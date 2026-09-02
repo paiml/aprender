@@ -1,0 +1,32 @@
+{
+  "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "an_unmarked_claim",
+          "level": "warning",
+          "message": {
+            "text": "The kernel is faster now."
+          },
+          "properties": {
+            "failure_scenario": "Nothing says how this is known.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    }
+  ]
+}

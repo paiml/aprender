@@ -1,0 +1,61 @@
+# The user-facing surface B4 scans in the diff — must-match / must-not-match.
+#
+# Driven by tests/pr-review.bats against
+#   scripts/check_pr_review_receipt.sh --match-shipped-surface <path>
+#
+# S3.C.1 says a comparative claim "in the diff, PR body, docs, or benchmark output" must
+# carry its comparator. Scanning EVERY changed path would red the very PR that adds this
+# table, and would red a specification that quotes a banned ratio in order to ban it. The
+# scope starts from the one check_no_claim_literals.sh already measured and defends —
+# library and binary sources plus the book, never tests, benches, examples or fixtures,
+# which state TARGETS by design.
+#
+# docs/**.md WAS IN THIS SCOPE AND WAS MEASURED OUT. Over the last 300 commits of
+# origin/main the diff scan fires five times, on two commits, and three of the five QUOTE
+# a fabricated claim in order to ban it — two of them in docs/benchmarking-gate-spec.md.
+# Those three have no honest remedy: S3.C.1's exit is a comparator command, version and
+# log, and there is no log for a number that was never measured. 2/5 is 40% measured
+# precision against S7's >=90% admission bar, so the class may not block on that surface.
+# The residual is recorded in the guard: a comparative claim added to docs/ prose is not
+# blocked, and two real ones are named there.
+#
+#
+# F6 -- book/** IS EXEMPT FROM THE RUST-LAYOUT EXCLUSIONS, and the rows below are the
+# measurement that decided it. `*/examples/*` was written for a cargo target directory.
+# The one directory it removed from the book is book/src/examples/ -- 153 of 441
+# published pages, 34.7%, all in book/src/SUMMARY.md -- and that is where
+# `851.8 tok/s = 2.93x Ollama` was published at da069a25f. B4 over that commit fired 0
+# times as merged and 2 times with book/ exempted; 0 false positives over all 153 pages
+# and over every added book/** line in 300 commits of origin/main.
+#
+# The exemption is scoped to book/ and nothing else. The pair
+#   MATCH     book/src/examples/showcase-benchmark.md
+#   NO-MATCH  crates/aprender-core/examples/demo.rs
+# is a single-variable control: same directory name, opposite verdict. If a future edit
+# widens the exemption past the book, the second row goes RED.
+# expect	subject	why
+MATCH	book/src/tools/apr-cli.md	the book is where users read, and where the 2.93x Ollama claim was actually published
+MATCH	book/README.md	book/ at any depth
+MATCH	crates/apr-cli/src/commands/serve/server.rs	a shipped source path; the 2.8x Ollama string lived here — the LINE test then decides (see rs-published-cases.tsv)
+MATCH	crates/aprender-core/src/lib.rs	crates/*/src/**.rs at any depth
+MATCH	src/bin/apr.rs	the root binary is shipped source too
+NO-MATCH	docs/qa/benchmark-matrix-2026-01-09.md	MEASURED OUT, not overlooked: docs/ in this repository is overwhelmingly where claims are AUDITED, and a gate whose only exit is to fabricate a comparator log is worse than the hole it closes
+NO-MATCH	docs/benchmarking-gate-spec.md	the spec that quotes "2.93x Ollama from a harness that never ran Ollama" in order to ban it — the exact false positive that removed docs/ from this scope
+NO-MATCH	docs/specifications/apr-perf-gate-001.md	§0.1 of that spec QUOTES 36.9x over FasterTransformer in order to ban it; excluded by check_no_claim_literals.sh for the same reason
+NO-MATCH	tests/fixtures/pr-review/comparative-claim-cases.tsv	THIS FILE. A case table full of banned ratios must not red the PR that adds it
+NO-MATCH	crates/aprender-serve/src/api/tests/native_routes_2376.rs	a test states a target, not a result
+NO-MATCH	crates/aprender-core/benches/matmul.rs	a bench states a bar
+NO-MATCH	examples/qwen_inference.rs	an example is not a published claim
+NO-MATCH	scripts/check_no_claim_literals.sh	a guard naming the literals it bans is not publishing them
+NO-MATCH	evidence/pr-review/backtest/results.md	evidence records what was measured, including the claims under audit
+NO-MATCH	crates/aprender-core/src/format_tests.rs	a _tests.rs sibling is a test whatever directory it sits in
+MATCH	CHANGELOG.md	D9 CLOSED: the KNOWN GAP this row used to record. A root-level .md is now in scope, and the sibling universe in check_no_claim_literals.sh moved in the SAME commit -- which is the condition F9 named when it declined to widen
+NO-MATCH	Cargo.toml	not a surface a claim can be published on
+MATCH	book/src/examples/showcase-benchmark.md	F6 THE SCAR: the page da069a25f published `851.8 tok/s = 2.93x Ollama` to; excluded until F6 by */examples/*, a Rust-layout rule applied to prose
+MATCH	book/src/examples/apr-cli-demo.md	one of the 153 published book pages under examples/, all of them in SUMMARY.md
+MATCH	book/examples/x.md	CONTROL, and it FLIPPED at F6: the old exclusion matched the name at any depth, so this was NO-MATCH. A book page is a book page at any depth
+NO-MATCH	crates/aprender-core/examples/demo.rs	SINGLE-VARIABLE CONTROL for the row above: same directory name, a cargo example target, still out of scope. The exemption is book/, not examples/
+NO-MATCH	book/src/examples/showcase-benchmark.rs	CONTROL: the exemption is book/**.md, not everything under book/. A .rs file there is not a rendered chapter
+MATCH	README.md	D9 THE SCAR: da069a25f published `2.93x Ollama` to README.md as well as to the book page F6 recovered, and B4 fired on neither. README.md is the first page a user reads
+NO-MATCH	crates/apr-cli/CHANGELOG.md	SINGLE-VARIABLE CONTROL for the CHANGELOG.md row: same filename, one directory down. The widening is ROOT-anchored, not a filename rule
+NO-MATCH	docs/README.md	SECOND CONTROL, and it is the one that guards the measured-out docs/ surface: `*.md` without the `*/*)` anchor matches this too, because bash case globs do not stop at `/`

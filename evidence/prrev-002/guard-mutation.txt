@@ -1,0 +1,14 @@
+mutate_vendored_schemas_guard.sh - PRREV-002
+
+  M0-baseline-unmutated              exit=0  as required
+  M1-schema-byte-appended            exit=1  as required
+  M2-manifest-entry-dropped          exit=1  as required
+  M3-sources-hash-drift              exit=1  as required
+  M4-remote-ref-introduced           exit=1  as required
+  M5-reject-fixture-relabelled       exit=1  as required
+  M6-accept-fixtures-deleted         exit=1  as required
+  M7-reject-fixtures-deleted         exit=1  as required
+  M8-schema-accepts-everything       exit=1  as required
+
+mutants: 9 as-required, 0 survived, 0 never engaged
+PASS: baseline GREEN, every mutant RED, every mutation observed to engage.

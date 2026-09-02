@@ -1,0 +1,1320 @@
+metadata:
+  version: 2.0.0
+  created: '2026-08-30'
+  author: PAIML Engineering
+  kind: kernel
+  description: >-
+    A PR review is evidence only if every claim it makes says HOW it knows.
+    This contract holds the three rules that make the pr-review skill's receipt
+    falsifiable rather than decorative: the closed set of grounding marks (S1),
+    the machine-decidable blocking tier (S7), and the split between the four
+    metrics that stop the line and the four that are only recorded until they
+    have been measured thirty times (S8).
+
+    It is deliberately a `kernel` contract and NOT an exempt registry. The
+    operator ruling of 2026-08-21 stands: an exemption is not an honest verdict,
+    and a contract governing an enforcement artifact is the last place to claim
+    one.
+
+    STATE ON THIS COMMIT: BUILT AND MUTATION-VERIFIED, STILL NOT ARMED. The
+    guard (scripts/check_pr_review_receipt.sh), the fixture table, the
+    vendored schemas, the reviewer skill and the CI wiring all exist here;
+    the `pr-review-receipt` job is not yet a required check. All but THREE of
+    the falsification tests below are green and bound to a command; those three
+    remain LIVE-PENDING and say so in the field the schema actually reads.
+
+    THE TOTALS ARE STATED ONCE EACH, ON PURPOSE. This paragraph used to restate
+    the fixture count and the falsification-test count, and both went stale: the
+    fixture count while the table grew from 26 to 35, and the test count while
+    the list grew from 11 to 15 to 17 - the second of those failing
+    `contract_data_integrity` on `pass_criteria says 11 tests, actual 15` for two
+    tickets. The falsification total now lives only in `qa_gate.pass_criteria`,
+    where scripts/check_pr_review_counts.sh derives it from the block and fails
+    this file when the two disagree; the fixture count lives in the places that
+    guard already checked. A number restated in four places is a number that will
+    be wrong in three of them.
+
+    This paragraph was rewritten by PRREV-008 and the previous text is worth
+    recording: it said "DECLARED, NOT ARMED. PRREV-001 ships this file alone.
+    The guard ... does not exist here." That was true when written and false
+    four commits later, and nothing made it say so. A contract that reads as
+    governance while enforcing nothing is the #2504 shape; a contract that
+    still describes a state the tree left behind is the same failure with the
+    sign flipped, and it is likelier, because nothing ever fails because a
+    status paragraph went stale.
+  references:
+  - 'PR-REVIEW-SKILL-002 v2 — grounded adversarial PR review with a signed receipt.
+    THE AUTHORITY FOR THIS FILE AND IT IS NOT IN THIS REPOSITORY at 745fa8588. It was
+    supplied out-of-tree. A contract whose source document cannot be opened from a
+    checkout is one rename away from unauditable: committing it under
+    docs/specifications/ is owed by PRREV-002.'
+  - 'Supersedes PR-REVIEW-SKILL-001 (draft, 2026-08-30). Spec S0 records what changed
+    (A1-A9) and, as load-bearing, what was REJECTED (R1-R6) — notably the SLSA Build L3
+    claim, which a skill invoked by the authoring agent cannot support. The receipt
+    declares attestation_level L1-self.'
+  - 'Spec S1 (grounding), S7 (blocking policy), S8 (instrumentation) — the three sections
+    this contract encodes. S2-S6 and S9-S12 are encoded by the artifacts of PRREV-002..007.'
+  - 'Spec S6.3 — the fourteen-row fixture table, of which rows 6, 7 and 14 are the
+    discrimination cases. Without them "refuse every receipt" reads green. Rows 15-21 are
+    owed by this contract and by PRREV-008 rather than by S6.3, and row 17 is a fourth
+    discrimination case: without it B4 would forbid the honest path it exists to require.'
+  - 'Spec S9 step 7 — the backtest, and the acceptance test for the whole design: "If the
+    skill would not have caught [the three named cases], the design is wrong and changes
+    before it is enabled." It caught one of three. PRREV-008 is the change: B4 now
+    recomputes comparative claims from the diff rather than from the reviewer''s own
+    findings, every consultation carries both a recomputed trigger and an emptiness
+    check, S3.A is enforced as unconditional, and the comparative pattern is
+    check_no_claim_literals.sh''s measured RATIO_RE rather than a second implementation
+    of it.'
+  - 'Spec S3.A vs S6.3 row 7 — the spec CONTRADICTS ITSELF. S3.A says pmat''s trigger is
+    "unconditional" and S8.4 repeats it; row 7 says a docs-only PR may record all four
+    consultations as not-triggered. The two normative statements win over the
+    illustrative row: `pmat: not-triggered` is rejected, and row 7 is rebuilt with pmat
+    consulted so it keeps discriminating. Recorded here because a divergence from the
+    authority is only legitimate while it is written down.'
+  - 'Spec S9 note — use `pv validate <file>`, NEVER `pv lint <FILE>`. MEASURED here on
+    745fa8588: `pv lint contracts/batch-admission-v1.yaml` prints "Gate 1: validate (0
+    contracts, 0 errors, 0 warnings)" and exits 0. See F-PRREV-008.'
+  - 'contracts/apr-bench-receipt-v1.yaml — the same problem one tier down. Spec S3.C.1
+    (the comparator block) is that contract''s provenance rule applied to a review claim
+    instead of a bench receipt.'
+  - 'The 2.93x-Ollama scar: the book published a comparative number from a harness that
+    never ran Ollama. Spec S3.C.1 + S7 class 4 is the mechanism that makes that
+    unwriteable rather than merely discouraged.'
+  - 'The 66-commit index-drift scar: an index answering about code that is not in the PR.
+    Spec A4 stamps index_commit into the receipt and gates on
+    `git merge-base --is-ancestor`.'
+  - 'PERF-055: ~7,200 lines across 46 files nearly re-implemented over code that already
+    existed. Spec S3.A duplication_hits is the highest-EV field in the receipt.'
+  depends_on:
+  - apr-bench-receipt-v1
+
+equations:
+
+  grounding_marks_are_closed:
+    formula: |
+      mark(claim) in { cited, measured, asserted }        -- and nothing else
+      cited    => query != "" and source_uri != ""
+                  and excerpt != "" and len(excerpt) <= 400
+                  and excerpt_sha256 = sha256(excerpt)
+      measured => command is argv[] and exit_code recorded and stdout_sha256 recorded
+      asserted => rationale != "" and precision_class = advisory
+      unmarked => REJECT(receipt)
+      asserted(c) contradicts measured(m) in the same receipt
+               => DROP(c), log finding.suppressed_by_measurement
+    domain: 'every claim the review makes about external reality, in findings.sarif
+      properties.grounding and in the in-toto predicate''s consultations block'
+    codomain: 'bool — the receipt is accepted or rejected whole; there is no partial
+      credit for a claim that is nearly grounded'
+    invariants:
+    - >-
+      THERE IS NO FOURTH CATEGORY. An unmarked claim is not a weaker claim, it is a
+      DEFECT IN THE REVIEW, and the guard rejects the receipt that carries it. The
+      failure this excludes is the one the repository has shipped most often: a
+      confident sentence about external reality with no way to tell whether anything
+      was consulted.
+    - >-
+      CITED IS VERIFIED, NOT MERELY LABELLED (S1.1). A recorded excerpt that does not
+      support its claim is the same failure as no excerpt. The guard therefore checks
+      excerpt_sha256 = sha256(excerpt) and excerpt != "" — a hash over an empty string
+      is a well-formed hash, so the non-empty check is not redundant with the digest
+      check and neither substitutes for the other.
+    - >-
+      ENTAILMENT IS NOT CHECKED AND THIS CONTRACT SAYS SO. Nothing here verifies that
+      the excerpt actually SUPPORTS the claim; that is Phase 3. A well-formed but
+      unsupportive citation passes. This is a stated residual risk (S1.1), written
+      into the contract rather than left for a reader to discover, because an
+      unstated residual is how a hash check comes to be read as a truth check.
+    - >-
+      CONTRADICTION IS FATAL TO THE CLAIM, NOT TO THE RUN (S1.2). An `asserted` claim
+      that contradicts a `measured` value in the same receipt is dropped and logged.
+      Failing the whole run instead would make the reviewer's incentive to omit the
+      measurement, which is the opposite of what this contract is for.
+    - >-
+      AN `asserted` CLAIM NEVER BLOCKS. That is what keeps judgement admissible
+      without letting it stop the line, and it is why precision_class is pinned to
+      advisory by the mark itself rather than chosen per finding.
+    preconditions:
+    - 'the receipt parses as an in-toto Statement v1 against the vendored schema before any mark is read'
+    - 'sha256 is computed over the excerpt bytes AS STORED, never over a re-wrapped or re-indented copy'
+    postconditions:
+    - 'every result in findings.sarif carries a non-empty properties.grounding'
+    - 'no result carries a grounding value outside { cited, measured, asserted }'
+    - 'every result carries a non-empty failure_scenario (S4.2)'
+
+  blocking_tier_is_objective_and_earned:
+    formula: |
+      BLOCK(pr) <=> any of the six machine-decidable classes:
+        B1  receipt missing, schema-invalid, or unsigned
+        B2  reviewer_actor.id = author_actor.id
+        B3  guard_mutation_score < 1.00     (guard-touching diff only)
+        B4  unverified_comparative_claim present
+        B5  breaking API surface with no semver bump
+        B6  index_is_ancestor = false AND verdict = PASS
+      FINDINGS  => blocks on a release branch only
+      DEGRADED  => never blocks; reason printed FIRST on the comment line
+      PASS      => proceeds
+      admission: blocks(Bi) requires precision(Bi) >= 0.90 on the rolling sample
+      demotion:  precision(Bi) < 0.90 => edit THIS FILE to advisory; never disable the gate
+    domain: 'a pull request carrying a receipt at evidence/pr-review/<pr>/<head_sha>/'
+    codomain: 'bool — and the boolean is a function of the receipt alone, so two
+      readers of the same receipt reach the same verdict'
+    invariants:
+    - >-
+      SIX CLASSES, NOT FIVE. The spec's S7 TABLE lists six blocking rows while its
+      prose beneath says "five objective, machine-decidable classes". The table is the
+      operative artifact and is encoded here in full; the prose is a miscount.
+      Dropping a row to reach five would be inventing policy, and silently writing
+      "five" over six rows would repeat the defect this contract exists to remove.
+      Recorded rather than quietly reconciled — see F-PRREV-003.
+    - >-
+      NONE OF THE SIX IS A JUDGEMENT CALL. That is the whole design constraint: a
+      blocking tier made of opinions freezes an active investigation, which is what
+      #2757 and #2766 did. Every class above is decided by reading the receipt, not by
+      agreeing with the reviewer.
+    - >-
+      FIXTURE ROW 10 IS NOT A SEVENTH CLASS. `base_sha` disagreeing with
+      `git merge-base origin/main head_sha` is RED under B1 (the receipt is invalid),
+      not under a class of its own. Said explicitly because a fixture row with no
+      named class is how a guard grows a rule nothing governs.
+    - >-
+      B5 IS THE ONE CLASS NO CONSULTATION PRODUCES. Nothing in S3's five consultations
+      emits `breaking API surface with no semver bump`, and no S8 metric measures its
+      precision — so the admission rule cannot be evaluated for it. It is carried here
+      because the spec's table carries it, and it is flagged because a blocking class
+      whose precision cannot be measured cannot be demoted by the mechanism that is
+      supposed to protect it.
+    - >-
+      DEMOTION IS A TICKET, NOT A CONFIG CHANGE. A class that falls below 0.90 is moved
+      to advisory BY EDITING THIS FILE, so the demotion is reviewable and dated. A
+      silent flag flip in CI leaves a gate that reads armed and is not.
+    - >-
+      DEGRADED PROCEEDS ON EVERY BRANCH, AND PUTS ITS REASON FIRST. An unreachable
+      source must be loud and non-blocking: making it block teaches reviewers to route
+      around the skill, and making it silent is the ConnectionRefused-reads-clean
+      failure the three-state SARIF encoding exists to prevent.
+    preconditions:
+    - 'BASE = git merge-base origin/main HEAD, and base_sha in the receipt equals it (S2)'
+    - 'the receipt signature verifies against the committed public key before any class is evaluated'
+    postconditions:
+    - 'a PR blocked by this contract cites exactly one of B1..B6 by name'
+    - 'no PR is blocked by a finding whose grounding is asserted'
+
+  instrument_before_ratchet:
+    formula: |
+      threshold(m) = UNSET  for m in { actionable_rate, effective_fp_rate,
+                                       audit_divergence, cost_per_actionable }
+                     while samples(m) < 30
+      samples(m) >= 30 =>
+        actionable_rate     : floor := measured - 5pp, monotone non-decreasing
+        effective_fp_rate   : <= 0.10 required for a class to REMAIN blocking
+        audit_divergence    : sets the re-review sampling rate
+        cost_per_actionable : ratchets DOWN quarterly
+    domain: 'the four continuous parameters of spec S8, over the rolling population of
+      reviewed pull requests'
+    codomain: 'a threshold or the absence of one; UNSET is a value here, not a gap'
+    invariants:
+    - >-
+      NO NUMBER MAY BE WRITTEN INTO THESE FOUR ROWS BEFORE THIRTY SAMPLES EXIST.
+      Inventing one would violate the same S1 grounding rule this contract exists to
+      enforce: a threshold with no measurement behind it is an `asserted` claim wearing
+      a `measured` mark, and it would be doing so in the file that defines the
+      difference. This is the single strongest reason the four rows below carry
+      `record-only` and not a plausible-looking default.
+    - >-
+      RECORD-ONLY IS NOT UNENFORCED. The guard still REJECTS a receipt whose `cost`
+      block is missing, and still rejects a blocking class with no precision sample.
+      What is absent is a THRESHOLD, not the measurement — the two failure modes look
+      identical in a report and are opposite in meaning.
+    - >-
+      A RATCHET MOVES ONE WAY. actionable_rate's floor may rise and never fall;
+      cost_per_actionable's ceiling may fall and never rise. A floor lowered to admit a
+      release is the defect APR-PERF-GATE-001 S10.1 already names.
+    - >-
+      effective_fp_rate IS THE ONLY ONE OF THE FOUR THAT CAN UN-ARM A GATE. It feeds
+      the S7 admission rule directly, so it is the one whose thirty samples are on the
+      critical path; the other three change reporting, not blocking.
+    - >-
+      THIRTY IS THE SPEC'S NUMBER AND IT IS NOT DERIVED HERE. It is a convention, not a
+      power calculation, and this contract does not dress it up as one. If a power
+      calculation is later done, it replaces the thirty and this invariant records that
+      it was measured.
+    preconditions:
+    - 'a sample is one merged PR that carried a schema-valid receipt; a DEGRADED receipt counts as a sample'
+    - 'the cost block records input_tokens, output_tokens and wall_seconds for every run, including runs that found nothing'
+    postconditions:
+    - 'this contract contains no numeric threshold for any of the four instrument-first metrics'
+    - 'every one of the four carries the literal severity instrument-only in the enforcement block'
+
+  four_defects_stop_the_line:
+    formula: |
+      guard_mutation_score  = 1.00   killed / attempted, on the guard itself
+      receipt_presence      = 1.00   PRs merged with a valid receipt / PRs merged
+      unmarked_claims       = 0      claims carrying no grounding mark
+      vacuous_consultations = 0      status = consulted with attempted = 0
+      ratchet(m) = NONE for all four
+    domain: 'the four jidoka parameters of spec S8'
+    codomain: 'exactly {1.00, 1.00, 0, 0} — a defined defect, not a target'
+    invariants:
+    - >-
+      A ZERO IS NOT A RATCHET. There is nothing to raise, so there is no direction in
+      which these four can rot. That is the point of separating them from the four
+      above: the same table holds two different KINDS of parameter, and conflating them
+      is precisely how a guessed threshold gets written next to a measured one.
+    - >-
+      guard_mutation_score = 1.00 IS THE ONE PLACE S7'S NARROWNESS DOES NOT APPLY
+      (S6.4). Every other verdict rests on the guard, so a guard that cannot fail
+      makes every green it emits a count of files rather than a verdict.
+    - >-
+      vacuous_consultations = 0 IS THE SAME SHAPE AS `pv lint <FILE>` PASSING OVER ZERO
+      CONTRACTS, and as `cargo test <no-such-filter>` printing `0 passed`: a pass-shaped
+      line from a scan that selected nothing. It is why this contract's own DONE-WHEN
+      is `pv validate <file>` and why F-PRREV-008 measures the vacuous form rather than
+      citing it.
+    - >-
+      receipt_presence = 1.00 MEANS A MISSING RECEIPT IS RED, NOT SKIPPED (S6.3). A
+      skipped check and a passed check are the same pixel in a status list.
+    - >-
+      unmarked_claims = 0 IS NOW EXERCISED. S6.3's fourteen rows cover empty
+      `source`/`excerpt` (row 3), empty `failure_scenario` (row 11) and a digest
+      mismatch (row 12), but none covered a result carrying NO properties.grounding at
+      all. PRREV-003 shipped the fifteenth row
+      (tests/fixtures/pr-review/row-15-finding-with-no-grounding-mark) and PRREV-004's
+      sweep kills both mutants on the branch it pins; PRREV-008 discharges the note. It
+      is recorded rather than deleted because the interval matters: for one commit the
+      metric read as governed while nothing exercised it, and a `check:` still saying
+      "not yet exercised" after the fixture lands is the same defect pointing the other
+      way.
+    - >-
+      vacuous_consultations = 0 WAS ENFORCED FOR ONE CONSULTATION IN FOUR until
+      PRREV-008. The guard rejected `mutation.attempted: 0` (row 2) and ACCEPTED
+      `cuda: consulted, queries: []`; symmetrically, only cuda's trigger was recomputed
+      from the diff, so `pmat`, `crux` and `mutation` could each be skipped outright by
+      writing `not-triggered`. Every consultation now carries both halves — a trigger
+      recomputed from `git diff` and an emptiness check — and rows 18-21 are the
+      fixtures. A metric enforced on one member of a set it quantifies over is not a
+      partial gate; it is a gate over one member, reported as if it covered the set.
+    preconditions:
+    - 'the guard has passed its own positive control (S6.1) before any receipt verdict it emits is believed'
+    - 'the mutation set for the guard is committed, so `attempted` is a count of a fixed set and not of whatever happened to run'
+    postconditions:
+    - 'a receipt with status consulted and attempted 0 yields DEGRADED, never PASS'
+    - 'a merged PR without a schema-valid signed receipt is impossible while receipt_presence is armed'
+
+  duplication_coverage_is_recorded_per_surface:
+    formula: |
+      duplication_coverage : SURFACE -> { semantic, lexical, none }
+        SURFACE = { rust, shell, python, config, docs, other,
+                    sibling_branches, merge_base_to_main }
+        REGION  = { head, siblings, merge_base_to_main }
+      pmat.status = consulted =>
+             duplication_hits is an array
+         and dom(duplication_coverage) >= SURFACE
+         and ran(duplication_coverage) subset { semantic, lexical, none }
+         and duplication_horizon is a non-empty array of refspecs
+         and { r : "<r>=..." in duplication_horizon } >= REGION
+         and horizon_branches_{total,scanned} in N (WHOLE numbers)
+         and 0 <= horizon_branches_scanned <= horizon_branches_total
+         and symbols_searched is a number
+      exists s: duplication_coverage(s) = none        => verdict != PASS
+      duplication_coverage(sibling_branches) != none
+         and horizon_branches_scanned = 0
+         and horizon_branches_total > 0                => REJECT(receipt)
+      horizon_branches_scanned < horizon_branches_total => verdict != PASS
+    domain: 'the pmat consultation of a receipt whose status is `consulted`'
+    codomain: 'bool — accepted or rejected whole'
+    invariants:
+    - >-
+      A COVERAGE GAP IS RECORDED, NEVER SILENTLY ABSENT. This is S3.0's three-state
+      rule applied one level down, to the field S3.A calls the highest-EV in the
+      receipt. PRREV-007 measured the gap: pmat's semantic index is Rust-only, so on
+      #2742 — 46 files, 7,244 insertions — 3,533 insertions (48.8%) of shell, python
+      and yaml were outside semantic reach entirely. `duplication_hits: []` therefore
+      meant "the half I can see is clean" and read as "nothing like this exists".
+      It must not be possible to read "searched and found nothing" as identical to
+      "could not search".
+    - >-
+      AN UNSEARCHED SURFACE CANNOT SIT UNDER A PASS. Exactly the rule S6.3 rows 5 and 6
+      already apply to an unreachable consultation: `none` is honest and permitted, and
+      it costs the receipt its PASS, not its validity. Fixture rows 16 and 17 are that
+      pair — the same coverage map under PASS (RED) and under DEGRADED (GREEN). Without
+      row 17 the rule would punish the honest receipt as hard as the silent one, and a
+      field that costs a PASS whatever is written in it is a field that learns to stay
+      empty.
+    - >-
+      THE HORIZON IS PART OF THE COVERAGE. Prior art on an UNMERGED SIBLING BRANCH is
+      invisible to any index anchored to this branch's history, which B6 requires it to
+      be. #2781 found #2742's prior art only because #2742 had merged 17 hours earlier;
+      reverse the order and S3.A returns []. So the refs actually swept are recorded,
+      and a sweep that covered fewer branches than existed cannot read PASS.
+    - >-
+      THE COUNTS ARE WHOLE NUMBERS, AND THAT IS A CORRECTNESS RULE, NOT A STYLE ONE.
+      The two verdict rules compare them with the shell's integer operators, which
+      ERROR on a fraction rather than compare false — so the enclosing branch reads
+      false and BOTH rules are SKIPPED. Measured: with the whole-number clauses removed,
+      a receipt recording scanned 2.5 of 40 under `verdict: PASS` is ACCEPTED; with them
+      it is REJECTED. A guard that fails OPEN on a value its own type check admitted is
+      the class this contract exists to remove.
+    - >-
+      A HORIZON THAT SWEPT NOTHING IS THE `attempted: 0` SHAPE. Claiming the sibling
+      branches were searched with horizon_branches_scanned = 0 over a non-empty horizon
+      passes vacuously, which S3.D already calls DEGRADED rather than clean for
+      mutation. The same words, one field over.
+    - >-
+      THE METHOD VOCABULARY IS CLOSED AT THREE, AND `lexical` IS NOT A SYNONYM FOR
+      `semantic`. scripts/pr_review_duplication_scan.sh performs an exact,
+      word-boundary name match; a re-implementation under a DIFFERENT name is invisible
+      to it and no amount of grep fixes that. The backtest's own example — this guard's
+      COMPARATIVE_RE being a second implementation of check_no_claim_literals.sh's
+      RATIO_RE — is NOT caught, because the names differ. Recording the method is what
+      keeps that residual visible instead of letting `lexical` be read as coverage.
+    preconditions:
+    - 'the receipt parses and verifies before any coverage field is read'
+    - 'horizon_branches_total is the CANDIDATE set — unmerged into origin/main, and neither an ancestor nor a descendant of head_sha — so a complete sweep does not read as partial'
+    postconditions:
+    - 'every surface in SURFACE carries a method in every consulted receipt'
+    - 'no receipt reads PASS while any surface reads `none` or while the horizon sweep was partial'
+    - 'a receipt recording `none` under DEGRADED is ACCEPTED (row 17), so honesty is never punished harder than silence'
+
+  autonomous_merge_requires_a_cross_vendor_quorum:
+    formula: |
+      ARM(pr) <=> receipt_guard_accepts(R)
+              and R.predicate.autonomy.requested = true
+              and R.predicate.verdict = "PASS"
+              and |{ m.vendor : m in R.predicate.autonomy.quorum }| >= 2
+              and { primary, cross_vendor } subset { m.role : m in quorum }
+              and forall m in quorum: m.actor.id != author_actor.id
+                                  and m.verdict = "PASS" and m.refusal = null
+              and no S.result carries precision_class = blocking
+              and no S.result carries autonomy_effect = "refuse"
+              and vacuous_consultations(R) = 0 and mutation.survivors = []
+              and paths(head_sha..PR.head) subset { evidence/pr-review/<pr>/** }
+              and (rev_list(main_sha_at_review..origin/main) = []
+                   or (delta_sweep.status = "clean"
+                       and delta_sweep.needles_sha256 = sha256(join(duplication_needles))))
+              and paths(base_sha..head_sha) intersect MECHANISM_PATHS = {}
+              and not exists_on_origin_main(".github/pr-review-autonomy.disabled")
+      NOT-ARM(pr) => the pull request stays green and a human merges it
+    domain: 'a pull request whose receipt carries a predicate.autonomy block (spec S13.2)'
+    codomain: 'PERMIT | REFUSE[Q1..Q10] — never BLOCK; S13 adds zero rows to the S7 tier'
+    invariants:
+    - >-
+      A REFUSAL IS NOT A BLOCK, AND THE LETTERING ENFORCES IT. The blocking tier stays
+      at six, B1..B6. Refusals are Q1..Q10 so that a log line cannot be read as a
+      blocking class, and a refused pull request is exactly as mergeable by a human as
+      it was before the arm script ran. Conflating the two would let S13 quietly widen
+      the blocking policy without amending S7 — the change nobody would notice.
+    - >-
+      VENDOR-DISTINCTNESS IS THE LOAD-BEARING PROPERTY, NOT MEMBER COUNT. The predicate
+      reads |distinct vendor| >= 2 and never |members| >= 2. A second Claude instance
+      shares the model, the prompt family, the three-mark vocabulary and the diff: it
+      raises the count and not the independence. A third vendor extends the quorum with
+      no edit to this file; two Claudes never satisfy it.
+    - >-
+      THE FOUR CONSULTATIONS ARE SOURCES AND DO NOT VOTE. A source has no verdict.
+      Counting them as members would count the same evidence twice — once as the
+      source's vote and once inside the primary reviewer's verdict, which IS a function
+      of that source's output. A five-member quorum built that way carries one
+      independent bit and four copies of it, which is the artifact-that-reads-as-N-checks
+      shape S6.1 and this contract's own D8 note exist to refuse.
+    - >-
+      DEGRADED NEVER MERGES, AND THE THROUGHPUT COST IS THE POINT. S3.0 exists so that
+      "could not consult" and "consulted, found nothing" are different artifacts.
+      Auto-merging on DEGRADED re-collapses that distinction exactly where it acquires
+      consequences. MEASURED: pmat MCP is ConnectionRefused in the authoring session and
+      6 of 8 recent reviews returned DEGRADED, so this rule would have refused all six.
+      That is the mechanism working; the remedy is to fix availability, never the rule.
+    - >-
+      VALIDITY IS DELEGATED, NEVER RE-IMPLEMENTED. The arm script shells out to
+      scripts/check_pr_review_receipt.sh for signature, schema, merge base, index
+      ancestry, the marks and B4 — one implementation, the one 185 mutants are run
+      against. A second copy inside the arm script would be two implementations of one
+      rule, each green against its own copy, which is D8 in the code written to enforce
+      D8. Fixture q-40b asserts the delegated refusal still carries the guard's own
+      class, because a delegation that swallows the callee's diagnosis is one nobody can
+      act on.
+    - >-
+      A PULL REQUEST THAT EDITS THE MERGE MECHANISM DOES NOT MERGE ITSELF. MECHANISM_PATHS
+      is a LITERAL PREFIX LIST and not a regex: matching is `case "$f" in "$m"*)`, which
+      cannot be wrong the way a pattern can, and this repository's guard patterns have
+      been wrong six times. The falsifiable consequence is that the pull request
+      introducing S13 touches every entry and is therefore refused under Q9 by its own
+      mechanism.
+    - >-
+      THE KILL SWITCH IS READ FROM origin/main AND NEVER FROM THE PR TREE. A branch that
+      deletes .github/pr-review-autonomy.disabled must not thereby turn autonomy back on.
+      It is evaluated FIRST in the repository phase, because an off switch consulted only
+      after five other checks have passed costs a minute of compute to use.
+    preconditions:
+    - 'every artifact-only clause is evaluated before every repository clause, so the positive control can fire in any working directory'
+    - 'the narrower clause precedes the general one: asserted-and-blocking before blocking, or the specific diagnosis is unreachable and its mutant is a permanent survivor'
+    - 'the PR context is an ARTIFACT produced by gh and consumed by one evaluator, so the live path and the test path are the same code'
+    postconditions:
+    - 'a refused pull request retains every check result it had; nothing is marked failed'
+    - 'the arming call is idempotent — an already-armed pull request reports ALREADY-ARMED and invokes nothing'
+    - 'autonomous_merge_reverts is recorded as 0/0 and READ AS UNDEFINED, never as clean'
+  arm_e_is_a_second_vendor_and_is_advisory:
+    formula: |
+      -- S3.E. The FIFTH consultation. S3.A..S3.D ask SOURCES; this one asks a
+      -- different REVIEWING AGENT, in its own process, from another vendor.
+      owed(receipt)     <=> skill_version(receipt) >= 2.1.0
+      status(antigravity) in { consulted, unreachable }   -- never not-triggered
+      owed and absent(antigravity)          => REJECT(receipt)        [B1]
+      status = unreachable and verdict=PASS => REJECT(receipt)        [B1]
+      status = consulted and attempted = 0  => REJECT(receipt)        [B1]
+      status = consulted =>
+            agy_version != "" and binary_path != ""
+        and model_id    != "" and model_family != ""
+        and same_family(model_id) = false                             -- S3.E.2
+        and usage.{input_tokens,output_tokens,total_tokens} : number
+        and reverified_by_primary : bool
+        and divergence.{agreed,agy_only,primary_only,contradicted} : whole >= 0
+        and agreed + agy_only + contradicted = len(findings)          -- the ledger balances
+      precision_class(f) = blocking for f in run(antigravity)
+                                            => REJECT(receipt)        [B1]
+    domain: 'consultations.antigravity of a receipt declaring skill_version >= 2.1.0,
+      and every SARIF result whose tool.driver.name is `antigravity`'
+    codomain: 'bool — the receipt is accepted or rejected whole'
+    invariants:
+    - >-
+      A SECOND SESSION IS NOT A SECOND MODEL. S5's control makes reviewer_actor differ
+      from author_actor, which is a different ACTOR; Huang et al. (ICLR'24) is a result
+      about WEIGHTS. S3.E is the first arm of this contract whose separation survives
+      that objection, and it is why the arm exists at all rather than a sixth prompt.
+    - >-
+      `agy` IS A HARNESS, NOT A MODEL. `agy models` on 2026-08-31 returned a catalogue in
+      which TWO ARE CLAUDE (claude-sonnet-4-6, claude-opus-4-6-thinking), beside Gemini
+      ids and gpt-oss-120b-medium. The SIZE of that catalogue is the vendor's and it
+      moved the same day - fourteen ids in one run, eleven hours later, the three
+      gemini-3.5-flash-* ids gone - so no rule here reads a count of it. What the rule
+      reads is that `claude-*` ids are in it. With --model omitted or pointed at a Claude id
+      the arm is the primary reviewer's own family reviewing itself, while every field a
+      reader checks still says `antigravity`. So model_id is recorded as an argv element
+      and CHECKED. This is the standing rule that a run is never labelled by INTENT: the
+      mechanism must be shown to have engaged.
+    - >-
+      THE ARM CANNOT BLOCK, AND THAT IS THE ADMISSION RULE WORKING RATHER THAN AN
+      OMISSION. S7 admits a class to the blocking tier only while its measured precision
+      on the rolling sample is >= 90%; S8 requires instrument -> 30 samples -> ratchet;
+      S3.E has ZERO samples, so the rule governing the tier has nothing to apply. A
+      blocking precision_class from this arm is an internally inconsistent receipt (B1),
+      NOT a seventh class. The tier stays at six, B1..B6.
+    - >-
+      IT IS S7.1 RUN THE OTHER WAY. B5 could never be DEMOTED because its sample could
+      never accrue. S3.E's sample accrues from the first reviewed PR, so it can be
+      PROMOTED — by exactly the edit to this file a demotion would use, once 30 samples
+      exist. Promotion is a ticket, not a silent config change.
+    - >-
+      A TIMEOUT IS `unavailable`, NEVER "no findings". agy's --print-timeout defaults to
+      5m0s and a repository-scale review needs more, so this arm fails SLOWLY at least as
+      readily as it fails fast — and a slow failure is the one most easily mistaken for a
+      clean run. unreachable + DEGRADED is also the arm's INTENDED behaviour on a box
+      with no agy installed, exactly as S3.0 already says of pmat's ConnectionRefused.
+    - >-
+      DISAGREEMENT IS RECORDED, NOT RESOLVED IN THE PRIMARY'S FAVOUR. `contradicted` is
+      the column a lazy implementation drops, and a receipt that cannot REPRESENT two
+      reviewers reaching opposite conclusions is one in which the primary always wins.
+      The ledger identity (agreed + agy_only + contradicted = len(findings)) is what
+      stops {0,0,0,0} sitting beside twelve findings and reading as perfect agreement.
+      `primary_only` is deliberately OUTSIDE the identity: it counts the primary's
+      findings, which are not in agy's array.
+    - >-
+      agy's `measured` CLAIMS ARE agy's. S1 defines measured as "produced by a command
+      THIS RUN executed", and agy is a separate process. THE RULING IS THAT THE PRIMARY
+      DOES NOT RE-RUN THEM and reverified_by_primary records it: re-running and
+      adjudicating would dissolve the independence the arm exists to create, collapsing
+      the disagreement into the primary's judgement. A run that DID re-verify writes
+      true and carries the commands as its own measured marks. What is forbidden is
+      leaving it unsaid.
+    - >-
+      THE VERSION GATE HAS A STATED BYPASS. A receipt is a RECORD OF A REVIEW THAT
+      HAPPENED, and evidence/pr-review/2795/f5fe1479.../ was written at 2.0.0 with four
+      consultations; back-filling an antigravity block into it would fabricate a
+      consultation nobody performed, which is the never-ran-Ollama shape with a JSON
+      schema in front of it. So 2.0.0 is judged by 2.0.0's rules. A reviewer who WRITES
+      2.0.0 therefore skips S3.E and the guard cannot tell that from a genuine 2.0.0
+      receipt. PRREV-018 owes the closure (arm 4 must require this PR's receipt to
+      declare the TREE's skill version). An advisory arm with a stated bypass is worth
+      more than a blocking one with an unstated closure.
+    - >-
+      MEASURED, NOT ASSERTED, on 2026-08-31: agy 1.1.22, 208429312 bytes,
+      sha256 2822292f...; one print-mode call returned rc 0, status SUCCESS,
+      duration_seconds 9.522, wall 13s, usage { input_tokens 20836, output_tokens 904,
+      thinking_tokens 752, cache_read_tokens 8142, total_tokens 21740 }. The usage block
+      is what feeds S8's cost_per_actionable, so a fixture carrying an invented one could
+      not detect an invented one.
+    - >-
+      agy's OWN `status` FIELD IS NOT A LIVENESS SIGNAL, MEASURED. A real invocation
+      returned rc 0, wall 54s, status=ERROR, error="Your previous response contained an
+      improperly formatted function call ... Retries remaining: 3", AND a complete
+      schema-valid structured_output with one well-formed finding: status reflects the
+      last internal turn, so a RECOVERED retry leaves it ERROR on a run that did exactly
+      what was asked. The first draft of S3.E.4 classified on that field and would have
+      discarded good reviews while reporting DEGRADED for a consultation that worked -
+      a liveness check failing closed on a healthy run, inside the clause that
+      classifies liveness. Availability is decided by rc = 0 AND a structured_output
+      that validates against the skill's schema with reviewed = true; status and error
+      are recorded as diagnostics and decide nothing.
+    - >-
+      `total_tokens` IS NOT THE TOTAL. Measured: input 11163 + output 2327 = total 13490,
+      while thinking_tokens 2176 and cache_read_tokens 47698 sit OUTSIDE it - the cache
+      reads alone are 3.5x the reported total. All five fields are recorded and any
+      cost_per_actionable figure states its numerator. A cost metric resting on a field
+      named `total` that is not the total is the 2.93x Ollama failure in miniature.
+    - >-
+      RESIDUAL, RECORDED RATHER THAN HIDDEN: agy's JSON output carries no `model` field,
+      so model_id records what was REQUESTED, not what answered. A silent server-side
+      fallback would not appear in the artifact. Closing it needs a field agy does not
+      currently emit.
+    preconditions:
+    - 'the agy binary is resolved with `command -v agy` and the resolved path recorded; a bare invocation and a hardcoded path are both refused by S3.E.1'
+    - '--model is passed explicitly and its value recorded as model_id; agy is a harness, not a model, and `agy models` offers two ids in the primary reviewer''s own family'
+    - 'a run that timed out, exited non-zero, or produced no parseable structured_output is recorded as unreachable BEFORE any finding of its is read'
+    postconditions:
+    - 'no result in the antigravity SARIF run carries precision_class blocking while S3.E has fewer than 30 samples'
+    - 'antigravity.model_id is outside the primary reviewer''s model family, so the arm is a second vendor in fact and not only in name'
+    - 'agreed + agy_only + contradicted equals len(antigravity.findings), so every agy finding is accounted for by exactly one column of the divergence ledger'
+    - 'reverified_by_primary is present and boolean, so whose measurement a `measured` agy claim is can be read off the receipt rather than inferred'
+
+falsification_tests:
+
+# THREE of the entries below are LIVE-PENDING and every one says so IN `test:`, the
+# field the schema reads and `pv lint --strict-test-binding` classifies. It was seven at
+# PRREV-001, when this file shipped alone and the guard did not exist; PRREV-008
+# discharges the four whose recorded reason ("the guard does not exist at 745fa8588",
+# "the fixtures are unwritten") is no longer true, and REWRITES the reason on F-PRREV-004,
+# which is still pending but no longer for the reason it gives. A ledger that keeps saying
+# an artifact is unwritten after it lands is the same defect as one that claims a metric
+# is exercised when it is not; it just points the other way, and the next reader believes
+# whichever of the two files they happen to open first. The house
+# alternative is a `test_harness_status:` sibling key; that key is not a field of
+# `FalsificationTest`, serde drops it, and a dropped key that reads as governance is
+# #2465 exactly. The `mutation:` keys below are dropped for the same reason and are
+# addressed to a human PR author, not to a gate — no pv gate reads them, and none is
+# claimed to.
+
+- id: F-PRREV-001
+  rule: an unmarked claim is a defect in the review, not a lesser claim
+  prediction: >-
+    A receipt carrying a SARIF result with no properties.grounding is REJECTED with a
+    non-zero exit. The same receipt with grounding=asserted and a non-empty rationale
+    is ACCEPTED and the finding is non-blocking.
+  test: 'bats tests/pr-review.bats -f "row 15"'
+  if_fails: >-
+    S8's unmarked_claims = 0 is unenforceable, and the whole S1 mark system degrades to
+    a labelling convention that a reviewer may simply omit — which is the pre-contract
+    status quo with extra ceremony
+  mutation: >-
+    delete the grounding-presence branch from the guard; fixture row 15 must turn RED.
+    A guard that still passes after the branch is deleted never had one.
+
+- id: F-PRREV-002
+  rule: cited is verified, not merely labelled
+  prediction: >-
+    A result with grounding=cited and excerpt_sha256 != sha256(excerpt) is REJECTED
+    (row 12); so is one with an empty source or excerpt (row 3). A cited result whose
+    digest matches a non-empty excerpt is ACCEPTED (row 14).
+  test: 'bats tests/pr-review.bats -f "row (3|12|14) "'
+  if_fails: >-
+    a citation becomes a string a reviewer types, which is indistinguishable from
+    memory with a URL attached — the exact failure S3.B exists to stop
+  mutation: >-
+    replace the digest comparison with a presence check for the excerpt_sha256 key;
+    row 12 must turn RED while row 14 stays GREEN. Both arms are required: a mutation
+    that reds everything proves the guard is broken, not that it discriminates.
+
+- id: F-PRREV-003
+  rule: the blocking tier discriminates, and it has six rows
+  prediction: >-
+    Every RED row of S6.3 (1, 2, 3, 4, 5, 8, 9, 10, 11, 12, 13) exits non-zero and
+    names exactly one of B1..B6; every GREEN row (6, 7, 14) exits zero. B5 is expected
+    to be named by NO row, because no fixture exercises a semver break — that absence
+    is the assertion, not an oversight. Extended by PRREV-008: rows 16, 18, 19, 20 and
+    21 are RED and row 17 is GREEN, and row 17 is a fourth discrimination case — it
+    carries the SAME published ratio as row 16 on the SAME diff, and differs only in
+    that the comparator is recorded.
+  test: 'bats tests/pr-review.bats'
+  if_fails: >-
+    "refuse every receipt" and "verify every receipt" produce the same green, which is
+    the over-reach the discrimination rows 6, 7 and 14 were added to catch
+  mutation: >-
+    make the verdict function constant-RED, then constant-GREEN. Rows 6/7/14 must fail
+    under the first and rows 1..5/8..13 under the second. One arm alone proves nothing.
+
+- id: F-PRREV-004
+  rule: a blocking class is demoted by editing this contract, never by disabling the gate
+  prediction: >-
+    Setting a class's measured precision below 0.90 in the rolling sample makes the
+    guard REFUSE to block on it and REQUIRE that this file be edited; the CI step
+    remains enabled and continues to report the class as advisory.
+  test: >-
+    LIVE-PENDING, and the REASON has changed: the guard (PRREV-003) and the CI wiring
+    (PRREV-006) both exist now, so what is missing is no longer an artifact but a
+    MEASUREMENT — the gate is not enabled, no PR has been reviewed under it, and a
+    precision sample of size zero cannot demote anything. Restating the reason rather
+    than leaving the old one is the point: "pending because the code is unwritten" and
+    "pending because nothing has been measured" are different states and only one of
+    them is fixed by writing code.
+  if_fails: >-
+    a noisy class is switched off in CI instead of demoted here, so the tier silently
+    shrinks and no artifact records that it did — Tricorder's finding is that an
+    analyzer above the false-positive bar gets disabled, and the only defence is to
+    make disabling it visible
+  mutation: >-
+    point the admission rule at a hardcoded 1.00 precision; every class must then stay
+    blocking regardless of its sample, and the fixture that supplies a 0.5-precision
+    class must turn RED.
+
+- id: F-PRREV-005
+  rule: no threshold is written for the four instrument-first metrics before thirty samples exist
+  prediction: >-
+    actionable_rate, effective_fp_rate, audit_divergence and cost_per_actionable each
+    carry the literal `record-only` and severity `instrument-only` in this file's
+    enforcement block, and no numeric bound. A PR that writes a number into any of the
+    four without also recording thirty samples is REJECTED.
+  test: >-
+    LIVE-PENDING (PRREV-003) — the check is a property of THIS FILE and is trivially
+    inspectable by a human today, but no committed guard asserts it. Deliberately not
+    shipped here as an ad-hoc regex: this repository's contract patterns have been
+    wrong six times and a case table caught every one, so the pattern belongs in
+    PRREV-003 beside its must-match / must-not-match table, not inline in a contract
+    where nothing can exercise it.
+  if_fails: >-
+    a plausible-looking default (0.10, 0.90, 30%) gets written into a row that has
+    never been measured, inside the very file that defines the difference between a
+    measured claim and an asserted one
+  mutation: >-
+    write `initial: 0.10` into the actionable_rate row; the guard must turn RED and
+    name the row. If it stays GREEN, S8's instrument-first half is decoration.
+
+- id: F-PRREV-006
+  rule: the four jidoka metrics are exactly 1.00, 1.00, 0, 0 and carry no ratchet
+  prediction: >-
+    guard_mutation_score and receipt_presence read 1.00; unmarked_claims and
+    vacuous_consultations read 0; none of the four carries a ratchet rule. A PR that
+    softens any of the four — 0.99, "target", a grace period — is REJECTED.
+  test: >-
+    LIVE-PENDING (PRREV-003), same reason as F-PRREV-005: the assertion is about this
+    file's contents and its regex belongs beside a case table.
+  if_fails: >-
+    the four line-stops become four more ratchets, and the first inconvenient PR lowers
+    one — which is how a floor comes to be "temporarily" lowered to permit a release
+  mutation: >-
+    change guard_mutation_score to 0.99 in the enforcement block; the guard must turn
+    RED. A 99% kill rate on the guard is a guard with a hole in it and nothing else.
+
+- id: F-PRREV-007
+  rule: a vacuous consultation is DEGRADED, never PASS
+  prediction: >-
+    A receipt with consultations.mutation.status=consulted and attempted=0 is REJECTED
+    when verdict=PASS (row 2). A receipt recording pmat as unreachable with
+    verdict=DEGRADED is ACCEPTED (row 6); the same receipt with verdict=PASS is
+    REJECTED (row 5).
+  test: 'bats tests/pr-review.bats -f "row (2|5|6|18) "'
+  if_fails: >-
+    "the source said nothing" and "I did not ask" become the same artifact, which is
+    the failure mode with the longest evidence list in this repository (#2754, #2779,
+    #2780, #2790, and pmat MCP returning ConnectionRefused on day one)
+  mutation: >-
+    remove the attempted-count check; row 2 must turn RED. Row 6 must stay GREEN under
+    the same mutation, or the guard is rejecting DEGRADED rather than rejecting vacuity.
+
+- id: F-PRREV-008
+  rule: this contract is gated per-file, because the directory-shaped invocation is vacuous over one file
+  prediction: >-
+    `pv validate contracts/pr-review-skill-v2.yaml` exits 0 having validated ONE
+    contract. `pv lint contracts/pr-review-skill-v2.yaml` also exits 0 and prints
+    PASS — having validated ZERO. The second is not a weaker check, it is no check.
+    MEASURED 2026-08-30 at 745fa8588 with the HEAD-built pv 0.64.0: `pv lint
+    contracts/batch-admission-v1.yaml` printed "Gate 1: validate (0 contracts, 0
+    errors, 0 warnings)" and "Result: PASS", exit 0. Recorded as a measurement rather
+    than repeated from spec S9, because a note asserting vacuity is exactly the kind
+    of claim this contract requires evidence for.
+  test: 'pv validate contracts/pr-review-skill-v2.yaml'
+  if_fails: >-
+    this contract joins the class it was written to remove: an artifact whose gate
+    passes over an empty set, reporting the same green as a gate that examined
+    everything
+  mutation: >-
+    swap the DONE-WHEN in the PRREV-001 ticket to `pv lint <FILE>` and delete every
+    equation from this file. `pv lint <FILE>` must still print PASS — that is the
+    demonstration, and it is why the ticket names `pv validate`.
+
+- id: F-PRREV-009
+  rule: a duplication coverage gap is recorded, and an unsearched surface never reads PASS
+  prediction: >-
+    A receipt with pmat.status=consulted and NO duplication_coverage is REJECTED
+    (probe dup-cov-absent). One whose coverage omits a single surface is REJECTED
+    naming that surface (probe dup-cov-missing-shell). One recording
+    shell/python/config/docs/other as `none` with verdict=PASS is REJECTED (row 16);
+    the SAME coverage with verdict=DEGRADED is ACCEPTED (row 17). A sweep claiming the
+    sibling branches with horizon_branches_scanned=0 over a non-empty horizon is
+    REJECTED; a sweep that covered 2 of 40 branches is REJECTED under PASS and ACCEPTED
+    under DEGRADED; a FRACTIONAL count is REJECTED, because the shell comparisons that
+    implement the two verdict rules error on it and skip. Both arms are required: a rule that reds everything proves the
+    guard is broken, not that it discriminates.
+  test: 'bats tests/pr-review.bats'
+  if_fails: >-
+    duplication_hits returns to meaning "the Rust half is clean" while reading as
+    "nothing like this exists" — measured at 48.8% of the very diff S3.A cites as its
+    evidence — and prior art on an unmerged sibling branch stays invisible, so PERF-055
+    remains a case this design catches only when the timing is lucky
+  mutation: >-
+    delete the coverage-completeness branch from scripts/check_pr_review_receipt.sh and
+    the dup-cov-missing-shell probe must turn RED; delete the `none` branch and row 16
+    must turn RED while row 17 stays GREEN. scripts/mutate-guard.sh derives both
+    mutants by scanning for `reject B<n>`, so neither has to be remembered.
+
+- id: F-PRREV-010
+  rule: the book's own directory names are not a Rust project layout
+  prediction: >-
+    `--match-shipped-surface book/src/examples/showcase-benchmark.md` MATCHES, and
+    `--match-shipped-surface crates/aprender-core/examples/demo.rs` does NOT. Row 25 —
+    the same diff as row 16 with one directory changed — is REJECTED [B4] naming that
+    page, and row 26, the same page with the comparator recorded, is ACCEPTED. Both
+    arms are required: without row 26 "block every book page under examples/" reads
+    green, and the widening would have no honest exit.
+  test: 'bats tests/pr-review.bats'
+  if_fails: >-
+    B4 goes back to discarding 34.7% of the published book — 153 of 441 pages, every
+    one of them listed in book/src/SUMMARY.md — including the page da069a25f published
+    `851.8 tok/s = 2.93x Ollama` to from a harness that never ran Ollama. That is the
+    publication S3.C.1, S9 step 7 and S11 are all written about, accepted by the gate
+    that names it. Measured on the real commit: 0 fires as merged, 2 with book/
+    exempted, 0 false positives over all 153 pages and over 300 commits of origin/main.
+  mutation: >-
+    `book-removed-from-b4-scope` puts the whole book out of scope and
+    `book-examples-back-out-of-scope` restores exactly the pre-F6 behaviour by
+    re-excluding */examples/* under book/. Both are in scripts/mutate-guard.sh and both
+    must be KILLED; the second is the one no fixture could kill before row 25 existed.
+
+- id: F-PRREV-011
+  rule: the duplication horizon has three regions and names all three, swept or not
+  prediction: >-
+    A receipt whose duplication_horizon is the pre-F7 spelling
+    ["HEAD", "refs/remotes/origin/* unmerged into origin/main"] is REJECTED naming all
+    three missing regions; one naming only head and siblings is REJECTED naming
+    merge_base_to_main. A coverage map with no merge_base_to_main key is REJECTED; one
+    recording it as `none` is REJECTED under PASS and ACCEPTED under DEGRADED. The
+    scanner, run against a repository where the prior art LANDED on origin/main after
+    the merge base, returns that file with where=main — and returns nothing for it when
+    the region is not swept, while still naming the region in the horizon.
+  test: 'bats tests/pr-review.bats'
+  if_fails: >-
+    `merge-base..origin/main` stays in no region of the horizon and in no field of the
+    receipt, so `duplication_hits: []` under a PASS keeps meaning "there is nothing
+    like this" over a region nobody searched. Measured on #2781, whose blind region is
+    exactly #2742: one commit, 46 files, 11 of them the prior art, and a single
+    `git grep` over it costs 1 s against 20 s for the 774-branch sibling sweep and
+    returns crates/apr-cli/src/commands/test_llm_band.rs.
+  mutation: >-
+    delete the `merge_base_to_main` entry from the required-surface list in
+    scripts/check_pr_review_receipt.sh and the dup-cov-no-mergebase probe must turn
+    RED; delete the horizon-region branch and both horizon probes must turn RED while
+    the discrimination arm stays GREEN. scripts/mutate-guard.sh derives the drop and
+    flip mutants for the new branch by scanning for `reject B<n>`, so neither has to be
+    remembered.
+
+- id: F-PRREV-012
+  rule: an autonomous merge needs two vendors, unanimous, neither of them the author
+  prediction: >-
+    A receipt whose quorum spans one vendor (q-23), lacks a cross_vendor member (q-24),
+    carries the author's own actor id (q-25) or records one non-null refusal (q-26) is
+    REFUSED under Q5 and NOT blocked. The same receipt with two vendors, both roles,
+    neither the author and no refusal (q-52) is PERMITTED.
+  test: 'bats tests/pr-review-quorum.bats -f "^q-2[3456] |^q-52 "'
+  if_fails: >-
+    the second reviewer becomes decoration: a single-vendor pair shares the model, the
+    prompt family and the diff, so the PASS that authorises the merge carries one
+    independent bit wearing two names
+  mutation: >-
+    drop the vendor-distinctness clause and q-23 must turn RED while q-52 stays GREEN.
+    Both arms are required: a mutation that reds everything proves the script is broken,
+    not that it discriminates. scripts/mutate_quorum_arm.sh derives that drop by scanning
+    for `refuse Q<n>`, so it does not have to be remembered.
+
+- id: F-PRREV-013
+  rule: DEGRADED does not auto-merge, and neither does a surviving blocking finding
+  prediction: >-
+    verdict=DEGRADED (q-15), an asserted finding classed blocking (q-16), a surviving
+    blocking-class finding (q-17), an unmarked claim (q-18) and a SARIF invocation with
+    executionSuccessful=false (q-19) are each REFUSED under Q6, each on its own branch —
+    the reason is asserted, not only the class.
+  test: 'bats tests/pr-review-quorum.bats -f "^q-1[56789] "'
+  if_fails: >-
+    a quorum proceeds when its sources were unreachable, which is an unreviewed merge
+    wearing a signed receipt — and S4.3 has already said a signature is a provenance
+    claim and never a diligence claim
+  mutation: >-
+    delete the verdict clause; q-15 must turn RED. Delete the asserted-and-blocking
+    clause and q-16 must turn RED while q-17 stays RED under its own reason — the two
+    rows differ in the grounding mark and in nothing else, which is what proves the
+    narrower clause is reachable.
+
+- id: F-PRREV-014
+  rule: the review must be OF the code about to merge, and of a main that has not moved
+  prediction: >-
+    A commit after the reviewed SHA that touches source is REFUSED under Q3 (q-47); the
+    same topology with the commit confined to evidence/pr-review/<pr>/** is PERMITTED
+    (q-53). A non-empty main_sha_at_review..origin/main region with no sweep is REFUSED
+    under Q4 (q-49); the same region swept, with the needle set recorded and its digest
+    matching, is PERMITTED (q-54).
+  test: 'bats tests/pr-review-quorum.bats -f "^q-4[6789] |^q-5[0134] "'
+  if_fails: >-
+    Arm 4's ancestor relaxation lets an unreviewed commit ride in behind the receipt,
+    and D7's blind region recurs in the TIME dimension — the queue merges at about one
+    PR an hour, so hours of main are unswept and, before S13, unnamed
+  mutation: >-
+    empty EVIDENCE_PREFIX_TEMPLATE and q-47 must turn GREEN-when-it-should-be-RED; point
+    it at a path nothing matches and q-53 must turn RED instead. Both directions are in
+    scripts/mutate_quorum_arm.sh as evidence-prefix-empty and evidence-prefix-never-matches.
+
+- id: F-PRREV-015
+  rule: a pull request that edits the merge mechanism does not merge itself
+  prediction: >-
+    A diff touching any MECHANISM_PATHS entry is REFUSED under Q9 (q-44). A diff touching
+    a guard-shaped file that is NOT a mechanism path reaches the mutation clause instead,
+    and is REFUSED under Q2 when the run is diff-scoped (q-45), PERMITTED when it is
+    guard-scoped at 100% (q-55). The kill switch on origin/main refuses everything (q-39)
+    while the SAME receipt permits against a repository without it (q-39b).
+  test: 'bats tests/pr-review-quorum.bats -f "^q-39|^q-44 |^q-45 |^q-55 "'
+  if_fails: >-
+    the mechanism can amend itself unattended — the one change that would remove every
+    other control in this file, and the one nobody would be watching for
+  mutation: >-
+    replace the scripts/check_pr_review_receipt.sh entry in MECHANISM_PATHS with a path
+    that does not exist and q-44 must turn RED; make the guard-shape case match everything
+    and q-52 must turn RED; make it match nothing and q-45 must turn RED. All three are in
+    scripts/mutate_quorum_arm.sh.
+
+- id: F-PRREV-016
+  rule: a second REVIEWER, not a second prompt — and it must actually be a second vendor
+  prediction: >-
+    A receipt declaring skill_version 2.1.0 with no consultations.antigravity is
+    REJECTED [B1] (row 28); the SAME receipt at 2.0.0 is ACCEPTED (row 27), because a
+    receipt is a record of a review that happened and back-filling the block would
+    fabricate a consultation nobody performed. antigravity.status=not-triggered is
+    REJECTED even on a DOCS-ONLY diff (row 34) — S3.E's trigger is stricter than S3.A's,
+    which needs a code file. status=unreachable with verdict=PASS is REJECTED (row 29)
+    and the SAME receipt with verdict=DEGRADED is ACCEPTED (row 30). status=consulted
+    with attempted=0 is REJECTED (row 31). AND: a receipt whose
+    antigravity.model_id is `claude-opus-4-6-thinking` is REJECTED (row 35) though it is
+    byte-identical to an ACCEPTED receipt but for that one token — asserted by a
+    single-variable jq diff in tests/pr-review.bats, not by inspection.
+    MEASURED, and it is why row 35 exists: `agy models` on 2026-08-31 returned a catalogue
+    of which TWO ARE CLAUDE — claude-sonnet-4-6 and claude-opus-4-6-thinking — beside the
+    Gemini ids and gpt-oss-120b-medium. agy is a HARNESS, not a model, so "Antigravity is
+    Google's" does not establish that the arm is cross-vendor. Re-measured hours later the
+    catalogue had shrunk from fourteen ids to eleven, so its SIZE is a vendor-side fact
+    this contract does not assert; the two Claude ids were in both runs.
+  test: 'bats tests/pr-review.bats'
+  if_fails: >-
+    S3.E becomes the primary reviewer talking to itself through a different binary while
+    every field a reader checks still says `antigravity` — the self-preference bias S5
+    cites Huang et al. (ICLR'24) for, with a cross-vendor label on it, and the standing
+    rule against labelling a run by INTENT rather than proving the mechanism engaged.
+    S9.3's open item ("S5's author/reviewer separation has still never been exercised on
+    this epic") would then be closed by an artifact that does not close it.
+  mutation: >-
+    `arm-e-never-required` forces the version gate false — row 28 must turn RED;
+    `arm-e-always-required` forces it true — row 27 must turn RED. BOTH directions,
+    because a gate mutated in one direction is a gate half-tested.
+    `arm-e-dropped-from-the-consultation-list` removes antigravity from the status and
+    unreachable lists — row 29 must turn RED. `arm-e-same-family-regex-never-matches`
+    must turn row 35 RED and `...-matches-everything` must turn row 07 RED. All five are
+    in scripts/mutate-guard.sh as NAMED sites, because none of them is a `reject B<n>`
+    line and the derived scan cannot see them.
+
+- id: F-PRREV-017
+  rule: an advisory arm may not acquire blocking authority, and disagreement is recorded rather than resolved
+  prediction: >-
+    A receipt whose `antigravity` SARIF run carries a result with
+    precision_class=blocking is REJECTED [B1] (row 32); the SAME finding at
+    precision_class=advisory is ACCEPTED (row 33), and it stays ACCEPTED at SARIF level
+    `error` — the arm is advisory about AUTHORITY, not about volume. A receipt whose
+    divergence ledger does not satisfy agreed + agy_only + contradicted = len(findings)
+    is REJECTED; one missing the `contradicted` column is REJECTED naming it; one with a
+    negative count is REJECTED. reverified_by_primary absent, or present as a string
+    rather than a boolean, is REJECTED.
+    ROW 32 WAS BUILT WRONG FIRST AND THE FAILURE IS PART OF THIS TEST: its agy finding
+    was marked `asserted`, so it went RED on S1's OLDER rule ("an asserted claim never
+    blocks") two hundred lines earlier in the guard — same class, same exit code, and
+    pinning NOTHING. It is `measured` now and the bats case asserts the ABSENCE of S1's
+    reason as well as the presence of S3.E's.
+  test: 'bats tests/pr-review.bats'
+  if_fails: >-
+    S7's admission rule is applied to five classes and waived for the sixth arm, which
+    is the ungoverned-class defect D3 recorded for B5, pointing the other way; and
+    `contradicted` becomes a column nothing constrains, so {0,0,0,0} beside a dozen agy
+    findings reads as perfect agreement and every disagreement resolves silently in the
+    primary's favour — the failure S5 names, one level up from its second-invocation
+    audit.
+  mutation: >-
+    delete the antigravity blocking-class branch from
+    scripts/check_pr_review_receipt.sh — row 32 must turn RED while row 33 stays GREEN.
+    Delete the ledger-identity branch — the arm-e-ledger-unbalanced probe must turn RED.
+    Both mutants are DERIVED by scripts/mutate-guard.sh from the `reject B<n>` scan, so
+    neither has to be remembered when the guard grows.
+
+- id: F-PRREV-018
+  rule: >-
+    a consultation is decided by the ARTIFACT it produced, never by the exit code and
+    never by the label the tool printed
+  prediction: >-
+    A receipt whose `antigravity.status` is `consulted` while `output_check` is absent,
+    is not an object, carries a non-boolean, or carries any of
+    structured_output_present / reviewed / schema_valid as false, is REJECTED [B1]
+    (row 36 and three probes). The SAME agy run - identical exit_code 0, identical
+    agy_status "SUCCESS", identical duration_seconds - recorded `unreachable` under
+    verdict DEGRADED is ACCEPTED (row 37).
+    THE NUMBERS IN BOTH ROWS ARE A TRANSCRIPT, NOT A HYPOTHESIS. S3.E step 3's
+    previously documented invocation, run verbatim against a real checkout on
+    2026-08-31, returned rc 0, .status "SUCCESS", an empty .response, 21 781 tokens
+    genuinely spent, and NO structured_output: a tool required the `command` permission
+    that headless print mode cannot prompt for, and it was auto-denied. The only true
+    account of the run was on stderr. rc 0 is therefore on NEITHER side of the
+    availability line, and `.status` is now measured wrong in BOTH directions - ERROR on
+    a review that was complete (PRREV-015) and SUCCESS on a run that reviewed nothing.
+  test: 'bats tests/pr-review.bats'
+  if_fails: >-
+    A review that never happened is recorded as a consultation that found nothing, and
+    the fifth arm - the one whose whole purpose is to be an independent second opinion -
+    reports clean on every PR where a tool permission was denied. That is a failure that
+    exits 0, the class this repository closed six times in one session (an EPIPE-inverted
+    grep that PASSED a safety check on the error, a chown swallowing errors, a timeout
+    naming no step, a `sed` draining its sibling's stream, a self-test satisfied by its
+    own vacuity floor, five make targets claiming CI), arriving in the one artifact
+    nobody re-derives.
+  mutation: >-
+    delete the `output_check` branch from scripts/check_pr_review_receipt.sh - row 36
+    must turn RED. Invert it - row 33, a consulted receipt that SATISFIES the rule, must
+    turn RED. Both mutants are DERIVED by scripts/mutate-guard.sh from the `reject B<n>`
+    scan, so neither has to be remembered. Row 37 is the discrimination arm: without it
+    the rule reads green as "refuse any receipt whose agy exited 0", which would refuse
+    every consultation that worked, because agy returns 0 when it works too.
+
+- id: F-PRREV-019
+  rule: >-
+    a property the artifact cannot carry is not claimed as verified, and the sections
+    that rest on it say so
+  prediction: >-
+    docs/specifications/PR-REVIEW-SKILL-002-v2.md S3.E.2a states that agy emits no model
+    field in EITHER output format, that a self-report probe is rejected as a control, and
+    that S3.E's cross-vendor property is therefore UNVERIFIABLE FROM THE RECEIPT - naming
+    S13.1's two-distinct-vendor predicate as resting on an assertion. S3.E.9 carries the
+    same limit in its list of what the arm does not do.
+    MEASURED 2026-08-31, and this entry is the record of the measurement: `--output-format
+    json` returns conversation_id, status, response, duration_seconds, num_turns,
+    json_schema, structured_output and usage. `--output-format stream-json` returns an
+    `init` event carrying conversation_id, cwd, tools[] and permission_mode, then
+    step_update and result events carrying text, timing and usage. NEITHER carries the
+    answering model. A first-turn self-report DOES discriminate - `--model
+    gemini-3.1-pro-high` answered "Google Gemini 3.1 Pro" and `--model claude-sonnet-4-6`
+    answered "Anthropic Claude Sonnet 4.6" - and is rejected anyway, because it is a claim
+    by the thing being identified about a DIFFERENT invocation than the review.
+  test: >-
+    LIVE-PENDING - no committed guard reads this file's prose. Asserted by review of
+    S3.E.2a and S3.E.9 against the measurements recorded in this entry, exactly as
+    F-PRREV-005 and F-PRREV-006 are for their own claims about this file.
+  if_fails: >-
+    S13.1 keeps calling vendor-distinctness "the load-bearing property" while the
+    predicate that encodes it reads a string the producer wrote, and the spec that would
+    be quoted as the evidence for it is the spec that stayed silent. An unverifiable
+    property treated as verified is the class this repository keeps closing, and a check
+    invented to close it would be worse than the hole, because it reads as coverage.
+  mutation: >-
+    ADDRESSED TO A HUMAN AND NOT TO A GATE, like F-PRREV-005 and F-PRREV-006: delete
+    S3.E.2a's closing ruling and the S3.E.9 bullet, and nothing mechanical goes RED. That
+    is exactly why the entry says LIVE-PENDING in `test:` instead of naming a command it
+    does not have. Re-pin it by re-running `agy --output-format stream-json` and checking
+    the init event for a model field; the day one appears, this entry is dischargeable
+    and the residual can be closed rather than stated.
+
+proof_obligations:
+- type: invariant
+  property: >-
+    An autonomous merge is armed only when the quorum spans at least two distinct
+    vendors, holds both roles, excludes the author and is unanimous; a failure of any
+    conjunct REFUSES and never BLOCKS (F-PRREV-012, F-PRREV-015).
+  formal: 'ARM(pr) => |vendors(quorum)| >= 2 and {primary, cross_vendor} subset roles(quorum) and forall m: m.actor != author and m.verdict = PASS and m.refusal = null; not ARM(pr) => blocking_classes(pr) unchanged'
+
+- type: invariant
+  property: >-
+    No receipt that is not PASS, that carries a blocking-class finding, an unmarked
+    claim, a vacuous consultation, a surviving mutant or an unsearched surface arms a
+    merge (F-PRREV-013).
+  formal: 'ARM(pr) => verdict = PASS and blocking_findings = 0 and unmarked_claims = 0 and vacuous_consultations = 0 and survivors = [] and forall s in SURFACE: cov(s) != none'
+
+- type: invariant
+  property: >-
+    Every refusal path of scripts/pr_review_quorum_arm.sh is exercised by at least one
+    committed fixture, and the derived mutation set kills 100% of its drop and flip
+    mutants — the same rule S6.4 applies to the receipt guard, applied where the
+    consequence is a merge rather than a message (S13.10).
+  formal: 'forall q in refusal_sites(arm): exists row in q_table: refuses(row) = q; quorum_arm_mutation_score = 1'
+
+
+- type: invariant
+  property: >-
+    Every claim in the receipt carries exactly one of the three grounding marks, and a
+    `cited` mark carries a non-empty excerpt whose sha256 matches the recorded digest
+    (F-PRREV-001, F-PRREV-002).
+  formal: 'forall c in claims: mark(c) in {cited, measured, asserted} and (mark(c) = cited => c.excerpt != "" and c.excerpt_sha256 = sha256(c.excerpt))'
+
+- type: invariant
+  property: >-
+    A PR is blocked if and only if it satisfies one of the six machine-decidable
+    classes B1..B6 of spec S7's table; the guard discriminates, proven by the three
+    GREEN rows of S6.3 (F-PRREV-003, F-PRREV-007).
+  formal: 'BLOCK(pr) <=> B1(pr) or B2(pr) or B3(pr) or B4(pr) or B5(pr) or B6(pr)'
+
+- type: soundness
+  property: >-
+    A class blocks only while its measured precision on the rolling sample is at least
+    0.90, and a class that falls below is demoted by editing this contract rather than
+    by disabling the gate (F-PRREV-004).
+  formal: 'blocks(Bi) => precision(Bi) >= 0.90; precision(Bi) < 0.90 => advisory(Bi) and gate_enabled'
+
+- type: invariant
+  property: >-
+    No numeric threshold exists for actionable_rate, effective_fp_rate,
+    audit_divergence or cost_per_actionable until thirty samples of that metric have
+    been recorded (F-PRREV-005).
+  formal: 'forall m in INSTRUMENT_FIRST: samples(m) < 30 => threshold(m) = UNSET'
+
+- type: invariant
+  property: >-
+    guard_mutation_score = 1.00, receipt_presence = 1.00, unmarked_claims = 0 and
+    vacuous_consultations = 0, none of the four carrying a ratchet (F-PRREV-006,
+    F-PRREV-008).
+  formal: 'guard_mutation_score = 1 and receipt_presence = 1 and unmarked_claims = 0 and vacuous_consultations = 0 and forall m in JIDOKA: ratchet(m) = NONE'
+
+- type: invariant
+  property: >-
+    A consulted pmat block records a coverage method for every surface, NAMES all three
+    horizon regions whether or not each was reached, and records the refs its horizon
+    actually swept; no receipt reads PASS while a surface reads `none` or while the
+    horizon sweep was partial (F-PRREV-009, F-PRREV-011).
+  formal: 'forall s in SURFACE: cov(s) in {semantic, lexical, none} and REGION subset named(duplication_horizon) and (exists s: cov(s) = none or scanned < total) => verdict != PASS'
+
+kani_harnesses:
+
+# DECLARED AND NOT WRITTEN, said plainly. Two of the five obligations above are
+# genuinely finite — the grounding mark is a closed three-valued enum crossed with
+# present/absent on each required field, and the blocking tier is a boolean function
+# over six predicates, so 2^6 = 64 assignments is exhaustive. Neither is solver-work
+# today for a reason that is not a shortage of effort: THERE IS NO RUST SURFACE. The
+# guard is bash (S6) and the receipt is JSON. A Kani harness needs a Rust function to
+# bind to, and PRREV-003 ships a shell script.
+#
+# So the cheaper alternative named on each is the honest one, and it is the same
+# statement without a solver: an exhaustive table in tests/pr-review.bats. Recorded
+# this way because the #2644 audit found declared-but-unwritten harnesses inflating
+# contract scores, and the remedy that survived review was to say so in the file, not
+# to drop the declaration and lose the record of what SHOULD be proved.
+
+- id: KH-PRREV-001
+  obligation: grounding_marks_are_closed
+  property: no_claim_outside_the_three_marks_is_ever_accepted
+  bound: 3
+  actually_verified: false
+
+- id: KH-PRREV-002
+  obligation: blocking_tier_is_objective_and_earned
+  property: block_iff_one_of_b1_through_b6
+  bound: 6
+  actually_verified: false
+
+enforcement:
+
+  # Spec S8, encoded in a block the schema reads. The FOUR ROWS ABOVE THE LINE are
+  # jidoka line-stops with a fixed value; the FOUR BELOW carry `record-only` and no
+  # number, and inventing one for them would violate S1 inside the file that defines
+  # S1. That split is the whole point of the table and is why the two halves are
+  # marked with different severities rather than merely commented apart.
+
+  guard_mutation_score:
+    description: 'killed / attempted on the guard''s own committed mutation set (S6.4, S8)'
+    check: '= 1.00 — no ratchet; a guard-touching PR below 1.00 BLOCKS (S7 class B3)'
+    severity: line-stop
+    reference: 'PR-REVIEW-SKILL-002 v2 S6.4 and S8; the one place S7 narrowness does not apply'
+
+  receipt_presence:
+    description: 'PRs merged carrying a schema-valid signed receipt / PRs merged (S8)'
+    check: '= 1.00 — no ratchet; a missing receipt is RED, never skipped (S6.3)'
+    severity: line-stop
+    reference: 'PR-REVIEW-SKILL-002 v2 S8; S7 class B1'
+
+  unmarked_claims:
+    description: 'claims carrying no S1 grounding mark (S8)'
+    check: '= 0 — no ratchet. Exercised by fixture row 15 and killed in both directions by the PRREV-004 sweep (F-PRREV-001)'
+    severity: line-stop
+    reference: 'PR-REVIEW-SKILL-002 v2 S1 and S8'
+
+  vacuous_consultations:
+    description: 'consultations recording status=consulted while having consulted nothing (S8)'
+    check: '= 0 — no ratchet; the pass-over-zero shape, measured in F-PRREV-008. Enforced on ALL FIVE consultations since PRREV-015 (rows 2, 18, 31, and the crux/pmat probes); on four since PRREV-008; before that, on mutation alone'
+    severity: line-stop
+    reference: 'PR-REVIEW-SKILL-002 v2 S3.D, S4.1 and S8; fixture row 2'
+
+  actionable_rate:
+    description: 'findings the author acted on / findings posted (S8)'
+    check: 'record-only until 30 samples; then floor := measured - 5pp, monotone. NO THRESHOLD MAY BE WRITTEN HERE BEFORE THEN'
+    severity: instrument-only
+    reference: 'PR-REVIEW-SKILL-002 v2 S8 — instrument, 30 samples, ratchet'
+
+  effective_fp_rate:
+    description: 'per blocking class, the measured effective false-positive rate (S8)'
+    check: 'record-only until 30 samples. It then feeds S7 admission (<= 0.10 to remain blocking) — the only one of the four that can un-arm a gate. NO THRESHOLD MAY BE WRITTEN HERE BEFORE THEN'
+    severity: instrument-only
+    reference: 'PR-REVIEW-SKILL-002 v2 S7 admission rule and S8; Tricorder''s 10% bar'
+
+  audit_divergence:
+    description: 'disagreement rate between the reviewer and the 10% independent re-review (S5, S8)'
+    check: 'record-only until 30 audits; then it SETS the sampling rate. NO THRESHOLD MAY BE WRITTEN HERE BEFORE THEN'
+    severity: instrument-only
+    reference: 'PR-REVIEW-SKILL-002 v2 S5 and S8'
+
+  cost_per_actionable:
+    description: '(input_tokens + output_tokens + wall_seconds) / actionable findings (S8)'
+    check: 'record-only until 30 samples; then ratchets DOWN quarterly. NO THRESHOLD MAY BE WRITTEN HERE BEFORE THEN. S3.E contributes a MEASURED numerator: agy''s own usage block, emitted by the process that spent the tokens, rather than an estimate reconstructed afterwards'
+    severity: instrument-only
+    reference: 'PR-REVIEW-SKILL-002 v2 S8; cost fields live in the in-toto predicate'
+
+  quorum_arm_mutation_score:
+    description: 'killed / attempted on the arm script''s derived mutation set (S13.10)'
+    check: '= 1.00 — no ratchet, measured 134/134 by the derived set. A surviving mutant is a refusal path the arm script states and nothing tests, which under S13 is a merge nobody authorised'
+    severity: line-stop
+    reference: 'PR-REVIEW-SKILL-002 v2 S13.10; scripts/mutate_quorum_arm.sh'
+
+  refusal_paths_without_a_fixture:
+    description: 'refuse Q<n> sites in the arm script with no row in tests/pr-review-quorum.bats (S13.10)'
+    check: '= 0 — no ratchet; it is a zero. Derived, not counted by hand: the mutation set scans for `refuse Q<n>` and a site with no row leaves a SURVIVOR'
+    severity: line-stop
+    reference: 'PR-REVIEW-SKILL-002 v2 S13.4 and S13.10'
+
+  autonomous_merge_reverts:
+    description: 'merges armed by S13 that were later reverted / merges armed by S13 (S13.9)'
+    check: '0/0 — UNDEFINED, NOT CLEAN. record-only; no threshold until 30 samples. The coverage pipeline reported 0/0 for months and every reader took it for green; this row exists so that cannot happen twice'
+    severity: instrument-only
+    reference: 'PR-REVIEW-SKILL-002 v2 S13.9 and S13.11; the COV_FLOOR scar'
+
+  autonomy_refusal_rate:
+    description: 'REFUSE / (PERMIT + REFUSE) over the --explain shadow lane (S13.9)'
+    check: 'record-only until 30 samples. NO THRESHOLD MAY BE WRITTEN HERE BEFORE THEN'
+    severity: instrument-only
+    reference: 'PR-REVIEW-SKILL-002 v2 S13.9, S13.11 rung 1'
+
+  degraded_share:
+    description: 'receipts verdict=DEGRADED / receipts emitted (S13.3, S13.9)'
+    check: 'record-only until 30 samples. It is the measurement nobody had before S13: how often this fleet cannot actually review'
+    severity: instrument-only
+    reference: 'PR-REVIEW-SKILL-002 v2 S13.3; PRREV-016 owes the transport: field that would make it attributable'
+  # --- S3.E, all four record-only, and there is NO exception ----------------
+  # The arm ships with zero samples on its first day, so S7's admission rule has nothing
+  # to apply to it (spec S3.E.6). Writing a number beside any of these before 30 samples
+  # would violate S8 inside the file that encodes S8.
+
+  arm_e_actionable_rate:
+    description: 'S3.E findings the author acted on / S3.E findings posted (S8, S3.E.6)'
+    check: 'record-only until 30 PRs carrying an S3.E consultation. IT IS ALSO THE PROMOTION GATE: S3.E may not enter the blocking tier before this number exists, which is what makes a later promotion a measurement rather than a decision. NO THRESHOLD MAY BE WRITTEN HERE BEFORE THEN'
+    severity: instrument-only
+    reference: 'PR-REVIEW-SKILL-002 v2 S3.E.6 and S8; S7 admission rule'
+
+  arm_e_agreement_rate:
+    description: 'agreed / (agreed + agy_only + primary_only + contradicted) — S3.E.7''s ledger'
+    check: >-
+      record-only until 30 samples, and IT IS NOT A SCORE TO MAXIMISE. Agreement near
+      1.0 means the second vendor is repeating what the primary already knew and the arm
+      is paying tokens for nothing — the honest response is to retire it. Agreement near
+      0 means the two are not reviewing the same artifact. NEITHER END IS A TARGET,
+      which is exactly why it is instrumented before anyone writes a threshold beside it.
+    severity: instrument-only
+    reference: 'PR-REVIEW-SKILL-002 v2 S3.E.7 and S8'
+
+  arm_e_contradiction_rate:
+    description: 'contradicted / (agreed + agy_only + primary_only + contradicted) (S3.E.7)'
+    check: 'record-only until 30 samples. This is the ledger''s sharp edge: a contradiction is the case where one of the two reviewers is WRONG, and it is the only column that names a defect rather than a difference in coverage. NO THRESHOLD MAY BE WRITTEN HERE BEFORE THEN'
+    severity: instrument-only
+    reference: 'PR-REVIEW-SKILL-002 v2 S3.E.7 and S8'
+
+  arm_e_unavailable_rate:
+    description: 'S3.E consultations recorded unreachable / S3.E consultations owed (S3.E.4)'
+    check: 'record-only until 30 samples. A rising value is the signal that agy''s --print-timeout is set below what a repository-scale review needs, which is the arm''s most likely silent failure. NO THRESHOLD MAY BE WRITTEN HERE BEFORE THEN'
+    severity: instrument-only
+    reference: 'PR-REVIEW-SKILL-002 v2 S3.E.4 and S8'
+
+qa_gate:
+  id: F-PRREV-GATE-001
+  name: 'a review claim is evidence only if it says how it knows'
+  description: >-
+    The organising gate for PR-REVIEW-SKILL-002 v2. It is not enough that a receipt
+    exists, parses, and is signed: S4.3 says plainly that a signature proves the
+    receipt came from CI, not that the review was honest, and conflating the two would
+    be the most sophisticated theater this repository has produced. What this gate
+    holds is narrower and checkable — every claim carries a mark, every `cited` mark
+    carries a digest that matches, the blocking tier is six machine-decidable classes
+    with a measured precision floor, and the eight S8 parameters are split into the
+    four that stop the line and the four that carry no number yet.
+  checks:
+  - grounding_mark_present_on_every_claim
+  - grounding_mark_in_closed_vocabulary
+  - cited_excerpt_nonempty_and_digest_matches
+  - asserted_never_blocks
+  - contradiction_suppressed_by_measurement
+  - blocking_tier_is_exactly_b1_through_b6
+  - blocking_class_precision_at_least_0_90
+  - demotion_edits_this_contract_not_the_ci_config
+  - four_jidoka_metrics_carry_no_ratchet
+  - four_instrument_first_metrics_carry_no_threshold
+  - vacuous_consultation_is_degraded_not_pass
+  - duplication_coverage_recorded_for_every_surface
+  - unsearched_duplication_surface_is_degraded_not_pass
+  - duplication_horizon_names_all_three_regions
+  - unsearched_merge_base_to_main_region_is_degraded_not_pass
+  - book_prose_is_not_scoped_by_a_rust_project_layout
+  - guard_positive_control_fires_before_any_verdict
+  - autonomous_merge_needs_two_vendors_unanimous_and_not_the_author
+  - degraded_never_arms_an_unattended_merge
+  - a_pr_editing_the_merge_mechanism_cannot_merge_itself
+  - every_refusal_path_is_exercised_by_a_committed_fixture
+  pass_criteria: >-
+    All 19 falsification tests turn RED against a fixture that violates them and GREEN
+    against the honest fixture, through scripts/check_pr_review_receipt.sh, whose own
+    positive control (S6.1) must fire first.
+
+    NOT SATISFIED ON THIS COMMIT, AND THE CONTRACT SAYS SO RATHER THAN IMPLYING
+    OTHERWISE. At PRREV-001 this file shipped alone and seven of the eight tests were
+    LIVE-PENDING. At PRREV-008 five are green and bound to a command — F-PRREV-001,
+    -002, -003, -007 through `bats tests/pr-review.bats`, and F-PRREV-008 through
+    `pv validate` — and FOUR remain LIVE-PENDING: F-PRREV-004 needs a precision sample
+    that only reviewed PRs can produce, F-PRREV-005 / F-PRREV-006 assert properties
+    of THIS FILE that no committed guard reads yet, and PRREV-020 adds F-PRREV-019, which
+    asserts a STATED LIMIT - that S3.E's cross-vendor property is unverifiable from the
+    receipt - live-pending for the same reason those two are and not for want of effort:
+    the thing it pins is a sentence, and a prose `test:` never runs. F-PRREV-018, added in
+    the same ticket, IS bound to `bats`. Everything added since - F-PRREV-009
+    through F-PRREV-018 - is bound to a `bats` command, so all
+    but those same four are bound. The total is deliberately not restated here; it is in
+    the `All N falsification tests` line above, which is derived and checked.
+
+    THE GATE IS STILL NOT ENABLED, and that is deliberate. S9 step 7's backtest found
+    four defects in the artifact it tested; PRREV-008 fixes them and re-verifies in the
+    widened scope, but "the guard rejects what it should" is not the same claim as "the
+    review it gates was diligent". Nothing here may be cited as evidence that a review
+    was grounded.
+  falsification: >-
+    Delete a required-field check from the guard and re-run the whole fixture table. If
+    the affected row does not turn RED, the guard's green is a count of files rather
+    than a verdict, and every verdict resting on it is withdrawn. This is not a thought
+    experiment: scripts/mutate-guard.sh performs it at every `reject B<n>` site the
+    guard contains, deriving the site list by scanning the guard on every run so that a
+    rule added tomorrow is mutated without anyone remembering to add it.
+
+verification_summary:
+  total_obligations: 9
+  l2_property_tested: 1
+  l3_kani_proved: 0
+  l4_lean_proved: 0
+  l4_sorry_count: 0
+  l4_not_applicable: 9

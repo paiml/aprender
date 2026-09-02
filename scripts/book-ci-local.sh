@@ -76,7 +76,7 @@ $ALL_CONTRACTS && pass || fail "missing contract"
 gate "27 chapter pages have PCU frontmatter"
 ALL_PCU=true
 for f in book/src/chapters/ch*.md; do
-  head -1 "$f" | grep -q "PCU:" || { ALL_PCU=false; break; }
+  grep -q "PCU:" <<< "$(head -1 "$f")" || { ALL_PCU=false; break; }
 done
 $ALL_PCU && pass || fail "missing PCU"
 

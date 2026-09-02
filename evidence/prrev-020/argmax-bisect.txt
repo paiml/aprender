@@ -1,0 +1,22 @@
+PRREV-020 - the single-argument cap is MAX_ARG_STRLEN, not ARG_MAX
+Measured 2026-08-31, lambda-vector (Linux 6.8.0-90-generic, x86_64), zsh.
+
+  $ getconf ARG_MAX
+  2097152
+
+A reader who checks that concludes a 144 KB diff has room. It does not: the cap that
+applies is Linux's MAX_ARG_STRLEN - 32 pages on ONE argument - and no ulimit raises it.
+
+  arg bytes    command                              rc
+  ---------    ---------------------------------    --
+  131071       /bin/echo "$(cat p131071)"            0
+  131072       /bin/echo "$(cat p131072)"          127     <- boundary, exactly 128 KiB
+  149497       /bin/echo "$(cat p149497)"          127
+  149497       agy -p "$(cat p149497)" ...         127     "argument list too long: .../agy"
+
+The exit code is the SHELL's, not the kernel's: zsh reports 127, bash 126, for the same
+E2BIG. tests/pr-review.bats asserts the REFUSAL and not the number.
+
+PR #2803's merge-base diff, measured the same day:
+  $ git diff $(git merge-base origin/main 53bc2bf32) 53bc2bf32 | wc -c
+  144325

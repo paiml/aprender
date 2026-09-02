@@ -1,0 +1,67 @@
+=== APR Serve ===
+
+Model: /home/noah/models/qwen2.5-coder-7b-instruct-q4_k_m.gguf
+Binding: 127.0.0.1:18090
+
+Model loading: mmap
+
+Press Ctrl+C to stop
+
+Detected format: GGUF
+Starting GGUF inference server...
+Loading GGUF model (mmap)...
+GGUF loaded: 339 tensors, 29 metadata entries
+Building quantized inference model...
+Model ready: 28 layers, vocab_size=152064, hidden_dim=3584
+gpu-layers: requested=all resolved=28 total=28 (backend=cuda)
+Enabling optimized CUDA acceleration (PAR-111)...
+  Max sequence length: 4096
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 2 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 2 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 3 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 3 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 1 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 7 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 7 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 2 backward branch(es) for sm_121 JIT workaround
+[GH-129] Early kernel preload: 44 modules compiled
+[PMAT-053] FP8 cache skipped: requires sm_89-sm_9x (have sm_90, cc=121)
+[trueno#243] Manual graph construction: pos=0, has_graph=false, capture_failed=false, token_count=0
+[GH-559] RmsNorm PTX (1888 bytes)
+[GH-480] Patched 2 backward branch(es) for sm_121 JIT workaround
+[GH-480] Patched 3 backward branch(es) for sm_121 JIT workaround
+[trueno#243] ✓ Manual graph: 619 kernels. first_args=Some(["0xfa6e6f3ae400", "0xfa6e6f3d6c00", "0xfa6e65ff8000"]), last_args=Some(["0xfa74cfe00000", "0xfa6d68800000", "0xfa6e6f3a9000", "0xe00", "0x25200"]), current_logits_buf=0xfa74cfe00000
+  Initializing GPU on device 0...
+  Pre-uploaded 0 MB weights to GPU
+CUDA optimized model ready
+  CONTINUOUS BATCHING: max_batch=32, window=0ms (PMAT-044)
+
+CUDA-optimized server listening on http://127.0.0.1:18090
+
+Endpoints:
+  GET  /health              - Health check
+  GET  /metrics             - Prometheus metrics
+  POST /generate            - Text generation
+  POST /v1/completions      - OpenAI-compatible
+  POST /v1/chat/completions - Chat completions
+
+Press Ctrl+C to stop

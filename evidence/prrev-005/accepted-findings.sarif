@@ -1,0 +1,142 @@
+{
+  "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": [
+            {
+              "level": "warning",
+              "message": {
+                "text": "pmat MCP transport refused the connection; the CLI transport answered and is what produced every pmat result in this run."
+              },
+              "properties": {
+                "grounding": "measured",
+                "command": [
+                  "pmat",
+                  "query",
+                  "validate an attestation receipt against a json schema",
+                  "--limit",
+                  "3",
+                  "--exclude-tests"
+                ],
+                "exit_code": 0
+              }
+            }
+          ]
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "duplication_hits",
+          "level": "note",
+          "message": {
+            "text": "The stack adds JSON-Schema validation in bash (check-jsonschema shelled out of check_pr_review_receipt.sh) while crates/aprender-train/src/config/validate/json_schema.rs:122-152 validate_yaml_against_schema already validates documents against a schema in Rust."
+          },
+          "properties": {
+            "grounding": "measured",
+            "source": "pmat query \"validate an attestation receipt against a json schema\" --limit 3 --exclude-tests",
+            "command": [
+              "pmat",
+              "query",
+              "validate an attestation receipt against a json schema",
+              "--limit",
+              "3",
+              "--exclude-tests"
+            ],
+            "exit_code": 0,
+            "failure_scenario": "A second schema-validation path drifts from the first: the Rust one gains a rule the bash gate does not have, and a receipt the crate would reject passes the gate.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "satd_introduced",
+          "level": "note",
+          "message": {
+            "text": "Zero SATD markers introduced. Two added lines match a naive TODO|FIXME|HACK|XXX scan, both of them the XXXXXX template of mktemp -d; neither is technical debt."
+          },
+          "properties": {
+            "grounding": "measured",
+            "source": "git diff BASE HEAD | grep -E \"^\\+\" | grep -E \"TODO|FIXME|HACK|XXX\"",
+            "command": [
+              "git",
+              "diff",
+              "745fa8588783413669f4ac6170d4645e39c15be4",
+              "5928ec2a7c68a2c3d967b8eeb74d0d1287f4064c"
+            ],
+            "exit_code": 0,
+            "failure_scenario": "A SATD count reported from the raw grep would record 2 markers that do not exist, and the next run would treat removing an mktemp template as paying down debt.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "nvidia-cuda-docs"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "no_device_behaviour_claim",
+          "level": "note",
+          "message": {
+            "text": "The S3.B path trigger fires on five paths in this diff, all of them fixture filenames containing the substring cuda; the diff makes no device-behaviour claim. The consultation was performed anyway and the authority answered."
+          },
+          "properties": {
+            "grounding": "cited",
+            "source": "nvidia-cuda-docs: CUDA C++ Programming Guide, Implicit Synchronization (2.5.8)",
+            "excerpt": "Independent operations from different CUDA streams cannot run concurrently if any CUDA operation on the NULL stream is submitted in between them, unless the streams are non-blocking CUDA streams.",
+            "excerpt_sha256": "313d8332c9916f955dd77ded60abbeeec1048031e31e4602a9cbbf8af6ae9456",
+            "failure_scenario": "Recording this consultation as not-triggered would make a fixture-name false positive indistinguishable from a real CUDA change that was never asked about, which is the exact confusion S3.B exists to remove.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "cargo-mutants"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": false,
+          "toolExecutionNotifications": [
+            {
+              "level": "error",
+              "message": {
+                "text": "The S3.D guard-scope sweep over scripts/check_pr_review_receipt.sh was NOT performed in this invocation: a concurrent mutate-guard.sh --jobs 12 held the box (pid 3779868, worktree wt-prrev-006) and contending would have starved it. Not consulted; verdict DEGRADED."
+              },
+              "properties": {
+                "grounding": "measured",
+                "command": [
+                  "pgrep",
+                  "-af",
+                  "mutate-guard.sh"
+                ],
+                "exit_code": 0
+              }
+            }
+          ]
+        }
+      ],
+      "results": []
+    }
+  ]
+}

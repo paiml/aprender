@@ -146,8 +146,8 @@ verify_model() {
 
     # Check for success indicators
     if [[ ${exit_code} -eq 0 ]] && \
-       echo "${output}" | grep -qiE "(loaded|format|model)" && \
-       echo "${output}" | grep -qiE "(goodbye|quit|exit|4)"; then
+       grep -qiE "(loaded|format|model)" <<< "${output}" && \
+       grep -qiE "(goodbye|quit|exit|4)" <<< "${output}" ; then
         log_success "${model_key}: chat completed successfully"
         echo "pass"
         return 0

@@ -1,0 +1,28 @@
+# PRREV-007 backtest — S3.C.1 comparative-claim detection, must-match / must-not-match.
+#
+# Subjects are drawn from THIS repository's real claim corpus (#2763/PERF-049, the
+# withdrawn ollama decode claim, #2776's internal A/B ratios), not invented for the
+# pattern. A regex ships a case table; this repo's patterns have been wrong six times
+# and a table caught every one.
+#
+# Column 2 is scripts/check_pr_review_receipt.sh --match-comparative  (B4, BLOCKING).
+# Column 3 is RATIO_RE from scripts/check_no_claim_literals.sh on origin/main, the
+# prior-art claim guard PERF-049 hardened in #2763 — one of the PRs backtested here.
+#
+# expect	prrev-B4	main-guard	subject	why
+MUST	MATCH	MATCH	2.93× Ollama	the exact literal the book published (U+00D7); #2763's registered mutation
+MUST	MATCH	MATCH	2.93x Ollama	ASCII spelling of the same claim
+MUST	MATCH	MATCH	1.21x llama.cpp on aarch64 Q4_K	SKILL.md 3.C.1's own worked example
+MUST	MATCH	nomatch	4.9x faster than scikit-learn	repo speed-wins evidence (GNB)
+MUST	MATCH	MATCH	1.371x over ollama decode	the WITHDRAWN ollama decode claim
+MUST	MATCH	nomatch	2.93 × Ollama	spaced multiplication sign
+MUST	nomatch	MATCH	36.9x over FasterTransformer	the spelling APR-PERF-GATE-001 §0.1 uses (#2763)
+MUST	nomatch	nomatch	3.2x faster than HuggingFace transformers	competitor named with an intervening word
+MUST	MATCH	MATCH	1.8x vs vLLM	abbreviated comparator
+MUST	nomatch	MATCH	2x speedup versus Ollama	'versus' spelled out
+MUSTNOT	nomatch	nomatch	v1.8x release notes	the false positive #2763's 27-row table found
+MUSTNOT	nomatch	nomatch	3.32x aggregate at N=8	internal aggregate, no competitor (#2763/PERF-001)
+MUSTNOT	nomatch	nomatch	0.817x at c=8	#2776's internal A/B ratio vs its own other arm
+MUSTNOT	nomatch	nomatch	agg_tok_s ratio 0.893 at c=4	internal, no ratio-x form
+MUSTNOT	nomatch	nomatch	16x smaller footprint	internal footprint claim, no competitor
+MUSTNOT	nomatch	nomatch	the matrix is 4x4	dimensions, not a ratio

@@ -1,0 +1,26 @@
+# S3.C surface trigger — must-match / must-not-match case table.
+#
+# Driven by tests/pr-review.bats against
+#   scripts/check_pr_review_receipt.sh --match-crux-surface <changed line>
+#
+# The trigger is recomputed over the lines the diff ADDS OR REMOVES, because deleting a
+# flag changes the CLI exactly as adding one does. It fires only when the receipt claims
+# `crux: not-triggered`, so a false positive here calls an honest reviewer a liar — which
+# is why every token is a DECLARATION spelling measured in this tree, not a guess.
+#
+# expect	subject	why
+MATCH	    #[arg(long = "gpu", help = "run on the GPU")]	a clap flag declaration: 2590 hits across 86 files
+MATCH	#[command(name = "bench", about = "benchmark a model")]	a clap subcommand declaration: 199 hits
+MATCH	#[derive(Parser, Debug)]	a new CLI parser is a new surface
+MATCH	#[derive(Subcommand)]	a new subcommand enum is a new surface
+MATCH	        .route("/v1/chat/completions", post(chat))	an HTTP route: 238 hits across 35 files
+MATCH	    let app = Router::new()	a router is where routes are registered
+MATCH	            long = "max-tokens",	a long flag on its own line
+MATCH	    ToolDefinition { name: "apr_qa".into(), description: d }	an MCP tool declaration: 216 hits
+NO-MATCH	    let out = Command::new("apr").arg("qa").output()?;	DELIBERATELY NOT A TOKEN: 752 hits across 293 files, overwhelmingly std::process::Command. A blocking class must hold >=90% precision (S7)
+NO-MATCH	    let wavelength = 3.0;	the left boundary keeps 'long =' from matching inside another identifier
+NO-MATCH	    let x = OutputFormat::Json;	KNOWN GAP, recorded not widened: S3.C names OUTPUT FORMATS, but OutputFormat is 822 hits across 103 files and nearly all are internal uses of the enum
+NO-MATCH	    #[serde(rename = "max_tokens")]	KNOWN GAP, recorded not widened: S3.C names CONFIG KEYS, and no spelling of one measured precisely enough to block on
+NO-MATCH	    println!("{} tokens in {:.2}s", n, secs);	an output line is not an output FORMAT declaration; see the gap above
+NO-MATCH	    // route the request to the right backend	prose about routing is not a route
+NO-MATCH	    let sum = a + b;	ordinary code

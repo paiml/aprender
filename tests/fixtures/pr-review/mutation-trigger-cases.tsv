@@ -1,0 +1,29 @@
+# S3.D mutation trigger — must-match / must-not-match case table.
+#
+# Driven by tests/pr-review.bats against
+#   scripts/check_pr_review_receipt.sh --match-mutation-trigger <path>
+#
+# S3.D's table has three rows. Rows 1 (guard-shaped files) and 2 (Rust source) differ in
+# whether the RESULT blocks — 100% kill versus advisory — not in whether the consultation
+# is owed. Row 3 (docs / non-code) is the only untriggered one. So one predicate answers
+# the only question the guard asks: is `not-triggered` a lie on this diff.
+#
+# `unreachable` stays open as the honest path when mutation cannot be run; it is
+# DEGRADED, and DEGRADED proceeds on a feature branch (S7).
+#
+# expect	subject	why
+MATCH	scripts/check_pr_review_receipt.sh	S3.D row 1: a check_*.sh guard
+MATCH	scripts/check_no_claim_literals.sh	S3.D row 1
+MATCH	scripts/dogfood.sh	S3.D row 1 names dogfood.sh explicitly
+MATCH	.github/workflows/ci.yml	S3.D row 1: ci.yml gate logic
+MATCH	contracts/pr-review-skill-v2.yaml	S3.D row 1: a contract falsifier
+MATCH	crates/aprender-core/src/fused.rs	S3.D row 2: Rust source
+MATCH	crates/apr-cli/src/commands/bench_tests.rs	a test IS Rust source; cargo mutants --in-diff reads the diff, not the surface
+NO-MATCH	docs/note.md	S3.D row 3: docs
+NO-MATCH	book/src/tools/apr-cli.md	S3.D row 3: docs
+NO-MATCH	src/cuda/kernel.cu	CUDA source is not Rust source; cargo mutants has nothing to mutate in it
+NO-MATCH	Cargo.toml	S3.D row 3: non-code
+NO-MATCH	schemas/sarif-2.1.0.json	a vendored schema is data
+NO-MATCH	scripts/apr_bin.sh	KNOWN GAP, recorded not widened: S3.D names check_*.sh and dogfood.sh, not every script. A sourced library with no committed mutation set has no 100%-kill target to measure against
+NO-MATCH	.github/workflows/benchmark.yml	S3.D names ci.yml gate logic; other workflows are outside the rule as written
+NO-MATCH	contracts/nested/thing.yaml	contracts/*.yaml is one level deep, as S3.D writes it

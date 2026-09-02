@@ -647,6 +647,67 @@ path = "src/lib.rs"
 # Contract: ci-infra-v1.yaml F-INFRA-004 — every patch must have tracking issue.
 
 # ----------------------------------------------------------------------------
+# Dev/test debuginfo: line tables only (aprender#2822; paiml/infra#415, #416)
+# ----------------------------------------------------------------------------
+# MEASURED, not assumed. The `workspace-test` job runs
+# `cargo build --examples --workspace --keep-going` (ci.yml), which emits 859
+# example binaries totalling 149 GB, and 94.6% of each binary is DWARF. Section
+# table for `agent_demo` (510 MB): .debug_str 219.9 MB, .debug_info 160.6 MB,
+# .debug_line 50.1 MB, .debug_ranges 36.8 MB -- against .text 11.9 MB. At
+# 186 GB/run the elastic disk budget admits only ~4 concurrent runs while 13
+# were being scheduled, so the CI reaper's emergency purges were arithmetically
+# inevitable: concurrency and disk are the same constraint.
+#
+# Root cause: this manifest had no `[profile.dev]` table at all, so the whole
+# workspace inherited cargo's default `debug = true` (full DWARF) -- and
+# `profile.test` inherits from `profile.dev`, so every test binary paid it too.
+#
+# `line-tables-only` keeps `.debug_line`, so `RUST_BACKTRACE=1` still resolves
+# `file.rs:LINE:COL` for every user frame -- verified by building a panicking
+# example under each setting and reading the backtrace, both directly and
+# through `cargo nextest run --profile ci`. It drops `.debug_info`/`.debug_str`,
+# the type and variable descriptions a *debugger* needs and CI never reads.
+#
+# MEASURED on 86 `aprender-orchestrate` examples, two isolated target dirs,
+# rustc 1.93.0 (`agent_demo` alone: 509,993,400 B -> 163,778,112 B):
+#
+#   setting                     debug/examples      whole target   backtrace
+#   default (debug = true)       17,746,294,665    21,716,092,463   file:line
+#   debug = 1  ("limited")        9,486,586,206    12,559,782,114   file:line
+#   line-tables-only (CHOSEN)     5,381,267,793     8,199,386,836   file:line
+#   line-tables-only + unpacked   3,105,547,047     6,002,663,347   file:line
+#   debug = 0                       417,720,289     2,566,061,079   NAMES ONLY
+#
+# So: 3.30x off `debug/examples`, 2.65x off the whole target dir. NOT the 29x a
+# `strip --strip-debug` of the same binaries reports -- stripping also discards
+# `.debug_line`, which is exactly the 47.3 MB per binary we are paying to keep.
+# Extrapolated to the CI run: debug/examples 149 GB -> ~45-50 GB, whole run
+# 186 GB -> ~75 GB, so the 797 GB elastic budget admits ~10 concurrent runs
+# instead of 4.3.
+#
+# Rejected alternatives:
+#   * `debug = 0`   -- 8.5x off the target dir, but backtrace frames lose
+#                      file:line entirely (measured above). Panic *messages*
+#                      keep it (that is `Location`, not DWARF), so this stays
+#                      the lever to pull if disk pressure returns.
+#   * `debug = 1`   -- alias for "limited": keeps `.debug_info` for types, so it
+#                      leaves the second-largest section in place for 1.87x.
+#   * `split-debuginfo = "unpacked"` -- a further 1.37x with backtraces intact,
+#                      but it is a second, platform-sensitive axis (it changes
+#                      what macOS runners emit) and produces ~1900 `.dwo` files
+#                      per target dir for the reaper to walk. Worth its own PR
+#                      with its own measurement on the mac runners.
+# A developer who wants full DWARF for a debugger session overrides locally:
+#   CARGO_PROFILE_DEV_DEBUG=full cargo build
+#
+# NOTE: `debug` and `debug-assertions` are INDEPENDENT settings. This sets only
+# `debug`; `debug-assertions` keeps its dev-profile default (true), so every
+# `debug_assert!` in the workspace still fires and the proptest carve-out below
+# -- the one place we deliberately disable them -- is unaffected.
+[profile.dev]
+debug = "line-tables-only"
+
+# ----------------------------------------------------------------------------
 # proptest debug-assertion workaround (Toyota Way: root-cause flaky-test fix)
 # ----------------------------------------------------------------------------
 # proptest 1.11.0 (latest published) has an OVER-STRICT, buggy `debug_assert!`

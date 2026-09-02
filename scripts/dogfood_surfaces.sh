@@ -668,7 +668,7 @@ for line in sys.stdin:
         | LC_ALL=C sort -u)
     while IFS= read -r b; do
         [ -n "$b" ] || continue
-        if ! printf '%s\n' "$built_names" | grep -qx "$b"; then
+        if ! grep -qx "$b" <<< "$built_names" ; then
             printf 'UNPROBED\t%s (declared by cargo, not built -- required-features)\n' "$b"
         fi
     done <<< "$declared"

@@ -1,0 +1,135 @@
+
+################################################################
+# MUTANT  arm-e-dropped-from-the-consultation-list
+#   site  scripts/check_pr_review_receipt.sh:546
+#   edit  CONSULT+=(antigravity)   ->   CONSULT+=()
+#   pins  agy unavailable must DEGRADE, never PASS  (rows 29 RED / 30 GREEN)
+################################################################
+--- BASELINE (unmutated guard) ---
+ok 1 row 29 agy UNAVAILABLE, verdict PASS                            RED  B1
+ok 2 row 30 the SAME unavailable agy, verdict DEGRADED             GREEN     [discrimination]
+  => SUITE GREEN
+  line 546 before:   if [ "$arm_e_present" -eq 1 ]; then CONSULT+=(antigravity); fi
+  line 546 after :   if [ "$arm_e_present" -eq 1 ]; then CONSULT+=(); fi
+--- MUTATED (the rule is gone / inverted) ---
+not ok 1 row 29 agy UNAVAILABLE, verdict PASS                            RED  B1
+ok 2 row 30 the SAME unavailable agy, verdict DEGRADED             GREEN     [discrimination]
+  => SUITE RED
+--- REVERTED ---
+ok 1 row 29 agy UNAVAILABLE, verdict PASS                            RED  B1
+ok 2 row 30 the SAME unavailable agy, verdict DEGRADED             GREEN     [discrimination]
+  => SUITE GREEN
+
+################################################################
+# MUTANT  reject-31-drop
+#   site  scripts/check_pr_review_receipt.sh:566
+#   edit  reject B   ->   true B
+#   pins  the shared unreachable-under-PASS rejection (rows 5/6 and 29/30)
+################################################################
+--- BASELINE (unmutated guard) ---
+ok 1 row 5  pmat unreachable with verdict PASS                         RED  B1
+ok 2 row 6  pmat unreachable with verdict DEGRADED                   GREEN     [discrimination]
+ok 3 row 29 agy UNAVAILABLE, verdict PASS                            RED  B1
+ok 4 row 30 the SAME unavailable agy, verdict DEGRADED             GREEN     [discrimination]
+  => SUITE GREEN
+  line 566 before:       reject B1 "consultations.$k is unreachable but the verdict is PASS; an unreachable source must be DEGRADED, not clean (S3.0)" || return 1
+  line 566 after :       true B1 "consultations.$k is unreachable but the verdict is PASS; an unreachable source must be DEGRADED, not clean (S3.0)" || return 1
+--- MUTATED (the rule is gone / inverted) ---
+not ok 1 row 5  pmat unreachable with verdict PASS                         RED  B1
+ok 2 row 6  pmat unreachable with verdict DEGRADED                   GREEN     [discrimination]
+not ok 3 row 29 agy UNAVAILABLE, verdict PASS                            RED  B1
+ok 4 row 30 the SAME unavailable agy, verdict DEGRADED             GREEN     [discrimination]
+  => SUITE RED
+--- REVERTED ---
+ok 1 row 5  pmat unreachable with verdict PASS                         RED  B1
+ok 2 row 6  pmat unreachable with verdict DEGRADED                   GREEN     [discrimination]
+ok 3 row 29 agy UNAVAILABLE, verdict PASS                            RED  B1
+ok 4 row 30 the SAME unavailable agy, verdict DEGRADED             GREEN     [discrimination]
+  => SUITE GREEN
+
+################################################################
+# MUTANT  reject-50-drop
+#   site  scripts/check_pr_review_receipt.sh:792
+#   edit  reject B   ->   true B
+#   pins  a vacuous consultation: status consulted with attempted 0
+################################################################
+--- BASELINE (unmutated guard) ---
+ok 1 row 31 agy consulted having invoked nothing                     RED  B1
+  => SUITE GREEN
+  line 792 before:         || reject B1 "antigravity.status is consulted with attempted=0; a consultation that invoked nothing is DEGRADED, not clean, exactly as mutation.attempted=0 and cuda.queries=[] are (S8 vacuous_consultations = 0)" || return 1
+  line 792 after :         || true B1 "antigravity.status is consulted with attempted=0; a consultation that invoked nothing is DEGRADED, not clean, exactly as mutation.attempted=0 and cuda.queries=[] are (S8 vacuous_consultations = 0)" || return 1
+--- MUTATED (the rule is gone / inverted) ---
+not ok 1 row 31 agy consulted having invoked nothing                     RED  B1
+  => SUITE RED
+--- REVERTED ---
+ok 1 row 31 agy consulted having invoked nothing                     RED  B1
+  => SUITE GREEN
+
+################################################################
+# MUTANT  reject-50-flip
+#   site  scripts/check_pr_review_receipt.sh:792
+#   edit  || return 1   ->   && return 1
+#   pins  the same vacuity site, inverted
+################################################################
+--- BASELINE (unmutated guard) ---
+ok 1 row 7  honest docs-only PR, pmat consulted, rest not-triggered  GREEN     [discrimination]
+ok 2 row 31 agy consulted having invoked nothing                     RED  B1
+ok 3 row 33 the SAME agy finding, marked advisory                  GREEN     [discrimination]
+  => SUITE GREEN
+  line 792 before:         || reject B1 "antigravity.status is consulted with attempted=0; a consultation that invoked nothing is DEGRADED, not clean, exactly as mutation.attempted=0 and cuda.queries=[] are (S8 vacuous_consultations = 0)" || return 1
+  line 792 after :         || reject B1 "antigravity.status is consulted with attempted=0; a consultation that invoked nothing is DEGRADED, not clean, exactly as mutation.attempted=0 and cuda.queries=[] are (S8 vacuous_consultations = 0)" && return 1
+--- MUTATED (the rule is gone / inverted) ---
+not ok 1 row 7  honest docs-only PR, pmat consulted, rest not-triggered  GREEN     [discrimination]
+not ok 2 row 31 agy consulted having invoked nothing                     RED  B1
+not ok 3 row 33 the SAME agy finding, marked advisory                  GREEN     [discrimination]
+  => SUITE RED
+--- REVERTED ---
+ok 1 row 7  honest docs-only PR, pmat consulted, rest not-triggered  GREEN     [discrimination]
+ok 2 row 31 agy consulted having invoked nothing                     RED  B1
+ok 3 row 33 the SAME agy finding, marked advisory                  GREEN     [discrimination]
+  => SUITE GREEN
+
+################################################################
+# MUTANT  reject-79-drop
+#   site  scripts/check_pr_review_receipt.sh:1113
+#   edit  reject B   ->   true B
+#   pins  an agy finding at precision_class blocking, while the arm is advisory
+################################################################
+--- BASELINE (unmutated guard) ---
+ok 1 row 32 an agy finding claiming a BLOCKING class                 RED  B1
+ok 2 row 33 the SAME agy finding, marked advisory                  GREEN     [discrimination]
+  => SUITE GREEN
+  line 1113 before:     reject B1 "the antigravity run states finding '$ag_blocking' with precision_class blocking; S3.E is advisory until 30 samples exist (S7's admission rule, S8's ratchet), so a blocking class from it is a receipt claiming an authority no measurement supports" || return 1
+  line 1113 after :     true B1 "the antigravity run states finding '$ag_blocking' with precision_class blocking; S3.E is advisory until 30 samples exist (S7's admission rule, S8's ratchet), so a blocking class from it is a receipt claiming an authority no measurement supports" || return 1
+--- MUTATED (the rule is gone / inverted) ---
+not ok 1 row 32 an agy finding claiming a BLOCKING class                 RED  B1
+ok 2 row 33 the SAME agy finding, marked advisory                  GREEN     [discrimination]
+  => SUITE RED
+--- REVERTED ---
+ok 1 row 32 an agy finding claiming a BLOCKING class                 RED  B1
+ok 2 row 33 the SAME agy finding, marked advisory                  GREEN     [discrimination]
+  => SUITE GREEN
+
+################################################################
+# MUTANT  reject-79-flip
+#   site  scripts/check_pr_review_receipt.sh:1113
+#   edit  || return 1   ->   && return 1
+#   pins  the same advisory site, inverted
+################################################################
+--- BASELINE (unmutated guard) ---
+ok 1 row 32 an agy finding claiming a BLOCKING class                 RED  B1
+ok 2 row 33 the SAME agy finding, marked advisory                  GREEN     [discrimination]
+  => SUITE GREEN
+  line 1113 before:     reject B1 "the antigravity run states finding '$ag_blocking' with precision_class blocking; S3.E is advisory until 30 samples exist (S7's admission rule, S8's ratchet), so a blocking class from it is a receipt claiming an authority no measurement supports" || return 1
+  line 1113 after :     reject B1 "the antigravity run states finding '$ag_blocking' with precision_class blocking; S3.E is advisory until 30 samples exist (S7's admission rule, S8's ratchet), so a blocking class from it is a receipt claiming an authority no measurement supports" && return 1
+--- MUTATED (the rule is gone / inverted) ---
+not ok 1 row 32 an agy finding claiming a BLOCKING class                 RED  B1
+ok 2 row 33 the SAME agy finding, marked advisory                  GREEN     [discrimination]
+  => SUITE RED
+--- REVERTED ---
+ok 1 row 32 an agy finding claiming a BLOCKING class                 RED  B1
+ok 2 row 33 the SAME agy finding, marked advisory                  GREEN     [discrimination]
+  => SUITE GREEN
+
+=== final state: guard restored ===
+guard identical to committed version

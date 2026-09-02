@@ -166,51 +166,92 @@ jobs:
             sleep "$delay"
             delay=$((delay + 6))  # linear backoff: 4,10,16,22,28,34,...
           done
-      - name: Pre-flight target-dir consistency check
-        # Root cause (five-whys):
-        #   1. Why does workspace-test sometimes fail with "no such file or
-        #      directory .rcgu.o" / extern location missing / cc-rs can't
-        #      create .o? Cargo's incremental state on the per-PR target
-        #      dir is inconsistent.
-        #   2. Why inconsistent? A prior run was SIGKILL'd mid-compile and
-        #      left orphan .rmeta files (parts cargo had registered as built)
-        #      without the corresponding .rcgu.o codegen artifacts (which were
-        #      mid-write at the moment of the kill).
-        #   3. Why was it SIGKILL'd? concurrency.cancel-in-progress (line 22)
-        #      cancels the previous run as soon as a new commit lands on the
-        #      branch (and "Update branch" / strict-up-to-date triggers this
-        #      every time aprender main moves forward).
-        #   4. Why does this persist? The target dir is bind-mounted from a
-        #      per-PR persistent path /mnt/nvme-raid0/targets/aprender-ci/<PR>/,
-        #      so partial-compile state survives across runs.
-        #   5. Root cause: cargo's incremental state is not atomic-on-kill, so
-        #      a persistent shared target dir + cancel-in-progress = damage.
-        # Prevention (this step): BEFORE invoking cargo, check whether the
-        # immediately-preceding workflow run on this branch was cancelled. If
-        # yes, rm -rf the target dir contents. This is a one-time check at
-        # job start — NOT a retry-on-failure pattern (which the operator
-        # rejects under the "flake is not allowed" directive).
+      - name: Target-dir reclaim planner must still turn RED (case table)
+        # The planner below decides what gets rm -rf'd. Its own case table runs
+        # first, in the same job, so it cannot rot into a step that only ever
+        # passes: row 1a executes the OLD parent-wide removal against a fixture
+        # holding a live sibling and REQUIRES it to destroy that sibling, and
+        # row 2a requires a genuinely orphaned dir to still be reclaimed. A
+        # blanket skip passes row 1 and fails row 2.
+        run: bash scripts/ci_reclaim_target_dirs.sh --self-test
+      - name: Reclaim orphaned per-RUN target dirs (never a live sibling)
+        # WHAT THIS REPLACED, and why (#2825).
+        #
+        # This step used to run, whenever the previous run on the branch was
+        # cancelled:
+        #
+        #   docker run --rm \
+        #     -v "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}:/workspace/target" \
+        #     "$IMAGE" bash -c 'rm -rf /workspace/target/* /workspace/target/.[!.]* ...'
+        #
+        # It mounted the PARENT. The tree is `aprender-ci/<PR>/run-<RUN_ID>`
+        # since #1693, so `<PR>/` is the shared parent of every run for that PR
+        # and `rm -rf <PR>/*` removed every sibling `run-*` directory with no
+        # notion of whether the run owning it was still building.
+        #
+        # Its own five-whys (whose text is preserved below) was written against
+        # a premise #1693 removed: "the target dir is bind-mounted from a per-PR
+        # persistent path /mnt/nvme-raid0/targets/aprender-ci/<PR>/, so partial-
+        # compile state survives across runs". Since #1693 the mount is per-RUN,
+        # so no other run's state can reach this run at all. The parent-wide
+        # removal bought nothing and could only take a sibling with it:
+        #
+        #   1. Why the "no such file or directory .rcgu.o" / missing-extern
+        #      failures? Cargo's incremental state on the target dir is
+        #      inconsistent.
+        #   2. Why inconsistent? A prior cargo was SIGKILL'd mid-compile and
+        #      left .rmeta without the matching .rcgu.o.
+        #   3. Why SIGKILL'd? concurrency.cancel-in-progress cancels the
+        #      previous run as soon as a new commit lands on the branch.
+        #   4. Why did it persist? -- ANSWERED BY #1693. It no longer does:
+        #      the mount is `<PR>/run-<RUN_ID>`, fresh per run.
+        #   5. So the residual risk is not stale state reaching this run; it is
+        #      this step reaching somebody else's live run.
+        #
+        # Measured 2026-08-31 over 36 of the last 100 runs:
+        #   * workspace-test and guard-runner-labels are two jobs of the SAME
+        #     run, on two runners of one host, and both mount
+        #     `<PR>/run-<RUN_ID>` (guard's "model-tests falsification suites"
+        #     step). Their job windows overlap by 21-29 minutes.
+        #   * The removal does fire: runs 33372476223 and 33375180919 both
+        #     logged "Previous run was cancelled; nuking target dir".
+        #   * The margin between this step and that sibling step on the shared
+        #     directory is uncontrolled and CHANGES SIGN -- +7.6 min at the
+        #     tightest (run 33369566809) and -10.8 min in run 33243677674,
+        #     where this step ran AFTER the sibling's cargo instead of before.
+        #     Nothing orders them; today it misses on luck, and the image pull
+        #     this job documents at up to 20 minutes moves it either way.
+        #
+        # So the removal is scoped: `run-<THIS_RUN_ID>` is never touched (a
+        # sibling JOB of this run is writing to it), and a sibling RUN's dir is
+        # reclaimed only when the API says that run is completed -- or, if the
+        # API cannot answer, only when the dir is older than the 100-minute job
+        # timeout. That age fallback is deliberate: sparing everything on an
+        # oracle outage would make this step inert exactly when it is needed.
+        # Cleanup never fails the build; a planner error downgrades to a
+        # warning and reclaims nothing.
         run: |
-          set -e
-          if [ -z "${{ github.event.pull_request.number }}" ]; then
-            echo "Not a PR run; skipping prior-cancel check"
+          set -uo pipefail
+          set +e
+          PARENT="/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}"
+          PLAN="${RUNNER_TEMP:-/tmp}/reclaim-${GITHUB_RUN_ID}.txt"
+          bash scripts/ci_reclaim_target_dirs.sh "$PARENT" "$GITHUB_RUN_ID" > "$PLAN"
+          rc=$?
+          if [ "$rc" -ne 0 ]; then
+            echo "::warning::reclaim planner exited ${rc}; reclaiming nothing (cleanup never fails the build)"
             exit 0
           fi
-          # Find the immediately-preceding workflow run on this branch.
-          # status=completed filter excludes the current in-progress run.
-          PREV_CONCLUSION=$(gh api \
-            "repos/${GITHUB_REPOSITORY}/actions/runs?branch=${GITHUB_HEAD_REF}&status=completed&per_page=1" \
-            --jq '.workflow_runs[0].conclusion' 2>/dev/null || echo "")
-          echo "Previous run conclusion on ${GITHUB_HEAD_REF}: ${PREV_CONCLUSION:-<none>}"
-          if [ "$PREV_CONCLUSION" = "cancelled" ]; then
-            echo "::warning::Previous run was cancelled; nuking target dir to prevent cargo cancel-damage"
-            docker run --rm \
-              -v "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}:/workspace/target" \
-              "$IMAGE" \
-              bash -c 'rm -rf /workspace/target/* /workspace/target/.[!.]* 2>/dev/null || true; ls -la /workspace/target/ || true'
-          else
-            echo "No cancel damage to clean (prior conclusion: ${PREV_CONCLUSION:-fresh-branch})"
+          if [ ! -s "$PLAN" ]; then
+            echo "Nothing to reclaim under ${PARENT}"
+            exit 0
           fi
+          echo "Reclaiming $(wc -l < "$PLAN") orphaned run dir(s):"
+          cat "$PLAN"
+          docker run --rm -i \
+            -v "${PARENT}:/parent" \
+            "$IMAGE" \
+            bash -c 'set -u; while read -r d; do case "$d" in run-*) rm -rf "/parent/${d:?}" ;; *) echo "refusing to remove: ${d}" ;; esac; done; ls -la /parent' \
+            < "$PLAN"
         env:
           GH_TOKEN: ${{ github.token }}
       - name: Pre-build chown — fix per-RUN root ownership
@@ -463,6 +504,21 @@ jobs:
       # passes on the merge-base can still red here, and CI is authoritative.
       - name: Fetch origin/main as the comparand for every ratchet in this job
         run: git fetch --no-tags --depth=1 origin +refs/heads/main:refs/remotes/origin/main
+      # aprender#2822. Case table FIRST, per the convention above: the probe
+      # below is only worth its 0.15s if the classifier it feeds can still turn
+      # RED. Seven rows over a throwaway tree - no cargo, no network, no host.
+      # Mutation-verified: deleting the sentinel rule, deleting the inode rule,
+      # or restoring the read-after-plant ordering bug each takes it RED.
+      #
+      # This step IS a gate and may fail the job. The probe and report steps are
+      # not and never can - a recorder that can red a required check is a
+      # liability, and #2822 is already red.
+      - name: "target-watch case table (aprender#2822)"
+        run: bash scripts/ci_target_watch.sh --self-test
+      - name: "target-watch: post-checkout"
+        # aprender#2822 boundary probe (2 stat, 1 readdir, 1 df, 1 pgrep).
+        # Instrumentation, never a gate: the script always exits 0.
+        run: bash scripts/ci_target_watch.sh probe "post-checkout"
       # A baseline that no guard compares to anything is an allowlist wearing
       # the word "ratchet". This is the coverage backstop: every scripts/*.txt
       # is classified shrink-only (and compared) or NOT-a-ratchet (with the
@@ -574,6 +630,10 @@ jobs:
         run: bash scripts/check_pv_version_parse.sh
       - name: "pv --version parse guard must still turn RED (case table)"
         run: bash scripts/check_pv_version_parse.sh --self-test
+      - name: "target-watch: before-cargo-install-bashrs"
+        # aprender#2822 boundary probe (2 stat, 1 readdir, 1 df, 1 pgrep).
+        # Instrumentation, never a gate: the script always exits 0.
+        run: bash scripts/ci_target_watch.sh probe "before-cargo-install-bashrs"
       # CLAUDE.md mandates bashrs over shellcheck; CI honoured that for SEVEN of
       # 72 scripts (`bashrs lint scripts/check_book_*.sh` in book.yml).
       # apr_bin.sh -- sourced by every gate in this repo -- was not one of them,
@@ -831,6 +891,10 @@ jobs:
         run: bash scripts/check_publish_safety.sh
       - name: Every include!() file is tracked by git (CB-510)
         run: bash scripts/check_include_files.sh
+      - name: "target-watch: before-pv-build"
+        # aprender#2822 boundary probe (2 stat, 1 readdir, 1 df, 1 pgrep).
+        # Instrumentation, never a gate: the script always exits 0.
+        run: bash scripts/ci_target_watch.sh probe "before-pv-build"
       # #2512: these two were invoked by NO workflow -- one Makefile-only
       # (`make tier3`, which CI does not run), one reachable from nothing at all.
       # Both pass today and are cheap, so there was never a reason for them to be
@@ -854,6 +918,10 @@ jobs:
         run: bash scripts/check_pv_bin_resolution.sh
       - name: Every contract cites a test that exists (strict-test-binding)
         run: bash scripts/check_contract_test_binding.sh
+      - name: "target-watch: before-contracts-tests"
+        # aprender#2822 boundary probe (2 stat, 1 readdir, 1 df, 1 pgrep).
+        # Instrumentation, never a gate: the script always exits 0.
+        run: bash scripts/ci_target_watch.sh probe "before-contracts-tests"
       # Poka-yoke (#2551): `cargo test -p aprender-contracts --test
       # validate_contracts` is the only thing that parses and validates the
       # contract corpus from Rust rather than through `pv lint`. It failed 3 of
@@ -874,8 +942,16 @@ jobs:
           cargo test -p aprender-contracts --test validate_contracts
           cargo test -p aprender-contracts --test kani_harness_generation
           cargo test -p aprender-contracts --test probar_test_generation
+      - name: "target-watch: before-wasm32-build"
+        # aprender#2822 boundary probe (2 stat, 1 readdir, 1 df, 1 pgrep).
+        # Instrumentation, never a gate: the script always exits 0.
+        run: bash scripts/ci_target_watch.sh probe "before-wasm32-build"
       - name: aprender-core builds for wasm32
         run: bash scripts/check_wasm32_core_builds.sh
+      - name: "target-watch: before-facade-compat"
+        # aprender#2822 boundary probe (2 stat, 1 readdir, 1 df, 1 pgrep).
+        # Instrumentation, never a gate: the script always exits 0.
+        run: bash scripts/ci_target_watch.sh probe "before-facade-compat"
       # aprender#2546: `provable-contracts*` were renamed to `aprender-contracts*`
       # and the published names left frozen at 0.3.1. A pin on the old name
       # resolved SILENTLY and installed a tool sixty versions behind. The names
@@ -1148,6 +1224,10 @@ jobs:
         run: bash scripts/check_dogfood_llm_probe_armed.sh
       - name: dogfood LLM probe guard case table
         run: bash scripts/check_dogfood_llm_probe_armed.sh --self-test
+      - name: "target-watch: before-profile-tests"
+        # aprender#2822 boundary probe (2 stat, 1 readdir, 1 df, 1 pgrep).
+        # Instrumentation, never a gate: the script always exits 0.
+        run: bash scripts/ci_target_watch.sh probe "before-profile-tests"
       # aprender-profile appeared in this file ZERO times while carrying 58
       # integration test targets. Running them found 110 failures -- 109 from a
       # single stale binary name left by the APR-MONO rename, dead since. Gated
@@ -1179,6 +1259,10 @@ jobs:
         run: bash scripts/check_model_tests_wired.sh
       - name: model-tests wiring case table
         run: bash scripts/check_model_tests_wired.sh --self-test
+      - name: "target-watch: before-model-tests-docker"
+        # aprender#2822 boundary probe (2 stat, 1 readdir, 1 df, 1 pgrep).
+        # Instrumentation, never a gate: the script always exits 0.
+        run: bash scripts/ci_target_watch.sh probe "before-model-tests-docker"
       - name: model-tests falsification suites (was gated by nothing, aprender#2522)
         # Runs INSIDE the image, on the same per-RUN target dir as the other
         # cargo steps, so the `model-tests` feature build reuses this run's
@@ -1201,8 +1285,16 @@ jobs:
               --test falsification_spec_v10_tests \
               --test falsification_stress_tests \
               --test falsification_gpu_state_tests
+      - name: "target-watch: before-book-examples"
+        # aprender#2822 boundary probe (2 stat, 1 readdir, 1 df, 1 pgrep).
+        # Instrumentation, never a gate: the script always exits 0.
+        run: bash scripts/ci_target_watch.sh probe "before-book-examples"
       - name: Book rust examples compile
         run: bash scripts/check_book_examples_compile.sh
+      - name: "target-watch: before-cargo-package"
+        # aprender#2822 boundary probe (2 stat, 1 readdir, 1 df, 1 pgrep).
+        # Instrumentation, never a gate: the script always exits 0.
+        run: bash scripts/ci_target_watch.sh probe "before-cargo-package"
       # CB-510: a Cargo.toml `exclude` pattern can strip an include!() target
       # from the published crate while git still tracks it, so the crate compiles
       # in-tree and fails for everyone installing from crates.io. This guard is
@@ -1270,6 +1362,10 @@ jobs:
       - name: Publishable-deps guard case table
         run: bash scripts/check_publishable_deps_publishable.sh --self-test
 
+      - name: "target-watch: before-cargo-deny-install"
+        # aprender#2822 boundary probe (2 stat, 1 readdir, 1 df, 1 pgrep).
+        # Instrumentation, never a gate: the script always exits 0.
+        run: bash scripts/ci_target_watch.sh probe "before-cargo-deny-install"
       # `cargo deny` ran in ZERO workflows -- only `make deny`. Positive control:
       # 9 workflows mention `cargo`, 0 mentioned `deny`. Meanwhile the `security`
       # job runs `cargo audit` with continue-on-error, which cannot fail the build
@@ -1286,9 +1382,17 @@ jobs:
       # cargo-llvm-cov ENOENT, empty coverage figure). Install into a per-run
       # root and put it FIRST on PATH so the freshly installed binary is the one
       # that runs, here and in the steps that follow.
+      # $RUNNER_TEMP, not /tmp. /tmp is emptied at boot, so a root there
+      # HALF-persists: it survives between jobs on a long-lived self-hosted
+      # box and vanishes on reboot, which is the shape paiml/infra's
+      # shared-$HOME guard blocks as `cargo-install-boot-volatile`.
+      # $RUNNER_TEMP is under the runner's own _work tree and is wiped per
+      # JOB, so it is private for the same reason the per-run name was,
+      # and the compile is paid honestly every run instead of
+      # four-times-in-sixteen.
       - name: Install cargo-deny (if absent)
         env:
-          CARGO_INSTALL_ROOT: /tmp/cargo-deny-${{ github.run_id }}-${{ github.run_attempt }}
+          CARGO_INSTALL_ROOT: ${{ runner.temp }}/cargo-deny
         run: |
           if ! command -v cargo-deny > /dev/null 2>&1; then
             cargo install cargo-deny --locked
@@ -1327,6 +1431,10 @@ jobs:
         run: bash scripts/check_test_fixture_paths.sh
       - name: Fixture-path guard case table
         run: bash scripts/check_test_fixture_paths.sh --self-test
+      - name: "target-watch: after-last-cargo-step"
+        # aprender#2822 boundary probe (2 stat, 1 readdir, 1 df, 1 pgrep).
+        # Instrumentation, never a gate: the script always exits 0.
+        run: bash scripts/ci_target_watch.sh probe "after-last-cargo-step"
       # #2532: the guard above has a universe of crates/**/tests?/**/*.rs, which
       # structurally excludes 100% of the 324 machine-specific paths pmat found
       # in SHIPPED code -- 46 of them inside contracts/ itself. Seventeen crux
@@ -1357,12 +1465,751 @@ jobs:
         run: bash scripts/check_hardcoded_paths.sh --self-test
       - name: Whole-tree machine-specific-path ratchet (arms itself at pmat >= 3.32.0)
         run: bash scripts/check_hardcoded_paths.sh --full-if-capable
+      # PRREV-006. PR-REVIEW-SKILL-002 v2 §9 row 6 states how the receipt guard
+      # may be wired, and both halves are scars rather than style:
+      #
+      #   job-level `if:`, NOT a workflow-level `paths:` filter — a path-filtered
+      #   required check never reports and blocks branch protection forever.
+      #
+      # A `paths:` filter here would mean the workflow does not run at all on a
+      # PR that misses it, so a check the ruleset requires never produces a check
+      # run: the PR sits PENDING and nothing merges. This file carries BOTH
+      # required checks (`ci / gate` and `workspace-test`), so that is a deadlock,
+      # not a hypothetical. A job-level `if:` is the opposite shape — the workflow
+      # runs, the job reports `skipped`, and `gate` reads the result (`mutants` is
+      # the in-repo precedent).
+      #
+      # Until this step, that rule lived in a COMMENT further down this file, on
+      # `vendored-schemas`, and a comment is not a trigger — the exact shape that
+      # left check_hardcoded_paths.sh unwired for months, two steps above. So the rule
+      # is CHECKED: the receipt guard must be invoked by a non-comment line, by
+      # exactly one job, that job must carry an `if:` at job indentation (4
+      # spaces, not a step's 8), and that `if:` must evaluate TRUE on
+      # pull_request and FALSE on push / merge_group / workflow_dispatch. Both
+      # polarities, because "it has an `if:`" is satisfied by `if: always()`.
+      # Text-only, no build. Self-test first (Verification Discipline #7).
+      - name: "Receipt-wiring guard case table (both polarities of the if:)"
+        run: bash scripts/check_pr_review_wiring.sh --self-test
+      - name: The PR-review receipt guard is wired job-level, not path-filtered
+        run: bash scripts/check_pr_review_wiring.sh
+      # The case table above is evidence only for the branches it can turn RED,
+      # and on its first pass it could not turn three of them. Dropping either
+      # zero-count check left the guard still rejecting on the NEIGHBOURING
+      # more-than-one branch, and the step-level fixture used `- if:`, whose
+      # leading `- ` means a widened job-level pattern never matched it. Both
+      # survived a verdict-only table; the mutation set is what found them.
+      # 15/15 kill required, and an anchor that stops matching is reported as
+      # HARNESS-BROKEN rather than as a dead mutant. Text-only, no build.
+      - name: "Receipt-wiring guard: every rule it states, mutated (15/15 kill)"
+        run: bash scripts/mutate_pr_review_wiring_guard.sh
+      # aprender#2822: THE REPORT. Runs even when the job dies mid-cargo,
+      # and takes its own final probe first -- without that, a failure at
+      # step K leaves the last recorded boundary BEFORE K and the table
+      # reads clean, which is the whole failure mode being investigated.
+      #
+      # It also pulls the host journal for the job's window into the job
+      # log. That is the decisive evidence and the only evidence that
+      # expires: `_work/*/target` is deleted by HOST automation (a sibling
+      # runner's job-started hook, a systemd timer) which logs under its own
+      # tag and appears in NO GitHub log. See
+      # scripts/runner-infra/runner-disk-guard.sh, whose own header records
+      # this exact signature.
+      #
+      # continue-on-error is deliberate and is NOT a disarmed gate: nothing
+      # here asserts anything. The gate that can fail is the case table
+      # wired above.
+      - name: "target-watch: report (aprender#2822)"
+        if: always()
+        continue-on-error: true
+        run: |
+          bash scripts/ci_target_watch.sh probe post-job
+          bash scripts/ci_target_watch.sh report
 
   # Top-level gate: satisfies org ruleset "Green Main" which requires check named "gate".
   # The reusable workflow produces "ci / gate" but rulesets need exact match on "gate".
+  # ── PRREV-002: the vendored JSON Schemas ─────────────────────────────────
+  #
+  # PR-REVIEW-SKILL-002 v2 §6.2 vendors the in-toto Statement v1 and SARIF
+  # 2.1.0 schemas under schemas/ so the receipt gate never fetches a schema at
+  # gate time. This job asserts the vendored bytes still match their recorded
+  # SHA-256, that no $ref in either schema resolves off-file, and that the whole
+  # accept/reject fixture table validates inside a network namespace with no
+  # interfaces. It then mutates the guard and requires every mutant RED.
+  #
+  # DELIBERATELY NOT IN `gate`'s needs LIST. Nothing produces a receipt yet
+  # (PRREV-005), and check-jsonschema is a Python tool no other job in this
+  # repo installs. A brand-new required check whose first dependency is an
+  # uninstalled interpreter is how a queue gets evicted.
+  #
+  # PRREV-006 UPDATE — what actually landed, so this paragraph is not a promise
+  # nothing keeps. PRREV-006 wired the receipt guard into `pr-review-receipt`
+  # below, with a job-level `if:` and no workflow-level `paths:` filter, and
+  # made that rule mechanical (check_pr_review_wiring.sh, run twice in
+  # guard-runner-labels). It did NOT promote either job into `gate`, for the
+  # reason this paragraph already gives and PRREV-006 shares verbatim: the same
+  # uninstalled interpreter, plus minisign. The spec agrees — §9 step 7 makes
+  # the backtest the acceptance test "before it is enabled". Promotion is
+  # PRREV-007's, and the arming condition it waits on is mechanical rather than
+  # written here: see the self-arming step in `pr-review-receipt`.
+  #
+  # The guard exits 2, not 1, when the ENVIRONMENT cannot answer (no
+  # check-jsonschema, or no unprivileged user namespace for `unshare -r -n`).
+  # Both are non-zero: an unmeasured gate is not a passing gate. The distinct
+  # code is so a broken box is never read as a broken tree.
+  vendored-schemas:
+    runs-on: [self-hosted, X64, Linux, clean-room]
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install check-jsonschema (network here, NEVER at gate time)
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v uv >/dev/null 2>&1; then
+            curl -LsSf https://astral.sh/uv/install.sh | sh
+            echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+            export PATH="$HOME/.local/bin:$PATH"
+          fi
+          uv tool install 'check-jsonschema==0.38.0'
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: schemas/ are the bytes we vendored, and validate offline
+        shell: bash
+        run: bash scripts/check_vendored_schemas.sh
+
+      - name: the guard can still turn RED
+        shell: bash
+        run: bash scripts/mutate_vendored_schemas_guard.sh
+
+  # ── PRREV-006: the receipt guard, wired ──────────────────────────────────
+  #
+  # PR-REVIEW-SKILL-002 v2 §9 row 6 is one sentence, and the `if:` below is what
+  # it is about:
+  #
+  #   job-level `if:`, NOT a workflow-level `paths:` filter — a path-filtered
+  #   required check never reports and blocks branch protection forever.
+  #
+  # A `paths:` filter stops the WORKFLOW from running at all on a PR that misses
+  # it, so a check the ruleset requires never produces a check run: the PR sits
+  # PENDING and nothing merges. This file carries BOTH required checks, so that
+  # is a deadlock rather than a hypothesis. A job-level `if:` is the opposite
+  # shape — the workflow runs, the job reports `skipped`, and `gate` reads the
+  # result. `mutants` below is the in-repo precedent.
+  #
+  # THE CONDITION IS A PRECONDITION, NOT A DODGE. The subject of this job is the
+  # receipt for ONE pull request, at evidence/pr-review/<pr>/<head_sha>/. On
+  # push, merge_group and workflow_dispatch there is no <pr>, so there is nothing
+  # for the check to be about. Both polarities of that claim are checked, not
+  # asserted: check_pr_review_wiring.sh (guard-runner-labels, above) evaluates
+  # this exact expression against all four events and fails if it runs where
+  # there is no PR or skips where there is one.
+  #
+  # FIVE ARMS. Arm 0 is text-only and runs first; the first two after it are not
+  # the same check twice:
+  #   0. the counts these files state as MEASURED, against what the tree derives.
+  #      The skill reviewed its own PR and found five stale ones — "119/119" in
+  #      four places over a set of 185, "65 tests" over 121, "22-row" over 26 —
+  #      each true when written and stale by the commit that shipped it. Two of
+  #      them are in the step NAMES below. check_pr_review_counts.sh derives the
+  #      three that a tree can derive and fails on any file that disagrees; its
+  #      --self-test writes each of the three shipped defects back in and requires
+  #      RED, then grows the tree three ways and requires RED again.
+  #   1..4 as before:
+  #   1. the guard over one GREEN and one RED fixture. It is the only arm that
+  #      survives an unobtainable bats, and it is the literal invocation
+  #      check_guards_are_wired.sh scans for — a guard named in a comment is not
+  #      wired. GREEN and RED together, because "refuse every receipt" reads
+  #      green against RED fixtures alone.
+  #   2. the 43-row fixture table (§6.3's fourteen, the twelve PRREV-008 and
+  #      PRREV-009 added, S3.E's nine, and PRREV-020's two) under bats, positive
+  #      controls included.
+  #   3. the guard's own mutation set (§6.4). §8 fixes guard_mutation_score at
+  #      100% with "no ratchet, it is a one". Wiring a guard and leaving its
+  #      falsifier dark would make the thing every other verdict rests on unable
+  #      to be SHOWN to fail — the epic's own most common defect class (§11).
+  #   4. this PR's own receipt, which arms itself (below).
+  #
+  # NOT IN `gate`'s needs, for vendored-schemas' reason plus a sharper one:
+  # nothing produces a receipt until PRREV-005, so a blocking receipt check today
+  # would red every PR including the one that lands PRREV-005 — a gate whose own
+  # remedy it makes impossible, which is how `apr test llm` shipped permanently
+  # unreachable. §9 step 7 makes the backtest the acceptance test "before it is
+  # enabled", so promotion is PRREV-007's. Arm 4 re-evaluates the arming
+  # condition on EVERY run rather than leaving it to a comment: the comment that
+  # said to promote check_hardcoded_paths.sh "once the fleet carries pmat >=
+  # 3.32.0" is two steps above this one, and 20 machine-specific paths landed
+  # through the gap while nothing re-read it.
+  pr-review-receipt:
+    runs-on: [self-hosted, X64, Linux, clean-room]
+    # 150, not 120: Arm 3 alone measured 3091s (51.5 min) on an idle 48-core box over
+    # the 185-mutant set, and PRREV-015 adds Arms 5 and 6 — an 83-row bats table and a
+    # second, 134-mutant sweep over scripts/pr_review_quorum_arm.sh. This number has
+    # already been wrong once here for exactly this reason (60 against a measured 51.5
+    # left 8 minutes for four other arms, which is not headroom; it is a job that times
+    # out the first time the runner is busy, and a cancelled job reads as a failure
+    # nobody can distinguish from a real one).
+    timeout-minutes: 150
+    if: github.event_name == 'pull_request'
+    env:
+      # The `runner` context is NOT available in a job-level `env:` block —
+      # GitHub rejects the workflow with `Unrecognized named-value: runner`
+      # (#2791). $RUNNER_TEMP is read inside the run blocks instead.
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      # The guard REFUSES to run without minisign, check-jsonschema, bats and jq:
+      # "a gate that cannot run must not read green". They go into a per-JOB
+      # private root under $RUNNER_TEMP, never ~/.local/bin: mac-server hosts 16
+      # runners under one $HOME, and a concurrent writer to a shared bin
+      # directory is what made Coverage Nightly report an EMPTY coverage figure
+      # (#2353). $RUNNER_TEMP and not /tmp, because /tmp half-persists on a
+      # long-lived box and is emptied at boot (#2791). Versions and digests are
+      # pinned in the script, which exits 2 — distinct from the guard's own 1 —
+      # when the BOX cannot answer, so a broken runner is never read as a broken
+      # tree.
+      - name: Install the tools the receipt guard refuses to run without
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/install_pr_review_tools.sh "$RUNNER_TEMP/pr-review-tools/bin"
+          echo "$RUNNER_TEMP/pr-review-tools/bin" >> "$GITHUB_PATH"
+
+      # Arm 0. Text-only, no build, and FIRST: the arms below quote numbers in
+      # their own step names, and a step named after a stale number is how "65
+      # tests" and "22-row" survived four commits of growth. Self-test before
+      # check, because a guard whose RED has never been seen is a guard whose
+      # GREEN is a count of files (Verification Discipline #7).
+      - name: "Stated-count guard: every stated-count drift turns it RED, both polarities"
+        shell: bash
+        run: bash scripts/check_pr_review_counts.sh --self-test
+      - name: The counts these files state as measured equal the derived ones
+        shell: bash
+        run: bash scripts/check_pr_review_counts.sh
+
+      # Arm 1. The receipts name commits in a purpose-built repository, not in
+      # aprender: for any commit reachable from aprender's own origin/main,
+      # `git merge-base origin/main X` is X itself, so the base_sha row would
+      # pass vacuously. Both exit codes are read from the guard itself, never
+      # through a pipe.
+      - name: The guard accepts an honest receipt and rejects a self-review
+        shell: bash
+        run: |
+          set -euo pipefail
+          FIX=tests/fixtures/pr-review
+          "$FIX/make-fixture-repo.sh" "$RUNNER_TEMP/pr-review-fixture-repo" > /dev/null
+          export PR_REVIEW_REPO="$RUNNER_TEMP/pr-review-fixture-repo"
+          export PR_REVIEW_PUBKEY="$FIX/keys/pr-review-test.pub"
+
+          bash scripts/check_pr_review_receipt.sh "$FIX/row-14-complete-gpu-review"
+          echo "GREEN discrimination row accepted, as it must be"
+
+          rc=0
+          bash scripts/check_pr_review_receipt.sh "$FIX/row-08-self-review" || rc=$?
+          if [ "$rc" -ne 1 ]; then
+            echo "row 08 (reviewer_actor == author_actor) exited $rc, expected 1." >&2
+            echo "A guard that accepts a self-review has no verdict to give (§5, §7)." >&2
+            exit 1
+          fi
+          echo "RED discrimination row rejected under B2, as it must be"
+
+      # Arm 2. Every row of §6.3, plus the positive controls, plus the
+      # must-match/must-not-match tables behind the three trigger regexes. This
+      # file is 165 tests and was reachable from NO workflow until this job — the
+      # dark-target class this repository has hit with benches and with 58 cgp
+      # tests. Both numbers here are recomputed by check_pr_review_counts.sh; the
+      # commit that wired this step wrote 65 and 22 over a file that already held
+      # 165 tests and 37 rows.
+      - name: The 43-row fixture table and both polarities of every trigger regex
+        shell: bash
+        run: bats tests/pr-review.bats
+
+      # Arm 3. §6.4: mechanically flip each validation branch and drop each
+      # required-field check, target 100% kill.
+      #
+      # The script's DEFAULT parallelism, because that is the only setting whose
+      # wall time has been measured: 185/185 killed in 3091s (51.5 min) at
+      # --jobs 12 on a 48-core box, 2026-08-30.
+      #
+      # THE SET IS 233/233 TODAY — PRREV-015 added S3.E, PRREV-020 its availability
+      # rule and PRREV-019 the survivors-shape rule, one `reject B<n>` site each and
+      # so two mutants each. So that wall time is a
+      # LOWER BOUND and not a current measurement. It is left as the number that
+      # was actually measured, with its date and its set size beside it, rather
+      # than rescaled: a scaled estimate wearing the shape of a measurement is
+      # the defect this whole job exists to catch. Re-measure before quoting it.
+      # The set is DERIVED — one `drop` and one
+      # `flip` per `reject B<n>` site, rescanned from the guard on every run — so
+      # its size moves when the guard does; `scripts/mutate-guard.sh --list`
+      # prints it, and check_pr_review_counts.sh fails this file when the number
+      # written here is not the number the script derives. An earlier draft of
+      # this step wrote --jobs 8 with a plausible-sounding reason and no
+      # measurement behind it, which is how a number becomes folklore.
+      #
+      # THE TIMEOUT WAS A THIRD DEFECT IN THIS JOB, and the same one: this
+      # paragraph said "timeout-minutes on this job is 60 against that 19
+      # minutes; a slower runner has headroom". 19 minutes was 1125s over the
+      # 119-mutant set. The set is 185 and the same box takes 3091s — 51.5
+      # minutes against a 60-minute cap, on an IDLE box, before Arms 0-2 and 4
+      # have run at all. Headroom of 8 minutes is not headroom; it is a job that
+      # times out the first time the runner is busy, and a cancelled job reads
+      # as a failure nobody can distinguish from a real one (#2792's cargo-audit
+      # eviction, and "N runs cancelled at the SAME elapsed time is a timeout,
+      # not a flake"). Raised to 120.
+      #
+      # AND A FOURTH: THIS STEP HAD NO `if:` AT ALL, so the full sweep ran on every
+      # pull request including docs-only ones -- while §3.D's own trigger table says
+      # the guard mutation set is required when the diff "touches scripts/check_*.sh,
+      # dogfood.sh, ci.yml gate logic, or a contracts/*.yaml falsifier" and that
+      # docs / non-code is "not triggered". CI contradicted the specification it
+      # enforces, and it was not a tidiness point: it is the queue. Measured
+      # 2026-09-01 -- three receipt jobs started within nine minutes of each other,
+      # the runner host's load average went 48 -> 133, and #2836's job was CANCELLED
+      # at exactly its 150-minute cap having proved nothing. A cancelled job reads as
+      # a failure nobody can distinguish from a real one.
+      #
+      # The decision is a SCRIPT with an 11-row case table, not an inline expression:
+      # this job's own Arm 4 post-mortem is that inline YAML is reachable from no test
+      # and its exit-0 branch passed every run it ever had. The table carries both
+      # polarities -- all seven sweep inputs must answer `yes`, and a docs-only and an
+      # unrelated-source diff must answer `no`, without which "always yes" reads green
+      # -- plus a fail-closed row and a row that fails when build_tree copies a path
+      # the list does not name.
+      - name: "Does this diff change anything the sweep reads? (§3.D trigger)"
+        id: sweep_needed
+        shell: bash
+        run: |
+          bash scripts/pr_review_sweep_needed.sh --self-test
+          BASE=$(git merge-base origin/main "${PR_HEAD_SHA}" 2>/dev/null) || BASE=""
+          if [ -z "$BASE" ]; then
+            echo "needed=yes" >> "$GITHUB_OUTPUT"
+            echo "::notice::merge-base unavailable; running the sweep (fail-closed)"
+            exit 0
+          fi
+          # FAIL-CLOSED. An earlier draft assigned OUT and appended it: if the script
+          # crashed, OUT was empty, `needed` was never set, and `needed == 'yes'` is
+          # false -- so a CRASHING TRIGGER SILENTLY SKIPPED THE SWEEP. That is the
+          # fail-open shape this repository exists to remove, in the guard that gates
+          # the guard. Status is read from the command, never through a pipe, and any
+          # outcome that is not a well-formed `needed=no` runs the sweep.
+          set +e
+          OUT=$(bash scripts/pr_review_sweep_needed.sh "$BASE" "${PR_HEAD_SHA}")
+          rc=$?
+          set -e
+          if [ "$rc" -ne 0 ] || [ -z "$OUT" ]; then
+            echo "needed=yes" >> "$GITHUB_OUTPUT"
+            echo "::notice::sweep trigger exited $rc with output '$OUT'; running the sweep (fail-closed)"
+            exit 0
+          fi
+          case "$OUT" in
+            needed=no)  echo "needed=no"  >> "$GITHUB_OUTPUT" ;;
+            needed=yes) echo "needed=yes" >> "$GITHUB_OUTPUT" ;;
+            *)          echo "needed=yes" >> "$GITHUB_OUTPUT"
+                        echo "::notice::sweep trigger printed an unrecognised answer '$OUT'; running the sweep (fail-closed)" ;;
+          esac
+          echo "::notice::sweep trigger -> $OUT"
+
+      - name: The guard's mutation set must kill 100% (§6.4, §8 fixes this at one)
+        if: steps.sweep_needed.outputs.needed == 'yes'
+        shell: bash
+        run: bash scripts/mutate-guard.sh
+
+      # A SKIPPED SWEEP IS RECORDED, NEVER SILENT. §3.0's rule one level up: "not
+      # triggered" and "did not run" must not be the same artifact.
+      - name: "Sweep not triggered — record why (§3.0)"
+        if: steps.sweep_needed.outputs.needed != 'yes'
+        shell: bash
+        run: |
+          echo "guard_mutation_score: NOT-TRIGGERED — no sweep input changed in this diff."
+          echo "Inputs are the six paths build_tree copies plus scripts/mutate-guard.sh;"
+          echo "see scripts/pr_review_sweep_needed.sh. The score is unchanged from main's."
+
+      # Arm 4. ARMED (PRREV-013). It could previously neither fail nor pass.
+      #
+      # The step this replaces was six lines of inline YAML, and it carried BOTH
+      # halves of the same defect:
+      #
+      #   * it began `if [ ! -f .github/pr-review.pub ]; then ... exit 0; fi`,
+      #     the key was absent, nothing owned shipping it (SKILL.md said
+      #     PRREV-006, the two comments above said PRREV-005, keys/README.md
+      #     hedged "PRREV-005/006"), and `PR_REVIEW_SIGNING_KEY` appeared in
+      #     zero workflows. So it EXITED 0 ON EVERY RUN IT EVER HAD. §8 fixes
+      #     `receipt_presence` at 100% "no ratchet, it is a one", and the job
+      #     written to enforce that could not fail — a gate that cannot fail,
+      #     inside the job built to prevent gates that cannot fail (§11).
+      #
+      #   * its armed branch then looked for `evidence/pr-review/<pr>/<TIP SHA>`,
+      #     which NO pull request can produce: committing the receipt changes the
+      #     tip, so a directory named after the tip cannot hold the review of the
+      #     tip. A gate that cannot pass, shipped in the same six lines as a gate
+      #     that cannot fail.
+      #
+      # Both are fixed in scripts/check_pr_review_arm4.sh, which is a SCRIPT and
+      # not inline YAML for the reason the `exit 0` survived unnoticed: Arms 1-3
+      # are all scripts with case tables, Arm 4 was the one reachable from no
+      # test, and Arm 4 is the one that broke. Its `--self-test` drives a case
+      # table, both polarities, including the absent-key row that used to read
+      # green — deliberately WITHOUT a row count written here, because a count of
+      # a table that grows is the drift Arm 0 exists to catch. The table is
+      # hermetic: it runs against tests/fixtures/pr-review/make-fixture-repo.sh,
+      # not against this repository's history, so a squash-merge cannot expire it.
+      # The self-test runs FIRST (Verification Discipline #7).
+      #
+      # .github/pr-review.pub is now COMMITTED — PRREV-013 generated the keypair,
+      # committed the public half, re-signed this PR's receipt with the secret
+      # half, and put that half in the repository secret PR_REVIEW_SIGNING_KEY_B64
+      # (base64 of the minisign secret-key FILE; §4.3's `minisign -S -s` takes a
+      # path, so a signer materialises it before use). The secret half is not in
+      # this repository and never will be. Rotation is `minisign -G -W`, replace
+      # .github/pr-review.pub, re-set the secret, re-sign.
+      #
+      # A MISSING RECEIPT IS NOW RED (§6.3, verbatim: "a missing receipt is RED,
+      # not skipped"). This job is deliberately still NOT in `gate`'s needs, so a
+      # red here does not block a merge; it makes `receipt_presence` a number
+      # somebody can read instead of a metric nothing measures. Promoting it into
+      # `gate` is a separate decision and wants 30 samples behind it, per §8.
+      #
+      # The step deepens the checkout first: base_sha resolves through
+      # `git merge-base origin/main <head>`, which a fetch-depth-1 checkout cannot
+      # answer. The script exits 2 rather than 0 or 1 when the BOX cannot answer,
+      # so a shallow clone is never read as a clean tree.
+      - name: "Arm 4 case table: the absent-key branch that used to exit 0 forever"
+        shell: bash
+        run: bash scripts/check_pr_review_arm4.sh --self-test
+      - name: This PR's own receipt, under the repository's own default key
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --unshallow origin +refs/heads/main:refs/remotes/origin/main \
+            || git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          bash scripts/check_pr_review_arm4.sh
+
+      # Arm 5. S13's refusal table. SHADOW ONLY — scripts/pr_review_quorum_arm.sh is
+      # invoked here with --explain against committed fixtures and a fixture
+      # repository, so it can merge nothing, and it is reachable from no step that
+      # can. S13.11 rung 0.
+      #
+      # The bats file exports a RECORDING STUB for gh before any row runs, and that is
+      # a safety device before it is an assertion: Arm 6 runs this same file against a
+      # MUTATED arm script, and one of the mutants disables the --explain guard. With
+      # a real gh on PATH that mutant would try to arm auto-merge on a live pull
+      # request. The stub records the call and exits 1, and two rows assert the call
+      # log is empty.
+      - name: "S13 quorum refusal table: 83 rows, one per refusal path, four that PERMIT"
+        shell: bash
+        run: bats tests/pr-review-quorum.bats
+
+      # Arm 6. S13.10 fixes quorum_arm_mutation_score at one with no ratchet, for the
+      # reason S6.4 gives one tier down and with more force: a surviving mutant is a
+      # refusal path the arm script STATES and nothing TESTS, and under S13 that is a
+      # merge nobody authorised.
+      #
+      # The set is DERIVED — one `drop` and one `flip` per `refuse Q<n>` site, rescanned
+      # on every run — so it cannot fall behind the script; check_pr_review_counts.sh
+      # fails this file when the number written here is not the number the script
+      # derives. MEASURED at the default --jobs 12 on this 48-core box, 2026-08-31:
+      # 134/134 killed. It is a SEPARATE script from mutate-guard.sh rather than an
+      # extension of it, because merging a 15-minute sweep into a 51-minute one buys
+      # nothing and serialises them.
+      - name: "The arm script's 134-mutant set must kill 100% (S13.10, fixed at one)"
+        shell: bash
+        run: bash scripts/mutate_quorum_arm.sh
+
+  # ---------------------------------------------------------------------------
+  # PR-REVIEW-SKILL-002 v2 §13.11 RUNG 1 — the shadow lane.
+  #
+  # "CI runs `--explain` on every PR and records PERMIT/REFUSE [Qn]. Merges nothing."
+  #
+  # THE RUNG'S FALSIFIER WAS RED-VERIFIED BEFORE THIS WAS WRITTEN, which is the
+  # ladder's own precondition ("a rung whose falsifier has never been seen to fail is
+  # a rung with no evidence behind it"). Rung 1's falsifier is *delete any one
+  # `refuse Q<n>` site and the corresponding q-row must turn RED*, and that is exactly
+  # what scripts/mutate_quorum_arm.sh derives and runs — one `drop` and one `flip` per
+  # site, 134/134 killed, already green as Arm 6 of `pr-review-receipt`.
+  #
+  # WHY A SEPARATE JOB AND NOT A SEVENTH ARM.
+  # `pr-review-receipt` carries two mutation sweeps and is allowed 150 minutes. A
+  # recorder appended to it would (a) produce a sample only after both sweeps, on a
+  # runner that may be an hour deep, and (b) never run at all on a PR whose Arm 4 has
+  # already failed — which is EVERY PR without a receipt, i.e. precisely the population
+  # rung 2 needs to measure. A recorder that only records when everything else passed
+  # measures the wrong thing.
+  #
+  # IT CANNOT MERGE, AND NOT ONLY BECAUSE IT PASSES --explain.
+  # `--explain` is the arm script's own guard, and one of Arm 6's 134 mutants disables
+  # it. So the capability is removed as well as unused: this is the first job in the
+  # file to set `permissions:`, and it holds `contents: read`. `gh pr merge` needs
+  # contents WRITE and cannot succeed with it. A flag is a promise; a missing scope is
+  # a fact.
+  #
+  # THE VERDICT GOES ON THE PULL REQUEST, NOT ONLY INTO A LOG.
+  # Operator instruction, 2026-09-01. A verdict visible only in a job log is a verdict
+  # nobody reads: logs expire — this repository has already lost a diagnosis that way,
+  # where a check-run annotation was the only surviving truth — and a reviewer looking
+  # at the pull request cannot see a step summary from a job they never opened. So the
+  # sample is published as a marked, idempotent comment: a push UPDATES it rather than
+  # appending, because a lane that appends is a lane people mute.
+  #
+  # IT IS NOT IN `gate`'s `needs:` AND MUST NOT BE. §13 adds zero rows to §7 — a
+  # refusal to arm is not a block, and the pull request stays exactly as green as it
+  # was. Rung 3 is where a class of PR starts merging on this signal, and it is two
+  # rungs and 30 samples away.
+  # ---------------------------------------------------------------------------
+  pr-review-shadow:
+    runs-on: [self-hosted, X64, Linux, clean-room]
+    # Text and one `gh pr view`; the arm script's own work is a receipt read. The
+    # tool install is the only slow part. 20 is not a measured number, it is a
+    # generous bound on a job with no build in it — and unlike the 150 above, a
+    # timeout here loses one sample, not an hour of runner.
+    timeout-minutes: 20
+    if: github.event_name == 'pull_request'
+    permissions:
+      # `contents: read` is the load-bearing half: `gh pr merge` needs contents WRITE,
+      # so the merge capability is ABSENT, not merely unused by the --explain flag.
+      # `pull-requests: write` buys exactly one thing — the verdict comment below.
+      contents: read
+      pull-requests: write
+    env:
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          # The arm script resolves `git merge-base origin/main <head>` and walks the
+          # commits after the reviewed SHA (§13.3). A shallow clone cannot answer
+          # either, and the script exits 2 — which this job reports as a failure
+          # rather than as a quiet zero.
+          fetch-depth: 0
+
+      - name: Install the tools the receipt guard refuses to run without
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/install_pr_review_tools.sh "$RUNNER_TEMP/pr-review-tools/bin"
+          echo "$RUNNER_TEMP/pr-review-tools/bin" >> "$GITHUB_PATH"
+
+      # Self-test FIRST, for the reason every other arm gives: a recorder whose RED
+      # has never been seen is a recorder whose GREEN is a count of invocations.
+      # Five of the rows are mutation-verified as load-bearing; the rest are held by a
+      # neighbouring branch, which is stated rather than assumed. The row count is in
+      # the step name and check_pr_review_counts.sh derives it, so a row added without
+      # restating it is RED instead of invisible.
+      - name: "Shadow recorder case table: 12 rows, every way a non-sample reads as a sample"
+        shell: bash
+        run: bash scripts/pr_review_shadow_record.sh --self-test
+
+      - name: "§13.11 rung 1: record this PR's quorum verdict (merges nothing)"
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/shadow"
+          # Status is read straight off the script, never through a pipe
+          # (Verification Discipline #1). A REFUSE is exit 0 here — it is a SAMPLE.
+          bash scripts/pr_review_shadow_record.sh \
+            --pr "$PR_NUMBER" --head "$PR_HEAD_SHA" --out "$RUNNER_TEMP/shadow" \
+            | tee "$RUNNER_TEMP/shadow/line.txt"
+          rc=${PIPESTATUS[0]}
+          [ "$rc" -eq 0 ] || exit "$rc"
+          {
+            echo '### §13.11 rung 1 — quorum shadow sample'
+            echo
+            echo '```'
+            cat "$RUNNER_TEMP/shadow/line.txt"
+            echo '```'
+            echo
+            echo 'Shadow mode. This records a verdict and merges nothing;'
+            echo 'a refusal to arm is not a block (§13, §7 unchanged).'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # The publisher has its own case table for the same reason the recorder does, and
+      # its four decision branches are mutation-verified: a publisher that never
+      # updates, one that swallows a failed write, one that skips on a missing body and
+      # one that treats an absent `gh` as a skip are all caught. Self-test first.
+      - name: "Publisher case table: 6 rows, upsert-by-marker and every silent-skip path"
+        shell: bash
+        run: bash scripts/pr_review_shadow_publish.sh --self-test
+
+      - name: Put the verdict on the pull request itself
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            echo '**§13.11 rung 1 — quorum shadow verdict**'
+            echo
+            echo '```'
+            cat "$RUNNER_TEMP/shadow/line.txt"
+            echo '```'
+            echo
+            echo 'Shadow mode: this records a verdict and **merges nothing**. A refusal'
+            echo 'to arm is not a block (§13 adds zero rows to §7) — the pull request is'
+            echo 'exactly as green as it was.'
+          } > "$RUNNER_TEMP/shadow/comment.md"
+          bash scripts/pr_review_shadow_publish.sh \
+            --pr "$PR_NUMBER" --body-file "$RUNNER_TEMP/shadow/comment.md"
+
+      # The sample has to leave the runner or rung 2 has nothing to count. §8 wants 30
+      # before any threshold is set, and `gh run download` over this artifact name is
+      # how they are harvested.
+      - name: Upload the sample
+        if: '!cancelled()'
+        uses: actions/upload-artifact@v7
+        with:
+          name: pr-review-shadow-sample
+          path: ${{ runner.temp }}/shadow/
+          retention-days: 90
+          if-no-files-found: warn
+
+  # ---------------------------------------------------------------------------
+  # THE SIGNER §4.3 NAMES AND NOTHING IMPLEMENTED.
+  #
+  # §4.3: the secret half "is held by whoever runs the reviewer ... and a copy is
+  # escrowed in the repository secret PR_REVIEW_SIGNING_KEY_B64 ... so A CI SIGNER
+  # MATERIALISES IT BEFORE USE." Measured 2026-09-01: that secret is real (created
+  # 2026-08-31) and `grep -rn PR_REVIEW_SIGNING_KEY .github/workflows/` matched only
+  # COMMENTS. An escrowed key with no consumer cannot sign anything — which is why the
+  # repository holds exactly ONE receipt and every PR records `REFUSE [Q1]`.
+  #
+  # WHY THIS EXISTS AT ALL, AND WHY THE CUTOFF BELOW DEPENDS ON IT. The review is
+  # performed by an agent, on the box a human runs it on, and the secret half is
+  # deliberately not there. So the halves are produced in two places: the agent writes
+  # the CONTENT, this attaches the SIGNATURE. Without it a reviewer CANNOT produce a
+  # valid receipt, and `pr-review-present` below would be a required check whose only
+  # remedy is impossible — the precise shape of `apr test llm`, advertised in --help
+  # and permanently unreachable because its own feature was undeclared.
+  #
+  # It pushes ONE file and never force-pushes. Forks get no secret, so it skips them
+  # rather than failing them.
+  # ---------------------------------------------------------------------------
+  pr-review-sign:
+    runs-on: [self-hosted, X64, Linux, clean-room]
+    timeout-minutes: 15
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout the PR head
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+
+      - name: Install the tools the signer refuses to run without
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/install_pr_review_tools.sh "$RUNNER_TEMP/pr-review-tools/bin"
+          echo "$RUNNER_TEMP/pr-review-tools/bin" >> "$GITHUB_PATH"
+
+      # Self-test first, and it is hermetic: it generates its own throwaway keypair, so
+      # every branch runs WITHOUT the repository secret. Three of its eight rows are
+      # mutation-verified as independently load-bearing; the script's header records
+      # which two are diagnostics rather than enforcement, so "8 rows" is not read as
+      # "8 rules".
+      - name: "Signer case table: 8 rows on a throwaway keypair"
+        shell: bash
+        run: bash scripts/pr_review_sign_receipt.sh --self-test
+
+      - name: Sign this PR's receipt, if it has an unsigned one
+        shell: bash
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_REVIEW_SIGNING_KEY_B64: ${{ secrets.PR_REVIEW_SIGNING_KEY_B64 }}
+        run: |
+          set -euo pipefail
+          root="evidence/pr-review/$PR_NUMBER"
+          if [ ! -d "$root" ]; then
+            echo "no receipt directory $root — nothing to sign."
+            echo "The review is still owed; the S13.11 shadow lane records its absence."
+            exit 0
+          fi
+          signed_any=0
+          # A receipt with a document and no signature is the only thing this touches.
+          while IFS= read -r rcpt; do
+            d=$(dirname "$rcpt")
+            [ -f "$rcpt.minisig" ] && { echo "already signed: $d"; continue; }
+            if [ -z "${PR_REVIEW_SIGNING_KEY_B64:-}" ]; then
+              echo "::error::$d carries an UNSIGNED receipt and PR_REVIEW_SIGNING_KEY_B64 is empty."
+              echo "::error::A receipt that cannot be signed cannot be verified by Arm 4."
+              exit 1
+            fi
+            bash scripts/pr_review_sign_receipt.sh "$d"
+            signed_any=1
+          done < <(find "$root" -name receipt.intoto.jsonl -type f)
+          echo "signed_any=$signed_any" >> "$GITHUB_ENV"
+
+      - name: Commit the signature back to the PR branch
+        if: env.signed_any == '1'
+        shell: bash
+        env:
+          PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: |
+          set -euo pipefail
+          git config user.name  "aprender-pr-review-signer"
+          git config user.email "noreply@anthropic.com"
+          git add evidence/pr-review
+          git commit -m "chore(pr-review): sign this PR's receipt (PR-REVIEW-SKILL-002 v2 §4.3 CI signer)"
+          # Never --force. A race with the author's own push fails this step and the
+          # next run signs it; a force-push would silently discard their commit.
+          git push origin "HEAD:$PR_HEAD_REF"
+
+  # ---------------------------------------------------------------------------
+  # RECEIPT PRESENCE, AS A FAST REQUIRED CHECK.
+  #
+  # Arm 4 already existed and already treated a missing receipt as RED — but it lives
+  # in `pr-review-receipt`, which carries two mutation sweeps, is allowed 150 minutes,
+  # and is in no `needs:` list. So its verdict blocked nothing, and on 2026-09-01 it
+  # TIMED OUT at 150.85 min under fleet contention. Putting THAT job in `gate` would
+  # make every pull request in the repository wait on a 2.5-hour sweep.
+  #
+  # This job is Arm 4 and nothing else: text, minisign, and one `git merge-base`. It is
+  # the one that goes in `gate`'s `needs:`.
+  #
+  # It arms FORWARD. `check_pr_review_arm4.sh` grandfathers pull requests below
+  # PR_REVIEW_CUTOFF, because the measured receipt rate on the day this landed was 1
+  # across 24 open PRs — arming it retroactively is not a ratchet, it is an outage, and
+  # this repository has already had a day where one armed gate blocked all nine open
+  # PRs.
+  # ---------------------------------------------------------------------------
+  pr-review-present:
+    runs-on: [self-hosted, X64, Linux, clean-room]
+    timeout-minutes: 20
+    if: github.event_name == 'pull_request'
+    env:
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          # base_sha resolves through `git merge-base origin/main <head>`, which a
+          # shallow clone cannot answer; the script exits 2 (the BOX cannot answer)
+          # rather than 1, so a shallow checkout is never read as a missing receipt.
+          fetch-depth: 0
+
+      - name: Install the tools Arm 4 refuses to run without
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/install_pr_review_tools.sh "$RUNNER_TEMP/pr-review-tools/bin"
+          echo "$RUNNER_TEMP/pr-review-tools/bin" >> "$GITHUB_PATH"
+
+      - name: "Arm 4 case table: 10 rows, both polarities of the cutoff"
+        shell: bash
+        run: bash scripts/check_pr_review_arm4.sh --self-test
+
+      - name: This PR's own receipt, under the repository's own default key
+        shell: bash
+        run: bash scripts/check_pr_review_arm4.sh
+
   gate:
     runs-on: [self-hosted, X64, Linux, clean-room]
-    needs: [ci, workspace-test, mutants, guard-runner-labels]
+    needs: [ci, workspace-test, mutants, guard-runner-labels, pr-review-present]
     if: always()
     steps:
       - name: Check required jobs
@@ -1390,6 +2237,25 @@ jobs:
             exit 1
           fi
           echo "mutants result: $MUT (success/skipped both pass)"
+          # Receipt presence (PR-REVIEW-SKILL-002 v2 S8 `receipt_presence`, fixed at
+          # 100% with no ratchet). Adding a job to `needs:` makes this job WAIT for it;
+          # it does not make it ENFORCE it — every other required job above is read
+          # explicitly, and a clause omitted here is a job whose failure gate cannot
+          # see. `skipped` passes for the same reason it does for mutants: the job
+          # carries `if: github.event_name == 'pull_request'` and does not run on
+          # push-to-main. Only an explicit `failure` blocks.
+          #
+          # The check itself arms FORWARD — check_pr_review_arm4.sh grandfathers pull
+          # requests below PR_REVIEW_CUTOFF — so this does not retroactively block the
+          # 24 pull requests that were open when it landed.
+          RCPT="${{ needs.pr-review-present.result }}"
+          if [ "$RCPT" = "failure" ]; then
+            echo "pr-review-present (this PR's own review receipt) failed: $RCPT"
+            echo "S6.3: a missing receipt is RED, not skipped. Run the pr-review skill on"
+            echo "this PR and commit the receipt; the pr-review-sign job signs it."
+            exit 1
+          fi
+          echo "pr-review-present result: $RCPT (success/skipped both pass)"
           echo "All required jobs passed"
 
   # Mutation testing — DIFF-SCOPED + BLOCKING on PRs (PMAT build-system audit gap #1).
@@ -1531,7 +2397,11 @@ jobs:
               # the host toolchain -- but the guard reads workflow text and cannot
               # see that, and "the guard cannot tell" is not a reason to exempt.
               # Declaring the root makes it true rather than merely argued.
-              export CARGO_INSTALL_ROOT=/tmp/cargo-mutants-root
+              # /usr/local, not /tmp: this root is destroyed with the --rm
+              # container either way, but /tmp is what paiml/infra's
+              # shared-$HOME guard reads as boot-volatile, and "the guard
+              # cannot tell" is not a reason to keep the ambiguous spelling.
+              export CARGO_INSTALL_ROOT=/usr/local/cargo-mutants-root
               export PATH="$CARGO_INSTALL_ROOT/bin:$PATH"
               if ! cargo mutants --version > /dev/null 2>&1; then
                 echo "cargo-mutants absent from image; installing"

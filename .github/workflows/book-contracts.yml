@@ -131,7 +131,7 @@ jobs:
         run: |
           FAIL=0
           for f in book/src/chapters/ch*.md; do
-            if ! head -1 "$f" | grep -q "PCU:"; then
+            if ! grep -q "PCU:" <<< "$(head -1 "$f")" ; then
               echo "::error::No PCU frontmatter: $f"
               FAIL=1
             fi
@@ -145,7 +145,7 @@ jobs:
           FAIL=0
           for md in $(find book/src -name "*.md" -not -name "SUMMARY.md"); do
             hdr=$(head -1 "$md")
-            if echo "$hdr" | grep -q 'PCU:'; then
+            if grep -q 'PCU:' <<< "$hdr" ; then
               CONTRACT=$(echo "$hdr" | grep -oE 'contract:[[:space:]]*[^ |]+' | sed 's/^contract:[[:space:]]*//')
               if [ -z "$CONTRACT" ]; then
                 echo "::error::$md has PCU header but no contract: field"

@@ -1,0 +1,6 @@
+{
+  "_type": "https://in-toto.io/Statement/v0.1",
+  "subject": [ { "digest": { "sha1": "745fa8588783413669f4ac6170d4645e39c15be4" } } ],
+  "predicateType": "https://paiml.dev/attestations/pr-review/v2",
+  "predicate": {}
+}

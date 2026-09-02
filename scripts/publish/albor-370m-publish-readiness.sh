@@ -136,8 +136,8 @@ fi
 # Gate 6: smoke generation (model produces output, not garbage)
 echo "Gate 6: smoke generation (apr run)"
 SMOKE=$("$APR_BIN" run "$CKPT" "def fibonacci(n):" --max-tokens 32 --temperature 0.0 2>&1 | head -50)
-if echo "$SMOKE" | grep -qE "^(Output|generation|tokens):" 2>/dev/null; then
-    if echo "$SMOKE" | grep -qE "[a-zA-Z]{5,}" 2>/dev/null; then
+if grep -qE "^(Output|generation|tokens):" 2>/dev/null <<< "$SMOKE" ; then
+    if grep -qE "[a-zA-Z]{5,}" 2>/dev/null <<< "$SMOKE" ; then
         ok "smoke generation produced text output"
     else
         warn "smoke generation produced output but no English/code-like text - may be degenerate"

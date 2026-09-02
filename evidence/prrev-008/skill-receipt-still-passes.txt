@@ -1,0 +1,36 @@
+PRREV-008 — the reviewer's OWN accepted receipt, re-checked against the four new rules.
+
+A guard hardening is only half verified by the fixtures it adds. The other half is that
+it did not start rejecting correct work — the over-reach the discrimination rows exist
+to catch, and the failure mode S7's five objective classes were narrowed to avoid.
+
+SUBJECT: evidence/prrev-005/accepted-receipt.intoto.jsonl on origin/feat/prrev-007-backtest
+— the receipt PRREV-005's skill actually emitted and the guard accepted, before any of
+these rules existed.
+
+  verdict                     DEGRADED
+  pmat.status                 consulted
+    complexity_delta          present, array
+    tdg_delta                 present, array
+    satd_introduced           present, array
+    duplication_hits          present, array          <- the S3.A vacuity rule passes
+  cuda.status                 consulted
+    queries                   1                       <- the F2 rule passes (was [] -> RED)
+    queries[0].q              non-empty
+    queries[0].result         "found"
+    queries[0].excerpt_sha256 313d8332c9916f95...     <- found WITH a digest
+  crux.status                 not-triggered
+    trigger_reason            "the diff changes no CLI subcommand or flag, no HTTP route,
+                               no MCP tool, no config key and no output format"
+                              and the diff adds .claude/skills/pr-review/SKILL.md, which
+                              is outside B4's shipped surface, so neither the S3.C
+                              surface route nor the S3.C.1 claim route fires
+  mutation.status             unreachable             <- the vacuity rule applies only to
+    attempted                 0                          `consulted`, and `unreachable`
+                                                         with verdict DEGRADED is the
+                                                         honest path S3.0 row 3 defines
+
+So all four of PRREV-008's rules are satisfied by the receipt the skill already produces.
+The rules add obligations the reviewer was ALREADY meeting and the guard was not
+checking — which is the shape a hardening should have, and the reason each of the six new
+RED fixtures had to be constructed rather than found.

@@ -96,7 +96,53 @@ RATIO_GAP_RE='(([A-Za-z]+([.-][A-Za-z]+)*|[A-Za-z]{1,3}\.)[[:space:]]+){0,5}'
 # DOT all disqualify, and `v1.8x` has no position left to match from.
 RATIO_LEFT_RE='(^|[^0-9A-Za-z.])'
 RATIO_RE="${RATIO_LEFT_RE}[0-9]+(\.[0-9]+)?${MULT_RE}[[:space:]]*${RATIO_GAP_RE}${COMPETITOR_RE}"
-TPUT_RE='[0-9]{2,}\+?[[:space:]]*tok/s'
+# THE QUANTIFIER WAS COUNTING THE WRONG DIGITS, AND IT MADE THIS PATTERN BLIND
+# TO THE COMMONEST SPELLING OF A THROUGHPUT FIGURE.
+#
+# `[0-9]{2,}` had to match the two digits IMMEDIATELY LEFT of the unit. In
+# `X.Y tok/s` -- one fractional digit, which is how essentially every rate in
+# this tree is written -- the only digit adjacent to the space is `Y`, and the
+# `.` in front of it gives `[0-9]{2,}` nowhere to start. So:
+#
+#     8.61 tok/s   CAUGHT  by accident, on the `61`
+#     57.5 tok/s   MISSED
+#     132.3 tok/s  MISSED   <- a three-digit rate, still invisible
+#     100  tok/s   CAUGHT
+#
+# THE MEASURED ESCAPE, #2787 (crates/aprender-serve/src/quantize/batched_matmul.rs):
+# the module doc stated `prefill **8.61 tok/s** against decode **7.76 tok/s**`
+# on line 10 and an imported llama.cpp figure, `53.8-57.5 tok/s`, on line 12.
+# The guard went RED naming line 10 ONLY. An engineer clearing exactly what the
+# guard named would have shipped line 12, and did -- it was removed by review,
+# not by this gate.
+#
+# THE WIDENING IS "AT LEAST TWO SIGNIFICANT DIGITS", NOT "ANY DIGITS", AND THE
+# DIFFERENCE WAS MEASURED RATHER THAN ARGUED. Over the 6911-file universe:
+#
+#     [0-9]{2,}                     (before)   0 hits beyond the baseline
+#     ([0-9]{2,}|[0-9]+\.[0-9]+)               68 hits
+#     [0-9]+(\.[0-9]+)?             (any)      80 hits
+#
+# The 68 are the decimal class the old quantifier could not read, and they are
+# recorded as aperture reveals -- see the ratchet at the tail of this file.
+# Twelve of the eighty are BARE SINGLE DIGITS, and that class is deliberately
+# left OUT: two of them are `reports `0 tok/s` for a perfectly healthy server`,
+# prose ABOUT a number rather than a claim, and a bare `N tok/s` carries the
+# worst claim-to-prose ratio of anything measured here. A rate worth stating is
+# stated to two figures.
+#
+# THE LEFT BOUNDARY is the same one RATIO_RE carries, and for the same reason:
+# without it the regex can restart one character into a version-like string.
+# It was measured to change NOTHING in this tree (the 68-hit set is identical
+# with and without it), so it is free safety rather than a guess.
+#
+# THE UNIT LIST IS DELIBERATELY NOT WIDENED. Adding `tokens/s|tok/sec` was
+# measured too: it produces exactly four more hits, all four of them
+# `50us/token = 20,000 tokens/sec` -- a unit-conversion identity in a doc
+# comment, which is arithmetic, not a claim. Four hits, four false. A
+# sub-pattern whose only new hits are false is not evidence of a wider defect
+# class.
+TPUT_RE="${RATIO_LEFT_RE}([0-9]{2,}|[0-9]+\.[0-9]+)\+?[[:space:]]*tok/s"
 
 # A PLACEHOLDER THAT HAS BEEN GIVEN A UNIT IS READ AS A MEASUREMENT. PERF-010's
 # second half, and a class RATIO_RE above has nothing to say about. `Throughput:
@@ -224,9 +270,9 @@ if [ "${1:-}" = "--selftest" ]; then
     t=0; f=0
     check() { # check <expect match|nomatch> <line>
         local want="$1" line="$2" got=nomatch
-        if printf '%s\n' "$line" | grep -qE "$CLAIM_RE" \
-           && printf '%s\n' "$line" | grep -qE "$RATIO_RE|$TPUT_RE|$DIAGNOSIS_RE" \
-           && ! printf '%s\n' "$line" | grep -qE "$TARGET_RE"; then got=match; fi
+        if grep -qE "$CLAIM_RE" <<< "$line" \
+           && grep -qE "$RATIO_RE|$TPUT_RE|$DIAGNOSIS_RE" <<< "$line" \
+           && ! grep -qE "$TARGET_RE" <<< "$line" ; then got=match; fi
         t=$((t+1))
         if [ "$got" = "$want" ]; then printf '  ok    %-8s %s\n' "$want" "$(printf '%s' "$line" | cut -c1-64)"
         else printf '  FAIL  want %-8s got %-8s %s\n' "$want" "$got" "$(printf '%s' "$line" | cut -c1-52)"; f=$((f+1)); fi
@@ -345,10 +391,44 @@ if [ "${1:-}" = "--selftest" ]; then
     check_ratio nomatch 'the decode ratio must be >= 1.0x llama.cpp'           # a threshold
     check_ratio nomatch 'Ollama runs at 2.9x the batch size'                   # competitor BEFORE the ratio
     check_ratio nomatch 'see section 2 for the llama loader'                   # no ratio at all
+    # THE THROUGHPUT HALF (#2787). check_ratio applies RATIO_RE|TPUT_RE, so these
+    # rows exercise TPUT_RE directly. The first two are the measured escape,
+    # verbatim from crates/aprender-serve/src/quantize/batched_matmul.rs:10 and
+    # :12 -- the guard named the first and was blind to the second, which is the
+    # whole subject of the widening. Assert both, or a future narrowing back to
+    # `[0-9]{2,}` leaves a table that still passes.
+    check_ratio match   'prefill **8.61 tok/s** against decode **7.76 tok/s**'  # was CAUGHT (on the 61)
+    check_ratio match   '53.8-57.5 tok/s prefill because it batches.'           # was MISSED -- the escape
+    check_ratio match   '| GPU | 1.5B | 132.3 tok/s |'                          # 3 digits, still missed before
+    check_ratio match   'Achieves Ollama-parity: 100+ tok/s'                    # integer + the `+` idiom
+    check_ratio match   'sustained 851.8 tok/s on the 1.5B model'
+    # MUST NOT MATCH. The bare single-digit class is OUT by decision, not by
+    # accident -- see the header. Two live lines in this tree are prose ABOUT a
+    # rate, and a guard that reds them teaches people to stop describing bugs.
+    check_ratio nomatch 'reports `0 tok/s` for a perfectly healthy server'
+    check_ratio nomatch 'the CPU SIMD path runs at ~5 tok/s'
+    check_ratio nomatch 'PASS: >= 10 tok/s'                                     # TARGET_RE -- a bar
+    check_ratio nomatch 'the tok/s column is empty'                             # a unit with no figure
     # VACUITY. A table that shrank to nothing would sweep clean, and both halves
     # must stay populated -- an all-positive table proves nothing about noise.
-    if [ "$rt" -lt 27 ]; then
-        printf '  FAIL  ratio table has %s row(s); at least 27 are required\n' "$rt"; rf=$((rf+1))
+    if [ "$rt" -lt 36 ]; then
+        printf '  FAIL  ratio table has %s row(s); at least 36 are required\n' "$rt"; rf=$((rf+1))
+    fi
+    # The escape must be ASSERTED against TPUT_RE ALONE, not against the union:
+    # if a future edit moved the coverage into RATIO_RE the rows above would
+    # still pass while the throughput detector had gone back to sleep.
+    if ! grep -qE "$TPUT_RE" <<< '53.8-57.5 tok/s prefill because it batches.'; then
+        printf '  FAIL  TPUT_RE cannot read a one-fractional-digit rate -- #2787 reopens\n'; rf=$((rf+1))
+    fi
+    # The probe is a VARIABLE, not an inline herestring. bashrs -- which this
+    # repo mandates over shellcheck -- reads the word `for` inside a herestring
+    # that shares a line with `then` as a malformed for-loop (SC2135), and
+    # scripts/ is gated on a SHRINK-ONLY bashrs error count, so one false error
+    # here is one someone else has to triage. Same class as the \042 dance for
+    # LIT and the OB/CB dance for markdown checkboxes; identical behaviour.
+    fp_probe='reports `0 tok/s` for a perfectly healthy server'
+    if grep -qE "$TPUT_RE" <<< "$fp_probe"; then
+        printf '  FAIL  TPUT_RE widened past two significant digits -- see the header\n'; rf=$((rf+1))
     fi
     # The two spellings PERF-049 was opened for must be ASSERTED, not merely
     # present: if a future edit narrows RATIO_RE back to ASCII-adjacent, this
@@ -492,9 +572,23 @@ fi
 #     mattered most: §9's whole point is that a claim a USER READS is the
 #     defect, and book/ is where users read. Five live `2.93x Ollama` claims sat
 #     in book/ while this guard reported PASS.
+# (d) ROOT-LEVEL *.md WAS NOT IN THE UNIVERSE EITHER, and it is where README.md is.
+#     da069a25f published `2.93x Ollama` to book/src/examples/showcase-benchmark.md AND
+#     to README.md. F6 brought the first into scope; the second stayed out of BOTH this
+#     universe and B4's, and F9 measured the hole rather than widening it, because a
+#     scope change that moves only one of the two definitions puts them out of step
+#     silently. This commit moves both. README.md is the first page a user reads, which
+#     is (c)'s own argument applied to the page above the book.
+#
+#     `:(glob)` IS LOAD-BEARING. A bare `'*.md'` pathspec matches at every depth -- 3460
+#     files here against 6 -- so it would pull in tests/, fixtures/ and evidence/ and
+#     re-admit the docs/specifications/ prose the grep below excludes by name. The
+#     `:(glob)` magic makes `*` stop at `/`, so the pathspec means what it reads as.
+#     `root-md-anchor-removed` in scripts/mutate-guard.sh mutates B4's matching anchor.
 mapfile -t SRC < <(
     { git ls-files 'crates/*/src/**/*.rs' 'crates/*/src/*.rs' 'src/**/*.rs' 'src/*.rs' \
-                   'book/**/*.md' 'book/*.md' 'docs/**/*.md' 'docs/*.md' 2>/dev/null
+                   'book/**/*.md' 'book/*.md' 'docs/**/*.md' 'docs/*.md' \
+                   ':(glob)*.md' 2>/dev/null
       find crates/*/src src book docs -type f \( -name '*.rs' -o -name '*.md' \) 2>/dev/null
     } | LC_ALL=C sort -u \
     | grep -vE '(^|/)(tests?|benches|examples)/' \

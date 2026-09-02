@@ -1,0 +1,6 @@
+{
+  "_type": "https://in-toto.io/Statement/v1",
+  "subject": [ { "digest": { "gitCommit": "745fa8588783413669f4ac6170d4645e39c15b" } } ],
+  "predicateType": "https://paiml.dev/attestations/pr-review/v2",
+  "predicate": {}
+}

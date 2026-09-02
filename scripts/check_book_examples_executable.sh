@@ -75,7 +75,7 @@ rewrite_destructive() {
     # decrypt, rm, upload, stamp).
     local first
     first=$(printf '%s\n' "$code" | sed -n '1p')
-    if printf '%s\n' "$first" | grep -qE '^apr\s+[a-z]'; then
+    if grep -qE '^apr\s+[a-z]' <<< "$first" ; then
         local cmd
         cmd=$(printf '%s\n' "$first" | awk '{print $2}')
         echo "apr $cmd --help"
@@ -113,7 +113,7 @@ while IFS= read -r record; do
 
     case "$cost" in
         trivial)
-            if [ -z "$APR_BIN" ] && printf '%s' "$code" | grep -qE '^apr\b'; then
+            if [ -z "$APR_BIN" ] && grep -qE '^apr\b' <<< "$code" ; then
                 skip=$((skip + 1))
                 echo "[SKIP] $path :: trivial (apr binary not available)"
                 continue
@@ -168,7 +168,7 @@ while IFS= read -r record; do
             if [ -n "$model" ] \
                 && ! [ -e "$model" ] \
                 && [ -e "$MODELS_DIR/$model" ] \
-                && ! printf '%s' "$run_code" | grep -qF "$MODELS_DIR/$model"; then
+                && ! grep -qF "$MODELS_DIR/$model" <<< "$run_code" ; then
                 run_code=$(printf '%s' "$run_code" | sed "s#\\b$model\\b#$MODELS_DIR/$model#g")
             fi
             if timeout 60 bash -c "$run_code" >/dev/null 2>&1; then

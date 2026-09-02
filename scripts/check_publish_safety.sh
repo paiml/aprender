@@ -42,7 +42,7 @@ echo -n "  Cargo config leak check... "
 checked=$((checked + 1))
 config_leak=0
 for pkg in aprender apr-cli; do
-    if cargo package -p "$pkg" --list 2>/dev/null | grep -q '\.cargo/config'; then
+    if grep -q '\.cargo/config' <<< "$(cargo package -p "$pkg" --list 2>/dev/null)" ; then
         if [ "$config_leak" -eq 0 ]; then
             echo "FAIL"
         fi

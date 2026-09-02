@@ -82,7 +82,7 @@ prune_target_dirs() {
 
         if [ "$mode" = "stale" ]; then
             # Only prune if nothing touched in STALE_DAYS days
-            if find "$tgt" -maxdepth 0 -mtime +"$STALE_DAYS" | grep -q .; then
+            if grep -q . <<< "$(find "$tgt" -maxdepth 0 -mtime +"$STALE_DAYS")" ; then
                 log "pruning stale target: $tgt"
                 rm -rf --one-file-system "$tgt" 2>/dev/null || sudo rm -rf --one-file-system "$tgt" 2>/dev/null || true
             fi

@@ -52,6 +52,26 @@ ignore = [
     # a four-major jump on a test-only dep. Tracked separately; revisit before
     # anything starts enabling `runtime`.
     "RUSTSEC-2026-0222",
+    # wasmtime 43.0.2 - "Filesystem sandbox escape when paths or symlinks
+    # contain trailing slashes", CVSS 8.8 HIGH. Published 2026-08-20; first
+    # broke the security gate on 2026-08-31, taking `ci / gate` -- a REQUIRED
+    # check -- red on every open pull request at once (#2799 through #2803).
+    #
+    # Highest severity in this cluster so far, so the reachability claim was
+    # re-verified rather than inherited from the entries above:
+    #   cargo tree -p aprender                        -> 0 wasmtime paths
+    #   cargo tree -p aprender --no-default-features  -> 0 wasmtime paths
+    #   cargo tree -p apr-cli                         -> 0 wasmtime paths
+    # wasmtime is optional and gated behind aprender-test-lib's `runtime`
+    # feature, which nothing in the workspace enables. No shipped artifact
+    # links it, and nothing here runs untrusted wasm with a preopened
+    # directory, which is the only way the escape is reachable at all.
+    #
+    # There is NO fixed 43.x: the advisory's ranges are >=24.0.13,<25,
+    # >=36.0.14,<37, >=46.0.3,<47 and >=47.0.4. So the real fix is the same
+    # three-major-version bump the -0222 note above already defers, and it
+    # must land before anything starts enabling `runtime`.
+    "RUSTSEC-2026-0269",
 
     # rustls-webpki 0.101.7 — transitive via aws-smithy-http-client (rustls 0.21).
     # Direct 0.103.x path already bumped to >=0.103.12. The 0.101.7 pin lives
@@ -117,4 +137,39 @@ ignore = [
     #   cargo tree --workspace                   | grep -cE "h2 v0.3"              -> 0
     # REMOVE WHEN aws-smithy-http-client drops hyper 0.14.
     "RUSTSEC-2026-0258",  # h2 0.3.27 via optional s3 feature only
+
+    # manzana 0.2.0 stubbed cryptography. CONTAINMENT ONLY - remove per the
+    # condition at the bottom of this block, which is NOT "when a new manzana
+    # ships".
+    #
+    # The advisory is about `manzana::secure_enclave::SecureEnclaveSigner`, whose
+    # sign() derives a "signature" from public values only and whose verify()
+    # merely recomputes sign() and compares. aprender does not touch any of it.
+    # Reachability measured on a clean origin/main worktree, x86_64 Linux, using
+    # the absolute cargo binary (a `cargo` shell function on the dev box shadows
+    # it and silently redirects CARGO_TARGET_DIR):
+    #   cargo tree -p aprender-gpu                  | grep -c manzana -> 0
+    #   cargo tree -p aprender-gpu --features metal | grep -c manzana -> 0
+    #   cargo tree --workspace                      | grep -c manzana -> 0
+    #   git grep -l 'secure_enclave|SecureEnclave' -- '*.rs'          -> 0 files
+    # The middle line is the load-bearing one: manzana is BOTH optional and
+    # declared under [target.'cfg(target_os = "macos")'.dependencies], so
+    # enabling `metal` on Linux still pulls in nothing. aprender's only three
+    # call sites are `manzana::metal::*` in aprender-gpu/src/backend/mod.rs,
+    # every one behind cfg(all(target_os = "macos", feature = "metal")).
+    # As with the h2 entry above, cargo-deny already passes without an exemption
+    # because it walks the ACTIVATED graph; cargo-audit scans Cargo.lock, which
+    # lists target- and feature-gated deps unconditionally.
+    #
+    # WHY AN IGNORE RATHER THAN AN UPGRADE. Both published versions (0.1.0 and
+    # 0.2.0) are YANKED, so there is nothing to bump to - `max_version` on
+    # crates.io reads 0.0.0. More importantly the advisory carries
+    # `[versions] patched = []`, which means NO version is considered fixed:
+    # publishing a corrected manzana does NOT clear this gate on its own. Only
+    # amending the upstream advisory to name a patched range does.
+    #
+    # REMOVE WHEN either the advisory gains a patched range and this workspace is
+    # on a version inside it, or the manzana dependency is dropped from
+    # aprender-gpu entirely. Publishing a new manzana alone is NOT the condition.
+    "RUSTSEC-2026-0273",  # manzana 0.2.0 stubbed crypto; unreachable here, see above
 ]
