@@ -482,9 +482,9 @@ def _ttft_over_e2e_rows(rows):
 
 
 def _executor_side(work, meta, side, n_predict, witnesses=None):
+    """One lane of one band, read from the replicate files the producer named."""
     witnesses = witnesses or {}
     meta_c = meta.get("concurrency")
-    """One lane of one band, read from the replicate files the producer named."""
     paths = [p for p in _replicate_paths(work, meta, side) if os.path.exists(p)]
     if not paths:
         return None, []
