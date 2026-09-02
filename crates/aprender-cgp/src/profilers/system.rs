@@ -236,74 +236,140 @@ mod tests {
         let _ = read_cpu_temperature();
     }
 
-    /// How many GPUs `nvidia-smi` actually REPORTS -- not whether the binary exists.
+    /// How many GPUs `nvidia-smi` actually REPORTS -- not whether the binary exists,
+    /// and never at the cost of hanging the suite.
     ///
-    /// `which::which("nvidia-smi").is_ok()` was the precondition for both GPU tests below,
-    /// and it is the wrong question. The intel clean-room runner has the NVIDIA userland
-    /// installed and no visible device, so `nvidia-smi` resolves, the tests decided a GPU
-    /// was present, the collectors correctly returned `None`, and Coverage Nightly failed
-    /// with "nvidia-smi exists but no health data" -- a red build reporting an ENVIRONMENT
-    /// fact as a code defect. A binary on `PATH` is not a device on the bus.
+    /// `which::which("nvidia-smi").is_ok()` was the precondition for both GPU tests, and it
+    /// is the wrong question. The intel clean-room runner has the NVIDIA userland installed
+    /// and no visible device, so `nvidia-smi` resolved, the tests decided a GPU was present,
+    /// the collectors correctly returned `None`, and Coverage Nightly failed with
+    /// "nvidia-smi exists but no health data" -- a red build reporting an ENVIRONMENT fact as
+    /// a code defect. A binary on `PATH` is not a device on the bus.
+    ///
+    /// THREE THINGS AN INDEPENDENT REVIEW REFUSED THE FIRST VERSION OVER:
+    ///
+    /// 1. A WEDGED DRIVER MUST NOT HANG CI. `Command::output()` blocks forever, and a hung
+    ///    `nvidia-smi` is a real state -- `which` could never hang, so a naive probe is a
+    ///    REGRESSION in failure mode. We spawn, poll `try_wait` against a deadline, and kill.
+    /// 2. THE OUTPUT IS PARSED AS A WHITELIST. Counting "non-empty lines" accepts a licence
+    ///    banner or an update notice as a GPU. `--query-gpu=index` emits integers; a line
+    ///    counts only if it PARSES as one. Blacklists fail open on their complement.
+    /// 3. ONE PROBE, ONE CALL. Calling it from two tests admits a TOCTOU where a transient
+    ///    makes both skip and the pair asserts nothing. There is now one test.
     fn gpus_reported() -> usize {
-        let Ok(out) = std::process::Command::new("nvidia-smi")
-            .args(["--query-gpu=name", "--format=csv,noheader"])
-            .output()
+        use std::process::{Command, Stdio};
+        use std::time::{Duration, Instant};
+
+        let Ok(mut child) = Command::new("nvidia-smi")
+            .args(["--query-gpu=index", "--format=csv,noheader"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
         else {
             return 0; // not installed, or not executable: no device either way
         };
-        if !out.status.success() {
-            return 0; // installed, but the driver has nothing to report
+
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            match child.try_wait() {
+                Ok(Some(status)) => {
+                    if !status.success() {
+                        return 0; // installed, but the driver has nothing to report
+                    }
+                    break;
+                }
+                Ok(None) => {
+                    if Instant::now() >= deadline {
+                        let _ = child.kill();
+                        let _ = child.wait();
+                        return 0; // wedged driver: treat as no device, never hang
+                    }
+                    std::thread::sleep(Duration::from_millis(50));
+                }
+                Err(_) => return 0,
+            }
         }
+
+        let Ok(out) = child.wait_with_output() else {
+            return 0;
+        };
         String::from_utf8_lossy(&out.stdout)
             .lines()
-            .filter(|l| !l.trim().is_empty())
+            .filter(|l| l.trim().parse::<u32>().is_ok())
             .count()
     }
 
-    /// When a GPU IS reported, the collectors must return sane data.
+    /// One probe, one branch, no skips.
     ///
-    /// Paired with `test_gpu_collectors_are_none_without_a_reporting_gpu` so that exactly
-    /// one of the two is meaningful on any given box and NEITHER is vacuous: a machine
-    /// with a GPU proves the parse works, a machine without one proves the absence path
-    /// returns `None` instead of panicking or fabricating a reading.
+    /// An earlier version was a PAIR of tests, each calling the probe and early-returning
+    /// when the host was the other kind. A review found two defects in that shape: the two
+    /// probe calls admit a TOCTOU where a transient failure makes BOTH tests skip and the
+    /// pair asserts nothing at all, and the `eprintln!` explaining a skip is swallowed by
+    /// `cargo test` without `--nocapture`, so a silent skip is invisible in CI.
+    ///
+    /// One test, probing once, cannot skip: exactly one branch executes on every host.
+    ///
+    /// WHAT EACH BRANCH PROVES, AND WHAT IT DOES NOT. The GPU branch proves the collectors
+    /// PARSE -- it is the only branch that can, and a parser regression fails it here. The
+    /// no-GPU branch proves the ABSENCE path returns `None` rather than fabricating a
+    /// reading or panicking. It cannot distinguish "no GPU" from "broken parser", because
+    /// both yield `None`; that is inherent to the branch and is why parse correctness is
+    /// asserted on the other side rather than claimed on this one.
     #[test]
-    fn test_gpu_collectors_have_valid_data_when_a_gpu_is_reported() {
-        if gpus_reported() == 0 {
-            eprintln!(
-                "skip: nvidia-smi reports no GPU on this host; the paired negative test covers it"
+    fn test_gpu_collectors_match_what_nvidia_smi_reports() {
+        if gpus_reported() > 0 {
+            let health = collect_system_health().expect("a reporting GPU must yield health data");
+            assert!(
+                health.gpu_temperature_celsius > 0.0,
+                "GPU temp should be > 0"
             );
-            return;
-        }
-        let health = collect_system_health().expect("a reporting GPU must yield health data");
-        assert!(
-            health.gpu_temperature_celsius > 0.0,
-            "GPU temp should be > 0"
-        );
-        assert!(
-            health.gpu_memory_total_mb > 0.0,
-            "GPU memory total should be > 0"
-        );
+            assert!(
+                health.gpu_memory_total_mb > 0.0,
+                "GPU memory total should be > 0"
+            );
 
-        let vram = collect_vram().expect("a reporting GPU must yield VRAM data");
-        assert!(vram.vram_total_mb > 0.0, "VRAM total should be > 0");
-        assert!(vram.vram_utilization_pct >= 0.0 && vram.vram_utilization_pct <= 100.0);
+            let vram = collect_vram().expect("a reporting GPU must yield VRAM data");
+            assert!(vram.vram_total_mb > 0.0, "VRAM total should be > 0");
+            assert!(vram.vram_utilization_pct >= 0.0 && vram.vram_utilization_pct <= 100.0);
+        } else {
+            assert!(
+                collect_system_health().is_none(),
+                "with no GPU reported, health must be None rather than a fabricated reading"
+            );
+            assert!(
+                collect_vram().is_none(),
+                "with no GPU reported, VRAM must be None rather than a fabricated reading"
+            );
+        }
     }
 
-    /// When no GPU is reported, the collectors must return `None` -- never a fabricated
-    /// zero, and never a panic. This is the half that runs in the clean room.
+    /// The probe must not count a banner, a notice, or an error string as a GPU.
+    ///
+    /// This is the whitelist from `gpus_reported` doc-comment point 2, asserted directly so
+    /// that loosening the filter back to "non-empty lines" turns it RED on a host with no
+    /// GPU as well as on one with a GPU. `nvidia-smi` writes most notices to stderr, which
+    /// the probe discards -- but not all of them, and a blacklist would fail open on the
+    /// first one it had not seen.
     #[test]
-    fn test_gpu_collectors_are_none_without_a_reporting_gpu() {
-        if gpus_reported() > 0 {
-            eprintln!("skip: this host reports a GPU; the paired positive test covers it");
-            return;
+    fn test_the_probe_counts_only_lines_that_parse_as_an_index() {
+        fn count(stdout: &str) -> usize {
+            stdout
+                .lines()
+                .filter(|l| l.trim().parse::<u32>().is_ok())
+                .count()
         }
-        assert!(
-            collect_system_health().is_none(),
-            "with no GPU reported, health must be None rather than a fabricated reading"
+        assert_eq!(count("0\n1\n"), 2, "two indices are two GPUs");
+        assert_eq!(count(""), 0, "no output is no GPU");
+        assert_eq!(count("\n  \n"), 0, "blank lines are no GPU");
+        assert_eq!(
+            count("NVIDIA-SMI has failed because it couldn't communicate with the driver\n"),
+            0,
+            "an error banner on stdout is NOT a GPU -- the defect a non-empty-lines filter has"
         );
-        assert!(
-            collect_vram().is_none(),
-            "with no GPU reported, VRAM must be None rather than a fabricated reading"
+        assert_eq!(
+            count("Please update your driver\n0\n"),
+            1,
+            "a notice beside a real index counts the index only"
         );
     }
 }
