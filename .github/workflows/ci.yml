@@ -1122,22 +1122,53 @@ jobs:
       # a workflow happens to call.
       - name: Receipt signer refuses what it must (PERF-007, case table)
         run: bash scripts/perf_receipt_sign.sh --selftest
-      # PERF-047. Section 5 of the spec is the epic's OWN ledger -- "a gate with
-      # no registered mutation is inadmissible" -- so which arms section 4.8 may
-      # read is decided by what it says, and nothing compared it to the tree.
-      # Audited 2026-08-29 it was wrong in BOTH directions at once: 12 rows said
-      # "not written" beside guards that ship case tables and are invoked twice
-      # each in THIS file, and 2 rows recorded as proof named a mutation that
-      # leaves its guard GREEN. One arm (cell completeness) had no row at all.
+      # PP-29. The successor of check_mutation_registry.sh, retired in the same
+      # commit that lands this one. That guard found its input by glob over
+      # `docs/specifications/APR-PERF-GATE-001-v*.md`; archiving that document
+      # did not break it loudly, it made it read ZERO rows and report zero
+      # violations -- a registry guard whose universe can empty itself, which is
+      # the shape the whole epic is about.
       #
-      # The check is two-way and the ratchet has no separate baseline file: the
-      # registry at merge-base with main IS the comparand, so there is nowhere
-      # to record a downgrade. Text-only and deterministic, so it belongs in the
-      # merge phase beside the other section 4.1 guards.
-      - name: The mutation registry describes the tree (PERF-047)
-        run: bash scripts/check_mutation_registry.sh
-      - name: Mutation-registry guard can still go RED (case table)
-        run: bash scripts/check_mutation_registry.sh --self-test
+      # Three joins, all text-only and deterministic, so they belong in the merge
+      # phase: §6's ARMED rows must name selftest cases that EXIST by name on the
+      # surface they declare; Appendix C's ledger may not spend one cell twice
+      # (PP-9); and §12's expiries must DERIVE from the blocked_by DAG rather
+      # than be typed. The derivation is written to
+      # evidence/parity/derived_expiries.json, which perf-matrix.yaml's
+      # `expires_after:` anchors resolve against.
+      - name: Every ARMED PP row names cases that exist (PP-29)
+        run: bash scripts/spec_conformance.sh
+      - name: Spec-conformance guard can still go RED (case table)
+        run: bash scripts/spec_conformance.sh --selftest
+      # PP-33. Nothing scanned the gate's readers for thresholds, so the spec's
+      # own must-fire -- `STRETCH = 1.50` in scripts/lib/parity_block.py -- could
+      # not turn anything red. Four independent encodings of the release floors
+      # were live at once, including two `lane.get("floor", 0.80)` defaults that
+      # applied whenever a lane omitted its bound.
+      - name: No gate reader carries a threshold (PP-33)
+        run: bash scripts/check_thresholds_in_matrix.sh
+      - name: Threshold guard can still go RED (case table)
+        run: bash scripts/check_thresholds_in_matrix.sh --selftest
+      # The single source of truth needs a truth check. An authorless policy
+      # number, a `inherited_from` pointing at a document with no history in any
+      # ref, a compute_class no build in this tree reaches, and a cell exception
+      # naming a comparator no host declares all passed CI on 2026-09-02.
+      - name: perf-matrix.yaml means what it says (PP-1, PP-16, PP-33)
+        run: bash scripts/check_perf_matrix_schema.sh
+      - name: Matrix-schema guard can still go RED (case table)
+        run: bash scripts/check_perf_matrix_schema.sh --selftest
+      # PP-19. A perf workflow that can run concurrently with itself measures
+      # two runs sharing one device, and the loser is reported as a regression.
+      - name: Perf workflows cannot run concurrently with themselves (PP-19)
+        run: bash scripts/check_perf_concurrency_groups.sh
+      - name: Concurrency-group guard can still go RED (case table)
+        run: bash scripts/check_perf_concurrency_groups.sh --selftest
+      # PP-23's bandwidth probe is release-phase INSTRUMENTATION (needs nvcc and an
+      # idle GPU) and never runs its measurement here; its case table is GPU-free
+      # and must, or the number the roofline rests on comes from a probe nobody
+      # has shown able to refuse.
+      - name: Bandwidth probe can still refuse (case table, no GPU)
+        run: bash scripts/measure_bandwidth.sh --selftest
       # The threshold rule is DERIVED, and the rule it replaced is falsified by
       # execution on every run rather than by a comment. 3-sigma pooled does not
       # catch the one regression on record (#2675).

@@ -99,13 +99,19 @@ impl Default for ServerConfig {
             verbose: false,
             backend: None,
             otlp_endpoint: None,
-            context_length: 4096,
+            context_length: DEFAULT_CONTEXT_LENGTH,
             no_fp8_cache: false,
             ollama_compat: false,
             model_path: None,
         }
     }
 }
+
+/// KV-cache context length a server uses when `--context-length` is not given.
+///
+/// Named because PP-14 has to distinguish an argument the operator SET from one
+/// that defaulted, and a magic 4096 in two places cannot support that.
+pub(crate) const DEFAULT_CONTEXT_LENGTH: usize = 4096;
 
 impl ServerConfig {
     /// PERF-021 / I-2: the accelerator decision reads the QUANTITY, never the

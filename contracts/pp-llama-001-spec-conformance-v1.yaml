@@ -1,0 +1,145 @@
+metadata:
+  version: 1.0.0
+  created: '2026-09-02'
+  author: PAIML Engineering
+  description: "Spec conformance — the property that the governing specification describes the tree it governs. A rule table that names checks nobody runs is worth negative EV: it is counted as coverage in every audit, it licenses the claim it was supposed to test, and it cannot be distinguished from a table describing real enforcement by reading either one. This contract owns the class of defects where a registry's universe can empty itself without saying so."
+  kind: pattern
+  references:
+    - "scripts/spec_conformance.sh — the join"
+    - "scripts/lib/spec_conformance.py — the parser"
+    - "docs/specifications/PP-LLAMA-001-MASTER.md — §6 invariants, Appendix C ledger, §12 obligation DAG"
+    - ".github/workflows/ci.yml — wired per-PR in guard-runner-labels (gate depends on it)"
+    - "scripts/check_mutation_registry.sh — the RETIRED predecessor, deleted in the same commit"
+
+five_whys:
+  symptom: "scripts/lib/mutation_registry.py located the rule table by glob over docs/specifications/APR-PERF-GATE-001-v*.md. Archiving that document moved it under docs/archive/, and the guard did not break loudly: it read ZERO rows, reported ZERO violations, and exited on a vacuity message that reads like a path problem. Every rule the table claimed to enforce became unchecked in one file move."
+  why_1: "The guard's universe was derived from a glob over a directory the spec was allowed to leave."
+  why_2: "Nothing asserted that the glob resolved to exactly one file; zero matches and one match took different branches only by accident of the vacuity floor."
+  why_3: "The table's status column was trusted as a statement about the tree. A row saying PROVEN was evidence that somebody had typed PROVEN."
+  why_4: "The selftest names in the table were prose. There was no surface on which a name could be looked up, so the join was never a join — it was a spelling."
+  why_5: "Enforcement was audited by counting rows rather than by resolving each row's names against a case table something runs."
+  root_cause: "A specification's claims about enforcement were checked by reading, and reading is the activity a missing file defeats. The remedy is mechanical: exactly one spec file, every ARMED row's case names resolved against the surface it declares, and a vacuity floor that fails when the parser stops matching."
+
+equations:
+  every_armed_row_names_cases_that_exist:
+    formula: "for every §6 row R with status ARMED: names(R) != {} and forall (surface, name) in names(R): name in cases(surface)"
+    domain: "the §6 table of the single docs/specifications/PP-LLAMA-001-MASTER*.md match; surfaces are `pg` (scripts/perf_gate.sh --list-selftests), `sh:<script>` (that script's case table) and `rs:<crate>` (a #[test] fn under crates/<crate>/src)"
+    codomain: "one CASE record per name with found|missing; exit 1 if any ARMED row names a missing case"
+    invariants:
+      - "An ARMED row names at least two cases: a must-fire and a must-not-fire"
+      - "A row whose status is not ARMED is not joined — OPEN means the producer is owed in §12, and reddening on it would push every honest 'not yet' into a false ARMED"
+      - "A short name is satisfied by a longer FOUND name in the same row that extends it with the `__` convention, and by nothing else"
+      - "A surface the tree cannot enumerate is a violation, never a skip"
+
+  one_spec_and_never_vacuous:
+    formula: "|glob(docs/specifications/PP-LLAMA-001-MASTER*.md)| == 1 and rows_parsed >= MIN_ROWS"
+    domain: "the repository root"
+    codomain: "exit code of scripts/spec_conformance.sh"
+    invariants:
+      - "Zero matches is the archived-predecessor defect and is RED, not a skip"
+      - "More than one match means two documents disagree and neither is the master"
+      - "MIN_ROWS is overridable by environment only so the case table can scan a one-row fixture"
+
+  a_cell_once_run_is_spent:
+    formula: "for every pair of Appendix C rows with conformance RECORDED: (host, workload, model quant, commit, interleaved) differ"
+    domain: "the row table of evidence/parity/LEDGER.md"
+    codomain: "exit 1 on a duplicate spend key"
+    invariants:
+      - "PP-9: re-running a cell until it comes out green is the defect the ledger exists to refuse"
+      - "The commit is part of the key, so a later commit legitimately starts a new row"
+      - "A ledger with no RECORDED row is reported as unexercised rather than counted as clean"
+
+  expiries_derive_from_the_dag:
+    formula: "for every §12 row R: expires(R) = R.date if root(R) else max{expires(B) : B in transitive blockers of R}"
+    domain: "the §12 obligation table"
+    codomain: "evidence/parity/derived_expiries.json, and exit 1 on a cycle or a mis-dated row"
+    invariants:
+      - "A cycle has no latest blocker, so every row in it waits for itself — refused"
+      - "A root row carries the one date a person must write; a root without one never expires"
+      - "A row with at least one live blocker may not type a date: a typed expiry can fall before the work it waits on"
+      - "A row all of whose blockers have LANDED is unblocked and must carry a date again"
+
+proof_obligations:
+  - type: invariant
+    property: "Every ARMED rule's two selftest cases exist by name"
+    formal: "scripts/spec_conformance.sh exits 0"
+    applies_to: every_armed_row_names_cases_that_exist
+  - type: invariant
+    property: "The join demonstrably turns RED when a named case is absent"
+    formal: "the conformance_missing row of the case table is RED against a surface missing one name"
+    applies_to: every_armed_row_names_cases_that_exist
+  - type: invariant
+    property: "The guard is not vacuous"
+    formal: "a spec whose §6 table parses to zero rows exits non-zero"
+    applies_to: one_spec_and_never_vacuous
+  - type: invariant
+    property: "A spent cell cannot be spent twice"
+    formal: "two RECORDED ledger rows sharing a spend key exit non-zero"
+    applies_to: a_cell_once_run_is_spent
+  - type: invariant
+    property: "The expiry derivation refuses cycles and mis-dated rows"
+    formal: "the dag_* rows of the case table are RED for a cycle, an undated root and a dated blocked row"
+    applies_to: expiries_derive_from_the_dag
+  - type: invariant
+    property: "The guard is enforced per-PR, not merely present"
+    formal: "ci.yml invokes it in a job that `gate` depends on"
+    applies_to: every_armed_row_names_cases_that_exist
+
+falsification_tests:
+  - id: FALSIFY-PP-LLAMA-001-CONFORMANCE-001
+    rule: "The guard exists and is executable"
+    prediction: "scripts/spec_conformance.sh is a regular file with the execute bit set"
+    test: "test -x scripts/spec_conformance.sh"
+    if_fails: "The join was deleted or unmarked — every §6 status is a claim again"
+
+  - id: FALSIFY-PP-LLAMA-001-CONFORMANCE-002
+    rule: "The parser exists beside it"
+    prediction: "scripts/lib/spec_conformance.py is present"
+    test: "test -f scripts/lib/spec_conformance.py"
+    if_fails: "The shell wrapper reports a missing scanner and exits 2 rather than passing on an empty scan"
+
+  - id: FALSIFY-PP-LLAMA-001-CONFORMANCE-003
+    rule: "The guard demonstrably turns RED (mutation-verified, not merely green)"
+    prediction: "The ten-row case table passes: a deleted case name is RED, an empty §6 is RED, a duplicate spend key is RED, and a cyclic, undated or mis-dated §12 row is RED"
+    test: "bash scripts/spec_conformance.sh --selftest"
+    if_fails: "The join has itself become vacuous — it would accept a §6 table naming cases that do not exist"
+
+  - id: FALSIFY-PP-LLAMA-001-CONFORMANCE-004
+    rule: "The guard is wired into the per-PR gate, not merely present in the tree"
+    prediction: "ci.yml invokes spec_conformance.sh in guard-runner-labels, which `gate` lists in its needs"
+    test: "grep -q 'bash scripts/spec_conformance.sh' .github/workflows/ci.yml"
+    if_fails: "A reference is not an execution — the join would sit unexecuted while being counted as enforcement (the #2327 defect class)"
+
+  - id: FALSIFY-PP-LLAMA-001-CONFORMANCE-005
+    rule: "The retired predecessor is gone, not merely superseded"
+    prediction: "scripts/check_mutation_registry.sh and scripts/lib/mutation_registry.py are absent"
+    test: "test ! -e scripts/check_mutation_registry.sh && test ! -e scripts/lib/mutation_registry.py"
+    if_fails: "Two registries describe the same mutations, and the archived-glob guard is still counted as coverage while reading nothing"
+
+  - id: FALSIFY-PP-LLAMA-001-CONFORMANCE-006
+    rule: "The guard fails closed when it finds nothing to check"
+    prediction: "With MIN_ROWS above the number of §6 rows, the guard exits non-zero"
+    test: "! MIN_ROWS=9999 bash scripts/spec_conformance.sh >/dev/null 2>&1"
+    if_fails: "The guard would report OK on an empty table — a blind checker is indistinguishable from a conformant spec"
+
+  - id: FALSIFY-PP-LLAMA-001-CONFORMANCE-007A
+    rule: "The master describes the tree it governs, on the tree as it stands"
+    prediction: "The join is green: every ARMED §6 row's cases exist, no ledger cell is spent twice, and every §12 expiry derives from its blockers"
+    test: "bash scripts/spec_conformance.sh"
+    if_fails: "Read the rows it prints. On 2026-09-02 the §6 and Appendix C halves were green (33 ARMED rows, 76 named cases, 0 missing) and the §12 half was RED on two rows: 19 and 21 each carry a literal date while still blocked by a live row (19 by row 1, 21 by row 2), which §12's own preamble forbids. The fix is in the master, not here: drop the date so the expiry derives, or record an amendment moving it and say who moved it."
+
+  - id: FALSIFY-PP-LLAMA-001-CONFORMANCE-007
+    rule: "The list surface the join reads is real"
+    prediction: "scripts/perf_gate.sh --list-selftests prints at least 25 case names"
+    test: "test \"$(bash scripts/perf_gate.sh --list-selftests | wc -l)\" -ge 25"
+    if_fails: "The pg surface collapsed, so every pg-surfaced §6 row would join against an empty set and the guard would be RED for the wrong reason"
+
+qa_gate:
+  id: F-PP-LLAMA-001-CONFORMANCE-001
+  name: "Spec conformance — every ARMED rule names cases that exist, no cell is spent twice, every expiry derives"
+  description: "Joins the master's §6 table to the case tables of perf_gate.sh, the sibling guards and the Rust crate; joins Appendix C's ledger to PP-9's spend rule; and derives §12's expiries from its blocked_by DAG. Empirical rather than syntactic: a name is looked up on the surface the row declares, so no reasoning about whether a check 'exists' is required."
+  checks:
+    - "every_armed_row_names_cases_that_exist"
+    - "one_spec_and_never_vacuous"
+    - "a_cell_once_run_is_spent"
+    - "expiries_derive_from_the_dag"

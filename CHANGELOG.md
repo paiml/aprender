@@ -7,6 +7,144 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.65.0] - 2026-09-02
+
+The **parity-instrument** release. v0.64.0 closed gates that could not fail;
+this one replaces the inference-performance specification that had been
+redesigned five times and armed zero times with one that every gate reads, and
+lands the instrument the spec describes — a receipt that witnesses correctness,
+names the mechanism engaged, carries prefill, decode and aggregate on every
+band, and is decided by a stated statistical rule on interleaved replicates.
+Governing document: `docs/specifications/PP-LLAMA-001-MASTER.md` (status
+`VERIFIED, NOT ARMED`; it arms on the first conformant reference-cell receipt,
+never by date).
+
+### Added — the specification and its companions (PP-LLAMA-001 §0–§13)
+
+- **One spec, one matrix, one ledger.** `PP-LLAMA-001-MASTER.md` (33 invariants
+  PP-1…PP-33, each with a must-fire and a must-not-fire selftest named in the
+  table), `PP-LLAMA-001-RATIONALE.md` (why each rule), the audit it answers
+  (`docs/audits/parity-spec-audit-2026-09-02.md`), and `evidence/parity/LEDGER.md`
+  rewritten to Appendix C (validity by band: the two 2026-09-01 cells are
+  `NONCONFORMANT-VALID` at c=1 and `INVALID-CORRECTNESS` at c>1, with the log
+  lines that prove it). Fifteen predecessor documents are archived
+  (`docs/archive/perf-2026-09-02/`). (#2843, supersedes #2845 and #2706)
+- **`scripts/spec_conformance.sh` (PP-29)** joins the §6 table to the selftest
+  surfaces (`perf_gate.sh --list-selftests`, each guard's case table, Rust
+  `#[test]` names), parses the LEDGER for PP-9 (a cell is spent once per key)
+  and derives every non-root §12 expiry from its blockers into
+  `evidence/parity/derived_expiries.json`. It replaces
+  `check_mutation_registry.sh`, whose universe the archive move had emptied.
+- **`scripts/perf-matrix.yaml` schema 2 (PP-33):** every threshold, floor,
+  ratchet direction and phase the gate reads, each with `threshold_class` and
+  `author`; a `protocol:` block (window, warmup, quiesce, cooldown, n_predict,
+  replicates ≥ 5, interleaved, sampler); a derived `ladder:`; the batch-
+  invariance witness policy; Arm A rewritten as per-band self-regression on
+  `agg`/`dec`/`prefill` (the `scaling_efficiency` up-only ratchet, which
+  rejected the single-stream fix it protected, is REPORTED and never gated);
+  Arm B replaced by the L3 non-inferiority rule with declared `δ` and
+  `armed_by`; `mini` is `NA{decided_by}` (#2841). New guards
+  `check_thresholds_in_matrix.sh` and `check_perf_matrix_schema.sh` keep it so.
+- **The v3 receipt (Appendix B)** in `crates/aprender-test-lib/src/perf_gate/`:
+  `run_id`, `started_utc`/`clock_source` (PP-30), subject/client/comparator
+  provenance with the verbatim `GET /v1/effective-config` body (PP-2/18/20/25),
+  the protocol block, a derived ladder from server-reported admission (PP-24),
+  per-band `status` in the §7.4 vocabulary, `stream_mode` with a client-side
+  witness (PP-27), the batch-invariance witness (PP-26), `short_of_n_predict`
+  (PP-28), per-band `samples[]` (PP-7), a `JoinKey` that refuses every mismatch
+  and the `-b 1` cripple (PP-22), `ComparatorStatus::Measured{baseline, ratios}`
+  constructible only from two same-run lanes (PP-3), the request-level paired
+  bootstrap and the replicate-level one-sided t bound of §4.3, the `AbRecord`
+  engine-track artifact (PP-32), and a typed reader with `deny_unknown_fields`.
+  The zero-GPU JOIN fixture reproduces the eight recorded ratios to four
+  decimals (§10).
+- **`apr test llm bench --band` is now a two-lane, interleaved producer:**
+  `--comparator-url` drives the comparator with the same client binary
+  (A,B,A,B… across replicates, matrix cooldown between lanes), `--band`
+  requires `--stream` and a 40-hex `--commit`, `--key-id` signs the receipt on
+  the measuring host, `--witness-json` attaches the PP-26 witness, and the
+  effective-config endpoint is read before the first request. Default
+  replicates: 5.
+- **`GET /v1/effective-config` (§5.2, §12 row 6)** on every `apr serve`
+  router: server clock, resolved compute class from residency, build features
+  (including apr-cli's), backend loaded, model, offload report
+  (`gpu_layers_{requested,resolved,total}`, `autofit_applied ∩ explicit_args = ∅`,
+  PP-14), scheduler report with `slots_admitted` and a live in-flight counter,
+  and — on CUDA builds — the resolved `GpuProfile`, graph configuration, the
+  prefill path `run_prefill` will select, the `max_batch` sizing with its four
+  inputs and `source` (`computed`|`env`), and a VRAM report. The JSON key set is
+  identical on CPU and CUDA builds.
+- **SSE declares itself (PP-27):** the first chunk carries `stream_mode`
+  (`live` from the token channel, `replayed` from the pregenerated builder), the
+  terminal chunk carries `usage` and llama.cpp-shaped `timings`
+  (`prompt_ms`, `prompt_per_second`, …) where the backend measured them.
+- **PP-26 witness (`scripts/perf041_batched_parity_probe.py`)** rewritten as a
+  token-level batch-invariance probe: pinned sampler, per-band engagement
+  attribution from the log offset, `divergence_at` against the declared point,
+  never exit 0 on a vacuous run, a replay `--selftest`, `witness.json` +
+  `marker.json`; wired into `cuda-nightly.yml` before the Pillar-4 beat (the
+  first gx10 night is EXPECTED RED per §9 #1a) and consumed at release by
+  `scripts/check_perf041_marker.sh` (missing marker = RED).
+- **The comparator is decided (§5.3):** `llama-server` configured to serve the
+  band (`-np c`, `-c c·n_ctx_slot`, `n_ctx_slot = 1024`, every 2026 default
+  pinned, `-b 1` refused as a cripple), pin `pinned_on`/`pin_expiry` with a
+  `COMPARATOR_STALE` verdict, cmake line corroborated against the resolved
+  build's `CMakeCache.txt`. `evidence/parity/props-39173bcac-{template,np16}.json`
+  record `GET /props` at both argvs (4 slots × 4096 vs 16 slots × 1024).
+- **`scripts/parity_host_receipt.sh`** relaunches the comparator per band, reads
+  `/props` and `/v1/effective-config`, interleaves replicates, and records the
+  `nvidia-smi` foreign-PID isolation before and after each band
+  (`scripts/perf_isolation.sh`, PP-19); every `--gpu` boolean in the harness is
+  now `--gpu-layers <N|all>` (PP-15).
+- **`scripts/measure_bandwidth.sh` (PP-23):** device-to-device memcpy bandwidth
+  with a duration warm-up and burst replicates; `evidence/bandwidth/lambda.json`
+  is the first `[V]` bandwidth in the tree, and the derived per-sequence decode
+  ceiling for the 7B Q4_K_M is below the vendor figure §2.4 used.
+- **Perf hosts are serialised (PP-19):** job-level `concurrency: perf-gx10` /
+  `perf-intel` with `cancel-in-progress: false` on every GPU or `--ignored`
+  bench job, enforced by `scripts/check_perf_concurrency_groups.sh`.
+- **PP-12 widened:** `check_no_claim_literals.sh` now reads
+  `docs/specifications/`, drops a hit only when it cites a resolving `evidence/`
+  path (the exemption `check_perf_claims_cite_receipts.sh` shares via
+  `scripts/lib/perf_claim_cite.sh`), detects ratio cells under a competitor
+  table header, and no longer lets a bare `require`/`expect` mask a claim. The
+  README performance table and the comparator ratio and throughput figure in
+  the MCP server spec are withdrawn (no receipt exists for any of them).
+
+### Fixed — defects the spec named (§9)
+
+- **§9 #1a:** `prefill_multi_prompt` had no Blackwell guard; on `cc ≥ 120` the
+  batched scheduler now refuses it and prefills each prompt serially, through
+  the same pure `select_prefill_path` predicate `run_prefill` uses. The dead,
+  cc-blind `GpuProfile.batched_prefill` field is gone.
+- **§9 #8:** the `cuda-batch = ["cuda"]` implication ran the wrong way and the
+  APR-Q4K GPU pool path was silently downgraded under `--features cuda`; the
+  stub is deleted and the path is gated on `cuda` alone.
+- **§10 refusal:** `FUSED_GATE_UP=1` selected an uncompiled module whenever the
+  Q4_K variant was not `HwDp4a`; it is now refused with a printed reason.
+- **§12 row 0b's real blocker:** the subject's SSE terminal chunk carried no
+  `usage`, so a streamed W1 band could never produce a receipt.
+- **PP-28:** the stream and blocking client paths dropped `seed` and
+  `ignore_eos` on the wire; `prompts-w1.jsonl` never carried `ignore_eos`
+  (regenerated; the corpus digest rotates by design).
+- **PP-20/P-6:** a pin past its expiry is a release-phase `COMPARATOR_STALE`
+  verdict, never a merge-phase FAIL by calendar.
+- **PP-21:** the band producer defaulted `commit` to the literal `UNPINNED`;
+  `receipt_sig.py` now refuses any commit that is not a 40-hex sha.
+- **Audit CO-1:** the LEDGER attributed "batching compiled out" to the wrong run.
+
+### Changed
+
+- `jugar_probar::llm::client::StreamedChatResponse.usage` is `Usage`, not
+  `Option<Usage>`: a stream without a terminal `usage` is
+  `LlmClientError::StreamNoUsage`, and the chunk-count fallback no longer exists.
+- `realizar::api::cuda_batch_scheduler::spawn_cuda_batch_scheduler` takes an
+  `Arc<InFlightCounter>`; the SSE builders take `prompt_tokens`;
+  `ChatCompletionChunk`/`ChatCompletionResponse` gain optional fields.
+- `scripts/perf000_serialization_probe.sh` (a probe its own contract said could
+  not measure) and `check_mutation_registry.sh` are deleted.
+
+
 ## [0.64.0] - 2026-08-23
 
 The **fail-closed** release. v0.62.0 fixed gates that could not fail and v0.63.0

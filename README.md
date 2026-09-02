@@ -41,7 +41,7 @@ publishing — all backed by YAML provable contracts that fail CI on drift.
 | Metric | Count | Source of truth |
 |-------:|------:|---|
 | Workspace crates | **79** workspace crates | `cargo metadata --no-deps` (NOT `ls crates/` — 4 are `exclude`d, 1 has no Cargo.toml) |
-| Provable contracts | **1801** provable contracts | `find contracts/ -name '*.yaml'` |
+| Provable contracts | **1805** provable contracts | `find contracts/ -name '*.yaml'` |
 | CLI commands | **110** CLI commands | `apr --help` |
 | Book CLI chapters | **112** chapters | `ls book/src/cli/*.md` |
 | Book lib chapters | **71** chapters | `ls book/src/lib/*.md` (parity with `pub mod`) |
@@ -222,20 +222,23 @@ paiml/aprender/
 │   ├── aprender-profile/           # Profiling
 │   ├── aprender-db/ aprender-graph/ aprender-rag/
 │   └── ... (82 crates total)
-├── contracts/                      # 1801 provable YAML contracts
+├── contracts/                      # 1805 provable YAML contracts
 └── book/                           # mdBook documentation
 ```
 
 ## Performance
 
-| Model | Format | Speed | Hardware |
-|-------|--------|-------|----------|
-| Qwen2.5-Coder 1.5B | Q4_K | 40+ tok/s | CPU (AVX2) |
-| Qwen2.5-Coder 7B | Q4_K | 225+ tok/s | RTX 4090 |
-| TinyLlama 1.1B | Q4_0 | 17 tok/s | CPU (APR format) |
+Every published throughput or comparator figure lives with the run that produced
+it. The measurement ledger is [`evidence/parity/LEDGER.md`](evidence/parity/LEDGER.md);
+the rules a figure must satisfy before it may be quoted anywhere — including on
+this page — are in
+[`docs/specifications/PP-LLAMA-001-MASTER.md`](docs/specifications/PP-LLAMA-001-MASTER.md).
 
-Reproduced from [candle-vs-apr](https://github.com/paiml/candle-vs-apr) and
-[ground-truth-apr-ludwig](https://github.com/paiml/ground-truth-apr-ludwig).
+This section carried a three-row table of `tok/s` figures until 2026-09-02. None
+of the three cited a receipt, and the RTX 4090 row asserted a rate the tree's own
+paired measurement contradicts, so all three are withdrawn rather than restated
+(PP-LLAMA-001 §2.1, PP-12). A withdrawal that reprints the number leaves the
+number on the page.
 
 ## Provable contracts
 
@@ -253,7 +256,7 @@ falsification_tests:
   prediction: apr validate bad-model.apr exits non-zero
 ```
 
-1801 contracts across inference, training, quantization, attention, FFN,
+1805 contracts across inference, training, quantization, attention, FFN,
 tokenization, model formats, CLI safety — and this README itself.
 
 ## Migration from old crates

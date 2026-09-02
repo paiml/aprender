@@ -174,6 +174,9 @@ fn test_chat_completion_chunk_serde() {
             },
             finish_reason: None,
         }],
+    stream_mode: None,
+    usage: None,
+    timings: None,
     };
     let json = serde_json::to_string(&chunk).expect("JSON serialization failed");
     let deserialized: crate::api::ChatCompletionChunk = serde_json::from_str(&json).expect("JSON deserialization failed");

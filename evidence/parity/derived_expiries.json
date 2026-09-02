@@ -1,0 +1,225 @@
+{
+  "rows": {
+    "0a": {
+      "blocked_by": [],
+      "derived_from": [],
+      "discharged": true,
+      "expires": null,
+      "root": true
+    },
+    "0b": {
+      "blocked_by": [],
+      "derived_from": [],
+      "discharged": true,
+      "expires": null,
+      "root": true
+    },
+    "0c": {
+      "blocked_by": [],
+      "derived_from": [],
+      "discharged": true,
+      "expires": null,
+      "root": true
+    },
+    "0d": {
+      "blocked_by": [],
+      "derived_from": [],
+      "discharged": true,
+      "expires": null,
+      "root": true
+    },
+    "0e": {
+      "blocked_by": [],
+      "derived_from": [],
+      "discharged": true,
+      "expires": null,
+      "root": true
+    },
+    "1": {
+      "blocked_by": [],
+      "derived_from": [],
+      "discharged": false,
+      "expires": "2026-09-19",
+      "root": true
+    },
+    "10": {
+      "blocked_by": [],
+      "derived_from": [],
+      "discharged": true,
+      "expires": null,
+      "root": true
+    },
+    "11": {
+      "blocked_by": [],
+      "derived_from": [],
+      "discharged": true,
+      "expires": null,
+      "root": true
+    },
+    "12": {
+      "blocked_by": [],
+      "derived_from": [],
+      "discharged": true,
+      "expires": null,
+      "root": true
+    },
+    "13": {
+      "blocked_by": [
+        "1"
+      ],
+      "derived_from": [
+        "1"
+      ],
+      "discharged": false,
+      "expires": "2026-09-19",
+      "root": false
+    },
+    "14": {
+      "blocked_by": [],
+      "derived_from": [],
+      "discharged": true,
+      "expires": null,
+      "root": true
+    },
+    "15": {
+      "blocked_by": [
+        "0b",
+        "0c",
+        "1",
+        "6",
+        "7",
+        "12"
+      ],
+      "derived_from": [
+        "1"
+      ],
+      "discharged": false,
+      "expires": "2026-09-19",
+      "root": false
+    },
+    "16": {
+      "blocked_by": [
+        "0b"
+      ],
+      "derived_from": [],
+      "discharged": false,
+      "expires": "2026-10-23",
+      "root": false
+    },
+    "17": {
+      "blocked_by": [
+        "0b"
+      ],
+      "derived_from": [],
+      "discharged": false,
+      "expires": "2026-10-23",
+      "root": false
+    },
+    "18": {
+      "blocked_by": [
+        "15"
+      ],
+      "derived_from": [
+        "15"
+      ],
+      "discharged": false,
+      "expires": "2026-09-19",
+      "root": false
+    },
+    "19": {
+      "blocked_by": [
+        "1",
+        "6"
+      ],
+      "derived_from": [
+        "1"
+      ],
+      "discharged": false,
+      "expires": "2026-09-19",
+      "root": false
+    },
+    "2": {
+      "blocked_by": [],
+      "derived_from": [],
+      "discharged": false,
+      "expires": "2026-09-19",
+      "root": true
+    },
+    "20": {
+      "blocked_by": [],
+      "derived_from": [],
+      "discharged": false,
+      "expires": "2026-10-23",
+      "root": true
+    },
+    "21": {
+      "blocked_by": [
+        "2"
+      ],
+      "derived_from": [
+        "2"
+      ],
+      "discharged": false,
+      "expires": "2026-09-19",
+      "root": false
+    },
+    "3": {
+      "blocked_by": [],
+      "derived_from": [],
+      "discharged": true,
+      "expires": null,
+      "root": true
+    },
+    "4": {
+      "blocked_by": [
+        "0b"
+      ],
+      "derived_from": [],
+      "discharged": true,
+      "expires": null,
+      "root": false
+    },
+    "5": {
+      "blocked_by": [],
+      "derived_from": [],
+      "discharged": true,
+      "expires": null,
+      "root": true
+    },
+    "6": {
+      "blocked_by": [],
+      "derived_from": [],
+      "discharged": true,
+      "expires": null,
+      "root": true
+    },
+    "7": {
+      "blocked_by": [
+        "0a",
+        "0b",
+        "0e"
+      ],
+      "derived_from": [],
+      "discharged": true,
+      "expires": null,
+      "root": false
+    },
+    "8": {
+      "blocked_by": [
+        "7"
+      ],
+      "derived_from": [],
+      "discharged": true,
+      "expires": null,
+      "root": false
+    },
+    "9": {
+      "blocked_by": [],
+      "derived_from": [],
+      "discharged": true,
+      "expires": null,
+      "root": true
+    }
+  },
+  "source": "docs/specifications/PP-LLAMA-001-MASTER.md"
+}

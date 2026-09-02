@@ -87,6 +87,14 @@ dev = []  # Enable `apr mono` subcommands (publish, shims, audit, archive)
 safetensors-compare = ["aprender/safetensors-compare"]
 inference = ["realizar", "trueno", "tokio", "axum", "futures-util"]
 cuda = ["inference", "realizar/cuda", "entrenar/cuda", "aprender-train-distill?/cuda"]
+# PP-LLAMA-001 §9 #8: a documented COMPATIBILITY ALIAS, nothing more. No
+# `#[cfg(feature = "cuda-batch")]` remains in the tree: the implication ran
+# the wrong way (`cuda-batch = ["cuda"]` means enabling it enables cuda, not
+# the reverse), so a plain `--features cuda` build compiled a stub for the
+# APR-Q4K GPU serve path and silently downgraded to the generic per-tensor
+# allocator. Kept so existing `--features cuda-batch` invocations and the
+# root passthrough keep building, and so a receipt can still record whether
+# the binary was built with it (§2.1 INVALID-BUILD reads that entry).
 cuda-batch = ["cuda"]
 # PMAT-335: WGPU backend for AMD/Intel/Apple GPU inference via Vulkan/Metal/WebGPU
 wgpu = ["inference"]

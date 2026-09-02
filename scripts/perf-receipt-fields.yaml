@@ -73,7 +73,22 @@ non_receipt_receivers:
     # universe.
     cond: the `expires_after` mapping of a baseline cell in perf-matrix.yaml
     a: one entry of perf-matrix.yaml's `expiry_anchors:` block
+    # PP-6/PP-33: the gate now reads its PHASES and its THRESHOLDS from
+    # perf-matrix.yaml instead of hardcoding them, so five more matrix receivers
+    # cross this extractor. They are named with an `mx_` prefix precisely so a
+    # reader cannot mistake `mx_protocol` (the matrix's pinned sampler) for
+    # `r["protocol"]` (what the run actually used) -- the two are compared
+    # against each other, and giving them the same name is how that comparison
+    # would quietly become a tautology.
+    mx_arm: one arm of perf-matrix.yaml's `arms:` block (phase, delta, metrics, n_min)
+    mx_host: one host of perf-matrix.yaml's `hosts:` block (compute_class, reachable_by, NA status)
+    mx_protocol: perf-matrix.yaml's `protocol:` block, the PINNED protocol
+    mx_stream: perf-matrix.yaml's `stream:` block
+    mx_witness: perf-matrix.yaml's `witness:` block
+    gated: arms.L3.gated, the per-band-class set of gated ratios
+    side: one side of a PARITY lane, a different document (the PP-8 case rows)
   bench_receipt.py:
+    environ: process environment (PERF_GATE_MATRIX, the injectable matrix path)
     band: the PARITY-lane band schema, a different document
     block: a parity block
     comp: a parity lane's comparator side
@@ -505,3 +520,732 @@ fields:
       than marking it: a cross-class row cannot arm Arm B's floor, and a receipt
       carrying the mark still walks into Arm A, which reads no comparator at all
       and would gate it happily.
+  schema_version:
+    class: UNMEASURED
+    source: derived
+    required: always
+    owner: PERF-004
+    spec: "§4 (the v3 wire)"
+    needs: >-
+      The wire generation the producer wrote. Absent means 2 (historical), and
+      the L1 arm applies the v3 rules only at 3 or above -- so a receipt is
+      never failed for not having been written in the future. Nothing emits it
+      yet: scripts/lib/perf_receipt.py stamps 2 deliberately, because its
+      inputs are historical band artifacts.
+
+  run_id:
+    class: UNMEASURED
+    source: client
+    required: always
+    owner: PERF-004
+    spec: "§4 (PP-3)"
+    needs: >-
+      A uuid4 shared by BOTH lanes of one invocation. It is what makes a ratio
+      paired: a baseline band whose run_id differs was measured in another
+      invocation, and the quotient of two afternoons is not a ratio. No
+      producer emits it.
+
+  ratios:
+    class: UNMEASURED
+    source: derived
+    required: conditional
+    owner: PERF-004
+    spec: "§4 (PP-17)"
+    needs: >-
+      Read only so that a TOP-LEVEL `ratios` object can be refused. A ratio
+      must sit inside the band it describes; a bandless one names no
+      concurrency, which is how a c=1 figure comes to be quoted as the
+      headline for a sixteen-user deployment. It must never be produced.
+
+  short_of_n_predict:
+    class: UNMEASURED
+    source: client
+    required: always
+    owner: PERF-004
+    spec: "§4 (PP-28)"
+    needs: >-
+      Count of COMPLETED requests whose generated_tokens !=
+      protocol.n_predict. `truncated` counts drain-abandoned requests only
+      (drain.rs), so nothing in the current receipt witnesses a completion
+      that stopped early -- and the gx10 c=1 corpus has 7 of 30 short, lambda
+      c=1 has 28 of 55. Count it in the client and carry it per band and at
+      the top level.
+
+  protocol:
+    class: UNMEASURED
+    source: client
+    required: always
+    owner: PERF-004
+    spec: "§5.1 (PP-22)"
+    needs: >-
+      The protocol block the run actually used, so it can be compared against
+      the pinned one in scripts/perf-matrix.yaml. Absent, the window and the
+      sampler are assumptions.
+
+  protocol.sampler:
+    class: UNMEASURED
+    source: client
+    required: always
+    owner: PERF-004
+    spec: "§5.1 (PP-28)"
+    needs: >-
+      the whole sampler block, compared against perf-matrix.yaml
+      protocol.sampler. crates/aprender-test-lib/src/llm/client.rs rebuilds
+      ChatRequest with `seed: None, ignore_eos: None` on the stream path, so
+      the values are dropped before they reach the wire and no receipt can
+      state them.
+
+  protocol.sampler.temperature:
+    class: UNMEASURED
+    source: client
+    required: always
+    owner: PERF-004
+    spec: "§5.1 (PP-28)"
+    needs: >-
+      temperature the run used, compared against perf-matrix.yaml
+      protocol.sampler. crates/aprender-test-lib/src/llm/client.rs rebuilds
+      ChatRequest with `seed: None, ignore_eos: None` on the stream path, so
+      the values are dropped before they reach the wire and no receipt can
+      state them.
+
+  protocol.sampler.seed:
+    class: UNMEASURED
+    source: client
+    required: always
+    owner: PERF-004
+    spec: "§5.1 (PP-28)"
+    needs: >-
+      seed the run used, compared against perf-matrix.yaml protocol.sampler.
+      crates/aprender-test-lib/src/llm/client.rs rebuilds ChatRequest with
+      `seed: None, ignore_eos: None` on the stream path, so the values are
+      dropped before they reach the wire and no receipt can state them.
+
+  protocol.sampler.ignore_eos:
+    class: UNMEASURED
+    source: client
+    required: always
+    owner: PERF-004
+    spec: "§5.1 (PP-28)"
+    needs: >-
+      ignore_eos the run used, compared against perf-matrix.yaml
+      protocol.sampler. crates/aprender-test-lib/src/llm/client.rs rebuilds
+      ChatRequest with `seed: None, ignore_eos: None` on the stream path, so
+      the values are dropped before they reach the wire and no receipt can
+      state them.
+
+  provenance.started_utc:
+    class: UNMEASURED
+    source: client
+    required: always
+    owner: PERF-004
+    spec: "§4 (PP-30)"
+    needs: >-
+      RFC3339 UTC instant the run began. Without it a comparator pin's expiry
+      cannot be evaluated against the run, and two receipts cannot be ordered.
+
+  provenance.clock_source:
+    class: UNMEASURED
+    source: client
+    required: always
+    owner: PERF-004
+    spec: "§4 (PP-30)"
+    needs: >-
+      Which clock produced started_utc. A timestamp with no clock named is a
+      number, and CLOCK_REALTIME versus CLOCK_MONOTONIC is the difference
+      between an orderable instant and an elapsed count.
+
+  provenance.subject:
+    class: UNMEASURED
+    source: server
+    required: always
+    owner: PERF-007
+    spec: "§4 (PP-18)"
+    needs: >-
+      The SERVED binary: {path, sha256, commit, feature_set}. `binary_*` at
+      the top of provenance describe the CLIENT, which nothing said, so the
+      one binary under test was the one field the receipt did not identify.
+
+  provenance.subject.commit:
+    class: UNMEASURED
+    source: server
+    required: at-release
+    owner: PERF-007
+    spec: "§4 (PP-18)"
+    needs: >-
+      The commit the SERVED binary was built from, which the staleness arm
+      requires to be an ancestor of the commit under test. `receipt.commit` is
+      a label the harness was handed; it does not constrain what answered.
+
+  provenance.client:
+    class: UNMEASURED
+    source: client
+    required: always
+    owner: PERF-007
+    spec: "§4 (PP-25)"
+    needs: >-
+      The load generator's own {path, sha256, commit}. PP-25 requires ONE
+      client driving both lanes; with no client identity on either side, two
+      clients is expressible and invisible.
+
+  provenance.client.commit:
+    class: UNMEASURED
+    source: client
+    required: at-release
+    owner: PERF-007
+    spec: "§4 (PP-18)"
+    needs: >-
+      The commit the CLIENT binary was built from; an ancestor test, same as
+      the subject's. A load generator from another branch measures a different
+      protocol.
+
+  provenance.client.sha256:
+    class: UNMEASURED
+    source: client
+    required: always
+    owner: PERF-007
+    spec: "§4 (PP-25)"
+    needs: >-
+      Digest of the client binary, compared against the baseline band's, so a
+      pair driven by two different clients is refused rather than divided.
+
+  provenance.server_config:
+    class: UNMEASURED
+    source: server
+    required: always
+    owner: PERF-018
+    spec: "§5.2 (PP-2)"
+    needs: >-
+      The verbatim body of GET /v1/effective-config. Without it every server
+      fact in the receipt is harness-declared: provenance.feature_set is
+      copied from the `--server-feature` flag, so both 745fa8588 receipts say
+      ['cuda'] whatever the server loaded. The route does not exist yet.
+
+  provenance.server_config.compute_class:
+    class: UNMEASURED
+    source: server
+    required: always
+    owner: PERF-018
+    spec: "§5.2 (PP-13)"
+    needs: >-
+      The dispatch path the SERVER says it took, compared against the
+      harness's own claim. When they disagree the server wins; a flag is a
+      request, not a measurement.
+
+  provenance.server_config.offload:
+    class: UNMEASURED
+    source: server
+    required: conditional
+    owner: PERF-018
+    spec: "§5.2 (PP-14)"
+    needs: >-
+      The offload decision block. Autofit that silently overrode an explicit
+      operator argument measured a configuration nobody asked for, and nothing
+      records that it happened.
+
+  provenance.server_config.offload.autofit_applied:
+    class: UNMEASURED
+    source: server
+    required: conditional
+    owner: PERF-018
+    spec: "§5.2 (PP-14)"
+    needs: >-
+      Whether the server re-decided the layer split for itself.
+
+  provenance.server_config.offload.explicit_args:
+    class: UNMEASURED
+    source: server
+    required: conditional
+    owner: PERF-018
+    spec: "§5.2 (PP-14)"
+    needs: >-
+      The offload arguments the operator actually passed. Autofit ANDed with a
+      non-empty explicit set is the override the gate refuses.
+
+  ladder:
+    class: UNMEASURED
+    source: derived
+    required: always
+    owner: PERF-018
+    spec: "§4 (PP-24)"
+    needs: >-
+      {declared, derived, slots_admitted}. scripts/lib/perf_receipt.py emits
+      the block with `declared` read from the matrix and the rest null, which
+      is the honest shape until a server reports admission.
+
+  ladder.declared:
+    class: UNMEASURED
+    source: derived
+    required: always
+    owner: PERF-018
+    spec: "§4 (PP-24)"
+    needs: >-
+      The band set the run was ASKED to measure, copied from perf-matrix.yaml
+      `ladder.declared` by the producer (crates/aprender-test-lib/src/perf_gate/receipt.rs
+      `Ladder`). The gate recomputes `derived` from it and the server-reported
+      admissions (PP-24), so a receipt cannot excuse a band by writing its own.
+  ladder.derived:
+    class: UNMEASURED
+    source: derived
+    required: always
+    owner: PERF-018
+    spec: "§4 (PP-24)"
+    needs: >-
+      `declared` filtered by min(non-null slots_admitted). Null until either
+      lane reports its admitted slot count; a copy of `declared` wearing the
+      derived name would assert an admission nobody measured.
+
+  ladder.slots_admitted:
+    class: UNMEASURED
+    source: server
+    required: always
+    owner: PERF-018
+    spec: "§5.2 (PP-24)"
+    needs: >-
+      Slots each SERVER admitted, from its own effective-config. lambda's log
+      prints `max_batch=11` and gx10's prints 32, and neither number reaches a
+      receipt -- so a c=16 pair across those two hosts compares admission, not
+      servers.
+
+  ladder.slots_admitted.apr:
+    class: UNMEASURED
+    source: server
+    required: always
+    owner: PERF-018
+    spec: "§5.2 (PP-24)"
+    needs: >-
+      Slots each SERVER admitted, from its own effective-config. lambda's log
+      prints `max_batch=11` and gx10's prints 32, and neither number reaches a
+      receipt -- so a c=16 pair across those two hosts compares admission, not
+      servers.
+
+  ladder.slots_admitted.llama:
+    class: UNMEASURED
+    source: server
+    required: always
+    owner: PERF-018
+    spec: "§5.2 (PP-24)"
+    needs: >-
+      Slots each SERVER admitted, from its own effective-config. lambda's log
+      prints `max_batch=11` and gx10's prints 32, and neither number reaches a
+      receipt -- so a c=16 pair across those two hosts compares admission, not
+      servers.
+
+  bands[].status:
+    class: UNMEASURED
+    source: derived
+    required: always
+    owner: PERF-004
+    spec: "§7.4"
+    needs: >-
+      MEASURED | UNMEASURED | NA | INVALID-CORRECTNESS | NONCONFORMANT-VALID |
+      COMPARATOR_STALE, derived by the producer and re-checked here. The
+      current receipts carry one word for every band and cannot distinguish a
+      band that measured nothing from one that measured garbage.
+
+  bands[].replicate:
+    class: UNMEASURED
+    source: client
+    required: always
+    owner: PERF-004
+    spec: "§4.3"
+    needs: >-
+      Which replicate this band entry is. Arm A's lower bound needs n >= 5
+      entries for one (metric, band), and with no replicate index a receipt
+      cannot carry more than one.
+
+  bands[].window_ms:
+    class: DERIVED
+    source: client
+    required: always
+    producer: {file: crates/aprender-test-lib/src/perf_gate/window.rs, symbol: "pub window_ms: f64"}
+    formula: the measurement window this band was run over; PP-10 compares each sample's issued_ms against it
+
+  bands[].drain_ms:
+    class: DERIVED
+    source: client
+    required: always
+    producer: {file: crates/aprender-test-lib/src/perf_gate/window.rs, symbol: "pub drain_ms: f64"}
+    formula: milliseconds between window close and the last in-flight request settling
+
+  bands[].decode_tok_per_sec:
+    class: DERIVED
+    source: client
+    required: always
+    producer: {file: crates/aprender-test-lib/src/llm/loadtest.rs, symbol: "let decode_tok_per_sec"}
+    formula: median(subject runs[].decode_tok_per_sec) for this band
+
+  bands[].prefill_tok_per_sec:
+    class: DERIVED
+    source: client
+    required: always
+    producer: {file: scripts/lib/perf_receipt.py, symbol: 'band["prefill_tok_per_sec"] = _median'}
+    formula: median(runs[].prefill_tok_per_sec) for this band
+    caveat: >-
+      The converter's value is CLIENT-DERIVED and is a different quantity from
+      the server-timed one the v3 wire wants: on the 2026-08-25 corpus it
+      reads 29.5/12.5/5.8 tok/s at c=4/8/16 against the comparator's
+      6619/4620/3905, because at c>1 the client's first-token wait is
+      queueing. That is why `prefill_source` exists and why the L1 arm refuses
+      anything but `server` on a v3 receipt.
+
+  bands[].prefill_source:
+    class: PRODUCED
+    source: derived
+    required: conditional
+    producer: {file: scripts/lib/perf_receipt.py, symbol: 'band["prefill_source"] = "client-derived"'}
+    caveat: >-
+      `server` iff the figure came from the server's own timings block;
+      `client-derived` for anything the load generator inferred. Present iff
+      prefill_tok_per_sec is.
+
+  bands[].scaling_efficiency:
+    class: UNMEASURED
+    source: derived
+    required: conditional
+    owner: PERF-004
+    spec: "§4 (PP-31)"
+    needs: >-
+      agg(c) / (c * agg(1)), REPORTED and never ratcheted -- it FALLS when
+      agg(1) improves, so ratcheting it up-only punished the work it existed
+      to protect. The gate derives it from the aggregates when a receipt does
+      not carry it, so the line a reader has always seen survives.
+
+  bands[].overhead_share:
+    class: UNMEASURED
+    source: derived
+    required: conditional
+    owner: PERF-004
+    spec: "§4"
+    needs: >-
+      agg(1)/dec(1): how much of a single client's decode rate survives the
+      request path. Meaningful only at c=1, reported, never gated.
+
+  bands[].roofline_tok_per_sec:
+    class: UNMEASURED
+    source: derived
+    required: conditional
+    owner: PERF-004
+    spec: "§4 (PP-23)"
+    needs: >-
+      Weights-bytes over device bandwidth: the rate a single stream cannot
+      exceed. Needs provenance.model_file.bytes and a committed per-device
+      bandwidth figure; neither exists, so a decode number 10x too high still
+      reads as a win.
+
+  bands[].samples:
+    class: UNMEASURED
+    source: client
+    required: always
+    owner: PERF-004
+    spec: "§4.4.5 (PP-7)"
+    needs: >-
+      The raw per-request rows, in the receipt rather than only in the
+      companion .jsonl.gz, so a later threshold can be re-derived and so PP-10
+      can see a request admitted after the window closed. The current receipts
+      carry summary statistics and a gzip nobody reads.
+
+  bands[].samples[].issued_ms:
+    class: UNMEASURED
+    source: client
+    required: always
+    owner: PERF-004
+    spec: "§4.4.7 (PP-10)"
+    needs: >-
+      Offset from window open at which the request was ISSUED. A request
+      issued at or after window_ms is drain, and counting its tokens in the
+      window inflates the throughput of the window that never contained it.
+
+  bands[].witness:
+    class: UNMEASURED
+    source: server
+    required: conditional
+    owner: PERF-004
+    spec: "§4 (PP-26)"
+    needs: >-
+      The batch-invariance witness: does the batched decode reproduce the m=1
+      token stream? gx10's log shows 32 decode steps with all-slot-identical
+      token ids (#2753), and every band in both receipts reads timeouts 0,
+      errors 0, suspect [] -- a batch producing garbage at full speed is
+      indistinguishable from one producing text.
+
+  bands[].witness.batch_invariance:
+    class: UNMEASURED
+    source: server
+    required: conditional
+    owner: PERF-004
+    spec: "§4 (PP-26)"
+    needs: >-
+      PASS | FAIL | UNMEASURABLE for this band.
+
+  bands[].witness.declared_min:
+    class: UNMEASURED
+    source: server
+    required: conditional
+    owner: PERF-004
+    spec: "§4 (PP-26)"
+    needs: >-
+      How many tokens the witness required to agree, compared against
+      perf-matrix.yaml witness.min_agree_tokens. A witness with no declared
+      length agrees on nothing.
+
+  bands[].witness.m_formed:
+    class: UNMEASURED
+    source: server
+    required: conditional
+    owner: PERF-004
+    spec: "§4 (PP-26)"
+    needs: >-
+      The batch size actually formed while the witness ran. A witness taken
+      while no batch formed observed the m=1 path twice.
+
+  bands[].stream_mode:
+    class: UNMEASURED
+    source: server
+    required: always
+    owner: PERF-004
+    spec: "§4 (PP-27)"
+    needs: >-
+      `live` | `replayed` | null, declared by the server on the first SSE
+      chunk. Both 745fa8588 runs were taken with --stream OFF, so ttft, itl
+      and decode are undefined in every one of their 2,396 samples and the
+      receipts say so only in prose.
+
+  bands[].stream_witness:
+    class: UNMEASURED
+    source: client
+    required: always
+    owner: PERF-004
+    spec: "§4 (PP-27)"
+    needs: >-
+      The CLIENT's own dual witness. A replayed stream declares itself live,
+      so a server-side flag cannot be the only evidence.
+
+  bands[].stream_witness.verdict:
+    class: UNMEASURED
+    source: client
+    required: always
+    owner: PERF-004
+    spec: "§4 (PP-27)"
+    needs: >-
+      live | replayed | undeclared, decided by the client.
+
+  bands[].stream_witness.client_ttft_over_e2e_median:
+    class: UNMEASURED
+    source: client
+    required: always
+    owner: PERF-004
+    spec: "§4 (PP-27)"
+    needs: >-
+      Median of (time to first token) / (end to end) over the band's requests.
+      At or above perf-matrix.yaml stream.live_ttft_over_e2e_max every token
+      arrived at the end, which is a replayed stream however it was declared.
+
+  bands[].join_key:
+    class: UNMEASURED
+    source: derived
+    required: conditional
+    owner: PERF-004
+    spec: "§4 (PP-22)"
+    needs: >-
+      The tuple two bands must agree on before their quotient is a ratio:
+      host, workload, band, model, quant, tokenization, window, replicates,
+      interleaved, n_ctx_slot, kv_type, fa, n_batch, n_predict. llama.cpp's
+      own compare-llama-bench.py refuses to compare rows unless 25 properties
+      agree; ours agreed on four.
+
+  bands[].join_key.n_batch:
+    class: UNMEASURED
+    source: derived
+    required: conditional
+    owner: PERF-004
+    spec: "§4 (PP-15/PP-22)"
+    needs: >-
+      The comparator's numeric batch size. `-b 1` does not tune llama.cpp, it
+      switches its batching OFF -- measured on gx10 the c=16 aggregate went
+      434.2 to 181.9 tok/s -- so a value of 1 is a crippled comparator, not a
+      pinned one, and the ratio taken against it is meaningless.
+
+  bands[].baseline:
+    class: UNMEASURED
+    source: client
+    required: conditional
+    owner: PERF-004
+    spec: "§4 (PP-3)"
+    needs: >-
+      The COMPARATOR lane's band, carried inside the subject's band, from the
+      same invocation. It is what makes a ratio paired instead of a quotient
+      of two afternoons; no receipt in evidence/ has a comparator lane at all.
+
+  bands[].baseline.join_key:
+    class: UNMEASURED
+    source: derived
+    required: conditional
+    owner: PERF-004
+    spec: "§4 (PP-22)"
+    needs: >-
+      The comparator band's own join key, compared field by field against the
+      subject's.
+
+  bands[].baseline.join_key.window_ms:
+    class: UNMEASURED
+    source: derived
+    required: conditional
+    owner: PERF-004
+    spec: "§4 (PP-22)"
+    needs: >-
+      The comparator's window. On the 2026-08-25 corpus the apr c=16 lane ran
+      43 s against llama.cpp's 25 s under one band label, and nothing could
+      see it.
+
+  bands[].baseline.join_key.n_batch:
+    class: UNMEASURED
+    source: derived
+    required: conditional
+    owner: PERF-004
+    spec: "§4 (PP-15/PP-22)"
+    needs: >-
+      The comparator's numeric batch size, on the comparator's own side of the
+      join.
+
+  bands[].baseline.client:
+    class: UNMEASURED
+    source: client
+    required: conditional
+    owner: PERF-007
+    spec: "§4 (PP-25)"
+    needs: >-
+      Which client drove the comparator lane.
+
+  bands[].baseline.client.sha256:
+    class: UNMEASURED
+    source: client
+    required: conditional
+    owner: PERF-007
+    spec: "§4 (PP-25)"
+    needs: >-
+      Digest of that client, compared against the subject's. Two clients is
+      two experiments.
+
+  bands[].ratios:
+    class: UNMEASURED
+    source: derived
+    required: conditional
+    owner: PERF-004
+    spec: "§4 (PP-3)"
+    needs: >-
+      {agg, dec, prefill}, each {point, lcb95, method, n}. The ONLY place a
+      ratio is representable, and only beside a baseline from the same run_id.
+
+  bands[].ratios.agg:
+    class: UNMEASURED
+    source: derived
+    required: conditional
+    owner: PERF-004
+    spec: "§4 (PP-3)"
+    needs: >-
+      The agg ratio's interval object.
+
+  bands[].ratios.agg.point:
+    class: UNMEASURED
+    source: derived
+    required: conditional
+    owner: PERF-004
+    spec: "§4 (P-5)"
+    needs: >-
+      the point estimate of the agg ratio.
+
+  bands[].ratios.agg.lcb95:
+    class: UNMEASURED
+    source: derived
+    required: conditional
+    owner: PERF-004
+    spec: "§4 (P-5)"
+    needs: >-
+      the one-sided 95% lower bound of the agg ratio.
+
+  bands[].ratios.dec:
+    class: UNMEASURED
+    source: derived
+    required: conditional
+    owner: PERF-004
+    spec: "§4 (PP-3)"
+    needs: >-
+      The dec ratio's interval object.
+
+  bands[].ratios.dec.point:
+    class: UNMEASURED
+    source: derived
+    required: conditional
+    owner: PERF-004
+    spec: "§4 (P-5)"
+    needs: >-
+      the point estimate of the dec ratio.
+
+  bands[].ratios.dec.lcb95:
+    class: UNMEASURED
+    source: derived
+    required: conditional
+    owner: PERF-004
+    spec: "§4 (P-5)"
+    needs: >-
+      the one-sided 95% lower bound of the dec ratio.
+
+  bands[].ratios[].point:
+    class: UNMEASURED
+    source: derived
+    required: conditional
+    owner: PERF-004
+    spec: "§4 (P-5)"
+    needs: >-
+      The point estimate, addressed through the metric name Arm L3's gated set
+      names. Arm L3 reads it as `b["ratios"][metric]["point"]`, so the
+      extractor renders the metric level as a list index.
+
+  bands[].ratios[].lcb95:
+    class: UNMEASURED
+    source: derived
+    required: conditional
+    owner: PERF-004
+    spec: "§4 (P-5)"
+    needs: >-
+      The one-sided 95% lower bound, addressed through the metric name Arm
+      L3's gated set names. Arm L3 reads it as `b["ratios"][metric]["lcb95"]`,
+      so the extractor renders the metric level as a list index.
+
+
+# ===========================================================================
+# THE v3 WIRE (PP-LLAMA-001 §4). The 63 entries added above are keys
+# perf_gate.sh's L1 arm reads and that NO producer in this tree writes yet. That
+# is the point of the UNMEASURED class: the difference between "nobody wired it
+# up" and "nobody instrumented it" is written down per field, in a form a guard
+# can check -- and a receipt that cannot state them says so by name instead of
+# reading as clean.
+#
+# `source:` IS NEW, and it is the field this file existed without for too long.
+# A receipt states facts about three different things and used to spell them
+# identically:
+#
+#   server    the SERVER answered for itself (GET /v1/effective-config, the
+#             scheduler, the batch witness). PP-13: a server fact may not be
+#             inferred from a harness flag, and rule 6 of
+#             scripts/check_perf_receipt_fields_have_producers.sh refuses a
+#             server-reported field labelled anything else.
+#   client    the load generator observed it (windows, latencies, its own sha)
+#   derived   computed from the two, in this repository, by a stated formula
+#
+# The measured defect: `provenance.feature_set` is copied from the harness's own
+# `--server-feature` flag, and both 745fa8588 receipts therefore claim
+# `["cuda"]` whatever the server actually loaded. A rule keyed on it is theater.
+# ===========================================================================
+
+# Fields the SERVER must answer for. Rule 6 requires `source: server` on every
+# one; a prefix entry covers the whole subtree. Listed rather than inferred from
+# the name so that adding a server fact under a new name is a deliberate act.
+server_reported_prefixes:
+- provenance.server_config
+- ladder.slots_admitted
+- bands[].witness
+server_reported_fields:
+- bands[].stream_mode
+- provenance.subject
+- provenance.subject.commit

@@ -35,6 +35,7 @@ cd "$(dirname "$0")/.." || exit 2
 RELEASE_TIME_ONLY="
 check_multiplatform_dogfood.sh
 check_bench_receipt.sh
+check_perf041_marker.sh
 "
 
 # The workflows whose jobs are REQUIRED status checks on main.
@@ -93,6 +94,8 @@ check_llama_pin.sh
 check_no_fabricated_baselines.sh
 check_no_timing_in_required.sh
 check_perf_claims_cite_receipts.sh
+check_perf_concurrency_groups.sh
+check_perf_matrix_schema.sh
 check_perf_receipt_fields_have_producers.sh
 "
 # check_perf_claims_cite_receipts.sh (PERF-010) matches `check_*perf*.sh` and
@@ -112,6 +115,17 @@ check_perf_receipt_fields_have_producers.sh
 # reader scripts. Its one timing-shaped token is the word `timeouts` inside a
 # comment, naming a RECEIPT FIELD rather than a bound. Verified by reading it
 # rather than by trusting the name, which is what the heuristic above cannot do.
+# check_perf_matrix_schema.sh matched on `perf` and reads only YAML: host
+# classes, threshold_class/author coverage, cell statuses, anchor resolution. It
+# compares no quantity to a clock.
+# check_perf_concurrency_groups.sh matched on `perf` and reads only workflow
+# YAML, asserting that a bench job declares a concurrency group. It is a
+# statement about ISOLATION, not about duration.
+# check_perf041_marker.sh is the opposite case and is in RELEASE_TIME_ONLY
+# above: it compares a marker's `started_utc` against the matrix's
+# `witness.max_age_days`, which IS a duration, and it belongs to the release
+# surface (root Cargo.toml `[package.metadata.dogfood] gates`) rather than to a
+# required workflow.
 
 unclassified=""
 while IFS= read -r f; do

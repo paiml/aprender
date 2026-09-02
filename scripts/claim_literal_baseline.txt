@@ -106,18 +106,84 @@
 # record and CLAUDE.md:218/222 are a WRONG/CORRECT code illustration; they are
 # recorded, not blessed, in this file's own words.
 #
-CHANGELOG.md:1719
-CHANGELOG.md:1734
-CHANGELOG.md:1933
-CHANGELOG.md:1934
-CHANGELOG.md:955
-CHANGELOG.md:957
+# APERTURE REVEAL 2026-09-02 (PP-LLAMA-001 §12 row 10 / PP-12, #2845-successor).
+# THIS FILE GREW BY 256 ADMITTED APERTURE REVEALS (223 -> 454 entries: 25 removed,
+# 256 added; the AUTHORITATIVE count is the ratchet's own verdict row, which names
+# every admitted coordinate), AND FOUR APERTURES MOVED AT ONCE. Recording the
+# reveals is the only way any of them could move: from the working tree alone an
+# aperture reveal and a fresh violation are the same diff, which is what
+# `set-aperture` in scripts/lib_baseline_ratchet.sh exists to tell apart. Every
+# line below is byte-identical at the comparand, or moved with its text intact at
+# no greater occurrence count, and the ratchet NAMES each one in its verdict row.
+#
+#   1. THE UNIVERSE. `^docs/specifications/` was excluded wholesale. The argument
+#      was that a spec is where a measured number belongs with its provenance and
+#      that a spec must be able to QUOTE a banned figure in order to ban it -- both
+#      right, and both now served by the citation exemption instead. What the
+#      exclusion actually hid 217 unreadable ratio and throughput matches (measured
+#      by running the FINISHED guard with and without the exclusion line: 237 -> 454),
+#      including `apr-mcp-server-spec.md:24` (`1.43× Ollama decode perf`) and `:276`
+#      (`~196 tok/s on reference hardware`), two figures for which NO receipt exists
+#      anywhere under evidence/ and which decided what the product ships. Those two
+#      are DELETED by this commit rather than recorded. `docs/specifications/archive/`
+#      is excluded by name, for the reason docs/archive/ is.
+#
+#   2. THE TARGET MASK. It was a bare substring test over the whole line, so
+#      `[Rr]equire` matched the word `required` in any grammatical role: 140 of 467
+#      raw matches under docs/specifications/ were masked by an ordinary English
+#      sentence that happened to contain require / expect / spec. It is now
+#      POSITIONAL -- a label bound to a figure within 20 bytes, in either direction,
+#      or a comparison operator, or a PASS:/FAIL: prefix. Measured before landing over
+#      the pre-existing universe: +2 findings and -0 -- it is strictly a widening, and
+#      only two lines in the whole tree were hiding behind a bare `spec ` or a `target`
+#      more than 20 bytes from its figure (bench/ship_007.rs:39,
+#      docs/qa/five-whys-16x-cpu-gap-2026-01-09.md:223). A first, ONE-DIRECTIONAL draft
+#      of the rule scored +32 instead, because 21 of those were bars written the other
+#      way round (`2x Ollama target`); that is why the rule is a proximity rule in both
+#      directions rather than an ordering rule.
+#
+#   3. THE TABLE DETECTOR. RATIO_RE needs the competitor name within five gap words
+#      and a `|` is deliberately not a gap word, so a comparison TABLE -- competitor
+#      in the header, ratio three columns away -- was unreadable by construction.
+#      The four withdrawn band ratios PP-LLAMA-001 §2.1 says "appear nowhere else"
+#      were published in two documents while this guard reported PASS. +17 over the
+#      pre-existing universe (220 -> 237), fifteen of them docs/BEATS.md rows whose
+#      receipt today is a contract YAML rather than an evidence/ path.
+#
+#   4. THE CITATION EXEMPTION. PP-12 reads "a number in README.md/book/docs/ is
+#      legal IFF it cites an evidence/ receipt path". Until now this guard
+#      implemented only the "delete" half, unconditionally, so PP-12's own
+#      must-not-fire fixture was RED and no spelling of a receipted figure was
+#      legal. 5 lines are now dropped as RECEIPTED rather than baselined; a
+#      DANGLING citation still fails.
+#
+# PAID DOWN IN THE SAME COMMIT, not merely re-recorded:
+#   README.md:233-235       the published `40+ / 225+ / 17 tok/s` Performance table.
+#                           The 7B/RTX 4090 row asserted a rate the tree's own paired
+#                           measurement contradicts. Deleted, not restated.
+#   docs/benchmarking-gate-spec.md:23,24,25,26,263,336
+#                           the document is archived to docs/archive/perf-2026-09-02/
+#                           (PP-LLAMA-001 §13), which is out of the universe for the
+#                           reason every archive is.
+#   docs/specifications/apr-mcp-server-spec.md:24,:276,:278
+#                           three uncited comparator/throughput figures, rewritten.
+#
+# The seven `crates/aprender-serve/**` coordinates that changed number are MOVES,
+# admitted under (a2): unrelated edits above them in the same pull request slid the
+# text down, and the coordinate is not the claim -- the text is.
+#
+# Recorded, not blessed. Shrink-only from here.
+#
+CHANGELOG.md:1093
+CHANGELOG.md:1095
+CHANGELOG.md:1857
+CHANGELOG.md:1872
+CHANGELOG.md:2071
+CHANGELOG.md:2072
 CLAUDE.md:218
 CLAUDE.md:222
 CLAUDE.md:685
-README.md:233
-README.md:234
-README.md:235
+ROADMAP.md:55
 book/src/advanced-testing/popperian-falsification.md:44
 book/src/tools/apr-cli.md:996
 crates/apr-cli/src/commands/bench_safetensors.rs:123
@@ -130,9 +196,9 @@ crates/apr-cli/src/commands/run_tests_layer_trace.rs:55
 crates/apr-cli/src/commands/run_tests_layer_trace.rs:56
 crates/apr-cli/src/commands/serve/handler_gpu_completion.rs:362
 crates/apr-cli/src/commands/serve/handler_gpu_completion.rs:363
-crates/apr-cli/src/commands/serve/handlers.rs:1160
+crates/apr-cli/src/commands/serve/handlers.rs:1169
 crates/apr-cli/src/commands/serve/handlers_include_01.rs:4
-crates/apr-cli/src/commands/serve/mod.rs:113
+crates/apr-cli/src/commands/serve/mod.rs:209
 crates/apr-cli/src/commands/speedup.rs:11
 crates/apr-cli/src/commands/test_llm.rs:14
 crates/apr-cli/src/commands/test_llm.rs:15
@@ -140,6 +206,7 @@ crates/apr-cli/src/commands/test_llm.rs:18
 crates/aprender-compute/src/backends/q4k/mod.rs:23
 crates/aprender-compute/src/brick/attention.rs:18
 crates/aprender-compute/src/brick/attention.rs:37
+crates/aprender-core/src/bench/ship_007.rs:39
 crates/aprender-core/src/format/gguf/api.rs:281
 crates/aprender-core/src/showcase/profiling.rs:165
 crates/aprender-gpu/src/kernels/attention/flash/mod.rs:18
@@ -157,9 +224,9 @@ crates/aprender-gpu/src/kernels/quantize/q4k/coalesced/multi_warp_vectorized.rs:
 crates/aprender-gpu/src/kernels/quantize/q4k/coalesced/wide_kernel.rs:19
 crates/aprender-gpu/src/kernels/quantize/q4k/coalesced/wide_kernel.rs:7
 crates/aprender-qa-runner/src/executor_serve_battery.rs:38
-crates/aprender-serve/src/api/mod_app_state_gpu.rs:190
-crates/aprender-serve/src/api/mod_app_state_gpu.rs:312
-crates/aprender-serve/src/api/mod_app_state_gpu.rs:450
+crates/aprender-serve/src/api/mod_app_state_gpu.rs:193
+crates/aprender-serve/src/api/mod_app_state_gpu.rs:317
+crates/aprender-serve/src/api/mod_app_state_gpu.rs:456
 crates/aprender-serve/src/bench/gemm_performance.rs:259
 crates/aprender-serve/src/cuda/executor/cached.rs:6
 crates/aprender-serve/src/cuda/executor/layers/batched_forward.rs:492
@@ -167,15 +234,15 @@ crates/aprender-serve/src/cuda/executor/layers/batched_layer_par111.rs:10
 crates/aprender-serve/src/cuda/executor/layers/batched_layer_par111.rs:11
 crates/aprender-serve/src/cuda/executor/layers/cublas_prefill/mod.rs:31
 crates/aprender-serve/src/cuda/executor/layers/par-062.rs:257
-crates/aprender-serve/src/cuda/executor/layers/prefill.rs:1043
+crates/aprender-serve/src/cuda/executor/layers/prefill.rs:1058
 crates/aprender-serve/src/cuda/executor/layers/reduces.rs:277
 crates/aprender-serve/src/cuda/executor/layers/transformer_layer_batched.rs:32
 crates/aprender-serve/src/cuda/executor/layers/transformer_layer_batched.rs:33
 crates/aprender-serve/src/cuda/executor/q6k_gemv_indexed.rs:274
 crates/aprender-serve/src/cuda/executor/tiled_gemv.rs:339
-crates/aprender-serve/src/cuda/gpu_profile.rs:295
-crates/aprender-serve/src/cuda/gpu_profile.rs:321
-crates/aprender-serve/src/cuda/gpu_profile.rs:375
+crates/aprender-serve/src/cuda/gpu_profile.rs:326
+crates/aprender-serve/src/cuda/gpu_profile.rs:352
+crates/aprender-serve/src/cuda/gpu_profile.rs:406
 crates/aprender-serve/src/cuda/kernel_type.rs:236
 crates/aprender-serve/src/cuda/kernels.rs:9
 crates/aprender-serve/src/gguf/cuda/clone_layer_weights.rs:294
@@ -206,30 +273,40 @@ crates/aprender-train/src/models/llama_370m.rs:1463
 crates/aprender-train/src/models/llama_370m.rs:1464
 crates/aprender-train/src/models/llama_370m.rs:1465
 crates/aprender-train/src/transformer/init.rs:7
+docs/BEATS.md:113
+docs/BEATS.md:124
 docs/BEATS.md:133
 docs/BEATS.md:134
 docs/BEATS.md:165
+docs/BEATS.md:255
+docs/BEATS.md:256
+docs/BEATS.md:257
+docs/BEATS.md:258
 docs/BEATS.md:271
 docs/BEATS.md:325
+docs/BEATS.md:44
+docs/BEATS.md:46
+docs/BEATS.md:47
+docs/BEATS.md:48
+docs/BEATS.md:49
+docs/BEATS.md:50
+docs/BEATS.md:51
 docs/BEATS.md:65
 docs/BEATS.md:66
+docs/BEATS.md:68
 docs/audits/dogfood-0.63.0-hansei.md:20
 docs/audits/dogfood-0.63.0-ledger.md:65
-docs/benchmarking-gate-spec.md:23
-docs/benchmarking-gate-spec.md:24
-docs/benchmarking-gate-spec.md:25
-docs/benchmarking-gate-spec.md:26
-docs/benchmarking-gate-spec.md:263
-docs/benchmarking-gate-spec.md:336
 docs/model-cards/albor-370m-v1.md:74
 docs/model-cards/albor-370m-v1.md:81
-docs/perf-024-measurement-protocol.md:124
+docs/perf-024-measurement-protocol.md:125
 docs/qa-cargo-run-example-conversion-minimize.md:128
 docs/qa/benchmark-matrix-2026-01-09.md:115
 docs/qa/benchmark-matrix-2026-01-09.md:12
 docs/qa/benchmark-matrix-2026-01-09.md:13
 docs/qa/benchmark-matrix-2026-01-09.md:133
 docs/qa/benchmark-matrix-2026-01-09.md:14
+docs/qa/benchmark-matrix-2026-01-09.md:182
+docs/qa/benchmark-matrix-2026-01-09.md:183
 docs/qa/benchmark-matrix-2026-01-09.md:186
 docs/qa/benchmark-matrix-2026-01-09.md:22
 docs/qa/benchmark-matrix-2026-01-09.md:23
@@ -254,6 +331,7 @@ docs/qa/benchmark-matrix-2026-01-09.md:85
 docs/qa/five-whys-16x-cpu-gap-2026-01-09.md:14
 docs/qa/five-whys-16x-cpu-gap-2026-01-09.md:16
 docs/qa/five-whys-16x-cpu-gap-2026-01-09.md:173
+docs/qa/five-whys-16x-cpu-gap-2026-01-09.md:223
 docs/qa/five-whys-16x-cpu-gap-2026-01-09.md:269
 docs/qa/five-whys-16x-cpu-gap-2026-01-09.md:28
 docs/qa/five-whys-16x-cpu-gap-2026-01-09.md:32
@@ -312,6 +390,7 @@ docs/qa/phase2-gpu-benchmark-verification-2026-01-08.md:33
 docs/qa/phase2-gpu-benchmark-verification-2026-01-08.md:41
 docs/qa/phase2-gpu-benchmark-verification-2026-01-08.md:42
 docs/qa/phase2-gpu-benchmark-verification-2026-01-08.md:87
+docs/qa/phase2-gpu-qa-verification-2026-01-08.md:12
 docs/qa/phase2-gpu-qa-verification-2026-01-08.md:279
 docs/qa/phase2-gpu-qa-verification-2026-01-08.md:280
 docs/qa/phase2-gpu-qa-verification-2026-01-08.md:281
@@ -329,3 +408,223 @@ docs/qa/test-matrix-results-2026-01-08.md:86
 docs/qa/test-matrix-results-2026-01-08.md:87
 docs/qa/test-matrix-results-2026-01-08.md:93
 docs/qa/test-matrix-results-2026-01-08.md:94
+docs/specifications/PR-REVIEW-SKILL-002-v2.md:1132
+docs/specifications/PR-REVIEW-SKILL-002-v2.md:1167
+docs/specifications/PR-REVIEW-SKILL-002-v2.md:1171
+docs/specifications/PR-REVIEW-SKILL-002-v2.md:1175
+docs/specifications/PR-REVIEW-SKILL-002-v2.md:1207
+docs/specifications/PR-REVIEW-SKILL-002-v2.md:1300
+docs/specifications/PR-REVIEW-SKILL-002-v2.md:23
+docs/specifications/PR-REVIEW-SKILL-002-v2.md:345
+docs/specifications/PR-REVIEW-SKILL-002-v2.md:356
+docs/specifications/PR-REVIEW-SKILL-002-v2.md:360
+docs/specifications/PR-REVIEW-SKILL-002-v2.md:60
+docs/specifications/PR-REVIEW-SKILL-002-v2.md:63
+docs/specifications/apr-book-spec.md:1141
+docs/specifications/apr-book-spec.md:611
+docs/specifications/apr-book-spec.md:612
+docs/specifications/aprender-compute/cgp-compute-gpu-profile.md:1465
+docs/specifications/aprender-compute/cgp-compute-gpu-profile.md:2574
+docs/specifications/aprender-compute/cgp-compute-gpu-profile.md:2575
+docs/specifications/aprender-compute/cgp-compute-gpu-profile.md:2717
+docs/specifications/aprender-compute/cgp-compute-gpu-profile.md:2859
+docs/specifications/aprender-compute/cgp-compute-gpu-profile.md:2860
+docs/specifications/aprender-compute/cgp-compute-gpu-profile.md:2930
+docs/specifications/aprender-compute/cgp-compute-gpu-profile.md:3328
+docs/specifications/aprender-compute/cgp-compute-gpu-profile.md:3463
+docs/specifications/aprender-compute/cgp-compute-gpu-profile.md:3465
+docs/specifications/aprender-compute/cgp-compute-gpu-profile.md:3466
+docs/specifications/aprender-compute/cgp-compute-gpu-profile.md:3467
+docs/specifications/aprender-compute/cgp-compute-gpu-profile.md:3469
+docs/specifications/aprender-compute/cgp-compute-gpu-profile.md:3548
+docs/specifications/aprender-compute/cgp-compute-gpu-profile.md:3549
+docs/specifications/aprender-compute/cgp-compute-gpu-profile.md:3550
+docs/specifications/aprender-compute/cgp-compute-gpu-profile.md:3557
+docs/specifications/aprender-compute/cgp-compute-gpu-profile.md:3558
+docs/specifications/aprender-compute/cgp-compute-gpu-profile.md:3585
+docs/specifications/aprender-compute/cgp-compute-gpu-profile.md:3601
+docs/specifications/aprender-compute/cgp-compute-gpu-profile.md:3603
+docs/specifications/aprender-compute/cgp-compute-gpu-profile.md:3605
+docs/specifications/aprender-compute/cgp-compute-gpu-profile.md:3642
+docs/specifications/aprender-compute/cgp-compute-gpu-profile.md:3643
+docs/specifications/aprender-compute/cgp-compute-gpu-profile.md:48
+docs/specifications/aprender-compute/cgp-compute-gpu-profile.md:49
+docs/specifications/aprender-compute/compute-block-tui-cbtop.md:1246
+docs/specifications/aprender-compute/compute-block-tui-cbtop.md:1278
+docs/specifications/aprender-compute/compute-block-tui-cbtop.md:1389
+docs/specifications/aprender-compute/compute-block-tui-cbtop.md:1475
+docs/specifications/aprender-compute/compute-block-tui-cbtop.md:1476
+docs/specifications/aprender-compute/compute-block-tui-cbtop.md:269
+docs/specifications/aprender-compute/compute-block-tui-cbtop.md:282
+docs/specifications/aprender-compute/compute-block-tui-cbtop.md:4836
+docs/specifications/aprender-compute/compute-block-tui-cbtop.md:5401
+docs/specifications/aprender-compute/compute-block-tui-cbtop.md:5447
+docs/specifications/aprender-compute/compute-block-tui-cbtop.md:5451
+docs/specifications/aprender-compute/compute-block-tui-cbtop.md:5467
+docs/specifications/aprender-compute/compute-block-tui-cbtop.md:5507
+docs/specifications/aprender-compute/compute-block-tui-cbtop.md:5511
+docs/specifications/aprender-compute/compute-block-tui-cbtop.md:5526
+docs/specifications/aprender-compute/compute-block-tui-cbtop.md:655
+docs/specifications/aprender-compute/compute-block-tui-cbtop.md:656
+docs/specifications/aprender-compute/ml-tuner-bricks.md:1818
+docs/specifications/aprender-compute/ml-tuner-bricks.md:1945
+docs/specifications/aprender-compute/ml-tuner-bricks.md:1961
+docs/specifications/aprender-compute/ml-tuner-bricks.md:2013
+docs/specifications/aprender-compute/ml-tuner-bricks.md:2023
+docs/specifications/aprender-compute/ml-tuner-bricks.md:2024
+docs/specifications/aprender-compute/ml-tuner-bricks.md:656
+docs/specifications/aprender-compute/ml-tuner-bricks.md:657
+docs/specifications/aprender-compute/pytorch-numpy-replacement-spec.md:1199
+docs/specifications/aprender-compute/pytorch-numpy-replacement-spec.md:1200
+docs/specifications/aprender-compute/pytorch-numpy-replacement-spec.md:1201
+docs/specifications/aprender-compute/pytorch-numpy-replacement-spec.md:1202
+docs/specifications/aprender-compute/sub/wgpu.md:24
+docs/specifications/aprender-compute/ublk-batched-gpu-compression.md:46
+docs/specifications/aprender-compute/ublk-batched-gpu-compression.md:87
+docs/specifications/aprender-gpu/complete-cuda-runtime-specification.md:1501
+docs/specifications/aprender-gpu/m-gpu-moe-3-scope.md:16
+docs/specifications/aprender-gpu/m-gpu-moe-3-scope.md:171
+docs/specifications/aprender-gpu/m-gpu-moe-3-scope.md:206
+docs/specifications/aprender-monorepo-consolidation.md:467
+docs/specifications/aprender-monorepo-consolidation.md:468
+docs/specifications/aprender-orchestrate/batuta-spec.md:109
+docs/specifications/aprender-orchestrate/batuta-spec.md:113
+docs/specifications/aprender-orchestrate/batuta-spec.md:408
+docs/specifications/aprender-orchestrate/batuta-spec.md:409
+docs/specifications/aprender-orchestrate/batuta-spec.md:424
+docs/specifications/aprender-orchestrate/batuta-spec.md:428
+docs/specifications/aprender-orchestrate/components/apr-code.md:968
+docs/specifications/aprender-profile/llm-inference-profiling-spec.md:362
+docs/specifications/aprender-profile/llm-inference-profiling-spec.md:365
+docs/specifications/aprender-profile/llm-inference-profiling-spec.md:373
+docs/specifications/aprender-profile/llm-inference-profiling-spec.md:48
+docs/specifications/aprender-profile/llm-inference-profiling-spec.md:49
+docs/specifications/aprender-profile/llm-inference-profiling-spec.md:50
+docs/specifications/aprender-profile/llm-inference-profiling-spec.md:51
+docs/specifications/aprender-serve/benchmark-model-runners-spec.md:31
+docs/specifications/aprender-serve/benchmark-model-runners-spec.md:39
+docs/specifications/aprender-serve/benchmark-model-runners-spec.md:56
+docs/specifications/aprender-serve/benchmark-model-runners-spec.md:59
+docs/specifications/aprender-serve/benchmark-model-runners-spec.md:617
+docs/specifications/aprender-serve/benchmark-model-runners-spec.md:875
+docs/specifications/aprender-serve/benchmarking-with-common-models-common-serving-spec.md:969
+docs/specifications/aprender-serve/benchmarking-with-common-models-common-serving-spec.md:971
+docs/specifications/aprender-serve/benchmarking-with-common-models-common-serving-spec.md:972
+docs/specifications/aprender-serve/decoder-throughput-specification-llama-mistral-phi-qwen.md:30
+docs/specifications/aprender-serve/decoder-throughput-specification-llama-mistral-phi-qwen.md:34
+docs/specifications/aprender-serve/decoder-throughput-specification-llama-mistral-phi-qwen.md:65
+docs/specifications/aprender-serve/enhanced-model-serving-apr-gguf-safetensor-full.md:1453
+docs/specifications/aprender-serve/enhanced-model-serving-apr-gguf-safetensor-full.md:1454
+docs/specifications/aprender-serve/enhanced-model-serving-apr-gguf-safetensor-full.md:1455
+docs/specifications/aprender-serve/enhanced-model-serving-apr-gguf-safetensor-full.md:1456
+docs/specifications/aprender-serve/enhanced-model-serving-apr-gguf-safetensor-full.md:1457
+docs/specifications/aprender-serve/llama-cpp-style-performance-spec.md:322
+docs/specifications/aprender-serve/llama-cpp-style-performance-spec.md:332
+docs/specifications/aprender-serve/llama-cpp-style-performance-spec.md:334
+docs/specifications/aprender-serve/performance-parity-ollama-llamacpp-gpu-inference-llms.md:15
+docs/specifications/aprender-serve/qwen-performance-improve.md:183
+docs/specifications/aprender-serve/qwen-performance-improve.md:340
+docs/specifications/aprender-serve/qwen-performance-improve.md:341
+docs/specifications/aprender-serve/qwen-performance-improve.md:86
+docs/specifications/aprender-serve/qwen-performance-improve.md:93
+docs/specifications/aprender-serve/qwen-showcase-throughput-improve.md:130
+docs/specifications/aprender-serve/qwen-showcase-throughput-improve.md:77
+docs/specifications/aprender-serve/qwen-showcase-throughput-improve.md:86
+docs/specifications/aprender-serve/serve-deploy-apr.md:875
+docs/specifications/aprender-serve/serve-deploy-apr.md:876
+docs/specifications/aprender-serve/simd-optimization-spec.md:123
+docs/specifications/aprender-serve/simd-optimization-spec.md:124
+docs/specifications/aprender-serve/simd-optimization-spec.md:125
+docs/specifications/aprender-serve/simd-optimization-spec.md:130
+docs/specifications/aprender-serve/simd-optimization-spec.md:131
+docs/specifications/aprender-serve/simd-optimization-spec.md:132
+docs/specifications/aprender-serve/simd-optimization-spec.md:18
+docs/specifications/aprender-serve/simd-optimization-spec.md:185
+docs/specifications/aprender-serve/simd-optimization-spec.md:19
+docs/specifications/aprender-serve/simd-optimization-spec.md:20
+docs/specifications/aprender-serve/simd-optimization-spec.md:23
+docs/specifications/aprender-serve/simd-optimization-spec.md:24
+docs/specifications/aprender-serve/simd-optimization-spec.md:25
+docs/specifications/aprender-serve/simd-optimization-spec.md:271
+docs/specifications/aprender-serve/simd-optimization-spec.md:29
+docs/specifications/aprender-serve/simd-optimization-spec.md:312
+docs/specifications/aprender-serve/simd-optimization-spec.md:313
+docs/specifications/aprender-serve/simd-optimization-spec.md:32
+docs/specifications/aprender-serve/simd-optimization-spec.md:422
+docs/specifications/aprender-serve/simd-optimization-spec.md:427
+docs/specifications/aprender-serve/simd-optimization-spec.md:429
+docs/specifications/aprender-serve/simd-optimization-spec.md:435
+docs/specifications/aprender-serve/simd-optimization-spec.md:436
+docs/specifications/aprender-serve/simd-optimization-spec.md:437
+docs/specifications/aprender-serve/simd-optimization-spec.md:69
+docs/specifications/aprender-train/albor-370m-roadmap.md:55
+docs/specifications/aprender-train/albor-370m-roadmap.md:70
+docs/specifications/aprender-train/causal-attention-mask-spec.md:145
+docs/specifications/aprender-train/causal-attention-mask-spec.md:36
+docs/specifications/aprender-train/entrenar-spec.md:869
+docs/specifications/aprender-train/entrenar-spec.md:870
+docs/specifications/aprender-train/fine-tune-rust-test-gen.md:1026
+docs/specifications/aprender-train/fine-tune-rust-test-gen.md:1285
+docs/specifications/aprender-train/fine-tune-rust-test-gen.md:1296
+docs/specifications/aprender-train/fine-tune-rust-test-gen.md:1300
+docs/specifications/aprender-train/fine-tune-rust-test-gen.md:387
+docs/specifications/aprender-train/model-1-qlora-retry-plan.md:76
+docs/specifications/aprender-train/ship-model-1-spec.md:2090
+docs/specifications/aprender-train/ship-model-1-spec.md:2098
+docs/specifications/aprender-train/ship-model-1-spec.md:2117
+docs/specifications/aprender-train/ship-model-1-spec.md:2321
+docs/specifications/aprender-train/ship-model-1-spec.md:2353
+docs/specifications/aprender-train/ship-model-1-spec.md:2542
+docs/specifications/aprender-train/ship-model-1-spec.md:2550
+docs/specifications/aprender-train/ship-model-1-spec.md:2571
+docs/specifications/aprender-train/ship-model-1-spec.md:2587
+docs/specifications/aprender-train/ship-model-1-spec.md:2639
+docs/specifications/aprender-train/ship-model-1-spec.md:2704
+docs/specifications/aprender-train/ship-model-1-spec.md:2737
+docs/specifications/aprender-train/ship-model-1-spec.md:28
+docs/specifications/aprender-train/ship-model-1-spec.md:801
+docs/specifications/aprender-train/ship-model-2-spec.md:1434
+docs/specifications/aprender-train/ship-model-2-spec.md:1698
+docs/specifications/aprender-train/ship-model-2-spec.md:1993
+docs/specifications/aprender-train/ship-model-2-spec.md:1997
+docs/specifications/aprender-train/ship-model-2-spec.md:2078
+docs/specifications/aprender-train/ship-model-2-spec.md:2115
+docs/specifications/aprender-train/ship-model-2-spec.md:2325
+docs/specifications/aprender-train/ship-model-2-spec.md:2326
+docs/specifications/aprender-train/ship-model-2-spec.md:30
+docs/specifications/aprender-train/ship-shared-methodology.md:1302
+docs/specifications/aprender-train/ship-shared-methodology.md:1431
+docs/specifications/aprender-train/ship-shared-methodology.md:1458
+docs/specifications/aprender-train/ship-shared-methodology.md:21
+docs/specifications/aprender-train/ship-shared-methodology.md:25
+docs/specifications/aprender-train/ship-shared-methodology.md:28
+docs/specifications/aprender-train/ship-shared-methodology.md:35
+docs/specifications/aprender-train/ship-shared-methodology.md:385
+docs/specifications/aprender-train/ship-shared-methodology.md:408
+docs/specifications/aprender-train/ship-shared-methodology.md:579
+docs/specifications/aprender-train/ship-shared-methodology.md:580
+docs/specifications/aprender-train/ship-shared-methodology.md:666
+docs/specifications/aprender-train/ship-shared-methodology.md:676
+docs/specifications/aprender-train/ship-two-models-spec.md:49
+docs/specifications/aprender-train/weight-initialization-spec.md:5
+docs/specifications/beat-campaign-10day-schedule-2026-06-12.md:161
+docs/specifications/beat-campaign-10day-schedule-2026-06-12.md:163
+docs/specifications/campaign-ev-reprioritization-2026-06-12.md:34
+docs/specifications/campaign-ev-reprioritization-2026-06-12.md:36
+docs/specifications/campaign-ev-reprioritization-2026-06-12.md:37
+docs/specifications/components/compute-backends.md:168
+docs/specifications/components/compute-backends.md:233
+docs/specifications/components/compute-backends.md:285
+docs/specifications/components/stack-architecture.md:184
+docs/specifications/components/stack-architecture.md:188
+docs/specifications/components/tracing.md:302
+docs/specifications/fable-architectural-review.md:156
+docs/specifications/fable-architectural-review.md:292
+docs/specifications/fable-architectural-review.md:31
+docs/specifications/fable-architectural-review.md:54
+docs/specifications/fable-architectural-review.md:96
+docs/specifications/m32d-moe-kv-cache-scope.md:15
+docs/specifications/m32d-moe-kv-cache-scope.md:199
+docs/specifications/m32d-moe-kv-cache-scope.md:3
+docs/specifications/pr-skill-spec.md:103
+docs/specifications/pr-skill-spec.md:197

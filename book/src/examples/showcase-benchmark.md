@@ -10,7 +10,7 @@ This example demonstrates the Qwen2.5-Coder showcase benchmark harness for measu
 
 **CORRECTNESS-012 fixed.** Comparator ratios are deliberately absent from this
 page: every one that used to appear here was derived from a hardcoded comparator
-baseline that no run ever measured (APR-PERF-GATE-001 §9). A ratio is published
+baseline that no run ever measured (`PP-LLAMA-001-MASTER.md`, formerly §9). A ratio is published
 only from a signed receipt that recorded both sides.
 
 ### Qwen2.5-Coder-1.5B Results

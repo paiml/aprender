@@ -87,13 +87,15 @@ async fn test_AUDIO_HDL_001_transcribe_dry_run() {
         )
         .await
         .expect("resp");
-    assert_eq!(response.status(), axum::http::StatusCode::OK);
+    // aprender does not transcribe audio (whisper-apr is a standalone project):
+    // the handler answers 501 with a typed error, never a fabricated "dry-run"
+    // transcript. This test once expected 200 + text; that contract is gone.
+    assert_eq!(response.status(), axum::http::StatusCode::NOT_IMPLEMENTED);
     let bytes = axum::body::to_bytes(response.into_body(), 1_048_576).await.expect("body");
     let json: serde_json::Value = serde_json::from_slice(&bytes).expect("parse");
-    assert!(
-        json["text"].as_str().expect("text").contains("dry-run")
-            || !json["text"].as_str().expect("text").is_empty()
-    );
+    assert_eq!(json["error"]["type"], "transcription_not_supported");
+    assert_eq!(json["error"]["code"], 501);
+    assert!(json["error"]["message"].as_str().expect("message").contains("whisper-apr"));
 }
 
 #[tokio::test]

@@ -35,12 +35,18 @@ on:
     - cron: "45 5 * * *"  # 05:45 UTC, after Nightly Bench (05:30)
   workflow_dispatch:
 
-concurrency:
-  group: beat-speed-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
   beat-speed:
+    # PP-19 / §5.4: one group per HOST, at job level, cancel-in-progress false.
+    # `beat-speed-${{ github.ref }}` with cancel true serialised this lane
+    # against itself only, while Nightly Bench measured on the same clean-room
+    # box 15 minutes earlier — and a queued run could cancel a beat mid-window.
+    # `perf-intel` is the SAME group nightly-bench's `measure` job declares, so
+    # the two lanes now serialise against each other; groups are repo-wide.
+    # Enforced by scripts/check_perf_concurrency_groups.sh.
+    concurrency:
+      group: perf-intel
+      cancel-in-progress: false
     runs-on: [self-hosted, X64, Linux, clean-room]
     timeout-minutes: 45
     env:

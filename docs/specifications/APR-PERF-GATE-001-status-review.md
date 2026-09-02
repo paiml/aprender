@@ -1,7 +1,9 @@
 # APR-PERF-GATE-001 — status review
 
 **Epic:** paiml/aprender#2706, opened 2026-08-27. **Reviewed:** 2026-09-01, at `origin/main` `b7bfcafa1`.
-**Spec:** [`APR-PERF-GATE-001-v2.2.md`](./APR-PERF-GATE-001-v2.2.md) (1265 lines) · [`APR-PERF-GATE-001-RESTART.md`](./APR-PERF-GATE-001-RESTART.md)
+**Spec:** [`APR-PERF-GATE-001-v2.2.md`](../archive/perf-2026-09-01/APR-PERF-GATE-001-v2.2.md) (1265 lines) · [`APR-PERF-GATE-001-RESTART.md`](../archive/perf-2026-09-01/APR-PERF-GATE-001-RESTART.md)
+
+> Both were archived 2026-09-01; the governing specification is now [`PP-LLAMA-001-MASTER.md`](./PP-LLAMA-001-MASTER.md). This review is retained, not superseded.
 
 This is an effectiveness review, not a progress report. It asks one question: **of the work
 done in five days, which part produced the thing the epic exists to produce?**

@@ -1,0 +1,74 @@
+{
+ "aggregate": {},
+ "regressions": [],
+ "runs": [
+  {
+   "completion_tokens_total": 768,
+   "concurrency": 1,
+   "decode_tok_per_sec": 100.0,
+   "drain_ms": 120.0,
+   "elapsed_secs": 60.0,
+   "failed": 0,
+   "prefill_tok_per_sec": 1180.0,
+   "prompt_tokens_total": 3072,
+   "request_details": [
+    {
+     "completion_tokens": 128,
+     "finish_reason": "length",
+     "itl_ms": 12.661417,
+     "latency_ms": 1653.0,
+     "prompt_tokens": 512,
+     "ttft_ms": 45.0
+    },
+    {
+     "completion_tokens": 128,
+     "finish_reason": "length",
+     "itl_ms": 12.795276,
+     "latency_ms": 1670.0,
+     "prompt_tokens": 512,
+     "ttft_ms": 46.5
+    },
+    {
+     "completion_tokens": 128,
+     "finish_reason": "length",
+     "itl_ms": 12.929134,
+     "latency_ms": 1687.0,
+     "prompt_tokens": 512,
+     "ttft_ms": 48.0
+    },
+    {
+     "completion_tokens": 128,
+     "finish_reason": "length",
+     "itl_ms": 13.062992,
+     "latency_ms": 1704.0,
+     "prompt_tokens": 512,
+     "ttft_ms": 49.5
+    },
+    {
+     "completion_tokens": 128,
+     "finish_reason": "length",
+     "itl_ms": 13.19685,
+     "latency_ms": 1721.0,
+     "prompt_tokens": 512,
+     "ttft_ms": 51.0
+    },
+    {
+     "completion_tokens": 128,
+     "finish_reason": "length",
+     "itl_ms": 13.330709,
+     "latency_ms": 1738.0,
+     "prompt_tokens": 512,
+     "ttft_ms": 52.5
+    }
+   ],
+   "runtime_name": "llamacpp-cpu-c1",
+   "stream_mode": "live",
+   "successful": 6,
+   "timeouts": 0,
+   "tokens_per_sec": 90.0,
+   "total_requests": 6,
+   "ttft_p50_ms": 49.5,
+   "witness": null
+  }
+ ]
+}

@@ -598,6 +598,13 @@ gates = [
     "scripts/check_parity_receipt.sh",
     # #2696 — a claim about measured reality may not be a literal a user reads.
     "scripts/check_no_claim_literals.sh",
+    # PP-LLAMA-001 §7.0 L0: correctness is checked "nightly + release, missing
+    # marker = RED". This is the release half — the phrase had no consumer, so a
+    # night on which the witness never ran (cuda-nightly yields to training and
+    # exits 0) was green and silent, and a release cut on top of it inherited the
+    # silence. RED when evidence/perf041/<host>/marker.json is absent, is not
+    # PASS, or is older than perf-matrix.yaml `witness.max_age_days`.
+    "scripts/check_perf041_marker.sh",
 ]
 
 [[bin]]

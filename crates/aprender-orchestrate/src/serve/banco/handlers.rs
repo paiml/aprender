@@ -266,6 +266,46 @@ fn sync_response(
 // BANCO-HDL-006: SSE streaming response
 // ============================================================================
 
+/// PP-27 — how banco produces its SSE frames.
+///
+/// `"replayed"`, and not as a hedge: `try_stream_inference` runs the whole
+/// decode loop and returns a `Vec` before the first frame is written, and the
+/// no-model path yields a canned message. Either way generation is over by the
+/// time the stream starts, so a client's inter-token gaps measure the SSE
+/// writer rather than the model. Declaring `"live"` here would put the writer's
+/// timings into a receipt under the model's name.
+pub(super) const BANCO_STREAM_MODE: &str = "replayed";
+
+/// PP-27 — the terminal `usage` for a streamed completion.
+///
+/// `measured` says whether a model produced the frames. When it did, each frame
+/// with no `finish_reason` is exactly one sampled token (the terminal marker
+/// carries the reason and no text), so counting them is counting tokens — not
+/// the chunk-count substitution PP-27 refuses, which counts whatever the
+/// transport chose to flush. When it did not, there was no generation to count
+/// and this reports the same `len / 4` estimate the non-streaming dry-run
+/// reports, so the two surfaces cannot disagree about one canned message.
+pub(super) fn stream_usage(
+    prompt_tokens: u32,
+    frames: &[(String, Option<String>)],
+    measured: bool,
+) -> Usage {
+    let completion_tokens = if measured {
+        u32::try_from(frames.iter().filter(|(_, finish)| finish.is_none()).count())
+            .unwrap_or(u32::MAX)
+    } else {
+        let chars: usize = frames.iter().map(|(text, _)| text.len()).sum();
+        u32::try_from(chars / 4).unwrap_or(u32::MAX)
+    };
+    Usage {
+        prompt_tokens,
+        completion_tokens,
+        total_tokens: prompt_tokens.saturating_add(completion_tokens),
+        context_window: None,
+        context_used_pct: None,
+    }
+}
+
 fn stream_response(
     state: BancoState,
     request: BancoChatRequest,
@@ -275,30 +315,38 @@ fn stream_response(
     let id = format!("banco-{}", now_epoch());
     let created = now_epoch();
 
-    // Try to generate real tokens via inference
+    // Try to generate real tokens via inference. Normalized to one shape on
+    // both builds: the frames, and the tokenizer's own prompt-token count.
     #[cfg(feature = "realizar")]
-    let real_tokens = super::handlers_inference::try_stream_inference(&state, &request);
+    let real_tokens: Option<(Vec<(String, Option<String>)>, u32)> =
+        super::handlers_inference::try_stream_inference(&state, &request)
+            .map(|generated| (generated.frames, generated.prompt_tokens));
     #[cfg(not(feature = "realizar"))]
-    let real_tokens: Option<Vec<(String, Option<String>)>> = {
-        let _ = &state;
-        None
-    };
+    let real_tokens: Option<(Vec<(String, Option<String>)>, u32)> = None;
 
-    let tokens_with_finish: Vec<(String, Option<String>)> = if let Some(toks) = real_tokens {
-        toks
-    } else {
-        // Helpful dry-run message
-        vec![
-            ("No model loaded. ".to_string(), None),
-            ("Load a GGUF model via ".to_string(), None),
-            ("POST /api/v1/models/load ".to_string(), None),
-            ("to enable real inference.".to_string(), None),
-            (String::new(), Some("dry_run".to_string())),
-        ]
+    // PP-27: the counts are the SERVER's. `prompt_tokens` is the tokenizer's
+    // own figure when a model ran; the dry-run has no tokenizer and falls back
+    // to the same estimator the non-streaming path uses. Neither is a
+    // placeholder zero, which a reader cannot tell from a real empty prompt.
+    let (tokens_with_finish, prompt_tokens, measured) = match real_tokens {
+        Some((frames, prompt_tokens)) => (frames, prompt_tokens, true),
+        None => {
+            // Helpful dry-run message
+            let frames = vec![
+                ("No model loaded. ".to_string(), None),
+                ("Load a GGUF model via ".to_string(), None),
+                ("POST /api/v1/models/load ".to_string(), None),
+                ("to enable real inference.".to_string(), None),
+                (String::new(), Some("dry_run".to_string())),
+            ];
+            let estimated = state.context_manager.estimate_tokens(&request.messages);
+            (frames, u32::try_from(estimated).unwrap_or(u32::MAX), false)
+        }
     };
+    let usage = stream_usage(prompt_tokens, &tokens_with_finish, measured);
 
     let stream = async_stream::stream! {
-        // Role chunk
+        // Role chunk — PP-27: the mechanism is declared on the FIRST chunk.
         let role_chunk = BancoChatChunk {
             id: id.clone(),
             object: "chat.completion.chunk".to_string(),
@@ -309,6 +357,8 @@ fn stream_response(
                 delta: ChatDelta { role: Some(Role::Assistant), content: None },
                 finish_reason: None,
             }],
+            stream_mode: Some(BANCO_STREAM_MODE.to_string()),
+            usage: None,
         };
         if let Ok(data) = serde_json::to_string(&role_chunk) {
             yield Ok(Event::default().data(data));
@@ -329,10 +379,29 @@ fn stream_response(
                     },
                     finish_reason: finish.clone(),
                 }],
+                stream_mode: None,
+                usage: None,
             };
             if let Ok(data) = serde_json::to_string(&chunk) {
                 yield Ok(Event::default().data(data));
             }
+        }
+
+        // PP-27: the terminal chunk carries `usage`. Without it a measuring
+        // client refuses the whole response (`LlmClientError::StreamNoUsage`)
+        // rather than counting frames, because a frame count is not a token
+        // count.
+        let terminal = BancoChatChunk {
+            id: id.clone(),
+            object: "chat.completion.chunk".to_string(),
+            created,
+            model: model_name.clone(),
+            choices: Vec::new(),
+            stream_mode: None,
+            usage: Some(usage),
+        };
+        if let Ok(data) = serde_json::to_string(&terminal) {
+            yield Ok(Event::default().data(data));
         }
 
         // [DONE] sentinel

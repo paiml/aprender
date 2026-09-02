@@ -22,7 +22,7 @@ use futures::stream::Stream;
 use super::{
     build_trace_data, clean_chat_output, format_chat_messages, AppState, ChatChoice,
     ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse, ChatMessage, ErrorResponse,
-    FinishReason, OpenAIModel, OpenAIModelsResponse, Usage,
+    FinishReason, OpenAIModel, OpenAIModelsResponse, StreamMode, Usage,
 };
 use crate::generate::{CancelToken, GenerationConfig, SamplingStrategy};
 use crate::tokenizer::BPETokenizer;
@@ -451,6 +451,7 @@ mod pmat821_chat_handler_threading_tests {
             user: None,
             tools: None,
             tool_choice: None,
+            stream_options: None,
         }
     }
 
@@ -656,7 +657,7 @@ fn request_tool_choice(request: &ChatCompletionRequest) -> Option<crate::grammar
 
 /// Build a non-streaming ChatCompletionResponse.
 #[allow(clippy::too_many_arguments)]
-fn build_chat_response(
+pub(crate) fn build_chat_response(
     request_id: String,
     model: String,
     text: String,
@@ -668,6 +669,7 @@ fn build_chat_response(
     latency: Duration,
     tools: Option<&[super::OpenAiTool]>,
     tool_choice: Option<crate::grammar::ToolChoice>,
+    timings: Option<super::Timings>,
 ) -> Response {
     let (brick_trace, step_trace, layer_trace) = build_trace_data(
         trace_level,
@@ -711,6 +713,7 @@ fn build_chat_response(
         brick_trace,
         step_trace,
         layer_trace,
+        timings,
     })
     .into_response()
 }
@@ -752,6 +755,13 @@ fn decode_token(tokenizer: &BPETokenizer, token_id: u32) -> Option<String> {
 /// multi-byte UTF-8 (emoji/CJK -> U+FFFD) and ignored request.stop on the cuda/gpu/cached
 /// chat STREAMING backends (the production GPU streaming path). All three callers passed
 /// `clean = false`, so the old `clean` param is dropped in favour of `stops`.
+///
+/// PP-27: this builder declares `stream_mode: "replayed"` on its first chunk.
+/// It is not a slower live stream — the whole generation finished before the
+/// first delta was written, so a client's inter-token gaps here measure the
+/// SSE writer, not the model. A receipt that recorded `ttft`/`itl_p95` off this
+/// path would be recording the wrong thing, which is why the mode is declared
+/// rather than inferred.
 fn pregenerated_sse_response(
     token_ids: Vec<u32>,
     tokenizer: Arc<BPETokenizer>,
@@ -759,6 +769,7 @@ fn pregenerated_sse_response(
     model_name: String,
     stops: Option<&[String]>,
     max_tokens: usize,
+    prompt_tokens: usize,
 ) -> Response {
     let completion_tokens = token_ids.len();
     let StreamedText { deltas, stopped } = streaming_text_deltas(&tokenizer, &token_ids, stops);
@@ -766,8 +777,17 @@ fn pregenerated_sse_response(
     // reason without knowing the budget it was generated under. The terminal
     // chunk now agrees with the non-streaming body for the same request.
     let finish = FinishReason::from_generation(stopped, completion_tokens, max_tokens);
+    let usage = Usage {
+        prompt_tokens,
+        completion_tokens,
+        total_tokens: prompt_tokens + completion_tokens,
+    };
     let stream = async_stream::stream! {
-        if let Some(evt) = sse_event(&ChatCompletionChunk::initial(&request_id, &model_name)) {
+        if let Some(evt) = sse_event(&ChatCompletionChunk::initial_with_mode(
+            &request_id,
+            &model_name,
+            StreamMode::Replayed,
+        )) {
             yield evt;
         }
 
@@ -778,7 +798,15 @@ fn pregenerated_sse_response(
             }
         }
 
-        if let Some(evt) = sse_event(&ChatCompletionChunk::done(&request_id, &model_name, finish)) {
+        // PP-27: no `timings` here. This path has no prefill/decode split to
+        // report — generation was already over when the response was built.
+        if let Some(evt) = sse_event(&ChatCompletionChunk::done_with_usage(
+            &request_id,
+            &model_name,
+            finish,
+            usage,
+            None,
+        )) {
             yield evt;
         }
         yield Ok::<_, Infallible>(Event::default().data("[DONE]".to_string()));
@@ -826,6 +854,12 @@ pub(crate) fn streaming_token_sink(
 /// newline from the stream.
 // serde_json::json!() uses infallible unwrap
 #[allow(clippy::disallowed_methods)]
+///
+/// PP-27: this builder declares `stream_mode: "live"` on its first chunk and
+/// carries `usage` — and, when the engine reported them, the server-measured
+/// `timings` — on the terminal one. `timings_rx` is the engine's return path:
+/// a backend that cannot separate prefill from decode simply passes `None` and
+/// the terminal chunk carries no `timings` key, which is the honest reading.
 pub(crate) fn true_streaming_sse_response(
     rx: tokio::sync::mpsc::Receiver<Result<u32, String>>,
     tokenizer: Arc<BPETokenizer>,
@@ -834,6 +868,8 @@ pub(crate) fn true_streaming_sse_response(
     metrics: Arc<crate::metrics::MetricsCollector>,
     start: Instant,
     max_tokens: usize,
+    prompt_tokens: usize,
+    timings_rx: Option<tokio::sync::oneshot::Receiver<super::PhaseTimings>>,
 ) -> Response {
     use tokio_stream::wrappers::ReceiverStream;
     use tokio_stream::StreamExt;
@@ -842,7 +878,11 @@ pub(crate) fn true_streaming_sse_response(
     let mut completion_tokens = 0usize;
 
     let stream = async_stream::stream! {
-        if let Some(evt) = sse_event(&ChatCompletionChunk::initial(&request_id, &model_name)) {
+        if let Some(evt) = sse_event(&ChatCompletionChunk::initial_with_mode(
+            &request_id,
+            &model_name,
+            StreamMode::Live,
+        )) {
             yield evt;
         }
 
@@ -870,7 +910,27 @@ pub(crate) fn true_streaming_sse_response(
         // #2375(6): a token stream that delivered the whole budget was cut off at
         // `max_tokens`; anything shorter ended on a stop/EOS token.
         let finish = FinishReason::from_generation(false, completion_tokens, max_tokens);
-        if let Some(evt) = sse_event(&ChatCompletionChunk::done(&request_id, &model_name, finish)) {
+        // The engine has finished by the time the token channel closed, so the
+        // oneshot either already carries the measurement or never will.
+        let timings = match timings_rx {
+            Some(rx) => rx
+                .await
+                .ok()
+                .and_then(|phases| phases.to_timings(prompt_tokens, completion_tokens)),
+            None => None,
+        };
+        let usage = Usage {
+            prompt_tokens,
+            completion_tokens,
+            total_tokens: prompt_tokens + completion_tokens,
+        };
+        if let Some(evt) = sse_event(&ChatCompletionChunk::done_with_usage(
+            &request_id,
+            &model_name,
+            finish,
+            usage,
+            timings,
+        )) {
             yield evt;
         }
 
@@ -965,6 +1025,7 @@ fn try_gpu_backend(
             request.model.clone(),
             request.stop.as_deref(),
             max_tokens,
+            prompt_tokens,
         ));
     }
 
@@ -987,6 +1048,9 @@ fn try_gpu_backend(
         latency,
         request.tools.as_deref(),
         request_tool_choice(request),
+        // This backend does not separate prefill from decode; §3 timings are
+        // absent rather than zero.
+        None,
     ))
 }
 
@@ -1051,6 +1115,7 @@ fn try_cached_backend(
             request.model.clone(),
             request.stop.as_deref(),
             max_tokens,
+            prompt_tokens,
         ));
     }
 
@@ -1073,6 +1138,9 @@ fn try_cached_backend(
         latency,
         request.tools.as_deref(),
         request_tool_choice(request),
+        // This backend does not separate prefill from decode; §3 timings are
+        // absent rather than zero.
+        None,
     ))
 }
 

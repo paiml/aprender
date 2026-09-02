@@ -143,7 +143,12 @@ async fn test_CMPL_HDL_004_openai_audio_compat() {
         )
         .await
         .expect("resp");
-    assert_eq!(response.status(), axum::http::StatusCode::OK);
+    // The OpenAI-shaped route reaches the same handler: 501 with a typed error,
+    // because aprender does not transcribe audio (see audio_tests).
+    assert_eq!(response.status(), axum::http::StatusCode::NOT_IMPLEMENTED);
+    let bytes = axum::body::to_bytes(response.into_body(), 1_048_576).await.expect("body");
+    let json: serde_json::Value = serde_json::from_slice(&bytes).expect("parse");
+    assert_eq!(json["error"]["type"], "transcription_not_supported");
 }
 
 #[tokio::test]

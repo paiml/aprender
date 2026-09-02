@@ -13070,14 +13070,22 @@ roadmap:
   assigned_to: null
   created: &id001 2026-08-27 00:00:00+00:00
   updated: 2026-08-29 00:00:00+00:00
-  spec: docs/archive/perf-2026-09-01/APR-PERF-GATE-001-v2.2.md
+  spec: docs/specifications/PP-LLAMA-001-MASTER.md
   acceptance_criteria:
-  - 'All 8 host x workload cells in scripts/perf-matrix.yaml carry a measured baseline (currently 0/8;
-    every cell status: UNMEASURED)'
-  - 'scripts/perf_gate.sh is invoked by at least one job that runs (currently invoked by NOTHING: git
-    grep perf_gate -- .github Makefile returns rc=1)'
-  - Mutation registry (spec section 5) reaches 24/24; spec recorded 1/24 at authoring
-  - F-BATCH-001 passes at every c > 1 (measured 2.45 on lambda, 2.85 on gx10, postcondition < 2)
+  - 'The epic closes when docs/specifications/PP-LLAMA-001-MASTER.md reaches ARMED. Its section 7.5
+    states the conditions, and they are the acceptance criteria of this epic verbatim.'
+  - 'PP-6, PP-26, PP-27, PP-28, PP-29 and PP-33 are ARMED (both selftest cases present under the exact
+    names in section 6 of the master).'
+  - 'PP-2, PP-13, PP-24 and PP-30 are ARMED, which requires the GET /v1/effective-config endpoint
+    (master section 12 row 6).'
+  - 'PP-29: scripts/spec_conformance.sh is GREEN inside the guard-runner-labels job, which the bare
+    required check gate needs at .github/workflows/ci.yml. It replaces the retired mutation registry.'
+  - 'The JOIN (master section 12 row 7) reproduces the committed zero-GPU fixture to four decimals.'
+  - 'One MEASURED reference-cell receipt exists at n >= 5 interleaved replicates (master section 12
+    row 18), and armed_by is set in scripts/perf-matrix.yaml for every band that PASSES P-5.'
+  - 'scripts/perf-matrix.yaml carries a delta row with a named author for every gated metric, replacing
+    the legacy B1/B2 floors, in the same commit.'
+  - 'F-BATCH-001 passes at every c > 1 (measured 2.45 on lambda, 2.85 on gx10, postcondition < 2)'
   - 'Child tickets (41 as of 2026-08-29), linked by github_issue 2706: BENCH-003, PERF-000 .. PERF-037, PERF-039,
     PERF-040. PERF-038 was never issued: no commit, branch, PR or issue in any repo mentions it (searched
     2026-08-29), so the sequence is deliberately left with a hole rather than filled with an invented ticket.'
@@ -13089,12 +13097,17 @@ roadmap:
   - gate
   - receipt-rule
   - epic
-  notes: 'Status reconciled against origin/main by PERF-040 on 2026-08-29 at 50d2bc2bb. Epic acceptance
-    criteria as measured that day: 0 of 8 scripts/perf-matrix.yaml cells carry a baseline (all
-    UNMEASURED, expires 2026-09-25, after which perf_gate.sh turns REPORT into FAIL); perf_gate.sh IS now
+  notes: 'Governed by docs/specifications/PP-LLAMA-001-MASTER.md since 2026-09-02; the superseded v2.2
+    spec is at docs/archive/perf-2026-09-01/ and the reviewed draft it replaced at
+    docs/archive/perf-2026-09-02/. Status reconciled against origin/main by PERF-040 on 2026-08-29 at
+    50d2bc2bb: 0 of 8 scripts/perf-matrix.yaml cells carry a baseline (all UNMEASURED); perf_gate.sh IS
     invoked, but only as --selftest at .github/workflows/ci.yml, because nothing on main can write the
     receipt its real mode reads (PERF-024/PERF-025, open PR #2744); F-BATCH-001 is RED at c=2 per
-    contracts/batch-admission-v1.yaml.'
+    contracts/batch-admission-v1.yaml. NO CELL EXPIRES BY DATE ANY MORE. The fixed calendar expiry is
+    replaced by the derived-expiry rule of the master sections 8 and 12: a cell inherits the latest
+    expiry among the section 12 obligation rows that block it, computed by scripts/spec_conformance.sh
+    into evidence/parity/derived_expiries.json, and an expiry moves only by an amendment recorded in the
+    master Appendix D. On expiry an instrument row makes every cell it blocks FAIL: INSTRUMENT.'
 - id: BENCH-003
   github_issue: 2706
   item_type: task
@@ -13104,7 +13117,7 @@ roadmap:
   assigned_to: null
   created: *id001
   updated: 2026-08-29 00:00:00+00:00
-  spec: docs/archive/perf-2026-09-01/APR-PERF-GATE-001-v2.2.md
+  spec: docs/specifications/PP-LLAMA-001-MASTER.md
   acceptance_criteria: []
   phases: []
   subtasks: []
@@ -13124,7 +13137,7 @@ roadmap:
   assigned_to: null
   created: *id001
   updated: 2026-08-29 00:00:00+00:00
-  spec: docs/archive/perf-2026-09-01/APR-PERF-GATE-001-v2.2.md
+  spec: docs/specifications/PP-LLAMA-001-MASTER.md
   acceptance_criteria: []
   phases: []
   subtasks: []
@@ -13144,7 +13157,7 @@ roadmap:
   assigned_to: null
   created: *id001
   updated: 2026-08-29 00:00:00+00:00
-  spec: docs/archive/perf-2026-09-01/APR-PERF-GATE-001-v2.2.md
+  spec: docs/specifications/PP-LLAMA-001-MASTER.md
   acceptance_criteria: []
   phases: []
   subtasks: []
@@ -13155,7 +13168,13 @@ roadmap:
   notes: 'VERIFIED on origin/main 2026-08-29: crates/aprender-serve/src/api/iteration_scheduler.rs
     implements the Orca (OSDI 2022) design. PARTIAL BY ITS OWN CONTRACT:
     contracts/batch-admission-v1.yaml F-BATCH-001 records verdict RED AT c=2 (serialization_index 2.45 >=
-    2), so the epic F-BATCH-001 acceptance criterion is NOT met. DOWNGRADED from completed 2026-08-29 by PERF-041: the credited 3.32x aggregate at N=8 is throughput of GARBAGE tokens. Batched CUDA decode emits a constant token to the max_tokens cap for every m>1 and never emits a stop token (#2753); the m=1 fast path in the same run returns coherent English with finish=stop. Aggregate at c=2 is honestly 0.82x of a SINGLE client. F-BATCH-001 stays RED and the mechanism, not just the margin, is unfinished.'
+    2), so the epic F-BATCH-001 acceptance criterion is NOT met. DOWNGRADED from completed 2026-08-29 by
+    PERF-041: the credited 3.32x aggregate at N=8 is throughput of GARBAGE tokens. Batched CUDA decode emits a
+    constant token to the max_tokens cap for every m>1 and never emits a stop token (#2753); the m=1 fast path
+    in the same run returns coherent English with finish=stop. Aggregate at c=2 is honestly 0.82x of a SINGLE
+    client. F-BATCH-001 stays RED and the mechanism, not just the margin, is unfinished. PP cross-ref (master
+    Appendix A): PP-26 (batch-invariance witness) and section 9 defects 2 and 5. Master section 12 row 1 is the
+    discharging row; no c>1 aggregate may be published while this is red.'
 - id: PERF-002
   github_issue: 2706
   item_type: task
@@ -13165,7 +13184,7 @@ roadmap:
   assigned_to: null
   created: *id001
   updated: 2026-08-29 00:00:00+00:00
-  spec: docs/archive/perf-2026-09-01/APR-PERF-GATE-001-v2.2.md
+  spec: docs/specifications/PP-LLAMA-001-MASTER.md
   acceptance_criteria: []
   phases: []
   subtasks: []
@@ -13186,7 +13205,7 @@ roadmap:
   assigned_to: null
   created: *id001
   updated: 2026-08-29 00:00:00+00:00
-  spec: docs/archive/perf-2026-09-01/APR-PERF-GATE-001-v2.2.md
+  spec: docs/specifications/PP-LLAMA-001-MASTER.md
   acceptance_criteria: []
   phases: []
   subtasks: []
@@ -13207,7 +13226,7 @@ roadmap:
   assigned_to: null
   created: *id001
   updated: 2026-08-29 00:00:00+00:00
-  spec: docs/archive/perf-2026-09-01/APR-PERF-GATE-001-v2.2.md
+  spec: docs/specifications/PP-LLAMA-001-MASTER.md
   acceptance_criteria: []
   phases: []
   subtasks: []
@@ -13222,7 +13241,8 @@ roadmap:
     scripts/lib/perf_receipt.py and check_perf_receipt_fields_have_producers.sh are ABSENT from
     origin/main, PR #2716 was CLOSED unmerged, and PR #2711 held PERF-004-SCHEMA back after adversarial
     verification found its claimed end-to-end run could not have executed. Branch feat/perf-004-schema
-    pushed.'
+    pushed. PP cross-ref (master Appendix A): PP-2, PP-13 and PP-30 (server-reported config, no inferred field,
+    started_utc plus clock_source); also PP-4, PP-10 and PP-11. Master section 12 row 6.'
 - id: PERF-005
   github_issue: 2706
   item_type: task
@@ -13232,7 +13252,7 @@ roadmap:
   assigned_to: null
   created: *id001
   updated: 2026-08-29 00:00:00+00:00
-  spec: docs/archive/perf-2026-09-01/APR-PERF-GATE-001-v2.2.md
+  spec: docs/specifications/PP-LLAMA-001-MASTER.md
   acceptance_criteria: []
   phases: []
   subtasks: []
@@ -13253,7 +13273,7 @@ roadmap:
   assigned_to: null
   created: *id001
   updated: 2026-08-29 00:00:00+00:00
-  spec: docs/archive/perf-2026-09-01/APR-PERF-GATE-001-v2.2.md
+  spec: docs/specifications/PP-LLAMA-001-MASTER.md
   acceptance_criteria: []
   phases: []
   subtasks: []
@@ -13265,7 +13285,9 @@ roadmap:
     crates/aprender-test-lib/src/perf_gate/mod.rs:310 asserts max_in_flight is neither emitted nor
     classified, and the only compute_class() is the bench-local one in
     crates/apr-cli/src/commands/bench.rs:283, not one function feeding banner + /health + receipt. Open
-    PR #2711 (branch feat/receipt-rule-b2, pushed) carries the andon commit.'
+    PR #2711 (branch feat/receipt-rule-b2, pushed) carries the andon commit. PP cross-ref (master Appendix A):
+    PP-2, PP-13 and PP-16. compute_class must be the dispatch path taken, read from the process, and
+    max_in_flight must be server-reported. Master section 12 row 6.'
 - id: PERF-007
   github_issue: 2706
   item_type: task
@@ -13275,7 +13297,7 @@ roadmap:
   assigned_to: null
   created: *id001
   updated: 2026-08-29 00:00:00+00:00
-  spec: docs/archive/perf-2026-09-01/APR-PERF-GATE-001-v2.2.md
+  spec: docs/specifications/PP-LLAMA-001-MASTER.md
   acceptance_criteria: []
   phases: []
   subtasks: []
@@ -13285,7 +13307,9 @@ roadmap:
   - receipt-rule
   notes: 'CONFIRMED planned 2026-08-29. Searched origin/main (scripts/, .github/, contracts/, docs/) for
     a signed receipt push or a staleness arm: no artifact. gh search issues/prs --repo paiml/infra
-    PERF-007 returns []. No aprender branch or open PR references it.'
+    PERF-007 returns []. No aprender branch or open PR references it. PP cross-ref (master Appendix A): PP-21
+    (signature valid and covering the commit under test), with PP-20 for the pin staleness half. Master section
+    12 rows 0c and 12.'
 - id: PERF-008
   github_issue: 2706
   item_type: task
@@ -13295,7 +13319,7 @@ roadmap:
   assigned_to: null
   created: *id001
   updated: 2026-08-29 00:00:00+00:00
-  spec: docs/archive/perf-2026-09-01/APR-PERF-GATE-001-v2.2.md
+  spec: docs/specifications/PP-LLAMA-001-MASTER.md
   acceptance_criteria: []
   phases: []
   subtasks: []
@@ -13316,7 +13340,7 @@ roadmap:
   assigned_to: null
   created: *id001
   updated: 2026-08-29 00:00:00+00:00
-  spec: docs/archive/perf-2026-09-01/APR-PERF-GATE-001-v2.2.md
+  spec: docs/specifications/PP-LLAMA-001-MASTER.md
   acceptance_criteria: []
   phases: []
   subtasks: []
@@ -13336,7 +13360,7 @@ roadmap:
   assigned_to: null
   created: *id001
   updated: 2026-08-29 00:00:00+00:00
-  spec: docs/archive/perf-2026-09-01/APR-PERF-GATE-001-v2.2.md
+  spec: docs/specifications/PP-LLAMA-001-MASTER.md
   acceptance_criteria: []
   phases: []
   subtasks: []
@@ -13358,7 +13382,7 @@ roadmap:
   assigned_to: null
   created: *id001
   updated: 2026-08-29 00:00:00+00:00
-  spec: docs/archive/perf-2026-09-01/APR-PERF-GATE-001-v2.2.md
+  spec: docs/specifications/PP-LLAMA-001-MASTER.md
   acceptance_criteria: []
   phases: []
   subtasks: []
@@ -13369,7 +13393,8 @@ roadmap:
   notes: 'CONFIRMED planned 2026-08-29. -DGGML_CUDA_ARCHITECTURES=121 appears on origin/main only as
     prose (the spec at lines 509 and 690, and .claude/skills/apr-dogfood/SKILL.md) - no build script, no
     receipt, no proof. gh search issues/prs --repo paiml/infra PERF-011 returns []. Blocks the gx10
-    comparator cells.'
+    comparator cells. PP cross-ref (master Appendix A): PP-20 (the comparator pin carries commit, cmake line,
+    template and expiry) and master section 12 row 15, the gx10 shakedown cell.'
 - id: PERF-012
   github_issue: 2706
   item_type: task
@@ -13379,7 +13404,7 @@ roadmap:
   assigned_to: null
   created: *id001
   updated: 2026-08-29 00:00:00+00:00
-  spec: docs/archive/perf-2026-09-01/APR-PERF-GATE-001-v2.2.md
+  spec: docs/specifications/PP-LLAMA-001-MASTER.md
   acceptance_criteria: []
   phases: []
   subtasks: []
@@ -13390,7 +13415,8 @@ roadmap:
   notes: 'CORRECTED from planned 2026-08-29. Branch evidence/perf-012-mini is PUSHED (9aae2e13f,
     evidence/perf-012-mini/findings.md plus 8 raw band JSONs) and concludes mini serializes on arm64 too
     and its Metal path does not exist. NOT on origin/main and NO PR is open, so the finding is currently
-    unreviewable and uncitable by the gate.'
+    unreviewable and uncitable by the gate. PP cross-ref (master Appendix A): PP-16 and PP-24. The master
+    decides mini as NA with decided_by rather than a permanent UNMEASURED; master section 12 row 5.'
 - id: PERF-013
   github_issue: 2706
   item_type: task
@@ -13400,7 +13426,7 @@ roadmap:
   assigned_to: null
   created: *id001
   updated: 2026-08-29 00:00:00+00:00
-  spec: docs/archive/perf-2026-09-01/APR-PERF-GATE-001-v2.2.md
+  spec: docs/specifications/PP-LLAMA-001-MASTER.md
   acceptance_criteria: []
   phases: []
   subtasks: []
@@ -13411,7 +13437,8 @@ roadmap:
   notes: 'CORRECTED from planned 2026-08-29. paiml/infra#338 is MERGED - the perf-solo label ships at
     cardinality 1 on intel-clean-room-16 - but it closed with one item explicitly unproven: no job has
     ever run on the label. Open PR #2720 (branch perf/perf-solo-lane-receipt, pushed) puts perf-solo on
-    the BEAT speed lane runs-on and records RUNNER_NAME.'
+    the BEAT speed lane runs-on and records RUNNER_NAME. PP cross-ref (master Appendix A): PP-19 (one global
+    concurrency group per host, cancel-in-progress false, no foreign compute PID). Master section 12 row 12.'
 - id: PERF-014
   github_issue: 2706
   item_type: task
@@ -13421,7 +13448,7 @@ roadmap:
   assigned_to: null
   created: *id001
   updated: 2026-08-29 00:00:00+00:00
-  spec: docs/archive/perf-2026-09-01/APR-PERF-GATE-001-v2.2.md
+  spec: docs/specifications/PP-LLAMA-001-MASTER.md
   acceptance_criteria: []
   phases: []
   subtasks: []
@@ -13441,7 +13468,7 @@ roadmap:
   assigned_to: null
   created: *id001
   updated: 2026-08-29 00:00:00+00:00
-  spec: docs/archive/perf-2026-09-01/APR-PERF-GATE-001-v2.2.md
+  spec: docs/specifications/PP-LLAMA-001-MASTER.md
   acceptance_criteria: []
   phases: []
   subtasks: []
@@ -13461,7 +13488,7 @@ roadmap:
   assigned_to: null
   created: *id001
   updated: 2026-08-29 00:00:00+00:00
-  spec: docs/archive/perf-2026-09-01/APR-PERF-GATE-001-v2.2.md
+  spec: docs/specifications/PP-LLAMA-001-MASTER.md
   acceptance_criteria: []
   phases: []
   subtasks: []
@@ -13482,7 +13509,7 @@ roadmap:
   assigned_to: null
   created: *id001
   updated: 2026-08-29 00:00:00+00:00
-  spec: docs/archive/perf-2026-09-01/APR-PERF-GATE-001-v2.2.md
+  spec: docs/specifications/PP-LLAMA-001-MASTER.md
   acceptance_criteria: []
   phases: []
   subtasks: []
@@ -13492,7 +13519,9 @@ roadmap:
   - receipt-rule
   notes: 'CONFIRMED planned 2026-08-29. scripts/perf_gate.sh has arm_e_interference() but it is REPORTING
     only (W2, and W2 has no injector - see PERF-020); nothing on origin/main ratchets Arm E. Depends on
-    PERF-001, whose F-BATCH-001 is still RED at c=2. No branch, no PR.'
+    PERF-001, whose F-BATCH-001 is still RED at c=2. No branch, no PR. PP cross-ref (master Appendix A): PP-4
+    (prefill is first-class and present on every band) and PP-31 (per-band ratchets seeded at the last MEASURED
+    receipt). Arm E becomes itl_p95, REPORTING.'
 - id: PERF-018
   github_issue: 2706
   item_type: task
@@ -13502,7 +13531,7 @@ roadmap:
   assigned_to: null
   created: *id001
   updated: 2026-08-29 00:00:00+00:00
-  spec: docs/archive/perf-2026-09-01/APR-PERF-GATE-001-v2.2.md
+  spec: docs/specifications/PP-LLAMA-001-MASTER.md
   acceptance_criteria: []
   phases: []
   subtasks: []
@@ -13512,7 +13541,9 @@ roadmap:
   - receipt-rule
   notes: 'CONFIRMED planned 2026-08-29. scripts/perf_gate.sh has arm_d_memory() in REPORTING mode; no
     block table or paged KV allocator exists under crates/aprender-serve/src on origin/main. Depends on
-    PERF-001. No branch, no PR.'
+    PERF-001. No branch, no PR. PP cross-ref (master Appendix A): PP-24 (slots_admitted and the derived ladder)
+    and PP-2 (kv_per_slot, kv_bytes_reserved and vram_peak reported by the server). Arm D becomes REPORTING
+    fields in PP-2.'
 - id: PERF-019
   github_issue: 2706
   item_type: task
@@ -13522,7 +13553,7 @@ roadmap:
   assigned_to: null
   created: *id001
   updated: 2026-08-29 00:00:00+00:00
-  spec: docs/archive/perf-2026-09-01/APR-PERF-GATE-001-v2.2.md
+  spec: docs/specifications/PP-LLAMA-001-MASTER.md
   acceptance_criteria: []
   phases: []
   subtasks: []
@@ -13534,7 +13565,9 @@ roadmap:
     origin/main. PR #2713 was CLOSED unmerged; PR #2711 explicitly held PERF-019 back because its guard
     has a vacuous pass one level below where it believed it closed one (the sentinel proves the filter
     engaged, nothing proves the walker did). Branch feat/perf-019-oneclient pushed; carried in open PR
-    #2742.'
+    #2742. PP cross-ref (master Appendix A): PP-25 (one client binary drives both lanes, its sha256 in the
+    receipt) and master section 5.3, which retires llama-bench from the comparator path entirely. Master section
+    12 row 7.'
 - id: PERF-020
   github_issue: 2706
   item_type: task
@@ -13544,7 +13577,7 @@ roadmap:
   assigned_to: null
   created: *id001
   updated: 2026-08-29 00:00:00+00:00
-  spec: docs/archive/perf-2026-09-01/APR-PERF-GATE-001-v2.2.md
+  spec: docs/specifications/PP-LLAMA-001-MASTER.md
   acceptance_criteria: []
   phases: []
   subtasks: []
@@ -13556,7 +13589,8 @@ roadmap:
     REPORTING mode, and crates/aprender-serve/benchmarks/qwen-coder/prompts-w2.jsonl is committed - but
     crates/aprender-test-lib/src/perf_gate/mod.rs:134 declares the Arm E out-of-band injector unproduced,
     and PR #2746 (PERF-039) shows the corpus was unreadable by the only loader in the tree, so nothing
-    had ever parsed that file.'
+    had ever parsed that file. PP cross-ref (master Appendix A): master section 5.1 workload W2, REPORTING, and
+    PP-4 (agg, dec and prefill on every band).'
 - id: PERF-021
   github_issue: 2706
   item_type: task
@@ -13566,7 +13600,7 @@ roadmap:
   assigned_to: null
   created: *id001
   updated: 2026-08-29 00:00:00+00:00
-  spec: docs/archive/perf-2026-09-01/APR-PERF-GATE-001-v2.2.md
+  spec: docs/specifications/PP-LLAMA-001-MASTER.md
   acceptance_criteria: []
   phases: []
   subtasks: []
@@ -13578,7 +13612,9 @@ roadmap:
     (crates/apr-cli/src/commands/serve/types.rs:504), --gpu-layers, --device and --list-devices
     (serve_commands.rs, dispatch_run.rs:184) all ship, and explicit-wins is enforced at
     serve/mod.rs:83-95. Open PR #2707 (branch feat/perf-021-landing, pushed, 9 commits) reports that two
-    of three surfaces verified nothing, so in_progress is correct.'
+    of three surfaces verified nothing, so in_progress is correct. PP cross-ref (master Appendix A): PP-15 (no
+    boolean accelerator flag on any surface; a quantity with a server-reported resolved value). Master section
+    12 row 0d, section 9 defect 9.'
 - id: PERF-022
   github_issue: 2706
   item_type: task
@@ -13588,7 +13624,7 @@ roadmap:
   assigned_to: null
   created: *id001
   updated: 2026-08-29 00:00:00+00:00
-  spec: docs/archive/perf-2026-09-01/APR-PERF-GATE-001-v2.2.md
+  spec: docs/specifications/PP-LLAMA-001-MASTER.md
   acceptance_criteria: []
   phases: []
   subtasks: []
@@ -13599,7 +13635,9 @@ roadmap:
   notes: 'CONFIRMED planned 2026-08-29. The O-1 three-way choice is recorded only as a spec question
     (APR-PERF-GATE-001-v2.2.md line 1098); no five-whys and no costing exists on origin/main. PR #2707
     states plainly that none of its work ships CUDA in the published artifact and that no code change
-    substitutes for this decision. Operator-owned escalation.'
+    substitutes for this decision. Operator-owned escalation. PP cross-ref (master Appendix A): PP-19. Any
+    distribution option that puts two runs on one device breaks the isolation rule, so the cost of each option
+    is a cost against PP-19. Master section 12 row 12.'
 - id: PERF-023
   github_issue: 2706
   item_type: task
@@ -13609,7 +13647,7 @@ roadmap:
   assigned_to: null
   created: *id001
   updated: 2026-08-29 00:00:00+00:00
-  spec: docs/archive/perf-2026-09-01/APR-PERF-GATE-001-v2.2.md
+  spec: docs/specifications/PP-LLAMA-001-MASTER.md
   acceptance_criteria: []
   phases: []
   subtasks: []
@@ -13620,7 +13658,9 @@ roadmap:
   notes: 'CONFIRMED planned 2026-08-29. Filed by PR #2707, which REFUSES a partial --gpu-layers request
     rather than rounding it, because OwnedQuantizedModelCuda takes no layer count and uploads every
     layer. The free-VRAM query that would let a partial request be honoured does not exist in any apr
-    build. No branch, no PR of its own.'
+    build. No branch, no PR of its own. PP cross-ref (master Appendix A): PP-2 and PP-24. The free-VRAM query is
+    the unrecorded input of master section 9 defect 7 and of the registered max_batch prediction in section 10.
+    Master section 12 row 6.'
 - id: PERF-024
   github_issue: 2706
   item_type: task
@@ -13630,7 +13670,7 @@ roadmap:
   assigned_to: null
   created: 2026-08-29 00:00:00+00:00
   updated: 2026-08-29 00:00:00+00:00
-  spec: docs/archive/perf-2026-09-01/APR-PERF-GATE-001-v2.2.md
+  spec: docs/specifications/PP-LLAMA-001-MASTER.md
   acceptance_criteria: []
   phases: []
   subtasks: []
@@ -13641,7 +13681,10 @@ roadmap:
   notes: 'Filed after the roadmap was last written; added by PERF-040 on 2026-08-29. NOT on origin/main:
     crates/aprender-test-lib/src/llm/band.rs and perf_gate/{bootstrap,metrics}.rs are absent, and main
     own perf_gate/mod.rs names the integration work as a separate ticket. PR #2717 CLOSED unmerged;
-    branch feat/perf-024-conformant-client pushed; carried in open PR #2744 (stacked on #2742).'
+    branch feat/perf-024-conformant-client pushed; carried in open PR #2744 (stacked on #2742). PP cross-ref
+    (master Appendix A): PP-27 and PP-28 (streaming with a dual witness; temperature, seed, ignore_eos and
+    max_tokens on the wire; completion_tokens equal to n_predict), with PP-10 and PP-11 for drain and
+    tokenization. Master section 5.1 and section 12 row 0b.'
 - id: PERF-025
   github_issue: 2706
   item_type: task
@@ -13651,7 +13694,7 @@ roadmap:
   assigned_to: null
   created: 2026-08-29 00:00:00+00:00
   updated: 2026-08-29 00:00:00+00:00
-  spec: docs/archive/perf-2026-09-01/APR-PERF-GATE-001-v2.2.md
+  spec: docs/specifications/PP-LLAMA-001-MASTER.md
   acceptance_criteria: []
   phases: []
   subtasks: []
@@ -13663,7 +13706,9 @@ roadmap:
     the operator note calls the band CLI. On 50d2bc2bb a grep for
     ReceiptInput/BandInput/DerivedBand/perf_gate:: outside the module returns rc=1 - nothing calls the
     protocol or the receipt producer, and perf_gate.sh real mode is invoked nowhere (only --selftest,
-    ci.yml:1011). Open PR #2744; abandoned branch feat/n1-band-cli contributed the shape only.'
+    ci.yml:1011). Open PR #2744; abandoned branch feat/n1-band-cli contributed the shape only. PP cross-ref
+    (master Appendix A): PP-4 and PP-7 (all three metrics per band; raw per-request samples retained). Master
+    section 12 rows 0b and 7.'
 - id: PERF-026
   github_issue: 2706
   item_type: task
@@ -13673,7 +13718,7 @@ roadmap:
   assigned_to: null
   created: 2026-08-29 00:00:00+00:00
   updated: 2026-08-29 00:00:00+00:00
-  spec: docs/archive/perf-2026-09-01/APR-PERF-GATE-001-v2.2.md
+  spec: docs/specifications/PP-LLAMA-001-MASTER.md
   acceptance_criteria: []
   phases: []
   subtasks: []
@@ -13695,7 +13740,7 @@ roadmap:
   assigned_to: null
   created: 2026-08-29 00:00:00+00:00
   updated: 2026-08-29 00:00:00+00:00
-  spec: docs/archive/perf-2026-09-01/APR-PERF-GATE-001-v2.2.md
+  spec: docs/specifications/PP-LLAMA-001-MASTER.md
   acceptance_criteria: []
   phases: []
   subtasks: []
@@ -13717,7 +13762,7 @@ roadmap:
   assigned_to: null
   created: 2026-08-29 00:00:00+00:00
   updated: 2026-08-29 00:00:00+00:00
-  spec: docs/archive/perf-2026-09-01/APR-PERF-GATE-001-v2.2.md
+  spec: docs/specifications/PP-LLAMA-001-MASTER.md
   acceptance_criteria: []
   phases: []
   subtasks: []
@@ -13738,7 +13783,7 @@ roadmap:
   assigned_to: null
   created: 2026-08-29 00:00:00+00:00
   updated: 2026-08-29 00:00:00+00:00
-  spec: docs/archive/perf-2026-09-01/APR-PERF-GATE-001-v2.2.md
+  spec: docs/specifications/PP-LLAMA-001-MASTER.md
   acceptance_criteria: []
   phases: []
   subtasks: []
@@ -13758,7 +13803,7 @@ roadmap:
   assigned_to: null
   created: 2026-08-29 00:00:00+00:00
   updated: 2026-08-29 00:00:00+00:00
-  spec: docs/archive/perf-2026-09-01/APR-PERF-GATE-001-v2.2.md
+  spec: docs/specifications/PP-LLAMA-001-MASTER.md
   acceptance_criteria: []
   phases: []
   subtasks: []
@@ -13779,7 +13824,7 @@ roadmap:
   assigned_to: null
   created: 2026-08-29 00:00:00+00:00
   updated: 2026-08-29 00:00:00+00:00
-  spec: docs/archive/perf-2026-09-01/APR-PERF-GATE-001-v2.2.md
+  spec: docs/specifications/PP-LLAMA-001-MASTER.md
   acceptance_criteria: []
   phases: []
   subtasks: []
@@ -13790,7 +13835,8 @@ roadmap:
   notes: 'Filed after the roadmap was last written; added by PERF-040 on 2026-08-29. Open PR #2720
     (branch perf/perf-solo-lane-receipt, pushed). It is the half PERF-013 left unproven: all 16 agents on
     intel report hostname mac-server, so RUNNER_NAME is the only field that can say which agent served a
-    job.'
+    job. PP cross-ref (master Appendix A): PP-19. A speed lane that shares a host with any other job is the
+    confound PP-19 exists to remove. Master section 12 row 12.'
 - id: PERF-032
   github_issue: 2706
   item_type: task
@@ -13800,7 +13846,7 @@ roadmap:
   assigned_to: null
   created: 2026-08-29 00:00:00+00:00
   updated: 2026-08-29 00:00:00+00:00
-  spec: docs/archive/perf-2026-09-01/APR-PERF-GATE-001-v2.2.md
+  spec: docs/specifications/PP-LLAMA-001-MASTER.md
   acceptance_criteria: []
   phases: []
   subtasks: []
@@ -13821,7 +13867,7 @@ roadmap:
   assigned_to: null
   created: 2026-08-29 00:00:00+00:00
   updated: 2026-08-29 00:00:00+00:00
-  spec: docs/archive/perf-2026-09-01/APR-PERF-GATE-001-v2.2.md
+  spec: docs/specifications/PP-LLAMA-001-MASTER.md
   acceptance_criteria: []
   phases: []
   subtasks: []
@@ -13831,7 +13877,9 @@ roadmap:
   - receipt-rule
   notes: 'Filed after the roadmap was last written; added by PERF-040 on 2026-08-29. Open PR #2738
     (branch feat/p1-batch2, pushed; merged from feat/m1-pin). gx10 was pointed at one of four llama.cpp
-    trees, and a pin of 23b8cc4 accepted two different trees at rc=0. Not on origin/main.'
+    trees, and a pin of 23b8cc4 accepted two different trees at rc=0. Not on origin/main. PP cross-ref (master
+    Appendix A): PP-20, and master section 5.3, which makes the pin a per-band template with pinned_on and
+    pin_expiry. Master section 12 row 3.'
 - id: PERF-034
   github_issue: 2706
   item_type: task
@@ -13841,7 +13889,7 @@ roadmap:
   assigned_to: null
   created: 2026-08-29 00:00:00+00:00
   updated: 2026-08-29 00:00:00+00:00
-  spec: docs/archive/perf-2026-09-01/APR-PERF-GATE-001-v2.2.md
+  spec: docs/specifications/PP-LLAMA-001-MASTER.md
   acceptance_criteria: []
   phases: []
   subtasks: []
@@ -13852,7 +13900,8 @@ roadmap:
   notes: 'Filed after the roadmap was last written; added by PERF-040 on 2026-08-29. Open PR #2738
     (branch feat/p1-batch2, pushed; merged from feat/m2-alloc). Reported 4.00 allocs/token and 5,474,948
     B -> 0.00 and 0, about 10.4x; its allocation harness is only correct under --test-threads=1, fixed in
-    the same branch. Not on origin/main.'
+    the same branch. Not on origin/main. PP cross-ref (master Appendix A): master section 9 defect 4 (decode at
+    c=1 is a gated metric under P-3) and PP-28, since the sampler is pinned on the wire for both lanes.'
 - id: PERF-035
   github_issue: 2706
   item_type: task
@@ -13862,7 +13911,7 @@ roadmap:
   assigned_to: null
   created: 2026-08-29 00:00:00+00:00
   updated: 2026-08-29 00:00:00+00:00
-  spec: docs/archive/perf-2026-09-01/APR-PERF-GATE-001-v2.2.md
+  spec: docs/specifications/PP-LLAMA-001-MASTER.md
   acceptance_criteria: []
   phases: []
   subtasks: []
@@ -13872,7 +13921,10 @@ roadmap:
   - receipt-rule
   notes: 'Filed after the roadmap was last written; added by PERF-040 on 2026-08-29. Open PR #2738
     (branch feat/p1-batch2, pushed; merged from feat/m3-cuda-ci). A type error in
-    aprender-serve/src/cuda/mod.rs left the required scope green. Not on origin/main.'
+    aprender-serve/src/cuda/mod.rs left the required scope green. Not on origin/main. PP cross-ref (master
+    Appendix A): master section 9 defect 8, whose lever is now server_config.build_features_cli from GET
+    /v1/effective-config (PP-2) rather than a harness flag (PP-13); PP-18 for the ancestor check on the
+    measuring binaries.'
 - id: PERF-036
   github_issue: 2706
   item_type: task
@@ -13882,7 +13934,7 @@ roadmap:
   assigned_to: null
   created: 2026-08-29 00:00:00+00:00
   updated: 2026-08-29 00:00:00+00:00
-  spec: docs/archive/perf-2026-09-01/APR-PERF-GATE-001-v2.2.md
+  spec: docs/specifications/PP-LLAMA-001-MASTER.md
   acceptance_criteria: []
   phases: []
   subtasks: []
@@ -13892,7 +13944,10 @@ roadmap:
   - receipt-rule
   notes: 'Filed after the roadmap was last written; added by PERF-040 on 2026-08-29. Open PR #2738
     (branch feat/p1-batch2, pushed; merged from feat/m5-serve-paths). The population PERF-032 ratchet now
-    refuses to grow. Not on origin/main.'
+    refuses to grow. Not on origin/main. PP cross-ref (master Appendix A): no invariant maps directly. It is a
+    precondition of master section 12 row 15, the gx10 shakedown cell: a receipt is reproducible only if the
+    paths it names exist on a host other than the author machine (PP-18 is the provenance half of the same
+    requirement).'
 - id: PERF-037
   github_issue: 2706
   item_type: task
@@ -13902,7 +13957,7 @@ roadmap:
   assigned_to: null
   created: 2026-08-29 00:00:00+00:00
   updated: 2026-08-29 00:00:00+00:00
-  spec: docs/archive/perf-2026-09-01/APR-PERF-GATE-001-v2.2.md
+  spec: docs/specifications/PP-LLAMA-001-MASTER.md
   acceptance_criteria: []
   phases: []
   subtasks: []
@@ -13913,7 +13968,10 @@ roadmap:
   notes: 'Filed after the roadmap was last written; added by PERF-040 on 2026-08-29. Open PR #2741
     (branch feat/r3-batch3, pushed). A fabricated PASS, not a late diagnosis: test_llm.rs:118 writes
     --output before :139 validates, so a swallowed refusal left a well-formed report the producer read as
-    a sample - measured rc=0 and lane PASS on a run where 3 of 10 requests died. Not on origin/main.'
+    a sample - measured rc=0 and lane PASS on a run where 3 of 10 requests died. Not on origin/main.
+    PP cross-ref (master Appendix A): PP-10 (nothing issued at or after window close; drained requests recorded with
+    drain_ms) and PP-21 (the receipt is signed after it is complete, never before). Master section 12 rows 0b
+    and 0c.'
 - id: PERF-039
   github_issue: 2706
   item_type: task
@@ -13923,7 +13981,7 @@ roadmap:
   assigned_to: null
   created: 2026-08-29 00:00:00+00:00
   updated: 2026-08-29 00:00:00+00:00
-  spec: docs/archive/perf-2026-09-01/APR-PERF-GATE-001-v2.2.md
+  spec: docs/specifications/PP-LLAMA-001-MASTER.md
   acceptance_criteria: []
   phases: []
   subtasks: []
@@ -13934,7 +13992,10 @@ roadmap:
   notes: 'Filed after the roadmap was last written; added by PERF-040 on 2026-08-29. Open PR #2746
     (branch feat/t2-batch4, pushed). The spec said prompts-w1.jsonl, the only loader parsed YAML, the CLI
     help promised a JSON array, and ignore_eos appeared nowhere in the tree. prompts-w2.jsonl was already
-    committed and unreadable by that loader, which is why PERF-020 is not complete. Not on origin/main.'
+    committed and unreadable by that loader, which is why PERF-020 is not complete. Not on origin/main. PP
+    cross-ref (master Appendix A): PP-28. Master section 5.1 records that adding ignore_eos to prompts-w1.jsonl
+    rotates the corpus sha256, which is a component of the PP-22 join key and the PP-9 cell key. Master section
+    12 row 0b.'
 - id: PERF-040
   github_issue: 2706
   item_type: task
@@ -13944,7 +14005,7 @@ roadmap:
   assigned_to: null
   created: 2026-08-29 00:00:00+00:00
   updated: 2026-08-29 00:00:00+00:00
-  spec: docs/archive/perf-2026-09-01/APR-PERF-GATE-001-v2.2.md
+  spec: docs/specifications/PP-LLAMA-001-MASTER.md
   acceptance_criteria: []
   phases: []
   subtasks: []
@@ -13957,4 +14018,7 @@ roadmap:
     never by trusting a report. Three planned entries were in fact shipped (PERF-008, PERF-010, PERF-016,
     all in PR #2710); three more were under way rather than untouched (PERF-012, PERF-013, PERF-019); one
     entry marked completed was not (PERF-004); and 16 tickets filed after the file was last written were
-    absent from it entirely. PERF-038 was searched for and does not exist anywhere. Branch feat/u1-roadmap.'
+    absent from it entirely. PERF-038 was searched for and does not exist anywhere. Branch feat/u1-roadmap. PP
+    cross-ref (master Appendix A): master section 13. All 42 spec fields in this file now name
+    docs/specifications/PP-LLAMA-001-MASTER.md; the superseded documents and their local paths are in
+    evidence/parity/LEDGER.md section 13.'

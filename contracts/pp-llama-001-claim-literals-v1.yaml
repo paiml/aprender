@@ -1,0 +1,148 @@
+metadata:
+  version: 1.0.0
+  created: '2026-09-02'
+  author: PAIML Engineering
+  description: "PP-LLAMA-001 PP-12 — a claim about measured reality may not be a literal on a surface a user reads, and a figure that IS published is legal only if it cites an evidence/ receipt path that resolves. This contract owns the negative half of that rule (scripts/check_no_claim_literals.sh): its universe, its detectors, its TARGET mask, and the citation exemption that makes the positive and negative halves expressible as one rule."
+  kind: pattern
+  references:
+    - "scripts/check_no_claim_literals.sh — the guard"
+    - "scripts/lib/perf_claim_cite.sh — the one definition of \"cites a receipt\", shared with the positive half"
+    - "scripts/check_perf_claims_cite_receipts.sh — the positive half (PERF-010)"
+    - "scripts/claim_literal_baseline.txt — the shrink-only ratchet (set-aperture, scripts/lib_baseline_ratchet.sh)"
+    - ".github/workflows/ci.yml — wired per-PR in guard-runner-labels (gate depends on it)"
+    - "docs/specifications/PP-LLAMA-001-MASTER.md §6/PP-12 and §12 row 10"
+
+five_whys:
+  symptom: "PP-12's own must-not-fire fixture was RED and its must-fire cases were invisible. `docs/specifications/apr-mcp-server-spec.md:24` published `1.43× Ollama` and `:276` published `~196 tok/s` with no receipt anywhere under evidence/; `README.md:234` published `225+ tok/s | RTX 4090`, a rate the tree's own paired measurement contradicts; `docs/benchmarking-gate-spec.md:49-54` republished the four withdrawn band ratios. The guard reported PASS over all of them."
+  why_1: "docs/specifications/ was excluded from the universe wholesale, so two of the four documents were unreadable to the guard by construction."
+  why_2: "The TARGET mask was a bare SUBSTRING test over the whole line, so `[Rr]equire` matched the word `required` anywhere in an ordinary English sentence — 140 of 467 raw matches under docs/specifications/ were masked that way, including a live comparator claim whose sentence merely ended in `required.`"
+  why_3: "The ratio detector requires the competitor name within five gap words of the number, and a `|` is deliberately not a gap word. A comparison TABLE puts the competitor in the header and the ratio three columns away, so the published band table was invisible to a rule that is correct for prose."
+  why_4: "The exclusion could not simply be deleted, because the guard had no way to accept a figure that DOES cite its receipt: a comparator ratio or a throughput literal was illegal regardless of citation, so PP-12's rule — legal IFF it cites — was unimplementable and a spec could only comply by euphemism."
+  why_5: "The rule was split across two guards by RULE (delete / cite) and, accidentally, by SURFACE. A defect in the seam between two correct guards is invisible to each of them separately."
+  root_cause: "The guard's aperture — universe, mask and detector shape — was narrower than the rule it was said to enforce, and there was no legal spelling of a receipted figure, so widening the aperture had no landing place. The remedy is all four at once: widen the universe, make the mask positional, add the table detector, and add a citation exemption that dereferences the path."
+
+equations:
+  claim_literal_is_absent_or_receipted:
+    formula: "for every line L on a shipped surface: hit(L) => cites_resolving_receipt(L, window=3)"
+    domain: "the guard's universe — crates/*/src/**.rs, src/**.rs, book/**.md, docs/**.md and root-level *.md, tracked UNION working tree, minus tests/benches/examples/fixtures, minus docs/archive/ and docs/specifications/archive/"
+    codomain: "exit code of scripts/check_no_claim_literals.sh"
+    invariants:
+      - "hit(L) is RATIO_RE | TPUT_RE | PLACEHOLDER_RE | TABLE_CELL_RATIO_RE (under a competitor header) | DIAGNOSIS_RE, minus the TARGET mask"
+      - "docs/specifications/ is IN the universe; only its archive/ subtree is out, for the reason docs/archive/ is out"
+      - "cites_resolving_receipt means an evidence/<path> token within the line or three lines either side WHICH EXISTS in the tree; a dangling citation never exempts"
+      - "The citation exemption is applied AFTER the match, never inside a detector, so matching stays a pure line test and the exemption can dereference"
+      - "The TARGET mask is POSITIONAL: a target word masks only as a line-leading or whole-cell label, as a label bound to the figure, as a comparison operator before a number, or as a PASS:/FAIL: verdict prefix"
+
+  aperture_growth_is_admitted_not_appended:
+    formula: "added(baseline) subset-of predates(comparand) AND guard_source_changed(comparand, HEAD)"
+    domain: "scripts/claim_literal_baseline.txt against merge-base(HEAD, origin/main) or the origin/main tip"
+    codomain: "exit code of baseline_ratchet_check(..., set-aperture, scripts/check_no_claim_literals.sh)"
+    invariants:
+      - "An entry may only LEAVE the baseline, except through the set-aperture path"
+      - "Every admitted entry is byte-identical at the comparand, or moved with its text intact at no greater occurrence count, and every one is NAMED in the verdict row"
+      - "A line this branch WROTE can never be admitted, so widening the universe cannot launder a new claim"
+
+  guard_is_not_vacuous:
+    formula: "universe_size > 0 AND ratio_rows >= 43 AND markdown_rows >= 26 AND table_rows >= 8 AND citation_rows >= 7 AND causal_rows >= 14"
+    domain: "the guard's file universe and its five self-test case tables"
+    codomain: "exit code of scripts/check_no_claim_literals.sh and of its --selftest"
+    invariants:
+      - "A guard over no files reports PASS and checks nothing; an empty universe is a hard failure"
+      - "Each case table carries both polarities and a row floor, because an all-positive table proves nothing about false positives"
+      - "A table that shrank to nothing would sweep clean — the floors are what makes the tables evidence"
+
+proof_obligations:
+  - type: invariant
+    property: "No NEW unreceipted claim literal on a user-facing surface"
+    formal: "scripts/check_no_claim_literals.sh exits 0"
+    applies_to: claim_literal_is_absent_or_receipted
+  - type: invariant
+    property: "The guard can turn RED on every shape it claims to cover"
+    formal: "The case tables carry must-fire rows for the ratio, throughput, placeholder, table and causal classes and exit non-zero if any fails"
+    applies_to: guard_is_not_vacuous
+  - type: invariant
+    property: "A figure that cites a resolving receipt is legal; a dangling citation is not"
+    formal: "--selftest rows claim_receipted / claim_unreceipted / claim_dangling_citation"
+    applies_to: claim_literal_is_absent_or_receipted
+  - type: invariant
+    property: "docs/specifications/ is inside the guard's universe"
+    formal: "the guard source carries no '^docs/specifications/' exclusion, and does carry '^docs/specifications/archive/'"
+    applies_to: claim_literal_is_absent_or_receipted
+  - type: invariant
+    property: "The guard is enforced per-PR, not merely present"
+    formal: "ci.yml invokes it in guard-runner-labels, which `gate` lists in its needs"
+    applies_to: claim_literal_is_absent_or_receipted
+  - type: invariant
+    property: "The baseline may only shrink, except through a named aperture reveal"
+    formal: "baseline_ratchet_check with kind set-aperture against a ref this branch cannot rewrite"
+    applies_to: aperture_growth_is_admitted_not_appended
+
+falsification_tests:
+  - id: FALSIFY-PP-LLAMA-CLAIMLIT-001
+    rule: "The guard exists and is executable"
+    prediction: "scripts/check_no_claim_literals.sh is a regular file with the execute bit set"
+    test: "test -x scripts/check_no_claim_literals.sh"
+    if_fails: "The guard was deleted or unmarked — the claim-literal class is unguarded again"
+
+  - id: FALSIFY-PP-LLAMA-CLAIMLIT-002
+    rule: "No NEW unreceipted claim literal on a user-facing surface, and the baseline did not grow"
+    prediction: "The guard exits 0 on the current tree"
+    test: "bash scripts/check_no_claim_literals.sh"
+    if_fails: "A claim about measured reality is a literal on a surface a user reads, or the shrink-only baseline grew. The report names file:line."
+
+  - id: FALSIFY-PP-LLAMA-CLAIMLIT-003
+    rule: "Every detector demonstrably turns RED, and every must-not-fire control stays GREEN"
+    prediction: "The five case tables pass, with their row floors"
+    test: "bash scripts/check_no_claim_literals.sh --selftest"
+    if_fails: "A detector has gone blind or a mask has gone broad. Re-run the table; do not re-read the regex — this repository's claim patterns have been wrong five times and every one was found by a table."
+
+  - id: FALSIFY-PP-LLAMA-CLAIMLIT-004
+    rule: "docs/specifications/ is IN the guard's universe; only its archive/ subtree is excluded"
+    prediction: "The guard source carries the archive exclusion and no exclusion of the parent directory"
+    test: "grep -q \"grep -vE '\\^docs/specifications/archive/'\" scripts/check_no_claim_literals.sh && [ \"$(grep -c \"grep -vE '\\^docs/specifications/' \" scripts/check_no_claim_literals.sh)\" -eq 0 ]"
+    if_fails: "The wholesale exclusion of docs/specifications/ is back. That is the aperture PP-12 was OPEN on: 245 unreadable ratio and throughput matches, including two figures for which no receipt exists anywhere under evidence/."
+
+  - id: FALSIFY-PP-LLAMA-CLAIMLIT-005
+    rule: "PP-12's two named cases exist BY NAME and both are green"
+    prediction: "--selftest prints an `ok` row for claim_unreceipted and for claim_receipted"
+    test: "[ \"$(bash scripts/check_no_claim_literals.sh --selftest | grep -c '^  ok    claim_unreceipted')\" -eq 1 ] && [ \"$(bash scripts/check_no_claim_literals.sh --selftest | grep -c '^  ok    claim_receipted ')\" -eq 1 ]"
+    if_fails: "The §6 join has nothing to bind PP-12 to: either the must-fire case is gone (the guard cannot see an unreceipted figure) or the must-not-fire case is gone (a receipted figure is illegal, and the spec can comply only by euphemism)"
+
+  - id: FALSIFY-PP-LLAMA-CLAIMLIT-006
+    rule: "The citation exemption dereferences the path — a DANGLING citation never exempts"
+    prediction: "--selftest prints an `ok` row for claim_dangling_citation, whose fixture cites evidence/parity/gone.json"
+    test: "[ \"$(bash scripts/check_no_claim_literals.sh --selftest | grep -c '^  ok    claim_dangling_citation')\" -eq 1 ]"
+    if_fails: "\"Cites a receipt\" has decayed from a checkable claim into a syntactic gesture. A citation pointing at a file nobody can open buys the reader's trust with nothing, and exempting it makes this guard strictly easier to satisfy than the rule it implements."
+
+  - id: FALSIFY-PP-LLAMA-CLAIMLIT-007
+    rule: "The withdrawn band table is READABLE — a ratio cell under a competitor header fires"
+    prediction: "--selftest's table class carries the verbatim c=16 row as a must-fire and the `| 2x | fast | yes | torch |` row as a must-not-fire, under the same header"
+    test: "[ \"$(bash scripts/check_no_claim_literals.sh --selftest | grep -c 'table case(s), 0 failure(s)')\" -eq 1 ]"
+    if_fails: "A comparison table is invisible again. RATIO_RE cannot cross a pipe by design, so without the table detector the four withdrawn band ratios PP-LLAMA-001 §2.1 says appear nowhere else can be republished at will."
+
+  - id: FALSIFY-PP-LLAMA-CLAIMLIT-008
+    rule: "The TARGET mask is positional, not a bare substring"
+    prediction: "The sentence that ends in the word `required` and carries a comparator ratio is a MUST-FIRE row, and the bar `Target: 2x Ollama` stays a must-not-fire"
+    test: "[ \"$(bash scripts/check_no_claim_literals.sh --selftest | grep -c 'ratio case(s), 0 failure(s)')\" -eq 1 ]"
+    if_fails: "The bare-substring mask is back. `[Rr]equire` then matches `required` anywhere on a line, and any claim sentence containing require/expect/spec walks past this guard — 140 of 467 raw matches under docs/specifications/ escaped that way."
+
+  - id: FALSIFY-PP-LLAMA-CLAIMLIT-009
+    rule: "The guard is wired into the per-PR gate, not merely present in the tree"
+    prediction: "ci.yml invokes both the guard and its case table in guard-runner-labels, which `gate` lists in its needs"
+    test: "[ \"$(grep -c 'check_no_claim_literals.sh' .github/workflows/ci.yml)\" -ge 2 ]"
+    if_fails: "A reference is not an execution — the guard would sit unexecuted while being counted as enforcement (the #2327 defect class)"
+
+  - id: FALSIFY-PP-LLAMA-CLAIMLIT-010
+    rule: "The one definition of \"cites a receipt\" is shared, not copied"
+    prediction: "Both guards source scripts/lib/perf_claim_cite.sh, and neither defines resolve_citations itself"
+    test: "[ \"$(grep -lc 'lib/perf_claim_cite.sh' scripts/check_no_claim_literals.sh scripts/check_perf_claims_cite_receipts.sh | wc -l)\" -eq 2 ] && [ \"$(grep -c '^resolve_citations()' scripts/lib/perf_claim_cite.sh)\" -eq 1 ]"
+    if_fails: "The positive and negative halves of PP-12 have two definitions of the same word. They drift, and the drift is invisible because each guard keeps passing against its own copy."
+
+qa_gate:
+  id: F-PP-LLAMA-CLAIMLIT-001
+  name: "PP-12 — no unreceipted claim literal on a user-facing surface"
+  description: "Sweeps every shipped .rs and .md surface for comparator ratios, throughput literals, unit-bound placeholders, ratio cells under a competitor header, and fabricated causal diagnoses; drops any hit that cites an evidence/ receipt path which resolves; compares the remainder against a shrink-only baseline ratcheted to a ref no pull request can rewrite."
+  checks:
+    - "claim_literal_is_absent_or_receipted"
+    - "aperture_growth_is_admitted_not_appended"
+    - "guard_is_not_vacuous"

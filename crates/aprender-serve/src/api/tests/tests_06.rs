@@ -289,6 +289,7 @@ fn test_chat_completion_response_structure() {
         brick_trace: None,
         step_trace: None,
         layer_trace: None,
+    timings: None,
     };
 
     let json = serde_json::to_string(&response).expect("serialize");
@@ -326,6 +327,7 @@ fn test_chat_completion_response_with_traces() {
         brick_trace: Some(trace.clone()),
         step_trace: Some(trace.clone()),
         layer_trace: Some(trace),
+    timings: None,
     };
 
     let json = serde_json::to_string(&response).expect("serialize");
