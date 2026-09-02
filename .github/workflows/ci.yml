@@ -604,10 +604,24 @@ jobs:
       # NOT read deny.toml -- so this covers licences, bans and sources, which
       # nothing else does.
       - name: cargo-deny (licences, bans, sources, advisories)
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
+          # cargo-deny fetches https://github.com/RustSec/advisory-db with the git
+          # CLI. Anonymous git from this host's egress IP is throttled by GitHub
+          # once the 16 runners have each fetched a few times (2026-09-02: every
+          # job on the fleet died at "could not read Username for
+          # 'https://github.com'"), so the container's git carries the job token
+          # the way actions/checkout does. GIT_CONFIG_* is per-process: nothing
+          # is written into the image or the workspace.
+          B64=$(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 | tr -d '\n')
           docker run --rm \
             -v "${GITHUB_WORKSPACE}:/workspace" \
             -w /workspace \
+            -e GIT_TERMINAL_PROMPT=0 \
+            -e GIT_CONFIG_COUNT=1 \
+            -e GIT_CONFIG_KEY_0=http.https://github.com/.extraheader \
+            -e "GIT_CONFIG_VALUE_0=AUTHORIZATION: basic $B64" \
             "$IMAGE" \
             cargo deny check
       # check_apr_bin_pinned asserts CALLERS pin the binary; it says nothing
@@ -1705,6 +1719,8 @@ jobs:
       # tree.
       - name: Install the tools the receipt guard refuses to run without
         shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           bash scripts/install_pr_review_tools.sh "$RUNNER_TEMP/pr-review-tools/bin"
@@ -2020,6 +2036,8 @@ jobs:
 
       - name: Install the tools the receipt guard refuses to run without
         shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           bash scripts/install_pr_review_tools.sh "$RUNNER_TEMP/pr-review-tools/bin"
@@ -2132,6 +2150,8 @@ jobs:
 
       - name: Install the tools the signer refuses to run without
         shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           bash scripts/install_pr_review_tools.sh "$RUNNER_TEMP/pr-review-tools/bin"
@@ -2225,6 +2245,8 @@ jobs:
 
       - name: Install the tools Arm 4 refuses to run without
         shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           bash scripts/install_pr_review_tools.sh "$RUNNER_TEMP/pr-review-tools/bin"
