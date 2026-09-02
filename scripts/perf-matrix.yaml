@@ -72,12 +72,22 @@ ladder:
 # `authors:` names the author of EACH number, because these two were decided by
 # different people; the block-level `author` is the default for any key it omits.
 witness:
+  # PP-26 (v3.1): batch invariance is measured where it exists -- every slot
+  # of an m=c batch of identical prompts must agree with every other slot to
+  # min_agree_tokens, and no slot may emit one token id for max_constant_run
+  # steps (#2753's signature ran for 116). The m=1 reference's agreement with
+  # the batch is RECORDED per band (`divergence_at`), not gated: on lambda it
+  # measures the fp divergence between kernel families, each of which is
+  # batch-size invariant to the end (evidence/perf041/lambda/). It becomes a
+  # gate when the top-2 margin instrument lands (master §12 row 22).
   min_agree_tokens: 64
+  max_constant_run: 16
+  m1_agreement: report
   max_age_days: 7
   threshold_class: policy
   author: spec-owner
-  authors: {min_agree_tokens: spec-owner, max_age_days: perf-gate}
-  provenance: "[U] until fp-nondeterminism is measured"
+  authors: {min_agree_tokens: spec-owner, max_constant_run: spec-owner, max_age_days: perf-gate}
+  provenance: "[M] 2026-09-02 lambda RTX 4090 (evidence/perf041/lambda/witness.json, m1-vs-m4-three-prompts.txt): intra-batch and cross-m agreement within a kernel family reach n_predict; m=1-vs-batch agreement is kernel-family fp divergence, recorded not gated"
 
 # ---------------------------------------------------------------- stream ----
 # PP-27. A replayed stream reports the whole response at the end, so

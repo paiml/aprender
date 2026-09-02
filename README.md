@@ -240,6 +240,12 @@ paired measurement contradicts, so all three are withdrawn rather than restated
 (PP-LLAMA-001 §2.1, PP-12). A withdrawal that reprints the number leaves the
 number on the page.
 
+The harnesses that reproduce the comparisons, without their numbers:
+[candle-vs-apr](https://github.com/paiml/candle-vs-apr) for inference and
+[ground-truth-apr-ludwig](https://github.com/paiml/ground-truth-apr-ludwig) for
+training. A figure from either belongs on this page only once it carries a
+receipt in the ledger.
+
 ## Provable contracts
 
 Every CLI command and kernel is bound to a YAML contract with equations,

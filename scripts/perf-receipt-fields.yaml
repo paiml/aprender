@@ -998,6 +998,29 @@ fields:
       The batch size actually formed while the witness ran. A witness taken
       while no batch formed observed the m=1 path twice.
 
+  bands[].witness.intra_agree_to:
+    class: UNMEASURED
+    source: server
+    required: conditional
+    owner: PERF-004
+    spec: "§4 (PP-26)"
+    needs: >-
+      PP-26 (a): the shortest agreement between any slot of the batch and
+      slot 0, for identical prompts. Below witness.min_agree_tokens the batch
+      is not invariant across its own slots. Absent on a witness taken before
+      v3.1, which the gate reads as the old single-slot rule.
+
+  bands[].witness.max_constant_run:
+    class: UNMEASURED
+    source: server
+    required: conditional
+    owner: PERF-004
+    spec: "§4 (PP-26)"
+    needs: >-
+      PP-26 (b): the longest run of one repeated token id in any slot.
+      #2753 emitted one id for 116 steps; at or above
+      witness.max_constant_run the slot is frozen and the band FAILS.
+
   bands[].stream_mode:
     class: UNMEASURED
     source: server

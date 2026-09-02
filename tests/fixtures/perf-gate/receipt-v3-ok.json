@@ -169,7 +169,9 @@
         "declared_min": 128,
         "divergence_at": null,
         "m_formed": 4,
-        "source": "server"
+        "source": "server",
+        "intra_agree_to": 128,
+        "max_constant_run": 2
       }
     },
     {
@@ -258,7 +260,9 @@
         "declared_min": 128,
         "divergence_at": null,
         "m_formed": 8,
-        "source": "server"
+        "source": "server",
+        "intra_agree_to": 128,
+        "max_constant_run": 2
       }
     },
     {
@@ -347,7 +351,9 @@
         "declared_min": 128,
         "divergence_at": null,
         "m_formed": 16,
-        "source": "server"
+        "source": "server",
+        "intra_agree_to": 128,
+        "max_constant_run": 2
       }
     }
   ],

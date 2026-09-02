@@ -307,6 +307,7 @@ elif short:
 THROUGHPUT = ("aggregate_tok_per_sec", "decode_tok_per_sec", "prefill_tok_per_sec")
 ttft_max = mx_stream.get("live_ttft_over_e2e_max")
 min_agree = mx_witness.get("min_agree_tokens")
+max_run = mx_witness.get("max_constant_run")
 client_sha = prov["client"].get("sha256") if isinstance(prov.get("client"), dict) else None
 if not isinstance(prov.get("client"), dict):
     fail.append("provenance.client absent -- PP-25 requires the SAME client binary on both lanes and "
@@ -327,17 +328,33 @@ for b in bands:
         ok = isinstance(wit, dict) and b["witness"].get("batch_invariance") == "PASS"
         if not ok and not invalid:
             fail.append("%s batch-invariance witness is %s and the band is not marked "
-                        "INVALID-CORRECTNESS -- a batched decode that does not reproduce the m=1 "
-                        "token stream is measuring garbage at full speed (PP-26)"
+                        "INVALID-CORRECTNESS -- a batch that is not invariant across its own "
+                        "slots, or froze on one token, is measuring garbage at full speed (PP-26)"
                         % (tag, "absent" if not isinstance(wit, dict)
                            else repr(b["witness"].get("batch_invariance"))))
         if isinstance(wit, dict) and min_agree is not None:
             formed = b["witness"].get("m_formed")
             declared = b["witness"].get("declared_min")
+            intra = b["witness"].get("intra_agree_to")
             if declared is not None and declared < min_agree:
                 fail.append("%s witness.declared_min=%s is below perf-matrix.yaml "
                             "witness.min_agree_tokens=%s -- a witness that agrees on fewer tokens "
                             "than that agrees on nothing" % (tag, declared, min_agree))
+            # PP-26 v3.1 (a), re-checked from the recorded number so a PASS token
+            # cannot outrun the agreement it claims to rest on.
+            if ok and intra is not None and intra < min_agree and not invalid:
+                fail.append("%s witness says PASS but intra_agree_to=%s is below "
+                            "witness.min_agree_tokens=%s -- the slots of one batch part before "
+                            "the declared point, so the verdict token is not the measurement "
+                            "(PP-26)" % (tag, intra, min_agree))
+            # PP-26 v3.1 (b), the same way: a PASS over a recorded frozen run is
+            # #2753 wearing a green token.
+            run = b["witness"].get("max_constant_run")
+            if ok and run is not None and max_run is not None and run >= max_run and not invalid:
+                fail.append("%s witness says PASS but max_constant_run=%s reaches "
+                            "witness.max_constant_run=%s -- a slot repeated one token id that "
+                            "long, which is #2753's signature, so the verdict token is not the "
+                            "measurement (PP-26)" % (tag, run, max_run))
             if formed is not None and formed < 2:
                 report.append("%s witness.m_formed=%s: the batch never formed, so the witness "
                               "observed no batched path" % (tag, formed))
@@ -1267,6 +1284,17 @@ for b in r["bands"]:
         for k in ("aggregate_tok_per_sec","decode_tok_per_sec","prefill_tok_per_sec","prefill_source"):
             b.pop(k, None)')"
   _row batch_invariance_ok         "$F" merge W1 lambda "" pass "PASS ArmL1"
+  # PP-26 v3.1 (a): the verdict token says PASS while the recorded intra-batch
+  # agreement is below the declared point. The token is not the measurement.
+  F="$(_mut biintra "$OK3" 'for b in r["bands"]:
+    if b["concurrency"] == 4:
+        b["witness"]={"batch_invariance":"PASS","divergence_at":3,"intra_agree_to":3,"max_constant_run":2,"declared_min":128,"m_formed":4,"source":"server"}')"
+  _row witness_intra_below_declared "$F" merge W1 lambda "" fail "intra_agree_to=3 is below"
+  # PP-26 v3.1 (b): PASS token over a recorded 116-step constant run (#2753).
+  F="$(_mut bifrozen "$OK3" 'for b in r["bands"]:
+    if b["concurrency"] == 4:
+        b["witness"]={"batch_invariance":"PASS","divergence_at":0,"intra_agree_to":128,"max_constant_run":116,"declared_min":128,"m_formed":4,"source":"server"}')"
+  _row witness_frozen_run_under_pass "$F" merge W1 lambda "" fail "max_constant_run=116 reaches"
   F="$(_mut biloud "$OK3" 'for b in r["bands"]:
     if b["concurrency"] == 4:
         b["status"]="INVALID-CORRECTNESS"')"

@@ -609,9 +609,9 @@ def _band_status(raw, band, baseline, ratios, ctx):
         ok = isinstance(witness, dict) and witness.get("batch_invariance") == "PASS"
         if not ok:
             return "INVALID-CORRECTNESS", [
-                "batch-invariance witness is %s at c=%d -- a batched decode "
-                "that does not reproduce the m=1 token stream is measuring "
-                "garbage at full speed (PP-26)"
+                "batch-invariance witness is %s at c=%d -- a batch that is not "
+                "invariant across its own slots, or froze on one token, is "
+                "measuring garbage at full speed (PP-26)"
                 % ("absent" if not isinstance(witness, dict)
                    else repr(witness.get("batch_invariance")), c)]
     if ctx["comparator_stale"]:

@@ -2,9 +2,12 @@
 # PP-26 batch-invariance witness (FALSIFY-CB-006 / #2753), executable.
 #
 # Starts a CUDA server, takes an m=1 reference, fires the declared ladder and
-# checks that every slot inside an m=c batch produces the SAME TOKEN SEQUENCE
-# as the m=1 reference, to the divergence point declared in
-# scripts/perf-matrix.yaml (`witness.min_agree_tokens`).
+# checks (PP-26 v3.1) that every slot inside an m=c batch produces the SAME
+# TOKEN SEQUENCE as every other slot to the point declared in
+# scripts/perf-matrix.yaml (`witness.min_agree_tokens`), and that no slot
+# freezes on one token id (`witness.max_constant_run`). The m=1 reference's
+# agreement with the batch is recorded per band, not gated: on lambda it
+# measures the fp divergence between kernel families (evidence/perf041/lambda/).
 #
 #   exit 0  PASS         every band measured and agreeing
 #   exit 1  DEFECT       a batched slot diverged before the declared point

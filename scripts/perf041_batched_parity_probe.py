@@ -74,7 +74,7 @@ EXIT_PASS = 0
 EXIT_FAIL = 1
 EXIT_UNMEASURABLE = 2
 
-WITNESS_VERSION = 1
+WITNESS_VERSION = 2
 MARKER = "PP-26-WITNESS: "
 
 # `[PMAT-044] Batch m=N done`, emitted by
@@ -106,7 +106,23 @@ FALLBACK_SEED = 0
 FALLBACK_TEMPERATURE = 0.0
 FALLBACK_N_PREDICT = 128
 FALLBACK_LADDER = (1, 4, 8, 16)
+FALLBACK_MAX_CONSTANT_RUN = 16
 
+# PP-26 v3.1 -- what is gated and what is recorded.
+#
+# Gated (a band FAILS on either):
+#   (a) intra-batch invariance: every slot of an m=c batch of identical prompts
+#       agrees with slot 0 to `witness.min_agree_tokens`;
+#   (b) no frozen slot: no slot repeats one token id for
+#       `witness.max_constant_run` consecutive steps (#2753 emitted one id for
+#       116 steps; that signature is what this witness exists to catch).
+# Recorded, not gated: the m=1 reference's agreement with the batch
+# (`divergence_at`). The m=1 engine and the batched engine select different
+# kernels, and at temperature 0 the first near-tie parts them; measured on
+# lambda, each kernel family is batch-size invariant to the end while the
+# families differ from each other (evidence/perf041/lambda/). Without a top-2
+# margin on the wire a near-tie flip and a wrong-KV divergence cannot be told
+# apart, so that comparison is a report until master S12 row 22 lands.
 DEFAULT_PROMPT = "Write an essay on compilers."
 REQUEST_TIMEOUT_S = 300.0
 
@@ -159,6 +175,13 @@ def resolve_policy(matrix: dict, notes: list[str], path: str) -> dict:
             f"falling back to declared_min={FALLBACK_MIN_AGREE} (PP-33 debt)"
         )
         declared_min = FALLBACK_MIN_AGREE
+    max_constant_run = witness.get("max_constant_run")
+    if not isinstance(max_constant_run, int) or isinstance(max_constant_run, bool):
+        notes.append(
+            f"matrix block absent: {path} witness.max_constant_run -- "
+            f"falling back to max_constant_run={FALLBACK_MAX_CONSTANT_RUN} (PP-33 debt)"
+        )
+        max_constant_run = FALLBACK_MAX_CONSTANT_RUN
 
     seed = sampler.get("seed")
     if not isinstance(seed, int) or isinstance(seed, bool):
@@ -204,6 +227,7 @@ def resolve_policy(matrix: dict, notes: list[str], path: str) -> dict:
 
     return {
         "declared_min": declared_min,
+        "max_constant_run": max_constant_run,
         "n_predict": n_predict,
         "ladder": list(declared),
         "sampler": {
@@ -351,55 +375,104 @@ def divergence_index(got: list[str], ref: list[str]) -> int:
     return limit
 
 
+def longest_constant_run(chunks: list[str]) -> int:
+    """Length of the longest run of one repeated chunk. 0 for an empty stream."""
+    best = run = 0
+    prev = None
+    for chunk in chunks:
+        run = run + 1 if chunk == prev else 1
+        prev = chunk
+        best = max(best, run)
+    return best
+
+
+def _score_slot(i: int, sample: dict, ref_chunks: list[str], n_predict: int) -> dict:
+    """One slot's record: refusal (error or short), else its two agreements."""
+    slot = {"i": i, "completion_tokens": sample.get("completion_tokens"),
+            "finish_reason": sample.get("finish_reason"),
+            "token_count_source": sample.get("token_count_source"),
+            "agree_to": None, "intra_agree_to": None,
+            "constant_run": None, "refused": None}
+    if sample.get("error"):
+        slot["refused"] = sample["error"]
+    elif sample.get("completion_tokens") != n_predict:
+        slot["refused"] = "short"
+    else:
+        slot["agree_to"] = divergence_index(sample["chunks"], ref_chunks)
+        slot["constant_run"] = longest_constant_run(sample["chunks"])
+    return slot
+
+
+def _refusal_text(slot: dict, sample: dict, n_predict: int) -> str:
+    if slot["refused"] == "short":
+        return (f"slot {slot['i']}: completion_tokens={sample.get('completion_tokens')} "
+                f"!= n_predict={n_predict} (PP-28)")
+    return f"slot {slot['i']}: {slot['refused']}"
+
+
+def _band_verdict(c: int, slots: list[dict], declared_min: int,
+                  max_constant_run: int) -> tuple[str, str | None, int, int]:
+    """PP-26 v3.1 (a)+(b) over scored slots: (result, reason, intra, run)."""
+    intra = min(slot["intra_agree_to"] for slot in slots)
+    run = max(slot["constant_run"] for slot in slots)
+    reasons = []
+    if run >= max_constant_run:
+        frozen = ",".join(str(slot["i"]) for slot in slots
+                          if slot["constant_run"] >= max_constant_run)
+        reasons.append(f"frozen slot(s) {frozen}: one token id repeated {run} "
+                       f"times, at or above the declared "
+                       f"max_constant_run={max_constant_run} (#2753 signature)")
+    if c > 1 and intra < declared_min:
+        reasons.append(f"slots of one batch disagree at chunk {intra} < "
+                       f"declared_min={declared_min}: the batch is not "
+                       f"invariant across its own slots")
+    if reasons:
+        return "FAIL", "; ".join(reasons), intra, run
+    return "PASS", None, intra, run
+
+
 def evaluate_band(c: int, m_formed: int, samples: list[dict],
                   ref_chunks: list[str], declared_min: int,
-                  n_predict: int) -> dict:
-    """One band's verdict. Pure: no I/O, so the case table can drive it."""
-    slots: list[dict] = []
-    refusals: list[str] = []
-    for i, sample in enumerate(samples):
-        slot = {"i": i, "completion_tokens": sample.get("completion_tokens"),
-                "finish_reason": sample.get("finish_reason"),
-                "token_count_source": sample.get("token_count_source"),
-                "agree_to": None, "refused": None}
-        if sample.get("error"):
-            slot["refused"] = sample["error"]
-            refusals.append(f"slot {i}: {sample['error']}")
-        elif sample.get("completion_tokens") != n_predict:
-            slot["refused"] = "short"
-            refusals.append(
-                f"slot {i}: completion_tokens={sample.get('completion_tokens')} "
-                f"!= n_predict={n_predict} (PP-28)"
-            )
-        else:
-            slot["agree_to"] = divergence_index(sample["chunks"], ref_chunks)
-        slots.append(slot)
+                  n_predict: int,
+                  max_constant_run: int = FALLBACK_MAX_CONSTANT_RUN) -> dict:
+    """One band's verdict (PP-26 v3.1). Pure: no I/O, so the case table can drive it.
+
+    PASS requires (a) every slot to agree with slot 0 for at least `declared_min`
+    chunks and (b) no slot to repeat one chunk `max_constant_run` times in a row.
+    The m=1 reference's agreement is recorded per slot (`agree_to`) and per band
+    (`divergence_at`); it does not decide the verdict.
+    """
+    slots = [_score_slot(i, sample, ref_chunks, n_predict)
+             for i, sample in enumerate(samples)]
+    refusals = [_refusal_text(slot, sample, n_predict)
+                for slot, sample in zip(slots, samples) if slot["refused"]]
+
+    def band(result, divergence_at, reason, intra=None, run=None):
+        return {"c": c, "m_formed": m_formed, "result": result,
+                "divergence_at": divergence_at, "intra_agree_to": intra,
+                "max_constant_run": run, "declared_min": declared_min,
+                "max_constant_run_declared": max_constant_run,
+                "reason": reason, "slots": slots}
 
     if refusals:
-        return {"c": c, "m_formed": m_formed, "result": "UNMEASURABLE",
-                "divergence_at": None, "declared_min": declared_min,
-                "reason": "; ".join(refusals), "slots": slots}
+        return band("UNMEASURABLE", None, "; ".join(refusals))
     # A batch is by definition two or more sequences decoded in one step, so
-    # `m_formed < 2` is not a threshold — it is the word "batch". At c=1 no
+    # `m_formed < 2` is not a threshold -- it is the word "batch". At c=1 no
     # batch can form and none is required: PP-26 exempts c=1, whose witness is
     # the m=1 reference's agreement with itself.
     if c > 1 and m_formed < 2:
-        return {"c": c, "m_formed": m_formed, "result": "UNMEASURABLE",
-                "divergence_at": None, "declared_min": declared_min,
-                "reason": (f"no batch with m>1 formed in this band's window "
-                           f"(max m={m_formed}); the batched path was never "
-                           f"exercised, so nothing about it was witnessed"),
-                "slots": slots}
+        return band("UNMEASURABLE", None,
+                    f"no batch with m>1 formed in this band's window "
+                    f"(max m={m_formed}); the batched path was never "
+                    f"exercised, so nothing about it was witnessed")
     if not slots:
-        return {"c": c, "m_formed": m_formed, "result": "UNMEASURABLE",
-                "divergence_at": None, "declared_min": declared_min,
-                "reason": "no samples returned", "slots": slots}
+        return band("UNMEASURABLE", None, "no samples returned")
+    first = samples[0]["chunks"]
+    for slot, sample in zip(slots, samples):
+        slot["intra_agree_to"] = divergence_index(sample["chunks"], first)
     divergence_at = min(slot["agree_to"] for slot in slots)
-    result = "PASS" if divergence_at >= declared_min else "FAIL"
-    return {"c": c, "m_formed": m_formed, "result": result,
-            "divergence_at": divergence_at, "declared_min": declared_min,
-            "reason": None, "slots": slots}
-
+    result, reason, intra, run = _band_verdict(c, slots, declared_min, max_constant_run)
+    return band(result, divergence_at, reason, intra, run)
 
 def exit_code(bands: list[dict]) -> int:
     """1 on any FAIL; 2 on any UNMEASURABLE or a vacuous run; else 0.
@@ -440,9 +513,13 @@ def env_block() -> dict:
 
 def print_marker(host: str, band: dict) -> None:
     divergence = band["divergence_at"]
+    intra = band.get("intra_agree_to")
+    run = band.get("max_constant_run")
     print(f"{MARKER}host={host} c={band['c']} m_formed={band['m_formed']} "
           f"result={band['result']} "
-          f"divergence_at={'none' if divergence is None else divergence}")
+          f"intra_agree_to={'none' if intra is None else intra} "
+          f"constant_run={'none' if run is None else run} "
+          f"m1_agree_to={'none' if divergence is None else divergence}")
 
 
 def run_probe(url: str, server_log: str, prompt: str, ladder: list[int],
@@ -458,7 +535,13 @@ def run_probe(url: str, server_log: str, prompt: str, ladder: list[int],
         "host": host,
         "commit": provenance.get("commit"),
         "binary_sha256": provenance.get("binary_sha256"),
-        "model": {"path": provenance.get("model_path"),
+        # The file NAME plus how the wrapper resolves it, never the absolute path:
+        # a witness is committed under evidence/ at release, and an absolute path
+        # there is a shipped hardcoded path (check_hardcoded_paths.sh). The
+        # sha256 below identifies the bytes.
+        "model": {"path": (os.path.basename(provenance["model_path"])
+                           if provenance.get("model_path") else None),
+                  "dir": "APR_MODELS (default $HOME/models)",
                   "sha256": provenance.get("model_sha256")},
         "prompt_sha256": hashlib.sha256(prompt.encode()).hexdigest(),
         "sampler": dict(sampler),
@@ -522,12 +605,15 @@ def run_probe(url: str, server_log: str, prompt: str, ladder: list[int],
         samples = fire_band(url, prompt, sampler, c)
         m_formed = max_batch_formed(server_log, offset)
         band = evaluate_band(c, m_formed, samples, ref_chunks, declared_min,
-                             n_predict)
+                             n_predict,
+                             policy.get("max_constant_run", FALLBACK_MAX_CONSTANT_RUN))
         witness["bands"].append(band)
         for slot in band["slots"]:
             print(f"  [{slot['i']}] tokens={slot['completion_tokens']} "
                   f"finish={slot['finish_reason']} "
-                  f"agree_to={slot['agree_to']} refused={slot['refused']}")
+                  f"intra_agree_to={slot['intra_agree_to']} "
+                  f"constant_run={slot['constant_run']} "
+                  f"m1_agree_to={slot['agree_to']} refused={slot['refused']}")
         if band["reason"]:
             print(f"  {band['result']}: {band['reason']}")
         print_marker(host, band)
@@ -535,15 +621,16 @@ def run_probe(url: str, server_log: str, prompt: str, ladder: list[int],
     rc = exit_code(witness["bands"])
     print()
     if rc == EXIT_FAIL:
-        print("FALSIFY-CB-006 RED: a batched slot diverged from the m=1 "
-              "reference before the declared point on identical greedy input.")
+        print("FALSIFY-CB-006 RED: a batch is not invariant across its own "
+              "slots, or a slot froze on one token id (PP-26 v3.1).")
     elif rc == EXIT_UNMEASURABLE:
         print("PP-26 UNMEASURABLE: no c>1 band was measured, or a band could "
               "not be decided. This is NOT a pass — an absent witness makes "
               "the band INVALID-CORRECTNESS (PP-26, P-4).")
     else:
-        print("FALSIFY-CB-006 GREEN: every batched slot agrees with the m=1 "
-              "reference to the declared point.")
+        print("FALSIFY-CB-006 GREEN: every batch is invariant across its slots "
+              "to the declared point and no slot froze; the m=1 agreement is "
+              "recorded per band (m1_agree_to), not gated.")
     return rc, witness
 
 
@@ -574,6 +661,9 @@ SELFTEST_NAMES = (
     # Measured, not argued -- see the PR body's mutation transcript.
     "witness_short_slot_is_unmeasurable",
     "witness_c1_only_is_not_a_pass",
+    # PP-26 v3.1: the two rules that replaced "equals the m=1 stream".
+    "witness_intra_batch_disagree_m4",
+    "witness_kernel_family_flip_recorded_ok",
 )
 
 
@@ -645,6 +735,7 @@ def _selftest_case(name: str, plan, ladder: list[int], declared_min: int,
     url = f"http://{host}:{port}/v1/chat/completions"
     policy = {
         "declared_min": declared_min,
+        "max_constant_run": declared_min,
         "n_predict": n_predict,
         "ladder": ladder,
         "sampler": {"temperature": 0.0, "seed": 0, "ignore_eos": True,
@@ -713,6 +804,43 @@ def selftest() -> int:
     rc, _ = _selftest_case("witness_identical_128_ok", plan_ok, [4],
                            declared_min, n_predict)
     row("witness_identical_128_ok", EXIT_PASS, rc)
+
+    # 3b. PP-26 v3.1 (a): one slot of the m=4 batch parts from the others at
+    #     chunk 1 while the other three equal the reference. MUST be exit 1 --
+    #     the batch is not invariant across its own slots.
+    odd = [good[0]] + _canned(n_predict - 1, "odd")
+
+    def plan_intra(index: int):
+        if index < 2:
+            return good, None
+        if index == 2:
+            return good, "[PMAT-044] Batch m=4 done"
+        return (odd if index == 3 else good), None
+
+    rc, wit = _selftest_case("witness_intra_batch_disagree_m4", plan_intra, [4],
+                             declared_min, n_predict)
+    band0 = (wit.get("bands") or [{}])[0]
+    row("witness_intra_batch_disagree_m4", EXIT_FAIL, rc,
+        band0.get("intra_agree_to") == 1,
+        f"intra_agree_to={band0.get('intra_agree_to')}")
+
+    # 3c. PP-26 v3.1 (c): all four slots agree with each other to the end and
+    #     part from the m=1 reference at chunk 2 -- the kernel-family flip
+    #     lambda measures. MUST be exit 0, and the band MUST record the m=1
+    #     agreement (divergence_at=2) rather than lose it.
+    flip = good[:2] + _canned(n_predict - 2, "flip")
+
+    def plan_flip(index: int):
+        if index < 2:
+            return good, None
+        return flip, ("[PMAT-044] Batch m=4 done" if index == 2 else None)
+
+    rc, wit = _selftest_case("witness_kernel_family_flip_recorded_ok", plan_flip,
+                             [4], declared_min, n_predict)
+    band0 = (wit.get("bands") or [{}])[0]
+    row("witness_kernel_family_flip_recorded_ok", EXIT_PASS, rc,
+        band0.get("divergence_at") == 2 and band0.get("result") == "PASS",
+        f"divergence_at={band0.get('divergence_at')} result={band0.get('result')}")
 
     # 4. A batch formed during the c=2 window must NOT credit the c=4 window.
     #    Two refs, then 2 slots at c=2, then 4 slots at c=4.

@@ -144,6 +144,19 @@ never by date).
   were never counted at all. The counter now mirrors the scheduler's own
   live slot count (`BatchState::m`) at every step and is zeroed when the
   batch drains.
+- **PP-26 amended to v3.1 after the first lambda witness.** The v3.0 bar — the
+  `m=1` and `m=c` greedy streams agree for 64 tokens — was DEFECT on every
+  `c>1` band of the release host, and the parting was not batching: three
+  kernel families (`m=1`; `m=2,3`; `m=4,8,16`) each agree with themselves to
+  the end and part from each other at the first near-tie with coherent text
+  on both sides (`evidence/parity/LEDGER.md` row 6, `evidence/perf041/lambda/`).
+  The witness now gates what batch invariance means — every slot of a batch
+  agrees with every other to `witness.min_agree_tokens`, and no slot repeats
+  one token id for `witness.max_constant_run` steps (#2753's signature) — and
+  records the `m=1` agreement per band instead of failing on it. The margin
+  instrument that would turn that record back into a gate is §12 row 22.
+  `scripts/check_perf041_marker.sh` reads the committed lambda marker (PASS)
+  at release.
 - **DP4A comments corrected (CUDA docs arm):** the `has_dp4a` gate stays at
   sm_75 (the DP4A kernels are validated from Turing), but its comments no
   longer claim DP4A itself begins there — the PTX ISA puts it at sm_61.

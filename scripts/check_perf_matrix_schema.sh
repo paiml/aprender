@@ -298,7 +298,7 @@ PY_MX
   # MUTATION 1b -- the `authors:` map names a key with an EMPTY author. Listing
   # the key used to exempt the number from both requirements at once.
   _expect matrix_authors_entry_empty \
-    "$(_variant authors_empty "$(printf '  author: spec-owner\n  authors: {min_agree_tokens: spec-owner, max_age_days: perf-gate}')"$'\x1f'"$(printf "  authors: {min_agree_tokens: '', max_age_days: perf-gate}")")" fail
+    "$(_variant authors_empty "$(printf '  author: spec-owner\n  authors: {min_agree_tokens: spec-owner, max_constant_run: spec-owner, max_age_days: perf-gate}')"$'\x1f'"$(printf "  authors: {min_agree_tokens: '', max_constant_run: spec-owner, max_age_days: perf-gate}")")" fail
 
   _expect matrix_inherited_from_missing \
     "$(_variant inherited_missing "inherited_from: docs/archive/perf-2026-09-01/APR-PERF-GATE-001-v2.2.md"$'\x1f'"inherited_from: docs/specifications/perf-parity-spec.md")" fail

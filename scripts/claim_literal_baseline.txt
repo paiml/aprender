@@ -174,12 +174,12 @@
 #
 # Recorded, not blessed. Shrink-only from here.
 #
-CHANGELOG.md:1093
-CHANGELOG.md:1095
-CHANGELOG.md:1857
-CHANGELOG.md:1872
-CHANGELOG.md:2071
-CHANGELOG.md:2072
+CHANGELOG.md:1121
+CHANGELOG.md:1123
+CHANGELOG.md:1885
+CHANGELOG.md:1900
+CHANGELOG.md:2099
+CHANGELOG.md:2100
 CLAUDE.md:218
 CLAUDE.md:222
 CLAUDE.md:685
@@ -240,9 +240,9 @@ crates/aprender-serve/src/cuda/executor/layers/transformer_layer_batched.rs:32
 crates/aprender-serve/src/cuda/executor/layers/transformer_layer_batched.rs:33
 crates/aprender-serve/src/cuda/executor/q6k_gemv_indexed.rs:274
 crates/aprender-serve/src/cuda/executor/tiled_gemv.rs:339
-crates/aprender-serve/src/cuda/gpu_profile.rs:326
-crates/aprender-serve/src/cuda/gpu_profile.rs:352
-crates/aprender-serve/src/cuda/gpu_profile.rs:406
+crates/aprender-serve/src/cuda/gpu_profile.rs:330
+crates/aprender-serve/src/cuda/gpu_profile.rs:356
+crates/aprender-serve/src/cuda/gpu_profile.rs:410
 crates/aprender-serve/src/cuda/kernel_type.rs:236
 crates/aprender-serve/src/cuda/kernels.rs:9
 crates/aprender-serve/src/gguf/cuda/clone_layer_weights.rs:294

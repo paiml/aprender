@@ -708,6 +708,8 @@ fn witness_of(band: &Value, source: &str, path: &Path) -> Result<BatchInvariance
     Ok(BatchInvarianceWitness {
         batch_invariance,
         divergence_at: as_u32(band.get("divergence_at")),
+        intra_agree_to: as_u32(band.get("intra_agree_to")),
+        max_constant_run: as_u32(band.get("max_constant_run")),
         declared_min: as_u32(band.get("declared_min")).unwrap_or_default(),
         m_formed: as_u32(band.get("m_formed")).unwrap_or_default(),
         source: source.to_string(),
