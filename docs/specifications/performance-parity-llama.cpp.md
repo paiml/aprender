@@ -417,17 +417,18 @@ The three concurrency rules act on three different surfaces and are easy to read
 checks the **declared** band — the join key both receipts carry. PP-8 checks the **offered load**:
 the comparator's client-side `http_concurrency` must equal the band's `c`. PP-24 checks the
 **served capacity**: how many of those requests the server actually admits at once. A run can
-satisfy the first two and violate the third, which is exactly what happened: a server can accept a `-np 16` configuration and
-still admit only 11 requests at once. The withdrawn W1 run did exactly that — the subject's own
-log printed `max_batch=11` while the band was driven at c=16.
+satisfy the first two and violate the third: a server accepts a `-np 16` configuration and still
+admits only 11 requests at once. The withdrawn W1 run did exactly that — the subject's own log
+printed `max_batch=11` while the band was driven at c=16.
 
 That is not "apr is slower at c=16". Five of the sixteen requests were **queued outside the
 measured window's concurrency**, so the band measured a c=11 server against a c=16 comparator
 and divided. The result is a join-key violation dressed as a ratio, which is why PP-22 and
 PP-24 are separate rules: PP-22 catches a *declared* mismatch, PP-24 catches an *effective* one.
 
-**The remedy is refusal, not correction.** A band whose lanes admit unequally is `UNMEASURED`
-with reason `admission_capped`, naming which server capped and by how much. Rescaling the
+**The remedy is refusal, not correction** — and, in one case below, refusal of the *question*.
+A band whose lanes admit unequally is `UNMEASURED` with reason `admission_capped`, naming which
+server capped and by how much. Rescaling the
 subject's aggregate by 16/11 would be arithmetic on a number the harness never measured;
 re-running at c=11 would be a different band. Both are answers to a question the run cannot
 answer, and §7's three-valued status exists precisely so that "we do not know" is sayable.
