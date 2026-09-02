@@ -1,0 +1,103 @@
+{
+  "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true
+        }
+      ],
+      "results": []
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "cargo-mutants"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true
+        }
+      ],
+      "results": []
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "ci-trigger-fail-open",
+          "level": "warning",
+          "message": {
+            "text": "The CI step evaluating the sweep trigger assigned the script's stdout without reading its status: a crashing trigger left `needed` unset, and `needed == 'yes'` is false, so the 229-mutant sweep was silently skipped."
+          },
+          "properties": {
+            "grounding": "measured",
+            "source": ".github/workflows/ci.yml sweep_needed step, reproduced locally: OUT='' when the script exits non-zero",
+            "failure_scenario": "A transient failure in the trigger script (missing git, unreadable diff) skips the guard's own mutation sweep on a PR that changes the guard, and the job reports success.",
+            "precision_class": "advisory",
+            "rationale_for_class": "S3.E is ADVISORY until 30 samples exist (S7's admission rule). The defect is real, measured and fixed; what the receipt may not claim is blocking AUTHORITY from an arm with no measured precision."
+          }
+        },
+        {
+          "ruleId": "whitelist-jq-crash-fail-open",
+          "level": "warning",
+          "message": {
+            "text": "The tool.driver.name whitelist assigned jq's stdout without reading its status; a jq type error prints nothing and leaves the variable empty, which reads as 'no bad driver'."
+          },
+          "properties": {
+            "grounding": "measured",
+            "source": "scripts/check_pr_review_receipt.sh, the bad_driver assignment",
+            "failure_scenario": "A findings.sarif whose runs array is a non-array type makes jq error; the whitelist then accepts every driver name, including one that hides a run from the antigravity selector.",
+            "precision_class": "advisory",
+            "rationale_for_class": "S3.E is ADVISORY until 30 samples exist (S7's admission rule). The defect is real, measured and fixed; what the receipt may not claim is blocking AUTHORITY from an arm with no measured precision."
+          }
+        },
+        {
+          "ruleId": "trigger-script-path-parsing-fail-open",
+          "level": "warning",
+          "message": {
+            "text": "git diff --name-only C-quotes a path containing a newline or quote, so a real sweep input arrives as a quoted string, matches no prefix, and is dropped from the comparison."
+          },
+          "properties": {
+            "grounding": "measured",
+            "source": "scripts/pr_review_sweep_needed.sh decide(); self-test row quoted-path-nul",
+            "failure_scenario": "A sweep input renamed to contain a newline is invisible to the trigger, so the mutation score silently goes stale while CI reports the sweep correctly skipped.",
+            "precision_class": "advisory",
+            "rationale_for_class": "S3.E is ADVISORY until 30 samples exist (S7's admission rule). The defect is real, measured and fixed; what the receipt may not claim is blocking AUTHORITY from an arm with no measured precision."
+          }
+        },
+        {
+          "ruleId": "sweep-trigger-scope",
+          "level": "warning",
+          "message": {
+            "text": "SWEEP_INPUTS enumerates what the sweep READS, which is not identical to S3.D's list of diffs that must TRIGGER a guard mutation set."
+          },
+          "properties": {
+            "grounding": "cited",
+            "source": "S3.D trigger table versus scripts/pr_review_sweep_needed.sh SWEEP_INPUTS",
+            "excerpt": "touches scripts/check_*.sh, dogfood.sh, ci.yml gate logic, or a contracts/*.yaml falsifier",
+            "excerpt_sha256": "cfdb6f4b8c631967f724e5591c3851c49a6512db453618a4ae05fe571b0cce3a",
+            "failure_scenario": "A change to a DIFFERENT guard's own mutation set is not covered by this trigger, so that guard's score is not re-derived by this job.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    }
+  ]
+}

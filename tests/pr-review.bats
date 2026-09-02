@@ -541,9 +541,9 @@ run_case_table() {  # run_case_table <table-basename> <guard-flag>
 @test "every S6.3 row, the contract's owed row, and PRREV-008's seven have a fixture" {
   local n
   n=$(find "$FIX" -maxdepth 1 -type d -name 'row-*' | wc -l)
-  [ "$n" -eq 40 ] || { echo "expected 40 row fixtures (14 from S6.3 + row 15 owed by the contract + rows 16-22 from PRREV-008 + rows 23-24 from PRREV-009 + rows 25-26 from PRREV-012/F6 + rows 27-35 from PRREV-015/S3.E + rows 36-37 from PRREV-020/S3.E.4), found $n"; false; }
+  [ "$n" -eq 43 ] || { echo "expected 43 row fixtures (14 from S6.3 + row 15 owed by the contract + rows 16-22 from PRREV-008 + rows 23-24 from PRREV-009 + rows 25-26 from PRREV-012/F6 + rows 27-35 from PRREV-015/S3.E + rows 36-37 from PRREV-020/S3.E.4 + rows 38-40 from the pmat transport probes + rows 41-43 from PRREV-023/S4.2), found $n"; false; }
   local i
-  for i in 01 02 03 04 05 06 07 08 09 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37; do
+  for i in 01 02 03 04 05 06 07 08 09 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43; do
     find "$FIX" -maxdepth 1 -type d -name "row-$i-*" | grep -q . \
       || { echo "no fixture directory for row $i"; false; }
   done
@@ -2045,4 +2045,115 @@ land_prior_art_on_main() {
   [ "$n3" -eq 2 ] || {
     echo "a changed guard did NOT re-prove the controls: entries $n2 -> $n3, expected 2"
     echo "every mutant would reuse a transcript proved against different bytes"; false; }
+}
+
+# --- PRREV-023: the runs array is not allowed to be empty --------------------
+
+@test "row 41 findings.sarif with an empty runs array                   RED  B1" {
+  # THE VACUITY. Every result rule in the guard reads `.runs[]? | .results[]?`, so over
+  # an empty runs array each of them iterates nothing and finds nothing to reject. This
+  # exact receipt returned rc=0 ACCEPT before the rule existed, while still declaring
+  # verdict FINDINGS and five consultations consulted, and the four positive controls
+  # fired correctly in that same run -- so it was genuine vacuity, not a broken harness.
+  assert_row row-41-sarif-with-no-runs RED B1 "carries no runs[]"
+}
+
+@test "row 42 a run whose tool.driver.name is outside the vocabulary    RED  B1" {
+  # Checked as a WHITELIST. S13.13 found every clause that fell to the forged receipts
+  # was a blacklist over a field and every clause that survived was a whitelist; the
+  # difference was the direction of the test. `Pmat` is one capital, which is all it
+  # takes to hide a run from `select(.tool.driver.name == "antigravity")`.
+  #
+  # The first draft of the rule ACCEPTED this row: `select([...] | index(.) == null)`
+  # rebinds `.` to the literal array through the pipe, so it asked whether the array
+  # contained itself. Caught by running the row, not by reading the line.
+  assert_row row-42-run-driver-outside-vocabulary RED B1 "outside { pmat, nvidia-cuda-docs, crux, cargo-mutants, antigravity }"
+}
+
+@test "row 43 verdict FINDINGS beside zero results                      RED  B1" {
+  # A verdict and the artifact it points at must not disagree about whether anything was
+  # found. FINDINGS over an empty result set is the same review as PASS, which makes the
+  # verdict decorative on exactly the transition S7 reads to decide blocking.
+  assert_row row-43-findings-verdict-with-no-results RED B1 "carries zero results"
+}
+
+@test "row 7 is PASS with an empty result set and stays GREEN     [discrimination]" {
+  # THE PARTNER FOR ROW 40, and the reason row 40's rule is about the VERDICT rather
+  # than the emptiness. row-07's findings.sarif carries a run with `results: []` and a
+  # PASS verdict, and it must stay GREEN: "consulted, found nothing" is S3.0 row 1, the
+  # honest outcome the whole three-state encoding exists to keep available. A rule that
+  # refused this would teach reviewers to invent findings.
+  run jq -e '[ .runs[] | .results[]? ] | length == 0' "$FIX/row-07-honest-docs-only-pmat-consulted/findings.sarif"
+  [ "$status" -eq 0 ] || { echo "row 7 no longer has an empty result set"; return 1; }
+  run jq -r '.predicate.verdict' "$FIX/row-07-honest-docs-only-pmat-consulted/receipt.intoto.jsonl"
+  [ "$output" = "PASS" ] || { echo "row 7 verdict is $output, expected PASS"; return 1; }
+  assert_row row-07-honest-docs-only-pmat-consulted GREEN
+}
+
+# --- the cache's three fail-closed properties, each mutation-verified --------
+# A cross-vendor review of the control cache named three ways it could serve a
+# transcript the live run would not have produced. Each is a row here, and each was
+# confirmed to go RED against the pre-fix guard before the fix was written.
+
+@test "S6.1 a truncated cache entry is a MISS, not a hit          [fail-closed]" {
+  # `[ -s ]` was the entire read-side check and it is TRUE OF A ONE-BYTE FRAGMENT. This
+  # queue evicts jobs mid-run, so a torn write was reachable, and it would have been a
+  # PERMANENT free pass: every later run cats the fragment and skips the controls.
+  local cache="${TMPDIR:-/tmp}/pr-review-pc-cache"
+  rm -rf "$cache"
+  run "$GUARD" "$FIX/row-14-complete-gpu-review"
+  local k; k=$(ls "$cache")
+  [ -n "$k" ] || { echo "cold run wrote no entry"; false; }
+
+  # Tear it. The terminator carries sha256 of the body, so a prefix cannot satisfy it.
+  head -c 30 "$cache/$k" > "$cache/$k.t" && mv "$cache/$k.t" "$cache/$k"
+  run "$GUARD" "$FIX/row-14-complete-gpu-review"
+  local fired; fired=$(printf '%s\n' "$output" | grep -c '^positive-control') || true
+  [ "$fired" -eq 4 ] || {
+    echo "a torn entry was served as a hit: $fired control lines, expected 4 from a re-run"
+    false; }
+  # ...and the re-run must have REPAIRED it, terminator and all.
+  run tail -n 1 "$cache/$k"
+  [[ "$output" == __PC_CACHE_END__\ * ]] || { echo "entry not restamped: $output"; false; }
+}
+
+@test "S6.1 a changed TOOL re-proves the controls, not just a changed guard" {
+  # The controls do not exercise the guard's bytes, they exercise the guard running
+  # THROUGH jq / check-jsonschema / minisign / git. If check-jsonschema began accepting
+  # invalid documents, control 1 would stop firing while the guard's bytes -- and so a
+  # guard-only key -- stayed identical. A shim earlier on PATH is the cheapest way to
+  # prove the key sees the difference; it resolves to the same jq, so ONLY the resolved
+  # path and file hash differ, which is the weakest form of the drift the key must catch.
+  local cache="${TMPDIR:-/tmp}/pr-review-pc-cache"
+  rm -rf "$cache"
+  run "$GUARD" "$FIX/row-14-complete-gpu-review"
+  [ "$(find "$cache" -maxdepth 1 -type f | wc -l)" -eq 1 ]
+
+  mkdir -p "$BATS_TEST_TMPDIR/shim"
+  printf '#!/bin/sh\nexec %s "$@"\n' "$(command -v jq)" > "$BATS_TEST_TMPDIR/shim/jq"
+  chmod +x "$BATS_TEST_TMPDIR/shim/jq"
+  PATH="$BATS_TEST_TMPDIR/shim:$PATH" run "$GUARD" "$FIX/row-14-complete-gpu-review"
+  local n; n=$(find "$cache" -maxdepth 1 -type f | wc -l)
+  [ "$n" -eq 2 ] || {
+    echo "a different jq reused the same key ($n entries, expected 2)"
+    echo "a broken tool would be cached past, which is the disarmed-guard class"; false; }
+}
+
+@test "S6.1 a run whose controls did NOT fire writes no cache entry [fail-closed]" {
+  # THE PROPERTY THE OTHER TWO REST ON. Every control is `|| exit 1`, so the write is
+  # unreachable unless all four fired -- an entry can only be created by a run that
+  # PROVED the guard can still fail. Verified by removing a seed: the seeded control
+  # refuses, the guard exits non-zero, and the cache must stay empty.
+  local cache="${TMPDIR:-/tmp}/pr-review-pc-cache"
+  rm -rf "$cache"
+  cp -a "$REPO_ROOT/tests/fixtures/pr-review/positive-control" "$BATS_TEST_TMPDIR/pc"
+  rm -f "$BATS_TEST_TMPDIR/pc/self-review/receipt.intoto.jsonl"
+
+  PR_REVIEW_POSITIVE_CONTROL_DIR="$BATS_TEST_TMPDIR/pc" \
+    run "$GUARD" "$FIX/row-14-complete-gpu-review"
+  [ "$status" -ne 0 ] || { echo "a missing control seed did not stop the run"; false; }
+  local n; n=$(find "$cache" -maxdepth 1 -type f 2>/dev/null | wc -l)
+  [ "$n" -eq 0 ] || {
+    echo "a run that could not prove the controls still wrote $n cache entry(ies)"
+    echo "that entry would then be served to runs that never proved anything"; false; }
 }

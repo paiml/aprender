@@ -22,7 +22,7 @@ difference is a defect in this file.
 **Contract**: `contracts/pr-review-skill-v2.yaml` (§1 grounding, §7 blocking, §8 metrics)
 **Guard**: `scripts/check_pr_review_receipt.sh` — it validates what you emit here, it has
 its own positive controls, and its mutation set (`scripts/mutate-guard.sh`) reports
-225/225. **Run it on your own receipt before you post anything.**
+233/233. **Run it on your own receipt before you post anything.**
 
 ## Context
 
@@ -438,7 +438,7 @@ Bash guards are exercised with `bats-core` fixtures. For the receipt guard itsel
 mutation set already exists and is a derivation, not a list:
 
 ```bash
-bash scripts/mutate-guard.sh          # 225/225 on scripts/check_pr_review_receipt.sh
+bash scripts/mutate-guard.sh          # 233/233 on scripts/check_pr_review_receipt.sh
 ```
 
 **`attempted: 0` with `status: consulted` is rejected** (fixture row 2). A mutation set
