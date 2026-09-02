@@ -77,11 +77,20 @@ host, model, date and comparator pin that produced it. Nothing in §4–§7 may 
 
 **apr's aggregate was flat at ~110 tok/s at every concurrency in the withdrawn run** — because
 batching was compiled out of that binary. **On `main` it scales** (99.9 → 449.9). The reasoning
-below about decode-vs-aggregate remains valid as a *rule*; the numbers that motivated it do not. Per-user decode *rises* with concurrency (1.554× at c=16) purely because each
-request gets the whole GPU in turn while llama.cpp shares it sixteen ways.
+below about decode-vs-aggregate remains valid as a *rule*; the numbers that motivated it do not.
+
+**In that run** per-user decode *rose* with concurrency (1.554× at c=16) while aggregate stayed
+flat — because each request got the whole GPU in turn while llama.cpp shared it sixteen ways.
+That is a property of a **serialising** server, and `main` is no longer one.
 
 > A gate that reports only per-user decode would call 0.097× aggregate a PASS.
 > — `scripts/llama_pin.toml`, in its own words
+
+**The rule survives the withdrawal because it rests on a mechanism, not on that run.** Whenever
+a server shares one device across `c` requests, per-user decode falls and aggregate rises; when
+it serialises, the reverse. The two metrics therefore move in opposite directions under the
+change that matters most here, and a receipt carrying one of them cannot be read. **No
+measurement is required for that to be true**, which is why I-4 stands while §2.1 does not.
 
 **Therefore a receipt must always CARRY both metrics on every band (I-4).** I-4 is a rule about
 receipt *completeness*, not about verdict formation: it forbids a receipt that records only one
@@ -302,6 +311,24 @@ before profiling would misdiagnose the bottleneck**, and §9 #3 is already disch
 coalesced/DP4A GEMV variants ship in `crates/aprender-gpu/src/kernels/quantize/q4k/coalesced/`,
 and the batched path calls no GEMV).
 
+### §6.1b I-8 is violated by construction, not by omission
+
+`scripts/llama_pin.toml:256` starts the comparator as
+
+```
+{llama_server} -m {model} --port {port} -ngl 999 -c {context_length} -t {threads} --no-warmup
+```
+
+with **no `-np` / `--parallel`**, and `scripts/parity_host_receipt.sh` starts that server
+**once, outside the `for c in $BANDS` loop**. So the comparator's slot count is fixed for the
+whole sweep while apr's concurrency varies 1 → 16. I-8 requires the comparator's
+`http_concurrency` to equal the band's `c`; today it cannot, because nothing varies it.
+
+This is worse than the boolean-`--gpu` violation above: `--gpu` resolves to a defensible value,
+whereas a comparator pinned at one slot count across four bands makes three of the four ratios a
+comparison between different configurations. **§12.3 owes the check of whether llama.cpp can be
+driven per-band by our client at all**, and until that is known I-8 is aspirational.
+
 ### §6.2 The gate in §7 is not implementable today, and this is the blocking item
 
 Assimilated from the quorum that reviewed the rejected v3.0 plan; both verified independently
@@ -369,7 +396,7 @@ from real regressions, and the team routes around them.
 
 | band | metric | status | against |
 |---|---|---|---|
-| c=1 | `dec_ratio` | **gated** — REPORTING until decode σ exists (§12.1b) | the comparator, same run |
+| c=1 | `dec_ratio` | **gated** — REPORTING until decode σ exists (§12.1) | the comparator, same run |
 | c=1 | `agg_ratio` | **REPORTED** — at c=1 the two still differ (§2.1's withdrawn run read 0.534 vs 0.587, because aggregate includes prefill and queue time while decode does not). Gating both here would re-create the two-metric trap §2.2 removes, so decode is the gated one and aggregate is recorded beside it | — |
 | c ∈ {4,8,16} | `agg_ratio` | **gated** | the comparator, same run |
 | c ∈ {4,8,16} | `dec_ratio` | **REPORTED** until `agg_ratio ≥ 1.0` is first achieved; a non-regression floor is set from **that same receipt** thereafter | apr's own post-batching baseline |
@@ -448,7 +475,7 @@ Breadth before depth is what produced eight empty cells.
 | # | finding | evidence | status |
 |---|---|---|---|
 | **1** | ~~apr does not batch~~ — **WITHDRAWN.** It batches on `main` (`max_batch=11`); the claim came from a build with the feature compiled out | §2.1 banner | the whole premise, retracted |
-| **2** | **Single-stream decode is behind** — 0.591× on main's indicative figure | §2.1 | still real, and now the *largest* known gap |
+| **2** | **Single-stream decode: UNMEASURED.** The 0.591× indicative figure divides main's aggregate (99.9) by **llama.cpp's 168.9 — a number from the withdrawn 2026-08-24 run**, so it inherits the withdrawal. There is no conformant paired measurement of single-stream on any host | §2.1 banner (withdrawn) | **not conceded and not sized.** §12.2 owes the measurement; until it lands, calling this the largest gap would rest on §2.1, which the banner forbids |
 | **3** | ~~M=1 GEMV coalescing~~ — **DISCHARGED.** `crates/aprender-gpu/src/kernels/quantize/q4k/coalesced/` ships ten coalesced/DP4A GEMV variants; the 192× non-coalesced defect does not exist here. Above m≥4 the batched path routes to cuBLAS GEMM and does not call a GEMV at all | tree | the kernel lever has **no named live mechanism** |
 | **4** | The harness uses a boolean `--gpu` | §6.1 | violates I-15 |
 | **5** | `mini` declares a backend that does not exist | #2841 | violates I-16 |
@@ -570,14 +597,19 @@ vocabulary its own tables violated).
 **Pass 7 re-raised four findings already fixed in passes 1–2** — `incomplete-withdrawal`,
 `missing-archives`, `contradictory-parity-definition`, `unimplemented-matrix-update`. Each was
 checked against the exact bytes the reviewer read (`md5sum` identical), and each is demonstrably
-present in fixed form. Precision on that pass is **1 of 5 = 20%**, against §7's admission rule of
-**≥ 90% to block**.
+present in fixed form. Precision on that pass is **1 of 5 = 20%**.
 
-**So the loop was stopped by the spec's own rule, not by the author's patience.** A reviewer
-below the precision bar may not block; §8's `effective_fp_rate` exists for exactly this, and this
-is its first live sample. The residual is recorded rather than argued away: the last *converged*
-pass (5) returned FINDINGS with two advisories, both since fixed, and no `cited` or `measured`
-finding against the current text survives verification.
+**The rule that stopped the loop is not in this document.** It is
+`PR-REVIEW-SKILL-002-v2.md`'s §7 admission rule — *a class may block only while its measured
+precision on the rolling sample is ≥ 90%* — and its §8 `effective_fp_rate` metric. Both govern
+the review process; **this specification governs inference performance and defines no such
+rules**, so citing "§7" and "§8" here without naming the other document was a dangling
+cross-reference into a section of *this* file that says nothing of the kind. Named properly, the
+claim is checkable: `grep -c effective_fp_rate docs/specifications/PR-REVIEW-SKILL-002-v2.md`
+returns 7, and the same grep against this file returns 0.
+
+So the loop was stopped by a rule that exists, in the document that owns it, and 20% is well
+under its bar.
 
 **What this does not license.** It is one reviewer on one document, and 20% is a sample of five.
 It is not a precision measurement of the arm, and §8 still owes 30 samples before any threshold
@@ -585,21 +617,20 @@ is set from it.
 
 ## §12 Unmeasured, owed, and named
 
-| # | item | owner | why it matters |
-|---|---|---|---|
-| **12.1** | **σ for `aggregate_tok_per_sec` is MEASURED — see §12.1a.** What remains unmeasured is σ for *decode* (not captured at all, §6.2b) and for the comparator lane (no producer, §6.2a) | perf-gate | the noise floor is no longer step zero; the comparator lane is |
-| 12.2 | §2.3's model-size scaling, controlled (same host, same harness, 1.5B vs 7B) | perf-gate | decides whether single-stream may ever be conceded |
-| 12.3 | Whether llama.cpp can be driven at c>1 by our client without patching it | perf-gate | I-8 is unenforceable otherwise |
-| 12.4 | Instrumentation overhead of any per-phase timing | perf-gate | unpriced; §10 declines the identity partly for this reason |
-| 12.5 | `mini`'s backend decision | #2841 | I-16 blocks the cell until resolved |
+| # | item | owner | expires | why it matters |
+|---|---|---|---|---|
+| **12.1** | σ for `aggregate_tok_per_sec` is MEASURED (§12.1a). What remains unmeasured is σ for *decode* (not captured at all, §6.2b) and for the comparator lane (no producer, §6.2a) | perf-gate | **2026-09-25** | the comparator lane, not the noise floor, is step zero |
+| 12.2 | A conformant paired single-stream measurement — the one §9 #2 is blocked on, and the one that would settle whether the deficit scales with model size (§2.3) | perf-gate | **2026-09-25** | until it exists, single-stream is neither sized nor conceded |
+| 12.3 | Whether llama.cpp can be driven at c>1 by our client without patching it | perf-gate | **2026-09-25** | I-8 is unenforceable otherwise, and §6.1b shows it is violated today |
+| 12.4 | Instrumentation overhead of any per-phase timing | perf-gate | **2026-10-15** | unpriced; §10 declines the summing identity partly for this reason |
+| 12.5 | `mini`'s backend decision | #2841 | **2026-09-25** | I-16 blocks the cell until resolved |
+| **12.6** | **I-2's scheduler block has no producer.** `crates/aprender-test-lib/src/perf_gate/receipt.rs`'s `Provenance` struct carries binary, host, accelerator, model, quantization and feature_set — and no scheduler field | perf-gate | **2026-09-25** | every receipt is a run of an unnamed configuration until it does |
+| **12.7** | **I-18 has no automated check.** `grep -ir ancestor crates/aprender-test-lib/src/perf_gate/` returns nothing; the ancestor rule is enforced by hand | perf-gate | **2026-10-15** | a `+no-git` or off-branch build could produce a receipt nothing refuses |
 
-### §12.1b Decode has no measured noise floor, so it is not gated yet
-
-§12.1a measures σ for **aggregate** only. `decode_tok_per_sec` is not captured at all (§6.2b),
-so its variance over the socket is unknown. **A gate on a metric with no measured noise floor is
-a flaky gate**, and this project has already paid for that class. Decode gating at c=1 is
-therefore **REPORTING** until capture exists and σ is computed from N=3 — which costs no matrix
-run beyond the one Step 0 already needs.
+**The expiry is not decoration.** §7's three-valued status requires `UNMEASURED` to carry an
+owner *and* an expiry, and a table of obligations without them is the same defect one level up.
+2026-09-25 is `perf-matrix.yaml`'s own lambda/W1 expiry, so these fall due with the cell they
+serve rather than on a date invented here.
 
 ### §12.1a The measured noise floor
 
