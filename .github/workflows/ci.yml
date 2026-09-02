@@ -1719,11 +1719,11 @@ jobs:
 
       # Arm 2. Every row of §6.3, plus the positive controls, plus the
       # must-match/must-not-match tables behind the three trigger regexes. This
-      # file is 161 tests and was reachable from NO workflow until this job — the
+      # file is 162 tests and was reachable from NO workflow until this job — the
       # dark-target class this repository has hit with benches and with 58 cgp
       # tests. Both numbers here are recomputed by check_pr_review_counts.sh; the
       # commit that wired this step wrote 65 and 22 over a file that already held
-      # 161 tests and 37 rows.
+      # 162 tests and 37 rows.
       - name: The 40-row fixture table and both polarities of every trigger regex
         shell: bash
         run: bats tests/pr-review.bats

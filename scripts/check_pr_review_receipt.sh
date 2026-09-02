@@ -1334,6 +1334,64 @@ validate_receipt() {
 # other than the one it names is mislabeled evidence, not a control. Requiring the
 # expected class turns that silent mislabel into a loud failure.
 # -------------------------------------------------------------------------
+# -------------------------------------------------------------------------
+# THE CONTROLS ARE CACHED BY THE GUARD'S OWN BYTES, AND THAT IS WHY IT IS SOUND.
+#
+# Measured: one guard invocation is ~2350ms, of which ~1160ms is NINE
+# check-jsonschema starts, and EIGHT of those nine are the four controls re-proving
+# the same fact. `tests/pr-review.bats` invokes the guard 161 times, so one suite pays
+# for the controls 161 times over; `scripts/mutate-guard.sh` runs that suite once per
+# mutant, so a 233-mutant sweep pays 37,513 times. That is what pushed the
+# `pr-review-receipt` job past its 150-minute cap TWICE, including on main.
+#
+# What the controls prove is that THIS GUARD, as these bytes, can still fail. That is a
+# property of the file, not of the receipt being checked -- so it needs proving once per
+# distinct guard, not once per invocation. The cache key is
+# sha256(this script) + sha256(the control seed tree), so:
+#
+#   * every mutant changes the script, changes the key, and re-proves the controls;
+#   * editing a control fixture changes the key and re-proves them;
+#   * 161 tests against one unchanged guard prove them once.
+#
+# FAIL-CLOSED IN EVERY DIRECTION. No sha256 tool, an unwritable cache dir, an unreadable
+# or malformed entry, or PR_REVIEW_NO_PC_CACHE=1 -- every one of them runs the controls.
+# A cache that cannot be read is never a cache that said yes.
+
+GUARD_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+PC_SEED_DIR=${PR_REVIEW_POSITIVE_CONTROL_DIR:-$GUARD_DIR/../tests/fixtures/pr-review/positive-control}
+
+pc_cache_key() {
+  command -v sha256sum >/dev/null 2>&1 || return 1
+  local gs ss
+  gs=$(sha256sum "$0" 2>/dev/null | cut -d' ' -f1) || return 1
+  [ -n "$gs" ] || return 1
+  ss=$( { find "$PC_SEED_DIR" -type f -exec sha256sum {} + 2>/dev/null | sort; } | sha256sum | cut -d' ' -f1 )
+  # THE SCHEMAS ARE PART OF THE KEY, and the suite proved it. Control 1 asserts the
+  # in-toto schema REJECTS a malformed statement; point PR_REVIEW_SCHEMA_DIR at a
+  # permissive schema and it must misfire and stop the run. With the schemas outside the
+  # key the controls were cached past that, and `S6.1 the schema-depth control is
+  # measured against the VENDORED schema` went RED -- the one test that varies a schema.
+  # A cache key that omits an input the cached result depends on is a stale-read waiting
+  # to happen, and this one was found by a test rather than by reading the key.
+  local sd
+  sd=$( { find "$SCHEMA_DIR" -type f -exec sha256sum {} + 2>/dev/null | sort; } | sha256sum | cut -d' ' -f1 )
+  printf '%s-%s-%s\n' "${gs:0:24}" "${ss:0:24}" "${sd:0:24}"
+}
+
+PC_TRANSCRIPT=""
+PC_CACHE_DIR="${TMPDIR:-/tmp}/pr-review-pc-cache"
+PC_CACHE_HIT=0
+if [ "${PR_REVIEW_NO_PC_CACHE:-0}" != "1" ]; then
+  _k=$(pc_cache_key 2>/dev/null) || _k=""
+  if [ -n "$_k" ] && [ -s "$PC_CACHE_DIR/$_k" ]; then
+    # The recorded lines are the controls' own output; replay them verbatim so the
+    # transcript of a cached run is byte-identical to an uncached one.
+    cat "$PC_CACHE_DIR/$_k"
+    PC_CACHE_HIT=1
+  fi
+fi
+
+if [ "$PC_CACHE_HIT" -eq 0 ]; then
 PC_TMP=$(mktemp -d "${TMPDIR:-/tmp}/pr-review-positive-control.XXXXXX")
 case "$PC_TMP" in
   */pr-review-positive-control.*) ;;
@@ -1354,8 +1412,6 @@ cleanup() {
 }
 trap cleanup EXIT
 
-GUARD_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-PC_SEED_DIR=${PR_REVIEW_POSITIVE_CONTROL_DIR:-$GUARD_DIR/../tests/fixtures/pr-review/positive-control}
 
 # run_control <name> <expected-class> <expected-reason-substring> <dir>
 #
@@ -1399,8 +1455,12 @@ $PROG: POSITIVE CONTROL MISFIRED ($name)
 EOF
       return 1 ;;
   esac
-  printf 'positive-control  %-15s fired (%s: %s)\n' "$name" "$REJECT_CLASS" \
-    "$(printf '%s' "$REJECT_REASON" | cut -c1-64)"
+  local _line
+  _line=$(printf 'positive-control  %-15s fired (%s: %s)' "$name" "$REJECT_CLASS" \
+    "$(printf '%s' "$REJECT_REASON" | cut -c1-64)")
+  printf '%s\n' "$_line"
+  PC_TRANSCRIPT="${PC_TRANSCRIPT:+$PC_TRANSCRIPT
+}$_line"
   return 0
 }
 
@@ -1429,10 +1489,22 @@ seeded_control() {
   cp -- "$seed/receipt.intoto.jsonl" "$seed/findings.sarif" \
         "$seed/receipt.intoto.jsonl.minisig" "$d/" || {
     echo "$PROG: FAIL - positive-control fixture at $seed is incomplete" >&2; return 1; }
-  (
+  # The subshell scopes PUBKEY, which also means PC_TRANSCRIPT assignments inside it are
+  # LOST -- so the cached transcript carried only the first control and a warm run
+  # printed three fewer lines than a cold one. Capture stdout in the parent, re-print it,
+  # and append it there. Status comes from the substitution, which is the subshell's own,
+  # never from a pipeline.
+  local _out _rc
+  _out=$(
     PUBKEY="$PC_SEED_DIR/positive-control.pub"
     run_control "$name" "$class" "$reason" "$d"
-  )
+  ); _rc=$?
+  if [ -n "$_out" ]; then
+    printf '%s\n' "$_out"
+    PC_TRANSCRIPT="${PC_TRANSCRIPT:+$PC_TRANSCRIPT
+}$_out"
+  fi
+  return "$_rc"
 }
 
 seeded_control self-review     self-review     B2 "reviewer_actor.id ="        || exit 1
@@ -1440,6 +1512,17 @@ seeded_control findings-digest findings-digest B1 "findings_ref.sha256"        |
 seeded_control cost-missing    cost-missing    B1 "predicate.cost must carry"  || exit 1
 
 # -------------------------------------------------------------------------
+fi   # end: controls ran (cache miss)
+
+# Record the controls' transcript under the key, best-effort. A failure to write is not
+# a failure of the run -- the next invocation simply pays for them again.
+if [ "$PC_CACHE_HIT" -eq 0 ] && [ "${PR_REVIEW_NO_PC_CACHE:-0}" != "1" ]; then
+  _k=$(pc_cache_key 2>/dev/null) || _k=""
+  if [ -n "$_k" ]; then
+    mkdir -p "$PC_CACHE_DIR" 2>/dev/null && printf '%s\n' "$PC_TRANSCRIPT" > "$PC_CACHE_DIR/$_k" 2>/dev/null || true
+  fi
+fi
+
 # The real receipts.
 # -------------------------------------------------------------------------
 if [ "$#" -eq 0 ]; then

@@ -2008,3 +2008,41 @@ land_prior_art_on_main() {
     "S3.E identity fields are absent or empty: model_id" \
     'del(.predicate.consultations.antigravity.model_id)'
 }
+
+@test "S6.1 the control cache is keyed by the guard's own bytes, so a mutant re-proves them" {
+  # The controls prove THIS GUARD can still fail -- a property of the file, not of the
+  # receipt -- so they are cached under sha256(guard)+sha256(seeds)+sha256(schemas).
+  # Measured: that took one invocation from 2362ms to 1004ms and the suite from 286s to
+  # 107s, which is what put `pr-review-receipt` back inside its 150-minute cap.
+  #
+  # THE PROPERTY EVERYTHING RESTS ON is that a CHANGED guard re-proves them. Every mutant
+  # in scripts/mutate-guard.sh changes the guard, so a key that ignored the guard's bytes
+  # would serve 233 mutants a transcript proved against a different file.
+  local cache="${TMPDIR:-/tmp}/pr-review-pc-cache"
+  rm -rf "$cache"
+
+  run "$GUARD" "$FIX/row-14-complete-gpu-review"          # cold: writes one entry
+  [ "$status" -eq 0 ] || { echo "$output"; false; }
+  local n1; n1=$(find "$cache" -type f 2>/dev/null | wc -l)
+  [ "$n1" -eq 1 ] || { echo "expected 1 cache entry, found $n1"; false; }
+
+  run "$GUARD" "$FIX/row-14-complete-gpu-review"          # warm: no new entry
+  [ "$status" -eq 0 ] || { echo "$output"; false; }
+  local n2; n2=$(find "$cache" -type f 2>/dev/null | wc -l)
+  [ "$n2" -eq 1 ] || { echo "warm run added an entry ($n1 -> $n2); the key is not stable"; false; }
+
+  # A one-byte change to the guard must produce a SECOND entry.
+  # The copy must be told where the seeds and schemas are: the guard resolves both
+  # relative to its OWN path, and a copy in a tmpdir would fail before it ever reached
+  # the cache -- which is a fixture-resolution failure, not a cache-key one.
+  cp "$GUARD" "$BATS_TEST_TMPDIR/mutant.sh"
+  printf '# one byte of mutant\n' >> "$BATS_TEST_TMPDIR/mutant.sh"
+  chmod +x "$BATS_TEST_TMPDIR/mutant.sh"
+  PR_REVIEW_POSITIVE_CONTROL_DIR="$FIX/positive-control" \
+  PR_REVIEW_SCHEMA_DIR="$REPO_ROOT/schemas" \
+    run "$BATS_TEST_TMPDIR/mutant.sh" "$FIX/row-14-complete-gpu-review"
+  local n3; n3=$(find "$cache" -type f 2>/dev/null | wc -l)
+  [ "$n3" -eq 2 ] || {
+    echo "a changed guard did NOT re-prove the controls: entries $n2 -> $n3, expected 2"
+    echo "every mutant would reuse a transcript proved against different bytes"; false; }
+}
