@@ -1330,10 +1330,10 @@ def _p1_set(key, value):
     return mutate
 
 
-def _p1_receipt(work):
+def _p1_receipt(work, extra=()):
     """The whole chain: P2 over $WORK, then P3 over the block it wrote."""
     block = os.path.join(work, "parity.json")
-    emitted = _run_parity_block(work, block, ["--pin-expiry", P1_PIN_EXPIRY])
+    emitted = _run_parity_block(work, block, ["--pin-expiry", P1_PIN_EXPIRY] + list(extra))
     if emitted.returncode != 0:
         return None, emitted.stderr.strip().replace("\n", " ")[:200]
     out = os.path.join(work, "receipt.json")
@@ -1349,6 +1349,54 @@ def _p1_receipt(work):
 
 def _p1_statuses(receipt):
     return [b.get("status") for b in receipt.get("bands") or []]
+
+
+def _p1_strip_witness(work):
+    """The real harness's shape: no per-replicate report carries a witness."""
+    for name in os.listdir(work):
+        if not name.endswith(".json") or name.startswith("band-"):
+            continue
+        path = os.path.join(work, name)
+        with open(path, encoding="utf-8") as handle:
+            doc = json.load(handle)
+        if isinstance(doc, dict) and isinstance(doc.get("runs"), list):
+            for run in doc["runs"]:
+                run.pop("witness", None)
+            with open(path, "w", encoding="utf-8") as handle:
+                json.dump(doc, handle)
+
+
+def _p1_witness_file(work, bands):
+    """A scripts/perf041_batched_parity_probe.py witness with the given bands."""
+    path = os.path.join(work, "perf041-witness.json")
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump({"witness_version": 2, "probe": "perf041", "commit": "0" * 40,
+                   "bands": [{"c": c, "m_formed": c, "result": "PASS",
+                              "divergence_at": 3, "intra_agree_to": 128,
+                              "max_constant_run": 1, "declared_min": 128,
+                              "reason": None} for c in bands]}, handle)
+    return path
+
+
+def _selftest_p1_witness_rows(root):
+    """PP-26 reaches an executor block only through --witness-json (the bench
+    reports carry none). Both polarities: attached for the band -> the band is
+    not INVALID-CORRECTNESS; the band missing from the witness -> it is."""
+    rows = []
+    work = _p1_work(root, "p1-witness-attached", _p1_strip_witness)
+    wit = _p1_witness_file(work, [1, 4])
+    receipt, why = _p1_receipt(work, ["--witness-json", wit])
+    ok = receipt is not None and "INVALID-CORRECTNESS" not in _p1_statuses(receipt) \
+        and all(isinstance(b.get("witness"), dict) and b["witness"].get("batch_invariance") == "PASS"
+                for b in receipt.get("bands") or [] if (b.get("concurrency") or 0) > 1)
+    rows.append(("witness_attached_from_perf041" + ("" if ok else ": " + (why or str(_p1_statuses(receipt)))), ok))
+    work = _p1_work(root, "p1-witness-absent-band", _p1_strip_witness)
+    wit = _p1_witness_file(work, [1])
+    receipt, why = _p1_receipt(work, ["--witness-json", wit])
+    statuses = _p1_statuses(receipt) if receipt else []
+    ok = receipt is not None and "INVALID-CORRECTNESS" in statuses
+    rows.append(("witness_absent_band_is_invalid_correctness" + ("" if ok else ": " + (why or str(statuses))), ok))
+    return rows
 
 
 def _selftest_p1_chain_rows(root):
@@ -1505,7 +1553,8 @@ def selftest():
                 + _selftest_refusal_rows(work)
                 + _selftest_fixture_rows(work)
                 + _selftest_parity_chain_rows(work, gate)
-                + _selftest_p1_chain_rows(work))
+                + _selftest_p1_chain_rows(work)
+                + _selftest_p1_witness_rows(work))
     finally:
         shutil.rmtree(work, ignore_errors=True)
     bad = sum(1 for _name, ok in rows if not ok)
