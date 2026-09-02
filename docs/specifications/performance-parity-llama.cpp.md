@@ -227,6 +227,23 @@ for that band** — `dec_ratio` at c=1, `agg_ratio` at c>1 — never on both at 
 `≥ 1.0` everywhere is a *beat*, not parity, and it would reject the continuous-batching work
 outright, because sharing a GPU sixteen ways necessarily lowers per-user decode.
 
+**P-4a · A ratchet is seeded at a number already achieved, and every gate ships a
+must-NOT-fire case beside its must-fire case.** These are the two structural cures for the trap
+this document has now walked into three times, and they are rules rather than vigilance.
+
+**Seeding.** *A ratchet whose starting point is an achieved measurement cannot outlaw the change
+that achieved it.* Every rejection so far came from a floor derived from measurements taken on
+the architecture the fix removes — the comparator's decode value, then apr's own prior decode,
+then a band the device could not admit. A floor set at a number a **reporting** lane has already
+produced, on the build under test, has no such history to be wrong about.
+
+**Must-not-fire.** A new gate lands with **both** cases in the same commit: an input that must
+turn it RED, and a known-good measurement that must leave it GREEN. PP-23 is the worked example
+— its must-fire is a decode rate above the ceiling, and its must-not-fire is gx10's c=8
+*aggregate* of 84.417 tok/s against a ~58 ceiling, which is correct batching and must not fire.
+Had that companion been required, PP-23 could not have shipped in the form that declared this
+document's own receipts a harness bug.
+
 **P-5 · The verdict is a bootstrap bound, and `1.0` is a definition rather than a threshold.**
 P-1 forbids literal thresholds, and an earlier draft then wrote `agg_ratio ≥ 1.0` as a trigger —
 a contradiction an audit caught. **`1.0` is what parity *means*: the comparator's own same-run
@@ -478,6 +495,38 @@ counted at all. Both of its terms were unmeasured besides — the denominator a 
 bandwidth PP-12 forbids publishing, the numerator aggregate rather than decode. §9 #1 stands
 because at c=1 exactly one sequence is in flight, so aggregate there *is* a per-sequence rate; it
 does not generalise one band to the right.
+
+### §6.1b″ The two-parameter decomposition was proposed to replace §9 #1, and the committed data cannot support it
+
+A planning round proposed replacing *"6.203 tok/s = 10.6% of an `[X]` vendor roofline"* — whose
+numerator is aggregate and whose denominator may not be published (PP-12) — with a fit of
+
+```
+wall_s = fixed_s + ms_per_token × generated_tokens
+```
+
+per band over the already-committed `samples.c*.r*.jsonl.gz`. No hardware, no comparator, no
+matrix run, and two *measured* parameters in place of one unmeasurable ratio. It is a better
+statistic and it is **not identifiable on this evidence**. Fitted here:
+
+| host | band | n | fixed_s | ms/token | token range |
+|---|---|---|---|---|---|
+| gx10 | c=1 | 30 | 19.694 | **−1.36** | 67–128 |
+| gx10 | c=4 | 36 | 6.316 | 13.19 | 5–128 |
+| gx10 | c=8 | 64 | 8.667 | 0.05 | 6–128 |
+| lambda | c=1 | 55 | 0.106 | 9.04 | 24–128 |
+| lambda | c=4/8/16 | 92/168/225 | — | **not identifiable** | 128 only |
+
+**A negative slope is physically impossible** and three lambda bands have no design matrix at
+all: W1 pins output at 128 tokens, so `generated_tokens` varies only where a request was
+truncated at window close — and those are exactly the requests whose wall time is *censored*,
+which is what produces the negative coefficient. Regressing on a censored variable recovers the
+truncation rule, not the decode rate.
+
+**So the decomposition is owed a WORKLOAD, not an analysis.** It needs output lengths varied by
+design — a W4 with a token-count sweep — and it may not be computed from W1's data. Recorded here
+because a plausible, cheap, comparator-free statistic that *reproduces nothing* is precisely the
+shape this document exists to catch, and it was caught by running it rather than by reading it.
 
 ### §6.1c PP-24 — equal admission, and why an unequal band is not a slow band
 
@@ -929,6 +978,7 @@ overstatement.
 | **12.7** | **PP-18 has no automated check.** `grep -ir ancestor crates/aprender-test-lib/src/perf_gate/` returns nothing; the ancestor rule is enforced by hand | perf-gate | **2026-10-16** | a `+no-git` or off-branch build could produce a receipt nothing refuses |
 | **12.8** | **The profile §7.1 is waiting on.** §7.1 is `DESIGNED, NOT ARMED` because no profile has named the kernel the microbenchmark would gate; §9 #1's `SUSPECT_DISPATCH` on gx10 is the obvious first subject | perf-gate | **2026-10-16** | a microbenchmark gating an unnamed kernel is a gate on a guess |
 | **12.10** | **Five invariants have no producer and, until now, no owner** — PP-19 (there is no perf workflow at all, so no concurrency group), PP-20 (no `expiry` field in `llama_pin.toml`), PP-21 (no `signature` on the receipt; `gate-release-r1.txt` already prints `FAIL ArmC-sig UNSIGNED`), PP-23 (`roofline_tok_per_sec` occurs only in prose), PP-25 (no client sha distinct from the server binary's). Four are §6.0a's re-adoptions: restored with IDs and mutations, and nothing scheduled to build them | perf-gate | **2026-10-09** | §6.0a's own finding was that four controls vanished *without a `decided_by`*. Re-adopting them with no date, owner or producer re-creates it one level milder — and an invariant with no expiry cannot FAIL, which is the immunity §12's expiry rule exists to remove. **PP-19 first**: §12.1a's largest number, gx10's 21.17% MDE at c=8, was traced to a device-wide stall — exactly what I-7 existed to prevent |
+| **12.13** | **Every engine fix reproduces its target at `HEAD` before it is scoped, with the prediction written down first.** All four planning strategies scoped their engine work from evidence taken at `745fa8588` — **the build whose headline measurement this document withdrew on build-provenance grounds**. Scoping from a withdrawn build is how §2.1 happened; doing it again while §2.1 sits in the same document would be the same error with the receipt attached | perf-gate + serve | **2026-10-02** | predict-then-verify, and the prediction goes in the probe script before the run |
 | **12.11** | **Nothing in this document owes a tok/s figure.** Every other row here is an instrument obligation. A review constructed a fully legal ten-merge sequence that satisfies §12 end to end, breaks no rule, and moves no token per second — the identical outcome #2706 produced, reachable *through compliance*. The gap-closing work needs a row like any other: an owner, an expiry, and a number | **perf-gate + serve** | **2026-11-13** | a specification that cannot be violated by shipping nothing has not constrained anything. §9 #1 is the first subject because it is the only live sized finding |
 | **12.9** | **§5.1's sampler pin is dropped on the STREAMING path only** — narrowed from an earlier draft that claimed both. `client.rs:436-448` rebuilds `stream_request` field-by-field with `seed: None, ignore_eos: None` and both are `skip_serializing_if`, so they are omitted; the **non**-streaming path at `:325` and `:369` uses struct-update (`..request.clone()`) and preserves them, and `prompts.rs:551-563` forwards `seed` from the W1 corpus. So the two committed W1 runs **did** carry a seed — and the moment §12.12 turns streaming on, they stop | perf-gate | **2026-10-02** | the fix must land with the `--stream` flag, or enabling streaming silently unpins the sampler |
 | **12.12** | **§5's `streaming \| required` row was violated by the run this document is built on, and nothing noticed.** `receipt.r1.json`'s `unproduced_fields` says it ten times — *"the transport did not stream, so the client never observed a first-token instant"*, *"…so there are no per-token arrival times to pool"*. `perf_gate.sh` passed it (`gate-merge-r1.txt`: VERDICT PASS), `findings.json` contains the string `stream` zero times, and §6.2b attributed the missing decode to **capture** when the receipt attributes it to **transport** — a different cause with a different fix | perf-gate | **2026-09-25** | order 1 was scoped against the wrong cause. Streaming is the only §5 row enforced by nothing: bands by PP-1, replicates by a unit test, tokenization by PP-11, one client by PP-25, the pin by PP-20 — and streaming by no invariant, no mutation and no gate, while violating it produces a receipt that passes |
@@ -953,7 +1003,7 @@ the one merge-phase speed gate this document gets.
 | **0** | **receipt signing deployed** (PP-21) | **2026-09-25** | `FAIL ArmC-sig UNSIGNED` — **the second release blocker that has nothing to do with the comparator** |
 | 1 | §12.6 server-reported scheduler config | **2026-10-02** | PP-2; PP-24; §6.1a(ii) — and the admissibility of every run below |
 | 1 | §12.5 `mini` backend decision, #2841 | **2026-09-25** | PP-16; the `mini` cell |
-| 2 | §6.2 the **JOIN**: comparator into the conformant producer | **2026-10-09** | every ratio. ~350 LOC across four Rust files; both halves exist |
+| 2 | §6.2 the **JOIN**: comparator into the conformant producer. **Accepted against a ZERO-GPU FIXTURE**: `evidence/parity-http/bands/{apr,llamacpp}-c{1,4,8,16}.json` is a complete paired both-lane band set whose derived ratios are already known — `0.5341/0.2308/0.1685/0.0967` aggregate and `0.5873/0.9231/1.3525/1.5540` decode. The new Rust path must reproduce them to four decimals with **no server, no GPU and no matrix run** | **2026-10-09** | every ratio. ~350 LOC across four Rust files; both halves exist, and the most expensive PR in the epic gets a cheap, deterministic merge criterion |
 | 2 | **PP-6 re-arm**: `arm_b_adoption` takes no `$phase` | **2026-10-09** | must land *with* the JOIN — see below |
 | 2 | §12.3 the comparator-configuration **decision** | **2026-10-09** | PP-8; PP-24; §5.2's argv contract |
 | 3 | §12.1 aggregate **and** decode σ at `n ≥ 5` | **2026-10-16** | P-5's ε; §7 may not arm before it |
@@ -965,6 +1015,12 @@ the one merge-phase speed gate this document gets.
 | — | §12.9 `seed`/`ignore_eos` on the **streaming** path | **2026-10-02** | *off the chain — but blocks nothing until order 0 lands* |
 | — | §12.11 the tok/s figure | **2026-11-13** | *off the chain — this is the deliverable* |
 
+**The first conformant cell run is spent on `gx10`, deliberately.** §8 does not parity-gate
+gx10, so a first attempt that turns out non-conformant costs a cell no product claim will ever
+be drawn from — a schema shakedown at the price of the cheapest cell rather than the reference
+one. PP-9's commit qualifier makes this safe to repeat at the next commit; without that
+qualifier it would have burned the shakedown and the reference cell alike.
+
 **Order 0 is the two release blockers and a flag, none of which involve a comparator.**
 `gate-release-r1.txt` on the reference cell prints `FAIL ArmC-sig UNSIGNED` and
 `FAIL ArmD instrumentation absent`. **Land the comparator tomorrow and the release gate still
@@ -972,9 +1028,17 @@ fails on both.** An earlier draft put the comparator at order 1 and the KV block
 the strength of "§7's gate has no producer" — which §6.2a now retracts. The two things that
 actually block a release verdict were scheduled behind the one thing that does not.
 
-**PP-6 is armed by the very PR that discharges the JOIN, and must be fixed in it.**
-`perf_gate.sh:392-398`: `run_gate` passes `$phase` to `arm_d_memory` and `arm_e_interference`
-and **not** to `arm_b_adoption`, which is called unconditionally. That is dormant only because
+**PP-6 is armed by the very PR that discharges the JOIN, and must be fixed in it — and the fix
+is not a threshold edit.** `perf-matrix.yaml` **already declares** `phase: release` on Arms A,
+B1 and B2 (`:41`, `:48`, `:59`), and `perf_gate.sh:392-398`'s `run_gate` passes `$phase` to
+`arm_d_memory` and `arm_e_interference` and **not** to `arm_a_scaling` or `arm_b_adoption`,
+which are called unconditionally.
+
+**So the script disobeys a phase the matrix already states.** The repair is to make it obey —
+three arms gaining the `$phase` argument their own declaration asks for — not to move a number.
+That is smaller, it needs no policy decision, and it removes the §6.2c "two live disagreeing
+rules" problem in the same motion, because after it the matrix is the single place the phase is
+written. That is dormant only because
 every receipt says `comparator_status: UNMEASURED` and Arm B `continue`s. The moment a receipt
 carries a comparator ratio, every PR gets a shared-runner comparator wall-clock ratio as a
 **blocking merge check** — precisely the failure PP-6 exists to prevent, and the class the
