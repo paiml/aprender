@@ -60,11 +60,13 @@ before it was pushed. All seven are recorded here for the same reason D1–D5 ar
 | **D6** | **B4's user-facing surface was scoped from a *Rust project layout*.** `match_shipped_surface` excluded `*/examples/*` — a cargo target-directory rule — and applied to `book/**` that removed `book/src/examples/`: **153 of the book's 441 published pages, 34.7%, every one listed in `book/src/SUMMARY.md`**, and precisely where `851.8 tok/s = 2.93x Ollama` was published at `da069a25f`. B4 fired **zero** times over the commit §3.C.1, §9 and §11 are all written about. | `PRREV-011` backtest (F6) | **`book/**` is prose and is exempt from the four Rust-layout exclusions, ahead of all of them** — a future `book/src/tests/` chapter is a chapter too. Fixed in `PRREV-012`: 0→2 fires on the real commit, 0 false positives over all 153 pages and over 300 commits of `origin/main`, §6.3 rows 25/26, and two mutants including one that restores the pre-fix behaviour exactly. | §3.C.1, §6.3 |
 | **D7** | **The duplication horizon had a third region, unswept AND unnamed.** §3.A's horizon was `HEAD` plus unmerged siblings. Prior art that landed on `origin/main` **after the merge base** is in neither — not on `HEAD` (the branch predates it), not an unmerged sibling (it merged), and B6 forbids an index newer than `HEAD` from supplying it. The receipt did not name the region, so `duplication_hits: []` under a `PASS` and "never looked there" were the same artifact. #2781's blind region was exactly #2742: 1 commit, 46 files, 11 of them the prior art. | `PRREV-011` backtest (F7) | **Swept, and recorded.** The horizon names three components — `head`, `siblings`, `merge_base_to_main` — whether or not each was reached, and `duplication_coverage` says which were. Measured, not estimated: one `git grep` over the region costs ~1 s against 20 s for the 774-branch sibling sweep, and on #2781 it returns `crates/apr-cli/src/commands/test_llm_band.rs` — 0 hits → 1. Fixed in `PRREV-012`. | §3.A, §4.1, §6.3 |
 | **D8** | **Merging two repair lanes created a dead validation branch** that `bats` could not see. `PRREV-008` and `PRREV-009` independently implemented "`duplication_hits` must be an array"; the earlier check is a strict superset and returns 129 lines sooner, so no receipt could reach the later one. 112 fixtures passed straight over it; only `mutate-guard.sh` saw it (`reject-50-drop` SURVIVED, 183/184 = 99.46%, a §7 blocking failure). | `PRREV-011` mutation sweep (F8) | **Removed, with a comment pointing 129 lines up.** It is the defect F4 exists to detect — two implementations of one rule, each green against its own copy — inside the guard that implements F4. §6.4's argument, demonstrated on itself: **a fixture table cannot find a dead branch; only the mutation set can.** | §6.4 |
-| **D9** | **`README.md` publishes competitor ratios and B4 does not read it.** `da069a25f` published `2.93x Ollama` to `README.md` on the same commit as the book page. A root-level `.md` is outside B4's inclusion list, which the case table already recorded as a KNOWN GAP — written before anyone knew `README.md` carried the claim. | `PRREV-012` backtest (F9) | **OPEN, measured, deliberately not fixed in `PRREV-012`.** A scope change ships with its precision measurement and moves the sibling definition in `check_no_claim_literals.sh` in the same commit, or the two drift silently. The measurement is done — 1 true positive at `da069a25f`, **0** would-be false positives over 1,457 added root-`.md` lines in 300 commits of `origin/main` — so the ticket starts from a number. | §9.3 |
+| **D9** | **`README.md` publishes competitor ratios and B4 does not read it.** `da069a25f` published `2.93x Ollama` to `README.md` on the same commit as the book page. A root-level `.md` is outside B4's inclusion list, which the case table already recorded as a KNOWN GAP — written before anyone knew `README.md` carried the claim. | `PRREV-012` backtest (F9) | **CLOSED by `PRREV-021`, on the two conditions this cell itself named.** Both definitions moved in one commit: `match_shipped_surface` gains a root-anchored `*.md`, and `check_no_claim_literals.sh`'s universe gains the `:(glob)*.md` pathspec. B4 over `da069a25f` goes **0 → 1** — the README line, verbatim — against **0** would-be false positives over **1,438** added root-`.md` lines in 300 commits (F9 read 1,457/0 on a window ending 300 commits earlier; the window moved, the zero did not). **The anchor is the rule:** a bare `*.md` matches at every depth in both languages — 3,460 files against 6 under `git ls-files`, and `docs/x.md` under a bash `case` — which would re-admit the `docs/` surface `PRREV-012` measured out at 40%, below §7's bar; `*/*) : ;;` and `:(glob)` are the same anchor twice, held by four rows including two single-variable controls. The widening revealed **12** claim literals no version of the guard could read, admitted through `set-aperture` (each proved to predate the comparand, each NAMED in the verdict): six dated CHANGELOG entries, three CLAUDE.md illustration lines, and **README.md:233–235, a published throughput table with a `225+ tok/s | RTX 4090` row on the first page a user reads** — the one that is debt rather than record, now inside a ratchet that only lets it shrink. Deriving or deleting it is its own ticket. | §9.3, `evidence/prrev-021/` |
 | **D10** | **Three statements about §3's arms were left describing four consultations after a fifth landed, and one of them refutes the table it sits under.** (a) §6.3 **row 7** reads *"all consultations `not-triggered`"*; its committed fixture has `pmat: consulted` (F3 made it so) **and** `antigravity: consulted` (§3.E.3 makes `not-triggered` illegal on any diff, docs-only included) — so a reviewer building row 7 from the spec builds a receipt the guard rejects, twice. (b) §8's closing paragraph says `vacuous_consultations` *"is enforced for `mutation` and for nothing else (F2)"* while the table cell three lines above it names rows 2, 18 and 31 — **the prose refutes the cell it is describing**, which is D1's exact shape. (c) That same cell credits a *"`pmat` probe"*; the pmat probe is a **shape** probe (absent-or-not-an-array), and pmat has no vacuity rule at all. | reading `PRREV-015` against the committed fixtures before pushing it | **All three corrected, and (c) is corrected by narrowing the claim rather than by adding a rule.** `duplication_hits: []` is a legitimate honest result, so pmat has no vacuity check *by design*; what stands in for one there is `duplication_coverage` — a surface recorded `none` under a `PASS` is refused (rows 23–24). The metric is enforced on **four arms of five**, and the table now says four and names them. Claiming the fifth would have been the cheaper edit and would have put an unenforced rule in the column that exists to show which rules are enforced. | §6.3, §8 |
 | **D11** | **`PRREV-015` would have taken `ci / gate` RED, and its own commit message reported a green tree.** Four defects, none of them visible to `bats tests/pr-review.bats`, which is the suite the ticket ran: (a) §3.E's falsification test was appended **into** `F-PRREV-015`'s body with no `- id:` of its own, giving that one entry two `rule` / `prediction` / `test` / `if_fails` / `mutation` keys; (b) the entry after it re-used the id `F-PRREV-019`, already taken 88 lines up; (c) `check_pr_review_counts.sh --self-test` exited **2, HARNESS-BROKEN** — four of its write-back rows were anchored on the literals `185/185`, `26-row` and `121 tests`, and `PRREV-015` moved every one of those to `215/215`, `35-row` and `151 tests` **without moving the anchors**, so four mutations matched nothing; (d) the contract's `pass_criteria` said *"All 11 falsification tests"* over 17 entries — and this one was **already RED on the branch before `PRREV-015` touched it**: at `f609ba5b9` it read 11 over **15**, and `cargo test -p aprender-contracts --test validate_contracts` was failing `contract_data_integrity` on that single line. The epic's own contract had been failing a `ci / gate` step for two tickets. | re-running the guards `ci / gate` runs, against the committed tree, before pushing | **All four fixed.** (a) and (b) are one `- id:` line and one renumber, and they are the load-bearing pair: `pv validate` exits **1** on them, and `cargo test -p aprender-contracts --test validate_contracts` goes from **9 passed / 1 failed to 7 passed / 3 failed** — measured in both directions, so this was a CI-visible RED and not a style note. (c) the four anchors now read their value from the same derivation the check uses, exactly as `stale_qrows` did after the identical drift one table earlier, and the self-test's own `13/13` tally is **counted** rather than stated. (d) `pass_criteria` reads 17 and `validate_contracts` goes **9 passed / 1 failed → 10 passed / 0 failed**, that one line having been the whole of the failure; and **`falsification_tests` joins the derived-count table** — the guard counts `- id:` entries inside the `falsification_tests:` block, so it cannot drift again. Its first draft counted the prefix `F-PRREV-` instead of the block, and the `tree-grew-a-falsifier` row went GREEN against an added entry: a universe built from the wrong side, caught by its own polarity row. | §6.3, §6.4 |
 | **D12** | **§3.E.2 quoted a count of a list this repository does not own, and it went stale within the day.** *"`agy models` prints **fourteen** ids"* was a real measurement. Re-run hours later on the same box it printed **eleven** — the three `gemini-3.5-flash-*` ids gone. Nothing was wrong with the measurement; what was wrong is stating a **vendor-side, server-fetched catalogue size** in the register this spec reserves for facts a reader can re-derive from the tree. | re-running `agy models` while checking `PRREV-015` | **The count is withdrawn as a claim and kept as a dated observation of both runs.** No rule reads it — `ARM_E_SAME_FAMILY_RE` matches `claude\|anthropic\|opus\|sonnet\|haiku`, never a list length — and the property that is actually load-bearing, *`claude-*` ids are in the catalogue*, held in both runs. The case table keeps the **union**: an id the vendor has pruned is still an id a stale script can pass, and shrinking the table whenever the vendor shrinks theirs would narrow the one rule here whose false negative is invisible. **`scripts/check_pr_review_receipt.sh`'s header comment still records the fourteen-id run and is deliberately NOT edited** — it is dated and true as taken, and editing the guard would invalidate a `guard_mutation_score` measured against those exact bytes. §6.4's rule cuts both ways. | §3.E.2, `arm-e-model-cases.tsv` |
 | **D13** | **§3.E could not review this repository, and the section shipped saying it could.** Three defects, all found by pointing the arm at two real PRs rather than by reading it. (a) **The documented invocation returns `rc 0` having reviewed nothing.** Headless print mode cannot prompt, so a tool needing permission is auto-denied — measured: `rc 0`, `.status "SUCCESS"`, `.response ""`, 21 781 tokens spent, and **no `structured_output`**, with the only true account on stderr. It is conditional, which is worse than broken: `view_file` and `grep_search` are auto-approved, so a read-only prompt returns a good review and the recipe looks right — it fails exactly when agy reaches for a command, which is what a `measured` finding requires. (b) **`-p "$(cat prompt)"` dies at `rc 127`** on any non-trivial PR; #2803's merge-base diff is 144 325 bytes. (c) **The model was pinned but what answered is unrecordable**, and §3.E.2's one-line residual was doing the work of a bound on §13. | running §3.E against #2800 and #2803 (`PRREV-020`) | **(a) and (b) fixed, (c) settled by measurement and stated as a limit.** (a) The invocation now extracts the head with `git archive \| tar -x` into a disposable directory and runs there under `--dangerously-skip-permissions`; the flag and the throwaway tree are **inseparable** — alone the flag hands a second agent write access to the working checkout — and `git status` was verified empty after a full run. `rc 0` is now on neither side of the availability line, the receipt records the test's own three booleans, and rows 36–37 are the same measured run recorded dishonestly and honestly. (b) The cap is **`MAX_ARG_STRLEN`**, not `ARG_MAX`: `getconf ARG_MAX` reads 2 097 152 on the same box, and the bisected boundary is 131 072 bytes on a single argument. The diff arrives as a file; the prompt is 310 bytes. (c) `stream-json` was checked and carries no model either; a self-report probe discriminates and is **rejected as a control**, being a claim by the identified thing about a different invocation. §3.E.2a now says the cross-vendor property is unverifiable from the receipt, and that §13.1's `\|distinct vendor\| ≥ 2` therefore rests on an assertion. **And the fix's own first draft carried the same class of defect:** §4.1 defines `$OUT` relative, the new recipe `cd`s into the disposable tree before redirecting into `$OUT`, and step 4 `rm -rf`s that tree — so the only record of the consultation would have been deleted, silently, at `rc 0`. Caught by reading the recipe back, not by any check; `$OUT` is absolutised before the `cd` and the doc-shape row asserts it. | §3.E.1, §3.E.2a, §3.E.4 |
+
+| **D14** | **The whole of §1 and §4.2 was reachable only through a non-empty `runs` array, and nothing required one.** Every result-level rule in `check_pr_review_receipt.sh` is written `.runs[]? | .results[]?`. Over an empty array each iterates the empty set and returns nothing to reject, so a `findings.sarif` of `{"version":"2.1.0","runs":[]}` took the grounding marks, `failure_scenario`, the cited-excerpt digest, `precision_class` and **B4's scan over the reviewer's own findings** to a silent PASS. Measured: a row-14 receipt with `.runs = []`, digest recomputed and re-signed, returned **`rc=0 ACCEPT`** while still declaring `verdict: FINDINGS` and five consultations `consulted` — with all four positive controls firing correctly in the same run, so it was genuine vacuity and not a broken harness. This is §8's own `vacuous_consultations` shape one level up, and the same shape as `pv lint <FILE>` passing over zero contracts. | the `PRREV-023` conformance audit of v2.0 against the shipped tree, then reproduced independently | **Three rules, three committed rows (38–40), six derived mutants.** `runs` must be non-empty; `tool.driver.name` must be in a closed vocabulary, checked as a **whitelist** per §13.13's finding that every clause which fell was a blacklist and every clause which survived was a whitelist; and `FINDINGS` must carry a result. **§4.2's literal "one runs[] entry per consultation" is deliberately NOT enforced** — it does not describe the corpus, and would refuse receipts §6.3 calls GREEN (row 7 is one `pmat` run beside `pmat` *and* `antigravity` consulted; row 6 is a `pmat` run beside a pmat that is `unreachable`). Measured over all 109 committed `findings.sarif` files: none has an empty `runs`, and the driver names occurring are exactly the five. A stricter pairing rule is a scope change that ships with its own precision measurement or not at all. **The whitelist's first draft accepted row 39**: written `select([…] | index(.) == null)`, the pipe rebinds `.` to the literal array so `index(.)` asks whether the array contains itself — caught by running the row, never by reading the line. | §6.3 rows 38–40, §4.2 |
 
 **D10, D11 and D12 were all found by re-running things — guards, and the tool itself — not
 by re-reading the diff**, and that is the only claim being made for them. They are **not** evidence that §5's author/reviewer
@@ -193,6 +195,99 @@ thing you were about to write. It is not on `HEAD`, it is not an unmerged siblin
 forbids an index newer than `HEAD` from supplying it. Measured: one `git grep` over it costs
 ~1 s against 20 s for the whole sibling sweep, and on #2781 it returns the prior art.
 
+#### §3.A.1 "pmat is unreachable" must be EARNED — operator ruling, 2026-09-01
+
+> *"'pmat doesn't work' is never accepted — toyota way."*
+
+**The measurement behind the rule.** Two of this repository's reviews recorded
+`pmat: unreachable` with a `DEGRADED` verdict, and both merged. The cause was not pmat.
+On the same box, the same day:
+
+| probe | result |
+|---|---|
+| `pmat --mode mcp` (stdio) | `initialize` OK, **19 tools** listed |
+| `pmat query` (CLI) | index loaded, **84,919 functions in 10,136 files** |
+| `pmat serve --transport http` on `:8765` | **HTTP 200**, full tool list, on the configured token |
+
+What had actually failed was **one transport**: an HTTP endpoint on a hand-started,
+unsupervised process, registered for a client that pmat's own `pmat mcp connect` tells
+you not to use it for — *"MCP over STDIO … **This is the right choice for Claude Code**
+and Claude Desktop on the same machine. No port, no token."* A working path existed and
+the receipt said the source was unreachable. That is the artifact this ruling bans.
+
+**The rule.** §3.A makes pmat unconditional, and pmat is the one arm with **two
+independent transports**. So `unreachable` is a claim about *both*, and a claim is not
+evidence: a receipt whose `consultations.pmat.status` is `unreachable` must carry
+`consultations.pmat.transports[]`, and
+
+1. the required set `{ stdio, cli }` must all appear — a **whitelist**, so a receipt may
+   probe more but never fewer, and renaming a probe to dodge the requirement lands in
+   the refusal rather than in the good bucket; and
+2. **every** listed transport must carry a non-empty `error`. A probe that recorded no
+   failure *succeeded*, and one reachable transport refutes `unreachable` outright — at
+   which point §3.A's consultation is owed over it.
+
+This is §3.E.4's shape one arm over: `agy` returning rc 0 is not a review, and pmat
+failing on one transport is not pmat being unreachable.
+
+**Rows 38–40** are the three ways the claim can be made without being earned (no probe,
+one probe, a probe that worked). **Row 6 is the GREEN half** and is why "reject every
+unreachable pmat" cannot read green either — an unreachable pmat that *earns* the claim
+is still accepted, because a box genuinely without pmat is a real thing.
+
+**One branch was removed while writing this, and the removal is the point.** A separate
+`transports`-is-not-a-list rejection was written first. Dropping it left the coverage
+check rejecting all four bad shapes anyway — absent, string, object, and a list of bare
+strings all yield no probed names — so it was a rule no fixture could independently
+kill, and `guard_mutation_score` is fixed at one with no ratchet. A rule that cannot
+fail alone is not a rule, it is a comment. The observed type survives as *diagnosis* in
+the surviving message, where it is genuinely useful.
+
+#### §4.3.1 The CI signer, and receipt presence as a required check (2026-09-01)
+
+**The question that produced this: "do all pull requests use the quorum?" The measured
+answer was no, and not by a little.** One receipt exists in the repository (#2795's).
+Every open pull request records `REFUSE [Q1] — the receipt is missing`. Arm 4 already
+treated that as RED and it blocked nothing, because `pr-review-receipt` is in no
+`needs:` list.
+
+Two things were missing, and the second could not be armed without the first.
+
+**1. The escrowed key had no consumer.** §4.3 says the secret half is *"escrowed in the
+repository secret `PR_REVIEW_SIGNING_KEY_B64` … so a CI signer materialises it before
+use."* That secret is real — created 2026-08-31 — and
+`grep -rn PR_REVIEW_SIGNING_KEY .github/workflows/` matched **only comments**. The
+reviewer runs where a human runs it and the secret half is deliberately not there, so
+no reviewer could produce a valid receipt at all. `scripts/pr_review_sign_receipt.sh` is
+that signer; the `pr-review-sign` job runs it and commits the signature back. It
+verifies its own output against the committed public key and deletes a signature that
+does not verify — a signature nothing can check is worse than none, because Arm 4 would
+then reject a receipt whose content was fine.
+
+**Arming presence without the signer would have been the `apr test llm` defect again**
+— a required check advertised with its own remedy structurally impossible.
+
+**2. `gate` waits on its needs; it does not read them.** Every required job is read by
+an explicit `if [ "${{ needs.X.result }}" != "success" ]` clause. Adding a job to
+`needs:` alone buys sequencing, not enforcement — a clause omitted there is a job whose
+failure the gate cannot see. `pr-review-present` therefore ships with its clause in the
+same commit.
+
+**Why a new job rather than gating `pr-review-receipt`.** That job carries two mutation
+sweeps, is allowed 150 minutes, and on 2026-09-01 **timed out at 150.85 min** under
+fleet contention. Putting it in `gate` would make every pull request wait on a 2.5-hour
+sweep. `pr-review-present` is Arm 4 and nothing else: text, minisign, one `git
+merge-base`.
+
+**The cutoff is a ratchet, not a retroactive gate.** `PR_REVIEW_CUTOFF` (2840)
+grandfathers pull requests below it: reported, counted, not failed. The receipt rate on
+the day this landed was **1 across 24 open pull requests**, and arming that
+retroactively is not a ratchet, it is an outage — this repository has already had a day
+where one armed gate blocked all nine open PRs. The cutoff is a **number and not a
+date**, for the reason `MECHANISM_PATHS` is a list and not a pattern: PR numbers only
+increase, the comparison is total, and there is no timezone in it. Both polarities are
+rows of `--self-test`, and the off-by-one (`-le` for `-lt`) is mutation-killed.
+
 ### §3.B NVIDIA CUDA documentation (triggered)
 
 Trigger: any changed path matching `crates/aprender-gpu/**`, `crates/aprender-serve/src/cuda/**`, `*cuda*`, `*ptx*`, `*cublas*`, `*fp8*`, `*nvrtc*`; or PR body/commit messages matching `sm_\d+`, `cu[A-Z]\w+`, `cuda[A-Z]\w+`, or a GPU architecture name.
@@ -200,6 +295,41 @@ Trigger: any changed path matching `crates/aprender-gpu/**`, `crates/aprender-se
 Required output: for every device-behaviour claim, either a `cited` entry (query + excerpt) or an explicit `no-authority-found` entry naming the query that returned nothing. The second form is mandatory — without it, "the docs said nothing" is indistinguishable from "I did not ask."
 
 This is the consultation with the most evidence of being needed: the 18% regression shipped on an ungrounded stream-ordering claim, #2765 (16-row alignment), #2789 (E4M3), #2771 (PTX aliasing), #2786 (GB10 Blackwell) were all CUDA questions asked of memory while the docs server sat idle.
+
+#### §3.B.1 §3.B is an AGENT, and `agy` cannot host it — measured 2026-09-01
+
+The arm is dispatched as `cuda-docs-reviewer` (`.claude/agents/cuda-docs-reviewer.md`),
+the only member of the quorum holding `mcp__nvidia-cuda-docs__search_cuda_docs`. An
+agent and not an inline tool call for two reasons: a reviewer that also writes the patch
+is not an independent check (§5), and a dedicated context reads the whole diff for
+device-behaviour claims instead of consulting the corpus only where it already suspected
+an answer.
+
+**The obvious alternative — hang it on §3.E's `agy` — does not work, and the failure is
+instructive rather than incidental.**
+
+| probe | result |
+|---|---|
+| `agy mcp list` | `nvidia-cuda-docs  http  **enabled**  https://api.copilot.nsight.ngc.nvidia.com/mcp/cuda-docs` |
+| `agy -p '<CUDA question, cite the docs>'` | **`MCP_UNREACHABLE`**, 7.06 s, rc 0 |
+| `curl -X POST <that URL> -d '{"method":"tools/list"}'` | **`401 invalid_token`** — *"Your client should automatically re-register and obtain new tokens"* |
+| `mcp__nvidia-cuda-docs__search_cuda_docs` from this client | full §2.5.6 *Blocking and non-blocking streams* text returned |
+
+The endpoint requires OAuth **dynamic client registration**. `agy mcp add` accepts only
+a **static** `--header "Authorization: Bearer TOKEN"`; there is no login verb, no
+registration flow, and no auth subcommand. So `agy` holds a configuration it cannot
+authenticate, and **a server that is configured and enabled is not a server that
+answers.**
+
+That sentence is §3.A.1's pmat ruling one arm over, and it generalises: *enabled* is a
+statement about a config file, *answers* is a statement about the world, and only the
+second one is evidence. It is also why the rc-0 trap in §3.E.4 is not a quirk of `agy` —
+here `agy` returned **rc 0** while reaching nothing at all.
+
+**Consequence for the receipt:** `consultations.antigravity` carries no CUDA weight and
+must never be read as a second opinion on device behaviour. §3.B is single-sourced by
+construction, and its `unreachable` path is therefore load-bearing rather than
+theoretical.
 
 ### §3.C CRUX — user-facing surface and competitive claims (triggered)
 
@@ -824,6 +954,12 @@ Every row a committed fixture under `tests/fixtures/pr-review/`, exercised by `b
 | 35 | `antigravity.model_id` in the primary reviewer's own model family | RED | B1 |
 | 36 | agy exited **0** with `.status SUCCESS` and **no** `structured_output`, recorded `consulted` | RED | B1 |
 | 37 | the SAME rc-0 run recorded `unreachable`, `verdict: DEGRADED` | **GREEN** | — |
+| 38 | `pmat` unreachable with **no transport probed at all** | RED | B1 |
+| 39 | `pmat` unreachable with **only one transport** probed | RED | B1 |
+| 40 | `pmat` unreachable but the CLI recorded **no error** | RED | B1 |
+| 41 | `findings.sarif` with an **empty `runs` array** | RED | B1 |
+| 42 | a run whose `tool.driver.name` is outside the closed vocabulary | RED | B1 |
+| 43 | `verdict: FINDINGS` beside **zero results** | RED | B1 |
 
 Rows 16–22 are owed by §9.1's F1–F3; rows 23–24 by F4; rows **25–26 by F6 (D6)**. Row 25 is row 16 with **one directory changed**, and until D6 the two verdicts diverged: row 16 RED, row 25 ACCEPTED. Rows 17, 24 and 26 are discrimination arms — without them "block every PR that names a competitor", "reject every receipt that admits a gap" and "block every book page under `examples/`" each read green, and the rule would punish the honest receipt exactly as hard as the silent one.
 
@@ -1051,7 +1187,7 @@ Recording this in the spec is not optional. A spec whose acceptance test failed 
 | re-run §9 step 7 against the same three merged PRs | `PRREV-014` | **is** enablement |
 | §3.E — the second-vendor arm: spec, SKILL steps, contract, guard, rows 27–35, 215/215 | `PRREV-015` | advisory; blocks nothing |
 | §3.E's two invocation defects + the vendor-identity limit: disposable tree, file-borne diff, `output_check`, rows 36–37, 217/217 | `PRREV-020` | advisory; blocks nothing |
-| the merged tree's `guard_mutation_score`, **measured**. `PRREV-019` and `PRREV-020` were written on the same parent and merged here; the derived counts moved again (mutation set 217 → 219/219, `tests/pr-review.bats` 156 → 158) and **no sweep has run on the merged tree**. Neither lane's figure transfers: 215/215 was measured on `PRREV-015`'s tree, and `PRREV-020` gave every `row-*` fixture an `output_check` block, so the corpus the sweep runs against moved as well as its size. The set size above is derived by `scripts/mutate-guard.sh --list` and is certain; the kill count is Arm 3 of the `pr-review-receipt` job, and lands as a follow-up commit the way `804559ed5` discharged `03d795423`'s pending 185/185. §8 allows no ratchet here: below 100% blocks. | `PRREV-021` | **PENDING** — the number is unverified until Arm 3 reports |
+| the merged tree's `guard_mutation_score`, **measured**. `PRREV-019` and `PRREV-020` were written on the same parent and merged here; the derived counts moved again (mutation set 217 → 233/233, `tests/pr-review.bats` 156 → 158) and **no sweep has run on the merged tree**. Neither lane's figure transfers: 215/215 was measured on `PRREV-015`'s tree, and `PRREV-020` gave every `row-*` fixture an `output_check` block, so the corpus the sweep runs against moved as well as its size. The set size above is derived by `scripts/mutate-guard.sh --list` and is certain; the kill count is Arm 3 of the `pr-review-receipt` job, and lands as a follow-up commit the way `804559ed5` discharged `03d795423`'s pending 185/185. §8 allows no ratchet here: below 100% blocks. | `PRREV-021` | **PENDING** — the number is unverified until Arm 3 reports |
 | §3.E.8's stated bypass — `check_pr_review_arm4.sh` requires this PR's receipt to declare the TREE's skill version | `PRREV-018` | before §3.E is promoted out of advisory |
 
 **What the backtest did *not* falsify**, recorded so F1–F5 are not read as a verdict on the whole design: §3.B's path and message triggers discriminated **2/2 must-match and 2/2 must-not-match on real PRs**, including the deliberately over-broad `*cuda*`; the guard's four positive controls fired first on every run, and E1-control proves it is not a guard that reads red by refusing everything either; B6 and the merge-base recomputation behaved exactly as specified throughout; neither comparative regex produced a false positive on 16 real subjects; and pointed at a checkout without `schemas/`, the guard **halted with POSITIVE CONTROL MISFIRED rather than validating** — a control that fired for the wrong reason refused to be evidence.
@@ -1205,7 +1341,7 @@ of a JSON file is a disagreement that gets resolved in the primary's favour by d
 
 ## §13 Autonomous merge on quorum
 
-**Status: DESIGNED AND BUILT, NOT ARMED.** Operator instruction, 2026-08-31: PRs auto-merge once the review quorum passes. Nothing below is enabled by writing it down, and nothing is enabled by the code landing either. `scripts/pr_review_quorum_arm.sh` exists, its fixture table is 83 rows and its derived mutation set kills 134/134 — and it is reachable from no workflow that can merge anything. §13.11 is the arming ladder and every rung carries a falsifier that must be RED-verified before it is climbed.
+**Status: SHADOW MODE (§13.11 rung 1). STILL NOT ARMED.** Operator instruction, 2026-08-31: PRs auto-merge once the review quorum passes. Nothing below is enabled by writing it down, and nothing is enabled by the code landing either. `scripts/pr_review_quorum_arm.sh` exists, its fixture table is 83 rows and its derived mutation set kills 134/134. **As of 2026-09-01 it is reachable from one workflow — `pr-review-shadow` in `ci.yml` — which invokes it with `--explain` on every pull request and records the verdict. That job holds a read-only token and is in no `needs:` list, so the capability to merge is absent as well as unused.** §13.11 is the arming ladder and every rung carries a falsifier that must be RED-verified before it is climbed.
 
 ### §13.0 What this changes, and the one rule that has no precedent
 
@@ -1440,11 +1576,38 @@ Each rung has a falsifier that must be **RED-verified** before the rung is climb
 
 | rung | state | what it does | falsifier that must be RED first |
 |---|---|---|---|
-| **0** | **HERE** | the mechanism exists, reachable from no merging workflow | the 83-row table and the derived mutation set are green; `PRREV-017` owes the delta-sweep cost |
-| **1** | next | **shadow mode**: CI runs `--explain` on every PR and records `PERMIT`/`REFUSE [Qn]`. Merges nothing. | delete any one `refuse Q<n>` site and the corresponding q-row must turn RED |
+| **0** | climbed 2026-09-01 | the mechanism exists, reachable from no merging workflow | the 83-row table and the derived mutation set are green; `PRREV-017` owes the delta-sweep cost |
+| **1** | **HERE** (2026-09-01) | **shadow mode**: CI runs `--explain` on every PR and records `PERMIT`/`REFUSE [Qn]`. Merges nothing. | delete any one `refuse Q<n>` site and the corresponding q-row must turn RED — RED-verified by `scripts/mutate_quorum_arm.sh`, 134/134, already green as Arm 6 |
 | **2** | after 30 shadow samples | publish `autonomy_refusal_rate` and `degraded_share`; no threshold is set from fewer (§8) | a `--explain` run on a PR whose receipt is DEGRADED must record `Q6` and not `PERMIT` |
 | **3** | after rung 2 | arm on a **narrow class**: docs-only diffs, `MECHANISM_PATHS ∩ diff = ∅`, quorum unanimous | a docs-only PR carrying a hand-edited receipt must refuse; the kill switch must stop rung 3 with one commit |
 | **4** | not scheduled | arm on code diffs | `autonomous_merge_reverts` has ≥30 samples and a measured value, not `0/0` |
+
+**What rung 1 is, mechanically.** `ci.yml`'s `pr-review-shadow` job runs
+`scripts/pr_review_shadow_record.sh`, which invokes the arm with `--explain`, classifies
+the result and writes one sample. A `REFUSE` is a **sample, not a failure** — the job is
+green on both verdicts and red only when no sample could be taken (the arm could not
+answer, or its exit code and its output disagreed). That asymmetry is the point: a
+recorder that fails on `REFUSE` would be a gate, and §13 adds zero rows to §7.
+
+**The recorder applies §13's own two lessons to itself.** `rc` is not a verdict — an arm
+exiting 0 while printing nothing is a defect and not a `PERMIT`, for the same reason
+§3.E.4 refuses to read `agy`'s rc 0 as a consultation. And the refusal class is matched
+against the `Q1..Q10` vocabulary rather than screened for bad spellings, because §13's
+forgery post-mortem found that every clause that survived was a whitelist and every
+clause that fell was a blacklist. Twelve `--self-test` rows, five of them mutation-verified
+as load-bearing; the remaining seven are held by a neighbouring branch, which is stated
+here rather than assumed, since a first mutation pass reported three of them as survivors
+and a faithful one killed all three.
+
+**Rung 2 is blocked on samples, and the first four are all `Q1`.** Measured 2026-09-01
+against live pull requests #2795, #2825, #2831 and #2833: every one records
+`REFUSE [Q1]`. #2795 is the interesting row — it is the one PR in the repository that
+*has* a receipt, and it still refuses, because that receipt was produced before §13
+existed and carries no `predicate.autonomy` block. So the shadow lane's first finding is
+that the population rung 2 wants to measure does not exist yet: `autonomy_refusal_rate`
+over today's fleet is `4/4 Q1`, which measures receipt coverage and not quorum quality.
+That is a fact about the fleet, not a defect in the lane, and it is exactly what a shadow
+rung is for.
 
 **The kill switch is rung-independent.** `.github/pr-review-autonomy.disabled`, read from `origin/main` and never from the PR tree, refuses everything at every rung. It is the first clause of the repository phase and not the last, because it is the operator's off switch and an off switch consulted only after five other checks have passed is an off switch that costs a minute of compute to use.
 

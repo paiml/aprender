@@ -253,6 +253,29 @@ match_shipped_surface() {
   case "$1" in
     book/*.md) return 0 ;;
   esac
+  # D9 (PRREV-021). A ROOT-LEVEL *.md IS A PUBLISHED SURFACE, and it was the one
+  # region of da069a25f that stayed invisible after F6 exempted book/**. That commit
+  # published `2.93x Ollama` to TWO files: book/src/examples/showcase-benchmark.md,
+  # which F6 brought into scope, and README.md, which stayed out because a root-level
+  # markdown file matched no inclusion line here. The case table recorded that as a
+  # KNOWN GAP on the CHANGELOG.md row -- written before anyone knew README.md carried
+  # the claim. It did, and README.md is the first page a user reads.
+  #
+  # THE ANCHOR IS THE WHOLE RULE. `*.md` alone matches `docs/x.md` and
+  # `evidence/**/results.md` too -- bash case globs do not stop at `/` -- which would
+  # re-admit the docs/ surface that was deliberately MEASURED OUT above (2/5 precision,
+  # below S7's >=90% bar). `*/*) : ;;` consumes every path that has a separator, so only
+  # a path with none can reach the line below. `root-md-anchor-removed` in
+  # scripts/mutate-guard.sh deletes exactly that anchor, and the docs/ NO-MATCH rows
+  # kill it.
+  #
+  # The sibling universe in scripts/check_no_claim_literals.sh moves in THIS commit,
+  # per the rule F9 stated when it declined to widen: the two definitions go out of
+  # step silently otherwise.
+  case "$1" in
+    */*)   : ;;
+    *.md)  return 0 ;;
+  esac
   case "$1" in
     tests/*|*/tests/*|test/*|*/test/*)         return 1 ;;
     benches/*|*/benches/*|examples/*|*/examples/*) return 1 ;;
@@ -566,6 +589,59 @@ validate_receipt() {
       reject B1 "consultations.$k is unreachable but the verdict is PASS; an unreachable source must be DEGRADED, not clean (S3.0)" || return 1
     fi
   done
+
+  # --- B1: "pmat is unreachable" must be EARNED, never asserted. ------------
+  # OPERATOR RULING, 2026-09-01: "'pmat doesn't work' is never accepted - toyota way."
+  #
+  # THE MEASUREMENT BEHIND THE RULE, so it is not re-litigated. Two of this
+  # repository's reviews recorded `pmat: unreachable` with a DEGRADED verdict and both
+  # merged. The cause was not pmat. On the same box, the same day: `pmat --mode mcp`
+  # answered `initialize` and listed 19 tools, and `pmat query` loaded an index of
+  # 84,919 functions across 10,136 files. What had actually failed was ONE transport -
+  # an HTTP endpoint on a hand-started, unsupervised process - while pmat's own
+  # `mcp connect` names stdio as "the right choice for Claude Code". A working path
+  # existed and the receipt said the source was unreachable.
+  #
+  # S3.A makes pmat unconditional, and pmat is the one arm with TWO INDEPENDENT
+  # TRANSPORTS. So `unreachable` here is a claim about both, and a claim is not
+  # evidence. This is S3.E.4's shape one arm over: agy returning rc 0 is not a review,
+  # and pmat failing on one transport is not pmat being unreachable.
+  #
+  # THE REQUIRED SET IS A WHITELIST, for S13's reason: every clause that survived the
+  # forged receipts was a whitelist and every clause that fell was a blacklist. A
+  # receipt may probe MORE transports; it may not probe fewer, and it may not rename
+  # one to escape the requirement.
+  if [ "$(jq -r '.predicate.consultations.pmat.status // ""' "$rcpt")" = "unreachable" ]; then
+    local tr_type probed missing_tr worked
+    tr_type=$(jq -r 'if (.predicate.consultations.pmat | has("transports"))
+                     then (.predicate.consultations.pmat.transports | type) else "absent" end' "$rcpt")
+
+    # THE TYPE IS REPORTED, NOT SEPARATELY REJECTED, AND THAT IS A MEASURED CHOICE.
+    # A `transports` that is absent, a string, an object, or a list of bare strings all
+    # yield NO probed names here - jq either iterates nothing or errors to stderr - so
+    # the coverage check below rejects every one of them. A separate type branch was
+    # written first and then removed: dropping it left this branch still rejecting all
+    # four shapes, i.e. it was a rule no fixture could independently kill, and
+    # `guard_mutation_score` is fixed at one with no ratchet. A rule that cannot fail
+    # alone is not a rule, it is a comment - so the type survives as DIAGNOSIS in the
+    # message, where it is genuinely useful, and the rejection has one owner.
+    probed=$(jq -r '[.predicate.consultations.pmat.transports[]? | .name? // empty] | join(" ")' "$rcpt" 2>/dev/null)
+    missing_tr=''
+    for want in stdio cli; do
+      case " $probed " in
+        *" $want "*) : ;;
+        *) missing_tr="$missing_tr $want" ;;
+      esac
+    done
+    [ -z "$missing_tr" ] \
+      || reject B1 "consultations.pmat.status is 'unreachable' but these transports were never probed:$missing_tr (probed: ${probed:-none}; transports is $tr_type). pmat has two independent transports and 'unreachable' is a claim about both; a transport nobody tried is not a transport that failed (S3.A, operator ruling 2026-09-01)" || return 1
+
+    # A probe with no error SUCCEEDED, and one success refutes `unreachable`.
+    worked=$(jq -r '[.predicate.consultations.pmat.transports[]
+                     | select((.error // "") == "") | .name] | join(", ")' "$rcpt")
+    [ -z "$worked" ] \
+      || reject B1 "consultations.pmat.status is 'unreachable' but transport(s) [$worked] recorded no error, i.e. they WORKED; one reachable transport refutes the claim, and S3.A's consultation is owed over it" || return 1
+  fi
 
   # =========================================================================
   # EVERY CONSULTATION GETS BOTH HALVES.
@@ -1091,6 +1167,77 @@ validate_receipt() {
 
     jq -e '.predicate.consultations.pmat.symbols_searched | type == "number"' "$rcpt" >/dev/null 2>&1 \
       || reject B1 "pmat.symbols_searched must be a number; a scan whose needle count is unrecorded cannot have its precision judged, and record-only is not unenforced" || return 1
+  fi
+
+  # --- S4.2: THE RUNS ARRAY IS NOT ALLOWED TO BE EMPTY. -----------------------
+  #
+  # Every result-level rule below is written `.runs[]? | .results[]?`. Over an EMPTY
+  # runs array each of them evaluates across the empty set and returns nothing to
+  # reject, so a findings.sarif of `{"version":"2.1.0","runs":[]}` took the whole of
+  # S1 and S4.2 -- the grounding marks, the failure_scenario rule, the cited-excerpt
+  # digest, precision_class, and B4's scan over the reviewer's findings -- to a silent
+  # PASS. Measured before this line existed: a row-14 receipt with `.runs = []`, its
+  # findings_ref.sha256 recomputed and re-signed, gave `rc=0 ACCEPT` while the SAME
+  # receipt still declared `verdict: FINDINGS` and five consultations `consulted`.
+  # The positive controls fired correctly in that run, so it was genuine vacuity and
+  # not a broken harness.
+  #
+  # This is the shape S8 already names `vacuous_consultations` and the one
+  # `pv lint <FILE>` has when it passes over zero contracts: a gate whose GREEN is a
+  # count of files rather than a verdict.
+  #
+  # THE RULE IS `>= 1`, DELIBERATELY, AND NOT S4.2's LITERAL "one runs[] entry per
+  # consultation". That sentence does not describe the corpus this guard was built
+  # against and enforcing it would refuse receipts the fixture table calls GREEN:
+  # row-07 is one `pmat` run beside `pmat` AND `antigravity` consulted, and row-06 is
+  # a `pmat` run beside a pmat that is `unreachable`. Measured over all 109 committed
+  # findings.sarif files: none has an empty runs array, so `>= 1` costs nothing it
+  # should not cost, and a stricter pairing rule is a scope change that ships with its
+  # own precision measurement or not at all.
+  jq -e '(.runs | type == "array") and (.runs | length) > 0' "$sarif" >/dev/null 2>&1 \
+    || reject B1 "findings.sarif carries no runs[]; every result rule below reads .runs[]?|.results[]? and evaluates over the empty set, so an empty runs array passes the whole of S1 and S4.2 vacuously (S8 vacuous_consultations)" || return 1
+
+  # --- S4.2: tool.driver.name is a CLOSED VOCABULARY, checked as a whitelist. -
+  #
+  # S13.13's post-mortem on eighteen forged receipts: every clause that FELL was a
+  # blacklist over a field and every clause that SURVIVED was a whitelist, and the
+  # difference was the direction of the test rather than the field or the care taken.
+  # So this asks whether the name is one of the five, never whether it is one of the
+  # bad spellings. An unrecognised driver name is how a run hides from a selector that
+  # looks for it by name -- the antigravity reader below is exactly such a selector,
+  # and `select(.tool.driver.name == "antigravity")` finds nothing if the run calls
+  # itself `Antigravity`, `agy`, or nothing at all.
+  #
+  # Measured over all 109 committed findings.sarif files: the names occurring are
+  # exactly pmat (98), antigravity (5), crux (4), nvidia-cuda-docs (3) and
+  # cargo-mutants (1), with no run missing the field. The vocabulary is S4.2's four
+  # plus S3.E's antigravity, which v2.4 added with the arm.
+  local bad_driver
+  # `. as $n` IS LOAD-BEARING. Written as `select([...] | index(.) == null)` the pipe
+  # rebinds `.` to the literal array, so `index(.)` asks whether the array contains
+  # ITSELF -- always null-free, so the clause matched nothing and a run renamed `Pmat`
+  # was ACCEPTED. It was caught by running the case table, not by reading the line.
+  # FAIL-CLOSED ON jq ITSELF. Assigning the substitution alone is fail-open: a jq type
+  # error prints nothing to stdout and leaves the variable empty, which reads as "no bad
+  # driver". The status is read from the command, and a non-zero jq is a REJECT.
+  bad_driver=$(jq -r '[ .runs[]? | (.tool.driver.name // "<absent>") ]
+      | map(select(. as $n | ["pmat","nvidia-cuda-docs","crux","cargo-mutants","antigravity"] | index($n) == null))
+      | join(", ")' "$sarif"); local jq_rc=$?
+  [ "$jq_rc" -eq 0 ] \
+    || reject B1 "findings.sarif could not be read for tool.driver.name (jq exited $jq_rc); a check that could not run is not a check that passed" || return 1
+  [ -z "$bad_driver" ] \
+    || reject B1 "findings.sarif carries a run whose tool.driver.name is outside { pmat, nvidia-cuda-docs, crux, cargo-mutants, antigravity }: $bad_driver; a run nothing can attribute is a run no selector reads (S4.2)" || return 1
+
+  # --- S4.2: a FINDINGS verdict has to carry a finding. -----------------------
+  #
+  # The receipt's verdict and the artifact it points at must not be able to disagree
+  # about whether anything was found. `verdict: FINDINGS` beside zero results is the
+  # same artifact as `verdict: PASS`, which makes the verdict field decorative on
+  # exactly the transition S7 reads to decide blocking. Measured over the corpus: no
+  # committed fixture declares FINDINGS with an empty result set.
+  if [ "$verdict" = "FINDINGS" ]; then
+    jq -e '[ .runs[]? | .results[]? ] | length > 0' "$sarif" >/dev/null 2>&1 \
+      || reject B1 "the verdict is FINDINGS and findings.sarif carries zero results; a verdict that names findings the artifact does not have is a verdict about nothing (S4.2)" || return 1
   fi
 
   # --- S1 / S4.2: every claim carries a mark, and a cited mark is verified. --

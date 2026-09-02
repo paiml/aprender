@@ -204,7 +204,19 @@ DUP_SHELL_NONE="\"duplication_coverage\":{\"rust\":\"semantic\",\"shell\":\"none
 PMAT_OK="{\"status\":\"consulted\",\"index_commit\":\"$C1\",\"index_is_ancestor\":true,\"complexity_delta\":[],\"tdg_delta\":[],\"satd_introduced\":[],\"duplication_hits\":[],\"cache_hits\":0,$DUP_FULL}"
 PMAT_STALE="{\"status\":\"consulted\",\"index_commit\":\"$C3\",\"index_is_ancestor\":false,\"complexity_delta\":[],\"tdg_delta\":[],\"satd_introduced\":[],\"duplication_hits\":[],\"cache_hits\":0,$DUP_FULL}"
 PMAT_SHELL_BLIND="{\"status\":\"consulted\",\"index_commit\":\"$C1\",\"index_is_ancestor\":true,\"complexity_delta\":[],\"tdg_delta\":[],\"satd_introduced\":[],\"duplication_hits\":[],\"cache_hits\":0,$DUP_SHELL_NONE}"
-PMAT_UNREACHABLE='{"status":"unreachable","trigger_reason":"pmat MCP server: ConnectionRefused"}'
+# `unreachable` is EARNED here, not asserted (operator ruling 2026-09-01: "'pmat doesn't
+# work' is never accepted - toyota way"). pmat is the one arm with two independent
+# transports, so the claim is about BOTH and the probe of each is recorded. This fixture
+# previously carried only `trigger_reason: pmat MCP server: ConnectionRefused` and was
+# GREEN - which is precisely the artifact the ruling bans, since on the box that produced
+# that message `pmat --mode mcp` listed 19 tools and `pmat query` loaded 84,919 functions.
+# One transport down is not the source being unreachable.
+PMAT_UNREACHABLE='{"status":"unreachable","trigger_reason":"pmat MCP server: ConnectionRefused","transports":[{"name":"stdio","error":"spawn pmat: ENOENT (not on PATH in this runner image)"},{"name":"cli","error":"pmat query: no index at ./.pmat/context.idx and --rebuild-index exceeded the step budget"}]}'
+
+# The three shapes the ruling makes illegal, each one a row below.
+PMAT_UNREACH_NO_PROBE='{"status":"unreachable","trigger_reason":"pmat MCP server: ConnectionRefused"}'
+PMAT_UNREACH_ONE_PROBE='{"status":"unreachable","trigger_reason":"pmat MCP server: ConnectionRefused","transports":[{"name":"stdio","error":"ECONNREFUSED"}]}'
+PMAT_UNREACH_CLI_WORKED='{"status":"unreachable","trigger_reason":"pmat MCP server: ConnectionRefused","transports":[{"name":"stdio","error":"ECONNREFUSED"},{"name":"cli"}]}'
 # NOT a PMAT_NT. The previous revision of this file carried one, used by row 7, whose
 # own trigger_reason read "pmat is unconditional; not-triggered is never correct for it"
 # - a fixture that stated the rule it exempted, and the guard accepted it. S3.A's
@@ -996,6 +1008,89 @@ RCPT=$(receipt "$D1" "$C1" DEGRADED "$PMAT_OK" "$CUDA_NT" "$CRUX_NT" "$MUT_NT" \
 emit row-37-arm-e-rc-zero-recorded-unreachable "$SARIF" "$RCPT"
 
 # ===========================================================================
+# ROW 41 - findings.sarif WITH AN EMPTY runs ARRAY                    -> RED  B1
+#
+# THE VACUITY. Every result-level rule in the guard is written
+# `.runs[]? | .results[]?`. Over an empty runs array each of them iterates the empty
+# set and finds nothing to reject, so the whole of S1 and S4.2 -- grounding marks,
+# failure_scenario, the cited-excerpt digest, precision_class, and B4's scan over the
+# reviewer's own findings -- passed silently. Measured before the rule existed: this
+# exact receipt returned rc=0 ACCEPT, while still declaring `verdict: FINDINGS` and
+# five consultations `consulted`. The positive controls fired correctly in the same
+# run, so it was genuine vacuity and not a broken harness.
+#
+# It is S8's `vacuous_consultations` shape one level up, and the same shape as
+# `pv lint <FILE>` passing over zero contracts: a GREEN that is a count of files.
+# ===========================================================================
+SARIF=$(
+cat <<'JSON'
+{ "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [] }
+JSON
+)
+RCPT=$(receipt "$D1" "$C1" FINDINGS "$PMAT_OK" "$CUDA_NT" "$CRUX_NT" "$MUT_NT" \
+      "$AUTHOR" "$REVIEWER" "$AG_OK")
+emit row-41-sarif-with-no-runs "$SARIF" "$RCPT"
+
+# ===========================================================================
+# ROW 42 - a run whose tool.driver.name is outside the vocabulary     -> RED  B1
+#
+# S4.2 fixes the driver name to a closed set, and this is checked as a WHITELIST
+# because S13.13's forged-receipt post-mortem found that every clause which fell was a
+# blacklist over a field and every clause which survived was a whitelist. The
+# difference was the direction of the test, not the field.
+#
+# The spelling here is `Pmat` -- one capital -- because that is the cheapest way a run
+# hides from a selector that finds it by name, and the guard has such a selector:
+# `select(.tool.driver.name == "antigravity")`. A renamed run is not read by it and
+# not rejected either, so its findings simply do not exist.
+#
+# THE FIRST DRAFT OF THIS RULE ACCEPTED THIS ROW. Written
+# `select([...] | index(.) == null)`, the pipe rebinds `.` to the literal array so
+# `index(.)` asks whether the array contains ITSELF. Caught by running the row, never
+# by reading the line -- which is why the row is committed rather than the reasoning.
+# ===========================================================================
+SARIF=$(
+cat <<'JSON'
+{ "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [ { "tool": { "driver": { "name": "Pmat" } },
+              "invocations": [ { "executionSuccessful": true } ],
+              "results": [] } ] }
+JSON
+)
+RCPT=$(receipt "$D1" "$C1" PASS "$PMAT_OK" "$CUDA_NT" "$CRUX_NT" "$MUT_NT" \
+      "$AUTHOR" "$REVIEWER" "$AG_OK")
+emit row-42-run-driver-outside-vocabulary "$SARIF" "$RCPT"
+
+# ===========================================================================
+# ROW 43 - verdict FINDINGS beside zero results                       -> RED  B1
+#
+# The verdict and the artifact it points at must not be able to disagree about whether
+# anything was found. FINDINGS with an empty result set is byte-for-byte the same
+# review as PASS, which makes the verdict decorative on exactly the transition S7
+# reads to decide blocking.
+#
+# Its discrimination partner is row 7, which is `PASS` with an empty result set and
+# stays GREEN: the variable is the verdict, not the emptiness. Without that pair this
+# rule would read as "refuse any review that found nothing", which is the honest
+# outcome S3.0 row 1 exists to keep available.
+# ===========================================================================
+SARIF=$(
+cat <<'JSON'
+{ "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [ { "tool": { "driver": { "name": "pmat" } },
+              "invocations": [ { "executionSuccessful": true } ],
+              "results": [] } ] }
+JSON
+)
+RCPT=$(receipt "$D1" "$C1" FINDINGS "$PMAT_OK" "$CUDA_NT" "$CRUX_NT" "$MUT_NT" \
+      "$AUTHOR" "$REVIEWER" "$AG_OK")
+emit row-43-findings-verdict-with-no-results "$SARIF" "$RCPT"
+
+# ===========================================================================
 # THE POSITIVE CONTROLS (S6.1) - not rows of the S6.3 table.
 #
 # scripts/check_pr_review_receipt.sh validates these BEFORE it validates anything
@@ -1073,3 +1168,35 @@ pc_emit findings-digest agent:pc-author        agent:pc-reviewer      wrong ok
 pc_emit cost-missing    agent:pc-author        agent:pc-reviewer      ok    missing
 
 echo "all fixtures rebuilt"
+
+
+# ===========================================================================
+# ROWS 38-40 - "pmat is unreachable" asserted rather than earned          -> RED
+#
+# OPERATOR RULING, 2026-09-01: "'pmat doesn't work' is never accepted - toyota way."
+# S3.A makes pmat unconditional and pmat is the ONE arm with two independent
+# transports, so `unreachable` is a claim about both of them. These three rows are the
+# ways that claim can be made without being earned. Row 6 is the GREEN half - an
+# unreachable pmat whose probes ARE recorded is still accepted, so "reject every
+# unreachable pmat" cannot read green here either.
+# ===========================================================================
+SARIF=$(
+cat <<'JSON'
+{ "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [ { "tool": { "driver": { "name": "pmat" } },
+              "invocations": [ { "executionSuccessful": false,
+                "toolExecutionNotifications": [ { "level": "error",
+                  "message": { "text": "pmat MCP server: ConnectionRefused. Consultation could not be performed; verdict DEGRADED." } } ] } ],
+              "results": [] } ] }
+JSON
+
+)
+RCPT=$(receipt "$D1" "$C1" DEGRADED "$PMAT_UNREACH_NO_PROBE" "$CUDA_NT" "$CRUX_NT" "$MUT_NT")
+emit row-38-pmat-unreachable-no-transport-probe "$SARIF" "$RCPT"
+
+RCPT=$(receipt "$D1" "$C1" DEGRADED "$PMAT_UNREACH_ONE_PROBE" "$CUDA_NT" "$CRUX_NT" "$MUT_NT")
+emit row-39-pmat-unreachable-one-transport-only "$SARIF" "$RCPT"
+
+RCPT=$(receipt "$D1" "$C1" DEGRADED "$PMAT_UNREACH_CLI_WORKED" "$CUDA_NT" "$CRUX_NT" "$MUT_NT")
+emit row-40-pmat-unreachable-but-cli-worked "$SARIF" "$RCPT"

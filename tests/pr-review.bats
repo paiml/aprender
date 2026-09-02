@@ -223,6 +223,33 @@ assert_probe() {
   assert_row row-06-unreachable-pmat-verdict-degraded GREEN
 }
 
+@test "row 38 pmat unreachable, no transport probed at all             RED       [andon]" {
+  # OPERATOR RULING 2026-09-01: "'pmat doesn't work' is never accepted - toyota way."
+  # Row 6 used to carry exactly this receipt and was GREEN. On the box that produced its
+  # "pmat MCP server: ConnectionRefused" message, `pmat --mode mcp` listed 19 tools and
+  # `pmat query` loaded 84,919 functions across 10,136 files - so what had failed was one
+  # transport on a hand-started, unsupervised HTTP server, not the source. S3.A makes pmat
+  # unconditional and pmat is the one arm with TWO independent transports, so `unreachable`
+  # is a claim about both and the probe of each must be recorded. Row 6 keeps the GREEN
+  # half: an unreachable pmat that EARNS the claim is still accepted.
+  assert_row row-38-pmat-unreachable-no-transport-probe RED
+}
+
+@test "row 39 pmat unreachable, only one transport probed              RED       [andon]" {
+  # A transport nobody tried is not a transport that failed. The required set is a
+  # WHITELIST - a receipt may probe more, never fewer, and renaming a probe to dodge the
+  # requirement lands here too rather than in the good bucket (S13's forgery lesson: every
+  # clause that survived was a whitelist, every clause that fell was a blacklist).
+  assert_row row-39-pmat-unreachable-one-transport-only RED
+}
+
+@test "row 40 pmat unreachable but the CLI recorded no error           RED       [andon]" {
+  # One reachable transport refutes `unreachable` outright, and S3.A's consultation is
+  # then owed over it. An empty-string error lands here too: a probe that recorded no
+  # failure SUCCEEDED, and "did not record" must not be readable as "failed".
+  assert_row row-40-pmat-unreachable-but-cli-worked RED
+}
+
 @test "row 7  honest docs-only PR, pmat consulted, rest not-triggered  GREEN     [discrimination]" {
   # S6.3 writes this row as "all consultations not-triggered". S3.A and S8.4 both make
   # pmat's trigger UNCONDITIONAL, so the spec contradicts itself and the two normative
@@ -514,9 +541,9 @@ run_case_table() {  # run_case_table <table-basename> <guard-flag>
 @test "every S6.3 row, the contract's owed row, and PRREV-008's seven have a fixture" {
   local n
   n=$(find "$FIX" -maxdepth 1 -type d -name 'row-*' | wc -l)
-  [ "$n" -eq 37 ] || { echo "expected 37 row fixtures (14 from S6.3 + row 15 owed by the contract + rows 16-22 from PRREV-008 + rows 23-24 from PRREV-009 + rows 25-26 from PRREV-012/F6 + rows 27-35 from PRREV-015/S3.E + rows 36-37 from PRREV-020/S3.E.4), found $n"; false; }
+  [ "$n" -eq 43 ] || { echo "expected 43 row fixtures (14 from S6.3 + row 15 owed by the contract + rows 16-22 from PRREV-008 + rows 23-24 from PRREV-009 + rows 25-26 from PRREV-012/F6 + rows 27-35 from PRREV-015/S3.E + rows 36-37 from PRREV-020/S3.E.4 + rows 38-40 from the pmat transport probes + rows 41-43 from PRREV-023/S4.2), found $n"; false; }
   local i
-  for i in 01 02 03 04 05 06 07 08 09 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37; do
+  for i in 01 02 03 04 05 06 07 08 09 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43; do
     find "$FIX" -maxdepth 1 -type d -name "row-$i-*" | grep -q . \
       || { echo "no fixture directory for row $i"; false; }
   done
@@ -1980,4 +2007,47 @@ land_prior_art_on_main() {
   assert_probe arm-e-no-model-id row-07-honest-docs-only-pmat-consulted B1 \
     "S3.E identity fields are absent or empty: model_id" \
     'del(.predicate.consultations.antigravity.model_id)'
+}
+
+# --- PRREV-023: the runs array is not allowed to be empty --------------------
+
+@test "row 41 findings.sarif with an empty runs array                   RED  B1" {
+  # THE VACUITY. Every result rule in the guard reads `.runs[]? | .results[]?`, so over
+  # an empty runs array each of them iterates nothing and finds nothing to reject. This
+  # exact receipt returned rc=0 ACCEPT before the rule existed, while still declaring
+  # verdict FINDINGS and five consultations consulted, and the four positive controls
+  # fired correctly in that same run -- so it was genuine vacuity, not a broken harness.
+  assert_row row-41-sarif-with-no-runs RED B1 "carries no runs[]"
+}
+
+@test "row 42 a run whose tool.driver.name is outside the vocabulary    RED  B1" {
+  # Checked as a WHITELIST. S13.13 found every clause that fell to the forged receipts
+  # was a blacklist over a field and every clause that survived was a whitelist; the
+  # difference was the direction of the test. `Pmat` is one capital, which is all it
+  # takes to hide a run from `select(.tool.driver.name == "antigravity")`.
+  #
+  # The first draft of the rule ACCEPTED this row: `select([...] | index(.) == null)`
+  # rebinds `.` to the literal array through the pipe, so it asked whether the array
+  # contained itself. Caught by running the row, not by reading the line.
+  assert_row row-42-run-driver-outside-vocabulary RED B1 "outside { pmat, nvidia-cuda-docs, crux, cargo-mutants, antigravity }"
+}
+
+@test "row 43 verdict FINDINGS beside zero results                      RED  B1" {
+  # A verdict and the artifact it points at must not disagree about whether anything was
+  # found. FINDINGS over an empty result set is the same review as PASS, which makes the
+  # verdict decorative on exactly the transition S7 reads to decide blocking.
+  assert_row row-43-findings-verdict-with-no-results RED B1 "carries zero results"
+}
+
+@test "row 7 is PASS with an empty result set and stays GREEN     [discrimination]" {
+  # THE PARTNER FOR ROW 40, and the reason row 40's rule is about the VERDICT rather
+  # than the emptiness. row-07's findings.sarif carries a run with `results: []` and a
+  # PASS verdict, and it must stay GREEN: "consulted, found nothing" is S3.0 row 1, the
+  # honest outcome the whole three-state encoding exists to keep available. A rule that
+  # refused this would teach reviewers to invent findings.
+  run jq -e '[ .runs[] | .results[]? ] | length == 0' "$FIX/row-07-honest-docs-only-pmat-consulted/findings.sarif"
+  [ "$status" -eq 0 ] || { echo "row 7 no longer has an empty result set"; return 1; }
+  run jq -r '.predicate.verdict' "$FIX/row-07-honest-docs-only-pmat-consulted/receipt.intoto.jsonl"
+  [ "$output" = "PASS" ] || { echo "row 7 verdict is $output, expected PASS"; return 1; }
+  assert_row row-07-honest-docs-only-pmat-consulted GREEN
 }

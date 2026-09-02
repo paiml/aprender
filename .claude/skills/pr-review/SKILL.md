@@ -22,7 +22,7 @@ difference is a defect in this file.
 **Contract**: `contracts/pr-review-skill-v2.yaml` (§1 grounding, §7 blocking, §8 metrics)
 **Guard**: `scripts/check_pr_review_receipt.sh` — it validates what you emit here, it has
 its own positive controls, and its mutation set (`scripts/mutate-guard.sh`) reports
-219/219. **Run it on your own receipt before you post anything.**
+233/233. **Run it on your own receipt before you post anything.**
 
 ## Context
 
@@ -348,11 +348,28 @@ that shipped on an ungrounded stream-ordering claim.
 The second form is mandatory. Without it, *"the docs said nothing"* and *"I did not ask"*
 are the same artifact — which is the whole of #2754, #2779, #2780 and #2790.
 
-Consult via `mcp__nvidia-cuda-docs__search_cuda_docs`. If that server is unreachable,
-that is row 3 of §3.0: `unreachable`, `executionSuccessful: false`, `DEGRADED`. It is not
-a licence to answer from memory. #2765 (16-row alignment), #2789 (E4M3), #2771 (PTX
-aliasing) and #2786 (GB10 Blackwell) were all asked of memory while the docs server sat
-idle.
+**Dispatch the `cuda-docs-reviewer` agent** (`.claude/agents/cuda-docs-reviewer.md`).
+This arm is an AGENT, not an inline tool call: it holds
+`mcp__nvidia-cuda-docs__search_cuda_docs`, it reads the whole diff for device-behaviour
+claims rather than reaching for the docs only where you already suspected an answer, and
+a reviewer that also writes the patch is not an independent check (§5). It returns the
+`consultations.cuda` block directly.
+
+If that server is unreachable, that is row 3 of §3.0: `unreachable`,
+`executionSuccessful: false`, `DEGRADED`. It is not a licence to answer from memory.
+#2765 (16-row alignment), #2789 (E4M3), #2771 (PTX aliasing) and #2786 (GB10 Blackwell)
+were all asked of memory while the docs server sat idle.
+
+**`agy` is NOT a CUDA authority and must never be recorded as one — measured
+2026-09-01.** `agy mcp list` shows `nvidia-cuda-docs`, type `http`, status **enabled**,
+at the right URL, and asked a CUDA question through it `agy` answers `MCP_UNREACHABLE`
+in 7 s. The endpoint returns **`401 invalid_token`** with *"Your client should
+automatically re-register and obtain new tokens"*: it requires OAuth **dynamic client
+registration**, and `agy mcp add` accepts only a **static**
+`--header "Authorization: Bearer TOKEN"` — there is no login verb and no registration
+flow. A server that is *configured and enabled* is not a server that *answers*; this is
+the same shape as §3.A.1's pmat ruling one arm over, and the reason §3.E's cross-vendor
+reviewer carries no CUDA weight.
 
 ### §3.C CRUX — user-facing surface and competitive claims (triggered)
 
@@ -393,9 +410,13 @@ Two things the guard checks that are easy to miss:
   `comparative_claims` is empty is itself B4. You cannot state the ratio in prose and
   omit the provenance.
 - B4 also reads the **diff**, not only your receipt, over the surface a user reads:
-  `book/**.md` at any depth, and printed literals plus doc comments in shipped `.rs`.
-  `book/src/examples/` is **in** that scope — it is 153 of the book's 441 published
-  pages and the directory `851.8 tok/s = 2.93x Ollama` was actually published to.
+  `book/**.md` at any depth, **a root-level `*.md`**, and printed literals plus doc
+  comments in shipped `.rs`. `book/src/examples/` is **in** that scope — it is 153 of
+  the book's 441 published pages and the directory `851.8 tok/s = 2.93x Ollama` was
+  actually published to. So is **`README.md`**: the same commit published the same
+  ratio there, and until `PRREV-021` neither definition could read it (D9). The
+  root-level rule is **anchored** — `docs/x.md` and `evidence/**/*.md` stay out, the
+  first because that surface was measured out at 40% precision, below §7's bar.
 - `version` and `artifact_sha256` are **captured, not remembered**. Run the comparator,
   read its version banner, hash the artifact you actually exercised. And never label a
   run by intent: `CUDA_VISIBLE_DEVICES` says what was *visible*, never what was *used*.
@@ -417,7 +438,7 @@ Bash guards are exercised with `bats-core` fixtures. For the receipt guard itsel
 mutation set already exists and is a derivation, not a list:
 
 ```bash
-bash scripts/mutate-guard.sh          # 219/219 on scripts/check_pr_review_receipt.sh
+bash scripts/mutate-guard.sh          # 233/233 on scripts/check_pr_review_receipt.sh
 ```
 
 **`attempted: 0` with `status: consulted` is rejected** (fixture row 2). A mutation set

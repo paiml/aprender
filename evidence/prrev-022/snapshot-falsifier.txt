@@ -1,0 +1,88 @@
+PRREV-022 -- the mutation sweep read the LIVE tree while holding line numbers from the
+past, so a concurrent edit could make it report KILLED for a reason unrelated to the
+mutation.
+
+=== HOW IT WAS FOUND ===
+
+Not by reading the script. A sweep launched at 14:33:13 from /home/noah/src/aprender-prrev
+printed, eight times:
+
+    SITE NOT PRESENT AT LINE 1361
+    SITE NOT PRESENT AT LINE 1385
+    ...
+
+while another session was editing scripts/check_pr_review_receipt.sh -- the file under
+mutation -- at 14:53:40 and again at 15:00:25.
+
+=== THE MECHANISM ===
+
+catalogue() scans the guard ONCE at sweep start and records each site's LINE NUMBER.
+build_tree() then copied all seven of its inputs from the LIVE $ROOT at the start of
+EACH MUTANT, minutes later. apply() read $GUARD -- also live -- and wrote the mutated
+copy into the tree.
+
+So the line numbers and the bytes they index came from two different moments.
+
+  THE VISIBLE FAILURE IS THE LUCKY ONE. `SITE NOT PRESENT` is loud and the run dies.
+  THE SILENT ONE IS THE DEFECT. If an edit shifts a line but the site's old text still
+  occurs at that number, the mutant lands on the WRONG LINE, status_note stays `ok`,
+  and the suite is measured against a guard mutated somewhere nobody chose. That
+  reports KILLED for a reason unrelated to the mutation and HIDES A SURVIVOR -- the one
+  outcome a mutation sweep exists to make impossible, in the sweep that S6.4 makes
+  every other verdict rest on.
+
+The did-it-land check was contaminated the same way. `cmp -s "$GUARD" "$tree/$GUARD_REL"`
+read the LIVE guard, so after a concurrent edit it compared two different versions and
+answered "they differ" for a mutant that never landed. A check that reads the moving
+thing cannot detect the thing moving.
+
+=== THE FIX ===
+
+One snapshot, taken BEFORE catalogue() reads a single line number, into $WORKDIR/src.
+$GUARD is repointed at it, so sites, trees and the did-it-land comparison all answer
+about the same bytes. build_tree() now reads $ROOT zero times:
+
+  $ sed -n '/^build_tree()/,/^}/p' scripts/mutate-guard.sh | grep -c ROOT
+  0
+
+=== THE FALSIFIER -- RED AND GREEN, ONE VARIABLE ===
+
+Both arms: same throwaway root, same mutant (book-removed-from-b4-scope), same
+`--only ... --jobs 1`, and at t+2s -- after catalogue() has recorded its line numbers --
+40 comment lines are prepended to the LIVE guard in that root.
+
+  ARM red    rc=1   verdict=INVALID
+             origin/main's scripts/mutate-guard.sh, VERBATIM (450 lines)
+             attempted 1  killed 0  survived 0  invalid 1
+             "mutate-guard.sh: FAIL - 1 mutation(s) did not change the guard.
+                A mutant that edits nothing scores a kill it never earned."
+
+  ARM green  rc=0   verdict=KILLED
+             this branch's scripts/mutate-guard.sh (506 lines)
+             attempted 1  killed 1  survived 0  invalid 0
+             guard_mutation_score = 100% (1/1)
+             book-removed-from-b4-scope  text  L254  KILLED
+               row 16 the diff publishes a ratio, nothing records it   RED  B4
+
+The only difference between the arms is the harness. The guard, the mutant, the fixture
+tree, the timing and the edit are identical.
+
+=== A PARTIAL REVERT WOULD HAVE PROVED NOTHING, AND WAS THE FIRST DRAFT ===
+
+The first RED arm reverted only build_tree's six `cp -a` sources to $ROOT while leaving
+GUARD pointed at the snapshot. That does NOT reproduce the bug: apply() reads $GUARD and
+WRITES the mutated guard over whatever build_tree put in the tree, so snapshot bytes win
+and the arm returns KILLED. It would have read as "the fix is unnecessary".
+
+The bug on main is that catalogue() and apply() read THE SAME LIVE PATH AT DIFFERENT
+TIMES. Only the real file carries that, so the RED arm runs origin/main's script
+verbatim. Recorded because the failure mode -- an arm that cannot fail, dressed as a
+control -- is the one this epic keeps finding.
+
+=== RESIDUAL, STATED ===
+
+This closes the sweep's exposure to edits DURING a run. It does not make the sweep
+hermetic against a tree that is already dirty when it starts: the snapshot faithfully
+copies whatever is there at t=0. That is correct behaviour -- a sweep should measure the
+tree it was pointed at -- and it is why the number CI publishes, taken on a clean
+checkout, is the one S8 reads.
