@@ -382,6 +382,16 @@ fi
 # The sweep.
 # ---------------------------------------------------------------------------
 WORKDIR=$(mktemp -d "${TMPDIR:-/tmp}/prrev-mutate.XXXXXX")
+
+# THE CONTROL CACHE IS PER RUN, AND THIS RUN OWNS IT. Every mutant changes the guard's
+# bytes, so each gets its own key and re-proves the four positive controls -- which is the
+# property the cache exists to preserve, not to bypass. What it saves is the repeated
+# BASELINE proving inside one invocation. Scoped under WORKDIR: unpredictable, 0700, and
+# removed with it, so no other job on a shared runner can read it or seed it. Unset, the
+# guard has no cache and proves the controls every time.
+PR_REVIEW_PC_CACHE_DIR="$WORKDIR/pc-cache"
+mkdir -m 700 -p "$PR_REVIEW_PC_CACHE_DIR"
+export PR_REVIEW_PC_CACHE_DIR
 case "$WORKDIR" in
   */prrev-mutate.*) ;;
   *) echo "$PROG: FAIL - refusing to use scratch dir $WORKDIR" >&2; exit 1 ;;

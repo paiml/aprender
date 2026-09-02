@@ -1719,14 +1719,24 @@ jobs:
 
       # Arm 2. Every row of §6.3, plus the positive controls, plus the
       # must-match/must-not-match tables behind the three trigger regexes. This
-      # file is 169 tests and was reachable from NO workflow until this job — the
+      # file is 171 tests and was reachable from NO workflow until this job — the
       # dark-target class this repository has hit with benches and with 58 cgp
       # tests. Both numbers here are recomputed by check_pr_review_counts.sh; the
       # commit that wired this step wrote 65 and 22 over a file that already held
-      # 169 tests and 37 rows.
+      # 171 tests and 37 rows.
       - name: The 43-row fixture table and both polarities of every trigger regex
         shell: bash
-        run: bats tests/pr-review.bats
+        run: |
+          set -euo pipefail
+          # The control cache is scoped to THIS job. bats' own setup_file creates one under
+          # BATS_FILE_TMPDIR, so this exists for any other guard invocation in the step and
+          # is removed with the runner temp. It is never a shared path: the key is derived
+          # from files in the repository, so a predictable world-writeable directory on a
+          # runner this organisation shares across repositories could be seeded by anyone.
+          PR_REVIEW_PC_CACHE_DIR=$(mktemp -d "${RUNNER_TEMP:-/tmp}/prrev-pc.XXXXXX")
+          export PR_REVIEW_PC_CACHE_DIR
+          trap 'rm -rf "$PR_REVIEW_PC_CACHE_DIR"' EXIT
+          bats tests/pr-review.bats
 
       # Arm 3. §6.4: mechanically flip each validation branch and drop each
       # required-field check, target 100% kill.

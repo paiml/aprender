@@ -26,6 +26,15 @@ setup_file() {
   # See tests/fixtures/pr-review/make-fixture-repo.sh for the topology and why.
   export FIXTURE_REPO="$BATS_FILE_TMPDIR/fixture-repo"
   "$FIX/make-fixture-repo.sh" "$FIXTURE_REPO" >/dev/null
+
+  # THE CONTROL CACHE IS SCOPED TO THIS RUN AND NO OTHER. It lives under BATS_FILE_TMPDIR
+  # -- unpredictable, ours, and gone when the file finishes. It was a fixed path under
+  # $TMPDIR, which on a runner this organisation shares across repositories meant any
+  # process on the box could compute the key from public files and seed a passing
+  # transcript, and meant one job's entry could be consumed by another job whose
+  # environment the key does not describe. Unset, the guard simply has no cache.
+  export PR_REVIEW_PC_CACHE_DIR="$BATS_FILE_TMPDIR/pc-cache"
+  mkdir -m 700 -p "$PR_REVIEW_PC_CACHE_DIR"
 }
 
 setup() {
@@ -2018,8 +2027,8 @@ land_prior_art_on_main() {
   # THE PROPERTY EVERYTHING RESTS ON is that a CHANGED guard re-proves them. Every mutant
   # in scripts/mutate-guard.sh changes the guard, so a key that ignored the guard's bytes
   # would serve 233 mutants a transcript proved against a different file.
-  local cache="${TMPDIR:-/tmp}/pr-review-pc-cache"
-  rm -rf "$cache"
+  local cache="$PR_REVIEW_PC_CACHE_DIR"
+  rm -rf "$cache"; mkdir -m 700 -p "$cache"
 
   run "$GUARD" "$FIX/row-14-complete-gpu-review"          # cold: writes one entry
   [ "$status" -eq 0 ] || { echo "$output"; false; }
@@ -2099,8 +2108,8 @@ land_prior_art_on_main() {
   # `[ -s ]` was the entire read-side check and it is TRUE OF A ONE-BYTE FRAGMENT. This
   # queue evicts jobs mid-run, so a torn write was reachable, and it would have been a
   # PERMANENT free pass: every later run cats the fragment and skips the controls.
-  local cache="${TMPDIR:-/tmp}/pr-review-pc-cache"
-  rm -rf "$cache"
+  local cache="$PR_REVIEW_PC_CACHE_DIR"
+  rm -rf "$cache"; mkdir -m 700 -p "$cache"
   run "$GUARD" "$FIX/row-14-complete-gpu-review"
   local k; k=$(ls "$cache")
   [ -n "$k" ] || { echo "cold run wrote no entry"; false; }
@@ -2124,8 +2133,8 @@ land_prior_art_on_main() {
   # guard-only key -- stayed identical. A shim earlier on PATH is the cheapest way to
   # prove the key sees the difference; it resolves to the same jq, so ONLY the resolved
   # path and file hash differ, which is the weakest form of the drift the key must catch.
-  local cache="${TMPDIR:-/tmp}/pr-review-pc-cache"
-  rm -rf "$cache"
+  local cache="$PR_REVIEW_PC_CACHE_DIR"
+  rm -rf "$cache"; mkdir -m 700 -p "$cache"
   run "$GUARD" "$FIX/row-14-complete-gpu-review"
   [ "$(find "$cache" -maxdepth 1 -type f | wc -l)" -eq 1 ]
 
@@ -2144,8 +2153,8 @@ land_prior_art_on_main() {
   # unreachable unless all four fired -- an entry can only be created by a run that
   # PROVED the guard can still fail. Verified by removing a seed: the seeded control
   # refuses, the guard exits non-zero, and the cache must stay empty.
-  local cache="${TMPDIR:-/tmp}/pr-review-pc-cache"
-  rm -rf "$cache"
+  local cache="$PR_REVIEW_PC_CACHE_DIR"
+  rm -rf "$cache"; mkdir -m 700 -p "$cache"
   cp -a "$REPO_ROOT/tests/fixtures/pr-review/positive-control" "$BATS_TEST_TMPDIR/pc"
   rm -f "$BATS_TEST_TMPDIR/pc/self-review/receipt.intoto.jsonl"
 
@@ -2156,4 +2165,57 @@ land_prior_art_on_main() {
   [ "$n" -eq 0 ] || {
     echo "a run that could not prove the controls still wrote $n cache entry(ies)"
     echo "that entry would then be served to runs that never proved anything"; false; }
+}
+
+@test "S6.1 with no cache directory supplied the controls ALWAYS run  [fail-closed]" {
+  # THE SCOPE IS THE FIX, not more key material. A second review refused the shared-path
+  # design on three grounds that all reduce to one: the environment is not fully hashable
+  # (PYTHONPATH, LD_LIBRARY_PATH and check-jsonschema's own Python packages are outside the
+  # key), so an entry written under one environment can be consumed under another -- and
+  # positive controls exist precisely to detect runtime environmental drift. Caching them
+  # across invocations assumes the stability they are there to test.
+  #
+  # Unset, therefore: no cache, controls every time. That is what a developer running the
+  # guard by hand gets, and it is the safe default rather than the fast one.
+  # COUNTING THE CONTROL LINES CANNOT PROVE THIS, and the first version of this row tried
+  # to. A cache hit REPLAYS the transcript verbatim -- that is the point of it -- so a
+  # replayed run prints the same four lines as a live one, and the row stayed GREEN under
+  # the mutation that restored the shared fallback path. Caught by re-mutating rather than
+  # by re-reading. The discriminator has to be PERSISTENCE: a run with no cache directory
+  # must leave nothing behind for a later run to read.
+  local shared="${TMPDIR:-/tmp}/pr-review-pc-cache"
+  rm -rf "$shared"
+  local before; before=$(find "${TMPDIR:-/tmp}" -maxdepth 2 -name '*pr-review-pc-cache*' 2>/dev/null | wc -l)
+
+  run env -u PR_REVIEW_PC_CACHE_DIR "$GUARD" "$FIX/row-14-complete-gpu-review"
+  local n1; n1=$(printf '%s\n' "$output" | grep -c '^positive-control') || true
+  [ "$n1" -eq 4 ] || { echo "expected 4 controls with no cache dir, saw $n1"; false; }
+
+  local after; after=$(find "${TMPDIR:-/tmp}" -maxdepth 2 -name '*pr-review-pc-cache*' 2>/dev/null | wc -l)
+  [ "$after" -eq "$before" ] || {
+    echo "a cache-less run persisted state ($before -> $after paths under TMPDIR)"
+    echo "the next invocation would replay it, and the controls would stop running"; false; }
+
+  run env -u PR_REVIEW_PC_CACHE_DIR "$GUARD" "$FIX/row-14-complete-gpu-review"
+  local n2; n2=$(printf '%s\n' "$output" | grep -c '^positive-control') || true
+  [ "$n2" -eq 4 ] || { echo "a second cache-less run skipped controls ($n2)"; false; }
+}
+
+@test "S6.1 the guard never CREATES a cache directory, only uses one it is given" {
+  # The old path was ${TMPDIR:-/tmp}/pr-review-pc-cache and the guard mkdir -p'd it. On a
+  # runner shared across repositories that is a predictable, world-writeable location whose
+  # key is computable from public files, so any process on the box could seed a passing
+  # transcript and the guard would skip its controls because a stranger said they fired.
+  # It now writes only into a directory the caller already created.
+  local shared="${TMPDIR:-/tmp}/pr-review-pc-cache"
+  rm -rf "$shared"
+  run env -u PR_REVIEW_PC_CACHE_DIR "$GUARD" "$FIX/row-14-complete-gpu-review"
+  [ ! -e "$shared" ] || { echo "the guard created the shared path $shared"; rm -rf "$shared"; false; }
+
+  # And a named-but-absent directory is no cache, never a newly created one.
+  local ghost="$BATS_TEST_TMPDIR/never-created"
+  PR_REVIEW_PC_CACHE_DIR="$ghost" run "$GUARD" "$FIX/row-14-complete-gpu-review"
+  [ ! -e "$ghost" ] || { echo "the guard created $ghost instead of running uncached"; false; }
+  local n; n=$(printf '%s\n' "$output" | grep -c '^positive-control') || true
+  [ "$n" -eq 4 ] || { echo "expected 4 controls against an absent cache dir, saw $n"; false; }
 }

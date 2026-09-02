@@ -1491,9 +1491,36 @@ pc_cache_body() {   # <file> -> body on stdout, rc 0 iff the terminator verifies
 }
 
 PC_TRANSCRIPT=""
-PC_CACHE_DIR="${TMPDIR:-/tmp}/pr-review-pc-cache"
+# THE CACHE DIRECTORY IS SUPPLIED BY THE CALLER, PER RUN, OR THERE IS NO CACHE.
+#
+# It used to be `${TMPDIR:-/tmp}/pr-review-pc-cache` -- a PREDICTABLE, WORLD-WRITEABLE path
+# on runners this organisation shares across repositories. A second review refused the
+# design over that and over what follows from it, and both objections are correct:
+#
+#   * ANYONE ON THE BOX COULD SEED IT. The key is derived entirely from files in the
+#     repository, so an unprivileged process can compute it and write a passing transcript.
+#     The guard would then skip the controls because a stranger said they had fired.
+#   * THE ENVIRONMENT IS NOT FULLY HASHABLE, so a shared entry crosses environments. The
+#     key covers each tool's resolved path, file hash and version -- and NOT `PYTHONPATH`,
+#     `LD_LIBRARY_PATH`, the Python packages under `check-jsonschema`, the locale or the
+#     umask. Job A with a healthy environment writes the entry; job B with a toxic
+#     `PYTHONPATH` that disarms `check-jsonschema` computes the same key, takes the hit,
+#     and skips the very controls that existed to catch it.
+#   * AND THAT IS THE DEEPER POINT, which the reviewer put better than the fix did:
+#     positive controls exist to detect RUNTIME ENVIRONMENTAL DRIFT. Caching them across
+#     invocations assumes the environment is stable, which is the assumption they are there
+#     to test. No amount of additional key material repairs that; only scope does.
+#
+# SO THE SCOPE IS ONE RUN. `PR_REVIEW_PC_CACHE_DIR` is set by the sweep to a `mktemp -d`
+# it owns -- unpredictable name, mode 0700, removed when the sweep exits. Unset, there is
+# NO CACHE and every invocation runs the controls, which is what a lone `check_pr_review_
+# receipt.sh` on a developer box does. Within one sweep the controls and the work they gate
+# share a process tree and therefore an environment: a toxic `PYTHONPATH` is present for
+# the control run too, so it is caught rather than cached past. That is the property the
+# shared directory destroyed and the only one that makes the cache sound.
+PC_CACHE_DIR="${PR_REVIEW_PC_CACHE_DIR:-}"
 PC_CACHE_HIT=0
-if [ "${PR_REVIEW_NO_PC_CACHE:-0}" != "1" ]; then
+if [ -n "$PC_CACHE_DIR" ] && [ "${PR_REVIEW_NO_PC_CACHE:-0}" != "1" ]; then
   _k=$(pc_cache_key 2>/dev/null) || _k=""
   if [ -n "$_k" ] && [ -s "$PC_CACHE_DIR/$_k" ] && _body=$(pc_cache_body "$PC_CACHE_DIR/$_k"); then
     # The recorded lines are the controls' own output; replay them verbatim so the
@@ -1628,13 +1655,15 @@ fi   # end: controls ran (cache miss)
 
 # Record the controls' transcript under the key, best-effort. A failure to write is not
 # a failure of the run -- the next invocation simply pays for them again.
-if [ "$PC_CACHE_HIT" -eq 0 ] && [ "${PR_REVIEW_NO_PC_CACHE:-0}" != "1" ]; then
+if [ "$PC_CACHE_HIT" -eq 0 ] && [ -n "$PC_CACHE_DIR" ] && [ "${PR_REVIEW_NO_PC_CACHE:-0}" != "1" ]; then
   _k=$(pc_cache_key 2>/dev/null) || _k=""
   if [ -n "$_k" ]; then
     # Reaching here means all four controls FIRED -- each is `|| exit 1` above -- so an
     # entry can only ever be written by a run that proved the guard can still fail. The
     # tmp file is created in the SAME directory so the mv is a rename, not a copy.
-    if mkdir -p "$PC_CACHE_DIR" 2>/dev/null; then
+    # `mkdir -p` only: the caller created it with the mode it wanted. Never chmod, never
+    # create a parent -- an unexpectedly-absent directory means no cache, not a new one.
+    if [ -d "$PC_CACHE_DIR" ]; then
       _t=$(mktemp "$PC_CACHE_DIR/.wr.XXXXXX" 2>/dev/null) && {
         { printf '%s\n' "$PC_TRANSCRIPT"
           printf '%s %s\n' "$PC_CACHE_MARK" \
