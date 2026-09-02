@@ -122,13 +122,13 @@ falsification_tests:
     test: "! MIN_ROWS=9999 bash scripts/spec_conformance.sh >/dev/null 2>&1"
     if_fails: "The guard would report OK on an empty table — a blind checker is indistinguishable from a conformant spec"
 
-  - id: FALSIFY-PP-LLAMA-001-CONFORMANCE-007A
+  - id: FALSIFY-PP-LLAMA-001-CONFORMANCE-008
     rule: "The master describes the tree it governs, on the tree as it stands"
     prediction: "The join is green: every ARMED §6 row's cases exist, no ledger cell is spent twice, and every §12 expiry derives from its blockers"
     test: "bash scripts/spec_conformance.sh"
     if_fails: "Read the rows it prints. On 2026-09-02 the §6 and Appendix C halves were green (33 ARMED rows, 76 named cases, 0 missing) and the §12 half was RED on two rows: 19 and 21 each carry a literal date while still blocked by a live row (19 by row 1, 21 by row 2), which §12's own preamble forbids. The fix is in the master, not here: drop the date so the expiry derives, or record an amendment moving it and say who moved it."
 
-  - id: FALSIFY-PP-LLAMA-001-CONFORMANCE-007
+  - id: FALSIFY-PP-LLAMA-001-CONFORMANCE-008
     rule: "The list surface the join reads is real"
     prediction: "scripts/perf_gate.sh --list-selftests prints at least 25 case names"
     test: "test \"$(bash scripts/perf_gate.sh --list-selftests | wc -l)\" -ge 25"
