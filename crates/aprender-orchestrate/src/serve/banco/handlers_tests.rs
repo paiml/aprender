@@ -197,6 +197,126 @@ async fn test_BANCO_HDL_007_chat_completions_streaming() {
 }
 
 // ============================================================================
+// PP-27: the SSE stream declares its mechanism and ends with `usage`
+// ============================================================================
+
+/// The defect this pins: the stream ended `content chunk -> [DONE]` with no
+/// terminal `usage`, and a measuring client refuses such a stream outright
+/// (`jugar_probar`'s `LlmClientError::StreamNoUsage`) rather than counting
+/// frames — so `banco_llm.rs::l2_chat_streaming_sse` panicked on the `unwrap`.
+/// Asserted over the wire, on the frames a client actually parses.
+#[tokio::test]
+async fn stream_ends_with_a_usage_chunk_before_done() {
+    let app = test_app();
+    let body = serde_json::json!({
+        "messages": [{"role": "user", "content": "Count to 3"}],
+        "stream": true
+    });
+    let response = app
+        .oneshot(
+            Request::post("/api/v1/chat/completions")
+                .header("content-type", "application/json")
+                .body(Body::from(serde_json::to_vec(&body).expect("json")))
+                .expect("req"),
+        )
+        .await
+        .expect("resp");
+    assert_eq!(response.status(), StatusCode::OK);
+    let bytes = axum::body::to_bytes(response.into_body(), 1_048_576).await.expect("body");
+    let text = String::from_utf8_lossy(&bytes);
+
+    let payloads: Vec<&str> =
+        text.lines().filter_map(|line| line.strip_prefix("data: ")).map(str::trim).collect();
+    assert_eq!(
+        payloads.last().copied(),
+        Some("[DONE]"),
+        "the stream must still end with the sentinel:\n{text}"
+    );
+
+    let frames: Vec<serde_json::Value> = payloads
+        .iter()
+        .filter(|p| **p != "[DONE]")
+        .map(|p| serde_json::from_str(p).expect("each SSE frame must be JSON"))
+        .collect();
+
+    // PP-27: the mechanism is declared on the FIRST chunk, and banco replays.
+    assert_eq!(
+        frames.first().expect("a first chunk")["stream_mode"].as_str(),
+        Some("replayed"),
+        "banco generates the whole completion before the first frame:\n{text}"
+    );
+
+    // ...and the LAST chunk before the sentinel carries the counts.
+    let terminal = frames.last().expect("a terminal chunk");
+    assert!(
+        !terminal["usage"].is_null(),
+        "the terminal chunk must carry `usage`, or a measuring client refuses \
+         the whole stream:\n{text}"
+    );
+    for field in ["prompt_tokens", "completion_tokens", "total_tokens"] {
+        assert!(
+            terminal["usage"][field].as_u64().is_some(),
+            "`usage.{field}` must be a number:\n{terminal}"
+        );
+    }
+    assert_eq!(
+        terminal["usage"]["total_tokens"].as_u64(),
+        Some(
+            terminal["usage"]["prompt_tokens"].as_u64().unwrap_or_default()
+                + terminal["usage"]["completion_tokens"].as_u64().unwrap_or_default()
+        ),
+        "the total must be the sum it claims to be:\n{terminal}"
+    );
+    assert!(
+        terminal["usage"]["prompt_tokens"].as_u64().unwrap_or_default() > 0,
+        "a non-empty prompt must not report 0 prompt tokens — that is the \
+         placeholder a real empty prompt is indistinguishable from:\n{terminal}"
+    );
+}
+
+/// `stream_usage` counts TOKENS, not frames: a generated stream's terminal
+/// marker (`finish_reason` set, no text) is not a token, and the dry-run has no
+/// generation to count so it falls back to the same estimate the non-streaming
+/// path reports.
+#[test]
+fn stream_usage_counts_tokens_not_frames() {
+    use super::handlers::{stream_usage, BANCO_STREAM_MODE};
+
+    let frames = vec![
+        ("one".to_string(), None),
+        ("two".to_string(), None),
+        (String::new(), Some("length".to_string())),
+    ];
+    let measured = stream_usage(9, &frames, true);
+    assert_eq!(
+        measured.completion_tokens, 2,
+        "the terminal marker carries the reason, not a token"
+    );
+    assert_eq!(measured.prompt_tokens, 9);
+    assert_eq!(measured.total_tokens, 11);
+
+    // The dry-run counts characters, not the four canned frames.
+    let canned = vec![
+        ("12345678".to_string(), None),
+        ("12345678".to_string(), None),
+        (String::new(), Some("dry_run".to_string())),
+    ];
+    let estimated = stream_usage(3, &canned, false);
+    assert_eq!(estimated.completion_tokens, 4, "16 chars / 4");
+    assert_eq!(estimated.total_tokens, 7);
+    assert_ne!(
+        stream_usage(3, &canned, true).completion_tokens,
+        estimated.completion_tokens,
+        "a generated stream and a canned one must not be counted the same way"
+    );
+
+    assert_eq!(
+        BANCO_STREAM_MODE, "replayed",
+        "generation finishes before the first frame is written"
+    );
+}
+
+// ============================================================================
 // BANCO_HDL_008: Privacy header present on all responses
 // ============================================================================
 

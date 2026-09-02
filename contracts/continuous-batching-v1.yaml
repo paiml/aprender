@@ -144,8 +144,35 @@ falsification_tests:
 - id: FALSIFY-CB-006
   rule: Correctness under batching
   prediction: Same prompt at c=1 and c=4 produces equivalent output
-  test: 'scripts/perf041_batched_parity_probe.sh (GPU; exits 0 PASS, 1 code
-    defect, 2 UNMEASURABLE)'
+  test: >-
+    GPU: scripts/perf041_batched_parity_probe.sh (exits 0 PASS, 1 code defect,
+    2 UNMEASURABLE; writes witness.json + marker.json, prints one
+    `PP-26-WITNESS: host=<h> c=<c> m_formed=<m> result=<R> divergence_at=<n>`
+    line per band). Wired in .github/workflows/cuda-nightly.yml, step
+    "PP-26 - batch-invariance witness (perf041)", and consumed at release by
+    scripts/check_perf041_marker.sh.
+
+    CPU (no device needed, runs in `ci / gate`):
+    `python3 scripts/perf041_batched_parity_probe.py --selftest` --
+    the probe's own case table, seven rows:
+    witness_constant_token_m3, witness_no_batch_formed_is_unmeasurable,
+    witness_identical_128_ok, witness_cross_band_log_not_credited,
+    witness_short_reference_is_unmeasurable, witness_short_slot_is_unmeasurable,
+    witness_c1_only_is_not_a_pass. `--list-selftests` prints the names.
+    PP-LLAMA-001 §6 PP-26 names witness_constant_token_m3 (must-fire) and
+    witness_identical_128_ok (must-not-fire) as this row's selftest pair.
+
+    WHAT IS COMPARED, since v3.0 of the master: the TOKEN SEQUENCE, not decoded
+    text. Every request carries temperature/seed/ignore_eos/n_predict from
+    scripts/perf-matrix.yaml `protocol.sampler` and `protocol.n_predict`, and
+    `stream: true`; one SSE content chunk is one generated token's delta; the
+    probe records `divergence_at` = the index of the first differing chunk
+    between the m=1 reference and each slot inside the m=c batch, and PASSes a
+    band iff `divergence_at >= witness.min_agree_tokens` (64, matrix, policy,
+    spec-owner). A sample whose token count is not exactly `n_predict` is
+    REFUSED as UNMEASURABLE rather than compared over its shared prefix (PP-28).
+    Engagement is attributed PER BAND from the server log's byte offset taken
+    before that band; a band at c>1 with `m_formed < 2` is UNMEASURABLE.
   measured: >-
     RED 2026-08-29 (PERF-041), RTX 4090, apr 0.64.0 (3eb2dae6a),
     qwen2.5-coder-1.5b-instruct-q4_k_m, greedy, 400-token cap.
@@ -175,15 +202,39 @@ falsification_tests:
     CB-008 states precisely the observed signature ("All M slots produce
     distinct tokens per decode step (not constant)") and has never run.
   mutation: >-
-    OBSERVED 2026-08-29. Neutralise the comparison in
-    perf041_batched_parity_probe.py (`ok = got == ref_prefix` -> `ok = True`):
-    the probe reports GREEN on the identical `!!!!` output, exit 0. Reverted:
-    RED, exit 1. So the verdict is driven by the comparison and nothing else.
-    Setting PREFIX_CHARS = 0 does NOT yield a false pass -- the positive
-    control rejects an empty reference and the probe exits 2 UNMEASURABLE.
-    Firing 2 requests that arrive apart likewise exits 2 rather than passing:
-    two m=1 batches form, the batched path is never exercised, and a probe
-    that cannot see the mechanism must not return a verdict about it.
+    OBSERVED 2026-09-02, on the rewritten probe, GPU-free, via
+    `python3 scripts/perf041_batched_parity_probe.py --selftest`. Each row below
+    is a source mutation whose effect on the seven-row case table was RUN, not
+    reasoned about:
+
+      neutralise the chunk comparison (divergence_index never reports a
+        difference)                 -> witness_constant_token_m3 BROKE (exit 0
+                                       where 1 is required)
+      delete the engagement rule (`c > 1 and m_formed < 2`)
+                                    -> witness_no_batch_formed_is_unmeasurable
+                                       and witness_cross_band_log_not_credited
+                                       both BROKE (exit 0). This is the ORIGINAL
+                                       defect: the pre-v3.0 probe `continue`d a
+                                       band that formed no batch and returned 0.
+      restore the cumulative log scan (seek(0) instead of seek(offset))
+                                    -> witness_cross_band_log_not_credited BROKE
+                                       (c=4 credited with the c=2 band's m=2)
+      delete the per-slot PP-28 refusal
+                                    -> witness_short_slot_is_unmeasurable BROKE
+      delete the vacuity rule (`no c>1 band measured` -> 2)
+                                    -> witness_c1_only_is_not_a_pass BROKE
+
+    The last two rows EXIST BECAUSE the first five did not kill those mutants:
+    the table was 5/5 green under both, which is the "a gate that cannot fail"
+    class this row was rewritten to close. They were added, and the mutations
+    re-run, in the same change.
+
+    HISTORICAL, 2026-08-29, on the prefix-of-decoded-text probe this replaced:
+    neutralising `ok = got == ref_prefix` -> `ok = True` reported GREEN on the
+    identical `!!!!` output, exit 0; reverted, RED, exit 1. Setting
+    PREFIX_CHARS = 0 did not yield a false pass -- the positive control rejects
+    an empty reference. That evidence stands for the comparison; it never
+    covered the no-batch-formed branch, which returned 0.
 
     STILL RED 2026-08-29 after PERF-050. Re-run of THIS field's own command,
     scripts/perf041_batched_parity_probe.sh, on an RTX 4090 with

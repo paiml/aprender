@@ -1,0 +1,157 @@
+metadata:
+  version: 1.0.0
+  created: '2026-09-02'
+  author: PAIML Engineering
+  description: "The performance gate's own integrity — the property that every arm can fail, at the phase it declares, against a number that lives in one file. A gate whose thresholds are typed into its readers cannot be changed by a matrix edit, and one whose release arms score a merge fails PRs on rules no PR can satisfy. This contract owns the class of defects where a gate's verdict is decided by a literal nobody can see."
+  kind: pattern
+  references:
+    - "scripts/perf_gate.sh — the arms and the verdict"
+    - "scripts/perf-matrix.yaml — the one place a number lives"
+    - "scripts/check_thresholds_in_matrix.sh — the ratchet (PP-33)"
+    - "scripts/check_perf_matrix_schema.sh — the matrix's own truth check"
+    - "scripts/check_perf_receipt_fields_have_producers.sh — every field the gate reads is classified"
+    - ".github/workflows/ci.yml — wired per-PR in guard-runner-labels (gate depends on it)"
+    - "docs/specifications/PP-LLAMA-001-MASTER.md — §6 PP-6, PP-16, PP-31, PP-33; §7 the phases"
+
+five_whys:
+  symptom: "scripts/lib/parity_block.py carried FLOOR = 0.80, STRETCH = 1.50 and CEILING = 1.50; scripts/lib/bench_receipt.py defaulted a lane's floor and ceiling to the same two numbers; scripts/perf_gate.sh compared against a literal 1.0 and a literal 0.5. Four independent encodings of the release thresholds were live at once, none reachable by a matrix edit, and STRETCH gated nothing at all while sitting beside a CEILING with the same value."
+  why_1: "Each reader needed a bound before the matrix carried one, and each supplied its own."
+  why_2: "The matrix was declared the single source of truth in a header comment, and nothing scanned the readers for the numbers it was supposed to own."
+  why_3: "The matrix itself had no schema check, so an authorless policy number and an `inherited_from` pointing at a document with no history in any ref both passed CI."
+  why_4: "The phases in the matrix were decoration: every `phase:` key was read by zero lines of code, so a release arm scored a merge and a matrix edit could not move an arm between phases."
+  why_5: "The gate's only passing input was a string literal inside itself, so nothing about it was exercised against a receipt any producer emits."
+  root_cause: "A gate's rules lived in four places and its declared configuration lived in none of them. The remedy is mechanical: the readers are scanned for threshold literals, the matrix is validated against its own header, and each arm runs at the phase the matrix declares — with a case table that proves each of those three can turn RED."
+
+equations:
+  no_reader_carries_a_threshold:
+    formula: "for every reader R in {perf_gate.sh, parity_block.py, perf_receipt.py, bench_receipt.py}: no float literal in R is adjacent to a comparison operator or bound to a module-level constant, outside a named allowlist"
+    domain: "the four files a verdict is computed in"
+    codomain: "exit code of scripts/check_thresholds_in_matrix.sh"
+    invariants:
+      - "An INTEGER comparison is definitional, not a threshold: `timeouts != 0`, `c == 1`, `n < 2` are not matched"
+      - "A whole-line comment is documentation and is dropped; a trailing one is not, because the strict direction is a loud false alarm rather than a silent miss"
+      - "Every allowlist entry is keyed to file plus exact text, so an allowlisted line that changes stops being allowlisted"
+      - "A scanned file that is absent is a broken scan, not a clean one"
+
+  the_matrix_means_what_it_says:
+    formula: "every number on the policy surface is covered by a threshold_class in {policy, inherited, ratchet} and an author; every host declares a reachable compute class; every cell status carries that status's required fields"
+    domain: "scripts/perf-matrix.yaml"
+    codomain: "exit code of scripts/check_perf_matrix_schema.sh"
+    invariants:
+      - "Coverage is INHERITED from the nearest ancestor that declares it, so a delta block under an authored arm needs no repetition"
+      - "`inherited_from` resolves to a path in the tree — a precedence claim pointing at a document nobody can open is not precedence"
+      - "NA is a DECISION: it needs a reason, a decided_by and a date, exactly as a policy number needs an author"
+      - "A MEASURED cell names a receipt that exists — a ratchet seeded from a file nobody can open is a number somebody typed"
+
+  every_arm_runs_at_its_declared_phase:
+    formula: "for every arm A: A's verdict counts iff phase(A) in {both, reporting} or phase(A) == cli_phase; otherwise A still RUNS and its FAIL is demoted to REPORT"
+    domain: "arms.* in scripts/perf-matrix.yaml and the --phase argument"
+    codomain: "the verdict of scripts/perf_gate.sh"
+    invariants:
+      - "Outside its phase an arm is DEMOTED, never skipped: a skipped arm prints nothing, so a merge verdict would say nothing about the release arms"
+      - "The demotion line is printed only when something was actually demoted, so an arm with nothing to say leaves the verdict byte-identical"
+      - "No comparator ratio decides a merge (PP-6), and no wall-clock assertion runs at merge phase"
+
+  a_ratchet_compares_quantities:
+    formula: "Arm A FAILs iff lcb95(metric, band) < seed(metric, band) with n >= n_min; scaling_efficiency and overhead_share are REPORTED"
+    domain: "arms.A.metrics and baselines.<host>.<workload> in the matrix"
+    codomain: "the ArmA lines of the verdict"
+    invariants:
+      - "scaling_efficiency FALLS when agg(1) improves, so ratcheting it up-only punished the work it existed to protect"
+      - "n < n_min reports the point estimate and declines a verdict — a ratchet that fires on one sample fires on noise"
+      - "A cell that is not MEASURED gates nothing: a ratchet needs a measurement to ratchet FROM"
+
+proof_obligations:
+  - type: invariant
+    property: "No reader carries a threshold"
+    formal: "scripts/check_thresholds_in_matrix.sh exits 0"
+    applies_to: no_reader_carries_a_threshold
+  - type: invariant
+    property: "The threshold ratchet demonstrably turns RED"
+    formal: "given `STRETCH = 1.50` in parity_block.py, the ratchet exits non-zero"
+    applies_to: no_reader_carries_a_threshold
+  - type: invariant
+    property: "The matrix passes its own header's rules"
+    formal: "scripts/check_perf_matrix_schema.sh exits 0"
+    applies_to: the_matrix_means_what_it_says
+  - type: invariant
+    property: "The matrix checker demonstrably turns RED"
+    formal: "a policy number with no author, an unresolvable inherited_from, an unknown compute class, an anonymous NA cell and a MEASURED cell with no receipt each exit non-zero"
+    applies_to: the_matrix_means_what_it_says
+  - type: invariant
+    property: "Every arm obeys its declared phase"
+    formal: "the phase_guard_b_merge / phase_guard_b_release / phase_guard_a_merge rows discriminate"
+    applies_to: every_arm_runs_at_its_declared_phase
+  - type: invariant
+    property: "The self-regression ratchet fires on a regression and not on an improvement"
+    formal: "self_regress_fail is RED and agg1_improve_ok is GREEN against the same seeded matrix"
+    applies_to: a_ratchet_compares_quantities
+  - type: invariant
+    property: "The gate is enforced per-PR, not merely present"
+    formal: "ci.yml invokes perf_gate.sh --selftest in a job that `gate` depends on"
+    applies_to: every_arm_runs_at_its_declared_phase
+
+falsification_tests:
+  - id: FALSIFY-PP-LLAMA-001-PERF-GATE-001
+    rule: "The gate and both new guards exist and are executable"
+    prediction: "perf_gate.sh, check_thresholds_in_matrix.sh and check_perf_matrix_schema.sh all carry the execute bit"
+    test: "test -x scripts/perf_gate.sh && test -x scripts/check_thresholds_in_matrix.sh && test -x scripts/check_perf_matrix_schema.sh"
+    if_fails: "A guard that cannot be executed is a file that looks like enforcement"
+
+  - id: FALSIFY-PP-LLAMA-001-PERF-GATE-002
+    rule: "No reader carries a threshold literal"
+    prediction: "The ratchet exits 0 on the current tree"
+    test: "bash scripts/check_thresholds_in_matrix.sh"
+    if_fails: "A verdict is decided by a number no matrix edit can reach; the report names the file:line"
+
+  - id: FALSIFY-PP-LLAMA-001-PERF-GATE-003
+    rule: "The threshold ratchet demonstrably turns RED (mutation-verified)"
+    prediction: "Fed the constant that shipped in parity_block.py, the ratchet exits non-zero"
+    test: "bash scripts/check_thresholds_in_matrix.sh --selftest"
+    if_fails: "The ratchet accepts the very literal PP-33 names as its must-fire"
+
+  - id: FALSIFY-PP-LLAMA-001-PERF-GATE-004
+    rule: "The matrix passes its own header's rules, and the checker can refuse each of them"
+    prediction: "The schema check is green on the tree and RED for an authorless policy number, an unresolvable inherited_from, an unknown class, an anonymous NA cell and a MEASURED cell with no receipt"
+    test: "bash scripts/check_perf_matrix_schema.sh && bash scripts/check_perf_matrix_schema.sh --selftest"
+    if_fails: "The single source of truth has no truth check, and an invented number is indistinguishable from a measured one"
+
+  - id: FALSIFY-PP-LLAMA-001-PERF-GATE-005
+    rule: "Every arm can still fail, and each at its declared phase"
+    prediction: "The gate's case table passes, including the three phase rows and the two self-regression rows"
+    test: "bash scripts/perf_gate.sh --selftest"
+    if_fails: "An arm has stopped discriminating, or a release arm is scoring a merge"
+
+  - id: FALSIFY-PP-LLAMA-001-PERF-GATE-006
+    rule: "Every receipt field the gate reads is classified with a producer or an owner"
+    prediction: "The schema map is green in both directions, and its rule-6 mutation is RED"
+    test: "bash scripts/check_perf_receipt_fields_have_producers.sh && bash scripts/check_perf_receipt_fields_have_producers.sh --self-test"
+    if_fails: "The gate reads a schema nothing writes, or a server-reported field is labelled as something the harness inferred (PP-13)"
+
+  - id: FALSIFY-PP-LLAMA-001-PERF-GATE-007
+    rule: "The gate is wired into the per-PR gate, not merely present"
+    prediction: "ci.yml invokes perf_gate.sh --selftest and both new matrix guards in guard-runner-labels"
+    test: "grep -q 'bash scripts/perf_gate.sh --selftest' .github/workflows/ci.yml && grep -q 'bash scripts/check_thresholds_in_matrix.sh' .github/workflows/ci.yml && grep -q 'bash scripts/check_perf_matrix_schema.sh' .github/workflows/ci.yml"
+    if_fails: "A reference is not an execution — the case table would sit unexecuted while being counted as enforcement"
+
+  - id: FALSIFY-PP-LLAMA-001-PERF-GATE-008
+    rule: "The gate's case table is not vacuous"
+    prediction: "perf_gate.sh --list-selftests enumerates at least 60 case names"
+    test: "test \"$(bash scripts/perf_gate.sh --list-selftests | wc -l)\" -ge 60"
+    if_fails: "The case table shrank; a gate seen only passing is not evidence, and the rows are the evidence"
+
+  - id: FALSIFY-PP-LLAMA-001-PERF-GATE-009
+    rule: "The zero-GPU JOIN fixture still reproduces its eight committed digits"
+    prediction: "The derivation over evidence/parity-http/bands reproduces 0.5341/0.2308/0.1685/0.0967 and 0.5873/0.9231/1.3525/1.5540 to four decimals"
+    test: "python3 scripts/lib/perf_receipt.py --fixture-check"
+    if_fails: "The arithmetic the whole parity chain rests on changed, or the committed corpus did"
+
+qa_gate:
+  id: F-PP-LLAMA-001-PERF-GATE-001
+  name: "Perf gate integrity — every arm can fail, at its declared phase, against a number in one file"
+  description: "Scans the four verdict readers for threshold literals, validates the matrix against its own grounding rule, and runs the gate's own case table including the phase and self-regression rows. Empirical rather than syntactic: each rule ships a mutation that turns it RED and a fixture that leaves it GREEN."
+  checks:
+    - "no_reader_carries_a_threshold"
+    - "the_matrix_means_what_it_says"
+    - "every_arm_runs_at_its_declared_phase"
+    - "a_ratchet_compares_quantities"

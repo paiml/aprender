@@ -899,6 +899,7 @@ fn test_chat_completion_response_full() {
         brick_trace: None,
         layer_trace: None,
         step_trace: None,
+        timings: None,
     };
     let json = serde_json::to_string(&response).expect("serialize");
     assert!(json.contains("chat.completion"));
@@ -1446,6 +1447,7 @@ fn test_complete_chat_completion_flow() {
         brick_trace: None,
         layer_trace: None,
         step_trace: None,
+        timings: None,
     };
 
     // Serialize response
@@ -1929,6 +1931,7 @@ fn test_chat_completion_response_empty_choices() {
         brick_trace: None,
         layer_trace: None,
         step_trace: None,
+        timings: None,
     };
     let json = serde_json::to_string(&response).expect("serialize");
     assert!(json.contains(r#""choices":[]"#));

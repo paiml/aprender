@@ -30,15 +30,27 @@ on:
     - cron: "30 5 * * *"  # 05:30 UTC, after the nightly builds at 04:00
   workflow_dispatch:
 
-concurrency:
-  group: bench-${{ github.ref }}
-  cancel-in-progress: true
-
 permissions:
   contents: read
 
 jobs:
   measure:
+    # PP-19 / §5.4. The group moved DOWN to the job and lost both the ref suffix
+    # and the cancellation.
+    #
+    #   `bench-${{ github.ref }}` serialised this lane against ITSELF and against
+    #   nothing else — including beat-speed-nightly, which runs 15 minutes later
+    #   on the same 32-core clean-room box, also with `--ignored` wall-clock
+    #   targets. Two measurements sharing a host is exactly what PP-19 forbids.
+    #
+    #   `cancel-in-progress: true` is worse than no group: a queued run KILLS a
+    #   measurement mid-window, and a truncated window is not a short
+    #   measurement, it is a wrong one.
+    #
+    # Enforced by scripts/check_perf_concurrency_groups.sh.
+    concurrency:
+      group: perf-intel
+      cancel-in-progress: false
     runs-on: [self-hosted, X64, Linux, clean-room]
     timeout-minutes: 45
     steps:

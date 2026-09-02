@@ -385,11 +385,19 @@ async fn try_cuda_gguf_completions(
         token_tx,
         non_streaming: true,
         enqueue_time: std::time::Instant::now(),
+        // §3: `/v1/completions` has no `timings` field on its response shape,
+        // so there is nothing for the engine's measurement to reach. Dropped
+        // rather than measured-and-discarded.
+        timing_tx: None,
     };
 
-    batch_tx
-        .try_send(batch_req)
-        .map_err(|_| rerr(state, StatusCode::SERVICE_UNAVAILABLE, "CUDA batch queue full"))?;
+    batch_tx.try_send(batch_req).map_err(|_| {
+        // §5.2: counted at the refusal — `/v1/completions` shares the scheduler
+        // with `/v1/chat/completions`, so a rejection here is a rejection the
+        // `kv.admission_rejected` figure has to include.
+        state.record_admission_rejected();
+        rerr(state, StatusCode::SERVICE_UNAVAILABLE, "CUDA batch queue full")
+    })?;
 
     // Collect all generated tokens
     let mut output_tokens = Vec::with_capacity(max_tokens);

@@ -1077,8 +1077,15 @@ fn start_apr_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
     // (`upload_apr_q4k_weights` rejects non-Q4K tensors), so passing a
     // non-Q4K APR errors cleanly and falls through to the generic GPU path.
     //
-    // Without `cuda-batch` feature this function is a stub that errors
-    // immediately, so the fallback chain stays identical for non-batch builds.
+    // PP-LLAMA-001 §9 #8: this fallback used to swallow a BUILD-CONFIGURATION
+    // error as well as a real one. Under `--features cuda` (without
+    // `cuda-batch`) `start_apr_q4k_server_gpu` was a stub returning
+    // "Q4K batch scheduler not available", and the arm below caught it and
+    // printed "path declined, trying generic GPU path" — so the pool-allocator
+    // path was skipped on every plain CUDA build, quietly. The stub is gone and
+    // the function is gated on `cuda`; what remains here is the fallback for
+    // REAL errors (a non-Q4K APR, which `parse_apr_q4k_config` /
+    // `upload_apr_q4k_weights` reject cleanly).
     #[cfg(feature = "cuda")]
     {
         let use_gpu = config.wants_accelerator();
@@ -1089,7 +1096,9 @@ fn start_apr_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
                     // Common case for non-Q4K APR — fall through quietly to
                     // the generic GPU path (which handles dequant + small models).
                     eprintln!(
-                        "[GH-471] Q4K pool-allocator path declined ({e}), trying generic GPU path"
+                        "[GH-471] Q4K pool-allocator path declined ({e}), trying generic GPU path \
+                         (this is a MODEL condition — the build-configuration stub that used to \
+                         land here was removed by PP-LLAMA-001 §9 #8)"
                     );
                 }
             }
@@ -1212,7 +1221,8 @@ fn try_apr_quantized_cpu(model_path: &Path, config: &ServerConfig) -> Result<()>
     // pass None — the qwen3_moe dispatch guard returns NOT_IMPLEMENTED
     // cleanly if an APR-format MoE model is ever loaded (defensive
     // fallback path in try_qwen3_moe_backend).
-    run_cpu_server(quantized, vocab, None, config)
+    // This path does not resolve a GGUF layer count; no offload block.
+    run_cpu_server(quantized, vocab, None, config, None)
 }
 
 /// Build the axum Router for APR CPU inference.

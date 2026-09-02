@@ -1,0 +1,27 @@
+{
+ "class": "cpu",
+ "client_concurrency": {
+  "comparator": 1,
+  "subject": 1
+ },
+ "comparator_flags": "-ngl 0 -c 1024 -t 8 -np 1 -fa auto -ub 512 -ctk f16 -ctv f16 -cb --no-warmup",
+ "comparator_n_batch": 2048,
+ "comparator_n_ctx_slot": 1024,
+ "comparator_props_file": "llama-cpu-c1.props.json",
+ "comparator_slots_admitted": 1,
+ "concurrency": 1,
+ "gpu_layers_requested": "0",
+ "gpu_layers_resolved": 0,
+ "gpu_layers_total": 28,
+ "interleaved": true,
+ "isolation_after_file": "iso-cpu-c1-after.json",
+ "isolation_before_file": "iso-cpu-c1-before.json",
+ "replicate_files": {
+  "comparator": "llama-cpu-c1-r{k}.json",
+  "subject": "apr-cpu-c1-r{k}.json"
+ },
+ "replicates": 5,
+ "subject_compute_class": "cpu",
+ "subject_effective_config": "present",
+ "subject_effective_config_file": "apr-cpu-c1.config.json"
+}

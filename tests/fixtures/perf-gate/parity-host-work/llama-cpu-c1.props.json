@@ -1,0 +1,8 @@
+{
+ "build_info": "7746 (39173bcac)",
+ "default_generation_settings": {
+  "n_ctx": 1024
+ },
+ "n_ctx": 1024,
+ "total_slots": 1
+}

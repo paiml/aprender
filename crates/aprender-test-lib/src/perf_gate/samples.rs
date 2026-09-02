@@ -25,6 +25,7 @@ use super::metrics::RequestSample;
 
 /// Where the raw samples went, and what they hash to.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SamplesFile {
     /// Path relative to the receipt directory.
     pub path: PathBuf,
@@ -208,6 +209,25 @@ mod tests {
             let _: RequestSample = serde_json::from_str(line).expect("each line stands alone");
         }
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Every `Deserialize` type in `perf_gate/` refuses a key it does not know.
+    ///
+    /// `SamplesFile` did not, so a retention record could carry an extra field
+    /// — `rows_dropped`, a second digest, anything — and the reader would
+    /// silently ignore it. §4.4.5 makes the samples file the thing a receipt is
+    /// re-derivable FROM; a reader that drops what it does not understand
+    /// cannot say whether it read the whole record.
+    #[test]
+    fn a_samples_record_with_an_unknown_key_is_refused() {
+        let honest = r#"{"path":"samples.c1.r1.jsonl.gz","sha256":"ab","bytes":10,"rows":3}"#;
+        let parsed: SamplesFile = serde_json::from_str(honest).expect("the known shape parses");
+        assert_eq!(parsed.rows, 3);
+
+        let extra = r#"{"path":"s.gz","sha256":"ab","bytes":10,"rows":3,"rows_dropped":7}"#;
+        let err = serde_json::from_str::<SamplesFile>(extra)
+            .expect_err("an unknown key must be refused, not dropped");
+        assert!(err.to_string().contains("rows_dropped"), "{err}");
     }
 
     #[test]

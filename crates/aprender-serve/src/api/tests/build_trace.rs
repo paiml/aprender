@@ -283,6 +283,9 @@ fn test_chat_completion_chunk_serde() {
             },
             finish_reason: None,
         }],
+    stream_mode: None,
+    usage: None,
+    timings: None,
     };
     let json = serde_json::to_string(&chunk).expect("JSON serialization failed");
     assert!(json.contains("chatcmpl-123"));
@@ -299,6 +302,9 @@ fn test_chat_completion_chunk_debug() {
         created: 0,
         model: "mod".to_string(),
         choices: vec![],
+    stream_mode: None,
+    usage: None,
+    timings: None,
     };
     let debug = format!("{:?}", chunk);
     assert!(debug.contains("ChatCompletionChunk"));
@@ -312,6 +318,9 @@ fn test_chat_completion_chunk_clone() {
         created: 123,
         model: "mod".to_string(),
         choices: vec![],
+    stream_mode: None,
+    usage: None,
+    timings: None,
     };
     let cloned = chunk.clone();
     assert_eq!(cloned.id, "id");

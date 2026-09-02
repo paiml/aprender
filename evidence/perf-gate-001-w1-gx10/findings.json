@@ -158,5 +158,26 @@
 
   "what_the_producer_refused": "Nothing. It refused no argument, aborted no band, emitted no comparator ratio (by design, SS4.7.1), and wrote an empty stderr. Its exit STATUS was not captured -- see invocation.txt deviation 2 -- so completion is evidenced by the three receipts, the terminal `next` block in stdout and the empty stderr rather than by rc.",
 
-  "not_cited_deliberately": "#2786's 0.579x and 105.6 tok/s are quoted only to state that they measure a different quantity. They are used as a comparator NOWHERE above. No pre-flight or carried [C] figure for gx10 is cited. perf-matrix.yaml was not modified and no baseline is proposed."
+  "not_cited_deliberately": "#2786's 0.579x and 105.6 tok/s are quoted only to state that they measure a different quantity. They are used as a comparator NOWHERE above. No pre-flight or carried [C] figure for gx10 is cited. perf-matrix.yaml was not modified and no baseline is proposed.",
+
+  "corrections": [
+    {
+      "date": "2026-09-02",
+      "field": "what_was_measured.per_request_shape_at_c1.gx10",
+      "was": "513-token prompt, 121.1 generated tokens per request, 19.53 s per request, latency median 20.86 s (min 4.24 s on a 67-token completion, max 20.88 s)",
+      "is": "The minimum-latency samples did NOT stop at 67 tokens. In every replicate exactly 2 of the 30 c=1 samples completed the full 128 generated tokens in 4.21-4.24 s, while the other 28 took 18.8-20.9 s; the 67-token sample is one of the 7 short completions and is not one of the fast ones. The band is bimodal at equal generated_tokens (max/min above 4x), which the receipt's suspect[] rule did not flag.",
+      "evidence": "evidence/perf-gate-001-w1-gx10/samples.c1.r1.jsonl.gz (fields index, generated_tokens, start_s, end_s; identically in samples.c1.r2.jsonl.gz and samples.c1.r3.jsonl.gz), corroborated by evidence/perf-gate-001-w1-gx10/server-full.log.gz, where 8 of 99 '[PMAT-044] Batch m=1 done' lines report 4,207-4,235 ms against 91 at 18,833-20,942 ms",
+      "consequence": "The two-parameter fit quoted as 16.75 s fixed plus 32.1 ms per token is a fit over 28 of the 30 samples per replicate; over all 30 the slope is negative and R-squared is 0.000. docs/specifications/PP-LLAMA-001-MASTER.md section 2.1 row 3 and section 9 defect 1 now state the exclusion, and its section 12 row 2 requires decompose() to refuse a bimodal band rather than fit through it.",
+      "appended_by": "PP-LLAMA-001 (docs/specifications/PP-LLAMA-001-MASTER.md). Evidence is append-only: the original text above is left exactly as written."
+    },
+    {
+      "date": "2026-09-02",
+      "field": "binary_provenance_verified_before_the_run (receipt provenance.feature_set)",
+      "was": "the receipt's provenance.feature_set records ['cuda'] and was read as a property of the build under test",
+      "is": "provenance.feature_set is HARNESS-DECLARED: it is copied verbatim from the --server-feature argument at crates/apr-cli/src/commands/test_llm_band.rs:217, and evidence/perf-gate-001-w1-gx10/invocation.txt passes '--server-feature cuda'. It restates the command line and cannot decide INVALID-BUILD.",
+      "evidence": "crates/apr-cli/src/commands/test_llm_band.rs:96 and :217; evidence/perf-gate-001-w1-gx10/invocation.txt. What does prove the mechanism engaged on this run is the server's own output at evidence/perf-gate-001-w1-gx10/server-startup.txt:56 (max_batch=32).",
+      "consequence": "docs/specifications/PP-LLAMA-001-MASTER.md PP-13 makes a harness-declared server fact schema-fatal, and its section 9 defect 8 moves the INVALID-BUILD lever onto server_config.build_features_cli from GET /v1/effective-config (PP-2).",
+      "appended_by": "PP-LLAMA-001 (docs/specifications/PP-LLAMA-001-MASTER.md)"
+    }
+  ]
 }

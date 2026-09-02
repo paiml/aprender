@@ -100,7 +100,16 @@ jobs:
     # that names no step. Job 95162862834 died exactly on the 85-minute mark this
     # way. The step timeout must be the one that can fire, because it points at
     # the step; the job timeout is the backstop behind it.
-    timeout-minutes: 100
+    # 150, not 100 (2026-09-02, PMAT-742): run 33664039826's workspace-test was
+    # killed at the 100-minute wall with ZERO failing tests, still inside the
+    # Integration step, while the same box ran the pr-review-receipt mutation
+    # sweep (100+ min), the guard job, four book jobs and the reusable workflow's
+    # seven. Over-subscription is the fleet's intended headroom, so a required
+    # check must not be a wall-clock assertion that the neighbours decide
+    # (feedback_no_wallclock_in_required_checks); #2811 raises this for the
+    # same reason. Successful runs measure 46-64 min; the limit sits above
+    # the worst contended run, and a hang still fails at the step timeout.
+    timeout-minutes: 150
     env:
       IMAGE: localhost:5000/sovereign-ci:stable
       PR_OR_REF: ${{ github.event.pull_request.number || github.ref_name }}
@@ -309,7 +318,7 @@ jobs:
         # ([profile.ci]: retries=0, fail-fast). line-tables-only debuginfo now
         # comes from root Cargo.toml [profile.test]; the CARGO_PROFILE_*_DEBUG
         # env vars are kept as belt-and-suspenders.
-        timeout-minutes: 75
+        timeout-minutes: 110
         run: |
           docker run --rm \
           -e CI -e GITHUB_ACTIONS -e GITHUB_REF -e GITHUB_SHA -e GITHUB_REPOSITORY -e GITHUB_RUN_ID -e GITHUB_EVENT_NAME -e GITHUB_WORKFLOW \
@@ -604,10 +613,24 @@ jobs:
       # NOT read deny.toml -- so this covers licences, bans and sources, which
       # nothing else does.
       - name: cargo-deny (licences, bans, sources, advisories)
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
+          # cargo-deny fetches https://github.com/RustSec/advisory-db with the git
+          # CLI. Anonymous git from this host's egress IP is throttled by GitHub
+          # once the 16 runners have each fetched a few times (2026-09-02: every
+          # job on the fleet died at "could not read Username for
+          # 'https://github.com'"), so the container's git carries the job token
+          # the way actions/checkout does. GIT_CONFIG_* is per-process: nothing
+          # is written into the image or the workspace.
+          B64=$(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 | tr -d '\n')
           docker run --rm \
             -v "${GITHUB_WORKSPACE}:/workspace" \
             -w /workspace \
+            -e GIT_TERMINAL_PROMPT=0 \
+            -e GIT_CONFIG_COUNT=1 \
+            -e GIT_CONFIG_KEY_0=http.https://github.com/.extraheader \
+            -e "GIT_CONFIG_VALUE_0=AUTHORIZATION: basic $B64" \
             "$IMAGE" \
             cargo deny check
       # check_apr_bin_pinned asserts CALLERS pin the binary; it says nothing
@@ -1122,22 +1145,53 @@ jobs:
       # a workflow happens to call.
       - name: Receipt signer refuses what it must (PERF-007, case table)
         run: bash scripts/perf_receipt_sign.sh --selftest
-      # PERF-047. Section 5 of the spec is the epic's OWN ledger -- "a gate with
-      # no registered mutation is inadmissible" -- so which arms section 4.8 may
-      # read is decided by what it says, and nothing compared it to the tree.
-      # Audited 2026-08-29 it was wrong in BOTH directions at once: 12 rows said
-      # "not written" beside guards that ship case tables and are invoked twice
-      # each in THIS file, and 2 rows recorded as proof named a mutation that
-      # leaves its guard GREEN. One arm (cell completeness) had no row at all.
+      # PP-29. The successor of check_mutation_registry.sh, retired in the same
+      # commit that lands this one. That guard found its input by glob over
+      # `docs/specifications/APR-PERF-GATE-001-v*.md`; archiving that document
+      # did not break it loudly, it made it read ZERO rows and report zero
+      # violations -- a registry guard whose universe can empty itself, which is
+      # the shape the whole epic is about.
       #
-      # The check is two-way and the ratchet has no separate baseline file: the
-      # registry at merge-base with main IS the comparand, so there is nowhere
-      # to record a downgrade. Text-only and deterministic, so it belongs in the
-      # merge phase beside the other section 4.1 guards.
-      - name: The mutation registry describes the tree (PERF-047)
-        run: bash scripts/check_mutation_registry.sh
-      - name: Mutation-registry guard can still go RED (case table)
-        run: bash scripts/check_mutation_registry.sh --self-test
+      # Three joins, all text-only and deterministic, so they belong in the merge
+      # phase: §6's ARMED rows must name selftest cases that EXIST by name on the
+      # surface they declare; Appendix C's ledger may not spend one cell twice
+      # (PP-9); and §12's expiries must DERIVE from the blocked_by DAG rather
+      # than be typed. The derivation is written to
+      # evidence/parity/derived_expiries.json, which perf-matrix.yaml's
+      # `expires_after:` anchors resolve against.
+      - name: Every ARMED PP row names cases that exist (PP-29)
+        run: bash scripts/spec_conformance.sh
+      - name: Spec-conformance guard can still go RED (case table)
+        run: bash scripts/spec_conformance.sh --selftest
+      # PP-33. Nothing scanned the gate's readers for thresholds, so the spec's
+      # own must-fire -- `STRETCH = 1.50` in scripts/lib/parity_block.py -- could
+      # not turn anything red. Four independent encodings of the release floors
+      # were live at once, including two `lane.get("floor", 0.80)` defaults that
+      # applied whenever a lane omitted its bound.
+      - name: No gate reader carries a threshold (PP-33)
+        run: bash scripts/check_thresholds_in_matrix.sh
+      - name: Threshold guard can still go RED (case table)
+        run: bash scripts/check_thresholds_in_matrix.sh --selftest
+      # The single source of truth needs a truth check. An authorless policy
+      # number, a `inherited_from` pointing at a document with no history in any
+      # ref, a compute_class no build in this tree reaches, and a cell exception
+      # naming a comparator no host declares all passed CI on 2026-09-02.
+      - name: perf-matrix.yaml means what it says (PP-1, PP-16, PP-33)
+        run: bash scripts/check_perf_matrix_schema.sh
+      - name: Matrix-schema guard can still go RED (case table)
+        run: bash scripts/check_perf_matrix_schema.sh --selftest
+      # PP-19. A perf workflow that can run concurrently with itself measures
+      # two runs sharing one device, and the loser is reported as a regression.
+      - name: Perf workflows cannot run concurrently with themselves (PP-19)
+        run: bash scripts/check_perf_concurrency_groups.sh
+      - name: Concurrency-group guard can still go RED (case table)
+        run: bash scripts/check_perf_concurrency_groups.sh --selftest
+      # PP-23's bandwidth probe is release-phase INSTRUMENTATION (needs nvcc and an
+      # idle GPU) and never runs its measurement here; its case table is GPU-free
+      # and must, or the number the roofline rests on comes from a probe nobody
+      # has shown able to refuse.
+      - name: Bandwidth probe can still refuse (case table, no GPU)
+        run: bash scripts/measure_bandwidth.sh --selftest
       # The threshold rule is DERIVED, and the rule it replaced is falsified by
       # execution on every run rather than by a comment. 3-sigma pooled does not
       # catch the one regression on record (#2675).
@@ -1400,13 +1454,29 @@ jobs:
             export PATH="$CARGO_INSTALL_ROOT/bin:$PATH"
           fi
           cargo deny --version
+      # Both steps fetch RustSec/advisory-db with git, on the HOST. Anonymous git
+      # from this host's egress IP is throttled by GitHub (2026-09-02: the second
+      # fetch of the same job died while the first had answered), so the fetch
+      # carries the job token through git's per-process GIT_CONFIG_* environment.
+      # Never `git config --global`: that lands in the ~/.gitconfig all 16
+      # runners share and made every later checkout answer HTTP 400.
       - name: Advisories must pass, with deny.toml exemptions honoured
-        run: cargo deny check advisories
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          export GIT_TERMINAL_PROMPT=0 GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.https://github.com/.extraheader
+          export GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 | tr -d '\n')"
+          cargo deny check advisories
       # Separate from the check above on purpose: a newly-FIXED upstream must
       # never fail anyone's build. It fails only this guard, whose remedy is
       # deleting a line.
       - name: Every deny.toml exemption must still be live
-        run: bash scripts/check_deny_exemptions_live.sh
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          export GIT_TERMINAL_PROMPT=0 GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.https://github.com/.extraheader
+          export GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 | tr -d '\n')"
+          bash scripts/check_deny_exemptions_live.sh
       # cargo-deny and cargo-audit read ONE database: RustSec. GHSA (what
       # Dependabot reads) is a superset, and when an advisory lives only there
       # every gate above is green while the crate sits in Cargo.lock. #2531:
@@ -1674,6 +1744,8 @@ jobs:
       # tree.
       - name: Install the tools the receipt guard refuses to run without
         shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           bash scripts/install_pr_review_tools.sh "$RUNNER_TEMP/pr-review-tools/bin"
@@ -1989,6 +2061,8 @@ jobs:
 
       - name: Install the tools the receipt guard refuses to run without
         shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           bash scripts/install_pr_review_tools.sh "$RUNNER_TEMP/pr-review-tools/bin"
@@ -2101,6 +2175,8 @@ jobs:
 
       - name: Install the tools the signer refuses to run without
         shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           bash scripts/install_pr_review_tools.sh "$RUNNER_TEMP/pr-review-tools/bin"
@@ -2194,6 +2270,8 @@ jobs:
 
       - name: Install the tools Arm 4 refuses to run without
         shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           bash scripts/install_pr_review_tools.sh "$RUNNER_TEMP/pr-review-tools/bin"

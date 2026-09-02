@@ -135,14 +135,68 @@ fn test_BANCO_TYP_004_chat_chunk_roundtrip() {
             delta: ChatDelta { role: Some(Role::Assistant), content: None },
             finish_reason: None,
         }],
+        stream_mode: None,
+        usage: None,
     };
     let json = serde_json::to_string(&chunk).expect("serialize");
     assert!(!json.contains("finish_reason"));
     assert!(json.contains("assistant"));
+    // PP-27: a content chunk repeats neither the declaration nor the counts.
+    assert!(!json.contains("stream_mode"), "{json}");
+    assert!(!json.contains("usage"), "{json}");
 
     let chunk2: BancoChatChunk = serde_json::from_str(&json).expect("deserialize");
     assert_eq!(chunk2.choices[0].delta.role, Some(Role::Assistant));
     assert!(chunk2.choices[0].finish_reason.is_none());
+}
+
+// ============================================================================
+// PP-27: the terminal chunk carries `usage`, the first declares `stream_mode`
+// ============================================================================
+
+/// A terminal chunk is `choices: []` plus `usage`, which is the shape OpenAI's
+/// `include_usage` frame has and the one `jugar_probar`'s `StreamChunk`
+/// deserializes (its `choices` is `#[serde(default)]` for exactly this frame).
+#[test]
+fn terminal_chunk_serializes_usage_and_no_choices() {
+    let chunk = BancoChatChunk {
+        id: "banco-789".to_string(),
+        object: "chat.completion.chunk".to_string(),
+        created: 1_700_000_002,
+        model: "echo".to_string(),
+        choices: Vec::new(),
+        stream_mode: None,
+        usage: Some(Usage {
+            prompt_tokens: 7,
+            completion_tokens: 11,
+            total_tokens: 18,
+            context_window: None,
+            context_used_pct: None,
+        }),
+    };
+    let json: serde_json::Value = serde_json::to_value(&chunk).expect("serialize");
+    assert_eq!(json["usage"]["prompt_tokens"].as_u64(), Some(7));
+    assert_eq!(json["usage"]["completion_tokens"].as_u64(), Some(11));
+    assert_eq!(json["usage"]["total_tokens"].as_u64(), Some(18));
+    assert_eq!(json["choices"].as_array().map(Vec::len), Some(0));
+}
+
+/// The declaration rides the first chunk and is a wire STRING, so a client
+/// deserializing it into an enum sees `replayed`, not an unparseable value.
+#[test]
+fn first_chunk_declares_the_stream_mode() {
+    let chunk = BancoChatChunk {
+        id: "banco-790".to_string(),
+        object: "chat.completion.chunk".to_string(),
+        created: 1_700_000_003,
+        model: "echo".to_string(),
+        choices: Vec::new(),
+        stream_mode: Some("replayed".to_string()),
+        usage: None,
+    };
+    let json: serde_json::Value = serde_json::to_value(&chunk).expect("serialize");
+    assert_eq!(json["stream_mode"].as_str(), Some("replayed"));
+    assert!(json.get("usage").is_none(), "usage belongs to the last chunk: {json}");
 }
 
 // ============================================================================

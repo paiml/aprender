@@ -7,7 +7,7 @@ use axum::{extract::State, http::StatusCode, response::Json};
 use serde::{Deserialize, Serialize};
 
 use super::state::BancoState;
-use super::types::ErrorResponse;
+use super::types::{ErrorDetail, ErrorResponse};
 
 /// POST /api/v1/audio/transcriptions — transcribe audio to text.
 pub async fn transcribe_handler(
@@ -50,10 +50,13 @@ fn transcribe_audio(
     Err((
         StatusCode::NOT_IMPLEMENTED,
         Json(ErrorResponse {
-            error: "transcription_not_supported".to_string(),
-            message: "aprender does not transcribe audio. whisper-apr is a \
-                      standalone project; use it directly."
-                .to_string(),
+            error: ErrorDetail {
+                message: "aprender does not transcribe audio. whisper-apr is a \
+                          standalone project; use it directly."
+                    .to_string(),
+                type_: "transcription_not_supported".to_string(),
+                code: 501,
+            },
         }),
     ))
 }

@@ -32,6 +32,32 @@
 set -euo pipefail
 
 BASELINE="scripts/claim_literal_baseline.txt"
+
+# ARGUMENT VALIDATION, BEFORE ANY WORK. Every mode below is selected by an
+# equality test against "${1:-}", so without this a typo -- `--self-test`,
+# `--selftests`, `--updated` -- falls through every one of them and runs the
+# DEFAULT GATE, telling a caller who believed they had run the case table that
+# it PASSED. A guard that answers a question it was not asked is the same
+# defect class as a guard that cannot fail. (The sibling guard grew this case
+# for exactly that reason.)
+case "${1:-}" in
+    ''|--selftest|--update) : ;;
+    *)
+        printf 'unknown arg: %s\n' "$1" >&2
+        printf 'usage: check_no_claim_literals.sh [--selftest|--update]\n' >&2
+        exit 2
+        ;;
+esac
+
+# ONE definition of "this number cites a receipt", shared with the POSITIVE
+# guard (check_perf_claims_cite_receipts.sh). See drop_receipted() below and
+# the library's own header. Sourced with `|| exit`, never plain: the library is
+# option-neutral and reports by return status, so a missing or broken library
+# must be a loud failure rather than a guard that quietly stops exempting.
+CLAIM_LIT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=scripts/lib/perf_claim_cite.sh
+. "${CLAIM_LIT_ROOT}/scripts/lib/perf_claim_cite.sh" || exit 1
+
 rc=0
 printf -- '--- claim literals on user-facing surfaces ------------------------\n'
 
@@ -177,10 +203,202 @@ PLACEHOLDER_TOK='(\[X+\]|\[TBD\]|\[TODO\]|\[N\]|TBD|TODO|XX+)'
 PERF_UNIT_RE='(tok/s|tokens/s|tok/sec|(ms|GB|MB)([^A-Za-z0-9]|$)|(x|×)([[:space:]]+(faster|slower|speedup)|[[:space:]]*$)|%[[:space:]]*(faster|slower|speedup))'
 PLACEHOLDER_RE="(^|[^A-Za-z0-9_])${PLACEHOLDER_TOK}[[:space:]]*${PERF_UNIT_RE}"
 
+# A RATIO PUBLISHED AS A TABLE CELL IS INVISIBLE TO RATIO_RE, BY CONSTRUCTION.
+#
+# RATIO_RE needs a competitor NAME within five gap words of the number, and a
+# `|` is deliberately not a gap word (`| 2x | fast | yes | torch |` must stay
+# green — see the header). That rule is right for prose and it makes a
+# comparison TABLE unreadable, because a table puts the competitor in the
+# HEADER and the ratio in a cell three columns away:
+#
+#   | band | llama agg | apr agg | **agg ratio** | llama dec | apr dec | dec ratio |
+#   | c=16 | 1120.8    | 108.4   | **0.097×**    | 71.2      | 110.6   | **1.554×** |
+#
+# Verbatim from docs/benchmarking-gate-spec.md:49-54. Those are the withdrawn
+# ratios PP-LLAMA-001 §2.1 says "appear nowhere else", published in a document
+# this guard reported PASS over: the six lines it DID name are the PROSE around
+# the table, not the table.
+#
+# So the header supplies what the row cannot: a decimal ratio inside a `|`
+# cell, in a table whose preceding TABLE_HEADER_WINDOW lines carry a competitor
+# name in a cell of their own. Both halves are load-bearing:
+#
+#   THE DECIMAL is what separates the must-fire row above from the must-not-fire
+#   `| 2x | fast | yes | torch |` — which carries a competitor in a cell and is
+#   still green, because `2x` is a column label, a dimension or a bare multiple,
+#   and a measured ratio is written to at least one fractional digit. The case
+#   table runs BOTH under the SAME competitor header, so the decimal rule is the
+#   only variable between them.
+#
+#   THE HEADER is what keeps this off every markdown table in the tree. A cell
+#   ratio with no competitor named above it is a compression factor, a speedup
+#   against ourselves, or a column of scaling efficiencies — none of which is
+#   the comparator claim I-12/PP-12 bans.
+#
+# The left boundary is the one RATIO_RE carries, for the same reason: without it
+# `| v1.8x release |` matches at `.8x`. It is spelled as an optional
+# "cell prefix ending in a non-alphanumeric, non-dot character" so that a cell
+# with no leading space (`|0.097×|`) still matches.
+TABLE_HEADER_WINDOW=10
+TABLE_CELL_RATIO_RE="\\|([^|]*[^0-9A-Za-z.|])?[0-9]+\\.[0-9]+[[:space:]]*${MULT_RE}[^|]*\\|"
+TABLE_HEADER_COMP_RE="\\|[^|]*${COMPETITOR_RE}[^|]*\\|"
+
+# table_ratio_hits_in <root> <md files...> -> `file:line:text` per table hit.
+#
+# ONE implementation, shared by the sweep and by the case table below, for the
+# reason causal_literals_in states: two copies of an extraction rule drift, and
+# the drift is invisible precisely because the table keeps passing against its
+# own copy.
+#
+# `grep -H` is not decoration: with a SINGLE file argument grep omits the
+# filename, and the case table feeds exactly one file. Without -H every selftest
+# row would parse the LINE NUMBER as the path and the header lookup would read
+# nothing — a table that passes while checking the wrong thing.
+#
+# The header block is CAPTURED and then matched, never `sed … | grep -q`: an
+# early-exiting reader hands the producer SIGPIPE and pipefail reports 141
+# though grep MATCHED. That exact shape has been a live fail-open here.
+table_ratio_hits_in() {
+    local root="$1"
+    shift
+    [ "$#" -gt 0 ] || return 0
+    local rec f n lo hi block cands
+    # The candidate scan runs INSIDE $root so the emitted paths are the ones the
+    # caller passed, and the header lookup below can dereference them as
+    # "$root/$f". Captured rather than piped: the loop body runs `sed` and
+    # `grep`, and a `grep | while` would put those in a subshell whose SIGPIPE
+    # status pipefail then reports as a failure.
+    cands=$( cd "$root" && grep -HInE "$TABLE_CELL_RATIO_RE" "$@" 2>/dev/null || true )
+    [ -n "$cands" ] || return 0
+    while IFS= read -r rec; do
+        f="${rec%%:*}"
+        n=$(printf '%s' "$rec" | cut -d: -f2)
+        case "$n" in '' | *[!0-9]*) continue ;; esac
+        hi=$((n - 1))
+        [ "$hi" -ge 1 ] || continue
+        lo=$((n - TABLE_HEADER_WINDOW))
+        if [ "$lo" -lt 1 ]; then lo=1; fi
+        block=$(sed -n "${lo},${hi}p" "$root/$f" 2>/dev/null)
+        if grep -qE "$TABLE_HEADER_COMP_RE" <<< "$block"; then
+            printf '%s\n' "$rec"
+        fi
+    done <<< "$cands"
+}
+
 # A TARGET says what we WANT; a CLAIM says what we GOT. Only the second lies.
 # Lines that name themselves a target, a threshold or a comparison operator are
 # stating a bar, and a bar is allowed to be a constant — that is what a bar IS.
-TARGET_RE='([Tt]arget|[Tt]hreshold|[Gg]oal|[Ee]xpect|[Rr]equire|spec |SPEC|PASS:|FAIL:|>=|<=|[><] *[0-9])'
+#
+# THE MASK WAS A BARE SUBSTRING TEST OVER THE WHOLE LINE, AND THAT IS A
+# FAIL-OPEN ON ITS COMPLEMENT.
+#
+#     ([Tt]arget|[Tt]hreshold|[Gg]oal|[Ee]xpect|[Rr]equire|spec |SPEC|PASS:|
+#      FAIL:|>=|<=|[><] *[0-9])
+#
+# `[Rr]equire` matches the substring `required`, anywhere on the line, in any
+# grammatical role. So this — verbatim from
+# docs/specifications/apr-mcp-server-spec.md:278 —
+#
+#     Q4_K_M is already the format that establishes aprender's 1.43× Ollama
+#     parity (on Qwen2.5-1.5B Q4_K_M) — no new kernels required.
+#
+# is a live comparator claim, matches RATIO_RE, and was MASKED, because the
+# sentence happens to end in the word "required". Measured over
+# docs/specifications/ at the moment the universe was widened: 140 of 467 raw
+# matches were masked this way, by `require`, `expect` or `spec ` appearing
+# somewhere in an ordinary English sentence.
+#
+# THE FIX IS POSITIONAL, NOT LEXICAL. A target word earns the mask when it is
+# doing the job of a target: BOUND TO A FIGURE, or LABELLING A TABLE CELL.
+#
+#   (T1) a whole-cell label       `| Target | 100 tok/s |`
+#   (T2) a label before a figure  `Target: 192 tok/s`, `Expected throughput: ~17
+#                                 tok/s`, `Target (batched): 50-80 tok/s`
+#   (T3) a qualifier after one    `2x Ollama target`, `400 tok/s target`,
+#                                 `50 tok/s decode target`
+#   (T4) a comparison operator    `>= 10 tok/s`, `> 100`
+#   (T5) a verdict prefix         `PASS:`, `FAIL:`
+#
+# and it does NOT earn it merely by appearing somewhere on the line. `spec ` /
+# `SPEC` are dropped outright: a document is not a bar, and "as the spec says"
+# masked whatever followed it.
+#
+# BOTH DIRECTIONS ARE NEEDED, AND THE SECOND WAS FOUND BY MEASURING RATHER THAN
+# BY READING. A first draft required the label to come BEFORE the number, which
+# is how a bar is usually written -- and it unmasked 22 lines of the form
+# `/// PAR-108: Key optimization for 2x Ollama target`, where the word sits
+# AFTER the figure it qualifies. Those are bars, and reddening them would teach
+# people to stop naming their targets. So the rule is a PROXIMITY rule in both
+# directions, not an ordering rule.
+#
+# THE BOUND IS 20 BYTES AND IT IS NOT A ROUND NUMBER FOR LOOKING CAREFUL. The
+# line this tightening exists for is
+#
+#   ... aprender's 1.43× Ollama parity (on Qwen2.5-1.5B Q4_K_M) — no new
+#   kernels required. Hugging Face canonical: `Qwen/Qwen3-Coder-30B-...`
+#
+# where `required` is 25 bytes from the nearest digit on its left and 31 from
+# the nearest on its right. Every real bar measured in this tree sits within 16
+# (`50 tok/s decode target`, the longest). 20 separates them with margin at both
+# ends, and both ends are rows in the case table, so moving it means re-running
+# the table rather than re-reading this comment.
+#
+# `[^|` in both patterns is load-bearing: a proximity window may not cross a
+# markdown table cell, or a `Target` column three cells away would mask an
+# unrelated ratio in the same row. The whole-cell form (T1) is what puts that
+# legitimate case back.
+#
+# THE `AFTER` FORM CARRIES A SHORTER VOCABULARY THAN THE OTHERS, AND THE
+# DIFFERENCE IS THE RESIDUAL THIS TIGHTENING LEFT BEHIND.
+#
+# (T3) exists for `2x Ollama target`, `400 tok/s target`, `50 tok/s decode
+# target` -- a NOUN naming the bar, sitting after the figure it qualifies.
+# `expect` and `require` do not work that way in English. Placed after a number
+# they are almost always a VERB in an ordinary sentence, and the sentence is a
+# claim:
+#
+#     apr sustains 851.8 tok/s = 2.93x Ollama, as expected.
+#     225 tok/s on the 4090, as required.
+#
+# Both are comparator/throughput claims. Both were GREEN, because `expected` /
+# `required` sat inside the 20-byte window after a digit. The mask was doing the
+# opposite of its job: `TARGET_AFTER_RE` was built to keep a NAMED BAR readable,
+# and it was reading "and that is what we predicted" as a bar.
+#
+# Before the figure the two words DO label one -- `the release requires 100
+# tok/s`, `expect >= 10 tok/s` -- so they stay in TARGET_BEFORE_RE, and a
+# whole-cell `| Expected |` header stays in TARGET_CELL_RE. Only the AFTER form
+# narrows, to the three nouns that actually name a bar. `claim_as_expected` /
+# `claim_as_required` below are the two lines above, verbatim.
+#
+# AND THE AFTER WINDOW MAY NOT CROSS SENTENCE PUNCTUATION. `[^|]{0,20}` let the
+# window run through `.`, `,`, `;` and `)`, so a bar named in the NEXT clause
+# masked a claim in this one. `[^|.,;)]` stops it at the clause boundary, which
+# is the same argument `[^|` already made for the table cell: proximity is only
+# evidence of a bar while the two are in one phrase.
+TARGET_WORD='([Tt]argets?|[Tt]hresholds?|[Gg]oals?|[Ee]xpect(s|ed|ation|ations)?|[Rr]equire(s|d|ment|ments)?)'
+TARGET_WORD_AFTER='([Tt]argets?|[Tt]hresholds?|[Gg]oals?)'
+TARGET_CELL_RE="\\|[[:space:]]*${TARGET_WORD}[[:space:]]*[|:]"
+TARGET_BEFORE_RE="${TARGET_WORD}[^|0-9]{0,20}[0-9]"
+TARGET_AFTER_RE="[0-9][^|]{0,20}${TARGET_WORD_AFTER}"
+TARGET_OP_RE='(^|[^A-Za-z])(PASS|FAIL):|>=|<=|[><] *[0-9]'
+TARGET_RE="${TARGET_CELL_RE}|${TARGET_BEFORE_RE}|${TARGET_AFTER_RE}|${TARGET_OP_RE}"
+
+# THE CAUSAL CLASS KEEPS THE OLD, BROAD MASK, and the split is deliberate
+# rather than an oversight left behind.
+#
+# (T1)-(T5) above are all defined RELATIVE TO A NUMBER -- "labels the figure",
+# "qualifies the figure", "operator before a number". A causal claim carries no
+# number at all (that is the whole reason DIAGNOSIS_RE exists), so the
+# positional forms are undefined for it. The tightening was measured over the
+# numeric classes, where the 140 masked matches were; it is not transferred to
+# a class where it was neither measured nor meaningful.
+#
+# RESIDUAL, STATED RATHER THAN LEFT TO BE FOUND: a fabricated diagnosis whose
+# sentence contains "expect", "require" or "spec " is still masked. That is the
+# behaviour on origin/main, unchanged by this commit, and it is a separate
+# ticket rather than an unmeasured widening smuggled in beside this one.
+TARGET_PROSE_RE='([Tt]arget|[Tt]hreshold|[Gg]oal|[Ee]xpect|[Rr]equire|spec |SPEC|PASS:|FAIL:|>=|<=|[><] *[0-9])'
 
 # A CAUSAL claim is a second class, and the ratio/throughput patterns cannot see
 # it — it carries no number at all. PERF-014: `apr profile` printed
@@ -263,7 +481,56 @@ causal_literals_in() {
                 rest = substr(rest, RSTART + RLENGTH)
             }
         }
-    ' "$@" 2>/dev/null | grep -E "$ATTRIBUTION_RE" | grep -vE "$TARGET_RE"
+    ' "$@" 2>/dev/null | grep -E "$ATTRIBUTION_RE" | grep -vE "$TARGET_PROSE_RE"
+}
+
+# THE CITATION EXEMPTION, APPLIED AFTER THE MATCH.
+#
+# PP-LLAMA-001 §6/PP-12 states ONE rule: "a number in README.md / book/ /
+# docs/ is legal iff it cites an evidence/ receipt path". That is a
+# CONJUNCTION over this guard and check_perf_claims_cite_receipts.sh, and until
+# now no single check encoded it. This guard implemented the "delete" half
+# UNCONDITIONALLY, so PP-12's own must-not-fire fixture — a figure citing
+# `evidence/…/receipt.r1.json` — was RED: citing a receipt beside `225+ tok/s`
+# left the line a TPUT_RE hit and there was no spelling of it both guards
+# accepted. The spec's rule was therefore unimplementable as written.
+#
+# So a hit is DROPPED when its own line, or the three lines either side, carry
+# a token matching `evidence/<path>` THAT RESOLVES TO A FILE THAT EXISTS. The
+# definition is not restated here: it is sourced from
+# scripts/lib/perf_claim_cite.sh, the same file the positive guard now uses, so
+# the two cannot drift.
+#
+# APPLIED AFTER THE MATCH, NOT AS PART OF IT, and that ordering is the whole
+# design. A pattern that tried to require-or-exclude a citation inside the same
+# regex would be unreadable and, worse, unable to check that the path RESOLVES.
+# Matching stays a pure line test; the exemption is a second, dereferencing
+# pass over the findings.
+#
+# THE THREE SHAPES A CITATION TAKES ARE ALL ACCEPTED, because §2.1 of the
+# master spec writes figures in all three: in the SAME PIPE-TABLE ROW as the
+# number, on the line AFTER it, and in the sentence before it.
+#
+# A DANGLING CITATION NEVER EXEMPTS. An uncited number is inherited debt —
+# visible, recorded, ratcheted down. A citation pointing at a file nobody can
+# open is an active forgery, and exempting it would make this guard strictly
+# easier to satisfy than the rule it implements.
+drop_receipted() { # drop_receipted <root> < findings-on-stdin
+    local root="$1" rec f n
+    while IFS= read -r rec; do
+        [ -n "$rec" ] || continue
+        f="${rec%%:*}"
+        n=$(printf '%s' "$rec" | cut -d: -f2)
+        # `claim_citation_exempts`, NOT `claim_line_is_receipted`: the exemption
+        # is a CONJUNCTION of "cites a resolving evidence/ FILE" and "is on one
+        # of the three surfaces PP-12 names". Applied without the second
+        # conjunct it laundered `.rs` doc comments and shipped `println!`s,
+        # where the reader never sees the path; applied with `-e` instead of
+        # `-f` it laundered two live `2.93x Ollama` lines on the strength of a
+        # bare DIRECTORY token. See scripts/lib/perf_claim_cite.sh's header.
+        if claim_citation_exempts "$root" "$f" "$n"; then continue; fi
+        printf '%s\n' "$rec"
+    done
 }
 
 if [ "${1:-}" = "--selftest" ]; then
@@ -377,6 +644,31 @@ if [ "${1:-}" = "--selftest" ]; then
     check_ratio match   'the 8.2x performance gap between realizar and llama.cpp'   # FIVE, the bound
     check_ratio match   '8x slower than llama.cpp'                             # integer ratio, self-deprecating
     check_ratio match   'Already 2.9x FASTER than Ollama'                      # I-12: illegal in either direction
+    # THE TARGET_RE TIGHTENING, ASSERTED. Verbatim from
+    # docs/specifications/apr-mcp-server-spec.md:278 as it stood at f21f437c2.
+    # It matches RATIO_RE and was MASKED, because the sentence ends in the word
+    # "required" and the old mask was a bare substring test over the whole line.
+    # 140 of 467 raw matches under docs/specifications/ were masked this way.
+    check_ratio match   "Q4_K_M is already the format that establishes aprender's 1.43× Ollama parity (on Qwen2.5-1.5B Q4_K_M) — no new kernels required."
+    check_ratio match   "Q4_K_M is already the format that establishes aprender's 1.43x Ollama parity (on Qwen2.5-1.5B Q4_K_M) — no new kernels required."
+    # ...and the bar it must NOT swallow with it. A target word LABELLING the
+    # line or BOUND TO THE FIGURE still masks; a comparison operator still masks.
+    check_ratio nomatch 'Target: 2x Ollama'
+    check_ratio nomatch 'expect >= 10 tok/s'
+    # THE `AFTER` NARROWING (claim_as_expected / claim_as_required). A verb of
+    # confirmation after the figure is not a bar; it is the sentence that makes
+    # the figure a claim. Both of these were GREEN.
+    check_ratio match   'apr sustains 851.8 tok/s = 2.93x Ollama, as expected.'
+    check_ratio match   '225 tok/s on the 4090, as required.'
+    # ...and the bars they must not take with them, in BOTH orders, so the
+    # narrowing is proved to be positional rather than a vocabulary deletion.
+    check_ratio nomatch '2x Ollama target'
+    check_ratio nomatch '400 tok/s target for the 1.5B model'
+    check_ratio nomatch '50 tok/s decode target'
+    check_ratio nomatch '| Expected | 100 tok/s |'
+    check_ratio nomatch 'Threshold: 100 tok/s'
+    check_ratio nomatch 'M4 Parity Target: 192 tok/s'
+    check_ratio nomatch 'the release requires 100 tok/s on this host'
     # MUST NOT MATCH. These matter as much: a false positive here reds every PR
     # in the repository, which is a worse failure than the hole it closes.
     check_ratio nomatch 'a 3x3 matrix'
@@ -411,8 +703,34 @@ if [ "${1:-}" = "--selftest" ]; then
     check_ratio nomatch 'the tok/s column is empty'                             # a unit with no figure
     # VACUITY. A table that shrank to nothing would sweep clean, and both halves
     # must stay populated -- an all-positive table proves nothing about noise.
-    if [ "$rt" -lt 36 ]; then
-        printf '  FAIL  ratio table has %s row(s); at least 36 are required\n' "$rt"; rf=$((rf+1))
+    if [ "$rt" -lt 49 ]; then
+        printf '  FAIL  ratio table has %s row(s); at least 49 are required\n' "$rt"; rf=$((rf+1))
+    fi
+    # THE TIGHTENING MUST BE ASSERTED AGAINST TARGET_RE ALONE. The rows above
+    # would still pass if a future edit restored the bare-substring mask and
+    # narrowed RATIO_RE to compensate. This says which half moved.
+    tr_probe="aprender's 1.43× Ollama parity — no new kernels required."
+    if grep -qE "$TARGET_RE" <<< "$tr_probe"; then
+        printf '  FAIL  TARGET_RE masks a bare `required` again -- apr-mcp-server-spec.md:278 reopens\n'; rf=$((rf+1))
+    fi
+    if ! grep -qE "$TARGET_RE" <<< 'M4 Parity Target: 192 tok/s'; then
+        printf '  FAIL  TARGET_RE no longer reads a label bound to the figure\n'; rf=$((rf+1))
+    fi
+    if ! grep -qE "$TARGET_RE" <<< 'PASS: >= 10 tok/s'; then
+        printf '  FAIL  TARGET_RE no longer reads a verdict prefix or an operator\n'; rf=$((rf+1))
+    fi
+    # The AFTER narrowing, asserted against TARGET_RE ALONE. Without these two
+    # the rows above would still pass if a future edit put `expect`/`require`
+    # back into TARGET_AFTER_RE and narrowed RATIO_RE to compensate.
+    ta_probe='851.8 tok/s = 2.93x Ollama, as expected.'
+    if grep -qE "$TARGET_RE" <<< "$ta_probe"; then
+        printf '  FAIL  TARGET_RE masks `as expected` after a figure again\n'; rf=$((rf+1))
+    fi
+    if ! grep -qE "$TARGET_RE" <<< '400 tok/s target'; then
+        printf '  FAIL  TARGET_RE no longer reads a bar NAMED after the figure (T3)\n'; rf=$((rf+1))
+    fi
+    if ! grep -qE "$TARGET_RE" <<< 'the release requires 100 tok/s on this host'; then
+        printf '  FAIL  TARGET_RE no longer reads `requires` BEFORE the figure\n'; rf=$((rf+1))
     fi
     # The escape must be ASSERTED against TPUT_RE ALONE, not against the union:
     # if a future edit moved the coverage into RATIO_RE the rows above would
@@ -489,6 +807,14 @@ if [ "${1:-}" = "--selftest" ]; then
     # text describes. The connector list would also have missed "3x the memory
     # of PyTorch". Kept as an assertion so a future narrowing is loud.
     check_md match   'The .apr file is 3x larger than PyTorch pickle output.'
+    # README.md's Performance table, VERBATIM as it stood at f21f437c2 (:234).
+    # It is a bare throughput figure with no competitor on the line, so only
+    # TPUT_RE can read it -- and it is the exact figure PP-LLAMA-001 §2.1
+    # contradicts with the tree's own receipt (c=1 decode 103.26 tok/s on the
+    # same host class). The ratio table's `100+ tok/s` row does not cover this
+    # shape: three significant digits inside a pipe table with a `+` idiom.
+    check_md match   '| Qwen2.5-Coder 7B | Q4_K | 225+ tok/s | RTX 4090 |'
+    check_md match   '| Qwen2.5-Coder 1.5B | Q4_K | 40+ tok/s | CPU (AVX2) |'
     # PLACEHOLDERS BOUND TO A UNIT.
     check_md match   'Throughput: XX tok/s'
     check_md match   '| Decode | [TBD] tok/s | 1.9 GB |'
@@ -515,8 +841,8 @@ if [ "${1:-}" = "--selftest" ]; then
     check_md nomatch 'TODO: add a benchmark harness for the graph module.'
     check_md nomatch 'The MAXX tok/s field is reserved.'
     # VACUITY: a table that shrank to nothing would sweep clean.
-    if [ "$mt" -lt 24 ]; then
-        printf '  FAIL  markdown table has %s row(s); at least 24 are required\n' "$mt"; mf=$((mf+1))
+    if [ "$mt" -lt 26 ]; then
+        printf '  FAIL  markdown table has %s row(s); at least 26 are required\n' "$mt"; mf=$((mf+1))
     fi
     # The placeholder half must be ASSERTED, not merely present: it is the only
     # detector here with ZERO live instances, so a silent narrowing would leave
@@ -529,8 +855,158 @@ if [ "${1:-}" = "--selftest" ]; then
     fi
     printf '  %s markdown case(s), %s failure(s)\n' "$mt" "$mf"
 
+    # THE TABLE CLASS. Every row above is a LINE test, and the withdrawn band
+    # table is not readable as one: the competitor is in the header and the
+    # ratio is in a cell below it. So this table drives the real extractor
+    # (table_ratio_hits_in) over a two-line fixture file, exactly as the causal
+    # table drives causal_literals_in -- a table that could only reach a regex
+    # would leave the header lookup, the 10-line window and the `-H` filename
+    # completely unproven.
+    tt=0; tf=0
+    TABLE_TD=$(mktemp -d) || exit 1
+    trap 'rm -rf "${CAUSAL_TD:?}" "${TABLE_TD:?}"' EXIT
+    check_table() { # check_table <match|nomatch> <header line> <row line> [name]
+        local want="$1" header="$2" row="$3" name="${4:-}" got=nomatch out
+        printf '%s\n%s\n' "$header" "$row" > "$TABLE_TD/probe.md"
+        out=$(table_ratio_hits_in "$TABLE_TD" probe.md 2>/dev/null | grep -vE "$TARGET_RE" || true)
+        [ -n "$out" ] && got=match
+        tt=$((tt+1))
+        if [ "$got" = "$want" ]; then printf '  ok    %-8s %s\n' "$want" "${name:-$(printf '%s' "$row" | cut -c1-64)}"
+        else printf '  FAIL  want %-8s got %-8s %s\n' "$want" "$got" "${name:-$(printf '%s' "$row" | cut -c1-52)}"; tf=$((tf+1)); fi
+    }
+    printf -- '--- table class: a ratio cell under a competitor header ---\n'
+    TBL_HDR='| band | llama agg | subject agg | **agg ratio** | llama dec | subject dec | dec ratio |'
+    # MUST FIRE. Verbatim from docs/benchmarking-gate-spec.md:54 -- one of the
+    # four withdrawn band rows PP-LLAMA-001 §2.1 says "appear nowhere else",
+    # published in a document this guard reported PASS over.
+    check_table match   "$TBL_HDR" '| c=16 | 1120.8 | 108.4 | **0.097×** | 71.2 | 110.6 | **1.554×** |'
+    check_table match   "$TBL_HDR" '| c=1 | 168.9 | 90.2 | 0.534× | 171.5 | 100.7 | 0.587× |'
+    check_table match   "$TBL_HDR" '| c=4 | 484.7 | 111.9 | 0.231x | 123.3 | 113.8 | 0.923x |'
+    # MUST NOT FIRE, UNDER THE SAME HEADER, so the DECIMAL is the only variable
+    # between this row and the three above. `| 2x |` is a column label, a
+    # dimension or a bare multiple; a measured ratio carries a fractional digit.
+    check_table nomatch "$TBL_HDR" '| 2x | fast | yes | torch |'
+    check_table nomatch "$TBL_HDR" '| c=16 | 1120 | 108 | 1 | 71 | 110 | 2 |'
+    check_table nomatch "$TBL_HDR" '| v1.8x release | notes | for | llama |'
+    # ...and WITHOUT a competitor header, an identical ratio cell is a
+    # compression factor or a scaling efficiency, not a comparator claim.
+    check_table nomatch '| band | agg | dec | scaling |' '| c=16 | 1120.8 | 108.4 | **0.097×** |'
+    # A cell with no leading space must still match: the left-boundary spelling
+    # is an OPTIONAL prefix, not a required one.
+    check_table match   "$TBL_HDR" '|c=16|1120.8|0.097×|'
+    if [ "$tt" -lt 8 ]; then
+        printf '  FAIL  table class has %s row(s); at least 8 are required\n' "$tt"; tf=$((tf+1))
+    fi
+    printf '  %s table case(s), %s failure(s)\n' "$tt" "$tf"
+
+    # THE CITATION EXEMPTION (PP-12: claim_unreceipted / claim_receipted).
+    #
+    # These two rows are the ones §6 names, and they are the only rows in this
+    # file that exercise drop_receipted() -- the dereferencing pass. A table
+    # that stopped at the regexes could not tell an exemption that RESOLVES a
+    # path from one that merely sees an `evidence/` token, which is the half
+    # that makes "cites" checkable rather than decorative.
+    #
+    # The claim is always on line 1 of the fixture, so a citation on a LATER
+    # line exercises the window's forward edge.
+    ct2=0; cf2=0
+    CITE_TD=$(mktemp -d) || exit 1
+    trap 'rm -rf "${CAUSAL_TD:?}" "${TABLE_TD:?}" "${CITE_TD:?}"' EXIT
+    mkdir -p "$CITE_TD/docs" "$CITE_TD/evidence/parity" "$CITE_TD/crates/x/src"
+    printf '{}\n' > "$CITE_TD/evidence/parity/receipt.r1.json"
+    check_cite_in() { # check_cite_in <relpath> <name> <RED|GREEN> <line...>
+        local rel="$1" name="$2" want="$3" got=GREEN n
+        shift 3
+        mkdir -p "$CITE_TD/$(dirname "$rel")"
+        printf '%s\n' "$@" > "$CITE_TD/$rel"
+        # The same three detectors the .md sweep applies, then the same
+        # exemption the sweep applies after them. Line 1 carries the claim.
+        n=1
+        if grep -qE "$RATIO_RE|$TPUT_RE|$PLACEHOLDER_RE" <<< "$1" \
+           && ! grep -qE "$TARGET_RE" <<< "$1" \
+           && ! claim_citation_exempts "$CITE_TD" "$rel" "$n"; then
+            got=RED
+        fi
+        ct2=$((ct2+1))
+        if [ "$got" = "$want" ]; then printf '  ok    %-38s %s\n' "$name" "$(printf '%s' "$1" | cut -c1-52)"
+        else printf '  FAIL  %-38s want %-5s got %-5s %s\n' "$name" "$want" "$got" "$(printf '%s' "$1" | cut -c1-40)"; cf2=$((cf2+1)); fi
+    }
+    check_cite() { # check_cite <name> <RED|GREEN> <line...>
+        local name="$1"; shift
+        check_cite_in docs/probe.md "$name" "$@"
+    }
+    printf -- '--- citation exemption (PP-12) ---\n'
+    # MUST FIRE: the figure with nothing behind it. Verbatim README.md:234.
+    check_cite claim_unreceipted RED \
+        '| Qwen2.5-Coder 7B | Q4_K | 225+ tok/s | RTX 4090 |' \
+        'Reproduced from candle-vs-apr.'
+    # MUST NOT FIRE: the same figure, citing a receipt that RESOLVES --
+    # in the SAME PIPE-TABLE ROW, which is how the master spec's §2.1 table
+    # writes its figures.
+    check_cite claim_receipted GREEN \
+        '| Qwen2.5-Coder 7B | Q4_K | 225+ tok/s | RTX 4090 | evidence/parity/receipt.r1.json |'
+    # ...and on a FOLLOWING line, inside the window.
+    check_cite claim_receipted_next_line GREEN \
+        '| Qwen2.5-Coder 7B | Q4_K | 225+ tok/s | RTX 4090 |' \
+        '' \
+        'Receipt: evidence/parity/receipt.r1.json'
+    # THE WINDOW IS A BOUND. Four lines below is out.
+    check_cite claim_citation_out_of_window RED \
+        '| Qwen2.5-Coder 7B | Q4_K | 225+ tok/s | RTX 4090 |' \
+        '' '' '' \
+        'Receipt: evidence/parity/receipt.r1.json'
+    # A DANGLING CITATION IS NOT A CITATION. It buys the reader's trust with a
+    # file nobody can open, which is worse than no citation at all.
+    check_cite claim_dangling_citation RED \
+        '| Qwen2.5-Coder 7B | Q4_K | 225+ tok/s | RTX 4090 | evidence/parity/gone.json |'
+    # A COMPARATOR RATIO IS EXEMPTED THE SAME WAY -- PP-12 is one rule, not two.
+    check_cite claim_ratio_receipted GREEN \
+        'decode 0.650× llama.cpp (evidence/parity/receipt.r1.json)'
+    check_cite claim_ratio_unreceipted RED \
+        'decode 0.650× llama.cpp on the reference host'
+    # A DIRECTORY IS NOT A RECEIPT. The token `evidence/parity/` matches
+    # PERF_CLAIM_RECEIPT_RE (as `evidence/parity`) and the old `[ -e ]` test was
+    # true of it, so a claim could be legalised by naming a folder nobody can
+    # open to find the figure. Two live lines in this tree were exempted by
+    # exactly this and by nothing else.
+    check_cite claim_dir_citation_does_not_exempt RED \
+        '| Qwen2.5-Coder 7B | Q4_K | 225+ tok/s | RTX 4090 | evidence/parity/ |'
+    # ...and the SAME line with the FILE named is still green, so the row above
+    # is not passing because the fixture directory is missing.
+    check_cite claim_file_citation_still_exempts GREEN \
+        '| Qwen2.5-Coder 7B | Q4_K | 225+ tok/s | RTX 4090 | evidence/parity/receipt.r1.json |'
+    # THE SURFACE IS A CONJUNCT. PP-12 legalises a cited figure in README.md,
+    # book/ and docs/ — the places a reader can follow the path. A `.rs` doc
+    # comment is rendered by `cargo doc` far from the repository and a shipped
+    # `println!` shows the number and not the path, so the citation buys
+    # nothing there. Byte-identical claim and byte-identical citation as
+    # `claim_file_citation_still_exempts`; the SURFACE is the only variable.
+    check_cite_in crates/x/src/probe.rs claim_rs_citation_does_not_exempt RED \
+        '/// sustained 225+ tok/s (evidence/parity/receipt.r1.json)'
+    check_cite_in docs/probe.md claim_md_citation_exempts GREEN \
+        'sustained 225+ tok/s (evidence/parity/receipt.r1.json)'
+    if [ "$ct2" -lt 11 ]; then
+        printf '  FAIL  citation table has %s row(s); at least 11 are required\n' "$ct2"; cf2=$((cf2+1))
+    fi
+    # THE TWO CONJUNCTS, ASSERTED SEPARATELY. The rows above would still pass if
+    # a future edit collapsed the exemption back into one test and compensated
+    # elsewhere; these say which half moved.
+    if claim_citation_surface_ok crates/x/src/probe.rs; then
+        printf '  FAIL  the exemption surface admits .rs again — PP-12 names three surfaces\n'; cf2=$((cf2+1))
+    fi
+    if ! claim_citation_surface_ok README.md || ! claim_citation_surface_ok book/src/a.md \
+       || ! claim_citation_surface_ok docs/specifications/a.md; then
+        printf '  FAIL  the exemption surface no longer admits README.md / book/ / docs/\n'; cf2=$((cf2+1))
+    fi
+    printf 'a figure, evidence/parity/\n' > "$CITE_TD/docs/dir-probe.md"
+    if claim_line_is_receipted "$CITE_TD" docs/dir-probe.md 1; then
+        printf '  FAIL  a bare evidence/ DIRECTORY resolves again — `-e` is back\n'; cf2=$((cf2+1))
+    fi
+    printf '  %s citation case(s), %s failure(s)\n' "$ct2" "$cf2"
+
     printf '  %s case(s), %s failure(s)\n' "$t" "$f"
-    [ "$f" -eq 0 ] && [ "$cf" -eq 0 ] && [ "$rf" -eq 0 ] && [ "$mf" -eq 0 ] || exit 1
+    [ "$f" -eq 0 ] && [ "$cf" -eq 0 ] && [ "$rf" -eq 0 ] && [ "$mf" -eq 0 ] \
+        && [ "$tf" -eq 0 ] && [ "$cf2" -eq 0 ] || exit 1
     exit 0
 fi
 
@@ -554,20 +1030,46 @@ fi
 #     documented tracked-only-universe shape, and the third instance in this
 #     epic. Unioned with a working-tree find.
 #
-# (d) docs/specifications/ IS EXCLUDED, and this guard's own FAIL text is the
-#     reason: "If it is a TARGET rather than a claim, it belongs in a test or a
-#     spec." A specification is where a measured number belongs WITH its
-#     provenance — §1 of APR-PERF-GATE-001 states the four adoption killers as
-#     measured figures, and §9 quotes the banned `291` literal in order to ban
-#     it. Sweeping docs/** in wholesale (added #2705 r3) caught those four lines
-#     and would have forced the spec to describe its own subject matter in
-#     euphemism.
+# (d) docs/specifications/ USED TO BE EXCLUDED, AND IS NOT ANY MORE (PP-12,
+#     PP-LLAMA-001 §12 row 10). The argument for the exclusion was that a
+#     specification is where a measured number belongs WITH its provenance, that
+#     a spec must be able to QUOTE a banned figure in order to ban it, and that
+#     nobody installs apr and reads docs/specifications/. The first two are
+#     right and are now served by the CITATION EXEMPTION instead — a figure in a
+#     spec is legal exactly when it cites the evidence/ receipt that produced
+#     it, which is the rule §3.2 always stated and which no guard could enforce
+#     while the whole directory was invisible.
 #
-#     The distinction is NOT "docs are exempt". §9's premise is that a claim a
-#     USER READS is the defect. Users read book/ and docs/BEATS.md — both stay in
-#     scope, and BEATS.md lines are in the baseline. Nobody installs apr and
-#     reads docs/specifications/. If a spec figure ever reaches a user surface it
-#     is caught THERE, which is the surface that matters.
+#     The third argument is what measurement killed. docs/specifications/ was
+#     carrying 327 unreadable ratio and throughput matches, including
+#     `apr-mcp-server-spec.md:24` ("It achieves 1.43× Ollama decode perf at 128
+#     tokens") and `:276` ("Measured ~196 tok/s on reference hardware") — two
+#     figures for which NO receipt exists anywhere under evidence/, on a
+#     document that decides what the product ships. A number nobody can
+#     dereference is a claim wherever it is written; the exclusion was an
+#     aperture, not a policy.
+#
+#     WHAT REPLACED IT IS NARROWER AND STATED: a spec figure is legal iff it
+#     cites evidence/, and the archive of superseded specs is out of scope for
+#     the reason in the next paragraph.
+# (d) docs/specifications/archive/ IS EXCLUDED FOR THE REASON docs/archive/ IS,
+#     and it had to be named separately the moment the parent exclusion went: it
+#     is a sibling of docs/archive/, not a child, so removing `^docs/specifications/`
+#     would have pulled 125 retired documents into scope in the same stroke. A
+#     retired specification is a record, and a guard that punishes the record
+#     teaches people to delete it.
+# (d) docs/archive/ IS EXCLUDED FOR EXACTLY THE SAME REASON, and it
+#     had to be added the moment a spec was archived rather than deleted. Superseding
+#     APR-PERF-GATE-001 moved its v2.2 document out of docs/specifications/ (excluded at
+#     the time) into docs/archive/perf-2026-09-01/ (not), and that ONE MOVE turned nine
+#     lines RED -- every one of them a figure the document QUOTES IN ORDER TO BAN,
+#     including `2.93x Ollama` and `36.9x`, the two this guard exists because of.
+#
+#     The rule is unchanged: a claim a USER READS is the defect. Nobody installs apr and
+#     reads an archive of superseded specifications; archiving is how this repository
+#     retires a document without deleting the record, and a guard that punishes the
+#     archive teaches people to delete instead. The live surfaces -- book/, docs/BEATS.md,
+#     README.md and shipped source -- are untouched by this line.
 # (c) book/ AND docs/ WERE NOT IN THE UNIVERSE AT ALL, which is the one that
 #     mattered most: §9's whole point is that a claim a USER READS is the
 #     defect, and book/ is where users read. Five live `2.93x Ollama` claims sat
@@ -582,7 +1084,7 @@ fi
 #
 #     `:(glob)` IS LOAD-BEARING. A bare `'*.md'` pathspec matches at every depth -- 3460
 #     files here against 6 -- so it would pull in tests/, fixtures/ and evidence/ and
-#     re-admit the docs/specifications/ prose the grep below excludes by name. The
+#     re-admit the tests/ and evidence/ prose the greps below exclude by name. The
 #     `:(glob)` magic makes `*` stop at `/`, so the pathspec means what it reads as.
 #     `root-md-anchor-removed` in scripts/mutate-guard.sh mutates B4's matching anchor.
 mapfile -t SRC < <(
@@ -592,7 +1094,8 @@ mapfile -t SRC < <(
       find crates/*/src src book docs -type f \( -name '*.rs' -o -name '*.md' \) 2>/dev/null
     } | LC_ALL=C sort -u \
     | grep -vE '(^|/)(tests?|benches|examples)/' \
-    | grep -vE '^docs/specifications/' \
+    | grep -vE '^docs/specifications/archive/' \
+    | grep -vE '^docs/archive/' \
     | grep -vE '_tests?\.rs$|_test\.rs$|proptests?[_.]|/fixtures?/')
 
 
@@ -626,6 +1129,7 @@ dochits=$(grep -InE "^[[:space:]]*(///|//!)" "${SRC[@]}" 2>/dev/null \
 mdfiles=()
 for f in "${SRC[@]}"; do case "$f" in *.md) mdfiles+=("$f") ;; esac; done
 mdhits=""
+tablehits=""
 if [ "${#mdfiles[@]}" -gt 0 ]; then
     # PLACEHOLDER_RE is applied to MARKDOWN ONLY, deliberately. In .rs a bare
     # `TODO` is an ordinary code comment and SATD there is pmat's gate, not
@@ -634,6 +1138,10 @@ if [ "${#mdfiles[@]}" -gt 0 ]; then
     # an unfilled figure is read as a filled one.
     mdhits=$(grep -InE "$RATIO_RE|$TPUT_RE|$PLACEHOLDER_RE" "${mdfiles[@]}" 2>/dev/null \
              | grep -vE "$TARGET_RE" || true)
+    # THE TABLE CLASS. Needs its own pass because it is the only detector here
+    # that is not a pure LINE test: the competitor lives in the header row and
+    # the ratio in a cell below it. See TABLE_CELL_RATIO_RE.
+    tablehits=$(table_ratio_hits_in "." "${mdfiles[@]}" | grep -vE "$TARGET_RE" || true)
 fi
 
 # PERF-016: the causal class over .rs, print macro or not. See DIAGNOSIS_RE.
@@ -647,8 +1155,51 @@ fi
 # Deduped by file:line -- a literal caught by both the CLAIM_RE sweep and the
 # causal sweep is ONE finding, and counting it twice would corrupt the ratchet's
 # known/new tally.
-all=$(printf '%s\n%s\n%s\n%s\n' "$hits" "$dochits" "$mdhits" "$causalhits" \
+all=$(printf '%s\n%s\n%s\n%s\n%s\n' "$hits" "$dochits" "$mdhits" "$tablehits" "$causalhits" \
       | grep -v '^$' | awk -F: '!seen[$1":"$2]++' || true)
+
+# THE CITATION EXEMPTION, applied AFTER the match and BEFORE the baseline
+# comparison. See drop_receipted(). A hit whose line -- or the three lines
+# either side of it -- carries a RESOLVING `evidence/<path>` token is not a
+# finding at all: PP-12's rule is "legal iff it cites a receipt", and this is
+# the half of that conjunction this guard owns.
+exempted=0
+before_exempt=$(printf '%s\n' "$all" | grep -c . || true)
+all=$(printf '%s\n' "$all" | grep -v '^$' | drop_receipted "." || true)
+after_exempt=$(printf '%s\n' "$all" | grep -c . || true)
+exempted=$((before_exempt - after_exempt))
+printf 'receipted (cite a resolving evidence/ path, exempt): %s\n' "$exempted"
+
+# --update RE-DERIVES THE BASELINE MECHANICALLY, AND IT IS NOT A LOOPHOLE.
+#
+# The sibling guard has had this since PERF-010 and this one did not, so the
+# only way to record an aperture reveal here was to hand-transcribe a few
+# hundred `<path>:<line>` coordinates out of a FAIL log -- which is both
+# error-prone and, worse, invites transcribing them WRONG in the direction that
+# makes the guard quieter.
+#
+# It cannot launder anything, and the reason is structural rather than
+# procedural: --update only writes the file. The RATCHET still judges it on the
+# next run, against a ref this branch cannot rewrite, under `set-aperture` --
+# so every line this branch WROTE is still refused by name, and every admitted
+# line is still printed. What --update removes is transcription, not judgement.
+#
+# The hand-written header is PRESERVED verbatim. It carries the dated aperture
+# paragraphs that say WHY each growth was admitted, and a mode that rewrote
+# them from a printf would delete the only record of that reasoning.
+if [ "${1:-}" = "--update" ]; then
+    header=$(awk 'BEGIN{h=1} h==1 && ($0 ~ /^#/ || $0 ~ /^[[:space:]]*$/) {print; next} {h=0}' "$BASELINE" 2>/dev/null || true)
+    {
+        [ -n "$header" ] && printf '%s\n' "$header"
+        printf '%s\n' "$all" | grep -v '^$' \
+            | awk -F: '{print $1":"$2}' | LC_ALL=C sort -u
+    } > "$BASELINE.new"
+    mv "$BASELINE.new" "$BASELINE"
+    printf 'baseline written: %s entr(ies). The ratchet still judges it -- run the\n' \
+        "$(grep -cvE '^[[:space:]]*(#|$)' "$BASELINE" || true)"
+    printf '                  guard with no argument and read the set-aperture verdict.\n'
+    exit 0
+fi
 
 known=0
 new=0

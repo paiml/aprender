@@ -131,5 +131,17 @@
 
   "what_the_producer_refused": "Nothing. PRODUCER_RC=0. It refused no argument, aborted no band, and emitted no comparator ratio -- the last by design (SS4.7.1).",
 
-  "not_cited_deliberately": "A pre-flight figure near 0.278 at c=16, and the carried non-conformant [C] value 0.075, are NOT used as comparators anywhere above. The pre-flight number was N=1 assembled from two separate one-band runs, and the [C] figures are marked non-conformant to SS4.4 by the spec itself. This cell reports what it measured."
+  "not_cited_deliberately": "A pre-flight figure near 0.278 at c=16, and the carried non-conformant [C] value 0.075, are NOT used as comparators anywhere above. The pre-flight number was N=1 assembled from two separate one-band runs, and the [C] figures are marked non-conformant to SS4.4 by the spec itself. This cell reports what it measured.",
+
+  "corrections": [
+    {
+      "date": "2026-09-02",
+      "field": "binary_provenance_verified_before_the_run (receipt provenance.feature_set)",
+      "was": "the receipt's provenance.feature_set records ['cuda'], read as evidence about the binary that served the run",
+      "is": "provenance.feature_set is HARNESS-DECLARED, not observed. crates/apr-cli/src/commands/test_llm_band.rs:96 takes --server-feature and :217 writes it straight into the receipt as feature_set; evidence/perf-gate-001-w1-lambda/invocation.txt passes '--server-feature cuda'. A declared value passes any rule keyed on it whatever the build did.",
+      "evidence": "crates/apr-cli/src/commands/test_llm_band.rs:96 and :217; evidence/perf-gate-001-w1-lambda/invocation.txt. The engagement of the batch scheduler on this run is proved instead by the server's own output at evidence/perf-gate-001-w1-lambda/server-startup.txt:27-28 (CONTINUOUS BATCHING: max_batch=11), which is a server fact rather than a harness one.",
+      "consequence": "docs/specifications/PP-LLAMA-001-MASTER.md PP-13 makes a harness-declared server field schema-fatal, and its section 9 defect 8 re-keys INVALID-BUILD onto server_config.build_features_cli from GET /v1/effective-config (PP-2). evidence/parity/LEDGER.md accordingly lists this cell's feature_set under what_it_lacks rather than as provenance.",
+      "appended_by": "PP-LLAMA-001 (docs/specifications/PP-LLAMA-001-MASTER.md). Evidence is append-only: nothing above is edited."
+    }
+  ]
 }

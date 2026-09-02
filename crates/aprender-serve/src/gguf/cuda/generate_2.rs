@@ -249,6 +249,9 @@ impl OwnedQuantizedModelCuda {
         extract_first_token: bool,
     ) -> Result<Option<u32>> {
         if prefill_count == 0 {
+            // No prefill PHASE ran. `None`, not `Some(0.0)`: a zero would be
+            // read as "prefill was instantaneous" and would enter a ratio.
+            self.last_phase_timings.prefill_ms = None;
             if trace {
                 eprintln!("[TRACE-PREFILL] Single token prompt, no prefill needed");
             }
@@ -281,12 +284,15 @@ impl OwnedQuantizedModelCuda {
         // keep the fast batched path unchanged. Explicit BATCHED_PREFILL=1 still
         // forces batched for A/B testing the deeper KV-scatter root-cause fix.
         // Contract: contracts/apr-cpu-vs-gpu-output-parity-v1.yaml (FALSIFY-CPU-GPU-009).
-        let is_blackwell = self.executor.gpu_profile.cc >= 120;
-        let use_batched = match std::env::var("BATCHED_PREFILL").as_deref() {
-            Ok("0") => false,
-            Ok(_) => true, // explicit opt-in forces batched even on Blackwell
-            Err(_) => !is_blackwell,
-        };
+        //
+        // PP-LLAMA-001 §9 #1: the predicate is no longer inline. It lives in
+        // `gpu_profile::select_prefill_path`, is resolved ONCE into the
+        // profile, and is the same answer `/v1/effective-config` reports and
+        // the multi-prompt guard in `generate_batched_streaming` enforces —
+        // so the endpoint cannot say `batched` about a serial run.
+        let choice = self.executor.gpu_profile.prefill_path();
+        let use_batched = choice.path == crate::cuda::gpu_profile::PrefillPath::Batched;
+        announce_prefill_path(choice);
 
         let prefill_start = std::time::Instant::now();
 
@@ -294,11 +300,12 @@ impl OwnedQuantizedModelCuda {
             for (pos, &token_id) in prompt.iter().enumerate().take(prefill_count) {
                 let _ = self.forward_gpu_resident(token_id, cache, pos)?;
             }
+            let elapsed = prefill_start.elapsed();
+            self.last_phase_timings.prefill_ms = Some(elapsed.as_secs_f64() * 1000.0);
             if trace {
                 eprintln!(
                     "[TRACE-PREFILL] Serial prefill: {} tokens in {:?}",
-                    prefill_count,
-                    prefill_start.elapsed()
+                    prefill_count, elapsed
                 );
             }
             return Ok(None);
@@ -389,12 +396,17 @@ impl OwnedQuantizedModelCuda {
                 reason: format!("Workspace restore failed: {e}"),
             })?;
 
+        let elapsed = prefill_start.elapsed();
+        // §3: the numerator of `prefill_tok_per_sec`. Recorded on `self` rather
+        // than printed, because a stderr line is not on the wire and §7.2 gates
+        // `prefill_ratio` at c=1 off a receipt field.
+        self.last_phase_timings.prefill_ms = Some(elapsed.as_secs_f64() * 1000.0);
         if trace {
             eprintln!(
                 "[TRACE-PREFILL] Batched prefill: {} tokens in {:?} ({:.1} tok/s){}",
                 prefill_count,
-                prefill_start.elapsed(),
-                prefill_count as f64 / prefill_start.elapsed().as_secs_f64(),
+                elapsed,
+                prefill_count as f64 / elapsed.as_secs_f64(),
                 if first_token.is_some() { " [+LM head]" } else { "" },
             );
         }
@@ -632,6 +644,12 @@ impl OwnedQuantizedModelCuda {
         prompt: &[u32],
         config: &QuantizedGenerateConfig,
     ) -> Result<Vec<u32>> {
+        // PP-LLAMA-001 §3 / PP-2: phase timings belong to THIS request. A
+        // prefix-cache hit skips `run_prefill`, so without this reset the hit
+        // would inherit the previous request's `prefill_ms` and the server-
+        // reported `timings.prompt_ms` that feeds the c=1 `prefill_ratio`
+        // would be fabricated. None, never a stale number.
+        self.last_phase_timings = crate::api::PhaseTimings::default();
         if prompt.is_empty() {
             return Ok(Vec::new());
         }
@@ -768,6 +786,12 @@ impl OwnedQuantizedModelCuda {
     ) -> Result<super::super::logprobs::GenerateResult> {
         use super::super::logprobs::{GenerateResult, TokenLogprob};
 
+        // PP-LLAMA-001 §3 / PP-2: phase timings belong to THIS request. A
+        // prefix-cache hit skips `run_prefill`, so without this reset the hit
+        // would inherit the previous request's `prefill_ms` and the server-
+        // reported `timings.prompt_ms` that feeds the c=1 `prefill_ratio`
+        // would be fabricated. None, never a stale number.
+        self.last_phase_timings = crate::api::PhaseTimings::default();
         if prompt.is_empty() {
             return Ok(GenerateResult { tokens: Vec::new(), logprobs: Vec::new() });
         }
@@ -1075,4 +1099,23 @@ impl OwnedQuantizedModelCuda {
         };
         Ok(ppl)
     }
+}
+
+/// PP-LLAMA-001 §9 #1: state, once per process, which prefill path is in force.
+///
+/// The path is resolved once in `GpuProfile::detect` and cannot change while the
+/// process runs, so one line is the whole fact — and a per-request line would be
+/// one per request at 100+ requests per band. Unconditional (not behind
+/// `trace`), because a receipt that cannot witness which prefill ran cannot
+/// distinguish the PMAT-810 Blackwell corruption from a healthy run.
+fn announce_prefill_path(choice: crate::cuda::gpu_profile::PrefillPathChoice) {
+    static ANNOUNCED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
+    ANNOUNCED.get_or_init(|| {
+        eprintln!(
+            "[PREFILL-PATH] {} cc={} ({})",
+            choice.path.as_str(),
+            choice.cc,
+            choice.reason
+        );
+    });
 }

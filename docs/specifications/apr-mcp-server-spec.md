@@ -21,7 +21,7 @@
 
 ## Problem
 
-Aprender ships a 58-subcommand CLI (`apr`) with structured `--json` output on most commands (57 commands pre-MCP plus `apr mcp` itself, added 2026-04-17 per PR #864). It achieves 1.43× Ollama decode perf at 128 tokens. But no agentic tool (Claude Code, Cursor, Cline, Aider, Continue) can invoke it without MCP.
+Aprender ships a 58-subcommand CLI (`apr`) with structured `--json` output on most commands (57 commands pre-MCP plus `apr mcp` itself, added 2026-04-17 per PR #864). Its single-stream decode is measured, paired against `llama.cpp`, in `evidence/parity-http/findings.json` — the only comparator figure this document will point at, and it is a figure the reader can open. No ratio is restated here (PP-LLAMA-001 §2.1, PP-12). But no agentic tool (Claude Code, Cursor, Cline, Aider, Continue) can invoke it without MCP.
 
 Every competitor tool with ecosystem momentum in early 2026 is addressable via MCP — except the local-inference tier. Ollama, llama.cpp, and Unsloth all lack first-party MCP servers. Shipping `apr mcp` first occupies that slot.
 
@@ -273,9 +273,9 @@ MCP is Anthropic's **client-tool protocol** (Directions 1–3 above). The Messag
 
 ### Default model — Qwen3-Coder-30B-A3B-Instruct (Q4_K_M GGUF)
 
-MoE: 30.5B total / 3.3B active parameters. Apache 2.0. Released 2025-04-29 (Qwen3 family). Q4_K_M GGUF ~18.6 GB on-disk — fits 24 GB VRAM (RTX 4090) with headroom for KV cache. Measured ~196 tok/s on reference hardware (4090, realizar fused Q4K + FlashDecoding path).
+MoE: 30.5B total / 3.3B active parameters. Apache 2.0. Released 2025-04-29 (Qwen3 family). Q4_K_M GGUF ~18.6 GB on-disk — fits 24 GB VRAM (RTX 4090) with headroom for KV cache. No decode rate is stated for this model: no run under `evidence/` has ever measured it, and a rate nobody can dereference is a claim, not a specification (PP-12).
 
-Rationale for **MoE over dense**: active-param count (3.3B) governs decode latency; total-param count (30.5B) governs reasoning capacity. MoE buys both cheaply. Q4_K_M is already the format that establishes aprender's 1.43× Ollama parity (on Qwen2.5-1.5B Q4_K_M) — no new kernels required. Hugging Face canonical: `Qwen/Qwen3-Coder-30B-A3B-Instruct`; pre-quantized GGUF: `unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF`.
+Rationale for **MoE over dense**: active-param count (3.3B) governs decode latency; total-param count (30.5B) governs reasoning capacity. MoE buys both cheaply. Q4_K_M is already the quantisation the CUDA Q4K/Q6K kernels are written against (`crates/aprender-serve/src/cuda/`), so selecting it as the default adds no new kernel work. No parity ratio is asserted for that choice: none has been measured on this model. Hugging Face canonical: `Qwen/Qwen3-Coder-30B-A3B-Instruct`; pre-quantized GGUF: `unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF`.
 
 **Fallback chain** (applied when `--model` is omitted and the preferred cache entry is missing):
 1. `unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF:Q4_K_M` (coder-specialized)

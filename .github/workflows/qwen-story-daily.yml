@@ -38,12 +38,27 @@ concurrency:
 jobs:
   story:
     name: Qwen story (apr-cli E2E)
-    # No self-hosted runner carries a bare `gpu` label (the retired lambda-labs-gpu
-    # runner did; it was never replaced). Target the CUDA x86 GPU pool instead —
-    # `cuda` + `X64` resolves to the RTX 4090 runner that actually holds the Qwen
-    # model registry this story exercises. Do NOT use `gpu` (matches nothing → the
-    # cron silently queued+cancelled daily). See feedback_ci_clean_room_label.
-    runs-on: [self-hosted, cuda, X64]
+    # THE SELECTOR NAMED A POOL THAT NO LONGER EXISTS. `[self-hosted, cuda, X64]`
+    # resolved to the RTX 4090 lambda-labs runner, which aprender#2740 /
+    # paiml/infra#359 REMOVED ("lambda-labs is the workstation and must never be
+    # a CI host"). Nothing else in the org carries `cuda` + `X64`: the live
+    # inventory is one gx10-blackwell runner and sixteen intel clean-room
+    # runners. So this cron has queued and been cancelled every day since
+    # 2026-08-30 — a dark lane, and exactly the failure the previous comment here
+    # warned about, arriving from the other direction.
+    #
+    # gx10 is the fleet's only sanctioned GPU runner. Its labels are literal, not
+    # a matrix expression, because paiml/infra#352 requires a selector that can
+    # reach gx10 to name `gpu` and a guard can only check labels it can see.
+    runs-on: [self-hosted, gpu, gx10, cuda, blackwell]
+    # PP-19 / §5.4: this job now contends gx10 with cuda-nightly and
+    # silicon-nightly, so it joins their host group. Groups are repo-wide, so the
+    # shared name is what serialises the three. The workflow-level
+    # `qwen-story-daily` group above still keeps this lane from overlapping
+    # itself. Enforced by scripts/check_perf_concurrency_groups.sh.
+    concurrency:
+      group: perf-gx10
+      cancel-in-progress: false
     timeout-minutes: 30
     env:
       # Default to the runner user's $HOME/models (the models live there, e.g.

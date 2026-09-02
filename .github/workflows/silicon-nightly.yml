@@ -76,6 +76,15 @@ jobs:
 
   aarch64-cuda-sm121:
     if: ${{ github.event_name != 'workflow_dispatch' || inputs.axis == 'all' || inputs.axis == 'aarch64-cuda-sm121' }}
+    # PP-19 / §5.4. gx10 has two CI consumers — this job at 03:30 UTC and
+    # cuda-nightly's `falsifiers` at 01:30 UTC, both with 90-minute timeouts and
+    # cuda-nightly regularly starting late after queue delay, so overlap is
+    # reachable. GitHub concurrency groups are REPO-WIDE, so naming the same
+    # `perf-gx10` group in both workflows is what serialises them; this job had
+    # no group at all. Enforced by scripts/check_perf_concurrency_groups.sh.
+    concurrency:
+      group: perf-gx10
+      cancel-in-progress: false
     # LITERAL LABELS, not a matrix expression. paiml/infra#352 requires any
     # selector that can reach gx10 to name `gpu`, and a guard can only check
     # labels it can see — labels hidden behind `${{ }}` are invisible to it.

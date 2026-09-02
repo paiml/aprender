@@ -139,30 +139,19 @@ CLAIM_RE="($RATIO_THEN_WORD)|($WORD_THEN_RATIO)"
 # than either.
 TARGET_RE='([Tt]arget|[Tt]hreshold|[Gg]oal|[Ee]xpect|[Rr]equire|spec |SPEC|PASS:|FAIL:|>=|<=|[><] *[0-9])'
 
-# The citation token, and the window it may appear in.
+# THE CITATION TOKEN, THE WINDOW, AND THE RESOLVER NOW LIVE IN ONE FILE.
 #
-# WINDOW = the claim's line, plus three lines either side. Three is not a round
-# number chosen for looking careful: it is the shortest window that covers the
-# three shapes citations actually take in this repo's markdown — in-row for a
-# table, in the following sentence for prose, and on the line under a fenced
-# block. Both edges are pinned by the case table (rows 9 and 10), so widening it
-# later requires re-running the table rather than re-reading this comment.
-RECEIPT_RE='evidence/[A-Za-z0-9._+-]+(/[A-Za-z0-9._+-]+)*'
-WINDOW=3
-
-# Resolve every receipt token in a block of text; print each as
-# "<path> <exists|missing>". Trailing markdown punctuation is stripped, so a
-# citation inside `[...](../evidence/x/y.json)` or backticks resolves.
-resolve_citations() {
-    local root="$1"
-    local text="$2"
-    local tok p
-    printf '%s\n' "$text" | grep -oE "$RECEIPT_RE" 2>/dev/null | while IFS= read -r tok; do
-        p="${tok#"${tok%%evidence/*}"}"
-        p=$(printf '%s' "$p" | sed 's/[])`",.;:]*$//')
-        if [ -e "$root/$p" ]; then printf '%s exists\n' "$p"; else printf '%s missing\n' "$p"; fi
-    done
-}
+# `RECEIPT_RE`, `WINDOW` and `resolve_citations()` were defined here. They are
+# now defined ONCE in scripts/lib/perf_claim_cite.sh, because PP-12's rule --
+# "a number in README.md/book/docs/ is legal iff it cites an evidence/ receipt
+# path" -- is a CONJUNCTION over BOTH guards, and check_no_claim_literals.sh
+# now needs the identical definition to run its citation EXEMPTION. Two copies
+# of a matching rule drift, and the drift is invisible precisely because each
+# guard keeps passing against its own copy. Behaviour here is unchanged; the
+# case table below re-proves the window and the existence check either way.
+PERF_CLAIM_CITE_LIB_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=scripts/lib/perf_claim_cite.sh
+. "${PERF_CLAIM_CITE_LIB_ROOT}/scripts/lib/perf_claim_cite.sh" || exit 2
 
 # scan_file <root> <relpath> -> one record per claim:
 #     <relpath>:<line>:<uncited|dangling>:<text>
