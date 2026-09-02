@@ -100,7 +100,16 @@ jobs:
     # that names no step. Job 95162862834 died exactly on the 85-minute mark this
     # way. The step timeout must be the one that can fire, because it points at
     # the step; the job timeout is the backstop behind it.
-    timeout-minutes: 100
+    # 150, not 100 (2026-09-02, PMAT-742): run 33664039826's workspace-test was
+    # killed at the 100-minute wall with ZERO failing tests, still inside the
+    # Integration step, while the same box ran the pr-review-receipt mutation
+    # sweep (100+ min), the guard job, four book jobs and the reusable workflow's
+    # seven. Over-subscription is the fleet's intended headroom, so a required
+    # check must not be a wall-clock assertion that the neighbours decide
+    # (feedback_no_wallclock_in_required_checks); #2811 raises this for the
+    # same reason. Successful runs measure 46-64 min; the limit sits above
+    # the worst contended run, and a hang still fails at the step timeout.
+    timeout-minutes: 150
     env:
       IMAGE: localhost:5000/sovereign-ci:stable
       PR_OR_REF: ${{ github.event.pull_request.number || github.ref_name }}
@@ -309,7 +318,7 @@ jobs:
         # ([profile.ci]: retries=0, fail-fast). line-tables-only debuginfo now
         # comes from root Cargo.toml [profile.test]; the CARGO_PROFILE_*_DEBUG
         # env vars are kept as belt-and-suspenders.
-        timeout-minutes: 75
+        timeout-minutes: 110
         run: |
           docker run --rm \
           -e CI -e GITHUB_ACTIONS -e GITHUB_REF -e GITHUB_SHA -e GITHUB_REPOSITORY -e GITHUB_RUN_ID -e GITHUB_EVENT_NAME -e GITHUB_WORKFLOW \
