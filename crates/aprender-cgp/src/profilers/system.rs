@@ -236,32 +236,74 @@ mod tests {
         let _ = read_cpu_temperature();
     }
 
-    /// If nvidia-smi is available, system health must have valid data.
-    #[test]
-    fn test_system_health_with_gpu() {
-        if which::which("nvidia-smi").is_err() {
-            return; // skip on machines without GPU
+    /// How many GPUs `nvidia-smi` actually REPORTS -- not whether the binary exists.
+    ///
+    /// `which::which("nvidia-smi").is_ok()` was the precondition for both GPU tests below,
+    /// and it is the wrong question. The intel clean-room runner has the NVIDIA userland
+    /// installed and no visible device, so `nvidia-smi` resolves, the tests decided a GPU
+    /// was present, the collectors correctly returned `None`, and Coverage Nightly failed
+    /// with "nvidia-smi exists but no health data" -- a red build reporting an ENVIRONMENT
+    /// fact as a code defect. A binary on `PATH` is not a device on the bus.
+    fn gpus_reported() -> usize {
+        let Ok(out) = std::process::Command::new("nvidia-smi")
+            .args(["--query-gpu=name", "--format=csv,noheader"])
+            .output()
+        else {
+            return 0; // not installed, or not executable: no device either way
+        };
+        if !out.status.success() {
+            return 0; // installed, but the driver has nothing to report
         }
-        let health = collect_system_health();
-        assert!(health.is_some(), "nvidia-smi exists but no health data");
-        let h = health.unwrap();
-        assert!(h.gpu_temperature_celsius > 0.0, "GPU temp should be > 0");
-        assert!(
-            h.gpu_memory_total_mb > 0.0,
-            "GPU memory total should be > 0"
-        );
+        String::from_utf8_lossy(&out.stdout)
+            .lines()
+            .filter(|l| !l.trim().is_empty())
+            .count()
     }
 
-    /// If nvidia-smi is available, VRAM must have valid data.
+    /// When a GPU IS reported, the collectors must return sane data.
+    ///
+    /// Paired with `test_gpu_collectors_are_none_without_a_reporting_gpu` so that exactly
+    /// one of the two is meaningful on any given box and NEITHER is vacuous: a machine
+    /// with a GPU proves the parse works, a machine without one proves the absence path
+    /// returns `None` instead of panicking or fabricating a reading.
     #[test]
-    fn test_vram_with_gpu() {
-        if which::which("nvidia-smi").is_err() {
+    fn test_gpu_collectors_have_valid_data_when_a_gpu_is_reported() {
+        if gpus_reported() == 0 {
+            eprintln!(
+                "skip: nvidia-smi reports no GPU on this host; the paired negative test covers it"
+            );
             return;
         }
-        let vram = collect_vram();
-        assert!(vram.is_some(), "nvidia-smi exists but no VRAM data");
-        let v = vram.unwrap();
-        assert!(v.vram_total_mb > 0.0, "VRAM total should be > 0");
-        assert!(v.vram_utilization_pct >= 0.0 && v.vram_utilization_pct <= 100.0);
+        let health = collect_system_health().expect("a reporting GPU must yield health data");
+        assert!(
+            health.gpu_temperature_celsius > 0.0,
+            "GPU temp should be > 0"
+        );
+        assert!(
+            health.gpu_memory_total_mb > 0.0,
+            "GPU memory total should be > 0"
+        );
+
+        let vram = collect_vram().expect("a reporting GPU must yield VRAM data");
+        assert!(vram.vram_total_mb > 0.0, "VRAM total should be > 0");
+        assert!(vram.vram_utilization_pct >= 0.0 && vram.vram_utilization_pct <= 100.0);
+    }
+
+    /// When no GPU is reported, the collectors must return `None` -- never a fabricated
+    /// zero, and never a panic. This is the half that runs in the clean room.
+    #[test]
+    fn test_gpu_collectors_are_none_without_a_reporting_gpu() {
+        if gpus_reported() > 0 {
+            eprintln!("skip: this host reports a GPU; the paired positive test covers it");
+            return;
+        }
+        assert!(
+            collect_system_health().is_none(),
+            "with no GPU reported, health must be None rather than a fabricated reading"
+        );
+        assert!(
+            collect_vram().is_none(),
+            "with no GPU reported, VRAM must be None rather than a fabricated reading"
+        );
     }
 }
