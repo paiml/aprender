@@ -1445,13 +1445,29 @@ jobs:
             export PATH="$CARGO_INSTALL_ROOT/bin:$PATH"
           fi
           cargo deny --version
+      # Both steps fetch RustSec/advisory-db with git, on the HOST. Anonymous git
+      # from this host's egress IP is throttled by GitHub (2026-09-02: the second
+      # fetch of the same job died while the first had answered), so the fetch
+      # carries the job token through git's per-process GIT_CONFIG_* environment.
+      # Never `git config --global`: that lands in the ~/.gitconfig all 16
+      # runners share and made every later checkout answer HTTP 400.
       - name: Advisories must pass, with deny.toml exemptions honoured
-        run: cargo deny check advisories
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          export GIT_TERMINAL_PROMPT=0 GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.https://github.com/.extraheader
+          export GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 | tr -d '\n')"
+          cargo deny check advisories
       # Separate from the check above on purpose: a newly-FIXED upstream must
       # never fail anyone's build. It fails only this guard, whose remedy is
       # deleting a line.
       - name: Every deny.toml exemption must still be live
-        run: bash scripts/check_deny_exemptions_live.sh
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          export GIT_TERMINAL_PROMPT=0 GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.https://github.com/.extraheader
+          export GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 | tr -d '\n')"
+          bash scripts/check_deny_exemptions_live.sh
       # cargo-deny and cargo-audit read ONE database: RustSec. GHSA (what
       # Dependabot reads) is a superset, and when an advisory lives only there
       # every gate above is green while the crate sits in Cargo.lock. #2531:

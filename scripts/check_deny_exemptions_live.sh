@@ -65,7 +65,8 @@ if [ "$dead" -gt 0 ]; then
 fi
 
 if [ "$rc" -ne 0 ]; then
-  printf '\nFAIL: `cargo deny check advisories` exited %s.\n' "$rc"
+  printf '\nFAIL: `cargo deny check advisories` exited %s. Its last lines:\n' "$rc"
+  tail -n 8 "$LOG" | sed 's/^/      /'
   tail -20 "$LOG" | sed 's|^|  |'
   exit "$rc"
 fi
