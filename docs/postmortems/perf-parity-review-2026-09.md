@@ -55,3 +55,45 @@ under its bar.
 It is not a precision measurement of the arm, and §8 still owes 30 samples before any threshold
 is set from it.
 
+
+---
+
+## Round 4 — `agy /teamwork`, and the three forks the team did not resolve
+
+A three-role adversarial team (systems architect, performance engineer, QA/release) was pointed
+at the revision after rounds 2 and 3. It found three defects — all applied to the spec — and
+split three ways on questions that are judgement, not fact. The splits are recorded here rather
+than averaged away in the spec, because a spec that hides its live disagreements is how a
+premise survives that nobody actually believes.
+
+### What it found (applied)
+
+**The two-term decomposition was stated wrong.** §10 claimed `agg_ratio ÷ dec_ratio` at c=1
+*is* the prefill-plus-overhead share, isolated. Expand it and it is
+`(apr_agg/apr_dec) ÷ (llama_agg/llama_dec)` — the ratio of the two servers' **own** overhead
+fractions. If both spend the same share outside decode it returns 1.0 while saying nothing about
+how many milliseconds that share is. The absolute is the per-lane term `agg ÷ dec`, which needs
+no ratio at all. Both are now recorded; a decomposition that only ever appears as a quotient
+cannot tell you which lane moved. *This defect was introduced by the round-2 fix for B-13.*
+
+**PP-24 defined an unpassable band.** If `apr serve` caps admission at 11 because the KV budget
+on a 24 GB card cannot hold sixteen sequences, then c=16 was `admission_capped` forever, the
+§12 expiry rule turned that into `FAIL`, and the cell blocked every release with no legal move
+available. The band ladder is now *derived* from what both lanes admit, and a deliberate,
+server-reported ceiling yields `NOT_APPLICABLE` with `decided_by` rather than a permanent
+`UNMEASURED`. **This is the third rule in this document to have outlawed its own remedy**, and
+the first to have done so by making a state unreachable rather than by rejecting a change.
+
+**A pinned argv and a per-band concurrency are not compatible.** §5.2 pinned the comparator's
+full argv; PP-8 requires its concurrency to equal the band's `c`; §6.1b records that the
+comparator is started once, outside the band loop. Pinning harder guarantees the violation. The
+pin is now a per-band **template** and the comparator is relaunched once per band.
+
+### Where the team split, and which side the spec takes
+
+| fork | the two sides | the spec's position |
+|---|---|---|
+| **§2.1: withdraw in place, or delete?** | *Delete* — people skim; a banner will not stop "apr is 10× slower" being quoted from a build with batching compiled out. *Retain* — the asymmetric gate is derived from understanding why that number happened, and the corpse on display is what stops the repeat | **Retain**, and the dissent is real: if the figure is ever cited outside its banner, that is evidence for deleting it and the decision should be revisited, not defended |
+| **DESIGNED-NOT-ARMED: theater, or contract?** | *Theater* — an 800-line normative document that says its own gate is not implementable gates nothing. *Contract* — the harness does not exist yet and the producer needs a specification to build against, or it will build the wrong one | **Contract**, conditionally: §7 has an owner and an expiry like any other unmeasured item, and if order 1 of §12 slips, "not armed" stops being a phase and becomes the objection |
+| **Roofline or parity as the epic's target?** | *Roofline* — 10.6% of memory bandwidth is objective, single-host, needs no second server, and fixing it yields parity for free. *Parity* — roofline is a theoretical ceiling llama.cpp may itself be far below on this chip; binding the epic to it risks a research project | **Both, with different jobs**: roofline is a bug-finding instrument (PP-23 changes *status*, never a verdict), parity is the product claim. §9 #1 is worked first because it is the only live sized finding, not because roofline replaces parity |
+| **§12: serialize behind the comparator lane, or parallelize?** | *Serialize* — optimizing without a trusted instrument is what produced the §2.1 withdrawal. *Parallelize* — a seven-step tooling chain pushes user-visible speed months out | **Neither, as posed**: the chain gates what may be **claimed**, not what may be **investigated**. Profiling, kernels and single-host fixes proceed today; ratios wait for order 1 |

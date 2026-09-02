@@ -1,6 +1,6 @@
 # Performance parity with llama.cpp — inference
 
-**Status:** REVIEWED DRAFT — quorum + `agy /teamwork`, an external audit, then an independent cross-vendor re-review of the revision itself; **rules changed by review in all three rounds**, the last of which found the audit's own fixes had introduced a scheduling deadlock (§12) and three wrong IDs in the appendix that documents ID stability (post-mortem: [`docs/postmortems/perf-parity-review-2026-09.md`](../postmortems/perf-parity-review-2026-09.md)) · **Date:** 2026-09-02 · **Tree:** `origin/main` `b7bfcafa1`
+**Status:** REVIEWED DRAFT — quorum + `agy /teamwork`, an external audit, an independent cross-vendor re-review of the revision, then a three-role adversarial team round; **rules changed by review in all four rounds**, the last two of which found that the audit's own fixes had introduced a scheduling deadlock (§12), three wrong IDs in the appendix that documents ID stability, a misstated decomposition (§10), and a band no device could pass (PP-24) (post-mortem: [`docs/postmortems/perf-parity-review-2026-09.md`](../postmortems/perf-parity-review-2026-09.md)) · **Date:** 2026-09-02 · **Tree:** `origin/main` `b7bfcafa1`
 **Supersedes:** epic #2706 (APR-PERF-GATE-001) and **fifteen** documents across four repositories (§11).
 **Scope:** the *only* specification governing inference performance of models in this project.
 
@@ -278,7 +278,17 @@ the band's `c`, and the obvious fix — appending `-np {c}` — makes the compar
 `llama-server` divides `-c` across `-np` slots, so `-np 16 -c 4096` leaves 256 tokens per slot
 and W1's 512 + 128 no longer fits. `[U]` — verify against the pinned commit's server README.
 
-So the contract is: the **full argv** lives in `llama_pin.toml` with `-c` scaled by `c`;
+**A single pinned argv and a per-band concurrency are not compatible, and PP-8 needs both.**
+§6.1b records that `parity_host_receipt.sh` starts the comparator *once, outside* the band loop,
+so its slot count is fixed while apr's concurrency runs 1 → 16. Pinning one argv harder does not
+fix that — it guarantees it. **The pin is a template, and the comparator is relaunched once per
+band**, with `{c}` substituted into `-np` and `-c` together; one server process per band, not
+one per cell. A comparator held at one slot count across four bands makes three of the four
+ratios a comparison between different configurations, which PP-22 would refuse if the mismatch
+were declared and does not catch because it is not.
+
+So the contract is: the **full argv** lives in `llama_pin.toml` as a per-band template with
+`-np {c}` and `-c` scaled by `c`;
 `n_ctx_slot ≥ 640` is asserted; every default that moved in llama.cpp during 2026 is pinned
 explicitly (`-fa`, `-b`/`-ub`, `--cache-type-k`/`-v`, `-cb`, slot-save off); and a `GET /props`
 snapshot from the running server is stored in the receipt — **the comparator's own PP-2**.
@@ -355,7 +365,7 @@ under PP-9.
 | **PP-21** | **The receipt's signature is valid AND `receipt.commit ⊇ commit-under-test`.** Re-adopted from v2.2 I-10; PP-18's ancestor rule is the weaker half of this and does not replace it | sign a receipt for a commit the PR does not contain |
 | **PP-22** | **A join-key mismatch — host, workload, band, quantization, `tokenization` — refuses the ratio rather than computing one.** Re-adopted from v2.2 I-11 | join a c=4 subject against a c=16 comparator; the ratio must be refused, not produced |
 | **PP-23** | **`roofline_tok_per_sec` is recorded, computed from a MEASURED device bandwidth and the model's byte size.** Above roofline is schema-fatal (a harness bug); below 25% flags `SUSPECT_DISPATCH` and blocks the cell from `MEASURED` — a status change, never a verdict. **The 25% is not a P-1 violation:** P-1 bans a literal on the *ratio to the comparator*, which is where a target would be laundered into a threshold. This is a fraction of a *physical ceiling on the same device*, it names no target, and no verdict turns on it — it decides only whether a reading is believable enough to be called measured | record a decode rate above the ceiling; separately, record gx10's 6.203 tok/s (10.6% of roofline, #2846) and require SUSPECT_DISPATCH |
-| **PP-24** | **`server.max_in_flight ≥ c` on BOTH lanes, server-reported.** Otherwise the band is `UNMEASURED` with reason `admission_capped`, naming which server capped and by how much | run c=16 against a subject admitting 11; the band must refuse, not average |
+| **PP-24** | **`server.max_in_flight ≥ c` on BOTH lanes, server-reported.** A transient mismatch is `UNMEASURED` reason `admission_capped`, naming which server capped and by how much; a *deliberate, server-reported* capacity limit is `NOT_APPLICABLE` with `decided_by` — never a band the device cannot hold expiring into `FAIL` (§6.1c) | run c=16 against a subject admitting 11; the band must refuse, not average — and a subject whose KV budget reports a ceiling of 11 must yield NOT_APPLICABLE, not a permanent UNMEASURED |
 
 ### §6.1a Three findings from the final review round
 
@@ -422,8 +432,28 @@ subject's aggregate by 16/11 would be arithmetic on a number the harness never m
 re-running at c=11 would be a different band. Both are answers to a question the run cannot
 answer, and §7's three-valued status exists precisely so that "we do not know" is sayable.
 
+**A band the hardware refuses is `NOT_APPLICABLE`, never a permanent `UNMEASURED`.** As first
+written this rule was unpassable: if `apr serve` caps admission at 11 because the KV budget on a
+24 GB card cannot hold sixteen sequences, then c=16 is `admission_capped` forever, the expiry
+rule in §12 turns that into `FAIL`, and the cell blocks every release with no legal move
+available — the exact dead state §7's three-valued status exists to avoid.
+
+So the two cases are separated by **who decided**:
+
+| the cap is | status | what it means |
+|---|---|---|
+| a *transient* mismatch — one lane misconfigured, a stale pin, a flag not forwarded | `UNMEASURED`, reason `admission_capped` | fix the configuration and re-run; the band is still owed |
+| a *deliberate, server-reported* capacity limit — the KV budget for this model on this device does not reach `c` | `NOT_APPLICABLE`, with `decided_by` and the reported budget | the band is not owed on this cell, and never expires into `FAIL` |
+
+**The band ladder is therefore derived, not declared.** A cell's bands are `{c ∈ ladder : c ≤
+min(admission capacity of both lanes)}`, read from the two servers rather than typed into
+`perf-matrix.yaml`, and a cell that admits 11 is measured at c ∈ {1, 4, 8} and reports its
+ceiling. A ladder that demands a concurrency the device cannot hold is not a stricter
+specification; it is one that cannot be satisfied, and this document has already shipped two of
+those.
+
 Its producer is §12.6's server-reported effective-config endpoint — the same one PP-2 needs —
-which is why 12.6 sits at order 4 in §12's chain and PP-24 cannot be armed before it.
+which is why 12.6 sits at order 3 in §12's chain and PP-24 cannot be armed before it.
 
 ### §6.2 The gate in §7 is not implementable today, and this is the blocking item
 
@@ -499,6 +529,20 @@ from real regressions, and the team routes around them.
 
 **The trigger is `agg_ratio ≥ 1.0`, in both §2.2 and here** — not "when batching lands", which
 is not an observable event. The receipt that first achieves it *is* the post-batching baseline.
+
+**The c=1 decode gate is a REGRESSION gate, not a parity floor, and the review round that caught
+this said the trap had merely moved.** The objection: continuous batching can add a fixed
+per-request cost that lowers c=1 decode while c=16 aggregate reaches parity — so an asymmetric
+gate with a c=1 *parity* floor would reject the batching PR at c=1 having been designed
+precisely to stop rejecting it at c>1. That is the same defect one band to the left, and it
+would be the third time.
+
+So at c=1 the gated comparison is against **apr's own previous release, outside the receipt's
+measured MDE** (§12.1a). The *parity* claim at c=1 stays REPORTING until §12.2 sizes single-
+stream against a conformant comparator lane. A change may lower c=1 decode within the MDE and
+merge; a change that lowers it beyond the MDE must say so and be argued, which is what a gate
+is for. Nothing here may arm before §12.1 — a gate on a metric with no captured σ is a coin
+flip, and this document has already shipped one of those.
 
 Plus: every cell in `perf-matrix.yaml` present, or `UNMEASURED` with owner and expiry.
 
@@ -610,11 +654,26 @@ because concurrent work on both confounds every run.
   **What is adopted instead:** per-phase **averages** (Σ ÷ n, which is what the ×c cancels to)
   and **device utilization**, neither of which requires a closed identity. Attribution is not
   refused — *summing* is. **The two-term paired decomposition is adopted now, not deferred to a
-  future amendment.** llama.cpp's `result_timings` already puts `prompt_per_second` and
-  `predicted_per_second` on the wire, and §7 notes that at c=1 aggregate includes prefill and
-  queue time while decode does not — so `agg_ratio ÷ dec_ratio` at c=1 (0.534 ÷ 0.587 in the
-  withdrawn run) *is* the prefill-plus-overhead share, isolated, using only the comparator's own
-  vocabulary. That is the diagnostic §9 #3 needs and it costs no additional measurement.
+  future amendment — and an earlier draft stated its meaning WRONG.** That draft said
+  `agg_ratio ÷ dec_ratio` at c=1 *is* "the prefill-plus-overhead share, isolated". It is not.
+  Expand it:
+
+  ```
+  agg_ratio ÷ dec_ratio = (apr_agg/llama_agg) ÷ (apr_dec/llama_dec)
+                        = (apr_agg/apr_dec) ÷ (llama_agg/llama_dec)
+  ```
+
+  which is **the ratio of the two servers' own overhead fractions**, not either server's
+  overhead. If both spend the same *share* of a request outside decode it returns 1.0 while
+  saying nothing about how many milliseconds that share is. It answers "is apr's non-decode
+  overhead a worse fraction of its own time than llama's is of its?" — a real paired question,
+  and the one §9 #3 needs a direction from — but it is not an absolute.
+
+  **The absolute is the per-lane term, and it needs no ratio at all**: `agg ÷ dec` on a single
+  lane is that lane's own overhead fraction, available from each server's `result_timings`
+  separately. Record both terms. The paired quotient is the comparison; the per-lane terms are
+  the measurements, and a decomposition that only ever appears as a quotient cannot tell you
+  which lane moved.
 - **It does not declare an iteration budget.** A declared budget with a retrospective five-whys
   is not a control; nothing in it can decline work.
 - **It does not claim the two levers are causally independent — and the arithmetic they rest on
@@ -708,7 +767,19 @@ seven obligations and four cells on the *same* date, which is a batch, not a flo
 | 4 | §12.7 an automated PP-18 ancestor check | **2026-10-16** | PP-18 stops being hand-enforced |
 | 4 | §12.8 the profile §7.1 is waiting on | **2026-10-16** | §7.1's target kernel |
 
-Order 1 is step zero: nothing later can start until the comparator lane exists. Each row's
+**The chain gates what may be CLAIMED, never what may be INVESTIGATED.** A review round split
+on exactly this — one side calling the serialization mandatory because the §2.1 withdrawal is
+what optimizing without a trusted instrument looks like, the other calling it a blocker that
+pushes real speed months out. Both are right about different things, and the resolution is that
+they are talking about different verbs.
+
+Nothing in this chain blocks profiling, `nsys`, a microbenchmark, a kernel rewrite, or a fix
+justified entirely by a **single-host** measurement — §9 #1 is comparator-free by construction
+and needs no row of this table. What the chain gates is the *ratio*: no comparator claim, no
+parity verdict, no published figure until order 1 exists. Work on the engine proceeds in
+parallel from today; what it may not do is announce a ratio.
+
+Order 1 is step zero for every ratio: no comparator claim can be made until the lane exists. Each row's
 `expires` in the table above is this column, and the two must not be maintained separately —
 an earlier draft did exactly that and the table said 2026-09-25 for obligations the chain did
 not schedule until 2026-10-16.
