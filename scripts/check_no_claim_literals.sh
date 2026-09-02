@@ -568,6 +568,18 @@ fi
 #     scope, and BEATS.md lines are in the baseline. Nobody installs apr and
 #     reads docs/specifications/. If a spec figure ever reaches a user surface it
 #     is caught THERE, which is the surface that matters.
+# (d) docs/archive/ IS EXCLUDED FOR EXACTLY THE REASON docs/specifications/ IS, and it
+#     had to be added the moment a spec was archived rather than deleted. Superseding
+#     APR-PERF-GATE-001 moved its v2.2 document from docs/specifications/ (excluded) to
+#     docs/archive/perf-2026-09-01/ (not), and that ONE MOVE turned nine lines RED --
+#     every one of them a figure the document QUOTES IN ORDER TO BAN, including
+#     `2.93x Ollama` and `36.9x`, the two this guard exists because of.
+#
+#     The rule is unchanged: a claim a USER READS is the defect. Nobody installs apr and
+#     reads an archive of superseded specifications; archiving is how this repository
+#     retires a document without deleting the record, and a guard that punishes the
+#     archive teaches people to delete instead. The live surfaces -- book/, docs/BEATS.md,
+#     README.md and shipped source -- are untouched by this line.
 # (c) book/ AND docs/ WERE NOT IN THE UNIVERSE AT ALL, which is the one that
 #     mattered most: §9's whole point is that a claim a USER READS is the
 #     defect, and book/ is where users read. Five live `2.93x Ollama` claims sat
@@ -579,6 +591,7 @@ mapfile -t SRC < <(
     } | LC_ALL=C sort -u \
     | grep -vE '(^|/)(tests?|benches|examples)/' \
     | grep -vE '^docs/specifications/' \
+    | grep -vE '^docs/archive/' \
     | grep -vE '_tests?\.rs$|_test\.rs$|proptests?[_.]|/fixtures?/')
 
 
