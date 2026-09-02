@@ -1169,6 +1169,77 @@ validate_receipt() {
       || reject B1 "pmat.symbols_searched must be a number; a scan whose needle count is unrecorded cannot have its precision judged, and record-only is not unenforced" || return 1
   fi
 
+  # --- S4.2: THE RUNS ARRAY IS NOT ALLOWED TO BE EMPTY. -----------------------
+  #
+  # Every result-level rule below is written `.runs[]? | .results[]?`. Over an EMPTY
+  # runs array each of them evaluates across the empty set and returns nothing to
+  # reject, so a findings.sarif of `{"version":"2.1.0","runs":[]}` took the whole of
+  # S1 and S4.2 -- the grounding marks, the failure_scenario rule, the cited-excerpt
+  # digest, precision_class, and B4's scan over the reviewer's findings -- to a silent
+  # PASS. Measured before this line existed: a row-14 receipt with `.runs = []`, its
+  # findings_ref.sha256 recomputed and re-signed, gave `rc=0 ACCEPT` while the SAME
+  # receipt still declared `verdict: FINDINGS` and five consultations `consulted`.
+  # The positive controls fired correctly in that run, so it was genuine vacuity and
+  # not a broken harness.
+  #
+  # This is the shape S8 already names `vacuous_consultations` and the one
+  # `pv lint <FILE>` has when it passes over zero contracts: a gate whose GREEN is a
+  # count of files rather than a verdict.
+  #
+  # THE RULE IS `>= 1`, DELIBERATELY, AND NOT S4.2's LITERAL "one runs[] entry per
+  # consultation". That sentence does not describe the corpus this guard was built
+  # against and enforcing it would refuse receipts the fixture table calls GREEN:
+  # row-07 is one `pmat` run beside `pmat` AND `antigravity` consulted, and row-06 is
+  # a `pmat` run beside a pmat that is `unreachable`. Measured over all 109 committed
+  # findings.sarif files: none has an empty runs array, so `>= 1` costs nothing it
+  # should not cost, and a stricter pairing rule is a scope change that ships with its
+  # own precision measurement or not at all.
+  jq -e '(.runs | type == "array") and (.runs | length) > 0' "$sarif" >/dev/null 2>&1 \
+    || reject B1 "findings.sarif carries no runs[]; every result rule below reads .runs[]?|.results[]? and evaluates over the empty set, so an empty runs array passes the whole of S1 and S4.2 vacuously (S8 vacuous_consultations)" || return 1
+
+  # --- S4.2: tool.driver.name is a CLOSED VOCABULARY, checked as a whitelist. -
+  #
+  # S13.13's post-mortem on eighteen forged receipts: every clause that FELL was a
+  # blacklist over a field and every clause that SURVIVED was a whitelist, and the
+  # difference was the direction of the test rather than the field or the care taken.
+  # So this asks whether the name is one of the five, never whether it is one of the
+  # bad spellings. An unrecognised driver name is how a run hides from a selector that
+  # looks for it by name -- the antigravity reader below is exactly such a selector,
+  # and `select(.tool.driver.name == "antigravity")` finds nothing if the run calls
+  # itself `Antigravity`, `agy`, or nothing at all.
+  #
+  # Measured over all 109 committed findings.sarif files: the names occurring are
+  # exactly pmat (98), antigravity (5), crux (4), nvidia-cuda-docs (3) and
+  # cargo-mutants (1), with no run missing the field. The vocabulary is S4.2's four
+  # plus S3.E's antigravity, which v2.4 added with the arm.
+  local bad_driver
+  # `. as $n` IS LOAD-BEARING. Written as `select([...] | index(.) == null)` the pipe
+  # rebinds `.` to the literal array, so `index(.)` asks whether the array contains
+  # ITSELF -- always null-free, so the clause matched nothing and a run renamed `Pmat`
+  # was ACCEPTED. It was caught by running the case table, not by reading the line.
+  # FAIL-CLOSED ON jq ITSELF. Assigning the substitution alone is fail-open: a jq type
+  # error prints nothing to stdout and leaves the variable empty, which reads as "no bad
+  # driver". The status is read from the command, and a non-zero jq is a REJECT.
+  bad_driver=$(jq -r '[ .runs[]? | (.tool.driver.name // "<absent>") ]
+      | map(select(. as $n | ["pmat","nvidia-cuda-docs","crux","cargo-mutants","antigravity"] | index($n) == null))
+      | join(", ")' "$sarif"); local jq_rc=$?
+  [ "$jq_rc" -eq 0 ] \
+    || reject B1 "findings.sarif could not be read for tool.driver.name (jq exited $jq_rc); a check that could not run is not a check that passed" || return 1
+  [ -z "$bad_driver" ] \
+    || reject B1 "findings.sarif carries a run whose tool.driver.name is outside { pmat, nvidia-cuda-docs, crux, cargo-mutants, antigravity }: $bad_driver; a run nothing can attribute is a run no selector reads (S4.2)" || return 1
+
+  # --- S4.2: a FINDINGS verdict has to carry a finding. -----------------------
+  #
+  # The receipt's verdict and the artifact it points at must not be able to disagree
+  # about whether anything was found. `verdict: FINDINGS` beside zero results is the
+  # same artifact as `verdict: PASS`, which makes the verdict field decorative on
+  # exactly the transition S7 reads to decide blocking. Measured over the corpus: no
+  # committed fixture declares FINDINGS with an empty result set.
+  if [ "$verdict" = "FINDINGS" ]; then
+    jq -e '[ .runs[]? | .results[]? ] | length > 0' "$sarif" >/dev/null 2>&1 \
+      || reject B1 "the verdict is FINDINGS and findings.sarif carries zero results; a verdict that names findings the artifact does not have is a verdict about nothing (S4.2)" || return 1
+  fi
+
   # --- S1 / S4.2: every claim carries a mark, and a cited mark is verified. --
   local v
   while IFS= read -r v; do

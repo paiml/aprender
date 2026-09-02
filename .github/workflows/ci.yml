@@ -1622,7 +1622,7 @@ jobs:
   #      check_guards_are_wired.sh scans for — a guard named in a comment is not
   #      wired. GREEN and RED together, because "refuse every receipt" reads
   #      green against RED fixtures alone.
-  #   2. the 40-row fixture table (§6.3's fourteen, the twelve PRREV-008 and
+  #   2. the 43-row fixture table (§6.3's fourteen, the twelve PRREV-008 and
   #      PRREV-009 added, S3.E's nine, and PRREV-020's two) under bats, positive
   #      controls included.
   #   3. the guard's own mutation set (§6.4). §8 fixes guard_mutation_score at
@@ -1719,12 +1719,12 @@ jobs:
 
       # Arm 2. Every row of §6.3, plus the positive controls, plus the
       # must-match/must-not-match tables behind the three trigger regexes. This
-      # file is 161 tests and was reachable from NO workflow until this job — the
+      # file is 165 tests and was reachable from NO workflow until this job — the
       # dark-target class this repository has hit with benches and with 58 cgp
       # tests. Both numbers here are recomputed by check_pr_review_counts.sh; the
       # commit that wired this step wrote 65 and 22 over a file that already held
-      # 161 tests and 37 rows.
-      - name: The 40-row fixture table and both polarities of every trigger regex
+      # 165 tests and 37 rows.
+      - name: The 43-row fixture table and both polarities of every trigger regex
         shell: bash
         run: bats tests/pr-review.bats
 
@@ -1735,7 +1735,7 @@ jobs:
       # wall time has been measured: 185/185 killed in 3091s (51.5 min) at
       # --jobs 12 on a 48-core box, 2026-08-30.
       #
-      # THE SET IS 225/225 TODAY — PRREV-015 added S3.E, PRREV-020 its availability
+      # THE SET IS 233/233 TODAY — PRREV-015 added S3.E, PRREV-020 its availability
       # rule and PRREV-019 the survivors-shape rule, one `reject B<n>` site each and
       # so two mutants each. So that wall time is a
       # LOWER BOUND and not a current measurement. It is left as the number that
@@ -1760,9 +1760,73 @@ jobs:
       # as a failure nobody can distinguish from a real one (#2792's cargo-audit
       # eviction, and "N runs cancelled at the SAME elapsed time is a timeout,
       # not a flake"). Raised to 120.
+      #
+      # AND A FOURTH: THIS STEP HAD NO `if:` AT ALL, so the full sweep ran on every
+      # pull request including docs-only ones -- while §3.D's own trigger table says
+      # the guard mutation set is required when the diff "touches scripts/check_*.sh,
+      # dogfood.sh, ci.yml gate logic, or a contracts/*.yaml falsifier" and that
+      # docs / non-code is "not triggered". CI contradicted the specification it
+      # enforces, and it was not a tidiness point: it is the queue. Measured
+      # 2026-09-01 -- three receipt jobs started within nine minutes of each other,
+      # the runner host's load average went 48 -> 133, and #2836's job was CANCELLED
+      # at exactly its 150-minute cap having proved nothing. A cancelled job reads as
+      # a failure nobody can distinguish from a real one.
+      #
+      # The decision is a SCRIPT with an 11-row case table, not an inline expression:
+      # this job's own Arm 4 post-mortem is that inline YAML is reachable from no test
+      # and its exit-0 branch passed every run it ever had. The table carries both
+      # polarities -- all seven sweep inputs must answer `yes`, and a docs-only and an
+      # unrelated-source diff must answer `no`, without which "always yes" reads green
+      # -- plus a fail-closed row and a row that fails when build_tree copies a path
+      # the list does not name.
+      - name: "Does this diff change anything the sweep reads? (§3.D trigger)"
+        id: sweep_needed
+        shell: bash
+        run: |
+          bash scripts/pr_review_sweep_needed.sh --self-test
+          BASE=$(git merge-base origin/main "${PR_HEAD_SHA}" 2>/dev/null) || BASE=""
+          if [ -z "$BASE" ]; then
+            echo "needed=yes" >> "$GITHUB_OUTPUT"
+            echo "::notice::merge-base unavailable; running the sweep (fail-closed)"
+            exit 0
+          fi
+          # FAIL-CLOSED. An earlier draft assigned OUT and appended it: if the script
+          # crashed, OUT was empty, `needed` was never set, and `needed == 'yes'` is
+          # false -- so a CRASHING TRIGGER SILENTLY SKIPPED THE SWEEP. That is the
+          # fail-open shape this repository exists to remove, in the guard that gates
+          # the guard. Status is read from the command, never through a pipe, and any
+          # outcome that is not a well-formed `needed=no` runs the sweep.
+          set +e
+          OUT=$(bash scripts/pr_review_sweep_needed.sh "$BASE" "${PR_HEAD_SHA}")
+          rc=$?
+          set -e
+          if [ "$rc" -ne 0 ] || [ -z "$OUT" ]; then
+            echo "needed=yes" >> "$GITHUB_OUTPUT"
+            echo "::notice::sweep trigger exited $rc with output '$OUT'; running the sweep (fail-closed)"
+            exit 0
+          fi
+          case "$OUT" in
+            needed=no)  echo "needed=no"  >> "$GITHUB_OUTPUT" ;;
+            needed=yes) echo "needed=yes" >> "$GITHUB_OUTPUT" ;;
+            *)          echo "needed=yes" >> "$GITHUB_OUTPUT"
+                        echo "::notice::sweep trigger printed an unrecognised answer '$OUT'; running the sweep (fail-closed)" ;;
+          esac
+          echo "::notice::sweep trigger -> $OUT"
+
       - name: The guard's mutation set must kill 100% (§6.4, §8 fixes this at one)
+        if: steps.sweep_needed.outputs.needed == 'yes'
         shell: bash
         run: bash scripts/mutate-guard.sh
+
+      # A SKIPPED SWEEP IS RECORDED, NEVER SILENT. §3.0's rule one level up: "not
+      # triggered" and "did not run" must not be the same artifact.
+      - name: "Sweep not triggered — record why (§3.0)"
+        if: steps.sweep_needed.outputs.needed != 'yes'
+        shell: bash
+        run: |
+          echo "guard_mutation_score: NOT-TRIGGERED — no sweep input changed in this diff."
+          echo "Inputs are the six paths build_tree copies plus scripts/mutate-guard.sh;"
+          echo "see scripts/pr_review_sweep_needed.sh. The score is unchanged from main's."
 
       # Arm 4. ARMED (PRREV-013). It could previously neither fail nor pass.
       #
