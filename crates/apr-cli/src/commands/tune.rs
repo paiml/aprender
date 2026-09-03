@@ -254,8 +254,10 @@ fn parse_model_size(size: &str) -> Result<u64, CliError> {
 /// VRAM feasibility verdict. Measured on the shipped 0.63.0 binary against
 /// `qwen2.5-coder-0.5b-instruct-q4_k_m.gguf` (491,400,064 bytes):
 ///
-///     apr inspect ... | grep Parameters   ->  630,167,424   (read from the file)
-///     apr tune ... --json                 ->  982,800,128   (= 491,400,064 x 2)
+/// ```text
+/// apr inspect ... | grep Parameters   ->  630,167,424   (read from the file)
+/// apr tune ... --json                 ->  982,800,128   (= 491,400,064 x 2)
+/// ```
 ///
 /// and on a zero-byte file it printed "Model parameters: 0", "fits in 16.0 GB
 /// VRAM", exit 0 — an empty file certified as a model that fits.

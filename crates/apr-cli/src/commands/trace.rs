@@ -223,9 +223,11 @@ fn handle_special_modes(
 /// claude-code-parity-apr docs/specifications/claude-code-parity-apr-poc.md
 /// § "M32d FAST PATH"):
 ///
-///     "apr trace --json --payload <gguf> --prompt 'What is 2+2?' returns
-///      non-null output_stats for every transformer_block_N entry, with
-///      finite L2 norms."
+/// ```text
+/// "apr trace --json --payload <gguf> --prompt 'What is 2+2?' returns
+///  non-null output_stats for every transformer_block_N entry, with
+///  finite L2 norms."
+/// ```
 fn handle_special_modes_with_json(
     path: &Path,
     reference: Option<&Path>,
