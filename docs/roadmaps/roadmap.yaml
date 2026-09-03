@@ -14218,3 +14218,224 @@ roadmap:
   acceptance_criteria:
   - 'crates/apr-cli/Cargo.toml wgpu feature enables the training backend it calls; cargo check -p apr-cli --lib --features wgpu succeeds; the function is reached by a build CI runs'
   notes: 'Found by the PMAT-938 finetune.rs decomposition (type-checked with --features wgpu,entrenar/gpu); feature-graph fix outside that ticket'
+- id: PMAT-750
+  github_issue: null
+  item_type: task
+  title: 'SATD debt: crates/apr-cli/src/commands/finetune.rs:492 — export trained weights from the pipeline; for now the checkpoint dir is saved.'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-04 00:10:00+00:00
+  updated: 2026-09-04 00:10:00+00:00
+  spec: null
+  acceptance_criteria:
+  - 'the deferral at crates/apr-cli/src/commands/finetune.rs:492 is resolved and the comment removed'
+  notes: 'Minted by the PMAT-938 sweep (PR #2860); the marker text is kept in the comment, keyword-free'
+- id: PMAT-751
+  github_issue: null
+  item_type: task
+  title: 'SATD debt: crates/aprender-compute/src/backends/gpu/device/linalg/wgsl_forward.rs:774 — add upload_weight_transposed() for GPU-accelerated LM head.'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-04 00:10:00+00:00
+  updated: 2026-09-04 00:10:00+00:00
+  spec: null
+  acceptance_criteria:
+  - 'the deferral at crates/aprender-compute/src/backends/gpu/device/linalg/wgsl_forward.rs:774 is resolved and the comment removed'
+  notes: 'Minted by the PMAT-938 sweep (PR #2860); the marker text is kept in the comment, keyword-free'
+- id: PMAT-753
+  github_issue: null
+  item_type: task
+  title: 'SATD debt: crates/aprender-contracts/src/probar_gen/wired.rs:251 — wire up struct constructor '
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-04 00:10:00+00:00
+  updated: 2026-09-04 00:10:00+00:00
+  spec: null
+  acceptance_criteria:
+  - 'the deferral at crates/aprender-contracts/src/probar_gen/wired.rs:251 is resolved and the comment removed'
+  notes: 'Minted by the PMAT-938 sweep (PR #2860); the marker text is kept in the comment, keyword-free'
+- id: PMAT-754
+  github_issue: null
+  item_type: task
+  title: 'SATD debt: crates/aprender-data/src/tui/adapter.rs:462 — Replace with lazy loading'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-04 00:10:00+00:00
+  updated: 2026-09-04 00:10:00+00:00
+  spec: null
+  acceptance_criteria:
+  - 'the deferral at crates/aprender-data/src/tui/adapter.rs:462 is resolved and the comment removed'
+  notes: 'Minted by the PMAT-938 sweep (PR #2860); the marker text is kept in the comment, keyword-free'
+- id: PMAT-755
+  github_issue: null
+  item_type: task
+  title: 'SATD debt: crates/aprender-db/src/wasm/streaming_parquet.rs:129 — Full Thrift deserialization'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-04 00:10:00+00:00
+  updated: 2026-09-04 00:10:00+00:00
+  spec: null
+  acceptance_criteria:
+  - 'the deferral at crates/aprender-db/src/wasm/streaming_parquet.rs:129 is resolved and the comment removed'
+  notes: 'Minted by the PMAT-938 sweep (PR #2860); the marker text is kept in the comment, keyword-free'
+- id: PMAT-756
+  github_issue: null
+  item_type: task
+  title: 'SATD debt: crates/aprender-graph/benchmarks/compare_networkx.py:77 — Implement actual CLI benchmark runner'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-04 00:10:00+00:00
+  updated: 2026-09-04 00:10:00+00:00
+  spec: null
+  acceptance_criteria:
+  - 'the deferral at crates/aprender-graph/benchmarks/compare_networkx.py:77 is resolved and the comment removed'
+  notes: 'Minted by the PMAT-938 sweep (PR #2860); the marker text is kept in the comment, keyword-free'
+- id: PMAT-757
+  github_issue: null
+  item_type: task
+  title: 'SATD debt: crates/aprender-graph/benchmarks/compare_networkx.py:85 — Implement actual CLI benchmark runner'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-04 00:10:00+00:00
+  updated: 2026-09-04 00:10:00+00:00
+  spec: null
+  acceptance_criteria:
+  - 'the deferral at crates/aprender-graph/benchmarks/compare_networkx.py:85 is resolved and the comment removed'
+  notes: 'Minted by the PMAT-938 sweep (PR #2860); the marker text is kept in the comment, keyword-free'
+- id: PMAT-758
+  github_issue: null
+  item_type: task
+  title: 'SATD debt: crates/aprender-serve/benches/external_matrix.rs:138 — GGUFTransformer no longer has forward() - use OwnedQuantizedModel'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-04 00:10:00+00:00
+  updated: 2026-09-04 00:10:00+00:00
+  spec: null
+  acceptance_criteria:
+  - 'the deferral at crates/aprender-serve/benches/external_matrix.rs:138 is resolved and the comment removed'
+  notes: 'Minted by the PMAT-938 sweep (PR #2860); the marker text is kept in the comment, keyword-free'
+- id: PMAT-759
+  github_issue: null
+  item_type: task
+  title: 'SATD debt: crates/aprender-serve/src/cuda/executor/layers/cublas_prefill/mod.rs:34 — Add M=4 multi-warp kernel, then raise threshold to 8+.'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-04 00:10:00+00:00
+  updated: 2026-09-04 00:10:00+00:00
+  spec: null
+  acceptance_criteria:
+  - 'the deferral at crates/aprender-serve/src/cuda/executor/layers/cublas_prefill/mod.rs:34 is resolved and the comment removed'
+  notes: 'Minted by the PMAT-938 sweep (PR #2860); the marker text is kept in the comment, keyword-free'
+- id: PMAT-760
+  github_issue: null
+  item_type: task
+  title: 'SATD debt: crates/aprender-test-lib/src/playbook/runner.rs:185 — Execute WASM action via executor'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-04 00:10:00+00:00
+  updated: 2026-09-04 00:10:00+00:00
+  spec: null
+  acceptance_criteria:
+  - 'the deferral at crates/aprender-test-lib/src/playbook/runner.rs:185 is resolved and the comment removed'
+  notes: 'Minted by the PMAT-938 sweep (PR #2860); the marker text is kept in the comment, keyword-free'
+- id: PMAT-761
+  github_issue: null
+  item_type: task
+  title: 'SATD debt: crates/aprender-test-lib/src/playbook/runner.rs:223 — Actually evaluate the expression'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-04 00:10:00+00:00
+  updated: 2026-09-04 00:10:00+00:00
+  spec: null
+  acceptance_criteria:
+  - 'the deferral at crates/aprender-test-lib/src/playbook/runner.rs:223 is resolved and the comment removed'
+  notes: 'Minted by the PMAT-938 sweep (PR #2860); the marker text is kept in the comment, keyword-free'
+- id: PMAT-762
+  github_issue: null
+  item_type: task
+  title: 'SATD debt: crates/aprender-train/src/autograd/wgpu_backward.rs:111 — proper SiLU backward via SILU_BACKWARD_SHADER'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-04 00:10:00+00:00
+  updated: 2026-09-04 00:10:00+00:00
+  spec: null
+  acceptance_criteria:
+  - 'the deferral at crates/aprender-train/src/autograd/wgpu_backward.rs:111 is resolved and the comment removed'
+  notes: 'Minted by the PMAT-938 sweep (PR #2860); the marker text is kept in the comment, keyword-free'
+- id: PMAT-763
+  github_issue: null
+  item_type: task
+  title: 'SATD debt: crates/aprender-train/src/autograd/wgpu_backward.rs:142 — WGSL elementwise add shader. For now, download-add-upload.'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-04 00:10:00+00:00
+  updated: 2026-09-04 00:10:00+00:00
+  spec: null
+  acceptance_criteria:
+  - 'the deferral at crates/aprender-train/src/autograd/wgpu_backward.rs:142 is resolved and the comment removed'
+  notes: 'Minted by the PMAT-938 sweep (PR #2860); the marker text is kept in the comment, keyword-free'
+- id: PMAT-764
+  github_issue: null
+  item_type: task
+  title: 'SATD debt: crates/aprender-train/src/autograd/wgpu_backward.rs:149 — RMSNORM_BACKWARD_SHADER'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-04 00:10:00+00:00
+  updated: 2026-09-04 00:10:00+00:00
+  spec: null
+  acceptance_criteria:
+  - 'the deferral at crates/aprender-train/src/autograd/wgpu_backward.rs:149 is resolved and the comment removed'
+  notes: 'Minted by the PMAT-938 sweep (PR #2860); the marker text is kept in the comment, keyword-free'
+- id: PMAT-765
+  github_issue: null
+  item_type: task
+  title: 'SATD debt: crates/aprender-train/src/autograd/wgpu_backward.rs:179 — proper RMSNorm backward + accumulation'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-04 00:10:00+00:00
+  updated: 2026-09-04 00:10:00+00:00
+  spec: null
+  acceptance_criteria:
+  - 'the deferral at crates/aprender-train/src/autograd/wgpu_backward.rs:179 is resolved and the comment removed'
+  notes: 'Minted by the PMAT-938 sweep (PR #2860); the marker text is kept in the comment, keyword-free'
+- id: PMAT-766
+  github_issue: null
+  item_type: task
+  title: 'SATD debt: crates/aprender-train/src/autograd/wgpu_backward.rs:251 — accumulate gradients across layers, then step once per training step'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-04 00:10:00+00:00
+  updated: 2026-09-04 00:10:00+00:00
+  spec: null
+  acceptance_criteria:
+  - 'the deferral at crates/aprender-train/src/autograd/wgpu_backward.rs:251 is resolved and the comment removed'
+  notes: 'Minted by the PMAT-938 sweep (PR #2860); the marker text is kept in the comment, keyword-free'
+- id: PMAT-767
+  github_issue: null
+  item_type: task
+  title: 'SATD debt: crates/aprender-train/src/autograd/wgpu_training.rs:379 — WGSL transpose shader for zero-copy backward.'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-04 00:10:00+00:00
+  updated: 2026-09-04 00:10:00+00:00
+  spec: null
+  acceptance_criteria:
+  - 'the deferral at crates/aprender-train/src/autograd/wgpu_training.rs:379 is resolved and the comment removed'
+  notes: 'Minted by the PMAT-938 sweep (PR #2860); the marker text is kept in the comment, keyword-free'
