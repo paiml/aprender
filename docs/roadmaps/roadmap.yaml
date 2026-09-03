@@ -14096,3 +14096,26 @@ roadmap:
   notes: 'Found by the PMAT-930 review quorum (paiml-agy-delegate, 3 lanes + the §3.E arm, gemini-3.1-pro-high, conversations
     df32ef55, f41060f3, 02623f0a, b2af861a); two of the four escape shapes re-run by Fable on 386b0bd40 (no leading pipe,
     extra pipe: violations=[]). Five-whys in .pmat/jidoka.jsonl. Landed in PR #2861 with PMAT-930'
+- id: PMAT-932
+  github_issue: null
+  item_type: bug
+  title: 'PMAT-931 second review: the run-skip rule failed both ways (a dummy first line hid every row after it; a
+    blank line inside the §13 table flagged eleven legitimate rows) and the mutation harness had no green baseline
+    and scored a crash as a kill'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-09-03 17:20:00+00:00
+  updated: 2026-09-03 17:20:00+00:00
+  spec: docs/specifications/PP-LLAMA-001-MASTER.md
+  acceptance_criteria:
+  - 'a run of pipe lines is skipped only when it opens with a header (header line + separator) other than the ledger
+    header; a run with the ledger header or no header is read row by row; a row counts when its first cell is a row id
+    and its width is within two columns of the ledger header; L0 when the first table is not the ledger; seven fixtures
+    (ledger_fragment_after_dummy_line, ledger_row_bold_id, ledger_side_table_split_ok, ledger_side_table_same_width_ok,
+    ledger_second_table_same_header, ledger_row_extra_pipe_outside, ledger_first_table_not_ledger); the harness runs
+    the unmutated table first, counts a crash as unviable, and reports 10/10 killed'
+  notes: 'Found by the PMAT-931 review quorum (paiml-agy-delegate, 3 lanes + the §3.E arm, gemini-3.1-pro-high, conversations
+    519483fd, cb269b2c, 804fdc9e, 972bd0c8). Re-run by Fable on 45588b6d1: dummy-first-line escape confirmed (violations
+    NONE); blank line at LEDGER.md:100 flagged 11 rows (confirmed); the bold-id escape was REFUTED (strip_md already
+    strips emphasis: L1,L2 fired). Landed in PR #2861 with PMAT-930 and PMAT-931'

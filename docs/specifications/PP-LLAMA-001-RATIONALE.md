@@ -179,6 +179,18 @@ mis-keying it. Eight mutants of these conditions are committed in
 `scripts/mutate_spec_conformance.sh` and each is killed by a named fixture, because a condition no
 fixture can remove is a condition nobody knows is load-bearing.
 
+**The rule that failed both ways.** The second form of L2 skipped a run of pipe lines whole
+whenever its first line carried no row id, to keep the superseded-documents table out. That one
+condition was a false negative and a false positive at once: a dummy first line hid every row
+after it, and a blank line inside the documents table made its second half open with a numeric
+cell and flagged eleven legitimate rows. The rule now reads what a table IS — a run that opens
+with a header line and a separator — and skips a run only when that header is not the ledger's;
+a run with the ledger's header, or with no header at all, is read row by row, and a row counts
+when its width is within two columns of the ledger's, which is what tells a stray pipe apart from
+a table half as wide. A table written above the ledger is L0, because the first table is the one
+the scan reads. The mutation set that substantiates this runs the unmutated case table first and
+counts a crash as unviable, never as a kill.
+
 ### PP-10
 
 `I-14`. A request issued after the window closes has its prefill inside the window and its decode
