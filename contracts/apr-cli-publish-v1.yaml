@@ -70,6 +70,12 @@ falsification_tests:
   test: "cargo check -p apr-cli --all-features"
   if_fails: "workspace build broken"
 
+- id: FALSIFY-PUB-CLI-005
+  rule: "publishing goes only through scripts/check_publish_preflight.sh, and the cascade carries no --allow-dirty (F-9)"
+  prediction: "check_publish_preflight.sh --selftest drives R1, R3, R4 and R5 to both verdicts (11 rows); cascade-publish.sh calls the gate before its first upload and its cargo publish line has no --allow-dirty"
+  test: "bash scripts/check_publish_preflight.sh --selftest && grep -q 'scripts/check_publish_preflight.sh' scripts/cascade-publish.sh && ! grep -q -- '--allow-dirty' scripts/cascade-publish.sh"
+  if_fails: "a dirty, untagged, off-main or NO-GO tree can be uploaded to an immutable registry"
+
 proof_obligations:
 - type: invariant
   property: "default features produce no cyclic dep chain on crates.io"

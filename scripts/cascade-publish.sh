@@ -271,7 +271,9 @@ publish_crate() {
     sel=(--manifest-path "${MANIFEST[$crate]}")
   fi
   local out
-  out=$(cargo publish "${sel[@]}" --allow-dirty --locked 2>&1 | tail -6)
+  # No dirty-tree override here: scripts/check_publish_preflight.sh proved the tree
+  # clean before the first upload (F-9, PMAT-745); a dirty tree stops the cascade there.
+  out=$(cargo publish "${sel[@]}" --locked 2>&1 | tail -6)
   if grep -q "Published $crate" <<< "$out" ; then
     echo "✓ PUBLISHED"
     sleep 10  # let crates.io index settle before dependents try to fetch
@@ -303,6 +305,21 @@ publish_crate() {
     return 1
   fi
 }
+
+# THE GATE (F-9, PMAT-745). Every mode that uploads passes through
+# scripts/check_publish_preflight.sh first: clean tree, version from cargo
+# metadata, tag at HEAD, HEAD on origin/main, dogfood receipt GO for this commit
+# and version. --check and --order-check upload nothing and are not gated. The
+# drain re-runs this script per pass, so the gate is re-asked before every pass.
+case "$MODE" in
+  --check|--order-check) : ;;
+  *)
+    if ! bash "$REPO_ROOT/scripts/check_publish_preflight.sh"; then
+      echo "⛔ check_publish_preflight.sh refused; nothing was published." >&2
+      exit 1
+    fi
+    ;;
+esac
 
 # Backup .cargo/config.toml once (publish needs a clean one without [patch.crates-io])
 if [ -f .cargo/config.toml ]; then
