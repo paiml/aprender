@@ -43,7 +43,12 @@ detect_models() {
 # Run benchmark for a single model
 run_benchmark() {
     local model="$1"
-    local output_file="$RESULTS_DIR/${RUNTIME}_${model//\//_}_$(date +%Y%m%d_%H%M%S).json"
+    # DET002: reproducible under SOURCE_DATE_EPOCH (falls back to the real
+    # wall clock when it's unset -- needed so repeated runs don't clobber
+    # each other's result files).
+    local run_stamp
+    run_stamp="$(date -u -d "@${SOURCE_DATE_EPOCH:-$(date +%s)}" +%Y%m%d_%H%M%S)"
+    local output_file="$RESULTS_DIR/${RUNTIME}_${model//\//_}_${run_stamp}.json"
 
     echo -e "${GREEN}Benchmarking: $model${NC}"
 
