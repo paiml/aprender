@@ -607,9 +607,53 @@ gates = [
     "scripts/check_perf041_marker.sh",
 ]
 
+# The interfaces this release SHIPS, each paired with the e2e target that proves
+# it is reachable through the BINARY (PMAT-749). `scripts/dogfood.sh` reads this
+# table for three gates:
+#
+#   transport-decl      this table exists and every entry has an `e2e` target
+#   transport-absence   the binary advertises no mcp/http surface missing here
+#   interface-parity    every named target exists, references CARGO_BIN_EXE_,
+#                       and passes at least one test
+#
+# It lives in Cargo.toml, not in the runner, so it is versioned with the code it
+# describes. An undeclared transport is an unverified one: a library-level suite
+# is structurally blind to a subcommand that is unreachable through the shipped
+# artifact, which is precisely what these e2e targets spawn.
+#
+# `features` names what `cargo test -p aprender --features <...>` must enable.
+# All three are `["cli"]` because that is the feature that builds the `apr` bin
+# target at all — without it there is no CARGO_BIN_EXE_apr to spawn. `mcp` and
+# `http` are not separate cargo features here: `apr mcp` and `apr serve run` are
+# subcommands of the one binary, always compiled in, so gating them on features
+# that do not exist would declare a transport nobody can exercise.
+[package.metadata.transports]
+cli = { e2e = "e2e_cli_t", features = ["cli"] }
+mcp = { e2e = "e2e_mcp_stdio_t", features = ["cli"] }
+http = { e2e = "e2e_http_serve_t", features = ["cli"] }
+
 [[bin]]
 name = "apr"
 path = "src/bin/apr.rs"
+required-features = ["cli"]
+
+# The e2e targets named by [package.metadata.transports]. Each spawns the `apr`
+# artifact, so each needs the feature that builds it — declared explicitly
+# rather than left to auto-discovery, which would emit targets that fail to
+# compile under `--no-default-features` (no bin, hence no CARGO_BIN_EXE_apr).
+[[test]]
+name = "e2e_cli_t"
+path = "tests/e2e_cli_t.rs"
+required-features = ["cli"]
+
+[[test]]
+name = "e2e_mcp_stdio_t"
+path = "tests/e2e_mcp_stdio_t.rs"
+required-features = ["cli"]
+
+[[test]]
+name = "e2e_http_serve_t"
+path = "tests/e2e_http_serve_t.rs"
 required-features = ["cli"]
 
 [dependencies]
