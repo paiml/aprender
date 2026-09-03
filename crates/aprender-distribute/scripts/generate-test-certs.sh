@@ -7,6 +7,16 @@ set -eu
 CERT_DIR="${1:-./certs}"
 DAYS="${2:-365}"
 
+# Refuse a traversal segment: CERT_DIR feeds both the mkdir below and the
+# `rm -f "${CERT_DIR}"/*.csr ...` cleanup at the end, so a caller-controlled
+# '..' component is refused once, here, before either call site trusts it.
+case "${CERT_DIR}" in
+    *..*)
+        echo "refusing a certificate directory containing '..': ${CERT_DIR}" >&2
+        exit 1
+        ;;
+esac
+
 echo "🔐 Generating self-signed TLS certificates for testing"
 echo "   Directory: ${CERT_DIR}"
 echo "   Validity: ${DAYS} days"
