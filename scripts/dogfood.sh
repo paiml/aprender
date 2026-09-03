@@ -397,17 +397,32 @@ if [ "$DOGFOOD_PHASE" = pre-publish ]; then
     mark version-unpublished PASS "$CRATE is not in the crates.io index at all (HTTP 404), so $VERSION is absent (pre-publish phase)"
   elif [ "$REG_CODE" != 200 ]; then
     mark version-unpublished FAIL "index.crates.io answered HTTP $REG_CODE for $CRATE — the version's status is UNKNOWN"
-  elif python3 -c '
+  else
+    # Three outcomes, three exit codes: 0 the version is in the index, 1 the
+    # index parsed and does not carry it, 2 the body is not the index (an HTML
+    # error page behind a 200, a captive portal). Only 1 is "absent"; 2 is
+    # UNKNOWN and FAIL -- a gate that read `unparseable` as `absent` was
+    # fail-open (fourth review of #2859, dogfood-index-decode-bypass).
+    python3 -c '
 import json, sys
 want = sys.argv[1]
-for line in open(sys.argv[2], encoding="utf-8"):
-    line = line.strip()
-    if not line: continue
-    if json.loads(line).get("vers") == want: sys.exit(0)
-sys.exit(1)' "$VERSION" "$WORKLOG/registry.ndjson"; then
-    mark version-unpublished FAIL "$CRATE $VERSION is ALREADY in the crates.io index — bump the version"
-  else
-    mark version-unpublished PASS "$VERSION absent from the crates.io index (consulted directly, HTTP 200; pre-publish phase)"
+seen = 0
+try:
+    for line in open(sys.argv[2], encoding="utf-8"):
+        line = line.strip()
+        if not line: continue
+        rec = json.loads(line)
+        if not isinstance(rec, dict) or "vers" not in rec: sys.exit(2)
+        seen += 1
+        if rec.get("vers") == want: sys.exit(0)
+except (ValueError, OSError, UnicodeDecodeError):
+    sys.exit(2)
+sys.exit(1 if seen else 2)' "$VERSION" "$WORKLOG/registry.ndjson"; REG_PARSE=$?
+    case "$REG_PARSE" in
+      0) mark version-unpublished FAIL "$CRATE $VERSION is ALREADY in the crates.io index — bump the version" ;;
+      1) mark version-unpublished PASS "$VERSION absent from the crates.io index (consulted directly, HTTP 200, index parsed; pre-publish phase)" ;;
+      *) mark version-unpublished FAIL "index.crates.io answered HTTP 200 but the body is not the index ($(head -c 60 "$WORKLOG/registry.ndjson" | tr -d '\n' | cut -c1-60)…) — the version's status is UNKNOWN" ;;
+    esac
   fi
 else
 DRY=$(env -u CARGO_REGISTRY_TOKEN cargo publish --dry-run --allow-dirty 2>&1); DRC=$?
