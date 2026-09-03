@@ -71,7 +71,10 @@ if (( N < 1 )); then
     exit 1
 fi
 
-TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
+# DET002: reproducible under SOURCE_DATE_EPOCH (falls back to the real
+# wall clock, same as before, when it's unset -- this needs a fresh value
+# per invocation so parallel runs don't collide on SHARD_DIR).
+TIMESTAMP="$(date -u -d "@${SOURCE_DATE_EPOCH:-$(date +%s)}" +%Y%m%d_%H%M%S)"
 SHARD_DIR="${RESULTS_DIR}/run_${TIMESTAMP}"
 mkdir -p "$SHARD_DIR"
 
@@ -93,6 +96,12 @@ if [[ ! -f "$BENCH_FILE" ]]; then
                 -o "${BENCH_FILE}.tmp"
             # Filter to standard test split
             jq -c 'select(.task_id >= 11 and .task_id <= 510)' "${BENCH_FILE}.tmp" > "$BENCH_FILE"
+            # SEC010: validate before rm -- BENCH_FILE is built from
+            # BENCHMARK_DIR (fixed) + this case arm's own literal label, but
+            # guard it explicitly rather than relying on the case dispatch.
+            case "${BENCH_FILE}.tmp" in
+                *..*) echo "ERROR: BENCH_FILE must not contain '..'" >&2; exit 1 ;;
+            esac
             rm -f "${BENCH_FILE}.tmp"
             ;;
         *)
@@ -170,7 +179,7 @@ dispatch_one() {
     local remote_out="${REMOTE_WORKDIR}/result_shard_${i}.json"
 
     {
-        echo "[$host] mkdir workdir"
+        echo "[$host] create workdir"
         if (( is_local )); then
             mkdir -p "$REMOTE_WORKDIR"
         else
