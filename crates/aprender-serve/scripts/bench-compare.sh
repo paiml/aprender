@@ -29,7 +29,7 @@ OUTPUT_DIR="${PROJECT_ROOT}/benches/comparative/results"
 # expression on purpose -- reaching the `cat > "$output_file"` destination
 # path below with a `git ...` substitution trips SEC010 (path-traversal
 # heuristic on dynamic `cat` targets), so the fallback stays a plain `date`.
-TIMESTAMP=$(date -u -d "@${SOURCE_DATE_EPOCH:-$(date +%s)}" +%Y%m%d_%H%M%S)
+TIMESTAMP=$(date -d "@${SOURCE_DATE_EPOCH:-$(date +%s)}" +%Y%m%d_%H%M%S)
 
 # Benchmark parameters (Hoefler & Belli methodology)
 MIN_SAMPLES=30          # Minimum samples before CV check
@@ -199,7 +199,7 @@ bench_llama_cpp() {
     cat > "$output_file" << EOF
 {
   "benchmark": "llama.cpp",
-  "timestamp": "$(date -u -d "@${SOURCE_DATE_EPOCH:-$(date +%s)}" -Iseconds)",
+  "timestamp": "$(date -d "@${SOURCE_DATE_EPOCH:-$(date +%s)}" -Iseconds)",
   "config": {
     "url": "${LLAMA_CPP_URL}",
     "model": "${MODEL_NAME}",
@@ -330,7 +330,7 @@ bench_ollama() {
     cat > "$output_file" << EOF
 {
   "benchmark": "ollama",
-  "timestamp": "$(date -u -d "@${SOURCE_DATE_EPOCH:-$(date +%s)}" -Iseconds)",
+  "timestamp": "$(date -d "@${SOURCE_DATE_EPOCH:-$(date +%s)}" -Iseconds)",
   "config": {
     "url": "${OLLAMA_URL}",
     "model": "phi",

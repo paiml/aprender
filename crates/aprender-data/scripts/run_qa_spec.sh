@@ -11,7 +11,7 @@ SPEC_FILE="docs/specifications/100-cargo-run-examples-spec.md"
 # expression on purpose -- reaching the `cat >` destination path below with a
 # `git ...` substitution trips SEC010 (path-traversal heuristic on dynamic
 # `cat` targets), so the fallback stays a plain `date` call.
-REPORT_FILE="target/qa-report-$(date -u -d "@${SOURCE_DATE_EPOCH:-$(date +%s)}" +%Y%m%d-%H%M%S).md"
+REPORT_FILE="target/qa-report-$(date -d "@${SOURCE_DATE_EPOCH:-$(date +%s)}" +%Y%m%d-%H%M%S).md"
 PASSED=0
 FAILED=0
 SKIPPED=0
@@ -36,7 +36,7 @@ fi
 cat > "$REPORT_FILE" << EOF
 # QA Specification Execution Report
 
-**Date**: $(date -u -d "@${SOURCE_DATE_EPOCH:-$(date +%s)}" -Iseconds)
+**Date**: $(date -d "@${SOURCE_DATE_EPOCH:-$(date +%s)}" -Iseconds)
 **Spec**: $SPEC_FILE
 
 | # | Example | Status | Time |

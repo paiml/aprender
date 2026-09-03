@@ -50,7 +50,7 @@ if [ "$SAVE_BASELINE" = true ]; then
     # reaching the `tee` destination below with a `git ...` substitution
     # trips SEC010's path-traversal heuristic on dynamic write targets, so
     # the fallback stays a plain `date` call.
-    TIMESTAMP="$(date -u -d "@${SOURCE_DATE_EPOCH:-$(date +%s)}" +%Y%m%d_%H%M%S)"
+    TIMESTAMP="$(date -d "@${SOURCE_DATE_EPOCH:-$(date +%s)}" +%Y%m%d_%H%M%S)"
     BASELINE_FILE="$BASELINE_DIR/bench_$TIMESTAMP.txt"
 
     cargo bench --quiet 2>&1 | tee "$BASELINE_FILE"
