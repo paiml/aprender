@@ -439,7 +439,7 @@ fn generate_wired_generic(out: &mut String, ob: &crate::schema::ProofObligation)
     ));
     out.push_str(
         "        let _ = &data;\n\
-         \x20       // TODO: wire up obligation test\n",
+         \x20       // Deferred (PMAT-753): wire up the obligation test\n",
     );
 }
 
