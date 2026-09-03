@@ -390,8 +390,8 @@ fn generate_wired_idempotency(
             "        let x = aprender::autograd::Tensor\
              ::new(&data, &[1, n]);\n",
         );
-        out.push_str("        let once = x.clone(); // TODO\n");
-        out.push_str("        let twice = once.clone(); // TODO\n");
+        out.push_str("        let once = x.clone(); // Deferred (PMAT-753)\n");
+        out.push_str("        let twice = once.clone(); // Deferred (PMAT-753)\n");
     }
 
     out.push_str(&format!("        // Idempotency: {}\n", ob.property));

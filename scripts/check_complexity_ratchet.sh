@@ -364,9 +364,79 @@ cx_write_fixture_lib() {
 }
 
 # ---------------------------------------------------------------------------
+
+# ── CB-200 (pmat comply, the TDG grade gate) ─────────────────────────────────
+# pmat 3.36.0 reads `.pmat-gates.toml [tdg] baseline` and reports CB-200 as
+# Warn ("debt held flat") while the count of functions below min_grade is at
+# or under it, Fail above it. Nothing in pmat compares that number with the
+# one on origin/main, so a branch could raise it and merge (PMAT-937 review).
+# The number is therefore MIRRORED in scripts/cb200_baseline.txt, the two must
+# agree, and the file is shrink-only against origin/main through the same
+# baseline_ratchet_check every other baseline in this tree goes through.
+CB200_REL='scripts/cb200_baseline.txt'
+
+cb200_toml_value() { # <gates.toml> -> the [tdg] baseline integer, or ""
+    python3 - "$1" <<'PY'
+import re, sys
+s = open(sys.argv[1], encoding="utf-8").read()
+sec = s.split("[tdg]", 1)[1].split("\n[", 1)[0] if "[tdg]" in s else ""
+m = re.search(r"^\s*baseline\s*=\s*(\d+)", sec, re.M)
+print(m.group(1) if m else "")
+PY
+}
+
+cb200_pair_check() { # <gates.toml> <mirror file> -> 0 when they agree, 1 otherwise (prints why)
+    local toml file
+    toml=$(cb200_toml_value "$1")
+    if [ -z "$toml" ]; then
+        printf 'FAIL: %s carries no [tdg] baseline; pmat comply would report CB-200 as Fail, not as a held ratchet.\n' "$1"
+        return 1
+    fi
+    if [ ! -f "$2" ]; then
+        printf 'FAIL: %s missing; it mirrors [tdg] baseline so the CB-200 count is ratcheted, not typed.\n' "$2"
+        return 1
+    fi
+    file=$(tr -d '[:space:]' < "$2")
+    if [ "$toml" != "$file" ]; then
+        printf 'FAIL: [tdg] baseline = %s but %s says %s; the two move together, and only the file is ratcheted against origin/main.\n' "$toml" "$2" "$file"
+        return 1
+    fi
+    printf 'ok    CB-200 baseline %s ([tdg] baseline == %s)\n' "$toml" "$2"
+    return 0
+}
+
+cb200_selftest() { # both polarities of the pair check, on throwaway files; returns the broke count
+    local td pass=0 broke=0
+    td=$(mktemp -d) || return 1
+    printf '[tdg]\nbaseline = 609\n' > "$td/gates.toml"
+    printf '609\n' > "$td/mirror.txt"
+    if cb200_pair_check "$td/gates.toml" "$td/mirror.txt" > /dev/null 2>&1; then
+        printf '  ok    %-38s %s\n' cb200_baseline_equal 'toml == mirror'; pass=$((pass + 1))
+    else
+        printf '  BROKE %-38s %s\n' cb200_baseline_equal 'equal values were refused'; broke=$((broke + 1))
+    fi
+    printf '[tdg]\nbaseline = 610\n' > "$td/gates.toml"
+    if cb200_pair_check "$td/gates.toml" "$td/mirror.txt" > /dev/null 2>&1; then
+        printf '  BROKE %-38s %s\n' cb200_baseline_raised 'a raised toml value passed'; broke=$((broke + 1))
+    else
+        printf '  ok    %-38s %s\n' cb200_baseline_raised 'toml 610 vs mirror 609 refused'; pass=$((pass + 1))
+    fi
+    printf '[tdg]\nmin_grade = "B"\n' > "$td/gates.toml"
+    if cb200_pair_check "$td/gates.toml" "$td/mirror.txt" > /dev/null 2>&1; then
+        printf '  BROKE %-38s %s\n' cb200_baseline_absent 'a toml with no baseline passed'; broke=$((broke + 1))
+    else
+        printf '  ok    %-38s %s\n' cb200_baseline_absent 'no [tdg] baseline refused'; pass=$((pass + 1))
+    fi
+    rm -rf "${td:?}"
+    printf '  CB-200: %s passed, %s broken\n' "$pass" "$broke"
+    return "$broke"
+}
+
 if [ "${1:-}" = '--selftest' ] || [ "${1:-}" = '--self-test' ]; then
-    cx_selftest
-    exit $?
+    cx_selftest; cx_rc=$?
+    cb200_selftest; cb_rc=$?
+    [ "$cx_rc" -eq 0 ] && [ "$cb_rc" -eq 0 ] && exit 0
+    exit 1
 fi
 
 printf '=== per-function complexity may only fall (check_complexity_ratchet.sh) ===\n'
@@ -449,6 +519,8 @@ printf 'baseline %s row(s)\n' "$RECORDED"
 . "${REPO_ROOT}/scripts/lib_baseline_ratchet.sh" || exit 1
 RATCHET_RC=0
 baseline_ratchet_check "$REPO_ROOT" "$BASELINE_REL" keyed2 || RATCHET_RC=$?
+cb200_pair_check "$REPO_ROOT/.pmat-gates.toml" "$REPO_ROOT/$CB200_REL" || RATCHET_RC=1
+baseline_ratchet_check "$REPO_ROOT" "$CB200_REL" count || RATCHET_RC=$?
 
 VERDICT_RC=0
 FINDINGS=$(cx_verdict "$BASELINE" "$WORK/current.txt") || VERDICT_RC=$?

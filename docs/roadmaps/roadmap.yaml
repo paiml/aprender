@@ -14439,3 +14439,16 @@ roadmap:
   acceptance_criteria:
   - 'the deferral at crates/aprender-train/src/autograd/wgpu_training.rs:379 is resolved and the comment removed'
   notes: 'Minted by the PMAT-938 sweep (PR #2860); the marker text is kept in the comment, keyword-free'
+- id: PMAT-945
+  github_issue: null
+  item_type: task
+  title: 'SATD debt: crates/aprender-train/src/train/pretrain_real.rs:488 — expose AdamW pre-clip grad norm.'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-04 00:10:00+00:00
+  updated: 2026-09-04 00:10:00+00:00
+  spec: null
+  acceptance_criteria:
+  - 'the deferral at crates/aprender-train/src/train/pretrain_real.rs:488 is resolved and the comment removed'
+  notes: 'Minted by the PMAT-938 sweep (PR #2860); the marker text is kept in the comment, keyword-free'
