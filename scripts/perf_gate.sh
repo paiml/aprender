@@ -98,6 +98,38 @@ run_phased() { # arm-key, cli-phase, command...
   return 0
 }
 
+cell_status() { # host, workload -> the matrix baseline status (MEASURED | UNMEASURED | NA | ABSENT)
+  python3 - "$MATRIX" "$1" "$2" <<'PY_CELL'
+import sys, yaml
+m = yaml.safe_load(open(sys.argv[1])) or {}
+bl = ((m.get("baselines") or {}).get(sys.argv[2]) or {}).get(sys.argv[3]) or {}
+print(bl.get("status") or "ABSENT")
+PY_CELL
+}
+
+receipt_is_historical() { # receipt -> yes when schema_version < 3 (the pre-v3 wire), else no
+  python3 - "$1" <<'PY_HIST'
+import json, sys
+sv = json.load(open(sys.argv[1])).get("schema_version")
+print("no" if (isinstance(sv, int) and not isinstance(sv, bool) and sv >= 3) else "yes")
+PY_HIST
+}
+
+# THE HISTORICAL-RECEIPT RULE FOR THE RELEASE-ONLY ARMS (§7.2, PP-1). A release
+# is legal while a cell is UNMEASURED{owner, expires} and unexpired; the only
+# receipt on disk for such a cell is the pre-v3 one the matrix has already
+# marked SPENT. ArmL1 reads that receipt as historical and says so. ArmC-sig
+# and ArmD did not: they failed it for being unsigned and for lacking the kv
+# block -- two rules that apply FROM the first conformant receipt (PP-21,
+# PP-2) -- so `--phase release` could not PASS in the exact state §7.2 permits
+# a release in, and the 0.65.0 cut was the first to run it (2026-09-03). The
+# demotion is narrow on purpose: BOTH conditions, or the FAIL stands. A v3
+# receipt is never demoted (unsigned v3 = FAIL), and a historical receipt
+# cited for a MEASURED cell is a defect in the citation, not a release state.
+historical_for_unmeasured() { # cell-status, historical(yes|no) -> 0 when the demotion applies
+  [ "$2" = yes ] && [ "$1" = UNMEASURED ]
+}
+
 # ---------------------------------------------------------------- arms -----
 # Every arm returns 0 (pass) or 1 (fail) and prints one PASS/FAIL line. The
 # verdict is the MIN over arms (exactly one verdict function, H11).
@@ -781,7 +813,11 @@ arm_d_memory() {
   # REPORTING: "reporting" governs the THRESHOLD, not the FIELD. A reporting arm
   # whose metric may silently vanish instruments nothing, so at release the
   # fields must be PRESENT even though no bound is applied to them yet.
-  local receipt="$1" phase="$2"
+  local receipt="$1" phase="$2" cell="${3:-}" hist="${4:-no}"
+  if [ "$phase" = release ] && historical_for_unmeasured "$cell" "$hist"; then
+    echo "REPORT ArmD historical receipt (schema_version<3) cited for an UNMEASURED cell: the kv block exists from the first conformant receipt (PP-2); nothing is instrumented here because nothing here is measured"
+    return 0
+  fi
   python3 - "$receipt" "$phase" "$MATRIX" <<'PY_D'
 import json,sys,yaml
 r=json.load(open(sys.argv[1])); phase=sys.argv[2]
@@ -854,7 +890,7 @@ arm_c_signature() {
   # which scripts/perf_receipt_sign.sh also calls, so the signed payload cannot
   # drift between producer and verifier. This function owns the PHASE rule, the
   # andon line and PP-18's ancestry test; it owns no key handling of its own.
-  local receipt="$1" host="$2" phase="$3" commit="$4"
+  local receipt="$1" host="$2" phase="$3" commit="$4" cell="${5:-}" hist="${6:-no}"
   if [ "$phase" != release ]; then
     # The only legal skip in this arm, and it is spec-mandated: the rule is
     # scoped to release. No PR can supply a host receipt, so wiring it at merge
@@ -870,6 +906,10 @@ arm_c_signature() {
     echo "FAIL ArmC-sig NO-COMMIT-UNDER-TEST: release phase with no commit-under-test."
     echo "      The staleness arm has nothing to compare, and an arm with no input is not a passing arm."
     return 1
+  fi
+  if historical_for_unmeasured "$cell" "$hist"; then
+    echo "REPORT ArmC-sig historical receipt (schema_version<3) cited for an UNMEASURED cell: no conformant receipt exists to bind to host=$host and commit-under-test=$commit; PP-21 applies from the first conformant receipt, and the cell's owner and expiry are ArmExpiry's to report"
+    return 0
   fi
   python3 - "$receipt" "$ROOT" "$host" "$commit" <<'PY_SIG'
 import json,os,subprocess,sys
@@ -968,13 +1008,16 @@ PY_CELLS
 run_gate() {
   local host="$1" phase="$2" workload="$3" receipt="$4" commit="${5:-}" rc=0
   [ -f "$receipt" ] || die "receipt not found: $receipt"
+  local cell hist
+  cell="$(cell_status "$host" "$workload")"
+  hist="$(receipt_is_historical "$receipt")"
   run_phased C     "$phase" arm_c_integrity     "$receipt" || rc=1
   run_phased L1    "$phase" arm_l1_schema       "$receipt" "$host" || rc=1
-  run_phased C_sig "$phase" arm_c_signature     "$receipt" "$host" "$phase" "$commit" || rc=1
+  run_phased C_sig "$phase" arm_c_signature     "$receipt" "$host" "$phase" "$commit" "$cell" "$hist" || rc=1
   run_phased expiry "$phase" arm_expiry_clock   "$host" "$workload" || rc=1
   run_phased A     "$phase" arm_a_self_regression "$receipt" "$host" "$workload" || rc=1
   run_phased L3    "$phase" arm_l3_parity       "$receipt" "$host" "$workload" || rc=1
-  run_phased D     "$phase" arm_d_memory        "$receipt" "$phase" || rc=1
+  run_phased D     "$phase" arm_d_memory        "$receipt" "$phase" "$cell" "$hist" || rc=1
   run_phased E     "$phase" arm_e_interference  "$receipt" "$phase" "$workload" || rc=1
   run_phased cells "$phase" cell_completeness   "$receipt" "$host" "$workload" || rc=1
   if [ "$rc" = 0 ]; then echo "VERDICT PASS host=$host phase=$phase workload=$workload"
@@ -1084,13 +1127,16 @@ with open(sys.argv[1], "w") as fh:
       --signed-at 2026-08-29T00:00:00Z >/dev/null
   }
 
-  _row() { # name, fixture, phase, workload, host, matrix(empty=committed), expect, needle, today
+  _row() { # name, fixture, phase, workload, host, matrix(empty=committed), expect, needle, today, raw
     _reg "$1" || return 0
-    local name="$1" f="$2" ph="$3" wl="$4" h="$5" mx="$6" expect="$7" needle="${8:-}" today="${9:-}"
+    local name="$1" f="$2" ph="$3" wl="$4" h="$5" mx="$6" expect="$7" needle="${8:-}" today="${9:-}" raw="${10:-}"
     local saved="$MATRIX" out rc=0 got
     if [ -n "$mx" ]; then MATRIX="$mx"; fi
     if [ "$ph" = release ]; then
-      _sigprep "$f" "$h"
+      # `raw` = the receipt goes in exactly as committed: unstamped, UNSIGNED.
+      # That is the production shape of the pre-v3 lambda receipt, and the
+      # historical rows below are about that shape; _sigprep would erase it.
+      if [ -z "$raw" ]; then _sigprep "$f" "$h"; fi
       out="$( ( export APR_PERF_RECEIPT_KEYRING="$sigkr"; export PERF_GATE_GIT_DIR="$sigrepo"; \
                 if [ -n "$today" ]; then export PERF_GATE_TODAY="$today"; fi; \
                 run_gate "$h" release "$wl" "$f" "$sigc1" ) 2>&1 )" || rc=1
@@ -1447,6 +1493,22 @@ for b in r["bands"]:
     # Set by the PR")"
   MX_NEITHER="$(_mx neither "expires_after: {anchor: PERF-001, days: 30}"$'\x1f'"absent_on_purpose: true")"
   MX_BADDAYS="$(_mx baddays "{anchor: PERF-001, days: 30}"$'\x1f'"{anchor: PERF-001, days: '30'}")"
+
+  # ---- §7.2 / PP-1: release phase over the pre-v3 receipt of an UNMEASURED cell
+  # The committed matrix carries lambda/W1 UNMEASURED and the only receipt for
+  # it is the pre-v3 one. Both release-only arms REPORT (the release rests on
+  # the cell's UNMEASURED status, which ArmExpiry judges), and the verdict is
+  # PASS. The two must-not-fire rows are the narrowness: the same receipt cited
+  # for a MEASURED cell is refused, and an unsigned v3 receipt is refused even
+  # for an UNMEASURED cell.
+  F="$(_mut histrel "$OK2" 'pass')"
+  _row historical_unmeasured_release_reports "$F" release W1 lambda "" pass "REPORT ArmC-sig historical receipt" "" raw
+  F="$(_mut histreld "$OK2" 'pass')"
+  _row historical_unmeasured_armd_reports    "$F" release W1 lambda "" pass "REPORT ArmD historical receipt" "" raw
+  F="$(_mut histrelm "$OK2" 'pass')"
+  _row historical_measured_release_fails     "$F" release W1 lambda "$MX_SEEDED" fail "FAIL ArmC-sig UNSIGNED" "" raw
+  F="$(_mut v3raw "$OK3" 'pass')"
+  _row v3_unsigned_unmeasured_release_fails  "$F" release W1 lambda "" fail "FAIL ArmC-sig UNSIGNED" "" raw
 
   # ---- PP-6: an arm runs at the phase perf-matrix.yaml declares for it ------
   local L3_BELOW
