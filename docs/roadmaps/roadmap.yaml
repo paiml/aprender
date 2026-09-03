@@ -14140,3 +14140,25 @@ roadmap:
     never returned). Re-run by Fable on fa6cf7706: a dummy header + separator + a RECORDED re-spend produced no
     violation (confirmed); a short RECORDED row outside the table produced none (confirmed once the probe carried the
     tier). The L0 objection (a table above the ledger) is designed behaviour and was rejected. Landed in PR #2861'
+- id: PMAT-934
+  github_issue: null
+  item_type: bug
+  title: 'PMAT-933 fourth review: a spend row with a non-row-id first cell (foo, #0c, 7bis) and a backticked tier
+    (`RECORDED`) both escaped L2; the id is now reported, never required, the tier is read through the shared
+    normalisation, and no heading ends the universe'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-09-03 19:10:00+00:00
+  updated: 2026-09-03 19:10:00+00:00
+  spec: docs/specifications/PP-LLAMA-001-MASTER.md
+  acceptance_criteria:
+  - 'a pipe line after the first table is a ledger row iff some cell, backticks stripped, starts with RECORDED or
+    CONFORMANT; the id is reported (row id or the raw first cell); the superseded cutoff is gone; fixtures
+    ledger_row_nonnumeric_id_outside, ledger_row_backticked_tier_outside, ledger_reserved_word_in_side_table (L2),
+    ledger_row_after_superseded_heading (L1,L2); mutants tier-backtick-strip-removed and id-required-reintroduced
+    replace backtick-strip-removed and superseded-cutoff-removed; 11/11 killed'
+  notes: 'Found by the PMAT-933 review (paiml-agy-delegate: the §3.E arm f5451570 and lanes d7910b93, 76cbe3d0,
+    dc6aa69e; the delegate itself found the backticked tier). Re-run by Fable on 7ff61b831: `| foo |` and a
+    backticked RECORDED both produced no violation (confirmed). The §13 reserved-word false positive is accepted as
+    fail-closed and documented. Landed in PR #2861'

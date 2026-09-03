@@ -201,6 +201,17 @@ row that claims no tier spends nothing and is another table's business, which is
 superseded-documents table out without a rule about headers. A table written above the ledger is
 L0, and the ledger's own rows are then outside the first table and L2 as well.
 
+**The id is reported, never required.** The fourth round showed the last two conjuncts were still
+an author's to satisfy: a spend row whose first cell was not a row id (`foo`, `#0c`, `7bis`) was not
+in the universe, and a tier written in backticks was not read as a tier while every other cell in
+the file is read through a backtick strip. So the membership test is the tier claim alone, read
+through the one normalisation every ledger rule uses, and the row's id is something the violation
+reports rather than something it waits for. The superseded heading no longer ends the universe
+either: a `RECORDED` row is a spend claim wherever it sits, and the old-schema rows under that
+heading claim no tier. The cost is a reserved word: a cell in any other table of `LEDGER.md` that
+starts with `RECORDED` or `CONFORMANT` is refused too, which is noise a person can see and fix,
+where every condition removed above was an escape nobody would.
+
 ### PP-10
 
 `I-14`. A request issued after the window closes has its prefill inside the window and its decode
