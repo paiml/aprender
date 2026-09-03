@@ -24,13 +24,13 @@ cp "$TARGET" "$BACKUP"
 # id | old text | new text  (tab-separated; each old text occurs EXACTLY ONCE)
 CATALOGUE=$(cat <<'CAT'
 l2-emit-removed	        _emit_ledger_split(table_end, outside)	        pass  # MUTANT
-backtick-strip-removed	    rid = cells[0].strip().strip("`").strip()	    rid = cells[0].strip()
 leading-pipe-required	    if line.count("|") < 2:	    if not line.lstrip().startswith("|"):
-superseded-cutoff-removed	(i for i, line in enumerate(lines) if SUPERSEDED_HEAD.match(line.strip())),	(i for i, line in enumerate(lines) if False),
 l2-relabelled-l1	    emit("VIOLATION", "L2", " ".join(rid for _, rid, _ in outside),	    emit("VIOLATION", "L1", " ".join(rid for _, rid, _ in outside),
 l3-removed	    _check_ledger_shapes(rows, header)	    pass  # MUTANT
 outside-rows-not-spent	    return rows + [c for _, _, c in outside]	    return rows
-tier-claim-check-removed	    if not rid or not _claims_spend(cells):	    if not rid:
+tier-claim-check-removed	    if not _claims_spend(cells):	    if False:
+id-required-reintroduced	    if not _claims_spend(cells):	    if not _claims_spend(cells) or not _row_id(cells):
+tier-backtick-strip-removed	    return any(_norm(c).upper().startswith(SPEND_TIERS) for c in cells)	    return any(c.strip().upper().startswith(SPEND_TIERS) for c in cells)
 conformant-tier-dropped	SPEND_TIERS = ("RECORDED", "CONFORMANT")	SPEND_TIERS = ("RECORDED",)
 l0-missing-columns-ignored	    missing = [k for k, v in idx.items() if v < 0]	    missing = []
 CAT

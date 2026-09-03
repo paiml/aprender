@@ -184,47 +184,51 @@ def _row_id(cells: list) -> str:
     first, so `7` and 7 are the same id."""
     if not cells:
         return ""
-    rid = cells[0].strip().strip("`").strip()
+    rid = _norm(cells[0])
     return rid if ROW_ID_CELL.match(rid) else ""
 
 
 SPEND_TIERS = ("RECORDED", "CONFORMANT")
 
 
+def _norm(cell: str) -> str:
+    """One normalisation for every cell the ledger rules read: backticks and
+    surrounding whitespace off (strip_md has already taken emphasis off)."""
+    return cell.strip().strip("`").strip()
+
+
 def _claims_spend(cells: list) -> bool:
     """A row that carries a conformance tier claims a spend. PP-9 binds on
     RECORDED (CONFORMANT implies it), so the universe of L2 is every row
-    that claims one -- whatever its width, its leading pipe, or the header
-    of the run it sits in. A row that claims no tier spends nothing and is
-    another table's business (PMAT-933)."""
-    return any(c.strip().upper().startswith(SPEND_TIERS) for c in cells)
+    that claims one -- whatever its id, its width, its leading pipe, the
+    table it was pasted under or the heading it sits below. RECORDED and
+    CONFORMANT are therefore reserved words in the ledger file: a cell that
+    starts with one is a spend claim wherever it is (PMAT-934)."""
+    return any(_norm(c).upper().startswith(SPEND_TIERS) for c in cells)
 
 
 def _outside_row(line: str):
-    """(row id, cells) when `line` is a ledger row that claims a spend, else None."""
+    """(row id or the raw first cell, cells) when `line` is a pipe row that
+    claims a spend, else None. The id is reported, never required: an id an
+    author chooses must not be able to take a row out of the universe."""
     cells = _pipe_cells(line)
     if not cells or _is_separator(cells):
         return None
-    rid = _row_id(cells)
-    if not rid or not _claims_spend(cells):
+    if not _claims_spend(cells):
         return None
-    return rid, cells
+    return _row_id(cells) or _norm(cells[0]) or "?", cells
 
 
 def ledger_rows_outside_table(lines: list) -> tuple:
     """(table_end, ((line index, row id, cells), ...)) -- every ledger row
     that sits after the first table breaks: L2's universe. A ledger row is
-    any pipe line before the `## Superseded rows` heading (or EOF) whose
-    first cell is a row id and that claims a conformance tier; no run, header
-    or width condition sits between such a row and the rule (PMAT-931,
-    PMAT-932 and PMAT-933 each removed one that an author could satisfy)."""
+    any pipe line after the first table, to the end of the file, that
+    claims a conformance tier; no id, run, header, width or region
+    condition sits between such a row and the rule (four review rounds on
+    #2861 each removed one that an author could satisfy)."""
     table_end = _first_table_end(lines)
-    superseded = next(
-        (i for i, line in enumerate(lines) if SUPERSEDED_HEAD.match(line.strip())),
-        len(lines),
-    )
     found = []
-    for i in range(table_end, superseded):
+    for i in range(table_end, len(lines)):
         hit = _outside_row(lines[i])
         if hit is not None:
             found.append((i, hit[0], hit[1]))

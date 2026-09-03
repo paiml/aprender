@@ -87,6 +87,7 @@ selftest() {
     local LEDGER_NOLEAD LEDGER_BACKTICK LEDGER_TRAILING LEDGER_EXTRA LEDGER_SIDE LEDGER_SUPERSEDED LEDGER_RESPEND_OUT
     local LEDGER_DUMMY_FIRST LEDGER_BOLD LEDGER_SIDE_SPLIT LEDGER_SIDE_WIDE LEDGER_SAME_HEADER LEDGER_EXTRA_OUT LEDGER_PRE
     local LEDGER_FOREIGN_HEADER LEDGER_THREE_OFF LEDGER_CONFORMANT_OUT LEDGER_NO_TIER_OUT
+    local LEDGER_NONNUMERIC_ID LEDGER_BACKTICK_TIER LEDGER_RESERVED_WORD
     local root_dag derived
     td="$(mktemp -d)" || { printf 'FAIL  mktemp -d failed\n'; return 2; }
     case "$td" in
@@ -195,6 +196,9 @@ selftest() {
     LEDGER_THREE_OFF="${LEDGER_ONE}\\n| 2 | lambda | W1 | ${BT}bbbb${BT} | false | RECORDED |\\n"
     LEDGER_CONFORMANT_OUT="${LEDGER_ONE}\\n| 2 | t | lambda | cuda | q · q4 | W1 | ${BT}bbbb${BT} | false | e | CONFORMANT |\\n"
     LEDGER_NO_TIER_OUT="${LEDGER_ONE}\\n| 2 | t | lambda | cuda | q · q4 | W1 | ${BT}bbbb${BT} | false | e | probe, no run |\\n"
+    LEDGER_NONNUMERIC_ID="${LEDGER_ONE}\\n| foo | t | lambda | cuda | q · q4 | W1 | ${BT}bbbb${BT} | false | e | RECORDED |\\n"
+    LEDGER_BACKTICK_TIER="${LEDGER_ONE}\\n| 2 | t | lambda | cuda | q · q4 | W1 | ${BT}bbbb${BT} | false | e | ${BT}RECORDED${BT} |\\n"
+    LEDGER_RESERVED_WORD="${LEDGER_TWO_COMMITS}\\n| # | repo | state |\\n|---|---|---|\\n| 3 | aprender | RECORDED as retained |\\n"
 
     # §6 -- the join itself.
     row conformance_ok CLEAN \
@@ -247,7 +251,7 @@ selftest() {
         "$(mk_root backtick "$ROW_ARMED" "$DAG_OK" "$LEDGER_BACKTICK" "alpha beta")"
     row ledger_side_table_ok CLEAN \
         "$(mk_root sidetable "$ROW_ARMED" "$DAG_OK" "$LEDGER_SIDE" "alpha beta")"
-    row ledger_superseded_rows_ok CLEAN \
+    row ledger_row_after_superseded_heading L1,L2 \
         "$(mk_root superseded "$ROW_ARMED" "$DAG_OK" "$LEDGER_SUPERSEDED" "alpha beta")"
     row ledger_respend_outside_table L1,L2 \
         "$(mk_root respendout "$ROW_ARMED" "$DAG_OK" "$LEDGER_RESPEND_OUT" "alpha beta")"
@@ -288,6 +292,16 @@ selftest() {
         "$(mk_root conformantout "$ROW_ARMED" "$DAG_OK" "$LEDGER_CONFORMANT_OUT" "alpha beta")"
     row ledger_row_without_tier_outside_ok CLEAN \
         "$(mk_root notier "$ROW_ARMED" "$DAG_OK" "$LEDGER_NO_TIER_OUT" "alpha beta")"
+    # PMAT-934: the id is reported, never required; the tier is read through
+    # the same normalisation as every other cell; RECORDED and CONFORMANT are
+    # reserved words wherever they start a cell in this file, and no heading
+    # ends the universe.
+    row ledger_row_nonnumeric_id_outside L2 \
+        "$(mk_root nonnumeric "$ROW_ARMED" "$DAG_OK" "$LEDGER_NONNUMERIC_ID" "alpha beta")"
+    row ledger_row_backticked_tier_outside L2 \
+        "$(mk_root backticktier "$ROW_ARMED" "$DAG_OK" "$LEDGER_BACKTICK_TIER" "alpha beta")"
+    row ledger_reserved_word_in_side_table L2 \
+        "$(mk_root reservedword "$ROW_ARMED" "$DAG_OK" "$LEDGER_RESERVED_WORD" "alpha beta")"
 
     # §12 -- the expiry DAG.
     if _reg dag_derived_equals_max_blocker; then
