@@ -48,6 +48,7 @@ equations:
       - "PP-9: re-running a cell until it comes out green is the defect the ledger exists to refuse"
       - "The commit is part of the key, so a later commit legitimately starts a new row"
       - "A ledger with no RECORDED row is reported as unexercised rather than counted as clean"
+      - "L2: a ledger row typed after the first table breaks (a blank or prose line splits it), with the same column count as the header and a row-id-shaped first cell, is a violation — the parser's universe is every row on the page between the header and the Superseded-rows section, not merely the first contiguous block table_rows() accumulates"
 
   expiries_derive_from_the_dag:
     formula: "for every §12 row R: expires(R) = R.date if root(R) else max{expires(B) : B in transitive blockers of R}"

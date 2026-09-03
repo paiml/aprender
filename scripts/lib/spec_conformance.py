@@ -124,6 +124,66 @@ def column(header: list, *needles) -> int:
     return -1
 
 
+def _first_table_end(lines: list) -> int:
+    """Line index (0-based) of the line that makes table_rows() stop.
+
+    Mirrors table_rows()'s own break condition exactly, without changing what
+    table_rows() returns, so a caller can find the lines the FIRST table
+    never reached: a blank line or a prose line right after the last data row
+    it accumulated.
+    """
+    header_seen = False
+    rows_seen = False
+    for i, line in enumerate(lines):
+        if not line.lstrip().startswith("|"):
+            if rows_seen:
+                return i
+            continue
+        cells = [strip_md(c) for c in line.strip().strip("|").split("|")]
+        if set("".join(cells)) <= set("-: "):
+            continue
+        if not header_seen:
+            header_seen = True
+            continue
+        rows_seen = True
+    return len(lines)
+
+
+ROW_ID_CELL = re.compile(r"^[0-9]+[a-z]?$")
+SUPERSEDED_HEAD = re.compile(r"^#{1,4}\s*Superseded rows\b")
+
+
+def _outside_row(line: str, header: list) -> str:
+    """The row-id cell of `line` if it is a ledger row shaped like the
+    header but sitting outside the first table, else "" (not a match)."""
+    if not line.lstrip().startswith("|"):
+        return ""
+    cells = [strip_md(c) for c in line.strip().strip("|").split("|")]
+    if set("".join(cells)) <= set("-: "):
+        return ""
+    if not ROW_ID_CELL.match(cells[0]):
+        return ""
+    if len(cells) != len(header):
+        return ""
+    return cells[0]
+
+
+def ledger_rows_outside_table(lines: list, header: list) -> tuple:
+    """((line index, row id), ...) for every ledger row that sits after the
+    first table breaks (L2's universe): same column shape as `header`, a
+    row-id first cell, found before the `## Superseded rows` heading (or
+    EOF) and after the line that ends the first pipe table."""
+    table_end = _first_table_end(lines)
+    superseded = next(
+        (i for i, line in enumerate(lines) if SUPERSEDED_HEAD.match(line.strip())),
+        len(lines),
+    )
+    found = (
+        (i, _outside_row(lines[i], header)) for i in range(table_end, superseded)
+    )
+    return table_end, tuple((i, rid) for i, rid in found if rid)
+
+
 # ------------------------------------------------------------- §6: the join --
 SURFACE_TOKEN = re.compile(r"(?<![\w:.-])(pg|sh:[^\s`,;)]+|rs:[^\s`,;)]+)(?![\w.-])")
 PAREN = re.compile(r"\(([^()]*)\)")
@@ -356,6 +416,65 @@ def check_section_6(root: str, spec: str, surfaces: Surfaces) -> int:
 
 
 # ------------------------------------------------- Appendix C: PP-9 spending --
+def _ledger_column_index(header: list) -> dict:
+    idx = {
+        "host": column(header, "host"),
+        "workload": column(header, "workload"),
+        "model": column(header, "model"),
+        "commit": column(header, "commit"),
+        "interleaved": column(header, "interleav"),
+        "conformance": column(header, "conformance"),
+    }
+    missing = [k for k, v in idx.items() if v < 0]
+    if missing:
+        emit("NOTE", "the ledger table carries no %s column, so those key "
+                     "components are absent from every spend key" % ", ".join(sorted(missing)))
+    return idx
+
+
+def _ledger_cell(cells: list, idx: dict, name: str) -> str:
+    i = idx[name]
+    return cells[i].strip().strip("`") if 0 <= i < len(cells) else ""
+
+
+def _ledger_spend_key(cells: list, idx: dict) -> tuple:
+    return tuple(_ledger_cell(cells, idx, k)
+                 for k in ("host", "workload", "model", "commit", "interleaved"))
+
+
+def _emit_respend(key: tuple) -> None:
+    emit("VIOLATION", "L1", " ".join(k for k in key if k),
+         "two ledger rows share the spend key (host, workload, model "
+         "quant, commit, interleaved) with conformance RECORDED. PP-9: a "
+         "cell, once run, is SPENT -- the second run is a re-roll, and "
+         "the only legal move is a new commit")
+
+
+def _check_ledger_spends(rows: list, idx: dict) -> int:
+    """Emit L1 for every re-spent key among RECORDED rows; return the RECORDED count."""
+    recorded = 0
+    seen = set()
+    for cells in rows:
+        if not _ledger_cell(cells, idx, "conformance").upper().startswith("RECORDED"):
+            continue
+        recorded += 1
+        key = _ledger_spend_key(cells, idx)
+        if key in seen:
+            _emit_respend(key)
+        seen.add(key)
+    return recorded
+
+
+def _emit_ledger_split(table_end: int, outside: tuple) -> None:
+    emit("VIOLATION", "L2", " ".join(rid for _, rid in outside),
+         "%d ledger row(s) sit outside the table PP-9 reads: the table "
+         "ends at line %d (a blank or prose line splits it) and a row "
+         "with the same columns continues at line %d; every spent row "
+         "must be contiguous with the header or the re-spend check "
+         "never sees it"
+         % (len(outside), table_end + 1, outside[0][0] + 1))
+
+
 def check_ledger(root: str, ledger: str) -> None:
     if not os.path.exists(ledger):
         emit("VIOLATION", "L0", "-",
@@ -369,36 +488,11 @@ def check_ledger(root: str, ledger: str) -> None:
     if not rows:
         emit("VIOLATION", "L0", "-", "no row table parsed from the ledger")
         return
-    idx = {
-        "host": column(header, "host"),
-        "workload": column(header, "workload"),
-        "model": column(header, "model"),
-        "commit": column(header, "commit"),
-        "interleaved": column(header, "interleav"),
-        "conformance": column(header, "conformance"),
-    }
-    missing = [k for k, v in idx.items() if v < 0]
-    if missing:
-        emit("NOTE", "the ledger table carries no %s column, so those key "
-                     "components are absent from every spend key" % ", ".join(sorted(missing)))
-    recorded = 0
-    seen = {}
-    for cells in rows:
-        def cell(name):
-            i = idx[name]
-            return cells[i].strip().strip("`") if 0 <= i < len(cells) else ""
-        conformance = cell("conformance")
-        if not conformance.upper().startswith("RECORDED"):
-            continue
-        recorded += 1
-        key = tuple(cell(k) for k in ("host", "workload", "model", "commit", "interleaved"))
-        if key in seen:
-            emit("VIOLATION", "L1", " ".join(k for k in key if k),
-                 "two ledger rows share the spend key (host, workload, model "
-                 "quant, commit, interleaved) with conformance RECORDED. PP-9: a "
-                 "cell, once run, is SPENT -- the second run is a re-roll, and "
-                 "the only legal move is a new commit")
-        seen[key] = True
+    table_end, outside = ledger_rows_outside_table(lines, header)
+    if outside:
+        _emit_ledger_split(table_end, outside)
+    idx = _ledger_column_index(header)
+    recorded = _check_ledger_spends(rows, idx)
     emit("LEDGER", len(rows), recorded)
     if recorded == 0:
         emit("NOTE", "no ledger row is marked conformance RECORDED, so the PP-9 "

@@ -153,6 +153,18 @@ row — and `interleaved`, because a non-interleaved sweep is a different experi
 the ledger has two conformance tiers: PP-9 binds on `RECORDED`, the tier a row can actually reach
 today, so the rule applies from the first row rather than after five missing producers land.
 
+**L2, the row-outside-the-table case.** The parser that enforces PP-9 reads the ledger's FIRST
+pipe table and stops at the first line that is neither a table row nor a separator — a blank line
+or a paragraph is enough. A ledger row typed after such a break, with the same column shape as the
+header, is invisible to the re-spend check: it is never compared to anything, so nothing prevents
+re-spending the key it carries. That happened here — a blank line split the table, and duplicating
+the last row as a new one passed `spec_conformance.sh` clean, because the parser's universe was
+four rows, not six. A guard's must-fire has to be a row sitting **outside the table**, i.e. a
+**split** table, because a row that stays inside the parsed table was already covered by L1. The
+row count the scanner reports (`LEDGER <rows> <recorded>`) is compared against the rows visible on
+the page precisely because a recorded count nobody compares to the source is theater: it looks like
+measurement and enforces nothing.
+
 ### PP-10
 
 `I-14`. A request issued after the window closes has its prefill inside the window and its decode

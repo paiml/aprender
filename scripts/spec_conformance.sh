@@ -83,7 +83,7 @@ selftest() {
     # definition parses as top-level to bashrs (SC2168), and a lint error in a
     # guard is the one place a lint error is not cosmetic.
     local td pass=0 fail=0
-    local BT ROW_ARMED ROW_OPEN DAG_OK LEDGER_ONE LEDGER_TWO LEDGER_TWO_COMMITS
+    local BT ROW_ARMED ROW_OPEN DAG_OK LEDGER_ONE LEDGER_TWO LEDGER_TWO_COMMITS LEDGER_SPLIT
     local root_dag derived
     td="$(mktemp -d)" || { printf 'FAIL  mktemp -d failed\n'; return 2; }
     case "$td" in
@@ -172,6 +172,7 @@ selftest() {
     LEDGER_ONE="| 1 | t | lambda | cuda | q · q4 | W1 | ${BT}aaaa${BT} | false | e | RECORDED |\\n"
     LEDGER_TWO="${LEDGER_ONE}| 2 | t | lambda | cuda | q · q4 | W1 | ${BT}aaaa${BT} | false | e | RECORDED |\\n"
     LEDGER_TWO_COMMITS="${LEDGER_ONE}| 2 | t | lambda | cuda | q · q4 | W1 | ${BT}bbbb${BT} | false | e | RECORDED |\\n"
+    LEDGER_SPLIT="${LEDGER_ONE}\\n| 2 | t | lambda | cuda | q · q4 | W1 | ${BT}bbbb${BT} | false | e | RECORDED |\\n"
 
     # §6 -- the join itself.
     row conformance_ok CLEAN \
@@ -206,6 +207,13 @@ selftest() {
         "$(mk_root respend "$ROW_ARMED" "$DAG_OK" "$LEDGER_TWO" "alpha beta")"
     row respend_new_commit CLEAN \
         "$(mk_root respend_ok "$ROW_ARMED" "$DAG_OK" "$LEDGER_TWO_COMMITS" "alpha beta")"
+    # A blank line splits the ledger table: the second row shares the header's
+    # column count and a row-id-shaped first cell, but table_rows() never sees
+    # it -- L2, and only L2 (the two commits differ, so L1 does not also fire).
+    row ledger_row_outside_table L2 \
+        "$(mk_root split "$ROW_ARMED" "$DAG_OK" "$LEDGER_SPLIT" "alpha beta")"
+    row ledger_rows_contiguous CLEAN \
+        "$(mk_root contiguous "$ROW_ARMED" "$DAG_OK" "$LEDGER_TWO_COMMITS" "alpha beta")"
 
     # §12 -- the expiry DAG.
     if _reg dag_derived_equals_max_blocker; then
