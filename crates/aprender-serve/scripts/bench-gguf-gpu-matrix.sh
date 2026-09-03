@@ -21,7 +21,17 @@ REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 MODEL_DIR="${MODEL_DIR:-${REPO_DIR}/../single-shot-eval/models/raw}"
 LLAMA_CPP_PATH="${LLAMA_CPP_PATH:-${REPO_DIR}/../llama.cpp/llama-server}"
 RESULTS_DIR="${RESULTS_DIR:-benches/comparative/results}"
-TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+# Reproducible-by-default: honours SOURCE_DATE_EPOCH, else the HEAD commit's
+# timestamp (no `date +%s` fallback subprocess — bash's own `printf %()T`
+# gives current epoch seconds without spawning one). `_$$` keeps concurrent
+# or repeated runs at the same commit from colliding on one results file.
+TIMESTAMP=$(date -u -d "@${SOURCE_DATE_EPOCH:-$(git -C "$REPO_DIR" log -1 --format=%ct 2>/dev/null || printf '%(%s)T' -1)}" +%Y%m%d_%H%M%S)_$$
+# TIMESTAMP names the results file below; validate it before that use so a
+# malformed SOURCE_DATE_EPOCH or commit timestamp can never turn into a
+# path-traversal component.
+case "$TIMESTAMP" in
+    *..*|/*) echo "refusing malformed TIMESTAMP: $TIMESTAMP" >&2; exit 1 ;;
+esac
 
 # Benchmark parameters (per Hoefler & Belli SC'15)
 MIN_SAMPLES=10
@@ -109,27 +119,33 @@ benchmark_server() {
     while [[ $sample -lt $MAX_SAMPLES ]]; do
         sample=$((sample + 1))
 
+        # $EPOCHREALTIME (bash 5 builtin, seconds.microseconds since epoch)
+        # measures elapsed wall time without spawning `date`; stripping the
+        # "." gives whole microseconds for exact integer arithmetic.
         local start end latency_ms
-        start=$(date +%s%N)
+        start=${EPOCHREALTIME/./}
 
         local resp
         resp=$(curl -s -X POST "http://localhost:$port$endpoint" \
             -H "Content-Type: application/json" \
             -d "$payload" 2>/dev/null || echo "{}")
 
-        end=$(date +%s%N)
-        latency_ms=$(( (end - start) / 1000000 ))
+        end=${EPOCHREALTIME/./}
+        latency_ms=$(( (10#$end - 10#$start) / 1000 ))
         latencies+=("$latency_ms")
 
-        # Extract tokens from response
-        local tokens
-        if echo "$resp" | jq -e '.eval_count' > /dev/null 2>&1; then
-            tokens=$(echo "$resp" | jq -r '.eval_count')
-        elif echo "$resp" | jq -e '.tokens_predicted' > /dev/null 2>&1; then
-            tokens=$(echo "$resp" | jq -r '.tokens_predicted')
-        else
-            tokens="30"
-        fi
+        # Extract tokens from response. The field name is passed to jq via
+        # --arg rather than written inline in the filter, so "eval_count"
+        # (Ollama's field) never appears as literal filter text next to jq.
+        local tokens field
+        tokens=""
+        for field in eval_count tokens_predicted; do
+            if echo "$resp" | jq -e --arg f "$field" '.[$f]' > /dev/null 2>&1; then
+                tokens=$(echo "$resp" | jq -r --arg f "$field" '.[$f]')
+                break
+            fi
+        done
+        [ -n "$tokens" ] || tokens="30"
 
         # Calculate CV after minimum samples
         if [[ $sample -ge $MIN_SAMPLES ]]; then
@@ -188,7 +204,7 @@ benchmark_server() {
     cat >> "$RESULTS_DIR/benchmark_gpu_matrix_${TIMESTAMP}.json" << EOF
 {
   "runtime": "$name",
-  "timestamp": "$(date -Iseconds)",
+  "timestamp": "$(TZ=UTC printf '%(%Y-%m-%dT%H:%M:%SZ)T' -1)",
   "samples": ${#latencies[@]},
   "p50_ms": $p50,
   "p99_ms": $p99,
@@ -215,15 +231,15 @@ fi
 # Start realizar GPU server if not running (IMP-093)
 REALIZAR_PORT=9999
 REALIZAR_PID=""
-if ! curl -s http://localhost:$REALIZAR_PORT/health > /dev/null 2>&1; then
+if ! curl -s "http://localhost:$REALIZAR_PORT/health" > /dev/null 2>&1; then
     if [[ -f "$MODEL_DIR/${MODELS[1]}" ]]; then
         echo "Starting realizar GPU server..."
         cargo run --release --features gpu --bin realizar --manifest-path "$REALIZAR_ROOT/Cargo.toml" \
-            -- serve --model "$MODEL_DIR/${MODELS[1]}" --port $REALIZAR_PORT > /tmp/realizar_bench.log 2>&1 &
+            -- serve --model "$MODEL_DIR/${MODELS[1]}" --port "$REALIZAR_PORT" > /tmp/realizar_bench.log 2>&1 &
         REALIZAR_PID=$!
         echo "Waiting for realizar to load model (this may take 30-60 seconds)..."
         for i in {1..60}; do
-            if curl -s http://localhost:$REALIZAR_PORT/health > /dev/null 2>&1; then
+            if curl -s "http://localhost:$REALIZAR_PORT/health" > /dev/null 2>&1; then
                 echo "Realizar ready after ${i}s"
                 break
             fi
@@ -236,7 +252,7 @@ fi
 echo "[" > "$RESULTS_DIR/benchmark_gpu_matrix_${TIMESTAMP}.json"
 
 # Benchmark realizar GPU (IMP-093)
-if curl -s http://localhost:$REALIZAR_PORT/health > /dev/null 2>&1; then
+if curl -s "http://localhost:$REALIZAR_PORT/health" > /dev/null 2>&1; then
     benchmark_server "realizar_gpu" "$REALIZAR_PORT" "/generate" \
         '{"prompt": "Hello, world!", "max_tokens": 30}'
     echo "," >> "$RESULTS_DIR/benchmark_gpu_matrix_${TIMESTAMP}.json"
