@@ -110,7 +110,8 @@ PY_CELL
 receipt_is_historical() { # receipt -> yes when schema_version < 3 (the pre-v3 wire), else no
   python3 - "$1" <<'PY_HIST'
 import json, sys
-sv = json.load(open(sys.argv[1])).get("schema_version")
+r = json.load(open(sys.argv[1]))
+sv = r.get("schema_version")
 print("no" if (isinstance(sv, int) and not isinstance(sv, bool) and sv >= 3) else "yes")
 PY_HIST
 }
