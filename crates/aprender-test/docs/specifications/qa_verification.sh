@@ -24,8 +24,13 @@ check() {
     echo "=== Point $num: $desc ==="
     echo "Command: $cmd"
 
-    # Use eval to execute the command string, capturing stderr to stdout
-    if result=$(eval "$cmd" 2>&1); then
+    # SEC001: run the command string in an isolated subshell (bash -c)
+    # rather than `eval`, which would execute it inside THIS shell and could
+    # redefine check()'s own variables/functions/traps. Every call site here
+    # is a fixed literal string, but bash -c is still the correct primitive
+    # for "run this shell pipeline as a string" — capturing stderr to stdout
+    # exactly as before.
+    if result=$(bash -c "$cmd" 2>&1); then
         echo "Result: $result"
         echo "Status: PASS"
         ((PASS++))
@@ -177,4 +182,6 @@ check 99 "Examples in Cargo.toml" "grep -c '\[\[example\]\]' crates/probar/Cargo
 check 100 "Full test suite" "cargo test 2>&1 | grep 'test result'"
 
 echo ""
-echo "========================================
+echo "========================================"
+echo "SUMMARY: $PASS passed, $FAIL failed (of $((PASS + FAIL)) checks)"
+echo "========================================"

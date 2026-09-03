@@ -9,7 +9,10 @@ run_test() {
     desc=$2
     cmd=$3
     echo "Running [$id] $desc..."
-    eval "$cmd" > "logs/$id.log" 2>&1
+    # SEC001: run in an isolated subshell (bash -c) instead of `eval`, which
+    # would execute the string inside run_test()'s own shell and could
+    # clobber id/desc/cmd. Every call site passes a fixed literal string.
+    bash -c "$cmd" > "logs/$id.log" 2>&1
     if [ $? -eq 0 ]; then
         echo "[$id] PASS"
     else
