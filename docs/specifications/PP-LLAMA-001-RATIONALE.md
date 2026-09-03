@@ -191,6 +191,16 @@ a table half as wide. A table written above the ledger is L0, because the first 
 the scan reads. The mutation set that substantiates this runs the unmutated case table first and
 counts a crash as unviable, never as a kill.
 
+**The universe is what PP-9 binds on.** The third round showed that the header rule and the width
+tolerance were each still a condition an author could satisfy: a run under a decorative header was
+skipped whole, and a row three columns off was dropped rather than refused. PP-9 binds on
+`RECORDED` (and `CONFORMANT` implies it), so the row the rule exists to catch is one that *claims a
+spend*; that claim is the membership test, and nothing else is. A row outside the first table with
+a row id and a tier is L2 whatever its width, its leading pipe, or the table it was pasted under; a
+row that claims no tier spends nothing and is another table's business, which is what keeps the
+superseded-documents table out without a rule about headers. A table written above the ledger is
+L0, and the ledger's own rows are then outside the first table and L2 as well.
+
 ### PP-10
 
 `I-14`. A request issued after the window closes has its prefill inside the window and its decode

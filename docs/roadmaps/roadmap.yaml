@@ -14119,3 +14119,24 @@ roadmap:
     519483fd, cb269b2c, 804fdc9e, 972bd0c8). Re-run by Fable on 45588b6d1: dummy-first-line escape confirmed (violations
     NONE); blank line at LEDGER.md:100 flagged 11 rows (confirmed); the bold-id escape was REFUTED (strip_md already
     strips emphasis: L1,L2 fired). Landed in PR #2861 with PMAT-930 and PMAT-931'
+- id: PMAT-933
+  github_issue: null
+  item_type: bug
+  title: 'PMAT-932 third review: a run under a decorative header was skipped whole and a row three columns off was
+    dropped rather than refused; the L2 universe is now every row that claims a spend (RECORDED or CONFORMANT)'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-09-03 18:05:00+00:00
+  updated: 2026-09-03 18:05:00+00:00
+  spec: docs/specifications/PP-LLAMA-001-MASTER.md
+  acceptance_criteria:
+  - 'a line outside the first table is a ledger row iff it has two or more pipes, a row-id first cell and a cell that
+    claims RECORDED or CONFORMANT; no run, header or width condition; fixtures ledger_row_under_foreign_header (L1,L2),
+    ledger_row_three_columns_off_outside (L2), ledger_row_conformant_outside (L2), ledger_row_without_tier_outside_ok
+    (CLEAN); ledger_first_table_not_ledger becomes L0,L2; mutants tier-claim-check-removed and conformant-tier-dropped
+    replace header-skip-removed and width-tolerance-removed; 10/10 killed'
+  notes: 'Found by the PMAT-932 review (paiml-agy-delegate: the §3.E arm 611de8db and lanes 87ecbcb2, 12f3e8e4; lane 2
+    never returned). Re-run by Fable on fa6cf7706: a dummy header + separator + a RECORDED re-spend produced no
+    violation (confirmed); a short RECORDED row outside the table produced none (confirmed once the probe carried the
+    tier). The L0 objection (a table above the ledger) is designed behaviour and was rejected. Landed in PR #2861'
