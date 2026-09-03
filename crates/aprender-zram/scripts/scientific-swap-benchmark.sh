@@ -39,14 +39,29 @@
 set -euo pipefail
 
 # Reproducibility escape hatch (bashrs DET002): SOURCE_DATE_EPOCH, when a
-# caller sets it, pins every timestamp this script emits to one instant so a
-# rerun of the same script version is byte-for-byte comparable (packaging /
-# CI replay). Left unset -- the normal case for an actual benchmark
-# invocation -- every helper below falls through to the real wall clock, so
-# run directory names and report timestamps are unchanged from before.
-_bench_epoch() { printf '%s' "${SOURCE_DATE_EPOCH:-$(date +%s)}"; }
-_bench_stamp_compact() { date -u -d "@$(_bench_epoch)" +%Y%m%d-%H%M%S; }
-_bench_stamp_iso() { date -u -d "@$(_bench_epoch)" -Iseconds; }
+# caller sets it, pins every timestamp this script emits to one UTC instant
+# so a rerun of the same script version is byte-for-byte comparable
+# (packaging / CI replay). Left unset -- the normal case for an actual
+# benchmark invocation -- every helper below falls through to plain `date`
+# (local wall clock, exactly as before this helper existed), so run
+# directory names and report timestamps are unchanged from before. Routing
+# the unset case through the epoch would silently force UTC formatting even
+# on a host whose local zone differs, which is a real behavior change this
+# helper must not make.
+_bench_stamp_compact() {
+    if [ -n "${SOURCE_DATE_EPOCH:-}" ]; then
+        date -u -d "@${SOURCE_DATE_EPOCH}" +%Y%m%d-%H%M%S
+    else
+        date +%Y%m%d-%H%M%S
+    fi
+}
+_bench_stamp_iso() {
+    if [ -n "${SOURCE_DATE_EPOCH:-}" ]; then
+        date -u -d "@${SOURCE_DATE_EPOCH}" -Iseconds
+    else
+        date -Iseconds
+    fi
+}
 
 #═══════════════════════════════════════════════════════════════════════════════
 # Configuration

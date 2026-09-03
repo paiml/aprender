@@ -38,12 +38,27 @@ set -euo pipefail
 
 # Reproducibility escape hatch (bashrs DET002): SOURCE_DATE_EPOCH, when a
 # caller sets it, pins the clock this dispatch names its run and stamps its
-# manifest with. Unset -- the normal case for a live dispatch -- these fall
-# through to the real wall clock, so the run name and dispatch timestamp are
-# unchanged from before.
-_epoch_now() { printf '%s' "${SOURCE_DATE_EPOCH:-$(date -u +%s)}"; }
-_stamp_compact() { date -u -d "@$(_epoch_now)" +%Y%m%d-%H%M%S; }
-_stamp_iso_z() { date -u -d "@$(_epoch_now)" +%Y-%m-%dT%H:%M:%SZ; }
+# manifest with, to one UTC instant. Unset -- the normal case for a live
+# dispatch -- each helper falls through to the exact pre-existing call
+# (RUN_NAME's `date +%Y%m%d-%H%M%S` was local time with no -u; dispatched_at's
+# `date -u +%Y-%m-%dT%H:%M:%SZ` was already UTC), so the run name and
+# dispatch timestamp are unchanged from before. Routing the unset case
+# through the epoch would force RUN_NAME's local-time stamp to UTC, which is
+# a real behavior change on any host whose local zone differs from UTC.
+_stamp_compact() {
+    if [ -n "${SOURCE_DATE_EPOCH:-}" ]; then
+        date -u -d "@${SOURCE_DATE_EPOCH}" +%Y%m%d-%H%M%S
+    else
+        date +%Y%m%d-%H%M%S
+    fi
+}
+_stamp_iso_z() {
+    if [ -n "${SOURCE_DATE_EPOCH:-}" ]; then
+        date -u -d "@${SOURCE_DATE_EPOCH}" +%Y-%m-%dT%H:%M:%SZ
+    else
+        date -u +%Y-%m-%dT%H:%M:%SZ
+    fi
+}
 
 # --------------------------------------------------------------------------
 # Config (override via env)
