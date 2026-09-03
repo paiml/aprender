@@ -32,6 +32,11 @@ tier-claim-check-removed	    if not _claims_spend(cells):	    if False:
 id-required-reintroduced	    if not _claims_spend(cells):	    if not _claims_spend(cells) or not _row_id(cells):
 tier-backtick-strip-removed	    return any(_norm(c).upper().startswith(SPEND_TIERS) for c in cells)	    return any(c.strip().upper().startswith(SPEND_TIERS) for c in cells)
 conformant-tier-dropped	SPEND_TIERS = ("RECORDED", "CONFORMANT")	SPEND_TIERS = ("RECORDED",)
+l1-respend-check-removed	        if key in seen:	        if False:
+l1-tier-filter-narrowed	        if not _ledger_cell(cells, idx, "conformance").upper().startswith(SPEND_TIERS):	        if not _ledger_cell(cells, idx, "conformance").upper().startswith("RECORDED"):
+wrap-emphasis-strip-removed	_WRAP = "`*_ \t"	_WRAP = "` \t"
+key-normaliser-bypassed	    return _norm(cells[i]) if 0 <= i < len(cells) else ""	    return cells[i].strip().strip("`") if 0 <= i < len(cells) else ""
+key-casefold-removed	    return tuple(_ledger_cell(cells, idx, k).casefold()	    return tuple(_ledger_cell(cells, idx, k)
 l0-missing-columns-ignored	    missing = [k for k, v in idx.items() if v < 0]	    missing = []
 CAT
 )

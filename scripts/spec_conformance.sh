@@ -88,6 +88,7 @@ selftest() {
     local LEDGER_DUMMY_FIRST LEDGER_BOLD LEDGER_SIDE_SPLIT LEDGER_SIDE_WIDE LEDGER_SAME_HEADER LEDGER_EXTRA_OUT LEDGER_PRE
     local LEDGER_FOREIGN_HEADER LEDGER_THREE_OFF LEDGER_CONFORMANT_OUT LEDGER_NO_TIER_OUT
     local LEDGER_NONNUMERIC_ID LEDGER_BACKTICK_TIER LEDGER_RESERVED_WORD
+    local LEDGER_UNDERSCORED_TIER LEDGER_RESPEND_CONFORMANT LEDGER_RESPEND_EMPHASISED_KEY LEDGER_RESPEND_ZWSP_KEY
     local root_dag derived
     td="$(mktemp -d)" || { printf 'FAIL  mktemp -d failed\n'; return 2; }
     case "$td" in
@@ -199,6 +200,10 @@ selftest() {
     LEDGER_NONNUMERIC_ID="${LEDGER_ONE}\\n| foo | t | lambda | cuda | q · q4 | W1 | ${BT}bbbb${BT} | false | e | RECORDED |\\n"
     LEDGER_BACKTICK_TIER="${LEDGER_ONE}\\n| 2 | t | lambda | cuda | q · q4 | W1 | ${BT}bbbb${BT} | false | e | ${BT}RECORDED${BT} |\\n"
     LEDGER_RESERVED_WORD="${LEDGER_TWO_COMMITS}\\n| # | repo | state |\\n|---|---|---|\\n| 3 | aprender | RECORDED as retained |\\n"
+    LEDGER_UNDERSCORED_TIER="${LEDGER_ONE}| 2 | t | lambda | cuda | q · q4 | W1 | ${BT}aaaa${BT} | false | e | __RECORDED__ |\\n"
+    LEDGER_RESPEND_CONFORMANT="| 1 | t | lambda | cuda | q · q4 | W1 | ${BT}aaaa${BT} | false | e | CONFORMANT |\\n| 2 | t | lambda | cuda | q · q4 | W1 | ${BT}aaaa${BT} | false | e | CONFORMANT |\\n"
+    LEDGER_RESPEND_EMPHASISED_KEY="${LEDGER_ONE}| 2 | t | __lambda__ | cuda | q · q4 | W1 | <code>aaaa</code> | false | e | RECORDED |\\n"
+    LEDGER_RESPEND_ZWSP_KEY="${LEDGER_ONE}| 2 | t | lam\\u200bbda | cuda | q · q4 | W1 | ${BT}AAAA${BT} | false | e | RECORDED |\\n"
 
     # §6 -- the join itself.
     row conformance_ok CLEAN \
@@ -302,6 +307,17 @@ selftest() {
         "$(mk_root backticktier "$ROW_ARMED" "$DAG_OK" "$LEDGER_BACKTICK_TIER" "alpha beta")"
     row ledger_reserved_word_in_side_table L2 \
         "$(mk_root reservedword "$ROW_ARMED" "$DAG_OK" "$LEDGER_RESERVED_WORD" "alpha beta")"
+    # PMAT-935: one normaliser for every cell. Underscore emphasis around the
+    # tier, CONFORMANT as a spend for L1 too, emphasis, code tags, a zero-width
+    # space or letter case inside a key -- none of them makes a second run new.
+    row ledger_row_underscored_tier L1 \
+        "$(mk_root underscoredtier "$ROW_ARMED" "$DAG_OK" "$LEDGER_UNDERSCORED_TIER" "alpha beta")"
+    row ledger_respend_conformant L1 \
+        "$(mk_root respendconformant "$ROW_ARMED" "$DAG_OK" "$LEDGER_RESPEND_CONFORMANT" "alpha beta")"
+    row ledger_respend_emphasised_key L1 \
+        "$(mk_root emphkey "$ROW_ARMED" "$DAG_OK" "$LEDGER_RESPEND_EMPHASISED_KEY" "alpha beta")"
+    row ledger_respend_zero_width_key L1 \
+        "$(mk_root zwspkey "$ROW_ARMED" "$DAG_OK" "$LEDGER_RESPEND_ZWSP_KEY" "alpha beta")"
 
     # §12 -- the expiry DAG.
     if _reg dag_derived_equals_max_blocker; then

@@ -42,6 +42,7 @@ from __future__ import annotations
 import glob
 import json
 import os
+import unicodedata
 import re
 import subprocess
 import sys
@@ -191,10 +192,24 @@ def _row_id(cells: list) -> str:
 SPEND_TIERS = ("RECORDED", "CONFORMANT")
 
 
+_WRAP = "`*_ \t"
+_CODE_TAG = re.compile(r"</?code>", re.IGNORECASE)
+
+
 def _norm(cell: str) -> str:
-    """One normalisation for every cell the ledger rules read: backticks and
-    surrounding whitespace off (strip_md has already taken emphasis off)."""
-    return cell.strip().strip("`").strip()
+    """One normalisation for every cell the ledger rules read. What a
+    formatting habit can put around or inside a value comes off: code tags,
+    format characters (zero-width joiners and spaces), no-break spaces,
+    runs of whitespace, and wrapping backticks, asterisks and underscores.
+    What is left is the value a person meant; comparisons casefold it.
+    THREAT MODEL, stated so the class is bounded: PP-9 is a discipline rule
+    against the honest re-roll. A key disguised past this normaliser
+    (homoglyphs, a changed digit) is a forged ledger row, and a forged row is
+    a line the pull request's diff shows to its reviewers (PMAT-935)."""
+    text = _CODE_TAG.sub("", cell)
+    text = "".join(ch for ch in text if unicodedata.category(ch) != "Cf")
+    text = " ".join(text.replace("\u00a0", " ").split())
+    return text.strip(_WRAP)
 
 
 def _claims_spend(cells: list) -> bool:
@@ -535,11 +550,11 @@ def _ledger_column_index(header: list) -> dict:
 
 def _ledger_cell(cells: list, idx: dict, name: str) -> str:
     i = idx[name]
-    return cells[i].strip().strip("`") if 0 <= i < len(cells) else ""
+    return _norm(cells[i]) if 0 <= i < len(cells) else ""
 
 
 def _ledger_spend_key(cells: list, idx: dict) -> tuple:
-    return tuple(_ledger_cell(cells, idx, k)
+    return tuple(_ledger_cell(cells, idx, k).casefold()
                  for k in ("host", "workload", "model", "commit", "interleaved"))
 
 
@@ -556,7 +571,7 @@ def _check_ledger_spends(rows: list, idx: dict) -> int:
     recorded = 0
     seen = set()
     for cells in rows:
-        if not _ledger_cell(cells, idx, "conformance").upper().startswith("RECORDED"):
+        if not _ledger_cell(cells, idx, "conformance").upper().startswith(SPEND_TIERS):
             continue
         recorded += 1
         key = _ledger_spend_key(cells, idx)
@@ -601,7 +616,7 @@ def check_ledger(root: str, ledger: str) -> None:
         return
     universe = _ledger_universe(lines, header, rows)
     recorded = _check_ledger_spends(universe, _ledger_column_index(header))
-    emit("LEDGER", len(rows), recorded)
+    emit("LEDGER", len(universe), recorded)
     if recorded == 0:
         emit("NOTE", "no ledger row is marked conformance RECORDED, so the PP-9 "
                      "duplicate rule matched nothing on this tree; its must-fire "
