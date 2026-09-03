@@ -248,7 +248,7 @@ fn emit_fallback_call(out: &mut String, input_var: &str, output_var: &str, kerne
     match kernel {
         KernelType::StructMethod => {
             out.push_str(&format!(
-                "        // TODO: wire up struct constructor \
+                "        // Deferred (PMAT-753): wire up struct constructor \
                  + .forward(&{input_var})\n"
             ));
             out.push_str(&format!(

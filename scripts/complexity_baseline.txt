@@ -15,8 +15,6 @@ crates/apr-cli/src/commands/embed_viz_classifier.rs::classify_schema 14 42
 crates/apr-cli/src/commands/experiment.rs::run_tui_browser 19 63
 crates/apr-cli/src/commands/explain.rs::explain_tensor 9 28
 crates/apr-cli/src/commands/explain_token_classifier.rs::classify_schema 12 50
-crates/apr-cli/src/commands/finetune.rs::execute_training 16 27
-crates/apr-cli/src/commands/finetune.rs::execute_training_wgpu 22 50
 crates/apr-cli/src/commands/gpu_memtrace_classifier.rs::classify_schema 9 26
 crates/apr-cli/src/commands/hang_trace_lint.rs::run 14 31
 crates/apr-cli/src/commands/inspect_output_json.rs::compute_quality_score 14 33
@@ -79,7 +77,6 @@ crates/aprender-common/src/display.rs::truncate_path 9 31
 crates/aprender-compute/src/activations.rs::test_f32_to_f16_matches_half_across_grid_rne 9 30
 crates/aprender-compute/src/backends/gpu/device/eigen.rs::symmetric_eigen_async 14 48
 crates/aprender-compute/src/backends/gpu/device/eigen.rs::symmetric_eigen_cpu 12 43
-crates/aprender-compute/src/backends/gpu/device/linalg/wgsl_forward.rs::forward_layer 19 33
 crates/aprender-compute/src/blis/compute.rs::gemm_blis 37 74
 crates/aprender-compute/src/blis/compute.rs::gemm_blis_avx512_bcast_b 11 51
 crates/aprender-compute/src/blis/compute.rs::gemm_blis_avx512_large 25 104
@@ -249,7 +246,6 @@ crates/aprender-data/src/quality/checks.rs::collect_data 15 56
 crates/aprender-data/src/serve/raw_source.rs::detect_format 13 27
 crates/aprender-data/src/sketch.rs::add_dataset 10 56
 crates/aprender-data/src/sketch.rs::merge 9 27
-crates/aprender-data/src/tui/adapter.rs::search_from 10 33
 crates/aprender-db/tests/backend_equivalence_tests.rs::prop_avg_equivalence_f32 14 40
 crates/aprender-distribute/src/checkpoint/mod.rs::cleanup 9 33
 crates/aprender-distribute/src/executor/remote.rs::start_test_worker 10 61
@@ -387,10 +383,7 @@ crates/aprender-profile/src/ml_anomaly.rs::calculate_silhouette_from_features 16
 crates/aprender-profile/src/process_tracer.rs::next 11 66
 crates/aprender-profile/src/ring_buffer.rs::sidecar_worker 9 27
 crates/aprender-profile/src/unified_trace.rs::happens_before 9 31
-crates/aprender-ptx-debug/src/analyzer/address_space.rs::detect_generic_shared_access 13 47
-crates/aprender-ptx-debug/src/analyzer/address_space.rs::detect_loop_cvta_shared 12 44
 crates/aprender-ptx-debug/src/analyzer/control_flow.rs::analyze_barriers 11 37
-crates/aprender-ptx-debug/src/analyzer/data_flow.rs::detect_computed_addr_from_loaded 12 27
 crates/aprender-ptx-debug/src/parser/lexer/mod.rs::read_directive 12 29
 crates/aprender-ptx-debug/src/parser/lexer/mod.rs::read_identifier_or_instruction 12 34
 crates/aprender-qa-gen/src/kernel_coverage.rs::walk_rs_files_for_name 8 33
@@ -580,8 +573,6 @@ crates/aprender-test-lib/src/file_ops.rs::is_accepted 9 32
 crates/aprender-test-lib/src/gpu_pixels/ptx_analysis.rs::analyze 22 43
 crates/aprender-test-lib/src/lint/ast_visitor.rs::is_rc_constructor_call 14 51
 crates/aprender-test-lib/src/lint/ast_visitor.rs::visit_local 15 57
-crates/aprender-test-lib/src/lint/state_sync.rs::detect_rc_function_call 7 26
-crates/aprender-test-lib/src/lint/state_sync.rs::lint_source_text_based 19 42
 crates/aprender-test-lib/src/llm/client.rs::chat_completion_stream 16 69
 crates/aprender-test-lib/src/llm/client.rs::serve_scripted_sse 9 26
 crates/aprender-test-lib/src/llm/score.rs::compute_concurrency_scaling_scorecard 11 29
@@ -593,8 +584,6 @@ crates/aprender-test-lib/src/pixel_coverage/heatmap.rs::export 49 176
 crates/aprender-test-lib/src/pixel_coverage/parallel.rs::downscale 11 33
 crates/aprender-test-lib/src/pixel_coverage/terminal.rs::find_gaps 15 63
 crates/aprender-test-lib/src/playbook/chromium_executor.rs::wait 11 49
-crates/aprender-test-lib/src/playbook/runner.rs::check_output_assertion 17 58
-crates/aprender-test-lib/src/playbook/runner.rs::run 9 27
 crates/aprender-test-lib/src/playbook/schema.rs::validate 10 29
 crates/aprender-test-lib/src/runtime.rs::test_wasm_circular_import_detection 10 31
 crates/aprender-test-lib/src/tui/tty.rs::parse_ansi_commands 17 43
@@ -645,7 +634,6 @@ crates/aprender-train/src/search/mcts/search/algorithm.rs::select 9 27
 crates/aprender-train/src/tokenizer/bpe.rs::train_fast 30 87
 crates/aprender-train/src/tokenizer/bpe.rs::train_naive_reference 9 30
 crates/aprender-train/src/train/gputrain_006.rs::verdict_from_reproducibility_study 13 26
-crates/aprender-train/src/train/pretrain_real.rs::family_from_tensor_names 16 40
 crates/aprender-train/src/train/shard_reader.rs::read_one_sequence 9 36
 crates/aprender-train/src/train/transformer_trainer/cuda_trainer.rs::gpu_backward 21 50
 crates/aprender-train/src/train/transformer_trainer/cuda_trainer.rs::load_optimizer_state_apr 26 51
