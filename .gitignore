@@ -100,3 +100,14 @@ per-layer-trace/
 # Python bytecode from scripts/*.py (dogfood gate helpers import each other)
 __pycache__/
 *.pyc
+
+# Root-level scratch that was once committed by accident (removed in 0.65.0):
+# pmat probe outputs, a stray simulation binary and its source, an 8.9 MB
+# strings dump, ticket lists. Root-anchored (CB-510): `/` so src/models is
+# never caught by a bare pattern.
+/*.out
+/remaining*.txt
+/gh_strings.txt
+/sim4
+/sim4.rs
+/.lint-cache

@@ -85,7 +85,7 @@ CARGO_CLASSIFY_CASES="${CARGO_CLASSIFY_DIR}/lib/cargo_failure_cases"
 # `cargo test` logs, where TEST NAMES AND ASSERTION MESSAGES routinely contain
 # the words "connection refused", "signal: 9" and "No space left on device".
 # Rows C11-C13 are those.
-_CARGO_ENV_SIG='could not execute process|could not parse/generate dep info|No space left on device \(os error 28\)|process did(n.t| not) exit successfully:.*\(signal: (9|15)[,)]|failed to acquire package cache lock|error: failed to download|couldn.t create a temp dir|\[double-spawn\] failed to exec'
+_CARGO_ENV_SIG='The slotmap turned out to be too small with [0-9]+ entries|could not execute process|could not parse/generate dep info|No space left on device \(os error 28\)|process did(n.t| not) exit successfully:.*\(signal: (9|15)[,)]|failed to acquire package cache lock|error: failed to download|couldn.t create a temp dir|\[double-spawn\] failed to exec'
 
 # The network rows need TWO conditions, because "Connection refused" and
 # "Temporary failure in name resolution" are ordinary strings that a test can
@@ -195,6 +195,11 @@ cargo_classify_selftest() {
     _row ENV  'C14 registry download failed'                     log_env_download.txt
     _row ENV  'C15 sovereign registry refused the connection'    log_env_conn_refused.txt
     _row ENV  'C16 DNS resolution failed (class=Net)'            log_env_dns.txt
+    # C20: cargo reads the workspace's own .git through gix-odb, whose pack
+    # index is a 32-slot map; a runner checkout that has fetched 33+ times
+    # without a gc overflows it before cargo reads a manifest. Four of sixteen
+    # fleet checkouts were past 32 on 2026-09-03 (33, 34, 37, 38 packs).
+    _row ENV  'C20 gix-odb slotmap overflow (33+ packs in the checkout)' log_env_gix_slotmap.txt
 
     # --- CODE: cargo ran, and the answer is about the code -----------------
     _row CODE 'C5  a genuine unresolved import'                  log_code_unresolved_import.txt

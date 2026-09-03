@@ -145,6 +145,11 @@ falsification_tests:
     prediction: "The derivation over evidence/parity-http/bands reproduces 0.5341/0.2308/0.1685/0.0967 and 0.5873/0.9231/1.3525/1.5540 to four decimals"
     test: "python3 scripts/lib/perf_receipt.py --fixture-check"
     if_fails: "The arithmetic the whole parity chain rests on changed, or the committed corpus did"
+  - id: FALSIFY-PP-LLAMA-001-PERF-GATE-010
+    rule: "An executor-layout receipt carries the PP-26 witness per band, attached from the perf041 witness file, since the per-replicate bench reports carry none"
+    prediction: "With --witness-json naming the band, the band carries the probe's block and is not INVALID-CORRECTNESS; with the band missing from the file it is INVALID-CORRECTNESS (rows witness_attached_from_perf041, witness_absent_band_is_invalid_correctness)"
+    test: "python3 scripts/lib/perf_receipt.py --selftest"
+    if_fails: "Either a band reads MEASURED with no witness block, or the attachment was dropped — the must-fire mutation (parity_block.py _witness_for returning only the reports' agreed value) turns witness_attached_from_perf041 RED"
 
   - id: FALSIFY-PP-LLAMA-001-PERF-GATE-010
     rule: "At --phase release, ArmC-sig and ArmD REPORT for a pre-v3 receipt cited for an UNMEASURED cell, and FAIL for every other input"
