@@ -136,9 +136,11 @@ fi
 
 OUTPUT_HEAD=$(head -c 500 "$OUTPUT_FILE")
 
-# Archive with jq (standard tool)
+# Archive with jq (standard tool). SOURCE_DATE_EPOCH, when set, pins the
+# recorded timestamp for a reproducible/test invocation; otherwise this is
+# real wall-clock time, as befits an evidence record of a live discharge run.
 jq -n \
-    --arg ts "$(date -Iseconds)" \
+    --arg ts "$(date -u -d "@${SOURCE_DATE_EPOCH:-$(date +%s)}" -Iseconds)" \
     --arg model "$MODEL_ID" \
     --arg fmt "$MANIFEST_FORMAT" \
     --arg manifest "$MANIFEST" \
