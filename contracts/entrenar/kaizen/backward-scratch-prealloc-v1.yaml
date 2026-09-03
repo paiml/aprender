@@ -1,3 +1,11 @@
+metadata:
+  kind: kaizen
+  version: "1.0.0"
+  author: "PAIML Engineering"
+  description: "backward-scratch-prealloc-v1 — kaizen KAIZEN-045 improvement record"
+  references:
+    - "KAIZEN-045"
+
 contract: backward-scratch-prealloc-v1
 version: 1.0.0
 status: implemented

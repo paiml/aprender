@@ -1,3 +1,13 @@
+metadata:
+  kind: kaizen
+  version: "1.0.0"
+  created: "2026-04-03"
+  author: "PAIML Engineering"
+  description: "FP16 cuBLAS GEMM for Training (Tier 2 Parity)"
+  references:
+    - "KAIZEN-068"
+    - "parent contract: apr-training-parity-v1"
+
 contract: fp16-cublas-gemm-v1
 title: FP16 cuBLAS GEMM for Training (Tier 2 Parity)
 kaizen: KAIZEN-068

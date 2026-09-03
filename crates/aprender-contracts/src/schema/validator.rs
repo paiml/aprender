@@ -46,6 +46,13 @@ pub fn validate_contract(contract: &Contract) -> Vec<Violation> {
         validate_beat_benchmark(contract, &mut violations);
     }
 
+    // Kaizen-only checks: an improvement record is exempt from
+    // PROVABILITY-001 (it is a measurement, not a theorem) but is held to its
+    // own falsifiability rules — see `schema::kaizen`, KAIZEN-001..006.
+    if contract.kind() == ContractKind::Kaizen {
+        crate::schema::kaizen::validate_kaizen(contract, &mut violations);
+    }
+
     // CRUX competitive-research metadata (aprender#2555): kind-independent —
     // the three fields are carried by 275 `crux-*` contracts of several kinds
     // and by non-crux contracts that reuse the vocabulary.
@@ -529,90 +536,128 @@ fn validate_equations(contract: &Contract, violations: &mut Vec<Violation>) {
     }
 }
 
+/// SCHEMA-005/006/014/015/016/017 over every proof obligation.
+///
+/// Split into three helpers rather than one loop body. As a single function it
+/// measured cognitive 30 against the repo's per-function ceiling of 25 (pmat
+/// analyze complexity), which blocked any commit that touched this file —
+/// including one that only added three lines elsewhere in it. The three
+/// helpers are the three things the loop actually checks: the obligation's own
+/// identity, whether its DbC fields belong on its type, and whether a
+/// subcontract's parent is declared. Order of pushed violations is unchanged.
 fn validate_proof_obligations(contract: &Contract, violations: &mut Vec<Violation>) {
-    use crate::schema::types::ObligationType;
-
-    let mut seen_ids = HashSet::new();
+    let mut seen_formal = HashSet::new();
     for (i, ob) in contract.proof_obligations.iter().enumerate() {
-        if ob.property.is_empty() {
-            violations.push(Violation {
-                severity: Severity::Error,
-                rule: "SCHEMA-005".to_string(),
-                message: format!("proof_obligations[{i}].property must not be empty"),
-                location: Some(format!("proof_obligations[{i}].property")),
-            });
-        }
-        if let Some(ref formal) = ob.formal {
-            if !seen_ids.insert(formal.clone()) {
-                violations.push(Violation {
-                    severity: Severity::Warning,
-                    rule: "SCHEMA-006".to_string(),
-                    message: format!("Duplicate formal predicate: {formal}"),
-                    location: Some(format!("proof_obligations[{i}].formal")),
-                });
-            }
-        }
+        validate_obligation_identity(i, ob, &mut seen_formal, violations);
+        validate_obligation_dbc_fields(i, ob, violations);
+        validate_obligation_parent_link(i, ob, contract, violations);
+    }
+}
 
-        // DbC field/type constraints
-        if ob.requires.is_some() && ob.obligation_type != ObligationType::Postcondition {
+/// SCHEMA-005/006: an obligation states a property, and no two obligations
+/// share a formal predicate.
+fn validate_obligation_identity(
+    index: usize,
+    ob: &crate::schema::types::ProofObligation,
+    seen_formal: &mut HashSet<String>,
+    violations: &mut Vec<Violation>,
+) {
+    if ob.property.is_empty() {
+        violations.push(Violation {
+            severity: Severity::Error,
+            rule: "SCHEMA-005".to_string(),
+            message: format!("proof_obligations[{index}].property must not be empty"),
+            location: Some(format!("proof_obligations[{index}].property")),
+        });
+    }
+    if let Some(ref formal) = ob.formal {
+        if !seen_formal.insert(formal.clone()) {
             violations.push(Violation {
-                severity: Severity::Error,
-                rule: "SCHEMA-014".to_string(),
-                message: format!(
-                    "proof_obligations[{i}].requires is only valid on \
-                     postcondition obligations (found on {})",
-                    ob.obligation_type
-                ),
-                location: Some(format!("proof_obligations[{i}].requires")),
+                severity: Severity::Warning,
+                rule: "SCHEMA-006".to_string(),
+                message: format!("Duplicate formal predicate: {formal}"),
+                location: Some(format!("proof_obligations[{index}].formal")),
             });
-        }
-
-        if ob.applies_to_phase.is_some()
-            && ob.obligation_type != ObligationType::LoopInvariant
-            && ob.obligation_type != ObligationType::LoopVariant
-        {
-            violations.push(Violation {
-                severity: Severity::Error,
-                rule: "SCHEMA-015".to_string(),
-                message: format!(
-                    "proof_obligations[{i}].applies_to_phase is only valid on \
-                     loop_invariant or loop_variant obligations (found on {})",
-                    ob.obligation_type
-                ),
-                location: Some(format!("proof_obligations[{i}].applies_to_phase")),
-            });
-        }
-
-        if ob.parent_contract.is_some() && ob.obligation_type != ObligationType::Subcontract {
-            violations.push(Violation {
-                severity: Severity::Error,
-                rule: "SCHEMA-016".to_string(),
-                message: format!(
-                    "proof_obligations[{i}].parent_contract is only valid on \
-                     subcontract obligations (found on {})",
-                    ob.obligation_type
-                ),
-                location: Some(format!("proof_obligations[{i}].parent_contract")),
-            });
-        }
-
-        // Subcontract parent_contract must be in depends_on
-        if let Some(ref parent) = ob.parent_contract {
-            if ob.obligation_type == ObligationType::Subcontract
-                && !contract.metadata.depends_on.contains(parent)
-            {
-                violations.push(Violation {
-                    severity: Severity::Error,
-                    rule: "SCHEMA-017".to_string(),
-                    message: format!(
-                        "proof_obligations[{i}].parent_contract \"{parent}\" \
-                         must be listed in metadata.depends_on"
-                    ),
-                    location: Some(format!("proof_obligations[{i}].parent_contract")),
-                });
-            }
         }
     }
+}
+
+/// SCHEMA-014/015/016: a DbC field only belongs on the obligation types that
+/// give it meaning. A `requires:` on an invariant, or an `applies_to_phase:`
+/// on a postcondition, is read by nothing.
+fn validate_obligation_dbc_fields(
+    index: usize,
+    ob: &crate::schema::types::ProofObligation,
+    violations: &mut Vec<Violation>,
+) {
+    use crate::schema::types::ObligationType;
+
+    let misplaced: [(bool, &str, &str, &str); 3] = [
+        (
+            ob.requires.is_some() && ob.obligation_type != ObligationType::Postcondition,
+            "SCHEMA-014",
+            "requires",
+            "postcondition",
+        ),
+        (
+            ob.applies_to_phase.is_some()
+                && ob.obligation_type != ObligationType::LoopInvariant
+                && ob.obligation_type != ObligationType::LoopVariant,
+            "SCHEMA-015",
+            "applies_to_phase",
+            "loop_invariant or loop_variant",
+        ),
+        (
+            ob.parent_contract.is_some() && ob.obligation_type != ObligationType::Subcontract,
+            "SCHEMA-016",
+            "parent_contract",
+            "subcontract",
+        ),
+    ];
+
+    for (is_misplaced, rule, field, valid_on) in misplaced {
+        if is_misplaced {
+            violations.push(Violation {
+                severity: Severity::Error,
+                rule: rule.to_string(),
+                message: format!(
+                    "proof_obligations[{index}].{field} is only valid on \
+                     {valid_on} obligations (found on {})",
+                    ob.obligation_type
+                ),
+                location: Some(format!("proof_obligations[{index}].{field}")),
+            });
+        }
+    }
+}
+
+/// SCHEMA-017: a subcontract's `parent_contract` must be declared in
+/// `metadata.depends_on`, so the composition graph can see the edge.
+fn validate_obligation_parent_link(
+    index: usize,
+    ob: &crate::schema::types::ProofObligation,
+    contract: &Contract,
+    violations: &mut Vec<Violation>,
+) {
+    use crate::schema::types::ObligationType;
+
+    let Some(parent) = ob.parent_contract.as_ref() else {
+        return;
+    };
+    if ob.obligation_type != ObligationType::Subcontract
+        || contract.metadata.depends_on.contains(parent)
+    {
+        return;
+    }
+    violations.push(Violation {
+        severity: Severity::Error,
+        rule: "SCHEMA-017".to_string(),
+        message: format!(
+            "proof_obligations[{index}].parent_contract \"{parent}\" \
+             must be listed in metadata.depends_on"
+        ),
+        location: Some(format!("proof_obligations[{index}].parent_contract")),
+    });
 }
 
 fn validate_falsification_tests(contract: &Contract, violations: &mut Vec<Violation>) {
