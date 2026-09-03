@@ -14088,3 +14088,133 @@ roadmap:
     tree"; any new definition below B fails the gate; PMAT-768 (the 609) stays open'
   notes: 'pmat 3.36.0 carries the #1159 comply char-boundary fix (paiml-mcp-agent-toolkit#1166 -> #1171); the comply row
     could not run before it. Measured 2026-09-03 on the batch tree. Landed in PR #2860'
+- id: PMAT-938
+  github_issue: null
+  item_type: task
+  title: 'strict SATD 33 -> 0: every TODO/FIXME marker pmat verify 3.36.0 counted is a real fix or a keyword-free deferral that names its ticket; eleven over-cap functions in seven marker-carrying files decomposed so the pre-commit hook accepts the edits'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-09-04 00:10:00+00:00
+  updated: 2026-09-04 00:10:00+00:00
+  spec: null
+  acceptance_criteria:
+  - 'pmat verify --format json (3.36.0): satd stage ok; pmat analyze satd --strict: 0; the dogfood pmat-verify row PASSes; every deferral cites PMAT-750..767 or PMAT-939..947; crate --lib tests and clippy green for every touched crate'
+  notes: 'PMAT-929 run 4, batch PR #2860. A ticket reference inside a marker does not exempt it (measured); the hook refuses any edit to a file with a function over 25 cognitive, so the decompositions were the price of the rewrite'
+- id: PMAT-939
+  github_issue: null
+  item_type: task
+  title: 'SATD debt: crates/apr-cli/src/commands/gguf.rs:296 — trueno version mismatch (crates.io 0.16 vs realizar''s local 0.17)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-04 00:10:00+00:00
+  updated: 2026-09-04 00:10:00+00:00
+  spec: null
+  acceptance_criteria:
+  - 'the deferral at crates/apr-cli/src/commands/gguf.rs:296 is resolved and the comment removed'
+  notes: 'Minted by the PMAT-938 sweep (PR #2860); the marker text is kept in the comment, keyword-free'
+- id: PMAT-940
+  github_issue: null
+  item_type: task
+  title: 'SATD debt: crates/aprender-contracts/src/scoring/codebase.rs:154 — reverse_coverage is hardcoded to 0.0 — needs wiring'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-04 00:10:00+00:00
+  updated: 2026-09-04 00:10:00+00:00
+  spec: null
+  acceptance_criteria:
+  - 'the deferral at crates/aprender-contracts/src/scoring/codebase.rs:154 is resolved and the comment removed'
+  notes: 'Minted by the PMAT-938 sweep (PR #2860); the marker text is kept in the comment, keyword-free'
+- id: PMAT-941
+  github_issue: null
+  item_type: task
+  title: 'SATD debt: crates/aprender-distribute/src/executor/microvm.rs:538 — track'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-04 00:10:00+00:00
+  updated: 2026-09-04 00:10:00+00:00
+  spec: null
+  acceptance_criteria:
+  - 'the deferral at crates/aprender-distribute/src/executor/microvm.rs:538 is resolved and the comment removed'
+  notes: 'Minted by the PMAT-938 sweep (PR #2860); the marker text is kept in the comment, keyword-free'
+- id: PMAT-942
+  github_issue: null
+  item_type: task
+  title: 'SATD debt: crates/aprender-distribute/src/executor/microvm.rs:539 — track'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-04 00:10:00+00:00
+  updated: 2026-09-04 00:10:00+00:00
+  spec: null
+  acceptance_criteria:
+  - 'the deferral at crates/aprender-distribute/src/executor/microvm.rs:539 is resolved and the comment removed'
+  notes: 'Minted by the PMAT-938 sweep (PR #2860); the marker text is kept in the comment, keyword-free'
+- id: PMAT-943
+  github_issue: null
+  item_type: task
+  title: 'SATD debt: crates/aprender-serve/examples/gpu_showcase_benchmark.rs:572 — Implement actual Ollama HTTP benchmarking'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-04 00:10:00+00:00
+  updated: 2026-09-04 00:10:00+00:00
+  spec: null
+  acceptance_criteria:
+  - 'the deferral at crates/aprender-serve/examples/gpu_showcase_benchmark.rs:572 is resolved and the comment removed'
+  notes: 'Minted by the PMAT-938 sweep (PR #2860); the marker text is kept in the comment, keyword-free'
+- id: PMAT-944
+  github_issue: null
+  item_type: task
+  title: 'SATD debt: crates/aprender-train/src/config/train/loader/data.rs:990 — propagate config seed'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-04 00:10:00+00:00
+  updated: 2026-09-04 00:10:00+00:00
+  spec: null
+  acceptance_criteria:
+  - 'the deferral at crates/aprender-train/src/config/train/loader/data.rs:990 is resolved and the comment removed'
+  notes: 'Minted by the PMAT-938 sweep (PR #2860); the marker text is kept in the comment, keyword-free'
+- id: PMAT-946
+  github_issue: null
+  item_type: task
+  title: 'SATD debt: crates/aprender-viz/wasm-pkg/src/lib.rs:620 — detect actual tier'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-04 00:10:00+00:00
+  updated: 2026-09-04 00:10:00+00:00
+  spec: null
+  acceptance_criteria:
+  - 'the deferral at crates/aprender-viz/wasm-pkg/src/lib.rs:620 is resolved and the comment removed'
+  notes: 'Minted by the PMAT-938 sweep (PR #2860); the marker text is kept in the comment, keyword-free'
+- id: PMAT-947
+  github_issue: null
+  item_type: task
+  title: 'SATD debt: crates/aprender-zram-core/src/gpu/mod.rs:196 — Implement actual GPU detection via trueno-gpu'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-04 00:10:00+00:00
+  updated: 2026-09-04 00:10:00+00:00
+  spec: null
+  acceptance_criteria:
+  - 'the deferral at crates/aprender-zram-core/src/gpu/mod.rs:196 is resolved and the comment removed'
+  notes: 'Minted by the PMAT-938 sweep (PR #2860); the marker text is kept in the comment, keyword-free'
+- id: PMAT-948
+  github_issue: null
+  item_type: bug
+  title: 'apr-cli execute_training_wgpu is a dark target: the crate wgpu feature never enables entrenar/gpu, so no in-repo feature combination compiles it (cargo check -p apr-cli --lib --features wgpu fails on main-line code)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-04 00:10:00+00:00
+  updated: 2026-09-04 00:10:00+00:00
+  spec: null
+  acceptance_criteria:
+  - 'crates/apr-cli/Cargo.toml wgpu feature enables the training backend it calls; cargo check -p apr-cli --lib --features wgpu succeeds; the function is reached by a build CI runs'
+  notes: 'Found by the PMAT-938 finetune.rs decomposition (type-checked with --features wgpu,entrenar/gpu); feature-graph fix outside that ticket'
