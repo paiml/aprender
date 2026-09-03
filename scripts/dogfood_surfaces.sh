@@ -633,7 +633,7 @@ emit_features() {
     #   dev      -> apr mono {publish,shims,audit,archive}
     #   hf-hub   -> alimentar {hub push, import hf}     (+ the apr data x mirror)
     #   doctest  -> alimentar doctest {extract,merge}   (+ the apr data x mirror)
-    #   eval     -> trueno-rag eval {7 verbs}           (+ the apr rag mirror)
+    #   `eval`   -> trueno-rag eval {7 verbs}           (+ the apr rag mirror)
     # Proven by rebuilding with the feature and watching them appear, not
     # inferred from the cfg attribute. Consumers MUST compare against a run with
     # the same feature set or treat those rows as a declared allowance.
