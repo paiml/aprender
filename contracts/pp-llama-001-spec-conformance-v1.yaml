@@ -143,7 +143,7 @@ falsification_tests:
 
   - id: FALSIFY-PP-LLAMA-001-CONFORMANCE-010
     rule: "L3: a first-table ledger row whose cell count differs from the header is refused, and no mutant of the L1/L2/L3 conditions survives its committed set"
-    prediction: "ledger_row_extra_pipe and ledger_row_trailing_pipes are L3 in the case table; scripts/mutate_spec_conformance.sh proves the unmutated table green first, then reports attempted=11 killed=11 unviable=0 survivors= none; a mutant that crashes the scanner is unviable, never a kill"
+    prediction: "ledger_row_extra_pipe and ledger_row_trailing_pipes are L3 in the case table; scripts/mutate_spec_conformance.sh proves the unmutated table green first, then reports attempted=10 killed=10 unviable=0 survivors= none; a mutant that crashes the scanner is unviable, never a kill"
     test: 'out=$(bash scripts/spec_conformance.sh --selftest); [ "$(echo "$out" | grep -c "ok    ledger_row_extra_pipe  *L3")" -eq 1 ] && [ "$(echo "$out" | grep -c "ok    ledger_row_trailing_pipes  *L3")" -eq 1 ] && bash scripts/mutate_spec_conformance.sh'
     if_fails: "a surviving mutant is a condition the scanner states and no fixture tests -- that shape is not a condition of PP-9's universe, that a different table is skipped whole, that the superseded region is out of scope, or that a malformed row is refused rather than mis-keyed -- and the rule it guards has no producer"
 

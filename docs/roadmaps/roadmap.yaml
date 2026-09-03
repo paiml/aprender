@@ -14157,7 +14157,7 @@ roadmap:
     CONFORMANT; the id is reported (row id or the raw first cell); the superseded cutoff is gone; fixtures
     ledger_row_nonnumeric_id_outside, ledger_row_backticked_tier_outside, ledger_reserved_word_in_side_table (L2),
     ledger_row_after_superseded_heading (L1,L2); mutants tier-backtick-strip-removed and id-required-reintroduced
-    replace backtick-strip-removed and superseded-cutoff-removed; 11/11 killed'
+    replace backtick-strip-removed and superseded-cutoff-removed; 10/10 killed'
   notes: 'Found by the PMAT-933 review (paiml-agy-delegate: the §3.E arm f5451570 and lanes d7910b93, 76cbe3d0,
     dc6aa69e; the delegate itself found the backticked tier). Re-run by Fable on 7ff61b831: `| foo |` and a
     backticked RECORDED both produced no violation (confirmed). The §13 reserved-word false positive is accepted as
