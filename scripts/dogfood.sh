@@ -153,8 +153,10 @@ RECEIPT_DIR="$PWD/.dogfood"
 mkdir -p "$RECEIPT_DIR"
 # The receipt's stamp honours SOURCE_DATE_EPOCH (the reproducible-build
 # convention, DET002) and falls back to the clock: a receipt records when it
-# ran, and a caller that wants a pinned stamp sets the epoch.
-TS=$(date -u -d "@${SOURCE_DATE_EPOCH:-$(date +%s)}" +%Y%m%dT%H%M%SZ)
+# ran, and a caller that wants a pinned stamp sets the epoch. Formatted by
+# python3 (already a hard dependency of this script) rather than `date -d`,
+# which is GNU-only and fails on the macOS host of the multi-platform sweep.
+TS=$(python3 -c 'import datetime, os, time; e = int(os.environ.get("SOURCE_DATE_EPOCH") or time.time()); print(datetime.datetime.fromtimestamp(e, datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ"))')
 # The commit the evidence describes, stamped INTO the receipt: a consumer that
 # globs for the newest receipt after a crashed run would otherwise read a
 # previous verdict as current with nothing to expose it (#2644, DF-12). With
