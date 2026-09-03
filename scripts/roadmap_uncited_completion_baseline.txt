@@ -948,10 +948,8 @@ docs/roadmaps/roadmap.yaml	Implement extractive summarization (TextRank, TF-IDF)
 docs/roadmaps/roadmap.yaml	Implement pattern-based entity extraction (emails, URLs, keywords)
 docs/roadmaps/roadmap.yaml	LAYOUT-001: Fix Q4K kernel layout mismatch - use row-major kernel for APR/GGUF
 docs/roadmaps/roadmap.yaml	PERF-000
-docs/roadmaps/roadmap.yaml	PERF-001
 docs/roadmaps/roadmap.yaml	PERF-002
 docs/roadmaps/roadmap.yaml	PERF-003
-docs/roadmaps/roadmap.yaml	PERF-004
 docs/roadmaps/roadmap.yaml	PERF-005
 docs/roadmaps/roadmap.yaml	PERF-009
 docs/roadmaps/roadmap.yaml	PERF-014

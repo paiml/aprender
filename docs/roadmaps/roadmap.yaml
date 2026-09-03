@@ -14053,4 +14053,4 @@ roadmap:
   acceptance_criteria:
   - 'cargo test -p aprender-contracts --test validate_contracts green (integrity 444); ids 001..008 contiguous
     and unique (653f277d6)'
-  notes: 'five-whys in .pmat/jidoka.jsonl'
+  notes: 'five-whys in .pmat/jidoka.jsonl; proof:PR#2851 (653f277d6 renumbered the ids; the corpus-integrity test is green on main)'
