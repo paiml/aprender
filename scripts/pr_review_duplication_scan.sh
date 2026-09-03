@@ -202,7 +202,11 @@ g cat-file -e "${BASE}^{commit}" 2>/dev/null \
 g cat-file -e "${HEAD_REF}^{commit}" 2>/dev/null \
   || { echo "$PROG: FAIL - head $HEAD_REF does not resolve in $REPO" >&2; exit 1; }
 
-START=$(date +%s)
+# EPOCHSECONDS (bash builtin) is an integer-seconds drop-in for `date +%s`
+# that spawns no subprocess; only its DIFFERENCE (WALL, below) is recorded,
+# so this is genuinely a wall-clock duration measurement, not a build-artifact
+# timestamp in need of a reproducible source.
+START=$EPOCHSECONDS
 
 TMP=$(mktemp -d "${TMPDIR:-/tmp}/prrev-dupscan.XXXXXX")
 case "$TMP" in
@@ -404,7 +408,13 @@ BR_TOTAL=$(awk 'END { print NR + 0 }' "$TMP/branches-all.txt")
 if [ "$HORIZON" != none ]; then
   CUT=0
   if [ "$HORIZON" = since ]; then
-    CUT=$(date -d "$HORIZON_SINCE days ago" +%s 2>/dev/null || echo 0)
+    # $EPOCHSECONDS (bash builtin) avoids a `date -d` subprocess; guarded so
+    # a non-numeric --horizon-since falls back to CUT=0 exactly as the old
+    # `date ... || echo 0` did, instead of an arithmetic error under set -e.
+    case "$HORIZON_SINCE" in
+      ''|*[!0-9]*) CUT=0 ;;
+      *) CUT=$((EPOCHSECONDS - HORIZON_SINCE * 86400)) ;;
+    esac
   fi
   awk -v cut="$CUT" '$1 >= cut { print $2 }' "$TMP/branches-all.txt" > "$TMP/branches.txt"
   if [ "$MAX_BRANCHES" -gt 0 ]; then
@@ -574,7 +584,7 @@ HORIZON_LIST=$(jq -n --arg head "head=$HEAD_REF" \
   --arg mb "merge_base_to_main=$MB_REFSPEC" \
   '[$head, $sib, $mb]')
 
-END=$(date +%s)
+END=$EPOCHSECONDS
 WALL=$((END - START))
 
 jq -n \

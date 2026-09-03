@@ -114,6 +114,12 @@ cmds=$("$APR" --help 2>&1 | awk '/^Commands:/{f=1; next} f && /^  [a-z]/{print $
 NEW_STUBS=0
 SKIPPED=0
 for cmd in $cmds; do
+  # $cmd is parsed from `apr --help` output; validate it before it is used to
+  # build a file path below (cat > "$STUB_PATH") so a malformed help line can
+  # never turn into a path-traversal write.
+  case "$cmd" in
+    *..*|/*) echo "skipping malformed command name: $cmd" >&2; continue ;;
+  esac
   # Skip if a chapter for this command already exists anywhere in book/src
   if grep -rEq "(^|/)cli/${cmd}\.md|\b${cmd}\.md" book/src/SUMMARY.md 2>/dev/null; then
     : # found in SUMMARY — but the path could be wrong; check actual file
