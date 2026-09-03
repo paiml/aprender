@@ -1,0 +1,125 @@
+{
+  "version": "2.1.0",
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat",
+          "version": "3.34.0",
+          "rules": [
+            {
+              "id": "PRREV-PMAT",
+              "name": "pmat quality and duplication"
+            }
+          ]
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": []
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "nvidia-cuda-docs",
+          "version": "mcp",
+          "rules": [
+            {
+              "id": "PRREV-CUDA",
+              "name": "device-behaviour claim vs NVIDIA docs"
+            }
+          ]
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": false,
+          "toolExecutionNotifications": [
+            {
+              "level": "error",
+              "message": {
+                "text": "nvidia-cuda-docs MCP unreachable"
+              },
+              "properties": {
+                "grounding": "measured"
+              }
+            }
+          ]
+        }
+      ],
+      "results": []
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "crux",
+          "version": "v1",
+          "rules": [
+            {
+              "id": "PRREV-CRUX",
+              "name": "user-facing surface coverage"
+            }
+          ]
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": []
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "cargo-mutants",
+          "version": "guard case-tables",
+          "rules": [
+            {
+              "id": "PRREV-MUT",
+              "name": "guard mutation set"
+            }
+          ]
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": []
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity",
+          "version": "1.1.24",
+          "rules": [
+            {
+              "id": "PRREV-AGY",
+              "name": "cross-vendor review (advisory)"
+            },
+            {
+              "id": "PRREV-AGY-PRIOR",
+              "name": "cross-vendor finding on an earlier commit of this PR, absent on the head"
+            }
+          ]
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": []
+    }
+  ]
+}
