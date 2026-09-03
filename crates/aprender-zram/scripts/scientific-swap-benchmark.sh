@@ -38,13 +38,23 @@
 
 set -euo pipefail
 
+# Reproducibility escape hatch (bashrs DET002): SOURCE_DATE_EPOCH, when a
+# caller sets it, pins every timestamp this script emits to one instant so a
+# rerun of the same script version is byte-for-byte comparable (packaging /
+# CI replay). Left unset -- the normal case for an actual benchmark
+# invocation -- every helper below falls through to the real wall clock, so
+# run directory names and report timestamps are unchanged from before.
+_bench_epoch() { printf '%s' "${SOURCE_DATE_EPOCH:-$(date +%s)}"; }
+_bench_stamp_compact() { date -u -d "@$(_bench_epoch)" +%Y%m%d-%H%M%S; }
+_bench_stamp_iso() { date -u -d "@$(_bench_epoch)" -Iseconds; }
+
 #═══════════════════════════════════════════════════════════════════════════════
 # Configuration
 #═══════════════════════════════════════════════════════════════════════════════
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
-RESULTS_DIR="${PROJECT_ROOT}/benchmark-results/$(date +%Y%m%d-%H%M%S)"
+RESULTS_DIR="${PROJECT_ROOT}/benchmark-results/$(_bench_stamp_compact)"
 SWAP_SIZE_GB=8
 RUNS_PER_TEST=3
 TEST_RUNTIME=30
@@ -121,7 +131,7 @@ log_warn() { echo -e "${YELLOW}[WARN]${NC} $*"; }
 log_json() {
     local level="$1" msg="$2"
     printf '{"timestamp":"%s","level":"%s","target":"bench","message":"%s"}\n' \
-        "$(date -Iseconds)" "$level" "$msg" >> "${RESULTS_DIR:-/tmp}/bench-trace.jsonl" 2>/dev/null || true
+        "$(_bench_stamp_iso)" "$level" "$msg" >> "${RESULTS_DIR:-/tmp}/bench-trace.jsonl" 2>/dev/null || true
 }
 
 # If remote host specified, execute there
@@ -234,7 +244,7 @@ setup_environment() {
 
     cat > "${RESULTS_DIR}/environment.json" << EOF
 {
-    "timestamp": "$(date -Iseconds)",
+    "timestamp": "$(_bench_stamp_iso)",
     "hostname": "$(hostname)",
     "platform": "$OS_TYPE",
     "kernel": "$(uname -r)",
@@ -783,7 +793,7 @@ run_compression_benchmark() {
     cat > "$report_file" << EOF
 # Compression Benchmark Report
 
-**Generated:** $(date -Iseconds)
+**Generated:** $(_bench_stamp_iso)
 **Platform:** $OS_TYPE
 **GPU Backend:** $GPU_BACKEND
 
@@ -929,11 +939,11 @@ EOF
 
     # Replace placeholders (macOS sed compatibility)
     if $IS_MACOS; then
-        sed -i '' "s/TIMESTAMP/$(date -Iseconds)/" "$report_file"
-        sed -i '' "s/BENCH_ID/BENCH-001-$(date +%Y%m%d-%H%M%S)/" "$report_file"
+        sed -i '' "s/TIMESTAMP/$(_bench_stamp_iso)/" "$report_file"
+        sed -i '' "s/BENCH_ID/BENCH-001-$(_bench_stamp_compact)/" "$report_file"
     else
-        sed -i "s/TIMESTAMP/$(date -Iseconds)/" "$report_file"
-        sed -i "s/BENCH_ID/BENCH-001-$(date +%Y%m%d-%H%M%S)/" "$report_file"
+        sed -i "s/TIMESTAMP/$(_bench_stamp_iso)/" "$report_file"
+        sed -i "s/BENCH_ID/BENCH-001-$(_bench_stamp_compact)/" "$report_file"
     fi
 
     log_pass "Report generated: $report_file"

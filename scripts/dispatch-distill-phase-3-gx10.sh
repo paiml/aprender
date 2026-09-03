@@ -36,6 +36,15 @@
 
 set -euo pipefail
 
+# Reproducibility escape hatch (bashrs DET002): SOURCE_DATE_EPOCH, when a
+# caller sets it, pins the clock this dispatch names its run and stamps its
+# manifest with. Unset -- the normal case for a live dispatch -- these fall
+# through to the real wall clock, so the run name and dispatch timestamp are
+# unchanged from before.
+_epoch_now() { printf '%s' "${SOURCE_DATE_EPOCH:-$(date -u +%s)}"; }
+_stamp_compact() { date -u -d "@$(_epoch_now)" +%Y%m%d-%H%M%S; }
+_stamp_iso_z() { date -u -d "@$(_epoch_now)" +%Y-%m-%dT%H:%M:%SZ; }
+
 # --------------------------------------------------------------------------
 # Config (override via env)
 # --------------------------------------------------------------------------
@@ -85,7 +94,7 @@ BATCH_SIZE="${BATCH_SIZE:-4}"
 LR="${LR:-1.5e-5}"
 T="${T:-4.0}"
 ALPHA="${ALPHA:-0.3}"
-RUN_NAME="distill-smoke-$(date +%Y%m%d-%H%M%S)"
+RUN_NAME="distill-smoke-$(_stamp_compact)"
 EVIDENCE_DIR="${EVIDENCE_DIR:-evidence/distill-phase-3-${RUN_NAME}}"
 DRY_RUN="${DRY_RUN:-0}"
 
@@ -322,7 +331,7 @@ cat > "${EVIDENCE_DIR}/dispatch.json" <<JSON
   "kd_alpha": "${ALPHA}",
   "remote_run_dir": "${RUN_DIR_REMOTE}",
   "remote_log": "${LOG_REMOTE}",
-  "dispatched_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  "dispatched_at": "$(_stamp_iso_z)"
 }
 JSON
 

@@ -38,6 +38,13 @@
 
 set -euo pipefail
 
+# Reproducibility escape hatch (bashrs DET002): SOURCE_DATE_EPOCH, when a
+# caller sets it, pins the clock this probe stamps its evidence filenames
+# with. Unset -- the normal case for a live probe run -- this falls through
+# to the real wall clock, so evidence filenames are unchanged from before.
+_epoch_now() { printf '%s' "${SOURCE_DATE_EPOCH:-$(date -u +%s)}"; }
+_stamp_compact() { date -u -d "@$(_epoch_now)" +%Y%m%d_%H%M%S; }
+
 HOSTS=""
 MODEL=""
 PROBE_RANGE="0-15"
@@ -98,7 +105,7 @@ trap 'rm -rf "$TMPDIR"' EXIT
 
 EVIDENCE_DIR="evidence/ship-two-001/shard-003-determinism"
 mkdir -p "$EVIDENCE_DIR"
-STAMP="$(date -u +%Y%m%d_%H%M%S)"
+STAMP="$(_stamp_compact)"
 PROBE_LOG="$EVIDENCE_DIR/probe_${STAMP}.log"
 PROBE_JSON="$EVIDENCE_DIR/probe_${STAMP}.json"
 
