@@ -998,7 +998,7 @@ impl WgslForwardPass {
             // Compute attention scores: Q[h] · K[kv_h, :seq_len]^T / sqrt(d)
             let scores = Self::attention_scores(
                 &q_data[q_offset..q_offset + head_dim],
-                &kv_cache_k,
+                kv_cache_k,
                 kv_offset,
                 kv_dim_usize,
                 seq_len,
@@ -1009,7 +1009,7 @@ impl WgslForwardPass {
             let out_offset = h * head_dim;
             Self::attention_weighted_v(
                 &scores,
-                &kv_cache_v,
+                kv_cache_v,
                 &mut attn_out[out_offset..out_offset + head_dim],
                 kv_offset,
                 kv_dim_usize,
