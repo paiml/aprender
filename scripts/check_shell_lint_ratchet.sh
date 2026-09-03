@@ -68,7 +68,16 @@ fi
 
 LOG=$(mktemp) || exit 1
 trap 'rm -f "${LOG:?}"' EXIT
-bashrs lint scripts/*.sh > "$LOG" 2>&1
+# ONE FILE PER INVOCATION. bashrs 7.0.1 cross-contaminates files linted in one
+# call: the same tree counted 13 errors on the fleet and 53 on a workstation,
+# and a branch that REMOVED 180 findings counted 57 on the fleet and 12 here,
+# so the single-invocation number was noise the ratchet could not distinguish
+# from growth (PMAT-936). Linting each script alone is deterministic; the file
+# name is prefixed because a single-file run prints none.
+: > "$LOG"
+find scripts -maxdepth 1 -name '*.sh' | LC_ALL=C sort | while IFS= read -r script; do
+    bashrs lint "$script" 2>&1 | sed "s|^|${script}: |" >> "$LOG" || true
+done
 errors=$(grep -cE '\[error\]' "$LOG" || true)
 
 printf '=== bashrs must see every script in scripts/ (check_shell_lint_ratchet.sh) ===\n'

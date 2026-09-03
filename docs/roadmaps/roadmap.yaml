@@ -14054,3 +14054,37 @@ roadmap:
   - 'cargo test -p aprender-contracts --test validate_contracts green (integrity 444); ids 001..008 contiguous
     and unique (653f277d6)'
   notes: 'five-whys in .pmat/jidoka.jsonl; proof:PR#2851 (653f277d6 renumbered the ids; the corpus-integrity test is green on main)'
+- id: PMAT-936
+  github_issue: null
+  item_type: bug
+  title: 'check_shell_lint_ratchet.sh ratcheted a nondeterministic number: bashrs 7.0.1 cross-contaminates files linted in
+    one invocation, so the same main tree counted 13 errors on the fleet and 53 on a workstation, and a branch that removed
+    180 findings counted 57 on the fleet (#2860 RED) and 12 locally'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-09-03 21:30:00+00:00
+  updated: 2026-09-03 21:30:00+00:00
+  spec: null
+  acceptance_criteria:
+  - 'the ratchet lints each script in its own bashrs invocation (sorted, file name prefixed); the count is identical on
+    any host for the same tree; baseline re-seeded 13 -> 9 with the shrink-only meta-ratchet green; bashrs gating findings
+    0 on the ratchet script'
+  notes: 'Measured 2026-09-03 (PMAT-929): single-invocation main=53 / batch=12 locally, 13 / 57 on the fleet; per-file
+    main=12 / batch=9 on both. Landed in PR #2860'
+- id: PMAT-937
+  github_issue: null
+  item_type: task
+  title: 'CB-200 (TDG grade gate) ratchet baseline recorded in .pmat-gates.toml [tdg] baseline = 609 so pmat comply 3.36.0
+    reports Warn (debt held flat) instead of Fail; the dogfood pmat-comply row reads it as GO with the absolute count'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-09-03 21:30:00+00:00
+  updated: 2026-09-03 21:30:00+00:00
+  spec: null
+  acceptance_criteria:
+  - 'pmat comply check (3.36.0): CB-200 -> Warn "at the recorded baseline of 609 — this is debt held flat, not a clean
+    tree"; any new definition below B fails the gate; PMAT-768 (the 609) stays open'
+  notes: 'pmat 3.36.0 carries the #1159 comply char-boundary fix (paiml-mcp-agent-toolkit#1166 -> #1171); the comply row
+    could not run before it. Measured 2026-09-03 on the batch tree. Landed in PR #2860'
