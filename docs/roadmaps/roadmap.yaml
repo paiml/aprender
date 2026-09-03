@@ -14054,3 +14054,24 @@ roadmap:
   - 'cargo test -p aprender-contracts --test validate_contracts green (integrity 444); ids 001..008 contiguous
     and unique (653f277d6)'
   notes: 'five-whys in .pmat/jidoka.jsonl; proof:PR#2851 (653f277d6 renumbered the ids; the corpus-integrity test is green on main)'
+- id: PMAT-930
+  github_issue: null
+  item_type: bug
+  title: 'PP-9 live scan read only the first pipe table of evidence/parity/LEDGER.md: a blank line after row 4 left
+    rows 5 and 6 outside the spend-key universe, so a re-spend of row 6 passed spec_conformance.sh'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-09-03 13:40:00+00:00
+  updated: 2026-09-03 13:40:00+00:00
+  spec: docs/specifications/PP-LLAMA-001-MASTER.md
+  acceptance_criteria:
+  - 'scripts/lib/spec_conformance.py emits L2 for a ledger row that sits outside the table it reads (same column
+    count as the header, row-id first cell, after the first table break, before the superseded section); the ledger
+    is re-joined so the live scan reports LEDGER 6 6; selftest cases ledger_row_outside_table (L2) and
+    ledger_rows_contiguous (CLEAN) named beside PP-9 in §6; must-fire mutation (the L2 emit removed) turns
+    ledger_row_outside_table BROKE; Appendix D row, RATIONALE PP-9 paragraph, contract invariant + falsification
+    test in pp-llama-001-spec-conformance-v1.yaml; pv validate green'
+  notes: 'Found by PMAT-929 (paiml-implement run 4) live-mutating Appendix C on 68b059ca9: duplicating row 6 as row 7
+    inside the v3 table produced PASS "no cell was spent twice"; the scanner had parsed 4 of 6 rows. Five-whys in
+    .pmat/jidoka.jsonl and docs/audits/impl-PMAT-929-receipt.md'
