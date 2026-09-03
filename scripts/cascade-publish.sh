@@ -321,12 +321,21 @@ case "$MODE" in
     ;;
 esac
 
-# Backup .cargo/config.toml once (publish needs a clean one without [patch.crates-io])
+# Backup .cargo/config.toml once (publish needs a clean one without [patch.crates-io]).
+# The backup lives OUTSIDE the tree. Beside the config it was an untracked file
+# inside the root crate's package directory -- `.cargo/config.toml` is ignored,
+# `.cargo/config.toml.cascade-backup` was not -- and with --allow-dirty gone (F-9)
+# `cargo publish` of the root crate would have refused on the file this script
+# itself created, after the preflight had already passed R1. Found by the
+# cross-vendor review of #2859. Measured: with the backup beside the config,
+# `git status --porcelain --untracked-files=all` lists it; with mktemp, nothing.
+CASCADE_CONFIG_BACKUP=""
 if [ -f .cargo/config.toml ]; then
-  cp .cargo/config.toml .cargo/config.toml.cascade-backup
+  CASCADE_CONFIG_BACKUP=$(mktemp "${TMPDIR:-/tmp}/cascade-config-backup.XXXXXX")
+  cp .cargo/config.toml "$CASCADE_CONFIG_BACKUP"
   echo "# Clean config for cascade publishing" > .cargo/config.toml
 fi
-trap 'if [ -f .cargo/config.toml.cascade-backup ]; then cp .cargo/config.toml.cascade-backup .cargo/config.toml && rm -f .cargo/config.toml.cascade-backup; fi' EXIT
+trap 'if [ -n "$CASCADE_CONFIG_BACKUP" ] && [ -f "$CASCADE_CONFIG_BACKUP" ]; then cp "$CASCADE_CONFIG_BACKUP" .cargo/config.toml && rm -f "$CASCADE_CONFIG_BACKUP"; fi' EXIT
 
 # --order-check: run ONLY the publish-order precondition, against the live
 # registry, and publish nothing. Two reasons this mode exists rather than the
