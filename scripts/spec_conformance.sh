@@ -86,6 +86,7 @@ selftest() {
     local BT ROW_ARMED ROW_OPEN DAG_OK LEDGER_ONE LEDGER_TWO LEDGER_TWO_COMMITS LEDGER_SPLIT
     local LEDGER_NOLEAD LEDGER_BACKTICK LEDGER_TRAILING LEDGER_EXTRA LEDGER_SIDE LEDGER_SUPERSEDED LEDGER_RESPEND_OUT
     local LEDGER_DUMMY_FIRST LEDGER_BOLD LEDGER_SIDE_SPLIT LEDGER_SIDE_WIDE LEDGER_SAME_HEADER LEDGER_EXTRA_OUT LEDGER_PRE
+    local LEDGER_FOREIGN_HEADER LEDGER_THREE_OFF LEDGER_CONFORMANT_OUT LEDGER_NO_TIER_OUT
     local root_dag derived
     td="$(mktemp -d)" || { printf 'FAIL  mktemp -d failed\n'; return 2; }
     case "$td" in
@@ -190,6 +191,10 @@ selftest() {
     LEDGER_SAME_HEADER="${LEDGER_ONE}\\n| # | started_utc | host | class | model · quant | workload | commit | interleaved | receipts | conformance |\\n|---|---|---|---|---|---|---|---|---|---|\\n| 2 | t | lambda | cuda | q · q4 | W1 | ${BT}bbbb${BT} | false | e | RECORDED |\\n"
     LEDGER_EXTRA_OUT="${LEDGER_ONE}\\n| 2 | t | | lambda | cuda | q · q4 | W1 | ${BT}bbbb${BT} | false | e | RECORDED |\\n"
     LEDGER_PRE="| # | repo |\\n|---|---|\\n| 1 | aprender |\\n\\n"
+    LEDGER_FOREIGN_HEADER="${LEDGER_ONE}\\n| dummy | x |\\n|---|---|\\n| 2 | t | lambda | cuda | q · q4 | W1 | ${BT}aaaa${BT} | false | e | RECORDED |\\n"
+    LEDGER_THREE_OFF="${LEDGER_ONE}\\n| 2 | lambda | W1 | ${BT}bbbb${BT} | false | RECORDED |\\n"
+    LEDGER_CONFORMANT_OUT="${LEDGER_ONE}\\n| 2 | t | lambda | cuda | q · q4 | W1 | ${BT}bbbb${BT} | false | e | CONFORMANT |\\n"
+    LEDGER_NO_TIER_OUT="${LEDGER_ONE}\\n| 2 | t | lambda | cuda | q · q4 | W1 | ${BT}bbbb${BT} | false | e | probe, no run |\\n"
 
     # §6 -- the join itself.
     row conformance_ok CLEAN \
@@ -270,8 +275,19 @@ selftest() {
         "$(mk_root sameheader "$ROW_ARMED" "$DAG_OK" "$LEDGER_SAME_HEADER" "alpha beta")"
     row ledger_row_extra_pipe_outside L2 \
         "$(mk_root extraout "$ROW_ARMED" "$DAG_OK" "$LEDGER_EXTRA_OUT" "alpha beta")"
-    row ledger_first_table_not_ledger L0 \
+    row ledger_first_table_not_ledger L0,L2 \
         "$(mk_root prefirst "$ROW_ARMED" "$DAG_OK" "$LEDGER_ONE" "alpha beta" "$LEDGER_PRE")"
+    # PMAT-933: the universe is every row that CLAIMS A SPEND. A run under a
+    # foreign header hides nothing; a row three columns off still claims its
+    # tier; CONFORMANT is a spend too; a row that claims no tier spends nothing.
+    row ledger_row_under_foreign_header L1,L2 \
+        "$(mk_root foreignhdr "$ROW_ARMED" "$DAG_OK" "$LEDGER_FOREIGN_HEADER" "alpha beta")"
+    row ledger_row_three_columns_off_outside L2 \
+        "$(mk_root threeoff "$ROW_ARMED" "$DAG_OK" "$LEDGER_THREE_OFF" "alpha beta")"
+    row ledger_row_conformant_outside L2 \
+        "$(mk_root conformantout "$ROW_ARMED" "$DAG_OK" "$LEDGER_CONFORMANT_OUT" "alpha beta")"
+    row ledger_row_without_tier_outside_ok CLEAN \
+        "$(mk_root notier "$ROW_ARMED" "$DAG_OK" "$LEDGER_NO_TIER_OUT" "alpha beta")"
 
     # §12 -- the expiry DAG.
     if _reg dag_derived_equals_max_blocker; then

@@ -30,8 +30,8 @@ superseded-cutoff-removed	(i for i, line in enumerate(lines) if SUPERSEDED_HEAD.
 l2-relabelled-l1	    emit("VIOLATION", "L2", " ".join(rid for _, rid, _ in outside),	    emit("VIOLATION", "L1", " ".join(rid for _, rid, _ in outside),
 l3-removed	    _check_ledger_shapes(rows, header)	    pass  # MUTANT
 outside-rows-not-spent	    return rows + [c for _, _, c in outside]	    return rows
-header-skip-removed	    if run_header is not None and run_header != header:	    if False:
-width-tolerance-removed	    return bool(_row_id(cells)) and abs(len(cells) - len(header)) <= 2	    return bool(_row_id(cells)) and len(cells) == len(header)
+tier-claim-check-removed	    if not rid or not _claims_spend(cells):	    if not rid:
+conformant-tier-dropped	SPEND_TIERS = ("RECORDED", "CONFORMANT")	SPEND_TIERS = ("RECORDED",)
 l0-missing-columns-ignored	    missing = [k for k, v in idx.items() if v < 0]	    missing = []
 CAT
 )

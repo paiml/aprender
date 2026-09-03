@@ -188,74 +188,46 @@ def _row_id(cells: list) -> str:
     return rid if ROW_ID_CELL.match(rid) else ""
 
 
-def _pipe_groups(lines: list, start: int, stop: int):
-    """Contiguous runs of pipe lines in lines[start:stop], each yielded as a
-    tuple of (line index, cells)."""
-    i = start
-    while i < stop:
-        if not _pipe_cells(lines[i]):
-            i += 1
-            continue
-        group = []
-        while i < stop:
-            cells = _pipe_cells(lines[i])
-            if not cells:
-                break
-            group.append((i, cells))
-            i += 1
-        yield tuple(group)
+SPEND_TIERS = ("RECORDED", "CONFORMANT")
 
 
-def _run_header(group: tuple):
-    """The lowercased header cells of a run that opens as a markdown table
-    (a header line followed by a separator line), else None -- a run with
-    no separator after its first line is a headerless fragment."""
-    if len(group) >= 2 and not _is_separator(group[0][1]) and _is_separator(group[1][1]):
-        return [c.lower() for c in group[0][1]]
-    return None
+def _claims_spend(cells: list) -> bool:
+    """A row that carries a conformance tier claims a spend. PP-9 binds on
+    RECORDED (CONFORMANT implies it), so the universe of L2 is every row
+    that claims one -- whatever its width, its leading pipe, or the header
+    of the run it sits in. A row that claims no tier spends nothing and is
+    another table's business (PMAT-933)."""
+    return any(c.strip().upper().startswith(SPEND_TIERS) for c in cells)
 
 
-def _ledger_like(cells: list, header: list) -> bool:
-    """A row-id first cell and a column count within two of the ledger
-    header's: one stray or missing pipe is a typo in a ledger row; a table
-    half the ledger's width is another table."""
-    return bool(_row_id(cells)) and abs(len(cells) - len(header)) <= 2
+def _outside_row(line: str):
+    """(row id, cells) when `line` is a ledger row that claims a spend, else None."""
+    cells = _pipe_cells(line)
+    if not cells or _is_separator(cells):
+        return None
+    rid = _row_id(cells)
+    if not rid or not _claims_spend(cells):
+        return None
+    return rid, cells
 
 
-def _fragment_rows(group: tuple, header: list) -> tuple:
-    """((line index, row id, cells), ...) -- the ledger rows in one run of
-    pipe lines outside the first table. A run that opens with a header
-    DIFFERENT from the ledger's is another table and is skipped whole; a run
-    with the ledger's own header, or no header at all, is read row by row,
-    so a dummy first line cannot hide the rows after it (PMAT-932)."""
-    run_header = _run_header(group)
-    if run_header is not None and run_header != header:
-        return ()
-    body = group[2:] if run_header is not None else group
-    return tuple((i, _row_id(c), c) for i, c in body
-                 if not _is_separator(c) and _ledger_like(c, header))
-
-
-def ledger_rows_outside_table(lines: list, header: list) -> tuple:
+def ledger_rows_outside_table(lines: list) -> tuple:
     """(table_end, ((line index, row id, cells), ...)) -- every ledger row
-    that sits after the first table breaks: L2's universe.
-
-    A ledger row is any pipe line before the `## Superseded rows` heading
-    (or EOF) whose first cell is a row id, in a run of pipe lines that does
-    NOT open with a header row. A run whose first non-separator line has no
-    row id is a different table (the superseded-documents table, say) and
-    is skipped whole. Column count and the leading pipe are not conditions:
-    a row that escaped the first table by its shape is exactly the row this
-    rule exists for, and requiring the canonical shape of it was the defect
-    PMAT-931 records."""
+    that sits after the first table breaks: L2's universe. A ledger row is
+    any pipe line before the `## Superseded rows` heading (or EOF) whose
+    first cell is a row id and that claims a conformance tier; no run, header
+    or width condition sits between such a row and the rule (PMAT-931,
+    PMAT-932 and PMAT-933 each removed one that an author could satisfy)."""
     table_end = _first_table_end(lines)
     superseded = next(
         (i for i, line in enumerate(lines) if SUPERSEDED_HEAD.match(line.strip())),
         len(lines),
     )
     found = []
-    for group in _pipe_groups(lines, table_end, superseded):
-        found.extend(_fragment_rows(group, header))
+    for i in range(table_end, superseded):
+        hit = _outside_row(lines[i])
+        if hit is not None:
+            found.append((i, hit[0], hit[1]))
     return table_end, tuple(found)
 
 
@@ -603,7 +575,7 @@ def _emit_ledger_split(table_end: int, outside: tuple) -> None:
 def _ledger_universe(lines: list, header: list, rows: list) -> list:
     """The rows PP-9's spend check reads: the first table's rows (L3 for a
     malformed one) plus every row L2 finds outside that table."""
-    table_end, outside = ledger_rows_outside_table(lines, header)
+    table_end, outside = ledger_rows_outside_table(lines)
     if outside:
         _emit_ledger_split(table_end, outside)
     _check_ledger_shapes(rows, header)
