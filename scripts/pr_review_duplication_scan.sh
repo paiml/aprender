@@ -411,9 +411,15 @@ if [ "$HORIZON" != none ]; then
     # $EPOCHSECONDS (bash builtin) avoids a `date -d` subprocess; guarded so
     # a non-numeric --horizon-since falls back to CUT=0 exactly as the old
     # `date ... || echo 0` did, instead of an arithmetic error under set -e.
+    # The `10#` prefix forces BASE-10 interpretation of $HORIZON_SINCE: bare
+    # arithmetic expansion treats a leading-zero numeral as octal (bash
+    # builtin, unlike `date -d` which is a plain string parser), so "08"/"09"
+    # would fatally error ("value too great for base") and "010" would
+    # silently compute from octal 8 instead of decimal 10. `10#$HORIZON_SINCE`
+    # reads the same digits `date -d "$HORIZON_SINCE days ago"` always did.
     case "$HORIZON_SINCE" in
       ''|*[!0-9]*) CUT=0 ;;
-      *) CUT=$((EPOCHSECONDS - HORIZON_SINCE * 86400)) ;;
+      *) CUT=$((EPOCHSECONDS - 10#$HORIZON_SINCE * 86400)) ;;
     esac
   fi
   awk -v cut="$CUT" '$1 >= cut { print $2 }' "$TMP/branches-all.txt" > "$TMP/branches.txt"
