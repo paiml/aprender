@@ -324,15 +324,22 @@ esac
 # Backup .cargo/config.toml once (publish needs a clean one without [patch.crates-io]).
 # The backup lives OUTSIDE the tree. Beside the config it was an untracked file
 # inside the root crate's package directory -- `.cargo/config.toml` is ignored,
-# `.cargo/config.toml.cascade-backup` was not -- and with --allow-dirty gone (F-9)
-# `cargo publish` of the root crate would have refused on the file this script
-# itself created, after the preflight had already passed R1. Found by the
+# `.cargo/config.toml.cascade-backup` was not -- and with the dirty-tree override
+# gone (F-9) `cargo publish` of the root crate would have refused on the file this
+# script itself created, after the preflight had already passed R1. Found by the
 # cross-vendor review of #2859. Measured: with the backup beside the config,
 # `git status --porcelain --untracked-files=all` lists it; with mktemp, nothing.
+# A backup that cannot be created is a refusal, not an empty string: with
+# CASCADE_CONFIG_BACKUP="" the config would be overwritten and never restored
+# (second review of #2859, mktemp-data-loss).
 CASCADE_CONFIG_BACKUP=""
 if [ -f .cargo/config.toml ]; then
-  CASCADE_CONFIG_BACKUP=$(mktemp "${TMPDIR:-/tmp}/cascade-config-backup.XXXXXX")
-  cp .cargo/config.toml "$CASCADE_CONFIG_BACKUP"
+  CASCADE_CONFIG_BACKUP=$(mktemp "${TMPDIR:-/tmp}/cascade-config-backup.XXXXXX") || CASCADE_CONFIG_BACKUP=""
+  if [ -z "$CASCADE_CONFIG_BACKUP" ] || [ ! -f "$CASCADE_CONFIG_BACKUP" ]; then
+    echo "⛔ could not create a backup of .cargo/config.toml (mktemp failed under ${TMPDIR:-/tmp}); nothing was published." >&2
+    exit 2
+  fi
+  cp .cargo/config.toml "$CASCADE_CONFIG_BACKUP" || { echo "⛔ could not back up .cargo/config.toml; nothing was published." >&2; exit 2; }
   echo "# Clean config for cascade publishing" > .cargo/config.toml
 fi
 trap 'if [ -n "$CASCADE_CONFIG_BACKUP" ] && [ -f "$CASCADE_CONFIG_BACKUP" ]; then cp "$CASCADE_CONFIG_BACKUP" .cargo/config.toml && rm -f "$CASCADE_CONFIG_BACKUP"; fi' EXIT

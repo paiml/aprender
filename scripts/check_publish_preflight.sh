@@ -41,12 +41,20 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
 die_env() { printf '%s: ENV %s\n' "$PROG" "$*" >&2; exit 2; }
 
+# The only rows a pre-publish dogfood receipt may DEFER (PMAT-745): both need the
+# crate to be ON the registry before they can be measured, so before a cascade
+# they are recorded with their obligation instead of failing by construction.
+PREPUBLISH_DEFERRABLE="publish-dry-run declared:check_multiplatform_dogfood"
+
 root_version() { # root -> the root manifest's package version, from cargo metadata
     local root="$1"
     cargo metadata --no-deps --offline --format-version 1 --manifest-path "$root/Cargo.toml" 2>/dev/null \
     | python3 -c '
 import json, os, sys
-m = json.load(sys.stdin)
+try:
+    m = json.load(sys.stdin)
+except ValueError:
+    sys.exit(1)   # cargo metadata printed nothing: no version, no stack trace
 root = os.path.realpath(sys.argv[1])
 for p in m.get("packages", []):
     if os.path.realpath(p["manifest_path"]) == root:
@@ -93,7 +101,9 @@ gate() {
 
     # R3 the tag points at HEAD
     tags="$(git -C "$root" tag --points-at HEAD 2>/dev/null)"
-    if [ -n "$version" ] && printf '%s\n' "$tags" | grep -qx -- "v$version"; then
+    # -F: the version is a string, not a pattern. With -x alone `v1-2-3` on HEAD
+    # satisfied `v1.2.3` (second review of #2859, tag-regex-injection).
+    if [ -n "$version" ] && printf '%s\n' "$tags" | grep -Fqx -- "v$version"; then
         echo "ok    R3 tag v$version points at HEAD ${head:0:9}"
     else
         printf 'FAIL  R3 tag v%s does not point at HEAD %s (tags here: %s)\n' \
@@ -117,15 +127,33 @@ gate() {
         echo "FAIL  R5 no dogfood receipt under $rdir (run scripts/dogfood.sh on this commit)"
         fails=1
     else
-        read -r verdict rcommit rversion < <(python3 -c '
+        read -r verdict rcommit rversion rphase rdeferred < <(python3 -c '
 import json, sys
 try:
     d = json.load(open(sys.argv[1]))
 except Exception:
-    print("UNREADABLE - -"); sys.exit(0)
-print(d.get("verdict") or "-", d.get("commit") or "-", d.get("version") or "-")' "$receipt")
-        if [ "$verdict" = GO ] && [ "$rcommit" = "$head" ] && [ "$rversion" = "$version" ]; then
-            echo "ok    R5 dogfood receipt $(basename "$receipt"): GO for ${head:0:9} at $version"
+    print("UNREADABLE - - - -"); sys.exit(0)
+deferred = d.get("deferred") or []
+print(d.get("verdict") or "-", d.get("commit") or "-", d.get("version") or "-",
+      d.get("phase") or "full", ",".join(str(x) for x in deferred) or "-")' "$receipt")
+        # A pre-publish receipt may DEFER only the rows that need the PUBLISHED
+        # crate (scripts/dogfood.sh --phase pre-publish). Any other deferred row
+        # is a refusal to measure, and this gate refuses with it. The set is a
+        # whitelist: a row not named here is refused, whatever it is called.
+        bad_defer=""
+        if [ "$rphase" = pre-publish ] && [ "$rdeferred" != "-" ]; then
+            for g in ${rdeferred//,/ }; do
+                case " $PREPUBLISH_DEFERRABLE " in *" $g "*) ;; *) bad_defer="$bad_defer $g" ;; esac
+            done
+        elif [ "$rphase" != pre-publish ] && [ "$rdeferred" != "-" ]; then
+            bad_defer=" $rdeferred (deferred outside the pre-publish phase)"
+        fi
+        if [ -n "$bad_defer" ]; then
+            printf 'FAIL  R5 dogfood receipt %s defers a row this gate does not accept:%s (accepted in --phase pre-publish: %s)\n' \
+                "$(basename "$receipt")" "$bad_defer" "$PREPUBLISH_DEFERRABLE"
+            fails=1
+        elif [ "$verdict" = GO ] && [ "$rcommit" = "$head" ] && [ "$rversion" = "$version" ]; then
+            echo "ok    R5 dogfood receipt $(basename "$receipt"): GO for ${head:0:9} at $version (phase $rphase${rdeferred:+, deferred: $rdeferred})"
         else
             printf 'FAIL  R5 dogfood receipt %s: verdict=%s commit=%s version=%s (need GO, %s, %s)\n' \
                 "$(basename "$receipt")" "$verdict" "${rcommit:0:9}" "$rversion" "${head:0:9}" "${version:-?}"
@@ -176,9 +204,9 @@ selftest() {
         mkdir -p "$d/.dogfood"
         write_receipt "$d" GO "$(git -C "$d" rev-parse HEAD)" 1.2.3
     }
-    write_receipt() { # dir, verdict, commit, version
-        printf '{"crate":"preflight-fixture","version":"%s","timestamp":"20260903T000000Z","commit":"%s","gates":[],"verdict":"%s"}\n' \
-            "$4" "$3" "$2" > "$1/.dogfood/receipt-20260903T000000Z.json"
+    write_receipt() { # dir, verdict, commit, version [, phase, deferred-json-array]
+        printf '{"crate":"preflight-fixture","version":"%s","timestamp":"20260903T000000Z","commit":"%s","gates":[],"phase":"%s","deferred":%s,"verdict":"%s"}\n' \
+            "$4" "$3" "${5:-full}" "${6:-[]}" "$2" > "$1/.dogfood/receipt-20260903T000000Z.json"
     }
     row() { # name, expect(0|1), needle, dir
         local name="$1" expect="$2" needle="$3" d="$4" out rc=0
@@ -229,6 +257,29 @@ selftest() {
 
     d="$tmp/unreadable"; build_repo "$d"; printf '{not json' > "$d/.dogfood/receipt-20260903T000000Z.json"
     row dogfood_receipt_unreadable_refuses 1 "FAIL  R5" "$d"
+
+    # R2: a virtual manifest has no root package, so cargo metadata names no version.
+    d="$tmp/norootpkg"; build_repo "$d"
+    printf '[workspace]\nmembers = []\n' > "$d/Cargo.toml"; git -C "$d" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -qam 'virtual' >/dev/null
+    git -C "$d" tag -f v1.2.3 >/dev/null; write_receipt "$d" GO "$(git -C "$d" rev-parse HEAD)" 1.2.3
+    row no_root_package_refuses        1 "FAIL  R2" "$d"
+
+    # R3: the version is a string, not a pattern -- `v1-2-3` must not satisfy `v1.2.3`.
+    d="$tmp/lookalike"; build_repo "$d"; git -C "$d" tag -d v1.2.3 >/dev/null; git -C "$d" tag v1-2-3
+    row tag_lookalike_refuses          1 "FAIL  R3" "$d"
+
+    # R5, pre-publish phase: the two registry-bound rows may be deferred, nothing else.
+    d="$tmp/prepub-ok"; build_repo "$d"
+    write_receipt "$d" GO "$(git -C "$d" rev-parse HEAD)" 1.2.3 pre-publish '["publish-dry-run","declared:check_multiplatform_dogfood"]'
+    row prepublish_allowed_deferrals_pass 0 "PASS" "$d"
+
+    d="$tmp/prepub-bad"; build_repo "$d"
+    write_receipt "$d" GO "$(git -C "$d" rev-parse HEAD)" 1.2.3 pre-publish '["publish-dry-run","bashrs"]'
+    row prepublish_unexpected_deferral_refuses 1 "FAIL  R5" "$d"
+
+    d="$tmp/fullphase-defer"; build_repo "$d"
+    write_receipt "$d" GO "$(git -C "$d" rev-parse HEAD)" 1.2.3 full '["publish-dry-run"]'
+    row deferral_outside_prepublish_refuses 1 "FAIL  R5" "$d"
 
     printf -- '--- %s/%s rows ---\n' "$pass" "$((pass + fail))"
     [ "$fail" -eq 0 ]

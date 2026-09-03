@@ -14066,8 +14066,12 @@ roadmap:
   updated: 2026-09-03 07:20:00+00:00
   spec: docs/specifications/PP-LLAMA-001-MASTER.md
   acceptance_criteria:
-  - 'scripts/check_publish_preflight.sh --selftest 11/11, both polarities; two must-fire mutations RED (R1 dropped,
-    GO check dropped); cascade-publish.sh refuses on a non-zero gate and carries no --allow-dirty; ci.yml runs the
-    case table; FALSIFY-PUB-CLI contract entry'
+  - 'scripts/check_publish_preflight.sh --selftest 16/16, both polarities of R1-R5; five must-fire mutations RED
+    (R1 dropped, GO check dropped, deferral whitelist shrunk, phase check dropped, grep -F removed); cascade-publish.sh
+    refuses on a non-zero gate, carries no dirty-tree override, and keeps its config backup outside the tree;
+    scripts/dogfood.sh --phase pre-publish records the two registry-bound rows as DEFER with their obligation, so R5
+    is satisfiable before a cascade; ci.yml runs the case table; FALSIFY-PUB-CLI contract entry'
   notes: 'PMAT-742 release rule F-9 (operator); a GitHub publish workflow is owed separately: no CARGO_REGISTRY_TOKEN
-    secret exists for the fleet, only PR_REVIEW_SIGNING_KEY_B64'
+    secret exists for the fleet, only PR_REVIEW_SIGNING_KEY_B64. Measured 2026-09-03: the full dogfood is NO-GO before
+    its own cascade by construction (publish-dry-run of a workspace root, cargo install of the unpublished version on
+    four hosts), which made the first R5 unsatisfiable; the pre-publish phase is the recorded, whitelisted answer'

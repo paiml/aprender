@@ -25,7 +25,29 @@ set -uo pipefail
 # scripts/check_verifier_pinning.sh.
 SKILL_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
-REPO_DIR="${1:-$PWD}"
+# PHASE (PMAT-745, F-9). `--phase pre-publish` is the run the publish gate
+# (scripts/check_publish_preflight.sh R5) reads BEFORE a cascade: the rows that
+# can only be measured against the PUBLISHED crate -- `publish-dry-run` of a
+# workspace root whose members are not on the registry yet, and the declared
+# multi-host `cargo install aprender` sweep -- are recorded DEFER, named in the
+# receipt with the obligation that discharges them, and are not FAIL. Every other
+# row is measured exactly as in a full run. The default is the full run: a
+# deferral outside the pre-publish phase is a FAIL, never a pass. Measured
+# 2026-09-03: the full run is NO-GO on every commit before its own cascade, by
+# construction, which made a GO precondition on publishing unsatisfiable.
+DOGFOOD_PHASE="${DOGFOOD_PHASE:-full}"
+REPO_DIR=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --phase) DOGFOOD_PHASE="${2:-}"; shift 2 ;;
+    --phase=*) DOGFOOD_PHASE="${1#--phase=}"; shift ;;
+    -h|--help) sed -n '2,14p' "$0"; echo "        dogfood.sh [--phase full|pre-publish|post-publish] [REPO_DIR]"; exit 0 ;;
+    *) REPO_DIR="$1"; shift ;;
+  esac
+done
+case "$DOGFOOD_PHASE" in full|pre-publish|post-publish) : ;; *) echo "dogfood: unknown --phase '$DOGFOOD_PHASE' (full|pre-publish|post-publish)" >&2; exit 2 ;; esac
+export DOGFOOD_PHASE
+REPO_DIR="${REPO_DIR:-$PWD}"
 cd "$REPO_DIR" 2>/dev/null || { echo "dogfood: no such dir: $REPO_DIR" >&2; exit 2; }
 [ -f Cargo.toml ] || { echo "dogfood: not a Rust crate (no Cargo.toml) in $REPO_DIR" >&2; exit 2; }
 
@@ -69,7 +91,7 @@ if [ -z "$CRATE" ] || [ -z "$VERSION" ]; then
   echo "  A virtual workspace root has no package of its own. Run dogfood from the" >&2
   echo "  member you are releasing, e.g. crates/<name>/ — pointing it at the root" >&2
   echo "  built the wrong binary (telemetry-server instead of pforge) and cascaded" >&2
-  echo "  into 'no package named \'\'' on 2026-08-20." >&2
+  echo "  into a 'no package named' error carrying an EMPTY name, on 2026-08-20." >&2
   ls -d ./*/ crates/*/ 2>/dev/null | head -12 | sed 's/^/    candidate: /' >&2
   exit 2
 fi
@@ -165,10 +187,17 @@ gate() { # gate <name> <cmd...> — runs cmd, records pass/fail
   NOTES+=("${note:0:120}")
   printf '  [%s] %-26s %s\n' "$([ $rc -eq 0 ] && echo ' OK ' || echo 'FAIL')" "$name" "${note:0:80}"
 }
-mark() { # mark <name> <PASS|FAIL|SKIP|REPORT|WARN|MANUAL> <note>
-  NAMES+=("$1"); RESULTS+=("$2"); NOTES+=("${3:0:200}")
-  [ "$2" = FAIL ] && FAILED=1
-  printf '  [%s] %-26s %s\n' "$([ "$2" = PASS ] && echo ' OK ' || echo "$2")" "$1" "${3:0:96}"
+mark() { # mark <name> <PASS|FAIL|SKIP|REPORT|WARN|MANUAL|DEFER> <note>
+  local st="$2" note="$3"
+  # DEFER is legal in the pre-publish phase only: a row that needs the published
+  # crate is recorded with its obligation. Anywhere else it is a FAIL wearing a
+  # softer word, and is recorded as the FAIL it is.
+  if [ "$st" = DEFER ] && [ "$DOGFOOD_PHASE" != pre-publish ]; then
+    st=FAIL; note="deferred outside --phase pre-publish (that is a refusal to measure, not a pass): $note"
+  fi
+  NAMES+=("$1"); RESULTS+=("$st"); NOTES+=("${note:0:200}")
+  [ "$st" = FAIL ] && FAILED=1
+  printf '  [%s] %-26s %s\n' "$([ "$st" = PASS ] && echo ' OK ' || echo "$st")" "$1" "${note:0:96}"
 }
 # run_to <logfile> <cmd...> — runs cmd with stdout+stderr to <logfile> and puts
 # the command's OWN exit status in $RUN_RC. Never a pipeline: `cmd | tee log`
@@ -185,7 +214,15 @@ run_split() { local o="$1" e="$2"; shift 2; "$@" > "$o" 2> "$e"; RUN_RC=$?; }
 # there. It must not be recomputed here: from inside the target repo a relative
 # ${BASH_SOURCE[0]} points at the wrong tree.
 WORKLOG=$(mktemp -d)
-trap 'rm -rf "$WORKLOG"' EXIT
+# The delete is guarded (SEC011): an empty or root WORKLOG is left alone.
+_rm_worklog() {
+  local v="${WORKLOG:-}"
+  case "$v" in
+    /tmp/?*|/var/folders/?*|/mnt/?*) if [ -n "$v" ] && [ "$v" != "/" ]; then rm -rf -- "$v" || :; fi ;;
+    *) return 0 ;;
+  esac
+}
+trap _rm_worklog EXIT
 
 # THE VERIFIER-PINNING RULE, and the two pins that implement it, live in exactly
 # one file. Read scripts/verifier_pin.sh — the rule is stated there and nowhere
@@ -293,7 +330,13 @@ else
     run_to "$WORKLOG/$(basename "$dg_path").log" bash "$dg_path"
     dg_rc=$RUN_RC
     dg_tail=$(tail -3 "$WORKLOG/$(basename "$dg_path").log" 2>/dev/null | strip_ansi | tr '\n' ' ')
-    if [ "$dg_rc" -eq 0 ]; then
+    dg_defer=$(grep -m1 '^DEFERRED: ' "$WORKLOG/$(basename "$dg_path").log" 2>/dev/null | strip_ansi)
+    if [ -n "$dg_defer" ]; then
+      # The gate itself said it cannot be measured before the cascade. mark()
+      # turns this into a FAIL outside the pre-publish phase.
+      mark "$dg_name" DEFER "$dg_path: ${dg_defer#DEFERRED: }"
+      [ "$DOGFOOD_PHASE" = pre-publish ] || DG_BAD=$((DG_BAD + 1))
+    elif [ "$dg_rc" -eq 0 ]; then
       mark "$dg_name" PASS "$dg_path exit=0"
     else
       mark "$dg_name" FAIL "$dg_path exit=$dg_rc — $dg_tail"
@@ -328,6 +371,22 @@ fi
 # index, not a flaky crates.io HTTP call). A dry-run SUCCEEDS even when the
 # version exists (it only warns), so the "already exists" string — not the exit
 # code — is what tells us the version is taken.
+if [ "$DOGFOOD_PHASE" = pre-publish ]; then
+  # Before the cascade a dry-run of a workspace root cannot resolve its own
+  # members (they are not on the registry yet), so it fails for a reason that
+  # says nothing about the version. The question this row exists to answer --
+  # "is $VERSION already on crates.io?" -- is asked of the registry directly.
+  DRY=""; DRC=0
+  REG=$(curl -fsS -A "aprender-dogfood (+https://github.com/paiml/aprender)" \
+        "https://crates.io/api/v1/crates/$CRATE/versions" 2>&1); REG_RC=$?
+  if [ "$REG_RC" -ne 0 ]; then
+    mark version-unpublished FAIL "crates.io not consulted (curl exit=$REG_RC): $(printf '%s' "$REG" | tail -1 | cut -c1-100) — the version's status is UNKNOWN"
+  elif printf '%s' "$REG" | python3 -c 'import json,sys; vs=json.load(sys.stdin).get("versions",[]); sys.exit(0 if any(v.get("num")==sys.argv[1] for v in vs) else 1)' "$VERSION"; then
+    mark version-unpublished FAIL "$CRATE $VERSION is ALREADY on crates.io — bump the version"
+  else
+    mark version-unpublished PASS "$VERSION absent from crates.io (registry consulted directly; pre-publish phase)"
+  fi
+else
 DRY=$(env -u CARGO_REGISTRY_TOKEN cargo publish --dry-run --allow-dirty 2>&1); DRC=$?
 # Here-string, never `printf | grep -q`: with the marker early and more than a
 # pipe buffer behind it, grep exits at first match, printf takes SIGPIPE, and
@@ -343,6 +402,7 @@ elif [ "$DRC" -ne 0 ]; then
   mark version-unpublished FAIL "cargo publish --dry-run failed (exit=$DRC) with no already-exists marker — the registry was never consulted, so the version's status is UNKNOWN: $(tail -2 <<< "$DRY" | strip_ansi | tr '\n' ' ' | cut -c1-120)"
 else
   mark version-unpublished PASS "$VERSION not yet published (dry-run exit 0, no already-exists marker)"
+fi
 fi
 
 # ── 3. changelog mentions the version ───────────────────────────────────────
@@ -965,7 +1025,9 @@ else
 fi
 
 # ── 10. publish dry-run (already run above; verdict is its exit code) ───────
-if [ $DRC -eq 0 ]; then mark publish-dry-run PASS "packages cleanly"
+if [ "$DOGFOOD_PHASE" = pre-publish ]; then
+  mark publish-dry-run DEFER "a workspace root cannot dry-run before its members are on the registry; discharged by the cascade's own per-tier publish and the post-publish dogfood"
+elif [ $DRC -eq 0 ]; then mark publish-dry-run PASS "packages cleanly"
 else mark publish-dry-run FAIL "$(printf '%s' "$DRY" | grep -iE 'error' | head -1)"; fi
 
 # ── 11. DOGFOOD: use the crate's own release binary on real data ────────────
@@ -1345,7 +1407,10 @@ elif [ -f scripts/dogfood-use.sh ] || [ -f "$(git rev-parse --show-toplevel 2>/d
   fi
   WORK=$(mktemp -d)
   gate dogfood-use env BIN="$BINPATH" WORK="$WORK" bash "$DF_SCRIPT"
-  rm -rf "$WORK"
+  case "${WORK:-}" in
+    /tmp/?*|/var/folders/?*|/mnt/?*) if [ -n "$WORK" ] && [ "$WORK" != "/" ]; then rm -rf -- "$WORK" || :; fi ;;
+    *) : ;;
+  esac
 else
   mark dogfood-use FAIL "no dogfood gate — add a native \`<bin> dogfood\` subcommand (preferred) or scripts/dogfood-use.sh. A released tool nobody ran is not dogfooded, and a WARN here is a step everyone learns to walk past."
 fi
@@ -1372,7 +1437,7 @@ mark clean-room MANUAL "run \`make -C ../infra/machines/clean-room clean-room-$C
 NAMES_TSV=$(for i in "${!NAMES[@]}"; do
   printf '%s\t%s\t%s\n' "${NAMES[$i]}" "${RESULTS[$i]}" "$(printf '%s' "${NOTES[$i]}" | tr '\n' '\r')"
 done)
-CRATE="$CRATE" VERSION="$VERSION" TS="$TS" SHA="$RECEIPT_SHA" \
+CRATE="$CRATE" VERSION="$VERSION" TS="$TS" SHA="$RECEIPT_SHA" PHASE="$DOGFOOD_PHASE" \
 VERDICT="$([ $FAILED -eq 0 ] && echo GO || echo NO-GO)" \
 ROWS="$NAMES_TSV" python3 > "$RECEIPT_PARTIAL" <<'PY'
 import json, os
@@ -1389,6 +1454,8 @@ for line in os.environ.get("ROWS", "").split("\n"):
 print(json.dumps({
     "crate": os.environ["CRATE"], "version": os.environ["VERSION"],
     "timestamp": os.environ["TS"], "commit": os.environ["SHA"], "gates": gates,
+    "phase": os.environ["PHASE"],
+    "deferred": [g["gate"] for g in gates if g["result"] == "DEFER"],
     "verdict": os.environ["VERDICT"],
 }, indent=2))
 PY
@@ -1404,7 +1471,15 @@ mv "$RECEIPT_PARTIAL" "$RECEIPT"
 echo "────────────────────────────────────────────────"
 echo "receipt: $RECEIPT"
 if [ $FAILED -eq 0 ]; then
-  echo "VERDICT: ✅ GO — all automated gates green. Complete clean-room (MANDATORY) then release."
+  for i in "${!NAMES[@]}"; do
+    [ "${RESULTS[$i]}" = DEFER ] || continue
+    printf '  · DEFER %-18s %s\n' "${NAMES[$i]}" "${NOTES[$i]}"
+  done
+  if [ "$DOGFOOD_PHASE" = pre-publish ]; then
+    echo "VERDICT: ✅ GO (phase pre-publish) — every measurable gate green; the DEFER rows above are owed by the post-publish dogfood on the published crate."
+  else
+    echo "VERDICT: ✅ GO — all automated gates green. Complete clean-room (MANDATORY) then release."
+  fi
   exit 0
 else
   # Name every failing gate and its note. A verdict that says only "a gate

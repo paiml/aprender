@@ -103,6 +103,18 @@ else
         "$(printf '%s\n' $main_hosts | grep -c .)"
 fi
 
+# PRE-PUBLISH PHASE (scripts/dogfood.sh --phase pre-publish, PMAT-745). Every
+# receipt this gate reads comes from `cargo install aprender --version X` on a
+# host, so before X is on crates.io there is nothing any host could have
+# installed: the gate is DEFERRED with the obligation named, after the matrix
+# floor above has been checked. In every other phase a missing receipt is the
+# FAIL it always was. dogfood.sh records a DEFERRED line as DEFER only in the
+# pre-publish phase and as FAIL anywhere else.
+if [ "${DOGFOOD_PHASE:-full}" = pre-publish ]; then
+    printf 'DEFERRED: %s is not on crates.io yet, so no host can have run `cargo install aprender --version %s`; owed by the post-publish dogfood as %s/{%s}.json\n' \
+        "$VERSION" "$VERSION" "$DIR" "$(printf '%s' "$HOSTS" | tr ' ' ',')"
+    exit 0
+fi
 for h in $HOSTS; do
     f="$DIR/$h.json"
     if [ ! -f "$f" ]; then
