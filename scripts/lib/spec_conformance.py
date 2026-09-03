@@ -206,17 +206,37 @@ def _pipe_groups(lines: list, start: int, stop: int):
         yield tuple(group)
 
 
-def _fragment_rows(group: tuple) -> tuple:
-    """((line index, row id, cells), ...) for a run of pipe lines that does
-    NOT open with a header row; () when it does (that run is another table)."""
-    first = next((c for _, c in group if not _is_separator(c)), None)
-    if first is None or not _row_id(first):
+def _run_header(group: tuple):
+    """The lowercased header cells of a run that opens as a markdown table
+    (a header line followed by a separator line), else None -- a run with
+    no separator after its first line is a headerless fragment."""
+    if len(group) >= 2 and not _is_separator(group[0][1]) and _is_separator(group[1][1]):
+        return [c.lower() for c in group[0][1]]
+    return None
+
+
+def _ledger_like(cells: list, header: list) -> bool:
+    """A row-id first cell and a column count within two of the ledger
+    header's: one stray or missing pipe is a typo in a ledger row; a table
+    half the ledger's width is another table."""
+    return bool(_row_id(cells)) and abs(len(cells) - len(header)) <= 2
+
+
+def _fragment_rows(group: tuple, header: list) -> tuple:
+    """((line index, row id, cells), ...) -- the ledger rows in one run of
+    pipe lines outside the first table. A run that opens with a header
+    DIFFERENT from the ledger's is another table and is skipped whole; a run
+    with the ledger's own header, or no header at all, is read row by row,
+    so a dummy first line cannot hide the rows after it (PMAT-932)."""
+    run_header = _run_header(group)
+    if run_header is not None and run_header != header:
         return ()
-    return tuple((i, _row_id(c), c) for i, c in group
-                 if _row_id(c) and not _is_separator(c))
+    body = group[2:] if run_header is not None else group
+    return tuple((i, _row_id(c), c) for i, c in body
+                 if not _is_separator(c) and _ledger_like(c, header))
 
 
-def ledger_rows_outside_table(lines: list) -> tuple:
+def ledger_rows_outside_table(lines: list, header: list) -> tuple:
     """(table_end, ((line index, row id, cells), ...)) -- every ledger row
     that sits after the first table breaks: L2's universe.
 
@@ -235,7 +255,7 @@ def ledger_rows_outside_table(lines: list) -> tuple:
     )
     found = []
     for group in _pipe_groups(lines, table_end, superseded):
-        found.extend(_fragment_rows(group))
+        found.extend(_fragment_rows(group, header))
     return table_end, tuple(found)
 
 
@@ -530,8 +550,10 @@ def _ledger_column_index(header: list) -> dict:
     }
     missing = [k for k, v in idx.items() if v < 0]
     if missing:
-        emit("NOTE", "the ledger table carries no %s column, so those key "
-                     "components are absent from every spend key" % ", ".join(sorted(missing)))
+        emit("VIOLATION", "L0", "-",
+             "the first pipe table of the ledger carries no %s column: it is not "
+             "the table PP-9 reads, so the spend check has nothing to key on -- a "
+             "table written above the ledger shadows it" % ", ".join(sorted(missing)))
     return idx
 
 
@@ -581,7 +603,7 @@ def _emit_ledger_split(table_end: int, outside: tuple) -> None:
 def _ledger_universe(lines: list, header: list, rows: list) -> list:
     """The rows PP-9's spend check reads: the first table's rows (L3 for a
     malformed one) plus every row L2 finds outside that table."""
-    table_end, outside = ledger_rows_outside_table(lines)
+    table_end, outside = ledger_rows_outside_table(lines, header)
     if outside:
         _emit_ledger_split(table_end, outside)
     _check_ledger_shapes(rows, header)

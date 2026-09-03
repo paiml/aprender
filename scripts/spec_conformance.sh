@@ -85,6 +85,7 @@ selftest() {
     local td pass=0 fail=0
     local BT ROW_ARMED ROW_OPEN DAG_OK LEDGER_ONE LEDGER_TWO LEDGER_TWO_COMMITS LEDGER_SPLIT
     local LEDGER_NOLEAD LEDGER_BACKTICK LEDGER_TRAILING LEDGER_EXTRA LEDGER_SIDE LEDGER_SUPERSEDED LEDGER_RESPEND_OUT
+    local LEDGER_DUMMY_FIRST LEDGER_BOLD LEDGER_SIDE_SPLIT LEDGER_SIDE_WIDE LEDGER_SAME_HEADER LEDGER_EXTRA_OUT LEDGER_PRE
     local root_dag derived
     td="$(mktemp -d)" || { printf 'FAIL  mktemp -d failed\n'; return 2; }
     case "$td" in
@@ -96,7 +97,7 @@ selftest() {
     # A synthetic root: a §6 table, a §12 table, a ledger and a stub whose
     # --list-selftests IS the surface. Building the surface rather than pointing
     # at the real one is what lets a row assert that a MISSING case reddens.
-    mk_root() { # mk_root <name> <§6 rows> <§12 rows> <ledger rows> <stub case names>
+    mk_root() { # mk_root <name> <§6 rows> <§12 rows> <ledger rows> <stub case names> [<ledger preamble>]
         local r="$td/$1"
         rm -rf "${r:?}"
         mkdir -p "$r/docs/specifications" "$r/scripts" "$r/evidence/parity"
@@ -123,6 +124,7 @@ selftest() {
         } > "$r/docs/specifications/PP-LLAMA-001-MASTER.md"
         {
             printf '# Ledger (fixture)\n\n'
+            printf '%b' "${6:-}"
             printf '| # | started_utc | host | class | model · quant | workload | commit | interleaved | receipts | conformance |\n'
             printf '|---|---|---|---|---|---|---|---|---|---|\n'
             printf '%b' "$4"
@@ -181,6 +183,13 @@ selftest() {
     LEDGER_SIDE="${LEDGER_TWO_COMMITS}\\n| c | agg |\\n|---|---|\\n| 1 | 90.2 |\\n"
     LEDGER_SUPERSEDED="${LEDGER_TWO_COMMITS}\\n## Superseded rows (schema v2)\\n\\n| 9 | t | lambda | cuda | q · q4 | W1 | ${BT}aaaa${BT} | false | e | RECORDED |\\n"
     LEDGER_RESPEND_OUT="${LEDGER_ONE}\\n| 2 | t | lambda | cuda | q · q4 | W1 | ${BT}aaaa${BT} | false | e | RECORDED |\\n"
+    LEDGER_DUMMY_FIRST="${LEDGER_ONE}\\n| dummy | x |\\n| 2 | t | lambda | cuda | q · q4 | W1 | ${BT}aaaa${BT} | false | e | RECORDED |\\n"
+    LEDGER_BOLD="${LEDGER_ONE}\\n| **2** | t | lambda | cuda | q · q4 | W1 | ${BT}bbbb${BT} | false | e | RECORDED |\\n"
+    LEDGER_SIDE_SPLIT="${LEDGER_TWO_COMMITS}\\n| c | agg |\\n|---|---|\\n| 1 | 90.2 |\\n\\n| 4 | 80.1 |\\n"
+    LEDGER_SIDE_WIDE="${LEDGER_TWO_COMMITS}\\n| n | a | b | c | d | e | f | g | h | i |\\n|---|---|---|---|---|---|---|---|---|---|\\n| 1 | a | b | c | d | e | f | g | h | i |\\n"
+    LEDGER_SAME_HEADER="${LEDGER_ONE}\\n| # | started_utc | host | class | model · quant | workload | commit | interleaved | receipts | conformance |\\n|---|---|---|---|---|---|---|---|---|---|\\n| 2 | t | lambda | cuda | q · q4 | W1 | ${BT}bbbb${BT} | false | e | RECORDED |\\n"
+    LEDGER_EXTRA_OUT="${LEDGER_ONE}\\n| 2 | t | | lambda | cuda | q · q4 | W1 | ${BT}bbbb${BT} | false | e | RECORDED |\\n"
+    LEDGER_PRE="| # | repo |\\n|---|---|\\n| 1 | aprender |\\n\\n"
 
     # §6 -- the join itself.
     row conformance_ok CLEAN \
@@ -243,6 +252,26 @@ selftest() {
         "$(mk_root trailing "$ROW_ARMED" "$DAG_OK" "$LEDGER_TRAILING" "alpha beta")"
     row ledger_row_extra_pipe L3 \
         "$(mk_root extrapipe "$ROW_ARMED" "$DAG_OK" "$LEDGER_EXTRA" "alpha beta")"
+    # PMAT-932: a run is read row by row unless it opens with a header that is
+    # not the ledger's, so a dummy first line hides nothing; a bold id is an id;
+    # a blank line inside a narrower side table flags nothing; a side table of
+    # the ledger's own width is told apart by its header; a second table with
+    # the ledger's header is outside the first table; a stray pipe outside the
+    # table is still a ledger row; and a table written ABOVE the ledger is L0.
+    row ledger_fragment_after_dummy_line L1,L2 \
+        "$(mk_root dummyfirst "$ROW_ARMED" "$DAG_OK" "$LEDGER_DUMMY_FIRST" "alpha beta")"
+    row ledger_row_bold_id L2 \
+        "$(mk_root boldid "$ROW_ARMED" "$DAG_OK" "$LEDGER_BOLD" "alpha beta")"
+    row ledger_side_table_split_ok CLEAN \
+        "$(mk_root sidesplit "$ROW_ARMED" "$DAG_OK" "$LEDGER_SIDE_SPLIT" "alpha beta")"
+    row ledger_side_table_same_width_ok CLEAN \
+        "$(mk_root sidewide "$ROW_ARMED" "$DAG_OK" "$LEDGER_SIDE_WIDE" "alpha beta")"
+    row ledger_second_table_same_header L2 \
+        "$(mk_root sameheader "$ROW_ARMED" "$DAG_OK" "$LEDGER_SAME_HEADER" "alpha beta")"
+    row ledger_row_extra_pipe_outside L2 \
+        "$(mk_root extraout "$ROW_ARMED" "$DAG_OK" "$LEDGER_EXTRA_OUT" "alpha beta")"
+    row ledger_first_table_not_ledger L0 \
+        "$(mk_root prefirst "$ROW_ARMED" "$DAG_OK" "$LEDGER_ONE" "alpha beta" "$LEDGER_PRE")"
 
     # §12 -- the expiry DAG.
     if _reg dag_derived_equals_max_blocker; then

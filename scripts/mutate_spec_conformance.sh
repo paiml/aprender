@@ -30,7 +30,9 @@ superseded-cutoff-removed	(i for i, line in enumerate(lines) if SUPERSEDED_HEAD.
 l2-relabelled-l1	    emit("VIOLATION", "L2", " ".join(rid for _, rid, _ in outside),	    emit("VIOLATION", "L1", " ".join(rid for _, rid, _ in outside),
 l3-removed	    _check_ledger_shapes(rows, header)	    pass  # MUTANT
 outside-rows-not-spent	    return rows + [c for _, _, c in outside]	    return rows
-header-skip-removed	    if first is None or not _row_id(first):	    if first is None:
+header-skip-removed	    if run_header is not None and run_header != header:	    if False:
+width-tolerance-removed	    return bool(_row_id(cells)) and abs(len(cells) - len(header)) <= 2	    return bool(_row_id(cells)) and len(cells) == len(header)
+l0-missing-columns-ignored	    missing = [k for k, v in idx.items() if v < 0]	    missing = []
 CAT
 )
 
@@ -39,7 +41,16 @@ if [ "${1:-}" = "--list" ]; then
     exit 0
 fi
 
-attempted=0; killed=0; survivors=""
+# THE BASELINE FIRST. A mutant is killed by a case that was GREEN without it; a
+# case table that is already red kills every mutant for free (PMAT-932).
+if base=$(bash "$SELFTEST" --selftest 2>&1); then base_rc=0; else base_rc=$?; fi
+if [ "$base_rc" -ne 0 ] || [ "$(printf '%s\n' "$base" | grep -c 'BROKE')" -ne 0 ]; then
+    printf 'FAIL  the unmutated case table is not green (rc=%s); nothing below could be a kill\n' "$base_rc"
+    exit 1
+fi
+printf '  baseline green: %s\n' "$(printf '%s\n' "$base" | tail -1 | sed 's/^ *//')"
+
+attempted=0; killed=0; unviable=0; survivors=""
 while IFS=$'\t' read -r id old new; do
     [ -n "$id" ] || continue
     attempted=$((attempted + 1))
@@ -64,9 +75,16 @@ PY
         survivors="$survivors $id(noop)"
         continue
     fi
-    out=$(bash "$SELFTEST" --selftest 2>&1 || true)
+    if out=$(bash "$SELFTEST" --selftest 2>&1); then :; else :; fi
+    # A mutant that CRASHES the scanner turns every case BROKE at once; that is
+    # not a fixture discriminating a condition, so it is UNVIABLE, never a kill.
+    crashed=$(printf '%s\n' "$out" | grep -c 'scanner errored' || true)
     broke=$(printf '%s\n' "$out" | grep -c 'BROKE' || true)
-    if [ "$broke" -ge 1 ]; then
+    if [ "$crashed" -ge 1 ]; then
+        printf '  UNVIABLE %-25s the scanner errored under this mutant (%s case(s))\n' "$id" "$crashed"
+        unviable=$((unviable + 1))
+        survivors="$survivors $id(unviable)"
+    elif [ "$broke" -ge 1 ]; then
         printf '  killed %-28s %s case(s) BROKE\n' "$id" "$broke"
         killed=$((killed + 1))
     else
@@ -76,7 +94,7 @@ PY
 done <<< "$CATALOGUE"
 cp "$BACKUP" "$TARGET"
 
-printf '%s: attempted=%s killed=%s survivors=%s\n' "$PROG" "$attempted" "$killed" "${survivors:- none}"
+printf '%s: attempted=%s killed=%s unviable=%s survivors=%s\n' "$PROG" "$attempted" "$killed" "$unviable" "${survivors:- none}"
 if [ "$killed" -ne "$attempted" ]; then
     printf 'FAIL  %s mutant(s) survived: a condition the scanner states and no fixture tests\n' "$((attempted - killed))"
     exit 1
