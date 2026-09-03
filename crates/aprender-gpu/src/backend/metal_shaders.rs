@@ -5,11 +5,15 @@
 //!
 //! # Usage
 //!
-//! ```ignore
-//! use trueno_gpu::backend::metal_shaders;
+//! These are source strings only. This crate contains no Metal dispatcher, so
+//! nothing here compiles or runs them -- pass a constant to a Metal API of your
+//! own (`MTLDevice::newLibraryWithSource`), or use the `wgpu` feature, which
+//! reaches Apple GPUs through wgpu's Metal backend and does execute.
 //!
-//! let compute = MetalCompute::default_device()?;
-//! let shader = compute.compile_shader(metal_shaders::ELEMENTWISE_ADD, "elementwise_add")?;
+//! ```ignore
+//! use aprender_gpu::backend::metal_shaders;
+//!
+//! let msl: &str = metal_shaders::ELEMENTWISE_ADD; // kernel name: "elementwise_add"
 //! ```
 
 /// Element-wise vector addition kernel

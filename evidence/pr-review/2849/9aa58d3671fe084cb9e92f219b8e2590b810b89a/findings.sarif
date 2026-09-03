@@ -1,0 +1,226 @@
+{
+  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spectool/main/schemas/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat",
+          "version": "cli",
+          "informationUri": "https://github.com/paiml/paiml-mcp-agent-toolkit",
+          "rules": [
+            {
+              "id": "pmat/satd",
+              "name": "satd",
+              "shortDescription": {
+                "text": "self-admitted technical debt introduced by this diff"
+              }
+            }
+          ]
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": []
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "nvidia-cuda-docs",
+          "version": "mcp",
+          "informationUri": "https://docs.nvidia.com/cuda/",
+          "rules": [
+            {
+              "id": "cuda/applicability",
+              "name": "applicability",
+              "shortDescription": {
+                "text": "CUDA documentation bearing on the diff"
+              }
+            }
+          ]
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": []
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "cargo-mutants",
+          "version": "in-diff",
+          "informationUri": "https://mutants.rs",
+          "rules": [
+            {
+              "id": "mutation/baseline",
+              "name": "baseline",
+              "shortDescription": {
+                "text": "the unmutated tree must build before mutants can run"
+              }
+            }
+          ]
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": false,
+          "toolExecutionNotifications": [
+            {
+              "level": "error",
+              "message": {
+                "text": "cargo mutants tested 0 mutants: `cargo test` fails in the UNMUTATED tree. The doctest at crates/aprender-gpu/src/lib.rs:12 references `trueno_gpu::ptx`, a pre-rename path. Reproduced identically on the merge-base f21f437c2, so it is pre-existing and not introduced by this PR."
+              },
+              "properties": {
+                "grounding": "measured",
+                "command": [
+                  "cargo",
+                  "mutants",
+                  "--in-diff",
+                  "/tmp/prrev/indiff.patch",
+                  "--package",
+                  "aprender-gpu",
+                  "--timeout",
+                  "120",
+                  "--jobs",
+                  "4"
+                ],
+                "exit_code": 0,
+                "stdout_sha256": "8636c7316738a45117b6f762671e78917b38ed38d7f458a7e25825adb27a3508"
+              }
+            }
+          ]
+        }
+      ],
+      "results": []
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity",
+          "version": "agy",
+          "informationUri": "https://antigravity.google",
+          "rules": [
+            {
+              "id": "antigravity/high",
+              "name": "high",
+              "shortDescription": {
+                "text": "cross-vendor reviewer, high severity"
+              }
+            },
+            {
+              "id": "antigravity/medium",
+              "name": "medium",
+              "shortDescription": {
+                "text": "cross-vendor reviewer, medium severity"
+              }
+            },
+            {
+              "id": "antigravity/low",
+              "name": "low",
+              "shortDescription": {
+                "text": "cross-vendor reviewer, low severity"
+              }
+            }
+          ]
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "antigravity/high",
+          "level": "error",
+          "message": {
+            "text": "SemVer Violation: Removal of public feature and exports \u2014 Removing the `metal` Cargo feature and the `pub use manzana::metal::*` exports (from backend/mod.rs) breaks backward compatibility for any external consumers of the `aprender-gpu` 0.64.0 public API. This requires a version bump (e.g., to 0.65.0) to comply with Cargo's semantic versioning rules, regardless of whether the feature was enabled within this specific workspace."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "crates/aprender-gpu/Cargo.toml"
+                },
+                "region": {
+                  "startLine": 80
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "asserted",
+            "precision_class": "advisory",
+            "rationale": "Removing the `metal` Cargo feature and the `pub use manzana::metal::*` exports (from backend/mod.rs) breaks backward compatibility for any external consumers of the `aprender-gpu` 0.64.0 public API. This requires a version bump (e.g., to 0.65.0) to comply with Cargo's semantic versioning rules, regardless of whether the feature was enabled within this specific workspace.",
+            "confidence": "high",
+            "reviewer": "agy/gemini-3.1-pro-high",
+            "failure_scenario": "A consumer whose Cargo.toml reads aprender-gpu = { version = \"0.64\", features = [\"metal\"] } resolves against a 0.64.x release carrying this change; cargo halts with `the package aprender-gpu does not have the feature metal`, and no patch-level pin avoids it."
+          }
+        },
+        {
+          "ruleId": "antigravity/medium",
+          "level": "warning",
+          "message": {
+            "text": "Process Violation: Loss of PMAT-006 specification traceability \u2014 Although the author is correct that the tests were tautological stubs (e.g., `let result = expected.clone(); assert_eq!(result, expected)`), completely deleting the file removes the PMAT-006 (METAL-01 to METAL-05) falsification tracking. Given the project's strict QA and falsification specification, these requirements should be formally deprecated or the tests rewritten to validate the `wgpu` Metal path, rather than silently dropping the matrix."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "crates/aprender-gpu/tests/metal_backend_f101.rs"
+                },
+                "region": {
+                  "startLine": 1
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "asserted",
+            "precision_class": "advisory",
+            "rationale": "Although the author is correct that the tests were tautological stubs (e.g., `let result = expected.clone(); assert_eq!(result, expected)`), completely deleting the file removes the PMAT-006 (METAL-01 to METAL-05) falsification tracking. Given the project's strict QA and falsification specification, these requirements should be formally deprecated or the tests rewritten to validate the `wgpu` Metal path, rather than silently dropping the matrix.",
+            "confidence": "high",
+            "reviewer": "agy/gemini-3.1-pro-high",
+            "failure_scenario": "An engineer greps METAL-01..METAL-05 to find what covers Apple GPU inference, finds nothing, and concludes the falsification conditions never existed rather than that they were retired; five FKR-011 conditions leave the matrix with no UNMEASURED or NOT_APPLICABLE record of their removal."
+          }
+        },
+        {
+          "ruleId": "antigravity/low",
+          "level": "note",
+          "message": {
+            "text": "Binary bloat on non-Apple platforms from unconditional shaders \u2014 Removing the `#[cfg(all(target_os = \"macos\", feature = \"metal\"))]` gate exposes `pub mod metal_shaders;` unconditionally. This embeds Apple-specific Metal shader string literals into the compiled binaries for Linux and Windows targets where they are completely unusable, introducing minor binary bloat and potential dead-code issues."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "crates/aprender-gpu/src/backend/mod.rs"
+                },
+                "region": {
+                  "startLine": 7
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "asserted",
+            "precision_class": "advisory",
+            "rationale": "Removing the `#[cfg(all(target_os = \"macos\", feature = \"metal\"))]` gate exposes `pub mod metal_shaders;` unconditionally. This embeds Apple-specific Metal shader string literals into the compiled binaries for Linux and Windows targets where they are completely unusable, introducing minor binary bloat and potential dead-code issues.",
+            "confidence": "high",
+            "reviewer": "agy/gemini-3.1-pro-high",
+            "failure_scenario": "A Linux or Windows build of aprender-gpu links 13 MSL shader string constants that no code path on those targets can dispatch, placing unreachable Apple-specific source in .rodata of every non-Apple binary."
+          }
+        }
+      ]
+    }
+  ]
+}

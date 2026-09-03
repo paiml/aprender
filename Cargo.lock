@@ -780,7 +780,6 @@ dependencies = [
  "criterion 0.7.0",
  "crossterm 0.28.1",
  "libloading",
- "manzana",
  "pollster",
  "proptest",
  "thiserror 2.0.18",
@@ -8119,20 +8118,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "62bb907fe88d54d8d9ce32a3cceab4218ed2f6b7d35617cafe9adf84e43919cb"
 dependencies = [
  "libc",
-]
-
-[[package]]
-name = "manzana"
-version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4b5eed7c777f2d9d8313bdbc671c19fae34769646b42e9ea2beeec9f5d872cb7"
-dependencies = [
- "bitflags 2.13.0",
- "core-foundation 0.10.1",
- "core-foundation-sys",
- "mach2",
- "thiserror 1.0.69",
- "tracing",
 ]
 
 [[package]]
