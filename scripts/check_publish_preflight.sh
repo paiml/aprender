@@ -142,7 +142,11 @@ print(d.get("verdict") or "-", d.get("commit") or "-", d.get("version") or "-",
         # whitelist: a row not named here is refused, whatever it is called.
         bad_defer=""
         if [ "$rphase" = pre-publish ] && [ "$rdeferred" != "-" ]; then
-            for g in ${rdeferred//,/ }; do
+            # Split on commas into an array: an unquoted expansion would also
+            # glob, and a gate should not depend on what files sit in its cwd.
+            local -a deferred_rows=()
+            IFS=, read -r -a deferred_rows <<< "$rdeferred"
+            for g in "${deferred_rows[@]}"; do
                 case " $PREPUBLISH_DEFERRABLE " in *" $g "*) ;; *) bad_defer="$bad_defer $g" ;; esac
             done
         elif [ "$rphase" != pre-publish ] && [ "$rdeferred" != "-" ]; then

@@ -35,7 +35,27 @@ cd "$(dirname "$0")/.." || exit 2
 #   mini        arm64 macOS   + Metal                Apple silicon, no /proc, APFS
 HOSTS="lambda intel gx10 mini"
 
-VERSION="$(awk -F'"' '/^version *=/{print $2; exit}' Cargo.toml)"
+# The version comes from cargo, not from a grep of Cargo.toml: under
+# `version.workspace = true` the grep is empty and every receipt reads as STALE
+# (review quorum on #2859, lane 3, measured). The grep stays as the fallback
+# for a tree whose metadata cannot be resolved; an empty result is a refusal.
+VERSION="$(cargo metadata --no-deps --offline --format-version 1 --manifest-path Cargo.toml 2>/dev/null \
+  | python3 -c '
+import json, os, sys
+try:
+    m = json.load(sys.stdin)
+except ValueError:
+    sys.exit(1)
+root = os.path.realpath("Cargo.toml")
+for p in m.get("packages", []):
+    if os.path.realpath(p["manifest_path"]) == root:
+        print(p["version"]); sys.exit(0)
+sys.exit(1)' 2>/dev/null)" || VERSION=""
+[ -n "$VERSION" ] || VERSION="$(awk -F'"' '/^version *=/{print $2; exit}' Cargo.toml)"
+if [ -z "$VERSION" ]; then
+    printf 'FAIL  the version being cut cannot be resolved (cargo metadata names no root package version; Cargo.toml has no literal)\n'
+    exit 1
+fi
 DIR="evidence/dogfood/$VERSION"
 # ONE validator, shared with scripts/check_bench_receipt.sh. Two readers of one
 # schema is the divergence class #2640 exists to close.

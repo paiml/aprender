@@ -273,14 +273,25 @@ publish_crate() {
   local out
   # No dirty-tree override here: scripts/check_publish_preflight.sh proved the tree
   # clean before the first upload (F-9, PMAT-745); a dirty tree stops the cascade there.
-  out=$(cargo publish "${sel[@]}" --locked 2>&1 | tail -6)
-  if grep -q "Published $crate" <<< "$out" ; then
+  # cargo's OWN exit status, read from the command: `cmd | tail -6` handed back
+  # tail's status, so the verdict below came from six lines of text alone. Two
+  # independent review lanes on #2859 reached this line. A zero exit without the
+  # `Published` line is not counted as published either -- it is deferred and
+  # named, so a drain pass asks again.
+  local log rc
+  log=$(mktemp "${TMPDIR:-/tmp}/cascade-publish.XXXXXX") || { echo "FATAL-ENV (mktemp failed; nothing uploaded for $crate)"; return 1; }
+  cargo publish "${sel[@]}" --locked > "$log" 2>&1; rc=$?
+  out=$(tail -6 "$log"); rm -f "$log"
+  if [ "$rc" -eq 0 ] && grep -q "Published $crate" <<< "$out" ; then
     echo "✓ PUBLISHED"
     sleep 10  # let crates.io index settle before dependents try to fetch
     return 0
   elif grep -qE "already.*upload|already exists" <<< "$out" ; then
     echo "(already on registry)"
     return 0
+  elif [ "$rc" -eq 0 ]; then
+    echo "DEFER (cargo publish exited 0 but printed no 'Published $crate' line — not counted as published)"
+    return 1
   # Surface the two FATAL classes that are NOT dep-ordering deferrals — a bare
   # "Caused by:" truncation hid both for ~2h in the v0.60.0 cascade:
   #   1. 403 authentication failed — a STALE $CARGO_REGISTRY_TOKEN env var
@@ -340,9 +351,11 @@ if [ -f .cargo/config.toml ]; then
     exit 2
   fi
   cp .cargo/config.toml "$CASCADE_CONFIG_BACKUP" || { echo "⛔ could not back up .cargo/config.toml; nothing was published." >&2; exit 2; }
+  # The restore trap is armed BEFORE the overwrite: between the two there was a
+  # window in which an interrupt lost the config (sixth review of #2859).
+  trap 'if [ -n "$CASCADE_CONFIG_BACKUP" ] && [ -f "$CASCADE_CONFIG_BACKUP" ]; then cp "$CASCADE_CONFIG_BACKUP" .cargo/config.toml && rm -f "$CASCADE_CONFIG_BACKUP"; fi' EXIT
   echo "# Clean config for cascade publishing" > .cargo/config.toml
 fi
-trap 'if [ -n "$CASCADE_CONFIG_BACKUP" ] && [ -f "$CASCADE_CONFIG_BACKUP" ]; then cp "$CASCADE_CONFIG_BACKUP" .cargo/config.toml && rm -f "$CASCADE_CONFIG_BACKUP"; fi' EXIT
 
 # --order-check: run ONLY the publish-order precondition, against the live
 # registry, and publish nothing. Two reasons this mode exists rather than the
