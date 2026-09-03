@@ -136,10 +136,16 @@ falsification_tests:
     if_fails: "The pg surface collapsed, so every pg-surfaced §6 row would join against an empty set and the guard would be RED for the wrong reason"
 
   - id: FALSIFY-PP-LLAMA-001-CONFORMANCE-009
-    rule: "L2: a ledger row outside the first table is refused, not silently dropped from PP-9's universe"
-    prediction: "ledger_row_outside_table (L2, a blank line splits the table) is RED and ledger_rows_contiguous (CLEAN, same rows with no split) is CLEAN in the case table; removing the L2 emit from check_ledger() turns ledger_row_outside_table BROKE"
-    test: 'out=$(bash scripts/spec_conformance.sh --selftest); [ "$(echo "$out" | grep -c "ok    ledger_row_outside_table  *L2")" -eq 1 ] && [ "$(echo "$out" | grep -c "ok    ledger_rows_contiguous  *CLEAN")" -eq 1 ]'
-    if_fails: "table_rows() reads only the FIRST pipe table of the ledger and stops at the first blank or prose line; a row typed after that break is invisible to a_cell_once_run_is_spent, so a re-spent key sitting outside the table passes clean (the PMAT-930 defect: a blank line after evidence/parity/LEDGER.md row 4 left rows 5 and 6 unread, and duplicating row 6 as row 7 passed spec_conformance.sh)"
+    rule: "L2: a ledger row outside the first table is refused, not silently dropped from PP-9's universe; the universe is the rule, not a shape"
+    prediction: "ledger_row_outside_table (a blank line splits the table), ledger_row_no_leading_pipe and ledger_row_backticked_id are L2, ledger_respend_outside_table is L1,L2, ledger_rows_contiguous, ledger_side_table_ok and ledger_superseded_rows_ok are CLEAN in the case table; removing the L2 emit turns four of them BROKE"
+    test: 'out=$(bash scripts/spec_conformance.sh --selftest); for c in "ledger_row_outside_table  *L2" "ledger_row_no_leading_pipe  *L2" "ledger_row_backticked_id  *L2" "ledger_respend_outside_table  *L1,L2" "ledger_rows_contiguous  *CLEAN" "ledger_side_table_ok  *CLEAN" "ledger_superseded_rows_ok  *CLEAN"; do [ "$(echo "$out" | grep -c "ok    $c")" -eq 1 ] || exit 1; done'
+    if_fails: "table_rows() reads only the FIRST pipe table of the ledger and stops at the first blank or prose line; a row typed after that break, in any shape, is invisible to a_cell_once_run_is_spent, so a re-spend of a RECORDED key passes -- PP-9 is enforced on the fixture and not on the surface where the decision is made"
+
+  - id: FALSIFY-PP-LLAMA-001-CONFORMANCE-010
+    rule: "L3: a first-table ledger row whose cell count differs from the header is refused, and no mutant of the L1/L2/L3 conditions survives its committed set"
+    prediction: "ledger_row_extra_pipe and ledger_row_trailing_pipes are L3 in the case table; scripts/mutate_spec_conformance.sh reports attempted=8 killed=8 survivors= none"
+    test: 'out=$(bash scripts/spec_conformance.sh --selftest); [ "$(echo "$out" | grep -c "ok    ledger_row_extra_pipe  *L3")" -eq 1 ] && [ "$(echo "$out" | grep -c "ok    ledger_row_trailing_pipes  *L3")" -eq 1 ] && bash scripts/mutate_spec_conformance.sh'
+    if_fails: "a surviving mutant is a condition the scanner states and no fixture tests -- that shape is not a condition of PP-9's universe, that a different table is skipped whole, that the superseded region is out of scope, or that a malformed row is refused rather than mis-keyed -- and the rule it guards has no producer"
 
 qa_gate:
   id: F-PP-LLAMA-001-CONFORMANCE-001

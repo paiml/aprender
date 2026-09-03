@@ -165,6 +165,20 @@ row count the scanner reports (`LEDGER <rows> <recorded>`) is compared against t
 the page precisely because a recorded count nobody compares to the source is theater: it looks like
 measurement and enforces nothing.
 
+**L2's universe, and L3.** The first form of L2 required the escaped row to have the canonical
+shape: a leading pipe, a row-id first cell, the header's column count. The review quorum on #2861
+refuted it four ways — a row with no leading pipe, a backticked id, a trailing `||`, an extra pipe —
+and two of the four passed on the tree. A shape condition on the row this rule exists to catch is
+the rule defined from the accepted case outward; defined from the rule inward, a ledger row is any
+pipe line before the superseded heading whose first cell is a row id, in a run that does not open
+with a header row (that run is a different table and is skipped whole, which is what keeps the
+superseded-documents table out). Rows found that way also enter the L1 spend check, so a re-spend
+outside the table fires both. A row inside the table whose cell count differs from the header's is
+L3: a malformed row shifts every column the spend key reads, and refusing it is cheaper than
+mis-keying it. Eight mutants of these conditions are committed in
+`scripts/mutate_spec_conformance.sh` and each is killed by a named fixture, because a condition no
+fixture can remove is a condition nobody knows is load-bearing.
+
 ### PP-10
 
 `I-14`. A request issued after the window closes has its prefill inside the window and its decode

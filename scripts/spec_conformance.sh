@@ -84,6 +84,7 @@ selftest() {
     # guard is the one place a lint error is not cosmetic.
     local td pass=0 fail=0
     local BT ROW_ARMED ROW_OPEN DAG_OK LEDGER_ONE LEDGER_TWO LEDGER_TWO_COMMITS LEDGER_SPLIT
+    local LEDGER_NOLEAD LEDGER_BACKTICK LEDGER_TRAILING LEDGER_EXTRA LEDGER_SIDE LEDGER_SUPERSEDED LEDGER_RESPEND_OUT
     local root_dag derived
     td="$(mktemp -d)" || { printf 'FAIL  mktemp -d failed\n'; return 2; }
     case "$td" in
@@ -173,6 +174,13 @@ selftest() {
     LEDGER_TWO="${LEDGER_ONE}| 2 | t | lambda | cuda | q · q4 | W1 | ${BT}aaaa${BT} | false | e | RECORDED |\\n"
     LEDGER_TWO_COMMITS="${LEDGER_ONE}| 2 | t | lambda | cuda | q · q4 | W1 | ${BT}bbbb${BT} | false | e | RECORDED |\\n"
     LEDGER_SPLIT="${LEDGER_ONE}\\n| 2 | t | lambda | cuda | q · q4 | W1 | ${BT}bbbb${BT} | false | e | RECORDED |\\n"
+    LEDGER_NOLEAD="${LEDGER_ONE} 2 | t | lambda | cuda | q · q4 | W1 | ${BT}bbbb${BT} | false | e | RECORDED |\\n"
+    LEDGER_BACKTICK="${LEDGER_ONE}\\n| ${BT}2${BT} | t | lambda | cuda | q · q4 | W1 | ${BT}bbbb${BT} | false | e | RECORDED |\\n"
+    LEDGER_TRAILING="${LEDGER_ONE}| 2 | t | lambda | cuda | q · q4 | W1 | ${BT}bbbb${BT} | false | e ||\\n"
+    LEDGER_EXTRA="${LEDGER_ONE}| 2 | t | | lambda | cuda | q · q4 | W1 | ${BT}bbbb${BT} | false | e | RECORDED |\\n"
+    LEDGER_SIDE="${LEDGER_TWO_COMMITS}\\n| c | agg |\\n|---|---|\\n| 1 | 90.2 |\\n"
+    LEDGER_SUPERSEDED="${LEDGER_TWO_COMMITS}\\n## Superseded rows (schema v2)\\n\\n| 9 | t | lambda | cuda | q · q4 | W1 | ${BT}aaaa${BT} | false | e | RECORDED |\\n"
+    LEDGER_RESPEND_OUT="${LEDGER_ONE}\\n| 2 | t | lambda | cuda | q · q4 | W1 | ${BT}aaaa${BT} | false | e | RECORDED |\\n"
 
     # §6 -- the join itself.
     row conformance_ok CLEAN \
@@ -214,6 +222,27 @@ selftest() {
         "$(mk_root split "$ROW_ARMED" "$DAG_OK" "$LEDGER_SPLIT" "alpha beta")"
     row ledger_rows_contiguous CLEAN \
         "$(mk_root contiguous "$ROW_ARMED" "$DAG_OK" "$LEDGER_TWO_COMMITS" "alpha beta")"
+    # PMAT-931: the universe of L2 is the RULE, not a shape. A row without its
+    # leading pipe ends the first table and starts a fragment (L2); a backticked
+    # id is still an id (L2); a run opening with a header row is a different
+    # table and is skipped whole (CLEAN); rows under the superseded heading are
+    # out of scope (CLEAN); a fragment row re-spending a key fires L1 as well.
+    row ledger_row_no_leading_pipe L2 \
+        "$(mk_root nolead "$ROW_ARMED" "$DAG_OK" "$LEDGER_NOLEAD" "alpha beta")"
+    row ledger_row_backticked_id L2 \
+        "$(mk_root backtick "$ROW_ARMED" "$DAG_OK" "$LEDGER_BACKTICK" "alpha beta")"
+    row ledger_side_table_ok CLEAN \
+        "$(mk_root sidetable "$ROW_ARMED" "$DAG_OK" "$LEDGER_SIDE" "alpha beta")"
+    row ledger_superseded_rows_ok CLEAN \
+        "$(mk_root superseded "$ROW_ARMED" "$DAG_OK" "$LEDGER_SUPERSEDED" "alpha beta")"
+    row ledger_respend_outside_table L1,L2 \
+        "$(mk_root respendout "$ROW_ARMED" "$DAG_OK" "$LEDGER_RESPEND_OUT" "alpha beta")"
+    # L3: a row inside the first table whose cell count differs from the header
+    # shifts every column the spend key reads -- refused, not mis-keyed.
+    row ledger_row_trailing_pipes L3 \
+        "$(mk_root trailing "$ROW_ARMED" "$DAG_OK" "$LEDGER_TRAILING" "alpha beta")"
+    row ledger_row_extra_pipe L3 \
+        "$(mk_root extrapipe "$ROW_ARMED" "$DAG_OK" "$LEDGER_EXTRA" "alpha beta")"
 
     # §12 -- the expiry DAG.
     if _reg dag_derived_equals_max_blocker; then

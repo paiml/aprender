@@ -14075,3 +14075,24 @@ roadmap:
   notes: 'Found by PMAT-929 (paiml-implement run 4) live-mutating Appendix C on 68b059ca9: duplicating row 6 as row 7
     inside the v3 table produced PASS "no cell was spent twice"; the scanner had parsed 4 of 6 rows. Five-whys in
     .pmat/jidoka.jsonl and docs/audits/impl-PMAT-929-receipt.md'
+- id: PMAT-931
+  github_issue: null
+  item_type: bug
+  title: 'PMAT-930 review: L2 was a whitelist of one row shape — a ledger row with no leading pipe or one extra pipe
+    passed both the first-table parse and L2; redesign L2 as a universe, add L3 (malformed row) and a mutation set'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-09-03 16:10:00+00:00
+  updated: 2026-09-03 16:10:00+00:00
+  spec: docs/specifications/PP-LLAMA-001-MASTER.md
+  acceptance_criteria:
+  - 'L2: every pipe line before the superseded heading whose first cell (backticks stripped) is a row id and that
+    does not belong to a group opening with a header row is a ledger row outside the table, whatever its column
+    count or leading pipe; those rows also enter the L1 spend check. L3: a first-table row whose cell count differs
+    from the header is refused. Fixtures ledger_row_no_leading_pipe, ledger_row_backticked_id, ledger_row_trailing_pipes,
+    ledger_row_extra_pipe, ledger_side_table_ok, ledger_superseded_rows_ok, ledger_respend_outside_table beside the
+    two of PMAT-930; scripts/mutate_spec_conformance.sh kills 8/8; the live scan on main stays PASS with LEDGER 6 6'
+  notes: 'Found by the PMAT-930 review quorum (paiml-agy-delegate, 3 lanes + the §3.E arm, gemini-3.1-pro-high, conversations
+    df32ef55, f41060f3, 02623f0a, b2af861a); two of the four escape shapes re-run by Fable on 386b0bd40 (no leading pipe,
+    extra pipe: violations=[]). Five-whys in .pmat/jidoka.jsonl. Landed in PR #2861 with PMAT-930'
