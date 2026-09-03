@@ -1,3 +1,13 @@
+metadata:
+  kind: kaizen
+  version: "1.0.0"
+  created: "2026-03-04"
+  author: "PAIML Engineering"
+  description: "Pre-allocated Forward Ping-Pong Buffers in ClassifyPipeline"
+  references:
+    - "KAIZEN-060"
+    - "parent contract: C-GPUTRAINIT-002"
+
 contract: C-CFWDSCRATCH-001
 title: Pre-allocated Forward Ping-Pong Buffers in ClassifyPipeline
 kaizen: KAIZEN-060

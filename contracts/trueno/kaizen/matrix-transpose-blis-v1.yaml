@@ -1,3 +1,11 @@
+metadata:
+  kind: kaizen
+  version: "1.0.0"
+  author: "PAIML Engineering"
+  description: "matrix-transpose-blis-v1 — kaizen KAIZEN-040 improvement record"
+  references:
+    - "KAIZEN-040"
+
 contract: matrix-transpose-blis-v1
 version: 1.0.0
 status: implemented

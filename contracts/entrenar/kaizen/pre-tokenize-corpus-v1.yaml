@@ -1,3 +1,11 @@
+metadata:
+  kind: kaizen
+  version: "1.0.0"
+  author: "PAIML Engineering"
+  description: "pre-tokenize-corpus-v1 — kaizen KAIZEN-028 improvement record"
+  references:
+    - "KAIZEN-028"
+
 contract: pre-tokenize-corpus-v1
 version: 1.0.0
 status: implemented

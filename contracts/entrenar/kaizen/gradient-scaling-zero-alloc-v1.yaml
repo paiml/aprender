@@ -1,3 +1,11 @@
+metadata:
+  kind: kaizen
+  version: "1.0.0"
+  author: "PAIML Engineering"
+  description: "gradient-scaling-zero-alloc-v1 — kaizen KAIZEN-037 improvement record"
+  references:
+    - "KAIZEN-037"
+
 contract: gradient-scaling-zero-alloc-v1
 version: 1.0.0
 status: implemented

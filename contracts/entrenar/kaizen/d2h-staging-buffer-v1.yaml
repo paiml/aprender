@@ -1,3 +1,13 @@
+metadata:
+  kind: kaizen
+  version: "1.0.0"
+  created: "2026-03-04"
+  author: "PAIML Engineering"
+  description: "Pre-allocated D2H Staging Buffer for Gradient Accumulation Downloads"
+  references:
+    - "KAIZEN-059"
+    - "parent contract: C-GPUTRAIN-002"
+
 contract: C-D2HSTG-001
 title: Pre-allocated D2H Staging Buffer for Gradient Accumulation Downloads
 kaizen: KAIZEN-059

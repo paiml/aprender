@@ -1,11 +1,18 @@
 use std::path::Path;
 
 use provable_contracts::error::Severity;
-use provable_contracts::schema::{parse_contract, validate_contract};
+use provable_contracts::schema::{validate_artifact, ArtifactKind};
 
+/// `pv validate <path>` — validate whatever artifact `path` holds.
+///
+/// Dispatches on what the file IS, not on the assumption that everything under
+/// `contracts/` is a `Contract`. Five files in the corpus are not: two pv
+/// binding registries and three publish manifests, all of which failed here
+/// with ``missing field `metadata` `` while the directory walkers that lint
+/// them already knew to treat them differently. See
+/// `provable_contracts::schema::artifact`.
 pub fn run(path: &Path) -> Result<(), Box<dyn std::error::Error>> {
-    let contract = parse_contract(path)?;
-    let violations = validate_contract(&contract);
+    let (kind, violations) = validate_artifact(path)?;
 
     let errors: Vec<_> = violations
         .iter()
@@ -23,9 +30,20 @@ pub fn run(path: &Path) -> Result<(), Box<dyn std::error::Error>> {
     println!("\n{} error(s), {} warning(s)", errors.len(), warnings.len());
 
     if errors.is_empty() {
-        println!("Contract is valid.");
+        println!("{} is valid.", noun(kind));
         Ok(())
     } else {
-        Err(format!("Contract has {} validation error(s)", errors.len()).into())
+        Err(format!("{} has {} validation error(s)", noun(kind), errors.len()).into())
+    }
+}
+
+/// How to name the artifact in the verdict line. Naming the kind is the point:
+/// a reader who runs `pv validate contracts/binding.yaml` and is told
+/// "Contract is valid." has been told something false about which rules ran.
+fn noun(kind: ArtifactKind) -> &'static str {
+    match kind {
+        ArtifactKind::Contract => "Contract",
+        ArtifactKind::Binding => "Binding registry (kind: binding)",
+        ArtifactKind::PublishManifest => "Publish manifest (kind: publish-manifest)",
     }
 }

@@ -401,7 +401,7 @@ mod tests {
 
     #[test]
     fn certify_empty_dir() {
-        let tmp = tempfile::tempdir().unwrap();
+        let tmp = tempfile::tempdir().expect("temp dir is creatable");
         let result = run(tmp.path(), None, None);
         assert!(result.is_ok());
     }
