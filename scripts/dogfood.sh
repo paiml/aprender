@@ -384,9 +384,13 @@ if [ "$DOGFOOD_PHASE" = pre-publish ]; then
   # a transport failure (third review of #2859, dogfood-curl-404-defect). The
   # HTTP status is read separately from the body so 404, 200 and anything else
   # each get their own verdict.
-  case "${#CRATE}" in
-    1) REG_PATH="1/$CRATE" ;; 2) REG_PATH="2/$CRATE" ;; 3) REG_PATH="3/${CRATE:0:1}/$CRATE" ;;
-    *) REG_PATH="${CRATE:0:2}/${CRATE:2:2}/$CRATE" ;;
+  # The index is keyed by the LOWERCASED name (crates.io folds case; cargo
+  # metadata reports the manifest's spelling verbatim) -- fifth review of
+  # #2859, F-CRATES-IO-CASE.
+  REG_NAME=$(printf '%s' "$CRATE" | tr '[:upper:]' '[:lower:]')
+  case "${#REG_NAME}" in
+    1) REG_PATH="1/$REG_NAME" ;; 2) REG_PATH="2/$REG_NAME" ;; 3) REG_PATH="3/${REG_NAME:0:1}/$REG_NAME" ;;
+    *) REG_PATH="${REG_NAME:0:2}/${REG_NAME:2:2}/$REG_NAME" ;;
   esac
   REG_CODE=$(curl -sS -o "$WORKLOG/registry.ndjson" -w '%{http_code}' \
         -A "aprender-dogfood (+https://github.com/paiml/aprender)" \
@@ -1135,7 +1139,13 @@ if [ -x "$BINPATH" ]; then
   CLI_HELP=$("$BINPATH" --help 2>&1); CLI_HELP_RC=$?
   SUBS=$(printf '%s\n' "$CLI_HELP" \
     | awk '/[Cc]ommands:/{f=1;next} /^[A-Za-z].*:[[:space:]]*$/{f=0} f' \
-    | grep -oE '^[[:space:]]+[a-z][a-z0-9_-]+' | tr -d ' ' | sort -u)
+    | grep -oE '^ {2}[a-z][a-z0-9_-]+' | tr -d ' ' | sort -u)
+  # Exactly two leading spaces: clap lists a subcommand at column 2 and wraps a
+  # long description onto continuation lines at the description column. The
+  # previous pattern (any indent) read those continuation lines as commands --
+  # "existing", "model", "the", "yet" -- and failed the row on prose. Measured
+  # on the 0.65.0 binary: 123 "commands" -> 111 real ones; all 110 (help aside)
+  # answer --help, so the row was red on the parser, not on the surface.
   if [ "$CLI_HELP_RC" -ne 0 ]; then
     # `|| true` used to discard this exit; a binary that CRASHES on --help
     # then read as "advertises no subcommands" — a SKIP cascading into
