@@ -1,0 +1,13 @@
+  PR_OR_REF: 2854
+  CARGO_BUILD_JOBS: 8
+  RUST_TEST_THREADS: 8
+##[endgroup]
+== check_format_sovereignty: apr-format leaf dependency sovereignty (#2231) ==
+ok    ENV/CODE classifier: 19/19 rows (scripts/cargo_classify.sh)
+PASS: apr-format closure is sovereign (no trueno/wgpu/cuda*/candle/tch/aprender-core)
+PASS[fixture+]: aprender-quant is sovereign (positive control)
+PASS[fixture-]: aprender-core correctly flagged as NON-sovereign (pulls:aprender-compute aprender-gpu aprender-core wgpu naga)
+== cargo publish -p apr-format --dry-run --no-verify (dev-dep cycle check) ==
+Caused by:
+  The slotmap turned out to be too small with 32 entries, would need 1 more
+FAIL: apr-format publish dry-run failed -- see /tmp/tmp.loNeAL6i4Z

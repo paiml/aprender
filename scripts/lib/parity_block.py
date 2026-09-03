@@ -351,6 +351,53 @@ def _short_of_n_predict(rows, n_predict):
                and row.get("completion_tokens") != n_predict)
 
 
+WITNESS_RESULTS = ("PASS", "FAIL", "UNMEASURABLE")
+
+
+def load_perf041_witness(path):
+    """`bands[]` of a scripts/perf041_batched_parity_probe.py witness, keyed by c.
+
+    The per-replicate bench reports never carry a witness (the non-band bench
+    has no such field), so the PP-26 result reaches an executor block only
+    through this file. A result outside PASS/FAIL/UNMEASURABLE is refused
+    rather than mapped to the failing side, the same rule apr-cli's band
+    producer applies (test_llm_band.rs `witness_of`).
+    """
+    if not path:
+        return {}
+    with open(path, encoding="utf-8") as handle:
+        doc = json.load(handle)
+    out = {}
+    for band in doc.get("bands") or []:
+        c = band.get("c")
+        result = band.get("result")
+        if c is None:
+            continue
+        if result not in WITNESS_RESULTS:
+            raise ValueError("witness band c=%r result %r is not one of %s"
+                             % (c, result, list(WITNESS_RESULTS)))
+        out[int(c)] = {
+            "batch_invariance": result,
+            "divergence_at": band.get("divergence_at"),
+            "declared_min": band.get("declared_min"),
+            "m_formed": band.get("m_formed"),
+            "intra_agree_to": band.get("intra_agree_to"),
+            "max_constant_run": band.get("max_constant_run"),
+            "source": "scripts/perf041_batched_parity_probe.py (%s, commit %s)"
+                      % (os.path.basename(path), doc.get("commit")),
+        }
+    return out
+
+
+def _witness_for(paths, c, witnesses):
+    """The band's witness: from the reports if every replicate agrees, else
+    from the perf041 file for this c, else None (which §7.4 reads as absent)."""
+    agreed = _agreed(paths, "witness")
+    if agreed is not None:
+        return agreed
+    return witnesses.get(int(c)) if c is not None else None
+
+
 def _agreed(paths, key):
     """A per-run value all the replicates agree on, or None.
 
@@ -434,8 +481,10 @@ def _ttft_over_e2e_rows(rows):
     return out
 
 
-def _executor_side(work, meta, side, n_predict):
+def _executor_side(work, meta, side, n_predict, witnesses=None):
     """One lane of one band, read from the replicate files the producer named."""
+    witnesses = witnesses or {}
+    meta_c = meta.get("concurrency")
     paths = [p for p in _replicate_paths(work, meta, side) if os.path.exists(p)]
     if not paths:
         return None, []
@@ -468,18 +517,18 @@ def _executor_side(work, meta, side, n_predict):
         # instrument here reports one". §7.4 treats an absent conformance
         # input exactly as it treats a failing one.
         "stream_mode": _agreed(paths, "stream_mode"),
-        "witness": _agreed(paths, "witness"),
+        "witness": _witness_for(paths, meta_c, witnesses),
         "timeouts": _summed(paths, "timeouts"),
         "drain_ms": _summed(paths, "drain_ms"),
     }
     return out, paths
 
 
-def _executor_band(work, meta, floor, ceiling, n_predict):
+def _executor_band(work, meta, floor, ceiling, n_predict, witnesses=None):
     """One band of the executor layout: both lanes, every record beside them."""
     c = meta.get("concurrency")
-    subject, s_paths = _executor_side(work, meta, "subject", n_predict)
-    comparator, c_paths = _executor_side(work, meta, "comparator", n_predict)
+    subject, s_paths = _executor_side(work, meta, "subject", n_predict, witnesses)
+    comparator, c_paths = _executor_side(work, meta, "comparator", n_predict, witnesses)
     if subject is None or comparator is None:
         return None
     flags = _comparator_flags(meta.get("comparator_flags"))
@@ -527,7 +576,7 @@ def _executor_band(work, meta, floor, ceiling, n_predict):
     return band
 
 
-def _executor_bands(work, klass, floor, ceiling):
+def _executor_bands(work, klass, floor, ceiling, witnesses=None):
     """Every band of one lane, ascending, and the ladder the lane REQUESTED.
 
     The requested ladder is the set of band METADATA files, not the set of
@@ -546,7 +595,7 @@ def _executor_bands(work, klass, floor, ceiling):
             continue
         if isinstance(meta.get("concurrency"), int):
             requested.append(meta["concurrency"])
-        band = _executor_band(work, meta, floor, ceiling, n_predict)
+        band = _executor_band(work, meta, floor, ceiling, n_predict, witnesses)
         if band is not None:
             out.append(band)
     return (sorted(out, key=lambda b: b["concurrency"]), sorted(requested))
@@ -555,7 +604,8 @@ def _executor_bands(work, klass, floor, ceiling):
 def _executor_lane(klass, args, work):
     """One lane of the executor layout, or None with the reason on stderr."""
     floor, ceiling = bench_receipt.lane_bounds()
-    bands, requested = _executor_bands(work, klass, floor, ceiling)
+    witnesses = load_perf041_witness(getattr(args, "witness_json", None))
+    bands, requested = _executor_bands(work, klass, floor, ceiling, witnesses)
     if not bands:
         sys.stderr.write(
             "FAIL  lane %s: no band metadata file under %s carries class %r.\n"
@@ -782,6 +832,9 @@ def main():
     # downstream: the executor refuses to start against an expired pin, but a
     # block read months later cannot tell that from silence.
     ap.add_argument("--pin-expiry")
+    ap.add_argument("--witness-json", help="scripts/perf041_batched_parity_probe.py "
+                    "witness for this host; its bands[] supply each band's PP-26 "
+                    "block, since the per-replicate bench reports carry none")
     ap.add_argument("--run-id", help="the invocation id both lanes share; "
                                      "minted here when not given")
     args = ap.parse_args()

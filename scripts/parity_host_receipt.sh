@@ -76,6 +76,7 @@ set -euo pipefail
 
 APR=""; MODEL=""; OUT="-"; SRC="crates.io"
 REPLICATES=5; DURATION=30; WARMUP=15; COOLDOWN=10; PROFILE="medium"; DRY_RUN=0
+WITNESS_JSON=""   # PP-26: the perf041 witness for this host, attached per band by parity_block.py
 while [ $# -gt 0 ]; do
     case "$1" in
         --apr) APR="$2"; shift 2 ;;
@@ -83,6 +84,7 @@ while [ $# -gt 0 ]; do
         --out) OUT="$2"; shift 2 ;;
         --install-source) SRC="$2"; shift 2 ;;
         --replicates) REPLICATES="$2"; shift 2 ;;
+        --witness-json) WITNESS_JSON="$2"; shift 2 ;;
         # `--runs` used to mean "consecutive same-lane runs inside one bench
         # invocation", which is exactly the non-interleaved design §4.3
         # refuses. Accepted as an alias for the replicate count so an existing
@@ -193,7 +195,22 @@ if ! flock -n 9; then
     exit 1
 fi
 
-WORK=$(mktemp -d); trap 'kill_servers; rm -rf "${WORK:?}"' EXIT
+WORK=$(mktemp -d)
+# On a non-zero exit the work directory is KEPT and its path printed. The first
+# W1 run on lambda (2026-09-03) refused its block because one band recorded a
+# zero rate, then deleted the 40 per-replicate reports and the server logs that
+# said why; three hours of measurement left no evidence to read. A refusal is
+# the right verdict and the wrong moment to destroy the diagnosis.
+cleanup_work() {
+    local rc=$?
+    kill_servers
+    if [ "$rc" -eq 0 ]; then
+        rm -rf "${WORK:?}"
+    else
+        printf 'REPORT exit %s: work directory kept for diagnosis: %s\n' "$rc" "$WORK" >&2
+    fi
+}
+trap cleanup_work EXIT
 SERVER_PIDS=""
 
 # How long a server may take to honour SIGTERM before it is SIGKILLed. Not a
@@ -578,4 +595,5 @@ python3 "$(dirname "$0")/lib/parity_block.py" \
     --llama "$LLAMA_SERVER" --llama-sha "$(sha256_of "$LLAMA_SERVER")" \
     --llama-build "$(printf '%s' "$LLAMA_BUILD" | sed 's/.*(\(.*\)).*/\1/')" \
     --pin-expiry "${LLAMA_PIN_EXPIRY:-}" \
-    --model "$MODEL" --install-source "$SRC" --out "$OUT"
+    --model "$MODEL" --install-source "$SRC" --out "$OUT" \
+    ${WITNESS_JSON:+--witness-json "$WITNESS_JSON"}

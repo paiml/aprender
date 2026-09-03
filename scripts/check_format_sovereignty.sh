@@ -109,6 +109,22 @@ echo "PASS[fixture-]: aprender-core correctly flagged as NON-sovereign (pulls:${
 #  cargo builds locally but crates.io rejects. --no-verify keeps it fast.
 #  --allow-dirty: this gate runs in dirty worktrees too -- it checks the manifest
 #  graph, not working-tree cleanliness.)
+# cargo reads this checkout's own .git through gix-odb to list the package's
+# files, and gix-odb indexes pack files into a 32-slot map. A runner checkout
+# that has fetched 33+ times with no gc overflows it, and cargo dies with
+# "The slotmap turned out to be too small" before it reads a manifest
+# (2026-09-03: runners 4/6/7/10 sat at 33-38 packs; the step failed on 6 and
+# passed on the two runners still under 32). This guard is about the manifest
+# graph, not about how many fetches a runner has seen, so consolidate first.
+# The container sees the bind-mounted checkout as another uid: safe.directory.
+PACK_DIR="$(git rev-parse --git-common-dir 2>/dev/null || echo .git)/objects/pack"
+PACKS_BEFORE="$(find "${PACK_DIR}" -maxdepth 1 -name '*.pack' 2>/dev/null | wc -l | tr -d ' ')"
+if [ "${PACKS_BEFORE}" -ge 24 ]; then
+  git -c safe.directory='*' repack -a -d -q
+  echo "REPORT repacked the checkout: ${PACKS_BEFORE} packs -> $(find "${PACK_DIR}" -maxdepth 1 -name '*.pack' 2>/dev/null | wc -l | tr -d ' ') (gix-odb overflows at 33)"
+else
+  echo "REPORT checkout holds ${PACKS_BEFORE} pack file(s); no repack needed (gix-odb overflows at 33)"
+fi
 echo "== cargo publish -p apr-format --dry-run --no-verify (dev-dep cycle check) =="
 # ONE invocation, output captured, `rc` read DIRECTLY. This was
 # `cargo publish ... | tee "${PUBLISH_LOG}" | tail -3`, so the `if` tested the
