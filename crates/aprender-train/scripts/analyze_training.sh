@@ -39,6 +39,15 @@ if [[ ! -f "$PROFILE_FILE" ]]; then
     exit 1
 fi
 
+# Reject a traversal segment in the caller-supplied path before it reaches
+# any read of the file below (SEC010).
+case "$PROFILE_FILE" in
+    *..*)
+        echo -e "${RED}✗ Error: refusing path with '..' traversal: $PROFILE_FILE${NC}"
+        exit 1
+        ;;
+esac
+
 echo -e "${BLUE}📁 Profile:${NC} $PROFILE_FILE"
 echo ""
 
