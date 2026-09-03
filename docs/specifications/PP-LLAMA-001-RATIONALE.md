@@ -212,6 +212,17 @@ heading claim no tier. The cost is a reserved word: a cell in any other table of
 starts with `RECORDED` or `CONFORMANT` is refused too, which is noise a person can see and fix,
 where every condition removed above was an escape nobody would.
 
+**One normaliser, and a stated threat model.** The fifth round moved from where a row sits to how
+it is written: `__RECORDED__` was not a tier because emphasis in underscores was never stripped,
+`__lambda__` and `<code>aaaa</code>` were new keys, a zero-width space made a new host, and L1 had
+quietly deduped only `RECORDED` rows while the universe admitted `CONFORMANT`. Every cell a ledger
+rule reads now goes through one normaliser — code tags, format characters, no-break spaces, runs of
+whitespace and wrapping emphasis off, comparisons casefolded — and L1 keys on the same tiers L2
+does. The class has to be bounded somewhere, so it is bounded here and said aloud: PP-9 is a
+discipline rule against the honest re-roll, and the guard closes what a formatting habit can do. A
+key disguised past that — a homoglyph, a changed digit — is a forged ledger row, and a forged row
+is a line the pull request's diff puts in front of its reviewers.
+
 ### PP-10
 
 `I-14`. A request issued after the window closes has its prefill inside the window and its decode

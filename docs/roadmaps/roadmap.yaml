@@ -14162,3 +14162,24 @@ roadmap:
     dc6aa69e; the delegate itself found the backticked tier). Re-run by Fable on 7ff61b831: `| foo |` and a
     backticked RECORDED both produced no violation (confirmed). The §13 reserved-word false positive is accepted as
     fail-closed and documented. Landed in PR #2861'
+- id: PMAT-935
+  github_issue: null
+  item_type: bug
+  title: 'PMAT-934 fifth review: __RECORDED__ was not a tier, __lambda__ / <code>aaaa</code> / a zero-width space were
+    new keys, and L1 deduped only RECORDED rows; one normaliser for every ledger cell, L1 on the same tiers as L2,
+    and the threat model stated'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-09-03 19:50:00+00:00
+  updated: 2026-09-03 19:50:00+00:00
+  spec: docs/specifications/PP-LLAMA-001-MASTER.md
+  acceptance_criteria:
+  - '_norm strips code tags, format characters, no-break spaces, whitespace runs and wrapping backticks/asterisks/
+    underscores; spend keys casefold; L1 keys on SPEND_TIERS; LEDGER reports the universe count; fixtures
+    ledger_row_underscored_tier, ledger_respend_conformant, ledger_respend_emphasised_key, ledger_respend_zero_width_key
+    (L1); mutants l1-respend-check-removed, l1-tier-filter-narrowed, wrap-emphasis-strip-removed, key-normaliser-bypassed,
+    key-casefold-removed; 15/15 killed; the threat model (honest re-roll, not forgery) written in RATIONALE and the docstring'
+  notes: 'Found by the PMAT-934 review (paiml-agy-delegate: the §3.E arm 044542d6, lanes 1ca23c06, 27e31188, 4c1a7eac;
+    the delegate found the L1 tier gap and widened the key renderings to six). Re-run by Fable on 45b29e793: __RECORDED__,
+    __lambda__ and a CONFORMANT re-spend each produced no violation (confirmed). Landed in PR #2861'
