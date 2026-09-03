@@ -312,6 +312,41 @@ _br_cmp_keyed() { # _br_cmp_keyed <base-file> <cur-file>   (lines are <key><TAB>
     [ -z "$BR_DELTA" ]
 }
 
+# `keyed2`. The same rule as `keyed` over lines carrying TWO integers,
+# `<key> <a> <b>`, whitespace-separated. It exists because the complexity
+# ratchet records a pair per function -- cyclomatic AND cognitive -- and the
+# rule is "over EITHER", so a baseline holding only one of them would ratchet
+# only half the predicate while looking complete.
+#
+# Splitting the pair into two `keyed` rows was the alternative and it is worse:
+# the key would have to carry the metric name, and a reader of
+# scripts/complexity_baseline.txt could no longer see, on one line, what a
+# function costs.
+#
+# No key may appear and neither number may rise. Either number may FALL, which
+# is what makes a partial refactor recordable rather than a diff the meta-gate
+# refuses. Comment stripping happens in grep, not in awk: an awk program
+# carrying a bracket-and-paren regex reads to bashrs as a `[ ` test and lands
+# SC1028 error lines in a shrink-only lint baseline.
+_br_cmp_keyed2() { # _br_cmp_keyed2 <base-file> <cur-file>  (lines are <key> <int> <int>)
+    BR_DELTA=$(LC_ALL=C awk '
+        NR == FNR { a[$1] = $2; b[$1] = $3; seen[$1] = 1; next }
+        {
+            if (!($1 in seen))    { printf "        + NEW KEY  %s (%s %s)\n", $1, $2, $3 }
+            else {
+                if ($2+0 > a[$1]+0) { printf "        + RAISED   %s  %s -> %s\n", $1, a[$1], $2 }
+                if ($3+0 > b[$1]+0) { printf "        + RAISED   %s  %s -> %s\n", $1, b[$1], $3 }
+            }
+        }
+    ' <(_br_data "$1") <(_br_data "$2"))
+    BR_REMOVED=$(LC_ALL=C awk '
+        NR == FNR { a[$1] = $2; b[$1] = $3; seen[$1] = 1; next }
+        { if (!($1 in seen) || a[$1]+0 < $2+0 || b[$1]+0 < $3+0) { n++ } }
+        END { print n+0 }
+    ' <(_br_data "$2") <(_br_data "$1"))
+    [ -z "$BR_DELTA" ]
+}
+
 # ---------------------------------------------------------------------------
 # Comparand resolution. Returns "<MODE>\t<commit-ish>" and never fails: the
 # CALLER decides, so that "could not resolve" is a loud verdict row rather than
@@ -363,7 +398,7 @@ baseline_ratchet_resolve() { # baseline_ratchet_resolve <root> <ref> <path>
 # ---------------------------------------------------------------------------
 # The entry point every guard calls.
 #
-#     baseline_ratchet_check <root> <baseline-path> <set|count|keyed|set-aperture> [<owning-guard-path>]
+#     baseline_ratchet_check <root> <baseline-path> <set|count|keyed|keyed2|set-aperture> [<owning-guard-path>]
 #
 # `set-aperture` takes a fifth argument, the owning guard, and without it every
 # addition is refused — see (b) in the header.
@@ -438,6 +473,7 @@ baseline_ratchet_check() {
         set)   if _br_cmp_set   "$base_copy" "$root/$path"; then cmp_rc=0; else cmp_rc=$?; fi ;;
         count) if _br_cmp_count "$base_copy" "$root/$path"; then cmp_rc=0; else cmp_rc=$?; fi ;;
         keyed) if _br_cmp_keyed "$base_copy" "$root/$path"; then cmp_rc=0; else cmp_rc=$?; fi ;;
+        keyed2) if _br_cmp_keyed2 "$base_copy" "$root/$path"; then cmp_rc=0; else cmp_rc=$?; fi ;;
         set-aperture)
             if _br_cmp_set_aperture "$base_copy" "$root/$path" "$root" "$ref" "$guard"; then
                 cmp_rc=0

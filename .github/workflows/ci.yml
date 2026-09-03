@@ -668,6 +668,20 @@ jobs:
         run: |
           cargo install bashrs --locked --quiet || true
           bash scripts/check_shell_lint_ratchet.sh
+      # PMAT-746. The ONLY complexity gate in this repository was the LOCAL pmat
+      # pre-commit hook (cyclomatic <= 30, cognitive <= 25, staged files only);
+      # this workflow ran none. So the merge queue LANDS the debt and the
+      # individual developer pays it, on unrelated work, at the moment they try
+      # to commit: serve/handlers.rs sits at cognitive 69, tokenize.rs at 34/89.
+      # 715 offenders are recorded, shrink-only against origin/main, and the
+      # numbers may only fall. Case table FIRST, per the convention above: the
+      # 9s scan is only worth its cost if the comparator it feeds can still turn
+      # RED. Reads no clock and compiles nothing.
+      - name: Per-function complexity may only fall (shrink-only)
+        run: |
+          command -v pmat > /dev/null 2>&1 || cargo install pmat --locked --quiet || true
+          bash scripts/check_complexity_ratchet.sh --selftest
+          bash scripts/check_complexity_ratchet.sh
       # Poka-yoke: nextest IGNORES an unknown config key with a warning instead
       # of failing. `slow-warning = "60s"` is not a nextest key, so profile.ci
       # had no per-test timeout and a hung run died at the job's 85-minute
