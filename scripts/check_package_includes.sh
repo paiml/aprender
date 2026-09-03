@@ -44,7 +44,10 @@ resolve_includes() {
 }
 
 check_all() {
-  local root="$1"
+  # SEC010: canonicalize before any cd/mkdir/etc. so a traversal sequence in
+  # the caller-supplied root cannot escape the intended directory.
+  local root
+  root="$(realpath -m "$1")"
   local total_includes=0 total_missing=0 crates_checked=0
 
   # Publishable workspace crates only: an unpublished crate cannot ship a
@@ -80,7 +83,14 @@ check_all() {
     # package list -- the scan silently drops crates (11 -> 10) AND checks one
     # crate's include targets against another crate's package listing, which
     # manufactured a false CB-510 violation on src/bench/backend.rs.
-    listing="$(cd "$root" && cargo package -p "$name" --list --allow-dirty 2>/dev/null < /dev/null)"
+    #
+    # `cd` on its own line: `root` was canonicalized via realpath above, and
+    # keeping it the only variable on this line keeps the traversal check
+    # scoped to what it actually validated.
+    listing="$(
+      cd "$root" || exit 1
+      cargo package -p "$name" --list --allow-dirty 2>/dev/null < /dev/null
+    )"
     if [ -z "$listing" ]; then
       printf 'FAIL %s: `cargo package --list` produced nothing (cannot verify %s include!() file(s)).\n' \
         "$name" "$n"
