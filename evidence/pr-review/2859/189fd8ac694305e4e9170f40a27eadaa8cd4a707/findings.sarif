@@ -1,0 +1,416 @@
+{
+  "version": "2.1.0",
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat",
+          "version": "3.34.0",
+          "rules": [
+            {
+              "id": "PRREV-PMAT",
+              "name": "pmat quality and duplication"
+            }
+          ]
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": []
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "nvidia-cuda-docs",
+          "version": "mcp",
+          "rules": [
+            {
+              "id": "PRREV-CUDA",
+              "name": "device-behaviour claim vs NVIDIA docs"
+            }
+          ]
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": false,
+          "toolExecutionNotifications": [
+            {
+              "level": "error",
+              "message": {
+                "text": "nvidia-cuda-docs MCP unreachable"
+              },
+              "properties": {
+                "grounding": "measured"
+              }
+            }
+          ]
+        }
+      ],
+      "results": []
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "crux",
+          "version": "v1",
+          "rules": [
+            {
+              "id": "PRREV-CRUX",
+              "name": "user-facing surface coverage"
+            }
+          ]
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": []
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "cargo-mutants",
+          "version": "guard case-tables",
+          "rules": [
+            {
+              "id": "PRREV-MUT",
+              "name": "guard mutation set"
+            }
+          ]
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": []
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity",
+          "version": "1.1.25",
+          "rules": [
+            {
+              "id": "PRREV-AGY",
+              "name": "cross-vendor review (advisory)"
+            },
+            {
+              "id": "PRREV-AGY-PRIOR",
+              "name": "cross-vendor finding on an earlier commit of this PR, absent on the head"
+            }
+          ]
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "PRREV-AGY-PRIOR",
+          "level": "note",
+          "baselineState": "absent",
+          "message": {
+            "text": "The PMAT-745 acceptance criteria specifically requires 'two must-fire mutations RED (R1 dropped, GO check dropped)', but no such mutations are implemented in scripts/check_publish_preflight.sh or ci.yml. (found on a9daa1040 by an earlier run; contradicted; this head reviewed by run 8)"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "docs/roadmaps/roadmap.yaml"
+                },
+                "region": {
+                  "startLine": 14061
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "precision_class": "advisory",
+            "failure_scenario": "A future pull request could accidentally disable or bypass the R1 (clean tree) or R5 (GO receipt) checks in scripts/check_publish_preflight.sh without failing CI, because there are no mutation tests verifying that these checks actually enforce their rules.",
+            "source": "agy gemini-3.1-pro-high on a9daa1040: ",
+            "excerpt": "",
+            "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "disposition": "contradicted by measurement: the two must-fire mutations are caught by the guard's own case table, which ci.yml runs under guard-runner-labels — R1 replaced by `if false` -> tracked_change_refuses and untracked_file_refuses BROKE (9/11); the GO conjunct dropped -> dogfood_no_go_refuses BROKE (10/11); re-run by the primary reviewer on a9daa1040"
+          }
+        },
+        {
+          "ruleId": "PRREV-AGY-PRIOR",
+          "level": "note",
+          "baselineState": "absent",
+          "message": {
+            "text": "cascade-publish.sh creates an untracked backup file (.cargo/config.toml.cascade-backup) that is not in .gitignore, which will cause 'cargo publish' to fail for the root crate due to the removal of '--allow-dirty'. (found on a9daa1040 by an earlier run; fixed; this head reviewed by run 8)"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/cascade-publish.sh"
+                },
+                "region": {
+                  "startLine": 324
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "precision_class": "advisory",
+            "failure_scenario": "When cascade-publish.sh attempts to publish the root crate (aprender, Tier 11), 'cargo publish' will fail because the script leaves an untracked backup file (.cargo/config.toml.cascade-backup) in the workspace root, and '--allow-dirty' has been removed.",
+            "source": "agy gemini-3.1-pro-high on a9daa1040: ",
+            "excerpt": "",
+            "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "disposition": "confirmed by the primary reviewer (git check-ignore: the backup was not ignored; both polarities measured in a throwaway repo) and fixed in 8784420cf: the backup lives in mktemp outside the tree"
+          }
+        },
+        {
+          "ruleId": "PRREV-AGY-PRIOR",
+          "level": "note",
+          "baselineState": "absent",
+          "message": {
+            "text": "The `version-unpublished` pre-publish check uses `curl -fsS` to query crates.io, which returns exit code 22 on HTTP 404 (Not Found). This prevents releasing any new crates because the 404 for an unpublished crate is treated as a fatal failure. (found on 1b435df0e by an earlier run; fixed; this head reviewed by run 8)"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": ""
+                },
+                "region": {
+                  "startLine": 1
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "precision_class": "advisory",
+            "failure_scenario": "When attempting to release a brand-new crate (which does not exist on crates.io), the registry API returns a 404 Not Found. The `-f` flag makes `curl` exit with 22, triggering the `REG_RC -ne 0` condition. The script marks `version-unpublished` as a FAIL with 'crates.io not consulted (curl exit=22)', permanently blocking the new crate from passing the release gate.",
+            "source": "agy gemini-3.1-pro-high on 1b435df0e: ",
+            "excerpt": "",
+            "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "disposition": "confirmed and fixed in 189fd8ac6: the check reads the sparse index; 404 is PASS (absent), 200 is parsed, anything else UNKNOWN/FAIL; measured 404 for a nonexistent name, 200 with 0.64.0 present and 0.65.0 absent for aprender"
+          }
+        },
+        {
+          "ruleId": "PRREV-AGY-PRIOR",
+          "level": "note",
+          "baselineState": "absent",
+          "message": {
+            "text": "The prediction string for FALSIFY-PUB-CLI-005 states the preflight gate selftest drives '11 rows', but the executed selftest actually contains 16 rows. (found on 1b435df0e by an earlier run; fixed; this head reviewed by run 8)"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": ""
+                },
+                "region": {
+                  "startLine": 1
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "precision_class": "advisory",
+            "failure_scenario": "An auditor or developer verifying the test contract against the `check_publish_preflight.sh` output will see 16 rows passing (including checks for R2 and various R5 deferral states) instead of the documented 11 rows. This documentation mismatch may cause confusion or false alarms about unintended test suite changes.",
+            "source": "agy gemini-3.1-pro-high on 1b435df0e: ",
+            "excerpt": "",
+            "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "disposition": "confirmed and fixed in 189fd8ac6: prediction says 16 rows; pv validate: valid"
+          }
+        },
+        {
+          "ruleId": "PRREV-AGY-PRIOR",
+          "level": "note",
+          "baselineState": "absent",
+          "message": {
+            "text": "Silent bypass of version-unpublished check if crates.io index returns HTTP 200 with invalid JSON (found on 9fc781053 by an earlier run; fixed; this head reviewed by run 8)"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": ""
+                },
+                "region": {
+                  "startLine": 1
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "precision_class": "advisory",
+            "failure_scenario": "If the crates.io index API returns an HTTP 200 OK containing an HTML page instead of NDJSON (e.g., a Cloudflare error page or captive portal), the `json.loads(line)` call raises a `JSONDecodeError`, causing Python to exit with code `1`. The shell script's `elif python3 -c ... ; then` condition interprets this non-zero exit code as \"the version was not found\" (rather than \"an error occurred\"), and evaluates the `else` branch, resulting in a `PASS` verdict. This permits a release to proceed despite being completely unable to verify whether the version is already published or not.",
+            "source": "agy gemini-3.1-pro-high on 9fc781053: ",
+            "excerpt": "",
+            "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "disposition": "confirmed and fixed in 189fd8ac6: the parser exits 0 listed / 1 absent / 2 unparseable, and only 1 is PASS; measured on an HTML page (2), an empty body (2), the live index with 0.65.0 (1) and 0.64.0 (0)"
+          }
+        },
+        {
+          "ruleId": "PRREV-AGY-PRIOR",
+          "level": "note",
+          "baselineState": "absent",
+          "message": {
+            "text": "The crates.io sparse index query will spuriously 404 if the crate name contains uppercase letters (found on 797134b92 by an earlier run; fixed; this head reviewed by run 8)"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/dogfood.sh"
+                },
+                "region": {
+                  "startLine": 387
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "precision_class": "advisory",
+            "failure_scenario": "If a workspace member has an uppercase letter in its `name` inside `Cargo.toml`, `cargo metadata` outputs it verbatim. The sparse index construction will use uppercase letters (e.g. `Se/rd/Serde`), causing the HTTP request to return 404 even if the crate is published (crates.io enforces lowercase). The script will incorrectly believe the version is unpublished.",
+            "source": "agy gemini-3.1-pro-high on 797134b92: ",
+            "excerpt": "",
+            "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "disposition": "confirmed and fixed in 189fd8ac6: the index path is built from the lowercased crate name"
+          }
+        },
+        {
+          "ruleId": "PRREV-AGY-PRIOR",
+          "level": "note",
+          "baselineState": "absent",
+          "message": {
+            "text": "The temporary directory cleanup traps bypass directories outside a hardcoded whitelist, leaking them if TMPDIR is customized (found on 797134b92 by an earlier run; accepted, not fixed; this head reviewed by run 8)"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/check_publish_preflight.sh"
+                },
+                "region": {
+                  "startLine": 185
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "asserted",
+            "precision_class": "advisory",
+            "failure_scenario": "If the CI environment or a user defines `TMPDIR=/home/user/tmp` or `/run/user/1000`, the `mktemp -d` commands in `dogfood.sh` and `check_publish_preflight.sh` will create temporary directories there. The cleanup traps (`_rm_scratch` and `_rm_worklog`) explicitly refuse to delete any path not starting with `/tmp/`, `/var/folders/`, or `/mnt/`, leaving garbage behind.",
+            "source": "agy gemini-3.1-pro-high on 797134b92: ",
+            "excerpt": "",
+            "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "disposition": "accepted, not fixed (asserted, no reproduction offered): the temp-dir whitelist is the SEC011 guard shape used across this repository (the preflight's _rm_scratch predates this PR); under a custom TMPDIR a scratch directory is left behind rather than an unexpected path being rm -rf'd, which is the intended side to fail on; advisory"
+          }
+        },
+        {
+          "ruleId": "PRREV-AGY-PRIOR",
+          "level": "note",
+          "baselineState": "absent",
+          "message": {
+            "text": "Race condition in setting the EXIT trap causes data loss of `.cargo/config.toml` if the script is interrupted between file overwrite and trap registration. (found on 7d5a59184 by an earlier run; fixed; this head reviewed by run 8)"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/cascade-publish.sh"
+                },
+                "region": {
+                  "startLine": 122
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "precision_class": "advisory",
+            "failure_scenario": "If `cascade-publish.sh` is interrupted (e.g. via SIGINT) after the `echo` overwrites `.cargo/config.toml` but before the `trap` is registered on the next line, the original config is lost. The trap should be registered immediately after the successful `cp` to ensure the backup is reliably restored.",
+            "source": "agy gemini-3.1-pro-high on 7d5a59184: ",
+            "excerpt": "",
+            "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "disposition": "confirmed and fixed in 189fd8ac6: the restore trap is armed before the config is overwritten"
+          }
+        },
+        {
+          "ruleId": "PRREV-AGY-PRIOR",
+          "level": "note",
+          "baselineState": "absent",
+          "message": {
+            "text": "dogfood.sh --phase drops into an infinite loop (found on e37cd969f by an earlier run; fixed; this head reviewed by run 8)"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": ""
+                },
+                "region": {
+                  "startLine": 1
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "precision_class": "advisory",
+            "failure_scenario": "If a user or script invokes `bash scripts/dogfood.sh --phase` without a value, `shift 2` fails in bash because `$#` is 1, but the script continues without aborting. `$#` remains 1 and `$1` remains `--phase`, causing the `while [ $# -gt 0 ]; do` loop to execute infinitely and hang the system.",
+            "source": "agy gemini-3.1-pro-high on e37cd969f: ",
+            "excerpt": "",
+            "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "disposition": "confirmed (timeout 5: rc 124) and fixed in 189fd8ac6: a bare --phase is a usage error, exit 2"
+          }
+        },
+        {
+          "ruleId": "PRREV-AGY-PRIOR",
+          "level": "note",
+          "baselineState": "absent",
+          "message": {
+            "text": "cascade-publish.sh leaks a temporary backup file if cp fails (found on e37cd969f by an earlier run; fixed; this head reviewed by run 8)"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": ""
+                },
+                "region": {
+                  "startLine": 1
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "precision_class": "advisory",
+            "failure_scenario": "If `cp .cargo/config.toml \"$CASCADE_CONFIG_BACKUP\"` fails (e.g. due to ENOSPC or permissions), the script executes `exit 2` before the `EXIT` trap is armed. The temporary file created via `mktemp` is left on disk indefinitely.",
+            "source": "agy gemini-3.1-pro-high on e37cd969f: ",
+            "excerpt": "",
+            "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "disposition": "confirmed and fixed in 189fd8ac6: a failed cp removes its partial backup before the refusal"
+          }
+        }
+      ]
+    }
+  ]
+}
