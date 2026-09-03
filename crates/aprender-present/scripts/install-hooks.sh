@@ -10,6 +10,12 @@
 set -e
 
 REPO_ROOT=$(git rev-parse --show-toplevel)
+# SEC010: validate the git-derived path before it is used to build the `cat >`
+# destinations below -- reject anything empty or containing a `..` traversal
+# segment rather than trusting `git rev-parse` output blindly.
+case "$REPO_ROOT" in
+    *..*|"") echo "error: unsafe REPO_ROOT from git rev-parse: '$REPO_ROOT'" >&2; exit 1 ;;
+esac
 HOOKS_DIR="$REPO_ROOT/.git/hooks"
 
 echo "╔══════════════════════════════════════════════════════════════════════════════╗"

@@ -161,7 +161,12 @@ if "$APR_BIN" export "$CKPT" --format safetensors -o "$ST_OUT" >/dev/null 2>&1 &
 else
     warn "SafeTensors export failed - non-blocking for HF publish but breaks the round-trip claim"
 fi
-if [[ -n "${TMP_EXPORT:-}" && -d "$TMP_EXPORT" && "$TMP_EXPORT" == /tmp/* ]]; then rm -rf "$TMP_EXPORT"; fi
+# SEC011: TMP_EXPORT is always assigned (unconditionally, above) before this
+# point, so the guard checks it directly rather than through a `:-` default
+# expansion -- bashrs's rm-rf-guard detector does not credit `${VAR:-}` as a
+# validated non-empty check, and `${VAR:-}` masking an actually-unset VAR
+# here would be exactly the silent-empty-string footgun SEC011 warns about.
+if [[ -n "$TMP_EXPORT" && -d "$TMP_EXPORT" && "$TMP_EXPORT" == /tmp/* ]]; then rm -rf "$TMP_EXPORT"; fi
 
 # Verdict
 echo

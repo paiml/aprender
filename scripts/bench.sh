@@ -10,8 +10,6 @@ echo "==========================="
 echo ""
 
 # Configuration - validated to prevent path traversal
-# bashrs:allow DET002 - timestamp intentionally non-deterministic for unique filenames
-# bashrs:allow SEC010 - BASELINE_DIR is hardcoded constant, not user input
 BASELINE_DIR=".performance-baselines"
 
 # Parse arguments
@@ -46,8 +44,13 @@ echo ""
 
 if [ "$SAVE_BASELINE" = true ]; then
     mkdir -p "$BASELINE_DIR"
-    # Note: Timestamp is intentionally non-deterministic for unique baseline filenames
-    TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
+    # DET002: honor SOURCE_DATE_EPOCH when a reproducible build sets it;
+    # otherwise fall back to the current time exactly as before (this
+    # filename is meant to be unique per invocation). No git call here --
+    # reaching the `tee` destination below with a `git ...` substitution
+    # trips SEC010's path-traversal heuristic on dynamic write targets, so
+    # the fallback stays a plain `date` call.
+    TIMESTAMP="$(date -u -d "@${SOURCE_DATE_EPOCH:-$(date +%s)}" +%Y%m%d_%H%M%S)"
     BASELINE_FILE="$BASELINE_DIR/bench_$TIMESTAMP.txt"
 
     cargo bench --quiet 2>&1 | tee "$BASELINE_FILE"

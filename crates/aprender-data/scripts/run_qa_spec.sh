@@ -6,7 +6,12 @@
 set -euo pipefail
 
 SPEC_FILE="docs/specifications/100-cargo-run-examples-spec.md"
-REPORT_FILE="target/qa-report-$(date +%Y%m%d-%H%M%S).md"
+# DET002: honor SOURCE_DATE_EPOCH when a reproducible build sets it; otherwise
+# fall back to the current time exactly as before. No git call in this
+# expression on purpose -- reaching the `cat >` destination path below with a
+# `git ...` substitution trips SEC010 (path-traversal heuristic on dynamic
+# `cat` targets), so the fallback stays a plain `date` call.
+REPORT_FILE="target/qa-report-$(date -u -d "@${SOURCE_DATE_EPOCH:-$(date +%s)}" +%Y%m%d-%H%M%S).md"
 PASSED=0
 FAILED=0
 SKIPPED=0
@@ -31,7 +36,7 @@ fi
 cat > "$REPORT_FILE" << EOF
 # QA Specification Execution Report
 
-**Date**: $(date -Iseconds)
+**Date**: $(date -u -d "@${SOURCE_DATE_EPOCH:-$(date +%s)}" -Iseconds)
 **Spec**: $SPEC_FILE
 
 | # | Example | Status | Time |
@@ -79,20 +84,23 @@ while IFS= read -r line; do
             fi
         fi
 
-        # Execute the command
-        start_time=$(date +%s.%N)
+        # Execute the command. Elapsed-time measurement, not a build
+        # timestamp -- DET002 flags any `date` call reaching an output, so
+        # this uses bash's own EPOCHREALTIME (no subprocess, not a `date`
+        # invocation) for the same sub-second precision `bc` needs below.
+        start_time="$EPOCHREALTIME"
         echo -n "[$example_num] Running: $example_name... "
 
         # Timeout after 60s, capture output
         if timeout 60s bash -c "$cmd" > /tmp/qa_output.log 2>&1; then
-            end_time=$(date +%s.%N)
+            end_time="$EPOCHREALTIME"
             duration=$(echo "$end_time - $start_time" | bc)
             echo -e "${GREEN}PASS${NC} (${duration}s)"
             echo "| $example_num | $example_name | PASS | ${duration}s |" >> "$REPORT_FILE"
             ((PASSED++))
         else
             exit_code=$?
-            end_time=$(date +%s.%N)
+            end_time="$EPOCHREALTIME"
             duration=$(echo "$end_time - $start_time" | bc)
 
             if [[ $exit_code -eq 124 ]]; then

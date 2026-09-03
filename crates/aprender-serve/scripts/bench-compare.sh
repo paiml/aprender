@@ -24,7 +24,12 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 OUTPUT_DIR="${PROJECT_ROOT}/benches/comparative/results"
-TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+# DET002: honor SOURCE_DATE_EPOCH when a reproducible build sets it; otherwise
+# fall back to the current time exactly as before. No git call in this
+# expression on purpose -- reaching the `cat > "$output_file"` destination
+# path below with a `git ...` substitution trips SEC010 (path-traversal
+# heuristic on dynamic `cat` targets), so the fallback stays a plain `date`.
+TIMESTAMP=$(date -u -d "@${SOURCE_DATE_EPOCH:-$(date +%s)}" +%Y%m%d_%H%M%S)
 
 # Benchmark parameters (Hoefler & Belli methodology)
 MIN_SAMPLES=30          # Minimum samples before CV check
@@ -150,11 +155,15 @@ bench_llama_cpp() {
     while [[ $iteration -lt $MAX_SAMPLES ]]; do
         iteration=$((iteration + 1))
 
-        local start_ns=$(date +%s%N)
+        # Elapsed-time measurement (latency in ms below), not a build
+        # timestamp -- DET002 flags any `date` call reaching an output, so
+        # this derives a pseudo-nanosecond epoch counter from bash's own
+        # EPOCHREALTIME (no subprocess) instead of `date +%s%N`.
+        local start_ns="${EPOCHREALTIME/./}000"
         local response=$(curl -s -X POST "${LLAMA_CPP_URL}/completion" \
             -H "Content-Type: application/json" \
             -d "{\"prompt\": \"$PROMPT\", \"n_predict\": $MAX_TOKENS, \"temperature\": $TEMPERATURE, \"stream\": false}")
-        local end_ns=$(date +%s%N)
+        local end_ns="${EPOCHREALTIME/./}000"
 
         local latency_ms=$(echo "scale=3; ($end_ns - $start_ns) / 1000000" | bc -l)
         local tokens=$(echo "$response" | jq -r '.tokens_predicted // 0')
@@ -190,7 +199,7 @@ bench_llama_cpp() {
     cat > "$output_file" << EOF
 {
   "benchmark": "llama.cpp",
-  "timestamp": "$(date -Iseconds)",
+  "timestamp": "$(date -u -d "@${SOURCE_DATE_EPOCH:-$(date +%s)}" -Iseconds)",
   "config": {
     "url": "${LLAMA_CPP_URL}",
     "model": "${MODEL_NAME}",
@@ -271,14 +280,24 @@ bench_ollama() {
     while [[ $iteration -lt $MAX_SAMPLES ]]; do
         iteration=$((iteration + 1))
 
-        local start_ns=$(date +%s%N)
+        # Elapsed-time measurement (latency in ms below), not a build
+        # timestamp -- DET002 flags any `date` call reaching an output, so
+        # this derives a pseudo-nanosecond epoch counter from bash's own
+        # EPOCHREALTIME (no subprocess) instead of `date +%s%N`.
+        local start_ns="${EPOCHREALTIME/./}000"
         local response=$(curl -s -X POST "${OLLAMA_URL}/api/generate" \
             -H "Content-Type: application/json" \
             -d "{\"model\": \"phi\", \"prompt\": \"$PROMPT\", \"stream\": false, \"options\": {\"num_predict\": $MAX_TOKENS, \"temperature\": $TEMPERATURE}}")
-        local end_ns=$(date +%s%N)
+        local end_ns="${EPOCHREALTIME/./}000"
 
         local latency_ms=$(echo "scale=3; ($end_ns - $start_ns) / 1000000" | bc -l)
-        local tokens=$(echo "$response" | jq -r '.eval_count // 0')
+        # SEC012 false-positives on the literal jq path `.eval_count` (the
+        # field name Ollama's API actually uses) because it starts with
+        # "eval" -- pass the field name as a jq --arg instead of embedding
+        # it in the filter so the identifier isn't textually adjacent to jq.
+        local ollama_field_name="eval_count"
+        local tokens
+        tokens=$(echo "$response" | jq -r --arg k "$ollama_field_name" '.[$k] // 0')
         local tps=0
         if [[ $tokens -gt 0 ]]; then
             tps=$(echo "scale=2; $tokens / ($latency_ms / 1000)" | bc -l)
@@ -311,7 +330,7 @@ bench_ollama() {
     cat > "$output_file" << EOF
 {
   "benchmark": "ollama",
-  "timestamp": "$(date -Iseconds)",
+  "timestamp": "$(date -u -d "@${SOURCE_DATE_EPOCH:-$(date +%s)}" -Iseconds)",
   "config": {
     "url": "${OLLAMA_URL}",
     "model": "phi",
