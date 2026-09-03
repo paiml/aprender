@@ -402,7 +402,8 @@ pub mod safetensors;
 /// SafeTensors CUDA inference (PMAT-116)
 ///
 /// Direct GPU loading for HuggingFace SafeTensors models.
-/// Achieves GGUF GPU parity (200+ tok/s).
+/// Targets GGUF GPU parity; the measured decode rate lives in the perf-gate
+/// receipts under `evidence/`, not in this comment.
 #[cfg(feature = "cuda")]
 pub mod safetensors_cuda;
 /// SafeTensors inference support (PAR-301)
