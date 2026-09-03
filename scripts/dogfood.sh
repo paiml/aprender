@@ -377,14 +377,37 @@ if [ "$DOGFOOD_PHASE" = pre-publish ]; then
   # says nothing about the version. The question this row exists to answer --
   # "is $VERSION already on crates.io?" -- is asked of the registry directly.
   DRY=""; DRC=0
-  REG=$(curl -fsS -A "aprender-dogfood (+https://github.com/paiml/aprender)" \
-        "https://crates.io/api/v1/crates/$CRATE/versions" 2>&1); REG_RC=$?
+  # The SPARSE INDEX is consulted, not the web API: it is the file cargo itself
+  # resolves against, it is not rate-limited the way api/v1 is (measured
+  # 2026-09-03: two api/v1 calls in a row answered HTTP 429), and a crate that
+  # has never been published answers 404 -- the strongest possible "absent", not
+  # a transport failure (third review of #2859, dogfood-curl-404-defect). The
+  # HTTP status is read separately from the body so 404, 200 and anything else
+  # each get their own verdict.
+  case "${#CRATE}" in
+    1) REG_PATH="1/$CRATE" ;; 2) REG_PATH="2/$CRATE" ;; 3) REG_PATH="3/${CRATE:0:1}/$CRATE" ;;
+    *) REG_PATH="${CRATE:0:2}/${CRATE:2:2}/$CRATE" ;;
+  esac
+  REG_CODE=$(curl -sS -o "$WORKLOG/registry.ndjson" -w '%{http_code}' \
+        -A "aprender-dogfood (+https://github.com/paiml/aprender)" \
+        "https://index.crates.io/$REG_PATH" 2>"$WORKLOG/registry.err"); REG_RC=$?
   if [ "$REG_RC" -ne 0 ]; then
-    mark version-unpublished FAIL "crates.io not consulted (curl exit=$REG_RC): $(printf '%s' "$REG" | tail -1 | cut -c1-100) — the version's status is UNKNOWN"
-  elif printf '%s' "$REG" | python3 -c 'import json,sys; vs=json.load(sys.stdin).get("versions",[]); sys.exit(0 if any(v.get("num")==sys.argv[1] for v in vs) else 1)' "$VERSION"; then
-    mark version-unpublished FAIL "$CRATE $VERSION is ALREADY on crates.io — bump the version"
+    mark version-unpublished FAIL "index.crates.io not consulted (curl exit=$REG_RC): $(tail -1 "$WORKLOG/registry.err" 2>/dev/null | cut -c1-100) — the version's status is UNKNOWN"
+  elif [ "$REG_CODE" = 404 ]; then
+    mark version-unpublished PASS "$CRATE is not in the crates.io index at all (HTTP 404), so $VERSION is absent (pre-publish phase)"
+  elif [ "$REG_CODE" != 200 ]; then
+    mark version-unpublished FAIL "index.crates.io answered HTTP $REG_CODE for $CRATE — the version's status is UNKNOWN"
+  elif python3 -c '
+import json, sys
+want = sys.argv[1]
+for line in open(sys.argv[2], encoding="utf-8"):
+    line = line.strip()
+    if not line: continue
+    if json.loads(line).get("vers") == want: sys.exit(0)
+sys.exit(1)' "$VERSION" "$WORKLOG/registry.ndjson"; then
+    mark version-unpublished FAIL "$CRATE $VERSION is ALREADY in the crates.io index — bump the version"
   else
-    mark version-unpublished PASS "$VERSION absent from crates.io (registry consulted directly; pre-publish phase)"
+    mark version-unpublished PASS "$VERSION absent from the crates.io index (consulted directly, HTTP 200; pre-publish phase)"
   fi
 else
 DRY=$(env -u CARGO_REGISTRY_TOKEN cargo publish --dry-run --allow-dirty 2>&1); DRC=$?
