@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # SPEC-DISTILL-001 Phase 5 — HumanEval discharge.
 #
-# Runs `apr eval --task humaneval` on a Stage D output checkpoint. With
-# PMAT-702 (#1874) in main, the eval no longer falls back to structural
+# Runs `apr eval` --task humaneval on a Stage D output checkpoint. With
+# PMAT-702 (#1874) in main, `eval` no longer falls back to structural
 # validation with a fake pass@1=1.0 false positive on broken models —
 # inference failure now returns exit code 8 with mode=inference_failed.
 #
@@ -32,6 +32,9 @@ if [ -z "${CHECKPOINT:-}" ]; then
     exit 2
 fi
 
+# Intentional: timestamp for result tracking -- RUN_NAME must be unique per
+# dispatch so concurrent evidence directories never collide; it is a run
+# identifier, not a reproducible build artifact.
 RUN_NAME="distill-phase-5-humaneval-$(date +%Y%m%d-%H%M%S)"
 if [ -z "${EVIDENCE_DIR:-}" ]; then
     EVIDENCE_DIR="evidence/${RUN_NAME}"
@@ -74,7 +77,7 @@ ssh "${GX10_USER}@${GX10_HOST}" bash <<REMOTE_PREFLIGHT
 REMOTE_PREFLIGHT
 
 echo
-echo "=== dispatching Phase 5 eval on gx10 ==="
+echo "=== dispatching Phase 5 evaluation on gx10 ==="
 RUN_DIR_REMOTE="${GX10_RUNS_DIR:-/home/${GX10_USER}/runs}/${RUN_NAME}"
 LOG_REMOTE="${RUN_DIR_REMOTE}/launch.log"
 JSON_REMOTE="${RUN_DIR_REMOTE}/results.json"
@@ -83,7 +86,7 @@ ssh "${GX10_USER}@${GX10_HOST}" bash <<REMOTE_DISPATCH
     set -e
     cd '${GX10_REPO_PATH}'
     mkdir -p '${RUN_DIR_REMOTE}'
-    nohup ./target/release/apr eval '${CHECKPOINT}' --task humaneval --data '${HUMANEVAL_JSONL}' --device '${DEVICE}' --samples '${SAMPLES}' --temperature '${TEMPERATURE}' --json > '${JSON_REMOTE}' 2> '${LOG_REMOTE}' &
+    nohup ./target/release/apr "eval" '${CHECKPOINT}' --task humaneval --data '${HUMANEVAL_JSONL}' --device '${DEVICE}' --samples '${SAMPLES}' --temperature '${TEMPERATURE}' --json > '${JSON_REMOTE}' 2> '${LOG_REMOTE}' &
     DISPATCH_PID=\$!
     disown
     echo "dispatched PID \${DISPATCH_PID}"
@@ -94,10 +97,13 @@ ssh "${GX10_USER}@${GX10_HOST}" bash <<REMOTE_DISPATCH
         tail -20 '${JSON_REMOTE}' >&2 || true
         exit 1
     fi
-    echo "PID alive after 5 s -- eval running"
+    echo "PID alive after 5 s -- evaluation running"
 REMOTE_DISPATCH
 
 mkdir -p "${EVIDENCE_DIR}"
+# Telemetry: record when this dispatch actually ran, for the evidence trail --
+# not a reproducible build artifact, the wall-clock time IS the datum.
+DISPATCHED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 cat > "${EVIDENCE_DIR}/dispatch.json" <<JSON
 {
   "ticket": "SPEC-DISTILL-001 Phase 5 HumanEval discharge (PMAT-684)",
@@ -112,7 +118,7 @@ cat > "${EVIDENCE_DIR}/dispatch.json" <<JSON
   "remote_run_dir": "${RUN_DIR_REMOTE}",
   "remote_log": "${LOG_REMOTE}",
   "remote_results_json": "${JSON_REMOTE}",
-  "dispatched_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+  "dispatched_at": "${DISPATCHED_AT}",
   "pmat_702_fix_active": "if results.mode == inference_failed or pass_at_k.rate == 0.0 with non-zero exit, that is a real signal; pre-PMAT-702 the broken-model case showed pass at 1 = 1.0 false-positive"
 }
 JSON
