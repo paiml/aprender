@@ -39,7 +39,12 @@ DOGFOOD_PHASE="${DOGFOOD_PHASE:-full}"
 REPO_DIR=""
 while [ $# -gt 0 ]; do
   case "$1" in
-    --phase) DOGFOOD_PHASE="${2:-}"; shift 2 ;;
+    --phase)
+      # `shift 2` with one argument left does not shift, so a bare `--phase`
+      # looped forever (seventh review of #2859, measured). A flag with no
+      # value is a usage error.
+      [ $# -ge 2 ] || { echo "dogfood: --phase needs a value (full|pre-publish|post-publish)" >&2; exit 2; }
+      DOGFOOD_PHASE="$2"; shift 2 ;;
     --phase=*) DOGFOOD_PHASE="${1#--phase=}"; shift ;;
     -h|--help) sed -n '2,14p' "$0"; echo "        dogfood.sh [--phase full|pre-publish|post-publish] [REPO_DIR]"; exit 0 ;;
     *) REPO_DIR="$1"; shift ;;

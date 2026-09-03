@@ -350,7 +350,9 @@ if [ -f .cargo/config.toml ]; then
     echo "⛔ could not create a backup of .cargo/config.toml (mktemp failed under ${TMPDIR:-/tmp}); nothing was published." >&2
     exit 2
   fi
-  cp .cargo/config.toml "$CASCADE_CONFIG_BACKUP" || { echo "⛔ could not back up .cargo/config.toml; nothing was published." >&2; exit 2; }
+  # A failed copy leaves a partial backup that must not be restored later and
+  # must not be left behind: it is removed before the refusal.
+  cp .cargo/config.toml "$CASCADE_CONFIG_BACKUP" || { rm -f "$CASCADE_CONFIG_BACKUP"; echo "⛔ could not back up .cargo/config.toml; nothing was published." >&2; exit 2; }
   # The restore trap is armed BEFORE the overwrite: between the two there was a
   # window in which an interrupt lost the config (sixth review of #2859).
   trap 'if [ -n "$CASCADE_CONFIG_BACKUP" ] && [ -f "$CASCADE_CONFIG_BACKUP" ]; then cp "$CASCADE_CONFIG_BACKUP" .cargo/config.toml && rm -f "$CASCADE_CONFIG_BACKUP"; fi' EXIT
