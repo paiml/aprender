@@ -98,31 +98,9 @@ impl<E: ActionExecutor> PlaybookRunner<E> {
 
         // Run steps if setup succeeded
         if passed {
-            for step in &steps.steps {
-                match self.run_step(step) {
-                    Ok(result) => {
-                        if !result.passed {
-                            passed = false;
-                            error_msg = result.error.clone();
-                        }
-                        step_results.push(result);
-                        if !passed {
-                            break;
-                        }
-                    }
-                    Err(e) => {
-                        passed = false;
-                        error_msg = Some(e.to_string());
-                        step_results.push(StepResult {
-                            name: step.name.clone(),
-                            passed: false,
-                            duration: Duration::ZERO,
-                            captured: HashMap::new(),
-                            error: Some(e.to_string()),
-                        });
-                        break;
-                    }
-                }
+            if let Some(err) = self.run_steps(&steps.steps, &mut step_results) {
+                passed = false;
+                error_msg = err;
             }
         }
 
@@ -169,9 +147,42 @@ impl<E: ActionExecutor> PlaybookRunner<E> {
         Ok(())
     }
 
+    /// Run steps until one fails, appending every attempted step to
+    /// `step_results`. Returns `Some(error)` for the first failure — the error
+    /// itself may be `None`, mirroring `StepResult::error` — or `None` if every
+    /// step passed.
+    fn run_steps(
+        &mut self,
+        steps: &[PlaybookStep],
+        step_results: &mut Vec<StepResult>,
+    ) -> Option<Option<String>> {
+        for step in steps {
+            match self.run_step(step) {
+                Ok(result) => {
+                    let failure = (!result.passed).then(|| result.error.clone());
+                    step_results.push(result);
+                    if let Some(error) = failure {
+                        return Some(error);
+                    }
+                }
+                Err(e) => {
+                    step_results.push(StepResult {
+                        name: step.name.clone(),
+                        passed: false,
+                        duration: Duration::ZERO,
+                        captured: HashMap::new(),
+                        error: Some(e.to_string()),
+                    });
+                    return Some(Some(e.to_string()));
+                }
+            }
+        }
+        None
+    }
+
     /// Run a single action.
     fn run_action(&self, _action: &PlaybookAction) -> Result<(), ExecutorError> {
-        // TODO: Execute WASM action via executor
+        // Deferred (PMAT-760): Execute WASM action via executor
         Ok(())
     }
 
@@ -209,7 +220,7 @@ impl<E: ActionExecutor> PlaybookRunner<E> {
 
         // Capture variables
         for capture in &step.capture {
-            // TODO: Actually evaluate the expression
+            // Deferred (PMAT-761): Actually evaluate the expression
             let value = self.substitute_variables(&capture.from);
             captured.insert(capture.var.clone(), value.clone());
             self.variables.insert(capture.var.clone(), value);
@@ -294,81 +305,28 @@ impl<E: ActionExecutor> PlaybookRunner<E> {
         let value = self.variables.get(&output.var);
 
         // Check not_empty
-        if output.not_empty == Some(true) && value.map_or(true, String::is_empty) {
-            return AssertionCheckResult {
-                description: format!("Variable '{}' is not empty", output.var),
-                passed: false,
-                error: Some(format!("Variable '{}' is empty or undefined", output.var)),
-            };
+        if let Some(failure) = Self::assert_not_empty(output, value) {
+            return failure;
         }
 
         // Check matches regex
-        if let Some(pattern) = &output.matches {
-            if let Some(val) = value {
-                if let Ok(re) = regex::Regex::new(pattern) {
-                    if !re.is_match(val) {
-                        return AssertionCheckResult {
-                            description: format!("Variable '{}' matches '{}'", output.var, pattern),
-                            passed: false,
-                            error: Some(format!(
-                                "Value '{}' does not match pattern '{}'",
-                                val, pattern
-                            )),
-                        };
-                    }
-                }
-            } else {
-                return AssertionCheckResult {
-                    description: format!("Variable '{}' matches '{}'", output.var, pattern),
-                    passed: false,
-                    error: Some(format!("Variable '{}' is undefined", output.var)),
-                };
-            }
+        if let Some(failure) = Self::assert_matches(output, value) {
+            return failure;
         }
 
         // Check less_than
-        if let Some(max) = output.less_than {
-            if let Some(val) = value {
-                if let Ok(num) = val.parse::<i64>() {
-                    if num >= max {
-                        return AssertionCheckResult {
-                            description: format!("Variable '{}' < {}", output.var, max),
-                            passed: false,
-                            error: Some(format!("{} is not less than {}", num, max)),
-                        };
-                    }
-                }
-            }
+        if let Some(failure) = Self::assert_less_than(output, value) {
+            return failure;
         }
 
         // Check greater_than
-        if let Some(min) = output.greater_than {
-            if let Some(val) = value {
-                if let Ok(num) = val.parse::<i64>() {
-                    if num <= min {
-                        return AssertionCheckResult {
-                            description: format!("Variable '{}' > {}", output.var, min),
-                            passed: false,
-                            error: Some(format!("{} is not greater than {}", num, min)),
-                        };
-                    }
-                }
-            }
+        if let Some(failure) = Self::assert_greater_than(output, value) {
+            return failure;
         }
 
         // Check equals
-        if let Some(expected) = &output.equals {
-            if value != Some(expected) {
-                return AssertionCheckResult {
-                    description: format!("Variable '{}' equals '{}'", output.var, expected),
-                    passed: false,
-                    error: Some(format!(
-                        "Expected '{}', got '{}'",
-                        expected,
-                        value.map_or("undefined", String::as_str)
-                    )),
-                };
-            }
+        if let Some(failure) = Self::assert_equals(output, value) {
+            return failure;
         }
 
         AssertionCheckResult {
@@ -376,6 +334,105 @@ impl<E: ActionExecutor> PlaybookRunner<E> {
             passed: true,
             error: None,
         }
+    }
+
+    /// `not_empty`: fails when the variable is undefined or the empty string.
+    fn assert_not_empty(
+        output: &OutputAssertion,
+        value: Option<&String>,
+    ) -> Option<AssertionCheckResult> {
+        if output.not_empty == Some(true) && value.map_or(true, String::is_empty) {
+            return Some(AssertionCheckResult {
+                description: format!("Variable '{}' is not empty", output.var),
+                passed: false,
+                error: Some(format!("Variable '{}' is empty or undefined", output.var)),
+            });
+        }
+        None
+    }
+
+    /// `matches`: fails when the variable is undefined, or is defined and does not
+    /// match. A pattern that fails to compile is ignored, as before.
+    fn assert_matches(
+        output: &OutputAssertion,
+        value: Option<&String>,
+    ) -> Option<AssertionCheckResult> {
+        let pattern = output.matches.as_ref()?;
+        let Some(val) = value else {
+            return Some(AssertionCheckResult {
+                description: format!("Variable '{}' matches '{}'", output.var, pattern),
+                passed: false,
+                error: Some(format!("Variable '{}' is undefined", output.var)),
+            });
+        };
+        let re = regex::Regex::new(pattern).ok()?;
+        if re.is_match(val) {
+            return None;
+        }
+        Some(AssertionCheckResult {
+            description: format!("Variable '{}' matches '{}'", output.var, pattern),
+            passed: false,
+            error: Some(format!(
+                "Value '{}' does not match pattern '{}'",
+                val, pattern
+            )),
+        })
+    }
+
+    /// `less_than`: fails when the variable parses as an integer that is not less
+    /// than the bound. A value that is undefined or unparseable is ignored, as before.
+    fn assert_less_than(
+        output: &OutputAssertion,
+        value: Option<&String>,
+    ) -> Option<AssertionCheckResult> {
+        let max = output.less_than?;
+        let num = value?.parse::<i64>().ok()?;
+        if num < max {
+            return None;
+        }
+        Some(AssertionCheckResult {
+            description: format!("Variable '{}' < {}", output.var, max),
+            passed: false,
+            error: Some(format!("{} is not less than {}", num, max)),
+        })
+    }
+
+    /// `greater_than`: fails when the variable parses as an integer that is not
+    /// greater than the bound. A value that is undefined or unparseable is ignored.
+    fn assert_greater_than(
+        output: &OutputAssertion,
+        value: Option<&String>,
+    ) -> Option<AssertionCheckResult> {
+        let min = output.greater_than?;
+        let num = value?.parse::<i64>().ok()?;
+        if num > min {
+            return None;
+        }
+        Some(AssertionCheckResult {
+            description: format!("Variable '{}' > {}", output.var, min),
+            passed: false,
+            error: Some(format!("{} is not greater than {}", num, min)),
+        })
+    }
+
+    /// `equals`: fails when the variable differs from the expected value.
+    fn assert_equals(
+        output: &OutputAssertion,
+        value: Option<&String>,
+    ) -> Option<AssertionCheckResult> {
+        let expected = output.equals.as_ref()?;
+        if value == Some(expected) {
+            return None;
+        }
+        Some(AssertionCheckResult {
+            description: format!("Variable '{}' equals '{}'", output.var, expected),
+            passed: false,
+            error: Some(format!(
+                "Expected '{}', got '{}'",
+                expected,
+                value.map_or("undefined", String::as_str)
+            )),
+        })
     }
 
     /// Export execution trace as JSON.
