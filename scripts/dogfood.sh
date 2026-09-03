@@ -53,7 +53,10 @@ done
 case "$DOGFOOD_PHASE" in full|pre-publish|post-publish) : ;; *) echo "dogfood: unknown --phase '$DOGFOOD_PHASE' (full|pre-publish|post-publish)" >&2; exit 2 ;; esac
 export DOGFOOD_PHASE
 REPO_DIR="${REPO_DIR:-$PWD}"
-cd "$REPO_DIR" 2>/dev/null || { echo "dogfood: no such dir: $REPO_DIR" >&2; exit 2; }
+# The target is resolved to a real, existing directory before the cd (SEC010):
+# a path with `..` components or a dangling symlink is refused, not walked.
+REPO_DIR=$(realpath -e -- "$REPO_DIR" 2>/dev/null) || { echo "dogfood: no such dir: ${1:-$PWD}" >&2; exit 2; }
+cd -- "$REPO_DIR" 2>/dev/null || { echo "dogfood: no such dir: $REPO_DIR" >&2; exit 2; }
 [ -f Cargo.toml ] || { echo "dogfood: not a Rust crate (no Cargo.toml) in $REPO_DIR" >&2; exit 2; }
 
 # Resolve identity from cargo itself, NOT by grepping Cargo.toml.
@@ -148,7 +151,10 @@ fi
 # (#2644, DF-3). Absolute by construction now.
 RECEIPT_DIR="$PWD/.dogfood"
 mkdir -p "$RECEIPT_DIR"
-TS=$(date -u +%Y%m%dT%H%M%SZ)
+# The receipt's stamp honours SOURCE_DATE_EPOCH (the reproducible-build
+# convention, DET002) and falls back to the clock: a receipt records when it
+# ran, and a caller that wants a pinned stamp sets the epoch.
+TS=$(date -u -d "@${SOURCE_DATE_EPOCH:-$(date +%s)}" +%Y%m%dT%H%M%SZ)
 # The commit the evidence describes, stamped INTO the receipt: a consumer that
 # globs for the newest receipt after a crashed run would otherwise read a
 # previous verdict as current with nothing to expose it (#2644, DF-12). With
