@@ -564,7 +564,8 @@ fn load_transformer_config(
 /// GPU-accelerated HumanEval inference via entrenar CudaTransformerTrainer (ALB-089).
 ///
 /// Uses `forward_logits()` for autoregressive generation. No KV cache -- each step
-/// reprocesses the full sequence. Still 20-40x faster than CPU for 350M model.
+/// reprocesses the full sequence; the GPU-vs-CPU ratio is a measured figure that
+/// belongs in an `evidence/` receipt, not in this comment.
 #[cfg_attr(coverage_nightly, coverage(off))]
 #[cfg(all(feature = "cuda", feature = "training"))]
 fn run_humaneval_inference_cuda(

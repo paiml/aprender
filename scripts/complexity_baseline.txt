@@ -12,11 +12,6 @@ crates/apr-cli/src/commands/distill.rs::run_cuda_backend 13 26
 crates/apr-cli/src/commands/distill.rs::run_text_generate 16 40
 crates/apr-cli/src/commands/dry_sampling_classifier.rs::classify_dry_match_len 10 47
 crates/apr-cli/src/commands/embed_viz_classifier.rs::classify_schema 14 42
-crates/apr-cli/src/commands/eval/inference.rs::extract_python_code_block_targeted 13 40
-crates/apr-cli/src/commands/eval/inference.rs::run_humaneval_inference 15 36
-crates/apr-cli/src/commands/eval/inference.rs::run_humaneval_inference_cuda 12 31
-crates/apr-cli/src/commands/eval/inference.rs::run_mbpp_inference 16 34
-crates/apr-cli/src/commands/eval/inference.rs::run_mbpp_inference_cuda 15 37
 crates/apr-cli/src/commands/experiment.rs::run_tui_browser 19 63
 crates/apr-cli/src/commands/explain.rs::explain_tensor 9 28
 crates/apr-cli/src/commands/explain_token_classifier.rs::classify_schema 12 50
@@ -50,12 +45,8 @@ crates/apr-cli/src/commands/react_trace_classifier.rs::classify_scratchpad_gramm
 crates/apr-cli/src/commands/rerank.rs::run 10 26
 crates/apr-cli/src/commands/rosetta_diff_tensor.rs::diff_tensor_pair 8 28
 crates/apr-cli/src/commands/run.rs::resolve_model 10 29
-crates/apr-cli/src/commands/serve/handlers.rs::start_realizar_server 18 49
-crates/apr-cli/src/commands/serve/handlers.rs::wgpu_chat_completion 18 69
-crates/apr-cli/src/commands/serve/handlers.rs::wgpu_detokenize_one 14 34
 crates/apr-cli/src/commands/shard/unsharder.rs::parse_index_json 12 32
 crates/apr-cli/src/commands/shard/unsharder.rs::unshard_safetensors_dir 14 29
-crates/apr-cli/src/commands/tokenize.rs::run_encode_corpus 34 89
 crates/apr-cli/src/commands/tool_use_classifier.rs::classify_arguments_against_schema 14 57
 crates/apr-cli/src/commands/tp_pp_classifier.rs::classify_distributed_metadata 11 26
 crates/apr-cli/src/commands/train.rs::run_halving_round 16 29
@@ -119,7 +110,6 @@ crates/aprender-contracts-cli/src/commands/kaizen.rs::inject_call_sites 13 49
 crates/aprender-contracts-cli/src/commands/kaizen.rs::scan_call_sites 10 38
 crates/aprender-contracts-cli/src/commands/kaizen.rs::skip_early_returns 14 62
 crates/aprender-contracts-cli/src/commands/lint_render.rs::print_findings_grouped 15 36
-crates/aprender-contracts-cli/src/commands/verify_pipeline.rs::walk_composition_edges 5 29
 crates/aprender-contracts/src/build_helper.rs::scan_source_fns 12 43
 crates/aprender-contracts/src/codegen.rs::emit_invariant_macro 11 26
 crates/aprender-contracts/src/codegen.rs::emit_precondition_macro 22 71
@@ -138,7 +128,6 @@ crates/aprender-contracts/src/mirai_gen.rs::generate_mirai_annotations 13 27
 crates/aprender-contracts/src/proof_status.rs::lean_theorem_names 19 132
 crates/aprender-contracts/src/reverse_coverage.rs::scan_file 19 54
 crates/aprender-contracts/src/scaffold/mod.rs::domain_to_params 19 43
-crates/aprender-contracts/src/schema/validator.rs::validate_proof_obligations 15 30
 crates/aprender-contrastive-data/src/split.rs::validate_ingest_ladder 12 30
 crates/aprender-core/build.rs::emit_provable_contract_bindings 24 80
 crates/aprender-core/src/autograd/grad_fn.rs::backward 11 31

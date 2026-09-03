@@ -479,7 +479,8 @@ impl WgpuModelDims {
 
 /// PMAT-367: Upload the raw Q4K weights, then every weight Q4K did not cover.
 ///
-/// Q4K mode saves 10x VRAM but is ~3x slower (compute-bound nibble extraction).
+/// Q4K mode trades VRAM for decode speed (compute-bound nibble extraction); the
+/// measured ratio lives in the perf-gate receipts under `evidence/`, not here.
 #[cfg(feature = "wgpu")]
 fn upload_wgpu_q4k_weights(
     fwd: &mut trueno::backends::gpu::WgslForwardPass,
@@ -1402,7 +1403,8 @@ fn start_apr_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
 /// Contract: apr-cpu-q4k-routing-v1.yaml
 /// Loading path: MappedAprModel::from_path → OwnedQuantizedModel::from_apr → run_cpu_server.
 /// APR files from GGUF/SafeTensors import already contain Q4K tensors, so this avoids
-/// the slow AprTransformer F32 matmul path (9.5 → ~28 tok/s).
+/// the slow AprTransformer F32 matmul path (the measured rates live in the
+/// perf-gate receipts under `evidence/`, not in this comment).
 #[cfg(feature = "inference")]
 fn try_apr_quantized_cpu(model_path: &Path, config: &ServerConfig) -> Result<()> {
     use realizar::apr::MappedAprModel;
