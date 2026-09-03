@@ -701,7 +701,16 @@ validate_receipt() {
         tests/*|*/tests/*|test/*|*/test/*|benches/*|*/benches/*|examples/*|*/examples/*|fixtures/*|*/fixtures/*) continue ;;
       esac
       if match_crux_surface "$cl"; then crux_fired="surface declaration in $cf"; break; fi
-    done < <(changed_lines "$base" "$head" '+-')
+    done < <(changed_lines "$base" "$head" '+-' | grep -E -- "$CRUX_SURFACE_RE" || true)
+    # The grep above is not an optimisation, it is what lets this loop finish.
+    # match_crux_surface forks one grep per changed line; #2854 deleted an 8.9 MB
+    # text file (393,108 lines through this loop, 9.5 min on lambda, past the
+    # 20-minute job wall twice on the fleet). One grep over the stream keeps only
+    # the lines the per-line test could accept, and the loop then re-applies the
+    # SAME regex and the path exclusions to each survivor, so the verdict is the
+    # one the unfiltered loop would reach. The `file\tline` shape does not widen
+    # the match: the tab is a non-word character, exactly what `(^|[^A-Za-z0-9_])`
+    # admits, and no path can carry `(`, `[` or `"`.
     if [ -z "$crux_fired" ]; then
       while IFS=$'\t' read -r cf cl; do
         [ -n "$cf" ] || continue

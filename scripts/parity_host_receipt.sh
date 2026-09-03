@@ -195,7 +195,22 @@ if ! flock -n 9; then
     exit 1
 fi
 
-WORK=$(mktemp -d); trap 'kill_servers; rm -rf "${WORK:?}"' EXIT
+WORK=$(mktemp -d)
+# On a non-zero exit the work directory is KEPT and its path printed. The first
+# W1 run on lambda (2026-09-03) refused its block because one band recorded a
+# zero rate, then deleted the 40 per-replicate reports and the server logs that
+# said why; three hours of measurement left no evidence to read. A refusal is
+# the right verdict and the wrong moment to destroy the diagnosis.
+cleanup_work() {
+    local rc=$?
+    kill_servers
+    if [ "$rc" -eq 0 ]; then
+        rm -rf "${WORK:?}"
+    else
+        printf 'REPORT exit %s: work directory kept for diagnosis: %s\n' "$rc" "$WORK" >&2
+    fi
+}
+trap cleanup_work EXIT
 SERVER_PIDS=""
 
 # How long a server may take to honour SIGTERM before it is SIGKILLed. Not a
