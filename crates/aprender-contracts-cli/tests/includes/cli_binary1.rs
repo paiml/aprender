@@ -12,9 +12,9 @@
 
     #[test]
     fn pv_validate_invalid_file() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().expect("temp dir is creatable");
         let path = dir.path().join("bad.yaml");
-        std::fs::write(&path, "{{invalid").unwrap();
+        std::fs::write(&path, "{{invalid").expect("fixture file is writable");
         let output = Command::new(pv_bin())
             .arg("validate")
             .arg(&path)
@@ -135,7 +135,7 @@
     #[test]
     fn pv_validate_with_warnings() {
         // Use a contract that has no qa_gate (generates SCHEMA-013 warning)
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().expect("temp dir is creatable");
         let path = dir.path().join("warn.yaml");
         std::fs::write(
             &path,
@@ -151,7 +151,7 @@ equations:
 falsification_tests: []
 "#,
         )
-        .unwrap();
+        .expect("the test fixture is well-formed");
         let output = Command::new(pv_bin())
             .arg("validate")
             .arg(&path)
@@ -165,7 +165,7 @@ falsification_tests: []
 
     #[test]
     fn pv_validate_with_errors() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().expect("temp dir is creatable");
         let path = dir.path().join("errors.yaml");
         std::fs::write(
             &path,
@@ -180,7 +180,7 @@ equations:
 falsification_tests: []
 "#,
         )
-        .unwrap();
+        .expect("the test fixture is well-formed");
         let output = Command::new(pv_bin())
             .arg("validate")
             .arg(&path)
@@ -193,7 +193,7 @@ falsification_tests: []
 
     #[test]
     fn pv_status_no_qa_gate() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().expect("temp dir is creatable");
         let path = dir.path().join("no_qa.yaml");
         std::fs::write(
             &path,
@@ -208,7 +208,7 @@ equations:
 falsification_tests: []
 "#,
         )
-        .unwrap();
+        .expect("the test fixture is well-formed");
         let output = Command::new(pv_bin())
             .arg("status")
             .arg(&path)
@@ -221,7 +221,7 @@ falsification_tests: []
 
     #[test]
     fn pv_audit_with_errors() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().expect("temp dir is creatable");
         let contract = dir.path().join("audit_err.yaml");
         std::fs::write(
             &contract,
@@ -243,7 +243,7 @@ falsification_tests:
     if_fails: "broken"
 "#,
         )
-        .unwrap();
+        .expect("the test fixture is well-formed");
         let output = Command::new(pv_bin())
             .arg("audit")
             .arg(&contract)

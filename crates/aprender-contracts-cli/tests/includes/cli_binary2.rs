@@ -53,7 +53,7 @@
 
     #[test]
     fn pv_generate_softmax() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().expect("temp dir is creatable");
         let output = Command::new(pv_bin())
             .arg("generate")
             .arg(contract_path("softmax-kernel-v1.yaml"))
@@ -69,7 +69,7 @@
 
     #[test]
     fn pv_generate_with_binding() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().expect("temp dir is creatable");
         let output = Command::new(pv_bin())
             .arg("generate")
             .arg(contract_path("softmax-kernel-v1.yaml"))
