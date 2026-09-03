@@ -8,9 +8,20 @@
 set -e
 
 OUTPUT_FILE="${1:-benchmarks/metadata/toolchain_manifest.txt}"
+# Path-traversal guard: OUTPUT_FILE comes straight from $1, so refuse a '..'
+# component before it is ever used as a write target.
+case "$OUTPUT_FILE" in
+    *..*)
+        echo "refusing OUTPUT_FILE with a '..' path component: $OUTPUT_FILE" >&2
+        exit 1
+        ;;
+esac
 
 echo "=== Certeza Reproducibility Manifest ===" > "$OUTPUT_FILE"
-echo "Generated: $(date -Iseconds)" >> "$OUTPUT_FILE"
+# "Generated:" records real wall-clock time by default (this manifest exists
+# to capture the state of an actual toolchain/build); SOURCE_DATE_EPOCH, when
+# set, pins it for a reproducible/test invocation.
+echo "Generated: $(date -u -d "@${SOURCE_DATE_EPOCH:-$(date +%s)}" -Iseconds)" >> "$OUTPUT_FILE"
 echo "" >> "$OUTPUT_FILE"
 
 echo "=== Rust Toolchain ===" >> "$OUTPUT_FILE"
@@ -73,6 +84,15 @@ echo "Reproducibility manifest generated: $OUTPUT_FILE"
 # Also save with git commit hash in filename for archival
 if command -v git &> /dev/null && [ -d ".git" ]; then
     COMMIT_HASH=$(git rev-parse --short HEAD 2>/dev/null || echo "nogit")
+    # git's short hash is always [0-9a-f]+ (or the "nogit" fallback above), but
+    # it names part of ARCHIVE_FILE below, so validate it before that path is
+    # built rather than trust the command that produced it.
+    case "$COMMIT_HASH" in
+        *..*|*/*)
+            echo "refusing unsafe COMMIT_HASH: $COMMIT_HASH" >&2
+            exit 1
+            ;;
+    esac
     ARCHIVE_FILE="benchmarks/metadata/toolchain_manifest_${COMMIT_HASH}.txt"
     cp "$OUTPUT_FILE" "$ARCHIVE_FILE"
     echo "Archived as: $ARCHIVE_FILE"
