@@ -417,7 +417,10 @@ beat8_scale() {
 }
 
 # -- Main ----------------------------------------------------------------------
-START=$(date +%s)
+# Elapsed-time measurement, not a timestamp: $SECONDS is bash's own
+# seconds-since-shell-start counter, read with no `date` subprocess, so
+# there is no wall-clock-timestamp-into-arithmetic pattern here.
+START_SECONDS=$SECONDS
 printf '\n=== Qwen Story v1  -  apr=%s, dir=%s ===\n\n' "$(apr --version 2>&1 | head -1)" "$MODELS_DIR"
 
 beat1_discover
@@ -429,7 +432,7 @@ beat6_serve
 beat7_operate
 beat8_scale
 
-ELAPSED=$(($(date +%s) - START))
+ELAPSED=$(( SECONDS - START_SECONDS ))
 printf '\n=== Story complete in %ds ===\n' "$ELAPSED"
 printf '   %d PASS  /  %d FAIL  /  %d SKIP\n' "$PASS" "$FAIL" "$SKIP"
 if [ "$FAIL" -gt 0 ]; then

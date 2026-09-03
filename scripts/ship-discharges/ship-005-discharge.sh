@@ -5,8 +5,9 @@
 # AC: AC-SHIP1-005 - MODEL-1 HumanEval pass@1 >= 86.00% nominal,
 #     >= 84.80% effective (after 1.2 pp noise allowance).
 #
-# Canonical command (3 runs, seed=0, take median):
-#   apr eval --benchmark humaneval paiml/qwen2.5-coder-7b-apache-q4k-v1 \
+# Canonical command (3 runs, seed=0, take median; subcommand is $APR_SUBCMD
+# below):
+#   apr <subcommand> --benchmark humaneval paiml/qwen2.5-coder-7b-apache-q4k-v1 \
 #       --json --features cuda
 #
 # Pass criterion: median pass@1 across 3 seed=0 runs >= 86.00 nominal
@@ -86,14 +87,16 @@ APR_SUBCMD="eval"
 for ((i=1; i<=RUNS; i++)); do
     LOG_FILE="${EVIDENCE_DIR}/eval-run-${i}.json"
     echo "Run $i/$RUNS: apr ${APR_SUBCMD} --benchmark humaneval $MODEL --json --seed 0"
-    START_EPOCH=$(date -u +%s)
+    # Elapsed-time measurement, not a timestamp: $SECONDS is bash's
+    # monotonic seconds-since-shell-start counter, so this never reads the
+    # wall clock the way `date -u +%s` twice would.
+    RUN_START_SECONDS=$SECONDS
     SUBCMD_EXIT=0
     "$APR_BINARY" "$APR_SUBCMD" --benchmark humaneval "$MODEL" --json --seed 0 >"$LOG_FILE" 2>&1 || SUBCMD_EXIT=$?
     if [[ "$SUBCMD_EXIT" -ne 0 ]]; then
         echo "  WARN: apr ${APR_SUBCMD} exit=$SUBCMD_EXIT on run $i (continuing for evidence)"
     fi
-    END_EPOCH=$(date -u +%s)
-    DURATION=$(( END_EPOCH - START_EPOCH ))
+    DURATION=$(( SECONDS - RUN_START_SECONDS ))
 
     # Extract pass@1 from JSON (try multiple keys; output format may use
     # `pass_at_1`, `pass@1`, or nested `metrics.pass_at_1`).
@@ -145,7 +148,10 @@ fi
 # --- Step 4: emit evidence JSON -----------------------------------------
 HOSTNAME_VAL="$(hostname)"
 APR_VERSION="$( "$APR_BINARY" --version 2>/dev/null || echo "unknown" )"
-DATE_UTC="$(date -u +%Y-%m-%d)"
+# Records the real day the discharge ran (audit trail). SOURCE_DATE_EPOCH,
+# when a caller sets it (e.g. to reproduce byte-identical evidence in a
+# test), pins the date instead of reading the live clock.
+DATE_UTC="$(date -u -d "@${SOURCE_DATE_EPOCH:-$(date -u +%s)}" +%Y-%m-%d)"
 
 # JSON-encode the array of pass@1 values
 PASS_AT_1_JSON="$(printf '%s\n' "${PASS_AT_1_VALUES[@]}" | jq -R . | jq -s 'map(tonumber)' )"
@@ -162,7 +168,7 @@ cat > "$EVIDENCE_FILE" <<JSON
     "apr_binary": "${APR_BINARY}",
     "apr_version": "${APR_VERSION}"
   },
-  "command": "apr eval --benchmark humaneval ${MODEL} --json --seed 0",
+  "command": "apr ${APR_SUBCMD} --benchmark humaneval ${MODEL} --json --seed 0",
   "model": "${MODEL}",
   "runs": ${RUNS},
   "seed": 0,
