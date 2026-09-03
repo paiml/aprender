@@ -987,7 +987,7 @@ fn load_lm_batches_from_parquet_dir(
     // PyTorch DataLoader with shuffle=True provides this by default.
     // We shuffle deterministically using the config seed for reproducibility.
     {
-        let seed = 123u64; // TODO: propagate config seed
+        let seed = 123u64; // Deferred (PMAT-944): propagate config seed
         let mut rng_state = seed;
         // Fisher-Yates shuffle with simple LCG
         for i in (1..all_batches.len()).rev() {

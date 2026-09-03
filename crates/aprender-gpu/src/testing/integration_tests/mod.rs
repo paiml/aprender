@@ -45,7 +45,7 @@ fn simulate_gemm_buggy(size: usize) -> Vec<f32> {
     for i in 0..size {
         for j in 0..size {
             let garbage = if i % 2 == 0 { 1000.0 } else { 0.0 };
-            let mut acc = garbage; // BUG: accumulator not initialized to 0
+            let mut acc = garbage; // Injected fault: accumulator not initialized to 0
             for k in 0..size {
                 acc += (i * size + k) as f32 * (k * size + j) as f32;
             }

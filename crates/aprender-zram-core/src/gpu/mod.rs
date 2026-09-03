@@ -193,7 +193,7 @@ pub fn meets_pcie_rule(
 /// Check if GPU is available on the system.
 #[must_use]
 pub fn gpu_available() -> bool {
-    // TODO: Implement actual GPU detection via trueno-gpu
+    // Deferred (PMAT-947): Implement actual GPU detection via trueno-gpu
     // For now, return false as we're stubbing the implementation
     #[cfg(feature = "cuda")]
     {

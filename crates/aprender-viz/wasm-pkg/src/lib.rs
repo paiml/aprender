@@ -617,7 +617,7 @@ pub fn benchmark_scatter(point_count: usize) -> BenchmarkResult {
         data_size: point_count,
         time_ms,
         throughput,
-        tier: "Scalar".to_string(), // TODO: detect actual tier
+        tier: "Scalar".to_string(), // Deferred (PMAT-946): detect actual tier
     }
 }
 
