@@ -390,9 +390,9 @@ $INVOKE"
         row=$((row + 1))
         eval_if "$1" "$2"; local got=$?
         if [ "$got" -eq "$3" ]; then
-            printf 'ok    row %-2s eval %-12s on %-16s -> %s\n' "$row" "$3" "$2" "$1"
+            printf 'ok    row %-2s want %-12s on %-16s -> %s\n' "$row" "$3" "$2" "$1"
         else
-            printf 'FAIL  row %-2s eval on %s of `%s`: wanted %s, got %s\n' "$row" "$2" "$1" "$3" "$got"
+            printf 'FAIL  row %-2s check on %s of `%s`: wanted %s, got %s\n' "$row" "$2" "$1" "$3" "$got"
             fails=1
         fi
     }

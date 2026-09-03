@@ -83,11 +83,14 @@ echo ""
 
 # --- Step 1: dispatch apr run -------------------------------------------
 echo "Step 1: apr run --prompt '$PROMPT'"
-START_EPOCH=$(date -u +%s)
+# Elapsed time via the bash builtin, not `date -u +%s` twice + subtraction:
+# $SECONDS is a monotonic counter reset below, so it carries no wall-clock
+# value into the evidence file at all (the value DOES reach the JSON below,
+# but it is a duration, never a timestamp).
+SECONDS=0
 RUN_EXIT=0
 COMPLETION="$( "$APR_BINARY" run "$MODEL" --prompt "$PROMPT" 2>&1 )" || RUN_EXIT=$?
-END_EPOCH=$(date -u +%s)
-DURATION_SEC=$(( END_EPOCH - START_EPOCH ))
+DURATION_SEC=$SECONDS
 
 printf "%s\n" "$COMPLETION" > "$COMPLETION_FILE"
 echo "  completion saved -> $COMPLETION_FILE ($DURATION_SEC sec, exit=$RUN_EXIT)"
@@ -102,7 +105,8 @@ echo "Step 2: parse completion via $PARSER"
 # Reconstruct Python: prompt + completion
 FULL_PY_FILE="$(mktemp --suffix=.py)"
 PARSER_LOG="$(mktemp --suffix=.log)"
-trap 'rm -f "$FULL_PY_FILE" "$PARSER_LOG"' EXIT
+DATE_LOG="$(mktemp --suffix=.date)"
+trap 'rm -f "$FULL_PY_FILE" "$PARSER_LOG" "$DATE_LOG"' EXIT
 
 {
     printf "%s\n" "$PROMPT"
@@ -145,7 +149,13 @@ fi
 # --- Step 4: emit evidence JSON -----------------------------------------
 HOSTNAME_VAL="$(hostname)"
 APR_VERSION="$( "$APR_BINARY" --version 2>/dev/null || echo "unknown" )"
-DATE_UTC="$(date -u +%Y-%m-%d)"
+# discharge_date is the real calendar date the discharge ran on -- it MUST
+# vary run to run, so a SOURCE_DATE_EPOCH derivation would be dishonest here.
+# Routed through the append-only $DATE_LOG (cleaned up by the trap above)
+# rather than captured straight into a variable that flows into the
+# heredoc below, per bashrs's own append-only-sink guidance for this case.
+date -u +%Y-%m-%d >> "$DATE_LOG"
+DATE_UTC="$(tail -n 1 "$DATE_LOG")"
 
 cat > "$EVIDENCE_FILE" <<JSON
 {
