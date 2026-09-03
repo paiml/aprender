@@ -135,6 +135,12 @@ falsification_tests:
     test: "test \"$(bash scripts/perf_gate.sh --list-selftests | wc -l)\" -ge 25"
     if_fails: "The pg surface collapsed, so every pg-surfaced §6 row would join against an empty set and the guard would be RED for the wrong reason"
 
+  - id: FALSIFY-PP-LLAMA-001-CONFORMANCE-009
+    rule: "L2: a ledger row outside the first table is refused, not silently dropped from PP-9's universe"
+    prediction: "ledger_row_outside_table (L2, a blank line splits the table) is RED and ledger_rows_contiguous (CLEAN, same rows with no split) is CLEAN in the case table; removing the L2 emit from check_ledger() turns ledger_row_outside_table BROKE"
+    test: 'out=$(bash scripts/spec_conformance.sh --selftest); [ "$(echo "$out" | grep -c "ok    ledger_row_outside_table  *L2")" -eq 1 ] && [ "$(echo "$out" | grep -c "ok    ledger_rows_contiguous  *CLEAN")" -eq 1 ]'
+    if_fails: "table_rows() reads only the FIRST pipe table of the ledger and stops at the first blank or prose line; a row typed after that break is invisible to a_cell_once_run_is_spent, so a re-spent key sitting outside the table passes clean (the PMAT-930 defect: a blank line after evidence/parity/LEDGER.md row 4 left rows 5 and 6 unread, and duplicating row 6 as row 7 passed spec_conformance.sh)"
+
 qa_gate:
   id: F-PP-LLAMA-001-CONFORMANCE-001
   name: "Spec conformance — every ARMED rule names cases that exist, no cell is spent twice, every expiry derives"
