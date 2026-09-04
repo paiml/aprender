@@ -14528,6 +14528,19 @@ roadmap:
   - 'driver_and_context, gpu_buffer and cuda_graph tests share one device and run under one process-wide mutex; 20 runs at --test-threads=48 on lambda: 0 failures, 0 signals'
   - 'a must-fire mutation (mutex removed) reproduces the failure within 20 runs'
   notes: 'Evidence: pp4-work/evidence/gpu-flake (t48-*.out, t4-*.out, characterize.log). CI cannot see this suite (no GPU runner); the release clean-room is the only gate that does.'
+- id: PMAT-960
+  github_issue: null
+  item_type: bug
+  title: 'dogfood.sh --phase post-publish: the version-unpublished row FAILs on a correctly published version (no phase inversion), so no post-publish run can be GO by construction; 0.65.2 carries a written determination instead'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-09-04 23:40:00+00:00
+  updated: 2026-09-04 23:40:00+00:00
+  spec: null
+  acceptance_criteria:
+  - 'in --phase post-publish the row PASSes iff the crate version is in the crates.io index and FAILs otherwise; pre-publish polarity unchanged; case rows for both phases and both polarities; must-fire mutation RED'
+  notes: 'Same shape the 0.64.0 cut recorded in evidence/dogfood/0.64.0/VERDICT.md. Found by the 0.65.2 post-publish run (receipt-20260904T232050Z.json).'
 - id: PMAT-750
   github_issue: null
   item_type: task
