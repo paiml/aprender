@@ -2,6 +2,135 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/aprender
 roadmap:
+- id: PMAT-930
+  github_issue: null
+  item_type: bug
+  title: 'PP-9 live scan read only the first pipe table of evidence/parity/LEDGER.md: a blank line after row 4 left
+    rows 5 and 6 outside the spend-key universe, so a re-spend of row 6 passed spec_conformance.sh'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-09-03 13:40:00+00:00
+  updated: 2026-09-03 13:40:00+00:00
+  spec: docs/specifications/PP-LLAMA-001-MASTER.md
+  acceptance_criteria:
+  - 'scripts/lib/spec_conformance.py emits L2 for a ledger row that sits outside the table it reads (same column
+    count as the header, row-id first cell, after the first table break, before the superseded section); the ledger
+    is re-joined so the live scan reports LEDGER 6 6; selftest cases ledger_row_outside_table (L2) and
+    ledger_rows_contiguous (CLEAN) named beside PP-9 in §6; must-fire mutation (the L2 emit removed) turns
+    ledger_row_outside_table BROKE; Appendix D row, RATIONALE PP-9 paragraph, contract invariant + falsification
+    test in pp-llama-001-spec-conformance-v1.yaml; pv validate green'
+  notes: 'Found by PMAT-929 (paiml-implement run 4) live-mutating Appendix C on 68b059ca9: duplicating row 6 as row 7
+    inside the v3 table produced PASS "no cell was spent twice"; the scanner had parsed 4 of 6 rows. Five-whys in
+    .pmat/jidoka.jsonl and docs/audits/impl-PMAT-929-receipt.md'
+- id: PMAT-931
+  github_issue: null
+  item_type: bug
+  title: 'PMAT-930 review: L2 was a whitelist of one row shape — a ledger row with no leading pipe or one extra pipe
+    passed both the first-table parse and L2; redesign L2 as a universe, add L3 (malformed row) and a mutation set'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-09-03 16:10:00+00:00
+  updated: 2026-09-03 16:10:00+00:00
+  spec: docs/specifications/PP-LLAMA-001-MASTER.md
+  acceptance_criteria:
+  - 'L2: every pipe line before the superseded heading whose first cell (backticks stripped) is a row id and that
+    does not belong to a group opening with a header row is a ledger row outside the table, whatever its column
+    count or leading pipe; those rows also enter the L1 spend check. L3: a first-table row whose cell count differs
+    from the header is refused. Fixtures ledger_row_no_leading_pipe, ledger_row_backticked_id, ledger_row_trailing_pipes,
+    ledger_row_extra_pipe, ledger_side_table_ok, ledger_superseded_rows_ok, ledger_respend_outside_table beside the
+    two of PMAT-930; scripts/mutate_spec_conformance.sh kills 8/8; the live scan on main stays PASS with LEDGER 6 6'
+  notes: 'Found by the PMAT-930 review quorum (paiml-agy-delegate, 3 lanes + the §3.E arm, gemini-3.1-pro-high, conversations
+    df32ef55, f41060f3, 02623f0a, b2af861a); two of the four escape shapes re-run by Fable on 386b0bd40 (no leading pipe,
+    extra pipe: violations=[]). Five-whys in .pmat/jidoka.jsonl. Landed in PR #2861 with PMAT-930'
+- id: PMAT-932
+  github_issue: null
+  item_type: bug
+  title: 'PMAT-931 second review: the run-skip rule failed both ways (a dummy first line hid every row after it; a
+    blank line inside the §13 table flagged eleven legitimate rows) and the mutation harness had no green baseline
+    and scored a crash as a kill'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-09-03 17:20:00+00:00
+  updated: 2026-09-03 17:20:00+00:00
+  spec: docs/specifications/PP-LLAMA-001-MASTER.md
+  acceptance_criteria:
+  - 'a run of pipe lines is skipped only when it opens with a header (header line + separator) other than the ledger
+    header; a run with the ledger header or no header is read row by row; a row counts when its first cell is a row id
+    and its width is within two columns of the ledger header; L0 when the first table is not the ledger; seven fixtures
+    (ledger_fragment_after_dummy_line, ledger_row_bold_id, ledger_side_table_split_ok, ledger_side_table_same_width_ok,
+    ledger_second_table_same_header, ledger_row_extra_pipe_outside, ledger_first_table_not_ledger); the harness runs
+    the unmutated table first, counts a crash as unviable, and reports 10/10 killed'
+  notes: 'Found by the PMAT-931 review quorum (paiml-agy-delegate, 3 lanes + the §3.E arm, gemini-3.1-pro-high, conversations
+    519483fd, cb269b2c, 804fdc9e, 972bd0c8). Re-run by Fable on 45588b6d1: dummy-first-line escape confirmed (violations
+    NONE); blank line at LEDGER.md:100 flagged 11 rows (confirmed); the bold-id escape was REFUTED (strip_md already
+    strips emphasis: L1,L2 fired). Landed in PR #2861 with PMAT-930 and PMAT-931'
+- id: PMAT-933
+  github_issue: null
+  item_type: bug
+  title: 'PMAT-932 third review: a run under a decorative header was skipped whole and a row three columns off was
+    dropped rather than refused; the L2 universe is now every row that claims a spend (RECORDED or CONFORMANT)'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-09-03 18:05:00+00:00
+  updated: 2026-09-03 18:05:00+00:00
+  spec: docs/specifications/PP-LLAMA-001-MASTER.md
+  acceptance_criteria:
+  - 'a line outside the first table is a ledger row iff it has two or more pipes, a row-id first cell and a cell that
+    claims RECORDED or CONFORMANT; no run, header or width condition; fixtures ledger_row_under_foreign_header (L1,L2),
+    ledger_row_three_columns_off_outside (L2), ledger_row_conformant_outside (L2), ledger_row_without_tier_outside_ok
+    (CLEAN); ledger_first_table_not_ledger becomes L0,L2; mutants tier-claim-check-removed and conformant-tier-dropped
+    replace header-skip-removed and width-tolerance-removed; 10/10 killed'
+  notes: 'Found by the PMAT-932 review (paiml-agy-delegate: the §3.E arm 611de8db and lanes 87ecbcb2, 12f3e8e4; lane 2
+    never returned). Re-run by Fable on fa6cf7706: a dummy header + separator + a RECORDED re-spend produced no
+    violation (confirmed); a short RECORDED row outside the table produced none (confirmed once the probe carried the
+    tier). The L0 objection (a table above the ledger) is designed behaviour and was rejected. Landed in PR #2861'
+- id: PMAT-934
+  github_issue: null
+  item_type: bug
+  title: 'PMAT-933 fourth review: a spend row with a non-row-id first cell (foo, #0c, 7bis) and a backticked tier
+    (`RECORDED`) both escaped L2; the id is now reported, never required, the tier is read through the shared
+    normalisation, and no heading ends the universe'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-09-03 19:10:00+00:00
+  updated: 2026-09-03 19:10:00+00:00
+  spec: docs/specifications/PP-LLAMA-001-MASTER.md
+  acceptance_criteria:
+  - 'a pipe line after the first table is a ledger row iff some cell, backticks stripped, starts with RECORDED or
+    CONFORMANT; the id is reported (row id or the raw first cell); the superseded cutoff is gone; fixtures
+    ledger_row_nonnumeric_id_outside, ledger_row_backticked_tier_outside, ledger_reserved_word_in_side_table (L2),
+    ledger_row_after_superseded_heading (L1,L2); mutants tier-backtick-strip-removed and id-required-reintroduced
+    replace backtick-strip-removed and superseded-cutoff-removed; 10/10 killed'
+  notes: 'Found by the PMAT-933 review (paiml-agy-delegate: the §3.E arm f5451570 and lanes d7910b93, 76cbe3d0,
+    dc6aa69e; the delegate itself found the backticked tier). Re-run by Fable on 7ff61b831: `| foo |` and a
+    backticked RECORDED both produced no violation (confirmed). The §13 reserved-word false positive is accepted as
+    fail-closed and documented. Landed in PR #2861'
+- id: PMAT-935
+  github_issue: null
+  item_type: bug
+  title: 'PMAT-934 fifth review: __RECORDED__ was not a tier, __lambda__ / <code>aaaa</code> / a zero-width space were
+    new keys, and L1 deduped only RECORDED rows; one normaliser for every ledger cell, L1 on the same tiers as L2,
+    and the threat model stated'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-09-03 19:50:00+00:00
+  updated: 2026-09-03 19:50:00+00:00
+  spec: docs/specifications/PP-LLAMA-001-MASTER.md
+  acceptance_criteria:
+  - '_norm strips code tags, format characters, no-break spaces, whitespace runs and wrapping backticks/asterisks/
+    underscores; spend keys casefold; L1 keys on SPEND_TIERS; LEDGER reports the universe count; fixtures
+    ledger_row_underscored_tier, ledger_respend_conformant, ledger_respend_emphasised_key, ledger_respend_zero_width_key
+    (L1); mutants l1-respend-check-removed, l1-tier-filter-narrowed, wrap-emphasis-strip-removed, key-normaliser-bypassed,
+    key-casefold-removed; 15/15 killed; the threat model (honest re-roll, not forgery) written in RATIONALE and the docstring'
+  notes: 'Found by the PMAT-934 review (paiml-agy-delegate: the §3.E arm 044542d6, lanes 1ca23c06, 27e31188, 4c1a7eac;
+    the delegate found the L1 tier gap and widened the key renderings to six). Re-run by Fable on 45b29e793: __RECORDED__,
+    __lambda__ and a CONFORMANT re-spend each produced no violation (confirmed). Landed in PR #2861'
 - id: APR-ANTIGRAVITY-PARITY-001
   github_issue: null
   item_type: epic
@@ -14054,135 +14183,6 @@ roadmap:
   - 'cargo test -p aprender-contracts --test validate_contracts green (integrity 444); ids 001..008 contiguous
     and unique (653f277d6)'
   notes: 'five-whys in .pmat/jidoka.jsonl; proof:PR#2851 (653f277d6 renumbered the ids; the corpus-integrity test is green on main)'
-- id: PMAT-930
-  github_issue: null
-  item_type: bug
-  title: 'PP-9 live scan read only the first pipe table of evidence/parity/LEDGER.md: a blank line after row 4 left
-    rows 5 and 6 outside the spend-key universe, so a re-spend of row 6 passed spec_conformance.sh'
-  status: inprogress
-  priority: high
-  assigned_to: null
-  created: 2026-09-03 13:40:00+00:00
-  updated: 2026-09-03 13:40:00+00:00
-  spec: docs/specifications/PP-LLAMA-001-MASTER.md
-  acceptance_criteria:
-  - 'scripts/lib/spec_conformance.py emits L2 for a ledger row that sits outside the table it reads (same column
-    count as the header, row-id first cell, after the first table break, before the superseded section); the ledger
-    is re-joined so the live scan reports LEDGER 6 6; selftest cases ledger_row_outside_table (L2) and
-    ledger_rows_contiguous (CLEAN) named beside PP-9 in §6; must-fire mutation (the L2 emit removed) turns
-    ledger_row_outside_table BROKE; Appendix D row, RATIONALE PP-9 paragraph, contract invariant + falsification
-    test in pp-llama-001-spec-conformance-v1.yaml; pv validate green'
-  notes: 'Found by PMAT-929 (paiml-implement run 4) live-mutating Appendix C on 68b059ca9: duplicating row 6 as row 7
-    inside the v3 table produced PASS "no cell was spent twice"; the scanner had parsed 4 of 6 rows. Five-whys in
-    .pmat/jidoka.jsonl and docs/audits/impl-PMAT-929-receipt.md'
-- id: PMAT-931
-  github_issue: null
-  item_type: bug
-  title: 'PMAT-930 review: L2 was a whitelist of one row shape — a ledger row with no leading pipe or one extra pipe
-    passed both the first-table parse and L2; redesign L2 as a universe, add L3 (malformed row) and a mutation set'
-  status: inprogress
-  priority: high
-  assigned_to: null
-  created: 2026-09-03 16:10:00+00:00
-  updated: 2026-09-03 16:10:00+00:00
-  spec: docs/specifications/PP-LLAMA-001-MASTER.md
-  acceptance_criteria:
-  - 'L2: every pipe line before the superseded heading whose first cell (backticks stripped) is a row id and that
-    does not belong to a group opening with a header row is a ledger row outside the table, whatever its column
-    count or leading pipe; those rows also enter the L1 spend check. L3: a first-table row whose cell count differs
-    from the header is refused. Fixtures ledger_row_no_leading_pipe, ledger_row_backticked_id, ledger_row_trailing_pipes,
-    ledger_row_extra_pipe, ledger_side_table_ok, ledger_superseded_rows_ok, ledger_respend_outside_table beside the
-    two of PMAT-930; scripts/mutate_spec_conformance.sh kills 8/8; the live scan on main stays PASS with LEDGER 6 6'
-  notes: 'Found by the PMAT-930 review quorum (paiml-agy-delegate, 3 lanes + the §3.E arm, gemini-3.1-pro-high, conversations
-    df32ef55, f41060f3, 02623f0a, b2af861a); two of the four escape shapes re-run by Fable on 386b0bd40 (no leading pipe,
-    extra pipe: violations=[]). Five-whys in .pmat/jidoka.jsonl. Landed in PR #2861 with PMAT-930'
-- id: PMAT-932
-  github_issue: null
-  item_type: bug
-  title: 'PMAT-931 second review: the run-skip rule failed both ways (a dummy first line hid every row after it; a
-    blank line inside the §13 table flagged eleven legitimate rows) and the mutation harness had no green baseline
-    and scored a crash as a kill'
-  status: inprogress
-  priority: high
-  assigned_to: null
-  created: 2026-09-03 17:20:00+00:00
-  updated: 2026-09-03 17:20:00+00:00
-  spec: docs/specifications/PP-LLAMA-001-MASTER.md
-  acceptance_criteria:
-  - 'a run of pipe lines is skipped only when it opens with a header (header line + separator) other than the ledger
-    header; a run with the ledger header or no header is read row by row; a row counts when its first cell is a row id
-    and its width is within two columns of the ledger header; L0 when the first table is not the ledger; seven fixtures
-    (ledger_fragment_after_dummy_line, ledger_row_bold_id, ledger_side_table_split_ok, ledger_side_table_same_width_ok,
-    ledger_second_table_same_header, ledger_row_extra_pipe_outside, ledger_first_table_not_ledger); the harness runs
-    the unmutated table first, counts a crash as unviable, and reports 10/10 killed'
-  notes: 'Found by the PMAT-931 review quorum (paiml-agy-delegate, 3 lanes + the §3.E arm, gemini-3.1-pro-high, conversations
-    519483fd, cb269b2c, 804fdc9e, 972bd0c8). Re-run by Fable on 45588b6d1: dummy-first-line escape confirmed (violations
-    NONE); blank line at LEDGER.md:100 flagged 11 rows (confirmed); the bold-id escape was REFUTED (strip_md already
-    strips emphasis: L1,L2 fired). Landed in PR #2861 with PMAT-930 and PMAT-931'
-- id: PMAT-933
-  github_issue: null
-  item_type: bug
-  title: 'PMAT-932 third review: a run under a decorative header was skipped whole and a row three columns off was
-    dropped rather than refused; the L2 universe is now every row that claims a spend (RECORDED or CONFORMANT)'
-  status: inprogress
-  priority: high
-  assigned_to: null
-  created: 2026-09-03 18:05:00+00:00
-  updated: 2026-09-03 18:05:00+00:00
-  spec: docs/specifications/PP-LLAMA-001-MASTER.md
-  acceptance_criteria:
-  - 'a line outside the first table is a ledger row iff it has two or more pipes, a row-id first cell and a cell that
-    claims RECORDED or CONFORMANT; no run, header or width condition; fixtures ledger_row_under_foreign_header (L1,L2),
-    ledger_row_three_columns_off_outside (L2), ledger_row_conformant_outside (L2), ledger_row_without_tier_outside_ok
-    (CLEAN); ledger_first_table_not_ledger becomes L0,L2; mutants tier-claim-check-removed and conformant-tier-dropped
-    replace header-skip-removed and width-tolerance-removed; 10/10 killed'
-  notes: 'Found by the PMAT-932 review (paiml-agy-delegate: the §3.E arm 611de8db and lanes 87ecbcb2, 12f3e8e4; lane 2
-    never returned). Re-run by Fable on fa6cf7706: a dummy header + separator + a RECORDED re-spend produced no
-    violation (confirmed); a short RECORDED row outside the table produced none (confirmed once the probe carried the
-    tier). The L0 objection (a table above the ledger) is designed behaviour and was rejected. Landed in PR #2861'
-- id: PMAT-934
-  github_issue: null
-  item_type: bug
-  title: 'PMAT-933 fourth review: a spend row with a non-row-id first cell (foo, #0c, 7bis) and a backticked tier
-    (`RECORDED`) both escaped L2; the id is now reported, never required, the tier is read through the shared
-    normalisation, and no heading ends the universe'
-  status: inprogress
-  priority: high
-  assigned_to: null
-  created: 2026-09-03 19:10:00+00:00
-  updated: 2026-09-03 19:10:00+00:00
-  spec: docs/specifications/PP-LLAMA-001-MASTER.md
-  acceptance_criteria:
-  - 'a pipe line after the first table is a ledger row iff some cell, backticks stripped, starts with RECORDED or
-    CONFORMANT; the id is reported (row id or the raw first cell); the superseded cutoff is gone; fixtures
-    ledger_row_nonnumeric_id_outside, ledger_row_backticked_tier_outside, ledger_reserved_word_in_side_table (L2),
-    ledger_row_after_superseded_heading (L1,L2); mutants tier-backtick-strip-removed and id-required-reintroduced
-    replace backtick-strip-removed and superseded-cutoff-removed; 10/10 killed'
-  notes: 'Found by the PMAT-933 review (paiml-agy-delegate: the §3.E arm f5451570 and lanes d7910b93, 76cbe3d0,
-    dc6aa69e; the delegate itself found the backticked tier). Re-run by Fable on 7ff61b831: `| foo |` and a
-    backticked RECORDED both produced no violation (confirmed). The §13 reserved-word false positive is accepted as
-    fail-closed and documented. Landed in PR #2861'
-- id: PMAT-935
-  github_issue: null
-  item_type: bug
-  title: 'PMAT-934 fifth review: __RECORDED__ was not a tier, __lambda__ / <code>aaaa</code> / a zero-width space were
-    new keys, and L1 deduped only RECORDED rows; one normaliser for every ledger cell, L1 on the same tiers as L2,
-    and the threat model stated'
-  status: inprogress
-  priority: high
-  assigned_to: null
-  created: 2026-09-03 19:50:00+00:00
-  updated: 2026-09-03 19:50:00+00:00
-  spec: docs/specifications/PP-LLAMA-001-MASTER.md
-  acceptance_criteria:
-  - '_norm strips code tags, format characters, no-break spaces, whitespace runs and wrapping backticks/asterisks/
-    underscores; spend keys casefold; L1 keys on SPEND_TIERS; LEDGER reports the universe count; fixtures
-    ledger_row_underscored_tier, ledger_respend_conformant, ledger_respend_emphasised_key, ledger_respend_zero_width_key
-    (L1); mutants l1-respend-check-removed, l1-tier-filter-narrowed, wrap-emphasis-strip-removed, key-normaliser-bypassed,
-    key-casefold-removed; 15/15 killed; the threat model (honest re-roll, not forgery) written in RATIONALE and the docstring'
-  notes: 'Found by the PMAT-934 review (paiml-agy-delegate: the §3.E arm 044542d6, lanes 1ca23c06, 27e31188, 4c1a7eac;
-    the delegate found the L1 tier gap and widened the key renderings to six). Re-run by Fable on 45b29e793: __RECORDED__,
-    __lambda__ and a CONFORMANT re-spend each produced no violation (confirmed). Landed in PR #2861'
 - id: PMAT-745
   github_issue: null
   item_type: bug
