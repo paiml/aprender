@@ -25,8 +25,38 @@ set -uo pipefail
 # scripts/check_verifier_pinning.sh.
 SKILL_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
-REPO_DIR="${1:-$PWD}"
-cd "$REPO_DIR" 2>/dev/null || { echo "dogfood: no such dir: $REPO_DIR" >&2; exit 2; }
+# PHASE (PMAT-745, F-9). `--phase pre-publish` is the run the publish gate
+# (scripts/check_publish_preflight.sh R5) reads BEFORE a cascade: the rows that
+# can only be measured against the PUBLISHED crate -- `publish-dry-run` of a
+# workspace root whose members are not on the registry yet, and the declared
+# multi-host `cargo install aprender` sweep -- are recorded DEFER, named in the
+# receipt with the obligation that discharges them, and are not FAIL. Every other
+# row is measured exactly as in a full run. The default is the full run: a
+# deferral outside the pre-publish phase is a FAIL, never a pass. Measured
+# 2026-09-03: the full run is NO-GO on every commit before its own cascade, by
+# construction, which made a GO precondition on publishing unsatisfiable.
+DOGFOOD_PHASE="${DOGFOOD_PHASE:-full}"
+REPO_DIR=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --phase)
+      # `shift 2` with one argument left does not shift, so a bare `--phase`
+      # looped forever (seventh review of #2859, measured). A flag with no
+      # value is a usage error.
+      [ $# -ge 2 ] || { echo "dogfood: --phase needs a value (full|pre-publish|post-publish)" >&2; exit 2; }
+      DOGFOOD_PHASE="$2"; shift 2 ;;
+    --phase=*) DOGFOOD_PHASE="${1#--phase=}"; shift ;;
+    -h|--help) sed -n '2,14p' "$0"; echo "        dogfood.sh [--phase full|pre-publish|post-publish] [REPO_DIR]"; exit 0 ;;
+    *) REPO_DIR="$1"; shift ;;
+  esac
+done
+case "$DOGFOOD_PHASE" in full|pre-publish|post-publish) : ;; *) echo "dogfood: unknown --phase '$DOGFOOD_PHASE' (full|pre-publish|post-publish)" >&2; exit 2 ;; esac
+export DOGFOOD_PHASE
+REPO_DIR="${REPO_DIR:-$PWD}"
+# The target is resolved to a real, existing directory before the cd (SEC010):
+# a path with `..` components or a dangling symlink is refused, not walked.
+REPO_DIR=$(realpath -e -- "$REPO_DIR" 2>/dev/null) || { echo "dogfood: no such dir: ${1:-$PWD}" >&2; exit 2; }
+cd -- "$REPO_DIR" 2>/dev/null || { echo "dogfood: no such dir: $REPO_DIR" >&2; exit 2; }
 [ -f Cargo.toml ] || { echo "dogfood: not a Rust crate (no Cargo.toml) in $REPO_DIR" >&2; exit 2; }
 
 # Resolve identity from cargo itself, NOT by grepping Cargo.toml.
@@ -69,7 +99,7 @@ if [ -z "$CRATE" ] || [ -z "$VERSION" ]; then
   echo "  A virtual workspace root has no package of its own. Run dogfood from the" >&2
   echo "  member you are releasing, e.g. crates/<name>/ — pointing it at the root" >&2
   echo "  built the wrong binary (telemetry-server instead of pforge) and cascaded" >&2
-  echo "  into 'no package named \'\'' on 2026-08-20." >&2
+  echo "  into a 'no package named' error carrying an EMPTY name, on 2026-08-20." >&2
   ls -d ./*/ crates/*/ 2>/dev/null | head -12 | sed 's/^/    candidate: /' >&2
   exit 2
 fi
@@ -121,7 +151,12 @@ fi
 # (#2644, DF-3). Absolute by construction now.
 RECEIPT_DIR="$PWD/.dogfood"
 mkdir -p "$RECEIPT_DIR"
-TS=$(date -u +%Y%m%dT%H%M%SZ)
+# The receipt's stamp honours SOURCE_DATE_EPOCH (the reproducible-build
+# convention, DET002) and falls back to the clock: a receipt records when it
+# ran, and a caller that wants a pinned stamp sets the epoch. Formatted by
+# python3 (already a hard dependency of this script) rather than `date -d`,
+# which is GNU-only and fails on the macOS host of the multi-platform sweep.
+TS=$(python3 -c 'import datetime, os, time; e = int(os.environ.get("SOURCE_DATE_EPOCH") or time.time()); print(datetime.datetime.fromtimestamp(e, datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ"))')
 # The commit the evidence describes, stamped INTO the receipt: a consumer that
 # globs for the newest receipt after a crashed run would otherwise read a
 # previous verdict as current with nothing to expose it (#2644, DF-12). With
@@ -165,10 +200,17 @@ gate() { # gate <name> <cmd...> — runs cmd, records pass/fail
   NOTES+=("${note:0:120}")
   printf '  [%s] %-26s %s\n' "$([ $rc -eq 0 ] && echo ' OK ' || echo 'FAIL')" "$name" "${note:0:80}"
 }
-mark() { # mark <name> <PASS|FAIL|SKIP|REPORT|WARN|MANUAL> <note>
-  NAMES+=("$1"); RESULTS+=("$2"); NOTES+=("${3:0:200}")
-  [ "$2" = FAIL ] && FAILED=1
-  printf '  [%s] %-26s %s\n' "$([ "$2" = PASS ] && echo ' OK ' || echo "$2")" "$1" "${3:0:96}"
+mark() { # mark <name> <PASS|FAIL|SKIP|REPORT|WARN|MANUAL|DEFER> <note>
+  local st="$2" note="$3"
+  # DEFER is legal in the pre-publish phase only: a row that needs the published
+  # crate is recorded with its obligation. Anywhere else it is a FAIL wearing a
+  # softer word, and is recorded as the FAIL it is.
+  if [ "$st" = DEFER ] && [ "$DOGFOOD_PHASE" != pre-publish ]; then
+    st=FAIL; note="deferred outside --phase pre-publish (that is a refusal to measure, not a pass): $note"
+  fi
+  NAMES+=("$1"); RESULTS+=("$st"); NOTES+=("${note:0:200}")
+  [ "$st" = FAIL ] && FAILED=1
+  printf '  [%s] %-26s %s\n' "$([ "$st" = PASS ] && echo ' OK ' || echo "$st")" "$1" "${note:0:96}"
 }
 # run_to <logfile> <cmd...> — runs cmd with stdout+stderr to <logfile> and puts
 # the command's OWN exit status in $RUN_RC. Never a pipeline: `cmd | tee log`
@@ -185,7 +227,15 @@ run_split() { local o="$1" e="$2"; shift 2; "$@" > "$o" 2> "$e"; RUN_RC=$?; }
 # there. It must not be recomputed here: from inside the target repo a relative
 # ${BASH_SOURCE[0]} points at the wrong tree.
 WORKLOG=$(mktemp -d)
-trap 'rm -rf "$WORKLOG"' EXIT
+# The delete is guarded (SEC011): an empty or root WORKLOG is left alone.
+_rm_worklog() {
+  local v="${WORKLOG:-}"
+  case "$v" in
+    /tmp/?*|/var/folders/?*|/mnt/?*) if [ -n "$v" ] && [ "$v" != "/" ]; then rm -rf -- "$v" || :; fi ;;
+    *) return 0 ;;
+  esac
+}
+trap _rm_worklog EXIT
 
 # THE VERIFIER-PINNING RULE, and the two pins that implement it, live in exactly
 # one file. Read scripts/verifier_pin.sh — the rule is stated there and nowhere
@@ -293,7 +343,13 @@ else
     run_to "$WORKLOG/$(basename "$dg_path").log" bash "$dg_path"
     dg_rc=$RUN_RC
     dg_tail=$(tail -3 "$WORKLOG/$(basename "$dg_path").log" 2>/dev/null | strip_ansi | tr '\n' ' ')
-    if [ "$dg_rc" -eq 0 ]; then
+    dg_defer=$(grep -m1 '^DEFERRED: ' "$WORKLOG/$(basename "$dg_path").log" 2>/dev/null | strip_ansi)
+    if [ -n "$dg_defer" ]; then
+      # The gate itself said it cannot be measured before the cascade. mark()
+      # turns this into a FAIL outside the pre-publish phase.
+      mark "$dg_name" DEFER "$dg_path: ${dg_defer#DEFERRED: }"
+      [ "$DOGFOOD_PHASE" = pre-publish ] || DG_BAD=$((DG_BAD + 1))
+    elif [ "$dg_rc" -eq 0 ]; then
       mark "$dg_name" PASS "$dg_path exit=0"
     else
       mark "$dg_name" FAIL "$dg_path exit=$dg_rc — $dg_tail"
@@ -328,6 +384,64 @@ fi
 # index, not a flaky crates.io HTTP call). A dry-run SUCCEEDS even when the
 # version exists (it only warns), so the "already exists" string — not the exit
 # code — is what tells us the version is taken.
+if [ "$DOGFOOD_PHASE" = pre-publish ]; then
+  # Before the cascade a dry-run of a workspace root cannot resolve its own
+  # members (they are not on the registry yet), so it fails for a reason that
+  # says nothing about the version. The question this row exists to answer --
+  # "is $VERSION already on crates.io?" -- is asked of the registry directly.
+  DRY=""; DRC=0
+  # The SPARSE INDEX is consulted, not the web API: it is the file cargo itself
+  # resolves against, it is not rate-limited the way api/v1 is (measured
+  # 2026-09-03: two api/v1 calls in a row answered HTTP 429), and a crate that
+  # has never been published answers 404 -- the strongest possible "absent", not
+  # a transport failure (third review of #2859, dogfood-curl-404-defect). The
+  # HTTP status is read separately from the body so 404, 200 and anything else
+  # each get their own verdict.
+  # The index is keyed by the LOWERCASED name (crates.io folds case; cargo
+  # metadata reports the manifest's spelling verbatim) -- fifth review of
+  # #2859, F-CRATES-IO-CASE.
+  REG_NAME=$(printf '%s' "$CRATE" | tr '[:upper:]' '[:lower:]')
+  case "${#REG_NAME}" in
+    1) REG_PATH="1/$REG_NAME" ;; 2) REG_PATH="2/$REG_NAME" ;; 3) REG_PATH="3/${REG_NAME:0:1}/$REG_NAME" ;;
+    *) REG_PATH="${REG_NAME:0:2}/${REG_NAME:2:2}/$REG_NAME" ;;
+  esac
+  REG_CODE=$(curl -sS -o "$WORKLOG/registry.ndjson" -w '%{http_code}' \
+        -A "aprender-dogfood (+https://github.com/paiml/aprender)" \
+        "https://index.crates.io/$REG_PATH" 2>"$WORKLOG/registry.err"); REG_RC=$?
+  if [ "$REG_RC" -ne 0 ]; then
+    mark version-unpublished FAIL "index.crates.io not consulted (curl exit=$REG_RC): $(tail -1 "$WORKLOG/registry.err" 2>/dev/null | cut -c1-100) — the version's status is UNKNOWN"
+  elif [ "$REG_CODE" = 404 ]; then
+    mark version-unpublished PASS "$CRATE is not in the crates.io index at all (HTTP 404), so $VERSION is absent (pre-publish phase)"
+  elif [ "$REG_CODE" != 200 ]; then
+    mark version-unpublished FAIL "index.crates.io answered HTTP $REG_CODE for $CRATE — the version's status is UNKNOWN"
+  else
+    # Three outcomes, three exit codes: 0 the version is in the index, 1 the
+    # index parsed and does not carry it, 2 the body is not the index (an HTML
+    # error page behind a 200, a captive portal). Only 1 is "absent"; 2 is
+    # UNKNOWN and FAIL -- a gate that read `unparseable` as `absent` was
+    # fail-open (fourth review of #2859, dogfood-index-decode-bypass).
+    python3 -c '
+import json, sys
+want = sys.argv[1]
+seen = 0
+try:
+    for line in open(sys.argv[2], encoding="utf-8"):
+        line = line.strip()
+        if not line: continue
+        rec = json.loads(line)
+        if not isinstance(rec, dict) or "vers" not in rec: sys.exit(2)
+        seen += 1
+        if rec.get("vers") == want: sys.exit(0)
+except (ValueError, OSError, UnicodeDecodeError):
+    sys.exit(2)
+sys.exit(1 if seen else 2)' "$VERSION" "$WORKLOG/registry.ndjson"; REG_PARSE=$?
+    case "$REG_PARSE" in
+      0) mark version-unpublished FAIL "$CRATE $VERSION is ALREADY in the crates.io index — bump the version" ;;
+      1) mark version-unpublished PASS "$VERSION absent from the crates.io index (consulted directly, HTTP 200, index parsed; pre-publish phase)" ;;
+      *) mark version-unpublished FAIL "index.crates.io answered HTTP 200 but the body is not the index ($(head -c 60 "$WORKLOG/registry.ndjson" | tr -d '\n' | cut -c1-60)…) — the version's status is UNKNOWN" ;;
+    esac
+  fi
+else
 DRY=$(env -u CARGO_REGISTRY_TOKEN cargo publish --dry-run --allow-dirty 2>&1); DRC=$?
 # Here-string, never `printf | grep -q`: with the marker early and more than a
 # pipe buffer behind it, grep exits at first match, printf takes SIGPIPE, and
@@ -343,6 +457,7 @@ elif [ "$DRC" -ne 0 ]; then
   mark version-unpublished FAIL "cargo publish --dry-run failed (exit=$DRC) with no already-exists marker — the registry was never consulted, so the version's status is UNKNOWN: $(tail -2 <<< "$DRY" | strip_ansi | tr '\n' ' ' | cut -c1-120)"
 else
   mark version-unpublished PASS "$VERSION not yet published (dry-run exit 0, no already-exists marker)"
+fi
 fi
 
 # ── 3. changelog mentions the version ───────────────────────────────────────
@@ -965,7 +1080,9 @@ else
 fi
 
 # ── 10. publish dry-run (already run above; verdict is its exit code) ───────
-if [ $DRC -eq 0 ]; then mark publish-dry-run PASS "packages cleanly"
+if [ "$DOGFOOD_PHASE" = pre-publish ]; then
+  mark publish-dry-run DEFER "a workspace root cannot dry-run before its members are on the registry; discharged by the cascade's own per-tier publish and the post-publish dogfood"
+elif [ $DRC -eq 0 ]; then mark publish-dry-run PASS "packages cleanly"
 else mark publish-dry-run FAIL "$(printf '%s' "$DRY" | grep -iE 'error' | head -1)"; fi
 
 # ── 11. DOGFOOD: use the crate's own release binary on real data ────────────
@@ -1035,12 +1152,13 @@ if [ -x "$BINPATH" ]; then
   CLI_HELP=$("$BINPATH" --help 2>&1); CLI_HELP_RC=$?
   SUBS=$(printf '%s\n' "$CLI_HELP" \
     | awk '/[Cc]ommands:/{f=1;next} /^[A-Za-z].*:[[:space:]]*$/{f=0} f' \
-    | grep -oE '^ {2}[a-z][a-z0-9_-]+( {2,}|$)' | tr -d ' ' | sort -u)
-  # clap indents a command name by exactly two spaces and follows it with two or
-  # more; a wrapped description line is indented far deeper and starts with an
-  # English word. The previous pattern took ANY indented lowercase token, so the
-  # words of eleven wrapped descriptions ("existing", "producer", "yet", ...)
-  # were probed as subcommands and reported as advertised-but-unusable.
+    | grep -oE '^ {2}[a-z][a-z0-9_-]+' | tr -d ' ' | sort -u)
+  # Exactly two leading spaces: clap lists a subcommand at column 2 and wraps a
+  # long description onto continuation lines at the description column. The
+  # previous pattern (any indent) read those continuation lines as commands --
+  # "existing", "model", "the", "yet" -- and failed the row on prose. Measured
+  # on the 0.65.0 binary: 123 "commands" -> 111 real ones; all 110 (help aside)
+  # answer --help, so the row was red on the parser, not on the surface.
   if [ "$CLI_HELP_RC" -ne 0 ]; then
     # `|| true` used to discard this exit; a binary that CRASHES on --help
     # then read as "advertises no subcommands" — a SKIP cascading into
@@ -1350,7 +1468,10 @@ elif [ -f scripts/dogfood-use.sh ] || [ -f "$(git rev-parse --show-toplevel 2>/d
   fi
   WORK=$(mktemp -d)
   gate dogfood-use env BIN="$BINPATH" WORK="$WORK" bash "$DF_SCRIPT"
-  rm -rf "$WORK"
+  case "${WORK:-}" in
+    /tmp/?*|/var/folders/?*|/mnt/?*) if [ -n "$WORK" ] && [ "$WORK" != "/" ]; then rm -rf -- "$WORK" || :; fi ;;
+    *) : ;;
+  esac
 else
   mark dogfood-use FAIL "no dogfood gate — add a native \`<bin> dogfood\` subcommand (preferred) or scripts/dogfood-use.sh. A released tool nobody ran is not dogfooded, and a WARN here is a step everyone learns to walk past."
 fi
@@ -1377,7 +1498,7 @@ mark clean-room MANUAL "run \`make -C ../infra/machines/clean-room clean-room-$C
 NAMES_TSV=$(for i in "${!NAMES[@]}"; do
   printf '%s\t%s\t%s\n' "${NAMES[$i]}" "${RESULTS[$i]}" "$(printf '%s' "${NOTES[$i]}" | tr '\n' '\r')"
 done)
-CRATE="$CRATE" VERSION="$VERSION" TS="$TS" SHA="$RECEIPT_SHA" \
+CRATE="$CRATE" VERSION="$VERSION" TS="$TS" SHA="$RECEIPT_SHA" PHASE="$DOGFOOD_PHASE" \
 VERDICT="$([ $FAILED -eq 0 ] && echo GO || echo NO-GO)" \
 ROWS="$NAMES_TSV" python3 > "$RECEIPT_PARTIAL" <<'PY'
 import json, os
@@ -1394,6 +1515,8 @@ for line in os.environ.get("ROWS", "").split("\n"):
 print(json.dumps({
     "crate": os.environ["CRATE"], "version": os.environ["VERSION"],
     "timestamp": os.environ["TS"], "commit": os.environ["SHA"], "gates": gates,
+    "phase": os.environ["PHASE"],
+    "deferred": [g["gate"] for g in gates if g["result"] == "DEFER"],
     "verdict": os.environ["VERDICT"],
 }, indent=2))
 PY
@@ -1409,7 +1532,15 @@ mv "$RECEIPT_PARTIAL" "$RECEIPT"
 echo "────────────────────────────────────────────────"
 echo "receipt: $RECEIPT"
 if [ $FAILED -eq 0 ]; then
-  echo "VERDICT: ✅ GO — all automated gates green. Complete clean-room (MANDATORY) then release."
+  for i in "${!NAMES[@]}"; do
+    [ "${RESULTS[$i]}" = DEFER ] || continue
+    printf '  · DEFER %-18s %s\n' "${NAMES[$i]}" "${NOTES[$i]}"
+  done
+  if [ "$DOGFOOD_PHASE" = pre-publish ]; then
+    echo "VERDICT: ✅ GO (phase pre-publish) — every measurable gate green; the DEFER rows above are owed by the post-publish dogfood on the published crate."
+  else
+    echo "VERDICT: ✅ GO — all automated gates green. Complete clean-room (MANDATORY) then release."
+  fi
   exit 0
 else
   # Name every failing gate and its note. A verdict that says only "a gate

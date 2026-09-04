@@ -1038,6 +1038,12 @@ jobs:
         run: bash scripts/check_cascade_covers_all_crates.sh --self-test
       - name: The release cascade must cover and order every publishable crate
         run: bash scripts/check_cascade_covers_all_crates.sh
+      # F-9 (PMAT-745): the only way into `cargo publish` is the preflight gate
+      # (clean tree, version from cargo metadata, tag at HEAD, HEAD on main,
+      # dogfood GO for this commit). Its case table drives every rule to both
+      # verdicts in a throwaway repository; the gate itself runs at release.
+      - name: Publish preflight gate case table (F-9)
+        run: bash scripts/check_publish_preflight.sh --selftest
       # The bump half of the same defect. `cargo set-version --workspace` cannot
       # reach an `exclude`d workspace and does not warn, so three files in
       # crates/facades/ have to ride in every bump commit. scripts/bump-version.sh

@@ -271,14 +271,27 @@ publish_crate() {
     sel=(--manifest-path "${MANIFEST[$crate]}")
   fi
   local out
-  out=$(cargo publish "${sel[@]}" --allow-dirty --locked 2>&1 | tail -6)
-  if grep -q "Published $crate" <<< "$out" ; then
+  # No dirty-tree override here: scripts/check_publish_preflight.sh proved the tree
+  # clean before the first upload (F-9, PMAT-745); a dirty tree stops the cascade there.
+  # cargo's OWN exit status, read from the command: `cmd | tail -6` handed back
+  # tail's status, so the verdict below came from six lines of text alone. Two
+  # independent review lanes on #2859 reached this line. A zero exit without the
+  # `Published` line is not counted as published either -- it is deferred and
+  # named, so a drain pass asks again.
+  local log rc
+  log=$(mktemp "${TMPDIR:-/tmp}/cascade-publish.XXXXXX") || { echo "FATAL-ENV (mktemp failed; nothing uploaded for $crate)"; return 1; }
+  cargo publish "${sel[@]}" --locked > "$log" 2>&1; rc=$?
+  out=$(tail -6 "$log"); rm -f "$log"
+  if [ "$rc" -eq 0 ] && grep -q "Published $crate" <<< "$out" ; then
     echo "✓ PUBLISHED"
     sleep 10  # let crates.io index settle before dependents try to fetch
     return 0
   elif grep -qE "already.*upload|already exists" <<< "$out" ; then
     echo "(already on registry)"
     return 0
+  elif [ "$rc" -eq 0 ]; then
+    echo "DEFER (cargo publish exited 0 but printed no 'Published $crate' line — not counted as published)"
+    return 1
   # Surface the two FATAL classes that are NOT dep-ordering deferrals — a bare
   # "Caused by:" truncation hid both for ~2h in the v0.60.0 cascade:
   #   1. 403 authentication failed — a STALE $CARGO_REGISTRY_TOKEN env var
@@ -304,12 +317,47 @@ publish_crate() {
   fi
 }
 
-# Backup .cargo/config.toml once (publish needs a clean one without [patch.crates-io])
+# THE GATE (F-9, PMAT-745). Every mode that uploads passes through
+# scripts/check_publish_preflight.sh first: clean tree, version from cargo
+# metadata, tag at HEAD, HEAD on origin/main, dogfood receipt GO for this commit
+# and version. --check and --order-check upload nothing and are not gated. The
+# drain re-runs this script per pass, so the gate is re-asked before every pass.
+case "$MODE" in
+  --check|--order-check) : ;;
+  *)
+    if ! bash "$REPO_ROOT/scripts/check_publish_preflight.sh"; then
+      echo "⛔ check_publish_preflight.sh refused; nothing was published." >&2
+      exit 1
+    fi
+    ;;
+esac
+
+# Backup .cargo/config.toml once (publish needs a clean one without [patch.crates-io]).
+# The backup lives OUTSIDE the tree. Beside the config it was an untracked file
+# inside the root crate's package directory -- `.cargo/config.toml` is ignored,
+# `.cargo/config.toml.cascade-backup` was not -- and with the dirty-tree override
+# gone (F-9) `cargo publish` of the root crate would have refused on the file this
+# script itself created, after the preflight had already passed R1. Found by the
+# cross-vendor review of #2859. Measured: with the backup beside the config,
+# `git status --porcelain --untracked-files=all` lists it; with mktemp, nothing.
+# A backup that cannot be created is a refusal, not an empty string: with
+# CASCADE_CONFIG_BACKUP="" the config would be overwritten and never restored
+# (second review of #2859, mktemp-data-loss).
+CASCADE_CONFIG_BACKUP=""
 if [ -f .cargo/config.toml ]; then
-  cp .cargo/config.toml .cargo/config.toml.cascade-backup
+  CASCADE_CONFIG_BACKUP=$(mktemp "${TMPDIR:-/tmp}/cascade-config-backup.XXXXXX") || CASCADE_CONFIG_BACKUP=""
+  if [ -z "$CASCADE_CONFIG_BACKUP" ] || [ ! -f "$CASCADE_CONFIG_BACKUP" ]; then
+    echo "⛔ could not create a backup of .cargo/config.toml (mktemp failed under ${TMPDIR:-/tmp}); nothing was published." >&2
+    exit 2
+  fi
+  # A failed copy leaves a partial backup that must not be restored later and
+  # must not be left behind: it is removed before the refusal.
+  cp .cargo/config.toml "$CASCADE_CONFIG_BACKUP" || { rm -f "$CASCADE_CONFIG_BACKUP"; echo "⛔ could not back up .cargo/config.toml; nothing was published." >&2; exit 2; }
+  # The restore trap is armed BEFORE the overwrite: between the two there was a
+  # window in which an interrupt lost the config (sixth review of #2859).
+  trap 'if [ -n "$CASCADE_CONFIG_BACKUP" ] && [ -f "$CASCADE_CONFIG_BACKUP" ]; then cp "$CASCADE_CONFIG_BACKUP" .cargo/config.toml && rm -f "$CASCADE_CONFIG_BACKUP"; fi' EXIT
   echo "# Clean config for cascade publishing" > .cargo/config.toml
 fi
-trap 'if [ -f .cargo/config.toml.cascade-backup ]; then cp .cargo/config.toml.cascade-backup .cargo/config.toml && rm -f .cargo/config.toml.cascade-backup; fi' EXIT
 
 # --order-check: run ONLY the publish-order precondition, against the live
 # registry, and publish nothing. Two reasons this mode exists rather than the
