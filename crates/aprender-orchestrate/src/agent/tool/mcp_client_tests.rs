@@ -210,7 +210,11 @@ async fn test_stdio_transport_env_flows_to_subprocess() {
         vec![
             "sh".into(),
             "-c".into(),
-            r#"printf '{"jsonrpc":"2.0","id":1,"result":{"content":[{"text":"%s"}]}}\n' "$MCP_ENV_TEST_KEY""#
+            // `read` first: the transport writes the request to the child's
+            // stdin and the child must still be alive to receive it. A
+            // server that only printf-ed exited before the write under load
+            // (clean-room, CARGO_BUILD_JOBS=2): "write stdin: Broken pipe".
+            r#"read -r _request; printf '{"jsonrpc":"2.0","id":1,"result":{"content":[{"text":"%s"}]}}\n' "$MCP_ENV_TEST_KEY""#
                 .into(),
         ],
         env,
