@@ -257,6 +257,48 @@ if [ "${1:-}" = "--self-test" ]; then
   else
     printf 'FAIL  row 8 wasm32-only handling: out=[%s] err=[%s]\n' "$out" "$err"; fails=1
   fi
+  # Rows 9-12 (PR #2866 review): production code AFTER a test module is still judged;
+  # a `use wasm_bindgen` inside a comment does not make a file wasm32-only; a block
+  # comment hides an include; concat!(env!("CARGO_MANIFEST_DIR"), "/../..") escapes.
+  mkdir -p "$TD/j/src"
+  printf '#[cfg(test)]\nmod tests { fn t() {} }\npub const G: &str = include_str!("../../../../after.yaml");\n' > "$TD/j/src/lib.rs"
+  if [ "$(python3 "$REPO_ROOT/scripts/lib/resolve_includes.py" "$TD/j" --escapes | grep -c .)" = "1" ]; then
+    printf 'ok    row 9 an escape after a test module is still reported\n'
+  else
+    printf 'FAIL  row 9 the escape after the test module was hidden\n'; fails=1
+  fi
+  mkdir -p "$TD/k/src"
+  printf '// use wasm_bindgen was here once\npub const H: &str = include_str!("../../../../gone.yaml");\n' > "$TD/k/src/lib.rs"
+  if [ "$(python3 "$REPO_ROOT/scripts/lib/resolve_includes.py" "$TD/k" --escapes 2>/dev/null | grep -c .)" = "1" ]; then
+    printf 'ok    row 10 a commented use wasm_bindgen does not make the file wasm32-only\n'
+  else
+    printf 'FAIL  row 10 a comment disabled the escape check\n'; fails=1
+  fi
+  mkdir -p "$TD/l/src"
+  printf '/* include_str!("../../../../gone.yaml") */\npub const I: u8 = 1;\n' > "$TD/l/src/lib.rs"
+  if [ -z "$(python3 "$REPO_ROOT/scripts/lib/resolve_includes.py" "$TD/l" --escapes)" ]; then
+    printf 'ok    row 11 a block-commented escaping include is ignored\n'
+  else
+    printf 'FAIL  row 11 reported an include inside a block comment\n'; fails=1
+  fi
+  mkdir -p "$TD/m/src"
+  printf 'pub const J: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../gone.yaml"));\n' > "$TD/m/src/lib.rs"
+  if [ "$(python3 "$REPO_ROOT/scripts/lib/resolve_includes.py" "$TD/m" --escapes | grep -c .)" = "1" ]; then
+    printf 'ok    row 12 a concat!(env!(CARGO_MANIFEST_DIR)) escape is reported\n'
+  else
+    printf 'FAIL  row 12 the concat! escape was missed\n'; fails=1
+  fi
+  # Row 13: `#[cfg(all(test, feature = "x"))] mod tests { … }` is test-only too; an
+  # escaping include inside it is not reported, while `#[cfg(any(test, …))]` is compiled
+  # outside tests and IS reported.
+  mkdir -p "$TD/n/src"
+  printf '#[cfg(all(test, feature = "x"))]\nmod tests { const K: &str = include_str!("../../../../gone.yaml"); }\n#[cfg(any(test, feature = "y"))]\nmod maybe { const L: &str = include_str!("../../../../gone2.yaml"); }\n' > "$TD/n/src/lib.rs"
+  got="$(python3 "$REPO_ROOT/scripts/lib/resolve_includes.py" "$TD/n" --escapes)"
+  if [ "$(printf '%s\n' "$got" | grep -c .)" = "1" ] && printf '%s' "$got" | grep -q 'gone2'; then
+    printf 'ok    row 13 all(test, …) is test-only; any(test, …) is still judged\n'
+  else
+    printf 'FAIL  row 13 cfg(all/any(test)) handling, got: %s\n' "$got"; fails=1
+  fi
   [ "$fails" -eq 0 ] || { printf '\nSELF-TEST FAILED\n'; exit 1; }
   printf '\nSELF-TEST PASSED\n'
   exit 0
