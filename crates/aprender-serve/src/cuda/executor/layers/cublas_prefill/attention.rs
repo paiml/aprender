@@ -967,6 +967,137 @@ DONE_NORM:
         Ok(())
     }
 
+    /// aprender#2753 / FALSIFY-CB-006: which GEMM route may a DECODE step take?
+    ///
+    /// The cuBLAS route on sm_89+ IS the FP8 E4M3 route: `cublas_prefill_gemm` selects FP8 on
+    /// `gpu_profile.fp8_prefill`, so `FP8_DECODE=0` cannot steer decode away from it once
+    /// `m >= cublas_gemm_threshold()` -- that knob only guards the `m >= 5` shortcut below, and
+    /// the fall-through reaches the same GEMM. Measured, not assumed.
+    ///
+    /// Why it matters, measured on an RTX 4090 with `APR_PARITY_PROBE=1` at m = 1 forced onto
+    /// the batched path (`APR_FORCE_BATCHED_PATH=1 CUBLAS_GEMM_THRESHOLD=1`), ordered streams,
+    /// all four probe controls passing, ONE binary and ONE env var (`FP8_PREFILL`):
+    ///
+    /// ```text
+    ///   FP8 E4M3 (default)            ORACLE cosine 0.998774  max|d| 0.8655
+    ///   HGEMM FP16 (FP8_PREFILL=0)           cosine 0.999961  max|d| 0.1450
+    /// ```
+    ///
+    /// on logits of absmax ~14. Six times the FP16 route's residual, and enough to move a
+    /// greedy argmax: the FP8 arm answers "Compilers are a crucial component of computer
+    /// programming" where the M=1 path and every other route answer "Compilers are software
+    /// programs that translate high-level programming languages". At m = 1 the ACTIVATION
+    /// scale is already per-row (there is one row), so the error is weight-side: a single
+    /// per-tensor absmax over the whole [n x k] weight into 3 mantissa bits.
+    ///
+    /// `APR_DECODE_GEMM` selects the route for decode only; prefill always keeps cuBLAS.
+    ///
+    ///   `cublas`   (default) unchanged -- the FP8 route, fastest, m-dependent output
+    ///   `nolmhead`           everything but the LM head; the LM head takes the GEMV route
+    ///   `gemv`               decode never uses cuBLAS -- DP4A for Q4K at 2..=8, per-row
+    ///                        GEMV otherwise, which is the M=1 path's own arithmetic
+    ///
+    /// Read once per process. The default is stated in `decode_gemm_route` with the numbers
+    /// that chose it.
+    fn decode_gemm_route() -> u8 {
+        static ROUTE: std::sync::OnceLock<u8> = std::sync::OnceLock::new();
+        *ROUTE.get_or_init(|| match std::env::var("APR_DECODE_GEMM").as_deref() {
+            Ok("gemv") => 2,
+            Ok("nolmhead") => 1,
+            _ => 0,
+        })
+    }
+
+    /// Whether THIS weight may take the cuBLAS route on a decode step. See `decode_gemm_route`.
+    fn decode_may_use_cublas(&self, weight_ptr: u64) -> bool {
+        if self.is_prefilling {
+            return true;
+        }
+        match Self::decode_gemm_route() {
+            2 => false,
+            1 => weight_ptr != self.lm_head_ptr,
+            _ => true,
+        }
+    }
+
+    /// The two quantizations every cuBLAS route in this dispatcher can consume.
+    fn is_cublas_qtype(qtype: WeightQuantType) -> bool {
+        qtype == WeightQuantType::Q4K || qtype == WeightQuantType::Q6K
+    }
+
+    /// PMAT-054B: W4A16 WMMA GEMM with pre-computed scales for batched decode (M=2-8).
+    /// Pre-computed FP16 scales eliminate GGML decode on GPU (~20 -> 5 insn/elem).
+    /// Only for small M (batched decode); large M (prefill) uses FP8 cuBLASLt. The M<=8 guard
+    /// is because WMMA 32x32 tiles waste 75-94% of their compute at M<8, and FP8 cuBLASLt is
+    /// faster from M>=5 (PMAT-093).
+    fn route_w4a16_wmma(&self, qtype: WeightQuantType, weight_ptr: u64, m: u32) -> bool {
+        self.gpu_profile.w4a16_interleaved
+            && m >= 2
+            && m <= 8
+            && !self.is_capturing
+            && qtype == WeightQuantType::Q4K
+            && self.interleaved_weight_cache.contains_key(&weight_ptr)
+    }
+
+    /// PMAT-090/093: FP8 cuBLASLt GEMM for batched decode on sm_89+, from M>=5.
+    ///
+    /// At M=4 the FP8 conversion overhead (absmax + convert per projection) cancels the tensor
+    /// core gain and DP4A with fused QKV+gate+up has the lower launch count. Measured on a yoga
+    /// 4060L at 1900MHz over 60s, isolated: c=4 FP8 235.0 agg / 16.5ms ITL vs DP4A 242.1 / 15.9
+    /// (+3% for DP4A); c=8 FP8 405.6 / 18.9ms vs DP4A 329.1 / 23.4 (-19% for DP4A). The FP8
+    /// weight cache persists from prefill, so no extra warmup is needed.
+    fn route_fp8_decode(&self, qtype: WeightQuantType, weight_ptr: u64, m: u32) -> bool {
+        self.gpu_profile.fp8_decode
+            && m >= 5
+            && !self.is_capturing
+            && self.decode_may_use_cublas(weight_ptr)
+            && Self::is_cublas_qtype(qtype)
+    }
+
+    /// PMAT-061: cuBLAS HGEMM for M>1 decode when the FP16 weight cache is populated.
+    ///
+    /// Five-Whys: c=4 decode ran at 0.56x (23.4ms/step against llama.cpp's 13.1ms). Batched Q4K
+    /// GEMV is compute-bound at M=4 (3.25x instruction scaling) because each weight super-block
+    /// needs M activation loads and M DP4A chains, and the dequant is ~20 bitmask ops per
+    /// super-block -- ALU-heavy at any M. HGEMM uses tensor cores and stays memory-bound, so it
+    /// scales ~1x with M: estimated 15.6ms at M=4 against GEMV's 23.4ms.
+    fn route_hgemm_decode(&self, qtype: WeightQuantType, weight_ptr: u64, m: u32) -> bool {
+        self.hgemm_batched_decode_active
+            && m >= 2
+            && !self.is_capturing
+            && Self::is_cublas_qtype(qtype)
+            && self.fp16_weight_cache.contains_key(&weight_ptr)
+            && std::env::var("HGEMM_BATCHED_DECODE").as_deref() != Ok("0")
+    }
+
+    /// GH-141: batched HW DP4A for Q4K on DP4A-capable GPUs (sm_75+).
+    ///
+    /// Reads Q4K weights (0.5625 B/elem) plus Q8_1 activations (1.125 B/elem) = 1.69 B/elem,
+    /// against cuBLAS SGEMM's 8 B/elem: 4.7x less bandwidth. PMAT-056 removed the
+    /// `!is_capturing` guard -- these are pure GPU kernels with no H2D copies, so they are
+    /// graph-capturable, and the old guard forced an FP32 fallback during capture.
+    fn route_batched_dp4a(&self, qtype: WeightQuantType, m: u32) -> bool {
+        qtype == WeightQuantType::Q4K
+            && m >= 2
+            && m <= 8
+            && self.gpu_profile.q4k == crate::cuda::gpu_profile::Q4kVariant::HwDp4a
+            && !self.is_prefilling
+            && std::env::var("BATCHED_DP4A").as_deref() != Ok("0")
+    }
+
+    /// GH-141: the general cuBLAS route, above `cublas_gemm_threshold()`.
+    ///
+    /// Never during CUDA graph capture: cuBLAS calls are not reliably capturable -- they may use
+    /// internal workspace or stream management the graph infrastructure cannot replay -- so
+    /// capture falls back to batched GEMV (custom PTX), which always is.
+    fn route_cublas(&self, qtype: WeightQuantType, weight_ptr: u64, m: u32) -> bool {
+        m >= super::cublas_gemm_threshold()
+            && self.decode_may_use_cublas(weight_ptr)
+            && Self::is_cublas_qtype(qtype)
+            && std::env::var("CUBLAS_PREFILL").as_deref() != Ok("0")
+            && !self.is_capturing
+    }
+
     /// PMAT-024/026: Batched GEMV with cuBLAS GEMM fallback for prefill
     ///
     /// When M >= threshold and weights are Q4K or Q6K, uses cuBLAS GEMM
@@ -984,18 +1115,9 @@ DONE_NORM:
         n_per_seq: u32,
         k_per_seq: u32,
     ) -> Result<(), GpuError> {
-        // PMAT-054B: W4A16 WMMA GEMM with pre-computed scales for batched decode (M=2-8).
-        // Pre-computed FP16 scales eliminate GGML decode on GPU (~20→5 insn/elem).
-        // Only for small M (batched decode). Large M (prefill) uses FP8 cuBLASLt.
-        // M<=8 guard: WMMA 32×32 tiles waste 75-94% compute at M<8, and FP8
-        // cuBLASLt is faster at M>=5 (PMAT-093).
-        if self.gpu_profile.w4a16_interleaved
-            && m >= 2
-            && m <= 8
-            && !self.is_capturing
-            && qtype == WeightQuantType::Q4K
-            && self.interleaved_weight_cache.contains_key(&weight_ptr)
-        {
+        // Route order is unchanged; each predicate is named above so this function stays
+        // readable and under the complexity ceiling that froze this file (#2766).
+        if self.route_w4a16_wmma(qtype, weight_ptr, m) {
             return self.w4a16_wmma_q4k_gemm(
                 weight_ptr,
                 packed_input_ptr,
@@ -1006,22 +1128,7 @@ DONE_NORM:
             );
         }
 
-        // PMAT-090: FP8 cuBLASLt GEMM for batched decode on sm_89+.
-        // PMAT-093: FP8 threshold raised from M>=2 to M>=5.
-        // At M=4: FP8 conversion overhead (absmax+convert per projection) cancels
-        // tensor core gains. DP4A with fused QKV+gate+up has lower launch count.
-        // Benchmarks (yoga 4060L, 1900MHz, 60s, isolated):
-        //   c=4 FP8: 235.0 aggregate, 16.5ms ITL
-        //   c=4 DP4A: 242.1 aggregate, 15.9ms ITL (+3%)
-        //   c=8 FP8: 405.6 aggregate, 18.9ms ITL
-        //   c=8 DP4A: 329.1 aggregate, 23.4ms ITL (-19%)
-        // FP8 crossover point: ~M=5 where tensor core BW dominates conversion cost.
-        // FP8 weight cache persists from prefill — no additional warmup needed.
-        if self.gpu_profile.fp8_decode
-            && m >= 5
-            && !self.is_capturing
-            && (qtype == WeightQuantType::Q4K || qtype == WeightQuantType::Q6K)
-        {
+        if self.route_fp8_decode(qtype, weight_ptr, m) {
             return self.cublas_prefill_gemm(
                 qtype,
                 weight_ptr,
@@ -1033,21 +1140,7 @@ DONE_NORM:
             );
         }
 
-        // PMAT-061: cuBLAS HGEMM for M>1 decode when FP16 weight cache is available.
-        // Five-Whys: c=4 decode 0.56x (23.4ms/step vs llama.cpp 13.1ms).
-        // Why? Batched Q4K GEMV is compute-bound at M=4 (3.25x instruction scaling).
-        // Why? Each weight SB requires M activation loads + M DP4A chains.
-        // Why? Dequant uses ~20 bitmask ops/SB — kernel is ALU-heavy at any M.
-        // Fix: cuBLAS HGEMM uses tensor cores (memory-bound, ~1x scaling with M).
-        // FP16 reads 3.5x more data but tensor cores hide M×compute.
-        // Estimated: HGEMM M=4 ~15.6ms (BW-limited) vs GEMV M=4 ~23.4ms (compute-limited).
-        if self.hgemm_batched_decode_active
-            && m >= 2
-            && !self.is_capturing
-            && (qtype == WeightQuantType::Q4K || qtype == WeightQuantType::Q6K)
-            && self.fp16_weight_cache.contains_key(&weight_ptr)
-            && std::env::var("HGEMM_BATCHED_DECODE").as_deref() != Ok("0")
-        {
+        if self.route_hgemm_decode(qtype, weight_ptr, m) {
             return self.cublas_prefill_gemm(
                 qtype,
                 weight_ptr,
@@ -1059,19 +1152,7 @@ DONE_NORM:
             );
         }
 
-        // GH-141: Batched HW DP4A for Q4K on DP4A-capable GPUs (sm_75+).
-        // Reads Q4K weights (0.5625 B/elem) + Q8_1 activations (1.125 B/elem)
-        // = 1.69 B/elem total, vs cuBLAS SGEMM 8 B/elem. 4.7x less bandwidth.
-        // PMAT-056: Removed !self.is_capturing guard — DP4A kernels are pure GPU
-        // kernels (no H2D copies), graph-capturable. Old guard forced FP32 fallback.
-        let use_batched_dp4a = qtype == WeightQuantType::Q4K
-            && m >= 2
-            && m <= 8
-            && self.gpu_profile.q4k == crate::cuda::gpu_profile::Q4kVariant::HwDp4a
-            && !self.is_prefilling
-            && std::env::var("BATCHED_DP4A").as_deref() != Ok("0");
-
-        if use_batched_dp4a {
+        if self.route_batched_dp4a(qtype, m) {
             return self.batched_hw_dp4a_q4k_gemv_into(
                 weight_ptr,
                 packed_input,
@@ -1082,16 +1163,7 @@ DONE_NORM:
             );
         }
 
-        // GH-141: Never use cuBLAS during CUDA graph capture. cuBLAS calls
-        // are not reliably capturable — they may use internal workspace or
-        // stream management that the graph infrastructure cannot replay.
-        // Use batched GEMV (custom PTX) instead, which is always capturable.
-        let use_cublas = m >= super::cublas_gemm_threshold()
-            && (qtype == WeightQuantType::Q4K || qtype == WeightQuantType::Q6K)
-            && std::env::var("CUBLAS_PREFILL").as_deref() != Ok("0")
-            && !self.is_capturing;
-
-        if use_cublas {
+        if self.route_cublas(qtype, weight_ptr, m) {
             self.cublas_prefill_gemm(
                 qtype,
                 weight_ptr,
