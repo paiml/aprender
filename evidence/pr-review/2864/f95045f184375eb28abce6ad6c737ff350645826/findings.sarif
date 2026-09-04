@@ -1,0 +1,236 @@
+{
+ "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+ "version": "2.1.0",
+ "runs": [
+  {
+   "tool": {
+    "driver": {
+     "name": "pmat",
+     "version": "unknown",
+     "rules": [
+      {
+       "id": "PRREV-PMAT",
+       "name": "pmat quality and duplication"
+      }
+     ]
+    }
+   },
+   "results": []
+  },
+  {
+   "tool": {
+    "driver": {
+     "name": "nvidia-cuda-docs",
+     "version": "mcp",
+     "rules": [
+      {
+       "id": "PRREV-CUDA",
+       "name": "device-behaviour claim vs NVIDIA docs"
+      }
+     ]
+    }
+   },
+   "results": []
+  },
+  {
+   "tool": {
+    "driver": {
+     "name": "crux",
+     "version": "v1",
+     "rules": [
+      {
+       "id": "PRREV-CRUX",
+       "name": "user-facing surface coverage"
+      }
+     ]
+    }
+   },
+   "results": []
+  },
+  {
+   "tool": {
+    "driver": {
+     "name": "cargo-mutants",
+     "version": "guard case-tables",
+     "rules": [
+      {
+       "id": "PRREV-MUT",
+       "name": "guard mutation set"
+      }
+     ]
+    }
+   },
+   "results": []
+  },
+  {
+   "tool": {
+    "driver": {
+     "name": "antigravity",
+     "version": "1.1.26",
+     "rules": [
+      {
+       "id": "PRREV-AGY",
+       "name": "cross-vendor review (advisory)"
+      },
+      {
+       "id": "PRREV-AGY-PRIOR",
+       "name": "cross-vendor review, earlier runs on this PR (advisory)"
+      }
+     ]
+    }
+   },
+   "results": [
+    {
+     "ruleId": "PRREV-AGY",
+     "level": "note",
+     "message": {
+      "text": "Cargo keeps versioned dev-dependencies in published manifests and strips path-only ones; the metadata 'req' field faithfully distinguishes them ('*' for path-only)"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "scripts/check_publish_preflight.sh"
+        },
+        "region": {
+         "startLine": 183
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "none stated",
+      "source": "agy gemini-3.1-pro-high on f95045f18: ",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "confirmation; re-verified by the primary: cargo metadata versioned sibling dev-deps [] after the change; preflight selftest 18/18 and 17/18 under the R6 mutation; the cycle reproduced by cargo publish --dry-run on aprender-core, aprender-graph and aprender-data",
+      "agy_id": "cargo-publish-semantics",
+      "baselineState": "new"
+     }
+    },
+    {
+     "ruleId": "PRREV-AGY",
+     "level": "note",
+     "message": {
+      "text": "R6 exhibits no false positives (e.g., dual normal/dev dependencies are processed individually) and skips unpublishable sources; no false negatives for aliases with both version and path as 'req' handles them correctly"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "scripts/check_publish_preflight.sh"
+        },
+        "region": {
+         "startLine": 185
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "none stated",
+      "source": "agy gemini-3.1-pro-high on f95045f18: ",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "confirmation; re-verified by the primary: cargo metadata versioned sibling dev-deps [] after the change; preflight selftest 18/18 and 17/18 under the R6 mutation; the cycle reproduced by cargo publish --dry-run on aprender-core, aprender-graph and aprender-data",
+      "agy_id": "r6-precision",
+      "baselineState": "new"
+     }
+    },
+    {
+     "ruleId": "PRREV-AGY",
+     "level": "note",
+     "message": {
+      "text": "The two-member test fixture accurately simulates cargo metadata behaviour and correctly asserts R6 polarity"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "scripts/check_publish_preflight.sh"
+        },
+        "region": {
+         "startLine": 258
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "none stated",
+      "source": "agy gemini-3.1-pro-high on f95045f18: ",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "confirmation; re-verified by the primary: cargo metadata versioned sibling dev-deps [] after the change; preflight selftest 18/18 and 17/18 under the R6 mutation; the cycle reproduced by cargo publish --dry-run on aprender-core, aprender-graph and aprender-data",
+      "agy_id": "fixture-faithfulness",
+      "baselineState": "new"
+     }
+    },
+    {
+     "ruleId": "PRREV-AGY",
+     "level": "note",
+     "message": {
+      "text": "The pipeline change in cascade-drain.sh solely affects output logging (adding DEFER to grep and increasing tail) with no side effects on execution flow"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "scripts/cascade-drain.sh"
+        },
+        "region": {
+         "startLine": 152
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "none stated",
+      "source": "agy gemini-3.1-pro-high on f95045f18: ",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "confirmation; re-verified by the primary: cargo metadata versioned sibling dev-deps [] after the change; preflight selftest 18/18 and 17/18 under the R6 mutation; the cycle reproduced by cargo publish --dry-run on aprender-core, aprender-graph and aprender-data",
+      "agy_id": "drain-change-impact",
+      "baselineState": "new"
+     }
+    },
+    {
+     "ruleId": "PRREV-AGY",
+     "level": "note",
+     "message": {
+      "text": "The cyclic dependency claim is structurally verified: aprender-test-lib -> aprender-compute -> aprender-core -> aprender-data -> aprender-test-lib"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "crates/aprender-data/Cargo.toml"
+        },
+        "region": {
+         "startLine": 112
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "none stated",
+      "source": "agy gemini-3.1-pro-high on f95045f18: ",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "confirmation; re-verified by the primary: cargo metadata versioned sibling dev-deps [] after the change; preflight selftest 18/18 and 17/18 under the R6 mutation; the cycle reproduced by cargo publish --dry-run on aprender-core, aprender-graph and aprender-data",
+      "agy_id": "dependency-cycle",
+      "baselineState": "new"
+     }
+    }
+   ]
+  }
+ ]
+}
