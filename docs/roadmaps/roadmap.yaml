@@ -14376,6 +14376,20 @@ roadmap:
   - 'send_jsonrpc waits for the child before returning a stdin write error; a non-zero exit always reports process exited <status>: <stderr>'
   - 'test_stdio_transport_exit_before_request_is_read (child closes stdin, 1 MiB request) is deterministic: 40/40 green with the fix, RED (got: write stdin: Broken pipe) with the transport change reverted'
   notes: 'Found by the predicted-main clean-room (8100ecd06): 1 failed of 6569 in batuta lib tests, the race between the child exit and the parent write. Fixed in #2860.'
+- id: PMAT-952
+  github_issue: null
+  item_type: bug
+  title: 'wgpu init deadlock: the shared_instance OnceLock initializer takes DEVICE_INIT_LOCK while GpuDevice::new holds it and calls shared_instance() (ABBA); the 0.65.0 release clean-room parked 49 threads on it'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-09-04 15:50:00+00:00
+  updated: 2026-09-04 15:50:00+00:00
+  spec: null
+  acceptance_criteria:
+  - 'the shared_instance initializer takes no mutex (the OnceLock already serializes the one-time enumeration, PMAT-778 intent preserved)'
+  - 'test_pmat952_shared_instance_does_not_deadlock_against_device_init_lock: a fresh child process holds DEVICE_INIT_LOCK and calls shared_instance() from another thread; green on the fix, RED (child exit 101 after the 30 s probe timeout) with the mutex restored'
+  notes: 'Found by the 0.65.0 release clean-room on 587ad0797 (2 green runs, 1 hang the same day: only the first initialization of a process can race). gdb backtrace under the release receipt evidence. Reachable in production whenever is_available() and GpuDevice::new() race on the wgpu path.'
 - id: PMAT-750
   github_issue: null
   item_type: task
