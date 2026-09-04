@@ -153,6 +153,76 @@ row — and `interleaved`, because a non-interleaved sweep is a different experi
 the ledger has two conformance tiers: PP-9 binds on `RECORDED`, the tier a row can actually reach
 today, so the rule applies from the first row rather than after five missing producers land.
 
+**L2, the row-outside-the-table case.** The parser that enforces PP-9 reads the ledger's FIRST
+pipe table and stops at the first line that is neither a table row nor a separator — a blank line
+or a paragraph is enough. A ledger row typed after such a break, with the same column shape as the
+header, is invisible to the re-spend check: it is never compared to anything, so nothing prevents
+re-spending the key it carries. That happened here — a blank line split the table, and duplicating
+the last row as a new one passed `spec_conformance.sh` clean, because the parser's universe was
+four rows, not six. A guard's must-fire has to be a row sitting **outside the table**, i.e. a
+**split** table, because a row that stays inside the parsed table was already covered by L1. The
+row count the scanner reports (`LEDGER <rows> <recorded>`) is compared against the rows visible on
+the page precisely because a recorded count nobody compares to the source is theater: it looks like
+measurement and enforces nothing.
+
+**L2's universe, and L3.** The first form of L2 required the escaped row to have the canonical
+shape: a leading pipe, a row-id first cell, the header's column count. The review quorum on #2861
+refuted it four ways — a row with no leading pipe, a backticked id, a trailing `||`, an extra pipe —
+and two of the four passed on the tree. A shape condition on the row this rule exists to catch is
+the rule defined from the accepted case outward; defined from the rule inward, a ledger row is any
+pipe line before the superseded heading whose first cell is a row id, in a run that does not open
+with a header row (that run is a different table and is skipped whole, which is what keeps the
+superseded-documents table out). Rows found that way also enter the L1 spend check, so a re-spend
+outside the table fires both. A row inside the table whose cell count differs from the header's is
+L3: a malformed row shifts every column the spend key reads, and refusing it is cheaper than
+mis-keying it. Eight mutants of these conditions are committed in
+`scripts/mutate_spec_conformance.sh` and each is killed by a named fixture, because a condition no
+fixture can remove is a condition nobody knows is load-bearing.
+
+**The rule that failed both ways.** The second form of L2 skipped a run of pipe lines whole
+whenever its first line carried no row id, to keep the superseded-documents table out. That one
+condition was a false negative and a false positive at once: a dummy first line hid every row
+after it, and a blank line inside the documents table made its second half open with a numeric
+cell and flagged eleven legitimate rows. The rule now reads what a table IS — a run that opens
+with a header line and a separator — and skips a run only when that header is not the ledger's;
+a run with the ledger's header, or with no header at all, is read row by row, and a row counts
+when its width is within two columns of the ledger's, which is what tells a stray pipe apart from
+a table half as wide. A table written above the ledger is L0, because the first table is the one
+the scan reads. The mutation set that substantiates this runs the unmutated case table first and
+counts a crash as unviable, never as a kill.
+
+**The universe is what PP-9 binds on.** The third round showed that the header rule and the width
+tolerance were each still a condition an author could satisfy: a run under a decorative header was
+skipped whole, and a row three columns off was dropped rather than refused. PP-9 binds on
+`RECORDED` (and `CONFORMANT` implies it), so the row the rule exists to catch is one that *claims a
+spend*; that claim is the membership test, and nothing else is. A row outside the first table with
+a row id and a tier is L2 whatever its width, its leading pipe, or the table it was pasted under; a
+row that claims no tier spends nothing and is another table's business, which is what keeps the
+superseded-documents table out without a rule about headers. A table written above the ledger is
+L0, and the ledger's own rows are then outside the first table and L2 as well.
+
+**The id is reported, never required.** The fourth round showed the last two conjuncts were still
+an author's to satisfy: a spend row whose first cell was not a row id (`foo`, `#0c`, `7bis`) was not
+in the universe, and a tier written in backticks was not read as a tier while every other cell in
+the file is read through a backtick strip. So the membership test is the tier claim alone, read
+through the one normalisation every ledger rule uses, and the row's id is something the violation
+reports rather than something it waits for. The superseded heading no longer ends the universe
+either: a `RECORDED` row is a spend claim wherever it sits, and the old-schema rows under that
+heading claim no tier. The cost is a reserved word: a cell in any other table of `LEDGER.md` that
+starts with `RECORDED` or `CONFORMANT` is refused too, which is noise a person can see and fix,
+where every condition removed above was an escape nobody would.
+
+**One normaliser, and a stated threat model.** The fifth round moved from where a row sits to how
+it is written: `__RECORDED__` was not a tier because emphasis in underscores was never stripped,
+`__lambda__` and `<code>aaaa</code>` were new keys, a zero-width space made a new host, and L1 had
+quietly deduped only `RECORDED` rows while the universe admitted `CONFORMANT`. Every cell a ledger
+rule reads now goes through one normaliser — code tags, format characters, no-break spaces, runs of
+whitespace and wrapping emphasis off, comparisons casefolded — and L1 keys on the same tiers L2
+does. The class has to be bounded somewhere, so it is bounded here and said aloud: PP-9 is a
+discipline rule against the honest re-roll, and the guard closes what a formatting habit can do. A
+key disguised past that — a homoglyph, a changed digit — is a forged ledger row, and a forged row
+is a line the pull request's diff puts in front of its reviewers.
+
 ### PP-10
 
 `I-14`. A request issued after the window closes has its prefill inside the window and its decode
