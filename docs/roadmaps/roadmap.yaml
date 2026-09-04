@@ -14452,3 +14452,20 @@ roadmap:
   acceptance_criteria:
   - 'the deferral at crates/aprender-train/src/train/pretrain_real.rs:488 is resolved and the comment removed'
   notes: 'Minted by the PMAT-938 sweep (PR #2860); the marker text is kept in the comment, keyword-free'
+- id: PMAT-744
+  github_issue: null
+  item_type: bug
+  title: 'perf_gate.sh --phase release cannot PASS while the reference cell is UNMEASURED: ArmC-sig and ArmD
+    fail the pre-v3 lambda receipt that the matrix already marks SPENT'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-09-03 04:30:00+00:00
+  updated: 2026-09-03 04:50:00+00:00
+  spec: docs/specifications/PP-LLAMA-001-MASTER.md
+  acceptance_criteria:
+  - 'perf_gate.sh --host lambda --phase release --workload W1 --receipt evidence/perf-gate-001-w1-lambda/receipt.r1.json
+    --commit <main> is VERDICT PASS with ArmC-sig and ArmD as REPORT lines naming the UNMEASURED cell'
+  - 'four --selftest rows, both polarities; each condition of historical_for_unmeasured has a row that goes RED
+    without it; FALSIFY-PP-LLAMA-001-PERF-GATE-011; spec §6 names the cases'
+  notes: 'PMAT-742 jidoka entry 10; first run of the release phase (0.65.0 cut)'

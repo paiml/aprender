@@ -151,6 +151,12 @@ falsification_tests:
     test: "python3 scripts/lib/perf_receipt.py --selftest"
     if_fails: "Either a band reads MEASURED with no witness block, or the attachment was dropped — the must-fire mutation (parity_block.py _witness_for returning only the reports' agreed value) turns witness_attached_from_perf041 RED"
 
+  - id: FALSIFY-PP-LLAMA-001-PERF-GATE-011
+    rule: "At --phase release, ArmC-sig and ArmD REPORT for a pre-v3 receipt cited for an UNMEASURED cell, and FAIL for every other input"
+    prediction: "perf_gate.sh --selftest keeps historical_unmeasured_release_reports and historical_unmeasured_armd_reports green, and historical_measured_release_fails and v3_unsigned_unmeasured_release_fails red; dropping either condition of historical_for_unmeasured turns one must-not-fire row green"
+    test: "bash scripts/perf_gate.sh --selftest"
+    if_fails: "Either the release phase cannot PASS in the UNMEASURED state §7.2 permits (a gate bypassed for substance), or an unsigned or mis-cited receipt passes the release phase"
+
 qa_gate:
   id: F-PP-LLAMA-001-PERF-GATE-001
   name: "Perf gate integrity — every arm can fail, at its declared phase, against a number in one file"
