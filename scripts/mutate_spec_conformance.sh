@@ -18,6 +18,12 @@ REPO_ROOT=$(git rev-parse --show-toplevel)
 TARGET="$REPO_ROOT/scripts/lib/spec_conformance.py"
 SELFTEST="$REPO_ROOT/scripts/spec_conformance.sh"
 BACKUP=$(mktemp)
+# SEC010: validate before cp/rm -- TARGET is REPO_ROOT plus a literal and
+# BACKUP is mktemp's answer, but guard them explicitly rather than relying on
+# the assignments above.
+case "$TARGET$BACKUP" in
+    *..*) echo "ERROR: TARGET/BACKUP must not contain '..'" >&2; exit 1 ;;
+esac
 trap 'cp "$BACKUP" "$TARGET"; rm -f "$BACKUP"' EXIT
 cp "$TARGET" "$BACKUP"
 
