@@ -452,7 +452,6 @@ crates/aprender-serve/src/brick/profiler_contracts.rs::validate_contracts 15 28
 crates/aprender-serve/src/cuda/executor/core.rs::new 1 40
 crates/aprender-serve/src/cuda/executor/flash_attention_cached.rs::flash_attention_cached 18 39
 crates/aprender-serve/src/cuda/executor/layers/apply.rs::apply_qkv_bias 18 31
-crates/aprender-serve/src/cuda/executor/layers/cublas_prefill/attention.rs::batched_gemv_or_gemm 30 37
 crates/aprender-serve/src/cuda/executor/layers/cublas_prefill/attention.rs::warmup_fp8_cache 20 37
 crates/aprender-serve/src/cuda/executor/layers/cublas_prefill/attention.rs::warmup_hgemm_cache 18 45
 crates/aprender-serve/src/cuda/executor/layers/cublas_prefill/gemm.rs::cublas_prefill_gemm 15 30
