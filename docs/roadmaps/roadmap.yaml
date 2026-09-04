@@ -14183,6 +14183,27 @@ roadmap:
   notes: 'Found by the PMAT-934 review (paiml-agy-delegate: the §3.E arm 044542d6, lanes 1ca23c06, 27e31188, 4c1a7eac;
     the delegate found the L1 tier gap and widened the key renderings to six). Re-run by Fable on 45b29e793: __RECORDED__,
     __lambda__ and a CONFORMANT re-spend each produced no violation (confirmed). Landed in PR #2861'
+- id: PMAT-745
+  github_issue: null
+  item_type: bug
+  title: 'F-9: the crates.io cascade ran cargo publish --allow-dirty with no precondition; publishing must go only
+    through a preflight gate (clean tree, version from cargo metadata, tag at HEAD, HEAD on main, dogfood GO)'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-09-03 07:10:00+00:00
+  updated: 2026-09-03 07:20:00+00:00
+  spec: docs/specifications/PP-LLAMA-001-MASTER.md
+  acceptance_criteria:
+  - 'scripts/check_publish_preflight.sh --selftest 16/16, both polarities of R1-R5; five must-fire mutations RED
+    (R1 dropped, GO check dropped, deferral whitelist shrunk, phase check dropped, grep -F removed); cascade-publish.sh
+    refuses on a non-zero gate, carries no dirty-tree override, and keeps its config backup outside the tree;
+    scripts/dogfood.sh --phase pre-publish records the two registry-bound rows as DEFER with their obligation, so R5
+    is satisfiable before a cascade; ci.yml runs the case table; FALSIFY-PUB-CLI contract entry'
+  notes: 'PMAT-742 release rule F-9 (operator); a GitHub publish workflow is owed separately: no CARGO_REGISTRY_TOKEN
+    secret exists for the fleet, only PR_REVIEW_SIGNING_KEY_B64. Measured 2026-09-03: the full dogfood is NO-GO before
+    its own cascade by construction (publish-dry-run of a workspace root, cargo install of the unpublished version on
+    four hosts), which made the first R5 unsatisfiable; the pre-publish phase is the recorded, whitelisted answer'
 - id: PMAT-744
   github_issue: null
   item_type: bug
