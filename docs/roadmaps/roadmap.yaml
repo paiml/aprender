@@ -14514,6 +14514,20 @@ roadmap:
   acceptance_criteria:
   - 'every obligation row in the spec §11 DAG landed or UNMEASURED{owner, expires}; CONFORMANT ledger rows on both proof hosts per workstream; training parity gate T-7 ARMED on both hosts'
   notes: 'Spec reviewed by agy /teamwork-preview and a 3-lane agy --mode plan quorum (receipt attached to the spec PR).'
+- id: PMAT-957
+  github_issue: null
+  item_type: bug
+  title: 'aprender-gpu CUDA driver tests race under the default test parallelism: 3/10 runs at 48 threads fail (CUDA_ERROR_UNKNOWN 901/906) or SIGSEGV; 0/10 at 4 threads; crashed the 0.65.1 release clean-room'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-09-04 19:20:00+00:00
+  updated: 2026-09-04 19:20:00+00:00
+  spec: null
+  acceptance_criteria:
+  - 'driver_and_context, gpu_buffer and cuda_graph tests share one device and run under one process-wide mutex; 20 runs at --test-threads=48 on lambda: 0 failures, 0 signals'
+  - 'a must-fire mutation (mutex removed) reproduces the failure within 20 runs'
+  notes: 'Evidence: pp4-work/evidence/gpu-flake (t48-*.out, t4-*.out, characterize.log). CI cannot see this suite (no GPU runner); the release clean-room is the only gate that does.'
 - id: PMAT-750
   github_issue: null
   item_type: task
