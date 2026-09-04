@@ -277,10 +277,17 @@ impl StdioMcpTransport {
             let stderr = String::from_utf8_lossy(&result.stderr);
             return Err(format!("process exited {}: {}", result.status, stderr.trim()));
         }
-        if let Some(e) = write_err {
-            return Err(e);
-        }
         let stdout = String::from_utf8_lossy(&result.stdout);
+        // PMAT-953: a server that exits 0 without reading the request (its
+        // stdin closed, EPIPE on our write) has still answered if it wrote a
+        // response; the write error only matters when there is nothing to
+        // parse. PMAT-950 covered the non-zero exit above; this is the clean
+        // exit, which four stdio tests hit under load on 2026-09-04.
+        if stdout.trim().is_empty() {
+            if let Some(e) = write_err {
+                return Err(e);
+            }
+        }
         let response: serde_json::Value =
             serde_json::from_str(stdout.trim()).map_err(|e| format!("parse response: {e}"))?;
         if let Some(error) = response.get("error") {

@@ -334,6 +334,30 @@ async fn test_stdio_transport_exit_before_request_is_read() {
 }
 
 #[tokio::test]
+async fn test_stdio_transport_clean_exit_without_reading_keeps_its_response() {
+    if skip_in_ci() {
+        return;
+    }
+    // The child closes its stdin, answers, and exits 0 without reading the
+    // request. With a request larger than a pipe buffer the write can never
+    // complete (EPIPE on every schedule), so this is the deterministic form of
+    // the race four stdio tests hit under load (PMAT-953). The response on
+    // stdout is the answer; "write stdin: Broken pipe" is not.
+    let response = serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {"content": [{"text": "answered without reading"}]}
+    });
+    let transport = StdioMcpTransport::new(
+        "answers-without-reading",
+        vec!["sh".into(), "-c".into(), format!("exec 0<&-; echo '{}'; exit 0", response)],
+    );
+    let big = "x".repeat(1 << 20);
+    let result = transport.call_tool("search", serde_json::json!({ "q": big })).await;
+    assert_eq!(result.as_deref().ok(), Some("answered without reading"), "got: {result:?}");
+}
+
+#[tokio::test]
 async fn test_stdio_transport_invalid_json_output() {
     if skip_in_ci() {
         return;

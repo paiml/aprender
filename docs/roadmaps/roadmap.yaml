@@ -14376,6 +14376,20 @@ roadmap:
   - 'send_jsonrpc waits for the child before returning a stdin write error; a non-zero exit always reports process exited <status>: <stderr>'
   - 'test_stdio_transport_exit_before_request_is_read (child closes stdin, 1 MiB request) is deterministic: 40/40 green with the fix, RED (got: write stdin: Broken pipe) with the transport change reverted'
   notes: 'Found by the predicted-main clean-room (8100ecd06): 1 failed of 6569 in batuta lib tests, the race between the child exit and the parent write. Fixed in #2860.'
+- id: PMAT-953
+  github_issue: null
+  item_type: bug
+  title: 'stdio MCP transport: a server that answers and exits 0 before reading the request still surfaced "write stdin: Broken pipe" (PMAT-950 covered only the non-zero exit); 4 batuta tests failed in the 0.65.0 release clean-room'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-09-04 16:10:00+00:00
+  updated: 2026-09-04 16:10:00+00:00
+  spec: null
+  acceptance_criteria:
+  - 'send_jsonrpc returns the stdin write error only when the child exited cleanly AND wrote nothing; a response on stdout is parsed regardless of EPIPE on the request'
+  - 'test_stdio_transport_clean_exit_without_reading_keeps_its_response (child closes stdin, echoes a response, exits 0; 1 MiB request) is green on the fix and RED (got: Err("write stdin: Broken pipe")) with the stdout-empty guard reverted'
+  notes: 'Found by the 0.65.0 release clean-room run 2 on 587ad0797 (88537 passed, 4 failed, all in mcp_client_tests.rs). Released 0.65.0 carries the defect by operator decision (cherry-pick behind the tag).'
 - id: PMAT-750
   github_issue: null
   item_type: task
