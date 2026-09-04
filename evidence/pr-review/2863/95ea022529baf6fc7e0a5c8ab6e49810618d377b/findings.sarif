@@ -1,0 +1,176 @@
+{
+ "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+ "version": "2.1.0",
+ "runs": [
+  {
+   "tool": {
+    "driver": {
+     "name": "pmat",
+     "version": "unknown",
+     "rules": [
+      {
+       "id": "PRREV-PMAT",
+       "name": "pmat quality and duplication"
+      }
+     ]
+    }
+   },
+   "results": []
+  },
+  {
+   "tool": {
+    "driver": {
+     "name": "nvidia-cuda-docs",
+     "version": "mcp",
+     "rules": [
+      {
+       "id": "PRREV-CUDA",
+       "name": "device-behaviour claim vs NVIDIA docs"
+      }
+     ]
+    }
+   },
+   "results": []
+  },
+  {
+   "tool": {
+    "driver": {
+     "name": "crux",
+     "version": "v1",
+     "rules": [
+      {
+       "id": "PRREV-CRUX",
+       "name": "user-facing surface coverage"
+      }
+     ]
+    }
+   },
+   "results": []
+  },
+  {
+   "tool": {
+    "driver": {
+     "name": "cargo-mutants",
+     "version": "guard case-tables",
+     "rules": [
+      {
+       "id": "PRREV-MUT",
+       "name": "guard mutation set"
+      }
+     ]
+    }
+   },
+   "results": []
+  },
+  {
+   "tool": {
+    "driver": {
+     "name": "antigravity",
+     "version": "1.1.26",
+     "rules": [
+      {
+       "id": "PRREV-AGY",
+       "name": "cross-vendor review (advisory)"
+      },
+      {
+       "id": "PRREV-AGY-PRIOR",
+       "name": "cross-vendor review, earlier runs on this PR (advisory)"
+      }
+     ]
+    }
+   },
+   "results": [
+    {
+     "ruleId": "PRREV-AGY",
+     "level": "note",
+     "message": {
+      "text": "Discarding EPIPE when stdout is non-empty correctly allows reading the response of a server that closes stdin. Garbage/partial stdout results in a parse error, which accurately reflects a cleanly-exited server generating bad output."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "crates/aprender-orchestrate/src/agent/tool/mcp_client.rs"
+        },
+        "region": {
+         "startLine": 286
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "asserted",
+      "precision_class": "advisory",
+      "failure_scenario": "none stated",
+      "source": "agy gemini-3.1-pro-high on 95ea02252: ",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "confirmation; re-verified by the primary: fix 20 passed, mutant (stdout-empty guard reverted) FAILED with got: Err(write stdin: Broken pipe), fix again 1 passed",
+      "agy_id": "clean-exit-handling",
+      "baselineState": "new"
+     }
+    },
+    {
+     "ruleId": "PRREV-AGY",
+     "level": "note",
+     "message": {
+      "text": "The test is deterministic and avoids flaking by exceeding typical pipe buffer sizes with a 1 MiB payload and explicitly using exec 0<&- to guarantee EPIPE."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "crates/aprender-orchestrate/src/agent/tool/mcp_client_tests.rs"
+        },
+        "region": {
+         "startLine": 353
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "asserted",
+      "precision_class": "advisory",
+      "failure_scenario": "none stated",
+      "source": "agy gemini-3.1-pro-high on 95ea02252: ",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "confirmation; re-verified by the primary: fix 20 passed, mutant (stdout-empty guard reverted) FAILED with got: Err(write stdin: Broken pipe), fix again 1 passed",
+      "agy_id": "test-determinism",
+      "baselineState": "new"
+     }
+    },
+    {
+     "ruleId": "PRREV-AGY",
+     "level": "note",
+     "message": {
+      "text": "Retaining the write error when stdout is empty correctly reports why the RPC failed if the server exited cleanly but provided no output."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "crates/aprender-orchestrate/src/agent/tool/mcp_client.rs"
+        },
+        "region": {
+         "startLine": 287
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "asserted",
+      "precision_class": "advisory",
+      "failure_scenario": "none stated",
+      "source": "agy gemini-3.1-pro-high on 95ea02252: ",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "confirmation; re-verified by the primary: fix 20 passed, mutant (stdout-empty guard reverted) FAILED with got: Err(write stdin: Broken pipe), fix again 1 passed",
+      "agy_id": "empty-stdout-branch",
+      "baselineState": "new"
+     }
+    }
+   ]
+  }
+ ]
+}

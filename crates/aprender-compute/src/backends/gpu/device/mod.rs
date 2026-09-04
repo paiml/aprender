@@ -77,8 +77,15 @@ pub(crate) fn shared_instance() -> wgpu::Instance {
     static INSTANCE: OnceLock<wgpu::Instance> = OnceLock::new();
     INSTANCE
         .get_or_init(|| {
-            // Serialize the one-time enumeration against any other GPU init.
-            let _guard = DEVICE_INIT_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+            // PMAT-952: this initializer must NOT take DEVICE_INIT_LOCK. The
+            // `OnceLock` already serializes the one-time enumeration (every
+            // other caller parks on it until this closure returns), and
+            // `GpuDevice::new` holds DEVICE_INIT_LOCK while it calls
+            // `shared_instance()`. Taking the mutex here as well was an ABBA
+            // cycle: a thread entering through `is_available_async` (no mutex)
+            // became the initializer, blocked on the mutex held by a
+            // `GpuDevice::new` thread, which was parked on this `OnceLock`.
+            // Measured 2026-09-04: 49 threads parked, release clean-room hung.
             // PMAT-925: constrain the instance to a non-GLES backend mask so the
             // broken GLES/EGL adapter (SIGABRT-in-Drop on Linux/AMD-RADV) is never
             // registered. `Instance::default()` would use `Backends::all()`
@@ -559,5 +566,72 @@ mod tests {
             result,
             expected
         );
+    }
+}
+
+/// PMAT-952: the `shared_instance` initializer must never take
+/// `DEVICE_INIT_LOCK`. `GpuDevice::new` holds that mutex while it calls
+/// `shared_instance()`, so an initializer that also took it was an ABBA cycle:
+/// the release clean-room of 2026-09-04 parked 49 threads on it. The race is
+/// only reachable on the FIRST initialization of a process, so the probe runs
+/// in a fresh child process where the `OnceLock` is still empty.
+#[cfg(all(test, feature = "gpu", not(target_arch = "wasm32")))]
+mod pmat952_tests {
+    use super::{shared_instance, DEVICE_INIT_LOCK};
+
+    const INNER_ENV: &str = "PMAT952_INNER";
+
+    #[test]
+    fn test_pmat952_shared_instance_does_not_deadlock_against_device_init_lock() {
+        if std::env::var_os(INNER_ENV).is_some() {
+            return; // we are the child; the probe below is the subject
+        }
+        let exe = std::env::current_exe().expect("current_exe");
+        let mut child = std::process::Command::new(exe)
+            .args([
+                "--exact",
+                "backends::gpu::device::pmat952_tests::pmat952_inner_probe",
+                "--nocapture",
+                "--test-threads=1",
+            ])
+            .env(INNER_ENV, "1")
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .expect("spawn the probe child");
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(90);
+        loop {
+            match child.try_wait().expect("try_wait") {
+                Some(status) => {
+                    assert!(
+                        status.success(),
+                        "PMAT-952: the probe child failed ({status}): shared_instance() parked \
+                         behind DEVICE_INIT_LOCK in a fresh process (the ABBA deadlock)"
+                    );
+                    return;
+                }
+                None if std::time::Instant::now() > deadline => {
+                    let _ = child.kill();
+                    panic!("PMAT-952: the probe child hung: shared_instance() parked behind DEVICE_INIT_LOCK");
+                }
+                None => std::thread::sleep(std::time::Duration::from_millis(100)),
+            }
+        }
+    }
+
+    /// Runs only inside the child spawned above (fresh process, empty `OnceLock`).
+    #[test]
+    fn pmat952_inner_probe() {
+        if std::env::var_os(INNER_ENV).is_none() {
+            return;
+        }
+        let _guard = DEVICE_INIT_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let _instance = shared_instance();
+            let _ = tx.send(());
+        });
+        rx.recv_timeout(std::time::Duration::from_secs(30))
+            .expect("shared_instance() parked while DEVICE_INIT_LOCK was held (PMAT-952)");
     }
 }

@@ -126,7 +126,7 @@ pacha = { workspace = true, optional = true }
 realizar = { workspace = true, optional = true }
 
 # ML algorithms and training (native-only)
-aprender = { path = "../aprender-core", version = "0.65.0", package = "aprender-core", optional = true }
+aprender = { path = "../aprender-core", version = "0.65.1", package = "aprender-core", optional = true }
 entrenar = { workspace = true, optional = true }
 alimentar = { workspace = true, optional = true }
 
@@ -321,7 +321,7 @@ proptest = "1.5"
 blake3 = "1.8"
 filetime = "0.2"
 trueno-cuda-edge = { path = "../aprender-cuda-edge", package = "aprender-cuda-edge" }
-jugar-probar = { workspace = true, features = ["browser"] }
+jugar-probar = { path = "../aprender-test-lib", package = "aprender-test-lib", features = ["browser"] }  # PMAT-955: path-only dev-dep
 tokio-tungstenite = "0.24"
 
 [[bench]]

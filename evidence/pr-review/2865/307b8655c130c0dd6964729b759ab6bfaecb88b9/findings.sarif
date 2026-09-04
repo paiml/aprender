@@ -1,0 +1,506 @@
+{
+ "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+ "version": "2.1.0",
+ "runs": [
+  {
+   "tool": {
+    "driver": {
+     "name": "pmat",
+     "version": "unknown",
+     "rules": [
+      {
+       "id": "PRREV-PMAT",
+       "name": "pmat quality and duplication"
+      }
+     ]
+    }
+   },
+   "results": []
+  },
+  {
+   "tool": {
+    "driver": {
+     "name": "nvidia-cuda-docs",
+     "version": "mcp",
+     "rules": [
+      {
+       "id": "PRREV-CUDA",
+       "name": "device-behaviour claim vs NVIDIA docs"
+      }
+     ]
+    }
+   },
+   "results": []
+  },
+  {
+   "tool": {
+    "driver": {
+     "name": "crux",
+     "version": "v1",
+     "rules": [
+      {
+       "id": "PRREV-CRUX",
+       "name": "user-facing surface coverage"
+      }
+     ]
+    }
+   },
+   "results": []
+  },
+  {
+   "tool": {
+    "driver": {
+     "name": "cargo-mutants",
+     "version": "guard case-tables",
+     "rules": [
+      {
+       "id": "PRREV-MUT",
+       "name": "guard mutation set"
+      }
+     ]
+    }
+   },
+   "results": []
+  },
+  {
+   "tool": {
+    "driver": {
+     "name": "antigravity",
+     "version": "1.1.26",
+     "rules": [
+      {
+       "id": "PRREV-AGY",
+       "name": "cross-vendor review (advisory)"
+      },
+      {
+       "id": "PRREV-AGY-PRIOR",
+       "name": "cross-vendor review, earlier runs on this PR (advisory)"
+      }
+     ]
+    }
+   },
+   "results": [
+    {
+     "ruleId": "PRREV-AGY",
+     "level": "note",
+     "message": {
+      "text": "Verified that the three PRs do not interact negatively. PMAT-950 logic is preserved alongside PMAT-953."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "crates/aprender-orchestrate/src/agent/tool/mcp_client.rs"
+        },
+        "region": {
+         "startLine": 280
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "none stated",
+      "source": "agy gemini-3.1-pro-high on 307b8655c: ",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "confirmation of the composition; re-verified by the primary: roadmap yaml loads with 703 items and 0 duplicate ids; the three mutations were RED on their PRs; guards PASS on the batch tree",
+      "agy_id": "batch-interaction-check",
+      "baselineState": "new"
+     }
+    },
+    {
+     "ruleId": "PRREV-AGY",
+     "level": "note",
+     "message": {
+      "text": "Verified that the batch correctly implements the preflight R6 rule, deadlock fix, and test race fix without altering each PR's claims. Cargo check and metadata confirm dev-dependencies correctly evade the R6 cycle check."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "scripts/check_publish_preflight.sh"
+        },
+        "region": {
+         "startLine": 172
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "none stated",
+      "source": "agy gemini-3.1-pro-high on 307b8655c: ",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "confirmation of the composition; re-verified by the primary: roadmap yaml loads with 703 items and 0 duplicate ids; the three mutations were RED on their PRs; guards PASS on the batch tree",
+      "agy_id": "release-cut-behavior",
+      "baselineState": "new"
+     }
+    },
+    {
+     "ruleId": "PRREV-AGY-PRIOR",
+     "level": "note",
+     "message": {
+      "text": "(1) Deadlock analysis is correct. GpuDevice::new holds DEVICE_INIT_LOCK while waiting on shared_instance(), and is_available_async enters shared_instance() without holding DEVICE_INIT_LOCK, creating the ABBA cycle. Removing the lock is safe because OnceLock ensures wgpu::Instance is created exactly once, serializing the ICD enumeration. There are no other wgpu::Instance creation paths outside shared_instance(). (found on 2f36db3e5 by PR #2862 \u00a73.E lane; note)"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "crates/aprender-compute/src/backends/gpu/device/mod.rs"
+        },
+        "region": {
+         "startLine": 80
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "none stated",
+      "source": "agy gemini-3.1-pro-high on 2f36db3e5 (agy-PMAT)",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "note; implement-as-written; re-verified by the primary on the PR",
+      "agy_id": "2862:F1"
+     },
+     "baselineState": "absent"
+    },
+    {
+     "ruleId": "PRREV-AGY-PRIOR",
+     "level": "note",
+     "message": {
+      "text": "(2) The test correctly discriminates. It does not pass vacuously: when the mutex is restored, the inner probe blocks, rx.recv_timeout panics after 30s, the child exits with 101, and the parent test correctly fails due to the `status.success()` assert. The --exact path is correct for the crate layout (trueno). The 30s/90s timeout pair is sound and ensures failure is caught. The child is killed if it hangs, preventing leakage. (found on 2f36db3e5 by PR #2862 \u00a73.E lane; note)"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "crates/aprender-compute/src/backends/gpu/device/mod.rs"
+        },
+        "region": {
+         "startLine": 601
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "none stated",
+      "source": "agy gemini-3.1-pro-high on 2f36db3e5 (agy-PMAT)",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "note; implement-as-written; re-verified by the primary on the PR",
+      "agy_id": "2862:F2"
+     },
+     "baselineState": "absent"
+    },
+    {
+     "ruleId": "PRREV-AGY-PRIOR",
+     "level": "note",
+     "message": {
+      "text": "(3) No regression risk for wasm32 or non-gpu builds. The test is correctly cfg-gated (feature = \"gpu\", not(target_arch = \"wasm32\")). For wasm32, DEVICE_INIT_LOCK is never taken in `new()`, and its removal from `shared_instance()` just avoids taking a lock unnecessarily. Non-gpu builds are protected by top-level cfg feature gates. (found on 2f36db3e5 by PR #2862 \u00a73.E lane; note)"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "crates/aprender-compute/src/backends/gpu/device/mod.rs"
+        },
+        "region": {
+         "startLine": 578
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "none stated",
+      "source": "agy gemini-3.1-pro-high on 2f36db3e5 (agy-PMAT)",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "note; implement-as-written; re-verified by the primary on the PR",
+      "agy_id": "2862:F3"
+     },
+     "baselineState": "absent"
+    },
+    {
+     "ruleId": "PRREV-AGY-PRIOR",
+     "level": "note",
+     "message": {
+      "text": "(4) All claims in the PR body are directly supported by the diff and the codebase. There are no unsubstantiated claims. (found on 2f36db3e5 by PR #2862 \u00a73.E lane; note)"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "crates/aprender-compute/src/backends/gpu/device/mod.rs"
+        },
+        "region": {
+         "startLine": 77
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "none stated",
+      "source": "agy gemini-3.1-pro-high on 2f36db3e5 (agy-PMAT)",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "note; implement-as-written; re-verified by the primary on the PR",
+      "agy_id": "2862:F4"
+     },
+     "baselineState": "absent"
+    },
+    {
+     "ruleId": "PRREV-AGY-PRIOR",
+     "level": "note",
+     "message": {
+      "text": "Discarding EPIPE when stdout is non-empty correctly allows reading the response of a server that closes stdin. Garbage/partial stdout results in a parse error, which accurately reflects a cleanly-exited server generating bad output. (found on 95ea02252 by PR #2863 \u00a73.E lane; note)"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "crates/aprender-orchestrate/src/agent/tool/mcp_client.rs"
+        },
+        "region": {
+         "startLine": 286
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "none stated",
+      "source": "agy gemini-3.1-pro-high on 95ea02252 (agy-PMAT)",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "note; implement-as-written; re-verified by the primary on the PR",
+      "agy_id": "2863:clean-exit-handling"
+     },
+     "baselineState": "absent"
+    },
+    {
+     "ruleId": "PRREV-AGY-PRIOR",
+     "level": "note",
+     "message": {
+      "text": "The test is deterministic and avoids flaking by exceeding typical pipe buffer sizes with a 1 MiB payload and explicitly using exec 0<&- to guarantee EPIPE. (found on 95ea02252 by PR #2863 \u00a73.E lane; note)"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "crates/aprender-orchestrate/src/agent/tool/mcp_client_tests.rs"
+        },
+        "region": {
+         "startLine": 353
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "none stated",
+      "source": "agy gemini-3.1-pro-high on 95ea02252 (agy-PMAT)",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "note; implement-as-written; re-verified by the primary on the PR",
+      "agy_id": "2863:test-determinism"
+     },
+     "baselineState": "absent"
+    },
+    {
+     "ruleId": "PRREV-AGY-PRIOR",
+     "level": "note",
+     "message": {
+      "text": "Retaining the write error when stdout is empty correctly reports why the RPC failed if the server exited cleanly but provided no output. (found on 95ea02252 by PR #2863 \u00a73.E lane; note)"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "crates/aprender-orchestrate/src/agent/tool/mcp_client.rs"
+        },
+        "region": {
+         "startLine": 287
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "none stated",
+      "source": "agy gemini-3.1-pro-high on 95ea02252 (agy-PMAT)",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "note; implement-as-written; re-verified by the primary on the PR",
+      "agy_id": "2863:empty-stdout-branch"
+     },
+     "baselineState": "absent"
+    },
+    {
+     "ruleId": "PRREV-AGY-PRIOR",
+     "level": "note",
+     "message": {
+      "text": "Cargo keeps versioned dev-dependencies in published manifests and strips path-only ones; the metadata 'req' field faithfully distinguishes them ('*' for path-only) (found on f95045f18 by PR #2864 \u00a73.E lane; note)"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "scripts/check_publish_preflight.sh"
+        },
+        "region": {
+         "startLine": 183
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "none stated",
+      "source": "agy gemini-3.1-pro-high on f95045f18 (agy-PMAT)",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "note; implement-as-written; re-verified by the primary on the PR",
+      "agy_id": "2864:cargo-publish-semantics"
+     },
+     "baselineState": "absent"
+    },
+    {
+     "ruleId": "PRREV-AGY-PRIOR",
+     "level": "note",
+     "message": {
+      "text": "R6 exhibits no false positives (e.g., dual normal/dev dependencies are processed individually) and skips unpublishable sources; no false negatives for aliases with both version and path as 'req' handles them correctly (found on f95045f18 by PR #2864 \u00a73.E lane; note)"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "scripts/check_publish_preflight.sh"
+        },
+        "region": {
+         "startLine": 185
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "none stated",
+      "source": "agy gemini-3.1-pro-high on f95045f18 (agy-PMAT)",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "note; implement-as-written; re-verified by the primary on the PR",
+      "agy_id": "2864:r6-precision"
+     },
+     "baselineState": "absent"
+    },
+    {
+     "ruleId": "PRREV-AGY-PRIOR",
+     "level": "note",
+     "message": {
+      "text": "The two-member test fixture accurately simulates cargo metadata behaviour and correctly asserts R6 polarity (found on f95045f18 by PR #2864 \u00a73.E lane; note)"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "scripts/check_publish_preflight.sh"
+        },
+        "region": {
+         "startLine": 258
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "none stated",
+      "source": "agy gemini-3.1-pro-high on f95045f18 (agy-PMAT)",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "note; implement-as-written; re-verified by the primary on the PR",
+      "agy_id": "2864:fixture-faithfulness"
+     },
+     "baselineState": "absent"
+    },
+    {
+     "ruleId": "PRREV-AGY-PRIOR",
+     "level": "note",
+     "message": {
+      "text": "The pipeline change in cascade-drain.sh solely affects output logging (adding DEFER to grep and increasing tail) with no side effects on execution flow (found on f95045f18 by PR #2864 \u00a73.E lane; note)"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "scripts/cascade-drain.sh"
+        },
+        "region": {
+         "startLine": 152
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "none stated",
+      "source": "agy gemini-3.1-pro-high on f95045f18 (agy-PMAT)",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "note; implement-as-written; re-verified by the primary on the PR",
+      "agy_id": "2864:drain-change-impact"
+     },
+     "baselineState": "absent"
+    },
+    {
+     "ruleId": "PRREV-AGY-PRIOR",
+     "level": "note",
+     "message": {
+      "text": "The cyclic dependency claim is structurally verified: aprender-test-lib -> aprender-compute -> aprender-core -> aprender-data -> aprender-test-lib (found on f95045f18 by PR #2864 \u00a73.E lane; note)"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "crates/aprender-data/Cargo.toml"
+        },
+        "region": {
+         "startLine": 112
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "none stated",
+      "source": "agy gemini-3.1-pro-high on f95045f18 (agy-PMAT)",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "note; implement-as-written; re-verified by the primary on the PR",
+      "agy_id": "2864:dependency-cycle"
+     },
+     "baselineState": "absent"
+    }
+   ]
+  }
+ ]
+}

@@ -18,6 +18,10 @@
 #   R3  the tag `v<version>` points at HEAD: the crate that is uploaded is the
 #       commit that is tagged, not a neighbour of it.
 #   R4  HEAD is an ancestor of the main ref: nothing publishes from a branch.
+#   R6  no sibling dev-dependency carries a version. cargo keeps a versioned
+#       dev-dependency in the published manifest and resolves it on the registry,
+#       so two siblings that name each other can never be uploaded first
+#       (PMAT-955: 0.65.0 stuck at 48/74 on aprender-core ↔ aprender-test-lib).
 #   R5  the newest dogfood receipt (`.dogfood/receipt-*.json`, written by
 #       scripts/dogfood.sh) says `verdict: GO` for THIS commit and THIS
 #       version. A stale receipt, a NO-GO, or no receipt at all refuses.
@@ -165,6 +169,35 @@ print(d.get("verdict") or "-", d.get("commit") or "-", d.get("version") or "-",
         fi
     fi
 
+    # R6 no sibling dev-dependency carries a version (PMAT-955). A dev-dependency
+    # with a version is kept in the published manifest and resolved on the
+    # registry at publish time; a path-only one is stripped. Two siblings that
+    # name each other with versions form a cycle no publish order can break.
+    r6="$(cargo metadata --no-deps --offline --format-version 1 --manifest-path "$root/Cargo.toml" 2>/dev/null | python3 -c '
+import json, sys
+try:
+    d = json.load(sys.stdin)
+except Exception:
+    print("UNREADABLE"); sys.exit(0)
+names = {p["name"] for p in d.get("packages", [])}
+bad = []
+for p in d.get("packages", []):
+    if p.get("publish") == []:
+        continue
+    for dep in p.get("dependencies", []):
+        if dep.get("kind") == "dev" and dep.get("name") in names and (dep.get("req") or "*") != "*":
+            bad.append("%s -> %s %s" % (p["name"], dep["name"], dep.get("req")))
+print("\n".join(bad))')"
+    if [ "$r6" = UNREADABLE ]; then
+        echo "FAIL  R6 cargo metadata is unreadable, so sibling dev-dependencies cannot be judged"
+        fails=1
+    elif [ -n "$r6" ]; then
+        printf 'FAIL  R6 sibling dev-dependency carries a version (kept in the published manifest; a publish cycle):\n%s\n' "$r6"
+        fails=1
+    else
+        echo "ok    R6 no sibling dev-dependency carries a version (path-only, stripped at publish)"
+    fi
+
     if [ "$fails" -ne 0 ]; then
         echo "REFUSE $PROG: publishing is not allowed from this tree (see the FAIL rows)."
         return 1
@@ -211,6 +244,27 @@ selftest() {
     write_receipt() { # dir, verdict, commit, version [, phase, deferred-json-array]
         printf '{"crate":"preflight-fixture","version":"%s","timestamp":"20260903T000000Z","commit":"%s","gates":[],"phase":"%s","deferred":%s,"verdict":"%s"}\n' \
             "$4" "$3" "${5:-full}" "${6:-[]}" "$2" > "$1/.dogfood/receipt-20260903T000000Z.json"
+    }
+    # A throwaway WORKSPACE: root package plus members a and b, where a has a
+    # dev-dependency on b declared either path-only or with a version (R6).
+    build_ws_repo() { # dir, devdep-suffix ('' | ', version = "1.2.3"')
+        local d="$1" suffix="$2"
+        mkdir -p "$d/src" "$d/a/src" "$d/b/src"
+        printf '[workspace]\nmembers = ["a", "b"]\n\n[package]\nname = "preflight-fixture"\nversion = "1.2.3"\nedition = "2021"\n\n[dependencies]\n' > "$d/Cargo.toml"
+        printf 'pub fn f() {}\n' > "$d/src/lib.rs"
+        printf '[package]\nname = "fx-a"\nversion = "1.2.3"\nedition = "2021"\n\n[dependencies]\n\n[dev-dependencies]\nfx-b = { path = "../b"%s }\n' "$suffix" > "$d/a/Cargo.toml"
+        printf 'pub fn a() {}\n' > "$d/a/src/lib.rs"
+        printf '[package]\nname = "fx-b"\nversion = "1.2.3"\nedition = "2021"\n' > "$d/b/Cargo.toml"
+        printf 'pub fn b() {}\n' > "$d/b/src/lib.rs"
+        printf '.dogfood/\n' > "$d/.gitignore"
+        git -C "$d" init -q -b fixture-main
+        git -C "$d" -c user.name=t -c user.email=t@t config commit.gpgsign false
+        ( cd "$d" && cargo metadata --no-deps --offline --format-version 1 >/dev/null 2>&1 )
+        git -C "$d" add -A
+        git -C "$d" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -qm 'fixture' >/dev/null
+        git -C "$d" tag v1.2.3
+        mkdir -p "$d/.dogfood"
+        write_receipt "$d" GO "$(git -C "$d" rev-parse HEAD)" 1.2.3
     }
     row() { # name, expect(0|1), needle, dir
         local name="$1" expect="$2" needle="$3" d="$4" out rc=0
@@ -292,6 +346,12 @@ selftest() {
     d="$tmp/fullphase-defer"; build_repo "$d"
     write_receipt "$d" GO "$(git -C "$d" rev-parse HEAD)" 1.2.3 full '["publish-dry-run"]'
     row deferral_outside_prepublish_refuses 1 "FAIL  R5" "$d"
+
+    # R6, both polarities (PMAT-955)
+    d="$tmp/devdep_version"; build_ws_repo "$d" ', version = "1.2.3"'
+    row versioned_sibling_devdep_refuses 1 "FAIL  R6" "$d"
+    d="$tmp/devdep_path"; build_ws_repo "$d" ''
+    row pathed_sibling_devdep_passes   0 "PASS" "$d"
 
     printf -- '--- %s/%s rows ---\n' "$pass" "$((pass + fail))"
     [ "$fail" -eq 0 ]
