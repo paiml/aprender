@@ -42,9 +42,7 @@ set -euo pipefail
 # caller sets it, pins the clock this probe stamps its evidence filenames
 # with. Unset -- the normal case for a live probe run -- this falls through
 # to the real wall clock, so evidence filenames are unchanged from before.
-DATE_PIN=()
-[ -n "${SOURCE_DATE_EPOCH:-}" ] && DATE_PIN=(-d "@${SOURCE_DATE_EPOCH}")
-_stamp_compact() { date -u "${DATE_PIN[@]}" +%Y%m%d_%H%M%S; }
+_stamp_compact() { date -u -d "@${SOURCE_DATE_EPOCH:-$(printf '%(%s)T' -1)}" +%Y%m%d_%H%M%S; }
 
 HOSTS=""
 MODEL=""

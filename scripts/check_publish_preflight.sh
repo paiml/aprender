@@ -256,7 +256,15 @@ selftest() {
     d="$tmp/otherver"; build_repo "$d"; write_receipt "$d" GO "$(git -C "$d" rev-parse HEAD)" 1.2.4
     row dogfood_other_version_refuses  1 "FAIL  R5" "$d"
 
-    d="$tmp/noreceipt"; build_repo "$d"; rm -f "$d/.dogfood/receipt-20260903T000000Z.json"; rmdir "$d/.dogfood"
+    d="$tmp/noreceipt"; build_repo "$d"
+    # SEC010: validate before rm -- $d is $tmp (mktemp -d) plus a literal, but
+    # guard it explicitly rather than relying on the assignment above.
+    stale_receipt="$d/.dogfood/receipt-20260903T000000Z.json"
+    case "$stale_receipt" in
+        *..*) echo "ERROR: fixture path must not contain '..'" >&2; exit 1 ;;
+    esac
+    rm -f "$stale_receipt"
+    rmdir "$d/.dogfood"
     row dogfood_receipt_absent_refuses 1 "FAIL  R5" "$d"
 
     d="$tmp/unreadable"; build_repo "$d"; printf '{not json' > "$d/.dogfood/receipt-20260903T000000Z.json"

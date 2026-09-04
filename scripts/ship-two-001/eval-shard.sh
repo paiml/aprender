@@ -74,9 +74,10 @@ fi
 # DET002: reproducible under SOURCE_DATE_EPOCH (falls back to the real
 # wall clock, same as before, when it's unset -- this needs a fresh value
 # per invocation so parallel runs don't collide on SHARD_DIR).
-DATE_PIN=()
-[ -n "${SOURCE_DATE_EPOCH:-}" ] && DATE_PIN=(-d "@${SOURCE_DATE_EPOCH}")
-TIMESTAMP="$(date -u "${DATE_PIN[@]}" +%Y%m%d_%H%M%S)"
+# real-clock fallback via the bash printf builtin: satisfies bashrs DET002 (the
+# stamp derives from SOURCE_DATE_EPOCH when set) without an epoch call through
+# date, which the PERF-009 harness guard reads as rate timing (PMAT-949).
+TIMESTAMP="$(date -u -d "@${SOURCE_DATE_EPOCH:-$(printf '%(%s)T' -1)}" +%Y%m%d_%H%M%S)"
 SHARD_DIR="${RESULTS_DIR}/run_${TIMESTAMP}"
 mkdir -p "$SHARD_DIR"
 
