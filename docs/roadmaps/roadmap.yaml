@@ -14487,6 +14487,33 @@ roadmap:
   - 'send_jsonrpc returns the stdin write error only when the child exited cleanly AND wrote nothing; a response on stdout is parsed regardless of EPIPE on the request'
   - 'test_stdio_transport_clean_exit_without_reading_keeps_its_response (child closes stdin, echoes a response, exits 0; 1 MiB request) is green on the fix and RED (got: Err("write stdin: Broken pipe")) with the stdout-empty guard reverted'
   notes: 'Found by the 0.65.0 release clean-room run 2 on 587ad0797 (88537 passed, 4 failed, all in mcp_client_tests.rs). Released 0.65.0 carries the defect by operator decision (cherry-pick behind the tag).'
+- id: PMAT-929
+  github_issue: null
+  item_type: task
+  title: '0.65.0 release under PP-LLAMA-001 v3.1: verify every LANDED §12 row on main, land the open rows, cut through the F-9 gate (paiml-implement run, receipt docs/audits/impl-PMAT-929-receipt.md)'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-09-03 12:00:00+00:00
+  updated: 2026-09-04 16:30:00+00:00
+  spec: docs/specifications/PP-LLAMA-001-MASTER.md
+  acceptance_criteria:
+  - 'perf_gate.sh --phase release PASS on the release sha with no SKIP hiding a FAIL; dogfood --phase pre-publish GO; tag from cargo metadata, absent on crates.io; cascade only through check_publish_preflight.sh (R1-R5), never --allow-dirty; post-publish dogfood on the published crate'
+  - 'receipt in docs/audits/ with claimed-vs-rerun table, jidoka log, estimates with basis, transcript-gate PASS, status-lint PASS'
+  notes: 'Tickets minted in this run: PMAT-930..953 (ledger scanner, dogfood gates, PERF-009 guard blind spot, stdio MCP transport races, wgpu init deadlock). Operator decisions quoted in the receipt.'
+- id: PMAT-951
+  github_issue: null
+  item_type: feature
+  title: '0.66 performance parity: 7B-class inference parity with llama.cpp/Ollama on lambda and gx10, QLoRA fine-tuning parity with Unsloth, wgpu (intel) and Metal (mini) parity, AMD/wasm first-class, CUDA PTX+cuBLAS documentation pass, crate renames to aprender_<english>'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-09-04 15:00:00+00:00
+  updated: 2026-09-04 16:30:00+00:00
+  spec: docs/specifications/0.66-performance-parity-report.md
+  acceptance_criteria:
+  - 'every obligation row in the spec §11 DAG landed or UNMEASURED{owner, expires}; CONFORMANT ledger rows on both proof hosts per workstream; training parity gate T-7 ARMED on both hosts'
+  notes: 'Spec reviewed by agy /teamwork-preview and a 3-lane agy --mode plan quorum (receipt attached to the spec PR).'
 - id: PMAT-750
   github_issue: null
   item_type: task
