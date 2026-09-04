@@ -14376,6 +14376,47 @@ roadmap:
   - 'send_jsonrpc waits for the child before returning a stdin write error; a non-zero exit always reports process exited <status>: <stderr>'
   - 'test_stdio_transport_exit_before_request_is_read (child closes stdin, 1 MiB request) is deterministic: 40/40 green with the fix, RED (got: write stdin: Broken pipe) with the transport change reverted'
   notes: 'Found by the predicted-main clean-room (8100ecd06): 1 failed of 6569 in batuta lib tests, the race between the child exit and the parent write. Fixed in #2860.'
+- id: PMAT-954
+  github_issue: null
+  item_type: bug
+  title: 'cascade-drain.sh filtered every DEFER line out of its log, so a STUCK drain reported no reason (0.65.0: 48/74 with the cycle invisible)'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-09-04 16:40:00+00:00
+  updated: 2026-09-04 16:40:00+00:00
+  spec: null
+  acceptance_criteria:
+  - 'a DEFER line printed by cascade-publish.sh survives the drain log filter'
+  notes: 'Found on the 0.65.0 cut; the reason had to be recovered by running cascade-publish.sh --only-tier 2 by hand.'
+- id: PMAT-955
+  github_issue: null
+  item_type: bug
+  title: 'publish cycle: five sibling dev-dependencies carried a version (workspace alias), so aprender-core (needs aprender-data) could not be uploaded before aprender-test-lib (needs aprender-core); 0.65.0 cascade STUCK at 48/74'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-09-04 16:40:00+00:00
+  updated: 2026-09-04 16:40:00+00:00
+  spec: null
+  acceptance_criteria:
+  - 'every sibling dev-dependency in a publishable crate is path-only (cargo metadata req "*"); preflight R6 refuses a versioned sibling dev-dependency, with a fixture row on both polarities and the R6 mutation RED'
+  - '0.65.1 cut from the fixed tree publishes all 74 crates (the 48 already at 0.65.0 move to 0.65.1); v0.65.0 is never moved'
+  notes: 'Memory rule feedback_crates_io_devdep_publish_cycles existed since 0.60.0 but had no guard; R6 is that guard, on the surface where the publish decision is made.'
+- id: PMAT-956
+  github_issue: null
+  item_type: bug
+  title: 'claim_literal_baseline.txt is line-keyed: any insert above a baselined line in CHANGELOG.md (every new release entry) moves six entries and the set-aperture ratchet refuses the re-key unless the guard itself changed; the 0.65.1 changelog entry could not be added'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-04 16:55:00+00:00
+  updated: 2026-09-04 16:55:00+00:00
+  spec: null
+  acceptance_criteria:
+  - 'baseline entries for prose files are keyed by path plus the normalised claim text (content-keyed), so a relocation is the same entry; the set-aperture rule (a2) already states the intent'
+  - 'case rows: an insert above a baselined CHANGELOG line passes unchanged; a copied claim (occurrence count up) still refuses; a claim whose text is absent at the comparand still refuses'
+  notes: 'Found on the 0.65.1 cut (PMAT-955 PR): the release note was moved out of CHANGELOG.md into the GitHub release and the receipt because the guard could not admit the shifted coordinates. Fix the guard in its own PR, then add the 0.65.0/0.65.1 entries.'
 - id: PMAT-750
   github_issue: null
   item_type: task

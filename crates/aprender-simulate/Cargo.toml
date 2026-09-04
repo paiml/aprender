@@ -57,7 +57,7 @@ crossterm = { version = "0.28", optional = true }
 # ComputeBlocks from presentar-terminal (SIMD-optimized TUI widgets)
 # Path deps to avoid jugar-probar prod dep chain (CB-081)
 presentar-terminal = { workspace = true, optional = true }
-presentar-core = { version = "0.65.0", path = "../aprender-present-core", package = "aprender-present-core", default-features = false, optional = true }
+presentar-core = { version = "0.65.1", path = "../aprender-present-core", package = "aprender-present-core", default-features = false, optional = true }
 
 # WASM (optional)
 wasm-bindgen = { version = "0.2", optional = true }

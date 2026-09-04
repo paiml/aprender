@@ -80,9 +80,9 @@ provable-contracts-macros = { workspace = true }
 # Core PAIML stack
 ndarray = "0.16"
 trueno = { workspace = true, features = ["parallel"] }
-trueno-gpu = { version = "0.65.0", path = "../aprender-gpu", package = "aprender-gpu", optional = true }  # CUDA compute (APR-MONO single-source-of-truth)
+trueno-gpu = { version = "0.65.1", path = "../aprender-gpu", package = "aprender-gpu", optional = true }  # CUDA compute (APR-MONO single-source-of-truth)
 realizar = { workspace = true, optional = true }
-aprender = { path = "../aprender-core", version = "0.65.0", package = "aprender-core" }  # ML interpret module + .apr format + tokenizers
+aprender = { path = "../aprender-core", version = "0.65.1", package = "aprender-core" }  # ML interpret module + .apr format + tokenizers
 trueno-viz = { workspace = true, features = ["terminal"] }
 batuta-common = { workspace = true, optional = true }  # WithDimensions trait for `viz` feature (APR-MONO §S #1978)
 presentar-terminal = { workspace = true, optional = true }
@@ -147,8 +147,8 @@ arrow = { version = "59", default-features = false }  # For MNIST example array 
 parquet = { version = "59", default-features = false }  # For ALB-007 Parquet writing in tests
 insta = { version = "1.42", features = ["json", "yaml"] }  # Snapshot testing for PMAT QA
 dirs = "5.0"  # Cache directory detection for examples
-jugar-probar = { workspace = true }  # TUI snapshot testing (ENT-140)
-provable-contracts = { workspace = true }  # Contract trait enforcement (Section 23)
+jugar-probar = { path = "../aprender-test-lib", package = "aprender-test-lib" }  # TUI snapshot testing (ENT-140); PMAT-955: path-only dev-dep
+provable-contracts = { path = "../aprender-contracts", package = "aprender-contracts" }  # PMAT-955: path-only dev-dep (no version)
 
 [[bench]]
 name = "monitor_bench"

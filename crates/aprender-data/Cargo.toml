@@ -109,7 +109,7 @@ criterion = { version = "0.5", features = ["html_reports"] }
 proptest = "1.6"
 assert_cmd = "2"
 predicates = "3"
-jugar-probar = { workspace = true }
+jugar-probar = { path = "../aprender-test-lib", package = "aprender-test-lib" }  # PMAT-955: path-only (no version) so cargo strips it at publish
 
 [[bin]]
 name = "alimentar"

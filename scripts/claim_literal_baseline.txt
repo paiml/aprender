@@ -196,7 +196,6 @@ crates/apr-cli/src/commands/run_tests_layer_trace.rs:55
 crates/apr-cli/src/commands/run_tests_layer_trace.rs:56
 crates/apr-cli/src/commands/serve/handler_gpu_completion.rs:362
 crates/apr-cli/src/commands/serve/handler_gpu_completion.rs:363
-crates/apr-cli/src/commands/serve/handlers.rs:1169
 crates/apr-cli/src/commands/serve/handlers_include_01.rs:4
 crates/apr-cli/src/commands/serve/mod.rs:209
 crates/apr-cli/src/commands/speedup.rs:11
@@ -263,7 +262,6 @@ crates/aprender-serve/src/inference/thread.rs:11
 crates/aprender-serve/src/inference/thread.rs:12
 crates/aprender-serve/src/inference/thread.rs:13
 crates/aprender-serve/src/inference/thread.rs:14
-crates/aprender-serve/src/lib.rs:401
 crates/aprender-serve/src/safetensors_cuda.rs:4
 crates/aprender-serve/src/tui.rs:108
 crates/aprender-test-lib/src/llm/training_scorecard.rs:217

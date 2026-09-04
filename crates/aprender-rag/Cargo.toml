@@ -63,7 +63,7 @@ fastembed = { version = "5", optional = true }
 
 # NVIDIA Embed Nemotron 8B via realizar GGUF infrastructure (GH-3)
 # Large model (~4-32GB depending on quantization), requires GGUF file
-realizar = { version = "0.65.0", path = "../aprender-serve", package = "aprender-serve", default-features = false, optional = true }
+realizar = { version = "0.65.1", path = "../aprender-serve", package = "aprender-serve", default-features = false, optional = true }
 
 
 # Eval: LLM-as-judge via Anthropic API (PMAT-015)
