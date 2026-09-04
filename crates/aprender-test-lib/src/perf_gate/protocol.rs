@@ -90,7 +90,12 @@ pub fn warmup_requests(concurrency: usize) -> usize {
 /// at runtime would make the producer depend on a path that does not exist in a
 /// published crate; `include_str!` binds the exact bytes of the checkout the
 /// binary was built from, which is also what the receipt's `commit` claims.
-pub const PERF_MATRIX_SOURCE: &str = include_str!("../../../../scripts/perf-matrix.yaml");
+///
+/// PMAT-958: the bytes arrive through `build.rs`, which copies the workspace
+/// file into `OUT_DIR` and refuses to build if the vendored copy shipped in the
+/// crate (`perf-matrix.vendored.yaml`) differs from it; a published crate, which
+/// has no `scripts/`, embeds the vendored copy.
+pub const PERF_MATRIX_SOURCE: &str = include_str!(concat!(env!("OUT_DIR"), "/perf-matrix.yaml"));
 
 /// §5.1 / PP-28 — the sampler pinned on both lanes, on the wire in every receipt.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
