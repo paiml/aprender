@@ -13,7 +13,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-contracts"
-version = "0.65.1"
+version = "0.65.2"
 dependencies = [
  "aprender-contracts-macros",
  "regex",
@@ -25,7 +25,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-contracts-macros"
-version = "0.65.1"
+version = "0.65.2"
 dependencies = [
  "proc-macro2",
  "quote",

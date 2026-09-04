@@ -31,7 +31,7 @@ path = "src/lib.rs"
 # facade resolves. `scripts/check_facade_compat.sh` fails if this version ever
 # drifts from the aprender workspace version — these manifests are excluded
 # from the root workspace, so `cargo set-version` does NOT reach them.
-upstream = { path = "../../aprender-contracts", version = "0.65.1", package = "aprender-contracts" }
+upstream = { path = "../../aprender-contracts", version = "0.65.2", package = "aprender-contracts" }
 
 [dev-dependencies]
 # Used by three of the vendored 0.3.1 example programs. They were regular

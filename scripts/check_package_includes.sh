@@ -68,6 +68,19 @@ check_all() {
     [ -n "$name" ] || continue
     [ -d "$dir/src" ] || continue
 
+    # PMAT-958: an include_str!/include_bytes! target outside the crate
+    # directory cannot be in the tarball, whatever `cargo package --list` says.
+    local escapes
+    escapes="$(python3 "$REPO_ROOT/scripts/lib/resolve_includes.py" "$dir" --escapes)"
+    if [ -n "$escapes" ]; then
+      while IFS=$'\t' read -r target from; do
+        [ -n "$target" ] || continue
+        printf 'ESCAPES %s: %s (included by %s) is OUTSIDE the crate; the published package cannot contain it.\n' \
+          "$name" "$target" "$from"
+        total_missing=$((total_missing + 1))
+      done <<< "$escapes"
+      crates_checked=$((crates_checked + 1))
+    fi
     local includes
     includes="$(resolve_includes "$dir")"
     [ -n "$includes" ] || continue
@@ -202,6 +215,48 @@ if [ "${1:-}" = "--self-test" ]; then
     printf 'ok    row 4 found %s include(s)\n' "$n"
   fi
 
+  # Row 5 (PMAT-958): an include_str! whose target escapes the crate is reported;
+  # the same include inside the `#[cfg(test)]` module, or in a *_tests.rs file,
+  # is not (the verification build does not compile tests).
+  mkdir -p "$TD/f/src" "$TD/f_out"
+  printf 'x: 1\n' > "$TD/f_out/data.yaml"
+  printf 'pub const A: &str = include_str!("../../f_out/data.yaml");\n#[cfg(test)]\nmod tests { const B: &str = include_str!("../../f_out/data.yaml"); }\n' > "$TD/f/src/lib.rs"
+  printf 'const C: &str = include_str!("../../f_out/data.yaml");\n' > "$TD/f/src/lib_tests.rs"
+  got="$(python3 "$REPO_ROOT/scripts/lib/resolve_includes.py" "$TD/f" --escapes)"
+  n="$(printf '%s\n' "$got" | grep -c . || true)"
+  if [ "$n" = "1" ] && printf '%s' "$got" | grep -q 'src/lib.rs$'; then
+    printf 'ok    row 5 an include_str! escaping the crate is reported once (non-test code only)\n'
+  else
+    printf 'FAIL  row 5 expected exactly one escape from src/lib.rs, got: %s\n' "$got"; fails=1
+  fi
+  # Row 6 (PMAT-958): an include_str! inside the crate is not an escape.
+  mkdir -p "$TD/g/src" "$TD/g/data"
+  printf 'y: 2\n' > "$TD/g/data/in.yaml"
+  printf 'pub const D: &str = include_str!("../data/in.yaml");\n' > "$TD/g/src/lib.rs"
+  if [ -z "$(python3 "$REPO_ROOT/scripts/lib/resolve_includes.py" "$TD/g" --escapes)" ]; then
+    printf 'ok    row 6 an include_str! inside the crate is not an escape\n'
+  else
+    printf 'FAIL  row 6 flagged an in-crate include_str! as escaping\n'; fails=1
+  fi
+  # Row 7 (PMAT-958): a commented-out escaping include is not compiled and not reported.
+  mkdir -p "$TD/h/src"
+  printf '// was include_str!("../../../../gone.yaml") before the fix\npub const E: u8 = 1;\n' > "$TD/h/src/lib.rs"
+  if [ -z "$(python3 "$REPO_ROOT/scripts/lib/resolve_includes.py" "$TD/h" --escapes)" ]; then
+    printf 'ok    row 7 a commented-out escaping include is ignored\n'
+  else
+    printf 'FAIL  row 7 reported an include that lives in a comment\n'; fails=1
+  fi
+  # Row 8 (PMAT-958): a wasm32-only file (`use wasm_bindgen`) is outside the host
+  # verification build; its escaping include is SKIPPED on stderr, not reported.
+  mkdir -p "$TD/i/src"
+  printf 'use wasm_bindgen::prelude::*;\npub const F: &[u8] = include_bytes!("../../../../gone.apr");\n' > "$TD/i/src/lib.rs"
+  out="$(python3 "$REPO_ROOT/scripts/lib/resolve_includes.py" "$TD/i" --escapes 2>/dev/null)"
+  err="$(python3 "$REPO_ROOT/scripts/lib/resolve_includes.py" "$TD/i" --escapes 2>&1 >/dev/null)"
+  if [ -z "$out" ] && printf '%s' "$err" | grep -q 'SKIPPED (wasm32-only'; then
+    printf 'ok    row 8 a wasm32-only escaping include is skipped visibly, not reported\n'
+  else
+    printf 'FAIL  row 8 wasm32-only handling: out=[%s] err=[%s]\n' "$out" "$err"; fails=1
+  fi
   [ "$fails" -eq 0 ] || { printf '\nSELF-TEST FAILED\n'; exit 1; }
   printf '\nSELF-TEST PASSED\n'
   exit 0

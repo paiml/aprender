@@ -149,7 +149,7 @@ exclude = [
 resolver = "2"
 
 [workspace.package]
-version = "0.65.1"
+version = "0.65.2"
 edition = "2021"
 license = "MIT"
 repository = "https://github.com/paiml/aprender"
@@ -227,7 +227,7 @@ tokenizers = { version = "0.23.1", default-features = false, features = ["fancy-
 # aprender-rand (lib name `trueno_rand`) is a workspace MEMBER but had no
 # [workspace.dependencies] entry, so every consumer had to re-declare the path.
 # It is the counter-based Philox RNG behind the SetFit encoder's dropout masks.
-aprender-rand = { path = "crates/aprender-rand", version = "0.65.1" }
+aprender-rand = { path = "crates/aprender-rand", version = "0.65.2" }
 
 # Chat templates
 minijinja = { version = "2.14", features = ["loader", "serde"] }
@@ -237,9 +237,9 @@ minijinja = { version = "2.14", features = ["loader", "serde"] }
 # `crates/aprender-contracts` (lib name `provable_contracts`). Declaring it from
 # crates.io compiled a SECOND copy of the contract engine alongside the in-tree
 # one — exactly the duplicate-crate + publish-cycle the consolidation removed.
-provable-contracts = { path = "crates/aprender-contracts", version = "0.65.1", package = "aprender-contracts" }
-provable-contracts-macros = { path = "crates/aprender-contracts-macros", version = "0.65.1", package = "aprender-contracts-macros" }
-aprender-contracts-macros = { path = "crates/aprender-contracts-macros", version = "0.65.1" }
+provable-contracts = { path = "crates/aprender-contracts", version = "0.65.2", package = "aprender-contracts" }
+provable-contracts-macros = { path = "crates/aprender-contracts-macros", version = "0.65.2", package = "aprender-contracts-macros" }
+aprender-contracts-macros = { path = "crates/aprender-contracts-macros", version = "0.65.2" }
 
 # YAML
 serde_yaml = "0.9"
@@ -251,64 +251,64 @@ hf-hub = { version = "0.4", default-features = false, features = ["ureq"] }
 hf-xet = "1.5.1"
 
 # Workspace-internal crates (paths within the monorepo)
-aprender-compute = { path = "crates/aprender-compute", version = "0.65.1" }
-aprender-gpu = { path = "crates/aprender-gpu", version = "0.65.1" }
-aprender-quant = { path = "crates/aprender-quant", version = "0.65.1" }
-aprender-serve = { path = "crates/aprender-serve", version = "0.65.1" }
-realizar = { path = "crates/aprender-serve", version = "0.65.1", package = "aprender-serve" }
-alimentar = { path = "crates/aprender-data", version = "0.65.1", package = "aprender-data" }
-pacha = { path = "crates/aprender-registry", version = "0.65.1", package = "aprender-registry" }
+aprender-compute = { path = "crates/aprender-compute", version = "0.65.2" }
+aprender-gpu = { path = "crates/aprender-gpu", version = "0.65.2" }
+aprender-quant = { path = "crates/aprender-quant", version = "0.65.2" }
+aprender-serve = { path = "crates/aprender-serve", version = "0.65.2" }
+realizar = { path = "crates/aprender-serve", version = "0.65.2", package = "aprender-serve" }
+alimentar = { path = "crates/aprender-data", version = "0.65.2", package = "aprender-data" }
+pacha = { path = "crates/aprender-registry", version = "0.65.2", package = "aprender-registry" }
 # APR-MONO self-containment: legacy sibling lib-name aliases -> in-monorepo crates (2026-06-12)
-trueno-quant = { path = "crates/aprender-quant", version = "0.65.1", package = "aprender-quant" }
-trueno-db = { path = "crates/aprender-db", version = "0.65.1", package = "aprender-db" }
-trueno-viz = { path = "crates/aprender-viz", version = "0.65.1", package = "aprender-viz" }
-trueno-rag = { path = "crates/aprender-rag", version = "0.65.1", package = "aprender-rag" }
-trueno-cuda-edge = { path = "crates/aprender-cuda-edge", version = "0.65.1", package = "aprender-cuda-edge" }
-renacer-core = { path = "crates/aprender-profile-core", version = "0.65.1", package = "aprender-profile-core" }
-repartir = { path = "crates/aprender-distribute", version = "0.65.1", package = "aprender-distribute" }
-simular = { path = "crates/aprender-simulate", version = "0.65.1", package = "aprender-simulate" }
-probar = { path = "crates/aprender-test-lib", version = "0.65.1", package = "aprender-test-lib" }
+trueno-quant = { path = "crates/aprender-quant", version = "0.65.2", package = "aprender-quant" }
+trueno-db = { path = "crates/aprender-db", version = "0.65.2", package = "aprender-db" }
+trueno-viz = { path = "crates/aprender-viz", version = "0.65.2", package = "aprender-viz" }
+trueno-rag = { path = "crates/aprender-rag", version = "0.65.2", package = "aprender-rag" }
+trueno-cuda-edge = { path = "crates/aprender-cuda-edge", version = "0.65.2", package = "aprender-cuda-edge" }
+renacer-core = { path = "crates/aprender-profile-core", version = "0.65.2", package = "aprender-profile-core" }
+repartir = { path = "crates/aprender-distribute", version = "0.65.2", package = "aprender-distribute" }
+simular = { path = "crates/aprender-simulate", version = "0.65.2", package = "aprender-simulate" }
+probar = { path = "crates/aprender-test-lib", version = "0.65.2", package = "aprender-test-lib" }
 # English key for the same crate, named after the command it serves (`apr test`).
 # The dep KEY, not the package name, is what becomes the extern crate name when
 # the two differ — the lib target is still `jugar_probar`, so keying it by its
 # package name would have imported Spanish anyway. Renaming that lib target is
 # 196 call sites in 17 crates and gets its own PR; this key is how new code
 # reads English today.
-apr-test = { path = "crates/aprender-test-lib", version = "0.65.1", package = "aprender-test-lib", default-features = false, features = ["llm"] }
+apr-test = { path = "crates/aprender-test-lib", version = "0.65.2", package = "aprender-test-lib", default-features = false, features = ["llm"] }
 # `jugar-probar` is the crates.io/lib name of the same in-tree crate as `probar`
 # above. Both aliases resolve to ONE package; consumers that spelled it
 # `jugar-probar = "0.4"|"0.5"|"1.0"` were building three extra copies.
-jugar-probar = { path = "crates/aprender-test-lib", version = "0.65.1", package = "aprender-test-lib" }
+jugar-probar = { path = "crates/aprender-test-lib", version = "0.65.2", package = "aprender-test-lib" }
 # NOTE: the matching `jugar-probar-derive` alias already exists further down this
 # same table (it points at crates/aprender-test-derive). crates/aprender-test-lib
 # was pinning `jugar-probar-derive = "=1.0.3"` from crates.io regardless — the
 # alias was sitting there unused.
-aprender-train = { path = "crates/aprender-train", version = "0.65.1" }
-entrenar = { path = "crates/aprender-train", version = "0.65.1", package = "aprender-train" }
-aprender-train-common = { path = "crates/aprender-train-common", version = "0.65.1" }
-aprender-train-distill = { path = "crates/aprender-train-distill", version = "0.65.1" }
-aprender-orchestrate = { path = "crates/aprender-orchestrate", version = "0.65.1" }
-aprender-contracts = { path = "crates/aprender-contracts", version = "0.65.1" }
-aprender-profile = { path = "crates/aprender-profile", version = "0.65.1" }
-aprender-profile-core = { path = "crates/aprender-profile-core", version = "0.65.1" }
-aprender-zram-core = { path = "crates/aprender-zram-core", version = "0.65.1" }
-aprender-zram-adaptive = { path = "crates/aprender-zram-adaptive", version = "0.65.1" }
-aprender-zram-cli = { path = "crates/aprender-zram-cli", version = "0.65.1" }
-aprender-present-core = { path = "crates/aprender-present-core", version = "0.65.1" }
-aprender-present-terminal = { path = "crates/aprender-present-terminal", version = "0.65.1" }
-aprender-present-widgets = { path = "crates/aprender-present-widgets", version = "0.65.1" }
-aprender-present-layout = { path = "crates/aprender-present-layout", version = "0.65.1" }
-aprender-present-yaml = { path = "crates/aprender-present-yaml", version = "0.65.1" }
-aprender-present-test = { path = "crates/aprender-present-test", version = "0.65.1" }
-aprender-db = { path = "crates/aprender-db", version = "0.65.1" }
-aprender-graph = { path = "crates/aprender-graph", version = "0.65.1" }
-aprender-rag = { path = "crates/aprender-rag", version = "0.65.1" }
-aprender-rag-cli = { path = "crates/aprender-rag-cli", version = "0.65.1" }
-aprender-qa-cli = { path = "crates/aprender-qa-cli", version = "0.65.1" }
-aprender-cgp = { path = "crates/aprender-cgp", version = "0.65.1" }
-aprender-contrastive-data = { path = "crates/aprender-contrastive-data", version = "0.65.1" }
-aprender-contracts-cli = { path = "crates/aprender-contracts-cli", version = "0.65.1" }
-aprender-data = { path = "crates/aprender-data", version = "0.65.1" }
+aprender-train = { path = "crates/aprender-train", version = "0.65.2" }
+entrenar = { path = "crates/aprender-train", version = "0.65.2", package = "aprender-train" }
+aprender-train-common = { path = "crates/aprender-train-common", version = "0.65.2" }
+aprender-train-distill = { path = "crates/aprender-train-distill", version = "0.65.2" }
+aprender-orchestrate = { path = "crates/aprender-orchestrate", version = "0.65.2" }
+aprender-contracts = { path = "crates/aprender-contracts", version = "0.65.2" }
+aprender-profile = { path = "crates/aprender-profile", version = "0.65.2" }
+aprender-profile-core = { path = "crates/aprender-profile-core", version = "0.65.2" }
+aprender-zram-core = { path = "crates/aprender-zram-core", version = "0.65.2" }
+aprender-zram-adaptive = { path = "crates/aprender-zram-adaptive", version = "0.65.2" }
+aprender-zram-cli = { path = "crates/aprender-zram-cli", version = "0.65.2" }
+aprender-present-core = { path = "crates/aprender-present-core", version = "0.65.2" }
+aprender-present-terminal = { path = "crates/aprender-present-terminal", version = "0.65.2" }
+aprender-present-widgets = { path = "crates/aprender-present-widgets", version = "0.65.2" }
+aprender-present-layout = { path = "crates/aprender-present-layout", version = "0.65.2" }
+aprender-present-yaml = { path = "crates/aprender-present-yaml", version = "0.65.2" }
+aprender-present-test = { path = "crates/aprender-present-test", version = "0.65.2" }
+aprender-db = { path = "crates/aprender-db", version = "0.65.2" }
+aprender-graph = { path = "crates/aprender-graph", version = "0.65.2" }
+aprender-rag = { path = "crates/aprender-rag", version = "0.65.2" }
+aprender-rag-cli = { path = "crates/aprender-rag-cli", version = "0.65.2" }
+aprender-qa-cli = { path = "crates/aprender-qa-cli", version = "0.65.2" }
+aprender-cgp = { path = "crates/aprender-cgp", version = "0.65.2" }
+aprender-contrastive-data = { path = "crates/aprender-contrastive-data", version = "0.65.2" }
+aprender-contracts-cli = { path = "crates/aprender-contracts-cli", version = "0.65.2" }
+aprender-data = { path = "crates/aprender-data", version = "0.65.2" }
 
 # Additional external deps needed by sub-crates
 serde_yaml_ng = "0.10"
@@ -353,25 +353,25 @@ wasmtime = "43"
 bollard = "0.17"
 
 # Old crate name aliases (workspace = true refs in migrated sub-crates)
-trueno-zram-core = { path = "crates/aprender-zram-core", version = "0.65.1", package = "aprender-zram-core" }
-trueno-zram-adaptive = { path = "crates/aprender-zram-adaptive", version = "0.65.1", package = "aprender-zram-adaptive" }
-trueno = { path = "crates/aprender-compute", version = "0.65.1", package = "aprender-compute" }
-presentar-core = { path = "crates/aprender-present-core", version = "0.65.1", package = "aprender-present-core" }
-presentar-terminal = { path = "crates/aprender-present-terminal", version = "0.65.1", package = "aprender-present-terminal" }
-presentar-widgets = { path = "crates/aprender-present-widgets", version = "0.65.1", package = "aprender-present-widgets" }
-presentar-layout = { path = "crates/aprender-present-layout", version = "0.65.1", package = "aprender-present-layout" }
-presentar-yaml = { path = "crates/aprender-present-yaml", version = "0.65.1", package = "aprender-present-yaml" }
-presentar-test = { path = "crates/aprender-present-test", version = "0.65.1", package = "aprender-present-test" }
-presentar-test-macros = { path = "crates/aprender-present-test-macros", version = "0.65.1", package = "aprender-present-test-macros" }
-jugar-probar-derive = { path = "crates/aprender-test-derive", version = "0.65.1", package = "aprender-test-derive" }
-batuta-common = { path = "crates/aprender-common", version = "0.65.1", package = "aprender-common" }
+trueno-zram-core = { path = "crates/aprender-zram-core", version = "0.65.2", package = "aprender-zram-core" }
+trueno-zram-adaptive = { path = "crates/aprender-zram-adaptive", version = "0.65.2", package = "aprender-zram-adaptive" }
+trueno = { path = "crates/aprender-compute", version = "0.65.2", package = "aprender-compute" }
+presentar-core = { path = "crates/aprender-present-core", version = "0.65.2", package = "aprender-present-core" }
+presentar-terminal = { path = "crates/aprender-present-terminal", version = "0.65.2", package = "aprender-present-terminal" }
+presentar-widgets = { path = "crates/aprender-present-widgets", version = "0.65.2", package = "aprender-present-widgets" }
+presentar-layout = { path = "crates/aprender-present-layout", version = "0.65.2", package = "aprender-present-layout" }
+presentar-yaml = { path = "crates/aprender-present-yaml", version = "0.65.2", package = "aprender-present-yaml" }
+presentar-test = { path = "crates/aprender-present-test", version = "0.65.2", package = "aprender-present-test" }
+presentar-test-macros = { path = "crates/aprender-present-test-macros", version = "0.65.2", package = "aprender-present-test-macros" }
+jugar-probar-derive = { path = "crates/aprender-test-derive", version = "0.65.2", package = "aprender-test-derive" }
+batuta-common = { path = "crates/aprender-common", version = "0.65.2", package = "aprender-common" }
 # APR-MONO sibling aliases — MUST use workspace refs, NEVER crates.io versions.
 # Hard-pinning these to crates.io creates a diamond: sub-crates pull older
 # aprender versions → multiple `aprender` crates in Cargo.lock = MUDA.
-renacer = { path = "crates/aprender-profile", version = "0.65.1", package = "aprender-profile" }
-entrenar-lora = { path = "crates/aprender-train-lora", version = "0.65.1", package = "aprender-train-lora" }
-batuta = { path = "crates/aprender-orchestrate", version = "0.65.1", package = "aprender-orchestrate" }
-trueno-graph = { path = "crates/aprender-graph", version = "0.65.1", package = "aprender-graph" }
+renacer = { path = "crates/aprender-profile", version = "0.65.2", package = "aprender-profile" }
+entrenar-lora = { path = "crates/aprender-train-lora", version = "0.65.2", package = "aprender-train-lora" }
+batuta = { path = "crates/aprender-orchestrate", version = "0.65.2", package = "aprender-orchestrate" }
+trueno-graph = { path = "crates/aprender-graph", version = "0.65.2", package = "aprender-graph" }
 
 [workspace.lints.rust]
 # Safety
@@ -553,7 +553,7 @@ semicolon_if_nothing_returned = "allow"  # Style preference
 
 [package]
 name = "aprender"
-version = "0.65.1"
+version = "0.65.2"
 edition = "2021"
 rust-version = "1.91"
 authors = ["Noah Gift <noah@paiml.com>"]
@@ -661,9 +661,9 @@ required-features = ["cli"]
 # (e.g. apr-cookbook, downstream apps) don't pull apr-cli's heavy transitive
 # dep graph (renacer/profile/inference/zram/visualization). `cargo install
 # aprender` still works because `cli` is in default features. See GH-1599.
-apr-cli = { path = "crates/apr-cli", version = "0.65.1", default-features = true, optional = true }
+apr-cli = { path = "crates/apr-cli", version = "0.65.2", default-features = true, optional = true }
 # Core ML library (lib name = "aprender")
-aprender_ml = { path = "crates/aprender-core", version = "0.65.1", package = "aprender-core" }
+aprender_ml = { path = "crates/aprender-core", version = "0.65.2", package = "aprender-core" }
 
 [features]
 default = ["cli"]
