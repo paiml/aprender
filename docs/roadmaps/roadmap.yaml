@@ -14417,6 +14417,35 @@ roadmap:
   - 'baseline entries for prose files are keyed by path plus the normalised claim text (content-keyed), so a relocation is the same entry; the set-aperture rule (a2) already states the intent'
   - 'case rows: an insert above a baselined CHANGELOG line passes unchanged; a copied claim (occurrence count up) still refuses; a claim whose text is absent at the comparand still refuses'
   notes: 'Found on the 0.65.1 cut (PMAT-955 PR): the release note was moved out of CHANGELOG.md into the GitHub release and the receipt because the guard could not admit the shifted coordinates. Fix the guard in its own PR, then add the 0.65.0/0.65.1 entries.'
+- id: PMAT-958
+  github_issue: null
+  item_type: bug
+  title: 'aprender-test-lib unpublishable: protocol.rs include_str!s ../../../../scripts/perf-matrix.yaml (outside the crate), so the cargo publish verification build fails; 0.65.1 cascade stuck at 67/74 with the root crate behind it'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-09-04 20:20:00+00:00
+  updated: 2026-09-04 20:20:00+00:00
+  spec: docs/specifications/PP-LLAMA-001-MASTER.md
+  acceptance_criteria:
+  - 'build.rs copies scripts/perf-matrix.yaml into OUT_DIR in the workspace, embeds perf-matrix.vendored.yaml in a published crate, and fails the build when the two differ (measured: drift mutation -> failed to run custom build command)'
+  - 'cargo publish -p aprender-test-lib --dry-run --locked verifies (measured at 0.65.1 deps: Packaged 242 files, Verifying, Finished)'
+  - 'check_package_includes.sh reports any include_str!/include_bytes! in non-test code whose target escapes the crate (rows 5-7; mutation with the predicate disabled -> row 5 BROKE)'
+  - '0.65.2 cut from the fixed tree publishes all 74 crates'
+  notes: 'CB-510 guard covered include!() only; the pre-publish dogfood DEFERs member dry-runs, so no pre-publish gate could see a verification failure.'
+- id: PMAT-959
+  github_issue: null
+  item_type: bug
+  title: 'aprender-present-lib src/browser/showcase.rs include_bytes!s ../../../../demo/assets/sentiment_mini.apr (repo root), but the asset lives at crates/aprender-present/demo/assets/; the wasm32 build of the published crate cannot compile'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-04 20:35:00+00:00
+  updated: 2026-09-04 20:35:00+00:00
+  spec: null
+  acceptance_criteria:
+  - 'the asset is vendored inside crates/aprender-present-lib (or reached through build.rs with a vendored copy, as PMAT-958 did for perf-matrix.yaml) and the wasm32 build of the packaged crate compiles'
+  notes: 'Found by the PMAT-958 widening of check_package_includes.sh; wasm32-only files are outside the host verification build, so the guard prints them as SKIPPED rather than failing — this is the one live residual.'
 - id: PMAT-952
   github_issue: null
   item_type: bug

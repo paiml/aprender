@@ -1,0 +1,399 @@
+# perf-matrix.yaml — THE EXPECTED CELL SET, and the ONE place a number lives.
+#
+# Governing spec: docs/specifications/PP-LLAMA-001-MASTER.md, PP-1 (the expected
+# cell set is enumerated HERE and the verdict asserts every one is present) and
+# PP-33 (every threshold, floor, ceiling, ratchet direction and phase the gate
+# reads lives in this file with `threshold_class` and `author`). A gate that only
+# reads the receipts it was handed cannot tell a missing host from a passing one,
+# and a threshold typed into a script cannot be changed without a code review of
+# the gate.
+#
+# GROUNDING RULE (PP-33). Every number in this file is one of:
+#   policy    — a deliberate product decision, needs an author, NOT a measurement
+#   inherited — set by a prior governing spec, precedence recorded
+#   ratchet   — today's measurement, monotone thereafter
+# There are no invented continuous thresholds. A baseline that has not been
+# measured under a conformant protocol is UNMEASURED with an owner and an
+# expiry -- never a plausible-looking number.
+#
+# CELL STATUS VOCABULARY (PP-1, §7.4). A baselines.<host>.<workload> cell is:
+#   MEASURED   {receipt, commit, n, interleaved, bands: {c<N>: {agg, dec, prefill}}}
+#              the seed Arm A ratchets against. `receipt` must exist in the tree.
+#   UNMEASURED {owner, and EXACTLY ONE of expires | expires_after}
+#              temporary, COUNTED against the denominator, RED once expired.
+#   NA         {reason, decided_by, date}
+#              permanent, excluded from the denominator. Never a silent skip:
+#              the gate prints the decision and its author on every run.
+#
+# WHO READS WHAT
+#   scripts/perf_gate.sh                 arms, phases, baselines, ladder, hosts,
+#                                        witness, stream, expiry_anchors
+#   scripts/lib/perf_receipt.py          ladder.declared, protocol
+#   scripts/lib/parity_block.py          ladder.declared, arms.L3.delta, derivation
+#   scripts/lib/bench_receipt.py         derivation.ratio_tolerance
+#   scripts/check_perf_matrix_schema.sh  every rule stated in this header
+#   scripts/check_thresholds_in_matrix.sh  refuses a float literal in the readers
+schema_version: 2
+
+# ---------------------------------------------------------------- protocol --
+# PP-22: the protocol values are part of the JOIN KEY, so two receipts taken
+# under different windows are not comparable and must not be quotiented. The
+# tree's dual-bound window (max(30, 8c) samples AND 60 s) with 2 warmup requests
+# per worker and a 5 s quiesce is NORMATIVE; the 10 s cooldown between lanes is
+# added here so an interleaved pair cannot inherit the previous lane's thermals.
+protocol:
+  window_ms: 60000
+  warmup_requests_per_worker: 2
+  quiesce_ms: 5000
+  cooldown_ms: 10000
+  n_predict: 128
+  prompt_tokens: 512
+  replicates_min: 5
+  interleaved: true
+  # PP-28: an unpinned sampler is an unpinned measurement. `n_predict` travels
+  # on the wire as OpenAI `max_tokens`; the corpus spells it that way too.
+  sampler: {temperature: 0.0, seed: 0, ignore_eos: true}
+  threshold_class: policy
+  author: spec-owner
+
+# ---------------------------------------------------------------- ladder ----
+# PP-24. The declared ladder is a REQUEST; the derived one is what both servers
+# admitted. The ladder was copied into five files (parity_block.py,
+# perf_receipt.py x2, llama_pin.toml, and here); it lives here now and the
+# producers read it.
+ladder:
+  declared: [1, 4, 8, 16]
+  derive_from: [slots_admitted.apr, slots_admitted.llama]
+  threshold_class: policy
+  author: spec-owner
+
+# --------------------------------------------------------------- witness ----
+# PP-26. A batch-invariance witness with no minimum length agrees on nothing.
+# `authors:` names the author of EACH number, because these two were decided by
+# different people; the block-level `author` is the default for any key it omits.
+witness:
+  # PP-26 (v3.1): batch invariance is measured where it exists -- every slot
+  # of an m=c batch of identical prompts must agree with every other slot to
+  # min_agree_tokens, and no slot may emit one token id for max_constant_run
+  # steps (#2753's signature ran for 116). The m=1 reference's agreement with
+  # the batch is RECORDED per band (`divergence_at`), not gated: on lambda it
+  # measures the fp divergence between kernel families, each of which is
+  # batch-size invariant to the end (evidence/perf041/lambda/). It becomes a
+  # gate when the top-2 margin instrument lands (master §12 row 22).
+  min_agree_tokens: 64
+  max_constant_run: 16
+  m1_agreement: report
+  max_age_days: 7
+  threshold_class: policy
+  author: spec-owner
+  authors: {min_agree_tokens: spec-owner, max_constant_run: spec-owner, max_age_days: perf-gate}
+  provenance: "[M] 2026-09-02 lambda RTX 4090 (evidence/perf041/lambda/witness.json, m1-vs-m4-three-prompts.txt): intra-batch and cross-m agreement within a kernel family reach n_predict; m=1-vs-batch agreement is kernel-family fp divergence, recorded not gated"
+
+# ---------------------------------------------------------------- stream ----
+# PP-27. A replayed stream reports the whole response at the end, so
+# client_ttft/e2e approaches 1. At or above this the stream is not live.
+stream:
+  live_ttft_over_e2e_max: 0.95
+  threshold_class: policy
+  author: spec-owner
+
+# ---------------------------------------------------- comparator template ----
+# PP-20 / PP-15. The comparator lane is a QUANTITY per band, never a boolean
+# flag: `-np {c}`, `-c {c} * n_ctx_slot`. A numeric batch size <= 1 switches
+# llama.cpp's batching OFF and is REFUSED rather than tuned.
+comparator_template:
+  n_ctx_slot: 1024
+  n_ctx_slot_min: 640
+  n_batch_min: 2
+  refuse_n_batch_le: 1
+  kv_type: f16
+  fa: auto
+  threshold_class: policy
+  author: spec-owner
+
+# ------------------------------------------------------------- derivation ----
+# The tolerance a DERIVED ratio must reproduce its own samples within. It is a
+# policy number like any other: it used to live as `RATIO_TOLERANCE = 0.01` in
+# scripts/lib/bench_receipt.py, where no matrix change could reach it.
+derivation:
+  ratio_tolerance: {value: 0.01, threshold_class: policy, author: perf-gate}
+  # The bound above which a ratio is likelier a measurement error than a win.
+  # It used to be `CEILING = 1.50` in scripts/lib/parity_block.py, beside a
+  # `STRETCH = 1.50` that gated nothing at all.
+  sanity_ceiling: {value: 1.50, threshold_class: policy, author: perf-gate}
+
+hosts:
+  lambda:
+    accelerator: rtx-4090
+    compute_class: cuda
+    comparator: llamacpp
+    reachable_by: [cuda]
+    ci_runner: none
+  gx10:
+    accelerator: gb10
+    compute_class: cuda
+    comparator: llamacpp
+    reachable_by: [cuda]
+    ci_runner: none
+  intel:
+    accelerator: cpu
+    compute_class: cpu
+    comparator: llamacpp
+    reachable_by: [cpu, wgpu]
+    ci_runner: self-hosted
+  # PP-16 / #2841. `compute_class: metal` named a path NO BUILD IN THIS TREE CAN
+  # REACH -- crates/aprender-serve pins trueno-gpu with features ["cuda"] and
+  # there is no Metal inference path at all -- so every receipt this host could
+  # produce would have declared a class its binary never took. The honest cell
+  # is NA with a decider and a date, not a class nothing implements.
+  mini:
+    accelerator: m4
+    compute_class: null
+    comparator: llamacpp
+    reachable_by: [cpu]
+    ci_runner: none
+    status: NA
+    reason: >-
+      apr has no Metal inference path; W1 cannot be measured under any class
+      this build reaches (#2841).
+    decided_by: spec-owner
+    date: '2026-09-02'
+    github_issue: 2841
+
+workloads: [W1, W2]
+
+arms:
+  # ---------------------------------------------------------------- Arm A ----
+  # PP-31. The arm used to ratchet scaling_efficiency(c) = (agg(c)/agg(1))/c
+  # UP-ONLY, which FALLS when agg(1) improves: a faster single-client path made
+  # the gate redder. Self-regression ratchets the QUANTITIES, per band, against
+  # the value the last MEASURED receipt on protected main achieved.
+  # scaling_efficiency and overhead_share are REPORTED and never gated.
+  A:
+    name: self-regression
+    phase: release
+    comparator_required: false
+    threshold_class: ratchet
+    direction: down-is-fail
+    statistic: lcb95
+    n_min: 5
+    author: perf-gate
+    metrics: {agg: [1, 4, 8, 16], dec: [1, 4, 8, 16], prefill: [1]}
+    reported: [scaling_efficiency, overhead_share]
+  # --------------------------------------------------------------- Arm L3 ----
+  # PP-3 / PP-17 / §7.5. B1 (aggregate floor 0.80, authorless) and B2 (decode
+  # floor 1.00, `inherited_from` a document that never existed in any ref) are
+  # REPLACED by one non-inferiority arm. The gated set is ASYMMETRIC by band
+  # because the two metrics measure different things: at c=1 the aggregate IS
+  # the decode, and at c>1 the aggregate is the only number a deployment feels.
+  # PASS iff ratios.<metric>.lcb95 >= 1 - delta. An (cell, band, metric) absent
+  # from `armed_by` is REPORTING -- a gate arms when a measurement arms it,
+  # never on a date (P-6).
+  L3:
+    name: parity
+    phase: release
+    comparator_required: true
+    statistic: lcb95
+    threshold_class: policy
+    author: spec-owner
+    gated: {c1: [dec_ratio, prefill_ratio], c_gt_1: [agg_ratio]}
+    reported: [agg_ratio@c1, dec_ratio@c_gt_1, prefill_ratio@c_gt_1, ttft,
+               itl_p95, scaling_efficiency, overhead_share]
+    delta: {dec_ratio: 0.0, prefill_ratio: 0.0, agg_ratio: 0.0}
+    # Written by the first PASS: armed_by.<host>.<wl>.c<c>.<metric> = {receipt, commit}
+    armed_by: {}
+    rising_decode_trap: >-
+      decode_ratio RISING while agg_ratio FALLS is the serialization signature,
+      not a win: each request owns the whole device in turn. The measurement
+      that named this trap is recorded in evidence/parity/LEDGER.md -- see the
+      2026-08-25 row for commit 53062e7f3, whose validity_by_band marks c>1
+      INVALID-BUILD. The digits are deliberately NOT quoted here: PP-12 forbids
+      publishing a c>1 aggregate from that run, and this file used to quote two
+      of them.
+  # ---------------------------------------------------------------- Arm C ----
+  C:
+    name: integrity
+    phase: both
+    comparator_required: false
+    # The integrity rules (completed == requested, timeouts fatal, tokenization
+    # stated, drain recorded, zero-token bands refused) are unchanged from the
+    # governing spec this one supersedes; the precedence is recorded rather than
+    # re-derived, and scripts/check_perf_matrix_schema.sh checks the path exists.
+    threshold_class: inherited
+    inherited_from: docs/archive/perf-2026-09-01/APR-PERF-GATE-001-v2.2.md
+    author: spec-owner
+  # -------------------------------------------------------------- Arm L1 -----
+  # The v3 wire rules that need no timing: server_config presence, the derived
+  # ladder, the stream witness, the batch-invariance witness, the sampler pin,
+  # the raw sample rows, the join key and the roofline. Static, so `both`.
+  L1:
+    name: v3-schema-rules
+    phase: both
+    comparator_required: false
+  # ------------------------------------------------------------ expiry -------
+  # The UNMEASURED-cell clock. Split out of Arm A (PP-6): Arm A is a RELEASE
+  # arm, but "this cell has been UNMEASURED past its deadline" is a static fact
+  # about the matrix that a merge can and should see. Keeping it inside Arm A
+  # would have moved eleven armed rules to release in the same commit that
+  # demoted Arm A, which is a disarm wearing the shape of a refactor.
+  expiry:
+    name: baseline-clock
+    phase: both
+    comparator_required: false
+  # ------------------------------------------------------------- Arm C-sig ---
+  C_sig:
+    name: signature-freshness
+    phase: release
+    comparator_required: false
+  # --------------------------------------------------------- cell set --------
+  cells:
+    name: cell-completeness
+    phase: release
+    comparator_required: false
+  # ---------------------------------------------------------------- Arm D ----
+  D:
+    name: memory-efficiency
+    phase: reporting
+    promote_with: PERF-001
+    # The NOTE threshold: refusing work while memory sits reserved-and-empty is
+    # the contiguous-allocation signature this arm exists to catch. It was a
+    # bare `0.5` in perf_gate.sh with no author and no matrix row.
+    note_kv_utilization_below: 0.5
+    threshold_class: policy
+    author: perf-gate
+  # ---------------------------------------------------------------- Arm E ----
+  E:
+    name: prefill-decode-interference
+    phase: reporting
+    workload: W2
+    promote_with: PERF-001
+
+# RATCHET BASELINES. Arm A is comparator-free, so it is the primary gate -- but
+# a ratchet needs a measurement to ratchet FROM. Both committed 745fa8588 runs
+# are SPENT and withdrawn (evidence/parity/LEDGER.md rows 1 and 2: the subject
+# binary was built with continuous batching compiled out), so there is still
+# nothing conformant to seed from. Committing a number anyway would be exactly
+# the fabricated-baseline class this file exists to remove.
+#
+# THE FOUR W1 CELLS NO LONGER EXPIRE BY CALENDAR. They carried
+# `expires: '2026-09-25'`, which would have turned Arm A into a date-armed FAIL
+# on four hosts with no conformant measurement path in existence -- P-6 says no
+# gate arms by date. The deadline is now the §12 row that BLOCKS the
+# measurement, through the `expires_after` anchor mechanism below.
+baselines:
+  lambda:
+    W1:
+      status: UNMEASURED
+      owner: perf-gate
+      reason: >-
+        Blocked on PP-LLAMA-001 row 18 (the reference measurement). The
+        745fa8588 lambda run is SPENT and its ratios are withdrawn.
+      expires_after: {anchor: PP-LLAMA-001-row-18, days: 0}
+    W2: &w2_expires_with_perf_001
+      status: UNMEASURED
+      owner: perf-gate
+      # NOT A CALENDAR DATE, deliberately. All four W2 cells carried
+      # `expires: '2026-09-25'`, and under this file's own GROUNDING RULE that
+      # number is none of policy / inherited / ratchet -- it is an invented
+      # continuous threshold, in the one file that says there are none. It also
+      # contradicted the section it implements: W2's expiry is dated from an
+      # EVENT ("PERF-001 merge + 30 days"), not from the calendar, because
+      # "a serialising server has no batch for a long prefill to interfere
+      # with, so W2 measures nothing today and a blocking W2 would be
+      # permanently red -- a gate people learn to walk past".
+      #
+      # The clock is therefore ARMED BY THE ANCHOR below, not by a date typed
+      # here. Until PERF-001 merges the cell REPORTS and says so, naming what
+      # has to happen; the PR that lands batching sets `merged_on` and the
+      # 30-day clock starts.
+      expires_after: {anchor: PERF-001, days: 30}
+      expiry_decided_by: '@noah'
+      expiry_cites: PP-LLAMA-001 §12
+      expiry_decided_on: '2026-08-29'
+      reason: >-
+        W2 is REPORTING and non-blocking. Its expiry is "PERF-001 merge + 30
+        days", owner @noah. The 2026-09-25 this cell used to carry had no
+        author (PERF-056, #2777).
+  gx10:
+    W1: {status: UNMEASURED, owner: perf-gate, expires_after: {anchor: PP-LLAMA-001-row-15, days: 0}}
+    W2: *w2_expires_with_perf_001
+  intel:
+    W1: {status: UNMEASURED, owner: perf-gate, expires_after: {anchor: PP-LLAMA-001-row-18, days: 0}}
+    W2: *w2_expires_with_perf_001
+  # An NA host has no denominator cells. Both are NA with a decider and a date;
+  # `cell-completeness` passes an NA cell with no receipt at all, and says so.
+  mini:
+    W1: {status: NA, reason: 'no Metal inference path (#2841)', decided_by: spec-owner, date: '2026-09-02'}
+    W2: {status: NA, reason: 'no Metal inference path (#2841)', decided_by: spec-owner, date: '2026-09-02'}
+
+# EXPIRY ANCHORS (PERF-056, #2777; PP-LLAMA-001 §8). A cell may date its expiry
+# from an EVENT rather than the calendar, via `expires_after: {anchor: ID,
+# days: N}`. §12 does exactly this for every non-root row and the matrix had no
+# way to say it, so the rule was flattened into a hardcoded date that
+# contradicted the section it came from.
+#
+# An unresolved anchor is NOT a free pass and NOT a silent one: the cell REPORTS
+# with the anchor, its owner and its status printed on every run, so "W1 is
+# still waiting on row 18" is a line in the gate output rather than an
+# assumption. `perf_gate.sh` FAILS a cell whose anchor is undeclared here, whose
+# `days` is not a non-negative integer, that declares both `expires` and
+# `expires_after`, or whose anchor claims `status: merged` while recording no
+# `merged_on` -- an expiry hanging off an event nothing defines is the absent-
+# `expires` hole wearing a different field name.
+#
+# `scripts/spec_conformance.sh` derives each anchor's date from the master's §12
+# blocked_by DAG and writes evidence/parity/derived_expiries.json; these entries
+# are the matrix half of that join.
+expiry_anchors:
+  PERF-001:
+    owner: '@noah'
+    github_issue: 2706
+    # DECLARED STATE, checked against docs/roadmaps/roadmap.yaml on 2026-08-29:
+    # `status: in_progress`, downgraded from completed the same day by PERF-041
+    # because the credited "3.32x aggregate at N=8" was throughput of GARBAGE
+    # tokens -- batched CUDA decode emitted a constant token to the max_tokens
+    # cap for every m>1 and never emitted a stop token (#2753), while the m=1
+    # fast path in the same run returned coherent English.
+    status: in_progress
+    # Set by the PR that lands batching. Null means the clock has not
+    # started; it does not mean the cell is exempt.
+    merged_on: null
+    decided_by: '@noah'
+    cites: PP-LLAMA-001 §12
+  PP-LLAMA-001-row-15:
+    owner: perf-gate
+    status: open
+    merged_on: null
+    decided_by: spec-owner
+    cites: PP-LLAMA-001 §12 row 15
+    reason: gx10 shakedown; until it lands, no gx10 W1 cell can be measured conformantly.
+  PP-LLAMA-001-row-18:
+    owner: perf-gate
+    status: open
+    merged_on: null
+    decided_by: spec-owner
+    cites: PP-LLAMA-001 §12 row 18
+    reason: the reference measurement; until it lands, no host has a seed for Arm A.
+
+# CELL EXCEPTIONS. A per-(host, band, arm) exception, distinct from a cell
+# status: a band may be NOT_APPLICABLE for the comparator arm and still fully
+# gated by Arm A, which needs no comparator.
+#   NOT_APPLICABLE — permanent, excluded from the denominator, needs decided_by
+#   UNMEASURED     — temporary, COUNTED against the denominator, needs an owner
+#                    and an expiry, and goes RED once expired
+# `comparator` must name a comparator some host declares; the entry that used to
+# sit here named `vllm`, which no host in this file has ever declared, so it
+# could not match any receipt and had never been read.
+cell_exceptions:
+- host: gx10
+  band: 16
+  comparator: llamacpp
+  arm: L3
+  status: NOT_APPLICABLE
+  permanent: false
+  decided_by: spec-owner
+  decided_on: '2026-09-02'
+  reason: >-
+    gx10 admitted 32 slots against llama.cpp's server default; the c=16 pair is
+    re-keyed by PP-24's derived ladder rather than compared across unequal
+    admission. Removed when row 15 lands.
