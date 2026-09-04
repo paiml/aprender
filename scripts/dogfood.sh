@@ -1035,7 +1035,12 @@ if [ -x "$BINPATH" ]; then
   CLI_HELP=$("$BINPATH" --help 2>&1); CLI_HELP_RC=$?
   SUBS=$(printf '%s\n' "$CLI_HELP" \
     | awk '/[Cc]ommands:/{f=1;next} /^[A-Za-z].*:[[:space:]]*$/{f=0} f' \
-    | grep -oE '^[[:space:]]+[a-z][a-z0-9_-]+' | tr -d ' ' | sort -u)
+    | grep -oE '^ {2}[a-z][a-z0-9_-]+( {2,}|$)' | tr -d ' ' | sort -u)
+  # clap indents a command name by exactly two spaces and follows it with two or
+  # more; a wrapped description line is indented far deeper and starts with an
+  # English word. The previous pattern took ANY indented lowercase token, so the
+  # words of eleven wrapped descriptions ("existing", "producer", "yet", ...)
+  # were probed as subcommands and reported as advertised-but-unusable.
   if [ "$CLI_HELP_RC" -ne 0 ]; then
     # `|| true` used to discard this exit; a binary that CRASHES on --help
     # then read as "advertises no subcommands" — a SKIP cascading into

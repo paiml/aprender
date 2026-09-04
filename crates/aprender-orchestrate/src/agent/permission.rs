@@ -20,8 +20,8 @@
 //! # Example
 //!
 //! ```rust,ignore
-//! use aprender_orchestrate::agent::permission::{PermissionMode, PermissionVerdict};
-//! use aprender_orchestrate::agent::capability::Capability;
+//! use batuta::agent::permission::{PermissionMode, PermissionVerdict};
+//! use batuta::agent::capability::Capability;
 //!
 //! let mode = PermissionMode::Plan;
 //! assert_eq!(
