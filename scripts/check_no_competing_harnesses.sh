@@ -32,6 +32,17 @@ BASELINE=0
 is_allowed() {
   case "$1" in
     */perf_gate.sh)                 return 0 ;;  # THE entrypoint
+    */ship-discharges/ship-002-discharge.sh) return 0 ;;  # a SHIP-002 DISCHARGE
+                                         # RECEIPT, not a harness: it runs apr
+                                         # once and records duration_sec as
+                                         # provenance of that one run. It states
+                                         # no tok/s and no comparison; the
+                                         # number is never quoted as a result.
+                                         # (PMAT-949: invisible to the old
+                                         # regex because it wrote `date -u +%s`.)
+    */ship-discharges/ship-008-discharge.sh) return 0 ;;  # likewise: SHIP-008
+                                         # discharge receipt, one run, its
+                                         # duration recorded as provenance only.
     */check_no_competing_harnesses.sh) return 0 ;;  # this detector: its own
                                                      # selftest fixtures contain the
                                                      # trigger strings, so without
@@ -132,7 +143,10 @@ trap 'rm -f "$COUNT_FILE"' EXIT
 starts_server() {
   grep -qE "serve run|llama-server|llama-cli|llama-bench|ollama (serve|run)|vllm serve|apr[[:space:]]+run|curl[^|]*(/v1/|/api/generate)|urllib\.request\.urlopen|requests\.(post|get)\(" "$1" 2>/dev/null
 }
-computes_rate() { grep -qE "date \+%s|tok/s|tokens?_per_sec|agg_tok_s|tok_s|SECONDS" "$1" 2>/dev/null; }
+# `date -u +%s` is the same clock as `date +%s`; the first regex missed the -u
+# form, so two discharge scripts measured an apr run on main for months while
+# this guard reported count=0 (PMAT-949). Pinned by the "-u" selftest row.
+computes_rate() { grep -qE "date( -u)? \+%s|tok/s|tokens?_per_sec|agg_tok_s|tok_s|SECONDS" "$1" 2>/dev/null; }
 
 # UNIVERSE: tracked UNION working tree. A `git ls-files`-only universe gives an
 # untracked harness a free pass, which is how three earlier guards were blind.
@@ -196,6 +210,8 @@ selftest() {
   _row "a real harness is detected"        detect 'apr serve run m.gguf & \n t=$(date +%s)'
   _row "server without timing is ignored"  ignore 'apr serve run m.gguf --port 8080'
   _row "timing without a server is ignored" ignore 't=$(date +%s); echo done'
+  _row "date -u +%s counts as timing"       detect 'apr run m.gguf --prompt hi \n t=$(date -u +%s)'
+  _row "a pinned calendar stamp is ignored"  ignore 'apr run m.gguf --prompt hi \n d=$(date -u "${PIN[@]}" +%Y-%m-%d)'
   _row "llama-server counts as a server"   detect 'llama-server -m m.gguf & \n echo tok/s'
   _row "ollama counts as a server"         detect 'ollama serve & \n SECONDS=0'
   _row "vllm counts as a server"           detect 'vllm serve m & \n echo tokens_per_sec'

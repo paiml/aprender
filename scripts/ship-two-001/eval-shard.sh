@@ -74,7 +74,9 @@ fi
 # DET002: reproducible under SOURCE_DATE_EPOCH (falls back to the real
 # wall clock, same as before, when it's unset -- this needs a fresh value
 # per invocation so parallel runs don't collide on SHARD_DIR).
-TIMESTAMP="$(date -u -d "@${SOURCE_DATE_EPOCH:-$(date +%s)}" +%Y%m%d_%H%M%S)"
+DATE_PIN=()
+[ -n "${SOURCE_DATE_EPOCH:-}" ] && DATE_PIN=(-d "@${SOURCE_DATE_EPOCH}")
+TIMESTAMP="$(date -u "${DATE_PIN[@]}" +%Y%m%d_%H%M%S)"
 SHARD_DIR="${RESULTS_DIR}/run_${TIMESTAMP}"
 mkdir -p "$SHARD_DIR"
 
