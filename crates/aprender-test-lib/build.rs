@@ -44,15 +44,14 @@ fn main() {
     let chosen = if inside_aprender_workspace(&manifest_dir) && workspace.is_file() {
         println!("cargo:rerun-if-changed={}", workspace.display());
         let ws = fs::read(&workspace).expect("read scripts/perf-matrix.yaml");
-        if ws != vendored_bytes {
-            panic!(
-                "PMAT-958: {} differs from {}; run `cp scripts/perf-matrix.yaml \
-                 crates/aprender-test-lib/{VENDORED}` so the published crate embeds the \
-                 same bytes the workspace does",
-                workspace.display(),
-                vendored.display()
-            );
-        }
+        assert!(
+            ws == vendored_bytes,
+            "PMAT-958: {} differs from {}; run `cp scripts/perf-matrix.yaml \
+             crates/aprender-test-lib/{VENDORED}` so the published crate embeds the \
+             same bytes the workspace does",
+            workspace.display(),
+            vendored.display()
+        );
         ws
     } else {
         vendored_bytes // published crate or a foreign tree: the vendored copy is the source
