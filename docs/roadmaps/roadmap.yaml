@@ -14218,6 +14218,21 @@ roadmap:
   acceptance_criteria:
   - 'crates/apr-cli/Cargo.toml wgpu feature enables the training backend it calls; cargo check -p apr-cli --lib --features wgpu succeeds; the function is reached by a build CI runs'
   notes: 'Found by the PMAT-938 finetune.rs decomposition (type-checked with --features wgpu,entrenar/gpu); feature-graph fix outside that ticket'
+- id: PMAT-949
+  github_issue: null
+  item_type: bug
+  title: 'PERF-009 harness guard was blind to date -u +%s: ship-002/ship-008 discharges measured an apr run on main at count=0; the bashrs DET002 rewrites then tripped it on three stamp-only scripts'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-09-04 06:00:00+00:00
+  updated: 2026-09-04 06:00:00+00:00
+  spec: null
+  acceptance_criteria:
+  - 'check_no_competing_harnesses.sh computes_rate matches date -u +%s; selftest row "date -u +%s counts as timing" turns BROKE when the widening is reverted (measured: selftest rc=1)'
+  - 'ship-002/ship-008 allowlisted with the stated reason (duration_sec is provenance of one run, never a quoted rate); dropping the ship-002 entry makes the guard FAIL on the tree (measured)'
+  - 'eval-shard.sh, ex-06-pull-and-rerun.sh, eval-shard-determinism-probe.sh honour SOURCE_DATE_EPOCH through a DATE_PIN array with no date +%s fallback; bashrs error lines 0; guard count=0 baseline=0 on the merged tree'
+  notes: 'Found when #2860 reached the PERF-009 step for the first time (the README-count step before it had been failing). Fixed in the same PR (e70b00760). Five-whys: the DET002 fix chose an epoch fallback because it is the idiom bashrs documents; the guard reads any date +%s as a rate because the four deleted harnesses all timed that way; the -u form was never in the case table.'
 - id: PMAT-750
   github_issue: null
   item_type: task
