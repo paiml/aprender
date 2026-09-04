@@ -17,7 +17,22 @@ fn test_find_apr_binary() {
 
 /// Write an executable `/bin/sh` script at `path` that prints `marker`.
 #[cfg(unix)]
+/// Every marker binary is written and spawned under one lock. `fork(2)` gives the
+/// child every open descriptor of the whole test process, so a sibling test
+/// still inside `write_marker_bin` at the moment this one spawns hands the
+/// child a write-open descriptor on its own marker, and `exec` refuses with
+/// ETXTBSY ("Text file busy"). Measured in a clean-room `cargo test --workspace
+/// --lib` (CARGO_BUILD_JOBS=2): 1 failure in 39,833 tests, this test, that error;
+/// 4 of 4 green when run alone. The lock closes the window instead of retrying it.
+static MARKER_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+fn spawn_marker(path: &std::path::Path) -> std::process::Output {
+    let _g = MARKER_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    std::process::Command::new(path).output().expect("spawn resolved backend")
+}
+
 fn write_marker_bin(path: &std::path::Path, marker: &str) {
+    let _g = MARKER_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     use std::io::Write;
     let mut f = std::fs::File::create(path).expect("create marker bin");
     writeln!(f, "#!/bin/sh").expect("shebang");
@@ -60,7 +75,7 @@ fn falsify_2384_self_wins_over_path_lookup() {
         resolved.display()
     );
 
-    let out = std::process::Command::new(&resolved).output().expect("spawn resolved backend");
+    let out = spawn_marker(&resolved);
     assert_eq!(
         String::from_utf8_lossy(&out.stdout).trim(),
         "SELF-0.63.0",
