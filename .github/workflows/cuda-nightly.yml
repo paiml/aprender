@@ -243,6 +243,38 @@ jobs:
           APR_FALSIFY_MODEL="$model" nice -n 19 cargo test -p aprender-serve --features cuda \
             --release --test falsify_stream_ordering_2767 -- --nocapture
 
+      # FALSIFY-CB-008 / aprender#2753: no frozen slots. The contract has forbidden this since
+      # v1.0 and its `test:` field named a BATCHED_DECODE_TRACE log -- a variable that did not
+      # exist -- so nothing ever read it while every batched slot emitted one token id to the
+      # max_tokens cap. This step is that field made executable.
+      #
+      # NOT covered by the PERF-053 step above: that one asserts repeated identical batches
+      # AGREE, and under the racy flag the m=8 arm agrees on varied garbage, which is not
+      # frozen. The two are complementary and both are cheap (~4s each).
+      #
+      # No CUBLAS_GEMM_THRESHOLD override here, deliberately: this test runs m=3 AND m=8 so it
+      # crosses that threshold and covers both decode GEMM routes. CB-006's divergence at
+      # m >= 4 is a separate defect and is not a freeze, so it cannot confound this verdict.
+      - name: FALSIFY-CB-008 - no frozen slots in batched decode (aprender#2753)
+        if: steps.decide.outputs.proceed == 'true'
+        run: |
+          set -euo pipefail
+          gguf="${{ vars.APR_STREAM_FALSIFY_MODEL || '/home/noah/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf' }}"
+          if [ -f "$gguf" ]; then
+            model="$gguf"
+          elif [ -f "$APR_PARITY_MODEL" ]; then
+            model="$APR_PARITY_MODEL"
+          else
+            echo "::error::CB-008 UNMEASURABLE on ${{ matrix.name }} (provisioning, not a code defect): neither $gguf nor $APR_PARITY_MODEL is present"
+            exit 1
+          fi
+          echo "CB-008 model: $model"
+          # The checker's OWN discrimination controls, which need no GPU. ci.yml's workspace
+          # --lib line already runs them on every PR; running them here too means a red GPU
+          # verdict can be attributed to the decode rather than to the checker.
+          nice -n 19 cargo test -p aprender-serve --lib --release cb008_checker_controls
+          APR_FALSIFY_MODEL="$model" nice -n 19 cargo test -p aprender-serve --features cuda \
+            --release --test falsify_cb008_no_frozen_slots_2753 -- --nocapture
       # PP-26 / L0 CORRECTNESS: the batch-invariance witness (FALSIFY-CB-006,
       # #2753, §9 #1a on Blackwell). PP-LLAMA-001 §7.0 puts correctness at layer
       # L0 and says perf041 runs "nightly + release, missing marker = RED"; the
