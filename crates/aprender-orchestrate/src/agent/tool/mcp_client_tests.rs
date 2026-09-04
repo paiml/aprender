@@ -311,6 +311,29 @@ async fn test_stdio_transport_process_exit_failure() {
 }
 
 #[tokio::test]
+async fn test_stdio_transport_exit_before_request_is_read() {
+    if skip_in_ci() {
+        return;
+    }
+    // The child closes its stdin and exits without reading. The request is
+    // larger than a pipe buffer, so the write can never complete: the
+    // transport sees EPIPE on every schedule, not only under load. The caller
+    // must still get the exit status and stderr (PMAT-950); before the fix
+    // this returned "write stdin: Broken pipe".
+    let transport = StdioMcpTransport::new(
+        "closes-stdin",
+        vec!["sh".into(), "-c".into(), "exec 0<&-; echo 'oops' >&2; exit 1".into()],
+    );
+    let big = "x".repeat(1 << 20);
+    let result = transport.call_tool("search", serde_json::json!({ "q": big })).await;
+    assert!(result.is_err());
+    let err = result.unwrap_err();
+    assert!(err.contains("process exited"), "got: {err}");
+    assert!(err.contains("oops"), "got: {err}");
+    assert!(!err.contains("Broken pipe"), "got: {err}");
+}
+
+#[tokio::test]
 async fn test_stdio_transport_invalid_json_output() {
     if skip_in_ci() {
         return;

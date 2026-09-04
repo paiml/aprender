@@ -14233,6 +14233,20 @@ roadmap:
   - 'ship-002/ship-008 allowlisted with the stated reason (duration_sec is provenance of one run, never a quoted rate); dropping the ship-002 entry makes the guard FAIL on the tree (measured)'
   - 'eval-shard.sh, ex-06-pull-and-rerun.sh, eval-shard-determinism-probe.sh honour SOURCE_DATE_EPOCH through a DATE_PIN array with no date +%s fallback; bashrs error lines 0; guard count=0 baseline=0 on the merged tree'
   notes: 'Found when #2860 reached the PERF-009 step for the first time (the README-count step before it had been failing). Fixed in the same PR (e70b00760). Five-whys: the DET002 fix chose an epoch fallback because it is the idiom bashrs documents; the guard reads any date +%s as a rate because the four deleted harnesses all timed that way; the -u form was never in the case table.'
+- id: PMAT-950
+  github_issue: null
+  item_type: bug
+  title: 'stdio MCP transport: a server that exits before reading the request surfaces as "write stdin: Broken pipe" instead of its exit status and stderr (flaky test_stdio_transport_process_exit_failure under load)'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-09-04 10:30:00+00:00
+  updated: 2026-09-04 10:30:00+00:00
+  spec: null
+  acceptance_criteria:
+  - 'send_jsonrpc waits for the child before returning a stdin write error; a non-zero exit always reports process exited <status>: <stderr>'
+  - 'test_stdio_transport_exit_before_request_is_read (child closes stdin, 1 MiB request) is deterministic: 40/40 green with the fix, RED (got: write stdin: Broken pipe) with the transport change reverted'
+  notes: 'Found by the predicted-main clean-room (8100ecd06): 1 failed of 6569 in batuta lib tests, the race between the child exit and the parent write. Fixed in #2860.'
 - id: PMAT-750
   github_issue: null
   item_type: task

@@ -257,19 +257,28 @@ impl StdioMcpTransport {
             cmd.env(k, v);
         }
         let mut child = cmd.spawn().map_err(|e| format!("spawn {}: {e}", self.command[0]))?;
+        // A write failure is not returned yet: a server that exits (or closes
+        // its stdin) before reading the request surfaces here as EPIPE, and
+        // the useful error is the child's exit status and stderr, not "Broken
+        // pipe". Wait for the child first; only a child that exited cleanly
+        // leaves the write error as the answer (PMAT-950).
+        let mut write_err: Option<String> = None;
         if let Some(mut stdin) = child.stdin.take() {
             use tokio::io::AsyncWriteExt;
-            stdin
-                .write_all(request_str.as_bytes())
-                .await
-                .map_err(|e| format!("write stdin: {e}"))?;
-            stdin.write_all(b"\n").await.map_err(|e| format!("write newline: {e}"))?;
+            let written = match stdin.write_all(request_str.as_bytes()).await {
+                Ok(()) => stdin.write_all(b"\n").await.map_err(|e| format!("write newline: {e}")),
+                Err(e) => Err(format!("write stdin: {e}")),
+            };
+            write_err = written.err();
             drop(stdin);
         }
         let result = child.wait_with_output().await.map_err(|e| format!("wait: {e}"))?;
         if !result.status.success() {
             let stderr = String::from_utf8_lossy(&result.stderr);
             return Err(format!("process exited {}: {}", result.status, stderr.trim()));
+        }
+        if let Some(e) = write_err {
+            return Err(e);
         }
         let stdout = String::from_utf8_lossy(&result.stdout);
         let response: serde_json::Value =
