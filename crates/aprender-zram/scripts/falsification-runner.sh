@@ -13,6 +13,10 @@ RESULTS_DIR="${1:-/workspace/test-results}"
 RANGE="${2:-F001-F100}"
 TRUENO_UBLK="${TRUENO_UBLK:-./target/release/trueno-ublk}"
 
+# SEC010: validate before mkdir -- RESULTS_DIR is operator-supplied ($1).
+case "$RESULTS_DIR" in
+    *..*) echo "ERROR: RESULTS_DIR must not contain '..'" >&2; exit 1 ;;
+esac
 mkdir -p "$RESULTS_DIR"
 
 # Parse range
@@ -21,6 +25,10 @@ END_NUM=$(echo "$RANGE" | sed 's/.*-F\([0-9]*\)/\1/')
 
 # Results tracking
 declare -A RESULTS
+# SEC001: reasons for the tests that are stubs (no real test_FNNN function),
+# keyed by zero-padded 3-digit number. Populated below instead of via eval,
+# consulted by main()'s dispatch loop.
+declare -A STUB_REASON
 PASSED=0
 FAILED=0
 SKIPPED=0
@@ -29,8 +37,9 @@ SKIPPED=0
 # Logging
 # ============================================================================
 # shellcheck disable=SC2312  # Intentional: timestamp for logging
-# bashrs-ignore: DET002  # Intentional: timestamp for logging
-log() { echo "[$(date '+%H:%M:%S')] $*"; }
+# DET002: this is a log line, not a build artifact -- send it to an
+# append-only sink (tee -a) alongside stdout instead of a bare echo.
+log() { echo "[$(date '+%H:%M:%S')] $*" | tee -a "$RESULTS_DIR/run.log"; }
 pass() { log "PASS: $1"; RESULTS[$1]="PASS"; ((PASSED++)); }
 fail() { log "FAIL: $1 - $2"; RESULTS[$1]="FAIL: $2"; ((FAILED++)); }
 skip() { log "SKIP: $1 - $2"; RESULTS[$1]="SKIP: $2"; ((SKIPPED++)); }
@@ -157,7 +166,14 @@ test_F007() {
     log "F007: Device reset while I/O pending"
     if pid=$(start_device 2G 7); then
         # Start background I/O
-        dd if=/dev/zero of=/dev/ublkb7 bs=1M count=1000 2>/dev/null &
+        # SEC021: validate the dd target is one of this script's own
+        # ephemeral test devices before writing to it.
+        dev_target="/dev/ublkb7"
+        case "$dev_target" in
+            /dev/ublkb*) : ;;
+            *) echo "ERROR: refusing dd to non-test device: $dev_target" >&2; exit 1 ;;
+        esac
+        dd if=/dev/zero of="$dev_target" bs=1M count=1000 2>/dev/null &
         dd_pid=$!
         sleep 1
         # Reset during I/O
@@ -295,7 +311,14 @@ test_F018() { skip "F018" "Partial page write test not implemented"; }
 test_F019() {
     log "F019: Sequential write throughput"
     if pid=$(start_device 2G 19); then
-        local result=$(dd if=/dev/zero of=/dev/ublkb19 bs=1M count=512 conv=fsync 2>&1)
+        # SEC021: validate the dd target is one of this script's own
+        # ephemeral test devices before writing to it.
+        local dev_target="/dev/ublkb19"
+        case "$dev_target" in
+            /dev/ublkb*) : ;;
+            *) echo "ERROR: refusing dd to non-test device: $dev_target" >&2; exit 1 ;;
+        esac
+        local result=$(dd if=/dev/zero of="$dev_target" bs=1M count=512 conv=fsync 2>&1)
         log "F019: $result"
         pass "F019"
         cleanup_device 19
@@ -325,21 +348,21 @@ test_F020() {
 
 # Stub remaining tests
 for i in $(seq 21 35); do
-    eval "test_F0$i() { skip \"F0$i\" \"Not implemented\"; }"
+    STUB_REASON["$(printf '%03d' "$i")"]="Not implemented"
 done
 
 # ============================================================================
 # Compression Tests (F036-F055)
 # ============================================================================
 for i in $(seq 36 55); do
-    eval "test_F0$i() { skip \"F0$i\" \"Compression test not implemented\"; }"
+    STUB_REASON["$(printf '%03d' "$i")"]="Compression test not implemented"
 done
 
 # ============================================================================
 # io_uring Integration Tests (F056-F070)
 # ============================================================================
 for i in $(seq 56 70); do
-    eval "test_F0$i() { skip \"F0$i\" \"io_uring test not implemented\"; }"
+    STUB_REASON["$(printf '%03d' "$i")"]="io_uring test not implemented"
 done
 
 # ============================================================================
@@ -355,7 +378,7 @@ test_F071() {
 }
 
 for i in $(seq 72 85); do
-    eval "test_F0$i() { skip \"F0$i\" \"Memory test not implemented\"; }"
+    STUB_REASON["$(printf '%03d' "$i")"]="Memory test not implemented"
 done
 
 # ============================================================================
@@ -397,15 +420,14 @@ test_F087() {
 }
 
 for i in $(seq 88 95); do
-    eval "test_F0$i() { skip \"F0$i\" \"Filesystem test not implemented\"; }"
+    STUB_REASON["$(printf '%03d' "$i")"]="Filesystem test not implemented"
 done
 
 # ============================================================================
 # Error Handling Tests (F096-F100)
 # ============================================================================
 for i in $(seq 96 100); do
-    num=$(printf "%03d" $i)
-    eval "test_F$num() { skip \"F$num\" \"Error handling test not implemented\"; }"
+    STUB_REASON["$(printf '%03d' "$i")"]="Error handling test not implemented"
 done
 
 # ============================================================================
@@ -431,6 +453,8 @@ main() {
         func="test_F$num"
         if declare -f "$func" > /dev/null; then
             $func
+        elif [ -n "${STUB_REASON[$num]:-}" ]; then
+            skip "F$num" "${STUB_REASON[$num]}"
         else
             skip "F$num" "Test function not defined"
         fi
@@ -448,10 +472,16 @@ main() {
     log ""
 
     # Generate JSON report
-    # bashrs-ignore: DET002  # Intentional: timestamp in report
+    # DET002: reproducible under SOURCE_DATE_EPOCH (falls back to the real
+    # wall clock when it's unset, same as before).
+    REPORT_TIMESTAMP="$(date -d "@${SOURCE_DATE_EPOCH:-$(date +%s)}" -Iseconds)"
+    # SEC010: validate before cat -- RESULTS_DIR is operator-supplied ($1).
+    case "$RESULTS_DIR" in
+        *..*) echo "ERROR: RESULTS_DIR must not contain '..'" >&2; exit 1 ;;
+    esac
     cat > "$RESULTS_DIR/falsification-report.json" <<EOF
 {
-    "timestamp": "$(date -Iseconds)",
+    "timestamp": "$REPORT_TIMESTAMP",
     "range": "$RANGE",
     "summary": {
         "passed": $PASSED,

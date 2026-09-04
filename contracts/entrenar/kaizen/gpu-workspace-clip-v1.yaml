@@ -1,3 +1,13 @@
+metadata:
+  kind: kaizen
+  version: "1.0.0"
+  created: "2026-03-04"
+  author: "PAIML Engineering"
+  description: "GPU-Side Per-Block Workspace Gradient Clipping"
+  references:
+    - "KAIZEN-054"
+    - "parent contract: C-GPUNORM-001"
+
 contract: C-WCLIP-001
 title: GPU-Side Per-Block Workspace Gradient Clipping
 kaizen: KAIZEN-054

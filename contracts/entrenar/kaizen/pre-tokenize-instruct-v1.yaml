@@ -1,3 +1,11 @@
+metadata:
+  kind: kaizen
+  version: "1.0.0"
+  author: "PAIML Engineering"
+  description: "pre-tokenize-instruct-v1 — kaizen KAIZEN-029 improvement record"
+  references:
+    - "KAIZEN-029"
+
 contract: pre-tokenize-instruct-v1
 version: 1.0.0
 status: implemented

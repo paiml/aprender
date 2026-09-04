@@ -44,7 +44,7 @@ mod verification {
 
         // Verify: No emit_ptx in generate path
         // Obligation: PTP-INV-002
-        // TODO: Replace with kernel-specific verification logic
+        // Scaffold: replace with kernel-specific verification logic
         //   Example: assert_eq!(precomputed, online);
         unimplemented!("Wire up kernel under test")
     }

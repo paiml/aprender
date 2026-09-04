@@ -68,7 +68,34 @@ fi
 
 LOG=$(mktemp) || exit 1
 trap 'rm -f "${LOG:?}"' EXIT
-bashrs lint scripts/*.sh > "$LOG" 2>&1
+# ONE FILE PER INVOCATION. bashrs 7.0.1 cross-contaminates files linted in one
+# call: the same tree counted 13 errors on the fleet and 53 on a workstation,
+# and a branch that REMOVED 180 findings counted 57 on the fleet and 12 here,
+# so the single-invocation number was noise the ratchet could not distinguish
+# from growth (PMAT-936). Linting each script alone is deterministic; the file
+# name is prefixed because a single-file run prints none.
+: > "$LOG"
+# A BROKEN TOOL IS NOT A CLEAN TREE. bashrs exits 0 on a clean file and 1 on
+# findings, 2 on errors; anything above is the tool failing, and a
+# tool that printed no [error] lines because it died must not read as an
+# improvement (measured: a stub exiting 101 produced "Improved: 9 -> 0", PASS).
+tool_failed=0
+while IFS= read -r script; do
+    out=$(bashrs lint "$script" 2>&1); rc=$?
+    printf '%s\n' "$out" | sed "s|^|${script}: |" >> "$LOG"
+    # bashrs: 0 clean, 1 warnings, 2 errors -- all three are the tool RUNNING.
+    if [ "$rc" -gt 2 ]; then
+        printf 'FAIL: bashrs exited %s on %s; a lint that could not run is not a lint that found nothing.\n' "$rc" "$script"
+        tool_failed=1
+    fi
+done < <(find scripts -maxdepth 1 -name '*.sh' | LC_ALL=C sort)
+if [ "$tool_failed" -ne 0 ]; then
+    exit 1
+fi
+if [ ! -s "$LOG" ]; then
+    printf 'FAIL: bashrs produced no output over %s script(s); the tool did not run.\n' "$scanned"
+    exit 1
+fi
 errors=$(grep -cE '\[error\]' "$LOG" || true)
 
 printf '=== bashrs must see every script in scripts/ (check_shell_lint_ratchet.sh) ===\n'

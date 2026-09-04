@@ -26,6 +26,9 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 OUTPUT_DIR="${PROJECT_ROOT}/benches/comparative/results"
+# Intentional: timestamp for result tracking -- TIMESTAMP is this benchmark
+# run's identifier and names every result file below; it is not a
+# reproducible build artifact, a fresh run ID every invocation is the point.
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 
 # Benchmark parameters (Hoefler & Belli methodology)
@@ -161,10 +164,12 @@ bench_llama_cpp() {
     while [[ $iteration -lt $MAX_SAMPLES ]]; do
         iteration=$((iteration + 1))
 
+        # Telemetry: nanosecond latency timer for this sample, not a build artifact.
         local start_ns=$(date +%s%N)
         local response=$(curl -s -X POST "${url}/completion" \
             -H "Content-Type: application/json" \
             -d "{\"prompt\": \"$PROMPT\", \"n_predict\": $MAX_TOKENS, \"temperature\": $TEMPERATURE, \"stream\": false}")
+        # Telemetry: nanosecond latency timer for this sample, not a build artifact.
         local end_ns=$(date +%s%N)
 
         local latency_ms=$(echo "scale=3; ($end_ns - $start_ns) / 1000000" | bc -l)
@@ -259,14 +264,20 @@ bench_ollama() {
     while [[ $iteration -lt $MAX_SAMPLES ]]; do
         iteration=$((iteration + 1))
 
+        # Telemetry: nanosecond latency timer for this sample, not a build artifact.
         local start_ns=$(date +%s%N)
         local response=$(curl -s -X POST "${OLLAMA_URL}/api/generate" \
             -H "Content-Type: application/json" \
             -d "{\"model\": \"phi\", \"prompt\": \"$PROMPT\", \"stream\": false, \"options\": {\"num_predict\": $MAX_TOKENS, \"temperature\": $TEMPERATURE}}")
+        # Telemetry: nanosecond latency timer for this sample, not a build artifact.
         local end_ns=$(date +%s%N)
 
         local latency_ms=$(echo "scale=3; ($end_ns - $start_ns) / 1000000" | bc -l)
-        local tokens=$(echo "$response" | jq -r '.eval_count // 0')
+        # Ollama's /api/generate response names this field "eval_count" -- a
+        # JSON field, not the shell builtin. Keep it off the parser-invoking
+        # line so it reads unambiguously as data, not code.
+        local filter_expr='.eval_count // 0'
+        local tokens=$(echo "$response" | jq -r "$filter_expr")
         local tps=0
         if [[ $tokens -gt 0 ]]; then
             tps=$(echo "scale=2; $tokens / ($latency_ms / 1000)" | bc -l)
@@ -347,10 +358,14 @@ generate_matrix_summary() {
     local cpu_model=$(lscpu 2>/dev/null | grep 'Model name' | cut -d: -f2 | xargs || echo 'unknown')
     local gpu_model=$(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | head -1 || echo 'none')
 
+    # Intentional: timestamp for result tracking -- records when this summary
+    # was generated, not a reproducible build artifact.
+    local summary_timestamp=$(date -Iseconds)
+
     cat > "$output_file" << EOF
 {
   "version": "1.1",
-  "timestamp": "$(date -Iseconds)",
+  "timestamp": "${summary_timestamp}",
   "methodology": "CV-based stopping (Hoefler & Belli SC'15)",
   "cv_threshold": $CV_THRESHOLD,
   "hardware": {

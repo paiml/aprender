@@ -9,7 +9,7 @@
 //! # Example
 //!
 //! ```rust
-//! use aprender_orchestrate::agent::status_line::StatusLine;
+//! use batuta::agent::status_line::StatusLine;
 //!
 //! let line = StatusLine {
 //!     model: "opus-4-7".into(),

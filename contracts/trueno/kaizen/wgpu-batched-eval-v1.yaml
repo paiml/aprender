@@ -1,3 +1,11 @@
+metadata:
+  kind: kaizen
+  version: "1.0.0"
+  author: "PAIML Engineering"
+  description: "wgpu-batched-eval-v1 — kaizen KAIZEN-175 improvement record"
+  references:
+    - "KAIZEN-175"
+
 contract: wgpu-batched-eval-v1
 version: 1.0.0
 status: pending

@@ -1,3 +1,11 @@
+metadata:
+  kind: kaizen
+  version: "1.0.0"
+  author: "PAIML Engineering"
+  description: "cpu-forward-zero-alloc-v1 — kaizen KAIZEN-035 improvement record"
+  references:
+    - "KAIZEN-035"
+
 contract: cpu-forward-zero-alloc-v1
 version: 1.0.0
 status: implemented

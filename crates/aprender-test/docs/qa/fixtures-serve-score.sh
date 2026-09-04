@@ -382,8 +382,8 @@ create_boundary_project() {
 # Cleanup function
 cleanup_test_fixtures() {
     local root="${1:-/tmp/probar-falsification}"
-    if [[ -d "$root" ]]; then
-        rm -rf "$root"
+    if [ -n "$root" ] && [ "$root" != "/" ] && [[ -d "$root" ]]; then
+        rm -rf -- "$root"
         echo "Cleaned up: $root"
     fi
 }

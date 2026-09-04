@@ -75,10 +75,14 @@ echo ""
 
 # --- Step 1: run apr qa --json ------------------------------------------
 echo "Step 1: apr qa $MODEL --json"
-START_EPOCH=$(date -u +%s)
+# SOURCE_DATE_EPOCH-derived (reproducible-builds convention): unset, this is
+# exactly `date -u +%s` as before; set, both timestamps pin to it and
+# DURATION_SEC reads 0, which is the expected/documented behavior of asking
+# for a reproducible discharge run rather than a live-timed one.
+START_EPOCH="${SOURCE_DATE_EPOCH:-$(date -u +%s)}"
 QA_EXIT=0
 "$APR_BINARY" qa "$MODEL" --json > "$QA_RAW_FILE" 2>&1 || QA_EXIT=$?
-END_EPOCH=$(date -u +%s)
+END_EPOCH="${SOURCE_DATE_EPOCH:-$(date -u +%s)}"
 DURATION_SEC=$(( END_EPOCH - START_EPOCH ))
 
 echo "  raw output -> $QA_RAW_FILE (${DURATION_SEC} sec, exit=$QA_EXIT)"
@@ -115,7 +119,8 @@ fi
 # --- Step 4: emit evidence JSON -----------------------------------------
 HOSTNAME_VAL="$(hostname)"
 APR_VERSION="$( "$APR_BINARY" --version 2>/dev/null || echo "unknown" )"
-DATE_UTC="$(date -u +%Y-%m-%d)"
+# Same SOURCE_DATE_EPOCH convention as START_EPOCH/END_EPOCH above.
+DATE_UTC="$(date -u -d "@${SOURCE_DATE_EPOCH:-$(date -u +%s)}" +%Y-%m-%d)"
 
 cat > "$EVIDENCE_FILE" <<JSON
 {

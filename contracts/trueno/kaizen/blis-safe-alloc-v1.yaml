@@ -1,3 +1,11 @@
+metadata:
+  kind: kaizen
+  version: "1.0.0"
+  author: "PAIML Engineering"
+  description: "blis-safe-alloc-v1 — kaizen KAIZEN-027 improvement record"
+  references:
+    - "KAIZEN-027"
+
 contract: blis-safe-alloc-v1
 version: 1.0.0
 status: implemented

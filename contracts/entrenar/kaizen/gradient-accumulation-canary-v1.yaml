@@ -1,3 +1,12 @@
+metadata:
+  kind: kaizen
+  version: "1.0.0"
+  created: "2026-04-03"
+  author: "PAIML Engineering"
+  description: "Gradient Accumulation Canary for Constrained VRAM Training"
+  references:
+    - "KAIZEN-069"
+
 contract: gradient-accumulation-canary-v1
 title: Gradient Accumulation Canary for Constrained VRAM Training
 kaizen: KAIZEN-069
@@ -43,7 +52,7 @@ invariants:
       - Same data samples in same order
       - Loss scaled by 1/accumulation_steps
     postconditions:
-      - |sum of micro-batch gradients - single-batch gradient| < epsilon
+      - "|sum of micro-batch gradients - single-batch gradient| < epsilon"
       - Final loss within 1% of non-accumulated baseline
 
   - id: C-GRADACC-003
@@ -89,7 +98,7 @@ falsification_tests:
 
   - id: FALSIFY-GRADACC-002
     rule: C-GRADACC-002 (gradient equivalence)
-    prediction: |final_loss(accum) - final_loss(no_accum)| / final_loss(no_accum) < 0.05
+    prediction: "|final_loss(accum) - final_loss(no_accum)| / final_loss(no_accum) < 0.05"
     test: |
       def test_loss_equivalent():
           r_accum = run_pytorch_canary(batch_size=1, accum=4)

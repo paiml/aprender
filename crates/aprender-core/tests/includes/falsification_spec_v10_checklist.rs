@@ -109,7 +109,7 @@ fn check_file_for_satd(path: &std::path::Path, violations: &mut Vec<String>) {
 /// someone ADDS a marker, which is the outcome worth excluding.
 ///
 /// Lower it whenever debt is paid down. Never raise it.
-const SATD_PRODUCTION_BASELINE: usize = 54;
+const SATD_PRODUCTION_BASELINE: usize = 37;
 
 fn f_checklist_005_satd_is_zero() {
     // F-CHECKLIST-005: SATD in production source may only shrink.

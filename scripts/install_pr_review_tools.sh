@@ -42,6 +42,14 @@ if [ -z "$BINDIR" ]; then
     echo "$PROG: usage: $PROG <bindir>" >&2
     exit 2
 fi
+# Path-traversal guard: BINDIR is caller-supplied, so refuse a '..' component
+# before it is ever used to create or enter a directory.
+case "$BINDIR" in
+    *..*)
+        echo "$PROG: refusing BINDIR with a '..' path component: $BINDIR" >&2
+        exit 2
+        ;;
+esac
 mkdir -p "$BINDIR"
 BINDIR=$(cd -- "$BINDIR" && pwd)
 

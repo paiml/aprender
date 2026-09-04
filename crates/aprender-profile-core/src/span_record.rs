@@ -79,7 +79,7 @@ use std::collections::HashMap;
 /// # Example
 ///
 /// ```
-/// use renacer::span_record::{SpanRecord, SpanKind, StatusCode};
+/// use renacer_core::span_record::{SpanRecord, SpanKind, StatusCode};
 /// use std::collections::HashMap;
 ///
 /// let span = SpanRecord {
@@ -260,7 +260,7 @@ impl SpanRecord {
     /// # Example
     ///
     /// ```
-    /// use renacer::span_record::{SpanRecord, SpanKind, StatusCode};
+    /// use renacer_core::span_record::{SpanRecord, SpanKind, StatusCode};
     /// use std::collections::HashMap;
     ///
     /// let mut attributes = HashMap::new();
@@ -356,7 +356,7 @@ impl SpanRecord {
     /// # Example
     ///
     /// ```
-    /// use renacer::span_record::{SpanRecord, SpanKind, StatusCode};
+    /// use renacer_core::span_record::{SpanRecord, SpanKind, StatusCode};
     /// use std::collections::HashMap;
     ///
     /// let span = SpanRecord::new(

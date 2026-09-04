@@ -26,7 +26,7 @@
 //! # Example
 //!
 //! ```rust,ignore
-//! use aprender_orchestrate::agent::org_policy::load_org_policy;
+//! use batuta::agent::org_policy::load_org_policy;
 //! use std::path::Path;
 //!
 //! let roots = [

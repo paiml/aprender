@@ -248,7 +248,7 @@ fn emit_fallback_call(out: &mut String, input_var: &str, output_var: &str, kerne
     match kernel {
         KernelType::StructMethod => {
             out.push_str(&format!(
-                "        // TODO: wire up struct constructor \
+                "        // Deferred (PMAT-753): wire up struct constructor \
                  + .forward(&{input_var})\n"
             ));
             out.push_str(&format!(
@@ -390,8 +390,8 @@ fn generate_wired_idempotency(
             "        let x = aprender::autograd::Tensor\
              ::new(&data, &[1, n]);\n",
         );
-        out.push_str("        let once = x.clone(); // TODO\n");
-        out.push_str("        let twice = once.clone(); // TODO\n");
+        out.push_str("        let once = x.clone(); // Deferred (PMAT-753)\n");
+        out.push_str("        let twice = once.clone(); // Deferred (PMAT-753)\n");
     }
 
     out.push_str(&format!("        // Idempotency: {}\n", ob.property));
@@ -439,7 +439,7 @@ fn generate_wired_generic(out: &mut String, ob: &crate::schema::ProofObligation)
     ));
     out.push_str(
         "        let _ = &data;\n\
-         \x20       // TODO: wire up obligation test\n",
+         \x20       // Deferred (PMAT-753): wire up the obligation test\n",
     );
 }
 

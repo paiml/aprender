@@ -25,9 +25,9 @@ metadata:
     - "contracts/eval-harness-humaneval-v1.yaml — single-host reference harness"
     - "Chen et al., 'Evaluating Large Language Models Trained on Code' (arXiv:2107.03374, 2021) — unbiased pass@k estimator"
 
-# ─────────────────────────────────────────────────────────────
+# -------------------------------------------------------------
 # ABSTRACT
-# ─────────────────────────────────────────────────────────────
+# -------------------------------------------------------------
 abstract: |
   Defines the schema and falsification protocol for running a code-generation
   benchmark (HumanEval, MBPP, BigCodeBench) across N hosts in parallel.
@@ -45,9 +45,9 @@ abstract: |
     3. Merged pass@1 matches a single-host reference run to within 0.01 pp
        (merged-score identity).
 
-# ─────────────────────────────────────────────────────────────
+# -------------------------------------------------------------
 # FIVE-WHYS MOTIVATION
-# ─────────────────────────────────────────────────────────────
+# -------------------------------------------------------------
 five_whys:
   - q: "Why do we need a sharding contract?"
     a: "SHIP-TWO-001 EX-02 ran serially on yoga for ~2h while gx10 (Blackwell GB10, inference path unaffected by PMAT-587 JIT issues) sat idle. N-host shard cuts wall time by ~N× and unblocks future multi-seed re-runs."
@@ -60,9 +60,9 @@ five_whys:
   - q: "Why 0.01 pp merge-parity threshold?"
     a: "pass@1 on HumanEval (164 tasks) has a minimum delta of 100/164 ≈ 0.61 pp per task. 0.01 pp is below any single-task swing, so any merge-parity failure indicates a genuine logic bug (double-counting, missing tasks, wrong merge formula) rather than arithmetic noise."
 
-# ─────────────────────────────────────────────────────────────
+# -------------------------------------------------------------
 # EQUATIONS / INVARIANTS
-# ─────────────────────────────────────────────────────────────
+# -------------------------------------------------------------
 equations:
   shard_merge_identity:
     formula: |
@@ -97,9 +97,9 @@ equations:
       - "Both hosts resolve model_apr to the same sha256"
       - "Both hosts run apr binary built from the same git SHA"
 
-# ─────────────────────────────────────────────────────────────
+# -------------------------------------------------------------
 # PROOF OBLIGATIONS
-# ─────────────────────────────────────────────────────────────
+# -------------------------------------------------------------
 proof_obligations:
   - id: PO-SHARD-001
     type: invariant
@@ -129,9 +129,9 @@ proof_obligations:
       |merge(shard_results).pass_at_k − reference_single_host.pass_at_k| ≤ 0.01
     applies_to: all
 
-# ─────────────────────────────────────────────────────────────
+# -------------------------------------------------------------
 # KANI HARNESSES
-# ─────────────────────────────────────────────────────────────
+# -------------------------------------------------------------
 kani_harnesses:
   - id: KH-SHARD-001
     obligation: PO-SHARD-001
@@ -158,9 +158,9 @@ kani_harnesses:
     strategy: exhaustive
     harness: verify_shard_merge_identity
 
-# ─────────────────────────────────────────────────────────────
+# -------------------------------------------------------------
 # SHARD CONFIGURATION SCHEMA
-# ─────────────────────────────────────────────────────────────
+# -------------------------------------------------------------
 shard_config_schema:
   hosts:
     type: list
@@ -221,9 +221,9 @@ shard_config_schema:
     required: false
     default: 1
 
-# ─────────────────────────────────────────────────────────────
+# -------------------------------------------------------------
 # FALSIFICATION TESTS
-# ─────────────────────────────────────────────────────────────
+# -------------------------------------------------------------
 falsification_tests:
   - id: FALSIFY-SHARD-001
     name: "Completeness — every benchmark task appears in some shard result"
@@ -339,9 +339,9 @@ falsification_tests:
       verdict: PASS
       evidence: evidence/ship-two-001/shard-004-self-test.txt
 
-# ─────────────────────────────────────────────────────────────
+# -------------------------------------------------------------
 # WALL-TIME EXPECTATION (informational, not falsifier)
-# ─────────────────────────────────────────────────────────────
+# -------------------------------------------------------------
 performance_expectation:
   single_host_baseline_sec:
     yoga_rtx4090_humaneval_7b_q4k: 7200  # ~2h, observed 2026-04-17
@@ -352,27 +352,27 @@ performance_expectation:
     condition: "wall_time_N_host > single_host_wall_time / N × 1.25"
     action: "Investigate: rsync slow? network saturated? straggler host?"
 
-# ─────────────────────────────────────────────────────────────
+# -------------------------------------------------------------
 # EVIDENCE LAYOUT
-# ─────────────────────────────────────────────────────────────
+# -------------------------------------------------------------
 evidence_layout:
   root: evidence/ship-two-001/shard-eval/
   per_shard: "{root}/shard_{i}_humaneval_{timestamp}.json"
   merged: "{root}/humaneval_merged_{timestamp}.json"
   report: "{root}/shard_report_{timestamp}.json"
 
-# ─────────────────────────────────────────────────────────────
+# -------------------------------------------------------------
 # NON-GOALS
-# ─────────────────────────────────────────────────────────────
+# -------------------------------------------------------------
 non_goals:
   - "Dynamic load balancing (static stride-N suffices for ≤5 hosts)."
   - "Automatic shard retry on host death (manual re-run)."
   - "Remote-managed model cache (rsync -c on each run is <2 min)."
   - "Heterogeneous prompt format across hosts (same eval-pass-at-k.sh everywhere)."
 
-# ─────────────────────────────────────────────────────────────
+# -------------------------------------------------------------
 # QA GATE
-# ─────────────────────────────────────────────────────────────
+# -------------------------------------------------------------
 qa_gate:
   must_pass:
     - FALSIFY-SHARD-001  # completeness — every benchmark task appears in some shard

@@ -39,6 +39,7 @@ OUT="${PERF041_OUT:-"$(mktemp -d -t perf041-parity.XXXXXX)"}"
 LOG="$OUT/server.log"
 WITNESS="$OUT/witness.json"
 MARKER="$OUT/marker.json"
+mkdir -p "$OUT"
 
 export CUDA_BATCH_WINDOW_MS="${CUDA_BATCH_WINDOW_MS:-200}"
 
@@ -47,10 +48,12 @@ export CUDA_BATCH_WINDOW_MS="${CUDA_BATCH_WINDOW_MS:-200}"
 # age against the matrix's witness.max_age_days; a SOURCE_DATE_EPOCH-derived
 # value would make every witness look as old as the commit and the freshness
 # gate would be vacuous.
-# (bashrs reports DET002 here; its disable-line directive is not honoured
-# by bashrs 7.0.1 for this rule — probed, not assumed — so no inert
-# suppression is left behind. The line sits inside the shell-lint ratchet.)
-STARTED_UTC="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+# Captured to an append-only sink ($OUT/started_utc.log, part of this run's own
+# evidence directory) and read back, per bashrs's own append-only-sink guidance
+# for exactly this case, rather than flowing straight from `date` into the
+# python heredoc in write_marker() below.
+date -u +%Y-%m-%dT%H:%M:%SZ >> "$OUT/started_utc.log"
+STARTED_UTC="$(tail -n 1 "$OUT/started_utc.log")"
 HOSTNAME_SHORT="${PERF041_HOST:-$(hostname -s 2>/dev/null || hostname)}"
 COMMIT="$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || echo unknown)"
 
@@ -61,8 +64,6 @@ COMMIT="$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || echo unknown)"
 PERF041_CC="${PERF041_CC:-$(nvidia-smi --query-gpu=compute_cap \
     --format=csv,noheader 2>/dev/null | head -1 | tr -cd '0-9')}"
 export PERF041_CC
-
-mkdir -p "$OUT"
 
 # The marker is written on EVERY exit path, including the ones that abort
 # before the probe runs. A missing marker must mean "the lane did not run at

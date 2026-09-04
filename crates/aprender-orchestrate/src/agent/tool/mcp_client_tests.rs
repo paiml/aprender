@@ -210,7 +210,11 @@ async fn test_stdio_transport_env_flows_to_subprocess() {
         vec![
             "sh".into(),
             "-c".into(),
-            r#"printf '{"jsonrpc":"2.0","id":1,"result":{"content":[{"text":"%s"}]}}\n' "$MCP_ENV_TEST_KEY""#
+            // `read` first: the transport writes the request to the child's
+            // stdin and the child must still be alive to receive it. A
+            // server that only printf-ed exited before the write under load
+            // (clean-room, CARGO_BUILD_JOBS=2): "write stdin: Broken pipe".
+            r#"read -r _request; printf '{"jsonrpc":"2.0","id":1,"result":{"content":[{"text":"%s"}]}}\n' "$MCP_ENV_TEST_KEY""#
                 .into(),
         ],
         env,
@@ -304,6 +308,29 @@ async fn test_stdio_transport_process_exit_failure() {
     let err = result.unwrap_err();
     assert!(err.contains("process exited"), "got: {err}");
     assert!(err.contains("oops"), "got: {err}");
+}
+
+#[tokio::test]
+async fn test_stdio_transport_exit_before_request_is_read() {
+    if skip_in_ci() {
+        return;
+    }
+    // The child closes its stdin and exits without reading. The request is
+    // larger than a pipe buffer, so the write can never complete: the
+    // transport sees EPIPE on every schedule, not only under load. The caller
+    // must still get the exit status and stderr (PMAT-950); before the fix
+    // this returned "write stdin: Broken pipe".
+    let transport = StdioMcpTransport::new(
+        "closes-stdin",
+        vec!["sh".into(), "-c".into(), "exec 0<&-; echo 'oops' >&2; exit 1".into()],
+    );
+    let big = "x".repeat(1 << 20);
+    let result = transport.call_tool("search", serde_json::json!({ "q": big })).await;
+    assert!(result.is_err());
+    let err = result.unwrap_err();
+    assert!(err.contains("process exited"), "got: {err}");
+    assert!(err.contains("oops"), "got: {err}");
+    assert!(!err.contains("Broken pipe"), "got: {err}");
 }
 
 #[tokio::test]

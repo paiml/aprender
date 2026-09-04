@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use crate::error::ContractError;
-use crate::schema::types::{Contract, CONTRACT_TOP_LEVEL_FIELDS};
+use crate::schema::types::{Contract, ContractKind, KaizenRecord, CONTRACT_TOP_LEVEL_FIELDS};
 
 /// Parse a YAML contract file into a [`Contract`] struct.
 ///
@@ -67,7 +67,29 @@ pub fn parse_contract_str(yaml: &str) -> Result<Contract, ContractError> {
     let mut contract: Contract = serde_yaml::from_str(yaml)?;
     contract.unknown_top_level_keys = unknown_top_level_keys(yaml);
     contract.strict_yaml_error = strict_yaml_error(yaml);
+    contract.kaizen_record = kaizen_record(yaml, contract.kind())?;
     Ok(contract)
+}
+
+/// Third pass, run ONLY for `metadata.kind: kaizen`: read the top-level blocks
+/// a kaizen improvement record carries (`contract:`, `kaizen:`, `status:`,
+/// `baseline:`, `target:`, …) that `Contract` deliberately does not model.
+///
+/// Gated on the kind rather than run unconditionally because those key names
+/// are not owned by the kaizen schema: `status:`, `version:` and `invariants:`
+/// appear at top level across the corpus with shapes that would make this
+/// deserialize fail. On a non-kaizen contract that failure would turn a
+/// perfectly good contract into a parse error; scoping the pass means it can
+/// only ever be reached by a document that has declared itself a kaizen record.
+///
+/// When it IS reached, a type error is returned rather than swallowed — a
+/// kaizen record whose `baseline:` is unreadable must be REPORTED, not
+/// silently validated as if it had none.
+fn kaizen_record(yaml: &str, kind: ContractKind) -> Result<Option<KaizenRecord>, ContractError> {
+    if kind != ContractKind::Kaizen {
+        return Ok(None);
+    }
+    Ok(Some(serde_yaml::from_str::<KaizenRecord>(yaml)?))
 }
 
 /// Top-level mapping keys of `yaml` that are not fields of [`Contract`].

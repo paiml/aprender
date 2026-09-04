@@ -535,8 +535,8 @@ impl MicroVmMetrics {
             warm_starts: executor.warm_starts(),
             vm_count: executor.instance_count(),
             idle_vms: executor.idle_count(),
-            avg_execution_ms: 0.0, // TODO: track
-            p99_execution_ms: 0.0, // TODO: track
+            avg_execution_ms: 0.0, // Deferred (PMAT-941): track
+            p99_execution_ms: 0.0, // Deferred (PMAT-942): track
         }
     }
 

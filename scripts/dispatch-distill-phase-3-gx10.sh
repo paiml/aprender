@@ -36,6 +36,30 @@
 
 set -euo pipefail
 
+# Reproducibility escape hatch (bashrs DET002): SOURCE_DATE_EPOCH, when a
+# caller sets it, pins the clock this dispatch names its run and stamps its
+# manifest with, to one UTC instant. Unset -- the normal case for a live
+# dispatch -- each helper falls through to the exact pre-existing call
+# (RUN_NAME's `date +%Y%m%d-%H%M%S` was local time with no -u; dispatched_at's
+# `date -u +%Y-%m-%dT%H:%M:%SZ` was already UTC), so the run name and
+# dispatch timestamp are unchanged from before. Routing the unset case
+# through the epoch would force RUN_NAME's local-time stamp to UTC, which is
+# a real behavior change on any host whose local zone differs from UTC.
+_stamp_compact() {
+    if [ -n "${SOURCE_DATE_EPOCH:-}" ]; then
+        date -u -d "@${SOURCE_DATE_EPOCH}" +%Y%m%d-%H%M%S
+    else
+        date +%Y%m%d-%H%M%S
+    fi
+}
+_stamp_iso_z() {
+    if [ -n "${SOURCE_DATE_EPOCH:-}" ]; then
+        date -u -d "@${SOURCE_DATE_EPOCH}" +%Y-%m-%dT%H:%M:%SZ
+    else
+        date -u +%Y-%m-%dT%H:%M:%SZ
+    fi
+}
+
 # --------------------------------------------------------------------------
 # Config (override via env)
 # --------------------------------------------------------------------------
@@ -85,7 +109,7 @@ BATCH_SIZE="${BATCH_SIZE:-4}"
 LR="${LR:-1.5e-5}"
 T="${T:-4.0}"
 ALPHA="${ALPHA:-0.3}"
-RUN_NAME="distill-smoke-$(date +%Y%m%d-%H%M%S)"
+RUN_NAME="distill-smoke-$(_stamp_compact)"
 EVIDENCE_DIR="${EVIDENCE_DIR:-evidence/distill-phase-3-${RUN_NAME}}"
 DRY_RUN="${DRY_RUN:-0}"
 
@@ -322,7 +346,7 @@ cat > "${EVIDENCE_DIR}/dispatch.json" <<JSON
   "kd_alpha": "${ALPHA}",
   "remote_run_dir": "${RUN_DIR_REMOTE}",
   "remote_log": "${LOG_REMOTE}",
-  "dispatched_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  "dispatched_at": "$(_stamp_iso_z)"
 }
 JSON
 

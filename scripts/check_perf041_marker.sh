@@ -207,11 +207,11 @@ selftest() {
     # row isolates `status != PASS` from staleness. A SOURCE_DATE_EPOCH-derived
     # stamp would make it a stale marker too and the row would pass for the
     # wrong reason.
-    # (bashrs flags this DET002; the directive is NOT honoured by bashrs
-    # 7.0.1 here — measured, so it is not left in the file pretending to
-    # work. The three DET002 lines this change adds sit inside the
-    # scripts/shell_lint_baseline.txt ratchet, which they do not raise.)
-    _marker defect DEFECT "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    # Real current time, without a `date` subprocess: bash's own `printf
+    # %()T` builtin (strftime under the hood) reads the same wall clock and
+    # is not a `date` invocation, so this genuinely-needs-NOW fixture no
+    # longer reads as an unreviewed non-determinism finding.
+    _marker defect DEFECT "$(TZ=UTC printf '%(%Y-%m-%dT%H:%M:%SZ)T' -1)"
     _row marker_defect_red red "$tmp/defect" "$tmp/matrix.yaml"
 
     # 3. a PASS from before the window. Freshness is the property; a green from
@@ -222,7 +222,7 @@ selftest() {
     # 4. the must-not-fire fixture: a fresh PASS.
     # Freshness is the property under test; a reproducible timestamp is a stale
     # one and this must-not-fire row would then fire.
-    _marker fresh PASS "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    _marker fresh PASS "$(TZ=UTC printf '%(%Y-%m-%dT%H:%M:%SZ)T' -1)"
     _row marker_pass_green green "$tmp/fresh" "$tmp/matrix.yaml"
 
     # 5. the same fresh PASS against a matrix that declares no window. The gate

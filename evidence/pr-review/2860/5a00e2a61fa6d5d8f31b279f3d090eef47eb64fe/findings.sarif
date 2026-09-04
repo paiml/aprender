@@ -1,0 +1,1659 @@
+{
+ "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+ "version": "2.1.0",
+ "runs": [
+  {
+   "tool": {
+    "driver": {
+     "name": "pmat",
+     "version": "unknown",
+     "rules": [
+      {
+       "id": "PRREV-PMAT",
+       "name": "pmat quality and duplication"
+      }
+     ]
+    }
+   },
+   "results": [
+    {
+     "ruleId": "PRREV-PMAT",
+     "level": "note",
+     "message": {
+      "text": "lexical name match `e2e_cli_t` at .claude/skills/apr-dogfood/SKILL.md:1324 (lexical); not duplicated logic: lexical name match only: the batch's helper or fixture shares an identifier with unrelated code (5 hit(s)); read on both sides, not duplicated logic"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": ".claude/skills/apr-dogfood/SKILL.md"
+        },
+        "region": {
+         "startLine": 1324
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "if the two symbols were the same logic, this PR would re-implement it; they are not (read on both sides)",
+      "source": "scripts/pr_review_duplication_scan.sh --base 68b059ca9 --head 5a00e2a61 --rust-semantic",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "name collision, no duplication"
+     }
+    },
+    {
+     "ruleId": "PRREV-PMAT",
+     "level": "note",
+     "message": {
+      "text": "lexical name match `e2e_mcp_stdio_t` at .claude/skills/apr-dogfood/SKILL.md:1325 (lexical); not duplicated logic: lexical name match only: the batch's helper or fixture shares an identifier with unrelated code (3 hit(s)); read on both sides, not duplicated logic"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": ".claude/skills/apr-dogfood/SKILL.md"
+        },
+        "region": {
+         "startLine": 1325
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "if the two symbols were the same logic, this PR would re-implement it; they are not (read on both sides)",
+      "source": "scripts/pr_review_duplication_scan.sh --base 68b059ca9 --head 5a00e2a61 --rust-semantic",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "name collision, no duplication"
+     }
+    },
+    {
+     "ruleId": "PRREV-PMAT",
+     "level": "note",
+     "message": {
+      "text": "lexical name match `e2e_http_serve_t` at .claude/skills/apr-dogfood/SKILL.md:1326 (lexical); not duplicated logic: lexical name match only: the batch's helper or fixture shares an identifier with unrelated code (4 hit(s)); read on both sides, not duplicated logic"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": ".claude/skills/apr-dogfood/SKILL.md"
+        },
+        "region": {
+         "startLine": 1326
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "if the two symbols were the same logic, this PR would re-implement it; they are not (read on both sides)",
+      "source": "scripts/pr_review_duplication_scan.sh --base 68b059ca9 --head 5a00e2a61 --rust-semantic",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "name collision, no duplication"
+     }
+    },
+    {
+     "ruleId": "PRREV-PMAT",
+     "level": "note",
+     "message": {
+      "text": "lexical name match `e2e_cli_t` at .claude/skills/dogfood/SKILL.md:287 (lexical); not duplicated logic: lexical name match only: the batch's helper or fixture shares an identifier with unrelated code (5 hit(s)); read on both sides, not duplicated logic"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": ".claude/skills/dogfood/SKILL.md"
+        },
+        "region": {
+         "startLine": 287
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "if the two symbols were the same logic, this PR would re-implement it; they are not (read on both sides)",
+      "source": "scripts/pr_review_duplication_scan.sh --base 68b059ca9 --head 5a00e2a61 --rust-semantic",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "name collision, no duplication"
+     }
+    },
+    {
+     "ruleId": "PRREV-PMAT",
+     "level": "note",
+     "message": {
+      "text": "lexical name match `e2e_mcp_stdio_t` at .claude/skills/dogfood/SKILL.md:288 (lexical); not duplicated logic: lexical name match only: the batch's helper or fixture shares an identifier with unrelated code (3 hit(s)); read on both sides, not duplicated logic"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": ".claude/skills/dogfood/SKILL.md"
+        },
+        "region": {
+         "startLine": 288
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "if the two symbols were the same logic, this PR would re-implement it; they are not (read on both sides)",
+      "source": "scripts/pr_review_duplication_scan.sh --base 68b059ca9 --head 5a00e2a61 --rust-semantic",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "name collision, no duplication"
+     }
+    },
+    {
+     "ruleId": "PRREV-PMAT",
+     "level": "note",
+     "message": {
+      "text": "lexical name match `e2e_http_serve_t` at .claude/skills/dogfood/SKILL.md:289 (lexical); not duplicated logic: lexical name match only: the batch's helper or fixture shares an identifier with unrelated code (4 hit(s)); read on both sides, not duplicated logic"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": ".claude/skills/dogfood/SKILL.md"
+        },
+        "region": {
+         "startLine": 289
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "if the two symbols were the same logic, this PR would re-implement it; they are not (read on both sides)",
+      "source": "scripts/pr_review_duplication_scan.sh --base 68b059ca9 --head 5a00e2a61 --rust-semantic",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "name collision, no duplication"
+     }
+    },
+    {
+     "ruleId": "PRREV-PMAT",
+     "level": "note",
+     "message": {
+      "text": "lexical name match `e2e_http_serve_t.rs` at .claude/skills/dogfood/SKILL.md:394 (lexical); not duplicated logic: lexical name match only: the batch's helper or fixture shares an identifier with unrelated code (1 hit(s)); read on both sides, not duplicated logic"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": ".claude/skills/dogfood/SKILL.md"
+        },
+        "region": {
+         "startLine": 394
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "if the two symbols were the same logic, this PR would re-implement it; they are not (read on both sides)",
+      "source": "scripts/pr_review_duplication_scan.sh --base 68b059ca9 --head 5a00e2a61 --rust-semantic",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "name collision, no duplication"
+     }
+    },
+    {
+     "ruleId": "PRREV-PMAT",
+     "level": "note",
+     "message": {
+      "text": "lexical name match `start_realizar_server` at book/src/examples/sharded-safetensors-serve.md:15 (lexical); not duplicated logic: lexical name match only: the batch's helper or fixture shares an identifier with unrelated code (3 hit(s)); read on both sides, not duplicated logic"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "book/src/examples/sharded-safetensors-serve.md"
+        },
+        "region": {
+         "startLine": 15
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "if the two symbols were the same logic, this PR would re-implement it; they are not (read on both sides)",
+      "source": "scripts/pr_review_duplication_scan.sh --base 68b059ca9 --head 5a00e2a61 --rust-semantic",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "name collision, no duplication"
+     }
+    },
+    {
+     "ruleId": "PRREV-PMAT",
+     "level": "note",
+     "message": {
+      "text": "lexical name match `attention_scores` at contracts/trace-attn-sub-stages-v1.yaml:104 (lexical); not duplicated logic: lexical name match only: the batch's helper or fixture shares an identifier with unrelated code (3 hit(s)); read on both sides, not duplicated logic"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "contracts/trace-attn-sub-stages-v1.yaml"
+        },
+        "region": {
+         "startLine": 104
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "if the two symbols were the same logic, this PR would re-implement it; they are not (read on both sides)",
+      "source": "scripts/pr_review_duplication_scan.sh --base 68b059ca9 --head 5a00e2a61 --rust-semantic",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "name collision, no duplication"
+     }
+    },
+    {
+     "ruleId": "PRREV-PMAT",
+     "level": "note",
+     "message": {
+      "text": "lexical name match `resolve_checkpoint_dir` at crates/apr-cli/src/commands/eval/mod.rs:236 (lexical); not duplicated logic: lexical name match only: the batch's helper or fixture shares an identifier with unrelated code (2 hit(s)); read on both sides, not duplicated logic"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "crates/apr-cli/src/commands/eval/mod.rs"
+        },
+        "region": {
+         "startLine": 236
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "if the two symbols were the same logic, this PR would re-implement it; they are not (read on both sides)",
+      "source": "scripts/pr_review_duplication_scan.sh --base 68b059ca9 --head 5a00e2a61 --rust-semantic",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "name collision, no duplication"
+     }
+    },
+    {
+     "ruleId": "PRREV-PMAT",
+     "level": "note",
+     "message": {
+      "text": "lexical name match `resolve_checkpoint_dir` at crates/apr-cli/src/commands/eval/mod.rs:313 (lexical); not duplicated logic: lexical name match only: the batch's helper or fixture shares an identifier with unrelated code (2 hit(s)); read on both sides, not duplicated logic"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "crates/apr-cli/src/commands/eval/mod.rs"
+        },
+        "region": {
+         "startLine": 313
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "if the two symbols were the same logic, this PR would re-implement it; they are not (read on both sides)",
+      "source": "scripts/pr_review_duplication_scan.sh --base 68b059ca9 --head 5a00e2a61 --rust-semantic",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "name collision, no duplication"
+     }
+    },
+    {
+     "ruleId": "PRREV-PMAT",
+     "level": "note",
+     "message": {
+      "text": "lexical name match `start_realizar_server` at crates/apr-cli/src/commands/serve/mod.rs:346 (lexical); not duplicated logic: lexical name match only: the batch's helper or fixture shares an identifier with unrelated code (3 hit(s)); read on both sides, not duplicated logic"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "crates/apr-cli/src/commands/serve/mod.rs"
+        },
+        "region": {
+         "startLine": 346
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "if the two symbols were the same logic, this PR would re-implement it; they are not (read on both sides)",
+      "source": "scripts/pr_review_duplication_scan.sh --base 68b059ca9 --head 5a00e2a61 --rust-semantic",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "name collision, no duplication"
+     }
+    },
+    {
+     "ruleId": "PRREV-PMAT",
+     "level": "note",
+     "message": {
+      "text": "lexical name match `check_sha256` at crates/apr-cli/src/commands/validate_manifest.rs:109 (lexical); not duplicated logic: lexical name match only: the batch's helper or fixture shares an identifier with unrelated code (2 hit(s)); read on both sides, not duplicated logic"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "crates/apr-cli/src/commands/validate_manifest.rs"
+        },
+        "region": {
+         "startLine": 109
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "if the two symbols were the same logic, this PR would re-implement it; they are not (read on both sides)",
+      "source": "scripts/pr_review_duplication_scan.sh --base 68b059ca9 --head 5a00e2a61 --rust-semantic",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "name collision, no duplication"
+     }
+    },
+    {
+     "ruleId": "PRREV-PMAT",
+     "level": "note",
+     "message": {
+      "text": "lexical name match `check_sha256` at crates/apr-cli/src/commands/validate_manifest.rs:211 (lexical); not duplicated logic: lexical name match only: the batch's helper or fixture shares an identifier with unrelated code (2 hit(s)); read on both sides, not duplicated logic"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "crates/apr-cli/src/commands/validate_manifest.rs"
+        },
+        "region": {
+         "startLine": 211
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "if the two symbols were the same logic, this PR would re-implement it; they are not (read on both sides)",
+      "source": "scripts/pr_review_duplication_scan.sh --base 68b059ca9 --head 5a00e2a61 --rust-semantic",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "name collision, no duplication"
+     }
+    },
+    {
+     "ruleId": "PRREV-PMAT",
+     "level": "note",
+     "message": {
+      "text": "lexical name match `_metrics` at crates/aprender-cgp/src/profilers/cuda.rs:468 (lexical); not duplicated logic: lexical name match only: the batch's helper or fixture shares an identifier with unrelated code (2 hit(s)); read on both sides, not duplicated logic"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "crates/aprender-cgp/src/profilers/cuda.rs"
+        },
+        "region": {
+         "startLine": 468
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "if the two symbols were the same logic, this PR would re-implement it; they are not (read on both sides)",
+      "source": "scripts/pr_review_duplication_scan.sh --base 68b059ca9 --head 5a00e2a61 --rust-semantic",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "name collision, no duplication"
+     }
+    },
+    {
+     "ruleId": "PRREV-PMAT",
+     "level": "note",
+     "message": {
+      "text": "lexical name match `attention_scores` at crates/aprender-compute/book/src/examples/neural-networks.md:128 (lexical); not duplicated logic: lexical name match only: the batch's helper or fixture shares an identifier with unrelated code (3 hit(s)); read on both sides, not duplicated logic"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "crates/aprender-compute/book/src/examples/neural-networks.md"
+        },
+        "region": {
+         "startLine": 128
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "if the two symbols were the same logic, this PR would re-implement it; they are not (read on both sides)",
+      "source": "scripts/pr_review_duplication_scan.sh --base 68b059ca9 --head 5a00e2a61 --rust-semantic",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "name collision, no duplication"
+     }
+    },
+    {
+     "ruleId": "PRREV-PMAT",
+     "level": "note",
+     "message": {
+      "text": "lexical name match `_threshold` at crates/aprender-contracts/src/auto_exempt.rs:311 (lexical); not duplicated logic: a suffix match on unrelated tree/contract helpers; lexical only"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "crates/aprender-contracts/src/auto_exempt.rs"
+        },
+        "region": {
+         "startLine": 311
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "if the two symbols were the same logic, this PR would re-implement it; they are not (read on both sides)",
+      "source": "scripts/pr_review_duplication_scan.sh --base 68b059ca9 --head 5a00e2a61 --rust-semantic",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "name collision, no duplication"
+     }
+    },
+    {
+     "ruleId": "PRREV-PMAT",
+     "level": "note",
+     "message": {
+      "text": "lexical name match `_threshold` at crates/aprender-core/src/tree/helpers_tests_regression_and_importance.rs:227 (lexical); not duplicated logic: a suffix match on unrelated tree/contract helpers; lexical only"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "crates/aprender-core/src/tree/helpers_tests_regression_and_importance.rs"
+        },
+        "region": {
+         "startLine": 227
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "if the two symbols were the same logic, this PR would re-implement it; they are not (read on both sides)",
+      "source": "scripts/pr_review_duplication_scan.sh --base 68b059ca9 --head 5a00e2a61 --rust-semantic",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "name collision, no duplication"
+     }
+    },
+    {
+     "ruleId": "PRREV-PMAT",
+     "level": "note",
+     "message": {
+      "text": "lexical name match `_threshold` at crates/aprender-core/src/tree/tests/core.rs:234 (lexical); not duplicated logic: a suffix match on unrelated tree/contract helpers; lexical only"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "crates/aprender-core/src/tree/tests/core.rs"
+        },
+        "region": {
+         "startLine": 234
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "if the two symbols were the same logic, this PR would re-implement it; they are not (read on both sides)",
+      "source": "scripts/pr_review_duplication_scan.sh --base 68b059ca9 --head 5a00e2a61 --rust-semantic",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "name collision, no duplication"
+     }
+    },
+    {
+     "ruleId": "PRREV-PMAT",
+     "level": "note",
+     "message": {
+      "text": "lexical name match `_threshold` at crates/aprender-core/src/tree/tests/core.rs:255 (lexical); not duplicated logic: a suffix match on unrelated tree/contract helpers; lexical only"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "crates/aprender-core/src/tree/tests/core.rs"
+        },
+        "region": {
+         "startLine": 255
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "if the two symbols were the same logic, this PR would re-implement it; they are not (read on both sides)",
+      "source": "scripts/pr_review_duplication_scan.sh --base 68b059ca9 --head 5a00e2a61 --rust-semantic",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "name collision, no duplication"
+     }
+    },
+    {
+     "ruleId": "PRREV-PMAT",
+     "level": "note",
+     "message": {
+      "text": "lexical name match `free_port` at crates/aprender-mcp/src/tools/serve.rs:657 (lexical); not duplicated logic: a 5-line ephemeral-port helper in the new transports e2e test shares its name with aprender-mcp's test helper and scripts/invariance.py; duplicated test scaffolding, not shipped logic \u2014 a shared test-lib helper is owed (recorded here, not blocking)"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "crates/aprender-mcp/src/tools/serve.rs"
+        },
+        "region": {
+         "startLine": 657
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "if the two symbols were the same logic, this PR would re-implement it; they are not (read on both sides)",
+      "source": "scripts/pr_review_duplication_scan.sh --base 68b059ca9 --head 5a00e2a61 --rust-semantic",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "name collision, no duplication"
+     }
+    },
+    {
+     "ruleId": "PRREV-PMAT",
+     "level": "note",
+     "message": {
+      "text": "lexical name match `free_port` at crates/aprender-mcp/src/tools/serve.rs:687 (lexical); not duplicated logic: a 5-line ephemeral-port helper in the new transports e2e test shares its name with aprender-mcp's test helper and scripts/invariance.py; duplicated test scaffolding, not shipped logic \u2014 a shared test-lib helper is owed (recorded here, not blocking)"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "crates/aprender-mcp/src/tools/serve.rs"
+        },
+        "region": {
+         "startLine": 687
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "if the two symbols were the same logic, this PR would re-implement it; they are not (read on both sides)",
+      "source": "scripts/pr_review_duplication_scan.sh --base 68b059ca9 --head 5a00e2a61 --rust-semantic",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "name collision, no duplication"
+     }
+    },
+    {
+     "ruleId": "PRREV-PMAT",
+     "level": "note",
+     "message": {
+      "text": "lexical name match `free_port` at crates/aprender-mcp/src/tools/serve.rs:701 (lexical); not duplicated logic: a 5-line ephemeral-port helper in the new transports e2e test shares its name with aprender-mcp's test helper and scripts/invariance.py; duplicated test scaffolding, not shipped logic \u2014 a shared test-lib helper is owed (recorded here, not blocking)"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "crates/aprender-mcp/src/tools/serve.rs"
+        },
+        "region": {
+         "startLine": 701
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "if the two symbols were the same logic, this PR would re-implement it; they are not (read on both sides)",
+      "source": "scripts/pr_review_duplication_scan.sh --base 68b059ca9 --head 5a00e2a61 --rust-semantic",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "name collision, no duplication"
+     }
+    },
+    {
+     "ruleId": "PRREV-PMAT",
+     "level": "note",
+     "message": {
+      "text": "lexical name match `free_port` at crates/aprender-mcp/src/tools/serve.rs:1163 (lexical); not duplicated logic: a 5-line ephemeral-port helper in the new transports e2e test shares its name with aprender-mcp's test helper and scripts/invariance.py; duplicated test scaffolding, not shipped logic \u2014 a shared test-lib helper is owed (recorded here, not blocking)"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "crates/aprender-mcp/src/tools/serve.rs"
+        },
+        "region": {
+         "startLine": 1163
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "if the two symbols were the same logic, this PR would re-implement it; they are not (read on both sides)",
+      "source": "scripts/pr_review_duplication_scan.sh --base 68b059ca9 --head 5a00e2a61 --rust-semantic",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "name collision, no duplication"
+     }
+    },
+    {
+     "ruleId": "PRREV-PMAT",
+     "level": "note",
+     "message": {
+      "text": "lexical name match `_metrics` at crates/aprender-present/scripts/pixel_diff.sh:75 (lexical); not duplicated logic: lexical name match only: the batch's helper or fixture shares an identifier with unrelated code (2 hit(s)); read on both sides, not duplicated logic"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "crates/aprender-present/scripts/pixel_diff.sh"
+        },
+        "region": {
+         "startLine": 75
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "if the two symbols were the same logic, this PR would re-implement it; they are not (read on both sides)",
+      "source": "scripts/pr_review_duplication_scan.sh --base 68b059ca9 --head 5a00e2a61 --rust-semantic",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "name collision, no duplication"
+     }
+    },
+    {
+     "ruleId": "PRREV-PMAT",
+     "level": "note",
+     "message": {
+      "text": "lexical name match `attention_scores` at crates/aprender-serve/contracts/forward-pass-v1.yaml:29 (lexical); not duplicated logic: lexical name match only: the batch's helper or fixture shares an identifier with unrelated code (3 hit(s)); read on both sides, not duplicated logic"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "crates/aprender-serve/contracts/forward-pass-v1.yaml"
+        },
+        "region": {
+         "startLine": 29
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "if the two symbols were the same logic, this PR would re-implement it; they are not (read on both sides)",
+      "source": "scripts/pr_review_duplication_scan.sh --base 68b059ca9 --head 5a00e2a61 --rust-semantic",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "name collision, no duplication"
+     }
+    },
+    {
+     "ruleId": "PRREV-PMAT",
+     "level": "note",
+     "message": {
+      "text": "lexical name match `wgpu_argmax` at crates/aprender-serve/examples/wgpu_parity_test.rs:159 (lexical); not duplicated logic: a name in the wgpu parity example/tests, untouched logic; lexical only"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "crates/aprender-serve/examples/wgpu_parity_test.rs"
+        },
+        "region": {
+         "startLine": 159
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "if the two symbols were the same logic, this PR would re-implement it; they are not (read on both sides)",
+      "source": "scripts/pr_review_duplication_scan.sh --base 68b059ca9 --head 5a00e2a61 --rust-semantic",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "name collision, no duplication"
+     }
+    },
+    {
+     "ruleId": "PRREV-PMAT",
+     "level": "note",
+     "message": {
+      "text": "lexical name match `wgpu_argmax` at crates/aprender-serve/examples/wgpu_parity_test.rs:164 (lexical); not duplicated logic: a name in the wgpu parity example/tests, untouched logic; lexical only"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "crates/aprender-serve/examples/wgpu_parity_test.rs"
+        },
+        "region": {
+         "startLine": 164
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "if the two symbols were the same logic, this PR would re-implement it; they are not (read on both sides)",
+      "source": "scripts/pr_review_duplication_scan.sh --base 68b059ca9 --head 5a00e2a61 --rust-semantic",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "name collision, no duplication"
+     }
+    },
+    {
+     "ruleId": "PRREV-PMAT",
+     "level": "note",
+     "message": {
+      "text": "lexical name match `wgpu_argmax` at crates/aprender-serve/tests/qwen3_moe_wgpu_parity.rs:194 (lexical); not duplicated logic: a name in the wgpu parity example/tests, untouched logic; lexical only"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "crates/aprender-serve/tests/qwen3_moe_wgpu_parity.rs"
+        },
+        "region": {
+         "startLine": 194
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "if the two symbols were the same logic, this PR would re-implement it; they are not (read on both sides)",
+      "source": "scripts/pr_review_duplication_scan.sh --base 68b059ca9 --head 5a00e2a61 --rust-semantic",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "name collision, no duplication"
+     }
+    },
+    {
+     "ruleId": "PRREV-PMAT",
+     "level": "note",
+     "message": {
+      "text": "lexical name match `wgpu_argmax` at crates/aprender-serve/tests/qwen3_moe_wgpu_parity.rs:199 (lexical); not duplicated logic: a name in the wgpu parity example/tests, untouched logic; lexical only"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "crates/aprender-serve/tests/qwen3_moe_wgpu_parity.rs"
+        },
+        "region": {
+         "startLine": 199
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "if the two symbols were the same logic, this PR would re-implement it; they are not (read on both sides)",
+      "source": "scripts/pr_review_duplication_scan.sh --base 68b059ca9 --head 5a00e2a61 --rust-semantic",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "name collision, no duplication"
+     }
+    },
+    {
+     "ruleId": "PRREV-PMAT",
+     "level": "note",
+     "message": {
+      "text": "lexical name match `wgpu_argmax` at crates/aprender-serve/tests/qwen3_moe_wgpu_parity.rs:202 (lexical); not duplicated logic: a name in the wgpu parity example/tests, untouched logic; lexical only"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "crates/aprender-serve/tests/qwen3_moe_wgpu_parity.rs"
+        },
+        "region": {
+         "startLine": 202
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "if the two symbols were the same logic, this PR would re-implement it; they are not (read on both sides)",
+      "source": "scripts/pr_review_duplication_scan.sh --base 68b059ca9 --head 5a00e2a61 --rust-semantic",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "name collision, no duplication"
+     }
+    },
+    {
+     "ruleId": "PRREV-PMAT",
+     "level": "note",
+     "message": {
+      "text": "lexical name match `assert_not_empty` at crates/aprender-test-lib/examples/soft_assertions.rs:58 (lexical); not duplicated logic: aprender-test-lib's soft assertion of the same name; runner.rs's extracted output-assertion helper takes a different signature; lexical only"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "crates/aprender-test-lib/examples/soft_assertions.rs"
+        },
+        "region": {
+         "startLine": 58
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "if the two symbols were the same logic, this PR would re-implement it; they are not (read on both sides)",
+      "source": "scripts/pr_review_duplication_scan.sh --base 68b059ca9 --head 5a00e2a61 --rust-semantic",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "name collision, no duplication"
+     }
+    },
+    {
+     "ruleId": "PRREV-PMAT",
+     "level": "note",
+     "message": {
+      "text": "lexical name match `assert_not_empty` at crates/aprender-test-lib/src/assertion/soft.rs:203 (lexical); not duplicated logic: aprender-test-lib's soft assertion of the same name; runner.rs's extracted output-assertion helper takes a different signature; lexical only"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "crates/aprender-test-lib/src/assertion/soft.rs"
+        },
+        "region": {
+         "startLine": 203
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "if the two symbols were the same logic, this PR would re-implement it; they are not (read on both sides)",
+      "source": "scripts/pr_review_duplication_scan.sh --base 68b059ca9 --head 5a00e2a61 --rust-semantic",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "name collision, no duplication"
+     }
+    },
+    {
+     "ruleId": "PRREV-PMAT",
+     "level": "note",
+     "message": {
+      "text": "lexical name match `assert_not_empty` at crates/aprender-test-lib/src/assertion/soft.rs:562 (lexical); not duplicated logic: aprender-test-lib's soft assertion of the same name; runner.rs's extracted output-assertion helper takes a different signature; lexical only"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "crates/aprender-test-lib/src/assertion/soft.rs"
+        },
+        "region": {
+         "startLine": 562
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "if the two symbols were the same logic, this PR would re-implement it; they are not (read on both sides)",
+      "source": "scripts/pr_review_duplication_scan.sh --base 68b059ca9 --head 5a00e2a61 --rust-semantic",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "name collision, no duplication"
+     }
+    },
+    {
+     "ruleId": "PRREV-PMAT",
+     "level": "note",
+     "message": {
+      "text": "lexical name match `assert_not_empty` at crates/aprender-test-lib/src/assertion/soft.rs:570 (lexical); not duplicated logic: aprender-test-lib's soft assertion of the same name; runner.rs's extracted output-assertion helper takes a different signature; lexical only"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "crates/aprender-test-lib/src/assertion/soft.rs"
+        },
+        "region": {
+         "startLine": 570
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "if the two symbols were the same logic, this PR would re-implement it; they are not (read on both sides)",
+      "source": "scripts/pr_review_duplication_scan.sh --base 68b059ca9 --head 5a00e2a61 --rust-semantic",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "name collision, no duplication"
+     }
+    },
+    {
+     "ruleId": "PRREV-PMAT",
+     "level": "note",
+     "message": {
+      "text": "lexical name match `artifact_tests.rs` at crates/aprender-train/.pmat-baseline.json:15058 (lexical); not duplicated logic: lexical name match only: the batch's helper or fixture shares an identifier with unrelated code (2 hit(s)); read on both sides, not duplicated logic"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "crates/aprender-train/.pmat-baseline.json"
+        },
+        "region": {
+         "startLine": 15058
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "if the two symbols were the same logic, this PR would re-implement it; they are not (read on both sides)",
+      "source": "scripts/pr_review_duplication_scan.sh --base 68b059ca9 --head 5a00e2a61 --rust-semantic",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "name collision, no duplication"
+     }
+    },
+    {
+     "ruleId": "PRREV-PMAT",
+     "level": "note",
+     "message": {
+      "text": "lexical name match `artifact_tests.rs` at crates/aprender-train/.pmat-baseline.json:15105 (lexical); not duplicated logic: lexical name match only: the batch's helper or fixture shares an identifier with unrelated code (2 hit(s)); read on both sides, not duplicated logic"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "crates/aprender-train/.pmat-baseline.json"
+        },
+        "region": {
+         "startLine": 15105
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "if the two symbols were the same logic, this PR would re-implement it; they are not (read on both sides)",
+      "source": "scripts/pr_review_duplication_scan.sh --base 68b059ca9 --head 5a00e2a61 --rust-semantic",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "name collision, no duplication"
+     }
+    },
+    {
+     "ruleId": "PRREV-PMAT",
+     "level": "note",
+     "message": {
+      "text": "lexical name match `load_instruct_corpus` at crates/aprender-train/src/finetune/instruct_corpus.rs:92 (lexical); not duplicated logic: the apr-cli helper extracted by the decomposition (finetune.rs) shares its name with aprender-train's instruct_corpus.rs loader; read on both sides: the apr-cli fn is the command's file-to-corpus shim around the train crate's loader, not a second parser (7 lexical hits, all in the train crate's own file)"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "crates/aprender-train/src/finetune/instruct_corpus.rs"
+        },
+        "region": {
+         "startLine": 92
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "if the two symbols were the same logic, this PR would re-implement it; they are not (read on both sides)",
+      "source": "scripts/pr_review_duplication_scan.sh --base 68b059ca9 --head 5a00e2a61 --rust-semantic",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "name collision, no duplication"
+     }
+    },
+    {
+     "ruleId": "PRREV-PMAT",
+     "level": "note",
+     "message": {
+      "text": "lexical name match `load_instruct_corpus` at crates/aprender-train/src/finetune/instruct_corpus.rs:173 (lexical); not duplicated logic: the apr-cli helper extracted by the decomposition (finetune.rs) shares its name with aprender-train's instruct_corpus.rs loader; read on both sides: the apr-cli fn is the command's file-to-corpus shim around the train crate's loader, not a second parser (7 lexical hits, all in the train crate's own file)"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "crates/aprender-train/src/finetune/instruct_corpus.rs"
+        },
+        "region": {
+         "startLine": 173
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "if the two symbols were the same logic, this PR would re-implement it; they are not (read on both sides)",
+      "source": "scripts/pr_review_duplication_scan.sh --base 68b059ca9 --head 5a00e2a61 --rust-semantic",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "name collision, no duplication"
+     }
+    },
+    {
+     "ruleId": "PRREV-PMAT",
+     "level": "note",
+     "message": {
+      "text": "lexical name match `load_instruct_corpus` at crates/aprender-train/src/finetune/instruct_corpus.rs:184 (lexical); not duplicated logic: the apr-cli helper extracted by the decomposition (finetune.rs) shares its name with aprender-train's instruct_corpus.rs loader; read on both sides: the apr-cli fn is the command's file-to-corpus shim around the train crate's loader, not a second parser (7 lexical hits, all in the train crate's own file)"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "crates/aprender-train/src/finetune/instruct_corpus.rs"
+        },
+        "region": {
+         "startLine": 184
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "if the two symbols were the same logic, this PR would re-implement it; they are not (read on both sides)",
+      "source": "scripts/pr_review_duplication_scan.sh --base 68b059ca9 --head 5a00e2a61 --rust-semantic",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "name collision, no duplication"
+     }
+    },
+    {
+     "ruleId": "PRREV-PMAT",
+     "level": "note",
+     "message": {
+      "text": "lexical name match `load_instruct_corpus` at crates/aprender-train/src/finetune/instruct_corpus.rs:194 (lexical); not duplicated logic: the apr-cli helper extracted by the decomposition (finetune.rs) shares its name with aprender-train's instruct_corpus.rs loader; read on both sides: the apr-cli fn is the command's file-to-corpus shim around the train crate's loader, not a second parser (7 lexical hits, all in the train crate's own file)"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "crates/aprender-train/src/finetune/instruct_corpus.rs"
+        },
+        "region": {
+         "startLine": 194
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "if the two symbols were the same logic, this PR would re-implement it; they are not (read on both sides)",
+      "source": "scripts/pr_review_duplication_scan.sh --base 68b059ca9 --head 5a00e2a61 --rust-semantic",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "name collision, no duplication"
+     }
+    },
+    {
+     "ruleId": "PRREV-PMAT",
+     "level": "note",
+     "message": {
+      "text": "lexical name match `load_instruct_corpus` at crates/aprender-train/src/finetune/instruct_corpus.rs:263 (lexical); not duplicated logic: the apr-cli helper extracted by the decomposition (finetune.rs) shares its name with aprender-train's instruct_corpus.rs loader; read on both sides: the apr-cli fn is the command's file-to-corpus shim around the train crate's loader, not a second parser (7 lexical hits, all in the train crate's own file)"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "crates/aprender-train/src/finetune/instruct_corpus.rs"
+        },
+        "region": {
+         "startLine": 263
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "if the two symbols were the same logic, this PR would re-implement it; they are not (read on both sides)",
+      "source": "scripts/pr_review_duplication_scan.sh --base 68b059ca9 --head 5a00e2a61 --rust-semantic",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "name collision, no duplication"
+     }
+    },
+    {
+     "ruleId": "PRREV-PMAT",
+     "level": "note",
+     "message": {
+      "text": "lexical name match `load_instruct_corpus` at crates/aprender-train/src/finetune/instruct_corpus.rs:272 (lexical); not duplicated logic: the apr-cli helper extracted by the decomposition (finetune.rs) shares its name with aprender-train's instruct_corpus.rs loader; read on both sides: the apr-cli fn is the command's file-to-corpus shim around the train crate's loader, not a second parser (7 lexical hits, all in the train crate's own file)"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "crates/aprender-train/src/finetune/instruct_corpus.rs"
+        },
+        "region": {
+         "startLine": 272
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "if the two symbols were the same logic, this PR would re-implement it; they are not (read on both sides)",
+      "source": "scripts/pr_review_duplication_scan.sh --base 68b059ca9 --head 5a00e2a61 --rust-semantic",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "name collision, no duplication"
+     }
+    },
+    {
+     "ruleId": "PRREV-PMAT",
+     "level": "note",
+     "message": {
+      "text": "lexical name match `load_instruct_corpus` at crates/aprender-train/src/finetune/mod.rs:81 (lexical); not duplicated logic: the apr-cli helper extracted by the decomposition (finetune.rs) shares its name with aprender-train's instruct_corpus.rs loader; read on both sides: the apr-cli fn is the command's file-to-corpus shim around the train crate's loader, not a second parser (7 lexical hits, all in the train crate's own file)"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "crates/aprender-train/src/finetune/mod.rs"
+        },
+        "region": {
+         "startLine": 81
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "if the two symbols were the same logic, this PR would re-implement it; they are not (read on both sides)",
+      "source": "scripts/pr_review_duplication_scan.sh --base 68b059ca9 --head 5a00e2a61 --rust-semantic",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "name collision, no duplication"
+     }
+    },
+    {
+     "ruleId": "PRREV-PMAT",
+     "level": "note",
+     "message": {
+      "text": "lexical name match `artifact_tests` at crates/aprender-train/src/storage/sqlite/backend/tests/mod.rs:5 (lexical); not duplicated logic: lexical name match only: the batch's helper or fixture shares an identifier with unrelated code (1 hit(s)); read on both sides, not duplicated logic"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "crates/aprender-train/src/storage/sqlite/backend/tests/mod.rs"
+        },
+        "region": {
+         "startLine": 5
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "if the two symbols were the same logic, this PR would re-implement it; they are not (read on both sides)",
+      "source": "scripts/pr_review_duplication_scan.sh --base 68b059ca9 --head 5a00e2a61 --rust-semantic",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "name collision, no duplication"
+     }
+    },
+    {
+     "ruleId": "PRREV-PMAT",
+     "level": "note",
+     "message": {
+      "text": "lexical name match `start_realizar_server` at docs/specifications/archive/qwen2.5-coder-showcase-archive/self-falsification-rounds.md:430 (lexical); not duplicated logic: lexical name match only: the batch's helper or fixture shares an identifier with unrelated code (3 hit(s)); read on both sides, not duplicated logic"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "docs/specifications/archive/qwen2.5-coder-showcase-archive/self-falsification-rounds.md"
+        },
+        "region": {
+         "startLine": 430
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "if the two symbols were the same logic, this PR would re-implement it; they are not (read on both sides)",
+      "source": "scripts/pr_review_duplication_scan.sh --base 68b059ca9 --head 5a00e2a61 --rust-semantic",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "name collision, no duplication"
+     }
+    },
+    {
+     "ruleId": "PRREV-PMAT",
+     "level": "note",
+     "message": {
+      "text": "lexical name match `e2e_cli_t` at evidence/dogfood/0.64.0/receipt-release-branch.json:129 (lexical); not duplicated logic: lexical name match only: the batch's helper or fixture shares an identifier with unrelated code (5 hit(s)); read on both sides, not duplicated logic"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "evidence/dogfood/0.64.0/receipt-release-branch.json"
+        },
+        "region": {
+         "startLine": 129
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "if the two symbols were the same logic, this PR would re-implement it; they are not (read on both sides)",
+      "source": "scripts/pr_review_duplication_scan.sh --base 68b059ca9 --head 5a00e2a61 --rust-semantic",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "name collision, no duplication"
+     }
+    },
+    {
+     "ruleId": "PRREV-PMAT",
+     "level": "note",
+     "message": {
+      "text": "lexical name match `e2e_cli_t` at scripts/dogfood.sh:1069 (lexical); not duplicated logic: lexical name match only: the batch's helper or fixture shares an identifier with unrelated code (5 hit(s)); read on both sides, not duplicated logic"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "scripts/dogfood.sh"
+        },
+        "region": {
+         "startLine": 1069
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "if the two symbols were the same logic, this PR would re-implement it; they are not (read on both sides)",
+      "source": "scripts/pr_review_duplication_scan.sh --base 68b059ca9 --head 5a00e2a61 --rust-semantic",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "name collision, no duplication"
+     }
+    },
+    {
+     "ruleId": "PRREV-PMAT",
+     "level": "note",
+     "message": {
+      "text": "lexical name match `e2e_mcp_stdio_t` at scripts/dogfood.sh:1070 (lexical); not duplicated logic: lexical name match only: the batch's helper or fixture shares an identifier with unrelated code (3 hit(s)); read on both sides, not duplicated logic"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "scripts/dogfood.sh"
+        },
+        "region": {
+         "startLine": 1070
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "if the two symbols were the same logic, this PR would re-implement it; they are not (read on both sides)",
+      "source": "scripts/pr_review_duplication_scan.sh --base 68b059ca9 --head 5a00e2a61 --rust-semantic",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "name collision, no duplication"
+     }
+    },
+    {
+     "ruleId": "PRREV-PMAT",
+     "level": "note",
+     "message": {
+      "text": "lexical name match `e2e_http_serve_t` at scripts/dogfood.sh:1071 (lexical); not duplicated logic: lexical name match only: the batch's helper or fixture shares an identifier with unrelated code (4 hit(s)); read on both sides, not duplicated logic"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "scripts/dogfood.sh"
+        },
+        "region": {
+         "startLine": 1071
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "if the two symbols were the same logic, this PR would re-implement it; they are not (read on both sides)",
+      "source": "scripts/pr_review_duplication_scan.sh --base 68b059ca9 --head 5a00e2a61 --rust-semantic",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "name collision, no duplication"
+     }
+    },
+    {
+     "ruleId": "PRREV-PMAT",
+     "level": "note",
+     "message": {
+      "text": "lexical name match `e2e_cli_t` at scripts/dogfood.sh:1114 (lexical); not duplicated logic: lexical name match only: the batch's helper or fixture shares an identifier with unrelated code (5 hit(s)); read on both sides, not duplicated logic"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "scripts/dogfood.sh"
+        },
+        "region": {
+         "startLine": 1114
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "if the two symbols were the same logic, this PR would re-implement it; they are not (read on both sides)",
+      "source": "scripts/pr_review_duplication_scan.sh --base 68b059ca9 --head 5a00e2a61 --rust-semantic",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "name collision, no duplication"
+     }
+    },
+    {
+     "ruleId": "PRREV-PMAT",
+     "level": "note",
+     "message": {
+      "text": "lexical name match `e2e_http_serve_t` at scripts/dogfood.sh:1196 (lexical); not duplicated logic: lexical name match only: the batch's helper or fixture shares an identifier with unrelated code (4 hit(s)); read on both sides, not duplicated logic"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "scripts/dogfood.sh"
+        },
+        "region": {
+         "startLine": 1196
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "if the two symbols were the same logic, this PR would re-implement it; they are not (read on both sides)",
+      "source": "scripts/pr_review_duplication_scan.sh --base 68b059ca9 --head 5a00e2a61 --rust-semantic",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "name collision, no duplication"
+     }
+    },
+    {
+     "ruleId": "PRREV-PMAT",
+     "level": "note",
+     "message": {
+      "text": "lexical name match `free_port` at scripts/invariance.py:33 (lexical); not duplicated logic: a 5-line ephemeral-port helper in the new transports e2e test shares its name with aprender-mcp's test helper and scripts/invariance.py; duplicated test scaffolding, not shipped logic \u2014 a shared test-lib helper is owed (recorded here, not blocking)"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "scripts/invariance.py"
+        },
+        "region": {
+         "startLine": 33
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "if the two symbols were the same logic, this PR would re-implement it; they are not (read on both sides)",
+      "source": "scripts/pr_review_duplication_scan.sh --base 68b059ca9 --head 5a00e2a61 --rust-semantic",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "name collision, no duplication"
+     }
+    },
+    {
+     "ruleId": "PRREV-PMAT",
+     "level": "note",
+     "message": {
+      "text": "lexical name match `free_port` at scripts/invariance.py:74 (lexical); not duplicated logic: a 5-line ephemeral-port helper in the new transports e2e test shares its name with aprender-mcp's test helper and scripts/invariance.py; duplicated test scaffolding, not shipped logic \u2014 a shared test-lib helper is owed (recorded here, not blocking)"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "scripts/invariance.py"
+        },
+        "region": {
+         "startLine": 74
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "if the two symbols were the same logic, this PR would re-implement it; they are not (read on both sides)",
+      "source": "scripts/pr_review_duplication_scan.sh --base 68b059ca9 --head 5a00e2a61 --rust-semantic",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "name collision, no duplication"
+     }
+    }
+   ]
+  },
+  {
+   "tool": {
+    "driver": {
+     "name": "nvidia-cuda-docs",
+     "version": "mcp",
+     "rules": [
+      {
+       "id": "PRREV-CUDA",
+       "name": "device-behaviour claim vs NVIDIA docs"
+      }
+     ]
+    }
+   },
+   "results": []
+  },
+  {
+   "tool": {
+    "driver": {
+     "name": "crux",
+     "version": "v1",
+     "rules": [
+      {
+       "id": "PRREV-CRUX",
+       "name": "user-facing surface coverage"
+      }
+     ]
+    }
+   },
+   "results": []
+  },
+  {
+   "tool": {
+    "driver": {
+     "name": "cargo-mutants",
+     "version": "guard case-tables",
+     "rules": [
+      {
+       "id": "PRREV-MUT",
+       "name": "guard mutation set"
+      }
+     ]
+    }
+   },
+   "results": []
+  },
+  {
+   "tool": {
+    "driver": {
+     "name": "antigravity",
+     "version": "1.1.25",
+     "rules": [
+      {
+       "id": "PRREV-AGY",
+       "name": "cross-vendor review (advisory)"
+      },
+      {
+       "id": "PRREV-AGY-PRIOR",
+       "name": "cross-vendor review, earlier runs on this PR (advisory)"
+      }
+     ]
+    }
+   },
+   "results": [
+    {
+     "ruleId": "PRREV-AGY",
+     "level": "note",
+     "message": {
+      "text": "Deferred (PMAT-945) (and 14 others like PMAT-751..767) was dropped from the roadmap."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "scripts/lib/spec_conformance.py"
+        },
+        "region": {
+         "startLine": 1
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "The debt tracker lost track of tickets that are still cited in the codebase (e.g. PMAT-945 in crates/aprender-train/src/train/pretrain_real.rs:488). This permits work to be permanently forgotten or dropped.",
+      "source": "agy gemini-3.1-pro-high on 5a00e2a61: ",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "confirmed: 17 of 24 Deferred (PMAT-nnn) ids had no roadmap block (PMAT-750..767 lived only on the receipt branch; PMAT-945 was cited as 'PMAT-945, task #111 follow-up' and slipped a strict regex); all minted in 526a186bd and 7668b6a77 (grounding measured: grep of cited ids vs `- id:` blocks now returns none missing)",
+      "agy_id": "(b)",
+      "baselineState": "new"
+     }
+    },
+    {
+     "ruleId": "PRREV-AGY",
+     "level": "note",
+     "message": {
+      "text": "Generated tests in `ptx-target-parity-v1_probar.rs` and `ptx-target-parity-v1_kani.rs` were not regenerated to match the new `probar_gen` template."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "scripts/lib/spec_conformance.py"
+        },
+        "region": {
+         "startLine": 1
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "Because the consumers were not regenerated after the template changed, the committed generated copies still contain the old `unimplemented!(\"Wire up: ...\")` stubs. Running `pv generate` (or the equivalent code generation check in CI) will overwrite these files with unexpected diffs or fail the build on the stale code.",
+      "source": "agy gemini-3.1-pro-high on 5a00e2a61: ",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "partly confirmed: the two `// TODO` template lines at wired.rs:393-394 (`let once = x.clone(); // TODO`) still emitted a bare TODO into generated tests; rewritten to `// Deferred (PMAT-753)` in 7668b6a77, contracts lib tests 1501 green; the ptx-target-parity `unimplemented!(\"Wire up: \u2026\")` strings come from a different generator path and are unchanged, so 'not regenerated' is not established",
+      "agy_id": "(e)",
+      "baselineState": "new"
+     }
+    }
+   ]
+  }
+ ]
+}

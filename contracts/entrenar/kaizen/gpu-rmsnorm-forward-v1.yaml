@@ -1,3 +1,13 @@
+metadata:
+  kind: kaizen
+  version: "1.0.0"
+  created: "2026-03-04"
+  author: "PAIML Engineering"
+  description: "GPU RMSNorm Forward for InstructPipeline"
+  references:
+    - "KAIZEN-066"
+    - "parent contract: C-GRADHIDDEN-001"
+
 contract: C-GPUNORM-001
 title: GPU RMSNorm Forward for InstructPipeline
 kaizen: KAIZEN-066

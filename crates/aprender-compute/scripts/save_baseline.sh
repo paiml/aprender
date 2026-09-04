@@ -53,6 +53,12 @@ fi
 if [ -n "$1" ]; then
     BENCH_FILE="$1"
 
+    # SEC010: reject path traversal before this caller-supplied path reaches cp.
+    if [[ "$BENCH_FILE" == *..* ]]; then
+        echo -e "${RED}❌ Error: benchmark file path must not contain '..': $BENCH_FILE${NC}"
+        exit 1
+    fi
+
     if [ ! -f "$BENCH_FILE" ]; then
         echo -e "${RED}❌ Error: Benchmark file not found: $BENCH_FILE${NC}"
         exit 1
