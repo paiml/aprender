@@ -244,6 +244,7 @@ falsification_tests|contracts/pr-review-skill-v2.yaml|1|All @N@ falsification te
 shadow_rows|.github/workflows/ci.yml|1|case table: @N@ rows
 publish_rows|.github/workflows/ci.yml|1|Publisher case table: @N@ rows
 arm4_rows|.github/workflows/ci.yml|1|Arm 4 case table: @N@ rows
+arm4_rows|.github/workflows/pr-review-quorum.yml|1|Arm 4 case table: @N@ rows
 signer_rows|.github/workflows/ci.yml|1|Signer case table: @N@ rows
 '
 
@@ -370,7 +371,7 @@ self_test() {
     # nothing to do with what it is measuring.
     ( cd "$REPO_ROOT" && \
       tar -cf - .claude/skills/pr-review/SKILL.md contracts/binding.yaml \
-                .github/workflows/ci.yml tests/pr-review.bats \
+                .github/workflows/ci.yml .github/workflows/pr-review-quorum.yml tests/pr-review.bats \
                 schemas scripts/pr_review_duplication_scan.sh \
                 scripts/mutate-guard.sh scripts/check_pr_review_receipt.sh \
                 scripts/check_pr_review_counts.sh tests/fixtures/pr-review \

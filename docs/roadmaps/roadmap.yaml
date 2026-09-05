@@ -14891,3 +14891,22 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-1054
+  github_issue: null
+  item_type: task
+  title: 'GH-2982: C0-5 PRQ-013 single base-owned quorum workflow (pull_request_target/merge_group)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-05T11:54:37Z
+  updated: 2026-09-05T11:54:37Z
+  spec: null
+  acceptance_criteria:
+  - 'see #2982 (A + mutation)'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - pp-066
+  notes: null

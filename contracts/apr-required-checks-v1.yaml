@@ -1,0 +1,412 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# apr-required-checks-v1
+#
+# The check that judges a pull request's OWN review receipt — and any check
+# the required `gate` job waits on — must be DEFINED BY THE BASE branch.
+#
+# ORIGIN (PRQ-013; PP-066 §1 F-28 class; measured 2026-09-05, PP-066 DAG row
+# C0-5, epic #2873, issue #2982)
+# Until 2026-09-05, the job that judged a pull request's own review receipt
+# (`pr-review-present`, Arm 4 — `scripts/check_pr_review_arm4.sh` without
+# `--self-test`) lived in `.github/workflows/ci.yml` under
+# `if: github.event_name == 'pull_request'`, and the required `gate` job
+# waited on it (`gate.needs` included `pr-review-present`). GitHub reads a
+# `pull_request`-triggered workflow's DEFINITION from the PR's own HEAD, not
+# from the base branch — so the check that decided whether a PR's own receipt
+# was acceptable was itself editable by the PR under review: delete the step,
+# comment it out, or `if: false` it, and `gate` sees `skipped` and passes.
+# This is the phantom-required-check deadlock's twin: not a check nothing
+# runs, but a check whose VERDICT the subject controls.
+#
+# THE FIX
+# The invoking job now lives in its own workflow,
+# `.github/workflows/pr-review-quorum.yml` (job `present`), triggered by
+# `pull_request_target` (base-defined: GitHub reads a `pull_request_target`
+# workflow from the DEFAULT branch regardless of what the PR head carries)
+# and `merge_group` (so the merge queue is not deadlocked waiting on an event
+# the workflow never fires for), and NOT also by `pull_request` (which would
+# reintroduce the head-defined reading for the same job). `ci.yml`'s `gate`
+# job no longer `needs:` a job named `pr-review-present`, nor any job that
+# invokes the arm-4 guard without `--self-test`.
+#
+# `merge_group` runs on the QUEUE'S MERGE REF (which contains the PR under
+# review) — the accepted GitHub limit for this design, recorded here rather
+# than hidden: a `pull_request_target` trigger has no `merge_group` analogue
+# that carries a *different* ref, so the merge-queue evaluation necessarily
+# reads the same tree the PR contributed. Whether `pr-review-quorum / present`
+# is promoted to a REQUIRED status-check context is a ruleset decision, made
+# by the operator and recorded in the C0-5 pull request body — this contract
+# governs what the TREE can prove, never what branch protection requires.
+#
+# THE GUARD (scripts/check_receipt_gate_base_owned.sh, rules B1..B4)
+#   B1  exactly one workflow under .github/workflows/*.yml invokes
+#       check_pr_review_arm4.sh WITHOUT --self-test, on a non-comment `run:`
+#       line.
+#   B2  that workflow's top-level `on:` declares BOTH pull_request_target and
+#       merge_group, and does NOT declare pull_request.
+#   B3  in ci.yml, job `gate` needs: no job that is itself named
+#       `pr-review-present`, and no job that invokes the guard without
+#       --self-test. (`needs:` cannot name a job in another file, so this can
+#       only ever fire against a job ci.yml still carries internally.)
+#   B4  the invoking job (identified by B1) carries a JOB-level `if:` that is
+#       true on exactly {pull_request_target, merge_group} and false on
+#       {push, workflow_dispatch}.
+# 17-row self-test (both polarities of each rule), wired in ci.yml job
+# `guard-runner-labels`: case table first, then the live check
+# (ci.yml:1590-1592).
+#
+# PROOF LADDER (crates/aprender-contracts/src/proof_status.rs):
+#   * L1 — YAML + obligations (this file).
+#   * L2 — falsification tests cover obligations, MEASURED: the guard's own
+#          `--self-test` passes 17/17 (2026-09-05), and each falsification
+#          test below cites the rows that discriminate its obligation.
+#   * L3 — Kani BMC. NOT APPLICABLE, and deliberately not declared: the
+#          subject is YAML-shaped workflow text and GitHub Actions trigger
+#          semantics, not a bounded arithmetic kernel. Declaring an un-backed
+#          Kani harness to inflate the level would be theater.
+# ─────────────────────────────────────────────────────────────────────────────
+name: apr-required-checks
+version: "1.0.0"
+scope: >
+  The workflow that invokes scripts/check_pr_review_arm4.sh without
+  --self-test (today: .github/workflows/pr-review-quorum.yml, job `present`),
+  its top-level `on:` and job-level `if:`, and the `gate` job of
+  .github/workflows/ci.yml. Out of scope: whether any status-check context is
+  a REQUIRED context in branch protection or a ruleset — that is an operator
+  decision recorded in a pull request body, never applied by this contract or
+  by the session that authors it.
+status: active
+
+metadata:
+  kind: pattern     # a cross-cutting CI-trigger-ownership guard over workflow
+                    # YAML, not a math kernel. Set EXPLICITLY so `pv
+                    # validate`'s `kernel` default never silently applies.
+  version: "1.0.0"
+  created: '2026-09-05'
+  last_modified: '2026-09-05'
+  author: PAIML Engineering
+  references:
+    - 'scripts/check_receipt_gate_base_owned.sh — the resolver (B1..B4, 17-row self-test)'
+    - '.github/workflows/pr-review-quorum.yml — the base-owned workflow (job `present`)'
+    - '.github/workflows/ci.yml — job `gate` (needs:) and job `guard-runner-labels` (wiring)'
+    - 'scripts/check_pr_review_arm4.sh — the arm-4 receipt-presence guard this contract governs the TRIGGER of, not the content of'
+    - 'scripts/check_pr_review_wiring.sh — the sibling guard for the job-level-if / not-path-filtered rule; used here only as the discrimination witness'
+    - 'PP-066 §1 F-28 class — the phantom-required-check-deadlock twin: not a check nothing runs, but one whose verdict the subject controls'
+    - 'PP-066 DAG row C0-5, epic #2873, issue #2982'
+  description: >
+    A check that judges a pull request's own review receipt, and any check
+    the required `gate` job waits on, must be DEFINED BY THE BASE branch — a
+    workflow triggered by pull_request_target (+ merge_group, so the merge
+    queue cannot deadlock) — and never by a pull_request workflow, whose
+    definition GitHub reads from the PR head. `merge_group` runs on the
+    queue's merge ref, which CONTAINS the pull request under review; that is
+    an accepted GitHub limit of this design, stated here rather than hidden.
+    The pull_request_target run is the base-owned one. Whether
+    `pr-review-quorum / present` is promoted to a REQUIRED status-check
+    context is a ruleset decision recorded in the pull request body — never
+    applied by this contract.
+
+equations:
+  b1_single_head_owned_invocation_locus:
+    formula: |
+      let LOCI = { (file, job) : file in .github/workflows/*.yml,
+                                  job invokes check_pr_review_arm4.sh
+                                  on a non-comment `run:` line WITHOUT
+                                  --self-test }
+      |LOCI| = 1
+    domain: 'every *.yml/*.yaml directly under .github/workflows/'
+    codomain: 'bool — exactly one real invocation locus, never zero, never two or more'
+    invariants:
+    - >-
+      ZERO MEANS THEATER. If no job invokes the guard for real, the receipt is
+      judged nowhere and `gate` passing means nothing about it. A
+      `--self-test`-only invocation, or the guard named only in a trailing
+      comment, does not count (rows 2, 4, 5).
+    - >-
+      TWO OR MORE IS TWO DEFINITIONS TO KEEP IN STEP. ci.yml carried the arm-4
+      invocation twice before this fix — once in a shadow job with no
+      `needs:` weight, once in `pr-review-present`, which `gate` depended on
+      (row 3).
+    preconditions:
+    - 'the scan strips trailing `#` comments before matching, so a mention is never mistaken for an invocation'
+    postconditions:
+    - 'B1_FILE and B1_JOB identify the single invoking (file, job) pair, or B2/B4 are skipped rather than evaluated against a guess'
+
+  b2_workflow_trigger_is_base_owned:
+    formula: |
+      let W = B1_FILE (the workflow identified by b1_single_head_owned_invocation_locus)
+      on(W) superset { pull_request_target, merge_group }
+      and pull_request not in on(W)
+    domain: 'the top-level `on:` of the workflow B1 identifies, parsed in both its YAML spellings — a mapping under `on:` and a same-line flow list `on: [a, b]`'
+    codomain: 'bool — accepted only under exactly this trigger set; an unparseable `on:` shape is a FAIL, never a pass by omission'
+    invariants:
+    - >-
+      pull_request_target IS BASE-DEFINED. GitHub reads a
+      pull_request_target-triggered workflow's DEFINITION from the DEFAULT
+      branch regardless of what the PR head carries — the property this
+      whole contract exists to require.
+    - >-
+      merge_group IS REQUIRED SO THE QUEUE CANNOT DEADLOCK. Without it, a PR
+      that reaches the merge queue would wait on an event the workflow never
+      fires for (row 9).
+    - >-
+      pull_request MUST NOT ALSO BE DECLARED. Adding it back reintroduces the
+      head-defined reading for the SAME job — the exact regression this
+      contract is written to catch (row 8, the registered mutation).
+    preconditions:
+    - 'a shape this guard cannot evaluate (an opaque scalar `on: "..."`) is REFUSED, never silently accepted (row 10)'
+    postconditions:
+    - 'the invoking job runs under a definition GitHub resolves from origin/main, on every event it fires for'
+
+  b3_gate_needs_no_head_defined_receipt_job:
+    formula: |
+      let NEEDS = needs(ci.yml, job = "gate")
+      forall j in NEEDS:
+        j != "pr-review-present"
+        and j not in { job : job invokes check_pr_review_arm4.sh
+                              without --self-test in ci.yml }
+    domain: 'the `needs:` list of the `gate` job in .github/workflows/ci.yml'
+    codomain: 'bool — gate waits on no job this contract classifies as a head-defined receipt job'
+    invariants:
+    - >-
+      `needs:` CANNOT NAME A JOB IN ANOTHER FILE. So the only way `gate` could
+      still end up waiting on a head-defined receipt job is by keeping one,
+      under EITHER name, inside ci.yml itself — which is exactly today's
+      pre-fix defect shape (rows 11, 12) and exactly what this rule
+      structurally forecloses once b1_single_head_owned_invocation_locus's
+      workflow lives in a different file.
+    - >-
+      A DIFFERENTLY-NAMED JOB IS NOT A LOOPHOLE. Renaming `pr-review-present`
+      to `custom-receipt` inside ci.yml and having `gate` depend on it is
+      caught the same way `pr-review-present` itself would be (row 12) — the
+      rule matches on WHAT THE JOB INVOKES, not on its name alone.
+    preconditions:
+    - 'ci.yml exists at the expected path; a missing file is a FAIL, never a vacuous pass'
+    postconditions:
+    - 'a clean gate (row 13) needs only jobs this guard classifies as neither head-defined-receipt jobs nor literally `pr-review-present`'
+
+  b4_invoking_job_if_is_exact_two_events:
+    formula: |
+      let IF = job_level_if(B1_FILE, B1_JOB)
+      IF != absent
+      and forall e in { pull_request_target, merge_group }: eval(IF, e) = true
+      and forall e in { push, workflow_dispatch }:           eval(IF, e) = false
+    domain: 'the JOB-level `if:` (4-space indent under the job key, never a step-level `if:`) of the invoking job identified by b1_single_head_owned_invocation_locus'
+    codomain: 'bool — true on exactly the two base-owned events, false on the two it must never run for'
+    invariants:
+    - >-
+      A MISSING JOB-LEVEL if: IS A FAIL (row 14). Without it, the job runs on
+      every event the workflow declares, including any push/workflow_dispatch
+      trigger a later edit might add.
+    - >-
+      "HAS AN if:" IS NOT ENOUGH — BOTH POLARITIES ARE CHECKED. `if: always()`
+      passes a naive "job carries an if:" test while judging nothing; this
+      evaluator REFUSES to evaluate it rather than guess (row 17), and a
+      condition that is also true on `push` (row 16) is a FAIL naming the
+      exact event, not a generic "if: looks wrong".
+    - >-
+      THE EVALUATOR UNDERSTANDS ONLY A DISJUNCTION OF
+      `github.event_name == '<literal>'`. Extending it to a richer expression
+      shape is a case-table row, not a widened regex (same rule
+      check_pr_review_wiring.sh's R3/R4 evaluator already applies).
+    preconditions:
+    - 'B1 identified exactly one (file, job) pair; otherwise this equation is not evaluated against a guess'
+    postconditions:
+    - 'the invoking job is reachable on pull_request_target and merge_group and unreachable on push and workflow_dispatch'
+
+  enforcement_is_wired_self_test_then_check:
+    formula: |
+      ci.yml job "guard-runner-labels" contains, in order:
+        step: run "bash scripts/check_receipt_gate_base_owned.sh --self-test"
+        step: run "bash scripts/check_receipt_gate_base_owned.sh"
+    domain: 'the step list of job guard-runner-labels in .github/workflows/ci.yml'
+    codomain: 'bool — both steps present, self-test step preceding the live-check step'
+    invariants:
+    - >-
+      SELF-TEST BEFORE CHECK, EVERY TIME (Verification Discipline #7). A guard
+      whose case table is not re-run on every invocation is re-read rather
+      than re-verified; MEASURED at ci.yml:1590-1592, the self-test step
+      immediately precedes the live-check step.
+    - >-
+      TEXT-ONLY, NO BUILD. Both steps are shell invocations against committed
+      YAML; the job carries no cargo build step this equation depends on,
+      which is why it can run early in guard-runner-labels rather than after
+      workspace-test.
+    preconditions:
+    - 'guard-runner-labels is itself in gate.needs (.github/workflows/ci.yml), so a failing self-test or a failing live check fails gate transitively'
+    postconditions:
+    - 'a PR that reverts either step is caught by guard-runner-labels before gate can pass'
+
+proof_obligations:
+  - id: RC-OB-001
+    statement: "Exactly one workflow job invokes check_pr_review_arm4.sh without --self-test."
+    discharged_by: falsification_tests[0]
+  - id: RC-OB-002
+    statement: "That workflow's on: declares pull_request_target and merge_group and never pull_request."
+    discharged_by: falsification_tests[1]
+  - id: RC-OB-003
+    statement: "ci.yml's gate job needs no job named pr-review-present and no job invoking the arm-4 guard without --self-test."
+    discharged_by: falsification_tests[2]
+  - id: RC-OB-004
+    statement: "The invoking job's job-level if: is true on exactly {pull_request_target, merge_group} and false on {push, workflow_dispatch}."
+    discharged_by: falsification_tests[3]
+  - id: RC-OB-005
+    statement: "The enforcement mechanism (check_receipt_gate_base_owned.sh) is wired into ci.yml's guard-runner-labels job, self-test step before live-check step."
+    discharged_by: falsification_tests[4]
+  - id: RC-OB-006
+    statement: "Reintroducing pull_request alongside pull_request_target on the invoking workflow turns the guard RED, while the unrelated wiring guard (check_pr_review_wiring.sh) stays GREEN under the same mutation."
+    discharged_by: falsification_tests[5]
+  - id: RC-OB-007
+    statement: "Re-adding pr-review-present to gate's needs: (under either its own name or a renamed job invoking the same guard) turns the guard RED."
+    discharged_by: falsification_tests[6]
+
+falsification_tests:
+
+  - id: RC-F-001
+    rule: exactly one workflow invokes the arm-4 receipt guard for real (B1)
+    prediction: >-
+      Zero real invocations FAILS naming "0 real invocations" (row 2); two
+      workflows both invoking it FAILS naming "places" (row 3); a
+      --self-test-only invocation is not counted, so it FAILS the same as row
+      2 (row 4); the guard named only in a trailing `#` comment is likewise
+      not counted (row 5); a correctly wired pair with exactly one real
+      invocation PASSES (row 1). All five rows are exercised by the same
+      --self-test run; there is no per-row filter.
+    test: 'bash scripts/check_receipt_gate_base_owned.sh --self-test'
+    if_fails: >-
+      the receipt could be judged nowhere (theater) or by two workflows that
+      drift out of step, and nothing in the tree would say so
+    mutation: >-
+      delete the real (non --self-test) invocation line from
+      pr-review-quorum.yml; check_receipt_gate_base_owned.sh must turn RED
+      naming "0 real invocations".
+
+  - id: RC-F-002
+    rule: "the invoking workflow's on: is pull_request_target + merge_group, never pull_request (B2)"
+    prediction: >-
+      A mapping-form on: with both required events PASSES (row 6); the
+      equivalent flow-list form `on: [pull_request_target, merge_group]`
+      PASSES (row 7); adding pull_request alongside pull_request_target FAILS
+      naming "ALSO declares" (row 8); omitting merge_group FAILS naming
+      "merge_group" (row 9); an opaque scalar on: this guard cannot parse
+      FAILS naming "cannot evaluate" rather than passing by default (row 10).
+    test: 'bash scripts/check_receipt_gate_base_owned.sh --self-test'
+    if_fails: >-
+      the invoking job could be moved back onto a pull_request trigger — this
+      contract's whole subject — and nothing would turn red
+    mutation: >-
+      add a pull_request: block to pr-review-quorum.yml's top-level on:
+      alongside the existing pull_request_target and merge_group blocks;
+      check_receipt_gate_base_owned.sh must turn RED naming "ALSO declares".
+
+  - id: RC-F-003
+    rule: gate needs no head-defined receipt job (B3)
+    prediction: >-
+      gate needing a job literally named pr-review-present FAILS naming
+      "needs `pr-review-present`" (row 11); gate needing a differently-named
+      job that itself invokes the arm-4 guard FAILS naming that job (row 12);
+      a clean gate needing only ordinary jobs (ci, workspace-test) PASSES
+      (row 13).
+    test: 'bash scripts/check_receipt_gate_base_owned.sh --self-test'
+    if_fails: >-
+      gate could depend on a job whose own definition the PR under review
+      controls, and only a differently-named job would be needed to make it
+      invisible to a naive "gate doesn't need pr-review-present" check
+    mutation: >-
+      add pr-review-present to ci.yml's gate.needs list (restoring the
+      pre-fix job and dependency together); check_receipt_gate_base_owned.sh
+      must turn RED naming "needs `pr-review-present`".
+
+  - id: RC-F-004
+    rule: "the invoking job's if: is true on exactly pull_request_target and merge_group (B4)"
+    prediction: >-
+      a job with no job-level if: FAILS naming "no JOB-level" (row 14); the
+      correct disjunction PASSES (row 15); an if: also true on push FAILS
+      naming "runs. There is no PR" (row 16); an if: this evaluator cannot
+      parse (e.g. `always()`) FAILS naming "cannot evaluate" rather than
+      passing by default (row 17).
+    test: 'bash scripts/check_receipt_gate_base_owned.sh --self-test'
+    if_fails: >-
+      the invoking job could run on push or workflow_dispatch — events with
+      no pull request to judge — or run on no event at all, and a check that
+      merely confirms "an if: exists" would not catch either
+    mutation: >-
+      widen pr-review-quorum.yml's job `present` if: to
+      `github.event_name == 'pull_request_target' || github.event_name == 'push'`;
+      check_receipt_gate_base_owned.sh must turn RED naming "runs. There is
+      no PR".
+
+  - id: RC-F-005
+    rule: the guard is wired into guard-runner-labels, self-test step then live-check step
+    prediction: >-
+      .github/workflows/ci.yml's guard-runner-labels job contains, in order,
+      a step running `bash scripts/check_receipt_gate_base_owned.sh
+      --self-test` immediately followed by a step running `bash
+      scripts/check_receipt_gate_base_owned.sh` (measured at ci.yml lines
+      1590 and 1592 on this commit), and guard-runner-labels is itself named
+      in ci.yml's gate.needs.
+    test: 'bash scripts/check_receipt_gate_base_owned.sh --self-test'
+    if_fails: >-
+      the guard could exist and pass on a developer's machine while CI never
+      runs it, which is the phantom-required-check-deadlock's twin this
+      contract is written against
+    mutation: >-
+      remove the live-check step (the second of the pair) from
+      guard-runner-labels while leaving the self-test step; the case table
+      keeps passing locally (it does not read ci.yml), which is why this
+      obligation is additionally checked by
+      scripts/check_pr_review_wiring.sh's sibling convention of requiring
+      both steps present — a reviewer diffing ci.yml against this contract's
+      description finds the removed step directly.
+
+  - id: RC-F-006
+    rule: reintroducing pull_request on the invoking workflow is caught, and does not spuriously trip the unrelated wiring guard
+    prediction: >-
+      Under the registered mutation "add pull_request: to
+      pr-review-quorum.yml's on:" (same mutation as RC-F-002),
+      check_receipt_gate_base_owned.sh turns RED (row 8: "ALSO declares"),
+      while scripts/check_pr_review_wiring.sh — which governs a DIFFERENT
+      job's job-level if: entirely — stays GREEN. The two guards discriminate
+      independently; one does not paper over the other's defect and neither
+      fires on a mutation outside its own scope.
+    test: 'bash scripts/check_receipt_gate_base_owned.sh --self-test && bash scripts/check_pr_review_wiring.sh --self-test'
+    if_fails: >-
+      a fix to one guard's scope could mask a regression the other guard was
+      supposed to catch, or a single mutation could be mistaken for
+      evidence against both guards when it only exercises one
+    mutation: >-
+      add pull_request: to pr-review-quorum.yml's top-level on: (identical to
+      RC-F-002's mutation); check_receipt_gate_base_owned.sh must turn RED
+      and check_pr_review_wiring.sh's self-test must still report 0 failing
+      rows.
+
+  - id: RC-F-007
+    rule: gate.needs can never regain a head-defined receipt job, under its old name or a new one
+    prediction: >-
+      Restoring pr-review-present to ci.yml's gate.needs (row 11) or adding
+      any differently-named job to ci.yml that itself invokes the arm-4 guard
+      and is named in gate.needs (row 12) both turn
+      check_receipt_gate_base_owned.sh RED; a gate needing only ci and
+      workspace-test (row 13) stays GREEN. The rule discriminates on WHAT a
+      needed job invokes, not on the literal string "pr-review-present"
+      alone.
+    test: 'bash scripts/check_receipt_gate_base_owned.sh --self-test'
+    if_fails: >-
+      renaming the job would be a one-line bypass of B3 that reintroduces the
+      original PRQ-013 defect under a new label
+    mutation: >-
+      add a job `custom-receipt` to ci.yml that runs `bash
+      scripts/check_pr_review_arm4.sh` and list it in gate.needs;
+      check_receipt_gate_base_owned.sh must turn RED naming "custom-receipt".
+
+non_goals:
+  - "Verifying the CONTENT of scripts/check_pr_review_arm4.sh's receipt judgement (Arm 4 itself) — that is pr-review-skill-v2's subject; this contract governs only WHERE and UNDER WHICH TRIGGER that judgement is invoked."
+  - "Deciding whether pr-review-quorum / present is a REQUIRED branch-protection or ruleset context. That is an operator decision recorded in the pull request body."
+  - "Auditing every workflow in .github/workflows/ for pull_request_target security hygiene beyond the one job this contract's scope names; the checkout-permissions comment in pr-review-quorum.yml is the security note, not a claim this contract re-verifies."
+
+binding_registry:
+  guard: scripts/check_receipt_gate_base_owned.sh
+  ci_job: guard-runner-labels          # inside gate.needs (.github/workflows/ci.yml)
+  invoking_workflow: .github/workflows/pr-review-quorum.yml
+  make_target: tier3
+  issue: "https://github.com/paiml/aprender/issues/2982"

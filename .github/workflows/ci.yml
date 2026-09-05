@@ -1582,6 +1582,14 @@ jobs:
         run: bash scripts/check_pr_review_wiring.sh --self-test
       - name: The PR-review receipt guard is wired job-level, not path-filtered
         run: bash scripts/check_pr_review_wiring.sh
+      # PRQ-013 (PP-066 C0-5, #2982): the job that judges a PR's OWN receipt must be
+      # defined by the base — a workflow on pull_request_target + merge_group, never
+      # pull_request — and `gate` must not wait on a head-defined receipt job. Case
+      # table first (17 rows, both polarities), then the tree.
+      - name: "Receipt-gate base-owned case table (17 rows, both polarities)"
+        run: bash scripts/check_receipt_gate_base_owned.sh --self-test
+      - name: The PR's own receipt is judged from the base, not the head (PRQ-013)
+        run: bash scripts/check_receipt_gate_base_owned.sh
       # The case table above is evidence only for the branches it can turn RED,
       # and on its first pass it could not turn three of them. Dropping either
       # zero-count check left the guard still rejecting on the NEIGHBOURING
@@ -1969,16 +1977,17 @@ jobs:
       # `git merge-base origin/main <head>`, which a fetch-depth-1 checkout cannot
       # answer. The script exits 2 rather than 0 or 1 when the BOX cannot answer,
       # so a shallow clone is never read as a clean tree.
-      - name: "Arm 4 case table: the absent-key branch that used to exit 0 forever"
+      - name: "Arm 4 case table: 10 rows, both polarities of the cutoff — the absent-key branch that used to exit 0 forever"
         shell: bash
         run: bash scripts/check_pr_review_arm4.sh --self-test
-      - name: This PR's own receipt, under the repository's own default key
-        shell: bash
-        run: |
-          set -euo pipefail
-          git fetch --no-tags --unshallow origin +refs/heads/main:refs/remotes/origin/main \
-            || git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
-          bash scripts/check_pr_review_arm4.sh
+      # This PR's own receipt (Arm 4 on the live PR) is NOT judged here any more.
+      # This job runs `on: pull_request`, whose definition GitHub reads from the PR
+      # head, so a PR could edit the check that judged it (PRQ-013, PP-066 C0-5,
+      # #2982). It is judged from the BASE in .github/workflows/pr-review-quorum.yml
+      # (`pull_request_target` + `merge_group`); scripts/check_receipt_gate_base_owned.sh
+      # refuses a second invocation of check_pr_review_arm4.sh anywhere else. The
+      # case table above stays: it tests THIS PR's changes to the script, which is
+      # what a head-defined job is for.
 
       # Arm 5. S13's refusal table. SHADOW ONLY — scripts/pr_review_quorum_arm.sh is
       # invoked here with --explain against committed fixtures and a fixture
@@ -2272,42 +2281,18 @@ jobs:
   # this repository has already had a day where one armed gate blocked all nine open
   # PRs.
   # ---------------------------------------------------------------------------
-  pr-review-present:
-    runs-on: [self-hosted, X64, Linux, clean-room]
-    timeout-minutes: 20
-    if: github.event_name == 'pull_request'
-    env:
-      PR_NUMBER: ${{ github.event.pull_request.number }}
-      PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-        with:
-          # base_sha resolves through `git merge-base origin/main <head>`, which a
-          # shallow clone cannot answer; the script exits 2 (the BOX cannot answer)
-          # rather than 1, so a shallow checkout is never read as a missing receipt.
-          fetch-depth: 0
-
-      - name: Install the tools Arm 4 refuses to run without
-        shell: bash
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          bash scripts/install_pr_review_tools.sh "$RUNNER_TEMP/pr-review-tools/bin"
-          echo "$RUNNER_TEMP/pr-review-tools/bin" >> "$GITHUB_PATH"
-
-      - name: "Arm 4 case table: 10 rows, both polarities of the cutoff"
-        shell: bash
-        run: bash scripts/check_pr_review_arm4.sh --self-test
-
-      - name: This PR's own receipt, under the repository's own default key
-        shell: bash
-        run: bash scripts/check_pr_review_arm4.sh
+  # pr-review-present MOVED 2026-09-05 (PP-066 C0-5, PRQ-013, #2982) to
+  # .github/workflows/pr-review-quorum.yml, job `present`. The paragraph above
+  # describes what the job does; what changed is WHO defines it: a
+  # `pull_request` job's definition comes from the PR head, so the check that
+  # judged a PR's own receipt was editable by that PR. `pull_request_target`
+  # runs the base's definition. `gate` below no longer waits on it; the
+  # ruleset decides whether `pr-review-quorum / present` is required (recorded
+  # in the C0-5 PR body, never applied by the session that wrote this).
 
   gate:
     runs-on: [self-hosted, X64, Linux, clean-room]
-    needs: [ci, workspace-test, mutants, guard-runner-labels, pr-review-present]
+    needs: [ci, workspace-test, mutants, guard-runner-labels]
     if: always()
     steps:
       - name: Check required jobs
@@ -2335,25 +2320,13 @@ jobs:
             exit 1
           fi
           echo "mutants result: $MUT (success/skipped both pass)"
-          # Receipt presence (PR-REVIEW-SKILL-002 v2 S8 `receipt_presence`, fixed at
-          # 100% with no ratchet). Adding a job to `needs:` makes this job WAIT for it;
-          # it does not make it ENFORCE it — every other required job above is read
-          # explicitly, and a clause omitted here is a job whose failure gate cannot
-          # see. `skipped` passes for the same reason it does for mutants: the job
-          # carries `if: github.event_name == 'pull_request'` and does not run on
-          # push-to-main. Only an explicit `failure` blocks.
-          #
-          # The check itself arms FORWARD — check_pr_review_arm4.sh grandfathers pull
-          # requests below PR_REVIEW_CUTOFF — so this does not retroactively block the
-          # 24 pull requests that were open when it landed.
-          RCPT="${{ needs.pr-review-present.result }}"
-          if [ "$RCPT" = "failure" ]; then
-            echo "pr-review-present (this PR's own review receipt) failed: $RCPT"
-            echo "S6.3: a missing receipt is RED, not skipped. Run the pr-review skill on"
-            echo "this PR and commit the receipt; the pr-review-sign job signs it."
-            exit 1
-          fi
-          echo "pr-review-present result: $RCPT (success/skipped both pass)"
+          # Receipt presence is NOT read here any more (PP-066 C0-5, PRQ-013,
+          # #2982). This job runs under the PR head's definition of ci.yml, so a
+          # receipt clause here was a check the PR under review could edit. The
+          # PR's own receipt is judged from the BASE by
+          # .github/workflows/pr-review-quorum.yml (pull_request_target +
+          # merge_group); scripts/check_receipt_gate_base_owned.sh refuses any
+          # `needs:` entry here that names a head-defined receipt job.
           echo "All required jobs passed"
 
   # Mutation testing — DIFF-SCOPED + BLOCKING on PRs (PMAT build-system audit gap #1).
