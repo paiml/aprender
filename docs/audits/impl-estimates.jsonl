@@ -9,3 +9,5 @@
 {"repo":"aprender","ticket":"PMAT-1054","phase":"P_2","mode":"direct","est":46,"actual":5,"basis":"est=impl-estimates.jsonl:L1-L7 median; actual=turns (worker maxTurns or orchestrator bash calls)"}
 {"repo":"aprender","ticket":"PMAT-1054","phase":"P_3","mode":"subagent:sonnet","est":46,"actual":40,"basis":"est=impl-estimates.jsonl:L1-L7 median; actual=turns (worker maxTurns or orchestrator bash calls)"}
 {"repo":"aprender","ticket":"PMAT-1054","phase":"P_4","mode":"direct","est":46,"actual":6,"basis":"est=impl-estimates.jsonl:L1-L7 median; actual=turns (worker maxTurns or orchestrator bash calls)"}
+{"repo":"aprender","ticket":"PMAT-742","phase":"all","mode":"direct","est":7,"actual":152,"basis":"first-run[U]; K=150 operator cap; PARTIAL(andon)"}
+{"repo":"aprender","ticket":"PMAT-742","phase":"continuation (P1-P6, 0.65.0 cut)","mode":"direct+delegate(quorum:3)","est":60,"actual":88,"basis":"6 phases × 10 turns first-run[U]; K=150 operator cap; STOPPED(dogfood pre-publish NO-GO); 8 agy single reviews + 1 three-lane quorum on #2859"}
