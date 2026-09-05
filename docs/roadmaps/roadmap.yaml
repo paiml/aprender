@@ -14910,3 +14910,1516 @@ roadmap:
   - kind:code
   - pp-066
   notes: null
+- id: PMAT-967
+  github_issue: null
+  item_type: task
+  title: 'GH-2882: I-1 master row 1: land #2809; Blackwell guard on prefill_multi_prompt (gpu_profile.rs::multi_prompt_prefill_allowed); perf04'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-05T11:23:55Z
+  updated: 2026-09-05T11:23:55Z
+  spec: null
+  acceptance_criteria:
+  - 'gh pr view 2809 --json state,mergedAt shows merged | bash scripts/check_perf041_marker.sh exit 0 (marker present in cuda-nightly.yml; absent marker = RED in its selftest) | the first wired gx10 night writes evidence/perf041/gx10/witness.json (EXPECTED RED per master §9 #1a is a finding to file, not a rerun) | mutation: remove the perf041 step from cuda-nightly.yml -> check_perf041_marker.sh RED'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-968
+  github_issue: null
+  item_type: task
+  title: 'GH-2883: I-15 gx10 shakedown cell: W1, n>=5 interleaved, at a commit containing 0b, 0c, 1, 6, 7, 12 -> a new LEDGER row'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-05T11:24:12Z
+  updated: 2026-09-05T11:24:12Z
+  spec: null
+  acceptance_criteria:
+  - 'scripts/parity_host_receipt.sh on gx10 (host key gx10-<serial>) -> evidence/perf-gate-001-w1-gx10/receipt.r{1..5}.json | scripts/perf_gate.sh --host gx10 --phase merge --workload W1 --receipt <r1> prints VERDICT and no traceback | evidence/parity/LEDGER.md gains row 15 with conformance CONFORMANT and validity_by_band; spec_conformance.sh PASS | mutation: drop the PP-26 witness from the receipt -> conformance INVALID-CORRECTNESS on every c>1 band'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-969
+  github_issue: null
+  item_type: task
+  title: 'GH-2884: I-18 lambda reference cell: W1, n>=5 interleaved, both lanes, derived ladder, armed_by set for every band that PASSES'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-05T11:24:16Z
+  updated: 2026-09-05T11:24:16Z
+  spec: null
+  acceptance_criteria:
+  - '#2817 closed: comparator lane produces a conformant W1 band (stream_options.include_usage sent; prompt_tokens>0) | scripts/parity_host_receipt.sh on lambda -> receipt with both lanes; scripts/perf_gate.sh --host lambda --phase merge --workload W1 VERDICT with armed_by only where P-5 passes | LEDGER.md row 18 CONFORMANT; C1 command exits 0 | mutation: set armed_by by hand on a band without lcb95>=1 -> perf_gate selftest RED'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-970
+  github_issue: null
+  item_type: task
+  title: 'GH-2885: I-16 W3 open-loop workload (report row 19, master row 16)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-05T11:24:19Z
+  updated: 2026-09-05T11:24:19Z
+  spec: null
+  acceptance_criteria:
+  - 'scripts/perf_w3.sh --validate; receipt under evidence/perf-gate-001-w3-lambda/ | mutation: none'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-971
+  github_issue: null
+  item_type: task
+  title: 'GH-2886: I-17 W4 token sweep (report row 19, master row 17; expiry tightened 10-23 -> 10-16 as the blocker of S-2, v1.6 amendment)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-05T11:24:22Z
+  updated: 2026-09-05T11:24:22Z
+  spec: null
+  acceptance_criteria:
+  - 'scripts/perf_w4.sh --tokens 64,256,512,2048 -> evidence/nsys/w4.json (S-2 reads it) | mutation: none'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-972
+  github_issue: null
+  item_type: task
+  title: 'GH-2887: I-24 parity_block.py: a zero COMPARATOR band median is a named refusal, not a traceback (#2735)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-05T11:24:26Z
+  updated: 2026-09-05T11:24:26Z
+  spec: null
+  acceptance_criteria:
+  - 'python3 scripts/lib/parity_block.py --work <fixture with llama-cpu-c8.json rates=0> -> rc=1 with ''band 8 comparator: non-positive rate is not a measurement''; control fixture rc=0; zero-SUBJECT fixture keeps its existing refusal | mutation: restore the bare statistics.median division at parity_block.py:571/652/680/720 -> ZeroDivisionError -> RED'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-973
+  github_issue: null
+  item_type: task
+  title: 'GH-2888: I-25 --workload bound to the prompt corpus: receipt.workload accepted only when corpus_sha256 equals the loaded prompts file '
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-05T11:24:29Z
+  updated: 2026-09-05T11:24:29Z
+  spec: null
+  acceptance_criteria:
+  - 'cargo test -p apr-cli --test workload_corpus_binding | apr test llm band --workload W1 --profile short is refused with one line | mutation: restore the free-text Workload::from_str acceptance -> RED'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-974
+  github_issue: null
+  item_type: task
+  title: 'GH-2889: I-26 PP-29 scanner: a §12 row expiry is the `Expires **date**` marker, never the first date in the cell; rows past expiry go '
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-05T11:24:33Z
+  updated: 2026-09-05T11:24:33Z
+  spec: null
+  acceptance_criteria:
+  - 'bash scripts/spec_conformance.sh --selftest carries expiry_marker_wins (a cell with an earlier prose date and a later Expires marker -> the marker) and expired_row_is_red | python3 -c over evidence/parity/derived_expiries.json: row 1 expires 2026-09-19; rows 13/15/18/19 derive from it | spec_conformance.sh at HEAD exits non-zero iff some non-discharged row is past expiry (today: none once the parse is fixed) | mutation: revert the parser to first-date -> expiry_marker_wins RED'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-975
+  github_issue: null
+  item_type: task
+  title: 'GH-2890: C0-1 cargo-deny (advisories, bans, licenses, sources) as a blocking job defined in this repo and named in required_status_che'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-05T11:24:36Z
+  updated: 2026-09-05T11:24:36Z
+  spec: null
+  acceptance_criteria:
+  - 'pmat comply check | grep CB-1701 shows ✓ | gh api repos/paiml/aprender/branches/main/protection --jq .required_status_checks.contexts lists the deny job | cargo deny check advisories bans licenses sources exits 0 at HEAD (wasmtime 47 bump per #2806 if advisories require it) | mutation: remove the deny context from the live required_status_checks.contexts while the merge queue is empty -> pmat comply check CB-1701 ✗; restore -> ✓ (live, reversible; before/after API reads pasted in the PR body)'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-976
+  github_issue: null
+  item_type: task
+  title: 'GH-2891: C0-2 ci / gate readable: sovereign-ci.yml pinned by sha and emitting a comply manifest pmat can read — or its gate steps vend'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-05T11:24:40Z
+  updated: 2026-09-05T11:24:40Z
+  spec: null
+  acceptance_criteria:
+  - 'pmat comply check | grep CB-2100 shows ✓ and names each of CB-050, CB-060, CB-1100, CB-124, CB-200, CB-2100, CB-2101, CB-2102, CB-302 under a required context | .github/workflows/ci.yml references paiml/.github/.github/workflows/sovereign-ci.yml@<sha>, not @main | mutation: point the uses: back to @main -> CB-2100 ✗'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-977
+  github_issue: null
+  item_type: task
+  title: 'GH-2892: C0-3 the ten contracts/work/GH-663..672.cot.yaml derivations exist (CB-1658), reconciled with PVI-3.1 (contracts/work -> .pma'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-05T11:24:43Z
+  updated: 2026-09-05T11:24:43Z
+  spec: null
+  acceptance_criteria:
+  - 'pmat comply check (main checkout with .pmat-work) | grep CB-1658 shows ✓ or 0 violations | ls contracts/work/GH-66{3..9}.cot.yaml contracts/work/GH-67{0,1,2}.cot.yaml | mutation: delete one cot.yaml -> CB-1658 ✗'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-978
+  github_issue: null
+  item_type: task
+  title: 'GH-2893: C0-4 perf_gate.sh arm_a_scaling: an arm that emits nothing on a c=1-only receipt is REPORT/FAIL, never PASS; selftest rows bo'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-05T11:24:47Z
+  updated: 2026-09-05T11:24:47Z
+  spec: null
+  acceptance_criteria:
+  - 'bash scripts/perf_gate.sh --selftest carries arm_a_c1_only_not_pass (RED polarity) and arm_a_multi_band_ok | bash scripts/perf_gate.sh --host lambda --phase merge --workload W1 --receipt <c=1-only receipt> prints REPORT ArmA scaling: c=1 only, no scaling measured and never VERDICT PASS | mutation: restore the silent `continue` loop -> arm_a_c1_only_not_pass RED'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-979
+  github_issue: null
+  item_type: task
+  title: 'GH-2894: G-7 cargo_classify.sh wired into workspace-test: an ENV verdict (double-spawn ENOENT, vanished .rlib/.o, ENOSPC, dep-info EN'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-05T11:24:50Z
+  updated: 2026-09-05T11:24:50Z
+  spec: null
+  acceptance_criteria:
+  - 'bash scripts/cargo_classify.sh --self-test runs scripts/lib/cargo_failure_cases/* both polarities | the workspace-test job in ci.yml pipes its captured log through the classifier (ENV -> exit 1 with ENV: annotation, no test named; CODE -> test named) | mutation: swap the classifier for `true` -> self-test RED; feed log_env_dep_info_contention.txt -> ENV, exit 1, no test named'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-980
+  github_issue: null
+  item_type: task
+  title: 'GH-2895: G-6 check_roadmap_diff_additive.sh: a PR roadmap.yaml diff consists only of added entries (id set grows, no existing entry l'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-05T11:24:54Z
+  updated: 2026-09-05T11:24:54Z
+  spec: null
+  acceptance_criteria:
+  - 'bash scripts/check_roadmap_diff_additive.sh <base> <head> exit 0 on a trimmed pmat work add hunk; exit 1 on the un-trimmed 2,531-line re-serialisation of 6d9ba274a (fixture) | bash scripts/check_guards_are_wired.sh | mutation: commit an un-trimmed pmat work add output -> RED'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-981
+  github_issue: null
+  item_type: task
+  title: 'GH-2896: G-5 check_target_universe.sh: for every workspace member (cargo metadata, root ∪ crates/facades) and every cargo target unde'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-05T11:24:57Z
+  updated: 2026-09-05T11:24:57Z
+  spec: null
+  acceptance_criteria:
+  - 'bash scripts/check_target_universe.sh exit 0 and prints members=82 targets=<n> dark=0 | bash scripts/check_guards_are_wired.sh | mutation: drop one named --test from ci.yml while it exists in cargo metadata -> RED; add "# CI only" to a make target no workflow calls -> RED; restore the query_pre_attn_scalar omission in driver_cuda_gguf.rs -> the cuda lane RED'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-982
+  github_issue: null
+  item_type: task
+  title: 'GH-2897: G-1 check_crate_names.sh: [lib] name == directory (- -> _) over the cargo-metadata member set (root 79 + facades 3); every o'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-05T11:25:01Z
+  updated: 2026-09-05T11:25:01Z
+  spec: null
+  acceptance_criteria:
+  - 'bash scripts/check_crate_names.sh exit 0 printing remaining=51 depkeys_remaining=<n> features_remaining=21 | bash tests/guards/crate_names_cases.sh (case table incl. stray manifest, commented name, absent [lib], [[bin]] ignored, workspace shell skipped, D-5 row, facades workspace, duplicate [lib] name) | bash scripts/check_guards_are_wired.sh | mutation: untracked crates/zz-probe/Cargo.toml with [package] and [lib] name = "probe" -> RED (unregistered stray); delete one allow-list line -> RED; add zz-probe to workspace.members with a bad name -> RED'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-983
+  github_issue: null
+  item_type: task
+  title: 'GH-2898: G-8 ratchets block regressions, not edits (class #2879): the claim-literal ratchet admits a PAIRED MOVE without a guard edit'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-05T11:25:04Z
+  updated: 2026-09-05T11:25:04Z
+  spec: null
+  acceptance_criteria:
+  - 'bash scripts/check_baseline_ratchets.sh --selftest carries paired_move_admitted and re_admission_refused | a CHANGELOG edit above line 1121 with no guard change passes the ratchet | the pre-commit hook selftest: a merge commit bringing a debt-carrying file from main is not re-gated; a new edit to it still is | the G2.3 ratchet case table: recording a newly found defect in the ledger is GREEN; a regression is RED | mutation: drop the removed-partner condition -> re_admission_refused RED'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-984
+  github_issue: null
+  item_type: task
+  title: 'GH-2899: G-9 cbtop verdict polarity: status PASS / ci_result green over its own grade F (or a profiler that returned nothing) is a na'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-05T11:25:08Z
+  updated: 2026-09-05T11:25:08Z
+  spec: null
+  acceptance_criteria:
+  - 'cargo test -p aprender-cbtop --test verdict_polarity: grade F => status FAIL; profiler empty => named refusal, exit non-zero | bash scripts/check_pass_grep_anchored.sh stays GREEN | mutation: restore the unconditional PASS -> RED'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-985
+  github_issue: null
+  item_type: task
+  title: 'GH-2900: G-2 DECISION D-5: [lib] name = aprender declared by root Cargo.toml and crates/aprender-core — keep the front door or rename'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-05T11:25:11Z
+  updated: 2026-09-05T11:25:11Z
+  spec: null
+  acceptance_criteria:
+  - 'one line in spec §0 with decided_by and date | mutation: none'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-986
+  github_issue: null
+  item_type: task
+  title: 'GH-2901: G-3 rename cost measured at HEAD: use-site count (review said 4,097 [A]) by the committed regex, pmat query as second estima'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-05T11:25:15Z
+  updated: 2026-09-05T11:25:15Z
+  spec: null
+  acceptance_criteria:
+  - 'bash scripts/crate_rename_cost.sh reproduces the per-name totals and prints both estimators with their disagreement | docs/audits/crate-rename-cost.md exists with basis= on every figure | mutation: none'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-987
+  github_issue: null
+  item_type: task
+  title: 'GH-2902: G-4 the obligation DAG as data with invariants in CI: scripts/check_dag_invariants.sh + scripts/lib/dag_invariants.py over d'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-05T11:25:18Z
+  updated: 2026-09-05T11:25:18Z
+  spec: null
+  acceptance_criteria:
+  - 'bash scripts/check_dag_invariants.sh docs/specifications/pp-066-dag.yaml --min-slack-days 6 exit 0 | bash scripts/check_dag_invariants.sh --selftest 5/5 both polarities | python3 scripts/render_dag.py --check exit 0 (spec tables match the yaml) | bash scripts/check_guards_are_wired.sh | mutation: set W-H''s expiry equal to C1''s -> RED (slack); swap two gx10 queue positions -> RED (order); add a self-edge -> RED (cycle)'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-988
+  github_issue: null
+  item_type: task
+  title: 'GH-2903: SPEC-1.6 spec v1.6: the 14 defects recorded by the S0 ledger and the #2872 review; S0-3/S0-12/S0-19 consequences (D-6 yes; B-M1 f'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-05T11:25:22Z
+  updated: 2026-09-05T11:25:22Z
+  spec: null
+  acceptance_criteria:
+  - 'bash tests/spec/pp066_v16_defects.sh — a case table of the 14 ledger defects: each asserts the corrected text is present (RED at v1.5, GREEN at v1.6; the RED-first test of this docs row) | bash scripts/check_no_claim_literals.sh && bash scripts/check_perf_claims_cite_receipts.sh | python3 scripts/render_dag.py --check (after G-4) or a byte-diff against the DAG-rendered tables | mutation: revert one of the 14 corrections -> its case-table row RED'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-989
+  github_issue: null
+  item_type: task
+  title: 'GH-2904: R-0 [premises discharged: S0-7 CONFIRMED, S0-14 CONFIRMED] BackendRegistry: enumerate cpu/cuda/wgpu at startup from the mach'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-05T11:25:26Z
+  updated: 2026-09-05T11:25:26Z
+  spec: null
+  acceptance_criteria:
+  - 'cargo test -p apr-cli --test registry_failure_catalogue (FX-1..FX-14, each with a must-RED twin under tests/fixtures/registry/defective/; FX-4b, REG-9 and REG-10 run against the real mixed host intel — two AMD W5700X + llvmpipe, S0-3 — not only against stubs) | scripts/pv_bin.sh validate contracts/apr-devices-schema-v1.yaml and every apr devices --json output validates against it on all four hosts | apr devices --json | jq -e ''[.[]|select(.status=="ready")]|length>=1'' on all four hosts | cargo test -p apr-cli --test backend_refusal_case_table (rows generated from {build features} x {host facts} x BACKEND_VALUES; refuse <=> request ∉ Ready) | git grep -c ''cfg!(any(feature = "cuda"'' crates/apr-cli/src prints 0 | S0-21 half: on gx10, apr devices --json read beside free -g under a 40 GB stress-ng --vm load, twice, and mem_free differs (REG-6 basis for mem_kind: Unified); on mini the adapter '
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-990
+  github_issue: null
+  item_type: task
+  title: 'GH-2905: R-2 [premises discharged: S0-14 CONFIRMED, S0-15 measured] W-I: cuda joins default features iff S0-14 passed on all four hos'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-05T11:25:29Z
+  updated: 2026-09-05T11:25:29Z
+  spec: null
+  acceptance_criteria:
+  - 'make -C machines/clean-room clean-room-p1 exit 0 (infra checkout; publish-path hard gate) | scripts/check_multiplatform_dogfood.sh --require-resolved-backend cuda exit 0 on lambda and gx10; --require-resolved-backend cpu exit 0 on intel and mini with the cuda entry printed as unavailable reason=DriverNotFound | apr serve run --gpu <m> on a build/host with no Ready GPU exits with the refusal code (error.rs) and the reason line | docs/audits/wi-cost.md carries S0-15 numbers with basis=cold-build-under-CI-load | mutation: make the dogfood record the request instead of the registry -> --require-resolved-backend RED on intel/mini'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-991
+  github_issue: null
+  item_type: task
+  title: 'GH-2906: R-3 T-6 honest training banner: -m lora --gpu-backend cuda refuses or trains on the GPU; the cuBLAS-backward line prints onl'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-05T11:25:32Z
+  updated: 2026-09-05T11:25:32Z
+  spec: null
+  acceptance_criteria:
+  - 'cargo test -p aprender-train --test banner_truth (banner emitted iff a device-side backward kernel launched, counter from the executor; --gpu-backend cuda on a CPU-only build exits with the refusal code read from error.rs) | mutation: print the banner unconditionally -> RED on the CPU-only arm'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-992
+  github_issue: null
+  item_type: task
+  title: 'GH-2907: R-4 W5 CLI wall-clock workload, cold arm: apr run / ollama run / llama-cli for a 32-token completion; replicate count from m'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-05T11:25:36Z
+  updated: 2026-09-05T11:25:36Z
+  spec: null
+  acceptance_criteria:
+  - 'scripts/perf_w5.sh --arm cold --pilot 5 prints CV per engine; n = ceil((1.96*CV/0.05)^2) written with basis=pilot | scripts/perf_w5.sh --arm cold --n $n -> evidence/w5/<host>/receipt.json naming all three binaries by sha256 and the Ollama daemon build | mutation: drop basis from the receipt -> validator RED'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-993
+  github_issue: null
+  item_type: task
+  title: 'GH-2908: R-5 apr-* assets for the 5 nightly.yml targets attached to every tagged release, built per D-10; sha256 + minisign-signed ma'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-05T11:25:40Z
+  updated: 2026-09-05T11:25:40Z
+  spec: null
+  acceptance_criteria:
+  - 'make -C machines/clean-room clean-room-p1 exit 0 first | gh release view v0.66.0-rc1 --json assets --jq ''[.assets[].name]'' lists apr-{x86_64,aarch64}-unknown-linux-gnu, apr-{x86_64,aarch64}-apple-darwin, apr-x86_64-pc-windows-msvc tarballs + .sha256 + one signed manifest | on each host scripts/check_multiplatform_dogfood.sh --from-release v0.66.0-rc1 verifies and records asset_sha256 | bench_host_receipt.sh H12 on the aarch64 asset on gx10 and mini before promotion | the promotion job refuses with one host receipt missing | mutation: promote with one host receipt missing -> the promotion job refuses; tamper one byte of the aarch64 tarball after signing -> the host --from-release verify step RED, no receipt written'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-994
+  github_issue: null
+  item_type: task
+  title: 'GH-2909: R-6 one-line installer served at /releases/latest/download/install.sh: detect OS/arch, download the matching asset from the '
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-05T11:25:43Z
+  updated: 2026-09-05T11:25:43Z
+  spec: null
+  acceptance_criteria:
+  - 'bash tests/install/cases.sh (5 targets resolve; bad sha256 -> non-zero and nothing on PATH; bad signature -> non-zero; prerelease-only tag skipped for latest; no curl -> one line; --version <tag> pins; never writes outside $PREFIX; shellcheck -S error clean; POSIX sh, bash 3.2 safe) | on each host the C4 run uses the script and its stdout ends with the apr devices block | mutation: flip one hex digit of the pinned public key -> every install RED'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-995
+  github_issue: null
+  item_type: task
+  title: 'GH-2910: R-7 README leads with the installer one-liner; cargo install aprender second; the backend line generated from the registry k'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-05T11:25:47Z
+  updated: 2026-09-05T11:25:47Z
+  spec: null
+  acceptance_criteria:
+  - 'bash scripts/check_readme_claims.sh exit 0 | bash scripts/check_no_claim_literals.sh exit 0 | a test greps README for the exact one-liner tests/install/cases.sh exercises | mutation: change the README one-liner''s URL -> the grep test RED'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-996
+  github_issue: null
+  item_type: task
+  title: 'GH-2911: P-0.3 proof credit from evidence only: l3_kani_proved/l4_lean_proved integers ignored; Kani credit = resolving #[kani::proof] '
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-05T11:25:50Z
+  updated: 2026-09-05T11:25:50Z
+  spec: null
+  acceptance_criteria:
+  - '. scripts/pv_bin.sh && "$PV" proof-status contracts/ --binding contracts/aprender/binding.yaml prints discharged Lean 8 / Kani 47 beside declared 181 / 1,257 | cargo test -p aprender-contracts --lib proof_credit (a contract with hand-typed l4_lean_proved: 7 and no resolving theorem scores 0) | mutation: re-trust the verification_summary integer in gates_extended.rs:401 / explain_render.rs:133 -> fixture RED'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-997
+  github_issue: null
+  item_type: task
+  title: 'GH-2912: P-0.6 pv lint as its own CI step with --min-score 0.48 (basis=measured mean score 0.48 Grade D at b1a6324b8, #2870 ledger — a '
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-05T11:25:53Z
+  updated: 2026-09-05T11:25:53Z
+  spec: null
+  acceptance_criteria:
+  - 'the ci.yml step (via scripts/pv_bin.sh) exits 0 at HEAD and prints warnings=1082 score>=0.48 | bash scripts/check_pv_lint_step.sh --selftest (a contract adding one warning -> RED) | bash scripts/check_baseline_ratchets.sh PASS with the new baseline classified | mutation: add a hollow contract carrying one new warning -> RED'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-998
+  github_issue: null
+  item_type: task
+  title: 'GH-2913: P-0.2 derived verification_summary (#2648 b): pv validate errors on drift; the 17 known drifts fixed (FALSIFY-PVI-002)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-05T11:25:57Z
+  updated: 2026-09-05T11:25:57Z
+  spec: null
+  acceptance_criteria:
+  - '. scripts/pv_bin.sh && "$PV" validate contracts/ exits non-zero on a fixture whose total_obligations != len(proof_obligations) | the 17 drifted contracts validate | mutation: re-accept a drifted summary -> RED'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-999
+  github_issue: null
+  item_type: task
+  title: 'GH-2914: P-0.4 honest headline: kernel · descriptive · fleet figures derived by pv status --headline; README checked as a floor (#2630)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-05T11:26:02Z
+  updated: 2026-09-05T11:26:02Z
+  spec: null
+  acceptance_criteria:
+  - '. scripts/pv_bin.sh && "$PV" status --headline prints the three figures; crates/aprender-core/tests/readme_contract.rs checks README as a floor | mutation: type a headline number by hand -> readme_contract RED'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-1000
+  github_issue: null
+  item_type: task
+  title: 'GH-2915: P-0.5 freeze the archived upstream: port the two stranded commits + the dirty manzana binding; remove the ../provable-contract'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-05T11:26:06Z
+  updated: 2026-09-05T11:26:06Z
+  spec: null
+  acceptance_criteria:
+  - 'git ls-files | grep -c "\.pv/" prints 0 | grep -rn "../provable-contracts" crates/aprender-contracts/src prints nothing | ARCHIVED-UPSTREAM.md exists | mutation: re-add the fallback path -> the no-fallback test RED'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-1001
+  github_issue: null
+  item_type: task
+  title: 'GH-2916: P-0.1 one proof ladder (upstream numbering: L4 Kani, L5 Lean; PVI-D-1) in proof_status.rs and the three docs; ladder_consisten'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-05T11:26:10Z
+  updated: 2026-09-05T11:26:10Z
+  spec: null
+  acceptance_criteria:
+  - 'cargo test -p aprender-contracts --lib ladder_consistency | mutation: change one doc ladder -> RED'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-1002
+  github_issue: null
+  item_type: task
+  title: 'GH-2917: P-1.1 #[contract] fails closed (#2699 in full): generated registry, compile_error! on missing name/equation/unparseable predic'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-05T11:26:13Z
+  updated: 2026-09-05T11:26:13Z
+  spec: null
+  acceptance_criteria:
+  - 'cargo test -p aprender-contracts-macros --test trybuild (missing contract -> compile error; optional -> warns) | cargo build -p aprender-contracts-macros succeeds; the 10 dangling call sites are P-1.2, which ships in the same PR | mutation: restore the option_env! None => nothing path -> trybuild RED'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-1003
+  github_issue: null
+  item_type: task
+  title: 'GH-2918: P-1.2 repoint or author the 10 dangling #[contract] sites (compile errors once P-1.1 lands; ships in the same PR as P-1.1 by c'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-05T11:26:17Z
+  updated: 2026-09-05T11:26:17Z
+  spec: null
+  acceptance_criteria:
+  - 'cargo build --workspace succeeds with all 10 #[contract] sites resolving to an existing contract YAML | cargo test -p aprender-contracts-macros --test trybuild carries a dangling-site row that is a compile error | mutation: re-dangle one site -> compile error -> RED'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-1004
+  github_issue: null
+  item_type: task
+  title: 'GH-2919: S-3 W-B bench: cargo bench batched Q4_K GEMV at M in {1,4,8} vs M in {16,32} cuBLAS GEMM; per-token time table; no kernel ch'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-05T11:26:21Z
+  updated: 2026-09-05T11:26:21Z
+  spec: null
+  acceptance_criteria:
+  - 'cargo bench -p aprender-serve --bench q4k_gemv -- --save-baseline wb0 -> evidence/bench/wb0.json with per-M medians and MADs (>=5 samples per M) | mutation: run 1 sample per M -> RED'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-1005
+  github_issue: null
+  item_type: task
+  title: 'GH-2920: S-3g S-3 on gx10 (queue slot after T-0)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-05T11:26:24Z
+  updated: 2026-09-05T11:26:24Z
+  spec: null
+  acceptance_criteria:
+  - 'same as S-3 on gx10 -> evidence/bench/wb0-gx10.json | mutation: none'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-1006
+  github_issue: null
+  item_type: task
+  title: 'GH-2921: S-1 [premises discharged: master rows 6 and 9 LANDED per S0-2] W-A per-token host work out of the decode loop: one model.wri'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-05T11:26:28Z
+  updated: 2026-09-05T11:26:28Z
+  spec: null
+  acceptance_criteria:
+  - 'scripts/perf_ab.sh --subject wa --delta code --interleave 5 -> AbRecord with pred_ms_per_tok <= 3.5 recorded before the run and measured.lcb95_ms_per_tok <= 3.5 after | PP-26 witness unchanged at m=1 (greedy stream byte-identical) | mutation: reintroduce the per-token write() -> counter invariant RED'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-1007
+  github_issue: null
+  item_type: task
+  title: 'GH-2922: S-2 W-C prefill without synchronous copies: pinned pre-allocated activation/KV staging, one async copy per layer, allocation'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-05T11:26:31Z
+  updated: 2026-09-05T11:26:31Z
+  spec: null
+  acceptance_criteria:
+  - 'nsys profile ... scripts/perf_w4.sh --tokens 64,256,512,2048 -> evidence/nsys/wc.json with api_share.copies_allocs < 0.10 | AbRecord with prefill_tok_s > 5700 registered before the run; golden output identical to pre-change | mutation: allocate per layer per token -> allocation-count invariant RED'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-1008
+  github_issue: null
+  item_type: task
+  title: 'GH-2923: T-0h training-parity harness: train_parity.sh + receipt schema in evidence/train-parity/; recipe extended to Qwen2.5-7B-Instr'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-05T11:26:35Z
+  updated: 2026-09-05T11:26:35Z
+  spec: null
+  acceptance_criteria:
+  - 'scripts/train_parity.sh --validate tests/fixtures/train-parity/*.json exit 0 | scripts/train_parity.sh --dry-run --model Qwen2.5-7B-Instruct --seq 2048 --mb 4 --rank 16 --alpha 16 --targets q,k,v,o,gate,up,down --steps 200 --seed 42 --n 5 --interleave prints the 20-run plan with a time budget basis=pilot | mutation: drop interleaved from a receipt -> validator RED'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-1009
+  github_issue: null
+  item_type: task
+  title: 'GH-2924: T-2 apr finetune --max-seq-len honoured or refused with one line and the refusal code on every path; the effective value pri'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-05T11:26:39Z
+  updated: 2026-09-05T11:26:39Z
+  spec: null
+  acceptance_criteria:
+  - 'cargo test -p apr-cli --test finetune_seq_len_truth over {256, 512, 1024, 2048} on instruct and wgpu paths: effective == requested or the command refuses | mutation: restore the 512 literal at finetune.rs:717 -> the 1024 and 2048 rows RED'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-1010
+  github_issue: null
+  item_type: task
+  title: 'GH-2925: T-1 tau_loss for the canary dataset from Unsloth-vs-Unsloth seed variance (seeds 42,43,44), 200 steps; tau = 3 x MAD of fina'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-05T11:26:42Z
+  updated: 2026-09-05T11:26:42Z
+  spec: null
+  acceptance_criteria:
+  - 'scripts/train_parity.sh --tau-derive --seeds 42,43,44 -> evidence/train-parity/tau_loss.json with the three losses, MAD, tau and basis | mutation: hand-type tau -> validator RED (no sha)'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-1011
+  github_issue: null
+  item_type: task
+  title: 'GH-2926: T-0 the four WT receipts: Unsloth QLoRA and apr finetune -m qlora on Qwen2.5-7B-Instruct, both hosts, n=5 interleaved, paire'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-05T11:26:46Z
+  updated: 2026-09-05T11:26:46Z
+  spec: null
+  acceptance_criteria:
+  - 'scripts/train_parity.sh --validate evidence/train-parity exit 0 with four receipts | evidence/train-parity/LEDGER.md rows 1-2 appended with validity_by_engine | mutation: a receipt with partial=true -> validate RED'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-1012
+  github_issue: null
+  item_type: task
+  title: 'GH-2927: T-3 training gate REPORTING + self-ratchet: train_tok_per_sec, peak_vram, |dloss|<=tau as WT cells in perf-matrix.yaml; ratc'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-05T11:26:50Z
+  updated: 2026-09-05T11:26:50Z
+  spec: null
+  acceptance_criteria:
+  - 'scripts/perf_gate.sh --phase merge --workload WT prints REPORTING with the ratio and ratchet: seeded@<sha> | scripts/perf_gate.sh --selftest wt_ratchet_fire and wt_ratchet_hold both present | mutation: set armed_by by hand -> selftest RED'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-1013
+  github_issue: null
+  item_type: task
+  title: 'GH-2928: B-A1 hosts.intel.wgpu cell in perf-matrix.yaml: compute_class wgpu, status UNMEASURED with owner, expiry anchored on D-3 (S0-'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-05T11:26:53Z
+  updated: 2026-09-05T11:26:53Z
+  spec: null
+  acceptance_criteria:
+  - 'bash scripts/check_backend_firstclass.sh --matrix-only exit 0 (after B-G1) or bash scripts/check_perf_matrix_schema.sh exit 0 today; the cell has an owner and exactly one expiry form and its anchor exists in expiry_anchors | mutation: type a date instead of the anchor -> RED'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-1014
+  github_issue: null
+  item_type: task
+  title: 'GH-2929: B-G1 check_backend_firstclass.sh: clauses 1-7 per backend computed from the tree (workflows, BACKEND_VALUES, perf-matrix.yaml'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-05T11:26:56Z
+  updated: 2026-09-05T11:26:56Z
+  spec: null
+  acceptance_criteria:
+  - 'bash scripts/check_backend_firstclass.sh exit 0 at HEAD printing cuda 6/7 or lower (derived); wired into ci / gate | case table tests/fixtures/firstclass/*.yaml must-match and must-not-match per clause | mutation: add "wgpu is a first-class backend" to README.md -> RED (and check_no_claim_literals.sh stays GREEN under it)'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-1015
+  github_issue: null
+  item_type: task
+  title: 'GH-2930: D-2doc qwen-train-canary README: the summary figure ("Gap vs unsloth: 2.5x") is derived from the table or deleted; the in-tree '
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-05T11:27:00Z
+  updated: 2026-09-05T11:27:00Z
+  spec: null
+  acceptance_criteria:
+  - 'grep -n "2.5x" ../qwen-train-canary/README.md prints nothing, or the line cites the table cell it divides | crates/aprender-train-canary/README.md and the sibling README carry the same throughput table (diff -q) | mutation: restore the 2.5x summary line -> the README check RED'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-1016
+  github_issue: null
+  item_type: task
+  title: 'GH-2931: D-1doc [spec id D-1 in §5 Track D; keyed D-1doc here because D-1 is also a §0 decision id] docs/specifications/cuda-backend-arc'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-05T11:27:03Z
+  updated: 2026-09-05T11:27:03Z
+  spec: null
+  acceptance_criteria:
+  - 'the claims-cite check over the doc: every API: sentence cites {artifact sha256, page} or UNVERIFIED{...}; exit 0 iff the UNVERIFIED count <= the receipt header count (down-only) | mutation: strip one citation -> RED'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-1017
+  github_issue: null
+  item_type: task
+  title: 'GH-2932: TAG-0.66.0 the release cut: v0.66.0-rc1 as prerelease, promotion from four host receipts (R-5), crates.io cascade from the release '
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-05T11:27:06Z
+  updated: 2026-09-05T11:27:06Z
+  spec: null
+  acceptance_criteria:
+  - 'make -C machines/clean-room clean-room-p1 exit 0 (infra checkout) | every §4 C0..C13 command exits 0 on the release commit | gh release view v0.66.0 --json isPrerelease --jq .isPrerelease prints false only after the promotion job | mutation: promote with one host receipt missing -> the promotion job refuses'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-1018
+  github_issue: null
+  item_type: task
+  title: 'GH-2933: DEC-D-2 DECISION D-2: Unsloth throughput concession not assumed revoked; T-3 ships REPORTING'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-05T11:27:10Z
+  updated: 2026-09-05T11:27:10Z
+  spec: null
+  acceptance_criteria:
+  - 'one line in spec §0 with decided_by and date | mutation: none'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-1019
+  github_issue: null
+  item_type: task
+  title: 'GH-2934: DEC-D-3 DECISION D-3 (escalate): CI home for non-CUDA lanes — may intel host a wgpu lane and a wasm harness; may mini host night'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-05T11:27:14Z
+  updated: 2026-09-05T11:27:14Z
+  spec: null
+  acceptance_criteria:
+  - 'one line in spec §0 with decided_by and date | mutation: none'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-1020
+  github_issue: null
+  item_type: task
+  title: 'GH-2935: DEC-D-8 DECISION D-8 (escalate): rename sequencing for 0.67 — one PR per crate vs batched leaves'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-05T11:27:18Z
+  updated: 2026-09-05T11:27:18Z
+  spec: null
+  acceptance_criteria:
+  - 'one line in spec §0 with decided_by and date | mutation: none'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-1021
+  github_issue: null
+  item_type: task
+  title: 'GH-2936: DEC-D-9 DECISION D-9: cuda in the published crate default features — yes iff S0-14 (held on intel/mini), R-0 merged, clean-room '
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-05T11:27:21Z
+  updated: 2026-09-05T11:27:21Z
+  spec: null
+  acceptance_criteria:
+  - 'one line in spec §0 with decided_by and date | mutation: none'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-1022
+  github_issue: null
+  item_type: task
+  title: 'GH-2937: DEC-D-10 DECISION D-10: per-target feature set of the release binaries (R-5 runs S0-14 per target)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-05T11:27:25Z
+  updated: 2026-09-05T11:27:25Z
+  spec: null
+  acceptance_criteria:
+  - 'one line in spec §0 with decided_by and date | mutation: none'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-1023
+  github_issue: null
+  item_type: task
+  title: 'GH-2938: DEC-D-11 DECISION D-11: PV-IMPROVE-001 phase 0 + 1.1/1.2 ride 0.66 as C12 blockers'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-05T11:27:28Z
+  updated: 2026-09-05T11:27:28Z
+  spec: null
+  acceptance_criteria:
+  - 'one line in spec §0 with decided_by and date | mutation: none'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-1024
+  github_issue: null
+  item_type: task
+  title: 'GH-2939: W-B-kernel multi-warp Q4_K GEMV, M in {1,4,8}'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-05T11:27:32Z
+  updated: 2026-09-05T11:27:32Z
+  spec: null
+  acceptance_criteria:
+  - 'kill if: no gain at M<=8, or per-layer cosine witness fails | mutation: none'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-1025
+  github_issue: null
+  item_type: task
+  title: 'GH-2940: W-D f16 KV + per-layer cosine witness; reserve from measured peak'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-05T11:27:35Z
+  updated: 2026-09-05T11:27:35Z
+  spec: null
+  acceptance_criteria:
+  - 'kill if: any layer cosine < 0.999 at 4096 ctx, or PP-26 regression | mutation: none'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-1026
+  github_issue: null
+  item_type: task
+  title: 'GH-2941: W-E scheduler: slots_admitted concurrent decodes under captured graphs, one graph per M-bucket or padding'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-05T11:27:38Z
+  updated: 2026-09-05T11:27:38Z
+  spec: null
+  acceptance_criteria:
+  - 'kill if: agg(4)/dec(1) < 2.5x; frozen slot; intra-batch divergence | mutation: none'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-1027
+  github_issue: null
+  item_type: task
+  title: 'GH-2942: W-G GB10: NEON Q4_K GEMV; batched prefill default on sm_121 after master 21; pre-compiled kernels (trueno#203)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-05T11:27:42Z
+  updated: 2026-09-05T11:27:42Z
+  spec: null
+  acceptance_criteria:
+  - 'kill if: prefill not linear in prompt tokens; collapse under batched prefill | mutation: none'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-1028
+  github_issue: null
+  item_type: task
+  title: 'GH-2943: W-H batch-invariant reduction; logprob margin on the wire (master row 22)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-05T11:27:46Z
+  updated: 2026-09-05T11:27:46Z
+  spec: null
+  acceptance_criteria:
+  - 'kill if: c=16 witness < 64 after the epilogue change | mutation: none'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-1029
+  github_issue: null
+  item_type: task
+  title: 'GH-2944: W-F-attach apr run attaches to a running apr serve; W5 resident arm'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-05T11:27:49Z
+  updated: 2026-09-05T11:27:49Z
+  spec: null
+  acceptance_criteria:
+  - 'kill if: resident completion slower than Ollama | mutation: none'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-1030
+  github_issue: null
+  item_type: task
+  title: 'GH-2945: T67-1 pre-compiled sm_121 kernels for training (trueno#203)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-05T11:27:53Z
+  updated: 2026-09-05T11:27:53Z
+  spec: null
+  acceptance_criteria:
+  - 'kill if: JIT still on the training path | mutation: none'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-1031
+  github_issue: null
+  item_type: task
+  title: 'GH-2946: T67-2 fused RMSNorm/RoPE/SwiGLU/chunked CE with their backward kernels (review 2.5)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-05T11:27:57Z
+  updated: 2026-09-05T11:27:57Z
+  spec: null
+  acceptance_criteria:
+  - 'kill if: forward launches counted, backward not | mutation: none'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-1032
+  github_issue: null
+  item_type: task
+  title: 'GH-2947: T67-3 NF4-in-the-matmul: kernel design + registered per-kernel prediction (mma.sync + register dequant) before code; cuBLAS ha'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-05T11:28:00Z
+  updated: 2026-09-05T11:28:00Z
+  spec: null
+  acceptance_criteria:
+  - 'kill if: code before the registered prediction | mutation: none'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-1033
+  github_issue: null
+  item_type: task
+  title: 'GH-2948: T67-4 bf16 + activation checkpointing; offload double-buffered and overlapped'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-05T11:28:03Z
+  updated: 2026-09-05T11:28:03Z
+  spec: null
+  acceptance_criteria:
+  - 'kill if: offload not overlapped | mutation: none'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-1034
+  github_issue: null
+  item_type: task
+  title: 'GH-2949: T67-5 sequence packing (T-2 already covers --max-seq-len)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-05T11:28:07Z
+  updated: 2026-09-05T11:28:07Z
+  spec: null
+  acceptance_criteria:
+  - 'kill if: packing changes the loss trajectory | mutation: none'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-1035
+  github_issue: null
+  item_type: task
+  title: 'GH-2950: T-7-arm first P-5 PASS on WT arms the training gate'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-05T11:28:11Z
+  updated: 2026-09-05T11:28:11Z
+  spec: null
+  acceptance_criteria:
+  - 'kill if: passes on a mutated (unfused) build | mutation: none'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-1036
+  github_issue: null
+  item_type: task
+  title: 'GH-2951: B-W0 quantized-weight upload path in serve: Q4K_GEMV_SHADER (already consumed by compute wgsl_forward.rs:424) wired into Owne'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-05T11:28:15Z
+  updated: 2026-09-05T11:28:15Z
+  spec: null
+  acceptance_criteria:
+  - 'kill if: device bytes > 1.3x model bytes; adapter not hardware; SUBGROUPS denial unrecorded | mutation: none'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-1037
+  github_issue: null
+  item_type: task
+  title: 'GH-2952: B-W1 wgpu lane on intel: the job, adapter selected by name/type and printed (two AMD W5700X, RADV; llvmpipe present so the ra'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-05T11:28:19Z
+  updated: 2026-09-05T11:28:19Z
+  spec: null
+  acceptance_criteria:
+  - 'kill if: adapter deviceType != DISCRETE_GPU or lavapipe|llvmpipe in driverName = FAIL | mutation: none'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-1038
+  github_issue: null
+  item_type: task
+  title: 'GH-2953: B-W2 Vulkan comparator pin (llama.cpp Vulkan build) in llama_pin.toml for the intel lane'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-05T11:28:22Z
+  updated: 2026-09-05T11:28:22Z
+  spec: null
+  acceptance_criteria:
+  - 'kill if: pin missing or expired | mutation: none'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-1039
+  github_issue: null
+  item_type: task
+  title: 'GH-2954: B-W3 PP-26 witnesses on the wgpu lane (m=1 vs m=c)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-05T11:28:25Z
+  updated: 2026-09-05T11:28:25Z
+  spec: null
+  acceptance_criteria:
+  - 'kill if: witness fails at c>1 | mutation: none'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-1040
+  github_issue: null
+  item_type: task
+  title: 'GH-2955: B-W4 W1 receipt on the wgpu lane; "wgpu loses to CPU" is a recorded outcome'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-05T11:28:29Z
+  updated: 2026-09-05T11:28:29Z
+  spec: null
+  acceptance_criteria:
+  - 'kill if: no conformant receipt | mutation: none'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-1041
+  github_issue: null
+  item_type: task
+  title: 'GH-2956: B-W5 clauses 5-6 for wgpu in check_backend_firstclass.sh (dogfood + formats)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-05T11:28:33Z
+  updated: 2026-09-05T11:28:33Z
+  spec: null
+  acceptance_criteria:
+  - 'kill if: score printed without a receipt | mutation: none'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-1042
+  github_issue: null
+  item_type: task
+  title: 'GH-2957: B-M1 metal as a Ready registry entry on mini via the wgpu-Metal adapter (no MSL dispatcher exists — S0-12); NA -> UNMEASURED '
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-05T11:28:37Z
+  updated: 2026-09-05T11:28:37Z
+  spec: null
+  acceptance_criteria:
+  - 'kill if: registry prints Ready before a build on mini took the class | mutation: none'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-1043
+  github_issue: null
+  item_type: task
+  title: 'GH-2958: B-M2 llama.cpp-Metal + Ollama comparator pins on mini'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-05T11:28:40Z
+  updated: 2026-09-05T11:28:40Z
+  spec: null
+  acceptance_criteria:
+  - 'kill if: pin missing or expired | mutation: none'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-1044
+  github_issue: null
+  item_type: task
+  title: 'GH-2959: B-M3 PP-26 witnesses and the W1 receipt on mini (#2826: the f32 wgpu path is 0.123 tok/s; needs B-W0)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-05T11:34:02Z
+  updated: 2026-09-05T11:34:02Z
+  spec: null
+  acceptance_criteria:
+  - 'kill if: no conformant receipt | mutation: none'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-1045
+  github_issue: null
+  item_type: task
+  title: 'GH-2972: B-M4 clauses 5-6 for metal in check_backend_firstclass.sh'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-05T11:34:05Z
+  updated: 2026-09-05T11:34:05Z
+  spec: null
+  acceptance_criteria:
+  - 'kill if: score printed without a receipt | mutation: none'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-1046
+  github_issue: null
+  item_type: task
+  title: 'GH-2973: B-S1 0.5B GGUF+APR decode under wasmtime (wasm bound computed from bytes per receipt; W1 excluded by address space)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-05T11:34:08Z
+  updated: 2026-09-05T11:34:08Z
+  spec: null
+  acceptance_criteria:
+  - 'kill if: a size line typed instead of computed | mutation: none'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-1047
+  github_issue: null
+  item_type: task
+  title: 'GH-2974: B-S2 browser harness for the wasm32 build'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-05T11:34:12Z
+  updated: 2026-09-05T11:34:12Z
+  spec: null
+  acceptance_criteria:
+  - 'kill if: harness not deterministic | mutation: none'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-1048
+  github_issue: null
+  item_type: task
+  title: 'GH-2975: B-S3 wasm size budget + self-ratchet'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-05T11:34:16Z
+  updated: 2026-09-05T11:34:16Z
+  spec: null
+  acceptance_criteria:
+  - 'kill if: ratchet seeded by hand | mutation: none'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-1049
+  github_issue: null
+  item_type: task
+  title: 'GH-2976: B-S4 clauses 5-6 for wasm32 in check_backend_firstclass.sh (clause 4 N/A at m=1, printed)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-05T11:34:20Z
+  updated: 2026-09-05T11:34:20Z
+  spec: null
+  acceptance_criteria:
+  - 'kill if: N/A printed as a pass | mutation: none'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-1050
+  github_issue: null
+  item_type: task
+  title: 'GH-2977: B-A2 vendor-neutral Vulkan lane receipt on AMD silicon (intel W5700X); ROCm/HIP row with its blocker'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-05T11:34:24Z
+  updated: 2026-09-05T11:34:24Z
+  spec: null
+  acceptance_criteria:
+  - 'kill if: NVIDIA-specific assumption in the wgpu lane | mutation: none'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-1051
+  github_issue: null
+  item_type: task
+  title: 'GH-2978: PVI-1.3-4.3 PV-IMPROVE phases 1.3-4.3 under #2556: empty macro arm, scoped codegen, PV-ENF-003, one binding registry, Kani/Lean nigh'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-05T11:34:27Z
+  updated: 2026-09-05T11:34:27Z
+  spec: null
+  acceptance_criteria:
+  - 'kill if: per #2870 | mutation: none'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-1052
+  github_issue: null
+  item_type: task
+  title: 'GH-2979: renames §6.7: 51 [lib]/package renames phased per D-8; shim package only; dep keys and feature strings updated per PR (G-1 count'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-05T11:34:31Z
+  updated: 2026-09-05T11:34:31Z
+  spec: null
+  acceptance_criteria:
+  - 'kill if: check_crate_names.sh remaining does not shrink by exactly the PR count | mutation: none'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-1053
+  github_issue: null
+  item_type: task
+  title: 'GH-2980: bar-gating qwen-coder-deploy TTFT/ITL/agg(4) bar GATED after re-derivation per F-14'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-05T11:34:35Z
+  updated: 2026-09-05T11:34:35Z
+  spec: null
+  acceptance_criteria:
+  - 'kill if: the comparator fails its own bar | mutation: none'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-1055
+  github_issue: null
+  item_type: task
+  title: 'GH-2983: C0-6 mutation step exceeds job timeout (134 mutants, #2872 receipt run) — basis= run 33953736119: 5,767 s step, 9,017 s job vs 9,000 s timeout'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-05T11:54:37Z
+  updated: 2026-09-05T11:54:37Z
+  spec: null
+  acceptance_criteria:
+  - 'see #2983 (A + mutation)'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-1056
+  github_issue: null
+  item_type: task
+  title: 'GH-2984: C0-7 receipt terminal marker + check_receipt_complete.sh'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-05T11:54:37Z
+  updated: 2026-09-05T11:54:37Z
+  spec: null
+  acceptance_criteria:
+  - 'see #2984 (A + mutation)'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
