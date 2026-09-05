@@ -1,0 +1,5 @@
+$ grep -c 'registry: true' contracts/*.yaml | awk … (any position, incl. comments) vs at key position only
+any_position=501
+key_position=500 files=500
+$ the one non-key hit
+5:# It used to be `registry: true`, which exempts a contract from PROVABILITY-001.

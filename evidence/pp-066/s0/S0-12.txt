@@ -1,0 +1,34 @@
+$ grep -nE "cfg|MetalBackend|metal" crates/aprender-gpu/src/backend/mod.rs | head -12
+6://! - Metal (Apple) - shader source only; no dispatcher (see `metal_shaders`)
+9:pub mod metal_shaders;
+33:        #[cfg(feature = "cuda")]
+37:        #[cfg(not(feature = "cuda"))]
+44:        #[cfg(feature = "cuda")]
+52:        #[cfg(not(feature = "cuda"))]
+62:/// source (`metal_shaders`) but no dispatcher: nothing here calls
+67:pub struct MetalBackend;
+69:impl Backend for MetalBackend {
+118:        cfg!(feature = "wgpu")
+146:    let metal = MetalBackend;
+147:    if metal.is_available() {
+$ sed -n 1,12p crates/aprender-gpu/src/backend/metal_shaders.rs
+//! Metal Shading Language (MSL) compute kernels
+//!
+//! Pre-built Metal compute shaders for common operations.
+//! These kernels are equivalent to the PTX kernels for CUDA.
+//!
+//! # Usage
+//!
+//! These are source strings only. This crate contains no Metal dispatcher, so
+//! nothing here compiles or runs them -- pass a constant to a Metal API of your
+//! own (`MTLDevice::newLibraryWithSource`), or use the `wgpu` feature, which
+//! reaches Apple GPUs through wgpu's Metal backend and does execute.
+//!
+$ grep -n "fn metal_devices\|fn .*metal" crates/aprender-gpu/src/backend/tests.rs | head -5
+10:fn test_metal_backend_unavailable() {
+23:fn test_metal_backend_name() {
+50:fn test_metal_backend_device_count() {
+68:fn test_metal_backend_default() {
+130:fn test_metal_backend_debug() {
+247:fn test_detect_backend_wgpu_priority_over_metal_and_vulkan() {
+$ aprender-gpu [features]: no `metal`; deps mentioning metal/manzana:

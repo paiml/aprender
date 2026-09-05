@@ -1,0 +1,31 @@
+$ make -C ~/src/infra/machines/intel --eval="s0:; @\$(SSH) \"...\"" s0   # SSH := ssh $(INTEL) from the Makefile
+mac-server
+x86_64
+01:00.1 Non-VGA unclassified device [0000]: Apple Inc. T2 Bridge Controller [106b:1801] (rev 01)
+01:00.2 Non-VGA unclassified device [0000]: Apple Inc. T2 Secure Enclave Processor [106b:1802] (rev 01)
+09:00.0 VGA compatible controller [0300]: Advanced Micro Devices, Inc. [AMD/ATI] Navi 10 [Radeon Pro W5700X] [1002:7310]
+14:00.0 VGA compatible controller [0300]: Advanced Micro Devices, Inc. [AMD/ATI] Navi 10 [Radeon Pro W5700X] [1002:7310]
+---vulkaninfo---
+	vendorID           = 0x1002
+	deviceType         = PHYSICAL_DEVICE_TYPE_DISCRETE_GPU
+	deviceName         = AMD Unknown (RADV NAVI10)
+	driverName         = radv
+	vendorID           = 0x1002
+	deviceType         = PHYSICAL_DEVICE_TYPE_DISCRETE_GPU
+	deviceName         = AMD Unknown (RADV NAVI10)
+	driverName         = radv
+	vendorID           = 0x10005
+	deviceType         = PHYSICAL_DEVICE_TYPE_CPU
+	deviceName         = llvmpipe (LLVM 15.0.7, 256 bits)
+	driverName         = llvmpipe
+vulkaninfo_rc=; which vulkaninfo
+---
+NVIDIA-SMI has failed because it couldn't communicate with the NVIDIA driver. Make sure that the latest NVIDIA driver is installed and running.
+
+cargo 1.97.1 (c980f4866 2026-06-30)
+/home/noah/src/aprender
+34248e8fe
+               total        used        free      shared  buff/cache   available
+Mem:             283          17          57           0         207         262
+32
+rc=0

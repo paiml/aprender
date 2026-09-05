@@ -1,0 +1,100 @@
+$ pmat query --literal 'max_seq_len' --path crates/apr-cli/src/commands/finetune.rs
+crates/apr-cli/src/commands/finetune.rs:322-338 │ build_instruct_config │ TDG: A+ │ O(1)
+   C:1 │ L:17 │ 7c │ 🔄21%
+   /// Build the `InstructConfig` for the default LoRA/QLoRA training path.  Root cause (Defect 2): the ...
+   calls: alpha, config, method, OptimalConfig, Method, (+9 more) │ ← execute_training
+ 322│ fn build_instruct_config(
+ 323│     config: &OptimalConfig,
+ 324│     learning_rate: f64,
+ 325│     epochs: u32,
+ 326│     max_seq_len: Option<usize>,
+ 327│ ) -> entrenar::finetune::instruct_pipeline::InstructConfig {
+ 328│     use entrenar::finetune::instruct_pipeline::InstructConfig;
+ 329│     InstructConfig {
+ 330│         lora_rank: config.rank as usize,
+ 331│         lora_alpha: config.alpha,
+ 332│         learning_rate: learning_rate as f32,
+ 333│         epochs: epochs as usize,
+ 334│         max_seq_len: max_seq_len.unwrap_or(InstructConfig::default().max_seq_len),
+ 335│         gradient_clip_norm: Some(1.0),
+ 336│         quantize_nf4: matches!(config.method, Method::QLoRA),
+ 337│     }
+ 338│ }
+
+crates/apr-cli/src/commands/finetune.rs:1625-1654 │ build_classify_config │ TDG: A+ │ O(1)
+   C:2 │ L:33 │ 7c │ 🔄21%
+   /// Build ClassifyConfig from CLI args, applying QLoRA defaults when appropriate.  Contract: provable...
+   calls: num_classes, available, transformer, quantize, max_seq_len, (+16 more) │ ← run_classify
+1625│ /// Build ClassifyConfig from CLI args, applying QLoRA defaults when appropriate.
+1626│ ///
+1627│ /// Contract: provable-contracts/contracts/entrenar/qlora-hyperparameters-v1.yaml
+1628│ fn build_classify_config(
+1629│     _model_config: &entrenar::transformer::TransformerConfig,
+1630│     num_classes: usize,
+1631│     rank: u32,
+1632│     epochs: u32,
+1633│     learning_rate: f64,
+1634│     max_seq_len: Option<usize>,
+1635│     quantize_nf4: bool,
+1636│ ) -> entrenar::finetune::classify_pipeline::ClassifyConfig {
+1637│     use entrenar::finetune::classify_pipeline::ClassifyConfig;
+1638│ 
+$ git grep -n "512" -- crates/apr-cli/src/commands/finetune.rs | head
+crates/apr-cli/src/commands/finetune.rs:317:/// `max_seq_len: 512`, silently dropping the CLI `--max-seq-len` value on the
+crates/apr-cli/src/commands/finetune.rs:319:/// threads the flag through, falling back to entrenar's default (512) when the
+crates/apr-cli/src/commands/finetune.rs:326:    max_seq_len: Option<usize>,
+crates/apr-cli/src/commands/finetune.rs:334:        max_seq_len: max_seq_len.unwrap_or(InstructConfig::default().max_seq_len),
+crates/apr-cli/src/commands/finetune.rs:381:    max_seq_len: Option<usize>,
+crates/apr-cli/src/commands/finetune.rs:417:    // Defect 2 fix: thread the CLI --max-seq-len through instead of hardcoding 512.
+crates/apr-cli/src/commands/finetune.rs:418:    let instruct_config = build_instruct_config(config, learning_rate, epochs, max_seq_len);
+crates/apr-cli/src/commands/finetune.rs:485:    // PMAT-512: Print training result to both stdout (human) and stderr (canary parser).
+crates/apr-cli/src/commands/finetune.rs:533:/// PMAT-512: the canary parser reads the final loss from stderr.
+crates/apr-cli/src/commands/finetune.rs:717:        512, // max_seq_len
+crates/apr-cli/src/commands/finetune.rs:1186:    max_seq_len: Option<usize>,
+crates/apr-cli/src/commands/finetune.rs:1223:            max_seq_len,
+crates/apr-cli/src/commands/finetune.rs:1245:            max_seq_len,
+crates/apr-cli/src/commands/finetune.rs:1263:            max_seq_len,
+$ sed -n 706,722p crates/apr-cli/src/commands/finetune.rs
+    let mut pipeline = WgpuInstructPipeline::new(
+        fwd,
+        trainer,
+        tokenizer,
+        embed_f32,
+        output_norm_f32,
+        lm_head_t_chunks,
+        lm_head_chunks,
+        num_layers,
+        hidden,
+        vocab,
+        512, // max_seq_len
+        heads,
+        kv_heads,
+        inter,
+        lora_rank,
+        lora_alpha,
+$ sed -n 314,336p crates/apr-cli/src/commands/finetune.rs
+/// Build the `InstructConfig` for the default LoRA/QLoRA training path.
+///
+/// Root cause (Defect 2): the old inline construction hardcoded
+/// `max_seq_len: 512`, silently dropping the CLI `--max-seq-len` value on the
+/// instruct path (only the `classify`/multi-adapter paths honored it). This
+/// threads the flag through, falling back to entrenar's default (512) when the
+/// flag is absent.
+#[cfg(feature = "training")]
+fn build_instruct_config(
+    config: &OptimalConfig,
+    learning_rate: f64,
+    epochs: u32,
+    max_seq_len: Option<usize>,
+) -> entrenar::finetune::instruct_pipeline::InstructConfig {
+    use entrenar::finetune::instruct_pipeline::InstructConfig;
+    InstructConfig {
+        lora_rank: config.rank as usize,
+        lora_alpha: config.alpha,
+        learning_rate: learning_rate as f32,
+        epochs: epochs as usize,
+        max_seq_len: max_seq_len.unwrap_or(InstructConfig::default().max_seq_len),
+        gradient_clip_norm: Some(1.0),
+        quantize_nf4: matches!(config.method, Method::QLoRA),
+$ git log -1 --format="%h %ad %s" -S"Defect 2 fix: thread the CLI --max-seq-len" -- crates/apr-cli/src/commands/finetune.rs
+2a3154175 Wed Jul 1 13:54:54 2026 +0200 fix(finetune): truthful gpu-backend banner + honor --max-seq-len + per-step progress (#2247)

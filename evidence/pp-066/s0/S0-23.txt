@@ -1,0 +1,12 @@
+$ pmat comply check | grep -E 'CB-(1700|1701|2100)'   # worktree pp-066-s0 @ da49c1081, 2026-09-05T08:00:42Z
+  ✗ CB-1700: Branch Protection: 1 branch-protection violation(s): no required_pull_request_reviews block, so zero approving reviews are required, and this branch does not qualify as CI-gated either: required_status_che
+cks.strict is false, so a stale branch can merge. Satisfy ONE of: (a) require at least 1 approving review, or (b) make every merge pass named required checks against the tree being merged — strict status checks, force 
+pushes and deletions disabled
+  ✗ CB-1701: Supply Chain: 1 supply-chain violation(s): no required status check is known to run a blocking `cargo deny check` over all of ["advisories", "bans", "licenses", "sources"]: "ci / gate" comes from the reusa
+ble workflow invoked by ci (ci.yml); its steps are not readable here; "workspace-test" (ci.yml) runs no cargo-deny
+  ✗ CB-2100: Comply Gate Effect: 9 severity=error rule(s) unreachable from required check(s) [ci / gate, workspace-test] | required context `ci / gate` resolves into `paiml/.github/.github/workflows/sovereign-ci.yml@ma
+in` (called by job `ci` in .github/workflows/ci.yml), whose steps are not readable from this repository, so no rule can be *shown* to run through it | required check `ci / gate`: **unknown** — resolves into `paiml/.git
+hub/.github/workflows/sovereign-ci.yml@main`, whose steps this repository cannot read. A HOLE, not a measured zero: no rule can be shown to run through it, and none can be shown not to | required check `workspace-test`: 
+**no** — this required check was read in full and gates nothing in the CB roster | unreachable: CB-050, CB-060, CB-1100, CB-124, CB-200, CB-2100, CB-2101, CB-2102, CB-302
+$ (CB-1658 as this worktree reads it)
+  - CB-1658: CoT Derivation Completeness: No .pmat-work directory

@@ -1,0 +1,19 @@
+$ bash scripts/pv_bin.sh   # worktree pp-066-s0 @ da49c1081
+rc=0
+$ . scripts/pv_bin.sh; "$PV" --version; ls -la "$PV"
+PV=/mnt/nvme-raid0/targets/aprender/debug/pv
+pv 0.65.2 (aprender provable-contracts verifier)
+crate aprender-contracts-cli — https://github.com/paiml/aprender
+Verifies YAML contracts under contracts/; run `pv --help` for the command surface.
+This is NOT pv(1), the pipe viewer (distro package `pv`, or the `pv` crate on crates.io).
+-rwxrwxr-x 2 noah noah 32072416 Sep  5 10:01 /mnt/nvme-raid0/targets/aprender/debug/pv
+$ "$PV" lint contracts/ | tail -3
+lint rc=0
+Summary: 0 errors, 1082 warnings, 0 suppressed, 5 new
+Estimated remediation: ~358h 5m
+Result: PASS
+$ grep -c 'registry: true' contracts/*.yaml | awk -F: '{s+=$2} END{print s}'  (files with >=1: N)
+total=501 files=501
+$ ls contracts/*.yaml | wc -l; find contracts -name "*.yaml" | wc -l
+1258
+1807

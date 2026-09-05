@@ -1,0 +1,33 @@
+host=mini started=2026-09-05T08:03:29Z base=da49c1081
+Preparing worktree (detached HEAD da49c1081)
+Updating files:  83% (16781/20032)Updating files:  84% (16827/20032)Updating files:  85% (17028/20032)Updating files:  86% (17228/20032)Updating files:  87% (17428/20032)Updating files:  88% (17629/20032)Updating files:  89% (17829/20032)Updating files:  90% (18029/20032)Updating files:  91% (18230/20032)Updating files:  92% (18430/20032)Updating files:  93% (18630/20032)Updating files:  94% (18831/20032)Updating files:  95% (19031/20032)Updating files:  96% (19231/20032)Updating files:  97% (19432/20032)Updating files:  98% (19632/20032)Updating files:  99% (19832/20032)Updating files: 100% (20032/20032)Updating files: 100% (20032/20032), done.
+HEAD is now at da49c1081 docs(audits): impl-PMAT-929 receipt + 0.65.2 post-publish host receipts (parity NO-GO, measured) + 0.66 parity report + delay report (#2868)
+worktree_sha=da49c108116ca8be0f7cd81a9379b7e333d17d6c dirty=       0
+rustc 1.93.0 (254b59607 2026-01-19)
+cargo 1.93.0 (083ac5135 2025-12-15)
+/Library/Developer/CommandLineTools
+no /usr/local/cuda
+=== S0-21 vm_stat ===
+Mach Virtual Memory Statistics: (page size of 16384 bytes)
+Pages free:                                   342650.
+Pages active:                                 247499.
+Pages inactive:                               231026.
+Pages speculative:                            119003.
+Pages throttled:                                   0.
+17179869184
+=== S0-14: cargo build -p apr-cli --features cuda --release 2>&1 | tail -3; echo exit ===
+warning: `aprender-train` (lib) generated 9 warnings (run `cargo fix --lib -p aprender-train` to apply 2 suggestions)
+warning: `aprender-serve` (lib) generated 1 warning
+    Finished `release` profile [optimized] target(s) in 3m 38s
+S0-14 rc=0 wall_s=219
+otool_cuda_count=0
+apr 0.65.2 (da49c1081)
+-rwxr-xr-x  1 noahgift  wheel  61339120 Sep  5 10:07 /tmp/apr-s0-target/release/apr
+=== S0-12: cargo check -p aprender-gpu --features metal ===
+error: the package 'aprender-gpu' does not contain this feature: metal
+S0-12 check rc=101
+=== S0-12: cargo test -p aprender-gpu --features metal -- metal_devices ===
+error: the package 'aprender-gpu' does not contain this feature: metal
+S0-12 test rc=101
+finished=2026-09-05T08:07:14Z
+S0-BUILD-DONE

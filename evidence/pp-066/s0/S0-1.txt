@@ -1,0 +1,38 @@
+$ git ls-files docs/specifications/PP-LLAMA-001-MASTER.md
+docs/specifications/PP-LLAMA-001-MASTER.md
+$ grep -n '^| 22' docs/specifications/PP-LLAMA-001-MASTER.md
+$ grep -n '^| \*\*22\*\*'
+364:| **22** | **instrument**: a top-2 logit margin per generated token on the wire (`logprobs` on the SSE delta, both engines), so the witness can classify an 
+$ grep -n '^| 3\.[01]' docs/specifications/PP-LLAMA-001-MASTER.md
+406:| 3.1 | 2026-09-03 | §7.2's release phase, run for the first time (0.65.0), FAILED over the pre-v3 lambda receipt on ArmC-sig (unsigned) and ArmD (no kv bl
+407:| 3.1 | 2026-09-02 | PP-26 amended after the first lambda witness: the `m=1`↔`m=c` 64-token bar measured kernel-family fp divergence (three families, each
+408:| 3.0 | 2026-09-02 | Complete rewrite: normative-only (§0.5); single invariant table with must-not-fire and selftest columns; layered gate L0–L3; first-P
+409:| 3.0 | 2026-09-02 | Line 3 gains a `**Status:**` line | every sibling spec in `docs/specifications/` carries one; `grep -lE '^\*\*Status' docs/specificatio
+410:| 3.0 | 2026-09-02 | Header `Supersedes` names PR #2845 as unmerged and this PR as the archiver | #2845 is `state=OPEN, mergedAt=null`; stating a landing th
+411:| 3.0 | 2026-09-02 | Header `Tree` drops the `02362ef8d` execution-plan citation | no `EXECUTION-PLAN-*` or `RECONCILIATION.md` file was ever added in any r
+412:| 3.0 | 2026-09-02 | Header `Companions` adds `docs/audits/parity-spec-audit-2026-09-02.md`, `evidence/bandwidth/`, `evidence/parity/derived_expiries.json` 
+413:| 3.0 | 2026-09-02 | §2.1 row 1 split into 1a (the c=1 pair, `53062e7f3` `[V]`) and 1b (`bands/`, commit `[U]`) | the two artifacts have different dates, d
+414:| 3.0 | 2026-09-02 | §2.1 last paragraph rewritten: the `0.591/0.395/0.544/0.401` series is named a cross-run quotient and forbidden | it is a `745fa8588` 
+415:| 3.0 | 2026-09-02 | §2.1 row 3 records that the fit excludes 2 of 30 samples per replicate, and that the fixed cost is transport-dependent | publishing a 
+416:| 3.0 | 2026-09-02 | Every figure in §2 carries its `evidence/` path on the same line or table row | PP-12's own rule, applied to this document | C-20 |
+417:| 3.0 | 2026-09-02 | §2.3 header changed to `[V]` by the command in each row, and a `verified_by` column added | the attribution rested on a plan that exis
+418:| 3.0 | 2026-09-02 | §2.3 and §9 #6 line citations corrected to `attention.rs:995`/`:1022` and `cublas_prefill/mod.rs:29-34`; §9 #1 to `generate_2.rs:284
+419:| 3.0 | 2026-09-02 | §3 and §5.1 state that `n_predict` is carried on the wire as `max_tokens` | the corpus, the loader and both servers use `max_tokens`;
+420:| 3.0 | 2026-09-02 | §5.1 states the dual-bound window, the warmup requests, the quiesce and the cooldown as normative, all resolved from `perf-matrix.yaml
+421:| 3.0 | 2026-09-02 | §6 selftest names carry a surface prefix, and stale line citations replaced | `spec_conformance.sh` joins on a surface as well as a na
+422:| 3.0 | 2026-09-02 | §6 PP-14's producer named as `OffloadReport.pp14_holds`, PP-8's status made honest | a row that names no producer cannot be joined | C
+423:| 3.0 | 2026-09-02 | §7.1 states what `ci / gate` concretely is | a rule that names a check nobody can locate is unenforceable | — |
+424:| 3.0 | 2026-09-02 | §7.2 states what a release concretely is, and where the perf release gate runs | "release phase" named no command | — |
+425:| 3.0 | 2026-09-02 | §8 and §12 derive expiries with `scripts/spec_conformance.sh` into `evidence/parity/derived_expiries.json` | the previous text named 
+426:| 3.0 | 2026-09-02 | §9 #1 carries the transport; #8's lever moved to `server_config.build_features_cli`; #9 lists all three flag sites; #10 marked DONE | 
+427:| 3.0 | 2026-09-02 | §10's `FUSED_GATE_UP` refusal cites `gpu_profile.rs:266`; the JOIN-fixture prediction names its statistic | the previous citation coul
+428:| 3.0 | 2026-09-02 | §12 rows re-stated with LANDED/OPEN status and the discharging file or test named | an obligation table that does not say what dischar
+429:| 3.0 | 2026-09-02 | Appendix C gains `n_replicates` and `n_samples` | one `n` column meant two different things | CO-2 |
+430:| 3.0 | 2026-09-02 | Appendix E gains the landing checklist and the pre-push command list | the enforced procedure lived only in the guards | — |
+432:| 3.0.24 | 2026-09-02 | §12 rows 19 and 21: the literal expiries (2026-10-16, 2026-11-06) are replaced by `derived` — both rows are blocked by live rows 
+433:| 3.0.25 | 2026-09-02 | Citations re-verified against the tree after the code landed: §3/§4.3/§9 #7/Appendix A name the endpoint's `vram.*` keys (no `vra
+434:| 3.1 | 2026-09-03 | PP-9's live scan read the ledger's first pipe table only; a blank line after row 4 left rows 5 and 6 outside it, and a re-spend of row 
+$ head -1 master
+# PP-LLAMA-001 v3.1 — MASTER — Inference performance parity with `llama.cpp`
+$ git log -1 --format='%h %ad' -- master
+a41e729f6 Fri Sep 4 12:47:00 2026 +0000 fix(perf-gate): PP-9's live scan read only the first pipe table of the ledger — L0/L1/L2/L3 now se
