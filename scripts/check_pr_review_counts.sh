@@ -244,6 +244,7 @@ falsification_tests|contracts/pr-review-skill-v2.yaml|1|All @N@ falsification te
 shadow_rows|.github/workflows/ci.yml|1|case table: @N@ rows
 publish_rows|.github/workflows/ci.yml|1|Publisher case table: @N@ rows
 arm4_rows|.github/workflows/ci.yml|1|Arm 4 case table: @N@ rows
+arm4_rows|.github/workflows/pr-review-quorum.yml|1|Arm 4 case table: @N@ rows
 signer_rows|.github/workflows/ci.yml|1|Signer case table: @N@ rows
 '
 

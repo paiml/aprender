@@ -1977,7 +1977,7 @@ jobs:
       # `git merge-base origin/main <head>`, which a fetch-depth-1 checkout cannot
       # answer. The script exits 2 rather than 0 or 1 when the BOX cannot answer,
       # so a shallow clone is never read as a clean tree.
-      - name: "Arm 4 case table: the absent-key branch that used to exit 0 forever"
+      - name: "Arm 4 case table: 10 rows, both polarities of the cutoff — the absent-key branch that used to exit 0 forever"
         shell: bash
         run: bash scripts/check_pr_review_arm4.sh --self-test
       # This PR's own receipt (Arm 4 on the live PR) is NOT judged here any more.
