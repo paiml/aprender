@@ -14910,7 +14910,7 @@ roadmap:
   - kind:code
   - pp-066
   notes: 'complete: proof:PR#2985 (merged cdc0acb99 2026-09-05T16:44:33Z); proof:docs/audits/impl-PMAT-1054-receipt.md'
-- id: PMAT-967
+- id: PMAT-1057
   github_issue: null
   item_type: task
   title: 'GH-2882: I-1 master row 1: land #2809; Blackwell guard on prefill_multi_prompt (gpu_profile.rs::multi_prompt_prefill_allowed); perf04'

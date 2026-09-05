@@ -14,7 +14,7 @@ track_parents:
   '0.67': 2970
   P: 2870
   PVI-1.3-4.3: 2556
-filed: '2026-09-05: issues #2882-#2980 under the track parents (GitHub caps a parent at 100 sub-issues; the epic holds the 31 triage sub-issues plus the 11 track parents); pmat ids PMAT-967..PMAT-1053'
+filed: '2026-09-05: issues #2882-#2980 under the track parents (GitHub caps a parent at 100 sub-issues; the epic holds the 31 triage sub-issues plus the 11 track parents); pmat ids PMAT-968..PMAT-1053 plus PMAT-1057 for I-1 (its first id PMAT-967 collided with #2871''s ticket of the same number, minted in another session; re-minted 2026-09-05)'
 receipts:
   policy: advisory
   since: '2026-09-05'
@@ -70,7 +70,7 @@ rows:
   quorum: 3-lane
   spec: master §12 row 1; PP-066 §5 Track I
   gh_issue: 2882
-  pmat_id: PMAT-967
+  pmat_id: PMAT-1057
   status: open
 - id: I-15
   title: 'gx10 shakedown cell: W1, n>=5 interleaved, at a commit containing 0b, 0c, 1, 6, 7, 12 -> a new LEDGER row'
