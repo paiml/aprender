@@ -328,7 +328,7 @@ baselines:
       interleaved: true
       subject: 'published 0.65.2, default features (cpu lane; parity.lanes[0])'
       bands:
-        c1: {agg: 23.18, dec: 44.1, prefill: 47.75}
+        c1: {agg: 23.177905280153, dec: 44.1002587776968, prefill: 47.74679967996131}
         c4: {validity: 'INVALID-CORRECTNESS(#2753/#2776) — no PP-26 witness; not reported, not seeded (P-4)'}
         c8: {validity: 'INVALID-CORRECTNESS(#2753/#2776) — no PP-26 witness; not reported, not seeded (P-4)'}
         c16: {validity: 'INVALID-CORRECTNESS(#2753/#2776) — no PP-26 witness; not reported, not seeded (P-4)'}
@@ -346,7 +346,7 @@ baselines:
       interleaved: true
       subject: 'published 0.65.2 installed with --features cuda (parity.lanes[1])'
       bands:
-        c1: {agg: 326.78, dec: 345.45, prefill: 5268.55}
+        c1: {agg: 326.77673844031267, dec: 345.44981138263495, prefill: 5268.553650727174}
         c4: {validity: 'INVALID-CORRECTNESS(#2753/#2776) — no PP-26 witness; not reported, not seeded (P-4)'}
         c8: {validity: 'INVALID-CORRECTNESS(#2753/#2776) — no PP-26 witness; not reported, not seeded (P-4)'}
         c16: {validity: 'INVALID-CORRECTNESS(#2753/#2776) — no PP-26 witness; not reported, not seeded (P-4)'}
@@ -367,7 +367,7 @@ baselines:
       interleaved: true
       subject: 'published 0.65.2, default features; block REFUSED, c1 from parity_attempt'
       bands:
-        c1: {agg: 3.5, dec: 6.78, prefill: 7.18}
+        c1: {agg: 3.53, dec: 6.78, prefill: 7.18}
         c4: {validity: 'INVALID-CORRECTNESS(#2753/#2776) — no PP-26 witness; not reported, not seeded (P-4)'}
         c8: {validity: 'INVALID-CORRECTNESS(#2753/#2776) — no PP-26 witness; not reported, not seeded (P-4)'}
         c16: {validity: 'INVALID-CORRECTNESS(#2753/#2776) — no PP-26 witness; not reported, not seeded (P-4)'}
@@ -388,7 +388,7 @@ baselines:
       interleaved: true
       subject: 'published 0.65.2, default features; block REFUSED, c1 from parity_attempt'
       bands:
-        c1: {agg: 14.3, dec: 27.82, prefill: 28.99}
+        c1: {agg: 14.32, dec: 27.82, prefill: 28.99}
         c4: {validity: 'INVALID-CORRECTNESS(#2753/#2776) — no PP-26 witness; not reported, not seeded (P-4)'}
         c8: {validity: 'INVALID-CORRECTNESS(#2753/#2776) — no PP-26 witness; not reported, not seeded (P-4)'}
         c16: {validity: 'INVALID-CORRECTNESS(#2753/#2776) — no PP-26 witness; not reported, not seeded (P-4)'}
@@ -411,7 +411,7 @@ baselines:
       interleaved: true
       subject: 'published 0.65.2, default features; block REFUSED, c1 from parity_attempt'
       bands:
-        c1: {agg: 4.5, dec: 8.85, prefill: 9.07}
+        c1: {agg: 4.53, dec: 8.85, prefill: 9.07}
         c4: {validity: 'INVALID-CORRECTNESS(#2753/#2776) — no PP-26 witness; not reported, not seeded (P-4)'}
         c8: {validity: 'INVALID-CORRECTNESS(#2753/#2776) — no PP-26 witness; not reported, not seeded (P-4)'}
         c16: {validity: 'INVALID-CORRECTNESS(#2753/#2776) — no PP-26 witness; not reported, not seeded (P-4)'}

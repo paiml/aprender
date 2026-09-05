@@ -148698,5 +148698,12 @@
   "decided_by": "noah",
   "date": "2026-09-05",
   "text": "0.65.2 stays published. No yank, no 0.65.3. These four host receipts are the 0.66 baseline."
+ },
+ "cuda_install": {
+  "command": "cargo install aprender@0.65.2 --features cuda --locked --root /tmp/apr-0652-cuda",
+  "rc": 0,
+  "wall_seconds": 167,
+  "source": "evidence/dogfood/0.65.2/lambda-cuda-install.txt",
+  "started": "2026-09-05 ~00:44Z on lambda"
  }
 }

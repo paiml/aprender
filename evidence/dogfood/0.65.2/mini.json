@@ -105,8 +105,8 @@
       12
      ]
     },
-    "subject_median_tok_per_sec": 4.5,
-    "comparator_median_tok_per_sec": 90.4
+    "subject_median_tok_per_sec": 4.53,
+    "comparator_median_tok_per_sec": 90.43
    },
    {
     "concurrency": 4,
@@ -171,8 +171,8 @@
       35
      ]
     },
-    "subject_median_tok_per_sec": 5.1,
-    "comparator_median_tok_per_sec": 154.6
+    "subject_median_tok_per_sec": 5.14,
+    "comparator_median_tok_per_sec": 154.55
    },
    {
     "concurrency": 8,
@@ -238,7 +238,7 @@
      ]
     },
     "subject_median_tok_per_sec": null,
-    "comparator_median_tok_per_sec": 181.4
+    "comparator_median_tok_per_sec": 181.44
    },
    {
     "concurrency": 16,
@@ -304,7 +304,7 @@
      ]
     },
     "subject_median_tok_per_sec": null,
-    "comparator_median_tok_per_sec": 94.7
+    "comparator_median_tok_per_sec": 94.69
    }
   ],
   "why_no_parity_block": "scripts/parity_host_receipt.sh refuses to emit a block that scripts/lib/bench_receipt.py would reject: a band whose subject throughput is zero is a failed measurement, not a measurement (F12). The attempt is recorded here under parity_attempt so the gate reads it as ABSENT, not as a block.",
@@ -326,7 +326,9 @@
    "PP-26 witness on every c>1 band",
    "PP-21 signature",
    "PP-25 client sha256"
-  ]
+  ],
+  "started_utc": "2026-09-05T00:23:15.541Z",
+  "started_utc_source": "apr-cpu-c1.config.json server.started_utc in the kept work dir on the host (copied here so the ledger row traces to the receipt)"
  },
  "bench_attempt": {
   "status": "refused",

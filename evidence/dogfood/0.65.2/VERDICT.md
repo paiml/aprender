@@ -16,10 +16,10 @@ Post-publish (`scripts/dogfood.sh --phase post-publish`, receipt `receipt-202609
 ## Host receipts
 | host | arch | install rc | wall s | `apr --version` | surface (advertised / answering --help) |
 |---|---|---|---|---|---|
-| lambda | x86_64-unknown-linux-gnu | 0 | 160 | `apr 0.65.2 (v0.65.2+no-git)` | {'cli_subcommands': 111, 'cli_subcommands_answering_help': 1 |
-| intel | x86_64-unknown-linux-gnu | 0 | 202 | `apr 0.65.2 (v0.65.2+no-git)` | {'cli_subcommands': 111, 'cli_subcommands_answering_help': 1 |
-| gx10 | aarch64-unknown-linux-gnu | 0 | 115 | `apr 0.65.2 (v0.65.2+no-git)` | {'cli_subcommands': 111, 'cli_subcommands_answering_help': 1 |
-| mini | aarch64-apple-darwin | 0 | 218 | `apr 0.65.2 (v0.65.2+no-git)` | {'cli_subcommands': 111, 'cli_subcommands_answering_help': 1 |
+| lambda | x86_64-unknown-linux-gnu | 0 | 160 | `apr 0.65.2 (v0.65.2+no-git)` | 111 advertised / 110 answer `--help` (0 unusable) |
+| intel | x86_64-unknown-linux-gnu | 0 | 202 | `apr 0.65.2 (v0.65.2+no-git)` | 111 advertised / 110 answer `--help` (0 unusable) |
+| gx10 | aarch64-unknown-linux-gnu | 0 | 115 | `apr 0.65.2 (v0.65.2+no-git)` | 111 advertised / 110 answer `--help` (0 unusable) |
+| mini | aarch64-apple-darwin | 0 | 218 | `apr 0.65.2 (v0.65.2+no-git)` | 111 advertised / 110 answer `--help` (0 unusable) |
 
 ## Parity lanes (post-publish, published binary, comparator llama.cpp 39173bcac per `scripts/llama_pin.toml`)
 Every row is the published `cargo install aprender --version 0.65.2 --locked --force` binary measured on the host by `scripts/parity_host_receipt.sh` (5 interleaved replicates per band, ladder 1/4/8/16). Numbers are aggregate tok/s medians, subject vs comparator, from the receipt's `parity` block or, where the script refused to emit a block, its `parity_attempt` block. **c>1 columns are STRUCK on every host:** a c>1 ratio is a number only when the band carries a PP-26 witness PASS (`min_agree_tokens 64`, `max_constant_run 16`) and the comparator's `slots_admitted` at that c read from `/props`; no band on any host carries a witness (`witness: null` in every band record), so every c>1 band is `INVALID-CORRECTNESS(#2753/#2776)` (P-4). `slots_admitted` did equal c on every band on every host. Completion counts (n/N requests) are kept because they are correctness facts, not ratios.
@@ -27,7 +27,7 @@ Every row is the published `cargo install aprender --version 0.65.2 --locked --f
 | host | lane | c=1 | c=4 | c=8 | c=16 | block | verdict |
 |---|---|---|---|---|---|---|---|
 | lambda | cpu (default install) | 23.2 vs 75.2 (decode 44.1 vs 74.2; TTFT 2.6 s vs 16 ms) | STRUCK | STRUCK | STRUCK | `parity` | c=1 FAIL — decode 0.59×, prefill 0.005× (PMAT-962). c>1: INVALID-CORRECTNESS(#2753/#2776) — no PP-26 witness was run on any band (`bands[].subject.witness = null`), so no c>1 ratio exists; comparator `slots_admitted` did equal c on every band (`comparator_admission`, from `/props`) |
-| lambda | cuda (`--features cuda` install of the same crate, `/tmp/apr-0652-cuda`, 167 s) | 326.8 vs 492.5 (decode 345.4 vs 499.3; prefill 5269 vs 29648; TTFT 24 vs 5 ms) | STRUCK | STRUCK | STRUCK | `parity` (second lane, run e52be880) | c=1 FAIL — decode 0.69×, prefill 0.18×. c>1: INVALID-CORRECTNESS(#2753/#2776) — no witness; the earlier "parity at c=16" is withdrawn |
+| lambda | cuda (`--features cuda` install of the same crate, `/tmp/apr-0652-cuda`, 167 s per `lambda.json` `cuda_install` and `lambda-cuda-install.txt`) | 326.8 vs 492.5 (decode 345.4 vs 499.3; prefill 5269 vs 29648; TTFT 24 vs 5 ms) | STRUCK | STRUCK | STRUCK | `parity` (second lane, run e52be880) | c=1 FAIL — decode 0.69×, prefill 0.18×. c>1: INVALID-CORRECTNESS(#2753/#2776) — no witness; the earlier "parity at c=16" is withdrawn |
 | intel | cpu | 14.3 vs 42.0 (per-replicate 18.1/6.2/12.3/14.6/14.3) | STRUCK (8/8 completed) | STRUCK (8/8 completed) | replicate 2: 0/16 requests succeeded; replicate 1: 9/16 | `parity_attempt` (refused) | NO BLOCK — zero-throughput band (PMAT-963); c>1 INVALID-CORRECTNESS, no witness |
 | gx10 | cpu | 3.5 vs 75.7 (TTFT 17.6 s) | STRUCK (4/4 completed, TTFT 36 s) | 0/8 succeeded, all 5 replicates | 0/16 succeeded, all 5 replicates | `parity_attempt` (refused) | NO BLOCK — 0.046× at c=1 (PMAT-964); every request fails at c≥8 (PMAT-963); c>1 INVALID-CORRECTNESS, no witness |
 | mini | cpu | 4.5 vs 90.4 (TTFT 13.9 s) | STRUCK (4/4 completed, TTFT 49.5 s) | 0/8 succeeded, all 5 replicates | 0/16 succeeded, all 5 replicates | `parity_attempt` (refused) | NO BLOCK — 0.05× at c=1 (PMAT-964); every request fails at c≥8 (PMAT-963); c>1 INVALID-CORRECTNESS, no witness. Run under Homebrew bash 5.3 + util-linux flock (hand-installed; declared in paiml/infra machines/mini/forjar.yaml by the sibling PR) |
