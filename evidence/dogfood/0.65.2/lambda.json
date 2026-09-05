@@ -13192,7 +13192,8 @@
      "c4": "INVALID-CORRECTNESS(#2753/#2776: no PP-26 witness; comparator slots_admitted == c from /props)",
      "c8": "INVALID-CORRECTNESS(#2753/#2776: no PP-26 witness; comparator slots_admitted == c from /props)",
      "c16": "INVALID-CORRECTNESS(#2753/#2776: no PP-26 witness; comparator slots_admitted == c from /props)"
-    }
+    },
+    "validity_by_band_source": "hand-annotated 2026-09-05 by the release orchestrator (PMAT-966): the harness emitted c>1 bands with witness=null and no validity mark; --witness-json is opt-in"
    },
    {
     "lane": "cuda",
@@ -135561,7 +135562,8 @@
      "c4": "INVALID-CORRECTNESS(#2753/#2776: no PP-26 witness; comparator slots_admitted == c from /props)",
      "c8": "INVALID-CORRECTNESS(#2753/#2776: no PP-26 witness; comparator slots_admitted == c from /props)",
      "c16": "INVALID-CORRECTNESS(#2753/#2776: no PP-26 witness; comparator slots_admitted == c from /props)"
-    }
+    },
+    "validity_by_band_source": "hand-annotated 2026-09-05 by the release orchestrator (PMAT-966): the harness emitted c>1 bands with witness=null and no validity mark; --witness-json is opt-in"
    }
   ],
   "run_id": "e167c1ab2c68496cbe1a2a881ab25900",
@@ -135575,7 +135577,8 @@
    "PP-26 batch-invariance witness on every c>1 band (min_agree_tokens 64, max_constant_run 16) \u2014 none was run; every c>1 ratio is struck",
    "PP-21 signature",
    "PP-25 client sha256"
-  ]
+  ],
+  "validity_by_band_source": "hand-annotated 2026-09-05 by the release orchestrator (PMAT-966): the harness emitted c>1 bands with witness=null and no validity mark; --witness-json is opt-in"
  },
  "parity_cuda_install_cpu_lane": {
   "lane": "cpu",

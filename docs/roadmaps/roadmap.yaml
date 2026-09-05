@@ -14602,6 +14602,38 @@ roadmap:
   - 'setsid is not used by either script (the mini launcher used it; recorded so nobody adds it): the guard is bash version + flock only'
   - 'the host prerequisites (Homebrew bash, util-linux flock) are declared in paiml/infra machines/mini/forjar.yaml, not hand-installed - the 2026-09-05 mini run used a HAND install of both (brew install bash; brew install util-linux), which is the reaper class'
   notes: 'Found producing the 0.65.2 mini receipt: chain3 ran under /bin/bash 3.2.57, parity rc=1 in 0 s with an empty parity.log; under Homebrew bash 5.3.15 the script proceeded and then refused on flock (fail-closed, correct); util-linux flock fixed that. Sibling infra PR declares both on mini.'
+- id: PMAT-966
+  github_issue: null
+  item_type: bug
+  title: 'witness=null on every band is a HARNESS defect: --witness-json is opt-in, so parity_block.py emits c>1 bands with no PP-26 witness and no validity mark, and perf_gate.sh grades them; PP-26 says absence is invalidity - the harness must print validity_by_band itself (no witness on c>1 => INVALID-CORRECTNESS), never a hand afterwards'
+  status: todo
+  priority: critical
+  assigned_to: null
+  created: 2026-09-05 07:10:00+00:00
+  updated: 2026-09-05 07:10:00+00:00
+  spec: docs/specifications/PP-LLAMA-001-MASTER.md
+  acceptance_criteria:
+  - 'scripts/lib/parity_block.py writes validity_by_band on every lane: c=1 MEASURED when the band completed, every c>1 band INVALID-CORRECTNESS(PP-26 absent) unless a witness with result PASS, min_agree_tokens >= 64 and max_constant_run <= 16 is attached; ratio fields on an INVALID band are null, not numbers'
+  - 'perf_gate.sh and check_parity_receipt.sh REFUSE a c>1 band that carries a ratio without a witness (fail closed), and print the validity line per band in the verdict'
+  - 'must-fire mutation: run scripts/parity_host_receipt.sh without --witness-json against a live pair; the emitted block must self-mark every c>1 band INVALID-CORRECTNESS and carry no c>1 ratio (RED today: the 0.65.2 lambda block carried ratio_aggregate_tok_per_sec on c=4/8/16 with witness=null)'
+  - 'the 0.65.2 receipts keep their hand-annotated validity_by_band with validity_by_band_source naming this ticket; the ledger rows 7-11 what_it_lacks name it'
+  notes: 'Found on the 0.65.2 post-publish receipts (evidence/dogfood/0.65.2/*.json): every band of both lambda lanes and of the three refused attempts has witness: null, and the block still carried per-band ratios and verdicts at c=4/8/16. The validity marks now in those files were written by hand afterwards - the gate grading its own paper - and are labelled so. Ruling 2026-09-05 (noah): hand-edited validity is not validity.'
+- id: PMAT-967
+  github_issue: null
+  item_type: bug
+  title: 'A release-phase perf-gate verdict with no artifact identity (CB-1400 sibling): VERDICT PASS host=lambda phase=release workload=W1 on every 0.65.x cut graded evidence/perf-gate-001-w1-lambda/receipt.r1.json - commit 745fa8588, a dev checkout with feature_set [cuda], binary sha256 9d0b08b0... - not the crates.io cli build that was published; the verdict line must carry feature_set and the built-binary sha256 (PP-18/PP-25), and a verdict from a checkout is phase=pre-publish-checkout, never quotable as release'
+  status: todo
+  priority: critical
+  assigned_to: null
+  created: 2026-09-05 07:10:00+00:00
+  updated: 2026-09-05 07:10:00+00:00
+  spec: docs/specifications/PP-LLAMA-001-MASTER.md
+  acceptance_criteria:
+  - 'the VERDICT line prints feature_set=[...] binary_sha256=<64 hex> install_source={registry|checkout} read from receipt.provenance (absent => FAIL INSTRUMENT, not PASS)'
+  - 'when install_source is not a registry install (cargo install from crates.io of the version under release), --phase release is relabelled phase=pre-publish-checkout in the verdict line and the run exits with a REPORT, never a PASS that a release runbook can quote; release_cut.sh (pp4-work) and scripts/release*.sh stop passing a stale checkout receipt as the release receipt'
+  - 'must-fire mutation: feed receipt.r1.json (745fa8588, checkout) with --phase release --commit <any newer sha> - today it prints PASS phase=release; after the fix it prints phase=pre-publish-checkout and no PASS'
+  - 'the three 0.65.x cut lines are relabelled in evidence/release/0.65.2/perf-gate-8e1e9ad40.txt and docs/audits/impl-PMAT-929-receipt.md (done in this PR)'
+  notes: 'Found 2026-09-05 while answering "which pre-publish gate should have been red": the receipt the gate graded on 587ad0797, 752f55346 and 8e1e9ad40 was the same 2026-09-01 file (ledger row 3, SPENT, subject lane invalid, unsigned); its PASS meant only that no W1 arm was ARMED. Nothing pre-publish ever measured the published default-feature (cli, CPU-only) binary; the first ladder it met was the post-publish host receipt (PMAT-962..964).'
 - id: PMAT-750
   github_issue: null
   item_type: task
