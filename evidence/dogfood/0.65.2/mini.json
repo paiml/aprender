@@ -1,0 +1,29 @@
+{
+ "host": "mini",
+ "arch": "aarch64-apple-darwin",
+ "os": "Darwin 25.5.0",
+ "cpu": "Apple M4",
+ "accelerator": "Apple Metal (Apple M4)",
+ "version_tested": "0.65.2",
+ "date": "2026-09-04",
+ "install_source": "crates.io",
+ "install_command": "cargo install aprender --version 0.65.2 --locked --force",
+ "install_root": "default (~/.cargo/bin)",
+ "version_before_install": "apr 0.64.0 (v0.64.0+no-git)",
+ "install_rc": 0,
+ "install_wall_seconds": 218,
+ "crates_compiled": 567,
+ "path_resolved_apr": "/Users/noahgift/.cargo/bin/apr",
+ "binary_sha256": "00352d2fa905a11aeb5a174e72882583186240b6ec158f622a0ad2cd2e078c84",
+ "binary_version_output": "apr 0.65.2 (v0.65.2+no-git)",
+ "surface": {
+  "cli_subcommands": 111,
+  "cli_subcommands_answering_help": 110,
+  "unusable": 0,
+  "note": "`help` is the one advertised subcommand that does not accept --help (it IS the help); every other subcommand answers --help"
+ },
+ "bare_apr_is_0_65_2": true,
+ "notable": "arm64 macOS (Apple M4); apr has no Metal inference path (#2841), so the binary is CPU class here.",
+ "verdict": "GO",
+ "collection_note": "Post-publish by construction: install_rc comes from `cargo install aprender --version 0.65.2 --locked --force` against crates.io on the host itself (scripts run over ssh, facts.json collected, receipt composed by the release orchestrator 2026-09-04/05)."
+}

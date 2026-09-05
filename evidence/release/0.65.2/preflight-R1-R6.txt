@@ -1,0 +1,7 @@
+ok    R1 clean tree (no tracked change, no untracked file)
+ok    R2 version 0.65.2 (cargo metadata, root manifest)
+ok    R3 tag v0.65.2 points at HEAD 8e1e9ad40
+ok    R4 HEAD is an ancestor of origin/main
+ok    R5 dogfood receipt receipt-20260904T221607Z.json: GO for 8e1e9ad40 at 0.65.2 (phase pre-publish, deferred: declared:check_multiplatform_dogfood,publish-dry-run)
+ok    R6 no sibling dev-dependency carries a version (path-only, stripped at publish)
+PASS  check_publish_preflight.sh: clean, versioned, tagged, on origin/main, dogfood GO

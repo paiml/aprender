@@ -14541,6 +14541,50 @@ roadmap:
   acceptance_criteria:
   - 'in --phase post-publish the row PASSes iff the crate version is in the crates.io index and FAILs otherwise; pre-publish polarity unchanged; case rows for both phases and both polarities; must-fire mutation RED'
   notes: 'Same shape the 0.64.0 cut recorded in evidence/dogfood/0.64.0/VERDICT.md. Found by the 0.65.2 post-publish run (receipt-20260904T232050Z.json).'
+- id: PMAT-962
+  github_issue: null
+  item_type: bug
+  title: 'Post-publish parity of the published 0.65.2 (cargo install aprender, default features) is FAIL on lambda CPU: decode 0.59x, prefill 0.005x of llama.cpp 39173bcac at c=1/4/8/16 (5 interleaved replicates per band); TTFT 2.6 s vs 16 ms at c=1 - the CPU prefill runs at decode speed'
+  status: todo
+  priority: critical
+  assigned_to: null
+  created: 2026-09-05 01:15:00+00:00
+  updated: 2026-09-05 01:15:00+00:00
+  spec: docs/specifications/0.66-performance-parity-report.md
+  acceptance_criteria:
+  - 'evidence/dogfood/<next>/lambda.json parity lane cpu verdict PASS against the pinned comparator (floor 1.0 from scripts/perf-matrix.yaml#arms.L3.delta), measured by scripts/parity_host_receipt.sh on the published binary, not on a tree build'
+  - 'prefill tok/s within the L3 band of the comparator at c=1 (measured 47.7 vs 8982.4 on 2026-09-05): the prefill must batch the prompt, not decode it one token at a time on CPU'
+  - 'the receipt records the install command and feature set that produced each lane; a lane from a --features cuda install is labelled as such'
+  notes: 'Measured 2026-09-05 by the 0.65.2 post-publish host receipt (evidence/dogfood/0.65.2/lambda.json, run_id e167c1ab2c68496cbe1a2a881ab25900). Subject aggregate tok/s c=1/4/8/16 = 23.2/44.9/52.5/54.8 vs comparator 75.2/128.3/155.2/172.4; subject decode 44.1 vs 74.2 at c=1. The published default-feature binary resolves 0 GPU layers on a 4090 host (the accelerator lane the gate requires needs an install with --features cuda; that lane is measured separately and recorded in the same receipt). Related: chunked prefill (Arm E), the accelerator-quantity contract, and the 0.66 parity report section 6.'
+- id: PMAT-963
+  github_issue: null
+  item_type: bug
+  title: 'Published 0.65.2 apr serve (CPU, default features) fails every request at c>=8 on gx10 (0/8 and 0/16 in all 5 replicates) and intermittently at c=16 on intel (0/16 in one replicate, 9/16 in another) under the parity protocol, while the pinned llama.cpp serves the same bands at 65-115 tok/s; no parity block can be emitted for either host'
+  status: todo
+  priority: critical
+  assigned_to: null
+  created: 2026-09-05 01:40:00+00:00
+  updated: 2026-09-05 01:40:00+00:00
+  spec: docs/specifications/0.66-performance-parity-report.md
+  acceptance_criteria:
+  - 'scripts/parity_host_receipt.sh on the published binary emits a block on gx10 and intel: every band of the declared ladder [1,4,8,16] has 5 replicates with successful == total_requests'
+  - 'the failure mode is named from the client side (apr test llm bench records the per-request error kind: timeout vs connection vs HTTP status) - today the run json carries only successful/failed counts, so the receipt cannot say WHY a request failed (own sub-ticket)'
+  - 'root cause is traced to the module (the writer-lock serialisation of concurrent requests and the prefill-at-decode-speed path, cf. PMAT-962), not to the protocol timeout'
+  notes: 'Measured 2026-09-05 by the 0.65.2 post-publish host receipts (evidence/dogfood/0.65.2/{gx10,intel}.json, key parity_attempt; kept work dirs on the hosts are named there). gx10: TTFT 17.6 s at c=1 and 36 s at c=4 with 4/4 successes, then 0 successes at c=8 and c=16 in every replicate. intel: c=16 replicate 2 had 0/16 successful, replicate 1 9/16, the other three 16/16. The protocol window is http_duration_secs = 30 (scripts/llama_pin.toml#protocol.http). The receipt validator (scripts/lib/bench_receipt.py) correctly refuses a band with zero subject throughput as a non-measurement, so these hosts carry parity_attempt instead of parity and check_multiplatform_dogfood.sh stays FAIL for them: the post-publish verdict for 0.65.2 is NO-GO on this evidence.'
+- id: PMAT-964
+  github_issue: null
+  item_type: bug
+  title: 'Published aarch64 0.65.2 (cargo install aprender on gx10/GB10, default features) decodes at 3.5 tok/s on CPU at c=1 - 0.045x the pinned llama.cpp (77.8) - and apr bench measures 7.7 tok/s, below its own H12 floor of 10, so the published aarch64 binary fails the spec it ships'
+  status: todo
+  priority: critical
+  assigned_to: null
+  created: 2026-09-05 01:40:00+00:00
+  updated: 2026-09-05 01:40:00+00:00
+  spec: docs/specifications/0.66-performance-parity-report.md
+  acceptance_criteria:
+  - 'the published aarch64 binary (crates.io, default features) reaches the H12 floor in apr bench on gx10 and a cpu-lane parity ratio within the L3 band at c=1'
+  - 'the receipt names which SIMD path the published binary took on aarch64 (NEON vs scalar) - the tree build measured 1.21x on GB10 (#2567) and the published binary measures 0.045x, so the two are not the same code path or the same build flags'
+  notes: 'Measured 2026-09-05: evidence/dogfood/0.65.2/gx10.json (parity_attempt band c=1: apr 3.5/3.5/3.6/3.5/3.5 tok/s, TTFT ~17.5 s; comparator 77.8/75.7/73.3/77.8/73.8; bench_attempt: apr bench 7.7 tok/s, Performance Grade F, exit non-zero). Related: PMAT-962 (lambda, same binary family, 0.59x decode), PMAT-963 (c>=8 request failures), #2567 (aarch64 Q4_K tree-build ratio).'
 - id: PMAT-750
   github_issue: null
   item_type: task

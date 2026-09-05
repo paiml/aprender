@@ -1,0 +1,836 @@
+[New LWP 2495327]
+[New LWP 2495328]
+[New LWP 2495329]
+[New LWP 2495330]
+[New LWP 2495331]
+[New LWP 2495332]
+[New LWP 2495333]
+[New LWP 2495334]
+[New LWP 2495335]
+[New LWP 2495336]
+[New LWP 2495337]
+[New LWP 2495338]
+[New LWP 2495339]
+[New LWP 2495340]
+[New LWP 2495341]
+[New LWP 2495346]
+[New LWP 2495347]
+[New LWP 2495366]
+[New LWP 2495386]
+[New LWP 2495387]
+[New LWP 2495388]
+[New LWP 2495389]
+[New LWP 2495390]
+[New LWP 2495391]
+[New LWP 2495392]
+[New LWP 2495393]
+[New LWP 2495394]
+[New LWP 2495395]
+[New LWP 2495396]
+[New LWP 2495397]
+[New LWP 2495398]
+[New LWP 2495399]
+[New LWP 2495400]
+[New LWP 2495401]
+[New LWP 2495402]
+[New LWP 2495403]
+[New LWP 2495404]
+[New LWP 2495405]
+[New LWP 2495406]
+[New LWP 2495407]
+[New LWP 2495408]
+[New LWP 2495409]
+[New LWP 2495410]
+[New LWP 2495411]
+[New LWP 2495413]
+[New LWP 2495414]
+[New LWP 2495418]
+[New LWP 2495435]
+[Thread debugging using libthread_db enabled]
+Using host libthread_db library "/lib/x86_64-linux-gnu/libthread_db.so.1".
+syscall () at ../sysdeps/unix/sysv/linux/x86_64/syscall.S:38
+
+Thread 49 (Thread 0x755f7594c640 (LWP 2495435) "backends::gpu::"):
+#0  syscall () at ../sysdeps/unix/sysv/linux/x86_64/syscall.S:38
+#1  0x0000621cd1984c14 in std::sys::pal::unix::futex::futex_wait () at library/std/src/sys/pal/unix/futex.rs:73
+#2  std::sys::sync::once::futex::Once::call () at library/std/src/sys/sync/once/futex.rs:200
+#3  0x0000621cd0c85c7e in call_once_force<std::sync::once_lock::{impl#0}::initialize::{closure_env#0}<core::option::Option<trueno::backends::gpu::GpuBackend>, std::sync::once_lock::{impl#0}::get_or_init::{closure_env#0}<core::option::Option<trueno::backends::gpu::GpuBackend>, trueno::backends::gpu::tests_gpu::get_shared_gpu::{closure_env#0}>, !>> () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once.rs:219
+#4  0x0000621ccfef8c90 in std::sync::once_lock::OnceLock<T>::initialize () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:533
+#5  0x0000621ccfef9655 in get_or_try_init<core::option::Option<trueno::backends::gpu::GpuBackend>, std::sync::once_lock::{impl#0}::get_or_init::{closure_env#0}<core::option::Option<trueno::backends::gpu::GpuBackend>, trueno::backends::gpu::tests_gpu::get_shared_gpu::{closure_env#0}>, !> () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:409
+#6  0x0000621ccfef91a6 in std::sync::once_lock::OnceLock<T>::get_or_init () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:320
+#7  0x0000621cd02f312a in trueno::backends::gpu::tests_gpu::get_shared_gpu () at crates/aprender-compute/src/backends/gpu/tests_gpu/mod.rs:16
+#8  0x0000621cd015d8d1 in trueno::backends::gpu::tests_gpu::tiled_ops::test_gpu_tiled_min_single_element () at crates/aprender-compute/src/backends/gpu/tests_gpu/tiled_ops.rs:153
+#9  0x0000621cd0d62b23 in trueno::backends::gpu::tests_gpu::tiled_ops::test_gpu_tiled_min_single_element::{{closure}} () at crates/aprender-compute/src/backends/gpu/tests_gpu/tiled_ops.rs:152
+#10 0x0000621cd00c7b56 in core::ops::function::FnOnce::call_once () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/core/src/ops/function.rs:250
+#11 0x0000621cd0e1cfbb in core::ops::function::FnOnce::call_once<fn() -> core::result::Result<(), alloc::string::String>, ()> () at library/core/src/ops/function.rs:250
+#12 test::__rust_begin_short_backtrace<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> () at library/test/src/lib.rs:663
+#13 0x0000621cd0e3094a in test::run_test_in_process::{closure#0} () at library/test/src/lib.rs:686
+
+Thread 48 (Thread 0x755f6f5fa640 (LWP 2495418) "backends::gpu::"):
+#0  syscall () at ../sysdeps/unix/sysv/linux/x86_64/syscall.S:38
+#1  0x0000621cd1984c14 in std::sys::pal::unix::futex::futex_wait () at library/std/src/sys/pal/unix/futex.rs:73
+#2  std::sys::sync::once::futex::Once::call () at library/std/src/sys/sync/once/futex.rs:200
+#3  0x0000621cd0c85c7e in call_once_force<std::sync::once_lock::{impl#0}::initialize::{closure_env#0}<core::option::Option<trueno::backends::gpu::GpuBackend>, std::sync::once_lock::{impl#0}::get_or_init::{closure_env#0}<core::option::Option<trueno::backends::gpu::GpuBackend>, trueno::backends::gpu::tests_gpu::get_shared_gpu::{closure_env#0}>, !>> () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once.rs:219
+#4  0x0000621ccfef8c90 in std::sync::once_lock::OnceLock<T>::initialize () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:533
+#5  0x0000621ccfef9655 in get_or_try_init<core::option::Option<trueno::backends::gpu::GpuBackend>, std::sync::once_lock::{impl#0}::get_or_init::{closure_env#0}<core::option::Option<trueno::backends::gpu::GpuBackend>, trueno::backends::gpu::tests_gpu::get_shared_gpu::{closure_env#0}>, !> () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:409
+#6  0x0000621ccfef91a6 in std::sync::once_lock::OnceLock<T>::get_or_init () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:320
+#7  0x0000621cd02f312a in trueno::backends::gpu::tests_gpu::get_shared_gpu () at crates/aprender-compute/src/backends/gpu/tests_gpu/mod.rs:16
+#8  0x0000621cd015c691 in trueno::backends::gpu::tests_gpu::tiled_ops::test_gpu_tiled_min_matches_cpu () at crates/aprender-compute/src/backends/gpu/tests_gpu/tiled_ops.rs:69
+#9  0x0000621cd0d62a43 in trueno::backends::gpu::tests_gpu::tiled_ops::test_gpu_tiled_min_matches_cpu::{{closure}} () at crates/aprender-compute/src/backends/gpu/tests_gpu/tiled_ops.rs:68
+#10 0x0000621cd00c41c6 in core::ops::function::FnOnce::call_once () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/core/src/ops/function.rs:250
+#11 0x0000621cd0e1cfbb in core::ops::function::FnOnce::call_once<fn() -> core::result::Result<(), alloc::string::String>, ()> () at library/core/src/ops/function.rs:250
+#12 test::__rust_begin_short_backtrace<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> () at library/test/src/lib.rs:663
+#13 0x0000621cd0e3094a in test::run_test_in_process::{closure#0} () at library/test/src/lib.rs:686
+
+Thread 47 (Thread 0x755f76552640 (LWP 2495414) "backends::gpu::"):
+#0  syscall () at ../sysdeps/unix/sysv/linux/x86_64/syscall.S:38
+#1  0x0000621cd1984c14 in std::sys::pal::unix::futex::futex_wait () at library/std/src/sys/pal/unix/futex.rs:73
+#2  std::sys::sync::once::futex::Once::call () at library/std/src/sys/sync/once/futex.rs:200
+#3  0x0000621cd0c85c7e in call_once_force<std::sync::once_lock::{impl#0}::initialize::{closure_env#0}<core::option::Option<trueno::backends::gpu::GpuBackend>, std::sync::once_lock::{impl#0}::get_or_init::{closure_env#0}<core::option::Option<trueno::backends::gpu::GpuBackend>, trueno::backends::gpu::tests_gpu::get_shared_gpu::{closure_env#0}>, !>> () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once.rs:219
+#4  0x0000621ccfef8c90 in std::sync::once_lock::OnceLock<T>::initialize () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:533
+#5  0x0000621ccfef9655 in get_or_try_init<core::option::Option<trueno::backends::gpu::GpuBackend>, std::sync::once_lock::{impl#0}::get_or_init::{closure_env#0}<core::option::Option<trueno::backends::gpu::GpuBackend>, trueno::backends::gpu::tests_gpu::get_shared_gpu::{closure_env#0}>, !> () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:409
+#6  0x0000621ccfef91a6 in std::sync::once_lock::OnceLock<T>::get_or_init () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:320
+#7  0x0000621cd02f312a in trueno::backends::gpu::tests_gpu::get_shared_gpu () at crates/aprender-compute/src/backends/gpu/tests_gpu/mod.rs:16
+#8  0x0000621cd015d571 in trueno::backends::gpu::tests_gpu::tiled_ops::test_gpu_tiled_max_with_negatives () at crates/aprender-compute/src/backends/gpu/tests_gpu/tiled_ops.rs:127
+#9  0x0000621cd0d62ae3 in trueno::backends::gpu::tests_gpu::tiled_ops::test_gpu_tiled_max_with_negatives::{{closure}} () at crates/aprender-compute/src/backends/gpu/tests_gpu/tiled_ops.rs:126
+#10 0x0000621cd00eb326 in core::ops::function::FnOnce::call_once () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/core/src/ops/function.rs:250
+#11 0x0000621cd0e1cfbb in core::ops::function::FnOnce::call_once<fn() -> core::result::Result<(), alloc::string::String>, ()> () at library/core/src/ops/function.rs:250
+#12 test::__rust_begin_short_backtrace<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> () at library/test/src/lib.rs:663
+#13 0x0000621cd0e3094a in test::run_test_in_process::{closure#0} () at library/test/src/lib.rs:686
+
+Thread 46 (Thread 0x755f7755a640 (LWP 2495413) "backends::gpu::"):
+#0  syscall () at ../sysdeps/unix/sysv/linux/x86_64/syscall.S:38
+#1  0x0000621cd1984c14 in std::sys::pal::unix::futex::futex_wait () at library/std/src/sys/pal/unix/futex.rs:73
+#2  std::sys::sync::once::futex::Once::call () at library/std/src/sys/sync/once/futex.rs:200
+#3  0x0000621cd0c85c7e in call_once_force<std::sync::once_lock::{impl#0}::initialize::{closure_env#0}<core::option::Option<trueno::backends::gpu::GpuBackend>, std::sync::once_lock::{impl#0}::get_or_init::{closure_env#0}<core::option::Option<trueno::backends::gpu::GpuBackend>, trueno::backends::gpu::tests_gpu::get_shared_gpu::{closure_env#0}>, !>> () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once.rs:219
+#4  0x0000621ccfef8c90 in std::sync::once_lock::OnceLock<T>::initialize () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:533
+#5  0x0000621ccfef9655 in get_or_try_init<core::option::Option<trueno::backends::gpu::GpuBackend>, std::sync::once_lock::{impl#0}::get_or_init::{closure_env#0}<core::option::Option<trueno::backends::gpu::GpuBackend>, trueno::backends::gpu::tests_gpu::get_shared_gpu::{closure_env#0}>, !> () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:409
+#6  0x0000621ccfef91a6 in std::sync::once_lock::OnceLock<T>::get_or_init () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:320
+#7  0x0000621cd02f312a in trueno::backends::gpu::tests_gpu::get_shared_gpu () at crates/aprender-compute/src/backends/gpu/tests_gpu/mod.rs:16
+#8  0x0000621cd015c321 in trueno::backends::gpu::tests_gpu::tiled_ops::test_gpu_tiled_max_matches_cpu () at crates/aprender-compute/src/backends/gpu/tests_gpu/tiled_ops.rs:43
+#9  0x0000621cd0d62a03 in trueno::backends::gpu::tests_gpu::tiled_ops::test_gpu_tiled_max_matches_cpu::{{closure}} () at crates/aprender-compute/src/backends/gpu/tests_gpu/tiled_ops.rs:42
+#10 0x0000621cd00c8196 in core::ops::function::FnOnce::call_once () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/core/src/ops/function.rs:250
+#11 0x0000621cd0e1cfbb in core::ops::function::FnOnce::call_once<fn() -> core::result::Result<(), alloc::string::String>, ()> () at library/core/src/ops/function.rs:250
+#12 test::__rust_begin_short_backtrace<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> () at library/test/src/lib.rs:663
+#13 0x0000621cd0e3094a in test::run_test_in_process::{closure#0} () at library/test/src/lib.rs:686
+
+Thread 45 (Thread 0x755f76351640 (LWP 2495411) "backends::gpu::"):
+#0  syscall () at ../sysdeps/unix/sysv/linux/x86_64/syscall.S:38
+#1  0x0000621cd1984c14 in std::sys::pal::unix::futex::futex_wait () at library/std/src/sys/pal/unix/futex.rs:73
+#2  std::sys::sync::once::futex::Once::call () at library/std/src/sys/sync/once/futex.rs:200
+#3  0x0000621cd0c85ade in call_once_force<std::sync::once_lock::{impl#0}::initialize::{closure_env#0}<bool, std::sync::once_lock::{impl#0}::get_or_init::{closure_env#0}<bool, trueno::backends::gpu::device::{impl#0}::is_available::{closure_env#0}>, !>> () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once.rs:219
+#4  0x0000621ccfef8d71 in std::sync::once_lock::OnceLock<T>::initialize () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:533
+#5  0x0000621ccfef93f1 in get_or_try_init<bool, std::sync::once_lock::{impl#0}::get_or_init::{closure_env#0}<bool, trueno::backends::gpu::device::{impl#0}::is_available::{closure_env#0}>, !> () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:409
+#6  0x0000621ccfef91e6 in std::sync::once_lock::OnceLock<T>::get_or_init () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:320
+#7  0x0000621cd007755d in trueno::backends::gpu::device::GpuDevice::is_available () at crates/aprender-compute/src/backends/gpu/device/mod.rs:243
+#8  0x0000621ccfe6c586 in trueno::backends::gpu::GpuBackend::is_available () at crates/aprender-compute/src/backends/gpu/mod.rs:118
+#9  0x0000621cd01fbe14 in trueno::backends::gpu::tests_gpu::scalar_matching::test_gpu_vec_add_matches_scalar () at crates/aprender-compute/src/backends/gpu/tests_gpu/scalar_matching.rs:7
+#10 0x0000621cd03c5693 in trueno::backends::gpu::tests_gpu::scalar_matching::test_gpu_vec_add_matches_scalar::{{closure}} () at crates/aprender-compute/src/backends/gpu/tests_gpu/scalar_matching.rs:6
+#11 0x0000621cd00e6456 in core::ops::function::FnOnce::call_once () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/core/src/ops/function.rs:250
+#12 0x0000621cd0e1cfbb in core::ops::function::FnOnce::call_once<fn() -> core::result::Result<(), alloc::string::String>, ()> () at library/core/src/ops/function.rs:250
+#13 test::__rust_begin_short_backtrace<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> () at library/test/src/lib.rs:663
+
+Thread 44 (Thread 0x755f77359640 (LWP 2495410) "backends::gpu::"):
+#0  syscall () at ../sysdeps/unix/sysv/linux/x86_64/syscall.S:38
+#1  0x0000621cd1984c14 in std::sys::pal::unix::futex::futex_wait () at library/std/src/sys/pal/unix/futex.rs:73
+#2  std::sys::sync::once::futex::Once::call () at library/std/src/sys/sync/once/futex.rs:200
+#3  0x0000621cd0c85ade in call_once_force<std::sync::once_lock::{impl#0}::initialize::{closure_env#0}<bool, std::sync::once_lock::{impl#0}::get_or_init::{closure_env#0}<bool, trueno::backends::gpu::device::{impl#0}::is_available::{closure_env#0}>, !>> () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once.rs:219
+#4  0x0000621ccfef8d71 in std::sync::once_lock::OnceLock<T>::initialize () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:533
+#5  0x0000621ccfef93f1 in get_or_try_init<bool, std::sync::once_lock::{impl#0}::get_or_init::{closure_env#0}<bool, trueno::backends::gpu::device::{impl#0}::is_available::{closure_env#0}>, !> () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:409
+#6  0x0000621ccfef91e6 in std::sync::once_lock::OnceLock<T>::get_or_init () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:320
+#7  0x0000621cd007755d in trueno::backends::gpu::device::GpuDevice::is_available () at crates/aprender-compute/src/backends/gpu/device/mod.rs:243
+#8  0x0000621ccfe6c586 in trueno::backends::gpu::GpuBackend::is_available () at crates/aprender-compute/src/backends/gpu/mod.rs:118
+#9  0x0000621cd01fb0d4 in trueno::backends::gpu::tests_gpu::scalar_matching::test_gpu_swish_matches_scalar () at crates/aprender-compute/src/backends/gpu/tests_gpu/scalar_matching.rs:145
+#10 0x0000621cd03c5633 in trueno::backends::gpu::tests_gpu::scalar_matching::test_gpu_swish_matches_scalar::{{closure}} () at crates/aprender-compute/src/backends/gpu/tests_gpu/scalar_matching.rs:144
+#11 0x0000621cd00dd466 in core::ops::function::FnOnce::call_once () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/core/src/ops/function.rs:250
+#12 0x0000621cd0e1cfbb in core::ops::function::FnOnce::call_once<fn() -> core::result::Result<(), alloc::string::String>, ()> () at library/core/src/ops/function.rs:250
+#13 test::__rust_begin_short_backtrace<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> () at library/test/src/lib.rs:663
+
+Thread 43 (Thread 0x755f6e3f1640 (LWP 2495409) "backends::gpu::"):
+#0  syscall () at ../sysdeps/unix/sysv/linux/x86_64/syscall.S:38
+#1  0x0000621cd1984c14 in std::sys::pal::unix::futex::futex_wait () at library/std/src/sys/pal/unix/futex.rs:73
+#2  std::sys::sync::once::futex::Once::call () at library/std/src/sys/sync/once/futex.rs:200
+#3  0x0000621cd0c85ade in call_once_force<std::sync::once_lock::{impl#0}::initialize::{closure_env#0}<bool, std::sync::once_lock::{impl#0}::get_or_init::{closure_env#0}<bool, trueno::backends::gpu::device::{impl#0}::is_available::{closure_env#0}>, !>> () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once.rs:219
+#4  0x0000621ccfef8d71 in std::sync::once_lock::OnceLock<T>::initialize () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:533
+#5  0x0000621ccfef93f1 in get_or_try_init<bool, std::sync::once_lock::{impl#0}::get_or_init::{closure_env#0}<bool, trueno::backends::gpu::device::{impl#0}::is_available::{closure_env#0}>, !> () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:409
+#6  0x0000621ccfef91e6 in std::sync::once_lock::OnceLock<T>::get_or_init () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:320
+#7  0x0000621cd007755d in trueno::backends::gpu::device::GpuDevice::is_available () at crates/aprender-compute/src/backends/gpu/device/mod.rs:243
+#8  0x0000621ccfe6c586 in trueno::backends::gpu::GpuBackend::is_available () at crates/aprender-compute/src/backends/gpu/mod.rs:118
+#9  0x0000621cd01fb774 in trueno::backends::gpu::tests_gpu::scalar_matching::test_gpu_sigmoid_matches_scalar () at crates/aprender-compute/src/backends/gpu/tests_gpu/scalar_matching.rs:88
+#10 0x0000621cd03c5663 in trueno::backends::gpu::tests_gpu::scalar_matching::test_gpu_sigmoid_matches_scalar::{{closure}} () at crates/aprender-compute/src/backends/gpu/tests_gpu/scalar_matching.rs:87
+#11 0x0000621cd00c2e76 in core::ops::function::FnOnce::call_once () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/core/src/ops/function.rs:250
+#12 0x0000621cd0e1cfbb in core::ops::function::FnOnce::call_once<fn() -> core::result::Result<(), alloc::string::String>, ()> () at library/core/src/ops/function.rs:250
+#13 test::__rust_begin_short_backtrace<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> () at library/test/src/lib.rs:663
+
+Thread 42 (Thread 0x755f6e1f0640 (LWP 2495408) "backends::gpu::"):
+#0  syscall () at ../sysdeps/unix/sysv/linux/x86_64/syscall.S:38
+#1  0x0000621cd1984c14 in std::sys::pal::unix::futex::futex_wait () at library/std/src/sys/pal/unix/futex.rs:73
+#2  std::sys::sync::once::futex::Once::call () at library/std/src/sys/sync/once/futex.rs:200
+#3  0x0000621cd0c85ade in call_once_force<std::sync::once_lock::{impl#0}::initialize::{closure_env#0}<bool, std::sync::once_lock::{impl#0}::get_or_init::{closure_env#0}<bool, trueno::backends::gpu::device::{impl#0}::is_available::{closure_env#0}>, !>> () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once.rs:219
+#4  0x0000621ccfef8d71 in std::sync::once_lock::OnceLock<T>::initialize () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:533
+#5  0x0000621ccfef93f1 in get_or_try_init<bool, std::sync::once_lock::{impl#0}::get_or_init::{closure_env#0}<bool, trueno::backends::gpu::device::{impl#0}::is_available::{closure_env#0}>, !> () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:409
+#6  0x0000621ccfef91e6 in std::sync::once_lock::OnceLock<T>::get_or_init () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:320
+#7  0x0000621cd007755d in trueno::backends::gpu::device::GpuDevice::is_available () at crates/aprender-compute/src/backends/gpu/device/mod.rs:243
+#8  0x0000621ccfe6c586 in trueno::backends::gpu::GpuBackend::is_available () at crates/aprender-compute/src/backends/gpu/mod.rs:118
+#9  0x0000621cd01faa34 in trueno::backends::gpu::tests_gpu::scalar_matching::test_gpu_relu_matches_scalar () at crates/aprender-compute/src/backends/gpu/tests_gpu/scalar_matching.rs:62
+#10 0x0000621cd03c5603 in trueno::backends::gpu::tests_gpu::scalar_matching::test_gpu_relu_matches_scalar::{{closure}} () at crates/aprender-compute/src/backends/gpu/tests_gpu/scalar_matching.rs:61
+#11 0x0000621cd00d43a6 in core::ops::function::FnOnce::call_once () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/core/src/ops/function.rs:250
+#12 0x0000621cd0e1cfbb in core::ops::function::FnOnce::call_once<fn() -> core::result::Result<(), alloc::string::String>, ()> () at library/core/src/ops/function.rs:250
+#13 test::__rust_begin_short_backtrace<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> () at library/test/src/lib.rs:663
+
+Thread 41 (Thread 0x755f76150640 (LWP 2495407) "backends::gpu::"):
+#0  syscall () at ../sysdeps/unix/sysv/linux/x86_64/syscall.S:38
+#1  0x0000621cd1984c14 in std::sys::pal::unix::futex::futex_wait () at library/std/src/sys/pal/unix/futex.rs:73
+#2  std::sys::sync::once::futex::Once::call () at library/std/src/sys/sync/once/futex.rs:200
+#3  0x0000621cd0c85ade in call_once_force<std::sync::once_lock::{impl#0}::initialize::{closure_env#0}<bool, std::sync::once_lock::{impl#0}::get_or_init::{closure_env#0}<bool, trueno::backends::gpu::device::{impl#0}::is_available::{closure_env#0}>, !>> () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once.rs:219
+#4  0x0000621ccfef8d71 in std::sync::once_lock::OnceLock<T>::initialize () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:533
+#5  0x0000621ccfef93f1 in get_or_try_init<bool, std::sync::once_lock::{impl#0}::get_or_init::{closure_env#0}<bool, trueno::backends::gpu::device::{impl#0}::is_available::{closure_env#0}>, !> () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:409
+#6  0x0000621ccfef91e6 in std::sync::once_lock::OnceLock<T>::get_or_init () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:320
+#7  0x0000621cd007755d in trueno::backends::gpu::device::GpuDevice::is_available () at crates/aprender-compute/src/backends/gpu/device/mod.rs:243
+#8  0x0000621ccfe6c586 in trueno::backends::gpu::GpuBackend::is_available () at crates/aprender-compute/src/backends/gpu/mod.rs:118
+#9  0x0000621cd01fa394 in trueno::backends::gpu::tests_gpu::scalar_matching::test_gpu_gelu_matches_scalar () at crates/aprender-compute/src/backends/gpu/tests_gpu/scalar_matching.rs:119
+#10 0x0000621cd03c55d3 in trueno::backends::gpu::tests_gpu::scalar_matching::test_gpu_gelu_matches_scalar::{{closure}} () at crates/aprender-compute/src/backends/gpu/tests_gpu/scalar_matching.rs:118
+#11 0x0000621cd00de1d6 in core::ops::function::FnOnce::call_once () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/core/src/ops/function.rs:250
+#12 0x0000621cd0e1cfbb in core::ops::function::FnOnce::call_once<fn() -> core::result::Result<(), alloc::string::String>, ()> () at library/core/src/ops/function.rs:250
+#13 test::__rust_begin_short_backtrace<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> () at library/test/src/lib.rs:663
+
+Thread 40 (Thread 0x755f77158640 (LWP 2495406) "backends::gpu::"):
+#0  syscall () at ../sysdeps/unix/sysv/linux/x86_64/syscall.S:38
+#1  0x0000621cd1984c14 in std::sys::pal::unix::futex::futex_wait () at library/std/src/sys/pal/unix/futex.rs:73
+#2  std::sys::sync::once::futex::Once::call () at library/std/src/sys/sync/once/futex.rs:200
+#3  0x0000621cd0c85ade in call_once_force<std::sync::once_lock::{impl#0}::initialize::{closure_env#0}<bool, std::sync::once_lock::{impl#0}::get_or_init::{closure_env#0}<bool, trueno::backends::gpu::device::{impl#0}::is_available::{closure_env#0}>, !>> () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once.rs:219
+#4  0x0000621ccfef8d71 in std::sync::once_lock::OnceLock<T>::initialize () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:533
+#5  0x0000621ccfef93f1 in get_or_try_init<bool, std::sync::once_lock::{impl#0}::get_or_init::{closure_env#0}<bool, trueno::backends::gpu::device::{impl#0}::is_available::{closure_env#0}>, !> () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:409
+#6  0x0000621ccfef91e6 in std::sync::once_lock::OnceLock<T>::get_or_init () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:320
+#7  0x0000621cd007755d in trueno::backends::gpu::device::GpuDevice::is_available () at crates/aprender-compute/src/backends/gpu/device/mod.rs:243
+#8  0x0000621ccfe6c586 in trueno::backends::gpu::GpuBackend::is_available () at crates/aprender-compute/src/backends/gpu/mod.rs:118
+#9  0x0000621cd01f904c in test_gpu_dot_matches_scalar () at crates/aprender-compute/src/backends/gpu/tests_gpu/scalar_matching.rs:35
+#10 0x0000621cd03c5573 in trueno::backends::gpu::tests_gpu::scalar_matching::test_gpu_dot_matches_scalar::{{closure}} () at crates/aprender-compute/src/backends/gpu/tests_gpu/scalar_matching.rs:34
+#11 0x0000621cd00db7c6 in core::ops::function::FnOnce::call_once () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/core/src/ops/function.rs:250
+#12 0x0000621cd0e1cfbb in core::ops::function::FnOnce::call_once<fn() -> core::result::Result<(), alloc::string::String>, ()> () at library/core/src/ops/function.rs:250
+#13 test::__rust_begin_short_backtrace<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> () at library/test/src/lib.rs:663
+
+Thread 39 (Thread 0x755f75b4d640 (LWP 2495405) "backends::gpu::"):
+#0  syscall () at ../sysdeps/unix/sysv/linux/x86_64/syscall.S:38
+#1  0x0000621cd1984c14 in std::sys::pal::unix::futex::futex_wait () at library/std/src/sys/pal/unix/futex.rs:73
+#2  std::sys::sync::once::futex::Once::call () at library/std/src/sys/sync/once/futex.rs:200
+#3  0x0000621cd0c85ade in call_once_force<std::sync::once_lock::{impl#0}::initialize::{closure_env#0}<bool, std::sync::once_lock::{impl#0}::get_or_init::{closure_env#0}<bool, trueno::backends::gpu::device::{impl#0}::is_available::{closure_env#0}>, !>> () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once.rs:219
+#4  0x0000621ccfef8d71 in std::sync::once_lock::OnceLock<T>::initialize () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:533
+#5  0x0000621ccfef93f1 in get_or_try_init<bool, std::sync::once_lock::{impl#0}::get_or_init::{closure_env#0}<bool, trueno::backends::gpu::device::{impl#0}::is_available::{closure_env#0}>, !> () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:409
+#6  0x0000621ccfef91e6 in std::sync::once_lock::OnceLock<T>::get_or_init () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:320
+#7  0x0000621cd007755d in trueno::backends::gpu::device::GpuDevice::is_available () at crates/aprender-compute/src/backends/gpu/device/mod.rs:243
+#8  0x0000621ccfe6c586 in trueno::backends::gpu::GpuBackend::is_available () at crates/aprender-compute/src/backends/gpu/mod.rs:118
+#9  0x0000621cd01f9cd4 in trueno::backends::gpu::tests_gpu::scalar_matching::test_gpu_clip_matches_scalar () at crates/aprender-compute/src/backends/gpu/tests_gpu/scalar_matching.rs:171
+#10 0x0000621cd03c55a3 in trueno::backends::gpu::tests_gpu::scalar_matching::test_gpu_clip_matches_scalar::{{closure}} () at crates/aprender-compute/src/backends/gpu/tests_gpu/scalar_matching.rs:170
+#11 0x0000621cd00daf06 in core::ops::function::FnOnce::call_once () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/core/src/ops/function.rs:250
+#12 0x0000621cd0e1cfbb in core::ops::function::FnOnce::call_once<fn() -> core::result::Result<(), alloc::string::String>, ()> () at library/core/src/ops/function.rs:250
+#13 test::__rust_begin_short_backtrace<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> () at library/test/src/lib.rs:663
+
+Thread 38 (Thread 0x755f76d56640 (LWP 2495404) "backends::gpu::"):
+#0  syscall () at ../sysdeps/unix/sysv/linux/x86_64/syscall.S:38
+#1  0x0000621cd1984c14 in std::sys::pal::unix::futex::futex_wait () at library/std/src/sys/pal/unix/futex.rs:73
+#2  std::sys::sync::once::futex::Once::call () at library/std/src/sys/sync/once/futex.rs:200
+#3  0x0000621cd0c85c7e in call_once_force<std::sync::once_lock::{impl#0}::initialize::{closure_env#0}<core::option::Option<trueno::backends::gpu::GpuBackend>, std::sync::once_lock::{impl#0}::get_or_init::{closure_env#0}<core::option::Option<trueno::backends::gpu::GpuBackend>, trueno::backends::gpu::tests_gpu::get_shared_gpu::{closure_env#0}>, !>> () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once.rs:219
+#4  0x0000621ccfef8c90 in std::sync::once_lock::OnceLock<T>::initialize () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:533
+#5  0x0000621ccfef9655 in get_or_try_init<core::option::Option<trueno::backends::gpu::GpuBackend>, std::sync::once_lock::{impl#0}::get_or_init::{closure_env#0}<core::option::Option<trueno::backends::gpu::GpuBackend>, trueno::backends::gpu::tests_gpu::get_shared_gpu::{closure_env#0}>, !> () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:409
+#6  0x0000621ccfef91a6 in std::sync::once_lock::OnceLock<T>::get_or_init () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:320
+#7  0x0000621cd02f312a in trueno::backends::gpu::tests_gpu::get_shared_gpu () at crates/aprender-compute/src/backends/gpu/tests_gpu/mod.rs:16
+#8  0x0000621cd0375b14 in trueno::backends::gpu::tests_gpu::matmul_and_convolve::test_gpu_matmul_non_square () at crates/aprender-compute/src/backends/gpu/tests_gpu/matmul_and_convolve.rs:56
+#9  0x0000621cd0c5e023 in trueno::backends::gpu::tests_gpu::matmul_and_convolve::test_gpu_matmul_non_square::{{closure}} () at crates/aprender-compute/src/backends/gpu/tests_gpu/matmul_and_convolve.rs:55
+#10 0x0000621cd00a9586 in core::ops::function::FnOnce::call_once () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/core/src/ops/function.rs:250
+#11 0x0000621cd0e1cfbb in core::ops::function::FnOnce::call_once<fn() -> core::result::Result<(), alloc::string::String>, ()> () at library/core/src/ops/function.rs:250
+#12 test::__rust_begin_short_backtrace<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> () at library/test/src/lib.rs:663
+#13 0x0000621cd0e3094a in test::run_test_in_process::{closure#0} () at library/test/src/lib.rs:686
+
+Thread 37 (Thread 0x755f6fdfe640 (LWP 2495403) "backends::gpu::"):
+#0  syscall () at ../sysdeps/unix/sysv/linux/x86_64/syscall.S:38
+#1  0x0000621cd1984c14 in std::sys::pal::unix::futex::futex_wait () at library/std/src/sys/pal/unix/futex.rs:73
+#2  std::sys::sync::once::futex::Once::call () at library/std/src/sys/sync/once/futex.rs:200
+#3  0x0000621cd0c85c7e in call_once_force<std::sync::once_lock::{impl#0}::initialize::{closure_env#0}<core::option::Option<trueno::backends::gpu::GpuBackend>, std::sync::once_lock::{impl#0}::get_or_init::{closure_env#0}<core::option::Option<trueno::backends::gpu::GpuBackend>, trueno::backends::gpu::tests_gpu::get_shared_gpu::{closure_env#0}>, !>> () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once.rs:219
+#4  0x0000621ccfef8c90 in std::sync::once_lock::OnceLock<T>::initialize () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:533
+#5  0x0000621ccfef9655 in get_or_try_init<core::option::Option<trueno::backends::gpu::GpuBackend>, std::sync::once_lock::{impl#0}::get_or_init::{closure_env#0}<core::option::Option<trueno::backends::gpu::GpuBackend>, trueno::backends::gpu::tests_gpu::get_shared_gpu::{closure_env#0}>, !> () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:409
+#6  0x0000621ccfef91a6 in std::sync::once_lock::OnceLock<T>::get_or_init () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:320
+#7  0x0000621cd02f312a in trueno::backends::gpu::tests_gpu::get_shared_gpu () at crates/aprender-compute/src/backends/gpu/tests_gpu/mod.rs:16
+#8  0x0000621cd0374f64 in trueno::backends::gpu::tests_gpu::matmul_and_convolve::test_gpu_matmul_identity () at crates/aprender-compute/src/backends/gpu/tests_gpu/matmul_and_convolve.rs:31
+#9  0x0000621cd0c5dfc3 in trueno::backends::gpu::tests_gpu::matmul_and_convolve::test_gpu_matmul_identity::{{closure}} () at crates/aprender-compute/src/backends/gpu/tests_gpu/matmul_and_convolve.rs:30
+#10 0x0000621cd00c63c6 in core::ops::function::FnOnce::call_once () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/core/src/ops/function.rs:250
+#11 0x0000621cd0e1cfbb in core::ops::function::FnOnce::call_once<fn() -> core::result::Result<(), alloc::string::String>, ()> () at library/core/src/ops/function.rs:250
+#12 test::__rust_begin_short_backtrace<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> () at library/test/src/lib.rs:663
+#13 0x0000621cd0e3094a in test::run_test_in_process::{closure#0} () at library/test/src/lib.rs:686
+
+Thread 36 (Thread 0x755f75d4e640 (LWP 2495402) "backends::gpu::"):
+#0  syscall () at ../sysdeps/unix/sysv/linux/x86_64/syscall.S:38
+#1  0x0000621cd1984c14 in std::sys::pal::unix::futex::futex_wait () at library/std/src/sys/pal/unix/futex.rs:73
+#2  std::sys::sync::once::futex::Once::call () at library/std/src/sys/sync/once/futex.rs:200
+#3  0x0000621cd0c85c7e in call_once_force<std::sync::once_lock::{impl#0}::initialize::{closure_env#0}<core::option::Option<trueno::backends::gpu::GpuBackend>, std::sync::once_lock::{impl#0}::get_or_init::{closure_env#0}<core::option::Option<trueno::backends::gpu::GpuBackend>, trueno::backends::gpu::tests_gpu::get_shared_gpu::{closure_env#0}>, !>> () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once.rs:219
+#4  0x0000621ccfef8c90 in std::sync::once_lock::OnceLock<T>::initialize () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:533
+#5  0x0000621ccfef9655 in get_or_try_init<core::option::Option<trueno::backends::gpu::GpuBackend>, std::sync::once_lock::{impl#0}::get_or_init::{closure_env#0}<core::option::Option<trueno::backends::gpu::GpuBackend>, trueno::backends::gpu::tests_gpu::get_shared_gpu::{closure_env#0}>, !> () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:409
+#6  0x0000621ccfef91a6 in std::sync::once_lock::OnceLock<T>::get_or_init () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:320
+#7  0x0000621cd02f312a in trueno::backends::gpu::tests_gpu::get_shared_gpu () at crates/aprender-compute/src/backends/gpu/tests_gpu/mod.rs:16
+#8  0x0000621cd0374734 in trueno::backends::gpu::tests_gpu::matmul_and_convolve::test_gpu_matmul_basic () at crates/aprender-compute/src/backends/gpu/tests_gpu/matmul_and_convolve.rs:5
+#9  0x0000621cd0c5df93 in trueno::backends::gpu::tests_gpu::matmul_and_convolve::test_gpu_matmul_basic::{{closure}} () at crates/aprender-compute/src/backends/gpu/tests_gpu/matmul_and_convolve.rs:4
+#10 0x0000621cd00ce3e6 in core::ops::function::FnOnce::call_once () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/core/src/ops/function.rs:250
+#11 0x0000621cd0e1cfbb in core::ops::function::FnOnce::call_once<fn() -> core::result::Result<(), alloc::string::String>, ()> () at library/core/src/ops/function.rs:250
+#12 test::__rust_begin_short_backtrace<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> () at library/test/src/lib.rs:663
+#13 0x0000621cd0e3094a in test::run_test_in_process::{closure#0} () at library/test/src/lib.rs:686
+
+Thread 35 (Thread 0x755f76753640 (LWP 2495401) "backends::gpu::"):
+#0  syscall () at ../sysdeps/unix/sysv/linux/x86_64/syscall.S:38
+#1  0x0000621cd1984c14 in std::sys::pal::unix::futex::futex_wait () at library/std/src/sys/pal/unix/futex.rs:73
+#2  std::sys::sync::once::futex::Once::call () at library/std/src/sys/sync/once/futex.rs:200
+#3  0x0000621cd0c85c7e in call_once_force<std::sync::once_lock::{impl#0}::initialize::{closure_env#0}<core::option::Option<trueno::backends::gpu::GpuBackend>, std::sync::once_lock::{impl#0}::get_or_init::{closure_env#0}<core::option::Option<trueno::backends::gpu::GpuBackend>, trueno::backends::gpu::tests_gpu::get_shared_gpu::{closure_env#0}>, !>> () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once.rs:219
+#4  0x0000621ccfef8c90 in std::sync::once_lock::OnceLock<T>::initialize () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:533
+#5  0x0000621ccfef9655 in get_or_try_init<core::option::Option<trueno::backends::gpu::GpuBackend>, std::sync::once_lock::{impl#0}::get_or_init::{closure_env#0}<core::option::Option<trueno::backends::gpu::GpuBackend>, trueno::backends::gpu::tests_gpu::get_shared_gpu::{closure_env#0}>, !> () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:409
+#6  0x0000621ccfef91a6 in std::sync::once_lock::OnceLock<T>::get_or_init () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:320
+#7  0x0000621cd02f312a in trueno::backends::gpu::tests_gpu::get_shared_gpu () at crates/aprender-compute/src/backends/gpu/tests_gpu/mod.rs:16
+#8  0x0000621cd0376364 in trueno::backends::gpu::tests_gpu::matmul_and_convolve::test_gpu_convolve2d_identity () at crates/aprender-compute/src/backends/gpu/tests_gpu/matmul_and_convolve.rs:104
+#9  0x0000621cd0c5e053 in trueno::backends::gpu::tests_gpu::matmul_and_convolve::test_gpu_convolve2d_identity::{{closure}} () at crates/aprender-compute/src/backends/gpu/tests_gpu/matmul_and_convolve.rs:103
+#10 0x0000621cd00d96a6 in core::ops::function::FnOnce::call_once () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/core/src/ops/function.rs:250
+#11 0x0000621cd0e1cfbb in core::ops::function::FnOnce::call_once<fn() -> core::result::Result<(), alloc::string::String>, ()> () at library/core/src/ops/function.rs:250
+#12 test::__rust_begin_short_backtrace<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> () at library/test/src/lib.rs:663
+#13 0x0000621cd0e3094a in test::run_test_in_process::{closure#0} () at library/test/src/lib.rs:686
+
+Thread 34 (Thread 0x755f76f57640 (LWP 2495400) "backends::gpu::"):
+#0  syscall () at ../sysdeps/unix/sysv/linux/x86_64/syscall.S:38
+#1  0x0000621cd1984c14 in std::sys::pal::unix::futex::futex_wait () at library/std/src/sys/pal/unix/futex.rs:73
+#2  std::sys::sync::once::futex::Once::call () at library/std/src/sys/sync/once/futex.rs:200
+#3  0x0000621cd0c85c7e in call_once_force<std::sync::once_lock::{impl#0}::initialize::{closure_env#0}<core::option::Option<trueno::backends::gpu::GpuBackend>, std::sync::once_lock::{impl#0}::get_or_init::{closure_env#0}<core::option::Option<trueno::backends::gpu::GpuBackend>, trueno::backends::gpu::tests_gpu::get_shared_gpu::{closure_env#0}>, !>> () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once.rs:219
+#4  0x0000621ccfef8c90 in std::sync::once_lock::OnceLock<T>::initialize () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:533
+#5  0x0000621ccfef9655 in get_or_try_init<core::option::Option<trueno::backends::gpu::GpuBackend>, std::sync::once_lock::{impl#0}::get_or_init::{closure_env#0}<core::option::Option<trueno::backends::gpu::GpuBackend>, trueno::backends::gpu::tests_gpu::get_shared_gpu::{closure_env#0}>, !> () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:409
+#6  0x0000621ccfef91a6 in std::sync::once_lock::OnceLock<T>::get_or_init () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:320
+#7  0x0000621cd02f312a in trueno::backends::gpu::tests_gpu::get_shared_gpu () at crates/aprender-compute/src/backends/gpu/tests_gpu/mod.rs:16
+#8  0x0000621cd03755c4 in trueno::backends::gpu::tests_gpu::matmul_and_convolve::test_gpu_convolve2d_basic () at crates/aprender-compute/src/backends/gpu/tests_gpu/matmul_and_convolve.rs:82
+#9  0x0000621cd0c5dff3 in trueno::backends::gpu::tests_gpu::matmul_and_convolve::test_gpu_convolve2d_basic::{{closure}} () at crates/aprender-compute/src/backends/gpu/tests_gpu/matmul_and_convolve.rs:81
+#10 0x0000621cd00ec7b6 in core::ops::function::FnOnce::call_once () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/core/src/ops/function.rs:250
+#11 0x0000621cd0e1cfbb in core::ops::function::FnOnce::call_once<fn() -> core::result::Result<(), alloc::string::String>, ()> () at library/core/src/ops/function.rs:250
+#12 test::__rust_begin_short_backtrace<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> () at library/test/src/lib.rs:663
+#13 0x0000621cd0e3094a in test::run_test_in_process::{closure#0} () at library/test/src/lib.rs:686
+
+Thread 33 (Thread 0x755f6e5f2640 (LWP 2495399) "backends::gpu::"):
+#0  syscall () at ../sysdeps/unix/sysv/linux/x86_64/syscall.S:38
+#1  0x0000621cd1984c14 in std::sys::pal::unix::futex::futex_wait () at library/std/src/sys/pal/unix/futex.rs:73
+#2  std::sys::sync::once::futex::Once::call () at library/std/src/sys/sync/once/futex.rs:200
+#3  0x0000621cd0c85c7e in call_once_force<std::sync::once_lock::{impl#0}::initialize::{closure_env#0}<core::option::Option<trueno::backends::gpu::GpuBackend>, std::sync::once_lock::{impl#0}::get_or_init::{closure_env#0}<core::option::Option<trueno::backends::gpu::GpuBackend>, trueno::backends::gpu::tests_gpu::get_shared_gpu::{closure_env#0}>, !>> () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once.rs:219
+#4  0x0000621ccfef8c90 in std::sync::once_lock::OnceLock<T>::initialize () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:533
+#5  0x0000621ccfef9655 in get_or_try_init<core::option::Option<trueno::backends::gpu::GpuBackend>, std::sync::once_lock::{impl#0}::get_or_init::{closure_env#0}<core::option::Option<trueno::backends::gpu::GpuBackend>, trueno::backends::gpu::tests_gpu::get_shared_gpu::{closure_env#0}>, !> () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:409
+#6  0x0000621ccfef91a6 in std::sync::once_lock::OnceLock<T>::get_or_init () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:320
+#7  0x0000621cd02f312a in trueno::backends::gpu::tests_gpu::get_shared_gpu () at crates/aprender-compute/src/backends/gpu/tests_gpu/mod.rs:16
+#8  0x0000621cd03768e4 in trueno::backends::gpu::tests_gpu::matmul_and_convolve::test_gpu_convolve2d_averaging () at crates/aprender-compute/src/backends/gpu/tests_gpu/matmul_and_convolve.rs:126
+#9  0x0000621cd0c5e083 in trueno::backends::gpu::tests_gpu::matmul_and_convolve::test_gpu_convolve2d_averaging::{{closure}} () at crates/aprender-compute/src/backends/gpu/tests_gpu/matmul_and_convolve.rs:125
+#10 0x0000621cd00dce96 in core::ops::function::FnOnce::call_once () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/core/src/ops/function.rs:250
+#11 0x0000621cd0e1cfbb in core::ops::function::FnOnce::call_once<fn() -> core::result::Result<(), alloc::string::String>, ()> () at library/core/src/ops/function.rs:250
+#12 test::__rust_begin_short_backtrace<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> () at library/test/src/lib.rs:663
+#13 0x0000621cd0e3094a in test::run_test_in_process::{closure#0} () at library/test/src/lib.rs:686
+
+Thread 32 (Thread 0x755f74542640 (LWP 2495398) "backends::gpu::"):
+#0  syscall () at ../sysdeps/unix/sysv/linux/x86_64/syscall.S:38
+#1  0x0000621cd1984c14 in std::sys::pal::unix::futex::futex_wait () at library/std/src/sys/pal/unix/futex.rs:73
+#2  std::sys::sync::once::futex::Once::call () at library/std/src/sys/sync/once/futex.rs:200
+#3  0x0000621cd0c85c7e in call_once_force<std::sync::once_lock::{impl#0}::initialize::{closure_env#0}<core::option::Option<trueno::backends::gpu::GpuBackend>, std::sync::once_lock::{impl#0}::get_or_init::{closure_env#0}<core::option::Option<trueno::backends::gpu::GpuBackend>, trueno::backends::gpu::tests_gpu::get_shared_gpu::{closure_env#0}>, !>> () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once.rs:219
+#4  0x0000621ccfef8c90 in std::sync::once_lock::OnceLock<T>::initialize () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:533
+#5  0x0000621ccfef9655 in get_or_try_init<core::option::Option<trueno::backends::gpu::GpuBackend>, std::sync::once_lock::{impl#0}::get_or_init::{closure_env#0}<core::option::Option<trueno::backends::gpu::GpuBackend>, trueno::backends::gpu::tests_gpu::get_shared_gpu::{closure_env#0}>, !> () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:409
+#6  0x0000621ccfef91a6 in std::sync::once_lock::OnceLock<T>::get_or_init () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:320
+#7  0x0000621cd02f312a in trueno::backends::gpu::tests_gpu::get_shared_gpu () at crates/aprender-compute/src/backends/gpu/tests_gpu/mod.rs:16
+#8  0x0000621cd0c8cf11 in trueno::backends::gpu::tests_gpu::basic_ops::test_gpu_vec_add_length_mismatch () at crates/aprender-compute/src/backends/gpu/tests_gpu/basic_ops.rs:50
+#9  0x0000621cd03e8a73 in trueno::backends::gpu::tests_gpu::basic_ops::test_gpu_vec_add_length_mismatch::{{closure}} () at crates/aprender-compute/src/backends/gpu/tests_gpu/basic_ops.rs:49
+#10 0x0000621cd00aa456 in core::ops::function::FnOnce::call_once () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/core/src/ops/function.rs:250
+#11 0x0000621cd0e1cfbb in core::ops::function::FnOnce::call_once<fn() -> core::result::Result<(), alloc::string::String>, ()> () at library/core/src/ops/function.rs:250
+#12 test::__rust_begin_short_backtrace<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> () at library/test/src/lib.rs:663
+#13 0x0000621cd0e3094a in test::run_test_in_process::{closure#0} () at library/test/src/lib.rs:686
+
+Thread 31 (Thread 0x755f6dfef640 (LWP 2495397) "backends::gpu::"):
+#0  syscall () at ../sysdeps/unix/sysv/linux/x86_64/syscall.S:38
+#1  0x0000621cd1984c14 in std::sys::pal::unix::futex::futex_wait () at library/std/src/sys/pal/unix/futex.rs:73
+#2  std::sys::sync::once::futex::Once::call () at library/std/src/sys/sync/once/futex.rs:200
+#3  0x0000621cd0c85c7e in call_once_force<std::sync::once_lock::{impl#0}::initialize::{closure_env#0}<core::option::Option<trueno::backends::gpu::GpuBackend>, std::sync::once_lock::{impl#0}::get_or_init::{closure_env#0}<core::option::Option<trueno::backends::gpu::GpuBackend>, trueno::backends::gpu::tests_gpu::get_shared_gpu::{closure_env#0}>, !>> () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once.rs:219
+#4  0x0000621ccfef8c90 in std::sync::once_lock::OnceLock<T>::initialize () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:533
+#5  0x0000621ccfef9655 in get_or_try_init<core::option::Option<trueno::backends::gpu::GpuBackend>, std::sync::once_lock::{impl#0}::get_or_init::{closure_env#0}<core::option::Option<trueno::backends::gpu::GpuBackend>, trueno::backends::gpu::tests_gpu::get_shared_gpu::{closure_env#0}>, !> () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:409
+#6  0x0000621ccfef91a6 in std::sync::once_lock::OnceLock<T>::get_or_init () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:320
+#7  0x0000621cd02f312a in trueno::backends::gpu::tests_gpu::get_shared_gpu () at crates/aprender-compute/src/backends/gpu/tests_gpu/mod.rs:16
+#8  0x0000621cd0c8c6e4 in trueno::backends::gpu::tests_gpu::basic_ops::test_gpu_vec_add_large () at crates/aprender-compute/src/backends/gpu/tests_gpu/basic_ops.rs:27
+#9  0x0000621cd03e8a13 in trueno::backends::gpu::tests_gpu::basic_ops::test_gpu_vec_add_large::{{closure}} () at crates/aprender-compute/src/backends/gpu/tests_gpu/basic_ops.rs:26
+#10 0x0000621cd00a7cc6 in core::ops::function::FnOnce::call_once () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/core/src/ops/function.rs:250
+#11 0x0000621cd0e1cfbb in core::ops::function::FnOnce::call_once<fn() -> core::result::Result<(), alloc::string::String>, ()> () at library/core/src/ops/function.rs:250
+#12 test::__rust_begin_short_backtrace<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> () at library/test/src/lib.rs:663
+#13 0x0000621cd0e3094a in test::run_test_in_process::{closure#0} () at library/test/src/lib.rs:686
+
+Thread 30 (Thread 0x755f74743640 (LWP 2495396) "backends::gpu::"):
+#0  syscall () at ../sysdeps/unix/sysv/linux/x86_64/syscall.S:38
+#1  0x0000621cd1984c14 in std::sys::pal::unix::futex::futex_wait () at library/std/src/sys/pal/unix/futex.rs:73
+#2  std::sys::sync::once::futex::Once::call () at library/std/src/sys/sync/once/futex.rs:200
+#3  0x0000621cd0c85c7e in call_once_force<std::sync::once_lock::{impl#0}::initialize::{closure_env#0}<core::option::Option<trueno::backends::gpu::GpuBackend>, std::sync::once_lock::{impl#0}::get_or_init::{closure_env#0}<core::option::Option<trueno::backends::gpu::GpuBackend>, trueno::backends::gpu::tests_gpu::get_shared_gpu::{closure_env#0}>, !>> () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once.rs:219
+#4  0x0000621ccfef8c90 in std::sync::once_lock::OnceLock<T>::initialize () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:533
+#5  0x0000621ccfef9655 in get_or_try_init<core::option::Option<trueno::backends::gpu::GpuBackend>, std::sync::once_lock::{impl#0}::get_or_init::{closure_env#0}<core::option::Option<trueno::backends::gpu::GpuBackend>, trueno::backends::gpu::tests_gpu::get_shared_gpu::{closure_env#0}>, !> () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:409
+#6  0x0000621ccfef91a6 in std::sync::once_lock::OnceLock<T>::get_or_init () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:320
+#7  0x0000621cd02f312a in trueno::backends::gpu::tests_gpu::get_shared_gpu () at crates/aprender-compute/src/backends/gpu/tests_gpu/mod.rs:16
+#8  0x0000621cd0c8c481 in trueno::backends::gpu::tests_gpu::basic_ops::test_gpu_vec_add_empty () at crates/aprender-compute/src/backends/gpu/tests_gpu/basic_ops.rs:116
+#9  0x0000621cd03e8933 in trueno::backends::gpu::tests_gpu::basic_ops::test_gpu_vec_add_empty::{{closure}} () at crates/aprender-compute/src/backends/gpu/tests_gpu/basic_ops.rs:115
+#10 0x0000621cd00e77c6 in core::ops::function::FnOnce::call_once () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/core/src/ops/function.rs:250
+#11 0x0000621cd0e1cfbb in core::ops::function::FnOnce::call_once<fn() -> core::result::Result<(), alloc::string::String>, ()> () at library/core/src/ops/function.rs:250
+#12 test::__rust_begin_short_backtrace<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> () at library/test/src/lib.rs:663
+#13 0x0000621cd0e3094a in test::run_test_in_process::{closure#0} () at library/test/src/lib.rs:686
+
+Thread 29 (Thread 0x755f74944640 (LWP 2495395) "backends::gpu::"):
+#0  syscall () at ../sysdeps/unix/sysv/linux/x86_64/syscall.S:38
+#1  0x0000621cd1984c14 in std::sys::pal::unix::futex::futex_wait () at library/std/src/sys/pal/unix/futex.rs:73
+#2  std::sys::sync::once::futex::Once::call () at library/std/src/sys/sync/once/futex.rs:200
+#3  0x0000621cd0c85c7e in call_once_force<std::sync::once_lock::{impl#0}::initialize::{closure_env#0}<core::option::Option<trueno::backends::gpu::GpuBackend>, std::sync::once_lock::{impl#0}::get_or_init::{closure_env#0}<core::option::Option<trueno::backends::gpu::GpuBackend>, trueno::backends::gpu::tests_gpu::get_shared_gpu::{closure_env#0}>, !>> () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once.rs:219
+#4  0x0000621ccfef8c90 in std::sync::once_lock::OnceLock<T>::initialize () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:533
+#5  0x0000621ccfef9655 in get_or_try_init<core::option::Option<trueno::backends::gpu::GpuBackend>, std::sync::once_lock::{impl#0}::get_or_init::{closure_env#0}<core::option::Option<trueno::backends::gpu::GpuBackend>, trueno::backends::gpu::tests_gpu::get_shared_gpu::{closure_env#0}>, !> () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:409
+#6  0x0000621ccfef91a6 in std::sync::once_lock::OnceLock<T>::get_or_init () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:320
+#7  0x0000621cd02f312a in trueno::backends::gpu::tests_gpu::get_shared_gpu () at crates/aprender-compute/src/backends/gpu/tests_gpu/mod.rs:16
+#8  0x0000621cd0c8be14 in trueno::backends::gpu::tests_gpu::basic_ops::test_gpu_vec_add_basic () at crates/aprender-compute/src/backends/gpu/tests_gpu/basic_ops.rs:5
+#9  0x0000621cd03e8903 in trueno::backends::gpu::tests_gpu::basic_ops::test_gpu_vec_add_basic::{{closure}} () at crates/aprender-compute/src/backends/gpu/tests_gpu/basic_ops.rs:4
+#10 0x0000621cd00d2e16 in core::ops::function::FnOnce::call_once () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/core/src/ops/function.rs:250
+#11 0x0000621cd0e1cfbb in core::ops::function::FnOnce::call_once<fn() -> core::result::Result<(), alloc::string::String>, ()> () at library/core/src/ops/function.rs:250
+#12 test::__rust_begin_short_backtrace<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> () at library/test/src/lib.rs:663
+#13 0x0000621cd0e3094a in test::run_test_in_process::{closure#0} () at library/test/src/lib.rs:686
+
+Thread 28 (Thread 0x755f74d46640 (LWP 2495394) "backends::gpu::"):
+#0  syscall () at ../sysdeps/unix/sysv/linux/x86_64/syscall.S:38
+#1  0x0000621cd1984c14 in std::sys::pal::unix::futex::futex_wait () at library/std/src/sys/pal/unix/futex.rs:73
+#2  std::sys::sync::once::futex::Once::call () at library/std/src/sys/sync/once/futex.rs:200
+#3  0x0000621cd0c85c7e in call_once_force<std::sync::once_lock::{impl#0}::initialize::{closure_env#0}<core::option::Option<trueno::backends::gpu::GpuBackend>, std::sync::once_lock::{impl#0}::get_or_init::{closure_env#0}<core::option::Option<trueno::backends::gpu::GpuBackend>, trueno::backends::gpu::tests_gpu::get_shared_gpu::{closure_env#0}>, !>> () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once.rs:219
+#4  0x0000621ccfef8c90 in std::sync::once_lock::OnceLock<T>::initialize () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:533
+#5  0x0000621ccfef9655 in get_or_try_init<core::option::Option<trueno::backends::gpu::GpuBackend>, std::sync::once_lock::{impl#0}::get_or_init::{closure_env#0}<core::option::Option<trueno::backends::gpu::GpuBackend>, trueno::backends::gpu::tests_gpu::get_shared_gpu::{closure_env#0}>, !> () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:409
+#6  0x0000621ccfef91a6 in std::sync::once_lock::OnceLock<T>::get_or_init () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:320
+#7  0x0000621cd02f312a in trueno::backends::gpu::tests_gpu::get_shared_gpu () at crates/aprender-compute/src/backends/gpu/tests_gpu/mod.rs:16
+#8  0x0000621cd0c8cc01 in trueno::backends::gpu::tests_gpu::basic_ops::test_gpu_dot_length_mismatch () at crates/aprender-compute/src/backends/gpu/tests_gpu/basic_ops.rs:103
+#9  0x0000621cd03e8a43 in trueno::backends::gpu::tests_gpu::basic_ops::test_gpu_dot_length_mismatch::{{closure}} () at crates/aprender-compute/src/backends/gpu/tests_gpu/basic_ops.rs:102
+#10 0x0000621cd00e9046 in core::ops::function::FnOnce::call_once () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/core/src/ops/function.rs:250
+#11 0x0000621cd0e1cfbb in core::ops::function::FnOnce::call_once<fn() -> core::result::Result<(), alloc::string::String>, ()> () at library/core/src/ops/function.rs:250
+#12 test::__rust_begin_short_backtrace<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> () at library/test/src/lib.rs:663
+#13 0x0000621cd0e3094a in test::run_test_in_process::{closure#0} () at library/test/src/lib.rs:686
+
+Thread 27 (Thread 0x755f74b45640 (LWP 2495393) "backends::gpu::"):
+#0  syscall () at ../sysdeps/unix/sysv/linux/x86_64/syscall.S:38
+#1  0x0000621cd1984c14 in std::sys::pal::unix::futex::futex_wait () at library/std/src/sys/pal/unix/futex.rs:73
+#2  std::sys::sync::once::futex::Once::call () at library/std/src/sys/sync/once/futex.rs:200
+#3  0x0000621cd0c85c7e in call_once_force<std::sync::once_lock::{impl#0}::initialize::{closure_env#0}<core::option::Option<trueno::backends::gpu::GpuBackend>, std::sync::once_lock::{impl#0}::get_or_init::{closure_env#0}<core::option::Option<trueno::backends::gpu::GpuBackend>, trueno::backends::gpu::tests_gpu::get_shared_gpu::{closure_env#0}>, !>> () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once.rs:219
+#4  0x0000621ccfef8c90 in std::sync::once_lock::OnceLock<T>::initialize () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:533
+#5  0x0000621ccfef9655 in get_or_try_init<core::option::Option<trueno::backends::gpu::GpuBackend>, std::sync::once_lock::{impl#0}::get_or_init::{closure_env#0}<core::option::Option<trueno::backends::gpu::GpuBackend>, trueno::backends::gpu::tests_gpu::get_shared_gpu::{closure_env#0}>, !> () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:409
+#6  0x0000621ccfef91a6 in std::sync::once_lock::OnceLock<T>::get_or_init () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:320
+#7  0x0000621cd02f312a in trueno::backends::gpu::tests_gpu::get_shared_gpu () at crates/aprender-compute/src/backends/gpu/tests_gpu/mod.rs:16
+#8  0x0000621cd0c8ba81 in trueno::backends::gpu::tests_gpu::basic_ops::test_gpu_dot_large () at crates/aprender-compute/src/backends/gpu/tests_gpu/basic_ops.rs:82
+#9  0x0000621cd03e88c3 in trueno::backends::gpu::tests_gpu::basic_ops::test_gpu_dot_large::{{closure}} () at crates/aprender-compute/src/backends/gpu/tests_gpu/basic_ops.rs:81
+#10 0x0000621cd00da466 in core::ops::function::FnOnce::call_once () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/core/src/ops/function.rs:250
+#11 0x0000621cd0e1cfbb in core::ops::function::FnOnce::call_once<fn() -> core::result::Result<(), alloc::string::String>, ()> () at library/core/src/ops/function.rs:250
+#12 test::__rust_begin_short_backtrace<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> () at library/test/src/lib.rs:663
+#13 0x0000621cd0e3094a in test::run_test_in_process::{closure#0} () at library/test/src/lib.rs:686
+
+Thread 26 (Thread 0x755f74341640 (LWP 2495392) "backends::gpu::"):
+#0  syscall () at ../sysdeps/unix/sysv/linux/x86_64/syscall.S:38
+#1  0x0000621cd1984c14 in std::sys::pal::unix::futex::futex_wait () at library/std/src/sys/pal/unix/futex.rs:73
+#2  std::sys::sync::once::futex::Once::call () at library/std/src/sys/sync/once/futex.rs:200
+#3  0x0000621cd0c85c7e in call_once_force<std::sync::once_lock::{impl#0}::initialize::{closure_env#0}<core::option::Option<trueno::backends::gpu::GpuBackend>, std::sync::once_lock::{impl#0}::get_or_init::{closure_env#0}<core::option::Option<trueno::backends::gpu::GpuBackend>, trueno::backends::gpu::tests_gpu::get_shared_gpu::{closure_env#0}>, !>> () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once.rs:219
+#4  0x0000621ccfef8c90 in std::sync::once_lock::OnceLock<T>::initialize () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:533
+#5  0x0000621ccfef9655 in get_or_try_init<core::option::Option<trueno::backends::gpu::GpuBackend>, std::sync::once_lock::{impl#0}::get_or_init::{closure_env#0}<core::option::Option<trueno::backends::gpu::GpuBackend>, trueno::backends::gpu::tests_gpu::get_shared_gpu::{closure_env#0}>, !> () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:409
+#6  0x0000621ccfef91a6 in std::sync::once_lock::OnceLock<T>::get_or_init () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:320
+#7  0x0000621cd02f312a in trueno::backends::gpu::tests_gpu::get_shared_gpu () at crates/aprender-compute/src/backends/gpu/tests_gpu/mod.rs:16
+#8  0x0000621cd0c8b6b1 in trueno::backends::gpu::tests_gpu::basic_ops::test_gpu_dot_basic () at crates/aprender-compute/src/backends/gpu/tests_gpu/basic_ops.rs:63
+#9  0x0000621cd03e8883 in trueno::backends::gpu::tests_gpu::basic_ops::test_gpu_dot_basic::{{closure}} () at crates/aprender-compute/src/backends/gpu/tests_gpu/basic_ops.rs:62
+#10 0x0000621cd00db406 in core::ops::function::FnOnce::call_once () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/core/src/ops/function.rs:250
+#11 0x0000621cd0e1cfbb in core::ops::function::FnOnce::call_once<fn() -> core::result::Result<(), alloc::string::String>, ()> () at library/core/src/ops/function.rs:250
+#12 test::__rust_begin_short_backtrace<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> () at library/test/src/lib.rs:663
+#13 0x0000621cd0e3094a in test::run_test_in_process::{closure#0} () at library/test/src/lib.rs:686
+
+Thread 25 (Thread 0x755f74f47640 (LWP 2495391) "backends::gpu::"):
+#0  syscall () at ../sysdeps/unix/sysv/linux/x86_64/syscall.S:38
+#1  0x0000621cd1984c14 in std::sys::pal::unix::futex::futex_wait () at library/std/src/sys/pal/unix/futex.rs:73
+#2  std::sys::sync::once::futex::Once::call () at library/std/src/sys/sync/once/futex.rs:200
+#3  0x0000621cd0c85c7e in call_once_force<std::sync::once_lock::{impl#0}::initialize::{closure_env#0}<core::option::Option<trueno::backends::gpu::GpuBackend>, std::sync::once_lock::{impl#0}::get_or_init::{closure_env#0}<core::option::Option<trueno::backends::gpu::GpuBackend>, trueno::backends::gpu::tests_gpu::get_shared_gpu::{closure_env#0}>, !>> () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once.rs:219
+#4  0x0000621ccfef8c90 in std::sync::once_lock::OnceLock<T>::initialize () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:533
+#5  0x0000621ccfef9655 in get_or_try_init<core::option::Option<trueno::backends::gpu::GpuBackend>, std::sync::once_lock::{impl#0}::get_or_init::{closure_env#0}<core::option::Option<trueno::backends::gpu::GpuBackend>, trueno::backends::gpu::tests_gpu::get_shared_gpu::{closure_env#0}>, !> () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:409
+#6  0x0000621ccfef91a6 in std::sync::once_lock::OnceLock<T>::get_or_init () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:320
+#7  0x0000621cd02f312a in trueno::backends::gpu::tests_gpu::get_shared_gpu () at crates/aprender-compute/src/backends/gpu/tests_gpu/mod.rs:16
+#8  0x0000621cd043f334 in trueno::backends::gpu::tests_gpu::activations::test_gpu_tanh_not_hardcoded () at crates/aprender-compute/src/backends/gpu/tests_gpu/activations.rs:76
+#9  0x0000621ccfe381c3 in trueno::backends::gpu::tests_gpu::activations::test_gpu_tanh_not_hardcoded::{{closure}} () at crates/aprender-compute/src/backends/gpu/tests_gpu/activations.rs:74
+#10 0x0000621cd00e3206 in core::ops::function::FnOnce::call_once () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/core/src/ops/function.rs:250
+#11 0x0000621cd0e1cfbb in core::ops::function::FnOnce::call_once<fn() -> core::result::Result<(), alloc::string::String>, ()> () at library/core/src/ops/function.rs:250
+#12 test::__rust_begin_short_backtrace<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> () at library/test/src/lib.rs:663
+#13 0x0000621cd0e3094a in test::run_test_in_process::{closure#0} () at library/test/src/lib.rs:686
+
+Thread 24 (Thread 0x755f7554a640 (LWP 2495390) "backends::gpu::"):
+#0  syscall () at ../sysdeps/unix/sysv/linux/x86_64/syscall.S:38
+#1  0x0000621cd1984c14 in std::sys::pal::unix::futex::futex_wait () at library/std/src/sys/pal/unix/futex.rs:73
+#2  std::sys::sync::once::futex::Once::call () at library/std/src/sys/sync/once/futex.rs:200
+#3  0x0000621cd0c85c7e in call_once_force<std::sync::once_lock::{impl#0}::initialize::{closure_env#0}<core::option::Option<trueno::backends::gpu::GpuBackend>, std::sync::once_lock::{impl#0}::get_or_init::{closure_env#0}<core::option::Option<trueno::backends::gpu::GpuBackend>, trueno::backends::gpu::tests_gpu::get_shared_gpu::{closure_env#0}>, !>> () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once.rs:219
+#4  0x0000621ccfef8c90 in std::sync::once_lock::OnceLock<T>::initialize () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:533
+#5  0x0000621ccfef9655 in get_or_try_init<core::option::Option<trueno::backends::gpu::GpuBackend>, std::sync::once_lock::{impl#0}::get_or_init::{closure_env#0}<core::option::Option<trueno::backends::gpu::GpuBackend>, trueno::backends::gpu::tests_gpu::get_shared_gpu::{closure_env#0}>, !> () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:409
+#6  0x0000621ccfef91a6 in std::sync::once_lock::OnceLock<T>::get_or_init () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:320
+#7  0x0000621cd02f312a in trueno::backends::gpu::tests_gpu::get_shared_gpu () at crates/aprender-compute/src/backends/gpu/tests_gpu/mod.rs:16
+#8  0x0000621cd043dc44 in trueno::backends::gpu::tests_gpu::activations::test_gpu_tanh_basic () at crates/aprender-compute/src/backends/gpu/tests_gpu/activations.rs:55
+#9  0x0000621ccfe380f3 in trueno::backends::gpu::tests_gpu::activations::test_gpu_tanh_basic::{{closure}} () at crates/aprender-compute/src/backends/gpu/tests_gpu/activations.rs:54
+#10 0x0000621cd00e03a6 in core::ops::function::FnOnce::call_once () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/core/src/ops/function.rs:250
+#11 0x0000621cd0e1cfbb in core::ops::function::FnOnce::call_once<fn() -> core::result::Result<(), alloc::string::String>, ()> () at library/core/src/ops/function.rs:250
+#12 test::__rust_begin_short_backtrace<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> () at library/test/src/lib.rs:663
+#13 0x0000621cd0e3094a in test::run_test_in_process::{closure#0} () at library/test/src/lib.rs:686
+
+Thread 23 (Thread 0x755f75148640 (LWP 2495389) "backends::gpu::"):
+#0  syscall () at ../sysdeps/unix/sysv/linux/x86_64/syscall.S:38
+#1  0x0000621cd1984c14 in std::sys::pal::unix::futex::futex_wait () at library/std/src/sys/pal/unix/futex.rs:73
+#2  std::sys::sync::once::futex::Once::call () at library/std/src/sys/sync/once/futex.rs:200
+#3  0x0000621cd0c85c7e in call_once_force<std::sync::once_lock::{impl#0}::initialize::{closure_env#0}<core::option::Option<trueno::backends::gpu::GpuBackend>, std::sync::once_lock::{impl#0}::get_or_init::{closure_env#0}<core::option::Option<trueno::backends::gpu::GpuBackend>, trueno::backends::gpu::tests_gpu::get_shared_gpu::{closure_env#0}>, !>> () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once.rs:219
+#4  0x0000621ccfef8c90 in std::sync::once_lock::OnceLock<T>::initialize () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:533
+#5  0x0000621ccfef9655 in get_or_try_init<core::option::Option<trueno::backends::gpu::GpuBackend>, std::sync::once_lock::{impl#0}::get_or_init::{closure_env#0}<core::option::Option<trueno::backends::gpu::GpuBackend>, trueno::backends::gpu::tests_gpu::get_shared_gpu::{closure_env#0}>, !> () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:409
+#6  0x0000621ccfef91a6 in std::sync::once_lock::OnceLock<T>::get_or_init () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:320
+#7  0x0000621cd02f312a in trueno::backends::gpu::tests_gpu::get_shared_gpu () at crates/aprender-compute/src/backends/gpu/tests_gpu/mod.rs:16
+#8  0x0000621cd043e1c4 in trueno::backends::gpu::tests_gpu::activations::test_gpu_softmax_basic () at crates/aprender-compute/src/backends/gpu/tests_gpu/activations.rs:106
+#9  0x0000621ccfe38123 in trueno::backends::gpu::tests_gpu::activations::test_gpu_softmax_basic::{{closure}} () at crates/aprender-compute/src/backends/gpu/tests_gpu/activations.rs:105
+#10 0x0000621cd00ba116 in core::ops::function::FnOnce::call_once () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/core/src/ops/function.rs:250
+#11 0x0000621cd0e1cfbb in core::ops::function::FnOnce::call_once<fn() -> core::result::Result<(), alloc::string::String>, ()> () at library/core/src/ops/function.rs:250
+#12 test::__rust_begin_short_backtrace<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> () at library/test/src/lib.rs:663
+#13 0x0000621cd0e3094a in test::run_test_in_process::{closure#0} () at library/test/src/lib.rs:686
+
+Thread 22 (Thread 0x755f76b55640 (LWP 2495388) "backends::gpu::"):
+#0  syscall () at ../sysdeps/unix/sysv/linux/x86_64/syscall.S:38
+#1  0x0000621cd1984c14 in std::sys::pal::unix::futex::futex_wait () at library/std/src/sys/pal/unix/futex.rs:73
+#2  std::sys::sync::once::futex::Once::call () at library/std/src/sys/sync/once/futex.rs:200
+#3  0x0000621cd0c85c7e in call_once_force<std::sync::once_lock::{impl#0}::initialize::{closure_env#0}<core::option::Option<trueno::backends::gpu::GpuBackend>, std::sync::once_lock::{impl#0}::get_or_init::{closure_env#0}<core::option::Option<trueno::backends::gpu::GpuBackend>, trueno::backends::gpu::tests_gpu::get_shared_gpu::{closure_env#0}>, !>> () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once.rs:219
+#4  0x0000621ccfef8c90 in std::sync::once_lock::OnceLock<T>::initialize () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:533
+#5  0x0000621ccfef9655 in get_or_try_init<core::option::Option<trueno::backends::gpu::GpuBackend>, std::sync::once_lock::{impl#0}::get_or_init::{closure_env#0}<core::option::Option<trueno::backends::gpu::GpuBackend>, trueno::backends::gpu::tests_gpu::get_shared_gpu::{closure_env#0}>, !> () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:409
+#6  0x0000621ccfef91a6 in std::sync::once_lock::OnceLock<T>::get_or_init () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:320
+#7  0x0000621cd02f312a in trueno::backends::gpu::tests_gpu::get_shared_gpu () at crates/aprender-compute/src/backends/gpu/tests_gpu/mod.rs:16
+#8  0x0000621cd043ede4 in trueno::backends::gpu::tests_gpu::activations::test_gpu_log_softmax_basic () at crates/aprender-compute/src/backends/gpu/tests_gpu/activations.rs:138
+#9  0x0000621ccfe38183 in trueno::backends::gpu::tests_gpu::activations::test_gpu_log_softmax_basic::{{closure}} () at crates/aprender-compute/src/backends/gpu/tests_gpu/activations.rs:137
+#10 0x0000621cd00daac6 in core::ops::function::FnOnce::call_once () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/core/src/ops/function.rs:250
+#11 0x0000621cd0e1cfbb in core::ops::function::FnOnce::call_once<fn() -> core::result::Result<(), alloc::string::String>, ()> () at library/core/src/ops/function.rs:250
+#12 test::__rust_begin_short_backtrace<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> () at library/test/src/lib.rs:663
+#13 0x0000621cd0e3094a in test::run_test_in_process::{closure#0} () at library/test/src/lib.rs:686
+
+Thread 21 (Thread 0x755f75349640 (LWP 2495387) "backends::gpu::"):
+#0  syscall () at ../sysdeps/unix/sysv/linux/x86_64/syscall.S:38
+#1  0x0000621cd1984c14 in std::sys::pal::unix::futex::futex_wait () at library/std/src/sys/pal/unix/futex.rs:73
+#2  std::sys::sync::once::futex::Once::call () at library/std/src/sys/sync/once/futex.rs:200
+#3  0x0000621cd0c85c7e in call_once_force<std::sync::once_lock::{impl#0}::initialize::{closure_env#0}<core::option::Option<trueno::backends::gpu::GpuBackend>, std::sync::once_lock::{impl#0}::get_or_init::{closure_env#0}<core::option::Option<trueno::backends::gpu::GpuBackend>, trueno::backends::gpu::tests_gpu::get_shared_gpu::{closure_env#0}>, !>> () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once.rs:219
+#4  0x0000621ccfef8c90 in std::sync::once_lock::OnceLock<T>::initialize () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:533
+#5  0x0000621ccfef9655 in get_or_try_init<core::option::Option<trueno::backends::gpu::GpuBackend>, std::sync::once_lock::{impl#0}::get_or_init::{closure_env#0}<core::option::Option<trueno::backends::gpu::GpuBackend>, trueno::backends::gpu::tests_gpu::get_shared_gpu::{closure_env#0}>, !> () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:409
+#6  0x0000621ccfef91a6 in std::sync::once_lock::OnceLock<T>::get_or_init () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:320
+#7  0x0000621cd02f312a in trueno::backends::gpu::tests_gpu::get_shared_gpu () at crates/aprender-compute/src/backends/gpu/tests_gpu/mod.rs:16
+#8  0x0000621cd043e864 in trueno::backends::gpu::tests_gpu::activations::test_gpu_leaky_relu_basic () at crates/aprender-compute/src/backends/gpu/tests_gpu/activations.rs:5
+#9  0x0000621ccfe38153 in trueno::backends::gpu::tests_gpu::activations::test_gpu_leaky_relu_basic::{{closure}} () at crates/aprender-compute/src/backends/gpu/tests_gpu/activations.rs:4
+#10 0x0000621cd00a81e6 in core::ops::function::FnOnce::call_once () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/core/src/ops/function.rs:250
+#11 0x0000621cd0e1cfbb in core::ops::function::FnOnce::call_once<fn() -> core::result::Result<(), alloc::string::String>, ()> () at library/core/src/ops/function.rs:250
+#12 test::__rust_begin_short_backtrace<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> () at library/test/src/lib.rs:663
+#13 0x0000621cd0e3094a in test::run_test_in_process::{closure#0} () at library/test/src/lib.rs:686
+
+Thread 20 (Thread 0x755f7574b640 (LWP 2495386) "backends::gpu::"):
+#0  syscall () at ../sysdeps/unix/sysv/linux/x86_64/syscall.S:38
+#1  0x0000621cd1984c14 in std::sys::pal::unix::futex::futex_wait () at library/std/src/sys/pal/unix/futex.rs:73
+#2  std::sys::sync::once::futex::Once::call () at library/std/src/sys/sync/once/futex.rs:200
+#3  0x0000621cd0c85ade in call_once_force<std::sync::once_lock::{impl#0}::initialize::{closure_env#0}<bool, std::sync::once_lock::{impl#0}::get_or_init::{closure_env#0}<bool, trueno::backends::gpu::device::{impl#0}::is_available::{closure_env#0}>, !>> () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once.rs:219
+#4  0x0000621ccfef8d71 in std::sync::once_lock::OnceLock<T>::initialize () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:533
+#5  0x0000621ccfef93f1 in get_or_try_init<bool, std::sync::once_lock::{impl#0}::get_or_init::{closure_env#0}<bool, trueno::backends::gpu::device::{impl#0}::is_available::{closure_env#0}>, !> () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:409
+#6  0x0000621ccfef91e6 in std::sync::once_lock::OnceLock<T>::get_or_init () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:320
+#7  0x0000621cd007755d in trueno::backends::gpu::device::GpuDevice::is_available () at crates/aprender-compute/src/backends/gpu/device/mod.rs:243
+#8  0x0000621ccfe6c586 in trueno::backends::gpu::GpuBackend::is_available () at crates/aprender-compute/src/backends/gpu/mod.rs:118
+#9  0x0000621cd01375e3 in trueno::backends::gpu::tests_gpu::get_shared_gpu::{{closure}} () at crates/aprender-compute/src/backends/gpu/tests_gpu/mod.rs:16
+#10 0x0000621ccfef9287 in std::sync::once_lock::OnceLock<T>::get_or_init::{{closure}} () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:320
+#11 0x0000621ccfef8f92 in {closure#0}<core::option::Option<trueno::backends::gpu::GpuBackend>, std::sync::once_lock::{impl#0}::get_or_init::{closure_env#0}<core::option::Option<trueno::backends::gpu::GpuBackend>, trueno::backends::gpu::tests_gpu::get_shared_gpu::{closure_env#0}>, !> () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:534
+#12 0x0000621cd0c86136 in {closure#0}<std::sync::once_lock::{impl#0}::initialize::{closure_env#0}<core::option::Option<trueno::backends::gpu::GpuBackend>, std::sync::once_lock::{impl#0}::get_or_init::{closure_env#0}<core::option::Option<trueno::backends::gpu::GpuBackend>, trueno::backends::gpu::tests_gpu::get_shared_gpu::{closure_env#0}>, !>> () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once.rs:219
+#13 0x0000621cd1984c47 in std::sys::sync::once::futex::Once::call () at library/std/src/sys/sync/once/futex.rs:178
+
+Thread 19 (Thread 0x755f6fbfd640 (LWP 2495366) "backends::gpu::"):
+#0  syscall () at ../sysdeps/unix/sysv/linux/x86_64/syscall.S:38
+#1  0x0000621cd1984c14 in std::sys::pal::unix::futex::futex_wait () at library/std/src/sys/pal/unix/futex.rs:73
+#2  std::sys::sync::once::futex::Once::call () at library/std/src/sys/sync/once/futex.rs:200
+#3  0x0000621cd0c85ade in call_once_force<std::sync::once_lock::{impl#0}::initialize::{closure_env#0}<bool, std::sync::once_lock::{impl#0}::get_or_init::{closure_env#0}<bool, trueno::backends::gpu::device::{impl#0}::is_available::{closure_env#0}>, !>> () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once.rs:219
+#4  0x0000621ccfef8d71 in std::sync::once_lock::OnceLock<T>::initialize () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:533
+#5  0x0000621ccfef93f1 in get_or_try_init<bool, std::sync::once_lock::{impl#0}::get_or_init::{closure_env#0}<bool, trueno::backends::gpu::device::{impl#0}::is_available::{closure_env#0}>, !> () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:409
+#6  0x0000621ccfef91e6 in std::sync::once_lock::OnceLock<T>::get_or_init () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:320
+#7  0x0000621cd007755d in trueno::backends::gpu::device::GpuDevice::is_available () at crates/aprender-compute/src/backends/gpu/device/mod.rs:243
+#8  0x0000621cd0d802cc in trueno::backends::gpu::pool::tests::test_pool_len_matches_devices () at crates/aprender-compute/src/backends/gpu/pool.rs:160
+#9  0x0000621cd0c5df63 in trueno::backends::gpu::pool::tests::test_pool_len_matches_devices::{{closure}} () at crates/aprender-compute/src/backends/gpu/pool.rs:159
+#10 0x0000621cd00de756 in core::ops::function::FnOnce::call_once () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/core/src/ops/function.rs:250
+#11 0x0000621cd0e1cfbb in core::ops::function::FnOnce::call_once<fn() -> core::result::Result<(), alloc::string::String>, ()> () at library/core/src/ops/function.rs:250
+#12 test::__rust_begin_short_backtrace<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> () at library/test/src/lib.rs:663
+#13 0x0000621cd0e3094a in test::run_test_in_process::{closure#0} () at library/test/src/lib.rs:686
+
+Thread 18 (Thread 0x755f75f4f640 (LWP 2495347) "backends::gpu::"):
+#0  syscall () at ../sysdeps/unix/sysv/linux/x86_64/syscall.S:38
+#1  0x0000621cd1984c14 in std::sys::pal::unix::futex::futex_wait () at library/std/src/sys/pal/unix/futex.rs:73
+#2  std::sys::sync::once::futex::Once::call () at library/std/src/sys/sync/once/futex.rs:200
+#3  0x0000621cd0c85ade in call_once_force<std::sync::once_lock::{impl#0}::initialize::{closure_env#0}<bool, std::sync::once_lock::{impl#0}::get_or_init::{closure_env#0}<bool, trueno::backends::gpu::device::{impl#0}::is_available::{closure_env#0}>, !>> () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once.rs:219
+#4  0x0000621ccfef8d71 in std::sync::once_lock::OnceLock<T>::initialize () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:533
+#5  0x0000621ccfef93f1 in get_or_try_init<bool, std::sync::once_lock::{impl#0}::get_or_init::{closure_env#0}<bool, trueno::backends::gpu::device::{impl#0}::is_available::{closure_env#0}>, !> () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:409
+#6  0x0000621ccfef91e6 in std::sync::once_lock::OnceLock<T>::get_or_init () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:320
+#7  0x0000621cd007755d in trueno::backends::gpu::device::GpuDevice::is_available () at crates/aprender-compute/src/backends/gpu/device/mod.rs:243
+#8  0x0000621cd02e741c in trueno::backends::gpu::device::tests::test_reduce_sum_not_hardcoded () at crates/aprender-compute/src/backends/gpu/device/mod.rs:539
+#9  0x0000621cd006c1d3 in trueno::backends::gpu::device::tests::test_reduce_sum_not_hardcoded::{{closure}} () at crates/aprender-compute/src/backends/gpu/device/mod.rs:537
+#10 0x0000621cd00c6386 in core::ops::function::FnOnce::call_once () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/core/src/ops/function.rs:250
+#11 0x0000621cd0e1cfbb in core::ops::function::FnOnce::call_once<fn() -> core::result::Result<(), alloc::string::String>, ()> () at library/core/src/ops/function.rs:250
+#12 test::__rust_begin_short_backtrace<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> () at library/test/src/lib.rs:663
+#13 0x0000621cd0e3094a in test::run_test_in_process::{closure#0} () at library/test/src/lib.rs:686
+
+Thread 17 (Thread 0x755f76954640 (LWP 2495346) "backends::gpu::"):
+#0  syscall () at ../sysdeps/unix/sysv/linux/x86_64/syscall.S:38
+#1  0x0000621cd1984c14 in std::sys::pal::unix::futex::futex_wait () at library/std/src/sys/pal/unix/futex.rs:73
+#2  std::sys::sync::once::futex::Once::call () at library/std/src/sys/sync/once/futex.rs:200
+#3  0x0000621cd0c85ade in call_once_force<std::sync::once_lock::{impl#0}::initialize::{closure_env#0}<bool, std::sync::once_lock::{impl#0}::get_or_init::{closure_env#0}<bool, trueno::backends::gpu::device::{impl#0}::is_available::{closure_env#0}>, !>> () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once.rs:219
+#4  0x0000621ccfef8d71 in std::sync::once_lock::OnceLock<T>::initialize () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:533
+#5  0x0000621ccfef93f1 in get_or_try_init<bool, std::sync::once_lock::{impl#0}::get_or_init::{closure_env#0}<bool, trueno::backends::gpu::device::{impl#0}::is_available::{closure_env#0}>, !> () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:409
+#6  0x0000621ccfef91e6 in std::sync::once_lock::OnceLock<T>::get_or_init () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:320
+#7  0x0000621cd007755d in trueno::backends::gpu::device::GpuDevice::is_available () at crates/aprender-compute/src/backends/gpu/device/mod.rs:243
+#8  0x0000621cd02e72ec in trueno::backends::gpu::device::tests::test_is_available_consistency () at crates/aprender-compute/src/backends/gpu/device/mod.rs:516
+#9  0x0000621cd006c1a3 in trueno::backends::gpu::device::tests::test_is_available_consistency::{{closure}} () at crates/aprender-compute/src/backends/gpu/device/mod.rs:513
+#10 0x0000621cd00c3d16 in core::ops::function::FnOnce::call_once () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/core/src/ops/function.rs:250
+#11 0x0000621cd0e1cfbb in core::ops::function::FnOnce::call_once<fn() -> core::result::Result<(), alloc::string::String>, ()> () at library/core/src/ops/function.rs:250
+#12 test::__rust_begin_short_backtrace<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> () at library/test/src/lib.rs:663
+#13 0x0000621cd0e3094a in test::run_test_in_process::{closure#0} () at library/test/src/lib.rs:686
+
+Thread 16 (Thread 0x755f6ffff640 (LWP 2495341) "backends::gpu::"):
+#0  syscall () at ../sysdeps/unix/sysv/linux/x86_64/syscall.S:38
+#1  0x0000621cd1984e26 in std::sys::pal::unix::futex::futex_wait () at library/std/src/sys/pal/unix/futex.rs:73
+#2  std::sys::sync::mutex::futex::Mutex::lock_contended () at library/std/src/sys/sync/mutex/futex.rs:61
+#3  0x0000621cd0df829a in lock () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sys/sync/mutex/futex.rs:33
+#4  lock<()> () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/poison/mutex.rs:492
+#5  0x0000621cd007764b in trueno::backends::gpu::device::GpuDevice::new () at crates/aprender-compute/src/backends/gpu/device/mod.rs:107
+#6  0x0000621ccff13bf9 in trueno::backends::gpu::device::backward::tests::test_silu_backward_length_mismatch () at crates/aprender-compute/src/backends/gpu/device/backward.rs:1120
+#7  0x0000621cd038c373 in trueno::backends::gpu::device::backward::tests::test_silu_backward_length_mismatch::{{closure}} () at crates/aprender-compute/src/backends/gpu/device/backward.rs:1119
+#8  0x0000621cd00d64f6 in core::ops::function::FnOnce::call_once () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/core/src/ops/function.rs:250
+#9  0x0000621cd0e1cfbb in core::ops::function::FnOnce::call_once<fn() -> core::result::Result<(), alloc::string::String>, ()> () at library/core/src/ops/function.rs:250
+#10 test::__rust_begin_short_backtrace<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> () at library/test/src/lib.rs:663
+#11 0x0000621cd0e3094a in test::run_test_in_process::{closure#0} () at library/test/src/lib.rs:686
+#12 core::panic::unwind_safe::{impl#23}::call_once<core::result::Result<(), alloc::string::String>, test::run_test_in_process::{closure_env#0}> () at library/core/src/panic/unwind_safe.rs:274
+#13 std::panicking::catch_unwind::do_call<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure_env#0}>, core::result::Result<(), alloc::string::String>> () at library/std/src/panicking.rs:581
+
+Thread 15 (Thread 0x755f77b5d640 (LWP 2495340) "backends::gpu::"):
+#0  syscall () at ../sysdeps/unix/sysv/linux/x86_64/syscall.S:38
+#1  0x0000621cd1984e26 in std::sys::pal::unix::futex::futex_wait () at library/std/src/sys/pal/unix/futex.rs:73
+#2  std::sys::sync::mutex::futex::Mutex::lock_contended () at library/std/src/sys/sync/mutex/futex.rs:61
+#3  0x0000621cd0df829a in lock () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sys/sync/mutex/futex.rs:33
+#4  lock<()> () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/poison/mutex.rs:492
+#5  0x0000621cd007764b in trueno::backends::gpu::device::GpuDevice::new () at crates/aprender-compute/src/backends/gpu/device/mod.rs:107
+#6  0x0000621ccff1382c in trueno::backends::gpu::device::backward::tests::test_silu_backward_at_zero () at crates/aprender-compute/src/backends/gpu/device/backward.rs:1103
+#7  0x0000621cd038c343 in trueno::backends::gpu::device::backward::tests::test_silu_backward_at_zero::{{closure}} () at crates/aprender-compute/src/backends/gpu/device/backward.rs:1102
+#8  0x0000621cd00e2926 in core::ops::function::FnOnce::call_once () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/core/src/ops/function.rs:250
+#9  0x0000621cd0e1cfbb in core::ops::function::FnOnce::call_once<fn() -> core::result::Result<(), alloc::string::String>, ()> () at library/core/src/ops/function.rs:250
+#10 test::__rust_begin_short_backtrace<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> () at library/test/src/lib.rs:663
+#11 0x0000621cd0e3094a in test::run_test_in_process::{closure#0} () at library/test/src/lib.rs:686
+#12 core::panic::unwind_safe::{impl#23}::call_once<core::result::Result<(), alloc::string::String>, test::run_test_in_process::{closure_env#0}> () at library/core/src/panic/unwind_safe.rs:274
+#13 std::panicking::catch_unwind::do_call<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure_env#0}>, core::result::Result<(), alloc::string::String>> () at library/std/src/panicking.rs:581
+
+Thread 14 (Thread 0x755f77d5e640 (LWP 2495339) "backends::gpu::"):
+#0  syscall () at ../sysdeps/unix/sysv/linux/x86_64/syscall.S:38
+#1  0x0000621cd1984e26 in std::sys::pal::unix::futex::futex_wait () at library/std/src/sys/pal/unix/futex.rs:73
+#2  std::sys::sync::mutex::futex::Mutex::lock_contended () at library/std/src/sys/sync/mutex/futex.rs:61
+#3  0x0000621cd0df829a in lock () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sys/sync/mutex/futex.rs:33
+#4  lock<()> () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/poison/mutex.rs:492
+#5  0x0000621cd007764b in trueno::backends::gpu::device::GpuDevice::new () at crates/aprender-compute/src/backends/gpu/device/mod.rs:107
+#6  0x0000621ccff149dc in trueno::backends::gpu::device::backward::tests::test_falsify_wgpu_003_nf4_dequant_parity () at crates/aprender-compute/src/backends/gpu/device/backward.rs:1420
+#7  0x0000621cd038c4c3 in trueno::backends::gpu::device::backward::tests::test_falsify_wgpu_003_nf4_dequant_parity::{{closure}} () at crates/aprender-compute/src/backends/gpu/device/backward.rs:1419
+#8  0x0000621cd00ab2f6 in core::ops::function::FnOnce::call_once () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/core/src/ops/function.rs:250
+#9  0x0000621cd0e1cfbb in core::ops::function::FnOnce::call_once<fn() -> core::result::Result<(), alloc::string::String>, ()> () at library/core/src/ops/function.rs:250
+#10 test::__rust_begin_short_backtrace<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> () at library/test/src/lib.rs:663
+#11 0x0000621cd0e3094a in test::run_test_in_process::{closure#0} () at library/test/src/lib.rs:686
+#12 core::panic::unwind_safe::{impl#23}::call_once<core::result::Result<(), alloc::string::String>, test::run_test_in_process::{closure_env#0}> () at library/core/src/panic/unwind_safe.rs:274
+#13 std::panicking::catch_unwind::do_call<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure_env#0}>, core::result::Result<(), alloc::string::String>> () at library/std/src/panicking.rs:581
+
+Thread 13 (Thread 0x755f7795c640 (LWP 2495338) "backends::gpu::"):
+#0  syscall () at ../sysdeps/unix/sysv/linux/x86_64/syscall.S:38
+#1  0x0000621cd1984e26 in std::sys::pal::unix::futex::futex_wait () at library/std/src/sys/pal/unix/futex.rs:73
+#2  std::sys::sync::mutex::futex::Mutex::lock_contended () at library/std/src/sys/sync/mutex/futex.rs:61
+#3  0x0000621cd0df829a in lock () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sys/sync/mutex/futex.rs:33
+#4  lock<()> () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/poison/mutex.rs:492
+#5  0x0000621cd007764b in trueno::backends::gpu::device::GpuDevice::new () at crates/aprender-compute/src/backends/gpu/device/mod.rs:107
+#6  0x0000621ccff15e7c in trueno::backends::gpu::device::backward::tests::test_falsify_wgpu_001_silu_backward_parity () at crates/aprender-compute/src/backends/gpu/device/backward.rs:1079
+#7  0x0000621cd038c683 in trueno::backends::gpu::device::backward::tests::test_falsify_wgpu_001_silu_backward_parity::{{closure}} () at crates/aprender-compute/src/backends/gpu/device/backward.rs:1078
+#8  0x0000621cd00df0c6 in core::ops::function::FnOnce::call_once () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/core/src/ops/function.rs:250
+#9  0x0000621cd0e1cfbb in core::ops::function::FnOnce::call_once<fn() -> core::result::Result<(), alloc::string::String>, ()> () at library/core/src/ops/function.rs:250
+#10 test::__rust_begin_short_backtrace<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> () at library/test/src/lib.rs:663
+#11 0x0000621cd0e3094a in test::run_test_in_process::{closure#0} () at library/test/src/lib.rs:686
+#12 core::panic::unwind_safe::{impl#23}::call_once<core::result::Result<(), alloc::string::String>, test::run_test_in_process::{closure_env#0}> () at library/core/src/panic/unwind_safe.rs:274
+#13 std::panicking::catch_unwind::do_call<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure_env#0}>, core::result::Result<(), alloc::string::String>> () at library/std/src/panicking.rs:581
+
+Thread 12 (Thread 0x755f7775b640 (LWP 2495337) "backends::gpu::"):
+#0  syscall () at ../sysdeps/unix/sysv/linux/x86_64/syscall.S:38
+#1  0x0000621cd1984e26 in std::sys::pal::unix::futex::futex_wait () at library/std/src/sys/pal/unix/futex.rs:73
+#2  std::sys::sync::mutex::futex::Mutex::lock_contended () at library/std/src/sys/sync/mutex/futex.rs:61
+#3  0x0000621cd0df829a in lock () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sys/sync/mutex/futex.rs:33
+#4  lock<()> () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/poison/mutex.rs:492
+#5  0x0000621cd007764b in trueno::backends::gpu::device::GpuDevice::new () at crates/aprender-compute/src/backends/gpu/device/mod.rs:107
+#6  0x0000621ccff15244 in trueno::backends::gpu::device::backward::tests::test_falsify_wgpu_001_rope_backward_parity () at crates/aprender-compute/src/backends/gpu/device/backward.rs:1221
+#7  0x0000621cd038c533 in trueno::backends::gpu::device::backward::tests::test_falsify_wgpu_001_rope_backward_parity::{{closure}} () at crates/aprender-compute/src/backends/gpu/device/backward.rs:1220
+#8  0x0000621cd00aada6 in core::ops::function::FnOnce::call_once () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/core/src/ops/function.rs:250
+#9  0x0000621cd0e1cfbb in core::ops::function::FnOnce::call_once<fn() -> core::result::Result<(), alloc::string::String>, ()> () at library/core/src/ops/function.rs:250
+#10 test::__rust_begin_short_backtrace<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> () at library/test/src/lib.rs:663
+#11 0x0000621cd0e3094a in test::run_test_in_process::{closure#0} () at library/test/src/lib.rs:686
+#12 core::panic::unwind_safe::{impl#23}::call_once<core::result::Result<(), alloc::string::String>, test::run_test_in_process::{closure_env#0}> () at library/core/src/panic/unwind_safe.rs:274
+#13 std::panicking::catch_unwind::do_call<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure_env#0}>, core::result::Result<(), alloc::string::String>> () at library/std/src/panicking.rs:581
+
+Thread 11 (Thread 0x755f6ddee640 (LWP 2495336) "backends::gpu::"):
+#0  syscall () at ../sysdeps/unix/sysv/linux/x86_64/syscall.S:38
+#1  0x0000621cd1984e26 in std::sys::pal::unix::futex::futex_wait () at library/std/src/sys/pal/unix/futex.rs:73
+#2  std::sys::sync::mutex::futex::Mutex::lock_contended () at library/std/src/sys/sync/mutex/futex.rs:61
+#3  0x0000621cd0df829a in lock () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sys/sync/mutex/futex.rs:33
+#4  lock<()> () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/poison/mutex.rs:492
+#5  0x0000621cd007764b in trueno::backends::gpu::device::GpuDevice::new () at crates/aprender-compute/src/backends/gpu/device/mod.rs:107
+#6  0x0000621ccff17757 in trueno::backends::gpu::device::backward::tests::test_falsify_wgpu_001_rmsnorm_backward_parity () at crates/aprender-compute/src/backends/gpu/device/backward.rs:1337
+#7  0x0000621cd038c973 in trueno::backends::gpu::device::backward::tests::test_falsify_wgpu_001_rmsnorm_backward_parity::{{closure}} () at crates/aprender-compute/src/backends/gpu/device/backward.rs:1336
+#8  0x0000621cd00d7f06 in core::ops::function::FnOnce::call_once () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/core/src/ops/function.rs:250
+#9  0x0000621cd0e1cfbb in core::ops::function::FnOnce::call_once<fn() -> core::result::Result<(), alloc::string::String>, ()> () at library/core/src/ops/function.rs:250
+#10 test::__rust_begin_short_backtrace<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> () at library/test/src/lib.rs:663
+#11 0x0000621cd0e3094a in test::run_test_in_process::{closure#0} () at library/test/src/lib.rs:686
+#12 core::panic::unwind_safe::{impl#23}::call_once<core::result::Result<(), alloc::string::String>, test::run_test_in_process::{closure_env#0}> () at library/core/src/panic/unwind_safe.rs:274
+#13 std::panicking::catch_unwind::do_call<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure_env#0}>, core::result::Result<(), alloc::string::String>> () at library/std/src/panicking.rs:581
+
+Thread 10 (Thread 0x755f6e7f3640 (LWP 2495335) "backends::gpu::"):
+#0  syscall () at ../sysdeps/unix/sysv/linux/x86_64/syscall.S:38
+#1  0x0000621cd1984e26 in std::sys::pal::unix::futex::futex_wait () at library/std/src/sys/pal/unix/futex.rs:73
+#2  std::sys::sync::mutex::futex::Mutex::lock_contended () at library/std/src/sys/sync/mutex/futex.rs:61
+#3  0x0000621cd0df829a in lock () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sys/sync/mutex/futex.rs:33
+#4  lock<()> () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/poison/mutex.rs:492
+#5  0x0000621cd007764b in trueno::backends::gpu::device::GpuDevice::new () at crates/aprender-compute/src/backends/gpu/device/mod.rs:107
+#6  0x0000621ccff16d85 in trueno::backends::gpu::device::backward::tests::test_falsify_wgpu_001_gemm_backward_b_parity () at crates/aprender-compute/src/backends/gpu/device/backward.rs:1188
+#7  0x0000621cd038c8e3 in trueno::backends::gpu::device::backward::tests::test_falsify_wgpu_001_gemm_backward_b_parity::{{closure}} () at crates/aprender-compute/src/backends/gpu/device/backward.rs:1187
+#8  0x0000621cd00cd336 in core::ops::function::FnOnce::call_once () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/core/src/ops/function.rs:250
+#9  0x0000621cd0e1cfbb in core::ops::function::FnOnce::call_once<fn() -> core::result::Result<(), alloc::string::String>, ()> () at library/core/src/ops/function.rs:250
+#10 test::__rust_begin_short_backtrace<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> () at library/test/src/lib.rs:663
+#11 0x0000621cd0e3094a in test::run_test_in_process::{closure#0} () at library/test/src/lib.rs:686
+#12 core::panic::unwind_safe::{impl#23}::call_once<core::result::Result<(), alloc::string::String>, test::run_test_in_process::{closure_env#0}> () at library/core/src/panic/unwind_safe.rs:274
+#13 std::panicking::catch_unwind::do_call<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure_env#0}>, core::result::Result<(), alloc::string::String>> () at library/std/src/panicking.rs:581
+
+Thread 9 (Thread 0x755f6e9f4640 (LWP 2495334) "backends::gpu::"):
+#0  syscall () at ../sysdeps/unix/sysv/linux/x86_64/syscall.S:38
+#1  0x0000621cd1984e26 in std::sys::pal::unix::futex::futex_wait () at library/std/src/sys/pal/unix/futex.rs:73
+#2  std::sys::sync::mutex::futex::Mutex::lock_contended () at library/std/src/sys/sync/mutex/futex.rs:61
+#3  0x0000621cd0df829a in lock () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sys/sync/mutex/futex.rs:33
+#4  lock<()> () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/poison/mutex.rs:492
+#5  0x0000621cd007764b in trueno::backends::gpu::device::GpuDevice::new () at crates/aprender-compute/src/backends/gpu/device/mod.rs:107
+#6  0x0000621ccff163b5 in trueno::backends::gpu::device::backward::tests::test_falsify_wgpu_001_gemm_backward_a_parity () at crates/aprender-compute/src/backends/gpu/device/backward.rs:1151
+#7  0x0000621cd038c7b3 in trueno::backends::gpu::device::backward::tests::test_falsify_wgpu_001_gemm_backward_a_parity::{{closure}} () at crates/aprender-compute/src/backends/gpu/device/backward.rs:1150
+#8  0x0000621cd00a8986 in core::ops::function::FnOnce::call_once () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/core/src/ops/function.rs:250
+#9  0x0000621cd0e1cfbb in core::ops::function::FnOnce::call_once<fn() -> core::result::Result<(), alloc::string::String>, ()> () at library/core/src/ops/function.rs:250
+#10 test::__rust_begin_short_backtrace<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> () at library/test/src/lib.rs:663
+#11 0x0000621cd0e3094a in test::run_test_in_process::{closure#0} () at library/test/src/lib.rs:686
+#12 core::panic::unwind_safe::{impl#23}::call_once<core::result::Result<(), alloc::string::String>, test::run_test_in_process::{closure_env#0}> () at library/core/src/panic/unwind_safe.rs:274
+#13 std::panicking::catch_unwind::do_call<core::panic::unwind_safe::AssertUnwindSafe<test::run_test_in_process::{closure_env#0}>, core::result::Result<(), alloc::string::String>> () at library/std/src/panicking.rs:581
+
+Thread 8 (Thread 0x755f6ebf5640 (LWP 2495333) "backends::gpu::"):
+#0  syscall () at ../sysdeps/unix/sysv/linux/x86_64/syscall.S:38
+#1  0x0000621cd1984e26 in std::sys::pal::unix::futex::futex_wait () at library/std/src/sys/pal/unix/futex.rs:73
+#2  std::sys::sync::mutex::futex::Mutex::lock_contended () at library/std/src/sys/sync/mutex/futex.rs:61
+#3  0x0000621cd0df829a in lock () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sys/sync/mutex/futex.rs:33
+#4  lock<()> () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/poison/mutex.rs:492
+#5  0x0000621ccfdde2e1 in trueno::backends::gpu::device::shared_instance::{{closure}} () at crates/aprender-compute/src/backends/gpu/device/mod.rs:81
+#6  0x0000621ccfef92b6 in std::sync::once_lock::OnceLock<T>::get_or_init::{{closure}} () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:320
+#7  0x0000621ccfef914e in {closure#0}<wgpu::api::instance::Instance, std::sync::once_lock::{impl#0}::get_or_init::{closure_env#0}<wgpu::api::instance::Instance, trueno::backends::gpu::device::shared_instance::{closure_env#0}>, !> () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:534
+#8  0x0000621cd0c860c6 in {closure#0}<std::sync::once_lock::{impl#0}::initialize::{closure_env#0}<wgpu::api::instance::Instance, std::sync::once_lock::{impl#0}::get_or_init::{closure_env#0}<wgpu::api::instance::Instance, trueno::backends::gpu::device::shared_instance::{closure_env#0}>, !>> () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once.rs:219
+#9  0x0000621cd1984c47 in std::sys::sync::once::futex::Once::call () at library/std/src/sys/sync/once/futex.rs:178
+#10 0x0000621cd0c8579e in call_once_force<std::sync::once_lock::{impl#0}::initialize::{closure_env#0}<wgpu::api::instance::Instance, std::sync::once_lock::{impl#0}::get_or_init::{closure_env#0}<wgpu::api::instance::Instance, trueno::backends::gpu::device::shared_instance::{closure_env#0}>, !>> () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once.rs:219
+#11 0x0000621ccfef8daa in std::sync::once_lock::OnceLock<T>::initialize () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:533
+#12 0x0000621ccfef9535 in get_or_try_init<wgpu::api::instance::Instance, std::sync::once_lock::{impl#0}::get_or_init::{closure_env#0}<wgpu::api::instance::Instance, trueno::backends::gpu::device::shared_instance::{closure_env#0}>, !> () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:409
+#13 0x0000621ccfef91d6 in std::sync::once_lock::OnceLock<T>::get_or_init () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:320
+
+Thread 7 (Thread 0x755f6edf6640 (LWP 2495332) "backends::gpu::"):
+#0  syscall () at ../sysdeps/unix/sysv/linux/x86_64/syscall.S:38
+#1  0x0000621cd1984c14 in std::sys::pal::unix::futex::futex_wait () at library/std/src/sys/pal/unix/futex.rs:73
+#2  std::sys::sync::once::futex::Once::call () at library/std/src/sys/sync/once/futex.rs:200
+#3  0x0000621cd0c8586e in call_once_force<std::sync::once_lock::{impl#0}::initialize::{closure_env#0}<core::option::Option<trueno::backends::gpu::device::GpuDevice>, std::sync::once_lock::{impl#0}::get_or_init::{closure_env#0}<core::option::Option<trueno::backends::gpu::device::GpuDevice>, trueno::backends::gpu::batch::tests::get_shared_device::{closure_env#0}>, !>> () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once.rs:219
+#4  0x0000621ccfef8d02 in std::sync::once_lock::OnceLock<T>::initialize () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:533
+#5  0x0000621ccfef9935 in get_or_try_init<core::option::Option<trueno::backends::gpu::device::GpuDevice>, std::sync::once_lock::{impl#0}::get_or_init::{closure_env#0}<core::option::Option<trueno::backends::gpu::device::GpuDevice>, trueno::backends::gpu::batch::tests::get_shared_device::{closure_env#0}>, !> () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:409
+#6  0x0000621ccfef9206 in std::sync::once_lock::OnceLock<T>::get_or_init () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:320
+#7  0x0000621cd0d4a97d in trueno::backends::gpu::batch::tests::get_shared_device () at crates/aprender-compute/src/backends/gpu/batch/tests.rs:14
+#8  0x0000621cd0d4b0f4 in trueno::backends::gpu::batch::tests::test_size_mismatch_mul () at crates/aprender-compute/src/backends/gpu/batch/tests.rs:67
+#9  0x0000621cd046c273 in trueno::backends::gpu::batch::tests::test_size_mismatch_mul::{{closure}} () at crates/aprender-compute/src/backends/gpu/batch/tests.rs:66
+#10 0x0000621cd00ec8b6 in core::ops::function::FnOnce::call_once () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/core/src/ops/function.rs:250
+#11 0x0000621cd0e1cfbb in core::ops::function::FnOnce::call_once<fn() -> core::result::Result<(), alloc::string::String>, ()> () at library/core/src/ops/function.rs:250
+#12 test::__rust_begin_short_backtrace<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> () at library/test/src/lib.rs:663
+#13 0x0000621cd0e3094a in test::run_test_in_process::{closure#0} () at library/test/src/lib.rs:686
+
+Thread 6 (Thread 0x755f6eff7640 (LWP 2495331) "backends::gpu::"):
+#0  syscall () at ../sysdeps/unix/sysv/linux/x86_64/syscall.S:38
+#1  0x0000621cd1984c14 in std::sys::pal::unix::futex::futex_wait () at library/std/src/sys/pal/unix/futex.rs:73
+#2  std::sys::sync::once::futex::Once::call () at library/std/src/sys/sync/once/futex.rs:200
+#3  0x0000621cd0c8586e in call_once_force<std::sync::once_lock::{impl#0}::initialize::{closure_env#0}<core::option::Option<trueno::backends::gpu::device::GpuDevice>, std::sync::once_lock::{impl#0}::get_or_init::{closure_env#0}<core::option::Option<trueno::backends::gpu::device::GpuDevice>, trueno::backends::gpu::batch::tests::get_shared_device::{closure_env#0}>, !>> () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once.rs:219
+#4  0x0000621ccfef8d02 in std::sync::once_lock::OnceLock<T>::initialize () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:533
+#5  0x0000621ccfef9935 in get_or_try_init<core::option::Option<trueno::backends::gpu::device::GpuDevice>, std::sync::once_lock::{impl#0}::get_or_init::{closure_env#0}<core::option::Option<trueno::backends::gpu::device::GpuDevice>, trueno::backends::gpu::batch::tests::get_shared_device::{closure_env#0}>, !> () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:409
+#6  0x0000621ccfef9206 in std::sync::once_lock::OnceLock<T>::get_or_init () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:320
+#7  0x0000621cd0d4a97d in trueno::backends::gpu::batch::tests::get_shared_device () at crates/aprender-compute/src/backends/gpu/batch/tests.rs:14
+#8  0x0000621cd0d4af84 in trueno::backends::gpu::batch::tests::test_size_mismatch_dot () at crates/aprender-compute/src/backends/gpu/batch/tests.rs:80
+#9  0x0000621cd046c243 in trueno::backends::gpu::batch::tests::test_size_mismatch_dot::{{closure}} () at crates/aprender-compute/src/backends/gpu/batch/tests.rs:79
+#10 0x0000621cd00e17c6 in core::ops::function::FnOnce::call_once () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/core/src/ops/function.rs:250
+#11 0x0000621cd0e1cfbb in core::ops::function::FnOnce::call_once<fn() -> core::result::Result<(), alloc::string::String>, ()> () at library/core/src/ops/function.rs:250
+#12 test::__rust_begin_short_backtrace<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> () at library/test/src/lib.rs:663
+#13 0x0000621cd0e3094a in test::run_test_in_process::{closure#0} () at library/test/src/lib.rs:686
+
+Thread 5 (Thread 0x755f6f3f9640 (LWP 2495330) "backends::gpu::"):
+#0  syscall () at ../sysdeps/unix/sysv/linux/x86_64/syscall.S:38
+#1  0x0000621cd1984c14 in std::sys::pal::unix::futex::futex_wait () at library/std/src/sys/pal/unix/futex.rs:73
+#2  std::sys::sync::once::futex::Once::call () at library/std/src/sys/sync/once/futex.rs:200
+#3  0x0000621cd0c8586e in call_once_force<std::sync::once_lock::{impl#0}::initialize::{closure_env#0}<core::option::Option<trueno::backends::gpu::device::GpuDevice>, std::sync::once_lock::{impl#0}::get_or_init::{closure_env#0}<core::option::Option<trueno::backends::gpu::device::GpuDevice>, trueno::backends::gpu::batch::tests::get_shared_device::{closure_env#0}>, !>> () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once.rs:219
+#4  0x0000621ccfef8d02 in std::sync::once_lock::OnceLock<T>::initialize () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:533
+#5  0x0000621ccfef9935 in get_or_try_init<core::option::Option<trueno::backends::gpu::device::GpuDevice>, std::sync::once_lock::{impl#0}::get_or_init::{closure_env#0}<core::option::Option<trueno::backends::gpu::device::GpuDevice>, trueno::backends::gpu::batch::tests::get_shared_device::{closure_env#0}>, !> () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:409
+#6  0x0000621ccfef9206 in std::sync::once_lock::OnceLock<T>::get_or_init () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:320
+#7  0x0000621cd0d4a97d in trueno::backends::gpu::batch::tests::get_shared_device () at crates/aprender-compute/src/backends/gpu/batch/tests.rs:14
+#8  0x0000621cd0d4ae14 in trueno::backends::gpu::batch::tests::test_size_mismatch_add () at crates/aprender-compute/src/backends/gpu/batch/tests.rs:54
+#9  0x0000621cd046c213 in trueno::backends::gpu::batch::tests::test_size_mismatch_add::{{closure}} () at crates/aprender-compute/src/backends/gpu/batch/tests.rs:53
+#10 0x0000621cd00e07b6 in core::ops::function::FnOnce::call_once () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/core/src/ops/function.rs:250
+#11 0x0000621cd0e1cfbb in core::ops::function::FnOnce::call_once<fn() -> core::result::Result<(), alloc::string::String>, ()> () at library/core/src/ops/function.rs:250
+#12 test::__rust_begin_short_backtrace<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> () at library/test/src/lib.rs:663
+#13 0x0000621cd0e3094a in test::run_test_in_process::{closure#0} () at library/test/src/lib.rs:686
+
+Thread 4 (Thread 0x755f6f1f8640 (LWP 2495329) "backends::gpu::"):
+#0  syscall () at ../sysdeps/unix/sysv/linux/x86_64/syscall.S:38
+#1  0x0000621cd1984c14 in std::sys::pal::unix::futex::futex_wait () at library/std/src/sys/pal/unix/futex.rs:73
+#2  std::sys::sync::once::futex::Once::call () at library/std/src/sys/sync/once/futex.rs:200
+#3  0x0000621cd0c8586e in call_once_force<std::sync::once_lock::{impl#0}::initialize::{closure_env#0}<core::option::Option<trueno::backends::gpu::device::GpuDevice>, std::sync::once_lock::{impl#0}::get_or_init::{closure_env#0}<core::option::Option<trueno::backends::gpu::device::GpuDevice>, trueno::backends::gpu::batch::tests::get_shared_device::{closure_env#0}>, !>> () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once.rs:219
+#4  0x0000621ccfef8d02 in std::sync::once_lock::OnceLock<T>::initialize () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:533
+#5  0x0000621ccfef9935 in get_or_try_init<core::option::Option<trueno::backends::gpu::device::GpuDevice>, std::sync::once_lock::{impl#0}::get_or_init::{closure_env#0}<core::option::Option<trueno::backends::gpu::device::GpuDevice>, trueno::backends::gpu::batch::tests::get_shared_device::{closure_env#0}>, !> () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:409
+#6  0x0000621ccfef9206 in std::sync::once_lock::OnceLock<T>::get_or_init () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:320
+#7  0x0000621cd0d4a97d in trueno::backends::gpu::batch::tests::get_shared_device () at crates/aprender-compute/src/backends/gpu/batch/tests.rs:14
+#8  0x0000621cd0d4abc4 in trueno::backends::gpu::batch::tests::test_operation_queuing () at crates/aprender-compute/src/backends/gpu/batch/tests.rs:35
+#9  0x0000621cd046c1e3 in trueno::backends::gpu::batch::tests::test_operation_queuing::{{closure}} () at crates/aprender-compute/src/backends/gpu/batch/tests.rs:34
+#10 0x0000621cd00c84b6 in core::ops::function::FnOnce::call_once () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/core/src/ops/function.rs:250
+#11 0x0000621cd0e1cfbb in core::ops::function::FnOnce::call_once<fn() -> core::result::Result<(), alloc::string::String>, ()> () at library/core/src/ops/function.rs:250
+#12 test::__rust_begin_short_backtrace<core::result::Result<(), alloc::string::String>, fn() -> core::result::Result<(), alloc::string::String>> () at library/test/src/lib.rs:663
+#13 0x0000621cd0e3094a in test::run_test_in_process::{closure#0} () at library/test/src/lib.rs:686
+
+Thread 3 (Thread 0x755f6f7fb640 (LWP 2495328) "backends::gpu::"):
+#0  syscall () at ../sysdeps/unix/sysv/linux/x86_64/syscall.S:38
+#1  0x0000621cd1984c14 in std::sys::pal::unix::futex::futex_wait () at library/std/src/sys/pal/unix/futex.rs:73
+#2  std::sys::sync::once::futex::Once::call () at library/std/src/sys/sync/once/futex.rs:200
+#3  0x0000621cd0c8579e in call_once_force<std::sync::once_lock::{impl#0}::initialize::{closure_env#0}<wgpu::api::instance::Instance, std::sync::once_lock::{impl#0}::get_or_init::{closure_env#0}<wgpu::api::instance::Instance, trueno::backends::gpu::device::shared_instance::{closure_env#0}>, !>> () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once.rs:219
+#4  0x0000621ccfef8daa in std::sync::once_lock::OnceLock<T>::initialize () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:533
+#5  0x0000621ccfef9535 in get_or_try_init<wgpu::api::instance::Instance, std::sync::once_lock::{impl#0}::get_or_init::{closure_env#0}<wgpu::api::instance::Instance, trueno::backends::gpu::device::shared_instance::{closure_env#0}>, !> () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:409
+#6  0x0000621ccfef91d6 in std::sync::once_lock::OnceLock<T>::get_or_init () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:320
+#7  0x0000621cd0074f4d in trueno::backends::gpu::device::shared_instance () at crates/aprender-compute/src/backends/gpu/device/mod.rs:79
+#8  0x0000621ccfde19c6 in {async_fn#0} () at crates/aprender-compute/src/backends/gpu/device/mod.rs:248
+#9  0x0000621cd02de08d in block_on<trueno::backends::gpu::device::{impl#0}::is_available_async::{async_fn_env#0}> () at /home/noah/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pollster-0.4.0/src/lib.rs:126
+#10 0x0000621cd043b01c in trueno::backends::gpu::runtime::block_on () at crates/aprender-compute/src/backends/gpu/runtime.rs:12
+#11 0x0000621ccfde1984 in trueno::backends::gpu::device::GpuDevice::is_available::{{closure}} () at crates/aprender-compute/src/backends/gpu/device/mod.rs:243
+#12 0x0000621ccfef9246 in std::sync::once_lock::OnceLock<T>::get_or_init::{{closure}} () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:320
+#13 0x0000621ccfef917e in {closure#0}<bool, std::sync::once_lock::{impl#0}::get_or_init::{closure_env#0}<bool, trueno::backends::gpu::device::{impl#0}::is_available::{closure_env#0}>, !> () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:534
+
+Thread 2 (Thread 0x755f6f9fc640 (LWP 2495327) "backends::gpu::"):
+#0  syscall () at ../sysdeps/unix/sysv/linux/x86_64/syscall.S:38
+#1  0x0000621cd1984c14 in std::sys::pal::unix::futex::futex_wait () at library/std/src/sys/pal/unix/futex.rs:73
+#2  std::sys::sync::once::futex::Once::call () at library/std/src/sys/sync/once/futex.rs:200
+#3  0x0000621cd0c8586e in call_once_force<std::sync::once_lock::{impl#0}::initialize::{closure_env#0}<core::option::Option<trueno::backends::gpu::device::GpuDevice>, std::sync::once_lock::{impl#0}::get_or_init::{closure_env#0}<core::option::Option<trueno::backends::gpu::device::GpuDevice>, trueno::backends::gpu::batch::tests::get_shared_device::{closure_env#0}>, !>> () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once.rs:219
+#4  0x0000621ccfef8d02 in std::sync::once_lock::OnceLock<T>::initialize () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:533
+#5  0x0000621ccfef9935 in get_or_try_init<core::option::Option<trueno::backends::gpu::device::GpuDevice>, std::sync::once_lock::{impl#0}::get_or_init::{closure_env#0}<core::option::Option<trueno::backends::gpu::device::GpuDevice>, trueno::backends::gpu::batch::tests::get_shared_device::{closure_env#0}>, !> () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:409
+#6  0x0000621ccfef9206 in std::sync::once_lock::OnceLock<T>::get_or_init () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/std/src/sync/once_lock.rs:320
+#7  0x0000621cd0d4a97d in trueno::backends::gpu::batch::tests::get_shared_device () at crates/aprender-compute/src/backends/gpu/batch/tests.rs:14
+#8  0x0000621cd046c2f3 in {async_block#0} () at crates/aprender-compute/src/backends/gpu/batch/tests.rs:94
+#9  0x0000621cd01a7654 in poll<&mut dyn core::future::future::Future<Output=()>> () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/core/src/future/future.rs:133
+#10 0x0000621cd01a75c6 in poll<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output=()>>> () at /rustc/254b59607d4417e9dffbc307138ae5c86280fe4c/library/core/src/future/future.rs:133
+#11 0x0000621ccfe3c006 in {closure#0}<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output=()>>>> () at /home/noah/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tokio-1.52.3/src/runtime/scheduler/current_thread/mod.rs:778
+#12 0x0000621ccfe3be04 in with_budget<core::task::poll::Poll<()>, tokio::runtime::scheduler::current_thread::{impl#9}::block_on::{closure#0}::{closure#0}::{closure_env#0}<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output=()>>>>> () at /home/noah/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tokio-1.52.3/src/task/coop/mod.rs:167
+#13 budget<core::task::poll::Poll<()>, tokio::runtime::scheduler::current_thread::{impl#9}::block_on::{closure#0}::{closure#0}::{closure_env#0}<core::pin::Pin<&mut core::pin::Pin<&mut dyn core::future::future::Future<Output=()>>>>> () at /home/noah/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tokio-1.52.3/src/task/coop/mod.rs:133
+
+Thread 1 (Thread 0x755f7817a980 (LWP 2495208) "trueno-beb550ae"):
+#0  syscall () at ../sysdeps/unix/sysv/linux/x86_64/syscall.S:38
+#1  0x0000621cd198c986 in std::sys::pal::unix::futex::futex_wait () at library/std/src/sys/pal/unix/futex.rs:73
+#2  std::sys::sync::thread_parking::futex::Parker::park () at library/std/src/sys/sync/thread_parking/futex.rs:55
+#3  std::thread::thread::Thread::park () at library/std/src/thread/thread.rs:121
+#4  0x0000621cd0e0c555 in std::sync::mpmc::context::Context::wait_until () at library/std/src/sync/mpmc/context.rs:143
+#5  std::sync::mpmc::list::{impl#3}::recv::{closure#1}<test::event::CompletedTest> () at library/std/src/sync/mpmc/list.rs:453
+#6  0x0000621cd0e0c12c in std::sync::mpmc::context::{impl#0}::with::{closure#0}<std::sync::mpmc::list::{impl#3}::recv::{closure_env#1}<test::event::CompletedTest>, ()> () at library/std/src/sync/mpmc/context.rs:49
+#7  std::sync::mpmc::context::{impl#0}::with::{closure#1}<std::sync::mpmc::list::{impl#3}::recv::{closure_env#1}<test::event::CompletedTest>, ()> () at library/std/src/sync/mpmc/context.rs:57
+#8  std::thread::local::LocalKey::try_with<core::cell::Cell<core::option::Option<std::sync::mpmc::context::Context>>, std::sync::mpmc::context::{impl#0}::with::{closure_env#1}<std::sync::mpmc::list::{impl#3}::recv::{closure_env#1}<test::event::CompletedTest>, ()>, ()> () at library/std/src/thread/local.rs:513
+#9  std::sync::mpmc::context::Context::with<std::sync::mpmc::list::{impl#3}::recv::{closure_env#1}<test::event::CompletedTest>, ()> () at library/std/src/sync/mpmc/context.rs:53
+#10 std::sync::mpmc::list::Channel::recv<test::event::CompletedTest> () at library/std/src/sync/mpmc/list.rs:442
+#11 0x0000621cd0e29a03 in std::sync::mpmc::Receiver::recv<test::event::CompletedTest> () at library/std/src/sync/mpmc/mod.rs:984
+#12 std::sync::mpsc::Receiver::recv<test::event::CompletedTest> () at library/std/src/sync/mpsc.rs:849
+#13 test::run_tests<test::console::run_tests_console::{closure_env#2}> () at library/test/src/lib.rs:472
+[Inferior 1 (process 2495208) detached]
