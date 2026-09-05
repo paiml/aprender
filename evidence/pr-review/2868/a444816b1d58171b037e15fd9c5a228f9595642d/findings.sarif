@@ -1,0 +1,489 @@
+{
+ "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+ "version": "2.1.0",
+ "runs": [
+  {
+   "tool": {
+    "driver": {
+     "name": "pmat",
+     "version": "unknown",
+     "rules": [
+      {
+       "id": "PRREV-PMAT",
+       "name": "pmat quality and duplication"
+      }
+     ]
+    }
+   },
+   "results": [
+    {
+     "ruleId": "PRREV-PMAT",
+     "level": "note",
+     "message": {
+      "text": "lexical name match `gx10.json` at docs/specifications/aprender-train/ship-model-1-spec.md:1666 (lexical); not duplicated logic: a different module shares the identifier"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "docs/specifications/aprender-train/ship-model-1-spec.md"
+        },
+        "region": {
+         "startLine": 1666
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "if the two symbols were the same logic, this PR would re-implement it; they are not (read on both sides)",
+      "source": "scripts/pr_review_duplication_scan.sh --base b1a6324b8 --head a444816b1 --rust-semantic",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "name collision, no duplication"
+     }
+    },
+    {
+     "ruleId": "PRREV-PMAT",
+     "level": "note",
+     "message": {
+      "text": "lexical name match `gx10.json` at docs/specifications/aprender-train/ship-model-1-spec.md:1963 (lexical); not duplicated logic: a different module shares the identifier"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "docs/specifications/aprender-train/ship-model-1-spec.md"
+        },
+        "region": {
+         "startLine": 1963
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "if the two symbols were the same logic, this PR would re-implement it; they are not (read on both sides)",
+      "source": "scripts/pr_review_duplication_scan.sh --base b1a6324b8 --head a444816b1 --rust-semantic",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "name collision, no duplication"
+     }
+    },
+    {
+     "ruleId": "PRREV-PMAT",
+     "level": "note",
+     "message": {
+      "text": "lexical name match `gx10.json` at docs/specifications/aprender-train/ship-model-1-spec.md:2037 (lexical); not duplicated logic: a different module shares the identifier"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "docs/specifications/aprender-train/ship-model-1-spec.md"
+        },
+        "region": {
+         "startLine": 2037
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "if the two symbols were the same logic, this PR would re-implement it; they are not (read on both sides)",
+      "source": "scripts/pr_review_duplication_scan.sh --base b1a6324b8 --head a444816b1 --rust-semantic",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "name collision, no duplication"
+     }
+    },
+    {
+     "ruleId": "PRREV-PMAT",
+     "level": "note",
+     "message": {
+      "text": "lexical name match `gx10.json` at evidence/section-71-ship-005-discharged-2026-05-12/findings.json:43 (lexical); not duplicated logic: a different module shares the identifier"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "evidence/section-71-ship-005-discharged-2026-05-12/findings.json"
+        },
+        "region": {
+         "startLine": 43
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "if the two symbols were the same logic, this PR would re-implement it; they are not (read on both sides)",
+      "source": "scripts/pr_review_duplication_scan.sh --base b1a6324b8 --head a444816b1 --rust-semantic",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "name collision, no duplication"
+     }
+    },
+    {
+     "ruleId": "PRREV-PMAT",
+     "level": "note",
+     "message": {
+      "text": "lexical name match `gx10.json` at scripts/perf_receipt_sign.sh:111 (lexical); not duplicated logic: a different module shares the identifier"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "scripts/perf_receipt_sign.sh"
+        },
+        "region": {
+         "startLine": 111
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "if the two symbols were the same logic, this PR would re-implement it; they are not (read on both sides)",
+      "source": "scripts/pr_review_duplication_scan.sh --base b1a6324b8 --head a444816b1 --rust-semantic",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "name collision, no duplication"
+     }
+    },
+    {
+     "ruleId": "PRREV-PMAT",
+     "level": "note",
+     "message": {
+      "text": "lexical name match `gx10.json` at scripts/perf_receipt_sign.sh:127 (lexical); not duplicated logic: a different module shares the identifier"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "scripts/perf_receipt_sign.sh"
+        },
+        "region": {
+         "startLine": 127
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "if the two symbols were the same logic, this PR would re-implement it; they are not (read on both sides)",
+      "source": "scripts/pr_review_duplication_scan.sh --base b1a6324b8 --head a444816b1 --rust-semantic",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "name collision, no duplication"
+     }
+    },
+    {
+     "ruleId": "PRREV-PMAT",
+     "level": "note",
+     "message": {
+      "text": "lexical name match `impl-estimates.jsonl` at docs/audits/impl-estimates.jsonl:0 (lexical); not duplicated logic: a different module shares the identifier"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "docs/audits/impl-estimates.jsonl"
+        },
+        "region": {
+         "startLine": 1
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "if the two symbols were the same logic, this PR would re-implement it; they are not (read on both sides)",
+      "source": "scripts/pr_review_duplication_scan.sh --base b1a6324b8 --head a444816b1 --rust-semantic",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "name collision, no duplication"
+     }
+    },
+    {
+     "ruleId": "PRREV-PMAT",
+     "level": "note",
+     "message": {
+      "text": "lexical name match `gx10.json` at evidence/dogfood/0.63.0/gx10.json:0 (lexical); not duplicated logic: a different module shares the identifier"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "evidence/dogfood/0.63.0/gx10.json"
+        },
+        "region": {
+         "startLine": 1
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "if the two symbols were the same logic, this PR would re-implement it; they are not (read on both sides)",
+      "source": "scripts/pr_review_duplication_scan.sh --base b1a6324b8 --head a444816b1 --rust-semantic",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "name collision, no duplication"
+     }
+    },
+    {
+     "ruleId": "PRREV-PMAT",
+     "level": "note",
+     "message": {
+      "text": "lexical name match `mini.json` at evidence/dogfood/0.63.0/mini.json:0 (lexical); not duplicated logic: a different module shares the identifier"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "evidence/dogfood/0.63.0/mini.json"
+        },
+        "region": {
+         "startLine": 1
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "if the two symbols were the same logic, this PR would re-implement it; they are not (read on both sides)",
+      "source": "scripts/pr_review_duplication_scan.sh --base b1a6324b8 --head a444816b1 --rust-semantic",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "name collision, no duplication"
+     }
+    }
+   ]
+  },
+  {
+   "tool": {
+    "driver": {
+     "name": "nvidia-cuda-docs",
+     "version": "mcp",
+     "rules": [
+      {
+       "id": "PRREV-CUDA",
+       "name": "device-behaviour claim vs NVIDIA docs"
+      }
+     ]
+    }
+   },
+   "results": []
+  },
+  {
+   "tool": {
+    "driver": {
+     "name": "crux",
+     "version": "v1",
+     "rules": [
+      {
+       "id": "PRREV-CRUX",
+       "name": "user-facing surface coverage"
+      }
+     ]
+    }
+   },
+   "results": []
+  },
+  {
+   "tool": {
+    "driver": {
+     "name": "cargo-mutants",
+     "version": "guard case-tables",
+     "rules": [
+      {
+       "id": "PRREV-MUT",
+       "name": "guard mutation set"
+      }
+     ]
+    }
+   },
+   "results": []
+  },
+  {
+   "tool": {
+    "driver": {
+     "name": "antigravity",
+     "version": "1.1.26",
+     "rules": [
+      {
+       "id": "PRREV-AGY",
+       "name": "cross-vendor review (advisory)"
+      },
+      {
+       "id": "PRREV-AGY-PRIOR",
+       "name": "cross-vendor review, earlier runs on this PR (advisory)"
+      }
+     ]
+    }
+   },
+   "results": [
+    {
+     "ruleId": "PRREV-AGY",
+     "level": "note",
+     "message": {
+      "text": "VERDICT.md quotes gx10 c=1 comparator aggregate as 77.8, but the JSON median is 75.7."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "evidence/dogfood/0.65.2/VERDICT.md"
+        },
+        "region": {
+         "startLine": 31
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "The VERDICT.md explicitly states 'Numbers are aggregate tok/s medians', meaning quoting 77.8 misrepresents the true median of 75.7, which breaks trust in the report.",
+      "source": "agy gemini-3.1-pro-high on a444816b1: ",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "fixed in 4ca8f95cf on the PR branch: VERDICT.md, gx10.json notable, roadmap PMAT-964 and the impl receipt now carry the median 75.7 and the ratio 0.046x; every other VERDICT number was recomputed from the receipts' median fields (gx10/mini/intel bands printed and compared)",
+      "agy_id": "gx10-c1-comparator-median",
+      "baselineState": "new"
+     }
+    },
+    {
+     "ruleId": "PRREV-AGY",
+     "level": "note",
+     "message": {
+      "text": "All other numbers in the VERDICT.md tables trace correctly to median fields in the JSON receipts. gx10/intel/mini are recorded honestly as parity_attempts (refused) without claiming unmeasured data."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "evidence/dogfood/0.65.2/VERDICT.md"
+        },
+        "region": {
+         "startLine": 1
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "none stated",
+      "source": "agy gemini-3.1-pro-high on a444816b1: ",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "confirmation; re-verified by the primary against the receipts",
+      "agy_id": "verdict-numbers-trace",
+      "baselineState": "new"
+     }
+    },
+    {
+     "ruleId": "PRREV-AGY",
+     "level": "note",
+     "message": {
+      "text": "The 0.66 report launders unreceipted figures into receipted ones by citing the provenance index as a receipt, failing to mark them as 'unreceipted [C]' in the text."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "docs/specifications/0.66-performance-parity-report.md"
+        },
+        "region": {
+         "startLine": 47
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "asserted",
+      "precision_class": "advisory",
+      "failure_scenario": "Readers will mistakenly trust unverified numbers because the report falsely portrays them as backed by a hard receipt (e.g. 'receipt: evidence/reports/...'), breaking the audit chain for unreceipted figures.",
+      "source": "agy gemini-3.1-pro-high on a444816b1: ",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "fixed in 4ca8f95cf on the PR branch: the 15 report lines that cite only the provenance index now read 'UNRECEIPTED [C] \u2014 provenance only: evidence/reports/...' or name the non-measurement source on the line itself; check_no_claim_literals.sh still PASS",
+      "agy_id": "laundering-unreceipted-figures",
+      "baselineState": "new"
+     }
+    },
+    {
+     "ruleId": "PRREV-AGY",
+     "level": "note",
+     "message": {
+      "text": "The impl receipt attributes the '0.66 spec grill background workflow' and 'skipping Round-6 review' decisions to the operator without providing verbatim quotes."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "docs/audits/impl-PMAT-929-receipt.md"
+        },
+        "region": {
+         "startLine": 142
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "asserted",
+      "precision_class": "advisory",
+      "failure_scenario": "Undermines the integrity of the audit log by claiming operator authorization for skipping work or spawning workflows without verifiable evidence (a verbatim quote).",
+      "source": "agy gemini-3.1-pro-high on a444816b1: ",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "fixed in 4ca8f95cf on the PR branch: both attributions in the impl receipt now quote the operator's messages verbatim ('[continue release in parallel and much this request to a background agent ...]', 'we will cherry pick this and not stop release', 'release autonomously in as few iterations as possible') and mark the residual interpretation [A]",
+      "agy_id": "unquoted-operator-decisions",
+      "baselineState": "new"
+     }
+    },
+    {
+     "ruleId": "PRREV-AGY",
+     "level": "note",
+     "message": {
+      "text": "The PR body's claims (published 74/74, dogfood NO-GO on measured parity, PARTIAL(escalate) with [A]) perfectly align with the diff."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "docs/audits/impl-PMAT-929-receipt.md"
+        },
+        "region": {
+         "startLine": 1
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "none stated",
+      "source": "agy gemini-3.1-pro-high on a444816b1: ",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "confirmation; re-verified by the primary against the receipts",
+      "agy_id": "pr-body-claims",
+      "baselineState": "new"
+     }
+    }
+   ]
+  }
+ ]
+}
