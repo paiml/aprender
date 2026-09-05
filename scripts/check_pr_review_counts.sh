@@ -371,7 +371,7 @@ self_test() {
     # nothing to do with what it is measuring.
     ( cd "$REPO_ROOT" && \
       tar -cf - .claude/skills/pr-review/SKILL.md contracts/binding.yaml \
-                .github/workflows/ci.yml tests/pr-review.bats \
+                .github/workflows/ci.yml .github/workflows/pr-review-quorum.yml tests/pr-review.bats \
                 schemas scripts/pr_review_duplication_scan.sh \
                 scripts/mutate-guard.sh scripts/check_pr_review_receipt.sh \
                 scripts/check_pr_review_counts.sh tests/fixtures/pr-review \
