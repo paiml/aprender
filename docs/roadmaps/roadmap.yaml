@@ -14446,6 +14446,19 @@ roadmap:
   acceptance_criteria:
   - 'the asset is vendored inside crates/aprender-present-lib (or reached through build.rs with a vendored copy, as PMAT-958 did for perf-matrix.yaml) and the wasm32 build of the packaged crate compiles'
   notes: 'Found by the PMAT-958 widening of check_package_includes.sh; wasm32-only files are outside the host verification build, so the guard prints them as SKIPPED rather than failing — this is the one live residual.'
+- id: PMAT-961
+  github_issue: null
+  item_type: bug
+  title: 'llama_bin.sh pin resolver rejects every non-CUDA comparator build (cmake_mismatch: declared flags without GGML_CUDA vs cache OFF), so intel and mini can never carry a parity block and check_multiplatform_dogfood.sh cannot pass on a non-grandfathered release'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-09-05 00:05:00+00:00
+  updated: 2026-09-05 00:05:00+00:00
+  spec: null
+  acceptance_criteria:
+  - 'a declared build line that does not name GGML_CUDA (or CMAKE_CUDA_ARCHITECTURES) matches a cache that has it OFF/unset; a declared ON still refuses a cache OFF; case rows for the intel and mini shapes (measured: both ok on the fix, both cmake_mismatch under the mutation)'
+  notes: 'Found producing the 0.65.2 post-publish receipts (the first release not grandfathered out of the parity requirement). The intel and mini 0.65.2 receipts were produced with this patched resolver and say so.'
 - id: PMAT-952
   github_issue: null
   item_type: bug

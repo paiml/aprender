@@ -209,6 +209,12 @@ llama_cmake_cache_get() { # llama_cmake_cache_get <cache-file> <name>
 }
 
 # Value of -D<name>=<value> in a declared cmake line, or the word `unset`.
+llama_cmake_norm_off() { # llama_cmake_norm_off <value>: OFF, empty and unset are one value
+    case "${1:-}" in
+        ""|unset|OFF|off|0|FALSE|false|NO|no|N|n) printf 'unset' ;;
+        *) printf '%s' "$1" ;;
+    esac
+}
 llama_cmake_flag_get() { # llama_cmake_flag_get <line> <name>
     llama_cf_line="${1:-}"
     llama_cf_name="${2:-}"
@@ -410,8 +416,15 @@ llama_bin_resolve() {
     LLAMA_CMAKE_ARCHS=$(llama_cmake_cache_get "$llama_bin_cache" CMAKE_CUDA_ARCHITECTURES)
     llama_bin_want_cuda=$(llama_cmake_flag_get "$llama_bin_line" GGML_CUDA)
     llama_bin_want_archs=$(llama_cmake_flag_get "$llama_bin_line" CMAKE_CUDA_ARCHITECTURES)
-    if [ "$LLAMA_CMAKE_CUDA" != "$llama_bin_want_cuda" ] ||
-       [ "$LLAMA_CMAKE_ARCHS" != "$llama_bin_want_archs" ]; then
+    # PMAT-961: a cmake option the declared line does not name takes its
+    # default, so a declared `unset` and a cache `OFF` (or an absent entry) are
+    # the same build. Without this, every non-CUDA host (intel: -DGGML_NATIVE=ON,
+    # mini: -DGGML_METAL=ON) was refused as cmake_mismatch and could never
+    # carry a parity block. A declared ON against a cache OFF still refuses.
+    llama_bin_cache_cuda=$(llama_cmake_norm_off "$LLAMA_CMAKE_CUDA")
+    llama_bin_cache_archs=$(llama_cmake_norm_off "$LLAMA_CMAKE_ARCHS")
+    if [ "$llama_bin_cache_cuda" != "$(llama_cmake_norm_off "$llama_bin_want_cuda")" ] ||
+       [ "$llama_bin_cache_archs" != "$(llama_cmake_norm_off "$llama_bin_want_archs")" ]; then
         LLAMA_PIN_REASON=cmake_mismatch
         LLAMA_PIN_RC=1
         return 1
