@@ -14909,7 +14909,7 @@ roadmap:
   labels:
   - kind:code
   - pp-066
-  notes: 'complete: #2985 merged cdc0acb99 2026-09-05T16:44:33Z; receipt docs/audits/impl-PMAT-1054-receipt.md'
+  notes: 'complete: proof:PR#2985 (merged cdc0acb99 2026-09-05T16:44:33Z); proof:docs/audits/impl-PMAT-1054-receipt.md'
 - id: PMAT-967
   github_issue: null
   item_type: task
