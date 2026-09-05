@@ -1,0 +1,13 @@
+host=mac-server started=2026-09-05T08:10:03Z sha=da49c108116ca8be0f7cd81a9379b7e333d17d6c load=99.14 109.60 112.08
+=== BUILD facade-cli: cargo build -p aprender --release --no-default-features --features cli (CARGO_TARGET_DIR=/tmp/apr-s0-target-facade-cli) ===
+    Finished `release` profile [optimized] target(s) in 6m 00s
+BUILD facade-cli rc=0 wall_s=361 load_end=146.18 134.80 123.00
+size_bytes=73714176 sha256=e97635e6be2c2fa9 ldd_cuda_cublas_count=0
+apr 0.65.2 (da49c1081)
+=== BUILD facade-cli-cuda: cargo build -p aprender --release --no-default-features --features cli,cuda (CARGO_TARGET_DIR=/tmp/apr-s0-target-facade-cli-cuda) ===
+    Finished `release` profile [optimized] target(s) in 6m 20s
+BUILD facade-cli-cuda rc=0 wall_s=381 load_end=82.48 113.07 119.09
+size_bytes=79045712 sha256=f42d6df0a9a45c19 ldd_cuda_cublas_count=0
+apr 0.65.2 (da49c1081)
+finished=2026-09-05T08:22:26Z
+S0-15-DONE

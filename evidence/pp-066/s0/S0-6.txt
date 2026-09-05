@@ -1,0 +1,22 @@
+$ python3 -c "...perf-matrix hosts..."
+{'lambda': ('cuda', None), 'gx10': ('cuda', None), 'intel': ('cpu', None), 'mini': (None, 'NA')}
+$ perf-matrix structure: hosts.<h> keys and per-cell status
+lambda ['accelerator', 'ci_runner', 'comparator', 'compute_class', 'reachable_by']
+gx10 ['accelerator', 'ci_runner', 'comparator', 'compute_class', 'reachable_by']
+intel ['accelerator', 'ci_runner', 'comparator', 'compute_class', 'reachable_by']
+mini ['accelerator', 'ci_runner', 'comparator', 'compute_class', 'date', 'decided_by', 'github_issue', 'reachable_by', 'reason', 'status']
+$ perf-matrix top-level keys and every cell with a status
+['arms', 'baselines', 'cell_exceptions', 'comparator_template', 'derivation', 'expiry_anchors', 'hosts', 'ladder', 'protocol', 'schema_version', 'stream', 'witness', 'workloads']
+  .hosts.mini: status=NA class=None owner=None expires=None decided_by=spec-owner
+  .baselines.lambda.W1: status=UNMEASURED class=None owner=perf-gate expires={'anchor': 'PP-LLAMA-001-row-18', 'days': 0} decided_by=None
+  .baselines.lambda.W2: status=UNMEASURED class=None owner=perf-gate expires={'anchor': 'PERF-001', 'days': 30} decided_by=None
+  .baselines.gx10.W1: status=UNMEASURED class=None owner=perf-gate expires={'anchor': 'PP-LLAMA-001-row-15', 'days': 0} decided_by=None
+  .baselines.gx10.W2: status=UNMEASURED class=None owner=perf-gate expires={'anchor': 'PERF-001', 'days': 30} decided_by=None
+  .baselines.intel.W1: status=UNMEASURED class=None owner=perf-gate expires={'anchor': 'PP-LLAMA-001-row-18', 'days': 0} decided_by=None
+  .baselines.intel.W2: status=UNMEASURED class=None owner=perf-gate expires={'anchor': 'PERF-001', 'days': 30} decided_by=None
+  .baselines.mini.W1: status=NA class=None owner=None expires=None decided_by=spec-owner
+  .baselines.mini.W2: status=NA class=None owner=None expires=None decided_by=spec-owner
+  .expiry_anchors.PERF-001: status=in_progress class=None owner=@noah expires=None decided_by=@noah
+  .expiry_anchors.PP-LLAMA-001-row-15: status=open class=None owner=perf-gate expires=None decided_by=spec-owner
+  .expiry_anchors.PP-LLAMA-001-row-18: status=open class=None owner=perf-gate expires=None decided_by=spec-owner
+  .cell_exceptions[0]: status=NOT_APPLICABLE class=None owner=None expires=None decided_by=spec-owner

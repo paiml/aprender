@@ -1,0 +1,6 @@
+$ git rev-parse v0.65.2^{commit}
+8e1e9ad405dda531ba4b6aa307e39b3a81418ce1
+$ git log --oneline 8e1e9ad40..b1a6324b8
+b1a6324b8 fix(perf-gate): pin resolver accepts non-CUDA comparator builds — intel/mini could never carry a parity block (PMAT-961) (#2867)
+$ git tag --points-at 8e1e9ad40
+v0.65.2

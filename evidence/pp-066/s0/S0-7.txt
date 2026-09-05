@@ -1,0 +1,70 @@
+$ pmat query --regex 'cfg!\(any\(feature = "cuda"' --path crates/apr-cli/src
+Loading index from "./.pmat/context.idx"...
+Checking for incremental updates...
+Incremental update: 10337 mtime-skipped, 0 checksum-reused, 0 re-parsed
+Index: 88496 functions in 10337 files (avg TDG: 98.0)
+Searching raw files for non-indexed matches...
+crates/apr-cli/src/accel.rs:27-29 │ build_has_accelerator │ TDG: A+ │ O(1)
+   C:1 │ L:3 │ 1c
+   /// True when this build carries a GPU backend that could honour a request.
+   calls: cfg, cuda, feature, any │ ← ensure_available, a_request_this_build_cannot_honour_is_refused
+  27│ pub(crate) fn build_has_accelerator() -> bool {
+  28│     cfg!(any(feature = "cuda", feature = "wgpu"))
+  29│ }
+
+crates/apr-cli/src/commands/serve/mod.rs:655-673 │ the_refusal_is_total_over_every_input │ TDG: A │ O(n^3)
+   C:6 │ L:19 │ 10c │ 🔄23%
+   /// EXHAUSTIVE OVER THE WHOLE INPUT SPACE.  The predicate reads four booleans and allocates nothing, ...
+   calls: backend, Err, cfg, request, matches, (+10 more)
+ 655│ fn the_refusal_is_total_over_every_input() {
+ 656│         let linked = cfg!(any(feature = "cuda", feature = "wgpu"));
+ 657│         for gpu in [false, true] {
+ 658│             for no_gpu in [false, true] {
+ 659│                 for backend in [None, Some("cpu"), Some("cuda"), Some("wgpu")] {
+ 660│                     let cfg = cfg_with(gpu, no_gpu, backend);
+ 661│                     let requested =
+ 662│                         (gpu && !no_gpu) || matches!(backend, Some("cuda" | "wgpu" | "gpu"));
+ 663│                     let expect_err = requested && !linked;
+ 664│                     assert_eq!(
+ 665│                         ensure_accelerator_available(&cfg).is_err(),
+ 666│                         expect_err,
+ 667│                         "gpu={gpu} no_gpu={no_gpu} backend={backend:?} linked={linked}: \
+$ pmat query --literal 'BACKEND_VALUES' --path crates/apr-cli/src
+Loading index from "./.pmat/context.idx"...
+Checking for incremental updates...
+Incremental update: 10337 mtime-skipped, 0 checksum-reused, 0 re-parsed
+Index: 88496 functions in 10337 files (avg TDG: 98.0)
+Searching raw files for non-indexed matches...
+crates/apr-cli/src/commands_enum.rs:26-30 │ BackendArg │ TDG: A+ │ O(1)
+   C:1 │ L:5 │ 16c 41% │ 🔄20%
+   /// The ONE `--backend` declaration, flattened into every command that offers the inference backend o...
+   calls: backend, arg, cpu, cuda │ ← Commands, dispatch_serve_command, dispatch_runtime_commands, (+4 more)
+  26│ pub struct BackendArg {
+  27│     /// Compute backend override (cuda, cpu, wgpu)
+  28│     #[arg(long, value_name = "BACKEND", value_parser = BACKEND_VALUES)]
+  29│     pub backend: Option<String>,
+  30│ }
+
+crates/apr-cli/src/model_ops_commands.rs:3-201 │ ModelOpsCommands │ TDG: A+ │ O(1)
+   C:1 │ L:199 │ 5c │ H:100%
+   calls: mode, width, path, text, alpha, (+134 more) │ ← Commands, extract_model_paths, dispatch_model_commands
+   3│ pub enum ModelOpsCommands {
+   4│     /// Fine-tune model with LoRA/QLoRA (GH-244)
+$ git grep -n "BACKEND_VALUES" -- crates/apr-cli/src | head -4; git grep -nE "cfg!\(any\(" -- crates/apr-cli/src | head
+crates/apr-cli/src/commands_enum.rs:10:pub const BACKEND_VALUES: [&str; 3] = ["cuda", "cpu", "wgpu"];
+crates/apr-cli/src/commands_enum.rs:28:    #[arg(long, value_name = "BACKEND", value_parser = BACKEND_VALUES)]
+crates/apr-cli/src/commands_enum.rs:44:/// a valid selection here and is absent from `BACKEND_VALUES`; `cpu` is not a
+crates/apr-cli/src/commands_enum.rs:51:pub const FINETUNE_GPU_BACKEND_VALUES: [&str; 3] = ["auto", "cuda", "wgpu"];
+crates/apr-cli/src/accel.rs:28:    cfg!(any(feature = "cuda", feature = "wgpu"))
+crates/apr-cli/src/commands/serve/mod.rs:236:    if cfg!(any(feature = "cuda", feature = "wgpu")) {
+crates/apr-cli/src/commands/serve/mod.rs:656:        let linked = cfg!(any(feature = "cuda", feature = "wgpu"));
+$ git grep -n "BACKEND_VALUES" -- crates/apr-cli/src (definition)
+crates/apr-cli/src/commands_enum.rs:10:pub const BACKEND_VALUES: [&str; 3] = ["cuda", "cpu", "wgpu"];
+$ sed -n 170,176p crates/apr-cli/src/dispatch.rs
+            // NOTE: this checks build capability only. When CUDA *is* compiled in
+            // but fails at runtime (e.g. the Blackwell sm_121 JIT), the GH-559
+            // wgpu fallback is deliberate and stays.
+            if backend.as_deref() == Some("cuda") && !cfg!(feature = "cuda") {
+                return Some(Err(CliError::ValidationFailed(
+                    "--backend cuda requested, but this `apr` was built WITHOUT the \
+`cuda` feature, so the CUDA backend does not exist in this binary. \

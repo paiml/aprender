@@ -1,0 +1,61 @@
+$ git grep -nE 'libcudart|cudart' -- crates | wc -l; head
+0
+$ git grep -noE 'libcublas[^" ]*' -- crates/aprender-gpu/src | sort -u
+crates/aprender-gpu/src/driver/cublaslt_sys.rs:235:libcublasLt.so
+crates/aprender-gpu/src/driver/cublaslt_sys.rs:235:libcublasLt.so.12
+crates/aprender-gpu/src/driver/cublas_sys.rs:123:libcublas.so
+crates/aprender-gpu/src/driver/cublas_sys.rs:232:libcublas.so
+crates/aprender-gpu/src/driver/cublas_sys.rs:232:libcublas.so.12
+crates/aprender-gpu/src/driver/cublas_sys.rs:4:libcublas.so.
+$ git grep -noE 'libcuda\.so[^" ]*' -- crates | sort -u
+crates/aprender-compute/batuta.yaml:76:libcuda.so
+crates/aprender-compute/book/src/api-reference/gpu-monitoring.md:207:libcuda.so/nvcuda.dll
+crates/aprender-compute/docs/specifications/compute-block-tui-cbtop.md:1029:libcuda.so
+crates/aprender-gpu/Cargo.toml:19:libcuda.so/nvcuda.dll
+crates/aprender-gpu/docs/qa/complete-cuda-runtime-specification-100pt-falsify.md:177:libcuda.so\|nvcuda.dll
+crates/aprender-gpu/docs/specifications/complete-cuda-runtime-specification.md:1405:libcuda.so
+crates/aprender-gpu/docs/specifications/complete-cuda-runtime-specification.md:1413:libcuda.so
+crates/aprender-gpu/docs/specifications/complete-cuda-runtime-specification.md:348:libcuda.so/nvcuda.dll.
+crates/aprender-gpu/docs/specifications/complete-cuda-runtime-specification.md:491:libcuda.so
+crates/aprender-gpu/docs/specifications/complete-cuda-runtime-specification.md:501:libcuda.so.1
+$ git grep -nE 'libcublas' -- crates | grep -v aprender-gpu | head -5
+crates/aprender-compute/docs/specifications/cgp-compute-gpu-profile.md:552:cgp profile library --so /usr/lib/libcublas.so.12 --symbol cublasGemmEx \
+$ sed -n 225,240p crates/aprender-gpu/src/driver/cublas_sys.rs
+    impl CublasDriver {
+        /// Load cuBLAS driver dynamically
+        ///
+        /// Returns `None` if cuBLAS is not available.
+        #[must_use]
+        pub fn load() -> Option<&'static Self> {
+            let _ = CUBLAS_LIBRARY.get_or_init(|| {
+                let lib_names = ["libcublas.so.12", "libcublas.so"];
+                for name in lib_names {
+                    if let Ok(lib) = unsafe { Library::new(name) } {
+                        return Some(lib);
+                    }
+                }
+                None
+            });
+
+$ sed -n 230,238p crates/aprender-gpu/src/driver/cublaslt_sys.rs
+    impl CublasLtDriver {
+        /// Load the cuBLASLt driver, returning a cached static reference.
+        #[must_use]
+        pub fn load() -> Option<&'static Self> {
+            let _ = CUBLASLT_LIBRARY.get_or_init(|| {
+                let lib_names = ["libcublasLt.so.12", "libcublasLt.so"];
+                for name in lib_names {
+                    if let Ok(lib) = unsafe { Library::new(name) } {
+                        return Some(lib);
+$ git grep -nE "libcuda\.so" -- crates/aprender-gpu/src crates/aprender-serve/src crates/aprender-compute/src
+crates/aprender-gpu/src/driver/mod.rs:136:/// - CUDA driver is installed (libcuda.so/nvcuda.dll exists)
+crates/aprender-gpu/src/driver/sys/mod.rs:4://! No external dependencies. Dynamic loading via libcuda.so/nvcuda.dll.
+crates/aprender-gpu/src/driver/sys/mod.rs:200:/// All function pointers are loaded at runtime from libcuda.so (Linux)
+crates/aprender-gpu/src/driver/sys/mod.rs:453:                let lib_names = ["libcuda.so.1", "libcuda.so"];
+$ pmat query --regex 'libcudart|cudart' --path crates
+$ pmat query --regex 'libcublas[^"]*' --path crates/aprender-gpu/src
+crates/aprender-gpu/src/driver/cublas_sys.rs:230-247 │ load │ TDG: A+ │ O(n)
+crates/aprender-gpu/src/driver/cublaslt_sys.rs:233-250 │ load │ TDG: A+ │ O(n)
+crates/aprender-compute/docs/specifications/cgp-compute-gpu-profile.md:552:cgp profile library --so /usr/lib/libcublas.so.12 --symbol cublas
+crates/aprender-gpu/src/driver/cublas_sys.rs:4://! Follows the same pattern as driver/sys.rs: dynamic loading via libcublas.so.
+crates/aprender-gpu/src/driver/cublas_sys.rs:123:/// Loaded from libcublas.so (Linux) at runtime.

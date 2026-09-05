@@ -1,0 +1,21 @@
+$ make -C ~/src/infra/machines/mini status
+Darwin 25.5.0 arm64
+26.5.2
+/dev/disk3s1s1   460Gi    12Gi   368Gi     4%    459k  3.9G    0%   /
+Homebrew 6.0.21
+cargo 1.96.0 (30a34c682 2026-05-25)
+rc=0
+$ make --eval="s0:; @ssh \$(HOST) \"...\"" s0   # HOST := mini from the Makefile
+mini
+arm64
+Apple M4
+17179869184
+zsh:1: command not found: cargo
+xcode-select: error: tool 'xcodebuild' requires Xcode, but active developer directory '/Library/Developer/CommandLineTools' is a command line tools instance
+26.5
+/Users/noahgift/src/aprender
+6453291c0
+      Chipset Model: Apple M4
+      Total Number of Cores: 10
+      Metal Support: Metal 4
+rc=0

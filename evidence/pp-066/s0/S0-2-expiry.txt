@@ -1,0 +1,9 @@
+33 row(s), 33 ARMED, 114 named case(s), 0 missing
+
+PASS  every ARMED row names cases that exist, no cell was spent twice,
+      and every §12 expiry derives from its blockers.
+$ python3: rows in evidence/parity/derived_expiries.json past 2026-09-05 and not discharged
+[('1', '2026-09-02'), ('13', '2026-09-02'), ('15', '2026-09-02'), ('18', '2026-09-02'), ('19', '2026-09-02')]
+$ dates in master row 1 cell (line 343): the scanner takes the FIRST one
+2026-09-02
+Expires **2026-09-19** 

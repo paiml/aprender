@@ -1,0 +1,6 @@
+  BEAT-OLLAMA-DECODE-CI-001.yaml           0ms
+  GH-339.yaml                              0ms
+
+Summary: 0 errors, 1082 warnings, 0 suppressed, 5 new
+Estimated remediation: ~358h 5m
+Result: PASS

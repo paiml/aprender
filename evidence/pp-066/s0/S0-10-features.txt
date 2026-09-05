@@ -1,0 +1,4 @@
+$ grep -nE '"(trueno|realizar|entrenar|batuta|pacha|alimentar)(/|")' -- '*/Cargo.toml' classified: feature arrays vs name= keys vs comments
+feature_arrays=21 name_keys=8 comments=1
+$ on intel (S0-14 script line `ldconfig -p | grep -c libcuda || true`): the bare `3` on S0-14-intel.txt line 9 is that count
+3

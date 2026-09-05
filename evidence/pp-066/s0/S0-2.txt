@@ -1,0 +1,38 @@
+$ pmat work list --status all   # REFUSED: 'all' is not a valid status (pmat pmat 3.36.0)
+$ python3: roadmap.yaml entries whose title starts with PP-(6|27|28|21|15|29|26)
+$ roadmap titles mentioning PP- (count):
+1
+$ master §12 rows 0a-0e,1,3,6,7,9,10,12,14 (status column as the master states it):
+288:| 1 | Blackwell prefill is a per-token serial loop | `crates/aprender-serve/src/cuda/gpu_profile.rs:517-531` (`select_prefill_path`: `cc >= SM12X_MIN_CC ⇒ Serial`; the predicate is numeric — datacenter Blackwell sm_100/103
+291:| 3 | Prefill 0.275× at c=1, host-side | #2697 `nsys`: `cuStreamSynchronize` 57.4%, `cuMemcpyHtoD_v2` 32.8% over 1,018 sync copies, `cuMemAlloc_v2` 3.3% over 904 allocs, `cuLaunchKernel` **0.7%** | 2,860 against 10,399 `tok/s
+294:| 6 | Batched Q4_K GEMV single-warp at `M <= 8` | `cublas_prefill/mod.rs:29-34` names the missing M=4 multi-warp kernel; decode is under capture so cuBLAS is bypassed (`cublas_prefill/attention.rs:995`, `:1022`) | unsized | §
+295:| 7 | VRAM 3.08× at c=1 | `evidence/parity-http/findings.json:16-17`: 14,030 against 4,554 MiB; **9,476 MiB** non-comparator `[C]`, roughly 20 KV slots of headroom at 448 MiB per slot (f32 KV, 4 B/element) consumed before a s
+297:| 9 | Harness uses a boolean accelerator flag | three sites: `scripts/llama_pin.toml:255`, `scripts/parity_host_receipt.sh:185` and `:187`, `scripts/perf041_batched_parity_probe.sh:25` (plus `scripts/llama_pin.toml:183` in the
+298:| 10 | `mini` declared a compute class with no reachable path | #2841; `crates/aprender-serve/Cargo.toml:52` pins `features = ["cuda"]` | PP-16 | `NA{decided_by: spec-owner, reason: no Metal inference path (#2841), date: 2026-
+338:| **0a** | `run_gate` dispatches every arm through `run_phased`, which reads the arm's `phase:` from `perf-matrix.yaml` (`arm_phase`) and demotes FAIL to REPORT outside it — `arm_a_self_regression` and `arm_l3_parity` replac
+339:| **0b** | `--stream` passed; `stream_request = ChatRequest { stream: Some(true), ..request.clone() }` on both the streaming and the blocking constructor; `ignore_eos` in `prompts-w1.jsonl` and its `_meta`; `short_of_n_predict
+340:| **0c** | receipt signing; and the `kv` block that replaced `kv: None` | PP-21; the memory arm | perf-gate | — | **LANDED** (this PR), in two halves: *signing* — `scripts/perf_receipt_sign.sh` with `sig_missing` / `sig_ok
+341:| **0d** | the boolean accelerator flag replaced by a quantity in `scripts/llama_pin.toml` and every lane script (§9 #9) | PP-15 | perf-gate | — | **LANDED** (this PR) — `scripts/check_comparator_flags.sh` (`boolean_flag`
+342:| **0e** | `scripts/spec_conformance.sh` + `scripts/lib/spec_conformance.py` wired into `guard-runner-labels`; `scripts/check_mutation_registry.sh` and `scripts/lib/mutation_registry.py` retired in the same commit | PP-29 | pe
+343:| **1** | land #2809; Blackwell guard on `prefill_multi_prompt`; `perf041` in `cuda-nightly.yml`, missing marker = RED; PP-26 witness in the receipt | PP-26; §9 #1a, #2 | serve | — | **OPEN.** The Blackwell guard (`gpu_prof
+345:| 3 | `/props` read on the pinned build at the withdrawn argv; `llama_pin.toml` becomes a per-band template with `pinned_on`/`pin_expiry`; a numeric `batch_size <= 1` refused; the CLI-differential lane retired | §5.3; PP-20 |
+348:| 6 | `GET /v1/effective-config` (§5.2) stored verbatim; `started_utc` and `clock_source`; `slots_admitted` on both lanes; derived ladder | PP-2, 13, 24, 30; §9 #7 accounting | serve | — | **LANDED** (this PR) — the rout
+349:| 7 | the JOIN: `ComparatorStatus::Measured { baseline }` + wire token; `--comparator-url`; a second `LlmClient` in the band loop; PP-22 refusal; the "always UNMEASURED" test at `crates/apr-cli/src/commands/test_llm_band.rs:71
+351:| 9 | `AbRecord` type | PP-32 | perf-gate | — | **LANDED** (this PR) — `abrecord_comparator` / `abrecord_ok` |
+352:| 10 | `check_no_claim_literals.sh` universe widened to `docs/specifications/`; the live uncited figures receipted or baselined with a dated comment; `docs/benchmarking-gate-spec.md` archived; `parity_block.py` thresholds remo
+354:| 12 | perf workflow with `concurrency: perf-<host>`; pin expiry field; client sha field | PP-19, 20, 25 | perf-gate | — | **LANDED** (this PR) in the half that exists: `scripts/check_perf_concurrency_groups.sh` (`isolation_
+356:| 14 | `scripts/measure_bandwidth.sh` per host, committed | PP-23 | perf-gate | — | **LANDED** (this PR) — `evidence/bandwidth/lambda.json`; `roofline_exceeded` / `roofline_aggregate_ok`. Hosts other than `lambda` stay `UN
+$ master §12 rows 3,6,7,9,10,12,14 status cells (LANDED/OPEN substring)
+0a -> **LANDED** (this PR) — `scripts/perf_gate.sh:63`, `:80`, `:938` | expires: []
+0b -> **LANDED** (this PR) — `crates/aprender-test-lib/src/llm/client.rs` (`stream_request_keeps_seed_and_ignore_eos | expires: []
+0c -> **LANDED** (this PR), in two halves: *signing* — `scripts/perf_receipt_sign.sh` with `sig_missing` / `sig_ok`; | expires: []
+0d -> **LANDED** (this PR) — `scripts/check_comparator_flags.sh` (`boolean_flag` / `quantity_flag`) | expires: []
+0e -> **LANDED** (this PR) — `conformance_missing` / `conformance_ok` | expires: []
+1 -> **OPEN.** The Blackwell guard (`gpu_profile.rs::multi_prompt_prefill_allowed`, consulted at `generate_batched_ | expires: ["**OPEN.** The Blackwell guard (`gpu_profile.rs::multi_prompt_prefill_allowed`, consulted at `generate_batched_streaming.rs:880` and `:1045`) and the `perf041` witness wiring land in this PR; #2809 does not. **The first wired gx10 night is EXPECTED RED** — that is §9 #1a's before-state, and it is a finding to file, not a flake to rerun. lambda witness taken 2026-09-02 at `a765c86a5` under v3.1: PASS on every band, `m=1` agreement recorded at 3 tokens (`evidence/perf041/lambda/witness.json`); under the v3.0 rule the same run was DEFECT on every `c>1` band, which is what §7.1's `[U]` anticipated. Expires **2026-09-19**"]
+3 -> **LANDED** (this PR) — `scripts/check_llama_pin.sh` (`pin_stale` / `pin_fresh`), `scripts/check_comparator_fla | expires: []
+6 -> **LANDED** (this PR) — the route is unconditional and its JSON shape is identical on CPU and CUDA builds (`cud | expires: ['`GET /v1/effective-config` (§5.2) stored verbatim; `started_utc` and `clock_source`; `slots_admitted` on both lanes; derived ladder']
+7 -> **LANDED** (this PR) — `join_fixture.rs` (`join_ok`, `join_mismatch`), `ratio_bare` / `ratio_paired`, `client_ | expires: []
+9 -> **LANDED** (this PR) — `abrecord_comparator` / `abrecord_ok` | expires: []
+10 -> **LANDED** (this PR) — `claim_unreceipted` / `claim_receipted` | expires: []
+12 -> **LANDED** (this PR) in the half that exists: `scripts/check_perf_concurrency_groups.sh` (`isolation_breach` / | expires: ['**LANDED** (this PR) in the half that exists: `scripts/check_perf_concurrency_groups.sh` (`isolation_breach` / `isolation_ok`), the pin expiry (row 3) and the client sha. **The CI half for `lambda` and `mini` is `NA{decided_by: infra#359 (lambda has no CI runner by policy), #2841 (mini has no reachable class), date: 2026-09-02}`** — on those hosts the producer of isolation is the harness itself: `scripts/parity_host_receipt.sh` takes an exclusive `flock -n` on the cell lock for the whole run (`:158-176`; a held lock is a REFUSAL, never a queue) and `scripts/perf_isolation.sh` writes the `nvidia-smi --query-compute-apps` record before and after every band (`foreign_pid_breach` / `foreign_pid_ok` in its case table)']
+14 -> **LANDED** (this PR) — `evidence/bandwidth/lambda.json`; `roofline_exceeded` / `roofline_aggregate_ok`. Hosts  | expires: []

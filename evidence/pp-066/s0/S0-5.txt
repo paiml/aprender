@@ -1,0 +1,23 @@
+$ gh api repos/paiml/aprender/actions/runners --jq '.runners[] | [.name,.status,(.labels[].name)] | @tsv'
+$ grep -n 'runs-on' .github/workflows/cuda-nightly.yml
+100:    runs-on: [self-hosted, gpu, Linux, ARM64, cuda, blackwell]
+$ gh api repos/paiml/aprender/actions/runners --jq .total_count
+0
+$ gh api orgs/paiml/actions/runners --paginate --jq '.runners[] | [.name,.status,(.labels[].name)] | @tsv'
+gx10-blackwell	online	self-hosted,Linux,ARM64,gpu,gx10,cuda,blackwell,gb10
+intel-clean-room	online	self-hosted,Linux,X64,clean-room,intel
+intel-clean-room-10	online	self-hosted,Linux,X64,clean-room,intel
+intel-clean-room-11	online	self-hosted,Linux,X64,clean-room,intel
+intel-clean-room-12	online	self-hosted,Linux,X64,clean-room,intel
+intel-clean-room-13	online	self-hosted,Linux,X64,clean-room,intel
+intel-clean-room-14	online	self-hosted,Linux,X64,clean-room,intel
+intel-clean-room-15	online	self-hosted,Linux,X64,clean-room,intel
+intel-clean-room-16	online	self-hosted,Linux,X64,clean-room,intel,perf-solo
+intel-clean-room-2	online	self-hosted,Linux,X64,clean-room,intel
+intel-clean-room-3	online	self-hosted,Linux,X64,clean-room,intel
+intel-clean-room-4	online	self-hosted,Linux,X64,clean-room,intel
+intel-clean-room-5	online	self-hosted,Linux,X64,clean-room,intel
+intel-clean-room-6	online	self-hosted,Linux,X64,clean-room,intel
+intel-clean-room-7	online	self-hosted,Linux,X64,clean-room,intel
+intel-clean-room-8	online	self-hosted,Linux,X64,clean-room,intel
+intel-clean-room-9	online	self-hosted,Linux,X64,clean-room,intel

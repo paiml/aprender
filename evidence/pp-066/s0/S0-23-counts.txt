@@ -1,0 +1,17 @@
+$ tail -1 of the pre-PATCH `pmat comply check` run (worktree pp-066-s0 @ da49c1081, started ~07:56Z)
+comply: 9 check(s) failed -> exit 1 (see the Fail entries above)
+$ tail -1 of the post-PATCH run
+comply: 8 check(s) failed -> exit 1 (see the Fail entries above)
+$ CB-1658 as the MAIN checkout (/home/noah/src/aprender, branch main, has .pmat-work/) reads it — `pmat comply check | grep -A11 CB-1658`, run 2026-09-05 ~07:40Z
+  ✗ CB-1658: CoT Derivation Completeness: 10 derivation completeness violation(s):
+    - GH-672: cot-digest.json exists but ./contracts/work/GH-672.cot.yaml is missing
+    - GH-670: cot-digest.json exists but ./contracts/work/GH-670.cot.yaml is missing
+    - GH-663: cot-digest.json exists but ./contracts/work/GH-663.cot.yaml is missing
+    - GH-668: cot-digest.json exists but ./contracts/work/GH-668.cot.yaml is missing
+    - GH-667: cot-digest.json exists but ./contracts/work/GH-667.cot.yaml is missing
+    - GH-666: cot-digest.json exists but ./contracts/work/GH-666.cot.yaml is missing
+    - GH-665: cot-digest.json exists but ./contracts/work/GH-665.cot.yaml is missing
+    - GH-664: cot-digest.json exists but ./contracts/work/GH-664.cot.yaml is missing
+    - GH-671: cot-digest.json exists but ./contracts/work/GH-671.cot.yaml is missing
+    - GH-669: cot-digest.json exists but ./contracts/work/GH-669.cot.yaml is missing
+  ✗ CB-1663: AGY Directory Structure: .agents/ exists but holds no *.json, no rules/*.md and no skills/*/ — 0 artifacts judged. An empty AGY tree is inert, 
