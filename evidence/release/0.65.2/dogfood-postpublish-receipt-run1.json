@@ -1,8 +1,8 @@
 {
   "crate": "aprender",
   "version": "0.65.2",
-  "timestamp": "20260905T024626Z",
-  "commit": "203bde8ff859d1300c799492d29322b95599fc81",
+  "timestamp": "20260904T232050Z",
+  "commit": "8e1e9ad405dda531ba4b6aa307e39b3a81418ce1",
   "gates": [
     {
       "gate": "git-clean",
@@ -72,17 +72,17 @@
     {
       "gate": "clippy",
       "result": "PASS",
-      "note": "warning: using config file `/mnt/nvme-raid0/agent-wt/receipt-0.65.0/crates/aprender-viz/.clippy.toml`, `/mnt/nvme-raid0/"
+      "note": "warning: using config file `/mnt/nvme-raid0/agent-wt/pp4/crates/aprender-viz/.clippy.toml`, `/mnt/nvme-raid0/agent-wt/pp"
     },
     {
       "gate": "test",
       "result": "PASS",
-      "note": "warning: aprender-compute@0.65.2: provable-contracts binding.yaml not found at /mnt/nvme-raid0/agent-wt/receipt-0.65.0/c"
+      "note": "warning: aprender-compute@0.65.2: provable-contracts binding.yaml not found at /mnt/nvme-raid0/agent-wt/pp4/crates/apren"
     },
     {
       "gate": "coverage",
       "result": "PASS",
-      "note": "warning: aprender-compute@0.65.2: provable-contracts binding.yaml not found at /mnt/nvme-raid0/agent-wt/receipt-0.65.0/c"
+      "note": "warning: aprender-compute@0.65.2: provable-contracts binding.yaml not found at /mnt/nvme-raid0/agent-wt/pp4/crates/apren"
     },
     {
       "gate": "security",
@@ -102,7 +102,7 @@
     {
       "gate": "release-binary",
       "result": "PASS",
-      "note": "built: /mnt/nvme-raid0/agent-wt/receipt-0.65.0/target/release/apr"
+      "note": "built: /mnt/nvme-raid0/targets/aprender-dogfood/release/apr"
     },
     {
       "gate": "deterministic-tools",
@@ -197,7 +197,7 @@
     {
       "gate": "probador-suite",
       "result": "PASS",
-      "note": "PASSED 4 tests in 65.79s (4 passed, 0 failed, 0 skipped)"
+      "note": "PASSED 4 tests in 65.74s (4 passed, 0 failed, 0 skipped)"
     },
     {
       "gate": "dogfood-use",

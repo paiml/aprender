@@ -5948,7 +5948,9 @@
       },
       "ratio_aggregate_tok_per_sec": 0.3496,
       "ratio_decode_tok_per_sec": 0.6772,
-      "verdict": "FAIL"
+      "verdict": "FAIL",
+      "validity": "INVALID-CORRECTNESS(#2753/#2776: no PP-26 witness; comparator slots_admitted == c from /props)",
+      "ratio_struck": true
      },
      {
       "concurrency": 8,
@@ -9340,7 +9342,9 @@
       },
       "ratio_aggregate_tok_per_sec": 0.3381,
       "ratio_decode_tok_per_sec": 0.6694,
-      "verdict": "FAIL"
+      "verdict": "FAIL",
+      "validity": "INVALID-CORRECTNESS(#2753/#2776: no PP-26 witness; comparator slots_admitted == c from /props)",
+      "ratio_struck": true
      },
      {
       "concurrency": 16,
@@ -13172,7 +13176,9 @@
       },
       "ratio_aggregate_tok_per_sec": 0.3179,
       "ratio_decode_tok_per_sec": 0.6393,
-      "verdict": "FAIL"
+      "verdict": "FAIL",
+      "validity": "INVALID-CORRECTNESS(#2753/#2776: no PP-26 witness; comparator slots_admitted == c from /props)",
+      "ratio_struck": true
      }
     ],
     "ceiling": 1.5,
@@ -13180,7 +13186,13 @@
     "threshold_source": "scripts/perf-matrix.yaml#arms.L3.delta,derivation.sanity_ceiling",
     "verdict": "FAIL",
     "subject_install": "cargo install aprender --version 0.65.2 --locked --force (default features; ~/.cargo/bin/apr)",
-    "run_id": "e167c1ab2c68496cbe1a2a881ab25900"
+    "run_id": "e167c1ab2c68496cbe1a2a881ab25900",
+    "validity_by_band": {
+     "c1": "MEASURED-c1 (no witness required at c=1; ratio stands)",
+     "c4": "INVALID-CORRECTNESS(#2753/#2776: no PP-26 witness; comparator slots_admitted == c from /props)",
+     "c8": "INVALID-CORRECTNESS(#2753/#2776: no PP-26 witness; comparator slots_admitted == c from /props)",
+     "c16": "INVALID-CORRECTNESS(#2753/#2776: no PP-26 witness; comparator slots_admitted == c from /props)"
+    }
    },
    {
     "lane": "cuda",
@@ -55230,7 +55242,9 @@
       },
       "ratio_aggregate_tok_per_sec": 0.4984,
       "ratio_decode_tok_per_sec": 0.5033,
-      "verdict": "FAIL"
+      "verdict": "FAIL",
+      "validity": "INVALID-CORRECTNESS(#2753/#2776: no PP-26 witness; comparator slots_admitted == c from /props)",
+      "ratio_struck": true
      },
      {
       "concurrency": 8,
@@ -86871,7 +86885,9 @@
       },
       "ratio_aggregate_tok_per_sec": 0.7231,
       "ratio_decode_tok_per_sec": 0.7412,
-      "verdict": "FAIL"
+      "verdict": "FAIL",
+      "validity": "INVALID-CORRECTNESS(#2753/#2776: no PP-26 witness; comparator slots_admitted == c from /props)",
+      "ratio_struck": true
      },
      {
       "concurrency": 16,
@@ -135529,7 +135545,9 @@
       },
       "ratio_aggregate_tok_per_sec": 1.0565,
       "ratio_decode_tok_per_sec": 1.1237,
-      "verdict": "PASS"
+      "verdict": "PASS",
+      "validity": "INVALID-CORRECTNESS(#2753/#2776: no PP-26 witness; comparator slots_admitted == c from /props)",
+      "ratio_struck": true
      }
     ],
     "ceiling": 1.5,
@@ -135537,7 +135555,13 @@
     "threshold_source": "scripts/perf-matrix.yaml#arms.L3.delta,derivation.sanity_ceiling",
     "verdict": "FAIL",
     "subject_install": "cargo install aprender@0.65.2 --features cuda --locked --root /tmp/apr-0652-cuda (second install of the same published crate; the default-feature install resolves 0 GPU layers)",
-    "run_id": "e52be880741e486b87833989d7e38a91"
+    "run_id": "e52be880741e486b87833989d7e38a91",
+    "validity_by_band": {
+     "c1": "MEASURED-c1 (no witness required at c=1; ratio stands)",
+     "c4": "INVALID-CORRECTNESS(#2753/#2776: no PP-26 witness; comparator slots_admitted == c from /props)",
+     "c8": "INVALID-CORRECTNESS(#2753/#2776: no PP-26 witness; comparator slots_admitted == c from /props)",
+     "c16": "INVALID-CORRECTNESS(#2753/#2776: no PP-26 witness; comparator slots_admitted == c from /props)"
+    }
    }
   ],
   "run_id": "e167c1ab2c68496cbe1a2a881ab25900",
@@ -135546,7 +135570,12 @@
   "run_ids": {
    "cpu": "e167c1ab2c68496cbe1a2a881ab25900",
    "accel": "e52be880741e486b87833989d7e38a91"
-  }
+  },
+  "what_it_lacks": [
+   "PP-26 batch-invariance witness on every c>1 band (min_agree_tokens 64, max_constant_run 16) \u2014 none was run; every c>1 ratio is struck",
+   "PP-21 signature",
+   "PP-25 client sha256"
+  ]
  },
  "parity_cuda_install_cpu_lane": {
   "lane": "cpu",
@@ -148664,5 +148693,10 @@
   "floor": 1.0,
   "threshold_source": "scripts/perf-matrix.yaml#arms.L3.delta,derivation.sanity_ceiling",
   "verdict": "FAIL"
+ },
+ "decision": {
+  "decided_by": "noah",
+  "date": "2026-09-05",
+  "text": "0.65.2 stays published. No yank, no 0.65.3. These four host receipts are the 0.66 baseline."
  }
 }

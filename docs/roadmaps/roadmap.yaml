@@ -14555,11 +14555,11 @@ roadmap:
   - 'evidence/dogfood/<next>/lambda.json parity lane cpu verdict PASS against the pinned comparator (floor 1.0 from scripts/perf-matrix.yaml#arms.L3.delta), measured by scripts/parity_host_receipt.sh on the published binary, not on a tree build'
   - 'prefill tok/s within the L3 band of the comparator at c=1 (measured 47.7 vs 8982.4 on 2026-09-05): the prefill must batch the prompt, not decode it one token at a time on CPU'
   - 'the receipt records the install command and feature set that produced each lane; a lane from a --features cuda install is labelled as such'
-  notes: 'Measured 2026-09-05 by the 0.65.2 post-publish host receipt (evidence/dogfood/0.65.2/lambda.json, run_id e167c1ab2c68496cbe1a2a881ab25900). Subject aggregate tok/s c=1/4/8/16 = 23.2/44.9/52.5/54.8 vs comparator 75.2/128.3/155.2/172.4; subject decode 44.1 vs 74.2 at c=1. The published default-feature binary resolves 0 GPU layers on a 4090 host; a second install of the same crate with --features cuda (167 s) gave the cuda lane, also FAIL: decode 0.69x, prefill 0.18x (326.8/510.0/1000.0/1898.6 vs 492.5/1023.2/1383.0/1797.0 aggregate at c=1/4/8/16; only c=16 clears the floor at 1.06x; TTFT 24 vs 5 ms at c=1). Related: chunked prefill (Arm E), the accelerator-quantity contract, and the 0.66 parity report section 6.'
+  notes: 'Measured 2026-09-05 by the 0.65.2 post-publish host receipt (evidence/dogfood/0.65.2/lambda.json, run_id e167c1ab2c68496cbe1a2a881ab25900). Subject aggregate tok/s at c=1 23.2 vs comparator 75.2; subject decode 44.1 vs 74.2 at c=1. Every c>1 band is INVALID-CORRECTNESS(#2753/#2776): no PP-26 witness was run, so no c>1 ratio is quoted (P-4). The published default-feature binary resolves 0 GPU layers on a 4090 host; a second install of the same crate with --features cuda (167 s) gave the cuda lane, also FAIL at c=1: decode 0.69x, prefill 0.18x (326.8 vs 492.5 aggregate at c=1; TTFT 24 vs 5 ms). c>1 bands: INVALID-CORRECTNESS(#2753/#2776), no witness, ratios struck. Related: chunked prefill (Arm E), the accelerator-quantity contract, and the 0.66 parity report section 6.'
 - id: PMAT-963
   github_issue: null
   item_type: bug
-  title: 'Published 0.65.2 apr serve (CPU, default features) fails every request at c>=8 on gx10 (0/8 and 0/16 in all 5 replicates) and intermittently at c=16 on intel (0/16 in one replicate, 9/16 in another) under the parity protocol, while the pinned llama.cpp serves the same bands at 65-115 tok/s; no parity block can be emitted for either host'
+  title: 'No pre-publish gate owns c>=8 request failures on the published default-feature (CPU) build or on aarch64: the only pre-publish ladder is perf_gate.sh --host lambda --phase release --workload W1 on the x86 tree build (CB-1400 class). Post-publish, the published 0.65.2 apr serve fails every request at c>=8 on gx10 and mini (0/8, 0/16 in all 5 replicates) and one c=16 replicate on intel (0/16), while the pinned llama.cpp serves the same bands; no parity block can be emitted for those hosts'
   status: todo
   priority: critical
   assigned_to: null
@@ -14570,11 +14570,12 @@ roadmap:
   - 'scripts/parity_host_receipt.sh on the published binary emits a block on gx10 and intel: every band of the declared ladder [1,4,8,16] has 5 replicates with successful == total_requests'
   - 'the failure mode is named from the client side (apr test llm bench records the per-request error kind: timeout vs connection vs HTTP status) - today the run json carries only successful/failed counts, so the receipt cannot say WHY a request failed (own sub-ticket)'
   - 'root cause is traced to the module (the writer-lock serialisation of concurrent requests and the prefill-at-decode-speed path, cf. PMAT-962), not to the protocol timeout'
+  - 'a pre-publish gate runs the ladder on the default-feature build and on at least one aarch64 host, or the release runbook says in writing that it does not and why (five whys: 1 the release cut ran perf_gate.sh once, host=lambda phase=release workload=W1 (evidence/release/0.65.2/perf-gate-8e1e9ad40.txt: one line, one host); 2 perf_gate.sh takes one --host and the runbook (pp4-work/release_cut.sh:10) calls it for lambda only; 3 the matrix cells for gx10/intel W1 are UNMEASURED and mini W1 is NA, so the gate has nothing to fail there; 4 the pre-publish dogfood runs on the cut host and its parity row (check_parity_receipt) reads the lambda receipt; 5 nothing in .github/workflows or scripts/release*.sh runs the ladder on a published or default-feature binary before cargo publish - the first ladder the published binary ever met was the post-publish host receipt)'
   notes: 'Measured 2026-09-05 by the 0.65.2 post-publish host receipts (evidence/dogfood/0.65.2/{gx10,intel}.json, key parity_attempt; kept work dirs on the hosts are named there). gx10: TTFT 17.6 s at c=1 and 36 s at c=4 with 4/4 successes, then 0 successes at c=8 and c=16 in every replicate. intel: c=16 replicate 2 had 0/16 successful, replicate 1 9/16, the other three 16/16. mini (M4): 2/2 at c=1 (4.5 tok/s, TTFT 13.9 s) and 4/4 at c=4 (TTFT 49.5 s), then 0/8 and 0/16 in every replicate. The protocol window is http_duration_secs = 30 (scripts/llama_pin.toml#protocol.http). The receipt validator (scripts/lib/bench_receipt.py) correctly refuses a band with zero subject throughput as a non-measurement, so these hosts carry parity_attempt instead of parity and check_multiplatform_dogfood.sh stays FAIL for them: the post-publish verdict for 0.65.2 is NO-GO on this evidence.'
 - id: PMAT-964
   github_issue: null
   item_type: bug
-  title: 'Published aarch64 0.65.2 (cargo install aprender, default features) decodes at 3.5 tok/s on gx10/GB10 and 4.5 tok/s on mini/M4 at c=1 - 0.046x and 0.05x the pinned llama.cpp CPU (medians 75.7 / 90.4) - and apr bench measures 7.7 / 8.1 tok/s, below its own H12 floor of 10, so the published aarch64 binaries fail the spec they ship'
+  title: 'H12 floor unwired for aarch64 pre-publish (CB-1400 class): the H12 throughput floor (>= 10 tok/s) exists only inside apr bench itself (crates/apr-cli/src/commands/bench.rs:260) and in the post-publish bench_host_receipt.sh; no workflow or release script runs apr bench before cargo publish on any host, and no pre-publish step runs on aarch64 at all. Post-publish, the published aarch64 0.65.2 decodes at 3.5 tok/s on gx10/GB10 and 4.5 tok/s on mini/M4 at c=1 (0.046x / 0.05x the pinned llama.cpp CPU medians 75.7 / 90.4) and apr bench measures 7.7 / 8.1 tok/s, below the floor it ships'
   status: todo
   priority: critical
   assigned_to: null
@@ -14583,8 +14584,24 @@ roadmap:
   spec: docs/specifications/0.66-performance-parity-report.md
   acceptance_criteria:
   - 'the published aarch64 binary (crates.io, default features) reaches the H12 floor in apr bench on gx10 and a cpu-lane parity ratio within the L3 band at c=1'
-  - 'the receipt names which SIMD path the published binary took on aarch64 (NEON vs scalar) - the tree build measured 1.21x on GB10 (#2567) and the published binary measures 0.045x, so the two are not the same code path or the same build flags'
+  - 'the receipt names which SIMD path the published binary took on aarch64 (NEON vs scalar) - the tree build measured 1.21x on GB10 (#2567) and the published binary measures 0.046x, so the two are not the same code path or the same build flags'
+  - 'H12 runs before cargo publish on an aarch64 host, or the release runbook names the workflow file:line that would (five whys: 1 the published aarch64 binary is below the H12 floor; 2 nothing pre-publish measured it - grep of .github/workflows/*.yml, scripts/release*.sh, scripts/dogfood.sh, scripts/perf_gate.sh and Makefile finds no apr bench invocation (the only hit is a docs example in scripts/gen-cli-chapter-stubs.sh:52); 3 H12 is asserted inside apr bench (bench.rs:260) and by bench_host_receipt.sh, both of which run only when someone runs them on a host after install; 4 the release cut has no aarch64 stage - perf gate, clean-room and pre-publish dogfood all ran on lambda x86; 5 the matrix marks gx10/intel W1 UNMEASURED and mini NA, so the gate reports rather than fails there)'
   notes: 'Measured 2026-09-05: evidence/dogfood/0.65.2/gx10.json (parity_attempt band c=1: apr 3.5/3.5/3.6/3.5/3.5 tok/s (median 3.5), TTFT ~17.5 s; comparator 77.8/75.7/73.3/77.8/73.8 (median 75.7); bench_attempt: apr bench 7.7 tok/s, Performance Grade F, exit non-zero). mini (M4, aarch64-apple, same published crate): 4.5 tok/s at c=1 vs 90.4 (0.05x), apr bench 8.1 tok/s (exit 5, below the H12 floor) - evidence/dogfood/0.65.2/mini.json. Related: PMAT-962 (lambda, same binary family, 0.59x decode), PMAT-963 (c>=8 request failures), #2567 (aarch64 Q4_K tree-build ratio).'
+- id: PMAT-965
+  github_issue: null
+  item_type: bug
+  title: 'parity_host_receipt.sh and bench_host_receipt.sh exit silently (0 s, empty log, rc=1) under macOS bash 3.2 - a silent-pass shape; they must fail closed with a message on BASH_VERSINFO<4 (the missing-flock case already fails closed with a message: measured on mini, "FAIL no flock(1)")'
+  status: todo
+  priority: high
+  assigned_to: null
+  created: 2026-09-05 05:30:00+00:00
+  updated: 2026-09-05 05:30:00+00:00
+  spec: null
+  acceptance_criteria:
+  - 'under bash 3.2 (or any BASH_VERSINFO[0] < 4) both scripts print one FAIL line naming the version they need and exit non-zero before touching the lock; case row + mutation (guard removed -> silent exit) in the same PR'
+  - 'setsid is not used by either script (the mini launcher used it; recorded so nobody adds it): the guard is bash version + flock only'
+  - 'the host prerequisites (Homebrew bash, util-linux flock) are declared in paiml/infra machines/mini/forjar.yaml, not hand-installed - the 2026-09-05 mini run used a HAND install of both (brew install bash; brew install util-linux), which is the reaper class'
+  notes: 'Found producing the 0.65.2 mini receipt: chain3 ran under /bin/bash 3.2.57, parity rc=1 in 0 s with an empty parity.log; under Homebrew bash 5.3.15 the script proceeded and then refused on flock (fail-closed, correct); util-linux flock fixed that. Sibling infra PR declares both on mini.'
 - id: PMAT-750
   github_issue: null
   item_type: task

@@ -314,17 +314,107 @@ baselines:
         W2 is REPORTING and non-blocking. Its expiry is "PERF-001 merge + 30
         days", owner @noah. The 2026-09-25 this cell used to carry had no
         author (PERF-056, #2777).
+    D1:
+      # 0.65.2 post-publish dogfood parity protocol (scripts/llama_pin.toml#protocol.http,
+      # qwen2.5-coder-1.5b-instruct q4_k_m, ladder 1/4/8/16). NOT W1/W2: perf_gate.sh
+      # --workload accepts only W1|W2, so this cell is a RECORDED seed (P-6, seeded at
+      # achieved) that no arm consumes yet; nothing here is ARMED (armed_by untouched).
+      # Ledger: evidence/parity/LEDGER.md row 7. Decision: decided_by noah 2026-09-05,
+      # these receipts are the 0.66 baseline; discovery baseline 8e1e9ad40.
+      status: MEASURED
+      receipt: evidence/dogfood/0.65.2/lambda.json
+      commit: 8e1e9ad40
+      n: 5
+      interleaved: true
+      subject: 'published 0.65.2, default features (cpu lane; parity.lanes[0])'
+      bands:
+        c1: {agg: 23.18, dec: 44.1, prefill: 47.75}
+        c4: {validity: 'INVALID-CORRECTNESS(#2753/#2776) — no PP-26 witness; not reported, not seeded (P-4)'}
+        c8: {validity: 'INVALID-CORRECTNESS(#2753/#2776) — no PP-26 witness; not reported, not seeded (P-4)'}
+        c16: {validity: 'INVALID-CORRECTNESS(#2753/#2776) — no PP-26 witness; not reported, not seeded (P-4)'}
+    D1-cuda:
+      # 0.65.2 post-publish dogfood parity protocol (scripts/llama_pin.toml#protocol.http,
+      # qwen2.5-coder-1.5b-instruct q4_k_m, ladder 1/4/8/16). NOT W1/W2: perf_gate.sh
+      # --workload accepts only W1|W2, so this cell is a RECORDED seed (P-6, seeded at
+      # achieved) that no arm consumes yet; nothing here is ARMED (armed_by untouched).
+      # Ledger: evidence/parity/LEDGER.md row 8. Decision: decided_by noah 2026-09-05,
+      # these receipts are the 0.66 baseline; discovery baseline 8e1e9ad40.
+      status: MEASURED
+      receipt: evidence/dogfood/0.65.2/lambda.json
+      commit: 8e1e9ad40
+      n: 5
+      interleaved: true
+      subject: 'published 0.65.2 installed with --features cuda (parity.lanes[1])'
+      bands:
+        c1: {agg: 326.78, dec: 345.45, prefill: 5268.55}
+        c4: {validity: 'INVALID-CORRECTNESS(#2753/#2776) — no PP-26 witness; not reported, not seeded (P-4)'}
+        c8: {validity: 'INVALID-CORRECTNESS(#2753/#2776) — no PP-26 witness; not reported, not seeded (P-4)'}
+        c16: {validity: 'INVALID-CORRECTNESS(#2753/#2776) — no PP-26 witness; not reported, not seeded (P-4)'}
   gx10:
     W1: {status: UNMEASURED, owner: perf-gate, expires_after: {anchor: PP-LLAMA-001-row-15, days: 0}}
     W2: *w2_expires_with_perf_001
+    D1:
+      # 0.65.2 post-publish dogfood parity protocol (scripts/llama_pin.toml#protocol.http,
+      # qwen2.5-coder-1.5b-instruct q4_k_m, ladder 1/4/8/16). NOT W1/W2: perf_gate.sh
+      # --workload accepts only W1|W2, so this cell is a RECORDED seed (P-6, seeded at
+      # achieved) that no arm consumes yet; nothing here is ARMED (armed_by untouched).
+      # Ledger: evidence/parity/LEDGER.md row 9. Decision: decided_by noah 2026-09-05,
+      # these receipts are the 0.66 baseline; discovery baseline 8e1e9ad40.
+      status: MEASURED
+      receipt: evidence/dogfood/0.65.2/gx10.json
+      commit: 8e1e9ad40
+      n: 5
+      interleaved: true
+      subject: 'published 0.65.2, default features; block REFUSED, c1 from parity_attempt'
+      bands:
+        c1: {agg: 3.5, dec: 6.78, prefill: 7.18}
+        c4: {validity: 'INVALID-CORRECTNESS(#2753/#2776) — no PP-26 witness; not reported, not seeded (P-4)'}
+        c8: {validity: 'INVALID-CORRECTNESS(#2753/#2776) — no PP-26 witness; not reported, not seeded (P-4)'}
+        c16: {validity: 'INVALID-CORRECTNESS(#2753/#2776) — no PP-26 witness; not reported, not seeded (P-4)'}
   intel:
     W1: {status: UNMEASURED, owner: perf-gate, expires_after: {anchor: PP-LLAMA-001-row-18, days: 0}}
     W2: *w2_expires_with_perf_001
+    D1:
+      # 0.65.2 post-publish dogfood parity protocol (scripts/llama_pin.toml#protocol.http,
+      # qwen2.5-coder-1.5b-instruct q4_k_m, ladder 1/4/8/16). NOT W1/W2: perf_gate.sh
+      # --workload accepts only W1|W2, so this cell is a RECORDED seed (P-6, seeded at
+      # achieved) that no arm consumes yet; nothing here is ARMED (armed_by untouched).
+      # Ledger: evidence/parity/LEDGER.md row 10. Decision: decided_by noah 2026-09-05,
+      # these receipts are the 0.66 baseline; discovery baseline 8e1e9ad40.
+      status: MEASURED
+      receipt: evidence/dogfood/0.65.2/intel.json
+      commit: 8e1e9ad40
+      n: 5
+      interleaved: true
+      subject: 'published 0.65.2, default features; block REFUSED, c1 from parity_attempt'
+      bands:
+        c1: {agg: 14.3, dec: 27.82, prefill: 28.99}
+        c4: {validity: 'INVALID-CORRECTNESS(#2753/#2776) — no PP-26 witness; not reported, not seeded (P-4)'}
+        c8: {validity: 'INVALID-CORRECTNESS(#2753/#2776) — no PP-26 witness; not reported, not seeded (P-4)'}
+        c16: {validity: 'INVALID-CORRECTNESS(#2753/#2776) — no PP-26 witness; not reported, not seeded (P-4)'}
   # An NA host has no denominator cells. Both are NA with a decider and a date;
   # `cell-completeness` passes an NA cell with no receipt at all, and says so.
   mini:
     W1: {status: NA, reason: 'no Metal inference path (#2841)', decided_by: spec-owner, date: '2026-09-02'}
     W2: {status: NA, reason: 'no Metal inference path (#2841)', decided_by: spec-owner, date: '2026-09-02'}
+    D1:
+      # 0.65.2 post-publish dogfood parity protocol (scripts/llama_pin.toml#protocol.http,
+      # qwen2.5-coder-1.5b-instruct q4_k_m, ladder 1/4/8/16). NOT W1/W2: perf_gate.sh
+      # --workload accepts only W1|W2, so this cell is a RECORDED seed (P-6, seeded at
+      # achieved) that no arm consumes yet; nothing here is ARMED (armed_by untouched).
+      # Ledger: evidence/parity/LEDGER.md row 11. Decision: decided_by noah 2026-09-05,
+      # these receipts are the 0.66 baseline; discovery baseline 8e1e9ad40.
+      status: MEASURED
+      receipt: evidence/dogfood/0.65.2/mini.json
+      commit: 8e1e9ad40
+      n: 5
+      interleaved: true
+      subject: 'published 0.65.2, default features; block REFUSED, c1 from parity_attempt'
+      bands:
+        c1: {agg: 4.5, dec: 8.85, prefill: 9.07}
+        c4: {validity: 'INVALID-CORRECTNESS(#2753/#2776) — no PP-26 witness; not reported, not seeded (P-4)'}
+        c8: {validity: 'INVALID-CORRECTNESS(#2753/#2776) — no PP-26 witness; not reported, not seeded (P-4)'}
+        c16: {validity: 'INVALID-CORRECTNESS(#2753/#2776) — no PP-26 witness; not reported, not seeded (P-4)'}
 
 # EXPIRY ANCHORS (PERF-056, #2777; PP-LLAMA-001 §8). A cell may date its expiry
 # from an EVENT rather than the calendar, via `expires_after: {anchor: ID,

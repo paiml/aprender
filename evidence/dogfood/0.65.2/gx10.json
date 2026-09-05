@@ -307,11 +307,35 @@
     "comparator_median_tok_per_sec": 114.5
    }
   ],
-  "why_no_parity_block": "scripts/parity_host_receipt.sh refuses to emit a block that scripts/lib/bench_receipt.py would reject: a band whose subject throughput is zero is a failed measurement, not a measurement (F12). The attempt is recorded here under parity_attempt so the gate reads it as ABSENT, not as a block."
+  "why_no_parity_block": "scripts/parity_host_receipt.sh refuses to emit a block that scripts/lib/bench_receipt.py would reject: a band whose subject throughput is zero is a failed measurement, not a measurement (F12). The attempt is recorded here under parity_attempt so the gate reads it as ABSENT, not as a block.",
+  "validity_by_band": {
+   "c1": "MEASURED-c1 (no witness required at c=1)",
+   "c4": "INVALID-CORRECTNESS(#2753/#2776: no PP-26 witness; comparator slots_admitted == c from /props)",
+   "c8": "INVALID-CORRECTNESS(#2753/#2776: no PP-26 witness; comparator slots_admitted == c from /props)",
+   "c16": "INVALID-CORRECTNESS(#2753/#2776: no PP-26 witness; comparator slots_admitted == c from /props)"
+  },
+  "comparator_slots_admitted": {
+   "c1": 1,
+   "c4": 4,
+   "c8": 8,
+   "c16": 16
+  },
+  "comparator_slots_source": "band-cpu-c*.json comparator_slots_admitted (read from GET /props per band)",
+  "what_it_lacks": [
+   "a parity block at all (refused: zero-throughput band)",
+   "PP-26 witness on every c>1 band",
+   "PP-21 signature",
+   "PP-25 client sha256"
+  ]
  },
  "bench_attempt": {
   "status": "refused",
   "reason": "apr bench exited non-zero: 'Validation failed: Throughput 7.7 tok/s below minimum 10 tok/s (spec H12)'; Performance Grade F. scripts/bench_host_receipt.sh does not write a block for a failed measurement (F12).",
   "measured_tok_per_sec": 7.7
+ },
+ "decision": {
+  "decided_by": "noah",
+  "date": "2026-09-05",
+  "text": "0.65.2 stays published. No yank, no 0.65.3. These four host receipts are the 0.66 baseline."
  }
 }
