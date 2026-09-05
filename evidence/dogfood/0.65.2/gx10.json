@@ -328,7 +328,8 @@
    "PP-25 client sha256"
   ],
   "started_utc": "2026-09-04T23:54:26.923Z",
-  "started_utc_source": "apr-cpu-c1.config.json server.started_utc in the kept work dir on the host (copied here so the ledger row traces to the receipt)"
+  "started_utc_source": "apr-cpu-c1.config.json server.started_utc in the kept work dir on the host (copied here so the ledger row traces to the receipt)",
+  "validity_by_band_source": "hand-annotated 2026-09-05 by the release orchestrator (PMAT-966): the harness emitted c>1 bands with witness=null and no validity mark; --witness-json is opt-in"
  },
  "bench_attempt": {
   "status": "refused",

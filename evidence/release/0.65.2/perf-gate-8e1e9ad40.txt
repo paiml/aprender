@@ -1,3 +1,5 @@
+# RELABELLED 2026-09-05 (PMAT-967): every 'phase=release' line below is phase=pre-publish-checkout (RELABELLED 2026-09-05, PMAT-967): the receipt the gate graded is evidence/perf-gate-001-w1-lambda/receipt.r1.json — commit 745fa8588, a dev checkout built at /mnt/nvme-raid0/perf-gate/target-cuda/release/apr, feature_set [cuda], binary sha256 9d0b08b015e22fb3e2cade8f0862d31b03e970c16ac8f2abf77140b7b8b63ed5, W1 7B, ledger row 3 (SPENT, subject lane invalid, unsigned). It is not the artifact that was published (crates.io `cargo install aprender`, default features = cli, CPU-only) and cannot be quoted as a release verdict; its PASS meant only that no W1 arm was ARMED
+# Original capture follows, unedited.
 perf_gate rc=0 main=8e1e9ad405dda531ba4b6aa307e39b3a81418ce1 :: VERDICT PASS host=lambda phase=release workload=W1
 SKIP lines: 1
 SKIP  ArmE measured on W2 only (workload=W1)
