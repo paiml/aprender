@@ -1,0 +1,492 @@
+{
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat",
+          "version": "3.37.0",
+          "rules": [
+            {
+              "id": "PRREV-PMAT",
+              "name": "pmat quality and duplication"
+            },
+            {
+              "id": "PRREV-PRIMARY",
+              "name": "primary reviewer measured findings on the diff (advisory)"
+            }
+          ]
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "PRREV-PRIMARY",
+          "level": "warning",
+          "message": {
+            "text": "S0-10 (and S0-10-features.txt:2) classifies the spec grep's 30 lines as '21 feature arrays, 8 `name =` keys, 1 comment'. Re-running the same `git grep` at HEAD and classifying each line by its TOML shape gives 21 feature arrays, 7 `name =` keys and 2 comments: crates/aprender-test/Cargo.toml:82 is a comment (`# APR-MONO: in-tree sibling, ... [lib] name = \"trueno\")`) that merely mentions `name =`, beside the genuine comment crates/aprender-graph/Cargo.toml:64. The feature-array count G-1 depends on (21) is correct; the 8/1 split is not."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "docs/audits/pp-066-s0-ledger.md"
+                },
+                "region": {
+                  "startLine": 20
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "precision_class": "advisory",
+            "finding_class": "inaccuracy",
+            "failure_scenario": "G-1's rename plan counts `name =` keys as lib renames to perform; a comment counted as a key becomes a phantom eighth `[lib] name` site that no manifest carries, and the checklist cannot close.",
+            "command": [
+              "bash",
+              "-c",
+              "git grep -nE '\"(trueno|realizar|entrenar|batuta|pacha|alimentar)(/|\")' -- '*/Cargo.toml' | awk -F: '{line=$0; sub(/^[^:]*:[0-9]+:/,\"\",line); if (line ~ /^[[:space:]]*#/) c++; else if (line ~ /^[[:space:]]*name[[:space:]]*=/) n++; else f++} END{print \"feature_arrays=\" f \" name_keys=\" n \" comments=\" c}'"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "05a920662dbe700aa4ddba5eda8e4d159f87a325e107d694febcf236697a2018",
+            "primary_measurement_id": "s010_classify",
+            "also_measured": [
+              {
+                "id": "s010_grep_count",
+                "command": [
+                  "bash",
+                  "-c",
+                  "git grep -nE '\"(trueno|realizar|entrenar|batuta|pacha|alimentar)(/|\")' -- '*/Cargo.toml' | wc -l"
+                ],
+                "exit_code": 0,
+                "stdout_sha256": "f4ccd05b3271c386ee55d9876c7450012a3b361e5065c09dc22075e38b3cc35c"
+              },
+              {
+                "id": "s010_line82",
+                "command": [
+                  "bash",
+                  "-c",
+                  "sed -n 82p crates/aprender-test/Cargo.toml"
+                ],
+                "exit_code": 0,
+                "stdout_sha256": "b47ad0901ada2c0fde260c1fd604bd1cf3af9353028fbe023e792b76e30d7902"
+              },
+              {
+                "id": "s010_line64",
+                "command": [
+                  "bash",
+                  "-c",
+                  "sed -n 64p crates/aprender-graph/Cargo.toml"
+                ],
+                "exit_code": 0,
+                "stdout_sha256": "257d59b859a52aa21256703a8ce78bba35bc30e521c3bfe20a26a17eaff857c4"
+              },
+              {
+                "id": "s010_features_file",
+                "command": [
+                  "bash",
+                  "-c",
+                  "sed -n 2p evidence/pp-066/s0/S0-10-features.txt"
+                ],
+                "exit_code": 0,
+                "stdout_sha256": "86a601b31c0d94671a1256df9d2e27ce69862374db8de08561593c9a892dc05f"
+              }
+            ],
+            "divergence": "primary_only",
+            "reviewer_finding_id": "r5-01-s010-split"
+          }
+        },
+        {
+          "ruleId": "PRREV-PRIMARY",
+          "level": "note",
+          "message": {
+            "text": "S0-9 reads 'Sibling checkout ~/src/qwen-train-canary/README.md (last commit `af23a25`, 2026-04-06)'. S0-9.txt:18-19 shows that hash came from `git log -1` with no path, i.e. the repository tip; README.md's own last commit is `3fe1265` (also 2026-04-06). The date holds, the hash attribution does not."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "docs/audits/pp-066-s0-ledger.md"
+                },
+                "region": {
+                  "startLine": 19
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "precision_class": "advisory",
+            "finding_class": "inaccuracy",
+            "failure_scenario": "A reader pins the README's provenance to af23a25 and, on a later README edit, cannot tell whether the throughput table changed under that commit; the file-level hash is the one that answers that.",
+            "command": [
+              "bash",
+              "-c",
+              "git -C /home/noah/src/qwen-train-canary log -1 --format='%h %ad' --date=short -- README.md"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "466defa08992bbcc06488c6fa3e99f283ae959146012fc6c9b2a6d1dd0ddf7b5",
+            "primary_measurement_id": "s09_readme_last_commit",
+            "also_measured": [
+              {
+                "id": "s09_repo_tip",
+                "command": [
+                  "bash",
+                  "-c",
+                  "git -C /home/noah/src/qwen-train-canary log -1 --format='%h %ad' --date=short"
+                ],
+                "exit_code": 0,
+                "stdout_sha256": "1fe2dc1fc61a34fc838c7ff3ce331a057f0bb62e1d8162bd1843d63483755147"
+              },
+              {
+                "id": "s09_evidence_cmd",
+                "command": [
+                  "bash",
+                  "-c",
+                  "sed -n 18,19p evidence/pp-066/s0/S0-9.txt"
+                ],
+                "exit_code": 0,
+                "stdout_sha256": "cd7bd79643602070befc44ea1b95f7844df9964ed4cb8ff6f5cc953b73249bd8"
+              }
+            ],
+            "divergence": "primary_only",
+            "reviewer_finding_id": "r5-02-s09-readme-commit"
+          }
+        },
+        {
+          "ruleId": "PRREV-PRIMARY",
+          "level": "note",
+          "message": {
+            "text": "Three S0-2 cell claims appear in neither cited file: `scripts/llama_pin.toml:235` carries `--gpu-layers all`; master Appendix E holds no `pmat work add` lines; `scripts/spec_conformance.sh` is executable. S0-2.txt's only `spec_conformance` hit is inside a pasted master row (line 16) and no line carries `:235`, `gpu-layers`, `pmat work add`, `Appendix E` or `test -x`. All three were re-measured TRUE at HEAD by this review (sed -n 235p; grep -c = 0; test -x = 0), so this is a citation gap, not an error."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "docs/audits/pp-066-s0-ledger.md"
+                },
+                "region": {
+                  "startLine": 12
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "precision_class": "advisory",
+            "finding_class": "note",
+            "failure_scenario": "The ledger's own rule is 'every row cites its file'; a claim with no cited line cannot be re-derived by the next reader and, if llama_pin.toml:235 moves, nothing in evidence/ shows what was true at da49c1081.",
+            "command": [
+              "bash",
+              "-c",
+              "sed -n 235p scripts/llama_pin.toml"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "65c638b17a5031e13d3627bf3fe86fdac10b468a6a6a681d7617125dad54d3d3",
+            "primary_measurement_id": "s02_llama_pin_235",
+            "also_measured": [
+              {
+                "id": "s02_appendix_e_work_add",
+                "command": [
+                  "bash",
+                  "-c",
+                  "grep -c 'pmat work add' docs/specifications/PP-LLAMA-001-MASTER.md"
+                ],
+                "exit_code": 1,
+                "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+              },
+              {
+                "id": "s02_spec_conformance_exec",
+                "command": [
+                  "bash",
+                  "-c",
+                  "test -x scripts/spec_conformance.sh && echo executable"
+                ],
+                "exit_code": 0,
+                "stdout_sha256": "6fc44c39d7595dd991e6c5ef1095bf8880978b1e164344ab15eb2402b392d899"
+              },
+              {
+                "id": "s02_evidence_lacks",
+                "command": [
+                  "bash",
+                  "-c",
+                  "grep -cE 'llama_pin|Appendix E|pmat work add|test -x' evidence/pp-066/s0/S0-2.txt evidence/pp-066/s0/S0-2-expiry.txt"
+                ],
+                "exit_code": 0,
+                "stdout_sha256": "4deeaa4428a52d7ffbbea801cbd8ffbe64ad826256bbec11668677d3c39d7a04"
+              }
+            ],
+            "divergence": "primary_only",
+            "reviewer_finding_id": "r5-03-s02-citation-gap"
+          }
+        },
+        {
+          "ruleId": "PRREV-PRIMARY",
+          "level": "note",
+          "message": {
+            "text": "Process and host details stated as measured facts have no evidence line: `nice -n 10` (S0-14 and S0-15 cells; the word 'nice' occurs in none of S0-14-intel.txt, S0-15-intel.txt, S0-14-mini.txt); 'no `manzana` dependency exists' (S0-12; S0-12.txt:34 is a `$` label with no command output beneath it — re-measured 0 at HEAD); and the Consequences line 37 '\"intel has no iGPU (Xeon W-3245)\" is true' (S0-3.txt carries no CPU model). Each is plausible or verified here, and each should carry its line or be marked as the author's assertion."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "docs/audits/pp-066-s0-ledger.md"
+                },
+                "region": {
+                  "startLine": 24
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "precision_class": "advisory",
+            "finding_class": "note",
+            "failure_scenario": "A later host or toolchain change makes the `nice -n 10` load context unreproducible for the S0-15 +5.5 % / +7.2 % figures, and the CPU-model claim is inherited by D-6 with nothing behind it.",
+            "command": [
+              "bash",
+              "-c",
+              "grep -c 'nice' evidence/pp-066/s0/S0-14-intel.txt evidence/pp-066/s0/S0-15-intel.txt evidence/pp-066/s0/S0-14-mini.txt"
+            ],
+            "exit_code": 1,
+            "stdout_sha256": "94f2e5e073d5bbaf9717488ee209bd7e7b8267648177034f0a7ce63543e264e8",
+            "primary_measurement_id": "s014_nice_in_logs",
+            "also_measured": [
+              {
+                "id": "s012_manzana_dep",
+                "command": [
+                  "bash",
+                  "-c",
+                  "grep -c manzana crates/aprender-gpu/Cargo.toml"
+                ],
+                "exit_code": 1,
+                "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+              },
+              {
+                "id": "s012_evidence_line34",
+                "command": [
+                  "bash",
+                  "-c",
+                  "sed -n 34p evidence/pp-066/s0/S0-12.txt"
+                ],
+                "exit_code": 0,
+                "stdout_sha256": "1fa60a554691731d95eeff00cfa64442fc97d8de5d9a39a1b93dd906ff91a888"
+              },
+              {
+                "id": "maj02_xeon_in_evidence",
+                "command": [
+                  "bash",
+                  "-c",
+                  "grep -cE 'W-3245|Xeon|lscpu|model name' evidence/pp-066/s0/S0-3.txt"
+                ],
+                "exit_code": 1,
+                "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+              }
+            ],
+            "divergence": "primary_only",
+            "reviewer_finding_id": "r5-04-asserted-details"
+          }
+        },
+        {
+          "ruleId": "PRREV-PRIMARY",
+          "level": "note",
+          "message": {
+            "text": "The explanation of the bare `3` on S0-14-intel.txt:9 (the script's `ldconfig -p | grep -c libcuda || true` probe) is recorded in evidence/pp-066/s0/S0-10-features.txt:3-4 — a file the S0-14 row does not cite (0 mentions of S0-10-features in ledger line 24), and 'ldconfig' occurs in no other evidence file. The log line itself is unlabeled."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "docs/audits/pp-066-s0-ledger.md"
+                },
+                "region": {
+                  "startLine": 24
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "precision_class": "advisory",
+            "finding_class": "note",
+            "failure_scenario": "A reader following S0-14's four cited files never reaches the explainer and sees only an unlabeled `3`; the row's 'a driver library is registered with the loader' reading of that digit is then unsupported from the cited set.",
+            "command": [
+              "bash",
+              "-c",
+              "grep -ln 'ldconfig' evidence/pp-066/s0/*.txt"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "932199fc6bf3535865163232ec5d495b2db835181cfc329a4749a41f835975c4",
+            "primary_measurement_id": "s014_ldconfig_explainer_location",
+            "also_measured": [
+              {
+                "id": "s014_row_cites_features_file",
+                "command": [
+                  "bash",
+                  "-c",
+                  "sed -n 24p docs/audits/pp-066-s0-ledger.md | grep -o 'S0-10-features' | wc -l"
+                ],
+                "exit_code": 0,
+                "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+              },
+              {
+                "id": "s014_intel_line9",
+                "command": [
+                  "bash",
+                  "-c",
+                  "sed -n 9p evidence/pp-066/s0/S0-14-intel.txt"
+                ],
+                "exit_code": 0,
+                "stdout_sha256": "1121cfccd5913f0a63fec40a6ffd44ea64f9dc135c66634ba001d10bcf4302a2"
+              }
+            ],
+            "divergence": "primary_only",
+            "reviewer_finding_id": "r5-05-s014-explainer-misfiled"
+          }
+        },
+        {
+          "ruleId": "PRREV-PRIMARY",
+          "level": "note",
+          "message": {
+            "text": "S0-14-mini.txt is pasted three times (under S0-12, S0-14 and S0-21) with the same first-40-rendered-line window, which ends at raw line 22 because the `\\r` progress fragments expand to 18 extra rendered lines. The lines S0-12 and S0-14 actually rely on — raw 23-31: `otool_cuda_count=0`, the 61,339,120-byte binary, and the two `--features metal` rc=101 refusals — appear in no rendered block (0 matches in the ledger). The cited file is exact; the ledger's rendering hides the load-bearing lines."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "docs/audits/pp-066-s0-ledger.md"
+                },
+                "region": {
+                  "startLine": 564
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "precision_class": "advisory",
+            "finding_class": "note",
+            "failure_scenario": "Someone reading the ledger alone (the artifact the PR body advertises) cannot confirm S0-12's `does not contain this feature: metal` or S0-14's 0-link result from what is shown, and must open the raw file — which is the case the paste blocks exist to avoid.",
+            "command": [
+              "bash",
+              "-c",
+              "grep -cE 'otool_cuda_count|S0-12 check rc|S0-12 test rc|61339120' docs/audits/pp-066-s0-ledger.md"
+            ],
+            "exit_code": 1,
+            "stdout_sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+            "primary_measurement_id": "s014mini_hidden_lines",
+            "also_measured": [
+              {
+                "id": "s014mini_paste_count",
+                "command": [
+                  "bash",
+                  "-c",
+                  "grep -c 'S0-14-mini.txt</code>' docs/audits/pp-066-s0-ledger.md"
+                ],
+                "exit_code": 0,
+                "stdout_sha256": "1121cfccd5913f0a63fec40a6ffd44ea64f9dc135c66634ba001d10bcf4302a2"
+              },
+              {
+                "id": "s014mini_raw_lines_23_31",
+                "command": [
+                  "bash",
+                  "-c",
+                  "sed -n 23,31p evidence/pp-066/s0/S0-14-mini.txt"
+                ],
+                "exit_code": 0,
+                "stdout_sha256": "acf498ac4011a72b9f0dc5142c76b7734b8ddb6f68f86dc6816268cff12b0087"
+              }
+            ],
+            "divergence": "primary_only",
+            "reviewer_finding_id": "r5-06-s014mini-window"
+          }
+        },
+        {
+          "ruleId": "PRREV-PRIMARY",
+          "level": "note",
+          "message": {
+            "text": "S0-3.txt:21 reads `vulkaninfo_rc=; which vulkaninfo` — the exit-status capture is empty and the `which` output is absent (line 22 is `---`). The S0-3 FALSIFIED verdict rests on the adapter listing bytes above it, which are present (2× RADV NAVI10 discrete, 1× llvmpipe CPU), so the verdict stands; the probe's own status is simply unrecorded."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "docs/audits/pp-066-s0-ledger.md"
+                },
+                "region": {
+                  "startLine": 13
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "precision_class": "advisory",
+            "finding_class": "note",
+            "failure_scenario": "If vulkaninfo had exited non-zero after a partial enumeration (a third adapter missing), nothing in the file would show it; B-W1's adapter-selection fixture would be built on a listing whose completeness was never checked.",
+            "command": [
+              "bash",
+              "-c",
+              "sed -n 21,22p evidence/pp-066/s0/S0-3.txt"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "3562d5c14449d56d00e17551660a7637b92d488893393b9126b65526b4d9cc8a",
+            "primary_measurement_id": "s03_vulkaninfo_rc_line",
+            "also_measured": [],
+            "divergence": "primary_only",
+            "reviewer_finding_id": "r5-07-s03-vulkaninfo-rc"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "crux",
+          "version": "contracts/crux-*.yaml at 04ba0664b (277 contracts)",
+          "rules": [
+            {
+              "id": "PRREV-CRUX",
+              "name": "CRUX user-facing surface and competitive claims"
+            }
+          ]
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": []
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity",
+          "version": "1.1.27",
+          "rules": [
+            {
+              "id": "PRREV-AGY",
+              "name": "cross-vendor reviewing agent (advisory)"
+            }
+          ]
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": []
+    }
+  ]
+}
