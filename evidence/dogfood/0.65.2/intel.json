@@ -1,0 +1,375 @@
+{
+ "host": "intel",
+ "arch": "x86_64-unknown-linux-gnu",
+ "os": "Linux 6.8.0-138-generic",
+ "cpu": "Intel(R) Xeon(R) W-3245 CPU @ 3.20GHz",
+ "accelerator": "none (no discrete GPU; nvidia-smi present but no driver)",
+ "version_tested": "0.65.2",
+ "date": "2026-09-04",
+ "install_source": "crates.io",
+ "install_command": "cargo install aprender --version 0.65.2 --locked --force",
+ "install_root": "default (~/.cargo/bin)",
+ "version_before_install": "apr 0.64.0 (v0.64.0+no-git)",
+ "install_rc": 0,
+ "install_wall_seconds": 202,
+ "crates_compiled": 568,
+ "path_resolved_apr": "/home/noah/.cargo/bin/apr",
+ "binary_sha256": "db7a7cd6ffa906c07906e817d50dbb7806c859b4c9e0844e514907ca5b50dea7",
+ "binary_version_output": "apr 0.65.2 (v0.65.2+no-git)",
+ "surface": {
+  "cli_subcommands": 111,
+  "cli_subcommands_answering_help": 110,
+  "unusable": 0,
+  "note": "`help` is the one advertised subcommand that does not accept --help (it IS the help); every other subcommand answers --help"
+ },
+ "bare_apr_is_0_65_2": true,
+ "notable": "x86_64 Xeon (AVX-512), no GPU; CPU class only. | Post-publish parity attempt 2026-09-05 (cpu lane, comparator llama.cpp 39173bcac -DGGML_NATIVE=ON, -ngl 0): apr c=1 per-replicate tok/s 18.1/6.2/12.3/14.6/14.3 (median 14.3, TTFT 3.3-9.0 s) vs comparator 42.0/33.7/41.0/44.4/43.4; c=4 apr 22.7 vs 93.3; c=8 apr 10.9 vs 65.8 (median); c=16 replicate 2 had 0/16 successful requests and replicate 1 had 9/16, the other three 16/16 at 19.6-23.5 tok/s. No parity block can be emitted (PMAT-963). The host is the shared CI runner box and carried runner load during the run (scripts under /home/noah/data/ci-nice.sh were deprioritising other repos); the replicate spread at c=1 (6.2-18.1) is consistent with that and is recorded, not smoothed.",
+ "verdict": "GO",
+ "collection_note": "Post-publish by construction: install_rc comes from `cargo install aprender --version 0.65.2 --locked --force` against crates.io on the host itself (scripts run over ssh, facts.json collected, receipt composed by the release orchestrator 2026-09-04/05). Parity attempted 2026-09-05 from a fresh clone (~/src/aprender-0652b at 8e1e9ad40) with the PMAT-961 resolver patch (#2867) applied; the pinned comparator was built on the host (-DGGML_NATIVE=ON -DLLAMA_CURL=OFF) and resolved ok. The bench block came from scripts/bench_host_receipt.sh on the same published binary (rc=0).",
+ "bench": {
+  "model": "/home/noah/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf",
+  "tokens_per_second": 18.9,
+  "total_tokens": 160,
+  "total_time_ms": 8466.449,
+  "time_to_first_token_ms": 55.526688,
+  "iterations": 5,
+  "mean_time_ms": 1693.2898,
+  "median_time_ms": 1661.766,
+  "std_dev_ms": 120.73315199999999,
+  "passed": true,
+  "samples_ms": [
+   1776.8540000000003,
+   1562.7930000000001,
+   1882.182,
+   1582.854,
+   1661.766
+  ],
+  "n": 5,
+  "runs_discarded": 0,
+  "provenance": {
+   "binary_path": "/home/noah/.cargo/bin/apr",
+   "binary_sha256": "db7a7cd6ffa906c07906e817d50dbb7806c859b4c9e0844e514907ca5b50dea7",
+   "reported_version": "0.65.2",
+   "build_commit": "v0.65.2+no-git",
+   "resolution": "path",
+   "compute_class": "cpu",
+   "feature_set": [
+    "inference",
+    "training"
+   ]
+  },
+  "model_sha256": "cc324af070c2ecbfd324a30884d2f951a7ff756aba85cb811a6ec436933bb046",
+  "latency_p50_ms": 1661.766,
+  "latency_p95_ms": 1882.182,
+  "latency_p99_ms": 1882.182
+ },
+ "parity_attempt": {
+  "status": "refused",
+  "instrument": "apr test llm bench via scripts/parity_host_receipt.sh (bash, PMAT-961 resolver patch)",
+  "comparator": "llama.cpp 39173bcac (scripts/llama_pin.toml), built on the host",
+  "model": "qwen2.5-coder-1.5b-instruct-q4_k_m.gguf",
+  "lane": "cpu (the published default-feature binary resolved 0 GPU layers; accel_absent)",
+  "ladder": [
+   1,
+   4,
+   8,
+   16
+  ],
+  "replicates_per_band": 5,
+  "refusal": "band[16]: subject aggregate_tok_per_sec contains a non-positive rate (replicate 2: 0/16 requests succeeded; replicate 1: 9/16)",
+  "kept_dir_on_host": "/tmp/tmp.bdsZKmjHK3",
+  "bands": [
+   {
+    "concurrency": 1,
+    "replicates": 5,
+    "subject": {
+     "successful": [
+      5,
+      2,
+      3,
+      4,
+      4
+     ],
+     "failed": [
+      0,
+      0,
+      0,
+      0,
+      0
+     ],
+     "tok_per_sec_mean": [
+      18.06,
+      6.22,
+      12.3,
+      14.57,
+      14.32
+     ],
+     "ttft_p50_ms": [
+      3280,
+      8960,
+      4715,
+      4234,
+      4347
+     ],
+     "decode_tok_per_sec": [
+      35.15,
+      10.94,
+      23.1,
+      27.82,
+      28.01
+     ],
+     "prefill_tok_per_sec": [
+      38.42,
+      14.36,
+      26.72,
+      29.76,
+      28.99
+     ]
+    },
+    "comparator": {
+     "tok_per_sec_mean": [
+      41.95,
+      33.67,
+      40.98,
+      44.38,
+      43.41
+     ],
+     "ttft_p50_ms": [
+      32,
+      34,
+      30,
+      30,
+      29
+     ]
+    },
+    "subject_median_tok_per_sec": 14.32,
+    "comparator_median_tok_per_sec": 41.95
+   },
+   {
+    "concurrency": 4,
+    "replicates": 5,
+    "subject": {
+     "successful": [
+      8,
+      8,
+      8,
+      8,
+      8
+     ],
+     "failed": [
+      0,
+      0,
+      0,
+      0,
+      0
+     ],
+     "tok_per_sec_mean": [
+      22.04,
+      22.65,
+      22.97,
+      23.81,
+      21.1
+     ],
+     "ttft_p50_ms": [
+      11578,
+      11255,
+      10953,
+      10742,
+      12414
+     ],
+     "decode_tok_per_sec": [
+      10.91,
+      11.21,
+      11.23,
+      11.82,
+      10.76
+     ],
+     "prefill_tok_per_sec": [
+      10.88,
+      11.2,
+      11.51,
+      11.75,
+      10.21
+     ]
+    },
+    "comparator": {
+     "tok_per_sec_mean": [
+      93.56,
+      93.33,
+      94.26,
+      85.21,
+      80.91
+     ],
+     "ttft_p50_ms": [
+      67,
+      67,
+      66,
+      80,
+      88
+     ]
+    },
+    "subject_median_tok_per_sec": 22.65,
+    "comparator_median_tok_per_sec": 93.33
+   },
+   {
+    "concurrency": 8,
+    "replicates": 5,
+    "subject": {
+     "successful": [
+      8,
+      8,
+      8,
+      8,
+      8
+     ],
+     "failed": [
+      0,
+      0,
+      0,
+      0,
+      0
+     ],
+     "tok_per_sec_mean": [
+      24.04,
+      25.23,
+      9.67,
+      10.15,
+      10.88
+     ],
+     "ttft_p50_ms": [
+      22029,
+      20742,
+      49555,
+      52898,
+      49625
+     ],
+     "decode_tok_per_sec": [
+      6.19,
+      6.42,
+      2.29,
+      2.69,
+      2.89
+     ],
+     "prefill_tok_per_sec": [
+      5.72,
+      6.07,
+      2.54,
+      2.38,
+      2.54
+     ]
+    },
+    "comparator": {
+     "tok_per_sec_mean": [
+      101.62,
+      61.69,
+      58.85,
+      66.97,
+      65.76
+     ],
+     "ttft_p50_ms": [
+      106,
+      172,
+      173,
+      155,
+      175
+     ]
+    },
+    "subject_median_tok_per_sec": 10.88,
+    "comparator_median_tok_per_sec": 65.76
+   },
+   {
+    "concurrency": 16,
+    "replicates": 5,
+    "subject": {
+     "successful": [
+      9,
+      0,
+      16,
+      16,
+      16
+     ],
+     "failed": [
+      7,
+      16,
+      0,
+      0,
+      0
+     ],
+     "tok_per_sec_mean": [
+      9.6,
+      0,
+      19.56,
+      22.51,
+      23.46
+     ],
+     "ttft_p50_ms": [
+      53616,
+      0,
+      55372,
+      44247,
+      43771
+     ],
+     "decode_tok_per_sec": [
+      1.95,
+      0,
+      2.62,
+      2.75,
+      2.96
+     ],
+     "prefill_tok_per_sec": [
+      2.35,
+      0,
+      2.28,
+      2.85,
+      2.88
+     ]
+    },
+    "comparator": {
+     "tok_per_sec_mean": [
+      74.96,
+      81.16,
+      127.43,
+      121.16,
+      127.3
+     ],
+     "ttft_p50_ms": [
+      251,
+      235,
+      176,
+      183,
+      179
+     ]
+    },
+    "subject_median_tok_per_sec": 21.035,
+    "comparator_median_tok_per_sec": 121.16
+   }
+  ],
+  "why_no_parity_block": "scripts/parity_host_receipt.sh refuses to emit a block that scripts/lib/bench_receipt.py would reject: a band whose subject throughput is zero is a failed measurement, not a measurement (F12). The attempt is recorded here under parity_attempt so the gate reads it as ABSENT, not as a block.",
+  "validity_by_band": {
+   "c1": "MEASURED-c1 (no witness required at c=1)",
+   "c4": "INVALID-CORRECTNESS(#2753/#2776: no PP-26 witness; comparator slots_admitted == c from /props)",
+   "c8": "INVALID-CORRECTNESS(#2753/#2776: no PP-26 witness; comparator slots_admitted == c from /props)",
+   "c16": "INVALID-CORRECTNESS(#2753/#2776: no PP-26 witness; comparator slots_admitted == c from /props)"
+  },
+  "comparator_slots_admitted": {
+   "c1": 1,
+   "c4": 4,
+   "c8": 8,
+   "c16": 16
+  },
+  "comparator_slots_source": "band-cpu-c*.json comparator_slots_admitted (read from GET /props per band)",
+  "what_it_lacks": [
+   "a parity block at all (refused: zero-throughput band)",
+   "PP-26 witness on every c>1 band",
+   "PP-21 signature",
+   "PP-25 client sha256"
+  ],
+  "started_utc": "2026-09-05T00:03:26.785Z",
+  "started_utc_source": "apr-cpu-c1.config.json server.started_utc in the kept work dir on the host (copied here so the ledger row traces to the receipt)"
+ },
+ "decision": {
+  "decided_by": "noah",
+  "date": "2026-09-05",
+  "text": "0.65.2 stays published. No yank, no 0.65.3. These four host receipts are the 0.66 baseline."
+ }
+}

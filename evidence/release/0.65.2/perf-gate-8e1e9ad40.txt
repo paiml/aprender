@@ -1,0 +1,3 @@
+perf_gate rc=0 main=8e1e9ad405dda531ba4b6aa307e39b3a81418ce1 :: VERDICT PASS host=lambda phase=release workload=W1
+SKIP lines: 1
+SKIP  ArmE measured on W2 only (workload=W1)

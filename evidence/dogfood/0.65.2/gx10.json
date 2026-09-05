@@ -1,0 +1,343 @@
+{
+ "host": "gx10",
+ "arch": "aarch64-unknown-linux-gnu",
+ "os": "Linux 6.17.0-1014-nvidia",
+ "cpu": "unknown",
+ "accelerator": "NVIDIA GB10 sm_121",
+ "version_tested": "0.65.2",
+ "date": "2026-09-04",
+ "install_source": "crates.io",
+ "install_command": "cargo install aprender --version 0.65.2 --locked --force",
+ "install_root": "default (~/.cargo/bin)",
+ "version_before_install": "apr 0.65.0 (fdc340e0)",
+ "install_rc": 0,
+ "install_wall_seconds": 115,
+ "crates_compiled": 567,
+ "path_resolved_apr": "/home/noah/.cargo/bin/apr",
+ "binary_sha256": "4d7a2df4209d33b79b1e979f6153ff3bf422f8335bf549362a4a5267809cc899",
+ "binary_version_output": "apr 0.65.2 (v0.65.2+no-git)",
+ "surface": {
+  "cli_subcommands": 111,
+  "cli_subcommands_answering_help": 110,
+  "unusable": 0,
+  "note": "`help` is the one advertised subcommand that does not accept --help (it IS the help); every other subcommand answers --help"
+ },
+ "bare_apr_is_0_65_2": true,
+ "notable": "aarch64 GB10 (sm_121) unified memory; the aarch64 Q4_K GEMV finding (#2567) still stands \u2014 numbers correct, speed via the scalar path. | Post-publish parity attempt 2026-09-05 (cpu lane, comparator llama.cpp 39173bcac built with -DGGML_CUDA=ON but run with -ngl 0 for the cpu lane): apr 3.5 tok/s at c=1 (TTFT 17.6 s) vs comparator 75.7 (medians of 5); 7.1 vs 104.4 at c=4 (TTFT 36 s); at c=8 and c=16 EVERY apr request failed in all 5 replicates (0/8, 0/16) while the comparator served 111.7 and 114.5 tok/s. No parity block can be emitted (PMAT-963); the aarch64 published binary is 0.046x the comparator at c=1 (PMAT-964). apr bench: 7.7 tok/s, below the H12 floor of 10, so no bench block either.",
+ "verdict": "GO",
+ "collection_note": "Post-publish by construction: install_rc comes from `cargo install aprender --version 0.65.2 --locked --force` against crates.io on the host itself (scripts run over ssh, facts.json collected, receipt composed by the release orchestrator 2026-09-04/05). Parity/bench attempted 2026-09-05 on the host from a fresh clone at 8e1e9ad40 with the PMAT-961 resolver patch (#2867) applied; the comparator pin resolved ok. The published binary was the subject (~/.cargo/bin/apr, cargo install aprender --version 0.65.2 --locked --force). The cuda lane the 0.66 report owes for GB10 needs an install with --features cuda; not attempted in this receipt.",
+ "parity_attempt": {
+  "status": "refused",
+  "instrument": "apr test llm bench via scripts/parity_host_receipt.sh (bash, PMAT-961 resolver patch)",
+  "comparator": "llama.cpp 39173bcac (scripts/llama_pin.toml), built on the host",
+  "model": "qwen2.5-coder-1.5b-instruct-q4_k_m.gguf",
+  "lane": "cpu (the published default-feature binary resolved 0 GPU layers; accel_absent)",
+  "ladder": [
+   1,
+   4,
+   8,
+   16
+  ],
+  "replicates_per_band": 5,
+  "refusal": "band[8] and band[16]: subject aggregate_tok_per_sec contains a non-positive rate (every request in every replicate failed at c=8 and c=16)",
+  "kept_dir_on_host": "/tmp/tmp.LCmTlB8O8M",
+  "bands": [
+   {
+    "concurrency": 1,
+    "replicates": 5,
+    "subject": {
+     "successful": [
+      1,
+      1,
+      1,
+      1,
+      1
+     ],
+     "failed": [
+      0,
+      0,
+      0,
+      0,
+      0
+     ],
+     "tok_per_sec_mean": [
+      3.53,
+      3.55,
+      3.57,
+      3.47,
+      3.47
+     ],
+     "ttft_p50_ms": [
+      17619,
+      17362,
+      17526,
+      17561,
+      17842
+     ],
+     "decode_tok_per_sec": [
+      6.83,
+      6.78,
+      6.94,
+      6.58,
+      6.68
+     ],
+     "prefill_tok_per_sec": [
+      7.15,
+      7.26,
+      7.19,
+      7.18,
+      7.06
+     ]
+    },
+    "comparator": {
+     "tok_per_sec_mean": [
+      77.85,
+      75.74,
+      73.33,
+      77.83,
+      73.76
+     ],
+     "ttft_p50_ms": [
+      17,
+      17,
+      18,
+      17,
+      18
+     ]
+    },
+    "subject_median_tok_per_sec": 3.53,
+    "comparator_median_tok_per_sec": 75.74
+   },
+   {
+    "concurrency": 4,
+    "replicates": 5,
+    "subject": {
+     "successful": [
+      4,
+      4,
+      4,
+      4,
+      4
+     ],
+     "failed": [
+      0,
+      0,
+      0,
+      0,
+      0
+     ],
+     "tok_per_sec_mean": [
+      7.09,
+      7.07,
+      7.07,
+      7.06,
+      7.07
+     ],
+     "ttft_p50_ms": [
+      35857,
+      36140,
+      36075,
+      36173,
+      36146
+     ],
+     "decode_tok_per_sec": [
+      3.5,
+      3.51,
+      3.51,
+      3.51,
+      3.53
+     ],
+     "prefill_tok_per_sec": [
+      3.51,
+      3.49,
+      3.49,
+      3.48,
+      3.49
+     ]
+    },
+    "comparator": {
+     "tok_per_sec_mean": [
+      105.3,
+      104.41,
+      104.37,
+      104.25,
+      104.56
+     ],
+     "ttft_p50_ms": [
+      50,
+      49,
+      49,
+      52,
+      50
+     ]
+    },
+    "subject_median_tok_per_sec": 7.07,
+    "comparator_median_tok_per_sec": 104.41
+   },
+   {
+    "concurrency": 8,
+    "replicates": 5,
+    "subject": {
+     "successful": [
+      0,
+      0,
+      0,
+      0,
+      0
+     ],
+     "failed": [
+      8,
+      8,
+      8,
+      8,
+      8
+     ],
+     "tok_per_sec_mean": [
+      0,
+      0,
+      0,
+      0,
+      0
+     ],
+     "ttft_p50_ms": [
+      0,
+      0,
+      0,
+      0,
+      0
+     ],
+     "decode_tok_per_sec": [
+      0,
+      0,
+      0,
+      0,
+      0
+     ],
+     "prefill_tok_per_sec": [
+      0,
+      0,
+      0,
+      0,
+      0
+     ]
+    },
+    "comparator": {
+     "tok_per_sec_mean": [
+      111.57,
+      111.93,
+      111.37,
+      111.88,
+      111.68
+     ],
+     "ttft_p50_ms": [
+      99,
+      100,
+      92,
+      99,
+      93
+     ]
+    },
+    "subject_median_tok_per_sec": null,
+    "comparator_median_tok_per_sec": 111.68
+   },
+   {
+    "concurrency": 16,
+    "replicates": 5,
+    "subject": {
+     "successful": [
+      0,
+      0,
+      0,
+      0,
+      0
+     ],
+     "failed": [
+      16,
+      16,
+      16,
+      16,
+      16
+     ],
+     "tok_per_sec_mean": [
+      0,
+      0,
+      0,
+      0,
+      0
+     ],
+     "ttft_p50_ms": [
+      0,
+      0,
+      0,
+      0,
+      0
+     ],
+     "decode_tok_per_sec": [
+      0,
+      0,
+      0,
+      0,
+      0
+     ],
+     "prefill_tok_per_sec": [
+      0,
+      0,
+      0,
+      0,
+      0
+     ]
+    },
+    "comparator": {
+     "tok_per_sec_mean": [
+      114.26,
+      114.74,
+      114.38,
+      114.58,
+      114.51
+     ],
+     "ttft_p50_ms": [
+      148,
+      197,
+      195,
+      148,
+      168
+     ]
+    },
+    "subject_median_tok_per_sec": null,
+    "comparator_median_tok_per_sec": 114.51
+   }
+  ],
+  "why_no_parity_block": "scripts/parity_host_receipt.sh refuses to emit a block that scripts/lib/bench_receipt.py would reject: a band whose subject throughput is zero is a failed measurement, not a measurement (F12). The attempt is recorded here under parity_attempt so the gate reads it as ABSENT, not as a block.",
+  "validity_by_band": {
+   "c1": "MEASURED-c1 (no witness required at c=1)",
+   "c4": "INVALID-CORRECTNESS(#2753/#2776: no PP-26 witness; comparator slots_admitted == c from /props)",
+   "c8": "INVALID-CORRECTNESS(#2753/#2776: no PP-26 witness; comparator slots_admitted == c from /props)",
+   "c16": "INVALID-CORRECTNESS(#2753/#2776: no PP-26 witness; comparator slots_admitted == c from /props)"
+  },
+  "comparator_slots_admitted": {
+   "c1": 1,
+   "c4": 4,
+   "c8": 8,
+   "c16": 16
+  },
+  "comparator_slots_source": "band-cpu-c*.json comparator_slots_admitted (read from GET /props per band)",
+  "what_it_lacks": [
+   "a parity block at all (refused: zero-throughput band)",
+   "PP-26 witness on every c>1 band",
+   "PP-21 signature",
+   "PP-25 client sha256"
+  ],
+  "started_utc": "2026-09-04T23:54:26.923Z",
+  "started_utc_source": "apr-cpu-c1.config.json server.started_utc in the kept work dir on the host (copied here so the ledger row traces to the receipt)"
+ },
+ "bench_attempt": {
+  "status": "refused",
+  "reason": "apr bench exited non-zero: 'Validation failed: Throughput 7.7 tok/s below minimum 10 tok/s (spec H12)'; Performance Grade F. scripts/bench_host_receipt.sh does not write a block for a failed measurement (F12).",
+  "measured_tok_per_sec": 7.7
+ },
+ "decision": {
+  "decided_by": "noah",
+  "date": "2026-09-05",
+  "text": "0.65.2 stays published. No yank, no 0.65.3. These four host receipts are the 0.66 baseline."
+ }
+}
