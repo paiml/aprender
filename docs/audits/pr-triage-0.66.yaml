@@ -1685,7 +1685,7 @@ prs:
     gate: queue decides
     workspace_test: queue decides
     root_cause_class: null
-    armed: false
+    armed: true
   evidence:
   - gh pr view 2871 --json number,title,author,isDraft,createdAt,mergeable,mergeStateStatus,baseRefName,headRefName,files,body,statusCheckRollup
   - gh pr checks 2871
@@ -1694,6 +1694,7 @@ prs:
     scan'
   - 'git worktree add --detach <wt> origin/main && git checkout --detach origin/chore/impl-PMAT-929-corrections && git rebase origin/main   # CLEAN'
   - 'gh pr merge 2871 --auto --squash   # armed on head 95bb1fe17; refs/triage/2871 not pushed (operator: no push tonight)'
+  - gh pr merge 2871 --auto --squash
 - number: 2981
   pmat_id: none (pmat#1193)
   title: 'docs(PP-066): obligation DAG (87 rows, filed #2882-#2980), first-wave plan, quorum record; roadmap +87 (epic #2873)'
