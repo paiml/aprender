@@ -2362,8 +2362,8 @@ rows:
   gh_issue: 2982
   pmat_id: PMAT-1054
   status: complete
-  notes: 'A1 measured 2026-09-05: ruleset "Green Main" requires bare gate; gate needs pr-review-present; pr-review-present/pr-review-receipt run if github.event_name == pull_request (definition from head) | complete: #2985 merged cdc0acb99 2026-09-05T16:44:33Z; receipt docs/audits/impl-PMAT-1054-receipt.md status: complete;
-    protection contexts = [ci / gate, workspace-test]. Receipts are advisory until this lands; the session regenerates none.'
+  notes: 'A1 measured 2026-09-05: ruleset "Green Main" requires bare gate; gate needs pr-review-present; pr-review-present/pr-review-receipt run if github.event_name == pull_request (definition from head); protection contexts = [ci / gate, workspace-test]. Receipts are advisory until this lands; the session regenerates none. | complete: #2985 merged cdc0acb99 2026-09-05T16:44:33Z; receipt docs/audits/impl-PMAT-1054-receipt.md status: complete'
+
 - id: C0-6
   title: 'mutation step exceeds the job timeout (134-mutant set, #2872 receipt run): a cancelled required step records NotRun{Timeout}, never PASS, and the step fits its job'
   epic: 2873
