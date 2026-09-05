@@ -38,7 +38,7 @@
       "grounding": "measured",
       "precision_class": "advisory",
       "failure_scenario": "if the two symbols were the same logic, this PR would re-implement it; they are not (read on both sides)",
-      "source": "scripts/pr_review_duplication_scan.sh --base b1a6324b8 --head a444816b1 --rust-semantic",
+      "source": "scripts/pr_review_duplication_scan.sh --base b1a6324b8 --head 2d091d7a4 --rust-semantic",
       "excerpt": "",
       "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
       "disposition": "name collision, no duplication"
@@ -66,7 +66,7 @@
       "grounding": "measured",
       "precision_class": "advisory",
       "failure_scenario": "if the two symbols were the same logic, this PR would re-implement it; they are not (read on both sides)",
-      "source": "scripts/pr_review_duplication_scan.sh --base b1a6324b8 --head a444816b1 --rust-semantic",
+      "source": "scripts/pr_review_duplication_scan.sh --base b1a6324b8 --head 2d091d7a4 --rust-semantic",
       "excerpt": "",
       "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
       "disposition": "name collision, no duplication"
@@ -94,7 +94,7 @@
       "grounding": "measured",
       "precision_class": "advisory",
       "failure_scenario": "if the two symbols were the same logic, this PR would re-implement it; they are not (read on both sides)",
-      "source": "scripts/pr_review_duplication_scan.sh --base b1a6324b8 --head a444816b1 --rust-semantic",
+      "source": "scripts/pr_review_duplication_scan.sh --base b1a6324b8 --head 2d091d7a4 --rust-semantic",
       "excerpt": "",
       "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
       "disposition": "name collision, no duplication"
@@ -122,7 +122,7 @@
       "grounding": "measured",
       "precision_class": "advisory",
       "failure_scenario": "if the two symbols were the same logic, this PR would re-implement it; they are not (read on both sides)",
-      "source": "scripts/pr_review_duplication_scan.sh --base b1a6324b8 --head a444816b1 --rust-semantic",
+      "source": "scripts/pr_review_duplication_scan.sh --base b1a6324b8 --head 2d091d7a4 --rust-semantic",
       "excerpt": "",
       "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
       "disposition": "name collision, no duplication"
@@ -150,7 +150,7 @@
       "grounding": "measured",
       "precision_class": "advisory",
       "failure_scenario": "if the two symbols were the same logic, this PR would re-implement it; they are not (read on both sides)",
-      "source": "scripts/pr_review_duplication_scan.sh --base b1a6324b8 --head a444816b1 --rust-semantic",
+      "source": "scripts/pr_review_duplication_scan.sh --base b1a6324b8 --head 2d091d7a4 --rust-semantic",
       "excerpt": "",
       "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
       "disposition": "name collision, no duplication"
@@ -178,7 +178,7 @@
       "grounding": "measured",
       "precision_class": "advisory",
       "failure_scenario": "if the two symbols were the same logic, this PR would re-implement it; they are not (read on both sides)",
-      "source": "scripts/pr_review_duplication_scan.sh --base b1a6324b8 --head a444816b1 --rust-semantic",
+      "source": "scripts/pr_review_duplication_scan.sh --base b1a6324b8 --head 2d091d7a4 --rust-semantic",
       "excerpt": "",
       "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
       "disposition": "name collision, no duplication"
@@ -206,7 +206,7 @@
       "grounding": "measured",
       "precision_class": "advisory",
       "failure_scenario": "if the two symbols were the same logic, this PR would re-implement it; they are not (read on both sides)",
-      "source": "scripts/pr_review_duplication_scan.sh --base b1a6324b8 --head a444816b1 --rust-semantic",
+      "source": "scripts/pr_review_duplication_scan.sh --base b1a6324b8 --head 2d091d7a4 --rust-semantic",
       "excerpt": "",
       "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
       "disposition": "name collision, no duplication"
@@ -234,7 +234,7 @@
       "grounding": "measured",
       "precision_class": "advisory",
       "failure_scenario": "if the two symbols were the same logic, this PR would re-implement it; they are not (read on both sides)",
-      "source": "scripts/pr_review_duplication_scan.sh --base b1a6324b8 --head a444816b1 --rust-semantic",
+      "source": "scripts/pr_review_duplication_scan.sh --base b1a6324b8 --head 2d091d7a4 --rust-semantic",
       "excerpt": "",
       "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
       "disposition": "name collision, no duplication"
@@ -262,7 +262,7 @@
       "grounding": "measured",
       "precision_class": "advisory",
       "failure_scenario": "if the two symbols were the same logic, this PR would re-implement it; they are not (read on both sides)",
-      "source": "scripts/pr_review_duplication_scan.sh --base b1a6324b8 --head a444816b1 --rust-semantic",
+      "source": "scripts/pr_review_duplication_scan.sh --base b1a6324b8 --head 2d091d7a4 --rust-semantic",
       "excerpt": "",
       "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
       "disposition": "name collision, no duplication"
@@ -319,7 +319,7 @@
    "tool": {
     "driver": {
      "name": "antigravity",
-     "version": "1.1.26",
+     "version": "1.1.27",
      "rules": [
       {
        "id": "PRREV-AGY",
@@ -337,67 +337,7 @@
      "ruleId": "PRREV-AGY",
      "level": "note",
      "message": {
-      "text": "VERDICT.md quotes gx10 c=1 comparator aggregate as 77.8, but the JSON median is 75.7."
-     },
-     "locations": [
-      {
-       "physicalLocation": {
-        "artifactLocation": {
-         "uri": "evidence/dogfood/0.65.2/VERDICT.md"
-        },
-        "region": {
-         "startLine": 31
-        }
-       }
-      }
-     ],
-     "properties": {
-      "grounding": "measured",
-      "precision_class": "advisory",
-      "failure_scenario": "The VERDICT.md explicitly states 'Numbers are aggregate tok/s medians', meaning quoting 77.8 misrepresents the true median of 75.7, which breaks trust in the report.",
-      "source": "agy gemini-3.1-pro-high on a444816b1: ",
-      "excerpt": "",
-      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "disposition": "fixed in 4ca8f95cf on the PR branch: VERDICT.md, gx10.json notable, roadmap PMAT-964 and the impl receipt now carry the median 75.7 and the ratio 0.046x; every other VERDICT number was recomputed from the receipts' median fields (gx10/mini/intel bands printed and compared)",
-      "agy_id": "gx10-c1-comparator-median",
-      "baselineState": "new"
-     }
-    },
-    {
-     "ruleId": "PRREV-AGY",
-     "level": "note",
-     "message": {
-      "text": "All other numbers in the VERDICT.md tables trace correctly to median fields in the JSON receipts. gx10/intel/mini are recorded honestly as parity_attempts (refused) without claiming unmeasured data."
-     },
-     "locations": [
-      {
-       "physicalLocation": {
-        "artifactLocation": {
-         "uri": "evidence/dogfood/0.65.2/VERDICT.md"
-        },
-        "region": {
-         "startLine": 1
-        }
-       }
-      }
-     ],
-     "properties": {
-      "grounding": "measured",
-      "precision_class": "advisory",
-      "failure_scenario": "none stated",
-      "source": "agy gemini-3.1-pro-high on a444816b1: ",
-      "excerpt": "",
-      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "disposition": "confirmation; re-verified by the primary against the receipts",
-      "agy_id": "verdict-numbers-trace",
-      "baselineState": "new"
-     }
-    },
-    {
-     "ruleId": "PRREV-AGY",
-     "level": "note",
-     "message": {
-      "text": "The 0.66 report launders unreceipted figures into receipted ones by citing the provenance index as a receipt, failing to mark them as 'unreceipted [C]' in the text."
+      "text": "Line 149 in 0.66-performance-parity-report.md launders the unreceipted 7.5 s TTFT figure under a 'receipt: evidence/prrev-008/b4-scope-measurement.txt' tag, violating the requirement that unreceipted figures be explicitly marked [C]."
      },
      "locations": [
       {
@@ -406,67 +346,7 @@
          "uri": "docs/specifications/0.66-performance-parity-report.md"
         },
         "region": {
-         "startLine": 47
-        }
-       }
-      }
-     ],
-     "properties": {
-      "grounding": "asserted",
-      "precision_class": "advisory",
-      "failure_scenario": "Readers will mistakenly trust unverified numbers because the report falsely portrays them as backed by a hard receipt (e.g. 'receipt: evidence/reports/...'), breaking the audit chain for unreceipted figures.",
-      "source": "agy gemini-3.1-pro-high on a444816b1: ",
-      "excerpt": "",
-      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "disposition": "fixed in 4ca8f95cf on the PR branch: the 15 report lines that cite only the provenance index now read 'UNRECEIPTED [C] \u2014 provenance only: evidence/reports/...' or name the non-measurement source on the line itself; check_no_claim_literals.sh still PASS",
-      "agy_id": "laundering-unreceipted-figures",
-      "baselineState": "new"
-     }
-    },
-    {
-     "ruleId": "PRREV-AGY",
-     "level": "note",
-     "message": {
-      "text": "The impl receipt attributes the '0.66 spec grill background workflow' and 'skipping Round-6 review' decisions to the operator without providing verbatim quotes."
-     },
-     "locations": [
-      {
-       "physicalLocation": {
-        "artifactLocation": {
-         "uri": "docs/audits/impl-PMAT-929-receipt.md"
-        },
-        "region": {
-         "startLine": 142
-        }
-       }
-      }
-     ],
-     "properties": {
-      "grounding": "asserted",
-      "precision_class": "advisory",
-      "failure_scenario": "Undermines the integrity of the audit log by claiming operator authorization for skipping work or spawning workflows without verifiable evidence (a verbatim quote).",
-      "source": "agy gemini-3.1-pro-high on a444816b1: ",
-      "excerpt": "",
-      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "disposition": "fixed in 4ca8f95cf on the PR branch: both attributions in the impl receipt now quote the operator's messages verbatim ('[continue release in parallel and much this request to a background agent ...]', 'we will cherry pick this and not stop release', 'release autonomously in as few iterations as possible') and mark the residual interpretation [A]",
-      "agy_id": "unquoted-operator-decisions",
-      "baselineState": "new"
-     }
-    },
-    {
-     "ruleId": "PRREV-AGY",
-     "level": "note",
-     "message": {
-      "text": "The PR body's claims (published 74/74, dogfood NO-GO on measured parity, PARTIAL(escalate) with [A]) perfectly align with the diff."
-     },
-     "locations": [
-      {
-       "physicalLocation": {
-        "artifactLocation": {
-         "uri": "docs/audits/impl-PMAT-929-receipt.md"
-        },
-        "region": {
-         "startLine": 1
+         "startLine": 149
         }
        }
       }
@@ -474,12 +354,222 @@
      "properties": {
       "grounding": "measured",
       "precision_class": "advisory",
-      "failure_scenario": "none stated",
-      "source": "agy gemini-3.1-pro-high on a444816b1: ",
+      "failure_scenario": "Readers will trust the 7.5 s TTFT figure as measured evidence because it is in a row ending with a receipt citation, circumventing the provenance index's classification.",
+      "source": "agy gemini-3.1-pro-high on 2d091d7a4: ",
       "excerpt": "",
       "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "disposition": "confirmation; re-verified by the primary against the receipts",
-      "agy_id": "pr-body-claims",
+      "disposition": "fixed in c3a6d1b9c: line 149 now reads '7.5 s TTFT (UNRECEIPTED [C] \u2014 the 7.5 s figure is not in the cited artifact)'",
+      "agy_id": "laundered_7.5_ttft",
+      "baselineState": "new"
+     }
+    },
+    {
+     "ruleId": "PRREV-AGY",
+     "level": "note",
+     "message": {
+      "text": "Line 151 in 0.66-performance-parity-report.md cites a 3.68x TTFT figure without an UNRECEIPTED marker, wrapping it under the line's 'receipt: evidence/parity-http/findings.json' tag, despite the provenance index confirming it is unreceipted."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "docs/specifications/0.66-performance-parity-report.md"
+        },
+        "region": {
+         "startLine": 151
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "An unreceipted figure is presented as having a receipt, violating the strict provenance accounting rules and misleading readers.",
+      "source": "agy gemini-3.1-pro-high on 2d091d7a4: ",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "fixed in c3a6d1b9c: line 151 marks TTFT 3.68x and ITL 1.549x UNRECEIPTED [C] on the line",
+      "agy_id": "laundered_3.68x_ttft",
+      "baselineState": "new"
+     }
+    },
+    {
+     "ruleId": "PRREV-AGY",
+     "level": "note",
+     "message": {
+      "text": "c>1 throughput ratios (0.893x, 0.817x, 0.231x, 0.097x) survive in the 0.66 report despite the PR body and VERDICT.md claiming every c>1 ratio was struck as INVALID-CORRECTNESS."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "docs/specifications/0.66-performance-parity-report.md"
+        },
+        "region": {
+         "startLine": 27
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "Readers will quote these c>1 throughput numbers that were produced without a PP-26 correctness witness, violating the correct-before-fast rule.",
+      "source": "agy gemini-3.1-pro-high on 2d091d7a4: ",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "fixed in c3a6d1b9c and 0699558ed: \u00a71.2 c=4/c=16 rows, the 2026-08-25 and #2776 history rows, G4 and the withdrawn quote on line 27 are STRUCK (INVALID-BUILD row 0b / no PP-26 witness); grep for the four ratios returns 0",
+      "agy_id": "surviving_c_gt_1_ratios",
+      "baselineState": "new"
+     }
+    },
+    {
+     "ruleId": "PRREV-AGY",
+     "level": "note",
+     "message": {
+      "text": "The D1 matrix seeds in perf-matrix.yaml for gx10, intel, and mini are rounded to one decimal place (e.g. gx10 agg is 3.5 instead of the exact median 3.53) rather than being the exact c=1 medians from the receipts."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "scripts/perf-matrix.yaml"
+        },
+        "region": {
+         "startLine": 147
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "Future parity checks will compare against slightly shifted baselines, causing false failures or passes due to rounding errors, violating the 'seeded at achieved' rule.",
+      "source": "agy gemini-3.1-pro-high on 2d091d7a4: ",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "fixed in c3a6d1b9c: D1 seeds are the exact medians of the receipt lists (gx10 3.53/6.78/7.18, intel 14.32/27.82/28.99, mini 4.53/8.85/9.07, lambda full precision); receipts' subject_median_tok_per_sec recomputed from the stored lists",
+      "agy_id": "matrix_seeds_rounded",
+      "baselineState": "new"
+     }
+    },
+    {
+     "ruleId": "PRREV-AGY",
+     "level": "note",
+     "message": {
+      "text": "The started_utc timestamps in LEDGER.md for gx10, intel, and mini (rows 9, 10, 11) trace to an external file in the work directory ('apr-cpu-c1.config.json'), not to a field within the receipt itself."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "evidence/parity/LEDGER.md"
+        },
+        "region": {
+         "startLine": 41
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "If the external work directory is cleaned up, the started_utc timestamp becomes unverifiable from the kept evidence artifact (the receipt json).",
+      "source": "agy gemini-3.1-pro-high on 2d091d7a4: ",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "fixed in c3a6d1b9c: parity_attempt.started_utc (+ source note) added to gx10/intel/mini receipts; ledger rows 9-11 cite that field",
+      "agy_id": "ledger_started_utc_unreceipted",
+      "baselineState": "new"
+     }
+    },
+    {
+     "ruleId": "PRREV-AGY",
+     "level": "note",
+     "message": {
+      "text": "The impl receipt attributes decisions to the operator without quoting them verbatim, specifically: 'operator rule: <=1' (line 33), 'operator rule' for clean-room (line 50), and 'operator requests mid-run' for spec/report writing (line 150)."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "docs/audits/impl-PMAT-929-receipt.md"
+        },
+        "region": {
+         "startLine": 33
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "Reviewers cannot verify the operator's actual instruction or intent without a verbatim quote, leading to potential misinterpretation of policy.",
+      "source": "agy gemini-3.1-pro-high on 2d091d7a4: ",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "fixed in c3a6d1b9c: lines 33/50/150 quote the invocation brief and the operator's messages verbatim; the standing \u22641-subagent rule is named as a 2026-09-02 memory note, not a message in this session",
+      "agy_id": "unquoted_operator_decisions",
+      "baselineState": "new"
+     }
+    },
+    {
+     "ruleId": "PRREV-AGY",
+     "level": "note",
+     "message": {
+      "text": "VERDICT.md claims a 167 s install wall time for the lambda cuda lane, but this number does not trace to any field in lambda.json (e.g. install_wall_seconds is null)."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "evidence/dogfood/0.65.2/VERDICT.md"
+        },
+        "region": {
+         "startLine": 23
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "Reviewers cannot verify the install time for the cuda lane, breaking the provenance of the VERDICT.md table.",
+      "source": "agy gemini-3.1-pro-high on 2d091d7a4: ",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "fixed in c3a6d1b9c: lambda.json gains cuda_install {rc 0, wall_seconds 167, source evidence/dogfood/0.65.2/lambda-cuda-install.txt}; VERDICT cites it",
+      "agy_id": "untraceable_cuda_install_time",
+      "baselineState": "new"
+     }
+    },
+    {
+     "ruleId": "PRREV-AGY",
+     "level": "note",
+     "message": {
+      "text": "VERDICT.md truncates the 'cli_subcommands_answering_help' value to '1 |' instead of '110}' for lambda, intel, and mini install lanes."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "evidence/dogfood/0.65.2/VERDICT.md"
+        },
+        "region": {
+         "startLine": 19
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "The table misreports the number of subcommands answering help as 1 instead of 110, causing confusion.",
+      "source": "agy gemini-3.1-pro-high on 2d091d7a4: ",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "fixed in c3a6d1b9c: host table rebuilt from the surface dict (111 advertised / 110 answer --help, 0 unusable)",
+      "agy_id": "truncated_cli_subcommands_answering_help",
       "baselineState": "new"
      }
     }
