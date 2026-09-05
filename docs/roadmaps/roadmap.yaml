@@ -14574,7 +14574,7 @@ roadmap:
 - id: PMAT-964
   github_issue: null
   item_type: bug
-  title: 'Published aarch64 0.65.2 (cargo install aprender, default features) decodes at 3.5 tok/s on gx10/GB10 and 4.5 tok/s on mini/M4 at c=1 - 0.045x and 0.05x the pinned llama.cpp CPU (77.8 / 90.4) - and apr bench measures 7.7 / 8.1 tok/s, below its own H12 floor of 10, so the published aarch64 binaries fail the spec they ship'
+  title: 'Published aarch64 0.65.2 (cargo install aprender, default features) decodes at 3.5 tok/s on gx10/GB10 and 4.5 tok/s on mini/M4 at c=1 - 0.046x and 0.05x the pinned llama.cpp CPU (medians 75.7 / 90.4) - and apr bench measures 7.7 / 8.1 tok/s, below its own H12 floor of 10, so the published aarch64 binaries fail the spec they ship'
   status: todo
   priority: critical
   assigned_to: null
@@ -14584,7 +14584,7 @@ roadmap:
   acceptance_criteria:
   - 'the published aarch64 binary (crates.io, default features) reaches the H12 floor in apr bench on gx10 and a cpu-lane parity ratio within the L3 band at c=1'
   - 'the receipt names which SIMD path the published binary took on aarch64 (NEON vs scalar) - the tree build measured 1.21x on GB10 (#2567) and the published binary measures 0.045x, so the two are not the same code path or the same build flags'
-  notes: 'Measured 2026-09-05: evidence/dogfood/0.65.2/gx10.json (parity_attempt band c=1: apr 3.5/3.5/3.6/3.5/3.5 tok/s, TTFT ~17.5 s; comparator 77.8/75.7/73.3/77.8/73.8; bench_attempt: apr bench 7.7 tok/s, Performance Grade F, exit non-zero). mini (M4, aarch64-apple, same published crate): 4.5 tok/s at c=1 vs 90.4 (0.05x), apr bench 8.1 tok/s (exit 5, below the H12 floor) - evidence/dogfood/0.65.2/mini.json. Related: PMAT-962 (lambda, same binary family, 0.59x decode), PMAT-963 (c>=8 request failures), #2567 (aarch64 Q4_K tree-build ratio).'
+  notes: 'Measured 2026-09-05: evidence/dogfood/0.65.2/gx10.json (parity_attempt band c=1: apr 3.5/3.5/3.6/3.5/3.5 tok/s (median 3.5), TTFT ~17.5 s; comparator 77.8/75.7/73.3/77.8/73.8 (median 75.7); bench_attempt: apr bench 7.7 tok/s, Performance Grade F, exit non-zero). mini (M4, aarch64-apple, same published crate): 4.5 tok/s at c=1 vs 90.4 (0.05x), apr bench 8.1 tok/s (exit 5, below the H12 floor) - evidence/dogfood/0.65.2/mini.json. Related: PMAT-962 (lambda, same binary family, 0.59x decode), PMAT-963 (c>=8 request failures), #2567 (aarch64 Q4_K tree-build ratio).'
 - id: PMAT-750
   github_issue: null
   item_type: task
