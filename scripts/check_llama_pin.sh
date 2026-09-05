@@ -168,6 +168,15 @@ run_case "pin_cmake_mismatch"               "abcdef1"  "$td/cudaoff/bin/llama-be
 run_case "an undeclared arch list MISMATCHES" "abcdef1" "$td/arch121/bin/llama-bench"   1 "$FRESH_EXPIRY" cmake_mismatch
 run_case "a declared arch list MATCHES"     "abcdef1"  "$td/arch121/bin/llama-bench"    0 "$FRESH_EXPIRY" ok \
          "cmake -B build -DGGML_CUDA=ON -DCMAKE_CUDA_ARCHITECTURES=121"
+# PMAT-961: a declared line that does not NAME GGML_CUDA (intel: -DGGML_NATIVE=ON,
+# mini: -DGGML_METAL=ON) describes a build whose cache has GGML_CUDA=OFF — the
+# option's default. That is a match, not a mismatch; refusing it made every
+# non-CUDA host unable to carry a parity block. A declared ON against OFF
+# (pin_cmake_mismatch above) still refuses.
+run_case "intel shape: -DGGML_NATIVE=ON matches CUDA=OFF" "abcdef1" "$td/cudaoff/bin/llama-bench" 0 "$FRESH_EXPIRY" ok \
+         "cmake -B build -DGGML_NATIVE=ON"
+run_case "mini shape: -DGGML_METAL=ON matches CUDA=OFF"   "abcdef1" "$td/cudaoff/bin/llama-bench" 0 "$FRESH_EXPIRY" ok \
+         "cmake -B build -DGGML_METAL=ON"
 run_case "no CMakeCache beside the binary"  "abcdef1"  "$td/nocache/bin/llama-bench"    1 "$FRESH_EXPIRY" cmake_cache_absent
 run_case "no build_flags for this host"     "abcdef1"  "$td/good/bin/llama-bench"       3 "$FRESH_EXPIRY" build_flags_absent NONE
 
