@@ -1,0 +1,902 @@
+{
+ "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+ "version": "2.1.0",
+ "runs": [
+  {
+   "tool": {
+    "driver": {
+     "name": "pmat",
+     "version": "3.36.0",
+     "rules": [
+      {
+       "id": "PRREV-PMAT",
+       "name": "pmat quality and duplication"
+      },
+      {
+       "id": "PRREV-PRIMARY",
+       "name": "primary reviewer findings, grounded per S1"
+      },
+      {
+       "id": "PRREV-VERIFY",
+       "name": "measured verifications of the diff's own claims"
+      }
+     ]
+    }
+   },
+   "invocations": [
+    {
+     "executionSuccessful": true,
+     "toolExecutionNotifications": []
+    }
+   ],
+   "results": [
+    {
+     "ruleId": "PRREV-PRIMARY",
+     "level": "warning",
+     "message": {
+      "text": "F-9 and S10 row 567 assert, marked [V], that the master in hand is v3.0 with no S12 row 22 and that v3.1 is not available, citing PP-LLAMA-001-MASTER-v3.md. At both the merge base and HEAD the tracked docs/specifications/PP-LLAMA-001-MASTER.md is titled v3.1 and carries S12 row 22 at line 364; no PP-LLAMA-001-MASTER-v3.md is tracked (git cat-file -e exits 128). S0-1's premise (committed, v3.1, row 22) is already CONFIRMED by the tree, so the [V] mark verifies a document that is not the tree's."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "docs/specifications/PP-066-release-spec.md"
+        },
+        "region": {
+         "startLine": 567
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "an implementer reads S10 row 567 and F-9, concludes no row 22 exists, leaves W-H's instrument unspecified and opens the I-00 'commit the master' ticket S0-1 names, against a master that is already committed and already v3.1",
+      "command": [
+       "grep",
+       "-nE",
+       "^\\| \\*\\*22\\*\\* \\|",
+       "docs/specifications/PP-LLAMA-001-MASTER.md"
+      ],
+      "exit_code": 0,
+      "stdout_sha256": "769035410bf026a9e0f7c0ccfc6e541caf0e7df0e918e7e889d4471c352fad69",
+      "also_measured": [
+       {
+        "id": "master_line1",
+        "command": [
+         "sed",
+         "-n",
+         "1p",
+         "docs/specifications/PP-LLAMA-001-MASTER.md"
+        ],
+        "exit_code": 0,
+        "stdout_sha256": "a66ee2c9fcd41a820ed864c7f7cdb51ee77dba0c2ddf08362128f522e47c19cb"
+       },
+       {
+        "id": "master_at_base_line1",
+        "command": [
+         "git",
+         "show",
+         "da49c108116ca8be0f7cd81a9379b7e333d17d6c:docs/specifications/PP-LLAMA-001-MASTER.md"
+        ],
+        "exit_code": 0,
+        "stdout_sha256": "efe99747e6ae544d480292500cd806d54f1635dca81dbca978a3e86aba807ecc"
+       },
+       {
+        "id": "master_v3_file_absent",
+        "command": [
+         "git",
+         "cat-file",
+         "-e",
+         "HEAD:docs/specifications/PP-LLAMA-001-MASTER-v3.md"
+        ],
+        "exit_code": 128,
+        "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+       },
+       {
+        "id": "master_tracked",
+        "command": [
+         "git",
+         "ls-files",
+         "docs/specifications/PP-LLAMA-001-MASTER.md"
+        ],
+        "exit_code": 0,
+        "stdout_sha256": "17cf92c7aa8ef13646259f27506f202f7c889b996cc6365b85f5af5a3ccc2a3f"
+       }
+      ]
+     }
+    },
+    {
+     "ruleId": "PRREV-PRIMARY",
+     "level": "warning",
+     "message": {
+      "text": "Step-0 premise count is stated three ways: S3's ticket line says 'the eight premises' (line 108), S9's genchi genbutsu target says '9/9 Step-0 premises' (line 544), and the S3 table (lines 112-134) has 23 S0 rows, S0-1..S0-23."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "docs/specifications/PP-066-release-spec.md"
+        },
+        "region": {
+         "startLine": 544
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "the S9 poka-yoke target '9/9 premises answered' reads as satisfied with 14 of the 23 premises unanswered; the S0 ledger ticket's own description under-scopes the work by 15 rows",
+      "command": [
+       "bash",
+       "-c",
+       "sed -n 112,134p docs/specifications/PP-066-release-spec.md | grep -cE '^\\| S0-'"
+      ],
+      "exit_code": 0,
+      "stdout_sha256": "076320a2a08267b4c026d06573bba408ea68841e73cdc20e62cce59de165ece3",
+      "also_measured": [
+       {
+        "id": "s0_count_claims",
+        "command": [
+         "grep",
+         "-nE",
+         "eight premises|9/9\\*\\* Step-0",
+         "docs/specifications/PP-066-release-spec.md"
+        ],
+        "exit_code": 0,
+        "stdout_sha256": "d171ae17aab0c2b790d8fa2caf072c795d2ff4fa2c64544c26ca5e90ce80745b"
+       }
+      ]
+     }
+    },
+    {
+     "ruleId": "PRREV-PRIMARY",
+     "level": "note",
+     "message": {
+      "text": "Line 582 says 'This document is a snapshot at 2026-09-04' while the Status line (line 3) says v1.5 2026-09-05 and F-25/F-26/F-27/F-28 and the v1.2-v1.5 changelog rows are dated 2026-09-05."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "docs/specifications/PP-066-release-spec.md"
+        },
+        "region": {
+         "startLine": 582
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "the 'where it disagrees with HEAD, HEAD wins' rule is anchored to a date one day before the findings it governs; a reader reconciling against 2026-09-04 discards the 09-05 findings as post-snapshot",
+      "command": [
+       "sed",
+       "-n",
+       "582p",
+       "docs/specifications/PP-066-release-spec.md"
+      ],
+      "exit_code": 0,
+      "stdout_sha256": "f3e024d6199c576277734763de51cf0a954d043a6f49b50a5d636f112c1001d8",
+      "also_measured": [
+       {
+        "id": "status_line",
+        "command": [
+         "sed",
+         "-n",
+         "3p",
+         "docs/specifications/PP-066-release-spec.md"
+        ],
+        "exit_code": 0,
+        "stdout_sha256": "493e8de532a84bd493c1c4fba2330f0df1eb3f4575cb31022707052e47f2b401"
+       }
+      ]
+     }
+    },
+    {
+     "ruleId": "PRREV-PRIMARY",
+     "level": "note",
+     "message": {
+      "text": "D-7 cites crates/apr-cli/src/error.rs:86-90,218 for CliError::FeatureDisabled -> 9 (marked [A] at 587ad0797). At HEAD the mapping `Self::FeatureDisabled(_) => 9` is at error.rs:106. The fact holds; the line references have drifted, which is what the [A] mark and S0-7 anticipate."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "crates/apr-cli/src/error.rs"
+        },
+        "region": {
+         "startLine": 106
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "a test author types the cited line into a comment or a fixture and the reference points at unrelated code; D-7's own rule (read the constant from error.rs, never type a number) is the mitigation and is unaffected",
+      "command": [
+       "grep",
+       "-n",
+       "FeatureDisabled(_) => 9",
+       "crates/apr-cli/src/error.rs"
+      ],
+      "exit_code": 0,
+      "stdout_sha256": "de997806b1d0b14d7edb829c18a1e6c657a7fb325e41c5cccfb637a336621a03"
+     }
+    },
+    {
+     "ruleId": "PRREV-PRIMARY",
+     "level": "note",
+     "message": {
+      "text": "Given the measured master state (v3.1, row 22 present, committed on origin/main), F-9's finding, S0-1's I-00 branch and the '[U] until S0-1' qualifier on W-H's instrument are already resolved and should be re-marked before the S0 ledger ticket opens, or S0-1 will spend a discovery row confirming what one `sed -n 1p` shows."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "docs/specifications/PP-066-release-spec.md"
+        },
+        "region": {
+         "startLine": 63
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "asserted",
+      "precision_class": "advisory",
+      "failure_scenario": "the S0 ledger records S0-1 CONFIRMED and nobody edits F-9/S10 row 567, leaving a [V] claim in the spec that the ledger contradicts; a later reader trusts the [V]",
+      "rationale": "judgement about what the spec should do with a measured fact; the fact itself is the PRREV-PRIMARY finding at line 567"
+     }
+    },
+    {
+     "ruleId": "PRREV-VERIFY",
+     "level": "note",
+     "message": {
+      "text": "F-27 receipt values confirmed: evidence/parity/LEDGER.md rows 7 and 8 carry 'decode 0.5945, prefill 0.0053' and 'decode 0.6919, prefill 0.1777' (file lines 45-46), as the F-27 row states."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "evidence/parity/LEDGER.md"
+        },
+        "region": {
+         "startLine": 45
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "had the ledger carried other values, F-27's post-publish figures would be typed, not receipted, and the claim-literal citation would be false",
+      "command": [
+       "bash",
+       "-c",
+       "grep -nE '^\\| (7|8) \\|' evidence/parity/LEDGER.md | grep -oE '^[0-9]+|decode 0\\.[0-9]+, prefill 0\\.[0-9]+'"
+      ],
+      "exit_code": 0,
+      "stdout_sha256": "9e9151214a948422abc4e215d5962b0eba3e7034ad8ec3417f75e6e9e43e366d"
+     }
+    },
+    {
+     "ruleId": "PRREV-VERIFY",
+     "level": "note",
+     "message": {
+      "text": "S-2 / MIN-03 / S10 receipt values confirmed: evidence/parity-http/findings.json has cuStreamSynchronize.pct 57.4, cuMemcpyHtoD_v2.calls 1018, cuMemAlloc_v2.calls 904, llamacpp prefill median 10399.36."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "evidence/parity-http/findings.json"
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "had any field differed, the S-2 description, the MIN-03 adjudication and the 0.55x note would cite a receipt that does not say what they quote",
+      "command": [
+       "jq",
+       "-c",
+       "{sync_pct: .fixed_cost_root_cause.api_time.cuStreamSynchronize.pct, htod_calls: .fixed_cost_root_cause.api_time.cuMemcpyHtoD_v2.calls, alloc_calls: .fixed_cost_root_cause.api_time.cuMemAlloc_v2.calls, llamacpp_prefill_median: .llamacpp.prefill_tok_per_sec.median}",
+       "evidence/parity-http/findings.json"
+      ],
+      "exit_code": 0,
+      "stdout_sha256": "c5bb6af72f9ccd15b69c71c846b84d0a070aad3125f9eb3836197d754397267a"
+     }
+    },
+    {
+     "ruleId": "PRREV-VERIFY",
+     "level": "note",
+     "message": {
+      "text": "F-28 / S0-23 branch-protection read reproduced: required_status_checks.strict=false, contexts [ci / gate, workspace-test], allow_force_pushes=false, allow_deletions=false, no required_pull_request_reviews block."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "docs/specifications/PP-066-release-spec.md"
+        },
+        "region": {
+         "startLine": 80
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "had strict read true or reviews been required, F-28 would be stale and the pre-authorised PATCH in S0-23 would be a no-op the ledger records as a change",
+      "command": [
+       "gh",
+       "api",
+       "repos/paiml/aprender/branches/main/protection",
+       "--jq",
+       "{strict:.required_status_checks.strict,contexts:.required_status_checks.contexts,force:.allow_force_pushes.enabled,del:.allow_deletions.enabled,reviews:(.required_pull_request_reviews // \"ABSENT\")}"
+      ],
+      "exit_code": 0,
+      "stdout_sha256": "0605f5f770ae5b7fcf9b437838dbb1f41929e58c40a93d2288058022c884bc45"
+     }
+    },
+    {
+     "ruleId": "PRREV-VERIFY",
+     "level": "note",
+     "message": {
+      "text": "F-28 / C0 comply read reproduced at HEAD in this worktree: `pmat comply check` exits 1 with CB-1700, CB-1701 and CB-2100 marked failing; CB-1658 reads 'No .pmat-work directory' here (the worktree has no .pmat-work, test -d exits 1), exactly the caveat F-28 states."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "docs/specifications/PP-066-release-spec.md"
+        },
+        "region": {
+         "startLine": 147
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "had the three rules passed, C0's first clause would already hold and the spec's ordering (C0 credited first) would rest on a stale reading",
+      "command": [
+       "pmat",
+       "comply",
+       "check"
+      ],
+      "exit_code": 1,
+      "stdout_sha256": "0132ce660c044360cf73a420386c551b35987ee25706d35d96e71f6d4def3a3b",
+      "also_measured": [
+       {
+        "id": "pmat_work_dir_absent",
+        "command": [
+         "test",
+         "-d",
+         ".pmat-work"
+        ],
+        "exit_code": 1,
+        "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+       }
+      ]
+     }
+    },
+    {
+     "ruleId": "PRREV-VERIFY",
+     "level": "note",
+     "message": {
+      "text": "Both claim guards the commit message names exit 0 on this tree: scripts/check_no_claim_literals.sh (PASS, no NEW claim literal) and scripts/check_perf_claims_cite_receipts.sh (PASS, every citation resolves); the three evidence/ receipts the spec cites resolve."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "docs/specifications/PP-066-release-spec.md"
+        },
+        "region": {
+         "startLine": 65
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "had either guard failed, the seven re-cited lines the commit describes would still be unreceipted literals",
+      "command": [
+       "bash",
+       "scripts/check_no_claim_literals.sh"
+      ],
+      "exit_code": 0,
+      "stdout_sha256": "503d7bfef0a8e12aec1fbf1b564344ee0a760eb981cd7726873e27c1ae390278",
+      "also_measured": [
+       {
+        "id": "perf_claims_guard",
+        "command": [
+         "bash",
+         "scripts/check_perf_claims_cite_receipts.sh"
+        ],
+        "exit_code": 0,
+        "stdout_sha256": "71d4fcb7b1b57d23b54cd25ca6899d297ea50f33404f4f495a1e80b82a205ecb"
+       },
+       {
+        "id": "cited_receipts_resolve",
+        "command": [
+         "ls",
+         "-1",
+         "evidence/parity-http/findings.json",
+         "evidence/parity/LEDGER.md",
+         "evidence/reports/0.66-parity-report-provenance.json"
+        ],
+        "exit_code": 0,
+        "stdout_sha256": "6dd119d0d56d92601835a4d79105cbc46cc2644b309c40e076dc56928e359db1"
+       }
+      ]
+     }
+    },
+    {
+     "ruleId": "PRREV-VERIFY",
+     "level": "note",
+     "message": {
+      "text": "docs/roadmaps/roadmap.yaml parses (715 roadmap entries) and its diff is exactly +17/-0, the PMAT-966 hunk the commit message promises; evidence/reports/0.66-parity-report-provenance.json parses (25 entries) and every entry carrying spec_line points at a spec line that contains the quoted figure (8/8)."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "docs/roadmaps/roadmap.yaml"
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "a re-serialised roadmap or a provenance index whose line numbers drifted would make the provenance-only marks point at the wrong text",
+      "command": [
+       "git",
+       "diff",
+       "--numstat",
+       "da49c108116ca8be0f7cd81a9379b7e333d17d6c",
+       "b132e2b74fb0b5b2c88a1b0063d64b67cc6f1e7d",
+       "--",
+       "docs/roadmaps/roadmap.yaml"
+      ],
+      "exit_code": 0,
+      "stdout_sha256": "d0b676c568b35fa3dfbe53d53e61c96c21938b622d51db36676920586c81266f",
+      "also_measured": [
+       {
+        "id": "roadmap_yaml_parses",
+        "command": [
+         "python3",
+         "-c",
+         "import yaml;d=yaml.safe_load(open('docs/roadmaps/roadmap.yaml'));print(len(d['roadmap']))"
+        ],
+        "exit_code": 0,
+        "stdout_sha256": "1d42234635e87f07d19c2a5b7e2f316dd40389c46abd2223052146caa5e3483e"
+       },
+       {
+        "id": "provenance_json_parses",
+        "command": [
+         "jq",
+         "-c",
+         "{kind, entries: (.entries|length), also_indexes: (.also_indexes|type)}",
+         "evidence/reports/0.66-parity-report-provenance.json"
+        ],
+        "exit_code": 0,
+        "stdout_sha256": "70a3da8c01cccc28391c4499cccfd511b659bffa4d117a2aacb3a0cdd451ccad"
+       },
+       {
+        "id": "provenance_spec_lines",
+        "command": [
+         "bash",
+         "-c",
+         "jq -r '.entries[] | select(.spec_line) | \"\\(.spec_line)\\t\\(.figure)\"' evidence/reports/0.66-parity-report-provenance.json | while IFS=$'\\t' read -r ln fig; do key=$(printf '%s' \"$fig\" | grep -oE '0\\.13\u00d7|2\\.5\u00d7|15\\.5 tok/s|GTT = 0\\.5|0\\.123 tok/s' | head -1); if sed -n \"${ln}p\" docs/specifications/PP-066-release-spec.md | grep -qF \"$key\"; then echo \"OK $ln $key\"; else echo \"MISS $ln $key\"; exit 1; fi; done"
+        ],
+        "exit_code": 0,
+        "stdout_sha256": "8cca3bd494d90878dbc040d721d6ebec02ceda9af51f8c37dfdc401bfcc7e7f5"
+       }
+      ]
+     }
+    },
+    {
+     "ruleId": "PRREV-VERIFY",
+     "level": "note",
+     "message": {
+      "text": "Driver prompt STEP 0 premise holds: issue #2873 exists, open, title 'Epic: PP-066 - 0.66 performance-parity release', label epic. S0-17 premise holds: tag v0.65.2 resolves to 8e1e9ad40."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "docs/audits/pp-066-driver-prompt.md"
+        },
+        "region": {
+         "startLine": 12
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "a missing epic would make STEP 0 halt on its own assertion; a different tag commit would make every 'published 0.65.2' receipt cite the wrong baseline",
+      "command": [
+       "gh",
+       "api",
+       "repos/paiml/aprender/issues/2873",
+       "--jq",
+       "{n:.number,title:.title,state:.state,labels:[.labels[].name]}"
+      ],
+      "exit_code": 0,
+      "stdout_sha256": "2fbffd5fef2685ae31f61b62606c97c26c215cd1511a28beb4320ac4ff3ace2e",
+      "also_measured": [
+       {
+        "id": "tag_0652",
+        "command": [
+         "git",
+         "rev-parse",
+         "v0.65.2^{commit}"
+        ],
+        "exit_code": 0,
+        "stdout_sha256": "dd14621b0df20cf150c9a4ceea9aa61220d3bd04163e054c2a43dec719e31158"
+       }
+      ]
+     }
+    },
+    {
+     "ruleId": "PRREV-VERIFY",
+     "level": "note",
+     "message": {
+      "text": "S3.C.1 basis: the guard's --match-comparative predicate matches 0 of the 773 added lines, so comparative_claims is empty by measurement, not by omission. S3.B/S3.C/S3.D triggers: every changed path returns rc=1 for --match-path, --match-crux-surface, --match-mutation-trigger and --match-shipped-surface; the commit message returns rc=1 for --match-message."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "docs/specifications/PP-066-release-spec.md"
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "had any line matched, a comparator block would be owed and its absence would be B4; had a trigger fired, the not-triggered status would be a rejected receipt",
+      "command": [
+       "bash",
+       "-c",
+       "m=0; n=0; while IFS= read -r line; do n=$((n+1)); if bash scripts/check_pr_review_receipt.sh --match-comparative \"$line\"; then m=$((m+1)); fi; done < <(git diff da49c108116ca8be0f7cd81a9379b7e333d17d6c b132e2b74fb0b5b2c88a1b0063d64b67cc6f1e7d | grep -E '^\\+' | grep -vE '^\\+\\+\\+' | sed 's/^+//'); echo \"added_lines=$n comparative_matches=$m\"; test \"$m\" -eq 0"
+      ],
+      "exit_code": 0,
+      "stdout_sha256": "506423b0ba20532353e5b85babe8f6e300cf5862d28a8111a59195b882cea8c3",
+      "also_measured": [
+       {
+        "id": "cuda_trigger_paths",
+        "command": [
+         "bash",
+         "-c",
+         "git diff --name-only da49c108116ca8be0f7cd81a9379b7e333d17d6c b132e2b74fb0b5b2c88a1b0063d64b67cc6f1e7d | while IFS= read -r f; do bash scripts/check_pr_review_receipt.sh --match-path \"$f\"; echo \"$f rc=$?\"; done"
+        ],
+        "exit_code": 0,
+        "stdout_sha256": "5961f9140a31e57dbeaa31565b3157df2aa83afca545a7b1293346113c1c64f8"
+       },
+       {
+        "id": "cuda_trigger_message",
+        "command": [
+         "bash",
+         "-c",
+         "MSG=$(git log --format=%B da49c108116ca8be0f7cd81a9379b7e333d17d6c..b132e2b74fb0b5b2c88a1b0063d64b67cc6f1e7d); bash scripts/check_pr_review_receipt.sh --match-message \"$MSG\"; echo rc=$?"
+        ],
+        "exit_code": 0,
+        "stdout_sha256": "91d957f8f2748a950526d4d21e0d5cd3bf5518e6c60b1beb470a13be1f978b1d"
+       },
+       {
+        "id": "crux_mutation_triggers",
+        "command": [
+         "bash",
+         "-c",
+         "git diff --name-only da49c108116ca8be0f7cd81a9379b7e333d17d6c b132e2b74fb0b5b2c88a1b0063d64b67cc6f1e7d | while IFS= read -r f; do bash scripts/check_pr_review_receipt.sh --match-crux-surface \"$f\"; c=$?; bash scripts/check_pr_review_receipt.sh --match-mutation-trigger \"$f\"; m=$?; bash scripts/check_pr_review_receipt.sh --match-shipped-surface \"$f\"; s=$?; echo \"$f crux=$c mutation=$m shipped=$s\"; done"
+        ],
+        "exit_code": 0,
+        "stdout_sha256": "de3088e61a2ba5b77a5ac2f16d1ec543eb0d95d8ba7045ff33aef28dc50136ed"
+       }
+      ]
+     }
+    },
+    {
+     "ruleId": "PRREV-PMAT",
+     "level": "note",
+     "message": {
+      "text": "lexical filename match `pp-066-driver-prompt.md` on origin/agent/pp-066-spec at docs/audits/pp-066-driver-prompt.md (lexical); that ref is this PR's own pushed branch, so the hit is the PR finding its earlier self, not prior art"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "docs/audits/pp-066-driver-prompt.md"
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "if the sibling ref were another branch carrying the same file, this PR would duplicate in-flight work; it is origin/agent/pp-066-spec itself",
+      "command": [
+       "bash",
+       "scripts/pr_review_duplication_scan.sh",
+       "--base",
+       "da49c108116ca8be0f7cd81a9379b7e333d17d6c",
+       "--head",
+       "b132e2b74fb0b5b2c88a1b0063d64b67cc6f1e7d",
+       "--rust-semantic",
+       "--json",
+       "/tmp/claude-1000/-home-noah-src-aprender-worktrees-pp-066-spec/42763d92-364c-4171-b9ac-0a16b08a9652/scratchpad/dup.json"
+      ],
+      "exit_code": 0,
+      "stdout_sha256": "88ce8d86eece1df1dfe88ca1981687a648e3269f8f01528cbe0f38c31d8e025d",
+      "disposition": "self-hit on the PR's own remote branch; no duplication"
+     }
+    },
+    {
+     "ruleId": "PRREV-PMAT",
+     "level": "note",
+     "message": {
+      "text": "lexical filename match `PP-066-release-spec.md` on origin/agent/pp-066-spec at docs/specifications/PP-066-release-spec.md (lexical); that ref is this PR's own pushed branch, so the hit is the PR finding its earlier self, not prior art"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "docs/specifications/PP-066-release-spec.md"
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "if the sibling ref were another branch carrying the same file, this PR would duplicate in-flight work; it is origin/agent/pp-066-spec itself",
+      "command": [
+       "bash",
+       "scripts/pr_review_duplication_scan.sh",
+       "--base",
+       "da49c108116ca8be0f7cd81a9379b7e333d17d6c",
+       "--head",
+       "b132e2b74fb0b5b2c88a1b0063d64b67cc6f1e7d",
+       "--rust-semantic",
+       "--json",
+       "/tmp/claude-1000/-home-noah-src-aprender-worktrees-pp-066-spec/42763d92-364c-4171-b9ac-0a16b08a9652/scratchpad/dup.json"
+      ],
+      "exit_code": 0,
+      "stdout_sha256": "88ce8d86eece1df1dfe88ca1981687a648e3269f8f01528cbe0f38c31d8e025d",
+      "disposition": "self-hit on the PR's own remote branch; no duplication"
+     }
+    }
+   ]
+  },
+  {
+   "tool": {
+    "driver": {
+     "name": "antigravity",
+     "version": "1.1.27",
+     "rules": [
+      {
+       "id": "PRREV-AGY",
+       "name": "cross-vendor review (advisory)"
+      }
+     ]
+    }
+   },
+   "invocations": [
+    {
+     "executionSuccessful": true,
+     "toolExecutionNotifications": []
+    }
+   ],
+   "results": [
+    {
+     "ruleId": "PRREV-AGY",
+     "level": "note",
+     "message": {
+      "text": "Commands in S0-2, S0-3, S0-8, S0-23, and C0 use `grep -E` (or `-Ei`) with backslashes escaping the pipe inside single quotes (e.g. `grep -E 'PP-(6\\|27)'`). In extended regular expressions, `\\|` matches a literal pipe character rather than performing alternation, causing these checks to silently fail to match their targets."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "docs/specifications/PP-066-release-spec.md"
+        },
+        "region": {
+         "startLine": 113
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "When the agent executes S0-2 exactly as written, the grep will return zero matches for the master rows, causing the agent to falsely conclude none have landed and incorrectly open new tickets for them.",
+      "source": "agy gemini-3.1-pro-high conversation a3141d71-ce56-402f-918a-d3792e2d01c8 on b132e2b74",
+      "agy_id": "grep-e-escaped-pipe",
+      "baselineState": "new",
+      "disposition": "CONFIRMED by the primary on GNU grep 3.7: 'PP-6' and 'PP-27' both fail to match 'PP-(6\\|27)' (exit 1) while the literal 'PP-6|27' matches (exit 0). The backslash is the markdown table-cell escape for '|', so the rendered text is correct and the raw file is not; a driver that copies commands from the raw file (which an agent does) inherits the defect. Primary did not raise it independently.",
+      "divergence": "agy_only",
+      "agy_command": [
+       "bash",
+       "-c",
+       "echo 'PP-6' | grep -E 'PP-(6\\|27)' || exit 1"
+      ],
+      "command": [
+       "bash",
+       "-c",
+       "echo 'PP-6' | grep -E 'PP-(6\\|27)'"
+      ],
+      "exit_code": 1,
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "reverified_by_primary": true,
+      "primary_measurement_id": "agy1_grep_escaped_pipe",
+      "also_measured": [
+       {
+        "id": "agy1_grep_escaped_pipe_second_alt",
+        "command": [
+         "bash",
+         "-c",
+         "echo 'PP-27' | grep -E 'PP-(6\\|27)'"
+        ],
+        "exit_code": 1,
+        "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+       },
+       {
+        "id": "agy1_grep_literal_pipe_probe",
+        "command": [
+         "bash",
+         "-c",
+         "echo 'PP-6|27' | grep -E 'PP-(6\\|27)'"
+        ],
+        "exit_code": 0,
+        "stdout_sha256": "94db4a9790fc8e3b64435e2c67ba140c2bab19bbd2c15b25a958b62c8700bae2"
+       },
+       {
+        "id": "agy1_grep_version",
+        "command": [
+         "bash",
+         "-c",
+         "grep --version | sed -n 1p"
+        ],
+        "exit_code": 0,
+        "stdout_sha256": "5add1655639c3920dfb30cc872cadef9b23a50abef8a8be9dba1288dfc1d929f"
+       },
+       {
+        "id": "agy1_spec_raw_lines",
+        "command": [
+         "grep",
+         "-nE",
+         "grep -E[i]* '[^']*\\\\\\|",
+         "docs/specifications/PP-066-release-spec.md"
+        ],
+        "exit_code": 0,
+        "stdout_sha256": "1ed51b149f96d59c782a9e8a419a836b0b3123ea4ffe190ab64a5b99f46e6bb5"
+       }
+      ]
+     }
+    },
+    {
+     "ruleId": "PRREV-AGY",
+     "level": "note",
+     "message": {
+      "text": "The driver prompt instructs running the `agy` CLI with `--json-schema agy/quorum-schema.json` in STEP 4, but this schema file does not exist anywhere in the repository."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "docs/audits/pp-066-driver-prompt.md"
+        },
+        "region": {
+         "startLine": 24
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "When the agent executes STEP 4 to perform the Teamwork Review of the plan, the `agy` command will crash with a file-not-found error for the schema, preventing the generation of `lane-N.json` and halting the epic.",
+      "source": "agy gemini-3.1-pro-high conversation a3141d71-ce56-402f-918a-d3792e2d01c8 on b132e2b74",
+      "agy_id": "missing-quorum-schema",
+      "baselineState": "new",
+      "disposition": "CONFIRMED by the primary: `ls agy/quorum-schema.json` exits 2 and no path matching quorum-schema is tracked anywhere in the tree (git ls-files | grep exits 1). The driver prompt's STEP 4 names the file as an argument to --json-schema. Primary did not raise it independently.",
+      "divergence": "agy_only",
+      "agy_command": [
+       "ls",
+       "agy/quorum-schema.json"
+      ],
+      "command": [
+       "ls",
+       "agy/quorum-schema.json"
+      ],
+      "exit_code": 2,
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "reverified_by_primary": true,
+      "primary_measurement_id": "agy2_quorum_schema_absent",
+      "also_measured": [
+       {
+        "id": "agy2_quorum_schema_anywhere",
+        "command": [
+         "bash",
+         "-c",
+         "git ls-files | grep -E 'quorum-schema|quorum.*schema' ; echo rc=$?"
+        ],
+        "exit_code": 0,
+        "stdout_sha256": "91d957f8f2748a950526d4d21e0d5cd3bf5518e6c60b1beb470a13be1f978b1d"
+       },
+       {
+        "id": "agy2_driver_prompt_line",
+        "command": [
+         "grep",
+         "-n",
+         "agy/quorum-schema.json",
+         "docs/audits/pp-066-driver-prompt.md"
+        ],
+        "exit_code": 0,
+        "stdout_sha256": "16cff5b5cd09be76a56a1b0e72c3b252fbcdf477fe44bcb4da95d7de2d62daea"
+       }
+      ]
+     }
+    },
+    {
+     "ruleId": "PRREV-AGY",
+     "level": "note",
+     "message": {
+      "text": "The C1 check command uses the prose symbol `\u2265` directly in the shell command (`grep -c CONFORMANT evidence/parity/LEDGER.md \u2265 2`). `\u2265` is not a valid bash operator, so grep will attempt to read from files literally named `\u2265` and `2`."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "docs/specifications/PP-066-release-spec.md"
+        },
+        "region": {
+         "startLine": 148
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "When the agent evaluates the C1 release criterion by running the command to ensure it exits 0, the shell will return a non-zero exit code due to missing files `\u2265` and `2`, falsely blocking the 0.66 release tag.",
+      "source": "agy gemini-3.1-pro-high conversation a3141d71-ce56-402f-918a-d3792e2d01c8 on b132e2b74",
+      "agy_id": "invalid-shell-operator-c1",
+      "baselineState": "new",
+      "disposition": "CONFIRMED by the primary: line 148's check cell reads `grep -c CONFORMANT evidence/parity/LEDGER.md \u2265 2`, prose inside a cell the spec's own F-12 rule says must be an acceptance command. Primary did not raise it independently.",
+      "divergence": "agy_only",
+      "agy_command": [
+       "bash",
+       "-c",
+       "grep -c CONFORMANT evidence/parity/LEDGER.md \u2265 2"
+      ],
+      "command": [
+       "bash",
+       "-c",
+       "sed -n 148p docs/specifications/PP-066-release-spec.md | grep -o 'grep -c CONFORMANT[^|]*'"
+      ],
+      "exit_code": 0,
+      "stdout_sha256": "6e21e2df514397d2ceffb225c4ba29bc6baf53c25bdcb02e8caa8dafe88d8b22",
+      "reverified_by_primary": true,
+      "primary_measurement_id": "agy3_c1_line"
+     }
+    }
+   ]
+  }
+ ]
+}

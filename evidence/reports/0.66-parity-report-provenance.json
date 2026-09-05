@@ -105,6 +105,66 @@
    "figure": "0.64.0 published binary: 15.7 tok/s decode, 0.099x llama.cpp (receipted in evidence/prrev-008/b4-scope-measurement.txt); the 7.5 tok/s figure on the same line",
    "source": "author session context; not in the prrev-008 artifact",
    "status": "15.7/0.099 receipted; 7.5 quoted, unreceipted [C]"
+  },
+  {
+   "document": "docs/specifications/PP-066-release-spec.md",
+   "spec_line": 65,
+   "figure": "0.13× (2,101 / 16,118) apr-vs-Unsloth QLoRA on gx10",
+   "source": "report line 52; inputs are report lines 47 and 49 (canary README table via author session context)",
+   "status": "quoted; unreceipted [C]"
+  },
+  {
+   "document": "docs/specifications/PP-066-release-spec.md",
+   "spec_line": 120,
+   "figure": "canary README summary 2.5× vs its table 0.13×",
+   "source": "../qwen-train-canary/README.md (sibling checkout) as quoted by the report line 52; S0-9 re-reads it",
+   "status": "quoted; unreceipted [C]"
+  },
+  {
+   "document": "docs/specifications/PP-066-release-spec.md",
+   "spec_line": 459,
+   "figure": "fused NF4 PTX 15.5 tok/s; cuBLAS-with-NF4-dequant 298 tok/s; PCIe ≈ 31.5 GB/s",
+   "source": "entrenar-spec §perf as quoted by the report line 54 (\"parity verified, blocked by Blackwell JIT\", trueno#200/#203); PCIe figure from the review at 587ad0797",
+   "status": "quoted; unreceipted [C]"
+  },
+  {
+   "document": "docs/specifications/PP-066-release-spec.md",
+   "spec_line": 566,
+   "figure": "0.13× inputs (2,101 / 16,118) in the §10 ledger row",
+   "source": "same as the F-11 entry",
+   "status": "quoted; unreceipted [C]"
+  },
+  {
+   "document": "docs/specifications/PP-066-release-spec.md",
+   "spec_line": 619,
+   "figure": "fused NF4 PTX 15.5 tok/s",
+   "source": "entrenar-spec §perf as quoted by the report line 54",
+   "status": "quoted; unreceipted [C]"
+  },
+  {
+   "document": "docs/specifications/PP-066-release-spec.md",
+   "spec_line": 649,
+   "figure": "GTT = 0.5 × (RAM − VRAM) on APUs",
+   "source": "third-party source reading of ollama gpu.go / GTT handling [X]; not a measurement of anything in this repository",
+   "status": "third-party [X]; unreceipted"
+  },
+  {
+   "document": "docs/specifications/PP-066-release-spec.md",
+   "spec_line": 461,
+   "figure": "wgpu-on-Metal decode 0.123 tok/s (8.14 s/token) on mini",
+   "source": "paiml/aprender issue #2826 (x_wgpu_tok_s = 0.123); no artifact under evidence/ at the time of writing",
+   "status": "issue-sourced; unreceipted [C]"
+  },
+  {
+   "document": "docs/specifications/PP-066-release-spec.md",
+   "spec_line": 597,
+   "figure": "wgpu-on-Metal decode 0.123 tok/s (8.14 s/token) on mini (MAJ-02)",
+   "source": "same as the B-W0 entry",
+   "status": "issue-sourced; unreceipted [C]"
   }
- ]
+ ],
+ "also_indexes": {
+  "document": "docs/specifications/PP-066-release-spec.md",
+  "note": "Entries carrying spec_line index figures the PP-066 spec (v1.5) quotes without a measurement artifact under evidence/. Same rule as the report: nothing here was re-measured; each is UNRECEIPTED until the 0.66 workstream measures it."
+ }
 }
