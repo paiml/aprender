@@ -1,0 +1,110 @@
+{
+ "kind": "provenance-index",
+ "what": "Every figure the 0.66 performance parity report quotes that is NOT backed by a measurement artifact under evidence/. Each entry names where the figure was taken from. Nothing here was re-measured by the report; a figure whose source is 'author session context' is UNRECEIPTED and carries confidence [C] in the report until the 0.66 workstream re-measures it.",
+ "report": "docs/specifications/0.66-performance-parity-report.md",
+ "written": "2026-09-05",
+ "entries": [
+  {
+   "report_line": 21,
+   "figure": "TTFT 3.68x [X]",
+   "source": "qwen-coder-deploy parity bar (prior art, ~/src/qwen-coder-deploy, 2026-08-25 scoring); no artifact under evidence/",
+   "status": "quoted; unreceipted"
+  },
+  {
+   "report_line": 47,
+   "figure": "apr QLoRA cuBLAS 2,101 tok/s on gx10",
+   "source": "author session context (entrenar/Unsloth canary README table); in-repo source not located at receipt time",
+   "status": "quoted; unreceipted [C]"
+  },
+  {
+   "report_line": 48,
+   "figure": "apr QLoRA WGPU 470 tok/s, loss 11.74 (not learning)",
+   "source": "author session context (WGPU training lane note); in-repo source not located",
+   "status": "quoted; unreceipted [C]"
+  },
+  {
+   "report_line": 49,
+   "figure": "Unsloth QLoRA 6,697 tok/s (yoga) / 16,118 tok/s (gx10)",
+   "source": "author session context (canary README table); in-repo source not located",
+   "status": "quoted; unreceipted [C]"
+  },
+  {
+   "report_line": 50,
+   "figure": "PyTorch full fine-tune 3,957 tok/s (gx10), OOM (yoga)",
+   "source": "author session context (canary README table); in-repo source not located",
+   "status": "quoted; unreceipted [C]"
+  },
+  {
+   "report_line": 54,
+   "figure": "GB10 QLoRA end to end at toy scale, 0 NaN, 2026-07-02, cascade tip fcc0fbcce",
+   "source": "docs/specifications/aprender-train/ (entrenar cascade notes) and the author's session context",
+   "status": "quoted; partially receipted (commit exists)"
+  },
+  {
+   "report_line": 86,
+   "figure": "1.5B on gx10 at 470 tok/s with loss 11.74",
+   "source": "same entry as line 48",
+   "status": "quoted; unreceipted [C]"
+  },
+  {
+   "report_line": 87,
+   "figure": "6,730 tok/s at hidden=1536 synthetic matmul (WGPU)",
+   "source": "author session context; in-repo source not located",
+   "status": "quoted; unreceipted [C]"
+  },
+  {
+   "report_line": 106,
+   "figure": "Ollama decode 300.7/299.9/328.6/313.5 tok/s",
+   "source": "docs/BEATS.md",
+   "status": "quoted from a doc, not from an evidence artifact"
+  },
+  {
+   "report_line": 142,
+   "figure": "SHIP-007 4090 124.6 tok/s",
+   "source": "evidence/section-75-ship-007-discharged-2026-05-13/ship-007-bench-discharged.json",
+   "status": "receipted"
+  },
+  {
+   "report_line": 143,
+   "figure": "BOS-only probe, 405 (row/line reference)",
+   "source": "docs/audits/parity-spec-audit-2026-09-02.md",
+   "status": "quoted from an audit doc"
+  },
+  {
+   "report_line": 145,
+   "figure": "GB10 head-to-head llama-bench tg128: 7B 0.66x, 1.5B 0.64x (2026-06-25)",
+   "source": "author session context; docs/archive/perf-2026-09-01/APR-PERF-GATE-001-v2.2.md names the tg128 head-to-head but does not carry these two ratios",
+   "status": "quoted; unreceipted [C]"
+  },
+  {
+   "report_line": 153,
+   "figure": "#2776 CU_STREAM_DEFAULT: 0.893 / 0.817",
+   "source": "PR #2776 body (github); no artifact under evidence/",
+   "status": "quoted; unreceipted"
+  },
+  {
+   "report_line": 177,
+   "figure": "apr CLI 2.7-3.9 s startup per one-shot",
+   "source": "docs/BEATS.md",
+   "status": "quoted from a doc"
+  },
+  {
+   "report_line": 209,
+   "figure": "cuBLAS-with-NF4 path 298 tok/s (sm_121)",
+   "source": "docs/specifications/aprender-train/entrenar-spec.md",
+   "status": "quoted from a spec"
+  },
+  {
+   "report_line": 288,
+   "figure": "fused NF4 PTX 15.5 tok/s; cuBLAS-with-NF4 298 tok/s",
+   "source": "docs/specifications/aprender-train/entrenar-spec.md",
+   "status": "quoted from a spec"
+  },
+  {
+   "report_line": 149,
+   "figure": "0.64.0 published binary: 15.7 tok/s decode, 0.099x llama.cpp (receipted in evidence/prrev-008/b4-scope-measurement.txt); the 7.5 tok/s figure on the same line",
+   "source": "author session context; not in the prrev-008 artifact",
+   "status": "15.7/0.099 receipted; 7.5 quoted, unreceipted [C]"
+  }
+ ]
+}
