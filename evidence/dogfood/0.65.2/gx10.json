@@ -340,5 +340,11 @@
   "decided_by": "noah",
   "date": "2026-09-05",
   "text": "0.65.2 stays published. No yank, no 0.65.3. These four host receipts are the 0.66 baseline."
+ },
+ "validity": {
+  "correctness": "INVALID-CORRECTNESS",
+  "why": "this receipt measured qwen2.5-coder-1.5b on cuda before #2971 (GPU computes a different function from CPU at position 0: cosine 0.9508 on lambda); every number here is a throughput of a wrong computation",
+  "issue": "https://github.com/paiml/aprender/issues/2971",
+  "relabelled": "2026-09-06 (L0-1a)"
  }
 }

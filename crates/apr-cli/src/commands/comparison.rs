@@ -201,7 +201,12 @@ fn profile_gpu_or_cpu(
     #[cfg(feature = "cuda")]
     {
         // PMAT-203: Skip parity gate for profiling — known false positive on CUDA 13.1 driver.
-        std::env::set_var("SKIP_PARITY_GATE", "1");
+        // REG-15 (#2971): the load-time parity gate is never disabled silently. If the user set
+        // SKIP_PARITY_GATE themselves it is printed as an override (every receipt of this run is
+        // INVALID-CORRECTNESS); otherwise the gate runs and a failing model is refused by name.
+        if let Some(line) = crate::commands::parity_admission::override_line() {
+            eprintln!("{line}");
+        }
 
         match profile_gpu_generation(path, warmup, measure, tokens) {
             Ok(r) => return Ok(r),
