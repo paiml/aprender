@@ -62,7 +62,7 @@ def _comparator_median(values, label):
     """The comparator's median rate, or a NAMED refusal.
 
     Deliberately asymmetric: only the COMPARATOR is guarded here. A zero-token
-    SUBJECT band does not crash this division (0 / positive == 0.0) and is
+    SUBJECT band does not crash this division (a zero numerator over a positive divisor is a plain zero ratio) and is
     already caught further downstream, in bench_receipt._median_of via
     validate_parity, with its own wording ("contains a non-positive rate").
     Guarding the subject here too would give the same subject condition two
