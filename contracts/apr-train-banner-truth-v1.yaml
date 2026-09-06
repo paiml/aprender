@@ -43,7 +43,7 @@ metadata:
   author: PAIML Engineering
   references:
     - 'crates/aprender-train/src/autograd/mod.rs — BACKWARD_KERNEL_LAUNCHES, backward_kernel_launches(), reset_backward_kernel_launches(), training_backend_banner()'
-    - 'crates/aprender-train/src/autograd/cuda_forward/matmul.rs, matmul_f16.rs — note_backward_kernel_launch() at every cuBLAS backward launch (a, a_accumulate, b; f16 a, b)'
+    - 'crates/aprender-train/src/autograd/cuda_forward/matmul.rs, matmul_f16.rs — note_backward_kernel_launch() at every device-side backward launch: cuBLAS a, a_accumulate, b; f16 a, b; f16->f32 a; NF4 cuBLAS a; NF4 PTX a; NF4 tensor-core a (the last four found by the review quorum and the orchestrator, 2026-09-06)'
     - 'crates/aprender-train/tests/banner_truth.rs — the RED-first test (both feature arms)'
     - 'crates/apr-cli/src/commands/finetune.rs — gpu_backend_decision, pre_training_notice, post_training_banner, GpuBackendChoice'
     - 'crates/apr-cli/src/commands/finetune_gpu_backend_truth_tests.rs — the request×build case table (both polarities)'
@@ -59,23 +59,24 @@ metadata:
 equations:
   banner_is_derived_from_launches:
     formula: |
-      training_backend_banner(requested) = Some(_)  <=>  requested == "cuda" ∧ backward_kernel_launches() > 0
+      training_backend_banner(requested, at_start) = Some(_)  <=>  requested == "cuda" ∧ backward_kernel_launches() > at_start
       "cuBLAS backward" ∉ pre_training_notice(choice)   for every choice
     domain: 'requested ∈ {cuda, wgpu, cpu, auto}; counter ∈ ℕ'
     codomain: 'Option<String>'
     invariants:
     - 'THE COUNTER IS THE ONLY PREDICATE: no cfg! read, no request-only branch decides the banner (banner_truth.rs, both cfg arms; finetune_gpu_backend_truth_tests::post_training_banner_is_none_with_zero_launches).'
-    - 'RESET RESTORES SILENCE: after reset_backward_kernel_launches() the cuda banner is None again — a banner without a launch is the defect.'
+    - 'SINCE-START, NO RESET (R-3 review quorum 2026-09-06, 3/3): the counter is process-wide and monotonic; the caller snapshots it before its run and the banner speaks only about launches since then, so a second fine-tune in one process, or a long-lived server, inherits nothing. There is deliberately no reset API and the tests never reset — a race-free case table.'
     preconditions: []
     postconditions:
     - 'on a cuda build after one cuBLAS backward the counter is > 0 and the banner names the count'
 
   gpu_request_meets_the_build:
     formula: |
-      gpu_backend_decision("cuda", build_has_cuda=false, _) = Err(FeatureDisabled)   with exit_code_value() = 9
-      gpu_backend_decision("wgpu", _, build_has_wgpu=false) = Err(FeatureDisabled)
+      gpu_backend_decision("cuda", _, build_has_cuda=false, _) = Err(FeatureDisabled)   with exit_code_value() = 9
+      gpu_backend_decision("cuda", method_has_cuda_path=false, true, _) = Err(ValidationFailed)   with exit_code_value() = 5   (plain LoRA: refuse, never a CPU run under a GPU flag)
+      gpu_backend_decision("wgpu", _, _, build_has_wgpu=false) = Err(FeatureDisabled)
       gpu_backend_decision("auto", …) ∈ Ok(_)   always;   gpu_backend_decision("cpu", …) ∈ Ok(cpu)
-    domain: 'requested × {build_has_cuda, build_has_wgpu}'
+    domain: 'requested × method_has_cuda_path × {build_has_cuda, build_has_wgpu}'
     codomain: 'Result<GpuBackendChoice, CliError>'
     invariants:
     - 'REFUSE, NEVER DOWNGRADE (finetune_gpu_backend_truth_tests::gpu_backend_decision_case_table, cuda_request_on_cpu_only_build_is_a_refusal_not_a_fallback): the exit code is read from error.rs, not declared here.'
@@ -92,7 +93,7 @@ proof_obligations:
     statement: "The pre-training notice never claims a cuBLAS backward; the post-training banner is derived from the counter only."
     discharged_by: falsification_tests[1]
   - id: TBT-OB-003
-    statement: "--gpu-backend cuda (wgpu) on a build without that feature is CliError::FeatureDisabled, exit 9; auto and cpu never refuse."
+    statement: "--gpu-backend cuda (wgpu) on a build without that feature is CliError::FeatureDisabled, exit 9; cuda for a method with no CUDA path (plain LoRA) is ValidationFailed, exit 5; auto and cpu never refuse."
     discharged_by: falsification_tests[1]
 
 falsification_tests:
@@ -102,9 +103,10 @@ falsification_tests:
     prediction: >-
       Without the cuda feature the counter is 0 and the banner is None for
       "cuda" and "cpu"; with --features cuda one cuBLAS backward makes the
-      counter > 0 and the banner Some(contains "cuBLAS backward"); reset makes
-      it None again (registered mutation: print the banner unconditionally ->
-      banner_is_none_for_cuda_with_zero_launches turns RED).
+      counter above the start snapshot and the banner Some(contains "backward
+      engaged"); a later snapshot makes it None again (registered mutation:
+      print the banner unconditionally -> banner_is_none_for_cuda_with_zero_launches
+      turns RED).
     test: 'cargo test -p aprender-train --test banner_truth'
     if_fails: >-
       a banner claims GPU training while every backward ran on the CPU
@@ -119,7 +121,9 @@ falsification_tests:
     prediction: >-
       gpu_backend_decision_case_table PASSES every row of {cuda, wgpu, auto,
       cpu} × {build flags}; the cuda request on a cpu-only build is
-      FeatureDisabled with exit_code_value() == 9;
+      FeatureDisabled with exit_code_value() == 9; plain LoRA with an explicit cuda
+      request is ValidationFailed with exit_code_value() == 5
+      (plain_lora_with_explicit_cuda_is_a_refusal_not_a_cpu_run);
       pre_training_notice_never_claims_cublas_backward PASSES;
       post_training_banner_is_none_with_zero_launches PASSES.
     test: 'cargo test -p apr-cli --lib gpu_backend_truth'

@@ -147,7 +147,7 @@ fn gpu_backend_decision_case_table() {
     ];
 
     for (i, row) in rows.iter().enumerate() {
-        let got = gpu_backend_decision(row.requested, row.build_has_cuda, row.build_has_wgpu);
+        let got = gpu_backend_decision(row.requested, true, row.build_has_cuda, row.build_has_wgpu);
         match &row.expect {
             Expect::Ok(choice) => {
                 assert_eq!(
@@ -182,7 +182,7 @@ fn gpu_backend_decision_case_table() {
 /// defect scenario) refuses; it never silently falls back to CPU.
 #[test]
 fn cuda_request_on_cpu_only_build_is_a_refusal_not_a_fallback() {
-    let err = gpu_backend_decision("cuda", false, false)
+    let err = gpu_backend_decision("cuda", true, false, false)
         .expect_err("cuda requested on a cpu-only build must refuse");
     assert!(matches!(err, CliError::FeatureDisabled(_)));
     assert_eq!(err.exit_code_value(), 9);
@@ -220,11 +220,13 @@ fn pre_training_notice_never_claims_cublas_backward() {
 /// launches, `post_training_banner` must be `None` for the cuda choice.
 #[test]
 fn post_training_banner_is_none_with_zero_launches() {
-    entrenar::reset_backward_kernel_launches();
     assert_eq!(entrenar::backward_kernel_launches(), 0);
 
     assert_eq!(
-        post_training_banner(&GpuBackendChoice::Cuda),
+        post_training_banner(
+            &GpuBackendChoice::Cuda,
+            entrenar::backward_kernel_launches()
+        ),
         None,
         "zero device-side backward launches observed — the cuBLAS banner must not print"
     );
@@ -234,7 +236,52 @@ fn post_training_banner_is_none_with_zero_launches() {
 /// `entrenar::training_backend_banner` gates on `requested == "cuda"`.
 #[test]
 fn post_training_banner_is_none_for_non_cuda_choices() {
-    entrenar::reset_backward_kernel_launches();
-    assert_eq!(post_training_banner(&GpuBackendChoice::Cpu), None);
-    assert_eq!(post_training_banner(&GpuBackendChoice::Wgpu), None);
+    assert_eq!(post_training_banner(&GpuBackendChoice::Cpu, 0), None);
+    assert_eq!(post_training_banner(&GpuBackendChoice::Wgpu, 0), None);
+}
+
+/// R-3 rule: `-m lora --gpu-backend cuda` REFUSES or trains on the GPU — never
+/// a CPU run under a GPU flag. Plain LoRA has no cuBLAS path, so the explicit
+/// request is `ValidationFailed` (exit code 5, read from error.rs), even on a
+/// build that has the cuda feature.
+#[test]
+fn plain_lora_with_explicit_cuda_is_a_refusal_not_a_cpu_run() {
+    let err = gpu_backend_decision("cuda", false, true, true)
+        .expect_err("cuda for a method with no cuda path must refuse");
+    assert!(matches!(err, CliError::ValidationFailed(_)), "got {err:?}");
+    assert_eq!(err.exit_code_value(), 5);
+}
+
+/// `auto` never refuses: plain LoRA on auto is the CPU path whatever the
+/// build carries; QLoRA on auto prefers cuda, then wgpu, then cpu.
+#[test]
+fn auto_follows_the_method_then_the_build() {
+    assert_eq!(
+        gpu_backend_decision("auto", false, true, true).expect("auto"),
+        GpuBackendChoice::Cpu
+    );
+    assert_eq!(
+        gpu_backend_decision("auto", true, true, true).expect("auto"),
+        GpuBackendChoice::Cuda
+    );
+    assert_eq!(
+        gpu_backend_decision("auto", true, false, true).expect("auto"),
+        GpuBackendChoice::Wgpu
+    );
+    assert_eq!(
+        gpu_backend_decision("auto", true, false, false).expect("auto"),
+        GpuBackendChoice::Cpu
+    );
+}
+
+/// The banner is about THIS run: a launch count snapshot taken now makes a
+/// later banner None even if earlier runs in this process launched kernels.
+#[test]
+fn post_training_banner_is_scoped_to_the_run() {
+    let now = entrenar::backward_kernel_launches();
+    assert_eq!(post_training_banner(&GpuBackendChoice::Cuda, now), None);
+    assert_eq!(
+        post_training_banner(&GpuBackendChoice::Cuda, now.saturating_add(1)),
+        None
+    );
 }

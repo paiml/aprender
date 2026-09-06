@@ -87,11 +87,6 @@ pub fn backward_kernel_launches() -> u64 {
     BACKWARD_KERNEL_LAUNCHES.load(std::sync::atomic::Ordering::SeqCst)
 }
 
-/// Reset the device-side backward kernel launch counter to zero.
-pub fn reset_backward_kernel_launches() {
-    BACKWARD_KERNEL_LAUNCHES.store(0, std::sync::atomic::Ordering::SeqCst);
-}
-
 /// Record one device-side backward kernel launch (PMAT-991). Called from
 /// every cuBLAS backward GEMM call site in `cuda_forward::matmul` /
 /// `cuda_forward::matmul_f16`, only after the launch itself succeeded.
@@ -108,16 +103,23 @@ pub(crate) fn note_backward_kernel_launch() {
 /// observed device-side backward kernel launches (PMAT-991, #2906) — never
 /// from `requested` alone. A banner claiming a cuBLAS backward path with
 /// zero launched backward kernels is exactly the defect this forecloses.
-pub fn training_backend_banner(requested: &str) -> Option<String> {
+/// `launches_at_start` is the caller's snapshot of [`backward_kernel_launches`]
+/// taken before its training run; there is deliberately no reset.
+pub fn training_backend_banner(requested: &str, launches_at_start: u64) -> Option<String> {
     if requested != "cuda" {
         return None;
     }
-    let launches = backward_kernel_launches();
+    // Since-start semantics (R-3 review quorum 2026-09-06, 3/3): the counter is
+    // process-wide and monotonic, so a second fine-tune in the same process, or
+    // a long-lived server, must not inherit an earlier run's launches. The
+    // caller snapshots `backward_kernel_launches()` before its run and the
+    // banner speaks only about launches observed since then.
+    let launches = backward_kernel_launches().saturating_sub(launches_at_start);
     if launches == 0 {
         return None;
     }
     Some(format!(
-        "[gpu-backend] CUDA — cuBLAS backward engaged ({launches} device-side backward launches)"
+        "[gpu-backend] CUDA — device-side backward engaged ({launches} device-side backward launches this run)"
     ))
 }
 

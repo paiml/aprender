@@ -169,7 +169,7 @@ pub fn gemm_f16_to_f32_backward_a(
         CudaTensorError::KernelError("cuBLAS handle required for fp16→fp32 backward".to_string())
     })?;
     super::matmul::bind_cublas_stream(cublas, stream)?;
-    cublas
+    let result = cublas
         .gemm_f16_to_f32(
             GemmOp::Trans,
             GemmOp::NoTrans,
@@ -187,7 +187,11 @@ pub fn gemm_f16_to_f32_backward_a(
         )
         .map_err(|e| {
             CudaTensorError::KernelError(format!("cuBLAS fp16→fp32 backward_a failed: {e:?}"))
-        })
+        });
+    if result.is_ok() {
+        crate::autograd::note_backward_kernel_launch();
+    }
+    result
 }
 
 /// Mixed-precision GEMM: C(fp32) = A(fp16) @ B(fp16) using tensor cores

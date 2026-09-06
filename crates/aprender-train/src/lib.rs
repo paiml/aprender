@@ -136,8 +136,5 @@ pub mod yaml_mode;
 pub mod error;
 
 // Re-export commonly used types
-pub use autograd::{
-    backward, backward_kernel_launches, reset_backward_kernel_launches, training_backend_banner,
-    Context, Tensor,
-};
+pub use autograd::{backward, backward_kernel_launches, training_backend_banner, Context, Tensor};
 pub use error::{Error, Result};

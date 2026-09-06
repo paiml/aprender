@@ -12,17 +12,16 @@
 
 #![allow(clippy::unwrap_used)]
 
-use entrenar::{backward_kernel_launches, reset_backward_kernel_launches, training_backend_banner};
+use entrenar::{backward_kernel_launches, training_backend_banner};
 
 /// Registered mutation: "print the banner unconditionally" must go RED here.
 /// A banner claiming cuBLAS backward with a zero launch count is exactly the
 /// defect this ticket forecloses.
 #[test]
 fn banner_is_none_for_cuda_with_zero_launches() {
-    reset_backward_kernel_launches();
-    assert_eq!(backward_kernel_launches(), 0);
+    let start = backward_kernel_launches();
     assert_eq!(
-        training_backend_banner("cuda"),
+        training_backend_banner("cuda", start),
         None,
         "a cuBLAS-backward banner with ZERO observed device-side backward launches is the \
          defect PMAT-991 exists to forbid — the banner must never be printed unconditionally"
@@ -32,9 +31,7 @@ fn banner_is_none_for_cuda_with_zero_launches() {
 #[cfg(not(feature = "cuda"))]
 mod cpu_only {
     use entrenar::autograd::{backward, matmul, Tensor};
-    use entrenar::{
-        backward_kernel_launches, reset_backward_kernel_launches, training_backend_banner,
-    };
+    use entrenar::{backward_kernel_launches, training_backend_banner};
 
     /// With no `cuda` feature compiled in, there is no device-side backward
     /// kernel that could ever launch — so the counter must stay at 0 even
@@ -43,7 +40,7 @@ mod cpu_only {
     /// and "cpu" (the banner is a cuBLAS claim, not a generic device claim).
     #[test]
     fn cpu_backward_never_increments_the_device_counter() {
-        reset_backward_kernel_launches();
+        let start = backward_kernel_launches();
 
         // Smallest public backward drivable through the autograd API: a 2x2
         // matmul forward + backward (entrenar::autograd::ops::matmul).
@@ -54,12 +51,12 @@ mod cpu_only {
 
         assert_eq!(
             backward_kernel_launches(),
-            0,
+            start,
             "no cuda feature is compiled in, so NOTHING can have launched a device-side \
              backward kernel — a CPU-only backward must never move this counter"
         );
-        assert_eq!(training_backend_banner("cuda"), None);
-        assert_eq!(training_backend_banner("cpu"), None);
+        assert_eq!(training_backend_banner("cuda", start), None);
+        assert_eq!(training_backend_banner("cpu", start), None);
     }
 }
 
@@ -70,9 +67,7 @@ mod cuda_only {
     use trueno_gpu::driver::{cuda_available, CudaContext, CudaStream, GpuBuffer};
 
     use entrenar::autograd::cuda_backward::{gemm_backward_a, init_kernel_cache};
-    use entrenar::{
-        backward_kernel_launches, reset_backward_kernel_launches, training_backend_banner,
-    };
+    use entrenar::{backward_kernel_launches, training_backend_banner};
 
     /// Runs a real cuBLAS backward GEMM (2x2) through the smallest public
     /// CUDA entry point and asserts the counter — and hence the banner — is
@@ -87,9 +82,8 @@ mod cuda_only {
         init_kernel_cache(ctx.clone()).expect("init_kernel_cache failed");
         let stream = CudaStream::new(&ctx).expect("CudaStream::new failed");
 
-        reset_backward_kernel_launches();
-        assert_eq!(backward_kernel_launches(), 0);
-        assert_eq!(training_backend_banner("cuda"), None);
+        let start = backward_kernel_launches();
+        assert_eq!(training_backend_banner("cuda", start), None);
 
         // C = A @ B, A/B/grad_C all 2x2 — same fixture as
         // cuda_backward::tests::gemm::test_gemm_backward_a_basic.
@@ -108,28 +102,28 @@ mod cuda_only {
             .expect("gemm_backward_a failed");
         stream.synchronize().expect("stream.synchronize failed");
 
-        let launches = backward_kernel_launches();
         assert!(
-            launches > 0,
+            backward_kernel_launches() > start,
             "a cuBLAS backward GEMM just launched on-device; the counter must reflect it"
         );
 
-        let banner = training_backend_banner("cuda");
+        let banner = training_backend_banner("cuda", start);
         assert!(banner.is_some(), "backward launched — the banner must now be Some");
         let banner = banner.expect("checked is_some above");
         assert!(
-            banner.contains("cuBLAS backward"),
-            "banner must name the cuBLAS backward engagement, got: {banner}"
+            banner.contains("backward engaged"),
+            "banner must name the device-side backward engagement, got: {banner}"
         );
 
         // Reset and re-check: a banner without ANY launch since the reset is
         // the defect again — the predicate must track the counter, not a
         // sticky "we've seen CUDA before" flag.
-        reset_backward_kernel_launches();
+        let later_run_start = backward_kernel_launches();
         assert_eq!(
-            training_backend_banner("cuda"),
+            training_backend_banner("cuda", later_run_start),
             None,
-            "after reset, zero launches have been observed — banner must be None again"
+            "a run that observed no new launches gets no banner, whatever earlier runs in this \
+             process launched — the process-wide counter must not leak across runs"
         );
     }
 }

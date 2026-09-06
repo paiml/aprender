@@ -232,85 +232,6 @@ fn display_memory_breakdown(req: &MemoryRequirement, vram_gb: f64) {
     }
 }
 
-/// Effective compute backend plus a *truthful* user-facing notice for a run.
-///
-/// Root cause (Defect 1): the old banner printed
-/// `[gpu-backend] CUDA selected — using cuBLAS backward path` purely off the
-/// `--gpu-backend` flag. But `InstructPipeline::from_apr` only calls `init_cuda`
-/// when `quantize_nf4 == true` (i.e. QLoRA — see
-/// `aprender-train/src/finetune/instruct_pipeline/constructors.rs`). For plain
-/// `-m lora` the model trains on the CPU F32 path, so the CUDA banner was a
-/// false claim that cost real debugging time. This keeps the GPU/cuBLAS claim
-/// gated on `quantize_nf4`, and otherwise warns that plain LoRA runs on CPU.
-#[cfg(feature = "training")]
-#[derive(Debug, PartialEq, Eq)]
-struct GpuBackendPlan {
-    /// Whether to route to the WGPU pipeline (`execute_training_wgpu`).
-    use_wgpu: bool,
-    /// Human-readable, accurate notice describing the effective backend.
-    notice: String,
-}
-
-/// Decide the effective training backend and an accurate notice.
-///
-/// * `quantize_nf4` — true only for QLoRA; the sole condition under which
-///   `InstructPipeline::from_apr` initializes CUDA/cuBLAS.
-/// * `wgpu_available` — pass `cfg!(feature = "wgpu")` from the call site.
-#[cfg(feature = "training")]
-fn gpu_backend_notice(
-    gpu_backend: &str,
-    quantize_nf4: bool,
-    wgpu_available: bool,
-) -> GpuBackendPlan {
-    match gpu_backend {
-        "wgpu" => GpuBackendPlan {
-            use_wgpu: true,
-            notice: "[gpu-backend] WGPU selected — using WGSL compute shader path".to_string(),
-        },
-        "cuda" => {
-            if quantize_nf4 {
-                GpuBackendPlan {
-                    use_wgpu: false,
-                    notice: "[gpu-backend] CUDA selected — using cuBLAS backward path (QLoRA/NF4)"
-                        .to_string(),
-                }
-            } else {
-                GpuBackendPlan {
-                    use_wgpu: false,
-                    notice: "[gpu-backend] WARNING: plain LoRA (-m lora) runs on the CPU F32 \
-                             path — --gpu-backend cuda does NOT engage the GPU here \
-                             (CUDA is only initialized for QLoRA/NF4). Use -m qlora for the \
-                             cuBLAS backward path."
-                        .to_string(),
-                }
-            }
-        }
-        _ => {
-            // "auto": prefer WGPU for NF4 (fast Q4K load) when compiled in;
-            // full/plain LoRA has no GPU init, so it stays on the CPU F32 path.
-            if quantize_nf4 && wgpu_available {
-                GpuBackendPlan {
-                    use_wgpu: true,
-                    notice: "[gpu-backend] auto → WGPU (NF4 fast load path)".to_string(),
-                }
-            } else if quantize_nf4 {
-                GpuBackendPlan {
-                    use_wgpu: false,
-                    notice: "[gpu-backend] auto → CUDA cuBLAS backward path (QLoRA/NF4)"
-                        .to_string(),
-                }
-            } else {
-                GpuBackendPlan {
-                    use_wgpu: false,
-                    notice: "[gpu-backend] auto → plain LoRA (-m lora) runs on the CPU F32 \
-                             path. Use -m qlora for GPU (CUDA cuBLAS / WGPU) training."
-                        .to_string(),
-                }
-            }
-        }
-    }
-}
-
 /// The training backend a run will actually use — decided ONCE from the
 /// caller's request plus what this binary was built with (PMAT-991, #2906).
 #[cfg(feature = "training")]
@@ -352,16 +273,31 @@ impl GpuBackendChoice {
 /// [`CliError::FeatureDisabled`] (exit code 9) when `"cuda"`/`"wgpu"` is
 /// requested but the corresponding feature was not compiled in. `"auto"`
 /// never errors — it picks the best compiled-in backend, else the CPU path.
+/// [`CliError::ValidationFailed`] (exit code 5) when `"cuda"` is requested for a
+/// method with no CUDA training path (`method_has_cuda_path == false`: plain
+/// LoRA); `-m lora --gpu-backend cuda` refuses or trains on the GPU, never a
+/// silent CPU run (PP-066 R-3).
 #[cfg(feature = "training")]
 pub fn gpu_backend_decision(
     requested: &str,
+    method_has_cuda_path: bool,
     build_has_cuda: bool,
     build_has_wgpu: bool,
 ) -> Result<GpuBackendChoice> {
     match requested {
         "cuda" => {
-            if build_has_cuda {
+            if build_has_cuda && method_has_cuda_path {
                 Ok(GpuBackendChoice::Cuda)
+            } else if build_has_cuda {
+                // R-3 rule: `-m lora --gpu-backend cuda` REFUSES or trains on the
+                // GPU — never a CPU run under a GPU flag. Plain LoRA has no cuBLAS
+                // backward path; only QLoRA/NF4 does.
+                Err(CliError::ValidationFailed(
+                    "--gpu-backend cuda was requested for a method with no CUDA training path: \
+                     plain LoRA (-m lora) runs on the CPU F32 path. Use -m qlora for the \
+                     cuBLAS/NF4 GPU path, or --gpu-backend cpu to say what will happen."
+                        .to_string(),
+                ))
             } else {
                 Err(CliError::FeatureDisabled(
                     "--gpu-backend cuda was requested but this apr binary was built without \
@@ -386,8 +322,12 @@ pub fn gpu_backend_decision(
         "cpu" => Ok(GpuBackendChoice::Cpu),
         _ => {
             // "auto": never refuses. Prefer CUDA's cuBLAS backward when
-            // compiled in, else WGPU, else the CPU F32 path.
-            if build_has_cuda {
+            // compiled in AND the method has a CUDA path (QLoRA/NF4), else
+            // WGPU, else the CPU F32 path. Plain LoRA on auto is the CPU path
+            // and the notice says so.
+            if !method_has_cuda_path {
+                Ok(GpuBackendChoice::Cpu)
+            } else if build_has_cuda {
                 Ok(GpuBackendChoice::Cuda)
             } else if build_has_wgpu {
                 Ok(GpuBackendChoice::Wgpu)
@@ -412,12 +352,16 @@ pub fn pre_training_notice(choice: &GpuBackendChoice) -> String {
         GpuBackendChoice::Wgpu => {
             "[gpu-backend] WGPU selected — using WGSL compute shader path".to_string()
         }
-        GpuBackendChoice::Cuda => "[gpu-backend] CUDA requested — whether a cuBLAS-driven \
-                                    backward pass engages is reported AFTER training, from the \
-                                    observed device-side launch count."
-            .to_string(),
+        GpuBackendChoice::Cuda => {
+            "[gpu-backend] CUDA requested for the QLoRA/NF4 path — whether a \
+                                    device-side backward engages is reported AFTER training, from \
+                                    the observed launch count."
+                .to_string()
+        }
         GpuBackendChoice::Cpu => {
-            "[gpu-backend] CPU — training runs on the CPU F32 path".to_string()
+            "[gpu-backend] CPU — training runs on the CPU F32 path (plain LoRA \
+                                   has no GPU path; use -m qlora for cuBLAS/NF4 or WGPU training)"
+                .to_string()
         }
     }
 }
@@ -425,12 +369,13 @@ pub fn pre_training_notice(choice: &GpuBackendChoice) -> String {
 /// Post-training banner (PMAT-991, #2906): `Some` iff a cuBLAS backward
 /// actually launched during training. Delegates to
 /// `entrenar::training_backend_banner`, which is itself driven strictly by
-/// `entrenar::backward_kernel_launches()` — never by `choice` alone. The
+/// `entrenar::backward_kernel_launches()` since `launches_at_start` — never by
+/// `choice` alone. The
 /// registered mutation "print the banner unconditionally for the cuda choice"
 /// is exactly what this forecloses.
 #[cfg(feature = "training")]
-pub fn post_training_banner(choice: &GpuBackendChoice) -> Option<String> {
-    entrenar::training_backend_banner(choice.requested_name())
+pub fn post_training_banner(choice: &GpuBackendChoice, launches_at_start: u64) -> Option<String> {
+    entrenar::training_backend_banner(choice.requested_name(), launches_at_start)
 }
 
 /// Build the `InstructConfig` for the default LoRA/QLoRA training path.
@@ -552,8 +497,12 @@ fn execute_training(
     // a silent CPU fallback. The pre-training notice may say CUDA was
     // requested; it must not claim a cuBLAS backward ran — that is only known
     // after training (`post_training_banner`, below).
-    let backend_choice =
-        gpu_backend_decision(gpu_backend, cfg!(feature = "cuda"), cfg!(feature = "wgpu"))?;
+    let backend_choice = gpu_backend_decision(
+        gpu_backend,
+        matches!(config.method, Method::QLoRA),
+        cfg!(feature = "cuda"),
+        cfg!(feature = "wgpu"),
+    )?;
     eprintln!("{}", pre_training_notice(&backend_choice));
     let use_wgpu = matches!(backend_choice, GpuBackendChoice::Wgpu);
 
@@ -600,12 +549,15 @@ fn execute_training(
     let mut trainer = InstructTrainer::new(pipeline, corpus, train_config)
         .map_err(|e| CliError::ValidationFailed(format!("Failed to create trainer: {e}")))?;
 
+    // R-3: snapshot the process-wide launch counter so the banner speaks only
+    // about THIS run (a second fine-tune in one process inherits nothing).
+    let launches_at_start = entrenar::backward_kernel_launches();
     let result = trainer.train();
 
     // PMAT-991 (#2906): the cuBLAS-backward line is an EVENT, printed only
     // now — after training — derived from the observed device-side backward
     // launch count, never from `gpu_backend` alone.
-    if let Some(banner) = post_training_banner(&backend_choice) {
+    if let Some(banner) = post_training_banner(&backend_choice, launches_at_start) {
         eprintln!("{banner}");
     }
 
