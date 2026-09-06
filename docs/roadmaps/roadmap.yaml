@@ -16422,3 +16422,28 @@ roadmap:
   - kind:code
   - pp-066
   notes: null
+- id: PMAT-1060
+  github_issue: null
+  item_type: bug
+  title: 'README claims cargo install aprender is CPU-only, but the plain install compiles the wgpu/Vulkan
+    backend by default (0.65.2 post-publish dogfood NO-GO) — fix for 0.65.3'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-09-06T16:59:05Z
+  updated: 2026-09-06T16:59:05Z
+  spec: null
+  acceptance_criteria:
+  - 'Either README.md''s CPU-only claim is made true (crates/aprender-serve default features no longer
+    inherited through apr-cli''s inference feature without default-features = false) or the README states
+    what the plain install ships.'
+  - 'The 0.65.3 post-publish dogfood''s banner probe is GREEN.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - release-0.65.3
+  - dogfood
+  notes: 'Found by docs/audits/dogfood-aprender-0.65.2-post-publish.md (aprender#3010). Freeze rule (BSE-001
+    spec v1.3 §3): dogfood run and recorded satisfies the freeze; this ticket carries the defect.'
