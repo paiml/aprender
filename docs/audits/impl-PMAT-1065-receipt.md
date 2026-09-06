@@ -10,7 +10,7 @@ pr: not yet opened (P0–P2 in flight; blocked_by G-10 complete; the write-set g
 model: claude-fable-5-1 (orchestrator) · N-lane root-cause quorum on agy (three model families, recorded below when returned)
 tokens_used: 109565 (root-cause delegate) + 112346 (REG-15 worker, two caps) measured by the harness; orchestrator [U]
 wall_clock_s: 3600 (basis=session clock; [U] precision)
-turns: 22
+turns: 34
 ---
 # impl receipt — PMAT-1065 (PP-066 row L0-1, #2971, P0): Qwen2.5-1.5B cuda ≠ cpu, and apr runs cpu under --gpu
 
@@ -59,6 +59,17 @@ turns: 22
 | the driver's 0.9418 / 5.38 | 3/3 guess gx10/GB10 sm_121; none tested the non-coder variant or another prompt | — | [U]; `make fleet-verify ROW=L0-1` on gx10 when G-11b lands |
 
 **Outstanding discriminating experiment (all three lanes name it):** a per-layer `APR_GPU_STAGE_DUMP` at position 0 (token 785) on the 1.5B, CPU vs GPU per stage, to separate attention-at-position-0 / RMSNorm / LM-head GEMV / FFN; plus the same token at position 1. Not run this session.
+
+## Driver v5.2/v6 DONE-IF ledger (L0-1a)
+| item | state | artifact |
+|---|---|---|
+| (i) forced + parity FAIL ⇒ refusal code from error.rs, never `selected: cpu` | admission level ✓ (`forced_backend_over_a_failed_parity_gate_refuses_with_the_code_from_error_rs`); CLI level waits for R-0b's `--backend` (no `--gpu` flag exists on chat/run today) | `crates/apr-cli/tests/reg15_admission.rs` |
+| (ii) `GET /v1/effective-config` `parity:{status,cosine,positions,threshold,basis}` | ✓ — the gate returns its cosine, the CUDA model carries `ParityGateRecord`, the report is never absent; cuda build checked on lambda | `effective_config.rs::parity_report`, `parity_report_carries_the_five_keys_when_no_gate_ran` |
+| (iii) `apr devices --model <gguf>` serviceable column | blocked on R-0a (`apr devices`, #3004) | — |
+| (iv) threshold basis from n ≥ 5 per known-good pair | one pair measured (7B@lambda min 0.9986 ×5, stdev 0.0; the bad pair 0.9508 ×5); [U] until 7B@gx10 | `evidence/parity/thresholds.yaml`, `evidence/parity/l0-1/lambda/n5/` |
+| (v) diff-benchmark decomposition recorded | ✓ below | `.pr/L0-1/diff_benchmark_report.override.patch` |
+| (vi) `make fleet-verify ROW=L0-1` GREEN on gx10 and lambda | pending G-11b's target on main and a HEAD cuda build on gx10 | — |
+| (vii) PR-time gate = two sentinels in workspace-test | ✓ | `parity_admission.rs::sentinel_tests` (1.5B RED, 7B GREEN, ≥ 64 positions) |
 
 ## Gaps (each with the artifact that closes it)
 - `crates/apr-cli/src/commands/diff_benchmark_report.rs:82` still sets `SKIP_PARITY_GATE=1` silently ("PMAT-203: known false positive on CUDA 13.1 driver" — itself a claim L0-1b must test): the file's `run()` (lines 16–198, cyclomatic 30) is over the pre-commit complexity gate, so the edit needs the decomposition in the same commit — patch kept at `.pr/L0-1/diff_benchmark_report.override.patch`.
