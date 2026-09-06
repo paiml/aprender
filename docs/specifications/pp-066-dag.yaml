@@ -55,7 +55,7 @@ rows:
   title: 'master row 1: land #2809; Blackwell guard on prefill_multi_prompt (gpu_profile.rs::multi_prompt_prefill_allowed); perf041 in cuda-nightly.yml with missing marker = RED; PP-26 witness in the receipt'
   epic: 2873
   track: I
-  lane: '0.66'
+  lane: '0.67'
   decision: false
   blockers:
   - G-11
@@ -78,11 +78,13 @@ rows:
   gh_issue: 2882
   pmat_id: PMAT-1057
   status: open
+  cut_by: SPEC-2.0
+  claim_protected: claim (2)/(3) speed & parity evidence — the W1/W3/W4 cells and the perf-gate ledger (no speed number ships in 0.66; instruments and speed ship in 0.67)
 - id: I-15
   title: 'gx10 shakedown cell: W1, n>=5 interleaved, at a commit containing 0b, 0c, 1, 6, 7, 12 -> a new LEDGER row'
   epic: 2873
   track: I
-  lane: '0.66'
+  lane: '0.67'
   decision: false
   blockers:
   - I-1
@@ -112,11 +114,13 @@ rows:
   gh_issue: 2883
   pmat_id: PMAT-968
   status: open
+  cut_by: SPEC-2.0
+  claim_protected: claim (2)/(3) speed & parity evidence — the W1/W3/W4 cells and the perf-gate ledger (no speed number ships in 0.66; instruments and speed ship in 0.67)
 - id: I-18
   title: 'lambda reference cell: W1, n>=5 interleaved, both lanes, derived ladder, armed_by set for every band that PASSES'
   epic: 2873
   track: I
-  lane: '0.66'
+  lane: '0.67'
   decision: false
   blockers:
   - I-15
@@ -146,11 +150,13 @@ rows:
   gh_issue: 2884
   pmat_id: PMAT-969
   status: open
+  cut_by: SPEC-2.0
+  claim_protected: claim (2)/(3) speed & parity evidence — the W1/W3/W4 cells and the perf-gate ledger (no speed number ships in 0.66; instruments and speed ship in 0.67)
 - id: I-16
   title: W3 open-loop workload (report row 19, master row 16)
   epic: 2873
   track: I
-  lane: '0.66'
+  lane: '0.67'
   decision: false
   blockers:
   - G-11
@@ -168,11 +174,13 @@ rows:
   gh_issue: 2885
   pmat_id: PMAT-970
   status: open
+  cut_by: SPEC-2.0
+  claim_protected: claim (2)/(3) speed & parity evidence — the W1/W3/W4 cells and the perf-gate ledger (no speed number ships in 0.66; instruments and speed ship in 0.67)
 - id: I-17
   title: W4 token sweep (report row 19, master row 17; expiry tightened 10-23 -> 10-16 as the blocker of S-2, v1.6 amendment)
   epic: 2873
   track: I
-  lane: '0.66'
+  lane: '0.67'
   decision: false
   blockers:
   - G-11
@@ -190,11 +198,13 @@ rows:
   gh_issue: 2886
   pmat_id: PMAT-971
   status: open
+  cut_by: SPEC-2.0
+  claim_protected: claim (2)/(3) speed & parity evidence — the W1/W3/W4 cells and the perf-gate ledger (no speed number ships in 0.66; instruments and speed ship in 0.67)
 - id: I-24
   title: 'parity_block.py: a zero COMPARATOR band median is a named refusal, not a traceback (#2735)'
   epic: 2873
   track: I
-  lane: '0.66'
+  lane: '0.67'
   decision: false
   blockers:
   - G-11
@@ -216,11 +226,13 @@ rows:
   gh_issue: 2887
   pmat_id: PMAT-972
   status: open
+  cut_by: SPEC-2.0
+  claim_protected: claim (2)/(3) speed & parity evidence — the W1/W3/W4 cells and the perf-gate ledger (no speed number ships in 0.66; instruments and speed ship in 0.67)
 - id: I-25
   title: '--workload bound to the prompt corpus: receipt.workload accepted only when corpus_sha256 equals the loaded prompts file and its _meta.corpus equals the label (#2756)'
   epic: 2873
   track: I
-  lane: '0.66'
+  lane: '0.67'
   decision: false
   blockers:
   - G-11
@@ -242,12 +254,14 @@ rows:
   gh_issue: 2888
   pmat_id: PMAT-973
   status: open
+  cut_by: SPEC-2.0
+  claim_protected: claim (2)/(3) speed & parity evidence — the W1/W3/W4 cells and the perf-gate ledger (no speed number ships in 0.66; instruments and speed ship in 0.67)
 - id: I-26
   title: 'PP-29 scanner: a §12 row expiry is the `Expires **date**` marker, never the first date in the cell; rows past expiry go RED (spec_conformance.sh and the §4 andon), and derived_expiries.json is
     regenerated'
   epic: 2873
   track: I
-  lane: '0.66'
+  lane: '0.67'
   decision: false
   blockers:
   - G-11
@@ -268,6 +282,8 @@ rows:
   gh_issue: 2889
   pmat_id: PMAT-974
   status: open
+  cut_by: SPEC-2.0
+  claim_protected: claim (2)/(3) speed & parity evidence — the W1/W3/W4 cells and the perf-gate ledger (no speed number ships in 0.66; instruments and speed ship in 0.67)
 - id: C0-1
   title: cargo-deny (advisories, bans, licenses, sources) as a blocking job defined in this repo and named in required_status_checks.contexts (CB-1701)
   epic: 2873
@@ -296,8 +312,8 @@ rows:
   pmat_id: PMAT-975
   status: open
 - id: C0-2
-  title: 'ci / gate readable: sovereign-ci.yml pinned by sha and emitting a comply manifest pmat can read — or its gate steps vendored into ci.yml — so the nine unreachable severity=error rules are shown
-    reachable from a named required context (CB-2100)'
+  title: '(pin) ci / gate readable: sovereign-ci.yml pinned by sha and emitting a comply manifest pmat can read — or its gate steps vendored into ci.yml — so the nine unreachable severity=error rules are
+    shown reachable from a named required context (CB-2100) — driver v5: pin sovereign-ci.yml by sha'
   epic: 2873
   track: C0
   lane: '0.66'
@@ -327,7 +343,7 @@ rows:
   title: the ten contracts/work/GH-663..672.cot.yaml derivations exist (CB-1658), reconciled with PVI-3.1 (contracts/work -> .pmat-work)
   epic: 2873
   track: C0
-  lane: '0.66'
+  lane: '0.67'
   decision: false
   blockers:
   - U-1
@@ -348,6 +364,8 @@ rows:
   gh_issue: 2892
   pmat_id: PMAT-977
   status: open
+  cut_by: SPEC-2.0
+  claim_protected: claim (3) pinned fail-closed gates — C0-3 cot derivations (U-1 upstream) and the mutation-timeout row are credited in 0.67
 - id: C0-4
   title: 'perf_gate.sh arm_a_scaling: an arm that emits nothing on a c=1-only receipt is REPORT/FAIL, never PASS; selftest rows both polarities (#2830)'
   epic: 2873
@@ -379,7 +397,7 @@ rows:
     verdict names the test'
   epic: 2873
   track: G
-  lane: '0.66'
+  lane: '0.67'
   decision: false
   blockers:
   - G-11
@@ -406,6 +424,8 @@ rows:
   gh_issue: 2894
   pmat_id: PMAT-979
   status: open
+  cut_by: SPEC-2.0
+  claim_protected: claim (3) gate integrity — the crate-name / target-universe / ratchet-edit / cbtop-polarity guards and the rename-cost measurement
 - id: G-6
   title: 'check_roadmap_diff_additive.sh: a PR roadmap.yaml diff consists only of added entries (id set grows, no existing entry line changes); wired beside check_roadmap_completion_is_cited.sh'
   epic: 2873
@@ -439,7 +459,7 @@ rows:
     workflow invokes FAILs'
   epic: 2873
   track: G
-  lane: '0.66'
+  lane: '0.67'
   decision: false
   blockers:
   - G-11
@@ -469,12 +489,14 @@ rows:
   gh_issue: 2896
   pmat_id: PMAT-981
   status: open
+  cut_by: SPEC-2.0
+  claim_protected: claim (3) gate integrity — the crate-name / target-universe / ratchet-edit / cbtop-polarity guards and the rename-cost measurement
 - id: G-1
   title: 'check_crate_names.sh: [lib] name == directory (- -> _) over the cargo-metadata member set (root 79 + facades 3); every other [package] manifest found by find (102 today) is a member or in scripts/crate_names_nonmembers.txt
     or FAIL; allow-list 51 + the D-5 row; dep-key (depkeys_remaining) and feature-string (features_remaining, 21 today) counters; fail-closed on unparseable manifests'
   epic: 2873
   track: G
-  lane: '0.66'
+  lane: '0.67'
   decision: false
   blockers:
   - G-11
@@ -499,13 +521,15 @@ rows:
   gh_issue: 2897
   pmat_id: PMAT-982
   status: open
+  cut_by: SPEC-2.0
+  claim_protected: claim (3) gate integrity — the crate-name / target-universe / ratchet-edit / cbtop-polarity guards and the rename-cost measurement
 - id: G-8
   title: 'ratchets block regressions, not edits (class #2879): the claim-literal ratchet admits a PAIRED MOVE without a guard edit (#2856 option 1: an added coordinate whose text equals, at the comparand,
     a coordinate the same diff removes, count not rising; re-admission and copies stay refused; one case-table row per polarity, C7); the pre-commit hook does not re-gate files a merge brings in from main
     (#2750); G2.3 ungated ratchet + G2.1 touch rule let a newly-found defect be recorded (#2757); the cognitive-127 dispatch that blocks apr verify exposure is decomposed, not exempted (#2494)'
   epic: 2873
   track: G
-  lane: '0.66'
+  lane: '0.67'
   decision: false
   blockers:
   - G-11
@@ -532,11 +556,13 @@ rows:
   gh_issue: 2898
   pmat_id: PMAT-983
   status: open
+  cut_by: SPEC-2.0
+  claim_protected: claim (3) gate integrity — the crate-name / target-universe / ratchet-edit / cbtop-polarity guards and the rename-cost measurement
 - id: G-9
   title: 'cbtop verdict polarity: status PASS / ci_result green over its own grade F (or a profiler that returned nothing) is a named FAIL, never PASS (#2730; class #2876)'
   epic: 2873
   track: G
-  lane: '0.66'
+  lane: '0.67'
   decision: false
   blockers:
   - G-11
@@ -558,6 +584,8 @@ rows:
   gh_issue: 2899
   pmat_id: PMAT-984
   status: open
+  cut_by: SPEC-2.0
+  claim_protected: claim (3) gate integrity — the crate-name / target-universe / ratchet-edit / cbtop-polarity guards and the rename-cost measurement
 - id: G-2
   title: 'DECISION D-5: [lib] name = aprender declared by root Cargo.toml and crates/aprender-core — keep the front door or rename to aprender_core; the guard allow-list line cites the decision'
   epic: 2873
@@ -585,7 +613,7 @@ rows:
     deps -> docs/audits/crate-rename-cost.md with basis='
   epic: 2873
   track: G
-  lane: '0.66'
+  lane: '0.67'
   decision: false
   blockers:
   - G-11
@@ -604,6 +632,8 @@ rows:
   gh_issue: 2901
   pmat_id: PMAT-986
   status: open
+  cut_by: SPEC-2.0
+  claim_protected: claim (3) gate integrity — the crate-name / target-universe / ratchet-edit / cbtop-polarity guards and the rename-cost measurement
 - id: G-4
   title: 'the obligation DAG as data with invariants in CI: scripts/check_dag_invariants.sh + scripts/lib/dag_invariants.py over docs/specifications/pp-066-dag.yaml (0 cycles, >=6 days slack blocker->blockee,
     per-host queue ordered by expiry, owner present, exactly one expiry form, rows past expiry listed); scripts/render_dag.py renders §5/§6 tables byte-identical; pmat rule owed upstream [U]'
@@ -796,7 +826,7 @@ rows:
   title: 'W5 CLI wall-clock workload, cold arm: apr run / ollama run / llama-cli for a 32-token completion; replicate count from measured CV; both hosts'
   epic: 2873
   track: R
-  lane: '0.66'
+  lane: '0.67'
   decision: false
   blockers:
   - G-11
@@ -817,6 +847,8 @@ rows:
   gh_issue: 2907
   pmat_id: PMAT-992
   status: open
+  cut_by: SPEC-2.0
+  claim_protected: claim (2)/(3) — the W5 CLI wall-clock workload (a speed number)
 - id: R-5
   title: 'apr-* assets for the 5 nightly.yml targets attached to every tagged release, built per D-10; sha256 + minisign-signed manifest (S0-19: public-key scheme); release cut as prerelease; hosts pull
     the asset, run C4 dogfood and bench_host_receipt.sh H12 on their target; the promotion job flips --prerelease=false from four green receipts'
@@ -829,6 +861,7 @@ rows:
   - DEC-D-10
   - G-11
   - R-2
+  - L0-1b
   issues:
   - 2869
   - 2585
@@ -882,7 +915,8 @@ rows:
   pmat_id: PMAT-994
   status: open
 - id: R-7
-  title: README leads with the installer one-liner; cargo install aprender second; the backend line generated from the registry kinds
+  title: 'README leads with the installer one-liner; cargo install aprender second; the backend line generated from the registry kinds (+B-G1 folded: the backend line and the supported-model line are generated
+    from the registry + manifest; every unreceipted claim removed)'
   epic: 2873
   track: R
   lane: '0.66'
@@ -913,7 +947,7 @@ rows:
     columns (FALSIFY-PVI-003)'
   epic: 2873
   track: P
-  lane: '0.66'
+  lane: '0.67'
   decision: false
   blockers:
   - DEC-D-11
@@ -936,12 +970,14 @@ rows:
   pmat_id: PMAT-996
   status: open
   parent: 2870
+  cut_by: SPEC-2.0
+  claim_protected: 'proof-count claims — Track P (#2870 → #2556): no proof-count number ships in 0.66 (claims ratchet)'
 - id: P-0.6
   title: 'pv lint as its own CI step with --min-score 0.48 (basis=measured mean score 0.48 Grade D at b1a6324b8, #2870 ledger — a floor at the current value, never an aspiration), shrink-only warning baseline
     (1,082), Gate 7 no longer skipped (FALSIFY-PVI-006)'
   epic: 2873
   track: P
-  lane: '0.66'
+  lane: '0.67'
   decision: false
   blockers:
   - P-0.3
@@ -965,11 +1001,13 @@ rows:
   pmat_id: PMAT-997
   status: open
   parent: 2870
+  cut_by: SPEC-2.0
+  claim_protected: 'proof-count claims — Track P (#2870 → #2556): no proof-count number ships in 0.66 (claims ratchet)'
 - id: P-0.2
   title: 'derived verification_summary (#2648 b): pv validate errors on drift; the 17 known drifts fixed (FALSIFY-PVI-002)'
   epic: 2873
   track: P
-  lane: '0.66'
+  lane: '0.67'
   decision: false
   blockers:
   - DEC-D-11
@@ -991,11 +1029,13 @@ rows:
   pmat_id: PMAT-998
   status: open
   parent: 2870
+  cut_by: SPEC-2.0
+  claim_protected: 'proof-count claims — Track P (#2870 → #2556): no proof-count number ships in 0.66 (claims ratchet)'
 - id: P-0.4
   title: 'honest headline: kernel · descriptive · fleet figures derived by pv status --headline; README checked as a floor (#2630) (FALSIFY-PVI-004)'
   epic: 2873
   track: P
-  lane: '0.66'
+  lane: '0.67'
   decision: false
   blockers:
   - P-0.3
@@ -1017,11 +1057,13 @@ rows:
   pmat_id: PMAT-999
   status: open
   parent: 2870
+  cut_by: SPEC-2.0
+  claim_protected: 'proof-count claims — Track P (#2870 → #2556): no proof-count number ships in 0.66 (claims ratchet)'
 - id: P-0.5
   title: 'freeze the archived upstream: port the two stranded commits + the dirty manzana binding; remove the ../provable-contracts/lean fallback; ARCHIVED-UPSTREAM.md; untrack the 10 .pv/ caches (FALSIFY-PVI-005)'
   epic: 2873
   track: P
-  lane: '0.66'
+  lane: '0.67'
   decision: false
   blockers:
   - DEC-D-11
@@ -1044,11 +1086,13 @@ rows:
   pmat_id: PMAT-1000
   status: open
   parent: 2870
+  cut_by: SPEC-2.0
+  claim_protected: 'proof-count claims — Track P (#2870 → #2556): no proof-count number ships in 0.66 (claims ratchet)'
 - id: P-0.1
   title: 'one proof ladder (upstream numbering: L4 Kani, L5 Lean; PVI-D-1) in proof_status.rs and the three docs; ladder_consistency test (FALSIFY-PVI-001)'
   epic: 2873
   track: P
-  lane: '0.66'
+  lane: '0.67'
   decision: false
   blockers:
   - DEC-D-11
@@ -1069,6 +1113,8 @@ rows:
   pmat_id: PMAT-1001
   status: open
   parent: 2870
+  cut_by: SPEC-2.0
+  claim_protected: 'proof-count claims — Track P (#2870 → #2556): no proof-count number ships in 0.66 (claims ratchet)'
 - id: P-1.1
   title: '#[contract] fails closed (#2699 in full): generated registry, compile_error! on missing name/equation/unparseable predicate, optional is the only silent spelling and warns, lib.rs:26 fixed; trybuild
     case table (FALSIFY-PVI-007; expiry 10-10 -> 10-03 so P-1.2 keeps its slack, v1.6 amendment)'
@@ -1129,7 +1175,7 @@ rows:
     report §10 registered prediction, spec §7; kill if >= 1.5)'
   epic: 2873
   track: S
-  lane: '0.66'
+  lane: '0.67'
   decision: false
   blockers:
   - I-1
@@ -1151,11 +1197,13 @@ rows:
   gh_issue: 2919
   pmat_id: PMAT-1004
   status: open
+  cut_by: SPEC-2.0
+  claim_protected: speed claims — W-A/W-B/W-C work and the perf-solo lane (no speed number ships in 0.66)
 - id: S-3g
   title: S-3 on gx10 (queue slot after T-0)
   epic: 2873
   track: S
-  lane: '0.66'
+  lane: '0.67'
   decision: false
   blockers:
   - S-3
@@ -1176,12 +1224,14 @@ rows:
   gh_issue: 2920
   pmat_id: PMAT-1005
   status: open
+  cut_by: SPEC-2.0
+  claim_protected: speed claims — W-A/W-B/W-C work and the perf-solo lane (no speed number ships in 0.66)
 - id: S-1
   title: '[premises discharged: master rows 6 and 9 LANDED per S0-2] W-A per-token host work out of the decode loop: one model.write() per step, embed on device, no per-slot try_send; AbRecord with registered
     prediction <= 3.5 ms/tok (basis= master §9 #5 / §12 row 19 registered prediction, spec §7)'
   epic: 2873
   track: S
-  lane: '0.66'
+  lane: '0.67'
   decision: false
   blockers:
   - I-1
@@ -1204,12 +1254,14 @@ rows:
   gh_issue: 2921
   pmat_id: PMAT-1006
   status: open
+  cut_by: SPEC-2.0
+  claim_protected: speed claims — W-A/W-B/W-C work and the perf-solo lane (no speed number ships in 0.66)
 - id: S-2
   title: 'W-C prefill without synchronous copies: pinned pre-allocated activation/KV staging, one async copy per layer, allocation outside the request; prediction copies+allocs < 10% of CUDA API time (basis=
     master §9 #3 / §12 row 20 registered prediction, spec §7); prefill > 5,700 tok/s registered (basis= 0.55x of the comparator median 10,399 in evidence/parity-http/findings.json; REPORTING; nothing arms)'
   epic: 2873
   track: S
-  lane: '0.66'
+  lane: '0.67'
   decision: false
   blockers:
   - I-17
@@ -1235,12 +1287,14 @@ rows:
   gh_issue: 2922
   pmat_id: PMAT-1007
   status: open
+  cut_by: SPEC-2.0
+  claim_protected: speed claims — W-A/W-B/W-C work and the perf-solo lane (no speed number ships in 0.66)
 - id: T-0h
   title: 'training-parity harness: train_parity.sh + receipt schema in evidence/train-parity/; recipe extended to Qwen2.5-7B-Instruct; interleaved A,B,A,B; clocks locked; requested vs effective seq/mb read
     back from the engine (requested != effective => INVALID-CONFIG); pilot descends the config ladder; memory prediction registered'
   epic: 2873
   track: T
-  lane: '0.66'
+  lane: '0.67'
   decision: false
   blockers:
   - G-11
@@ -1261,12 +1315,14 @@ rows:
   gh_issue: 2923
   pmat_id: PMAT-1008
   status: open
+  cut_by: SPEC-2.0
+  claim_protected: training-parity claims — no training-parity number ships in 0.66
 - id: T-2
   title: 'apr finetune --max-seq-len honoured or refused with one line and the refusal code on every path; the effective value printed and written to the receipt; the wgpu instruct pipeline (finetune.rs:717)
     no longer hardcodes 512 (instruct path already honours since #2247)'
   epic: 2873
   track: T
-  lane: '0.66'
+  lane: '0.67'
   decision: false
   blockers:
   - G-11
@@ -1286,11 +1342,13 @@ rows:
   gh_issue: 2924
   pmat_id: PMAT-1009
   status: open
+  cut_by: SPEC-2.0
+  claim_protected: training-parity claims — no training-parity number ships in 0.66
 - id: T-1
   title: tau_loss for the canary dataset from Unsloth-vs-Unsloth seed variance (seeds 42,43,44), 200 steps; tau = 3 x MAD of final_loss; written into the dataset manifest with basis=seed-variance-n3
   epic: 2873
   track: T
-  lane: '0.66'
+  lane: '0.67'
   decision: false
   blockers:
   - T-0h
@@ -1312,18 +1370,20 @@ rows:
   pmat_id: PMAT-1010
   status: open
   notes: 'bundled with T-0 in one gx10 window (spec §5 T-1: queue slot 2 = the T-0 window)'
+  cut_by: SPEC-2.0
+  claim_protected: training-parity claims — no training-parity number ships in 0.66
 - id: T-0
   title: 'the four WT receipts: Unsloth QLoRA and apr finetune -m qlora on Qwen2.5-7B-Instruct, both hosts, n=5 interleaved, paired at the highest ladder rung apr completes; first two training LEDGER rows'
   epic: 2873
   track: T
-  lane: '0.66'
+  lane: '0.67'
   decision: false
   blockers:
   - T-0h
   - T-1
   - T-2
   - G-11
-  - L0-1
+  - L0-1a
   issues: []
   host: lambda, gx10
   queue_pos:
@@ -1341,12 +1401,14 @@ rows:
   gh_issue: 2926
   pmat_id: PMAT-1011
   status: open
+  cut_by: SPEC-2.0
+  claim_protected: training-parity claims — no training-parity number ships in 0.66
 - id: T-3
   title: 'training gate REPORTING + self-ratchet: train_tok_per_sec, peak_vram, |dloss|<=tau as WT cells in perf-matrix.yaml; ratchet seeded at the T-0 achieved value; arms only on the first P-5 PASS, never
     by date (D-2 pending)'
   epic: 2873
   track: T
-  lane: '0.66'
+  lane: '0.67'
   decision: false
   blockers:
   - T-0
@@ -1370,11 +1432,13 @@ rows:
   pmat_id: PMAT-1012
   status: open
   notes: master row 8 (ratchet shape) is LANDED per master §12 (S0-2), so it is a discharged premise, not an open blocker
+  cut_by: SPEC-2.0
+  claim_protected: training-parity claims — no training-parity number ships in 0.66
 - id: B-A1
   title: 'hosts.intel.wgpu cell in perf-matrix.yaml: compute_class wgpu, status UNMEASURED with owner, expiry anchored on D-3 (S0-3 found two AMD W5700X + llvmpipe on intel)'
   epic: 2873
   track: B
-  lane: '0.66'
+  lane: '0.67'
   decision: false
   blockers:
   - DEC-D-3
@@ -1398,12 +1462,14 @@ rows:
   pmat_id: PMAT-1013
   status: open
   notes: 'DEC-D-3 decided 2026-09-06: intel hosts no wgpu lane in 0.66; the cell stays UNMEASURED with that reason'
+  cut_by: SPEC-2.0
+  claim_protected: backend coverage claims beyond the registry — B-A1 (the intel wgpu cell)
 - id: B-G1
   title: 'check_backend_firstclass.sh: clauses 1-7 per backend computed from the tree (workflows, BACKEND_VALUES, perf-matrix.yaml, receipts, dogfood, formats, pins); prints N/7; FAIL if any doc claims
     a backend first-class with N<7; vacuity floor'
   epic: 2873
   track: B
-  lane: '0.66'
+  lane: '0.67'
   decision: false
   blockers:
   - R-0
@@ -1425,12 +1491,14 @@ rows:
   gh_issue: 2929
   pmat_id: PMAT-1014
   status: open
+  cut_by: SPEC-2.0
+  claim_protected: claim (1) honest backends — FOLDED INTO R-7 (the README backend table is generated from the registry per host; the per-backend N/7 clause map ships in 0.67)
 - id: D-2doc
   title: 'qwen-train-canary README: the summary figure ("Gap vs unsloth: 2.5x") is derived from the table or deleted; the in-tree crates/aprender-train-canary/README.md carries the same table (S0-9 README-defect
     ticket)'
   epic: 2873
   track: D
-  lane: '0.66'
+  lane: '0.67'
   decision: false
   blockers:
   - G-11
@@ -1450,12 +1518,14 @@ rows:
   gh_issue: 2930
   pmat_id: PMAT-1015
   status: open
+  cut_by: SPEC-2.0
+  claim_protected: documentation figures — the canary README figure and the cuda architecture doc (no number ships without a receipt)
 - id: D-1doc
   title: '[spec id D-1 in §5 Track D; keyed D-1doc here because D-1 is also a §0 decision id] docs/specifications/cuda-backend-architecture.md: PTX backend, sm_121 JIT, fused NF4 paths, cuBLAS + CUBLAS_GEMM_THRESHOLD,
     FP8 prefill on sm_89 (#2765), graph-capture cuBLAS bypass, select_prefill_path, CU_STREAM_DEFAULT; every API: sentence cites a pinned vendored doc artifact or carries UNVERIFIED{reason,date}'
   epic: 2873
   track: D
-  lane: '0.66'
+  lane: '0.67'
   decision: false
   blockers:
   - G-11
@@ -1475,6 +1545,8 @@ rows:
   gh_issue: 2931
   pmat_id: PMAT-1016
   status: open
+  cut_by: SPEC-2.0
+  claim_protected: documentation figures — the canary README figure and the cuda architecture doc (no number ships without a receipt)
 - id: TAG-0.66.0
   title: 'the release cut: v0.66.0-rc1 as prerelease, promotion from four host receipts (R-5), crates.io cascade from the release workflow — cut only when C0..C13 hold by their own commands; C0 first'
   epic: 2873
@@ -1482,75 +1554,24 @@ rows:
   lane: '0.66'
   decision: false
   blockers:
-  - I-1
-  - I-15
-  - I-18
-  - I-16
-  - I-17
-  - I-24
-  - I-25
-  - I-26
   - C0-1
   - C0-2
-  - C0-3
   - C0-4
-  - G-7
-  - G-6
-  - G-5
-  - G-1
-  - G-8
-  - G-9
-  - G-3
-  - G-4
-  - SPEC-1.6
+  - G-10
+  - G-10b
+  - G-11
+  - G-11b
+  - L0-1a
+  - L0-1b
   - R-0
+  - R-0b
   - R-2
   - R-3
-  - R-4
   - R-5
   - R-6
   - R-7
-  - P-0.3
-  - P-0.6
-  - P-0.2
-  - P-0.4
-  - P-0.5
-  - P-0.1
-  - P-1.1
-  - P-1.2
-  - S-3
-  - S-3g
-  - S-1
-  - S-2
-  - T-0h
-  - T-2
-  - T-1
-  - T-0
-  - T-3
-  - B-A1
-  - B-G1
-  - D-2doc
-  - D-1doc
-  - C0-5
-  - C0-6
-  - C0-7
-  - G-11
-  - G-2
-  - G-10
-  - DEC-D-2
-  - DEC-D-3
-  - DEC-D-8
-  - DEC-D-9
-  - DEC-D-10
-  - DEC-D-11
-  - G-10b
-  - G-10c
-  - U-1
-  - S-0
-  - R-0b
-  - L0-1
-  - G-11b
   - R-8
+  - SPEC-2.0
   issues:
   - 2850
   - 2869
@@ -2482,7 +2503,7 @@ rows:
   title: 'mutation step exceeds the job timeout (134-mutant set, #2872 receipt run): a cancelled required step records NotRun{Timeout}, never PASS, and the step fits its job'
   epic: 2873
   track: C0
-  lane: '0.66'
+  lane: '0.67'
   decision: false
   blockers:
   - G-11
@@ -2506,6 +2527,8 @@ rows:
   pmat_id: PMAT-1055
   status: open
   notes: 'basis= pull_request run 33953736119 of #2872 (2026-09-05): fixture table 2,299 s; S13 refusal table 756 s; 134-mutant step 5,767 s then cancelled at the 150-min job timeout.'
+  cut_by: SPEC-2.0
+  claim_protected: claim (3) pinned fail-closed gates — C0-3 cot derivations (U-1 upstream) and the mutation-timeout row are credited in 0.67
 - id: C0-7
   title: 'receipt terminal marker + check_receipt_complete.sh: impl receipts carry status: complete|partial in front matter, are written .tmp then mv, and a resume treats partial as not complete'
   epic: 2873
@@ -2596,7 +2619,7 @@ rows:
     take the pin; workflow installs at the pin); baseline to 0'
   epic: 2873
   track: G
-  lane: '0.66'
+  lane: '0.67'
   decision: false
   blockers:
   - G-10b
@@ -2618,12 +2641,14 @@ rows:
   pmat_id: PMAT-1064
   status: open
   notes: pmat_id PMAT-1064; the sweep exists on agent/G-10-full (5f8f28f19, 45 files)
+  cut_by: SPEC-2.0
+  claim_protected: claim (3) gate integrity — the crate-name / target-universe / ratchet-edit / cbtop-polarity guards and the rename-cost measurement
 - id: U-1
   title: 'pmat#1200: `pmat work cot derive` emits hollow obligations (empty statement/hypothesis for v5.0 contract.json steps; CB-1658 passes the hollow file) — fix upstream, pmat release (Noah publishes),
     forjar pin bump on four hosts + the runner, scripts/pmat_bin.sh bump PR, ratchet re-baseline stamped (PMAT-1061)'
   epic: 2873
   track: C0
-  lane: '0.66'
+  lane: '0.67'
   decision: false
   blockers: []
   issues: []
@@ -2645,12 +2670,14 @@ rows:
   status: open
   notes: 'expiry = C0-3 (09-19) - 6 d per the driver; polled each session; sequence recorded here: pmat#1200 fix -> pmat release -> forjar pin bump (4 hosts + runner) -> pmat_bin.sh bump PR -> re-baseline
     stamped'
+  cut_by: SPEC-2.0
+  claim_protected: claim (3) pinned fail-closed gates — C0-3 cot derivations (U-1 upstream) and the mutation-timeout row are credited in 0.67
 - id: S-0
   title: 'speed lane on perf-solo: the beat/speed lane runs on perf-solo and its receipt names its own host (PR #2720 direction accepted under D-3; diff re-derived from HEAD, #2720 closed as prior art with
     prior-art/2720 kept)'
   epic: 2873
   track: S
-  lane: '0.66'
+  lane: '0.67'
   decision: false
   blockers:
   - G-11
@@ -2671,6 +2698,8 @@ rows:
   pmat_id: PMAT-1068
   status: open
   notes: 'D-3: 0.66 lanes = intel only; mini no lane; speed on perf-solo; B-* stay 0.67'
+  cut_by: SPEC-2.0
+  claim_protected: speed claims — W-A/W-B/W-C work and the perf-solo lane (no speed number ships in 0.66)
 - id: R-0b
   title: 'backend resolution reads the registry: accel.rs:28, serve/mod.rs:236 and :656 stop consulting cfg!(feature = …); --backend/--gpu/--device refused by enumeration with the registry''s reason; BACKEND_VALUES
     widened to the five REG-11 kinds (a static clap vocabulary) with the refusal at runtime as Unavailable(NotCompiled); GET /v1/effective-config reports the resolved entry + discovered_at (split of R-0
@@ -2682,7 +2711,7 @@ rows:
   blockers:
   - R-0
   - G-11
-  - L0-1
+  - L0-1a
   issues:
   - 2378
   - 2507
@@ -2709,18 +2738,20 @@ rows:
   status: open
   notes: 'lane 1 (systems): BACKEND_VALUES is a compile-time [&str; N] fed to clap''s value_parser and cannot be runtime-populated — "zero cfg! reads" applies to DECISIONS, the vocabulary stays static and
     widened; lane 2 (Apple): wgpu is a transport over a physical backend, so the printed kind list and the entry schema must not double-count one GPU (device_uid dedup, decided with R-0a)'
-- id: L0-1
-  title: '[P0] Qwen2.5-1.5B on cuda computes a different function from cpu (cosine 0.9418, |Δlogit|max 5.38; hidden 1536 / heads 12 / kv 2) and apr then runs cpu under --gpu: model manifest evidence/models/supported.yaml
+- id: L0-1a
+  title: '[P0, bounded] Qwen2.5-1.5B on cuda computes a different function from cpu (cosine 0.9418, |Δlogit|max 5.38; hidden 1536 / heads 12 / kv 2) and apr then runs cpu under --gpu: model manifest evidence/models/supported.yaml
     derived (never typed); RED-first horizon test (1.5B RED / 7B GREEN before any kernel edit, must-RED twin); five whys by apr parity SPC to the op, then the fix; REG-15 model admission (forced backend
     never downgrades; unforced prints selected: cpu (reason: parity FAILED …); effective-config parity block; SKIP_PARITY_GATE prints override:, marks receipts INVALID-CORRECTNESS, asserted unset in dogfood
     and ci / gate); threshold 0.98 [U] -> measured n>=5 per known-good pair with basis=; contract apr-gpu-cpu-parity-v1; dogfood P6 falsifier; C14 = scripts/check_model_parity.sh --manifest in apr-dogfood
-    --release, C4 post-publish, R-8 nightly; every existing (1.5B, cuda) receipt relabelled INVALID-CORRECTNESS'
+    --release, C4 post-publish, R-8 nightly; every existing (1.5B, cuda) receipt relabelled INVALID-CORRECTNESS — L0-1a: manifest (derived), horizon test with must-RED twin, REG-15 admission (forced never
+    downgrades; selected: line; effective-config parity block; SKIP_PARITY_GATE override printed + INVALID-CORRECTNESS + asserted unset), threshold file, contract apr-gpu-cpu-parity-v1, dogfood P6 falsifier,
+    C14 in apr-dogfood --release/C4/R-8, receipts relabelled'
   epic: 2873
   track: L0
   lane: '0.66'
   decision: false
   blockers:
-  - G-10
+  - G-11
   issues: []
   host: lambda, gx10 (fleet-verify)
   queue_pos: null
@@ -2741,7 +2772,8 @@ rows:
   gh_issue: 3017
   pmat_id: PMAT-1065
   status: open
-  notes: P0. Expiry = the earliest 09-19 row (driver v4). Threshold 0.98 is [U] until measured. Track L0 = correctness landmines found in dogfood.
+  notes: 'P0. Expiry = the earliest 09-19 row (driver v4). Threshold 0.98 is [U] until measured. Track L0 = correctness landmines found in dogfood. | split by driver v5: L0-1a bounded (this row), L0-1b
+    unbounded (the op and the fix)'
 - id: G-11b
   title: 'one-call state (scripts/pp066_state.sh: head row, complete receipts, PR states, main reds with ticket ids, U-1 poll), the session docs commit (scripts/session_docs_commit.sh), the .pr/<row>/accept.sh
     convention in pp-066-plan.md, make fleet-verify ROW=<row> (forjar/make only)'
@@ -2751,6 +2783,7 @@ rows:
   decision: false
   blockers:
   - G-10
+  - G-11
   issues: []
   host: any
   queue_pos: null
@@ -2797,6 +2830,64 @@ rows:
   pmat_id: PMAT-1067
   status: open
   notes: expiry basis [U] (R-5 10-09 + 6 d + 1)
+- id: L0-1b
+  title: '[P0, unbounded] five whys by apr parity SPC to the OP; the fix; revert → 1.5B RED, 7B GREEN; m=1 stream byte-identical on every other manifest model. ANDON: two sessions without a named op → STOP
+    with the SPC table'
+  epic: 2873
+  track: L0
+  lane: '0.66'
+  decision: false
+  blockers:
+  - L0-1a
+  issues: []
+  host: lambda, gx10 (fleet-verify)
+  queue_pos: null
+  expiry: '2026-09-26'
+  owner: perf-gate
+  A:
+  - make fleet-verify ROW=L0-1 GREEN on lambda and gx10 (the horizon test)
+  - revert the fix -> 1.5B RED, 7B GREEN
+  - m=1 greedy stream byte-identical on every other manifest model before/after (CF-4)
+  contract: contracts/apr-gpu-cpu-parity-v1.yaml
+  mutations:
+  - revert the op fix -> 1.5B RED
+  quorum: N-lane root cause (three model families)
+  spec: driver v5 L0-1b
+  gh_issue: 3017
+  pmat_id: null
+  status: open
+  notes: 'shares issue #3017 with L0-1a; ticket minted in the session docs commit; the 2026-09-06 quorum (one family, refuted the fused-FFN hypothesis on default config) is the first session'
+- id: SPEC-2.0
+  title: 'spec v2.0 (driver v5): the 18-row scope with each cut row naming the claim it protected; the claims ratchet (README, notes, CLI output carry no performance, training-parity or proof-count number;
+    check_no_claim_literals.sh + check_perf_claims_cite_receipts.sh over notes and README in ci / gate, mutation: one number → RED); scripts/release_criteria.sh C0 C4 C5 C6 C7 C8 C9 C11 C13 C14 one exit-coded
+    command each (C1 C2 C3 C10 C12 → 0.67 with their tracks); C8 via scripts/run_clean_room.sh requiring ../infra; C11 = 15 fixtures; refusal codes from error.rs; REG-15 in R-0; §4 credited-first one reading;
+    rescope quorum (three adversarial agy lanes over README/notes/CLI claims)'
+  epic: 2873
+  track: G
+  lane: '0.66'
+  decision: false
+  blockers:
+  - G-11
+  issues: []
+  host: any
+  queue_pos: null
+  expiry: '2026-09-19'
+  owner: spec-owner
+  A:
+  - bash scripts/release_criteria.sh --list prints the ten criteria, each with its command
+  - bash scripts/release_criteria.sh C0 exits non-zero until C0 holds (never a vacuous 0)
+  - bash scripts/check_no_claim_literals.sh over README.md and the release notes exits 0; one added number -> RED
+  - python3 scripts/render_dag.py --check byte-identical; bash scripts/check_dag_invariants.sh exit 0
+  contract: null
+  mutations:
+  - add one performance number to README.md -> the claims ratchet RED
+  - delete one criterion command from release_criteria.sh -> --list RED (10 required)
+  quorum: 'rescope quorum: three adversarial agy lanes'
+  spec: driver v5 PHASE 0
+  gh_issue: null
+  pmat_id: null
+  status: open
+  notes: orchestrator row (the spec and the DAG are its write set); ticket and issue minted in the session docs commit
 amendments:
 - date: '2026-09-05'
   by: noahgift (driver STEP A)
@@ -2890,3 +2981,19 @@ amendments:
   why: R-2 moved to 10-02 (R-0b edge); the R-2 -> I-18 edge needs 6 d
   moved_by: noahgift via driver prompt
   basis: '[U] takt not yet measured'
+- date: '2026-09-06'
+  by: noahgift via driver prompt 2026-09-06 (v5 SPEC-2.0)
+  row: (scope)
+  change: '18-row 0.66 scope; 38 rows → 0.67 with cut_by/claim_protected: I-1, I-15, I-18, I-16, I-17, I-24, I-25, I-26, C0-3, G-7, G-5, G-1, G-8, G-9, G-3, R-4, P-0.3, P-0.6, P-0.2, P-0.4, P-0.5, P-0.1,
+    S-3, S-3g, S-1, S-2, T-0h, T-2, T-1, T-0, T-3, B-A1, D-2doc, D-1doc, C0-6, G-10c, U-1, S-0'
+  why: 'driver v5: three claims (honest backends, GPU=CPU per manifest model, downloaded binary = tested binary) and no others'
+- date: '2026-09-06'
+  by: noahgift via driver prompt 2026-09-06 (v5)
+  row: L0-1 -> L0-1a + L0-1b
+  change: 'split: bounded tooling/admission vs the unbounded op fix; L0-1b expiry 2026-09-26 [U]'
+  why: driver v5 P0
+- date: '2026-09-06'
+  by: noahgift via driver prompt 2026-09-06 (v5)
+  row: (edges)
+  change: L0-1a, R-0, G-11b <- G-11; L0-1b <- L0-1a; R-0b <- R-0, L0-1a; R-2 <- R-0b; R-5 <- R-2, L0-1b; R-6, R-8 <- R-5; R-7 <- R-6; TAG-0.66.0 <- every kept row; edges from kept rows to cut rows dropped
+  why: driver v5 PHASE 0
