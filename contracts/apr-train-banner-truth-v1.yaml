@@ -1,0 +1,141 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# apr-train-banner-truth-v1 — the cuBLAS-backward training banner is an EVENT,
+# never a claim off the request; a GPU request the build cannot honour is a
+# refusal, never a silent CPU run (PP-066 DAG row R-3 / spec §5 T-6, issue
+# #2906, ticket PMAT-991; feedback_apr_finetune_lora_cpu_only)
+#
+# WHAT IT GOVERNS
+#   entrenar::backward_kernel_launches() / reset_backward_kernel_launches() /
+#   training_backend_banner(requested) in crates/aprender-train, and the CLI
+#   seam in crates/apr-cli/src/commands/finetune.rs: gpu_backend_decision
+#   (request × build facts -> choice | CliError::FeatureDisabled, exit 9 per
+#   crates/apr-cli/src/error.rs:106), pre_training_notice (may not claim a
+#   backward that has not run), post_training_banner (derived from the
+#   counter only).
+#
+# PROOF LADDER, STATED HONESTLY (PP-066 §5 contract discipline, F-26)
+#   * L1 — the resolver exists: the two test targets named below.
+#   * L2 — falsification tests cover obligations, MEASURED 2026-09-06: the
+#          entrenar integration test passes with and without --features cuda
+#          on lambda (RTX 4090, sm_89); the apr-cli case table passes in the
+#          default feature set (training, no cuda).
+#   * L3/L4 — NOT APPLICABLE and deliberately not declared: a counter and a
+#          string predicate, not a kernel. No self-exemption flag, no
+#          hand-typed proof summary, no Kani, no Lean.
+# ─────────────────────────────────────────────────────────────────────────────
+name: apr-train-banner-truth
+version: "1.0.0"
+scope: >
+  The training-backend banner and the --gpu-backend refusal of `apr finetune`.
+  Out of scope: which backend is fastest (PP-066 Track T measures that), the
+  QLoRA/NF4 kernels themselves, and the wgpu pipeline's own notices (they
+  keep their meaning; only the cuBLAS claim is governed here).
+status: active
+
+metadata:
+  kind: pattern     # a process-wide counter and a string predicate over it,
+                    # plus a request×build decision table — not a math kernel.
+                    # Set EXPLICITLY so `pv validate`'s `kernel` default never
+                    # silently applies.
+  version: "1.0.0"
+  created: '2026-09-06'
+  last_modified: '2026-09-06'
+  author: PAIML Engineering
+  references:
+    - 'crates/aprender-train/src/autograd/mod.rs — BACKWARD_KERNEL_LAUNCHES, backward_kernel_launches(), reset_backward_kernel_launches(), training_backend_banner()'
+    - 'crates/aprender-train/src/autograd/cuda_forward/matmul.rs, matmul_f16.rs — note_backward_kernel_launch() at every cuBLAS backward launch (a, a_accumulate, b; f16 a, b)'
+    - 'crates/aprender-train/tests/banner_truth.rs — the RED-first test (both feature arms)'
+    - 'crates/apr-cli/src/commands/finetune.rs — gpu_backend_decision, pre_training_notice, post_training_banner, GpuBackendChoice'
+    - 'crates/apr-cli/src/commands/finetune_gpu_backend_truth_tests.rs — the request×build case table (both polarities)'
+    - 'crates/apr-cli/src/error.rs:106 — CliError::FeatureDisabled => exit code 9 (D-7: read, never invented)'
+    - 'PP-066 DAG row R-3 (docs/specifications/pp-066-dag.yaml), spec §5 T-6; issue #2906; ticket PMAT-991'
+  description: >
+    A device-side backward launch increments a process-wide counter at the
+    launch site. The banner that says "cuBLAS backward" is Some only when the
+    request named cuda AND that counter is above zero; the pre-training notice
+    never contains the claim. A request for a backend the build did not
+    compile is CliError::FeatureDisabled (exit 9), never a fallback.
+
+equations:
+  banner_is_derived_from_launches:
+    formula: |
+      training_backend_banner(requested) = Some(_)  <=>  requested == "cuda" ∧ backward_kernel_launches() > 0
+      "cuBLAS backward" ∉ pre_training_notice(choice)   for every choice
+    domain: 'requested ∈ {cuda, wgpu, cpu, auto}; counter ∈ ℕ'
+    codomain: 'Option<String>'
+    invariants:
+    - 'THE COUNTER IS THE ONLY PREDICATE: no cfg! read, no request-only branch decides the banner (banner_truth.rs, both cfg arms; finetune_gpu_backend_truth_tests::post_training_banner_is_none_with_zero_launches).'
+    - 'RESET RESTORES SILENCE: after reset_backward_kernel_launches() the cuda banner is None again — a banner without a launch is the defect.'
+    preconditions: []
+    postconditions:
+    - 'on a cuda build after one cuBLAS backward the counter is > 0 and the banner names the count'
+
+  gpu_request_meets_the_build:
+    formula: |
+      gpu_backend_decision("cuda", build_has_cuda=false, _) = Err(FeatureDisabled)   with exit_code_value() = 9
+      gpu_backend_decision("wgpu", _, build_has_wgpu=false) = Err(FeatureDisabled)
+      gpu_backend_decision("auto", …) ∈ Ok(_)   always;   gpu_backend_decision("cpu", …) ∈ Ok(cpu)
+    domain: 'requested × {build_has_cuda, build_has_wgpu}'
+    codomain: 'Result<GpuBackendChoice, CliError>'
+    invariants:
+    - 'REFUSE, NEVER DOWNGRADE (finetune_gpu_backend_truth_tests::gpu_backend_decision_case_table, cuda_request_on_cpu_only_build_is_a_refusal_not_a_fallback): the exit code is read from error.rs, not declared here.'
+    - 'THE BUILD FACTS ARE READ ONCE at the call site that produces the two bools; the decision itself is a pure function (the R-0 registry replaces those reads in 0.66).'
+    preconditions: []
+    postconditions:
+    - 'the refusal message names the missing feature and the rebuild flag --features cuda'
+
+proof_obligations:
+  - id: TBT-OB-001
+    statement: "The cuBLAS-backward banner is Some iff cuda was requested and at least one device-side backward launched; reset makes it None again."
+    discharged_by: falsification_tests[0]
+  - id: TBT-OB-002
+    statement: "The pre-training notice never claims a cuBLAS backward; the post-training banner is derived from the counter only."
+    discharged_by: falsification_tests[1]
+  - id: TBT-OB-003
+    statement: "--gpu-backend cuda (wgpu) on a build without that feature is CliError::FeatureDisabled, exit 9; auto and cpu never refuse."
+    discharged_by: falsification_tests[1]
+
+falsification_tests:
+
+  - id: TBT-F-001
+    rule: the banner is derived from launches
+    prediction: >-
+      Without the cuda feature the counter is 0 and the banner is None for
+      "cuda" and "cpu"; with --features cuda one cuBLAS backward makes the
+      counter > 0 and the banner Some(contains "cuBLAS backward"); reset makes
+      it None again (registered mutation: print the banner unconditionally ->
+      banner_is_none_for_cuda_with_zero_launches turns RED).
+    test: 'cargo test -p aprender-train --test banner_truth'
+    if_fails: >-
+      a banner claims GPU training while every backward ran on the CPU
+      (feedback_apr_finetune_lora_cpu_only)
+    mutation: >-
+      make training_backend_banner return Some for requested == "cuda"
+      regardless of the counter; banner_is_none_for_cuda_with_zero_launches
+      must turn RED.
+
+  - id: TBT-F-002
+    rule: the request meets the build; the notice never claims
+    prediction: >-
+      gpu_backend_decision_case_table PASSES every row of {cuda, wgpu, auto,
+      cpu} × {build flags}; the cuda request on a cpu-only build is
+      FeatureDisabled with exit_code_value() == 9;
+      pre_training_notice_never_claims_cublas_backward PASSES;
+      post_training_banner_is_none_with_zero_launches PASSES.
+    test: 'cargo test -p apr-cli --lib gpu_backend_truth'
+    if_fails: >-
+      a cpu-only binary accepts --gpu-backend cuda and silently trains on the
+      CPU, or prints "cuBLAS backward" before any step ran
+    mutation: >-
+      make gpu_backend_decision return Ok(cpu) for "cuda" when build_has_cuda
+      is false; cuda_request_on_cpu_only_build_is_a_refusal_not_a_fallback must
+      turn RED.
+
+non_goals:
+  - "Deciding which backend is fastest, or whether plain LoRA should move to the GPU (PP-066 Track T; 0.67 training levers)."
+  - "Runtime discovery of the device (R-0's registry replaces the cfg! reads at the call site; this contract only governs what is printed and refused)."
+
+binding_registry:
+  library_test: crates/aprender-train/tests/banner_truth.rs
+  cli_test: crates/apr-cli/src/commands/finetune_gpu_backend_truth_tests.rs
+  issue: "https://github.com/paiml/aprender/issues/2906"
