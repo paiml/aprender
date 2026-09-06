@@ -921,7 +921,12 @@ jobs:
       # reads contracts/apr-cli-commands-v1.yaml, whose equivalence to the real
       # binary is enforced by FALSIFY-CLI-001/002 in the integration line.
       - name: README claims must match measurement
-        run: bash scripts/check_readme_claims.sh
+        run: |
+          # G-11 (PMAT-1062): the README's counts are a RATCHET — a row PR may leave them
+          # lagging, never overstated; the orchestrator docs commit regenerates them and
+          # verifies with --exact. Case table both polarities FIRST, then the live check.
+          bash scripts/check_readme_claims.sh --self-test
+          bash scripts/check_readme_claims.sh
 
       # Three guards that existed and could not block a merge. The publish-safety
       # one is the gate credited with keeping a 28 MB test.apr out of a published
@@ -1229,6 +1234,17 @@ jobs:
         run: bash scripts/check_dag_invariants.sh --selftest
       - name: The PP-066 obligation DAG holds its invariants (G-4, C10)
         run: bash scripts/check_dag_invariants.sh docs/specifications/pp-066-dag.yaml --min-slack-days 6
+      # G-11 (PMAT-1062): a ROW PR (head branch agent/<id>, <id> a DAG row) never writes
+      # docs/specifications/pp-066-dag.yaml, docs/roadmaps/roadmap.yaml, the release spec
+      # (its §5.0 block is rendered) or a README count line. Eight armed PRs each carried
+      # such an edit and every merge made the other seven DIRTY. The DAG's status is
+      # derived from the receipt (scripts/lib/dag_status.py, D7 above); the roadmap and
+      # the counts are the orchestrator docs commit's. Case table, then the live check;
+      # merge_group and push carry no head branch and say so (REPORT), judged at the PR.
+      - name: Row-PR write-set case table (G-11, PMAT-1062)
+        run: bash scripts/check_row_pr_write_set.sh --self-test
+      - name: A row PR writes no shared file (G-11, PMAT-1062)
+        run: bash scripts/check_row_pr_write_set.sh --event "${GITHUB_EVENT_NAME:-pull_request}" --branch "${GITHUB_HEAD_REF:-}"
       # PP-33. Nothing scanned the gate's readers for thresholds, so the spec's
       # own must-fire -- `STRETCH = 1.50` in scripts/lib/parity_block.py -- could
       # not turn anything red. Four independent encodings of the release floors
