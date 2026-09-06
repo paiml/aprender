@@ -345,3 +345,86 @@ pub fn on_cuda_load_error(msg: &str, forced: bool) -> Result<bool, String> {
         }
     }
 }
+
+/// The PR-time gate (L0-1a item vii): two SENTINEL records ride `workspace-test` so the
+/// horizon rule can be seen to hold both polarities on every PR — the lambda 1.5B record
+/// must be RED and the lambda 7B record must be GREEN under `evidence/parity/thresholds.yaml`.
+/// The full manifest runs only in dogfood, the release and R-8 (C14).
+#[cfg(test)]
+mod sentinel_tests {
+    use std::path::PathBuf;
+
+    fn evidence(rel: &str) -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../..")
+            .join(rel)
+    }
+
+    /// The threshold file's `min_cosine` and `min_positions`, read by regex — the file is
+    /// YAML but the test carries no YAML dependency; a missing key is a test failure, never a default.
+    fn thresholds() -> (f32, usize) {
+        let text = std::fs::read_to_string(evidence("evidence/parity/thresholds.yaml"))
+            .expect("evidence/parity/thresholds.yaml is committed");
+        let grab = |key: &str| -> String {
+            text.lines()
+                .find_map(|l| {
+                    l.trim_start()
+                        .strip_prefix(key)
+                        .map(|v| v.split('#').next().unwrap_or("").trim().to_string())
+                })
+                .unwrap_or_else(|| panic!("thresholds.yaml carries `{key}`"))
+        };
+        (
+            grab("min_cosine:").parse().expect("min_cosine is a float"),
+            grab("min_positions:")
+                .parse()
+                .expect("min_positions is an integer"),
+        )
+    }
+
+    /// `(positions, min cosine)` of an `apr parity --json` record.
+    fn record(rel: &str) -> (usize, f32) {
+        let text = std::fs::read_to_string(evidence(rel)).unwrap_or_else(|e| panic!("{rel}: {e}"));
+        let v: serde_json::Value = serde_json::from_str(&text).expect("valid JSON");
+        let rows = v["metrics"].as_array().expect("metrics is an array");
+        let cos: Vec<f32> = rows
+            .iter()
+            .filter_map(|r| r["cosine_similarity"].as_f64())
+            .map(|c| c as f32)
+            .collect();
+        (cos.len(), cos.iter().copied().fold(f32::INFINITY, f32::min))
+    }
+
+    fn judge(rel: &str) -> bool {
+        let (min_cosine, min_positions) = thresholds();
+        let (positions, min) = record(rel);
+        positions >= min_positions && min >= min_cosine
+    }
+
+    #[test]
+    fn sentinel_1p5b_on_lambda_is_red_under_the_horizon_rule() {
+        assert!(
+            !judge("evidence/parity/l0-1/lambda/qwen2.5-coder-1.5b-instruct-q4_k_m.json"),
+            "the 1.5B sentinel passed: either the record changed or the threshold moved without a re-measurement (#2971)"
+        );
+    }
+
+    #[test]
+    fn sentinel_7b_on_lambda_is_green_under_the_horizon_rule() {
+        assert!(
+            judge("evidence/parity/l0-1/lambda/qwen2.5-coder-7b-instruct-q4_k_m.json"),
+            "the 7B sentinel failed: the horizon rule can no longer pass a known-good model"
+        );
+    }
+
+    #[test]
+    fn sentinels_carry_at_least_sixty_four_positions() {
+        for rel in [
+            "evidence/parity/l0-1/lambda/qwen2.5-coder-1.5b-instruct-q4_k_m.json",
+            "evidence/parity/l0-1/lambda/qwen2.5-coder-7b-instruct-q4_k_m.json",
+        ] {
+            let (positions, _) = record(rel);
+            assert!(positions >= 64, "{rel}: {positions} positions < 64 (I8)");
+        }
+    }
+}
