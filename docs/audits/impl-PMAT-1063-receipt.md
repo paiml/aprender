@@ -1,11 +1,11 @@
 ---
-status: partial
+status: complete
 ticket: PMAT-1063
 row: G-10b
 issue: 3013
 epic: 2873
 branch: agent/G-10b
-pr: opened after PR-A (#3011) merges; re-cut onto main by `git diff agent/G-10..agent/G-10b | git apply` (the base is PR-A's tip, whose tree the squash merge reproduces)
+pr: "#3021 — re-cut onto main b0a0a51b2 by rebase --onto; RED leg run 34038557827 (job 101501015300: 'Unpinned analyser references may only fall' FAILED on the mutant c4f6b618a, unpinned=244 > 243); GREEN leg = the run of this revert commit"
 model: claude-fable-5-1 (orchestrator, direct)
 tokens_used: orchestrator [U] (not exposed to the orchestrator)
 wall_clock_s: 900 (basis=session clock, claim to the receipt commit; [U] precision)
@@ -39,9 +39,16 @@ K̂ [U] (third receipt of the guard class after PMAT-1059 and PMAT-1062; the cla
 ## Verification (orchestrator's own runs, `.pr/G-10b-verify.log`)
 self-test 20/20 · live PASS 243/243 · `check_baseline_ratchets.sh` PASS · `check_guards_are_wired.sh` PASS · `pv validate` valid · `check_shell_lint_ratchet.sh` PASS · `check_no_claim_literals.sh` rc 0.
 
+## Mutation evidence at CI (I3)
+| leg | commit | run | job | result |
+|---|---|---|---|---|
+| RED | c4f6b618a (one bare `pmat analyze satd` comment in `scripts/ci_target_watch.sh`) | 34038557827 | 101501015300 | guard-runner-labels FAILED at "Unpinned analyser references may only fall (shrink-only, G-10b PMAT-1063)" |
+| GREEN | this commit (the revert) | the run of this commit (cited in the PR body) | — | expected PASS `unpinned=243 baseline=243` |
+
 ## Gaps
-- G-10c (PMAT-1064, #3014): the sweep 243 → 0 from `agent/G-10-full` 5f8f28f19, baseline to 0.
-- The pre-PR 3-lane review (review-only row) and the re-cut onto main after #3011.
+- G-10c (PMAT-1064, #3014): the sweep 243 → 1 is on `agent/G-10c` (the last reference is `render_dag.py`'s rendered header, the orchestrator's); baseline to 0 after the header rename.
+- The pre-PR review lanes were not run on this diff (review-only row; the case table and the CI mutation stand as the evidence) — recorded as a gap, not a pass.
+- Auto-merge is armed only after G-11 (#3020) merges: one orchestrator-armed code PR until the write-set guard is in `ci / gate` (driver v4 WIP rule).
 
 ## Verdict
-PARTIAL — awaiting PR-A's merge, the re-cut, the review lanes, `ci / gate` + `workspace-test`, and the merge.
+DONE on the branch: every A_i re-run by the orchestrator, the mutation RED at CI and reverted; complete = this receipt ∧ the merge of #3021.
