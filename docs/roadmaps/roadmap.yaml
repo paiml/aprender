@@ -153,17 +153,7 @@ roadmap:
   - contracts/apr-antigravity-parity-v1.yaml promotes DRAFT -> ENFORCED when the two wire surfaces ship
     and all four gates pass.
   phases: []
-  subtasks:
-  - id: APR-GEMINI-PROXY-001
-    github_issue: null
-    title: APR-GEMINI-PROXY-001
-    status: planned
-    completion: 0
-  - id: APR-ANTIGRAVITY-INTEGRATION-001
-    github_issue: null
-    title: APR-ANTIGRAVITY-INTEGRATION-001
-    status: planned
-    completion: 0
+  subtasks: []
   estimated_effort: null
   labels:
   - pillar-5
@@ -10312,32 +10302,7 @@ roadmap:
     already a benchmark in-tree (score.rs TRAINING_TOK_S=6000 unsloth-level; ch23_training_bench). Children:
     PMAT-711..715. Advances CRUX-D.'
   phases: []
-  subtasks:
-  - id: PMAT-711
-    github_issue: null
-    title: PMAT-711
-    status: planned
-    completion: 0
-  - id: PMAT-712
-    github_issue: null
-    title: PMAT-712
-    status: planned
-    completion: 0
-  - id: PMAT-713
-    github_issue: null
-    title: PMAT-713
-    status: planned
-    completion: 0
-  - id: PMAT-714
-    github_issue: null
-    title: PMAT-714
-    status: planned
-    completion: 0
-  - id: PMAT-715
-    github_issue: null
-    title: PMAT-715
-    status: planned
-    completion: 0
+  subtasks: []
   estimated_effort: null
   labels:
   - crux-d
@@ -10479,27 +10444,7 @@ roadmap:
     PMAT-718 (PyTorch), PMAT-710 (Unsloth), PMAT-719 (Ollama/llama.cpp). Each pillar ships FALSIFY-BEAT-*
     gates.'
   phases: []
-  subtasks:
-  - id: PMAT-717
-    github_issue: null
-    title: PMAT-717
-    status: planned
-    completion: 0
-  - id: PMAT-718
-    github_issue: null
-    title: PMAT-718
-    status: planned
-    completion: 0
-  - id: PMAT-710
-    github_issue: null
-    title: PMAT-710
-    status: planned
-    completion: 0
-  - id: PMAT-719
-    github_issue: null
-    title: PMAT-719
-    status: planned
-    completion: 0
+  subtasks: []
   estimated_effort: null
   labels:
   - mission
@@ -10575,12 +10520,7 @@ roadmap:
     output/dequant correctness (the CRUX-M verify wall / Q2_K-class) that ollama+llama.cpp LACK. CRUX-M-02
     (PMAT-671, active) is the correctness leg. Sub-targets from the beat-analysis.'
   phases: []
-  subtasks:
-  - id: PMAT-671
-    github_issue: null
-    title: PMAT-671
-    status: planned
-    completion: 0
+  subtasks: []
   estimated_effort: null
   labels:
   - pillar-ollama
