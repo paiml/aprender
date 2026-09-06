@@ -1,0 +1,14 @@
+# APR_PREFILL_CHUNK sweep — chooses PREFILL_CHUNK in prefill_batched.rs.
+# Host: lambda (noah-Lambda-Vector), AMD Ryzen Threadripper 7960X, 48 threads.
+# Model: /home/noah/models/qwen2.5-coder-7b-instruct-q4_k_m.gguf
+# Shape: 513-token prompt, 4 generated (decode is not what is being swept).
+# Binary: release example perf_cpu_prefill_repro, one build, env-switched.
+# Load average at start of sweep: 64.77 / 33.49 / 24.66 — single replicates,
+# heavily loaded box, so read the TREND, not any one cell.
+# Columns: arm,rep,prefill_tok,prefill_s,prefill_tok_s,decode_tok,decode_s,decode_tok_s,ratio,t_req_s
+chunk=8    batched,0,513,22.7590,22.541,4,1.1201,3.571,6.3122,23.879
+chunk=16   batched,0,513,14.8196,34.616,4,0.6334,6.315,5.4818,15.453
+chunk=32   batched,0,513,15.3908,33.332,4,0.6886,5.809,5.7377,16.079
+chunk=64   batched,0,513,13.6611,37.552,4,0.6347,6.302,5.9589,14.296
+chunk=128  batched,0,513,12.6897,40.426,4,0.6185,6.468,6.2506,13.308
+chunk=256  batched,0,513,12.3650,41.488,4,0.6362,6.287,6.5985,13.001

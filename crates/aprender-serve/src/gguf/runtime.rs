@@ -286,6 +286,17 @@ impl OwnedQuantizedKVCache {
         }
     }
 
+    /// Maximum number of positions this cache can hold.
+    ///
+    /// PREFILL-CPU (#2787): `append` silently drops entries once `seq_len`
+    /// reaches this bound, and batched prefill advances `seq_len` only after a
+    /// whole chunk of layers — so it must check the bound itself, up front,
+    /// rather than discover a half-written cache afterwards.
+    #[must_use]
+    pub fn capacity(&self) -> usize {
+        self.max_seq_len
+    }
+
     /// Current sequence length
     #[must_use]
     pub fn len(&self) -> usize {
