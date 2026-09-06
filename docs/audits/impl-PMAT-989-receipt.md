@@ -26,7 +26,7 @@ ticket PMAT-989 · kind code · branch `agent/R-0` (worktree, claim held) · bas
 ## What lands
 - `trueno::registry` (`crates/aprender-compute/src/registry/`): `BackendKind::ALL = {cpu, cuda, wgpu, metal, hip}`; `BackendEntry {kind, api, device_index, device_uid, device_name, vendor, vendor_id: Option, device_type, mem_total, mem_free, mem_kind: Discrete | Unified{working_set_limit}, compute_class, caps, source: CompiledIn | Dlopen(path) | NotCompiled | Fixture(path), status: Ready | Unavailable(NotCompiled | DriverNotFound | NoDevice | NoBackend | ProbeFailed | ReserveExceedsFree), transport}`; the object-safe `BackendFactory` (`kind()`, `discover()`) with `MockBackendFactory`; `BackendRegistry::{discover, discover_with, from_fixture_json, with_reserve, select_default, distinct_devices, render_block, to_json}`; the CUDA factory through `trueno_gpu::driver` (`libcuda.so.1`, never cudart — REG-2), the wgpu factory over adapters with `transport` (a software rasteriser is `NoBackend`, never a GPU); `cpu` always Ready; every kind an explicit line (REG-11); REG-7 reserve (3,584 MiB `[U] default until master row 6 measures vram_peak`) as `ReserveExceedsFree{reserve, free}` **propagated across every entry sharing a `device_uid`** (a card refused for memory through the cuda driver is refused through its wgpu twin too — found by the catalogue, see Jidoka); REG-8 selection printed with its reason; REG-12 nothing persisted, fixtures named in `source`.
 - `apr devices [--json]` (an `ExtendedCommands` variant; category `hardware` in `contracts/apr-cli-commands-v1.yaml`, 111 commands): prints the block or the `apr-devices-v1` JSON; overrides `APR_RESERVE_BYTES` (`<n|nK|nM|nG>`) and `APR_REGISTRY_FIXTURE` are printed when active; a malformed override is exit 4 naming the variable; discovery never fails the process (REG-1).
-- Case table (9 rows, hermetic) + CLI failure catalogue (9 rows on fixture registries, every hermetic row with a must-RED twin: `tests/fixtures/registry/defective/missing-metal-line.json`), both wired into ci.yml's integration line. `contracts/schemas/apr-devices-v1.schema.json` validated with the `jsonschema` crate on the fixtures and on the running machine.
+- Case table (9 rows, hermetic) + CLI failure catalogue (10 rows on fixture registries, every hermetic row with a must-RED twin: `tests/fixtures/registry/defective/missing-metal-line.json`), both wired into ci.yml's integration line. `contracts/schemas/apr-devices-v1.schema.json` validated with the `jsonschema` crate on the fixtures and on the running machine.
 - Contracts: `apr-backend-registry-v1.yaml` (invariants (i) and (iii) discharged; (ii), (iv), (v) are R-0b's and are NOT claimed) and `apr-devices-schema-v1.yaml`; README 1811 → 1813 contracts, 110 → 111 commands.
 - The design-quorum amendment (DAG R-0 = R-0a, new R-0b #3002 / PMAT-1060, expiry moves, spec §12 llamafile citation) rides as #3003 and is also the first commit of this branch.
 
@@ -34,7 +34,7 @@ ticket PMAT-989 · kind code · branch `agent/R-0` (worktree, claim held) · bas
 | check | result |
 |---|---|
 | `cargo test -p aprender-compute --test registry_case_table` | rc 0, 9/9 — no features, `--features gpu`, `--features cuda` |
-| `cargo test -p apr-cli --test registry_failure_catalogue` | rc 0, 9/9 |
+| `cargo test -p apr-cli --test registry_failure_catalogue` | rc 0, 10/10 (after the review round) |
 | `cargo test -p apr-cli --test cli_commands` (FALSIFY-CLI-001..005 with `devices`) | rc 0, 15/15 |
 | `cargo test -p aprender-compute --lib` (CI's own step for this crate) | rc 0: 3,510 passed, 4 ignored |
 | `cargo clippy -p aprender-compute --lib -- -D warnings` · `--features gpu` · `cargo clippy -p apr-cli --lib --bin apr -- -D warnings` · `cargo fmt --all -- --check` | rc 0 each (`--features cuda,gpu` trips a PRE-EXISTING `unused import GemmOp` at `matrix/ops/arithmetic.rs:413` on main too; not this diff) |
@@ -54,8 +54,19 @@ ticket PMAT-989 · kind code · branch `agent/R-0` (worktree, claim held) · bas
 |---|---|---|---|
 | design quorum | delegate (agy quorum, width 3) | abe9d0e106e9e35b0 (agy 47b84e91…, bb7a2fd1…, ec3bc416…) | 3/3 implement-with-changes, 3/3 split; record + amendment (#3003) |
 | P_1–P_4 | direct | — | Fable-owned row |
-| P3 review | delegate (agy quorum, width 3) | see the PR body | review-only |
+| P3 review | delegate (agy quorum, width 3) | ac34fe7e671ff6cd3 (agy ff457afe…, 904c34f5…, 141e9820…) | 3/3 FAIL = mergeable-with-changes; applied below |
 Slots ≤ 2 live at any instant; denials 0.
+
+## Review quorum (3-lane, review-only, 2026-09-06) — claims re-run, then applied
+3/3 lanes: mergeable with changes; no lane called the approach wrong. Unanimous positives (re-read, held): invariant (i) cpu always Ready and (iii) non-empty reason across the cfg combinations; the CUDA factory never aborts (REG-1); contexts are dropped. Claims settled by re-running or re-reading:
+- **`devices` duplicated in `contracts/apr-cli-commands-v1.yaml`** (lanes 1+2) — TRUE (an aborted edit script inserted it twice; FALSIFY-CLI-005 counts the Rust list, not the YAML, so it did not catch it). Fixed: 111 entries, matching `apr --help`. Lane 3's "111 is accurate" was reading `apr --help`; lane 1's "~120" was wrong.
+- **Dead arms in `cuda.rs`** (lane 1) — TRUE: `cuda_available()` is `device_count().map(|c| c > 0)`, folding a load failure, a probe error and zero devices into one bool. Fixed: `CudaDriver::load()` first (`DriverNotFound`), then `device_count()` (`ProbeFailed` / `NoDevice`) — three reachable reasons.
+- **Schema too permissive** (lanes 2+3, two distinct defects) — TRUE: nested objects lacked `additionalProperties: false`, and `unavailable` never required the per-kind payload nor did `ready` forbid `kind`. Fixed, with a twin row (`schema_twin_documents_serde_refuses_do_not_validate`: driver-not-found without `path`, a ready entry with `kind`, a stray field — all refused). Lane 1's "robust" was wrong.
+- **Override lines printed from the request** (lanes 2+3) — TRUE in spirit: the lines echoed the env value. Now they print what the registry holds (`reserve_bytes`/`basis`, `source`).
+- **`#[cfg(feature = "inference")]` on `apr devices` vs an unconditional `registered_commands()`** (lane 1) — the existing precedent: `gpu`, `train`, `code` are cfg-gated and listed unconditionally; the CLI contract describes the default feature set. Not changed; recorded.
+- **`apply_reserve` pass 2 keys on `device_uid`, which can differ across APIs** (lane 2 vs lanes 1+3) — TRUE as a limitation: both factories derive the uid from vendor + normalised name; a host whose APIs name one card differently gets two uids and no propagation, and `distinct_devices()` counts two. Recorded as a contract non_goal and a dogfood check, not hidden.
+- **Help-parser decomposition not behaviour-preserving** (lane 1 vs lane 3) — FALSE: the original `help_subcommands` had neither the blank-line break nor the lowercase filter (it filtered only `help`); the decomposition keeps each parser's own rules. 15/15 unchanged.
+- **A CUDA context per device during a read-only probe** (lane 3) — TRUE: `cuMemGetInfo` needs a current context; recorded as a contract non_goal (created and dropped; a process-level "no side effects", not a driver-level one).
 
 ## Jidoka
 - **The catalogue's FX-7 row caught a real gap in the library** (the case table had passed): with a fixture where the cuda entry knows its free memory and its wgpu twin does not, the cuda entry was refused for the reserve and the wgpu twin of the SAME card stayed Ready and got selected. Fixed by propagating the refusal across entries sharing a `device_uid` with the sibling's measured figure; the case table gained row 9 (RED before the fix).
@@ -72,7 +83,7 @@ Slots ≤ 2 live at any instant; denials 0.
 - Receipt for this PR: advisory, not produced (driver A1).
 
 ## Estimates
-K̂ 5 (`basis=first-run[U]`); actual: design quorum 1 delegate dispatch; P_1–P_4 ≈ 22 orchestrator bash calls (`basis=this receipt`). Rows appended to `docs/audits/impl-estimates.jsonl`.
+K̂ 5 (`basis=first-run[U]`); actual: design quorum 1 delegate dispatch; P_1–P_4 ≈ 22 orchestrator bash calls; review round 1 delegate dispatch + 4 bash calls (`basis=this receipt`). Rows appended to `docs/audits/impl-estimates.jsonl`.
 
 ## Verdict
 PENDING-MERGE (`status: partial`).
