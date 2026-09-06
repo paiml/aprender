@@ -1736,6 +1736,12 @@ pub const fn default_replicates() -> usize {
     REPLICATES
 }
 
+/// PMAT-973 / #2756 — `bind_workload`/`receipt_accepts_workload` pinned
+/// against the real W1 corpus and the `--profile short` shape (no `_meta`).
+#[cfg(test)]
+#[path = "test_llm_band_workload_binding_tests.rs"]
+mod workload_corpus_binding;
+
 #[cfg(test)]
 mod tests {
     use super::*;
