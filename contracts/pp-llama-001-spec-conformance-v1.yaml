@@ -59,6 +59,7 @@ equations:
       - "A root row carries the one date a person must write; a root without one never expires"
       - "A row with at least one live blocker may not type a date: a typed expiry can fall before the work it waits on"
       - "A row all of whose blockers have LANDED is unblocked and must carry a date again"
+      - "THE MARKER IS THE EXPIRY (I-26, PMAT-974, S0-2): a §12 root cell's expiry is its `Expires **YYYY-MM-DD**` marker and never the first date in the cell (a witness date earlier in the prose does not become the expiry); rows past their derived expiry are RED in spec_conformance.sh (the §4 andon) — `SPEC_CONFORMANCE_TODAY` pins the clock for the case table (rows expiry_marker_wins, expired_row_is_red)"
 
 proof_obligations:
   - type: invariant
@@ -146,6 +147,12 @@ falsification_tests:
     prediction: "ledger_row_extra_pipe and ledger_row_trailing_pipes are L3 in the case table; scripts/mutate_spec_conformance.sh proves the unmutated table green first, then reports attempted=15 killed=15 unviable=0 survivors= none; a mutant that crashes the scanner is unviable, never a kill"
     test: 'out=$(bash scripts/spec_conformance.sh --selftest); [ "$(echo "$out" | grep -c "ok    ledger_row_extra_pipe  *L3")" -eq 1 ] && [ "$(echo "$out" | grep -c "ok    ledger_row_trailing_pipes  *L3")" -eq 1 ] && bash scripts/mutate_spec_conformance.sh'
     if_fails: "a surviving mutant is a condition the scanner states and no fixture tests -- that shape is not a condition of PP-9's universe, that a different table is skipped whole, that the superseded region is out of scope, or that a malformed row is refused rather than mis-keyed -- and the rule it guards has no producer"
+
+  - id: FALSIFY-PP-LLAMA-001-CONFORMANCE-011
+    rule: "A §12 expiry is the Expires marker, never the first date in the cell; a non-discharged row past its derived expiry is RED (I-26, S0-2)"
+    prediction: "spec_conformance.sh --selftest keeps expiry_marker_wins green (a cell with a prose date 2026-09-02 and a later marker 2026-09-19 derives 2026-09-19) and expired_row_is_red green (with SPEC_CONFORMANCE_TODAY past the marker the scan exits non-zero naming the row); reverting the parser to first-date turns expiry_marker_wins RED with `expected 2026-09-19 got [2026-09-02]`; evidence/parity/derived_expiries.json row 1 reads 2026-09-19 and rows 13/15/18/19 derive from it"
+    test: "bash scripts/spec_conformance.sh --selftest"
+    if_fails: "Five master rows sat past a mis-parsed expiry at HEAD with nothing RED anywhere (S0-2): the andon the spec promises does not fire, and C1's blockers inherit whichever date the scanner happened to see first"
 
 qa_gate:
   id: F-PP-LLAMA-001-CONFORMANCE-001
