@@ -114,6 +114,7 @@ resume found and did, each item judged by a command, not by intent:
 | 2 | the branch was 2 commits behind a main that had moved under it: G-10 (#3011) and **G-11 (#3020)** | `origin/main` merged in | merge commit `4e90fb4ea` |
 | 3 | G-11 landed `scripts/check_row_pr_write_set.sh` AFTER this branch was cut: a row branch `agent/<row>` may not write a README count line. This branch carried `1811→1814` contracts and `110→111` commands | the README conflict resolved to main's side; `git diff origin/main HEAD -- README.md` is empty | `check_row_pr_write_set.sh --branch agent/R-0 --event pull_request` → PASS, "row PR agent/R-0 writes no shared file (27 changed paths)" |
 | 4 | the mutation evidence was LOCAL only; driver v6 requires the mutant PUSHED and the PR's own CI RED | mutant `4a66e20a7` → revert | run ids in the table below |
+| 5 | G-10/G-11 also landed `check_dogfood_coverage.sh`. **G2.1 freshness** is RED when a branch edits a file the surface ledger cites and leaves the ledger behind: this PR inserts 7 lines at `extended_commands.rs:631` and 5 at `dispatch_analysis.rs:484`, both cited | `docs/audits/surface_audit.csv` re-audited | `DOGFOOD COVERAGE GATE: PASS`, G2.1–G2.6 all green, 144/834 covered, 28 per-binary floors held |
 
 **Consequence of (3), stated rather than hidden:** the README now UNDERSTATES —
 it claims 1811 contracts against 1814 present and 110 commands against 111. That
@@ -122,6 +123,30 @@ lag, never overstate") and the orchestrator's docs commit regenerates them with
 `scripts/check_readme_claims.sh --exact` after the merge. The book chapter
 `book/src/cli/devices.md` and its page contract stay, because the book parity
 falsifier (FALSIFY-BOOK-CLI-PARITY-001) is RED without them.
+
+**The ledger re-audit (5), in full — it is a measurement, not a touch.**
+The guard is satisfied by *touching* `surface_audit.csv`, which is exactly the shape
+worth refusing. What was actually done:
+- **64 citations re-pointed through an exact old→new line map** — `difflib` over
+  `origin/main`'s copy of each file against HEAD's. All 2,160 lines of
+  `extended_commands.rs` and all 1,832 of `dispatch_analysis.rs` map (pure insertions,
+  nothing deleted), so **0 unmapped**; the two citations a naive text search called
+  AMBIGUOUS (identical `match` arms) are resolved by the map, which a text search
+  cannot do. Row order is preserved and no row is lost — G2.2 reads "833 comparand
+  rows all present".
+- **One new row**: `apr,apr devices,8,x86_64-linux;nvidia-cuda,ollama,yes,10,apr-core-commands,crates/apr-cli/src/extended_commands.rs:636,high`.
+  `in_dogfood_skill=yes` is **measured**: `dogfood_surfaces.sh` enumerates subcommands
+  from the BUILT binary's `--help`, and its own awk parser lists `devices` among 111
+  subcommands of a binary reporting `fae3b7f35` — HEAD. Getting that right took three
+  refusals from `scripts/apr_bin.sh`, which is the point of it: the first enumeration
+  ran against a binary from `b83c2313b`, an ancestor of this branch that ALREADY had
+  `devices`, so it would have "proven" the claim while measuring nothing. Pinned with
+  `APR_BIN` to a binary built from HEAD, then re-run.
+- **The stated counts that must move with the ledger**: the contract's `overall` block
+  (833/143/0.1717 → 834/144/0.1727, as its own `scripts/dogfood_baseline.py` command
+  now measures), its two T2 pairing lines and the same line in
+  `.claude/skills/apr-dogfood/SKILL.md` — G2.6 refuses a cluster ratio printed without
+  the feature ratio beside it.
 
 **Mutation — pushed, PR CI RED, reverted, PR CI GREEN**
 
