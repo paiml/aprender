@@ -180,7 +180,7 @@ The cards below are prose; the obligation set is **data** in `docs/specification
 
 <!-- dag:table:begin (rendered by scripts/render_dag.py; do not edit by hand) -->
 
-_Rendered from `docs/specifications/pp-066-dag.yaml` (epic #2873, 91 rows). Edit the YAML, run `python3 scripts/render_dag.py render`, paste; `--check` refuses drift._
+_Rendered from `docs/specifications/pp-066-dag.yaml` (epic #2873, 92 rows). Edit the YAML, run `python3 scripts/render_dag.py render`, paste; `--check` refuses drift._
 
 ### Track I
 
