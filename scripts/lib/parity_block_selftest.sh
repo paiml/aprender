@@ -75,7 +75,7 @@ pbs_run() {
     local work=$1 out=$2
     python3 "$PBS_ROOT/scripts/lib/parity_block.py" \
         --work "$work" \
-        --apr /usr/bin/apr --apr-sha "$(printf 'a%.0s' $(seq 1 64))" \
+        --apr "$work/fixture-apr" --apr-sha "$(printf 'a%.0s' $(seq 1 64))" \
         --llama /usr/bin/llama-server --llama-sha "$(printf 'b%.0s' $(seq 1 64))" \
         --llama-build deadbeef00000000000000000000000000000000 \
         --model fixture-model.gguf --install-source local-build \
