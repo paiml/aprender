@@ -16467,11 +16467,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'GH-2999: G-10 check_hardcoded_paths.sh arms at pmat >= 3.32 while the fleet runs 3.31; under 3.37 main is 317 vs baseline 277 — every PR goes red on the fleet upgrade'
-  status: planned
+  status: completed
   priority: medium
   assigned_to: null
   created: 2026-09-06T02:37:57Z
-  updated: 2026-09-06T02:37:57Z
+  updated: 2026-09-06T14:00:00Z
   spec: null
   acceptance_criteria:
   - 'see #2999 (A + mutation)'
@@ -16481,7 +16481,7 @@ roadmap:
   labels:
   - kind:code
   - pp-066
-  notes: null
+  notes: 'complete: proof:PR#3011 (merged b0a0a51b2 2026-09-06T13:51:59Z); proof:docs/audits/impl-PMAT-1059-receipt.md'
 - id: PMAT-1060
   github_issue: 3002
   item_type: task
