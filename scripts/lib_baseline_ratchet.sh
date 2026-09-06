@@ -274,12 +274,17 @@ _br_cmp_set_aperture() { # <base-file> <cur-file> <root> <ref> <owning-guard-pat
     [ -z "$BR_DELTA" ]
 }
 
+# A STAMPED count baseline (PMAT-1059) carries `count: N` beside `pmat_version:`
+# and `basis:`; the number is that line, never the file's other text.
+_br_stamped_count() { # _br_stamped_count <file> -> N | rc 1 when the file carries no stamped line
+    sed -nE 's/^count:[[:space:]]*([0-9]+)[[:space:]]*(#.*)?$/\1/p' "$1" | grep -m1 .
+}
 _br_cmp_count() { # _br_cmp_count <base-file> <cur-file>
     local b c
     BR_DELTA=""
     BR_REMOVED=0
-    b=$(_br_number "$1") || { BR_DELTA="        comparand holds no integer"; return 2; }
-    c=$(_br_number "$2") || { BR_DELTA="        working tree holds no integer"; return 2; }
+    b=$(_br_stamped_count "$1" || _br_number "$1") || { BR_DELTA="        comparand holds no integer"; return 2; }
+    c=$(_br_stamped_count "$2" || _br_number "$2") || { BR_DELTA="        working tree holds no integer"; return 2; }
     if [ "$c" -gt "$b" ]; then
         BR_DELTA=$(printf '        + the recorded count rose %s -> %s' "$b" "$c")
         return 1

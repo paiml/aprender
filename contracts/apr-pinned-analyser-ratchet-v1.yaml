@@ -1,0 +1,196 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# apr-pinned-analyser-ratchet-v1 — a ratchet's number is a property of the tree
+# AND the instrument (PP-066 DAG row G-10, epic #2873, issue #2999; PMAT-1059)
+#
+# WHAT IT GOVERNS
+#   scripts/pmat_bin.sh (the ONE pin: PMAT_PIN, resolution order, refusal),
+#   scripts/hardcoded_path_shipped_baseline.txt (stamped: count, pmat_version,
+#   basis) and scripts/check_hardcoded_paths.sh --full-if-capable (absolute
+#   compare only under a matching stamp; otherwise REPORT and decide HEAD vs
+#   merge-base under the same binary). The guard that every OTHER analyser
+#   reference under scripts/ and .github/workflows/ resolves through the pin
+#   (check_pmat_pinned.sh) is G-10b and extends this contract; the sweep of
+#   the references it counts is G-10c.
+#
+# PROOF LADDER, STATED HONESTLY (F-26)
+#   * L1 — the resolver and the ratchet exist and are wired in ci.yml job
+#          guard-runner-labels (case table, then the live step).
+#   * L2 — falsification tests cover the obligations, MEASURED:
+#          check_hardcoded_paths.sh --self-test 16/16 (2026-09-06; ratchet rows
+#          R1-R11), including the registered mutations (one added path RED on both
+#          compare paths; a stamp bumped without a measurement refused; no analyser
+#          at the pin is FAIL (ENV); the push shape judged against the first parent,
+#          never HEAD itself); check_sourced_libs_option_neutral.sh covers the resolver.
+#   * L3/L4 — NOT APPLICABLE and not declared: shell guards over a text file.
+# ─────────────────────────────────────────────────────────────────────────────
+name: apr-pinned-analyser-ratchet
+version: "1.0.0"
+scope: >
+  The analyser pin, the stamped shipped-tier baseline and the differential
+  ratchet. Out of scope: what the analyser detects (pmat#1017 owns the
+  detector); the re-baseline itself, which is its own ticket (PMAT-1061) and
+  never lands as a raise; the guard over every other analyser reference
+  (check_pmat_pinned.sh, G-10b) and the sweep of those references (G-10c).
+status: active
+
+metadata:
+  kind: pattern     # a pin-and-compare rule over shell guards and a text file, not a kernel
+  version: "1.0.0"
+  created: '2026-09-06'
+  last_modified: '2026-09-06'
+  author: PAIML Engineering
+  references:
+    - 'scripts/pmat_bin.sh — PMAT_PIN, resolution order, refusal with both versions named'
+    - 'scripts/check_hardcoded_paths.sh — --full-if-capable: stamped baseline, REPORT BASELINE-STALE/INVALID, HEAD vs merge-base'
+    - 'scripts/hardcoded_path_shipped_baseline.txt — count:, pmat_version:, basis:'
+    - 'scripts/lib/resolve_base.sh — the base resolver shared with check_roadmap_diff_additive.sh (G-6)'
+    - 'paiml/infra machines/intel/forjar.yaml — the fleet pin (3.31.0 -> 3.37.0, PMAT-231) that armed the ratchet on 2026-09-06'
+    - 'PP-066 DAG row G-10, issue #2999, epic #2873'
+  description: >
+    On 2026-09-06 the fleet's analyser moved 3.31.0 -> 3.37.0 and the shipped-tier
+    ratchet, whose baseline 277 named no instrument, counted 317 on an unchanged
+    tree: every open PR went red for a defect none introduced. The pin lives in
+    one file; every gate resolves through it; the baseline is stamped; a count is
+    compared only against a count measured by the same binary; anything else is
+    REPORTed and decided by the differential under the same binary.
+
+equations:
+  one_pin:
+    formula: |
+      PMAT := scripts/pmat_bin.sh(PMAT_PIN)        # exported, version asserted
+      resolve(cands) := the first x in (PMAT_BIN_OVERRIDE, ~/.local/pmat/PMAT_PIN/bin/pmat, command -v pmat)
+                        with version(x) == PMAT_PIN; none => return 1 naming every version tried
+      the ratchet's scan runs "$PMAT" and nothing on PATH
+    domain: 'the analyser binary the shipped-tier ratchet measures with'
+    codomain: 'a path at the pin, or a refusal'
+    invariants:
+    - 'THE RESOLVER REFUSES OFF-PIN AND ABSENT (ratchet row R8: no analyser at the pin => FAIL (ENV), never PASS).'
+    - 'OPTION-NEUTRAL: sourcing pmat_bin.sh sets no shell option in the caller (check_sourced_libs_option_neutral.sh).'
+    - 'THE LOG NAMES THE PIN: every ratchet verdict line carries $PMAT_VERSION.'
+    preconditions: []
+    postconditions:
+    - 'pmat_bin_resolve returns 0 iff "$PMAT" --version reports PMAT_PIN; it exports PMAT and PMAT_VERSION and sets nothing else'
+
+  stamped_baseline:
+    formula: |
+      baseline := (count: N, pmat_version: X.Y.Z, basis: "$PMAT analyze hardcoded-paths …")
+      valid(baseline) ⟺ all three parse
+      ¬valid  =>  the number is NOT compared (REPORT BASELINE-INVALID)
+    domain: 'scripts/hardcoded_path_shipped_baseline.txt'
+    codomain: 'valid | INVALID'
+    invariants:
+    - 'INVALID IS NOT A NUMBER (ratchet row R5).'
+    - 'A STAMP IS NOT A MEASUREMENT (row R6): pmat_version moves while count: stands => refused.'
+    preconditions: []
+    postconditions:
+    - 'the 277 recorded on 2026-09-05 stays INVALID until PMAT-1061 measures it under the pin'
+
+  no_absolute_compare_across_instruments:
+    formula: |
+      stamp == PMAT_VERSION  =>  verdict := shipped(HEAD) <= count                     (rows R1, R2)
+      stamp != PMAT_VERSION  =>  REPORT BASELINE-STALE{stamp, PMAT_VERSION};
+                                 verdict := shipped(HEAD) - shipped(merge-base) <= 0    (rows R3, R4)
+      no base nameable       =>  FAIL (never the branch against itself)                (row R7)
+      no analyser at the pin =>  FAIL (ENV)                                             (row R8)
+      HEAD == origin/main tip (push shape) =>  base := first parent of HEAD              (rows R9, R10)
+      base would be HEAD itself (parent not fetched) =>  FAIL, never the tree against itself (row R11)
+    domain: 'the shipped-tier scan of HEAD and of merge-base(origin/main, HEAD) under the same binary'
+    codomain: 'PASS | FAIL'
+    invariants:
+    - 'ONE ADDED PATH IS RED ON BOTH PATHS (rows R2, R4): the registered mutation.'
+    - 'THE DIFFERENTIAL NAMES THE PATH (rows R4, R10): LC_ALL=C comm -13 base head, both sides sorted under the same collation.'
+    - 'NEVER THE TREE AGAINST ITSELF (rows R9-R11): on a push to main merge-base(origin/main, HEAD) IS HEAD; the base is the first parent, and ci.yml deepens the depth-1 checkout by one so it exists. The G-10 review quorum (3/3, 2026-09-06) named the vacuous HEAD-vs-HEAD pass as its blocking finding.'
+    preconditions:
+    - 'the base is named by scripts/lib/resolve_base.sh on every CI checkout shape (G-6 case table)'
+    postconditions:
+    - 'the log carries the pin the verdict was measured under'
+
+proof_obligations:
+  - id: PIN-OB-001
+    statement: "The ratchet measures with the binary scripts/pmat_bin.sh resolves at PMAT_PIN and no other; an absent or off-pin analyser is FAIL (ENV), never PASS, and sourcing the resolver mutates no shell option."
+    discharged_by: falsification_tests[0]
+  - id: PIN-OB-002
+    statement: "A baseline without count, pmat_version and basis is INVALID and is never compared; a stamp moved without a measurement is refused."
+    discharged_by: falsification_tests[1]
+  - id: PIN-OB-003
+    statement: "A count is compared only against a count measured by the same binary; otherwise the verdict is the differential HEAD vs base under the same binary, the base is never HEAD itself (push shape: the first parent), and a positive delta names the added path."
+    discharged_by: falsification_tests[2]
+  - id: PIN-OB-004
+    statement: "The ratchet is wired in ci.yml job guard-runner-labels, case table before the live check, and the push shape is deepened by one so the first parent exists."
+    discharged_by: falsification_tests[3]
+
+falsification_tests:
+  - id: PIN-F-001
+    rule: one pin — the resolver refuses off-pin and absent
+    prediction: >-
+      ratchet row R8: with only an off-pin binary (a fake reporting 3.0.0) the
+      run is FAIL (ENV), exit 1, never PASS. One --self-test run exercises every
+      row; there is no per-row filter.
+    test: 'bash scripts/check_hardcoded_paths.sh --self-test'
+    if_fails: >-
+      a gate's number silently depends on whichever analyser PATH resolves
+    mutation: >-
+      make pmat_bin_resolve accept any version (drop the `[ "$v" = "$PMAT_PIN" ]`
+      test); row R8 must turn RED (the off-pin fake is accepted and the run
+      passes at rc 0).
+
+  - id: PIN-F-002
+    rule: stamped baseline — INVALID is not a number, a stamp is not a measurement
+    prediction: >-
+      row R5: a baseline whose pmat_version is INVALID is REPORTed (BASELINE-INVALID)
+      and decided by the differential, never compared; row R6: pmat_version moved
+      to the pin while count: stands is refused ("A stamp is not a measurement").
+    test: 'bash scripts/check_hardcoded_paths.sh --self-test'
+    if_fails: >-
+      a number nobody measured becomes the gate, and a re-stamp becomes a raise
+    mutation: >-
+      coerce an INVALID stamp to the recorded count and compare; row R5 must turn
+      RED. Drop the stamp-bump refusal; row R6 must turn RED.
+
+  - id: PIN-F-003
+    rule: no absolute compare across instruments — the differential, never the tree against itself
+    prediction: >-
+      rows R1/R2: absolute compare under a matching stamp (PASS / RED at +1);
+      rows R3/R4: a stale stamp is REPORTed (BASELINE-STALE) and decided HEAD vs
+      merge-base under the same binary, the RED naming src/f8.rs; row R7: no
+      base nameable is RED by name; rows R9/R10: on the push shape (HEAD is the
+      origin/main tip) the base is the FIRST PARENT, delta 0 PASS and +1 RED
+      naming the path; row R11: the tip with its parent not fetched (depth-1) is
+      RED "never the tree against itself".
+    test: 'bash scripts/check_hardcoded_paths.sh --self-test'
+    if_fails: >-
+      the day the fleet's analyser moves, every PR goes red (or green) for a
+      defect no PR introduced — the G-10 landmine; or the ratchet on main passes
+      vacuously (HEAD vs HEAD) and unlimited paths land undetected
+    mutation: >-
+      compare shipped <= count regardless of the stamp; rows R3 and R5 must turn
+      RED. Let resolve_base return merge-base(origin/main, HEAD) when that is HEAD
+      itself; row R10 must turn RED (it passes at delta 0) and row R11 must turn
+      RED (rc 0).
+
+  - id: PIN-F-004
+    rule: wired, case table then live, push shape deepened
+    prediction: >-
+      check_guards_are_wired.sh does not name check_hardcoded_paths.sh while
+      ci.yml carries its three steps (contract scan, --self-test,
+      --full-if-capable); the "Fetch origin/main" step deepens by one on push.
+    test: 'bash scripts/check_guards_are_wired.sh'
+    if_fails: >-
+      a guard that exists and gates nothing (class #2878); or the push-shape
+      run of the ratchet on main refuses on every push for want of a parent
+    mutation: >-
+      delete the three check_hardcoded_paths.sh steps from ci.yml;
+      check_guards_are_wired.sh must turn RED naming the script.
+
+non_goals:
+  - "check_pmat_pinned.sh — every other analyser reference resolves through the pin (G-10b, shrink-only from the 281 counted on 2026-09-06)."
+  - "The sweep of those 281 references to 0 (G-10c)."
+  - "The re-baseline (PMAT-1061): measured under the pin, stamped, its own PR."
+  - "What counts as a machine-specific path: the analyser's detector (pmat#1017)."
+  - "Makefile recipes: outside the operator assertion's surface; tracked separately."
+
+binding_registry:
+  guard: scripts/check_hardcoded_paths.sh   # --full-if-capable; resolver scripts/pmat_bin.sh
+  ci_job: guard-runner-labels
+  make_target: tier3
+  issue: "https://github.com/paiml/aprender/issues/2999"

@@ -512,7 +512,12 @@ jobs:
       # comparand, and it means the CI path is the tip path: a local run that
       # passes on the merge-base can still red here, and CI is authoritative.
       - name: Fetch origin/main as the comparand for every ratchet in this job
-        run: git fetch --no-tags --depth=1 origin +refs/heads/main:refs/remotes/origin/main
+        run: |
+          git fetch --no-tags --depth=1 origin +refs/heads/main:refs/remotes/origin/main
+          # push shape: HEAD IS the origin/main tip, so every differential ratchet judges it against
+          # its FIRST PARENT (scripts/lib/resolve_base.sh: HEAD vs HEAD would pass vacuously, the
+          # G-10 quorum's finding), and a depth-1 checkout has not fetched that parent. Deepen by one.
+          if [ "${GITHUB_EVENT_NAME:-}" = push ]; then git fetch --no-tags --deepen=1 origin +refs/heads/main:refs/remotes/origin/main; fi
       # aprender#2822. Case table FIRST, per the convention above: the probe
       # below is only worth its 0.15s if the classifier it feeds can still turn
       # RED. Seven rows over a throwaway tree - no cargo, no network, no host.
@@ -916,7 +921,12 @@ jobs:
       # reads contracts/apr-cli-commands-v1.yaml, whose equivalence to the real
       # binary is enforced by FALSIFY-CLI-001/002 in the integration line.
       - name: README claims must match measurement
-        run: bash scripts/check_readme_claims.sh
+        run: |
+          # G-11 (PMAT-1062): the README's counts are a RATCHET — a row PR may leave them
+          # lagging, never overstated; the orchestrator docs commit regenerates them and
+          # verifies with --exact. Case table both polarities FIRST, then the live check.
+          bash scripts/check_readme_claims.sh --self-test
+          bash scripts/check_readme_claims.sh
 
       # Three guards that existed and could not block a merge. The publish-safety
       # one is the gate credited with keeping a 28 MB test.apr out of a published
@@ -1224,6 +1234,17 @@ jobs:
         run: bash scripts/check_dag_invariants.sh --selftest
       - name: The PP-066 obligation DAG holds its invariants (G-4, C10)
         run: bash scripts/check_dag_invariants.sh docs/specifications/pp-066-dag.yaml --min-slack-days 6
+      # G-11 (PMAT-1062): a ROW PR (head branch agent/<id>, <id> a DAG row) never writes
+      # docs/specifications/pp-066-dag.yaml, docs/roadmaps/roadmap.yaml, the release spec
+      # (its §5.0 block is rendered) or a README count line. Eight armed PRs each carried
+      # such an edit and every merge made the other seven DIRTY. The DAG's status is
+      # derived from the receipt (scripts/lib/dag_status.py, D7 above); the roadmap and
+      # the counts are the orchestrator docs commit's. Case table, then the live check;
+      # merge_group and push carry no head branch and say so (REPORT), judged at the PR.
+      - name: Row-PR write-set case table (G-11, PMAT-1062)
+        run: bash scripts/check_row_pr_write_set.sh --self-test
+      - name: A row PR writes no shared file (G-11, PMAT-1062)
+        run: bash scripts/check_row_pr_write_set.sh --event "${GITHUB_EVENT_NAME:-pull_request}" --branch "${GITHUB_HEAD_REF:-}"
       # PP-33. Nothing scanned the gate's readers for thresholds, so the spec's
       # own must-fire -- `STRETCH = 1.50` in scripts/lib/parity_block.py -- could
       # not turn anything red. Four independent encodings of the release floors
@@ -1594,7 +1615,7 @@ jobs:
         run: bash scripts/check_hardcoded_paths.sh
       - name: Machine-specific-path guard case table
         run: bash scripts/check_hardcoded_paths.sh --self-test
-      - name: Whole-tree machine-specific-path ratchet (arms itself at pmat >= 3.32.0)
+      - name: Whole-tree machine-specific-path ratchet (pinned analyser via scripts/pmat_bin.sh, PMAT-1059)
         run: bash scripts/check_hardcoded_paths.sh --full-if-capable
       # PRREV-006. PR-REVIEW-SKILL-002 v2 §9 row 6 states how the receipt guard
       # may be wired, and both halves are scars rather than style:
