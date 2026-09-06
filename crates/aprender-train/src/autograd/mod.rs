@@ -71,6 +71,56 @@ pub use precision::{
 };
 pub use tensor::Tensor;
 
+/// Process-wide counter of device-side backward kernel launches observed so
+/// far — cuBLAS backward GEMM calls (`cuda_forward::matmul`/`matmul_f16`).
+///
+/// PMAT-991 (#2906): this counter, not the caller's request string, is the
+/// ONLY source of truth for whether a cuBLAS backward path actually engaged.
+/// The old CLI banner was derived from the request alone and could claim GPU
+/// training while every backward ran on the CPU.
+static BACKWARD_KERNEL_LAUNCHES: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+
+/// Number of device-side backward kernel launches observed since process
+/// start (or the last [`reset_backward_kernel_launches`]).
+pub fn backward_kernel_launches() -> u64 {
+    BACKWARD_KERNEL_LAUNCHES.load(std::sync::atomic::Ordering::SeqCst)
+}
+
+/// Reset the device-side backward kernel launch counter to zero.
+pub fn reset_backward_kernel_launches() {
+    BACKWARD_KERNEL_LAUNCHES.store(0, std::sync::atomic::Ordering::SeqCst);
+}
+
+/// Record one device-side backward kernel launch (PMAT-991). Called from
+/// every cuBLAS backward GEMM call site in `cuda_forward::matmul` /
+/// `cuda_forward::matmul_f16`, only after the launch itself succeeded.
+///
+/// Only reachable when the `cuda` feature is compiled in — every call site
+/// lives behind `#[cfg(feature = "cuda")]`, so a `cpu-fallback` build never
+/// calls this and must not be warned/denied as dead code for it.
+#[cfg_attr(not(feature = "cuda"), allow(dead_code))]
+pub(crate) fn note_backward_kernel_launch() {
+    BACKWARD_KERNEL_LAUNCHES.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+}
+
+/// Derive the "cuBLAS backward engaged" training banner strictly from
+/// observed device-side backward kernel launches (PMAT-991, #2906) — never
+/// from `requested` alone. A banner claiming a cuBLAS backward path with
+/// zero launched backward kernels is exactly the defect this forecloses.
+pub fn training_backend_banner(requested: &str) -> Option<String> {
+    if requested != "cuda" {
+        return None;
+    }
+    let launches = backward_kernel_launches();
+    if launches == 0 {
+        return None;
+    }
+    Some(format!(
+        "[gpu-backend] CUDA — cuBLAS backward engaged ({launches} device-side backward launches)"
+    ))
+}
+
 /// Perform backward pass on a tensor
 pub fn backward(tensor: &mut Tensor, grad_output: Option<ndarray::Array1<f32>>) {
     if let Some(grad) = grad_output {
