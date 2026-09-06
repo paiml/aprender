@@ -318,3 +318,30 @@ mod tests {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 }
+
+/// The one decision every CUDA load-failure site makes (REG-15, #2971): if the failure is
+/// the load-time parity gate, admit the request — a FORCED request is refused with its
+/// reason (never a silent downgrade); an UNFORCED one prints the selection line and may
+/// fall back. Any other failure returns `Ok(false)` so the caller keeps its own message.
+///
+/// # Errors
+/// The refusal, when the request was forced and the gate failed.
+pub fn on_cuda_load_error(msg: &str, forced: bool) -> Result<bool, String> {
+    if !is_parity_gate_error(msg) {
+        return Ok(false);
+    }
+    let (cosine, threshold) = parse_gate_error(msg).unwrap_or((f32::NAN, f32::NAN));
+    let verdict = ParityVerdict::fail(
+        cosine,
+        1,
+        threshold,
+        "load-time gate, one token (crates/aprender-serve/src/gguf/cuda/mod_parity_gate.rs); the >= 64-position horizon is C14",
+    );
+    match admit(forced, &verdict) {
+        Admission::Refuse { reason, .. } => Err(format!("parity gate refused the GPU: {reason}")),
+        Admission::SelectCpu { line } | Admission::Proceed { line } => {
+            eprintln!("{line}");
+            Ok(true)
+        }
+    }
+}

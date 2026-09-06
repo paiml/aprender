@@ -466,10 +466,12 @@ impl ChatSession {
                                 .map_err(|e| format!("CUDA generate failed: {e}"));
                         }
                         Err(e) => {
-                            println!(
-                                "{}",
-                                format!("[CUDA init failed: {}, falling back to CPU]", e).yellow()
-                            );
+                            // REG-15 (#2971): a parity-gate failure is never a silent downgrade. `apr chat`
+                            // has no forced-GPU flag until R-0b's `--backend`, so the request is unforced here.
+                            let handled = crate::commands::parity_admission::on_cuda_load_error(&format!("{e}"), false)?;
+                            if !handled {
+                                println!("{}", format!("[CUDA init failed: {}, falling back to CPU]", e).yellow());
+                            }
                             // Re-create model for CPU fallback (model was consumed)
                             let model = OwnedQuantizedModel::from_mapped(&mapped)
                                 .map_err(|e| format!("Failed to recreate model: {e}"))?;
