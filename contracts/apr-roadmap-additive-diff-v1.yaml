@@ -19,7 +19,7 @@
 #          scripts/lib/roadmap_diff.py, wired in ci.yml job guard-runner-labels
 #          (self-test step, then the live check of the PR's diff).
 #   * L2 — falsification tests cover obligations, MEASURED: `--self-test`
-#          passes 14/14 (2026-09-05), including the real 6d9ba274a history row, the base-side duplicate rows (10–12) and the shallow-checkout base resolution (13–14)
+#          passes 15/15 (2026-09-06), including the real 6d9ba274a history row, the base-side duplicate rows (10–12) and the shallow-checkout base resolution (13–15: PR merge commit → first parent; branch head → refused; merge_group squash head on the origin/main tip → that tip)
 #          (reserialised=361 → trimmed → PASS).
 #   * L3/L4 — NOT APPLICABLE and deliberately not declared: the subject is
 #          YAML text and git history, not a kernel. No self-exemption flag, no
@@ -46,7 +46,7 @@ metadata:
   last_modified: '2026-09-05'
   author: PAIML Engineering
   references:
-    - 'scripts/check_roadmap_diff_additive.sh resolve_base — merge-base(origin/main, HEAD), else (shallow CI checkout) the PR merge commit''s first parent or the origin/main tip; a non-merge head is exit 2, never HEAD-vs-HEAD (rows 13–14; the first CI run compared 807=807, added=0)'
+    - 'scripts/check_roadmap_diff_additive.sh resolve_base — merge-base(origin/main, HEAD), else (shallow CI checkout) the PR merge commit''s first parent or the origin/main tip; a merge_group squash head (single parent == origin/main tip) resolves to that parent (run 34002682350 refused it before row 15); any other single-parent head is exit 2, never HEAD-vs-HEAD (rows 13–15; the first CI run compared 807=807, added=0)'
     - 'scripts/check_roadmap_diff_additive.sh — the guard (defaults: base = merge-base with origin/main, head = HEAD; 9-row --self-test)'
     - 'scripts/lib/roadmap_diff.py — the library: `check` (R1..R4) and `trim` (the remedy)'
     - 'scripts/roadmap_trim.py — one-command remedy: rebuild the working file as base bytes + real changes'

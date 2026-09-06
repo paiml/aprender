@@ -81,12 +81,18 @@ resolve_base() {
     if [ -n "$mb" ]; then BASE_REF="$mb"; BASE_HOW="merge-base(origin/main, $head)"; return 0; fi
     # read the parents off the commit OBJECT: in a depth-1 clone `rev-list --parents` shows none (shallow graft), `cat-file -p` still does
     parents=$(git -C "$REPO_ROOT" cat-file -p "$head^{commit}" 2>/dev/null | awk '/^parent /{printf "%s ", $2} /^$/{exit}')
+    local p1 main_tip; p1=$(printf '%s\n' "$parents" | cut -d' ' -f1); main_tip=$(git -C "$REPO_ROOT" rev-parse origin/main)
     if [ "$(printf '%s\n' "$parents" | wc -w)" -lt 2 ]; then
-        printf '%s: merge-base(origin/main, %s) is unresolvable (shallow checkout) and %s is not a merge commit,\n' "$PROG" "$head" "$head" >&2
-        printf '    so no base can be named. A pull_request job checks out refs/pull/N/merge; run with an explicit <base> otherwise.\n' >&2
+        # merge_group: the queue's temporary head is a SINGLE-parent squash-shaped commit whose parent is
+        # the base branch tip (run 34002682350: parent == origin/main). That parent is the base. Any other
+        # single-parent head (a branch commit) has no nameable base here and is refused.
+        if [ -n "$p1" ] && [ "$p1" = "$main_tip" ]; then
+            BASE_REF="$p1"; BASE_HOW="single parent == origin/main tip (merge_group squash head, shallow checkout)"; return 0
+        fi
+        printf '%s: merge-base(origin/main, %s) is unresolvable (shallow checkout) and %s is not a merge commit nor a commit on the origin/main tip,\n' "$PROG" "$head" "$head" >&2
+        printf '    so no base can be named. A pull_request job checks out refs/pull/N/merge, a merge_group job the queue head; run with an explicit <base> otherwise.\n' >&2
         return 1
     fi
-    local p1; p1=$(printf '%s\n' "$parents" | cut -d' ' -f1)
     if git -C "$REPO_ROOT" cat-file -e "$p1^{commit}" 2>/dev/null; then
         BASE_REF="$p1"; BASE_HOW="first parent of the merge commit $head (shallow checkout)"
     else
@@ -356,6 +362,13 @@ EOF
         *) printf 'FAIL  row %-2s shallow fallback: refused for the wrong reason (rc=%s): %s\n' "$row" "$rc2" "$err2"; fails=1 ;;
     esac
 
+    row=$((row + 1))
+    ( cd "$R" && git checkout -q main && cp "$TD/base_dup.yaml" r.yaml && git commit -qam squash-shaped-queue-head ) 2>/dev/null   # main already holds append.yaml; a DIFFERENT file makes the commit real
+    got3=$( cd "$R" && ROADMAP_DIFF_FORCE_SHALLOW=1 bash -c '. "$0" --lib-only; REPO_ROOT="$1"; resolve_base HEAD && printf "%s|%s" "$BASE_REF" "$BASE_HOW"' "$SELF" "$R" 2>/dev/null ) || true
+    want3=$( cd "$R" && git rev-parse origin/main )
+    case "$got3" in "$want3|single parent == origin/main tip"*) printf 'ok    row %-2s shallow fallback: single-parent head on the origin/main tip (merge_group squash head) -> that tip\n' "$row" ;;
+        *) printf 'FAIL  row %-2s shallow fallback: wanted %s|single parent == origin/main tip..., got %s\n' "$row" "$want3" "$got3"; fails=1 ;; esac
+
     if [ "$fails" -ne 0 ]; then
         printf '\nSELF-TEST FAILED (%s/%s rows)\n' "$((row - fails + fails))" "$row"
         exit 1
@@ -382,6 +395,10 @@ else
 fi
 
 printf '=== roadmap.yaml diff is additive: base=%s (%s) head=%s (%s) ===\n' "$BASE_REF" "$BASE_HOW" "$HEAD_REF" "$PROG"
+if [ "$(git -C "$REPO_ROOT" rev-parse "$BASE_REF^{commit}")" = "$(git -C "$REPO_ROOT" rev-parse "$HEAD_REF^{commit}")" ]; then
+    printf 'PASS  base and head are the same commit (a push/workflow_dispatch run on the branch tip): there is no PR diff to judge here; the judgement happened on the pull_request and merge_group runs\n'
+    exit 0
+fi
 if out=$(run_check "$BASE_REF" "$HEAD_REF" 2>&1); then
     printf '%s\n' "$out"
     printf 'PASS\n'
