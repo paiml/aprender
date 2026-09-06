@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # check_model_parity.sh — C14: GPU/CPU parity over the model manifest (PP-066 row L0-1,
-# #3017, PMAT-1065; card item 7; wired in apr-dogfood --release, C4 post-publish, R-8 nightly).
+# #2971, PMAT-1065; card item 7; wired in apr-dogfood --release, C4 post-publish, R-8 nightly).
 #
 # For every model in evidence/models/supported.yaml that this host holds (a .gguf whose
 # basename starts with the manifest name, under $APR_MODELS_DIR, default ~/models), run

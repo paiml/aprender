@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # derive_model_manifest.sh — evidence/models/supported.yaml is DERIVED from what the
-# tree names, never typed (PP-066 row L0-1, #3017, PMAT-1065, card item 1).
+# tree names, never typed (PP-066 row L0-1, #2971, PMAT-1065, card item 1).
 #
 # Sources (in this order; every citation is file:line):
 #   README.md · docs/BEATS.md · book/src/**/*.md · evidence/dogfood/*/*.json ·
@@ -37,7 +37,7 @@ for f in sources:
         for m in pat.finditer(line):
             name = m.group(0).lower()
             found.setdefault(name, []).append(f"{rel}:{i}")
-lines = ["# evidence/models/supported.yaml — DERIVED by scripts/derive_model_manifest.sh; do not edit by hand (L0-1, #3017).",
+lines = ["# evidence/models/supported.yaml — DERIVED by scripts/derive_model_manifest.sh; do not edit by hand (L0-1, #2971).",
          "# A model is in the manifest iff a shipped document names it; every entry cites where.",
          "schema: apr-supported-models/v1",
          "models:"]

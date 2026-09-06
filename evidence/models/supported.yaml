@@ -1,4 +1,4 @@
-# evidence/models/supported.yaml — DERIVED by scripts/derive_model_manifest.sh; do not edit by hand (L0-1, #3017).
+# evidence/models/supported.yaml — DERIVED by scripts/derive_model_manifest.sh; do not edit by hand (L0-1, #2971).
 # A model is in the manifest iff a shipped document names it; every entry cites where.
 schema: apr-supported-models/v1
 models:

@@ -2,7 +2,7 @@
 status: partial
 ticket: PMAT-1065
 row: L0-1
-issue: 3017
+issue: 2971
 epic: 2873
 priority: P0
 branch: agent/L0-1
@@ -12,7 +12,7 @@ tokens_used: orchestrator [U]
 wall_clock_s: 3600 (basis=session clock; [U] precision)
 turns: 9
 ---
-# impl receipt — PMAT-1065 (PP-066 row L0-1, #3017, P0): Qwen2.5-1.5B cuda ≠ cpu, and apr runs cpu under --gpu
+# impl receipt — PMAT-1065 (PP-066 row L0-1, #2971, P0): Qwen2.5-1.5B cuda ≠ cpu, and apr runs cpu under --gpu
 
 ## RED first (card item 2) — recorded BEFORE any kernel edit
 `evidence/parity/l0-1/lambda/RECORD.md` + the two `apr parity --json` files. Host lambda (RTX 4090), binary the 0.65.2 post-publish cuda install (`c642576eecb62daa`), 78 positions:
@@ -55,7 +55,7 @@ turns: 9
 **Outstanding discriminating experiment (all three lanes name it):** a per-layer `APR_GPU_STAGE_DUMP` at position 0 (token 785) on the 1.5B, CPU vs GPU per stage, to separate attention-at-position-0 / RMSNorm / LM-head GEMV / FFN; plus the same token at position 1. Not run this session.
 
 ## Next (P2/P3, not started)
-item 3 the discriminating experiment (apr parity with the unfused FFN forced — no switch exists today; a flag is part of the fix) and the fix; item 4 REG-15 admission in apr-cli (forced backend never downgrades; `selected: cpu (reason: parity FAILED …)`; effective-config `parity:{…}`; SKIP_PARITY_GATE printed as override, receipts INVALID-CORRECTNESS, asserted unset in dogfood and `ci / gate`; the two silent `set_var` sites removed); item 5 the threshold measurement; item 6 contract `apr-gpu-cpu-parity-v1.yaml`; item 7 C14 wired in `apr-dogfood --release`, C4, R-8; relabel every (1.5B, cuda) receipt INVALID-CORRECTNESS citing #3017.
+item 3 the discriminating experiment (apr parity with the unfused FFN forced — no switch exists today; a flag is part of the fix) and the fix; item 4 REG-15 admission in apr-cli (forced backend never downgrades; `selected: cpu (reason: parity FAILED …)`; effective-config `parity:{…}`; SKIP_PARITY_GATE printed as override, receipts INVALID-CORRECTNESS, asserted unset in dogfood and `ci / gate`; the two silent `set_var` sites removed); item 5 the threshold measurement; item 6 contract `apr-gpu-cpu-parity-v1.yaml`; item 7 C14 wired in `apr-dogfood --release`, C4, R-8; relabel every (1.5B, cuda) receipt INVALID-CORRECTNESS citing #2971.
 
 ## Verdict
 PARTIAL — RED-first recorded on lambda; gx10 [U]; the fix not started.

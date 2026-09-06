@@ -1,4 +1,4 @@
-# evidence/parity/thresholds.yaml — the GPU/CPU parity thresholds C14 reads (L0-1, #3017).
+# evidence/parity/thresholds.yaml — the GPU/CPU parity thresholds C14 reads (L0-1, #2971).
 # EVERY threshold carries a basis. 0.98 is the driver's number and is [U] until item 5 of
 # the card measures n >= 5 known-good pairs per model and records the command here.
 schema: apr-parity-thresholds/v1
