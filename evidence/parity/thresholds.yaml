@@ -4,6 +4,6 @@
 schema: apr-parity-thresholds/v1
 min_positions: 64          # basis: I8 / CF-4 (#1864) — any autoregressive gate validates over >= 64 positions
 default:
-  min_cosine: 0.98         # basis: '[U] driver v4 2026-09-06; to be replaced by measured n>=5 per known-good pair (L0-1 item 5)'
+  min_cosine: 0.98         # basis: '= PARITY_GATE_COSINE_MIN, crates/aprender-serve/src/gguf/cuda/mod.rs:803 (the load-time gate constant), itself [U]; replaced by measured n>=5 per known-good pair (L0-1 item 5)'
   basis: '[U]'
 models: {}                  # per-model overrides land here with n and the command that measured them
