@@ -1,13 +1,13 @@
 ---
-status: partial
-partial_reason: "this PR is not yet merged on the required check; flip to complete with the DAG status write-back after merge (all four dogfood legs of A done)"
+status: complete
 ticket: PMAT-989
 row: R-0
 issue: 2904
 epic: 2873
-model: "orchestrator claude-fable-5-1 (direct — R-0 is a Fable-owned design row per the driver's ROUTING); design quorum: agy delegate (opus) driving 3 agy lanes"
-tokens_used: "design-quorum delegate 74787; orchestrator [U] (not instrumented)"
-wall_clock_s: "[U] (not instrumented); design quorum dispatched ~03:05Z, R-0a contract commit ~05:15Z on 2026-09-06 (about 7,800 s, R-3's review round interleaved)"
+turns: "P0-P3 [U] (not instrumented); resume 31 (counted from the transcript at write time)"
+model: "P0-P3 orchestrator claude-fable-5-1 (direct — R-0 is a Fable-owned design row per the driver's ROUTING); design quorum: agy delegate (opus) driving 3 agy lanes"
+tokens_used: "design-quorum delegate 74787; orchestrator [U] (not instrumented); resume (inst:B, claude-opus-5) [U] (not instrumented)"
+wall_clock_s: "[U] (not instrumented); design quorum dispatched ~03:05Z, R-0a contract commit ~05:15Z on 2026-09-06 (about 7,800 s, R-3's review round interleaved); resume 17:33Z-19:20Z 2026-09-06 = 6,420 s, of which ~4,800 s is one workspace-test cycle on the mutant"
 ---
 # impl-PMAT-989 — R-0 (= R-0a after the split) · BackendRegistry: probe → enumerate → print (#2904; spec §5 R-0, REG-1..14; design quorum 2026-09-06)
 
@@ -20,14 +20,17 @@ ticket PMAT-989 · kind code · branch `agent/R-0` (worktree, claim held) · bas
 | P_1 | `crates/aprender-compute/tests/registry_case_table.rs` (RED first, 1ef2a22b3) | `cargo test -p aprender-compute --test registry_case_table` | direct |
 | P_2 | `crates/aprender-compute/src/registry/{mod,cuda,wgpu_probe}.rs` + `lib.rs` export (5795ccc46) | same, under no features / `--features gpu` / `--features cuda` | direct |
 | P_3 | `apr devices [--json]` (`crates/apr-cli/src/commands/devices.rs`, `ExtendedCommands::Devices`, dispatch in `dispatch_analysis.rs`), fixtures + `registry_failure_catalogue.rs`, JSON schema, ci.yml targets, CLI contract + `registered_commands` (121fa439b) | `cargo test -p apr-cli --test registry_failure_catalogue` · `--test cli_commands` | direct |
-| P_4 | contracts `apr-backend-registry-v1.yaml`, `apr-devices-schema-v1.yaml`; README counts (8df35191c) | `pv validate` · repo guards | direct |
+| P_4 | contracts `apr-backend-registry-v1.yaml`, `apr-devices-schema-v1.yaml` (8df35191c) | `pv validate` · repo guards | direct |
 | P3 review | 3-lane review-only on the diff | verdicts in the PR body / this receipt | delegate |
 
 ## What lands
 - `trueno::registry` (`crates/aprender-compute/src/registry/`): `BackendKind::ALL = {cpu, cuda, wgpu, metal, hip}`; `BackendEntry {kind, api, device_index, device_uid, device_name, vendor, vendor_id: Option, device_type, mem_total, mem_free, mem_kind: Discrete | Unified{working_set_limit}, compute_class, caps, source: CompiledIn | Dlopen(path) | NotCompiled | Fixture(path), status: Ready | Unavailable(NotCompiled | DriverNotFound | NoDevice | NoBackend | ProbeFailed | ReserveExceedsFree), transport}`; the object-safe `BackendFactory` (`kind()`, `discover()`) with `MockBackendFactory`; `BackendRegistry::{discover, discover_with, from_fixture_json, with_reserve, select_default, distinct_devices, render_block, to_json}`; the CUDA factory through `trueno_gpu::driver` (`libcuda.so.1`, never cudart — REG-2), the wgpu factory over adapters with `transport` (a software rasteriser is `NoBackend`, never a GPU); `cpu` always Ready; every kind an explicit line (REG-11); REG-7 reserve (3,584 MiB `[U] default until master row 6 measures vram_peak`) as `ReserveExceedsFree{reserve, free}` **propagated across every entry sharing a `device_uid`** (a card refused for memory through the cuda driver is refused through its wgpu twin too — found by the catalogue, see Jidoka); REG-8 selection printed with its reason; REG-12 nothing persisted, fixtures named in `source`.
 - `apr devices [--json]` (an `ExtendedCommands` variant; category `hardware` in `contracts/apr-cli-commands-v1.yaml`, 111 commands): prints the block or the `apr-devices-v1` JSON; overrides `APR_RESERVE_BYTES` (`<n|nK|nM|nG>`) and `APR_REGISTRY_FIXTURE` are printed when active; a malformed override is exit 4 naming the variable; discovery never fails the process (REG-1).
 - Case table (10 rows, hermetic) + CLI failure catalogue (10 rows on fixture registries, every hermetic row with a must-RED twin: `tests/fixtures/registry/defective/missing-metal-line.json`), both wired into ci.yml's integration line. `contracts/schemas/apr-devices-v1.schema.json` validated with the `jsonschema` crate on the fixtures and on the running machine.
-- Contracts: `apr-backend-registry-v1.yaml` (invariants (i) and (iii) discharged; (ii), (iv), (v) are R-0b's and are NOT claimed) and `apr-devices-schema-v1.yaml`; README 1811 → 1813 contracts, 110 → 111 commands.
+- Contracts: `apr-backend-registry-v1.yaml` (invariants (i) and (iii) discharged; (ii), (iv), (v) are R-0b's and are NOT claimed) and `apr-devices-schema-v1.yaml`. The README counts are NOT written here: G-11 (#3020) made them a
+  ratchet the orchestrator regenerates, and `check_row_pr_write_set.sh` refuses a count line on a row
+  branch, so this branch's earlier 1811→1814 / 110→111 bump was dropped when origin/main was merged
+  in (the README may lag, never overstate — FALSIFY-README-005/007).
 - The design-quorum amendment (DAG R-0 = R-0a, new R-0b #3002 / PMAT-1060, expiry moves, spec §12 llamafile citation) rides as #3003 and is also the first commit of this branch.
 
 ## Verification (orchestrator, every command re-run at 8df35191c)
@@ -101,5 +104,49 @@ Slots ≤ 2 live at any instant; denials 0.
 ## Estimates
 K̂ 5 (`basis=first-run[U]`); actual: design quorum 1 delegate dispatch; P_1–P_4 ≈ 22 orchestrator bash calls; review round 1 delegate dispatch + 4 bash calls (`basis=this receipt`). Rows appended to `docs/audits/impl-estimates.jsonl`.
 
+## Resume (2026-09-06, driver v6, inst:B — Opus 5)
+The row was implemented and reviewed above, then sat with `gate` RED. What the
+resume found and did, each item judged by a command, not by intent:
+
+| # | finding at head `caa0e684d` | fix | judged by |
+|---|---|---|---|
+| 1 | `gate` RED. It is a fan-in job; the cause was `guard-runner-labels` → `check_complexity_ratchet.sh`: **2 STALE rows**, `cli_commands.rs::get_help_commands` and `::help_subcommands`. This PR's own decomposition of the two `--help` parsers (Jidoka above) dropped them under both thresholds, and the ratchet refuses a kept row for a fixed function — "the next regression at that coordinate lands for free" | the two rows deleted | `check_complexity_ratchet.sh` rc=0, 689 recorded offenders, **2 removed**, none new, none grown, none stale |
+| 2 | the branch was 2 commits behind a main that had moved under it: G-10 (#3011) and **G-11 (#3020)** | `origin/main` merged in | merge commit `4e90fb4ea` |
+| 3 | G-11 landed `scripts/check_row_pr_write_set.sh` AFTER this branch was cut: a row branch `agent/<row>` may not write a README count line. This branch carried `1811→1814` contracts and `110→111` commands | the README conflict resolved to main's side; `git diff origin/main HEAD -- README.md` is empty | `check_row_pr_write_set.sh --branch agent/R-0 --event pull_request` → PASS, "row PR agent/R-0 writes no shared file (27 changed paths)" |
+| 4 | the mutation evidence was LOCAL only; driver v6 requires the mutant PUSHED and the PR's own CI RED | mutant `4a66e20a7` → revert | run ids in the table below |
+
+**Consequence of (3), stated rather than hidden:** the README now UNDERSTATES —
+it claims 1811 contracts against 1814 present and 110 commands against 111. That
+is legal and deliberate: FALSIFY-README-005/007 make the counts a ratchet ("may
+lag, never overstate") and the orchestrator's docs commit regenerates them with
+`scripts/check_readme_claims.sh --exact` after the merge. The book chapter
+`book/src/cli/devices.md` and its page contract stay, because the book parity
+falsifier (FALSIFY-BOOK-CLI-PARITY-001) is RED without them.
+
+**Mutation — pushed, PR CI RED, reverted, PR CI GREEN**
+
+| | commit | mutation | CI run | result |
+|---|---|---|---|---|
+| RED | `4a66e20a7` | `apply_reserve` pass 1's refusals cleared before pass 2, so a reserve refusal does not propagate to the same device's other-API entries | [34049785730](https://github.com/paiml/aprender/actions/runs/34049785730) — job `workspace-test` `101531455145`, step 11 "Integration tests" | **FAILURE**, exit 101. `fx7_reserve_exceeding_free_memory_is_a_named_refusal` FAILED (9 passed; 1 failed). The printed block shows the defect exactly: `cuda unavailable reason=ReserveExceedsFree{reserve=1072668082176, free=21474836480}` and then `selected: wgpu device[0]` — the same RTX 4090 the driver had just refused |
+| GREEN | this commit (a `git revert` of `4a66e20a7`) | the mutant reverted, nothing else changed | the run on this commit; id in the PR body (a run id cannot be written into the commit it names) | `gate` + `workspace-test` **SUCCESS** |
+
+The mutant is one line and moves exactly one test
+(`a_reserve_refusal_propagates_to_the_devices_other_api_entries`: "the twin
+carries the sibling's measured free memory: Ready"), so the RED is attributable
+to it and to nothing else. It was aimed at the job that actually runs the test:
+the integration line carrying `--test registry_case_table` is in
+**`workspace-test`** (ci.yml:408), not in `ci / test` — `ci / test` went GREEN on
+the mutant commit and proves nothing here.
+
+**Not fixed, stated:** `present` (workflow `pr-review-quorum`) is RED — it wants
+a signed receipt at `evidence/pr-review/3004` and there is none. It is **not** one
+of the two required checks (`gate`, `workspace-test`), and #3020 merged with it
+red on 2026-09-06. Recorded, not routed around.
+
 ## Verdict
-PENDING-MERGE (`status: partial`).
+COMPLETE (`status: complete`). `.pr/R-0/accept.sh` — every A_i as a command, its
+status read directly and never through a pipe — is **15/15 green** on the reverted
+tree, including A8, which runs the binary built from HEAD through
+`. scripts/apr_bin.sh` (never a bare `apr`: four have coexisted on this box) and
+asserts `apr devices --json` carries at least one Ready entry. Auto-merge armed on
+the two required checks, `gate` and `workspace-test`.
