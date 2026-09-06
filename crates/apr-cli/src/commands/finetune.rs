@@ -311,30 +311,69 @@ fn gpu_backend_notice(
     }
 }
 
+/// Which training path is asking for the effective `--max-seq-len`.
+///
+/// T-2 (PMAT-1009, #2924): `execute_training_wgpu` built its
+/// `WgpuInstructPipeline` with the literal `512, // max_seq_len`, silently
+/// dropping the CLI flag while the instruct (`build_instruct_config`) path
+/// already honored it. One `effective_max_seq_len` function now answers for
+/// every path so they cannot diverge again.
+#[cfg(feature = "training")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SeqLenPath {
+    Instruct,
+    Wgpu,
+    Classify,
+}
+
+/// The effective `max_seq_len` for `path`, given the CLI's `--max-seq-len`.
+///
+/// The rule (spec §5, T-2): the engine's effective `max_seq_len` equals the
+/// request on every path, or the command refuses with
+/// `CliError::ValidationFailed` (exit code 5) — never a silent clamp. None
+/// of the three downstream configs (`InstructConfig`, `WgpuInstructPipeline`,
+/// `ClassifyConfig`) impose an upper bound today (all plain `usize` fields),
+/// so every path currently returns `requested` unchanged, or the path's
+/// documented default (512, from `InstructConfig::default()` /
+/// `ClassifyConfig::default()`) when `requested` is `None`. `Wgpu` shares the
+/// `Instruct` default rather than a separate literal.
+#[cfg(feature = "training")]
+pub(crate) fn effective_max_seq_len(requested: Option<usize>, path: SeqLenPath) -> Result<usize> {
+    let default = match path {
+        SeqLenPath::Instruct | SeqLenPath::Wgpu => {
+            entrenar::finetune::instruct_pipeline::InstructConfig::default().max_seq_len
+        }
+        SeqLenPath::Classify => {
+            entrenar::finetune::classify_pipeline::ClassifyConfig::default().max_seq_len
+        }
+    };
+    Ok(requested.unwrap_or(default))
+}
+
 /// Build the `InstructConfig` for the default LoRA/QLoRA training path.
 ///
 /// Root cause (Defect 2): the old inline construction hardcoded
 /// `max_seq_len: 512`, silently dropping the CLI `--max-seq-len` value on the
 /// instruct path (only the `classify`/multi-adapter paths honored it). This
-/// threads the flag through, falling back to entrenar's default (512) when the
-/// flag is absent.
+/// threads the flag through `effective_max_seq_len` so the instruct and wgpu
+/// paths can never disagree.
 #[cfg(feature = "training")]
 fn build_instruct_config(
     config: &OptimalConfig,
     learning_rate: f64,
     epochs: u32,
     max_seq_len: Option<usize>,
-) -> entrenar::finetune::instruct_pipeline::InstructConfig {
+) -> Result<entrenar::finetune::instruct_pipeline::InstructConfig> {
     use entrenar::finetune::instruct_pipeline::InstructConfig;
-    InstructConfig {
+    Ok(InstructConfig {
         lora_rank: config.rank as usize,
         lora_alpha: config.alpha,
         learning_rate: learning_rate as f32,
         epochs: epochs as usize,
-        max_seq_len: max_seq_len.unwrap_or(InstructConfig::default().max_seq_len),
+        max_seq_len: effective_max_seq_len(max_seq_len, SeqLenPath::Instruct)?,
         gradient_clip_norm: Some(1.0),
         quantize_nf4: matches!(config.method, Method::QLoRA),
-    }
+    })
 }
 
 /// Execute LoRA adapter creation from model tensors.
@@ -415,7 +454,7 @@ fn execute_training(
 
     // 3. Create InstructPipeline from APR model.
     // Defect 2 fix: thread the CLI --max-seq-len through instead of hardcoding 512.
-    let instruct_config = build_instruct_config(config, learning_rate, epochs, max_seq_len);
+    let instruct_config = build_instruct_config(config, learning_rate, epochs, max_seq_len)?;
 
     if !json_output {
         output::pipeline_stage("Training", output::StageStatus::Running);
@@ -423,6 +462,7 @@ fn execute_training(
         println!("  Rank: {}, Alpha: {:.1}", config.rank, config.alpha);
         println!("  Epochs: {epochs}, LR: {learning_rate:.1e}");
         println!("  Data: {} samples", corpus.len());
+        output::kv("Max seq len", instruct_config.max_seq_len.to_string());
     }
 
     // PMAT-494 FIX / Defect 1: Route based on --gpu-backend flag with a TRUTHFUL
@@ -449,6 +489,7 @@ fn execute_training(
             learning_rate,
             json_output,
             corpus,
+            max_seq_len,
         );
     }
 
@@ -619,9 +660,18 @@ fn execute_training_wgpu(
     learning_rate: f64,
     json_output: bool,
     corpus: Vec<entrenar::finetune::instruct_corpus::InstructSample>,
+    max_seq_len: Option<usize>,
 ) -> Result<()> {
     use entrenar::finetune::wgpu_pipeline::WgpuInstructPipeline;
     use entrenar::tokenizer::HfTokenizer;
+
+    // T-2 (PMAT-1009, #2924): the effective value is computed the same way
+    // as the instruct path — never a separate literal — so the two paths
+    // can never disagree.
+    let wgpu_max_seq_len = effective_max_seq_len(max_seq_len, SeqLenPath::Wgpu)?;
+    if !json_output {
+        output::kv("Max seq len", wgpu_max_seq_len.to_string());
+    }
 
     let t_start = std::time::Instant::now();
 
@@ -714,7 +764,7 @@ fn execute_training_wgpu(
         num_layers,
         hidden,
         vocab,
-        512, // max_seq_len
+        wgpu_max_seq_len, // T-2/#2924: was the literal 512, dropping --max-seq-len
         heads,
         kv_heads,
         inter,
@@ -2415,7 +2465,7 @@ mod tests;
 
 #[cfg(all(test, feature = "training"))]
 #[path = "finetune_seq_len_truth_tests.rs"]
-mod seq_len_truth_tests;
+mod finetune_seq_len_truth_tests;
 
 #[cfg(test)]
 #[path = "finetune_contract_tests.rs"]
