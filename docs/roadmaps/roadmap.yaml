@@ -14906,7 +14906,7 @@ roadmap:
   - 'four --selftest rows, both polarities; each condition of historical_for_unmeasured has a row that goes RED
     without it; FALSIFY-PP-LLAMA-001-PERF-GATE-011; spec §6 names the cases'
   notes: 'PMAT-742 jidoka entry 10; first run of the release phase (0.65.0 cut)'
-- id: PMAT-966
+- id: PMAT-1058
   github_issue: null
   item_type: task
   title: 'PP-066: land the 0.66 release spec (docs only)'
@@ -14922,7 +14922,7 @@ roadmap:
   subtasks: []
   estimated_effort: null
   labels: []
-  notes: null
+  notes: 'first minted as PMAT-966 (#2872, 2026-09-05 07:00Z); #2871 minted PMAT-966 for a harness defect in another session at 07:10Z and both landed — re-minted to PMAT-1058 on 2026-09-06 (the later copy in the file; the harness ticket keeps PMAT-966 because signed evidence under evidence/ cites it)'
 - id: PMAT-1054
   github_issue: null
   item_type: task
@@ -15167,11 +15167,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'GH-2895: G-6 check_roadmap_diff_additive.sh: a PR roadmap.yaml diff consists only of added entries (id set grows, no existing entry l'
-  status: planned
+  status: completed
   priority: medium
   assigned_to: null
   created: 2026-09-05T11:24:54Z
-  updated: 2026-09-05T11:24:54Z
+  updated: 2026-09-06T02:37:35Z
   spec: null
   acceptance_criteria:
   - 'bash scripts/check_roadmap_diff_additive.sh <base> <head> exit 0 on a trimmed pmat work add hunk; exit 1 on the un-trimmed 2,531-line re-serialisation of 6d9ba274a (fixture) | bash scripts/check_guards_are_wired.sh | mutation: commit an un-trimmed pmat work add output -> RED'
@@ -15181,7 +15181,7 @@ roadmap:
   labels:
   - kind:code
   - pp-066
-  notes: null
+  notes: 'complete: proof:PR#2987 (merged 65680cdf8 2026-09-06T02:37:35Z); proof:docs/audits/impl-PMAT-980-receipt.md'
 - id: PMAT-981
   github_issue: null
   item_type: task
@@ -15288,11 +15288,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'GH-2902: G-4 the obligation DAG as data with invariants in CI: scripts/check_dag_invariants.sh + scripts/lib/dag_invariants.py over d'
-  status: planned
+  status: completed
   priority: medium
   assigned_to: null
   created: 2026-09-05T11:25:18Z
-  updated: 2026-09-05T11:25:18Z
+  updated: 2026-09-06T02:37:35Z
   spec: null
   acceptance_criteria:
   - 'bash scripts/check_dag_invariants.sh docs/specifications/pp-066-dag.yaml --min-slack-days 6 exit 0 | bash scripts/check_dag_invariants.sh --selftest 5/5 both polarities | python3 scripts/render_dag.py --check exit 0 (spec tables match the yaml) | bash scripts/check_guards_are_wired.sh | mutation: set W-H''s expiry equal to C1''s -> RED (slack); swap two gx10 queue positions -> RED (order); add a self-edge -> RED (cycle)'
@@ -15302,16 +15302,16 @@ roadmap:
   labels:
   - kind:code
   - pp-066
-  notes: null
+  notes: 'complete: proof:PR#2987 (merged 65680cdf8 2026-09-06T02:37:35Z); proof:docs/audits/impl-PMAT-987-receipt.md'
 - id: PMAT-988
   github_issue: null
   item_type: task
   title: 'GH-2903: SPEC-1.6 spec v1.6: the 14 defects recorded by the S0 ledger and the #2872 review; S0-3/S0-12/S0-19 consequences (D-6 yes; B-M1 f'
-  status: planned
+  status: completed
   priority: medium
   assigned_to: null
   created: 2026-09-05T11:25:22Z
-  updated: 2026-09-05T11:25:22Z
+  updated: 2026-09-06T02:37:35Z
   spec: null
   acceptance_criteria:
   - 'bash tests/spec/pp066_v16_defects.sh — a case table of the 14 ledger defects: each asserts the corrected text is present (RED at v1.5, GREEN at v1.6; the RED-first test of this docs row) | bash scripts/check_no_claim_literals.sh && bash scripts/check_perf_claims_cite_receipts.sh | python3 scripts/render_dag.py --check (after G-4) or a byte-diff against the DAG-rendered tables | mutation: revert one of the 14 corrections -> its case-table row RED'
@@ -15321,7 +15321,7 @@ roadmap:
   labels:
   - kind:code
   - pp-066
-  notes: null
+  notes: 'complete: proof:PR#2987 (merged 65680cdf8 2026-09-06T02:37:35Z); proof:docs/audits/impl-PMAT-988-receipt.md'
 - id: PMAT-989
   github_issue: null
   item_type: task
@@ -16448,14 +16448,33 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'GH-2984: C0-7 receipt terminal marker + check_receipt_complete.sh'
-  status: planned
+  status: completed
   priority: medium
   assigned_to: null
   created: 2026-09-05T11:54:37Z
-  updated: 2026-09-05T11:54:37Z
+  updated: 2026-09-06T02:37:35Z
   spec: null
   acceptance_criteria:
   - 'see #2984 (A + mutation)'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - pp-066
+  notes: 'complete: proof:PR#2987 (merged 65680cdf8 2026-09-06T02:37:35Z); proof:docs/audits/impl-PMAT-1056-receipt.md'
+- id: PMAT-1059
+  github_issue: null
+  item_type: task
+  title: 'GH-2999: G-10 check_hardcoded_paths.sh arms at pmat >= 3.32 while the fleet runs 3.31; under 3.37 main is 317 vs baseline 277 — every PR goes red on the fleet upgrade'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-06T02:37:57Z
+  updated: 2026-09-06T02:37:57Z
+  spec: null
+  acceptance_criteria:
+  - 'see #2999 (A + mutation)'
   phases: []
   subtasks: []
   estimated_effort: null
