@@ -62,7 +62,7 @@ judge() { # judge <repo> <base> <head> <branch> <event> <dag> <readme> -> 0 clea
         printf 'ok    %s: `%s` is an orchestrator branch; it owns the DAG, the spec block, the roadmap and the README counts\n' "$PROG" "$branch"; return 0
     fi
     # rule 1: the DAG and the spec are orchestrator-only on EVERY branch
-    for f in docs/specifications/PP-066-release-spec.md; do   # MUTANT: the DAG dropped from rule 1
+    for f in docs/specifications/pp-066-dag.yaml docs/specifications/PP-066-release-spec.md; do
         if printf '%s\n' "$changed" | grep -qxF -- "$f"; then
             printf 'FAIL  %s: branch %s writes %s — orchestrator-only (agent/pp-066-*); the status of a row is derived from its receipt and the spec block is rendered\n' "$PROG" "${branch:-<none>}" "$f"; rc=1
         fi

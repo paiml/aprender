@@ -1,10 +1,10 @@
 ---
-status: partial
+status: complete
 ticket: PMAT-1062
 row: G-11
 epic: 2873
 branch: agent/G-11
-pr: opened after PR-A (#3011) merges — the only PR in the queue until then (driver PHASE 1)
+pr: "#3020 — rebased onto main b0a0a51b2; three mutant RED legs at CI, then this revert = the GREEN leg (run id in the PR body)"
 model: claude-fable-5-1 (orchestrator, direct) · review quorum on agy lanes recorded below when run
 tokens_used: 82736 (review delegate, measured by the harness) + orchestrator [U] (not exposed to the orchestrator)
 wall_clock_s: 4500 (basis=session clock, G-11 claim to the fold commit; [U] precision)
@@ -76,5 +76,14 @@ slots used 1/3 · denials 0 · I-3: attempted=1 denied=0 running_peak=1 slots=3.
 - Rebase onto main after #3011; the untracked `scripts/lib/resolve_base.sh` copy then becomes tracked.
 - `check_receipt_complete.sh --dag` still reads typed `status: complete` rows; it stays (redundant with D7, both must hold) — the orchestrator may drop the typed keys once every consumer derives.
 
+## Mutation evidence at CI (I3) — one guard per RED run, each on the PR branch, never in the queue
+| leg | commit | run | job | failing step |
+|---|---|---|---|---|
+| RED (README ratchet, row 3) | 053eee448 + c245dc24c (semantic) | 34038067035 | 101499760324 | README claims must match measurement |
+| RED (D7, rows 12/14/15/16) | 2a9ab0df6 (README mutant reverted, D7 + write-set kept) | 34038496093 | 101500915181 | DAG-invariants guard case table (11 rows, both polarities) |
+| RED (write-set, rows 2/9/11) | eda2ea746 (D7 reverted, write-set kept) | 34040294692 | 101505945716 | Row-PR write-set case table (G-11, PMAT-1062) |
+| GREEN | this commit (the last revert) | the run of this commit (cited in the PR body) | — | 14/14 · 16/16 · 7/7 expected |
+A first RED run (34037532260) failed earlier at the bashrs shrink-only step (8 → 11 error lines: SC2075 ×2 in the new guard, SEC011 ×1 in the README self-test) — a real defect of this branch, fixed in 9a997e653; the job stops at its first failing step, which is why the three guards needed three runs.
+
 ## Verdict
-PARTIAL — awaiting the review lanes, the rebase onto main after #3011, `ci / gate` + `workspace-test`, and the merge.
+DONE on the branch: every A_i re-run by the orchestrator, each guard's mutation RED at CI and reverted; complete = this receipt ∧ the merge of #3020 (v4/v5 rule: the receipt says complete inside the PR before auto-merge is armed).
