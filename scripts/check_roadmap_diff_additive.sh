@@ -73,7 +73,7 @@ run_check() {
 # checkout at a non-merge head is exit 2 — the box cannot answer.
 # ROADMAP_DIFF_FORCE_SHALLOW=1 makes merge-base unresolvable for the case table.
 # shellcheck source=scripts/lib/resolve_base.sh
-. "$(dirname "$SELF")/lib/resolve_base.sh" || exit 1
+. "$(dirname -- "${BASH_SOURCE[0]}")/lib/resolve_base.sh" || exit 1
 
 SELF="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/${BASH_SOURCE[0]##*/}"   # absolute: the case table cds into a scratch repo before sourcing it
 if [ "${1:-}" = "--lib-only" ]; then return 0 2>/dev/null || exit 0; fi
