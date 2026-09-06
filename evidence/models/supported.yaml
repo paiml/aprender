@@ -69,7 +69,7 @@ models:
 - name: qwen2.5-coder-1.5b
   family: qwen2.5
   size: 1.5b
-  cited_by_count: 37
+  cited_by_count: 39
   cited_by:
   - README.md:27
   - README.md:28
@@ -83,7 +83,7 @@ models:
   - book/src/cli/serve.md:19
   - book/src/cli/tokenize.md:17
   - book/src/cli/tokenize.md:19
-  # … and 25 more
+  # … and 27 more
 - name: qwen2.5-coder-1.5b-instruct
   family: qwen2.5
   size: 1.5b
