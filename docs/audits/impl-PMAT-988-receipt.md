@@ -1,6 +1,6 @@
 ---
-status: partial
-partial_reason: "this PR is not yet merged on the required check; it must land after G-4 (its ci.yml step runs scripts/render_dag.py) — flip to complete with the DAG status write-back after merge"
+status: complete
+merged: "PR #2987 squash 65680cdf8, 2026-09-06T02:37:35Z, through the merge queue (queue CI run 34005252966: ci / gate + workspace-test green)"
 ticket: PMAT-988
 row: SPEC-1.6
 issue: 2903
@@ -47,5 +47,9 @@ Reverting the §4 sentence "C0 is a *precondition of crediting*, not of *working
 ## Estimates
 K̂ 184 (`basis=docs/audits/impl-estimates.jsonl:L1-L7 median 46 × 4 phases`); actual turns: P_1–P_3 [U] (lost at context compaction), P_4 (renderer fix, re-render, re-verification, this receipt) = 5 orchestrator bash calls. Rows appended to `docs/audits/impl-estimates.jsonl` carry `actual` only where measured.
 
+## Merge evidence (orchestrator, after the fact)
+- Merged as `65680cdf8` (#2987, the STEP B batch G-6 → G-4 → SPEC-1.6 → C0-7) at 2026-09-06T02:37:35Z through the merge queue; queue CI run 34005252966: `ci / gate` and `workspace-test` green; PR run 34003610208: every gate leg green, including the `guard-runner-labels` steps this row adds.
+- Every A_i was re-run by the orchestrator on the batch tip before the push (PR body, "Acceptance commands" table) and the row's registered mutation shown RED then restored GREEN there.
+
 ## Verdict
-PENDING-MERGE (`status: partial`).
+DONE (`status: complete`).
