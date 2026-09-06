@@ -49,6 +49,8 @@ pub(crate) mod rm_gc_lint;
 pub(crate) mod data;
 pub(crate) mod diagnose;
 
+#[cfg(feature = "inference")]
+pub(crate) mod devices;
 pub(crate) mod dry_sampling_classifier;
 pub(crate) mod dry_sampling_lint;
 pub(crate) mod embed;

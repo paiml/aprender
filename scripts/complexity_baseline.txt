@@ -58,8 +58,6 @@ crates/apr-cli/src/dispatch.rs::dispatch_runtime_commands 15 41
 crates/apr-cli/src/error.rs::resolve_model_path 19 74
 crates/apr-cli/src/federation/gateway.rs::execute_with_retries 9 26
 crates/apr-cli/src/help_producer_truth.rs::resolve 19 73
-crates/apr-cli/tests/cli_commands.rs::get_help_commands 13 47
-crates/apr-cli/tests/cli_commands.rs::help_subcommands 10 36
 crates/apr-format/src/v2/writer.rs::add_q4_tensor 12 27
 crates/aprender-cbtop/src/adversarial/validators.rs::validate_floats 9 26
 crates/aprender-cbtop/src/app/metrics.rs::read_cpu_usage 10 41
