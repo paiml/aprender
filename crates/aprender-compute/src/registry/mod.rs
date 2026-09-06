@@ -474,6 +474,9 @@ fn apply_reserve(entries: &mut [BackendEntry], reserve: u64) {
             }
         }
     }
+    // MUTANT (PMAT-989, R-0a): deliberately drop the pass-1 refusals so pass 2
+    // propagates nothing. Reverted in the next commit; see the PR body's Mutation row.
+    refused.clear();
     // Pass 2 (lane 2, device_uid): the same physical device seen through another
     // API that reports NO free memory (wgpu) is the same full card — refuse its
     // twins too, with the figure the sibling measured, so the selection cannot
