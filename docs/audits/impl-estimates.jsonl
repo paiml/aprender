@@ -27,3 +27,5 @@
 {"repo":"aprender","ticket":"PMAT-1056","phase":"P_2","mode":"direct","est":46,"actual":1,"basis":"est=impl-estimates.jsonl:L1-L7 median; actual=orchestrator bash calls"}
 {"repo":"aprender","ticket":"PMAT-1056","phase":"P_3","mode":"direct","est":46,"actual":1,"basis":"est=impl-estimates.jsonl:L1-L7 median; actual=orchestrator bash calls"}
 {"repo":"aprender","ticket":"PMAT-1056","phase":"P_4","mode":"direct","est":46,"actual":1,"basis":"est=impl-estimates.jsonl:L1-L7 median; actual=orchestrator bash calls"}
+{"repo":"aprender","ticket":"PMAT-989","phase":"design-quorum","mode":"delegate(quorum:3)","est":5,"actual":1,"basis":"est=first-run[U]; actual=one delegate dispatch (74,787 tokens), record docs/audits/pp-066-r0-design-quorum.md"}
+{"repo":"aprender","ticket":"PMAT-989","phase":"P_1-P_4","mode":"direct","est":5,"actual":22,"basis":"est=first-run[U]; actual=orchestrator bash calls (RED table, registry, apr devices + catalogue, contracts)"}
