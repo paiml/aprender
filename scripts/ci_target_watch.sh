@@ -436,3 +436,5 @@ case "${1:-}" in
         ;;
 esac
 exit 0
+
+# MUTANT (G-10b RED leg): a bare analyser spelling — run pmat analyze satd before pushing
