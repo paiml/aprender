@@ -1,0 +1,287 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# apr-obligation-dag-v1 — the PP-066 obligation DAG is data, and its
+# invariants are checked by machine (PP-066 §4 C10, §5 G-4; DAG row G-4,
+# epic #2873, issue #2902; ticket PMAT-987)
+#
+# WHAT IT GOVERNS
+#   docs/specifications/pp-066-dag.yaml — every 0.66 obligation as a row with
+#   blockers, host queue position, expiry (a date or {anchor, days}), owner.
+#   The 0.66 report's slack claim was checked by hand and missed the physical
+#   queue; the review of 2026-09-04 found W-G scheduled before W-B on gx10 and
+#   W-H expiring the day of the row it should block. A DAG whose invariants
+#   are prose is re-checked by every reader and by none of them the same way.
+#
+# PROOF LADDER, STATED HONESTLY (PP-066 §5 contract discipline, F-26)
+#   * L1 — the resolver exists: scripts/check_dag_invariants.sh over
+#          scripts/lib/dag_invariants.py, wired in ci.yml job guard-runner-labels
+#          (case table, then the live DAG). scripts/render_dag.py renders the
+#          §5/§6 block and `--check` refuses drift once SPEC-1.6 inserts the
+#          marker pair (exit 3 = NOT ARMED until then, never a pass).
+#   * L2 — falsification tests cover obligations, MEASURED: `--selftest`
+#          passes 11/11 (2026-09-05); the three registered mutations on the
+#          real DAG (slack, queue order, self-edge) each went RED and the
+#          restored DAG GREEN.
+#   * L3/L4 — NOT APPLICABLE and deliberately not declared: the subject is a
+#          YAML data file, not a kernel. No self-exemption flag, no hand-typed
+#          proof summary block, no Kani harness, no Lean theorem.
+#   NOT `pmat comply check --rule obligation-dag`: pmat 3.37.0 has no such
+#   rule (measured 2026-09-05); this in-repo checker is the gate until a pmat
+#   ticket lands the rule.
+# ─────────────────────────────────────────────────────────────────────────────
+name: apr-obligation-dag
+version: "1.0.0"
+scope: >
+  docs/specifications/pp-066-dag.yaml: its `rows` (id, lane, blockers, owner,
+  expiry, status) and its `host_queues` header. Out of scope: the CONTENT of
+  any row (acceptance commands, contracts, mutations — those are the rows'
+  own tickets), the §4 andon that fires on an expired row (this contract only
+  makes the past-expiry list mechanical), and pmat's own obligation rule,
+  which does not exist yet.
+status: active
+
+metadata:
+  kind: pattern     # a structural rule over a YAML data file, not a math
+                    # kernel. Set EXPLICITLY so `pv validate`'s `kernel`
+                    # default never silently applies.
+  version: "1.0.0"
+  created: '2026-09-05'
+  last_modified: '2026-09-05'
+  author: PAIML Engineering
+  references:
+    - 'scripts/check_dag_invariants.sh — the guard (11-row --selftest; a missing DAG is exit 2)'
+    - 'scripts/lib/dag_invariants.py — D1..D6 and the past-expiry report'
+    - 'scripts/render_dag.py — the rendered §5/§6 block; --check exits 0 match / 1 drift / 3 not armed'
+    - '.github/workflows/ci.yml — job guard-runner-labels (case table, then the live DAG)'
+    - 'docs/specifications/PP-066-release-spec.md §2 (6-day slack floor, host queues), §4 C10, §5 G-4'
+    - 'docs/audits/pp-066-plan-quorum.md — the review findings the rules mechanise'
+    - 'PP-066 DAG row G-4, epic #2873, issue #2902'
+  description: >
+    Every blocker names a row (D1); the blocker graph is acyclic (D2); on the
+    0.66 lane a row expires at least min_slack_days (6, spec §2) after every
+    row that blocks it (D3); each per-host queue is ordered by expiry (D4);
+    every row has an owner (D5); every row carries exactly one expiry form —
+    a date or {anchor, days} whose anchor is a row (D6). Rows past their
+    resolved expiry are REPORTED with their ids so no row expires silently;
+    the §4 andon decides what that means. An expiry moves only by an
+    `amendments:` row naming who, why and the date (spec §12 rule), never by
+    editing a blocker away — the guard's FAIL footer says so.
+
+equations:
+  d1_no_dangling_blocker:
+    formula: |
+      for r in rows, for b in r.blockers:  b in ids(rows)
+    domain: 'every row and every entry of its blockers list'
+    codomain: 'bool'
+    invariants:
+    - 'A BLOCKER THAT IS NOT A ROW IS NAMED (selftest row 2): an obligation that waits on nothing the DAG can complete waits forever, invisibly.'
+    preconditions:
+    - 'rows have unique string ids (a duplicate is a usage error, exit 2)'
+    postconditions:
+    - 'D1 lines name the row and the missing blocker'
+
+  d2_acyclic:
+    formula: |
+      the directed graph (row -> blocker) has no cycle
+    domain: 'the blocker graph'
+    codomain: 'bool'
+    invariants:
+    - 'A CYCLE IS PRINTED AS ITS PATH (selftest row 3: I-1 -> T-0 -> I-15 -> I-1; mutation 3 on the real DAG: a self-edge G-4 -> G-4).'
+    preconditions: []
+    postconditions:
+    - 'D2 lines carry the full cycle path'
+
+  d3_slack_on_the_066_lane:
+    formula: |
+      for r in rows with lane == "0.66", for b in r.blockers:
+        expires(r) - expires(b) >= min_slack_days        (default 6, spec §2)
+      where expires() resolves {anchor, days} recursively
+    domain: 'every blocker->blockee pair whose blockee is on the 0.66 lane'
+    codomain: 'bool'
+    invariants:
+    - 'ZERO SLACK IS THE REVIEW FINDING (W-H expiring the day of its blocker); selftest row 4 is that pair, row 5 shows the same pair ungated on the 0.67 lane (carried rows carry placeholder expiries until the 0.67 spec dates them).'
+    - 'THE FLOOR IS SPEC §2''s, NOT THIS FILE''s: the number is an argument (--min-slack-days) whose default is 6 and whose basis is the spec.'
+    preconditions:
+    - 'both expiries resolve (else D6 already fired)'
+    postconditions:
+    - 'D3 lines carry blocker, blockee and the measured slack in days'
+
+  d4_host_queues_ordered_by_expiry:
+    formula: |
+      for host, q in host_queues, for consecutive (a, b) in q:  expires(a) <= expires(b)
+    domain: 'every per-host queue in the DAG header'
+    codomain: 'bool'
+    invariants:
+    - 'A QUEUE INVERSION IS NAMED WITH BOTH DATES (selftest row 6; mutation 2 on the real DAG: gx10 positions 2 and 4 swapped -> T-0 (10-03) before T-1 (09-26)). gx10 is one queue ordered by expiry (spec §2).'
+    preconditions:
+    - 'every queue entry is a row (else a D4 line names it)'
+    postconditions:
+    - 'D4 lines name host, both rows and both resolved dates'
+
+  d5_owner_present:
+    formula: |
+      for r in rows:  r.owner is a non-empty string
+    domain: 'every row'
+    codomain: 'bool'
+    invariants:
+    - 'AN UNOWNED ROW IS A ROW NOBODY IS ASKED ABOUT WHEN IT EXPIRES (selftest row 7).'
+    preconditions: []
+    postconditions:
+    - 'D5 lines name the row'
+
+  d6_exactly_one_expiry_form:
+    formula: |
+      for r in rows:  r.expiry is an ISO date
+                      xor r.expiry == {anchor: <row id>, days: <int>} with anchor in ids(rows)
+    domain: 'every row'
+    codomain: 'bool'
+    invariants:
+    - 'TWO FORMS, NO FORM, A MALFORMED FORM AND A GHOST ANCHOR ARE FOUR RED ROWS (selftest rows 8, 9, 10): an expiry that cannot be resolved is not a late row, it is a row with no deadline, which spec §12 forbids.'
+    preconditions: []
+    postconditions:
+    - 'D6 lines name the row and the defect'
+
+  past_expiry_is_reported_not_judged:
+    formula: |
+      report = [ r : expires(r) < today and r.status != "complete" ]
+      printed as one REPORT line; never a violation of this contract
+    domain: 'every row with a resolved expiry'
+    codomain: 'a list'
+    invariants:
+    - 'THE LIST IS MECHANICAL, THE VERDICT IS THE §4 ANDON''s (selftest row 11: a past-expiry row keeps rc 0 here and prints the REPORT line). `today` defaults to the DAG header''s `generated` date so the check is deterministic in CI; --today overrides.'
+    preconditions: []
+    postconditions:
+    - 'past_expiry=<n> on the summary line'
+
+  enforcement_is_wired_case_table_then_live:
+    formula: |
+      ci.yml job "guard-runner-labels" contains, in order:
+        step: run "bash scripts/check_dag_invariants.sh --selftest"
+        step: run "bash scripts/check_dag_invariants.sh docs/specifications/pp-066-dag.yaml --min-slack-days 6"
+    domain: 'the step list of job guard-runner-labels in .github/workflows/ci.yml'
+    codomain: 'bool'
+    invariants:
+    - 'CASE TABLE BEFORE THE LIVE CHECK, EVERY TIME (Verification Discipline #7).'
+    - 'A MISSING DAG IS EXIT 2, NEVER A PASS: until the DAG lands on main (PR #2981) this step is RED by design on any branch that lacks the file.'
+    - 'render_dag.py --check IS NOT WIRED HERE: it exits 3 (NOT ARMED) until SPEC-1.6 inserts the marker pair, and that PR wires it; wiring a step that cannot pass is a phantom, wiring one that always passes is theater.'
+    preconditions:
+    - 'guard-runner-labels is in gate.needs, so a RED here fails gate transitively'
+    postconditions:
+    - 'check_guards_are_wired.sh names the guard as wired'
+
+proof_obligations:
+  - id: DAG-OB-001
+    statement: "No blocker names a row that does not exist, and the blocker graph is acyclic."
+    discharged_by: falsification_tests[0]
+  - id: DAG-OB-002
+    statement: "On the 0.66 lane every row expires at least min_slack_days after each of its blockers."
+    discharged_by: falsification_tests[1]
+  - id: DAG-OB-003
+    statement: "Every per-host queue is ordered by resolved expiry."
+    discharged_by: falsification_tests[2]
+  - id: DAG-OB-004
+    statement: "Every row has an owner and exactly one resolvable expiry form."
+    discharged_by: falsification_tests[3]
+  - id: DAG-OB-005
+    statement: "Rows past their expiry are reported by id and never silently dropped."
+    discharged_by: falsification_tests[4]
+  - id: DAG-OB-006
+    statement: "The guard is wired in ci.yml's guard-runner-labels, case table before the live DAG."
+    discharged_by: falsification_tests[5]
+
+falsification_tests:
+
+  - id: DAG-F-001
+    rule: no dangling blocker, no cycle (D1, D2)
+    prediction: >-
+      A blocker naming a non-row FAILS with a D1 line (selftest row 2); a
+      cycle I-1 -> T-0 -> I-15 -> I-1 FAILS with the path (row 3); the good
+      6-row DAG PASSES (row 1). One --selftest run exercises every row; there
+      is no per-row filter.
+    test: 'bash scripts/check_dag_invariants.sh --selftest'
+    if_fails: >-
+      an obligation could wait on nothing the DAG can complete, or on itself,
+      and no reader would see it
+    mutation: >-
+      append the row's own id to G-4's blockers in the real DAG;
+      check_dag_invariants.sh must turn RED with "D2 cycle: G-4 -> G-4".
+
+  - id: DAG-F-002
+    rule: 6-day slack on the 0.66 lane (D3)
+    prediction: >-
+      W-H expiring the day of its blocker S-1 on the 0.66 lane FAILS with a D3
+      line reading "slack 0 d < 6 d" (row 4); the same pair on the 0.67 lane
+      PASSES (row 5).
+    test: 'bash scripts/check_dag_invariants.sh --selftest'
+    if_fails: >-
+      the review's zero-slack finding lands again and a blocked row expires
+      before its blocker can complete
+    mutation: >-
+      set R-2's expiry equal to R-0's in the real DAG; the guard must turn RED
+      with "D3 R-0 -> R-2: slack 0 d < 6 d".
+
+  - id: DAG-F-003
+    rule: host queues ordered by expiry (D4)
+    prediction: >-
+      gx10 queued as [I-1, T-0, I-15] FAILS naming "T-0 (2026-10-03) is queued
+      before I-15 (2026-09-26)" (row 6).
+    test: 'bash scripts/check_dag_invariants.sh --selftest'
+    if_fails: >-
+      a later-expiring row takes the gx10 window before an earlier one (the
+      W-G-before-W-B finding)
+    mutation: >-
+      swap positions 2 and 4 of host_queues.gx10 in the real DAG; the guard
+      must turn RED with a D4 line naming T-0 before T-1.
+
+  - id: DAG-F-004
+    rule: owner present, exactly one expiry form (D5, D6)
+    prediction: >-
+      An empty owner FAILS (row 7); an expiry carrying both an anchor and a
+      date FAILS (row 8); a missing expiry FAILS (row 9); an anchor naming a
+      non-row FAILS (row 10).
+    test: 'bash scripts/check_dag_invariants.sh --selftest'
+    if_fails: >-
+      a row with no deadline or no owner sits in the DAG as if it were
+      scheduled
+    mutation: >-
+      delete `owner:` from one row of the real DAG; the guard must turn RED
+      with a D5 line.
+
+  - id: DAG-F-005
+    rule: past expiry is reported, not judged here
+    prediction: >-
+      A row whose resolved expiry is before --today keeps rc 0 and prints
+      "REPORT past-expiry" with the row id (row 11); the selftest also asserts
+      the REPORT line is present.
+    test: 'bash scripts/check_dag_invariants.sh --selftest'
+    if_fails: >-
+      an expired row vanishes from every list and the §4 andon has nothing to
+      read
+    mutation: >-
+      drop the REPORT line from dag_invariants.run_check; selftest row 11's
+      grep must turn RED.
+
+  - id: DAG-F-006
+    rule: the guard is wired, case table then live check
+    prediction: >-
+      check_guards_are_wired.sh names no unwired guard while ci.yml's
+      guard-runner-labels carries both steps; removing both lines makes it
+      name check_dag_invariants.sh.
+    test: 'bash scripts/check_guards_are_wired.sh'
+    if_fails: >-
+      the guard exists and gates nothing (the dark-guard class #2878)
+    mutation: >-
+      delete the two `run: bash scripts/check_dag_invariants.sh` lines from
+      ci.yml; check_guards_are_wired.sh must turn RED naming the script.
+
+non_goals:
+  - "Judging whether an expired row should hold the tag — that is the §4 andon and the release-cut row TAG-0.66.0."
+  - "Rendering drift as a gate before SPEC-1.6 lands the marker pair; render_dag.py --check exits 3 (NOT ARMED) until then and is wired by that PR."
+  - "Replacing pmat's future obligation-dag rule; when it lands, this guard's case table is the acceptance test for it."
+
+binding_registry:
+  guard: scripts/check_dag_invariants.sh
+  library: scripts/lib/dag_invariants.py
+  renderer: scripts/render_dag.py
+  ci_job: guard-runner-labels          # inside gate.needs (.github/workflows/ci.yml)
+  make_target: tier3
+  issue: "https://github.com/paiml/aprender/issues/2902"

@@ -1,0 +1,291 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# apr-roadmap-additive-diff-v1 — a pull request's roadmap diff is ADDITIVE
+# (PP-066 DAG row G-6, epic #2873, issue #2895; defect #2874, class #2878/#2630)
+#
+# WHAT IT GOVERNS
+#   `pmat work add` and `pmat work complete` re-serialise ALL of
+#   docs/roadmaps/roadmap.yaml on every call. Commit 6d9ba274a is the measured
+#   instance: one 17-line ticket arrived with 2,531 unrelated lines rewritten
+#   (long strings re-folded, `phases: []` / `subtasks: []` /
+#   `estimated_effort: null` / `labels: []` materialised on 361 entries that had
+#   never carried them). Two in-flight PRs editing the roadmap in the same
+#   window then conflict by construction, and a reviewer cannot see the one
+#   entry that changed. This contract holds the rule the PP-066 driver states
+#   ("roadmap.yaml carries only the new hunk") as a tree fact rather than a
+#   sentence in a prompt.
+#
+# PROOF LADDER, STATED HONESTLY (PP-066 §5 contract discipline, F-26)
+#   * L1 — the resolver exists: scripts/check_roadmap_diff_additive.sh over
+#          scripts/lib/roadmap_diff.py, wired in ci.yml job guard-runner-labels
+#          (self-test step, then the live check of the PR's diff).
+#   * L2 — falsification tests cover obligations, MEASURED: `--self-test`
+#          passes 14/14 (2026-09-05), including the real 6d9ba274a history row, the base-side duplicate rows (10–12) and the shallow-checkout base resolution (13–14)
+#          (reserialised=361 → trimmed → PASS).
+#   * L3/L4 — NOT APPLICABLE and deliberately not declared: the subject is
+#          YAML text and git history, not a kernel. No self-exemption flag, no
+#          hand-typed proof summary block, no Kani harness, no Lean theorem.
+# ─────────────────────────────────────────────────────────────────────────────
+name: apr-roadmap-additive-diff
+version: "1.0.0"
+scope: >
+  The diff of docs/roadmaps/roadmap.yaml between a pull request's merge base
+  and its head, split into top-level entries at `- id:`. In scope: which
+  entries may change and how. Out of scope: the content of any entry, the
+  serialisation pmat chooses (the remedy `python3 scripts/roadmap_trim.py`
+  restores the base's bytes, it does not reformat pmat), and every other
+  roadmap file under docs/roadmaps/ (they are not gated today; widening the
+  universe is a new falsification row, not a silent default).
+status: active
+
+metadata:
+  kind: pattern     # a diff-shape rule over YAML text and git refs, not a
+                    # math kernel. Set EXPLICITLY so `pv validate`'s `kernel`
+                    # default never silently applies.
+  version: "1.0.0"
+  created: '2026-09-05'
+  last_modified: '2026-09-05'
+  author: PAIML Engineering
+  references:
+    - 'scripts/check_roadmap_diff_additive.sh resolve_base — merge-base(origin/main, HEAD), else (shallow CI checkout) the PR merge commit''s first parent or the origin/main tip; a non-merge head is exit 2, never HEAD-vs-HEAD (rows 13–14; the first CI run compared 807=807, added=0)'
+    - 'scripts/check_roadmap_diff_additive.sh — the guard (defaults: base = merge-base with origin/main, head = HEAD; 9-row --self-test)'
+    - 'scripts/lib/roadmap_diff.py — the library: `check` (R1..R4) and `trim` (the remedy)'
+    - 'scripts/roadmap_trim.py — one-command remedy: rebuild the working file as base bytes + real changes'
+    - '.github/workflows/ci.yml — job guard-runner-labels (self-test step, then the live check)'
+    - 'docs/audits/pp-066-driver-prompt.md STEP 1b / STEP 5 — the rule as the driver states it'
+    - 'paiml/aprender#2874 — the defect; #2630 — the README-count serialization point of the same class; #2895 — this row'
+  description: >
+    A pull request's diff of docs/roadmaps/roadmap.yaml may only ADD entries
+    (the id set grows), or edit a ticket's OWN lifecycle fields (status,
+    updated, notes, github_issue, labels, assigned_to, priority). Every other
+    base entry must be byte-identical at head. A base entry whose bytes differ
+    while its parsed content is unchanged — or changes only in string folding
+    or in materialised empty keys — is a RE-SERIALISATION, the churn pmat
+    produces, and it is refused with the count of such entries. Deleting an
+    entry is refused (this repository never deletes roadmap entries). The
+    remedy is `python3 scripts/roadmap_trim.py`, which restores the base's
+    bytes for every entry that did not really change and keeps head's
+    rendering for the entries that did; the guard's own self-test proves that
+    trimming the real 6d9ba274a re-serialisation makes it pass.
+
+equations:
+  r1_no_entry_deleted:
+    formula: |
+      let IDS(x) = { id : `- id: <id>` block in x }
+      IDS(base) subset IDS(head)
+    domain: 'the top-level entry ids of docs/roadmaps/roadmap.yaml at the merge base and at the head'
+    codomain: 'bool — every base id survives at head'
+    invariants:
+    - >-
+      DELETION IS REFUSED, NAMED. The guard prints `VIOLATION deleted: <n>
+      base id(s) missing at head` with the first three ids (row 5). This
+      repository records a ticket's end as a lifecycle edit (status:
+      completed / cancelled), never as a removed entry.
+    preconditions:
+    - 'both versions split at `^- id:` into byte-exact blocks; the first occurrence is what the per-id comparison reads. A duplicate id that GROWS at head is a violation (rows 6, 11); a duplicate already in BASE is baselined and reported as `known duplicate-id` (row 10) — main carried PMAT-966 twice on 2026-09-05, minted by two sessions — and removing the later copy is the remedy (row 12)'
+    postconditions:
+    - 'deleted=<n> is printed on the summary line whether or not n is zero'
+
+  r2_existing_entry_unchanged_or_lifecycle_only:
+    formula: |
+      for id in IDS(base) ∩ IDS(head):
+        block(head, id) == block(base, id)                                   (byte-identical)
+        or ( core(parse(head, id)) == core(parse(base, id))
+             and lifecycle(parse(head, id)) != lifecycle(parse(base, id)) )  (a real lifecycle edit)
+      where core(d)      = d minus LIFECYCLE_KEYS, after normalising materialised empty keys
+            lifecycle(d) = d restricted to LIFECYCLE_KEYS
+            LIFECYCLE_KEYS = {status, updated, notes, github_issue, labels, assigned_to, priority}
+    domain: 'every entry present on both sides'
+    codomain: 'bool per entry — same | lifecycle | reserialised | changed | unparsable'
+    invariants:
+    - >-
+      BYTES DIFFER, CONTENT SAME ⇒ RE-SERIALISATION, REFUSED. Normalising
+      materialised empty keys (`phases: []`, `subtasks: []`,
+      `estimated_effort: null`, `labels: []`) on BOTH sides before the
+      core/lifecycle split is what keeps a materialised `labels: []` from
+      reading as a lifecycle change (row 2: reserialised=3 on a 3-entry
+      fixture; row 9: reserialised=361 on the real 6d9ba274a).
+    - >-
+      A NON-LIFECYCLE FIELD CHANGED ⇒ REFUSED, NAMING THE FIELD (row 4: a
+      changed title). Editing a ticket's acceptance criteria or title is a
+      spec change, not a roadmap lifecycle event, and it lands through the
+      spec's own PR.
+    - >-
+      A LIFECYCLE EDIT IS ALLOWED FOR THAT ENTRY ALONE (row 3: status +
+      updated). pmat re-renders the whole file when it flips one status; the
+      trim keeps head's rendering only for the entry whose lifecycle changed.
+    - >-
+      AN ENTRY THAT CANNOT BE PARSED IN ISOLATION is resolved against the
+      whole-document parse first (a `created: *id001` alias defined on another
+      entry is real data in this file); only when the whole-document parse
+      does not line up positionally is the isolated parse tried, and a
+      failure there is a violation, never a pass.
+    preconditions:
+    - 'the base parses as YAML (a usage error otherwise — the base is already-merged content, exit 2)'
+    postconditions:
+    - 'reserialised=<n> first_ids=<a, b, c> is printed whenever n > 0'
+
+  r3_added_entries_reported:
+    formula: |
+      added = IDS(head) minus IDS(base)
+      summary line carries added=|added|
+    domain: 'the head-only ids'
+    codomain: 'a count, never a violation'
+    invariants:
+    - 'ADDITION IS THE ALLOWED SHAPE (row 1: append one entry → PASS, added=1). Where in the file a new entry lands is not gated; the trim appends new entries at the end in head order.'
+    preconditions: []
+    postconditions:
+    - 'added=<n> is printed on the summary line'
+
+  r4_head_parses_and_keeps_top_level_keys:
+    formula: |
+      parse(head) succeeds and keys(parse(head)) == keys(parse(base))
+    domain: 'the whole head file'
+    codomain: 'bool'
+    invariants:
+    - 'A HEAD THAT DOES NOT PARSE IS REFUSED (row 7), never skipped: an unparseable roadmap would silence every other roadmap guard downstream.'
+    preconditions: []
+    postconditions:
+    - 'VIOLATION head-unparsable: <first error line> or VIOLATION top-level-keys-changed'
+
+  trim_is_the_remedy:
+    formula: |
+      check(base, trim(base, head)) == PASS
+        whenever the only real changes in head are additions and lifecycle edits
+    domain: 'any head produced by pmat work add / pmat work complete over a good base'
+    codomain: 'bool'
+    invariants:
+    - 'THE REMEDY IS PROVEN BY THE GUARD ITSELF (row 8 on the synthetic fixture, row 9 on the real 6d9ba274a re-serialisation: reserialised=361 → trimmed → PASS).'
+    - 'A YAML anchor (`&id001`) defined on one entry and aliased on others is preserved: the definer collapses to base bytes when unchanged, or has its anchor line transplanted onto head''s rendering when only its lifecycle changed; an alias-user is forced to head bytes only when neither is possible, which is content-safe because pmat''s serializer expands aliases to literal values.'
+    preconditions:
+    - 'base and head both parse'
+    postconditions:
+    - 'the trimmed file is byte-identical to the base for every unchanged entry'
+
+  enforcement_is_wired_self_test_then_check:
+    formula: |
+      ci.yml job "guard-runner-labels" contains, in order:
+        step: run "bash scripts/check_roadmap_diff_additive.sh --self-test"
+        step: run "bash scripts/check_roadmap_diff_additive.sh"
+    domain: 'the step list of job guard-runner-labels in .github/workflows/ci.yml'
+    codomain: 'bool — both steps present, self-test step preceding the live-check step'
+    invariants:
+    - 'SELF-TEST BEFORE CHECK, EVERY TIME (Verification Discipline #7): the case table is re-run on every invocation, not re-read.'
+    - 'THE LIVE CHECK READS THE PR DIFF: base = `git merge-base origin/main HEAD`, head = HEAD; a missing origin/main is exit 2 (the box cannot answer), never a pass and never a rule violation.'
+    preconditions:
+    - 'guard-runner-labels is itself in gate.needs, so a failing self-test or a failing live check fails gate transitively'
+    postconditions:
+    - 'a PR that reverts either step is caught by check_guards_are_wired.sh (the guard would be named by no workflow)'
+
+proof_obligations:
+  - id: RD-OB-001
+    statement: "No base roadmap entry is deleted at head."
+    discharged_by: falsification_tests[0]
+  - id: RD-OB-002
+    statement: "Every entry present on both sides is byte-identical, or differs only in lifecycle fields; a byte change with no content change is refused as re-serialisation with a count."
+    discharged_by: falsification_tests[1]
+  - id: RD-OB-003
+    statement: "A non-lifecycle field change on an existing entry is refused, naming the field."
+    discharged_by: falsification_tests[2]
+  - id: RD-OB-004
+    statement: "A head that does not parse, or that grows a duplicate id beyond what base already carries, is refused; a base-side duplicate is baselined and named."
+    discharged_by: falsification_tests[3]
+  - id: RD-OB-005
+    statement: "Trimming a re-serialised head yields a file the guard accepts, on the synthetic fixture and on the real 6d9ba274a."
+    discharged_by: falsification_tests[4]
+  - id: RD-OB-006
+    statement: "The guard is wired in ci.yml's guard-runner-labels, self-test before live check."
+    discharged_by: falsification_tests[5]
+
+falsification_tests:
+
+  - id: RD-F-001
+    rule: no entry deleted (R1)
+    prediction: >-
+      Deleting one existing entry from the head fixture FAILS naming
+      "deleted" (row 5); appending one entry PASSES with added=1 (row 1).
+      Both rows are exercised by the same --self-test run; there is no
+      per-row filter.
+    test: 'bash scripts/check_roadmap_diff_additive.sh --self-test'
+    if_fails: >-
+      a ticket could vanish from the roadmap inside a re-serialisation and
+      nothing would say so
+    mutation: >-
+      remove the deleted-id check from roadmap_diff.run_check (treat
+      `deleted` as empty); row 5 must turn RED.
+
+  - id: RD-F-002
+    rule: re-serialisation is refused with a count (R2)
+    prediction: >-
+      Re-folding every title and materialising `phases: []` on all three
+      fixture entries FAILS with reserialised=3 (row 2); a status + updated
+      change on one entry PASSES as a lifecycle edit (row 3).
+    test: 'bash scripts/check_roadmap_diff_additive.sh --self-test'
+    if_fails: >-
+      the 2,531-line churn of 6d9ba274a lands again on the next pmat work add
+    mutation: >-
+      make classify_pair return "lifecycle" whenever the bytes differ; row 2
+      must turn RED (the re-serialisation reads as allowed).
+
+  - id: RD-F-003
+    rule: a non-lifecycle field change is refused (R2)
+    prediction: >-
+      Changing an existing entry's title FAILS naming "non-lifecycle
+      field(s) changed: title" (row 4).
+    test: 'bash scripts/check_roadmap_diff_additive.sh --self-test'
+    if_fails: >-
+      a spec change could be smuggled into the roadmap under a lifecycle edit
+    mutation: >-
+      add `title` to LIFECYCLE_KEYS in roadmap_diff.py; row 4 must turn RED.
+
+  - id: RD-F-004
+    rule: an unparseable or duplicated head is refused (R4, duplicate-id)
+    prediction: >-
+      A duplicate id grown at head FAILS naming "duplicate-id" (rows 6, 11); a base-side duplicate PASSES as `known duplicate-id` (row 10) and its removal PASSES (row 12); a head that
+      does not parse as YAML FAILS naming "head-unparsable" (row 7).
+    test: 'bash scripts/check_roadmap_diff_additive.sh --self-test'
+    if_fails: >-
+      a broken roadmap would pass and silence every downstream roadmap guard
+    mutation: >-
+      catch the YAMLError in _parse_full and return an empty document instead
+      of the error; row 7 must turn RED.
+
+  - id: RD-F-005
+    rule: trim is the remedy (real history)
+    prediction: >-
+      The synthetic re-serialised head, trimmed against its base, PASSES (row
+      8); the real commit 6d9ba274a against 6d9ba274a~1 FAILS with
+      reserialised=361 and PASSES once trimmed (row 9). When the 6d9ba274a
+      object is unreachable the self-test prints SKIP for row 9 and does not
+      count it as a pass.
+    test: 'bash scripts/check_roadmap_diff_additive.sh --self-test'
+    if_fails: >-
+      the driver's rule has a guard but no remedy, and every pmat work add PR
+      is blocked instead of fixed
+    mutation: >-
+      make render_trim return head_text unchanged; rows 8 and 9 must turn RED.
+
+  - id: RD-F-006
+    rule: the guard is wired, self-test then live check
+    prediction: >-
+      `bash scripts/check_guards_are_wired.sh` names no unwired guard while
+      ci.yml job guard-runner-labels carries both steps; removing both lines
+      makes it name check_roadmap_diff_additive.sh.
+    test: 'bash scripts/check_guards_are_wired.sh'
+    if_fails: >-
+      the guard exists and gates nothing (the dark-guard class #2878)
+    mutation: >-
+      delete the two `run: bash scripts/check_roadmap_diff_additive.sh` lines
+      from ci.yml; check_guards_are_wired.sh must turn RED naming the script.
+
+non_goals:
+  - "Reformatting pmat's output. The trim restores the base's bytes for unchanged entries; it does not impose a style on new or edited entries. The upstream fix (pmat preserving serialisation) is a paiml/pmat ticket named in #2874."
+  - "Gating docs/roadmaps/*.yaml files other than roadmap.yaml, or ledgers under docs/audits/. Widening the universe is a new falsification row."
+  - "Judging the CONTENT of a lifecycle edit (whether a `completed` status cites a proof) — that is check_roadmap_completion_is_cited.sh's subject."
+
+binding_registry:
+  guard: scripts/check_roadmap_diff_additive.sh
+  library: scripts/lib/roadmap_diff.py
+  remedy: scripts/roadmap_trim.py
+  ci_job: guard-runner-labels          # inside gate.needs (.github/workflows/ci.yml)
+  make_target: tier3
+  issue: "https://github.com/paiml/aprender/issues/2895"
