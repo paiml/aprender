@@ -659,8 +659,9 @@ rows:
   spec: 'found 2026-09-05 (PR #2987 local sweep of guard-runner-labels); Verification Discipline #5: a guard that arms on a version the fleet does not run gates nothing'
   gh_issue: 2999
   pmat_id: PMAT-1059
-  status: open
-  notes: 'fleet pmat 3.31.0 (ssh intel, 2026-09-05); local 3.37.0; pmat analyze hardcoded-paths shipped findings: main 317 vs baseline 277 under 3.37.0'
+  status: complete
+  notes: 'fleet pmat 3.31.0 (ssh intel, 2026-09-05); local 3.37.0; pmat analyze hardcoded-paths shipped findings: main 317 vs baseline 277 under 3.37.0 | complete: #3011 merged b0a0a51b2 2026-09-06T13:51:59Z
+    (PR-A); G-10b/G-10c follow'
 - id: SPEC-1.6
   title: 'spec v1.6: the 14 defects recorded by the S0 ledger and the #2872 review; S0-3/S0-12/S0-19 consequences (D-6 yes; B-M1 from wgpu-Metal; R-6 public-key scheme, "no third scheme"); expiry moves
     P-0.6 -> 09-26, T-0 -> 10-03; Track P sources = #2870 until the PVI doc lands; G-4 checker home; §5/§6 tables rendered from the DAG'
