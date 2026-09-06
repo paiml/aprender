@@ -16,7 +16,7 @@ track_parents:
   PVI-1.3-4.3: 2556
 filed: '2026-09-05: issues #2882-#2980 under the track parents (GitHub caps a parent at 100 sub-issues; the epic holds the 31 triage sub-issues plus the 11 track parents); pmat ids PMAT-968..PMAT-1053 plus
   PMAT-1057 for I-1 (its first id PMAT-967 collided with #2871''s ticket of the same number, minted in another session; re-minted 2026-09-05); 2026-09-06: G-11 #3012, G-10b #3013, G-10c #3014, U-1 #3015,
-  S-0 #3016 (labelled pp-066; track-parent linkage by body reference)'
+  S-0 #3016 (labelled pp-066; track-parent linkage by body reference); 2026-09-06 (driver v4): L0-1 #3017 (P0), G-11b #3018, R-8 #3019; R-0b #3002 folded from #3003'
 receipts:
   policy: advisory
   since: '2026-09-05'
@@ -57,7 +57,8 @@ rows:
   track: I
   lane: '0.66'
   decision: false
-  blockers: []
+  blockers:
+  - G-11
   issues:
   - 2809
   host: gx10
@@ -87,6 +88,7 @@ rows:
   - I-1
   - I-24
   - I-25
+  - G-11
   issues:
   - 2819
   - 2834
@@ -119,6 +121,7 @@ rows:
   blockers:
   - I-15
   - R-2
+  - G-11
   issues:
   - 2817
   - 2818
@@ -151,7 +154,8 @@ rows:
   track: I
   lane: '0.66'
   decision: false
-  blockers: []
+  blockers:
+  - G-11
   issues: []
   host: lambda
   queue_pos: null
@@ -172,7 +176,8 @@ rows:
   track: I
   lane: '0.66'
   decision: false
-  blockers: []
+  blockers:
+  - G-11
   issues: []
   host: lambda
   queue_pos: null
@@ -193,7 +198,8 @@ rows:
   track: I
   lane: '0.66'
   decision: false
-  blockers: []
+  blockers:
+  - G-11
   issues:
   - 2735
   - 2876
@@ -218,7 +224,8 @@ rows:
   track: I
   lane: '0.66'
   decision: false
-  blockers: []
+  blockers:
+  - G-11
   issues:
   - 2756
   - 2876
@@ -244,7 +251,8 @@ rows:
   track: I
   lane: '0.66'
   decision: false
-  blockers: []
+  blockers:
+  - G-11
   issues: []
   host: any
   queue_pos: null
@@ -268,7 +276,8 @@ rows:
   track: C0
   lane: '0.66'
   decision: false
-  blockers: []
+  blockers:
+  - G-11
   issues:
   - 2806
   host: any
@@ -295,7 +304,8 @@ rows:
   track: C0
   lane: '0.66'
   decision: false
-  blockers: []
+  blockers:
+  - G-11
   issues:
   - 2734
   - 2646
@@ -323,6 +333,7 @@ rows:
   decision: false
   blockers:
   - U-1
+  - G-11
   issues: []
   host: any
   queue_pos: null
@@ -345,7 +356,8 @@ rows:
   track: C0
   lane: '0.66'
   decision: false
-  blockers: []
+  blockers:
+  - G-11
   issues:
   - 2830
   - 2876
@@ -371,7 +383,8 @@ rows:
   track: G
   lane: '0.66'
   decision: false
-  blockers: []
+  blockers:
+  - G-11
   issues:
   - 2822
   - 2828
@@ -430,7 +443,8 @@ rows:
   track: G
   lane: '0.66'
   decision: false
-  blockers: []
+  blockers:
+  - G-11
   issues:
   - 2482
   - 2500
@@ -464,7 +478,8 @@ rows:
   track: G
   lane: '0.66'
   decision: false
-  blockers: []
+  blockers:
+  - G-11
   issues:
   - 2470
   - 2492
@@ -494,7 +509,8 @@ rows:
   track: G
   lane: '0.66'
   decision: false
-  blockers: []
+  blockers:
+  - G-11
   issues:
   - 2856
   - 2879
@@ -524,7 +540,8 @@ rows:
   track: G
   lane: '0.66'
   decision: false
-  blockers: []
+  blockers:
+  - G-11
   issues:
   - 2730
   - 2876
@@ -572,7 +589,8 @@ rows:
   track: G
   lane: '0.66'
   decision: false
-  blockers: []
+  blockers:
+  - G-11
   issues: []
   host: intel
   queue_pos: null
@@ -630,7 +648,7 @@ rows:
   issues: []
   host: any
   queue_pos: null
-  expiry: '2026-09-12'
+  expiry: '2026-09-06'
   owner: spec-owner
   A:
   - bash scripts/check_hardcoded_paths.sh --full-if-capable exits 0 on main under pmat 3.37.0 (either the 40 new shipped findings are fixed, or the baseline is re-measured with basis=pmat <version> recorded
@@ -672,14 +690,15 @@ rows:
   status: complete
   notes: 'complete: #2987 merged 65680cdf8 2026-09-06T02:37:35Z; receipt docs/audits/impl-PMAT-988-receipt.md status: complete'
 - id: R-0
-  title: '[premises discharged: S0-7 CONFIRMED, S0-14 CONFIRMED] BackendRegistry: enumerate cpu/cuda/wgpu at startup from the machine (dlopen libcuda.so.1, wgpu adapters, cpu always); one printed line per
-    backend with source and status.reason; apr devices [--json]; --backend/--gpu resolved against the Ready set and refused otherwise; GET /v1/effective-config reports the resolved entry; zero cfg! reads
-    in apr-cli backend decisions; REG-1..REG-14 with FX-1..FX-14'
+  title: '[premises discharged: S0-7 CONFIRMED, S0-14 CONFIRMED] R-0a (split 2026-09-06, design quorum 3/3): BackendRegistry::discover() + apr devices [--json] + contracts/apr-devices-schema-v1.yaml + the
+    hermetic fixture case table and MockBackend — the registry EXISTS and prints one line per backend with source and status.reason; the resolution rewiring (--backend/--gpu against the Ready set, effective-config,
+    zero cfg! reads in decisions) is R-0b (#3002)'
   epic: 2873
   track: R
   lane: '0.66'
   decision: false
-  blockers: []
+  blockers:
+  - G-11
   issues:
   - 2378
   - 2507
@@ -711,6 +730,11 @@ rows:
   gh_issue: 2904
   pmat_id: PMAT-989
   status: open
+  notes: 'design quorum 2026-09-06 (docs/audits/pp-066-r0-design-quorum.md): 3/3 implement-with-changes, 3/3 split. Schema changes folded into P1: an object-safe BackendFactory (discover(&self)/create(&self,
+    device)) beside the non-object-safe ComputeBackend (gpu/backend.rs:33-46); entries carry api ∈ {cuda-driver, wgpu, metal, hip, cpu} + device_uid so one physical GPU reachable through two APIs is deduplicated
+    for REG-8/REG-9 (monitor/backends.rs:39 enumerates the Metal adapter through wgpu); vendor_id Option<u32> + vendor String (Apple silicon has no PCI id); mem_kind Unified carries working_set_limit and
+    REG-7 reserves against it; fixtures: FX-1/3/12 cfg(target_os = linux) rows, FX-2/4/5/6/8/9 host-dogfood rows on the named hosts, FX-7/10/11/14 + MockBackend the CI case table; §12 llamafile citation
+    corrected (lane 3) | alias R-0a (driver v4); folded from #3003 (agent/R-0-amend) by the orchestrator 2026-09-06'
 - id: R-2
   title: '[premises discharged: S0-14 CONFIRMED, S0-15 measured] W-I: cuda joins default features iff S0-14 passed on all four hosts (D-9) and only behind R-0; apr serve run --gpu refuses via the registry
     with one line; check_multiplatform_dogfood reads apr devices --json and the effective-config backend; compile-time and size cost REPORTED with basis= (S0-15); clean-room p1 before publish'
@@ -721,6 +745,8 @@ rows:
   blockers:
   - R-0
   - DEC-D-9
+  - G-11
+  - R-0b
   issues:
   - 2696
   - 2788
@@ -728,7 +754,7 @@ rows:
   - 2571
   host: all four (dogfood)
   queue_pos: null
-  expiry: '2026-09-26'
+  expiry: '2026-10-02'
   owner: spec-owner
   A:
   - make -C machines/clean-room clean-room-p1 exit 0 (infra checkout; publish-path hard gate)
@@ -749,11 +775,12 @@ rows:
   track: R
   lane: '0.66'
   decision: false
-  blockers: []
+  blockers:
+  - G-11
   issues: []
   host: lambda, gx10
   queue_pos: null
-  expiry: '2026-09-12'
+  expiry: '2026-09-19'
   owner: spec-owner
   A:
   - cargo test -p aprender-train --test banner_truth (banner emitted iff a device-side backward kernel launched, counter from the executor; --gpu-backend cuda on a CPU-only build exits with the refusal
@@ -772,7 +799,8 @@ rows:
   track: R
   lane: '0.66'
   decision: false
-  blockers: []
+  blockers:
+  - G-11
   issues: []
   host: lambda, gx10
   queue_pos:
@@ -800,6 +828,8 @@ rows:
   blockers:
   - R-0
   - DEC-D-10
+  - G-11
+  - R-2
   issues:
   - 2869
   - 2585
@@ -833,6 +863,7 @@ rows:
   decision: false
   blockers:
   - R-5
+  - G-11
   issues:
   - 2869
   host: all four (C4 path)
@@ -859,6 +890,7 @@ rows:
   decision: false
   blockers:
   - R-6
+  - G-11
   issues:
   - 2869
   host: any
@@ -886,6 +918,7 @@ rows:
   decision: false
   blockers:
   - DEC-D-11
+  - G-11
   issues:
   - 2732
   host: intel (CI runner) for P-0.6, else any
@@ -914,6 +947,7 @@ rows:
   blockers:
   - P-0.3
   - DEC-D-11
+  - G-11
   issues: []
   host: intel (CI runner) for P-0.6, else any
   queue_pos: null
@@ -940,6 +974,7 @@ rows:
   decision: false
   blockers:
   - DEC-D-11
+  - G-11
   issues: []
   host: intel (CI runner) for P-0.6, else any
   queue_pos: null
@@ -966,6 +1001,7 @@ rows:
   blockers:
   - P-0.3
   - DEC-D-11
+  - G-11
   issues: []
   host: intel (CI runner) for P-0.6, else any
   queue_pos: null
@@ -990,6 +1026,7 @@ rows:
   decision: false
   blockers:
   - DEC-D-11
+  - G-11
   issues: []
   host: intel (CI runner) for P-0.6, else any
   queue_pos: null
@@ -1016,6 +1053,7 @@ rows:
   decision: false
   blockers:
   - DEC-D-11
+  - G-11
   issues: []
   host: intel (CI runner) for P-0.6, else any
   queue_pos: null
@@ -1096,6 +1134,7 @@ rows:
   decision: false
   blockers:
   - I-1
+  - G-11
   issues:
   - 2694
   host: lambda
@@ -1122,6 +1161,7 @@ rows:
   blockers:
   - S-3
   - I-15
+  - G-11
   issues: []
   host: gx10
   queue_pos:
@@ -1146,6 +1186,7 @@ rows:
   decision: false
   blockers:
   - I-1
+  - G-11
   issues:
   - 2694
   host: lambda
@@ -1173,6 +1214,7 @@ rows:
   decision: false
   blockers:
   - I-17
+  - G-11
   issues:
   - 2693
   - 2697
@@ -1201,7 +1243,8 @@ rows:
   track: T
   lane: '0.66'
   decision: false
-  blockers: []
+  blockers:
+  - G-11
   issues: []
   host: lambda (dev), both (run)
   queue_pos: null
@@ -1226,7 +1269,8 @@ rows:
   track: T
   lane: '0.66'
   decision: false
-  blockers: []
+  blockers:
+  - G-11
   issues:
   - 2526
   host: any (CPU test)
@@ -1251,6 +1295,7 @@ rows:
   decision: false
   blockers:
   - T-0h
+  - G-11
   issues: []
   host: gx10
   queue_pos:
@@ -1278,6 +1323,8 @@ rows:
   - T-0h
   - T-1
   - T-2
+  - G-11
+  - L0-1
   issues: []
   host: lambda, gx10
   queue_pos:
@@ -1306,6 +1353,7 @@ rows:
   - T-0
   - R-3
   - DEC-D-2
+  - G-11
   issues: []
   host: both
   queue_pos: null
@@ -1331,6 +1379,7 @@ rows:
   decision: false
   blockers:
   - DEC-D-3
+  - G-11
   issues: []
   host: any (YAML edit)
   queue_pos: null
@@ -1360,10 +1409,11 @@ rows:
   blockers:
   - R-0
   - R-2
+  - G-11
   issues: []
   host: any
   queue_pos: null
-  expiry: '2026-10-03'
+  expiry: '2026-10-09'
   owner: spec-owner
   A:
   - bash scripts/check_backend_firstclass.sh exit 0 at HEAD printing cuda 6/7 or lower (derived); wired into ci / gate
@@ -1383,7 +1433,8 @@ rows:
   track: D
   lane: '0.66'
   decision: false
-  blockers: []
+  blockers:
+  - G-11
   issues: []
   host: any
   queue_pos: null
@@ -1407,7 +1458,8 @@ rows:
   track: D
   lane: '0.66'
   decision: false
-  blockers: []
+  blockers:
+  - G-11
   issues:
   - 2765
   host: any
@@ -1483,6 +1535,23 @@ rows:
   - C0-5
   - C0-6
   - C0-7
+  - G-11
+  - G-2
+  - G-10
+  - DEC-D-2
+  - DEC-D-3
+  - DEC-D-8
+  - DEC-D-9
+  - DEC-D-10
+  - DEC-D-11
+  - G-10b
+  - G-10c
+  - U-1
+  - S-0
+  - R-0b
+  - L0-1
+  - G-11b
+  - R-8
   issues:
   - 2850
   - 2869
@@ -2416,7 +2485,8 @@ rows:
   track: C0
   lane: '0.66'
   decision: false
-  blockers: []
+  blockers:
+  - G-11
   issues:
   - 2983
   host: any
@@ -2472,7 +2542,8 @@ rows:
   track: G
   lane: '0.66'
   decision: false
-  blockers: []
+  blockers:
+  - G-10
   issues: []
   host: any
   queue_pos: null
@@ -2503,6 +2574,7 @@ rows:
   decision: false
   blockers:
   - G-10
+  - G-11
   issues: []
   host: any
   queue_pos: null
@@ -2529,6 +2601,7 @@ rows:
   decision: false
   blockers:
   - G-10b
+  - G-11
   issues: []
   host: any
   queue_pos: null
@@ -2580,7 +2653,8 @@ rows:
   track: S
   lane: '0.66'
   decision: false
-  blockers: []
+  blockers:
+  - G-11
   issues: []
   host: perf-solo
   queue_pos: null
@@ -2598,6 +2672,132 @@ rows:
   pmat_id: null
   status: open
   notes: 'D-3: 0.66 lanes = intel only; mini no lane; speed on perf-solo; B-* stay 0.67'
+- id: R-0b
+  title: 'backend resolution reads the registry: accel.rs:28, serve/mod.rs:236 and :656 stop consulting cfg!(feature = …); --backend/--gpu/--device refused by enumeration with the registry''s reason; BACKEND_VALUES
+    widened to the five REG-11 kinds (a static clap vocabulary) with the refusal at runtime as Unavailable(NotCompiled); GET /v1/effective-config reports the resolved entry + discovered_at (split of R-0
+    per the design quorum 2026-09-06)'
+  epic: 2873
+  track: R
+  lane: '0.66'
+  decision: false
+  blockers:
+  - R-0
+  - G-11
+  - L0-1
+  issues:
+  - 2378
+  - 2507
+  - 2586
+  - 2661
+  host: any (verified on all four)
+  queue_pos: null
+  expiry: '2026-09-26'
+  owner: spec-owner
+  A:
+  - git grep -c 'cfg!(any(feature = "cuda"' crates/apr-cli/src prints 0
+  - cargo test -p apr-cli --test backend_refusal_case_table (rows generated from {build features} x {host facts} x the REG-11 kind list; refuse <=> request ∉ Ready; every refusal prints the registry''s
+    reason and exits with the code read from error.rs)
+  - GET /v1/effective-config reports backend == the resolved entry and discovered_at (REG-12); C11 cross-check GREEN on a CPU-only host
+  contract: contracts/apr-backend-registry-v1.yaml (invariants ii, iv, v)
+  mutations:
+  - make resolution consult cfg!(feature = "cuda") instead of the enumeration -> the (build=cuda, host=no-libcuda, ask=cuda) row goes GREEN wrongly -> table RED
+  - 'print Backend: CUDA from the request instead of the entry -> C11 cross-check RED on a CPU-only host'
+  - restore cfg!(any(cuda, wgpu)) at accel.rs:28 -> (build=wgpu, ask=cuda) RED
+  quorum: 3-lane (the design was judged with R-0; this half is review-only on the diff)
+  spec: PP-066 §5 R-0 (the resolution half); REG-8, REG-11, REG-12; design quorum 2026-09-06
+  gh_issue: 3002
+  pmat_id: PMAT-1060
+  status: open
+  notes: 'lane 1 (systems): BACKEND_VALUES is a compile-time [&str; N] fed to clap''s value_parser and cannot be runtime-populated — "zero cfg! reads" applies to DECISIONS, the vocabulary stays static and
+    widened; lane 2 (Apple): wgpu is a transport over a physical backend, so the printed kind list and the entry schema must not double-count one GPU (device_uid dedup, decided with R-0a)'
+- id: L0-1
+  title: '[P0] Qwen2.5-1.5B on cuda computes a different function from cpu (cosine 0.9418, |Δlogit|max 5.38; hidden 1536 / heads 12 / kv 2) and apr then runs cpu under --gpu: model manifest evidence/models/supported.yaml
+    derived (never typed); RED-first horizon test (1.5B RED / 7B GREEN before any kernel edit, must-RED twin); five whys by apr parity SPC to the op, then the fix; REG-15 model admission (forced backend
+    never downgrades; unforced prints selected: cpu (reason: parity FAILED …); effective-config parity block; SKIP_PARITY_GATE prints override:, marks receipts INVALID-CORRECTNESS, asserted unset in dogfood
+    and ci / gate); threshold 0.98 [U] -> measured n>=5 per known-good pair with basis=; contract apr-gpu-cpu-parity-v1; dogfood P6 falsifier; C14 = scripts/check_model_parity.sh --manifest in apr-dogfood
+    --release, C4 post-publish, R-8 nightly; every existing (1.5B, cuda) receipt relabelled INVALID-CORRECTNESS'
+  epic: 2873
+  track: L0
+  lane: '0.66'
+  decision: false
+  blockers:
+  - G-10
+  issues: []
+  host: lambda, gx10 (fleet-verify)
+  queue_pos: null
+  expiry: '2026-09-19'
+  owner: perf-gate
+  A:
+  - make fleet-verify ROW=L0-1 — the horizon test over the manifest GREEN on lambda and gx10 (>= 64 positions, I8)
+  - bash scripts/check_model_parity.sh --manifest exits 0 (C14)
+  - revert the fix -> 1.5B RED, 7B GREEN (the must-RED twin)
+  - SKIP_PARITY_GATE=1 exported in ci / gate -> RED (asserted unset)
+  contract: contracts/apr-gpu-cpu-parity-v1.yaml
+  mutations:
+  - revert the op fix -> 1.5B RED, 7B GREEN
+  - export SKIP_PARITY_GATE in dogfood -> every receipt INVALID-CORRECTNESS and the gate RED
+  - a model named in README but absent from the manifest -> check_readme_claims.sh RED
+  quorum: N-lane root cause (three model families recorded)
+  spec: driver v4 P0 (2026-09-06); the source report path is [U] (not in-tree on 2026-09-06)
+  gh_issue: 3017
+  pmat_id: null
+  status: open
+  notes: P0. Expiry = the earliest 09-19 row (driver v4). Threshold 0.98 is [U] until measured. Track L0 = correctness landmines found in dogfood.
+- id: G-11b
+  title: 'one-call state (scripts/pp066_state.sh: head row, complete receipts, PR states, main reds with ticket ids, U-1 poll), the session docs commit (scripts/session_docs_commit.sh), the .pr/<row>/accept.sh
+    convention in pp-066-plan.md, make fleet-verify ROW=<row> (forjar/make only)'
+  epic: 2873
+  track: G
+  lane: '0.66'
+  decision: false
+  blockers:
+  - G-10
+  issues: []
+  host: any
+  queue_pos: null
+  expiry: '2026-09-19'
+  owner: spec-owner
+  A:
+  - bash scripts/pp066_state.sh exits 0 and prints the head row
+  - bash scripts/session_docs_commit.sh --dry-run lists the edits
+  - make fleet-verify ROW=G-11b collects a receipt from each named host
+  contract: null
+  mutations:
+  - a row whose blocker is open is never printed as head
+  - 'a receipt without status: never counts as complete'
+  quorum: review-only
+  spec: driver v4 ROW DELTAS G-11b
+  gh_issue: 3018
+  pmat_id: null
+  status: open
+  notes: expiry basis [U] (set by the ordering commit of 2026-09-06)
+- id: R-8
+  title: 'nightly-latest-dogfood.yml: install from latest on four hosts via the R-6 installer, apr devices --json, C14 (check_model_parity.sh --manifest), diff vs the release receipt; drift files an issue.
+    Non-blocking for the tag, required to close the epic'
+  epic: 2873
+  track: R
+  lane: '0.66'
+  decision: false
+  blockers:
+  - R-5
+  - G-11
+  issues: []
+  host: all four (forjar/make)
+  queue_pos: null
+  expiry: '2026-10-16'
+  owner: spec-owner
+  A:
+  - the workflow is green once on all four hosts after the cut
+  - a seeded drift (tampered manifest entry) files an issue
+  contract: null
+  mutations:
+  - tamper one manifest entry -> an issue is filed naming host, sha256, diff
+  quorum: review-only
+  spec: driver v4 ROW DELTAS R-8
+  gh_issue: 3019
+  pmat_id: null
+  status: open
+  notes: expiry basis [U] (R-5 10-09 + 6 d + 1)
 amendments:
 - date: '2026-09-05'
   by: noahgift (driver STEP A)
@@ -2644,3 +2844,43 @@ amendments:
   row: DEC-D-2, DEC-D-3, G-2 (D-5), DEC-D-8, DEC-D-9, DEC-D-10, DEC-D-11
   change: status open -> complete (decision receipts docs/audits/impl-PMAT-{1018,1019,985,1020,1021,1022,1023}-receipt.md)
   why: 'the seven decisions are recorded as comments on #2873 (decided_by: noahgift via driver prompt 2026-09-06); D-4, D-6, D-7 have no DAG row and live in the comments only'
+- date: '2026-09-06'
+  by: noahgift via driver prompt 2026-09-06 (v4 ordering)
+  row: G-10
+  change: expiry 2026-09-12 -> 2026-09-06
+  why: 'PR-A #3011 green (guard-runner-labels and workspace-test) at 12:42Z, merging today; the G-10 -> G-11 edge needs 6 d'
+  moved_by: noahgift via driver prompt
+  basis: '[U] takt not yet measured (fewer than three measured receipts of a class)'
+- date: '2026-09-06'
+  by: noahgift via driver prompt 2026-09-06 (v4 ordering)
+  row: R-3
+  change: expiry 2026-09-12 -> 2026-09-19
+  why: 'the G-11a -> R-3 edge (every open 0.66 row waits for the write-set guard); #3001 is rebased after G-11 lands'
+  moved_by: noahgift via driver prompt
+  basis: '[U] takt not yet measured (fewer than three measured receipts of a class)'
+- date: '2026-09-06'
+  by: noahgift via driver prompt 2026-09-06 (v4 ordering)
+  row: R-2
+  change: expiry 2026-09-26 -> 2026-10-02
+  why: the R-0b -> R-2 edge (driver v4 ordering); slack 6 d
+  moved_by: noahgift via driver prompt
+  basis: '[U] takt not yet measured (fewer than three measured receipts of a class)'
+- date: '2026-09-06'
+  by: noahgift via driver prompt 2026-09-06 (v4 ordering)
+  row: B-G1
+  change: expiry 2026-10-03 -> 2026-10-09
+  why: R-2 moved to 10-02; the R-2 -> B-G1 edge needs 6 d
+  moved_by: noahgift via driver prompt
+  basis: '[U] takt not yet measured (fewer than three measured receipts of a class)'
+- date: '2026-09-06'
+  by: noahgift via driver prompt 2026-09-06 (v4 ordering)
+  row: (edges)
+  change: 'L0-1, G-11, G-11b <- G-10; every other open 0.66 row <- G-11 (U-1 excepted: upstream); C0-3 <- U-1; R-0b <- R-0, L0-1; R-2 <- R-0b, DEC-D-9; B-G1 <- R-2; R-5 <- R-2; R-6, R-8 <- R-5; R-7 <- R-6;
+    T-0 <- L0-1; TAG-0.66.0 <- every 0.66 row'
+  why: driver v4 ORDERING lives in the DAG; SPEC-1.6/G-4/G-6 are complete, so the queue-head edge is moot
+- date: '2026-09-06'
+  by: noahgift via driver prompt 2026-09-06 (v4)
+  row: R-0 / R-0b
+  change: R-0 carries the R-0a half (registry + apr devices); R-0b (#3002, PMAT-1060) is the resolution half
+  why: '#3003 (agent/R-0-amend) folded into the orchestrator branch: its branch is not an orchestrator branch under G-11 and its DAG/spec/roadmap edits belong here; docs/audits/pp-066-r0-design-quorum.md
+    carried over verbatim'
