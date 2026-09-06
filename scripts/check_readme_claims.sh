@@ -308,7 +308,11 @@ check_install_line() {
 case "$mode" in
   selftest)
     # G-11 case table: the counts are a ratchet (lag allowed, overstatement RED; --exact for the orchestrator)
-    TD=$(mktemp -d "${TMPDIR:-/tmp}/readme-selftest.XXXXXX"); trap 'rm -rf -- "$TD"' EXIT
+    TD=$(mktemp -d "${TMPDIR:-/tmp}/readme-selftest.XXXXXX")
+    safe_rm_scratch() { local victim=${1:-} must=${2:-}; [ -n "$victim" ] || return 0; [ -n "$must" ] || return 0; [ "$victim" != "/" ] || return 0
+      case "$victim" in *"$must"*) if [ -n "$victim" ] && [ "$victim" != "/" ]; then rm -rf -- "$victim"; fi ;; *) return 0 ;; esac; }
+    cleanup() { safe_rm_scratch "$TD" 'readme-selftest.'; }
+    trap cleanup EXIT
     mc=$(measured_crate_count) || { echo "FAIL self-test: cannot measure the crate count" >&2; exit 1; }
     cc=$(measured_contract_count)
     fx() { printf '# apr\n\n**%s** workspace crates, **%s** provable contracts.\n%s\n' "$1" "$2" "${3:-}" > "$TD/README.md"; }

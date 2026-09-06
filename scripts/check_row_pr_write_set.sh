@@ -64,7 +64,7 @@ judge() { # judge <repo> <base> <head> <branch> <event> <dag> <readme> -> 0 clea
     # rule 1: the DAG and the spec are orchestrator-only on EVERY branch
     for f in docs/specifications/PP-066-release-spec.md; do   # MUTANT: the DAG dropped from rule 1
         if printf '%s\n' "$changed" | grep -qxF -- "$f"; then
-            printf 'FAIL  %s: branch %s writes %s — orchestrator-only (agent/pp-066-*); a row'\''s status is derived from its receipt and the spec block is rendered\n' "$PROG" "${branch:-<none>}" "$f"; rc=1
+            printf 'FAIL  %s: branch %s writes %s — orchestrator-only (agent/pp-066-*); the status of a row is derived from its receipt and the spec block is rendered\n' "$PROG" "${branch:-<none>}" "$f"; rc=1
         fi
     done
     # rule 2: a ROW PR (agent/<id>, <id> a DAG row) may not write the roadmap or a README count line
@@ -76,7 +76,7 @@ judge() { # judge <repo> <base> <head> <branch> <event> <dag> <readme> -> 0 clea
         [ "$rc" = 0 ] && printf 'ok    %s: `%s` names no DAG row; the roadmap/README-count rule binds row PRs only\n' "$PROG" "$branch"; return "$rc"
     fi
     if printf '%s\n' "$changed" | grep -qxF -- docs/roadmaps/roadmap.yaml; then
-        printf 'FAIL  %s: row PR %s writes docs/roadmaps/roadmap.yaml — pmat work complete and the ticket edits are the orchestrator docs commit'\''s\n' "$PROG" "$branch"; rc=1
+        printf 'FAIL  %s: row PR %s writes docs/roadmaps/roadmap.yaml — pmat work complete and the ticket edits belong to the orchestrator docs commit\n' "$PROG" "$branch"; rc=1
     fi
     if printf '%s\n' "$changed" | grep -qxF -- "$readme"; then
         local hits; hits=$(git -C "$repo" diff "$base" "$head" -- "$readme" | grep -E '^[-+][^-+]' | grep -E -- "$COUNT_RE" || true)
