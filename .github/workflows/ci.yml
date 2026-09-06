@@ -1594,7 +1594,7 @@ jobs:
         run: bash scripts/check_hardcoded_paths.sh
       - name: Machine-specific-path guard case table
         run: bash scripts/check_hardcoded_paths.sh --self-test
-      - name: Whole-tree machine-specific-path ratchet (arms itself at pmat >= 3.32.0)
+      - name: Whole-tree machine-specific-path ratchet (pinned analyser via scripts/pmat_bin.sh, PMAT-1059)
         run: bash scripts/check_hardcoded_paths.sh --full-if-capable
       # PRREV-006. PR-REVIEW-SKILL-002 v2 §9 row 6 states how the receipt guard
       # may be wired, and both halves are scars rather than style:

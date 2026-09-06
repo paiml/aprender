@@ -4,7 +4,7 @@
 #
 # WHY THIS EXISTS
 # ---------------
-# `pmat work add` (and `pmat work complete`) re-serialise ALL of
+# `$PMAT work add` (and `$PMAT work complete`) re-serialise ALL of
 # docs/roadmaps/roadmap.yaml on every call. One 17-line ticket arrived with
 # 2,531 unrelated lines rewritten — long strings re-folded onto one line,
 # `phases: []` / `subtasks: []` / `estimated_effort: null` / `labels: []`
@@ -72,34 +72,8 @@ run_check() {
 # object is present, else the origin/main tip fetched by the job. A shallow
 # checkout at a non-merge head is exit 2 — the box cannot answer.
 # ROADMAP_DIFF_FORCE_SHALLOW=1 makes merge-base unresolvable for the case table.
-resolve_base() {
-    local head=$1 mb parents
-    mb=""
-    if [ "${ROADMAP_DIFF_FORCE_SHALLOW:-0}" != 1 ]; then
-        mb=$(git -C "$REPO_ROOT" merge-base origin/main "$head" 2>/dev/null || true)
-    fi
-    if [ -n "$mb" ]; then BASE_REF="$mb"; BASE_HOW="merge-base(origin/main, $head)"; return 0; fi
-    # read the parents off the commit OBJECT: in a depth-1 clone `rev-list --parents` shows none (shallow graft), `cat-file -p` still does
-    parents=$(git -C "$REPO_ROOT" cat-file -p "$head^{commit}" 2>/dev/null | awk '/^parent /{printf "%s ", $2} /^$/{exit}')
-    local p1 main_tip; p1=$(printf '%s\n' "$parents" | cut -d' ' -f1); main_tip=$(git -C "$REPO_ROOT" rev-parse origin/main)
-    if [ "$(printf '%s\n' "$parents" | wc -w)" -lt 2 ]; then
-        # merge_group: the queue's temporary head is a SINGLE-parent squash-shaped commit whose parent is
-        # the base branch tip (run 34002682350: parent == origin/main). That parent is the base. Any other
-        # single-parent head (a branch commit) has no nameable base here and is refused.
-        if [ -n "$p1" ] && [ "$p1" = "$main_tip" ]; then
-            BASE_REF="$p1"; BASE_HOW="single parent == origin/main tip (merge_group squash head, shallow checkout)"; return 0
-        fi
-        printf '%s: merge-base(origin/main, %s) is unresolvable (shallow checkout) and %s is not a merge commit nor a commit on the origin/main tip,\n' "$PROG" "$head" "$head" >&2
-        printf '    so no base can be named. A pull_request job checks out refs/pull/N/merge, a merge_group job the queue head; run with an explicit <base> otherwise.\n' >&2
-        return 1
-    fi
-    if git -C "$REPO_ROOT" cat-file -e "$p1^{commit}" 2>/dev/null; then
-        BASE_REF="$p1"; BASE_HOW="first parent of the merge commit $head (shallow checkout)"
-    else
-        BASE_REF=$(git -C "$REPO_ROOT" rev-parse origin/main); BASE_HOW="origin/main tip (shallow checkout; the merge commit's first parent is not fetched)"
-    fi
-    return 0
-}
+# shellcheck source=scripts/lib/resolve_base.sh
+. "$(dirname -- "${BASH_SOURCE[0]}")/lib/resolve_base.sh" || exit 1
 
 SELF="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/${BASH_SOURCE[0]##*/}"   # absolute: the case table cds into a scratch repo before sourcing it
 if [ "${1:-}" = "--lib-only" ]; then return 0 2>/dev/null || exit 0; fi
@@ -177,14 +151,14 @@ EOF
 
     # Row 2: append + re-fold every existing entry's title + materialise
     # phases: []/subtasks: []/estimated_effort: null/labels: [] on ALL of
-    # them -> FAIL, reserialised=3 (the measured pmat defect shape).
+    # them -> FAIL, reserialised=3 (the measured analyser defect shape).
     python3 - "$TD/base.yaml" "$TD/reserial.yaml" <<'PY'
 import re
 import sys
 base = open(sys.argv[1]).read()
 def materialise(block):
     # Every entry gets RE-FOLDED (its title re-wrapped across two physical
-    # lines, same string once parsed — the literal pmat behaviour) so even
+    # lines, same string once parsed — the analyser's literal behaviour) so even
     # an entry that already carries the materialised empty keys (A-1) still
     # differs byte-for-byte from base.
     block = re.sub(
