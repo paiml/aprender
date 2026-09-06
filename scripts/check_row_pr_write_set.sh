@@ -16,32 +16,38 @@
 #   bash scripts/check_row_pr_write_set.sh --base <ref> --head <ref> [--branch <name>] [--event <name>] [--dag <yaml>] [--readme <md>]
 #   bash scripts/check_row_pr_write_set.sh --self-test
 #
-# A ROW PR is a head branch `agent/<id>` whose <id> is a row of the DAG. Anything else
-# (an orchestrator branch such as agent/pp-066-spec, a fix/… branch) is not judged here
-# and says so. On the merge_group and push shapes there is no head branch to read, so
-# the guard REPORTs that the write set was judged on the pull_request run (which is a
-# required check) and exits 0 — stated, not silent.
-#
-# FORBIDDEN in a row PR (the diff base..head must not touch):
-#   docs/specifications/pp-066-dag.yaml
-#   docs/roadmaps/roadmap.yaml
-#   docs/specifications/PP-066-release-spec.md      (its §5.0 block is rendered from the DAG)
-#   README.md lines that carry a count claim         (N workspace crates / N contracts / N CLI commands)
+# Two rules, two universes (the G-11 review quorum, 2026-09-06: a row PR opened from a
+# branch NOT named agent/<id> must not walk through):
+#   * the DAG and the release spec are the ORCHESTRATOR's on EVERY branch: only an
+#     orchestrator branch (agent/pp-066-*, agent/pr-triage*) may write
+#     docs/specifications/pp-066-dag.yaml or docs/specifications/PP-066-release-spec.md
+#     (its §5.0 block is rendered from the DAG);
+#   * a ROW PR — head branch `agent/<id>` whose <id> is a row of the DAG — may in
+#     addition not write docs/roadmaps/roadmap.yaml (other work mints tickets there)
+#     or a README.md line carrying a count claim (N workspace crates / N contracts /
+#     N CLI commands — the same extractor patterns scripts/check_readme_claims.sh reads).
+# On the merge_group and push shapes there is no head branch to read, so the guard
+# REPORTs that the write set was judged on the pull_request run — which IS required:
+# job guard-runner-labels is in the local `gate` job's needs and the ruleset "Green
+# Main" requires the context `gate` — and exits 0, stated, not silent.
+# Renames are never collapsed (--no-renames): a rename's SOURCE path is a write.
+# ci.yml itself is guarded by scripts/check_guards_are_wired.sh (a deleted step is RED).
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PROG=check_row_pr_write_set
 DAG_DEFAULT="docs/specifications/pp-066-dag.yaml"
-COUNT_RE='[0-9]+\*{0,2}( +[a-z]+){0,2} +(workspace crates?|contracts?|CLI commands?)\b'
+COUNT_RE='[0-9]+\*{0,2}( +[a-z]+){0,2} +(workspace crates?|contracts?|CLI commands?)\b'   # = check_readme_claims.sh's claim extractors: a line they do not read is not a claim
+ORCHESTRATOR_RE='^agent/(pp-066-|pr-triage)'
 
 usage() { printf 'usage: %s --base <ref> --head <ref> [--branch <name>] [--event <name>] [--dag <yaml>] [--readme <md>] | --self-test\n' "$PROG" >&2; exit 2; }
 
-row_ids() { # row_ids <dag> -> one id per line
-    python3 - "$1" <<'PY'
+row_ids() { # row_ids <repo> <base> <dag relpath> -> one id per line; the DAG is read at the BASE (a PR that renames or deletes it still has a base)
+    git -C "$1" show "$2:$3" 2>/dev/null | python3 -c '
 import sys, yaml
-d = yaml.safe_load(open(sys.argv[1], encoding="utf-8")) or {}
+d = yaml.safe_load(sys.stdin) or {}
 for r in d.get("rows") or []:
     print(r.get("id"))
-PY
+'
 }
 
 judge() { # judge <repo> <base> <head> <branch> <event> <dag> <readme> -> 0 clean / 1 RED / 2 usage-env
@@ -50,20 +56,28 @@ judge() { # judge <repo> <base> <head> <branch> <event> <dag> <readme> -> 0 clea
         merge_group|push)
             printf 'REPORT %s: the %s shape carries no head branch; the write set was judged on the pull_request run (a required check). Not a verdict.\n' "$PROG" "$event"; return 0 ;;
     esac
-    case "$branch" in
-        agent/*) id=${branch#agent/} ;;
-        *) printf 'ok    %s: `%s` is not an agent/<row> branch; the write-set rule binds row PRs only\n' "$PROG" "${branch:-<none>}"; return 0 ;;
-    esac
-    [ -f "$dag" ] || { printf '%s: ENV - %s is missing (the box cannot answer)\n' "$PROG" "$dag" >&2; return 2; }
-    if ! row_ids "$dag" | grep -qxF -- "$id"; then
-        printf 'ok    %s: `%s` names no DAG row (an orchestrator or other branch); the write-set rule binds row PRs only\n' "$PROG" "$branch"; return 0
+    git -C "$repo" cat-file -e "$base:$dag" 2>/dev/null || { printf '%s: ENV - %s is missing at the base %.9s (the box cannot answer)\n' "$PROG" "$dag" "$base" >&2; return 2; }
+    local changed; changed=$(git -C "$repo" diff --no-renames --name-only "$base" "$head" --) || { printf '%s: ENV - git diff %s %s failed\n' "$PROG" "$base" "$head" >&2; return 2; }
+    if printf '%s' "$branch" | grep -qE -- "$ORCHESTRATOR_RE"; then
+        printf 'ok    %s: `%s` is an orchestrator branch; it owns the DAG, the spec block, the roadmap and the README counts\n' "$PROG" "$branch"; return 0
     fi
-    local changed; changed=$(git -C "$repo" diff --name-only "$base" "$head" --) || { printf '%s: ENV - git diff %s %s failed\n' "$PROG" "$base" "$head" >&2; return 2; }
-    for f in docs/specifications/pp-066-dag.yaml docs/roadmaps/roadmap.yaml docs/specifications/PP-066-release-spec.md; do
+    # rule 1: the DAG and the spec are orchestrator-only on EVERY branch
+    for f in docs/specifications/pp-066-dag.yaml docs/specifications/PP-066-release-spec.md; do
         if printf '%s\n' "$changed" | grep -qxF -- "$f"; then
-            printf 'FAIL  %s: row PR %s writes the shared file %s — the DAG status is derived from the receipt, the roadmap and the spec block are the orchestrator docs commit'\''s\n' "$PROG" "$branch" "$f"; rc=1
+            printf 'FAIL  %s: branch %s writes %s — orchestrator-only (agent/pp-066-*); a row'\''s status is derived from its receipt and the spec block is rendered\n' "$PROG" "${branch:-<none>}" "$f"; rc=1
         fi
     done
+    # rule 2: a ROW PR (agent/<id>, <id> a DAG row) may not write the roadmap or a README count line
+    case "$branch" in
+        agent/*) id=${branch#agent/} ;;
+        *) [ "$rc" = 0 ] && printf 'ok    %s: `%s` is not an agent/<row> branch; the roadmap/README-count rule binds row PRs only\n' "$PROG" "${branch:-<none>}"; return "$rc" ;;
+    esac
+    if ! row_ids "$repo" "$base" "$dag" | grep -qxF -- "$id"; then
+        [ "$rc" = 0 ] && printf 'ok    %s: `%s` names no DAG row; the roadmap/README-count rule binds row PRs only\n' "$PROG" "$branch"; return "$rc"
+    fi
+    if printf '%s\n' "$changed" | grep -qxF -- docs/roadmaps/roadmap.yaml; then
+        printf 'FAIL  %s: row PR %s writes docs/roadmaps/roadmap.yaml — pmat work complete and the ticket edits are the orchestrator docs commit'\''s\n' "$PROG" "$branch"; rc=1
+    fi
     if printf '%s\n' "$changed" | grep -qxF -- "$readme"; then
         local hits; hits=$(git -C "$repo" diff "$base" "$head" -- "$readme" | grep -E '^[-+][^-+]' | grep -E -- "$COUNT_RE" || true)
         if [ -n "$hits" ]; then
@@ -106,7 +120,7 @@ if [ "${1:-}" = "--self-test" ]; then
         local want=$1 label=$2 branch=$3 event=$4 mut=$5 rc=0
         n=$((n + 1))
         ( cd "$R" && git checkout -q --detach "$BASE" && bash -c "$mut" && git add -A && git commit -qm "$label" --allow-empty ) >/dev/null 2>&1
-        judge "$R" "$BASE" "$(git -C "$R" rev-parse HEAD)" "$branch" "$event" "$R/docs/specifications/pp-066-dag.yaml" README.md > "$TD/out.$n" 2>&1 || rc=$?
+        judge "$R" "$BASE" "$(git -C "$R" rev-parse HEAD)" "$branch" "$event" docs/specifications/pp-066-dag.yaml README.md > "$TD/out.$n" 2>&1 || rc=$?
         if [ "$rc" = "$want" ]; then printf 'ok    row %-2s rc=%s  %s\n' "$n" "$rc" "$label"
         else printf 'FAIL  row %-2s rc=%s (wanted %s)  %s\n' "$n" "$rc" "$want" "$label"; sed 's/^/        /' "$TD/out.$n"; red=1; fi
     }
@@ -118,24 +132,28 @@ if [ "${1:-}" = "--self-test" ]; then
     row 0 "row PR editing README prose (no count line): PASS"                         agent/G-11 pull_request 'sed -i "s/prose line/prose line edited/" README.md'
     row 0 "orchestrator branch writing the DAG, roadmap and README counts: not a row PR" agent/pp-066-spec pull_request 'echo "- {id: Z-1}" >> docs/specifications/pp-066-dag.yaml; sed -i "s/1812/1813/" README.md'
     row 0 "a fix/ branch writing the roadmap: not an agent branch"                    fix/thing  pull_request 'echo "- id: PMAT-2" >> docs/roadmaps/roadmap.yaml'
+    row 1 "a fix/ branch writing the DAG: RED on EVERY non-orchestrator branch (quorum Q1)" fix/thing pull_request 'echo "- {id: Z-1}" >> docs/specifications/pp-066-dag.yaml'
+    row 1 "an agent/<not-a-row> branch writing the spec: RED"                          agent/nope pull_request 'echo "x" >> docs/specifications/PP-066-release-spec.md'
+    row 1 "a row PR RENAMING the DAG away: RED (the source path is a write; --no-renames)" agent/G-11 pull_request 'git mv docs/specifications/pp-066-dag.yaml docs/specifications/moved.yaml'
     row 0 "merge_group shape: REPORT (judged on the pull_request run), exit 0"        agent/G-11 merge_group 'echo "- {id: Z-1}" >> docs/specifications/pp-066-dag.yaml'
     row 0 "push shape: REPORT, exit 0"                                                agent/G-11 push        'echo "- {id: Z-1}" >> docs/specifications/pp-066-dag.yaml'
-    for i in 9 10; do grep -q '^REPORT' "$TD/out.$i" || { printf 'FAIL  row %-2s printed no REPORT line: a silent skip\n' "$i"; red=1; }; done
-    n2=$((n + 1)); rc=0; judge "$R" "$BASE" "$BASE" agent/G-11 pull_request "$R/docs/specifications/nope.yaml" README.md >"$TD/out.$n2" 2>&1 || rc=$?
-    if [ "$rc" = 2 ]; then printf 'ok    row %-2s rc=2  a missing DAG is ENV (exit 2), never a pass\n' "$n2"; else printf 'FAIL  row %-2s rc=%s (wanted 2)  a missing DAG\n' "$n2" "$rc"; red=1; fi
+    for i in 12 13; do grep -q '^REPORT' "$TD/out.$i" || { printf 'FAIL  row %-2s printed no REPORT line: a silent skip\n' "$i"; red=1; }; done
+    grep -q 'pp-066-dag.yaml' "$TD/out.11" || { printf 'FAIL  row 11 did not name the renamed file\n'; red=1; }
+    n2=$((n + 1)); rc=0; judge "$R" "$BASE" "$BASE" agent/G-11 pull_request docs/specifications/nope.yaml README.md >"$TD/out.$n2" 2>&1 || rc=$?
+    if [ "$rc" = 2 ]; then printf 'ok    row %-2s rc=2  a DAG missing at the base is ENV (exit 2), never a pass\n' "$n2"; else printf 'FAIL  row %-2s rc=%s (wanted 2)  a missing DAG\n' "$n2" "$rc"; red=1; fi
     printf '%s/%s rows\n' "$((n2 - red))" "$n2"
     [ "$red" = 0 ] || exit 1
     exit 0
 fi
 
-BASE=""; HEAD_REF="HEAD"; BRANCH="${GITHUB_HEAD_REF:-}"; EVENT="${GITHUB_EVENT_NAME:-pull_request}"; DAG="$ROOT/$DAG_DEFAULT"; README="README.md"
+BASE=""; HEAD_REF="HEAD"; BRANCH="${GITHUB_HEAD_REF:-}"; EVENT="${GITHUB_EVENT_NAME:-pull_request}"; DAG="$DAG_DEFAULT"; README="README.md"
 while [ $# -gt 0 ]; do
     case "$1" in
         --base) BASE=$2; shift 2 ;;
         --head) HEAD_REF=$2; shift 2 ;;
         --branch) BRANCH=$2; shift 2 ;;
         --event) EVENT=$2; shift 2 ;;
-        --dag) DAG=$2; [ -f "$DAG" ] || DAG="$ROOT/$2"; shift 2 ;;
+        --dag) DAG=$2; shift 2 ;;   # a path RELATIVE to the repo root; read at the base commit
         --readme) README=$2; shift 2 ;;
         *) usage ;;
     esac

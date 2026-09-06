@@ -116,7 +116,9 @@ def check(dag_path: str, spec_path: str, root: str = REPO_ROOT) -> int:
         print(f"PASS  the rendered DAG block in {spec_path} is byte-identical to {dag_path} ({len(doc['rows'])} rows)")
         return 0
     sys.stdout.writelines(difflib.unified_diff(block.splitlines(True), rendered.splitlines(True), "spec (committed)", "render (from the yaml)"))
-    print(f"FAIL  DRIFT: the spec's DAG block differs from the render of {dag_path}; run `python3 scripts/render_dag.py render` and paste between the markers")
+    print(f"FAIL  DRIFT: the spec's DAG block differs from the render of {dag_path}; run `python3 scripts/render_dag.py render` and paste between the markers. "
+          "The status column is DERIVED from docs/audits/impl-<pmat_id>-receipt.md (G-11): a ROW PR ships its receipt as `status: partial` and never edits the spec; "
+          "the orchestrator docs commit (agent/pp-066-*) flips the receipt to complete AND re-renders this block in the same commit.")
     return 1
 
 

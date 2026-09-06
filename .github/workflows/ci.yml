@@ -921,12 +921,12 @@ jobs:
       # reads contracts/apr-cli-commands-v1.yaml, whose equivalence to the real
       # binary is enforced by FALSIFY-CLI-001/002 in the integration line.
       - name: README claims must match measurement
-        run: bash scripts/check_readme_claims.sh
-      # G-11 (PMAT-1062): the README's counts are a RATCHET — a row PR may leave them
-      # lagging, never overstated; the orchestrator docs commit regenerates them and
-      # verifies with --exact. Case table both polarities, then the live check above.
-      - name: README count ratchet case table (G-11, PMAT-1062)
-        run: bash scripts/check_readme_claims.sh --self-test
+        run: |
+          # G-11 (PMAT-1062): the README's counts are a RATCHET — a row PR may leave them
+          # lagging, never overstated; the orchestrator docs commit regenerates them and
+          # verifies with --exact. Case table both polarities FIRST, then the live check.
+          bash scripts/check_readme_claims.sh --self-test
+          bash scripts/check_readme_claims.sh
 
       # Three guards that existed and could not block a merge. The publish-safety
       # one is the gate credited with keeping a 28 MB test.apr out of a published

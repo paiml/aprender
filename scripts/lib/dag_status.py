@@ -28,7 +28,9 @@ def receipt_path(root: str, row: dict):
 
 def _leading_front_matter(path):
     """The lines inside the FIRST `---` block, or None when the file does not open with one."""
-    with open(path, encoding="utf-8") as f:
+    # newline="": a CRLF receipt keeps its \r, so `---\r` is NOT a front-matter fence — exactly
+    # what scripts/check_receipt_complete.sh sees (head -n1 / awk keep the \r)
+    with open(path, encoding="utf-8", newline="") as f:
         lines = f.read().split("\n")
     if not lines or lines[0] != "---":
         return None
@@ -44,7 +46,7 @@ def _marker_value(front_matter) -> str:
     for line in front_matter or []:
         m = _STATUS.match(line)
         if m:
-            v = m.group(1).strip().strip("\"'")
+            v = re.sub(r"[\s\"']", "", m.group(1))   # awk: gsub(/[[:space:]"']/, "") — anywhere, not only the edges
             return v if v in ("complete", "partial") else "none"
     return "none"
 

@@ -233,12 +233,7 @@ check_cli_command_count() {
     echo "FAIL FALSIFY-README-003 cli_command_count: README lacks '**K** CLI commands' claim" >&2
     return 1
   fi
-  if [[ "$claimed" -gt "$measured" || ( "$EXACT" = 1 && "$claimed" -ne "$measured" ) ]]; then
-    echo "FAIL FALSIFY-README-003 cli_command_count: README claims $claimed," \
-         "contracts/apr-cli-commands-v1.yaml lists $measured commands" >&2
-    return 1
-  fi
-  echo "PASS FALSIFY-README-003 cli_command_count: $measured"
+  compare_count FALSIFY-README-003 cli_command_count "$claimed" "$measured" "contracts/apr-cli-commands-v1.yaml"
 }
 
 check_cookbook_link() {

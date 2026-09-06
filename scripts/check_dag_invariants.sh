@@ -146,6 +146,8 @@ PY
     mut d7c 'rows["R-4"]["pmat_id"] = "PMAT-8"; rows["R-4"]["status"] = "complete"';    row D7 1 "typed status: complete over a receipt that says partial" "$TD/d7c.yaml"
     mut d7d 'del rows["R-4"]["status"]; rows["R-4"]["pmat_id"] = "PMAT-7"; rows["R-4"]["expiry"] = "2026-09-01"'; row D7 0 "no typed status: a complete receipt makes a past-expiry row NOT expired (derived)" "$TD/d7d.yaml"
     if grep -q 'expired' "$TD/out.$n"; then printf 'FAIL  row %-2s D7     the complete receipt was not read: the row still reports as expired\n' "$n"; fails=1; fi
+    printf -- '---\r\nstatus: complete\r\n---\r\n' > "$TD/root/docs/audits/impl-PMAT-9-receipt.md"
+    mut d7e 'rows["R-4"]["pmat_id"] = "PMAT-9"; rows["R-4"]["status"] = "complete"';    row D7 1 "a CRLF receipt is no front matter for bash (head -n1 keeps the CR) and none for python too: typed complete is RED" "$TD/d7e.yaml"
     printf '%s/%s rows\n' "$((n - red))" "$n"
     [ "$red" = 0 ] || exit 1
     exit 0
