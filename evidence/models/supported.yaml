@@ -174,3 +174,8 @@ models:
   - book/src/examples/qwen3.5-hybrid-attention.md:7
   - book/src/examples/qwen3.5-hybrid-attention.md:130
   - book/src/ml-fundamentals/fine-tuning.md:34
+- name: qwen9-99b
+  family: qwen9
+  size: 99b
+  cited_by_count: 0
+  cited_by: []
