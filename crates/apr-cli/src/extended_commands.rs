@@ -324,6 +324,16 @@ pub enum ExtendedCommands {
         /// Assert parity (exit non-zero on divergence)
         #[arg(long)]
         assert: bool,
+        /// L0-1b: per-op table — every stage of every layer, CPU vs GPU, over every
+        /// position; names the first diverging op. Exit 0 with the table.
+        #[arg(long)]
+        per_op: bool,
+        /// Where --per-op writes the two APRT trees (default: a temp dir)
+        #[arg(long, value_name = "DIR")]
+        out: Option<PathBuf>,
+        /// Cosine threshold for --per-op (basis: evidence/parity/thresholds.yaml)
+        #[arg(long, default_value_t = 0.98)]
+        threshold: f32,
     },
     /// Model-to-PTX source mapping (Mieruka: make GPU kernel dispatch visible)
     #[command(name = "ptx-map")]

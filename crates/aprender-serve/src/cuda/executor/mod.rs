@@ -274,6 +274,7 @@ mod layers;
 mod q4k;
 mod q_basic;
 mod quantized;
+mod stage_dump;
 mod weights;
 mod workspace;
 

@@ -148,6 +148,28 @@ impl ParityGateRecord {
         Self { status: "skipped", cosine: None, positions: 0, threshold: PARITY_GATE_COSINE_MIN, basis: "SKIP_PARITY_GATE override — every receipt of this run is INVALID-CORRECTNESS (REG-15)" }
     }
 
+    /// `apr parity --per-op` (L0-1b): the table is the verdict, so the model is
+    /// admitted without the one-token gate — an INTERNAL bypass, recorded here.
+    #[must_use]
+    pub fn skipped_for_diagnosis() -> Self {
+        Self {
+            status: "skipped",
+            cosine: None,
+            positions: 0,
+            threshold: PARITY_GATE_COSINE_MIN,
+            basis: "apr parity --per-op: internal bypass — the per-op table is the verdict (never SKIP_PARITY_GATE)",
+        }
+    }
+    /// The load-time skip decision: the `SKIP_PARITY_GATE` operator override, or
+    /// the diagnostic command's internal bypass; `None` means the gate runs.
+    #[must_use]
+    pub fn load_time_skip() -> Option<Self> {
+        if std::env::var("SKIP_PARITY_GATE").as_deref() == Ok("1") {
+            return Some(Self::skipped());
+        }
+        crate::inference_trace::gpu_stage_dump::per_op_tap::gate_bypass_armed()
+            .then(Self::skipped_for_diagnosis)
+    }
     /// The gate ran and passed at `cosine`.
     #[must_use]
     pub fn passed(cosine: f32) -> Self {
@@ -403,11 +425,8 @@ impl OwnedQuantizedModelCuda {
         // is exercised by `qwen3_moe_gpu_parity.rs` which uses the
         // MoE forward methods directly, bypassing the dense path
         // this gate runs.
-        let skip_gate = std::env::var("SKIP_PARITY_GATE")
-            .map(|v| v == "1")
-            .unwrap_or(false);
-
-        self = self.admit_by_parity_gate(skip_gate)?;
+        let skip = ParityGateRecord::load_time_skip();
+        self = self.admit_by_parity_gate(skip)?;
 
         // §9 #7: the ONE snapshot that makes preload's VRAM cost accountable.
         // `memory_info` was taken before `init_kv_cache_gpu`, weight upload and

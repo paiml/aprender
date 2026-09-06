@@ -129,6 +129,8 @@ pub(crate) mod parity;
 /// `apr_cli::parity_admission` (see `lib.rs`) so `tests/reg15_admission.rs`
 /// can exercise it without reaching into the private `commands` tree.
 pub(crate) mod parity_admission;
+pub(crate) mod parity_per_op;
+pub(crate) mod parity_per_op_table;
 pub(crate) mod pipeline;
 pub(crate) mod png_encode;
 pub(crate) mod ppl;
