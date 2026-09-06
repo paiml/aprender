@@ -1,0 +1,170 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# apr-parity-per-op-v1 — `apr parity --per-op`: the per-op CPU-vs-GPU table
+# names the first diverging op (PP-066 row L0-1b, #2971, PMAT-1070)
+#
+# WHAT IT GOVERNS
+#   The instrument that turns "the 1.5B diverges (cosine 0.9508)" into a named
+#   (stage, layer): the CPU reference forward (`forward_single_with_cache`, the
+#   load-time gate's own comparator) and the GPU-resident forward each write
+#   every SaveTensorStage they compute, per position, as APRT files; the two
+#   trees are compared file by file; rows are aggregated in forward order; the
+#   first row under the cosine threshold is named. The table is the verdict:
+#   the command exits 0 with the table, and the load-time admission gate is
+#   bypassed INTERNALLY (recorded on the model as `skipped` with a basis naming
+#   this command) — never through SKIP_PARITY_GATE.
+#
+# PROOF LADDER, STATED HONESTLY
+#   * L1 — the instrument exists: crates/apr-cli/src/commands/parity_per_op.rs
+#          (driver, cuda) + parity_per_op_table.rs (pure aggregation);
+#          crates/aprender-serve/src/inference_trace/gpu_stage_dump/per_op_tap.rs
+#          (thread-local CPU tap, GPU dump config, gate bypass);
+#          crates/aprender-serve/src/cuda/executor/stage_dump.rs (device dump).
+#   * L2 — falsification MEASURED: unit tests (table order + first-divergence,
+#          tap writes only the selected stage, bypass is thread-local); the live
+#          twin on lambda 2026-09-06: 1.5B → `post_ffn_residual layer 26,
+#          0.660150 @pos 0`, 7B → no diverging op, 78 positions each
+#          (docs/audits/l0-1b-arms.md). Decomposition of the reference forward
+#          verified bitwise: 24,258 CPU dump files identical before/after.
+#   * L3/L4 — NOT APPLICABLE: a diagnostic over two dump trees, not a kernel.
+# ─────────────────────────────────────────────────────────────────────────────
+name: apr-parity-per-op
+version: "1.0.0"
+scope: >
+  `apr parity <gguf> --per-op [--out DIR] [--threshold T] [--json]` and the
+  two taps it arms. Out of scope: the parity threshold's value (I4: basis in
+  evidence/parity/thresholds.yaml, 0.98 [U]) and the fix the table points at
+  (L0-1b step 2).
+status: active
+
+metadata:
+  kind: pattern     # a diagnostic contract over dump trees, not a math kernel.
+                    # Set EXPLICITLY so `pv validate`'s `kernel` default never
+                    # silently applies.
+  version: "1.0.0"
+  created: '2026-09-06'
+  last_modified: '2026-09-06'
+  author: PAIML Engineering
+  references:
+    - 'crates/apr-cli/src/commands/parity_per_op.rs — the driver (cuda); non-cuda builds return FeatureDisabled'
+    - 'crates/apr-cli/src/commands/parity_per_op_table.rs — cosine, max_abs, forward order, first_divergence (unit-tested, feature-free)'
+    - 'crates/aprender-serve/src/inference_trace/gpu_stage_dump/per_op_tap.rs — CPU tap, GPU dump config, gate bypass (thread-local)'
+    - 'crates/aprender-serve/src/cuda/executor/stage_dump.rs — CudaExecutor::dump_stage (sync every stream, copy, APRT)'
+    - 'docs/audits/l0-1b-arms.md — the arms table, the per-op table and the float64 probe (2026-09-06, lambda)'
+    - 'PP-066 DAG row L0-1b, issue #2971, epic #2873'
+  description: >
+    For every prompt position the CPU reference and the GPU-resident forward
+    each emit every stage they compute as `<dir>/{cpu,gpu}/pos-NNNN/[layer-N/]
+    <stage>.bin`; stages present on both sides are paired, cosine and max|Δ|
+    are aggregated per (stage, layer) across positions, rows are ordered
+    embedding → per-layer stages → final_norm → lm_head, and the first row
+    whose min cosine is under the threshold is printed as the diverging op.
+
+equations:
+  the_two_trees_come_from_the_same_forwards_the_gate_compares:
+    formula: |
+      cpu(pos) = tap(forward_single_with_cache)        # the load-time gate's comparator
+      gpu(pos) = dump(forward_gpu_resident, SKIP_CUDA_GRAPH=1)   # non-graphed, printed as an override
+      lm_head row min cosine == the gate's cosine on the same model (0.9508 on the 1.5B)
+    domain: 'a GGUF model on a CUDA host, a prompt of P >= 64 positions'
+    codomain: 'two APRT trees, one file per (side, position, stage[, layer])'
+    invariants:
+    - 'THE TABLE CLOSES THE LOOP: the lm_head row reproduces the number the gate refuses on (measured 0.950827 vs 0.9508).'
+    - 'A STAGE ONE SIDE NEVER EMITS IS LISTED, NOT COMPARED (qkv_matmul is CPU-only; ffn_up is emitted by neither fused path).'
+    preconditions:
+    - 'the model loads on CPU and CUDA; the bypass admits it without the one-token gate'
+    postconditions:
+    - 'exit 0 with the table whether or not a row is red'
+
+  first_divergence_is_the_first_row_under_threshold_in_forward_order:
+    formula: |
+      rows sorted by key(stage, layer) = embedding < (layer, LAYER_ORDER index) < final_norm < lm_head
+      first = min_{forward order} { row : min_cosine(row) < threshold }
+    domain: 'aggregated rows'
+    codomain: 'Option<row>'
+    invariants:
+    - 'DOWNSTREAM RED IS NOT THE ANSWER: with layer-3 ffn_swigl and lm_head both red, the named op is ffn_swigl@3 (unit test).'
+    - 'A LENGTH MISMATCH SCORES COSINE 0, NEVER A PASS.'
+    preconditions: []
+    postconditions:
+    - 'a clean table names nothing and says so'
+
+  the_bypass_is_internal_and_recorded:
+    formula: |
+      ParityGateRecord::load_time_skip() = SKIP_PARITY_GATE=1  ⇒ skipped()            # operator override, printed
+                                         | gate_bypass_armed() ⇒ skipped_for_diagnosis()   # this command, printed
+                                         | else                ⇒ None (the gate runs)
+      gate_bypass_armed() is thread-local and false in every other process
+    domain: 'OwnedQuantizedModelCuda construction'
+    codomain: 'ParityGateRecord'
+    invariants:
+    - 'NEVER SILENT: both skips carry a basis string naming their cause; the diagnosis basis names this command.'
+    - 'NEVER LEAKS (unit test): arming on another thread does not arm the caller.'
+    preconditions: []
+    postconditions:
+    - 'the record is printed by the driver before the first forward'
+
+proof_obligations:
+  - id: POP-OB-001
+    statement: "The per-op rows aggregate cosine/max|Δ| per (stage, layer) in forward order and name the first row under threshold, never a downstream one."
+    discharged_by: falsification_tests[0]
+  - id: POP-OB-002
+    statement: "The CPU tap writes exactly the stages the armed plan selects, unarmed it writes and computes nothing, and the gate bypass is thread-local."
+    discharged_by: falsification_tests[1]
+  - id: POP-OB-003
+    statement: "On the release host the 1.5B table names an op and the 7B table names none; the lm_head row equals the gate's cosine."
+    discharged_by: falsification_tests[2]
+
+falsification_tests:
+
+  - id: POP-F-001
+    rule: forward order and first divergence
+    prediction: >-
+      rows_come_out_in_forward_order_and_the_first_red_op_is_named names
+      ffn_swigl@3 (position 5, 2 positions) and marks 2 rows RED; a clean
+      table names nothing; cosine of mismatched lengths is 0.
+    test: 'cargo test -p apr-cli --lib parity_per_op_table'
+    if_fails: >-
+      the instrument names lm_head for every defect and the bisection never
+      moves upstream
+    mutation: >-
+      make first_divergence scan rows in reverse; the ordering test must
+      turn RED naming lm_head.
+
+  - id: POP-F-002
+    rule: the taps and the bypass
+    prediction: >-
+      armed_tap_writes_the_selected_stage_and_reads_back writes
+      layer-3/ffn_swigl.bin and lm_head.bin only; unarmed_tap_writes_nothing
+      leaves no file and runs no side computation; gate_bypass_is_off_by_default
+      _and_thread_local.
+    test: 'cargo test -p aprender-serve --lib per_op_tap'
+    if_fails: >-
+      a production forward pays for dumps it never asked for, or a diagnostic
+      bypass admits a model in an unrelated thread
+    mutation: >-
+      make tap ignore should_save; the armed test must turn RED on the
+      attn_norm file that must not exist.
+
+  - id: POP-F-003
+    rule: the live twin on the release host (fleet-verify, not workspace-test)
+    prediction: >-
+      `apr parity <1.5B> --per-op --json` on lambda: first_divergence is
+      non-null with layer 26 post_ffn_residual and rows[lm_head].min_cosine
+      within 1e-3 of the gate's 0.9508; on the 7B first_divergence is null.
+    test: 'bash .pr/L0-1b/accept.sh'
+    if_fails: >-
+      the table no longer reproduces the defect it was built to name — either
+      the fix landed (then the 1.5B row must flip GREEN with it) or the
+      instrument drifted
+    mutation: >-
+      after step 2 lands, revert the CPU quantisation change: the 1.5B table
+      must name layer 26 again while the 7B stays clean.
+
+non_goals:
+  - "Deciding which side is right — the float64 probe in docs/audits/l0-1b-arms.md does that; this contract only guarantees the table is faithful to the two forwards."
+  - "The fix (L0-1b step 2)."
+
+binding_registry:
+  instrument: crates/apr-cli/src/commands/parity_per_op.rs
+  acceptance: .pr/L0-1b/accept.sh
+  issue: "https://github.com/paiml/aprender/issues/2971"
