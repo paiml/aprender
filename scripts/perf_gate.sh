@@ -658,6 +658,22 @@ def t_lower(values):
 WIRE = {"agg": "aggregate_tok_per_sec", "dec": "decode_tok_per_sec",
         "prefill": "prefill_tok_per_sec"}
 
+# THE ARM MUST SAY WHEN IT MEASURED NOTHING (#2830). c=1 is the denominator, so
+# a receipt whose only band is c=1 walks every print below and fires none of
+# them: no c>1 band to report scaling on, and (when the baseline itself seeds
+# nothing the configured metrics can match) no seeded cell to ratchet either.
+# Silence used to read as "nothing failed" and the gate said VERDICT PASS. Every
+# line this arm emits now goes through `say`, so a genuinely empty run is
+# detectable and is reported -- never passed -- instead of vanishing.
+emitted = False
+
+
+def say(line):
+    global emitted
+    emitted = True
+    print(line)
+
+
 bands = r.get("bands") or []
 base = next((b.get("aggregate_tok_per_sec") for b in bands
              if b.get("concurrency") == 1 and b.get("aggregate_tok_per_sec")), None)
@@ -679,14 +695,14 @@ for b in bands:
     if se is None and base and c > 1 and b.get("aggregate_tok_per_sec") is not None:
         se = (b["aggregate_tok_per_sec"] / base) / c
     if se is not None:
-        print("REPORT ArmA c=%s scaling_efficiency=%.4f (reported, never ratcheted)" % (c, se))
+        say("REPORT ArmA c=%s scaling_efficiency=%.4f (reported, never ratcheted)" % (c, se))
     if b.get("overhead_share") is not None:
-        print("REPORT ArmA c=%s overhead_share=%.4f (reported, never ratcheted)" % (c, b["overhead_share"]))
+        say("REPORT ArmA c=%s overhead_share=%.4f (reported, never ratcheted)" % (c, b["overhead_share"]))
 
 status = bl.get("status")
 if status != "MEASURED":
-    print("REPORT ArmA %s/%s baseline is %r -- a ratchet needs a measurement to ratchet FROM; "
-          "nothing is gated until a conformant receipt seeds this cell" % (host, wl, status))
+    say("REPORT ArmA %s/%s baseline is %r -- a ratchet needs a measurement to ratchet FROM; "
+        "nothing is gated until a conformant receipt seeds this cell" % (host, wl, status))
     sys.exit(0)
 seed_bands = bl.get("bands") or {}
 fail = False
@@ -698,24 +714,33 @@ for name in sorted(metrics):
         if seed is None:
             continue
         if not got:
-            print("FAIL ArmA c=%d %s absent while the baseline seeds it at %s" % (c, name, seed))
+            say("FAIL ArmA c=%d %s absent while the baseline seeds it at %s" % (c, name, seed))
             fail = True
             continue
         n = len(got)
         lcb = t_lower(got)
         if n_min is not None and n < n_min:
-            print("REPORT ArmA c=%d %s n=%d < n_min=%s: reporting only (point %.4f vs seed %s)"
-                  % (c, name, n, n_min, sum(got) / n, seed))
+            say("REPORT ArmA c=%d %s n=%d < n_min=%s: reporting only (point %.4f vs seed %s)"
+                % (c, name, n, n_min, sum(got) / n, seed))
             continue
         if lcb is None:
-            print("REPORT ArmA c=%d %s n=%d: no lower bound is computable" % (c, name, n))
+            say("REPORT ArmA c=%d %s n=%d: no lower bound is computable" % (c, name, n))
             continue
         if lcb < seed:
-            print("FAIL ArmA c=%d %s lcb95=%.4f < baseline %s (n=%d) -- a ratchet moves one way"
-                  % (c, name, lcb, seed, n))
+            say("FAIL ArmA c=%d %s lcb95=%.4f < baseline %s (n=%d) -- a ratchet moves one way"
+                % (c, name, lcb, seed, n))
             fail = True
         else:
-            print("PASS ArmA c=%d %s lcb95=%.4f >= baseline %s (n=%d)" % (c, name, lcb, seed, n))
+            say("PASS ArmA c=%d %s lcb95=%.4f >= baseline %s (n=%d)" % (c, name, lcb, seed, n))
+if not emitted:
+    # Every branch above ran and none of them had anything to say -- the
+    # commonest cause is a c=1-only receipt (no c>1 band to compute scaling
+    # from) paired with a baseline that measured no cell the matrix's metrics
+    # config names. An arm with nothing to report is a REPORT, and a REPORT is
+    # never spent as a PASS: fail closed so the gate's overall VERDICT can only
+    # read FAIL, never PASS, on a run this arm never actually measured.
+    print("REPORT ArmA scaling: c=1 only, no scaling measured")
+    sys.exit(1)
 sys.exit(1 if fail else 0)
 PY_A
 }
@@ -1632,8 +1657,14 @@ r["bands"]=reps+rest
   # band (MX_C1SILENT), the arm used to walk every branch, print nothing at
   # all, and exit 0 -- so the gate's own VERDICT line said PASS on a run this
   # arm never actually measured. It must now say so and the run must not read
-  # as PASS.
+  # as PASS. (overhead_share is popped too: it is the c=1 band's own
+  # self-descriptive figure, a v3 producer writes it even on a c=1-only
+  # receipt, and it would otherwise emit a line and mask the exact silence
+  # this row exists to catch.)
   F="$(_mut c1only "$OK3" 'r["bands"]=[b for b in r["bands"] if b["concurrency"] == 1]
+for b in r["bands"]:
+    b.pop("overhead_share", None)
+    b.pop("scaling_efficiency", None)
 r["ladder"]["slots_admitted"]={"apr": 1, "llama": 1}
 r["ladder"]["derived"]=[1]')"
   _row arm_a_c1_only_not_pass      "$F" release W1 lambda "$MX_C1SILENT" fail "REPORT ArmA scaling: c=1 only, no scaling measured"
