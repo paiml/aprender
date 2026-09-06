@@ -1,0 +1,9 @@
+# evidence/parity/thresholds.yaml — the GPU/CPU parity thresholds C14 reads (L0-1, #3017).
+# EVERY threshold carries a basis. 0.98 is the driver's number and is [U] until item 5 of
+# the card measures n >= 5 known-good pairs per model and records the command here.
+schema: apr-parity-thresholds/v1
+min_positions: 64          # basis: I8 / CF-4 (#1864) — any autoregressive gate validates over >= 64 positions
+default:
+  min_cosine: 0.98         # basis: '[U] driver v4 2026-09-06; to be replaced by measured n>=5 per known-good pair (L0-1 item 5)'
+  basis: '[U]'
+models: {}                  # per-model overrides land here with n and the command that measured them
