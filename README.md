@@ -41,7 +41,7 @@ publishing — all backed by YAML provable contracts that fail CI on drift.
 | Metric | Count | Source of truth |
 |-------:|------:|---|
 | Workspace crates | **79** workspace crates | `cargo metadata --no-deps` (NOT `ls crates/` — 4 are `exclude`d, 1 has no Cargo.toml) |
-| Provable contracts | **1811** provable contracts | `find contracts/ -name '*.yaml'` |
+| Provable contracts | **1821** provable contracts | `find contracts/ -name '*.yaml'` |
 | CLI commands | **110** CLI commands | `apr --help` |
 | Book CLI chapters | **112** chapters | `ls book/src/cli/*.md` |
 | Book lib chapters | **71** chapters | `ls book/src/lib/*.md` (parity with `pub mod`) |
@@ -222,7 +222,7 @@ paiml/aprender/
 │   ├── aprender-profile/           # Profiling
 │   ├── aprender-db/ aprender-graph/ aprender-rag/
 │   └── ... (82 crates total)
-├── contracts/                      # 1811 provable YAML contracts
+├── contracts/                      # 1821 provable YAML contracts
 └── book/                           # mdBook documentation
 ```
 
