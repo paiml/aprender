@@ -13,6 +13,36 @@
 //! It previously ran on lambda-vector (RTX 4090, sm_89). That leg is retired:
 //! lambda-labs is the workstation and must never be a CI host (paiml/infra#359).
 //!
+//! ## 2026-09-01: THE FLOOR DID NOT MOVE WITH THE HOST (aprender#2835)
+//!
+//! Retiring the `ada-4090` leg also deleted the predicate that scoped this step to it
+//! (`&& matrix.name == 'ada-4090'`). **Removing a matrix leg re-targets every step
+//! whose predicate named it.** From 2026-08-30 this gate asserted an sm_89 floor on
+//! sm_121 and went red four nights running; before that it reports `skipped` on both
+//! legs, so those four are the first executions it has ever had on this silicon.
+//!
+//! Every number below this line is an sm_89 number. That is now enforced rather than
+//! merely documented: `SILICON_FLOORS` is keyed by compute capability, sm_121 has no
+//! entry, and an uncalibrated silicon produces `UNCALIBRATED-SILICON` — a refusal to
+//! assert a threshold derived on other hardware. It is NOT a pass (that is the
+//! `ada-4090 only` skip that hid this gate for months) and NOT a claim that apr
+//! regressed.
+//!
+//! The failure text was wrong in the same way. At ratio 0.619 it led with "very likely
+//! not decoding on the GPU at all", whose own cited signature is ~0.065 — a diagnosis
+//! its own arithmetic excluded. This file already contained the rule ("a failure
+//! message that confidently names the wrong cause is worse than one that names none");
+//! it had not been applied to the ladder itself. The diagnosis is now conditional on
+//! the measured ratio.
+//!
+//! Whether GB10 is honestly ~0.62x or carries a real sm_121 decode deficit is OPEN
+//! (#2835; #2800 argues the #2786 GB10 shortfall is a real deficit). Those imply
+//! opposite fixes, and this gate must not pick one by accident — which is exactly what
+//! inheriting 0.90 did.
+//!
+//! The unit tests below now DO run in CI: this target was added to `ci.yml`'s beat
+//! chain. The header's own admission that they did not was still true today.
+//!
 //! TWO CLAIMS THAT USED TO SIT HERE WERE FALSE, and both are recorded rather than
 //! quietly deleted:
 //!
@@ -111,16 +141,108 @@
 use std::path::Path;
 use std::process::Command;
 
-/// NO-COLLAPSE FLOOR (mirrors the contract's `beat_threshold`). apr's MEDIAN-OF-7
-/// decode must stay within this factor of ollama's median.
+/// A no-collapse floor is DERIVED ON ONE SILICON AND DOES NOT TRANSFER TO ANOTHER.
 ///
-/// This is NOT a beat threshold. It was 1.10 while the harness believed apr ran
-/// at 1.371x; the three post-#2323 measurements are 1.109 / 1.042 / 1.015, so 1.10
-/// now fails about every other night for a reason the gate cannot fix. 0.90 sits
-/// 12% below the worst observed median — it will not flake — while still catching
-/// the collapse that actually costs users: an F2-rejected GPU path falling to CPU
-/// SIMD measures ratio ~0.065, violating this floor by 14x. See the header.
+/// This table exists because the untransferable thing was transferred. #2740 retired
+/// the `ada-4090` matrix leg — correctly; lambda-vector is the workstation and must
+/// never be a CI host — and in the same commit the beat step lost the predicate that
+/// had scoped it to that leg:
+///
+/// ```text
+/// -  - name: Pillar-4 ... beat (ada-4090 only)
+/// -    if: steps.decide.outputs.proceed == 'true' && matrix.name == 'ada-4090'
+/// +  - name: Pillar-4 ... beat
+/// +    if: steps.decide.outputs.proceed == 'true'
+/// ```
+///
+/// **Removing a matrix leg re-targets every step whose predicate named it.** The
+/// assertion did not move hosts; the host moved out from under the assertion, and a
+/// single global constant had no way to notice. Every number in this file's header is
+/// an sm_89 number — the four measurements, the 1.015 worst median, the ~300 tok/s
+/// incumbent — and since 2026-08-30 the gate has been asserting them against sm_121.
+///
+/// It had never run there before: on 2026-08-29 and earlier the step reports
+/// `skipped` on both matrix legs. So the first four executions in the file's history
+/// are the first four measurements of this silicon, and they are NOT a calibration —
+/// §8's rule is that a threshold comes from samples, never from invention, and four
+/// nights is not a sample set. They are recorded in `GB10_OBSERVED` below as data.
+struct SiliconFloor {
+    /// Compute capability exactly as `nvidia-smi --query-gpu=compute_cap` prints it.
+    compute_cap: &'static str,
+    /// Human name, for the failure message.
+    arch: &'static str,
+    /// apr's median-of-N decode must stay within this factor of ollama's median.
+    floor: f64,
+    /// What the number was derived FROM. A floor with no derivation is an invention.
+    derived_from: &'static str,
+}
+
+/// One entry per silicon this gate has been calibrated on. **Absence is meaningful**
+/// and is handled explicitly — see `UNCALIBRATED` in the assertion below. Adding a
+/// silicon here requires the derivation, not just the number.
+const SILICON_FLOORS: &[SiliconFloor] = &[SiliconFloor {
+    compute_cap: "8.9",
+    arch: "sm_89 (RTX 4090)",
+    floor: 0.90,
+    derived_from: "four measurements 2026-06-15..2026-07-31 on lambda-vector; worst \
+                   observed median 1.015, and 0.90 sits 12% under it so it does not \
+                   flake, while still catching the CPU-SIMD collapse at ratio ~0.065",
+}];
+
+/// The four GB10 executions, recorded as DATA and deliberately not turned into a
+/// floor. ollama is stable within 0.8% across them, so this is a reproducible
+/// measurement of apr on this silicon and not a noisy rig:
+///
+/// ```text
+///   date        apr median-of-7   ollama median   ratio
+///   2026-08-30      105.6             182.3       0.579
+///   2026-08-30      117.9             182.3       0.647
+///   2026-08-31      116.0             181.8       0.638
+///   2026-09-01      112.0             180.9       0.619
+/// ```
+///
+/// Whether that is an honest GB10 number or a real sm_121 decode deficit is OPEN
+/// (aprender#2835, and #2800 argues the GB10 shortfall on #2786 is a real deficit).
+/// The two answers imply opposite fixes — recalibrate, or fix the kernel — and this
+/// gate must not pick one by accident, which is exactly what inheriting 0.90 did.
+const GB10_OBSERVED: &[f64] = &[0.579, 0.647, 0.638, 0.619];
+
+/// Retained as the sm_89 floor's spelling for the contract mirror and the unit test
+/// below. Reading it directly in an assertion is what this fix removes.
 const ENFORCED_THRESHOLD: f64 = 0.90;
+
+/// Below this ratio the CPU-SIMD fallback hypothesis is live (that collapse measures
+/// ~0.065). Above it, offering that hypothesis is naming a cause the measurement
+/// already excludes — which the previous failure message did at 0.619.
+const CPU_FALLBACK_RATIO_CEILING: f64 = 0.20;
+
+/// Look up the floor for a compute capability. `None` means UNCALIBRATED, which is a
+/// distinct outcome from "passes" and from "fails".
+fn floor_for(compute_cap: &str) -> Option<&'static SiliconFloor> {
+    SILICON_FLOORS
+        .iter()
+        .find(|f| f.compute_cap == compute_cap.trim())
+}
+
+/// Ask the driver which silicon this actually is. Never inferred from the runner
+/// label: a label is a claim about provisioning, and this gate has already been
+/// wrong once about which host it was running on.
+fn detect_compute_cap() -> Option<String> {
+    let out = Command::new("nvidia-smi")
+        .args(["--query-gpu=compute_cap", "--format=csv,noheader"])
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let s = String::from_utf8_lossy(&out.stdout);
+    let first = s.lines().next()?.trim().to_string();
+    if first.is_empty() {
+        None
+    } else {
+        Some(first)
+    }
+}
 
 /// Forced token counts for the differential apr measurement (amortizes fixed cost).
 const N_LOW: u32 = 128;
@@ -343,20 +465,172 @@ fn beat_ollama_decode_throughput_speed() {
     // cause was #2323 changing the default Q4K kernel. A failure message that
     // confidently names the wrong cause is worse than one that names none, so this
     // one reports the measurement and points at the checks that discriminate.
+    // THREE OUTCOMES, NOT TWO. A floor belongs to the silicon it was derived on, so
+    // before comparing anything we ask which silicon this is. "No entry" is its own
+    // verdict: not a pass (that is the `ada-4090 only` skip that hid this gate for
+    // months) and not a failure against a number nobody derived here (that is what
+    // has been happening since 2026-08-30).
+    let cap = detect_compute_cap();
+    let cap_str = cap
+        .clone()
+        .unwrap_or_else(|| "<nvidia-smi did not answer>".to_string());
+
+    let Some(known) = cap.as_deref().and_then(floor_for) else {
+        panic!(
+            "UNCALIBRATED-SILICON beat-ollama-decode-throughput: this host reports compute_cap \
+             {cap_str}, which has NO calibrated no-collapse floor in SILICON_FLOORS. Measured \
+             here: apr median-of-{APR_MEDIAN_N} {apr_med:.1} tok/s vs ollama median \
+             {ollama_med:.1} tok/s (ratio_median {ratio_med:.3}).\n\n\
+             This is NOT a statement that apr regressed. It is a refusal to assert a threshold \
+             derived on other hardware. Every number in this file's header - the four \
+             measurements, the 1.015 worst median, the ~300 tok/s incumbent - is sm_89, and \
+             #2740 re-targeted this step to a new silicon by deleting the matrix leg its \
+             predicate named. Removing a matrix leg re-targets every step whose predicate \
+             named it.\n\n\
+             To resolve, do ONE of: (a) add a SILICON_FLOORS entry for {cap_str} WITH its \
+             derivation - samples, not a number picked to make this green; or (b) restore a \
+             host predicate so this step runs only where it is calibrated; or (c) if the \
+             deficit is real, fix it and say so - #2800 argues the GB10 shortfall on #2786 is \
+             a real deficit, and GB10_OBSERVED in this file records {n_obs} nights at \
+             {obs_lo:.3}-{obs_hi:.3} with ollama stable within 0.8%. (a) and (c) are opposite \
+             conclusions; this gate must not pick one by accident. See aprender#2835. \
+             (contract beat-ollama-decode-throughput-speed-v1.yaml)",
+            n_obs = GB10_OBSERVED.len(),
+            obs_lo = GB10_OBSERVED.iter().copied().fold(f64::INFINITY, f64::min),
+            obs_hi = GB10_OBSERVED
+                .iter()
+                .copied()
+                .fold(f64::NEG_INFINITY, f64::max),
+        );
+    };
+
+    // The diagnosis is now CONDITIONAL on the measurement, because the previous one was
+    // not. It said "at this depth apr is very likely not decoding on the GPU at all" and
+    // offered the CPU-SIMD fallback first - while its own numbers read 112 tok/s against
+    // a fallback that measures ~20. A failure message that names a cause its own
+    // arithmetic excludes is worse than one that names none; that lesson is three
+    // paragraphs up in this file and was not applied to the ladder itself.
+    let diagnosis = if ratio_med < CPU_FALLBACK_RATIO_CEILING {
+        "At this depth apr is very likely not decoding on the GPU at all. Check, in order: \
+         (1) is the F2 first-token gate REJECTING the CUDA path (look for 'GPU diverges from \
+         CPU' / cosine < 0.95)? A rejected CUDA path falls to wgpu, then to CPU SIMD, and \
+         measures ~20 tok/s - ratio ~0.065. (2) is APR_BIN built --features cuda? (3) is \
+         HW_DP4A_Q4K set, re-selecting the degraded kernel #2323 removed as the default?"
+    } else {
+        "This ratio is well ABOVE the CPU-SIMD fallback band (~0.065), so apr IS decoding on \
+         the GPU and the CPU-fallback hypotheses do not apply - do not spend time on them. \
+         This is a real throughput deficit against the incumbent on calibrated silicon: \
+         compare the kernel actually selected (apr trace / APR_BIN --features cuda) against \
+         the one this floor was derived under."
+    };
+
     assert!(
-        ratio_med >= ENFORCED_THRESHOLD,
-        "DECODE-COLLAPSE beat-ollama-decode-throughput: apr median-of-{APR_MEDIAN_N} decode \
-         {apr_med:.1} tok/s is below {ENFORCED_THRESHOLD:.2}x ollama's median {ollama_med:.1} tok/s \
-         (ratio_median {ratio_med:.3}). This floor is NOT a beat threshold - at this depth apr is \
-         very likely not decoding on the GPU at all. Check, in order: (1) is the F2 first-token \
-         gate REJECTING the CUDA path (look for 'GPU diverges from CPU' / cosine < 0.95)? A \
-         rejected CUDA path falls to wgpu, then to CPU SIMD, and measures ~20 tok/s - ratio ~0.065. \
-         (2) is APR_BIN built --features cuda? (3) is HW_DP4A_Q4K set, re-selecting the degraded \
-         kernel #2323 removed as the default? (contract beat-ollama-decode-throughput-speed-v1.yaml)"
+        ratio_med >= known.floor,
+        "DECODE-COLLAPSE beat-ollama-decode-throughput on {arch} (compute_cap {cap_str}): apr \
+         median-of-{APR_MEDIAN_N} decode {apr_med:.1} tok/s is below {floor:.2}x ollama's median \
+         {ollama_med:.1} tok/s (ratio_median {ratio_med:.3}). This floor is NOT a beat threshold; \
+         it was derived as: {derived}. {diagnosis} \
+         (contract beat-ollama-decode-throughput-speed-v1.yaml)",
+        arch = known.arch,
+        floor = known.floor,
+        derived = known.derived_from,
     );
 }
 
 // --- Pure-CPU unit tests for the parsing helpers (these DO run in normal CI) ---
+
+#[test]
+fn sm_89_is_calibrated_and_carries_its_derivation() {
+    let f = floor_for("8.9").expect("sm_89 must stay calibrated; it is the only derived floor");
+    assert!(
+        (f.floor - ENFORCED_THRESHOLD).abs() < f64::EPSILON,
+        "the sm_89 entry and ENFORCED_THRESHOLD must not drift apart"
+    );
+    assert!(
+        !f.derived_from.is_empty(),
+        "a floor with no derivation is an invention, not a calibration"
+    );
+}
+
+#[test]
+fn every_floor_states_what_it_was_derived_from() {
+    // The rule that makes this table different from a constant. A number may be added
+    // here only with the samples behind it; that is what stops the next silicon
+    // inheriting a figure nobody measured on it.
+    for f in SILICON_FLOORS {
+        assert!(
+            !f.derived_from.is_empty(),
+            "SILICON_FLOORS entry {} has no derivation",
+            f.arch
+        );
+        assert!(
+            f.floor > 0.0 && f.floor < 2.0,
+            "SILICON_FLOORS entry {} has an implausible floor {}",
+            f.arch,
+            f.floor
+        );
+    }
+}
+
+#[test]
+fn gb10_is_deliberately_uncalibrated() {
+    // GB10 reports compute_cap 12.1. If someone adds an entry for it, this test must be
+    // the thing that makes them justify it — deleting this test is the visible act.
+    assert!(
+        floor_for("12.1").is_none(),
+        "GB10/sm_121 has no derived floor. Four nights is data, not a calibration (S8: a \
+         threshold comes from samples, never from invention). If you are adding one, bring \
+         the derivation and update GB10_OBSERVED and aprender#2835."
+    );
+    assert!(
+        floor_for("<nvidia-smi did not answer>").is_none(),
+        "an unanswered probe must never resolve to a floor"
+    );
+}
+
+#[test]
+fn inheriting_the_sm_89_floor_would_have_failed_every_gb10_night() {
+    // This is the regression the calibration table exists to prevent, stated as an
+    // assertion rather than as a comment. Every recorded GB10 night violates the sm_89
+    // floor — which is precisely why asserting it there produced four red nights that
+    // read as an apr regression rather than as a re-targeted gate.
+    assert!(
+        !GB10_OBSERVED.is_empty(),
+        "the observations must not be emptied"
+    );
+    for r in GB10_OBSERVED {
+        assert!(
+            *r < ENFORCED_THRESHOLD,
+            "GB10 observation {r} is at or above the sm_89 floor; if that is now true the \
+             premise of aprender#2835 has changed and this file needs re-reading"
+        );
+    }
+}
+
+#[test]
+fn the_cpu_fallback_diagnosis_does_not_fire_on_the_observed_gb10_band() {
+    // The message defect: at ratio 0.619 the old text led with "very likely not decoding
+    // on the GPU at all", whose own cited signature is ~0.065. The ceiling must sit
+    // ABOVE the collapse band and BELOW every observed GB10 ratio, or the diagnosis is
+    // wrong in one direction or the other.
+    const DOCUMENTED_CPU_COLLAPSE_RATIO: f64 = 0.065;
+    // A const block, so this half is a COMPILE failure rather than a test failure: the
+    // ceiling dropping below the collapse it exists to catch should not be something you
+    // can build and ship while the suite happens not to run.
+    const {
+        assert!(
+            CPU_FALLBACK_RATIO_CEILING > DOCUMENTED_CPU_COLLAPSE_RATIO,
+            "the ceiling must still admit the collapse it was written to catch"
+        );
+    }
+    for r in GB10_OBSERVED {
+        assert!(
+            *r > CPU_FALLBACK_RATIO_CEILING,
+            "observed GB10 ratio {r} would trigger the CPU-fallback diagnosis, which its own \
+             magnitude excludes"
+        );
+    }
+}
 
 #[test]
 fn parse_generated_extracts_tokens_and_ms() {

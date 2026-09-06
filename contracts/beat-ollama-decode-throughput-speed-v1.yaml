@@ -35,6 +35,18 @@ metadata:
     claim a GPU decode win over ollama on sm_89. Still a MANUAL/GPU gate
     (#[ignore], NVIDIA host only).
 
+    2026-09-01 (aprender#2835): THE 0.90 FLOOR IS SCOPED TO sm_89 AND DOES NOT
+    TRANSFER. aprender#2740 retired the ada-4090 matrix leg and, in the same
+    commit, deleted the `matrix.name == 'ada-4090'` predicate that scoped this
+    step to it - so from 2026-08-30 the gate ran on gx10 (GB10, sm_121) and
+    asserted an sm_89 number there, red four nights. Removing a matrix leg
+    re-targets every step whose predicate named it. The harness now keys the
+    floor by compute capability (SILICON_FLOORS); sm_121 has NO entry and yields
+    UNCALIBRATED-SILICON rather than a pass or a foreign threshold. Four GB10
+    nights are recorded as data (0.579/0.647/0.638/0.619, ollama stable within
+    0.8%) and are explicitly NOT a calibration: a threshold comes from samples,
+    never from invention.
+
     SCOPE: STEADY-STATE GPU DECODE only — marginal token-generation rate with
     model load + FP8-weight-cache build + CUDA-graph capture + prefill amortized
     out. apr's one-shot CLI has a large (~3.4-3.9s) fixed per-invocation startup
