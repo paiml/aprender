@@ -1,0 +1,253 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "apr-devices-v1.schema.json",
+  "title": "apr devices --json (PP-066 R-0a)",
+  "type": "object",
+  "required": [
+    "schema",
+    "discovered_at_unix",
+    "source",
+    "reserve_bytes",
+    "reserve_basis",
+    "entries",
+    "selected"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema": {
+      "const": "apr-devices-v1"
+    },
+    "discovered_at_unix": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "source": {
+      "type": "string",
+      "pattern": "^(machine|fixture\\(.+\\))$"
+    },
+    "reserve_bytes": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "reserve_basis": {
+      "type": "string",
+      "minLength": 1
+    },
+    "entries": {
+      "type": "array",
+      "minItems": 5,
+      "items": {
+        "$ref": "#/definitions/entry"
+      }
+    },
+    "selected": {
+      "type": "object",
+      "required": [
+        "kind",
+        "device_index",
+        "device_uid",
+        "reason"
+      ],
+      "properties": {
+        "kind": {
+          "$ref": "#/definitions/kind"
+        },
+        "device_index": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "device_uid": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  },
+  "definitions": {
+    "kind": {
+      "enum": [
+        "cpu",
+        "cuda",
+        "wgpu",
+        "metal",
+        "hip"
+      ]
+    },
+    "entry": {
+      "type": "object",
+      "required": [
+        "kind",
+        "api",
+        "device_index",
+        "device_uid",
+        "device_name",
+        "vendor",
+        "vendor_id",
+        "device_type",
+        "mem_total",
+        "mem_free",
+        "mem_kind",
+        "compute_class",
+        "caps",
+        "source",
+        "status",
+        "transport"
+      ],
+      "properties": {
+        "kind": {
+          "$ref": "#/definitions/kind"
+        },
+        "api": {
+          "enum": [
+            "cpu",
+            "cuda-driver",
+            "wgpu",
+            "metal",
+            "hip"
+          ]
+        },
+        "device_index": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "device_uid": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "device_name": {
+          "type": "string"
+        },
+        "vendor": {
+          "type": "string"
+        },
+        "vendor_id": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "device_type": {
+          "type": "string"
+        },
+        "mem_total": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "mem_free": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "mem_kind": {
+          "type": "object",
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "enum": [
+                "discrete",
+                "unified"
+              ]
+            },
+            "working_set_limit": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          }
+        },
+        "compute_class": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "caps": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "source": {
+          "type": "object",
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "enum": [
+                "compiled-in",
+                "dlopen",
+                "not-compiled",
+                "fixture"
+              ]
+            },
+            "detail": {
+              "type": "string"
+            }
+          }
+        },
+        "status": {
+          "type": "object",
+          "required": [
+            "state"
+          ],
+          "properties": {
+            "state": {
+              "enum": [
+                "ready",
+                "unavailable"
+              ]
+            },
+            "kind": {
+              "enum": [
+                "not-compiled",
+                "driver-not-found",
+                "no-device",
+                "no-backend",
+                "probe-failed",
+                "reserve-exceeds-free"
+              ]
+            }
+          },
+          "if": {
+            "properties": {
+              "state": {
+                "const": "unavailable"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "state",
+              "kind"
+            ]
+          }
+        },
+        "transport": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    }
+  }
+}

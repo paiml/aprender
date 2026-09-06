@@ -631,6 +631,13 @@ pub enum ExtendedCommands {
         #[arg(long)]
         slice: Option<String>,
     },
+    /// Backend discovery: probe, enumerate, print — every kind is a line (PP-066 R-0)
+    #[cfg(feature = "inference")]
+    Devices {
+        /// Print the apr-devices-v1 JSON document
+        #[arg(long)]
+        json: bool,
+    },
     /// Model architecture tree view
     Tree {
         /// Path to .apr model file

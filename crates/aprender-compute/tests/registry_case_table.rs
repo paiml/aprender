@@ -232,3 +232,38 @@ fn json_carries_the_schema_top_level_keys() {
         "at least the five kind lines"
     );
 }
+
+/// FX-7 through two APIs (found by the CLI catalogue on the one-cuda fixture):
+/// the cuda-driver entry was refused for memory, but its wgpu twin reports no
+/// free memory and stayed Ready — so the selection slid onto the very card that
+/// was just refused. A refusal propagates to every entry sharing the
+/// `device_uid`, with the figure the sibling measured.
+#[test]
+fn a_reserve_refusal_propagates_to_the_devices_other_api_entries() {
+    let cuda = MockBackendFactory::new(
+        BackendKind::Cuda,
+        vec![ready(BackendKind::Cuda, Api::CudaDriver, 0, "GPU A", "nvidia-gpu-a", 1 << 30)],
+    );
+    let wgpu = MockBackendFactory::new(
+        BackendKind::Wgpu,
+        vec![BackendEntry {
+            mem_free: None,
+            mem_total: None,
+            transport: Some("vulkan".to_string()),
+            ..ready(BackendKind::Wgpu, Api::Wgpu, 0, "GPU A", "nvidia-gpu-a", 0)
+        }],
+    );
+    let f: Vec<Box<dyn BackendFactory>> = vec![Box::new(cuda), Box::new(wgpu)];
+    let reg = BackendRegistry::discover_with(&f, Some(999 << 30));
+    let wgpu_e = reg.entries.iter().find(|e| e.kind == BackendKind::Wgpu).expect("wgpu line");
+    assert!(
+        matches!(wgpu_e.status, Status::Unavailable(Reason::ReserveExceedsFree { free_bytes, .. }) if free_bytes == 1 << 30),
+        "the twin carries the sibling's measured free memory: {:?}",
+        wgpu_e.status
+    );
+    assert_eq!(
+        reg.select_default().kind,
+        BackendKind::Cpu,
+        "the selection must not slide onto the refused card"
+    );
+}

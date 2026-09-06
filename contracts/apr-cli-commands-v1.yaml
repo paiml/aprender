@@ -364,6 +364,18 @@ commands:
     requires_model: false
     side_effects: [gpu]
 
+  - name: devices
+    category: hardware
+    description: "Backend discovery: probe, enumerate, print (PP-066 R-0)"
+    requires_model: false
+    side_effects: []
+
+  - name: devices
+    category: hardware
+    description: "Backend discovery: probe, enumerate, print (PP-066 R-0)"
+    requires_model: false
+    side_effects: []
+
   - name: profile
     category: hardware
     description: "Deep profiling with Roofline analysis"

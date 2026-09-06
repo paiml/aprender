@@ -72,7 +72,9 @@ fn entry(i: usize, info: &wgpu::AdapterInfo, limits: &wgpu::Limits) -> BackendEn
         vendor: vendor.to_string(),
         vendor_id: if vendor == "unknown" { None } else { Some(info.vendor) },
         device_type: device_type.to_string(),
-        mem_total: Some(limits.max_buffer_size),
+        // wgpu exposes no VRAM figure; `max_buffer_size` is an allocation cap, not
+        // memory, so it is reported as a capability string and mem_total stays unknown.
+        mem_total: None,
         mem_free: None,
         mem_kind: if unified {
             MemKind::Unified { working_set_limit: Some(limits.max_buffer_size) }
@@ -80,7 +82,7 @@ fn entry(i: usize, info: &wgpu::AdapterInfo, limits: &wgpu::Limits) -> BackendEn
             MemKind::Discrete
         },
         compute_class: None,
-        caps: Vec::new(),
+        caps: vec![format!("max_buffer_size={}", limits.max_buffer_size)],
         source: Source::CompiledIn,
         status,
         transport: Some(transport.to_string()),

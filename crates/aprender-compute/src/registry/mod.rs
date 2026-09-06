@@ -354,6 +354,16 @@ impl BackendRegistry {
         Ok(reg)
     }
 
+    /// Re-apply a reserve (an `APR_RESERVE_BYTES` override on a fixture) and reselect.
+    #[must_use]
+    pub fn with_reserve(mut self, reserve_bytes: u64, basis: &str) -> Self {
+        self.reserve_bytes = reserve_bytes;
+        self.reserve_basis = basis.to_string();
+        apply_reserve(&mut self.entries, reserve_bytes);
+        self.selected = select(&self.entries, reserve_bytes);
+        self
+    }
+
     /// The Ready entries.
     pub fn ready(&self) -> impl Iterator<Item = &BackendEntry> {
         self.entries.iter().filter(|e| e.is_ready())
@@ -450,6 +460,8 @@ fn render_entry(e: &BackendEntry) -> String {
 }
 
 fn apply_reserve(entries: &mut [BackendEntry], reserve: u64) {
+    // Pass 1: entries that KNOW their free memory and cannot fit the reserve.
+    let mut refused: Vec<(String, u64)> = Vec::new();
     for e in entries.iter_mut().filter(|e| e.kind != BackendKind::Cpu && e.is_ready()) {
         if let Some(free) = e.mem_free {
             if free < reserve {
@@ -457,7 +469,24 @@ fn apply_reserve(entries: &mut [BackendEntry], reserve: u64) {
                     reserve_bytes: reserve,
                     free_bytes: free,
                 });
+                refused.push((e.identity(), free));
             }
+        }
+    }
+    // Pass 2 (lane 2, device_uid): the same physical device seen through another
+    // API that reports NO free memory (wgpu) is the same full card — refuse its
+    // twins too, with the figure the sibling measured, so the selection cannot
+    // slide onto the very device that was just refused.
+    for e in entries
+        .iter_mut()
+        .filter(|e| e.kind != BackendKind::Cpu && e.is_ready() && e.mem_free.is_none())
+    {
+        let id = e.identity();
+        if let Some((_, free)) = refused.iter().find(|(r, _)| *r == id) {
+            e.status = Status::Unavailable(Reason::ReserveExceedsFree {
+                reserve_bytes: reserve,
+                free_bytes: *free,
+            });
         }
     }
 }
