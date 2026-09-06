@@ -30,3 +30,4 @@
 {"repo":"aprender","ticket":"PMAT-991","phase":"P_1","mode":"subagent:sonnet","est":3,"actual":40,"basis":"est=first-run[U]; actual=worker maxTurns (40) + one resume"}
 {"repo":"aprender","ticket":"PMAT-991","phase":"P_2","mode":"subagent:sonnet","est":3,"actual":40,"basis":"est=first-run[U]; actual=worker maxTurns (40) + one resume; last mile by the orchestrator"}
 {"repo":"aprender","ticket":"PMAT-991","phase":"P_3","mode":"direct","est":3,"actual":9,"basis":"est=first-run[U]; actual=orchestrator bash calls (relocation, contract, mutations, receipt)"}
+{"repo":"aprender","ticket":"PMAT-991","phase":"P3-review","mode":"delegate(quorum:3)+direct","est":3,"actual":9,"basis":"est=first-run[U]; actual=orchestrator bash calls applying the 3/3 mergeable-with-changes verdict (since-start banner, 4 more launch sites, plain-LoRA refusal, dead notice)"}
