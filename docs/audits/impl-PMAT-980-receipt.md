@@ -1,6 +1,6 @@
 ---
-status: partial
-partial_reason: "waiting on C0-5 (#2985) to merge — this branch rebases onto it, bumps the README contract count, then opens its PR; flip to complete with the DAG write-back after merge"
+status: complete
+merged: "PR #2987 squash 65680cdf8, 2026-09-06T02:37:35Z, through the merge queue (queue CI run 34005252966: ci / gate + workspace-test green)"
 ticket: PMAT-980
 row: G-6
 issue: 2895
@@ -54,5 +54,10 @@ Re-serialised `docs/roadmaps/roadmap.yaml` pmat-style on the working tree (every
 - README contract count: 1808 → 1809 after rebasing onto C0-5 (both PRs add one contract; the count is a serialization point, #2630 / P-0.4).
 - Receipt for this PR: advisory, not produced (driver A1); this is the first PR the base-owned `pr-review-quorum.yml` will judge once C0-5 is on main.
 
+## Merge evidence (orchestrator, after the fact)
+- Merged as `65680cdf8` (#2987, the STEP B batch G-6 → G-4 → SPEC-1.6 → C0-7) at 2026-09-06T02:37:35Z through the merge queue; queue CI run 34005252966: `ci / gate` and `workspace-test` green; PR run 34003610208: every gate leg green, including the `guard-runner-labels` steps this row adds.
+- The first CI run of #2987 (33991535406) found the guard comparing HEAD to itself in the shallow checkout and refusing every PR over main's pre-existing duplicate `PMAT-966`; both fixed at e2e3492b7 (rows 10–14, 14/14), and the guard passed on the next run (34003610208) and on the queue run (34005252966).
+- Every A_i was re-run by the orchestrator on the batch tip before the push (PR body, "Acceptance commands" table) and the row's registered mutation shown RED then restored GREEN there.
+
 ## Verdict
-PENDING-MERGE (`status: partial`).
+DONE (`status: complete`).
