@@ -132,9 +132,7 @@ rows:
   host: lambda
   queue_pos:
     lambda: 3
-  expiry:
-    anchor: I-15
-    days: 7
+  expiry: '2026-10-09'
   owner: perf-gate
   A:
   - '#2817 closed: comparator lane produces a conformant W1 band (stream_options.include_usage sent; prompt_tokens>0)'
@@ -2884,3 +2882,10 @@ amendments:
   change: R-0 carries the R-0a half (registry + apr devices); R-0b (#3002, PMAT-1060) is the resolution half
   why: '#3003 (agent/R-0-amend) folded into the orchestrator branch: its branch is not an orchestrator branch under G-11 and its DAG/spec/roadmap edits belong here; docs/audits/pp-066-r0-design-quorum.md
     carried over verbatim'
+- date: '2026-09-06'
+  by: noahgift via driver prompt 2026-09-06 (v4 ordering)
+  row: I-18
+  change: 'expiry {''anchor'': ''I-15'', ''days'': 7} (resolved 2026-10-03) -> 2026-10-09 (a date; the anchor form is replaced, D6 one form per row)'
+  why: R-2 moved to 10-02 (R-0b edge); the R-2 -> I-18 edge needs 6 d
+  moved_by: noahgift via driver prompt
+  basis: '[U] takt not yet measured'

@@ -188,7 +188,7 @@ _Rendered from `docs/specifications/pp-066-dag.yaml` (epic #2873, 100 rows). Edi
 |---|---|---|---|---|---|---|---|---|---|---|
 | I-1 | master row 1: land #2809; Blackwell guard on prefill_multi_prompt (gpu_profile.rs::multi_prompt_prefill_allowed); perf041 in cuda-nightly.yml with missing marker = RED; PP-26 witness in the receipt | G-11 | #2809 | gx10 | 2026-09-19 | serve | 3-lane | #2882 | PMAT-1057 | open |
 | I-15 | gx10 shakedown cell: W1, n>=5 interleaved, at a commit containing 0b, 0c, 1, 6, 7, 12 -> a new LEDGER row | I-1, I-24, I-25, G-11 | #2819, #2834, #2846 | gx10 | 2026-09-26 (= I-1 + 7 d) | perf-gate | review-only | #2883 | PMAT-968 | open |
-| I-18 | lambda reference cell: W1, n>=5 interleaved, both lanes, derived ladder, armed_by set for every band that PASSES | I-15, R-2, G-11 | #2817, #2818, #2832, #2816, #2815, #2844 | lambda | 2026-10-03 (= I-15 + 7 d) | perf-gate | review-only | #2884 | PMAT-969 | open |
+| I-18 | lambda reference cell: W1, n>=5 interleaved, both lanes, derived ladder, armed_by set for every band that PASSES | I-15, R-2, G-11 | #2817, #2818, #2832, #2816, #2815, #2844 | lambda | 2026-10-09 | perf-gate | review-only | #2884 | PMAT-969 | open |
 | I-16 | W3 open-loop workload (report row 19, master row 16) | G-11 | — | lambda | 2026-10-23 | perf-gate | review-only | #2885 | PMAT-970 | open |
 | I-17 | W4 token sweep (report row 19, master row 17; expiry tightened 10-23 -> 10-16 as the blocker of S-2, v1.6 amendment) | G-11 | — | lambda | 2026-10-16 | perf-gate | review-only | #2886 | PMAT-971 | open |
 | I-24 | parity_block.py: a zero COMPARATOR band median is a named refusal, not a traceback (#2735) | G-11 | #2735, #2876 | any | 2026-09-19 | perf-gate | review-only | #2887 | PMAT-972 | open |
