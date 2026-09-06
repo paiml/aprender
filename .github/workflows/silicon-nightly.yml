@@ -57,6 +57,20 @@ jobs:
       - name: Every required silicon axis must have a runner that can serve it
         run: bash scripts/check_silicon_coverage.sh
 
+      # THE WORK ITSELF MUST BE RESOLVABLE, and this is the cheap place to find
+      # out. Both legs below shipped naming `-p aprender-primitives`, a package
+      # that has never existed in this repo, so the lane's first scheduled run
+      # ran the real suite green and then died on the name — on BOTH silicons,
+      # at 03:30, nine minutes in. The guard above probes its own matcher
+      # thoroughly but only ever asked "can a runner serve this axis?"; nothing
+      # asked whether the lane's own commands could resolve.
+      - name: Put the runner's Rust toolchain on PATH
+        run: echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+      - name: The package guard's own reader must be able to fail
+        run: bash scripts/check_silicon_packages.sh --self-test
+      - name: Every package this lane names must exist in the workspace
+        run: bash scripts/check_silicon_packages.sh
+
   x86_64-cpu:
     if: ${{ github.event_name != 'workflow_dispatch' || inputs.axis == 'all' || inputs.axis == 'x86_64-cpu' }}
     runs-on: [self-hosted, clean-room, intel]
@@ -72,7 +86,7 @@ jobs:
         run: |
           set -euo pipefail
           nice -n 19 cargo test -p aprender-compute --release --lib
-          nice -n 19 cargo test -p aprender-primitives --release --lib
+          nice -n 19 cargo test -p aprender-core --release --lib
 
   aarch64-cuda-sm121:
     if: ${{ github.event_name != 'workflow_dispatch' || inputs.axis == 'all' || inputs.axis == 'aarch64-cuda-sm121' }}
@@ -98,7 +112,7 @@ jobs:
         run: |
           set -euo pipefail
           nice -n 19 cargo test -p aprender-compute --release --lib
-          nice -n 19 cargo test -p aprender-primitives --release --lib
+          nice -n 19 cargo test -p aprender-core --release --lib
 
   # PER-SILICON REPORTING. The table is the deliverable: "silicon-nightly failed"
   # is not actionable, "aarch64-cuda-sm121 failed and x86_64-cpu passed" is.
