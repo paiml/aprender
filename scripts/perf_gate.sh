@@ -1452,9 +1452,10 @@ for b in r["bands"]:
   _row ratio_without_baseline      "$F" merge W1 lambda "" fail "The comparator band the ratio was taken against"
 
   # ---- the matrix variants the phase, ratchet and expiry rows need ---------
-  local MX_SEEDED MX_AMERGE MX_ARMED MX_W1FIXED
+  local MX_SEEDED MX_AMERGE MX_ARMED MX_W1FIXED MX_C1SILENT
   local MX_MERGED MX_NOANCHOR MX_BOTH MX_MERGEDNULL MX_NEITHER MX_BADDAYS
   local A_W1_OLD A_W1_NEW A_PHASE_OLD A_PHASE_NEW ARMED_OLD ARMED_NEW
+  local A_W1_MEASURED_NOBANDS
   A_W1_OLD='    W1:
       status: UNMEASURED
       owner: perf-gate
@@ -1470,6 +1471,15 @@ for b in r["bands"]:
       interleaved: true
       bands:
         c1: {agg: 100.0, dec: 110.0, prefill: 900.0}'
+  # #2830. A baseline can flip MEASURED without ever seeding a band the
+  # configured metrics name -- the arm then has no seeded cell to ratchet and,
+  # paired with a c=1-only receipt, no c>1 band to report scaling on either.
+  A_W1_MEASURED_NOBANDS='    W1:
+      status: MEASURED
+      receipt: evidence/perf-gate-001-w1-lambda/receipt.r1.json
+      commit: 745fa8588
+      n: 5
+      interleaved: true'
   A_PHASE_OLD='    name: self-regression
     phase: release'
   A_PHASE_NEW='    name: self-regression
@@ -1482,6 +1492,7 @@ for b in r["bands"]:
                prefill_ratio: {receipt: evidence/perf-gate-001-w1-lambda/receipt.r1.json, commit: 745fa8588}}
           c4: {agg_ratio: {receipt: evidence/perf-gate-001-w1-lambda/receipt.r1.json, commit: 745fa8588}}'
   MX_SEEDED="$(_mx seeded "$A_W1_OLD"$'\x1f'"$A_W1_NEW")"
+  MX_C1SILENT="$(_mx c1silent "$A_W1_OLD"$'\x1f'"$A_W1_MEASURED_NOBANDS")"
   MX_AMERGE="$(_mx amerge "$A_W1_OLD"$'\x1f'"$A_W1_NEW"$'\x1e'"$A_PHASE_OLD"$'\x1f'"$A_PHASE_NEW")"
   MX_ARMED="$(_mx armed "$ARMED_OLD"$'\x1f'"$ARMED_NEW")"
   MX_W1FIXED="$(_mx w1fixed "expires_after: {anchor: PP-LLAMA-001-row-18, days: 0}"$'\x1f'"expires: '2026-09-25'")"
@@ -1615,6 +1626,25 @@ r["bands"]=reps+rest
   F="$(_mut amerge "$OK3" 'AGG,DEC,PRE=80.0,90.0,700.0
 '"$REPS")"
   _row phase_guard_a_merge         "$F" merge W1 lambda "$MX_AMERGE" fail "FAIL ArmA c=1 agg lcb95"
+
+  # #2830. A receipt whose only band is c=1 has no c>1 band to report scaling
+  # from; paired with a baseline that flipped MEASURED without ever seeding a
+  # band (MX_C1SILENT), the arm used to walk every branch, print nothing at
+  # all, and exit 0 -- so the gate's own VERDICT line said PASS on a run this
+  # arm never actually measured. It must now say so and the run must not read
+  # as PASS.
+  F="$(_mut c1only "$OK3" 'r["bands"]=[b for b in r["bands"] if b["concurrency"] == 1]
+r["ladder"]["slots_admitted"]={"apr": 1, "llama": 1}
+r["ladder"]["derived"]=[1]')"
+  _row arm_a_c1_only_not_pass      "$F" release W1 lambda "$MX_C1SILENT" fail "REPORT ArmA scaling: c=1 only, no scaling measured"
+  # The must-not-fire twin: a receipt with a real c>1 band alongside c=1 still
+  # gets the ordinary scaling REPORT line, and the collapse text above never
+  # appears.
+  F="$(_mut c1and8 "$OK3" 'r["bands"]=[b for b in r["bands"] if b["concurrency"] in (1, 8)]
+r["ladder"]["declared"]=[1, 8]
+r["ladder"]["slots_admitted"]={"apr": 8, "llama": 8}
+r["ladder"]["derived"]=[1, 8]')"
+  _row arm_a_multi_band_ok         "$F" release W1 lambda "" pass "REPORT ArmA c=8 scaling_efficiency="
 
   # ---- PP-1: the expected cell set -----------------------------------------
   F="$(_mut cellsfull "$OK3" 'pass')"
