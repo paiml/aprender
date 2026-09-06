@@ -161,6 +161,8 @@ impl ParityGateRecord {
     }
 }
 
+/// A quantized GGUF model with its weights resident on one CUDA device, admitted by the
+/// load-time parity gate (`parity` records what the gate measured, REG-15).
 pub struct OwnedQuantizedModelCuda {
     /// REG-15: what the load-time parity gate measured for this model.
     pub parity: ParityGateRecord,
