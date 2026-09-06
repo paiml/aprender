@@ -111,3 +111,8 @@ __pycache__/
 /sim4
 /sim4.rs
 /.lint-cache
+
+# PP-066 G-11b: per-row scratch lives in .pr/<row>/; only the accept.sh convention file is tracked (I5)
+.pr/**
+!.pr/*/
+!.pr/*/accept.sh

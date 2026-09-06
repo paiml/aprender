@@ -83,3 +83,17 @@ Every DAG row is a GitHub issue (#2882–#2980, label `pp-066`; decisions also `
 - `python3` over `pp-066-dag.yaml`: `slack violations: []`, `lambda ordered`, `gx10 ordered`, acyclic, every #2873 sub-issue cited (output pasted in the PR body).
 - `bash scripts/check_no_claim_literals.sh && bash scripts/check_perf_claims_cite_receipts.sh` exit 0.
 - STEP 4's teamwork pass and three quorum lanes (`docs/audits/pp-066-plan-quorum.md`) precede STEP 5.
+
+## `.pr/<row>/accept.sh` — the acceptance convention (G-11b, driver v4 I5)
+
+Every row's P1 writes `.pr/<row>/accept.sh` in the row's worktree: a bash script that re-runs **every** `A_i` of the row's DAG card in one call, prints each command and its exit code, and exits non-zero if any did. A worker's PASS is a claim; the orchestrator runs `accept.sh` itself and pastes its output into the PR body and the receipt. `make fleet-verify ROW=<row>` (`scripts/fleet_verify.sh`) runs the same script on the hosts the card names and writes one receipt per host under `evidence/fleet/<row>/`. `.pr/**` is gitignored except `.pr/*/accept.sh`, so the script rides the row's PR and nothing else from the scratch dir does.
+
+```bash
+#!/usr/bin/env bash
+# <row> accept.sh — re-runs every A_i in one call (I5)
+set -uo pipefail; cd "$(dirname "$0")/../.."; rc=0
+run() { printf '== %s\n' "$*"; "$@"; local r=$?; printf 'rc=%s\n' "$r"; [ "$r" = 0 ] || rc=1; }
+run bash scripts/<guard>.sh --self-test
+run bash scripts/<guard>.sh
+exit "$rc"
+```

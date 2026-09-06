@@ -1269,3 +1269,10 @@ check-siblings: ## Verify sibling repos exist and versions are compatible
 		echo "Or build standalone (uses crates.io versions):"; \
 		echo "  Remove [patch.crates-io] from .cargo/config.toml"; \
 	fi
+
+# ── PP-066 G-11b: run a row's .pr/<row>/accept.sh on the hosts its DAG card names ──
+# The only sanctioned path to the fleet (scripts/fleet_verify.sh; receipts under evidence/fleet/<row>/).
+.PHONY: fleet-verify
+fleet-verify:
+	@[ -n "$(ROW)" ] || { echo "usage: make fleet-verify ROW=<dag row id> [SHA=<commit>] [HOSTS=\"lambda gx10\"]"; exit 2; }
+	@bash scripts/fleet_verify.sh --row "$(ROW)" $(if $(SHA),--sha $(SHA),) $(if $(HOSTS),--hosts "$(HOSTS)",)
