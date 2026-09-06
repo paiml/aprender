@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 #
-# check_hardcoded_paths.sh — no contract may name a machine-specific path.
+# check_hardcoded_paths.sh — no contract may name a machine-specific path, and
+# the whole-tree SHIPPED tier is ratcheted under ONE pinned analyser.
 #
 # WHY THIS EXISTS (#2532)
 # -----------------------
-# `pmat analyze hardcoded-paths -p . --fail-on-shipped` reported 324 findings in
+# `$PMAT analyze hardcoded-paths -p . --fail-on-shipped` reported 324 findings in
 # SHIPPED code on origin/main @ 5c08e771f — and 46 of them were in contracts/
 # itself, the tier whose whole job is to make a defect impossible.
 #
@@ -36,48 +37,36 @@
 #     $HOME/.cache/…  ~/models/…             the invoking user's home
 #     target/release/apr                     workspace-relative
 #
-# `--full` mode: the whole-tree ratchet over pmat's SHIPPED tier. Detection is
-# pmat's — this script only holds the number. See "WHY TWO MODES".
+# `--full` / `--full-if-capable`: the whole-tree ratchet over the analyser's
+# SHIPPED tier (pmat#1017 owns the detector; this script holds the number).
 #
-# WHY THREE MODES / HOW --full ARMS ITSELF
-# ----------------------------------------
-# pmat owns this detector (pmat#1017) and re-implementing its tiering would be
-# muda, so --full shells out to it and compares `.shipped_count`.
-#
-# The clean-room pool that runs the blocking guards (the only runners carrying
-# the `clean-room` label) still cannot do it. RE-MEASURED 2026-08-28, unchanged
-# from the 2026-08-20 reading:
-#
-#   $ ssh mac-server 'pmat --version; pmat analyze hardcoded-paths --help'
-#   pmat 3.31.0
-#   error: unrecognized subcommand 'hardcoded-paths'
-#
-# Wiring a bare --full into the required gate today would red main on every PR.
-# The alternatives are worse: `cargo install pmat || true` (book.yml:90 does
-# this — a gate that cannot fail), or a cold `cargo install` inside a
-# timeout-boxed job (the cargo-audit failure mode that evicted the merge queue).
-#
-# WHAT WENT WRONG WITH LEAVING IT UNWIRED (#2706 / PERF-032)
-# ---------------------------------------------------------
-# The previous version of this header said "PROMOTE --full INTO ci.yml AS SOON
-# AS THE CLEAN-ROOM FLEET CARRIES pmat >= 3.32.0 — this comment is the trigger."
-# A comment is not a trigger. Nobody re-reads it, and nothing re-evaluates the
-# condition, so the mode that actually catches shipped machine-specific paths
-# gated nothing for as long as it took 20 of them to land (299 vs a baseline of
-# 278, measured on origin/main 62d23d8d1). The same header also claimed --full
-# "runs from `make tier3`"; the Makefile has never invoked this script at all.
-#
-# So the promotion is now MECHANICAL rather than editorial. --full-if-capable
-# probes for the subcommand at run time and:
-#   * runs the full ratchet and PROPAGATES ITS EXIT STATUS when pmat can do it;
-#   * otherwise PROVES the capability is absent and skips, printing the version
-#     and the actual refusal text.
-# The day the fleet carries pmat >= 3.32.0 the gate arms itself, with no edit
-# and nobody having to remember. This is not `|| true`: `|| true` discards a
-# verdict that was actually produced, whereas the skip here is taken only when
-# no verdict CAN be produced, and it says so in the log. The residual blind
-# spot — a runner silently losing pmat — is the price of not cold-installing a
-# toolchain inside a required job, and it is stated here rather than hidden.
+# THE INSTRUMENT IS PART OF THE NUMBER (PMAT-1059, DAG row G-10, #2999)
+# ---------------------------------------------------------------------
+# History, in one paragraph. The clean-room fleet ran 3.31.0, which has no
+# `hardcoded-paths` subcommand, so an earlier version of this mode "armed
+# itself": it probed for the subcommand and skipped, with proof, when absent
+# (#2706 / PERF-032 had shown that a comment saying "promote this when the
+# fleet upgrades" is not a trigger — 20 shipped paths landed while it waited).
+# The baseline it would compare against, 277, had been recorded with no
+# analyser version named. On 2026-09-06 paiml/infra pinned the fleet at 3.37.0
+# (machines/intel/forjar.yaml, PMAT-231); the mode armed, counted 317 on an
+# UNCHANGED tree, and every open PR went red for a defect none had introduced.
+# A count is a property of (tree, instrument). So now:
+#   * the analyser is scripts/pmat_bin.sh's pin, never PATH. A runner without
+#     the pin is an ENV failure (exit 1): never a skip, never a pass;
+#   * scripts/hardcoded_path_shipped_baseline.txt carries count:, pmat_version:
+#     and basis:. Any of them missing or unparseable => INVALID, and INVALID is
+#     not a number;
+#   * the absolute compare (shipped <= count) runs only under a matching stamp.
+#     Otherwise the guard REPORTs BASELINE-STALE{old,new} (or BASELINE-INVALID)
+#     and the verdict is HEAD vs merge-base under the same binary: delta <= 0
+#     PASS, delta > 0 FAIL naming the new paths (a differential CAN name them;
+#     a scalar never could — the standing weakness noted under PERF-032);
+#   * re-baselining is its own ticket, re-measured, stamped, never a raise; a
+#     stamp that moves while count: stands still is refused.
+# The base is scripts/lib/resolve_base.sh (G-6's resolver, one case table for
+# both guards). --self-test carries both polarities of every branch above with
+# a fixture analyser and a fixture repo: run it, don't read it.
 #
 # THE 6 THAT STAYED, AND WHY (classified, NOT exempted)
 # -----------------------------------------------------
@@ -106,9 +95,9 @@
 #     that can actually observe a CI run. Deliberately left visible in the count.
 #
 #   bash scripts/check_hardcoded_paths.sh                    # blocking (contracts/)
-#   bash scripts/check_hardcoded_paths.sh --self-test        # case table
-#   bash scripts/check_hardcoded_paths.sh --full             # shipped-tier ratchet
-#   bash scripts/check_hardcoded_paths.sh --full-if-capable  # ratchet, self-arming
+#   bash scripts/check_hardcoded_paths.sh --self-test        # case table: default mode + the ratchet's 8 rows
+#   bash scripts/check_hardcoded_paths.sh --full             # shipped-tier ratchet under the pin
+#   bash scripts/check_hardcoded_paths.sh --full-if-capable  # the same entry point (ci.yml); it no longer skips
 #
 set -uo pipefail
 
@@ -122,7 +111,7 @@ CONTRACT_DIR="${CONTRACT_DIR:-${REPO_ROOT}/contracts}"
 # Vacuity floor: 1778 contract files today. A scan that examined almost nothing
 # must go RED, not print the same OK as a scan that examined everything.
 MIN_CONTRACT_FILES="${MIN_CONTRACT_FILES:-1000}"
-# Vacuity floor for --full: pmat reports files_scanned=14192 on this tree.
+# Vacuity floor for --full: the analyser reports files_scanned=14192 on this tree.
 MIN_FILES_SCANNED="${MIN_FILES_SCANNED:-14000}"
 
 # An absolute path rooted in a NAMED user's home. `$HOME/...`, `~/...`,
