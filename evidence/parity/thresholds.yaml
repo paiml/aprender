@@ -2,7 +2,7 @@
 # EVERY threshold carries a basis. 0.98 is the driver's number and is [U] until item 5 of
 # the card measures n >= 5 known-good pairs per model and records the command here.
 schema: apr-parity-thresholds/v1
-min_positions: 1   # MUTANT (round 2): a one-position record must now be refused by the PR-time gate          # basis: I8 / CF-4 (#1864) — any autoregressive gate validates over >= 64 positions
+min_positions: 64          # basis: I8 / CF-4 (#1864) — any autoregressive gate validates over >= 64 positions
 default:
   min_cosine: 0.98
   # basis (item 5, first pair measured 2026-09-06): n=5 runs of the known-good pair
