@@ -26,13 +26,17 @@
 PMAT_PIN="3.37.0"
 
 pmat_bin_resolve() {
-    local cand tried="" v cands=""
-    cands="${PMAT_BIN_OVERRIDE:-}"
+    # an ARRAY, not a word-split string: sourced from zsh (no word splitting) a string
+    # would be one non-executable "candidate" and the pin would look uninstalled
+    local cand tried="" v onpath="" cands=()
+    if [ -n "${PMAT_BIN_OVERRIDE:-}" ]; then cands+=("$PMAT_BIN_OVERRIDE"); fi
     if [ "${PMAT_BIN_NO_FALLBACK:-0}" != 1 ]; then
-        cands="$cands ${HOME}/.local/pmat/${PMAT_PIN}/bin/pmat $(command -v pmat 2>/dev/null || true)"
+        cands+=("${HOME}/.local/pmat/${PMAT_PIN}/bin/pmat")
+        onpath=$(command -v pmat 2>/dev/null || true)
+        if [ -n "$onpath" ]; then cands+=("$onpath"); fi
     fi
-    for cand in $cands; do
-        [ -n "$cand" ] && [ -x "$cand" ] || continue
+    for cand in ${cands[@]+"${cands[@]}"}; do
+        if [ ! -x "$cand" ]; then continue; fi
         v=$("$cand" --version 2>/dev/null | head -n1 | awk '{print $2}')
         if [ "$v" = "$PMAT_PIN" ]; then
             PMAT="$cand"; PMAT_VERSION="$v"; export PMAT PMAT_VERSION; return 0

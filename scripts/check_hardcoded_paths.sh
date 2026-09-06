@@ -210,8 +210,15 @@ if [ "${1:-}" = "--self-test" ]; then
         ( cd "$R" && git add -A && git commit -qm base && git update-ref refs/remotes/origin/main HEAD && git checkout -q -B row )
         scanjson "$hn" > "$R/.fake-scan.json"; printf '%s\n' "$hbl" > "$R/scripts/hardcoded_path_shipped_baseline.txt"
         ( cd "$R" && git add -A && git commit -qm head --allow-empty )
-        [ "$env" = no-base ] && git -C "$R" update-ref -d refs/remotes/origin/main
-        out=$(HP_REPO_ROOT="$R" PMAT_BIN_OVERRIDE="${FAKE_BIN:-$FAKE}" PMAT_BIN_NO_FALLBACK=1 MIN_FILES_SCANNED=1 bash "${BASH_SOURCE[0]}" --full-if-capable 2>&1) || rc=$?
+        local root="$R"
+        case "$env" in
+            no-base) git -C "$R" update-ref -d refs/remotes/origin/main ;;
+            push)    git -C "$R" update-ref refs/remotes/origin/main HEAD ;;   # HEAD IS the origin/main tip
+            push-shallow)   # the tip with its parent NOT fetched: a depth-1 clone of the row branch
+                rm -rf "$R.shallow"; git clone -q --depth=1 -b row "file://$R" "$R.shallow" 2>/dev/null
+                git -C "$R.shallow" config core.hooksPath /dev/null; git -C "$R.shallow" update-ref refs/remotes/origin/main HEAD; root="$R.shallow" ;;
+        esac
+        out=$(HP_REPO_ROOT="$root" PMAT_BIN_OVERRIDE="${FAKE_BIN:-$FAKE}" PMAT_BIN_NO_FALLBACK=1 MIN_FILES_SCANNED=1 bash "${BASH_SOURCE[0]}" --full-if-capable 2>&1) || rc=$?
         if [ "$rc" = "$want" ] && { [ -z "$sub" ] || printf '%s' "$out" | grep -qF -- "$sub"; }; then printf 'ok    ratchet %s (rc=%s)\n' "$label" "$rc"
         else printf 'FAIL  ratchet %s (rc=%s, wanted %s%s)\n' "$label" "$rc" "$want" "${sub:+; wanted text: $sub}"; printf '%s\n' "$out" | tail -6 | sed 's|^|        |'; fails=1; fi
     }
@@ -221,9 +228,12 @@ if [ "${1:-}" = "--self-test" ]; then
     hp_row 1 "R4 stale stamp, +1 path vs base: RED by the differential, path named"     8 "$(bl 5 3.36.0)" 9 "$(bl 5 3.36.0)" "src/f8.rs|fixture://p8"
     hp_row 0 "R5 INVALID stamp (no version): REPORT + differential PASS"                8 "$(bl 8 INVALID)" 8 "$(bl 8 INVALID)" "BASELINE-INVALID"
     hp_row 1 "R6 stamp bumped 3.36.0 -> pin while count: stands: refused"              8 "$(bl 8 3.36.0)" 8 "$(bl 8 "$pin")" "A stamp is not a measurement"
-    hp_row 1 "R7 stale stamp and no base to name: RED, never the branch against itself" 8 "$(bl 5 3.36.0)" 8 "$(bl 5 3.36.0)" "" no-base
+    hp_row 1 "R7 stale stamp and no base to name: RED by name (the comparand ref is unresolvable), never the branch against itself" 8 "$(bl 5 3.36.0)" 8 "$(bl 5 3.36.0)" "cannot resolve the comparand ref" no-base
     FAKE_BIN="$TD/off-pin" hp_row 1 "R8 no analyser at the pin: FAIL (ENV), not a pass" 8 "$(bl 8 "$pin")" 8 "$(bl 8 "$pin")" "FAIL (ENV)"
     unset FAKE_BIN
+    hp_row 0 "R9 push shape (HEAD is the origin/main tip): judged against its FIRST PARENT, delta 0 PASS" 8 "$(bl 5 3.36.0)" 8 "$(bl 5 3.36.0)" "push shape" push
+    hp_row 1 "R10 push shape, +1 path vs the first parent: RED, path named (never HEAD vs HEAD)" 8 "$(bl 5 3.36.0)" 9 "$(bl 5 3.36.0)" "src/f8.rs|fixture://p8" push
+    hp_row 1 "R11 push shape with the parent not fetched (depth-1): RED, never the tree against itself" 8 "$(bl 5 3.36.0)" 9 "$(bl 5 3.36.0)" "never the tree against itself" push-shallow
 
     [ "$fails" -eq 0 ] || { printf '\nSELF-TEST FAILED\n'; exit 1; }
     printf '\nSELF-TEST PASSED\n'; exit 0
@@ -263,7 +273,9 @@ hp_read_baseline() { # hp_read_baseline <file> -> HP_COUNT HP_VER HP_BASIS HP_VA
     [ -n "$HP_BASIS" ] || { HP_VALID=0; HP_WHY="${HP_WHY:+$HP_WHY; }no 'basis: \$PMAT analyze hardcoded-paths ...' line"; }
 }
 hp_scan() { # hp_scan <dir> <out.json>; the analyser's own rc, never $? through a pipe
-    ( cd "$1" && "$PMAT" analyze hardcoded-paths -p . -f json ) > "$2" 2> "$2.err"
+    # -u GIT_*: a hook or a caller's environment must not redirect the analyser's `git ls-files`
+    # from the tree it was pointed at (a base worktree enumerating HEAD is a delta of 0).
+    ( cd "$1" && env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE "$PMAT" analyze hardcoded-paths -p . -f json ) > "$2" 2> "$2.err"
 }
 hp_paths() { # hp_paths <json> -> sorted "file|path" lines of the shipped tier
     jq -r '.findings[] | select(.site=="shipped") | "\(.file)|\(.path)"' "$1" | sed 's|^\./||' | LC_ALL=C sort
@@ -295,9 +307,13 @@ if [ "${1:-}" = "--full-if-capable" ] || [ "${1:-}" = "--full" ]; then
     . "${SELF_ROOT}/scripts/lib_baseline_ratchet.sh" || exit 1
     baseline_ratchet_check "${REPO_ROOT}" scripts/hardcoded_path_shipped_baseline.txt count || exit 1
     # shellcheck source=scripts/lib/resolve_base.sh
-    PROG=check_hardcoded_paths . "${SELF_ROOT}/scripts/lib/resolve_base.sh" || exit 1
+    PROG=check_hardcoded_paths   # a plain assignment: `PROG=x . file` does not outlive the `.` builtin (set -u would kill us inside resolve_base)
+    . "${SELF_ROOT}/scripts/lib/resolve_base.sh" || exit 1
     base_ok=0; BASE_REF=""; BASE_HOW=""
     if resolve_base HEAD > "$TD/resolve.txt" 2>&1; then base_ok=1; fi
+    if [ "$base_ok" = 1 ] && [ "$(git -C "$REPO_ROOT" rev-parse "$BASE_REF^{commit}" 2>/dev/null)" = "$(git -C "$REPO_ROOT" rev-parse 'HEAD^{commit}')" ]; then
+        printf 'the resolver named HEAD itself as the base (%s); never the tree against itself\n' "$BASE_HOW" > "$TD/resolve.txt"; base_ok=0
+    fi
     if [ "$base_ok" = 1 ] && git -C "$REPO_ROOT" cat-file -e "${BASE_REF}:scripts/hardcoded_path_shipped_baseline.txt" 2>/dev/null; then
         git -C "$REPO_ROOT" show "${BASE_REF}:scripts/hardcoded_path_shipped_baseline.txt" > "$TD/base_baseline.txt"
         bver=$(sed -nE 's/^pmat_version:[[:space:]]*([0-9]+\.[0-9]+\.[0-9]+).*$/\1/p' "$TD/base_baseline.txt" | head -n1)
@@ -347,7 +363,7 @@ if [ "${1:-}" = "--full-if-capable" ] || [ "${1:-}" = "--full" ]; then
     if [ "$delta" -gt 0 ]; then
         hp_paths "$TD/head.json" > "$TD/head.txt"; hp_paths "$TD/base.json" > "$TD/base.txt"
         printf '\nFAIL: this change adds %s shipped machine-specific path(s) (on HEAD, absent at the base):\n' "$delta"
-        comm -13 "$TD/base.txt" "$TD/head.txt" | head -40 | sed 's|^|  |'
+        LC_ALL=C comm -13 "$TD/base.txt" "$TD/head.txt" | head -40 | sed 's|^|  |'
         exit 1
     fi
     printf 'PASS (differential, delta %+d)\n' "$delta"; exit 0

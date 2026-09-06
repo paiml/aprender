@@ -16,10 +16,11 @@
 #   * L1 — the resolver and the ratchet exist and are wired in ci.yml job
 #          guard-runner-labels (case table, then the live step).
 #   * L2 — falsification tests cover the obligations, MEASURED:
-#          check_hardcoded_paths.sh --self-test 13/13 (2026-09-06), including the
-#          registered mutations (one added path RED on both compare paths; a stamp
-#          bumped without a measurement refused; no analyser at the pin is FAIL
-#          (ENV)); check_sourced_libs_option_neutral.sh covers the resolver.
+#          check_hardcoded_paths.sh --self-test 16/16 (2026-09-06; ratchet rows
+#          R1-R11), including the registered mutations (one added path RED on both
+#          compare paths; a stamp bumped without a measurement refused; no analyser
+#          at the pin is FAIL (ENV); the push shape judged against the first parent,
+#          never HEAD itself); check_sourced_libs_option_neutral.sh covers the resolver.
 #   * L3/L4 — NOT APPLICABLE and not declared: shell guards over a text file.
 # ─────────────────────────────────────────────────────────────────────────────
 name: apr-pinned-analyser-ratchet
@@ -91,11 +92,14 @@ equations:
                                  verdict := shipped(HEAD) - shipped(merge-base) <= 0    (rows R3, R4)
       no base nameable       =>  FAIL (never the branch against itself)                (row R7)
       no analyser at the pin =>  FAIL (ENV)                                             (row R8)
+      HEAD == origin/main tip (push shape) =>  base := first parent of HEAD              (rows R9, R10)
+      base would be HEAD itself (parent not fetched) =>  FAIL, never the tree against itself (row R11)
     domain: 'the shipped-tier scan of HEAD and of merge-base(origin/main, HEAD) under the same binary'
     codomain: 'PASS | FAIL'
     invariants:
     - 'ONE ADDED PATH IS RED ON BOTH PATHS (rows R2, R4): the registered mutation.'
-    - 'THE DIFFERENTIAL NAMES THE PATH (row R4): comm -13 base head.'
+    - 'THE DIFFERENTIAL NAMES THE PATH (rows R4, R10): LC_ALL=C comm -13 base head, both sides sorted under the same collation.'
+    - 'NEVER THE TREE AGAINST ITSELF (rows R9-R11): on a push to main merge-base(origin/main, HEAD) IS HEAD; the base is the first parent, and ci.yml deepens the depth-1 checkout by one so it exists. The G-10 review quorum (3/3, 2026-09-06) named the vacuous HEAD-vs-HEAD pass as its blocking finding.'
     preconditions:
     - 'the base is named by scripts/lib/resolve_base.sh on every CI checkout shape (G-6 case table)'
     postconditions:
@@ -107,41 +111,73 @@ proof_obligations:
     discharged_by: falsification_tests[0]
   - id: PIN-OB-002
     statement: "A baseline without count, pmat_version and basis is INVALID and is never compared; a stamp moved without a measurement is refused."
-    discharged_by: falsification_tests[0]
-  - id: PIN-OB-003
-    statement: "A count is compared only against a count measured by the same binary; otherwise the verdict is the differential HEAD vs merge-base under the same binary, which names the added path."
-    discharged_by: falsification_tests[0]
-  - id: PIN-OB-004
-    statement: "The ratchet is wired in ci.yml job guard-runner-labels, case table before the live check."
     discharged_by: falsification_tests[1]
+  - id: PIN-OB-003
+    statement: "A count is compared only against a count measured by the same binary; otherwise the verdict is the differential HEAD vs base under the same binary, the base is never HEAD itself (push shape: the first parent), and a positive delta names the added path."
+    discharged_by: falsification_tests[2]
+  - id: PIN-OB-004
+    statement: "The ratchet is wired in ci.yml job guard-runner-labels, case table before the live check, and the push shape is deepened by one so the first parent exists."
+    discharged_by: falsification_tests[3]
 
 falsification_tests:
   - id: PIN-F-001
-    rule: one pin, stamped baseline, no absolute compare across instruments
+    rule: one pin — the resolver refuses off-pin and absent
     prediction: >-
-      ratchet rows R1-R8 hold: PASS/RED by the absolute compare under a matching
-      stamp; REPORT BASELINE-STALE + differential PASS/RED under a stale stamp
-      (the RED names src/f8.rs); REPORT BASELINE-INVALID + differential under an
-      invalid stamp; a stamp bump without a measurement refused; no base => RED;
-      no analyser at the pin => FAIL (ENV) (row R8 is the resolver's refusal
-      observed through the ratchet). One --self-test run exercises every row.
+      ratchet row R8: with only an off-pin binary (a fake reporting 3.0.0) the
+      run is FAIL (ENV), exit 1, never PASS. One --self-test run exercises every
+      row; there is no per-row filter.
+    test: 'bash scripts/check_hardcoded_paths.sh --self-test'
+    if_fails: >-
+      a gate's number silently depends on whichever analyser PATH resolves
+    mutation: >-
+      make pmat_bin_resolve accept any version (drop the `[ "$v" = "$PMAT_PIN" ]`
+      test); row R8 must turn RED (the off-pin fake is accepted and the run
+      passes at rc 0).
+
+  - id: PIN-F-002
+    rule: stamped baseline — INVALID is not a number, a stamp is not a measurement
+    prediction: >-
+      row R5: a baseline whose pmat_version is INVALID is REPORTed (BASELINE-INVALID)
+      and decided by the differential, never compared; row R6: pmat_version moved
+      to the pin while count: stands is refused ("A stamp is not a measurement").
+    test: 'bash scripts/check_hardcoded_paths.sh --self-test'
+    if_fails: >-
+      a number nobody measured becomes the gate, and a re-stamp becomes a raise
+    mutation: >-
+      coerce an INVALID stamp to the recorded count and compare; row R5 must turn
+      RED. Drop the stamp-bump refusal; row R6 must turn RED.
+
+  - id: PIN-F-003
+    rule: no absolute compare across instruments — the differential, never the tree against itself
+    prediction: >-
+      rows R1/R2: absolute compare under a matching stamp (PASS / RED at +1);
+      rows R3/R4: a stale stamp is REPORTed (BASELINE-STALE) and decided HEAD vs
+      merge-base under the same binary, the RED naming src/f8.rs; row R7: no
+      base nameable is RED by name; rows R9/R10: on the push shape (HEAD is the
+      origin/main tip) the base is the FIRST PARENT, delta 0 PASS and +1 RED
+      naming the path; row R11: the tip with its parent not fetched (depth-1) is
+      RED "never the tree against itself".
     test: 'bash scripts/check_hardcoded_paths.sh --self-test'
     if_fails: >-
       the day the fleet's analyser moves, every PR goes red (or green) for a
-      defect no PR introduced — the G-10 landmine
+      defect no PR introduced — the G-10 landmine; or the ratchet on main passes
+      vacuously (HEAD vs HEAD) and unlimited paths land undetected
     mutation: >-
-      make the ratchet compare shipped <= count regardless of the stamp; rows R3
-      and R5 must turn RED. Make the resolver accept any version; row R8 must
-      turn RED.
+      compare shipped <= count regardless of the stamp; rows R3 and R5 must turn
+      RED. Let resolve_base return merge-base(origin/main, HEAD) when that is HEAD
+      itself; row R10 must turn RED (it passes at delta 0) and row R11 must turn
+      RED (rc 0).
 
-  - id: PIN-F-002
-    rule: wired, case table then live
+  - id: PIN-F-004
+    rule: wired, case table then live, push shape deepened
     prediction: >-
       check_guards_are_wired.sh does not name check_hardcoded_paths.sh while
-      ci.yml carries its three steps (contract scan, --self-test, --full-if-capable).
+      ci.yml carries its three steps (contract scan, --self-test,
+      --full-if-capable); the "Fetch origin/main" step deepens by one on push.
     test: 'bash scripts/check_guards_are_wired.sh'
     if_fails: >-
-      a guard that exists and gates nothing (class #2878)
+      a guard that exists and gates nothing (class #2878); or the push-shape
+      run of the ratchet on main refuses on every push for want of a parent
     mutation: >-
       delete the three check_hardcoded_paths.sh steps from ci.yml;
       check_guards_are_wired.sh must turn RED naming the script.

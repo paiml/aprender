@@ -343,6 +343,24 @@ EOF
     case "$got3" in "$want3|single parent == origin/main tip"*) printf 'ok    row %-2s shallow fallback: single-parent head on the origin/main tip (merge_group squash head) -> that tip\n' "$row" ;;
         *) printf 'FAIL  row %-2s shallow fallback: wanted %s|single parent == origin/main tip..., got %s\n' "$row" "$want3" "$got3"; fails=1 ;; esac
 
+    # Rows 16-17: the push shape — HEAD IS the origin/main tip, so merge-base(origin/main, HEAD) is
+    # HEAD and a differential of HEAD against itself is a vacuous pass (G-10 quorum, 2026-09-06).
+    # The base is the tip's FIRST PARENT; with that parent not fetched (depth-1) it is a refusal.
+    row=$((row + 1))
+    ( cd "$R" && git update-ref refs/remotes/origin/main HEAD )
+    got4=$( cd "$R" && bash -c '. "$0" --lib-only; REPO_ROOT="$1"; resolve_base HEAD && printf "%s|%s" "$BASE_REF" "$BASE_HOW"' "$SELF" "$R" 2>/dev/null ) || true
+    want4=$( cd "$R" && git rev-parse 'HEAD^1' )
+    case "$got4" in "$want4|first parent of HEAD (HEAD is the origin/main tip"*) printf 'ok    row %-2s push shape: HEAD on the origin/main tip -> its first parent, never HEAD itself\n' "$row" ;;
+        *) printf 'FAIL  row %-2s push shape: wanted %s|first parent of HEAD (HEAD is the origin/main tip..., got %s\n' "$row" "$want4" "$got4"; fails=1 ;; esac
+    row=$((row + 1))
+    rm -rf "$R.shallow"; git clone -q --depth=1 -b main "file://$R" "$R.shallow" 2>/dev/null; git -C "$R.shallow" update-ref refs/remotes/origin/main HEAD
+    rc5=0; err5=$( cd "$R.shallow" && bash -c '. "$0" --lib-only; REPO_ROOT="$1"; resolve_base HEAD' "$SELF" "$R.shallow" 2>&1 >/dev/null ) || rc5=$?
+    case "$rc5:$err5" in
+        0:*) printf 'FAIL  row %-2s push shape, parent not fetched: resolved a base (rc=0) instead of refusing\n' "$row"; fails=1 ;;
+        *"never the tree against itself"*) printf 'ok    row %-2s push shape, parent not fetched (depth-1): refused by name, never HEAD itself\n' "$row" ;;
+        *) printf 'FAIL  row %-2s push shape, parent not fetched: refused for the wrong reason (rc=%s): %s\n' "$row" "$rc5" "$err5"; fails=1 ;;
+    esac
+
     if [ "$fails" -ne 0 ]; then
         printf '\nSELF-TEST FAILED (%s/%s rows)\n' "$((row - fails + fails))" "$row"
         exit 1
