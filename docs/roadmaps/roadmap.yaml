@@ -15254,11 +15254,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'GH-2900: G-2 DECISION D-5: [lib] name = aprender declared by root Cargo.toml and crates/aprender-core — keep the front door or rename'
-  status: planned
+  status: completed
   priority: medium
   assigned_to: null
   created: 2026-09-05T11:25:11Z
-  updated: 2026-09-05T11:25:11Z
+  updated: 2026-09-06T12:10:00Z
   spec: null
   acceptance_criteria:
   - 'one line in spec §0 with decided_by and date | mutation: none'
@@ -15266,7 +15266,7 @@ roadmap:
   subtasks: []
   estimated_effort: null
   labels: []
-  notes: null
+  notes: 'complete: proof:https://github.com/paiml/aprender/issues/2873#issuecomment-5558718271 (decided_by: noahgift via driver prompt 2026-09-06); proof:docs/audits/impl-PMAT-985-receipt.md'
 - id: PMAT-986
   github_issue: null
   item_type: task
@@ -15819,11 +15819,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'GH-2933: DEC-D-2 DECISION D-2: Unsloth throughput concession not assumed revoked; T-3 ships REPORTING'
-  status: planned
+  status: completed
   priority: medium
   assigned_to: null
   created: 2026-09-05T11:27:10Z
-  updated: 2026-09-05T11:27:10Z
+  updated: 2026-09-06T12:10:00Z
   spec: null
   acceptance_criteria:
   - 'one line in spec §0 with decided_by and date | mutation: none'
@@ -15831,16 +15831,16 @@ roadmap:
   subtasks: []
   estimated_effort: null
   labels: []
-  notes: null
+  notes: 'complete: proof:https://github.com/paiml/aprender/issues/2873#issuecomment-5558717537 (decided_by: noahgift via driver prompt 2026-09-06); proof:docs/audits/impl-PMAT-1018-receipt.md'
 - id: PMAT-1019
   github_issue: null
   item_type: task
   title: 'GH-2934: DEC-D-3 DECISION D-3 (escalate): CI home for non-CUDA lanes — may intel host a wgpu lane and a wasm harness; may mini host night'
-  status: planned
+  status: completed
   priority: medium
   assigned_to: null
   created: 2026-09-05T11:27:14Z
-  updated: 2026-09-05T11:27:14Z
+  updated: 2026-09-06T12:10:00Z
   spec: null
   acceptance_criteria:
   - 'one line in spec §0 with decided_by and date | mutation: none'
@@ -15848,16 +15848,16 @@ roadmap:
   subtasks: []
   estimated_effort: null
   labels: []
-  notes: null
+  notes: 'complete: proof:https://github.com/paiml/aprender/issues/2873#issuecomment-5558717787 (decided_by: noahgift via driver prompt 2026-09-06); proof:docs/audits/impl-PMAT-1019-receipt.md'
 - id: PMAT-1020
   github_issue: null
   item_type: task
   title: 'GH-2935: DEC-D-8 DECISION D-8 (escalate): rename sequencing for 0.67 — one PR per crate vs batched leaves'
-  status: planned
+  status: completed
   priority: medium
   assigned_to: null
   created: 2026-09-05T11:27:18Z
-  updated: 2026-09-05T11:27:18Z
+  updated: 2026-09-06T12:10:00Z
   spec: null
   acceptance_criteria:
   - 'one line in spec §0 with decided_by and date | mutation: none'
@@ -15865,16 +15865,16 @@ roadmap:
   subtasks: []
   estimated_effort: null
   labels: []
-  notes: null
+  notes: 'complete: proof:https://github.com/paiml/aprender/issues/2873#issuecomment-5558719034 (decided_by: noahgift via driver prompt 2026-09-06); proof:docs/audits/impl-PMAT-1020-receipt.md'
 - id: PMAT-1021
   github_issue: null
   item_type: task
   title: 'GH-2936: DEC-D-9 DECISION D-9: cuda in the published crate default features — yes iff S0-14 (held on intel/mini), R-0 merged, clean-room '
-  status: planned
+  status: completed
   priority: medium
   assigned_to: null
   created: 2026-09-05T11:27:21Z
-  updated: 2026-09-05T11:27:21Z
+  updated: 2026-09-06T12:10:00Z
   spec: null
   acceptance_criteria:
   - 'one line in spec §0 with decided_by and date | mutation: none'
@@ -15882,16 +15882,16 @@ roadmap:
   subtasks: []
   estimated_effort: null
   labels: []
-  notes: null
+  notes: 'complete: proof:https://github.com/paiml/aprender/issues/2873#issuecomment-5558719666 (decided_by: noahgift via driver prompt 2026-09-06); proof:docs/audits/impl-PMAT-1021-receipt.md'
 - id: PMAT-1022
   github_issue: null
   item_type: task
   title: 'GH-2937: DEC-D-10 DECISION D-10: per-target feature set of the release binaries (R-5 runs S0-14 per target)'
-  status: planned
+  status: completed
   priority: medium
   assigned_to: null
   created: 2026-09-05T11:27:25Z
-  updated: 2026-09-05T11:27:25Z
+  updated: 2026-09-06T12:10:00Z
   spec: null
   acceptance_criteria:
   - 'one line in spec §0 with decided_by and date | mutation: none'
@@ -15899,16 +15899,16 @@ roadmap:
   subtasks: []
   estimated_effort: null
   labels: []
-  notes: null
+  notes: 'complete: proof:https://github.com/paiml/aprender/issues/2873#issuecomment-5558719920 (decided_by: noahgift via driver prompt 2026-09-06); proof:docs/audits/impl-PMAT-1022-receipt.md'
 - id: PMAT-1023
   github_issue: null
   item_type: task
   title: 'GH-2938: DEC-D-11 DECISION D-11: PV-IMPROVE-001 phase 0 + 1.1/1.2 ride 0.66 as C12 blockers'
-  status: planned
+  status: completed
   priority: medium
   assigned_to: null
   created: 2026-09-05T11:27:28Z
-  updated: 2026-09-05T11:27:28Z
+  updated: 2026-09-06T12:10:00Z
   spec: null
   acceptance_criteria:
   - 'one line in spec §0 with decided_by and date | mutation: none'
@@ -15916,7 +15916,7 @@ roadmap:
   subtasks: []
   estimated_effort: null
   labels: []
-  notes: null
+  notes: 'complete: proof:https://github.com/paiml/aprender/issues/2873#issuecomment-5558720148 (decided_by: noahgift via driver prompt 2026-09-06); proof:docs/audits/impl-PMAT-1023-receipt.md'
 - id: PMAT-1024
   github_issue: null
   item_type: task
