@@ -105,7 +105,7 @@ fn one_vendors_failure_does_not_touch_anothers_entry() {
     let hip = MockBackendFactory::new(
         BackendKind::Hip,
         vec![BackendEntry {
-            status: Status::Unavailable(Reason::NoBackend("AMD".to_string())),
+            status: Status::Unavailable(Reason::NoBackend { vendor: "AMD".to_string() }),
             vendor: "AMD".to_string(),
             vendor_id: Some(0x1002),
             ..ready(BackendKind::Hip, Api::Hip, 0, "Radeon iGPU", "amd-igpu", 0)
@@ -119,7 +119,7 @@ fn one_vendors_failure_does_not_touch_anothers_entry() {
     let reg = BackendRegistry::discover_with(&f, None);
     let hip_e = reg.entries.iter().find(|e| e.kind == BackendKind::Hip).expect("hip line");
     assert!(
-        matches!(hip_e.status, Status::Unavailable(Reason::NoBackend(_))),
+        matches!(hip_e.status, Status::Unavailable(Reason::NoBackend { .. })),
         "AMD with no backend is LISTED, not ignored"
     );
     let sel = reg.select_default();
