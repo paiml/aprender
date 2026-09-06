@@ -95,7 +95,14 @@ bash "$ROOT/scripts/pp066_state.sh" > "$ROOT/docs/audits/pp-066-status-$DATE.md.
 { printf '# PP-066 status — %s (scripts/pp066_state.sh, one call)\n\n```\n' "$DATE"; cat "$ROOT/docs/audits/pp-066-status-$DATE.md.tmp"; printf '```\n'; } > "$ROOT/docs/audits/pp-066-status-$DATE.md.new"
 mv "$ROOT/docs/audits/pp-066-status-$DATE.md.new" "$ROOT/docs/audits/pp-066-status-$DATE.md"; rm -f "$ROOT/docs/audits/pp-066-status-$DATE.md.tmp"
 # 5. kaizen
-if [ "${#KAIZEN[@]}" -gt 0 ]; then [ -f "$ROOT/docs/audits/driver-kaizen.md" ] || printf '# Driver kaizen — one line per prompt defect met\n\n' > "$ROOT/docs/audits/driver-kaizen.md"; for k in "${KAIZEN[@]}"; do printf -- '- %s: %s\n' "$DATE" "$k" >> "$ROOT/docs/audits/driver-kaizen.md"; done; fi
+if [ "${#KAIZEN[@]}" -gt 0 ]; then
+    if [ ! -f "$ROOT/docs/audits/driver-kaizen.md" ]; then
+        printf '# Driver kaizen — one line per prompt defect met\n\n' > "$ROOT/docs/audits/driver-kaizen.md"
+    fi
+    for k in "${KAIZEN[@]}"; do
+        printf -- '- %s: %s\n' "$DATE" "$k" >> "$ROOT/docs/audits/driver-kaizen.md"
+    done
+fi
 # re-render and commit
 python3 "$ROOT/scripts/render_dag.py" render > "${TMPDIR:-/tmp}/sdc-block.$$"
 python3 - "$ROOT/docs/specifications/PP-066-release-spec.md" "${TMPDIR:-/tmp}/sdc-block.$$" <<'PY'
