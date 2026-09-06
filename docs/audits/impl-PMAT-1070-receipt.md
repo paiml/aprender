@@ -63,12 +63,17 @@ bitwise identical** before/after (`diff -rq`), GPU tree identical, same first di
 No Claude sub-agents; no agy lanes yet (P3 quorum for this N-lane row is owed before arming:
 three model families on the arms doc + the probe).
 
+## P3 quorum (three families) — `.pr/L0-1b/quorum.md`
+3/3 endorse fixing the CPU side; lane 2's dissent ("per-32 matches the GPU" is falsified by the probe table) upheld and folded;
+the delegate's zero-code arm ran: **`DIRECT_FP32_GEMV=1` → 1.5B min cosine 0.950827 → 0.999896, no diverging op** (arm A7).
+
 ## Gaps / next (step 2)
 
-- The fix is on the CPU side: the Q4_K × Q8 dot family (`fused_q4k_q8k_dot`,
-  `fused_q4k_q8k_ffn_up_gate_into`, `fused_q4k_q8k_parallel_matvec_into`, and
-  `quantize_activations_q8k_into`) takes one activation scale per 32-element sub-block instead of
-  one per 256 — the GPU's numerics, strictly more accurate. Revert → the 1.5B per-op table names
-  layer 26 again (POP-F-003), 7B GREEN; the GPU m=1 stream is untouched by construction.
+- The fix is on the CPU side (decided spec in docs/audits/l0-1b-arms.md §Fallback criterion): the Q4_K × Q8_K
+  drivers run f32 activations for a matmul whose normed residual-stream input has a 256-block with
+  max/second-largest ≥ 8 (basis: the measured table; never on 77 ordinary positions, always on the first
+  token's crushed blocks); the down projection keeps Q8_K. Expected 0.9999 (arm A7 measured the path);
+  fallback plan: per-32 scales as the quorum decided. Revert → the 1.5B per-op table names layer 26 again
+  (POP-F-003), 7B GREEN; the GPU m=1 stream is untouched by construction.
 - gx10 twin of the table (`make fleet-verify ROW=L0-1b` once G-11b lands).
 - P3 quorum (three families) on the finding before the fix PR.

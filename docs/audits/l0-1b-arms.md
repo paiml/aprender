@@ -58,7 +58,7 @@ The 7B: every op ≥ 0.98 over 78 positions (worst: layer 23 attn_out 0.9946).
 
 Positions ≥ 1 carry no massive activation and agree (ffn_swigl@26 pos 1: cos 0.999, max Δ 0.7).
 
-### Which side is wrong — the probe (`scratchpad/probe26.py`, gguf-py dequant, float64)
+### Which side is wrong — the probe (`.pr/L0-1b/step0/probe26.py`, gguf-py dequant, float64)
 
 Recomputing neurons 2908 / 7035 from the dequantised Q4_K weights of `blk.26.ffn_{gate,up}` and the
 CPU-tapped `ffn_norm` input:
@@ -68,14 +68,21 @@ CPU-tapped `ffn_norm` input:
 | f64, f32 input (truth for the quantised weights) | **−1142.0** | **618.4** |
 | GPU tap | −1136.5 (−0.5 %) | 616.9 (−0.2 %) |
 | CPU tap | −996.4 (−12.7 %) | 573.6 (−7.2 %) |
-| input Q8-quantised per 32 (GPU-style) | −1116.3 | 611.9 |
+| input Q8-quantised per 32 | −1116.3 (−2.25 %) | 611.9 |
 | input Q8-quantised per 256 (Q8_K, one scale per super-block) | **−996.369** | **573.560** |
 
 The CPU value is reproduced to three decimals by quantising the activation vector to int8 with one
 scale per 256 elements: the −146.68 outlier at dim 408 sets the scale (1.155) for dims 256–511 and
 crushes the other 255 elements to coarse steps; neuron 2908 draws 24.7 of its 68.7 gate pre-activation
-from that block. **The CPU reference is the inaccurate side.** The GPU (per-32 activation scales in
-its DP4A path) is within 0.5 % of the truth.
+from that block. **The CPU reference is the inaccurate side.** The GPU tap is within 0.5 % of the truth; note (quorum lane 2)
+that per-32 int8 quantisation of the input gives −1116.3, 2.25 % off — so the GPU's own activation numerics are NOT
+established by this table, only that they are closer to the truth than Q8_K's per-256 scale.
+
+**End-to-end falsifier (arm A7, run after the quorum):** `DIRECT_FP32_GEMV=1 apr parity <1.5B> --json` — the CPU
+reference uses f32 activations in `fused_q4k_parallel_matvec_into` (parallel_k.rs:258) and nothing else changes —
+**min cosine 0.950827 → 0.999896 (position 22), 0 positions < 0.98, 0 argmax mismatches; `--per-op` names no op
+(layer 26 ffn_swigl 0.999247, post_ffn_residual 0.999857, lm_head 0.999896).** The CPU's Q8_K activation
+quantisation is the mechanism, shown on the shipped binary with one environment variable.
 
 ## Consequence for the fix (step 2)
 
@@ -84,10 +91,38 @@ Q8_K-quantised (256-element scale). On massive-activation tokens (position 0 of 
 smaller on the 7B: 0.9986) that reference loses up to 13 % on the outlier neurons, and the "GPU
 divergence" is the CPU's error. The fix is on the CPU side: the Q4_K × Q8 dot family
 (`fused_q4k_q8k_dot`, `fused_q4k_q8k_ffn_up_gate_into`, `fused_q4k_q8k_parallel_matvec_into`, and
-the quantiser feeding them) takes one activation scale per 32-element sub-block — the sub-block
-the Q4_K scales/mins already iterate — instead of one per 256. This matches the GPU's numerics and
-is strictly more accurate; the GPU m=1 stream is untouched (CF-4 holds by construction on the GPU
-side), the CPU stream changes only where a 256-block held an outlier. Revert → the 1.5B per-op
-table names layer 26 again; 7B GREEN.
+the quantiser feeding them) must stop letting one element set the scale of 255 others. Candidates
+measured on this token (`.pr/L0-1b/step0/probe26b.py`; error on neuron 2908 vs the f64 truth):
+per-32 scales −2.25 % (the quorum's pick; touches every SIMD variant); f32 activations ≈ 0 but −17 %
+CPU decode (PMAT-305); an outlier split (zero |x| > τ·rms, τ ∈ [4, 8] → the same 3 dims, before
+Q8_K, then add the outlier terms exactly) −0.06 % at ≈ zero cost when no outlier is present. The
+split needs a criterion that separates crushed blocks from ordinary ones — see the table below.
+The GPU m=1 stream is untouched by any of these (CF-4 holds by construction on the GPU side).
+Revert → the 1.5B per-op table names layer 26 again; 7B GREEN (POP-F-003).
 
 Not done here: the kernel change itself (next session; the receipt carries this table).
+
+### Fallback criterion — measured on this tree (78 positions × 28 layers, CPU dump trees)
+
+Per 256-block, `max|x| / second-largest |x|` (the crushing statistic: how much of the block's int8 range one
+element takes):
+
+| matmul input | pos 0 max | pos 0 blocks ≥ 8 | pos ≥ 1 max | pos ≥ 1 p99.9 | pos ≥ 1 blocks ≥ 8 | blocks |
+|---|---|---|---|---|---|---|
+| attn_norm (→ qkv) | 21.4 | 14 | 4.6 | 3.9 | 0 | 12,936 |
+| ffn_norm (→ gate/up) | 20.1 | 27 | 6.0 | 4.7 | 0 | 12,936 |
+| final_norm (→ lm_head) | 2.7 | 0 | 7.7 | 7.2 | 0 | 462 |
+| attention (→ o_proj) | 1.0 | 0 | 5.2 | 3.9 | 0 | 12,936 |
+| ffn_swigl (→ down) | 641.3 | 30 | 89.5 | 21.9 | 553 | 75,460 |
+
+(`max|x|/rms` per block does not separate: it saturates at 16.0 on ordinary blocks too; global `max/rms` does not either —
+ffn_swigl's median is 78.)
+
+**Decided step-2 spec (orchestrator, after the quorum; the quorum's per-32 is the fallback plan):** the CPU Q4_K × Q8_K
+drivers (`fused_q4k_parallel_matvec_into`, the gate/up driver, the scratch-path twins) run a matmul with f32 activations
+(the existing `DIRECT_FP32_GEMV` path, `fused_q4k_dot_simd`) whenever the **normed residual-stream input** (qkv, gate/up,
+lm_head) contains a block with `max/second ≥ 8` — basis: the table above (77 non-first positions × 28 layers never exceed
+6.0; the first token's crushed blocks are ≥ 20). The down projection keeps Q8_K: spiky SwiGLU inputs are normal and its
+error is ≤ 0.4 % cosine at every position (per-op rows). Expected: the f32 path measured end to end as arm A7
+(0.999896); cost only on massive-activation tokens. If the down-projection exclusion proves wrong on another manifest model,
+per-32 scales (quorum) is the fallback plan.
