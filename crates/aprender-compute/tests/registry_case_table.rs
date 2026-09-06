@@ -267,3 +267,49 @@ fn a_reserve_refusal_propagates_to_the_devices_other_api_entries() {
         "the selection must not slide onto the refused card"
     );
 }
+
+/// Found on intel (two AMD W5700X, both "AMD Unknown (RADV NAVI10)" through
+/// wgpu): two DIFFERENT cards with one name collapsed into one device_uid and
+/// REG-9 counted one device. Same-named entries within one API are
+/// disambiguated by ordinal; distinct cards stay distinct.
+#[test]
+fn two_different_cards_with_one_name_stay_two_devices() {
+    let wgpu = MockBackendFactory::new(
+        BackendKind::Wgpu,
+        vec![
+            BackendEntry {
+                transport: Some("vulkan".to_string()),
+                ..ready(
+                    BackendKind::Wgpu,
+                    Api::Wgpu,
+                    0,
+                    "AMD Unknown (RADV NAVI10)",
+                    "amd:amd-unknown-radv-navi10",
+                    8 << 30,
+                )
+            },
+            BackendEntry {
+                transport: Some("vulkan".to_string()),
+                ..ready(
+                    BackendKind::Wgpu,
+                    Api::Wgpu,
+                    1,
+                    "AMD Unknown (RADV NAVI10)",
+                    "amd:amd-unknown-radv-navi10",
+                    8 << 30,
+                )
+            },
+        ],
+    );
+    let f: Vec<Box<dyn BackendFactory>> = vec![Box::new(wgpu)];
+    let reg = BackendRegistry::discover_with(&f, None);
+    assert_eq!(reg.distinct_devices(), 2, "two cards, two devices");
+    let uids: Vec<_> = reg
+        .entries
+        .iter()
+        .filter(|e| e.kind == BackendKind::Wgpu)
+        .map(|e| e.device_uid.clone())
+        .collect();
+    assert_ne!(uids[0], uids[1], "{uids:?}");
+    assert_eq!(reg.select_default().device_index, Some(0));
+}

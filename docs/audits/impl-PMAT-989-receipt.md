@@ -1,6 +1,6 @@
 ---
 status: partial
-partial_reason: "this PR is not yet merged on the required check; the gx10/intel/mini dogfood legs of A are pending (lambda done); flip to complete with the DAG status write-back after merge"
+partial_reason: "this PR is not yet merged on the required check; flip to complete with the DAG status write-back after merge (all four dogfood legs of A done)"
 ticket: PMAT-989
 row: R-0
 issue: 2904
@@ -26,7 +26,7 @@ ticket PMAT-989 · kind code · branch `agent/R-0` (worktree, claim held) · bas
 ## What lands
 - `trueno::registry` (`crates/aprender-compute/src/registry/`): `BackendKind::ALL = {cpu, cuda, wgpu, metal, hip}`; `BackendEntry {kind, api, device_index, device_uid, device_name, vendor, vendor_id: Option, device_type, mem_total, mem_free, mem_kind: Discrete | Unified{working_set_limit}, compute_class, caps, source: CompiledIn | Dlopen(path) | NotCompiled | Fixture(path), status: Ready | Unavailable(NotCompiled | DriverNotFound | NoDevice | NoBackend | ProbeFailed | ReserveExceedsFree), transport}`; the object-safe `BackendFactory` (`kind()`, `discover()`) with `MockBackendFactory`; `BackendRegistry::{discover, discover_with, from_fixture_json, with_reserve, select_default, distinct_devices, render_block, to_json}`; the CUDA factory through `trueno_gpu::driver` (`libcuda.so.1`, never cudart — REG-2), the wgpu factory over adapters with `transport` (a software rasteriser is `NoBackend`, never a GPU); `cpu` always Ready; every kind an explicit line (REG-11); REG-7 reserve (3,584 MiB `[U] default until master row 6 measures vram_peak`) as `ReserveExceedsFree{reserve, free}` **propagated across every entry sharing a `device_uid`** (a card refused for memory through the cuda driver is refused through its wgpu twin too — found by the catalogue, see Jidoka); REG-8 selection printed with its reason; REG-12 nothing persisted, fixtures named in `source`.
 - `apr devices [--json]` (an `ExtendedCommands` variant; category `hardware` in `contracts/apr-cli-commands-v1.yaml`, 111 commands): prints the block or the `apr-devices-v1` JSON; overrides `APR_RESERVE_BYTES` (`<n|nK|nM|nG>`) and `APR_REGISTRY_FIXTURE` are printed when active; a malformed override is exit 4 naming the variable; discovery never fails the process (REG-1).
-- Case table (9 rows, hermetic) + CLI failure catalogue (10 rows on fixture registries, every hermetic row with a must-RED twin: `tests/fixtures/registry/defective/missing-metal-line.json`), both wired into ci.yml's integration line. `contracts/schemas/apr-devices-v1.schema.json` validated with the `jsonschema` crate on the fixtures and on the running machine.
+- Case table (10 rows, hermetic) + CLI failure catalogue (10 rows on fixture registries, every hermetic row with a must-RED twin: `tests/fixtures/registry/defective/missing-metal-line.json`), both wired into ci.yml's integration line. `contracts/schemas/apr-devices-v1.schema.json` validated with the `jsonschema` crate on the fixtures and on the running machine.
 - Contracts: `apr-backend-registry-v1.yaml` (invariants (i) and (iii) discharged; (ii), (iv), (v) are R-0b's and are NOT claimed) and `apr-devices-schema-v1.yaml`; README 1811 → 1813 contracts, 110 → 111 commands.
 - The design-quorum amendment (DAG R-0 = R-0a, new R-0b #3002 / PMAT-1060, expiry moves, spec §12 llamafile citation) rides as #3003 and is also the first commit of this branch.
 
@@ -40,8 +40,24 @@ ticket PMAT-989 · kind code · branch `agent/R-0` (worktree, claim held) · bas
 | `cargo clippy -p aprender-compute --lib -- -D warnings` · `--features gpu` · `cargo clippy -p apr-cli --lib --bin apr -- -D warnings` · `cargo fmt --all -- --check` | rc 0 each (`--features cuda,gpu` trips a PRE-EXISTING `unused import GemmOp` at `matrix/ops/arithmetic.rs:413` on main too; not this diff) |
 | `pv validate` + `pv lint` on both contracts · `check_contract_test_binding.sh` · `check_contract_enforcement.sh` · `check_readme_claims.sh` (FALSIFY-README-002/003) · `check_no_claim_literals.sh` · `check_perf_claims_cite_receipts.sh` · `check_roadmap_diff_additive.sh` · `check_dag_invariants.sh` · `render_dag.py --check` · `check_receipt_complete.sh --dag` · `check_guards_are_wired.sh` · `check_baseline_ratchets.sh` | rc 0 each |
 | A (lambda): `apr devices --json \| jq -e '[.entries[]\|select(.status.state=="ready")]\|length>=1'` | true (default build: cpu Ready + wgpu/Vulkan sees the RTX 4090; `cuda` line reads `NotCompiled` because the default build has no cuda feature — an honest line, the D-9 question) |
-| A (gx10, intel, mini) | PENDING — see Gaps |
+| A (gx10, intel, mini): the same jq on `apr devices --json` from a build of this branch on each host | **true, true, true** — gx10: `NVIDIA GB10` Ready through wgpu/vulkan, `kind=unified` (the Vulkan loader printed a freedreno `VK_ERROR_INCOMPATIBLE_DRIVER` line on stderr for an unrelated device node; discovery did not abort — REG-1); intel: two `AMD Unknown (RADV NAVI10)` Ready through vulkan, llvmpipe listed as `NoBackend(software rasteriser …)` (S0-3); mini: `Apple M4` Ready through wgpu/metal, `kind=unified`; on all three `cuda` reads `NotCompiled` (default build) and `metal`/`hip` read `NoBackend`. Blocks pasted below. |
 | A: `scripts/pv_bin.sh validate contracts/apr-devices-schema-v1.yaml` | valid |
+
+## Four-host dogfood (printed blocks, default build of this branch)
+```
+gx10  backend: cpu    ready        aarch64 host cpu, 20 threads class=neon mem=122502MiB kind=unified source=compiled-in
+gx10  backend: wgpu   ready        device[0]="NVIDIA GB10" kind=unified transport=vulkan caps={max_buffer_size=4503599627370496} source=compiled-in
+gx10  backend: wgpu   unavailable  reason=NoBackend(software rasteriser (llvmpipe (LLVM 20.1.2, 128 bits)) is not a GPU) source=compiled-in
+gx10  selected: wgpu device[0]  reserve=3584MiB basis=[U] default until master row 6 measures vram_peak  (first Ready non-cpu entry; 1 physical device(s) Ready)
+intel backend: cpu    ready        x86_64 host cpu, 32 threads class=avx512 mem=289934MiB kind=unified source=compiled-in
+intel backend: wgpu   ready        device[0]="AMD Unknown (RADV NAVI10)" kind=discrete transport=vulkan caps={max_buffer_size=2147483647} source=compiled-in
+intel backend: wgpu   ready        device[1]="AMD Unknown (RADV NAVI10)" kind=discrete transport=vulkan caps={max_buffer_size=2147483647} source=compiled-in
+intel backend: wgpu   unavailable  reason=NoBackend(software rasteriser (llvmpipe (LLVM 15.0.7, 256 bits)) is not a GPU) source=compiled-in
+mini  backend: cpu    ready        aarch64 host cpu, 10 threads class=neon kind=unified source=compiled-in
+mini  backend: wgpu   ready        device[0]="Apple M4" kind=unified transport=metal caps={max_buffer_size=9534832640} source=compiled-in
+(every host also prints the cuda NotCompiled, metal NoBackend and hip NoBackend lines)
+```
+**Finding (REG-9, intel)**: the two W5700X cards enumerate with ONE name through wgpu, so they shared a `device_uid` and `distinct_devices()` counted **1** — two different cards collapsed into one. Fixed on this branch: same-named entries within one API are disambiguated by ordinal (`#k`); case-table row 10 (`two_different_cards_with_one_name_stay_two_devices`, RED before the fix). Cross-API twins still match by ordinal.
 
 ## Mutations (RED, then restored GREEN)
 1. `missing_entry` no longer produces a line for a kind without a factory → case table 6/9 (`cpu_is_always_ready_and_every_kind_prints_a_line`, `json_carries_the_schema_top_level_keys` + one more FAILED) and catalogue 8/9 (`json_output_validates_against_the_schema…` FAILED). Restored → 9/9, 9/9.
@@ -76,7 +92,7 @@ Slots ≤ 2 live at any instant; denials 0.
 - `git add` with one non-existent pathspec stages nothing (the pathspec error aborts the whole add) — two commits appeared empty until re-added; and `git checkout -- <file>` restores the INDEX version, so a staged edit survives it (use `git restore --staged --worktree`).
 
 ## Gaps
-- **Dogfood legs**: gx10, intel and mini not yet run (the branch must be built there; S0 left worktrees on intel/mini). Recorded as PENDING in A; the lambda leg is done on the default build. The `--features cuda` leg on lambda: the case table's cuda arm passed (the CUDA factory saw the RTX 4090 via `libcuda.so.1`); the `apr` binary with `--features cuda` is the D-9 question, not this row's.
+- **Dogfood legs**: all four done on the default build (lambda, gx10, intel, mini — blocks above); the intel leg found the REG-9 uid collision, fixed here. The `--features cuda` leg on lambda: the case table's cuda arm passed (the CUDA factory saw the RTX 4090 via `libcuda.so.1`); the `apr` binary with `--features cuda` is the D-9 question, not this row's.
 - The non-hermetic fixtures FX-1/3/12 (Linux-only: `LD_PRELOAD` stub, read-only `$TMPDIR`, `strace`) and FX-2/4/5/6/8/9 (real drivers, real cards, root) are not in CI by the quorum's decision; they become host-dogfood rows recorded as receipts.
 - `caps` is a name list; cuBLAS-as-a-capability (REG-5) lands with R-0b's effective-config.
 - REG-1's "a driver fault never takes the process down" for the wgpu path (`DEVICE_INIT_LOCK` on a broken EGL driver, lane 1's open question) is unproven here.

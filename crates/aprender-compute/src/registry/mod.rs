@@ -326,6 +326,7 @@ impl BackendRegistry {
             if found.is_empty() {
                 found.push(missing_entry(kind));
             }
+            disambiguate_same_named(&mut found);
             entries.extend(found);
         }
         apply_reserve(&mut entries, reserve);
@@ -534,6 +535,23 @@ fn count_distinct(entries: &[BackendEntry]) -> usize {
         }
     }
     seen.len()
+}
+
+/// Two DIFFERENT cards with the same name through one API (intel's two AMD
+/// W5700X both enumerate as "AMD Unknown (RADV NAVI10)") would share a uid and
+/// collapse into one device for REG-9. The k-th same-named entry within an API
+/// gets `#k` appended, so twins across APIs still match by ordinal while
+/// distinct cards stay distinct (found by the four-host dogfood, 2026-09-06).
+fn disambiguate_same_named(found: &mut [BackendEntry]) {
+    let uids: Vec<Option<String>> = found.iter().map(|e| e.device_uid.clone()).collect();
+    for (i, e) in found.iter_mut().enumerate() {
+        let Some(uid) = uids[i].clone() else { continue };
+        let earlier = uids[..i].iter().filter(|u| u.as_deref() == Some(uid.as_str())).count();
+        let total = uids.iter().filter(|u| u.as_deref() == Some(uid.as_str())).count();
+        if total > 1 {
+            e.device_uid = Some(format!("{uid}#{earlier}"));
+        }
+    }
 }
 
 fn missing_entry(kind: BackendKind) -> BackendEntry {
