@@ -16420,7 +16420,7 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
-- id: PMAT-1060
+- id: PMAT-1073
   github_issue: 3002
   item_type: task
   title: 'GH-3002: R-0b backend resolution reads the registry (split of R-0 per the design quorum 2026-09-06)'
@@ -16642,3 +16642,26 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-1072
+  github_issue: 3028
+  item_type: bug
+  title: 'GH-3028: main RED — upstream roadmap-valid (PATH pmat 3.39.0) rejected 12 legacy nested subtask
+    records as duplicate ids; dropped them, in-repo pin-independent id-uniqueness guard through the parsed
+    tree (scripts/check_roadmap_ids_unique.sh), G-6 treats a parent''s subtasks list as lifecycle (PR #3030)'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-09-06T18:05:00Z
+  updated: 2026-09-06T18:05:00Z
+  spec: null
+  acceptance_criteria:
+  - 'bash scripts/check_roadmap_ids_unique.sh --self-test && bash scripts/check_roadmap_ids_unique.sh'
+  - 'pmat 3.39.0 and the 3.37.0 pin both print Validation passed on docs/roadmaps/roadmap.yaml'
+  - 'mutation: main push run 34049248452 (RED, roadmap-valid) vs PR #3030 run (GREEN, same step)'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - pp-066
+  notes: 'see #3028; fleet pin drift paiml/infra#468; the identical dedup also rides #3027 (BSE-001 H4)'

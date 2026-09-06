@@ -4,7 +4,7 @@ Three adversarial agy lanes (agy 1.1.27, `--mode plan`, `writes=false`; conversa
 
 ## Verdict: **scope-holds-with-changes** (lane 1); lanes 2/3 said scope-fails on a premise the spec refutes
 
-The 2-of-3 "scope-fails" rested on *C3 moved to 0.67 ⇒ `--backend` resolution unenforced*. The spec says the resolution ships in **R-0b** (`docs/specifications/PP-066-release-spec.md:267` — "R-0b ships the resolution; the per-surface case table over every host is credited in 0.67 with its instrument"; R-0b is kept, #3002, PMAT-1060, a TAG-0.66.0 dependency) and C11 (credited) carries "zero `cfg!(feature)` reads in `apr-cli` backend decisions"; only the per-surface × per-host case table is deferred with its instrument. A moved criterion is not a moved capability. Verdict adopted: **scope holds with the changes below.**
+The 2-of-3 "scope-fails" rested on *C3 moved to 0.67 ⇒ `--backend` resolution unenforced*. The spec says the resolution ships in **R-0b** (`docs/specifications/PP-066-release-spec.md:267` — "R-0b ships the resolution; the per-surface case table over every host is credited in 0.67 with its instrument"; R-0b is kept, #3002, PMAT-1073, a TAG-0.66.0 dependency) and C11 (credited) carries "zero `cfg!(feature)` reads in `apr-cli` backend decisions"; only the per-surface × per-host case table is deferred with its instrument. A moved criterion is not a moved capability. Verdict adopted: **scope holds with the changes below.**
 
 ## Rulings (every hit returns a row or removes a claim)
 

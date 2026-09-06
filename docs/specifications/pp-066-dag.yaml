@@ -2736,7 +2736,7 @@ rows:
   quorum: 3-lane (the design was judged with R-0; this half is review-only on the diff)
   spec: PP-066 §5 R-0 (the resolution half); REG-8, REG-11, REG-12; design quorum 2026-09-06
   gh_issue: 3002
-  pmat_id: PMAT-1060
+  pmat_id: PMAT-1073
   status: open
   notes: 'lane 1 (systems): BACKEND_VALUES is a compile-time [&str; N] fed to clap''s value_parser and cannot be runtime-populated — "zero cfg! reads" applies to DECISIONS, the vocabulary stays static and
     widened; lane 2 (Apple): wgpu is a transport over a physical backend, so the printed kind list and the entry schema must not double-count one GPU (device_uid dedup, decided with R-0a)'
@@ -2974,7 +2974,7 @@ amendments:
 - date: '2026-09-06'
   by: noahgift via driver prompt 2026-09-06 (v4)
   row: R-0 / R-0b
-  change: R-0 carries the R-0a half (registry + apr devices); R-0b (#3002, PMAT-1060) is the resolution half
+  change: R-0 carries the R-0a half (registry + apr devices); R-0b (#3002, PMAT-1073) is the resolution half
   why: '#3003 (agent/R-0-amend) folded into the orchestrator branch: its branch is not an orchestrator branch under G-11 and its DAG/spec/roadmap edits belong here; docs/audits/pp-066-r0-design-quorum.md
     carried over verbatim'
 - date: '2026-09-06'
