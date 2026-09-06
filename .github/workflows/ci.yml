@@ -1617,6 +1617,14 @@ jobs:
         run: bash scripts/check_hardcoded_paths.sh --self-test
       - name: Whole-tree machine-specific-path ratchet (pinned analyser via scripts/pmat_bin.sh, PMAT-1059)
         run: bash scripts/check_hardcoded_paths.sh --full-if-capable
+      # G-10b (PMAT-1063, #3013): every OTHER analyser reference under scripts/ and the
+      # workflows resolves through the same pin — counted, shrink-only against
+      # scripts/pmat_unpinned_baseline.txt (measured at the commit it names, never typed);
+      # the sweep to 0 is G-10c. Case table first, then the live count.
+      - name: Analyser pin guard case table (scripts/pmat_bin.sh, G-10b PMAT-1063)
+        run: bash scripts/check_pmat_pinned.sh --self-test
+      - name: Unpinned analyser references may only fall (shrink-only, G-10b PMAT-1063)
+        run: bash scripts/check_pmat_pinned.sh
       # PRREV-006. PR-REVIEW-SKILL-002 v2 §9 row 6 states how the receipt guard
       # may be wired, and both halves are scars rather than style:
       #
