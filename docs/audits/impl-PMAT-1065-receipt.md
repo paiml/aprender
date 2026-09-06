@@ -44,6 +44,7 @@ turns: 34
 ## Dispatch ledger
 | dispatch | agent | lane | width | agy conversations | families | note |
 |---|---|---|---|---|---|---|
+| review lane (P3) | paiml-agy-delegate `a762096ce60330115` (opus) → one Gemini 3.1 Pro lane `8b5326d5-…` | quorum, mode plan | 1 | implement-with-changes; ten findings, six fixed (`043a47801`, `25a8f8683`), two recorded for R-0b, two documented — `.pr/L0-1/quorum.md` |
 | REG-15 worker | paiml-impl-worker `a36e5044dff6e57d2` (sonnet) | subagent | 1 | — | — | hit its 40-turn cap twice (exploration, then the module + tests); returned `partial=true` naming the unwired sites; its receipt claimed `cargo test --test reg15_admission` exit 0 — re-run by the orchestrator: 7 passed. The lock entry it held outlived its cap until it was told to stop (kaizen) |
 | root-cause quorum | paiml-agy-delegate `a3b9e53386bd9cf4c` (opus) | quorum, mode plan | 3 | b69448cb-aa3b-4c01-990c-bb843c0f4df2 · 0298ed4c-c0a2-4535-a1b9-26bafaefef4a · 36a93c83-32a4-4f93-b89e-f5de170f3a7b | **gemini-3.1-pro ×3 — NOT three families** (a gap: the driver requires three model families for an N-lane row; the delegate did not vary them — kaizen line, re-run with distinct families before P2) | num_turns=1 each: no lane ran a command; every citation is from the staged prompt or memory |
 
@@ -72,7 +73,7 @@ turns: 34
 | (vii) PR-time gate = two sentinels in workspace-test | ✓ | `parity_admission.rs::sentinel_tests` (1.5B RED, 7B GREEN, ≥ 64 positions) |
 
 ## Gaps (each with the artifact that closes it)
-- `crates/apr-cli/src/commands/diff_benchmark_report.rs:82` still sets `SKIP_PARITY_GATE=1` silently ("PMAT-203: known false positive on CUDA 13.1 driver" — itself a claim L0-1b must test): the file's `run()` (lines 16–198, cyclomatic 30) is over the pre-commit complexity gate, so the edit needs the decomposition in the same commit — patch kept at `.pr/L0-1/diff_benchmark_report.override.patch`.
+- ~~`diff_benchmark_report.rs:82` silent `SKIP_PARITY_GATE`~~ closed in `25a8f8683` (the GPU half extracted into `gpu_profile_or_none()`); the file's "PMAT-203: known false positive on CUDA 13.1 driver" comment is a claim L0-1b must test.
 - `GET /v1/effective-config` `parity:{…}` block: the handler is `crates/aprender-serve/src/api/effective_config.rs` (outside the worker's scope); not wired.
 - `apr devices --model <gguf>` serviceable column: after R-0a's `apr devices` lands.
 - `apr-dogfood --release` C14 row and the dogfood P6 falsifier: not wired (the release phase of `scripts/dogfood.sh`).
