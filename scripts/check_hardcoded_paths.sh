@@ -113,6 +113,8 @@
 set -uo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SELF_ROOT="$REPO_ROOT"                      # the checkout that carries the libs
+REPO_ROOT="${HP_REPO_ROOT:-$REPO_ROOT}"   # the tree under test (the self-test points this at a fixture repo)
 SHIPPED_BASELINE="${REPO_ROOT}/scripts/hardcoded_path_shipped_baseline.txt"
 
 # Scanned tier. Overridable so the self-test can point at a fixture tree.
@@ -201,136 +203,165 @@ if [ "${1:-}" = "--self-test" ]; then
         printf 'ok    guard fails closed below the vacuity floor\n'
     fi
 
+    # ---- the pinned-instrument ratchet: a fixture analyser + a fixture repo (PMAT-1059) ----
+    pin=$(sed -nE 's/^PMAT_PIN="([0-9.]+)"$/\1/p' "${SELF_ROOT}/scripts/pmat_bin.sh" | head -n1)
+    FAKE="$TD/fake-analyser"
+    printf '#!/usr/bin/env bash\ncase "$1" in --version) echo "%s %s"; exit 0;; esac\nd=.; while [ $# -gt 0 ]; do case "$1" in -p) d=$2; shift;; --help) echo ok; exit 0;; esac; shift; done\ncat "$d/.fake-scan.json"\n' "pmat" "$pin" > "$FAKE"
+    printf '#!/usr/bin/env bash\ncase "$1" in --version) echo "%s 3.0.0"; exit 0;; esac\necho ok\n' "pmat" > "$TD/off-pin"
+    chmod +x "$FAKE" "$TD/off-pin"
+    scanjson() { local n=$1 i s=""; for ((i = 0; i < n; i++)); do s="$s{\"site\":\"shipped\",\"file\":\"src/f$i.rs\",\"path\":\"fixture://p$i\"},"; done; printf '{"shipped_count":%s,"files_scanned":5,"findings":[%s]}\n' "$n" "${s%,}"; }
+    bl() { printf 'count: %s\npmat_version: %s\nbasis: $PMAT analyze hardcoded-paths -p . -f json | jq .shipped_count (fixture)\n' "$1" "$2"; }
+    R="$TD/repo"; mkdir -p "$R/scripts"
+    ( cd "$R" && git init -q . && git config user.email t@t && git config user.name t && git config core.hooksPath /dev/null && git commit -q --allow-empty -m root )
+    hp_row() { # hp_row <want rc> <label> <base n> <base baseline> <head n> <head baseline> [<wanted text>] [<env>]
+        local want=$1 label=$2 bn=$3 bbl=$4 hn=$5 hbl=$6 sub=${7:-} env=${8:-} rc=0 out
+        ( cd "$R" && git checkout -q --detach && git reset -q --hard "$(git rev-list --max-parents=0 HEAD)" ) || return 1
+        mkdir -p "$R/scripts"
+        scanjson "$bn" > "$R/.fake-scan.json"; printf '%s\n' "$bbl" > "$R/scripts/hardcoded_path_shipped_baseline.txt"
+        ( cd "$R" && git add -A && git commit -qm base && git update-ref refs/remotes/origin/main HEAD && git checkout -q -B row )
+        scanjson "$hn" > "$R/.fake-scan.json"; printf '%s\n' "$hbl" > "$R/scripts/hardcoded_path_shipped_baseline.txt"
+        ( cd "$R" && git add -A && git commit -qm head --allow-empty )
+        [ "$env" = no-base ] && git -C "$R" update-ref -d refs/remotes/origin/main
+        out=$(HP_REPO_ROOT="$R" PMAT_BIN_OVERRIDE="${FAKE_BIN:-$FAKE}" PMAT_BIN_NO_FALLBACK=1 MIN_FILES_SCANNED=1 bash "${BASH_SOURCE[0]}" --full-if-capable 2>&1) || rc=$?
+        if [ "$rc" = "$want" ] && { [ -z "$sub" ] || printf '%s' "$out" | grep -qF -- "$sub"; }; then printf 'ok    ratchet %s (rc=%s)\n' "$label" "$rc"
+        else printf 'FAIL  ratchet %s (rc=%s, wanted %s%s)\n' "$label" "$rc" "$want" "${sub:+; wanted text: $sub}"; printf '%s\n' "$out" | tail -6 | sed 's|^|        |'; fails=1; fi
+    }
+    hp_row 0 "R1 stamp == pin, 8 <= 8: PASS by the absolute compare"                   8 "$(bl 8 "$pin")" 8 "$(bl 8 "$pin")" "matches the pin"
+    hp_row 1 "R2 stamp == pin, +1 path: RED by the absolute compare"                    8 "$(bl 8 "$pin")" 9 "$(bl 8 "$pin")" "grew 8 -> 9"
+    hp_row 0 "R3 stale stamp 3.36.0 (count 5), a newer pin widens: REPORT + differential PASS" 8 "$(bl 5 3.36.0)" 8 "$(bl 5 3.36.0)" "BASELINE-STALE{old=3.36.0,new=$pin}"
+    hp_row 1 "R4 stale stamp, +1 path vs base: RED by the differential, path named"     8 "$(bl 5 3.36.0)" 9 "$(bl 5 3.36.0)" "src/f8.rs|fixture://p8"
+    hp_row 0 "R5 INVALID stamp (no version): REPORT + differential PASS"                8 "$(bl 8 INVALID)" 8 "$(bl 8 INVALID)" "BASELINE-INVALID"
+    hp_row 1 "R6 stamp bumped 3.36.0 -> pin while count: stands: refused"              8 "$(bl 8 3.36.0)" 8 "$(bl 8 "$pin")" "A stamp is not a measurement"
+    hp_row 1 "R7 stale stamp and no base to name: RED, never the branch against itself" 8 "$(bl 5 3.36.0)" 8 "$(bl 5 3.36.0)" "" no-base
+    FAKE_BIN="$TD/off-pin" hp_row 1 "R8 no analyser at the pin: FAIL (ENV), not a pass" 8 "$(bl 8 "$pin")" 8 "$(bl 8 "$pin")" "FAIL (ENV)"
+    unset FAKE_BIN
+
     [ "$fails" -eq 0 ] || { printf '\nSELF-TEST FAILED\n'; exit 1; }
     printf '\nSELF-TEST PASSED\n'; exit 0
 fi
 
 # ---------------------------------------------------------------------------
-# --full-if-capable: the same ratchet, but it arms itself. Runs --full and
-# propagates its status wherever pmat can produce a verdict; where pmat cannot,
-# it PROVES that and skips. See "WHAT WENT WRONG WITH LEAVING IT UNWIRED".
+# --full-if-capable / --full: the shipped tier, ratcheted under ONE pinned
+# instrument (PMAT-1059, DAG row G-10, #2999).
 #
-# The skip is deliberately narrow. It is taken only for a demonstrated
-# capability gap, it prints the evidence, and it is not reachable once the
-# subcommand exists -- so no edit is needed on the day the fleet upgrades.
+# THE INSTRUMENT IS PART OF THE NUMBER. 277 was recorded 2026-09-05 with no
+# version named; 3.37.0 and 3.38.0 both count 317 on that same tree. The day
+# paiml/infra pinned the fleet at 3.37.0 (forjar.yaml, PMAT-231) the self-arming
+# guard armed and every PR went red for a defect no PR introduced. So:
+#   * the binary is scripts/pmat_bin.sh's pin, never PATH. "--full-if-capable"
+#     no longer skips: a runner without the pin is an ENV failure (exit 1),
+#     because an unanswered ratchet is not a pass;
+#   * the baseline carries count:, pmat_version:, basis:. Any of the three
+#     missing or unparseable => INVALID, and INVALID is not a number;
+#   * the absolute compare (shipped <= count) runs ONLY when the stamp equals
+#     the binary's version. Otherwise the guard REPORTs BASELINE-STALE{old,new}
+#     (or BASELINE-INVALID) and decides by HEAD vs merge-base under the same
+#     binary: delta <= 0 PASS, delta > 0 FAIL naming the new paths;
+#   * re-baselining is its own ticket, re-measured, stamped, never a raise: a
+#     stamp that moves while count: stands still is refused.
+# The base is named by scripts/lib/resolve_base.sh (G-6's resolver, one case
+# table for both guards) and materialised as a detached worktree (the analyser
+# enumerates with `git ls-files`), so a depth-1 checkout that fetched origin/main
+# can answer.
 # ---------------------------------------------------------------------------
-if [ "${1:-}" = "--full-if-capable" ]; then
-    printf '=== shipped-tier ratchet, self-arming (--full-if-capable) ===\n'
-    if ! command -v pmat >/dev/null 2>&1; then
-        printf 'SKIPPED (proven): no pmat on this runner.\n'
-        printf 'This mode is a thin wrapper over `pmat analyze hardcoded-paths`\n'
-        printf '(pmat#1017); it does not re-detect. It arms itself once pmat is\n'
-        printf 'present AND carries the subcommand -- no edit required.\n'
-        exit 0
-    fi
-    # Never read $? through a pipe (Verification Discipline #1).
-    PROBE_OUT="$(pmat analyze hardcoded-paths --help 2>&1)"
-    probe_rc=$?
-    PMAT_VER="$(pmat --version 2>&1 | head -1)"
-    if [ "$probe_rc" -ne 0 ]; then
-        printf 'SKIPPED (proven): %s cannot run this analysis.\n' "$PMAT_VER"
-        printf '  $ pmat analyze hardcoded-paths --help   -> rc=%s\n' "$probe_rc"
-        printf '%s\n' "$PROBE_OUT" | head -3 | sed 's|^|  |'
-        printf 'Needs pmat >= 3.32.0. The ratchet arms itself when that lands.\n'
-        exit 0
-    fi
-    printf 'pmat is capable (%s) -- the ratchet is ARMED and blocking.\n' "$PMAT_VER"
-    bash "${BASH_SOURCE[0]}" --full
-    exit $?
-fi
-
-# ---------------------------------------------------------------------------
-# --full: pmat's shipped tier, ratcheted. Detection is pmat's; this holds the
-# number. Fails hard when pmat cannot do it, never silently.
-# ---------------------------------------------------------------------------
-if [ "${1:-}" = "--full" ]; then
-    printf '=== shipped-tier ratchet via pmat (check_hardcoded_paths.sh --full) ===\n'
-    command -v pmat >/dev/null 2>&1 || {
-        printf 'FAIL: pmat not found. This mode is a thin wrapper over\n'
-        printf '  pmat analyze hardcoded-paths (pmat#1017); it does not re-detect.\n'
+hp_read_baseline() { # hp_read_baseline <file> -> HP_COUNT HP_VER HP_BASIS HP_VALID HP_WHY
+    HP_COUNT=$(sed -nE 's/^count:[[:space:]]*([0-9]+)[[:space:]]*(#.*)?$/\1/p' "$1" | head -n1)
+    HP_VER=$(sed -nE 's/^pmat_version:[[:space:]]*([0-9]+\.[0-9]+\.[0-9]+)[[:space:]]*(#.*)?$/\1/p' "$1" | head -n1)
+    HP_BASIS=$(sed -nE 's/^basis:[[:space:]]*(\$PMAT analyze hardcoded-paths.*)$/\1/p' "$1" | head -n1)
+    HP_VALID=1; HP_WHY=""
+    [ -n "$HP_COUNT" ] || { HP_VALID=0; HP_WHY="no 'count: N' line"; }
+    [ -n "$HP_VER" ]   || { HP_VALID=0; HP_WHY="${HP_WHY:+$HP_WHY; }no 'pmat_version: X.Y.Z' line"; }
+    [ -n "$HP_BASIS" ] || { HP_VALID=0; HP_WHY="${HP_WHY:+$HP_WHY; }no 'basis: \$PMAT analyze hardcoded-paths ...' line"; }
+}
+hp_scan() { # hp_scan <dir> <out.json>; the analyser's own rc, never $? through a pipe
+    ( cd "$1" && "$PMAT" analyze hardcoded-paths -p . -f json ) > "$2" 2> "$2.err"
+}
+hp_paths() { # hp_paths <json> -> sorted "file|path" lines of the shipped tier
+    jq -r '.findings[] | select(.site=="shipped") | "\(.file)|\(.path)"' "$1" | sed 's|^\./||' | LC_ALL=C sort
+}
+if [ "${1:-}" = "--full-if-capable" ] || [ "${1:-}" = "--full" ]; then
+    printf '=== shipped-tier ratchet under the pinned analyser (check_hardcoded_paths.sh %s) ===\n' "$1"
+    # shellcheck source=scripts/pmat_bin.sh
+    if ! . "${SELF_ROOT}/scripts/pmat_bin.sh"; then
+        printf 'FAIL (ENV): scripts/pmat_bin.sh found no analyser at its pin. A runner without the pin cannot answer, and an unanswered ratchet is not a pass.\n'
         exit 1
-    }
-    command -v jq >/dev/null 2>&1 || { printf 'FAIL: jq not found.\n'; exit 1; }
-
+    fi
+    command -v jq >/dev/null 2>&1 || { printf 'FAIL (ENV): jq not found.\n'; exit 1; }
+    printf 'armed under the pin %s (%s)\n' "$PMAT_VERSION" "$PMAT"
     TD="$(mktemp -d)" || { printf 'FAIL: no temp dir\n' >&2; exit 1; }
     trap 'rm -rf "${TD:?}"' EXIT
-    # Never read $? through a pipe (Verification Discipline #1).
-    ( cd "$REPO_ROOT" && pmat analyze hardcoded-paths -p . -f json ) \
-        > "$TD/out.json" 2> "$TD/err.txt"
-    rc=$?
-    if [ "$rc" -ne 0 ] || [ ! -s "$TD/out.json" ]; then
-        printf 'FAIL: pmat analyze hardcoded-paths did not produce JSON (rc=%s).\n' "$rc"
-        printf 'Needs pmat >= 3.32.0; 3.31.0 has no such subcommand.\n'
-        sed 's|^|  |' "$TD/err.txt" | head -5
-        exit 1
+    if ! hp_scan "$REPO_ROOT" "$TD/head.json" || [ ! -s "$TD/head.json" ]; then
+        printf 'FAIL: the analyser produced no JSON for HEAD.\n'; sed 's|^|  |' "$TD/head.json.err" | head -5; exit 1
     fi
-
-    shipped="$(jq -r '.shipped_count' "$TD/out.json")"
-    files="$(jq -r '.files_scanned' "$TD/out.json")"
-    case "$shipped$files" in ''|*[!0-9]*) printf 'FAIL: unparseable pmat JSON\n'; exit 1 ;; esac
-
+    shipped="$(jq -r '.shipped_count' "$TD/head.json")"
+    files="$(jq -r '.files_scanned' "$TD/head.json")"
+    case "$shipped$files" in ''|*[!0-9]*) printf 'FAIL: unparseable analyser JSON\n'; exit 1 ;; esac
     if [ "$files" -lt "$MIN_FILES_SCANNED" ]; then
-        printf '\nFAIL (vacuity): pmat scanned only %s file(s), floor %s.\n' "$files" "$MIN_FILES_SCANNED"
-        printf 'Fix the scan, not this number.\n'
-        exit 1
+        printf '\nFAIL (vacuity): the analyser scanned only %s file(s), floor %s. Fix the scan, not this number.\n' "$files" "$MIN_FILES_SCANNED"; exit 1
     fi
     [ -f "$SHIPPED_BASELINE" ] || { printf 'FAIL: %s missing.\n' "$SHIPPED_BASELINE"; exit 1; }
-    baseline="$(tr -d '[:space:]' < "$SHIPPED_BASELINE")"
-
-    # THE RATCHET IS A PROPERTY OF THE DIFF, NOT OF THE TREE.
-    #
-    # Everything above compares the scan against the baseline AS IT STANDS IN THE
-    # WORKING TREE, and that is not a ratchet. NEW (a finding with no entry) and
-    # STALE (an entry with no finding) are the only two properties a working tree
-    # can answer, and a commit that appends one line AND lands the matching
-    # violation satisfies both at once: not new, because it is baselined; not
-    # stale, because the finding is real.
-    #
-    # Measured, not argued: appending one entry cloned from this file's own last
-    # real entry returned rc=0 from this guard, under its own words:
-    #     "shipped-tier ratchet via pmat"
-    # Twelve guards in scripts/ failed the same probe.
-    #
-    # So growth is now compared against merge-base(HEAD, origin/main), falling
-    # back to the origin/main TIP because CI checks out shallow — a ref this
-    # branch cannot rewrite, and never the branch against itself.
+    hp_read_baseline "$SHIPPED_BASELINE"
+    # The file itself is shrink-only against a ref this branch cannot rewrite.
     # shellcheck source=scripts/lib_baseline_ratchet.sh
-    . "${REPO_ROOT}/scripts/lib_baseline_ratchet.sh" || exit 1
+    . "${SELF_ROOT}/scripts/lib_baseline_ratchet.sh" || exit 1
     baseline_ratchet_check "${REPO_ROOT}" scripts/hardcoded_path_shipped_baseline.txt count || exit 1
-
-    printf 'pmat scanned %s file(s); %s shipped finding(s), baseline %s\n' "$files" "$shipped" "$baseline"
-    if [ "$shipped" -gt "$baseline" ]; then
-        printf '\nFAIL: shipped machine-specific paths grew %s -> %s.\n' "$baseline" "$shipped"
-        printf 'Fix the paths. Raising the baseline is how the previous 20 landed.\n'
-        # This used to re-run pmat and `head -40` the human-readable output. Two
-        # defects: it paid for a second scan whose result could differ from the
-        # one that produced the verdict, and 40 lines of an ALPHABETICAL list is
-        # a window onto `.github/` and `crates/a*` only -- a path added under
-        # scripts/ or tools/ was invisible in the very message announcing it.
-        # Reuse the JSON that produced the verdict, and summarise all of it.
-        printf '\nAll %s shipped finding(s), by file:\n' "$shipped"
-        jq -r '.findings[] | select(.site=="shipped") | .file' "$TD/out.json" \
-            | LC_ALL=C sort | uniq -c | sort -rn > "$TD/byfile.txt"
-        nfiles="$(grep -c . < "$TD/byfile.txt")"
-        head -40 "$TD/byfile.txt" | sed 's|^|  |'
-        if [ "$nfiles" -gt 40 ]; then
-            printf '  ... and %s more file(s).\n' "$((nfiles - 40))"
+    # shellcheck source=scripts/lib/resolve_base.sh
+    PROG=check_hardcoded_paths . "${SELF_ROOT}/scripts/lib/resolve_base.sh" || exit 1
+    base_ok=0; BASE_REF=""; BASE_HOW=""
+    if resolve_base HEAD > "$TD/resolve.txt" 2>&1; then base_ok=1; fi
+    if [ "$base_ok" = 1 ] && git -C "$REPO_ROOT" cat-file -e "${BASE_REF}:scripts/hardcoded_path_shipped_baseline.txt" 2>/dev/null; then
+        git -C "$REPO_ROOT" show "${BASE_REF}:scripts/hardcoded_path_shipped_baseline.txt" > "$TD/base_baseline.txt"
+        bver=$(sed -nE 's/^pmat_version:[[:space:]]*([0-9]+\.[0-9]+\.[0-9]+).*$/\1/p' "$TD/base_baseline.txt" | head -n1)
+        bcount=$(sed -nE 's/^count:[[:space:]]*([0-9]+).*$/\1/p' "$TD/base_baseline.txt" | head -n1)
+        if [ -n "$HP_VER" ] && [ "$HP_VER" != "${bver:-}" ] && [ -n "$bcount" ] && [ "${HP_COUNT:-}" = "$bcount" ]; then
+            printf '\nFAIL: pmat_version moved %s -> %s in %s while count: stayed %s. A stamp is not a measurement: re-baselining is its own ticket, re-measured under the new pin, never a raise.\n' \
+                "${bver:-none}" "$HP_VER" "${SHIPPED_BASELINE#"$REPO_ROOT"/}" "$HP_COUNT"
+            exit 1
         fi
-        # A COUNT cannot say which path is new -- that is the standing weakness
-        # of a scalar ratchet (see PERF-032). Hand over the exact recipe rather
-        # than leaving the reader to invent one.
-        printf '\nA count cannot name the NEW path. To get it:\n'
-        printf '  %s\n' \
-            'pmat analyze hardcoded-paths -p . -f json > /tmp/now.json' \
-            "jq -r '.findings[]|select(.site==\"shipped\")|\"\\(.file)|\\(.path)\"' /tmp/now.json | sort > /tmp/now.txt" \
-            '# repeat in a worktree at origin/main, then: comm -13 /tmp/base.txt /tmp/now.txt'
+    fi
+    if [ "$HP_VALID" = 1 ] && [ "$HP_VER" = "$PMAT_VERSION" ]; then
+        printf 'baseline: count %s, stamped %s (matches the pin); basis: %s\n' "$HP_COUNT" "$HP_VER" "$HP_BASIS"
+        printf 'scanned %s file(s); %s shipped finding(s), baseline %s\n' "$files" "$shipped" "$HP_COUNT"
+        if [ "$shipped" -gt "$HP_COUNT" ]; then
+            printf '\nFAIL: shipped machine-specific paths grew %s -> %s under the same instrument. Fix the paths; never raise the number.\n' "$HP_COUNT" "$shipped"
+            printf 'All %s shipped finding(s), by file:\n' "$shipped"
+            hp_paths "$TD/head.json" | cut -d'|' -f1 | uniq -c | sort -rn | head -40 | sed 's|^|  |'
+            exit 1
+        fi
+        if [ "$shipped" -lt "$HP_COUNT" ]; then
+            printf '\nImproved: %s -> %s. Re-baseline under its own ticket (stamped) to record it.\n' "$HP_COUNT" "$shipped"
+        fi
+        printf 'PASS\n'; exit 0
+    fi
+    # ---- instrument mismatch, or an INVALID stamp: the count is not compared ----
+    if [ "$HP_VALID" = 1 ]; then
+        printf 'REPORT BASELINE-STALE{old=%s,new=%s}: the recorded count %s was measured by another instrument and is not compared.\n' "$HP_VER" "$PMAT_VERSION" "$HP_COUNT"
+    else
+        printf 'REPORT BASELINE-INVALID{stamp=%s,binary=%s}: %s; the recorded number is not a baseline and is not compared.\n' "${HP_VER:-none}" "$PMAT_VERSION" "$HP_WHY"
+    fi
+    printf 'Re-baselining is its own ticket (stamped, never a raise). Deciding by HEAD vs merge-base under the same pin.\n'
+    if [ "$base_ok" != 1 ]; then
+        printf '\nFAIL: no base can be named, so the differential is UNMEASURED and this run cannot pass:\n'; sed 's|^|  |' "$TD/resolve.txt" | head -4; exit 1
+    fi
+    # The analyser enumerates with `git ls-files`, so the base must be a checkout, not an archive.
+    if ! git -C "$REPO_ROOT" worktree add -q --detach "$TD/base" "$BASE_REF" 2> "$TD/wt.err"; then
+        printf '\nFAIL: cannot materialise the base tree %s as a worktree:\n' "$BASE_REF"; sed 's|^|  |' "$TD/wt.err" | head -3; exit 1
+    fi
+    trap 'git -C "$REPO_ROOT" worktree remove --force "$TD/base" >/dev/null 2>&1; rm -rf "${TD:?}"' EXIT
+    if ! hp_scan "$TD/base" "$TD/base.json" || [ ! -s "$TD/base.json" ]; then
+        printf '\nFAIL: the analyser produced no JSON for the base tree.\n'; sed 's|^|  |' "$TD/base.json.err" | head -5; exit 1
+    fi
+    base_shipped=$(jq -r '.shipped_count' "$TD/base.json")
+    case "$base_shipped" in ''|*[!0-9]*) printf 'FAIL: unparseable base JSON\n'; exit 1 ;; esac
+    delta=$((shipped - base_shipped))
+    printf 'differential: base %.9s (%s) = %s shipped; HEAD = %s shipped; delta %+d\n' "$BASE_REF" "$BASE_HOW" "$base_shipped" "$shipped" "$delta"
+    if [ "$delta" -gt 0 ]; then
+        hp_paths "$TD/head.json" > "$TD/head.txt"; hp_paths "$TD/base.json" > "$TD/base.txt"
+        printf '\nFAIL: this change adds %s shipped machine-specific path(s) (on HEAD, absent at the base):\n' "$delta"
+        comm -13 "$TD/base.txt" "$TD/head.txt" | head -40 | sed 's|^|  |'
         exit 1
     fi
-    if [ "$shipped" -lt "$baseline" ]; then
-        printf '\nImproved: %s -> %s. Lower %s to record it.\n' "$baseline" "$shipped" "$SHIPPED_BASELINE"
-    fi
-    printf 'PASS\n'
-    exit 0
+    printf 'PASS (differential, delta %+d)\n' "$delta"; exit 0
 fi
 
 # ---------------------------------------------------------------------------
