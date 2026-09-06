@@ -27,3 +27,6 @@
 {"repo":"aprender","ticket":"PMAT-1056","phase":"P_2","mode":"direct","est":46,"actual":1,"basis":"est=impl-estimates.jsonl:L1-L7 median; actual=orchestrator bash calls"}
 {"repo":"aprender","ticket":"PMAT-1056","phase":"P_3","mode":"direct","est":46,"actual":1,"basis":"est=impl-estimates.jsonl:L1-L7 median; actual=orchestrator bash calls"}
 {"repo":"aprender","ticket":"PMAT-1056","phase":"P_4","mode":"direct","est":46,"actual":1,"basis":"est=impl-estimates.jsonl:L1-L7 median; actual=orchestrator bash calls"}
+{"repo":"aprender","ticket":"PMAT-991","phase":"P_1","mode":"subagent:sonnet","est":3,"actual":40,"basis":"est=first-run[U]; actual=worker maxTurns (40) + one resume"}
+{"repo":"aprender","ticket":"PMAT-991","phase":"P_2","mode":"subagent:sonnet","est":3,"actual":40,"basis":"est=first-run[U]; actual=worker maxTurns (40) + one resume; last mile by the orchestrator"}
+{"repo":"aprender","ticket":"PMAT-991","phase":"P_3","mode":"direct","est":3,"actual":9,"basis":"est=first-run[U]; actual=orchestrator bash calls (relocation, contract, mutations, receipt)"}
