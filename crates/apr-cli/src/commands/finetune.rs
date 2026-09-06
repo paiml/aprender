@@ -2413,6 +2413,10 @@ fn display_classify_next_steps(json_output: bool) {
 #[path = "finetune_tests.rs"]
 mod tests;
 
+#[cfg(all(test, feature = "training"))]
+#[path = "finetune_seq_len_truth_tests.rs"]
+mod seq_len_truth_tests;
+
 #[cfg(test)]
 #[path = "finetune_contract_tests.rs"]
 mod contract_tests;
