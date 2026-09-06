@@ -22,10 +22,16 @@ from __future__ import annotations
 
 import argparse
 import difflib
+import os
 import sys
 from datetime import date, timedelta
 
 import yaml
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from lib.dag_status import derived_status  # noqa: E402  (G-11: status is derived from the receipt, never typed)
+
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 BEGIN = "<!-- dag:table:begin (rendered by scripts/render_dag.py; do not edit by hand) -->"
 END = "<!-- dag:table:end -->"
@@ -60,17 +66,17 @@ def _cell(s) -> str:
     return str(s if s is not None else "—").replace("|", "\\|").replace("\n", " ").strip()
 
 
-def _row_line(r: dict, rows: dict) -> str:
+def _row_line(r: dict, rows: dict, root: str = REPO_ROOT) -> str:
     blockers = ", ".join(r.get("blockers") or []) or "—"
     issues = ", ".join(f"#{i}" for i in (r.get("issues") or [])) or "—"
     gh = f"#{r['gh_issue']}" if r.get("gh_issue") else "—"
     # the title is never truncated: a citation at its end must survive rendering (claim-literal guard)
     cells = (r["id"], r.get("title") or "", blockers, issues, r.get("host"), _expiry_cell(r["id"], rows),
-             r.get("owner"), r.get("quorum"), gh, r.get("pmat_id"), r.get("status"))
+             r.get("owner"), r.get("quorum"), gh, r.get("pmat_id"), derived_status(root, r))
     return "| " + " | ".join(_cell(x) for x in cells) + " |"
 
 
-def _sections(doc: dict, rows: dict) -> list:
+def _sections(doc: dict, rows: dict, root: str = REPO_ROOT) -> list:
     by_track: dict = {}
     for r in doc["rows"]:
         by_track.setdefault(str(r.get("track")), []).append(r)
@@ -78,16 +84,16 @@ def _sections(doc: dict, rows: dict) -> list:
     out: list = []
     for tr in (t for t in order if t in by_track):
         out += [TRACK_TITLE.get(tr, f"### Track {tr}"), "", HEADER]
-        out += [_row_line(r, rows) for r in by_track[tr]]
+        out += [_row_line(r, rows, root) for r in by_track[tr]]
         out.append("")
     return out
 
 
-def render(doc: dict) -> str:
+def render(doc: dict, root: str = REPO_ROOT) -> str:
     rows = {r["id"]: r for r in doc["rows"]}
     intro = (f"_Rendered from `docs/specifications/pp-066-dag.yaml` (epic #{doc.get('epic')}, {len(rows)} rows). "
              "Edit the YAML, run `python3 scripts/render_dag.py render`, paste; `--check` refuses drift._")
-    return "\n".join([BEGIN, "", intro, ""] + _sections(doc, rows) + [END]) + "\n"
+    return "\n".join([BEGIN, "", intro, ""] + _sections(doc, rows, root) + [END]) + "\n"
 
 
 def extract_block(spec_text: str):
@@ -99,9 +105,9 @@ def extract_block(spec_text: str):
     return spec_text[i:j + len(END)] + "\n"
 
 
-def check(dag_path: str, spec_path: str) -> int:
+def check(dag_path: str, spec_path: str, root: str = REPO_ROOT) -> int:
     doc = yaml.safe_load(open(dag_path, encoding="utf-8"))
-    rendered = render(doc)
+    rendered = render(doc, root)
     block = extract_block(open(spec_path, encoding="utf-8").read())
     if block is None:
         print(f"NOT ARMED: {spec_path} carries no `{BEGIN[:22]}…` / `{END}` marker pair; the §5/§6 tables are still hand-typed (SPEC-1.6 inserts them). exit 3, not a pass.")
@@ -120,11 +126,12 @@ def main(argv=None) -> int:
     ap.add_argument("--check", action="store_true", help="compare the spec's marked block against the render")
     ap.add_argument("--dag", default="docs/specifications/pp-066-dag.yaml")
     ap.add_argument("--spec", default="docs/specifications/PP-066-release-spec.md")
+    ap.add_argument("--root", default=REPO_ROOT, help="repository root holding docs/audits/impl-*-receipt.md (the status column is derived from them)")
     args = ap.parse_args(argv)
     try:
         if args.check:
-            return check(args.dag, args.spec)
-        sys.stdout.write(render(yaml.safe_load(open(args.dag, encoding="utf-8"))))
+            return check(args.dag, args.spec, args.root)
+        sys.stdout.write(render(yaml.safe_load(open(args.dag, encoding="utf-8")), args.root))
         return 0
     except (OSError, yaml.YAMLError) as e:
         print(f"render_dag: {e}", file=sys.stderr)
