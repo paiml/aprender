@@ -92,7 +92,7 @@ while IFS= read -r name; do
         # UNMEASURED is a per-host REPORT, never a per-host RED: no single host holds every model the
         # README names; the fleet-level rule (every README-cited model measured on >= 1 GPU host) is
         # the release's (R-5 promotion: C14 PASS on four receipts, parity != skipped)
-        printf 'UNMEASURED %s: no file under %s (reported; the fleet-level rule is the release'\''s)\n' "$name" "$MODELS_DIR"; continue
+        printf 'UNMEASURED %s: no file under %s (reported; the fleet-level rule belongs to the release)\n' "$name" "$MODELS_DIR"; continue
     fi
     case " $seen " in *" $f "*) printf 'ALIAS %s -> %s (already measured under a longer name)\n' "$name" "$(basename "$f")"; continue ;; esac
     seen="$seen $f"
