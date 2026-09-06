@@ -181,7 +181,7 @@ fn gpu_profile_or_none(
     warmup_passes: usize,
     measure_passes: usize,
     format: &OutputFormat,
-) -> Result<Option<RealProfileResults>> {
+) -> Result<Option<RealProfileResults>, CliError> {
     let r: Option<RealProfileResults> = if !use_cpu {
             // PMAT-203: Skip parity gate for profiling — known false positive on CUDA 13.1 driver.
         // The parity gate compares GPU/CPU logits and fails spuriously, but profiling
