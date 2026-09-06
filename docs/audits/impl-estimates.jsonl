@@ -27,3 +27,4 @@
 {"repo":"aprender","ticket":"PMAT-1056","phase":"P_2","mode":"direct","est":46,"actual":1,"basis":"est=impl-estimates.jsonl:L1-L7 median; actual=orchestrator bash calls"}
 {"repo":"aprender","ticket":"PMAT-1056","phase":"P_3","mode":"direct","est":46,"actual":1,"basis":"est=impl-estimates.jsonl:L1-L7 median; actual=orchestrator bash calls"}
 {"repo":"aprender","ticket":"PMAT-1056","phase":"P_4","mode":"direct","est":46,"actual":1,"basis":"est=impl-estimates.jsonl:L1-L7 median; actual=orchestrator bash calls"}
+{"repo":"aprender","ticket":"PMAT-1059","phase":"row","mode":"direct+quorum:agy","est":null,"actual":15,"basis":"first-run[U]","turns":15,"tokens":64665,"wall_clock_s":2700,"model":"claude-fable-5-1","class":"ratchet-guard","pr":3011}

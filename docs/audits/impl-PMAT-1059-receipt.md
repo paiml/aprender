@@ -1,11 +1,11 @@
 ---
-status: partial
+status: complete
 ticket: PMAT-1059
 row: G-10
 issue: 2999
 epic: 2873
 branch: agent/G-10
-pr: PR-A (opened from this branch; number recorded by the orchestrator docs commit after merge)
+pr: "#3011 — merged 2026-09-06T13:51:59Z as b0a0a51b2 (squash); guard-runner-labels and workspace-test green on the PR run 34029601098 and the merge-queue run 34034085658"
 model: claude-fable-5-1 (orchestrator) · paiml-agy-delegate on opus · agy 1.1.27 quorum lanes ×3 (mode plan)
 tokens_used: 64665 (delegate, measured by the harness) + orchestrator [U] (not exposed to the orchestrator)
 wall_clock_s: 2700 (basis=session clock, PHASE 1 start to the receipt commit; [U] precision)
@@ -83,4 +83,4 @@ K̂ [U] · actual turns 15 · basis=first-run[U] (class: ratchet-guard). Appende
 - `present` / `pr-review-receipt` are judged from the base after merge (C0-6 class), non-required.
 
 ## Verdict
-PARTIAL — awaiting `ci / gate` + `workspace-test` on PR-A and the merge. The marker flips to `complete` in the orchestrator docs commit that also records the PR number.
+DONE — #3011 merged (b0a0a51b2). The marker was flipped by the orchestrator docs commit (driver v3 rule); from G-11 on, the receipt says complete inside the PR before auto-merge is armed (driver v4: nothing is written after a merge) — recorded as a kaizen line.

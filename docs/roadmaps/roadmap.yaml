@@ -13194,30 +13194,22 @@ roadmap:
   github_issue: 2706
   item_type: epic
   title: The receipt rule — a performance number is evidence only if something can prove how it was measured
-  status: in_progress
+  status: inprogress
   priority: critical
   assigned_to: null
   created: &id001 2026-08-27 00:00:00+00:00
   updated: 2026-08-29 00:00:00+00:00
   spec: docs/specifications/PP-LLAMA-001-MASTER.md
   acceptance_criteria:
-  - 'The epic closes when docs/specifications/PP-LLAMA-001-MASTER.md reaches ARMED. Its section 7.5
-    states the conditions, and they are the acceptance criteria of this epic verbatim.'
-  - 'PP-6, PP-26, PP-27, PP-28, PP-29 and PP-33 are ARMED (both selftest cases present under the exact
-    names in section 6 of the master).'
-  - 'PP-2, PP-13, PP-24 and PP-30 are ARMED, which requires the GET /v1/effective-config endpoint
-    (master section 12 row 6).'
-  - 'PP-29: scripts/spec_conformance.sh is GREEN inside the guard-runner-labels job, which the bare
-    required check gate needs at .github/workflows/ci.yml. It replaces the retired mutation registry.'
-  - 'The JOIN (master section 12 row 7) reproduces the committed zero-GPU fixture to four decimals.'
-  - 'One MEASURED reference-cell receipt exists at n >= 5 interleaved replicates (master section 12
-    row 18), and armed_by is set in scripts/perf-matrix.yaml for every band that PASSES P-5.'
-  - 'scripts/perf-matrix.yaml carries a delta row with a named author for every gated metric, replacing
-    the legacy B1/B2 floors, in the same commit.'
-  - 'F-BATCH-001 passes at every c > 1 (measured 2.45 on lambda, 2.85 on gx10, postcondition < 2)'
-  - 'Child tickets (41 as of 2026-08-29), linked by github_issue 2706: BENCH-003, PERF-000 .. PERF-037, PERF-039,
-    PERF-040. PERF-038 was never issued: no commit, branch, PR or issue in any repo mentions it (searched
-    2026-08-29), so the sequence is deliberately left with a hole rather than filled with an invented ticket.'
+  - The epic closes when docs/specifications/PP-LLAMA-001-MASTER.md reaches ARMED. Its section 7.5 states the conditions, and they are the acceptance criteria of this epic verbatim.
+  - PP-6, PP-26, PP-27, PP-28, PP-29 and PP-33 are ARMED (both selftest cases present under the exact names in section 6 of the master).
+  - PP-2, PP-13, PP-24 and PP-30 are ARMED, which requires the GET /v1/effective-config endpoint (master section 12 row 6).
+  - 'PP-29: scripts/spec_conformance.sh is GREEN inside the guard-runner-labels job, which the bare required check gate needs at .github/workflows/ci.yml. It replaces the retired mutation registry.'
+  - The JOIN (master section 12 row 7) reproduces the committed zero-GPU fixture to four decimals.
+  - One MEASURED reference-cell receipt exists at n >= 5 interleaved replicates (master section 12 row 18), and armed_by is set in scripts/perf-matrix.yaml for every band that PASSES P-5.
+  - scripts/perf-matrix.yaml carries a delta row with a named author for every gated metric, replacing the legacy B1/B2 floors, in the same commit.
+  - F-BATCH-001 passes at every c > 1 (measured 2.45 on lambda, 2.85 on gx10, postcondition < 2)
+  - 'Child tickets (41 as of 2026-08-29), linked by github_issue 2706: BENCH-003, PERF-000 .. PERF-037, PERF-039, PERF-040. PERF-038 was never issued: no commit, branch, PR or issue in any repo mentions it (searched 2026-08-29), so the sequence is deliberately left with a hole rather than filled with an invented ticket.'
   phases: []
   subtasks: []
   estimated_effort: null
@@ -13226,17 +13218,7 @@ roadmap:
   - gate
   - receipt-rule
   - epic
-  notes: 'Governed by docs/specifications/PP-LLAMA-001-MASTER.md since 2026-09-02; the superseded v2.2
-    spec is at docs/archive/perf-2026-09-01/ and the reviewed draft it replaced at
-    docs/archive/perf-2026-09-02/. Status reconciled against origin/main by PERF-040 on 2026-08-29 at
-    50d2bc2bb: 0 of 8 scripts/perf-matrix.yaml cells carry a baseline (all UNMEASURED); perf_gate.sh IS
-    invoked, but only as --selftest at .github/workflows/ci.yml, because nothing on main can write the
-    receipt its real mode reads (PERF-024/PERF-025, open PR #2744); F-BATCH-001 is RED at c=2 per
-    contracts/batch-admission-v1.yaml. NO CELL EXPIRES BY DATE ANY MORE. The fixed calendar expiry is
-    replaced by the derived-expiry rule of the master sections 8 and 12: a cell inherits the latest
-    expiry among the section 12 obligation rows that block it, computed by scripts/spec_conformance.sh
-    into evidence/parity/derived_expiries.json, and an expiry moves only by an amendment recorded in the
-    master Appendix D. On expiry an instrument row makes every cell it blocks FAIL: INSTRUMENT.'
+  notes: 'Governed by docs/specifications/PP-LLAMA-001-MASTER.md since 2026-09-02; the superseded v2.2 spec is at docs/archive/perf-2026-09-01/ and the reviewed draft it replaced at docs/archive/perf-2026-09-02/. Status reconciled against origin/main by PERF-040 on 2026-08-29 at 50d2bc2bb: 0 of 8 scripts/perf-matrix.yaml cells carry a baseline (all UNMEASURED); perf_gate.sh IS invoked, but only as --selftest at .github/workflows/ci.yml, because nothing on main can write the receipt its real mode reads (PERF-024/PERF-025, open PR #2744); F-BATCH-001 is RED at c=2 per contracts/batch-admission-v1.yaml. NO CELL EXPIRES BY DATE ANY MORE. The fixed calendar expiry is replaced by the derived-expiry rule of the master sections 8 and 12: a cell inherits the latest expiry among the section 12 obligation rows that block it, computed by scripts/spec_conformance.sh into evidence/parity/derived_expiries.json, and an expiry moves only by an amendment recorded in the master Appendix D. On expiry an instrument row makes every cell it blocks FAIL: INSTRUMENT.'
 - id: BENCH-003
   github_issue: 2706
   item_type: task
@@ -13281,10 +13263,10 @@ roadmap:
   github_issue: 2706
   item_type: task
   title: Iteration-level scheduling (Orca design) — REAL BUT PARTIAL, F-BATCH-001 red at c=2
-  status: in_progress
+  status: inprogress
   priority: high
   assigned_to: null
-  created: *id001
+  created: 2026-08-27 00:00:00+00:00
   updated: 2026-08-29 00:00:00+00:00
   spec: docs/specifications/PP-LLAMA-001-MASTER.md
   acceptance_criteria: []
@@ -13294,16 +13276,7 @@ roadmap:
   labels:
   - perf
   - receipt-rule
-  notes: 'VERIFIED on origin/main 2026-08-29: crates/aprender-serve/src/api/iteration_scheduler.rs
-    implements the Orca (OSDI 2022) design. PARTIAL BY ITS OWN CONTRACT:
-    contracts/batch-admission-v1.yaml F-BATCH-001 records verdict RED AT c=2 (serialization_index 2.45 >=
-    2), so the epic F-BATCH-001 acceptance criterion is NOT met. DOWNGRADED from completed 2026-08-29 by
-    PERF-041: the credited 3.32x aggregate at N=8 is throughput of GARBAGE tokens. Batched CUDA decode emits a
-    constant token to the max_tokens cap for every m>1 and never emits a stop token (#2753); the m=1 fast path
-    in the same run returns coherent English with finish=stop. Aggregate at c=2 is honestly 0.82x of a SINGLE
-    client. F-BATCH-001 stays RED and the mechanism, not just the margin, is unfinished. PP cross-ref (master
-    Appendix A): PP-26 (batch-invariance witness) and section 9 defects 2 and 5. Master section 12 row 1 is the
-    discharging row; no c>1 aggregate may be published while this is red.'
+  notes: 'VERIFIED on origin/main 2026-08-29: crates/aprender-serve/src/api/iteration_scheduler.rs implements the Orca (OSDI 2022) design. PARTIAL BY ITS OWN CONTRACT: contracts/batch-admission-v1.yaml F-BATCH-001 records verdict RED AT c=2 (serialization_index 2.45 >= 2), so the epic F-BATCH-001 acceptance criterion is NOT met. DOWNGRADED from completed 2026-08-29 by PERF-041: the credited 3.32x aggregate at N=8 is throughput of GARBAGE tokens. Batched CUDA decode emits a constant token to the max_tokens cap for every m>1 and never emits a stop token (#2753); the m=1 fast path in the same run returns coherent English with finish=stop. Aggregate at c=2 is honestly 0.82x of a SINGLE client. F-BATCH-001 stays RED and the mechanism, not just the margin, is unfinished. PP cross-ref (master Appendix A): PP-26 (batch-invariance witness) and section 9 defects 2 and 5. Master section 12 row 1 is the discharging row; no c>1 aggregate may be published while this is red.'
 - id: PERF-002
   github_issue: 2706
   item_type: task
@@ -13350,10 +13323,10 @@ roadmap:
   github_issue: 2706
   item_type: task
   title: Receipt schema v2.2 — all metrics, workload, tokenization, scheduler block, drain
-  status: in_progress
+  status: inprogress
   priority: high
   assigned_to: null
-  created: *id001
+  created: 2026-08-27 00:00:00+00:00
   updated: 2026-08-29 00:00:00+00:00
   spec: docs/specifications/PP-LLAMA-001-MASTER.md
   acceptance_criteria: []
@@ -13363,15 +13336,7 @@ roadmap:
   labels:
   - perf
   - receipt-rule
-  notes: 'CORRECTED from completed 2026-08-29. Schema half IS on origin/main
-    (scripts/lib/bench_receipt.py plus its 14-case discrimination table; perf_gate.sh arm_c_integrity
-    requires tokenization.method and drain_ms; crates/aprender-test-lib/src/perf_gate/receipt.rs names
-    the s4.4.9 scheduler block). Producer-mapping half is NOT: scripts/perf-receipt-fields.yaml,
-    scripts/lib/perf_receipt.py and check_perf_receipt_fields_have_producers.sh are ABSENT from
-    origin/main, PR #2716 was CLOSED unmerged, and PR #2711 held PERF-004-SCHEMA back after adversarial
-    verification found its claimed end-to-end run could not have executed. Branch feat/perf-004-schema
-    pushed. PP cross-ref (master Appendix A): PP-2, PP-13 and PP-30 (server-reported config, no inferred field,
-    started_utc plus clock_source); also PP-4, PP-10 and PP-11. Master section 12 row 6.'
+  notes: 'CORRECTED from completed 2026-08-29. Schema half IS on origin/main (scripts/lib/bench_receipt.py plus its 14-case discrimination table; perf_gate.sh arm_c_integrity requires tokenization.method and drain_ms; crates/aprender-test-lib/src/perf_gate/receipt.rs names the s4.4.9 scheduler block). Producer-mapping half is NOT: scripts/perf-receipt-fields.yaml, scripts/lib/perf_receipt.py and check_perf_receipt_fields_have_producers.sh are ABSENT from origin/main, PR #2716 was CLOSED unmerged, and PR #2711 held PERF-004-SCHEMA back after adversarial verification found its claimed end-to-end run could not have executed. Branch feat/perf-004-schema pushed. PP cross-ref (master Appendix A): PP-2, PP-13 and PP-30 (server-reported config, no inferred field, started_utc plus clock_source); also PP-4, PP-10 and PP-11. Master section 12 row 6.'
 - id: PERF-005
   github_issue: 2706
   item_type: task
@@ -13397,10 +13362,10 @@ roadmap:
   github_issue: 2706
   item_type: task
   title: One compute_class() and max_in_flight -> banner, /health, receipt (andon)
-  status: in_progress
+  status: inprogress
   priority: high
   assigned_to: null
-  created: *id001
+  created: 2026-08-27 00:00:00+00:00
   updated: 2026-08-29 00:00:00+00:00
   spec: docs/specifications/PP-LLAMA-001-MASTER.md
   acceptance_criteria: []
@@ -13410,13 +13375,7 @@ roadmap:
   labels:
   - perf
   - receipt-rule
-  notes: 'CORRECTED from planned 2026-08-29. NOT on origin/main:
-    crates/aprender-test-lib/src/perf_gate/mod.rs:310 asserts max_in_flight is neither emitted nor
-    classified, and the only compute_class() is the bench-local one in
-    crates/apr-cli/src/commands/bench.rs:283, not one function feeding banner + /health + receipt. Open
-    PR #2711 (branch feat/receipt-rule-b2, pushed) carries the andon commit. PP cross-ref (master Appendix A):
-    PP-2, PP-13 and PP-16. compute_class must be the dispatch path taken, read from the process, and
-    max_in_flight must be server-reported. Master section 12 row 6.'
+  notes: 'CORRECTED from planned 2026-08-29. NOT on origin/main: crates/aprender-test-lib/src/perf_gate/mod.rs:310 asserts max_in_flight is neither emitted nor classified, and the only compute_class() is the bench-local one in crates/apr-cli/src/commands/bench.rs:283, not one function feeding banner + /health + receipt. Open PR #2711 (branch feat/receipt-rule-b2, pushed) carries the andon commit. PP cross-ref (master Appendix A): PP-2, PP-13 and PP-16. compute_class must be the dispatch path taken, read from the process, and max_in_flight must be server-reported. Master section 12 row 6.'
 - id: PERF-007
   github_issue: 2706
   item_type: task
@@ -13528,10 +13487,10 @@ roadmap:
   github_issue: 2706
   item_type: task
   title: mini c=8/c=16 — measure or re-decide NOT_APPLICABLE
-  status: in_progress
+  status: inprogress
   priority: high
   assigned_to: null
-  created: *id001
+  created: 2026-08-27 00:00:00+00:00
   updated: 2026-08-29 00:00:00+00:00
   spec: docs/specifications/PP-LLAMA-001-MASTER.md
   acceptance_criteria: []
@@ -13541,19 +13500,15 @@ roadmap:
   labels:
   - perf
   - receipt-rule
-  notes: 'CORRECTED from planned 2026-08-29. Branch evidence/perf-012-mini is PUSHED (9aae2e13f,
-    evidence/perf-012-mini/findings.md plus 8 raw band JSONs) and concludes mini serializes on arm64 too
-    and its Metal path does not exist. NOT on origin/main and NO PR is open, so the finding is currently
-    unreviewable and uncitable by the gate. PP cross-ref (master Appendix A): PP-16 and PP-24. The master
-    decides mini as NA with decided_by rather than a permanent UNMEASURED; master section 12 row 5.'
+  notes: 'CORRECTED from planned 2026-08-29. Branch evidence/perf-012-mini is PUSHED (9aae2e13f, evidence/perf-012-mini/findings.md plus 8 raw band JSONs) and concludes mini serializes on arm64 too and its Metal path does not exist. NOT on origin/main and NO PR is open, so the finding is currently unreviewable and uncitable by the gate. PP cross-ref (master Appendix A): PP-16 and PP-24. The master decides mini as NA with decided_by rather than a permanent UNMEASURED; master section 12 row 5.'
 - id: PERF-013
   github_issue: 2706
   item_type: task
   title: Dedicated single-agent intel label; forjar apply + deploy + verify
-  status: in_progress
+  status: inprogress
   priority: high
   assigned_to: null
-  created: *id001
+  created: 2026-08-27 00:00:00+00:00
   updated: 2026-08-29 00:00:00+00:00
   spec: docs/specifications/PP-LLAMA-001-MASTER.md
   acceptance_criteria: []
@@ -13563,11 +13518,7 @@ roadmap:
   labels:
   - perf
   - receipt-rule
-  notes: 'CORRECTED from planned 2026-08-29. paiml/infra#338 is MERGED - the perf-solo label ships at
-    cardinality 1 on intel-clean-room-16 - but it closed with one item explicitly unproven: no job has
-    ever run on the label. Open PR #2720 (branch perf/perf-solo-lane-receipt, pushed) puts perf-solo on
-    the BEAT speed lane runs-on and records RUNNER_NAME. PP cross-ref (master Appendix A): PP-19 (one global
-    concurrency group per host, cancel-in-progress false, no foreign compute PID). Master section 12 row 12.'
+  notes: 'CORRECTED from planned 2026-08-29. paiml/infra#338 is MERGED - the perf-solo label ships at cardinality 1 on intel-clean-room-16 - but it closed with one item explicitly unproven: no job has ever run on the label. Open PR #2720 (branch perf/perf-solo-lane-receipt, pushed) puts perf-solo on the BEAT speed lane runs-on and records RUNNER_NAME. PP cross-ref (master Appendix A): PP-19 (one global concurrency group per host, cancel-in-progress false, no foreign compute PID). Master section 12 row 12.'
 - id: PERF-014
   github_issue: 2706
   item_type: task
@@ -13677,10 +13628,10 @@ roadmap:
   github_issue: 2706
   item_type: task
   title: One client, both servers; retire llama-bench from the comparator path
-  status: in_progress
+  status: inprogress
   priority: high
   assigned_to: null
-  created: *id001
+  created: 2026-08-27 00:00:00+00:00
   updated: 2026-08-29 00:00:00+00:00
   spec: docs/specifications/PP-LLAMA-001-MASTER.md
   acceptance_criteria: []
@@ -13690,21 +13641,15 @@ roadmap:
   labels:
   - perf
   - receipt-rule
-  notes: 'CORRECTED from planned 2026-08-29. scripts/check_comparator_one_client.sh is ABSENT from
-    origin/main. PR #2713 was CLOSED unmerged; PR #2711 explicitly held PERF-019 back because its guard
-    has a vacuous pass one level below where it believed it closed one (the sentinel proves the filter
-    engaged, nothing proves the walker did). Branch feat/perf-019-oneclient pushed; carried in open PR
-    #2742. PP cross-ref (master Appendix A): PP-25 (one client binary drives both lanes, its sha256 in the
-    receipt) and master section 5.3, which retires llama-bench from the comparator path entirely. Master section
-    12 row 7.'
+  notes: 'CORRECTED from planned 2026-08-29. scripts/check_comparator_one_client.sh is ABSENT from origin/main. PR #2713 was CLOSED unmerged; PR #2711 explicitly held PERF-019 back because its guard has a vacuous pass one level below where it believed it closed one (the sentinel proves the filter engaged, nothing proves the walker did). Branch feat/perf-019-oneclient pushed; carried in open PR #2742. PP cross-ref (master Appendix A): PP-25 (one client binary drives both lanes, its sha256 in the receipt) and master section 5.3, which retires llama-bench from the comparator path entirely. Master section 12 row 7.'
 - id: PERF-020
   github_issue: 2706
   item_type: task
   title: Workload W2 corpus + injector; Arms D and E, REPORTING
-  status: in_progress
+  status: inprogress
   priority: high
   assigned_to: null
-  created: *id001
+  created: 2026-08-27 00:00:00+00:00
   updated: 2026-08-29 00:00:00+00:00
   spec: docs/specifications/PP-LLAMA-001-MASTER.md
   acceptance_criteria: []
@@ -13714,20 +13659,15 @@ roadmap:
   labels:
   - perf
   - receipt-rule
-  notes: 'CORRECTED from planned 2026-08-29. Arms D and E exist in scripts/perf_gate.sh on origin/main in
-    REPORTING mode, and crates/aprender-serve/benchmarks/qwen-coder/prompts-w2.jsonl is committed - but
-    crates/aprender-test-lib/src/perf_gate/mod.rs:134 declares the Arm E out-of-band injector unproduced,
-    and PR #2746 (PERF-039) shows the corpus was unreadable by the only loader in the tree, so nothing
-    had ever parsed that file. PP cross-ref (master Appendix A): master section 5.1 workload W2, REPORTING, and
-    PP-4 (agg, dec and prefill on every band).'
+  notes: 'CORRECTED from planned 2026-08-29. Arms D and E exist in scripts/perf_gate.sh on origin/main in REPORTING mode, and crates/aprender-serve/benchmarks/qwen-coder/prompts-w2.jsonl is committed - but crates/aprender-test-lib/src/perf_gate/mod.rs:134 declares the Arm E out-of-band injector unproduced, and PR #2746 (PERF-039) shows the corpus was unreadable by the only loader in the tree, so nothing had ever parsed that file. PP cross-ref (master Appendix A): master section 5.1 workload W2, REPORTING, and PP-4 (agg, dec and prefill on every band).'
 - id: PERF-021
   github_issue: 2706
   item_type: task
   title: Accelerator contract — retire boolean --gpu for a quantity, resolved-quantity reporting
-  status: in_progress
+  status: inprogress
   priority: high
   assigned_to: null
-  created: *id001
+  created: 2026-08-27 00:00:00+00:00
   updated: 2026-08-29 00:00:00+00:00
   spec: docs/specifications/PP-LLAMA-001-MASTER.md
   acceptance_criteria: []
@@ -13737,13 +13677,7 @@ roadmap:
   labels:
   - perf
   - receipt-rule
-  notes: 'VERIFIED PARTIAL on origin/main 2026-08-29: GpuLayerRequest
-    (crates/apr-cli/src/commands/serve/types.rs:504), --gpu-layers, --device and --list-devices
-    (serve_commands.rs, dispatch_run.rs:184) all ship, and explicit-wins is enforced at
-    serve/mod.rs:83-95. Open PR #2707 (branch feat/perf-021-landing, pushed, 9 commits) reports that two
-    of three surfaces verified nothing, so in_progress is correct. PP cross-ref (master Appendix A): PP-15 (no
-    boolean accelerator flag on any surface; a quantity with a server-reported resolved value). Master section
-    12 row 0d, section 9 defect 9.'
+  notes: 'VERIFIED PARTIAL on origin/main 2026-08-29: GpuLayerRequest (crates/apr-cli/src/commands/serve/types.rs:504), --gpu-layers, --device and --list-devices (serve_commands.rs, dispatch_run.rs:184) all ship, and explicit-wins is enforced at serve/mod.rs:83-95. Open PR #2707 (branch feat/perf-021-landing, pushed, 9 commits) reports that two of three surfaces verified nothing, so in_progress is correct. PP cross-ref (master Appendix A): PP-15 (no boolean accelerator flag on any surface; a quantity with a server-reported resolved value). Master section 12 row 0d, section 9 defect 9.'
 - id: PERF-022
   github_issue: 2706
   item_type: task
@@ -13793,8 +13727,8 @@ roadmap:
 - id: PERF-024
   github_issue: 2706
   item_type: task
-  title: 'Conformant s4.4 measurement protocol for the load test - termination rule, drain_ms, tokenization block'
-  status: in_progress
+  title: Conformant s4.4 measurement protocol for the load test - termination rule, drain_ms, tokenization block
+  status: inprogress
   priority: high
   assigned_to: null
   created: 2026-08-29 00:00:00+00:00
@@ -13807,18 +13741,12 @@ roadmap:
   labels:
   - perf
   - receipt-rule
-  notes: 'Filed after the roadmap was last written; added by PERF-040 on 2026-08-29. NOT on origin/main:
-    crates/aprender-test-lib/src/llm/band.rs and perf_gate/{bootstrap,metrics}.rs are absent, and main
-    own perf_gate/mod.rs names the integration work as a separate ticket. PR #2717 CLOSED unmerged;
-    branch feat/perf-024-conformant-client pushed; carried in open PR #2744 (stacked on #2742). PP cross-ref
-    (master Appendix A): PP-27 and PP-28 (streaming with a dual witness; temperature, seed, ignore_eos and
-    max_tokens on the wire; completion_tokens equal to n_predict), with PP-10 and PP-11 for drain and
-    tokenization. Master section 5.1 and section 12 row 0b.'
+  notes: 'Filed after the roadmap was last written; added by PERF-040 on 2026-08-29. NOT on origin/main: crates/aprender-test-lib/src/llm/band.rs and perf_gate/{bootstrap,metrics}.rs are absent, and main own perf_gate/mod.rs names the integration work as a separate ticket. PR #2717 CLOSED unmerged; branch feat/perf-024-conformant-client pushed; carried in open PR #2744 (stacked on #2742). PP cross-ref (master Appendix A): PP-27 and PP-28 (streaming with a dual witness; temperature, seed, ignore_eos and max_tokens on the wire; completion_tokens equal to n_predict), with PP-10 and PP-11 for drain and tokenization. Master section 5.1 and section 12 row 0b.'
 - id: PERF-025
   github_issue: 2706
   item_type: task
-  title: 'apr test llm bench --band - give the s4.4 protocol a caller and perf_gate.sh real mode an input'
-  status: in_progress
+  title: apr test llm bench --band - give the s4.4 protocol a caller and perf_gate.sh real mode an input
+  status: inprogress
   priority: high
   assigned_to: null
   created: 2026-08-29 00:00:00+00:00
@@ -13831,13 +13759,7 @@ roadmap:
   labels:
   - perf
   - receipt-rule
-  notes: 'Filed after the roadmap was last written; added by PERF-040 on 2026-08-29. This is the ticket
-    the operator note calls the band CLI. On 50d2bc2bb a grep for
-    ReceiptInput/BandInput/DerivedBand/perf_gate:: outside the module returns rc=1 - nothing calls the
-    protocol or the receipt producer, and perf_gate.sh real mode is invoked nowhere (only --selftest,
-    ci.yml:1011). Open PR #2744; abandoned branch feat/n1-band-cli contributed the shape only. PP cross-ref
-    (master Appendix A): PP-4 and PP-7 (all three metrics per band; raw per-request samples retained). Master
-    section 12 rows 0b and 7.'
+  notes: 'Filed after the roadmap was last written; added by PERF-040 on 2026-08-29. This is the ticket the operator note calls the band CLI. On 50d2bc2bb a grep for ReceiptInput/BandInput/DerivedBand/perf_gate:: outside the module returns rc=1 - nothing calls the protocol or the receipt producer, and perf_gate.sh real mode is invoked nowhere (only --selftest, ci.yml:1011). Open PR #2744; abandoned branch feat/n1-band-cli contributed the shape only. PP cross-ref (master Appendix A): PP-4 and PP-7 (all three metrics per band; raw per-request samples retained). Master section 12 rows 0b and 7.'
 - id: PERF-026
   github_issue: 2706
   item_type: task
@@ -13947,8 +13869,8 @@ roadmap:
 - id: PERF-031
   github_issue: 2706
   item_type: task
-  title: 'Run the BEAT speed lane on perf-solo and make the job name its own runner'
-  status: in_progress
+  title: Run the BEAT speed lane on perf-solo and make the job name its own runner
+  status: inprogress
   priority: high
   assigned_to: null
   created: 2026-08-29 00:00:00+00:00
@@ -13961,11 +13883,7 @@ roadmap:
   labels:
   - perf
   - receipt-rule
-  notes: 'Filed after the roadmap was last written; added by PERF-040 on 2026-08-29. Open PR #2720
-    (branch perf/perf-solo-lane-receipt, pushed). It is the half PERF-013 left unproven: all 16 agents on
-    intel report hostname mac-server, so RUNNER_NAME is the only field that can say which agent served a
-    job. PP cross-ref (master Appendix A): PP-19. A speed lane that shares a host with any other job is the
-    confound PP-19 exists to remove. Master section 12 row 12.'
+  notes: 'Filed after the roadmap was last written; added by PERF-040 on 2026-08-29. Open PR #2720 (branch perf/perf-solo-lane-receipt, pushed). It is the half PERF-013 left unproven: all 16 agents on intel report hostname mac-server, so RUNNER_NAME is the only field that can say which agent served a job. PP cross-ref (master Appendix A): PP-19. A speed lane that shares a host with any other job is the confound PP-19 exists to remove. Master section 12 row 12.'
 - id: PERF-032
   github_issue: 2706
   item_type: task
@@ -13990,8 +13908,8 @@ roadmap:
 - id: PERF-033
   github_issue: 2706
   item_type: task
-  title: 'The comparator pin was global while its builds are per-host, and it accepted a bare prefix'
-  status: in_progress
+  title: The comparator pin was global while its builds are per-host, and it accepted a bare prefix
+  status: inprogress
   priority: high
   assigned_to: null
   created: 2026-08-29 00:00:00+00:00
@@ -14004,16 +13922,12 @@ roadmap:
   labels:
   - perf
   - receipt-rule
-  notes: 'Filed after the roadmap was last written; added by PERF-040 on 2026-08-29. Open PR #2738
-    (branch feat/p1-batch2, pushed; merged from feat/m1-pin). gx10 was pointed at one of four llama.cpp
-    trees, and a pin of 23b8cc4 accepted two different trees at rc=0. Not on origin/main. PP cross-ref (master
-    Appendix A): PP-20, and master section 5.3, which makes the pin a per-band template with pinned_on and
-    pin_expiry. Master section 12 row 3.'
+  notes: 'Filed after the roadmap was last written; added by PERF-040 on 2026-08-29. Open PR #2738 (branch feat/p1-batch2, pushed; merged from feat/m1-pin). gx10 was pointed at one of four llama.cpp trees, and a pin of 23b8cc4 accepted two different trees at rc=0. Not on origin/main. PP cross-ref (master Appendix A): PP-20, and master section 5.3, which makes the pin a per-band template with pinned_on and pin_expiry. Master section 12 row 3.'
 - id: PERF-034
   github_issue: 2706
   item_type: task
-  title: 'The decode sampler full-sorted 152,064 logits per token to keep 40'
-  status: in_progress
+  title: The decode sampler full-sorted 152,064 logits per token to keep 40
+  status: inprogress
   priority: high
   assigned_to: null
   created: 2026-08-29 00:00:00+00:00
@@ -14026,16 +13940,12 @@ roadmap:
   labels:
   - perf
   - receipt-rule
-  notes: 'Filed after the roadmap was last written; added by PERF-040 on 2026-08-29. Open PR #2738
-    (branch feat/p1-batch2, pushed; merged from feat/m2-alloc). Reported 4.00 allocs/token and 5,474,948
-    B -> 0.00 and 0, about 10.4x; its allocation harness is only correct under --test-threads=1, fixed in
-    the same branch. Not on origin/main. PP cross-ref (master Appendix A): master section 9 defect 4 (decode at
-    c=1 is a gated metric under P-3) and PP-28, since the sampler is pinned on the wire for both lanes.'
+  notes: 'Filed after the roadmap was last written; added by PERF-040 on 2026-08-29. Open PR #2738 (branch feat/p1-batch2, pushed; merged from feat/m2-alloc). Reported 4.00 allocs/token and 5,474,948 B -> 0.00 and 0, about 10.4x; its allocation harness is only correct under --test-threads=1, fixed in the same branch. Not on origin/main. PP cross-ref (master Appendix A): master section 9 defect 4 (decode at c=1 is a gated metric under P-3) and PP-28, since the sampler is pinned on the wire for both lanes.'
 - id: PERF-035
   github_issue: 2706
   item_type: task
-  title: 'CUDA was built by no required check, and a 4,545-line CUDA path had never compiled once'
-  status: in_progress
+  title: CUDA was built by no required check, and a 4,545-line CUDA path had never compiled once
+  status: inprogress
   priority: high
   assigned_to: null
   created: 2026-08-29 00:00:00+00:00
@@ -14048,17 +13958,12 @@ roadmap:
   labels:
   - perf
   - receipt-rule
-  notes: 'Filed after the roadmap was last written; added by PERF-040 on 2026-08-29. Open PR #2738
-    (branch feat/p1-batch2, pushed; merged from feat/m3-cuda-ci). A type error in
-    aprender-serve/src/cuda/mod.rs left the required scope green. Not on origin/main. PP cross-ref (master
-    Appendix A): master section 9 defect 8, whose lever is now server_config.build_features_cli from GET
-    /v1/effective-config (PP-2) rather than a harness flag (PP-13); PP-18 for the ancestor check on the
-    measuring binaries.'
+  notes: 'Filed after the roadmap was last written; added by PERF-040 on 2026-08-29. Open PR #2738 (branch feat/p1-batch2, pushed; merged from feat/m3-cuda-ci). A type error in aprender-serve/src/cuda/mod.rs left the required scope green. Not on origin/main. PP cross-ref (master Appendix A): master section 9 defect 8, whose lever is now server_config.build_features_cli from GET /v1/effective-config (PP-2) rather than a harness flag (PP-13); PP-18 for the ancestor check on the measuring binaries.'
 - id: PERF-036
   github_issue: 2706
   item_type: task
-  title: '215 hardcoded machine paths in aprender-serve, across 185 files'
-  status: in_progress
+  title: 215 hardcoded machine paths in aprender-serve, across 185 files
+  status: inprogress
   priority: high
   assigned_to: null
   created: 2026-08-29 00:00:00+00:00
@@ -14071,17 +13976,12 @@ roadmap:
   labels:
   - perf
   - receipt-rule
-  notes: 'Filed after the roadmap was last written; added by PERF-040 on 2026-08-29. Open PR #2738
-    (branch feat/p1-batch2, pushed; merged from feat/m5-serve-paths). The population PERF-032 ratchet now
-    refuses to grow. Not on origin/main. PP cross-ref (master Appendix A): no invariant maps directly. It is a
-    precondition of master section 12 row 15, the gx10 shakedown cell: a receipt is reproducible only if the
-    paths it names exist on a host other than the author machine (PP-18 is the provenance half of the same
-    requirement).'
+  notes: 'Filed after the roadmap was last written; added by PERF-040 on 2026-08-29. Open PR #2738 (branch feat/p1-batch2, pushed; merged from feat/m5-serve-paths). The population PERF-032 ratchet now refuses to grow. Not on origin/main. PP cross-ref (master Appendix A): no invariant maps directly. It is a precondition of master section 12 row 15, the gx10 shakedown cell: a receipt is reproducible only if the paths it names exist on a host other than the author machine (PP-18 is the provenance half of the same requirement).'
 - id: PERF-037
   github_issue: 2706
   item_type: task
-  title: 'The chain only two harness invocations were swallowed, and the harness wrote its receipt before validating'
-  status: in_progress
+  title: The chain only two harness invocations were swallowed, and the harness wrote its receipt before validating
+  status: inprogress
   priority: high
   assigned_to: null
   created: 2026-08-29 00:00:00+00:00
@@ -14094,18 +13994,12 @@ roadmap:
   labels:
   - perf
   - receipt-rule
-  notes: 'Filed after the roadmap was last written; added by PERF-040 on 2026-08-29. Open PR #2741
-    (branch feat/r3-batch3, pushed). A fabricated PASS, not a late diagnosis: test_llm.rs:118 writes
-    --output before :139 validates, so a swallowed refusal left a well-formed report the producer read as
-    a sample - measured rc=0 and lane PASS on a run where 3 of 10 requests died. Not on origin/main.
-    PP cross-ref (master Appendix A): PP-10 (nothing issued at or after window close; drained requests recorded with
-    drain_ms) and PP-21 (the receipt is signed after it is complete, never before). Master section 12 rows 0b
-    and 0c.'
+  notes: 'Filed after the roadmap was last written; added by PERF-040 on 2026-08-29. Open PR #2741 (branch feat/r3-batch3, pushed). A fabricated PASS, not a late diagnosis: test_llm.rs:118 writes --output before :139 validates, so a swallowed refusal left a well-formed report the producer read as a sample - measured rc=0 and lane PASS on a run where 3 of 10 requests died. Not on origin/main. PP cross-ref (master Appendix A): PP-10 (nothing issued at or after window close; drained requests recorded with drain_ms) and PP-21 (the receipt is signed after it is complete, never before). Master section 12 rows 0b and 0c.'
 - id: PERF-039
   github_issue: 2706
   item_type: task
-  title: 'W1 corpus had three formats and no file, and seed/ignore_eos had no wire representation'
-  status: in_progress
+  title: W1 corpus had three formats and no file, and seed/ignore_eos had no wire representation
+  status: inprogress
   priority: high
   assigned_to: null
   created: 2026-08-29 00:00:00+00:00
@@ -14118,18 +14012,12 @@ roadmap:
   labels:
   - perf
   - receipt-rule
-  notes: 'Filed after the roadmap was last written; added by PERF-040 on 2026-08-29. Open PR #2746
-    (branch feat/t2-batch4, pushed). The spec said prompts-w1.jsonl, the only loader parsed YAML, the CLI
-    help promised a JSON array, and ignore_eos appeared nowhere in the tree. prompts-w2.jsonl was already
-    committed and unreadable by that loader, which is why PERF-020 is not complete. Not on origin/main. PP
-    cross-ref (master Appendix A): PP-28. Master section 5.1 records that adding ignore_eos to prompts-w1.jsonl
-    rotates the corpus sha256, which is a component of the PP-22 join key and the PP-9 cell key. Master section
-    12 row 0b.'
+  notes: 'Filed after the roadmap was last written; added by PERF-040 on 2026-08-29. Open PR #2746 (branch feat/t2-batch4, pushed). The spec said prompts-w1.jsonl, the only loader parsed YAML, the CLI help promised a JSON array, and ignore_eos appeared nowhere in the tree. prompts-w2.jsonl was already committed and unreadable by that loader, which is why PERF-020 is not complete. Not on origin/main. PP cross-ref (master Appendix A): PP-28. Master section 5.1 records that adding ignore_eos to prompts-w1.jsonl rotates the corpus sha256, which is a component of the PP-22 join key and the PP-9 cell key. Master section 12 row 0b.'
 - id: PERF-040
   github_issue: 2706
   item_type: task
-  title: 'Reconcile docs/roadmaps/roadmap.yaml with origin/main - the record said planned for shipped work'
-  status: in_progress
+  title: Reconcile docs/roadmaps/roadmap.yaml with origin/main - the record said planned for shipped work
+  status: inprogress
   priority: high
   assigned_to: null
   created: 2026-08-29 00:00:00+00:00
@@ -14142,15 +14030,7 @@ roadmap:
   labels:
   - perf
   - receipt-rule
-  notes: 'This ticket. Added 2026-08-29. Every one of the 26 pre-existing github_issue 2706 entries was
-    re-decided against origin/main at 50d2bc2bb by naming a merge commit or a file that does exist there,
-    never by trusting a report. Three planned entries were in fact shipped (PERF-008, PERF-010, PERF-016,
-    all in PR #2710); three more were under way rather than untouched (PERF-012, PERF-013, PERF-019); one
-    entry marked completed was not (PERF-004); and 16 tickets filed after the file was last written were
-    absent from it entirely. PERF-038 was searched for and does not exist anywhere. Branch feat/u1-roadmap. PP
-    cross-ref (master Appendix A): master section 13. All 42 spec fields in this file now name
-    docs/specifications/PP-LLAMA-001-MASTER.md; the superseded documents and their local paths are in
-    evidence/parity/LEDGER.md section 13.'
+  notes: 'This ticket. Added 2026-08-29. Every one of the 26 pre-existing github_issue 2706 entries was re-decided against origin/main at 50d2bc2bb by naming a merge commit or a file that does exist there, never by trusting a report. Three planned entries were in fact shipped (PERF-008, PERF-010, PERF-016, all in PR #2710); three more were under way rather than untouched (PERF-012, PERF-013, PERF-019); one entry marked completed was not (PERF-004); and 16 tickets filed after the file was last written were absent from it entirely. PERF-038 was searched for and does not exist anywhere. Branch feat/u1-roadmap. PP cross-ref (master Appendix A): master section 13. All 42 spec fields in this file now name docs/specifications/PP-LLAMA-001-MASTER.md; the superseded documents and their local paths are in evidence/parity/LEDGER.md section 13.'
 - id: PMAT-742
   github_issue: 2851
   item_type: task
@@ -14171,18 +14051,20 @@ roadmap:
 - id: PMAT-743
   github_issue: 2851
   item_type: bug
-  title: 'PMAT-742 jidoka: contract corpus integrity ratchet rose 444->445 on #2851 (pp-llama-001-spec-conformance-v1
-    test id 007A)'
-  status: done
+  title: 'PMAT-742 jidoka: contract corpus integrity ratchet rose 444->445 on #2851 (pp-llama-001-spec-conformance-v1 test id 007A)'
+  status: completed
   priority: high
   assigned_to: null
   created: 2026-09-02 17:05:00+00:00
   updated: 2026-09-02 17:20:00+00:00
   spec: null
   acceptance_criteria:
-  - 'cargo test -p aprender-contracts --test validate_contracts green (integrity 444); ids 001..008 contiguous
-    and unique (653f277d6)'
-  notes: 'five-whys in .pmat/jidoka.jsonl; proof:PR#2851 (653f277d6 renumbered the ids; the corpus-integrity test is green on main)'
+  - cargo test -p aprender-contracts --test validate_contracts green (integrity 444); ids 001..008 contiguous and unique (653f277d6)
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: five-whys in .pmat/jidoka.jsonl; proof:PR#2851 (653f277d6 renumbered the ids; the corpus-integrity test is green on main)
 - id: PMAT-936
   github_issue: null
   item_type: bug
@@ -14545,22 +14427,26 @@ roadmap:
   github_issue: null
   item_type: bug
   title: 'Post-publish parity of the published 0.65.2 (cargo install aprender, default features) is FAIL on lambda CPU: decode 0.59x, prefill 0.005x of llama.cpp 39173bcac at c=1/4/8/16 (5 interleaved replicates per band); TTFT 2.6 s vs 16 ms at c=1 - the CPU prefill runs at decode speed'
-  status: todo
+  status: planned
   priority: critical
   assigned_to: null
   created: 2026-09-05 01:15:00+00:00
   updated: 2026-09-05 01:15:00+00:00
   spec: docs/specifications/0.66-performance-parity-report.md
   acceptance_criteria:
-  - 'evidence/dogfood/<next>/lambda.json parity lane cpu verdict PASS against the pinned comparator (floor 1.0 from scripts/perf-matrix.yaml#arms.L3.delta), measured by scripts/parity_host_receipt.sh on the published binary, not on a tree build'
+  - evidence/dogfood/<next>/lambda.json parity lane cpu verdict PASS against the pinned comparator (floor 1.0 from scripts/perf-matrix.yaml#arms.L3.delta), measured by scripts/parity_host_receipt.sh on the published binary, not on a tree build
   - 'prefill tok/s within the L3 band of the comparator at c=1 (measured 47.7 vs 8982.4 on 2026-09-05): the prefill must batch the prompt, not decode it one token at a time on CPU'
-  - 'the receipt records the install command and feature set that produced each lane; a lane from a --features cuda install is labelled as such'
+  - the receipt records the install command and feature set that produced each lane; a lane from a --features cuda install is labelled as such
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
   notes: 'Measured 2026-09-05 by the 0.65.2 post-publish host receipt (evidence/dogfood/0.65.2/lambda.json, run_id e167c1ab2c68496cbe1a2a881ab25900). Subject aggregate tok/s at c=1 23.2 vs comparator 75.2; subject decode 44.1 vs 74.2 at c=1. Every c>1 band is INVALID-CORRECTNESS(#2753/#2776): no PP-26 witness was run, so no c>1 ratio is quoted (P-4). The published default-feature binary resolves 0 GPU layers on a 4090 host; a second install of the same crate with --features cuda (167 s) gave the cuda lane, also FAIL at c=1: decode 0.69x, prefill 0.18x (326.8 vs 492.5 aggregate at c=1; TTFT 24 vs 5 ms). c>1 bands: INVALID-CORRECTNESS(#2753/#2776), no witness, ratios struck. Related: chunked prefill (Arm E), the accelerator-quantity contract, and the 0.66 parity report section 6.'
 - id: PMAT-963
   github_issue: null
   item_type: bug
   title: 'No pre-publish gate owns c>=8 request failures on the published default-feature (CPU) build or on aarch64: the only pre-publish ladder is perf_gate.sh --host lambda --phase release --workload W1 on the x86 tree build (CB-1400 class). Post-publish, the published 0.65.2 apr serve fails every request at c>=8 on gx10 and mini (0/8, 0/16 in all 5 replicates) and one c=16 replicate on intel (0/16), while the pinned llama.cpp serves the same bands; no parity block can be emitted for those hosts'
-  status: todo
+  status: planned
   priority: critical
   assigned_to: null
   created: 2026-09-05 01:40:00+00:00
@@ -14569,44 +14455,56 @@ roadmap:
   acceptance_criteria:
   - 'scripts/parity_host_receipt.sh on the published binary emits a block on gx10 and intel: every band of the declared ladder [1,4,8,16] has 5 replicates with successful == total_requests'
   - 'the failure mode is named from the client side (apr test llm bench records the per-request error kind: timeout vs connection vs HTTP status) - today the run json carries only successful/failed counts, so the receipt cannot say WHY a request failed (own sub-ticket)'
-  - 'root cause is traced to the module (the writer-lock serialisation of concurrent requests and the prefill-at-decode-speed path, cf. PMAT-962), not to the protocol timeout'
+  - root cause is traced to the module (the writer-lock serialisation of concurrent requests and the prefill-at-decode-speed path, cf. PMAT-962), not to the protocol timeout
   - 'a pre-publish gate runs the ladder on the default-feature build and on at least one aarch64 host, or the release runbook says in writing that it does not and why (five whys: 1 the release cut ran perf_gate.sh once, host=lambda phase=release workload=W1 (evidence/release/0.65.2/perf-gate-8e1e9ad40.txt: one line, one host); 2 perf_gate.sh takes one --host and the runbook (pp4-work/release_cut.sh:10) calls it for lambda only; 3 the matrix cells for gx10/intel W1 are UNMEASURED and mini W1 is NA, so the gate has nothing to fail there; 4 the pre-publish dogfood runs on the cut host and its parity row (check_parity_receipt) reads the lambda receipt; 5 nothing in .github/workflows or scripts/release*.sh runs the ladder on a published or default-feature binary before cargo publish - the first ladder the published binary ever met was the post-publish host receipt)'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
   notes: 'Measured 2026-09-05 by the 0.65.2 post-publish host receipts (evidence/dogfood/0.65.2/{gx10,intel}.json, key parity_attempt; kept work dirs on the hosts are named there). gx10: TTFT 17.6 s at c=1 and 36 s at c=4 with 4/4 successes, then 0 successes at c=8 and c=16 in every replicate. intel: c=16 replicate 2 had 0/16 successful, replicate 1 9/16, the other three 16/16. mini (M4): 2/2 at c=1 (4.5 tok/s, TTFT 13.9 s) and 4/4 at c=4 (TTFT 49.5 s), then 0/8 and 0/16 in every replicate. The protocol window is http_duration_secs = 30 (scripts/llama_pin.toml#protocol.http). The receipt validator (scripts/lib/bench_receipt.py) correctly refuses a band with zero subject throughput as a non-measurement, so these hosts carry parity_attempt instead of parity and check_multiplatform_dogfood.sh stays FAIL for them: the post-publish verdict for 0.65.2 is NO-GO on this evidence.'
 - id: PMAT-964
   github_issue: null
   item_type: bug
   title: 'H12 floor unwired for aarch64 pre-publish (CB-1400 class): the H12 throughput floor (>= 10 tok/s) exists only inside apr bench itself (crates/apr-cli/src/commands/bench.rs:260) and in the post-publish bench_host_receipt.sh; no workflow or release script runs apr bench before cargo publish on any host, and no pre-publish step runs on aarch64 at all. Post-publish, the published aarch64 0.65.2 decodes at 3.5 tok/s on gx10/GB10 and 4.5 tok/s on mini/M4 at c=1 (0.046x / 0.05x the pinned llama.cpp CPU medians 75.7 / 90.4) and apr bench measures 7.7 / 8.1 tok/s, below the floor it ships'
-  status: todo
+  status: planned
   priority: critical
   assigned_to: null
   created: 2026-09-05 01:40:00+00:00
   updated: 2026-09-05 01:40:00+00:00
   spec: docs/specifications/0.66-performance-parity-report.md
   acceptance_criteria:
-  - 'the published aarch64 binary (crates.io, default features) reaches the H12 floor in apr bench on gx10 and a cpu-lane parity ratio within the L3 band at c=1'
-  - 'the receipt names which SIMD path the published binary took on aarch64 (NEON vs scalar) - the tree build measured 1.21x on GB10 (#2567) and the published binary measures 0.046x, so the two are not the same code path or the same build flags'
+  - the published aarch64 binary (crates.io, default features) reaches the H12 floor in apr bench on gx10 and a cpu-lane parity ratio within the L3 band at c=1
+  - the receipt names which SIMD path the published binary took on aarch64 (NEON vs scalar) - the tree build measured 1.21x on GB10 (#2567) and the published binary measures 0.046x, so the two are not the same code path or the same build flags
   - 'H12 runs before cargo publish on an aarch64 host, or the release runbook names the workflow file:line that would (five whys: 1 the published aarch64 binary is below the H12 floor; 2 nothing pre-publish measured it - grep of .github/workflows/*.yml, scripts/release*.sh, scripts/dogfood.sh, scripts/perf_gate.sh and Makefile finds no apr bench invocation (the only hit is a docs example in scripts/gen-cli-chapter-stubs.sh:52); 3 H12 is asserted inside apr bench (bench.rs:260) and by bench_host_receipt.sh, both of which run only when someone runs them on a host after install; 4 the release cut has no aarch64 stage - perf gate, clean-room and pre-publish dogfood all ran on lambda x86; 5 the matrix marks gx10/intel W1 UNMEASURED and mini NA, so the gate reports rather than fails there)'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
   notes: 'Measured 2026-09-05: evidence/dogfood/0.65.2/gx10.json (parity_attempt band c=1: apr 3.5/3.5/3.6/3.5/3.5 tok/s (median 3.5), TTFT ~17.5 s; comparator 77.8/75.7/73.3/77.8/73.8 (median 75.7); bench_attempt: apr bench 7.7 tok/s, Performance Grade F, exit non-zero). mini (M4, aarch64-apple, same published crate): 4.5 tok/s at c=1 vs 90.4 (0.05x), apr bench 8.1 tok/s (exit 5, below the H12 floor) - evidence/dogfood/0.65.2/mini.json. Related: PMAT-962 (lambda, same binary family, 0.59x decode), PMAT-963 (c>=8 request failures), #2567 (aarch64 Q4_K tree-build ratio).'
 - id: PMAT-965
   github_issue: null
   item_type: bug
   title: 'parity_host_receipt.sh and bench_host_receipt.sh exit silently (0 s, empty log, rc=1) under macOS bash 3.2 - a silent-pass shape; they must fail closed with a message on BASH_VERSINFO<4 (the missing-flock case already fails closed with a message: measured on mini, "FAIL no flock(1)")'
-  status: todo
+  status: planned
   priority: high
   assigned_to: null
   created: 2026-09-05 05:30:00+00:00
   updated: 2026-09-05 05:30:00+00:00
   spec: null
   acceptance_criteria:
-  - 'under bash 3.2 (or any BASH_VERSINFO[0] < 4) both scripts print one FAIL line naming the version they need and exit non-zero before touching the lock; case row + mutation (guard removed -> silent exit) in the same PR'
+  - under bash 3.2 (or any BASH_VERSINFO[0] < 4) both scripts print one FAIL line naming the version they need and exit non-zero before touching the lock; case row + mutation (guard removed -> silent exit) in the same PR
   - 'setsid is not used by either script (the mini launcher used it; recorded so nobody adds it): the guard is bash version + flock only'
-  - 'the host prerequisites (Homebrew bash, util-linux flock) are declared in paiml/infra machines/mini/forjar.yaml, not hand-installed - the 2026-09-05 mini run used a HAND install of both (brew install bash; brew install util-linux), which is the reaper class'
+  - the host prerequisites (Homebrew bash, util-linux flock) are declared in paiml/infra machines/mini/forjar.yaml, not hand-installed - the 2026-09-05 mini run used a HAND install of both (brew install bash; brew install util-linux), which is the reaper class
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
   notes: 'Found producing the 0.65.2 mini receipt: chain3 ran under /bin/bash 3.2.57, parity rc=1 in 0 s with an empty parity.log; under Homebrew bash 5.3.15 the script proceeded and then refused on flock (fail-closed, correct); util-linux flock fixed that. Sibling infra PR declares both on mini.'
 - id: PMAT-966
   github_issue: null
   item_type: bug
   title: 'witness=null on every band is a HARNESS defect: --witness-json is opt-in, so parity_block.py emits c>1 bands with no PP-26 witness and no validity mark, and perf_gate.sh grades them; PP-26 says absence is invalidity - the harness must print validity_by_band itself (no witness on c>1 => INVALID-CORRECTNESS), never a hand afterwards'
-  status: todo
+  status: planned
   priority: critical
   assigned_to: null
   created: 2026-09-05 07:10:00+00:00
@@ -14614,25 +14512,33 @@ roadmap:
   spec: docs/specifications/PP-LLAMA-001-MASTER.md
   acceptance_criteria:
   - 'scripts/lib/parity_block.py writes validity_by_band on every lane: c=1 MEASURED when the band completed, every c>1 band INVALID-CORRECTNESS(PP-26 absent) unless a witness with result PASS, min_agree_tokens >= 64 and max_constant_run <= 16 is attached; ratio fields on an INVALID band are null, not numbers'
-  - 'perf_gate.sh and check_parity_receipt.sh REFUSE a c>1 band that carries a ratio without a witness (fail closed), and print the validity line per band in the verdict'
+  - perf_gate.sh and check_parity_receipt.sh REFUSE a c>1 band that carries a ratio without a witness (fail closed), and print the validity line per band in the verdict
   - 'must-fire mutation: run scripts/parity_host_receipt.sh without --witness-json against a live pair; the emitted block must self-mark every c>1 band INVALID-CORRECTNESS and carry no c>1 ratio (RED today: the 0.65.2 lambda block carried ratio_aggregate_tok_per_sec on c=4/8/16 with witness=null)'
-  - 'the 0.65.2 receipts keep their hand-annotated validity_by_band with validity_by_band_source naming this ticket; the ledger rows 7-11 what_it_lacks name it'
+  - the 0.65.2 receipts keep their hand-annotated validity_by_band with validity_by_band_source naming this ticket; the ledger rows 7-11 what_it_lacks name it
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
   notes: 'Found on the 0.65.2 post-publish receipts (evidence/dogfood/0.65.2/*.json): every band of both lambda lanes and of the three refused attempts has witness: null, and the block still carried per-band ratios and verdicts at c=4/8/16. The validity marks now in those files were written by hand afterwards - the gate grading its own paper - and are labelled so. Ruling 2026-09-05 (noah): hand-edited validity is not validity.'
 - id: PMAT-967
   github_issue: null
   item_type: bug
   title: 'A release-phase perf-gate verdict with no artifact identity (CB-1400 sibling): VERDICT PASS host=lambda phase=release workload=W1 on every 0.65.x cut graded evidence/perf-gate-001-w1-lambda/receipt.r1.json - commit 745fa8588, a dev checkout with feature_set [cuda], binary sha256 9d0b08b0... - not the crates.io cli build that was published; the verdict line must carry feature_set and the built-binary sha256 (PP-18/PP-25), and a verdict from a checkout is phase=pre-publish-checkout, never quotable as release'
-  status: todo
+  status: planned
   priority: critical
   assigned_to: null
   created: 2026-09-05 07:10:00+00:00
   updated: 2026-09-05 07:10:00+00:00
   spec: docs/specifications/PP-LLAMA-001-MASTER.md
   acceptance_criteria:
-  - 'the VERDICT line prints feature_set=[...] binary_sha256=<64 hex> install_source={registry|checkout} read from receipt.provenance (absent => FAIL INSTRUMENT, not PASS)'
-  - 'when install_source is not a registry install (cargo install from crates.io of the version under release), --phase release is relabelled phase=pre-publish-checkout in the verdict line and the run exits with a REPORT, never a PASS that a release runbook can quote; release_cut.sh (pp4-work) and scripts/release*.sh stop passing a stale checkout receipt as the release receipt'
+  - the VERDICT line prints feature_set=[...] binary_sha256=<64 hex> install_source={registry|checkout} read from receipt.provenance (absent => FAIL INSTRUMENT, not PASS)
+  - when install_source is not a registry install (cargo install from crates.io of the version under release), --phase release is relabelled phase=pre-publish-checkout in the verdict line and the run exits with a REPORT, never a PASS that a release runbook can quote; release_cut.sh (pp4-work) and scripts/release*.sh stop passing a stale checkout receipt as the release receipt
   - 'must-fire mutation: feed receipt.r1.json (745fa8588, checkout) with --phase release --commit <any newer sha> - today it prints PASS phase=release; after the fix it prints phase=pre-publish-checkout and no PASS'
-  - 'the three 0.65.x cut lines are relabelled in evidence/release/0.65.2/perf-gate-8e1e9ad40.txt and docs/audits/impl-PMAT-929-receipt.md (done in this PR)'
+  - the three 0.65.x cut lines are relabelled in evidence/release/0.65.2/perf-gate-8e1e9ad40.txt and docs/audits/impl-PMAT-929-receipt.md (done in this PR)
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
   notes: 'Found 2026-09-05 while answering "which pre-publish gate should have been red": the receipt the gate graded on 587ad0797, 752f55346 and 8e1e9ad40 was the same 2026-09-01 file (ledger row 3, SPENT, subject lane invalid, unsigned); its PASS meant only that no W1 arm was ARMED. Nothing pre-publish ever measured the published default-feature (cli, CPU-only) binary; the first ladder it met was the post-publish host receipt (PMAT-962..964).'
 - id: PMAT-750
   github_issue: null
@@ -15254,11 +15160,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'GH-2900: G-2 DECISION D-5: [lib] name = aprender declared by root Cargo.toml and crates/aprender-core — keep the front door or rename'
-  status: planned
+  status: completed
   priority: medium
   assigned_to: null
   created: 2026-09-05T11:25:11Z
-  updated: 2026-09-05T11:25:11Z
+  updated: 2026-09-06T12:10:00Z
   spec: null
   acceptance_criteria:
   - 'one line in spec §0 with decided_by and date | mutation: none'
@@ -15266,7 +15172,7 @@ roadmap:
   subtasks: []
   estimated_effort: null
   labels: []
-  notes: null
+  notes: 'complete: proof:https://github.com/paiml/aprender/issues/2873#issuecomment-5558718271 (decided_by: noahgift via driver prompt 2026-09-06); proof:docs/audits/impl-PMAT-985-receipt.md'
 - id: PMAT-986
   github_issue: null
   item_type: task
@@ -15819,11 +15725,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'GH-2933: DEC-D-2 DECISION D-2: Unsloth throughput concession not assumed revoked; T-3 ships REPORTING'
-  status: planned
+  status: completed
   priority: medium
   assigned_to: null
   created: 2026-09-05T11:27:10Z
-  updated: 2026-09-05T11:27:10Z
+  updated: 2026-09-06T12:10:00Z
   spec: null
   acceptance_criteria:
   - 'one line in spec §0 with decided_by and date | mutation: none'
@@ -15831,16 +15737,16 @@ roadmap:
   subtasks: []
   estimated_effort: null
   labels: []
-  notes: null
+  notes: 'complete: proof:https://github.com/paiml/aprender/issues/2873#issuecomment-5558717537 (decided_by: noahgift via driver prompt 2026-09-06); proof:docs/audits/impl-PMAT-1018-receipt.md'
 - id: PMAT-1019
   github_issue: null
   item_type: task
   title: 'GH-2934: DEC-D-3 DECISION D-3 (escalate): CI home for non-CUDA lanes — may intel host a wgpu lane and a wasm harness; may mini host night'
-  status: planned
+  status: completed
   priority: medium
   assigned_to: null
   created: 2026-09-05T11:27:14Z
-  updated: 2026-09-05T11:27:14Z
+  updated: 2026-09-06T12:10:00Z
   spec: null
   acceptance_criteria:
   - 'one line in spec §0 with decided_by and date | mutation: none'
@@ -15848,16 +15754,16 @@ roadmap:
   subtasks: []
   estimated_effort: null
   labels: []
-  notes: null
+  notes: 'complete: proof:https://github.com/paiml/aprender/issues/2873#issuecomment-5558717787 (decided_by: noahgift via driver prompt 2026-09-06); proof:docs/audits/impl-PMAT-1019-receipt.md'
 - id: PMAT-1020
   github_issue: null
   item_type: task
   title: 'GH-2935: DEC-D-8 DECISION D-8 (escalate): rename sequencing for 0.67 — one PR per crate vs batched leaves'
-  status: planned
+  status: completed
   priority: medium
   assigned_to: null
   created: 2026-09-05T11:27:18Z
-  updated: 2026-09-05T11:27:18Z
+  updated: 2026-09-06T12:10:00Z
   spec: null
   acceptance_criteria:
   - 'one line in spec §0 with decided_by and date | mutation: none'
@@ -15865,16 +15771,16 @@ roadmap:
   subtasks: []
   estimated_effort: null
   labels: []
-  notes: null
+  notes: 'complete: proof:https://github.com/paiml/aprender/issues/2873#issuecomment-5558719034 (decided_by: noahgift via driver prompt 2026-09-06); proof:docs/audits/impl-PMAT-1020-receipt.md'
 - id: PMAT-1021
   github_issue: null
   item_type: task
   title: 'GH-2936: DEC-D-9 DECISION D-9: cuda in the published crate default features — yes iff S0-14 (held on intel/mini), R-0 merged, clean-room '
-  status: planned
+  status: completed
   priority: medium
   assigned_to: null
   created: 2026-09-05T11:27:21Z
-  updated: 2026-09-05T11:27:21Z
+  updated: 2026-09-06T12:10:00Z
   spec: null
   acceptance_criteria:
   - 'one line in spec §0 with decided_by and date | mutation: none'
@@ -15882,16 +15788,16 @@ roadmap:
   subtasks: []
   estimated_effort: null
   labels: []
-  notes: null
+  notes: 'complete: proof:https://github.com/paiml/aprender/issues/2873#issuecomment-5558719666 (decided_by: noahgift via driver prompt 2026-09-06); proof:docs/audits/impl-PMAT-1021-receipt.md'
 - id: PMAT-1022
   github_issue: null
   item_type: task
   title: 'GH-2937: DEC-D-10 DECISION D-10: per-target feature set of the release binaries (R-5 runs S0-14 per target)'
-  status: planned
+  status: completed
   priority: medium
   assigned_to: null
   created: 2026-09-05T11:27:25Z
-  updated: 2026-09-05T11:27:25Z
+  updated: 2026-09-06T12:10:00Z
   spec: null
   acceptance_criteria:
   - 'one line in spec §0 with decided_by and date | mutation: none'
@@ -15899,16 +15805,16 @@ roadmap:
   subtasks: []
   estimated_effort: null
   labels: []
-  notes: null
+  notes: 'complete: proof:https://github.com/paiml/aprender/issues/2873#issuecomment-5558719920 (decided_by: noahgift via driver prompt 2026-09-06); proof:docs/audits/impl-PMAT-1022-receipt.md'
 - id: PMAT-1023
   github_issue: null
   item_type: task
   title: 'GH-2938: DEC-D-11 DECISION D-11: PV-IMPROVE-001 phase 0 + 1.1/1.2 ride 0.66 as C12 blockers'
-  status: planned
+  status: completed
   priority: medium
   assigned_to: null
   created: 2026-09-05T11:27:28Z
-  updated: 2026-09-05T11:27:28Z
+  updated: 2026-09-06T12:10:00Z
   spec: null
   acceptance_criteria:
   - 'one line in spec §0 with decided_by and date | mutation: none'
@@ -15916,7 +15822,7 @@ roadmap:
   subtasks: []
   estimated_effort: null
   labels: []
-  notes: null
+  notes: 'complete: proof:https://github.com/paiml/aprender/issues/2873#issuecomment-5558720148 (decided_by: noahgift via driver prompt 2026-09-06); proof:docs/audits/impl-PMAT-1023-receipt.md'
 - id: PMAT-1024
   github_issue: null
   item_type: task
@@ -16467,11 +16373,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'GH-2999: G-10 check_hardcoded_paths.sh arms at pmat >= 3.32 while the fleet runs 3.31; under 3.37 main is 317 vs baseline 277 — every PR goes red on the fleet upgrade'
-  status: planned
+  status: completed
   priority: medium
   assigned_to: null
   created: 2026-09-06T02:37:57Z
-  updated: 2026-09-06T02:37:57Z
+  updated: 2026-09-06T14:00:00Z
   spec: null
   acceptance_criteria:
   - 'see #2999 (A + mutation)'
@@ -16481,4 +16387,281 @@ roadmap:
   labels:
   - kind:code
   - pp-066
+  notes: 'complete: proof:PR#3011 (merged b0a0a51b2 2026-09-06T13:51:59Z); proof:docs/audits/impl-PMAT-1059-receipt.md'
+- id: Sovereign AI Integration Specification v1.1 - Complete architecture document with 10 peer-reviewed references, Toyota Way principles, and Rust safety improvements
+  github_issue: null
+  item_type: task
+  title: 'New task: Sovereign AI Integration Specification v1.1 - Complete architecture document with 10 peer-reviewed references, Toyota Way principles, and Rust safety improvements'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-20 19:29:36.580632+00:00
+  updated: 2025-11-20 19:29:42.227136+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
   notes: null
+- id: 'Phase 2: Bayesian Examples & Documentation - Create cargo examples and book chapters for Gamma-Poisson, Normal-InverseGamma, and Dirichlet-Multinomial conjugate priors'
+  github_issue: null
+  item_type: task
+  title: 'New task: Phase 2: Bayesian Examples & Documentation - Create cargo examples and book chapters for Gamma-Poisson, Normal-InverseGamma, and Dirichlet-Multinomial conjugate priors'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-22 14:41:15.060857+00:00
+  updated: 2025-11-22 14:55:52.231115+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-1073
+  github_issue: 3002
+  item_type: task
+  title: 'GH-3002: R-0b backend resolution reads the registry (split of R-0 per the design quorum 2026-09-06)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-06T04:40:00Z
+  updated: 2026-09-06T04:40:00Z
+  spec: null
+  acceptance_criteria:
+  - 'see #3002 (A + mutation)'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - pp-066
+  notes: null
+- id: PMAT-1061
+  github_issue: null
+  item_type: task
+  title: 'G-10 re-baseline: scripts/hardcoded_path_shipped_baseline.txt re-measured under the pin (3.37.0), stamped (count/pmat_version/basis), its own PR — never a raise; the baseline kind table gains a stamped-series rule (PP-066 #2873, G-10 quorum dissent Q1)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-06T11:30:00Z
+  updated: 2026-09-06T11:30:00Z
+  spec: null
+  acceptance_criteria:
+  - bash scripts/check_hardcoded_paths.sh --full-if-capable prints `stamped 3.37.0 (matches the pin)` and PASS by the absolute compare at HEAD; check_baseline_ratchets.sh treats the stamped re-measurement as a new series, not a raise (case-table row both polarities)
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - pp-066
+  notes: null
+- id: PMAT-1062
+  github_issue: 3012
+  item_type: task
+  title: 'G-11 shared-file write contention: row PRs never touch pp-066-dag.yaml, roadmap.yaml, the rendered spec block or README counts (check_row_pr_write_set.sh); DAG status derived from receipts (render_dag.py, dag_invariants.py D7); README counts >= claimed, exact only for the orchestrator (PP-066 #2873, driver R2 2026-09-06)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-06T11:30:00Z
+  updated: 2026-09-06T11:30:00Z
+  spec: null
+  acceptance_criteria:
+  - 'bash scripts/check_row_pr_write_set.sh --self-test both polarities; a row branch touching docs/specifications/pp-066-dag.yaml is RED naming the file; python3 scripts/render_dag.py --check PASS with no status: key read; bash scripts/check_readme_claims.sh PASS with README <= measured and RED with README > measured'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - pp-066
+  notes: null
+- id: PMAT-1063
+  github_issue: 3013
+  item_type: task
+  title: 'G-10b analyser pin guard: scripts/check_pmat_pinned.sh — every analyser reference under scripts/ and .github/workflows/ resolves through scripts/pmat_bin.sh; scripts/pmat_unpinned_baseline.txt 281 shrink-only; wired in guard-runner-labels case table then live; extends apr-pinned-analyser-ratchet-v1 (PP-066 #2873, #2999)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-06T11:30:00Z
+  updated: 2026-09-06T11:30:00Z
+  spec: null
+  acceptance_criteria:
+  - bash scripts/check_pmat_pinned.sh --self-test 15/15; bash scripts/check_pmat_pinned.sh prints unpinned=N <= 281; reintroducing one bare `pmat comply check` turns it RED naming the line
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - pp-066
+  notes: null
+- id: PMAT-1064
+  github_issue: 3014
+  item_type: task
+  title: 'G-10c analyser reference sweep: the 281 unpinned references under scripts/ and .github/workflows/ resolve through scripts/pmat_bin.sh; presence probes become ENV failures; workflow installs at the pin; baseline to 0 (PP-066 #2873, #2999)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-06T11:30:00Z
+  updated: 2026-09-06T11:30:00Z
+  spec: null
+  acceptance_criteria:
+  - bash scripts/check_pmat_pinned.sh prints unpinned=0; scripts/pmat_unpinned_baseline.txt is 0; dogfood.sh / verifier_pin.sh / ci.sh resolve $PMAT through the pin (each prints the pin)
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - pp-066
+  notes: null
+- id: PMAT-1065
+  github_issue: 3017
+  item_type: task
+  title: 'L0-1: [P0] Qwen2.5-1.5B on cuda computes a different function from cpu (cosine 0.9418, |Δlogit|max 5.38; hidden 1536 / heads 12 / kv 2) and apr then runs cpu under --'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-09-06T14:10:00Z
+  updated: 2026-09-06T14:10:00Z
+  spec: null
+  acceptance_criteria:
+  - 'see issue #3017 (A + mutation)'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - pp-066
+  notes: null
+- id: PMAT-1066
+  github_issue: 3018
+  item_type: task
+  title: 'G-11b: one-call state (scripts/pp066_state.sh: head row, complete receipts, PR states, main reds with ticket ids, U-1 poll), the session docs commit (scripts/session_d'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-06T14:10:00Z
+  updated: 2026-09-06T14:10:00Z
+  spec: null
+  acceptance_criteria:
+  - 'see issue #3018 (A + mutation)'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - pp-066
+  notes: null
+- id: PMAT-1067
+  github_issue: 3019
+  item_type: task
+  title: 'R-8: nightly-latest-dogfood.yml: install from latest on four hosts via the R-6 installer, apr devices --json, C14 (check_model_parity.sh --manifest), diff vs the rel'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-06T14:10:00Z
+  updated: 2026-09-06T14:10:00Z
+  spec: null
+  acceptance_criteria:
+  - 'see issue #3019 (A + mutation)'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - pp-066
+  notes: null
+- id: PMAT-1068
+  github_issue: 3016
+  item_type: task
+  title: 'S-0: speed lane on perf-solo: the beat/speed lane runs on perf-solo and its receipt names its own host (PR #2720 direction accepted under D-3; diff re-derived from H'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-06T14:10:00Z
+  updated: 2026-09-06T14:10:00Z
+  spec: null
+  acceptance_criteria:
+  - 'see issue #3016 (A + mutation)'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - pp-066
+  notes: null
+- id: PMAT-1069
+  github_issue: 3015
+  item_type: task
+  title: 'U-1: pmat#1200: `pmat work cot derive` emits hollow obligations (empty statement/hypothesis for v5.0 contract.json steps; CB-1658 passes the hollow file) — fix upstr'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-06T14:10:00Z
+  updated: 2026-09-06T14:10:00Z
+  spec: null
+  acceptance_criteria:
+  - 'see issue #3015 (A + mutation)'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - pp-066
+  notes: null
+- id: PMAT-1070
+  github_issue: null
+  item_type: task
+  title: 'L0-1b: [P0, unbounded] five whys by apr parity SPC to the OP; the fix; revert → 1.5B RED, 7B GREEN; m=1 str (PP-066 #2873, issue #2971)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-06T16:33:26Z
+  updated: 2026-09-06T16:33:26Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-1071
+  github_issue: null
+  item_type: task
+  title: 'SPEC-2.0: spec v2.0 (driver v5): the 18-row scope with each cut row naming the claim it protected; the claims  (PP-066 #2873, issue #3023)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-06T16:33:26Z
+  updated: 2026-09-06T16:33:26Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-1072
+  github_issue: 3028
+  item_type: bug
+  title: 'GH-3028: main RED — upstream roadmap-valid (PATH pmat 3.39.0) rejected 12 legacy nested subtask
+    records as duplicate ids; dropped them, in-repo pin-independent id-uniqueness guard through the parsed
+    tree (scripts/check_roadmap_ids_unique.sh), G-6 treats a parent''s subtasks list as lifecycle (PR #3030)'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-09-06T18:05:00Z
+  updated: 2026-09-06T18:05:00Z
+  spec: null
+  acceptance_criteria:
+  - 'bash scripts/check_roadmap_ids_unique.sh --self-test && bash scripts/check_roadmap_ids_unique.sh'
+  - 'pmat 3.39.0 and the 3.37.0 pin both print Validation passed on docs/roadmaps/roadmap.yaml'
+  - 'mutation: main push run 34049248452 (RED, roadmap-valid) vs PR #3030 run (GREEN, same step)'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - pp-066
+  notes: 'see #3028; fleet pin drift paiml/infra#468; the identical dedup also rides #3027 (BSE-001 H4)'
