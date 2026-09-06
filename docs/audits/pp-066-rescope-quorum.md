@@ -4,7 +4,7 @@ Three adversarial agy lanes (agy 1.1.27, `--mode plan`, `writes=false`; conversa
 
 ## Verdict: **scope-holds-with-changes** (lane 1); lanes 2/3 said scope-fails on a premise the spec refutes
 
-The 2-of-3 "scope-fails" rested on *C3 moved to 0.67 ⇒ `--backend` resolution unenforced*. The spec says the resolution ships in **R-0b** (kept, #3002, PMAT-1060, a TAG-0.66.0 dependency) and C11 (credited) carries "zero `cfg!(feature)` reads in `apr-cli` backend decisions"; only the per-surface × per-host case table is deferred with its instrument. A moved criterion is not a moved capability. Verdict adopted: **scope holds with the changes below.**
+The 2-of-3 "scope-fails" rested on *C3 moved to 0.67 ⇒ `--backend` resolution unenforced*. The spec says the resolution ships in **R-0b** (`docs/specifications/PP-066-release-spec.md:267` — "R-0b ships the resolution; the per-surface case table over every host is credited in 0.67 with its instrument"; R-0b is kept, #3002, PMAT-1060, a TAG-0.66.0 dependency) and C11 (credited) carries "zero `cfg!(feature)` reads in `apr-cli` backend decisions"; only the per-surface × per-host case table is deferred with its instrument. A moved criterion is not a moved capability. Verdict adopted: **scope holds with the changes below.**
 
 ## Rulings (every hit returns a row or removes a claim)
 
@@ -26,7 +26,7 @@ The spec's sentence ("README, release notes and CLI output") **understates** the
 Sufficient for the three claims once R-0b lands (C11) — see the verdict. Two instruments the criteria name are not on main yet: `evidence/models/supported.yaml` (on `agent/L0-1`, L0-1a) and `scripts/check_backend_registry.sh` (R-0b); `release_criteria.sh` reports a missing instrument as ENV (exit 2), never a pass, until they land.
 
 ## Q3 — C5
-**Unanimous: dishonest to keep credited** while every training number is cut and no claim needs it. **C5 moves to 0.67 with Track T.** The credited set is C0 C4 C6 C7 C8 C9 C11 C13 C14 (nine).
+**Unanimous: dishonest to keep credited** while every training number is cut and no claim needs it. **C5 moves to 0.67 with Track T.** Claim protected: none of the three (a training-parity receipt schema); the residue — the harness and its receipt schema — is carried by row **T-0h** (`release: 0.67`, `claim_protected:` names it) and credited in 0.67 with Track T's numbers. The credited set is C0 C4 C6 C7 C8 C9 C11 C13 C14 (nine).
 
 ## Disposition
 - `scripts/release_criteria.sh`: C5 → 0.67 (this commit).
