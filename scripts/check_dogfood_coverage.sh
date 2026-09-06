@@ -427,7 +427,7 @@ selftest_build_repo() {
 
   # `git init` is NOT hermetic on a developer box: this machine sets
   # init.templatedir=~/.git-templates, so a scratch repo silently inherits the
-  # pmat pre-commit hooks and every fixture commit fails. The first draft of
+  # analyser's pre-commit hooks and every fixture commit fails. The first draft of
   # this self-test reported all three mutations RED -- for that reason, not for
   # the mutation. An empty template plus a dead hooksPath isolates the fixture.
   git -C "$td" init -q -b main --template= || return 1

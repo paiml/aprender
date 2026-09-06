@@ -4,7 +4,7 @@
 # Bug classes caught:
 #   1. Tracked symlinks (mode 120000) — broke cargo install for all external users
 #   2. with_file_name() anti-pattern — misses hash-prefixed companion files
-#   3. .pmat dev tool artifacts — shipped DB files and caches to crates.io
+#   3. .pmat/ dev-tool artifacts — shipped DB files and caches to crates.io
 #   4. Large binary files in packages — bloated crate downloads
 #   5. Hardcoded local paths — break on other machines
 #
@@ -86,7 +86,7 @@ else
     echo "OK ($sibling_count usages)"
 fi
 
-# Check 5: No .pmat dev tool artifacts tracked by git (CB-510 class)
+# Check 5: No .pmat/ dev-tool artifacts tracked by git (CB-510 class)
 echo -n "  Dev tool artifacts check... "
 checked=$((checked + 1))
 pmat_tracked=$(git ls-files | grep '\.pmat/' || true)

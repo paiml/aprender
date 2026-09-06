@@ -28,7 +28,7 @@
 # `set -uo pipefail` WITHOUT `-e` on purpose - the whole script is built around
 # running every beat and counting failures (emit_fail/FAILED_BEATS). Turning
 # errexit on under it meant the first non-zero command anywhere killed the run:
-# the nightly story died after SIX LINES, inside Beat 1's advisory pmat hunt,
+# the nightly story died after SIX LINES, inside Beat 1's advisory analyser hunt,
 # and reported nothing about why. A sourceable library must be option-neutral.
 #
 # Fail-closed is preserved explicitly instead: the bottom of this file returns

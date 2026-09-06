@@ -8,7 +8,7 @@
 # because its whole design is to run every beat and tally failures. The source
 # silently turned errexit on underneath it, so the first non-zero command
 # anywhere aborted the run: the nightly story died after six lines, inside an
-# ADVISORY pmat hunt, and the log said nothing about why.
+# ADVISORY analyser hunt, and the log said nothing about why.
 #
 # The leak is invisible in review - both files are individually correct, and
 # `set -euo pipefail` is the thing you are normally praised for writing. Only

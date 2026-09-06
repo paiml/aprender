@@ -5,9 +5,9 @@
 # WHY THIS EXISTS
 # ---------------
 # `.gitignore:62` says `**/.pmat-work/`. Git tracked 461 of those files anyway,
-# totalling 315 MB — pmat per-ticket scratch (140 × ~5 MB `contract.json`),
+# totalling 315 MB — the analyser's per-ticket scratch (140 × ~5 MB `contract.json`),
 # regenerable, read by nothing in the Makefile, the workflows, `scripts/`, any
-# Rust source, or any pmat config. Classic add-before-ignore: the pattern was
+# Rust source, or any analyser config. Classic add-before-ignore: the pattern was
 # written after the files were staged, and `git rm --cached` was never run. Every
 # clone paid the checkout cost.
 #

@@ -565,7 +565,7 @@ validate_receipt() {
   # joins it rather than getting a private copy of either rule. Two implementations of
   # one rule drift, and each stays green against its own copy - F4 and D8, in the guard
   # that implements F4.
-  local -a CONSULT=(pmat cuda crux mutation)
+  local -a CONSULT=(cuda crux mutation pmat)
   if [ "$arm_e_present" -eq 1 ]; then CONSULT+=(antigravity); fi
 
   local k st
@@ -590,22 +590,22 @@ validate_receipt() {
     fi
   done
 
-  # --- B1: "pmat is unreachable" must be EARNED, never asserted. ------------
-  # OPERATOR RULING, 2026-09-01: "'pmat doesn't work' is never accepted - toyota way."
+  # --- B1: "analyser is unreachable" must be EARNED, never asserted. ------------
+  # OPERATOR RULING, 2026-09-01: "'analyser doesn't work' is never accepted - toyota way."
   #
   # THE MEASUREMENT BEHIND THE RULE, so it is not re-litigated. Two of this
   # repository's reviews recorded `pmat: unreachable` with a DEGRADED verdict and both
-  # merged. The cause was not pmat. On the same box, the same day: `pmat --mode mcp`
-  # answered `initialize` and listed 19 tools, and `pmat query` loaded an index of
+  # merged. The cause was not pmat. On the same box, the same day: `$PMAT --mode mcp`
+  # answered `initialize` and listed 19 tools, and `$PMAT_BIN query` loaded an index of
   # 84,919 functions across 10,136 files. What had actually failed was ONE transport -
   # an HTTP endpoint on a hand-started, unsupervised process - while pmat's own
   # `mcp connect` names stdio as "the right choice for Claude Code". A working path
   # existed and the receipt said the source was unreachable.
   #
-  # S3.A makes pmat unconditional, and pmat is the one arm with TWO INDEPENDENT
+  # S3.A makes the analyser consultation unconditional, and analyser is the one arm with TWO INDEPENDENT
   # TRANSPORTS. So `unreachable` here is a claim about both, and a claim is not
   # evidence. This is S3.E.4's shape one arm over: agy returning rc 0 is not a review,
-  # and pmat failing on one transport is not pmat being unreachable.
+  # and analyser failing on one transport is not analyser being unreachable.
   #
   # THE REQUIRED SET IS A WHITELIST, for S13's reason: every clause that survived the
   # forged receipts was a whitelist and every clause that fell was a blacklist. A
@@ -613,7 +613,7 @@ validate_receipt() {
   # one to escape the requirement.
   if [ "$(jq -r '.predicate.consultations.pmat.status // ""' "$rcpt")" = "unreachable" ]; then
     local tr_type probed missing_tr worked
-    tr_type=$(jq -r 'if (.predicate.consultations.pmat | has("transports"))
+    tr_type=$(jq -r 'if (.predicate.consultations.pmat|has("transports"))
                      then (.predicate.consultations.pmat.transports | type) else "absent" end' "$rcpt")
 
     # THE TYPE IS REPORTED, NOT SEPARATELY REJECTED, AND THAT IS A MEASURED CHOICE.
@@ -634,7 +634,7 @@ validate_receipt() {
       esac
     done
     [ -z "$missing_tr" ] \
-      || reject B1 "consultations.pmat.status is 'unreachable' but these transports were never probed:$missing_tr (probed: ${probed:-none}; transports is $tr_type). pmat has two independent transports and 'unreachable' is a claim about both; a transport nobody tried is not a transport that failed (S3.A, operator ruling 2026-09-01)" || return 1
+      || reject B1 "consultations.pmat.status is 'unreachable' but these transports were never probed:$missing_tr (probed: ${probed:-none}; transports is $tr_type). the analyser has two independent transports and 'unreachable' is a claim about both; a transport nobody tried is not a transport that failed (S3.A, operator ruling 2026-09-01)" || return 1
 
     # A probe with no error SUCCEEDED, and one success refutes `unreachable`.
     worked=$(jq -r '[.predicate.consultations.pmat.transports[]
@@ -650,11 +650,11 @@ validate_receipt() {
   # diff, only mutation's emptiness was checked, and NO consultation had both. So
   # `cuda: consulted, queries: []` was ACCEPTED while the analogous
   # `mutation.attempted: 0` was rejected, and `pmat: not-triggered` was ACCEPTED on a
-  # code PR though S3.A calls pmat unconditional. Half a rule per consultation is not
+  # code PR though S3.A calls the analyser consultation unconditional. Half a rule per consultation is not
   # three-quarters of a gate; it is four different gates, three of which cannot fail.
   #
   #                       trigger recomputed        emptiness checked
-  #   pmat                unconditional (S3.A)      the four S3.A arrays
+  #   analyser (pmat)     unconditional (S3.A)      the four S3.A arrays
   #   cuda                path + message (S3.B)     queries[] non-empty, well-formed
   #   crux                surface + claim (S3.C)    surfaces[] or claims[] non-empty
   #   mutation            file shape (S3.D)         attempted > 0, counts coherent
@@ -665,16 +665,16 @@ validate_receipt() {
   changed_files=$(git -C "$REPO" diff --name-only "$base" "$head" 2>/dev/null || true)
   commit_msgs=$(git -C "$REPO" log --format=%B "$base..$head" 2>/dev/null || true)
 
-  # --- B1: pmat is UNCONDITIONAL, so not-triggered is never true of it. -----
-  # S3.A: "Trigger: unconditional", and S8.4 repeats it -- "pmat always (cheap,
+  # --- B1: analyser is UNCONDITIONAL, so not-triggered is never true of it. -----
+  # S3.A: "Trigger: unconditional", and S8.4 repeats it -- "the analyser always (cheap,
   # deterministic); CUDA/CRUX/mutation trigger on shape". S6.3's row 7 reads "all
   # consultations not-triggered", which contradicts both; the two normative statements
   # win over the illustrative row, and row 7 now carries `pmat: consulted` with four
   # empty arrays. That fixture previously blessed this exact defect with a
-  # trigger_reason reading "pmat is unconditional; not-triggered is never correct for
+  # trigger_reason reading "the analyser is unconditional; not-triggered is never correct for
   # it" -- a fixture stating the rule it exempted.
   [ "$pmat_st" != "not-triggered" ] \
-    || reject B1 "consultations.pmat is not-triggered, but S3.A makes pmat unconditional on every PR; an unmeasured CB-200 is Skip, and Skip is not a pass" || return 1
+    || reject B1 "consultations.analyser is not-triggered, but S3.A makes the analyser consultation unconditional on every PR; an unmeasured CB-200 is Skip, and Skip is not a pass" || return 1
 
   # --- B1: the CUDA consultation was skipped while its trigger fired (row 1).
   if [ "$cuda_st" = "not-triggered" ]; then
@@ -737,7 +737,7 @@ validate_receipt() {
       || reject B1 "consultations.mutation is not-triggered but S3.D triggers on this diff ($mut_fired); only docs and non-code are untriggered" || return 1
   fi
 
-  # --- B1: pmat consulted must SHOW the four things S3.A requires. ---------
+  # --- B1: analyser consulted must SHOW the four things S3.A requires. ---------
   # An ABSENT key and an EMPTY array are the difference between "did not look" and
   # "looked and found nothing" -- S3.0's whole subject, one level up from the SARIF.
   # duplication_hits is the one S3.A calls "the highest-EV field in the receipt".
@@ -752,7 +752,7 @@ validate_receipt() {
     #     raises SC1087 (array expansion) on the second form. scripts/ is gated on a
     #     SHRINK-ONLY bashrs error count, so two false errors here are two someone else
     #     has to triage. Same class as the \042 dance in check_no_claim_literals.sh.
-    pmat_missing=$(jq -r '.predicate.consultations.pmat as $p
+    pmat_missing=$(jq -r '(.predicate.consultations.pmat) as $p
         | ["complexity_delta","tdg_delta","satd_introduced","duplication_hits"]
         | map(. as $k | select((($p | has($k)) | not) or (($p | getpath([$k]) | type) != "array")))
         | join(", ")' "$rcpt")
@@ -1031,7 +1031,7 @@ validate_receipt() {
     # NOT `// "null"`: jq's alternative operator treats `false` as absent, so
     # `false // "null"` yields the string "null" and a correctly-recorded stale index
     # would be rejected as a misreport. Fixture row 9 caught this.
-    idx_rec=$(jq -r 'if (.predicate.consultations.pmat | has("index_is_ancestor"))
+    idx_rec=$(jq -r 'if (.predicate.consultations.pmat|has("index_is_ancestor"))
                      then (.predicate.consultations.pmat.index_is_ancestor | tostring)
                      else "absent" end' "$rcpt")
     [ -n "$idx" ] || reject B1 "pmat.status is consulted but index_commit is absent; an unrecorded index cannot be shown to describe this PR" || return 1
@@ -1057,7 +1057,7 @@ validate_receipt() {
   # receipt", and both have the same shape:
   #
   #   (a) pmat's semantic index is Rust-only. On #2742 - 46 files, 7,244 insertions -
-  #       3,533 of those insertions (48.8%) are sh, py and yaml, and a `pmat query`
+  #       3,533 of those insertions (48.8%) are sh, py and yaml, and a `$PMAT_BIN query`
   #       cannot return any of them. `duplication_hits: []` therefore meant "the half I
   #       can see is clean" and READ as "nothing like this exists".
   #   (b) prior art on an UNMERGED SIBLING BRANCH is invisible by construction. #2781
@@ -1199,7 +1199,7 @@ validate_receipt() {
   # consultation". That sentence does not describe the corpus this guard was built
   # against and enforcing it would refuse receipts the fixture table calls GREEN:
   # row-07 is one `pmat` run beside `pmat` AND `antigravity` consulted, and row-06 is
-  # a `pmat` run beside a pmat that is `unreachable`. Measured over all 109 committed
+  # a `pmat` run beside an analyser that is `unreachable`. Measured over all 109 committed
   # findings.sarif files: none has an empty runs array, so `>= 1` costs nothing it
   # should not cost, and a stricter pairing rule is a scope change that ships with its
   # own precision measurement or not at all.
@@ -1218,7 +1218,7 @@ validate_receipt() {
   # itself `Antigravity`, `agy`, or nothing at all.
   #
   # Measured over all 109 committed findings.sarif files: the names occurring are
-  # exactly pmat (98), antigravity (5), crux (4), nvidia-cuda-docs (3) and
+  # exactly the analyser (98), antigravity (5), crux (4), nvidia-cuda-docs (3) and
   # cargo-mutants (1), with no run missing the field. The vocabulary is S4.2's four
   # plus S3.E's antigravity, which v2.4 added with the arm.
   local bad_driver

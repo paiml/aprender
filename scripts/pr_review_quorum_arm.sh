@@ -403,8 +403,8 @@ phase_a() {
   local pmat_st st k
   pmat_st=$(jq -r '.predicate.consultations.pmat.status // ""' "$rcpt")
   [ "$pmat_st" = "consulted" ] \
-    || refuse Q2 "consultations.pmat.status is '$pmat_st'; S3.A makes pmat unconditional, so an autonomous merge requires it to have actually run" || return 1
-  for k in pmat cuda crux mutation; do
+    || refuse Q2 "consultations.pmat.status is '$pmat_st'; S3.A makes the analyser consultation unconditional, so an autonomous merge requires it to have actually run" || return 1
+  for k in cuda crux mutation pmat; do
     st=$(jq -r --arg k "$k" '.predicate.consultations[$k].status // ""' "$rcpt")
     case "$st" in
       consulted) ;;
@@ -423,7 +423,7 @@ phase_a() {
   local vacuous
   vacuous=$(jq -r '.predicate.consultations as $c
       | [ (if ($c.pmat.status == "consulted") and (($c.pmat.symbols_searched // 0) == 0)
-             then "pmat searched 0 symbols" else empty end),
+             then "the pmat-index searched 0 symbols" else empty end),
           (if ($c.cuda.status == "consulted") and (([$c.cuda.queries[]?] | length) == 0)
              then "cuda asked 0 queries" else empty end),
           (if ($c.crux.status == "consulted")

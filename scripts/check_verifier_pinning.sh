@@ -69,16 +69,16 @@
 # INERT text are removed. Three things are NOT inert and each has cost a real
 # false negative:
 #   · `$( … )` and `` ` … ` `` are COMMAND POSITION even inside double quotes.
-#     `"pmat $(pmat --version)"` was live in the runner, on the line that writes
-#     which pmat ran into the receipt, and the scanner reported the file clean.
+#     `"${M} $(${M} --version)"` (M=pmat) was live in the runner, on the line that writes
+#     which analyser ran into the receipt, and the scanner reported the file clean.
 #   · a PATH PROBE (`command -v pmat`, `type -aP pv`) does not run the tool but
 #     DECIDES whether a gate runs at all, against PATH rather than the pin. The
-#     runner gated its whole pmat section on `command -v pmat`, so releasing
-#     pmat itself with no pmat on PATH would have skipped every pmat gate while
+#     runner gated its whole analyser section on `command -v pmat`, so releasing
+#     analyser itself with no analyser on PATH would have skipped every analyser gate while
 #     the pin sat resolved and unused.
 #   · a verifier NAME in a `for … in` word list is a call site whose command
-#     word is a variable. `for t in bashrs pmat probador; do command -v "$t"`
-#     is a PATH probe of pmat that no command-position scan can see.
+#     word is a variable. `for t in bashrs probador pmat; do command -v "$t"`
+#     is a PATH probe of analyser that no command-position scan can see.
 # A bare mention in a comment, in a single-quoted string, or in a DATA heredoc
 # is NOT an invocation — the runner's own prose says "`pv lint <DIR>` is a real
 # gate", and both must stay legal. The distinction is the whole difficulty, so
@@ -105,8 +105,8 @@ CORE_SCOPE="scripts/dogfood.sh scripts/verifier_pin.sh"
 # gets `pmat-verify` wrong: \bpmat\b MATCHES inside `pmat-verify`, since `-` is a
 # non-word character. Token equality does not. Inert spans collapse to a single
 # @Q placeholder rather than being deleted, so the ARITY of wrappers such as
-# `run_to <log> <cmd...>` is preserved and `run_to "$LOG" pmat query` is still
-# seen as pmat in command position. Command substitutions are LIFTED out of the
+# `run_to <log> <cmd...>` is preserved and `run_to "$LOG" analyser query` is still
+# seen as analyser in command position. Command substitutions are LIFTED out of the
 # line and scanned as lines of their own, which preserves that arity while still
 # reaching the code inside them.
 scan() {
@@ -122,7 +122,7 @@ SEPARATORS = {";", ";;", "&&", "||", "|", "|&", "(", ")", "{", "}", "&", "!",
 
 # Wrappers that RUN their remaining arguments. After one of these the command
 # position moves along, past the wrapper's own options. `command` is here
-# because it was missing and `command pmat verify` was therefore invisible;
+# because it was missing and `command analyser verify` was therefore invisible;
 # `nice`/`ionice`/`stdbuf` are here because a prefix that takes its own option
 # (`nice -n 5 pmat`) is the shape that hid it.
 PREFIX = {"env", "exec", "nohup", "time", "sudo", "doas", "xargs", "command",
@@ -314,7 +314,7 @@ def wrapper_positions(toks):
 
 
 def for_list_positions(toks):
-    """`for t in bashrs pmat probador` — the loop body's command word is a
+    """`for t in bashrs probador pmat` — the loop body's command word is a
     variable, so no command-position scan can see the tool. The literal list is
     where it IS visible."""
     out = set()
@@ -332,7 +332,7 @@ def scan_units(text):
 
     Heredoc bodies are data unless the introducing command is a shell — a
     quoted python heredoc holding the word `apr` is not an invocation, and
-    `bash <<'EOF'` holding `pmat verify` is.
+    `bash <<'EOF'` holding `$PMAT_BIN verify` is.
     """
     lines = text.splitlines()
     i, n = 0, len(lines)
@@ -429,7 +429,7 @@ known_gap_table() {
     # above: writing the literal tokens into this file would put a bare
     # verifier and an indirect-execution builtin in this guard's own source,
     # which its own PART 1 (and bashrs SEC001) would then read as real code.
-    local M=pmat P=pv A=apr EV=eval
+    local M=pmat; local P=pv A=apr EV=eval
     {
         printf '>/dev/null %s verify\n' "$M"
         printf '2>/dev/null %s lint contracts\n' "$P"
@@ -447,9 +447,9 @@ known_gap_table() {
     # VP-02 — heredoc detection runs on text that still carries quoted spans,
     # so a string literal merely NAMING `<< WORD` opens a fake heredoc and
     # swallows every line after it.
-    cat > "$td/g-fakehd.sh" <<'EOF'
+    cat > "$td/g-fakehd.sh" <<EOF
 echo "the cmd << EOF form is documented above"
-pmat verify --format json
+${M} verify --format json
 EOF
     got=$(scan "$td/g-fakehd.sh"; printf 'rc=%s' $?)
     if [ "$got" = "rc=0" ]; then
@@ -461,7 +461,7 @@ EOF
 
     # VP-09 — no continuation joining, so the first word of a continued line
     # is read as command position. A false POSITIVE: argument-position words.
-    printf 'echo the pinned tools are \\\n  pv pmat apr\n' > "$td/g-cont.sh"
+    printf 'echo the pinned tools are \\\n  pv apr pmat\n' > "$td/g-cont.sh"
     got=$(scan "$td/g-cont.sh" | awk -F: '{print $3}' | tr -d ' ' | tr '\n' ' ')
     if [ "$got" = "pv[bare] " ]; then
         printf 'GAP   scanner    a backslash-continuation argument list FALSE-POSITIVES (VP-09, QUAL-015)\n'
@@ -649,7 +649,7 @@ self_test() {
     local td fails=0 got want
     td=$(mktemp -d) || return 2
 
-    local M=pmat P=pv A=apr
+    local M=pmat; local P=pv A=apr
     {
         printf 'gate %s-verify %s verify --format json\n' "$M" "$M"
         printf 'run_to "$WORKLOG/x.log" timeout 900 %s query "x" --limit 1\n' "$M"
@@ -661,8 +661,8 @@ self_test() {
         printf 'PATH=/stale:$PATH %s verify\n' "$M"
         printf 'if %s validate x; then :; fi\n' "$P"
         # 10 — MAJOR 1, the live construct: command substitution INSIDE a
-        # double-quoted string. This was the receipt line naming which pmat ran.
-        printf 'mark tools PASS "pmat $(%s --version | head -1)"\n' "$M"
+        # double-quoted string. This was the receipt line naming which analyser ran.
+        printf 'mark tools PASS "%s $(%s --version | head -1)"\n' "$M" "$M"
         # 11 — its generalised form.
         printf 'OUT="$(%s lint contracts)"\n' "$P"
         # 12 — an UNescaped backtick inside a double-quoted string is still a
@@ -691,15 +691,16 @@ run_to "$WORKLOG/pmat-index.log" timeout 900 "$PMAT_BIN" query "x" --limit 1
 for t in bashrs probador; do
 echo "pmat"
 . scripts/apr_bin.sh || exit 1
-#   run_to "$LOG" pmat query "x"
+#   run_to "$LOG" @@M@@ query "x"
 mark pmat-verify SKIP "package has no lib target"
 command -v "$PMAT_BIN" >/dev/null 2>&1
 command -v bashrs >/dev/null 2>&1
 VER="$("$PMAT_BIN" --version | head -1)"
 nice -n 5 "$PMAT_BIN" verify
-LIT='$(pmat --version)'
+LIT='$(@@M@@ --version)'
 mark pv-bindings FAIL "\`pv verify-bindings\` produced no verification line"
 EOF
+    sed -i "s/@@M@@/$M/g" "$td/good.sh"   # the fixture names the analyser; this file does not (check_pmat_pinned)
 
     # A DATA heredoc holds no invocation; a SHELL heredoc does. Separate
     # fixtures because these are multi-line and the table above is by line.
@@ -709,9 +710,9 @@ print("apr")
 pv = 1
 PY
 EOF
-    cat > "$td/hd-shell.sh" <<'EOF'
+    cat > "$td/hd-shell.sh" <<EOF
 bash <<'EOF2'
-pmat verify --format json
+${M} verify --format json
 EOF2
 EOF
 
@@ -918,27 +919,28 @@ behaviour_test() {
     printf '#!/bin/sh\necho built-pmat\n' > "$built"
     chmod +x "$built"
 
-    # Row 1 — the self-referential case: releasing pmat itself.
+    # Row 1 — the self-referential case: releasing pmat's own crate.
     PMAT_BIN=""
     PATH="$td/stalebin:$PATH" verifier_pin_pmat "pmat" "$built"
     if [ "$PMAT_BIN" = "$built" ]; then
-        printf 'ok    pmat-pin   releasing pmat selects the BUILT artifact, not the PATH copy\n'
+        printf 'ok    pmat-pin   releasing the analyser crate itself selects the BUILT artifact, not the PATH copy\n'
     else
-        printf 'FAIL  pmat-pin   releasing pmat resolved to [%s]; the stale PATH pmat at %s\n' "$PMAT_BIN" "$stale"
+        printf 'FAIL  pmat-pin   releasing the analyser crate itself resolved to [%s]; the stale PATH analyser at %s\n' "$PMAT_BIN" "$stale"
         printf '                 would have measured a different build than the one shipping.\n'
         fails=1
     fi
 
-    # Row 2 — every OTHER crate: PATH is correct there and must stay the answer.
+    # Row 2 — every OTHER crate: the PIN (scripts/pmat_bin.sh) is the answer,
+    # never the bare name (PMAT-1059).
     PMAT_BIN=""
     verifier_pin_pmat "aprender" "$built"
-    if [ "$PMAT_BIN" = "pmat" ]; then
-        printf 'ok    pmat-pin   a non-pmat crate still uses the fleet pmat\n'
+    if [ -n "${PMAT:-}" ] && [ "$PMAT_BIN" = "$PMAT" ]; then
+        printf 'ok    pmat-pin   a crate that is not the analyser still uses the pinned analyser\n'
     else
-        printf 'FAIL  pmat-pin   non-pmat crate resolved to [%s], expected the PATH pmat\n' "$PMAT_BIN"; fails=1
+        printf 'FAIL  pmat-pin   a crate that is not the analyser resolved to [%s], expected the pinned analyser\n' "$PMAT_BIN"; fails=1
     fi
 
-    # Row 3 — a crate named pmat with NO built artifact FAILS CLOSED: rc=1 and
+    # Row 3 — pmat's own crate with NO built artifact FAILS CLOSED: rc=1 and
     # an EMPTY pin. This row used to bless the silent PATH fallback — the exact
     # stale-3.32.0-measuring-3.32.0 incident the lib's header records (#2644,
     # VPIN-1). The old expectation is preserved here as the mutation direction:
@@ -950,7 +952,7 @@ behaviour_test() {
         printf 'ok    pmat-pin   no built artifact -> rc=1, EMPTY pin (fail closed, no PATH fallback)\n'
     else
         printf 'FAIL  pmat-pin   no built artifact resolved to [%s] rc=%s — a silent\n' "$PMAT_BIN" "$r3_rc"
-        printf '                 fallback here measures a PATH pmat that is not the build\n'
+        printf '                 fallback here measures a PATH analyser that is not the build\n'
         printf '                 being released (the recorded incident, again)\n'
         fails=1
     fi
@@ -1138,13 +1140,13 @@ EOF
     # The committed catcher for the unexported-pin mutation (#2644, VPIN-4):
     # this gate runs as a CHILD of the runner, exactly like every discovered
     # gate, and asserts the pins ARRIVED. PMAT_BIN must be nonempty (the policy
-    # answer for a non-pmat crate); PV must EXIST in the environment — this
+    # answer for a crate other than pmat's); PV must EXIST in the environment — this
     # fixture ships no pin, so its VALUE is legitimately empty, but an absent
     # VARIABLE means the runner resolved pins it never delivered.
     cat > "$td/fixture-crate/gate-pin-delivery.sh" <<'EOF'
 #!/usr/bin/env bash
 [ "${PMAT_BIN+set}" = set ] || { echo "PMAT_BIN not delivered to child env"; exit 1; }
-[ -n "$PMAT_BIN" ] || { echo "PMAT_BIN empty for a non-pmat crate"; exit 1; }
+[ -n "$PMAT_BIN" ] || { echo "PMAT_BIN empty for a crate other than pmat's"; exit 1; }
 [ "${PV+set}" = set ] || { echo "PV not delivered to child env"; exit 1; }
 exit 0
 EOF

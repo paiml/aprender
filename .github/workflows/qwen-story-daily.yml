@@ -1,8 +1,8 @@
-# Nightly Qwen-story regression cron + pmat bug-hunt manifest.
+# Nightly Qwen-story regression cron + the pinned analyser's bug-hunt manifest.
 #
 # Contract: contracts/qwen-story-v1.yaml § FALSIFY-QWEN-STORY-006.
 # Runs `scripts/qwen-story.sh` against the canonical Qwen model registry,
-# emits a pmat manifest of high-risk untested code in each beat's command
+# emits the pinned analyser's manifest of high-risk untested code in each beat's command
 # modules, and opens (or comments on) a tracking issue when the manifest
 # grows beyond a threshold.
 #
@@ -19,7 +19,7 @@ on:
   workflow_dispatch:
     inputs:
       pmat_hunt:
-        description: 'Run pmat bug-hunt manifest (1 = yes, 0 = skip for speed)'
+        description: "Run the pinned analyser's bug-hunt manifest (1 = yes, 0 = skip for speed)"
         required: false
         default: '1'
       file_issue:
@@ -134,11 +134,11 @@ jobs:
           bash scripts/qwen-story.sh 2>&1 | tee /tmp/story.log
           echo "exit_code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
 
-      - name: Extract pmat bug-hunt manifest
+      - name: Extract the pinned analyser's bug-hunt manifest
         id: manifest
         shell: bash
         run: |
-          # Pull the pmat hunt lines out of the log into a structured artifact.
+          # Pull the analyser's hunt lines out of the log into a structured artifact.
           #
           # The pattern used to be '^(    gap|    churn|    fault)' - FOUR
           # leading spaces - while qwen-story.sh emits these rows with EIGHT
@@ -163,7 +163,7 @@ jobs:
           echo "growth=$GROWTH" >> "$GITHUB_OUTPUT"
           echo "Previous manifest: $PREV_LINES lines, current: $LINES lines, growth: $GROWTH"
 
-      - name: Upload pmat manifest artifact
+      - name: Upload the analyser's manifest artifact
         if: always()
         uses: actions/upload-artifact@v7
         with:

@@ -117,7 +117,7 @@ fi
 # overriding the project's own declaration rather than measuring it.
 #
 # `--all-features` is NOT a safe fallback. A crate may declare a feature that is
-# DELIBERATELY non-compiling: pmat has `broken-tests`, a quarantine with 49
+# DELIBERATELY non-compiling: pmat's `broken-tests` is a quarantine with 49
 # sites (paiml-mcp-agent-toolkit#1023). Using --all-features there measures the
 # quarantine, not the crate, and yields a permanent RED that says nothing about
 # release readiness — and a gate that is always red is one everybody learns to
@@ -244,7 +244,7 @@ if [ -f "$SKILL_DIR/verifier_pin.sh" ]; then
   . "$SKILL_DIR/verifier_pin.sh"
 else
   echo "dogfood: $SKILL_DIR/verifier_pin.sh is missing." >&2
-  echo "  It carries the rule that decides WHICH pv and WHICH pmat this protocol" >&2
+  echo "  It carries the rule that decides WHICH pv and WHICH pmat, this protocol" >&2
   echo "  is allowed to believe. Without it every verifier would fall back to" >&2
   echo "  PATH, which is the exact defect #2640 closed. Refusing to run." >&2
   exit 2
@@ -255,12 +255,13 @@ fi
 # them) — a pin resolved after they ran is a pin delivered to nobody, while
 # pin_audit certified consumption the environment never carried (#2644, VPIN-4).
 #
-# The pmat pin is called here with NO artifact: for every crate but pmat that
-# already yields the final answer (the fleet pmat). For the one crate where the
-# artifact matters — releasing pmat itself — it cannot exist before the build,
-# so this phase leaves PMAT_BIN EMPTY there and any declared gate consuming it
-# fails closed rather than measuring a PATH binary that is not the build being
-# released. The post-build call further down upgrades the pin to the artifact.
+# The PMAT_BIN pin is called here with NO artifact: for every crate other than
+# pmat's own release, that already yields the final answer (pmat's fleet
+# build). For the one crate where the artifact matters — pmat's own release —
+# it cannot exist before the build, so this phase leaves PMAT_BIN EMPTY there
+# and any declared gate consuming it fails closed rather than measuring a PATH
+# binary that is not the build being released. The post-build call further
+# down upgrades the pin to the artifact.
 verifier_pin_pmat "$CRATE" ""
 PV=""
 verifier_pin_pv
@@ -269,7 +270,7 @@ VERIFIER_PIN_PV_RC=$?
 echo "══ dogfood pre-release: $CRATE v$VERSION ══"
 
 # ── 1. hygiene ───────────────────────────────────────────────────────────────
-# `.dogfood/` (this receipt), `.pmat/` (the index the pmat gate must build before
+# `.dogfood/` (this receipt), `.pmat/` (the index pmat's gate must build before
 # CB-200 can run at all) and `.pv/` (pv's lint cache) are artefacts THIS PROTOCOL
 # creates. Excluding them is not hiding dirt — it is refusing to let the
 # measurement fail itself. Everything else, including untracked shell scripts,
@@ -495,7 +496,7 @@ else mark security FAIL "cargo-deny not installed — the advisory scan did not 
 # RustSec database". That is NOT the same question as "is anything in my tree
 # known-vulnerable", and the difference is not theoretical:
 #
-#   pmat 3.32.0, 2026-08-21. `cargo deny check advisories` printed
+#   pmat's version 3.32.0, 2026-08-21. `cargo deny check advisories` printed
 #   "no crate matched advisory criteria / advisories ok" while
 #   thrift 0.17.0 sat in the tree (parquet 57.3.1 <- aprender-db) carrying
 #   CVE-2026-43868, medium, CVSS 5.3, patched in 0.23.0. RustSec's db, pulled
@@ -564,7 +565,7 @@ if [ -z "$BINPATH" ]; then
     | sed -n 's/.*"executable":"\([^"]*\)".*/\1/p' | grep -v null | tail -1)
 fi
 BINPATH="${BINPATH:-}"
-# Which pmat runs the pmat gates. The rule and its measured evidence are in
+# WHICH PMAT RUNS THE PMAT GATES. The rule and its measured evidence are in
 # scripts/verifier_pin.sh; this is the post-build call site — the early phase
 # above already delivered the policy answer to the declared gates, and this one
 # upgrades the pin to the just-built artifact for the case where the crate IS
@@ -573,11 +574,11 @@ BINPATH="${BINPATH:-}"
 verifier_pin_pmat "$CRATE" "$BINPATH"
 VERIFIER_PIN_PMAT_RC=$?
 if [ "$VERIFIER_PIN_PMAT_RC" -ne 0 ]; then
-  mark pmat-pin FAIL "releasing pmat but the built artifact is missing or failed behavior verification (--version) — refusing the PATH fallback: a stale fleet pmat measuring a pmat release is the recorded 3.32.0-vs-3.32.0 incident (see scripts/verifier_pin.sh). Every pmat gate below is unverifiable against the artifact being released"
+  mark pmat-pin FAIL "pmat's own release has a built artifact that is missing or failed behavior verification (--version) — refusing the PATH fallback: a stale fleet pmat's build measuring pmat's own release is the recorded 3.32.0-vs-3.32.0 incident (see scripts/verifier_pin.sh). Every gate below, for pmat, is unverifiable against the artifact being released"
 elif [ "$CRATE" = "pmat" ]; then
-  mark pmat-pin PASS "releasing pmat: gates measure the BUILT artifact ($PMAT_BIN), behavior-verified"
+  mark pmat-pin PASS "pmat's own release: gates measure the BUILT artifact ($PMAT_BIN), behavior-verified"
 else
-  mark pmat-pin PASS "fleet pmat is the correct verifier for a non-pmat crate (exported to declared gates)"
+  mark pmat-pin PASS "pmat's fleet build is the correct verifier since this release is not pmat's own (exported to declared gates)"
 fi
 readonly PMAT_BIN
 if [ -n "$BINPATH" ] && [ -x "$BINPATH" ]; then
@@ -627,9 +628,9 @@ case "$VERIFIER_PIN_PV_RC" in
 esac
 readonly PV
 # bashrs and probador are unpinned in this repo, so PATH is the only answer
-# there and asking it is correct. pmat is NOT in that list: it is PINNED, and
+# there and asking it is correct. pmat's build is NOT resolved that way: it is PINNED, and
 # `command -v pmat` would ask PATH about a tool whose answer the pin has already
-# decided — for the one crate where the pin matters (releasing pmat itself, with
+# decided — for the one crate where the pin matters (releasing pmat's own build, with
 # the built artifact and possibly nothing on PATH) it reports the wrong thing.
 for t in bashrs probador; do
   command -v "$t" >/dev/null 2>&1 || MISSING_TOOLS="$MISSING_TOOLS $t"
@@ -639,12 +640,12 @@ if [ -n "$MISSING_TOOLS" ]; then
   mark deterministic-tools FAIL "NOT INSTALLED:$MISSING_TOOLS — install them; a release cannot be verified by absent verifiers"
 else
   # Every version here comes from the binary the gates will actually run. This
-  # line used a bare `pmat --version` inside the quoted note — the ONE row whose
-  # job is to say which pmat measured this release named a pmat off PATH, which
+  # line used a bare `$PMAT --version` inside the quoted note — the ONE row whose
+  # job is to say which analyser measured this release named an analyser off PATH, which
   # may be a different build at the same version string (verifier_pin.sh records
   # the 3.32.0-vs-3.32.0 case). It read as inert text to the guard, too: a
   # command substitution inside double quotes is still command position.
-  mark deterministic-tools PASS "pv $("${PV:-:}" --version 2>/dev/null | head -1 | awk '{print $2}'), bashrs $(bashrs --version 2>/dev/null | head -1 | awk '{print $2}'), pmat $("$PMAT_BIN" --version 2>/dev/null | head -1 | awk '{print $2}'), probador $(probador --version 2>/dev/null | head -1 | awk '{print $2}')"
+  mark deterministic-tools PASS "pv $("${PV:-:}" --version 2>/dev/null | head -1 | awk '{print $2}'), bashrs $(bashrs --version 2>/dev/null | head -1 | awk '{print $2}'), analyser $("$PMAT_BIN" --version 2>/dev/null | head -1 | awk '{print $2}'), probador $(probador --version 2>/dev/null | head -1 | awk '{print $2}')"
 fi
 
 # pv — provable-contract validation (YAML contracts, verification ladder).
@@ -885,15 +886,15 @@ else
   mark renacer SKIP "no renacer.toml — golden tracing not configured for this crate"
 fi
 
-# pmat — the fleet's own quality gate, run against the crate under release.
+# The analyser — the fleet's own quality gate, run against the crate under release.
 # `verify` is the CI-faithful one (format, complexity, satd, clippy, tests).
 # The probe asks about "$PMAT_BIN", NOT about a bare `pmat`. Those differ in
-# exactly the case the pin exists for: releasing pmat itself, where PMAT_BIN is
-# the freshly built artifact and PATH may hold an older pmat or none at all. A
+# exactly the case the pin exists for: releasing pmat's own crate, where PMAT_BIN is
+# the freshly built artifact and PATH may hold an older analyser or none at all. A
 # bare `command -v pmat` there either skips every gate below or answers about a
 # binary none of them run.
 if command -v "$PMAT_BIN" >/dev/null 2>&1; then
-  # `pmat verify` runs cargo underneath and hard-errors on a crate with no lib
+  # `$PMAT_BIN verify` runs cargo underneath and hard-errors on a crate with no lib
   # target: "error: no library targets found in package `pforge-cli`". That is a
   # gate that CANNOT PASS for any bin-only crate, and an unpassable gate trains
   # people to bypass the whole protocol (the same trap that had cohete's pre-push
@@ -902,7 +903,7 @@ if command -v "$PMAT_BIN" >/dev/null 2>&1; then
   # it as a SKIP that names the enumeration, rather than a FAIL nobody can fix.
   #
   # Note pmat-comply below still runs and still gates CB-200, so a bin-only crate
-  # is NOT unmeasured — it loses one of two pmat gates, not both.
+  # is NOT unmeasured — it loses one of two analyser gates, not both.
   HAS_LIB_TARGET=$(cargo metadata --no-deps --format-version 1 2>/dev/null \
     | python3 -c '
 import json,os,sys
@@ -929,13 +930,13 @@ for p in d.get("packages",[]):
     if os.path.realpath(p.get("manifest_path","")) == here:
         print(",".join(sorted({k for t in p.get("targets",[]) for k in t["kind"]}))); raise SystemExit
 print("?")' 2>/dev/null)
-    mark pmat-verify SKIP "package has no lib target (kinds present: ${TGTS:-?}) — \`pmat verify\` requires one and hard-errors otherwise; pmat-comply/CB-200 below still gates this crate"
+    mark pmat-verify SKIP "package has no lib target (kinds present: ${TGTS:-?}) — \`analyser verify\` requires one and hard-errors otherwise; pmat-comply/CB-200 below still gates this crate"
   else
     gate pmat-verify "$PMAT_BIN" verify --format json
   fi
 
-  # ── pmat comply: gate on WHAT ACTUALLY RAN, not on the exit code ──────────
-  # `pmat comply check` runs 155 checks and its exit code CANNOT SEE A SKIP.
+  # ── analyser comply: gate on WHAT ACTUALLY RAN, not on the exit code ──────────
+  # `$PMAT_BIN comply check` runs 155 checks and its exit code CANNOT SEE A SKIP.
   # Measured on a clean tiny crate: {"pass":26,"warn":13,"fail":0,"skip":116},
   # "is_compliant": true, exit 0 — and THREE of those 116 skipped checks carry
   # "severity": "Error". `--strict` does not help; it only adds a warnings
@@ -944,9 +945,9 @@ print("?")' 2>/dev/null)
   #
   # The sharpest case is CB-200 (TDG Grade Gate). In a fresh `git clone` with no
   # .pmat/ it reports Skip: "Not measured: no .pmat/context.db. `comply check`
-  # will not build one … Run `pmat query \"x\"` to create the index."  Measured
+  # will not build one … Run `analyser query \"x\"` to create the index."  Measured
   # on rmedia: fresh clone {"fail":3,"skip":95} with CB-200=Skip; after ONE
-  # `pmat query`, {"fail":4,"skip":93} with CB-200=Fail — "24 function(s) below
+  # `$PMAT_BIN query`, {"fail":4,"skip":93} with CB-200=Fail — "24 function(s) below
   # minimum grade A". The green was the index's absence, not the tree's quality.
   #
   # So: BUILD THE INDEX FIRST, then gate on CB-200 specifically (Skip and Fail
@@ -975,7 +976,7 @@ print(f"{s['fail']} {s['skip']} {cb['status'] if cb else 'ABSENT'} {len(dark)}")
 PY
 )
   if [ "$PMAT_SUM" = "PARSE_ERROR" ]; then
-    mark pmat-comply FAIL "could not parse \`pmat comply check --format json\` (exit=$PMAT_COMPLY_RC, index build exit=$PMAT_IDX_RC) — the fleet gate did not run"
+    mark pmat-comply FAIL "could not parse \`analyser comply check --format json\` (exit=$PMAT_COMPLY_RC, index build exit=$PMAT_IDX_RC) — the fleet gate did not run"
   else
     CM_FAIL=$(printf '%s' "$PMAT_SUM" | awk '{print $1}')
     CM_SKIP=$(printf '%s' "$PMAT_SUM" | awk '{print $2}')
@@ -999,35 +1000,35 @@ PY
       # `Fail` (the count went UP) and `Skip` (nothing was measured) remain
       # NO-GO below, unchanged.
       Warn)
-        mark pmat-comply PASS "CB-200 at or under its recorded baseline — debt held flat, NOT a clean tree; ${CM_FAIL} other fail(s), ${CM_SKIP} skip(s) of which ${CM_DARK} are Error-severity (#1008). Run \`pmat comply check\` (without --failures-only) for the absolute count." ;;
+        mark pmat-comply PASS "CB-200 at or under its recorded baseline — debt held flat, NOT a clean tree; ${CM_FAIL} other fail(s), ${CM_SKIP} skip(s) of which ${CM_DARK} are Error-severity (#1008). Run \`analyser comply check\` (without --failures-only) for the absolute count." ;;
       Skip)
-        mark pmat-comply FAIL "CB-200 (TDG Grade Gate) is UNMEASURED, not passing — run \`pmat query \"x\"\` in this repo to build .pmat/context.db, then re-run. ${CM_DARK} Error-severity checks went dark; comply's own exit code (${PMAT_COMPLY_RC}) cannot see a skip." ;;
+        mark pmat-comply FAIL "CB-200 (TDG Grade Gate) is UNMEASURED, not passing — run \`analyser query \"x\"\` in this repo to build .pmat/context.db, then re-run. ${CM_DARK} Error-severity checks went dark; comply's own exit code (${PMAT_COMPLY_RC}) cannot see a skip." ;;
       ABSENT)
-        mark pmat-comply FAIL "CB-200 absent from comply's check list — this pmat build does not run the TDG grade gate" ;;
+        mark pmat-comply FAIL "CB-200 absent from comply's check list — this analyser build does not run the TDG grade gate" ;;
       *)
-        mark pmat-comply FAIL "CB-200 (TDG Grade Gate) = $CM_CB200 — see \`pmat comply check\`; ${CM_FAIL} total fail(s), ${CM_DARK} Error-severity checks dark (#1008, not gated)" ;;
+        mark pmat-comply FAIL "CB-200 (TDG Grade Gate) = $CM_CB200 — see \`analyser comply check\`; ${CM_FAIL} total fail(s), ${CM_DARK} Error-severity checks dark (#1008, not gated)" ;;
     esac
   fi
-  # reachability: code the build never compiles. New in pmat 3.32.0.
+  # reachability: code the build never compiles. New in analyser version 3.32.0.
   #
   # These two lines were BARE `pmat` in BOTH copies of the runner — the
   # user-scope copy that invented PMAT_BIN never applied it here, because the
   # subcommand landed after the hardening did. Found by
   # scripts/check_verifier_pinning.sh on its first run, which is the argument
   # for the gate: the rule's own author missed a site, and only a mechanical
-  # sweep of the whole file noticed. `--help` on a stale pmat also decides
+  # sweep of the whole file noticed. `--help` on a stale analyser also decides
   # whether the gate runs AT ALL, so an unpinned probe silently skips it.
   if "$PMAT_BIN" analyze reachability --help >/dev/null 2>&1; then
     RO=$(timeout 900 "$PMAT_BIN" analyze reachability -p . -f json 2>/dev/null | python3 -c "import sys,json;d=json.load(sys.stdin);print(d['orphan_count'],d['orphan_tests'])" 2>/dev/null || echo "? ?")
     mark reachability WARN "unreachable files/tests: $RO (a file the build never compiles cannot be tested)"
   else
-    # The if-with-no-else made this row VANISH on any pmat without the
+    # The if-with-no-else made this row VANISH on any analyser build without the
     # subcommand — violating this script's own receipt-completeness rule
     # (#2644, DF-9): a gate that vanishes reads as a gate that passed.
-    mark reachability SKIP "this pmat has no \`analyze reachability\` (pre-3.32.0) — the orphan sweep did NOT run"
+    mark reachability SKIP "this analyser build has no \`analyze reachability\` (pre-3.32.0) — the orphan sweep did NOT run"
   fi
 else
-  mark pmat-verify WARN "pmat not installed — the fleet quality gate did NOT run"
+  mark pmat-verify FAIL "no analyser at the pin (scripts/pmat_bin.sh) — the fleet quality gate did NOT run"
 fi
 
 # ── 9. provable contracts (the sovereign differentiator) ────────────────────
@@ -1486,7 +1487,7 @@ mark clean-room MANUAL "run \`make -C ../infra/machines/clean-room clean-room-$C
 #
 # It did not. Notes were escaped with `sed 's/"/\\"/g'`, which handles the quote
 # and nothing else — no newline, no backslash, no tab, no control character.
-# `pmat verify --format json` embeds a multi-line JSON blob in its note, and
+# `analyser verify --format json` embeds a multi-line JSON blob in its note, and
 # that one note made the whole receipt unparseable:
 #
 #   json.decoder.JSONDecodeError: Expecting ',' delimiter: line 22 column 147

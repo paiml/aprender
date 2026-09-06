@@ -192,7 +192,7 @@ vacuity_guard() {
 #   pv       contract validation / lint / score  (never yq, never a python YAML walk)
 #   bashrs   shell quality                       (never shellcheck)
 #   probar   endpoint + playbook testing         (never a hand-rolled curl loop)
-#   pmat     code search and quality analysis    (never grep for discovery)
+#   pmat_bin.sh analyser: code search and quality analysis (never grep for discovery)
 #
 # Each is asserted PRESENT rather than skipped-if-missing. A sweep that silently
 # drops its own verification tools reports a clean pass having checked less --
@@ -257,7 +257,10 @@ surface_tools() {
     # point of this line, given it once recorded `pv 0.49.0` as evidence.
     ok "pv pinned to HEAD build ($("$PV" -V))"
     require_tool bashrs "shell linting must use bashrs, not shellcheck"
-    require_tool pmat   "code search must use pmat query, not grep"
+    # the analyser is pinned, never PATH-resolved (scripts/pmat_bin.sh, PMAT-1059)
+    # shellcheck source=scripts/pmat_bin.sh
+    if . "$REPO_ROOT/scripts/pmat_bin.sh"; then ok "analyser pinned by scripts/pmat_bin.sh ($PMAT_VERSION at $PMAT)"
+    else bad "analyser MISSING at the pin (scripts/pmat_bin.sh) -- code search must use the pinned analyser's query, not grep"; fi
 
     # This script is shell, and is held to the rule it enforces.
     bashrs_check "$REPO_ROOT/scripts/dogfood_surfaces.sh"

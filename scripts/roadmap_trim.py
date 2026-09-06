@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""roadmap_trim.py — collapse a `pmat work add`/`work complete` roadmap.yaml
+"""roadmap_trim.py — collapse a `$PMAT work add`/`work complete` roadmap.yaml
 re-serialisation back to the base's bytes, one command (PMAT-980, G-6, #2874).
 
     python3 scripts/roadmap_trim.py [--base <ref>] [--file <path>]

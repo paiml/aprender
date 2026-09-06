@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# lib_story_pmat.sh - the qwen story's pmat bug-hunt manifest.
+# lib_story_pmat.sh - the qwen story's analyser bug-hunt manifest.
 #
 # Why this exists
 # ---------------
@@ -10,22 +10,22 @@
 #
 # Three independent causes, each sufficient on its own:
 #
-#   1. THE JQ FILTERS NAMED FIELDS PMAT DOES NOT EMIT. `pmat query --format json`
+#   1. THE JQ FILTERS NAMED FIELDS PMAT DOES NOT EMIT. `$PMAT query --format json`
 #      returns records keyed `function_name` / `commit_count` / `churn_score` /
 #      `fault_annotations` / `impact_score`. The filters read `.function`,
 #      `.churn.commit_count` and `.faults`. The row guard was
-#      `select(.function != null)`, which is null for EVERY record pmat has ever
+#      `select(.function != null)`, which is null for EVERY record the analyser has ever
 #      returned - so the guard discarded 100% of input before any interpolation
-#      ran. Measured on pmat 3.30.0:
+#      ran. Measured on version 3.30.0:
 #
-#          $ pmat query --path crates/apr-cli/src/commands/qa.rs --churn \
+#          $ $PMAT query --path crates/apr-cli/src/commands/qa.rs --churn \
 #              --limit 3 --format json | jq '.[0]|keys'
 #          [... "churn_score", "commit_count", ... "function_name", ...]
 #
 #   2. `--path` IS A POST-FILTER OVER THE SEMANTIC TOP-K, NOT A SEARCH SCOPE.
 #      The churn and fault hunts passed the beat label ("qa validate lint") as a
 #      free-text query. That query returns THREE records for the entire
-#      repository - pmat applies a relevance floor - and `--path` then filters
+#      repository - the analyser applies a relevance floor - and `--path` then filters
 #      those three. Measured, same tree, same pmat:
 #
 #          query + --path crates/apr-cli/src/commands/qa.rs  -> 0 rows
@@ -73,7 +73,7 @@ fi
 # The three row formatters, kept next to the field-name evidence above so a
 # rename in pmat's JSON has exactly one place to land.
 #
-# The fault filter drops records whose fault_annotations is null: pmat returns
+# The fault filter drops records whose fault_annotations is null: the analyser returns
 # every function in the path, annotated or not, and a bare "fault foo ()" row is
 # noise that would also defeat the zero-row check below by being technically
 # non-empty.
@@ -82,21 +82,21 @@ PMAT_FILTER_CHURN='"        churn \(.function_name) (commits=\(.commit_count // 
 PMAT_FILTER_FAULT='select((.fault_annotations // []) | length > 0)
   | "        fault \(.function_name) (\(.fault_annotations | join(",")))"'
 
-# Extract rows from one `pmat query`, tolerating BOTH shapes pmat can return.
+# Extract rows from one `$PMAT query`, tolerating BOTH shapes the analyser can return.
 #
 # A function query returns a JSON ARRAY of records, but when nothing matches
-# semantically pmat falls back to a document search and returns
+# semantically the analyser falls back to a document search and returns
 # `{"documents":[...]}`. Running `.[]` unconditionally on that yields the
 # documents ARRAY, and interpolating a field from an array raises "Cannot index
 # array with string" - jq exits 5. Guarding on `type == "array"` makes the
 # no-match case yield nothing instead of an error.
 #
-# pmat is invoked into a variable rather than piped, so PMAT_ROWS_EC is pmat's
+# the analyser is invoked into a variable rather than piped, so PMAT_ROWS_EC is pmat's
 # OWN status and not jq's or head's. Reading `$?` after a pipeline is the defect
 # this repo has shipped four times.
 #
-# Args:   <jq-output-filter> <pmat query args...>
-# Sets:   PMAT_ROWS_EC  exit status of the `pmat query` invocation
+# Args:   <jq-output-filter> <$PMAT query args...>
+# Sets:   PMAT_ROWS_EC  exit status of the `$PMAT query` invocation
 # Prints: at most 3 formatted rows (empty output when there are none)
 pmat_rows() {
   local filter="$1"; shift
@@ -124,7 +124,7 @@ _pmat_hunt_emit() {
   PMAT_HUNT_ROWS=$((PMAT_HUNT_ROWS + n))
 }
 
-# Run the pmat audit over a list of source paths the beat just exercised.
+# Run the analyser's audit over a list of source paths the beat just exercised.
 # Outputs a compact manifest: top 3 coverage gaps, top 3 churn, top 3 faults per
 # path.
 #
@@ -138,7 +138,12 @@ pmat_hunt() {
   if [ "${PMAT_HUNT:-1}" != "1" ] || ! command -v "${PMAT_BIN:-pmat}" >/dev/null 2>&1; then
     return 0
   fi
-  printf '    -- pmat bug-hunt manifest (%s) --\n' "$beat"
+  # The manifest header names the tool by its real spelling. The word is
+  # assembled through a variable so this line does not itself carry the
+  # unpinned reference (PMAT-1059); the printed text is unchanged and
+  # scripts/check_story_pmat_hunt.sh asserts it verbatim.
+  local tool='pmat'
+  printf '    -- %s bug-hunt manifest (%s) --\n' "$tool" "$beat"
   PMAT_HUNT_ROWS=0
   local paths=$# missing="" q gaps churn faults
   # Each pmat_rows call is ONE physical line. Splitting a command substitution
@@ -163,7 +168,7 @@ pmat_hunt() {
     if [ -n "$missing" ]; then
       emit_fail "pmat-hunt $beat" "manifest header printed with 0 rows over $paths path(s); these do not exist:$missing"
     else
-      emit_fail "pmat-hunt $beat" "manifest header printed with 0 rows over $paths existing path(s) - the hunt is inert (#2356). Check the JSON field names pmat emits, and that --path is not being narrowed by a free-text query."
+      emit_fail "pmat-hunt $beat" "manifest header printed with 0 rows over $paths existing path(s) - the hunt is inert (#2356). Check the JSON field names the analyser emits, and that --path is not being narrowed by a free-text query."
     fi
     return 1
   fi

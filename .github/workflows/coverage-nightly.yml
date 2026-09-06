@@ -5,7 +5,7 @@ name: Coverage Nightly
 # Rationale: coverage is recurring maintenance, so it belongs in a cron job, not
 # ad-hoc work. Until this existed, coverage ran nowhere in CI — the 96.35% figure
 # was a local point-in-time number, never tracked. This job measures nightly,
-# surfaces the ranked gaps via `pmat query --coverage-gaps` (the dogfooded
+# surfaces the ranked gaps via the pinned analyser's `query --coverage-gaps` (the dogfooded
 # analysis CLAUDE.md mandates), and keeps a single tracking issue up to date so
 # the autonomous loop can fix the top gaps as small `test(...)` PRs.
 #
@@ -201,31 +201,28 @@ jobs:
           # ARMED, it just reports a value first.
           exit "$cov_rc"
 
-      # pmat (crates.io) for the dogfooded gap analysis — BEST-EFFORT. cargo isn't
-      # on PATH for raw run: steps on these runners, so source the cargo env; and
-      # `|| true` keeps a pmat failure from aborting the job (the coverage % below
-      # is the core deliverable; gap ranking is a bonus).
-      # CARGO_INSTALL_ROOT (set in the first step) sends this install to the job-private root too,
-      # so this step cannot clobber another job's pmat either — the exposure is
-      # symmetric and #2353 only happened to be observed from the victim side.
-      - name: Ensure pmat installed
+      # The analyser is resolved through scripts/pmat_bin.sh (PMAT-1059/G-10,
+      # #2999), never installed here: this job runs on the self-hosted
+      # clean-room pool, which already carries the pinned analyser on PATH
+      # (paiml/infra forjar, PMAT-231) — the resolver accepts it because the
+      # version matches. Resolving it in its own step fails the job early and
+      # explicitly if the fleet ever drifts off the pin, rather than the old
+      # `|| true` which let a missing/wrong analyser pass silently.
+      - name: Resolve pinned analyser
         run: |
           export PATH="$COV_TOOLS/bin:$HOME/.cargo/bin:$HOME/.local/bin:$PATH"
-          command -v pmat >/dev/null 2>&1 || cargo install pmat --locked --root "$COV_TOOLS" || true
+          . scripts/pmat_bin.sh || exit 1
 
-      # Dogfooded gap analysis — pmat query, NOT raw llvm-cov output (CLAUDE.md).
-      # Same default ./target as the make step so pmat finds the coverage profiles.
-      - name: Gap analysis (pmat --coverage-gaps)
+      # Dogfooded gap analysis — analyser query, NOT raw llvm-cov output (CLAUDE.md).
+      # Same default ./target as the make step so the analyser finds the coverage profiles.
+      - name: Gap analysis (coverage-gaps via the pinned analyser)
         id: gaps
         if: always()
         run: |
           export PATH="$COV_TOOLS/bin:$HOME/.cargo/bin:$HOME/.local/bin:$PATH"
-          if command -v pmat >/dev/null 2>&1; then
-            pmat query --coverage-gaps --exclude-tests --limit 30 > /tmp/gaps.txt 2>/dev/null \
-              || echo "(pmat --coverage-gaps returned no data — coverage profile missing?)" > /tmp/gaps.txt
-          else
-            echo "(pmat unavailable on runner — gap ranking skipped; coverage % above is authoritative)" > /tmp/gaps.txt
-          fi
+          . scripts/pmat_bin.sh || exit 1
+          "$PMAT" query --coverage-gaps --exclude-tests --limit 30 > /tmp/gaps.txt 2>/dev/null \
+            || echo "(coverage-gaps returned no data — coverage profile missing?)" > /tmp/gaps.txt
 
       - name: Job summary
         if: always()
@@ -244,7 +241,7 @@ jobs:
             COV_THRESHOLD="$(make -s --eval='print-target: ; @echo $(COV_THRESHOLD)' print-target 2>/dev/null || echo unknown)"
             echo "**Line coverage: ${{ steps.cov.outputs.pct }}** (enforced floor ${COV_FLOOR}%, target ${COV_THRESHOLD}%)"
             echo ""
-            echo "### Top uncovered functions (\`pmat query --coverage-gaps --exclude-tests\`)"
+            echo "### Top uncovered functions (\`query --coverage-gaps --exclude-tests\` via the pinned analyser)"
             echo '```'
             head -30 /tmp/gaps.txt
             echo '```'
@@ -262,7 +259,7 @@ jobs:
             "" \
             "**Line coverage: ${{ steps.cov.outputs.pct }}** (target ≥ 95%)" \
             "" \
-            "### Top uncovered (pmat --coverage-gaps --exclude-tests)" \
+            "### Top uncovered (\`--coverage-gaps --exclude-tests\` via the pinned analyser)" \
             '```' \
             "$(head -30 /tmp/gaps.txt)" \
             '```' \

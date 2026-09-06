@@ -4,7 +4,7 @@
 # Source it, never execute it:
 #     . "$SKILL_DIR/verifier_pin.sh" || exit 2
 #     verifier_pin_pmat "$CRATE" "$BINPATH"   # sets+EXPORTS PMAT_BIN; 0 pinned,
-#                                             # 1 releasing pmat with no working artifact
+#                                             # 1 pmat's own release has no working artifact
 #     verifier_pin_pv                         # sets+EXPORTS PV; 0 pinned, 1 broken, 2 unpinned
 #
 # Both pins EXPORT their result: the gates this protocol discovers from
@@ -25,7 +25,7 @@
 # points at this one. #2640 exists because the same rule had been rediscovered
 # FIVE times, each time as a local fix that did not know about the other four:
 #
-#   1  PMAT_BIN (user-scope dogfood runner)  a gate ran a pmat that predated
+#   1  PMAT_BIN (user-scope dogfood runner)  a gate ran pmat's build that predated
 #      CB-200 becoming a ratchet, and Failed a tree the shipped code passes
 #   2  scripts/pv_bin.sh                     PATH pv 0.49.0 vs in-tree 0.63.0
 #      disagreed on the gate that DECIDES the release
@@ -47,14 +47,14 @@
 # the nightly six lines in (CLAUDE.md; scripts/check_sourced_libs_option_neutral.sh).
 # Failure is signalled by RETURN STATUS only.
 
-# ── WHICH pmat runs the pmat gates ──────────────────────────────────────────
+# ── WHICH PMAT RUNS THE PMAT GATES ──────────────────────────────────────────
 #
-# `pmat verify` and `pmat comply check` are normally the INSTALLED pmat applied
+# `$PMAT verify` and `$PMAT comply check` are normally pmat's INSTALLED build, applied
 # to whatever crate is under test — that is the point of a fleet quality tool.
 # But when the crate under test IS pmat, that is the one case where it is wrong:
 # the gate then measures a DIFFERENT BUILD than the one being released.
 #
-# Measured, 2026-08-22, releasing pmat 3.32.0:
+# Measured, 2026-08-22, releasing pmat's version 3.32.0:
 #   installed ~/.cargo/bin/pmat   version 3.32.0   commit 8134bb373
 #   built from the release tree   version 3.32.0   commit 7a7409e03
 # Both print "3.32.0". Only the commit line differs, and nothing in the receipt
@@ -65,13 +65,13 @@
 # of the thing being released is the same defect class this protocol exists to
 # find, sitting inside the protocol.
 #
-# So: for pmat, the pmat gates use the artifact just built. For every other
+# So: for pmat, pmat's own gates use the artifact just built. For every other
 # crate, PATH is correct and is what still happens.
-# Returns: 0 = pinned (the fleet pmat for a non-pmat crate, the behavior-verified
+# Returns: 0 = pinned (the fleet's pmat, applied to a crate that isn't pmat's release; the behavior-verified
 #              built artifact when the crate IS pmat)
-#          1 = releasing pmat with a missing or non-working artifact — PMAT_BIN is
+#          1 = pmat's own release has a missing or non-working artifact — PMAT_BIN is
 #              left EMPTY and the caller must fail closed. The old behavior fell
-#              back to the PATH pmat silently, which is the recorded incident
+#              back to a PATH-resolved pmat, silently — which is the recorded incident
 #              above happening again with this file watching (#2644, VPIN-1).
 #
 # The behavior check is `--version` answering with SOMETHING, deliberately not a
@@ -81,7 +81,17 @@
 verifier_pin_pmat() {
     verifier_pin_crate="${1:-}"
     verifier_pin_built="${2:-}"
-    PMAT_BIN=pmat
+    # The fleet analyser is the PIN (scripts/pmat_bin.sh, PMAT-1059), never the
+    # bare name: PATH is what let a 24-day-old binary certify a release. A pin
+    # that cannot be resolved fails closed here, exactly like a missing artifact.
+    # shellcheck source=scripts/pmat_bin.sh
+    if . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/pmat_bin.sh"; then
+        PMAT_BIN="$PMAT"
+    else
+        PMAT_BIN=""
+        export PMAT_BIN
+        return 1
+    fi
     export PMAT_BIN
     if [ "$verifier_pin_crate" = "pmat" ]; then
         if [ -z "$verifier_pin_built" ]; then

@@ -3,7 +3,7 @@
 #
 # WHY THIS EXISTS
 # ---------------
-# The only complexity gate in this repository was the LOCAL pmat pre-commit
+# The only complexity gate in this repository was the LOCAL analyser pre-commit
 # hook (.git/hooks/pre-commit, PMAT_MAX_CYCLOMATIC_COMPLEXITY=30,
 # PMAT_MAX_COGNITIVE_COMPLEXITY=25, run over STAGED files only).
 # .github/workflows/ci.yml ran no complexity check at all. The consequence is
@@ -63,6 +63,8 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=scripts/pmat_bin.sh
+. "${REPO_ROOT}/scripts/pmat_bin.sh" || exit 1
 BASELINE_REL='scripts/complexity_baseline.txt'
 BASELINE="${REPO_ROOT}/${BASELINE_REL}"
 ROWS_PY="${REPO_ROOT}/scripts/lib/complexity_rows.py"
@@ -78,7 +80,7 @@ MAX_COGNITIVE=25
 # trip it, and far above zero so a broken scan cannot pass.
 MIN_RS_FILES=5000
 
-# pmat is fed an explicit file list, and a single argv entry is capped at
+# The analyser is fed an explicit file list, and a single argv entry is capped at
 # 128 KiB by the kernel (MAX_ARG_STRLEN). The longest tracked path is 129
 # bytes, so 400 paths per invocation leaves an order of magnitude of headroom.
 CHUNK=400
@@ -91,8 +93,9 @@ CHUNK=400
 # It is deliberately NOT pmat's own project scan. `.pmatignore` excludes 1336
 # tracked .rs files (all of crates/aprender-serve's tests, benches, examples
 # and bin entry points, plus a reference monolith), and the pre-commit hook
-# does NOT honour it: the hook runs `pmat analyze complexity --file <staged>`,
-# which reads whatever it is handed. A CI universe narrower than the hook's
+# does NOT honour it: the hook invokes the analyser directly with
+# `analyze complexity --file <staged>`, which reads whatever it is handed.
+# A CI universe narrower than the hook's
 # would leave exactly the files whose debt blocks local commits unguarded.
 cx_universe() { # cx_universe <root> -> repo-relative .rs paths, sorted, unique
     local root="$1"
@@ -121,10 +124,10 @@ cx_measure() { # cx_measure <root> <scratch-dir>
     cx_universe "$root" > "$list"
     files=$(grep -c . "$list" || true)
 
-    # A comma is pmat's own list separator, so a path containing one would be
-    # split into two nonexistent files and silently drop from the scan.
+    # A comma is the analyser's own list separator, so a path containing one
+    # would be split into two nonexistent files and silently drop from the scan.
     if grep -q ',' "$list"; then
-        printf 'FAIL: a .rs path contains a comma, which is pmat --files own separator:\n' >&2
+        printf 'FAIL: a .rs path contains a comma, which the analyser uses as its --files separator:\n' >&2
         grep ',' "$list" | sed 's/^/      /' >&2
         return 1
     fi
@@ -138,10 +141,10 @@ cx_measure() { # cx_measure <root> <scratch-dir>
     split -l "$CHUNK" -d -a 4 "$list" "$work/chunks/c"
     for chunk in "$work"/chunks/c*; do
         case "$chunk" in *.json | *.err) continue ;; esac
-        if ! ( cd "$root" && pmat analyze complexity \
+        if ! ( cd "$root" && "$PMAT" analyze complexity \
                     --files "$(paste -sd, "$chunk")" \
                     --format json --top-files 0 ) > "$chunk.json" 2> "$chunk.err"; then
-            printf 'FAIL: pmat analyze complexity failed on %s\n' "$chunk" >&2
+            printf 'FAIL: the analyser complexity scan failed on %s\n' "$chunk" >&2
             sed 's/^/      | /' "$chunk.err" >&2
             return 1
         fi
@@ -338,7 +341,7 @@ cx_selftest() {
 
 # The fixture, emitted rather than stored, so the table cannot drift from a
 # file nobody looks at. Every number in the header above came from running
-# pmat over exactly this text.
+# the analyser over exactly this text.
 cx_write_fixture_lib() {
     local i=0
     printf 'pub fn tidy(a: i32) -> i32 {\n    a + 1\n}\n\n'
@@ -365,11 +368,12 @@ cx_write_fixture_lib() {
 
 # ---------------------------------------------------------------------------
 
-# ── CB-200 (pmat comply, the TDG grade gate) ─────────────────────────────────
-# pmat 3.36.0 reads `.pmat-gates.toml [tdg] baseline` and reports CB-200 as
-# Warn ("debt held flat") while the count of functions below min_grade is at
-# or under it, Fail above it. Nothing in pmat compares that number with the
-# one on origin/main, so a branch could raise it and merge (PMAT-937 review).
+# ── CB-200 ("$PMAT" comply, the TDG grade gate) ──────────────────────────────
+# The analyser (3.36.0) reads `.pmat-gates.toml [tdg] baseline` and reports
+# CB-200 as Warn ("debt held flat") while the count of functions below
+# min_grade is at or under it, Fail above it. Nothing in the analyser compares
+# that number with the one on origin/main, so a branch could raise it and
+# merge (PMAT-937 review).
 # The number is therefore MIRRORED in scripts/cb200_baseline.txt, the two must
 # agree, and the file is shrink-only against origin/main through the same
 # baseline_ratchet_check every other baseline in this tree goes through.
@@ -389,7 +393,7 @@ cb200_pair_check() { # <gates.toml> <mirror file> -> 0 when they agree, 1 otherw
     local toml file
     toml=$(cb200_toml_value "$1")
     if [ -z "$toml" ]; then
-        printf 'FAIL: %s carries no [tdg] baseline; pmat comply would report CB-200 as Fail, not as a held ratchet.\n' "$1"
+        printf 'FAIL: %s carries no [tdg] baseline; the analyser comply gate would report CB-200 as Fail, not as a held ratchet.\n' "$1"
         return 1
     fi
     if [ ! -f "$2" ]; then
@@ -441,28 +445,23 @@ fi
 
 printf '=== per-function complexity may only fall (check_complexity_ratchet.sh) ===\n'
 
-if ! command -v pmat > /dev/null 2>&1; then
-    printf 'SKIP: pmat is not installed; install it with `cargo install pmat --locked`.\n' >&2
-    printf 'This is a hard failure in CI, where the workflow installs it first.\n' >&2
-    [ "${CI:-}" = 'true' ] && exit 1
-    exit 0
-fi
+# The analyser was resolved by scripts/pmat_bin.sh above; absence already failed closed (PMAT-1059).
 if ! command -v python3 > /dev/null 2>&1; then
-    printf 'FAIL: python3 is required to read pmat JSON.\n' >&2
+    printf 'FAIL: python3 is required to read analyser JSON.\n' >&2
     exit 1
 fi
 
 # PROVE THE MECHANISM ENGAGED, do not label the run by intent: print WHICH
-# binary produced these numbers. A complexity verdict from an unnamed pmat is a
+# binary produced these numbers. A complexity verdict from an unnamed analyser is a
 # confident answer about code you may not be running.
 #
 # NO CLOCK IS READ HERE, deliberately. The scan costs 8-9s wall on this host
-# (10255 files, 11 pmat invocations, measured on 68b059ca), which is why it is
+# (10255 files, 11 analyser invocations, measured on 68b059ca), which is why it is
 # affordable per-PR -- but the duration is neither printed nor asserted. A
 # wall-clock assertion in a required check has failed eleven times in this
 # repository (#2671), and `date` in a guard is a DET002 error line that lands
 # in a shrink-only lint baseline.
-printf 'pmat: %s (%s)\n' "$(command -v pmat)" "$(pmat --version 2>/dev/null | head -1)"
+printf 'analyser: %s (%s)\n' "$PMAT" "$PMAT_VERSION"
 
 WORK=$(mktemp -d) || exit 1
 trap 'rm -rf "${WORK:?}"' EXIT

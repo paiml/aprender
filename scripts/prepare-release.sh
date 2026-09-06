@@ -40,7 +40,9 @@ echo "✅ Up to date with remote"
 
 # 4. Run all quality checks
 echo "🔍 Running quality gates..."
-if ! pmat quality-gate; then
+# shellcheck source=scripts/pmat_bin.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/scripts/pmat_bin.sh" || exit 1
+if ! "$PMAT" quality-gate; then
     echo "❌ Quality gates failed"
     exit 1
 fi

@@ -49,14 +49,14 @@
 #
 # WHY THE CITATION LIVES IN PROSE AND NOT IN ITS OWN FIELD
 # --------------------------------------------------------
-# pmat owns these files, and `pmat work edit` reparses and REWRITES the whole
-# file. An unknown key does not survive. Reproduced here rather than taken on
-# faith, and the result is worse than the issue reported -- editing an
+# The analyser owns these files, and `"$PMAT" work edit` reparses and REWRITES
+# the whole file. An unknown key does not survive. Reproduced here rather than
+# taken on faith, and the result is worse than the issue reported -- editing an
 # UNRELATED ticket destroys the key on EVERY ticket:
 #
 #   RT-001: status completed, evidence: [scripts/foo.sh, PR#1234]
 #   RT-002: status planned
-#   $ pmat work edit RT-002 --status in_progress
+#   $ "$PMAT" work edit RT-002 --status in_progress
 #   ✓ Updated ticket: RT-002
 #   $ diff before after
 #   -  evidence:            <- RT-001's, deleted by an edit to RT-002
@@ -82,7 +82,7 @@
 # THE UNIVERSE, AND THE FREE PASS IT WOULD OTHERWISE GIVE
 # -------------------------------------------------------
 # The issue names docs/roadmaps/roadmap.yaml. That file holds 289 of the
-# repository's 1033 `completed` claims. There are 21 pmat work-contract files:
+# repository's 1033 `completed` claims. There are 21 analyser work-contract files:
 # one per crate under */docs/roadmaps/, plus book/. Scoping to the file the
 # issue happened to name would hand 744 completed claims -- 72% of them -- a
 # free pass, which is the universe defect this epic has now paid for four
@@ -92,14 +92,14 @@
 #   universe is a free pass for an untracked file, and untracked is exactly how
 #   a new roadmap arrives;
 #   every roadmap*.yaml / ROADMAP*.yaml;
-#   IN SCOPE iff the file declares a top-level `roadmap:` key -- the pmat work
+#   IN SCOPE iff the file declares a top-level `roadmap:` key -- the analyser work
 #   contract schema. Five files in this tree are named roadmap.yaml and are a
 #   different schema entirely (`project:`/`milestones:`/`epics:`/`items:`);
 #   they are reported out of scope WITH their top-level keys, never skipped
 #   silently. An in-scope file that will not PARSE is a hard failure.
 #
-# Status matching is normalised through pmat's own alias table
-# (`pmat work list-statuses`): done/finished/closed all mean completed, and
+# Status matching is normalised through the analyser's own alias table
+# (`"$PMAT" work list-statuses`): done/finished/closed all mean completed, and
 # case, hyphens and underscores are insignificant. That is not hypothetical --
 # docs/roadmaps/roadmap.yaml writes `in_progress` while every other file in the
 # tree writes `inprogress`. A naive `== "completed"` filter is a universe hole.
@@ -130,7 +130,7 @@
 #     a ref this branch cannot rewrite. Appending is REFUSED, so the gate
 #     cannot be laundered in the commit that breaks it.
 #
-# Keyed by ID and never by line number, because pmat REFLOWS the file: the
+# Keyed by ID and never by line number, because the analyser REFLOWS the file: the
 # round trip above moved 13516 lines to 12804 and would have invalidated every
 # line-keyed entry in one unrelated edit.
 #
@@ -194,8 +194,9 @@ except ImportError:
 
 root = sys.argv[1]
 
-# pmat's own alias table, from `pmat work list-statuses`. Case, hyphens and
-# underscores are insignificant there, so they are insignificant here.
+# the analyser's own alias table, from its `work list-statuses` subcommand.
+# Case, hyphens and underscores are insignificant there, so they are
+# insignificant here.
 DONE = {"completed", "done", "finished", "closed"}
 def is_completed(s):
     if not isinstance(s, str):
@@ -262,7 +263,7 @@ for rel in sorted(cand):
         continue
     # Cheap schema probe FIRST, so a file of a different schema that happens
     # not to parse is classified out rather than reddening the gate. A file
-    # claiming the pmat contract schema and then failing to parse is a hard
+    # claiming the analyser contract schema and then failing to parse is a hard
     # failure; one that never claimed it is not this guard's business.
     if not re.search(r"(?m)^roadmap:", raw):
         top = re.findall(r"(?m)^([A-Za-z_][A-Za-z0-9_]*):", raw)[:5]
@@ -586,7 +587,7 @@ YAML
     row 'foreign schema contributes no records' 0 "$n_rec"
 
     printf -- '--- case table: unmeasured is a FAILURE, never a skip ---------------\n'
-    # A file that CLAIMS the pmat schema and then will not parse must be loud.
+    # A file that CLAIMS the analyser schema and then will not parse must be loud.
     # This is the branch that, taken quietly, disarms the whole guard.
     mk docs/roadmaps/broken.yaml <<'YAML'
 roadmap:
@@ -665,7 +666,7 @@ if [ "$N_SCOPE" -lt "$MIN_ROADMAPS" ]; then
     printf '      The scan is broken, not the tree.\n'
     exit 1
 fi
-printf 'universe: %s pmat work-contract roadmap file(s)\n' "$N_SCOPE"
+printf 'universe: %s analyser work-contract roadmap file(s)\n' "$N_SCOPE"
 
 BASELINE="$REPO_ROOT/$BASELINE_REL"
 
@@ -682,7 +683,7 @@ if [ "${1:-}" = "--update" ]; then
         printf '# check_roadmap_completion_is_cited.sh and by\n'
         printf '# check_baseline_ratchets.sh, so an APPEND IS REFUSED — a new\n'
         printf '# completed claim cannot be laundered in the commit that makes it.\n#\n'
-        printf '# Keyed by <file><TAB><entry id>, never by line number: pmat reflows\n'
+        printf '# Keyed by <file><TAB><entry id>, never by line number: the analyser reflows\n'
         printf '# these files (13516 -> 12804 lines in one unrelated edit) and a\n'
         printf '# line-keyed baseline would be invalidated wholesale.\n#\n'
         printf '# A DANGLING citation is never baselined — see the guard header.\n'

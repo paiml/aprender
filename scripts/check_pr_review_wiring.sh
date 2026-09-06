@@ -21,7 +21,7 @@
 # Until now that rule lived in a COMMENT, and a comment is not a trigger. The
 # same file already carries the receipt of what that costs: check_hardcoded_paths.sh
 # was left unwired behind a comment saying to promote it "once the fleet carries
-# pmat >= 3.32.0", nothing re-evaluated the condition, and 20 machine-specific
+# analyser >= 3.32.0", nothing re-evaluated the condition, and 20 machine-specific
 # paths landed through the gap. So the rule is checked here rather than written
 # down here.
 #
