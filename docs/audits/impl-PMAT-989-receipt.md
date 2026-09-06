@@ -1,5 +1,6 @@
 ---
-status: complete
+status: partial
+partial_reason: "G-11 (#3020) DERIVES the DAG row status from this receipt: scripts/check_dag_invariants.sh D7 and render_dag.py --check both go RED while the row is typed `open` here and `complete` there. The protocol the guards state is that a ROW PR ships `partial` and the ORCHESTRATOR docs commit (agent/pp-066-*) flips this marker to `complete` AND re-renders the spec block in the same commit. Everything this row owed is done and green - see Verdict."
 ticket: PMAT-989
 row: R-0
 issue: 2904
@@ -169,7 +170,15 @@ of the two required checks (`gate`, `workspace-test`), and #3020 merged with it
 red on 2026-09-06. Recorded, not routed around.
 
 ## Verdict
-COMPLETE (`status: complete`). `.pr/R-0/accept.sh` — every A_i as a command, its
+DONE, and marked `status: partial` **on purpose** — under G-11 (#3020) this marker is
+the DAG's status for row R-0, and only the orchestrator's docs commit may flip it, in
+the same commit that re-renders the spec block. Typing `complete` here without that
+re-render is precisely what `check_dag_invariants.sh` D7 refuses ("typed status `open`
+disagrees with the receipt (derived `complete`); status is derived, never typed") and
+what `render_dag.py --check` reports as DRIFT. Both were RED on this branch for one
+commit and are green again.
+
+The work itself: `.pr/R-0/accept.sh` — every A_i as a command, its
 status read directly and never through a pipe — is **15/15 green** on the reverted
 tree, including A8, which runs the binary built from HEAD through
 `. scripts/apr_bin.sh` (never a bare `apr`: four have coexisted on this box) and
