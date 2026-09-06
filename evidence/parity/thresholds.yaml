@@ -4,6 +4,13 @@
 schema: apr-parity-thresholds/v1
 min_positions: 64          # basis: I8 / CF-4 (#1864) — any autoregressive gate validates over >= 64 positions
 default:
-  min_cosine: 0.98         # basis: '= PARITY_GATE_COSINE_MIN, crates/aprender-serve/src/gguf/cuda/mod.rs:803 (the load-time gate constant), itself [U]; replaced by measured n>=5 per known-good pair (L0-1 item 5)'
-  basis: '[U]'
+  min_cosine: 0.98
+  # basis (item 5, first pair measured 2026-09-06): n=5 runs of the known-good pair
+  # (qwen2.5-coder-7b-instruct-q4_k_m @ lambda RTX 4090, apr 0.65.2 cuda c642576eecb62daa,
+  # the 78-token corpus prompt) — min cosine over positions 0.9986 in all five runs (stdev 0.0);
+  # the known-bad pair (1.5B @ lambda) 0.9508 in all five (stdev 0.0). 0.98 (= PARITY_GATE_COSINE_MIN,
+  # crates/aprender-serve/src/gguf/cuda/mod.rs:803) lies between them with 0.0186 of margin under the
+  # good floor. Records: evidence/parity/l0-1/lambda/n5/ (run.sh is the command).
+  # Stays [U] for the release until the second known-good pair (7B @ gx10) is measured with n>=5.
+  basis: 'measured n=5 on one known-good pair (7B@lambda, min 0.9986 ×5) vs the known-bad pair (1.5B@lambda, 0.9508 ×5); [U] until the gx10 pair'
 models: {}                  # per-model overrides land here with n and the command that measured them
