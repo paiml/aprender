@@ -52,7 +52,7 @@ jobs:
     # checks with no owning ticket in the PP-066 DAG — so wiring it into a
     # required context would red every PR's merge on unrelated, untracked
     # debt. See #2891 for the finding and the follow-up this blocks on.
-    uses: paiml/.github/.github/workflows/sovereign-ci.yml@4453399ee3794714800ff8db316ea7e1d3705a00
+    uses: paiml/.github/.github/workflows/sovereign-ci.yml@main
     with:
       repo: ${{ github.event.repository.name }}
       # Phase 3 pilot (heavy workload) — build-performance.md §7 Phase 3.
