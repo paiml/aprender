@@ -126,7 +126,7 @@ rows:
     lambda: 3
   expiry:
     anchor: I-15
-    days: 7
+    days: 14
   owner: perf-gate
   A:
   - '#2817 closed: comparator lane produces a conformant W1 band (stream_options.include_usage sent; prompt_tokens>0)'
@@ -636,9 +636,7 @@ rows:
   pmat_id: PMAT-988
   status: open
 - id: R-0
-  title: '[premises discharged: S0-7 CONFIRMED, S0-14 CONFIRMED] BackendRegistry: enumerate cpu/cuda/wgpu at startup from the machine (dlopen libcuda.so.1, wgpu adapters, cpu always); one printed line per
-    backend with source and status.reason; apr devices [--json]; --backend/--gpu resolved against the Ready set and refused otherwise; GET /v1/effective-config reports the resolved entry; zero cfg! reads
-    in apr-cli backend decisions; REG-1..REG-14 with FX-1..FX-14'
+  title: '[premises discharged: S0-7 CONFIRMED, S0-14 CONFIRMED] R-0a (split 2026-09-06, design quorum 3/3): BackendRegistry::discover() + apr devices [--json] + contracts/apr-devices-schema-v1.yaml + the hermetic fixture case table and MockBackend — the registry EXISTS and prints one line per backend with source and status.reason; the resolution rewiring (--backend/--gpu against the Ready set, effective-config, zero cfg! reads in decisions) is R-0b (#3002)'
   epic: 2873
   track: R
   lane: '0.66'
@@ -675,6 +673,39 @@ rows:
   gh_issue: 2904
   pmat_id: PMAT-989
   status: open
+  notes: 'design quorum 2026-09-06 (docs/audits/pp-066-r0-design-quorum.md): 3/3 implement-with-changes, 3/3 split. Schema changes folded into P1: an object-safe BackendFactory (discover(&self)/create(&self, device)) beside the non-object-safe ComputeBackend (gpu/backend.rs:33-46); entries carry api ∈ {cuda-driver, wgpu, metal, hip, cpu} + device_uid so one physical GPU reachable through two APIs is deduplicated for REG-8/REG-9 (monitor/backends.rs:39 enumerates the Metal adapter through wgpu); vendor_id Option<u32> + vendor String (Apple silicon has no PCI id); mem_kind Unified carries working_set_limit and REG-7 reserves against it; fixtures: FX-1/3/12 cfg(target_os = linux) rows, FX-2/4/5/6/8/9 host-dogfood rows on the named hosts, FX-7/10/11/14 + MockBackend the CI case table; §12 llamafile citation corrected (lane 3)'
+- id: R-0b
+  title: 'backend resolution reads the registry: accel.rs:28, serve/mod.rs:236 and :656 stop consulting cfg!(feature = …); --backend/--gpu/--device refused by enumeration with the registry''s reason; BACKEND_VALUES widened to the five REG-11 kinds (a static clap vocabulary) with the refusal at runtime as Unavailable(NotCompiled); GET /v1/effective-config reports the resolved entry + discovered_at (split of R-0 per the design quorum 2026-09-06)'
+  epic: 2873
+  track: R
+  lane: '0.66'
+  decision: false
+  blockers:
+  - R-0
+  issues:
+  - 2378
+  - 2507
+  - 2586
+  - 2661
+  host: any (verified on all four)
+  queue_pos: null
+  expiry: '2026-09-26'
+  owner: spec-owner
+  A:
+  - git grep -c 'cfg!(any(feature = "cuda"' crates/apr-cli/src prints 0
+  - cargo test -p apr-cli --test backend_refusal_case_table (rows generated from {build features} x {host facts} x the REG-11 kind list; refuse <=> request ∉ Ready; every refusal prints the registry''s reason and exits with the code read from error.rs)
+  - GET /v1/effective-config reports backend == the resolved entry and discovered_at (REG-12); C11 cross-check GREEN on a CPU-only host
+  contract: contracts/apr-backend-registry-v1.yaml (invariants ii, iv, v)
+  mutations:
+  - make resolution consult cfg!(feature = "cuda") instead of the enumeration -> the (build=cuda, host=no-libcuda, ask=cuda) row goes GREEN wrongly -> table RED
+  - 'print Backend: CUDA from the request instead of the entry -> C11 cross-check RED on a CPU-only host'
+  - restore cfg!(any(cuda, wgpu)) at accel.rs:28 -> (build=wgpu, ask=cuda) RED
+  quorum: 3-lane (the design was judged with R-0; this half is review-only on the diff)
+  spec: PP-066 §5 R-0 (the resolution half); REG-8, REG-11, REG-12; design quorum 2026-09-06
+  gh_issue: 3002
+  pmat_id: PMAT-1060
+  status: open
+  notes: 'lane 1 (systems): BACKEND_VALUES is a compile-time [&str; N] fed to clap''s value_parser and cannot be runtime-populated — "zero cfg! reads" applies to DECISIONS, the vocabulary stays static and widened; lane 2 (Apple): wgpu is a transport over a physical backend, so the printed kind list and the entry schema must not double-count one GPU (device_uid dedup, decided with R-0a)'
 - id: R-2
   title: '[premises discharged: S0-14 CONFIRMED, S0-15 measured] W-I: cuda joins default features iff S0-14 passed on all four hosts (D-9) and only behind R-0; apr serve run --gpu refuses via the registry
     with one line; check_multiplatform_dogfood reads apr devices --json and the effective-config backend; compile-time and size cost REPORTED with basis= (S0-15); clean-room p1 before publish'
@@ -685,6 +716,7 @@ rows:
   blockers:
   - R-0
   - DEC-D-9
+  - R-0b
   issues:
   - 2696
   - 2788
@@ -692,7 +724,7 @@ rows:
   - 2571
   host: all four (dogfood)
   queue_pos: null
-  expiry: '2026-09-26'
+  expiry: '2026-10-03'
   owner: spec-owner
   A:
   - make -C machines/clean-room clean-room-p1 exit 0 (infra checkout; publish-path hard gate)
@@ -1321,10 +1353,11 @@ rows:
   blockers:
   - R-0
   - R-2
+  - R-0b
   issues: []
   host: any
   queue_pos: null
-  expiry: '2026-10-03'
+  expiry: '2026-10-10'
   owner: spec-owner
   A:
   - bash scripts/check_backend_firstclass.sh exit 0 at HEAD printing cuda 6/7 or lower (derived); wired into ci / gate
@@ -2418,6 +2451,11 @@ rows:
   status: open
   notes: 'A6 of the driver: resume logic reads only receipts whose front matter says status: complete.'
 amendments:
+- date: '2026-09-06'
+  by: 'the PP-066 driver (STEP C), on the R-0 design quorum of 2026-09-06 (3/3 lanes; docs/audits/pp-066-r0-design-quorum.md)'
+  row: R-0
+  change: 'split into R-0 (= R-0a: registry + apr devices + fixtures, #2904, expiry unchanged 2026-09-19) and R-0b (resolution rewiring, #3002, PMAT-1060, expiry 2026-09-26); R-2 gains blocker R-0b and moves 2026-09-26 -> 2026-10-03; B-G1 gains blocker R-0b and moves 2026-10-03 -> 2026-10-10; I-18 (anchor I-15) days 7 -> 14 (= 2026-10-10) so its slack against R-2 holds; the lambda queue order R-4 < S-3 < I-18 < S-1 < S-2 is unchanged'
+  why: '§12 amendment rule: a blocker that moves pulls its blockees by the min-slack (6 d); the split is the quorum''s unanimous recommendation and lets `apr devices` ship and be validated on all four hosts before any decision path is rewired'
 - date: '2026-09-05'
   by: noahgift (driver STEP A)
   row: G-6
