@@ -2541,6 +2541,10 @@ fn display_classify_next_steps(json_output: bool) {
 mod tests;
 
 #[cfg(test)]
+#[path = "finetune_gpu_backend_truth_tests.rs"]
+mod gpu_backend_truth_tests;
+
+#[cfg(test)]
 #[path = "finetune_contract_tests.rs"]
 mod contract_tests;
 

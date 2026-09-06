@@ -311,7 +311,7 @@ fn test_run_training_creates_adapter() {
         None,
         false,
         None,
-        "cuda",
+        "cpu", /* PMAT-991: "cuda" on a cpu-only build is now FeatureDisabled (exit 9), not a silent CPU fallback; this test exercises the CPU adapter path and says so */
         None,
         None,
         None,

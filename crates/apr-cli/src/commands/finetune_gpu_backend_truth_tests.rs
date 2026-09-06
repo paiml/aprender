@@ -17,16 +17,14 @@
 //!    (`entrenar::backward_kernel_launches()`), never from the request.
 //!
 //! These three functions are pure and gate through
-//! `apr_cli::finetune_test_support` (the crate-private `commands` tree is not
+//! `super` (this file is a `#[cfg(test)]` module of `commands::finetune`; the crate-private `commands` tree is not
 //! reachable from an integration test, same seam as `serve_test_support` /
 //! `qa_types`).
 
 #![allow(clippy::unwrap_used)]
 
-use apr_cli::finetune_test_support::{
-    gpu_backend_decision, post_training_banner, pre_training_notice, GpuBackendChoice,
-};
-use apr_cli::CliError;
+use super::{gpu_backend_decision, post_training_banner, pre_training_notice, GpuBackendChoice};
+use crate::CliError;
 
 /// Every row of {cuda, wgpu, auto, cpu} x {build_has_cuda} x {build_has_wgpu} —
 /// both polarities of both build flags, for every requested string.
