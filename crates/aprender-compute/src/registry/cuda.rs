@@ -1,6 +1,6 @@
 //! CUDA factory: `libcuda.so.1` through the driver API, never cudart (REG-2).
 use super::{Api, BackendEntry, BackendFactory, BackendKind, MemKind, Reason, Source, Status};
-use trueno_gpu::driver::{cuda_available, device_count, CudaContext};
+use trueno_gpu::driver::{device_count, CudaContext};
 
 /// Discovers NVIDIA devices through the dlopen'd driver.
 pub struct CudaFactory;
@@ -13,7 +13,10 @@ impl BackendFactory for CudaFactory {
     }
 
     fn discover(&self) -> Vec<BackendEntry> {
-        if !cuda_available() {
+        // Three distinct, reachable reasons (review quorum 2026-09-06, lane 1:
+        // `cuda_available()` folds a load failure, a probe error and zero devices
+        // into one bool, which made two arms dead). dlopen first, then count.
+        if trueno_gpu::driver::sys::CudaDriver::load().is_none() {
             return vec![BackendEntry::unavailable(
                 BackendKind::Cuda,
                 Api::CudaDriver,

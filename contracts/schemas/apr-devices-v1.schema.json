@@ -68,7 +68,8 @@
           "type": "string",
           "minLength": 1
         }
-      }
+      },
+      "additionalProperties": false
     }
   },
   "definitions": {
@@ -171,7 +172,8 @@
                 "null"
               ]
             }
-          }
+          },
+          "additionalProperties": false
         },
         "compute_class": {
           "type": [
@@ -202,13 +204,15 @@
             "detail": {
               "type": "string"
             }
-          }
+          },
+          "additionalProperties": false
         },
         "status": {
           "type": "object",
           "required": [
             "state"
           ],
+          "additionalProperties": false,
           "properties": {
             "state": {
               "enum": [
@@ -225,21 +229,128 @@
                 "probe-failed",
                 "reserve-exceeds-free"
               ]
+            },
+            "path": {
+              "type": "string"
+            },
+            "vendor": {
+              "type": "string"
+            },
+            "error": {
+              "type": "string"
+            },
+            "reserve_bytes": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "free_bytes": {
+              "type": "integer",
+              "minimum": 0
             }
           },
-          "if": {
-            "properties": {
-              "state": {
-                "const": "unavailable"
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "state": {
+                    "const": "ready"
+                  }
+                }
+              },
+              "then": {
+                "not": {
+                  "required": [
+                    "kind"
+                  ]
+                },
+                "maxProperties": 1
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "state": {
+                    "const": "unavailable"
+                  }
+                }
+              },
+              "then": {
+                "required": [
+                  "state",
+                  "kind"
+                ]
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "kind": {
+                    "const": "driver-not-found"
+                  }
+                },
+                "required": [
+                  "kind"
+                ]
+              },
+              "then": {
+                "required": [
+                  "path"
+                ]
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "kind": {
+                    "const": "no-backend"
+                  }
+                },
+                "required": [
+                  "kind"
+                ]
+              },
+              "then": {
+                "required": [
+                  "vendor"
+                ]
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "kind": {
+                    "const": "probe-failed"
+                  }
+                },
+                "required": [
+                  "kind"
+                ]
+              },
+              "then": {
+                "required": [
+                  "error"
+                ]
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "kind": {
+                    "const": "reserve-exceeds-free"
+                  }
+                },
+                "required": [
+                  "kind"
+                ]
+              },
+              "then": {
+                "required": [
+                  "reserve_bytes",
+                  "free_bytes"
+                ]
               }
             }
-          },
-          "then": {
-            "required": [
-              "state",
-              "kind"
-            ]
-          }
+          ]
         },
         "transport": {
           "type": [
@@ -247,7 +358,8 @@
             "null"
           ]
         }
-      }
+      },
+      "additionalProperties": false
     }
   }
 }

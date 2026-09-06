@@ -129,6 +129,8 @@ falsification_tests:
       APR_RESERVE_BYTES as the default -> a_malformed_reserve_override_is_refused_by_name RED.
 
 non_goals:
+  - "Side-effect-free discovery is a PROCESS property (no files, no cache, no persistent allocation); reading free memory needs a driver context, so the CUDA factory creates and drops one CUDA context per device (cuCtxCreate + drop) during discovery — recorded here rather than hidden (review quorum 2026-09-06, lane 3)."
+  - "device_uid is vendor + normalised adapter name from BOTH APIs; if two APIs name one card differently the twins carry different uids and the reserve refusal does not propagate between them (lane 2). Every fixture and the four hosts name the card identically through cuda and wgpu; a host that does not is a dogfood finding, not a silent pass — distinct_devices() would count two."
   - "Resolution: refusing --backend/--gpu/--device requests not in the Ready set, effective-config, zero cfg! reads in decisions — R-0b (#3002) adds REG-OB-004..006 and their tests to this file."
   - "The non-hermetic fixtures FX-2/4/5/6/8/9 (real drivers, real cards, root): host-dogfood rows recorded as receipts on the named hosts, never CI claims (design quorum 2026-09-06)."
   - "Elementwise / structured device kernels' capabilities (caps is a name list; cuBLAS-as-capability lands with R-0b's effective-config)."

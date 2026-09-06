@@ -41,11 +41,19 @@ pub fn run(json: bool) -> Result<()> {
         println!("{}", registry.to_json().map_err(CliError::InvalidInput)?);
         return Ok(());
     }
-    if let Some(r) = reserve {
-        println!("override: APR_RESERVE_BYTES={r}");
+    // REG-8: overrides are loud — and printed from what the REGISTRY holds, not
+    // from the request (review quorum 2026-09-06, lanes 2 and 3).
+    if reserve.is_some() {
+        println!(
+            "override: APR_RESERVE_BYTES -> reserve_bytes={} basis={}",
+            registry.reserve_bytes, registry.reserve_basis
+        );
     }
-    if let Some(p) = &fixture {
-        println!("override: APR_REGISTRY_FIXTURE={p}");
+    if fixture.is_some() {
+        println!(
+            "override: APR_REGISTRY_FIXTURE -> source={}",
+            registry.source
+        );
     }
     print!("{}", registry.render_block(env!("CARGO_PKG_VERSION")));
     Ok(())

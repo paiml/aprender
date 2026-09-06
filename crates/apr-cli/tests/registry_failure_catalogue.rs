@@ -75,7 +75,7 @@ fn fx11_cpu_only_prints_all_five_kinds_and_selects_cpu_with_a_reason() {
         "{text}"
     );
     assert!(
-        text.contains("override: APR_REGISTRY_FIXTURE="),
+        text.contains("override: APR_REGISTRY_FIXTURE -> source=fixture("),
         "REG-8: an override is loud:\n{text}"
     );
     assert!(
@@ -124,7 +124,7 @@ fn fx7_reserve_exceeding_free_memory_is_a_named_refusal() {
     assert!(out.status.success());
     let text = stdout(&out);
     assert!(
-        text.contains("override: APR_RESERVE_BYTES=1072668082176"),
+        text.contains("override: APR_RESERVE_BYTES -> reserve_bytes=1072668082176 basis=APR_RESERVE_BYTES override"),
         "{text}"
     );
     assert!(
@@ -312,4 +312,48 @@ fn a_malformed_reserve_override_is_refused_by_name() {
     let out = apr_devices(&[("APR_RESERVE_BYTES", "lots")], false);
     assert_eq!(out.status.code(), Some(4), "{:?}", out.status);
     assert!(String::from_utf8_lossy(&out.stderr).contains("APR_RESERVE_BYTES"));
+}
+
+/// Schema twin (review quorum 2026-09-06, lanes 2 and 3): a document serde would
+/// refuse must not validate — an unavailable entry without its per-kind payload
+/// (`driver-not-found` without `path`), a ready entry carrying a `kind`, and a
+/// stray field on an entry are all rejected.
+#[test]
+fn schema_twin_documents_serde_refuses_do_not_validate() {
+    let schema_text = std::fs::read_to_string(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../contracts/schemas/apr-devices-v1.schema.json"),
+    )
+    .expect("schema file");
+    let schema: serde_json::Value = serde_json::from_str(&schema_text).expect("schema json");
+    let validator = jsonschema::validator_for(&schema).expect("schema compiles");
+    let out = apr_devices(
+        &[(
+            "APR_REGISTRY_FIXTURE",
+            fixture("cpu-only.json").to_str().expect("utf8"),
+        )],
+        true,
+    );
+    let good: serde_json::Value = serde_json::from_str(&stdout(&out)).expect("json");
+    assert!(validator.is_valid(&good));
+    let mut no_path = good.clone();
+    no_path["entries"][1]["status"] =
+        serde_json::json!({"state": "unavailable", "kind": "driver-not-found"});
+    assert!(
+        !validator.is_valid(&no_path),
+        "driver-not-found without `path` must not validate"
+    );
+    let mut kind_on_ready = good.clone();
+    kind_on_ready["entries"][0]["status"] =
+        serde_json::json!({"state": "ready", "kind": "no-device"});
+    assert!(
+        !validator.is_valid(&kind_on_ready),
+        "a ready status must not carry a reason kind"
+    );
+    let mut stray = good.clone();
+    stray["entries"][0]["bogus"] = serde_json::json!(1);
+    assert!(
+        !validator.is_valid(&stray),
+        "a stray field on an entry must not validate"
+    );
 }
