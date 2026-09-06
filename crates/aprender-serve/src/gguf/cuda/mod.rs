@@ -108,7 +108,62 @@ impl std::fmt::Debug for CudaInitError {
 /// // GPU-accelerated forward pass
 /// let logits = cuda_model.forward_cuda(&tokens)?;
 /// ```
+/// What the load-time parity gate measured for THIS model (REG-15, PP-066 #2971): the
+/// record `GET /v1/effective-config` reports as `parity`. Never absent: `not-run` when
+/// no gate applies (MoE), `skipped` under the `SKIP_PARITY_GATE` override (every
+/// receipt of that run is INVALID-CORRECTNESS), `PASS` with the cosine otherwise —
+/// a failing gate never constructs the model, so `FAIL` is a refusal, not a record.
+#[derive(Clone, Debug)]
+pub struct ParityGateRecord {
+    /// `PASS` | `skipped` | `not-run`
+    pub status: &'static str,
+    /// The cosine the gate measured, when it ran.
+    pub cosine: Option<f32>,
+    /// Positions the gate compared (the load-time gate: one token).
+    pub positions: usize,
+    /// The threshold the verdict was judged against.
+    pub threshold: f32,
+    /// Where the threshold and the measurement come from.
+    pub basis: &'static str,
+}
+
+impl ParityGateRecord {
+    const BASIS_GATE: &'static str = "load-time gate, one token (crates/aprender-serve/src/gguf/cuda/mod_parity_gate.rs); the >= 64-position horizon is C14 (scripts/check_model_parity.sh)";
+
+    /// The gate has not run on this model (no dense gate applies).
+    #[must_use]
+    pub fn not_run(why: &'static str) -> Self {
+        Self {
+            status: "not-run",
+            cosine: None,
+            positions: 0,
+            threshold: PARITY_GATE_COSINE_MIN,
+            basis: why,
+        }
+    }
+
+    /// The `SKIP_PARITY_GATE` override: printed, never silent.
+    #[must_use]
+    pub fn skipped() -> Self {
+        Self { status: "skipped", cosine: None, positions: 0, threshold: PARITY_GATE_COSINE_MIN, basis: "SKIP_PARITY_GATE override — every receipt of this run is INVALID-CORRECTNESS (REG-15)" }
+    }
+
+    /// The gate ran and passed at `cosine`.
+    #[must_use]
+    pub fn passed(cosine: f32) -> Self {
+        Self {
+            status: "PASS",
+            cosine: Some(cosine),
+            positions: 1,
+            threshold: PARITY_GATE_COSINE_MIN,
+            basis: Self::BASIS_GATE,
+        }
+    }
+}
+
 pub struct OwnedQuantizedModelCuda {
+    /// REG-15: what the load-time parity gate measured for this model.
+    pub parity: ParityGateRecord,
     /// Inner model
     pub(crate) model: OwnedQuantizedModel,
     /// Cached CUDA executor
@@ -350,14 +405,7 @@ impl OwnedQuantizedModelCuda {
             .map(|v| v == "1")
             .unwrap_or(false);
 
-        if !skip_gate && !self.model.config.constraints.is_moe {
-            if let Err(e) = parity_gate(&mut self) {
-                return Err(CudaInitError {
-                    error: e,
-                    model: Box::new(self.into_model()),
-                });
-            }
-        }
+        self = self.admit_by_parity_gate(skip_gate)?;
 
         // §9 #7: the ONE snapshot that makes preload's VRAM cost accountable.
         // `memory_info` was taken before `init_kv_cache_gpu`, weight upload and
@@ -507,6 +555,7 @@ impl OwnedQuantizedModelCuda {
         let embed_buf = vec![0.0f32; model.config.hidden_dim];
 
         let cuda_model = Self {
+            parity: ParityGateRecord::not_run("the gate has not run yet"),
             model,
             executor,
             device_name,
