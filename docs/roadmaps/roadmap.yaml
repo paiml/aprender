@@ -16577,3 +16577,98 @@ roadmap:
   - kind:code
   - pp-066
   notes: null
+- id: PMAT-1065
+  github_issue: 3017
+  item_type: task
+  title: 'L0-1: [P0] Qwen2.5-1.5B on cuda computes a different function from cpu (cosine 0.9418, |Δlogit|max 5.38; hidden 1536 / heads 12 / kv 2) and apr then runs cpu under --'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-09-06T14:10:00Z
+  updated: 2026-09-06T14:10:00Z
+  spec: null
+  acceptance_criteria:
+  - 'see issue #3017 (A + mutation)'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - pp-066
+  notes: null
+- id: PMAT-1066
+  github_issue: 3018
+  item_type: task
+  title: 'G-11b: one-call state (scripts/pp066_state.sh: head row, complete receipts, PR states, main reds with ticket ids, U-1 poll), the session docs commit (scripts/session_d'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-06T14:10:00Z
+  updated: 2026-09-06T14:10:00Z
+  spec: null
+  acceptance_criteria:
+  - 'see issue #3018 (A + mutation)'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - pp-066
+  notes: null
+- id: PMAT-1067
+  github_issue: 3019
+  item_type: task
+  title: 'R-8: nightly-latest-dogfood.yml: install from latest on four hosts via the R-6 installer, apr devices --json, C14 (check_model_parity.sh --manifest), diff vs the rel'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-06T14:10:00Z
+  updated: 2026-09-06T14:10:00Z
+  spec: null
+  acceptance_criteria:
+  - 'see issue #3019 (A + mutation)'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - pp-066
+  notes: null
+- id: PMAT-1068
+  github_issue: 3016
+  item_type: task
+  title: 'S-0: speed lane on perf-solo: the beat/speed lane runs on perf-solo and its receipt names its own host (PR #2720 direction accepted under D-3; diff re-derived from H'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-06T14:10:00Z
+  updated: 2026-09-06T14:10:00Z
+  spec: null
+  acceptance_criteria:
+  - 'see issue #3016 (A + mutation)'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - pp-066
+  notes: null
+- id: PMAT-1069
+  github_issue: 3015
+  item_type: task
+  title: 'U-1: pmat#1200: `pmat work cot derive` emits hollow obligations (empty statement/hypothesis for v5.0 contract.json steps; CB-1658 passes the hollow file) — fix upstr'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-06T14:10:00Z
+  updated: 2026-09-06T14:10:00Z
+  spec: null
+  acceptance_criteria:
+  - 'see issue #3015 (A + mutation)'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - pp-066
+  notes: null

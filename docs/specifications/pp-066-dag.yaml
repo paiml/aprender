@@ -2641,7 +2641,7 @@ rows:
   quorum: none (upstream)
   spec: driver R4 / PHASE 4 of 2026-09-06
   gh_issue: 3015
-  pmat_id: null
+  pmat_id: PMAT-1069
   status: open
   notes: 'expiry = C0-3 (09-19) - 6 d per the driver; polled each session; sequence recorded here: pmat#1200 fix -> pmat release -> forjar pin bump (4 hosts + runner) -> pmat_bin.sh bump PR -> re-baseline
     stamped'
@@ -2668,7 +2668,7 @@ rows:
   quorum: review-only
   spec: 'DEC-D-3 (comment on #2873, 2026-09-06)'
   gh_issue: 3016
-  pmat_id: null
+  pmat_id: PMAT-1068
   status: open
   notes: 'D-3: 0.66 lanes = intel only; mini no lane; speed on perf-solo; B-* stay 0.67'
 - id: R-0b
@@ -2739,7 +2739,7 @@ rows:
   quorum: N-lane root cause (three model families recorded)
   spec: driver v4 P0 (2026-09-06); the source report path is [U] (not in-tree on 2026-09-06)
   gh_issue: 3017
-  pmat_id: null
+  pmat_id: PMAT-1065
   status: open
   notes: P0. Expiry = the earliest 09-19 row (driver v4). Threshold 0.98 is [U] until measured. Track L0 = correctness landmines found in dogfood.
 - id: G-11b
@@ -2767,7 +2767,7 @@ rows:
   quorum: review-only
   spec: driver v4 ROW DELTAS G-11b
   gh_issue: 3018
-  pmat_id: null
+  pmat_id: PMAT-1066
   status: open
   notes: expiry basis [U] (set by the ordering commit of 2026-09-06)
 - id: R-8
@@ -2794,7 +2794,7 @@ rows:
   quorum: review-only
   spec: driver v4 ROW DELTAS R-8
   gh_issue: 3019
-  pmat_id: null
+  pmat_id: PMAT-1067
   status: open
   notes: expiry basis [U] (R-5 10-09 + 6 d + 1)
 amendments:
