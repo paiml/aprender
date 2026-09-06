@@ -29,7 +29,30 @@ concurrency:
 
 jobs:
   ci:
-    uses: paiml/.github/.github/workflows/sovereign-ci.yml@main
+    # Pinned to a commit sha, not @main (PMAT-976, C0-2, #2891, CB-2100/CB-2101
+    # supply-chain provenance). @main is a moving target: whatever paiml/.github
+    # merges next runs on this repo's next push with no review here. A sha is
+    # immutable, matches the content diffed against @main at pin time (identical
+    # at 4453399ee3794714800ff8db316ea7e1d3705a00 on 2026-09-06), and gives a
+    # reviewable diff on every re-pin.
+    #
+    # This alone does NOT make CB-2100 (`pmat comply check`) read the callee's
+    # steps: `paiml/.github/.../sovereign-ci.yml@<anything>` is an external
+    # `uses:` reference (not `./...`), and pmat's gate-effect analyzer
+    # (services/gate_effect/resolve.rs::local_reusable_path, pmat 3.39.0)
+    # treats every such reference — branch, tag, or sha alike — as `Opaque`:
+    # unreadable, never "readable". Verified directly against the source (not
+    # inferred from behavior). Closing CB-2100 needs one of: (a) paiml/.github
+    # starts emitting a manifest pmat can read through an opaque `uses:`, which
+    # requires a matching read-path in pmat itself (neither exists in 3.39.0 —
+    # both are out of aprender's scope), or (b) a required, LOCAL job in this
+    # repo runs `pmat comply check`/`comply status` unsuppressed. (b) is
+    # possible today but not yet landable: a bare, unfiltered run currently
+    # fails on CB-040, CB-081, CB-400, CB-1305, CB-1308 and CB-1650 — six
+    # checks with no owning ticket in the PP-066 DAG — so wiring it into a
+    # required context would red every PR's merge on unrelated, untracked
+    # debt. See #2891 for the finding and the follow-up this blocks on.
+    uses: paiml/.github/.github/workflows/sovereign-ci.yml@4453399ee3794714800ff8db316ea7e1d3705a00
     with:
       repo: ${{ github.event.repository.name }}
       # Phase 3 pilot (heavy workload) — build-performance.md §7 Phase 3.
@@ -1583,6 +1606,13 @@ jobs:
         run: bash scripts/check_test_fixture_paths.sh
       - name: Fixture-path guard case table
         run: bash scripts/check_test_fixture_paths.sh --self-test
+      # PMAT-976 (C0-2, #2891, epic #2873): the sovereign-ci.yml reusable
+      # workflow ci.yml calls must be pinned to a commit sha, never a branch.
+      # Text-only, no build.
+      - name: sovereign-ci.yml pin guard case table
+        run: bash scripts/check_ci_reusable_workflow_pinned.sh --self-test
+      - name: ci.yml must pin sovereign-ci.yml by commit sha, not @main
+        run: bash scripts/check_ci_reusable_workflow_pinned.sh
       - name: "target-watch: after-last-cargo-step"
         # aprender#2822 boundary probe (2 stat, 1 readdir, 1 df, 1 pgrep).
         # Instrumentation, never a gate: the script always exits 0.
