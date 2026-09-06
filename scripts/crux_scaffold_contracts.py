@@ -69,7 +69,7 @@ def make_contract(story: dict) -> str:
 # Auto-scaffolded from crux-competitive-research-ux-v1.yaml (DRAFT).
 # DO NOT promote to ACTIVE until: (1) evidence collected, (2) falsification
 # body reflects competitor's canonical CLI, (3) apr surface mapped or gap
-# tracked in pmat work (see master §12).
+# tracked as a work ticket (see master §12).
 
 metadata:
   id: {sid}
@@ -82,7 +82,7 @@ metadata:
   - crux-competitive-research-ux-v1
   category: "{category} — {cat_name}"
   competitor: {competitor}
-  demand_score: {demand}  # 1..5, {prio} priority in pmat work
+  demand_score: {demand}  # 1..5, {prio} priority as a work ticket
   intake_status: {status}
   description: >
     {title}. Root-cause workflow extracted from {competitor} UX — see master

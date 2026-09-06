@@ -18,9 +18,9 @@
 # (spec §2, never a number invented here). A missing DAG file is exit 2 — the
 # box cannot answer — never a passing DAG.
 #
-# NOT `pmat comply check --rule obligation-dag`: pmat 3.37.0 has no such
-# rule (measured 2026-09-05). This checker is the gate until a pmat ticket
-# lands the rule; the row's DAG entry says so.
+# NOT `"$PMAT" comply check --rule obligation-dag`: the analyser (3.37.0) has no
+# such rule (measured 2026-09-05). This checker is the gate until an upstream
+# ticket lands the rule; the row's DAG entry says so.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

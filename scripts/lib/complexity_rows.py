@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Turn `pmat analyze complexity --format json` output into ratchet rows.
+"""Turn `$PMAT analyze complexity --format json` output into ratchet rows.
 
-Reads one or more pmat JSON documents (named as positional arguments) and
+Reads one or more analyser JSON documents (named as positional arguments) and
 writes one line per Rust function that is over EITHER threshold:
 
     <path>::<function> <cyclomatic> <cognitive>
@@ -78,7 +78,7 @@ def _record(worst, key, cyclomatic, cognitive):
 
 
 def _scan(doc, max_cyclomatic, max_cognitive, worst):
-    """Fold one pmat document into `worst`; return (files, functions) seen."""
+    """Fold one analyser document into `worst`; return (files, functions) seen."""
     functions = 0
     for entry in doc.get("files") or []:
         functions += len(entry.get("functions") or [])
@@ -101,7 +101,7 @@ def main(paths):
     # it is a hard failure rather than an empty report.
     if not paths:
         sys.stderr.write(
-            "complexity_rows.py: no pmat JSON document given. An empty scan is "
+            "complexity_rows.py: no analyser JSON document given. An empty scan is "
             "not a clean scan.\n"
         )
         return 2

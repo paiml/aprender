@@ -11,7 +11,7 @@
 # check_baseline_ratchets.sh, so an APPEND IS REFUSED — a new
 # completed claim cannot be laundered in the commit that makes it.
 #
-# Keyed by <file><TAB><entry id>, never by line number: pmat reflows
+# Keyed by <file><TAB><entry id>, never by line number: the roadmap tool reflows
 # these files (13516 -> 12804 lines in one unrelated edit) and a
 # line-keyed baseline would be invalidated wholesale.
 #

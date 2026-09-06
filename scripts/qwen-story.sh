@@ -34,7 +34,7 @@ set -uo pipefail
 . "$(dirname "${BASH_SOURCE[0]}")/apr_bin.sh" || exit 1
 
 MODELS_DIR="${MODELS_DIR:-$HOME/models}"
-PMAT_HUNT="${PMAT_HUNT:-1}"  # 1 = run pmat full audit per beat
+PMAT_HUNT="${PMAT_HUNT:-1}"  # 1 = run the analyser's full audit per beat
 TMPDIR_STORY="${TMPDIR_STORY:-/tmp/qwen-story-$$}"
 mkdir -p "$TMPDIR_STORY"
 trap '[ -n "$TMPDIR_STORY" ] && [ "$TMPDIR_STORY" != "/" ] && rm -rf "$TMPDIR_STORY" 2>/dev/null; pkill -P $$ 2>/dev/null || true' EXIT
@@ -95,7 +95,7 @@ emit_evidence() {
 }
 
 # pmat_rows / pmat_hunt live in a sourceable library so the manifest can be
-# driven directly against a stubbed pmat - see scripts/check_story_pmat_hunt.sh.
+# driven directly against a stubbed analyser - see scripts/check_story_pmat_hunt.sh.
 # They ran here for months emitting eight headers and zero rows a night (#2356);
 # the library header records all three causes and the measurements behind them.
 #

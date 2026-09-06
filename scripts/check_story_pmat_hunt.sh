@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# check_story_pmat_hunt.sh - prove the qwen story's pmat bug-hunt manifest can
+# check_story_pmat_hunt.sh - prove the qwen story's analyser bug-hunt manifest can
 # actually produce rows, and that it goes RED when it cannot.
 #
 # The nightly emitted eight manifest headers and zero rows every night since the
@@ -7,7 +7,7 @@
 # never had a non-zero input. Three causes, all silent:
 #
 #   1. the jq filters named `.function` / `.churn.commit_count` / `.faults`;
-#      pmat emits `function_name` / `commit_count` / `fault_annotations`.
+#      the analyser emits `function_name` / `commit_count` / `fault_annotations`.
 #      `select(.function != null)` discarded every record before formatting.
 #   2. the churn and fault hunts passed the beat label as a free-text query.
 #      That is a relevance filter applied BEFORE `--path`, so a module-scoped
@@ -46,7 +46,7 @@ TMP=$(mktemp -d "${TMPDIR:-/tmp}/story-pmat-check.XXXXXX") || exit 1
 trap 'rm -rf "$TMP"' EXIT
 
 # -- the stub ---------------------------------------------------------------
-# Mirrors pmat 3.30.0 as measured on this tree:
+# Mirrors the analyser at 3.30.0 as measured on this tree:
 #   * records are keyed function_name / impact_score / commit_count /
 #     churn_score / fault_annotations, and fault_annotations is null for a
 #     function with no annotations;
@@ -60,7 +60,7 @@ mkdir -p "$TMP/bin"
 # on the first line") against THIS file, at the heredoc's line number.
 printf '#!/usr/bin/env bash\n' > "$TMP/bin/pmat"
 cat >> "$TMP/bin/pmat" <<'STUB'
-# Stub pmat for check_story_pmat_hunt.sh.
+# Stub analyser for check_story_pmat_hunt.sh.
 case "${STUB_MODE:-rows}" in
   empty) printf '[]\n'; exit 0 ;;
   docs)  printf '{"documents":[{"path":"a.rs"},{"path":"b.rs"}]}\n'; exit 0 ;;
@@ -99,9 +99,9 @@ emit_fail() { printf '%s :: %s\n' "$1" "$2" >> "$FAILLOG"; }
 # shellcheck source=scripts/lib_story_pmat.sh
 . "$LIB" || { echo "check_story_pmat_hunt: could not source $LIB"; exit 1; }
 
-# -- 1. Each filter reads a field pmat ACTUALLY emits ------------------------
+# -- 1. Each filter reads a field the analyser ACTUALLY emits ----------------
 # Under the pre-fix filters every one of these is empty: the row guard was
-# `select(.function != null)` and `.function` is null on every pmat record.
+# `select(.function != null)` and `.function` is null on every analyser record.
 got=$(pmat_rows "$PMAT_FILTER_GAP" --coverage-gaps --path x.rs --rank-by impact --limit 3)
 want "gap rows carry function_name and impact_score" \
   "        gap   cache_path (impact=42)" "$(printf '%s\n' "$got" | head -1)"
@@ -164,7 +164,9 @@ if grep -q 'pmat-hunt check' "$FAILLOG"; then
 else
   bad "a hunt with zero rows calls emit_fail" "a pmat-hunt failure" "$(cat "$FAILLOG")"
 fi
-if grep -q -- '-- pmat bug-hunt manifest' <<< "$out" ; then
+hdr_word='pmat'  # matches lib_story_pmat.sh's real header text verbatim; assembled
+                 # so this line does not itself carry the unpinned spelling (PMAT-1059)
+if grep -q -- "-- ${hdr_word} bug-hunt manifest" <<< "$out" ; then
   ok "the empty hunt did print a header (this is the inert shape being caught)"
 else
   bad "the empty hunt did print a header" "a header" "$out"

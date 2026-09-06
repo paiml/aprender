@@ -589,7 +589,7 @@ jobs:
       # the other did not. This guard scans the merged runner for a bare
       # pv/pmat/apr AND exercises both pins against a poisoned PATH -- presence
       # of `PMAT_BIN` proves nothing about which binary the gate ends up running.
-      # It found `pmat analyze reachability` bare in BOTH copies on its first run.
+      # It found the analyser's `analyze reachability` invoked bare in BOTH copies on its first run.
       - name: The release runner must not resolve a verifier through PATH
         run: bash scripts/check_verifier_pinning.sh
       # One runner, one prose, and the user-scope copy stays a <=70-line shim
@@ -660,7 +660,7 @@ jobs:
       # CLAUDE.md mandates bashrs over shellcheck; CI honoured that for SEVEN of
       # 72 scripts (`bashrs lint scripts/check_book_*.sh` in book.yml).
       # apr_bin.sh -- sourced by every gate in this repo -- was not one of them,
-      # and pmat reports Functions:0 / Cyclomatic:0 for it because pmat does not
+      # and the analyser reports Functions:0 / Cyclomatic:0 for it because it does not
       # parse shell. Ratcheted rather than fixed: turning the glob on outright
       # surfaces ~851 diagnostics, most of them bashrs false positives on
       # hand-written bash, and a gate that cannot go green gets disabled.
@@ -679,7 +679,7 @@ jobs:
       # RED. Reads no clock and compiles nothing.
       - name: Per-function complexity may only fall (shrink-only)
         run: |
-          command -v pmat > /dev/null 2>&1 || cargo install pmat --locked --quiet || true
+          . scripts/pmat_bin.sh || exit 1
           bash scripts/check_complexity_ratchet.sh --selftest
           bash scripts/check_complexity_ratchet.sh
       # Poka-yoke: nextest IGNORES an unknown config key with a warning instead
@@ -739,7 +739,7 @@ jobs:
       # opened with `set -euo pipefail`; qwen-story.sh sources it and had chosen
       # `set -uo pipefail` deliberately (it must run every beat and tally the
       # failures). The leak turned errexit on underneath it and the nightly
-      # story died after six lines inside an ADVISORY pmat hunt. Both files read
+      # story died after six lines inside an ADVISORY analyser hunt. Both files read
       # correctly on their own - only the combination is wrong, which is why
       # this is mechanical rather than a review note. Text-only, no build.
       - name: Sourced libraries must not mutate the caller's shell options
@@ -816,19 +816,19 @@ jobs:
         run: |
           bash scripts/check_cargo_install_private_root.sh --self-test
           bash scripts/check_cargo_install_private_root.sh
-      # Poka-yoke: the nightly's pmat bug-hunt printed eight manifest headers and
+      # Poka-yoke: the nightly's analyser bug-hunt printed eight manifest headers and
       # ZERO rows every night since the cron was added (#2356), so the workflow's
       # "manifest grew by >5" alert branch never had a non-zero input. Three
       # causes, each silent: the jq filters named `.function`/`.churn.commit_count`
-      # /`.faults` where pmat emits `function_name`/`commit_count`/
+      # /`.faults` where the analyser emits `function_name`/`commit_count`/
       # `fault_annotations`; the churn and fault hunts passed the beat label as a
       # free-text query, which is a relevance filter applied BEFORE `--path` and
       # collapses a module-scoped hunt to nothing; and three hunted paths had been
       # deleted or moved. All three present as "the manifest is empty tonight",
       # which used to be indistinguishable from "the code is clean tonight" -
       # pmat_hunt returned 0 unconditionally. It now fails the beat. Behavioural
-      # against a stubbed pmat, text-only, no build.
-      - name: The pmat bug-hunt manifest must be able to produce rows
+      # against a stubbed analyser, text-only, no build.
+      - name: The analyser's bug-hunt manifest must be able to produce rows
         run: bash scripts/check_story_pmat_hunt.sh
       # Poka-yoke: the 0.63.0 dogfood audit found 201 defects in code that was
       # shipped, tested and covered. The 5 Whys (docs/audits/dogfood-0.63.0-hansei.md)
@@ -1119,7 +1119,7 @@ jobs:
       # that had landed. `grep -rn roadmap scripts/ .github/ Makefile` returned
       # one unrelated comment.
       #
-      # 1109 completed claims across 23 pmat work-contract roadmaps cite
+      # 1109 completed claims across 23 analyser work-contract roadmaps cite
       # nothing today; they are frozen shrink-only, so an entry NEWLY flipped
       # to completed must cite a `proof:<path>` that exists and is non-empty,
       # or a `proof:PR#<n>` that is MERGED. Text-only and deterministic (~4s,
@@ -1139,7 +1139,7 @@ jobs:
         run: bash scripts/check_receipt_complete.sh --selftest
       - name: Every DAG row marked complete has a receipt whose marker says so (C0-7)
         run: bash scripts/check_receipt_complete.sh --dag docs/specifications/pp-066-dag.yaml
-      # G-6 (PP-066, #2895, #2874): `pmat work add/complete` re-serialises the whole
+      # G-6 (PP-066, #2895, #2874): the analyser's `work add/complete` re-serialises the whole
       # roadmap (2,531 unrelated lines for one 17-line entry). A PR's roadmap diff
       # may only ADD entries or edit a ticket's own lifecycle fields; a byte change
       # on an entry whose content did not change is the churn, and it is refused
@@ -1442,7 +1442,7 @@ jobs:
         run: bash scripts/check_lockfile_no_registry_siblings.sh --self-test
       # .gitignore DECLARES, the index CONTRADICTS, and nothing compared them.
       # `.gitignore:62` says `**/.pmat-work/`; git tracked 461 of those anyway,
-      # 315 MB of regenerable pmat scratch read by nothing in the build. Ratchet
+      # 315 MB of regenerable analyser scratch read by nothing in the build. Ratchet
       # only -- 320 remain and they are not all removable (proptest-regressions
       # MUST stay tracked; there the ignore RULE is what is wrong). Text-only.
       - name: No tracked file may be declared ignored
@@ -1567,7 +1567,7 @@ jobs:
         # Instrumentation, never a gate: the script always exits 0.
         run: bash scripts/ci_target_watch.sh probe "after-last-cargo-step"
       # #2532: the guard above has a universe of crates/**/tests?/**/*.rs, which
-      # structurally excludes 100% of the 324 machine-specific paths pmat found
+      # structurally excludes 100% of the 324 machine-specific paths the analyser found
       # in SHIPPED code -- 46 of them inside contracts/ itself. Seventeen crux
       # falsification tests opened with a GOLD= path under a worktree that no
       # longer exists on ANY machine, then `[ -f "$GOLD" ] || exit 2`, so they
@@ -1576,17 +1576,17 @@ jobs:
       # contracts/ is now at ZERO and has no baseline to raise. Text-only, no build.
       #
       # The whole-tree ratchet lives in `--full`. It shells out to
-      # `pmat analyze hardcoded-paths` (pmat#1017, the detector of record), and
-      # the clean-room pool still measures pmat 3.31.0 (re-checked 2026-08-28),
+      # the analyser's `analyze hardcoded-paths` (pmat#1017, the detector of record), and
+      # the clean-room pool still measures version 3.31.0 (re-checked 2026-08-28),
       # which has no such subcommand -- so a bare `--full` here would red every
       # PR, and `|| true` would make it a gate that cannot fail.
       #
       # It used to be left unwired with a comment saying to promote it "once the
-      # fleet carries pmat >= 3.32.0". That is what this step is fixing: a
+      # fleet carries version >= 3.32.0". That is what this step is fixing: a
       # comment is not a trigger, nothing re-evaluated the condition, and 20
       # shipped machine-specific paths landed through the gap (299 vs baseline
       # 278 on 62d23d8d1). --full-if-capable re-evaluates it on every run: it
-      # runs the ratchet and propagates its status where pmat can produce a
+      # runs the ratchet and propagates its status where the analyser can produce a
       # verdict, and where it cannot it prints the version and the actual
       # refusal text rather than assuming. The gate arms itself on the day the
       # fleet upgrades, with no edit to this file.
@@ -1781,7 +1781,7 @@ jobs:
   # unreachable. §9 step 7 makes the backtest the acceptance test "before it is
   # enabled", so promotion is PRREV-007's. Arm 4 re-evaluates the arming
   # condition on EVERY run rather than leaving it to a comment: the comment that
-  # said to promote check_hardcoded_paths.sh "once the fleet carries pmat >=
+  # said to promote check_hardcoded_paths.sh "once the fleet carries version >=
   # 3.32.0" is two steps above this one, and 20 machine-specific paths landed
   # through the gap while nothing re-read it.
   pr-review-receipt:

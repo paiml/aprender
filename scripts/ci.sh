@@ -79,15 +79,14 @@ else
     echo "⚠️  cargo-llvm-cov not installed, skipping coverage"
 fi
 
-# Step 7: TDG Score (optional, requires pmat)
+# Step 7: TDG Score under the pinned analyser (scripts/pmat_bin.sh, PMAT-1059).
+# Absence of the pin is a failure, never a skip: a step that cannot measure must not pass.
 echo "📈 [7/7] TDG Score analysis..."
-if command -v pmat &> /dev/null; then
-    TDG_OUTPUT=$(pmat tdg 2>&1)
-    echo "$TDG_OUTPUT"
-    echo "✅ TDG analysis complete"
-else
-    echo "⚠️  pmat not installed, skipping TDG analysis"
-fi
+# shellcheck source=scripts/pmat_bin.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/scripts/pmat_bin.sh" || { echo "❌ no analyser at the pin (scripts/pmat_bin.sh)"; exit 1; }
+TDG_OUTPUT=$("$PMAT" tdg 2>&1)
+echo "$TDG_OUTPUT"
+echo "✅ TDG analysis complete"
 
 echo ""
 echo "🎉 CI/CD Pipeline Complete!"

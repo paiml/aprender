@@ -21,7 +21,7 @@ name: Binary Release
 # smaller and match typical Linux distributions. aarch64 builds use
 # `cross`. Strip uses the matching ${triple}-strip per target — the
 # musl cross image lacks gnu-strip and vice-versa (lessons from
-# pmat v3.16.0 first-run failure on aarch64-musl).
+# the analyser's v3.16.0 first-run failure on aarch64-musl).
 
 on:
   release:

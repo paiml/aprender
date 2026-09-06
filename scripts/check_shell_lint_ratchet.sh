@@ -15,7 +15,7 @@
 # it. Neither did anything else:
 #
 #   * `make lint-scripts` exists, but tier3 is not run in CI.
-#   * pmat DOES accept the file and reports
+#   * the analyser DOES accept the file and reports
 #       Functions: 0, Max Cyclomatic: 0
 #     for 227 lines holding 4 functions and heavy branching. It does not parse
 #     shell. That is worse than no coverage, because it looks like a pass —

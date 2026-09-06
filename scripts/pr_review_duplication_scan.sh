@@ -4,7 +4,7 @@
 # WHY THIS EXISTS
 #
 # S3.A calls duplication_hits "the highest-EV field in the receipt" and prescribes
-# `pmat query` as its mechanism. PRREV-007's backtest measured what that mechanism can
+# `$PMAT query` as its mechanism. PRREV-007's backtest measured what that mechanism can
 # see, and the answer is: less than half of the diff it was designed for.
 #
 #   (a) pmat's semantic index is Rust-only. 10,247 tracked .rs files; 10,317 files
@@ -25,7 +25,7 @@
 #       the prior art. Measured: one git grep over that region costs 1 s against 20 s for
 #       the 774-branch sweep, and it returns test_llm_band.rs.
 #
-# So this script does the crude thing pmat cannot: a LEXICAL sweep for the diff's new
+# So this script does the crude thing the analyser cannot: a LEXICAL sweep for the diff's new
 # symbol and file names, over every text file regardless of language, over the unmerged
 # sibling branches as well as HEAD, and over merge-base..origin/main.
 #
@@ -62,7 +62,7 @@
 #     --horizon-since DAYS  with --horizon since        (default: 30)
 #     --max-branches N      cap the sweep, 0 = no cap   (default: 0)
 #     --rust-semantic       record rust coverage as `semantic`; pass this ONLY when the
-#                           caller actually ran the S3.A `pmat query` pass. Without it
+#                           caller actually ran the S3.A `$PMAT query` pass. Without it
 #                           rust is recorded `lexical`, which is the truth of this
 #                           script on its own.
 #     --json OUT            write the JSON block here   (default: stdout)
@@ -270,7 +270,7 @@ N_NEEDLE=$(awk 'END { print NR + 0 }' "$TMP/needles.txt")
 # ---------------------------------------------------------------------------
 # 2. The HEAD sweep: every text file, every language, minus this diff's own files.
 #
-# This is the half pmat cannot do. `git grep -I -n -w -F` is exact-name, word-boundary
+# This is the half the analyser cannot do. `git grep -I -n -w -F` is exact-name, word-boundary
 # and language-blind, which is the whole point: shell, python, yaml and markdown are as
 # searchable as Rust.
 #

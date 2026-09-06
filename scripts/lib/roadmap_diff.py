@@ -3,7 +3,7 @@
 
 WHY THIS EXISTS
 ---------------
-`pmat work add` (and `pmat work complete`) re-serialise ALL of
+`$PMAT work add` (and `$PMAT work complete`) re-serialise ALL of
 docs/roadmaps/roadmap.yaml on every call, not just the entry that changed. One
 17-line ticket arrived with 2,531 unrelated lines rewritten: long strings were
 re-folded onto one line, and `phases: []` / `subtasks: []` /
@@ -25,10 +25,10 @@ scripts/check_roadmap_diff_additive.sh drives.
 
 ENTRY MODEL
 -----------
-`docs/roadmaps/roadmap.yaml` is a pmat work-contract file: a `roadmap:` key
+`docs/roadmaps/roadmap.yaml` is a work-contract file: a `roadmap:` key
 holding a YAML sequence, each item beginning at column 0 with `- id: <ID>`.
 Entries are split at that exact byte offset — BYTE-EXACT blocks, not
-re-serialised — so an unrelated entry that pmat did not touch compares equal
+re-serialised — so an unrelated entry that the tool did not touch compares equal
 byte-for-byte and never needs YAML at all. Only entries that DO differ in
 bytes are parsed, to decide whether the difference is content or noise.
 
@@ -75,7 +75,7 @@ LIFECYCLE_KEYS = {
     "priority",
 }
 
-# Keys `pmat work add` materialises onto every entry even when the entry never
+# Keys `$PMAT work add` materialises onto every entry even when the entry never
 # carried them. Absent and present-with-this-default are the SAME content.
 NORMALIZE_DEFAULTS = {
     "phases": [],

@@ -144,8 +144,8 @@ self_test() {
 
     # is_install MUST match
     probe is_install 0 '          cargo install cargo-llvm-cov --locked'
-    probe is_install 0 '        run: cargo install pmat --locked'
-    probe is_install 0 '  command -v pmat >/dev/null 2>&1 || cargo install pmat --locked || true'
+    probe is_install 0 '        run: cargo install sometool --locked'
+    probe is_install 0 '  command -v sometool >/dev/null 2>&1 || cargo install sometool --locked || true'
     probe is_install 0 '            cargo install cargo-mutants --locked'
     probe is_install 0 '          cargo install --path crates/apr-cli --force'
     # is_install MUST NOT match
@@ -157,9 +157,9 @@ self_test() {
 
     # has_explicit_root
     probe has_explicit_root 0 'cargo install cargo-llvm-cov --locked --root "$COV_TOOLS"'
-    probe has_explicit_root 0 'cargo install pmat --root=/tmp/x'
-    probe has_explicit_root 1 'cargo install pmat --locked'
-    probe has_explicit_root 1 'cargo install pmat --rooted'
+    probe has_explicit_root 0 'cargo install sometool --root=/tmp/x'
+    probe has_explicit_root 1 'cargo install sometool --locked'
+    probe has_explicit_root 1 'cargo install sometool --rooted'
 
     # declares_private_root
     probe declares_private_root 0 '      CARGO_HOME: /tmp/cargo-home-security-intel-clean-room-14'

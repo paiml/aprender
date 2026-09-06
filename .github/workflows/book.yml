@@ -105,21 +105,21 @@ jobs:
       - name: Library example-block gate (FALSIFY-BOOK-LIB-EXAMPLE-001)
         run: bash scripts/check_book_lib_example_block.sh
 
-      # BOOK-CLOSEOUT-001 § Phase 4: pmat comply gates all book contracts together
+      # BOOK-CLOSEOUT-001 § Phase 4: comply gate (pinned analyser) gates all book contracts together
       # (single check that asserts is_compliant=true; ties the linkcheck +
       # parity + example gates into one contract surface)
-      - name: pmat comply gate (FALSIFY-BOOK-COMPLY-001)
+      - name: comply gate (pinned analyser) (FALSIFY-BOOK-COMPLY-001)
         run: |
-          # Install pmat if not present (most CI runners have it cached)
-          if ! command -v pmat >/dev/null 2>&1; then
-            cargo install pmat --locked --quiet || true
-          fi
+          # Install the analyser at the pin (scripts/pmat_bin.sh, PMAT-1059/G-10, #2999).
+          PIN=$(sed -nE 's/^PMAT_PIN="([0-9.]+)"$/\1/p' scripts/pmat_bin.sh)
+          cargo install --version "$PIN" --locked --root "$HOME/.local/pmat/$PIN" pmat
+          . scripts/pmat_bin.sh || exit 1
           # Validate the book-completeness contract via pv.
           #
           # This line used to call a bare `pv` and exited 127 (command not found)
           # the first time the step ever ran: every earlier run died at the parity
           # gate above, so nothing reached it. Note the shape of the bug — the step
-          # guards `pmat` with `command -v` and a comment saying it "tolerates
+          # guarded the analyser with `command -v` and a comment saying it "tolerates
           # absence", then invokes `pv` unguarded one line earlier, in a step whose
           # entire purpose is running pv.
           #
@@ -129,12 +129,8 @@ jobs:
           # it is validating.
           cargo run --quiet -p aprender-contracts-cli --bin pv -- \
             validate contracts/apr-book-completeness-v1.yaml
-          # pmat comply check — single binary signal; tolerates absence (pmat may not be available on every runner)
-          if command -v pmat >/dev/null 2>&1; then
-            pmat comply check 2>&1 | tail -10 || echo "::warning::pmat comply check returned non-zero (advisory)"
-          else
-            echo "::warning::pmat not available — skipping comply gate (advisory)"
-          fi
+          # comply check via the pinned analyser (resolved by scripts/pmat_bin.sh above)
+          "$PMAT" comply check 2>&1 | tail -10 || echo "::warning::comply check returned non-zero (advisory)"
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v5

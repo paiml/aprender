@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Bulk-create pmat work tickets for every CRUX story with status == "missing".
+# Bulk-create work tickets (via the pinned analyser, scripts/pmat_bin.sh) for
+# every CRUX story with status == "missing".
 # Idempotent via tag-based existence check (tag: crux-{id_lower}).
 #
 # Usage:
@@ -9,12 +10,9 @@
 
 set -euo pipefail
 
-DRY_RUN=0
-if [[ "${1:-}" == "--dry-run" ]]; then
-  DRY_RUN=1
-fi
-
+# shellcheck source=scripts/pmat_bin.sh
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+. "$ROOT/scripts/pmat_bin.sh" || exit 1
 MASTER="$ROOT/contracts/crux-competitive-research-ux-v1.yaml"
 
 if ! command -v yq >/dev/null 2>&1; then
@@ -22,15 +20,15 @@ if ! command -v yq >/dev/null 2>&1; then
   exit 1
 fi
 
-if ! command -v pmat >/dev/null 2>&1; then
-  echo "pmat not installed — aborting" >&2
-  exit 1
+DRY_RUN=0
+if [[ "${1:-}" == "--dry-run" ]]; then
+  DRY_RUN=1
 fi
 
 # Cache current ticket list once for O(1) idempotence checks.
 EXISTING_LIST=$(mktemp)
 trap 'rm -f "$EXISTING_LIST"' EXIT
-pmat work list 2>/dev/null > "$EXISTING_LIST" || true
+"$PMAT" work list 2>/dev/null > "$EXISTING_LIST" || true
 
 # Extract missing stories: id	title	demand	competitor
 rows=$(yq -o json '.stories' "$MASTER" | python3 "$ROOT/scripts/crux_missing_stories.py")
@@ -57,16 +55,16 @@ while IFS=$'\t' read -r id title score competitor; do
   desc="Contract: contracts/crux-${id#CRUX-}-v1.yaml | Competitor: ${competitor} | Demand: ${score}/5 | Parent: crux-competitive-research-ux-v1"
 
   # Idempotence: skip if a ticket titled "CRUX gap: <id> —" already exists.
-  # pmat work list has no tag filter; grep the full list (cached once below).
+  # `$PMAT work list` has no tag filter; grep the full list (cached once below).
   if grep -qF "CRUX gap: $id " "$EXISTING_LIST"; then
     skipped=$((skipped + 1))
     continue
   fi
 
   if [[ "$DRY_RUN" == "1" ]]; then
-    echo "[DRY] pmat work add 'CRUX gap: $id — $title' -p $prio -t '$tags'"
+    echo "[DRY] \$PMAT work add 'CRUX gap: $id — $title' -p $prio -t '$tags'"
   else
-    pmat work add "CRUX gap: $id — $title" \
+    "$PMAT" work add "CRUX gap: $id — $title" \
       -d "$desc" \
       -p "$prio" \
       -t "$tags" >/dev/null

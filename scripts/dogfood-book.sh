@@ -8,7 +8,7 @@
 # Per CLAUDE.md:
 # - Use bashrs (not shellcheck) for shell quality
 # - Use pv (not bash) for contract validation
-# - Use pmat comply for cross-contract gating
+# - Use the analyser's `comply` gate (via scripts/pmat_bin.sh) for cross-contract gating
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
