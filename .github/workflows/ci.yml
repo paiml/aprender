@@ -1149,6 +1149,8 @@ jobs:
         run: bash scripts/check_receipt_complete.sh --selftest
       - name: Every DAG row marked complete has a receipt whose marker says so (C0-7)
         run: bash scripts/check_receipt_complete.sh --dag docs/specifications/pp-066-dag.yaml
+      - name: "parity_block.py refusals: a zero or empty COMPARATOR band is a named refusal, never a traceback (I-24, #2735) — case table both polarities"
+        run: bash scripts/check_parity_block_refusals.sh --selftest
       # G-6 (PP-066, #2895, #2874): `pmat work add/complete` re-serialises the whole
       # roadmap (2,531 unrelated lines for one 17-line entry). A PR's roadmap diff
       # may only ADD entries or edit a ticket's own lifecycle fields; a byte change
