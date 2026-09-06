@@ -3,7 +3,7 @@ metadata:
   created: '2026-08-22'
   author: PAIML Engineering
   references:
-  - 'docs/audits/surface_audit.csv — 142 of 830 features gated, across 28 binaries and 14 clusters, measured 2026-08-22 @ 4bbfeb07f; 142 of 832 features gated after the PERF-046 partial re-audit (PR #2742); 143 of 833 features gated after the PP-LLAMA-001 re-audit (GET /v1/effective-config added and swept by the dogfood route enumeration, router.rs rows re-pointed)'
+  - 'docs/audits/surface_audit.csv — 142 of 830 features gated, across 28 binaries and 14 clusters, measured 2026-08-22 @ 4bbfeb07f; 142 of 832 features gated after the PERF-046 partial re-audit (PR #2742); 143 of 833 features gated after the PP-LLAMA-001 re-audit (GET /v1/effective-config added and swept by the dogfood route enumeration, router.rs rows re-pointed); 144 of 834 features gated after the PP-066 R-0a re-audit (PR #3004: `apr devices` added -- swept by the dogfood SUBCOMMAND enumeration, proven against a binary built from the head -- and the 64 extended_commands.rs / dispatch_analysis.rs citations re-pointed through an exact old->new line map)'
   - 'docs/audits/surface_audit_elbow.png — k-selection evidence: inertia knee and silhouette over k in [2,45]'
   - 'scripts/dogfood_cluster.py — the k-sweep that produced the elbow plot (k-selection ONLY; it does not write the columns)'
   - 'scripts/check_no_cluster_id_keys.sh — T1 enforcement: nothing may key on `cluster_id`'
@@ -55,15 +55,15 @@ metadata:
 
     overall:
       command: "python3 scripts/dogfood_baseline.py  # section: totals"
-      rows: 833
-      covered: 143
-      ratio: 0.1717            # 143/833 -- 17.2%, NOT "about 17%"
+      rows: 834
+      covered: 144
+      ratio: 0.1727            # 144/834 -- 17.3%, NOT "about 17%"
       binaries: 28
       binaries_at_zero_coverage: 27
       clusters: 14
       clusters_at_zero_coverage: 9
       note: >
-        All 142 covered features are in `apr`. 27 of 28 binaries have no gate at
+        All 144 covered features are in `apr`. 27 of 28 binaries have no gate at
         all, including aprender-orchestrate (184 features), aprender-test-cli (39)
         and pv (38).
 
@@ -272,7 +272,7 @@ equations:
     codomain: bool
     invariants:
     - "T2. Cluster coverage is a PROXY: one gate in a 95-member cluster is 1%, not covered"
-    - "5/14 clusters (35.7%) and 143/833 features (17.2%) are reported together, always"
+    - "5/14 clusters (35.7%) and 144/834 features (17.3%) are reported together, always"
     - "Enforced mechanically by enforce_pairing(); deleting the feature fraction from the emitter turns the gate RED"
     - "This is the single most important trap: reporting the proxy alone is how a coverage gate becomes theatre while looking stricter"
 
@@ -661,7 +661,7 @@ falsification_tests:
     Every emitted line stating a CLUSTER-level ratio also states the underlying
     FEATURE-level ratio, on EVERY channel one can be emitted through: this gate's
     report, the receipt, scripts/dogfood_baseline.py and
-    .claude/skills/apr-dogfood/SKILL.md. 5 of 14 clusters (35.7%) is a proxy and 143 of 833 features (17.2%) is the thing.
+    .claude/skills/apr-dogfood/SKILL.md. 5 of 14 clusters (35.7%) is a proxy and 144 of 834 features (17.3%) is the thing.
     One gate in a 95-member cluster is
     1%. The rule keys on the NUMBER -- a denominator equal to the cluster count
     -- not on a phrase, because a phrase can be reworded and a denominator cannot;
