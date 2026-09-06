@@ -1,0 +1,101 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# apr-devices-schema-v1 — the JSON document `apr devices --json` prints has ONE
+# shape on every host, and every kind of the fixed list is a line in it
+# (PP-066 DAG row R-0 / R-0a, spec §5 REG-11 + REG-12; issue #2904; PMAT-989)
+#
+# WHAT IT GOVERNS
+#   contracts/schemas/apr-devices-v1.schema.json (JSON Schema draft-07) and the
+#   documents `apr devices --json` emits — from the machine or from a fixture
+#   (`APR_REGISTRY_FIXTURE`, which the document names in `source`).
+#
+# PROOF LADDER, STATED HONESTLY (PP-066 §5 contract discipline, F-26)
+#   * L1 — the resolver exists: crates/apr-cli/tests/registry_failure_catalogue.rs
+#          validates every fixture AND this machine's live output against the
+#          schema with the `jsonschema` crate; ci.yml runs that target.
+#   * L2 — falsification MEASURED 2026-09-06: 9/9 rows on lambda; the defective
+#          fixture (four entries) is refused by the schema (minItems: 5).
+#   * L3/L4 — NOT APPLICABLE and deliberately not declared: a JSON shape, not a
+#          kernel. No self-exemption flag, no hand-typed proof summary.
+# ─────────────────────────────────────────────────────────────────────────────
+name: apr-devices-schema
+version: "1.0.0"
+scope: >
+  The shape of `apr devices --json`. Out of scope: which entries are Ready on a
+  given host (that is the host's dogfood receipt), and the resolution of a
+  `--backend` request against the Ready set (R-0b, #3002).
+status: active
+
+metadata:
+  kind: pattern     # a JSON Schema over a printed document, not a math kernel.
+                    # Set EXPLICITLY so `pv validate`'s `kernel` default never
+                    # silently applies.
+  version: "1.0.0"
+  created: '2026-09-06'
+  last_modified: '2026-09-06'
+  author: PAIML Engineering
+  references:
+    - 'contracts/schemas/apr-devices-v1.schema.json — the schema (draft-07): required top-level keys, entries minItems 5, kind enum {cpu, cuda, wgpu, metal, hip}, api enum, tagged source/status/mem_kind'
+    - 'crates/aprender-compute/src/registry/mod.rs — BackendRegistry (serde Serialize/Deserialize): the ONE producer of the document'
+    - 'crates/apr-cli/src/commands/devices.rs — `apr devices [--json]`'
+    - 'crates/apr-cli/tests/registry_failure_catalogue.rs — json_output_validates_against_the_schema_on_fixtures_and_on_this_machine, schema_twin_the_defective_fixture_is_refused_by_the_schema'
+    - 'crates/apr-cli/tests/fixtures/registry/{cpu-only,one-cuda,two-vendors}.json and defective/missing-metal-line.json'
+    - 'PP-066 DAG row R-0 (docs/specifications/pp-066-dag.yaml); design quorum record docs/audits/pp-066-r0-design-quorum.md'
+  description: >
+    apr devices --json is one JSON object: schema, discovered_at_unix, source
+    ("machine" or "fixture(path)"), reserve_bytes, reserve_basis, entries (at
+    least five: one per kind of the fixed list, each Ready or Unavailable with
+    a tagged reason and a tagged source) and selected (kind, device, reason).
+    The same shape on lambda, gx10, intel and mini; a CPU-only box differs only
+    in which entries are Ready.
+
+equations:
+  one_shape_on_every_host:
+    formula: |
+      validate(apr-devices-v1.schema.json, `apr devices --json`) = ok
+      count(entries) >= 5  ∧  ∀ kind ∈ {cpu, cuda, wgpu, metal, hip}: ∃ e ∈ entries: e.kind = kind
+    domain: 'every host the release is dogfooded on, and every fixture'
+    codomain: 'bool'
+    invariants:
+    - 'ABSENCE IS A LINE (REG-11): a document with fewer than five entries does not validate — the defective fixture is the registered mutation.'
+    - 'THE SOURCE IS NAMED (REG-12): `source` is "machine" or "fixture(<path>)"; a fixture-built document is never mistaken for the machine.'
+    preconditions: []
+    postconditions:
+    - 'the catalogue passes on fixtures and on the machine it runs on'
+
+proof_obligations:
+  - id: DEV-OB-001
+    statement: "Every apr devices --json document validates against contracts/schemas/apr-devices-v1.schema.json, on fixtures and on the running machine."
+    discharged_by: falsification_tests[0]
+  - id: DEV-OB-002
+    statement: "A document that drops a kind line is refused by the schema (minItems 5)."
+    discharged_by: falsification_tests[0]
+
+falsification_tests:
+
+  - id: DEV-F-001
+    rule: one shape, five lines, the source named
+    prediction: >-
+      json_output_validates_against_the_schema_on_fixtures_and_on_this_machine
+      PASSES for cpu-only, one-cuda, two-vendors and the live machine;
+      schema_twin_the_defective_fixture_is_refused_by_the_schema PASSES (the
+      four-entry document is invalid); fx11_cpu_only_prints_all_five_kinds_and_selects_cpu_with_a_reason
+      PASSES and its twin catches the defective fixture. One run of the
+      catalogue exercises every row.
+    test: 'cargo test -p apr-cli --test registry_failure_catalogue'
+    if_fails: >-
+      the dogfood's expectation of a fixed schema is void and a missing backend
+      can vanish from the output instead of being read as a line
+    mutation: >-
+      drop `minItems: 5` from the schema; schema_twin_the_defective_fixture_is_refused_by_the_schema
+      must turn RED.
+
+non_goals:
+  - "Which backend is selected on a host (REG-8 is the registry's rule; the schema only carries the result)."
+  - "Refusing a --backend request (R-0b)."
+
+binding_registry:
+  schema: contracts/schemas/apr-devices-v1.schema.json
+  producer: crates/aprender-compute/src/registry/mod.rs
+  cli: crates/apr-cli/src/commands/devices.rs
+  ci_target: "cargo test -p apr-cli --test registry_failure_catalogue (ci.yml integration line)"
+  issue: "https://github.com/paiml/aprender/issues/2904"

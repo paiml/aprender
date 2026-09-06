@@ -1,0 +1,141 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# apr-backend-registry-v1 — the machine is discovered at startup and every
+# backend kind is an explicit entry; nothing is decided from a build flag
+# (PP-066 DAG row R-0, spec §5 "backend registry: probe → enumerate → load →
+# print → refuse", REG-1..REG-14; issue #2904; ticket PMAT-989; the resolution
+# half R-0b is #3002 / PMAT-1060 and ADDS its obligations to this file)
+#
+# WHAT IT GOVERNS
+#   trueno::registry (crates/aprender-compute/src/registry/): BackendRegistry,
+#   BackendEntry, BackendFactory, the REG-7 reserve, the REG-8 selection, the
+#   device_uid rule of the 2026-09-06 design quorum, and `apr devices`.
+#
+# PROOF LADDER, STATED HONESTLY (PP-066 §5 contract discipline, F-26)
+#   * L1 — the resolver exists: crates/aprender-compute/tests/registry_case_table.rs
+#          (hermetic, mock factories) and the apr-cli catalogue; both in ci.yml.
+#   * L2 — falsification MEASURED 2026-09-06 on lambda: 9/9 case-table rows under
+#          no features, --features gpu and --features cuda; 9/9 catalogue rows.
+#   * L3/L4 — NOT APPLICABLE and deliberately not declared. The invariants of
+#          the spec card that belong to RESOLUTION — (ii) resolved ∈ Ready,
+#          (iv) effective-config.backend == resolved, (v) no build-fact read in
+#          resolution — are R-0b's and are NOT claimed here; this file carries
+#          (i) and (iii) only, discharged below. No self-exemption flag.
+# ─────────────────────────────────────────────────────────────────────────────
+name: apr-backend-registry
+version: "1.0.0"
+scope: >
+  Discovery: probe, enumerate, print. Out of scope until R-0b (#3002): the
+  --backend/--gpu/--device refusal against the Ready set and effective-config.
+status: active
+
+metadata:
+  kind: pattern     # a discovery registry and its printed/JSON surface, not a
+                    # math kernel. Set EXPLICITLY so `pv validate`'s `kernel`
+                    # default never silently applies.
+  version: "1.0.0"
+  created: '2026-09-06'
+  last_modified: '2026-09-06'
+  author: PAIML Engineering
+  references:
+    - 'crates/aprender-compute/src/registry/mod.rs — BackendKind::ALL, BackendEntry, BackendFactory (object-safe), MockBackendFactory, BackendRegistry::{discover, discover_with, from_fixture_json, with_reserve, select_default, distinct_devices, render_block, to_json}, device_uid()'
+    - 'crates/aprender-compute/src/registry/cuda.rs — libcuda.so.1 through trueno_gpu::driver (REG-2: never cudart); DriverNotFound / NoDevice / ProbeFailed'
+    - 'crates/aprender-compute/src/registry/wgpu_probe.rs — adapters with transport; a software rasteriser is NoBackend, never a GPU'
+    - 'crates/aprender-compute/tests/registry_case_table.rs — 9 rows: cpu always Ready + every kind a line; a kind without a factory is Unavailable with a reason; REG-9; REG-4; two-API device_uid dedup; REG-7 refusal; REG-12 fixture round trip; JSON keys; refusal propagation across a device''s entries'
+    - 'crates/apr-cli/tests/registry_failure_catalogue.rs — the CLI rows on fixtures (FX-7, FX-11, REG-4/9/12, the schema) with must-RED twins'
+    - 'docs/audits/pp-066-r0-design-quorum.md — the 3/3 implement-with-changes record and the decisions folded in'
+    - 'PP-066 DAG rows R-0 and R-0b; issues #2904, #3002'
+  description: >
+    BackendRegistry::discover() runs at startup, before any engine or model is
+    touched, and returns one entry per discovered device plus one explicit
+    Unavailable(reason) entry for every kind of {cpu, cuda, wgpu, metal, hip}
+    nothing discovered; cpu is always Ready. A device reachable through two APIs
+    is two entries sharing a device_uid and one device for selection; a REG-7
+    reserve that exceeds a device's free memory refuses that device through
+    every one of its entries. The selection and its reason are printed; nothing
+    is cached or persisted between discoveries.
+
+equations:
+  invariant_i_cpu_always_ready_every_kind_a_line:
+    formula: |
+      ∃ e ∈ entries: e.kind = cpu ∧ e.status = Ready
+      ∀ kind ∈ BackendKind::ALL: ∃ e ∈ entries: e.kind = kind
+      ∀ e ∈ entries: e.source ≠ ∅ ∧ (e.status = Ready ∨ e.status = Unavailable(reason ≠ ∅))
+    domain: 'any machine, any factory set (including none)'
+    codomain: 'bool'
+    invariants:
+    - 'SPEC INVARIANT (i) — cpu ∈ Ready always (case-table row 1, on the real machine).'
+    - 'SPEC INVARIANT (iii) — every entry carries a source and, if not Ready, a non-empty reason (row 2: a kind without a factory is Unavailable(NotCompiled | NoBackend), never missing).'
+    preconditions: []
+    postconditions:
+    - 'render_block prints a `backend: <kind>` line for all five kinds and a `selected:` line (REG-8, REG-11)'
+
+  reserve_and_selection:
+    formula: |
+      e.mem_free < reserve  ⇒  e.status = Unavailable(ReserveExceedsFree{reserve, free})            (REG-7)
+      e.status = ReserveExceedsFree ∧ e'.device_uid = e.device_uid ∧ e'.mem_free = ∅  ⇒  e'.status = ReserveExceedsFree   (lane 2)
+      select_default() = first Ready non-cpu entry, else cpu with the reasons of every refused entry   (REG-8)
+      distinct_devices() = |{ device_uid : Ready non-cpu entries }|                                   (REG-9, lane 2)
+    domain: 'entries after apply_reserve'
+    codomain: 'Selection'
+    invariants:
+    - 'A REFUSAL NEVER SLIDES ONTO THE SAME CARD (row 9, found by the catalogue on the one-cuda fixture): the wgpu twin of a memory-refused cuda device is refused too, with the figure the sibling measured.'
+    - 'NOTHING PERSISTED (REG-12, row 7): a fixture round-trips through JSON and names its file in `source`; the machine registry says "machine".'
+    preconditions: []
+    postconditions:
+    - 'the printed selection names why (reason non-empty)'
+
+proof_obligations:
+  - id: REG-OB-001
+    statement: "cpu is always Ready and every kind of the fixed list is an entry; a non-Ready entry carries a non-empty reason and every entry a source (spec invariants i and iii)."
+    discharged_by: falsification_tests[0]
+  - id: REG-OB-002
+    statement: "A reserve above a device's free memory refuses that device through every entry sharing its device_uid; the selection falls to cpu with the reasons printed; two entries of one device count as one device."
+    discharged_by: falsification_tests[0]
+  - id: REG-OB-003
+    statement: "The CLI prints the block and the JSON from the machine or from a named fixture, overrides are printed, and a malformed override is refused by name (exit 4)."
+    discharged_by: falsification_tests[1]
+
+falsification_tests:
+
+  - id: REG-F-001
+    rule: discovery invariants, hermetic
+    prediction: >-
+      cpu_is_always_ready_and_every_kind_prints_a_line, a_kind_without_a_factory_is_unavailable_with_a_reason_not_missing,
+      two_devices_are_two_entries_and_the_default_is_device_zero, one_vendors_failure_does_not_touch_anothers_entry,
+      the_same_device_through_two_apis_shares_a_uid_and_counts_once, a_reserve_exceeding_free_memory_is_a_named_refusal_never_a_silent_cpu_run,
+      fixtures_round_trip_through_json_and_name_their_source, json_carries_the_schema_top_level_keys,
+      a_reserve_refusal_propagates_to_the_devices_other_api_entries: 9/9 PASS under no features, --features gpu, --features cuda.
+    test: 'cargo test -p aprender-compute --test registry_case_table'
+    if_fails: >-
+      a backend can be missing from the output instead of read as a line, or a
+      refused card is selected through its other API
+    mutation: >-
+      make missing_entry() return no entry for a kind without a factory -> rows 1 and 2 RED;
+      drop pass 2 of apply_reserve -> row 9 RED; make cpu_entry() Unavailable -> row 1 RED.
+
+  - id: REG-F-002
+    rule: the CLI surface on fixtures
+    prediction: >-
+      fx11 (five lines, cpu selected with its reason, the fixture override printed), its twin
+      (the defective fixture is caught), fx7 (ReserveExceedsFree with both numbers, override
+      printed, cpu selected naming the reserve) and its twin, reg4 (NoBackend(AMD) listed, cuda
+      selected; twins share a uid and count once), reg12 (nothing persisted), the schema pair,
+      and a malformed APR_RESERVE_BYTES = exit 4 naming the variable: 9/9 PASS.
+    test: 'cargo test -p apr-cli --test registry_failure_catalogue'
+    if_fails: >-
+      `apr devices` can print a claim the registry did not make, or hide an override
+    mutation: >-
+      print the block without the `override:` lines -> fx11 and fx7 RED; accept a malformed
+      APR_RESERVE_BYTES as the default -> a_malformed_reserve_override_is_refused_by_name RED.
+
+non_goals:
+  - "Resolution: refusing --backend/--gpu/--device requests not in the Ready set, effective-config, zero cfg! reads in decisions — R-0b (#3002) adds REG-OB-004..006 and their tests to this file."
+  - "The non-hermetic fixtures FX-2/4/5/6/8/9 (real drivers, real cards, root): host-dogfood rows recorded as receipts on the named hosts, never CI claims (design quorum 2026-09-06)."
+  - "Elementwise / structured device kernels' capabilities (caps is a name list; cuBLAS-as-capability lands with R-0b's effective-config)."
+
+binding_registry:
+  library: crates/aprender-compute/src/registry/mod.rs
+  case_table: crates/aprender-compute/tests/registry_case_table.rs
+  catalogue: crates/apr-cli/tests/registry_failure_catalogue.rs
+  ci_targets: "cargo test -p aprender-compute --test registry_case_table && cargo test -p apr-cli --test registry_failure_catalogue (ci.yml integration line)"
+  issue: "https://github.com/paiml/aprender/issues/2904"
