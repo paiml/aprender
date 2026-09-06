@@ -250,7 +250,7 @@ pub(crate) fn cublas_gemm_backward_a(
     k: u32,
     n: u32,
 ) -> Result<()> {
-    cublas
+    let result = cublas
         .gemm_f32(
             GemmOp::Trans,
             GemmOp::NoTrans,
@@ -266,7 +266,11 @@ pub(crate) fn cublas_gemm_backward_a(
             grad_a.as_ptr(),
             k as i32,
         )
-        .map_err(|e| CudaTensorError::KernelError(format!("cuBLAS GEMM backward_a failed: {e:?}")))
+        .map_err(|e| CudaTensorError::KernelError(format!("cuBLAS GEMM backward_a failed: {e:?}")));
+    if result.is_ok() {
+        crate::autograd::note_backward_kernel_launch();
+    }
+    result
 }
 
 /// cuBLAS backward A with accumulation: grad_A += grad_C @ B^T (PMAT-484)
@@ -284,7 +288,7 @@ pub(crate) fn cublas_gemm_backward_a_accumulate(
     k: u32,
     n: u32,
 ) -> Result<()> {
-    cublas
+    let result = cublas
         .gemm_f32(
             GemmOp::Trans,
             GemmOp::NoTrans,
@@ -302,7 +306,11 @@ pub(crate) fn cublas_gemm_backward_a_accumulate(
         )
         .map_err(|e| {
             CudaTensorError::KernelError(format!("cuBLAS GEMM backward_a accumulate failed: {e:?}"))
-        })
+        });
+    if result.is_ok() {
+        crate::autograd::note_backward_kernel_launch();
+    }
+    result
 }
 
 /// cuBLAS backward B: grad_B[K,N] = A[M,K]^T @ grad_C[M,N]
@@ -316,7 +324,7 @@ pub(crate) fn cublas_gemm_backward_b(
     k: u32,
     n: u32,
 ) -> Result<()> {
-    cublas
+    let result = cublas
         .gemm_f32(
             GemmOp::NoTrans,
             GemmOp::Trans,
@@ -332,7 +340,11 @@ pub(crate) fn cublas_gemm_backward_b(
             grad_b.as_ptr(),
             n as i32,
         )
-        .map_err(|e| CudaTensorError::KernelError(format!("cuBLAS GEMM backward_b failed: {e:?}")))
+        .map_err(|e| CudaTensorError::KernelError(format!("cuBLAS GEMM backward_b failed: {e:?}")));
+    if result.is_ok() {
+        crate::autograd::note_backward_kernel_launch();
+    }
+    result
 }
 
 /// Batched 4D GEMM forward pass on GPU for multi-head attention
@@ -958,7 +970,7 @@ pub fn gemm_nf4_backward_a_cublas(
 
     // grad_in[M,K] = grad_out[M,N] @ W[N,K]
     // col-major: C_cm[K,M] = W_cm[K,N] @ A_cm[N,M]
-    cublas
+    let result = cublas
         .gemm_f32(
             GemmOp::NoTrans, // W_cm[K,N] as-is
             GemmOp::NoTrans, // grad_out_cm[N,M] as-is
@@ -974,7 +986,11 @@ pub fn gemm_nf4_backward_a_cublas(
             grad_input.as_ptr(), // grad_in: row-major [M,K] = col-major [K,M], ldc=K
             k as i32,            // ldc = K
         )
-        .map_err(|e| CudaTensorError::KernelError(format!("cuBLAS NF4 backward_a failed: {e:?}")))
+        .map_err(|e| CudaTensorError::KernelError(format!("cuBLAS NF4 backward_a failed: {e:?}")));
+    if result.is_ok() {
+        crate::autograd::note_backward_kernel_launch();
+    }
+    result
 }
 
 /// NF4 transposed GEMM for backward pass (ENT-153: QLoRA backward).
@@ -1053,6 +1069,7 @@ pub fn gemm_nf4_backward_a(
         stream.launch_kernel(module, "nf4_gemm_transpose", &config, &mut args).map_err(|e| {
             CudaTensorError::KernelError(format!("NF4 GEMM transpose launch failed: {e:?}"))
         })?;
+        crate::autograd::note_backward_kernel_launch();
     }
 
     Ok(())
@@ -1128,6 +1145,7 @@ pub fn gemm_nf4_tc_backward_a(
                     "NF4 tensor core GEMM backward_a launch failed: {e:?}"
                 ))
             })?;
+        crate::autograd::note_backward_kernel_launch();
     }
 
     Ok(())
