@@ -1,6 +1,6 @@
-# PP-066 — 0.66 performance-parity release: implementation spec (v1.6)
+# PP-066 — 0.66 "honest GPU" release: implementation spec (v2.0)
 
-**Status:** DRAFT v1.6 · 2026-09-05 · rewrite of `0_66-performance-parity-report.md` (the "report") into
+**Status:** DRAFT v2.0 · 2026-09-06 (SPEC-2.0: three claims, 18-row scope, claims ratchet, executable criteria — §4.1) · v1.6 · 2026-09-05 · rewrite of `0_66-performance-parity-report.md` (the "report") into
 paiml-implement units · v1.1 adjudicates `0_66-review.md` (six-report swarm, one explorer with tree access at
 `d6c6c6f8` / `587ad0797`) — verdicts in §11 · v1.2 promotes the **backend registry** (R-0) to the first code ticket of 0.66 after the five-whys of 2026-09-05 (§1 F-25): the GPU defect is design, not configuration · v1.3 folds in **#2869** (no pre-built `apr` on tagged releases) and **PV-IMPROVE-001** (`docs/specifications/improve-provable-contracts.md` `[U]` path; the `pv` enforcement half is theater at `b1a6324b8`) — the first changes the artifact of record, the second changes what "contract per feature" is worth · v1.4 assimilates a third-party comparative study of GPU discovery in llama.cpp / llamafile / Ollama (`[X]`, §12) into R-0 as fourteen numbered requirements with a failure-catalogue case table — the discovery story is the product's first screen and it has to be right · governing inference spec `docs/specifications/PP-LLAMA-001-MASTER.md` (v3.0 in
 hand; v3.1 `[U]`) · this document **adds tickets and re-scopes**; it does not restate PP-LLAMA-001 §4–§7.
@@ -163,6 +163,114 @@ No row of §5 past its expiry without a RED (andon). **v1.6:** at HEAD `evidence
 CUDA doc, G-3 count) is a finding against its owner, not a hold on the tag.
 
 ---
+
+## §4.1 v2.0 — three claims, an 18-row scope, a claims ratchet, executable criteria (SPEC-2.0, driver v5, 2026-09-06)
+
+<!-- spec2:begin (the two tables below are generated from docs/specifications/pp-066-dag.yaml by the SPEC-2.0 commit; cut_by / claim_protected are DAG fields) -->
+
+**0.66 ships on three claims and no others.** (1) `apr` reports every backend on every host truthfully and never downgrades a forced one. (2) Every model in `evidence/models/supported.yaml` computes the same function on GPU as on CPU or the GPU refuses it — proven pre-publish (C14 in `apr-dogfood --release`), post-publish (C4) and nightly (R-8). (3) The downloaded binary is the tested binary, on four hosts, behind pinned fail-closed gates (C13, C8, C0).
+
+**Claims ratchet.** The 0.66 README, the release notes and every CLI output carry **no** performance, training-parity or proof-count number. `scripts/check_no_claim_literals.sh` and `scripts/check_perf_claims_cite_receipts.sh` run over the notes and the README in `ci / gate`; the registered mutation is one added number → RED. #2870 progress in the notes is two commands and their output with `basis=`. The notes say, in words: *no speed delivered in 0.66; instruments and speed ship in 0.67.*
+
+### 0.66 scope — 24 rows (the DAG rows with `lane: '0.66'`)
+
+| id | track | blockers | expiry | owner | issue | pmat |
+|---|---|---|---|---|---|---|
+| C0-1 | C0 | G-11 | 2026-09-19 | spec-owner | #2890 | PMAT-975 |
+| C0-2 | C0 | G-11 | 2026-09-26 | spec-owner | #2891 | PMAT-976 |
+| C0-4 | C0 | G-11 | 2026-09-19 | perf-gate | #2893 | PMAT-978 |
+| G-6 | G | C0-5 | 2026-09-26 | spec-owner | #2895 | PMAT-980 |
+| G-4 | G | — | 2026-09-19 | spec-owner | #2902 | PMAT-987 |
+| G-10 | G | — | 2026-09-06 | spec-owner | #2999 | PMAT-1059 |
+| SPEC-1.6 | D | — | 2026-09-12 | spec-owner | #2903 | PMAT-988 |
+| R-0 | R | G-11 | 2026-09-19 | spec-owner | #2904 | PMAT-989 |
+| R-2 | R | R-0, DEC-D-9, G-11, R-0b | 2026-10-02 | spec-owner | #2905 | PMAT-990 |
+| R-3 | R | G-11 | 2026-09-19 | spec-owner | #2906 | PMAT-991 |
+| R-5 | R | R-0, DEC-D-10, G-11, R-2, L0-1b | 2026-10-09 | spec-owner | #2908 | PMAT-993 |
+| R-6 | R | R-5, G-11 | 2026-10-16 | spec-owner | #2909 | PMAT-994 |
+| R-7 | R | R-6, G-11 | 2026-10-23 | spec-owner | #2910 | PMAT-995 |
+| TAG-0.66.0 | REL | C0-1, C0-2, C0-4, G-10, G-10b, G-11, G-11b, L0-1a, L0-1b, R-0, R-0b, R-2, R-3, R-5, R-6, R-7, R-8, SPEC-2.0 | 2026-10-30 | spec-owner | #2932 | PMAT-1017 |
+| C0-5 | C0 | — | 2026-09-19 | spec-owner | #2982 | PMAT-1054 |
+| C0-7 | C0 | — | 2026-09-19 | spec-owner | #2984 | PMAT-1056 |
+| G-11 | G | G-10 | 2026-09-12 | spec-owner | #3012 | PMAT-1062 |
+| G-10b | G | G-10, G-11 | 2026-09-19 | spec-owner | #3013 | PMAT-1063 |
+| R-0b | R | R-0, G-11, L0-1a | 2026-09-26 | spec-owner | #3002 | PMAT-1060 |
+| L0-1a | L0 | G-11 | 2026-09-19 | perf-gate | #3017 | PMAT-1065 |
+| G-11b | G | G-10, G-11 | 2026-09-19 | spec-owner | #3018 | PMAT-1066 |
+| R-8 | R | R-5, G-11 | 2026-10-16 | spec-owner | #3019 | PMAT-1067 |
+| L0-1b | L0 | L0-1a | 2026-09-26 | perf-gate | #3017 | — |
+| SPEC-2.0 | G | G-11 | 2026-09-19 | spec-owner | — | — |
+
+### Cut to 0.67 by SPEC-2.0 — 39 rows, each naming the claim it protected
+
+| id | track | claim protected (why 0.66 can ship without it) |
+|---|---|---|
+| I-1 | I | claim (2)/(3) speed & parity evidence — the W1/W3/W4 cells and the perf-gate ledger (no speed number ships in 0.66; instruments and speed ship in 0.67) |
+| I-15 | I | claim (2)/(3) speed & parity evidence — the W1/W3/W4 cells and the perf-gate ledger (no speed number ships in 0.66; instruments and speed ship in 0.67) |
+| I-18 | I | claim (2)/(3) speed & parity evidence — the W1/W3/W4 cells and the perf-gate ledger (no speed number ships in 0.66; instruments and speed ship in 0.67) |
+| I-16 | I | claim (2)/(3) speed & parity evidence — the W1/W3/W4 cells and the perf-gate ledger (no speed number ships in 0.66; instruments and speed ship in 0.67) |
+| I-17 | I | claim (2)/(3) speed & parity evidence — the W1/W3/W4 cells and the perf-gate ledger (no speed number ships in 0.66; instruments and speed ship in 0.67) |
+| I-24 | I | claim (2)/(3) speed & parity evidence — the W1/W3/W4 cells and the perf-gate ledger (no speed number ships in 0.66; instruments and speed ship in 0.67) |
+| I-25 | I | claim (2)/(3) speed & parity evidence — the W1/W3/W4 cells and the perf-gate ledger (no speed number ships in 0.66; instruments and speed ship in 0.67) |
+| I-26 | I | claim (2)/(3) speed & parity evidence — the W1/W3/W4 cells and the perf-gate ledger (no speed number ships in 0.66; instruments and speed ship in 0.67) |
+| C0-3 | C0 | claim (3) pinned fail-closed gates — C0-3 cot derivations (U-1 upstream) and the mutation-timeout row are credited in 0.67 |
+| G-7 | G | claim (3) gate integrity — the crate-name / target-universe / ratchet-edit / cbtop-polarity guards and the rename-cost measurement |
+| G-5 | G | claim (3) gate integrity — the crate-name / target-universe / ratchet-edit / cbtop-polarity guards and the rename-cost measurement |
+| G-1 | G | claim (3) gate integrity — the crate-name / target-universe / ratchet-edit / cbtop-polarity guards and the rename-cost measurement |
+| G-8 | G | claim (3) gate integrity — the crate-name / target-universe / ratchet-edit / cbtop-polarity guards and the rename-cost measurement |
+| G-9 | G | claim (3) gate integrity — the crate-name / target-universe / ratchet-edit / cbtop-polarity guards and the rename-cost measurement |
+| G-3 | G | claim (3) gate integrity — the crate-name / target-universe / ratchet-edit / cbtop-polarity guards and the rename-cost measurement |
+| R-4 | R | claim (2)/(3) — the W5 CLI wall-clock workload (a speed number) |
+| P-0.3 | P | proof-count claims — Track P (#2870 → #2556): no proof-count number ships in 0.66 (claims ratchet) |
+| P-0.6 | P | proof-count claims — Track P (#2870 → #2556): no proof-count number ships in 0.66 (claims ratchet) |
+| P-0.2 | P | proof-count claims — Track P (#2870 → #2556): no proof-count number ships in 0.66 (claims ratchet) |
+| P-0.4 | P | proof-count claims — Track P (#2870 → #2556): no proof-count number ships in 0.66 (claims ratchet) |
+| P-0.5 | P | proof-count claims — Track P (#2870 → #2556): no proof-count number ships in 0.66 (claims ratchet) |
+| P-0.1 | P | proof-count claims — Track P (#2870 → #2556): no proof-count number ships in 0.66 (claims ratchet) |
+| S-3 | S | speed claims — W-A/W-B/W-C work and the perf-solo lane (no speed number ships in 0.66) |
+| S-3g | S | speed claims — W-A/W-B/W-C work and the perf-solo lane (no speed number ships in 0.66) |
+| S-1 | S | speed claims — W-A/W-B/W-C work and the perf-solo lane (no speed number ships in 0.66) |
+| S-2 | S | speed claims — W-A/W-B/W-C work and the perf-solo lane (no speed number ships in 0.66) |
+| T-0h | T | training-parity claims — no training-parity number ships in 0.66 |
+| T-2 | T | training-parity claims — no training-parity number ships in 0.66 |
+| T-1 | T | training-parity claims — no training-parity number ships in 0.66 |
+| T-0 | T | training-parity claims — no training-parity number ships in 0.66 |
+| T-3 | T | training-parity claims — no training-parity number ships in 0.66 |
+| B-A1 | B | backend coverage claims beyond the registry — B-A1 (the intel wgpu cell) |
+| B-G1 | B | claim (1) honest backends — FOLDED INTO R-7 (the README backend table is generated from the registry per host; the per-backend N/7 clause map ships in 0.67) |
+| D-2doc | D | documentation figures — the canary README figure and the cuda architecture doc (no number ships without a receipt) |
+| D-1doc | D | documentation figures — the canary README figure and the cuda architecture doc (no number ships without a receipt) |
+| C0-6 | C0 | claim (3) pinned fail-closed gates — C0-3 cot derivations (U-1 upstream) and the mutation-timeout row are credited in 0.67 |
+| G-10c | G | claim (3) gate integrity — the crate-name / target-universe / ratchet-edit / cbtop-polarity guards and the rename-cost measurement |
+| U-1 | C0 | claim (3) pinned fail-closed gates — C0-3 cot derivations (U-1 upstream) and the mutation-timeout row are credited in 0.67 |
+| S-0 | S | speed claims — W-A/W-B/W-C work and the perf-solo lane (no speed number ships in 0.66) |
+
+### Executable criteria — `scripts/release_criteria.sh` (one exit-coded command each; C0 credited first, I9)
+
+| credited in 0.66 | command (`bash scripts/release_criteria.sh --list`) | built by |
+|---|---|---|
+| C0 | the spec §4 C0 command verbatim through the analyser pin (`--c0`): CB-1700/1701/2100 show no ✗, `strict=true`, `perf_gate.sh --selftest` GREEN | C0-1, C0-2 (pin), C0-4 |
+| C4 | `scripts/check_multiplatform_dogfood.sh --require-resolved-backend cuda` — four host receipts through the R-6 installer, `apr devices --json`, effective-config backend | R-6, R-2 |
+| C5 | `scripts/train_parity.sh --validate evidence/train-parity` — the harness receipts schema-valid (the training NUMBERS are 0.67) | T-0h (0.67) — [U] in 0.66 unless the harness lands |
+| C6 | `scripts/check_guards_observed_red.sh` — every 0.66 guard PR carries mutation RED → revert with run ids | G-10a, G-10b, G-11a |
+| C7 | `scripts/check_no_claim_literals.sh` ∧ `scripts/check_perf_claims_cite_receipts.sh` — the claims ratchet over README, notes, `docs/specifications/` | SPEC-2.0 |
+| C8 | `scripts/run_clean_room.sh` — clean-room p1 via `../infra` (hard gate; ENV exit 2 without infra, never a pass) | SPEC-2.0 |
+| C9 | `scripts/check_receipt_complete.sh --dag` — every credited row has a receipt whose marker says complete (the v1.6 `partial=false` prose is replaced by the marker, C0-7) | C0-7 |
+| C11 | `scripts/check_backend_registry.sh --static` — **15** fixtures FX-1..15 each observed RED once; zero `cfg!(feature)` reads in `apr-cli` backend decisions; REG-15 (model admission) in R-0 | R-0a, R-0b |
+| C13 | `scripts/check_release_assets.sh v0.66.0` — five `apr-*` tarballs + `.sha256` + minisign signature; `install.sh` ends by printing `apr devices` | R-5, R-6 |
+| C14 | `scripts/check_model_parity.sh --manifest` — GPU = CPU per manifest model over ≥ 64 positions (I8), or the GPU refuses it; `SKIP_PARITY_GATE` is a printed override that never passes | L0-1a |
+
+| moved to 0.67 with its track | why |
+|---|---|
+| C1 | the parity LEDGER rows are speed numbers (Track I → 0.67) |
+| C2 | perf-matrix compute_class cells (Track B → 0.67) |
+| C3 | `--backend` on every enumerated surface: R-0b ships the resolution; the per-surface case table over every host is credited in 0.67 with its instrument |
+| C10 | the DAG invariants gate is G-4 (complete) and runs in `ci / gate`; as a *release* criterion it moves with Track G |
+| C12 | contract-per-card and `pv lint` ride Track P (#2870 → #2556, D-11) |
+
+**Refusal codes** are read from `crates/apr-cli/src/error.rs` at test time, one per variant (D-7). **REG-15 (model admission)** is part of R-0: a forced backend never downgrades; unforced prints `selected: cpu (reason: parity FAILED …)`; `GET /v1/effective-config` carries `parity: {status, cosine, positions, threshold, basis}`. **§4 "credited first"** keeps its single reading (v1.6): C0 is a precondition of *crediting*, not of *working*.
+
+<!-- spec2:end -->
 
 ## §5 0.66 tickets — paiml-implement units
 
