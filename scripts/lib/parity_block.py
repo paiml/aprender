@@ -49,6 +49,46 @@ import bench_receipt  # noqa: E402
 # bench_receipt._matrix() helper so producer and gate cannot disagree.
 
 
+class _NonMeasurement(Exception):
+    """A band's comparator carries no usable rate. Raised in place of the bare
+    ZeroDivisionError/StatisticsError that `statistics.median(subject) /
+    statistics.median(comparator)` used to raise when the comparator's samples
+    were all zero or absent (#2735, #2887). main() is the ONE place that
+    catches this and turns it into the same FAIL-and-exit-1 shape every other
+    refusal in this file already uses -- there is no second refusal path."""
+
+
+def _comparator_median(values, label):
+    """The comparator's median rate, or a NAMED refusal.
+
+    Deliberately asymmetric: only the COMPARATOR is guarded here. A zero-token
+    SUBJECT band does not crash this division (0 / positive == 0.0) and is
+    already caught further downstream, in bench_receipt._median_of via
+    validate_parity, with its own wording ("contains a non-positive rate").
+    Guarding the subject here too would give the same subject condition two
+    different refusal texts for one defect.
+    """
+    if not values:
+        raise _NonMeasurement(
+            "%s comparator: no samples is not a measurement" % label)
+    med = statistics.median(values)
+    if not med > 0:
+        raise _NonMeasurement(
+            "%s comparator: non-positive rate is not a measurement" % label)
+    return med
+
+
+def _ratio(subject_values, comparator_values, label):
+    """subject/comparator, derived from raw samples (#2735).
+
+    The comparator is guarded by `_comparator_median` before it is ever a
+    denominator; the subject is read with a bare `statistics.median` exactly
+    as before, so its existing downstream refusal is untouched.
+    """
+    comparator_median = _comparator_median(comparator_values, label)
+    return statistics.median(subject_values) / comparator_median
+
+
 def _samples(path, key):
     """Per-run values from a BenchmarkReport, in run order."""
     with open(path, encoding="utf-8") as handle:
@@ -481,16 +521,50 @@ def _ttft_over_e2e_rows(rows):
     return out
 
 
+def _executor_paths(work, meta, side):
+    """The replicate files this side actually wrote (lifted from _executor_side's
+    top): the producer's named paths, filtered to those that exist."""
+    return [p for p in _replicate_paths(work, meta, side) if os.path.exists(p)]
+
+
+def _executor_runs_rows(paths):
+    """Every run record and every per-request row across this side's replicate
+    files (lifted from _executor_side)."""
+    runs = [r for path in paths for r in _runs(path)]
+    rows = _request_rows(paths)
+    return runs, rows
+
+
+def _client_concurrency(runs):
+    """The single concurrency level every run agreed on, or None if they
+    didn't (lifted from _executor_side's `out["client_concurrency"]`)."""
+    levels = {r.get("concurrency") for r in runs}
+    return levels.pop() if len(levels) == 1 else None
+
+
+def _executor_totals(runs):
+    """The three run-level sums _executor_side's `out` dict carries."""
+    return {
+        "tokens_total": sum(r["completion_tokens_total"] for r in runs),
+        "requested": sum(r["total_requests"] for r in runs),
+        "completed": sum(r["successful"] for r in runs),
+    }
+
+
+def _executor_samples_ms(rows):
+    """Raw per-request latencies that carried one (lifted from
+    _executor_side's `out["samples_ms"]`, §4.4.5)."""
+    return [row["latency_ms"] for row in rows if "latency_ms" in row]
+
+
 def _executor_side(work, meta, side, n_predict, witnesses=None):
     """One lane of one band, read from the replicate files the producer named."""
     witnesses = witnesses or {}
     meta_c = meta.get("concurrency")
-    paths = [p for p in _replicate_paths(work, meta, side) if os.path.exists(p)]
+    paths = _executor_paths(work, meta, side)
     if not paths:
         return None, []
-    runs = [r for path in paths for r in _runs(path)]
-    rows = _request_rows(paths)
-    levels = {r.get("concurrency") for r in runs}
+    runs, rows = _executor_runs_rows(paths)
     out = {
         # PER-REPLICATE, in replicate order: the k-th entry here and the k-th
         # entry on the other side are the PAIR §4.3's estimator divides.
@@ -498,12 +572,10 @@ def _executor_side(work, meta, side, n_predict, witnesses=None):
         "decode_tok_per_sec": _per_replicate(paths, "decode_tok_per_sec"),
         "prefill_tok_per_sec": _per_replicate(paths, "prefill_tok_per_sec"),
         "ttft_p50_ms": _per_replicate(paths, "ttft_p50_ms"),
-        "client_concurrency": levels.pop() if len(levels) == 1 else None,
+        "client_concurrency": _client_concurrency(runs),
         "replicate_files": [os.path.basename(p) for p in paths],
-        "tokens_total": sum(r["completion_tokens_total"] for r in runs),
-        "requested": sum(r["total_requests"] for r in runs),
-        "completed": sum(r["successful"] for r in runs),
-        "samples_ms": [row["latency_ms"] for row in rows if "latency_ms" in row],
+        **_executor_totals(runs),
+        "samples_ms": _executor_samples_ms(rows),
         # PP-7: the raw rows survive the boundary. This block used to keep only
         # per-RUN summaries, so a threshold could never be re-derived from a
         # parity block afterwards.
@@ -567,8 +639,8 @@ def _executor_band(work, meta, floor, ceiling, n_predict, witnesses=None):
     }
     ok = True
     for metric in ("aggregate_tok_per_sec", "decode_tok_per_sec"):
-        ratio = (statistics.median(band["subject"][metric])
-                 / statistics.median(band["comparator"][metric]))
+        ratio = _ratio(band["subject"][metric], band["comparator"][metric],
+                       "band %d" % c)
         band["ratio_" + metric] = round(ratio, 4)
         if ratio < floor or ratio > ceiling:
             ok = False
@@ -601,44 +673,58 @@ def _executor_bands(work, klass, floor, ceiling, witnesses=None):
     return (sorted(out, key=lambda b: b["concurrency"]), sorted(requested))
 
 
-def _executor_lane(klass, args, work):
-    """One lane of the executor layout, or None with the reason on stderr."""
-    floor, ceiling = bench_receipt.lane_bounds()
-    witnesses = load_perf041_witness(getattr(args, "witness_json", None))
-    bands, requested = _executor_bands(work, klass, floor, ceiling, witnesses)
-    if not bands:
-        sys.stderr.write(
-            "FAIL  lane %s: no band metadata file under %s carries class %r.\n"
-            "      The executor writes one band-<class>-c<c>.json per band; "
-            "without it nothing states what the band was.\n" % (klass, work, klass))
-        return None
-    base = next((b for b in bands if b["concurrency"] == LANE_BAND), None)
-    if base is None:
-        sys.stderr.write(
-            "FAIL  lane %s: the c=%d band is the lane-level measurement and it "
-            "is absent.\n      Refusing to report half a comparison. There is no "
-            "fallback to another band: a lane reported from c=4 while claiming "
-            "the lane ratio would be a different measurement under the same "
-            "name.\n" % (klass, LANE_BAND))
-        return None
-    # THE CLASS COMES FROM THE SERVER'S OWN OUTPUT, never from the flag: the
-    # executor reads it out of the loader's line about itself and writes it into
-    # the band metadata. The comparator's class is the OFFLOAD QUANTITY it was
-    # given -- zero layers is the cpu path -- and `comparator_class_source`
-    # records which of the two statements the value came from.
-    apr_class = base["subject_compute_class"] or "unknown"
+def _no_band_metadata_error(klass, work):
+    """FAIL text when no band metadata file names this lane's class (lifted
+    from _executor_lane's `if not bands` arm)."""
+    sys.stderr.write(
+        "FAIL  lane %s: no band metadata file under %s carries class %r.\n"
+        "      The executor writes one band-<class>-c<c>.json per band; "
+        "without it nothing states what the band was.\n" % (klass, work, klass))
+
+
+def _no_lane_band_error(klass):
+    """FAIL text when the lane-level (c=LANE_BAND) band is absent (lifted
+    from _executor_lane's `if base is None` arm)."""
+    sys.stderr.write(
+        "FAIL  lane %s: the c=%d band is the lane-level measurement and it "
+        "is absent.\n      Refusing to report half a comparison. There is no "
+        "fallback to another band: a lane reported from c=4 while claiming "
+        "the lane ratio would be a different measurement under the same "
+        "name.\n" % (klass, LANE_BAND))
+
+
+def _feature_set(apr_class):
+    """cli+inference, plus the compute class actually taken (lifted from
+    _executor_lane's `feats` line) -- never claimed by a build that never
+    took that path."""
+    return ["cli", "inference"] + ([apr_class] if apr_class != "cpu" else [])
+
+
+def _comparator_class(base, apr_class):
+    """The comparator's compute class and where it came from (lifted from
+    _executor_lane's class-resolution block): declared gpu-layers if the
+    field parses, else unresolved."""
     ngl = base["comparator_admission"].get("gpu_layers")
-    comp_class, source = "unknown", "unresolved"
     if ngl is not None and ngl.isdigit():
-        comp_class = "cpu" if int(ngl) == 0 else apr_class
-        source = "declared-gpu-layers"
-    feats = ["cli", "inference"] + ([apr_class] if apr_class != "cpu" else [])
+        return ("cpu" if int(ngl) == 0 else apr_class), "declared-gpu-layers"
+    return "unknown", "unresolved"
+
+
+def _executor_subject(base, args, apr_class, feats):
+    """The lane's subject side, provenance attached (lifted from
+    _executor_lane's `subject` block)."""
     subject = dict(base["subject"])
     subject["provenance"] = {
         "binary_path": args.apr, "binary_sha256": args.apr_sha,
         "resolution": "scripts/apr_bin.sh", "compute_class": apr_class,
         "feature_set": feats}
     subject["install_source"] = args.install_source
+    return subject
+
+
+def _executor_comparator(base, args, comp_class, source):
+    """The lane's comparator side, provenance attached (lifted from
+    _executor_lane's `comparator` block)."""
     comparator = dict(base["comparator"])
     comparator["provenance"] = {
         "binary_path": args.llama, "binary_sha256": args.llama_sha,
@@ -648,14 +734,39 @@ def _executor_lane(klass, args, work):
     if args.pin_expiry:
         comparator["pin_expiry"] = args.pin_expiry
     comparator["compute_class_source"] = source
-    ratio = (statistics.median(subject["decode_tok_per_sec"])
-             / statistics.median(comparator["decode_tok_per_sec"]))
+    return comparator
+
+
+def _executor_lane(klass, args, work):
+    """One lane of the executor layout, or None with the reason on stderr."""
+    floor, ceiling = bench_receipt.lane_bounds()
+    witnesses = load_perf041_witness(getattr(args, "witness_json", None))
+    bands, requested = _executor_bands(work, klass, floor, ceiling, witnesses)
+    if not bands:
+        _no_band_metadata_error(klass, work)
+        return None
+    base = next((b for b in bands if b["concurrency"] == LANE_BAND), None)
+    if base is None:
+        _no_lane_band_error(klass)
+        return None
+    # THE CLASS COMES FROM THE SERVER'S OWN OUTPUT, never from the flag: the
+    # executor reads it out of the loader's line about itself and writes it into
+    # the band metadata. The comparator's class is the OFFLOAD QUANTITY it was
+    # given -- zero layers is the cpu path -- and `comparator_class_source`
+    # records which of the two statements the value came from.
+    apr_class = base["subject_compute_class"] or "unknown"
+    comp_class, source = _comparator_class(base, apr_class)
+    feats = _feature_set(apr_class)
+    subject = _executor_subject(base, args, apr_class, feats)
+    comparator = _executor_comparator(base, args, comp_class, source)
+    ratio = _ratio(subject["decode_tok_per_sec"], comparator["decode_tok_per_sec"],
+                   "band %d" % LANE_BAND)
     lane = {"lane": apr_class, "layout": "executor",
             "subject": subject, "comparator": comparator,
             "ratio_decode": round(ratio, 4),
             "ratio_prefill": round(
-                statistics.median(subject["prefill_tok_per_sec"])
-                / statistics.median(comparator["prefill_tok_per_sec"]), 4),
+                _ratio(subject["prefill_tok_per_sec"], comparator["prefill_tok_per_sec"],
+                       "band %d" % LANE_BAND), 4),
             "declared_bands": requested,
             "ladder_declared": list(bands_default()),
             "bands": bands, "ceiling": ceiling}
@@ -676,8 +787,8 @@ def _band_from(name, c, work, floor, ceiling):
             "comparator": _band_side(l)}
     ok = True
     for metric in ("aggregate_tok_per_sec", "decode_tok_per_sec"):
-        ratio = (statistics.median(band["subject"][metric])
-                 / statistics.median(band["comparator"][metric]))
+        ratio = _ratio(band["subject"][metric], band["comparator"][metric],
+                       "band %d" % c)
         band["ratio_" + metric] = round(ratio, 4)
         if ratio < floor or ratio > ceiling:
             ok = False
@@ -716,13 +827,13 @@ def _lane_from(name, apr_class, comp_class, args, work):
     comparator["name"] = "llama.cpp"
     comparator["build_commit"] = args.llama_build
 
-    ratio = (statistics.median(subject["decode_tok_per_sec"])
-             / statistics.median(comparator["decode_tok_per_sec"]))
+    ratio = _ratio(subject["decode_tok_per_sec"], comparator["decode_tok_per_sec"],
+                   "band %d" % LANE_BAND)
     lane = {"lane": apr_class, "subject": subject, "comparator": comparator,
             "ratio_decode": round(ratio, 4),
             "ratio_prefill": round(
-                statistics.median(subject["prefill_tok_per_sec"])
-                / statistics.median(comparator["prefill_tok_per_sec"]), 4)}
+                _ratio(subject["prefill_tok_per_sec"], comparator["prefill_tok_per_sec"],
+                       "band %d" % LANE_BAND), 4)}
     floor, ceiling = bench_receipt.lane_bounds()
     declared = bands_default()
     bands = [b for b in (_band_from(name, c, work, floor, ceiling) for c in declared) if b]
@@ -777,6 +888,53 @@ def _executor_layout(work):
     return bool(glob.glob(os.path.join(work, BAND_META_GLOB)))
 
 
+def _bad_lane_row_error(row):
+    """FAIL text for a lanes.txt line that names neither layout (lifted from
+    build()'s row-dispatch `else` arm)."""
+    sys.stderr.write(
+        "FAIL  lanes.txt line %r has %d field(s) and no band metadata "
+        "file sits beside it. Two fields are the executor spelling and "
+        "need band-<class>-c<c>.json; three are the historical one.\n"
+        % (" ".join(row), len(row)))
+
+
+def _lane_for_row(row, executor, args):
+    """One lanes.txt row resolved to a lane dict, or None with stderr already
+    carrying the reason (lifted from build()'s per-row dispatch: two fields is
+    the executor spelling, three is the historical one)."""
+    if executor:
+        return _executor_lane(row[0], args, args.work)
+    if len(row) == 3:
+        return _lane_from(row[0], row[1], row[2], args, args.work)
+    _bad_lane_row_error(row)
+    return None
+
+
+def _build_lanes(rows, executor, args):
+    """Every lane in lanes.txt order, or None the moment one fails (lifted
+    from build()'s lane-accumulation loop)."""
+    lanes = []
+    for row in rows:
+        lane = _lane_for_row(row, executor, args)
+        if lane is None:
+            return None
+        lanes.append(lane)
+    return lanes
+
+
+def _finalize_executor_block(block, args):
+    """Executor-only block fields, mutated in place (lifted from build()'s
+    `if executor` tail). ONE INVOCATION, ONE IDENTITY (PP-3): the two lanes of
+    an interleaved band are only a pair because they were driven inside the
+    same invocation, and nothing in the artifact said so. A receipt derived
+    from this block copies the id onto every band and onto the baseline
+    beside it, so a cross-run pairing stops being expressible."""
+    block["run_id"] = args.run_id or uuid.uuid4().hex
+    block["layout"] = "executor"
+    if args.pin_expiry:
+        block["comparator_pin_expiry"] = args.pin_expiry
+
+
 def build(args):
     lanes_txt = os.path.join(args.work, "lanes.txt")
     if not os.path.exists(lanes_txt):
@@ -785,22 +943,9 @@ def build(args):
     rows = _lane_rows(lanes_txt)
     executor = _executor_layout(args.work)
 
-    lanes = []
-    for row in rows:
-        if executor:
-            lane = _executor_lane(row[0], args, args.work)
-        elif len(row) == 3:
-            lane = _lane_from(row[0], row[1], row[2], args, args.work)
-        else:
-            sys.stderr.write(
-                "FAIL  lanes.txt line %r has %d field(s) and no band metadata "
-                "file sits beside it. Two fields are the executor spelling and "
-                "need band-<class>-c<c>.json; three are the historical one.\n"
-                % (" ".join(row), len(row)))
-            return None
-        if lane is None:
-            return None
-        lanes.append(lane)
+    lanes = _build_lanes(rows, executor, args)
+    if lanes is None:
+        return None
 
     floor, ceiling = bench_receipt.lane_bounds()
     block = {"instrument": "apr test llm bench",
@@ -810,19 +955,13 @@ def build(args):
              "threshold_source": "scripts/perf-matrix.yaml#arms.L3.delta,derivation.sanity_ceiling",
              "lanes": lanes}
     if executor:
-        # ONE INVOCATION, ONE IDENTITY (PP-3). The two lanes of an interleaved
-        # band are only a pair because they were driven inside the same
-        # invocation, and nothing in the artifact said so. A receipt derived
-        # from this block copies the id onto every band and onto the baseline
-        # beside it, so a cross-run pairing stops being expressible.
-        block["run_id"] = args.run_id or uuid.uuid4().hex
-        block["layout"] = "executor"
-        if args.pin_expiry:
-            block["comparator_pin_expiry"] = args.pin_expiry
+        _finalize_executor_block(block, args)
     return block
 
 
-def main():
+def _build_argparser():
+    """This file's CLI surface (lifted from main()'s top): the required
+    flags, then the three optional ones."""
     ap = argparse.ArgumentParser()
     for flag in ("--work", "--apr", "--apr-sha", "--llama", "--llama-sha",
                  "--llama-build", "--model", "--install-source", "--out"):
@@ -837,12 +976,23 @@ def main():
                     "block, since the per-replicate bench reports carry none")
     ap.add_argument("--run-id", help="the invocation id both lanes share; "
                                      "minted here when not given")
-    args = ap.parse_args()
+    return ap
 
-    block = build(args)
-    if block is None:
-        return 1
 
+def _safe_build(args):
+    """build(args), converting the _NonMeasurement refusal into the same
+    already-printed-message shape build() uses for its other refusals
+    (lifted from main()'s try/except)."""
+    try:
+        return build(args)
+    except _NonMeasurement as exc:
+        sys.stderr.write("FAIL  %s\n" % exc)
+        return None
+
+
+def _emit_block(block, out):
+    """Validate against this repo's own gate, then write it (lifted from
+    main()'s tail): returns the process exit code."""
     # SELF-VALIDATION. The same function the release gate calls.
     errors = bench_receipt.validate_parity(block)
     if errors:
@@ -853,13 +1003,21 @@ def main():
         return 1
 
     text = json.dumps({"parity": block}, indent=2)
-    if args.out == "-":
+    if out == "-":
         print(text)
     else:
-        with open(args.out, "w", encoding="utf-8") as handle:
+        with open(out, "w", encoding="utf-8") as handle:
             handle.write(text + "\n")
-        sys.stderr.write("wrote %s\n" % args.out)
+        sys.stderr.write("wrote %s\n" % out)
     return 0
+
+
+def main():
+    args = _build_argparser().parse_args()
+    block = _safe_build(args)
+    if block is None:
+        return 1
+    return _emit_block(block, args.out)
 
 
 if __name__ == "__main__":
