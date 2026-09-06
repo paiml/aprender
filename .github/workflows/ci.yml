@@ -512,7 +512,12 @@ jobs:
       # comparand, and it means the CI path is the tip path: a local run that
       # passes on the merge-base can still red here, and CI is authoritative.
       - name: Fetch origin/main as the comparand for every ratchet in this job
-        run: git fetch --no-tags --depth=1 origin +refs/heads/main:refs/remotes/origin/main
+        run: |
+          git fetch --no-tags --depth=1 origin +refs/heads/main:refs/remotes/origin/main
+          # push shape: HEAD IS the origin/main tip, so every differential ratchet judges it against
+          # its FIRST PARENT (scripts/lib/resolve_base.sh: HEAD vs HEAD would pass vacuously, the
+          # G-10 quorum's finding), and a depth-1 checkout has not fetched that parent. Deepen by one.
+          if [ "${GITHUB_EVENT_NAME:-}" = push ]; then git fetch --no-tags --deepen=1 origin +refs/heads/main:refs/remotes/origin/main; fi
       # aprender#2822. Case table FIRST, per the convention above: the probe
       # below is only worth its 0.15s if the classifier it feeds can still turn
       # RED. Seven rows over a throwaway tree - no cargo, no network, no host.
@@ -1594,7 +1599,7 @@ jobs:
         run: bash scripts/check_hardcoded_paths.sh
       - name: Machine-specific-path guard case table
         run: bash scripts/check_hardcoded_paths.sh --self-test
-      - name: Whole-tree machine-specific-path ratchet (arms itself at pmat >= 3.32.0)
+      - name: Whole-tree machine-specific-path ratchet (pinned analyser via scripts/pmat_bin.sh, PMAT-1059)
         run: bash scripts/check_hardcoded_paths.sh --full-if-capable
       # PRREV-006. PR-REVIEW-SKILL-002 v2 §9 row 6 states how the receipt guard
       # may be wired, and both halves are scars rather than style:
