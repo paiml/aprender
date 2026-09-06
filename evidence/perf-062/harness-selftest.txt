@@ -1,0 +1,17 @@
+PERF-059 harness self-test (no GPU, no model)
+case 1: all slots identical to the reference -- must PASS
+  PASS band=self-1: 2/2 match the c=1 reference
+    ok
+case 2: one slot diverged -- must FAIL
+  FAIL band=self-2: 1/2 diverged, 0/2 empty
+    ok
+case 3: one slot empty -- must FAIL
+  FAIL band=self-3: 0/2 diverged, 1/2 empty
+    ok
+case 4: no completions at all -- must FAIL
+  FAIL band=self-4: no completions returned
+    ok
+case 5: a prefix of the reference -- must FAIL
+  FAIL band=self-5: 1/1 diverged, 0/1 empty
+    ok
+SELF-TEST PASS: the verdict distinguishes all five cases
