@@ -417,6 +417,17 @@ mod sentinel_tests {
         );
     }
 
+    /// I8: the threshold file itself may never ask for fewer than 64 positions — a
+    /// `min_positions: 1` would let a one-token record admit a backend (round-2 mutant).
+    #[test]
+    fn thresholds_demand_at_least_sixty_four_positions() {
+        let (_, min_positions) = thresholds();
+        assert!(
+            min_positions >= 64,
+            "evidence/parity/thresholds.yaml min_positions = {min_positions} < 64 (I8)"
+        );
+    }
+
     #[test]
     fn sentinels_carry_at_least_sixty_four_positions() {
         for rel in [
