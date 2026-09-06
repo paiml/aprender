@@ -198,6 +198,21 @@ open(sys.argv[2], "w").write(head)
 PY
     assert_row 'status + updated change on one entry' PASS "$TD/lifecycle.yaml" 'lifecycle=1'
 
+    # Row 3b (PMAT-1072, #3028): a parent's nested subtask records dropped to
+    # `subtasks: []` -> PASS (lifecycle). The records are structure older pmat
+    # wrote, not content; their uniqueness is check_roadmap_ids_unique.sh's rule.
+    python3 - "$TD/base.yaml" "$TD/subtasks.yaml" <<'PY'
+import sys
+base = open(sys.argv[1]).read()
+head = base.replace(
+    "- id: A-1\n  title: 'first entry'\n  status: planned\n  phases: []\n  subtasks: []\n",
+    "- id: A-1\n  title: 'first entry'\n  status: planned\n  phases: []\n  subtasks:\n  - id: A-2\n    title: A-2\n    status: planned\n",
+)
+assert head != base
+open(sys.argv[2], "w").write(head)
+PY
+    assert_row 'a parent subtasks list changed (nested records <-> [])' PASS "$TD/subtasks.yaml" 'lifecycle=1'
+
     # Row 4: an existing entry's title changed -> FAIL.
     python3 - "$TD/base.yaml" "$TD/titlechg.yaml" <<'PY'
 import sys
