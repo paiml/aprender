@@ -7,7 +7,8 @@
 /// # Errors
 ///
 /// Returns `RealizarError` if GPU and CPU produce divergent logits.
-fn parity_gate(cuda_model: &mut OwnedQuantizedModelCuda) -> Result<()> {
+/// Returns the cosine the gate measured on PASS (REG-15: the record travels with the model).
+fn parity_gate(cuda_model: &mut OwnedQuantizedModelCuda) -> Result<f32> {
     // GH-280: The capability gate in with_max_seq_len() now prevents models
     // with unsupported ops (e.g., QkNorm) from reaching this point.
     // If parity gate runs, the model MUST be fully supported by GPU.
@@ -126,7 +127,7 @@ fn parity_gate(cuda_model: &mut OwnedQuantizedModelCuda) -> Result<()> {
                 cosine, PARITY_GATE_COSINE_MIN,
             );
         }
-        Ok(())
+        Ok(cosine)
     } else {
         // Compute additional diagnostics for the error message
         let cpu_argmax = cpu_logits
@@ -177,5 +178,33 @@ fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
         0.0
     } else {
         (dot / denom) as f32
+    }
+}
+
+impl OwnedQuantizedModelCuda {
+    /// REG-15 (#2971): the one admission decision at load — the gate runs unless it is
+    /// skipped (`SKIP_PARITY_GATE`, recorded as an override) or does not apply (MoE); a
+    /// PASS records the cosine on the model, a failure refuses to construct it.
+    fn admit_by_parity_gate(mut self, skip: Option<ParityGateRecord>) -> std::result::Result<Self, CudaInitError> {
+        if let Some(record) = skip {
+            self.parity = record;
+            return Ok(self);
+        }
+        if self.model.config.constraints.is_moe {
+            self.parity = ParityGateRecord::not_run(
+                "MoE architecture: the dense load-time gate does not apply (qwen3_moe_gpu_parity.rs covers it)",
+            );
+            return Ok(self);
+        }
+        match parity_gate(&mut self) {
+            Ok(cosine) => {
+                self.parity = ParityGateRecord::passed(cosine);
+                Ok(self)
+            }
+            Err(e) => Err(CudaInitError {
+                error: e,
+                model: Box::new(self.into_model()),
+            }),
+        }
     }
 }

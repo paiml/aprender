@@ -7,7 +7,6 @@ crates/apr-cli/src/commands/attn_parity_lint.rs::run 13 26
 crates/apr-cli/src/commands/attn_viz_classifier.rs::classify_causal_mask 8 29
 crates/apr-cli/src/commands/attn_viz_lint.rs::run 13 34
 crates/apr-cli/src/commands/check_finite_lint.rs::run 11 28
-crates/apr-cli/src/commands/diff_benchmark_report.rs::run 19 27
 crates/apr-cli/src/commands/distill.rs::run_cuda_backend 13 26
 crates/apr-cli/src/commands/distill.rs::run_text_generate 16 40
 crates/apr-cli/src/commands/dry_sampling_classifier.rs::classify_dry_match_len 10 47
@@ -55,7 +54,6 @@ crates/apr-cli/src/commands/validate_manifest.rs::check_gguf_file_type 12 33
 crates/apr-cli/src/commands/validate_manifest.rs::read_gguf_signature 13 35
 crates/apr-cli/src/dispatch.rs::dispatch_diagnostic_commands 10 30
 crates/apr-cli/src/dispatch.rs::dispatch_runtime_commands 15 41
-crates/apr-cli/src/error.rs::resolve_model_path 19 74
 crates/apr-cli/src/federation/gateway.rs::execute_with_retries 9 26
 crates/apr-cli/src/help_producer_truth.rs::resolve 19 73
 crates/apr-cli/tests/cli_commands.rs::get_help_commands 13 47
@@ -469,7 +467,6 @@ crates/aprender-serve/src/gguf/cuda/cuda.rs::forward_single_cuda_with_cache 22 5
 crates/aprender-serve/src/gguf/cuda/cuda_layer_weights.rs::forward_single_full_cuda_with_cache 16 31
 crates/aprender-serve/src/gguf/cuda/forward_qwen3_moe_cuda.rs::forward_qwen3_moe_cuda 27 60
 crates/aprender-serve/src/gguf/cuda/forward_qwen3_moe_cuda_traced.rs::forward_qwen3_moe_cuda_traced_with_plan 34 76
-crates/aprender-serve/src/gguf/cuda/mod.rs::preload_and_verify 19 30
 crates/aprender-serve/src/gguf/cuda/speculative.rs::generate_speculative_cuda 20 60
 crates/aprender-serve/src/gguf/cuda/speculative.rs::generate_speculative_with_draft 21 63
 crates/aprender-serve/src/gguf/inference/cached/sync_owned_quantized.rs::forward_batch_with_gpu_ffn 35 41

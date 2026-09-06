@@ -19,119 +19,119 @@ impl OwnedQuantizedModel {
     ) -> Result<Vec<f32>> {
         let layer = &self.layers[layer_idx];
 
-        if self.config.constraints.has_gate_ffn() {
-            // GH-306: Fused path only when separate gate weight exists
-            if let Some(ref gate_weight) = layer.ffn_gate_weight {
-                // Fused RMSNorm + SwiGLU (LLaMA, TinyLlama, Mistral, etc.)
-                // PMAT-809: the fused kernel bakes in `* weight` RMSNorm + SiLU, so
-                // it is correct ONLY for non-Gemma. Gemma-v1 needs (1+w) RMSNorm +
-                // GeGLU, so it falls through to the explicit arch-dispatched path.
-                if use_rmsnorm && !self.config.is_gemma1() {
-                    if let Some(ref ffn_norm) = layer.ffn_norm_weight {
-                        let (mut ffn_up, mut ffn_gate) = self.fused_rmsnorm_ffn_up_gate(
-                            hidden, ffn_norm, self.config.eps,
-                            &layer.ffn_up_weight, gate_weight,
-                        )?;
-                        if let Some(ref bias) = layer.ffn_up_bias {
-                            ops::add_bias(&mut ffn_up, bias);
-                        }
-                        if let Some(ref bias) = layer.ffn_gate_bias {
-                            ops::add_bias(&mut ffn_gate, bias);
-                        }
-                        ops::silu(&mut ffn_gate);
-                        for i in 0..ffn_gate.len() {
-                            ffn_gate[i] *= ffn_up[i];
-                        }
-                        return Ok(ffn_gate);
-                    }
-                }
-
-                // Non-fused gated path (LayerNorm models, no FFN norm, or Gemma).
-                let ffn_input = if let Some(ref ffn_norm) = layer.ffn_norm_weight {
-                    if use_rmsnorm {
-                        self.rms_norm_arch(hidden, ffn_norm, self.config.eps)
-                    } else {
-                        ops::layer_norm(
-                            hidden, ffn_norm,
-                            layer.ffn_norm_bias.as_deref(), self.config.eps,
-                        )
-                    }
-                } else {
-                    hidden.to_vec()
-                };
-
-                let out_dim = layer.ffn_up_weight.out_dim;
-                let mut ffn_up = vec![0.0f32; out_dim];
-                let mut ffn_gate = vec![0.0f32; out_dim];
-                self.fused_gate_up_matmul_into(
-                    &ffn_input, gate_weight, &layer.ffn_up_weight,
-                    &mut ffn_gate, &mut ffn_up,
-                )?;
-                if let Some(ref bias) = layer.ffn_up_bias {
-                    ops::add_bias(&mut ffn_up, bias);
-                }
-                if let Some(ref bias) = layer.ffn_gate_bias {
-                    ops::add_bias(&mut ffn_gate, bias);
-                }
-                // PMAT-809 (a): GeGLU (Gemma) vs SwiGLU (LLaMA) on the gate branch.
-                self.gemma_gate_activation(&mut ffn_gate);
-                for i in 0..ffn_gate.len() {
-                    ffn_gate[i] *= ffn_up[i];
-                }
-                Ok(ffn_gate)
-            } else {
-                // GH-306: Fused gate_up weight (Phi-3.5) — single matmul, split in half
-                let ffn_input = if let Some(ref ffn_norm) = layer.ffn_norm_weight {
-                    if use_rmsnorm {
-                        self.rms_norm_arch(hidden, ffn_norm, self.config.eps)
-                    } else {
-                        ops::layer_norm(
-                            hidden, ffn_norm,
-                            layer.ffn_norm_bias.as_deref(), self.config.eps,
-                        )
-                    }
-                } else {
-                    hidden.to_vec()
-                };
-
-                let fused = self.fused_matmul(&ffn_input, &layer.ffn_up_weight)?;
-                let half = fused.len() / 2;
-                let mut ffn_gate = fused[..half].to_vec();
-                let mut ffn_up = fused[half..].to_vec();
-                if let Some(ref bias) = layer.ffn_up_bias {
-                    // Split bias too if present
-                    let bias_half = bias.len() / 2;
-                    ops::add_bias(&mut ffn_gate, &bias[..bias_half]);
-                    ops::add_bias(&mut ffn_up, &bias[bias_half..]);
-                }
-                self.gemma_gate_activation(&mut ffn_gate);
-                for i in 0..ffn_gate.len() {
-                    ffn_gate[i] *= ffn_up[i];
-                }
-                Ok(ffn_gate)
-            }
-        } else {
+        if !self.config.constraints.has_gate_ffn() {
             // GELU path (GPT-2, BERT, etc.) - no gate weight
-            let ffn_input = if let Some(ref ffn_norm) = layer.ffn_norm_weight {
-                if use_rmsnorm {
-                    self.rms_norm_arch(hidden, ffn_norm, self.config.eps)
-                } else {
-                    ops::layer_norm(
-                        hidden, ffn_norm,
-                        layer.ffn_norm_bias.as_deref(), self.config.eps,
-                    )
-                }
-            } else {
-                hidden.to_vec()
-            };
-
+            let ffn_input = self.ffn_input_normed(hidden, layer_idx, use_rmsnorm);
             let mut ffn_hidden = self.fused_matmul(&ffn_input, &layer.ffn_up_weight)?;
             if let Some(ref bias) = layer.ffn_up_bias {
                 ops::add_bias(&mut ffn_hidden, bias);
             }
             ops::gelu(&mut ffn_hidden);
-            Ok(ffn_hidden)
+            return Ok(ffn_hidden);
         }
+
+        // GH-306: Fused path only when separate gate weight exists
+        let Some(ref gate_weight) = layer.ffn_gate_weight else {
+            return self.single_cache_ffn_fused_gate_up(hidden, layer_idx, use_rmsnorm);
+        };
+
+        // Fused RMSNorm + SwiGLU (LLaMA, TinyLlama, Mistral, etc.)
+        // PMAT-809: the fused kernel bakes in `* weight` RMSNorm + SiLU, so
+        // it is correct ONLY for non-Gemma. Gemma-v1 needs (1+w) RMSNorm +
+        // GeGLU, so it falls through to the explicit arch-dispatched path.
+        if use_rmsnorm && !self.config.is_gemma1() {
+            if let Some(ref ffn_norm) = layer.ffn_norm_weight {
+                let (ffn_up, ffn_gate) = self.fused_rmsnorm_ffn_up_gate(
+                    hidden, ffn_norm, self.config.eps,
+                    &layer.ffn_up_weight, gate_weight,
+                )?;
+                return Ok(self.ffn_activate(
+                    ffn_up, ffn_gate,
+                    layer.ffn_up_bias.as_deref(), layer.ffn_gate_bias.as_deref(),
+                    false,
+                ));
+            }
+        }
+
+        // Non-fused gated path (LayerNorm models, no FFN norm, or Gemma).
+        let ffn_input = self.ffn_input_normed(hidden, layer_idx, use_rmsnorm);
+        let out_dim = layer.ffn_up_weight.out_dim;
+        let mut ffn_up = vec![0.0f32; out_dim];
+        let mut ffn_gate = vec![0.0f32; out_dim];
+        self.fused_gate_up_matmul_into(
+            &ffn_input, gate_weight, &layer.ffn_up_weight,
+            &mut ffn_gate, &mut ffn_up,
+        )?;
+        // PMAT-809 (a): GeGLU (Gemma) vs SwiGLU (LLaMA) on the gate branch.
+        Ok(self.ffn_activate(
+            ffn_up, ffn_gate,
+            layer.ffn_up_bias.as_deref(), layer.ffn_gate_bias.as_deref(),
+            true,
+        ))
+    }
+
+    /// GH-306: fused gate_up weight (Phi-3.5) — single matmul, split in half.
+    fn single_cache_ffn_fused_gate_up(
+        &self,
+        hidden: &[f32],
+        layer_idx: usize,
+        use_rmsnorm: bool,
+    ) -> Result<Vec<f32>> {
+        let layer = &self.layers[layer_idx];
+        let ffn_input = self.ffn_input_normed(hidden, layer_idx, use_rmsnorm);
+        let fused = self.fused_matmul(&ffn_input, &layer.ffn_up_weight)?;
+        let half = fused.len() / 2;
+        let mut ffn_gate = fused[..half].to_vec();
+        let mut ffn_up = fused[half..].to_vec();
+        if let Some(ref bias) = layer.ffn_up_bias {
+            // Split bias too if present
+            let bias_half = bias.len() / 2;
+            ops::add_bias(&mut ffn_gate, &bias[..bias_half]);
+            ops::add_bias(&mut ffn_up, &bias[bias_half..]);
+        }
+        Ok(self.ffn_activate(ffn_up, ffn_gate, None, None, true))
+    }
+
+    /// The FFN input: the pre-FFN norm (arch RMSNorm or LayerNorm), or the
+    /// hidden state itself when the layer carries no FFN norm.
+    fn ffn_input_normed(&self, hidden: &[f32], layer_idx: usize, use_rmsnorm: bool) -> Vec<f32> {
+        let layer = &self.layers[layer_idx];
+        match layer.ffn_norm_weight {
+            Some(ref ffn_norm) if use_rmsnorm => self.rms_norm_arch(hidden, ffn_norm, self.config.eps),
+            Some(ref ffn_norm) => ops::layer_norm(
+                hidden, ffn_norm,
+                layer.ffn_norm_bias.as_deref(), self.config.eps,
+            ),
+            None => hidden.to_vec(),
+        }
+    }
+
+    /// Biases, the gate activation (`arch_gate`: GeGLU for Gemma, SiLU
+    /// otherwise; `false`: plain SiLU — the fused kernel's non-Gemma path),
+    /// then `gate *= up`. Returns the activated vector.
+    fn ffn_activate(
+        &self,
+        mut ffn_up: Vec<f32>,
+        mut ffn_gate: Vec<f32>,
+        up_bias: Option<&[f32]>,
+        gate_bias: Option<&[f32]>,
+        arch_gate: bool,
+    ) -> Vec<f32> {
+        if let Some(bias) = up_bias {
+            ops::add_bias(&mut ffn_up, bias);
+        }
+        if let Some(bias) = gate_bias {
+            ops::add_bias(&mut ffn_gate, bias);
+        }
+        if arch_gate {
+            self.gemma_gate_activation(&mut ffn_gate);
+        } else {
+            ops::silu(&mut ffn_gate);
+        }
+        for i in 0..ffn_gate.len() {
+            ffn_gate[i] *= ffn_up[i];
+        }
+        ffn_gate
     }
 
     /// Final output computation for single-token cached forward pass
@@ -487,21 +487,10 @@ impl OwnedQuantizedModel {
     ) -> Result<Vec<f32>> {
         let hidden_dim = self.config.hidden_dim;
 
-        // 1. Token embedding lookup
+        // 1. Token embedding lookup (+ learned position embedding, GH-278)
         let mut hidden = self.embed(&[token_id]);
-
-        // GH-278: Add learned position embedding for absolute encoding (GPT-2, BERT, whisper)
-        if self.config.constraints.uses_absolute_positions() {
-            if let Some(ref pos_emb) = self.position_embedding {
-                let start = position * hidden_dim;
-                let end = start + hidden_dim;
-                if end <= pos_emb.len() {
-                    for i in 0..hidden_dim {
-                        hidden[i] += pos_emb[start + i];
-                    }
-                }
-            }
-        }
+        self.add_position_embedding(&mut hidden, position);
+        crate::inference_trace::gpu_stage_dump::per_op_tap::tap(crate::inference_trace::save_tensor_stage::SaveTensorStage::Embedding, 0, &hidden);
 
         // GH-278: Use contract-derived norm type.
         let use_rmsnorm = self.config.constraints.uses_rmsnorm();
@@ -516,80 +505,17 @@ impl OwnedQuantizedModel {
 
         // DEBUG: Consolidated embedding trace (PMAT-260)
         self.debug_trace_embedding(&hidden, token_id, position);
-
-        // GH-559 DIAGNOSTIC: Dump CPU hidden state per layer for GPU comparison
-        static CPU_LAYER_DEBUG: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-        let cpu_layer_debug = *CPU_LAYER_DEBUG.get_or_init(|| {
-            std::env::var("CPU_LAYER_DEBUG")
-                .map(|v| v == "1")
-                .unwrap_or(false)
-        });
-
         // GH-559: Dump CPU RMSNorm output for Layer 0 comparison with GPU
-        if cpu_layer_debug {
-            let gamma = &self.layers[0].attn_norm_weight;
-            let sum_sq: f32 = hidden.iter().map(|x| x * x).sum();
-            let rms = (sum_sq / hidden.len() as f32 + self.config.eps).sqrt();
-            let normed: Vec<f32> = hidden.iter().zip(gamma.iter())
-                .map(|(x, g)| (x / rms) * g)
-                .collect();
-            eprintln!(
-                "[GH-559-CPU] Layer 0 RMSNorm: rms={:.6}, first16={:?}",
-                rms, &normed[..16.min(normed.len())]
-            );
-        }
+        self.debug_cpu_layer0_rmsnorm(&hidden);
 
         // 2. Process through transformer layers
         for (layer_idx, layer) in self.layers.iter().enumerate() {
-            // 2a+2b. Fused attention layer norm + QKV projection
-            // For RMSNorm models: fuse norm + matmul to eliminate intermediate allocation
-            // For LayerNorm models: use separate operations (has bias)
-            // PMAT-307: Use workspace for QKV to eliminate per-layer Vec alloc.
-            // For fused QKV weights: norm_into + matmul_into → qkv_buffer
-            let qkv_actual_dim;
-            // PMAT-809: the fused RMSNorm+QKV kernels bake in `* weight` norm. When
-            // the arch needs a runtime (1+w) offset, normalize explicitly via
-            // rms_norm_into_arch then run the standard QKV matmul. GGUF gemma has +1
-            // baked in (rmsnorm_unit_offset == false) so it stays on the fused path.
-            let mut qkv = if use_rmsnorm && self.config.rmsnorm_unit_offset() {
-                qkv_actual_dim = 0;
-                self.rms_norm_into_arch(&hidden, &layer.attn_norm_weight, self.config.eps,
-                    &mut o_proj_buffer[..hidden_dim]);
-                let v = self.qkv_matmul(&o_proj_buffer[..hidden_dim], &layer.qkv_weight)?;
-                qkv_buffer[..v.len()].copy_from_slice(&v);
-                &mut qkv_buffer[..v.len()]
-            } else if use_rmsnorm {
-                match &layer.qkv_weight {
-                    crate::gguf::quantized::OwnedQKVWeights::Fused(ref w) => {
-                        // RMSNorm → o_proj_buffer (reuse as temp), matmul → qkv_buffer
-                        ops::rms_norm_into(&hidden, &layer.attn_norm_weight, self.config.eps,
-                            &mut o_proj_buffer[..hidden_dim]);
-                        qkv_actual_dim = w.out_dim;
-                        self.fused_matmul_into(&o_proj_buffer[..hidden_dim], w,
-                            &mut qkv_buffer[..w.out_dim])?;
-                        &mut qkv_buffer[..w.out_dim]
-                    },
-                    _ => {
-                        // Separate Q/K/V: use allocating path (rayon::join needs ownership)
-                        qkv_actual_dim = 0; // unused
-                        let v = self.fused_rmsnorm_qkv_matmul(
-                            &hidden, &layer.attn_norm_weight, self.config.eps, &layer.qkv_weight)?;
-                        // Copy to qkv_buffer for uniform handling below
-                        qkv_buffer[..v.len()].copy_from_slice(&v);
-                        &mut qkv_buffer[..v.len()]
-                    },
-                }
-            } else {
-                let normed = ops::layer_norm(
-                    &hidden, &layer.attn_norm_weight,
-                    layer.attn_norm_bias.as_deref(), self.config.eps);
-                let v = self.qkv_matmul(&normed, &layer.qkv_weight)?;
-                qkv_actual_dim = 0;
-                qkv_buffer[..v.len()].copy_from_slice(&v);
-                &mut qkv_buffer[..v.len()]
-            };
+            crate::inference_trace::gpu_stage_dump::per_op_tap::tap_norm(crate::inference_trace::save_tensor_stage::SaveTensorStage::AttnNorm, layer_idx as u32, &hidden, Some(&layer.attn_norm_weight), layer.attn_norm_bias.as_deref(), self.config.eps, use_rmsnorm);
+            // 2a+2b. Fused attention layer norm + QKV projection → qkv_buffer
+            let mut qkv = self.single_cache_qkv(&hidden, layer_idx, use_rmsnorm, &mut o_proj_buffer[..hidden_dim], &mut qkv_buffer)?;
 
             // PMAT-114: Trace QKV BEFORE bias (PMAT-260)
+            crate::inference_trace::gpu_stage_dump::per_op_tap::tap(crate::inference_trace::save_tensor_stage::SaveTensorStage::QkvMatmul, layer_idx as u32, &qkv[..]);
             self.debug_trace_qkv(&qkv, layer_idx, hidden_dim);
 
             if let Some(ref bias) = layer.qkv_bias {
@@ -597,49 +523,19 @@ impl OwnedQuantizedModel {
             }
 
             // 2c. Extract Q, K, V with GQA-aware sizes and apply RoPE
-            // Q: [hidden_dim] = [num_heads * head_dim]
-            // K: [kv_dim] = [num_kv_heads * head_dim]
-            // V: [kv_dim] = [num_kv_heads * head_dim]
-            // Optimization: apply RoPE in-place to avoid Q/K copies
-            let num_kv_heads = self.config.num_kv_heads;
             // GH-479: Use config methods (Qwen3 head_dim != hidden/heads)
+            let num_kv_heads = self.config.num_kv_heads;
             let head_dim = self.config.head_dim();
             let q_dim = self.config.q_dim();
             let kv_dim = self.config.kv_dim();
 
             // PMAT-114: Trace QKV after bias for layer 0 (PMAT-260)
             self.debug_trace_qkv_after_bias(&qkv, layer, layer_idx, hidden_dim);
-
-            // GH-479: Per-head QK RMSNorm (Qwen3) — after bias, before RoPE
-            if let Some(ref q_norm) = layer.attn_q_norm_weight {
-                ops::apply_per_head_rms_norm(
-                    &mut qkv[0..q_dim],
-                    q_norm,
-                    self.config.num_heads,
-                    self.config.eps,
-                );
-            }
-            if let Some(ref k_norm) = layer.attn_k_norm_weight {
-                ops::apply_per_head_rms_norm(
-                    &mut qkv[q_dim..q_dim + kv_dim],
-                    k_norm,
-                    num_kv_heads,
-                    self.config.eps,
-                );
-            }
-
-            // GH-278: Skip RoPE for models with learned position embeddings (GPT-2)
-            if self.config.constraints.uses_rope() {
-                self.apply_rope(&mut qkv[0..q_dim], position, self.config.num_heads);
-                self.apply_rope(
-                    &mut qkv[q_dim..q_dim + kv_dim],
-                    position,
-                    num_kv_heads,
-                );
-            }
+            self.single_cache_qk_norm_rope(&mut qkv, layer_idx, position);
 
             // Use slices to avoid copies (only copy K for cache storage)
-            // GH-479: Use q_dim (may differ from hidden_dim for Qwen3)
+            crate::inference_trace::gpu_stage_dump::per_op_tap::tap(crate::inference_trace::save_tensor_stage::SaveTensorStage::QPostRope, layer_idx as u32, &qkv[0..q_dim]);
+            crate::inference_trace::gpu_stage_dump::per_op_tap::tap(crate::inference_trace::save_tensor_stage::SaveTensorStage::KPostRope, layer_idx as u32, &qkv[q_dim..q_dim + kv_dim]);
             let q = &qkv[0..q_dim];
             let k = &qkv[q_dim..q_dim + kv_dim];
             let v = &qkv[q_dim + kv_dim..q_dim + 2 * kv_dim];
@@ -647,29 +543,19 @@ impl OwnedQuantizedModel {
             // 2d. Get cached K/V and compute attention with GQA support
             let k_cache = cache.get_k(layer_idx);
             let v_cache = cache.get_v(layer_idx);
-
-            // Use pre-allocated attention output buffer (reused across layers)
             if k_cache.is_empty() {
                 // First token - no cache yet, output is just weighted V
-                // With single query and single K/V, need to expand V for all Q heads
-                let q_per_kv = self.config.num_heads / num_kv_heads;
-                for q_head in 0..self.config.num_heads {
-                    let kv_head = q_head / q_per_kv;
-                    let v_start = kv_head * head_dim;
-                    let out_start = q_head * head_dim;
-                    attn_out_buffer[out_start..out_start + head_dim]
-                        .copy_from_slice(&v[v_start..v_start + head_dim]);
-                }
+                Self::first_token_attention(v, &mut attn_out_buffer, head_dim, self.config.num_heads, num_kv_heads);
             } else {
                 // Use cached K/V for attention with GQA
                 // Uses pre-allocated buffer to avoid 704 Vec allocations per token
                 self.attention_with_cache_gqa_into(q, k_cache, v_cache, k, v, &mut attn_out_buffer);
-
                 // CORRECTNESS-013: Debug CPU attention output (PMAT-260)
                 Self::debug_trace_attention_output(&attn_out_buffer, layer_idx, position, head_dim);
             }
 
             // 2e. Store K and V in cache for future tokens
+            crate::inference_trace::gpu_stage_dump::per_op_tap::tap(crate::inference_trace::save_tensor_stage::SaveTensorStage::Attention, layer_idx as u32, &attn_out_buffer);
             cache.append(layer_idx, k, v);
 
             // 2f. Attention output projection → o_proj_buffer (PMAT-305: no alloc)
@@ -677,73 +563,220 @@ impl OwnedQuantizedModel {
             if let Some(ref bias) = layer.attn_output_bias {
                 ops::add_bias(&mut o_proj_buffer, bias);
             }
-
-            // PMAT-810: Gemma2 POST-attention RMSNorm on the attention output,
-            // BEFORE the residual add: `x + post_attn_norm(attn(...))`. `None` for
-            // every other arch → residual add unchanged. GGUF bakes the Gemma
-            // `(1+w)` offset into the weight, so standard rms_norm is correct.
-            if let Some(ref post_w) = layer.post_attn_norm_weight {
-                let normed = ops::rms_norm(&o_proj_buffer[..hidden_dim], post_w, self.config.eps);
-                o_proj_buffer[..hidden_dim].copy_from_slice(&normed);
-            }
+            // PMAT-810: Gemma2 POST-attention RMSNorm BEFORE the residual add.
+            self.post_norm_in_place(&mut o_proj_buffer[..hidden_dim], layer.post_attn_norm_weight.as_deref());
 
             // 2g. Residual connection
+            crate::inference_trace::gpu_stage_dump::per_op_tap::tap(crate::inference_trace::save_tensor_stage::SaveTensorStage::AttnOut, layer_idx as u32, &o_proj_buffer);
             for i in 0..hidden_dim {
                 hidden[i] += o_proj_buffer[i];
             }
+            crate::inference_trace::gpu_stage_dump::per_op_tap::tap(crate::inference_trace::save_tensor_stage::SaveTensorStage::PostAttnResidual, layer_idx as u32, &hidden);
 
-            // 2h+2i. FFN with optional layer norm and SwiGLU/GELU activation
-            let ffn_activated = self.single_cache_ffn_block(&hidden, layer_idx, use_rmsnorm)?;
-
-            // 2j. FFN down projection → ffn_down_buffer (PMAT-305: no alloc)
-            self.fused_matmul_into(&ffn_activated, &layer.ffn_down_weight, &mut ffn_down_buffer)?;
-            if let Some(ref bias) = layer.ffn_down_bias {
-                ops::add_bias(&mut ffn_down_buffer, bias);
-            }
-
-            // PMAT-810: Gemma2 POST-FFN RMSNorm on the FFN output, BEFORE the
-            // residual add: `h + post_ffw_norm(ffn(...))`. `None` elsewhere.
-            if let Some(ref post_w) = layer.post_ffw_norm_weight {
-                let normed = ops::rms_norm(&ffn_down_buffer[..hidden_dim], post_w, self.config.eps);
-                ffn_down_buffer[..hidden_dim].copy_from_slice(&normed);
-            }
-
-            // Residual
-            for i in 0..hidden_dim {
-                hidden[i] += ffn_down_buffer[i];
-            }
+            // 2h-2j. FFN, down projection, post-norm, residual
+            self.single_cache_ffn_residual(&mut hidden, layer_idx, use_rmsnorm, &mut ffn_down_buffer)?;
 
             // DEBUG: Consolidated per-layer output trace (PMAT-260)
             self.debug_trace_layer_output(&hidden, layer_idx);
-
             // GH-559 DIAGNOSTIC: Dump CPU hidden state per layer
-            if cpu_layer_debug {
-                let sum: f32 = hidden.iter().sum();
-                let rms: f32 = (hidden.iter().map(|x| x * x).sum::<f32>() / hidden.len() as f32).sqrt();
-                eprintln!(
-                    "[GH-559-CPU] Layer {}/{} output: sum={:.6}, rms={:.6}, first16={:?}",
-                    layer_idx, self.layers.len(), sum, rms,
-                    &hidden[..16.min(hidden.len())]
-                );
-                // GH-559: For Layer 0, dump elements at Q4K super-block boundaries (every 256)
-                if layer_idx == 0 {
-                    for sb in 0..(hidden.len() / 256) {
-                        let idx = sb * 256;
-                        let end = (idx + 5).min(hidden.len());
-                        let sb_sum: f32 = hidden[idx..idx+256.min(hidden.len()-idx)].iter().sum();
-                        eprintln!(
-                            "[GH-559-CPU] L0 sb{}: idx={}, sum={:.4}, vals={:?}",
-                            sb, idx, sb_sum, &hidden[idx..end]
-                        );
-                    }
-                }
-            }
+            self.debug_cpu_layer_output(&hidden, layer_idx);
         }
 
         // Advance cache position after processing all layers
         cache.advance();
 
         // Final output: norm + LM head + debug verification + bias
-        self.single_cache_final_output(&hidden, position, use_rmsnorm)
+        crate::inference_trace::gpu_stage_dump::per_op_tap::tap_norm(crate::inference_trace::save_tensor_stage::SaveTensorStage::FinalNorm, 0, &hidden, Some(&self.output_norm_weight), self.output_norm_bias.as_deref(), self.config.eps, use_rmsnorm);
+        let logits = self.single_cache_final_output(&hidden, position, use_rmsnorm);
+        crate::inference_trace::gpu_stage_dump::per_op_tap::tap_ok(crate::inference_trace::save_tensor_stage::SaveTensorStage::LmHead, 0, &logits);
+        logits
+    }
+
+    /// GH-278: learned position embedding for absolute encoding (GPT-2, BERT, whisper).
+    fn add_position_embedding(&self, hidden: &mut [f32], position: usize) {
+        if !self.config.constraints.uses_absolute_positions() {
+            return;
+        }
+        let hidden_dim = self.config.hidden_dim;
+        if let Some(ref pos_emb) = self.position_embedding {
+            let start = position * hidden_dim;
+            let end = start + hidden_dim;
+            if end <= pos_emb.len() {
+                for i in 0..hidden_dim {
+                    hidden[i] += pos_emb[start + i];
+                }
+            }
+        }
+    }
+
+    /// 2a+2b: attention norm + QKV projection into `qkv_buffer`; returns the
+    /// filled prefix. For RMSNorm models the norm is fused into the matmul
+    /// (`o_proj_buffer` is the scratch for the normed input); LayerNorm models
+    /// (bias) use separate operations. PMAT-809: an arch with a runtime (1+w)
+    /// offset normalises explicitly, then runs the standard QKV matmul.
+    fn single_cache_qkv<'b>(
+        &self,
+        hidden: &[f32],
+        layer_idx: usize,
+        use_rmsnorm: bool,
+        o_proj_buffer: &mut [f32],
+        qkv_buffer: &'b mut [f32],
+    ) -> Result<&'b mut [f32]> {
+        let layer = &self.layers[layer_idx];
+        let len = if use_rmsnorm && self.config.rmsnorm_unit_offset() {
+            self.rms_norm_into_arch(hidden, &layer.attn_norm_weight, self.config.eps, o_proj_buffer);
+            let v = self.qkv_matmul(o_proj_buffer, &layer.qkv_weight)?;
+            qkv_buffer[..v.len()].copy_from_slice(&v);
+            v.len()
+        } else if use_rmsnorm {
+            match &layer.qkv_weight {
+                crate::gguf::quantized::OwnedQKVWeights::Fused(ref w) => {
+                    // RMSNorm → o_proj_buffer (reuse as temp), matmul → qkv_buffer
+                    ops::rms_norm_into(hidden, &layer.attn_norm_weight, self.config.eps, o_proj_buffer);
+                    self.fused_matmul_into(o_proj_buffer, w, &mut qkv_buffer[..w.out_dim])?;
+                    w.out_dim
+                }
+                _ => {
+                    // Separate Q/K/V: use allocating path (rayon::join needs ownership)
+                    let v = self.fused_rmsnorm_qkv_matmul(
+                        hidden, &layer.attn_norm_weight, self.config.eps, &layer.qkv_weight)?;
+                    // Copy to qkv_buffer for uniform handling below
+                    qkv_buffer[..v.len()].copy_from_slice(&v);
+                    v.len()
+                }
+            }
+        } else {
+            let normed = ops::layer_norm(
+                hidden, &layer.attn_norm_weight,
+                layer.attn_norm_bias.as_deref(), self.config.eps);
+            let v = self.qkv_matmul(&normed, &layer.qkv_weight)?;
+            qkv_buffer[..v.len()].copy_from_slice(&v);
+            v.len()
+        };
+        let (qkv, _) = qkv_buffer.split_at_mut(len);
+        Ok(qkv)
+    }
+
+    /// GH-479: per-head QK RMSNorm (Qwen3) after bias, then RoPE (skipped for
+    /// models with learned position embeddings, GH-278).
+    fn single_cache_qk_norm_rope(&self, qkv: &mut [f32], layer_idx: usize, position: usize) {
+        let layer = &self.layers[layer_idx];
+        let num_kv_heads = self.config.num_kv_heads;
+        let q_dim = self.config.q_dim();
+        let kv_dim = self.config.kv_dim();
+        if let Some(ref q_norm) = layer.attn_q_norm_weight {
+            ops::apply_per_head_rms_norm(&mut qkv[0..q_dim], q_norm, self.config.num_heads, self.config.eps);
+        }
+        if let Some(ref k_norm) = layer.attn_k_norm_weight {
+            ops::apply_per_head_rms_norm(&mut qkv[q_dim..q_dim + kv_dim], k_norm, num_kv_heads, self.config.eps);
+        }
+        if self.config.constraints.uses_rope() {
+            self.apply_rope(&mut qkv[0..q_dim], position, self.config.num_heads);
+            self.apply_rope(&mut qkv[q_dim..q_dim + kv_dim], position, num_kv_heads);
+        }
+    }
+
+    /// First token, no cache yet: the attention output is V, expanded from
+    /// every KV head to the Q heads it serves (GQA).
+    fn first_token_attention(v: &[f32], attn_out_buffer: &mut [f32], head_dim: usize, num_heads: usize, num_kv_heads: usize) {
+        let q_per_kv = num_heads / num_kv_heads;
+        for q_head in 0..num_heads {
+            let kv_head = q_head / q_per_kv;
+            let v_start = kv_head * head_dim;
+            let out_start = q_head * head_dim;
+            attn_out_buffer[out_start..out_start + head_dim]
+                .copy_from_slice(&v[v_start..v_start + head_dim]);
+        }
+    }
+
+    /// PMAT-810: Gemma2 POST-norm on a block output BEFORE the residual add
+    /// (`None` for every other arch → unchanged). GGUF bakes the Gemma `(1+w)`
+    /// offset into the weight, so standard rms_norm is correct.
+    fn post_norm_in_place(&self, buf: &mut [f32], post_w: Option<&[f32]>) {
+        if let Some(w) = post_w {
+            let normed = ops::rms_norm(buf, w, self.config.eps);
+            buf.copy_from_slice(&normed);
+        }
+    }
+
+    /// 2h-2j: FFN block, down projection into `ffn_down_buffer`, Gemma2
+    /// post-FFN norm, residual into `hidden`.
+    fn single_cache_ffn_residual(
+        &self,
+        hidden: &mut [f32],
+        layer_idx: usize,
+        use_rmsnorm: bool,
+        ffn_down_buffer: &mut [f32],
+    ) -> Result<()> {
+        let layer = &self.layers[layer_idx];
+        let hidden_dim = self.config.hidden_dim;
+        crate::inference_trace::gpu_stage_dump::per_op_tap::tap_norm(crate::inference_trace::save_tensor_stage::SaveTensorStage::FfnNorm, layer_idx as u32, hidden, layer.ffn_norm_weight.as_deref(), layer.ffn_norm_bias.as_deref(), self.config.eps, use_rmsnorm);
+        let ffn_activated = self.single_cache_ffn_block(hidden, layer_idx, use_rmsnorm)?;
+        crate::inference_trace::gpu_stage_dump::per_op_tap::tap(crate::inference_trace::save_tensor_stage::SaveTensorStage::FfnSwigl, layer_idx as u32, &ffn_activated);
+        // 2j. FFN down projection → ffn_down_buffer (PMAT-305: no alloc)
+        self.fused_matmul_into(&ffn_activated, &layer.ffn_down_weight, ffn_down_buffer)?;
+        if let Some(ref bias) = layer.ffn_down_bias {
+            ops::add_bias(ffn_down_buffer, bias);
+        }
+        self.post_norm_in_place(&mut ffn_down_buffer[..hidden_dim], layer.post_ffw_norm_weight.as_deref());
+        crate::inference_trace::gpu_stage_dump::per_op_tap::tap(crate::inference_trace::save_tensor_stage::SaveTensorStage::FfnOut, layer_idx as u32, ffn_down_buffer);
+        for i in 0..hidden_dim {
+            hidden[i] += ffn_down_buffer[i];
+        }
+        crate::inference_trace::gpu_stage_dump::per_op_tap::tap(crate::inference_trace::save_tensor_stage::SaveTensorStage::PostFfnResidual, layer_idx as u32, hidden);
+        Ok(())
+    }
+
+    /// GH-559 DIAGNOSTIC switch (`CPU_LAYER_DEBUG=1`), read once.
+    fn cpu_layer_debug() -> bool {
+        static CPU_LAYER_DEBUG: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        *CPU_LAYER_DEBUG.get_or_init(|| {
+            std::env::var("CPU_LAYER_DEBUG")
+                .map(|v| v == "1")
+                .unwrap_or(false)
+        })
+    }
+
+    /// GH-559: Dump CPU RMSNorm output for Layer 0 comparison with GPU.
+    fn debug_cpu_layer0_rmsnorm(&self, hidden: &[f32]) {
+        if !Self::cpu_layer_debug() {
+            return;
+        }
+        let gamma = &self.layers[0].attn_norm_weight;
+        let sum_sq: f32 = hidden.iter().map(|x| x * x).sum();
+        let rms = (sum_sq / hidden.len() as f32 + self.config.eps).sqrt();
+        let normed: Vec<f32> = hidden.iter().zip(gamma.iter())
+            .map(|(x, g)| (x / rms) * g)
+            .collect();
+        eprintln!(
+            "[GH-559-CPU] Layer 0 RMSNorm: rms={:.6}, first16={:?}",
+            rms, &normed[..16.min(normed.len())]
+        );
+    }
+
+    /// GH-559 DIAGNOSTIC: Dump CPU hidden state per layer (and, for layer 0,
+    /// the elements at Q4K super-block boundaries).
+    fn debug_cpu_layer_output(&self, hidden: &[f32], layer_idx: usize) {
+        if !Self::cpu_layer_debug() {
+            return;
+        }
+        let sum: f32 = hidden.iter().sum();
+        let rms: f32 = (hidden.iter().map(|x| x * x).sum::<f32>() / hidden.len() as f32).sqrt();
+        eprintln!(
+            "[GH-559-CPU] Layer {}/{} output: sum={:.6}, rms={:.6}, first16={:?}",
+            layer_idx, self.layers.len(), sum, rms,
+            &hidden[..16.min(hidden.len())]
+        );
+        if layer_idx == 0 {
+            for sb in 0..(hidden.len() / 256) {
+                let idx = sb * 256;
+                let end = (idx + 5).min(hidden.len());
+                let sb_sum: f32 = hidden[idx..idx+256.min(hidden.len()-idx)].iter().sum();
+                eprintln!(
+                    "[GH-559-CPU] L0 sb{}: idx={}, sum={:.4}, vals={:?}",
+                    sb, idx, sb_sum, &hidden[idx..end]
+                );
+            }
+        }
     }
 }

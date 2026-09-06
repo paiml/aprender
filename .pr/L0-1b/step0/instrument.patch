@@ -1,0 +1,1121 @@
+diff --git a/crates/apr-cli/src/commands/mod.rs b/crates/apr-cli/src/commands/mod.rs
+index 413300cf8..9deb754a5 100644
+--- a/crates/apr-cli/src/commands/mod.rs
++++ b/crates/apr-cli/src/commands/mod.rs
+@@ -129,6 +129,8 @@ pub(crate) mod parity;
+ /// `apr_cli::parity_admission` (see `lib.rs`) so `tests/reg15_admission.rs`
+ /// can exercise it without reaching into the private `commands` tree.
+ pub(crate) mod parity_admission;
++pub(crate) mod parity_per_op;
++pub(crate) mod parity_per_op_table;
+ pub(crate) mod pipeline;
+ pub(crate) mod png_encode;
+ pub(crate) mod ppl;
+diff --git a/crates/apr-cli/src/commands/parity_per_op.rs b/crates/apr-cli/src/commands/parity_per_op.rs
+new file mode 100644
+index 000000000..a20f8d947
+--- /dev/null
++++ b/crates/apr-cli/src/commands/parity_per_op.rs
+@@ -0,0 +1,202 @@
++//! `apr parity --per-op` (L0-1b, #2971, PP-066): the per-op CPU-vs-GPU table.
++//!
++//! For every position of the prompt, runs the CPU reference forward
++//! (`forward_single_with_cache`, the same function the load-time gate compares
++//! against) with the per-op tap armed, and the GPU-resident forward with the
++//! executor's stage dump armed, both writing APRT files per (stage, layer).
++//! The two trees are then compared file by file; the table is printed in
++//! forward order and the FIRST op under the threshold is named. Exit 0 with
++//! the table even when an op is red — the table IS the verdict — and the
++//! load-time admission gate is bypassed INTERNALLY (never `SKIP_PARITY_GATE`).
++use std::path::Path;
++
++use crate::error::Result;
++
++#[cfg(feature = "cuda")]
++pub fn run(
++    file: &Path,
++    prompt: &str,
++    out: Option<&Path>,
++    threshold: f32,
++    json: bool,
++) -> Result<()> {
++    use super::parity_per_op_table::{aggregate, first_divergence, render};
++    use crate::error::CliError;
++    use realizar::gguf::{
++        MappedGGUFModel, OwnedQuantizedKVCache, OwnedQuantizedModel, OwnedQuantizedModelCuda,
++    };
++    use realizar::inference_trace::gpu_stage_dump::GpuStageDumpConfig;
++    use realizar::inference_trace::per_op_tap;
++    use realizar::inference_trace::save_tensor_compose::read_stage_file;
++    use realizar::inference_trace::save_tensor_plan::SaveTensorPlan;
++
++    // The graphed decode path replays a captured graph; host read-backs inside it are
++    // impossible, so the instrument forces the non-graphed path. Printed: an override.
++    std::env::set_var("SKIP_CUDA_GRAPH", "1");
++    eprintln!("override: SKIP_CUDA_GRAPH=1 (per-op instrument runs the non-graphed GPU path; arms A0/A1 measured identical cosine)");
++
++    let mapped = MappedGGUFModel::from_path(file)
++        .map_err(|e| CliError::ValidationFailed(format!("GGUF load failed: {e}")))?;
++    let tokens = mapped.model.encode(prompt).unwrap_or_else(|| vec![1u32]);
++    let model = OwnedQuantizedModel::from_mapped(&mapped)
++        .map_err(|e| CliError::ValidationFailed(format!("model load failed: {e}")))?;
++    let num_layers = model.config().num_layers;
++    let kv_dim = model.config().kv_dim();
++
++    per_op_tap::arm_gate_bypass();
++    let mut cuda_model = OwnedQuantizedModelCuda::new(model, 0)
++        .map_err(|e| CliError::ValidationFailed(format!("CUDA init failed: {e}")))?;
++    eprintln!(
++        "selected: cuda ({}) parity: {} — {}",
++        cuda_model.device_name(),
++        cuda_model.parity.status,
++        cuda_model.parity.basis
++    );
++
++    let root = match out {
++        Some(p) => p.to_path_buf(),
++        None => std::env::temp_dir().join(format!("apr-parity-per-op-{}", std::process::id())),
++    };
++    std::fs::create_dir_all(&root)
++        .map_err(|e| CliError::ValidationFailed(format!("{}: {e}", root.display())))?;
++    eprintln!(
++        "per-op dump root: {} ({} positions, {} layers)",
++        root.display(),
++        tokens.len(),
++        num_layers
++    );
++
++    let max_seq = tokens.len() + 1;
++    let mut cpu_cache = OwnedQuantizedKVCache::new(num_layers, kv_dim, max_seq);
++    let mut gpu_cache = OwnedQuantizedKVCache::new(num_layers, kv_dim, max_seq);
++    cuda_model.executor_mut().reset_kv_cache_gpu();
++
++    for (pos, &token_id) in tokens.iter().enumerate() {
++        let cpu_dir = root.join("cpu").join(format!("pos-{pos:04}"));
++        let gpu_dir = root.join("gpu").join(format!("pos-{pos:04}"));
++        let plan = SaveTensorPlan::from_cli("all", &format!("0..{num_layers}"), cpu_dir)
++            .map_err(|e| CliError::ValidationFailed(format!("plan: {e:?}")))?;
++        per_op_tap::set_plan(Some(plan));
++        let cpu = cuda_model
++            .model()
++            .forward_single_with_cache(token_id, &mut cpu_cache, pos);
++        per_op_tap::set_plan(None);
++        cpu.map_err(|e| {
++            CliError::InferenceFailed(format!("CPU forward failed at pos {pos}: {e}"))
++        })?;
++
++        per_op_tap::set_gpu_dump(Some(GpuStageDumpConfig::with_output_dir(gpu_dir)));
++        let gpu = cuda_model.forward_gpu_resident(token_id, &mut gpu_cache, pos);
++        per_op_tap::set_gpu_dump(None);
++        gpu.map_err(|e| {
++            CliError::InferenceFailed(format!("GPU forward failed at pos {pos}: {e}"))
++        })?;
++    }
++
++    // Pair every CPU file with its GPU twin; a stage one side never emits is skipped
++    // (and listed), a stage both emit with different lengths scores cosine 0.
++    let mut samples = Vec::new();
++    let mut cpu_only = std::collections::BTreeSet::new();
++    for pos in 0..tokens.len() {
++        let cpu_dir = root.join("cpu").join(format!("pos-{pos:04}"));
++        let gpu_dir = root.join("gpu").join(format!("pos-{pos:04}"));
++        for (rel, layer) in stage_files(&cpu_dir) {
++            let gpu_path = gpu_dir.join(&rel);
++            if !gpu_path.exists() {
++                cpu_only.insert(rel.clone());
++                continue;
++            }
++            let (_, cpu) = read_stage_file(&cpu_dir.join(&rel))
++                .map_err(|e| CliError::ValidationFailed(format!("{}: {e:?}", rel)))?;
++            let (_, gpu) = read_stage_file(&gpu_path)
++                .map_err(|e| CliError::ValidationFailed(format!("{}: {e:?}", rel)))?;
++            let stage = Path::new(&rel)
++                .file_stem()
++                .and_then(|s| s.to_str())
++                .unwrap_or("?")
++                .to_string();
++            samples.push((stage, layer, pos, cpu, gpu));
++        }
++    }
++    let rows = aggregate(&samples);
++    let first = first_divergence(&rows, threshold);
++    if json {
++        let table: Vec<serde_json::Value> = rows
++            .iter()
++            .map(|r| serde_json::json!({"stage": r.stage, "layer": r.layer, "min_cosine": r.min_cosine, "min_position": r.min_position, "max_abs": r.max_abs, "positions": r.positions}))
++            .collect();
++        println!(
++            "{}",
++            serde_json::json!({
++                "model": file.display().to_string(),
++                "positions": tokens.len(),
++                "threshold": threshold,
++                "threshold_basis": "evidence/parity/thresholds.yaml min_cosine (0.98, driver [U] until the gx10 pair)",
++                "first_divergence": first.map(|r| serde_json::json!({"stage": r.stage, "layer": r.layer, "min_cosine": r.min_cosine, "min_position": r.min_position})),
++                "cpu_only_stages": cpu_only.iter().collect::<Vec<_>>(),
++                "rows": table,
++            })
++        );
++    } else {
++        print!("{}", render(&rows, threshold));
++        if !cpu_only.is_empty() {
++            println!(
++                "(cpu-only stages, not compared: {})",
++                cpu_only.iter().cloned().collect::<Vec<_>>().join(", ")
++            );
++        }
++        match first {
++            Some(r) => println!(
++                "FIRST DIVERGING OP: {} layer {} — min cosine {:.6} at position {} (threshold {threshold})",
++                r.stage,
++                r.layer.map_or_else(|| "-".to_string(), |l| l.to_string()),
++                r.min_cosine,
++                r.min_position
++            ),
++            None => println!("every op >= {threshold} over {} positions: no diverging op", tokens.len()),
++        }
++    }
++    Ok(())
++}
++
++/// `(relative path, layer)` for every `layer-N/<stage>.bin` and `<stage>.bin` under `dir`.
++#[cfg(feature = "cuda")]
++fn stage_files(dir: &Path) -> Vec<(String, Option<u32>)> {
++    let mut out = Vec::new();
++    let Ok(entries) = std::fs::read_dir(dir) else {
++        return out;
++    };
++    for e in entries.flatten() {
++        let name = e.file_name().to_string_lossy().to_string();
++        if let Some(n) = name
++            .strip_prefix("layer-")
++            .and_then(|n| n.parse::<u32>().ok())
++        {
++            if let Ok(files) = std::fs::read_dir(e.path()) {
++                for f in files.flatten() {
++                    let fname = f.file_name().to_string_lossy().to_string();
++                    if fname.ends_with(".bin") {
++                        out.push((format!("{name}/{fname}"), Some(n)));
++                    }
++                }
++            }
++        } else if name.ends_with(".bin") {
++            out.push((name, None));
++        }
++    }
++    out.sort();
++    out
++}
++
++#[cfg(not(feature = "cuda"))]
++pub fn run(
++    _file: &Path,
++    _prompt: &str,
++    _out: Option<&Path>,
++    _threshold: f32,
++    _json: bool,
++) -> Result<()> {
++    Err(crate::error::CliError::FeatureDisabled(
++        "cuda feature required for apr parity --per-op".to_string(),
++    ))
++}
+diff --git a/crates/apr-cli/src/commands/parity_per_op_table.rs b/crates/apr-cli/src/commands/parity_per_op_table.rs
+new file mode 100644
+index 000000000..3f457628d
+--- /dev/null
++++ b/crates/apr-cli/src/commands/parity_per_op_table.rs
+@@ -0,0 +1,222 @@
++//! The per-op parity table (L0-1b, #2971): pure aggregation over per-position
++//! stage pairs, and the one question the instrument answers — which op, in
++//! forward order, is the FIRST whose min cosine falls under the threshold.
++//! No I/O and no realizar types, so it is tested in the workspace build.
++
++/// One (stage, layer) row: aggregated over every position compared.
++#[derive(Debug, Clone, PartialEq)]
++pub struct OpRow {
++    /// Canonical stage name (`attn_norm`, `ffn_swigl`, `lm_head`, …).
++    pub stage: String,
++    /// `None` for whole-model stages (`embedding`, `final_norm`, `lm_head`).
++    pub layer: Option<u32>,
++    /// Minimum cosine over positions.
++    pub min_cosine: f32,
++    /// Position at which the minimum cosine occurred.
++    pub min_position: usize,
++    /// Maximum |cpu - gpu| over positions and elements.
++    pub max_abs: f32,
++    /// Positions compared.
++    pub positions: usize,
++}
++
++/// Forward order of the per-layer stages the two taps emit in common.
++pub const LAYER_ORDER: &[&str] = &[
++    "attn_norm",
++    "qkv_matmul",
++    "q_post_rope",
++    "k_post_rope",
++    "attention",
++    "attn_out",
++    "post_attn_residual",
++    "ffn_norm",
++    "ffn_up",
++    "ffn_swigl",
++    "ffn_out",
++    "post_ffn_residual",
++];
++
++/// Sort key in forward order: embedding, then layer by layer in `LAYER_ORDER`,
++/// then final_norm, lm_head. Unknown stages sort after the known ones of their layer.
++#[must_use]
++pub fn forward_key(stage: &str, layer: Option<u32>) -> (u32, u32, usize) {
++    match (stage, layer) {
++        ("embedding", _) => (0, 0, 0),
++        ("final_norm", _) => (2, 0, 0),
++        ("lm_head", _) => (2, 0, 1),
++        (s, Some(l)) => (
++            1,
++            l,
++            LAYER_ORDER
++                .iter()
++                .position(|k| *k == s)
++                .unwrap_or(LAYER_ORDER.len()),
++        ),
++        (_, None) => (3, 0, 0),
++    }
++}
++
++/// Cosine similarity; `0.0` when either side has zero norm or the lengths differ.
++#[must_use]
++pub fn cosine(a: &[f32], b: &[f32]) -> f32 {
++    if a.len() != b.len() || a.is_empty() {
++        return 0.0;
++    }
++    let (mut dot, mut na, mut nb) = (0.0f64, 0.0f64, 0.0f64);
++    for (x, y) in a.iter().zip(b) {
++        dot += f64::from(*x) * f64::from(*y);
++        na += f64::from(*x) * f64::from(*x);
++        nb += f64::from(*y) * f64::from(*y);
++    }
++    if na == 0.0 || nb == 0.0 {
++        return 0.0;
++    }
++    (dot / (na.sqrt() * nb.sqrt())) as f32
++}
++
++/// Maximum absolute elementwise difference (`inf` when the lengths differ).
++#[must_use]
++pub fn max_abs_diff(a: &[f32], b: &[f32]) -> f32 {
++    if a.len() != b.len() {
++        return f32::INFINITY;
++    }
++    a.iter()
++        .zip(b)
++        .map(|(x, y)| (x - y).abs())
++        .fold(0.0f32, f32::max)
++}
++
++/// Aggregate `(stage, layer, position, cpu, gpu)` samples into forward-ordered rows.
++#[must_use]
++pub fn aggregate(samples: &[(String, Option<u32>, usize, Vec<f32>, Vec<f32>)]) -> Vec<OpRow> {
++    let mut rows: Vec<OpRow> = Vec::new();
++    for (stage, layer, pos, cpu, gpu) in samples {
++        let c = cosine(cpu, gpu);
++        let m = max_abs_diff(cpu, gpu);
++        match rows
++            .iter_mut()
++            .find(|r| r.stage == *stage && r.layer == *layer)
++        {
++            Some(r) => {
++                if c < r.min_cosine {
++                    r.min_cosine = c;
++                    r.min_position = *pos;
++                }
++                r.max_abs = r.max_abs.max(m);
++                r.positions += 1;
++            }
++            None => rows.push(OpRow {
++                stage: stage.clone(),
++                layer: *layer,
++                min_cosine: c,
++                min_position: *pos,
++                max_abs: m,
++                positions: 1,
++            }),
++        }
++    }
++    rows.sort_by_key(|r| forward_key(&r.stage, r.layer));
++    rows
++}
++
++/// The FIRST row in forward order whose min cosine is under `threshold`.
++#[must_use]
++pub fn first_divergence(rows: &[OpRow], threshold: f32) -> Option<&OpRow> {
++    rows.iter().find(|r| r.min_cosine < threshold)
++}
++
++/// One line per row, forward order, the diverging rows marked.
++#[must_use]
++pub fn render(rows: &[OpRow], threshold: f32) -> String {
++    let mut out = String::new();
++    out.push_str(&format!(
++        "{:<6} {:<20} {:>10} {:>6} {:>12} {:>5}  mark\n",
++        "layer", "op", "min_cos", "@pos", "max_abs", "n"
++    ));
++    for r in rows {
++        let layer = r.layer.map_or_else(|| "-".to_string(), |l| l.to_string());
++        let mark = if r.min_cosine < threshold {
++            "<-- RED"
++        } else {
++            ""
++        };
++        out.push_str(&format!(
++            "{:<6} {:<20} {:>10.6} {:>6} {:>12.5} {:>5}  {}\n",
++            layer, r.stage, r.min_cosine, r.min_position, r.max_abs, r.positions, mark
++        ));
++    }
++    out
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++
++    fn s(
++        stage: &str,
++        layer: Option<u32>,
++        pos: usize,
++        cpu: &[f32],
++        gpu: &[f32],
++    ) -> (String, Option<u32>, usize, Vec<f32>, Vec<f32>) {
++        (stage.to_string(), layer, pos, cpu.to_vec(), gpu.to_vec())
++    }
++
++    #[test]
++    fn cosine_and_max_abs_are_what_they_say() {
++        assert!((cosine(&[1.0, 0.0], &[1.0, 0.0]) - 1.0).abs() < 1e-6);
++        assert!(cosine(&[1.0, 0.0], &[0.0, 1.0]).abs() < 1e-6);
++        assert_eq!(
++            cosine(&[1.0], &[1.0, 2.0]),
++            0.0,
++            "length mismatch is 0, never a pass"
++        );
++        assert_eq!(max_abs_diff(&[1.0, 2.0], &[1.5, 2.0]), 0.5);
++        assert!(max_abs_diff(&[1.0], &[1.0, 1.0]).is_infinite());
++    }
++
++    #[test]
++    fn rows_come_out_in_forward_order_and_the_first_red_op_is_named() {
++        // layer 3 ffn_swigl diverges at position 5; layer 0 attn_out is clean; lm_head diverges too
++        // (downstream). The instrument must name ffn_swigl@3, not lm_head.
++        let samples = vec![
++            s("lm_head", None, 0, &[1.0, 2.0], &[2.0, -1.0]),
++            s("ffn_swigl", Some(3), 5, &[1.0, 0.0], &[0.0, 1.0]),
++            s("ffn_swigl", Some(3), 4, &[1.0, 0.0], &[1.0, 0.0]),
++            s("attn_out", Some(0), 5, &[1.0, 1.0], &[1.0, 1.0]),
++            s("embedding", None, 5, &[1.0, 1.0], &[1.0, 1.0]),
++            s("post_attn_residual", Some(3), 5, &[1.0, 1.0], &[1.0, 1.0]),
++        ];
++        let rows = aggregate(&samples);
++        let order: Vec<(String, Option<u32>)> =
++            rows.iter().map(|r| (r.stage.clone(), r.layer)).collect();
++        assert_eq!(
++            order,
++            vec![
++                ("embedding".into(), None),
++                ("attn_out".into(), Some(0)),
++                ("post_attn_residual".into(), Some(3)),
++                ("ffn_swigl".into(), Some(3)),
++                ("lm_head".into(), None),
++            ]
++        );
++        let first = first_divergence(&rows, 0.98).expect("something is red");
++        assert_eq!(
++            (
++                first.stage.as_str(),
++                first.layer,
++                first.min_position,
++                first.positions
++            ),
++            ("ffn_swigl", Some(3), 5, 2)
++        );
++        assert!(render(&rows, 0.98).contains("ffn_swigl"));
++        assert_eq!(render(&rows, 0.98).matches("<-- RED").count(), 2);
++    }
++
++    #[test]
++    fn a_clean_table_names_nothing() {
++        let rows = aggregate(&[s("attn_norm", Some(0), 0, &[1.0, 2.0], &[1.0, 2.0])]);
++        assert!(first_divergence(&rows, 0.98).is_none());
++    }
++}
+diff --git a/crates/apr-cli/src/dispatch_analysis.rs b/crates/apr-cli/src/dispatch_analysis.rs
+index 954e0af18..1082260ef 100644
+--- a/crates/apr-cli/src/dispatch_analysis.rs
++++ b/crates/apr-cli/src/dispatch_analysis.rs
+@@ -1497,9 +1497,17 @@ fn dispatch_profiling_commands(cli: &Cli) -> Option<Result<(), CliError>> {
+             file,
+             prompt,
+             assert,
++            per_op,
++            out,
++            threshold,
+             // GH-636: pass cli.json to parity — was dropping the flag
+-        } => crate::error::resolve_model_path(file)
+-            .and_then(|r| commands::parity::run(&r, prompt, *assert, cli.verbose, cli.json)),
++        } => crate::error::resolve_model_path(file).and_then(|r| {
++            if *per_op {
++                commands::parity_per_op::run(&r, prompt, out.as_deref(), *threshold, cli.json)
++            } else {
++                commands::parity::run(&r, prompt, *assert, cli.verbose, cli.json)
++            }
++        }),
+ 
+         ExtendedCommands::PtxMap {
+             file,
+diff --git a/crates/apr-cli/src/extended_commands.rs b/crates/apr-cli/src/extended_commands.rs
+index 42339738e..0726959a8 100644
+--- a/crates/apr-cli/src/extended_commands.rs
++++ b/crates/apr-cli/src/extended_commands.rs
+@@ -324,6 +324,16 @@ pub enum ExtendedCommands {
+         /// Assert parity (exit non-zero on divergence)
+         #[arg(long)]
+         assert: bool,
++        /// L0-1b: per-op table — every stage of every layer, CPU vs GPU, over every
++        /// position; names the first diverging op. Exit 0 with the table.
++        #[arg(long)]
++        per_op: bool,
++        /// Where --per-op writes the two APRT trees (default: a temp dir)
++        #[arg(long, value_name = "DIR")]
++        out: Option<PathBuf>,
++        /// Cosine threshold for --per-op (basis: evidence/parity/thresholds.yaml)
++        #[arg(long, default_value_t = 0.98)]
++        threshold: f32,
+     },
+     /// Model-to-PTX source mapping (Mieruka: make GPU kernel dispatch visible)
+     #[command(name = "ptx-map")]
+diff --git a/crates/aprender-serve/src/cuda/executor/layers/indexed_ffn.rs b/crates/aprender-serve/src/cuda/executor/layers/indexed_ffn.rs
+index f086d96ec..dde0ee877 100644
+--- a/crates/aprender-serve/src/cuda/executor/layers/indexed_ffn.rs
++++ b/crates/aprender-serve/src/cuda/executor/layers/indexed_ffn.rs
+@@ -35,6 +35,7 @@ impl CudaExecutor {
+             self.stop_brick_id(timer_rmsnorm2, 1);
+         }
+ 
++        self.dump_stage(crate::inference_trace::save_tensor_stage::SaveTensorStage::FfnNorm, layer_idx as u32, hidden_buf1, hidden_dim as usize);
+         // 7+8. FFN gate/up projections + SwiGLU
+         // PMAT-027: Invalidate Q8 cache — hidden_buf1 was just written by FFN RMSNorm.
+         self.q8_activation_valid = false;
+@@ -61,6 +62,7 @@ impl CudaExecutor {
+             self.debug_check_buf(ffn_act_buf, "SwiGLU", layer_idx)?;
+         }
+ 
++        self.dump_stage(crate::inference_trace::save_tensor_stage::SaveTensorStage::FfnSwigl, layer_idx as u32, ffn_act_buf, intermediate_dim as usize);
+         // 9. FFN down projection: ffn_act -> hidden_buf1 (reuse, ffn_normed no longer needed)
+         // PAR-058: Use correct kernel based on FFN down quantization type
+         // PAR-105-FIX: Only override qtype if metadata qtype doesn't match expected size
+@@ -103,6 +105,7 @@ impl CudaExecutor {
+             self.debug_check_buf(hidden_buf1, "FFN down", layer_idx)?;
+         }
+ 
++        self.dump_stage(crate::inference_trace::save_tensor_stage::SaveTensorStage::FfnOut, layer_idx as u32, hidden_buf1, hidden_dim as usize);
+         // 10. Second residual: residual1 (input_staging) + ffn_out (hidden_buf1) -> hidden_buf2
+         // PAR-044 FIX: Now safe because residual1 is in input_staging, not hidden_buf2
+         let timer_res2 = if profiling {
+@@ -127,6 +130,7 @@ impl CudaExecutor {
+             self.debug_check_buf(hidden_buf2, "Layer output", layer_idx)?;
+         }
+ 
++        self.dump_stage(crate::inference_trace::save_tensor_stage::SaveTensorStage::PostFfnResidual, layer_idx as u32, hidden_buf2, hidden_dim as usize);
+         Ok(())
+     }
+ 
+diff --git a/crates/aprender-serve/src/cuda/executor/layers/phase_attention.rs b/crates/aprender-serve/src/cuda/executor/layers/phase_attention.rs
+index e3f6ca09a..f6f6974ae 100644
+--- a/crates/aprender-serve/src/cuda/executor/layers/phase_attention.rs
++++ b/crates/aprender-serve/src/cuda/executor/layers/phase_attention.rs
+@@ -17,6 +17,9 @@ impl CudaExecutor {
+         skip_debug: bool,
+         profiling: bool,
+     ) -> Result<(), GpuError> {
++        self.dump_stage(crate::inference_trace::save_tensor_stage::SaveTensorStage::AttnNorm, layer_idx as u32, hidden_buf1, hidden_dim as usize);
++        self.dump_stage(crate::inference_trace::save_tensor_stage::SaveTensorStage::QPostRope, layer_idx as u32, q_buf, q_dim as usize);
++        self.dump_stage(crate::inference_trace::save_tensor_stage::SaveTensorStage::KPostRope, layer_idx as u32, k_buf, k_buf.len());
+         // PERF-050 round 8: ORACLE side of the layer-0 stage differential.
+         //
+         // These q/k/v are the OUTPUT of workspace_qkv_rope_phase, which lives in apply.rs and
+@@ -126,6 +129,9 @@ impl CudaExecutor {
+             self.debug_check_buf(input_staging, "Residual1", layer_idx)?;
+         }
+ 
++        self.dump_stage(crate::inference_trace::save_tensor_stage::SaveTensorStage::Attention, layer_idx as u32, attn_out_buf, q_dim as usize);
++        self.dump_stage(crate::inference_trace::save_tensor_stage::SaveTensorStage::AttnOut, layer_idx as u32, hidden_buf1, hidden_dim as usize);
++        self.dump_stage(crate::inference_trace::save_tensor_stage::SaveTensorStage::PostAttnResidual, layer_idx as u32, input_staging, hidden_dim as usize);
+         Ok(())
+     }
+ }
+diff --git a/crates/aprender-serve/src/cuda/executor/mod.rs b/crates/aprender-serve/src/cuda/executor/mod.rs
+index 20422fe48..7427d080f 100644
+--- a/crates/aprender-serve/src/cuda/executor/mod.rs
++++ b/crates/aprender-serve/src/cuda/executor/mod.rs
+@@ -274,6 +274,7 @@ mod layers;
+ mod q4k;
+ mod q_basic;
+ mod quantized;
++mod stage_dump;
+ mod weights;
+ mod workspace;
+ 
+diff --git a/crates/aprender-serve/src/cuda/executor/stage_dump.rs b/crates/aprender-serve/src/cuda/executor/stage_dump.rs
+new file mode 100644
+index 000000000..eb4c66304
+--- /dev/null
++++ b/crates/aprender-serve/src/cuda/executor/stage_dump.rs
+@@ -0,0 +1,50 @@
++//! L0-1b per-op stage dump on the GPU-resident path (#2971, PP-066).
++//!
++//! `apr parity --per-op` arms `per_op_tap::set_gpu_dump` on its thread (never an
++//! env variable); [`CudaExecutor::dump_stage`] is a no-op when nothing is armed,
++//! so the production path pays one thread-local read per stage. When armed, the
++//! executor synchronises every stream, copies the device buffer to the host and
++//! writes `<dir>/layer-N/<stage>.bin` in APRT — the same file the CPU tap writes
++//! for the same (stage, layer), so the two trees compare file by file.
++use super::CudaExecutor;
++use super::GpuBuffer;
++use crate::inference_trace::gpu_stage_dump::maybe_dump_host_buffer;
++use crate::inference_trace::per_op_tap;
++use crate::inference_trace::save_tensor_stage::SaveTensorStage;
++
++impl CudaExecutor {
++    /// Dump the first `n` floats of `buf` for `(stage, layer)` when armed. Non-fatal.
++    pub(crate) fn dump_stage(
++        &self,
++        stage: SaveTensorStage,
++        layer: u32,
++        buf: &GpuBuffer<f32>,
++        n: usize,
++    ) {
++        let Some(cfg) = per_op_tap::gpu_dump() else {
++            return;
++        };
++        if let Err(e) = self.synchronize_all() {
++            eprintln!(
++                "[per-op-dump] {}: layer {layer}: sync failed: {e}",
++                stage.canonical_name()
++            );
++            return;
++        }
++        let n = n.min(buf.len());
++        let mut host = vec![0.0f32; n];
++        if let Err(e) = buf.copy_to_host(&mut host) {
++            eprintln!(
++                "[per-op-dump] {}: layer {layer}: copy failed: {e}",
++                stage.canonical_name()
++            );
++            return;
++        }
++        if let Err(e) = maybe_dump_host_buffer(Some(&cfg), stage, layer, &host) {
++            eprintln!(
++                "[per-op-dump] {}: layer {layer}: write failed: {e}",
++                stage.canonical_name()
++            );
++        }
++    }
++}
+diff --git a/crates/aprender-serve/src/gguf/cuda/mod.rs b/crates/aprender-serve/src/gguf/cuda/mod.rs
+index f5f3ed9cf..31b91404b 100644
+--- a/crates/aprender-serve/src/gguf/cuda/mod.rs
++++ b/crates/aprender-serve/src/gguf/cuda/mod.rs
+@@ -148,6 +148,27 @@ impl ParityGateRecord {
+         Self { status: "skipped", cosine: None, positions: 0, threshold: PARITY_GATE_COSINE_MIN, basis: "SKIP_PARITY_GATE override — every receipt of this run is INVALID-CORRECTNESS (REG-15)" }
+     }
+ 
++    /// `apr parity --per-op` (L0-1b): the table is the verdict, so the model is
++    /// admitted without the one-token gate — an INTERNAL bypass, recorded here.
++    #[must_use]
++    pub fn skipped_for_diagnosis() -> Self {
++        Self {
++            status: "skipped",
++            cosine: None,
++            positions: 0,
++            threshold: PARITY_GATE_COSINE_MIN,
++            basis: "apr parity --per-op: internal bypass — the per-op table is the verdict (never SKIP_PARITY_GATE)",
++        }
++    }
++    /// The load-time skip decision: the `SKIP_PARITY_GATE` operator override, or
++    /// the diagnostic command's internal bypass; `None` means the gate runs.
++    #[must_use]
++    pub fn load_time_skip() -> Option<Self> {
++        if std::env::var("SKIP_PARITY_GATE").as_deref() == Ok("1") {
++            return Some(Self::skipped());
++        }
++        crate::inference_trace::per_op_tap::gate_bypass_armed().then(Self::skipped_for_diagnosis)
++    }
+     /// The gate ran and passed at `cosine`.
+     #[must_use]
+     pub fn passed(cosine: f32) -> Self {
+@@ -403,11 +424,8 @@ impl OwnedQuantizedModelCuda {
+         // is exercised by `qwen3_moe_gpu_parity.rs` which uses the
+         // MoE forward methods directly, bypassing the dense path
+         // this gate runs.
+-        let skip_gate = std::env::var("SKIP_PARITY_GATE")
+-            .map(|v| v == "1")
+-            .unwrap_or(false);
+-
+-        self = self.admit_by_parity_gate(skip_gate)?;
++        let skip = ParityGateRecord::load_time_skip();
++        self = self.admit_by_parity_gate(skip)?;
+ 
+         // §9 #7: the ONE snapshot that makes preload's VRAM cost accountable.
+         // `memory_info` was taken before `init_kv_cache_gpu`, weight upload and
+diff --git a/crates/aprender-serve/src/gguf/cuda/mod_parity_gate.rs b/crates/aprender-serve/src/gguf/cuda/mod_parity_gate.rs
+index ed8cf66f5..d274fefbd 100644
+--- a/crates/aprender-serve/src/gguf/cuda/mod_parity_gate.rs
++++ b/crates/aprender-serve/src/gguf/cuda/mod_parity_gate.rs
+@@ -185,9 +185,9 @@ impl OwnedQuantizedModelCuda {
+     /// REG-15 (#2971): the one admission decision at load — the gate runs unless it is
+     /// skipped (`SKIP_PARITY_GATE`, recorded as an override) or does not apply (MoE); a
+     /// PASS records the cosine on the model, a failure refuses to construct it.
+-    fn admit_by_parity_gate(mut self, skip_gate: bool) -> std::result::Result<Self, CudaInitError> {
+-        if skip_gate {
+-            self.parity = ParityGateRecord::skipped();
++    fn admit_by_parity_gate(mut self, skip: Option<ParityGateRecord>) -> std::result::Result<Self, CudaInitError> {
++        if let Some(record) = skip {
++            self.parity = record;
+             return Ok(self);
+         }
+         if self.model.config.constraints.is_moe {
+diff --git a/crates/aprender-serve/src/gguf/inference/forward/ffn_block.rs b/crates/aprender-serve/src/gguf/inference/forward/ffn_block.rs
+index 93f66ee63..555a6500c 100644
+--- a/crates/aprender-serve/src/gguf/inference/forward/ffn_block.rs
++++ b/crates/aprender-serve/src/gguf/inference/forward/ffn_block.rs
+@@ -504,6 +504,7 @@ impl OwnedQuantizedModel {
+         }
+ 
+         // GH-278: Use contract-derived norm type.
++        crate::inference_trace::per_op_tap::tap(crate::inference_trace::save_tensor_stage::SaveTensorStage::Embedding, 0, &hidden);
+         let use_rmsnorm = self.config.constraints.uses_rmsnorm();
+ 
+         // PMAT-305/307: Pre-allocate workspace buffers — reused across all layers.
+@@ -541,6 +542,7 @@ impl OwnedQuantizedModel {
+ 
+         // 2. Process through transformer layers
+         for (layer_idx, layer) in self.layers.iter().enumerate() {
++            crate::inference_trace::per_op_tap::tap_norm(crate::inference_trace::save_tensor_stage::SaveTensorStage::AttnNorm, layer_idx as u32, &hidden, Some(&layer.attn_norm_weight), layer.attn_norm_bias.as_deref(), self.config.eps, use_rmsnorm);
+             // 2a+2b. Fused attention layer norm + QKV projection
+             // For RMSNorm models: fuse norm + matmul to eliminate intermediate allocation
+             // For LayerNorm models: use separate operations (has bias)
+@@ -590,6 +592,7 @@ impl OwnedQuantizedModel {
+             };
+ 
+             // PMAT-114: Trace QKV BEFORE bias (PMAT-260)
++            crate::inference_trace::per_op_tap::tap(crate::inference_trace::save_tensor_stage::SaveTensorStage::QkvMatmul, layer_idx as u32, &qkv[..]);
+             self.debug_trace_qkv(&qkv, layer_idx, hidden_dim);
+ 
+             if let Some(ref bias) = layer.qkv_bias {
+@@ -640,6 +643,8 @@ impl OwnedQuantizedModel {
+ 
+             // Use slices to avoid copies (only copy K for cache storage)
+             // GH-479: Use q_dim (may differ from hidden_dim for Qwen3)
++            crate::inference_trace::per_op_tap::tap(crate::inference_trace::save_tensor_stage::SaveTensorStage::QPostRope, layer_idx as u32, &qkv[0..q_dim]);
++            crate::inference_trace::per_op_tap::tap(crate::inference_trace::save_tensor_stage::SaveTensorStage::KPostRope, layer_idx as u32, &qkv[q_dim..q_dim + kv_dim]);
+             let q = &qkv[0..q_dim];
+             let k = &qkv[q_dim..q_dim + kv_dim];
+             let v = &qkv[q_dim + kv_dim..q_dim + 2 * kv_dim];
+@@ -670,6 +675,7 @@ impl OwnedQuantizedModel {
+             }
+ 
+             // 2e. Store K and V in cache for future tokens
++            crate::inference_trace::per_op_tap::tap(crate::inference_trace::save_tensor_stage::SaveTensorStage::Attention, layer_idx as u32, &attn_out_buffer);
+             cache.append(layer_idx, k, v);
+ 
+             // 2f. Attention output projection → o_proj_buffer (PMAT-305: no alloc)
+@@ -688,12 +694,16 @@ impl OwnedQuantizedModel {
+             }
+ 
+             // 2g. Residual connection
++            crate::inference_trace::per_op_tap::tap(crate::inference_trace::save_tensor_stage::SaveTensorStage::AttnOut, layer_idx as u32, &o_proj_buffer);
+             for i in 0..hidden_dim {
+                 hidden[i] += o_proj_buffer[i];
+             }
++            crate::inference_trace::per_op_tap::tap(crate::inference_trace::save_tensor_stage::SaveTensorStage::PostAttnResidual, layer_idx as u32, &hidden);
++            crate::inference_trace::per_op_tap::tap_norm(crate::inference_trace::save_tensor_stage::SaveTensorStage::FfnNorm, layer_idx as u32, &hidden, layer.ffn_norm_weight.as_deref(), layer.ffn_norm_bias.as_deref(), self.config.eps, use_rmsnorm);
+ 
+             // 2h+2i. FFN with optional layer norm and SwiGLU/GELU activation
+             let ffn_activated = self.single_cache_ffn_block(&hidden, layer_idx, use_rmsnorm)?;
++            crate::inference_trace::per_op_tap::tap(crate::inference_trace::save_tensor_stage::SaveTensorStage::FfnSwigl, layer_idx as u32, &ffn_activated);
+ 
+             // 2j. FFN down projection → ffn_down_buffer (PMAT-305: no alloc)
+             self.fused_matmul_into(&ffn_activated, &layer.ffn_down_weight, &mut ffn_down_buffer)?;
+@@ -709,9 +719,11 @@ impl OwnedQuantizedModel {
+             }
+ 
+             // Residual
++            crate::inference_trace::per_op_tap::tap(crate::inference_trace::save_tensor_stage::SaveTensorStage::FfnOut, layer_idx as u32, &ffn_down_buffer);
+             for i in 0..hidden_dim {
+                 hidden[i] += ffn_down_buffer[i];
+             }
++            crate::inference_trace::per_op_tap::tap(crate::inference_trace::save_tensor_stage::SaveTensorStage::PostFfnResidual, layer_idx as u32, &hidden);
+ 
+             // DEBUG: Consolidated per-layer output trace (PMAT-260)
+             self.debug_trace_layer_output(&hidden, layer_idx);
+@@ -744,6 +756,9 @@ impl OwnedQuantizedModel {
+         cache.advance();
+ 
+         // Final output: norm + LM head + debug verification + bias
+-        self.single_cache_final_output(&hidden, position, use_rmsnorm)
++        crate::inference_trace::per_op_tap::tap_norm(crate::inference_trace::save_tensor_stage::SaveTensorStage::FinalNorm, 0, &hidden, Some(&self.output_norm_weight), self.output_norm_bias.as_deref(), self.config.eps, use_rmsnorm);
++        let logits = self.single_cache_final_output(&hidden, position, use_rmsnorm);
++        crate::inference_trace::per_op_tap::tap_ok(crate::inference_trace::save_tensor_stage::SaveTensorStage::LmHead, 0, &logits);
++        logits
+     }
+ }
+diff --git a/crates/aprender-serve/src/inference_trace/gpu_stage_dump.rs b/crates/aprender-serve/src/inference_trace/gpu_stage_dump.rs
+index d8d1ebc74..b2d45c558 100644
+--- a/crates/aprender-serve/src/inference_trace/gpu_stage_dump.rs
++++ b/crates/aprender-serve/src/inference_trace/gpu_stage_dump.rs
+@@ -53,6 +53,9 @@ impl GpuStageDumpConfig {
+     /// the env var is unset, empty, or whitespace-only.
+     #[must_use]
+     pub fn from_env() -> Option<Self> {
++        if let Some(armed) = super::per_op_tap::gpu_dump() {
++            return Some(armed);
++        }
+         let raw = std::env::var("APR_GPU_STAGE_DUMP").ok()?;
+         let trimmed = raw.trim();
+         if trimmed.is_empty() {
+diff --git a/crates/aprender-serve/src/inference_trace/mod.rs b/crates/aprender-serve/src/inference_trace/mod.rs
+index 37eafa6aa..69a8b7f6a 100644
+--- a/crates/aprender-serve/src/inference_trace/mod.rs
++++ b/crates/aprender-serve/src/inference_trace/mod.rs
+@@ -22,6 +22,7 @@
+ //! ```
+ 
+ pub mod gpu_stage_dump;
++pub mod per_op_tap;
+ pub mod save_tensor;
+ pub mod save_tensor_compose;
+ pub mod save_tensor_emit;
+diff --git a/crates/aprender-serve/src/inference_trace/per_op_tap.rs b/crates/aprender-serve/src/inference_trace/per_op_tap.rs
+new file mode 100644
+index 000000000..72136fdfd
+--- /dev/null
++++ b/crates/aprender-serve/src/inference_trace/per_op_tap.rs
+@@ -0,0 +1,220 @@
++//! L0-1b per-op tap (#2971, PP-066): the CPU reference forward emits every
++//! [`SaveTensorStage`] it computes, so `apr parity --per-op` can compare the
++//! CPU and GPU trees stage by stage and name the FIRST op whose cosine falls.
++//!
++//! Design (why a thread-local and not a parameter): the reference path is
++//! `OwnedQuantizedModel::forward_single_with_cache`, the exact function the
++//! load-time gate and `apr parity` compare against. Threading a plan through
++//! its signature would change a public API used across the crate and rename
++//! a function the per-function complexity ratchet records; a struct field
++//! would touch 61 constructors. The tap is armed on the calling thread by the
++//! diagnostic command, read at each stage, and is `None` in every other
++//! process — a single `RefCell` borrow per stage, no allocation.
++//!
++//! The gate bypass lives here too: `apr parity --per-op` must construct the
++//! CUDA model even when the load-time gate would refuse it (the table IS the
++//! verdict), and it must do so INTERNALLY — never through `SKIP_PARITY_GATE`,
++//! which is an operator override and is printed as one.
++use std::cell::{Cell, RefCell};
++
++use super::gpu_stage_dump::GpuStageDumpConfig;
++use super::save_tensor_emit::write_stage_file;
++use super::save_tensor_plan::SaveTensorPlan;
++use super::save_tensor_stage::SaveTensorStage;
++
++thread_local! {
++    static PLAN: RefCell<Option<SaveTensorPlan>> = const { RefCell::new(None) };
++    static GATE_BYPASS: Cell<bool> = const { Cell::new(false) };
++    static GPU_DUMP: RefCell<Option<GpuStageDumpConfig>> = const { RefCell::new(None) };
++}
++
++/// Arm (or clear) the GPU-side stage dump on the calling thread: the executor's
++/// per-phase dump points and [`GpuStageDumpConfig::from_env`] both read it, so
++/// the whole-model SHIP-007 sites honour it without an env variable.
++pub fn set_gpu_dump(cfg: Option<GpuStageDumpConfig>) {
++    GPU_DUMP.with(|g| *g.borrow_mut() = cfg);
++}
++
++/// The armed GPU dump config, if any (a clone; the config is one path).
++#[must_use]
++pub fn gpu_dump() -> Option<GpuStageDumpConfig> {
++    GPU_DUMP.with(|g| g.borrow().clone())
++}
++
++/// Arm (or clear, with `None`) the per-op tap on the calling thread.
++pub fn set_plan(plan: Option<SaveTensorPlan>) {
++    PLAN.with(|p| *p.borrow_mut() = plan);
++}
++
++/// Whether a plan is armed on the calling thread.
++#[must_use]
++pub fn is_armed() -> bool {
++    PLAN.with(|p| p.borrow().is_some())
++}
++
++/// Emit `values` for `(stage, layer)` when the armed plan selects it. Non-fatal:
++/// an I/O failure is printed and inference continues — the tap is diagnostic.
++pub fn tap(stage: SaveTensorStage, layer: u32, values: &[f32]) {
++    PLAN.with(|p| {
++        let guard = p.borrow();
++        let Some(plan) = guard.as_ref() else { return };
++        if !plan.should_save(stage, layer) {
++            return;
++        }
++        if let Err(e) = write_stage_file(&plan.output_dir, stage, layer, values) {
++            eprintln!(
++                "[per-op-tap] {}: layer {layer}: {e}",
++                stage.canonical_name()
++            );
++        }
++    });
++}
++
++/// Like [`tap`], but `values` is computed only when the plan selects the stage —
++/// for stages the reference path never materialises (its fused kernels fold
++/// the norm into the matmul), so the side computation costs nothing unarmed.
++pub fn tap_with(stage: SaveTensorStage, layer: u32, values: impl FnOnce() -> Vec<f32>) {
++    let selected = PLAN.with(|p| {
++        p.borrow()
++            .as_ref()
++            .is_some_and(|plan| plan.should_save(stage, layer))
++    });
++    if selected {
++        tap(stage, layer, &values());
++    }
++}
++
++/// [`tap`] on the `Ok` side of a result, so a caller adds no branch of its own.
++pub fn tap_ok<E>(stage: SaveTensorStage, layer: u32, r: &Result<Vec<f32>, E>) {
++    if let Ok(v) = r {
++        tap(stage, layer, v);
++    }
++}
++
++/// [`tap`] of the norm a fused kernel folded away, computed only when the plan
++/// selects the stage; slices in, no closure at the call site.
++pub fn tap_norm(
++    stage: SaveTensorStage,
++    layer: u32,
++    x: &[f32],
++    weight: Option<&[f32]>,
++    bias: Option<&[f32]>,
++    eps: f32,
++    rmsnorm: bool,
++) {
++    let selected = PLAN.with(|p| {
++        p.borrow()
++            .as_ref()
++            .is_some_and(|plan| plan.should_save(stage, layer))
++    });
++    if selected {
++        tap(stage, layer, &norm_for_tap(x, weight, bias, eps, rmsnorm));
++    }
++}
++
++/// The norm a fused kernel would have produced: RMSNorm (`weight`) or LayerNorm
++/// (`weight`, `bias`); `None` weight means the stage's input is passed through.
++#[must_use]
++pub fn norm_for_tap(
++    x: &[f32],
++    weight: Option<&[f32]>,
++    bias: Option<&[f32]>,
++    eps: f32,
++    rmsnorm: bool,
++) -> Vec<f32> {
++    match weight {
++        None => x.to_vec(),
++        Some(w) if rmsnorm => crate::gguf::ops::rms_norm(x, w, eps),
++        Some(w) => crate::gguf::ops::layer_norm(x, w, bias, eps),
++    }
++}
++
++/// Arm the internal load-time-gate bypass for the calling thread (the diagnostic
++/// command only). Recorded on the model as `skipped` with a basis naming this
++/// path — printed, never silent.
++pub fn arm_gate_bypass() {
++    GATE_BYPASS.with(|g| g.set(true));
++}
++
++/// Whether the diagnostic gate bypass is armed on the calling thread.
++#[must_use]
++pub fn gate_bypass_armed() -> bool {
++    GATE_BYPASS.with(Cell::get)
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++    use crate::inference_trace::save_tensor_compose::read_stage_file;
++
++    #[test]
++    fn unarmed_tap_writes_nothing_and_computes_nothing() {
++        set_plan(None);
++        let tmp = std::env::temp_dir().join(format!("per-op-tap-unarmed-{}", std::process::id()));
++        tap(SaveTensorStage::FfnSwigl, 3, &[1.0, 2.0]);
++        let mut computed = false;
++        tap_with(SaveTensorStage::FfnNorm, 3, || {
++            computed = true;
++            vec![0.0]
++        });
++        assert!(!computed, "the side computation must not run unarmed");
++        assert!(!tmp.exists());
++        assert!(!is_armed());
++    }
++
++    #[test]
++    fn armed_tap_writes_the_selected_stage_and_reads_back() {
++        let tmp = std::env::temp_dir().join(format!("per-op-tap-armed-{}", std::process::id()));
++        let _ = std::fs::remove_dir_all(&tmp);
++        let plan = SaveTensorPlan::from_cli("ffn_swigl,lm_head", "0..4", tmp.clone())
++            .expect("plan parses");
++        set_plan(Some(plan));
++        assert!(is_armed());
++        tap(SaveTensorStage::FfnSwigl, 3, &[0.5, -1.5, 2.0]);
++        tap(SaveTensorStage::FfnSwigl, 7, &[9.0]); // outside 0..4: not selected
++        tap(SaveTensorStage::AttnNorm, 3, &[9.0]); // not in the stage list
++        tap_with(SaveTensorStage::LmHead, 0, || vec![1.0, 2.0]);
++        set_plan(None);
++        let (hdr, vals) =
++            read_stage_file(&tmp.join("layer-3").join("ffn_swigl.bin")).expect("written");
++        assert_eq!(hdr.layer, 3);
++        assert_eq!(vals, vec![0.5, -1.5, 2.0]);
++        assert!(
++            !tmp.join("layer-7").exists(),
++            "layer 7 is outside the plan's range"
++        );
++        assert!(
++            !tmp.join("layer-3").join("attn_norm.bin").exists(),
++            "attn_norm was not selected"
++        );
++        assert!(
++            tmp.join("lm_head.bin").exists(),
++            "whole-model stages land at the root"
++        );
++        let _ = std::fs::remove_dir_all(&tmp);
++    }
++
++    #[test]
++    fn norm_for_tap_passes_through_without_a_weight() {
++        assert_eq!(
++            norm_for_tap(&[1.0, 2.0], None, None, 1e-6, true),
++            vec![1.0, 2.0]
++        );
++    }
++
++    #[test]
++    fn gate_bypass_is_off_by_default_and_thread_local() {
++        assert!(!gate_bypass_armed());
++        let other = std::thread::spawn(|| {
++            arm_gate_bypass();
++            gate_bypass_armed()
++        })
++        .join()
++        .expect("thread");
++        assert!(other);
++        assert!(
++            !gate_bypass_armed(),
++            "arming on another thread must not leak here"
++        );
++    }
++}
+diff --git a/docs/audits/l0-1b-arms.md b/docs/audits/l0-1b-arms.md
+new file mode 100644
+index 000000000..e09565e7c
+--- /dev/null
++++ b/docs/audits/l0-1b-arms.md
+@@ -0,0 +1,93 @@
++# L0-1b — step 1 (bisection by controls) and step 0 (the per-op table), lambda, 2026-09-06
++
++Ticket PMAT-1070, issue #2971, PP-066 row L0-1b. Binary: `apr 0.65.2 (cbb511c55)` built with
++`--features cuda` from agent/L0-1b (plan commit on top of agent/L0-1 @ 665b71194); model
++`/home/noah/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf`; prompt = `PROMPT` in
++`scripts/check_model_parity.sh` (78 tokens); host lambda (RTX 4090, sm_89). Every number below
++is a measurement of that binary on that host; nothing is inferred from a lane verdict (I16).
++
++## Step 1 — arms (each row is one `apr parity <1.5B> --json` run)
++
++| arm | env | positions | min cosine (position, token) | # < 0.98 | argmax ≠ |
++|---|---|---|---|---|---|
++| A0 baseline | — | 78 | 0.9508 (0, 785) | 1 | 2 |
++| A1 graph off | `SKIP_CUDA_GRAPH=1` | 78 | 0.9508 (0, 785) | 1 | 2 |
++| A2 FP8 decode off | `FP8_DECODE=0` | 78 | 0.9508 (0, 785) | 1 | 2 |
++| A3 FP8 all off | `FP8_PREFILL=0 FP8_DECODE=0` | 78 | 0.9508 (0, 785) | 1 | 2 |
++| A4 flash decode off | `FLASH_DECODE=0` | 78 | 0.9508 (0, 785) | 1 | 2 |
++| A5 fused gate-up off | `FUSED_GATE_UP=0` | 78 | 0.9508 (0, 785) | 1 | 2 |
++| A6 all off | A1+A3+A4+A5 | 78 | 0.9508 (0, 785) | 1 | 2 |
++| reference 7B | — | 78 | 0.9986 (0, 785) | 0 | 2 |
++
++Seven arms, one cosine to four decimals: no switchable path (graph capture, FP8 cuBLASLt, flash
++decode, fused gate+up) is the mechanism. The divergence lives in the base per-layer kernels and
++appears at position 0 only.
++
++## Step 0 — `apr parity <model> --per-op` (281 rows × 78 positions; 9 s on the 1.5B, 18 s on the 7B)
++
++Layers 0–25 of the 1.5B agree at every op (min cosine ≥ 0.9916, most ≥ 0.998). Then, at
++position 0:
++
++| layer | op | min cosine | @pos | max \|Δ\| |
++|---|---|---|---|---|
++| 26 | attn_norm … post_attn_residual | ≥ 0.9962 | — | ≤ 12.85 |
++| 26 | ffn_norm | 0.998730 | 21 | 0.31 |
++| 26 | ffn_swigl | 0.997669 | 21 | **140.2** |
++| 26 | ffn_out | 0.996157 | 23 | **408.5** |
++| 26 | post_ffn_residual | **0.660150** | 0 | 395.7 |
++| 27 | attn_norm | 0.761651 | 0 | 27.1 |
++| 27 | post_attn_residual | 0.645909 | 0 | 394.8 |
++| 27 | ffn_swigl | 0.581351 | 0 | 42.0 |
++| 27 | post_ffn_residual | 0.559132 | 0 | 399.0 |
++| — | final_norm | 0.639776 | 0 | 86.4 |
++| — | lm_head | **0.950827** | 0 | 12.0 |
++
++The `lm_head` row is the gate's own number (0.9508): the table closes the loop end to end.
++The 7B: every op ≥ 0.98 over 78 positions (worst: layer 23 attn_out 0.9946).
++
++### The element (layer 26, position 0)
++
++| stage | CPU | GPU | note |
++|---|---|---|---|
++| post_attn_residual dim 408 | −3664.4 | −3677.2 | the residual carries a massive activation (also dims 520/940 ≈ +2233); cosine 0.999999 |
++| ffn_norm (input to gate/up) | cos 1.000000, max Δ 0.028 | | dim 408 = −146.68 on both sides — the FFN input is identical |
++| ffn_swigl neuron 2908 | −996.4 | −1136.5 | +14 % |
++| ffn_swigl neuron 7035 | 573.6 | 616.9 | +7.5 % |
++| ffn_out dim 408 | +3675.7 | +4084.2 | the FFN CANCELS the massive activation: CPU residual → +11.3 |
++| post_ffn_residual dim 408 | 11.3 | 407.0 | the GPU keeps 407 → layer 27 cosine 0.56–0.76 → logits 0.9508 |
++
++Positions ≥ 1 carry no massive activation and agree (ffn_swigl@26 pos 1: cos 0.999, max Δ 0.7).
++
++### Which side is wrong — the probe (`scratchpad/probe26.py`, gguf-py dequant, float64)
++
++Recomputing neurons 2908 / 7035 from the dequantised Q4_K weights of `blk.26.ffn_{gate,up}` and the
++CPU-tapped `ffn_norm` input:
++
++| computation | neuron 2908 | neuron 7035 |
++|---|---|---|
++| f64, f32 input (truth for the quantised weights) | **−1142.0** | **618.4** |
++| GPU tap | −1136.5 (−0.5 %) | 616.9 (−0.2 %) |
++| CPU tap | −996.4 (−12.7 %) | 573.6 (−7.2 %) |
++| input Q8-quantised per 32 (GPU-style) | −1116.3 | 611.9 |
++| input Q8-quantised per 256 (Q8_K, one scale per super-block) | **−996.369** | **573.560** |
++
++The CPU value is reproduced to three decimals by quantising the activation vector to int8 with one
++scale per 256 elements: the −146.68 outlier at dim 408 sets the scale (1.155) for dims 256–511 and
++crushes the other 255 elements to coarse steps; neuron 2908 draws 24.7 of its 68.7 gate pre-activation
++from that block. **The CPU reference is the inaccurate side.** The GPU (per-32 activation scales in
++its DP4A path) is within 0.5 % of the truth.
++
++## Consequence for the fix (step 2)
++
++The load-time gate and `apr parity` compare the GPU against a CPU path whose activations are
++Q8_K-quantised (256-element scale). On massive-activation tokens (position 0 of Qwen2.5-1.5B;
++smaller on the 7B: 0.9986) that reference loses up to 13 % on the outlier neurons, and the "GPU
++divergence" is the CPU's error. The fix is on the CPU side: the Q4_K × Q8 dot family
++(`fused_q4k_q8k_dot`, `fused_q4k_q8k_ffn_up_gate_into`, `fused_q4k_q8k_parallel_matvec_into`, and
++the quantiser feeding them) takes one activation scale per 32-element sub-block — the sub-block
++the Q4_K scales/mins already iterate — instead of one per 256. This matches the GPU's numerics and
++is strictly more accurate; the GPU m=1 stream is untouched (CF-4 holds by construction on the GPU
++side), the CPU stream changes only where a 256-block held an outlier. Revert → the 1.5B per-op
++table names layer 26 again; 7B GREEN.
++
++Not done here: the kernel change itself (next session; the receipt carries this table).

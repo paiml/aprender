@@ -1245,6 +1245,16 @@ jobs:
         run: bash scripts/check_row_pr_write_set.sh --self-test
       - name: A row PR writes no shared file (G-11, PMAT-1062)
         run: bash scripts/check_row_pr_write_set.sh --event "${GITHUB_EVENT_NAME:-pull_request}" --branch "${GITHUB_HEAD_REF:-}"
+      # L0-1a (#2971, PMAT-1065): the supported-model manifest is DERIVED from what the tree
+      # names (README, BEATS, book, dogfood receipts, perf-matrix) — a named model absent from
+      # the manifest, or a typed entry nothing cites, is DRIFT; C14's own case table runs over
+      # the lambda RED-first records so the gate can be seen to turn RED. Case tables, then live.
+      - name: Supported-model manifest case table (L0-1a, #2971)
+        run: bash scripts/derive_model_manifest.sh --self-test
+      - name: The manifest equals its derivation (a named model is never absent, an entry is never typed)
+        run: bash scripts/derive_model_manifest.sh --check
+      - name: C14 model-parity case table (L0-1a, #2971)
+        run: bash scripts/check_model_parity.sh --self-test
       # PP-33. Nothing scanned the gate's readers for thresholds, so the spec's
       # own must-fire -- `STRETCH = 1.50` in scripts/lib/parity_block.py -- could
       # not turn anything red. Four independent encodings of the release floors
