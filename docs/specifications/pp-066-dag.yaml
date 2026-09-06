@@ -14,7 +14,9 @@ track_parents:
   '0.67': 2970
   P: 2870
   PVI-1.3-4.3: 2556
-filed: '2026-09-05: issues #2882-#2980 under the track parents (GitHub caps a parent at 100 sub-issues; the epic holds the 31 triage sub-issues plus the 11 track parents); pmat ids PMAT-968..PMAT-1053 plus PMAT-1057 for I-1 (its first id PMAT-967 collided with #2871''s ticket of the same number, minted in another session; re-minted 2026-09-05)'
+filed: '2026-09-05: issues #2882-#2980 under the track parents (GitHub caps a parent at 100 sub-issues; the epic holds the 31 triage sub-issues plus the 11 track parents); pmat ids PMAT-968..PMAT-1053 plus
+  PMAT-1057 for I-1 (its first id PMAT-967 collided with #2871''s ticket of the same number, minted in another session; re-minted 2026-09-05); 2026-09-06: G-11 #3012, G-10b #3013, G-10c #3014, U-1 #3015,
+  S-0 #3016 (labelled pp-066; track-parent linkage by body reference)'
 receipts:
   policy: advisory
   since: '2026-09-05'
@@ -26,7 +28,9 @@ spec: docs/specifications/PP-066-release-spec.md
 ledger: docs/audits/pp-066-s0-ledger.md
 plan: docs/audits/pp-066-plan.md
 generated: '2026-09-05'
-estimate_basis: '[U] 2026-09-06: five receipts carry status: complete (C0-5, G-6, G-4, SPEC-1.6, C0-7) but only C0-5 records wall_clock_s (974 s) and tokens_used (249,243 worker tokens); the others are [U] (not instrumented), so the §12 rule (median of three measured receipts of a class) is not yet satisfiable and every expiry stays as amended in v1.6'
+estimate_basis: '[U] 2026-09-06: five receipts carry status: complete (C0-5, G-6, G-4, SPEC-1.6, C0-7) but only C0-5 records wall_clock_s (974 s) and tokens_used (249,243 worker tokens); the others are
+  [U] (not instrumented), so the §12 rule (median of three measured receipts of a class) is not yet satisfiable and every expiry stays as amended in v1.6 | 2026-09-06 (driver R5): PMAT-1059 (G-10, PR-A)
+  and PMAT-1062 (G-11) receipts record turns/wall_clock_s with tokens [U]; still fewer than three measured receipts of a class'
 min_slack_days: 6
 host_queues:
   lambda:
@@ -317,7 +321,8 @@ rows:
   track: C0
   lane: '0.66'
   decision: false
-  blockers: []
+  blockers:
+  - U-1
   issues: []
   host: any
   queue_pos: null
@@ -415,7 +420,8 @@ rows:
   gh_issue: 2895
   pmat_id: PMAT-980
   status: complete
-  notes: ' Amendment 2026-09-05 (noahgift via the PP-066 driver STEP A): expiry 09-12 -> 09-26 — its original anchor ("before STEP 5 mints tickets") passed with STEP 5 on 2026-09-05, and C0-5 (base-owned receipt gate, 09-19) now blocks every merge including this one; slack rule 6 d. | complete: #2987 merged 65680cdf8 2026-09-06T02:37:35Z; receipt docs/audits/impl-PMAT-980-receipt.md status: complete'
+  notes: ' Amendment 2026-09-05 (noahgift via the PP-066 driver STEP A): expiry 09-12 -> 09-26 — its original anchor ("before STEP 5 mints tickets") passed with STEP 5 on 2026-09-05, and C0-5 (base-owned
+    receipt gate, 09-19) now blocks every merge including this one; slack rule 6 d. | complete: #2987 merged 65680cdf8 2026-09-06T02:37:35Z; receipt docs/audits/impl-PMAT-980-receipt.md status: complete'
 - id: G-5
   title: 'check_target_universe.sh: for every workspace member (cargo metadata, root ∪ crates/facades) and every cargo target under the feature sets that compile it, the set CI builds/lints/runs is derived
     from the workflows and compared — omission FAILs; cargo clippy --workspace --all-targets in reporting mode with a frozen per-crate shrink-only baseline; a make target whose help says CI and that no
@@ -609,9 +615,12 @@ rows:
   gh_issue: 2902
   pmat_id: PMAT-987
   status: complete
-  notes: 'pmat comply check has no --rule obligation-dag at pmat 3.37.0; the in-repo checker is the gate until a pmat ticket lands the rule. | complete: #2987 merged 65680cdf8 2026-09-06T02:37:35Z; receipt docs/audits/impl-PMAT-987-receipt.md status: complete'
+  notes: 'pmat comply check has no --rule obligation-dag at pmat 3.37.0; the in-repo checker is the gate until a pmat ticket lands the rule. | complete: #2987 merged 65680cdf8 2026-09-06T02:37:35Z; receipt
+    docs/audits/impl-PMAT-987-receipt.md status: complete'
 - id: G-10
-  title: 'check_hardcoded_paths.sh --full-if-capable arms itself at pmat >= 3.32.0 and the fleet runs 3.31.0: under pmat 3.37.0 pristine main reports 317 shipped findings against a baseline of 277, so the day the fleet upgrades every PR goes red (found 2026-09-05 running the guard-runner-labels steps locally; the guard must name the pmat version it armed under and the baseline must carry a measured, versioned basis)'
+  title: 'check_hardcoded_paths.sh --full-if-capable arms itself at pmat >= 3.32.0 and the fleet runs 3.31.0: under pmat 3.37.0 pristine main reports 317 shipped findings against a baseline of 277, so the
+    day the fleet upgrades every PR goes red (found 2026-09-05 running the guard-runner-labels steps locally; the guard must name the pmat version it armed under and the baseline must carry a measured,
+    versioned basis)'
   epic: 2873
   track: G
   lane: '0.66'
@@ -620,14 +629,15 @@ rows:
   issues: []
   host: any
   queue_pos: null
-  expiry: '2026-10-03'
+  expiry: '2026-09-12'
   owner: spec-owner
   A:
-  - bash scripts/check_hardcoded_paths.sh --full-if-capable exits 0 on main under pmat 3.37.0 (either the 40 new shipped findings are fixed, or the baseline is re-measured with basis=pmat <version> recorded in scripts/hardcoded_path_shipped_baseline.txt) and the guard prints the pmat version it armed under
+  - bash scripts/check_hardcoded_paths.sh --full-if-capable exits 0 on main under pmat 3.37.0 (either the 40 new shipped findings are fixed, or the baseline is re-measured with basis=pmat <version> recorded
+    in scripts/hardcoded_path_shipped_baseline.txt) and the guard prints the pmat version it armed under
   - the guard's self-test carries a row where a NEWER pmat widens detection and the ratchet names the version delta instead of failing every PR
   contract: null
   mutations:
-  - 'drop the version line from the baseline -> the guard refuses to arm (RED), never compares counts across pmat versions'
+  - drop the version line from the baseline -> the guard refuses to arm (RED), never compares counts across pmat versions
   quorum: review-only
   spec: 'found 2026-09-05 (PR #2987 local sweep of guard-runner-labels); Verification Discipline #5: a guard that arms on a version the fleet does not run gates nothing'
   gh_issue: 2999
@@ -1026,7 +1036,7 @@ rows:
     case table (FALSIFY-PVI-007; expiry 10-10 -> 10-03 so P-1.2 keeps its slack, v1.6 amendment)'
   epic: 2873
   track: P
-  lane: '0.66'
+  lane: '0.67'
   decision: false
   blockers:
   - P-0.6
@@ -1048,11 +1058,12 @@ rows:
   pmat_id: PMAT-1002
   status: open
   parent: 2870
+  notes: ' moved to 0.67 (#2556) by DEC-D-11, 2026-09-06'
 - id: P-1.2
   title: 'repoint or author the 10 dangling #[contract] sites (compile errors once P-1.1 lands; ships in the same PR as P-1.1 by construction, carded separately so the spec card resolves)'
   epic: 2873
   track: P
-  lane: '0.66'
+  lane: '0.67'
   decision: false
   blockers:
   - P-1.1
@@ -1074,6 +1085,7 @@ rows:
   pmat_id: PMAT-1003
   status: open
   parent: 2870
+  notes: ' moved to 0.67 (#2556) by DEC-D-11, 2026-09-06'
 - id: S-3
   title: 'W-B bench: cargo bench batched Q4_K GEMV at M in {1,4,8} vs M in {16,32} cuBLAS GEMM; per-token time table; no kernel change; prediction t(M=4)/t(M=16) <= 1.3 registered before the run (basis=
     report §10 registered prediction, spec §7; kill if >= 1.5)'
@@ -1336,6 +1348,7 @@ rows:
   gh_issue: 2928
   pmat_id: PMAT-1013
   status: open
+  notes: 'DEC-D-3 decided 2026-09-06: intel hosts no wgpu lane in 0.66; the cell stays UNMEASURED with that reason'
 - id: B-G1
   title: 'check_backend_firstclass.sh: clauses 1-7 per backend computed from the tree (workflows, BACKEND_VALUES, perf-matrix.yaml, receipts, dogfood, formats, pins); prints N/7; FAIL if any doc claims
     a backend first-class with N<7; vacuity floor'
@@ -2387,8 +2400,9 @@ rows:
   gh_issue: 2982
   pmat_id: PMAT-1054
   status: complete
-  notes: 'A1 measured 2026-09-05: ruleset "Green Main" requires bare gate; gate needs pr-review-present; pr-review-present/pr-review-receipt run if github.event_name == pull_request (definition from head); protection contexts = [ci / gate, workspace-test]. Receipts are advisory until this lands; the session regenerates none. | complete: #2985 merged cdc0acb99 2026-09-05T16:44:33Z; receipt docs/audits/impl-PMAT-1054-receipt.md status: complete'
-
+  notes: 'A1 measured 2026-09-05: ruleset "Green Main" requires bare gate; gate needs pr-review-present; pr-review-present/pr-review-receipt run if github.event_name == pull_request (definition from head);
+    protection contexts = [ci / gate, workspace-test]. Receipts are advisory until this lands; the session regenerates none. | complete: #2985 merged cdc0acb99 2026-09-05T16:44:33Z; receipt docs/audits/impl-PMAT-1054-receipt.md
+    status: complete'
 - id: C0-6
   title: 'mutation step exceeds the job timeout (134-mutant set, #2872 receipt run): a cancelled required step records NotRun{Timeout}, never PASS, and the step fits its job'
   epic: 2873
@@ -2441,10 +2455,180 @@ rows:
   gh_issue: 2984
   pmat_id: PMAT-1056
   status: complete
-  notes: 'A6 of the driver: resume logic reads only receipts whose front matter says status: complete. | complete: #2987 merged 65680cdf8 2026-09-06T02:37:35Z; receipt docs/audits/impl-PMAT-1056-receipt.md status: complete'
+  notes: 'A6 of the driver: resume logic reads only receipts whose front matter says status: complete. | complete: #2987 merged 65680cdf8 2026-09-06T02:37:35Z; receipt docs/audits/impl-PMAT-1056-receipt.md
+    status: complete'
+- id: G-11
+  title: 'shared-file write contention: a row PR never writes pp-066-dag.yaml, roadmap.yaml, the rendered spec block or a README count line (check_row_pr_write_set.sh); DAG status DERIVED from the receipt
+    (dag_status.py; render_dag.py; dag_invariants.py D7); README counts a ratchet (lag allowed, overstatement RED, --exact for the orchestrator); one orchestrator docs commit per merge writes the shared
+    files'
+  epic: 2873
+  track: G
+  lane: '0.66'
+  decision: false
+  blockers: []
+  issues: []
+  host: any
+  queue_pos: null
+  expiry: '2026-09-12'
+  owner: spec-owner
+  A:
+  - bash scripts/check_row_pr_write_set.sh --self-test (11 rows, both polarities)
+  - bash scripts/check_dag_invariants.sh --selftest (D7 rows 12-15)
+  - bash scripts/check_readme_claims.sh --self-test (7 rows)
+  - 'after any merge of #3003-#3009 the rest read MERGEABLE; rebuilds == 0'
+  contract: contracts/apr-row-pr-write-set-v1.yaml
+  mutations:
+  - a row branch appends to pp-066-dag.yaml -> RED naming the file
+  - 'typed status: complete over no receipt -> D7 RED'
+  - README overstates a count by one -> RED
+  quorum: review-only
+  spec: driver R2 of 2026-09-06; PP-066 §2 (queue throughput)
+  gh_issue: 3012
+  pmat_id: PMAT-1062
+  status: open
+  notes: 'pmat_id PMAT-1062 minted 2026-09-06 (orchestrator, by hand: pmat work add mints colliding ids, pmat#1169)'
+- id: G-10b
+  title: 'analyser pin guard: scripts/check_pmat_pinned.sh — every analyser reference under scripts/ and .github/workflows/ resolves through scripts/pmat_bin.sh; scripts/pmat_unpinned_baseline.txt 281 shrink-only;
+    wired case table then live; extends apr-pinned-analyser-ratchet-v1 (PIN-OB-005)'
+  epic: 2873
+  track: G
+  lane: '0.66'
+  decision: false
+  blockers:
+  - G-10
+  issues: []
+  host: any
+  queue_pos: null
+  expiry: '2026-09-19'
+  owner: spec-owner
+  A:
+  - bash scripts/check_pmat_pinned.sh --self-test 15/15
+  - bash scripts/check_pmat_pinned.sh prints unpinned=N <= 281 (shrink-only)
+  contract: contracts/apr-pinned-analyser-ratchet-v1.yaml
+  mutations:
+  - reintroduce one bare `pmat comply check` in any script -> RED naming the line
+  quorum: review-only
+  spec: 'driver PHASE 1 of 2026-09-06; #2999'
+  gh_issue: 3013
+  pmat_id: PMAT-1063
+  status: open
+  notes: pmat_id PMAT-1063; the guard and its 15-row case table exist on agent/G-10-full (4592b0572)
+- id: G-10c
+  title: 'analyser reference sweep: the 281 unpinned references under scripts/ and .github/workflows/ resolve through scripts/pmat_bin.sh (presence probes become ENV failures; dogfood/verifier_pin/ci.sh
+    take the pin; workflow installs at the pin); baseline to 0'
+  epic: 2873
+  track: G
+  lane: '0.66'
+  decision: false
+  blockers:
+  - G-10b
+  issues: []
+  host: any
+  queue_pos: null
+  expiry: '2026-09-26'
+  owner: spec-owner
+  A:
+  - bash scripts/check_pmat_pinned.sh prints unpinned=0
+  - grep -rEn "(^|[^_/])pmat " scripts/ .github/workflows/ | grep -v pmat_bin | wc -l == 0
+  contract: contracts/apr-pinned-analyser-ratchet-v1.yaml
+  mutations:
+  - restore one bare reference -> RED; baseline 0 refuses growth
+  quorum: review-only
+  spec: 'driver PHASE 1 of 2026-09-06; #2999'
+  gh_issue: 3014
+  pmat_id: PMAT-1064
+  status: open
+  notes: pmat_id PMAT-1064; the sweep exists on agent/G-10-full (5f8f28f19, 45 files)
+- id: U-1
+  title: 'pmat#1200: `pmat work cot derive` emits hollow obligations (empty statement/hypothesis for v5.0 contract.json steps; CB-1658 passes the hollow file) — fix upstream, pmat release (Noah publishes),
+    forjar pin bump on four hosts + the runner, scripts/pmat_bin.sh bump PR, ratchet re-baseline stamped (PMAT-1061)'
+  epic: 2873
+  track: C0
+  lane: '0.66'
+  decision: false
+  blockers: []
+  issues: []
+  host: upstream (paiml/paiml-mcp-agent-toolkit)
+  queue_pos: null
+  expiry: '2026-09-13'
+  owner: pmat
+  A:
+  - gh issue view 1200 -R paiml/paiml-mcp-agent-toolkit --json state -q .state == CLOSED
+  - bash -c ". scripts/pmat_bin.sh && $PMAT --version" reports the fixed release on the runner (forjar.yaml stack-tool-pmat)
+  - 'pmat work cot derive on GH-663 emits a non-empty statement (mutation: hollow -> pv validate RED, CB-1658 sequence in C0-3)'
+  contract: null
+  mutations:
+  - a hollow cot.yaml statement -> pv validate RED (C0-3 folds this)
+  quorum: none (upstream)
+  spec: driver R4 / PHASE 4 of 2026-09-06
+  gh_issue: 3015
+  pmat_id: null
+  status: open
+  notes: 'expiry = C0-3 (09-19) - 6 d per the driver; polled each session; sequence recorded here: pmat#1200 fix -> pmat release -> forjar pin bump (4 hosts + runner) -> pmat_bin.sh bump PR -> re-baseline
+    stamped'
+- id: S-0
+  title: 'speed lane on perf-solo: the beat/speed lane runs on perf-solo and its receipt names its own host (PR #2720 direction accepted under D-3; diff re-derived from HEAD, #2720 closed as prior art with
+    prior-art/2720 kept)'
+  epic: 2873
+  track: S
+  lane: '0.66'
+  decision: false
+  blockers: []
+  issues: []
+  host: perf-solo
+  queue_pos: null
+  expiry: '2026-09-26'
+  owner: perf-gate
+  A:
+  - 'the speed-lane workflow runs-on names perf-solo and the receipt carries host: perf-solo'
+  - bash scripts/check_perf_claims_cite_receipts.sh PASS
+  contract: null
+  mutations:
+  - 'a receipt without host: -> the lane refuses to publish a number'
+  quorum: review-only
+  spec: 'DEC-D-3 (comment on #2873, 2026-09-06)'
+  gh_issue: 3016
+  pmat_id: null
+  status: open
+  notes: 'D-3: 0.66 lanes = intel only; mini no lane; speed on perf-solo; B-* stay 0.67'
 amendments:
 - date: '2026-09-05'
   by: noahgift (driver STEP A)
   row: G-6
   change: expiry 2026-09-12 -> 2026-09-26
   why: STEP 5 already filed the tickets (the anchor passed); C0-5 blocks every merge and expires 09-19
+- date: '2026-09-06'
+  by: noahgift via driver prompt 2026-09-06
+  row: P-1.1
+  change: lane 0.66 -> 0.67 (#2556); dropped from C12's blockers
+  why: 'DEC-D-11: P-0.1-0.6 ride 0.66 as C12 blockers; P-1.1+1.2 move to #2556'
+- date: '2026-09-06'
+  by: noahgift via driver prompt 2026-09-06
+  row: P-1.2
+  change: lane 0.66 -> 0.67 (#2556)
+  why: DEC-D-11
+- date: '2026-09-06'
+  by: noahgift via driver prompt 2026-09-06
+  row: C0-3
+  change: blockers [] -> [U-1]
+  why: 'driver R4: C0-3 is blocked by pmat#1200 (hollow cot derive); nothing hollow ships; C0 and every C stay [U] until U-1 lands'
+- date: '2026-09-06'
+  by: noahgift via driver prompt 2026-09-06
+  row: U-1
+  change: new row, expiry 2026-09-13 (= C0-3 - 6 d)
+  why: driver R4; an upstream row past expiry without an amendment is RED in pmat comply, never started
+- date: '2026-09-06'
+  by: noahgift via driver prompt 2026-09-06
+  row: G-10
+  change: expiry 2026-10-03 -> 2026-09-12
+  why: 'PR-A #3011 armed 2026-09-06; G-10b/G-10c (09-19/09-26) list G-10 as blocker and need the 6-day slack'
+- date: '2026-09-06'
+  by: noahgift via driver prompt 2026-09-06
+  row: G-11
+  change: new row, expiry 2026-09-12
+  why: 'driver R2: the write-set guard lands before #3003-#3009 are rebased and merged serially'
+- date: '2026-09-06'
+  by: noahgift via driver prompt 2026-09-06
+  row: S-0
+  change: 'new row (D-3: speed lane on perf-solo, #2720 direction)'
+  why: 'DEC-D-3 comment on #2873'

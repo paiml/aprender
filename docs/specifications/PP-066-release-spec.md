@@ -180,7 +180,7 @@ The cards below are prose; the obligation set is **data** in `docs/specification
 
 <!-- dag:table:begin (rendered by scripts/render_dag.py; do not edit by hand) -->
 
-_Rendered from `docs/specifications/pp-066-dag.yaml` (epic #2873, 91 rows). Edit the YAML, run `python3 scripts/render_dag.py render`, paste; `--check` refuses drift._
+_Rendered from `docs/specifications/pp-066-dag.yaml` (epic #2873, 96 rows). Edit the YAML, run `python3 scripts/render_dag.py render`, paste; `--check` refuses drift._
 
 ### Track I
 
@@ -201,11 +201,12 @@ _Rendered from `docs/specifications/pp-066-dag.yaml` (epic #2873, 91 rows). Edit
 |---|---|---|---|---|---|---|---|---|---|---|
 | C0-1 | cargo-deny (advisories, bans, licenses, sources) as a blocking job defined in this repo and named in required_status_checks.contexts (CB-1701) | — | #2806 | any | 2026-09-19 | spec-owner | review-only | #2890 | PMAT-975 | open |
 | C0-2 | ci / gate readable: sovereign-ci.yml pinned by sha and emitting a comply manifest pmat can read — or its gate steps vendored into ci.yml — so the nine unreachable severity=error rules are shown reachable from a named required context (CB-2100) | — | #2734, #2646 | any | 2026-09-26 | spec-owner | teamwork | #2891 | PMAT-976 | open |
-| C0-3 | the ten contracts/work/GH-663..672.cot.yaml derivations exist (CB-1658), reconciled with PVI-3.1 (contracts/work -> .pmat-work) | — | — | any | 2026-09-19 | spec-owner | review-only | #2892 | PMAT-977 | open |
+| C0-3 | the ten contracts/work/GH-663..672.cot.yaml derivations exist (CB-1658), reconciled with PVI-3.1 (contracts/work -> .pmat-work) | U-1 | — | any | 2026-09-19 | spec-owner | review-only | #2892 | PMAT-977 | open |
 | C0-4 | perf_gate.sh arm_a_scaling: an arm that emits nothing on a c=1-only receipt is REPORT/FAIL, never PASS; selftest rows both polarities (#2830) | — | #2830, #2876 | any | 2026-09-19 | perf-gate | review-only | #2893 | PMAT-978 | open |
 | C0-5 | PRQ-013 single base-owned quorum workflow (pull_request_target/merge_group): the receipt/quorum check that gates a PR is defined by the base, never by the PR head | — | #2982 | any | 2026-09-19 | spec-owner | review-only | #2982 | PMAT-1054 | complete |
 | C0-6 | mutation step exceeds the job timeout (134-mutant set, #2872 receipt run): a cancelled required step records NotRun{Timeout}, never PASS, and the step fits its job | — | #2983 | any | 2026-09-19 | spec-owner | review-only | #2983 | PMAT-1055 | open |
 | C0-7 | receipt terminal marker + check_receipt_complete.sh: impl receipts carry status: complete\|partial in front matter, are written .tmp then mv, and a resume treats partial as not complete | — | #2984 | any | 2026-09-19 | spec-owner | review-only | #2984 | PMAT-1056 | complete |
+| U-1 | pmat#1200: `pmat work cot derive` emits hollow obligations (empty statement/hypothesis for v5.0 contract.json steps; CB-1658 passes the hollow file) — fix upstream, pmat release (Noah publishes), forjar pin bump on four hosts + the runner, scripts/pmat_bin.sh bump PR, ratchet re-baseline stamped (PMAT-1061) | — | — | upstream (paiml/paiml-mcp-agent-toolkit) | 2026-09-13 | pmat | none (upstream) | #3015 | — | open |
 
 ### Track R
 
@@ -240,6 +241,7 @@ _Rendered from `docs/specifications/pp-066-dag.yaml` (epic #2873, 91 rows). Edit
 | S-3g | S-3 on gx10 (queue slot after T-0) | S-3, I-15 | — | gx10 | 2026-10-10 | perf-gate | review-only | #2920 | PMAT-1005 | open |
 | S-1 | [premises discharged: master rows 6 and 9 LANDED per S0-2] W-A per-token host work out of the decode loop: one model.write() per step, embed on device, no per-slot try_send; AbRecord with registered prediction <= 3.5 ms/tok (basis= master §9 #5 / §12 row 19 registered prediction, spec §7) | I-1 | #2694 | lambda | 2026-10-16 | perf-gate | N-lane root cause (>=3: performance physics, systems, evidence) | #2921 | PMAT-1006 | open |
 | S-2 | W-C prefill without synchronous copies: pinned pre-allocated activation/KV staging, one async copy per layer, allocation outside the request; prediction copies+allocs < 10% of CUDA API time (basis= master §9 #3 / §12 row 20 registered prediction, spec §7); prefill > 5,700 tok/s registered (basis= 0.55x of the comparator median 10,399 in evidence/parity-http/findings.json; REPORTING; nothing arms) | I-17 | #2693, #2697, #2765, #2766 | lambda | 2026-10-23 | perf-gate | N-lane root cause (>=3) | #2922 | PMAT-1007 | open |
+| S-0 | speed lane on perf-solo: the beat/speed lane runs on perf-solo and its receipt names its own host (PR #2720 direction accepted under D-3; diff re-derived from HEAD, #2720 closed as prior art with prior-art/2720 kept) | — | — | perf-solo | 2026-09-26 | perf-gate | review-only | #3016 | — | open |
 
 ### Track T
 
@@ -271,7 +273,10 @@ _Rendered from `docs/specifications/pp-066-dag.yaml` (epic #2873, 91 rows). Edit
 | G-2 | DECISION D-5: [lib] name = aprender declared by root Cargo.toml and crates/aprender-core — keep the front door or rename to aprender_core; the guard allow-list line cites the decision | — | — | any | 2026-09-19 | spec-owner | none | #2900 | PMAT-985 | open |
 | G-3 | rename cost measured at HEAD: use-site count (review said 4,097 [A]) by the committed regex, pmat query as second estimator, dep-key and feature-string counts, sibling checkouts, crates.io reverse deps -> docs/audits/crate-rename-cost.md with basis= | — | — | intel | 2026-10-03 | spec-owner | none | #2901 | PMAT-986 | open |
 | G-4 | the obligation DAG as data with invariants in CI: scripts/check_dag_invariants.sh + scripts/lib/dag_invariants.py over docs/specifications/pp-066-dag.yaml (0 cycles, >=6 days slack blocker->blockee, per-host queue ordered by expiry, owner present, exactly one expiry form, rows past expiry listed); scripts/render_dag.py renders §5/§6 tables byte-identical; pmat rule owed upstream [U] | — | — | any | 2026-09-19 | spec-owner | review-only | #2902 | PMAT-987 | complete |
-| G-10 | check_hardcoded_paths.sh --full-if-capable arms itself at pmat >= 3.32.0 and the fleet runs 3.31.0: under pmat 3.37.0 pristine main reports 317 shipped findings against a baseline of 277, so the day the fleet upgrades every PR goes red (found 2026-09-05 running the guard-runner-labels steps locally; the guard must name the pmat version it armed under and the baseline must carry a measured, versioned basis) | — | — | any | 2026-10-03 | spec-owner | review-only | #2999 | PMAT-1059 | open |
+| G-10 | check_hardcoded_paths.sh --full-if-capable arms itself at pmat >= 3.32.0 and the fleet runs 3.31.0: under pmat 3.37.0 pristine main reports 317 shipped findings against a baseline of 277, so the day the fleet upgrades every PR goes red (found 2026-09-05 running the guard-runner-labels steps locally; the guard must name the pmat version it armed under and the baseline must carry a measured, versioned basis) | — | — | any | 2026-09-12 | spec-owner | review-only | #2999 | PMAT-1059 | open |
+| G-11 | shared-file write contention: a row PR never writes pp-066-dag.yaml, roadmap.yaml, the rendered spec block or a README count line (check_row_pr_write_set.sh); DAG status DERIVED from the receipt (dag_status.py; render_dag.py; dag_invariants.py D7); README counts a ratchet (lag allowed, overstatement RED, --exact for the orchestrator); one orchestrator docs commit per merge writes the shared files | — | — | any | 2026-09-12 | spec-owner | review-only | #3012 | PMAT-1062 | open |
+| G-10b | analyser pin guard: scripts/check_pmat_pinned.sh — every analyser reference under scripts/ and .github/workflows/ resolves through scripts/pmat_bin.sh; scripts/pmat_unpinned_baseline.txt 281 shrink-only; wired case table then live; extends apr-pinned-analyser-ratchet-v1 (PIN-OB-005) | G-10 | — | any | 2026-09-19 | spec-owner | review-only | #3013 | PMAT-1063 | open |
+| G-10c | analyser reference sweep: the 281 unpinned references under scripts/ and .github/workflows/ resolve through scripts/pmat_bin.sh (presence probes become ENV failures; dogfood/verifier_pin/ci.sh take the pin; workflow installs at the pin); baseline to 0 | G-10b | — | any | 2026-09-26 | spec-owner | review-only | #3014 | PMAT-1064 | open |
 
 ### Track D
 

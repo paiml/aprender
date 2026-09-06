@@ -16482,3 +16482,79 @@ roadmap:
   - kind:code
   - pp-066
   notes: null
+- id: PMAT-1061
+  github_issue: null
+  item_type: task
+  title: 'G-10 re-baseline: scripts/hardcoded_path_shipped_baseline.txt re-measured under the pin (3.37.0), stamped (count/pmat_version/basis), its own PR — never a raise; the baseline kind table gains a stamped-series rule (PP-066 #2873, G-10 quorum dissent Q1)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-06T11:30:00Z
+  updated: 2026-09-06T11:30:00Z
+  spec: null
+  acceptance_criteria:
+  - 'bash scripts/check_hardcoded_paths.sh --full-if-capable prints `stamped 3.37.0 (matches the pin)` and PASS by the absolute compare at HEAD; check_baseline_ratchets.sh treats the stamped re-measurement as a new series, not a raise (case-table row both polarities)'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - pp-066
+  notes: null
+- id: PMAT-1062
+  github_issue: 3012
+  item_type: task
+  title: 'G-11 shared-file write contention: row PRs never touch pp-066-dag.yaml, roadmap.yaml, the rendered spec block or README counts (check_row_pr_write_set.sh); DAG status derived from receipts (render_dag.py, dag_invariants.py D7); README counts >= claimed, exact only for the orchestrator (PP-066 #2873, driver R2 2026-09-06)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-06T11:30:00Z
+  updated: 2026-09-06T11:30:00Z
+  spec: null
+  acceptance_criteria:
+  - 'bash scripts/check_row_pr_write_set.sh --self-test both polarities; a row branch touching docs/specifications/pp-066-dag.yaml is RED naming the file; python3 scripts/render_dag.py --check PASS with no status: key read; bash scripts/check_readme_claims.sh PASS with README <= measured and RED with README > measured'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - pp-066
+  notes: null
+- id: PMAT-1063
+  github_issue: 3013
+  item_type: task
+  title: 'G-10b analyser pin guard: scripts/check_pmat_pinned.sh — every analyser reference under scripts/ and .github/workflows/ resolves through scripts/pmat_bin.sh; scripts/pmat_unpinned_baseline.txt 281 shrink-only; wired in guard-runner-labels case table then live; extends apr-pinned-analyser-ratchet-v1 (PP-066 #2873, #2999)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-06T11:30:00Z
+  updated: 2026-09-06T11:30:00Z
+  spec: null
+  acceptance_criteria:
+  - 'bash scripts/check_pmat_pinned.sh --self-test 15/15; bash scripts/check_pmat_pinned.sh prints unpinned=N <= 281; reintroducing one bare `pmat comply check` turns it RED naming the line'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - pp-066
+  notes: null
+- id: PMAT-1064
+  github_issue: 3014
+  item_type: task
+  title: 'G-10c analyser reference sweep: the 281 unpinned references under scripts/ and .github/workflows/ resolve through scripts/pmat_bin.sh; presence probes become ENV failures; workflow installs at the pin; baseline to 0 (PP-066 #2873, #2999)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-06T11:30:00Z
+  updated: 2026-09-06T11:30:00Z
+  spec: null
+  acceptance_criteria:
+  - 'bash scripts/check_pmat_pinned.sh prints unpinned=0; scripts/pmat_unpinned_baseline.txt is 0; dogfood.sh / verifier_pin.sh / ci.sh resolve $PMAT through the pin (each prints the pin)'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - pp-066
+  notes: null
