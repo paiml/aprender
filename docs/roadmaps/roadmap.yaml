@@ -15337,9 +15337,7 @@ roadmap:
   phases: []
   subtasks: []
   estimated_effort: null
-  labels:
-  - kind:code
-  - pp-066
+  labels: []
   notes: null
 - id: PMAT-990
   github_issue: null
@@ -16477,25 +16475,6 @@ roadmap:
   spec: null
   acceptance_criteria:
   - 'see #2999 (A + mutation)'
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels:
-  - kind:code
-  - pp-066
-  notes: null
-- id: PMAT-1060
-  github_issue: null
-  item_type: task
-  title: 'GH-3002: R-0b backend resolution reads the registry (split of R-0 per the design quorum 2026-09-06)'
-  status: planned
-  priority: medium
-  assigned_to: null
-  created: 2026-09-06T04:40:00Z
-  updated: 2026-09-06T04:40:00Z
-  spec: null
-  acceptance_criteria:
-  - 'see #3002 (A + mutation)'
   phases: []
   subtasks: []
   estimated_effort: null
