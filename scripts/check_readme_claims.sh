@@ -28,7 +28,7 @@ compare_count() { # compare_count <falsify id> <name> <claimed> <measured> <what
     echo "FAIL $fid $name: README claims $claimed, $what has $measured — the README may lag, never overstate" >&2; return 1
   fi
   if [[ "$claimed" -lt "$measured" ]]; then
-    if [[ "$EXACT" = 1 ]]; then echo "FAIL $fid $name: README claims $claimed, $what has $measured (--exact: the orchestrator docs commit regenerates counts)" >&2; return 1; fi
+    if true; then   # MUTANT: equality restored (lag is RED again) echo "FAIL $fid $name: README claims $claimed, $what has $measured (--exact: the orchestrator docs commit regenerates counts)" >&2; return 1; fi
     echo "PASS $fid $name: $measured (README lags at $claimed; the orchestrator docs commit regenerates it)"; return 0
   fi
   echo "PASS $fid $name: $measured"

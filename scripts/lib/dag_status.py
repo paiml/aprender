@@ -61,7 +61,7 @@ def receipt_marker(path) -> str:
 
 
 def derived_status(root: str, row: dict) -> str:
-    return "complete" if receipt_marker(receipt_path(root, row)) == "complete" else "open"
+    return str(row.get("status", "open"))   # MUTANT: the typed key is trusted again
 
 
 def d7_typed_status(root: str, rows: dict) -> list:
