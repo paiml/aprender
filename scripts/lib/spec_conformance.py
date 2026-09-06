@@ -39,6 +39,7 @@ Exit status is 0 unless the scan itself broke; the CALLER decides, so that
 
 from __future__ import annotations
 
+import datetime
 import glob
 import json
 import os
@@ -66,6 +67,13 @@ NEXT_HEAD = re.compile(r"^#{1,4}\s")
 BARE_NAME = re.compile(r"^[a-z][a-z0-9_]*$")
 SURFACES = ("pg", "sh", "rs")
 DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
+# I-26 (PMAT-974, S0-2): a §12 cell's expiry is this MARKER, never the first
+# date the cell happens to mention. A root row narrates work in prose before
+# its actual expiry ("witness taken 2026-09-02 ... Expires **2026-09-19**"),
+# and DATE.search alone took the earlier prose date every time. table_rows()
+# runs every cell through strip_md() before this ever sees it, so the `**`
+# bold markers around the date are already gone -- match on the word alone.
+EXPIRES_MARKER = re.compile(r"Expires\s+(\d{4}-\d{2}-\d{2})")
 # `^\s+(ok|BROKE)\s+<name>` is the shape the master names, and the tree carries
 # BOTH indentations: perf_gate.sh and check_perf_concurrency_groups.sh indent
 # their rows, check_comparator_flags.sh and check_llama_pin.sh start at column 0.
@@ -766,8 +774,12 @@ class _Expiries:
 
     def _resolve(self, key, row, stack):
         cell = row["expires_cell"]
-        found = DATE.search(cell)
-        literal = found.group(0) if found else None
+        marker = EXPIRES_MARKER.search(cell)
+        if marker:
+            literal = marker.group(1)
+        else:
+            found = DATE.search(cell)
+            literal = found.group(0) if found else None
         live = self._live(row)
         if row["blocked_by"] and not live:
             return self._unblocked(key, literal)
@@ -810,18 +822,37 @@ def _dag_reason(row: dict) -> str:
     return "root" if not row["blocked_by"] else "unblocked"
 
 
-def _dag_document(table: dict, derived: dict) -> dict:
+def _today() -> str:
+    """"Today", for deciding whether a §12 row is past its derived expiry
+    (D6). SPEC_CONFORMANCE_TODAY overrides it -- read by the --selftest case
+    table so the andon is exercised deterministically, never by the wall
+    clock at whatever moment the suite happens to run."""
+    override = os.environ.get("SPEC_CONFORMANCE_TODAY", "").strip()
+    return override or datetime.date.today().isoformat()
+
+
+def _dag_document(table: dict, derived: dict, today: str) -> dict:
     document = {}
     for key in sorted(table):
         row = table[key]
+        expires = derived.get(key)
         document[key] = {
-            "expires": derived.get(key),
+            "expires": expires,
             "root": not row["blocked_by"],
             "discharged": bool(row.get("discharged")),
             "blocked_by": row["blocked_by"],
             "derived_from": row.get("derived_from", []),
         }
-        emit("DAG", key, derived.get(key) or "-", _dag_reason(row))
+        emit("DAG", key, expires or "-", _dag_reason(row))
+        # §4 andon: a row past its derived expiry, and not discharged (no
+        # LANDED marker), must turn the whole scan RED. A row with no
+        # derivable expiry (D2/D1 already fired for it) has nothing to
+        # compare and is skipped here, not double-counted.
+        if expires and not row.get("discharged") and expires < today:
+            emit("VIOLATION", "D6", key,
+                 "expired %s (today is %s) and is not discharged. §4's andon "
+                 "refuses a row past its expiry with nothing red for it"
+                 % (expires, today))
     return document
 
 
@@ -862,7 +893,7 @@ def check_dag(root: str, spec: str, out_path: str) -> None:
     table = parse_dag(root, spec)
     if table is None:
         return
-    document = _dag_document(table, derive_expiries(table))
+    document = _dag_document(table, derive_expiries(table), _today())
     if not out_path:
         return
     text = json.dumps({"source": os.path.relpath(spec, root),
