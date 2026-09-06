@@ -563,7 +563,8 @@ rows:
   spec: PP-066 §0 D-5, §5 G-2
   gh_issue: 2900
   pmat_id: PMAT-985
-  status: open
+  status: complete
+  notes: 'decided 2026-09-06: https://github.com/paiml/aprender/issues/2873#issuecomment-5558718271'
 - id: G-3
   title: 'rename cost measured at HEAD: use-site count (review said 4,097 [A]) by the committed regex, pmat query as second estimator, dep-key and feature-string counts, sibling checkouts, crates.io reverse
     deps -> docs/audits/crate-rename-cost.md with basis='
@@ -1522,7 +1523,8 @@ rows:
   spec: PP-066 §0
   gh_issue: 2933
   pmat_id: PMAT-1018
-  status: open
+  status: complete
+  notes: 'decided 2026-09-06: https://github.com/paiml/aprender/issues/2873#issuecomment-5558717537'
 - id: DEC-D-3
   title: 'DECISION D-3 (escalate): CI home for non-CUDA lanes — may intel host a wgpu lane and a wasm harness; may mini host nightly Metal'
   epic: 2873
@@ -1543,7 +1545,8 @@ rows:
   spec: PP-066 §0
   gh_issue: 2934
   pmat_id: PMAT-1019
-  status: open
+  status: complete
+  notes: 'decided 2026-09-06: https://github.com/paiml/aprender/issues/2873#issuecomment-5558717787'
 - id: DEC-D-8
   title: 'DECISION D-8 (escalate): rename sequencing for 0.67 — one PR per crate vs batched leaves'
   epic: 2873
@@ -1564,7 +1567,8 @@ rows:
   spec: PP-066 §0
   gh_issue: 2935
   pmat_id: PMAT-1020
-  status: open
+  status: complete
+  notes: 'decided 2026-09-06: https://github.com/paiml/aprender/issues/2873#issuecomment-5558719034'
 - id: DEC-D-9
   title: 'DECISION D-9: cuda in the published crate default features — yes iff S0-14 (held on intel/mini), R-0 merged, clean-room p1 green'
   epic: 2873
@@ -1585,7 +1589,8 @@ rows:
   spec: PP-066 §0
   gh_issue: 2936
   pmat_id: PMAT-1021
-  status: open
+  status: complete
+  notes: 'decided 2026-09-06: https://github.com/paiml/aprender/issues/2873#issuecomment-5558719666'
 - id: DEC-D-10
   title: 'DECISION D-10: per-target feature set of the release binaries (R-5 runs S0-14 per target)'
   epic: 2873
@@ -1606,7 +1611,8 @@ rows:
   spec: PP-066 §0
   gh_issue: 2937
   pmat_id: PMAT-1022
-  status: open
+  status: complete
+  notes: 'decided 2026-09-06: https://github.com/paiml/aprender/issues/2873#issuecomment-5558719920'
 - id: DEC-D-11
   title: 'DECISION D-11: PV-IMPROVE-001 phase 0 + 1.1/1.2 ride 0.66 as C12 blockers'
   epic: 2873
@@ -1627,7 +1633,8 @@ rows:
   spec: PP-066 §0
   gh_issue: 2938
   pmat_id: PMAT-1023
-  status: open
+  status: complete
+  notes: 'decided 2026-09-06: https://github.com/paiml/aprender/issues/2873#issuecomment-5558720148'
 - id: W-B-kernel
   title: multi-warp Q4_K GEMV, M in {1,4,8}
   epic: 2873
@@ -2632,3 +2639,8 @@ amendments:
   row: S-0
   change: 'new row (D-3: speed lane on perf-solo, #2720 direction)'
   why: 'DEC-D-3 comment on #2873'
+- date: '2026-09-06'
+  by: noahgift via driver prompt 2026-09-06
+  row: DEC-D-2, DEC-D-3, G-2 (D-5), DEC-D-8, DEC-D-9, DEC-D-10, DEC-D-11
+  change: status open -> complete (decision receipts docs/audits/impl-PMAT-{1018,1019,985,1020,1021,1022,1023}-receipt.md)
+  why: 'the seven decisions are recorded as comments on #2873 (decided_by: noahgift via driver prompt 2026-09-06); D-4, D-6, D-7 have no DAG row and live in the comments only'
