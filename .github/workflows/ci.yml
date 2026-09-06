@@ -1129,6 +1129,27 @@ jobs:
         run: bash scripts/check_roadmap_completion_is_cited.sh
       - name: Roadmap-citation guard can still go RED (case table)
         run: bash scripts/check_roadmap_completion_is_cited.sh --selftest
+      # C0-7 (PP-066, #2984): an implementation receipt is complete only when its
+      # leading front matter says `status: complete` (a marker the writer sets
+      # LAST, written .tmp then mv'd); a DAG row may claim status: complete
+      # only over such a receipt; a tracked *.tmp receipt is a torn write. The
+      # resume logic reads the marker, never the prose. Case table first (13
+      # rows, both polarities), then the DAG (a missing DAG is exit 2).
+      - name: "Receipt-marker guard case table (13 rows, both polarities)"
+        run: bash scripts/check_receipt_complete.sh --selftest
+      - name: Every DAG row marked complete has a receipt whose marker says so (C0-7)
+        run: bash scripts/check_receipt_complete.sh --dag docs/specifications/pp-066-dag.yaml
+      # G-6 (PP-066, #2895, #2874): `pmat work add/complete` re-serialises the whole
+      # roadmap (2,531 unrelated lines for one 17-line entry). A PR's roadmap diff
+      # may only ADD entries or edit a ticket's own lifecycle fields; a byte change
+      # on an entry whose content did not change is the churn, and it is refused
+      # with the count. Remedy: `python3 scripts/roadmap_trim.py`. Case table first
+      # (9 rows, both polarities, incl. the real 6d9ba274a re-serialisation), then
+      # the PR's diff against its merge base.
+      - name: "Roadmap additive-diff guard case table (9 rows, both polarities)"
+        run: bash scripts/check_roadmap_diff_additive.sh --self-test
+      - name: A PR's roadmap diff only adds entries or edits a ticket's own lifecycle fields (G-6)
+        run: bash scripts/check_roadmap_diff_additive.sh
       - name: One benchmarking entrypoint (PERF-009)
         run: bash scripts/check_no_competing_harnesses.sh
       - name: Competing-harness guard can still go RED (case table)
@@ -1183,6 +1204,26 @@ jobs:
         run: bash scripts/spec_conformance.sh
       - name: Spec-conformance guard can still go RED (case table)
         run: bash scripts/spec_conformance.sh --selftest
+      # SPEC-1.6 (PP-066, #2903): the v1.6 corrections are each asserted by a
+      # row that was RED on the v1.5 text (the --v15-red arm proves the table
+      # can fail), and the §5.0 DAG block is rendered from the yaml — drift is
+      # RED (G-4's render_dag.py --check; 3 = not armed is not a pass).
+      - name: "PP-066 spec v1.6 defect table (22 rows) and its v1.5 RED proof"
+        run: bash tests/spec/pp066_v16_defects.sh && bash tests/spec/pp066_v16_defects.sh --v15-red
+      - name: The spec's rendered DAG block matches the yaml (G-4 --check)
+        run: python3 scripts/render_dag.py --check --dag docs/specifications/pp-066-dag.yaml --spec docs/specifications/PP-066-release-spec.md
+      # G-4 (PP-066 §4 C10, #2902): the obligation DAG (docs/specifications/pp-066-dag.yaml)
+      # is data, and its invariants are checked by machine — D1 no dangling
+      # blocker, D2 acyclic, D3 >= 6 days slack blocker->blockee on the 0.66
+      # lane (spec §2), D4 per-host queues ordered by expiry, D5 owner, D6
+      # exactly one expiry form. A missing DAG is exit 2 (the box cannot
+      # answer), never a pass. The case table runs first (11 rows, both
+      # polarities). render_dag.py --check is wired by SPEC-1.6, which inserts
+      # the marker pair the rendered §5/§6 block lives between.
+      - name: "DAG-invariants guard case table (11 rows, both polarities)"
+        run: bash scripts/check_dag_invariants.sh --selftest
+      - name: The PP-066 obligation DAG holds its invariants (G-4, C10)
+        run: bash scripts/check_dag_invariants.sh docs/specifications/pp-066-dag.yaml --min-slack-days 6
       # PP-33. Nothing scanned the gate's readers for thresholds, so the spec's
       # own must-fire -- `STRETCH = 1.50` in scripts/lib/parity_block.py -- could
       # not turn anything red. Four independent encodings of the release floors
