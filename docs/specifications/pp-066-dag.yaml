@@ -942,6 +942,8 @@ rows:
   gh_issue: 2910
   pmat_id: PMAT-995
   status: open
+  notes: ' | rescope quorum removals (docs/audits/pp-066-rescope-quorum.md): README:44/265 the word provable; dispatch.rs:177 ~20x; chat_load_tokenizers.rs:230 ~4x; extended_commands.rs:87/208 tok/s; book
+    qwen-inference.md:9, showcase-benchmark.md:20, performance.md:250; crates/aprender-zram/README.md:25, crates/aprender-viz/README.md:35'
 - id: P-0.3
   title: 'proof credit from evidence only: l3_kani_proved/l4_lean_proved integers ignored; Kani credit = resolving #[kani::proof] (47), Lean credit = sorry-free resolving theorem (8); declared vs discharged
     columns (FALSIFY-PVI-003)'
@@ -2769,11 +2771,11 @@ rows:
   - a model named in README but absent from the manifest -> check_readme_claims.sh RED
   quorum: N-lane root cause (three model families recorded)
   spec: driver v4 P0 (2026-09-06); the source report path is [U] (not in-tree on 2026-09-06)
-  gh_issue: 3017
+  gh_issue: 2971
   pmat_id: PMAT-1065
   status: open
   notes: 'P0. Expiry = the earliest 09-19 row (driver v4). Threshold 0.98 is [U] until measured. Track L0 = correctness landmines found in dogfood. | split by driver v5: L0-1a bounded (this row), L0-1b
-    unbounded (the op and the fix)'
+    unbounded (the op and the fix) | issue #2971 (the user report; #3017 closed as its duplicate, driver v5.1)'
 - id: G-11b
   title: 'one-call state (scripts/pp066_state.sh: head row, complete receipts, PR states, main reds with ticket ids, U-1 poll), the session docs commit (scripts/session_docs_commit.sh), the .pr/<row>/accept.sh
     convention in pp-066-plan.md, make fleet-verify ROW=<row> (forjar/make only)'
@@ -2853,10 +2855,11 @@ rows:
   - revert the op fix -> 1.5B RED
   quorum: N-lane root cause (three model families)
   spec: driver v5 L0-1b
-  gh_issue: 3017
+  gh_issue: 2971
   pmat_id: null
   status: open
-  notes: 'shares issue #3017 with L0-1a; ticket minted in the session docs commit; the 2026-09-06 quorum (one family, refuted the fused-FFN hypothesis on default config) is the first session'
+  notes: 'shares issue #3017 with L0-1a; ticket minted in the session docs commit; the 2026-09-06 quorum (one family, refuted the fused-FFN hypothesis on default config) is the first session | issue #2971
+    (the user report; #3017 closed as its duplicate, driver v5.1)'
 - id: SPEC-2.0
   title: 'spec v2.0 (driver v5): the 18-row scope with each cut row naming the claim it protected; the claims ratchet (README, notes, CLI output carry no performance, training-parity or proof-count number;
     check_no_claim_literals.sh + check_perf_claims_cite_receipts.sh over notes and README in ci / gate, mutation: one number → RED); scripts/release_criteria.sh C0 C4 C5 C6 C7 C8 C9 C11 C13 C14 one exit-coded
@@ -2884,7 +2887,7 @@ rows:
   - delete one criterion command from release_criteria.sh -> --list RED (10 required)
   quorum: 'rescope quorum: three adversarial agy lanes'
   spec: driver v5 PHASE 0
-  gh_issue: null
+  gh_issue: 3023
   pmat_id: null
   status: open
   notes: orchestrator row (the spec and the DAG are its write set); ticket and issue minted in the session docs commit
@@ -2997,3 +3000,8 @@ amendments:
   row: (edges)
   change: L0-1a, R-0, G-11b <- G-11; L0-1b <- L0-1a; R-0b <- R-0, L0-1a; R-2 <- R-0b; R-5 <- R-2, L0-1b; R-6, R-8 <- R-5; R-7 <- R-6; TAG-0.66.0 <- every kept row; edges from kept rows to cut rows dropped
   why: driver v5 PHASE 0
+- date: '2026-09-06'
+  by: noahgift via driver prompt 2026-09-06 (v5.1 rescope quorum)
+  row: C5 / R-7 / L0-1a / L0-1b / SPEC-2.0
+  change: 'C5 -> 0.67 with Track T (quorum Q3 unanimous); R-7 carries the nine claim removals; L0-1a/L0-1b cite #2971; SPEC-2.0 = #3023'
+  why: docs/audits/pp-066-rescope-quorum.md
