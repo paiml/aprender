@@ -5,8 +5,13 @@
 # Sources (in this order; every citation is file:line):
 #   README.md · docs/BEATS.md · book/src/**/*.md · evidence/dogfood/*/*.json ·
 #   scripts/perf-matrix.yaml
-# A model is a name matching /qwen[0-9.]*-?[a-z]*-?[0-9]+(\.[0-9])?b(-[a-z0-9.]+)*/ (case-
-# insensitive) with the quantisation suffix and the .gguf extension stripped; each
+# ADMISSION RULE (the manifest's universe): a model family is admitted when the tree ships
+# and runs a GGUF of it — today the qwen families only (README/BEATS/book/dogfood/perf-matrix
+# name qwen2/qwen2.5/qwen3.5 models; llama/llama2/mistral/phi/gemma mentions are chat-template
+# names and comparators, not supported-model claims; llama.cpp is the comparator tool).
+# Widening the universe is ONE edit to the pattern below and is a claim: the widened family
+# must then pass C14 on the fleet. A name matches /qwen[0-9](\.[0-9])?(-coder|-instruct)?-<size>b(-instruct)?/
+# (case-insensitive) with the quantisation suffix and the .gguf extension stripped; each
 # entry records where it is cited. The manifest is what C14 (check_model_parity.sh
 # --manifest) iterates and what check_readme_claims.sh holds the README to.
 #

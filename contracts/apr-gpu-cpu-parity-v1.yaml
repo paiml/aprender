@@ -70,7 +70,10 @@ equations:
         positions(run) < 64                         =>  FAIL (I8)
         min_p cosine_p(run) < threshold(m)          =>  FAIL naming the positions
         else PASS
-      m ∈ manifest \ host  =>  UNMEASURED (RED when README cites m)
+      m ∈ manifest \ host  =>  UNMEASURED (a per-host REPORT; the fleet-level rule is R-5's promotion)
+      measured(host) = 0    =>  not a pass
+      alias(m) resolves to a file already measured under a longer name  =>  ALIAS, measured once
+      threshold(m) without min_cosine or basis  =>  refused (exit 2), never defaulted (I4)
       SKIP_PARITY_GATE set  =>  print `override:`; every receipt INVALID-CORRECTNESS; C14 never exits 0
     domain: 'apr parity JSON records over the manifest on one host'
     codomain: 'PASS | FAIL | UNMEASURED | override'
@@ -148,9 +151,11 @@ falsification_tests:
       FAIL) -> `selected: cpu (reason: parity FAILED …)` printed;
       effective-config carries parity:{status,cosine,positions,threshold,basis};
       SKIP_PARITY_GATE=1 -> `override:` printed and the receipt INVALID-CORRECTNESS.
-    test: 'cargo test -p apr-cli --test backend_refusal_case_table'
+    test: 'cargo test -p apr-cli --test reg15_admission'
     if_fails: >-
-      `apr chat --gpu` silently runs on the CPU (#2971's second half)
+      `apr chat --gpu` silently runs on the CPU (#2971's second half). The CLI-level rows
+      (a forced --backend cuda over a failed gate) land in R-0b's backend_refusal_case_table,
+      which does not exist yet; this contract's test is the admission level.
     mutation: >-
       restore the `[CUDA init failed: …, falling back to CPU]` catch
       (chat_generate_session_02.rs:471); the forced-cuda REG-15 row must turn RED.
