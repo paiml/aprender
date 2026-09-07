@@ -1,4 +1,4 @@
-# tool_version=pmat 3.37.0
+# tool_version=pmat 3.39.0
 # complexity_baseline.txt - functions over the pre-commit hook thresholds
 # (cyclomatic > 30 or cognitive > 25), as "<path>::<function> <cyclomatic> <cognitive>".
 # SHRINK-ONLY. Regenerate with: bash scripts/check_complexity_ratchet.sh --update

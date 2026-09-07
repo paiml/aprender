@@ -88,6 +88,30 @@ check_one() { # check_one TOOL TOMLFILE
     return 0
 }
 
+
+# check_headers TOMLFILE -- every `# tool_version=<tool> <version>` header on a
+# ratchet baseline (BSE-10a, lib_baseline_ratchet.sh) that names a PINNED tool
+# must carry the pinned version. Two mirrors of one fleet pin drifted apart on
+# 2026-09-07 (tools.toml 3.39.0, complexity_baseline.txt 3.37.0) and the D2
+# complexity ratchet refused every merge as an instrument mismatch; this makes
+# the pin bump and the header move together or fail here.
+check_headers() { # check_headers TOMLFILE
+    local f=$1 bad=0 n=0 b tool ver pinned
+    for b in scripts/*baseline*.txt; do
+        [ -f "$b" ] || continue
+        read -r tool ver < <(sed -n 's/^#[[:space:]]*tool_version=\([a-z]*\) \([0-9][0-9.]*\).*/\1 \2/p' "$b" | head -1)
+        [ -n "$tool" ] || continue
+        case " $TOOLS " in *" $tool "*) : ;; *) continue ;; esac
+        n=$((n + 1))
+        pinned=$(pinned_version "$tool" "$f")
+        if [ "$ver" != "$pinned" ]; then
+            printf 'FAIL  header   %s records %s %s, tools.toml pins %s\n' "$b" "$tool" "$ver" "$pinned"
+            bad=1
+        fi
+    done
+    printf '%s baseline header(s) name a pinned tool; %s\n' "$n" "$([ "$bad" -eq 0 ] && echo 'all agree with tools.toml' || echo 'MISMATCH')"
+    return "$bad"
+}
 # audit_workflow FILE -- REDs a workflow that still installs pmat/bashrs, or
 # that calls this script's own invocation in a way that can fail open.
 audit_workflow() { # audit_workflow FILE
@@ -168,6 +192,13 @@ TOML
     row 1 "bashrs: wrong version on PATH -> RED"   "$TD/bin-wrong" bashrs
     row 1 "pmat: absent from PATH -> RED"          "$TD/bin-empty" pmat
     row 1 "bashrs: absent from PATH -> RED"        "$TD/bin-empty" bashrs
+    # header rows run from a scratch tree whose scripts/ holds only fixtures.
+    mkdir -p "$TD/tree/scripts"
+    printf '# tool_version=pmat 1.2.3\n1\n' > "$TD/tree/scripts/a_baseline.txt"
+    printf '# tool_version=none (grep)\n1\n' > "$TD/tree/scripts/b_baseline.txt"
+    n=$((n + 1)); if ( cd "$TD/tree" && check_headers "$TD/tools.toml" > /dev/null 2>&1 ); then printf 'ok    row %-2s rc=0  baseline headers at the pin -> GREEN\n' "$n"; else printf 'FAIL  row %-2s  headers at the pin should be GREEN\n' "$n"; fails=1; fi
+    printf '# tool_version=pmat 1.2.2\n1\n' > "$TD/tree/scripts/a_baseline.txt"
+    n=$((n + 1)); if ( cd "$TD/tree" && check_headers "$TD/tools.toml" > /dev/null 2>&1 ); then printf 'FAIL  row %-2s  a header behind the pin should be RED\n' "$n"; fails=1; else printf 'ok    row %-2s rc=1  a baseline header behind the pin -> RED\n' "$n"; fi
 
     [ "$fails" -eq 0 ] || { printf '\nSELF-TEST FAILED\n'; exit 1; }
     printf '\nSELF-TEST PASSED (%s/%s rows)\n' "$n" "$n"
@@ -202,6 +233,8 @@ for tool in $TOOLS; do
     n=$((n + 1))
     check_one "$tool" "$TOOLS_TOML" || fails=$((fails + 1))
 done
+n=$((n + 1))
+check_headers "$TOOLS_TOML" || fails=$((fails + 1))
 
 printf '%s/%s checks, %s failed\n' "$((n - fails))" "$n" "$fails"
 [ "$fails" -eq 0 ]
