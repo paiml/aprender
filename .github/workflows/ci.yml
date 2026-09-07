@@ -263,6 +263,26 @@ jobs:
             < "$PLAN"
         env:
           GH_TOKEN: ${{ github.token }}
+      # M2 (#3039, PMAT-1062): the per-PR parent under targets/aprender-ci is
+      # created by the docker DAEMON, as root, by whichever job first bind-mounts
+      # a path beneath it; every later job of the other kind then fails mkdir
+      # with EACCES (guard-cargo on #3039; job ORDER decided it). Create both
+      # levels here on the host, as the runner user, before any bind mount. A
+      # parent an earlier run already left root-owned is chowned — that one
+      # directory, not its contents — through the image, which runs as root,
+      # exactly as the chown step below does for the run dir.
+      - name: Create this run's target dir and registry on the host (before any bind mount)
+        run: |
+          set -euo pipefail
+          parent="/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}"
+          reg="/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}"
+          for d in "$parent" "$reg"; do
+            if [ -d "$d" ] && [ ! -w "$d" ]; then
+              docker run --rm -v "$(dirname "$d"):/p" "$IMAGE" chown "$(id -u):$(id -g)" "/p/$(basename "$d")"
+            fi
+          done
+          mkdir -p "${parent}/run-${GITHUB_RUN_ID}" "$reg"
+          ls -ld "$parent" "${parent}/run-${GITHUB_RUN_ID}" "$reg"
       - name: Pre-build chown — fix per-RUN root ownership
         # Root cause (five-whys):
         #   1. Why do fresh runs sometimes fail with "failed to create
@@ -849,6 +869,14 @@ jobs:
       # not $CARGO_HOME/registry.
       - name: Create this job's own target dir and CARGO_HOME (before any bind mount)
         run: |
+          # A root-owned parent (created by the docker daemon for another job's
+          # bind mount, #3039) is chowned through the image before the mkdir;
+          # that one directory only, never its contents.
+          for d in "$(dirname "$GUARD_TARGET_DIR")" "$(dirname "$GUARD_CARGO_HOME")" "$GUARD_CARGO_HOME"; do
+            if [ -d "$d" ] && [ ! -w "$d" ]; then
+              docker run --rm -v "$(dirname "$d"):/p" "$IMAGE" chown "$(id -u):$(id -g)" "/p/$(basename "$d")"
+            fi
+          done
           mkdir -p "$GUARD_TARGET_DIR"
           mkdir -p "$GUARD_CARGO_HOME/registry"
           printf 'target dir: %s\n' "$GUARD_TARGET_DIR"
