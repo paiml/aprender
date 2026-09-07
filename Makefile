@@ -715,6 +715,22 @@ gate: ## Fail-closed, comparand-pinned composite gate (BSE-16)
 	scripts/guard_tree.sh --no-cargo
 	scripts/gate_touched_crates.sh
 
+# Predict whether merge(origin/main, HEAD) will pass the tree-property
+# guards, BEFORE pushing (BSE-14, docs/specifications/build-system-
+# enhancement.md §4 wave 3, infra repo). `predict` builds the merge in a
+# throwaway `git worktree` (never touches this branch's own working tree),
+# runs guard_tree.sh --no-cargo and gate_touched_crates.sh --dry-run against
+# it, and records the verdict in .predict/last-<branch>.json. `predict-check`
+# is the cheap replay for a pre-push hook: it refuses (exit 3) rather than
+# reuse a verdict made stale by origin/main moving, HEAD moving, or the
+# working tree going dirty, and exits 4 (distinct) on a fetch/network
+# failure.
+predict: ## Predict merge(origin/main, HEAD) against the tree-property guards (BSE-14)
+	scripts/predict_merge.sh
+
+predict-check: ## Refuse a stale prediction; exit 0 only if still fresh (BSE-14)
+	scripts/predict_merge.sh --check
+
 # Quick check (compile only)
 check:
 	cargo check --all
