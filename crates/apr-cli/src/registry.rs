@@ -358,6 +358,43 @@ mod real {
 }
 
 pub use real::{build_has_accelerator, compiled, compute_class, resolve};
+
+/// Resolve `req` and print the `selected:` line (REG-8, R-0b: "selected:
+/// always") to stderr — once per process, so a command whose preflight
+/// resolves twice (an explicit `--backend` and then `--gpu`) prints one line.
+/// The parity text joins it at the CUDA load site, which prints its own
+/// `parity:` line from the gate record (REG-15).
+///
+/// # Errors
+/// The same refusals as [`resolve`].
+pub fn announce(req: &Request<'_>, asked: &str) -> Result<Resolved> {
+    let r = resolve(req, asked)?;
+    if !ANNOUNCED.swap(true, std::sync::atomic::Ordering::SeqCst) {
+        eprintln!("{}", selected_line(&r, None));
+    }
+    Ok(r)
+}
+
+static ANNOUNCED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// The `parity:` line a CUDA load site prints from its admission record
+/// (REG-15, L0-1a): the companion of the `selected:` line, printed once the
+/// gate has actually run on this model.
+#[must_use]
+pub fn parity_line(
+    status: &str,
+    cosine: Option<f32>,
+    positions: usize,
+    threshold: f32,
+    basis: &str,
+) -> String {
+    match cosine {
+        Some(c) => format!(
+            "parity: {status} cosine={c:.6} positions={positions} threshold={threshold} basis={basis}"
+        ),
+        None => format!("parity: {status} positions={positions} threshold={threshold} basis={basis}"),
+    }
+}
 #[cfg(feature = "inference")]
 pub use real::{build_has_accelerator_in, compiled_in, current, load, resolve_in};
 

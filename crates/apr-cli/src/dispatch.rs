@@ -115,16 +115,8 @@ fn dispatch_sibling_cli_commands(cli: &Cli) -> Option<Result<(), CliError>> {
 fn run_preflight(gpu: bool, no_gpu: bool, backend: Option<&str>) -> Result<bool, CliError> {
     if let Some(b) = backend.filter(|b| *b != "cpu") {
         eprintln!("Backend override: {b}");
-        let asked = format!("--backend {b}");
-        crate::registry::resolve(
-            &crate::registry::Request {
-                backend: Some(b),
-                ..Default::default()
-            },
-            &asked,
-        )?;
     }
-    crate::accel::ensure_available(gpu && !no_gpu, &crate::accel::asked_flag(gpu, backend))?;
+    crate::accel::ensure_available_for(gpu, no_gpu, backend)?;
     let backend_forces_cpu = backend == Some("cpu");
     Ok(if gpu { false } else { no_gpu || backend_forces_cpu })
 }

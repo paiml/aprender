@@ -156,6 +156,9 @@ fn try_init_gguf_cuda(
                 )
                 .bright_green()
             );
+            // R-0b / REG-15: the gate record, next to the `selected:` line.
+            let pr = &cuda_model.parity;
+            eprintln!("{}", crate::registry::parity_line(pr.status, pr.cosine, pr.positions, pr.threshold, pr.basis));
             (Some(cuda_model), false)
         }
         Err(e) => {

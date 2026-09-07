@@ -1657,10 +1657,7 @@ fn dispatch_extended_command(cli: &Cli) -> Result<(), CliError> {
             // unlike `apr run` it does not even carry the bespoke
             // `--backend cuda` check. Three surfaces, one refusal, so a fix
             // here cannot land on two of them again.
-            crate::accel::ensure_available(
-                *gpu && !*no_gpu,
-                &crate::accel::asked_flag(*gpu, backend.as_deref()),
-            )?;
+            crate::accel::ensure_available_for(*gpu, *no_gpu, backend.as_deref())?;
             // GH-326: --gpu overrides --no-gpu when both specified
             let effective_no_gpu = if *gpu { false } else { *no_gpu };
             chat::run(

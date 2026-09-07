@@ -263,8 +263,29 @@ fn accelerator_request(config: &ServerConfig) -> Option<(crate::registry::Reques
 /// not Ready on this host ⇒ `BackendUnavailable` (14).
 fn ensure_accelerator_available(config: &ServerConfig) -> Result<()> {
     match accelerator_request(config) {
-        None => Ok(()),
-        Some((req, asked)) => crate::registry::resolve(&req, &asked).map(|_| ()),
+        // R-0b "selected: always": the registry's default is announced with its
+        // reason even when nothing asked for an accelerator.
+        None => {
+            // `--no-gpu`, `--backend cpu` or `--gpu-layers 0` mean cpu; else the
+            // registry's default. Nothing here can refuse.
+            let cpu = config.no_gpu || config.gpu_layers.is_some();
+            let asked = if config.no_gpu {
+                "--no-gpu"
+            } else if cpu {
+                "--gpu-layers 0"
+            } else {
+                "default"
+            };
+            let req = crate::registry::Request {
+                gpu: false,
+                no_gpu: cpu,
+                backend: config.backend.as_deref(),
+                layers_want_accelerator: false,
+            };
+            let _ = crate::registry::announce(&req, asked);
+            Ok(())
+        }
+        Some((req, asked)) => crate::registry::announce(&req, &asked).map(|_| ()),
     }
 }
 

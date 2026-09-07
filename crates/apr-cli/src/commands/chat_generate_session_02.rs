@@ -460,6 +460,9 @@ impl ChatSession {
                                 )
                                 .bright_green()
                             );
+                            // R-0b / REG-15: the gate record, next to the `selected:` line.
+                            let pr = &cuda_model.parity;
+                            eprintln!("{}", crate::registry::parity_line(pr.status, pr.cosine, pr.positions, pr.threshold, pr.basis));
                             // Use generate_gpu_resident (tested working path) not generate_full_cuda_with_cache
                             return cuda_model
                                 .generate_gpu_resident(prompt, &gen_config)

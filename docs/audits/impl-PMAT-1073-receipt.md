@@ -94,6 +94,39 @@ precedence (`--no-gpu` beats `--gpu`; `--backend cpu` asks for nothing) is uncha
 - `aprender-serve` `double_must_use` on `ParityReport::not_run` (L0-1a's code, #3026): fixed at its
   source on `agent/L0-1` (278417bbc, local, held while the queue is BSE-001's) and merged here.
 
+## Third commit: `selected:` always, `parity:` at the CUDA load, measured end to end
+`crate::registry::announce()` resolves and prints the `selected:` line once per process;
+`accel::ensure_available_for(gpu, no_gpu, backend)` builds the request exactly as `apr run` /
+`apr chat` honour it (GH-326: `--gpu` wins; clap already refuses `--gpu` with `--no-gpu` on `run`),
+serve's gate does the same with its own precedence (`--no-gpu`, `--backend cpu`, `--gpu-layers 0`
+⇒ cpu). The first cut announced the registry default under `--no-gpu` (the line said wgpu while the
+run used cpu) — caught by the binary, not by the unit tests, whose stderr cargo captures. The CUDA
+load sites (`chat_load_tokenizers.rs` GGUF site, `chat_generate_session_02.rs`,
+`serve/handlers_include_01.rs` ×2) print `parity: <status> cosine=… positions=… threshold=… basis=…`
+from the gate record; the SafeTensors CUDA model carries no record and prints none.
+
+Measured on this box with the debug `apr` built from this tree (`APR_REGISTRY_FIXTURE` selects the
+host facts; the live registry finds an RTX 4090 through wgpu on this non-cuda build):
+
+| invocation | registry | exit | line |
+|---|---|---|---|
+| `run` (no flag) | live | 3 (file) | `selected: wgpu device[0]=NVIDIA GeForce RTX 4090 (registry: first Ready non-cpu entry; …)` |
+| `run --no-gpu` | live | 3 | `selected: cpu (registry: --no-gpu: cpu requested)` |
+| `run --backend cpu` | live | 3 | `selected: cpu (registry: --backend cpu: cpu requested)` |
+| `run --gpu` | cpu-only | **14** | `Backend unavailable: --gpu was requested, but no such backend is Ready on this host` |
+| `run --gpu` | no-accelerator-compiled | **9** | `Feature not enabled: … not compiled into this build` + install line |
+| `run --backend wgpu` | cpu-only | **14** | (the old cuda-only special case let this through) |
+| `run --gpu` | one-cuda | 3 | `selected: cuda device[0]=… (registry: --gpu: first Ready accelerator)` |
+| `chat --no-gpu` | live | 3 | `selected: cpu (registry: --no-gpu: cpu requested)` |
+| `chat --gpu` | no-accelerator-compiled | **9** | as run |
+| `serve run <0.5B gguf> --gpu` | cpu-only | **14** | as run (the gate precedes the load) |
+| `serve run <0.5B gguf> --gpu-layers all` | no-accelerator-compiled | **9** | quotes `--gpu-layers` |
+| `serve run <0.5B gguf> --backend cuda` | cpu-only | **14** | quotes `--backend cuda` |
+| `serve run <0.5B gguf> --no-gpu` | live | 124 (timeout: the server started) | `selected: cpu (registry: --no-gpu: cpu requested)` |
+
+One `selected:` line per process (`grep -c` = 1 on `run --gpu`). The `parity:` line needs a CUDA
+build and a GPU host; it is owed from the lambda/gx10 fleet-verify.
+
 ## Gaps / next
 Still owed before `status: complete`: the `selected:` line at every model-load site (run/chat/serve),
 A3's `GET /v1/effective-config.backend == resolved Selection` + `discovered_at` (REG-12) on the
