@@ -327,6 +327,13 @@ fi
 #     control is the same workflow with the argument removed: a BARE invocation
 #     must NOT skip it, or the runner would quietly stop running every guard
 #     any workflow happens to name.
+#
+#     The bare control is written to ci.yml (not e.g. nightly.yml): since
+#     PMAT-1062 a BARE invocation in a workflow OTHER than ci.yml, with none
+#     in ci.yml, is the wired-elsewhere case (rows 13-17 below) and would
+#     confound this row. ci.yml naming the guard for itself is neither
+#     arg-wired nor wired-elsewhere -- it is the plain "this dispatcher's own
+#     workflow also runs it bare" case, which must still run here.
 # ---------------------------------------------------------------------------
 mkdir -p "$fixture/.github/workflows"
 printf 'jobs:\n  n:\n    steps:\n      - run: bash scripts/check_fail_beta.sh "$LOG"\n' \
@@ -334,8 +341,9 @@ printf 'jobs:\n  n:\n    steps:\n      - run: bash scripts/check_fail_beta.sh "$
 arg_out="$(cd "$fixture" && bash scripts/guard_tree.sh --dry-run 2>&1)"
 n_arg_skip="$(grep -c '^skipped: scripts/check_fail_beta\.sh -- wired-with-args in nightly\.yml$' <<<"$arg_out")"
 
+rm -f "$fixture/.github/workflows/nightly.yml"
 printf 'jobs:\n  n:\n    steps:\n      - run: bash scripts/check_fail_beta.sh\n' \
-    >"$fixture/.github/workflows/nightly.yml"
+    >"$fixture/.github/workflows/ci.yml"
 bare_out="$(cd "$fixture" && bash scripts/guard_tree.sh --dry-run 2>&1)"
 n_bare_run="$(grep -c '^run: scripts/check_fail_beta\.sh$' <<<"$bare_out")"
 rm -rf "${fixture:?row 10: refusing to rm -rf an empty path}/.github"
@@ -395,6 +403,155 @@ if [ "$wired_rc" -eq 0 ] && [ "$mut_rc" -ne 0 ] && [ "${n_mut_row3:-0}" -gt 0 ];
 else
     fail_row "check_guards_are_wired.sh knows the dispatcher, mutant goes RED" \
         "real_rc=$wired_rc mutant_rc=$mut_rc mutant_row3_fail=${n_mut_row3:-0}"
+fi
+
+# ---------------------------------------------------------------------------
+# 13-16. The wired-elsewhere skip (PMAT-1062): a guard bare-invoked ONLY in a
+#     workflow other than ci.yml, and never in ci.yml at all, is
+#     `skipped: ... wired-elsewhere <workflow>` -- one row, not a failure.
+#
+#     13. bare-invoked only in book.yml            -> skipped: wired-elsewhere
+#     14. the SAME guard also bare-invoked in ci.yml -> run: (ci.yml still
+#         wires it for itself; another workflow naming it too changes nothing)
+#     15. invoked by no workflow at all (dark)      -> run: (BSE-01's intent)
+#     16. a mutant that neuters the new rule         -> case 13 goes RED,
+#         proving 13 actually discriminates rather than passing by
+#         construction (same poka-yoke shape as check #2 above).
+# ---------------------------------------------------------------------------
+mkdir -p "$fixture/.github/workflows"
+printf 'jobs:\n  b:\n    steps:\n      - run: bash scripts/check_good.sh\n' \
+    >"$fixture/.github/workflows/book.yml"
+
+elsewhere_out="$(cd "$fixture" && bash scripts/guard_tree.sh --dry-run 2>&1)"
+n_elsewhere_skip="$(grep -c '^skipped: scripts/check_good\.sh -- wired-elsewhere book\.yml$' <<<"$elsewhere_out")"
+
+if [ "${n_elsewhere_skip:-0}" -eq 1 ]; then
+    pass_row "13: bare-invoked only outside ci.yml -> skipped: wired-elsewhere <workflow>"
+else
+    fail_row "13: bare-invoked only outside ci.yml -> skipped: wired-elsewhere" \
+        "matches=${n_elsewhere_skip:-0} out=$elsewhere_out"
+fi
+
+printf 'jobs:\n  c:\n    steps:\n      - run: bash scripts/check_good.sh\n' \
+    >"$fixture/.github/workflows/ci.yml"
+also_ci_out="$(cd "$fixture" && bash scripts/guard_tree.sh --dry-run 2>&1)"
+n_also_ci_run="$(grep -c '^run: scripts/check_good\.sh$' <<<"$also_ci_out")"
+n_also_ci_skip="$(grep -c 'check_good\.sh -- wired-elsewhere' <<<"$also_ci_out")"
+rm -f "$fixture/.github/workflows/ci.yml"
+
+if [ "${n_also_ci_run:-0}" -eq 1 ] && [ "${n_also_ci_skip:-0}" -eq 0 ]; then
+    pass_row "14: also bare-invoked in ci.yml still runs (not wired-elsewhere)"
+else
+    fail_row "14: also bare-invoked in ci.yml still runs" \
+        "run_rows=${n_also_ci_run:-0} skip_rows=${n_also_ci_skip:-0}"
+fi
+
+rm -rf "${fixture:?row 15: refusing to rm -rf an empty path}/.github"
+dark_out="$(cd "$fixture" && bash scripts/guard_tree.sh --dry-run 2>&1)"
+n_dark_run="$(grep -c '^run: scripts/check_good\.sh$' <<<"$dark_out")"
+
+if [ "${n_dark_run:-0}" -eq 1 ]; then
+    pass_row "15: invoked by no workflow at all still runs (dark, BSE-01 intent)"
+else
+    fail_row "15: invoked by no workflow at all still runs" "run_rows=${n_dark_run:-0}"
+fi
+
+mkdir -p "$fixture/.github/workflows"
+printf 'jobs:\n  b:\n    steps:\n      - run: bash scripts/check_good.sh\n' \
+    >"$fixture/.github/workflows/book.yml"
+no_elsewhere_mutant="$fixture/scripts/guard_tree_no_elsewhere.sh"
+sed 's/wf="\$(wired_elsewhere_in "\$base")"/wf=""/' "$fixture/scripts/guard_tree.sh" \
+    >"$no_elsewhere_mutant"
+chmod +x "$no_elsewhere_mutant"
+mutant_elsewhere_out="$(cd "$fixture" && bash scripts/guard_tree_no_elsewhere.sh --dry-run 2>&1)"
+n_mut_elsewhere_skip="$(grep -c 'check_good\.sh -- wired-elsewhere' <<<"$mutant_elsewhere_out")"
+rm -rf "${fixture:?row 16: refusing to rm -rf an empty path}/.github"
+
+if [ "${n_mut_elsewhere_skip:-0}" -eq 0 ]; then
+    pass_row "16: mutant that drops the wired-elsewhere rule goes RED on case 13"
+else
+    fail_row "16: mutant that drops the wired-elsewhere rule goes RED on case 13" \
+        "mutant still emitted a wired-elsewhere skip: ${n_mut_elsewhere_skip:-0}"
+fi
+
+# ---------------------------------------------------------------------------
+# 17. Over the REAL repo, --no-cargo --dry-run lists check_book_cli_parity.sh
+#     as wired-elsewhere -- the concrete finding this ticket exists to fix
+#     (book.yml owns it, has no cargo/apr on the bare --no-cargo runner).
+# ---------------------------------------------------------------------------
+real_elsewhere="$(cd "$REPO_ROOT" && bash scripts/guard_tree.sh --no-cargo --dry-run 2>&1)"
+n_real_book="$(grep -c '^skipped: scripts/check_book_cli_parity\.sh -- wired-elsewhere book\.yml$' <<<"$real_elsewhere")"
+
+if [ "${n_real_book:-0}" -eq 1 ]; then
+    pass_row "17: real --no-cargo --dry-run reports check_book_cli_parity.sh as wired-elsewhere book.yml"
+else
+    fail_row "17: real --no-cargo --dry-run reports check_book_cli_parity.sh as wired-elsewhere" \
+        "matches=${n_real_book:-0}"
+fi
+
+# ---------------------------------------------------------------------------
+# 18-20. The unwired-baseline skip (PMAT-1062): a guard NAMED in
+#     scripts/unwired_guards_baseline.txt -- check_guards_are_wired.sh's own
+#     shrink-only ledger of already-accepted unwired guards -- is
+#     `skipped: ... unwired-baseline (shrink-only ledger)`, not run.
+#
+#     18. planting the ledger with the guard's name -> skipped
+#     19. the control: removing it from the ledger -> run: (a runner that
+#         skipped everything would pass 18 on its own without this)
+#     20. a mutant that ignores the ledger entirely -> case 18 goes RED,
+#         proving 18 actually discriminates (same poka-yoke shape as #2, #16)
+# ---------------------------------------------------------------------------
+printf 'check_fail_alpha.sh\n' >"$fixture/scripts/unwired_guards_baseline.txt"
+ledger_out="$(cd "$fixture" && bash scripts/guard_tree.sh --dry-run 2>&1)"
+n_ledger_skip="$(grep -c '^skipped: scripts/check_fail_alpha\.sh -- unwired-baseline (shrink-only ledger)$' <<<"$ledger_out")"
+
+if [ "${n_ledger_skip:-0}" -eq 1 ]; then
+    pass_row "18: a guard named in unwired_guards_baseline.txt -> skipped: unwired-baseline"
+else
+    fail_row "18: a guard named in unwired_guards_baseline.txt -> skipped: unwired-baseline" \
+        "matches=${n_ledger_skip:-0} out=$ledger_out"
+fi
+
+rm -f "$fixture/scripts/unwired_guards_baseline.txt"
+noledger_out="$(cd "$fixture" && bash scripts/guard_tree.sh --dry-run 2>&1)"
+n_noledger_run="$(grep -c '^run: scripts/check_fail_alpha\.sh$' <<<"$noledger_out")"
+
+if [ "${n_noledger_run:-0}" -eq 1 ]; then
+    pass_row "19: removing the guard from the ledger runs it again (control)"
+else
+    fail_row "19: removing the guard from the ledger runs it again" \
+        "run_rows=${n_noledger_run:-0}"
+fi
+
+printf 'check_fail_alpha.sh\n' >"$fixture/scripts/unwired_guards_baseline.txt"
+no_ledger_mutant="$fixture/scripts/guard_tree_no_ledger.sh"
+sed 's/if is_unwired_baseline "\$base"; then/if false; then/' "$fixture/scripts/guard_tree.sh" \
+    >"$no_ledger_mutant"
+chmod +x "$no_ledger_mutant"
+mutant_ledger_out="$(cd "$fixture" && bash scripts/guard_tree_no_ledger.sh --dry-run 2>&1)"
+n_mut_ledger_skip="$(grep -c 'check_fail_alpha\.sh -- unwired-baseline' <<<"$mutant_ledger_out")"
+rm -f "$fixture/scripts/unwired_guards_baseline.txt"
+
+if [ "${n_mut_ledger_skip:-0}" -eq 0 ]; then
+    pass_row "20: mutant that ignores the ledger goes RED on case 18"
+else
+    fail_row "20: mutant that ignores the ledger goes RED on case 18" \
+        "mutant still emitted an unwired-baseline skip: ${n_mut_ledger_skip:-0}"
+fi
+
+# ---------------------------------------------------------------------------
+# 21. Over the REAL repo, --dry-run (the full universe, since every ledgered
+#     guard here happens to be cargo-classified and so never enters the
+#     --no-cargo subset) lists at least one ledgered guard as unwired-baseline.
+# ---------------------------------------------------------------------------
+real_ledger="$(cd "$REPO_ROOT" && bash scripts/guard_tree.sh --dry-run 2>&1)"
+n_real_ledger="$(grep -c -- '-- unwired-baseline (shrink-only ledger)$' <<<"$real_ledger")"
+
+if [ "${n_real_ledger:-0}" -ge 1 ]; then
+    pass_row "21: real --dry-run reports at least one ledgered guard as unwired-baseline ($n_real_ledger)"
+else
+    fail_row "21: real --dry-run reports at least one ledgered guard as unwired-baseline" \
+        "matches=${n_real_ledger:-0}"
 fi
 
 printf '%d checks, %d failed\n' "$total" "$failed"

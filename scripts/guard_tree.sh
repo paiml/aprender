@@ -52,13 +52,13 @@
 # advertises self-test gets TWO rows: `[self-test]` (run first) and `[run]`.
 # A guard that does not gets one `[run]` row.
 #
-# TWO KINDS OF GUARD THIS RUNNER MUST NOT RUN BARE
-# -------------------------------------------------
+# FOUR KINDS OF GUARD THIS RUNNER MUST NOT RUN BARE
+# ---------------------------------------------------
 # "Run every guard" is only true of guards a bare invocation can run at all,
-# and there are two populations for which it is false. Both are DERIVED from
-# the oracle that already owns the answer -- neither is a name list here,
-# because a second hand-maintained list is the defect this whole file exists
-# to avoid.
+# and there are four populations for which it is false. All four are
+# DERIVED from the oracle that already owns the answer -- neither is a name
+# list here, because a second hand-maintained list is the defect this whole
+# file exists to avoid.
 #
 #   1. ARGUMENT- OR ENV-WIRED. `check_beat_measurements.sh <beat-log>` in
 #      beat-speed-nightly.yml, `check_pr_review_arm4.sh` under a step `env:`
@@ -80,6 +80,30 @@
 #      registry is read with `check_no_timing_in_required.sh --list`, so the
 #      two can never disagree, and that guard now also asserts this run set
 #      does not contain its registry -- deleting the skip below turns it RED.
+#
+#   3. WIRED ELSEWHERE. `check_book_cli_parity.sh` is bare-invoked only in
+#      book.yml (PMAT-1062), after that workflow builds `apr` -- a binary
+#      this dispatcher's `--no-cargo` step, running inside ci.yml, has no
+#      reason to have on PATH. ci.yml never names the guard at all. Running
+#      it here duplicates a guard another workflow already owns and fails it
+#      for a reason that workflow was written to avoid. The oracle is the
+#      same workflow scan as rule 1: a guard with a BARE invocation somewhere
+#      and NO invocation of any kind (bare or ARG) in ci.yml is
+#      `skipped: ... wired-elsewhere <workflow>` -- one row, still wired,
+#      just not by this dispatcher. A guard invoked in ci.yml AND elsewhere
+#      still runs; a guard invoked nowhere (dark) still runs -- neither case
+#      matches "no invocation in ci.yml AND a bare invocation elsewhere".
+#
+#   4. UNWIRED-BASELINE. scripts/unwired_guards_baseline.txt (owned by
+#      check_guards_are_wired.sh, PMAT-1062) is the shrink-only ledger of
+#      guards already accepted as reached by no workflow. A name in it is a
+#      known, argued-about gap, not something this run-all dispatcher should
+#      turn into a fresh required-check failure. The oracle is the ledger
+#      file itself, read the same way check_guards_are_wired.sh's own ratchet
+#      reads it: `skipped: ... unwired-baseline (shrink-only ledger)`. The
+#      ledger can only shrink (baseline_ratchet_check), so this skip
+#      population can only shrink with it; removing an entry from the ledger
+#      makes this dispatcher run that guard again.
 #
 # USAGE
 # -----
@@ -229,6 +253,30 @@ arg_wired_in() {
     awk -F'\t' -v b="$base" '$1 == b && $2 == "ARG" { print $3; exit }' <<<"$INVOCATIONS"
 }
 
+# wired_elsewhere_in BASE -- the (other) workflow that bare-invokes BASE, when
+# ci.yml itself never invokes BASE at all (bare or ARG).
+#
+# THIS RUNNER IS A STEP INSIDE ci.yml, AND ci.yml IS NOT THE ONLY WORKFLOW.
+# book.yml bare-invokes check_book_cli_parity.sh at line 94, after building
+# `apr` -- a binary this dispatcher's `--no-cargo` step has no reason to have
+# on a bare runner, and ci.yml never names the guard at all. Running it here
+# duplicates a guard another workflow already owns and fails it for a reason
+# that workflow was written to prevent (no `apr` on PATH). The guard is not
+# unwired -- book.yml's own step wires it -- it is wired by a DIFFERENT
+# workflow than the one this dispatcher runs inside.
+#
+# Prints nothing when BASE is invoked in ci.yml at all (bare or ARG -- a
+# guard ci.yml also names for itself still runs here), or has no BARE
+# invocation anywhere (a guard with only ARG invocations is already the
+# arg-wired case above; a guard with no invocation at all is the dark case,
+# and BSE-01's intent is that dark guards still run).
+wired_elsewhere_in() {
+    base="$1"
+    n_ci="$(awk -F'\t' -v b="$base" '$1 == b && $3 == "ci.yml"' <<<"$INVOCATIONS" | grep -c .)"
+    [ "${n_ci:-0}" -eq 0 ] || return 0
+    awk -F'\t' -v b="$base" '$1 == b && $2 == "BARE" { print $3; exit }' <<<"$INVOCATIONS"
+}
+
 # ---------------------------------------------------------------------------
 # ORACLE 2 -- the release-time registry, read from the guard that owns it.
 #
@@ -250,6 +298,40 @@ is_release_time() {
     return 1
 }
 
+# ---------------------------------------------------------------------------
+# ORACLE 3 -- the shrink-only unwired-guards ledger, read from the guard that
+# owns it (PMAT-1062).
+#
+# scripts/unwired_guards_baseline.txt is check_guards_are_wired.sh's own
+# accepted-exemption list: a guard named there is ALREADY KNOWN to be reached
+# by no workflow, and that file's ratchet (baseline_ratchet_check, compared
+# against merge-base(HEAD, origin/main)) is what forbids the list from
+# growing -- so a name can only be here because it was already argued about
+# and accepted, never because someone wanted a red guard to stop failing.
+# Measured on this branch: all three currently ledgered guards exit non-zero
+# run bare (check_book_examples_executable.sh, check_mcp_never_path_resolves_apr.sh,
+# check_multiplatform_dogfood.sh) -- a run-all dispatcher running them here
+# turns three ALREADY-ACCEPTED gaps into three fresh required-check failures,
+# which is not what accepting the gap meant.
+#
+# Absent file => empty ledger, which is not a silent hole: this runner then
+# RUNS those guards, and check_guards_are_wired.sh is the thing whose ratchet
+# turns red about a guard that is unwired and unledgered.
+UNWIRED_BASELINE_GUARDS=""
+if [ -f scripts/unwired_guards_baseline.txt ]; then
+    UNWIRED_BASELINE_GUARDS="$(grep -vE '^[[:space:]]*(#|$)' scripts/unwired_guards_baseline.txt 2>/dev/null)" \
+        || UNWIRED_BASELINE_GUARDS=""
+fi
+
+is_unwired_baseline() {
+    base="$1"
+    flat=" $(tr '\n' ' ' <<<"$UNWIRED_BASELINE_GUARDS") "
+    case "$flat" in
+        *" $base "*) return 0 ;;
+    esac
+    return 1
+}
+
 # skip_reason GUARD -- why this runner must not run GUARD bare, or empty.
 skip_reason() {
     base="$(basename "$1")"
@@ -257,9 +339,18 @@ skip_reason() {
         printf 'release-time (check_no_timing_in_required)\n'
         return 0
     fi
+    if is_unwired_baseline "$base"; then
+        printf 'unwired-baseline (shrink-only ledger)\n'
+        return 0
+    fi
     wf="$(arg_wired_in "$base")"
     if [ -n "$wf" ]; then
         printf 'wired-with-args in %s\n' "$wf"
+        return 0
+    fi
+    wf="$(wired_elsewhere_in "$base")"
+    if [ -n "$wf" ]; then
+        printf 'wired-elsewhere %s\n' "$wf"
     fi
 }
 
