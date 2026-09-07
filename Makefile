@@ -37,7 +37,7 @@ SHELL := /bin/bash
 # Multi-line recipes execute in same shell
 .ONESHELL:
 
-.PHONY: all build test test-smoke test-fast test-quick test-full test-heavy lint lint-current fmt clean doc book book-build book-serve book-test tier1 tier2 tier3 tier4 coverage coverage-fast profile hooks-install hooks-verify lint-scripts bashrs-score bashrs-lint-makefile chaos-test chaos-test-full chaos-test-lite fuzz bench dev pre-push ci check run-ci run-bench audit deps-validate deny pmat-score pmat-gates quality-report semantic-search examples mutants mutants-fast property-test install-alsa test-alsa test-audio-full contract-validate contract-test contract-audit contract-regen contract-check dev-setup check-siblings check-wasm32 contrastive-data-boundary contrastive-data-boundary-cases
+.PHONY: all build test test-smoke test-fast test-quick test-full test-heavy lint lint-current fmt clean doc book book-build book-serve book-test tier1 tier2 tier3 tier4 coverage coverage-fast profile hooks-install hooks-verify lint-scripts bashrs-score bashrs-lint-makefile chaos-test chaos-test-full chaos-test-lite fuzz bench dev pre-push ci gate check run-ci run-bench audit deps-validate deny pmat-score pmat-gates quality-report semantic-search examples mutants mutants-fast property-test install-alsa test-alsa test-audio-full contract-validate contract-test contract-audit contract-regen contract-check dev-setup check-siblings check-wasm32 contrastive-data-boundary contrastive-data-boundary-cases
 
 # Default target
 all: tier2
@@ -692,6 +692,28 @@ pre-push: tier3
 
 # CI/CD checks
 ci: tier4
+
+# Fail-closed, comparand-pinned composite gate (BSE-16, docs/specifications/
+# build-system-enhancement.md, infra repo). Replaces both a bare `pmat verify`
+# (RED on pre-existing SATD, verify.rs:460,493) and `cargo test --workspace`
+# (42-94min measured, docs/reports/work-history-delay-optimization-report.md)
+# with: skip the SATD/tests stages pmat can't pass or can't scope correctly,
+# run the tree-property guard, then test only the touched crates and their
+# direct reverse dependents (scripts/gate_touched_crates.sh), falling back to
+# `cargo check --workspace --tests` when that selection can't be trusted.
+# `@set -e` is REQUIRED as the first recipe line: under .ONESHELL (see top of
+# this file) a failing line does NOT abort a multi-line recipe on its own —
+# only the shell's own exit status does, and without `set -e` that is just the
+# LAST command's exit code (measured: a `false` mid-recipe is otherwise silently
+# swallowed). This local `set -e` is scoped to this recipe's own shell
+# invocation only, not the file-wide .SHELLFLAGS (see that comment for why -e
+# is not applied globally).
+gate: ## Fail-closed, comparand-pinned composite gate (BSE-16)
+	@set -e
+	@echo "==> gate comparand: origin/main@$$(git rev-parse origin/main)"
+	pmat verify --format json --skip satd --skip tests
+	scripts/guard_tree.sh --no-cargo
+	scripts/gate_touched_crates.sh
 
 # Quick check (compile only)
 check:
