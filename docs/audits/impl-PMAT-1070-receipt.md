@@ -67,7 +67,39 @@ three model families on the arms doc + the probe).
 3/3 endorse fixing the CPU side; lane 2's dissent ("per-32 matches the GPU" is falsified by the probe table) upheld and folded;
 the delegate's zero-code arm ran: **`DIRECT_FP32_GEMV=1` → 1.5B min cosine 0.950827 → 0.999896, no diverging op** (arm A7).
 
-## Gaps / next (step 2)
+## Step 2 — the fix (this PR, measured on lambda)
+
+`quantize::has_crushed_block` (per 256-block `max/second ≥ 8`, basis: the criterion table in the arms doc — never on
+77 ordinary positions × 28 layers, ≥ 20 on the first token's crushed blocks) routes ONE matmul to the f32-activation
+kernel (`quantize::direct_f32::fused_q4k_parallel_matvec_f32_into`, the `DIRECT_FP32_GEMV` numerics) through
+`matvec_into_honest` on the reference forward (QKV, o_proj, gate/up, down) and the fused gate+up driver.
+
+| measurement | before (71a25c2bb) | after |
+|---|---|---|
+| 1.5B `apr parity` min cosine (78 positions) | 0.950827 @0, 1 < 0.98, 2 argmax≠ | **0.999761** @36, 0 < 0.98, 0 argmax≠ |
+| 1.5B `--per-op` first diverging op / lm_head | post_ffn_residual L26 (0.660) / 0.950827 | **none** / 0.999761 (worst row k_post_rope L6 0.996102) |
+| 7B `apr parity` min cosine | 0.998607 | **0.999580** (worst per-op row ffn_out L23 0.994065) |
+| GPU dump tree (1.5B, 78 positions) | — | 0 differing files vs before |
+| GPU m=1 greedy stream, 32 tokens, 5 local models (0.5B, 1.5B, 7B coder; Qwen3-8B; Qwen3.5-0.8B) | — | byte-identical (Qwen3.5-0.8B refuses on both: SSM layers unsupported, rc 8) |
+| fallbacks on the 78-position run (`APR_CRUSHED_TRACE=1`) | — | 1.5B 298 / 7B 624 matmul calls (of ~15k / ~15k) |
+| CPU decode, 1.5B, 64 tokens, `--backend cpu`, n=3 (tok/s) | 11.6 · 10.8 · 10.8 (an earlier pair under GPU load: 11.6 · 9.8 · 11.4 vs 9.2 · 10.3 · 10.8) | 12.0 · 13.2 · 12.6 — no slowdown resolved at n=3 on a loaded box; basis [U] until an idle n≥5 run |
+| refactor oracle: predicate-off mutant vs the pre-fix CPU tree | — | 24,258 / 24,258 files bitwise identical; the mutant names L26 again, lm_head 0.950827; `accept.sh` A5 RED |
+
+Revert falsifier (POP-F-003): make `has_crushed_block` return false → A5 RED (measured above); restore → 6/6.
+
+## Gaps / next
+- gx10 twin of the table and of the 1.5B gate (`make fleet-verify ROW=L0-1b` once G-11b lands) — the "resolved" line of
+  the row needs lambda AND gx10; this receipt stays `partial` until the gx10 row is measured.
+- `apr chat --gpu <1.5B>` prints `selected: cuda … parity: PASS` — to be captured on lambda (the `apr run -q` path prints no
+  admission line) and posted on #2971.
+- The scratch-path forward (`forward_single_with_scratch`, results.rs) and the SHIP-007 `forward_traced` keep their
+  Q8_K sites unchanged: they are not on the gate's path and their files carry pre-existing complexity debt the hook
+  refuses to let this PR touch; `apr run` generation goes through the reference forward (the fallback trace counted 639
+  calls over a 64-token generation).
+- The APR-format transformer (`apr_transformer/helpers.rs`, 4 Q8_K sites) is out of this row's manifest scope.
+- Speed basis: an idle-box n≥5 CPU decode pair before/after (I4).
+
+## Gaps / next (superseded list kept for the record)
 
 - The fix is on the CPU side (decided spec in docs/audits/l0-1b-arms.md §Fallback criterion): the Q4_K × Q8_K
   drivers run f32 activations for a matmul whose normed residual-stream input has a 256-block with
