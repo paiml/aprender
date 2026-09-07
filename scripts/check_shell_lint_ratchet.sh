@@ -49,10 +49,9 @@ BASELINE="${REPO_ROOT}/scripts/shell_lint_baseline.txt"
 cd "$REPO_ROOT" || exit 1
 
 if ! command -v bashrs >/dev/null 2>&1; then
-    printf 'SKIP: bashrs is not installed; install it with `cargo install bashrs --locked`.\n' >&2
-    printf 'This is a hard failure in CI, where the workflow installs it first.\n' >&2
-    [ "${CI:-}" = "true" ] && exit 1
-    exit 0
+    printf 'ENV: bashrs is not on PATH; the fleet pin installs it (tools.toml; CI never installs tools).\n' >&2
+    printf 'Without the linter this guard cannot decide, so it refuses to pass (exit 2, never 0).\n' >&2
+    exit 2
 fi
 
 scanned=$(find scripts -maxdepth 1 -name '*.sh' | wc -l | tr -d ' ')

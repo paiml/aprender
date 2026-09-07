@@ -442,7 +442,7 @@ fi
 printf '=== per-function complexity may only fall (check_complexity_ratchet.sh) ===\n'
 
 if ! command -v pmat > /dev/null 2>&1; then
-    printf 'SKIP: pmat is not installed; install it with `cargo install pmat --locked`.\n' >&2
+    printf 'ENV: pmat is not on PATH; the fleet pin installs it (tools.toml; CI never installs tools).\n' >&2
     printf 'This is a hard failure in CI, where the workflow installs it first.\n' >&2
     [ "${CI:-}" = 'true' ] && exit 1
     exit 0
