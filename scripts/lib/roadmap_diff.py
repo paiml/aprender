@@ -73,6 +73,12 @@ LIFECYCLE_KEYS = {
     "labels",
     "assigned_to",
     "priority",
+    # A parent's subtasks list is structure the tooling maintains, not the
+    # ticket's content: older pmat wrote nested child RECORDS here and pmat
+    # >= 3.39.0 `work validate` refuses those as duplicate ids (PMAT-1072,
+    # #3028). Dropping them is a lifecycle edit; uniqueness is
+    # scripts/check_roadmap_ids_unique.sh's rule, not this one's.
+    "subtasks",
 }
 
 # Keys `pmat work add` materialises onto every entry even when the entry never
