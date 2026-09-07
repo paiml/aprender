@@ -504,6 +504,10 @@ pub struct KvReport {
 pub struct EffectiveConfigResponse {
     /// Wire schema version of this body.
     pub schema_version: u32,
+    /// REG-15 (PP-066 #2971): what the load-time parity gate measured for the loaded
+    /// GPU model — never absent. `not-run` on a CPU-only server, `skipped` under the
+    /// `SKIP_PARITY_GATE` override, `PASS` with the cosine when the gate admitted the model.
+    pub parity: ParityReport,
     /// Identity and clock of the serving process.
     pub server: ServerReport,
     /// The dispatch path this process will take, from residency (PP-2).
@@ -594,11 +598,69 @@ pub fn compute_class_from_residency(state: &AppState) -> &'static str {
 
 /// Build the whole body from an `AppState`.
 #[must_use]
+/// The `parity` block of `GET /v1/effective-config` (REG-15, PP-066 #2971).
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct ParityReport {
+    /// `PASS` | `skipped` | `not-run`
+    pub status: String,
+    /// The cosine the gate measured, when it ran.
+    pub cosine: Option<f32>,
+    /// Positions the gate compared (the load-time gate: one token).
+    pub positions: usize,
+    /// The threshold the verdict was judged against.
+    pub threshold: f32,
+    /// Where the threshold and the measurement come from.
+    pub basis: String,
+}
+
+impl ParityReport {
+    /// No GPU model is loaded, so no gate ran; the threshold reported is the gate's constant.
+    #[must_use]
+    pub fn not_run(why: &str) -> Self {
+        Self {
+            status: "not-run".into(),
+            cosine: None,
+            positions: 0,
+            threshold: 0.98,
+            basis: why.into(),
+        }
+    }
+}
+
+/// The loaded GPU model's gate record, or `not-run` when there is none.
+#[cfg(feature = "cuda")]
+fn parity_report(state: &AppState) -> ParityReport {
+    let Some(model) = state.cuda_model() else {
+        return ParityReport::not_run("no GPU model loaded (cpu residency)");
+    };
+    match model.try_read() {
+        Ok(m) => ParityReport {
+            status: m.parity.status.to_string(),
+            cosine: m.parity.cosine,
+            positions: m.parity.positions,
+            threshold: m.parity.threshold,
+            basis: m.parity.basis.to_string(),
+        },
+        Err(_) => {
+            ParityReport::not_run("the GPU model lock is contended; the record is on the model")
+        },
+    }
+}
+
+/// A build without the `cuda` feature has no gate: `not-run`, with the reason.
+#[cfg(not(feature = "cuda"))]
+fn parity_report(_state: &AppState) -> ParityReport {
+    ParityReport::not_run("cuda feature not compiled: no GPU gate exists in this build")
+}
+
+/// The body of `GET /v1/effective-config`, derived from residency and the loaded model —
+/// never from `cfg!` (PP-2), and never without its `parity` block (REG-15).
 pub fn effective_config(state: &AppState) -> EffectiveConfigResponse {
     let effective = state.effective_config_state();
     let cuda_snapshot = cuda_snapshot(state);
     EffectiveConfigResponse {
         schema_version: EFFECTIVE_CONFIG_SCHEMA_VERSION,
+        parity: parity_report(state),
         server: {
             let mut server = effective.clock.report();
             if server.build_commit.is_none() {
@@ -758,6 +820,25 @@ mod effective_config_tests {
 
     /// PP-14 must-fire: a run that says auto-fit chose the very argument the
     /// operator pinned cannot be reproduced from its own receipt.
+    /// REG-15 (#2971): the parity block is never absent and always carries the five keys.
+    #[test]
+    fn parity_report_carries_the_five_keys_when_no_gate_ran() {
+        let v = serde_json::to_value(ParityReport::not_run("test")).expect("serialises");
+        let mut keys: Vec<&str> = v
+            .as_object()
+            .expect("object")
+            .keys()
+            .map(String::as_str)
+            .collect();
+        keys.sort_unstable();
+        assert_eq!(
+            keys,
+            ["basis", "cosine", "positions", "status", "threshold"]
+        );
+        assert_eq!(v["status"], "not-run");
+        assert!(v["cosine"].is_null());
+    }
+
     #[test]
     fn autofit_override() {
         assert!(

@@ -1,0 +1,172 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# apr-gpu-cpu-parity-v1 — every model in the manifest computes the same function
+# on GPU as on CPU, or the GPU refuses it (PP-066 claim 2; DAG rows L0-1a/L0-1b;
+# issue #2971; ticket PMAT-1065; driver v5.1)
+#
+# WHAT IT GOVERNS
+#   evidence/models/supported.yaml (DERIVED by scripts/derive_model_manifest.sh,
+#   never typed); scripts/check_model_parity.sh --manifest (C14: apr parity over
+#   >= 64 positions per manifest model, min cosine vs evidence/parity/thresholds.yaml);
+#   REG-15 model admission (a forced backend never downgrades; unforced prints
+#   `selected: cpu (reason: parity FAILED …)`; effective-config carries
+#   parity:{status,cosine,positions,threshold,basis}; SKIP_PARITY_GATE is a
+#   printed override that marks receipts INVALID-CORRECTNESS and never passes).
+#
+# PROOF LADDER, STATED HONESTLY (F-26)
+#   * L1 — the manifest derivation and C14 exist; C14 is wired in apr-dogfood
+#          --release, C4 and R-8 (SPEC-2.0 criteria table).
+#   * L2 — falsification tests cover the obligations, MEASURED (2026-09-06):
+#          derive_model_manifest.sh --self-test 6/6; check_model_parity.sh
+#          --self-test 6/6 over the lambda RED-first records (1.5B RED at
+#          position 0, 7B GREEN, must-RED twin, < 64 positions refused).
+#   * L3/L4 — NOT APPLICABLE: shell/python guards over JSON records and a
+#          manifest; the kernels themselves are L0-1b's subject.
+# ─────────────────────────────────────────────────────────────────────────────
+name: apr-gpu-cpu-parity
+version: "1.0.0"
+scope: >
+  The supported-model manifest, the C14 horizon gate over it, the parity
+  thresholds file and the REG-15 admission behaviour. Out of scope: WHICH op
+  diverges on Qwen2.5-1.5B and its fix (L0-1b, the unbounded row) and the
+  backend registry itself (apr-backend-registry-v1, R-0a/R-0b).
+status: active
+
+metadata:
+  kind: pattern     # a derived manifest + a measured gate over recorded runs, not a kernel; set EXPLICITLY
+  version: "1.0.0"
+  created: '2026-09-06'
+  last_modified: '2026-09-06'
+  author: PAIML Engineering
+  references:
+    - 'scripts/derive_model_manifest.sh — evidence/models/supported.yaml, --check, --self-test (6 rows)'
+    - 'scripts/check_model_parity.sh — --manifest (C14), --judge, --self-test (6 rows)'
+    - 'evidence/parity/thresholds.yaml — min_positions 64 (I8/CF-4), min_cosine 0.98 = PARITY_GATE_COSINE_MIN (crates/aprender-serve/src/gguf/cuda/mod.rs:803), itself [U]'
+    - 'evidence/parity/l0-1/lambda/ — the RED-first records (RECORD.md)'
+    - 'crates/aprender-serve/src/gguf/cuda/mod_parity_gate.rs — the load-time gate this contract widens from one token to >= 64 positions'
+    - 'issue #2971 (the user report), epic #2873'
+  description: >
+    A model is supported iff a shipped document names it; C14 measures every
+    supported model this host holds over at least 64 positions and judges the
+    minimum cosine against a threshold that carries its basis; a model that
+    fails is refused by the GPU with the reason printed and never silently
+    downgraded; an override is printed and invalidates every receipt of the run.
+
+equations:
+  manifest_is_derived:
+    formula: |
+      supported.yaml = derive(README.md, docs/BEATS.md, book/src/**, evidence/dogfood/*/*.json, scripts/perf-matrix.yaml)
+      committed ≠ derive(tree)  =>  DRIFT (exit 1); a hand-typed entry nothing cites is DRIFT
+    domain: 'the shipped documents that name a model'
+    codomain: 'the manifest, or DRIFT'
+    invariants:
+    - 'EVERY ENTRY CITES file:line (self-test rows 1-3); a typed entry is refused (row 5); a missing manifest is not a pass (row 6).'
+    preconditions: []
+    postconditions:
+    - 'derive_model_manifest.sh --check exits 0 iff the committed manifest equals its derivation'
+
+  horizon_gate:
+    formula: |
+      for m in manifest ∩ host:  run = apr parity <m> --prompt <corpus> --json
+        positions(run) < 64                         =>  FAIL (I8)
+        min_p cosine_p(run) < threshold(m)          =>  FAIL naming the positions
+        else PASS
+      m ∈ manifest \ host  =>  UNMEASURED (a per-host REPORT; the fleet-level rule is R-5's promotion)
+      measured(host) = 0    =>  not a pass
+      alias(m) resolves to a file already measured under a longer name  =>  ALIAS, measured once
+      threshold(m) without min_cosine or basis  =>  refused (exit 2), never defaulted (I4)
+      SKIP_PARITY_GATE set  =>  print `override:`; every receipt INVALID-CORRECTNESS; C14 never exits 0
+    domain: 'apr parity JSON records over the manifest on one host'
+    codomain: 'PASS | FAIL | UNMEASURED | override'
+    invariants:
+    - 'THE THRESHOLD IS THE DECISION (rows 1, 5): the same 1.5B record is RED at 0.98 and PASS at 0.90 — the number carries its basis or is [U].'
+    - 'FEWER THAN 64 POSITIONS IS NEVER JUDGED (row 4).'
+    - 'A MUST-RED TWIN EXISTS (row 3): tests/fixtures/parity/defective/one-position-at-0.5.json.'
+    preconditions:
+    - 'the apr binary is pinned by scripts/apr_bin.sh (I6) or passed as --apr'
+    postconditions:
+    - 'evidence/parity/<host>/<model>.json per measured model'
+
+  model_admission_reg15:
+    formula: |
+      forced(--gpu | --backend cuda) ∧ parity(m) = FAIL  =>  refuse with the code read from error.rs + the reason; NEVER run cpu
+      unforced ∧ parity(m) = FAIL                        =>  print `selected: cpu (reason: parity FAILED cosine=… position=… threshold=…)`
+      GET /v1/effective-config.parity = {status, cosine, positions, threshold, basis}
+      SKIP_PARITY_GATE set  =>  print `override:` on the first line; receipts INVALID-CORRECTNESS; asserted unset in dogfood and ci / gate
+    domain: 'apr run / chat / serve on a manifest model'
+    codomain: 'a refusal, a printed selection, or an override — never a silent downgrade'
+    invariants:
+    - 'A FORCED BACKEND NEVER DOWNGRADES (the second half of #2971).'
+    - 'THE SELECTED PATH IS PRINTED (the load-time gate printed its retry only under verbose(): mod_parity_gate.rs:92-97).'
+    preconditions:
+    - 'refusal codes are read from crates/apr-cli/src/error.rs at test time, one per variant (D-7)'
+    postconditions:
+    - 'cargo test -p apr-cli --test backend_refusal_case_table carries the REG-15 rows'
+
+proof_obligations:
+  - id: PAR-OB-001
+    statement: "The supported-model manifest is derived from what the tree names and refuses a typed entry."
+    discharged_by: falsification_tests[0]
+  - id: PAR-OB-002
+    statement: "C14 judges every manifest model this host holds over >= 64 positions against a threshold with a basis; an override is printed and never passes."
+    discharged_by: falsification_tests[1]
+  - id: PAR-OB-003
+    statement: "A forced backend never downgrades; an unforced selection is printed with its reason; effective-config carries the parity block."
+    discharged_by: falsification_tests[2]
+
+falsification_tests:
+  - id: PAR-F-001
+    rule: the manifest is derived, never typed
+    prediction: >-
+      6/6 rows: three models derived from README, perf-matrix and a dogfood
+      receipt; case-folded with quant suffix stripped; the 1.5B cited twice;
+      --check PASSES on an identical committed manifest, is DRIFT on a typed
+      entry, and is not a pass on a missing manifest.
+    test: 'bash scripts/derive_model_manifest.sh --self-test'
+    if_fails: >-
+      a model nobody documents is claimed supported, or a documented one is never measured
+    mutation: >-
+      append a hand-typed entry to evidence/models/supported.yaml;
+      `bash scripts/derive_model_manifest.sh --check` must turn RED (DRIFT).
+
+  - id: PAR-F-002
+    rule: the horizon gate over >= 64 positions
+    prediction: >-
+      6/6 rows: the lambda 1.5B record is RED (position 0 at 0.9508 < 0.98);
+      the 7B record is GREEN; the must-RED twin is RED naming position 40; 20
+      positions is refused; the same 1.5B record PASSES under a 0.90 threshold;
+      an output with no metrics is RED.
+    test: 'bash scripts/check_model_parity.sh --self-test'
+    if_fails: >-
+      a model that computes a different function on the GPU ships as supported
+    mutation: >-
+      lower min_positions to 1 in evidence/parity/thresholds.yaml; row 4 must
+      turn RED (20 positions judged). Export SKIP_PARITY_GATE=1 and run
+      --manifest; the first line must read `override:` and the exit must be 1.
+
+  - id: PAR-F-003
+    rule: REG-15 admission — never a silent downgrade
+    prediction: >-
+      the REG-15 rows of the refusal case table: (forced cuda, parity FAIL) ->
+      the refusal code read from error.rs with the reason; (unforced, parity
+      FAIL) -> `selected: cpu (reason: parity FAILED …)` printed;
+      effective-config carries parity:{status,cosine,positions,threshold,basis};
+      SKIP_PARITY_GATE=1 -> `override:` printed and the receipt INVALID-CORRECTNESS.
+    test: 'cargo test -p apr-cli --test reg15_admission'
+    if_fails: >-
+      `apr chat --gpu` silently runs on the CPU (#2971's second half). The CLI-level rows
+      (a forced --backend cuda over a failed gate) land in R-0b's backend_refusal_case_table,
+      which does not exist yet; this contract's test is the admission level.
+    mutation: >-
+      restore the `[CUDA init failed: …, falling back to CPU]` catch
+      (chat_generate_session_02.rs:471); the forced-cuda REG-15 row must turn RED.
+
+non_goals:
+  - "The op that diverges on Qwen2.5-1.5B and its fix (L0-1b): bisection by controls, the per-op SPC table, the kernel edit."
+  - "The backend registry (R-0a/R-0b) and `apr devices --model` (L0-1a's serviceable column lands once R-0a's `apr devices` exists)."
+  - "The measured threshold (item 5): n >= 5 known-good pairs per model replace the 0.98 [U] in evidence/parity/thresholds.yaml under its own commit with the command."
+
+binding_registry:
+  guard: scripts/check_model_parity.sh
+  ci_job: guard-runner-labels
+  make_target: tier3
+  issue: "https://github.com/paiml/aprender/issues/2971"
