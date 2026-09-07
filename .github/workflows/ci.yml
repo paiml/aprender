@@ -111,6 +111,10 @@ jobs:
     # the worst contended run, and a hang still fails at the step timeout.
     timeout-minutes: 150
     env:
+      # The sccache host directory, named ONCE per job: the machine-specific-path
+      # ratchet counts literals, and the quick-tier steps added two more copies
+      # of a path this job already spelled five times (PMAT-1077).
+      SCCACHE_HOST_DIR: /home/noah/data/sccache
       IMAGE: localhost:5000/sovereign-ci:stable
       PR_OR_REF: ${{ github.event.pull_request.number || github.ref_name }}
     steps:
@@ -384,7 +388,7 @@ jobs:
             -v "${GITHUB_WORKSPACE}:/workspace" \
             -v "/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}:/usr/local/cargo/registry" \
             -v "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}:/workspace/target" \
-            -v "/home/noah/data/sccache:/sccache" \
+            -v "${SCCACHE_HOST_DIR}:/sccache" \
             -w /workspace \
             -e CARGO_TARGET_DIR=/workspace/target \
             -e RUSTC_WRAPPER=rustc-sccache \
@@ -404,7 +408,7 @@ jobs:
             -v "${GITHUB_WORKSPACE}:/workspace" \
             -v "/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}:/usr/local/cargo/registry" \
             -v "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}:/workspace/target" \
-            -v "/home/noah/data/sccache:/sccache" \
+            -v "${SCCACHE_HOST_DIR}:/sccache" \
             -w /workspace \
             -e CARGO_TARGET_DIR=/workspace/target \
             -e RUSTC_WRAPPER=rustc-sccache \
@@ -457,7 +461,7 @@ jobs:
             -v "${GITHUB_WORKSPACE}:/workspace" \
             -v "/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}:/usr/local/cargo/registry" \
             -v "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}:/workspace/target" \
-            -v "/home/noah/data/sccache:/sccache" \
+            -v "${SCCACHE_HOST_DIR}:/sccache" \
             -w /workspace \
             -e CARGO_TARGET_DIR=/workspace/target \
             -e RUSTC_WRAPPER=rustc-sccache \
@@ -485,7 +489,7 @@ jobs:
             -v "${GITHUB_WORKSPACE}:/workspace" \
             -v "/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}:/usr/local/cargo/registry" \
             -v "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}:/workspace/target" \
-            -v "/home/noah/data/sccache:/sccache" \
+            -v "${SCCACHE_HOST_DIR}:/sccache" \
             -w /workspace \
             -e CARGO_TARGET_DIR=/workspace/target \
             -e RUSTC_WRAPPER=rustc-sccache \
@@ -529,7 +533,7 @@ jobs:
             -v "${GITHUB_WORKSPACE}:/workspace" \
             -v "/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}:/usr/local/cargo/registry" \
             -v "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}:/workspace/target" \
-            -v "/home/noah/data/sccache:/sccache" \
+            -v "${SCCACHE_HOST_DIR}:/sccache" \
             -w /workspace \
             -e CARGO_TARGET_DIR=/workspace/target \
             -e RUSTC_WRAPPER=rustc-sccache \
@@ -1127,6 +1131,11 @@ jobs:
         run: bash scripts/ci_test_tier.sh --self-test
       - name: "Tree-reader registry guard case table (BSE-17)"
         run: bash scripts/check_tree_reader_tests.sh --self-test
+      # The registry is the WIRED half; the unwired half is a ledger of tests
+      # that read the tree and that no lane runs (39 on 2026-09-07, one of them
+      # red on main). Both halves are checked here: drift either way is RED.
+      - name: "Tree-reader registry and unwired ledger agree with the sources (BSE-17)"
+        run: bash scripts/check_tree_reader_tests.sh
       - name: bashrs must see every script in scripts/ (shrink-only)
         run: bash scripts/check_shell_lint_ratchet.sh
       # PMAT-746. The ONLY complexity gate in this repository was the LOCAL pmat

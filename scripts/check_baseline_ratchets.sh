@@ -99,6 +99,11 @@ classify() { # classify <basename> -> "<kind>[<TAB>reason]", rc 1 if unclassifie
         # and the set grows whenever someone writes a test that reads the tree.
         # Freezing it against main would forbid adding such a test; the guard
         # that owns it already fails in both directions (BSE-17, PMAT-1077).
+        # The UNWIRED half: tree-reader targets no workflow runs. Same kind of
+        # file, same reason it is not a ratchet — it is an exact match against
+        # the sources, and drift FAILS in both directions in its own guard.
+        tree_reader_unwired_baseline.txt)
+            printf 'none\tderived ledger of tree-reader targets no lane runs (exact-match against the sources, scripts/check_tree_reader_tests.sh)\n' ;;
         tree_reader_tests.txt)
             printf 'none	derived registry, exact-match against the sources (drift FAILS both ways, scripts/check_tree_reader_tests.sh)
 ' ;;

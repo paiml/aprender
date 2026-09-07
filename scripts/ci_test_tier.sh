@@ -36,7 +36,7 @@ while [ $# -gt 0 ]; do
 done
 
 targets_from_registry() { # -> space list crate:--lib | crate:--test:name
-    grep -v '^#' "$1" | grep -v '^[[:space:]]*$' | awk -F'\t' '{ if ($2=="--lib") printf "%s:--lib ", $1; else printf "%s:--test:%s ", $1, $3 }' | sed 's/ $//'
+    grep -v '^#' "$1" | grep -v '^[[:space:]]*$' | awk -F"\t" '{ if ($2=="--test") printf "%s:--test:%s ", $1, $3; else printf "%s:%s ", $1, $2 }' | sed 's/ $//'
 }
 
 decide() {
