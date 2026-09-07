@@ -15,6 +15,19 @@
 #   4. `--list --no-cargo` has the same count as
 #      `git ls-files 'scripts/check_*.sh' | grep -LE '(^|[^a-z_-])cargo '`.
 #   5. The summary line reads `N checks, M failed`.
+#   8. `--dry-run` DECIDES and executes nothing: over a fixture holding two
+#      guards that exit 1 it must exit 0 and print no FAIL row.
+#   9. The release-time skip is read from `check_no_timing_in_required.sh
+#      --list` and ONLY from there -- planting a stub registry skips a guard,
+#      removing it runs the guard again (the control).
+#  10. The argument/env skip is read from the workflows -- an invocation with
+#      an argument skips, a BARE invocation of the same guard does not.
+#  11. Over the real repo, `--no-cargo --dry-run` skips guards for BOTH
+#      reasons, because the two come from two oracles and either can go empty.
+#  12. `check_guards_are_wired.sh` counts a dispatched guard as wired, and a
+#      mutant whose dispatcher_wired() returns nothing -- the pre-BSE-01
+#      behaviour that reported 29 CI-run guards as dark -- fails its own case
+#      table.
 
 set -uo pipefail
 
@@ -50,7 +63,12 @@ trap on_exit EXIT
 # ---------------------------------------------------------------------------
 make_fixture() {
     dir="$(mktemp -d)" || exit 1
-    git -C "$dir" init -q
+    # An EMPTY template dir: `git init` otherwise inherits this machine's global
+    # template hooks, and a pre-commit hook that fails would leave the fixture
+    # with no commit at all -- `git ls-files` then answers nothing and every row
+    # below passes over an empty universe.
+    mkdir -p "$dir/.empty-git-template"
+    git -C "$dir" init -q --template="$dir/.empty-git-template"
     git -C "$dir" config user.email test@example.invalid
     git -C "$dir" config user.name "guard_tree_test"
     mkdir -p "$dir/scripts"
@@ -91,7 +109,7 @@ SH
     chmod 644 "$dir/scripts/check_noexec.sh"
 
     git -C "$dir" add -A
-    git -C "$dir" commit -q -m fixture
+    git -C "$dir" -c commit.gpgsign=false commit -q -m fixture
     printf '%s\n' "$dir"
 }
 
@@ -249,6 +267,134 @@ if [ "${n_suffix:-0}" -gt 0 ]; then
 else
     fail_row "guard-cargo has its own target dir suffix (run-<RUN_ID>-guards)" \
         "matches=${n_suffix:-0}"
+fi
+
+# ---------------------------------------------------------------------------
+# 8. --dry-run decides and executes NOTHING.
+#
+#    The fixture holds two guards that exit 1. A dry run over it must exit 0
+#    and print no FAIL row at all -- that is the only evidence available that
+#    nothing ran, and it is exactly the evidence the real run produces the
+#    opposite of two rows above.
+# ---------------------------------------------------------------------------
+dry_out="$(cd "$fixture" && bash scripts/guard_tree.sh --dry-run 2>&1)"
+dry_rc=$?
+n_dry_fail="$(grep -c '^FAIL' <<<"$dry_out")"
+n_dry_run="$(grep -c '^run: ' <<<"$dry_out")"
+
+if [ "$dry_rc" -eq 0 ] && [ "${n_dry_fail:-0}" -eq 0 ] && [ "${n_dry_run:-0}" -ge 4 ]; then
+    pass_row "--dry-run decides without executing (rc=0, no FAIL row, $n_dry_run run: rows)"
+else
+    fail_row "--dry-run decides without executing" \
+        "rc=$dry_rc fail_rows=${n_dry_fail:-0} run_rows=${n_dry_run:-0}"
+fi
+
+# ---------------------------------------------------------------------------
+# 9. The release-time skip is DERIVED from check_no_timing_in_required.sh
+#    --list, not from a list living in guard_tree.sh.
+#
+#    Planted stub registry naming check_fail_alpha.sh => that guard is skipped
+#    and does NOT fail the run. Remove the stub => it is back to a FAIL row.
+#    The control is the whole point: a runner that skipped everything would
+#    pass the first half on its own.
+# ---------------------------------------------------------------------------
+cat >"$fixture/scripts/check_no_timing_in_required.sh" <<'SH'
+#!/usr/bin/env bash
+if [ "${1:-}" = "--list" ]; then
+    printf 'check_fail_alpha.sh\n'
+    exit 0
+fi
+exit 0
+SH
+reg_out="$(cd "$fixture" && bash scripts/guard_tree.sh --dry-run 2>&1)"
+n_reg_skip="$(grep -c '^skipped: scripts/check_fail_alpha\.sh -- release-time (check_no_timing_in_required)$' <<<"$reg_out")"
+rm -f "$fixture/scripts/check_no_timing_in_required.sh"
+ctl_out="$(cd "$fixture" && bash scripts/guard_tree.sh --dry-run 2>&1)"
+n_ctl_run="$(grep -c '^run: scripts/check_fail_alpha\.sh$' <<<"$ctl_out")"
+
+if [ "${n_reg_skip:-0}" -eq 1 ] && [ "${n_ctl_run:-0}" -eq 1 ]; then
+    pass_row "release-time skip is read from check_no_timing_in_required.sh --list (and only from it)"
+else
+    fail_row "release-time skip is read from check_no_timing_in_required.sh --list" \
+        "with_registry_skip=${n_reg_skip:-0} without_registry_run=${n_ctl_run:-0}"
+fi
+
+# ---------------------------------------------------------------------------
+# 10. The argument/env skip is DERIVED from the workflows themselves.
+#
+#     A guard whose only invocation carries an argument cannot be run bare by
+#     this runner (check_beat_measurements.sh <beat-log> is the live case). The
+#     control is the same workflow with the argument removed: a BARE invocation
+#     must NOT skip it, or the runner would quietly stop running every guard
+#     any workflow happens to name.
+# ---------------------------------------------------------------------------
+mkdir -p "$fixture/.github/workflows"
+printf 'jobs:\n  n:\n    steps:\n      - run: bash scripts/check_fail_beta.sh "$LOG"\n' \
+    >"$fixture/.github/workflows/nightly.yml"
+arg_out="$(cd "$fixture" && bash scripts/guard_tree.sh --dry-run 2>&1)"
+n_arg_skip="$(grep -c '^skipped: scripts/check_fail_beta\.sh -- wired-with-args in nightly\.yml$' <<<"$arg_out")"
+
+printf 'jobs:\n  n:\n    steps:\n      - run: bash scripts/check_fail_beta.sh\n' \
+    >"$fixture/.github/workflows/nightly.yml"
+bare_out="$(cd "$fixture" && bash scripts/guard_tree.sh --dry-run 2>&1)"
+n_bare_run="$(grep -c '^run: scripts/check_fail_beta\.sh$' <<<"$bare_out")"
+rm -rf "${fixture:?row 10: refusing to rm -rf an empty path}/.github"
+
+if [ "${n_arg_skip:-0}" -eq 1 ] && [ "${n_bare_run:-0}" -eq 1 ]; then
+    pass_row "argument-wired skip is derived from the workflows (a BARE invocation still runs)"
+else
+    fail_row "argument-wired skip is derived from the workflows" \
+        "with_arg_skip=${n_arg_skip:-0} bare_run=${n_bare_run:-0}"
+fi
+
+# ---------------------------------------------------------------------------
+# 11. Over the REAL repo, --no-cargo --dry-run skips both populations.
+#
+#     A count alone would pass on three skips of one kind; both reasons must
+#     appear, because they come from two different oracles and either can go
+#     silently empty.
+# ---------------------------------------------------------------------------
+real_dry="$(cd "$REPO_ROOT" && bash scripts/guard_tree.sh --no-cargo --dry-run 2>&1)"
+n_skipped="$(grep -c '^skipped: ' <<<"$real_dry")"
+n_release="$(grep -c 'release-time (check_no_timing_in_required)' <<<"$real_dry")"
+n_argwired="$(grep -c 'wired-with-args in ' <<<"$real_dry")"
+
+if [ "${n_skipped:-0}" -ge 3 ] && [ "${n_release:-0}" -ge 1 ] && [ "${n_argwired:-0}" -ge 1 ]; then
+    pass_row "real --no-cargo --dry-run: $n_skipped skipped ($n_release release-time, $n_argwired arg-wired)"
+else
+    fail_row "real --no-cargo --dry-run skips both populations" \
+        "skipped=${n_skipped:-0} release=${n_release:-0} argwired=${n_argwired:-0}"
+fi
+
+# ---------------------------------------------------------------------------
+# 12. The wiring oracle knows the dispatcher, and a mutant that does not goes
+#     RED against the SAME case table.
+#
+#     check_guards_are_wired.sh --self-test rows 3/4 assert that a workflow
+#     whose ONLY content is `bash scripts/guard_tree.sh --no-cargo` wires the
+#     derived subset. The mutant neuters dispatcher_wired() to return nothing
+#     -- the pre-BSE-01 behaviour that reported 29 CI-run guards as dark -- and
+#     must fail that table. Without this row, row 3 passing proves nothing.
+# ---------------------------------------------------------------------------
+wired_guard="$REPO_ROOT/scripts/check_guards_are_wired.sh"
+wired_out="$(bash "$wired_guard" --self-test 2>&1)"
+wired_rc=$?
+
+mutdir="$(mktemp -d)" || exit 1
+cleanup_dirs="$cleanup_dirs $mutdir"
+mkdir -p "$mutdir/scripts"
+cp "$REPO_ROOT/scripts/guard_tree.sh" "$mutdir/scripts/guard_tree.sh"
+sed 's#^    \[ -f "\$root/scripts/guard_tree.sh" \] || return 0$#    return 0#' \
+    "$wired_guard" >"$mutdir/scripts/check_guards_are_wired.sh"
+mut_out="$(bash "$mutdir/scripts/check_guards_are_wired.sh" --self-test 2>&1)"
+mut_rc=$?
+n_mut_row3="$(grep -c '^FAIL  row 3' <<<"$mut_out")"
+
+if [ "$wired_rc" -eq 0 ] && [ "$mut_rc" -ne 0 ] && [ "${n_mut_row3:-0}" -gt 0 ]; then
+    pass_row "check_guards_are_wired.sh knows the dispatcher; the no-dispatcher mutant goes RED"
+else
+    fail_row "check_guards_are_wired.sh knows the dispatcher, mutant goes RED" \
+        "real_rc=$wired_rc mutant_rc=$mut_rc mutant_row3_fail=${n_mut_row3:-0}"
 fi
 
 printf '%d checks, %d failed\n' "$total" "$failed"

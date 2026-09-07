@@ -52,14 +52,50 @@
 # advertises self-test gets TWO rows: `[self-test]` (run first) and `[run]`.
 # A guard that does not gets one `[run]` row.
 #
+# TWO KINDS OF GUARD THIS RUNNER MUST NOT RUN BARE
+# -------------------------------------------------
+# "Run every guard" is only true of guards a bare invocation can run at all,
+# and there are two populations for which it is false. Both are DERIVED from
+# the oracle that already owns the answer -- neither is a name list here,
+# because a second hand-maintained list is the defect this whole file exists
+# to avoid.
+#
+#   1. ARGUMENT- OR ENV-WIRED. `check_beat_measurements.sh <beat-log>` in
+#      beat-speed-nightly.yml, `check_pr_review_arm4.sh` under a step `env:`
+#      carrying PR_NUMBER in pr-review-quorum.yml, `check_receipt_complete.sh
+#      --dag <path>` in ci.yml. Run bare these FAIL, and a red row for a guard
+#      that was never given its input is the one failure a run-all runner may
+#      not produce (the same reason mode-644 guards are run through `bash`).
+#      The oracle is the workflows themselves: a guard whose EVERY invocation
+#      across .github/workflows/*.yml carries an argument or sits in a step
+#      with an `env:` block is `skipped: ... wired-with-args in <workflow>`.
+#      One row, never a failure -- it IS wired, just not by this runner.
+#
+#   2. RELEASE-TIME. scripts/check_no_timing_in_required.sh holds the registry
+#      of guards that assert a DURATION and may therefore never reach a
+#      required status check (aprender#2671: eleven wall-clock assertions have
+#      failed in one, and one ratio rewrite blocked all nine open PRs). This
+#      dispatcher runs inside a required job, so running them here would
+#      re-create by DISPATCH exactly what that guard forbids by NAME. The
+#      registry is read with `check_no_timing_in_required.sh --list`, so the
+#      two can never disagree, and that guard now also asserts this run set
+#      does not contain its registry -- deleting the skip below turns it RED.
+#
 # USAGE
 # -----
 #   scripts/guard_tree.sh                     run every guard
 #   scripts/guard_tree.sh --no-cargo          run only the cargo-free subset
 #   scripts/guard_tree.sh --cargo-only        run only the cargo-using subset
+#   scripts/guard_tree.sh --dry-run           print run:/skipped: rows, run nothing
 #   scripts/guard_tree.sh --list              print the guard universe
 #   scripts/guard_tree.sh --list --no-cargo   print the cargo-free subset
 #   scripts/guard_tree.sh --list --cargo-only print the cargo-using subset
+#
+# `--list` prints the raw SUBSET (the cargo classification only); `--dry-run`
+# prints the DECISION (subset minus the two skip populations above). Readers
+# that want "what does CI actually execute" must ask --dry-run: that is what
+# check_guards_are_wired.sh and check_no_timing_in_required.sh both do, so a
+# guard this runner skips is never reported as wired by it.
 
 set -uo pipefail
 
@@ -86,15 +122,17 @@ cargo_only_universe() {
 }
 
 usage() {
-    printf 'usage: %s [--list] [--no-cargo | --cargo-only]\n' "$0" >&2
+    printf 'usage: %s [--list | --dry-run] [--no-cargo | --cargo-only]\n' "$0" >&2
     exit 2
 }
 
 list_mode=0
+dry_run=0
 subset=all
 for arg in "$@"; do
     case "$arg" in
         --list) list_mode=1 ;;
+        --dry-run) dry_run=1 ;;
         --no-cargo) subset=no-cargo ;;
         --cargo-only) subset=cargo-only ;;
         *) usage ;;
@@ -113,6 +151,117 @@ if [ "$list_mode" -eq 1 ]; then
     universe_for_subset
     exit 0
 fi
+
+# ---------------------------------------------------------------------------
+# ORACLE 1 -- how the workflows themselves invoke each guard.
+#
+# One awk pass over .github/workflows/*.yml emits one row per INVOCATION:
+#
+#     <basename>\t(ARG|BARE)\t<workflow file>
+#
+# ARG means the invocation carried an argument, or sat in a step that declares
+# an `env:` block (pr-review-quorum.yml passes PR_NUMBER that way, with no
+# argument at all -- an env-only invocation is still an invocation this runner
+# cannot reproduce). BARE means neither.
+#
+# MENTION IS NOT INVOCATION, and this is the same distinction
+# check_guards_are_wired.sh had to learn the hard way: `sed 's/#.*$//'` strips
+# from the FIRST `#`, so a trailing comment cannot mint a fake invocation, and
+# the token must sit in command position -- at line start or after
+# whitespace/`;`/`&`/`|`/`(`, optionally behind `bash `, `sh ` or `./`.
+#
+# A trailing `\` (line continuation) and a leading redirect/pipe/terminator in
+# the remainder are NOT arguments and are stripped before the emptiness test.
+# Reading `bash scripts/check_x.sh >/dev/null` as "takes arguments" would skip
+# a guard that runs perfectly well bare, which is coverage lost silently.
+workflow_invocations() {
+    [ -d .github/workflows ] || return 0
+    awk '
+        BEGIN { q = sprintf("%c", 39) }
+        FNR == 1 {
+            step_env = 0
+            nf = split(FILENAME, fp, "/")
+            wf = fp[nf]
+            re = "(^|[[:space:];&|(])((ba)?sh[[:space:]]+|\\./)?[^[:space:]\"" q "`]*check_[A-Za-z0-9_.-]+\\.sh"
+        }
+        /^[[:space:]]*-[[:space:]]+(name|run|uses|if|shell|env|with|id):/ { step_env = 0 }
+        /^[[:space:]]+env:[[:space:]]*$/ { step_env = 1 }
+        {
+            line = $0
+            sub(/#.*$/, "", line)
+            s = line
+            while (match(s, re)) {
+                tok = substr(s, RSTART, RLENGTH)
+                rest = substr(s, RSTART + RLENGTH)
+                s = rest
+                w = tok
+                sub(/^[[:space:];&|(]+/, "", w)
+                sub(/^(ba)?sh[[:space:]]+/, "", w)
+                sub(/^\.\//, "", w)
+                np = split(w, pp, "/")
+                base = pp[np]
+                sub("^[\"" q "]", "", rest)
+                sub(/[[:space:]]+$/, "", rest)
+                sub(/\\$/, "", rest)
+                sub(/^[[:space:]]+/, "", rest)
+                if (rest ~ /^([|;&)>]|2>)/) { rest = "" }
+                if (rest != "" || step_env == 1)
+                    printf "%s\tARG\t%s\n", base, wf
+                else
+                    printf "%s\tBARE\t%s\n", base, wf
+            }
+        }
+    ' .github/workflows/*.yml 2>/dev/null
+}
+
+INVOCATIONS="$(workflow_invocations)"
+
+# arg_wired_in BASE -- the workflow that wires BASE with arguments/env, when
+# EVERY invocation of BASE does. Prints nothing when BASE has a bare
+# invocation somewhere, or no invocation at all (an unwired guard is exactly
+# what this runner exists to reach).
+arg_wired_in() {
+    base="$1"
+    n_bare="$(awk -F'\t' -v b="$base" '$1 == b && $2 == "BARE"' <<<"$INVOCATIONS" | grep -c .)"
+    n_arg="$(awk -F'\t' -v b="$base" '$1 == b && $2 == "ARG"' <<<"$INVOCATIONS" | grep -c .)"
+    [ "${n_arg:-0}" -gt 0 ] || return 0
+    [ "${n_bare:-0}" -eq 0 ] || return 0
+    awk -F'\t' -v b="$base" '$1 == b && $2 == "ARG" { print $3; exit }' <<<"$INVOCATIONS"
+}
+
+# ---------------------------------------------------------------------------
+# ORACLE 2 -- the release-time registry, read from the guard that owns it.
+#
+# Absent script => empty registry, which is not a silent hole: this runner then
+# RUNS those guards, and check_no_timing_in_required.sh is the thing that turns
+# red about it. The two halves cannot both go quiet.
+RELEASE_TIME_GUARDS=""
+if [ -f scripts/check_no_timing_in_required.sh ]; then
+    RELEASE_TIME_GUARDS="$(bash scripts/check_no_timing_in_required.sh --list 2>/dev/null)" \
+        || RELEASE_TIME_GUARDS=""
+fi
+
+is_release_time() {
+    base="$1"
+    flat=" $(tr '\n' ' ' <<<"$RELEASE_TIME_GUARDS") "
+    case "$flat" in
+        *" $base "*) return 0 ;;
+    esac
+    return 1
+}
+
+# skip_reason GUARD -- why this runner must not run GUARD bare, or empty.
+skip_reason() {
+    base="$(basename "$1")"
+    if is_release_time "$base"; then
+        printf 'release-time (check_no_timing_in_required)\n'
+        return 0
+    fi
+    wf="$(arg_wired_in "$base")"
+    if [ -n "$wf" ]; then
+        printf 'wired-with-args in %s\n' "$wf"
+    fi
+}
 
 # advertises_self_test G -- does guard G's --help output mention "self-test"?
 #
@@ -153,9 +302,22 @@ run_row() {
 }
 
 guards="$(universe_for_subset)"
+skipped=0
+to_run=0
 
 while IFS= read -r g; do
     [ -n "$g" ] || continue
+    reason="$(skip_reason "$g")"
+    if [ -n "$reason" ]; then
+        skipped=$((skipped + 1))
+        printf 'skipped: %s -- %s\n' "$g" "$reason"
+        continue
+    fi
+    if [ "$dry_run" -eq 1 ]; then
+        to_run=$((to_run + 1))
+        printf 'run: %s\n' "$g"
+        continue
+    fi
     if advertises_self_test "$g"; then
         run_row "$g [self-test]" bash "$g" --self-test
         run_row "$g [run]" bash "$g"
@@ -164,6 +326,12 @@ while IFS= read -r g; do
     fi
 done <<<"$guards"
 
+if [ "$dry_run" -eq 1 ]; then
+    printf '%d to run, %d skipped\n' "$to_run" "$skipped"
+    exit 0
+fi
+
+printf '%d guard(s) skipped\n' "$skipped"
 printf '%d checks, %d failed\n' "$total" "$failed"
 if [ "$failed" -gt 0 ]; then
     printf 'FAILED:\n%s' "$fail_rows" >&2
