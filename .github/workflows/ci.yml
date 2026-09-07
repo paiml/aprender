@@ -1335,6 +1335,8 @@ jobs:
               -e SCCACHE_CACHE_SIZE=50G \
               -e CARGO_INCREMENTAL=0 \
               -e CARGO_BUILD_JOBS=8 \
+              -e CARGO_TERM_COLOR=never \
+              -e CARGO_TERM_COLOR=never \
               "${DR_ENV[@]}" \
               "$IMAGE" "$@"
           }

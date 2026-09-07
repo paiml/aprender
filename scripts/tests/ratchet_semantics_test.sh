@@ -402,7 +402,7 @@ run_satd() {
   # `--features model-tests` is not optional: the whole suite is
   # `#![cfg(feature = "model-tests")]`, so without it the binary contains ZERO
   # tests and every row below would "pass" over nothing.
-  if ! ( cd "$ROOT" && cargo test -p aprender-core --features model-tests \
+  if ! ( cd "$ROOT" && CARGO_TERM_COLOR=never cargo test -p aprender-core --features model-tests \
            --test falsification_spec_v10_tests --no-run ) > "$log" 2>&1; then
     die "cargo could not build the falsification suite: $(tail -3 "$log" | tr '\n' ' ')"
   fi
