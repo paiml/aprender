@@ -1,0 +1,38 @@
+metadata:
+  version: 1.0.0
+  kind: schema
+  description: |
+    PCU (Page Content Unit) contract for book/src/cli/devices.md (apr devices CLI reference).
+    Enforces: page exists, references the command, has a runnable example.
+  references:
+    - "docs/specifications/book-completeness-spec.md"
+
+equations:
+  pcu_header_present:
+    formula: "file_contains(book/src/cli/devices.md, 'PCU: cli-devices')"
+  command_mentioned:
+    formula: "file_contains(book/src/cli/devices.md, 'apr devices')"
+  example_block_present:
+    formula: "file_contains_fenced(book/src/cli/devices.md, language='bash')"
+
+falsification_tests:
+  - id: FALSIFY-PAGE-CLI-DEVICES-001
+    name: stub_exists
+    prediction: "book/src/cli/devices.md exists on disk"
+    test_harness: "test -f book/src/cli/devices.md"
+    expected_output: "exit 0"
+    if_fails: "Run scripts/gen-cli-chapter-stubs.sh to regenerate."
+
+  - id: FALSIFY-PAGE-CLI-DEVICES-002
+    name: command_mentioned
+    prediction: "page references the command at least once"
+    test_harness: "grep -q 'apr devices' book/src/cli/devices.md"
+    expected_output: "exit 0"
+    if_fails: "Add a mention of `apr devices` to the chapter."
+
+  - id: FALSIFY-PAGE-CLI-DEVICES-003
+    name: runnable_example
+    prediction: "page has at least one ```bash code block"
+    test_harness: "grep -c '^```bash' book/src/cli/devices.md"
+    expected_output: "stdout >= 1"
+    if_fails: "Add a ```bash code block with a runnable example."
