@@ -27,8 +27,14 @@ answer — a missing file is not a passing DAG).
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from datetime import date, timedelta
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from dag_status import d7_typed_status, derived_status  # noqa: E402  (G-11)
+
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 try:
     import yaml
@@ -196,17 +202,18 @@ def d5_owner(rows: dict) -> list:
     return [f"D5 {rid}: no owner" for rid, r in rows.items() if not str(r.get("owner") or "").strip()]
 
 
-def past_expiry(rows: dict, exp: dict, today: date) -> list:
-    return [f"{rid} expired {exp[rid]}" for rid in rows if rid in exp and exp[rid] < today and rows[rid].get("status") != "complete"]
+def past_expiry(rows: dict, exp: dict, today: date, root: str) -> list:
+    # complete is DERIVED from the receipt (G-11), never read off the row
+    return [f"{rid} expired {exp[rid]}" for rid in rows if rid in exp and exp[rid] < today and derived_status(root, rows[rid]) != "complete"]
 
 
-def run_check(doc: dict, min_days: int, today: date) -> "tuple[int, list]":
+def run_check(doc: dict, min_days: int, today: date, root: str = REPO_ROOT) -> "tuple[int, list]":
     rows = rows_by_id(doc)
-    violations = d1_dangling(rows) + d2_cycles(rows) + d6_expiry_forms(rows) + d5_owner(rows)
+    violations = d1_dangling(rows) + d2_cycles(rows) + d6_expiry_forms(rows) + d5_owner(rows) + d7_typed_status(root, rows)
     exp, more = resolved_expiries(rows)
     violations += more + d3_slack(rows, exp, min_days) + d4_queues(doc, rows, exp)
     lines = list(violations)
-    expired = past_expiry(rows, exp, today)
+    expired = past_expiry(rows, exp, today, root)
     if expired:
         lines.append("REPORT past-expiry (not a violation here; the §4 andon owns it): " + "; ".join(expired))
     lines.append(
@@ -232,10 +239,11 @@ def main(argv=None) -> int:
     c.add_argument("dag")
     c.add_argument("--min-slack-days", type=int, default=6)
     c.add_argument("--today", default=None, help="YYYY-MM-DD; default = the DAG header's `generated` date if present, else today")
+    c.add_argument("--root", default=REPO_ROOT, help="repository root holding docs/audits/impl-*-receipt.md (status is derived from them, G-11)")
     args = ap.parse_args(argv)
     try:
         doc = load_dag(args.dag)
-        rc, lines = run_check(doc, args.min_slack_days, _today(args.today, doc))
+        rc, lines = run_check(doc, args.min_slack_days, _today(args.today, doc), args.root)
     except UsageError as e:
         print(f"dag_invariants: {e}", file=sys.stderr)
         return 2

@@ -1,0 +1,207 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# apr-row-pr-write-set-v1 — a PP-066 row PR never writes a shared file; the
+# DAG's status is derived from the receipt; the README's counts are a ratchet
+# (PP-066 DAG row G-11, epic #2873; ticket PMAT-1062; driver R2 of 2026-09-06)
+#
+# WHAT IT GOVERNS
+#   scripts/check_row_pr_write_set.sh (a head branch agent/<id> whose <id> is
+#   a DAG row may not touch docs/specifications/pp-066-dag.yaml,
+#   docs/roadmaps/roadmap.yaml, docs/specifications/PP-066-release-spec.md
+#   or a README count line); scripts/lib/dag_status.py (a row is complete iff
+#   docs/audits/impl-<pmat_id>-receipt.md says `status: complete` in its
+#   leading front matter — render_dag.py prints that, dag_invariants.py D7
+#   refuses a typed status that disagrees); scripts/check_readme_claims.sh
+#   (claimed <= measured; --exact for the orchestrator docs commit).
+#
+# WHY
+#   Eight armed row PRs (#3001, #3003-#3009) each hand-edited the DAG status,
+#   the roadmap (pmat work complete) or a README count. Every merge made the
+#   other seven DIRTY and each needed a rebuild through a queue that lands
+#   ~1 PR/hour. None of those three files is owned by a row; one orchestrator
+#   docs commit after each merge writes all of them.
+#
+# PROOF LADDER, STATED HONESTLY (F-26)
+#   * L1 — the guards exist and are wired in ci.yml job guard-runner-labels.
+#   * L2 — falsification tests cover the obligations, MEASURED (2026-09-06):
+#          check_row_pr_write_set.sh --self-test 11/11, check_dag_invariants.sh
+#          --selftest 15/15 (D7 rows 12-15), check_readme_claims.sh --self-test
+#          7/7 — each with its registered mutation RED.
+#   * L3/L4 — NOT APPLICABLE and not declared: shell and python guards over
+#          markdown and YAML data files.
+# ─────────────────────────────────────────────────────────────────────────────
+name: apr-row-pr-write-set
+version: "1.0.0"
+scope: >
+  The write set of a PP-066 row PR, the derivation of a DAG row's status, and
+  the README count ratchet. Out of scope: what a receipt must say
+  (AUTO-IMPL-SKILL-001 §7), the receipt marker rule itself (apr-impl-receipt-v1,
+  C0-7), and who writes the orchestrator docs commit (the driver prompt).
+status: active
+
+metadata:
+  kind: pattern     # a write-discipline rule over shell/python guards and data files; set EXPLICITLY
+  version: "1.0.0"
+  created: '2026-09-06'
+  last_modified: '2026-09-06'
+  author: PAIML Engineering
+  references:
+    - 'scripts/check_row_pr_write_set.sh — --base/--head/--branch/--event · --self-test (11 rows)'
+    - 'scripts/lib/dag_status.py — derived_status(), receipt_marker(), d7_typed_status()'
+    - 'scripts/render_dag.py — the status column is derived; --root'
+    - 'scripts/lib/dag_invariants.py — D7; past-expiry reads the derived status; --root'
+    - 'scripts/check_readme_claims.sh — compare_count(): lag allowed, overstatement RED; --exact; --self-test (7 rows)'
+    - '.github/workflows/ci.yml — job guard-runner-labels: the four new steps, case table before live'
+    - 'contracts/apr-impl-receipt-v1.yaml (C0-7) — the marker this contract derives from'
+    - 'PP-066 DAG row G-11, epic #2873'
+  description: >
+    A row PR's write set is {crate code, tests, contracts/, its own receipt, its
+    book page}. Completion is read from the receipt's marker, never typed into
+    the DAG; the roadmap and the README counts are written by one orchestrator
+    docs commit per merge; the README may lag the tree and may never overstate it.
+
+equations:
+  row_pr_write_set:
+    formula: |
+      row_pr(branch) ⟺ branch = "agent/" + id ∧ id ∈ dag.rows.id
+      row_pr(branch) ∧ event = pull_request  =>
+        diff(base, head) ∩ { docs/specifications/pp-066-dag.yaml,
+                             docs/roadmaps/roadmap.yaml,
+                             docs/specifications/PP-066-release-spec.md } = ∅
+        ∧ no changed README.md line matches /[0-9]+\*{0,2}( +[a-z]+){0,2} +(workspace crates?|contracts?|CLI commands?)\b/
+      ¬row_pr(branch)                        =>  not judged, said so (ok line)
+      event ∈ {merge_group, push}            =>  REPORT (no head branch to read), exit 0, judged at the PR
+    domain: 'the diff of a pull request against the base named by scripts/lib/resolve_base.sh'
+    codomain: 'PASS | FAIL | REPORT | ENV'
+    invariants:
+    - 'THE SHARED FILES ARE NAMED, NOT PATTERNED (rows 2-4): a new shared file is a contract bump, not a regex.'
+    - 'A COUNT LINE, NOT THE README (rows 5-6): prose edits to README.md are a row''s to make.'
+    - 'AN ORCHESTRATOR BRANCH IS NOT A ROW (rows 7-8): agent/pp-066-spec names no row; fix/… is not agent/.'
+    - 'A SHAPE WITHOUT A HEAD BRANCH SAYS SO (rows 9-10): a REPORT line, never a silent exit 0.'
+    - 'A MISSING DAG IS ENV, EXIT 2 (row 11).'
+    preconditions:
+    - 'base is named by scripts/lib/resolve_base.sh (PR-A, PMAT-1059) or passed as --base'
+    postconditions:
+    - 'a FAIL names the file or the README line'
+
+  status_is_derived:
+    formula: |
+      status(row) := "complete" if marker(docs/audits/impl-<row.pmat_id>-receipt.md) = complete else "open"
+      render_dag.py prints status(row); it never reads row.status
+      row.status present ∧ row.status ≠ status(row)  =>  D7 violation
+      expired(row) ⟺ expiry(row) < today ∧ status(row) ≠ complete
+    domain: 'every row of docs/specifications/pp-066-dag.yaml'
+    codomain: 'complete | open'
+    invariants:
+    - 'THE RECEIPT IS THE RECORD (D7 rows 12-15): a typed status is a cache, tolerated only while it agrees.'
+    - 'ONE MARKER RULE: receipt_marker() is the same function as scripts/check_receipt_complete.sh (leading front matter, quotes stripped, .tmp is torn).'
+    preconditions: []
+    postconditions:
+    - 'python3 scripts/render_dag.py --check is byte-identical to the committed block without reading any status: key'
+
+  readme_counts_ratchet:
+    formula: |
+      claimed(README) > measured(tree)                =>  FAIL (never overstate)
+      claimed(README) < measured(tree) ∧ ¬exact       =>  PASS, lag reported
+      claimed(README) < measured(tree) ∧ exact        =>  FAIL (the orchestrator regenerates)
+      |{distinct contract counts in README}| > 1      =>  FAIL (self-contradiction)
+    domain: 'the three README count claims vs cargo metadata, find contracts/, the CLI registry'
+    codomain: 'PASS | FAIL'
+    invariants:
+    - 'LAG IS ALLOWED, OVERSTATEMENT IS NOT (rows 3, 5, 6).'
+    - '--exact IS THE ORCHESTRATOR''S CHECK (rows 2, 4), never a CI step on a row PR.'
+    preconditions: []
+    postconditions:
+    - 'the PASS line names the lag when there is one'
+
+  enforcement_is_wired:
+    formula: |
+      ci.yml job "guard-runner-labels" contains, each case table before its live step:
+        bash scripts/check_readme_claims.sh --self-test        bash scripts/check_readme_claims.sh
+        bash scripts/check_dag_invariants.sh --selftest         bash scripts/check_dag_invariants.sh docs/specifications/pp-066-dag.yaml --min-slack-days 6
+        bash scripts/check_row_pr_write_set.sh --self-test      bash scripts/check_row_pr_write_set.sh --event … --branch …
+    domain: 'the step list of job guard-runner-labels'
+    codomain: 'bool'
+    invariants:
+    - 'CASE TABLE BEFORE THE LIVE CHECK (Verification Discipline #7).'
+    preconditions:
+    - 'guard-runner-labels is in gate.needs'
+    postconditions:
+    - 'check_guards_are_wired.sh names check_row_pr_write_set.sh as wired'
+
+proof_obligations:
+  - id: WS-OB-001
+    statement: "A row PR's diff touches none of the three shared files and no README count line; non-row branches are not judged and say so; shapes without a head branch REPORT."
+    discharged_by: falsification_tests[0]
+  - id: WS-OB-002
+    statement: "A DAG row's status is derived from its receipt's marker; a typed status that disagrees is D7; past-expiry reads the derived status."
+    discharged_by: falsification_tests[1]
+  - id: WS-OB-003
+    statement: "The README's counts may lag and may never overstate; --exact restores equality for the orchestrator; a self-contradicting README fails."
+    discharged_by: falsification_tests[2]
+  - id: WS-OB-004
+    statement: "The three guards are wired in ci.yml's guard-runner-labels, case table before live."
+    discharged_by: falsification_tests[3]
+
+falsification_tests:
+  - id: WS-F-001
+    rule: a row PR writes no shared file
+    prediction: >-
+      rows 2-5 RED naming the file or line (DAG, roadmap, spec, README count);
+      rows 1 and 6 PASS (crate code; README prose); rows 7-8 not judged (an
+      orchestrator branch; a fix/ branch); rows 9-10 REPORT with exit 0
+      (merge_group, push); row 11 exit 2 (missing DAG). One --self-test run
+      exercises every row.
+    test: 'bash scripts/check_row_pr_write_set.sh --self-test'
+    if_fails: >-
+      every merge makes every other armed PR DIRTY again (the eight-PR rebuild storm of 2026-09-06)
+    mutation: >-
+      drop docs/specifications/pp-066-dag.yaml from the forbidden list; row 2
+      must turn RED (it passes at rc 0).
+
+  - id: WS-F-002
+    rule: status is derived from the receipt
+    prediction: >-
+      D7 row 12: typed complete with no receipt is RED (the registered mutation);
+      row 13: typed complete over a complete receipt PASSES; row 14: typed
+      complete over a partial receipt is RED; row 15: no typed status, a
+      complete receipt, a past expiry — NOT expired.
+    test: 'bash scripts/check_dag_invariants.sh --selftest'
+    if_fails: >-
+      the DAG becomes the record of completion and a row PR must edit it to be counted
+    mutation: >-
+      make derived_status() return row.get("status", "open"); rows 12 and 15
+      must turn RED.
+
+  - id: WS-F-003
+    rule: README counts are a ratchet
+    prediction: >-
+      rows 1-2 equal PASS (default and --exact); row 3 lag PASS with the lag
+      reported; row 4 lag under --exact RED; rows 5-6 overstatement RED (the
+      registered mutation); row 7 two contract counts RED.
+    test: 'bash scripts/check_readme_claims.sh --self-test'
+    if_fails: >-
+      a row PR that adds a contract must bump the README and collides with every other such PR
+    mutation: >-
+      restore the equality compare in compare_count; row 3 must turn RED.
+
+  - id: WS-F-004
+    rule: wired, case table then live
+    prediction: >-
+      check_guards_are_wired.sh names no unwired guard while ci.yml carries the six steps.
+    test: 'bash scripts/check_guards_are_wired.sh'
+    if_fails: >-
+      a guard that exists and gates nothing (class #2878)
+    mutation: >-
+      delete the two check_row_pr_write_set.sh steps from ci.yml;
+      check_guards_are_wired.sh must turn RED naming the script.
+
+non_goals:
+  - "Who writes the orchestrator docs commit and when (the PP-066 driver prompt: once per merge)."
+  - "Regenerating the README counts automatically (the orchestrator edits and verifies with --exact)."
+  - "Stripping the typed status: keys from the DAG (tolerated as a cache; the orchestrator may drop them)."
+
+binding_registry:
+  guard: scripts/check_row_pr_write_set.sh
+  ci_job: guard-runner-labels
+  make_target: tier3
+  issue: "https://github.com/paiml/aprender/issues/2873"

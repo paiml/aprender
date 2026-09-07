@@ -16,7 +16,23 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-README="$REPO_ROOT/README.md"
+README="${README_PATH:-$REPO_ROOT/README.md}"   # README_PATH: a fixture, for --self-test
+# G-11 (PMAT-1062, driver R2 2026-09-06): the README's counts are a RATCHET, not an
+# equality. A row PR that adds a contract may leave the README LAGGING (claimed <
+# measured); it may never OVERSTATE (claimed > measured). The orchestrator docs commit
+# regenerates the counts after each merge and verifies them with --exact.
+EXACT="${README_EXACT:-0}"
+compare_count() { # compare_count <falsify id> <name> <claimed> <measured> <what measured is>
+  local fid=$1 name=$2 claimed=$3 measured=$4 what=$5
+  if [[ "$claimed" -gt "$measured" ]]; then
+    echo "FAIL $fid $name: README claims $claimed, $what has $measured — the README may lag, never overstate" >&2; return 1
+  fi
+  if [[ "$claimed" -lt "$measured" ]]; then
+    if [[ "$EXACT" = 1 ]]; then echo "FAIL $fid $name: README claims $claimed, $what has $measured (--exact: the orchestrator docs commit regenerates counts)" >&2; return 1; fi
+    echo "PASS $fid $name: $measured (README lags at $claimed; the orchestrator docs commit regenerates it)"; return 0
+  fi
+  echo "PASS $fid $name: $measured"
+}
 
 # A cargo exit is classified before any verdict names the README. See
 # scripts/cargo_classify.sh. The case table is armed on the normal path because
@@ -174,11 +190,7 @@ check_crate_count() {
     echo "FAIL FALSIFY-README-001 crate_count: README lacks '**N** workspace crates' claim (pattern mismatch)" >&2
     return 1
   fi
-  if [[ "$measured" != "$claimed" ]]; then
-    echo "FAIL FALSIFY-README-001 crate_count: README claims $claimed, cargo metadata --no-deps has $measured workspace members" >&2
-    return 1
-  fi
-  echo "PASS FALSIFY-README-001 crate_count: $measured"
+  compare_count FALSIFY-README-001 crate_count "$claimed" "$measured" "cargo metadata --no-deps"
 }
 
 check_contract_count() {
@@ -192,17 +204,14 @@ check_contract_count() {
   # EVERY claim must agree with the filesystem, not just the first one found.
   # The README is also not allowed to contradict itself: three different counts
   # in one file is a drift the reader cannot resolve.
-  while IFS= read -r c; do
-    [[ -n "$c" ]] || continue
-    n=$((n + 1))
-    if [[ "$measured" != "$c" ]]; then
-      echo "FAIL FALSIFY-README-002 contract_count: README claims $c, filesystem has $measured" >&2
-      grep -niE "\\b$c\\*{0,2}( +[a-z]+){0,2} +contracts?\\b" "$README" | sed 's|^|       |' >&2
-      rc=1
-    fi
-  done <<< "$claimed"
-  [[ "$rc" -eq 0 ]] || return 1
-  echo "PASS FALSIFY-README-002 contract_count: $measured ($n claim(s) checked)"
+  # The README may not contradict ITSELF: three different counts in one file is a
+  # drift the reader cannot resolve, whatever the filesystem says.
+  if [[ "$(printf '%s\n' "$claimed" | grep -c .)" -gt 1 ]]; then
+    echo "FAIL FALSIFY-README-002 contract_count: the README carries several different contract counts: $(printf '%s' "$claimed" | tr '\n' ' ')" >&2
+    return 1
+  fi
+  n=1
+  compare_count FALSIFY-README-002 contract_count "$claimed" "$measured" "the filesystem (find contracts/ -name '*.yaml')" || return 1
 }
 
 check_cli_command_count() {
@@ -224,12 +233,7 @@ check_cli_command_count() {
     echo "FAIL FALSIFY-README-003 cli_command_count: README lacks '**K** CLI commands' claim" >&2
     return 1
   fi
-  if [[ "$measured" != "$claimed" ]]; then
-    echo "FAIL FALSIFY-README-003 cli_command_count: README claims $claimed," \
-         "contracts/apr-cli-commands-v1.yaml lists $measured commands" >&2
-    return 1
-  fi
-  echo "PASS FALSIFY-README-003 cli_command_count: $measured"
+  compare_count FALSIFY-README-003 cli_command_count "$claimed" "$measured" "contracts/apr-cli-commands-v1.yaml"
 }
 
 check_cookbook_link() {
@@ -250,6 +254,8 @@ for arg in "$@"; do
   case "$arg" in
     --claim) mode="one" ;;
     --regen) mode="regen" ;;
+    --exact) EXACT=1 ;;
+    --self-test) mode="selftest" ;;
     crate_count|contract_count|cli_command_count|cookbook_link) claim="$arg" ;;
     *) echo "unknown arg: $arg" >&2; exit 2 ;;
   esac
@@ -300,6 +306,36 @@ check_install_line() {
 }
 
 case "$mode" in
+  selftest)
+    # G-11 case table: the counts are a ratchet (lag allowed, overstatement RED; --exact for the orchestrator)
+    TD=$(mktemp -d "${TMPDIR:-/tmp}/readme-selftest.XXXXXX")
+    safe_rm_scratch() { local victim=${1:-} must=${2:-}; [ -n "$victim" ] || return 0; [ -n "$must" ] || return 0; [ "$victim" != "/" ] || return 0
+      case "$victim" in *"$must"*) if [ -n "$victim" ] && [ "$victim" != "/" ]; then rm -rf -- "$victim"; fi ;; *) return 0 ;; esac; }
+    cleanup() { safe_rm_scratch "$TD" 'readme-selftest.'; }
+    trap cleanup EXIT
+    mc=$(measured_crate_count) || { echo "FAIL self-test: cannot measure the crate count" >&2; exit 1; }
+    cc=$(measured_contract_count)
+    fx() { printf '# apr\n\n**%s** workspace crates, **%s** provable contracts.\n%s\n' "$1" "$2" "${3:-}" > "$TD/README.md"; }
+    n=0; red=0
+    row() { # row <want rc> <label> <claim> [<extra env>]
+      local want=$1 label=$2 claim=$3 env=${4:-} rc=0
+      n=$((n + 1))
+      env README_PATH="$TD/README.md" $env bash "$0" --claim "$claim" >"$TD/out.$n" 2>&1 || rc=$?
+      if [ "$rc" = "$want" ]; then printf 'ok    row %-2s rc=%s  %s\n' "$n" "$rc" "$label"
+      else printf 'FAIL  row %-2s rc=%s (wanted %s)  %s\n' "$n" "$rc" "$want" "$label"; sed 's/^/        /' "$TD/out.$n"; red=1; fi
+    }
+    fx "$mc" "$cc";                    row 0 "claims equal the measurement: PASS"                              crate_count
+    fx "$mc" "$cc";                    row 0 "equal, --exact: PASS"                                            contract_count README_EXACT=1
+    fx "$((mc - 1))" "$((cc - 1))";    row 0 "README lags by one (a row PR added a crate): PASS, lag reported" crate_count
+    grep -q 'lags at' "$TD/out.$n" || { printf 'FAIL  row %-2s the lag was not reported\n' "$n"; red=1; }
+    fx "$((mc - 1))" "$((cc - 1))";    row 1 "lags by one under --exact (the orchestrator docs commit): RED"  contract_count README_EXACT=1
+    fx "$((mc + 1))" "$((cc + 1))";    row 1 "README OVERSTATES the crate count by one: RED (the registered mutation)" crate_count
+    fx "$mc" "$((cc + 1))";            row 1 "README overstates the contract count: RED"                       contract_count
+    fx "$mc" "$cc" "and $((cc - 1)) contracts elsewhere"; row 1 "two different contract counts in one README: RED (self-contradiction)" contract_count
+    printf '%s/%s rows\n' "$((n - red))" "$n"
+    [ "$red" = 0 ] || exit 1
+    exit 0
+    ;;
   regen)
     echo "workspace members:     $(measured_crate_count)"
     echo "contracts/ *.yaml:     $(measured_contract_count)"

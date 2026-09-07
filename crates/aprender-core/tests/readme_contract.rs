@@ -127,15 +127,31 @@ fn test_readme_crate_count_matches_workspace() {
         "FALSIFY-README-005: parsed {crate_count} packages from cargo metadata — parser is wrong"
     );
 
-    let expected_row = format!("| Workspace crates | **{crate_count}** workspace crates |");
+    // G-11 (PMAT-1062): the README's counts are a RATCHET, not an equality. A row PR
+    // that adds a crate may leave the README LAGGING (claimed < measured); it may never
+    // OVERSTATE. The orchestrator docs commit regenerates the counts after each merge
+    // and verifies them exactly with `scripts/check_readme_claims.sh --exact`.
+    let claimed = number_before(&readme, "** workspace crates |")
+        .expect("FALSIFY-README-005: README claims-table row `| Workspace crates | **N** workspace crates |` is missing");
     assert!(
-        readme.contains(&expected_row),
-        "FALSIFY-README-005: README claims-table row does not match cargo.\n\
-         expected: {expected_row}\n\
-         `cargo metadata --no-deps` reports {crate_count} workspace packages. Note that\n\
-         `ls crates/` is NOT the same number — some crates/ entries are `exclude`d in the\n\
-         root Cargo.toml and one has no Cargo.toml at all. A directory is not a crate."
+        claimed <= crate_count,
+        "FALSIFY-README-005: README claims {claimed} workspace crates but `cargo metadata --no-deps`\n\
+         reports {crate_count} — the README may lag, never overstate. Note that `ls crates/` is NOT\n\
+         the same number — some crates/ entries are `exclude`d in the root Cargo.toml and one has\n\
+         no Cargo.toml at all. A directory is not a crate."
     );
+}
+
+/// The number immediately before `suffix` in `text` (digits only; markdown bold `**`
+/// between the digits and the suffix is part of the suffix the caller passes).
+fn number_before(text: &str, suffix: &str) -> Option<usize> {
+    let idx = text.find(suffix)?;
+    let digits: String = text[..idx]
+        .chars()
+        .rev()
+        .take_while(char::is_ascii_digit)
+        .collect();
+    digits.chars().rev().collect::<String>().parse().ok()
 }
 
 /// FALSIFY-README-007: Contract count in README matches `find contracts/ -name '*.yaml'`.
@@ -168,11 +184,13 @@ fn test_readme_contract_count_matches_workspace() {
     }
 
     let contract_count = count_yaml(&contracts_dir);
-    let count_str = format!("**{contract_count}** provable contracts");
+    // G-11 (PMAT-1062): lag allowed, overstatement RED (see FALSIFY-README-005 above).
+    let claimed = number_before(&readme, "** provable contracts")
+        .expect("FALSIFY-README-007: README lacks a `**M** provable contracts` claim");
     assert!(
-        readme.contains(&count_str),
-        "FALSIFY-README-007: README lacks `**{contract_count}** provable contracts` \
-         matching `find contracts/ -name '*.yaml'` — update the README claims table row"
+        claimed <= contract_count,
+        "FALSIFY-README-007: README claims {claimed} provable contracts but `find contracts/ -name '*.yaml'` \
+         counts {contract_count} — the README may lag, never overstate; the orchestrator docs commit regenerates it"
     );
 }
 
