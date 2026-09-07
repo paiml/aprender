@@ -22,10 +22,10 @@ Three classes. For each: where the literal lives, who writes it, how it goes STA
 
 | | |
 |---|---|
-| Where | `README.md:44` (`1812** provable contracts`), `README.md:225` (`1812 provable YAML contracts`), `README.md:265` (`1812 contracts across inference, training, …`) |
+| Where | **PHASE A LANDED (2026-09-07).** The count is now GENERATED into inline markers and there is exactly one authored-count site left: none. `README.md:44` (`**<!-- CONTRACT_COUNT_START -->1814<!-- CONTRACT_COUNT_END -->** provable contracts`, the metrics table) and `README.md:265` (`The tree carries <!-- CONTRACT_COUNT_START -->1814<!-- CONTRACT_COUNT_END --> contracts across inference, …`) are generated blocks; the third site, the tree diagram at `README.md:225`, states no number at all (`# provable YAML contracts (count in the table above)`) because it sits inside a fenced block where an HTML comment would render literally. Before phase A these were three hand-written literals, all reading `1812` against a filesystem carrying `1814`. |
 | Measured against | `find "$REPO_ROOT/contracts" -name "*.yaml" \| wc -l` (`scripts/check_readme_claims.sh:90-92`) |
 | Claim extractor | `claimed_contract_counts()` — every number preceding `contract(s)` through ≤2 qualifier words, deduplicated (`scripts/check_readme_claims.sh:168-172`) |
-| Who writes it | **A human, by hand.** `--regen` *prints* the numbers "for manual README edit" (`scripts/check_readme_claims.sh:8`); it does not write the file. There is no `readme-sync` target in this repo's `Makefile` (`grep -rn readme Makefile` → no match). The only `readme-sync` binary, `apr-qa-readme-sync` (`crates/aprender-qa-certify/src/main.rs:3,38,78-101`), rewrites the region between `<!-- CERTIFICATION_TABLE_START -->` / `..._END -->` (`crates/aprender-qa-certify/src/lib.rs:451,453`) — **markers that `README.md` does not contain** (`grep -n '<!--' README.md` → no match). It cannot regenerate any of the three contract-count literals. |
+| Who writes it | **`scripts/readme_sync.sh`, as of phase A** — `make readme-sync` (`Makefile:554`) runs `--write`, which substitutes the text between the markers with `find contracts/ -name '*.yaml' \| wc -l` and touches nothing else in the file (`scripts/readme_sync.sh:85` `rewrite_stream`, applied at `:135`); the rewrite is a fixpoint, so a second run is byte-identical, and a README carrying no marker is exit **3**, never a silent "0 blocks rewritten". It reads the file BACK and asserts every block now carries the measured count (`:150`) rather than reporting that bytes were written. Previously: **a human, by hand** — `--regen` *printed* the numbers "for manual README edit" (`scripts/check_readme_claims.sh:8`) and there was no `readme-sync` target; the only `readme-sync` binary, `apr-qa-readme-sync` (`crates/aprender-qa-certify/src/main.rs:3,38,78-101`), rewrites a certification table between `<!-- CERTIFICATION_TABLE_START -->` / `..._END -->` (`crates/aprender-qa-certify/src/lib.rs:451,453`), markers `README.md` still does not contain, and it cannot regenerate a contract count. |
 | Runs in | `.github/workflows/ci.yml:1079` (`--self-test` then the live check) |
 | How it goes STALE | The measurement moves whenever *any* PR adds or deletes a `contracts/*.yaml`; the literal moves only when someone edits three separate prose sites. **Measured now: literals 1812, filesystem 1814 — already two behind.** |
 | Current polarity | `compare_count()` (`:25-35`): `claimed > measured` → FAIL (`:27-29`); `claimed < measured` → PASS with a "README lags" line, unless `README_EXACT=1` (`:24,30-33,257`). So today's 1812-vs-1814 drift is GREEN by design (G-11 / PMAT-1062, `:20-23`). |
@@ -160,7 +160,7 @@ must produce; rows marked *today* are what the tree does now, at the cited line.
 | P4 | CB-200 / SATD count improvement | same | **0** | today: GREEN, but only because the literal is a stale ceiling (`:292-294`); after P4 is derived, the number must come from `measure($BASE)`, and `cb200_pair_check`'s exact-equality (`:388-406`) must not turn the improvement RED |
 | P5 | Missing comparand SHA (ref unresolvable) | any of the three, `BASELINE_RATCHET_BASE_REF=refs/heads/nope` | **1 at preflight**, before any measurement | today: RED but only at the ratchet call, after the ~9 s scan (`check_complexity_ratchet.sh:470-486` runs first). BSE-03 moves it to preflight (`APR-QUALITY-001` §7 D2). |
 | P6 | Comparand resolves but carries no baseline | as above with `$BASE` predating the file | **1** | today: RED (`ABSENT`, `lib_baseline_ratchet.sh:399,447-454`) |
-| P7 | README literal **absent** (the count is derived, no literal in the file) | `bash scripts/check_readme_claims.sh --claim contract_count` | **0** | today: **1** — `"README makes no contract-count claim"` (`check_readme_claims.sh:200-203`). BSE-03 must invert this **and** land the generator that makes the count derived; inverting the guard alone deletes the check. |
+| P7 | README literal **absent** (the count is derived, no literal in the file) | `bash scripts/check_readme_claims.sh --claim contract_count` | **0** | **DONE (phase A).** The generator landed first, so inverting the old `"README makes no contract-count claim"` FAIL did not delete a check. The rule as implemented, in `check_contract_count` (`scripts/check_readme_claims.sh:261`): (a) a **generated block** (`<!-- CONTRACT_COUNT_START -->N<!-- CONTRACT_COUNT_END -->`, `:57`) is judged by **EQUALITY** against `measure(merge)` — a generated number cannot legitimately lag, so a block that disagrees is RED naming BOTH numbers (`:349`); (b) an **authored literal outside a block** keeps the G-11 ratchet (may lag, may never overstate, `--exact`), and the extractor sees only the file with the blocks stripped (`:186,198`); (c) **no block and no literal** is GREEN only because `scripts/readme_sync.sh --print` regenerates the block **in this run, twice, byte-identically**, and the run PRINTS the bytes it would write (`:373-379`) — an absent claim on its own is never the reason; (d) both measurements come from `git archive <rev> -- contracts` piped to `tar -t`, one instrument over two revisions, and a listing of 0 is a FAILED measurement rather than a count (`:235-245`); (e) the comparand is resolved and printed **before** any measurement, and an unresolvable ref is RED at PREFLIGHT (`:265-281`). Rows: `scripts/tests/ratchet_semantics_test.sh --class readme` (`:129,146,159,170,185,207,221,240`). |
 | P8 | README literal hand-edited to a number the filesystem does not carry, **overstating** | `bash scripts/check_readme_claims.sh --claim contract_count` | **1** | today: RED (`:27-29`, self-test rows `:332-333`) |
 | P9 | README literal hand-edited **understating** (lag) | same | **0** normally, **1** under `README_EXACT=1` | today: as stated (`:30-33`, rows `:329-331`) |
 | P10 | README carries two different contract counts | same | **1** | today: RED (`:209-212`, row `:334`) |
@@ -255,7 +255,7 @@ Every way a PR could turn a regression GREEN, and the control that closes it.
 | A4 | **Delete the baseline to disarm the gate** | `ABSENT` would otherwise read as "no growth" | Closed: missing-from-tree is RED (`:419-423`), and comparand-carries-nothing is RED with the words "a missing comparand is not 'no growth'" (`:447-454`). |
 | A5 | **Bootstrap laundering** — introduce a "new" baseline so the `BOOTSTRAP` free pass applies | `BOOTSTRAP` returns rc 0 (`:438-446`) | Already narrowed to three simultaneous conditions and unreachable for any existing baseline (`:375-397`); an override can never reach it (`:384-387`). BSE-03 must not widen it. |
 | A6 | **Run under a different tool version** — a `pmat` that scores fewer functions makes any tree look improved | `check_complexity_ratchet.sh:465` prints the binary and version, but **nothing asserts them**; `cb200` depends on `pmat comply`'s grading | The comparand and the merge must be measured **by the same binary in the same job** — that is the whole point of the normaliser. BSE-03 records it in the receipt via **BSE-10a's `tool_version` header** and REDs when the two measurements were not produced by one version. Without this, A6 defeats the entire model: two measurements from two `pmat`s are not a diff. |
-| A7 | **Hand-edit the README block** to a number that flatters the tree | the literal is authored (`check_readme_claims.sh:8`) and nothing regenerates it (no `readme-sync` target; `apr-qa-readme-sync` writes a table between markers `README.md` does not have) | Overstatement is already RED (`:27-29`). BSE-03 makes the count **derived** (P7) so the literal is generated, and the generator's output must be diffed in CI — "does the file match what the sources produce", never "does it match a lock". |
+| A7 | **Hand-edit the README block** to a number that flatters the tree | the literal was authored (`check_readme_claims.sh:8`) and nothing regenerated it | **Closed for the contract count (phase A).** The number is generated (`scripts/readme_sync.sh`, `make readme-sync`) and the guard compares the block to `measure(merge_sha)` by equality (`check_readme_claims.sh:349`), so a hand-edit in EITHER direction is RED — "does the file match what the sources produce", never "does it match a lock". The registered mutation (`scripts/tests/ratchet_semantics_test.sh:240`) replaces exactly the line that measures the merge tree (`check_readme_claims.sh:287`, marked `# RATCHET-MUTATION-POINT`) with a read of a file on disk and requires the hand-edited rows to go GREEN, so their RED is load-bearing. The other two count literals in this file (`**N** workspace crates`, `**K** CLI commands`) are still authored and A7 is open for them. |
 | A8 | **Widen the exclusion set** — add a path to `.pmat-gates.toml [tdg] exclude` (`:102-108`) or `[exclude] paths` (`:31-42`) so offenders leave the universe | the universe is config, and the config is in the PR | The universe must be measured at **both** revs: an exclusion added by the PR shrinks `measure($MERGE)`'s universe but not `measure($BASE)`'s, so a universe-size delta is itself a finding and must be printed and REDed, not silently absorbed into "improvement". |
 | A9 | **Shrink the scan** — break `cx_universe()` so few files are scanned and everything reads as fixed | a broken scan and a clean tree are indistinguishable | `MIN_RS_FILES=5000` vacuity floor (`check_complexity_ratchet.sh:79,481-486`). The same floor is needed for the new `measure($BASE)` path, or A9 reopens at the comparand end. |
 | A10 | **Skip the stage** — `pmat verify --skip satd` | BSE-16 legitimately uses `--skip satd` because SATD is owned by *this* ticket | The forbidden-flag list applies: `--skip` may appear only in the BSE-16 `gate:` recipe with SATD owned here. If BSE-03 does not land a SATD ratchet, `--skip satd` is an unguarded surface, not a delegation. |
@@ -300,8 +300,16 @@ with equations — the numeric content is the polarity relation, not a formula.
 
 ## Acceptance
 
-`bash scripts/tests/ratchet_semantics_test.sh` (new; sibling of the existing
+`bash scripts/tests/ratchet_semantics_test.sh --class <readme|complexity|satd>` (sibling
+of the existing
 `scripts/tests/{guard_tree,gate_touched_crates,witness_diff,check_roadmap_sorted}_test.sh`).
+
+**Phase A shipped `--class readme` only** — 12 checks over the rows below, run by
+`make ratchet-semantics-test` (`Makefile:566`). `--class complexity` and `--class satd`
+are documented stubs that exit **3** ("not implemented in this phase") and never 0: a
+stub that exits 0 is a guard reporting a verdict it did not reach. The complexity/SATD
+rows in the table below are therefore still a SPECIFICATION, not a passing suite, and
+this file is where their measurement side is owed.
 
 **The scratch pair.** Not this repository — a throwaway git repo, the pattern
 `check_baseline_ratchets.sh:213-232` already uses (`git init`, pinned
@@ -364,13 +372,17 @@ diff of two incomparable numbers.
 
 ## Open questions for the grill
 
-1. **P7 vs `check_readme_claims.sh:200-203`.** The spec's polarity is "README literal
-   absent → GREEN (count derived, `readme-sync` regenerates the block)". There is **no
-   `readme-sync` target** in this repo's `Makefile`, and `apr-qa-readme-sync` writes a
-   certification table between markers `README.md` does not carry. So BSE-03 must
-   *create* the generator, not reuse one. Until it exists, inverting `:200-203` removes
-   a check and adds nothing. Which is it: build the generator in this ticket, or keep
-   P7 RED?
+1. **P7 vs `check_readme_claims.sh:200-203` — ANSWERED, and built: build the generator
+   in this ticket.** Phase A landed `scripts/readme_sync.sh` + `make readme-sync`
+   (`Makefile:554`) and made the count derived at `README.md:44,265`, so the invert is
+   a real check and not a deletion — see the P7 row above for the rule as implemented.
+   Two decisions worth carrying forward: the markers are **inline** (both on one line)
+   because a marker on its own line ends a GFM table and opens an HTML block, and the
+   count is stated inside the metrics table; and a **dirty working tree** is a printed
+   `UNCOMMITTED` note with the claim judged against the working tree
+   (`check_readme_claims.sh:306-309,314-316`), never a silent pass — CI's checkout is
+   pristine, so there `disk == merge` by construction and only the merge tree is ever
+   the comparand.
 2. **Cost of `measure($BASE)` for SATD/CB-200.** Complexity is ~9 s/rev
    (`check_complexity_ratchet.sh:461-463`), so the pair is affordable per PR. A full
    `pmat comply` for CB-200 at two revs is not obviously so, and BSE-16 explicitly
