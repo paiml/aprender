@@ -1,0 +1,19 @@
+{
+  "agents_md": "present",
+  "clean_room": "",
+  "code_search": "pmat query",
+  "contracts_dir": "contracts",
+  "crate_kind": "79",
+  "default_branch": "main",
+  "default_branch_source": "origin/HEAD",
+  "dogfood_cmd": "",
+  "gate_cmd": "cargo test --workspace",
+  "gate_cmd_fallback": "true",
+  "head": "e4b423790a66d1241697ce586bd5f550225e77dc",
+  "quorum_tool": "agy",
+  "repo_root": "/home/noah/src/aprender-worktrees/R-0b",
+  "required_check": "ci / gate,workspace-test",
+  "required_check_source": "branch-protection",
+  "ticketing": "pmat work",
+  "version": "0.65.2"
+}
