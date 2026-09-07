@@ -1,0 +1,82 @@
+# tool_version=none (derived by scripts/check_tree_reader_tests.sh from the test sources; regenerate with --update, never edit)
+# crate<TAB>--test<TAB>name | crate<TAB>--lib — every test target that reads the tree (BSE-17); the quick tier always runs these
+apr-cli	--lib
+apr-cli	--test	beat_apr_sibling_cli_reach
+apr-cli	--test	cli_commands
+apr-cli	--test	falsification_crux_a_01
+apr-cli	--test	falsification_crux_a_03
+apr-cli	--test	falsification_crux_a_20
+apr-cli	--test	pixel_regression
+apr-format	--lib
+apr-format	--test	golden_fixtures
+aprender-cgp	--lib
+aprender-cgp	--test	integration
+aprender-compute-xtask	--lib
+aprender-contracts	--lib
+aprender-contracts	--test	apr_hnsw_persistence_contract
+aprender-contracts	--test	apr_hybrid_retrieval_contract
+aprender-contracts	--test	apr_mcp_server_contract
+aprender-contracts	--test	apr_mcp_tool_inventory_contract
+aprender-contracts	--test	apr_registry_snapshot_contract
+aprender-contracts	--test	apr_rerank_contract
+aprender-contracts	--test	apr_serve_api_key_auth_contract
+aprender-contracts	--test	kani_harness_generation
+aprender-contracts	--test	probar_test_generation
+aprender-contracts	--test	validate_contracts
+aprender-contracts-cli	--lib
+aprender-contracts-cli	--test	book_coverage
+aprender-contracts-cli	--test	cli_integration
+aprender-contracts-cli	--test	ground_truth
+aprender-contracts-cli	--test	pv_surface_gate
+aprender-contrastive-data	--test	goldens_regenerate
+aprender-contrastive-data	--test	negative_leaky
+aprender-contrastive-data	--test	negative_materializing
+aprender-contrastive-data	--test	reference_fixtures
+aprender-core	--lib
+aprender-core	--test	beat_sklearn_gaussiannb_accuracy
+aprender-core	--test	beat_sklearn_iris
+aprender-core	--test	beat_sklearn_metrics_parity
+aprender-core	--test	beat_sklearn_nmi
+aprender-core	--test	beat_sklearn_pipeline_encoder
+aprender-core	--test	beat_sklearn_svc_accuracy
+aprender-core	--test	book_contracts
+aprender-core	--test	falsification_spec_v10_tests
+aprender-core	--test	monorepo_invariants
+aprender-core	--test	readme_contract
+aprender-core	--test	realizar_integration_tests
+aprender-core	--test	setfit_conformance
+aprender-core	--test	spec_checklist_19_inference
+aprender-core	--test	spec_checklist_q_qwen_coder
+aprender-core	--test	spec_checklist_r_model_import
+aprender-core	--test	spec_checklist_t_realizar
+aprender-core	--test	spec_checklist_u_performance
+aprender-core	--test	spec_checklist_v_sovereign
+aprender-core	--test	spec_checklist_w_advanced_perf
+aprender-core	--test	spec_checklist_x_anti_stub
+aprender-core	--test	toyota_principles_tests
+aprender-gpu	--lib
+aprender-mcp	--test	falsify_mcp_008
+aprender-orchestrate	--lib
+aprender-present-cli	--lib
+aprender-present-lib	--lib
+aprender-present-lib	--test	showcase_shell_autocomplete
+aprender-present-terminal	--test	pixel_perfect_tests
+aprender-present-yaml	--test	examples
+aprender-present-yaml	--test	prs_examples
+aprender-profile	--lib
+aprender-profile	--test	sprint49_depyler_ingestion_tests
+aprender-qa-certify	--lib
+aprender-rag	--lib
+aprender-rag-cli	--lib
+aprender-serve	--lib
+aprender-serve	--test	fusion_gate_contract_falsify
+aprender-serve	--test	infer_deep_coverage
+aprender-serve	--test	parity_contract_falsify
+aprender-serve	--test	qwen3_moe_argmax_parity
+aprender-serve	--test	qwen3_moe_parity
+aprender-shell	--lib
+aprender-simulate	--lib
+aprender-test-cli	--lib
+aprender-test-lib	--lib
+aprender-train	--lib
+aprender-train	--test	yaml_mode_integration

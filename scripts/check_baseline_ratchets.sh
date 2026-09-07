@@ -92,6 +92,16 @@ classify() { # classify <basename> -> "<kind>[<TAB>reason]", rc 1 if unclassifie
         test_fixture_path_baseline.txt)          printf 'count\n' ;;
         tracked_ignored_baseline.txt)            printf 'count\n' ;;
         unwired_guards_baseline.txt)             printf 'set\n' ;;
+        # NOT a ratchet either, and for the same reason one level along: this
+        # registry is DERIVED from the test sources on every run
+        # (scripts/check_tree_reader_tests.sh) and must equal that derivation
+        # EXACTLY — a stale line FAILS as drift, a missing one FAILS as drift,
+        # and the set grows whenever someone writes a test that reads the tree.
+        # Freezing it against main would forbid adding such a test; the guard
+        # that owns it already fails in both directions (BSE-17, PMAT-1077).
+        tree_reader_tests.txt)
+            printf 'none	derived registry, exact-match against the sources (drift FAILS both ways, scripts/check_tree_reader_tests.sh)
+' ;;
         # NOT a ratchet, and deliberately so. This file MODELS INTENT: its own
         # header says the declared set must match the OBSERVED set EXACTLY, an
         # entry whose duplicate no longer exists FAILS as stale, and adding a
