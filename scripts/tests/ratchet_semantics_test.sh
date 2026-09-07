@@ -390,6 +390,13 @@ run_complexity() {
 # --class satd
 # ===========================================================================
 
+# exe_from_log LOG -- the falsification suite's executable as cargo named it.
+# The sovereign-ci image colours cargo output, so the line carries escapes
+# and a CR; strip both before matching (PR #3039 guard-cargo, 2026-09-07).
+exe_from_log() { # exe_from_log <cargo --no-run log>
+  sed -e 's/\x1b\[[0-9;]*m//g' -e 's/\r$//' "$1" \
+    | sed -n 's|.*Executable tests/falsification_spec_v10_tests\.rs (\(.*\))$|\1|p' | tail -1
+}
 satd_run() { # satd_run <binary> <filter> [VAR=value...] -> output; rc is the test rc
   local bin="$1" filter="$2"
   shift 2
@@ -498,7 +505,7 @@ run_satd() {
   sed -i 's/^const SATD_PRODUCTION_BASELINE: usize = [0-9][0-9]*;$/const SATD_PRODUCTION_BASELINE: usize = 999999;/' "$inc"
   cmp -s "$inc" "$WORK/checklist.orig" && die "S8: the mutant is byte-identical to the include (sed matched nothing)"
   mbin=""
-  if ( cd "$ROOT" && cargo test -p aprender-core --features model-tests \
+  if ( cd "$ROOT" && CARGO_TERM_COLOR=never cargo test -p aprender-core --features model-tests \
          --test falsification_spec_v10_tests --no-run ) > "$mlog" 2>&1; then
     mbin=$(sed -n 's|.*Executable tests/falsification_spec_v10_tests\.rs (\(.*\))$|\1|p' "$mlog" | tail -1)
   fi
@@ -516,7 +523,7 @@ run_satd() {
   else
     bad "S8b mutant + comparand: rc=$rc, wanted RED judged by the comparand, not by 999999"$'\n'"$(printf '%s' "$out" | sed 's/^/        /')"
   fi
-  ( cd "$ROOT" && cargo test -p aprender-core --features model-tests \
+  ( cd "$ROOT" && CARGO_TERM_COLOR=never cargo test -p aprender-core --features model-tests \
       --test falsification_spec_v10_tests --no-run ) > "$WORK/satd-rebuild.log" 2>&1 \
     || die "S8: the suite could not be rebuilt from the restored include: $(tail -2 "$WORK/satd-rebuild.log" | tr '\n' ' ')"
 }

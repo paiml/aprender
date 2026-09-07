@@ -1336,7 +1336,6 @@ jobs:
               -e CARGO_INCREMENTAL=0 \
               -e CARGO_BUILD_JOBS=8 \
               -e CARGO_TERM_COLOR=never \
-              -e CARGO_TERM_COLOR=never \
               "${DR_ENV[@]}" \
               "$IMAGE" "$@"
           }
@@ -1344,7 +1343,7 @@ jobs:
           # 1. build the checklist suite once, at HEAD, and learn its executable
           dr "$GITHUB_WORKSPACE" cargo test -p aprender-core --features model-tests \
             --test falsification_spec_v10_tests --no-run 2>&1 | tee "$RUNNER_TEMP/satd-build.log"
-          bin=$(sed -n 's|.*Executable tests/falsification_spec_v10_tests\.rs (\(.*\))$|\1|p' "$RUNNER_TEMP/satd-build.log" | tail -1)
+          bin=$(sed -e 's/\x1b\[[0-9;]*m//g' -e 's/\r$//' "$RUNNER_TEMP/satd-build.log" | sed -n 's|.*Executable tests/falsification_spec_v10_tests\.rs (\(.*\))$|\1|p' | tail -1)
           [ -n "$bin" ] || { echo "FAIL: cargo did not name the falsification suite executable"; exit 1; }
           # 2. measure the comparand with that same binary
           # A detached worktree, not `git archive`: archive honours .gitattributes
