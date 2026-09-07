@@ -41,13 +41,13 @@ pub(crate) use types::GpuLayerRequest;
 pub(crate) fn list_devices() -> Result<()> {
     println!("accelerators this BUILD can dispatch to:");
     let mut any = false;
-    if cfg!(feature = "cuda") {
-        println!("  cuda    compiled in");
-        any = true;
-    }
-    if cfg!(feature = "wgpu") {
-        println!("  wgpu    compiled in");
-        any = true;
+    // R-0b (#3002): what is compiled comes from the registry, never `cfg!`
+    // (`apr devices` prints every backend with its Ready/Unavailable reason).
+    for kind in ["cuda", "wgpu", "metal", "hip"] {
+        if crate::registry::compiled(kind) {
+            println!("  {kind:<7} compiled in");
+            any = true;
+        }
     }
     println!("  cpu     always available");
     if !any {
@@ -75,7 +75,8 @@ pub(crate) fn cli_build_features() -> Vec<String> {
     if cfg!(feature = "inference") {
         features.push("inference");
     }
-    if cfg!(feature = "cuda") {
+    // R-0b: the compiled backends come from the registry, never `cfg!`.
+    if crate::registry::compiled("cuda") {
         features.push("cuda");
     }
     // §9 #8: `cuda-batch = ["cuda"]` is a compatibility alias now, but a receipt
@@ -84,7 +85,7 @@ pub(crate) fn cli_build_features() -> Vec<String> {
     if cfg!(feature = "cuda-batch") {
         features.push("cuda-batch");
     }
-    if cfg!(feature = "wgpu") {
+    if crate::registry::compiled("wgpu") {
         features.push("wgpu");
     }
     if cfg!(feature = "training") {
@@ -233,9 +234,6 @@ fn ensure_accelerator_available(config: &ServerConfig) -> Result<()> {
     if !wants_gpu {
         return Ok(());
     }
-    if cfg!(any(feature = "cuda", feature = "wgpu")) {
-        return Ok(());
-    }
     // Quote back the flag the USER typed. `--gpu` sets gpu_layers to All on the
     // way in, so checking gpu_layers first would tell a user who typed `--gpu`
     // about a flag they did not use.
@@ -248,19 +246,16 @@ fn ensure_accelerator_available(config: &ServerConfig) -> Result<()> {
     } else {
         "--gpu".to_string()
     };
-    Err(CliError::FeatureDisabled(format!(
-        "{asked} was requested, but this build has no GPU backend compiled in, \n\
-         so the server would have run on CPU without telling you. On a 7B Q4_K_M \n\
-         model that is roughly a tenth of the decode rate and several seconds of \n\
-         extra latency to the first token (aprender#2696).\n\
-         \n\
-         Install a build that has one:\n\
-         \n\
-        \x20    cargo install aprender --features cuda    # NVIDIA\n\
-        \x20    cargo install aprender --features wgpu    # portable GPU backend\n\
-         \n\
-         Or pass --no-gpu to run on CPU deliberately."
-    )))
+    // R-0b (#3002): resolve against the registry; a forced backend never
+    // downgrades (FeatureDisabled when not compiled, BackendUnavailable when
+    // compiled but not Ready on this host).
+    let req = crate::registry::Request {
+        gpu: config.gpu,
+        no_gpu: config.no_gpu,
+        backend: wants_backend,
+        layers_want_accelerator: wants_layers,
+    };
+    crate::registry::resolve(&req, &asked).map(|_| ())
 }
 
 /// Serve command entry point (blocking)
@@ -653,7 +648,7 @@ mod accelerator_guard_tests {
     /// (requested, can_dispatch) with exactly one Err cell.
     #[test]
     fn the_refusal_is_total_over_every_input() {
-        let linked = cfg!(any(feature = "cuda", feature = "wgpu"));
+        let linked = crate::registry::build_has_accelerator();
         for gpu in [false, true] {
             for no_gpu in [false, true] {
                 for backend in [None, Some("cpu"), Some("cuda"), Some("wgpu")] {

@@ -85,6 +85,9 @@ equations:
     - 'the printed selection names why (reason non-empty)'
 
 proof_obligations:
+  - id: REG-OB-004
+    statement: "apr-cli turns a backend request into a Selection or a refusal by reading the registry, never cfg!; a forced accelerator that is not Ready refuses (exit 9 not-compiled, 14 not-Ready) and never resolves to cpu; the static guard keeps cfg!(feature=cuda|wgpu) backend reads at zero outside registry.rs."
+    discharged_by: falsification_tests[2]
   - id: REG-OB-001
     statement: "cpu is always Ready and every kind of the fixed list is an entry; a non-Ready entry carries a non-empty reason and every entry a source (spec invariants i and iii)."
     discharged_by: falsification_tests[0]
@@ -128,10 +131,30 @@ falsification_tests:
       print the block without the `override:` lines -> fx11 and fx7 RED; accept a malformed
       APR_RESERVE_BYTES as the default -> a_malformed_reserve_override_is_refused_by_name RED.
 
+  - id: REG-F-003
+    rule: resolution reads the registry, and a forced backend never downgrades (R-0b, #3002)
+    prediction: >-
+      apr_cli::registry::resolve_in over the R-0a fixtures — a_forced_accelerator_never_resolves_to_cpu
+      (one-cuda selects cuda), a_forced_accelerator_with_none_ready_refuses_and_never_downgrades
+      (cpu-only: --gpu/--backend cuda/--backend wgpu each Err with exit 9 or 14, never cpu),
+      cpu_and_no_gpu_and_default_resolve_to_cpu, the_default_takes_a_ready_accelerator_when_there_is_one,
+      every_backend_value_is_resolvable_on_every_fixture_and_forced_gpu_is_never_cpu: 5/5 PASS; and
+      scripts/check_backend_registry.sh --static finds zero cfg!(feature = "cuda"|"wgpu") backend reads
+      in crates/apr-cli/src outside registry.rs.
+    test: 'cargo test -p apr-cli --test backend_refusal_case_table && bash scripts/check_backend_registry.sh --static'
+    if_fails: >-
+      a build that compiled no accelerator, or a host with none Ready, runs a forced --gpu on cpu
+      and reports success (aprender#2696) — the claim-1 defect
+    mutation: >-
+      make the not-ready branch of resolve_in return cpu_resolved instead of an Err ->
+      a_forced_accelerator_with_none_ready_refuses_and_never_downgrades and
+      every_backend_value_is_resolvable... RED (observed); restore cfg!(feature) at accel.rs:28 ->
+      check_backend_registry.sh --static RED naming the line (observed).
+
 non_goals:
   - "Side-effect-free discovery is a PROCESS property (no files, no cache, no persistent allocation); reading free memory needs a driver context, so the CUDA factory creates and drops one CUDA context per device (cuCtxCreate + drop) during discovery — recorded here rather than hidden (review quorum 2026-09-06, lane 3)."
   - "device_uid is vendor + normalised adapter name from BOTH APIs; if two APIs name one card differently the twins carry different uids and the reserve refusal does not propagate between them (lane 2). Every fixture and the four hosts name the card identically through cuda and wgpu; a host that does not is a dogfood finding, not a silent pass — distinct_devices() would count two."
-  - "Resolution: refusing --backend/--gpu/--device requests not in the Ready set, effective-config, zero cfg! reads in decisions — R-0b (#3002) adds REG-OB-004..006 and their tests to this file."
+  - "effective-config's backend == the resolved Selection and discovered_at (REG-12) — R-0b's serve half, tracked on the row; the CLI resolution and the zero-cfg guard ARE discharged here (REG-OB-004). Legacy non-goal text: R-0b (#3002) adds REG-OB-004..006 and their tests to this file."
   - "The non-hermetic fixtures FX-2/4/5/6/8/9 (real drivers, real cards, root): host-dogfood rows recorded as receipts on the named hosts, never CI claims (design quorum 2026-09-06)."
   - "Elementwise / structured device kernels' capabilities (caps is a name list; cuBLAS-as-capability lands with R-0b's effective-config)."
 
@@ -139,5 +162,8 @@ binding_registry:
   library: crates/aprender-compute/src/registry/mod.rs
   case_table: crates/aprender-compute/tests/registry_case_table.rs
   catalogue: crates/apr-cli/tests/registry_failure_catalogue.rs
+  resolution: crates/apr-cli/src/registry.rs
+  resolution_case_table: crates/apr-cli/tests/backend_refusal_case_table.rs
+  static_guard: scripts/check_backend_registry.sh   # ci.yml guard-runner-labels
   ci_targets: "cargo test -p aprender-compute --test registry_case_table && cargo test -p apr-cli --test registry_failure_catalogue (ci.yml integration line)"
   issue: "https://github.com/paiml/aprender/issues/2904"

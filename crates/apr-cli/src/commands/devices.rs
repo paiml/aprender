@@ -59,7 +59,7 @@ pub fn run(json: bool) -> Result<()> {
     Ok(())
 }
 
-fn reserve_override() -> Result<Option<u64>> {
+pub(crate) fn reserve_override() -> Result<Option<u64>> {
     let Ok(raw) = std::env::var("APR_RESERVE_BYTES") else {
         return Ok(None);
     };

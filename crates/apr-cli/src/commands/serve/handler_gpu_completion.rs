@@ -422,13 +422,7 @@ fn start_gguf_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
         // NOTE: a BUILD label, not a residency claim. What actually loaded is
         // reported by `/v1/effective-config`'s `backend_loaded`, which is
         // derived from the AppState and can say `cpu` on this very build.
-        if cfg!(feature = "cuda") {
-            "cuda"
-        } else if cfg!(feature = "wgpu") {
-            "wgpu"
-        } else {
-            "cpu"
-        }
+        crate::registry::compute_class()
     );
     // PP-14/PP-15: the same resolution, as a value the served process reports.
     let offload = super::offload_report(config, resolved_layers, total_layers);

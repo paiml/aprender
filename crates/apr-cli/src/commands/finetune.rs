@@ -255,7 +255,7 @@ struct GpuBackendPlan {
 ///
 /// * `quantize_nf4` — true only for QLoRA; the sole condition under which
 ///   `InstructPipeline::from_apr` initializes CUDA/cuBLAS.
-/// * `wgpu_available` — pass `cfg!(feature = "wgpu")` from the call site.
+/// * `wgpu_available` — pass `crate::registry::compiled("wgpu")` from the call site (R-0b).
 #[cfg(feature = "training")]
 fn gpu_backend_notice(
     gpu_backend: &str,
@@ -432,7 +432,7 @@ fn execute_training(
     let backend_plan = gpu_backend_notice(
         gpu_backend,
         instruct_config.quantize_nf4,
-        cfg!(feature = "wgpu"),
+        crate::registry::compiled("wgpu"),
     );
     eprintln!("{}", backend_plan.notice);
     let use_wgpu = backend_plan.use_wgpu;

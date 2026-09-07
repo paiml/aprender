@@ -281,24 +281,9 @@ pub(crate) fn run(
 /// Feature gates are read FIRST and are decisive when absent: a build without
 /// the feature cannot take that path, whatever `nvidia-smi` says.
 fn compute_class() -> &'static str {
-    if cfg!(feature = "cuda") {
-        // Built for CUDA. It still only counts as `cuda` if the runtime is
-        // actually there; otherwise this build silently fell back and the
-        // receipt must say so rather than claim the fast path.
-        let runtime = std::process::Command::new("nvidia-smi")
-            .arg("-L")
-            .output()
-            .map(|o| o.status.success())
-            .unwrap_or(false);
-        if runtime {
-            return "cuda";
-        }
-        return "cpu";
-    }
-    if cfg!(feature = "wgpu") {
-        return "wgpu";
-    }
-    "cpu"
+    // R-0b (#3002): the registry's default selection is the class this build
+    // runs on (first Ready accelerator, else cpu) — a runtime fact, never `cfg!`.
+    crate::registry::compute_class()
 }
 
 /// PARITY-001 — sha256 of a file's contents, for model identity.
@@ -330,10 +315,11 @@ fn provenance_json() -> serde_json::Value {
     if cfg!(feature = "inference") {
         features.push("inference");
     }
-    if cfg!(feature = "cuda") {
+    // R-0b: compiled backends come from the registry, never `cfg!`.
+    if crate::registry::compiled("cuda") {
         features.push("cuda");
     }
-    if cfg!(feature = "wgpu") {
+    if crate::registry::compiled("wgpu") {
         features.push("wgpu");
     }
     if cfg!(feature = "training") {
@@ -850,7 +836,7 @@ mod parity_001_receipt_tests {
     #[test]
     fn compute_class_is_cpu_without_a_gpu_feature() {
         let class = compute_class();
-        if cfg!(feature = "cuda") || cfg!(feature = "wgpu") {
+        if crate::registry::build_has_accelerator() {
             // Built with a GPU feature: the class may legitimately be a GPU
             // path, or `cpu` if the runtime turned out to be absent.
             assert!(

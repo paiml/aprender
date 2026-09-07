@@ -1155,6 +1155,10 @@ jobs:
       # rows, both polarities), then the DAG (a missing DAG is exit 2).
       - name: "Receipt-marker guard case table (13 rows, both polarities)"
         run: bash scripts/check_receipt_complete.sh --selftest
+      # R-0b (#3002, PP-066 C11): a backend DECISION in apr-cli reads the registry,
+      # never cfg!(feature = "cuda"|"wgpu"). Case table first, then the live tree.
+      - name: "Backend-registry static guard can still go RED (case table)"
+        run: bash scripts/check_backend_registry.sh --self-test
       - name: Every DAG row marked complete has a receipt whose marker says so (C0-7)
         run: bash scripts/check_receipt_complete.sh --dag docs/specifications/pp-066-dag.yaml
       # G-6 (PP-066, #2895, #2874): `pmat work add/complete` re-serialises the whole

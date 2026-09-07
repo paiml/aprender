@@ -25,7 +25,8 @@ use crate::error::{CliError, Result};
 /// True when this build carries a GPU backend that could honour a request.
 #[must_use]
 pub(crate) fn build_has_accelerator() -> bool {
-    cfg!(any(feature = "cuda", feature = "wgpu"))
+    // R-0b (#3002): the registry says what this build compiled; never `cfg!`.
+    crate::registry::build_has_accelerator()
 }
 
 /// Refuse an accelerator request this build cannot honour.
@@ -42,9 +43,33 @@ pub(crate) fn build_has_accelerator() -> bool {
 /// # Errors
 /// [`CliError::FeatureDisabled`] when `wants_accelerator` and the build has none.
 pub(crate) fn ensure_available(wants_accelerator: bool, asked: &str) -> Result<()> {
-    if !wants_accelerator || build_has_accelerator() {
+    if !wants_accelerator {
         return Ok(());
     }
+    // R-0b: resolve the request the user typed against the registry. A forced
+    // kind that is not Ready refuses (FeatureDisabled when not compiled,
+    // BackendUnavailable when compiled but absent here); it never downgrades.
+    let req = request_from_asked(asked);
+    crate::registry::resolve(&req, asked).map(|_| ())
+}
+
+/// The request behind the flag text a caller quotes back (`--gpu`,
+/// `--gpu-layers`, `--backend <kind>`).
+pub(crate) fn request_from_asked(asked: &str) -> crate::registry::Request<'_> {
+    match asked.strip_prefix("--backend ") {
+        Some(kind) => crate::registry::Request {
+            backend: Some(kind.trim()),
+            ..Default::default()
+        },
+        None => crate::registry::Request {
+            gpu: true,
+            ..Default::default()
+        },
+    }
+}
+
+#[allow(dead_code)]
+pub(crate) fn legacy_refusal(asked: &str) -> Result<()> {
     Err(CliError::FeatureDisabled(format!(
         "{asked} was requested, but this build has no GPU backend compiled in, \n\
          so it would have run on CPU without telling you. On a 7B Q4_K_M \n\
