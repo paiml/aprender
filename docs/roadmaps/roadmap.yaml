@@ -16422,3 +16422,19 @@ roadmap:
   - kind:code
   - pp-066
   notes: null
+- id: PROBE-09B-u2
+  github_issue: null
+  item_type: task
+  title: 'BSE-09b probe u2 — throwaway, never merged to main'
+  status: planned
+  priority: low
+  assigned_to: null
+  created: 2026-09-07T00:00:00Z
+  updated: 2026-09-07T00:00:00Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
