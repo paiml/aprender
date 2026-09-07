@@ -950,6 +950,17 @@ jobs:
       # the fixture binaries are shell scripts that print a version string.
       - name: apr_bin.sh must resolve the HEAD-built binary, whatever its profile
         run: bash scripts/check_apr_bin_resolution.sh
+      # pmat and bashrs used to be installed here, per job, unpinned and
+      # fail-open (`cargo install ... || true`): whatever crates.io served at
+      # that instant became the linter/complexity gate, and a failed install
+      # silently fell back to whatever was already on PATH. The fleet pin
+      # (infra machines/intel/forjar.yaml: stack-tool-pmat, stack-tool-bashrs)
+      # is now the only installer -- this step only ASSERTS the version on
+      # PATH matches tools.toml, and fails closed on a mismatch or an absent
+      # binary. Placed before the first use of either tool in this job.
+      # (BSE-10a, PMAT-1066)
+      - name: pmat/bashrs must match the pinned fleet versions (never install)
+        run: bash scripts/check_tool_versions.sh
       # CLAUDE.md mandates bashrs over shellcheck; CI honoured that for SEVEN of
       # 72 scripts (`bashrs lint scripts/check_book_*.sh` in book.yml).
       # apr_bin.sh -- sourced by every gate in this repo -- was not one of them,
@@ -958,9 +969,7 @@ jobs:
       # surfaces ~851 diagnostics, most of them bashrs false positives on
       # hand-written bash, and a gate that cannot go green gets disabled.
       - name: bashrs must see every script in scripts/ (shrink-only)
-        run: |
-          cargo install bashrs --locked --quiet || true
-          bash scripts/check_shell_lint_ratchet.sh
+        run: bash scripts/check_shell_lint_ratchet.sh
       # PMAT-746. The ONLY complexity gate in this repository was the LOCAL pmat
       # pre-commit hook (cyclomatic <= 30, cognitive <= 25, staged files only);
       # this workflow ran none. So the merge queue LANDS the debt and the
@@ -972,7 +981,6 @@ jobs:
       # RED. Reads no clock and compiles nothing.
       - name: Per-function complexity may only fall (shrink-only)
         run: |
-          command -v pmat > /dev/null 2>&1 || cargo install pmat --locked --quiet || true
           bash scripts/check_complexity_ratchet.sh --selftest
           bash scripts/check_complexity_ratchet.sh
       # Hand-rolled argv parsing is banned. simular's `match args[1]` silently

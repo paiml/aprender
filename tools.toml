@@ -1,0 +1,29 @@
+# tools.toml — pinned CI tool versions (BSE-10a, PMAT-1066).
+#
+# These are ASSERTED by scripts/check_tool_versions.sh, never installed by
+# CI. The fleet installer is infra's forjar pin, applied to every clean-room
+# runner (paiml/infra, machines/intel/forjar.yaml):
+#
+#   stack-tool-pmat    (line 784)  version: "3.37.0"
+#   stack-tool-bashrs  (line 810)  version: "7.0.1"
+#
+# ci.yml used to run, per job:
+#   command -v pmat > /dev/null 2>&1 || cargo install pmat --locked --quiet || true
+#   cargo install bashrs --locked --quiet || true
+# unpinned, PATH-first, and fail-open (the trailing `|| true` swallowed a
+# failed install and carried on with whatever pmat/bashrs happened to already
+# be on PATH). aprender also forbids self-hosted jobs from installing into the
+# shared ~/.cargo/bin (scripts/check_cargo_install_private_root.sh,
+# aprender#2353) — the fleet pin is the only thing allowed to put a binary
+# there. This file is the aprender-side half of that contract: it names the
+# version the fleet is supposed to have, so check_tool_versions.sh can fail
+# closed the moment the two drift apart, instead of silently running whatever
+# crates.io served at install time.
+#
+# Bump this file in the SAME commit as the infra forjar.yaml version bump.
+
+[pmat]
+version = "3.37.0"
+
+[bashrs]
+version = "7.0.1"
