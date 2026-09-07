@@ -274,14 +274,29 @@ jobs:
       - name: Create this run's target dir and registry on the host (before any bind mount)
         run: |
           set -euo pipefail
+          # heal_path ROOT PATH: on a merge_group event PR_OR_REF is the queue
+          # ref (gh-readonly-queue/main/pr-N-<sha>), so the per-ref dir is NESTED
+          # and an ancestor may already be root-owned from a build whose bind
+          # mount let the docker daemon create it (#3037's queue build: mkdir
+          # EACCES on .../aprender-ci/gh-readonly-queue/...). Walk every
+          # component from ROOT down; chown each existing unwritable one through
+          # the image (that directory only, never its contents); then mkdir -p.
+          heal_path() {
+            local root=$1 path=$2 cur=$1 rel part
+            rel=${path#"$root"/}
+            IFS=/ read -ra parts <<< "$rel"
+            for part in "${parts[@]}"; do
+              cur="$cur/$part"
+              if [ -d "$cur" ] && [ ! -w "$cur" ]; then
+                docker run --rm -v "$(dirname "$cur"):/p" "$IMAGE" chown "$(id -u):$(id -g)" "/p/$(basename "$cur")"
+              fi
+            done
+            mkdir -p "$path"
+          }
           parent="/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}"
           reg="/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}"
-          for d in "$parent" "$reg"; do
-            if [ -d "$d" ] && [ ! -w "$d" ]; then
-              docker run --rm -v "$(dirname "$d"):/p" "$IMAGE" chown "$(id -u):$(id -g)" "/p/$(basename "$d")"
-            fi
-          done
-          mkdir -p "${parent}/run-${GITHUB_RUN_ID}" "$reg"
+          heal_path /mnt/nvme-raid0/targets/aprender-ci "${parent}/run-${GITHUB_RUN_ID}"
+          heal_path /mnt/nvme-raid0/cargo-ci/registry "$reg"
           ls -ld "$parent" "${parent}/run-${GITHUB_RUN_ID}" "$reg"
       - name: Pre-build chown — fix per-RUN root ownership
         # Root cause (five-whys):
@@ -872,13 +887,27 @@ jobs:
           # A root-owned parent (created by the docker daemon for another job's
           # bind mount, #3039) is chowned through the image before the mkdir;
           # that one directory only, never its contents.
-          for d in "$(dirname "$GUARD_TARGET_DIR")" "$(dirname "$GUARD_CARGO_HOME")" "$GUARD_CARGO_HOME"; do
-            if [ -d "$d" ] && [ ! -w "$d" ]; then
-              docker run --rm -v "$(dirname "$d"):/p" "$IMAGE" chown "$(id -u):$(id -g)" "/p/$(basename "$d")"
-            fi
-          done
-          mkdir -p "$GUARD_TARGET_DIR"
-          mkdir -p "$GUARD_CARGO_HOME/registry"
+          # heal_path ROOT PATH: on a merge_group event PR_OR_REF is the queue
+          # ref (gh-readonly-queue/main/pr-N-<sha>), so the per-ref dir is NESTED
+          # and an ancestor may already be root-owned from a build whose bind
+          # mount let the docker daemon create it (#3037's queue build: mkdir
+          # EACCES on .../aprender-ci/gh-readonly-queue/...). Walk every
+          # component from ROOT down; chown each existing unwritable one through
+          # the image (that directory only, never its contents); then mkdir -p.
+          heal_path() {
+            local root=$1 path=$2 cur=$1 rel part
+            rel=${path#"$root"/}
+            IFS=/ read -ra parts <<< "$rel"
+            for part in "${parts[@]}"; do
+              cur="$cur/$part"
+              if [ -d "$cur" ] && [ ! -w "$cur" ]; then
+                docker run --rm -v "$(dirname "$cur"):/p" "$IMAGE" chown "$(id -u):$(id -g)" "/p/$(basename "$cur")"
+              fi
+            done
+            mkdir -p "$path"
+          }
+          heal_path /mnt/nvme-raid0/targets/aprender-ci "$GUARD_TARGET_DIR"
+          heal_path /mnt/nvme-raid0/cargo-ci/home "$GUARD_CARGO_HOME/registry"
           printf 'target dir: %s\n' "$GUARD_TARGET_DIR"
           printf 'cargo home: %s (registry/ .package-cache .package-cache-mutate travel together)\n' "$GUARD_CARGO_HOME"
       # Poka-yoke: a beat that no workflow executes reads as enforcement, is
