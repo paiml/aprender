@@ -1,3 +1,4 @@
+# tool_version=none (measured by pv, an in-repo binary built from HEAD; not a fleet-pinned analyser)
 contracts/apr-export-num-layers-v1.yaml	1
 contracts/apr-pretrain-cuda-forward-parity-v1.yaml	3
 contracts/apr-pretrain-cuda-rope-theta-cache-key-v1.yaml	1

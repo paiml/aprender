@@ -396,7 +396,7 @@ cb200_pair_check() { # <gates.toml> <mirror file> -> 0 when they agree, 1 otherw
         printf 'FAIL: %s missing; it mirrors [tdg] baseline so the CB-200 count is ratcheted, not typed.\n' "$2"
         return 1
     fi
-    file=$(tr -d '[:space:]' < "$2")
+    file=$(grep -vE '^[[:space:]]*(#|$)' "$2" | tr -d '[:space:]')
     if [ "$toml" != "$file" ]; then
         printf 'FAIL: [tdg] baseline = %s but %s says %s; the two move together, and only the file is ratcheted against origin/main.\n' "$toml" "$2" "$file"
         return 1
@@ -442,10 +442,9 @@ fi
 printf '=== per-function complexity may only fall (check_complexity_ratchet.sh) ===\n'
 
 if ! command -v pmat > /dev/null 2>&1; then
-    printf 'SKIP: pmat is not installed; install it with `cargo install pmat --locked`.\n' >&2
-    printf 'This is a hard failure in CI, where the workflow installs it first.\n' >&2
-    [ "${CI:-}" = 'true' ] && exit 1
-    exit 0
+    printf 'ENV: pmat is not on PATH; the fleet pin installs it (tools.toml; CI never installs tools).\n' >&2
+    printf 'Without the analyser this guard cannot decide, so it refuses to pass (exit 2, never 0).\n' >&2
+    exit 2
 fi
 if ! command -v python3 > /dev/null 2>&1; then
     printf 'FAIL: python3 is required to read pmat JSON.\n' >&2

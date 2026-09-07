@@ -57,6 +57,11 @@ crates/aprender-shell/qa_test_artifacts/
 # PMAT caches and generated data (recursive — covers root AND subcrates)
 # CB-510 lesson: non-recursive patterns miss crates/*/.pmat/ files
 **/.pmat/
+
+# predict_merge.sh records (BSE-14): a per-branch prediction of whether
+# merge(origin/main, HEAD) passes the tree-property guards. Machine-local
+# and branch-keyed -- never meant to be committed.
+/.predict/
 # Artefacts the dogfood protocol creates (skill rule: gitignore all three).
 # .pv was TRACKED until #2644's twice-run showed every dogfood run mutates
 # contracts.idx/lint-previous.json, flipping the NEXT run's git-clean gate:
@@ -111,3 +116,9 @@ __pycache__/
 /sim4
 /sim4.rs
 /.lint-cache
+
+# `pmat work` scratch files for docs/roadmaps/roadmap.yaml — never commit
+# these; a tracked copy races the real file in every future diff
+# (BSE-09a, PMAT-1065, checked by scripts/check_roadmap_sorted.sh).
+docs/roadmaps/*.bak
+docs/roadmaps/*.lock
