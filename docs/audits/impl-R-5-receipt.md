@@ -6,7 +6,7 @@ kind: code
 branch: agent/R-5
 model: claude-fable-5-1
 ---
-# impl receipt — R-5 (part 1): scripts/publish_cascade.sh
+# impl receipt — R-5: publish_cascade.sh (part 1) + the promotion gate (part 2)
 
 `status: partial`: the cascade script, its case table, its mutations and its contract are done and
 measured. The rest of R-5 (five release assets, sha256 + minisign manifest, base-owned promotion
@@ -64,6 +64,53 @@ The first non-zero `cargo publish` ends the run and prints the crate, what is li
 Re-running into a half-published set is how one release becomes two; every crate already on
 crates.io at its workspace version is skipped, so a re-run after a fix is safe by construction.
 
+## Part 2: `scripts/check_promotion_receipts.sh` — the base-owned promotion gate
+A release is promoted from prerelease to stable only over four host receipts that each prove the
+DOWNLOADED asset is the TESTED binary. Per host, all required: a receipt exists · its
+`binary_sha256` is in the release's minisign-verified sha256 manifest · its C14 parity status is
+PASS · its parity was not skipped (status `skipped`, or `SKIP_PARITY_GATE` in the recorded
+command, refuses even beside a PASS — the 0.65.2 defect exactly). The manifest must verify
+against the repository's public key with minisign, the scheme `.github/pr-review.pub` already
+uses (S0-19: no third scheme); unsigned or unverifiable promotes nothing.
+
+| leg | result |
+|---|---|
+| `--self-test` | 15/15, both polarities |
+| `bashrs lint` | 0 errors |
+| `pv validate contracts/apr-release-promotion-v1.yaml` | valid, 0 errors 0 warnings |
+| bare run (how `guard_tree.sh` invokes every `check_*.sh`) | `NOT-RUN … exit 0` — argument-wired; the promotion step supplies the tag |
+
+The three registered mutations, **measured**:
+
+| mutation (whole statement removed, `bash -n` clean, self-test rc checked) | rows that go RED |
+|---|---|
+| missing: the no-receipt branch becomes a silent `continue` | row 2 (15/15 → 14/15) |
+| tampered: the manifest membership test removed | rows 3 and 11 (15/15 → 13/15) |
+| skipped: the skipped test removed | row 5 (15/15 → 14/15) |
+
+Row 4 (status `skipped`) does NOT depend on the skipped test: its status also falls into the
+status case-arm's catch-all refusal, so it stays RED under this mutant. Row 5 (status PASS with
+`SKIP_PARITY_GATE` in the recorded command) is the one only the skipped test catches, and it is
+the one that matters — a receipt that says PASS while the gate was bypassed is the 0.65.2 shape.
+
+**A defect in how I first measured this, recorded so it is not repeated.** The guard is a
+one-line `if …; then …; fi`. My first mutant replaced only the `if` head, leaving a dangling
+`fi`, so the self-test died with a **syntax error** (rc 2) and printed zero FAIL rows — which
+reads exactly like "nothing went red". I had already written "rows 4 and 5 RED" into this receipt
+from that non-result. Re-measured with the whole statement replaced, `bash -n` asserted clean, and
+the self-test's own exit code checked. A mutant that does not parse is not a mutant.
+
+A defect in my own first cut, caught by the case table: the public-key path was bound when the
+script loaded, so the self-test's override was never seen and two rows refused on "public key
+absent". Read lazily now. The real-signature row (15) is exercised with verification ON: a fake
+`.minisig` does not verify, so the bypass the case table uses for the other rows cannot leak into
+a live promotion.
+
+What this half does NOT do: build or sign the assets, or produce the receipts. The public key
+`.github/release-assets.pub` does not exist yet; it is created with the first signed manifest at
+release time, and until then the gate refuses (absent key ⇒ nothing promotes), which is the
+correct default.
+
 ## An observation for the DONE-IF, not a change
 The driver's check "no workflow runs cargo publish" is written as `grep -rL 'cargo publish'`. That
 literal grep FAILS here, but the intent HOLDS: all three occurrences
@@ -71,7 +118,8 @@ literal grep FAILS here, but the intent HOLDS: all three occurrences
 classifier class as PMAT-1074 — a textual token test over prose. Recorded rather than worked around.
 
 ## Gaps
-The five assets, the sha256 + minisign manifest and the base-owned promotion; `--dry-run` against
+The five assets and the sha256 + minisign manifest (the workflow half), the promotion STEP that
+invokes the gate with the tag, and `.github/release-assets.pub`; `--dry-run` against
 the real registry (it runs `cargo publish --dry-run` per crate, which needs a full build of 71
 crates and is a release-time step); the live cascade itself at RELEASE; the 3-lane quorum; the CI
 RED→GREEN mutation pair; the merge. Queue is under another session's lock by operator instruction.
