@@ -166,7 +166,7 @@ jobs:
               echo "Image pulled successfully on attempt $i"
               exit 0
             fi
-            if [ $i -eq $max_attempts ]; then
+            if [ "$i" -eq "$max_attempts" ]; then
               echo "::error::Registry localhost:5000 unreachable after $max_attempts attempts (~13min) AND image not in local cache"
               echo "::error::Suggests paiml/infra runner-side registry restart + initial image seed needed"
               exit 1
@@ -451,6 +451,14 @@ jobs:
   # sovereign-ci registry. Pure text check; runs on the clean-room pool.
   guard-runner-labels:
     runs-on: [self-hosted, X64, Linux, clean-room]
+    # 90: the BSE-05 cap for a PR/merge-group job. Basis (BSE-05 formula
+    # T = max(15, ceil(1.5*p99), p99+20) over the job's own history): p50 52.9 /
+    # p99 85.1 minutes over the last 9 SUCCESSFUL runs of this job as it stood
+    # BEFORE the cargo half moved to `guard-cargo` (cancelled runs excluded --
+    # a 0.0-minute cancellation is not a duration). T would be 128; the 90-minute
+    # PR cap binds instead. That measured p99 is an upper bound for what is left
+    # here, because this job strictly shrank.
+    timeout-minutes: 90
     env:
       IMAGE: localhost:5000/sovereign-ci:stable
       # Same definition as workspace-test (:106). aprender#2627: the
@@ -533,17 +541,336 @@ jobs:
         # aprender#2822 boundary probe (2 stat, 1 readdir, 1 df, 1 pgrep).
         # Instrumentation, never a gate: the script always exits 0.
         run: bash scripts/ci_target_watch.sh probe "post-checkout"
-      # A baseline that no guard compares to anything is an allowlist wearing
-      # the word "ratchet". This is the coverage backstop: every scripts/*.txt
-      # is classified shrink-only (and compared) or NOT-a-ratchet (with the
-      # reason printed), and an unclassified one is a hard failure -- so the
-      # next baseline file to arrive cannot arrive unratcheted.
-      - name: Baseline ratchet mutation table
-        run: bash scripts/check_baseline_ratchets.sh --self-test
-      - name: Every shrink-only baseline is classified and may not grow
-        run: bash scripts/check_baseline_ratchets.sh
-      - name: Every self-hosted job must pin a discriminating label
-        run: bash scripts/check_runner_labels.sh
+      # ── ONE STEP, EVERY CARGO-FREE GUARD, EVERY FAILURE REPORTED ──────────
+      #
+      # This step replaces 53 separate `bash scripts/check_X.sh` steps. GitHub
+      # Actions steps are fail-fast by construction: the first red step ends
+      # the job, so a PR that broke guard #3 never learned whether guards
+      # #4-53 were also broken and each red run named exactly ONE guard.
+      # scripts/guard_tree.sh runs every guard in the universe
+      # (`git ls-files 'scripts/check_*.sh'`, never a written list), runs each
+      # guard's `--self-test` first where the script advertises one, prints a
+      # PASS/FAIL row per guard, and exits 1 only after all of them have run.
+      #
+      # `--no-cargo` is the subset whose own source contains no bare `cargo `
+      # token — the classification is derived from the guards themselves, so
+      # it cannot drift from a list kept here. The cargo-using half runs in
+      # the `guard-cargo` job below, in parallel with workspace-test.
+      #
+      # The four guards that take arguments (check_receipt_complete --dag,
+      # check_dag_invariants <path> --min-slack-days, check_row_pr_write_set
+      # --event/--branch, check_hardcoded_paths --full-if-capable) keep their
+      # own steps below: an argument is a claim this runner cannot derive.
+      - name: Every cargo-free guard runs, and every failure is reported
+        run: bash scripts/guard_tree.sh --no-cargo
+      - name: "target-watch: before-cargo-install-bashrs"
+        # aprender#2822 boundary probe (2 stat, 1 readdir, 1 df, 1 pgrep).
+        # Instrumentation, never a gate: the script always exits 0.
+        run: bash scripts/ci_target_watch.sh probe "before-cargo-install-bashrs"
+      # Poka-yoke: nextest IGNORES an unknown config key with a warning instead
+      # of failing. `slow-warning = "60s"` is not a nextest key, so profile.ci
+      # had no per-test timeout and a hung run died at the job's 85-minute
+      # timeout naming nothing -- evicting #2502 from the merge queue. The
+      # warning was in every workspace-test log and nobody read it, so it is a
+      # hard failure now. Runs nextest's real parser on a 3-line crate.
+      - name: nextest must ignore no key in .config/nextest.toml
+        # Runs INSIDE the image: cargo-nextest is installed there, not on the
+        # host runner (the first version of this step failed with "SKIP:
+        # cargo-nextest not installed" -> exit 1, which is the guard failing
+        # closed in the wrong place). The probe crate has ZERO dependencies, so
+        # CARGO_NET_OFFLINE=1 is safe and no registry mount is needed.
+        run: |
+          docker run --rm \
+            -v "${GITHUB_WORKSPACE}:/workspace" \
+            -w /workspace \
+            -e CARGO_NET_OFFLINE=1 \
+            "$IMAGE" \
+            bash scripts/check_nextest_config_keys.sh
+      - name: "nextest-key guard must still turn RED (case table)"
+        run: |
+          docker run --rm \
+            -v "${GITHUB_WORKSPACE}:/workspace" \
+            -w /workspace \
+            -e CARGO_NET_OFFLINE=1 \
+            "$IMAGE" \
+            bash scripts/check_nextest_config_keys.sh --self-test
+      # The baseline printer holds its OWN output to the same pairing rule and
+      # re-derives every number the contract quotes.
+      - name: Dogfood baselines must re-derive from the ledger
+        run: python3 scripts/dogfood_baseline.py --check
+      - name: "target-watch: before-pv-build"
+        # aprender#2822 boundary probe (2 stat, 1 readdir, 1 df, 1 pgrep).
+        # Instrumentation, never a gate: the script always exits 0.
+        run: bash scripts/ci_target_watch.sh probe "before-pv-build"
+      - name: "target-watch: before-contracts-tests"
+        # aprender#2822 boundary probe (2 stat, 1 readdir, 1 df, 1 pgrep).
+        # Instrumentation, never a gate: the script always exits 0.
+        run: bash scripts/ci_target_watch.sh probe "before-contracts-tests"
+      - name: "target-watch: before-wasm32-build"
+        # aprender#2822 boundary probe (2 stat, 1 readdir, 1 df, 1 pgrep).
+        # Instrumentation, never a gate: the script always exits 0.
+        run: bash scripts/ci_target_watch.sh probe "before-wasm32-build"
+      - name: "target-watch: before-facade-compat"
+        # aprender#2822 boundary probe (2 stat, 1 readdir, 1 df, 1 pgrep).
+        # Instrumentation, never a gate: the script always exits 0.
+        run: bash scripts/ci_target_watch.sh probe "before-facade-compat"
+      # The bump half of the same defect. `cargo set-version --workspace` cannot
+      # reach an `exclude`d workspace and does not warn, so three files in
+      # crates/facades/ have to ride in every bump commit. scripts/bump-version.sh
+      # does that; these two rows keep its case table live and assert the tree is
+      # version-consistent right now (which check_facade_compat.sh R3/R5 also
+      # backstop from the compat side).
+      - name: Version-bump case table (reaches the excluded workspace)
+        run: bash scripts/bump-version.sh --self-test
+      - name: Every workspace is at a consistent version
+        run: bash scripts/bump-version.sh --check
+      - name: Every DAG row marked complete has a receipt whose marker says so (C0-7)
+        run: bash scripts/check_receipt_complete.sh --dag docs/specifications/pp-066-dag.yaml
+      # APR-PERF-GATE-001's PRIMARY gate — Arms A/B1/B2/C/D/E and
+      # cell-completeness — was invoked by NOTHING: no workflow, no Makefile
+      # target, no [package.metadata.dogfood] entry. `git grep perf_gate --
+      # .github Makefile` returned rc=1. The meta-guard could not see it because
+      # it globbed check_*.sh and this file is perf_gate.sh; that universe is
+      # now derived from selftest capability instead.
+      #
+      # SELFTEST ONLY, and that is not a shortcut. The real gate needs
+      # --host/--phase/--workload/--receipt; no PR can supply a receipt, because
+      # receipts come from the nightly push hosts (§4.9.1). Wiring the gate
+      # itself at merge phase would be a required check that can never PASS —
+      # the mirror of one that can never fail. And declaring it in the dogfood
+      # gates is worse: dogfood.sh:293 runs `bash "$dg_path"` with NO arguments,
+      # perf_gate.sh:326 requires four, so every release sweep would report
+      # exit=2 forever — a usage error indistinguishable from a real regression.
+      #
+      # What this DOES buy: the 29-case selftest genuinely discriminates
+      # (disabling the B1 aggregate floor drops it to 27 passed, 2 broken;
+      # unwiring the §4.9.1 signature arm drops it to 23 passed, 6 broken), so a
+      # gate that silently stops discriminating now fails here rather than
+      # certifying a release later.
+      - name: Perf gate can still discriminate (APR-PERF-GATE-001, case table)
+        run: bash scripts/perf_gate.sh --selftest
+      # PERF-007, the HOST half of §4.9.1. `perf_gate.sh --selftest` already
+      # runs this table, but check_guards_are_wired.sh cannot see one level of
+      # indirection and its remedy for an unwired guard is to wire it, not to
+      # baseline it. Named here so the signer's refusals — it will not sign
+      # another host's receipt, will not sign a receipt with no commit, will not
+      # mint a key — are executed by a workflow and not merely by a script that
+      # a workflow happens to call.
+      - name: Receipt signer refuses what it must (PERF-007, case table)
+        run: bash scripts/perf_receipt_sign.sh --selftest
+      # PP-29. The successor of check_mutation_registry.sh, retired in the same
+      # commit that lands this one. That guard found its input by glob over
+      # `docs/specifications/APR-PERF-GATE-001-v*.md`; archiving that document
+      # did not break it loudly, it made it read ZERO rows and report zero
+      # violations -- a registry guard whose universe can empty itself, which is
+      # the shape the whole epic is about.
+      #
+      # Three joins, all text-only and deterministic, so they belong in the merge
+      # phase: §6's ARMED rows must name selftest cases that EXIST by name on the
+      # surface they declare; Appendix C's ledger may not spend one cell twice
+      # (PP-9); and §12's expiries must DERIVE from the blocked_by DAG rather
+      # than be typed. The derivation is written to
+      # evidence/parity/derived_expiries.json, which perf-matrix.yaml's
+      # `expires_after:` anchors resolve against.
+      - name: Every ARMED PP row names cases that exist (PP-29)
+        run: bash scripts/spec_conformance.sh
+      - name: Spec-conformance guard can still go RED (case table)
+        run: bash scripts/spec_conformance.sh --selftest
+      # SPEC-1.6 (PP-066, #2903): the v1.6 corrections are each asserted by a
+      # row that was RED on the v1.5 text (the --v15-red arm proves the table
+      # can fail), and the §5.0 DAG block is rendered from the yaml — drift is
+      # RED (G-4's render_dag.py --check; 3 = not armed is not a pass).
+      - name: "PP-066 spec v1.6 defect table (22 rows) and its v1.5 RED proof"
+        run: bash tests/spec/pp066_v16_defects.sh && bash tests/spec/pp066_v16_defects.sh --v15-red
+      - name: The spec's rendered DAG block matches the yaml (G-4 --check)
+        run: python3 scripts/render_dag.py --check --dag docs/specifications/pp-066-dag.yaml --spec docs/specifications/PP-066-release-spec.md
+      - name: The PP-066 obligation DAG holds its invariants (G-4, C10)
+        run: bash scripts/check_dag_invariants.sh docs/specifications/pp-066-dag.yaml --min-slack-days 6
+      - name: A row PR writes no shared file (G-11, PMAT-1062)
+        run: bash scripts/check_row_pr_write_set.sh --event "${GITHUB_EVENT_NAME:-pull_request}" --branch "${GITHUB_HEAD_REF:-}"
+      # PP-23's bandwidth probe is release-phase INSTRUMENTATION (needs nvcc and an
+      # idle GPU) and never runs its measurement here; its case table is GPU-free
+      # and must, or the number the roofline rests on comes from a probe nobody
+      # has shown able to refuse.
+      - name: Bandwidth probe can still refuse (case table, no GPU)
+        run: bash scripts/measure_bandwidth.sh --selftest
+      # The converter that closes the loop, end to end: a BenchmarkReport this
+      # repo can actually produce reaches a verdict, and what remains failing is
+      # the UNMEASURED bucket BY NAME rather than a schema error.
+      - name: Receipt converter round-trips into a gate verdict
+        run: python3 scripts/lib/perf_receipt.py --selftest
+      - name: "target-watch: before-profile-tests"
+        # aprender#2822 boundary probe (2 stat, 1 readdir, 1 df, 1 pgrep).
+        # Instrumentation, never a gate: the script always exits 0.
+        run: bash scripts/ci_target_watch.sh probe "before-profile-tests"
+      - name: "target-watch: before-model-tests-docker"
+        # aprender#2822 boundary probe (2 stat, 1 readdir, 1 df, 1 pgrep).
+        # Instrumentation, never a gate: the script always exits 0.
+        run: bash scripts/ci_target_watch.sh probe "before-model-tests-docker"
+      - name: "target-watch: before-book-examples"
+        # aprender#2822 boundary probe (2 stat, 1 readdir, 1 df, 1 pgrep).
+        # Instrumentation, never a gate: the script always exits 0.
+        run: bash scripts/ci_target_watch.sh probe "before-book-examples"
+      - name: "target-watch: before-cargo-package"
+        # aprender#2822 boundary probe (2 stat, 1 readdir, 1 df, 1 pgrep).
+        # Instrumentation, never a gate: the script always exits 0.
+        run: bash scripts/ci_target_watch.sh probe "before-cargo-package"
+
+      - name: "target-watch: before-cargo-deny-install"
+        # aprender#2822 boundary probe (2 stat, 1 readdir, 1 df, 1 pgrep).
+        # Instrumentation, never a gate: the script always exits 0.
+        run: bash scripts/ci_target_watch.sh probe "before-cargo-deny-install"
+      - name: "target-watch: after-last-cargo-step"
+        # aprender#2822 boundary probe (2 stat, 1 readdir, 1 df, 1 pgrep).
+        # Instrumentation, never a gate: the script always exits 0.
+        run: bash scripts/ci_target_watch.sh probe "after-last-cargo-step"
+      - name: Whole-tree machine-specific-path ratchet (pinned analyser via scripts/pmat_bin.sh, PMAT-1059)
+        run: bash scripts/check_hardcoded_paths.sh --full-if-capable
+      # The case table above is evidence only for the branches it can turn RED,
+      # and on its first pass it could not turn three of them. Dropping either
+      # zero-count check left the guard still rejecting on the NEIGHBOURING
+      # more-than-one branch, and the step-level fixture used `- if:`, whose
+      # leading `- ` means a widened job-level pattern never matched it. Both
+      # survived a verdict-only table; the mutation set is what found them.
+      # 15/15 kill required, and an anchor that stops matching is reported as
+      # HARNESS-BROKEN rather than as a dead mutant. Text-only, no build.
+      - name: "Receipt-wiring guard: every rule it states, mutated (15/15 kill)"
+        run: bash scripts/mutate_pr_review_wiring_guard.sh
+      # aprender#2822: THE REPORT. Runs even when the job dies mid-cargo,
+      # and takes its own final probe first -- without that, a failure at
+      # step K leaves the last recorded boundary BEFORE K and the table
+      # reads clean, which is the whole failure mode being investigated.
+      #
+      # It also pulls the host journal for the job's window into the job
+      # log. That is the decisive evidence and the only evidence that
+      # expires: `_work/*/target` is deleted by HOST automation (a sibling
+      # runner's job-started hook, a systemd timer) which logs under its own
+      # tag and appears in NO GitHub log. See
+      # scripts/runner-infra/runner-disk-guard.sh, whose own header records
+      # this exact signature.
+      #
+      # continue-on-error is deliberate and is NOT a disarmed gate: nothing
+      # here asserts anything. The gate that can fail is the case table
+      # wired above.
+      - name: "target-watch: report (aprender#2822)"
+        if: always()
+        continue-on-error: true
+        run: |
+          bash scripts/ci_target_watch.sh probe post-job
+          bash scripts/ci_target_watch.sh report
+
+  # ── THE CARGO-USING GUARDS, PARALLEL TO workspace-test ────────────────────
+  #
+  # These steps used to sit in `guard-runner-labels`, where they were the bulk
+  # of a 53-minute median / 85-minute p99 job. They are not moved here to be
+  # faster in isolation: they are moved because they must NOT share
+  # `/workspace/target` with workspace-test.
+  #
+  # workspace-test and the guard job are two jobs of the SAME run on two
+  # runners of one host, and both bind-mounted
+  # `/mnt/nvme-raid0/targets/aprender-ci/<PR>/run-<RUN_ID>` as
+  # `/workspace/target` while both ran cargo against it. That is the
+  # dep-info race behind aprender#2822 / `could not parse/generate dep info
+  # at .../deps/<crate>.d: No such file or directory`. This job's container
+  # steps mount `run-<RUN_ID>-guards` instead, so the two jobs can never
+  # write one another's target tree.
+  #
+  # No `needs:` — running these AFTER workspace-test would serialise ~40
+  # minutes onto every green run for no ordering that anything requires.
+  guard-cargo:
+    runs-on: [self-hosted, X64, Linux, clean-room]
+    # 90: the BSE-05 cap for a PR/merge-group job. Basis (BSE-05 formula
+    # T = max(15, ceil(1.5*p99), p99+20) over the job's own history): the
+    # unsplit `guard-runner-labels` measured p50 52.9 / p99 85.1 minutes over
+    # its last 9 successful runs, which is the upper bound for this job — it
+    # carries the cargo half of that job and nothing new. The cap is what
+    # binds, not the formula (T would be 128); a required check must not
+    # become a wall-clock assertion its neighbours decide, so the value sits
+    # above the worst contended run of the strictly larger job it came from.
+    timeout-minutes: 90
+    env:
+      IMAGE: localhost:5000/sovereign-ci:stable
+      PR_OR_REF: ${{ github.event.pull_request.number || github.ref_name }}
+      # This job's OWN per-run target dir. The `-guards` suffix is the whole
+      # point: workspace-test mounts `run-<RUN_ID>` and this job must never
+      # resolve to the same path. Reaped by the same `run-*` sweep on intel.
+      GUARD_TARGET_DIR: /mnt/nvme-raid0/targets/aprender-ci/${{ github.event.pull_request.number || github.ref_name }}/run-${{ github.run_id }}-guards
+      # PMAT-238 (paiml/infra#435): the CARGO_HOME mount is the WHOLE cargo
+      # home, not `registry/` alone. `.package-cache` and
+      # `.package-cache-mutate` are cargo's flock files and they live beside
+      # `registry/` in $CARGO_HOME. Mounting only `registry/` gives every
+      # container its own private lock while they all share one registry —
+      # which is infra#77 (16 private locks over one shared registry), and it
+      # corrupts the registry rather than serialising access to it.
+      GUARD_CARGO_HOME: /mnt/nvme-raid0/cargo-ci/home/${{ github.event.pull_request.number || github.ref_name }}
+    steps:
+      - name: Pre-checkout ownership restore (EACCES self-heal)
+        # Same guard as workspace-test (:92) and mutants (:435). This job was
+        # the ONLY clean-room job missing it, and that asymmetry took main red
+        # on 2026-07-06 (run 28776891625): a hard-killed docker job left
+        # root-owned target/.rustc_info.json + target/package/ in the runner
+        # checkout, so this job's actions/checkout `git clean -ffdx` failed
+        # with EACCES before a single step ran. Because `gate` hard-requires
+        # guard-runner-labels (:379), a checkout-level EACCES here reads as a
+        # required-check failure and blocks every merge — the andon stays red
+        # until someone manually `ssh intel sudo rm`s the leftovers.
+        # Cached-image gate is sound: leftovers can only exist if a previous
+        # docker job ran on this runner, which implies the image is already in
+        # the local cache. So "image not cached ⟹ no leftovers" and skipping is
+        # safe (and keeps this step tolerant of a registry outage).
+        run: |
+          if docker image inspect "$IMAGE" > /dev/null 2>&1; then
+            docker run --rm -v "${GITHUB_WORKSPACE}:/workspace" "$IMAGE" \
+              bash -c 'chown -R 1000:1000 /workspace 2>/dev/null || true'
+          else
+            echo "Image not cached — no prior docker job on this runner, nothing to restore"
+          fi
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+      # THE COMPARAND, FETCHED ONCE, BEFORE ANY GUARD THAT NEEDS IT.
+      #
+      # Every shrink-only baseline in scripts/ is now compared against a ref a
+      # pull request cannot rewrite, because twelve of them were compared
+      # against nothing: appending one entry -- cloned from that file's own last
+      # real entry -- returned rc=0 from all twelve, and on two of them the
+      # appended entry laundered a violation created in the same commit.
+      #
+      # This step used to sit ~180 lines down, next to the one guard that
+      # needed it. Three ratcheted guards (shell lint, hand-rolled parsers,
+      # assertion exclusion) run BEFORE that point and would have had an
+      # unresolvable comparand -- which those guards treat as a hard failure,
+      # never as "no growth", so the mistake would have been loud rather than
+      # silent. It is still a mistake. One fetch, before all of them.
+      #
+      # fetch-depth is 1 here, so the merge-base is usually unavailable and the
+      # ratchets fall back to the origin/main TIP. That is the STRICTER
+      # comparand, and it means the CI path is the tip path: a local run that
+      # passes on the merge-base can still red here, and CI is authoritative.
+      - name: Fetch origin/main as the comparand for every ratchet in this job
+        run: |
+          git fetch --no-tags --depth=1 origin +refs/heads/main:refs/remotes/origin/main
+          # push shape: HEAD IS the origin/main tip, so every differential ratchet judges it against
+          # its FIRST PARENT (scripts/lib/resolve_base.sh: HEAD vs HEAD would pass vacuously, the
+          # G-10 quorum's finding), and a depth-1 checkout has not fetched that parent. Deepen by one.
+          if [ "${GITHUB_EVENT_NAME:-}" = push ]; then git fetch --no-tags --deepen=1 origin +refs/heads/main:refs/remotes/origin/main; fi
+      # DOCKER CREATES A MISSING BIND SOURCE AS root:root, AND `--user` ALONE
+      # THEN EACCESs ON IT. The per-RUN target path is fresh every run, so a
+      # container that mounts it and drops to the runner's uid cannot write
+      # the directory the daemon just made for it. Create both host paths
+      # FIRST, from the runner user, in a plain step — then the mount source
+      # already exists and is already owned by the uid the container runs as.
+      # `registry/` is created here too so the first container to use the
+      # cargo home finds it, and the two lock files (.package-cache,
+      # .package-cache-mutate) are created by cargo itself INSIDE this same
+      # directory — which is the entire reason the mount is $CARGO_HOME and
+      # not $CARGO_HOME/registry.
+      - name: Create this job's own target dir and CARGO_HOME (before any bind mount)
+        run: |
+          mkdir -p "$GUARD_TARGET_DIR"
+          mkdir -p "$GUARD_CARGO_HOME/registry"
+          printf 'target dir: %s\n' "$GUARD_TARGET_DIR"
+          printf 'cargo home: %s (registry/ .package-cache .package-cache-mutate travel together)\n' "$GUARD_CARGO_HOME"
       # Poka-yoke: a beat that no workflow executes reads as enforcement, is
       # counted as enforcement, and proves nothing. The Pillar-4 marquee decode
       # beat sat in ZERO workflows while being quoted as an enforced win (#2319).
@@ -551,12 +878,6 @@ jobs:
       # for its own runner.
       - name: Every beat must be executed by some workflow
         run: bash scripts/check_beats_gated.sh
-      # Poka-yoke: PMAT-CI-PASSGREP-001 killed ONE `grep "0 failed"` that also
-      # matched "10 failed". Two more instances of the same class survived that
-      # fix, one of them a live contract falsifier. Probe every zero-count
-      # pass-grep against an all-failing line instead of trusting review.
-      - name: Every zero-count pass-grep must reject a failing line
-        run: bash scripts/check_pass_grep_anchored.sh
       # Poka-yoke: a bare `apr` runs whatever PATH resolves. qwen-story-daily
       # installed 0.61.0 to ~/.cargo/bin and then executed a 24-day-old 0.60.0
       # from ~/.local/bin, so every beat validated stale code while reporting
@@ -647,21 +968,6 @@ jobs:
       # the fixture binaries are shell scripts that print a version string.
       - name: apr_bin.sh must resolve the HEAD-built binary, whatever its profile
         run: bash scripts/check_apr_bin_resolution.sh
-      # Poka-yoke (#2559): pv_bin.sh proves a resolved `pv` is the HEAD build by
-      # reading the semver out of `pv --version`. That version line is now
-      # deliberately multi-line -- four things claim the name `pv`, so it has to
-      # say which one it is -- and the old `awk '{print $NF}'` extractor handed
-      # the comparison four lines of prose, failing every consumer of pv_bin.sh.
-      # The extractor is a guard's parser, and guard patterns in this repo have
-      # been wrong five times running, every one caught by a case table.
-      - name: pv --version semver extractor must answer its case table
-        run: bash scripts/check_pv_version_parse.sh
-      - name: "pv --version parse guard must still turn RED (case table)"
-        run: bash scripts/check_pv_version_parse.sh --self-test
-      - name: "target-watch: before-cargo-install-bashrs"
-        # aprender#2822 boundary probe (2 stat, 1 readdir, 1 df, 1 pgrep).
-        # Instrumentation, never a gate: the script always exits 0.
-        run: bash scripts/ci_target_watch.sh probe "before-cargo-install-bashrs"
       # CLAUDE.md mandates bashrs over shellcheck; CI honoured that for SEVEN of
       # 72 scripts (`bashrs lint scripts/check_book_*.sh` in book.yml).
       # apr_bin.sh -- sourced by every gate in this repo -- was not one of them,
@@ -687,33 +993,6 @@ jobs:
           command -v pmat > /dev/null 2>&1 || cargo install pmat --locked --quiet || true
           bash scripts/check_complexity_ratchet.sh --selftest
           bash scripts/check_complexity_ratchet.sh
-      # Poka-yoke: nextest IGNORES an unknown config key with a warning instead
-      # of failing. `slow-warning = "60s"` is not a nextest key, so profile.ci
-      # had no per-test timeout and a hung run died at the job's 85-minute
-      # timeout naming nothing -- evicting #2502 from the merge queue. The
-      # warning was in every workspace-test log and nobody read it, so it is a
-      # hard failure now. Runs nextest's real parser on a 3-line crate.
-      - name: nextest must ignore no key in .config/nextest.toml
-        # Runs INSIDE the image: cargo-nextest is installed there, not on the
-        # host runner (the first version of this step failed with "SKIP:
-        # cargo-nextest not installed" -> exit 1, which is the guard failing
-        # closed in the wrong place). The probe crate has ZERO dependencies, so
-        # CARGO_NET_OFFLINE=1 is safe and no registry mount is needed.
-        run: |
-          docker run --rm \
-            -v "${GITHUB_WORKSPACE}:/workspace" \
-            -w /workspace \
-            -e CARGO_NET_OFFLINE=1 \
-            "$IMAGE" \
-            bash scripts/check_nextest_config_keys.sh
-      - name: "nextest-key guard must still turn RED (case table)"
-        run: |
-          docker run --rm \
-            -v "${GITHUB_WORKSPACE}:/workspace" \
-            -w /workspace \
-            -e CARGO_NET_OFFLINE=1 \
-            "$IMAGE" \
-            bash scripts/check_nextest_config_keys.sh --self-test
       # Hand-rolled argv parsing is banned. simular's `match args[1]` silently
       # DROPPED --seed: unknown flags fell through a catch-all, a valueless flag
       # was discarded, and an unparseable value became the default instead of an
@@ -740,24 +1019,6 @@ jobs:
         run: bash scripts/check_hermetic_stdin_tests.sh --self-test
       - name: No test may assert about the fd 0 it inherited
         run: bash scripts/check_hermetic_stdin_tests.sh
-      # Poka-yoke: `set` in a SOURCED file mutates the caller's shell. apr_bin.sh
-      # opened with `set -euo pipefail`; qwen-story.sh sources it and had chosen
-      # `set -uo pipefail` deliberately (it must run every beat and tally the
-      # failures). The leak turned errexit on underneath it and the nightly
-      # story died after six lines inside an ADVISORY pmat hunt. Both files read
-      # correctly on their own - only the combination is wrong, which is why
-      # this is mechanical rather than a review note. Text-only, no build.
-      - name: Sourced libraries must not mutate the caller's shell options
-        run: bash scripts/check_sourced_libs_option_neutral.sh --self-test
-      # Poka-yoke: a Cargo `exclude` entry is a gitignore pattern, so a bare
-      # `"tests/"` is NOT anchored to the package root - it matches at every
-      # depth. CB-510 was the same bug with `"models/"` hiding `src/models/`.
-      # In v0.63.0 it dropped 443 files from the published aprender-serve and
-      # left 11 (serve) + 18 (train) `mod tests;` declarations pointing at
-      # directories that are not in the tarball, so neither published crate can
-      # compile its own test suite. Text-only check, no build.
-      - name: No exclude pattern may swallow a src/ directory
-        run: bash scripts/check_exclude_anchored.sh
       # Poka-yoke: a contract may not name an enforcement command that cannot
       # run. #2504: apr-cli-commands-v1.yaml declared five falsification
       # conditions enforced by `cargo test --test apr_cli_commands ...`; there
@@ -790,26 +1051,6 @@ jobs:
         run: bash scripts/check_gate5_stage.sh --self-test
       - name: A pre-release gate must name the stage it is valid at (#2543)
         run: bash scripts/check_gate5_stage.sh
-      # Poka-yoke: capturing `cmd 2>&1` into one variable and then parsing it as
-      # JSON puts the command's diagnostics in front of its data. On 2026-08-11
-      # the nightly story reported `no format_parity gate found in --json output
-      # (got: '')` for a gate that had run and PASSED, because `apr qa --json`
-      # writes JSON to stdout while the CUDA path emits `[trueno#243]` lines to
-      # stderr. A false FAIL reddens main for a non-reason. The converse matters
-      # too: a Rust panic arrives on stderr, so the panic checks must keep
-      # reading the merged view. Behavioural, text-only, no build.
-      - name: Story JSON parsing must read stdout, not the merged stream
-        run: bash scripts/check_story_json_streams.sh
-      # Poka-yoke: a path filter is a claim that nothing outside those paths can
-      # break the gate. book.yml filtered on `book/**`, so the CLI/book parity gate
-      # never ran when the CLI gained a command — `apr beat-run` shipped in #1995
-      # with no chapter and the gate stayed green for three months, hiding a lib
-      # parity failure, a `pv` step that exited 127, and two chapter examples
-      # training to NaN behind it. Text-only check, no build.
-      - name: A path-filtered workflow must not be able to go dark
-        run: |
-          bash scripts/check_workflow_path_filters.sh --self-test
-          bash scripts/check_workflow_path_filters.sh
       # Poka-yoke: mac-server runs 16 runners under ONE $HOME, so
       # $HOME/.cargo/bin is shared mutable state. `cargo install` replaces a
       # binary there while another job is mid-run and about to exec it — on
@@ -821,91 +1062,6 @@ jobs:
         run: |
           bash scripts/check_cargo_install_private_root.sh --self-test
           bash scripts/check_cargo_install_private_root.sh
-      # Poka-yoke: the nightly's pmat bug-hunt printed eight manifest headers and
-      # ZERO rows every night since the cron was added (#2356), so the workflow's
-      # "manifest grew by >5" alert branch never had a non-zero input. Three
-      # causes, each silent: the jq filters named `.function`/`.churn.commit_count`
-      # /`.faults` where pmat emits `function_name`/`commit_count`/
-      # `fault_annotations`; the churn and fault hunts passed the beat label as a
-      # free-text query, which is a relevance filter applied BEFORE `--path` and
-      # collapses a module-scoped hunt to nothing; and three hunted paths had been
-      # deleted or moved. All three present as "the manifest is empty tonight",
-      # which used to be indistinguishable from "the code is clean tonight" -
-      # pmat_hunt returned 0 unconditionally. It now fails the beat. Behavioural
-      # against a stubbed pmat, text-only, no build.
-      - name: The pmat bug-hunt manifest must be able to produce rows
-        run: bash scripts/check_story_pmat_hunt.sh
-      # Poka-yoke: the 0.63.0 dogfood audit found 201 defects in code that was
-      # shipped, tested and covered. The 5 Whys (docs/audits/dogfood-0.63.0-hansei.md)
-      # landed on: nothing mechanical requires an assertion to EXCLUDE an outcome.
-      # `assert!(status == OK || status == BAD_REQUEST || status == NOT_IMPLEMENTED)`
-      # passes whatever the endpoint does, earns identical line coverage to an
-      # assert_eq!, and is exempt from diff-scoped mutation testing on
-      # pre-existing surface. 320 such sites existed; the first one tightened
-      # showed a test named `test_apr_explain_endpoint` never reaching the
-      # explain handler at all. Baseline-ratcheted so the debt only falls.
-      # Text-only check, no build.
-      - name: Assertions must exclude an outcome, not merely reach one
-        run: bash scripts/check_assertions_exclude.sh
-      - name: Assertion-exclusion guard case table
-        run: bash scripts/check_assertions_exclude.sh --self-test
-
-      # PMAT-742: the apr-dogfood coverage gate. The 0.63.0 surface audit found
-      # 142 of 830 shipped features carry any gate at all (17.1%), and 27 of 28
-      # binaries carry none. Where gates look they find defects at 72.5%; where
-      # they do not, the surface scores 6 by default, which does not mean "fine",
-      # it means unlooked-at. So coverage itself is now the ratchet.
-      #
-      # The comparand is docs/audits/surface_audit.csv AS IT EXISTS ON
-      # origin/main, never the working tree. The multi-platform dogfood gate kept
-      # its floor and its universe as literals in one file, so a single commit
-      # editing both defeated it while it reported green. There is no baseline
-      # number in this repo to edit: every floor is derived at run time from a
-      # ref a pull request cannot rewrite.
-      #
-      # fetch-depth for this job is 1, so origin/main must be fetched -- and it
-      # is now fetched ONCE, immediately after checkout, because the baseline
-      # ratchets that run earlier in this job need the same comparand. A failed
-      # fetch does NOT degrade to a self-comparison; every guard that uses it
-      # hard-fails on an unresolvable comparand.
-      #
-      # DOGFOOD_RECEIPT extends the T2 pairing rule to the receipt when a run
-      # produces one. The rule is enforced on every channel a cluster-level ratio
-      # can leave through -- the gate report, the skill, the baseline printer and
-      # the receipt -- because a pairing rule applied at one call site is a
-      # pairing rule with three ways around it.
-      - name: Dogfood coverage gate mutation table
-        run: bash scripts/check_dogfood_coverage.sh --self-test
-      - name: Dogfood coverage may not regress
-        run: bash scripts/check_dogfood_coverage.sh
-      # The baseline printer holds its OWN output to the same pairing rule and
-      # re-derives every number the contract quotes.
-      - name: Dogfood baselines must re-derive from the ledger
-        run: python3 scripts/dogfood_baseline.py --check
-
-      # T1: nothing may key on `cluster_id`. The surface ledger gained
-      # cluster_id + cluster_label; the LABEL is human-owned and durable, the ID
-      # is a k-means label that PERMUTES whenever the input moves. An obligation
-      # keyed on the id silently re-points at a different set of features the
-      # next time the surface is re-clustered -- the stale-hardcoded-list failure
-      # class in new clothes.
-      #
-      # The guard is an ALLOWLIST, not a list of banned syntaxes. Its first
-      # version enumerated four keying forms and passed twelve ordinary ones --
-      # `groupby("cluster_id")`, `r.cluster_id`, `WHERE cluster_id = 3` and the
-      # rest. "Nothing may key on this" is a universal claim and no finite list
-      # of syntaxes carries one, so a standalone token is now a key unless the
-      # line says otherwise: backticked, after a comment marker, in a schema
-      # header, or carrying a stated pragma.
-      #
-      # It ships a must-match/must-not-match case table and CI runs the table
-      # beside the scan, because five `apr`-invocation patterns in this repo were
-      # wrong and every one was caught by its table rather than by review.
-      # Text-only, no build.
-      - name: "the `cluster_id` key guard case table"
-        run: bash scripts/check_no_cluster_id_keys.sh --self-test
-      - name: "Nothing may key on `cluster_id`"
-        run: bash scripts/check_no_cluster_id_keys.sh
 
       # FALSIFY-README-00*: README metric claims must match measurement. The
       # guard existed and ran nowhere -- its only caller was scripts/dogfood-book.sh,
@@ -936,12 +1092,6 @@ jobs:
       # been shipping to crates.io unseen.
       - name: Publish safety (binary/oversize files in published packages)
         run: bash scripts/check_publish_safety.sh
-      - name: Every include!() file is tracked by git (CB-510)
-        run: bash scripts/check_include_files.sh
-      - name: "target-watch: before-pv-build"
-        # aprender#2822 boundary probe (2 stat, 1 readdir, 1 df, 1 pgrep).
-        # Instrumentation, never a gate: the script always exits 0.
-        run: bash scripts/ci_target_watch.sh probe "before-pv-build"
       # #2512: these two were invoked by NO workflow -- one Makefile-only
       # (`make tier3`, which CI does not run), one reachable from nothing at all.
       # Both pass today and are cheap, so there was never a reason for them to be
@@ -965,10 +1115,6 @@ jobs:
         run: bash scripts/check_pv_bin_resolution.sh
       - name: Every contract cites a test that exists (strict-test-binding)
         run: bash scripts/check_contract_test_binding.sh
-      - name: "target-watch: before-contracts-tests"
-        # aprender#2822 boundary probe (2 stat, 1 readdir, 1 df, 1 pgrep).
-        # Instrumentation, never a gate: the script always exits 0.
-        run: bash scripts/ci_target_watch.sh probe "before-contracts-tests"
       # Poka-yoke (#2551): `cargo test -p aprender-contracts --test
       # validate_contracts` is the only thing that parses and validates the
       # contract corpus from Rust rather than through `pv lint`. It failed 3 of
@@ -989,16 +1135,8 @@ jobs:
           cargo test -p aprender-contracts --test validate_contracts
           cargo test -p aprender-contracts --test kani_harness_generation
           cargo test -p aprender-contracts --test probar_test_generation
-      - name: "target-watch: before-wasm32-build"
-        # aprender#2822 boundary probe (2 stat, 1 readdir, 1 df, 1 pgrep).
-        # Instrumentation, never a gate: the script always exits 0.
-        run: bash scripts/ci_target_watch.sh probe "before-wasm32-build"
       - name: aprender-core builds for wasm32
         run: bash scripts/check_wasm32_core_builds.sh
-      - name: "target-watch: before-facade-compat"
-        # aprender#2822 boundary probe (2 stat, 1 readdir, 1 df, 1 pgrep).
-        # Instrumentation, never a gate: the script always exits 0.
-        run: bash scripts/ci_target_watch.sh probe "before-facade-compat"
       # aprender#2546: `provable-contracts*` were renamed to `aprender-contracts*`
       # and the published names left frozen at 0.3.1. A pin on the old name
       # resolved SILENTLY and installed a tool sixty versions behind. The names
@@ -1018,19 +1156,6 @@ jobs:
       # silently and the cascade would upload a facade before its upstream.
       - name: The cascade's facade order gate arms on every spelling cargo accepts
         run: bash scripts/check_facade_order_gate.sh
-      # aprender#2558: nothing detected two crates declaring the same `[[bin]]
-      # name`. FOUR things claimed `pv` -- the crates.io pipe viewer, /usr/bin/pv,
-      # aprender-contracts-cli and the provable-contracts-cli facade -- all
-      # writing ~/.cargo/bin/pv. MEASURED: `cargo install` FAILS CLOSED on that
-      # collision (exit 101, first binary survives); it does NOT overwrite, so
-      # the hazard is a BLOCKED install rather than a silent clobber. The
-      # facade gave up the name; this stops the next one being noticed by
-      # accident. Scans BOTH workspaces: crates/facades is `exclude`d from the
-      # root, so a root-only scan is inert by construction. `apr` is a
-      # deliberate duplicate and passes via a declared-intent allowlist. The
-      # text-only case table runs first, per the convention above.
-      - name: No MCP tool may spawn a bare `apr` (aprender#2563)
-        run: bash scripts/check_mcp_no_bare_apr_literal.sh
       - name: Duplicate bin-name case table
         run: bash scripts/check_duplicate_bin_names.sh --self-test
       - name: No two crates may claim one bin name
@@ -1054,30 +1179,6 @@ jobs:
       # verdicts in a throwaway repository; the gate itself runs at release.
       - name: Publish preflight gate case table (F-9)
         run: bash scripts/check_publish_preflight.sh --selftest
-      # The bump half of the same defect. `cargo set-version --workspace` cannot
-      # reach an `exclude`d workspace and does not warn, so three files in
-      # crates/facades/ have to ride in every bump commit. scripts/bump-version.sh
-      # does that; these two rows keep its case table live and assert the tree is
-      # version-consistent right now (which check_facade_compat.sh R3/R5 also
-      # backstop from the compat side).
-      - name: Version-bump case table (reaches the excluded workspace)
-        run: bash scripts/bump-version.sh --self-test
-      - name: Every workspace is at a consistent version
-        run: bash scripts/bump-version.sh --check
-      # The meta-guard. Four guards were found unwired by accident while looking
-      # for something else; without this the fifth is found the same way.
-      - name: Every check_*.sh is named by a workflow
-        run: bash scripts/check_guards_are_wired.sh
-      - name: Wiring guard case table
-        run: bash scripts/check_guards_are_wired.sh --self-test
-      # The complement of the meta-guard above. That one asserts every guard IS
-      # wired; this one asserts a release-time TIMING gate is NOT -- including
-      # transitively through a make target this workflow invokes. Eleven
-      # wall-clock assertions have failed in a required check here, and until
-      # now the placement was protected by a comment in
-      # scripts/unwired_guards_baseline.txt rather than by a mechanism (#2671).
-      - name: No timing gate in a required check
-        run: bash scripts/check_no_timing_in_required.sh
       # F12 — a comparator baseline is MEASURED or ABSENT, never asserted.
       # Three literals (OLLAMA_BASELINE=291 / _SINGLE=120 / _CPU=15) shipped a
       # ratio against a frozen number of unknown date, host and build, with
@@ -1121,147 +1222,6 @@ jobs:
         run: bash scripts/check_perf_claims_cite_receipts.sh
       - name: Claims-cite-receipts guard can still go RED (case table)
         run: bash scripts/check_perf_claims_cite_receipts.sh --selftest
-      # PERF-044, the same rule one level up. docs/roadmaps/roadmap.yaml is the
-      # document that says what this epic has finished, and a `status:
-      # completed` there was a claim nothing could check: PERF-004 was marked
-      # completed while all three of its artifacts are absent from main and its
-      # PR #2716 is CLOSED unmerged, and seven entries said `planned` for work
-      # that had landed. `grep -rn roadmap scripts/ .github/ Makefile` returned
-      # one unrelated comment.
-      #
-      # 1109 completed claims across 23 pmat work-contract roadmaps cite
-      # nothing today; they are frozen shrink-only, so an entry NEWLY flipped
-      # to completed must cite a `proof:<path>` that exists and is non-empty,
-      # or a `proof:PR#<n>` that is MERGED. Text-only and deterministic (~4s,
-      # and it touches the network only for an entry that cites a PR, of which
-      # there are none), so it belongs in the merge phase beside PERF-010.
-      - name: Completed roadmap statuses cite something (PERF-044)
-        run: bash scripts/check_roadmap_completion_is_cited.sh
-      - name: Roadmap-citation guard can still go RED (case table)
-        run: bash scripts/check_roadmap_completion_is_cited.sh --selftest
-      # PMAT-1072 (#3028): every `id:` in the roadmap is unique, nested subtask
-      # records included — pmat >= 3.39.0's `work validate` rule, enforced here
-      # through the parsed tree so the fleet's PATH pmat version is never the only
-      # thing standing between main and a duplicate id. Case table first.
-      - name: "Roadmap-id-uniqueness guard case table (6 rows, both polarities)"
-        run: bash scripts/check_roadmap_ids_unique.sh --self-test
-      - name: Every roadmap id is unique, nested records included (PMAT-1072)
-        run: bash scripts/check_roadmap_ids_unique.sh
-      # C0-7 (PP-066, #2984): an implementation receipt is complete only when its
-      # leading front matter says `status: complete` (a marker the writer sets
-      # LAST, written .tmp then mv'd); a DAG row may claim status: complete
-      # only over such a receipt; a tracked *.tmp receipt is a torn write. The
-      # resume logic reads the marker, never the prose. Case table first (13
-      # rows, both polarities), then the DAG (a missing DAG is exit 2).
-      - name: "Receipt-marker guard case table (13 rows, both polarities)"
-        run: bash scripts/check_receipt_complete.sh --selftest
-      - name: Every DAG row marked complete has a receipt whose marker says so (C0-7)
-        run: bash scripts/check_receipt_complete.sh --dag docs/specifications/pp-066-dag.yaml
-      # G-6 (PP-066, #2895, #2874): `pmat work add/complete` re-serialises the whole
-      # roadmap (2,531 unrelated lines for one 17-line entry). A PR's roadmap diff
-      # may only ADD entries or edit a ticket's own lifecycle fields; a byte change
-      # on an entry whose content did not change is the churn, and it is refused
-      # with the count. Remedy: `python3 scripts/roadmap_trim.py`. Case table first
-      # (9 rows, both polarities, incl. the real 6d9ba274a re-serialisation), then
-      # the PR's diff against its merge base.
-      - name: "Roadmap additive-diff guard case table (9 rows, both polarities)"
-        run: bash scripts/check_roadmap_diff_additive.sh --self-test
-      - name: A PR's roadmap diff only adds entries or edits a ticket's own lifecycle fields (G-6)
-        run: bash scripts/check_roadmap_diff_additive.sh
-      - name: One benchmarking entrypoint (PERF-009)
-        run: bash scripts/check_no_competing_harnesses.sh
-      - name: Competing-harness guard can still go RED (case table)
-        run: bash scripts/check_no_competing_harnesses.sh --selftest
-      # APR-PERF-GATE-001's PRIMARY gate — Arms A/B1/B2/C/D/E and
-      # cell-completeness — was invoked by NOTHING: no workflow, no Makefile
-      # target, no [package.metadata.dogfood] entry. `git grep perf_gate --
-      # .github Makefile` returned rc=1. The meta-guard could not see it because
-      # it globbed check_*.sh and this file is perf_gate.sh; that universe is
-      # now derived from selftest capability instead.
-      #
-      # SELFTEST ONLY, and that is not a shortcut. The real gate needs
-      # --host/--phase/--workload/--receipt; no PR can supply a receipt, because
-      # receipts come from the nightly push hosts (§4.9.1). Wiring the gate
-      # itself at merge phase would be a required check that can never PASS —
-      # the mirror of one that can never fail. And declaring it in the dogfood
-      # gates is worse: dogfood.sh:293 runs `bash "$dg_path"` with NO arguments,
-      # perf_gate.sh:326 requires four, so every release sweep would report
-      # exit=2 forever — a usage error indistinguishable from a real regression.
-      #
-      # What this DOES buy: the 29-case selftest genuinely discriminates
-      # (disabling the B1 aggregate floor drops it to 27 passed, 2 broken;
-      # unwiring the §4.9.1 signature arm drops it to 23 passed, 6 broken), so a
-      # gate that silently stops discriminating now fails here rather than
-      # certifying a release later.
-      - name: Perf gate can still discriminate (APR-PERF-GATE-001, case table)
-        run: bash scripts/perf_gate.sh --selftest
-      # PERF-007, the HOST half of §4.9.1. `perf_gate.sh --selftest` already
-      # runs this table, but check_guards_are_wired.sh cannot see one level of
-      # indirection and its remedy for an unwired guard is to wire it, not to
-      # baseline it. Named here so the signer's refusals — it will not sign
-      # another host's receipt, will not sign a receipt with no commit, will not
-      # mint a key — are executed by a workflow and not merely by a script that
-      # a workflow happens to call.
-      - name: Receipt signer refuses what it must (PERF-007, case table)
-        run: bash scripts/perf_receipt_sign.sh --selftest
-      # PP-29. The successor of check_mutation_registry.sh, retired in the same
-      # commit that lands this one. That guard found its input by glob over
-      # `docs/specifications/APR-PERF-GATE-001-v*.md`; archiving that document
-      # did not break it loudly, it made it read ZERO rows and report zero
-      # violations -- a registry guard whose universe can empty itself, which is
-      # the shape the whole epic is about.
-      #
-      # Three joins, all text-only and deterministic, so they belong in the merge
-      # phase: §6's ARMED rows must name selftest cases that EXIST by name on the
-      # surface they declare; Appendix C's ledger may not spend one cell twice
-      # (PP-9); and §12's expiries must DERIVE from the blocked_by DAG rather
-      # than be typed. The derivation is written to
-      # evidence/parity/derived_expiries.json, which perf-matrix.yaml's
-      # `expires_after:` anchors resolve against.
-      - name: Every ARMED PP row names cases that exist (PP-29)
-        run: bash scripts/spec_conformance.sh
-      - name: Spec-conformance guard can still go RED (case table)
-        run: bash scripts/spec_conformance.sh --selftest
-      # SPEC-1.6 (PP-066, #2903): the v1.6 corrections are each asserted by a
-      # row that was RED on the v1.5 text (the --v15-red arm proves the table
-      # can fail), and the §5.0 DAG block is rendered from the yaml — drift is
-      # RED (G-4's render_dag.py --check; 3 = not armed is not a pass).
-      - name: "PP-066 spec v1.6 defect table (22 rows) and its v1.5 RED proof"
-        run: bash tests/spec/pp066_v16_defects.sh && bash tests/spec/pp066_v16_defects.sh --v15-red
-      - name: The spec's rendered DAG block matches the yaml (G-4 --check)
-        run: python3 scripts/render_dag.py --check --dag docs/specifications/pp-066-dag.yaml --spec docs/specifications/PP-066-release-spec.md
-      # G-4 (PP-066 §4 C10, #2902): the obligation DAG (docs/specifications/pp-066-dag.yaml)
-      # is data, and its invariants are checked by machine — D1 no dangling
-      # blocker, D2 acyclic, D3 >= 6 days slack blocker->blockee on the 0.66
-      # lane (spec §2), D4 per-host queues ordered by expiry, D5 owner, D6
-      # exactly one expiry form. A missing DAG is exit 2 (the box cannot
-      # answer), never a pass. The case table runs first (11 rows, both
-      # polarities). render_dag.py --check is wired by SPEC-1.6, which inserts
-      # the marker pair the rendered §5/§6 block lives between.
-      - name: "DAG-invariants guard case table (11 rows, both polarities)"
-        run: bash scripts/check_dag_invariants.sh --selftest
-      - name: The PP-066 obligation DAG holds its invariants (G-4, C10)
-        run: bash scripts/check_dag_invariants.sh docs/specifications/pp-066-dag.yaml --min-slack-days 6
-      # G-11 (PMAT-1062): a ROW PR (head branch agent/<id>, <id> a DAG row) never writes
-      # docs/specifications/pp-066-dag.yaml, docs/roadmaps/roadmap.yaml, the release spec
-      # (its §5.0 block is rendered) or a README count line. Eight armed PRs each carried
-      # such an edit and every merge made the other seven DIRTY. The DAG's status is
-      # derived from the receipt (scripts/lib/dag_status.py, D7 above); the roadmap and
-      # the counts are the orchestrator docs commit's. Case table, then the live check;
-      # merge_group and push carry no head branch and say so (REPORT), judged at the PR.
-      - name: Row-PR write-set case table (G-11, PMAT-1062)
-        run: bash scripts/check_row_pr_write_set.sh --self-test
-      - name: A row PR writes no shared file (G-11, PMAT-1062)
-        run: bash scripts/check_row_pr_write_set.sh --event "${GITHUB_EVENT_NAME:-pull_request}" --branch "${GITHUB_HEAD_REF:-}"
-      # PP-33. Nothing scanned the gate's readers for thresholds, so the spec's
-      # own must-fire -- `STRETCH = 1.50` in scripts/lib/parity_block.py -- could
-      # not turn anything red. Four independent encodings of the release floors
-      # were live at once, including two `lane.get("floor", 0.80)` defaults that
-      # applied whenever a lane omitted its bound.
-      - name: No gate reader carries a threshold (PP-33)
-        run: bash scripts/check_thresholds_in_matrix.sh
-      - name: Threshold guard can still go RED (case table)
-        run: bash scripts/check_thresholds_in_matrix.sh --selftest
       # The single source of truth needs a truth check. An authorless policy
       # number, a `inherited_from` pointing at a document with no history in any
       # ref, a compute_class no build in this tree reaches, and a cell exception
@@ -1276,87 +1236,6 @@ jobs:
         run: bash scripts/check_perf_concurrency_groups.sh
       - name: Concurrency-group guard can still go RED (case table)
         run: bash scripts/check_perf_concurrency_groups.sh --selftest
-      # PP-23's bandwidth probe is release-phase INSTRUMENTATION (needs nvcc and an
-      # idle GPU) and never runs its measurement here; its case table is GPU-free
-      # and must, or the number the roofline rests on comes from a probe nobody
-      # has shown able to refuse.
-      - name: Bandwidth probe can still refuse (case table, no GPU)
-        run: bash scripts/measure_bandwidth.sh --selftest
-      # The threshold rule is DERIVED, and the rule it replaced is falsified by
-      # execution on every run rather than by a comment. 3-sigma pooled does not
-      # catch the one regression on record (#2675).
-      - name: Bench threshold derivation holds
-        run: bash scripts/check_bench_threshold.sh
-      # Instance 5 of the unpinned-verifier table becomes a mechanism. An
-      # unpinned comparator makes every ratio meaningless across time: the
-      # denominator moves silently while the receipt claims a fixed baseline
-      # (#2676, closing the open half of #2647).
-      - name: llama.cpp comparator pin discriminates
-        run: bash scripts/check_llama_pin.sh
-      # PERF-019 / I-15. The pin above says WHICH llama.cpp; this says WHICH
-      # BINARY of it may be driven. 4.4.8/X7: llama-bench does not separate PP
-      # from TG under concurrent load, so a ratio built from it compares two
-      # CLIENTS with two servers attached rather than two servers. The rule is
-      # one client -- `apr test llm bench` -- against llama-server on both
-      # sides, which is what scripts/parity_host_receipt.sh already does.
-      #
-      # The tree was already clean when this landed; the guard is what keeps it
-      # clean. Neither existing guard covered it: check_no_competing_harnesses
-      # requires a file to ALSO compute a rate, and parity_host_receipt.sh
-      # computes none, so a llama-bench call added there stayed green (rc=0)
-      # with the defect in place.
-      - name: Comparator is not driven by llama-bench (I-15)
-        run: bash scripts/check_comparator_one_client.sh
-      - name: One-client guard can still go RED (case table)
-        run: bash scripts/check_comparator_one_client.sh --selftest
-      # An unstated knob is a silent degree of freedom: it becomes whatever
-      # each side defaults to, and the difference lands in the ratio wearing
-      # the label of a performance result (#2677).
-      - name: Benchmark fairness protocol is complete
-        run: bash scripts/check_bench_protocol.sh
-      # PERF-004. scripts/perf_gate.sh read a receipt schema NOTHING in the tree
-      # wrote: four real artifacts all returned rc=1 and the only input that
-      # passed was the gate's own synthetic fixture. The tempting repair is to
-      # default the missing fields, which would hand-assign five numbers no
-      # instrument produces. scripts/perf-receipt-fields.yaml classifies every
-      # field the gate reads as PRODUCED, DERIVED, POLICY or UNMEASURED, and
-      # this holds the classification to the tree in both directions -- a new
-      # unclassified requirement, and an entry whose producer has since been
-      # deleted, are each a FAIL.
-      - name: Every field the perf gate reads has a producer or a named owner
-        run: bash scripts/check_perf_receipt_fields_have_producers.sh
-      - name: Schema-map guard can still go RED (case table + 5 mutations)
-        run: bash scripts/check_perf_receipt_fields_have_producers.sh --self-test
-      # The converter that closes the loop, end to end: a BenchmarkReport this
-      # repo can actually produce reaches a verdict, and what remains failing is
-      # the UNMEASURED bucket BY NAME rather than a schema error.
-      - name: Receipt converter round-trips into a gate verdict
-        run: python3 scripts/lib/perf_receipt.py --selftest
-      # NOT a second `perf_gate.sh --selftest` step. This commit was authored
-      # before #2709 landed, and carried its own copy; two identically-scoped
-      # invocations under two names is how a check comes to look twice as
-      # covered as it is. The case table runs once, above, as "Perf gate can
-      # still discriminate".
-      # aprender#2737: the pin declared batch_size = 1 while TWO other places
-      # retyped `-b 1` independently of it and a third declared
-      # context_length/threads that no execution ever read. `-b 1` does not tune
-      # llama.cpp, it switches its batching OFF -- measured on gx10 against the
-      # pinned build, the c=16 aggregate went 434.2 -> 181.9 tok/s while c=1
-      # moved 0.3%, which took the ratio this epic exists to compute from 2.03x
-      # to 4.85x in apr's favour. A handicapped denominator is not a benchmark.
-      # This asserts the declaration is the ONLY source of the comparator's
-      # knobs, in both directions.
-      #
-      # It lives HERE, and not in nightly-bench.yml where it was first wired,
-      # because it is a static consistency check over committed files: it needs
-      # no bench hardware, no model, and no receipt, so a PR can and must fail
-      # it. It was wired into the nightly lane only because the change that
-      # added it was barred from editing ci.yml.
-      #
-      # No separate --self-test step: this guard has no such flag, it runs its
-      # own 13-row mutation table in front of the verdict on EVERY invocation.
-      - name: Comparator flags match the declaration
-        run: bash scripts/check_comparator_flags.sh
       # The deepest check in the surface sweep -- real generation through
       # /v1/chat/completions -- had never executed once: the probe binary was
       # built without --features llm (clap advertises `llm` regardless, only the
@@ -1368,10 +1247,6 @@ jobs:
         run: bash scripts/check_dogfood_llm_probe_armed.sh
       - name: dogfood LLM probe guard case table
         run: bash scripts/check_dogfood_llm_probe_armed.sh --self-test
-      - name: "target-watch: before-profile-tests"
-        # aprender#2822 boundary probe (2 stat, 1 readdir, 1 df, 1 pgrep).
-        # Instrumentation, never a gate: the script always exits 0.
-        run: bash scripts/ci_target_watch.sh probe "before-profile-tests"
       # aprender-profile appeared in this file ZERO times while carrying 58
       # integration test targets. Running them found 110 failures -- 109 from a
       # single stale binary name left by the APR-MONO rename, dead since. Gated
@@ -1403,19 +1278,26 @@ jobs:
         run: bash scripts/check_model_tests_wired.sh
       - name: model-tests wiring case table
         run: bash scripts/check_model_tests_wired.sh --self-test
-      - name: "target-watch: before-model-tests-docker"
-        # aprender#2822 boundary probe (2 stat, 1 readdir, 1 df, 1 pgrep).
-        # Instrumentation, never a gate: the script always exits 0.
-        run: bash scripts/ci_target_watch.sh probe "before-model-tests-docker"
       - name: model-tests falsification suites (was gated by nothing, aprender#2522)
-        # Runs INSIDE the image, on the same per-RUN target dir as the other
-        # cargo steps, so the `model-tests` feature build reuses this run's
-        # artifacts instead of starting a second cold one.
+        # Runs INSIDE the image, on THIS job's own per-RUN target dir --
+        # `run-<RUN_ID>-guards`, never the `run-<RUN_ID>` that workspace-test
+        # mounts. Both jobs of one run used to bind-mount the same host path as
+        # /workspace/target and run cargo against it concurrently, which is the
+        # dep-info race (aprender#2822). Two mounts, two trees, no ordering.
+        #
+        # --user: the container ran as UID 0, so every artifact it wrote into
+        # the bind mounts came back root-owned and the NEXT run's checkout
+        # `git clean -ffdx` hit EACCES -- which is why this workflow already
+        # carries a "Pre-checkout ownership restore" step in three jobs. The
+        # host paths are created by the step above, from this same uid, because
+        # a bare --user EACCESs on a bind source docker had to auto-create.
         run: |
           docker run --rm \
+            --user "$(id -u):$(id -g)" \
             -v "${GITHUB_WORKSPACE}:/workspace" \
-            -v "/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}:/usr/local/cargo/registry" \
-            -v "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}:/workspace/target" \
+            -v "${GUARD_CARGO_HOME}:/cargo-home" \
+            -v "${GUARD_TARGET_DIR}:/workspace/target" \
+            -e CARGO_HOME=/cargo-home \
             -v "/home/noah/data/sccache:/sccache" \
             -w /workspace \
             -e CARGO_TARGET_DIR=/workspace/target \
@@ -1429,16 +1311,8 @@ jobs:
               --test falsification_spec_v10_tests \
               --test falsification_stress_tests \
               --test falsification_gpu_state_tests
-      - name: "target-watch: before-book-examples"
-        # aprender#2822 boundary probe (2 stat, 1 readdir, 1 df, 1 pgrep).
-        # Instrumentation, never a gate: the script always exits 0.
-        run: bash scripts/ci_target_watch.sh probe "before-book-examples"
       - name: Book rust examples compile
         run: bash scripts/check_book_examples_compile.sh
-      - name: "target-watch: before-cargo-package"
-        # aprender#2822 boundary probe (2 stat, 1 readdir, 1 df, 1 pgrep).
-        # Instrumentation, never a gate: the script always exits 0.
-        run: bash scripts/ci_target_watch.sh probe "before-cargo-package"
       # CB-510: a Cargo.toml `exclude` pattern can strip an include!() target
       # from the published crate while git still tracks it, so the crate compiles
       # in-tree and fails for everyone installing from crates.io. This guard is
@@ -1469,15 +1343,6 @@ jobs:
         run: bash scripts/check_lockfile_no_registry_siblings.sh
       - name: Lockfile sibling guard case table
         run: bash scripts/check_lockfile_no_registry_siblings.sh --self-test
-      # .gitignore DECLARES, the index CONTRADICTS, and nothing compared them.
-      # `.gitignore:62` says `**/.pmat-work/`; git tracked 461 of those anyway,
-      # 315 MB of regenerable pmat scratch read by nothing in the build. Ratchet
-      # only -- 320 remain and they are not all removable (proptest-regressions
-      # MUST stay tracked; there the ignore RULE is what is wrong). Text-only.
-      - name: No tracked file may be declared ignored
-        run: bash scripts/check_no_tracked_ignored_files.sh
-      - name: Tracked-ignored guard case table
-        run: bash scripts/check_no_tracked_ignored_files.sh --self-test
       # Poka-yoke: APR-MONO made every sibling a path alias under crates/, but
       # `trueno = "0.16"` still BUILDS - cargo resolves the crates.io copy
       # alongside the in-tree one, so the tree compiles two mutually
@@ -1505,11 +1370,6 @@ jobs:
         run: bash scripts/check_publishable_deps_publishable.sh
       - name: Publishable-deps guard case table
         run: bash scripts/check_publishable_deps_publishable.sh --self-test
-
-      - name: "target-watch: before-cargo-deny-install"
-        # aprender#2822 boundary probe (2 stat, 1 readdir, 1 df, 1 pgrep).
-        # Instrumentation, never a gate: the script always exits 0.
-        run: bash scripts/ci_target_watch.sh probe "before-cargo-deny-install"
       # `cargo deny` ran in ZERO workflows -- only `make deny`. Positive control:
       # 9 workflows mention `cargo`, 0 mentioned `deny`. Meanwhile the `security`
       # job runs `cargo audit` with continue-on-error, which cannot fail the build
@@ -1555,7 +1415,8 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           export GIT_TERMINAL_PROMPT=0 GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.https://github.com/.extraheader
-          export GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 | tr -d '\n')"
+          GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 | tr -d '\n')"
+          export GIT_CONFIG_VALUE_0
           cargo deny check advisories
       # Separate from the check above on purpose: a newly-FIXED upstream must
       # never fail anyone's build. It fails only this guard, whose remedy is
@@ -1565,7 +1426,8 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           export GIT_TERMINAL_PROMPT=0 GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.https://github.com/.extraheader
-          export GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 | tr -d '\n')"
+          GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 | tr -d '\n')"
+          export GIT_CONFIG_VALUE_0
           bash scripts/check_deny_exemptions_live.sh
       # cargo-deny and cargo-audit read ONE database: RustSec. GHSA (what
       # Dependabot reads) is a superset, and when an advisory lives only there
@@ -1578,120 +1440,6 @@ jobs:
         run: bash scripts/check_no_ghsa_banned_crates.sh
       - name: "GHSA guard must still turn RED (case table)"
         run: bash scripts/check_no_ghsa_banned_crates.sh --self-test
-      # A test gated on a path outside the workspace is green on every machine
-      # that lacks it, which is every machine but one. The monorepo merged 20
-      # sibling repos in-tree, so gates like
-      #   file_exists("/home/noah/src/realizar/src/quantize.rs")
-      # now probe a path that CANNOT exist again -- realizar is
-      # crates/aprender-serve. Five such gates remain and none of them reads the
-      # file it probes; the path only decides whether to skip. Ratcheted, because
-      # repointing them makes dormant tests run for the first time and belongs in
-      # its own change. Text-only check, no build.
-      - name: Tests must not gate on paths outside the workspace
-        run: bash scripts/check_test_fixture_paths.sh
-      - name: Fixture-path guard case table
-        run: bash scripts/check_test_fixture_paths.sh --self-test
-      - name: "target-watch: after-last-cargo-step"
-        # aprender#2822 boundary probe (2 stat, 1 readdir, 1 df, 1 pgrep).
-        # Instrumentation, never a gate: the script always exits 0.
-        run: bash scripts/ci_target_watch.sh probe "after-last-cargo-step"
-      # #2532: the guard above has a universe of crates/**/tests?/**/*.rs, which
-      # structurally excludes 100% of the 324 machine-specific paths pmat found
-      # in SHIPPED code -- 46 of them inside contracts/ itself. Seventeen crux
-      # falsification tests opened with a GOLD= path under a worktree that no
-      # longer exists on ANY machine, then `[ -f "$GOLD" ] || exit 2`, so they
-      # skipped everywhere while `pv validate` and `pv lint contracts/` both
-      # reported PASS. The two guards' universes are complementary, not nested.
-      # contracts/ is now at ZERO and has no baseline to raise. Text-only, no build.
-      #
-      # The whole-tree ratchet lives in `--full`. It shells out to
-      # `pmat analyze hardcoded-paths` (pmat#1017, the detector of record), and
-      # the clean-room pool still measures pmat 3.31.0 (re-checked 2026-08-28),
-      # which has no such subcommand -- so a bare `--full` here would red every
-      # PR, and `|| true` would make it a gate that cannot fail.
-      #
-      # It used to be left unwired with a comment saying to promote it "once the
-      # fleet carries pmat >= 3.32.0". That is what this step is fixing: a
-      # comment is not a trigger, nothing re-evaluated the condition, and 20
-      # shipped machine-specific paths landed through the gap (299 vs baseline
-      # 278 on 62d23d8d1). --full-if-capable re-evaluates it on every run: it
-      # runs the ratchet and propagates its status where pmat can produce a
-      # verdict, and where it cannot it prints the version and the actual
-      # refusal text rather than assuming. The gate arms itself on the day the
-      # fleet upgrades, with no edit to this file.
-      - name: No contract may name a machine-specific path
-        run: bash scripts/check_hardcoded_paths.sh
-      - name: Machine-specific-path guard case table
-        run: bash scripts/check_hardcoded_paths.sh --self-test
-      - name: Whole-tree machine-specific-path ratchet (pinned analyser via scripts/pmat_bin.sh, PMAT-1059)
-        run: bash scripts/check_hardcoded_paths.sh --full-if-capable
-      # PRREV-006. PR-REVIEW-SKILL-002 v2 §9 row 6 states how the receipt guard
-      # may be wired, and both halves are scars rather than style:
-      #
-      #   job-level `if:`, NOT a workflow-level `paths:` filter — a path-filtered
-      #   required check never reports and blocks branch protection forever.
-      #
-      # A `paths:` filter here would mean the workflow does not run at all on a
-      # PR that misses it, so a check the ruleset requires never produces a check
-      # run: the PR sits PENDING and nothing merges. This file carries BOTH
-      # required checks (`ci / gate` and `workspace-test`), so that is a deadlock,
-      # not a hypothetical. A job-level `if:` is the opposite shape — the workflow
-      # runs, the job reports `skipped`, and `gate` reads the result (`mutants` is
-      # the in-repo precedent).
-      #
-      # Until this step, that rule lived in a COMMENT further down this file, on
-      # `vendored-schemas`, and a comment is not a trigger — the exact shape that
-      # left check_hardcoded_paths.sh unwired for months, two steps above. So the rule
-      # is CHECKED: the receipt guard must be invoked by a non-comment line, by
-      # exactly one job, that job must carry an `if:` at job indentation (4
-      # spaces, not a step's 8), and that `if:` must evaluate TRUE on
-      # pull_request and FALSE on push / merge_group / workflow_dispatch. Both
-      # polarities, because "it has an `if:`" is satisfied by `if: always()`.
-      # Text-only, no build. Self-test first (Verification Discipline #7).
-      - name: "Receipt-wiring guard case table (both polarities of the if:)"
-        run: bash scripts/check_pr_review_wiring.sh --self-test
-      - name: The PR-review receipt guard is wired job-level, not path-filtered
-        run: bash scripts/check_pr_review_wiring.sh
-      # PRQ-013 (PP-066 C0-5, #2982): the job that judges a PR's OWN receipt must be
-      # defined by the base — a workflow on pull_request_target + merge_group, never
-      # pull_request — and `gate` must not wait on a head-defined receipt job. Case
-      # table first (17 rows, both polarities), then the tree.
-      - name: "Receipt-gate base-owned case table (17 rows, both polarities)"
-        run: bash scripts/check_receipt_gate_base_owned.sh --self-test
-      - name: The PR's own receipt is judged from the base, not the head (PRQ-013)
-        run: bash scripts/check_receipt_gate_base_owned.sh
-      # The case table above is evidence only for the branches it can turn RED,
-      # and on its first pass it could not turn three of them. Dropping either
-      # zero-count check left the guard still rejecting on the NEIGHBOURING
-      # more-than-one branch, and the step-level fixture used `- if:`, whose
-      # leading `- ` means a widened job-level pattern never matched it. Both
-      # survived a verdict-only table; the mutation set is what found them.
-      # 15/15 kill required, and an anchor that stops matching is reported as
-      # HARNESS-BROKEN rather than as a dead mutant. Text-only, no build.
-      - name: "Receipt-wiring guard: every rule it states, mutated (15/15 kill)"
-        run: bash scripts/mutate_pr_review_wiring_guard.sh
-      # aprender#2822: THE REPORT. Runs even when the job dies mid-cargo,
-      # and takes its own final probe first -- without that, a failure at
-      # step K leaves the last recorded boundary BEFORE K and the table
-      # reads clean, which is the whole failure mode being investigated.
-      #
-      # It also pulls the host journal for the job's window into the job
-      # log. That is the decisive evidence and the only evidence that
-      # expires: `_work/*/target` is deleted by HOST automation (a sibling
-      # runner's job-started hook, a systemd timer) which logs under its own
-      # tag and appears in NO GitHub log. See
-      # scripts/runner-infra/runner-disk-guard.sh, whose own header records
-      # this exact signature.
-      #
-      # continue-on-error is deliberate and is NOT a disarmed gate: nothing
-      # here asserts anything. The gate that can fail is the case table
-      # wired above.
-      - name: "target-watch: report (aprender#2822)"
-        if: always()
-        continue-on-error: true
-        run: |
-          bash scripts/ci_target_watch.sh probe post-job
-          bash scripts/ci_target_watch.sh report
 
   # Top-level gate: satisfies org ruleset "Green Main" which requires check named "gate".
   # The reusable workflow produces "ci / gate" but rulesets need exact match on "gate".
@@ -2362,13 +2110,26 @@ jobs:
 
   gate:
     runs-on: [self-hosted, X64, Linux, clean-room]
-    needs: [ci, workspace-test, mutants, guard-runner-labels]
+    # 22: BSE-05 formula T = max(15, ceil(1.5*p99), p99+20) over this job's own
+    # history -- p50 0.2 / p90 1.4 / p99 1.4 minutes over its last 7 successful
+    # runs, so p99+20 = 21.4 binds and rounds to 22. This job only reads
+    # `needs.*.result`; the 20-minute term is the headroom BSE-05 adds so a
+    # slow runner is never the thing that fails a required check.
+    timeout-minutes: 22
+    needs: [ci, workspace-test, mutants, guard-runner-labels, guard-cargo]
     if: always()
     steps:
       - name: Check required jobs
         run: |
           if [ "${{ needs.guard-runner-labels.result }}" != "success" ]; then
             echo "guard-runner-labels failed: ${{ needs.guard-runner-labels.result }}"
+            exit 1
+          fi
+          # guard-cargo is the cargo half of the same guard universe (BSE-01).
+          # It is judged exactly like guard-runner-labels: a required check that
+          # is not read by `gate` is not a required check.
+          if [ "${{ needs.guard-cargo.result }}" != "success" ]; then
+            echo "guard-cargo failed: ${{ needs.guard-cargo.result }}"
             exit 1
           fi
           if [ "${{ needs.ci.result }}" != "success" ]; then
@@ -2485,7 +2246,7 @@ jobs:
               echo "Image pulled successfully on attempt $i"
               exit 0
             fi
-            if [ $i -eq $max_attempts ]; then
+            if [ "$i" -eq "$max_attempts" ]; then
               echo "::error::Registry localhost:5000 unreachable after $max_attempts attempts AND image not in local cache"
               exit 1
             fi
@@ -2539,7 +2300,7 @@ jobs:
               # see that, and "the guard cannot tell" is not a reason to exempt.
               # Declaring the root makes it true rather than merely argued.
               # /usr/local, not /tmp: this root is destroyed with the --rm
-              # container either way, but /tmp is what paiml/infra's
+              # container either way, but /tmp is what the paiml/infra
               # shared-$HOME guard reads as boot-volatile, and "the guard
               # cannot tell" is not a reason to keep the ambiguous spelling.
               export CARGO_INSTALL_ROOT=/usr/local/cargo-mutants-root

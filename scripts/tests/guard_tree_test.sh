@@ -75,6 +75,21 @@ exit 1
 SH
 
     chmod +x "$dir"/scripts/check_*.sh
+
+    # A guard WITHOUT the executable bit. Ten of the 96 tracked guards are
+    # mode 100644 (git ls-files -s 'scripts/check_*.sh'), and ci.yml has
+    # always invoked every guard as `bash scripts/check_X.sh`, so the mode
+    # never mattered there. A runner that execs the path directly turns those
+    # ten into "Permission denied" FAIL rows -- a red row for a guard that
+    # was never run, which is the one thing a run-all runner may not do.
+    # Created AFTER the blanket chmod above so the mode is the assertion.
+    cat >"$dir/scripts/check_noexec.sh" <<'SH'
+#!/usr/bin/env bash
+echo "check_noexec: passes, and carries no executable bit"
+exit 0
+SH
+    chmod 644 "$dir/scripts/check_noexec.sh"
+
     git -C "$dir" add -A
     git -C "$dir" commit -q -m fixture
     printf '%s\n' "$dir"
@@ -108,6 +123,22 @@ if [ "$rc" -eq 1 ] && [ "${n_alpha:-0}" -gt 0 ] && [ "${n_beta:-0}" -gt 0 ]; the
 else
     fail_row "runs every guard and reports every failure" \
         "rc=$rc n_alpha=${n_alpha:-0} n_beta=${n_beta:-0}"
+fi
+
+# ---------------------------------------------------------------------------
+# 1b. A guard without the executable bit must be RUN, not reported FAIL.
+#     ci.yml invokes every guard as `bash scripts/check_X.sh`; the runner must
+#     use the same form, or the ten mode-644 guards in this repo become red
+#     rows nobody executed.
+# ---------------------------------------------------------------------------
+n_noexec_pass="$(grep -c '^PASS  scripts/check_noexec\.sh \[run\]$' <<<"$out")"
+n_noexec_denied="$(grep -c 'check_noexec.*[Pp]ermission denied' <<<"$out")"
+
+if [ "${n_noexec_pass:-0}" -gt 0 ] && [ "${n_noexec_denied:-0}" -eq 0 ]; then
+    pass_row "a mode-644 guard is run through bash, not exec'd (PASS row, no EACCES)"
+else
+    fail_row "a mode-644 guard is run through bash, not exec'd" \
+        "pass_rows=${n_noexec_pass:-0} permission_denied=${n_noexec_denied:-0}"
 fi
 
 # ---------------------------------------------------------------------------
@@ -166,6 +197,58 @@ if [ "${n_summary:-0}" -gt 0 ]; then
     pass_row 'summary line reads "N checks, M failed"'
 else
     fail_row 'summary line reads "N checks, M failed"' "no matching line in: $out"
+fi
+
+# ---------------------------------------------------------------------------
+# 6. PMAT-238 (paiml/infra#435): the container CARGO_HOME mount must carry
+#    registry/ together with .package-cache and .package-cache-mutate.
+#
+#    A registry mounted WITHOUT both lock files is infra#77: every container
+#    takes a private flock while they all write one shared registry, so the
+#    lock serialises nothing and the registry corrupts instead. The two legs
+#    below are (a) ci.yml names the three together, and (b) the job that runs
+#    the cargo guards contains no `:/usr/local/cargo/registry` mount -- (b) is
+#    the discriminating one: restoring the registry-only mount turns it red.
+#
+#    grep -c over a captured variable throughout. `producer | grep -q`
+#    SIGPIPEs the producer under pipefail and can read a real match as a
+#    false negative.
+# ---------------------------------------------------------------------------
+CI_YML="$REPO_ROOT/.github/workflows/ci.yml"
+ci_text="$(cat "$CI_YML")"
+
+n_together="$(grep -cE 'registry/.*\.package-cache.*\.package-cache-mutate' <<<"$ci_text")"
+if [ "${n_together:-0}" -gt 0 ]; then
+    pass_row "ci.yml names registry/, .package-cache and .package-cache-mutate together"
+else
+    fail_row "ci.yml names registry/, .package-cache and .package-cache-mutate together" \
+        "no line names all three (matches=${n_together:-0})"
+fi
+
+# The guard-cargo job body: from its key to the next top-level job key.
+guard_cargo_job="$(awk '/^  guard-cargo:/{f=1} f&&/^  [a-z][a-z0-9_-]*:/&&!/^  guard-cargo:/{f=0} f' <<<"$ci_text")"
+n_job="$(grep -c 'guard-cargo:' <<<"$guard_cargo_job")"
+n_registry_only="$(grep -c -- ':/usr/local/cargo/registry' <<<"$guard_cargo_job")"
+n_cargo_home="$(grep -c -- '-e CARGO_HOME=' <<<"$guard_cargo_job")"
+
+if [ "${n_job:-0}" -eq 1 ] && [ "${n_registry_only:-0}" -eq 0 ] && [ "${n_cargo_home:-0}" -gt 0 ]; then
+    pass_row "guard-cargo mounts the whole CARGO_HOME, never registry/ alone"
+else
+    fail_row "guard-cargo mounts the whole CARGO_HOME, never registry/ alone" \
+        "job_found=${n_job:-0} registry_only_mounts=${n_registry_only:-0} cargo_home_env=${n_cargo_home:-0}"
+fi
+
+# ---------------------------------------------------------------------------
+# 7. The two guard jobs must not resolve to one target dir. workspace-test
+#    mounts run-<RUN_ID>; guard-cargo must mount run-<RUN_ID>-guards, or the
+#    dep-info race (aprender#2822) is back.
+# ---------------------------------------------------------------------------
+n_suffix="$(grep -c 'run-\${{ github.run_id }}-guards' <<<"$guard_cargo_job")"
+if [ "${n_suffix:-0}" -gt 0 ]; then
+    pass_row "guard-cargo has its own target dir suffix (run-<RUN_ID>-guards)"
+else
+    fail_row "guard-cargo has its own target dir suffix (run-<RUN_ID>-guards)" \
+        "matches=${n_suffix:-0}"
 fi
 
 printf '%d checks, %d failed\n' "$total" "$failed"

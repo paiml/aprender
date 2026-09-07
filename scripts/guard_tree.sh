@@ -30,6 +30,18 @@
 # guard_tree.sh's classification can never independently drift from a
 # hand-copied list living in the workflow.
 #
+# THE INVOCATION FORM IS `bash <guard>`, NOT `<guard>`
+# -----------------------------------------------------
+# Ten of the 96 tracked guards are mode 100644 (`git ls-files -s
+# 'scripts/check_*.sh'`), because ci.yml has always invoked them as
+# `bash scripts/check_X.sh` and the executable bit therefore never mattered.
+# Exec'ing the path directly turned those ten into `Permission denied` FAIL
+# rows -- a red row for a guard that never ran, which is the one failure a
+# run-all runner may not produce. Measured before the fix: 3 of the 47
+# cargo-free guards (check_assertions_exclude, check_baseline_ratchets,
+# check_workflow_path_filters) failed this way while ci.yml ran all three
+# green. The `--help` probe uses the same form for the same reason.
+#
 # SELF-TEST DETECTION
 # --------------------
 # A guard "advertises --self-test" when its own `--help` output contains the
@@ -112,7 +124,7 @@ fi
 # output is captured and never executed a second time for detection alone.
 advertises_self_test() {
     g="$1"
-    help_out="$("$g" --help 2>&1)"
+    help_out="$(bash "$g" --help 2>&1)"
     n="$(grep -c -- 'self-test' <<<"$help_out")"
     [ "${n:-0}" -gt 0 ]
 }
@@ -145,10 +157,10 @@ guards="$(universe_for_subset)"
 while IFS= read -r g; do
     [ -n "$g" ] || continue
     if advertises_self_test "$g"; then
-        run_row "$g [self-test]" "$g" --self-test
-        run_row "$g [run]" "$g"
+        run_row "$g [self-test]" bash "$g" --self-test
+        run_row "$g [run]" bash "$g"
     else
-        run_row "$g [run]" "$g"
+        run_row "$g [run]" bash "$g"
     fi
 done <<<"$guards"
 
