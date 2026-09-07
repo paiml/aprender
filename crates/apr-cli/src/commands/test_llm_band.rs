@@ -448,6 +448,88 @@ fn is_sha256(value: &str) -> bool {
             .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
 }
 
+/// PMAT-973 / #2756 — the label and the sha256 of the prompt-corpus bytes
+/// that earned it. A `Workload` recorded with no [`WorkloadBinding`] is a
+/// declaration; one recorded WITH it is a claim the receipt can be checked
+/// against.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct WorkloadBinding {
+    /// The `--workload` label this binding was checked against.
+    pub(crate) label: Workload,
+    /// sha256 of exactly the bytes read from `prompts_file`.
+    pub(crate) corpus_sha256: String,
+    /// Prompt records after the `_meta` header line.
+    pub(crate) prompt_count: usize,
+}
+
+/// The first line's `_meta.corpus`, when the line parses and declares one.
+///
+/// Unrelated to [`resolve_corpus`]'s private `CorpusMeta` (which does not
+/// even carry this field) — this is checked at the wire-format level, on
+/// purpose: binding a label to a corpus must not depend on which fields a
+/// deserializer happens to know about today.
+fn parse_meta_corpus(first_line: &str) -> Option<String> {
+    let value: Value = serde_json::from_str(first_line).ok()?;
+    value
+        .get("_meta")?
+        .get("corpus")?
+        .as_str()
+        .map(str::to_string)
+}
+
+/// Bind `label` to the prompt file actually loaded, or refuse.
+///
+/// Accepted only when `prompts_file`'s own `_meta.corpus` equals `label`'s
+/// wire token (§ DAG row I-25): a `--workload W1` run whose sent prompts are
+/// not the labelled W1 corpus — `--profile short`'s one prompt, or a file
+/// with no `_meta` header at all — is refused rather than silently recorded
+/// under a name it did not earn.
+///
+/// # Errors
+/// [`CliError::InvalidFormat`] when `prompts_file` cannot be read or hashed;
+/// [`CliError::ValidationFailed`] when the file names a different corpus, or
+/// names none.
+pub(crate) fn bind_workload(label: Workload, prompts_file: &Path) -> Result<WorkloadBinding> {
+    let label_token = label.wire_token();
+    let content = std::fs::read_to_string(prompts_file).map_err(|e| {
+        CliError::InvalidFormat(format!("prompt corpus {}: {e}", prompts_file.display()))
+    })?;
+    let mut lines = content.lines();
+    let corpus = lines.next().and_then(parse_meta_corpus);
+    match corpus.as_deref() {
+        Some(actual) if actual == label_token => {}
+        Some(actual) => {
+            return Err(CliError::ValidationFailed(format!(
+                "--workload {label_token}: {} is labelled {actual}, not {label_token}; a corpus \
+                 label needs its corpus",
+                prompts_file.display()
+            )));
+        }
+        None => {
+            return Err(CliError::ValidationFailed(format!(
+                "--workload {label_token}: {} is not a labelled corpus (no `_meta.corpus` \
+                 header); a corpus label needs its corpus",
+                prompts_file.display()
+            )));
+        }
+    }
+    let corpus_sha256 = sha256_file(prompts_file)
+        .map_err(|e| CliError::InvalidFormat(format!("hashing {}: {e}", prompts_file.display())))?;
+    let prompt_count = lines.filter(|l| !l.trim().is_empty()).count();
+    Ok(WorkloadBinding {
+        label,
+        corpus_sha256,
+        prompt_count,
+    })
+}
+
+/// False when `workload` is a corpus label (every [`Workload`] variant is)
+/// but the receipt carries no `corpus_sha256` — a label the receipt did not
+/// bind to the bytes it measured.
+pub(crate) fn receipt_accepts_workload(_workload: Workload, corpus_sha256: Option<&str>) -> bool {
+    corpus_sha256.is_some()
+}
+
 impl ServerFacts {
     /// Read `GET /v1/effective-config`. A body this harness cannot understand
     /// yields empty facts rather than an error: an older `apr serve` simply
@@ -990,6 +1072,10 @@ struct ReceiptShell<'a> {
     witness: BTreeMap<u32, BatchInvarianceWitness>,
     kv: Option<KvBlock>,
     notes: Vec<String>,
+    /// PMAT-973 / #2756 — sha256 of the prompt-corpus bytes that earned
+    /// `workload`'s label. `Some` only when [`bind_workload`] accepted it;
+    /// `prepare` refuses the run rather than construct a shell with `None`.
+    corpus_sha256: Option<String>,
 }
 
 impl ReceiptShell<'_> {
@@ -1161,6 +1247,7 @@ impl ReceiptShell<'_> {
         );
         input.kv = self.kv;
         let rendered = render_with_notes(&input, &self.notes)
+            .and_then(|json| attach_corpus_sha256(&json, self.corpus_sha256.as_deref()))
             .map_err(|e| CliError::ValidationFailed(format!("receipt r{}: {e}", replicate + 1)))?;
 
         let path = self
@@ -1220,6 +1307,31 @@ fn render_with_notes(
             .and_then(Value::as_array_mut)
             .ok_or_else(|| "receipt has no `unproduced_fields` array to extend".to_string())?;
         field.extend(notes.iter().map(|n| Value::String(n.clone())));
+    }
+    serde_json::to_string_pretty(&value).map_err(|e| format!("serialising receipt: {e}"))
+}
+
+/// PMAT-973 / #2756 — add `corpus_sha256` to an already-rendered receipt.
+///
+/// A second pass over the rendered JSON, the same shape as
+/// [`render_with_notes`]'s `unproduced_fields` patch, rather than a field on
+/// `ReceiptInput` itself: `ReceiptInput` lives in `aprender-test-lib` and is
+/// shared with `bench_receipt.py`'s schema on the other side of the wire;
+/// this producer's own binding is not that contract's business.
+///
+/// # Errors
+/// When `rendered` is not valid JSON.
+fn attach_corpus_sha256(
+    rendered: &str,
+    corpus_sha256: Option<&str>,
+) -> std::result::Result<String, String> {
+    let Some(sha) = corpus_sha256 else {
+        return Ok(rendered.to_string());
+    };
+    let mut value: Value =
+        serde_json::from_str(rendered).map_err(|e| format!("re-reading rendered receipt: {e}"))?;
+    if let Some(map) = value.as_object_mut() {
+        map.insert("corpus_sha256".to_string(), Value::String(sha.to_string()));
     }
     serde_json::to_string_pretty(&value).map_err(|e| format!("serialising receipt: {e}"))
 }
@@ -1363,6 +1475,22 @@ async fn prepare<'a>(
     let tokenization = build_tokenization(args)?;
     let workload = Workload::from_str(args.workload)
         .map_err(|e| CliError::InvalidInput(format!("--workload: {e}")))?;
+    // PMAT-973 / #2756 — a workload label the receipt cannot falsify is not
+    // provenance: refuse before the first request rather than record a label
+    // the sent prompts never earned.
+    let corpus_sha256 = match args.prompts {
+        Some(path) => Some(bind_workload(workload, path)?.corpus_sha256),
+        None => {
+            let corpus = resolve_corpus(args.profile, None)?;
+            return Err(CliError::ValidationFailed(format!(
+                "--workload {}: the prompt set sent is not the {} corpus ({}); a corpus label \
+                 needs its corpus",
+                args.workload,
+                args.workload,
+                describe_workload(args.profile, None, corpus.requests.len())
+            )));
+        }
+    };
     let witness = load_witness(args.witness_json)?;
     let (protocol, protocol_source) =
         protocol_params_with_source(args.replicates, args.comparator_url.is_some());
@@ -1455,6 +1583,7 @@ async fn prepare<'a>(
         witness,
         kv: facts.kv,
         notes,
+        corpus_sha256,
     };
     announce(&shell, levels, &started_utc);
     Ok((shell, lanes))
@@ -1735,6 +1864,12 @@ fn check_prompt_band(
 pub const fn default_replicates() -> usize {
     REPLICATES
 }
+
+/// PMAT-973 / #2756 — `bind_workload`/`receipt_accepts_workload` pinned
+/// against the real W1 corpus and the `--profile short` shape (no `_meta`).
+#[cfg(test)]
+#[path = "test_llm_band_workload_binding_tests.rs"]
+mod workload_corpus_binding;
 
 #[cfg(test)]
 mod tests {
@@ -2581,6 +2716,7 @@ mod tests {
             witness: BTreeMap::new(),
             kv: None,
             notes,
+            corpus_sha256: None,
         }
     }
 
