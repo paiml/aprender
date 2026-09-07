@@ -35,9 +35,10 @@
 #   0   always, for both UNCHANGED and CHANGED — CHANGED is information for
 #       the caller (a release checklist, a job summary) to act on, never a
 #       failure this script itself judges.
-#   2   usage error (wrong argument count, or an argument is not a file) —
-#       this is the caller's mistake, not a witness verdict, so it is kept
-#       distinct from 0.
+#   2   usage error (wrong argument count, an argument is not a file, or an
+#       argument is an EMPTY file — an empty witness is a broken probe, not
+#       a verdict) — this is the caller's mistake, not a witness verdict, so
+#       it is kept distinct from 0.
 set -uo pipefail
 
 usage() {
@@ -53,6 +54,16 @@ observed="$2"
 for f in "$expected" "$observed"; do
   if [ ! -f "$f" ]; then
     echo "::error::witness_diff.sh: not a file: $f" >&2
+    exit 2
+  fi
+  # An empty witness file is never a legitimate "no change" - it means the
+  # probe that should have produced a `PP-26-WITNESS: ` line produced
+  # nothing (a broken grep, a probe crash upstream, a truncated artifact).
+  # `cmp -s` on two empty files reports equal, which would silently print
+  # UNCHANGED for exactly the failure this tool exists to surface. Reject
+  # it here so the caller sees an error, never a false UNCHANGED.
+  if [ ! -s "$f" ]; then
+    echo "::error::witness_diff.sh: empty file: $f" >&2
     exit 2
   fi
 done

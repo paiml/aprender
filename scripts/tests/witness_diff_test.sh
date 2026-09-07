@@ -17,6 +17,17 @@
 #      WRONG (a status field can agree while the surrounding witness line
 #      does not) — proving this test suite would go RED if that mutation
 #      ever landed in the real script.
+#   6. an empty observed file                    -> exit 2 (rejected, not a
+#      silent UNCHANGED)
+#   7. an empty expected file                    -> exit 2 (same reason,
+#      other side)
+#   8. a mutant that drops the empty-file (`-s`) guard, derived by deleting
+#      exactly that block from a COPY of the real script (never hand-typed,
+#      so it tracks the guard's actual shape) is shown to wrongly report
+#      UNCHANGED on two empty files — proving cases 6/7 are real regression
+#      tests: this is what the real script did (D1 revision, BSE-11,
+#      Pmat-Ticket: PMAT-1067) before the guard existed, and would do again
+#      if the guard were ever deleted.
 #
 # Prints "N checks, M failed" and exits 1 if M > 0.
 set -uo pipefail
@@ -116,7 +127,39 @@ else
   FAILED=$((FAILED + 1))
 fi
 
-# --- Case 6: usage errors are distinct from a witness verdict -------------
+# --- Case 6: an empty observed file -> exit 2, never a silent UNCHANGED ---
+: > "$WORK/empty_observed.txt"
+check "empty observed file -> exit 2" "" 2 -- \
+  bash "$SCRIPT" "$WORK/a.txt" "$WORK/empty_observed.txt"
+
+# --- Case 7: an empty expected file -> exit 2 (same reason, other side) ---
+: > "$WORK/empty_expected.txt"
+check "empty expected file -> exit 2" "" 2 -- \
+  bash "$SCRIPT" "$WORK/empty_expected.txt" "$WORK/a.txt"
+
+# --- Case 8: a mutant that drops the empty-file (`-s`) guard reports -------
+# UNCHANGED on two empty files. Derived by DELETING exactly that block from
+# a copy of the real script (not hand-typed), so the fixture tracks the
+# guard's actual shape rather than a guess at it. This is what the real
+# script did before the guard existed (the D1-flagged defect, BSE-11,
+# Pmat-Ticket: PMAT-1067): `cmp -s` on two empty files reports equal, so a
+# broken probe that produced nothing on both sides read as "no change".
+MUTANT_NOEMPTY="$WORK/witness_diff_mutant_noempty.sh"
+sed '/^  # An empty witness file/,/^  fi$/d' "$SCRIPT" > "$MUTANT_NOEMPTY"
+chmod +x "$MUTANT_NOEMPTY"
+
+: > "$WORK/mutant_empty_a.txt"
+: > "$WORK/mutant_empty_b.txt"
+CHECKS=$((CHECKS + 1))
+mutant_noempty_out="$(bash "$MUTANT_NOEMPTY" "$WORK/mutant_empty_a.txt" "$WORK/mutant_empty_b.txt" 2>/dev/null)"
+if [ "$mutant_noempty_out" = "UNCHANGED" ]; then
+  printf 'ok    mutation caught: dropping the empty-file guard reports UNCHANGED on two empty files (would be RED if it were the real script — real script correctly exits 2)\n'
+else
+  printf 'FAIL  mutation not demonstrated: dropping the empty-file guard produced %q on two empty files, expected UNCHANGED so the contrast with the real script (exit 2) proves the guard is load-bearing\n' "$mutant_noempty_out"
+  FAILED=$((FAILED + 1))
+fi
+
+# --- Case 9: usage errors are distinct from a witness verdict -------------
 check "missing argument -> usage error, exit 2" "" 2 -- \
   bash "$SCRIPT" "$WORK/a.txt"
 
