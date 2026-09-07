@@ -77,6 +77,8 @@ roadmap:
   title: nine
 - id: PMAT-10
   title: ten
+- id: 'PMAT-10-SIMD: a freeform tail glued to the id, keyed PMAT-10'
+  title: ten simd
 - id: GH-3
   title: gh three
 - id: GH-4
@@ -120,12 +122,26 @@ YAML
 cp "$TD/bak/roadmap.yaml" "$TD/bak/roadmap.yaml.bak"
 touch "$TD/bak/roadmap.yaml.lock"
 git -C "$TD/bak" add roadmap.yaml roadmap.yaml.bak roadmap.yaml.lock
+mkgitrepo "$TD/freeform"
+cat >"$TD/freeform/roadmap.yaml" <<'YAML'
+roadmap:
+- id: PMAT-112
+  title: one twelve
+- id: 'PMAT-099: legacy title glued to the id - the head is still PMAT-099'
+  title: ninety nine, the form the first regex could not see (roadmap.yaml:2325, seven such blocks)
+YAML
+# A guard that cannot run git must say so: the `|| true` this replaced
+# reported "zero tracked .bak/.lock files" for a git that had just failed.
+mkdir -p "$TD/badgit"
+printf '#!/bin/sh\necho "fatal: not a git repository" >&2\nexit 128\n' >"$TD/badgit/git"
+chmod +x "$TD/badgit/git"
+printf '#!/usr/bin/env bash\nPATH=%q:$PATH exec bash %q "$@"\n' "$TD/badgit" "$GUARD" >"$TD/guard-badgit.sh"
 
 # ---------------------------------------------------------------------------
 # The real guard, both polarities per rule.
 # ---------------------------------------------------------------------------
 row 0 "sorted fixture: mixed PMAT/GH prefixes + one legacy freeform id" \
-    '^PASS  .*7 top-level id' "$GUARD" "$TD/sorted/roadmap.yaml"
+    '^PASS  .*8 top-level id' "$GUARD" "$TD/sorted/roadmap.yaml"
 row 1 "out-of-order id (PMAT-945, PMAT-745, PMAT-744 — the BSE-09b shape)" \
     'FAIL.*sorts before' "$GUARD" "$TD/unsorted/roadmap.yaml"
 row 1 "duplicate id (PMAT-905 twice)" \
@@ -134,6 +150,10 @@ row 1 "a tracked roadmap.yaml.bak / .lock (git add, no commit needed)" \
     'FAIL  tracked backup/lock file' "$GUARD" "$TD/bak/roadmap.yaml"
 row 2 "a missing roadmap file is ENV (exit 2), never a pass" \
     'ENV' "$GUARD" "$TD/absent/roadmap.yaml"
+row 1 "a freeform id whose head is PREFIX-NUM ('PMAT-099: ...' after PMAT-112) — the form variant the first regex skipped" \
+    'FAIL  PMAT-099 at line 4 sorts before PMAT-112' "$GUARD" "$TD/freeform/roadmap.yaml"
+row 2 "git itself failing is ENV (exit 2), never a pass" \
+    'ENV   git ls-files failed' "$TD/guard-badgit.sh" "$TD/sorted/roadmap.yaml"
 
 # ---------------------------------------------------------------------------
 # The guard's own --self-test must also be green (it is exercised in CI via

@@ -2254,6 +2254,38 @@ roadmap:
   - kv-cache
   - realizar
   notes: null
+- id: 'PMAT-099: APR format parity - fix AprTransformer config reading'
+  github_issue: null
+  item_type: task
+  title: 'New task: PMAT-099: APR format parity - fix AprTransformer config reading'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-01-22 14:11:54.074583+00:00
+  updated: 2026-02-04 12:49:26+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: 'PMAT-103-SIMD: AVX2 SIMD optimization for Q4K matmul to achieve 5+ tok/s'
+  github_issue: null
+  item_type: task
+  title: 'New task: PMAT-103-SIMD: AVX2 SIMD optimization for Q4K matmul to achieve 5+ tok/s'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-01-23 12:13:30.786974+00:00
+  updated: 2026-02-20 11:05:16+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-110
   github_issue: null
   item_type: task
@@ -2322,22 +2354,6 @@ roadmap:
   - falsification
   - showcase
   notes: null
-- id: 'PMAT-099: APR format parity - fix AprTransformer config reading'
-  github_issue: null
-  item_type: task
-  title: 'New task: PMAT-099: APR format parity - fix AprTransformer config reading'
-  status: completed
-  priority: medium
-  assigned_to: null
-  created: 2026-01-22 14:11:54.074583+00:00
-  updated: 2026-02-04 12:49:26+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
 - id: 'APR-PARITY-001: APR/SafeTensors GGUF parity - all QA scripts pass'
   github_issue: null
   item_type: task
@@ -2362,22 +2378,6 @@ roadmap:
   priority: medium
   assigned_to: null
   created: 2026-01-23 10:19:57.986146+00:00
-  updated: 2026-02-20 11:05:16+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: 'PMAT-103-SIMD: AVX2 SIMD optimization for Q4K matmul to achieve 5+ tok/s'
-  github_issue: null
-  item_type: task
-  title: 'New task: PMAT-103-SIMD: AVX2 SIMD optimization for Q4K matmul to achieve 5+ tok/s'
-  status: completed
-  priority: medium
-  assigned_to: null
-  created: 2026-01-23 12:13:30.786974+00:00
   updated: 2026-02-20 11:05:16+00:00
   spec: null
   acceptance_criteria: []
@@ -2615,6 +2615,85 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: 'PMAT-127: Fix F-APR-GGUF - APR from GGUF produces garbage'
+  github_issue: 186
+  item_type: task
+  title: 'FIXED: PMAT-127 APR from GGUF produces garbage (dtype mismatch)'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-01-28 23:40:09.296872+00:00
+  updated: 2026-01-30 19:20:00+00:00
+  spec: null
+  acceptance_criteria:
+  - '[x] apr check /tmp/test.apr passes 10/10 stages'
+  - '[x] apr trace --payload shows valid logits (L2=1311.75, not NaN)'
+  - '[x] Root cause identified: dtype byte mismatch (APR 12=Q4K, realizar expected 8)'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - bugfix
+  - p0-resolved
+  notes: 'Root Cause: DType byte mapping mismatch between aprender and realizar.
+
+    - APR format uses dtype 12 for Q4K, 14 for Q6K (per aprender/src/format/v2.rs)
+
+    - realizar read dtype 12 as fallback "F32" causing NaN logits
+
+    Fix: Updated realizar/src/apr/mod.rs from_binary() dtype mapping.
+
+    Commits: aaa0f9a3, 734a076f
+
+    '
+- id: 'PMAT-129: Fix F-SAFETENSORS-GPU - apr run should support SafeTensors GPU'
+  github_issue: null
+  item_type: task
+  title: 'New task: PMAT-129: Fix F-SAFETENSORS-GPU - apr run should support SafeTensors GPU'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-01-29 07:44:56.916841+00:00
+  updated: 2026-02-04 12:48:45+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: 'PMAT-130: Fix F-Q4_0 - GGUF Q4_0 dequantization produces garbage'
+  github_issue: null
+  item_type: task
+  title: 'New task: PMAT-130: Fix F-Q4_0 - GGUF Q4_0 dequantization produces garbage'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-01-29 07:51:38.043099+00:00
+  updated: 2026-02-04 12:48:45+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: 'PMAT-131: Fix F-UX-033 - SafeTensors CPU should display backend type'
+  github_issue: null
+  item_type: task
+  title: 'New task: PMAT-131: Fix F-UX-033 - SafeTensors CPU should display backend type'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-01-29 08:06:40.076272+00:00
+  updated: 2026-02-04 12:43:49+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-190
   github_issue: null
   item_type: task
@@ -2741,85 +2820,6 @@ roadmap:
   - bug
   - safetensors
   - cli
-  notes: null
-- id: 'PMAT-127: Fix F-APR-GGUF - APR from GGUF produces garbage'
-  github_issue: 186
-  item_type: task
-  title: 'FIXED: PMAT-127 APR from GGUF produces garbage (dtype mismatch)'
-  status: completed
-  priority: medium
-  assigned_to: null
-  created: 2026-01-28 23:40:09.296872+00:00
-  updated: 2026-01-30 19:20:00+00:00
-  spec: null
-  acceptance_criteria:
-  - '[x] apr check /tmp/test.apr passes 10/10 stages'
-  - '[x] apr trace --payload shows valid logits (L2=1311.75, not NaN)'
-  - '[x] Root cause identified: dtype byte mismatch (APR 12=Q4K, realizar expected 8)'
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels:
-  - bugfix
-  - p0-resolved
-  notes: 'Root Cause: DType byte mapping mismatch between aprender and realizar.
-
-    - APR format uses dtype 12 for Q4K, 14 for Q6K (per aprender/src/format/v2.rs)
-
-    - realizar read dtype 12 as fallback "F32" causing NaN logits
-
-    Fix: Updated realizar/src/apr/mod.rs from_binary() dtype mapping.
-
-    Commits: aaa0f9a3, 734a076f
-
-    '
-- id: 'PMAT-129: Fix F-SAFETENSORS-GPU - apr run should support SafeTensors GPU'
-  github_issue: null
-  item_type: task
-  title: 'New task: PMAT-129: Fix F-SAFETENSORS-GPU - apr run should support SafeTensors GPU'
-  status: completed
-  priority: medium
-  assigned_to: null
-  created: 2026-01-29 07:44:56.916841+00:00
-  updated: 2026-02-04 12:48:45+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: 'PMAT-130: Fix F-Q4_0 - GGUF Q4_0 dequantization produces garbage'
-  github_issue: null
-  item_type: task
-  title: 'New task: PMAT-130: Fix F-Q4_0 - GGUF Q4_0 dequantization produces garbage'
-  status: completed
-  priority: medium
-  assigned_to: null
-  created: 2026-01-29 07:51:38.043099+00:00
-  updated: 2026-02-04 12:48:45+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: 'PMAT-131: Fix F-UX-033 - SafeTensors CPU should display backend type'
-  github_issue: null
-  item_type: task
-  title: 'New task: PMAT-131: Fix F-UX-033 - SafeTensors CPU should display backend type'
-  status: completed
-  priority: medium
-  assigned_to: null
-  created: 2026-01-29 08:06:40.076272+00:00
-  updated: 2026-02-04 12:43:49+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
   notes: null
 - id: GH-189
   github_issue: null
@@ -4281,6 +4281,31 @@ roadmap:
   labels:
   - bug
   notes: null
+- id: GH-279-4
+  github_issue: null
+  item_type: task
+  title: 'GH-279: Wire QkNorm into GPU forward path + fix format_parity sharded SafeTensors'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-02-17 19:03:09.771720+00:00
+  updated: 2026-02-18 21:00:00+00:00
+  spec: null
+  acceptance_criteria:
+  - golden_output QA gate passes (GPU QkNorm matches CPU path)
+  - format_parity QA gate passes (sharded SafeTensors loads all shards)
+  - performance_regression QA gate passes (GPU speedup restored to baseline)
+  phases: []
+  subtasks: []
+  estimated_effort: 4h
+  labels:
+  - cuda
+  - qwen3
+  - qa-gates
+  notes: Wired per-head RMSNorm (QkNorm) into GPU forward path for Qwen3 models. Added attn_q/k_norm_ptr/len
+    fields to IndexedLayerWeights + BoundLayerWeights. Used existing per_head_rmsnorm_into CUDA kernel
+    and cache_rmsnorm_gamma upload. Fixed format_parity gate to detect sharded models via model.safetensors.index.json.
+    Extensive complexity refactoring to pass pre-commit quality gates.
 - id: PMAT-285
   github_issue: null
   item_type: task
@@ -4370,31 +4395,6 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
-- id: GH-279-4
-  github_issue: null
-  item_type: task
-  title: 'GH-279: Wire QkNorm into GPU forward path + fix format_parity sharded SafeTensors'
-  status: completed
-  priority: high
-  assigned_to: null
-  created: 2026-02-17 19:03:09.771720+00:00
-  updated: 2026-02-18 21:00:00+00:00
-  spec: null
-  acceptance_criteria:
-  - golden_output QA gate passes (GPU QkNorm matches CPU path)
-  - format_parity QA gate passes (sharded SafeTensors loads all shards)
-  - performance_regression QA gate passes (GPU speedup restored to baseline)
-  phases: []
-  subtasks: []
-  estimated_effort: 4h
-  labels:
-  - cuda
-  - qwen3
-  - qa-gates
-  notes: Wired per-head RMSNorm (QkNorm) into GPU forward path for Qwen3 models. Added attn_q/k_norm_ptr/len
-    fields to IndexedLayerWeights + BoundLayerWeights. Used existing per_head_rmsnorm_into CUDA kernel
-    and cache_rmsnorm_gamma upload. Fixed format_parity gate to detect sharded models via model.safetensors.index.json.
-    Extensive complexity refactoring to pass pre-commit quality gates.
 - id: Add contract-driven property tests from provable-contracts
   github_issue: null
   item_type: task

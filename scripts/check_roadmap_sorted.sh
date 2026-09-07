@@ -1,3 +1,7 @@
+    if ! tracked=$(git -C "$dir" ls-files -- '*.bak' '*.lock' 2>&1); then
+        printf 'ENV   git ls-files failed under %s: %s — the tracked-backup check cannot be decided, refusing to pass\n' "$dir" "$tracked"
+        return 2
+    fi
 #!/usr/bin/env bash
 # check_roadmap_sorted.sh — new docs/roadmaps/roadmap.yaml entries land at a
 # SORTED position, not blindly appended to the tail (BSE-09a, PMAT-1065).
@@ -96,7 +100,10 @@ scan_file() {
     dir="$(dirname -- "$f")"
 
     # --- TRACKED-BAK-CHECK-BEGIN ---
-    tracked=$(git -C "$dir" ls-files -- '*.bak' '*.lock' 2>/dev/null || true)
+    if ! tracked=$(git -C "$dir" ls-files -- '*.bak' '*.lock' 2>&1); then
+        printf 'ENV   git ls-files failed under %s: %s — the tracked-backup check cannot be decided, refusing to pass\n' "$dir" "$tracked"
+        return 2
+    fi
     if [ -n "$tracked" ]; then
         printf 'FAIL  tracked backup/lock file(s) under %s (must be gitignored, never committed via git add):\n' "$dir"
         printf '%s\n' "$tracked" | sed 's/^/      /'
@@ -121,7 +128,7 @@ scan_file() {
         # --- DUP-CHECK-END ---
 
         # --- SORT-CHECK-BEGIN ---
-        if [[ "$id" =~ ^([A-Za-z][A-Za-z0-9_]*)-([0-9]+)$ ]]; then
+        if [[ "$id" =~ ^([A-Za-z][A-Za-z0-9_]*)-([0-9]+)([^0-9A-Za-z_].*)?$ ]]; then
             prefix="${BASH_REMATCH[1]}"
             numeral=$((10#${BASH_REMATCH[2]}))
             key="${last_numeral[$prefix]+x}"
