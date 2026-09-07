@@ -218,7 +218,7 @@ jobs:
         #      this step reaching somebody else's live run.
         #
         # Measured 2026-08-31 over 36 of the last 100 runs:
-        #   * workspace-test and guard-runner-labels are two jobs of the SAME
+        #   * workspace-test and guard-tree are two jobs of the SAME
         #     run, on two runners of one host, and both mount
         #     `<PR>/run-<RUN_ID>` (guard's "model-tests falsification suites"
         #     step). Their job windows overlap by 21-29 minutes.
@@ -449,7 +449,7 @@ jobs:
   # discriminating runner label, so a bare [self-hosted, X64, Linux] selector
   # can never again silently land a job on a GPU/dev runner without the
   # sovereign-ci registry. Pure text check; runs on the clean-room pool.
-  guard-runner-labels:
+  guard-tree:
     runs-on: [self-hosted, X64, Linux, clean-room]
     # 90: the BSE-05 cap for a PR/merge-group job. Basis (BSE-05 formula
     # T = max(15, ceil(1.5*p99), p99+20) over the job's own history): p50 52.9 /
@@ -483,7 +483,7 @@ jobs:
         # root-owned target/.rustc_info.json + target/package/ in the runner
         # checkout, so this job's actions/checkout `git clean -ffdx` failed
         # with EACCES before a single step ran. Because `gate` hard-requires
-        # guard-runner-labels (:379), a checkout-level EACCES here reads as a
+        # guard-tree (:379), a checkout-level EACCES here reads as a
         # required-check failure and blocks every merge — the andon stays red
         # until someone manually `ssh intel sudo rm`s the leftovers.
         # Cached-image gate is sound: leftovers can only exist if a previous
@@ -563,37 +563,19 @@ jobs:
       # own steps below: an argument is a claim this runner cannot derive.
       - name: Every cargo-free guard runs, and every failure is reported
         run: bash scripts/guard_tree.sh --no-cargo
+      # scripts/tests/guard_tree_test.sh is guard_tree.sh's OWN case table
+      # (BSE-01, PMAT-1062) -- it proves guard_tree.sh's no-fail-fast
+      # behaviour against a fixture, proves a fail-fast MUTANT of it goes RED
+      # on that same fixture, and checks --list/--no-cargo/--dry-run against
+      # the real repo. BSE-01 wrote it but never wired it into any workflow;
+      # wired here (BSE-02, PMAT-1064) because it is cargo-free and this is
+      # the job whose own dispatcher it verifies.
+      - name: "guard_tree.sh's own case table (BSE-01, wired BSE-02)"
+        run: bash scripts/tests/guard_tree_test.sh
       - name: "target-watch: before-cargo-install-bashrs"
         # aprender#2822 boundary probe (2 stat, 1 readdir, 1 df, 1 pgrep).
         # Instrumentation, never a gate: the script always exits 0.
         run: bash scripts/ci_target_watch.sh probe "before-cargo-install-bashrs"
-      # Poka-yoke: nextest IGNORES an unknown config key with a warning instead
-      # of failing. `slow-warning = "60s"` is not a nextest key, so profile.ci
-      # had no per-test timeout and a hung run died at the job's 85-minute
-      # timeout naming nothing -- evicting #2502 from the merge queue. The
-      # warning was in every workspace-test log and nobody read it, so it is a
-      # hard failure now. Runs nextest's real parser on a 3-line crate.
-      - name: nextest must ignore no key in .config/nextest.toml
-        # Runs INSIDE the image: cargo-nextest is installed there, not on the
-        # host runner (the first version of this step failed with "SKIP:
-        # cargo-nextest not installed" -> exit 1, which is the guard failing
-        # closed in the wrong place). The probe crate has ZERO dependencies, so
-        # CARGO_NET_OFFLINE=1 is safe and no registry mount is needed.
-        run: |
-          docker run --rm \
-            -v "${GITHUB_WORKSPACE}:/workspace" \
-            -w /workspace \
-            -e CARGO_NET_OFFLINE=1 \
-            "$IMAGE" \
-            bash scripts/check_nextest_config_keys.sh
-      - name: "nextest-key guard must still turn RED (case table)"
-        run: |
-          docker run --rm \
-            -v "${GITHUB_WORKSPACE}:/workspace" \
-            -w /workspace \
-            -e CARGO_NET_OFFLINE=1 \
-            "$IMAGE" \
-            bash scripts/check_nextest_config_keys.sh --self-test
       # The baseline printer holds its OWN output to the same pairing rule and
       # re-derives every number the contract quotes.
       - name: Dogfood baselines must re-derive from the ledger
@@ -761,7 +743,7 @@ jobs:
 
   # ── THE CARGO-USING GUARDS, PARALLEL TO workspace-test ────────────────────
   #
-  # These steps used to sit in `guard-runner-labels`, where they were the bulk
+  # These steps used to sit in `guard-tree`, where they were the bulk
   # of a 53-minute median / 85-minute p99 job. They are not moved here to be
   # faster in isolation: they are moved because they must NOT share
   # `/workspace/target` with workspace-test.
@@ -781,7 +763,7 @@ jobs:
     runs-on: [self-hosted, X64, Linux, clean-room]
     # 90: the BSE-05 cap for a PR/merge-group job. Basis (BSE-05 formula
     # T = max(15, ceil(1.5*p99), p99+20) over the job's own history): the
-    # unsplit `guard-runner-labels` measured p50 52.9 / p99 85.1 minutes over
+    # unsplit `guard-tree` measured p50 52.9 / p99 85.1 minutes over
     # its last 9 successful runs, which is the upper bound for this job — it
     # carries the cargo half of that job and nothing new. The cap is what
     # binds, not the formula (T would be 128); a required check must not
@@ -811,7 +793,7 @@ jobs:
         # root-owned target/.rustc_info.json + target/package/ in the runner
         # checkout, so this job's actions/checkout `git clean -ffdx` failed
         # with EACCES before a single step ran. Because `gate` hard-requires
-        # guard-runner-labels (:379), a checkout-level EACCES here reads as a
+        # guard-tree (:379), a checkout-level EACCES here reads as a
         # required-check failure and blocks every merge — the andon stays red
         # until someone manually `ssh intel sudo rm`s the leftovers.
         # Cached-image gate is sound: leftovers can only exist if a previous
@@ -1440,6 +1422,42 @@ jobs:
         run: bash scripts/check_no_ghsa_banned_crates.sh
       - name: "GHSA guard must still turn RED (case table)"
         run: bash scripts/check_no_ghsa_banned_crates.sh --self-test
+      # MOVED from guard-tree to guard-cargo (BSE-02, PMAT-1064): the guard
+      # this step calls, check_nextest_config_keys.sh, invokes `cargo nextest
+      # run` directly -- a bare `cargo ` token in its own source -- so it is
+      # a cargo-using guard by guard_tree.sh's own classification
+      # (cargo_only_universe), even though ci.yml dispatches it as an
+      # explicit step rather than through the dispatcher. guard-tree's
+      # contract (BSE-02) is that no step in that job runs cargo; leaving
+      # this here would have violated it silently, since guard_tree.sh
+      # --no-cargo never sees explicit steps at all.
+      # Poka-yoke: nextest IGNORES an unknown config key with a warning instead
+      # of failing. `slow-warning = "60s"` is not a nextest key, so profile.ci
+      # had no per-test timeout and a hung run died at the job's 85-minute
+      # timeout naming nothing -- evicting #2502 from the merge queue. The
+      # warning was in every workspace-test log and nobody read it, so it is a
+      # hard failure now. Runs nextest's real parser on a 3-line crate.
+      - name: nextest must ignore no key in .config/nextest.toml
+        # Runs INSIDE the image: cargo-nextest is installed there, not on the
+        # host runner (the first version of this step failed with "SKIP:
+        # cargo-nextest not installed" -> exit 1, which is the guard failing
+        # closed in the wrong place). The probe crate has ZERO dependencies, so
+        # CARGO_NET_OFFLINE=1 is safe and no registry mount is needed.
+        run: |
+          docker run --rm \
+            -v "${GITHUB_WORKSPACE}:/workspace" \
+            -w /workspace \
+            -e CARGO_NET_OFFLINE=1 \
+            "$IMAGE" \
+            bash scripts/check_nextest_config_keys.sh
+      - name: "nextest-key guard must still turn RED (case table)"
+        run: |
+          docker run --rm \
+            -v "${GITHUB_WORKSPACE}:/workspace" \
+            -w /workspace \
+            -e CARGO_NET_OFFLINE=1 \
+            "$IMAGE" \
+            bash scripts/check_nextest_config_keys.sh --self-test
 
   # Top-level gate: satisfies org ruleset "Green Main" which requires check named "gate".
   # The reusable workflow produces "ci / gate" but rulesets need exact match on "gate".
@@ -1461,7 +1479,7 @@ jobs:
   # nothing keeps. PRREV-006 wired the receipt guard into `pr-review-receipt`
   # below, with a job-level `if:` and no workflow-level `paths:` filter, and
   # made that rule mechanical (check_pr_review_wiring.sh, run twice in
-  # guard-runner-labels). It did NOT promote either job into `gate`, for the
+  # guard-tree). It did NOT promote either job into `gate`, for the
   # reason this paragraph already gives and PRREV-006 shares verbatim: the same
   # uninstalled interpreter, plus minisign. The spec agrees — §9 step 7 makes
   # the backtest the acceptance test "before it is enabled". Promotion is
@@ -1518,7 +1536,7 @@ jobs:
   # receipt for ONE pull request, at evidence/pr-review/<pr>/<head_sha>/. On
   # push, merge_group and workflow_dispatch there is no <pr>, so there is nothing
   # for the check to be about. Both polarities of that claim are checked, not
-  # asserted: check_pr_review_wiring.sh (guard-runner-labels, above) evaluates
+  # asserted: check_pr_review_wiring.sh (guard-tree, above) evaluates
   # this exact expression against all four events and fails if it runs where
   # there is no PR or skips where there is one.
   #
@@ -2116,17 +2134,17 @@ jobs:
     # `needs.*.result`; the 20-minute term is the headroom BSE-05 adds so a
     # slow runner is never the thing that fails a required check.
     timeout-minutes: 22
-    needs: [ci, workspace-test, mutants, guard-runner-labels, guard-cargo]
+    needs: [ci, workspace-test, mutants, guard-tree, guard-cargo]
     if: always()
     steps:
       - name: Check required jobs
         run: |
-          if [ "${{ needs.guard-runner-labels.result }}" != "success" ]; then
-            echo "guard-runner-labels failed: ${{ needs.guard-runner-labels.result }}"
+          if [ "${{ needs.guard-tree.result }}" != "success" ]; then
+            echo "guard-tree failed: ${{ needs.guard-tree.result }}"
             exit 1
           fi
           # guard-cargo is the cargo half of the same guard universe (BSE-01).
-          # It is judged exactly like guard-runner-labels: a required check that
+          # It is judged exactly like guard-tree: a required check that
           # is not read by `gate` is not a required check.
           if [ "${{ needs.guard-cargo.result }}" != "success" ]; then
             echo "guard-cargo failed: ${{ needs.guard-cargo.result }}"
