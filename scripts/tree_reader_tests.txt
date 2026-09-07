@@ -27,7 +27,6 @@ aprender-core	--test	falsification_spec_v10_tests
 aprender-core	--test	monorepo_invariants
 aprender-core	--test	readme_contract
 aprender-core	--test	setfit_conformance
-aprender-gpu	--lib
 aprender-orchestrate	--lib
 aprender-present-cli	--bins
 aprender-present-lib	--lib

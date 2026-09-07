@@ -82,10 +82,22 @@ derive() { # derive <repo root> -> sorted "crate\t--test\tname" / "crate\t--lib"
 # runs it" is itself a finding — 36 of 80 targets on the day this was written.
 UNWIRED_LEDGER_DEFAULT="scripts/tree_reader_unwired_baseline.txt"
 
+# full_tier_excludes ROOT -- the crates the full tier's `--workspace --lib` run
+# EXCLUDES (gpu, cuda-edge, compute: they need hardware or their own step).
+# Read from the workflow, never restated: a lib target of an excluded crate is
+# not wired by `--workspace --lib`, and the first quick-tier run would have
+# tested aprender-gpu --lib on a CPU runner had this not been derived.
+full_tier_excludes() { # full_tier_excludes <root> -> one crate per line
+    grep -rhoE 'nextest run --profile ci --workspace --lib( --exclude [a-z0-9-]+)+' "$1"/.github/workflows/ 2>/dev/null \
+        | head -1 | grep -oE -- '--exclude [a-z0-9-]+' | awk '{print $2}'
+}
+
 wired_targets() { # wired_targets <root> -- the derived set, wired half only
     local root=$1 line c kind name
     derive "$root" | while IFS=$'\t' read -r c kind name; do
         if [ "$kind" = "--lib" ] || [ "$kind" = "--bins" ]; then
+            # excluded from --workspace --lib by the full tier (hardware, own step)?
+            full_tier_excludes "$root" | grep -qxF "$c" && continue
             printf '%s\t%s\n' "$c" "$kind"
         elif grep -rqF -- "--test $name" "$root"/.github/workflows/ 2>/dev/null; then
             printf '%s\t--test\t%s\n' "$c" "$name"
@@ -183,14 +195,14 @@ self_test() {
         printf 'FAIL  row %-2s        split wrong. wired=[%s] unwired=[%s]\n' "$n" "$(printf '%s' "$w" | tr '\n' ';')" "$(printf '%s' "$u" | tr '\n' ';')"; red=1
     fi
     update "$td" "$td/registry.txt" > /dev/null
-    row 0 "registry equals derived -> PASS" '^PASS' bash -c "$(declare -f derive wired_targets unwired_targets registry_body check check_unwired); check '$td' '$td/registry.txt'"
+    row 0 "registry equals derived -> PASS" '^PASS' bash -c "$(declare -f derive full_tier_excludes wired_targets unwired_targets registry_body check check_unwired); check '$td' '$td/registry.txt'"
     printf 'zeta\t--lib\n' >> "$td/registry.txt"
-    row 1 "a stale registry line -> RED (drift, registry only)" '^FAIL .*drifted' bash -c "$(declare -f derive wired_targets unwired_targets registry_body check check_unwired); check '$td' '$td/registry.txt'"
+    row 1 "a stale registry line -> RED (drift, registry only)" '^FAIL .*drifted' bash -c "$(declare -f derive full_tier_excludes wired_targets unwired_targets registry_body check check_unwired); check '$td' '$td/registry.txt'"
     update "$td" "$td/registry.txt" > /dev/null; sed -i '/^beta/d' "$td/registry.txt"
-    row 1 "a missing registry line -> RED (drift, derived only)" '> beta' bash -c "$(declare -f derive wired_targets unwired_targets registry_body check check_unwired); check '$td' '$td/registry.txt'"
-    row 2 "registry file absent -> ENV (exit 2), never a pass" '^ENV' bash -c "$(declare -f derive wired_targets unwired_targets registry_body check check_unwired); check '$td' '$td/absent.txt'"
+    row 1 "a missing registry line -> RED (drift, derived only)" '> beta' bash -c "$(declare -f derive full_tier_excludes wired_targets unwired_targets registry_body check check_unwired); check '$td' '$td/registry.txt'"
+    row 2 "registry file absent -> ENV (exit 2), never a pass" '^ENV' bash -c "$(declare -f derive full_tier_excludes wired_targets unwired_targets registry_body check check_unwired); check '$td' '$td/absent.txt'"
     mkdir -p "$td/empty/crates/x/tests"; printf '#[test] fn t() {}\n' > "$td/empty/crates/x/tests/t.rs"; printf '# h\n' > "$td/empty/reg.txt"
-    row 1 "a tree with ZERO readers -> RED (vacuity), never a pass" 'derived ZERO' bash -c "$(declare -f derive wired_targets unwired_targets registry_body check check_unwired); check '$td/empty' '$td/empty/reg.txt'"
+    row 1 "a tree with ZERO readers -> RED (vacuity), never a pass" 'derived ZERO' bash -c "$(declare -f derive full_tier_excludes wired_targets unwired_targets registry_body check check_unwired); check '$td/empty' '$td/empty/reg.txt'"
     # MUTANT: drop the scripts/ pattern from the oracle -> beta --lib vanishes from the derived set (the falsifier discriminates)
     row 0 "mutant oracle without the scripts/ pattern loses beta --lib — this row proves the oracle is load-bearing" 'MUTANT-LOST-BETA' bash -c "ORACLE=$(printf %q "${ORACLE/\"scripts\/|/}"); $(declare -f derive); if derive '$td' | grep -q '^beta'; then echo MUTANT-KEPT-BETA; else echo MUTANT-LOST-BETA; fi"
     printf '\n%s checks, %s failed\n' "$n" "$red"

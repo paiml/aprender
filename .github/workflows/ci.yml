@@ -501,7 +501,7 @@ jobs:
             -e CARGO_PROFILE_DEV_DEBUG=line-tables-only \
             -e CARGO_TERM_COLOR=never \
             "$IMAGE" \
-            bash -c "cargo nextest run --profile ci --lib --tests $pkgs"
+            bash -c "cargo nextest run --profile ci --lib --tests$pkgs"
       # BSE-17 quick tier, part 2: every test target that reads the tree, from
       # scripts/tree_reader_tests.txt (derived; the guard has already proved the
       # registry equals the sources in this run). Grouped per crate: one cargo
@@ -524,7 +524,7 @@ jobs:
                 "$crate:--test:"*) flags="$flags --test ${t#"$crate:--test:"}" ;;
               esac
             done
-            script="$script cargo test -p $crate$flags &&"
+            script="$script cargo nextest run --profile ci -p $crate$flags &&"
           done
           script="${script% &&}"
           printf '%s\n' "$script" | tr '&' '\n' | grep -v '^$' | sed 's/^/  + /'
