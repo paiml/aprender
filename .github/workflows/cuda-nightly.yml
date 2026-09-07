@@ -344,6 +344,60 @@ jobs:
           esac
           exit "$fail"
 
+      # BSE-11 (docs/specifications/build-system-enhancement.md wave 3,
+      # `paiml/infra`, PMAT-1067): byte-compare tonight's witness line(s)
+      # against the last successful run's, instead of leaving the release
+      # checklist to re-diagnose this job's GitHub status colour. The PP-26
+      # witness has printed the SAME `^PP-26-WITNESS: ` line(s) — a standing
+      # INVALID-CORRECTNESS band, not a regression — every night since
+      # 2026-08-30 (docs/reports/work-history-delay-optimization-report.md);
+      # a colour is red either way, so a real regression and a known-stable
+      # failure are indistinguishable without opening the log. `witness_diff.sh`
+      # answers exactly "did the bytes change?" and nothing else, so the
+      # checklist can read the single word `CHANGED` and skip the rest on a
+      # night that says `UNCHANGED`.
+      #
+      # `proceed == 'true'` (not just `!cancelled()`) is required: on a yield
+      # night `decide` writes only marker.json, never probe.log, so this step
+      # would read a file that does not exist. Mirrors the witness step's own
+      # condition immediately above.
+      #
+      # SAME ARTIFACT NAME the next step uploads (`pp26-witness-${{ matrix.name
+      # }}`) is downloaded here for the PREVIOUS run — this job already
+      # produces it nightly, so no new artifact is introduced. `gh run list`/
+      # `gh run download` read-only calls need no token beyond the runner's own
+      # ambient gh auth (the same pattern qwen-story-daily.yml's manifest step
+      # already uses); no `permissions:` change.
+      - name: PP-26 - witness byte-compare against the previous run (BSE-11)
+        if: ${{ !cancelled() && steps.decide.outputs.proceed == 'true' }}
+        run: |
+          set -uo pipefail
+          observed="$PERF041_OUT/witness-line.observed.txt"
+          expected="$PERF041_OUT/witness-line.expected.txt"
+          # $log is a previous step's local variable, not inherited across
+          # `run:` blocks (each is its own shell) - recompute the same path
+          # the witness step above wrote it to ($PERF041_OUT/probe.log).
+          log="$PERF041_OUT/probe.log"
+          grep '^PP-26-WITNESS: ' "$log" > "$observed" || : > "$observed"
+
+          rm -rf /tmp/pp26-prev-witness && mkdir -p /tmp/pp26-prev-witness
+          gh run list --workflow=cuda-nightly.yml --status=success --limit=1 \
+            --json databaseId --jq '.[0].databaseId' 2>/dev/null \
+            | xargs -I {} gh run download {} -n "pp26-witness-${{ matrix.name }}" \
+                -D /tmp/pp26-prev-witness 2>/dev/null || true
+          if [ -f /tmp/pp26-prev-witness/probe.log ]; then
+            grep '^PP-26-WITNESS: ' /tmp/pp26-prev-witness/probe.log > "$expected" || : > "$expected"
+          else
+            # No prior successful run's artifact (e.g. the first run ever) -
+            # an empty baseline is its own honest "nothing to compare against
+            # yet", never a silent skip.
+            : > "$expected"
+          fi
+
+          verdict="$(bash scripts/witness_diff.sh "$expected" "$observed")"
+          echo "PP-26 witness byte-compare: $verdict"
+          echo "PP-26 witness byte-compare: **$verdict**" >> "$GITHUB_STEP_SUMMARY"
+
       # `!cancelled()` with NO proceed condition, on purpose: when `decide`
       # yields to training it writes a NOT_RUN marker, and a yielded night is
       # only visible if that marker leaves the runner.
