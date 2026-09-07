@@ -7,10 +7,11 @@
 #   scripts/hardcoded_path_shipped_baseline.txt (stamped: count, pmat_version,
 #   basis) and scripts/check_hardcoded_paths.sh --full-if-capable (absolute
 #   compare only under a matching stamp; otherwise REPORT and decide HEAD vs
-#   merge-base under the same binary). The guard that every OTHER analyser
-#   reference under scripts/ and .github/workflows/ resolves through the pin
-#   (check_pmat_pinned.sh) is G-10b and extends this contract; the sweep of
-#   the references it counts is G-10c.
+#   merge-base under the same binary). 1.1.0 (G-10b, PMAT-1063): the guard
+#   that every OTHER analyser reference under scripts/ and .github/workflows/
+#   resolves through the pin — scripts/check_pmat_pinned.sh, counted and
+#   shrink-only against scripts/pmat_unpinned_baseline.txt. The sweep of the
+#   references it counts to 0 is G-10c (PMAT-1064).
 #
 # PROOF LADDER, STATED HONESTLY (F-26)
 #   * L1 — the resolver and the ratchet exist and are wired in ci.yml job
@@ -24,7 +25,7 @@
 #   * L3/L4 — NOT APPLICABLE and not declared: shell guards over a text file.
 # ─────────────────────────────────────────────────────────────────────────────
 name: apr-pinned-analyser-ratchet
-version: "1.0.0"
+version: "1.1.0"
 scope: >
   The analyser pin, the stamped shipped-tier baseline and the differential
   ratchet. Out of scope: what the analyser detects (pmat#1017 owns the
@@ -35,14 +36,15 @@ status: active
 
 metadata:
   kind: pattern     # a pin-and-compare rule over shell guards and a text file, not a kernel
-  version: "1.0.0"
+  version: "1.1.0"
   created: '2026-09-06'
-  last_modified: '2026-09-06'
+  last_modified: '2026-09-06'   # 1.1.0: G-10b adds PIN-OB-005 / PIN-F-005 (the pin guard, shrink-only)
   author: PAIML Engineering
   references:
     - 'scripts/pmat_bin.sh — PMAT_PIN, resolution order, refusal with both versions named'
     - 'scripts/check_hardcoded_paths.sh — --full-if-capable: stamped baseline, REPORT BASELINE-STALE/INVALID, HEAD vs merge-base'
     - 'scripts/hardcoded_path_shipped_baseline.txt — count:, pmat_version:, basis:'
+    - 'scripts/check_pmat_pinned.sh — the operator assertion as a shrink-only guard: grep -rEn "(^|[^_/])pmat " scripts/ .github/workflows/ | grep -v pmat_bin, counted against scripts/pmat_unpinned_baseline.txt (G-10b)'
     - 'scripts/lib/resolve_base.sh — the base resolver shared with check_roadmap_diff_additive.sh (G-6)'
     - 'paiml/infra machines/intel/forjar.yaml — the fleet pin (3.31.0 -> 3.37.0, PMAT-231) that armed the ratchet on 2026-09-06'
     - 'PP-066 DAG row G-10, issue #2999, epic #2873'
@@ -182,8 +184,26 @@ falsification_tests:
       delete the three check_hardcoded_paths.sh steps from ci.yml;
       check_guards_are_wired.sh must turn RED naming the script.
 
+  - id: PIN-F-005
+    rule: one pin for every reference — counted, shrink-only (G-10b)
+    prediction: >-
+      case-table rows 1-11: the five unpinned spellings match, the six sanctioned
+      ones do not; rows 12-15: the resolver resolves at the pin, refuses off-pin
+      and absent, leaks no option; rows 16-20 (a fixture tree with 2 unpinned
+      lines): baseline 2 PASS, baseline 1 RED naming the lines, baseline 3 PASS
+      with an improvement reported, no baseline ENV exit 2, an INVALID baseline
+      ENV exit 2. One --self-test run exercises every row.
+    test: 'bash scripts/check_pmat_pinned.sh --self-test'
+    if_fails: >-
+      a gate's number silently depends on whichever analyser PATH resolves, one
+      script at a time
+    mutation: >-
+      reintroduce one bare `pmat comply check` in any script under scripts/;
+      `bash scripts/check_pmat_pinned.sh` must turn RED naming the line
+      (count = baseline + 1). Make the guard compare count <= 0 regardless of
+      the baseline; row 16 must turn RED.
+
 non_goals:
-  - "check_pmat_pinned.sh — every other analyser reference resolves through the pin (G-10b, shrink-only from the 281 counted on 2026-09-06)."
   - "The sweep of those 281 references to 0 (G-10c)."
   - "The re-baseline (PMAT-1061): measured under the pin, stamped, its own PR."
   - "What counts as a machine-specific path: the analyser's detector (pmat#1017)."

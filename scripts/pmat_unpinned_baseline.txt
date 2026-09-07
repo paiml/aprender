@@ -1,0 +1,1 @@
+252   # unpinned analyser references under scripts/ and .github/workflows/; basis: bash scripts/check_pmat_pinned.sh (grep -rEn "(^|[^_/])pmat " scripts/ .github/workflows/ | grep -v pmat_bin | wc -l) at a9fe67cc7; shrink-only (check_baseline_ratchets.sh kind count); G-10b PMAT-1063, sweep to 0 is G-10c
