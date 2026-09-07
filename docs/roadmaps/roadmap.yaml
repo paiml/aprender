@@ -15711,7 +15711,7 @@ roadmap:
   subtasks: []
   estimated_effort: null
   labels: []
-  notes: 'complete: proof:https://github.com/paiml/aprender/issues/2873#issuecomment-5558719034 (decided_by: noahgift via driver prompt 2026-09-06); proof:docs/audits/impl-PMAT-1020-receipt.md'
+  notes: 'complete: decided at https://github.com/paiml/aprender/issues/2873#issuecomment-5558719034 (decided_by: noahgift via driver prompt 2026-09-06); proof:docs/audits/impl-PMAT-1020-receipt.md'
 - id: PMAT-1021
   github_issue: null
   item_type: task
@@ -15728,7 +15728,7 @@ roadmap:
   subtasks: []
   estimated_effort: null
   labels: []
-  notes: 'complete: proof:https://github.com/paiml/aprender/issues/2873#issuecomment-5558719666 (decided_by: noahgift via driver prompt 2026-09-06); proof:docs/audits/impl-PMAT-1021-receipt.md'
+  notes: 'complete: decided at https://github.com/paiml/aprender/issues/2873#issuecomment-5558719666 (decided_by: noahgift via driver prompt 2026-09-06); proof:docs/audits/impl-PMAT-1021-receipt.md'
 - id: PMAT-1022
   github_issue: null
   item_type: task
@@ -15745,7 +15745,7 @@ roadmap:
   subtasks: []
   estimated_effort: null
   labels: []
-  notes: 'complete: proof:https://github.com/paiml/aprender/issues/2873#issuecomment-5558719920 (decided_by: noahgift via driver prompt 2026-09-06); proof:docs/audits/impl-PMAT-1022-receipt.md'
+  notes: 'complete: decided at https://github.com/paiml/aprender/issues/2873#issuecomment-5558719920 (decided_by: noahgift via driver prompt 2026-09-06); proof:docs/audits/impl-PMAT-1022-receipt.md'
 - id: PMAT-1023
   github_issue: null
   item_type: task
@@ -15762,7 +15762,7 @@ roadmap:
   subtasks: []
   estimated_effort: null
   labels: []
-  notes: 'complete: proof:https://github.com/paiml/aprender/issues/2873#issuecomment-5558720148 (decided_by: noahgift via driver prompt 2026-09-06); proof:docs/audits/impl-PMAT-1023-receipt.md'
+  notes: 'complete: decided at https://github.com/paiml/aprender/issues/2873#issuecomment-5558720148 (decided_by: noahgift via driver prompt 2026-09-06); proof:docs/audits/impl-PMAT-1023-receipt.md'
 - id: PMAT-1024
   github_issue: null
   item_type: task
