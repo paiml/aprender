@@ -16328,38 +16328,6 @@ roadmap:
   - kind:code
   - pp-066
   notes: 'complete: proof:PR#3011 (merged b0a0a51b2 2026-09-06T13:51:59Z); proof:docs/audits/impl-PMAT-1059-receipt.md'
-- id: Sovereign AI Integration Specification v1.1 - Complete architecture document with 10 peer-reviewed references, Toyota Way principles, and Rust safety improvements
-  github_issue: null
-  item_type: task
-  title: 'New task: Sovereign AI Integration Specification v1.1 - Complete architecture document with 10 peer-reviewed references, Toyota Way principles, and Rust safety improvements'
-  status: completed
-  priority: medium
-  assigned_to: null
-  created: 2025-11-20 19:29:36.580632+00:00
-  updated: 2025-11-20 19:29:42.227136+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: 'Phase 2: Bayesian Examples & Documentation - Create cargo examples and book chapters for Gamma-Poisson, Normal-InverseGamma, and Dirichlet-Multinomial conjugate priors'
-  github_issue: null
-  item_type: task
-  title: 'New task: Phase 2: Bayesian Examples & Documentation - Create cargo examples and book chapters for Gamma-Poisson, Normal-InverseGamma, and Dirichlet-Multinomial conjugate priors'
-  status: completed
-  priority: medium
-  assigned_to: null
-  created: 2025-11-22 14:41:15.060857+00:00
-  updated: 2025-11-22 14:55:52.231115+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
 - id: PMAT-1073
   github_issue: 3002
   item_type: task
