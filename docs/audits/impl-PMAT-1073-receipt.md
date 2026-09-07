@@ -170,7 +170,9 @@ Known limitation, on purpose: the CPU generation is spent before the refusal (re
 the fallback inside `run_gguf_generate`); the pre-generation refusal is #3042.
 
 ## Gaps / next
-Still owed before `status: complete`: the review-only quorum (one agy lane over the diff), the CI
-RED→GREEN mutation pair, `make fleet-verify ROW=R-0b` on four hosts (that is where the `parity:`
-line is observed on a CUDA build, and where lambda/gx10 confirm `selected: cuda`), and the merge —
-all gated on the fleet, which is BSE-001's until told otherwise; this PR is stacked on R-0a #3004.
+Quorum: done (one agy lane, verdict folded — above). Still owed before `status: complete`: the CI
+RED→GREEN mutation pair, `make fleet-verify ROW=R-0b` on four hosts (where the `parity:` line and
+`selected: cuda` are observed on a CUDA build, and where `apr chat --gpu`'s forced refusal on a
+CUDA-init failure — compiled here, not runnable — is exercised), and the merge. All gated on the
+fleet, which is BSE-001's until told otherwise; this PR is stacked on R-0a #3004. The waste on a
+forced runtime failure (CPU generation spent before the refusal) is #3042.
