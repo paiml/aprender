@@ -4,7 +4,7 @@
 # CI. The fleet installer is infra's forjar pin, applied to every clean-room
 # runner (paiml/infra, machines/intel/forjar.yaml):
 #
-#   stack-tool-pmat    (line 784)  version: "3.37.0"
+#   stack-tool-pmat    (line 784)  version: "3.39.0"   # infra ef0ec4c, 2026-09-06
 #   stack-tool-bashrs  (line 810)  version: "7.0.1"
 #
 # ci.yml used to run, per job:
@@ -23,7 +23,7 @@
 # Bump this file in the SAME commit as the infra forjar.yaml version bump.
 
 [pmat]
-version = "3.37.0"
+version = "3.39.0"
 
 [bashrs]
 version = "7.0.1"
