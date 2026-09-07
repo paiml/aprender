@@ -592,6 +592,13 @@ jobs:
       # the job whose own dispatcher it verifies.
       - name: "guard_tree.sh's own case table (BSE-01, wired BSE-02)"
         run: bash scripts/tests/guard_tree_test.sh
+      # R-5 (#2908): the crates.io cascade is NEVER run by a workflow (PP-066
+      # publish standard); its CASE TABLE is, so the script is a named guard
+      # (check_guards_are_wired.sh: a `--self-test` mode claims guard status)
+      # and the four refusals are proven on every PR with no registry token
+      # in sight.
+      - name: "Publish cascade refusals and derived order (case table, R-5)"
+        run: bash scripts/publish_cascade.sh --self-test
       - name: "target-watch: before-cargo-install-bashrs"
         # aprender#2822 boundary probe (2 stat, 1 readdir, 1 df, 1 pgrep).
         # Instrumentation, never a gate: the script always exits 0.

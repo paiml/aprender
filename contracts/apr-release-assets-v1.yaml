@@ -1,5 +1,5 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# apr-release-promotion-v1 — a release is promoted from prerelease to stable
+# apr-release-assets-v1 — the release assets are signed, and a release is promoted from prerelease to stable
 # only over four host receipts that each prove the DOWNLOADED asset is the
 # TESTED binary (PP-066 row R-5, epic #2873, issue #2908, claim 3)
 #
@@ -12,7 +12,7 @@
 #          skipped -> refuse), 2026-09-07.
 #   * L3/L4 — NOT APPLICABLE: a JSON-and-manifest rule, not a kernel.
 # ─────────────────────────────────────────────────────────────────────────────
-name: apr-release-promotion
+name: apr-release-assets
 version: "1.0.0"
 scope: >
   scripts/check_promotion_receipts.sh over evidence/dogfood/<version>/<host>.json

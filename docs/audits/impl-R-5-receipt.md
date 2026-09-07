@@ -6,7 +6,7 @@ kind: code
 branch: agent/R-5
 model: claude-fable-5-1
 ---
-# impl receipt — R-5: publish_cascade.sh (part 1) + the promotion gate (part 2)
+# impl receipt — R-5: the cascade (1), the promotion gate (2), the asset workflow (3)
 
 `status: partial`: the cascade script, its case table, its mutations and its contract are done and
 measured. The rest of R-5 (five release assets, sha256 + minisign manifest, base-owned promotion
@@ -77,7 +77,7 @@ uses (S0-19: no third scheme); unsigned or unverifiable promotes nothing.
 |---|---|
 | `--self-test` | 15/15, both polarities |
 | `bashrs lint` | 0 errors |
-| `pv validate contracts/apr-release-promotion-v1.yaml` | valid, 0 errors 0 warnings |
+| `pv validate contracts/apr-release-assets-v1.yaml` | valid, 0 errors 0 warnings |
 | bare run (how `guard_tree.sh` invokes every `check_*.sh`) | `NOT-RUN … exit 0` — argument-wired; the promotion step supplies the tag |
 
 The three registered mutations, **measured**:
@@ -111,6 +111,49 @@ What this half does NOT do: build or sign the assets, or produce the receipts. T
 release time, and until then the gate refuses (absent key ⇒ nothing promotes), which is the
 correct default.
 
+## Part 3: `.github/workflows/release-assets.yml`
+On a published release: `apr` is built for the five nightly.yml targets on hosted runners
+(`--locked`; Windows without the visualization feature, as nightly does), plus a `--features cuda`
+build on the gx10 runner. One sha256 manifest is written over every archive and signed with
+minisign under the scheme the repo already uses for PR-review receipts — committed
+`.github/release-assets.pub`, secret `RELEASE_ASSETS_SIGNING_KEY_B64` materialised to a file before
+`minisign -S` (S0-19: no third scheme) — and verified against the committed public key BEFORE
+upload. Archives, manifest and signature go to the release with `gh release upload`.
+
+A separate, manually dispatched `promote` job downloads the signed manifest FROM THE RELEASE,
+verifies it, runs `check_promotion_receipts.sh <tag> --manifest …` over the four host receipts
+committed on main, and only on PASS runs `gh release edit --prerelease=false`. The gate therefore
+reads nothing this workflow produced except the signed manifest, whose signature is what makes it
+base-owned (I2).
+
+| check | result |
+|---|---|
+| `actionlint` on release-assets.yml and ci.yml | clean, rc 0 |
+| `cargo publish` literal in release-assets.yml | 0 (the phrase is kept out of every workflow on purpose) |
+| `check_guards_are_wired.sh` | PASS (ratcheted): 110 scanned, 3 unwired, unchanged vs the baseline |
+| merge onto the advanced main (505fd159e), throwaway-worktree oracle | CLEAN |
+
+**Two facts that bound this half, recorded not hidden.**
+- **No x86_64 cuda runner exists.** The registered cuda-capable runner is gx10 (aarch64). The
+  x86_64 cuda asset D-10 would want cannot be produced by any workflow today; that asset is
+  absent from the manifest by construction, not silently mislabelled. Building it on lambda
+  requires registering lambda as a runner, which is an infra decision, not this row's.
+- **The public key does not exist yet.** `.github/release-assets.pub` is created with the first
+  signed manifest at release time (`minisign -G -W`, commit the .pub, set the secret). Until then
+  the manifest job refuses (unset secret ⇒ exit 1) and the promotion gate refuses (absent key ⇒
+  REFUSE). Both defaults are the correct direction.
+
+**The cascade script is a named guard, and that is right.** `check_guards_are_wired.sh` derives
+its universe from any script with a `--self-test` mode — "a claim to be a guard is what makes it
+one" — and went RED on `publish_cascade.sh`. The honest wiring is its CASE TABLE, run in ci's
+guard job on every PR; the live mode is never named by a workflow. A defect in how I first wired
+it: my anchor step existed only on a sibling stack, the assertion fired, and a chained commit
+landed WITHOUT the edit. Re-anchored on the tree being edited; the guard now passes.
+
+**Owed at release, not here:** the receipts' directory for an rc tag (`evidence/dogfood/0.66.0-rc1`
+vs `0.66.0`) is [U] until fleet-verify writes the first one; `check_multiplatform_dogfood.sh
+--from-release <tag>` (named in #2908's acceptance) is an R-2-file change and is not in this PR.
+
 ## An observation for the DONE-IF, not a change
 The driver's check "no workflow runs cargo publish" is written as `grep -rL 'cargo publish'`. That
 literal grep FAILS here, but the intent HOLDS: all three occurrences
@@ -118,8 +161,8 @@ literal grep FAILS here, but the intent HOLDS: all three occurrences
 classifier class as PMAT-1074 — a textual token test over prose. Recorded rather than worked around.
 
 ## Gaps
-The five assets and the sha256 + minisign manifest (the workflow half), the promotion STEP that
-invokes the gate with the tag, and `.github/release-assets.pub`; `--dry-run` against
+`.github/release-assets.pub` + the secret (created at the first signed release); the x86_64 cuda
+asset (no runner); `--from-release` in the dogfood script (R-2's file); `--dry-run` against
 the real registry (it runs `cargo publish --dry-run` per crate, which needs a full build of 71
 crates and is a release-time step); the live cascade itself at RELEASE; the 3-lane quorum; the CI
 RED→GREEN mutation pair; the merge. Queue is under another session's lock by operator instruction.

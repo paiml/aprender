@@ -1,0 +1,218 @@
+# release-assets.yml — PP-066 row R-5 (#2908), claim 3: the downloaded binary
+# is the tested binary.
+#
+# On a PUBLISHED release (rc or not) this builds `apr` for the five nightly.yml
+# targets on hosted runners, plus a CUDA build of the aarch64 asset on the gx10
+# runner (the only cuda-capable runner registered; there is no x86_64+cuda
+# runner, so that asset is not produced here — recorded in the R-5 receipt),
+# writes ONE sha256 manifest over every archive, signs it with minisign, and
+# uploads archives + manifest + signature to the release.
+#
+# SIGNING follows the scheme the repository already uses for PR-review receipts
+# (S0-19: a public key committed at .github/*.pub, the secret half escrowed as a
+# base64 repository secret and materialised to a file before use). No third
+# scheme. Public key: .github/release-assets.pub. Secret:
+# RELEASE_ASSETS_SIGNING_KEY_B64. Rotation: `minisign -G -W`, replace the .pub,
+# re-set the secret, re-sign.
+#
+# PROMOTION (prerelease -> stable) is a separate, manually dispatched job. It
+# downloads the manifest and its signature FROM THE RELEASE, verifies the
+# signature against the committed public key, and runs the base-owned gate
+# scripts/check_promotion_receipts.sh over the four host receipts committed
+# under evidence/dogfood/<version>/ by fleet-verify. Only a PASS flips
+# isPrerelease to false. The gate reads nothing this workflow produced except
+# the signed manifest, whose signature is what makes it trustworthy (I2).
+#
+# NOTHING HERE PUBLISHES TO crates.io. The cascade is scripts/publish_cascade.sh,
+# run locally from the promoted tag by the driver (PP-066 publish standard,
+# 2026-09-07); the literal command is kept out of every workflow file on purpose
+# so the driver's textual DONE-IF over .github/workflows stays meaningful.
+name: release-assets
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag (e.g. v0.66.0-rc1)'
+        required: true
+        type: string
+      promote:
+        description: 'Run the promotion gate and, on PASS, flip isPrerelease to false'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    if: ${{ github.event_name == 'release' || !inputs.promote }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            runner: ubuntu-latest
+          - target: aarch64-unknown-linux-gnu
+            runner: ubuntu-24.04-arm
+          - target: x86_64-apple-darwin
+            runner: macos-latest
+          - target: aarch64-apple-darwin
+            runner: macos-latest
+          - target: x86_64-pc-windows-msvc
+            runner: windows-latest
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Resolve tag
+        id: tag
+        shell: bash
+        run: |
+          TAG="${{ github.event.release.tag_name || inputs.tag }}"
+          [ -n "$TAG" ] || { echo "no tag"; exit 2; }
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+      - name: Checkout at tag
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ steps.tag.outputs.tag }}
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - name: Build (unix)
+        if: runner.os != 'Windows'
+        run: cargo build --release -p apr-cli --target ${{ matrix.target }} --locked
+      - name: Build (windows — no visualization feature)
+        if: runner.os == 'Windows'
+        run: cargo build --release -p apr-cli --target ${{ matrix.target }} --no-default-features --features inference --locked
+      - name: Package (unix)
+        if: runner.os != 'Windows'
+        run: |
+          ARCHIVE="apr-${{ steps.tag.outputs.tag }}-${{ matrix.target }}"
+          mkdir -p "$ARCHIVE"
+          cp "target/${{ matrix.target }}/release/apr" "$ARCHIVE/"
+          for f in README.md LICENSE LICENSE-MIT LICENSE-APACHE; do [ -f "$f" ] && cp "$f" "$ARCHIVE/"; done
+          tar czf "${ARCHIVE}.tar.gz" "$ARCHIVE"
+      - name: Package (windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $archive = "apr-${{ steps.tag.outputs.tag }}-${{ matrix.target }}"
+          New-Item -ItemType Directory -Force -Path $archive
+          Copy-Item "target/${{ matrix.target }}/release/apr.exe" "$archive/"
+          foreach ($f in @("README.md", "LICENSE", "LICENSE-MIT", "LICENSE-APACHE")) { if (Test-Path $f) { Copy-Item $f "$archive/" } }
+          Compress-Archive -Path "$archive/*" -DestinationPath "$archive.zip"
+      - name: Upload archive
+        uses: actions/upload-artifact@v7
+        with:
+          name: apr-${{ matrix.target }}
+          path: apr-${{ steps.tag.outputs.tag }}-${{ matrix.target }}.*
+          if-no-files-found: error
+
+  build-cuda-aarch64:
+    # D-10: assets carry cuda per target where a cuda-capable builder exists.
+    # gx10 is the only registered cuda runner; x86_64+cuda has none.
+    if: ${{ github.event_name == 'release' || !inputs.promote }}
+    runs-on: [self-hosted, gpu, gx10, cuda, blackwell]
+    steps:
+      - name: Resolve tag
+        id: tag
+        run: |
+          TAG="${{ github.event.release.tag_name || inputs.tag }}"
+          [ -n "$TAG" ] || { echo "no tag"; exit 2; }
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+      - name: Checkout at tag
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ steps.tag.outputs.tag }}
+      - name: Build (cuda)
+        run: cargo build --release -p apr-cli --features cuda --locked
+      - name: Package
+        run: |
+          ARCHIVE="apr-${{ steps.tag.outputs.tag }}-aarch64-unknown-linux-gnu-cuda"
+          mkdir -p "$ARCHIVE"
+          cp target/release/apr "$ARCHIVE/"
+          for f in README.md LICENSE LICENSE-MIT LICENSE-APACHE; do [ -f "$f" ] && cp "$f" "$ARCHIVE/"; done
+          tar czf "${ARCHIVE}.tar.gz" "$ARCHIVE"
+      - name: Upload archive
+        uses: actions/upload-artifact@v7
+        with:
+          name: apr-aarch64-unknown-linux-gnu-cuda
+          path: apr-${{ steps.tag.outputs.tag }}-aarch64-unknown-linux-gnu-cuda.tar.gz
+          if-no-files-found: error
+
+  manifest:
+    needs: [build, build-cuda-aarch64]
+    if: ${{ always() && needs.build.result == 'success' && (github.event_name == 'release' || !inputs.promote) }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve tag
+        id: tag
+        run: |
+          TAG="${{ github.event.release.tag_name || inputs.tag }}"
+          [ -n "$TAG" ] || { echo "no tag"; exit 2; }
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+      - name: Checkout (for the public key and the guard)
+        uses: actions/checkout@v7
+      - name: Download every archive
+        uses: actions/download-artifact@v7
+        with:
+          path: assets
+          merge-multiple: true
+      - name: Install minisign
+        run: sudo apt-get update -q && sudo apt-get install -y -q minisign
+      - name: Write and sign the manifest
+        env:
+          KEY_B64: ${{ secrets.RELEASE_ASSETS_SIGNING_KEY_B64 }}
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.tag.outputs.tag }}"
+          cd assets
+          ls -la
+          # ONE manifest over every archive; the promotion gate greps a receipt's
+          # binary sha against these lines.
+          sha256sum apr-"$TAG"-*.tar.gz apr-"$TAG"-*.zip 2>/dev/null > "apr-$TAG.sha256" || sha256sum apr-"$TAG"-*.tar.gz > "apr-$TAG.sha256"
+          cat "apr-$TAG.sha256"
+          [ -n "${KEY_B64:-}" ] || { echo "REFUSE: RELEASE_ASSETS_SIGNING_KEY_B64 is unset; an unsigned manifest promotes nothing"; exit 1; }
+          umask 077
+          printf '%s' "$KEY_B64" | base64 -d > "$RUNNER_TEMP/release-assets.key"
+          [ -s "$RUNNER_TEMP/release-assets.key" ] || { echo "REFUSE: the secret did not decode to a non-empty key file"; exit 1; }
+          # -W: the key was generated without a password (minisign -G -W)
+          minisign -S -W -s "$RUNNER_TEMP/release-assets.key" -m "apr-$TAG.sha256"
+          rm -f "$RUNNER_TEMP/release-assets.key"
+          # verify what we just signed against the COMMITTED public key before uploading
+          minisign -Vm "apr-$TAG.sha256" -p ../.github/release-assets.pub
+      - name: Upload archives, manifest and signature to the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ steps.tag.outputs.tag }}"
+          gh release upload "$TAG" assets/apr-"$TAG"-* assets/apr-"$TAG".sha256 assets/apr-"$TAG".sha256.minisig --clobber
+
+  promote:
+    # Manually dispatched with promote=true. Base-owned: reads the signed
+    # manifest from the release and the four host receipts committed on main.
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.promote }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main (the committed receipts and public key)
+        uses: actions/checkout@v7
+        with:
+          ref: main
+      - name: Install minisign
+        run: sudo apt-get update -q && sudo apt-get install -y -q minisign
+      - name: Download the signed manifest from the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/manifest"
+          gh release download "${{ inputs.tag }}" --pattern 'apr-${{ inputs.tag }}.sha256*' --dir "$RUNNER_TEMP/manifest"
+          ls -la "$RUNNER_TEMP/manifest"
+      - name: Promotion gate (four receipts, asset sha256 in the manifest, C14 PASS, parity never skipped)
+        run: bash scripts/check_promotion_receipts.sh "${{ inputs.tag }}" --manifest "$RUNNER_TEMP/manifest/apr-${{ inputs.tag }}.sha256"
+      - name: Promote
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release edit "${{ inputs.tag }}" --prerelease=false --latest

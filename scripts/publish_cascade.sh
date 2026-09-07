@@ -60,7 +60,7 @@ pc_prerelease() { # true | false | unknown
 pc_list() {
     command -v python3 >/dev/null 2>&1 || { printf '%s: ENV - python3 missing\n' "$PROG" >&2; return 2; }
     if [ -n "${PC_METADATA+x}" ]; then cat "$PC_METADATA"; else
-        ( cd "$ROOT" && cargo metadata --no-deps --format-version 1 2>/dev/null ) || {
+        cargo metadata --no-deps --format-version 1 --manifest-path "$ROOT/Cargo.toml" 2>/dev/null || {
             printf '%s: ENV - cargo metadata failed\n' "$PROG" >&2; return 2; }
     fi | python3 -c '
 import json, sys
@@ -230,7 +230,7 @@ case "${1:-}" in
     while IFS=$(printf '\t') read -r crate version; do
         [ -n "$crate" ] || continue
         i=$((i + 1))
-        if ( cd "$ROOT" && cargo publish -p "$crate" --dry-run --allow-dirty > /dev/null 2>&1 ); then
+        if cargo publish -p "$crate" --dry-run --allow-dirty --manifest-path "$ROOT/Cargo.toml" > /dev/null 2>&1; then
             printf '| %s | %s | %s | ok |\n' "$i" "$crate" "$version" >> "$ROOT/$RECEIPT"
             printf 'ok    %-34s %s\n' "$crate" "$version"
         else
@@ -265,7 +265,7 @@ while IFS=$(printf '\t') read -r crate version; do
         continue
     fi
     printf 'publish %-34s %s\n' "$crate" "$version"
-    if ( cd "$ROOT" && cargo publish -p "$crate" ); then
+    if cargo publish -p "$crate" --manifest-path "$ROOT/Cargo.toml"; then
         live="$live $crate"
         # the index is eventually consistent; the next crate's build resolves
         # this one from it, so wait for it to appear rather than racing.
