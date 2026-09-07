@@ -494,6 +494,52 @@ pub struct KvReport {
 // The response
 // ---------------------------------------------------------------------------
 
+/// R-0b (#3002, REG-12): the backend apr-cli RESOLVED at startup — the registry
+/// Selection with its reason and `discovered_at` — set once per process by the
+/// serve gate and reported beside the residency-MEASURED `compute_class` so a
+/// reader can cross-check the two. `matches_loaded` is `null` until a model is
+/// resident (nothing to compare), then `kind == compute_class`.
+#[derive(Debug, Clone, Serialize)]
+pub struct BackendResolution {
+    /// `cpu`, `cuda`, `wgpu`, `metal`, `hip` — the registry kind selected.
+    pub kind: String,
+    /// Device index within the kind, when a physical device was selected.
+    pub device_index: Option<u32>,
+    /// Stable device identity (REG-9), when known.
+    pub device_uid: Option<String>,
+    /// Human name of the selected device (`host cpu` for cpu).
+    pub device_name: String,
+    /// Why this selection (REG-8): the registry's reason or the request.
+    pub reason: String,
+    /// When the registry was discovered (unix seconds; REG-12).
+    pub discovered_at_unix: u64,
+    /// Who resolved it and when (the launcher names itself).
+    pub basis: String,
+    /// `kind == compute_class` once a model is resident; `null` before.
+    pub matches_loaded: Option<bool>,
+}
+
+static BACKEND_RESOLUTION: std::sync::OnceLock<BackendResolution> = std::sync::OnceLock::new();
+
+/// Record the startup resolution. `false` when one was already recorded: the
+/// first wins, and a second call is a caller defect, never a silent overwrite.
+pub fn set_backend_resolution(r: BackendResolution) -> bool {
+    BACKEND_RESOLUTION.set(r).is_ok()
+}
+
+/// The recorded startup resolution, if the launcher recorded one.
+#[must_use]
+pub fn backend_resolution() -> Option<BackendResolution> {
+    BACKEND_RESOLUTION.get().cloned()
+}
+
+fn resolved_report(compute_class: &str) -> Option<BackendResolution> {
+    backend_resolution().map(|mut r| {
+        r.matches_loaded = (compute_class != "unknown").then(|| r.kind == compute_class);
+        r
+    })
+}
+
 /// Body of `GET /v1/effective-config`.
 ///
 /// The key set is IDENTICAL on every build. `cuda` is `null` on a build without
@@ -531,6 +577,9 @@ pub struct EffectiveConfigResponse {
     /// `true` when a live field could not be read because the model lock was
     /// held (PMAT-073). The affected blocks are absent, never guessed.
     pub lock_contended: bool,
+    /// R-0b (#3002): the startup backend resolution (`null` when the launcher
+    /// recorded none), with `matches_loaded` against `compute_class`.
+    pub resolved: Option<BackendResolution>,
 }
 
 /// `realizar`'s own compile-time feature set.
@@ -657,7 +706,8 @@ fn parity_report(_state: &AppState) -> ParityReport {
 pub fn effective_config(state: &AppState) -> EffectiveConfigResponse {
     let effective = state.effective_config_state();
     let cuda_snapshot = cuda_snapshot(state);
-    EffectiveConfigResponse {
+    let mut resp = EffectiveConfigResponse {
+        resolved: None,
         schema_version: EFFECTIVE_CONFIG_SCHEMA_VERSION,
         parity: parity_report(state),
         server: {
@@ -687,7 +737,9 @@ pub fn effective_config(state: &AppState) -> EffectiveConfigResponse {
         cuda: cuda_snapshot.cuda,
         kv: cuda_snapshot.kv,
         lock_contended: cuda_snapshot.lock_contended,
-    }
+    };
+    resp.resolved = resolved_report(resp.compute_class);
+    resp
 }
 
 /// The live half of the body: everything that needs the model lock.

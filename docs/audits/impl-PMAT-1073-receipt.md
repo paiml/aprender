@@ -127,10 +127,20 @@ host facts; the live registry finds an RTX 4090 through wgpu on this non-cuda bu
 One `selected:` line per process (`grep -c` = 1 on `run --gpu`). The `parity:` line needs a CUDA
 build and a GPU host; it is owed from the lambda/gx10 fleet-verify.
 
+## Fourth commit: `GET /v1/effective-config.resolved` (A3, REG-12)
+`realizar::api::effective_config::{BackendResolution, set_backend_resolution}` — a process-wide
+record (first write wins) the serve gate sets from its `Resolved` right after resolving; the
+response gains a `resolved` key {kind, device_index, device_uid, device_name, reason,
+discovered_at_unix, basis, matches_loaded} beside the residency-measured `compute_class`, with
+`matches_loaded` null until a model is resident, then `kind == compute_class`. No `AppState`
+builder site changes (there are seven). Route test `effective_config_reports_the_startup_backend_resolution`
++ REQUIRED_TOP_LEVEL_KEYS 13 → 14 (29/29 in the module). Contract REG-OB-004/REG-F-003 extended.
+Verified: `cargo test -p aprender-serve --lib effective_config`, apr-cli serve/accel/registry
+278/278, `cargo check -p apr-cli --features cuda`, `cargo clippy -p {apr-cli,aprender-serve} --lib
+-- -D warnings` (the crate denies `missing_docs`; two iterations to satisfy it).
+
 ## Gaps / next
-Still owed before `status: complete`: the `selected:` line at every model-load site (run/chat/serve),
-A3's `GET /v1/effective-config.backend == resolved Selection` + `discovered_at` (REG-12) on the
-served process, `make fleet-verify ROW=R-0b` on four hosts, and the CI RED→GREEN mutation pair
-(the fleet is BSE-001's until told otherwise; this PR is stacked on R-0a #3004 and cannot arm
-before it merges).  A3's `GET /v1/effective-config.backend == resolved Selection` + `discovered_at` (REG-12)
-on the served process, and `make fleet-verify ROW=R-0b` on four hosts.
+Still owed before `status: complete`: the review-only quorum (one agy lane over the diff), the CI
+RED→GREEN mutation pair, `make fleet-verify ROW=R-0b` on four hosts (that is where the `parity:`
+line is observed on a CUDA build, and where lambda/gx10 confirm `selected: cuda`), and the merge —
+all gated on the fleet, which is BSE-001's until told otherwise; this PR is stacked on R-0a #3004.

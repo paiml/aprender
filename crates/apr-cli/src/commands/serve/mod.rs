@@ -261,7 +261,9 @@ fn accelerator_request(config: &ServerConfig) -> Option<(crate::registry::Reques
 /// R-0b (#3002): the request resolves against the backend registry. A forced
 /// backend never downgrades: not compiled ⇒ `FeatureDisabled` (9), compiled but
 /// not Ready on this host ⇒ `BackendUnavailable` (14).
-fn ensure_accelerator_available(config: &ServerConfig) -> Result<()> {
+fn ensure_accelerator_available(
+    config: &ServerConfig,
+) -> Result<Option<crate::registry::Resolved>> {
     match accelerator_request(config) {
         // R-0b "selected: always": the registry's default is announced with its
         // reason even when nothing asked for an accelerator.
@@ -282,10 +284,9 @@ fn ensure_accelerator_available(config: &ServerConfig) -> Result<()> {
                 backend: config.backend.as_deref(),
                 layers_want_accelerator: false,
             };
-            let _ = crate::registry::announce(&req, asked);
-            Ok(())
+            Ok(crate::registry::announce(&req, asked).ok())
         }
-        Some((req, asked)) => crate::registry::announce(&req, &asked).map(|_| ()),
+        Some((req, asked)) => crate::registry::announce(&req, &asked).map(Some),
     }
 }
 
@@ -295,10 +296,10 @@ fn ensure_accelerator_available(config: &ServerConfig) -> Result<()> {
 pub(crate) fn ensure_accelerator_available_in(
     config: &ServerConfig,
     reg: &trueno::registry::BackendRegistry,
-) -> Result<()> {
+) -> Result<Option<crate::registry::Resolved>> {
     match accelerator_request(config) {
-        None => Ok(()),
-        Some((req, asked)) => crate::registry::resolve_in(&req, &asked, reg).map(|_| ()),
+        None => Ok(None),
+        Some((req, asked)) => crate::registry::resolve_in(&req, &asked, reg).map(Some),
     }
 }
 
@@ -321,7 +322,25 @@ pub(crate) fn run(model_path: &Path, config: &ServerConfig) -> Result<()> {
     contract_pre_server_lifecycle!();
 
     // `--gpu` must not be accepted by a build that has no GPU to dispatch to.
-    ensure_accelerator_available(config)?;
+    let resolved = ensure_accelerator_available(config)?;
+    // R-0b / REG-12: the startup resolution reaches GET /v1/effective-config.
+    #[cfg(feature = "inference")]
+    if let Some(r) = resolved {
+        let _ = realizar::api::effective_config::set_backend_resolution(
+            realizar::api::effective_config::BackendResolution {
+                kind: r.kind.to_string(),
+                device_index: r.device_index,
+                device_uid: r.device_uid,
+                device_name: r.device_name,
+                reason: r.reason,
+                discovered_at_unix: r.discovered_at_unix,
+                basis: "apr-cli backend registry at startup (R-0b, #3002)".to_string(),
+                matches_loaded: None,
+            },
+        );
+    }
+    #[cfg(not(feature = "inference"))]
+    let _ = resolved;
 
     // PMAT-297: Configure rayon thread pool to physical core count.
     // Default (all threads incl. HT) causes 44% regression from contention.

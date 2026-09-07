@@ -86,7 +86,7 @@ equations:
 
 proof_obligations:
   - id: REG-OB-004
-    statement: "apr-cli turns a backend request into a Selection or a refusal by reading the registry, never cfg!; a forced accelerator that is not Ready refuses (exit 9 not-compiled, 14 not-Ready) and never resolves to cpu; the static guard keeps cfg!(feature=cuda|wgpu) backend reads at zero outside registry.rs."
+    statement: "apr-cli turns a backend request into a Selection or a refusal by reading the registry, never cfg!; a forced accelerator that is not Ready refuses (exit 9 not-compiled, 14 not-Ready) and never resolves to cpu; every run/chat/serve prints one `selected:` line; the static guard keeps cfg!(feature=cuda|wgpu) backend reads at zero outside registry.rs; the served process reports the startup Selection as effective-config `resolved` (REG-12)."
     discharged_by: falsification_tests[2]
   - id: REG-OB-001
     statement: "cpu is always Ready and every kind of the fixed list is an entry; a non-Ready entry carries a non-empty reason and every entry a source (spec invariants i and iii)."
@@ -140,8 +140,11 @@ falsification_tests:
       cpu_and_no_gpu_and_default_resolve_to_cpu, the_default_takes_a_ready_accelerator_when_there_is_one,
       every_backend_value_is_resolvable_on_every_fixture_and_forced_gpu_is_never_cpu: 5/5 PASS; and
       scripts/check_backend_registry.sh --static finds zero cfg!(feature = "cuda"|"wgpu") backend reads
-      in crates/apr-cli/src outside registry.rs.
-    test: 'cargo test -p apr-cli --test backend_refusal_case_table && bash scripts/check_backend_registry.sh --static'
+      in crates/apr-cli/src outside registry.rs; and GET /v1/effective-config carries `resolved`
+      {kind, device_index, device_uid, device_name, reason, discovered_at_unix, basis, matches_loaded}
+      — the startup Selection (REG-12) beside the residency-measured compute_class, matches_loaded
+      null on a model-less server (effective_config_reports_the_startup_backend_resolution).
+    test: 'cargo test -p apr-cli --test backend_refusal_case_table && bash scripts/check_backend_registry.sh --static && cargo test -p aprender-serve --lib effective_config_route_pp2'
     if_fails: >-
       a build that compiled no accelerator, or a host with none Ready, runs a forced --gpu on cpu
       and reports success (aprender#2696) — the claim-1 defect
