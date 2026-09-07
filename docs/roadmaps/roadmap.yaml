@@ -16422,3 +16422,163 @@ roadmap:
   - kind:code
   - pp-066
   notes: null
+- id: PMAT-1061
+  github_issue: null
+  item_type: task
+  title: 'BSE-16 fail-closed gate: target — pmat verify stage_tests root-crate-only in a workspace, SATD pre-existing (§13 F-09)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-09-07T01:23:54Z
+  updated: 2026-09-07T01:23:54Z
+  spec: docs/specifications/build-system-enhancement.md (paiml/infra)
+  acceptance_criteria:
+  - 'The A_i command of the matching §4 item in the spec exits 0 on the branch and its named mutation goes RED; Fable re-runs both.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - bse-001
+  - m2
+  notes: null
+- id: PMAT-1062
+  github_issue: null
+  item_type: task
+  title: 'BSE-01 guard job runs all, reports all; CARGO_TARGET_DIR per container step; aprender timeout-minutes'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-09-07T01:23:54Z
+  updated: 2026-09-07T01:23:54Z
+  spec: docs/specifications/build-system-enhancement.md (paiml/infra)
+  acceptance_criteria:
+  - 'The A_i command of the matching §4 item in the spec exits 0 on the branch and its named mutation goes RED; Fable re-runs both.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - bse-001
+  - m2
+  notes: null
+- id: PMAT-1063
+  github_issue: null
+  item_type: task
+  title: 'BSE-14 scripts/predict_merge.sh — merge(origin/main, HEAD) in a temp worktree, guard_tree --list guards, freshness tuple, --check refuses on movement'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-09-07T01:23:54Z
+  updated: 2026-09-07T01:23:54Z
+  spec: docs/specifications/build-system-enhancement.md (paiml/infra)
+  acceptance_criteria:
+  - 'The A_i command of the matching §4 item in the spec exits 0 on the branch and its named mutation goes RED; Fable re-runs both.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - bse-001
+  - m2
+  notes: null
+- id: PMAT-1064
+  github_issue: null
+  item_type: task
+  title: 'BSE-02 guard-tree job first (the cargo-free guards), parallel to the builds'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-09-07T01:23:54Z
+  updated: 2026-09-07T01:23:54Z
+  spec: docs/specifications/build-system-enhancement.md (paiml/infra)
+  acceptance_criteria:
+  - 'The A_i command of the matching §4 item in the spec exits 0 on the branch and its named mutation goes RED; Fable re-runs both.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - bse-001
+  - m2
+  notes: null
+- id: PMAT-1065
+  github_issue: null
+  item_type: task
+  title: 'BSE-09b merge=union on GitHub''s merge engine (goal lane); BSE-09a sorted-insert only if union CONFLICTS'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-07T01:23:54Z
+  updated: 2026-09-07T01:23:54Z
+  spec: docs/specifications/build-system-enhancement.md (paiml/infra)
+  acceptance_criteria:
+  - 'The A_i command of the matching §4 item in the spec exits 0 on the branch and its named mutation goes RED; Fable re-runs both.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - bse-001
+  - m2
+  notes: null
+- id: PMAT-1066
+  github_issue: null
+  item_type: task
+  title: 'BSE-10a CI tool pins + baseline tool_version — assert, never install (tools.toml, check_tool_versions.sh)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-07T01:23:54Z
+  updated: 2026-09-07T01:23:54Z
+  spec: docs/specifications/build-system-enhancement.md (paiml/infra)
+  acceptance_criteria:
+  - 'The A_i command of the matching §4 item in the spec exits 0 on the branch and its named mutation goes RED; Fable re-runs both.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - bse-001
+  - m2
+  notes: null
+- id: PMAT-1067
+  github_issue: null
+  item_type: task
+  title: 'BSE-11 nightly witness byte-compare (witness_diff.sh: UNCHANGED/CHANGED, never a status colour)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-07T01:23:54Z
+  updated: 2026-09-07T01:23:54Z
+  spec: docs/specifications/build-system-enhancement.md (paiml/infra)
+  acceptance_criteria:
+  - 'The A_i command of the matching §4 item in the spec exits 0 on the branch and its named mutation goes RED; Fable re-runs both.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - bse-001
+  - m2
+  notes: null
+- id: PMAT-1068
+  github_issue: null
+  item_type: task
+  title: 'BSE-03 three ratchet classes → D2 comparand diff measured on origin/main@SHA in-run; README count derived; threat model first (PR-B)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-09-07T01:23:54Z
+  updated: 2026-09-07T01:23:54Z
+  spec: docs/specifications/build-system-enhancement.md (paiml/infra)
+  acceptance_criteria:
+  - 'The A_i command of the matching §4 item in the spec exits 0 on the branch and its named mutation goes RED; Fable re-runs both.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - bse-001
+  - m2
+  notes: null
