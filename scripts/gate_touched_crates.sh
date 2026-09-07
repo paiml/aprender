@@ -41,6 +41,10 @@ while [ $# -gt 0 ]; do
       DRY_RUN=1
       shift
       ;;
+    --print-selection)
+      PRINT_SELECTION=1
+      shift
+      ;;
     --diff-from)
       [ $# -ge 2 ] || { echo "gate_touched_crates: --diff-from requires a file argument" >&2; exit 2; }
       DIFF_FROM="$2"
@@ -134,6 +138,18 @@ sorted_list() {
   fi
   printf '%s\n' "$@" | sort | paste -sd' ' -
 }
+
+# --print-selection (BSE-17, PMAT-1077): one machine-readable line for the CI
+# tier decision, no cargo run. `selection=full` when the rule falls closed to the
+# whole workspace, `none` when nothing is touched, `quick` with the sorted set.
+if [ "${PRINT_SELECTION:-0}" -eq 1 ]; then
+  case "$action" in
+    check) printf 'selection=full crates= rule=%s\n' "$rule" ;;
+    none)  printf 'selection=none crates= rule=%s\n' "$rule" ;;
+    test)  printf 'selection=quick crates=%s rule=%s\n' "$(sorted_list "${!selected[@]}")" "$rule" ;;
+  esac
+  exit 0
+fi
 
 echo "gate_touched_crates: comparand=${COMPARAND}"
 echo "gate_touched_crates: touched crate(s): $(sorted_list "${!touched_crates[@]}")"

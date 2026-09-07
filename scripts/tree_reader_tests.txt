@@ -1,0 +1,42 @@
+# tool_version=none (derived by scripts/check_tree_reader_tests.sh from the test sources; regenerate with --update, never edit)
+# crate<TAB>--test<TAB>name | crate<TAB>--lib — every test target that reads the tree (BSE-17); the quick tier always runs these
+apr-cli	--lib
+apr-cli	--test	beat_apr_sibling_cli_reach
+apr-cli	--test	cli_commands
+apr-format	--lib
+aprender-cgp	--lib
+aprender-compute-xtask	--bins
+aprender-contracts	--lib
+aprender-contracts	--test	apr_serve_api_key_auth_contract
+aprender-contracts	--test	kani_harness_generation
+aprender-contracts	--test	probar_test_generation
+aprender-contracts	--test	validate_contracts
+aprender-contracts-cli	--lib
+aprender-contracts-cli	--test	cli_integration
+aprender-contracts-cli	--test	ground_truth
+aprender-contracts-cli	--test	pv_surface_gate
+aprender-core	--lib
+aprender-core	--test	beat_sklearn_gaussiannb_accuracy
+aprender-core	--test	beat_sklearn_iris
+aprender-core	--test	beat_sklearn_metrics_parity
+aprender-core	--test	beat_sklearn_nmi
+aprender-core	--test	beat_sklearn_pipeline_encoder
+aprender-core	--test	beat_sklearn_svc_accuracy
+aprender-core	--test	book_contracts
+aprender-core	--test	falsification_spec_v10_tests
+aprender-core	--test	monorepo_invariants
+aprender-core	--test	readme_contract
+aprender-core	--test	setfit_conformance
+aprender-orchestrate	--lib
+aprender-present-cli	--bins
+aprender-present-lib	--lib
+aprender-profile	--lib
+aprender-qa-certify	--lib
+aprender-rag	--lib
+aprender-rag-cli	--lib
+aprender-serve	--lib
+aprender-shell	--lib
+aprender-simulate	--lib
+aprender-test-cli	--lib
+aprender-test-lib	--lib
+aprender-train	--lib

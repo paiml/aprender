@@ -16599,3 +16599,20 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-1077
+  github_issue: null
+  item_type: task
+  title: 'BSE-17 two-tier tests: quick on pull_request (touched crates + reverse dependents + derived tree-reader targets), full on push-to-main/merge_group/nightly/pre-release; tree-identity reuse on the queue ref'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-07T15:00:58Z
+  updated: 2026-09-07T15:00:58Z
+  spec: null
+  acceptance_criteria:
+  - 'Ruling 2026-09-07 (Noah): ''quick test for aprender PR, then full test pre-release — implement ASAP''. Measured 2026-09-07: 22 workspace-test jobs in 33 CI runs, 8 green at 95 min avg, 6 cancelled by a newer push, 4 merge-queue rebuilds of a tree byte-identical to the PR head; both PR-B workspace-test reds came from tree-reader tests (contracts baseline reader, readme_contract.rs) that a crate selection alone would have skipped. Quick tier = gate_touched_crates.sh selection (cap -> full) + every test target that reads the tree, DERIVED by scripts/check_tree_reader_tests.sh from the test sources (include_str!, fs::read*, Path::new, project_root/workspace_root, CARGO_MANIFEST_DIR) into scripts/tree_reader_tests.txt and diffed on every run. Full tier unchanged on push to main, merge_group, workflow_dispatch, nightly, pre-release. Queue ref: when HEAD^{tree} equals the PR head''s tree and that head''s workspace-test check-run succeeded, the job cites it and skips the suite; any doubt runs it.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
