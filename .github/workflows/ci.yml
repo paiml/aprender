@@ -1139,6 +1139,14 @@ jobs:
         run: bash scripts/check_roadmap_completion_is_cited.sh
       - name: Roadmap-citation guard can still go RED (case table)
         run: bash scripts/check_roadmap_completion_is_cited.sh --selftest
+      # PMAT-1072 (#3028): every `id:` in the roadmap is unique, nested subtask
+      # records included — pmat >= 3.39.0's `work validate` rule, enforced here
+      # through the parsed tree so the fleet's PATH pmat version is never the only
+      # thing standing between main and a duplicate id. Case table first.
+      - name: "Roadmap-id-uniqueness guard case table (6 rows, both polarities)"
+        run: bash scripts/check_roadmap_ids_unique.sh --self-test
+      - name: Every roadmap id is unique, nested records included (PMAT-1072)
+        run: bash scripts/check_roadmap_ids_unique.sh
       # C0-7 (PP-066, #2984): an implementation receipt is complete only when its
       # leading front matter says `status: complete` (a marker the writer sets
       # LAST, written .tmp then mv'd); a DAG row may claim status: complete

@@ -1,0 +1,150 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# apr-roadmap-ids-unique-v1 — every `id:` in docs/roadmaps/roadmap.yaml is
+# unique, nested records included (PMAT-1072, #3028; fleet drift infra#468)
+#
+# WHAT IT GOVERNS
+#   The id namespace of the roadmap as pmat >= 3.39.0 reads it: every `id:`
+#   key in the PARSED tree — top-level entries and any nested record (the
+#   legacy `subtasks:` child copies) — names one ticket once. An id that
+#   appears inside a block-scalar body is prose. The rule lives in the repo
+#   (scripts/check_roadmap_ids_unique.sh, wired in guard-runner-labels), so
+#   the version of pmat on a runner's PATH is never the only guard.
+#
+# PROOF LADDER, STATED HONESTLY
+#   * L1 — the guard exists and is wired (ci.yml, case table before the live run).
+#   * L2 — falsification MEASURED: `--self-test` 6/6 (2026-09-06); the live
+#          guard is RED on main @ 3792afa3d's roadmap (12 duplicates, the same
+#          12 pmat 3.39.0 names in run 34049248452) and GREEN after the fix.
+#   * L3/L4 — NOT APPLICABLE: a YAML data file, not a kernel. No self-exemption.
+# ─────────────────────────────────────────────────────────────────────────────
+name: apr-roadmap-ids-unique
+version: "1.0.0"
+scope: >
+  docs/roadmaps/roadmap.yaml, parsed. Out of scope: which ids are minted and
+  by whom (the PP-066 driver's minter rule), the additive-diff rule (G-6,
+  scripts/check_roadmap_diff_additive.sh), and pmat's own validator.
+status: active
+
+metadata:
+  kind: pattern     # a uniqueness rule over a YAML data file, not a math
+                    # kernel. Set EXPLICITLY so `pv validate`'s `kernel`
+                    # default never silently applies.
+  version: "1.0.0"
+  created: '2026-09-06'
+  last_modified: '2026-09-06'
+  author: PAIML Engineering
+  references:
+    - 'scripts/check_roadmap_ids_unique.sh — the guard: [<roadmap.yaml>] · --self-test (6 rows)'
+    - '.github/workflows/ci.yml — job guard-runner-labels (case table, then the live roadmap)'
+    - 'pmat 3.39.0 CHANGELOG (PMAT-674, pmat PR #1196): `work validate` refuses a duplicated id, subtask ids included'
+    - 'paiml/aprender#3028 — main RED on run 34049248452; paiml/infra#468 — the fleet PATH pmat pin drift'
+  description: >
+    A roadmap id names one ticket. pmat >= 3.39.0 refuses a file where any
+    `id:` line repeats; older pmat wrote nested child records under a parent's
+    `subtasks:` that repeat the child's id, and no in-repo check saw them
+    because the pinned analyser predates the rule. The guard walks the parsed
+    tree, reports every duplicate with its path and line, and fails closed on
+    an unparsable file.
+
+equations:
+  ids_are_unique_in_the_parsed_tree:
+    formula: |
+      ids(doc) = [ node.id | node ∈ mappings(doc), "id" ∈ keys(node) ]
+      valid(doc) ⇔ |ids(doc)| = |set(ids(doc))|
+      a scalar body (`spec: |` …) is text: its lines contribute no id
+    domain: 'docs/roadmaps/roadmap.yaml parsed by yaml.safe_load'
+    codomain: 'bool'
+    invariants:
+    - 'NESTED RECORDS COUNT (self-test row 2): a `subtasks:` child record with an id that also exists top-level is a duplicate — the #3028 shape.'
+    - 'PROSE DOES NOT COUNT (row 4): an `- id:` line inside a block scalar is not a node.'
+    preconditions: []
+    postconditions:
+    - 'exit 0 prints `PASS  <n> ids`; exit 1 names every duplicate id with path and line'
+
+  unparsable_is_a_defect_missing_is_env:
+    formula: |
+      yaml.safe_load fails  =>  exit 1 (a defect in the file)
+      file absent           =>  exit 2 (the box cannot answer; never a pass)
+    domain: 'the guard invocation'
+    codomain: '{0, 1, 2}'
+    invariants:
+    - 'A GUARD THAT CANNOT READ ITS INPUT DOES NOT PASS (rows 5, 6).'
+    preconditions: []
+    postconditions:
+    - 'the self-test exercises both exits'
+
+  enforcement_is_wired_case_table_then_live:
+    formula: |
+      ci.yml job "guard-runner-labels" contains, in order:
+        run "bash scripts/check_roadmap_ids_unique.sh --self-test"
+        run "bash scripts/check_roadmap_ids_unique.sh"
+    domain: 'the step list of job guard-runner-labels in .github/workflows/ci.yml'
+    codomain: 'bool'
+    invariants:
+    - 'CASE TABLE BEFORE THE LIVE CHECK (Verification Discipline #7).'
+    preconditions:
+    - 'guard-runner-labels is in gate.needs, so a RED here fails gate transitively'
+    postconditions:
+    - 'check_guards_are_wired.sh names the guard as wired'
+
+proof_obligations:
+  - id: RMID-OB-001
+    statement: "Every id in the parsed roadmap tree is unique; nested records count, block-scalar text does not."
+    discharged_by: falsification_tests[0]
+  - id: RMID-OB-002
+    statement: "An unparsable roadmap is exit 1 and a missing one exit 2; neither is a pass."
+    discharged_by: falsification_tests[1]
+  - id: RMID-OB-003
+    statement: "The guard is wired in ci.yml's guard-runner-labels, case table before the live run."
+    discharged_by: falsification_tests[2]
+
+falsification_tests:
+
+  - id: RMID-F-001
+    rule: ids are unique in the parsed tree
+    prediction: >-
+      Two unique ids PASS (row 1); a nested subtask record duplicating a
+      top-level id FAILS naming `A-2`, its path `subtasks[0]` and line 5
+      (row 2); two top-level entries with one id FAIL (row 3); an id inside a
+      block scalar PASSES (row 4).
+    test: 'bash scripts/check_roadmap_ids_unique.sh --self-test'
+    if_fails: >-
+      a duplicate id ships to main and the next pmat >= 3.39.0 on any runner's
+      PATH turns `ci / security` RED for every PR (#3028)
+    mutation: >-
+      make walk() skip list items (only top-level mappings scanned); row 2
+      must turn RED. Live twin: the guard on main @ 3792afa3d's roadmap is
+      RED with the 12 ids run 34049248452 names; on the fixed file GREEN.
+
+  - id: RMID-F-002
+    rule: unparsable is a defect, missing is ENV
+    prediction: >-
+      A broken YAML file is exit 1 with `does not parse` (row 5); an absent
+      path is exit 2 with `ENV` (row 6).
+    test: 'bash scripts/check_roadmap_ids_unique.sh --self-test'
+    if_fails: >-
+      a torn roadmap reads as clean
+    mutation: >-
+      catch YAMLError and print PASS; row 5 must turn RED.
+
+  - id: RMID-F-003
+    rule: the guard is wired, case table then live
+    prediction: >-
+      check_guards_are_wired.sh names no unwired guard while ci.yml carries
+      both steps; removing both lines makes it name check_roadmap_ids_unique.sh.
+    test: 'bash scripts/check_guards_are_wired.sh'
+    if_fails: >-
+      the guard exists and gates nothing (class #2878)
+    mutation: >-
+      delete the two `run: bash scripts/check_roadmap_ids_unique.sh` lines
+      from ci.yml; check_guards_are_wired.sh must turn RED naming the script.
+
+non_goals:
+  - "Who mints ids and in which PR (the PP-066 driver's minter rule; G-6 owns the additive diff)."
+  - "Replacing pmat's own validator: the fleet's pmat still runs; this guard makes its verdict reproducible in-repo at any pmat version."
+
+binding_registry:
+  guard: scripts/check_roadmap_ids_unique.sh
+  ci_job: guard-runner-labels          # inside gate.needs (.github/workflows/ci.yml)
+  make_target: tier3
+  issue: "https://github.com/paiml/aprender/issues/3028"
