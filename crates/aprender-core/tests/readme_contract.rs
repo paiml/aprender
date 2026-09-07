@@ -185,6 +185,14 @@ fn test_readme_contract_count_matches_workspace() {
 
     let contract_count = count_yaml(&contracts_dir);
     // G-11 (PMAT-1062): lag allowed, overstatement RED (see FALSIFY-README-005 above).
+    // BSE-03 phase A (PMAT-1068): the number is DERIVED and sits inside the
+    // generated CONTRACT_COUNT block, so the claim reads
+    // `**<!-- CONTRACT_COUNT_START -->N<!-- CONTRACT_COUNT_END -->** provable contracts`.
+    // Strip the markers before parsing; the universe below is the generator's
+    // (`find contracts/ -name '*.yaml'`), unchanged.
+    let readme = readme
+        .replace("<!-- CONTRACT_COUNT_START -->", "")
+        .replace("<!-- CONTRACT_COUNT_END -->", "");
     let claimed = number_before(&readme, "** provable contracts")
         .expect("FALSIFY-README-007: README lacks a `**M** provable contracts` claim");
     assert!(

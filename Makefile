@@ -540,6 +540,32 @@ COV_CARGO_ENV := $(if $(COV_TARGET_DIR),CARGO_TARGET_DIR=$(COV_TARGET_DIR))
 # survive it (31 present afterwards), so coverage-html still has data to work from.
 .PHONY: coverage-check contracts
 
+# BSE-03 phase A (Pmat-Ticket: PMAT-1068). The README's contract count is
+# DERIVED: scripts/readme_sync.sh rewrites the text between the
+# <!-- CONTRACT_COUNT_START/END --> markers with `find contracts/ -name '*.yaml'`
+# and nothing else in the file. Idempotent — running it twice is byte-identical.
+#
+# Before this, three literals in three prose sites were maintained by hand and
+# `--regen` only PRINTED the numbers for a human to copy; they sat two behind
+# the filesystem (1812 vs 1814) and were GREEN, because the guard lets the
+# README lag. scripts/check_readme_claims.sh judges the generated block by
+# EQUALITY against the MERGE TREE, with origin/main as the comparand.
+.PHONY: readme-sync readme-sync-check
+readme-sync: ## Regenerate the README's derived contract count (BSE-03)
+	@bash scripts/readme_sync.sh --write
+
+readme-sync-check: ## Fail if README.md is not what the generator produces
+	@bash scripts/readme_sync.sh --check
+
+# The polarity table of the D2 normaliser, on a throwaway git repo (BSE-03
+# phase A). It carries its own registered mutation: a copy of the guard whose
+# merge-tree measurement READS A FILE ON DISK must turn the hand-edited rows
+# GREEN, which is what makes their RED load-bearing rather than incidental.
+# `--class complexity` and `--class satd` are stubs and exit 3, never 0.
+.PHONY: ratchet-semantics-test
+ratchet-semantics-test: ## BSE-03: D2 ratchet polarity rows (--class readme)
+	@bash scripts/tests/ratchet_semantics_test.sh --class readme
+
 # Alias the dogfood pre-release protocol looks for. It expects `coverage-check`;
 # without it the gate reports WARN ("verify >=95% manually"), i.e. a release gate
 # that asks a human to do the measurement is not a gate. `coverage` already
