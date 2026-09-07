@@ -1159,6 +1159,8 @@ jobs:
       # never cfg!(feature = "cuda"|"wgpu"). Case table first, then the live tree.
       - name: "Backend-registry static guard can still go RED (case table)"
         run: bash scripts/check_backend_registry.sh --self-test
+      - name: No cfg!(feature) backend decision in apr-cli (R-0b, #3002)
+        run: bash scripts/check_backend_registry.sh --static
       - name: Every DAG row marked complete has a receipt whose marker says so (C0-7)
         run: bash scripts/check_receipt_complete.sh --dag docs/specifications/pp-066-dag.yaml
       # G-6 (PP-066, #2895, #2874): `pmat work add/complete` re-serialises the whole

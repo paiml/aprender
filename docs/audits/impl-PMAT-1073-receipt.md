@@ -45,23 +45,59 @@ the CLI resolution, the case table, the guard and the contract are done and veri
   `check_backend_registry.sh --static` RED naming the line (observed).
 - CI RED→GREEN pair: owed once the PR runs (fleet starved; PR blocked on #3004 regardless).
 
-## Acceptance (`.pr/R-0b/accept.sh`)
-A2 (case table) 5/5, A3 (guard self-test) 3/3, A4 (registry unit tests), A5 (`pv validate`) all GREEN.
-A1 (`--static` == 0) is **RED**: two reads remain (below) — the honest state of a partial row.
+## Acceptance (`.pr/R-0b/accept.sh`) — 5/5 GREEN (second commit)
+A1 (`--static` == 0) GREEN, A2 (case table) 5/5, A3 (guard self-test) 3/3, A4 (registry unit
+tests), A5 (`pv validate`). `cargo clippy -p apr-cli --lib -- -D warnings` clean; apr-cli lib
+suite 7,228 passed / 0 failed (measured on this tree after the serve-test rewrite; the earlier run
+had 4 failures — below).
 
-## Gaps / next (the row's remaining step)
-Two backend `cfg!(feature=…)` reads are not yet converted, and both files are blocked by the
-pre-commit complexity hook, which charges a staged file for every function in its `include!`
-expansion:
-- `dispatch.rs:173` (`--backend cuda && !cfg!(feature="cuda")`) — `dispatch.rs` carries
-  pre-existing `dispatch_runtime_commands` (cognitive 43) and `dispatch_diagnostic_commands` (30);
-- `lib.rs:230` (`cuda_feature = cfg!(feature="cuda")`, a version-json build report) — `lib.rs`
-  `include!`s `dispatch.rs` and `help_producer_truth.rs` (`resolve`, cognitive 73).
-Converting either read requires decomposing those three pre-existing over-threshold functions in the
-same commit (the repo's same-commit rule; `--no-verify` is forbidden). That is a prerequisite
-refactor of other features' hot code and is filed separately; when it lands, the two reads convert to
-`crate::registry::compiled(…)` and ci.yml arms `check_backend_registry.sh --static` (A1 → GREEN).
-Functionally, `apr run --backend cuda` on a non-cuda build still refuses today via the existing
-`dispatch.rs:173` cfg check — claim 1 holds; only its *mechanism* (cfg vs registry) is the residual.
-Also owed: A3's `GET /v1/effective-config.backend == resolved Selection` + `discovered_at` (REG-12)
+## Second commit: the last two cfg reads converted (#3040 done inside this PR)
+`dispatch.rs:173` and `lib.rs:230` are converted; `check_backend_registry.sh --static` is armed
+in ci.yml as a live gate. The pre-commit complexity hook charges a staged file for every function
+in its `include!` expansion, so this required decomposing three pre-existing over-threshold
+functions in the same commit (the same-commit rule; `--no-verify` is forbidden):
+
+| function | before | after |
+|---|---|---|
+| `dispatch_runtime_commands` (dispatch.rs) | cognitive 43 | `run_preflight` + `run_batch_if_requested` hoisted; arm ≤ 25 |
+| `dispatch_diagnostic_commands` (dispatch.rs) | cognitive 30 | `trace_save_tensor_dispatch` + `DiffOpts`/`diff_dispatch` hoisted |
+| `help_producer_truth::resolve` | cognitive 73 | a `Walk` cursor: `step`/`long_flag`/`short_takes_value`/`word` |
+
+Oracles: the three `help_producer_truth` tests (3/3 before and after), the serve/accel/registry
+tests (278/278), `cargo check` with default and `--features cuda`.
+
+**`apr run --backend <kind>` now resolves against the registry** in `run_preflight` (cuda AND
+wgpu — the old check special-cased cuda only, so `--backend wgpu` on a build that could not honour
+it fell through; that gap closes here).
+
+### The four serve-guard tests were the old premise, not a regression
+`accelerator_guard_tests::{gpu_without_a_backend_is_an_error_not_a_silent_cpu_run,
+an_unreachable_backend_is_also_an_error, the_refusal_is_total_over_every_input}` and
+`gpu_layers_contract_tests::gpu_layers_is_refused_on_a_build_with_no_accelerator` failed on this
+box after the conversion. They asserted "a build without the `cuda`/`wgpu` features is CPU-only",
+but apr-cli's `wgpu` feature is `["inference"]` — an alias — so the wgpu inference path exists on
+every default build, and the registry truthfully found this host's two AMD W5700X (RADV) adapters
+Ready. The cfg gate had been refusing `--gpu` on a build that could serve on wgpu. The tests now
+run over fixture registries through `ensure_accelerator_available_in(config, reg)`:
+`no-accelerator-compiled` (new twin of cpu-only: cuda/wgpu `source: not-compiled`) ⇒
+`FeatureDisabled` with the install remedy; `cpu-only` ⇒ `BackendUnavailable` quoting the flag;
+the total-refusal table runs over four fixtures × every request the server accepts. Serve's own
+precedence (`--no-gpu` beats `--gpu`; `--backend cpu` asks for nothing) is unchanged.
+
+### Pre-existing, not touched (recorded, not fixed here)
+- `cargo check -p apr-cli --no-default-features` does not build on origin/main either
+  (`diff_05_aprt_stage.rs:100` uses `realizar` unconditionally; `lib.rs:74` `serve::auth`); no
+  gate builds that configuration.
+- `cargo clippy -p apr-cli --tests`: 36 `disallowed_methods` in `tests/falsification_crux_{a_22,k_08}.rs`
+  (on main), 2 in `nf4_classifier.rs`, 5 in R-0a's `registry_failure_catalogue.rs`. The gated form
+  is `--lib`; ci.yml's header claims `--all-targets` but carries no clippy step.
+- `aprender-serve` `double_must_use` on `ParityReport::not_run` (L0-1a's code, #3026): fixed at its
+  source on `agent/L0-1` (278417bbc, local, held while the queue is BSE-001's) and merged here.
+
+## Gaps / next
+Still owed before `status: complete`: the `selected:` line at every model-load site (run/chat/serve),
+A3's `GET /v1/effective-config.backend == resolved Selection` + `discovered_at` (REG-12) on the
+served process, `make fleet-verify ROW=R-0b` on four hosts, and the CI RED→GREEN mutation pair
+(the fleet is BSE-001's until told otherwise; this PR is stacked on R-0a #3004 and cannot arm
+before it merges).  A3's `GET /v1/effective-config.backend == resolved Selection` + `discovered_at` (REG-12)
 on the served process, and `make fleet-verify ROW=R-0b` on four hosts.

@@ -227,7 +227,8 @@ pub fn cli_main() -> std::process::ExitCode {
 /// completeness + field invariants (`visible_devices.len() <= 16`, no
 /// `cuda_feature && !cuda_runtime_available` inconsistency).
 pub fn emit_version_json() {
-    let cuda_feature = cfg!(feature = "cuda");
+    // R-0b (#3002): what is compiled comes from the registry, never `cfg!`.
+    let cuda_feature = crate::registry::compiled("cuda");
 
     // cuda_runtime_available: try nvidia-smi -L. Present-and-exits-0 ⇒ true.
     // This matches how gputrain_003 queries nvidia-smi — keep the probe

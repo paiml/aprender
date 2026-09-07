@@ -29,7 +29,7 @@ fn reg(fixture: &str) -> BackendRegistry {
     BackendRegistry::from_fixture_json(&text, &path).expect("fixture parses")
 }
 
-fn req<'a>(gpu: bool, no_gpu: bool, backend: Option<&'a str>) -> Request<'a> {
+fn req(gpu: bool, no_gpu: bool, backend: Option<&str>) -> Request<'_> {
     Request {
         gpu,
         no_gpu,
