@@ -1,3 +1,4 @@
+# tool_version=none (measured by grep over shipped surfaces; not a versioned analyser)
 # Claim literals that PREDATE check_no_claim_literals.sh (#2696, 2026-08-25).
 #
 # Each line is a claim about measured reality sitting on a surface a user

@@ -121,7 +121,7 @@ if [ ! -f "$BASELINE" ]; then
   printf 'FAIL: %s missing. Run --update once to establish it.\n' "$BASELINE"
   exit 1
 fi
-baseline="$(tr -d '[:space:]' < "$BASELINE")"
+baseline="$(grep -vE '^[[:space:]]*(#|$)' "$BASELINE" | tr -d '[:space:]')"
 
 printf 'scanned %s test file(s); %s out-of-workspace path(s), baseline %s\n' \
   "$scanned" "$count" "$baseline"

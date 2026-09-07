@@ -396,7 +396,7 @@ cb200_pair_check() { # <gates.toml> <mirror file> -> 0 when they agree, 1 otherw
         printf 'FAIL: %s missing; it mirrors [tdg] baseline so the CB-200 count is ratcheted, not typed.\n' "$2"
         return 1
     fi
-    file=$(tr -d '[:space:]' < "$2")
+    file=$(grep -vE '^[[:space:]]*(#|$)' "$2" | tr -d '[:space:]')
     if [ "$toml" != "$file" ]; then
         printf 'FAIL: [tdg] baseline = %s but %s says %s; the two move together, and only the file is ratcheted against origin/main.\n' "$toml" "$2" "$file"
         return 1
