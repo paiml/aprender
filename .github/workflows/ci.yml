@@ -1345,11 +1345,15 @@ jobs:
           bin=$(sed -n 's|.*Executable tests/falsification_spec_v10_tests\.rs (\(.*\))$|\1|p' "$RUNNER_TEMP/satd-build.log" | tail -1)
           [ -n "$bin" ] || { echo "FAIL: cargo did not name the falsification suite executable"; exit 1; }
           # 2. measure the comparand with that same binary
-          comparand="$RUNNER_TEMP/comparand"; rm -rf "$comparand"; mkdir -p "$comparand"
-          git archive --format=tar origin/main | tar -xf - -C "$comparand"
+          # A detached worktree, not `git archive`: archive honours .gitattributes
+          # export-ignore, so an ignored source file would vanish from the
+          # comparand and lower the measured count (review m2-prb-review, 4/5 lanes).
+          comparand="$RUNNER_TEMP/comparand"; git worktree remove --force "$comparand" 2>/dev/null || rm -rf "$comparand"
+          git worktree add --detach "$comparand" origin/main
+          trap 'git worktree remove --force "$comparand" 2>/dev/null || true' EXIT
           DR_ENV=(-e SATD_BASELINE=0)
           set +e
-          out=$(dr "$comparand" "$bin" f_checklist_005_satd_is_zero --exact --nocapture 2>&1); mrc=$?
+          out=$(dr "$comparand" "$bin" f_dod_001_satd_count_is_zero --exact --nocapture 2>&1); mrc=$?
           set -e
           n=$(printf '%s\n' "$out" | sed -n 's/.*BROKEN -- \([0-9][0-9]*\) markers in production source.*/\1/p' | head -1)
           if [ "$mrc" -eq 0 ] && [ -z "$n" ] && printf '%s\n' "$out" | grep -q '^test result: ok'; then n=0; fi

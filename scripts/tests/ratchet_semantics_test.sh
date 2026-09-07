@@ -480,6 +480,45 @@ run_satd() {
   else
     bad "S7  unparseable: rc=$rc, wanted a failure naming SATD_BASELINE"$'\n'"$(printf '%s' "$out" | sed 's/^/        /')"
   fi
+  # S8 — MUTATION. The compiled-in constant is the one number a PR can rewrite
+  # (threat-model class 2). Raise it to 999999 in the include, rebuild the
+  # suite, and run the MUTANT twice: with SATD_BASELINE unset it is GREEN — the
+  # pre-BSE-03 path, where the rewrite "passed"; with SATD_BASELINE=$((n - 1))
+  # it is RED naming $n, judged by the export and not by 999999. If the unset
+  # run were RED, or the exported run were judged by the constant, this class
+  # would not be measuring the property. The include is restored whatever
+  # happens (EXIT trap while mutated, then explicitly) and the suite is
+  # rebuilt from the restored source so no mutant binary outlives this row.
+  local inc="$ROOT/crates/aprender-core/tests/includes/falsification_spec_v10_checklist.rs" mbin mlog
+  mlog="$WORK/satd-mutant-build.log"
+  cp "$inc" "$WORK/checklist.orig" || die "cannot copy the checklist include for S8"
+  grep -q '^const SATD_PRODUCTION_BASELINE: usize = [0-9][0-9]*;$' "$inc" \
+    || die "S8: the constant SATD_PRODUCTION_BASELINE is not where this row expects it"
+  trap 'cp "$WORK/checklist.orig" "$inc" 2>/dev/null; rm -rf "${WORK:?}"' EXIT
+  sed -i 's/^const SATD_PRODUCTION_BASELINE: usize = [0-9][0-9]*;$/const SATD_PRODUCTION_BASELINE: usize = 999999;/' "$inc"
+  cmp -s "$inc" "$WORK/checklist.orig" && die "S8: the mutant is byte-identical to the include (sed matched nothing)"
+  mbin=""
+  if ( cd "$ROOT" && cargo test -p aprender-core --features model-tests \
+         --test falsification_spec_v10_tests --no-run ) > "$mlog" 2>&1; then
+    mbin=$(sed -n 's|.*Executable tests/falsification_spec_v10_tests\.rs (\(.*\))$|\1|p' "$mlog" | tail -1)
+  fi
+  cp "$WORK/checklist.orig" "$inc"; trap 'rm -rf "${WORK:?}"' EXIT
+  [ -n "$mbin" ] && [ -x "$mbin" ] || die "S8: cargo could not build the mutant: $(tail -3 "$mlog" | tr '\n' ' ')"
+  out=$(satd_run "$mbin" f_dod_001_satd_count_is_zero); rc=$?
+  if [ "$rc" -eq 0 ] && printf '%s' "$out" | grep -q 'SATD ceiling 999999 (source: constant)'; then
+    ok "S8a mutant (constant rewritten to 999999), SATD_BASELINE unset: GREEN — the rewritable path a PR had before"
+  else
+    bad "S8a mutant unset: rc=$rc, wanted 0 naming the rewritten constant"$'\n'"$(printf '%s' "$out" | sed 's/^/        /')"
+  fi
+  out=$(satd_run "$mbin" f_dod_001_satd_count_is_zero "SATD_BASELINE=$((n - 1))"); rc=$?
+  if [ "$rc" -ne 0 ] && printf '%s' "$out" | grep -q "the ceiling is $((n - 1)) (source: comparand)"; then
+    ok "S8b the same mutant with the comparand exported: RED at $((n - 1)) against $n — the rewritten constant is unread"
+  else
+    bad "S8b mutant + comparand: rc=$rc, wanted RED judged by the comparand, not by 999999"$'\n'"$(printf '%s' "$out" | sed 's/^/        /')"
+  fi
+  ( cd "$ROOT" && cargo test -p aprender-core --features model-tests \
+      --test falsification_spec_v10_tests --no-run ) > "$WORK/satd-rebuild.log" 2>&1 \
+    || die "S8: the suite could not be rebuilt from the restored include: $(tail -2 "$WORK/satd-rebuild.log" | tr '\n' ' ')"
 }
 
 case "$CLASS" in
