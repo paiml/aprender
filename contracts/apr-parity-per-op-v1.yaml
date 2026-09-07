@@ -148,17 +148,20 @@ falsification_tests:
   - id: POP-F-003
     rule: the live twin on the release host (fleet-verify, not workspace-test)
     prediction: >-
-      `apr parity <1.5B> --per-op --json` on lambda: first_divergence is
-      non-null with layer 26 post_ffn_residual and rows[lm_head].min_cosine
-      within 1e-3 of the gate's 0.9508; on the 7B first_divergence is null.
+      `apr parity <1.5B> --per-op --json` on lambda AFTER step 2 (the crushed-
+      block f32 fallback, quantize/mod.rs::has_crushed_block): first_divergence
+      is null and rows[lm_head].min_cosine >= 0.98; the RED twin is the pre-fix
+      binary (commit 71a25c2bb): first_divergence = post_ffn_residual layer 26,
+      lm_head 0.950827 — the number the gate refused on. On the 7B
+      first_divergence is null in both.
     test: 'bash .pr/L0-1b/accept.sh'
     if_fails: >-
       the table no longer reproduces the defect it was built to name — either
       the fix landed (then the 1.5B row must flip GREEN with it) or the
       instrument drifted
     mutation: >-
-      after step 2 lands, revert the CPU quantisation change: the 1.5B table
-      must name layer 26 again while the 7B stays clean.
+      revert the fallback (make has_crushed_block return false): the 1.5B table
+      must name layer 26 again with lm_head ~0.9508 while the 7B stays clean.
 
 non_goals:
   - "Deciding which side is right — the float64 probe in docs/audits/l0-1b-arms.md does that; this contract only guarantees the table is faithful to the two forwards."

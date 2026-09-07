@@ -41,10 +41,7 @@ impl OwnedQuantizedModel {
         // GeGLU, so it falls through to the explicit arch-dispatched path.
         if use_rmsnorm && !self.config.is_gemma1() {
             if let Some(ref ffn_norm) = layer.ffn_norm_weight {
-                let (ffn_up, ffn_gate) = self.fused_rmsnorm_ffn_up_gate(
-                    hidden, ffn_norm, self.config.eps,
-                    &layer.ffn_up_weight, gate_weight,
-                )?;
+                let (ffn_up, ffn_gate) = self.ffn_up_gate_honest(hidden, ffn_norm, &layer.ffn_up_weight, gate_weight)?;
                 return Ok(self.ffn_activate(
                     ffn_up, ffn_gate,
                     layer.ffn_up_bias.as_deref(), layer.ffn_gate_bias.as_deref(),
@@ -559,7 +556,7 @@ impl OwnedQuantizedModel {
             cache.append(layer_idx, k, v);
 
             // 2f. Attention output projection → o_proj_buffer (PMAT-305: no alloc)
-            self.fused_matmul_into(&attn_out_buffer, &layer.attn_output_weight, &mut o_proj_buffer)?;
+            self.matvec_into_honest(&attn_out_buffer, &layer.attn_output_weight, &mut o_proj_buffer)?;
             if let Some(ref bias) = layer.attn_output_bias {
                 ops::add_bias(&mut o_proj_buffer, bias);
             }
@@ -625,7 +622,7 @@ impl OwnedQuantizedModel {
         let layer = &self.layers[layer_idx];
         let len = if use_rmsnorm && self.config.rmsnorm_unit_offset() {
             self.rms_norm_into_arch(hidden, &layer.attn_norm_weight, self.config.eps, o_proj_buffer);
-            let v = self.qkv_matmul(o_proj_buffer, &layer.qkv_weight)?;
+            let v = self.qkv_matmul_honest(o_proj_buffer, &layer.qkv_weight)?;
             qkv_buffer[..v.len()].copy_from_slice(&v);
             v.len()
         } else if use_rmsnorm {
@@ -633,13 +630,13 @@ impl OwnedQuantizedModel {
                 crate::gguf::quantized::OwnedQKVWeights::Fused(ref w) => {
                     // RMSNorm → o_proj_buffer (reuse as temp), matmul → qkv_buffer
                     ops::rms_norm_into(hidden, &layer.attn_norm_weight, self.config.eps, o_proj_buffer);
-                    self.fused_matmul_into(o_proj_buffer, w, &mut qkv_buffer[..w.out_dim])?;
+                    self.matvec_into_honest(o_proj_buffer, w, &mut qkv_buffer[..w.out_dim])?;
                     w.out_dim
                 }
                 _ => {
-                    // Separate Q/K/V: use allocating path (rayon::join needs ownership)
-                    let v = self.fused_rmsnorm_qkv_matmul(
-                        hidden, &layer.attn_norm_weight, self.config.eps, &layer.qkv_weight)?;
+                    // Separate Q/K/V: normalise once, three matvecs (rayon::join needs ownership)
+                    ops::rms_norm_into(hidden, &layer.attn_norm_weight, self.config.eps, o_proj_buffer);
+                    let v = self.qkv_matmul_honest(o_proj_buffer, &layer.qkv_weight)?;
                     // Copy to qkv_buffer for uniform handling below
                     qkv_buffer[..v.len()].copy_from_slice(&v);
                     v.len()
@@ -649,7 +646,7 @@ impl OwnedQuantizedModel {
             let normed = ops::layer_norm(
                 hidden, &layer.attn_norm_weight,
                 layer.attn_norm_bias.as_deref(), self.config.eps);
-            let v = self.qkv_matmul(&normed, &layer.qkv_weight)?;
+            let v = self.qkv_matmul_honest(&normed, &layer.qkv_weight)?;
             qkv_buffer[..v.len()].copy_from_slice(&v);
             v.len()
         };
@@ -714,7 +711,7 @@ impl OwnedQuantizedModel {
         let ffn_activated = self.single_cache_ffn_block(hidden, layer_idx, use_rmsnorm)?;
         crate::inference_trace::gpu_stage_dump::per_op_tap::tap(crate::inference_trace::save_tensor_stage::SaveTensorStage::FfnSwigl, layer_idx as u32, &ffn_activated);
         // 2j. FFN down projection → ffn_down_buffer (PMAT-305: no alloc)
-        self.fused_matmul_into(&ffn_activated, &layer.ffn_down_weight, ffn_down_buffer)?;
+        self.matvec_into_honest(&ffn_activated, &layer.ffn_down_weight, ffn_down_buffer)?;
         if let Some(ref bias) = layer.ffn_down_bias {
             ops::add_bias(ffn_down_buffer, bias);
         }
@@ -778,5 +775,73 @@ impl OwnedQuantizedModel {
                 );
             }
         }
+    }
+
+    /// L0-1b (#2971): a Q4_K matvec runs through Q8_K activations unless the
+    /// activation carries a crushed 256-block (one element setting the scale of
+    /// 255 others) — then the f32-activation kernel, for this matmul only. Every
+    /// other quantisation type is untouched.
+    fn matvec_into_honest(
+        &self,
+        x: &[f32],
+        w: &crate::gguf::quantized::OwnedQuantizedTensor,
+        out: &mut [f32],
+    ) -> Result<()> {
+        if w.qtype == GGUF_TYPE_Q4_K && crate::quantize::has_crushed_block(x) {
+            crate::quantize::note_crushed_fallback(w.in_dim, w.out_dim);
+            return crate::quantize::fused_q4k_parallel_matvec_f32_into(&w.data, x, w.in_dim, w.out_dim, out);
+        }
+        self.fused_matmul_into(x, w, out)
+    }
+
+    /// Allocating twin of [`Self::matvec_into_honest`] (single token).
+    fn matvec_honest(&self, x: &[f32], w: &crate::gguf::quantized::OwnedQuantizedTensor) -> Result<Vec<f32>> {
+        if w.qtype == GGUF_TYPE_Q4_K && crate::quantize::has_crushed_block(x) {
+            let mut out = vec![0.0f32; w.out_dim];
+            self.matvec_into_honest(x, w, &mut out)?;
+            return Ok(out);
+        }
+        self.fused_matmul(x, w)
+    }
+
+    /// QKV projection of one normalised token through [`Self::matvec_honest`]:
+    /// the fused tensor as one matvec, separate Q/K/V as three (Q ∥ (K ∥ V), as
+    /// `qkv_matmul` does), concatenated in Q, K, V order.
+    fn qkv_matmul_honest(
+        &self,
+        normed: &[f32],
+        qkv: &crate::gguf::quantized::OwnedQKVWeights,
+    ) -> Result<Vec<f32>> {
+        match qkv {
+            crate::gguf::quantized::OwnedQKVWeights::Fused(ref w) => self.matvec_honest(normed, w),
+            crate::gguf::quantized::OwnedQKVWeights::Separate { ref q, ref k, ref v } => {
+                let (q_out, (k_out, v_out)) = rayon::join(
+                    || self.matvec_honest(normed, q),
+                    || rayon::join(|| self.matvec_honest(normed, k), || self.matvec_honest(normed, v)),
+                );
+                let mut out = q_out?;
+                out.extend_from_slice(&k_out?);
+                out.extend_from_slice(&v_out?);
+                Ok(out)
+            }
+        }
+    }
+
+    /// RMSNorm + up/gate projections: Q4_K weights go through
+    /// [`Self::matvec_honest`] (up ∥ gate); any other type keeps the fused
+    /// `fused_rmsnorm_ffn_up_gate` path byte for byte.
+    fn ffn_up_gate_honest(
+        &self,
+        hidden: &[f32],
+        ffn_norm: &[f32],
+        up: &crate::gguf::quantized::OwnedQuantizedTensor,
+        gate: &crate::gguf::quantized::OwnedQuantizedTensor,
+    ) -> Result<(Vec<f32>, Vec<f32>)> {
+        if up.qtype != GGUF_TYPE_Q4_K || gate.qtype != GGUF_TYPE_Q4_K {
+            return self.fused_rmsnorm_ffn_up_gate(hidden, ffn_norm, self.config.eps, up, gate);
+        }
+        let normed = ops::rms_norm(hidden, ffn_norm, self.config.eps);
+        let (u, g) = rayon::join(|| self.matvec_honest(&normed, up), || self.matvec_honest(&normed, gate));
+        Ok((u?, g?))
     }
 }
