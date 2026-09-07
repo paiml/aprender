@@ -1,4 +1,26 @@
 impl ChatSession {
+        /// R-0b (#3002): after a CUDA init failure in `apr chat`, either refuse — the
+        /// request FORCED an accelerator (`--gpu`, `--backend cuda`), or the load-time
+        /// parity gate refused it (REG-15, #2971) — or announce the CPU fallback out
+        /// loud. `Ok(())` means: fall back.
+        ///
+        /// # Errors
+        /// The refusal, with the backend's reason.
+        #[cfg(feature = "cuda")]
+        fn cuda_fallback_or_refuse(e: &str) -> Result<(), String> {
+            let forced = crate::registry::forced_accelerator();
+            if crate::commands::parity_admission::on_cuda_load_error(e, forced)? {
+                return Ok(());
+            }
+            if forced {
+                return Err(format!(
+                    "cuda was forced and selected, but CUDA init failed ({e}); refusing to \
+                     fall back to CPU — pass --no-gpu to run on CPU deliberately (R-0b, #3002)"
+                ));
+            }
+            println!("{}", format!("[CUDA init failed: {e}, falling back to CPU]").yellow());
+            Ok(())
+        }
 
         pub(super) fn generate(&mut self, user_input: &str, config: &ChatConfig) -> String {
             let start = Instant::now();
@@ -469,12 +491,9 @@ impl ChatSession {
                                 .map_err(|e| format!("CUDA generate failed: {e}"));
                         }
                         Err(e) => {
-                            // REG-15 (#2971): a parity-gate failure is never a silent downgrade. `apr chat`
-                            // has no forced-GPU flag until R-0b's `--backend`, so the request is unforced here.
-                            let handled = crate::commands::parity_admission::on_cuda_load_error(&format!("{e}"), false)?;
-                            if !handled {
-                                println!("{}", format!("[CUDA init failed: {}, falling back to CPU]", e).yellow());
-                            }
+                            // REG-15 / R-0b (#3002): refuse — the request was forced, or the
+                            // load-time parity gate said so — or announce the CPU fallback.
+                            Self::cuda_fallback_or_refuse(&format!("{e}"))?;
                             // Re-create model for CPU fallback (model was consumed)
                             let model = OwnedQuantizedModel::from_mapped(&mapped)
                                 .map_err(|e| format!("Failed to recreate model: {e}"))?;

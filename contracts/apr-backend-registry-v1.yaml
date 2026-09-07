@@ -143,12 +143,18 @@ falsification_tests:
       in crates/apr-cli/src outside registry.rs; and GET /v1/effective-config carries `resolved`
       {kind, device_index, device_uid, device_name, reason, discovered_at_unix, basis, matches_loaded}
       — the startup Selection (REG-12) beside the residency-measured compute_class, matches_loaded
-      null on a model-less server (effective_config_reports_the_startup_backend_resolution).
+      null on a model-less server (effective_config_reports_the_startup_backend_resolution); and after a
+      generation, a forced accelerator whose runtime attempt fell to CPU is refused before any output
+      (BackendUnavailable, 14) while a default selection that fell to CPU prints a corrective
+      `selected: cpu (fallback …)` line — registry::after_generation, unit-tested, measured with
+      `apr run --gpu` on a model whose Q6_K tensor the wgpu path cannot dequantize (exit 14, no output).
     test: 'cargo test -p apr-cli --test backend_refusal_case_table && bash scripts/check_backend_registry.sh --static && cargo test -p aprender-serve --lib effective_config_route_pp2'
     if_fails: >-
       a build that compiled no accelerator, or a host with none Ready, runs a forced --gpu on cpu
       and reports success (aprender#2696) — the claim-1 defect
     mutation: >-
+      make after_generation return Ok(None) when forced && used_gpu == Some(false) ->
+      a_forced_accelerator_that_fell_to_cpu_at_runtime_is_refused_never_reported_as_success RED;
       make the not-ready branch of resolve_in return cpu_resolved instead of an Err ->
       a_forced_accelerator_with_none_ready_refuses_and_never_downgrades and
       every_backend_value_is_resolvable... RED (observed); restore cfg!(feature) at accel.rs:28 ->

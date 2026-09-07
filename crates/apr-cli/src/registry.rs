@@ -371,11 +371,69 @@ pub fn announce(req: &Request<'_>, asked: &str) -> Result<Resolved> {
     let r = resolve(req, asked)?;
     if !ANNOUNCED.swap(true, std::sync::atomic::Ordering::SeqCst) {
         eprintln!("{}", selected_line(&r, None));
+        FORCED.store(
+            !matches!(req.wanted(), Wanted::Cpu | Wanted::Default),
+            std::sync::atomic::Ordering::SeqCst,
+        );
+        if let Ok(mut g) = LAST_KIND.lock() {
+            *g = Some(r.kind);
+        }
     }
     Ok(r)
 }
 
 static ANNOUNCED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static FORCED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static LAST_KIND: std::sync::Mutex<Option<&'static str>> = std::sync::Mutex::new(None);
+
+/// Whether the announced request FORCED an accelerator (`--gpu`, `--backend
+/// cuda|wgpu|gpu`, `--gpu-layers all|n`) rather than taking the default.
+#[must_use]
+pub fn forced_accelerator() -> bool {
+    FORCED.load(std::sync::atomic::Ordering::SeqCst)
+}
+
+/// The kind the `selected:` line announced, if one was announced.
+#[must_use]
+pub fn announced_kind() -> Option<&'static str> {
+    LAST_KIND.lock().ok().and_then(|g| *g)
+}
+
+/// After a generation, reconcile what was ANNOUNCED with what RAN (R-0b, the
+/// review lane's axis 6, measured 2026-09-07): realizar falls to CPU when the
+/// accelerator's runtime attempt fails (`used_gpu == false`), and said so only
+/// under `--verbose`. A forced accelerator that fell to CPU is a refusal
+/// (`BackendUnavailable`, exit 14) — the caller must print NO output; a default
+/// selection that fell to CPU returns the corrective `selected: cpu (fallback …)`
+/// line for the caller to print, so the LAST `selected:` line is what ran.
+/// `None` when nothing needs saying (cpu ran as announced, or the run does not
+/// report `used_gpu`).
+///
+/// # Errors
+/// `BackendUnavailable` when the request forced an accelerator and CPU ran.
+pub fn after_generation(
+    forced: bool,
+    announced: Option<&str>,
+    used_gpu: Option<bool>,
+) -> Result<Option<String>> {
+    let fell_to_cpu = used_gpu == Some(false) && announced.is_some_and(|k| k != "cpu");
+    if !fell_to_cpu {
+        return Ok(None);
+    }
+    let kind = announced.unwrap_or("accelerator");
+    if forced {
+        return Err(CliError::BackendUnavailable(format!(
+            "{kind} was forced and selected, but its runtime attempt on this model failed and \
+             the generation ran on CPU. Refusing to report that as success: re-run with \
+             --verbose for the backend's reason, or with --no-gpu to run on CPU deliberately \
+             (R-0b, #3002; the pre-generation refusal is #3042)."
+        )));
+    }
+    Ok(Some(format!(
+        "selected: cpu (fallback: the {kind} attempt failed on this model at runtime; \
+         re-run with --verbose for its reason)"
+    )))
+}
 
 /// The `parity:` line a CUDA load site prints from its admission record
 /// (REG-15, L0-1a): the companion of the `selected:` line, printed once the
@@ -475,6 +533,23 @@ mod tests {
             selected_line(&c, None),
             "selected: cpu (registry: --no-gpu: cpu requested)"
         );
+    }
+
+    #[test]
+    fn a_forced_accelerator_that_fell_to_cpu_at_runtime_is_refused_never_reported_as_success() {
+        // measured 2026-09-07: `apr run --gpu` announced wgpu, wgpu failed on a Q6_K
+        // tensor, the run finished on CPU and exited 0 — this is that refusal.
+        let e = after_generation(true, Some("wgpu"), Some(false)).expect_err("forced ⇒ refuse");
+        assert!(matches!(e, CliError::BackendUnavailable(_)), "{e}");
+        assert_eq!(e.exit_code_value(), 14);
+        // a default selection that fell to CPU is corrected out loud, not refused
+        let line = after_generation(false, Some("wgpu"), Some(false)).expect("default ⇒ a line");
+        assert!(line.as_deref().is_some_and(|l| l.starts_with("selected: cpu (fallback")), "{line:?}");
+        // cpu announced, cpu ran: nothing to say; a run that reports no used_gpu: nothing to say
+        assert_eq!(after_generation(true, Some("cpu"), Some(false)).expect("ok"), None);
+        assert_eq!(after_generation(true, Some("cuda"), None).expect("ok"), None);
+        // the accelerator actually ran: nothing to say
+        assert_eq!(after_generation(true, Some("cuda"), Some(true)).expect("ok"), None);
     }
 
     #[test]

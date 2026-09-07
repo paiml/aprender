@@ -359,6 +359,19 @@ fn print_run_output(
     // --stream takes precedence — emit JSONL stream. This implies json-style
     // structured output regardless of --format. (--stream --json is the same
     // as --stream alone.)
+    // R-0b (#3002): reconcile what was ANNOUNCED with what RAN before any output.
+    // realizar falls to CPU when the accelerator's runtime attempt fails and
+    // said so only under --verbose (measured 2026-09-07); a forced accelerator
+    // that fell to CPU is refused here (exit 14, no output), a default one is
+    // corrected out loud so the last `selected:` line is what ran.
+    if let Some(line) = crate::registry::after_generation(
+        crate::registry::forced_accelerator(),
+        crate::registry::announced_kind(),
+        result.used_gpu,
+    )? {
+        eprintln!("{line}");
+    }
+
     if stream && !benchmark {
         return print_stream_output(result, source, max_tokens);
     }

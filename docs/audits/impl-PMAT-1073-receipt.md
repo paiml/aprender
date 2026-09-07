@@ -75,9 +75,13 @@ it fell through; that gap closes here).
 an_unreachable_backend_is_also_an_error, the_refusal_is_total_over_every_input}` and
 `gpu_layers_contract_tests::gpu_layers_is_refused_on_a_build_with_no_accelerator` failed on this
 box after the conversion. They asserted "a build without the `cuda`/`wgpu` features is CPU-only",
-but apr-cli's `wgpu` feature is `["inference"]` — an alias — so the wgpu inference path exists on
-every default build, and the registry truthfully found this host's two AMD W5700X (RADV) adapters
-Ready. The cfg gate had been refusing `--gpu` on a build that could serve on wgpu. The tests now
+but the wgpu path exists on every default build — **cause, corrected by the review lane's
+delegate:** not apr-cli's `wgpu = ["inference"]` (a feature implication runs one way: enabling
+`wgpu` enables `inference`, never the reverse, and apr-cli's default set never enables `wgpu`) but
+`crates/aprender-serve/Cargo.toml:49` `trueno = { workspace = true, features = ["gpu"] }`,
+unconditional, which compiles `WgpuFactory` into `trueno::registry::default_factories()`
+(`crates/aprender-compute/src/registry/mod.rs:643-651`). The registry truthfully found this
+host's RTX 4090 through wgpu on a non-cuda build. The cfg gate had been refusing `--gpu` on a build that could serve on wgpu. The tests now
 run over fixture registries through `ensure_accelerator_available_in(config, reg)`:
 `no-accelerator-compiled` (new twin of cpu-only: cuda/wgpu `source: not-compiled`) ⇒
 `FeatureDisabled` with the install remedy; `cpu-only` ⇒ `BackendUnavailable` quoting the flag;
@@ -138,6 +142,32 @@ builder site changes (there are seven). Route test `effective_config_reports_the
 Verified: `cargo test -p aprender-serve --lib effective_config`, apr-cli serve/accel/registry
 278/278, `cargo check -p apr-cli --features cuda`, `cargo clippy -p {apr-cli,aprender-serve} --lib
 -- -D warnings` (the crate denies `missing_docs`; two iterations to satisfy it).
+
+## Fifth commit: the review lane's finding, folded (a forced accelerator that fell to CPU at runtime)
+Quorum: `.pr/R-0b/quorum.md`, `docs/audits/quorum/PMAT-1073-lane-1.json`. The lane's axis-6 FAIL was
+**measured true** on this box before the fold: `apr run <0.5B q4_k_m> --gpu` announced
+`selected: wgpu device[0]=NVIDIA GeForce RTX 4090`, printed `Backend: wgpu (Vulkan)`, then — only
+under `--verbose` — `Backend: CPU (wgpu unavailable: Format error: Unsupported quantization type 6
+for WGPU dequant)`, ran on CPU and exited 0; the quiet run had no fallback notice at all
+(`gguf_gpu_generate.rs:375-391`). The row's claim was false end to end.
+
+Fold, at the apr-cli boundary (realizar's file is hook-blocked by two more pre-existing
+over-threshold functions — #3042): realizar already returns `used_gpu` per run, so
+`registry::after_generation(forced, announced, used_gpu)` runs in `run_entry.rs` BEFORE any output
+mode: a forced accelerator that fell to CPU ⇒ `BackendUnavailable` (14), no output; a default
+selection that fell to CPU ⇒ a corrective `selected: cpu (fallback …)` line, so the LAST
+`selected:` line is what ran. Unit test
+`a_forced_accelerator_that_fell_to_cpu_at_runtime_is_refused_never_reported_as_success`.
+
+| invocation (same model, live registry) | exit | what the user sees |
+|---|---|---|
+| `run --gpu` | **14** | `selected: wgpu …`, `Backend: wgpu (Vulkan)`, then `error: Backend unavailable: wgpu was forced and selected, but its runtime attempt on this model failed and the generation ran on CPU. Refusing to report that as success …` — no `Output:` |
+| `run` (default) | 0 | `selected: wgpu …`, `Backend: wgpu (Vulkan)`, then `selected: cpu (fallback: the wgpu attempt failed on this model at runtime; re-run with --verbose for its reason)`, then `Output:` |
+| `run --no-gpu` | 0 | one line, `selected: cpu (registry: --no-gpu: cpu requested)` |
+| `run --gpu --format json` / `--stream` | 14 | the refusal, no JSON body / no token events (measured in the fifth commit's table below) |
+
+Known limitation, on purpose: the CPU generation is spent before the refusal (realizar decides
+the fallback inside `run_gguf_generate`); the pre-generation refusal is #3042.
 
 ## Gaps / next
 Still owed before `status: complete`: the review-only quorum (one agy lane over the diff), the CI
