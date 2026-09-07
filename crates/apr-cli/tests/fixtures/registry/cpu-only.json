@@ -1,0 +1,144 @@
+{
+  "schema": "apr-devices-v1",
+  "discovered_at_unix": 1788600000,
+  "source": "machine",
+  "reserve_bytes": 3758096384,
+  "reserve_basis": "[U] default until master row 6 measures vram_peak",
+  "entries": [
+    {
+      "kind": "cpu",
+      "api": "cpu",
+      "device_index": null,
+      "device_uid": "host-cpu",
+      "device_name": "x86_64 host cpu, 8 threads",
+      "vendor": "host",
+      "vendor_id": null,
+      "device_type": "cpu",
+      "mem_total": 34359738368,
+      "mem_free": null,
+      "mem_kind": {
+        "kind": "unified",
+        "working_set_limit": null
+      },
+      "compute_class": "avx2",
+      "caps": [],
+      "source": {
+        "kind": "compiled-in"
+      },
+      "status": {
+        "state": "ready"
+      },
+      "transport": null
+    },
+    {
+      "kind": "cuda",
+      "api": "cuda-driver",
+      "device_index": null,
+      "device_uid": null,
+      "device_name": "",
+      "vendor": "",
+      "vendor_id": null,
+      "device_type": "",
+      "mem_total": null,
+      "mem_free": null,
+      "mem_kind": {
+        "kind": "discrete"
+      },
+      "compute_class": null,
+      "caps": [],
+      "source": {
+        "kind": "dlopen",
+        "detail": "libcuda.so.1"
+      },
+      "status": {
+        "state": "unavailable",
+        "kind": "driver-not-found",
+        "path": "libcuda.so.1"
+      },
+      "transport": null
+    },
+    {
+      "kind": "wgpu",
+      "api": "wgpu",
+      "device_index": null,
+      "device_uid": null,
+      "device_name": "",
+      "vendor": "",
+      "vendor_id": null,
+      "device_type": "",
+      "mem_total": null,
+      "mem_free": null,
+      "mem_kind": {
+        "kind": "discrete"
+      },
+      "compute_class": null,
+      "caps": [],
+      "source": {
+        "kind": "compiled-in"
+      },
+      "status": {
+        "state": "unavailable",
+        "kind": "no-device"
+      },
+      "transport": null
+    },
+    {
+      "kind": "metal",
+      "api": "metal",
+      "device_index": null,
+      "device_uid": null,
+      "device_name": "",
+      "vendor": "",
+      "vendor_id": null,
+      "device_type": "",
+      "mem_total": null,
+      "mem_free": null,
+      "mem_kind": {
+        "kind": "discrete"
+      },
+      "compute_class": null,
+      "caps": [],
+      "source": {
+        "kind": "not-compiled"
+      },
+      "status": {
+        "state": "unavailable",
+        "kind": "no-backend",
+        "vendor": "no native Metal backend in 0.66 (a Metal adapter appears under wgpu)"
+      },
+      "transport": null
+    },
+    {
+      "kind": "hip",
+      "api": "hip",
+      "device_index": null,
+      "device_uid": null,
+      "device_name": "",
+      "vendor": "",
+      "vendor_id": null,
+      "device_type": "",
+      "mem_total": null,
+      "mem_free": null,
+      "mem_kind": {
+        "kind": "discrete"
+      },
+      "compute_class": null,
+      "caps": [],
+      "source": {
+        "kind": "not-compiled"
+      },
+      "status": {
+        "state": "unavailable",
+        "kind": "no-backend",
+        "vendor": "no HIP backend in 0.66"
+      },
+      "transport": null
+    }
+  ],
+  "selected": {
+    "kind": "cpu",
+    "device_index": null,
+    "device_uid": null,
+    "reason": "fixture; recomputed on load"
+  }
+}

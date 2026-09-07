@@ -295,6 +295,7 @@ dependencies = [
  "glob",
  "half",
  "humansize",
+ "jsonschema",
  "libc",
  "parquet",
  "predicates",
