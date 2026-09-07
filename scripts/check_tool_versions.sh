@@ -135,10 +135,15 @@ TOML
     # contains ONLY the shim dir, and `/usr/bin/env bash` resolves `bash`
     # via PATH too -- so an env-shebang shim silently fails to execute
     # ("No such file or directory") instead of proving the version check.
-    printf '#!/bin/bash\nprintf "pmat 1.2.3\\n"\n'   > "$TD/bin-right/pmat"
-    printf '#!/bin/bash\nprintf "bashrs 4.5.6\\n"\n' > "$TD/bin-right/bashrs"
-    printf '#!/bin/bash\nprintf "pmat 9.9.9\\n"\n'   > "$TD/bin-wrong/pmat"
-    printf '#!/bin/bash\nprintf "bashrs 9.9.9\\n"\n' > "$TD/bin-wrong/bashrs"
+    # A mock answers ONLY to `--version`: a bare invocation prints usage and
+    # exits 2, so the spec's named mutation for BSE-10a (strip `--version`
+    # from installed_version) turns every GREEN row RED. With unconditional
+    # mocks that mutant passed 6/6 (measured 2026-09-07, PR #3037 review).
+    for spec in "bin-right/pmat=pmat 1.2.3" "bin-right/bashrs=bashrs 4.5.6" \
+                "bin-wrong/pmat=pmat 9.9.9" "bin-wrong/bashrs=bashrs 9.9.9"; do
+        printf '#!/bin/bash\n[ "${1:-}" = "--version" ] || { printf "usage\\n"; exit 2; }\nprintf "%s\\n"\n' \
+            "${spec#*=}" > "$TD/${spec%%=*}"
+    done
     chmod +x "$TD"/bin-right/* "$TD"/bin-wrong/*
 
     row() { # row WANT_RC LABEL PATHVAL TOOL

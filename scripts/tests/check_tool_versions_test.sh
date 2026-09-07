@@ -88,6 +88,17 @@ row 1 "mutant: a fail-open \`check_tool_versions.sh || true\` call goes RED" \
 # A missing file is ENV (exit 2), never a pass.
 row 2 "a missing workflow file is ENV (exit 2), never a pass" \
     'does not exist' bash "$GUARD" --audit-workflow "$TD/absent.yml"
+# BSE-10a's named mutation: strip `--version` from installed_version. The
+# self-test's mocks answer only to `--version`, so the mutant's GREEN rows
+# go RED and the self-test fails. A mutant byte-identical to the guard is
+# refused first — a falsifier that cannot fail is not evidence.
+cp "$GUARD" "$TD/strip-version.sh"
+sed -i 's/"$tool" --version 2>\/dev\/null/"$tool" 2>\/dev\/null/' "$TD/strip-version.sh"
+if cmp -s "$GUARD" "$TD/strip-version.sh"; then
+    printf 'FAIL  the strip-version mutant is byte-identical to the guard (sed matched nothing)\n'; red=1
+fi
+row 1 "mutant: installed_version without --version -> --self-test goes RED" \
+    'SELF-TEST FAILED' bash "$TD/strip-version.sh" --self-test
 
 printf '%s/%s checks, %s failed\n' "$((n - red))" "$n" "$red"
 [ "$red" = 0 ]
