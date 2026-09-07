@@ -1011,6 +1011,15 @@ jobs:
         run: |
           bash scripts/check_complexity_ratchet.sh --selftest
           bash scripts/check_complexity_ratchet.sh
+      # BSE-03 phase C (PMAT-1068): a ratchet verdict is a function of the
+      # (comparand SHA, merge SHA) pair and of nothing else -- not of a file a
+      # PR can rewrite, not of which pmat happened to be on PATH. The case
+      # tables prove it per class against fixtures with a pmat SHIM (cargo-free).
+      # The satd class builds the falsification suite and runs beside it below.
+      - name: "Ratchet verdicts depend on (comparand, merge) only -- readme + complexity case tables (BSE-03)"
+        run: |
+          bash scripts/tests/ratchet_semantics_test.sh --class readme
+          bash scripts/tests/ratchet_semantics_test.sh --class complexity
       # Hand-rolled argv parsing is banned. simular's `match args[1]` silently
       # DROPPED --seed: unknown flags fell through a catch-all, a valueless flag
       # was discarded, and an unparseable value became the default instead of an
@@ -1296,39 +1305,65 @@ jobs:
         run: bash scripts/check_model_tests_wired.sh
       - name: model-tests wiring case table
         run: bash scripts/check_model_tests_wired.sh --self-test
-      - name: model-tests falsification suites (was gated by nothing, aprender#2522)
-        # Runs INSIDE the image, on THIS job's own per-RUN target dir --
-        # `run-<RUN_ID>-guards`, never the `run-<RUN_ID>` that workspace-test
-        # mounts. Both jobs of one run used to bind-mount the same host path as
-        # /workspace/target and run cargo against it concurrently, which is the
-        # dep-info race (aprender#2822). Two mounts, two trees, no ordering.
-        #
-        # --user: the container ran as UID 0, so every artifact it wrote into
-        # the bind mounts came back root-owned and the NEXT run's checkout
-        # `git clean -ffdx` hit EACCES -- which is why this workflow already
-        # carries a "Pre-checkout ownership restore" step in three jobs. The
-        # host paths are created by the step above, from this same uid, because
-        # a bare --user EACCESs on a bind source docker had to auto-create.
+      # BSE-03 phase C (PMAT-1068): the SATD ceiling is MEASURED on the comparand
+      # by the SAME scanner, in this job, and exported as SATD_BASELINE; the
+      # constant in the checklist is the local fallback only (threat model
+      # class 2: the one number a PR could rewrite). The HEAD-built suite scans
+      # whatever tree is mounted at /workspace, so origin/main (fetched above)
+      # is archived to a directory and mounted in the workspace's place while
+      # the target dir stays the HEAD build. A ceiling of 0 makes the checklist
+      # name the count it measured; a comparand with no markers passes and
+      # measures 0. A count that cannot be read fails HERE -- the suite refuses
+      # an empty SATD_BASELINE on its own account, but a step that exported one
+      # would be reporting a measurement it did not take.
+      - name: model-tests falsification suites (was gated by nothing, aprender#2522) -- SATD ceiling measured on the comparand (BSE-03)
         run: |
-          docker run --rm \
-            --user "$(id -u):$(id -g)" \
-            -v "${GITHUB_WORKSPACE}:/workspace" \
-            -v "${GUARD_CARGO_HOME}:/cargo-home" \
-            -v "${GUARD_TARGET_DIR}:/workspace/target" \
-            -e CARGO_HOME=/cargo-home \
-            -v "/home/noah/data/sccache:/sccache" \
-            -w /workspace \
-            -e CARGO_TARGET_DIR=/workspace/target \
-            -e RUSTC_WRAPPER=rustc-sccache \
-            -e SCCACHE_DIR=/sccache \
-            -e SCCACHE_CACHE_SIZE=50G \
-            -e CARGO_INCREMENTAL=0 \
-            -e CARGO_BUILD_JOBS=8 \
-            "$IMAGE" \
-            cargo test -p aprender-core --features model-tests \
-              --test falsification_spec_v10_tests \
-              --test falsification_stress_tests \
-              --test falsification_gpu_state_tests
+          set -euo pipefail
+          dr() { # dr <dir mounted as /workspace> <cmd...>
+            local ws=$1; shift
+            docker run --rm \
+              --user "$(id -u):$(id -g)" \
+              -v "${ws}:/workspace" \
+              -v "${GUARD_CARGO_HOME}:/cargo-home" \
+              -v "${GUARD_TARGET_DIR}:/workspace/target" \
+              -e CARGO_HOME=/cargo-home \
+              -v "/home/noah/data/sccache:/sccache" \
+              -w /workspace \
+              -e CARGO_TARGET_DIR=/workspace/target \
+              -e RUSTC_WRAPPER=rustc-sccache \
+              -e SCCACHE_DIR=/sccache \
+              -e SCCACHE_CACHE_SIZE=50G \
+              -e CARGO_INCREMENTAL=0 \
+              -e CARGO_BUILD_JOBS=8 \
+              "${DR_ENV[@]}" \
+              "$IMAGE" "$@"
+          }
+          DR_ENV=()
+          # 1. build the checklist suite once, at HEAD, and learn its executable
+          dr "$GITHUB_WORKSPACE" cargo test -p aprender-core --features model-tests \
+            --test falsification_spec_v10_tests --no-run 2>&1 | tee "$RUNNER_TEMP/satd-build.log"
+          bin=$(sed -n 's|.*Executable tests/falsification_spec_v10_tests\.rs (\(.*\))$|\1|p' "$RUNNER_TEMP/satd-build.log" | tail -1)
+          [ -n "$bin" ] || { echo "FAIL: cargo did not name the falsification suite executable"; exit 1; }
+          # 2. measure the comparand with that same binary
+          comparand="$RUNNER_TEMP/comparand"; rm -rf "$comparand"; mkdir -p "$comparand"
+          git archive --format=tar origin/main | tar -xf - -C "$comparand"
+          DR_ENV=(-e SATD_BASELINE=0)
+          set +e
+          out=$(dr "$comparand" "$bin" f_checklist_005_satd_is_zero --exact --nocapture 2>&1); mrc=$?
+          set -e
+          n=$(printf '%s\n' "$out" | sed -n 's/.*BROKEN -- \([0-9][0-9]*\) markers in production source.*/\1/p' | head -1)
+          if [ "$mrc" -eq 0 ] && [ -z "$n" ] && printf '%s\n' "$out" | grep -q '^test result: ok'; then n=0; fi
+          case "$n" in ''|*[!0-9]*) printf '%s\n' "$out" | tail -20; echo "FAIL: the comparand measurement did not yield a count (rc=$mrc)"; exit 1 ;; esac
+          echo "SATD_BASELINE=$n measured on origin/main $(git rev-parse --short origin/main) by the HEAD-built suite"
+          # 3. the suites, judged against the measured ceiling
+          DR_ENV=(-e "SATD_BASELINE=$n")
+          dr "$GITHUB_WORKSPACE" cargo test -p aprender-core --features model-tests \
+            --test falsification_spec_v10_tests \
+            --test falsification_stress_tests \
+            --test falsification_gpu_state_tests
+          # 4. the satd class of the ratchet-semantics case table (rebuilds nothing)
+          DR_ENV=()
+          dr "$GITHUB_WORKSPACE" bash scripts/tests/ratchet_semantics_test.sh --class satd
       - name: Book rust examples compile
         run: bash scripts/check_book_examples_compile.sh
       # CB-510: a Cargo.toml `exclude` pattern can strip an include!() target
