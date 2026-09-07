@@ -16588,11 +16588,11 @@ roadmap:
   title: 'GH-3028: main RED — upstream roadmap-valid (PATH pmat 3.39.0) rejected 12 legacy nested subtask
     records as duplicate ids; dropped them, in-repo pin-independent id-uniqueness guard through the parsed
     tree (scripts/check_roadmap_ids_unique.sh), G-6 treats a parent''s subtasks list as lifecycle (PR #3030)'
-  status: in_progress
+  status: completed
   priority: high
   assigned_to: null
   created: 2026-09-06T18:05:00Z
-  updated: 2026-09-06T18:05:00Z
+  updated: 2026-09-07T07:55:00Z
   spec: null
   acceptance_criteria:
   - 'bash scripts/check_roadmap_ids_unique.sh --self-test && bash scripts/check_roadmap_ids_unique.sh'
@@ -16604,4 +16604,4 @@ roadmap:
   labels:
   - kind:code
   - pp-066
-  notes: 'see #3028; fleet pin drift paiml/infra#468; the identical dedup also rides #3027 (BSE-001 H4)'
+  notes: 'see #3028; fleet pin drift paiml/infra#468; the identical dedup also rides #3027 (BSE-001 H4). Merged as #3030 on 2026-09-07 (main e4b423790, push run green). proof:PR#3030'
