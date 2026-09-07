@@ -15112,7 +15112,7 @@ roadmap:
   subtasks: []
   estimated_effort: null
   labels: []
-  notes: 'complete: proof:https://github.com/paiml/aprender/issues/2873#issuecomment-5558718271 (decided_by: noahgift via driver prompt 2026-09-06); proof:docs/audits/impl-PMAT-985-receipt.md'
+  notes: 'complete: decided at https://github.com/paiml/aprender/issues/2873#issuecomment-5558718271 (decided_by: noahgift via driver prompt 2026-09-06); proof:docs/audits/impl-PMAT-985-receipt.md'
 - id: PMAT-986
   github_issue: null
   item_type: task
@@ -15677,7 +15677,7 @@ roadmap:
   subtasks: []
   estimated_effort: null
   labels: []
-  notes: 'complete: proof:https://github.com/paiml/aprender/issues/2873#issuecomment-5558717537 (decided_by: noahgift via driver prompt 2026-09-06); proof:docs/audits/impl-PMAT-1018-receipt.md'
+  notes: 'complete: decided at https://github.com/paiml/aprender/issues/2873#issuecomment-5558717537 (decided_by: noahgift via driver prompt 2026-09-06); proof:docs/audits/impl-PMAT-1018-receipt.md'
 - id: PMAT-1019
   github_issue: null
   item_type: task
@@ -15694,7 +15694,7 @@ roadmap:
   subtasks: []
   estimated_effort: null
   labels: []
-  notes: 'complete: proof:https://github.com/paiml/aprender/issues/2873#issuecomment-5558717787 (decided_by: noahgift via driver prompt 2026-09-06); proof:docs/audits/impl-PMAT-1019-receipt.md'
+  notes: 'complete: decided at https://github.com/paiml/aprender/issues/2873#issuecomment-5558717787 (decided_by: noahgift via driver prompt 2026-09-06); proof:docs/audits/impl-PMAT-1019-receipt.md'
 - id: PMAT-1020
   github_issue: null
   item_type: task
