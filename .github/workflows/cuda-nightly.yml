@@ -386,6 +386,32 @@ jobs:
       #      malformed on some other unanticipated exit path - pass through
       #      unexamined; the `case` inspects the actual word, not just the
       #      exit code of the substitution).
+      # D1 follow-up (BSE-11, Pmat-Ticket: PMAT-1067): the D1 fix above still
+      # conflated two different failures behind `run_id="$(gh run list ...)"`
+      # + `[ -z "$run_id" ]`. Under `set -uo pipefail` (no `-e`), a `gh`
+      # invocation that fails outright - bad/expired auth, an API 5xx, a rate
+      # limit - ALSO leaves `run_id` empty, so it read exactly like "no prior
+      # successful run", the legitimate NO-BASELINE case. A broken `gh` must
+      # not silently masquerade as "nothing to compare against"; only an
+      # `rc=0` empty result is NO-BASELINE. `gh run list`'s exit status is now
+      # captured directly (`if ! run_id=$(...); then ... exit 1; fi`) before
+      # the emptiness check ever runs, mirroring the same distinction already
+      # made below for `gh run download` (download failure -> exit 1;
+      # "no artifact" -> NO-BASELINE).
+      #
+      # Two further D1-follow-up fixes, same ticket:
+      #   - The "checklist" this step's `NO-BASELINE`/`CHANGED`/`UNCHANGED`
+      #     word feeds (O12, docs/reports/work-history-delay-optimization-report.md)
+      #     is a human release-day process outside this repo, not an in-repo
+      #     document this workflow can update - so the three-word semantics
+      #     are now stated directly in the job's own step summary line below,
+      #     which is what a release-day reader actually opens.
+      #   - When a downloaded baseline's `probe.log` HAS the file but its
+      #     witness line is absent (an empty `$expected`/`$observed`), the
+      #     step already failed closed via `witness_diff.sh`'s own exit 2 -
+      #     but the resulting "unexpected verdict: ''" message did not say
+      #     WHICH of the two files was empty. Checked explicitly below so
+      #     the failure names the file before `witness_diff.sh` ever runs.
       - name: PP-26 - witness byte-compare against the previous run (BSE-11)
         if: ${{ !cancelled() && steps.decide.outputs.proceed == 'true' }}
         run: |
@@ -400,8 +426,15 @@ jobs:
 
           verdict=""
           rm -rf /tmp/pp26-prev-witness && mkdir -p /tmp/pp26-prev-witness
-          run_id="$(gh run list --workflow=cuda-nightly.yml --status=success --limit=1 \
-            --json databaseId --jq '.[0].databaseId')"
+          # gh's exit code is captured on its own (never folded into the
+          # emptiness check below): a `gh` failure - bad auth, an API error,
+          # a rate limit - is an ERROR, not "no prior successful run", even
+          # though both leave `run_id` unset under `set -uo pipefail`.
+          if ! run_id="$(gh run list --workflow=cuda-nightly.yml --status=success --limit=1 \
+                 --json databaseId --jq '.[0].databaseId')"; then
+            echo "::error::PP-26 witness: gh run list failed (auth/API error) - not a NO-BASELINE condition"
+            exit 1
+          fi
           if [ -z "$run_id" ]; then
             # No prior successful run at all (e.g. the first run ever) - an
             # honest "nothing to compare against yet", never a silent skip.
@@ -436,6 +469,17 @@ jobs:
           fi
 
           if [ "$verdict" != "NO-BASELINE" ]; then
+            # Fail closed and name which file is empty before handing off to
+            # witness_diff.sh, whose own "unexpected verdict: ''" message
+            # (below) does not say which side was the problem.
+            if [ ! -s "$expected" ]; then
+              echo "::error::PP-26 witness: expected witness line is empty (previous run's probe.log had no '^PP-26-WITNESS: ' line)"
+              exit 1
+            fi
+            if [ ! -s "$observed" ]; then
+              echo "::error::PP-26 witness: observed witness line is empty (this run's probe.log had no '^PP-26-WITNESS: ' line)"
+              exit 1
+            fi
             verdict="$(bash scripts/witness_diff.sh "$expected" "$observed")"
           fi
 
@@ -452,6 +496,11 @@ jobs:
 
           echo "PP-26 witness byte-compare: $verdict"
           echo "PP-26 witness byte-compare: **$verdict**" >> "$GITHUB_STEP_SUMMARY"
+          # The release-day reader of this summary is a human process outside
+          # this repo (O12, docs/reports/work-history-delay-optimization-report.md)
+          # with no in-repo checklist document to carry this instead - so the
+          # three words are defined right here, where that reader looks.
+          echo "> UNCHANGED = same witness bytes as the last successful run (no action). CHANGED = witness bytes differ (investigate). NO-BASELINE = nothing to compare against yet (treat like CHANGED - look at it)." >> "$GITHUB_STEP_SUMMARY"
 
       # `!cancelled()` with NO proceed condition, on purpose: when `decide`
       # yields to training it writes a NOT_RUN marker, and a yielded night is
