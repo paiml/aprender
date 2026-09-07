@@ -111,3 +111,9 @@ __pycache__/
 /sim4
 /sim4.rs
 /.lint-cache
+
+# `pmat work` scratch files for docs/roadmaps/roadmap.yaml — never commit
+# these; a tracked copy races the real file in every future diff
+# (BSE-09a, PMAT-1065, checked by scripts/check_roadmap_sorted.sh).
+docs/roadmaps/*.bak
+docs/roadmaps/*.lock
