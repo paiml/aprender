@@ -1,8 +1,8 @@
+#!/usr/bin/env bash
     if ! tracked=$(git -C "$dir" ls-files -- '*.bak' '*.lock' 2>&1); then
         printf 'ENV   git ls-files failed under %s: %s — the tracked-backup check cannot be decided, refusing to pass\n' "$dir" "$tracked"
         return 2
     fi
-#!/usr/bin/env bash
 # check_roadmap_sorted.sh — new docs/roadmaps/roadmap.yaml entries land at a
 # SORTED position, not blindly appended to the tail (BSE-09a, PMAT-1065).
 #
