@@ -1,0 +1,109 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# apr-publish-cascade-v1 — the crates.io cascade derives its publish set, orders
+# it by dependency, refuses every unsafe precondition, and is idempotent per
+# crate (PP-066 row R-5, epic #2873, issue #2908, ticket PMAT-1078)
+#
+# WHAT IT GOVERNS
+#   scripts/publish_cascade.sh: --list, --dry-run, LIVE <tag>, --self-test.
+#   Out of scope: the release assets and the base-owned promotion (the rest of
+#   R-5), and what a published crate contains (CB-510 owns that).
+#
+# PROOF LADDER, STATED HONESTLY
+#   * L1 — the resolver exists: the script above, discovered by guard_tree.sh
+#          (`git ls-files 'scripts/check_*.sh'` does NOT match it; it is invoked
+#          by the RELEASE procedure, not by CI, and that is deliberate — a
+#          publish must never be reachable from a workflow).
+#   * L2 — falsification MEASURED: --self-test 15/15 both polarities, including
+#          all four registered mutations, on 2026-09-07.
+#   * L3/L4 — NOT APPLICABLE and deliberately not declared: a shell procedure
+#          over a registry, not a kernel. No self-exemption flag.
+# ─────────────────────────────────────────────────────────────────────────────
+name: apr-publish-cascade
+version: "1.0.0"
+scope: >
+  scripts/publish_cascade.sh and the ordering it derives from `cargo metadata`.
+status: active
+
+metadata:
+  kind: pattern
+  version: "1.0.0"
+  created: '2026-09-07'
+  last_modified: '2026-09-07'
+  author: PAIML Engineering
+  references:
+    - 'scripts/publish_cascade.sh — --list · --dry-run · <tag> · --self-test (15 rows)'
+    - 'PP-066 publish standard (2026-09-07): the cascade runs locally from the promoted tag with a local token; no token in GitHub secrets; no workflow runs cargo publish'
+    - 'PP-066 row R-5, issue #2908'
+  description: >
+    The publish set is every `cargo metadata` workspace member whose `publish`
+    is not false, ordered so each crate follows the workspace crates it depends
+    on through NORMAL and BUILD dependencies. Dev-dependencies are excluded from
+    the ordering: siblings here are path-only and legally cyclic. Live mode
+    refuses unless HEAD is exactly the tag, detached and clean, the GitHub
+    release is not a prerelease, and CARGO_REGISTRY_TOKEN is unset. Each crate
+    already on crates.io at its workspace version is skipped, so a re-run after
+    a failure never republishes. The first failure is a report, not a retry.
+
+equations:
+  the_publish_set_is_derived_and_ordered:
+    formula: |
+      set   = { m ∈ workspace_members : m.publish ≠ [] }
+      order = topological over { (a,b) : b ∈ deps(a), kind(b) ∈ {normal, build} }
+    domain: 'cargo metadata --no-deps'
+    codomain: 'an ordered crate list'
+    invariants:
+    - 'DERIVED, NEVER LISTED: a crate added to the workspace joins the cascade with no edit here.'
+    - 'DEV-DEPS ARE NOT ORDERING EDGES: this workspace really has aprender-compute <-> aprender-core through dev-deps; ordering on them would report a cycle and refuse a workspace that publishes fine. Measured on 2026-09-07: 71 crates, 0 ordering violations.'
+    - 'A REAL CYCLE IS EXIT 2, NEVER A GUESSED ORDER.'
+    preconditions: []
+    postconditions:
+    - '--list prints every publishable member exactly once, dependencies first'
+
+  live_mode_refuses_every_unsafe_precondition:
+    formula: |
+      publish ⇒ describe(HEAD) = tag ∧ detached ∧ clean
+              ∧ isPrerelease(tag) = false ∧ CARGO_REGISTRY_TOKEN unset
+    domain: 'the repository, the GitHub release, the environment'
+    codomain: 'bool'
+    invariants:
+    - 'crates.io HAS NO UNPUBLISH: every refusal guards something unrecoverable.'
+    - 'AN UNKNOWN IS A REFUSAL: a release lookup that fails refuses rather than assuming not-prerelease.'
+    - 'IDEMPOTENT PER CRATE: a version already on crates.io is skipped, so a re-run after a stop never republishes.'
+    preconditions: []
+    postconditions:
+    - 'the first non-zero publish stops the run and reports {crate, live set, remaining}'
+
+proof_obligations:
+  - id: PUBC-OB-001
+    statement: "The publish set is derived from cargo metadata and ordered by normal/build dependencies only; a real cycle is exit 2."
+    discharged_by: falsification_tests[0]
+  - id: PUBC-OB-002
+    statement: "Live mode refuses a wrong tag, a branch, a dirty tree, a prerelease, an unknown release and a token in the environment; each crate is published at most once."
+    discharged_by: falsification_tests[0]
+
+falsification_tests:
+  - id: PUBC-F-001
+    rule: the derived order and every refusal, both polarities
+    prediction: >-
+      --self-test passes 15/15: preflight passes when all five preconditions hold; each of the four
+      registered mutations (branch, dirty, prerelease, token) refuses on its own; a wrong tag, no
+      tag, and an unknown release each refuse; the derived set is topological and drops publish=false;
+      a private crate never appears; a real cycle is exit 2; a DEV-dep cycle is NOT a cycle;
+      malformed metadata is exit 2; an already-published version is skipped and a new one is not.
+    test: 'bash scripts/publish_cascade.sh --self-test'
+    if_fails: >-
+      an immutable version reaches crates.io from an untagged, dirty or prerelease tree, or a
+      re-run after a partial cascade republishes and one release becomes two
+    mutation: >-
+      drop the detached-HEAD check -> row 2 RED; drop the dirty check -> row 3 RED; drop the
+      prerelease check -> row 4 RED; drop the token check -> row 5 RED. Each observed.
+
+non_goals:
+  - "The release assets, sha256 and minisign manifest, and the base-owned promotion — the rest of R-5."
+  - "What a published crate CONTAINS: check_include_files.sh and the CB-510 lesson own that."
+  - "Yanking or recovering a bad publish: crates.io has no unpublish, which is why the refusals are the whole design."
+
+binding_registry:
+  script: scripts/publish_cascade.sh
+  receipt: docs/audits/publish-cascade-dryrun.md
+  issue: "https://github.com/paiml/aprender/issues/2908"

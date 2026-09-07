@@ -1,0 +1,11 @@
+{
+  "row": "R-5", "issue": 2908, "inst": "A",
+  "at_head": {
+    "scripts/publish_cascade.sh": "absent",
+    "contracts/apr-publish-cascade-v1.yaml": "absent",
+    "docs/audits/impl-R-5-receipt.md": "absent",
+    "no_workflow_runs_cargo_publish": "HOLDS in intent; the literal grep -rL is misleading — all 3 occurrences (binary-release.yml:5, ci.yml:1051, ci.yml:1517) are COMMENTS, not commands. Same classifier class as PMAT-1074."
+  },
+  "scope_this_pr": "scripts/publish_cascade.sh + its contract + receipt. Assets/promotion are the rest of R-5 and are fleet-gated.",
+  "vacuous": false
+}
