@@ -49,7 +49,9 @@ them under any other path. Of the **21** paths named: **1 exists**
 | `gx10` | aarch64 | 20 | 119 GB | 324 G | GB10 | [N/A] unified | 590.48.01 | **12.1** | 13.1 | 13.0 |
 
 `ssh yoga 'lsmod | grep -E "^(nvidia|nouveau)"'` → `nvidia`, `nvidia_uvm`, `nvidia_drm`,
-`nvidia_modeset` loaded; **no `nouveau`**. `nvidia-smi -L` names the AD107M. yoga can
+`nvidia_modeset` loaded; **no `nouveau`**. `ssh yoga 'nvidia-smi -L'` → `GPU 0: NVIDIA
+GeForce RTX 4060 Laptop GPU (UUID: GPU-a3a7c6c0-…)`; the part number **AD107M** comes from
+`lspci -nn`, not from `nvidia-smi`. yoga can
 execute kernels as of this measurement.
 
 ## GT-3 — runners

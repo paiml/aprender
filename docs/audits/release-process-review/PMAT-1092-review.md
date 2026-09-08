@@ -5,7 +5,7 @@
 | Ticket | PMAT-1092 |
 | Reviewed | `docs/audits/release-process-review/release-process-aprender-v0.1-draft.md` v0.1 (463 lines) |
 | Against | `origin/main` @ `c04eda87d`, and the physical hosts, 2026-09-08 |
-| Method | one `agy /teamwork-preview` lane, every finding re-run here, then **seven** AD-04 quorum rounds over this review — rounds 1–4, 6 and 7 returned 3 × FAIL, round 5 returned 2 × FAIL / 1 PASS; every objection was applied rather than argued (see *Method*) |
+| Method | one `agy /teamwork-preview` lane, every finding re-run here, then **eight** AD-04 quorum rounds over this review — rounds 1–4, 6 and 7 returned 3 × FAIL; rounds 5 and 8 returned 2 × FAIL / 1 PASS; every objection was applied rather than argued (see *Method*) |
 | Epic | **paiml/aprender#3058** — the build order, the two gates that cannot fail, and the decisions 0.66 is blocked on |
 | Verdict | **do-not-implement-as-written** — adopt §1/§2/§5.2/§10 now (and §9 bar the row RD-5 turns on), block §3.4/§5.1/§5.3/§6/§7 on the items below |
 | Marks | `[V]` verified by a command printed here · `[C]` computed · `[A]` asserted, source named · `[U]` unverified, owner named |
@@ -155,6 +155,7 @@ And the recorded cost of Option B, which the draft does not cite anywhere:
 > `FORJAR_UNREACHABLE_DAYS`-style handling so "yoga was off" is distinguishable from "the lane
 > died".
 
+Command: `gh issue view 359 --repo paiml/infra --json number,title,state,body,comments`.
 Corroborated in the tree: `.github/workflows/cuda-nightly.yml:52` —
 `description: "Which silicon to run (all | blackwell) — ada retired, see infra#359"`, and
 `:100` — `runs-on: [self-hosted, gpu, Linux, ARM64, cuda, blackwell]`, one literal leg.
@@ -191,7 +192,9 @@ only*") and constraint 5 (a separate group scoped to `release-assets.yml@refs/ta
 **not configured on any group**. And `gpu-x86`, the group whose name suggests it is where a
 yoga runner belongs, has `allows_public_repositories: false` — a public repo cannot use it.
 
-Constraint 2 is buildable today: `.github/workflows/pr-gate.yml` has an `authorize` job `[V]`.
+Constraint 2 is buildable today: `grep -n 'authorize' .github/workflows/pr-gate.yml` → `:10`,
+under a file header reading "PR Authorization Gate — block PRs from unauthorized
+contributors" `[V]`.
 
 **Consequence.** §7 landing before the group configuration means PR-authored code executes on
 a machine in a house, with no workflow restriction. §7.2 calls these constraints
@@ -237,9 +240,17 @@ Contract is valid.
 ```
 
 with **10 proof obligations and 11 falsification tests** (`FALSIFY-CPU-GPU-001..011`), and it
-already documents the bypass the draft's §10.3 forbids — `SKIP_PARITY_GATE=1`, implemented at
-`crates/aprender-serve/src/gguf/cuda/mod.rs:268-279`, plus `bypass: SKIP_PARITY_GATE=1` as a
-declared field in `contracts/layer-parity-v1.yaml:121`. `contracts/apr-gpu-parity-consistency-v1.yaml`
+already documents the bypass the draft's §10.3 forbids — `SKIP_PARITY_GATE=1`, plus
+`bypass: SKIP_PARITY_GATE=1` as a declared field in `contracts/layer-parity-v1.yaml:121`.
+
+**A stale citation inside that contract, found while auditing this finding.** The contract
+places the bypass at `crates/aprender-serve/src/gguf/cuda/mod.rs:268-279` (YAML lines 18 and
+179). `grep -n 'SKIP_PARITY_GATE' crates/aprender-serve/src/gguf/cuda/mod.rs` returns **`:333`**
+(the comment) and **`:349`** (`let skip_gate = std::env::var("SKIP_PARITY_GATE")`); `:268-279`
+is the `HGEMM_PREFILL` / FP16 warm-up block. An earlier revision of this review repeated the
+contract's range without checking it. A line-keyed citation inside a contract drifts silently —
+the same class as the `file:line` baseline drift this repo already tracks — so the contract's
+source anchors are worth a pass of their own. `contracts/apr-gpu-parity-consistency-v1.yaml`
 and `contracts/apr-cli-publish-v1.yaml` also exist.
 
 **Consequence.** Two contracts for one invariant splits the ratchet: a falsifier added to one
@@ -355,7 +366,11 @@ UNMEASURED verdict for unified memory.
 `§7.1`: "Budget: the check must complete inside the merge-queue ceiling (`[U]` — measure and
 record `basis=`; current workspace-test observed ≈ 34 min)."
 
-Measured over the **28 `ci.yml` runs that actually succeeded** in the last 200
+Measured over the `ci.yml` runs that succeeded within the last 200, **sampled 2026-09-08**.
+The window rolls, so the sample is dated for that reason: it held **28 runs** at the time of
+writing, a re-derivation the same day gave `n=24 min=38 median=65 p90=119 max=129`, and quorum
+lanes re-deriving minutes apart got `min=39 median=67`. Min and median are stable to ±2; `n`
+and p90 move with the window. The figures below are the original sample
 (`gh run list --workflow ci.yml --limit 200 --json databaseId,status,conclusion,createdAt,updatedAt,event
 --jq '.[]|select(.status=="completed" and .conclusion=="success")|…'`), minutes:
 
@@ -364,7 +379,7 @@ Measured over the **28 `ci.yml` runs that actually succeeded** in the last 200
 n=28   min=38   median=65   p90=117   max=129
 ```
 
-and the `workspace-test` job alone, on the six most recent successes:
+and the `workspace-test` job alone, on the six most recent successes at that sampling:
 `39 · 49 · 55 · 64 · 70 · 78` min.
 
 An earlier revision of this finding quoted a 3–98 min spread drawn from runs that were almost
@@ -386,9 +401,8 @@ refutes another. **Nobody has yet pinned which population RD-3's budget is state
 and that, not the arithmetic, is the defect: a budget whose population is unspecified cannot
 be exceeded, so it cannot fail.
 
-What *is* stable across every population measured here: the `workspace-test` job alone on the
-six most recent `ci.yml` successes ran `39 · 49 · 55 · 64 · 70 · 78` min, and no successful
-`ci.yml` run completed in under 38.
+What is stable across every re-derivation, this review's and the quorum's alike: the median
+sits in the sixties and the maximum above two hours — an order of magnitude away from "≈34".
 
 **Smallest fix.** RD-3 names its population explicitly — workflow, ref, job, and conclusion
 filter — before it names a number, and carries the run list. Until then the budget is `[U]`,
@@ -438,11 +452,11 @@ Commands: `ssh <host> 'uname -m; nproc; free -g; df -h /'`,
 |---|---|---|
 | **S0-Y1** | `yoga` | x86_64 · **22 cores** · 30 GB RAM · 859 G free on `/` |
 | **S0-Y2** | `yoga` | **RTX 4060 Laptop GPU** · 8188 MiB · driver **595.91.07** · compute cap **8.9 (sm_89)** · CUDA 13.2 (smi) · nvcc 12.4 · `libcuda.so.1` present |
-| — | `yoga` | `nvidia`, `nvidia_uvm`, `nvidia_drm`, `nvidia_modeset` loaded; **no `nouveau`**; `nvidia-smi -L` names the AD107M. **yoga can execute kernels** — this reverses the 2026-09-08 morning probe that found nouveau bound and `nvidia-smi` failing. Any note claiming yoga is build-only is stale. |
+| — | `yoga` | `nvidia`, `nvidia_uvm`, `nvidia_drm`, `nvidia_modeset` loaded; **no `nouveau`**; `ssh yoga 'nvidia-smi -L'` → `GPU 0: NVIDIA GeForce RTX 4060 Laptop GPU (UUID: GPU-a3a7c6c0-…)` — the part number **AD107M** comes from `lspci -nn`, not from `nvidia-smi`, and an earlier revision of this row attributed it to the wrong tool. **yoga can execute kernels** — this reverses the 2026-09-08 morning probe that found nouveau bound and `nvidia-smi` failing. Any note claiming yoga is build-only is stale. |
 | — | `yoga` | free VRAM **7807 MiB** of 8188 (2 MiB used — the dGPU is not driving a display) |
 | — | `yoga` | **no `~/models` directory** — no parity model is provisioned (F9) |
-| **S0-G2** | `lambda-labs` | x86_64 · 48 cores · 125 GB · 376 G free · **RTX 4090** 24564 MiB · driver **570.207** · cap **8.9** · CUDA 12.8 · nvcc 12.8 · 23291 MiB free |
-| **S0-G2** | `gx10` | aarch64 · 20 cores · 119 GB · 324 G free · **GB10** VRAM `[N/A]` unified · driver **590.48.01** · cap **12.1 (sm_121)** · CUDA 13.1 · nvcc 13.0 |
+| **S0-G2a** | `lambda-labs` | x86_64 · 48 cores · 125 GB · 376 G free · **RTX 4090** 24564 MiB · driver **570.207** · cap **8.9** · CUDA 12.8 · nvcc 12.8 · 23291 MiB free |
+| **S0-G2b** | `gx10` | aarch64 · 20 cores · 119 GB · 324 G free · **GB10** VRAM `[N/A]` unified · driver **590.48.01** · cap **12.1 (sm_121)** · CUDA 13.1 · nvcc 13.0 |
 | **S0-M1** | both dogfood hosts | `qwen2.5-coder-7b-instruct-q4_k_m.gguf` **4 683 073 536 B** present on `lambda-labs` **and** `gx10`. Fits lambda (23291 MiB free) with ~18.6 GiB spare; gx10 unified, no VRAM figure exists |
 | **S0-M1 (ext.)** | `yoga` | Extended per F9's own Smallest fix, since §7.1 assigns yoga a 7B cell. **Capacity yes, provisioning no:** 7807 MiB free of 8188 against 4.36 GiB of weights (~3.3 GiB for KV and activations), but `ssh yoga 'ls ~/models'` → **no such directory**. No model is present to run |
 | **S0-R1** | org | groups `Default` / `gpu-nodes` / `gpu-x86`; **all three** `restricted_to_workflows: false`, `selected_workflows: []`; `gpu-x86` `allows_public_repositories: false`. Runners: `yoga-gpu` (online, `self-hosted,Linux,X64,gpu,cuda,yoga,ada`), `gx10-blackwell` (online), 17 × `intel-clean-room*`. **No `lambda-4090`.** Repo-scoped runners: `total_count: 0` |
@@ -472,7 +486,7 @@ Recommendations carry the finding that motivates them.
 | **RD-3** | Two findings against the criterion as written, neither of which decides advisory-vs-required: (a) "0 false reds in 14 days" is satisfied by a box that was powered off for 14 days unless a reachability term is added — F3; (b) the budget names no population, so it cannot be exceeded and cannot fail — F10. Whether `cuda-test` becomes required in 0.66 or 0.66.1 remains the team's call | F3, F10 |
 | **RD-4** | One finding, not a disposition: the slot discipline RD-4 relies on is enforced by `check_host_slot.sh`, which does not exist (F1), so "one role at a time" is currently unenforced however the team decides the rest | F1 |
 | **RD-5** | Cannot be decided while §9 says the opposite — resolve F8 first | F8 |
-| **RD-6** | Whatever the team decides, the ledger adds a second asymmetry that must be stated beside it: the two x86 GPU hosts are **both sm_89**, so §4's two-host row is redundancy, not cross-architecture coverage | S0 ledger |
+| **RD-6** | The ledger surfaces a second asymmetry alongside the one RD-6 names: the two x86 GPU hosts are **both sm_89**, so §4's two-host row is redundancy rather than cross-architecture coverage. That is a fact the decision now has in front of it; what to do about either asymmetry is the team's | S0 ledger |
 | **RD-7** | F7 is a finding against the basis as written, not a decision: the floor is a source constant in `PtxModule`, so deriving it from `nvidia-smi` makes a source constant float on hardware inventory. What the declared minimum *should be* remains the team's call | F7, F2 |
 | **RD-8** | No finding against it — nothing measured here bears on cross-machine reproducibility. Team's call | — |
 | **RD-9** | Appendix A executes the S0 rows RD-9 asks for, and `yoga`'s identity is now `[V]` rather than `[U]`. Whether that satisfies RD-9 is Noah's to record — a measurement being taken is not the same act as a decision being closed. S0-Y3/Y4/Y5 and S0-G1 are still unmeasured | S0 ledger |
@@ -487,8 +501,10 @@ One `agy /teamwork-preview` lane (agy 1.1.27, `--sandbox`, `writes=false`, conve
 after; no lane writes leaked.
 
 Every finding was then re-executed here, and this document was itself put through the AD-04
-merge quorum **seven times** — three independent agy lanes per round, reviewing *this review*.
-Rounds 1–4, 6 and 7 returned **3 × FAIL**; round 5 returned **2 × FAIL and 1 PASS**. What follows is
+merge quorum **eight times** — three independent agy lanes per round, reviewing *this review*.
+Rounds 1–4, 6 and 7 returned **3 × FAIL**; rounds 5 and 8 returned **2 × FAIL and 1 PASS**.
+Round 8 was the first to audit the eleven findings as a *set* against the machine, and it is
+the round that caught measurements of mine that did not reproduce — three of them. What follows is
 what that changed, because a review that hides its own corrections is not evidence. The quorum
 has not yet returned three PASS; that is stated here and in the receipt rather than left to be
 inferred from the absence of a green mark.
@@ -523,8 +539,9 @@ inferred from the absence of a green mark.
    | quorum 5 | this table's own arithmetic (it read "ten rows" against nine enumerated, and "each finding exactly one more" against two rounds that found two), the §9 row of the verdict table, and S0-Y4/Y5's "F3's decision" | 3 |
    | quorum 6 | the §9 carve-out missing from the intro prose, §4 "admissible" while RD-6 governs it, RD-1's "amend C13 **in the same PR**" imperative, S0-N1's "default features" (true for 4 of 5 targets; Windows builds `--no-default-features --features inference`), and this paragraph's own stale "a fifth round may find an eleventh" | 5 |
    | quorum 7 | F11's body still said "default features" for all five targets, contradicting the S0-N1 row round 6 had just made precise; F11's *Smallest fix* still carried the "in the same PR" imperative removed from RD-1; F8's `[V]` label list for #2971 omitted `inst:A` and so no longer reproduced; §12 was missing from the verdict table; S0-M1 had not been extended to yoga as F9's own Smallest fix asks; and the round-6 sentence above said "a sixteenth … a seventeenth" when round 6 found five | 6 |
+   | quorum 8 | **three of my own measurements failed to reproduce** — Appendix A attributed `lspci`'s **AD107M** string to `nvidia-smi -L`; F5 repeated `mod.rs:268-279` for the `SKIP_PARITY_GATE` bypass, which lives at `:333`/`:349` (a range I copied from the contract without checking, and which is still wrong *in* the contract); and F10's rolling-window figures drift, so the sample is now dated. Plus a duplicated `S0-G2` id, two `[V]` marks with no printed command (F3, F4), and RD-6's "must be stated" | 6 |
 
-   **Twenty-six, over eight passes** — seven quorum rounds and one sweep of my own. The pattern is more useful than the count: a document can
+   **Thirty-two, over nine passes** — eight quorum rounds and one sweep of my own. The pattern is more useful than the count: a document can
    declare "escalated, not decided" in its heading and mean it, and still decide by
    grammar — an imperative in a "Smallest fix", a "becomes", a "now closes". Every one of
    these was caught by a reader who was not the author. So this paragraph records the
