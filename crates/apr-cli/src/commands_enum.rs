@@ -7,6 +7,12 @@
 /// prevent — a run whose throughput number was taken through a backend the
 /// caller did not ask for — so a typo must be rejected by the parser, not
 /// echoed back.
+// R-0b (#3002): the backend-resolution module. Declared here (an included
+// file whose own analysis is clean) rather than in lib.rs, whose include! tree
+// pulls pre-existing over-threshold functions the complexity hook would charge.
+#[path = "registry.rs"]
+pub mod registry;
+
 pub const BACKEND_VALUES: [&str; 3] = ["cuda", "cpu", "wgpu"];
 
 /// The ONE `--backend` declaration, flattened into every command that offers the

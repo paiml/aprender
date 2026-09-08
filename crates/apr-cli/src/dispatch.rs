@@ -100,6 +100,63 @@ fn dispatch_sibling_cli_commands(cli: &Cli) -> Option<Result<(), CliError>> {
 }
 
 /// Dispatch runtime commands: check, run, serve.
+/// `apr run` preflight (#3040 decomposition of `dispatch_runtime_commands`).
+/// Prints the backend override, resolves an explicit `--backend <kind>` and a
+/// `--gpu` request against the backend registry (R-0b, #3002: a build that
+/// lacks the kind refuses with `FeatureDisabled`; a host with nothing Ready
+/// refuses with `BackendUnavailable`; never a silent fall-back to wgpu/CPU),
+/// then applies GH-326 (`--gpu` overrides `--no-gpu`). Returns `effective_no_gpu`.
+///
+/// PERF-021: `apr run` is the surface #2696 was measured through and the one with
+/// no guard; this runs ABOVE the `batch_jsonl` early return, which bypasses
+/// `dispatch_run` entirely.
+// The throughput figures behind both paragraphs stay in `//` and out of rustdoc: the
+// claims ratchet treats a `///` number as a claim on a surface a user reads, and 0.66
+// makes no speed claims. The measurements themselves are in
+// FALSIFY-BACKEND-CUDA-HONESTY-001 and #2696, which is where a reader should get them
+// (and where they carry their basis) rather than from an API doc that cannot be
+// re-measured. Moving this prose from `//` to `///` is what made them newly visible.
+fn run_preflight(gpu: bool, no_gpu: bool, backend: Option<&str>) -> Result<bool, CliError> {
+    if let Some(b) = backend.filter(|b| *b != "cpu") {
+        eprintln!("Backend override: {b}");
+    }
+    crate::accel::ensure_available_for(gpu, no_gpu, backend)?;
+    let backend_forces_cpu = backend == Some("cpu");
+    Ok(if gpu { false } else { no_gpu || backend_forces_cpu })
+}
+
+/// `apr run --batch-jsonl`: load the model once, process every prompt. `None`
+/// when no batch file was given (or the build has no inference stack).
+#[allow(clippy::too_many_arguments)]
+fn run_batch_if_requested(
+    source: &str,
+    batch_file: Option<&std::path::PathBuf>,
+    max_tokens: usize,
+    temperature: f32,
+    top_k: usize,
+    effective_no_gpu: bool,
+    verbose: bool,
+) -> Option<Result<(), CliError>> {
+    #[cfg(feature = "inference")]
+    {
+        let batch_file = batch_file?;
+        Some(run::run_batch(
+            source,
+            batch_file,
+            max_tokens,
+            temperature,
+            top_k,
+            effective_no_gpu,
+            verbose,
+        ))
+    }
+    #[cfg(not(feature = "inference"))]
+    {
+        let _ = (source, batch_file, max_tokens, temperature, top_k, effective_no_gpu, verbose);
+        None
+    }
+}
+
 fn dispatch_runtime_commands(cli: &Cli) -> Option<Result<(), CliError>> {
     Some(match cli.command.as_ref() {
         // GH-685: forward cli.verbose to check
@@ -139,85 +196,25 @@ fn dispatch_runtime_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             backend: BackendArg { backend },
         } => {
             // GH-614: --backend cpu forces CPU-only inference
-            let backend_forces_cpu = backend.as_deref() == Some("cpu");
-            if let Some(ref b) = backend {
-                if b != "cpu" {
-                    eprintln!("Backend override: {b}");
-                }
-            }
-            // FALSIFY-BACKEND-CUDA-HONESTY-001: refuse `--backend cuda` on a build
-            // that has no CUDA compiled in, instead of silently serving wgpu/CPU.
-            //
-            // The CUDA generate path is behind `#[cfg(feature = "cuda")]`
-            // (aprender-serve/src/infer/gguf_gpu_generate.rs:356). On a build without
-            // that feature the whole block VANISHES, control falls through to the
-            // GH-559 wgpu fallback, and the run prints:
-            //     Backend override: cuda
-            //     Backend: wgpu (Vulkan)
-            // wgpu then fails its own cpu-parity gate (cosine 0.884 < 0.99) and
-            // degrades again — ~20 tok/s where CUDA gives ~400. Measured 2026-07-27
-            // on an RTX 4090 with nvcc 12.8 present, so this is NOT a
-            // missing-hardware case; it is a build that cannot honour the flag
-            // reporting success anyway.
-            //
-            // This silently invalidates any measurement taken through it. The
-            // Pillar-4 decode beat run against such a binary reports
-            // `ratio_median=0.070x` and a BEAT-REGRESSION panic — a fabricated 14x
-            // regression with nothing wrong in apr's decode path.
-            //
-            // A 20x silent downgrade is never what the caller asked for. Fail.
-            //
-            // NOTE: this checks build capability only. When CUDA *is* compiled in
-            // but fails at runtime (e.g. the Blackwell sm_121 JIT), the GH-559
-            // wgpu fallback is deliberate and stays.
-            if backend.as_deref() == Some("cuda") && !cfg!(feature = "cuda") {
-                return Some(Err(CliError::ValidationFailed(
-                    "--backend cuda requested, but this `apr` was built WITHOUT the \
-`cuda` feature, so the CUDA backend does not exist in this binary. \
-Refusing to silently fall back to wgpu/CPU: that path is ~20x slower \
-(~20 tok/s vs ~400) and makes any throughput measurement taken through it \
-meaningless. Rebuild the ROOT facade with CUDA: `cargo build --release \
---features cuda` (build the root, not `-p apr-cli`: BOTH packages define a \
-binary named `apr`, and only the root's cuda = [\"cli\", \"apr-cli/cuda\"] \
-chain enables this path). To run on this build anyway, pass `--backend cpu` \
-or drop `--backend`."
-                        .to_string(),
-                )));
-            }
-            // PERF-021: `apr run` is the surface #2696 was MEASURED through —
-            // 15.7 tok/s decode, 0.099x llama.cpp — and it was the surface with
-            // no guard. The jidoka refusal landed only on `apr serve`, one
-            // command over from where the defect was recorded.
-            //
-            // Placed ABOVE `effective_no_gpu` and above the `batch_jsonl` early
-            // return below: that return bypasses `dispatch_run` entirely, so a
-            // check any lower is skipped by `apr run --gpu --batch-jsonl f.jsonl`.
-            if let Err(e) = crate::accel::ensure_available(
-                *gpu && !*no_gpu,
-                &crate::accel::asked_flag(*gpu, backend.as_deref()),
-            ) {
-                return Some(Err(e));
-            }
-
-            // GH-326: --gpu overrides --no-gpu when both specified
-            let effective_no_gpu = if *gpu {
-                false
-            } else {
-                *no_gpu || backend_forces_cpu
+            // R-0b (#3002) / #3040: the preflight (backend override, registry
+            // resolution, the PERF-021 accelerator refusal, GH-326 precedence)
+            // lives in `run_preflight` so this arm stays readable.
+            let effective_no_gpu = match run_preflight(*gpu, *no_gpu, backend.as_deref()) {
+                Ok(v) => v,
+                Err(e) => return Some(Err(e)),
             };
 
             // Batch JSONL mode: load model once, process all prompts
-            #[cfg(feature = "inference")]
-            if let Some(ref batch_file) = batch_jsonl {
-                return Some(run::run_batch(
-                    source,
-                    batch_file,
-                    *max_tokens,
-                    *temperature,
-                    *top_k,
-                    effective_no_gpu,
-                    *verbose || cli.verbose,
-                ));
+            if let Some(r) = run_batch_if_requested(
+                source,
+                batch_jsonl.as_ref(),
+                *max_tokens,
+                *temperature,
+                *top_k,
+                effective_no_gpu,
+                *verbose || cli.verbose,
+            ) {
+                return Some(r);
             }
 
             // GH-240: merge global --json flag into output format
@@ -505,6 +502,90 @@ fn dispatch_inspection_commands(cli: &Cli) -> Option<Result<(), CliError>> {
 }
 
 /// Dispatch diagnostic commands: trace, tensors, diff.
+/// `apr trace --save-tensor` (#3040 decomposition; SHIP-007 layer-0 stage
+/// diff): `Some(result)` when the stage dump ran (or the format was refused),
+/// `None` to fall through to the ordinary trace. GGUF dispatches to the
+/// MoE-traced wireup when the arch is qwen3_moe (M-MOE-SUB-2 step (a));
+/// dense-GGUF and .safetensors land in SHIP-007 PR-E.
+fn trace_save_tensor_dispatch(
+    r: &std::path::Path,
+    save_tensor: Option<&str>,
+    save_tensor_dir: Option<&std::path::Path>,
+    save_tensor_layers: &str,
+) -> Option<Result<(), CliError>> {
+    #[cfg(feature = "inference")]
+    {
+        let stages = save_tensor?;
+        let ext_lower = r
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(str::to_ascii_lowercase);
+        match ext_lower.as_deref() {
+            Some("apr") => Some(crate::commands::trace_save_tensor::run_save_tensor_apr(
+                r,
+                stages,
+                save_tensor_dir,
+                save_tensor_layers,
+            )),
+            Some("gguf") => Some(crate::commands::trace_save_tensor::run_save_tensor_gguf_moe(
+                r,
+                stages,
+                save_tensor_dir,
+                save_tensor_layers,
+            )),
+            _ => {
+                eprintln!(
+                    "apr trace --save-tensor: only .apr and .gguf (qwen3_moe arch) \
+                     supported today; .safetensors will be wired in SHIP-007 PR-E \
+                     (got {})",
+                    r.display()
+                );
+                None
+            }
+        }
+    }
+    #[cfg(not(feature = "inference"))]
+    {
+        let _ = (r, save_tensor, save_tensor_dir, save_tensor_layers);
+        None
+    }
+}
+
+/// The `apr diff` flags (#3040 decomposition).
+struct DiffOpts<'a> {
+    weights: bool,
+    values: bool,
+    filter: Option<&'a str>,
+    limit: usize,
+    transpose_aware: bool,
+    json: bool,
+    quant_roundtrip: bool,
+    threshold: f32,
+    no_threshold: bool,
+}
+
+fn diff_dispatch(
+    file1: &std::path::Path,
+    file2: &std::path::Path,
+    o: DiffOpts<'_>,
+) -> Result<(), CliError> {
+    let r1 = crate::error::resolve_model_path(file1)?;
+    let r2 = crate::error::resolve_model_path(file2)?;
+    if o.quant_roundtrip {
+        return dispatch_quant_roundtrip(&r1, &r2, o.threshold, o.no_threshold, o.json);
+    }
+    diff::run(
+        &r1,
+        &r2,
+        o.weights,
+        o.values,
+        o.filter,
+        o.limit,
+        o.transpose_aware,
+        o.json,
+    )
+}
+
 fn dispatch_diagnostic_commands(cli: &Cli) -> Option<Result<(), CliError>> {
     Some(match cli.command.as_ref() {
         Commands::Trace {
@@ -520,46 +601,13 @@ fn dispatch_diagnostic_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             save_tensor_dir,
             save_tensor_layers,
         } => crate::error::resolve_model_path(file).and_then(|r| {
-            // SHIP-007 layer-0 stage diff: when --save-tensor is set on a
-            // .apr file, dispatch to the end-to-end save-tensor wrapper
-            // (PR-A clap → PR-B plan → PR-C-real step1+2 wrapper). For
-            // .gguf/.safetensors and the common no-flag case, fall through
-            // to the existing trace path.
-            #[cfg(feature = "inference")]
-            if let Some(stages) = save_tensor.as_deref() {
-                let ext_lower = r
-                    .extension()
-                    .and_then(|e| e.to_str())
-                    .map(str::to_ascii_lowercase);
-                match ext_lower.as_deref() {
-                    Some("apr") => {
-                        return crate::commands::trace_save_tensor::run_save_tensor_apr(
-                            &r,
-                            stages,
-                            save_tensor_dir.as_deref(),
-                            save_tensor_layers,
-                        );
-                    }
-                    Some("gguf") => {
-                        // M-MOE-SUB-2 step (a) CLI completion: GGUF dispatches
-                        // to the MoE-traced wireup if the arch is qwen3_moe;
-                        // dense-GGUF will be wired in SHIP-007 PR-E.
-                        return crate::commands::trace_save_tensor::run_save_tensor_gguf_moe(
-                            &r,
-                            stages,
-                            save_tensor_dir.as_deref(),
-                            save_tensor_layers,
-                        );
-                    }
-                    _ => {
-                        eprintln!(
-                            "apr trace --save-tensor: only .apr and .gguf (qwen3_moe arch) \
-                             supported today; .safetensors will be wired in SHIP-007 PR-E \
-                             (got {})",
-                            r.display()
-                        );
-                    }
-                }
+            if let Some(res) = trace_save_tensor_dispatch(
+                &r,
+                save_tensor.as_deref(),
+                save_tensor_dir.as_deref(),
+                save_tensor_layers,
+            ) {
+                return res;
             }
             trace::run(
                 &r,
@@ -601,38 +649,21 @@ fn dispatch_diagnostic_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             quant_roundtrip,
             threshold,
             no_threshold,
-        } => {
-            if *quant_roundtrip {
-                // CRUX-B-20: per-tensor quant roundtrip error report.
-                crate::error::resolve_model_path(file1).and_then(|r1| {
-                    crate::error::resolve_model_path(file2).and_then(|r2| {
-                        dispatch_quant_roundtrip(
-                            &r1,
-                            &r2,
-                            *threshold,
-                            *no_threshold,
-                            *json || cli.json,
-                        )
-                    })
-                })
-            } else {
-                crate::error::resolve_model_path(file1).and_then(|r1| {
-                    crate::error::resolve_model_path(file2).and_then(|r2| {
-                        diff::run(
-                            &r1,
-                            &r2,
-                            *weights,
-                            *values,
-                            filter.as_deref(),
-                            *limit,
-                            *transpose_aware,
-                            *json || cli.json,
-                        )
-                    })
-                })
-            }
-        }
-
+        } => diff_dispatch(
+            file1,
+            file2,
+            DiffOpts {
+                weights: *weights,
+                values: *values,
+                filter: filter.as_deref(),
+                limit: *limit,
+                transpose_aware: *transpose_aware,
+                json: *json || cli.json,
+                quant_roundtrip: *quant_roundtrip,
+                threshold: *threshold,
+                no_threshold: *no_threshold,
+            },
+        ),
         _ => return None,
     })
 }

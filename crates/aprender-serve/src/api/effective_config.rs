@@ -494,6 +494,52 @@ pub struct KvReport {
 // The response
 // ---------------------------------------------------------------------------
 
+/// R-0b (#3002, REG-12): the backend apr-cli RESOLVED at startup — the registry
+/// Selection with its reason and `discovered_at` — set once per process by the
+/// serve gate and reported beside the residency-MEASURED `compute_class` so a
+/// reader can cross-check the two. `matches_loaded` is `null` until a model is
+/// resident (nothing to compare), then `kind == compute_class`.
+#[derive(Debug, Clone, Serialize)]
+pub struct BackendResolution {
+    /// `cpu`, `cuda`, `wgpu`, `metal`, `hip` — the registry kind selected.
+    pub kind: String,
+    /// Device index within the kind, when a physical device was selected.
+    pub device_index: Option<u32>,
+    /// Stable device identity (REG-9), when known.
+    pub device_uid: Option<String>,
+    /// Human name of the selected device (`host cpu` for cpu).
+    pub device_name: String,
+    /// Why this selection (REG-8): the registry's reason or the request.
+    pub reason: String,
+    /// When the registry was discovered (unix seconds; REG-12).
+    pub discovered_at_unix: u64,
+    /// Who resolved it and when (the launcher names itself).
+    pub basis: String,
+    /// `kind == compute_class` once a model is resident; `null` before.
+    pub matches_loaded: Option<bool>,
+}
+
+static BACKEND_RESOLUTION: std::sync::OnceLock<BackendResolution> = std::sync::OnceLock::new();
+
+/// Record the startup resolution. `false` when one was already recorded: the
+/// first wins, and a second call is a caller defect, never a silent overwrite.
+pub fn set_backend_resolution(r: BackendResolution) -> bool {
+    BACKEND_RESOLUTION.set(r).is_ok()
+}
+
+/// The recorded startup resolution, if the launcher recorded one.
+#[must_use]
+pub fn backend_resolution() -> Option<BackendResolution> {
+    BACKEND_RESOLUTION.get().cloned()
+}
+
+fn resolved_report(compute_class: &str) -> Option<BackendResolution> {
+    backend_resolution().map(|mut r| {
+        r.matches_loaded = (compute_class != "unknown").then(|| r.kind == compute_class);
+        r
+    })
+}
+
 /// Body of `GET /v1/effective-config`.
 ///
 /// The key set is IDENTICAL on every build. `cuda` is `null` on a build without
@@ -504,6 +550,10 @@ pub struct KvReport {
 pub struct EffectiveConfigResponse {
     /// Wire schema version of this body.
     pub schema_version: u32,
+    /// REG-15 (PP-066 #2971): what the load-time parity gate measured for the loaded
+    /// GPU model — never absent. `not-run` on a CPU-only server, `skipped` under the
+    /// `SKIP_PARITY_GATE` override, `PASS` with the cosine when the gate admitted the model.
+    pub parity: ParityReport,
     /// Identity and clock of the serving process.
     pub server: ServerReport,
     /// The dispatch path this process will take, from residency (PP-2).
@@ -527,6 +577,9 @@ pub struct EffectiveConfigResponse {
     /// `true` when a live field could not be read because the model lock was
     /// held (PMAT-073). The affected blocks are absent, never guessed.
     pub lock_contended: bool,
+    /// R-0b (#3002): the startup backend resolution (`null` when the launcher
+    /// recorded none), with `matches_loaded` against `compute_class`.
+    pub resolved: Option<BackendResolution>,
 }
 
 /// `realizar`'s own compile-time feature set.
@@ -594,11 +647,69 @@ pub fn compute_class_from_residency(state: &AppState) -> &'static str {
 
 /// Build the whole body from an `AppState`.
 #[must_use]
+/// The `parity` block of `GET /v1/effective-config` (REG-15, PP-066 #2971).
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct ParityReport {
+    /// `PASS` | `skipped` | `not-run`
+    pub status: String,
+    /// The cosine the gate measured, when it ran.
+    pub cosine: Option<f32>,
+    /// Positions the gate compared (the load-time gate: one token).
+    pub positions: usize,
+    /// The threshold the verdict was judged against.
+    pub threshold: f32,
+    /// Where the threshold and the measurement come from.
+    pub basis: String,
+}
+
+impl ParityReport {
+    /// No GPU model is loaded, so no gate ran; the threshold reported is the gate's constant.
+    pub fn not_run(why: &str) -> Self {
+        Self {
+            status: "not-run".into(),
+            cosine: None,
+            positions: 0,
+            threshold: 0.98,
+            basis: why.into(),
+        }
+    }
+}
+
+/// The loaded GPU model's gate record, or `not-run` when there is none.
+#[cfg(feature = "cuda")]
+fn parity_report(state: &AppState) -> ParityReport {
+    let Some(model) = state.cuda_model() else {
+        return ParityReport::not_run("no GPU model loaded (cpu residency)");
+    };
+    match model.try_read() {
+        Ok(m) => ParityReport {
+            status: m.parity.status.to_string(),
+            cosine: m.parity.cosine,
+            positions: m.parity.positions,
+            threshold: m.parity.threshold,
+            basis: m.parity.basis.to_string(),
+        },
+        Err(_) => {
+            ParityReport::not_run("the GPU model lock is contended; the record is on the model")
+        },
+    }
+}
+
+/// A build without the `cuda` feature has no gate: `not-run`, with the reason.
+#[cfg(not(feature = "cuda"))]
+fn parity_report(_state: &AppState) -> ParityReport {
+    ParityReport::not_run("cuda feature not compiled: no GPU gate exists in this build")
+}
+
+/// The body of `GET /v1/effective-config`, derived from residency and the loaded model —
+/// never from `cfg!` (PP-2), and never without its `parity` block (REG-15).
 pub fn effective_config(state: &AppState) -> EffectiveConfigResponse {
     let effective = state.effective_config_state();
     let cuda_snapshot = cuda_snapshot(state);
-    EffectiveConfigResponse {
+    let mut resp = EffectiveConfigResponse {
+        resolved: None,
         schema_version: EFFECTIVE_CONFIG_SCHEMA_VERSION,
+        parity: parity_report(state),
         server: {
             let mut server = effective.clock.report();
             if server.build_commit.is_none() {
@@ -626,7 +737,9 @@ pub fn effective_config(state: &AppState) -> EffectiveConfigResponse {
         cuda: cuda_snapshot.cuda,
         kv: cuda_snapshot.kv,
         lock_contended: cuda_snapshot.lock_contended,
-    }
+    };
+    resp.resolved = resolved_report(resp.compute_class);
+    resp
 }
 
 /// The live half of the body: everything that needs the model lock.
@@ -758,6 +871,25 @@ mod effective_config_tests {
 
     /// PP-14 must-fire: a run that says auto-fit chose the very argument the
     /// operator pinned cannot be reproduced from its own receipt.
+    /// REG-15 (#2971): the parity block is never absent and always carries the five keys.
+    #[test]
+    fn parity_report_carries_the_five_keys_when_no_gate_ran() {
+        let v = serde_json::to_value(ParityReport::not_run("test")).expect("serialises");
+        let mut keys: Vec<&str> = v
+            .as_object()
+            .expect("object")
+            .keys()
+            .map(String::as_str)
+            .collect();
+        keys.sort_unstable();
+        assert_eq!(
+            keys,
+            ["basis", "cosine", "positions", "status", "threshold"]
+        );
+        assert_eq!(v["status"], "not-run");
+        assert!(v["cosine"].is_null());
+    }
+
     #[test]
     fn autofit_override() {
         assert!(

@@ -41,13 +41,13 @@ pub(crate) use types::GpuLayerRequest;
 pub(crate) fn list_devices() -> Result<()> {
     println!("accelerators this BUILD can dispatch to:");
     let mut any = false;
-    if cfg!(feature = "cuda") {
-        println!("  cuda    compiled in");
-        any = true;
-    }
-    if cfg!(feature = "wgpu") {
-        println!("  wgpu    compiled in");
-        any = true;
+    // R-0b (#3002): what is compiled comes from the registry, never `cfg!`
+    // (`apr devices` prints every backend with its Ready/Unavailable reason).
+    for kind in ["cuda", "wgpu", "metal", "hip"] {
+        if crate::registry::compiled(kind) {
+            println!("  {kind:<7} compiled in");
+            any = true;
+        }
     }
     println!("  cpu     always available");
     if !any {
@@ -75,7 +75,8 @@ pub(crate) fn cli_build_features() -> Vec<String> {
     if cfg!(feature = "inference") {
         features.push("inference");
     }
-    if cfg!(feature = "cuda") {
+    // R-0b: the compiled backends come from the registry, never `cfg!`.
+    if crate::registry::compiled("cuda") {
         features.push("cuda");
     }
     // §9 #8: `cuda-batch = ["cuda"]` is a compatibility alias now, but a receipt
@@ -84,7 +85,7 @@ pub(crate) fn cli_build_features() -> Vec<String> {
     if cfg!(feature = "cuda-batch") {
         features.push("cuda-batch");
     }
-    if cfg!(feature = "wgpu") {
+    if crate::registry::compiled("wgpu") {
         features.push("wgpu");
     }
     if cfg!(feature = "training") {
@@ -205,10 +206,11 @@ pub(crate) fn resolve_gpu_layers(
 /// consulted, and the server starts on CPU having warned nobody.
 ///
 /// `cargo install aprender` produces exactly that build — root `Cargo.toml` has
-/// `default = ["cli"]` and `cuda` is opt-in. Measured on 2026-08-24 with an
-/// idle RTX 4090 in the machine: 15.7 tok/s decode against llama.cpp's 158.9,
-/// and 7.5 SECONDS to first token. A tenth of the speed, no diagnostic, and a
-/// plausible-looking number at the end of it.
+/// `default = ["cli"]` and `cuda` is opt-in. Measured on 2026-08-24 with an idle
+/// RTX 4090 in the machine, it decoded at a fraction of llama.cpp's rate with
+/// seconds to first token: no diagnostic, and a plausible-looking number at the
+/// end of it. The figures and their basis are in #2696, which is where a reader
+/// should get them.
 ///
 /// The remedy in the message is checked to be real. #2527 is the counter-case:
 /// `aprender-test-cli` printed "rebuild with --features llm" for a feature its
@@ -218,7 +220,11 @@ pub(crate) fn resolve_gpu_layers(
 /// `--backend wgpu` is covered by the same check: naming a backend the build
 /// cannot reach is the same defect wearing a different flag.
 #[allow(clippy::unnecessary_wraps)] // wraps only when no accelerator is compiled in
-fn ensure_accelerator_available(config: &ServerConfig) -> Result<()> {
+/// The accelerator request a `ServerConfig` makes, with the flag text to quote
+/// back — `None` when nothing asked for an accelerator. Precedence is this
+/// command's, unchanged: `--no-gpu` beats `--gpu`; `--backend cpu` asks for
+/// nothing; `--gpu-layers 0` asks for nothing.
+fn accelerator_request(config: &ServerConfig) -> Option<(crate::registry::Request<'_>, String)> {
     let wants_backend = config.backend.as_deref();
     // PERF-021: `--gpu-layers` is the request; `--gpu` is its deprecated
     // boolean spelling and means `all`. `--gpu-layers 0` is an explicit CPU
@@ -227,14 +233,10 @@ fn ensure_accelerator_available(config: &ServerConfig) -> Result<()> {
     let wants_layers = config
         .gpu_layers
         .is_some_and(GpuLayerRequest::wants_accelerator);
-    let wants_gpu = wants_layers
-        || (config.gpu && !config.no_gpu)
-        || matches!(wants_backend, Some("wgpu" | "cuda" | "gpu"));
+    let gpu = config.gpu && !config.no_gpu;
+    let wants_gpu = wants_layers || gpu || matches!(wants_backend, Some("wgpu" | "cuda" | "gpu"));
     if !wants_gpu {
-        return Ok(());
-    }
-    if cfg!(any(feature = "cuda", feature = "wgpu")) {
-        return Ok(());
+        return None;
     }
     // Quote back the flag the USER typed. `--gpu` sets gpu_layers to All on the
     // way in, so checking gpu_layers first would tell a user who typed `--gpu`
@@ -248,19 +250,58 @@ fn ensure_accelerator_available(config: &ServerConfig) -> Result<()> {
     } else {
         "--gpu".to_string()
     };
-    Err(CliError::FeatureDisabled(format!(
-        "{asked} was requested, but this build has no GPU backend compiled in, \n\
-         so the server would have run on CPU without telling you. On a 7B Q4_K_M \n\
-         model that is roughly a tenth of the decode rate and several seconds of \n\
-         extra latency to the first token (aprender#2696).\n\
-         \n\
-         Install a build that has one:\n\
-         \n\
-        \x20    cargo install aprender --features cuda    # NVIDIA\n\
-        \x20    cargo install aprender --features wgpu    # portable GPU backend\n\
-         \n\
-         Or pass --no-gpu to run on CPU deliberately."
-    )))
+    let req = crate::registry::Request {
+        gpu,
+        no_gpu: false,
+        backend: wants_backend.filter(|b| *b != "cpu"),
+        layers_want_accelerator: wants_layers,
+    };
+    Some((req, asked))
+}
+
+/// R-0b (#3002): the request resolves against the backend registry. A forced
+/// backend never downgrades: not compiled ⇒ `FeatureDisabled` (9), compiled but
+/// not Ready on this host ⇒ `BackendUnavailable` (14).
+fn ensure_accelerator_available(
+    config: &ServerConfig,
+) -> Result<Option<crate::registry::Resolved>> {
+    match accelerator_request(config) {
+        // R-0b "selected: always": the registry's default is announced with its
+        // reason even when nothing asked for an accelerator.
+        None => {
+            // `--no-gpu`, `--backend cpu` or `--gpu-layers 0` mean cpu; else the
+            // registry's default. Nothing here can refuse.
+            let cpu = config.no_gpu || config.gpu_layers.is_some();
+            let asked = if config.no_gpu {
+                "--no-gpu"
+            } else if cpu {
+                "--gpu-layers 0"
+            } else {
+                "default"
+            };
+            let req = crate::registry::Request {
+                gpu: false,
+                no_gpu: cpu,
+                backend: config.backend.as_deref(),
+                layers_want_accelerator: false,
+            };
+            Ok(crate::registry::announce(&req, asked).ok())
+        }
+        Some((req, asked)) => crate::registry::announce(&req, &asked).map(Some),
+    }
+}
+
+/// The same gate over an explicit registry — tests hand it fixtures instead of
+/// the live host, so "a build with no accelerator" is a fixture, not a `cfg`.
+#[cfg(feature = "inference")]
+pub(crate) fn ensure_accelerator_available_in(
+    config: &ServerConfig,
+    reg: &trueno::registry::BackendRegistry,
+) -> Result<Option<crate::registry::Resolved>> {
+    match accelerator_request(config) {
+        None => Ok(None),
+        Some((req, asked)) => crate::registry::resolve_in(&req, &asked, reg).map(Some),
+    }
 }
 
 /// Serve command entry point (blocking)
@@ -282,7 +323,25 @@ pub(crate) fn run(model_path: &Path, config: &ServerConfig) -> Result<()> {
     contract_pre_server_lifecycle!();
 
     // `--gpu` must not be accepted by a build that has no GPU to dispatch to.
-    ensure_accelerator_available(config)?;
+    let resolved = ensure_accelerator_available(config)?;
+    // R-0b / REG-12: the startup resolution reaches GET /v1/effective-config.
+    #[cfg(feature = "inference")]
+    if let Some(r) = resolved {
+        let _ = realizar::api::effective_config::set_backend_resolution(
+            realizar::api::effective_config::BackendResolution {
+                kind: r.kind.to_string(),
+                device_index: r.device_index,
+                device_uid: r.device_uid,
+                device_name: r.device_name,
+                reason: r.reason,
+                discovered_at_unix: r.discovered_at_unix,
+                basis: "apr-cli backend registry at startup (R-0b, #3002)".to_string(),
+                matches_loaded: None,
+            },
+        );
+    }
+    #[cfg(not(feature = "inference"))]
+    let _ = resolved;
 
     // PMAT-297: Configure rayon thread pool to physical core count.
     // Default (all threads incl. HT) causes 44% regression from contention.
@@ -376,16 +435,32 @@ mod accelerator_guard_tests {
         }
     }
 
-    /// The defect itself: on a build with no accelerator, `--gpu` must not be
-    /// waved through. Before #2696 this returned Ok and the server ran on CPU.
+    /// An R-0a registry fixture (`crates/apr-cli/tests/fixtures/registry/`).
+    #[cfg(feature = "inference")]
+    pub(super) fn fixture(name: &str) -> trueno::registry::BackendRegistry {
+        let path = format!(
+            "{}/tests/fixtures/registry/{name}.json",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{path}: {e}"));
+        trueno::registry::BackendRegistry::from_fixture_json(&text, &path).expect("fixture parses")
+    }
+
+    /// The defect itself (#2696): on a build with no accelerator compiled in,
+    /// `--gpu` must not be waved through — before #2696 this returned Ok and the
+    /// server ran on CPU. R-0b: "compiled" is the registry's `not-compiled`
+    /// lines, so the case is a fixture, never a `cfg`.
     #[test]
-    #[cfg(not(any(feature = "cuda", feature = "wgpu")))]
+    #[cfg(feature = "inference")]
     fn gpu_without_a_backend_is_an_error_not_a_silent_cpu_run() {
-        let err = ensure_accelerator_available(&cfg_with(true, false, None))
-            .expect_err("--gpu on a CPU-only build must fail");
+        let reg = fixture("no-accelerator-compiled");
+        let err = ensure_accelerator_available_in(&cfg_with(true, false, None), &reg)
+            .expect_err("--gpu on a build with no accelerator compiled must fail");
         let msg = err.to_string();
-        // The remedy must be present AND runnable. #2527 shipped an error
-        // naming a rebuild that could not be performed.
+        assert!(
+            matches!(err, crate::error::CliError::FeatureDisabled(_)),
+            "not compiled ⇒ FeatureDisabled (exit 9): {msg}"
+        );
         assert!(
             msg.contains("cargo install aprender --features cuda"),
             "the error must name a remedy that works: {msg}"
@@ -396,17 +471,23 @@ mod accelerator_guard_tests {
         );
     }
 
-    /// Naming a backend the build cannot reach is the same defect in a
-    /// different flag, so it takes the same path.
+    /// cpu-only: cuda's driver is missing and wgpu sees no device — compiled,
+    /// not Ready. That is `BackendUnavailable` (exit 14), never a cpu run, and
+    /// the message quotes the flag the user typed.
     #[test]
-    #[cfg(not(any(feature = "cuda", feature = "wgpu")))]
+    #[cfg(feature = "inference")]
     fn an_unreachable_backend_is_also_an_error() {
+        let reg = fixture("cpu-only");
         for backend in ["wgpu", "cuda", "gpu"] {
-            let err =
-                ensure_accelerator_available(&cfg_with(false, false, Some(backend))).unwrap_err();
+            let err = ensure_accelerator_available_in(&cfg_with(false, false, Some(backend)), &reg)
+                .unwrap_err();
             assert!(
                 err.to_string().contains(&format!("--backend {backend}")),
-                "the message must quote the flag the user typed, not a generic one"
+                "the message must quote the flag the user typed, not a generic one: {err}"
+            );
+            assert!(
+                matches!(err, crate::error::CliError::BackendUnavailable(_)),
+                "compiled but not Ready ⇒ BackendUnavailable, never cpu: {err}"
             );
         }
     }
@@ -643,31 +724,57 @@ mod accelerator_guard_tests {
         );
     }
 
-    /// EXHAUSTIVE OVER THE WHOLE INPUT SPACE.
-    ///
-    /// The predicate reads four booleans and allocates nothing, so "for all
-    /// inputs" is sixteen cases, not a bounded proof. contracts/
-    /// accelerator-request-v1.yaml declares a Kani harness for this and marks
-    /// it `declared-not-written`; this is the cheaper alternative it names,
-    /// written rather than deferred. `result` is a total function of
-    /// (requested, can_dispatch) with exactly one Err cell.
-    #[test]
-    fn the_refusal_is_total_over_every_input() {
-        let linked = cfg!(any(feature = "cuda", feature = "wgpu"));
+    /// Every {gpu, no_gpu, backend} the server accepts.
+    #[cfg(feature = "inference")]
+    fn every_request() -> Vec<(bool, bool, Option<&'static str>)> {
+        let mut v = Vec::new();
         for gpu in [false, true] {
             for no_gpu in [false, true] {
-                for backend in [None, Some("cpu"), Some("cuda"), Some("wgpu")] {
-                    let cfg = cfg_with(gpu, no_gpu, backend);
-                    let requested =
-                        (gpu && !no_gpu) || matches!(backend, Some("cuda" | "wgpu" | "gpu"));
-                    let expect_err = requested && !linked;
-                    assert_eq!(
-                        ensure_accelerator_available(&cfg).is_err(),
-                        expect_err,
-                        "gpu={gpu} no_gpu={no_gpu} backend={backend:?} linked={linked}: \
-                         Err exactly when a request is made that this build cannot honour"
-                    );
+                for backend in [None, Some("cpu"), Some("cuda"), Some("wgpu"), Some("gpu")] {
+                    v.push((gpu, no_gpu, backend));
                 }
+            }
+        }
+        v
+    }
+
+    /// Whether `reg` has a Ready accelerator (of kind `k`, when named).
+    #[cfg(feature = "inference")]
+    fn ready(reg: &trueno::registry::BackendRegistry, k: Option<&str>) -> bool {
+        use trueno::registry::{BackendKind, Status};
+        reg.entries.iter().any(|e| {
+            e.kind != BackendKind::Cpu
+                && matches!(e.status, Status::Ready)
+                && k.is_none_or(|k| e.kind.as_str() == k)
+        })
+    }
+
+    /// Err exactly when a request is made that this HOST cannot honour (R-0b):
+    /// over four fixtures — nothing compiled, compiled-but-absent, one Ready
+    /// cuda, two vendors — and every request the server accepts.
+    #[test]
+    #[cfg(feature = "inference")]
+    fn the_refusal_is_total_over_every_input() {
+        for name in [
+            "no-accelerator-compiled",
+            "cpu-only",
+            "one-cuda",
+            "two-vendors",
+        ] {
+            let reg = fixture(name);
+            for (gpu, no_gpu, backend) in every_request() {
+                let requested =
+                    (gpu && !no_gpu) || matches!(backend, Some("cuda" | "wgpu" | "gpu"));
+                let honourable = match backend {
+                    Some(k @ ("cuda" | "wgpu")) => ready(&reg, Some(k)),
+                    _ => ready(&reg, None),
+                };
+                assert_eq!(
+                    ensure_accelerator_available_in(&cfg_with(gpu, no_gpu, backend), &reg).is_err(),
+                    requested && !honourable,
+                    "{name}: gpu={gpu} no_gpu={no_gpu} backend={backend:?}: \
+                     Err exactly when a request is made that this host cannot honour"
+                );
             }
         }
     }
@@ -690,6 +797,8 @@ mod gpu_layers_contract_tests {
     //! it is that AUTOMATION OVERRODE AN EXPLICIT USER INSTRUCTION AND THE
     //! OVERRIDE WAS UNOBSERVABLE. These test both halves.
 
+    #[cfg(feature = "inference")]
+    use super::accelerator_guard_tests::fixture;
     use super::*;
 
     #[test]
@@ -786,21 +895,19 @@ mod gpu_layers_contract_tests {
         );
     }
 
-    /// The quantity reaches the same refusal the boolean does — one gate, both
-    /// spellings, so retiring `--gpu` cannot reopen the hole it closed.
     #[test]
-    #[cfg(not(any(feature = "cuda", feature = "wgpu")))]
+    #[cfg(feature = "inference")]
     fn gpu_layers_is_refused_on_a_build_with_no_accelerator() {
+        let reg = fixture("no-accelerator-compiled");
         let mut cfg = ServerConfig::default();
         cfg.gpu_layers = Some(GpuLayerRequest::All);
-        let err = ensure_accelerator_available(&cfg).expect_err("must refuse");
+        let err = ensure_accelerator_available_in(&cfg, &reg).expect_err("must refuse");
         assert!(
             err.to_string().contains("--gpu-layers"),
             "quotes what was asked: {err}"
         );
-
-        // ...and an explicit CPU request is not an accelerator request.
         cfg.gpu_layers = Some(GpuLayerRequest::None);
-        ensure_accelerator_available(&cfg).expect("--gpu-layers 0 asks for no accelerator");
+        ensure_accelerator_available_in(&cfg, &reg)
+            .expect("--gpu-layers 0 asks for no accelerator");
     }
 }

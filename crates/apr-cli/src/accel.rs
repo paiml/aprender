@@ -25,7 +25,8 @@ use crate::error::{CliError, Result};
 /// True when this build carries a GPU backend that could honour a request.
 #[must_use]
 pub(crate) fn build_has_accelerator() -> bool {
-    cfg!(any(feature = "cuda", feature = "wgpu"))
+    // R-0b (#3002): the registry says what this build compiled; never `cfg!`.
+    crate::registry::build_has_accelerator()
 }
 
 /// Refuse an accelerator request this build cannot honour.
@@ -41,10 +42,65 @@ pub(crate) fn build_has_accelerator() -> bool {
 ///
 /// # Errors
 /// [`CliError::FeatureDisabled`] when `wants_accelerator` and the build has none.
+/// R-0b "selected: always": resolve the request exactly as `apr run` / `apr
+/// chat` honour it — GH-326 `--gpu` overrides `--no-gpu`, and `--gpu` also
+/// overrides `--backend cpu` (that is what `effective_no_gpu` does downstream,
+/// so the line must say the same) — announce the selection, and refuse a forced
+/// accelerator this host cannot honour. Nothing can refuse a cpu request.
+pub(crate) fn ensure_available_for(gpu: bool, no_gpu: bool, backend: Option<&str>) -> Result<()> {
+    let backend = if gpu {
+        backend.filter(|b| *b != "cpu")
+    } else {
+        backend
+    };
+    let no_gpu = no_gpu && !gpu;
+    let wants = gpu || matches!(backend, Some("cuda" | "wgpu" | "gpu"));
+    let asked = if wants {
+        asked_flag(gpu, backend)
+    } else if no_gpu {
+        "--no-gpu".to_string()
+    } else if backend == Some("cpu") {
+        "--backend cpu".to_string()
+    } else {
+        "default".to_string()
+    };
+    let req = crate::registry::Request {
+        gpu,
+        no_gpu,
+        backend,
+        layers_want_accelerator: false,
+    };
+    crate::registry::announce(&req, &asked).map(|_| ())
+}
+
 pub(crate) fn ensure_available(wants_accelerator: bool, asked: &str) -> Result<()> {
-    if !wants_accelerator || build_has_accelerator() {
+    if !wants_accelerator {
         return Ok(());
     }
+    // R-0b: resolve the request the user typed against the registry. A forced
+    // kind that is not Ready refuses (FeatureDisabled when not compiled,
+    // BackendUnavailable when compiled but absent here); it never downgrades.
+    let req = request_from_asked(asked);
+    crate::registry::announce(&req, asked).map(|_| ())
+}
+
+/// The request behind the flag text a caller quotes back (`--gpu`,
+/// `--gpu-layers`, `--backend <kind>`).
+pub(crate) fn request_from_asked(asked: &str) -> crate::registry::Request<'_> {
+    match asked.strip_prefix("--backend ") {
+        Some(kind) => crate::registry::Request {
+            backend: Some(kind.trim()),
+            ..Default::default()
+        },
+        None => crate::registry::Request {
+            gpu: true,
+            ..Default::default()
+        },
+    }
+}
+
+#[allow(dead_code)]
+pub(crate) fn legacy_refusal(asked: &str) -> Result<()> {
     Err(CliError::FeatureDisabled(format!(
         "{asked} was requested, but this build has no GPU backend compiled in, \n\
          so it would have run on CPU without telling you. On a 7B Q4_K_M \n\

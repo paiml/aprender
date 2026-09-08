@@ -198,7 +198,6 @@ crates/apr-cli/src/commands/run_tests_layer_trace.rs:56
 crates/apr-cli/src/commands/serve/handler_gpu_completion.rs:362
 crates/apr-cli/src/commands/serve/handler_gpu_completion.rs:363
 crates/apr-cli/src/commands/serve/handlers_include_01.rs:4
-crates/apr-cli/src/commands/serve/mod.rs:209
 crates/apr-cli/src/commands/speedup.rs:11
 crates/apr-cli/src/commands/test_llm.rs:14
 crates/apr-cli/src/commands/test_llm.rs:15

@@ -1476,7 +1476,7 @@ The nine clusters at zero, largest first: `http-orchestrate-banco` (95),
 `test-harness` (49), `rag-eval` (44), `qa-cgp` (37), `simulation` (18),
 `orchestrate-pacha-secrets` (17).
 
-**Report both numbers or neither (T2).** "5 of 14 clusters gated (35.7%)" without "143 of 833 features gated (17.2%)" beside it is a proxy masquerading as coverage, and the gate refuses to emit it — *on this line too*.
+**Report both numbers or neither (T2).** "5 of 14 clusters gated (35.7%)" without "144 of 834 features gated (17.3%)" beside it is a proxy masquerading as coverage, and the gate refuses to emit it — *on this line too*.
 
 The rule is about the NUMBER, not about a phrasing, and it is enforced on every
 surface that can emit one: the gate's own report, the receipt, the output of

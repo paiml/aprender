@@ -49,90 +49,109 @@ fn quoted_apr_invocations(site: &str, help: &str) -> Vec<Quoted> {
 ///
 /// Returns `Err(reason)` naming the first token the parser would reject.
 fn resolve(root: &clap::Command, quoted: &str) -> Result<(), String> {
-    let mut cmd = root;
+    let mut walk = Walk { root, cmd: root, path: String::from("apr"), positionals_used: 0, awaiting_value: false };
     let mut tokens = quoted.split_whitespace();
     let _apr = tokens.next(); // "apr"
-    let mut path = String::from("apr");
-    let mut positionals_used = 0usize;
-
-    // Set when the previous token was a long flag that takes a value, so the
-    // next bare word is that value and not a subcommand or positional.
-    let mut awaiting_value = false;
-
     for tok in tokens {
+        walk.step(tok)?;
+    }
+    Ok(())
+}
+
+/// The cursor of one quoted `apr …` invocation as `resolve` walks its tokens
+/// (decomposed from one 73-cognitive function for #3040; behaviour unchanged —
+/// the same tests are the oracle).
+struct Walk<'a> {
+    root: &'a clap::Command,
+    cmd: &'a clap::Command,
+    path: String,
+    positionals_used: usize,
+    awaiting_value: bool,
+}
+
+impl<'a> Walk<'a> {
+    fn step(&mut self, tok: &str) -> Result<(), String> {
         if let Some(flag) = tok.strip_prefix("--") {
-            awaiting_value = false;
-            let name = flag.split('=').next().unwrap_or(flag);
-            if name.is_empty() {
-                continue; // bare `--`
-            }
-            let matches_long = |a: &clap::Arg| {
-                a.get_long() == Some(name)
-                    || a.get_all_aliases()
-                        .is_some_and(|al| al.iter().any(|x| *x == name))
-            };
-            // clap propagates `global = true` args from the root to every
-            // subcommand, so `--json` is legal on any of them.
-            let Some(arg) = cmd
-                .get_arguments()
-                .find(|a| matches_long(a))
-                .or_else(|| root.get_arguments().find(|a| a.is_global_set() && matches_long(a)))
-            else {
-                return Err(format!("`{path}` has no flag `--{name}`"));
-            };
-            awaiting_value = !flag.contains('=')
-                && arg
-                    .get_num_args()
-                    .is_none_or(|r| r.takes_values())
-                && arg.get_action().takes_values();
-            continue;
+            return self.long_flag(flag);
         }
         if let Some(short) = tok.strip_prefix('-') {
-            // Short flags are not name-checked (help text uses them rarely),
-            // but a short flag that takes a value consumes the next word.
-            let c = short.chars().next();
-            awaiting_value = c.is_some_and(|c| {
-                cmd.get_arguments()
-                    .chain(root.get_arguments().filter(|a| a.is_global_set()))
-                    .any(|a| a.get_short() == Some(c) && a.get_action().takes_values())
-            }) && short.len() == 1;
-            continue;
+            self.awaiting_value = self.short_takes_value(short);
+            return Ok(());
         }
-        if tok.starts_with('<') || tok.starts_with('"') {
-            awaiting_value = false;
-            continue; // placeholders are not checked
+        if tok.starts_with('<') || tok.starts_with('"') || self.awaiting_value {
+            // placeholders are not checked; a bare word after a value flag is its value
+            self.awaiting_value = false;
+            return Ok(());
         }
-        if awaiting_value {
-            awaiting_value = false;
-            continue; // this bare word is the previous flag's value
+        self.word(tok)
+    }
+
+    /// `--name[=value]`: the flag must exist on the command or be global; a
+    /// value-taking flag without `=` makes the next bare word its value.
+    fn long_flag(&mut self, flag: &str) -> Result<(), String> {
+        self.awaiting_value = false;
+        let name = flag.split('=').next().unwrap_or(flag);
+        if name.is_empty() {
+            return Ok(()); // bare `--`
         }
-        // A bare word is a subcommand while the command still has subcommands
-        // and has not started consuming positionals; otherwise it is a
-        // positional VALUE — and there are only so many of those.
-        let sub = if positionals_used == 0 {
-            cmd.get_subcommands()
+        let matches_long = |a: &clap::Arg| {
+            a.get_long() == Some(name)
+                || a.get_all_aliases()
+                    .is_some_and(|al| al.iter().any(|x| *x == name))
+        };
+        let Some(arg) = self
+            .cmd
+            .get_arguments()
+            .find(|a| matches_long(a))
+            .or_else(|| self.root.get_arguments().find(|a| a.is_global_set() && matches_long(a)))
+        else {
+            return Err(format!("`{}` has no flag `--{name}`", self.path));
+        };
+        self.awaiting_value = !flag.contains('=')
+            && arg.get_num_args().is_none_or(|r| r.takes_values())
+            && arg.get_action().takes_values();
+        Ok(())
+    }
+
+    /// `-x`: a single-letter short that takes a value makes the next word its value.
+    fn short_takes_value(&self, short: &str) -> bool {
+        let c = short.chars().next();
+        c.is_some_and(|c| {
+            self.cmd
+                .get_arguments()
+                .chain(self.root.get_arguments().filter(|a| a.is_global_set()))
+                .any(|a| a.get_short() == Some(c) && a.get_action().takes_values())
+        }) && short.len() == 1
+    }
+
+    /// A bare word: a subcommand (only before any positional), a positional
+    /// within capacity, or an error naming what the path cannot take.
+    fn word(&mut self, tok: &str) -> Result<(), String> {
+        let sub = if self.positionals_used == 0 {
+            self.cmd
+                .get_subcommands()
                 .find(|s| s.get_name() == tok || s.get_all_aliases().any(|a| a == tok))
         } else {
             None
         };
         if let Some(sub) = sub {
-            cmd = sub;
-            path = format!("{path} {tok}");
-            continue;
+            self.cmd = sub;
+            self.path = format!("{} {tok}", self.path);
+            return Ok(());
         }
-        if positionals_used < positional_capacity(cmd) {
-            positionals_used += 1;
-            continue;
+        if self.positionals_used < positional_capacity(self.cmd) {
+            self.positionals_used += 1;
+            return Ok(());
         }
-        if cmd.get_subcommands().next().is_some() {
-            return Err(format!("`{path}` has no subcommand `{tok}`"));
+        if self.cmd.get_subcommands().next().is_some() {
+            return Err(format!("`{}` has no subcommand `{tok}`", self.path));
         }
-        return Err(format!(
-            "`{path}` takes {} positional(s); `{tok}` is one too many",
-            positional_capacity(cmd)
-        ));
+        Err(format!(
+            "`{}` takes {} positional(s); `{tok}` is one too many",
+            self.path,
+            positional_capacity(self.cmd)
+        ))
     }
-    Ok(())
 }
 
 /// How many bare words this command can swallow as positional values.

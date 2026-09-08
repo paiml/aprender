@@ -484,6 +484,11 @@ fn dispatch_analysis_commands_rest(cli: &Cli) -> Option<Result<(), CliError>> {
         return None;
     };
     let result = match ext {
+        // PP-066 R-0a: `apr devices` — an extended command dispatched from this
+        // file because dispatch.rs's runtime dispatcher carries pre-existing
+        // complexity debt the pre-commit gate refuses to let any edit ride on.
+        #[cfg(feature = "inference")]
+        ExtendedCommands::Devices { json } => commands::devices::run(*json || cli.json),
         ExtendedCommands::OtlpLint {
             otlp_file,
             require_apr_span,
@@ -1652,10 +1657,7 @@ fn dispatch_extended_command(cli: &Cli) -> Result<(), CliError> {
             // unlike `apr run` it does not even carry the bespoke
             // `--backend cuda` check. Three surfaces, one refusal, so a fix
             // here cannot land on two of them again.
-            crate::accel::ensure_available(
-                *gpu && !*no_gpu,
-                &crate::accel::asked_flag(*gpu, backend.as_deref()),
-            )?;
+            crate::accel::ensure_available_for(*gpu, *no_gpu, backend.as_deref())?;
             // GH-326: --gpu overrides --no-gpu when both specified
             let effective_no_gpu = if *gpu { false } else { *no_gpu };
             chat::run(

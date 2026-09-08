@@ -1476,6 +1476,31 @@ else
   mark dogfood-use FAIL "no dogfood gate — add a native \`<bin> dogfood\` subcommand (preferred) or scripts/dogfood-use.sh. A released tool nobody ran is not dogfooded, and a WARN here is a step everyone learns to walk past."
 fi
 
+# ── C14: GPU = CPU per supported-model manifest model (PP-066 L0-1a, #2971) ──
+# Never vacuous. The row's own falsifier runs first: the must-RED twin
+# (tests/fixtures/parity/defective/one-position-at-0.5.json) has to turn C14 RED
+# on every run, or the gate proves nothing. Then the manifest: a MEASURED
+# failure FAILs; a host that holds no manifest model REPORTs with the reason —
+# the pre-publish proof of claim 2 lives on lambda and gx10 through
+# `make fleet-verify ROW=release`, never on a GPU-less dev box.
+if [ -f scripts/check_model_parity.sh ]; then
+  if bash scripts/check_model_parity.sh --judge tests/fixtures/parity/defective/one-position-at-0.5.json --model qwen2.5-coder-7b-instruct >/dev/null 2>&1; then
+    mark model-parity-falsifier FAIL "the must-RED twin (one position at cosine 0.5) PASSED C14 — the gate cannot turn RED and proves nothing"
+  else
+    mark model-parity-falsifier PASS "the must-RED twin turns C14 RED (tests/fixtures/parity/defective/one-position-at-0.5.json)"
+  fi
+  if C14_OUT=$(bash scripts/check_model_parity.sh --manifest --apr "$BINPATH" 2>&1); then C14_RC=0; else C14_RC=$?; fi
+  if [ "$C14_RC" -eq 0 ] && printf '%s\n' "$C14_OUT" | grep -q '^PASS '; then
+    mark model-parity PASS "C14: $(printf '%s\n' "$C14_OUT" | grep -c '^PASS ') manifest model(s) measured over >= 64 positions on $(hostname -s)"
+  elif printf '%s\n' "$C14_OUT" | grep -q -E '^FAIL |^override:'; then
+    mark model-parity FAIL "C14: $(printf '%s\n' "$C14_OUT" | grep -E '^FAIL |^override:' | head -1 | cut -c1-160)"
+  else
+    mark model-parity REPORT "C14 UNMEASURED on $(hostname -s): $(printf '%s\n' "$C14_OUT" | tail -1 | cut -c1-120) — proven on lambda and gx10 by make fleet-verify ROW=release, never here"
+  fi
+else
+  mark model-parity FAIL "scripts/check_model_parity.sh is missing — claim 2 (GPU = CPU per manifest model) is unmeasured"
+fi
+
 # ── clean-room reminder (heavy, runs on the CI box; not automated here) ─────
 mark clean-room MANUAL "run \`make -C ../infra/machines/clean-room clean-room-$CRATE\` (MANDATORY release gate)"
 

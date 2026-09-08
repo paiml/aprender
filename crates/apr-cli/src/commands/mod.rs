@@ -49,6 +49,8 @@ pub(crate) mod rm_gc_lint;
 pub(crate) mod data;
 pub(crate) mod diagnose;
 
+#[cfg(feature = "inference")]
+pub(crate) mod devices;
 pub(crate) mod dry_sampling_classifier;
 pub(crate) mod dry_sampling_lint;
 pub(crate) mod embed;
@@ -124,6 +126,11 @@ pub(crate) mod oracle;
 pub(crate) mod otlp_classifier;
 pub(crate) mod otlp_lint;
 pub(crate) mod parity;
+/// REG-15 model admission (#2971, PMAT-1065): a forced backend never
+/// downgrades on a load-time parity-gate failure. Re-exported publicly at
+/// `apr_cli::parity_admission` (see `lib.rs`) so `tests/reg15_admission.rs`
+/// can exercise it without reaching into the private `commands` tree.
+pub(crate) mod parity_admission;
 pub(crate) mod pipeline;
 pub(crate) mod png_encode;
 pub(crate) mod ppl;
