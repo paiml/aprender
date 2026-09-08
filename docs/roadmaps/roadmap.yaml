@@ -14767,7 +14767,8 @@ roadmap:
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
+  labels:
+  - kind:code
   notes: null
 - id: PMAT-969
   github_issue: null
@@ -14784,7 +14785,8 @@ roadmap:
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
+  labels:
+  - kind:code
   notes: null
 - id: PMAT-970
   github_issue: null
@@ -14801,7 +14803,8 @@ roadmap:
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
+  labels:
+  - kind:code
   notes: null
 - id: PMAT-971
   github_issue: null
@@ -14818,7 +14821,8 @@ roadmap:
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
+  labels:
+  - kind:code
   notes: null
 - id: PMAT-972
   github_issue: null
@@ -14835,7 +14839,8 @@ roadmap:
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
+  labels:
+  - kind:code
   notes: null
 - id: PMAT-973
   github_issue: null
@@ -14852,7 +14857,8 @@ roadmap:
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
+  labels:
+  - kind:code
   notes: null
 - id: PMAT-974
   github_issue: null
@@ -14869,7 +14875,8 @@ roadmap:
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
+  labels:
+  - kind:code
   notes: null
 - id: PMAT-975
   github_issue: null
@@ -14886,7 +14893,8 @@ roadmap:
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
+  labels:
+  - kind:code
   notes: null
 - id: PMAT-976
   github_issue: null
@@ -14903,7 +14911,8 @@ roadmap:
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
+  labels:
+  - kind:code
   notes: null
 - id: PMAT-977
   github_issue: null
@@ -14920,7 +14929,8 @@ roadmap:
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
+  labels:
+  - kind:code
   notes: null
 - id: PMAT-978
   github_issue: null
@@ -14937,7 +14947,8 @@ roadmap:
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
+  labels:
+  - kind:code
   notes: null
 - id: PMAT-979
   github_issue: null
@@ -14954,7 +14965,8 @@ roadmap:
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
+  labels:
+  - kind:code
   notes: null
 - id: PMAT-980
   github_issue: null
@@ -14990,7 +15002,8 @@ roadmap:
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
+  labels:
+  - kind:code
   notes: null
 - id: PMAT-982
   github_issue: null
@@ -15007,7 +15020,8 @@ roadmap:
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
+  labels:
+  - kind:code
   notes: null
 - id: PMAT-983
   github_issue: null
@@ -15024,7 +15038,8 @@ roadmap:
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
+  labels:
+  - kind:code
   notes: null
 - id: PMAT-984
   github_issue: null
@@ -15041,7 +15056,8 @@ roadmap:
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
+  labels:
+  - kind:code
   notes: null
 - id: PMAT-985
   github_issue: null
@@ -15075,7 +15091,8 @@ roadmap:
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
+  labels:
+  - kind:code
   notes: null
 - id: PMAT-987
   github_issue: null
@@ -15112,7 +15129,7 @@ roadmap:
   subtasks: []
   estimated_effort: null
   labels:
-  - kind:code
+  - kind:docs
   - pp-066
   notes: 'complete: proof:PR#2987 (merged 65680cdf8 2026-09-06T02:37:35Z); proof:docs/audits/impl-PMAT-988-receipt.md'
 - id: PMAT-989
@@ -15130,7 +15147,8 @@ roadmap:
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
+  labels:
+  - kind:code
   notes: null
 - id: PMAT-990
   github_issue: null
@@ -15147,7 +15165,8 @@ roadmap:
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
+  labels:
+  - kind:code
   notes: null
 - id: PMAT-991
   github_issue: null
@@ -15164,7 +15183,8 @@ roadmap:
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
+  labels:
+  - kind:code
   notes: null
 - id: PMAT-992
   github_issue: null
@@ -15181,7 +15201,8 @@ roadmap:
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
+  labels:
+  - kind:code
   notes: null
 - id: PMAT-993
   github_issue: 2908
@@ -15217,7 +15238,8 @@ roadmap:
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
+  labels:
+  - kind:code
   notes: 'R-5 delta 2026-09-08: blockers += KEY (#3045, PMAT-1079) — the installer pins the fingerprint of keys/apr-release-minisign.pub; DONE-IF the file is present on main.'
 - id: PMAT-995
   github_issue: null
@@ -15234,7 +15256,8 @@ roadmap:
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
+  labels:
+  - kind:code
   notes: null
 - id: PMAT-996
   github_issue: null
@@ -15251,7 +15274,8 @@ roadmap:
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
+  labels:
+  - kind:code
   notes: null
 - id: PMAT-997
   github_issue: null
@@ -15268,7 +15292,8 @@ roadmap:
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
+  labels:
+  - kind:code
   notes: null
 - id: PMAT-998
   github_issue: null
@@ -15285,7 +15310,8 @@ roadmap:
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
+  labels:
+  - kind:code
   notes: null
 - id: PMAT-999
   github_issue: null
@@ -15302,7 +15328,8 @@ roadmap:
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
+  labels:
+  - kind:code
   notes: null
 - id: PMAT-1000
   github_issue: null
@@ -15319,7 +15346,8 @@ roadmap:
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
+  labels:
+  - kind:code
   notes: null
 - id: PMAT-1001
   github_issue: null
@@ -15336,7 +15364,8 @@ roadmap:
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
+  labels:
+  - kind:code
   notes: null
 - id: PMAT-1002
   github_issue: null
@@ -15353,7 +15382,8 @@ roadmap:
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
+  labels:
+  - kind:code
   notes: null
 - id: PMAT-1003
   github_issue: null
@@ -15370,7 +15400,8 @@ roadmap:
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
+  labels:
+  - kind:code
   notes: null
 - id: PMAT-1004
   github_issue: null
@@ -15387,7 +15418,8 @@ roadmap:
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
+  labels:
+  - kind:code
   notes: null
 - id: PMAT-1005
   github_issue: null
@@ -15404,7 +15436,8 @@ roadmap:
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
+  labels:
+  - kind:code
   notes: null
 - id: PMAT-1006
   github_issue: null
@@ -15421,7 +15454,8 @@ roadmap:
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
+  labels:
+  - kind:code
   notes: null
 - id: PMAT-1007
   github_issue: null
@@ -15438,7 +15472,8 @@ roadmap:
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
+  labels:
+  - kind:code
   notes: null
 - id: PMAT-1008
   github_issue: null
@@ -15455,7 +15490,8 @@ roadmap:
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
+  labels:
+  - kind:code
   notes: null
 - id: PMAT-1009
   github_issue: null
@@ -15472,7 +15508,8 @@ roadmap:
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
+  labels:
+  - kind:code
   notes: null
 - id: PMAT-1010
   github_issue: null
@@ -15489,7 +15526,8 @@ roadmap:
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
+  labels:
+  - kind:code
   notes: null
 - id: PMAT-1011
   github_issue: null
@@ -15506,7 +15544,8 @@ roadmap:
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
+  labels:
+  - kind:code
   notes: null
 - id: PMAT-1012
   github_issue: null
@@ -15523,7 +15562,8 @@ roadmap:
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
+  labels:
+  - kind:code
   notes: null
 - id: PMAT-1013
   github_issue: null
@@ -15540,7 +15580,8 @@ roadmap:
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
+  labels:
+  - kind:code
   notes: null
 - id: PMAT-1014
   github_issue: null
@@ -15557,7 +15598,8 @@ roadmap:
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
+  labels:
+  - kind:code
   notes: null
 - id: PMAT-1015
   github_issue: null
@@ -15574,7 +15616,8 @@ roadmap:
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
+  labels:
+  - kind:code
   notes: null
 - id: PMAT-1016
   github_issue: null
@@ -15591,7 +15634,8 @@ roadmap:
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
+  labels:
+  - kind:code
   notes: null
 - id: PMAT-1017
   github_issue: null
@@ -15608,7 +15652,8 @@ roadmap:
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
+  labels:
+  - kind:docs
   notes: null
 - id: PMAT-1018
   github_issue: null
@@ -15625,7 +15670,8 @@ roadmap:
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
+  labels:
+  - kind:docs
   notes: 'complete: decided at https://github.com/paiml/aprender/issues/2873#issuecomment-5558717537 (decided_by: noahgift via driver prompt 2026-09-06); proof:docs/audits/impl-PMAT-1018-receipt.md'
 - id: PMAT-1019
   github_issue: null
@@ -15642,7 +15688,8 @@ roadmap:
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
+  labels:
+  - kind:docs
   notes: 'complete: decided at https://github.com/paiml/aprender/issues/2873#issuecomment-5558717787 (decided_by: noahgift via driver prompt 2026-09-06); proof:docs/audits/impl-PMAT-1019-receipt.md'
 - id: PMAT-1020
   github_issue: null
@@ -15659,7 +15706,8 @@ roadmap:
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
+  labels:
+  - kind:docs
   notes: 'complete: decided at https://github.com/paiml/aprender/issues/2873#issuecomment-5558719034 (decided_by: noahgift via driver prompt 2026-09-06); proof:docs/audits/impl-PMAT-1020-receipt.md'
 - id: PMAT-1021
   github_issue: null
@@ -15676,7 +15724,8 @@ roadmap:
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
+  labels:
+  - kind:docs
   notes: 'complete: decided at https://github.com/paiml/aprender/issues/2873#issuecomment-5558719666 (decided_by: noahgift via driver prompt 2026-09-06); proof:docs/audits/impl-PMAT-1021-receipt.md'
 - id: PMAT-1022
   github_issue: null
@@ -15693,7 +15742,8 @@ roadmap:
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
+  labels:
+  - kind:docs
   notes: 'complete: decided at https://github.com/paiml/aprender/issues/2873#issuecomment-5558719920 (decided_by: noahgift via driver prompt 2026-09-06); proof:docs/audits/impl-PMAT-1022-receipt.md'
 - id: PMAT-1023
   github_issue: null
@@ -15710,7 +15760,8 @@ roadmap:
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
+  labels:
+  - kind:docs
   notes: 'complete: decided at https://github.com/paiml/aprender/issues/2873#issuecomment-5558720148 (decided_by: noahgift via driver prompt 2026-09-06); proof:docs/audits/impl-PMAT-1023-receipt.md'
 - id: PMAT-1024
   github_issue: null
@@ -15727,7 +15778,8 @@ roadmap:
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
+  labels:
+  - kind:code
   notes: null
 - id: PMAT-1025
   github_issue: null
@@ -15744,7 +15796,8 @@ roadmap:
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
+  labels:
+  - kind:code
   notes: null
 - id: PMAT-1026
   github_issue: null
@@ -15761,7 +15814,8 @@ roadmap:
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
+  labels:
+  - kind:code
   notes: null
 - id: PMAT-1027
   github_issue: null
@@ -15778,7 +15832,8 @@ roadmap:
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
+  labels:
+  - kind:code
   notes: null
 - id: PMAT-1028
   github_issue: null
@@ -15795,7 +15850,8 @@ roadmap:
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
+  labels:
+  - kind:code
   notes: null
 - id: PMAT-1029
   github_issue: null
@@ -15812,7 +15868,8 @@ roadmap:
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
+  labels:
+  - kind:code
   notes: null
 - id: PMAT-1030
   github_issue: null
@@ -15829,7 +15886,8 @@ roadmap:
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
+  labels:
+  - kind:code
   notes: null
 - id: PMAT-1031
   github_issue: null
@@ -15846,7 +15904,8 @@ roadmap:
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
+  labels:
+  - kind:code
   notes: null
 - id: PMAT-1032
   github_issue: null
@@ -15863,7 +15922,8 @@ roadmap:
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
+  labels:
+  - kind:code
   notes: null
 - id: PMAT-1033
   github_issue: null
@@ -15880,7 +15940,8 @@ roadmap:
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
+  labels:
+  - kind:code
   notes: null
 - id: PMAT-1034
   github_issue: null
@@ -15897,7 +15958,8 @@ roadmap:
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
+  labels:
+  - kind:code
   notes: null
 - id: PMAT-1035
   github_issue: null
@@ -15914,7 +15976,8 @@ roadmap:
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
+  labels:
+  - kind:code
   notes: null
 - id: PMAT-1036
   github_issue: null
@@ -15931,7 +15994,8 @@ roadmap:
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
+  labels:
+  - kind:code
   notes: null
 - id: PMAT-1037
   github_issue: null
@@ -15948,7 +16012,8 @@ roadmap:
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
+  labels:
+  - kind:code
   notes: null
 - id: PMAT-1038
   github_issue: null
@@ -15965,7 +16030,8 @@ roadmap:
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
+  labels:
+  - kind:code
   notes: null
 - id: PMAT-1039
   github_issue: null
@@ -15982,7 +16048,8 @@ roadmap:
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
+  labels:
+  - kind:code
   notes: null
 - id: PMAT-1040
   github_issue: null
@@ -15999,7 +16066,8 @@ roadmap:
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
+  labels:
+  - kind:code
   notes: null
 - id: PMAT-1041
   github_issue: null
@@ -16016,7 +16084,8 @@ roadmap:
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
+  labels:
+  - kind:code
   notes: null
 - id: PMAT-1042
   github_issue: null
@@ -16033,7 +16102,8 @@ roadmap:
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
+  labels:
+  - kind:code
   notes: null
 - id: PMAT-1043
   github_issue: null
@@ -16050,7 +16120,8 @@ roadmap:
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
+  labels:
+  - kind:code
   notes: null
 - id: PMAT-1044
   github_issue: null
@@ -16067,7 +16138,8 @@ roadmap:
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
+  labels:
+  - kind:code
   notes: null
 - id: PMAT-1045
   github_issue: null
@@ -16084,7 +16156,8 @@ roadmap:
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
+  labels:
+  - kind:code
   notes: null
 - id: PMAT-1046
   github_issue: null
@@ -16101,7 +16174,8 @@ roadmap:
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
+  labels:
+  - kind:code
   notes: null
 - id: PMAT-1047
   github_issue: null
@@ -16118,7 +16192,8 @@ roadmap:
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
+  labels:
+  - kind:code
   notes: null
 - id: PMAT-1048
   github_issue: null
@@ -16135,7 +16210,8 @@ roadmap:
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
+  labels:
+  - kind:code
   notes: null
 - id: PMAT-1049
   github_issue: null
@@ -16152,7 +16228,8 @@ roadmap:
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
+  labels:
+  - kind:code
   notes: null
 - id: PMAT-1050
   github_issue: null
@@ -16169,7 +16246,8 @@ roadmap:
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
+  labels:
+  - kind:code
   notes: null
 - id: PMAT-1051
   github_issue: null
@@ -16186,7 +16264,8 @@ roadmap:
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
+  labels:
+  - kind:code
   notes: null
 - id: PMAT-1052
   github_issue: null
@@ -16203,7 +16282,8 @@ roadmap:
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
+  labels:
+  - kind:code
   notes: null
 - id: PMAT-1053
   github_issue: null
@@ -16220,7 +16300,8 @@ roadmap:
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
+  labels:
+  - kind:code
   notes: null
 - id: PMAT-1054
   github_issue: null
@@ -16256,7 +16337,8 @@ roadmap:
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
+  labels:
+  - kind:code
   notes: null
 - id: PMAT-1056
   github_issue: null
@@ -16292,7 +16374,8 @@ roadmap:
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
+  labels:
+  - kind:code
   notes: null
 - id: PMAT-1058
   github_issue: null
