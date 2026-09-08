@@ -5,7 +5,7 @@
 | Ticket | PMAT-1092 |
 | Reviewed | `docs/audits/release-process-review/release-process-aprender-v0.1-draft.md` v0.1 (463 lines) |
 | Against | `origin/main` @ `c04eda87d`, and the physical hosts, 2026-09-08 |
-| Method | one `agy /teamwork-preview` lane, every finding re-run here, then three AD-04 quorum lanes over this review — which returned 3 × FAIL and corrected five things (see *Method*) |
+| Method | one `agy /teamwork-preview` lane, every finding re-run here, then **four** AD-04 quorum rounds over this review — all four returned 3 × FAIL, and every objection was applied rather than argued (see *Method*) |
 | Epic | **paiml/aprender#3058** — the build order, the two gates that cannot fail, and the decisions 0.66 is blocked on |
 | Verdict | **do-not-implement-as-written** — adopt §1/§2/§5.2/§9/§10 now, block §3.4/§5.1/§5.3/§6/§7 on the items below |
 | Marks | `[V]` verified by a command printed here · `[C]` computed · `[A]` asserted, source named · `[U]` unverified, owner named |
@@ -481,9 +481,10 @@ One `agy /teamwork-preview` lane (agy 1.1.27, `--sandbox`, `writes=false`, conve
 after; no lane writes leaked.
 
 Every finding was then re-executed here, and this document was itself put through the AD-04
-merge quorum — three further independent agy lanes reviewing *this review*. **They returned
-3 × FAIL**, and they were right on five counts. What follows is what that changed, because a
-review that hides its own corrections is not evidence.
+merge quorum **four times** — three independent agy lanes per round, reviewing *this review*.
+**Every round returned 3 × FAIL.** What follows is what that changed, because a review that
+hides its own corrections is not evidence. The quorum never passed; that is stated here and
+in the receipt rather than left to be inferred from the absence of a green mark.
 
 **Overturned by the quorum — this review was wrong:**
 
@@ -501,13 +502,23 @@ review that hides its own corrections is not evidence.
    not. Fixed.
 4. **Dispositions in the RD table.** "Accept" / "No objection" / "Reframe" on RD-2, RD-6,
    RD-7 and RD-8 are decisions, not escalations, in a document claiming to decide none.
-   Rephrased — and it took two further quorums to finish the job. The **second** caught RD-3
-   (which called advisory→required "sound", and still cited the 3–98 figure F10 had just
-   retracted) and RD-4 ("Unchanged"). The **third** caught RD-9, which declared itself
-   "Closed by Appendix A above" — a measurement I had taken, reported as a decision I had no
-   standing to make. Each round this section claimed the sweep was complete and each time a
-   row remained, so it now records the history instead: seven rows, three passes, and the
-   count is a fact about the passes rather than a guarantee about the table.
+   Rephrased — and it took three further quorums to finish, each finding exactly one more
+   after the last had claimed the sweep was complete. The **second** caught RD-3 (which
+   called advisory→required "sound", and still cited the 3–98 figure F10 had just retracted)
+   and RD-4 ("Unchanged"). The **third** caught RD-9, which declared itself "Closed by
+   Appendix A above" — a measurement I had taken, reported as a decision I had no standing to
+   make. The **fourth** caught two more: F8's "Smallest fix" laid out the two readings of the
+   §9-vs-§5.5 contradiction and then picked one, which is RD-5 decided by the back door,
+   while RD-5's own row says "resolve F8 first"; and Appendix A still headed its results
+   "§2's `[U]` rows now close as" — the RD-9 defect verbatim, one section further down,
+   missed when RD-9 was fixed.
+
+   **Ten rows, four rounds.** The pattern is more useful than the count: a document can
+   declare "escalated, not decided" in its heading and mean it, and still decide by
+   grammar — an imperative in a "Smallest fix", a "becomes", a "now closes". Every one of
+   these was caught by a reader who was not the author. So this paragraph records the
+   history rather than certifying the table; a fifth round may well find an eleventh, and
+   that would be the method working, not failing.
 5. **Staging the draft into `docs/specifications/`.** All three lanes objected: a document
    whose header reads "Not yet normative" landing in the normative specs directory will be
    read — and RAG-indexed — as a spec. The draft now lives beside this review at
