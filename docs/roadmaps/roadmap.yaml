@@ -16627,7 +16627,7 @@ roadmap:
   updated: 2026-09-08T00:00:00Z
   spec: docs/specifications/release-process-aprender.md
   acceptance_criteria:
-  - 'The draft names 12 scripts/workflows/contracts as the release process of record; measured on origin/main c04eda87d, 11 of 12 are ABSENT (only scripts/check_readme_claims.sh exists). The review must state which sections are executable today and which describe artifacts that do not exist.'
+  - 'The draft names 21 scripts/workflows/contracts/keys/manifests as the release process of record. Measured on origin/main c04eda87d and re-audited in full by the AD-04 quorum: 1 exists (scripts/check_readme_claims.sh), 1 is correctly marked new (contracts/apr-dogfood-models-v1.yaml), and 19 of the 20 non-new paths are ABSENT under any path (find over the tree, not just the named location). An earlier revision of this criterion said 12 paths and 11 absent, taken from a partial first sweep before workflows, contracts, install.sh, the signing key and the model manifest were counted; a criterion satisfiable by fixing 11 would have silently dropped 8. The review must state which sections are executable today and which describe artifacts that do not exist.'
   - 'Appendix A S0 rows are measured on the physical hosts (ssh, nvidia-smi, uname) and written back into the spec, closing every [U] in section 2 and RD-9. A row transcribed rather than measured is RED.'
   - 'Every finding carries the command that produced it; a finding with no command is [U] with a named owner.'
   phases: []
