@@ -78,6 +78,22 @@ if [ "${1:-}" = "--self-test" ]; then
     # time), this row would come back larger. It must not exist as a field here.
     row "queue wait is not runner time (created_at is not read)" "3600	1	C" \
         "$(printf '%s\n' '{"name":"C","created_at":"2026-09-01T00:00:00Z","started_at":"2026-09-01T00:50:00Z","completed_at":"2026-09-01T01:50:00Z","conclusion":"success"}' | sum_jobs)"
+    # The truncation rule, driven through the real script rather than asserted in
+    # prose: a window whose run count reaches --limit must exit 2, and the same
+    # window with room to spare must not. CI_JOB_MINUTES_REPO points at a repo
+    # that does not exist, so `gh run list` fails first and both rows would exit 2
+    # for the wrong reason -- so this row only runs where gh can answer, and says
+    # so when it skips.
+    n=$((n + 1))
+    if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
+        out=$("$0" --since 2026-09-01 --until 2026-09-07 --limit 1 2>&1); rc=$?
+        case "$rc:$out" in
+            2:*TRUNCATED*) printf 'ok    row %-2s a run count equal to --limit is TRUNCATED, never a total\n' "$n" ;;
+            *) printf 'FAIL  row %-2s --limit 1 over a busy window must exit 2 TRUNCATED (rc=%s)\n' "$n" "$rc"; red=1 ;;
+        esac
+    else
+        printf 'skip  row %-2s truncation row needs an authenticated gh (stated, not silently passed)\n' "$n"
+    fi
     [ "$red" = 0 ] && { printf '\nSELF-TEST PASSED (%s/%s)\n' "$n" "$n"; exit 0; }
     printf '\nSELF-TEST FAILED\n'; exit 1
 fi
@@ -106,6 +122,18 @@ COUNT=$(printf '%s\n' "$RUNS" | grep -c . || true)
 [ "${COUNT:-0}" -gt 0 ] || {
     printf '%s: ENV - zero runs in %s for %s. GitHub expires run history, so this is\n' "$PROG" "$RANGE" "$REPO" >&2
     printf '      almost always retention rather than an idle fleet. Refusing to report 0 h.\n' >&2; exit 2; }
+# NO SILENT CAP. `gh run list --limit N` returns at most N runs with no signal that
+# it truncated, so a sum over a bound window would quietly become a sum over "the
+# N most recent runs" and read as a total. The first derivation of this number hit
+# exactly that: 400 runs requested, 400 returned, and the figure was a floor
+# wearing the units of a total. Equality is the only evidence available, so it is
+# treated as truncation and refused.
+[ "$COUNT" -lt "$LIMIT" ] || {
+    printf '%s: TRUNCATED - `gh run list` returned exactly --limit (%s) runs for %s, so\n' "$PROG" "$LIMIT" "$RANGE" >&2
+    printf '      the window is not fully covered and any sum here is a FLOOR, not a total.\n' >&2
+    printf '      Re-run with a larger --limit (or a narrower window):\n' >&2
+    printf '        %s --since %s%s --limit %s\n' "$PROG" "$SINCE" "$([ -n "$UNTIL" ] && printf -- ' --until %s' "$UNTIL")" "$((LIMIT * 3))" >&2
+    exit 2; }
 
 TMP=$(mktemp) || exit 2
 trap 'rm -f -- "$TMP"' EXIT
