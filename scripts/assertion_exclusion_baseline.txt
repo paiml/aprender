@@ -1,3 +1,4 @@
+# tool_version=none (measured by find/grep over tracked .rs files; not a versioned analyser)
 # assertion_exclusion_baseline.txt - pre-existing debt, monotonically decreasing.
 # Regenerate with: bash scripts/check_assertions_exclude.sh --update-baseline
 # See docs/audits/dogfood-0.63.0-hansei.md for why this file exists.

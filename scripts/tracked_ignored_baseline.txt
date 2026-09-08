@@ -1,1 +1,2 @@
+# tool_version=none (measured by git ls-files + .gitignore match; not a versioned analyser)
 320
