@@ -454,8 +454,8 @@ Recommendations carry the finding that motivates them.
 |---|---|---|
 | **RD-1** | Decide before §3.1 can be adopted; whatever is chosen, amend PP-066 C13 **in the same PR**. Note the runner-class change is a separate consequence that survives every option (F11) | F11, F1 |
 | **RD-2** | No finding against it — FX-18 is stated with both polarities, so nothing in this review bears on the choice. Team's call | — |
-| **RD-3** | Advisory→required is sound, but the criterion must add a reachability term, else "0 false reds in 14 days" is satisfied by a box that was off; and the budget's `basis=` is the 3–98 min distribution, not "≈34 min" | F3, F10 |
-| **RD-4** | Unchanged; add that `check_host_slot.sh` does not exist yet (F1) | F1 |
+| **RD-3** | Two findings against the criterion as written, neither of which decides advisory-vs-required: (a) "0 false reds in 14 days" is satisfied by a box that was powered off for 14 days unless a reachability term is added — F3; (b) the budget names no population, so it cannot be exceeded and cannot fail — F10. Whether `cuda-test` becomes required in 0.66 or 0.66.1 remains the team's call | F3, F10 |
+| **RD-4** | One finding, not a disposition: the slot discipline RD-4 relies on is enforced by `check_host_slot.sh`, which does not exist (F1), so "one role at a time" is currently unenforced however the team decides the rest | F1 |
 | **RD-5** | Cannot be decided while §9 says the opposite — resolve F8 first | F8 |
 | **RD-6** | Whatever the team decides, the ledger adds a second asymmetry that must be stated beside it: the two x86 GPU hosts are **both sm_89**, so §4's two-host row is redundancy, not cross-architecture coverage | S0 ledger |
 | **RD-7** | F7 is a finding against the basis as written, not a decision: the floor is a source constant in `PtxModule`, so deriving it from `nvidia-smi` makes a source constant float on hardware inventory. What the declared minimum *should be* remains the team's call | F7, F2 |
@@ -490,8 +490,12 @@ review that hides its own corrections is not evidence.
 3. **GT-1 arithmetic.** "20 of 21 non-new" was impossible; 21 named, 1 new, 1 present, **19 of
    20 non-new absent**. The review body always said 19; the evidence pack's summary line did
    not. Fixed.
-4. **Dispositions in the RD table.** "Accept" / "No objection" on RD-2, RD-6, RD-8 are
-   decisions, not escalations, in a document claiming to decide none. Rephrased.
+4. **Dispositions in the RD table.** "Accept" / "No objection" / "Reframe" on RD-2, RD-6,
+   RD-7 and RD-8 are decisions, not escalations, in a document claiming to decide none.
+   Rephrased — and a **second** quorum then caught two the first pass missed: RD-3 called
+   advisory→required "sound" and RD-4 said "Unchanged", while this section claimed the
+   dispositions had been removed. Both rewritten as findings; the claim above is now
+   accurate because the row it describes is.
 5. **Staging the draft into `docs/specifications/`.** All three lanes objected: a document
    whose header reads "Not yet normative" landing in the normative specs directory will be
    read — and RAG-indexed — as a spec. The draft now lives beside this review at
