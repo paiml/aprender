@@ -46,3 +46,17 @@ a single run is a sufficient witness here and a flake is not an available explan
 0.0185 under the lower of the two) and TWO measured known-bad pairs (1.5B, 0.9506–0.9508). That is
 the second pair `evidence/parity/thresholds.yaml` was waiting on, and the `[U]` on that file is
 lifted by this record.
+
+## The records are portable, and the five-run series is one file (2026-09-08)
+
+Every record here was re-taken with the model named RELATIVELY — `cd ~/models && apr parity
+./<model>.gguf --prompt "<the 78-token corpus prompt>" --json` — with the same pinned binary
+and the same prompt. The `metrics` array and every other key are byte-identical to the
+absolute-path run; only the `model` field differs. That keeps `check_hardcoded_paths.sh`'s
+shipped-path count flat without deleting a measurement: nothing is redacted, the run was
+simply invoked the way it should have been.
+
+`n5/` no longer carries five JSON files per model. All five runs were byte-identical to each
+other AND to the canonical record beside this file — `stdev 0` understates it; the whole file
+was the same file — so five copies carried nothing the recorded sha256 does not. See
+`n5/DETERMINISM.md` for the hashes and `n5/runs.log` for the ten exit codes.
