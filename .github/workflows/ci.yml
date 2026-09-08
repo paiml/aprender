@@ -1855,11 +1855,7 @@ jobs:
       pull-requests: write
     env:
       PR_NUMBER: ${{ github.event.pull_request.number }}
-      # On workflow_dispatch there is no pull_request context; the dispatched ref
-      # is the thing to sweep. Empty would make every sha-consuming step take its
-      # fail-closed branch and sweep anyway, so this fallback is about naming the
-      # right commit in the log, not about reachability.
-      PR_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: Checkout
