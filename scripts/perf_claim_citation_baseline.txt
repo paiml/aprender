@@ -1,3 +1,4 @@
+# tool_version=none (measured by grep over README/book/docs; not a versioned analyser)
 # Speed comparisons in README.md, book/ and docs/ that cite no
 # receipt, as of the day check_perf_claims_cite_receipts.sh was
 # written. Recorded, not blessed.

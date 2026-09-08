@@ -2,135 +2,161 @@ roadmap_version: '1.0'
 github_enabled: true
 github_repo: paiml/aprender
 roadmap:
-- id: PMAT-930
+- id: PMAT-081
   github_issue: null
-  item_type: bug
-  title: 'PP-9 live scan read only the first pipe table of evidence/parity/LEDGER.md: a blank line after row 4 left
-    rows 5 and 6 outside the spend-key universe, so a re-spend of row 6 passed spec_conformance.sh'
-  status: inprogress
+  item_type: task
+  title: 'FORMAT-PARITY-001: Implement SafeTensors and APR inference'
+  status: completed
   priority: high
   assigned_to: null
-  created: 2026-09-03 13:40:00+00:00
-  updated: 2026-09-03 13:40:00+00:00
-  spec: docs/specifications/PP-LLAMA-001-MASTER.md
+  created: 2026-01-20 11:24:51+00:00
+  updated: 2026-01-20 20:00:00+00:00
+  spec: null
   acceptance_criteria:
-  - 'scripts/lib/spec_conformance.py emits L2 for a ledger row that sits outside the table it reads (same column
-    count as the header, row-id first cell, after the first table break, before the superseded section); the ledger
-    is re-joined so the live scan reports LEDGER 6 6; selftest cases ledger_row_outside_table (L2) and
-    ledger_rows_contiguous (CLEAN) named beside PP-9 in §6; must-fire mutation (the L2 emit removed) turns
-    ledger_row_outside_table BROKE; Appendix D row, RATIONALE PP-9 paragraph, contract invariant + falsification
-    test in pp-llama-001-spec-conformance-v1.yaml; pv validate green'
-  notes: 'Found by PMAT-929 (paiml-implement run 4) live-mutating Appendix C on 68b059ca9: duplicating row 6 as row 7
-    inside the v3 table produced PASS "no cell was spent twice"; the scanner had parsed 4 of 6 rows. Five-whys in
-    .pmat/jidoka.jsonl and docs/audits/impl-PMAT-929-receipt.md'
-- id: PMAT-931
+  - Implement PAR-301 (SafeTensors) and PAR-302 (APR) format inference in realizar
+  - 'PAR-301: SafeTensors /v1/chat/completions with SSE streaming'
+  - 'PAR-302: APR format /v1/chat/completions with SSE streaming (CPU and GPU)'
+  phases: []
+  subtasks: []
+  estimated_effort: 2h
+  labels:
+  - inference
+  - api
+  - streaming
+  notes: 'Resolved 2026-01-20:
+
+    - PAR-301: SafeTensors server now has /v1/chat/completions and /generate endpoints
+
+    - PAR-302: APR server (CPU and GPU) now has /v1/chat/completions endpoint
+
+    - Both support OpenAI-compatible API with SSE streaming
+
+    - ChatML prompt template formatting implemented
+
+    '
+- id: PMAT-082
   github_issue: null
-  item_type: bug
-  title: 'PMAT-930 review: L2 was a whitelist of one row shape — a ledger row with no leading pipe or one extra pipe
-    passed both the first-table parse and L2; redesign L2 as a universe, add L3 (malformed row) and a mutation set'
-  status: inprogress
+  item_type: task
+  title: 'APR-CLI-RELEASE-029: Release apr-cli v0.2.10 to crates.io'
+  status: completed
   priority: high
   assigned_to: null
-  created: 2026-09-03 16:10:00+00:00
-  updated: 2026-09-03 16:10:00+00:00
-  spec: docs/specifications/PP-LLAMA-001-MASTER.md
+  created: 2026-01-20 16:57:43+00:00
+  updated: 2026-01-20 17:01:00+00:00
+  spec: null
   acceptance_criteria:
-  - 'L2: every pipe line before the superseded heading whose first cell (backticks stripped) is a row id and that
-    does not belong to a group opening with a header row is a ledger row outside the table, whatever its column
-    count or leading pipe; those rows also enter the L1 spend check. L3: a first-table row whose cell count differs
-    from the header is refused. Fixtures ledger_row_no_leading_pipe, ledger_row_backticked_id, ledger_row_trailing_pipes,
-    ledger_row_extra_pipe, ledger_side_table_ok, ledger_superseded_rows_ok, ledger_respend_outside_table beside the
-    two of PMAT-930; scripts/mutate_spec_conformance.sh kills 8/8; the live scan on main stays PASS with LEDGER 6 6'
-  notes: 'Found by the PMAT-930 review quorum (paiml-agy-delegate, 3 lanes + the §3.E arm, gemini-3.1-pro-high, conversations
-    df32ef55, f41060f3, 02623f0a, b2af861a); two of the four escape shapes re-run by Fable on 386b0bd40 (no leading pipe,
-    extra pipe: violations=[]). Five-whys in .pmat/jidoka.jsonl. Landed in PR #2861 with PMAT-930'
-- id: PMAT-932
+  - 'Version bump: 0.2.9 -> 0.2.10'
+  - Published to crates.io
+  - Verified installation from crates.io
+  - apr --version reports 0.2.10
+  - apr run works with 1.5B model
+  phases: []
+  subtasks: []
+  estimated_effort: 30m
+  labels:
+  - release
+  - crates-io
+  notes: 'Released 2026-01-20: apr-cli v0.2.10 published to crates.io
+
+    Verified: cargo install apr-cli installs and runs correctly
+
+    '
+- id: PMAT-083
   github_issue: null
-  item_type: bug
-  title: 'PMAT-931 second review: the run-skip rule failed both ways (a dummy first line hid every row after it; a
-    blank line inside the §13 table flagged eleven legitimate rows) and the mutation harness had no green baseline
-    and scored a crash as a kill'
-  status: inprogress
+  item_type: task
+  title: PMAT-COMPLY-001
+  status: completed
   priority: high
   assigned_to: null
-  created: 2026-09-03 17:20:00+00:00
-  updated: 2026-09-03 17:20:00+00:00
-  spec: docs/specifications/PP-LLAMA-001-MASTER.md
+  created: 2026-01-21 16:38:40+00:00
+  updated: 2026-01-21 16:41:40.297300+00:00
+  spec: null
   acceptance_criteria:
-  - 'a run of pipe lines is skipped only when it opens with a header (header line + separator) other than the ledger
-    header; a run with the ledger header or no header is read row by row; a row counts when its first cell is a row id
-    and its width is within two columns of the ledger header; L0 when the first table is not the ledger; seven fixtures
-    (ledger_fragment_after_dummy_line, ledger_row_bold_id, ledger_side_table_split_ok, ledger_side_table_same_width_ok,
-    ledger_second_table_same_header, ledger_row_extra_pipe_outside, ledger_first_table_not_ledger); the harness runs
-    the unmutated table first, counts a crash as unviable, and reports 10/10 killed'
-  notes: 'Found by the PMAT-931 review quorum (paiml-agy-delegate, 3 lanes + the §3.E arm, gemini-3.1-pro-high, conversations
-    519483fd, cb269b2c, 804fdc9e, 972bd0c8). Re-run by Fable on 45588b6d1: dummy-first-line escape confirmed (violations
-    NONE); blank line at LEDGER.md:100 flagged 11 rows (confirmed); the bold-id escape was REFUTED (strip_md already
-    strips emphasis: L1,L2 fired). Landed in PR #2861 with PMAT-930 and PMAT-931'
-- id: PMAT-933
+  - 'Fix all PMAT compliance warnings: missing .pmat-metrics.toml, O(1) hooks cache, file health analysis'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - compliance
+  - pmat
+  notes: null
+- id: PMAT-084
   github_issue: null
-  item_type: bug
-  title: 'PMAT-932 third review: a run under a decorative header was skipped whole and a row three columns off was
-    dropped rather than refused; the L2 universe is now every row that claims a spend (RECORDED or CONFORMANT)'
-  status: inprogress
-  priority: high
+  item_type: task
+  title: 'FILE-HEALTH-001: Refactor large files to improve code health'
+  status: completed
+  priority: critical
   assigned_to: null
-  created: 2026-09-03 18:05:00+00:00
-  updated: 2026-09-03 18:05:00+00:00
-  spec: docs/specifications/PP-LLAMA-001-MASTER.md
+  created: 2026-01-21 16:42:33+00:00
+  updated: 2026-01-21 16:47:22.466235+00:00
+  spec: null
   acceptance_criteria:
-  - 'a line outside the first table is a ledger row iff it has two or more pipes, a row-id first cell and a cell that
-    claims RECORDED or CONFORMANT; no run, header or width condition; fixtures ledger_row_under_foreign_header (L1,L2),
-    ledger_row_three_columns_off_outside (L2), ledger_row_conformant_outside (L2), ledger_row_without_tier_outside_ok
-    (CLEAN); ledger_first_table_not_ledger becomes L0,L2; mutants tier-claim-check-removed and conformant-tier-dropped
-    replace header-skip-removed and width-tolerance-removed; 10/10 killed'
-  notes: 'Found by the PMAT-932 review (paiml-agy-delegate: the §3.E arm 611de8db and lanes 87ecbcb2, 12f3e8e4; lane 2
-    never returned). Re-run by Fable on fa6cf7706: a dummy header + separator + a RECORDED re-spend produced no
-    violation (confirmed); a short RECORDED row outside the table produced none (confirmed once the probe carried the
-    tier). The L0 objection (a table above the ledger) is designed behaviour and was rejected. Landed in PR #2861'
-- id: PMAT-934
+  - 'Split 20 files >2000 lines into smaller modules. Target: all files <2000 lines, avg health >85%'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - refactoring
+  - file-health
+  - pmat
+  notes: null
+- id: PMAT-085
   github_issue: null
-  item_type: bug
-  title: 'PMAT-933 fourth review: a spend row with a non-row-id first cell (foo, #0c, 7bis) and a backticked tier
-    (`RECORDED`) both escaped L2; the id is now reported, never required, the tier is read through the shared
-    normalisation, and no heading ends the universe'
-  status: inprogress
-  priority: high
+  item_type: task
+  title: 'FILE-HEALTH-002: Split optim/mod.rs into submodules'
+  status: completed
+  priority: critical
   assigned_to: null
-  created: 2026-09-03 19:10:00+00:00
-  updated: 2026-09-03 19:10:00+00:00
-  spec: docs/specifications/PP-LLAMA-001-MASTER.md
+  created: 2026-01-21 16:49:43+00:00
+  updated: 2026-02-04 12:47:27+00:00
+  spec: null
   acceptance_criteria:
-  - 'a pipe line after the first table is a ledger row iff some cell, backticks stripped, starts with RECORDED or
-    CONFORMANT; the id is reported (row id or the raw first cell); the superseded cutoff is gone; fixtures
-    ledger_row_nonnumeric_id_outside, ledger_row_backticked_tier_outside, ledger_reserved_word_in_side_table (L2),
-    ledger_row_after_superseded_heading (L1,L2); mutants tier-backtick-strip-removed and id-required-reintroduced
-    replace backtick-strip-removed and superseded-cutoff-removed; 10/10 killed'
-  notes: 'Found by the PMAT-933 review (paiml-agy-delegate: the §3.E arm f5451570 and lanes d7910b93, 76cbe3d0,
-    dc6aa69e; the delegate itself found the backticked tier). Re-run by Fable on 7ff61b831: `| foo |` and a
-    backticked RECORDED both produced no violation (confirmed). The §13 reserved-word false positive is accepted as
-    fail-closed and documented. Landed in PR #2861'
-- id: PMAT-935
+  - Extract optimizers into separate files to reduce optim/mod.rs from 7090 to <2000 lines
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - refactoring
+  - file-health
+  notes: null
+- id: PMAT-086
   github_issue: null
-  item_type: bug
-  title: 'PMAT-934 fifth review: __RECORDED__ was not a tier, __lambda__ / <code>aaaa</code> / a zero-width space were
-    new keys, and L1 deduped only RECORDED rows; one normaliser for every ledger cell, L1 on the same tiers as L2,
-    and the threat model stated'
-  status: inprogress
-  priority: high
+  item_type: task
+  title: 'SERVE-TRACE-001: Implement X-Trace-Level header in apr serve'
+  status: completed
+  priority: medium
   assigned_to: null
-  created: 2026-09-03 19:50:00+00:00
-  updated: 2026-09-03 19:50:00+00:00
-  spec: docs/specifications/PP-LLAMA-001-MASTER.md
+  created: 2026-01-21 18:30:00+00:00
+  updated: 2026-01-26 09:50:00+00:00
+  spec: null
   acceptance_criteria:
-  - '_norm strips code tags, format characters, no-break spaces, whitespace runs and wrapping backticks/asterisks/
-    underscores; spend keys casefold; L1 keys on SPEND_TIERS; LEDGER reports the universe count; fixtures
-    ledger_row_underscored_tier, ledger_respend_conformant, ledger_respend_emphasised_key, ledger_respend_zero_width_key
-    (L1); mutants l1-respend-check-removed, l1-tier-filter-narrowed, wrap-emphasis-strip-removed, key-normaliser-bypassed,
-    key-casefold-removed; 15/15 killed; the threat model (honest re-roll, not forgery) written in RATIONALE and the docstring'
-  notes: 'Found by the PMAT-934 review (paiml-agy-delegate: the §3.E arm 044542d6, lanes 1ca23c06, 27e31188, 4c1a7eac;
-    the delegate found the L1 tier gap and widened the key renderings to six). Re-run by Fable on 45b29e793: __RECORDED__,
-    __lambda__ and a CONFORMANT re-spend each produced no violation (confirmed). Landed in PR #2861'
+  - Parse X-Trace-Level header (brick/step/layer)
+  - Include brick_trace, step_trace, or layer_trace in response when header present
+  - No trace fields in response when header absent (F-TRACE-004b)
+  - QA serve script passes F-TRACE-001, F-TRACE-002, F-TRACE-003
+  phases: []
+  subtasks: []
+  estimated_effort: 4h
+  labels:
+  - serving
+  - tracing
+  - feature
+  notes: 'Discovered 2026-01-21: X-Trace-Level header documented in examples/serve_with_tracing.rs
+
+    but not implemented in commands/serve.rs. QA script fails F-TRACE-001/002/003.
+
+
+    COMPLETED 2026-01-26: All tracing features implemented and working:
+
+    - X-Trace-Level header parsing in serve.rs
+
+    - --trace, --trace-level, --profile CLI flags
+
+    - --trace-output JSON file writing
+
+    - QA tests all pass (qa_serve 35/35, qa_chat 20/20, qa_verify 20/20)
+
+    '
 - id: APR-ANTIGRAVITY-PARITY-001
   github_issue: null
   item_type: epic
@@ -428,53 +454,37 @@ roadmap:
   labels:
   - enhancement
   notes: null
-- id: GH-23
-  github_issue: 23
+- id: GH-15
+  github_issue: null
   item_type: task
-  title: '[TOP 10] Implement K-Nearest Neighbors (kNN) Classifier'
+  title: 'New task: GH-15'
   status: completed
   priority: medium
   assigned_to: null
-  created: 2025-11-19 14:08:23.937219+00:00
-  updated: 2025-11-20 21:05:00+00:00
+  created: 2025-11-21 07:03:43.949171+00:00
+  updated: 2025-11-21 07:12:09.670302+00:00
   spec: null
-  acceptance_criteria:
-  - KNN struct with fit/predict
-  - Distance metric selection
-  - Weighted voting option
-  - Comprehensive tests (EXTREME TDD)
-  - 'Example: knn_iris.rs'
-  - 'Book chapter: ml-fundamentals/knn.md'
+  acceptance_criteria: []
   phases: []
   subtasks: []
   estimated_effort: null
-  labels:
-  - enhancement
+  labels: []
   notes: null
-- id: GH-26
-  github_issue: 26
+- id: GH-16
+  github_issue: null
   item_type: task
-  title: '[TOP 10] Implement Gradient Boosting Machine (GBM)'
+  title: 'New task: GH-16'
   status: completed
   priority: medium
   assigned_to: null
-  created: 2025-11-19 14:56:44.525541+00:00
-  updated: 2025-11-20 21:05:00+00:00
+  created: 2025-11-21 07:17:59.807813+00:00
+  updated: 2025-11-21 07:28:00.029018+00:00
   spec: null
-  acceptance_criteria:
-  - GradientBoostingClassifier struct
-  - GradientBoostingRegressor struct
-  - fit/predict/staged_predict
-  - Feature importance
-  - Early stopping
-  - Comprehensive tests (EXTREME TDD)
-  - 'Example: gbm_boston_housing.rs'
-  - 'Book chapter: ml-fundamentals/gradient-boosting.md'
+  acceptance_criteria: []
   phases: []
   subtasks: []
   estimated_effort: null
-  labels:
-  - enhancement
+  labels: []
   notes: null
 - id: Sovereign AI Integration Specification v1.1 - Complete architecture document with 10 peer-reviewed
     references, Toyota Way principles, and Rust safety improvements
@@ -719,38 +729,6 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
-- id: GH-15
-  github_issue: null
-  item_type: task
-  title: 'New task: GH-15'
-  status: completed
-  priority: medium
-  assigned_to: null
-  created: 2025-11-21 07:03:43.949171+00:00
-  updated: 2025-11-21 07:12:09.670302+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: GH-16
-  github_issue: null
-  item_type: task
-  title: 'New task: GH-16'
-  status: completed
-  priority: medium
-  assigned_to: null
-  created: 2025-11-21 07:17:59.807813+00:00
-  updated: 2025-11-21 07:28:00.029018+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
 - id: GH-17
   github_issue: null
   item_type: task
@@ -767,15 +745,15 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
-- id: GH-20
+- id: GH-18
   github_issue: null
   item_type: task
-  title: 'New task: GH-20'
+  title: 'New task: GH-18'
   status: completed
   priority: medium
   assigned_to: null
-  created: 2025-11-21 07:52:04.630299+00:00
-  updated: 2025-11-21 12:10:25.405809+00:00
+  created: 2025-11-21 11:17:52.675519+00:00
+  updated: 2025-11-21 12:14:04.777014+00:00
   spec: null
   acceptance_criteria: []
   phases: []
@@ -799,15 +777,15 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
-- id: GH-18
+- id: GH-20
   github_issue: null
   item_type: task
-  title: 'New task: GH-18'
+  title: 'New task: GH-20'
   status: completed
   priority: medium
   assigned_to: null
-  created: 2025-11-21 11:17:52.675519+00:00
-  updated: 2025-11-21 12:14:04.777014+00:00
+  created: 2025-11-21 07:52:04.630299+00:00
+  updated: 2025-11-21 12:10:25.405809+00:00
   spec: null
   acceptance_criteria: []
   phases: []
@@ -846,6 +824,54 @@ roadmap:
   subtasks: []
   estimated_effort: null
   labels: []
+  notes: null
+- id: GH-23
+  github_issue: 23
+  item_type: task
+  title: '[TOP 10] Implement K-Nearest Neighbors (kNN) Classifier'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-19 14:08:23.937219+00:00
+  updated: 2025-11-20 21:05:00+00:00
+  spec: null
+  acceptance_criteria:
+  - KNN struct with fit/predict
+  - Distance metric selection
+  - Weighted voting option
+  - Comprehensive tests (EXTREME TDD)
+  - 'Example: knn_iris.rs'
+  - 'Book chapter: ml-fundamentals/knn.md'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - enhancement
+  notes: null
+- id: GH-26
+  github_issue: 26
+  item_type: task
+  title: '[TOP 10] Implement Gradient Boosting Machine (GBM)'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-19 14:56:44.525541+00:00
+  updated: 2025-11-20 21:05:00+00:00
+  spec: null
+  acceptance_criteria:
+  - GradientBoostingClassifier struct
+  - GradientBoostingRegressor struct
+  - fit/predict/staged_predict
+  - Feature importance
+  - Early stopping
+  - Comprehensive tests (EXTREME TDD)
+  - 'Example: gbm_boston_housing.rs'
+  - 'Book chapter: ml-fundamentals/gradient-boosting.md'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - enhancement
   notes: null
 - id: GH-28
   github_issue: null
@@ -1848,38 +1874,37 @@ roadmap:
     All 95 QA tests pass with coherent output across 0.5B, 1B, 1.5B, 7B, 32B models.
 
     '
-- id: PMAT-081
+- id: PMAT-087
   github_issue: null
   item_type: task
-  title: 'FORMAT-PARITY-001: Implement SafeTensors and APR inference'
+  title: 'SERVE-STREAM-001: Fix SSE streaming not visible to OpenAI SDK clients'
   status: completed
   priority: high
   assigned_to: null
-  created: 2026-01-20 11:24:51+00:00
-  updated: 2026-01-20 20:00:00+00:00
+  created: 2026-01-21 18:31:33+00:00
+  updated: 2026-01-21 20:00:00+00:00
   spec: null
   acceptance_criteria:
-  - Implement PAR-301 (SafeTensors) and PAR-302 (APR) format inference in realizar
-  - 'PAR-301: SafeTensors /v1/chat/completions with SSE streaming'
-  - 'PAR-302: APR format /v1/chat/completions with SSE streaming (CPU and GPU)'
+  - '**Root Cause**: CPU streaming in realizar''s api.rs is ''fake streaming'' - it generates ALL tokens
+    first via generate_with_cache (blocking), THEN streams them one-by-one. True streaming only exists
+    in CUDA path (generate_gpu_resident_streaming).
+
+
+    **Fix Required**: Add streaming callback support to CPU OwnedQuantizedModel.generate_with_cache()
+    similar to the CUDA path, or implement generate_streaming() method that yields tokens as they''re
+    generated.
+
+
+    **Files**:
+
+    - /home/noah/src/realizar/src/api.rs:3622-3679 (CPU quantized streaming)
+
+    - /home/noah/src/realizar/src/gguf/mod.rs (add generate_streaming)'
   phases: []
   subtasks: []
-  estimated_effort: 2h
-  labels:
-  - inference
-  - api
-  - streaming
-  notes: 'Resolved 2026-01-20:
-
-    - PAR-301: SafeTensors server now has /v1/chat/completions and /generate endpoints
-
-    - PAR-302: APR server (CPU and GPU) now has /v1/chat/completions endpoint
-
-    - Both support OpenAI-compatible API with SSE streaming
-
-    - ChatML prompt template formatting implemented
-
-    '
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: 'GGUF-SERVE-001: Validate apr serve works for all GGUF model sizes (0.5B, 1B, 1.5B, 7B, 32B)'
   github_issue: null
   item_type: task
@@ -1918,160 +1943,6 @@ roadmap:
     Remaining gaps: PAR-301 (SafeTensors), PAR-302 (APR format).
 
     '
-- id: PMAT-082
-  github_issue: null
-  item_type: task
-  title: 'APR-CLI-RELEASE-029: Release apr-cli v0.2.10 to crates.io'
-  status: completed
-  priority: high
-  assigned_to: null
-  created: 2026-01-20 16:57:43+00:00
-  updated: 2026-01-20 17:01:00+00:00
-  spec: null
-  acceptance_criteria:
-  - 'Version bump: 0.2.9 -> 0.2.10'
-  - Published to crates.io
-  - Verified installation from crates.io
-  - apr --version reports 0.2.10
-  - apr run works with 1.5B model
-  phases: []
-  subtasks: []
-  estimated_effort: 30m
-  labels:
-  - release
-  - crates-io
-  notes: 'Released 2026-01-20: apr-cli v0.2.10 published to crates.io
-
-    Verified: cargo install apr-cli installs and runs correctly
-
-    '
-- id: PMAT-083
-  github_issue: null
-  item_type: task
-  title: PMAT-COMPLY-001
-  status: completed
-  priority: high
-  assigned_to: null
-  created: 2026-01-21 16:38:40+00:00
-  updated: 2026-01-21 16:41:40.297300+00:00
-  spec: null
-  acceptance_criteria:
-  - 'Fix all PMAT compliance warnings: missing .pmat-metrics.toml, O(1) hooks cache, file health analysis'
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels:
-  - compliance
-  - pmat
-  notes: null
-- id: PMAT-084
-  github_issue: null
-  item_type: task
-  title: 'FILE-HEALTH-001: Refactor large files to improve code health'
-  status: completed
-  priority: critical
-  assigned_to: null
-  created: 2026-01-21 16:42:33+00:00
-  updated: 2026-01-21 16:47:22.466235+00:00
-  spec: null
-  acceptance_criteria:
-  - 'Split 20 files >2000 lines into smaller modules. Target: all files <2000 lines, avg health >85%'
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels:
-  - refactoring
-  - file-health
-  - pmat
-  notes: null
-- id: PMAT-085
-  github_issue: null
-  item_type: task
-  title: 'FILE-HEALTH-002: Split optim/mod.rs into submodules'
-  status: completed
-  priority: critical
-  assigned_to: null
-  created: 2026-01-21 16:49:43+00:00
-  updated: 2026-02-04 12:47:27+00:00
-  spec: null
-  acceptance_criteria:
-  - Extract optimizers into separate files to reduce optim/mod.rs from 7090 to <2000 lines
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels:
-  - refactoring
-  - file-health
-  notes: null
-- id: PMAT-086
-  github_issue: null
-  item_type: task
-  title: 'SERVE-TRACE-001: Implement X-Trace-Level header in apr serve'
-  status: completed
-  priority: medium
-  assigned_to: null
-  created: 2026-01-21 18:30:00+00:00
-  updated: 2026-01-26 09:50:00+00:00
-  spec: null
-  acceptance_criteria:
-  - Parse X-Trace-Level header (brick/step/layer)
-  - Include brick_trace, step_trace, or layer_trace in response when header present
-  - No trace fields in response when header absent (F-TRACE-004b)
-  - QA serve script passes F-TRACE-001, F-TRACE-002, F-TRACE-003
-  phases: []
-  subtasks: []
-  estimated_effort: 4h
-  labels:
-  - serving
-  - tracing
-  - feature
-  notes: 'Discovered 2026-01-21: X-Trace-Level header documented in examples/serve_with_tracing.rs
-
-    but not implemented in commands/serve.rs. QA script fails F-TRACE-001/002/003.
-
-
-    COMPLETED 2026-01-26: All tracing features implemented and working:
-
-    - X-Trace-Level header parsing in serve.rs
-
-    - --trace, --trace-level, --profile CLI flags
-
-    - --trace-output JSON file writing
-
-    - QA tests all pass (qa_serve 35/35, qa_chat 20/20, qa_verify 20/20)
-
-    '
-- id: PMAT-087
-  github_issue: null
-  item_type: task
-  title: 'SERVE-STREAM-001: Fix SSE streaming not visible to OpenAI SDK clients'
-  status: completed
-  priority: high
-  assigned_to: null
-  created: 2026-01-21 18:31:33+00:00
-  updated: 2026-01-21 20:00:00+00:00
-  spec: null
-  acceptance_criteria:
-  - '**Root Cause**: CPU streaming in realizar''s api.rs is ''fake streaming'' - it generates ALL tokens
-    first via generate_with_cache (blocking), THEN streams them one-by-one. True streaming only exists
-    in CUDA path (generate_gpu_resident_streaming).
-
-
-    **Fix Required**: Add streaming callback support to CPU OwnedQuantizedModel.generate_with_cache()
-    similar to the CUDA path, or implement generate_streaming() method that yields tokens as they''re
-    generated.
-
-
-    **Files**:
-
-    - /home/noah/src/realizar/src/api.rs:3622-3679 (CPU quantized streaming)
-
-    - /home/noah/src/realizar/src/gguf/mod.rs (add generate_streaming)'
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
 - id: PMAT-088
   github_issue: null
   item_type: task
@@ -2306,102 +2177,6 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
-- id: 'PMAT-099: APR format parity - fix AprTransformer config reading'
-  github_issue: null
-  item_type: task
-  title: 'New task: PMAT-099: APR format parity - fix AprTransformer config reading'
-  status: completed
-  priority: medium
-  assigned_to: null
-  created: 2026-01-22 14:11:54.074583+00:00
-  updated: 2026-02-04 12:49:26+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: 'APR-PARITY-001: APR/SafeTensors GGUF parity - all QA scripts pass'
-  github_issue: null
-  item_type: task
-  title: 'New task: APR-PARITY-001: APR/SafeTensors GGUF parity - all QA scripts pass'
-  status: completed
-  priority: medium
-  assigned_to: null
-  created: 2026-01-22 15:35:30.231896+00:00
-  updated: 2026-02-04 13:08:15+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: APR-PUB-001
-  github_issue: null
-  item_type: task
-  title: 'New task: APR-PUB-001'
-  status: completed
-  priority: medium
-  assigned_to: null
-  created: 2026-01-23 10:19:57.986146+00:00
-  updated: 2026-02-20 11:05:16+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: 'PMAT-103-SIMD: AVX2 SIMD optimization for Q4K matmul to achieve 5+ tok/s'
-  github_issue: null
-  item_type: task
-  title: 'New task: PMAT-103-SIMD: AVX2 SIMD optimization for Q4K matmul to achieve 5+ tok/s'
-  status: completed
-  priority: medium
-  assigned_to: null
-  created: 2026-01-23 12:13:30.786974+00:00
-  updated: 2026-02-20 11:05:16+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: 'APR-TRACE-001: Implement tracing features for APR serve path (5 failing tests)'
-  github_issue: null
-  item_type: task
-  title: 'New task: APR-TRACE-001: Implement tracing features for APR serve path (5 failing tests)'
-  status: completed
-  priority: medium
-  assigned_to: null
-  created: 2026-01-23 12:44:42.307541+00:00
-  updated: 2026-01-23 12:56:13.838059+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: 'LAYOUT-001: Fix Q4K kernel layout mismatch - use row-major kernel for APR/GGUF'
-  github_issue: null
-  item_type: task
-  title: 'New task: LAYOUT-001: Fix Q4K kernel layout mismatch - use row-major kernel for APR/GGUF'
-  status: completed
-  priority: medium
-  assigned_to: null
-  created: 2026-01-23 14:32:25.102949+00:00
-  updated: 2026-01-23 14:39:07.951711+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
 - id: PMAT-097
   github_issue: null
   item_type: task
@@ -2479,6 +2254,38 @@ roadmap:
   - kv-cache
   - realizar
   notes: null
+- id: 'PMAT-099: APR format parity - fix AprTransformer config reading'
+  github_issue: null
+  item_type: task
+  title: 'New task: PMAT-099: APR format parity - fix AprTransformer config reading'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-01-22 14:11:54.074583+00:00
+  updated: 2026-02-04 12:49:26+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: 'PMAT-103-SIMD: AVX2 SIMD optimization for Q4K matmul to achieve 5+ tok/s'
+  github_issue: null
+  item_type: task
+  title: 'New task: PMAT-103-SIMD: AVX2 SIMD optimization for Q4K matmul to achieve 5+ tok/s'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-01-23 12:13:30.786974+00:00
+  updated: 2026-02-20 11:05:16+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-110
   github_issue: null
   item_type: task
@@ -2546,6 +2353,70 @@ roadmap:
   - qa
   - falsification
   - showcase
+  notes: null
+- id: 'APR-PARITY-001: APR/SafeTensors GGUF parity - all QA scripts pass'
+  github_issue: null
+  item_type: task
+  title: 'New task: APR-PARITY-001: APR/SafeTensors GGUF parity - all QA scripts pass'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-01-22 15:35:30.231896+00:00
+  updated: 2026-02-04 13:08:15+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: APR-PUB-001
+  github_issue: null
+  item_type: task
+  title: 'New task: APR-PUB-001'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-01-23 10:19:57.986146+00:00
+  updated: 2026-02-20 11:05:16+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: 'APR-TRACE-001: Implement tracing features for APR serve path (5 failing tests)'
+  github_issue: null
+  item_type: task
+  title: 'New task: APR-TRACE-001: Implement tracing features for APR serve path (5 failing tests)'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-01-23 12:44:42.307541+00:00
+  updated: 2026-01-23 12:56:13.838059+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: 'LAYOUT-001: Fix Q4K kernel layout mismatch - use row-major kernel for APR/GGUF'
+  github_issue: null
+  item_type: task
+  title: 'New task: LAYOUT-001: Fix Q4K kernel layout mismatch - use row-major kernel for APR/GGUF'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-01-23 14:32:25.102949+00:00
+  updated: 2026-01-23 14:39:07.951711+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
   notes: null
 - id: PMAT-113
   github_issue: null
@@ -2823,22 +2694,6 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
-- id: GH-189
-  github_issue: null
-  item_type: task
-  title: APR chat special tokens fix (BpeTokenizer)
-  status: completed
-  priority: medium
-  assigned_to: null
-  created: 2026-01-31 06:24:21.819716+00:00
-  updated: 2026-01-31 06:24:56+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
 - id: PMAT-190
   github_issue: null
   item_type: task
@@ -2945,22 +2800,6 @@ roadmap:
   - testing
   - round-12
   notes: null
-- id: PMAT-ROSETTA-001
-  github_issue: null
-  item_type: task
-  title: 'New task: PMAT-ROSETTA-001'
-  status: completed
-  priority: medium
-  assigned_to: null
-  created: 2026-02-01 18:33:22.303949+00:00
-  updated: 2026-02-04 12:46:49+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
 - id: PMAT-195
   github_issue: null
   item_type: task
@@ -2981,6 +2820,22 @@ roadmap:
   - bug
   - safetensors
   - cli
+  notes: null
+- id: GH-189
+  github_issue: null
+  item_type: task
+  title: APR chat special tokens fix (BpeTokenizer)
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-01-31 06:24:21.819716+00:00
+  updated: 2026-01-31 06:24:56+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
   notes: null
 - id: PMAT-196
   github_issue: null
@@ -3089,6 +2944,22 @@ roadmap:
   - golden
   - validation
   notes: null
+- id: PMAT-ROSETTA-001
+  github_issue: null
+  item_type: task
+  title: 'New task: PMAT-ROSETTA-001'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-02-01 18:33:22.303949+00:00
+  updated: 2026-02-04 12:46:49+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-201
   github_issue: null
   item_type: task
@@ -3157,22 +3028,6 @@ roadmap:
 
 
     Fix: Return actual token count from execute_inference() and use it in benchmark output.'
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: GH-202
-  github_issue: null
-  item_type: task
-  title: 'New task: GH-202'
-  status: completed
-  priority: medium
-  assigned_to: null
-  created: 2026-02-04 12:40:00.035130+00:00
-  updated: 2026-02-04 12:41:13+00:00
-  spec: null
-  acceptance_criteria: []
   phases: []
   subtasks: []
   estimated_effort: null
@@ -3248,22 +3103,6 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
-- id: 'PMAT-PHASE6: Re-run Phase 6 (marathon + throughput) with self-converted GGUF'
-  github_issue: null
-  item_type: task
-  title: 'New task: PMAT-PHASE6: Re-run Phase 6 (marathon + throughput) with self-converted GGUF'
-  status: completed
-  priority: medium
-  assigned_to: null
-  created: 2026-02-04 14:50:34.685386+00:00
-  updated: 2026-02-20 11:05:16+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
 - id: PMAT-208
   github_issue: null
   item_type: task
@@ -3293,6 +3132,22 @@ roadmap:
   spec: null
   acceptance_criteria:
   - '0/6 models pass QA gates. Blocked by #202 LAYOUT-002 fix.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: GH-202
+  github_issue: null
+  item_type: task
+  title: 'New task: GH-202'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-02-04 12:40:00.035130+00:00
+  updated: 2026-02-04 12:41:13+00:00
+  spec: null
+  acceptance_criteria: []
   phases: []
   subtasks: []
   estimated_effort: null
@@ -3364,6 +3219,22 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: 'PMAT-PHASE6: Re-run Phase 6 (marathon + throughput) with self-converted GGUF'
+  github_issue: null
+  item_type: task
+  title: 'New task: PMAT-PHASE6: Re-run Phase 6 (marathon + throughput) with self-converted GGUF'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-02-04 14:50:34.685386+00:00
+  updated: 2026-02-20 11:05:16+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-214
   github_issue: null
   item_type: task
@@ -3373,54 +3244,6 @@ roadmap:
   assigned_to: null
   created: 2026-02-04 18:27:18+00:00
   updated: 2026-02-04 18:28:14+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: GH-205
-  github_issue: null
-  item_type: task
-  title: 'New task: GH-205'
-  status: completed
-  priority: medium
-  assigned_to: null
-  created: 2026-02-05 11:20:38.193678+00:00
-  updated: 2026-02-20 11:05:16+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: GH-207
-  github_issue: null
-  item_type: task
-  title: 'New task: GH-207'
-  status: completed
-  priority: medium
-  assigned_to: null
-  created: 2026-02-05 11:27:20.280899+00:00
-  updated: 2026-02-20 11:05:16+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: GH-208
-  github_issue: null
-  item_type: task
-  title: 'New task: GH-208'
-  status: completed
-  priority: medium
-  assigned_to: null
-  created: 2026-02-05 11:29:43.574421+00:00
-  updated: 2026-02-20 11:05:16+00:00
   spec: null
   acceptance_criteria: []
   phases: []
@@ -3545,6 +3368,54 @@ roadmap:
   labels:
   - model-oracle
   - phase-1
+  notes: null
+- id: GH-205
+  github_issue: null
+  item_type: task
+  title: 'New task: GH-205'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-02-05 11:20:38.193678+00:00
+  updated: 2026-02-20 11:05:16+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: GH-207
+  github_issue: null
+  item_type: task
+  title: 'New task: GH-207'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-02-05 11:27:20.280899+00:00
+  updated: 2026-02-20 11:05:16+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: GH-208
+  github_issue: null
+  item_type: task
+  title: 'New task: GH-208'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-02-05 11:29:43.574421+00:00
+  updated: 2026-02-20 11:05:16+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
   notes: null
 - id: PMAT-221
   github_issue: null
@@ -3832,6 +3703,114 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-235
+  github_issue: null
+  item_type: task
+  title: 'PMAT-PROFILE-A: Formal verification + code quality for A score'
+  status: completed
+  priority: critical
+  assigned_to: null
+  created: 2026-02-10 08:37:32+00:00
+  updated: 2026-02-20 11:05:16+00:00
+  spec: null
+  acceptance_criteria:
+  - Improve Formal Verification 0.9->8+, Code Quality 11->20+, Rust Tooling 69.5->100+
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-243
+  github_issue: null
+  item_type: task
+  title: Fix 16 showcase spec falsification bugs (Round 51)
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-02-14 15:33:00+00:00
+  updated: 2026-02-20 11:05:16+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-244
+  github_issue: null
+  item_type: task
+  title: Split 3 files >2000 lines for File Health compliance
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-02-14 18:13:10+00:00
+  updated: 2026-02-14 19:17:19+00:00
+  spec: null
+  acceptance_criteria:
+  - rosetta.rs (7202), lib.rs (7148), oracle.rs (6114) need splitting
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - comply
+  - file-health
+  notes: null
+- id: PMAT-245
+  github_issue: null
+  item_type: task
+  title: Fix CB-500 string byte indexing warnings
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-02-14 18:13:12+00:00
+  updated: 2026-02-20 11:07:30+00:00
+  spec: null
+  acceptance_criteria:
+  - 319 CB-506 warnings for &str[n..m] byte indexing that can panic on non-ASCII
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - comply
+  - cb-500
+  notes: null
+- id: PMAT-246
+  github_issue: null
+  item_type: task
+  title: Fix CB-900 broken markdown links in book
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-02-14 18:13:13+00:00
+  updated: 2026-02-20 11:07:30+00:00
+  spec: null
+  acceptance_criteria:
+  - 24 broken internal links in book/ and docs/
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - comply
+  - cb-900
+  notes: null
+- id: PMAT-257
+  github_issue: null
+  item_type: task
+  title: 'GH-259: apr flow — add GGUF/SafeTensors support via Rosetta dispatch'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-02-15 08:14:25+00:00
+  updated: 2026-02-15 08:36:11+00:00
+  spec: null
+  acceptance_criteria:
+  - apr flow only works with APR format, fails on GGUF with 'Invalid magic'. Should use Rosetta Stone
+    dispatch like tree/hex/debug.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: GH-219
   github_issue: null
   item_type: task
@@ -3848,18 +3827,19 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
-- id: PMAT-235
+- id: PMAT-258
   github_issue: null
   item_type: task
-  title: 'PMAT-PROFILE-A: Formal verification + code quality for A score'
+  title: 'GH-260: apr diff — fix cross-format APR parse failure'
   status: completed
-  priority: critical
+  priority: high
   assigned_to: null
-  created: 2026-02-10 08:37:32+00:00
-  updated: 2026-02-20 11:05:16+00:00
+  created: 2026-02-15 08:14:26+00:00
+  updated: 2026-02-15 08:36:12+00:00
   spec: null
   acceptance_criteria:
-  - Improve Formal Verification 0.9->8+, Code Quality 11->20+, Rust Tooling 69.5->100+
+  - 'apr diff GGUF vs APR fails with ''Invalid tensor index: invalid dtype''. Rosetta Stone diff should
+    handle cross-format comparison.'
   phases: []
   subtasks: []
   estimated_effort: null
@@ -3962,339 +3942,6 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
-- id: PMAT-243
-  github_issue: null
-  item_type: task
-  title: Fix 16 showcase spec falsification bugs (Round 51)
-  status: completed
-  priority: medium
-  assigned_to: null
-  created: 2026-02-14 15:33:00+00:00
-  updated: 2026-02-20 11:05:16+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: PMAT-244
-  github_issue: null
-  item_type: task
-  title: Split 3 files >2000 lines for File Health compliance
-  status: completed
-  priority: high
-  assigned_to: null
-  created: 2026-02-14 18:13:10+00:00
-  updated: 2026-02-14 19:17:19+00:00
-  spec: null
-  acceptance_criteria:
-  - rosetta.rs (7202), lib.rs (7148), oracle.rs (6114) need splitting
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels:
-  - comply
-  - file-health
-  notes: null
-- id: PMAT-245
-  github_issue: null
-  item_type: task
-  title: Fix CB-500 string byte indexing warnings
-  status: completed
-  priority: medium
-  assigned_to: null
-  created: 2026-02-14 18:13:12+00:00
-  updated: 2026-02-20 11:07:30+00:00
-  spec: null
-  acceptance_criteria:
-  - 319 CB-506 warnings for &str[n..m] byte indexing that can panic on non-ASCII
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels:
-  - comply
-  - cb-500
-  notes: null
-- id: PMAT-246
-  github_issue: null
-  item_type: task
-  title: Fix CB-900 broken markdown links in book
-  status: completed
-  priority: medium
-  assigned_to: null
-  created: 2026-02-14 18:13:13+00:00
-  updated: 2026-02-20 11:07:30+00:00
-  spec: null
-  acceptance_criteria:
-  - 24 broken internal links in book/ and docs/
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels:
-  - comply
-  - cb-900
-  notes: null
-- id: GH-248
-  github_issue: 248
-  item_type: task
-  title: 'bug: --json flag ignored on list, eval, tree, debug subcommands'
-  status: completed
-  priority: medium
-  assigned_to: null
-  created: 2026-02-14 21:33:19.572210+00:00
-  updated: 2026-02-20 11:05:16+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels:
-  - bug
-  notes: null
-- id: GH-249
-  github_issue: 249
-  item_type: task
-  title: 'bug: apr inspect --json returns empty architecture field'
-  status: completed
-  priority: medium
-  assigned_to: null
-  created: 2026-02-14 21:32:59.143242+00:00
-  updated: 2026-02-20 11:05:16+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels:
-  - bug
-  notes: null
-- id: GH-250
-  github_issue: 250
-  item_type: task
-  title: 'bug: apr run --json produces completely wrong tokens (32/32 mismatch)'
-  status: completed
-  priority: medium
-  assigned_to: null
-  created: 2026-02-14 21:32:59.917777+00:00
-  updated: 2026-02-20 11:05:16+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels:
-  - bug
-  notes: null
-- id: GH-251
-  github_issue: 251
-  item_type: task
-  title: 'bug: apr validate output format changed — dict with top-level keys instead of checks list'
-  status: completed
-  priority: medium
-  assigned_to: null
-  created: 2026-02-14 21:33:00.732997+00:00
-  updated: 2026-02-20 11:05:16+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels:
-  - bug
-  notes: null
-- id: GH-252
-  github_issue: 252
-  item_type: task
-  title: 'bug: apr lint exits 5 on warnings-only (0 errors)'
-  status: completed
-  priority: medium
-  assigned_to: null
-  created: 2026-02-14 21:33:01.473463+00:00
-  updated: 2026-02-20 11:05:16+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels:
-  - bug
-  notes: null
-- id: GH-253
-  github_issue: 253
-  item_type: task
-  title: 'bug: apr check (selftest) fails with GH-187 embedding warning'
-  status: completed
-  priority: medium
-  assigned_to: null
-  created: 2026-02-14 21:33:02.228863+00:00
-  updated: 2026-02-20 11:05:16+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels:
-  - bug
-  notes: null
-- id: GH-254
-  github_issue: 254
-  item_type: task
-  title: 'bug: apr bench reports 0.0 tok/s throughput on all models'
-  status: completed
-  priority: medium
-  assigned_to: null
-  created: 2026-02-14 21:33:03.102874+00:00
-  updated: 2026-02-20 11:05:16+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels:
-  - bug
-  notes: null
-- id: GH-256
-  github_issue: 256
-  item_type: task
-  title: 'bug: apr diff reports structural diffs between int4 and int8 variants of same model'
-  status: completed
-  priority: medium
-  assigned_to: null
-  created: 2026-02-14 21:33:03.820306+00:00
-  updated: 2026-02-20 11:05:16+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels:
-  - bug
-  notes: null
-- id: PMAT-257
-  github_issue: null
-  item_type: task
-  title: 'GH-259: apr flow — add GGUF/SafeTensors support via Rosetta dispatch'
-  status: completed
-  priority: high
-  assigned_to: null
-  created: 2026-02-15 08:14:25+00:00
-  updated: 2026-02-15 08:36:11+00:00
-  spec: null
-  acceptance_criteria:
-  - apr flow only works with APR format, fails on GGUF with 'Invalid magic'. Should use Rosetta Stone
-    dispatch like tree/hex/debug.
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: PMAT-258
-  github_issue: null
-  item_type: task
-  title: 'GH-260: apr diff — fix cross-format APR parse failure'
-  status: completed
-  priority: high
-  assigned_to: null
-  created: 2026-02-15 08:14:26+00:00
-  updated: 2026-02-15 08:36:12+00:00
-  spec: null
-  acceptance_criteria:
-  - 'apr diff GGUF vs APR fails with ''Invalid tensor index: invalid dtype''. Rosetta Stone diff should
-    handle cross-format comparison.'
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: GH-243
-  github_issue: 243
-  item_type: task
-  title: 'feat: apr quantize — unified quantization pipeline with GGUF/AWQ/GPTQ output'
-  status: completed
-  priority: medium
-  assigned_to: null
-  created: 2026-02-15 10:52:15.943055+00:00
-  updated: 2026-02-20 11:05:16+00:00
-  spec: null
-  acceptance_criteria:
-  - '`apr quantize model.apr --scheme int4` works end-to-end'
-  - '`apr quantize model.apr --scheme gptq --calibration data.jsonl` works'
-  - '`apr quantize --plan --json` returns memory/time estimates'
-  - '`--batch` mode produces multiple output files'
-  - JSON output for all modes
-  - Testable in tiny-model-ground-truth parity checker
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: GH-244
-  github_issue: 244
-  item_type: task
-  title: 'feat: apr finetune — LoRA/QLoRA fine-tuning with adapter upload to Hub'
-  status: completed
-  priority: medium
-  assigned_to: null
-  created: 2026-02-15 11:12:10.414158+00:00
-  updated: 2026-02-20 11:05:16+00:00
-  spec: null
-  acceptance_criteria:
-  - '`apr finetune model.apr --method lora --data train.jsonl` trains and saves adapter'
-  - '`apr finetune merge` produces valid APR model'
-  - Adapter format compatible with PEFT (`adapter_config.json`)
-  - '`--plan --json` returns VRAM/time estimates (existing behavior preserved)'
-  - Testable with tiny models (SmolLM-135M fine-tune should complete in <5min)
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: GH-247
-  github_issue: 247
-  item_type: task
-  title: 'feat: apr prune + apr distill — structured pruning and knowledge distillation pipeline'
-  status: completed
-  priority: medium
-  assigned_to: null
-  created: 2026-02-15 11:12:51.494148+00:00
-  updated: 2026-02-20 11:05:16+00:00
-  spec: null
-  acceptance_criteria:
-  - '`apr prune model.apr --method structured --target-ratio 0.5` produces smaller model'
-  - '`apr distill teacher.apr --student pruned.apr --data train.jsonl` trains student'
-  - '`apr prune --analyze --json` returns layer importance scores'
-  - '`apr prune --plan --json` returns time/memory/quality estimates'
-  - Combined `--distill` flag works for Minitron-style pipeline
-  - Pruned model passes `apr validate` and `apr check`
-  - Testable with tiny models (SmolLM-135M → ~70M should complete in <10min)
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: GH-246
-  github_issue: 246
-  item_type: task
-  title: 'feat: apr export — MLX, CoreML, and OpenVINO format support'
-  status: completed
-  priority: medium
-  assigned_to: null
-  created: 2026-02-15 11:30:26.378754+00:00
-  updated: 2026-02-20 11:05:16+00:00
-  spec: null
-  acceptance_criteria:
-  - '`apr export --format mlx` produces loadable MLX model'
-  - '`apr export --format onnx` produces valid ONNX model'
-  - '`apr export --list-formats --json` lists all supported formats'
-  - '`--batch` mode produces multiple output directories'
-  - Round-trip validation via `apr rosetta` for each format
-  - Testable in tiny-model-ground-truth parity checker
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
 - id: PMAT-259
   github_issue: null
   item_type: task
@@ -4374,92 +4021,162 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
-- id: GH-280
-  github_issue: null
+- id: GH-243
+  github_issue: 243
   item_type: task
-  title: 'GH-280: Kernel capability gate — contract-driven GPU admission control'
+  title: 'feat: apr quantize — unified quantization pipeline with GGUF/AWQ/GPTQ output'
   status: completed
   priority: medium
   assigned_to: null
-  created: 2026-02-17 18:43:44.982621+00:00
-  updated: 2026-02-18 11:51:41+00:00
+  created: 2026-02-15 10:52:15.943055+00:00
+  updated: 2026-02-20 11:05:16+00:00
   spec: null
   acceptance_criteria:
-  - PerHeadRmsNormKernel added to trueno-gpu v0.4.18. Capability gate flipped in realizar. Qwen3 GPU inference
-    unblocked. 9 new kernel tests, 10 capability tests pass.
+  - '`apr quantize model.apr --scheme int4` works end-to-end'
+  - '`apr quantize model.apr --scheme gptq --calibration data.jsonl` works'
+  - '`apr quantize --plan --json` returns memory/time estimates'
+  - '`--batch` mode produces multiple output files'
+  - JSON output for all modes
+  - Testable in tiny-model-ground-truth parity checker
   phases: []
   subtasks: []
   estimated_effort: null
   labels: []
   notes: null
-- id: GH-279-4
-  github_issue: null
+- id: GH-244
+  github_issue: 244
   item_type: task
-  title: 'GH-279: Wire QkNorm into GPU forward path + fix format_parity sharded SafeTensors'
-  status: completed
-  priority: high
-  assigned_to: null
-  created: 2026-02-17 19:03:09.771720+00:00
-  updated: 2026-02-18 21:00:00+00:00
-  spec: null
-  acceptance_criteria:
-  - golden_output QA gate passes (GPU QkNorm matches CPU path)
-  - format_parity QA gate passes (sharded SafeTensors loads all shards)
-  - performance_regression QA gate passes (GPU speedup restored to baseline)
-  phases: []
-  subtasks: []
-  estimated_effort: 4h
-  labels:
-  - cuda
-  - qwen3
-  - qa-gates
-  notes: Wired per-head RMSNorm (QkNorm) into GPU forward path for Qwen3 models. Added attn_q/k_norm_ptr/len
-    fields to IndexedLayerWeights + BoundLayerWeights. Used existing per_head_rmsnorm_into CUDA kernel
-    and cache_rmsnorm_gamma upload. Fixed format_parity gate to detect sharded models via model.safetensors.index.json.
-    Extensive complexity refactoring to pass pre-commit quality gates.
-- id: Add contract-driven property tests from provable-contracts
-  github_issue: null
-  item_type: task
-  title: 'New task: Add contract-driven property tests from provable-contracts'
+  title: 'feat: apr finetune — LoRA/QLoRA fine-tuning with adapter upload to Hub'
   status: completed
   priority: medium
   assigned_to: null
-  created: 2026-02-18 14:48:42.940650+00:00
-  updated: 2026-02-18 14:50:17.905535+00:00
+  created: 2026-02-15 11:12:10.414158+00:00
+  updated: 2026-02-20 11:05:16+00:00
+  spec: null
+  acceptance_criteria:
+  - '`apr finetune model.apr --method lora --data train.jsonl` trains and saves adapter'
+  - '`apr finetune merge` produces valid APR model'
+  - Adapter format compatible with PEFT (`adapter_config.json`)
+  - '`--plan --json` returns VRAM/time estimates (existing behavior preserved)'
+  - Testable with tiny models (SmolLM-135M fine-tune should complete in <5min)
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: GH-246
+  github_issue: 246
+  item_type: task
+  title: 'feat: apr export — MLX, CoreML, and OpenVINO format support'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-02-15 11:30:26.378754+00:00
+  updated: 2026-02-20 11:05:16+00:00
+  spec: null
+  acceptance_criteria:
+  - '`apr export --format mlx` produces loadable MLX model'
+  - '`apr export --format onnx` produces valid ONNX model'
+  - '`apr export --list-formats --json` lists all supported formats'
+  - '`--batch` mode produces multiple output directories'
+  - Round-trip validation via `apr rosetta` for each format
+  - Testable in tiny-model-ground-truth parity checker
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: GH-247
+  github_issue: 247
+  item_type: task
+  title: 'feat: apr prune + apr distill — structured pruning and knowledge distillation pipeline'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-02-15 11:12:51.494148+00:00
+  updated: 2026-02-20 11:05:16+00:00
+  spec: null
+  acceptance_criteria:
+  - '`apr prune model.apr --method structured --target-ratio 0.5` produces smaller model'
+  - '`apr distill teacher.apr --student pruned.apr --data train.jsonl` trains student'
+  - '`apr prune --analyze --json` returns layer importance scores'
+  - '`apr prune --plan --json` returns time/memory/quality estimates'
+  - Combined `--distill` flag works for Minitron-style pipeline
+  - Pruned model passes `apr validate` and `apr check`
+  - Testable with tiny models (SmolLM-135M → ~70M should complete in <10min)
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: GH-248
+  github_issue: 248
+  item_type: task
+  title: 'bug: --json flag ignored on list, eval, tree, debug subcommands'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-02-14 21:33:19.572210+00:00
+  updated: 2026-02-20 11:05:16+00:00
   spec: null
   acceptance_criteria: []
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
+  labels:
+  - bug
   notes: null
-- id: GH-282
-  github_issue: 282
-  item_type: bug
-  title: 'fix: apr serve GPU failures — missing make_current() in APR CUDA path'
+- id: GH-249
+  github_issue: 249
+  item_type: task
+  title: 'bug: apr inspect --json returns empty architecture field'
   status: completed
-  priority: high
+  priority: medium
   assigned_to: null
-  created: 2026-02-18 22:00:00+00:00
-  updated: 2026-02-18 22:00:00+00:00
+  created: 2026-02-14 21:32:59.143242+00:00
+  updated: 2026-02-20 11:05:16+00:00
   spec: null
-  acceptance_criteria:
-  - APR CUDA forward path calls make_current() before all GPU operations
-  - GEMM kernel param types match .param .u32 declarations (u32, not i32)
-  - CUDA error code 201 (INVALID_CONTEXT) mapped in trueno-gpu diagnostics
-  - All 14802 realizar unit tests pass
+  acceptance_criteria: []
   phases: []
   subtasks: []
-  estimated_effort: 2h
+  estimated_effort: null
   labels:
-  - cuda
-  - apr-serve
-  - bug-fix
-  notes: 'Root cause: AprV2ModelCuda never called make_current() before CUDA ops. GGUF path had make_current()
-    in 4+ places. When tokio worker threads (apr serve) called forward_cuda, the CUDA context was not
-    current, causing cuModuleLoadData to fail with error 201 (CUDA_ERROR_INVALID_CONTEXT). Also fixed
-    i32→u32 type mismatch in GEMM parameter passing and added 5 missing CUDA error codes to trueno-gpu
-    mapping. GH-284 (HTTP perf regression) is a cascade from this — GPU falls back to CPU.'
+  - bug
+  notes: null
+- id: GH-250
+  github_issue: 250
+  item_type: task
+  title: 'bug: apr run --json produces completely wrong tokens (32/32 mismatch)'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-02-14 21:32:59.917777+00:00
+  updated: 2026-02-20 11:05:16+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - bug
+  notes: null
+- id: GH-251
+  github_issue: 251
+  item_type: task
+  title: 'bug: apr validate output format changed — dict with top-level keys instead of checks list'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-02-14 21:33:00.732997+00:00
+  updated: 2026-02-20 11:05:16+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - bug
+  notes: null
 - id: PMAT-283
   github_issue: null
   item_type: task
@@ -4496,6 +4213,99 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: GH-252
+  github_issue: 252
+  item_type: task
+  title: 'bug: apr lint exits 5 on warnings-only (0 errors)'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-02-14 21:33:01.473463+00:00
+  updated: 2026-02-20 11:05:16+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - bug
+  notes: null
+- id: GH-253
+  github_issue: 253
+  item_type: task
+  title: 'bug: apr check (selftest) fails with GH-187 embedding warning'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-02-14 21:33:02.228863+00:00
+  updated: 2026-02-20 11:05:16+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - bug
+  notes: null
+- id: GH-254
+  github_issue: 254
+  item_type: task
+  title: 'bug: apr bench reports 0.0 tok/s throughput on all models'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-02-14 21:33:03.102874+00:00
+  updated: 2026-02-20 11:05:16+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - bug
+  notes: null
+- id: GH-256
+  github_issue: 256
+  item_type: task
+  title: 'bug: apr diff reports structural diffs between int4 and int8 variants of same model'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-02-14 21:33:03.820306+00:00
+  updated: 2026-02-20 11:05:16+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - bug
+  notes: null
+- id: GH-279-4
+  github_issue: null
+  item_type: task
+  title: 'GH-279: Wire QkNorm into GPU forward path + fix format_parity sharded SafeTensors'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-02-17 19:03:09.771720+00:00
+  updated: 2026-02-18 21:00:00+00:00
+  spec: null
+  acceptance_criteria:
+  - golden_output QA gate passes (GPU QkNorm matches CPU path)
+  - format_parity QA gate passes (sharded SafeTensors loads all shards)
+  - performance_regression QA gate passes (GPU speedup restored to baseline)
+  phases: []
+  subtasks: []
+  estimated_effort: 4h
+  labels:
+  - cuda
+  - qwen3
+  - qa-gates
+  notes: Wired per-head RMSNorm (QkNorm) into GPU forward path for Qwen3 models. Added attn_q/k_norm_ptr/len
+    fields to IndexedLayerWeights + BoundLayerWeights. Used existing per_head_rmsnorm_into CUDA kernel
+    and cache_rmsnorm_gamma upload. Fixed format_parity gate to detect sharded models via model.safetensors.index.json.
+    Extensive complexity refactoring to pass pre-commit quality gates.
 - id: PMAT-285
   github_issue: null
   item_type: task
@@ -4567,6 +4377,67 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: GH-280
+  github_issue: null
+  item_type: task
+  title: 'GH-280: Kernel capability gate — contract-driven GPU admission control'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-02-17 18:43:44.982621+00:00
+  updated: 2026-02-18 11:51:41+00:00
+  spec: null
+  acceptance_criteria:
+  - PerHeadRmsNormKernel added to trueno-gpu v0.4.18. Capability gate flipped in realizar. Qwen3 GPU inference
+    unblocked. 9 new kernel tests, 10 capability tests pass.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: Add contract-driven property tests from provable-contracts
+  github_issue: null
+  item_type: task
+  title: 'New task: Add contract-driven property tests from provable-contracts'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-02-18 14:48:42.940650+00:00
+  updated: 2026-02-18 14:50:17.905535+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: GH-282
+  github_issue: 282
+  item_type: bug
+  title: 'fix: apr serve GPU failures — missing make_current() in APR CUDA path'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-02-18 22:00:00+00:00
+  updated: 2026-02-18 22:00:00+00:00
+  spec: null
+  acceptance_criteria:
+  - APR CUDA forward path calls make_current() before all GPU operations
+  - GEMM kernel param types match .param .u32 declarations (u32, not i32)
+  - CUDA error code 201 (INVALID_CONTEXT) mapped in trueno-gpu diagnostics
+  - All 14802 realizar unit tests pass
+  phases: []
+  subtasks: []
+  estimated_effort: 2h
+  labels:
+  - cuda
+  - apr-serve
+  - bug-fix
+  notes: 'Root cause: AprV2ModelCuda never called make_current() before CUDA ops. GGUF path had make_current()
+    in 4+ places. When tokio worker threads (apr serve) called forward_cuda, the CUDA context was not
+    current, causing cuModuleLoadData to fail with error 201 (CUDA_ERROR_INVALID_CONTEXT). Also fixed
+    i32→u32 type mismatch in GEMM parameter passing and added 5 missing CUDA error codes to trueno-gpu
+    mapping. GH-284 (HTTP perf regression) is a cascade from this — GPU falls back to CPU.'
 - id: PMAT-289
   github_issue: null
   item_type: task
@@ -4747,54 +4618,6 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
-- id: GH-306
-  github_issue: null
-  item_type: task
-  title: 'New task: GH-306'
-  status: completed
-  priority: medium
-  assigned_to: null
-  created: 2026-02-22 21:14:55.545255+00:00
-  updated: 2026-03-31 16:59:03+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: C-04-hardcoded-eos-chat
-  github_issue: null
-  item_type: task
-  title: 'New task: C-04-hardcoded-eos-chat'
-  status: completed
-  priority: medium
-  assigned_to: null
-  created: 2026-02-23 12:58:12.438665+00:00
-  updated: 2026-03-31 16:59:03+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: GH-324
-  github_issue: null
-  item_type: task
-  title: 'New task: GH-324'
-  status: completed
-  priority: medium
-  assigned_to: null
-  created: 2026-02-23 15:11:27.494301+00:00
-  updated: 2026-03-31 16:59:03+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
 - id: PMAT-325
   github_issue: null
   item_type: task
@@ -4907,6 +4730,54 @@ roadmap:
   assigned_to: null
   created: 2026-02-23 21:21:09+00:00
   updated: 2026-03-31 16:19:41+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: GH-306
+  github_issue: null
+  item_type: task
+  title: 'New task: GH-306'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-02-22 21:14:55.545255+00:00
+  updated: 2026-03-31 16:59:03+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: C-04-hardcoded-eos-chat
+  github_issue: null
+  item_type: task
+  title: 'New task: C-04-hardcoded-eos-chat'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-02-23 12:58:12.438665+00:00
+  updated: 2026-03-31 16:59:03+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: GH-324
+  github_issue: null
+  item_type: task
+  title: 'New task: GH-324'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-02-23 15:11:27.494301+00:00
+  updated: 2026-03-31 16:59:03+00:00
   spec: null
   acceptance_criteria: []
   phases: []
@@ -5037,108 +4908,6 @@ roadmap:
   - contracts
   - parity
   notes: null
-- id: GH-341
-  github_issue: 341
-  item_type: task
-  title: 'chore: publish safety gate + package bloat cleanup (28MB savings)'
-  status: completed
-  priority: medium
-  assigned_to: null
-  created: 2026-02-26 18:12:34.145741+00:00
-  updated: 2026-03-31 16:59:03+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels:
-  - enhancement
-  notes: null
-- id: GH-336
-  github_issue: 336
-  item_type: task
-  title: 'fix(P2): benchmark silently swallows generate() errors, reports 0 tok/s'
-  status: completed
-  priority: medium
-  assigned_to: null
-  created: 2026-02-26 18:14:12.757672+00:00
-  updated: 2026-03-31 16:59:03+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels:
-  - bug
-  notes: null
-- id: GH-337
-  github_issue: 337
-  item_type: task
-  title: 'fix(P2): chat server silently degrades to byte-level decode on tokenizer error'
-  status: completed
-  priority: medium
-  assigned_to: null
-  created: 2026-02-26 18:17:17.543326+00:00
-  updated: 2026-03-31 16:59:03+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels:
-  - bug
-  notes: null
-- id: GH-338
-  github_issue: 338
-  item_type: task
-  title: 'fix(P2): probar silently ignores corrupted msgpack metadata'
-  status: completed
-  priority: medium
-  assigned_to: null
-  created: 2026-02-26 18:25:24.218479+00:00
-  updated: 2026-03-31 16:59:03+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels:
-  - bug
-  notes: null
-- id: GH-339
-  github_issue: 339
-  item_type: task
-  title: 'fix(P2): chat template failure silently falls back to raw prompt'
-  status: completed
-  priority: medium
-  assigned_to: null
-  created: 2026-02-26 18:26:49.640389+00:00
-  updated: 2026-03-31 16:59:03+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels:
-  - bug
-  notes: null
-- id: GH-340
-  github_issue: 340
-  item_type: task
-  title: 'fix(P3): safetensors.rs placeholder generation produces fake tokens'
-  status: completed
-  priority: medium
-  assigned_to: null
-  created: 2026-02-26 18:28:00.080317+00:00
-  updated: 2026-03-31 16:59:03+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels:
-  - bug
-  notes: null
 - id: PMAT-342
   github_issue: null
   item_type: task
@@ -5148,22 +4917,6 @@ roadmap:
   assigned_to: null
   created: 2026-03-01 11:47:17+00:00
   updated: 2026-03-31 16:19:41+00:00
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
-- id: GH-366
-  github_issue: null
-  item_type: task
-  title: 'New task: GH-366'
-  status: completed
-  priority: medium
-  assigned_to: null
-  created: 2026-03-01 11:50:50.562288+00:00
-  updated: 2026-03-31 16:59:03+00:00
   spec: null
   acceptance_criteria: []
   phases: []
@@ -5258,21 +5011,107 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
-- id: GH-479
-  github_issue: null
+- id: GH-336
+  github_issue: 336
   item_type: task
-  title: 'New task: GH-479'
+  title: 'fix(P2): benchmark silently swallows generate() errors, reports 0 tok/s'
   status: completed
   priority: medium
   assigned_to: null
-  created: 2026-03-12 10:27:35.676295+00:00
+  created: 2026-02-26 18:14:12.757672+00:00
   updated: 2026-03-31 16:59:03+00:00
   spec: null
   acceptance_criteria: []
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
+  labels:
+  - bug
+  notes: null
+- id: GH-337
+  github_issue: 337
+  item_type: task
+  title: 'fix(P2): chat server silently degrades to byte-level decode on tokenizer error'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-02-26 18:17:17.543326+00:00
+  updated: 2026-03-31 16:59:03+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - bug
+  notes: null
+- id: GH-338
+  github_issue: 338
+  item_type: task
+  title: 'fix(P2): probar silently ignores corrupted msgpack metadata'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-02-26 18:25:24.218479+00:00
+  updated: 2026-03-31 16:59:03+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - bug
+  notes: null
+- id: GH-339
+  github_issue: 339
+  item_type: task
+  title: 'fix(P2): chat template failure silently falls back to raw prompt'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-02-26 18:26:49.640389+00:00
+  updated: 2026-03-31 16:59:03+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - bug
+  notes: null
+- id: GH-340
+  github_issue: 340
+  item_type: task
+  title: 'fix(P3): safetensors.rs placeholder generation produces fake tokens'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-02-26 18:28:00.080317+00:00
+  updated: 2026-03-31 16:59:03+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - bug
+  notes: null
+- id: GH-341
+  github_issue: 341
+  item_type: task
+  title: 'chore: publish safety gate + package bloat cleanup (28MB savings)'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-02-26 18:12:34.145741+00:00
+  updated: 2026-03-31 16:59:03+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - enhancement
   notes: null
 - id: PMAT-480
   github_issue: null
@@ -5295,6 +5134,22 @@ roadmap:
   - spec
   - cli
   - tracing
+  notes: null
+- id: GH-366
+  github_issue: null
+  item_type: task
+  title: 'New task: GH-366'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-03-01 11:50:50.562288+00:00
+  updated: 2026-03-31 16:59:03+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
   notes: null
 - id: PMAT-481
   github_issue: null
@@ -5407,6 +5262,22 @@ roadmap:
   - cli
   - tracing
   - serve
+  notes: null
+- id: GH-479
+  github_issue: null
+  item_type: task
+  title: 'New task: GH-479'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-03-12 10:27:35.676295+00:00
+  updated: 2026-03-31 16:59:03+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
   notes: null
 - id: PMAT-486
   github_issue: null
@@ -6020,6 +5891,138 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-515
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-A-08 — Custom mirror / HF_ENDPOINT'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-04-18 14:44:17+00:00
+  updated: 2026-04-18 14:44:17+00:00
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-A-08-v1.yaml | Competitor: huggingface | Demand: 3/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-A
+  - competitor-huggingface
+  - crux-a-08
+  notes: null
+- id: PMAT-516
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-A-10 — VRAM-aware quant auto-select'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-04-18 14:44:17+00:00
+  updated: 2026-04-18 14:44:17+00:00
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-A-10-v1.yaml | Competitor: ollama | Demand: 4/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-A
+  - competitor-ollama
+  - crux-a-10
+  notes: null
+- id: PMAT-517
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-A-11 — apr cp copy model with new tag'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-04-18 14:44:17+00:00
+  updated: 2026-04-18 14:44:17+00:00
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-A-11-v1.yaml | Competitor: ollama | Demand: 3/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-A
+  - competitor-ollama
+  - crux-a-11
+  notes: null
+- id: PMAT-518
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-A-12 — apr ps list running models'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-04-18 14:44:17+00:00
+  updated: 2026-04-18 14:44:17+00:00
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-A-12-v1.yaml | Competitor: ollama | Demand: 4/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-A
+  - competitor-ollama
+  - crux-a-12
+  notes: null
+- id: PMAT-519
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-A-13 — apr stop unload model from VRAM'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-04-18 14:44:17+00:00
+  updated: 2026-04-18 14:44:17+00:00
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-A-13-v1.yaml | Competitor: ollama | Demand: 4/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-A
+  - competitor-ollama
+  - crux-a-13
+  notes: null
+- id: PMAT-520
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-A-14 — Pull from S3/GCS/Azure URL'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-04-18 14:44:17+00:00
+  updated: 2026-04-18 14:44:17+00:00
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-A-14-v1.yaml | Competitor: ecosystem | Demand: 3/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-A
+  - competitor-ecosystem
+  - crux-a-14
+  notes: null
 - id: PMAT-MCP-PARITY-001
   github_issue: null
   item_type: task
@@ -6179,160 +6182,6 @@ roadmap:
     six falsification cross-checks listed at the bottom of the spec matrix section after each ticket closes.
 
     '
-- id: PMAT-654
-  github_issue: null
-  item_type: task
-  title: 'CRUX gap: CRUX-A-04 — Include/exclude file globs'
-  status: planned
-  priority: high
-  assigned_to: null
-  created: 2026-04-18 14:44:17+00:00
-  updated: 2026-04-18 14:44:17+00:00
-  spec: null
-  acceptance_criteria:
-  - 'Contract: contracts/crux-A-04-v1.yaml | Competitor: huggingface | Demand: 4/5 | Parent: crux-competitive-research-ux-v1'
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels:
-  - crux
-  - gap
-  - crux-A
-  - competitor-huggingface
-  - crux-a-04
-  notes: null
-- id: PMAT-515
-  github_issue: null
-  item_type: task
-  title: 'CRUX gap: CRUX-A-08 — Custom mirror / HF_ENDPOINT'
-  status: planned
-  priority: medium
-  assigned_to: null
-  created: 2026-04-18 14:44:17+00:00
-  updated: 2026-04-18 14:44:17+00:00
-  spec: null
-  acceptance_criteria:
-  - 'Contract: contracts/crux-A-08-v1.yaml | Competitor: huggingface | Demand: 3/5 | Parent: crux-competitive-research-ux-v1'
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels:
-  - crux
-  - gap
-  - crux-A
-  - competitor-huggingface
-  - crux-a-08
-  notes: null
-- id: PMAT-516
-  github_issue: null
-  item_type: task
-  title: 'CRUX gap: CRUX-A-10 — VRAM-aware quant auto-select'
-  status: planned
-  priority: high
-  assigned_to: null
-  created: 2026-04-18 14:44:17+00:00
-  updated: 2026-04-18 14:44:17+00:00
-  spec: null
-  acceptance_criteria:
-  - 'Contract: contracts/crux-A-10-v1.yaml | Competitor: ollama | Demand: 4/5 | Parent: crux-competitive-research-ux-v1'
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels:
-  - crux
-  - gap
-  - crux-A
-  - competitor-ollama
-  - crux-a-10
-  notes: null
-- id: PMAT-517
-  github_issue: null
-  item_type: task
-  title: 'CRUX gap: CRUX-A-11 — apr cp copy model with new tag'
-  status: planned
-  priority: medium
-  assigned_to: null
-  created: 2026-04-18 14:44:17+00:00
-  updated: 2026-04-18 14:44:17+00:00
-  spec: null
-  acceptance_criteria:
-  - 'Contract: contracts/crux-A-11-v1.yaml | Competitor: ollama | Demand: 3/5 | Parent: crux-competitive-research-ux-v1'
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels:
-  - crux
-  - gap
-  - crux-A
-  - competitor-ollama
-  - crux-a-11
-  notes: null
-- id: PMAT-518
-  github_issue: null
-  item_type: task
-  title: 'CRUX gap: CRUX-A-12 — apr ps list running models'
-  status: planned
-  priority: high
-  assigned_to: null
-  created: 2026-04-18 14:44:17+00:00
-  updated: 2026-04-18 14:44:17+00:00
-  spec: null
-  acceptance_criteria:
-  - 'Contract: contracts/crux-A-12-v1.yaml | Competitor: ollama | Demand: 4/5 | Parent: crux-competitive-research-ux-v1'
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels:
-  - crux
-  - gap
-  - crux-A
-  - competitor-ollama
-  - crux-a-12
-  notes: null
-- id: PMAT-519
-  github_issue: null
-  item_type: task
-  title: 'CRUX gap: CRUX-A-13 — apr stop unload model from VRAM'
-  status: planned
-  priority: high
-  assigned_to: null
-  created: 2026-04-18 14:44:17+00:00
-  updated: 2026-04-18 14:44:17+00:00
-  spec: null
-  acceptance_criteria:
-  - 'Contract: contracts/crux-A-13-v1.yaml | Competitor: ollama | Demand: 4/5 | Parent: crux-competitive-research-ux-v1'
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels:
-  - crux
-  - gap
-  - crux-A
-  - competitor-ollama
-  - crux-a-13
-  notes: null
-- id: PMAT-520
-  github_issue: null
-  item_type: task
-  title: 'CRUX gap: CRUX-A-14 — Pull from S3/GCS/Azure URL'
-  status: planned
-  priority: medium
-  assigned_to: null
-  created: 2026-04-18 14:44:17+00:00
-  updated: 2026-04-18 14:44:17+00:00
-  spec: null
-  acceptance_criteria:
-  - 'Contract: contracts/crux-A-14-v1.yaml | Competitor: ecosystem | Demand: 3/5 | Parent: crux-competitive-research-ux-v1'
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels:
-  - crux
-  - gap
-  - crux-A
-  - competitor-ecosystem
-  - crux-a-14
-  notes: null
 - id: PMAT-521
   github_issue: null
   item_type: task
@@ -9259,6 +9108,28 @@ roadmap:
   - competitor-ecosystem
   - crux-k-21
   notes: null
+- id: PMAT-654
+  github_issue: null
+  item_type: task
+  title: 'CRUX gap: CRUX-A-04 — Include/exclude file globs'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-04-18 14:44:17+00:00
+  updated: 2026-04-18 14:44:17+00:00
+  spec: null
+  acceptance_criteria:
+  - 'Contract: contracts/crux-A-04-v1.yaml | Competitor: huggingface | Demand: 4/5 | Parent: crux-competitive-research-ux-v1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - crux
+  - gap
+  - crux-A
+  - competitor-huggingface
+  - crux-a-04
+  notes: null
 - id: PMAT-655
   github_issue: null
   item_type: task
@@ -11019,6 +10890,102 @@ roadmap:
   - roadmap-structure
   - beat
   notes: 'four-pillar beat-analysis roadmap gap #2'
+- id: PMAT-742
+  github_issue: 2851
+  item_type: task
+  title: 'PP-LLAMA-001 v3.1: land #2851 and cut 0.65.0 under the spec (batch fixes, #2849, publish
+    gate, dogfood GO, receipt)'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-09-02 16:45:00+00:00
+  updated: 2026-09-02 17:30:00+00:00
+  spec: docs/specifications/PP-LLAMA-001-MASTER.md
+  acceptance_criteria:
+  - '#2851 merged green on ci / gate + workspace-test; release batch merged; #2849 merged'
+  - 'v0.65.0 tagged and released with the parity guide attached; crates.io cascade drained; post-publish
+    verification via the crates.io API'
+  - 'docs/audits/impl-PMAT-742-receipt.md written; transcript-gate PASS'
+  notes: 'paiml-implement run; jidoka entries in .pmat/jidoka.jsonl'
+- id: PMAT-743
+  github_issue: 2851
+  item_type: bug
+  title: 'PMAT-742 jidoka: contract corpus integrity ratchet rose 444->445 on #2851 (pp-llama-001-spec-conformance-v1
+    test id 007A)'
+  status: done
+  priority: high
+  assigned_to: null
+  created: 2026-09-02 17:05:00+00:00
+  updated: 2026-09-02 17:20:00+00:00
+  spec: null
+  acceptance_criteria:
+  - 'cargo test -p aprender-contracts --test validate_contracts green (integrity 444); ids 001..008 contiguous
+    and unique (653f277d6)'
+  notes: 'five-whys in .pmat/jidoka.jsonl; proof:PR#2851 (653f277d6 renumbered the ids; the corpus-integrity test is green on main)'
+- id: PMAT-744
+  github_issue: null
+  item_type: bug
+  title: 'perf_gate.sh --phase release cannot PASS while the reference cell is UNMEASURED: ArmC-sig and ArmD
+    fail the pre-v3 lambda receipt that the matrix already marks SPENT'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-09-03 04:30:00+00:00
+  updated: 2026-09-03 04:50:00+00:00
+  spec: docs/specifications/PP-LLAMA-001-MASTER.md
+  acceptance_criteria:
+  - 'perf_gate.sh --host lambda --phase release --workload W1 --receipt evidence/perf-gate-001-w1-lambda/receipt.r1.json
+    --commit <main> is VERDICT PASS with ArmC-sig and ArmD as REPORT lines naming the UNMEASURED cell'
+  - 'four --selftest rows, both polarities; each condition of historical_for_unmeasured has a row that goes RED
+    without it; FALSIFY-PP-LLAMA-001-PERF-GATE-011; spec §6 names the cases'
+  notes: 'PMAT-742 jidoka entry 10; first run of the release phase (0.65.0 cut)'
+- id: PMAT-745
+  github_issue: null
+  item_type: bug
+  title: 'F-9: the crates.io cascade ran cargo publish --allow-dirty with no precondition; publishing must go only
+    through a preflight gate (clean tree, version from cargo metadata, tag at HEAD, HEAD on main, dogfood GO)'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-09-03 07:10:00+00:00
+  updated: 2026-09-03 07:20:00+00:00
+  spec: docs/specifications/PP-LLAMA-001-MASTER.md
+  acceptance_criteria:
+  - 'scripts/check_publish_preflight.sh --selftest 16/16, both polarities of R1-R5; five must-fire mutations RED
+    (R1 dropped, GO check dropped, deferral whitelist shrunk, phase check dropped, grep -F removed); cascade-publish.sh
+    refuses on a non-zero gate, carries no dirty-tree override, and keeps its config backup outside the tree;
+    scripts/dogfood.sh --phase pre-publish records the two registry-bound rows as DEFER with their obligation, so R5
+    is satisfiable before a cascade; ci.yml runs the case table; FALSIFY-PUB-CLI contract entry'
+  notes: 'PMAT-742 release rule F-9 (operator); a GitHub publish workflow is owed separately: no CARGO_REGISTRY_TOKEN
+    secret exists for the fleet, only PR_REVIEW_SIGNING_KEY_B64. Measured 2026-09-03: the full dogfood is NO-GO before
+    its own cascade by construction (publish-dry-run of a workspace root, cargo install of the unpublished version on
+    four hosts), which made the first R5 unsatisfiable; the pre-publish phase is the recorded, whitelisted answer'
+- id: PMAT-750
+  github_issue: null
+  item_type: task
+  title: 'SATD debt: crates/apr-cli/src/commands/finetune.rs:492 — export trained weights from the pipeline; for now the checkpoint dir is saved.'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-04 00:10:00+00:00
+  updated: 2026-09-04 00:10:00+00:00
+  spec: null
+  acceptance_criteria:
+  - 'the deferral at crates/apr-cli/src/commands/finetune.rs:492 is resolved and the comment removed'
+  notes: 'Minted by the PMAT-938 sweep (PR #2860); the marker text is kept in the comment, keyword-free'
+- id: PMAT-751
+  github_issue: null
+  item_type: task
+  title: 'SATD debt: crates/aprender-compute/src/backends/gpu/device/linalg/wgsl_forward.rs:774 — add upload_weight_transposed() for GPU-accelerated LM head.'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-04 00:10:00+00:00
+  updated: 2026-09-04 00:10:00+00:00
+  spec: null
+  acceptance_criteria:
+  - 'the deferral at crates/aprender-compute/src/backends/gpu/device/linalg/wgsl_forward.rs:774 is resolved and the comment removed'
+  notes: 'Minted by the PMAT-938 sweep (PR #2860); the marker text is kept in the comment, keyword-free'
 - id: PILLAR1-001
   github_issue: null
   item_type: task
@@ -14091,515 +14058,6 @@ roadmap:
     cross-ref (master Appendix A): master section 13. All 42 spec fields in this file now name
     docs/specifications/PP-LLAMA-001-MASTER.md; the superseded documents and their local paths are in
     evidence/parity/LEDGER.md section 13.'
-- id: PMAT-742
-  github_issue: 2851
-  item_type: task
-  title: 'PP-LLAMA-001 v3.1: land #2851 and cut 0.65.0 under the spec (batch fixes, #2849, publish
-    gate, dogfood GO, receipt)'
-  status: inprogress
-  priority: high
-  assigned_to: null
-  created: 2026-09-02 16:45:00+00:00
-  updated: 2026-09-02 17:30:00+00:00
-  spec: docs/specifications/PP-LLAMA-001-MASTER.md
-  acceptance_criteria:
-  - '#2851 merged green on ci / gate + workspace-test; release batch merged; #2849 merged'
-  - 'v0.65.0 tagged and released with the parity guide attached; crates.io cascade drained; post-publish
-    verification via the crates.io API'
-  - 'docs/audits/impl-PMAT-742-receipt.md written; transcript-gate PASS'
-  notes: 'paiml-implement run; jidoka entries in .pmat/jidoka.jsonl'
-- id: PMAT-743
-  github_issue: 2851
-  item_type: bug
-  title: 'PMAT-742 jidoka: contract corpus integrity ratchet rose 444->445 on #2851 (pp-llama-001-spec-conformance-v1
-    test id 007A)'
-  status: done
-  priority: high
-  assigned_to: null
-  created: 2026-09-02 17:05:00+00:00
-  updated: 2026-09-02 17:20:00+00:00
-  spec: null
-  acceptance_criteria:
-  - 'cargo test -p aprender-contracts --test validate_contracts green (integrity 444); ids 001..008 contiguous
-    and unique (653f277d6)'
-  notes: 'five-whys in .pmat/jidoka.jsonl; proof:PR#2851 (653f277d6 renumbered the ids; the corpus-integrity test is green on main)'
-- id: PMAT-936
-  github_issue: null
-  item_type: bug
-  title: 'check_shell_lint_ratchet.sh ratcheted a nondeterministic number: bashrs 7.0.1 cross-contaminates files linted in
-    one invocation, so the same main tree counted 13 errors on the fleet and 53 on a workstation, and a branch that removed
-    180 findings counted 57 on the fleet (#2860 RED) and 12 locally'
-  status: inprogress
-  priority: high
-  assigned_to: null
-  created: 2026-09-03 21:30:00+00:00
-  updated: 2026-09-03 21:30:00+00:00
-  spec: null
-  acceptance_criteria:
-  - 'the ratchet lints each script in its own bashrs invocation (sorted, file name prefixed); the count is identical on
-    any host for the same tree; baseline re-seeded 13 -> 9 with the shrink-only meta-ratchet green; bashrs gating findings
-    0 on the ratchet script'
-  notes: 'Measured 2026-09-03 (PMAT-929): single-invocation main=53 / batch=12 locally, 13 / 57 on the fleet; per-file
-    main=12 / batch=9 on both. Landed in PR #2860'
-- id: PMAT-937
-  github_issue: null
-  item_type: task
-  title: 'CB-200 (TDG grade gate) ratchet baseline recorded in .pmat-gates.toml [tdg] baseline = 609 so pmat comply 3.36.0
-    reports Warn (debt held flat) instead of Fail; the dogfood pmat-comply row reads it as GO with the absolute count'
-  status: inprogress
-  priority: high
-  assigned_to: null
-  created: 2026-09-03 21:30:00+00:00
-  updated: 2026-09-03 21:30:00+00:00
-  spec: null
-  acceptance_criteria:
-  - 'pmat comply check (3.36.0): CB-200 -> Warn "at the recorded baseline of 609 — this is debt held flat, not a clean
-    tree"; any new definition below B fails the gate; PMAT-768 (the 609) stays open'
-  notes: 'pmat 3.36.0 carries the #1159 comply char-boundary fix (paiml-mcp-agent-toolkit#1166 -> #1171); the comply row
-    could not run before it. Measured 2026-09-03 on the batch tree. Landed in PR #2860'
-- id: PMAT-938
-  github_issue: null
-  item_type: task
-  title: 'strict SATD 33 -> 0: every TODO/FIXME marker pmat verify 3.36.0 counted is a real fix or a keyword-free deferral that names its ticket; eleven over-cap functions in seven marker-carrying files decomposed so the pre-commit hook accepts the edits'
-  status: inprogress
-  priority: high
-  assigned_to: null
-  created: 2026-09-04 00:10:00+00:00
-  updated: 2026-09-04 00:10:00+00:00
-  spec: null
-  acceptance_criteria:
-  - 'pmat verify --format json (3.36.0): satd stage ok; pmat analyze satd --strict: 0; the dogfood pmat-verify row PASSes; every deferral cites PMAT-750..767 or PMAT-939..947; crate --lib tests and clippy green for every touched crate'
-  notes: 'PMAT-929 run 4, batch PR #2860. A ticket reference inside a marker does not exempt it (measured); the hook refuses any edit to a file with a function over 25 cognitive, so the decompositions were the price of the rewrite'
-- id: PMAT-939
-  github_issue: null
-  item_type: task
-  title: 'SATD debt: crates/apr-cli/src/commands/gguf.rs:296 — trueno version mismatch (crates.io 0.16 vs realizar''s local 0.17)'
-  status: planned
-  priority: medium
-  assigned_to: null
-  created: 2026-09-04 00:10:00+00:00
-  updated: 2026-09-04 00:10:00+00:00
-  spec: null
-  acceptance_criteria:
-  - 'the deferral at crates/apr-cli/src/commands/gguf.rs:296 is resolved and the comment removed'
-  notes: 'Minted by the PMAT-938 sweep (PR #2860); the marker text is kept in the comment, keyword-free'
-- id: PMAT-940
-  github_issue: null
-  item_type: task
-  title: 'SATD debt: crates/aprender-contracts/src/scoring/codebase.rs:154 — reverse_coverage is hardcoded to 0.0 — needs wiring'
-  status: planned
-  priority: medium
-  assigned_to: null
-  created: 2026-09-04 00:10:00+00:00
-  updated: 2026-09-04 00:10:00+00:00
-  spec: null
-  acceptance_criteria:
-  - 'the deferral at crates/aprender-contracts/src/scoring/codebase.rs:154 is resolved and the comment removed'
-  notes: 'Minted by the PMAT-938 sweep (PR #2860); the marker text is kept in the comment, keyword-free'
-- id: PMAT-941
-  github_issue: null
-  item_type: task
-  title: 'SATD debt: crates/aprender-distribute/src/executor/microvm.rs:538 — track'
-  status: planned
-  priority: medium
-  assigned_to: null
-  created: 2026-09-04 00:10:00+00:00
-  updated: 2026-09-04 00:10:00+00:00
-  spec: null
-  acceptance_criteria:
-  - 'the deferral at crates/aprender-distribute/src/executor/microvm.rs:538 is resolved and the comment removed'
-  notes: 'Minted by the PMAT-938 sweep (PR #2860); the marker text is kept in the comment, keyword-free'
-- id: PMAT-942
-  github_issue: null
-  item_type: task
-  title: 'SATD debt: crates/aprender-distribute/src/executor/microvm.rs:539 — track'
-  status: planned
-  priority: medium
-  assigned_to: null
-  created: 2026-09-04 00:10:00+00:00
-  updated: 2026-09-04 00:10:00+00:00
-  spec: null
-  acceptance_criteria:
-  - 'the deferral at crates/aprender-distribute/src/executor/microvm.rs:539 is resolved and the comment removed'
-  notes: 'Minted by the PMAT-938 sweep (PR #2860); the marker text is kept in the comment, keyword-free'
-- id: PMAT-943
-  github_issue: null
-  item_type: task
-  title: 'SATD debt: crates/aprender-serve/examples/gpu_showcase_benchmark.rs:572 — Implement actual Ollama HTTP benchmarking'
-  status: planned
-  priority: medium
-  assigned_to: null
-  created: 2026-09-04 00:10:00+00:00
-  updated: 2026-09-04 00:10:00+00:00
-  spec: null
-  acceptance_criteria:
-  - 'the deferral at crates/aprender-serve/examples/gpu_showcase_benchmark.rs:572 is resolved and the comment removed'
-  notes: 'Minted by the PMAT-938 sweep (PR #2860); the marker text is kept in the comment, keyword-free'
-- id: PMAT-944
-  github_issue: null
-  item_type: task
-  title: 'SATD debt: crates/aprender-train/src/config/train/loader/data.rs:990 — propagate config seed'
-  status: planned
-  priority: medium
-  assigned_to: null
-  created: 2026-09-04 00:10:00+00:00
-  updated: 2026-09-04 00:10:00+00:00
-  spec: null
-  acceptance_criteria:
-  - 'the deferral at crates/aprender-train/src/config/train/loader/data.rs:990 is resolved and the comment removed'
-  notes: 'Minted by the PMAT-938 sweep (PR #2860); the marker text is kept in the comment, keyword-free'
-- id: PMAT-946
-  github_issue: null
-  item_type: task
-  title: 'SATD debt: crates/aprender-viz/wasm-pkg/src/lib.rs:620 — detect actual tier'
-  status: planned
-  priority: medium
-  assigned_to: null
-  created: 2026-09-04 00:10:00+00:00
-  updated: 2026-09-04 00:10:00+00:00
-  spec: null
-  acceptance_criteria:
-  - 'the deferral at crates/aprender-viz/wasm-pkg/src/lib.rs:620 is resolved and the comment removed'
-  notes: 'Minted by the PMAT-938 sweep (PR #2860); the marker text is kept in the comment, keyword-free'
-- id: PMAT-947
-  github_issue: null
-  item_type: task
-  title: 'SATD debt: crates/aprender-zram-core/src/gpu/mod.rs:196 — Implement actual GPU detection via trueno-gpu'
-  status: planned
-  priority: medium
-  assigned_to: null
-  created: 2026-09-04 00:10:00+00:00
-  updated: 2026-09-04 00:10:00+00:00
-  spec: null
-  acceptance_criteria:
-  - 'the deferral at crates/aprender-zram-core/src/gpu/mod.rs:196 is resolved and the comment removed'
-  notes: 'Minted by the PMAT-938 sweep (PR #2860); the marker text is kept in the comment, keyword-free'
-- id: PMAT-948
-  github_issue: null
-  item_type: bug
-  title: 'apr-cli execute_training_wgpu is a dark target: the crate wgpu feature never enables entrenar/gpu, so no in-repo feature combination compiles it (cargo check -p apr-cli --lib --features wgpu fails on main-line code)'
-  status: planned
-  priority: medium
-  assigned_to: null
-  created: 2026-09-04 00:10:00+00:00
-  updated: 2026-09-04 00:10:00+00:00
-  spec: null
-  acceptance_criteria:
-  - 'crates/apr-cli/Cargo.toml wgpu feature enables the training backend it calls; cargo check -p apr-cli --lib --features wgpu succeeds; the function is reached by a build CI runs'
-  notes: 'Found by the PMAT-938 finetune.rs decomposition (type-checked with --features wgpu,entrenar/gpu); feature-graph fix outside that ticket'
-- id: PMAT-949
-  github_issue: null
-  item_type: bug
-  title: 'PERF-009 harness guard was blind to date -u +%s: ship-002/ship-008 discharges measured an apr run on main at count=0; the bashrs DET002 rewrites then tripped it on three stamp-only scripts'
-  status: inprogress
-  priority: high
-  assigned_to: null
-  created: 2026-09-04 06:00:00+00:00
-  updated: 2026-09-04 06:00:00+00:00
-  spec: null
-  acceptance_criteria:
-  - 'check_no_competing_harnesses.sh computes_rate matches date -u +%s; selftest row "date -u +%s counts as timing" turns BROKE when the widening is reverted (measured: selftest rc=1)'
-  - 'ship-002/ship-008 allowlisted with the stated reason (duration_sec is provenance of one run, never a quoted rate); dropping the ship-002 entry makes the guard FAIL on the tree (measured)'
-  - 'eval-shard.sh, ex-06-pull-and-rerun.sh, eval-shard-determinism-probe.sh honour SOURCE_DATE_EPOCH through a DATE_PIN array with no date +%s fallback; bashrs error lines 0; guard count=0 baseline=0 on the merged tree'
-  notes: 'Found when #2860 reached the PERF-009 step for the first time (the README-count step before it had been failing). Fixed in the same PR (e70b00760). Five-whys: the DET002 fix chose an epoch fallback because it is the idiom bashrs documents; the guard reads any date +%s as a rate because the four deleted harnesses all timed that way; the -u form was never in the case table.'
-- id: PMAT-950
-  github_issue: null
-  item_type: bug
-  title: 'stdio MCP transport: a server that exits before reading the request surfaces as "write stdin: Broken pipe" instead of its exit status and stderr (flaky test_stdio_transport_process_exit_failure under load)'
-  status: inprogress
-  priority: high
-  assigned_to: null
-  created: 2026-09-04 10:30:00+00:00
-  updated: 2026-09-04 10:30:00+00:00
-  spec: null
-  acceptance_criteria:
-  - 'send_jsonrpc waits for the child before returning a stdin write error; a non-zero exit always reports process exited <status>: <stderr>'
-  - 'test_stdio_transport_exit_before_request_is_read (child closes stdin, 1 MiB request) is deterministic: 40/40 green with the fix, RED (got: write stdin: Broken pipe) with the transport change reverted'
-  notes: 'Found by the predicted-main clean-room (8100ecd06): 1 failed of 6569 in batuta lib tests, the race between the child exit and the parent write. Fixed in #2860.'
-- id: PMAT-954
-  github_issue: null
-  item_type: bug
-  title: 'cascade-drain.sh filtered every DEFER line out of its log, so a STUCK drain reported no reason (0.65.0: 48/74 with the cycle invisible)'
-  status: inprogress
-  priority: medium
-  assigned_to: null
-  created: 2026-09-04 16:40:00+00:00
-  updated: 2026-09-04 16:40:00+00:00
-  spec: null
-  acceptance_criteria:
-  - 'a DEFER line printed by cascade-publish.sh survives the drain log filter'
-  notes: 'Found on the 0.65.0 cut; the reason had to be recovered by running cascade-publish.sh --only-tier 2 by hand.'
-- id: PMAT-955
-  github_issue: null
-  item_type: bug
-  title: 'publish cycle: five sibling dev-dependencies carried a version (workspace alias), so aprender-core (needs aprender-data) could not be uploaded before aprender-test-lib (needs aprender-core); 0.65.0 cascade STUCK at 48/74'
-  status: inprogress
-  priority: high
-  assigned_to: null
-  created: 2026-09-04 16:40:00+00:00
-  updated: 2026-09-04 16:40:00+00:00
-  spec: null
-  acceptance_criteria:
-  - 'every sibling dev-dependency in a publishable crate is path-only (cargo metadata req "*"); preflight R6 refuses a versioned sibling dev-dependency, with a fixture row on both polarities and the R6 mutation RED'
-  - '0.65.1 cut from the fixed tree publishes all 74 crates (the 48 already at 0.65.0 move to 0.65.1); v0.65.0 is never moved'
-  notes: 'Memory rule feedback_crates_io_devdep_publish_cycles existed since 0.60.0 but had no guard; R6 is that guard, on the surface where the publish decision is made.'
-- id: PMAT-956
-  github_issue: null
-  item_type: bug
-  title: 'claim_literal_baseline.txt is line-keyed: any insert above a baselined line in CHANGELOG.md (every new release entry) moves six entries and the set-aperture ratchet refuses the re-key unless the guard itself changed; the 0.65.1 changelog entry could not be added'
-  status: planned
-  priority: medium
-  assigned_to: null
-  created: 2026-09-04 16:55:00+00:00
-  updated: 2026-09-04 16:55:00+00:00
-  spec: null
-  acceptance_criteria:
-  - 'baseline entries for prose files are keyed by path plus the normalised claim text (content-keyed), so a relocation is the same entry; the set-aperture rule (a2) already states the intent'
-  - 'case rows: an insert above a baselined CHANGELOG line passes unchanged; a copied claim (occurrence count up) still refuses; a claim whose text is absent at the comparand still refuses'
-  notes: 'Found on the 0.65.1 cut (PMAT-955 PR): the release note was moved out of CHANGELOG.md into the GitHub release and the receipt because the guard could not admit the shifted coordinates. Fix the guard in its own PR, then add the 0.65.0/0.65.1 entries.'
-- id: PMAT-958
-  github_issue: null
-  item_type: bug
-  title: 'aprender-test-lib unpublishable: protocol.rs include_str!s ../../../../scripts/perf-matrix.yaml (outside the crate), so the cargo publish verification build fails; 0.65.1 cascade stuck at 67/74 with the root crate behind it'
-  status: inprogress
-  priority: high
-  assigned_to: null
-  created: 2026-09-04 20:20:00+00:00
-  updated: 2026-09-04 20:20:00+00:00
-  spec: docs/specifications/PP-LLAMA-001-MASTER.md
-  acceptance_criteria:
-  - 'build.rs copies scripts/perf-matrix.yaml into OUT_DIR in the workspace, embeds perf-matrix.vendored.yaml in a published crate, and fails the build when the two differ (measured: drift mutation -> failed to run custom build command)'
-  - 'cargo publish -p aprender-test-lib --dry-run --locked verifies (measured at 0.65.1 deps: Packaged 242 files, Verifying, Finished)'
-  - 'check_package_includes.sh reports any include_str!/include_bytes! in non-test code whose target escapes the crate (rows 5-7; mutation with the predicate disabled -> row 5 BROKE)'
-  - '0.65.2 cut from the fixed tree publishes all 74 crates'
-  notes: 'CB-510 guard covered include!() only; the pre-publish dogfood DEFERs member dry-runs, so no pre-publish gate could see a verification failure.'
-- id: PMAT-959
-  github_issue: null
-  item_type: bug
-  title: 'aprender-present-lib src/browser/showcase.rs include_bytes!s ../../../../demo/assets/sentiment_mini.apr (repo root), but the asset lives at crates/aprender-present/demo/assets/; the wasm32 build of the published crate cannot compile'
-  status: planned
-  priority: medium
-  assigned_to: null
-  created: 2026-09-04 20:35:00+00:00
-  updated: 2026-09-04 20:35:00+00:00
-  spec: null
-  acceptance_criteria:
-  - 'the asset is vendored inside crates/aprender-present-lib (or reached through build.rs with a vendored copy, as PMAT-958 did for perf-matrix.yaml) and the wasm32 build of the packaged crate compiles'
-  notes: 'Found by the PMAT-958 widening of check_package_includes.sh; wasm32-only files are outside the host verification build, so the guard prints them as SKIPPED rather than failing — this is the one live residual.'
-- id: PMAT-961
-  github_issue: null
-  item_type: bug
-  title: 'llama_bin.sh pin resolver rejects every non-CUDA comparator build (cmake_mismatch: declared flags without GGML_CUDA vs cache OFF), so intel and mini can never carry a parity block and check_multiplatform_dogfood.sh cannot pass on a non-grandfathered release'
-  status: inprogress
-  priority: high
-  assigned_to: null
-  created: 2026-09-05 00:05:00+00:00
-  updated: 2026-09-05 00:05:00+00:00
-  spec: null
-  acceptance_criteria:
-  - 'a declared build line that does not name GGML_CUDA (or CMAKE_CUDA_ARCHITECTURES) matches a cache that has it OFF/unset; a declared ON still refuses a cache OFF; case rows for the intel and mini shapes (measured: both ok on the fix, both cmake_mismatch under the mutation)'
-  notes: 'Found producing the 0.65.2 post-publish receipts (the first release not grandfathered out of the parity requirement). The intel and mini 0.65.2 receipts were produced with this patched resolver and say so.'
-- id: PMAT-952
-  github_issue: null
-  item_type: bug
-  title: 'wgpu init deadlock: the shared_instance OnceLock initializer takes DEVICE_INIT_LOCK while GpuDevice::new holds it and calls shared_instance() (ABBA); the 0.65.0 release clean-room parked 49 threads on it'
-  status: inprogress
-  priority: high
-  assigned_to: null
-  created: 2026-09-04 15:50:00+00:00
-  updated: 2026-09-04 15:50:00+00:00
-  spec: null
-  acceptance_criteria:
-  - 'the shared_instance initializer takes no mutex (the OnceLock already serializes the one-time enumeration, PMAT-778 intent preserved)'
-  - 'test_pmat952_shared_instance_does_not_deadlock_against_device_init_lock: a fresh child process holds DEVICE_INIT_LOCK and calls shared_instance() from another thread; green on the fix, RED (child exit 101 after the 30 s probe timeout) with the mutex restored'
-  notes: 'Found by the 0.65.0 release clean-room on 587ad0797 (2 green runs, 1 hang the same day: only the first initialization of a process can race). gdb backtrace under the release receipt evidence. Reachable in production whenever is_available() and GpuDevice::new() race on the wgpu path.'
-- id: PMAT-953
-  github_issue: null
-  item_type: bug
-  title: 'stdio MCP transport: a server that answers and exits 0 before reading the request still surfaced "write stdin: Broken pipe" (PMAT-950 covered only the non-zero exit); 4 batuta tests failed in the 0.65.0 release clean-room'
-  status: inprogress
-  priority: high
-  assigned_to: null
-  created: 2026-09-04 16:10:00+00:00
-  updated: 2026-09-04 16:10:00+00:00
-  spec: null
-  acceptance_criteria:
-  - 'send_jsonrpc returns the stdin write error only when the child exited cleanly AND wrote nothing; a response on stdout is parsed regardless of EPIPE on the request'
-  - 'test_stdio_transport_clean_exit_without_reading_keeps_its_response (child closes stdin, echoes a response, exits 0; 1 MiB request) is green on the fix and RED (got: Err("write stdin: Broken pipe")) with the stdout-empty guard reverted'
-  notes: 'Found by the 0.65.0 release clean-room run 2 on 587ad0797 (88537 passed, 4 failed, all in mcp_client_tests.rs). Released 0.65.0 carries the defect by operator decision (cherry-pick behind the tag).'
-- id: PMAT-929
-  github_issue: null
-  item_type: task
-  title: '0.65.0 release under PP-LLAMA-001 v3.1: verify every LANDED §12 row on main, land the open rows, cut through the F-9 gate (paiml-implement run, receipt docs/audits/impl-PMAT-929-receipt.md)'
-  status: inprogress
-  priority: high
-  assigned_to: null
-  created: 2026-09-03 12:00:00+00:00
-  updated: 2026-09-04 16:30:00+00:00
-  spec: docs/specifications/PP-LLAMA-001-MASTER.md
-  acceptance_criteria:
-  - 'perf_gate.sh --phase release PASS on the release sha with no SKIP hiding a FAIL; dogfood --phase pre-publish GO; tag from cargo metadata, absent on crates.io; cascade only through check_publish_preflight.sh (R1-R5), never --allow-dirty; post-publish dogfood on the published crate'
-  - 'receipt in docs/audits/ with claimed-vs-rerun table, jidoka log, estimates with basis, transcript-gate PASS, status-lint PASS'
-  notes: 'Tickets minted in this run: PMAT-930..953 (ledger scanner, dogfood gates, PERF-009 guard blind spot, stdio MCP transport races, wgpu init deadlock). Operator decisions quoted in the receipt.'
-- id: PMAT-951
-  github_issue: null
-  item_type: feature
-  title: '0.66 performance parity: 7B-class inference parity with llama.cpp/Ollama on lambda and gx10, QLoRA fine-tuning parity with Unsloth, wgpu (intel) and Metal (mini) parity, AMD/wasm first-class, CUDA PTX+cuBLAS documentation pass, crate renames to aprender_<english>'
-  status: planned
-  priority: high
-  assigned_to: null
-  created: 2026-09-04 15:00:00+00:00
-  updated: 2026-09-04 16:30:00+00:00
-  spec: docs/specifications/0.66-performance-parity-report.md
-  acceptance_criteria:
-  - 'every obligation row in the spec §11 DAG landed or UNMEASURED{owner, expires}; CONFORMANT ledger rows on both proof hosts per workstream; training parity gate T-7 ARMED on both hosts'
-  notes: 'Spec reviewed by agy /teamwork-preview and a 3-lane agy --mode plan quorum (receipt attached to the spec PR).'
-- id: PMAT-957
-  github_issue: null
-  item_type: bug
-  title: 'aprender-gpu CUDA driver tests race under the default test parallelism: 3/10 runs at 48 threads fail (CUDA_ERROR_UNKNOWN 901/906) or SIGSEGV; 0/10 at 4 threads; crashed the 0.65.1 release clean-room'
-  status: planned
-  priority: high
-  assigned_to: null
-  created: 2026-09-04 19:20:00+00:00
-  updated: 2026-09-04 19:20:00+00:00
-  spec: null
-  acceptance_criteria:
-  - 'driver_and_context, gpu_buffer and cuda_graph tests share one device and run under one process-wide mutex; 20 runs at --test-threads=48 on lambda: 0 failures, 0 signals'
-  - 'a must-fire mutation (mutex removed) reproduces the failure within 20 runs'
-  notes: 'Evidence: pp4-work/evidence/gpu-flake (t48-*.out, t4-*.out, characterize.log). CI cannot see this suite (no GPU runner); the release clean-room is the only gate that does.'
-- id: PMAT-960
-  github_issue: null
-  item_type: bug
-  title: 'dogfood.sh --phase post-publish: the version-unpublished row FAILs on a correctly published version (no phase inversion), so no post-publish run can be GO by construction; 0.65.2 carries a written determination instead'
-  status: planned
-  priority: high
-  assigned_to: null
-  created: 2026-09-04 23:40:00+00:00
-  updated: 2026-09-04 23:40:00+00:00
-  spec: null
-  acceptance_criteria:
-  - 'in --phase post-publish the row PASSes iff the crate version is in the crates.io index and FAILs otherwise; pre-publish polarity unchanged; case rows for both phases and both polarities; must-fire mutation RED'
-  notes: 'Same shape the 0.64.0 cut recorded in evidence/dogfood/0.64.0/VERDICT.md. Found by the 0.65.2 post-publish run (receipt-20260904T232050Z.json).'
-- id: PMAT-962
-  github_issue: null
-  item_type: bug
-  title: 'Post-publish parity of the published 0.65.2 (cargo install aprender, default features) is FAIL on lambda CPU: decode 0.59x, prefill 0.005x of llama.cpp 39173bcac at c=1/4/8/16 (5 interleaved replicates per band); TTFT 2.6 s vs 16 ms at c=1 - the CPU prefill runs at decode speed'
-  status: todo
-  priority: critical
-  assigned_to: null
-  created: 2026-09-05 01:15:00+00:00
-  updated: 2026-09-05 01:15:00+00:00
-  spec: docs/specifications/0.66-performance-parity-report.md
-  acceptance_criteria:
-  - 'evidence/dogfood/<next>/lambda.json parity lane cpu verdict PASS against the pinned comparator (floor 1.0 from scripts/perf-matrix.yaml#arms.L3.delta), measured by scripts/parity_host_receipt.sh on the published binary, not on a tree build'
-  - 'prefill tok/s within the L3 band of the comparator at c=1 (measured 47.7 vs 8982.4 on 2026-09-05): the prefill must batch the prompt, not decode it one token at a time on CPU'
-  - 'the receipt records the install command and feature set that produced each lane; a lane from a --features cuda install is labelled as such'
-  notes: 'Measured 2026-09-05 by the 0.65.2 post-publish host receipt (evidence/dogfood/0.65.2/lambda.json, run_id e167c1ab2c68496cbe1a2a881ab25900). Subject aggregate tok/s at c=1 23.2 vs comparator 75.2; subject decode 44.1 vs 74.2 at c=1. Every c>1 band is INVALID-CORRECTNESS(#2753/#2776): no PP-26 witness was run, so no c>1 ratio is quoted (P-4). The published default-feature binary resolves 0 GPU layers on a 4090 host; a second install of the same crate with --features cuda (167 s) gave the cuda lane, also FAIL at c=1: decode 0.69x, prefill 0.18x (326.8 vs 492.5 aggregate at c=1; TTFT 24 vs 5 ms). c>1 bands: INVALID-CORRECTNESS(#2753/#2776), no witness, ratios struck. Related: chunked prefill (Arm E), the accelerator-quantity contract, and the 0.66 parity report section 6.'
-- id: PMAT-963
-  github_issue: null
-  item_type: bug
-  title: 'No pre-publish gate owns c>=8 request failures on the published default-feature (CPU) build or on aarch64: the only pre-publish ladder is perf_gate.sh --host lambda --phase release --workload W1 on the x86 tree build (CB-1400 class). Post-publish, the published 0.65.2 apr serve fails every request at c>=8 on gx10 and mini (0/8, 0/16 in all 5 replicates) and one c=16 replicate on intel (0/16), while the pinned llama.cpp serves the same bands; no parity block can be emitted for those hosts'
-  status: todo
-  priority: critical
-  assigned_to: null
-  created: 2026-09-05 01:40:00+00:00
-  updated: 2026-09-05 01:40:00+00:00
-  spec: docs/specifications/0.66-performance-parity-report.md
-  acceptance_criteria:
-  - 'scripts/parity_host_receipt.sh on the published binary emits a block on gx10 and intel: every band of the declared ladder [1,4,8,16] has 5 replicates with successful == total_requests'
-  - 'the failure mode is named from the client side (apr test llm bench records the per-request error kind: timeout vs connection vs HTTP status) - today the run json carries only successful/failed counts, so the receipt cannot say WHY a request failed (own sub-ticket)'
-  - 'root cause is traced to the module (the writer-lock serialisation of concurrent requests and the prefill-at-decode-speed path, cf. PMAT-962), not to the protocol timeout'
-  - 'a pre-publish gate runs the ladder on the default-feature build and on at least one aarch64 host, or the release runbook says in writing that it does not and why (five whys: 1 the release cut ran perf_gate.sh once, host=lambda phase=release workload=W1 (evidence/release/0.65.2/perf-gate-8e1e9ad40.txt: one line, one host); 2 perf_gate.sh takes one --host and the runbook (pp4-work/release_cut.sh:10) calls it for lambda only; 3 the matrix cells for gx10/intel W1 are UNMEASURED and mini W1 is NA, so the gate has nothing to fail there; 4 the pre-publish dogfood runs on the cut host and its parity row (check_parity_receipt) reads the lambda receipt; 5 nothing in .github/workflows or scripts/release*.sh runs the ladder on a published or default-feature binary before cargo publish - the first ladder the published binary ever met was the post-publish host receipt)'
-  notes: 'Measured 2026-09-05 by the 0.65.2 post-publish host receipts (evidence/dogfood/0.65.2/{gx10,intel}.json, key parity_attempt; kept work dirs on the hosts are named there). gx10: TTFT 17.6 s at c=1 and 36 s at c=4 with 4/4 successes, then 0 successes at c=8 and c=16 in every replicate. intel: c=16 replicate 2 had 0/16 successful, replicate 1 9/16, the other three 16/16. mini (M4): 2/2 at c=1 (4.5 tok/s, TTFT 13.9 s) and 4/4 at c=4 (TTFT 49.5 s), then 0/8 and 0/16 in every replicate. The protocol window is http_duration_secs = 30 (scripts/llama_pin.toml#protocol.http). The receipt validator (scripts/lib/bench_receipt.py) correctly refuses a band with zero subject throughput as a non-measurement, so these hosts carry parity_attempt instead of parity and check_multiplatform_dogfood.sh stays FAIL for them: the post-publish verdict for 0.65.2 is NO-GO on this evidence.'
-- id: PMAT-964
-  github_issue: null
-  item_type: bug
-  title: 'H12 floor unwired for aarch64 pre-publish (CB-1400 class): the H12 throughput floor (>= 10 tok/s) exists only inside apr bench itself (crates/apr-cli/src/commands/bench.rs:260) and in the post-publish bench_host_receipt.sh; no workflow or release script runs apr bench before cargo publish on any host, and no pre-publish step runs on aarch64 at all. Post-publish, the published aarch64 0.65.2 decodes at 3.5 tok/s on gx10/GB10 and 4.5 tok/s on mini/M4 at c=1 (0.046x / 0.05x the pinned llama.cpp CPU medians 75.7 / 90.4) and apr bench measures 7.7 / 8.1 tok/s, below the floor it ships'
-  status: todo
-  priority: critical
-  assigned_to: null
-  created: 2026-09-05 01:40:00+00:00
-  updated: 2026-09-05 01:40:00+00:00
-  spec: docs/specifications/0.66-performance-parity-report.md
-  acceptance_criteria:
-  - 'the published aarch64 binary (crates.io, default features) reaches the H12 floor in apr bench on gx10 and a cpu-lane parity ratio within the L3 band at c=1'
-  - 'the receipt names which SIMD path the published binary took on aarch64 (NEON vs scalar) - the tree build measured 1.21x on GB10 (#2567) and the published binary measures 0.046x, so the two are not the same code path or the same build flags'
-  - 'H12 runs before cargo publish on an aarch64 host, or the release runbook names the workflow file:line that would (five whys: 1 the published aarch64 binary is below the H12 floor; 2 nothing pre-publish measured it - grep of .github/workflows/*.yml, scripts/release*.sh, scripts/dogfood.sh, scripts/perf_gate.sh and Makefile finds no apr bench invocation (the only hit is a docs example in scripts/gen-cli-chapter-stubs.sh:52); 3 H12 is asserted inside apr bench (bench.rs:260) and by bench_host_receipt.sh, both of which run only when someone runs them on a host after install; 4 the release cut has no aarch64 stage - perf gate, clean-room and pre-publish dogfood all ran on lambda x86; 5 the matrix marks gx10/intel W1 UNMEASURED and mini NA, so the gate reports rather than fails there)'
-  notes: 'Measured 2026-09-05: evidence/dogfood/0.65.2/gx10.json (parity_attempt band c=1: apr 3.5/3.5/3.6/3.5/3.5 tok/s (median 3.5), TTFT ~17.5 s; comparator 77.8/75.7/73.3/77.8/73.8 (median 75.7); bench_attempt: apr bench 7.7 tok/s, Performance Grade F, exit non-zero). mini (M4, aarch64-apple, same published crate): 4.5 tok/s at c=1 vs 90.4 (0.05x), apr bench 8.1 tok/s (exit 5, below the H12 floor) - evidence/dogfood/0.65.2/mini.json. Related: PMAT-962 (lambda, same binary family, 0.59x decode), PMAT-963 (c>=8 request failures), #2567 (aarch64 Q4_K tree-build ratio).'
-- id: PMAT-965
-  github_issue: null
-  item_type: bug
-  title: 'parity_host_receipt.sh and bench_host_receipt.sh exit silently (0 s, empty log, rc=1) under macOS bash 3.2 - a silent-pass shape; they must fail closed with a message on BASH_VERSINFO<4 (the missing-flock case already fails closed with a message: measured on mini, "FAIL no flock(1)")'
-  status: todo
-  priority: high
-  assigned_to: null
-  created: 2026-09-05 05:30:00+00:00
-  updated: 2026-09-05 05:30:00+00:00
-  spec: null
-  acceptance_criteria:
-  - 'under bash 3.2 (or any BASH_VERSINFO[0] < 4) both scripts print one FAIL line naming the version they need and exit non-zero before touching the lock; case row + mutation (guard removed -> silent exit) in the same PR'
-  - 'setsid is not used by either script (the mini launcher used it; recorded so nobody adds it): the guard is bash version + flock only'
-  - 'the host prerequisites (Homebrew bash, util-linux flock) are declared in paiml/infra machines/mini/forjar.yaml, not hand-installed - the 2026-09-05 mini run used a HAND install of both (brew install bash; brew install util-linux), which is the reaper class'
-  notes: 'Found producing the 0.65.2 mini receipt: chain3 ran under /bin/bash 3.2.57, parity rc=1 in 0 s with an empty parity.log; under Homebrew bash 5.3.15 the script proceeded and then refused on flock (fail-closed, correct); util-linux flock fixed that. Sibling infra PR declares both on mini.'
-- id: PMAT-966
-  github_issue: null
-  item_type: bug
-  title: 'witness=null on every band is a HARNESS defect: --witness-json is opt-in, so parity_block.py emits c>1 bands with no PP-26 witness and no validity mark, and perf_gate.sh grades them; PP-26 says absence is invalidity - the harness must print validity_by_band itself (no witness on c>1 => INVALID-CORRECTNESS), never a hand afterwards'
-  status: todo
-  priority: critical
-  assigned_to: null
-  created: 2026-09-05 07:10:00+00:00
-  updated: 2026-09-05 07:10:00+00:00
-  spec: docs/specifications/PP-LLAMA-001-MASTER.md
-  acceptance_criteria:
-  - 'scripts/lib/parity_block.py writes validity_by_band on every lane: c=1 MEASURED when the band completed, every c>1 band INVALID-CORRECTNESS(PP-26 absent) unless a witness with result PASS, min_agree_tokens >= 64 and max_constant_run <= 16 is attached; ratio fields on an INVALID band are null, not numbers'
-  - 'perf_gate.sh and check_parity_receipt.sh REFUSE a c>1 band that carries a ratio without a witness (fail closed), and print the validity line per band in the verdict'
-  - 'must-fire mutation: run scripts/parity_host_receipt.sh without --witness-json against a live pair; the emitted block must self-mark every c>1 band INVALID-CORRECTNESS and carry no c>1 ratio (RED today: the 0.65.2 lambda block carried ratio_aggregate_tok_per_sec on c=4/8/16 with witness=null)'
-  - 'the 0.65.2 receipts keep their hand-annotated validity_by_band with validity_by_band_source naming this ticket; the ledger rows 7-11 what_it_lacks name it'
-  notes: 'Found on the 0.65.2 post-publish receipts (evidence/dogfood/0.65.2/*.json): every band of both lambda lanes and of the three refused attempts has witness: null, and the block still carried per-band ratios and verdicts at c=4/8/16. The validity marks now in those files were written by hand afterwards - the gate grading its own paper - and are labelled so. Ruling 2026-09-05 (noah): hand-edited validity is not validity.'
-- id: PMAT-967
-  github_issue: null
-  item_type: bug
-  title: 'A release-phase perf-gate verdict with no artifact identity (CB-1400 sibling): VERDICT PASS host=lambda phase=release workload=W1 on every 0.65.x cut graded evidence/perf-gate-001-w1-lambda/receipt.r1.json - commit 745fa8588, a dev checkout with feature_set [cuda], binary sha256 9d0b08b0... - not the crates.io cli build that was published; the verdict line must carry feature_set and the built-binary sha256 (PP-18/PP-25), and a verdict from a checkout is phase=pre-publish-checkout, never quotable as release'
-  status: todo
-  priority: critical
-  assigned_to: null
-  created: 2026-09-05 07:10:00+00:00
-  updated: 2026-09-05 07:10:00+00:00
-  spec: docs/specifications/PP-LLAMA-001-MASTER.md
-  acceptance_criteria:
-  - 'the VERDICT line prints feature_set=[...] binary_sha256=<64 hex> install_source={registry|checkout} read from receipt.provenance (absent => FAIL INSTRUMENT, not PASS)'
-  - 'when install_source is not a registry install (cargo install from crates.io of the version under release), --phase release is relabelled phase=pre-publish-checkout in the verdict line and the run exits with a REPORT, never a PASS that a release runbook can quote; release_cut.sh (pp4-work) and scripts/release*.sh stop passing a stale checkout receipt as the release receipt'
-  - 'must-fire mutation: feed receipt.r1.json (745fa8588, checkout) with --phase release --commit <any newer sha> - today it prints PASS phase=release; after the fix it prints phase=pre-publish-checkout and no PASS'
-  - 'the three 0.65.x cut lines are relabelled in evidence/release/0.65.2/perf-gate-8e1e9ad40.txt and docs/audits/impl-PMAT-929-receipt.md (done in this PR)'
-  notes: 'Found 2026-09-05 while answering "which pre-publish gate should have been red": the receipt the gate graded on 587ad0797, 752f55346 and 8e1e9ad40 was the same 2026-09-01 file (ledger row 3, SPENT, subject lane invalid, unsigned); its PASS meant only that no W1 arm was ARMED. Nothing pre-publish ever measured the published default-feature (cli, CPU-only) binary; the first ladder it met was the post-publish host receipt (PMAT-962..964).'
-- id: PMAT-750
-  github_issue: null
-  item_type: task
-  title: 'SATD debt: crates/apr-cli/src/commands/finetune.rs:492 — export trained weights from the pipeline; for now the checkpoint dir is saved.'
-  status: planned
-  priority: medium
-  assigned_to: null
-  created: 2026-09-04 00:10:00+00:00
-  updated: 2026-09-04 00:10:00+00:00
-  spec: null
-  acceptance_criteria:
-  - 'the deferral at crates/apr-cli/src/commands/finetune.rs:492 is resolved and the comment removed'
-  notes: 'Minted by the PMAT-938 sweep (PR #2860); the marker text is kept in the comment, keyword-free'
-- id: PMAT-751
-  github_issue: null
-  item_type: task
-  title: 'SATD debt: crates/aprender-compute/src/backends/gpu/device/linalg/wgsl_forward.rs:774 — add upload_weight_transposed() for GPU-accelerated LM head.'
-  status: planned
-  priority: medium
-  assigned_to: null
-  created: 2026-09-04 00:10:00+00:00
-  updated: 2026-09-04 00:10:00+00:00
-  spec: null
-  acceptance_criteria:
-  - 'the deferral at crates/aprender-compute/src/backends/gpu/device/linalg/wgsl_forward.rs:774 is resolved and the comment removed'
-  notes: 'Minted by the PMAT-938 sweep (PR #2860); the marker text is kept in the comment, keyword-free'
 - id: PMAT-753
   github_issue: null
   item_type: task
@@ -14795,6 +14253,274 @@ roadmap:
   acceptance_criteria:
   - 'the deferral at crates/aprender-train/src/autograd/wgpu_training.rs:379 is resolved and the comment removed'
   notes: 'Minted by the PMAT-938 sweep (PR #2860); the marker text is kept in the comment, keyword-free'
+- id: PMAT-929
+  github_issue: null
+  item_type: task
+  title: '0.65.0 release under PP-LLAMA-001 v3.1: verify every LANDED §12 row on main, land the open rows, cut through the F-9 gate (paiml-implement run, receipt docs/audits/impl-PMAT-929-receipt.md)'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-09-03 12:00:00+00:00
+  updated: 2026-09-04 16:30:00+00:00
+  spec: docs/specifications/PP-LLAMA-001-MASTER.md
+  acceptance_criteria:
+  - 'perf_gate.sh --phase release PASS on the release sha with no SKIP hiding a FAIL; dogfood --phase pre-publish GO; tag from cargo metadata, absent on crates.io; cascade only through check_publish_preflight.sh (R1-R5), never --allow-dirty; post-publish dogfood on the published crate'
+  - 'receipt in docs/audits/ with claimed-vs-rerun table, jidoka log, estimates with basis, transcript-gate PASS, status-lint PASS'
+  notes: 'Tickets minted in this run: PMAT-930..953 (ledger scanner, dogfood gates, PERF-009 guard blind spot, stdio MCP transport races, wgpu init deadlock). Operator decisions quoted in the receipt.'
+- id: PMAT-930
+  github_issue: null
+  item_type: bug
+  title: 'PP-9 live scan read only the first pipe table of evidence/parity/LEDGER.md: a blank line after row 4 left
+    rows 5 and 6 outside the spend-key universe, so a re-spend of row 6 passed spec_conformance.sh'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-09-03 13:40:00+00:00
+  updated: 2026-09-03 13:40:00+00:00
+  spec: docs/specifications/PP-LLAMA-001-MASTER.md
+  acceptance_criteria:
+  - 'scripts/lib/spec_conformance.py emits L2 for a ledger row that sits outside the table it reads (same column
+    count as the header, row-id first cell, after the first table break, before the superseded section); the ledger
+    is re-joined so the live scan reports LEDGER 6 6; selftest cases ledger_row_outside_table (L2) and
+    ledger_rows_contiguous (CLEAN) named beside PP-9 in §6; must-fire mutation (the L2 emit removed) turns
+    ledger_row_outside_table BROKE; Appendix D row, RATIONALE PP-9 paragraph, contract invariant + falsification
+    test in pp-llama-001-spec-conformance-v1.yaml; pv validate green'
+  notes: 'Found by PMAT-929 (paiml-implement run 4) live-mutating Appendix C on 68b059ca9: duplicating row 6 as row 7
+    inside the v3 table produced PASS "no cell was spent twice"; the scanner had parsed 4 of 6 rows. Five-whys in
+    .pmat/jidoka.jsonl and docs/audits/impl-PMAT-929-receipt.md'
+- id: PMAT-931
+  github_issue: null
+  item_type: bug
+  title: 'PMAT-930 review: L2 was a whitelist of one row shape — a ledger row with no leading pipe or one extra pipe
+    passed both the first-table parse and L2; redesign L2 as a universe, add L3 (malformed row) and a mutation set'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-09-03 16:10:00+00:00
+  updated: 2026-09-03 16:10:00+00:00
+  spec: docs/specifications/PP-LLAMA-001-MASTER.md
+  acceptance_criteria:
+  - 'L2: every pipe line before the superseded heading whose first cell (backticks stripped) is a row id and that
+    does not belong to a group opening with a header row is a ledger row outside the table, whatever its column
+    count or leading pipe; those rows also enter the L1 spend check. L3: a first-table row whose cell count differs
+    from the header is refused. Fixtures ledger_row_no_leading_pipe, ledger_row_backticked_id, ledger_row_trailing_pipes,
+    ledger_row_extra_pipe, ledger_side_table_ok, ledger_superseded_rows_ok, ledger_respend_outside_table beside the
+    two of PMAT-930; scripts/mutate_spec_conformance.sh kills 8/8; the live scan on main stays PASS with LEDGER 6 6'
+  notes: 'Found by the PMAT-930 review quorum (paiml-agy-delegate, 3 lanes + the §3.E arm, gemini-3.1-pro-high, conversations
+    df32ef55, f41060f3, 02623f0a, b2af861a); two of the four escape shapes re-run by Fable on 386b0bd40 (no leading pipe,
+    extra pipe: violations=[]). Five-whys in .pmat/jidoka.jsonl. Landed in PR #2861 with PMAT-930'
+- id: PMAT-932
+  github_issue: null
+  item_type: bug
+  title: 'PMAT-931 second review: the run-skip rule failed both ways (a dummy first line hid every row after it; a
+    blank line inside the §13 table flagged eleven legitimate rows) and the mutation harness had no green baseline
+    and scored a crash as a kill'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-09-03 17:20:00+00:00
+  updated: 2026-09-03 17:20:00+00:00
+  spec: docs/specifications/PP-LLAMA-001-MASTER.md
+  acceptance_criteria:
+  - 'a run of pipe lines is skipped only when it opens with a header (header line + separator) other than the ledger
+    header; a run with the ledger header or no header is read row by row; a row counts when its first cell is a row id
+    and its width is within two columns of the ledger header; L0 when the first table is not the ledger; seven fixtures
+    (ledger_fragment_after_dummy_line, ledger_row_bold_id, ledger_side_table_split_ok, ledger_side_table_same_width_ok,
+    ledger_second_table_same_header, ledger_row_extra_pipe_outside, ledger_first_table_not_ledger); the harness runs
+    the unmutated table first, counts a crash as unviable, and reports 10/10 killed'
+  notes: 'Found by the PMAT-931 review quorum (paiml-agy-delegate, 3 lanes + the §3.E arm, gemini-3.1-pro-high, conversations
+    519483fd, cb269b2c, 804fdc9e, 972bd0c8). Re-run by Fable on 45588b6d1: dummy-first-line escape confirmed (violations
+    NONE); blank line at LEDGER.md:100 flagged 11 rows (confirmed); the bold-id escape was REFUTED (strip_md already
+    strips emphasis: L1,L2 fired). Landed in PR #2861 with PMAT-930 and PMAT-931'
+- id: PMAT-933
+  github_issue: null
+  item_type: bug
+  title: 'PMAT-932 third review: a run under a decorative header was skipped whole and a row three columns off was
+    dropped rather than refused; the L2 universe is now every row that claims a spend (RECORDED or CONFORMANT)'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-09-03 18:05:00+00:00
+  updated: 2026-09-03 18:05:00+00:00
+  spec: docs/specifications/PP-LLAMA-001-MASTER.md
+  acceptance_criteria:
+  - 'a line outside the first table is a ledger row iff it has two or more pipes, a row-id first cell and a cell that
+    claims RECORDED or CONFORMANT; no run, header or width condition; fixtures ledger_row_under_foreign_header (L1,L2),
+    ledger_row_three_columns_off_outside (L2), ledger_row_conformant_outside (L2), ledger_row_without_tier_outside_ok
+    (CLEAN); ledger_first_table_not_ledger becomes L0,L2; mutants tier-claim-check-removed and conformant-tier-dropped
+    replace header-skip-removed and width-tolerance-removed; 10/10 killed'
+  notes: 'Found by the PMAT-932 review (paiml-agy-delegate: the §3.E arm 611de8db and lanes 87ecbcb2, 12f3e8e4; lane 2
+    never returned). Re-run by Fable on fa6cf7706: a dummy header + separator + a RECORDED re-spend produced no
+    violation (confirmed); a short RECORDED row outside the table produced none (confirmed once the probe carried the
+    tier). The L0 objection (a table above the ledger) is designed behaviour and was rejected. Landed in PR #2861'
+- id: PMAT-934
+  github_issue: null
+  item_type: bug
+  title: 'PMAT-933 fourth review: a spend row with a non-row-id first cell (foo, #0c, 7bis) and a backticked tier
+    (`RECORDED`) both escaped L2; the id is now reported, never required, the tier is read through the shared
+    normalisation, and no heading ends the universe'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-09-03 19:10:00+00:00
+  updated: 2026-09-03 19:10:00+00:00
+  spec: docs/specifications/PP-LLAMA-001-MASTER.md
+  acceptance_criteria:
+  - 'a pipe line after the first table is a ledger row iff some cell, backticks stripped, starts with RECORDED or
+    CONFORMANT; the id is reported (row id or the raw first cell); the superseded cutoff is gone; fixtures
+    ledger_row_nonnumeric_id_outside, ledger_row_backticked_tier_outside, ledger_reserved_word_in_side_table (L2),
+    ledger_row_after_superseded_heading (L1,L2); mutants tier-backtick-strip-removed and id-required-reintroduced
+    replace backtick-strip-removed and superseded-cutoff-removed; 10/10 killed'
+  notes: 'Found by the PMAT-933 review (paiml-agy-delegate: the §3.E arm f5451570 and lanes d7910b93, 76cbe3d0,
+    dc6aa69e; the delegate itself found the backticked tier). Re-run by Fable on 7ff61b831: `| foo |` and a
+    backticked RECORDED both produced no violation (confirmed). The §13 reserved-word false positive is accepted as
+    fail-closed and documented. Landed in PR #2861'
+- id: PMAT-935
+  github_issue: null
+  item_type: bug
+  title: 'PMAT-934 fifth review: __RECORDED__ was not a tier, __lambda__ / <code>aaaa</code> / a zero-width space were
+    new keys, and L1 deduped only RECORDED rows; one normaliser for every ledger cell, L1 on the same tiers as L2,
+    and the threat model stated'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-09-03 19:50:00+00:00
+  updated: 2026-09-03 19:50:00+00:00
+  spec: docs/specifications/PP-LLAMA-001-MASTER.md
+  acceptance_criteria:
+  - '_norm strips code tags, format characters, no-break spaces, whitespace runs and wrapping backticks/asterisks/
+    underscores; spend keys casefold; L1 keys on SPEND_TIERS; LEDGER reports the universe count; fixtures
+    ledger_row_underscored_tier, ledger_respend_conformant, ledger_respend_emphasised_key, ledger_respend_zero_width_key
+    (L1); mutants l1-respend-check-removed, l1-tier-filter-narrowed, wrap-emphasis-strip-removed, key-normaliser-bypassed,
+    key-casefold-removed; 15/15 killed; the threat model (honest re-roll, not forgery) written in RATIONALE and the docstring'
+  notes: 'Found by the PMAT-934 review (paiml-agy-delegate: the §3.E arm 044542d6, lanes 1ca23c06, 27e31188, 4c1a7eac;
+    the delegate found the L1 tier gap and widened the key renderings to six). Re-run by Fable on 45b29e793: __RECORDED__,
+    __lambda__ and a CONFORMANT re-spend each produced no violation (confirmed). Landed in PR #2861'
+- id: PMAT-936
+  github_issue: null
+  item_type: bug
+  title: 'check_shell_lint_ratchet.sh ratcheted a nondeterministic number: bashrs 7.0.1 cross-contaminates files linted in
+    one invocation, so the same main tree counted 13 errors on the fleet and 53 on a workstation, and a branch that removed
+    180 findings counted 57 on the fleet (#2860 RED) and 12 locally'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-09-03 21:30:00+00:00
+  updated: 2026-09-03 21:30:00+00:00
+  spec: null
+  acceptance_criteria:
+  - 'the ratchet lints each script in its own bashrs invocation (sorted, file name prefixed); the count is identical on
+    any host for the same tree; baseline re-seeded 13 -> 9 with the shrink-only meta-ratchet green; bashrs gating findings
+    0 on the ratchet script'
+  notes: 'Measured 2026-09-03 (PMAT-929): single-invocation main=53 / batch=12 locally, 13 / 57 on the fleet; per-file
+    main=12 / batch=9 on both. Landed in PR #2860'
+- id: PMAT-937
+  github_issue: null
+  item_type: task
+  title: 'CB-200 (TDG grade gate) ratchet baseline recorded in .pmat-gates.toml [tdg] baseline = 609 so pmat comply 3.36.0
+    reports Warn (debt held flat) instead of Fail; the dogfood pmat-comply row reads it as GO with the absolute count'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-09-03 21:30:00+00:00
+  updated: 2026-09-03 21:30:00+00:00
+  spec: null
+  acceptance_criteria:
+  - 'pmat comply check (3.36.0): CB-200 -> Warn "at the recorded baseline of 609 — this is debt held flat, not a clean
+    tree"; any new definition below B fails the gate; PMAT-768 (the 609) stays open'
+  notes: 'pmat 3.36.0 carries the #1159 comply char-boundary fix (paiml-mcp-agent-toolkit#1166 -> #1171); the comply row
+    could not run before it. Measured 2026-09-03 on the batch tree. Landed in PR #2860'
+- id: PMAT-938
+  github_issue: null
+  item_type: task
+  title: 'strict SATD 33 -> 0: every TODO/FIXME marker pmat verify 3.36.0 counted is a real fix or a keyword-free deferral that names its ticket; eleven over-cap functions in seven marker-carrying files decomposed so the pre-commit hook accepts the edits'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-09-04 00:10:00+00:00
+  updated: 2026-09-04 00:10:00+00:00
+  spec: null
+  acceptance_criteria:
+  - 'pmat verify --format json (3.36.0): satd stage ok; pmat analyze satd --strict: 0; the dogfood pmat-verify row PASSes; every deferral cites PMAT-750..767 or PMAT-939..947; crate --lib tests and clippy green for every touched crate'
+  notes: 'PMAT-929 run 4, batch PR #2860. A ticket reference inside a marker does not exempt it (measured); the hook refuses any edit to a file with a function over 25 cognitive, so the decompositions were the price of the rewrite'
+- id: PMAT-939
+  github_issue: null
+  item_type: task
+  title: 'SATD debt: crates/apr-cli/src/commands/gguf.rs:296 — trueno version mismatch (crates.io 0.16 vs realizar''s local 0.17)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-04 00:10:00+00:00
+  updated: 2026-09-04 00:10:00+00:00
+  spec: null
+  acceptance_criteria:
+  - 'the deferral at crates/apr-cli/src/commands/gguf.rs:296 is resolved and the comment removed'
+  notes: 'Minted by the PMAT-938 sweep (PR #2860); the marker text is kept in the comment, keyword-free'
+- id: PMAT-940
+  github_issue: null
+  item_type: task
+  title: 'SATD debt: crates/aprender-contracts/src/scoring/codebase.rs:154 — reverse_coverage is hardcoded to 0.0 — needs wiring'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-04 00:10:00+00:00
+  updated: 2026-09-04 00:10:00+00:00
+  spec: null
+  acceptance_criteria:
+  - 'the deferral at crates/aprender-contracts/src/scoring/codebase.rs:154 is resolved and the comment removed'
+  notes: 'Minted by the PMAT-938 sweep (PR #2860); the marker text is kept in the comment, keyword-free'
+- id: PMAT-941
+  github_issue: null
+  item_type: task
+  title: 'SATD debt: crates/aprender-distribute/src/executor/microvm.rs:538 — track'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-04 00:10:00+00:00
+  updated: 2026-09-04 00:10:00+00:00
+  spec: null
+  acceptance_criteria:
+  - 'the deferral at crates/aprender-distribute/src/executor/microvm.rs:538 is resolved and the comment removed'
+  notes: 'Minted by the PMAT-938 sweep (PR #2860); the marker text is kept in the comment, keyword-free'
+- id: PMAT-942
+  github_issue: null
+  item_type: task
+  title: 'SATD debt: crates/aprender-distribute/src/executor/microvm.rs:539 — track'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-04 00:10:00+00:00
+  updated: 2026-09-04 00:10:00+00:00
+  spec: null
+  acceptance_criteria:
+  - 'the deferral at crates/aprender-distribute/src/executor/microvm.rs:539 is resolved and the comment removed'
+  notes: 'Minted by the PMAT-938 sweep (PR #2860); the marker text is kept in the comment, keyword-free'
+- id: PMAT-943
+  github_issue: null
+  item_type: task
+  title: 'SATD debt: crates/aprender-serve/examples/gpu_showcase_benchmark.rs:572 — Implement actual Ollama HTTP benchmarking'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-04 00:10:00+00:00
+  updated: 2026-09-04 00:10:00+00:00
+  spec: null
+  acceptance_criteria:
+  - 'the deferral at crates/aprender-serve/examples/gpu_showcase_benchmark.rs:572 is resolved and the comment removed'
+  notes: 'Minted by the PMAT-938 sweep (PR #2860); the marker text is kept in the comment, keyword-free'
+- id: PMAT-944
+  github_issue: null
+  item_type: task
+  title: 'SATD debt: crates/aprender-train/src/config/train/loader/data.rs:990 — propagate config seed'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-04 00:10:00+00:00
+  updated: 2026-09-04 00:10:00+00:00
+  spec: null
+  acceptance_criteria:
+  - 'the deferral at crates/aprender-train/src/config/train/loader/data.rs:990 is resolved and the comment removed'
+  notes: 'Minted by the PMAT-938 sweep (PR #2860); the marker text is kept in the comment, keyword-free'
 - id: PMAT-945
   github_issue: null
   item_type: task
@@ -14808,97 +14534,318 @@ roadmap:
   acceptance_criteria:
   - 'the deferral at crates/aprender-train/src/train/pretrain_real.rs:488 is resolved and the comment removed'
   notes: 'Minted by the PMAT-938 sweep (PR #2860); the marker text is kept in the comment, keyword-free'
-- id: PMAT-745
-  github_issue: null
-  item_type: bug
-  title: 'F-9: the crates.io cascade ran cargo publish --allow-dirty with no precondition; publishing must go only
-    through a preflight gate (clean tree, version from cargo metadata, tag at HEAD, HEAD on main, dogfood GO)'
-  status: inprogress
-  priority: high
-  assigned_to: null
-  created: 2026-09-03 07:10:00+00:00
-  updated: 2026-09-03 07:20:00+00:00
-  spec: docs/specifications/PP-LLAMA-001-MASTER.md
-  acceptance_criteria:
-  - 'scripts/check_publish_preflight.sh --selftest 16/16, both polarities of R1-R5; five must-fire mutations RED
-    (R1 dropped, GO check dropped, deferral whitelist shrunk, phase check dropped, grep -F removed); cascade-publish.sh
-    refuses on a non-zero gate, carries no dirty-tree override, and keeps its config backup outside the tree;
-    scripts/dogfood.sh --phase pre-publish records the two registry-bound rows as DEFER with their obligation, so R5
-    is satisfiable before a cascade; ci.yml runs the case table; FALSIFY-PUB-CLI contract entry'
-  notes: 'PMAT-742 release rule F-9 (operator); a GitHub publish workflow is owed separately: no CARGO_REGISTRY_TOKEN
-    secret exists for the fleet, only PR_REVIEW_SIGNING_KEY_B64. Measured 2026-09-03: the full dogfood is NO-GO before
-    its own cascade by construction (publish-dry-run of a workspace root, cargo install of the unpublished version on
-    four hosts), which made the first R5 unsatisfiable; the pre-publish phase is the recorded, whitelisted answer'
-- id: PMAT-744
-  github_issue: null
-  item_type: bug
-  title: 'perf_gate.sh --phase release cannot PASS while the reference cell is UNMEASURED: ArmC-sig and ArmD
-    fail the pre-v3 lambda receipt that the matrix already marks SPENT'
-  status: inprogress
-  priority: high
-  assigned_to: null
-  created: 2026-09-03 04:30:00+00:00
-  updated: 2026-09-03 04:50:00+00:00
-  spec: docs/specifications/PP-LLAMA-001-MASTER.md
-  acceptance_criteria:
-  - 'perf_gate.sh --host lambda --phase release --workload W1 --receipt evidence/perf-gate-001-w1-lambda/receipt.r1.json
-    --commit <main> is VERDICT PASS with ArmC-sig and ArmD as REPORT lines naming the UNMEASURED cell'
-  - 'four --selftest rows, both polarities; each condition of historical_for_unmeasured has a row that goes RED
-    without it; FALSIFY-PP-LLAMA-001-PERF-GATE-011; spec §6 names the cases'
-  notes: 'PMAT-742 jidoka entry 10; first run of the release phase (0.65.0 cut)'
-- id: PMAT-1058
+- id: PMAT-946
   github_issue: null
   item_type: task
-  title: 'PP-066: land the 0.66 release spec (docs only)'
+  title: 'SATD debt: crates/aprender-viz/wasm-pkg/src/lib.rs:620 — detect actual tier'
   status: planned
   priority: medium
   assigned_to: null
-  created: 2026-09-05T07:00:53Z
-  updated: 2026-09-05T07:00:53Z
-  spec: docs/specifications/PP-066-release-spec.md
-  acceptance_criteria:
-  - Source of truth for the 0.66 obligation set
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: 'first minted as PMAT-966 (#2872, 2026-09-05 07:00Z); #2871 minted PMAT-966 for a harness defect in another session at 07:10Z and both landed — re-minted to PMAT-1058 on 2026-09-06 (the later copy in the file; the harness ticket keeps PMAT-966 because signed evidence under evidence/ cites it)'
-- id: PMAT-1054
-  github_issue: null
-  item_type: task
-  title: 'GH-2982: C0-5 PRQ-013 single base-owned quorum workflow (pull_request_target/merge_group)'
-  status: completed
-  priority: medium
-  assigned_to: null
-  created: 2026-09-05T11:54:37Z
-  updated: 2026-09-05T16:44:33Z
+  created: 2026-09-04 00:10:00+00:00
+  updated: 2026-09-04 00:10:00+00:00
   spec: null
   acceptance_criteria:
-  - 'see #2982 (A + mutation)'
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels:
-  - kind:code
-  - pp-066
-  notes: 'complete: proof:PR#2985 (merged cdc0acb99 2026-09-05T16:44:33Z); proof:docs/audits/impl-PMAT-1054-receipt.md'
-- id: PMAT-1057
+  - 'the deferral at crates/aprender-viz/wasm-pkg/src/lib.rs:620 is resolved and the comment removed'
+  notes: 'Minted by the PMAT-938 sweep (PR #2860); the marker text is kept in the comment, keyword-free'
+- id: PMAT-947
   github_issue: null
   item_type: task
-  title: 'GH-2882: I-1 master row 1: land #2809; Blackwell guard on prefill_multi_prompt (gpu_profile.rs::multi_prompt_prefill_allowed); perf04'
+  title: 'SATD debt: crates/aprender-zram-core/src/gpu/mod.rs:196 — Implement actual GPU detection via trueno-gpu'
   status: planned
   priority: medium
   assigned_to: null
-  created: 2026-09-05T11:23:55Z
-  updated: 2026-09-05T11:23:55Z
+  created: 2026-09-04 00:10:00+00:00
+  updated: 2026-09-04 00:10:00+00:00
   spec: null
   acceptance_criteria:
-  - 'gh pr view 2809 --json state,mergedAt shows merged | bash scripts/check_perf041_marker.sh exit 0 (marker present in cuda-nightly.yml; absent marker = RED in its selftest) | the first wired gx10 night writes evidence/perf041/gx10/witness.json (EXPECTED RED per master §9 #1a is a finding to file, not a rerun) | mutation: remove the perf041 step from cuda-nightly.yml -> check_perf041_marker.sh RED'
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
+  - 'the deferral at crates/aprender-zram-core/src/gpu/mod.rs:196 is resolved and the comment removed'
+  notes: 'Minted by the PMAT-938 sweep (PR #2860); the marker text is kept in the comment, keyword-free'
+- id: PMAT-948
+  github_issue: null
+  item_type: bug
+  title: 'apr-cli execute_training_wgpu is a dark target: the crate wgpu feature never enables entrenar/gpu, so no in-repo feature combination compiles it (cargo check -p apr-cli --lib --features wgpu fails on main-line code)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-04 00:10:00+00:00
+  updated: 2026-09-04 00:10:00+00:00
+  spec: null
+  acceptance_criteria:
+  - 'crates/apr-cli/Cargo.toml wgpu feature enables the training backend it calls; cargo check -p apr-cli --lib --features wgpu succeeds; the function is reached by a build CI runs'
+  notes: 'Found by the PMAT-938 finetune.rs decomposition (type-checked with --features wgpu,entrenar/gpu); feature-graph fix outside that ticket'
+- id: PMAT-949
+  github_issue: null
+  item_type: bug
+  title: 'PERF-009 harness guard was blind to date -u +%s: ship-002/ship-008 discharges measured an apr run on main at count=0; the bashrs DET002 rewrites then tripped it on three stamp-only scripts'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-09-04 06:00:00+00:00
+  updated: 2026-09-04 06:00:00+00:00
+  spec: null
+  acceptance_criteria:
+  - 'check_no_competing_harnesses.sh computes_rate matches date -u +%s; selftest row "date -u +%s counts as timing" turns BROKE when the widening is reverted (measured: selftest rc=1)'
+  - 'ship-002/ship-008 allowlisted with the stated reason (duration_sec is provenance of one run, never a quoted rate); dropping the ship-002 entry makes the guard FAIL on the tree (measured)'
+  - 'eval-shard.sh, ex-06-pull-and-rerun.sh, eval-shard-determinism-probe.sh honour SOURCE_DATE_EPOCH through a DATE_PIN array with no date +%s fallback; bashrs error lines 0; guard count=0 baseline=0 on the merged tree'
+  notes: 'Found when #2860 reached the PERF-009 step for the first time (the README-count step before it had been failing). Fixed in the same PR (e70b00760). Five-whys: the DET002 fix chose an epoch fallback because it is the idiom bashrs documents; the guard reads any date +%s as a rate because the four deleted harnesses all timed that way; the -u form was never in the case table.'
+- id: PMAT-950
+  github_issue: null
+  item_type: bug
+  title: 'stdio MCP transport: a server that exits before reading the request surfaces as "write stdin: Broken pipe" instead of its exit status and stderr (flaky test_stdio_transport_process_exit_failure under load)'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-09-04 10:30:00+00:00
+  updated: 2026-09-04 10:30:00+00:00
+  spec: null
+  acceptance_criteria:
+  - 'send_jsonrpc waits for the child before returning a stdin write error; a non-zero exit always reports process exited <status>: <stderr>'
+  - 'test_stdio_transport_exit_before_request_is_read (child closes stdin, 1 MiB request) is deterministic: 40/40 green with the fix, RED (got: write stdin: Broken pipe) with the transport change reverted'
+  notes: 'Found by the predicted-main clean-room (8100ecd06): 1 failed of 6569 in batuta lib tests, the race between the child exit and the parent write. Fixed in #2860.'
+- id: PMAT-951
+  github_issue: null
+  item_type: feature
+  title: '0.66 performance parity: 7B-class inference parity with llama.cpp/Ollama on lambda and gx10, QLoRA fine-tuning parity with Unsloth, wgpu (intel) and Metal (mini) parity, AMD/wasm first-class, CUDA PTX+cuBLAS documentation pass, crate renames to aprender_<english>'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-09-04 15:00:00+00:00
+  updated: 2026-09-04 16:30:00+00:00
+  spec: docs/specifications/0.66-performance-parity-report.md
+  acceptance_criteria:
+  - 'every obligation row in the spec §11 DAG landed or UNMEASURED{owner, expires}; CONFORMANT ledger rows on both proof hosts per workstream; training parity gate T-7 ARMED on both hosts'
+  notes: 'Spec reviewed by agy /teamwork-preview and a 3-lane agy --mode plan quorum (receipt attached to the spec PR).'
+- id: PMAT-952
+  github_issue: null
+  item_type: bug
+  title: 'wgpu init deadlock: the shared_instance OnceLock initializer takes DEVICE_INIT_LOCK while GpuDevice::new holds it and calls shared_instance() (ABBA); the 0.65.0 release clean-room parked 49 threads on it'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-09-04 15:50:00+00:00
+  updated: 2026-09-04 15:50:00+00:00
+  spec: null
+  acceptance_criteria:
+  - 'the shared_instance initializer takes no mutex (the OnceLock already serializes the one-time enumeration, PMAT-778 intent preserved)'
+  - 'test_pmat952_shared_instance_does_not_deadlock_against_device_init_lock: a fresh child process holds DEVICE_INIT_LOCK and calls shared_instance() from another thread; green on the fix, RED (child exit 101 after the 30 s probe timeout) with the mutex restored'
+  notes: 'Found by the 0.65.0 release clean-room on 587ad0797 (2 green runs, 1 hang the same day: only the first initialization of a process can race). gdb backtrace under the release receipt evidence. Reachable in production whenever is_available() and GpuDevice::new() race on the wgpu path.'
+- id: PMAT-953
+  github_issue: null
+  item_type: bug
+  title: 'stdio MCP transport: a server that answers and exits 0 before reading the request still surfaced "write stdin: Broken pipe" (PMAT-950 covered only the non-zero exit); 4 batuta tests failed in the 0.65.0 release clean-room'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-09-04 16:10:00+00:00
+  updated: 2026-09-04 16:10:00+00:00
+  spec: null
+  acceptance_criteria:
+  - 'send_jsonrpc returns the stdin write error only when the child exited cleanly AND wrote nothing; a response on stdout is parsed regardless of EPIPE on the request'
+  - 'test_stdio_transport_clean_exit_without_reading_keeps_its_response (child closes stdin, echoes a response, exits 0; 1 MiB request) is green on the fix and RED (got: Err("write stdin: Broken pipe")) with the stdout-empty guard reverted'
+  notes: 'Found by the 0.65.0 release clean-room run 2 on 587ad0797 (88537 passed, 4 failed, all in mcp_client_tests.rs). Released 0.65.0 carries the defect by operator decision (cherry-pick behind the tag).'
+- id: PMAT-954
+  github_issue: null
+  item_type: bug
+  title: 'cascade-drain.sh filtered every DEFER line out of its log, so a STUCK drain reported no reason (0.65.0: 48/74 with the cycle invisible)'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-09-04 16:40:00+00:00
+  updated: 2026-09-04 16:40:00+00:00
+  spec: null
+  acceptance_criteria:
+  - 'a DEFER line printed by cascade-publish.sh survives the drain log filter'
+  notes: 'Found on the 0.65.0 cut; the reason had to be recovered by running cascade-publish.sh --only-tier 2 by hand.'
+- id: PMAT-955
+  github_issue: null
+  item_type: bug
+  title: 'publish cycle: five sibling dev-dependencies carried a version (workspace alias), so aprender-core (needs aprender-data) could not be uploaded before aprender-test-lib (needs aprender-core); 0.65.0 cascade STUCK at 48/74'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-09-04 16:40:00+00:00
+  updated: 2026-09-04 16:40:00+00:00
+  spec: null
+  acceptance_criteria:
+  - 'every sibling dev-dependency in a publishable crate is path-only (cargo metadata req "*"); preflight R6 refuses a versioned sibling dev-dependency, with a fixture row on both polarities and the R6 mutation RED'
+  - '0.65.1 cut from the fixed tree publishes all 74 crates (the 48 already at 0.65.0 move to 0.65.1); v0.65.0 is never moved'
+  notes: 'Memory rule feedback_crates_io_devdep_publish_cycles existed since 0.60.0 but had no guard; R6 is that guard, on the surface where the publish decision is made.'
+- id: PMAT-956
+  github_issue: null
+  item_type: bug
+  title: 'claim_literal_baseline.txt is line-keyed: any insert above a baselined line in CHANGELOG.md (every new release entry) moves six entries and the set-aperture ratchet refuses the re-key unless the guard itself changed; the 0.65.1 changelog entry could not be added'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-04 16:55:00+00:00
+  updated: 2026-09-04 16:55:00+00:00
+  spec: null
+  acceptance_criteria:
+  - 'baseline entries for prose files are keyed by path plus the normalised claim text (content-keyed), so a relocation is the same entry; the set-aperture rule (a2) already states the intent'
+  - 'case rows: an insert above a baselined CHANGELOG line passes unchanged; a copied claim (occurrence count up) still refuses; a claim whose text is absent at the comparand still refuses'
+  notes: 'Found on the 0.65.1 cut (PMAT-955 PR): the release note was moved out of CHANGELOG.md into the GitHub release and the receipt because the guard could not admit the shifted coordinates. Fix the guard in its own PR, then add the 0.65.0/0.65.1 entries.'
+- id: PMAT-957
+  github_issue: null
+  item_type: bug
+  title: 'aprender-gpu CUDA driver tests race under the default test parallelism: 3/10 runs at 48 threads fail (CUDA_ERROR_UNKNOWN 901/906) or SIGSEGV; 0/10 at 4 threads; crashed the 0.65.1 release clean-room'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-09-04 19:20:00+00:00
+  updated: 2026-09-04 19:20:00+00:00
+  spec: null
+  acceptance_criteria:
+  - 'driver_and_context, gpu_buffer and cuda_graph tests share one device and run under one process-wide mutex; 20 runs at --test-threads=48 on lambda: 0 failures, 0 signals'
+  - 'a must-fire mutation (mutex removed) reproduces the failure within 20 runs'
+  notes: 'Evidence: pp4-work/evidence/gpu-flake (t48-*.out, t4-*.out, characterize.log). CI cannot see this suite (no GPU runner); the release clean-room is the only gate that does.'
+- id: PMAT-958
+  github_issue: null
+  item_type: bug
+  title: 'aprender-test-lib unpublishable: protocol.rs include_str!s ../../../../scripts/perf-matrix.yaml (outside the crate), so the cargo publish verification build fails; 0.65.1 cascade stuck at 67/74 with the root crate behind it'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-09-04 20:20:00+00:00
+  updated: 2026-09-04 20:20:00+00:00
+  spec: docs/specifications/PP-LLAMA-001-MASTER.md
+  acceptance_criteria:
+  - 'build.rs copies scripts/perf-matrix.yaml into OUT_DIR in the workspace, embeds perf-matrix.vendored.yaml in a published crate, and fails the build when the two differ (measured: drift mutation -> failed to run custom build command)'
+  - 'cargo publish -p aprender-test-lib --dry-run --locked verifies (measured at 0.65.1 deps: Packaged 242 files, Verifying, Finished)'
+  - 'check_package_includes.sh reports any include_str!/include_bytes! in non-test code whose target escapes the crate (rows 5-7; mutation with the predicate disabled -> row 5 BROKE)'
+  - '0.65.2 cut from the fixed tree publishes all 74 crates'
+  notes: 'CB-510 guard covered include!() only; the pre-publish dogfood DEFERs member dry-runs, so no pre-publish gate could see a verification failure.'
+- id: PMAT-959
+  github_issue: null
+  item_type: bug
+  title: 'aprender-present-lib src/browser/showcase.rs include_bytes!s ../../../../demo/assets/sentiment_mini.apr (repo root), but the asset lives at crates/aprender-present/demo/assets/; the wasm32 build of the published crate cannot compile'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-04 20:35:00+00:00
+  updated: 2026-09-04 20:35:00+00:00
+  spec: null
+  acceptance_criteria:
+  - 'the asset is vendored inside crates/aprender-present-lib (or reached through build.rs with a vendored copy, as PMAT-958 did for perf-matrix.yaml) and the wasm32 build of the packaged crate compiles'
+  notes: 'Found by the PMAT-958 widening of check_package_includes.sh; wasm32-only files are outside the host verification build, so the guard prints them as SKIPPED rather than failing — this is the one live residual.'
+- id: PMAT-960
+  github_issue: null
+  item_type: bug
+  title: 'dogfood.sh --phase post-publish: the version-unpublished row FAILs on a correctly published version (no phase inversion), so no post-publish run can be GO by construction; 0.65.2 carries a written determination instead'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-09-04 23:40:00+00:00
+  updated: 2026-09-04 23:40:00+00:00
+  spec: null
+  acceptance_criteria:
+  - 'in --phase post-publish the row PASSes iff the crate version is in the crates.io index and FAILs otherwise; pre-publish polarity unchanged; case rows for both phases and both polarities; must-fire mutation RED'
+  notes: 'Same shape the 0.64.0 cut recorded in evidence/dogfood/0.64.0/VERDICT.md. Found by the 0.65.2 post-publish run (receipt-20260904T232050Z.json).'
+- id: PMAT-961
+  github_issue: null
+  item_type: bug
+  title: 'llama_bin.sh pin resolver rejects every non-CUDA comparator build (cmake_mismatch: declared flags without GGML_CUDA vs cache OFF), so intel and mini can never carry a parity block and check_multiplatform_dogfood.sh cannot pass on a non-grandfathered release'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-09-05 00:05:00+00:00
+  updated: 2026-09-05 00:05:00+00:00
+  spec: null
+  acceptance_criteria:
+  - 'a declared build line that does not name GGML_CUDA (or CMAKE_CUDA_ARCHITECTURES) matches a cache that has it OFF/unset; a declared ON still refuses a cache OFF; case rows for the intel and mini shapes (measured: both ok on the fix, both cmake_mismatch under the mutation)'
+  notes: 'Found producing the 0.65.2 post-publish receipts (the first release not grandfathered out of the parity requirement). The intel and mini 0.65.2 receipts were produced with this patched resolver and say so.'
+- id: PMAT-962
+  github_issue: null
+  item_type: bug
+  title: 'Post-publish parity of the published 0.65.2 (cargo install aprender, default features) is FAIL on lambda CPU: decode 0.59x, prefill 0.005x of llama.cpp 39173bcac at c=1/4/8/16 (5 interleaved replicates per band); TTFT 2.6 s vs 16 ms at c=1 - the CPU prefill runs at decode speed'
+  status: todo
+  priority: critical
+  assigned_to: null
+  created: 2026-09-05 01:15:00+00:00
+  updated: 2026-09-05 01:15:00+00:00
+  spec: docs/specifications/0.66-performance-parity-report.md
+  acceptance_criteria:
+  - 'evidence/dogfood/<next>/lambda.json parity lane cpu verdict PASS against the pinned comparator (floor 1.0 from scripts/perf-matrix.yaml#arms.L3.delta), measured by scripts/parity_host_receipt.sh on the published binary, not on a tree build'
+  - 'prefill tok/s within the L3 band of the comparator at c=1 (measured 47.7 vs 8982.4 on 2026-09-05): the prefill must batch the prompt, not decode it one token at a time on CPU'
+  - 'the receipt records the install command and feature set that produced each lane; a lane from a --features cuda install is labelled as such'
+  notes: 'Measured 2026-09-05 by the 0.65.2 post-publish host receipt (evidence/dogfood/0.65.2/lambda.json, run_id e167c1ab2c68496cbe1a2a881ab25900). Subject aggregate tok/s at c=1 23.2 vs comparator 75.2; subject decode 44.1 vs 74.2 at c=1. Every c>1 band is INVALID-CORRECTNESS(#2753/#2776): no PP-26 witness was run, so no c>1 ratio is quoted (P-4). The published default-feature binary resolves 0 GPU layers on a 4090 host; a second install of the same crate with --features cuda (167 s) gave the cuda lane, also FAIL at c=1: decode 0.69x, prefill 0.18x (326.8 vs 492.5 aggregate at c=1; TTFT 24 vs 5 ms). c>1 bands: INVALID-CORRECTNESS(#2753/#2776), no witness, ratios struck. Related: chunked prefill (Arm E), the accelerator-quantity contract, and the 0.66 parity report section 6.'
+- id: PMAT-963
+  github_issue: null
+  item_type: bug
+  title: 'No pre-publish gate owns c>=8 request failures on the published default-feature (CPU) build or on aarch64: the only pre-publish ladder is perf_gate.sh --host lambda --phase release --workload W1 on the x86 tree build (CB-1400 class). Post-publish, the published 0.65.2 apr serve fails every request at c>=8 on gx10 and mini (0/8, 0/16 in all 5 replicates) and one c=16 replicate on intel (0/16), while the pinned llama.cpp serves the same bands; no parity block can be emitted for those hosts'
+  status: todo
+  priority: critical
+  assigned_to: null
+  created: 2026-09-05 01:40:00+00:00
+  updated: 2026-09-05 01:40:00+00:00
+  spec: docs/specifications/0.66-performance-parity-report.md
+  acceptance_criteria:
+  - 'scripts/parity_host_receipt.sh on the published binary emits a block on gx10 and intel: every band of the declared ladder [1,4,8,16] has 5 replicates with successful == total_requests'
+  - 'the failure mode is named from the client side (apr test llm bench records the per-request error kind: timeout vs connection vs HTTP status) - today the run json carries only successful/failed counts, so the receipt cannot say WHY a request failed (own sub-ticket)'
+  - 'root cause is traced to the module (the writer-lock serialisation of concurrent requests and the prefill-at-decode-speed path, cf. PMAT-962), not to the protocol timeout'
+  - 'a pre-publish gate runs the ladder on the default-feature build and on at least one aarch64 host, or the release runbook says in writing that it does not and why (five whys: 1 the release cut ran perf_gate.sh once, host=lambda phase=release workload=W1 (evidence/release/0.65.2/perf-gate-8e1e9ad40.txt: one line, one host); 2 perf_gate.sh takes one --host and the runbook (pp4-work/release_cut.sh:10) calls it for lambda only; 3 the matrix cells for gx10/intel W1 are UNMEASURED and mini W1 is NA, so the gate has nothing to fail there; 4 the pre-publish dogfood runs on the cut host and its parity row (check_parity_receipt) reads the lambda receipt; 5 nothing in .github/workflows or scripts/release*.sh runs the ladder on a published or default-feature binary before cargo publish - the first ladder the published binary ever met was the post-publish host receipt)'
+  notes: 'Measured 2026-09-05 by the 0.65.2 post-publish host receipts (evidence/dogfood/0.65.2/{gx10,intel}.json, key parity_attempt; kept work dirs on the hosts are named there). gx10: TTFT 17.6 s at c=1 and 36 s at c=4 with 4/4 successes, then 0 successes at c=8 and c=16 in every replicate. intel: c=16 replicate 2 had 0/16 successful, replicate 1 9/16, the other three 16/16. mini (M4): 2/2 at c=1 (4.5 tok/s, TTFT 13.9 s) and 4/4 at c=4 (TTFT 49.5 s), then 0/8 and 0/16 in every replicate. The protocol window is http_duration_secs = 30 (scripts/llama_pin.toml#protocol.http). The receipt validator (scripts/lib/bench_receipt.py) correctly refuses a band with zero subject throughput as a non-measurement, so these hosts carry parity_attempt instead of parity and check_multiplatform_dogfood.sh stays FAIL for them: the post-publish verdict for 0.65.2 is NO-GO on this evidence.'
+- id: PMAT-964
+  github_issue: null
+  item_type: bug
+  title: 'H12 floor unwired for aarch64 pre-publish (CB-1400 class): the H12 throughput floor (>= 10 tok/s) exists only inside apr bench itself (crates/apr-cli/src/commands/bench.rs:260) and in the post-publish bench_host_receipt.sh; no workflow or release script runs apr bench before cargo publish on any host, and no pre-publish step runs on aarch64 at all. Post-publish, the published aarch64 0.65.2 decodes at 3.5 tok/s on gx10/GB10 and 4.5 tok/s on mini/M4 at c=1 (0.046x / 0.05x the pinned llama.cpp CPU medians 75.7 / 90.4) and apr bench measures 7.7 / 8.1 tok/s, below the floor it ships'
+  status: todo
+  priority: critical
+  assigned_to: null
+  created: 2026-09-05 01:40:00+00:00
+  updated: 2026-09-05 01:40:00+00:00
+  spec: docs/specifications/0.66-performance-parity-report.md
+  acceptance_criteria:
+  - 'the published aarch64 binary (crates.io, default features) reaches the H12 floor in apr bench on gx10 and a cpu-lane parity ratio within the L3 band at c=1'
+  - 'the receipt names which SIMD path the published binary took on aarch64 (NEON vs scalar) - the tree build measured 1.21x on GB10 (#2567) and the published binary measures 0.046x, so the two are not the same code path or the same build flags'
+  - 'H12 runs before cargo publish on an aarch64 host, or the release runbook names the workflow file:line that would (five whys: 1 the published aarch64 binary is below the H12 floor; 2 nothing pre-publish measured it - grep of .github/workflows/*.yml, scripts/release*.sh, scripts/dogfood.sh, scripts/perf_gate.sh and Makefile finds no apr bench invocation (the only hit is a docs example in scripts/gen-cli-chapter-stubs.sh:52); 3 H12 is asserted inside apr bench (bench.rs:260) and by bench_host_receipt.sh, both of which run only when someone runs them on a host after install; 4 the release cut has no aarch64 stage - perf gate, clean-room and pre-publish dogfood all ran on lambda x86; 5 the matrix marks gx10/intel W1 UNMEASURED and mini NA, so the gate reports rather than fails there)'
+  notes: 'Measured 2026-09-05: evidence/dogfood/0.65.2/gx10.json (parity_attempt band c=1: apr 3.5/3.5/3.6/3.5/3.5 tok/s (median 3.5), TTFT ~17.5 s; comparator 77.8/75.7/73.3/77.8/73.8 (median 75.7); bench_attempt: apr bench 7.7 tok/s, Performance Grade F, exit non-zero). mini (M4, aarch64-apple, same published crate): 4.5 tok/s at c=1 vs 90.4 (0.05x), apr bench 8.1 tok/s (exit 5, below the H12 floor) - evidence/dogfood/0.65.2/mini.json. Related: PMAT-962 (lambda, same binary family, 0.59x decode), PMAT-963 (c>=8 request failures), #2567 (aarch64 Q4_K tree-build ratio).'
+- id: PMAT-965
+  github_issue: null
+  item_type: bug
+  title: 'parity_host_receipt.sh and bench_host_receipt.sh exit silently (0 s, empty log, rc=1) under macOS bash 3.2 - a silent-pass shape; they must fail closed with a message on BASH_VERSINFO<4 (the missing-flock case already fails closed with a message: measured on mini, "FAIL no flock(1)")'
+  status: todo
+  priority: high
+  assigned_to: null
+  created: 2026-09-05 05:30:00+00:00
+  updated: 2026-09-05 05:30:00+00:00
+  spec: null
+  acceptance_criteria:
+  - 'under bash 3.2 (or any BASH_VERSINFO[0] < 4) both scripts print one FAIL line naming the version they need and exit non-zero before touching the lock; case row + mutation (guard removed -> silent exit) in the same PR'
+  - 'setsid is not used by either script (the mini launcher used it; recorded so nobody adds it): the guard is bash version + flock only'
+  - 'the host prerequisites (Homebrew bash, util-linux flock) are declared in paiml/infra machines/mini/forjar.yaml, not hand-installed - the 2026-09-05 mini run used a HAND install of both (brew install bash; brew install util-linux), which is the reaper class'
+  notes: 'Found producing the 0.65.2 mini receipt: chain3 ran under /bin/bash 3.2.57, parity rc=1 in 0 s with an empty parity.log; under Homebrew bash 5.3.15 the script proceeded and then refused on flock (fail-closed, correct); util-linux flock fixed that. Sibling infra PR declares both on mini.'
+- id: PMAT-966
+  github_issue: null
+  item_type: bug
+  title: 'witness=null on every band is a HARNESS defect: --witness-json is opt-in, so parity_block.py emits c>1 bands with no PP-26 witness and no validity mark, and perf_gate.sh grades them; PP-26 says absence is invalidity - the harness must print validity_by_band itself (no witness on c>1 => INVALID-CORRECTNESS), never a hand afterwards'
+  status: todo
+  priority: critical
+  assigned_to: null
+  created: 2026-09-05 07:10:00+00:00
+  updated: 2026-09-05 07:10:00+00:00
+  spec: docs/specifications/PP-LLAMA-001-MASTER.md
+  acceptance_criteria:
+  - 'scripts/lib/parity_block.py writes validity_by_band on every lane: c=1 MEASURED when the band completed, every c>1 band INVALID-CORRECTNESS(PP-26 absent) unless a witness with result PASS, min_agree_tokens >= 64 and max_constant_run <= 16 is attached; ratio fields on an INVALID band are null, not numbers'
+  - 'perf_gate.sh and check_parity_receipt.sh REFUSE a c>1 band that carries a ratio without a witness (fail closed), and print the validity line per band in the verdict'
+  - 'must-fire mutation: run scripts/parity_host_receipt.sh without --witness-json against a live pair; the emitted block must self-mark every c>1 band INVALID-CORRECTNESS and carry no c>1 ratio (RED today: the 0.65.2 lambda block carried ratio_aggregate_tok_per_sec on c=4/8/16 with witness=null)'
+  - 'the 0.65.2 receipts keep their hand-annotated validity_by_band with validity_by_band_source naming this ticket; the ledger rows 7-11 what_it_lacks name it'
+  notes: 'Found on the 0.65.2 post-publish receipts (evidence/dogfood/0.65.2/*.json): every band of both lambda lanes and of the three refused attempts has witness: null, and the block still carried per-band ratios and verdicts at c=4/8/16. The validity marks now in those files were written by hand afterwards - the gate grading its own paper - and are labelled so. Ruling 2026-09-05 (noah): hand-edited validity is not validity.'
+- id: PMAT-967
+  github_issue: null
+  item_type: bug
+  title: 'A release-phase perf-gate verdict with no artifact identity (CB-1400 sibling): VERDICT PASS host=lambda phase=release workload=W1 on every 0.65.x cut graded evidence/perf-gate-001-w1-lambda/receipt.r1.json - commit 745fa8588, a dev checkout with feature_set [cuda], binary sha256 9d0b08b0... - not the crates.io cli build that was published; the verdict line must carry feature_set and the built-binary sha256 (PP-18/PP-25), and a verdict from a checkout is phase=pre-publish-checkout, never quotable as release'
+  status: todo
+  priority: critical
+  assigned_to: null
+  created: 2026-09-05 07:10:00+00:00
+  updated: 2026-09-05 07:10:00+00:00
+  spec: docs/specifications/PP-LLAMA-001-MASTER.md
+  acceptance_criteria:
+  - 'the VERDICT line prints feature_set=[...] binary_sha256=<64 hex> install_source={registry|checkout} read from receipt.provenance (absent => FAIL INSTRUMENT, not PASS)'
+  - 'when install_source is not a registry install (cargo install from crates.io of the version under release), --phase release is relabelled phase=pre-publish-checkout in the verdict line and the run exits with a REPORT, never a PASS that a release runbook can quote; release_cut.sh (pp4-work) and scripts/release*.sh stop passing a stale checkout receipt as the release receipt'
+  - 'must-fire mutation: feed receipt.r1.json (745fa8588, checkout) with --phase release --commit <any newer sha> - today it prints PASS phase=release; after the fix it prints phase=pre-publish-checkout and no PASS'
+  - 'the three 0.65.x cut lines are relabelled in evidence/release/0.65.2/perf-gate-8e1e9ad40.txt and docs/audits/impl-PMAT-929-receipt.md (done in this PR)'
+  notes: 'Found 2026-09-05 while answering "which pre-publish gate should have been red": the receipt the gate graded on 587ad0797, 752f55346 and 8e1e9ad40 was the same 2026-09-01 file (ledger row 3, SPENT, subject lane invalid, unsigned); its PASS meant only that no W1 arm was ARMED. Nothing pre-publish ever measured the published default-feature (cli, CPU-only) binary; the first ladder it met was the post-publish host receipt (PMAT-962..964).'
 - id: PMAT-968
   github_issue: null
   item_type: task
@@ -16367,6 +16314,25 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-1054
+  github_issue: null
+  item_type: task
+  title: 'GH-2982: C0-5 PRQ-013 single base-owned quorum workflow (pull_request_target/merge_group)'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-09-05T11:54:37Z
+  updated: 2026-09-05T16:44:33Z
+  spec: null
+  acceptance_criteria:
+  - 'see #2982 (A + mutation)'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - pp-066
+  notes: 'complete: proof:PR#2985 (merged cdc0acb99 2026-09-05T16:44:33Z); proof:docs/audits/impl-PMAT-1054-receipt.md'
 - id: PMAT-1055
   github_issue: null
   item_type: task
@@ -16403,6 +16369,40 @@ roadmap:
   - kind:code
   - pp-066
   notes: 'complete: proof:PR#2987 (merged 65680cdf8 2026-09-06T02:37:35Z); proof:docs/audits/impl-PMAT-1056-receipt.md'
+- id: PMAT-1057
+  github_issue: null
+  item_type: task
+  title: 'GH-2882: I-1 master row 1: land #2809; Blackwell guard on prefill_multi_prompt (gpu_profile.rs::multi_prompt_prefill_allowed); perf04'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-05T11:23:55Z
+  updated: 2026-09-05T11:23:55Z
+  spec: null
+  acceptance_criteria:
+  - 'gh pr view 2809 --json state,mergedAt shows merged | bash scripts/check_perf041_marker.sh exit 0 (marker present in cuda-nightly.yml; absent marker = RED in its selftest) | the first wired gx10 night writes evidence/perf041/gx10/witness.json (EXPECTED RED per master §9 #1a is a finding to file, not a rerun) | mutation: remove the perf041 step from cuda-nightly.yml -> check_perf041_marker.sh RED'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-1058
+  github_issue: null
+  item_type: task
+  title: 'PP-066: land the 0.66 release spec (docs only)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-05T07:00:53Z
+  updated: 2026-09-05T07:00:53Z
+  spec: docs/specifications/PP-066-release-spec.md
+  acceptance_criteria:
+  - Source of truth for the 0.66 obligation set
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: 'first minted as PMAT-966 (#2872, 2026-09-05 07:00Z); #2871 minted PMAT-966 for a harness defect in another session at 07:10Z and both landed — re-minted to PMAT-1058 on 2026-09-06 (the later copy in the file; the harness ticket keeps PMAT-966 because signed evidence under evidence/ cites it)'
 - id: PMAT-1059
   github_issue: null
   item_type: task
@@ -16421,4 +16421,198 @@ roadmap:
   labels:
   - kind:code
   - pp-066
+  notes: null
+- id: PMAT-1061
+  github_issue: null
+  item_type: task
+  title: 'BSE-16 fail-closed gate: target — pmat verify stage_tests root-crate-only in a workspace, SATD pre-existing (§13 F-09)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-09-07T01:23:54Z
+  updated: 2026-09-07T01:23:54Z
+  spec: docs/specifications/build-system-enhancement.md (paiml/infra)
+  acceptance_criteria:
+  - 'The A_i command of the matching §4 item in the spec exits 0 on the branch and its named mutation goes RED; Fable re-runs both.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - bse-001
+  - m2
+  notes: null
+- id: PMAT-1062
+  github_issue: null
+  item_type: task
+  title: 'BSE-01 guard job runs all, reports all; CARGO_TARGET_DIR per container step; aprender timeout-minutes'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-09-07T01:23:54Z
+  updated: 2026-09-07T01:23:54Z
+  spec: docs/specifications/build-system-enhancement.md (paiml/infra)
+  acceptance_criteria:
+  - 'The A_i command of the matching §4 item in the spec exits 0 on the branch and its named mutation goes RED; Fable re-runs both.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - bse-001
+  - m2
+  notes: null
+- id: PMAT-1063
+  github_issue: null
+  item_type: task
+  title: 'BSE-14 scripts/predict_merge.sh — merge(origin/main, HEAD) in a temp worktree, guard_tree --list guards, freshness tuple, --check refuses on movement'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-09-07T01:23:54Z
+  updated: 2026-09-07T01:23:54Z
+  spec: docs/specifications/build-system-enhancement.md (paiml/infra)
+  acceptance_criteria:
+  - 'The A_i command of the matching §4 item in the spec exits 0 on the branch and its named mutation goes RED; Fable re-runs both.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - bse-001
+  - m2
+  notes: null
+- id: PMAT-1064
+  github_issue: null
+  item_type: task
+  title: 'BSE-02 guard-tree job first (the cargo-free guards), parallel to the builds'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-09-07T01:23:54Z
+  updated: 2026-09-07T01:23:54Z
+  spec: docs/specifications/build-system-enhancement.md (paiml/infra)
+  acceptance_criteria:
+  - 'The A_i command of the matching §4 item in the spec exits 0 on the branch and its named mutation goes RED; Fable re-runs both.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - bse-001
+  - m2
+  notes: null
+- id: PMAT-1065
+  github_issue: null
+  item_type: task
+  title: 'BSE-09b merge=union on GitHub''s merge engine (goal lane); BSE-09a sorted-insert only if union CONFLICTS'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-07T01:23:54Z
+  updated: 2026-09-07T01:23:54Z
+  spec: docs/specifications/build-system-enhancement.md (paiml/infra)
+  acceptance_criteria:
+  - 'The A_i command of the matching §4 item in the spec exits 0 on the branch and its named mutation goes RED; Fable re-runs both.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - bse-001
+  - m2
+  notes: null
+- id: PMAT-1066
+  github_issue: null
+  item_type: task
+  title: 'BSE-10a CI tool pins + baseline tool_version — assert, never install (tools.toml, check_tool_versions.sh)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-07T01:23:54Z
+  updated: 2026-09-07T01:23:54Z
+  spec: docs/specifications/build-system-enhancement.md (paiml/infra)
+  acceptance_criteria:
+  - 'The A_i command of the matching §4 item in the spec exits 0 on the branch and its named mutation goes RED; Fable re-runs both.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - bse-001
+  - m2
+  notes: null
+- id: PMAT-1067
+  github_issue: null
+  item_type: task
+  title: 'BSE-11 nightly witness byte-compare (witness_diff.sh: UNCHANGED/CHANGED, never a status colour)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-07T01:23:54Z
+  updated: 2026-09-07T01:23:54Z
+  spec: docs/specifications/build-system-enhancement.md (paiml/infra)
+  acceptance_criteria:
+  - 'The A_i command of the matching §4 item in the spec exits 0 on the branch and its named mutation goes RED; Fable re-runs both.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - bse-001
+  - m2
+  notes: null
+- id: PMAT-1068
+  github_issue: null
+  item_type: task
+  title: 'BSE-03 three ratchet classes → D2 comparand diff measured on origin/main@SHA in-run; README count derived; threat model first (PR-B)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-09-07T01:23:54Z
+  updated: 2026-09-07T01:23:54Z
+  spec: docs/specifications/build-system-enhancement.md (paiml/infra)
+  acceptance_criteria:
+  - 'The A_i command of the matching §4 item in the spec exits 0 on the branch and its named mutation goes RED; Fable re-runs both.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - bse-001
+  - m2
+  notes: null
+- id: PMAT-1074
+  github_issue: null
+  item_type: task
+  title: 'guard_tree.sh cargo classifier is textual: 25 of 170 guards flip when comments and quoted strings are ignored (measured 2026-09-07); replace with an execution oracle or a declared universe'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-07T08:44:10Z
+  updated: 2026-09-07T08:44:10Z
+  spec: null
+  acceptance_criteria:
+  - 'guard_tree.sh --no-cargo decides by a bare ''cargo '' token in the guard''s own text (BSE-01/BSE-02 design). Measured on bse-m2-pr-a: 25 guards carry the token only in comments or printf strings (check_apr_bin_pinned, check_beats_gated, check_tool_versions, both ratchets, ...), so the cargo-free universe — the one predict_merge.sh runs — omitted tree-property guards, and #3037 was predicted PASS on a tree the fleet lint ratchet rejected. Some of the 25 reach cargo through sourced helpers (apr_bin.sh), so stripping strings alone has false negatives. Oracle candidates: run each guard with cargo hidden from PATH (execution), or a declared universe checked against CI wiring. Two ratchets were fixed by rewording their messages in the same PR.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-1077
+  github_issue: null
+  item_type: task
+  title: 'BSE-17 two-tier tests: quick on pull_request (touched crates + reverse dependents + derived tree-reader targets), full on push-to-main/merge_group/nightly/pre-release; tree-identity reuse on the queue ref'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-07T15:00:58Z
+  updated: 2026-09-07T15:00:58Z
+  spec: null
+  acceptance_criteria:
+  - 'Ruling 2026-09-07 (Noah): ''quick test for aprender PR, then full test pre-release — implement ASAP''. Measured 2026-09-07: 22 workspace-test jobs in 33 CI runs, 8 green at 95 min avg, 6 cancelled by a newer push, 4 merge-queue rebuilds of a tree byte-identical to the PR head; both PR-B workspace-test reds came from tree-reader tests (contracts baseline reader, readme_contract.rs) that a crate selection alone would have skipped. Quick tier = gate_touched_crates.sh selection (cap -> full) + every test target that reads the tree, DERIVED by scripts/check_tree_reader_tests.sh from the test sources (include_str!, fs::read*, Path::new, project_root/workspace_root, CARGO_MANIFEST_DIR) into scripts/tree_reader_tests.txt and diffed on every run. Full tier unchanged on push to main, merge_group, workflow_dispatch, nightly, pre-release. Queue ref: when HEAD^{tree} equals the PR head''s tree and that head''s workspace-test check-run succeeded, the job cites it and skips the suite; any doubt runs it.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
   notes: null
