@@ -206,3 +206,4 @@ pub(crate) mod unified_search_lint;
 pub(crate) mod validate;
 pub(crate) mod validate_manifest;
 pub(crate) mod xet_mode;
+include!("lint_json_outcome_shape_tests.rs");
