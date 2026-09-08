@@ -5,9 +5,9 @@
 | Ticket | PMAT-1092 |
 | Reviewed | `docs/audits/release-process-review/release-process-aprender-v0.1-draft.md` v0.1 (463 lines) |
 | Against | `origin/main` @ `c04eda87d`, and the physical hosts, 2026-09-08 |
-| Method | one `agy /teamwork-preview` lane, every finding re-run here, then **four** AD-04 quorum rounds over this review — all four returned 3 × FAIL, and every objection was applied rather than argued (see *Method*) |
+| Method | one `agy /teamwork-preview` lane, every finding re-run here, then **five** AD-04 quorum rounds over this review — rounds 1–4 returned 3 × FAIL, round 5 returned 2 × FAIL / 1 PASS; every objection was applied rather than argued (see *Method*) |
 | Epic | **paiml/aprender#3058** — the build order, the two gates that cannot fail, and the decisions 0.66 is blocked on |
-| Verdict | **do-not-implement-as-written** — adopt §1/§2/§5.2/§9/§10 now, block §3.4/§5.1/§5.3/§6/§7 on the items below |
+| Verdict | **do-not-implement-as-written** — adopt §1/§2/§5.2/§10 now (and §9 bar the row RD-5 turns on), block §3.4/§5.1/§5.3/§6/§7 on the items below |
 | Marks | `[V]` verified by a command printed here · `[C]` computed · `[A]` asserted, source named · `[U]` unverified, owner named |
 
 The draft is right about *what* to gate and mostly wrong about *what already exists*. Its
@@ -22,7 +22,8 @@ Evidence pack with every command: `docs/audits/release-process-review/ground-tru
 
 | section | verdict | blocked on |
 |---|---|---|
-| §1 doctrine · §2 ledger shape · §5.2 manifest · §9 targets · §10 refusals | **admissible** | — |
+| §1 doctrine · §2 ledger shape · §5.2 manifest · §10 refusals | **admissible** | — |
+| §9 targets | admissible **except** the jidoka row F8 flags | RD-5 — §9's "0 divergences found by a user" and §5.5's UNSERVICEABLE escape cannot both hold as worded |
 | §3.1 artifact set | **blocked** | RD-1, and the unstated runner-class + feature-set change (F11) |
 | §3.2 FX-16/17/18 | admissible **as fixtures**; the artifacts they test do not exist yet | F1 |
 | §3.3 one recipe | **blocked** | `run_clean_room.sh` does not exist (F1) |
@@ -443,7 +444,7 @@ Commands: `ssh <host> 'uname -m; nproc; free -g; df -h /'`,
 | **S0-R2** | repo | required contexts `["ci / gate","workspace-test"]`; rulesets *Green Main*, *workspace-test*, *Merge Queue (main)* all `active` |
 | **S0-N1** | `nightly.yml` | 5 targets, **GitHub-hosted** runners, `cargo build --release -p apr-cli`, **default features**, zero occurrences of `cuda` |
 | **S0-Y3** | `yoga` | `[U]` — not run here; needs a `cargo build -p apr-cli --release --features cuda` on yoga plus `ldd \| grep -c cudart` (owner: Noah). Note `crates/aprender-gpu` advertises "no LLVM, no nvcc", so the expected count of 0 is a property of the source, not of the box |
-| **S0-Y4/Y5** | `yoga` | `[U]` — CUDA unit-test execution and its wall-clock budget, unmeasured (owner: Noah). Blocked behind F3's decision, not behind the box |
+| **S0-Y4/Y5** | `yoga` | `[U]` — CUDA unit-test execution and its wall-clock budget, unmeasured (owner: Noah). Blocked behind the decision F3 is a finding against — RD-3 — not behind the box |
 | **S0-G1** | `gx10` | `[U]` — per-artifact build wall clock, unmeasured (owner: Noah). Feeds RD-4 |
 
 **What `§2`'s `[U]` rows now measure as:** `yoga` = x86_64, RTX 4060 Laptop, 8 GB, sm_89, driver
@@ -481,10 +482,11 @@ One `agy /teamwork-preview` lane (agy 1.1.27, `--sandbox`, `writes=false`, conve
 after; no lane writes leaked.
 
 Every finding was then re-executed here, and this document was itself put through the AD-04
-merge quorum **four times** — three independent agy lanes per round, reviewing *this review*.
-**Every round returned 3 × FAIL.** What follows is what that changed, because a review that
-hides its own corrections is not evidence. The quorum never passed; that is stated here and
-in the receipt rather than left to be inferred from the absence of a green mark.
+merge quorum **five times** — three independent agy lanes per round, reviewing *this review*.
+Rounds 1–4 returned **3 × FAIL**; round 5 returned **2 × FAIL and 1 PASS**. What follows is
+what that changed, because a review that hides its own corrections is not evidence. The quorum
+has not yet returned three PASS; that is stated here and in the receipt rather than left to be
+inferred from the absence of a green mark.
 
 **Overturned by the quorum — this review was wrong:**
 
@@ -502,18 +504,20 @@ in the receipt rather than left to be inferred from the absence of a green mark.
    not. Fixed.
 4. **Dispositions in the RD table.** "Accept" / "No objection" / "Reframe" on RD-2, RD-6,
    RD-7 and RD-8 are decisions, not escalations, in a document claiming to decide none.
-   Rephrased — and it took three further quorums to finish, each finding exactly one more
-   after the last had claimed the sweep was complete. The **second** caught RD-3 (which
-   called advisory→required "sound", and still cited the 3–98 figure F10 had just retracted)
-   and RD-4 ("Unchanged"). The **third** caught RD-9, which declared itself "Closed by
-   Appendix A above" — a measurement I had taken, reported as a decision I had no standing to
-   make. The **fourth** caught two more: F8's "Smallest fix" laid out the two readings of the
-   §9-vs-§5.5 contradiction and then picked one, which is RD-5 decided by the back door,
-   while RD-5's own row says "resolve F8 first"; and Appendix A still headed its results
-   "§2's `[U]` rows now close as" — the RD-9 defect verbatim, one section further down,
-   missed when RD-9 was fixed.
+   Rephrased — and it took three further quorums plus one sweep of my own to finish, each
+   pass following one that had claimed the sweep was complete. The full list, so the count
+   can be checked rather than believed:
 
-   **Ten rows, four rounds.** The pattern is more useful than the count: a document can
+   | pass | found | count |
+   |---|---|---|
+   | quorum 1 | RD-2, RD-6, RD-7, RD-8 — "Accept" / "No objection" / "Reframe" | 4 |
+   | quorum 2 | RD-3 (called advisory→required "sound", and still cited the 3–98 figure F10 had just retracted), RD-4 ("Unchanged") | 2 |
+   | quorum 3 | RD-9 — "Closed by Appendix A above": a measurement I had taken, reported as a decision I had no standing to make | 1 |
+   | my own sweep, after quorum 3 | F3's "RD-3's criterion **becomes**", F7's "RD-7 **becomes**", F11's "RD-1 **is resolved** in the same PR" | 3 |
+   | quorum 4 | F8's "Smallest fix" laid out the two readings of the §9-vs-§5.5 contradiction and picked one — RD-5 by the back door, while RD-5's row says "resolve F8 first"; and Appendix A still headed its results "§2's `[U]` rows now close as", the RD-9 defect verbatim one section further down | 2 |
+   | quorum 5 | this table's own arithmetic (it read "ten rows" against nine enumerated, and "each finding exactly one more" against two rounds that found two), the §9 row of the verdict table, and S0-Y4/Y5's "F3's decision" | 3 |
+
+   **Fifteen, over six passes** — five quorum rounds and one sweep of my own. The pattern is more useful than the count: a document can
    declare "escalated, not decided" in its heading and mean it, and still decide by
    grammar — an imperative in a "Smallest fix", a "becomes", a "now closes". Every one of
    these was caught by a reader who was not the author. So this paragraph records the
