@@ -1,0 +1,46 @@
+{
+  "ticket": "PMAT-1091",
+  "base": "origin/main",
+  "head": "0e8dd9df80b5beec44ce621e967f8acd4c364cff",
+  "diff_sha256": "690b879efa16325764e12edf1dda8aba8bc1a2f90416cd3704abb43bd3ba0911",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 9284,
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff perfectly implements the requested changes for ticket PMAT-1091. `workflow_dispatch` is given a `pr` input, the job's `if` condition is updated to run only on `workflow_dispatch` with a non-empty `pr`, `PR_HEAD_SHA` is removed from the job-level environment, and a new step is correctly introduced before the consumers to fetch the head SHA via `gh`, validate its length, and verify it's fetchable. No extraneous or forbidden changes were made.",
+      "findings": [],
+      "raw_bytes": 2450,
+      "err_bytes": 0
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff perfectly implements the acceptance criteria of PMAT-1091. It correctly shifts the `pr-review-receipt` job from `pull_request` to an ad-hoc `workflow_dispatch` trigger. It adds the required `pr` input, removes `PR_HEAD_SHA` from the job-level environment, and introduces a defensively-programmed bash step that securely fetches the PR head SHA via `gh`, verifies its 40-character length, fetches it from origin, and correctly exports it to `$GITHUB_ENV` for the subsequent sweeping steps. All updated comments and conditions exactly match the requirements.",
+      "findings": [],
+      "raw_bytes": 2167,
+      "err_bytes": 0
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff accurately implements the acceptance criteria for PMAT-1091. \n\n- It adds `workflow_dispatch` with the `pr` input to `ci.yml`.\n- It restricts the `pr-review-receipt` job to run only on `workflow_dispatch` when `inputs.pr` is not empty.\n- It removes `PR_HEAD_SHA` from the job-level environment as specified, substituting it with a robust new step (\"Resolve the PR head, or refuse\").\n- The new step properly asserts the presence of `PR_NUMBER`, retrieves the SHA using `gh`, ensures it's exactly 40 characters, verifies it is fetchable, and exports it to the environment.\n- The extensive comments regarding the Three Queries and the rationale behind the change match the ticket requirements exactly. \n\nNo violations or missing requirements were found.",
+      "findings": [],
+      "raw_bytes": 3423,
+      "err_bytes": 0
+    }
+  ],
+  "dissent": [],
+  "dedup": [],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": []
+}
