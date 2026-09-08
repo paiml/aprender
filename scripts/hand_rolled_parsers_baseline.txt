@@ -1,1 +1,2 @@
+# tool_version=none (measured by cargo metadata + grep; not a versioned analyser)
 aprender-ptx-debug

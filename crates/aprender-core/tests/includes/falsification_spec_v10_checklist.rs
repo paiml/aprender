@@ -109,33 +109,123 @@ fn check_file_for_satd(path: &std::path::Path, violations: &mut Vec<String>) {
 /// someone ADDS a marker, which is the outcome worth excluding.
 ///
 /// Lower it whenever debt is paid down. Never raise it.
+///
+/// BSE-03 phase B (PMAT-1068): this constant is now the FALLBACK, not the
+/// comparand. It is the one number in the SATD class that a pull request can
+/// rewrite, which is the whole defect the D2 normaliser removes
+/// (`docs/audits/threat-model-bse-03-ratchets.md`, class 2). When the job
+/// exports `SATD_BASELINE` — the count measured on the comparand checkout of
+/// `origin/main`, in the same job, by this same scanner — that measurement is
+/// the ceiling and this constant is not read at all.
 const SATD_PRODUCTION_BASELINE: usize = 37;
+
+/// The environment variable carrying `measure(comparand)` for the SATD class.
+const SATD_BASELINE_ENV: &str = "SATD_BASELINE";
+
+/// The ceiling, and WHICH SOURCE it came from.
+///
+/// Two rules, and the second is the one worth stating:
+///
+/// * unset ⇒ the constant, tagged `"constant"`. That is the local-developer
+///   path, where there is no second checkout to measure.
+/// * set ⇒ the parsed value, tagged `"comparand"` — including `0`, which is a
+///   real measurement of a tree with no markers and must never read as "unset".
+/// * set but EMPTY or unparseable ⇒ `Err`. It does **not** fall back. An empty
+///   `SATD_BASELINE` means the job tried to measure the comparand and failed,
+///   and silently substituting a hand-written constant for a measurement that
+///   did not happen is the exact defect this suite exists to catch: a gate
+///   reporting a verdict it did not reach.
+fn satd_baseline_from(raw: Option<&str>) -> Result<(usize, &'static str), String> {
+    match raw {
+        None => Ok((SATD_PRODUCTION_BASELINE, "constant")),
+        Some(s) if s.trim().is_empty() => Err(format!(
+            "{SATD_BASELINE_ENV} is set but empty: the comparand measurement did not \
+             happen, and an unmeasured comparand is not a baseline. Unset it to fall \
+             back to the constant deliberately, or fix the measurement."
+        )),
+        Some(s) => s
+            .trim()
+            .parse::<usize>()
+            .map(|n| (n, "comparand"))
+            .map_err(|e| {
+                format!(
+                    "{SATD_BASELINE_ENV}={s:?} is not a marker count ({e}); it must be \
+                     the integer this same scanner measured on the comparand checkout."
+                )
+            }),
+    }
+}
 
 fn f_checklist_005_satd_is_zero() {
     // F-CHECKLIST-005: SATD in production source may only shrink.
+    //
+    // POLARITY (BSE-03 phase B): a count ABOVE the ceiling fails; a count at or
+    // below it passes. There is NO lower bound any more. The old "a ratchet
+    // that never tightens is stuck" assertion was one — it failed a tree whose
+    // debt had FALLEN, and it is the registered mutation of
+    // `scripts/tests/ratchet_semantics_test.sh --class satd`. It was load
+    // bearing only while the ceiling was a hand-written constant that somebody
+    // had to remember to lower. A ceiling measured on the comparand tightens by
+    // itself on the next merge, so an improvement needs no edit anywhere, and
+    // reddening one is how a guard teaches people to stop paying debt down.
+    let raw = std::env::var(SATD_BASELINE_ENV).ok();
+    let (baseline, source) = match satd_baseline_from(raw.as_deref()) {
+        Ok(pair) => pair,
+        Err(why) => panic!("F-CHECKLIST-005: {why}"),
+    };
+    // Printed, not merely computed: which number was enforced, and from where.
+    println!("F-CHECKLIST-005: SATD ceiling {baseline} (source: {source})");
+
     let mut violations = Vec::new();
     for path in production_rs_files() {
         check_file_for_satd(&path, &mut violations);
     }
 
     assert!(
-        violations.len() <= SATD_PRODUCTION_BASELINE,
+        violations.len() <= baseline,
         "F-CHECKLIST-005: SATD ratchet BROKEN -- {} markers in production source, \
-         baseline is {SATD_PRODUCTION_BASELINE}. Remove the new marker, or pay down \
-         elsewhere; do not raise the baseline.\n{}",
+         the ceiling is {baseline} (source: {source}). Remove the new marker, or pay \
+         down elsewhere; do not raise the ceiling.\n{}",
         violations.len(),
         violations.join("\n")
     );
+}
 
-    // A ratchet that never tightens is a ratchet nobody notices is stuck.
-    assert!(
-        violations.len() + 8 >= SATD_PRODUCTION_BASELINE,
-        "F-CHECKLIST-005: SATD fell to {} against a baseline of \
-         {SATD_PRODUCTION_BASELINE}. Lower SATD_PRODUCTION_BASELINE to {} so the \
-         gain is locked in.",
-        violations.len(),
-        violations.len()
+#[test]
+fn f_checklist_005_satd_baseline_source_is_env_then_constant() {
+    // F-CHECKLIST-005, the parsing half. Both polarities of every rule in
+    // satd_baseline_from, because "reads the environment when set" is a claim
+    // about a fallback nobody sees fire.
+    assert_eq!(
+        satd_baseline_from(None).expect("unset is not an error"),
+        (SATD_PRODUCTION_BASELINE, "constant"),
+        "unset must fall back to the constant, and say so"
     );
+    assert_eq!(
+        satd_baseline_from(Some("12")).expect("a count parses"),
+        (12, "comparand"),
+        "a set value must WIN over the constant, and be tagged as the comparand"
+    );
+    assert_eq!(
+        satd_baseline_from(Some(" 7\n")).expect("surrounding whitespace parses"),
+        (7, "comparand"),
+        "a value captured from a shell command substitution carries whitespace"
+    );
+    assert_eq!(
+        satd_baseline_from(Some("0")).expect("zero parses"),
+        (0, "comparand"),
+        "0 is a real measurement of a clean comparand and must not read as unset"
+    );
+    for bad in ["", "   ", "abc", "-1", "37.0", "1e2"] {
+        let err = satd_baseline_from(Some(bad)).expect_err(
+            "an unusable SATD_BASELINE must be an ERROR, never a silent fall back to \
+             the constant",
+        );
+        assert!(
+            err.contains(SATD_BASELINE_ENV),
+            "the failure must name the variable it could not use, got: {err}"
+        );
+    }
 }
 
 // =============================================================================

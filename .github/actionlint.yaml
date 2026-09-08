@@ -1,0 +1,13 @@
+self-hosted-runner:
+  # The real label set in use, from `grep -h runs-on .github/workflows/*.yml`
+  # (BSE-01, PMAT-1062). `self-hosted`, `X64`/`x64`, `Linux`/`linux` and
+  # `ARM64`/`arm64` are already known to actionlint; the rest are this fleet's
+  # custom labels and would otherwise report "label ... is unknown" on every
+  # self-hosted job.
+  labels:
+    - clean-room
+    - intel
+    - gpu
+    - gx10
+    - cuda
+    - blackwell

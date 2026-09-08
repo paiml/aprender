@@ -179,7 +179,7 @@ if [ ! -f "$BASELINE_FILE" ]; then
   printf 'FAIL: %s missing. Run --update once to establish it.\n' "$BASELINE_FILE"
   exit 1
 fi
-baseline_count="$(grep -c . "$BASELINE_FILE" || true)"
+baseline_count="$(grep -vcE '^[[:space:]]*(#|$)' "$BASELINE_FILE" || true)"
 
 printf '%s collision(s), baseline %s\n' "$count" "$baseline_count"
 
@@ -187,7 +187,7 @@ if [ "$count" -gt "$baseline_count" ]; then
   printf '\nFAIL: registry copies of workspace-local crates grew %s -> %s.\n' "$baseline_count" "$count"
   printf 'A crates.io package now shares a name with a workspace crate. Cargo will\n'
   printf 'happily compile both, and their types are mutually incompatible.\n\n'
-  comm -13 <(sort "$BASELINE_FILE") <(printf '%s\n' "$FOUND" | grep . | sort) | sed 's|^|  NEW: |'
+  comm -13 <(grep -vE '^[[:space:]]*(#|$)' "$BASELINE_FILE" | sort) <(printf '%s\n' "$FOUND" | grep . | sort) | sed 's|^|  NEW: |'
   printf '\nFind the transitive source with:  cargo tree -i <name>@<version>\n'
   exit 1
 fi

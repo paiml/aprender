@@ -35,9 +35,42 @@
 #   GROWN  a recorded function whose number rose              -> RED
 #   STALE  a recorded function now under BOTH thresholds      -> RED (delete it)
 #
-# STALE is the half that makes this a ratchet rather than an allowlist. Without
-# it a row survives its own repair, and the next regression at that coordinate
-# is admitted for free by a row nobody noticed was already spent.
+# STALE is the half that made this a ratchet rather than an allowlist WHEN THE
+# COMPARAND WAS A FILE. Without it a row survives its own repair, and the next
+# regression at that coordinate is admitted for free by a row nobody noticed was
+# already spent. That rule is preserved in cx_verdict() and in the case table
+# below, and it is the pre-BSE-03 verdict.
+#
+# WHAT BSE-03 PHASE B CHANGED, AND WHY STALE IS GONE FROM THE VERDICT
+# -------------------------------------------------------------------
+# The check path no longer compares a measurement of one tree against a FILE.
+# It measures TWO REVISIONS with one instrument in one job -- the comparand
+# resolved by baseline_ratchet_resolve (origin/main, a ref a pull request cannot
+# rewrite) and the merge commit under test -- and diffs the two measurements:
+#
+#   NEW      over a threshold in the merge tree, absent from the comparand -> RED
+#   GROWN    a comparand function whose number rose                        -> RED
+#   IMPROVED a comparand function whose number fell                        -> GREEN
+#   RESOLVED a comparand function now under both thresholds                -> GREEN
+#
+# RESOLVED is where STALE used to be, and dropping it costs nothing HERE
+# because the comparand is no longer an allowlist a human maintains: it is
+# re-measured from origin/main on every run, so a repaired function leaves the
+# comparand by itself on the next merge. Nobody has to notice. The property
+# defended above -- "a row must not survive its own repair" -- is what makes a
+# FILE comparand a ratchet; a MEASURED comparand has no rows to survive.
+#
+# The three failures this removes are the merge commits: git writes the merged
+# baseline file, no author does, and a merge of two individually-legal branches
+# carries rows neither branch wrote. A measurement of the merged TREE has no
+# such artefact. scripts/complexity_baseline.txt survives as the recorded
+# inventory and is still shrink-only against origin/main through
+# baseline_ratchet_check (an author may not APPEND to it), but it is no longer
+# an input to the verdict.
+#
+# Model, rows and mutation: docs/audits/threat-model-bse-03-ratchets.md;
+# contract contracts/patterns/ratchet-verdict-d2-v1.yaml (APR-RATCHET-D2-001);
+# polarity rows: bash scripts/tests/ratchet_semantics_test.sh --class complexity
 #
 # WHAT THE ROWS MEAN
 #
@@ -76,7 +109,17 @@ MAX_COGNITIVE=25
 # repository has now found in a dozen guards. 10255 .rs files are tracked on
 # 68b059ca; the floor is set well below that so an ordinary deletion cannot
 # trip it, and far above zero so a broken scan cannot pass.
-MIN_RS_FILES=5000
+#
+# It is applied to BOTH revisions since phase B: a comparand measured over a
+# collapsed universe reads as "everything was already broken", which is attack
+# A9 re-entering at the comparand end.
+#
+# CX_MIN_RS_FILES exists so the throwaway fixture in
+# scripts/tests/ratchet_semantics_test.sh (four functions, one file) can reach
+# the verdict at all. Every run PRINTS the floor it used and says out loud when
+# it is not the shipped one, because a vacuity floor nobody can see is a
+# vacuity floor nobody can audit.
+MIN_RS_FILES="${CX_MIN_RS_FILES:-5000}"
 
 # pmat is fed an explicit file list, and a single argv entry is capped at
 # 128 KiB by the kernel (MAX_ARG_STRLEN). The longest tracked path is 129
@@ -265,6 +308,24 @@ cx_selftest() {
         fi
     }
 
+    cx_row_d2() { # cx_row_d2 <name> <want-red|want-green> <needle> <base-rows> <merge-rows>
+        local name="$1" want="$2" needle="$3" out rc ok=1
+        out=$(cx_verdict_d2 "$4" "$5") && rc=0 || rc=$?
+        count=$((count + 1))
+        case "$want" in
+            want-red)   [ "$rc" -ne 0 ] || ok=0 ;;
+            want-green) [ "$rc" -eq 0 ] || ok=0 ;;
+        esac
+        if [ -n "$needle" ] && ! grep -qF -- "$needle" <<< "$out"; then ok=0; fi
+        if [ "$ok" -eq 1 ]; then
+            printf '  ok    %-10s %s\n' "$want" "$name"
+        else
+            printf '  BROKE %-10s %s (rc=%s)\n' "$want" "$name" "$rc"
+            printf '%s\n' "$out" | sed 's/^/          | /'
+            fails=$((fails + 1))
+        fi
+    }
+
     cx_assert() { # cx_assert <name> <ok:0|1> <detail>
         count=$((count + 1))
         if [ "$2" -eq 0 ]; then
@@ -323,8 +384,19 @@ cx_selftest() {
     fi
     cx_row 'a clean tree against an empty baseline' want-green '' "$td/empty.txt" "$td/clean_rows.txt"
 
-    if [ "$count" -lt 9 ]; then
-        printf '  BROKE case table has %s row(s); at least 9 are required\n' "$count"
+    # ROWS 10-14. THE D2 VERDICT, over the SAME measured fixture rows. Both
+    # polarities again, and row 14 is the discriminator that says the two
+    # verdicts are genuinely different functions rather than one renamed: the
+    # input that reds as STALE at row 8 is GREEN here, because a comparand that
+    # is a MEASUREMENT has no row to keep.
+    cx_row_d2 'D2: over a threshold and absent from the comparand' want-red   'NEW'      "$td/empty.txt"    "$measured"
+    cx_row_d2 'D2: a comparand function that grew'                 want-red   'GROWN'    "$td/grew_cyc.txt" "$measured"
+    cx_row_d2 'D2: a comparand function that fell'                 want-green 'IMPROVED' "$td/fell.txt"     "$measured"
+    cx_row_d2 'D2: a comparand function now under both (was STALE→RED)' want-green 'RESOLVED' "$td/stale.txt" "$measured"
+    cx_row_d2 'D2: the merge tree measures identically'            want-green ''         "$measured"        "$measured"
+
+    if [ "$count" -lt 14 ]; then
+        printf '  BROKE case table has %s row(s); at least 14 are required\n' "$count"
         fails=$((fails + 1))
     fi
     printf '  %s row(s), %s failure(s)\n' "$count" "$fails"
@@ -364,6 +436,91 @@ cx_write_fixture_lib() {
 }
 
 # ---------------------------------------------------------------------------
+# THE D2 NORMALISER (BSE-03 phase B). measure(<rev>) over a PRISTINE
+# materialisation of that revision, taken from the object store.
+#
+# `git archive <rev> | tar -x --wildcards '*.rs'` is the materialisation: it
+# writes exactly the .rs universe of that revision and nothing else (0.7 s and
+# 10265 files for HEAD of this repository on 2026-09-07, byte-identical in count
+# to `git ls-files -- '*.rs'`), it cannot be contaminated by the working tree,
+# and unlike `git worktree add` it leaves no administrative state behind for a
+# failed run to strand. pmat needs no Cargo.toml to read a file list, so the
+# extracted tree is a complete instrument input.
+#
+# The path handed to the resolver is a PRESENCE test, not the universe: the
+# universe is measured from the tree. `src` is carried by every revision of this
+# repository and by the fixture.
+CX_COMPARAND_PATH='src'
+
+cx_materialise() { # cx_materialise <root> <rev> <dest> -> the .rs tree of <rev>
+    local root="$1" rev="$2" dest="$3"
+    mkdir -p "$dest" || return 1
+    git -C "$root" archive --format=tar "$rev" 2>/dev/null \
+        | tar -x -C "$dest" --wildcards '*.rs' 2>/dev/null
+}
+
+# One measurement of one revision. Writes into <work>:
+#   tree/            the materialised .rs universe
+#   rows.txt         the offender rows
+#   universe.txt     the scanned file list (cx_measure writes it)
+#   tool_version.txt the pmat that produced rows.txt, captured INSIDE the tree
+#
+# The version is captured per measurement rather than once per run because the
+# claim being asserted is "these two row sets came from one binary" (attack A6),
+# and a single capture at the top of the script cannot witness that.
+cx_measure_rev() { # cx_measure_rev <root> <rev> <work>
+    local root="$1" rev="$2" work="$3"
+    mkdir -p "$work" || return 1
+    if ! cx_materialise "$root" "$rev" "$work/tree"; then
+        printf 'FAIL: could not materialise %s from the object store; the measurement did not happen.\n' "$rev" >&2
+        return 1
+    fi
+    ( cd "$work/tree" && pmat --version 2>/dev/null | head -1 ) > "$work/tool_version.txt"
+    cx_measure "$work/tree" "$work" > "$work/rows.txt" 2> "$work/measure.err"
+}
+
+# The recorded instrument, BSE-10a's form: a `# tool_version=<...>` header line
+# in the baseline file. Absent is NOT a pass and NOT a mismatch; the caller says
+# which.
+cx_recorded_tool_version() { # cx_recorded_tool_version <file>
+    sed -n 's/^#[[:space:]]*tool_version=[[:space:]]*//p' "$1" 2>/dev/null | head -1
+}
+
+# THE D2 VERDICT. Two MEASUREMENTS in, findings out; rc 1 iff a RED finding.
+# Improvements are printed as NOTE lines and are never a failure -- there is no
+# lower bound here, which is exactly what distinguishes this from cx_verdict.
+cx_verdict_d2() { # cx_verdict_d2 <base-rows> <merge-rows>
+    local out red
+    out=$( { cx_data "$1" | sed 's/^/B /'
+             cx_data "$2" | sed 's/^/C /'; } | LC_ALL=C awk '
+        $1 == "B" { bcyc[$2] = $3; bcog[$2] = $4; base[$2] = 1; next }
+        $1 == "C" {
+            cur[$2] = 1
+            if (!($2 in base)) {
+                printf "RED    NEW      %s  cyclomatic %s cognitive %s  (over a threshold, absent from the comparand)\n", $2, $3, $4
+                next
+            }
+            if ($3+0 > bcyc[$2]+0) { printf "RED    GROWN    %s  cyclomatic %s -> %s\n", $2, bcyc[$2], $3 }
+            if ($4+0 > bcog[$2]+0) { printf "RED    GROWN    %s  cognitive %s -> %s\n", $2, bcog[$2], $4 }
+            if ($3+0 < bcyc[$2]+0) { printf "NOTE   IMPROVED %s  cyclomatic %s -> %s\n", $2, bcyc[$2], $3 }
+            if ($4+0 < bcog[$2]+0) { printf "NOTE   IMPROVED %s  cognitive %s -> %s\n", $2, bcog[$2], $4 }
+        }
+        END {
+            for (k in base) {
+                if (!(k in cur)) {
+                    printf "NOTE   RESOLVED %s  under both thresholds in the merge tree; the comparand is a MEASUREMENT, so there is no row to delete\n", k
+                }
+            }
+        }
+    ' | LC_ALL=C sort)
+    if [ -n "$out" ]; then
+        printf '%s\n' "$out"
+    fi
+    red=$(printf '%s\n' "$out" | grep -c '^RED ' || true)
+    [ "$red" -eq 0 ]
+}
+
+# ---------------------------------------------------------------------------
 
 # ── CB-200 (pmat comply, the TDG grade gate) ─────────────────────────────────
 # pmat 3.36.0 reads `.pmat-gates.toml [tdg] baseline` and reports CB-200 as
@@ -396,7 +553,7 @@ cb200_pair_check() { # <gates.toml> <mirror file> -> 0 when they agree, 1 otherw
         printf 'FAIL: %s missing; it mirrors [tdg] baseline so the CB-200 count is ratcheted, not typed.\n' "$2"
         return 1
     fi
-    file=$(tr -d '[:space:]' < "$2")
+    file=$(grep -vE '^[[:space:]]*(#|$)' "$2" | tr -d '[:space:]')
     if [ "$toml" != "$file" ]; then
         printf 'FAIL: [tdg] baseline = %s but %s says %s; the two move together, and only the file is ratcheted against origin/main.\n' "$toml" "$2" "$file"
         return 1
@@ -442,10 +599,9 @@ fi
 printf '=== per-function complexity may only fall (check_complexity_ratchet.sh) ===\n'
 
 if ! command -v pmat > /dev/null 2>&1; then
-    printf 'SKIP: pmat is not installed; install it with `cargo install pmat --locked`.\n' >&2
-    printf 'This is a hard failure in CI, where the workflow installs it first.\n' >&2
-    [ "${CI:-}" = 'true' ] && exit 1
-    exit 0
+    printf 'ENV: pmat is not on PATH; the fleet pin installs it (tools.toml; CI never installs tools).\n' >&2
+    printf 'Without the analyser this guard cannot decide, so it refuses to pass (exit 2, never 0).\n' >&2
+    exit 2
 fi
 if ! command -v python3 > /dev/null 2>&1; then
     printf 'FAIL: python3 is required to read pmat JSON.\n' >&2
@@ -467,82 +623,196 @@ printf 'pmat: %s (%s)\n' "$(command -v pmat)" "$(pmat --version 2>/dev/null | he
 WORK=$(mktemp -d) || exit 1
 trap 'rm -rf "${WORK:?}"' EXIT
 
-if ! cx_measure "$REPO_ROOT" "$WORK" > "$WORK/current.txt" 2> "$WORK/measure.err"; then
-    sed 's/^/      | /' "$WORK/measure.err" >&2
-    printf 'FAIL: the complexity scan did not complete, so growth is UNMEASURED.\n' >&2
-    exit 1
-fi
-sed 's/^/  /' "$WORK/measure.err"
-
-SCANNED=$(grep -c . "$WORK/universe.txt" || true)
-CURRENT=$(grep -c . "$WORK/current.txt" || true)
-printf '%s .rs file(s) scanned, %s function(s) over cyclomatic>%s or cognitive>%s\n' \
-    "$SCANNED" "$CURRENT" "$MAX_CYCLOMATIC" "$MAX_COGNITIVE"
-
-if [ "$SCANNED" -lt "$MIN_RS_FILES" ]; then
-    printf '\nFAIL (vacuity): only %s .rs file(s) found, expected %s+.\n' "$SCANNED" "$MIN_RS_FILES"
-    printf 'The scan is broken, not the code. Fix it rather than this number.\n'
-    exit 1
-fi
-
+# ---------------------------------------------------------------------------
+# --update KEEPS THE WORKING TREE AS ITS SUBJECT. It is a recorder, not a
+# verdict: it writes down what the tree you are sitting on measures, and it is
+# the only path that may write the baseline file. It also records the
+# INSTRUMENT (BSE-10a's `tool_version=` header), because the check path asserts
+# against it and a header nothing writes is a control nothing can hold.
 if [ "${1:-}" = '--update' ]; then
+    if ! cx_measure "$REPO_ROOT" "$WORK" > "$WORK/current.txt" 2> "$WORK/measure.err"; then
+        sed 's/^/      | /' "$WORK/measure.err" >&2
+        printf 'FAIL: the complexity scan did not complete, so nothing was recorded.\n' >&2
+        exit 1
+    fi
+    sed 's/^/  /' "$WORK/measure.err"
+    SCANNED=$(grep -c . "$WORK/universe.txt" || true)
+    CURRENT=$(grep -c . "$WORK/current.txt" || true)
+    if [ "$SCANNED" -lt "$MIN_RS_FILES" ]; then
+        printf 'FAIL (vacuity): only %s .rs file(s) found, expected %s+. Nothing was written.\n' \
+            "$SCANNED" "$MIN_RS_FILES" >&2
+        exit 1
+    fi
     {
         printf '# complexity_baseline.txt - functions over the pre-commit hook thresholds\n'
         printf '# (cyclomatic > %s or cognitive > %s), as "<path>::<function> <cyclomatic> <cognitive>".\n' \
             "$MAX_CYCLOMATIC" "$MAX_COGNITIVE"
         printf '# SHRINK-ONLY. Regenerate with: bash scripts/check_complexity_ratchet.sh --update\n'
         printf '# Owner: scripts/check_complexity_ratchet.sh (PMAT-746).\n'
+        printf '# tool_version=%s\n' "$(pmat --version 2>/dev/null | head -1)"
         cat "$WORK/current.txt"
     } > "$BASELINE"
-    printf 'baseline rewritten: %s row(s)\n' "$CURRENT"
+    printf 'baseline rewritten: %s row(s), tool_version=%s\n' \
+        "$CURRENT" "$(pmat --version 2>/dev/null | head -1)"
     exit 0
 fi
 
-if [ ! -f "$BASELINE" ]; then
-    printf 'FAIL: %s missing. Run --update once to establish it.\n' "$BASELINE"
-    exit 1
-fi
-
-RECORDED=$(cx_data "$BASELINE" | grep -c . || true)
-printf 'baseline %s row(s)\n' "$RECORDED"
-
-# THE RATCHET IS A PROPERTY OF THE DIFF, NOT OF THE TREE.
-#
-# Everything below compares the scan against the baseline AS IT STANDS IN THE
-# WORKING TREE, and that alone is not a ratchet: NEW and STALE are the only two
-# properties a working tree can answer, and a commit that appends a row AND
-# lands the matching offender satisfies both at once. Twelve guards in this
-# repository failed exactly that probe. So the file is ALSO compared against a
-# ref a pull request cannot rewrite.
+# ---------------------------------------------------------------------------
+# PREFLIGHT. The comparand is resolved and PRINTED before a single file is
+# measured (threat model P5): an unresolvable comparand invalidates the
+# measurement, so paying for the measurement first only buys a more expensive
+# way to say the same thing.
 #
 # shellcheck source=scripts/lib_baseline_ratchet.sh
 . "${REPO_ROOT}/scripts/lib_baseline_ratchet.sh" || exit 1
+
+RESOLUTION=$(baseline_ratchet_resolve "$REPO_ROOT" "$BASELINE_RATCHET_BASE_REF" "$CX_COMPARAND_PATH")
+MODE=${RESOLUTION%%$'\t'*}
+REF=${RESOLUTION##*$'\t'}
+case "$MODE" in
+    UNRESOLVABLE)
+        printf 'FAIL PREFLIGHT: cannot resolve the comparand ref <%s>, so complexity is UNMEASURED against anything. That is not "no growth", and it is not degraded to comparing this branch against itself.\n' "$REF" >&2
+        printf '     In CI, before this guard runs:  git fetch --no-tags --depth=1 origin +refs/heads/main:refs/remotes/origin/main\n' >&2
+        exit 1 ;;
+    ABSENT | BOOTSTRAP)
+        printf 'FAIL PREFLIGHT: <%s> carries no %s/ tree, so there is no comparand to measure. A missing comparand is not "no growth".\n' "$REF" "$CX_COMPARAND_PATH" >&2
+        exit 1 ;;
+esac
+BASE_SHA=$(git -C "$REPO_ROOT" rev-parse --verify --quiet "${REF}^{commit}") || BASE_SHA=""
+MERGE_SHA=$(git -C "$REPO_ROOT" rev-parse --verify --quiet 'HEAD^{commit}') || MERGE_SHA=""
+if [ -z "$BASE_SHA" ] || [ -z "$MERGE_SHA" ]; then
+    printf 'FAIL PREFLIGHT: <%s> and HEAD did not both resolve to a commit (base=%q merge=%q).\n' \
+        "$REF" "$BASE_SHA" "$MERGE_SHA" >&2
+    exit 1
+fi
+BASE_SHORT=$(git -C "$REPO_ROOT" rev-parse --short "$BASE_SHA" 2>/dev/null) || BASE_SHORT="$BASE_SHA"
+MERGE_SHORT=$(git -C "$REPO_ROOT" rev-parse --short "$MERGE_SHA" 2>/dev/null) || MERGE_SHORT="$MERGE_SHA"
+BASE_DATE=$(git -C "$REPO_ROOT" show -s --format=%cI "$BASE_SHA" 2>/dev/null) || BASE_DATE='<no date>'
+
+printf 'complexity — D2 comparand diff (BSE-03 phase B): the verdict is a function of two REVISIONS and the instrument, of nothing else on disk\n'
+printf '  comparand   %-12s %s  %s\n' "$MODE" "$BASE_SHORT" "$BASE_DATE"
+printf '  merge       %-12s %s  (HEAD)\n' 'HEAD' "$MERGE_SHORT"
+printf '  floor       %s .rs file(s), applied to BOTH revisions\n' "$MIN_RS_FILES"
+if [ "$BASELINE_RATCHET_BASE_REF" != 'origin/main' ]; then
+    printf '  OVERRIDDEN  comparand set via BASELINE_RATCHET_BASE_REF=%s — NOT a protected ref\n' \
+        "$BASELINE_RATCHET_BASE_REF"
+fi
+if [ "${CX_MIN_RS_FILES:-}" != '' ]; then
+    printf '  OVERRIDDEN  vacuity floor set via CX_MIN_RS_FILES=%s — this is the fixture seam, NOT the shipped floor of 5000\n' \
+        "$CX_MIN_RS_FILES"
+fi
+DIRTY=$(git -C "$REPO_ROOT" status --porcelain -- '*.rs' | grep -c . || true)
+if [ "$DIRTY" -ne 0 ]; then
+    printf '  UNCOMMITTED %s .rs path(s) differ between the working tree and %s. The verdict below is over the COMMIT, not over your edits; CI checks out pristine, where the two are equal by construction.\n' \
+        "$DIRTY" "$MERGE_SHORT"
+fi
+
+# ---------------------------------------------------------------------------
+# MEASUREMENT: ONE INSTRUMENT, TWO REVISIONS, in this job.
+if ! cx_measure_rev "$REPO_ROOT" "$BASE_SHA" "$WORK/base"; then
+    sed 's/^/      | /' "$WORK/base/measure.err" >&2 2>/dev/null || true
+    printf 'FAIL: the comparand %s could not be measured, so growth is UNMEASURED. That is a broken check, not a clean tree.\n' "$BASE_SHORT" >&2
+    exit 1
+fi
+if ! cx_measure_rev "$REPO_ROOT" "$MERGE_SHA" "$WORK/merge"; then
+    sed 's/^/      | /' "$WORK/merge/measure.err" >&2 2>/dev/null || true
+    printf 'FAIL: the merge tree %s could not be measured, so growth is UNMEASURED.\n' "$MERGE_SHORT" >&2
+    exit 1
+fi
+
+BASE_FILES=$(grep -c . "$WORK/base/universe.txt" || true)
+MERGE_FILES=$(grep -c . "$WORK/merge/universe.txt" || true)
+BASE_ROWS=$(grep -c . "$WORK/base/rows.txt" || true)
+MERGE_ROWS=$(grep -c . "$WORK/merge/rows.txt" || true)
+printf '  measured    base  %s .rs file(s), %s function(s) over cyclomatic>%s or cognitive>%s\n' \
+    "$BASE_FILES" "$BASE_ROWS" "$MAX_CYCLOMATIC" "$MAX_COGNITIVE"
+printf '  measured    merge %s .rs file(s), %s function(s) over cyclomatic>%s or cognitive>%s\n' \
+    "$MERGE_FILES" "$MERGE_ROWS" "$MAX_CYCLOMATIC" "$MAX_COGNITIVE"
+printf '  universe    base=%s merge=%s delta=%s  (A8: an exclusion added by the PR shrinks one side only, and that is a finding, never an improvement)\n' \
+    "$BASE_FILES" "$MERGE_FILES" "$(printf '%+d' "$((MERGE_FILES - BASE_FILES))")"
+printf '  polarity    the verdict is about the DIFF of two measurements: a number that ROSE is a regression (RED); a number that FELL, or a function that left the set entirely, is an IMPROVEMENT (GREEN). There is NO lower bound and nothing to delete.\n'
+
+if [ "$BASE_FILES" -lt "$MIN_RS_FILES" ] || [ "$MERGE_FILES" -lt "$MIN_RS_FILES" ]; then
+    printf '\nFAIL (vacuity): base scanned %s .rs file(s) and merge scanned %s, expected %s+ at BOTH revisions.\n' \
+        "$BASE_FILES" "$MERGE_FILES" "$MIN_RS_FILES"
+    printf 'The scan is broken, not the code. Fix it rather than this number.\n'
+    exit 1
+fi
+
+# THE INSTRUMENT IS ASSERTED, NOT LOGGED (threat model A6). Two measurements
+# made by two different pmats are not a diff: a binary that scores fewer
+# functions makes any tree look improved, and printing both versions while
+# comparing their output anyway is a guard reporting a result it did not
+# measure.
+BASE_TOOL=$(cat "$WORK/base/tool_version.txt" 2>/dev/null || true)
+MERGE_TOOL=$(cat "$WORK/merge/tool_version.txt" 2>/dev/null || true)
+RECORDED_TOOL=$(cx_recorded_tool_version "$BASELINE")
+printf '  instrument  base=<%s> merge=<%s> recorded=<%s>\n' "$BASE_TOOL" "$MERGE_TOOL" "$RECORDED_TOOL"
+if [ -z "$BASE_TOOL" ] || [ -z "$MERGE_TOOL" ]; then
+    printf '\nFAIL (instrument): pmat did not name itself at one of the two revisions (base=%q merge=%q). An unnamed instrument cannot be asserted equal to anything.\n' \
+        "$BASE_TOOL" "$MERGE_TOOL"
+    exit 1
+fi
+if [ "$BASE_TOOL" != "$MERGE_TOOL" ]; then
+    printf '\nFAIL (instrument): the two measurements were produced by DIFFERENT pmat versions, so their difference is not a complexity diff.\n'
+    printf '  base  %s  (%s)\n' "$BASE_TOOL" "$BASE_SHORT"
+    printf '  merge %s  (%s)\n' "$MERGE_TOOL" "$MERGE_SHORT"
+    exit 1
+fi
+if [ -n "$RECORDED_TOOL" ] && [ "$RECORDED_TOOL" != "$MERGE_TOOL" ]; then
+    printf '\nFAIL (instrument): the recorded tool_version does not match the pmat that ran.\n'
+    printf '  recorded %s  (%s tool_version= header)\n' "$RECORDED_TOOL" "$BASELINE_REL"
+    printf '  ran      %s  (both revisions)\n' "$MERGE_TOOL"
+    printf '  Re-record it in the same commit that moves the toolchain: bash scripts/check_complexity_ratchet.sh --update\n'
+    exit 1
+fi
+if [ -z "$RECORDED_TOOL" ]; then
+    printf '  NOT RECORDED %s carries no `# tool_version=` header, so the recorded-instrument leg is UNASSERTED (the two-measurement leg above still holds). `--update` writes it.\n' \
+        "$BASELINE_REL"
+fi
+
+if [ ! -f "$BASELINE" ]; then
+    printf 'FAIL: %s missing. Run --update once to establish it.\n' "$BASELINE" >&2
+    exit 1
+fi
+RECORDED=$(cx_data "$BASELINE" | grep -c . || true)
+printf '  inventory   %s recorded row(s) in %s — shrink-only against origin/main, and NOT an input to the verdict\n' \
+    "$RECORDED" "$BASELINE_REL"
+
+# ---------------------------------------------------------------------------
+# THE VERDICT, over the two measurements.
+VERDICT_RC=0
+FINDINGS=$(cx_verdict_d2 "$WORK/base/rows.txt" "$WORK/merge/rows.txt") || VERDICT_RC=$?   # RATCHET-MUTATION-POINT — the comparand is the MEASUREMENT of base_sha; the registered mutation of scripts/tests/ratchet_semantics_test.sh --class complexity replaces exactly this line with the pre-BSE-03 `cx_verdict "$BASELINE" ...`, which reads the baseline FILE and reintroduces the STALE lower bound
+if [ -n "$FINDINGS" ]; then
+    printf '%s\n' "$FINDINGS"
+fi
+
+# ---------------------------------------------------------------------------
+# THE FILE-LEVEL RATCHETS. Unchanged, and still needed for a reason the verdict
+# above no longer covers: scripts/complexity_baseline.txt and
+# scripts/cb200_baseline.txt are still READ by humans and by pmat comply, so an
+# author appending to either must still be refused against a ref they cannot
+# rewrite. What changed is that neither file is an input to the complexity
+# verdict any more.
 RATCHET_RC=0
 baseline_ratchet_check "$REPO_ROOT" "$BASELINE_REL" keyed2 || RATCHET_RC=$?
 cb200_pair_check "$REPO_ROOT/.pmat-gates.toml" "$REPO_ROOT/$CB200_REL" || RATCHET_RC=1
 baseline_ratchet_check "$REPO_ROOT" "$CB200_REL" count || RATCHET_RC=$?
 
-VERDICT_RC=0
-FINDINGS=$(cx_verdict "$BASELINE" "$WORK/current.txt") || VERDICT_RC=$?
-
 if [ "$VERDICT_RC" -ne 0 ]; then
-    printf '\nFAIL: the complexity ratchet moved backwards.\n'
-    printf '%s\n' "$FINDINGS"
-    printf '\n  NEW    the function is over a threshold and has no row. Split it, or\n'
-    printf '         reduce it below cyclomatic %s / cognitive %s. The baseline is\n' \
-        "$MAX_CYCLOMATIC" "$MAX_COGNITIVE"
-    printf '         SHRINK-ONLY against origin/main: appending a row is REFUSED,\n'
-    printf '         because a row and its violation in one commit is the laundering\n'
-    printf '         shape this repository has already found twelve times.\n'
-    printf '  GROWN  the recorded number is the ceiling. It may fall, never rise.\n'
-    printf '  STALE  the function is fixed - delete its row in the same commit, or\n'
-    printf '         the next regression at that coordinate lands for free.\n'
-    printf '         bash scripts/check_complexity_ratchet.sh --update\n'
+    printf '\nFAIL: complexity regressed against %s.\n' "$BASE_SHORT"
+    printf '  NEW    the function is over a threshold in %s and was not over one in\n' "$MERGE_SHORT"
+    printf '         %s. Split it, or reduce it below cyclomatic %s / cognitive %s.\n' \
+        "$BASE_SHORT" "$MAX_CYCLOMATIC" "$MAX_COGNITIVE"
+    printf '  GROWN  the comparand measurement is the ceiling. It may fall, never rise.\n'
+    printf '  There is nothing to edit in %s to make this pass: the comparand is\n' "$BASELINE_REL"
+    printf '  measured from %s, not read from the tree you can write to.\n' "$BASELINE_RATCHET_BASE_REF"
 fi
 
 if [ "$RATCHET_RC" -ne 0 ] || [ "$VERDICT_RC" -ne 0 ]; then
     exit 1
 fi
 
-printf 'PASS (ratcheted): %s recorded offender(s), none new, none grown, none stale.\n' "$RECORDED"
+printf 'PASS (D2): %s vs %s measured by %s — none new, none grown.\n' \
+    "$BASE_SHORT" "$MERGE_SHORT" "$MERGE_TOOL"
 exit 0
