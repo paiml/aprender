@@ -309,10 +309,13 @@ Shipping a release whose declared sentinel model diverges on GPU guarantees the 
 not improved — it just moves who writes it down. The target and the escape hatch cannot both
 be true as worded.
 
-**Smallest fix.** Pick one, in the document: either the metric counts *undeclared* divergences
-only (and says so, which is defensible — an honestly-refused model is not a user discovery),
-or #2971 blocks the tag. `§9`'s instrument ("issues labelled P0 filed by non-maintainers")
-already implies the former; make it explicit.
+**Smallest fix.** The document has to say which of two things it means, because as worded it
+says both: either the metric counts *undeclared* divergences only — an honestly-refused model
+would then not be a user discovery — or #2971 blocks the tag. One piece of evidence bears on
+it, offered as evidence and not as an answer: `§9` already scopes its own instrument to
+"issues labelled P0 filed by **non-maintainers**", which is narrower than "found by a user".
+Whether that narrowing is the intent, or a looseness to be tightened the other way, is RD-5's
+to settle.
 
 ---
 
@@ -443,7 +446,7 @@ Commands: `ssh <host> 'uname -m; nproc; free -g; df -h /'`,
 | **S0-Y4/Y5** | `yoga` | `[U]` — CUDA unit-test execution and its wall-clock budget, unmeasured (owner: Noah). Blocked behind F3's decision, not behind the box |
 | **S0-G1** | `gx10` | `[U]` — per-artifact build wall clock, unmeasured (owner: Noah). Feeds RD-4 |
 
-**§2's `[U]` rows now close as:** `yoga` = x86_64, RTX 4060 Laptop, 8 GB, sm_89, driver
+**What `§2`'s `[U]` rows now measure as:** `yoga` = x86_64, RTX 4060 Laptop, 8 GB, sm_89, driver
 595.91.07. Note this makes the fleet **sm_89 ×2 (yoga, lambda) and sm_121 ×1 (gx10)** — the
 `x86-gpu-cuda` artifact's two verification hosts are the *same* compute capability, so §4's
 two-host row for it is redundancy, not cross-architecture coverage. RD-6 states the aarch64
