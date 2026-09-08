@@ -20,10 +20,11 @@ worktree off `origin/main`.
 |---|---|---|---|
 | 1 | teamwork grill of the draft | `route=agy-quorum w=1.08 basis=quota.json@20h` | delegate, lane=teamwork, width 1 |
 | 2 | ground truth + review | `route=self w=0.00` | self |
-| 3–6 | AD-04 quorum ×3 + corrections | `route=agy-quorum w=1.08` | delegate, lane=quorum, width 3 ×3 |
+| 3–n | AD-04 quorum + corrections, one phase per round | `route=agy-quorum w=1.08` | delegate, lane=quorum, width 3 per round — **see the dispatch ledger below for the rounds actually run**; this row deliberately names no count, because every count restated in prose here went stale the next round |
 
 `K̂=5 basis=docs/audits/impl-estimates.jsonl:L20-L29` was for a 3-phase code change and badly
-under-estimated a spec grill with four adversarial rounds. Actual ≫ K̂.
+under-estimated a spec grill with an adversarial round per phase — see the ledger for how many.
+Actual ≫ K̂.
 
 ## Dispatch ledger
 

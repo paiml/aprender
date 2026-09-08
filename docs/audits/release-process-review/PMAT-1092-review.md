@@ -5,7 +5,7 @@
 | Ticket | PMAT-1092 |
 | Reviewed | `docs/audits/release-process-review/release-process-aprender-v0.1-draft.md` v0.1 (463 lines) |
 | Against | `origin/main` @ `c04eda87d`, and the physical hosts, 2026-09-08 |
-| Method | one `agy /teamwork-preview` lane, every finding re-run here, then **ten** AD-04 quorum rounds over this review — rounds 1–4, 6, 7, 9 and 10 returned 3 × FAIL; rounds 5 and 8 returned 2 × FAIL / 1 PASS; every objection was applied rather than argued (see *Method*) |
+| Method | one `agy /teamwork-preview` lane, every finding re-run here, then **eleven** AD-04 quorum rounds over this review — rounds 1–4, 6, 7, 9, 10 and 11 returned 3 × FAIL; rounds 5 and 8 returned 2 × FAIL / 1 PASS; every objection was applied rather than argued (see *Method*) |
 | Epic | **paiml/aprender#3058** — the build order, the two gates that cannot fail, and the decisions 0.66 is blocked on |
 | Verdict | **do-not-implement-as-written** — adopt §1/§2/§5.2/§10 now (and §9 bar the row RD-5 turns on), block §3.4/§5.1/§5.3/§6/§7 on the items below |
 | Marks | `[V]` verified by a command printed here · `[C]` computed · `[A]` asserted, source named · `[U]` unverified, owner named |
@@ -502,8 +502,11 @@ One `agy /teamwork-preview` lane (agy 1.1.27, `--sandbox`, `writes=false`, conve
 after; no lane writes leaked.
 
 Every finding was then re-executed here, and this document was itself put through the AD-04
-merge quorum **ten times** — three independent agy lanes per round, reviewing *this review*.
-Rounds 1–4, 6, 7, 9 and 10 returned **3 × FAIL**; rounds 5 and 8 returned **2 × FAIL and 1 PASS**.
+merge quorum **eleven times** — three independent agy lanes per round, reviewing *this review*.
+Rounds 1–4, 6, 7, 9, 10 and 11 returned **3 × FAIL**; rounds 5 and 8 returned **2 × FAIL and 1
+PASS**. By round 11 no lane could find anything false about the world, the machine, the draft
+or any measurement — six independent re-audits reproduced — and the only class left was a round
+count restated in prose, which is now cited from the ledger rather than restated.
 Rounds 8 and 9 were the first to audit the evidence *as sets* rather than the prose, and they
 are the rounds that caught measurements of mine that did not reproduce — five in all. Round 9
 also re-tested **GT-1 in full**: all 21 paths, `find` included. It held, so the review's
@@ -549,8 +552,9 @@ inferred from the absence of a green mark.
    | quorum 8 | **three of my own measurements failed to reproduce** — Appendix A attributed `lspci`'s **AD107M** string to `nvidia-smi -L`; F5 repeated `mod.rs:268-279` for the `SKIP_PARITY_GATE` bypass, which lives at `:333`/`:349` (a range I copied from the contract without checking, and which is still wrong *in* the contract); and F10's rolling-window figures drift, so the sample is now dated. Plus a duplicated `S0-G2` id, two `[V]` marks with no printed command (F3, F4), and RD-6's "must be stated" | 6 |
    | quorum 9 | the first full audit of GT-1 and GT-6. **GT-1 held** — all 21 paths re-tested, 1 present, 1 marked new, 19 of 20 non-new absent, and `find` confirmed none exists elsewhere, so the review's headline claim is machine-verified end to end. **GT-6 did not**: it attributed R-5's "5 `nightly.yml` targets" wording to C13, which never names the workflow, and quoted R-5 as "**built** on the nightly.yml runners" where the spec says "**build** on" | 2 |
    | quorum 10 | the first audit of GT-3/GT-5, the receipt and **the epic**. GT-3 dropped the `gx10` label from `gx10-blackwell`; GT-5 silently truncated all four issue titles under a heading claiming `gh` output; the receipt still read "0/3 PASS" over three rounds when ten had run and two returned a PASS; **the epic — what the release is actually run from — still carried `mod.rs:268-279` and "built on"**, and its C5 said "the eight §8 guards" over a list of six; and this Method preamble said "eight times" beside a nine-round enumeration | 6 |
+   | quorum 11 | **nothing false about the world, the machine, the draft or any measurement** — six independent re-audits of GT-2 and GT-4 all reproduced and all six round-10 fixes held on all three lanes. What remained was one class in three instances: a round count restated in prose (`receipt:23`, `receipt:26`, the epic's Provenance) that goes stale every time a round is added. Fixed by removing the counts and citing the ledger instead, so the class cannot recur | 3 |
 
-   **Forty, over eleven passes** — ten quorum rounds and one sweep of my own. The pattern is more useful than the count: a document can
+   **Forty-three, over twelve passes** — eleven quorum rounds and one sweep of my own. The pattern is more useful than the count: a document can
    declare "escalated, not decided" in its heading and mean it, and still decide by
    grammar — an imperative in a "Smallest fix", a "becomes", a "now closes". Every one of
    these was caught by a reader who was not the author. So this paragraph records the
