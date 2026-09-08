@@ -6,7 +6,7 @@
 | branch | `PMAT-1092-release-process-spec` · PR #3056 · epic #3058 |
 | base | `origin/main` @ `c04eda87d` |
 | discover.json sha256 | `repo_root=/mnt/nvme-raid0/agent-wt/rel-process` · `gate_cmd=make gate` · `gate_cmd_fallback=false` · `required_check=ci / gate,workspace-test` |
-| verdict | **PARTIAL(escalate)** — the review is complete and landed; the draft's nine RD decisions are Noah's and are not decided here |
+| verdict | **PARTIAL(escalate)** — ten quorum rounds, never 3 PASS — the review is complete and landed; the draft's nine RD decisions are Noah's and are not decided here |
 
 ## Why a worktree
 
@@ -27,12 +27,24 @@ under-estimated a spec grill with four adversarial rounds. Actual ≫ K̂.
 
 ## Dispatch ledger
 
-| dispatch | lane | width | conversations | outcome |
-|---|---|---|---|---|
-| ph1.delegate | teamwork | 1 | `55b4205c` | `do-not-implement-as-written`, 10 findings |
-| ph3.delegate | quorum | 3 | `0e863919`, `2ff50417`, `ccd407ea` | **3 × FAIL** on this review; maxTurns, resumed once (§6.2) |
-| ph5.delegate | quorum | 3 | `af3ee618`, `595f4a64`, `4d4ac0ef` | **3 × FAIL**, unanimous on RD-9 |
-| round 4 | quorum | 3 | — | operator stopped; lanes killed at 06:36 |
+| dispatch | lane | width | outcome |
+|---|---|---|---|
+| ph1 | teamwork | 1 | `do-not-implement-as-written`, 10 findings on the draft |
+| round 1 | quorum | 3 | **3 × FAIL** on this review — the mislabelled `cuobjdump` probe, a cancelled-run basis, GT-1 arithmetic, four RD dispositions, the draft's placement |
+| round 2 | quorum | 3 | **3 × FAIL**, unanimous — RD-3 and RD-4 still disposed |
+| round 3 | quorum | 3 | **3 × FAIL**, unanimous — RD-9 "Closed by Appendix A" |
+| round 4 | quorum | 3 | **3 × FAIL**, unanimous — F8 decided RD-5; Appendix A's "now close as" |
+| round 5 | quorum | 3 | **2 × FAIL / 1 PASS** — the Method table's own arithmetic; §9 in the verdict table; S0-Y4/Y5 |
+| round 6 | quorum | 3 | **3 × FAIL** — §9 carve-out missing from the prose, §4 vs RD-6, RD-1's imperative, S0-N1 per target, a stale ordinal |
+| round 7 | quorum | 3 | **3 × FAIL** — F11 contradicted S0-N1; F8's `[V]` label list; F11's surviving imperative; §12; S0-M1 |
+| round 8 | quorum | 3 | **2 × FAIL / 1 PASS** — first audit of the findings as a set; **three of my measurements did not reproduce** (AD107M/`nvidia-smi`, `mod.rs:268-279`, F10's rolling window) |
+| round 9 | quorum | 3 | **3 × FAIL** — **GT-1 held in full**; GT-6 misattributed C13/R-5 and misquoted "build on" |
+| round 10 | quorum | 3 | **3 × FAIL** — GT-3's missing `gx10` label, GT-5's truncated titles, **this receipt's stale tally**, and **the epic still carrying corrected text** |
+
+An earlier revision of this receipt recorded "0/3 PASS" over three rounds with round 4
+stopped. Ten rounds ran; rounds 5 and 8 each returned one PASS. The quorum has still never
+returned three PASS, which is the fact that matters, but the tally was wrong and the ledger
+stopped at round 4 — caught by round 10, which was the first to audit this file at all.
 
 Lanes ran in disposable copy-trees (`PMAT-1092-quorum`, `-quorum2`); `repo_root` verified
 byte-identical before and after each round (diff md5 `8d091c762e9dda0712614607e2a0f713`).
@@ -66,8 +78,14 @@ Same shape as reading `$?` through a pipe: a claim written from intent, not from
 - `pr-review-quorum` **FAIL** — the base-owned gate wants a signed receipt at
   `evidence/pr-review/3056/` under `.github/pr-review.pub`. Not produced; separate skill,
   needs the private key.
-- AD-04 quorum: **0/3 PASS**. Rounds 1–3 all FAIL; each objection applied; round 4 stopped by
-  the operator. Auto-merge **not armed** and must not be until a round returns 3 PASS.
+- AD-04 quorum: **never 3 PASS in ten rounds.** Rounds 1–4, 6, 7, 9, 10 were 3 × FAIL; rounds
+  5 and 8 returned 2 × FAIL / 1 PASS. Every objection was applied rather than argued — forty
+  rows over eleven passes, tabulated in the review's Method section. Auto-merge **not armed**
+  and must not be until a round returns 3 PASS.
+- The findings themselves have now been machine-audited as a set: **GT-1 held in full** (all 21
+  paths, `find` included). The defects rounds 8–10 found were in the review's *evidence and
+  self-account* — five measurements of mine that did not reproduce — not in the findings about
+  the draft, every one of which has been re-run by a lane and stood.
 - `pv_lane` NotRun — no contract changed by this PR.
 
 ## Filed

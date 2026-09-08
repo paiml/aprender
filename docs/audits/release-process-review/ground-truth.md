@@ -59,7 +59,7 @@ execute kernels as of this measurement.
 `gh api orgs/paiml/actions/runners`:
 
 - `yoga-gpu` — online, **not busy**, labels `self-hosted,Linux,X64,gpu,cuda,yoga,ada`
-- `gx10-blackwell` — online, labels `self-hosted,Linux,ARM64,gpu,cuda,blackwell,gb10`
+- `gx10-blackwell` — online, labels `self-hosted,Linux,ARM64,gpu,gx10,cuda,blackwell,gb10`
 - `intel-clean-room` .. `intel-clean-room-16` — 17 runners, labels `self-hosted,Linux,X64,clean-room,intel`; `-16` carries `perf-solo` instead of `clean-room`
 - **no `lambda-4090`** on the org list
 
@@ -91,14 +91,14 @@ handling so 'yoga was off' is distinguishable from 'the lane died'."*
 
 ## GT-5 — issues the draft cites
 
-`gh issue view <n> --repo paiml/aprender`:
+`gh issue view <n> --repo paiml/aprender --json number,state,title` — titles verbatim, not truncated:
 
 | issue | state | title |
 |---|---|---|
-| #2696 | **CLOSED** | P0: published apr 0.64.0 SILENTLY IGNORES `--gpu` |
-| #2869 | OPEN | No pre-built apr binary on stable releases |
-| #2971 | OPEN (`bug, P0, pp-066, inst:A`) | GPU inference refuses Qwen2.5-1.5B-Instruct GGUF (hidden=1536/heads=12/kv_heads=2): parity gate fails at cosine 0.94 |
-| #2982 | **CLOSED** | C0-5: PRQ-013 single base-owned quorum workflow |
+| #2696 | **CLOSED** | P0: published apr 0.64.0 SILENTLY IGNORES --gpu — 15.7 tok/s decode, 7.5s to first token, 0.099x llama.cpp |
+| #2869 | OPEN | No pre-built apr binary on stable releases — cargo install is the only path, and it's not beginner-friendly |
+| #2971 | OPEN (`bug, P0, pp-066, inst:A`) | GPU inference refuses Qwen2.5-1.5B-Instruct GGUF (hidden=1536/heads=12/kv_heads=2): parity gate fails at cosine 0.94, CPU works fine |
+| #2982 | **CLOSED** | C0-5: PRQ-013 single base-owned quorum workflow (pull_request_target/merge_group): the receipt/quorum check that gates a PR is defined by the base, never by the PR head |
 
 ## GT-6 — the PP-066 spec this draft extends
 
