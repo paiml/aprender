@@ -88,8 +88,10 @@ GUARD_RE="(^|[[:space:];&|(])((ba)?sh[[:space:]]+|[.]/)?[^[:space:]]*check_pr_re
 # Events the workflow can be triggered by, and whether the receipt job must run.
 # Driven as a table rather than asserted once: the FALSE rows are what stop
 # `if: always()` and a step-level `if:` from reading as compliance.
-EVENTS_TRUE='pull_request'
-EVENTS_FALSE='push merge_group workflow_dispatch'
+# Every event this workflow can fire on. R4 decides per event whether the wiring
+# under test SHOULD run there, rather than reading the answer off a fixed list —
+# a fixed list is a second copy of the rule, and it is what went stale.
+EVENTS_ALL='pull_request push merge_group workflow_dispatch'
 
 # ---------------------------------------------------------------------------
 # invoking_job <ci.yml> — name of the job whose steps invoke the receipt guard.
@@ -149,13 +151,57 @@ workflow_path_filters() {
 #   1 -> the expression is FALSE for that event
 #   2 -> this guard cannot evaluate the expression (a FAILURE, never a pass)
 # ---------------------------------------------------------------------------
+# if_required_input <expr> -> the input name the expression requires non-empty,
+# or nothing. Shape B only (below). Exit 2 if the expression is not understood.
+if_required_input() {
+    local norm
+    norm=$(printf '%s' "$1" | sed 's/[[:space:]][[:space:]]*/ /g; s/^ //; s/ $//')
+    grep -oE "inputs\.[a-z_][a-z0-9_]* != ''" <<<"$norm" | sed "s/inputs\.//; s/ !=.*//" | head -1
+}
+
+# dispatch_input_declared <workflow> <name> -> 0 if on.workflow_dispatch.inputs
+# declares <name>. An `inputs.X != ''` guard naming an input the workflow does
+# not declare is ALWAYS false, so the job never runs and reports nothing — dark,
+# not refused. A typo would be indistinguishable from a deliberate disable.
+dispatch_input_declared() {
+    awk -v want="$2" '
+        /^on:/            {in_on=1; next}
+        /^[^[:space:]]/   {in_on=0; in_wd=0}
+        in_on && /^  workflow_dispatch:/ {in_wd=1; next}
+        in_on && /^  [a-z_]+:/           {in_wd=0}
+        in_wd && /^    inputs:/          {in_in=1; next}
+        in_wd && /^    [a-z_]+:/         {in_in=0}
+        in_in && $0 ~ "^      " want ":" {found=1}
+        END {exit !found}
+    ' "$1"
+}
+
+# eval_if <expr> <event> -> 0 runs, 1 skipped, 2 not understood.
+#
+# TWO SHAPES, and nothing else:
+#   A  a disjunction of `github.event_name == '<literal>'`
+#   B  `github.event_name == '<literal>' && inputs.<name> != \'\'`
+#
+# Shape B was added when pr-review-receipt moved off pull_request to ad-hoc
+# dispatch (PMAT-1091, #3049): the sweep was 39.4% of the PR merge path and
+# returned one verdict in 30 days. It is a SEPARATE shape rather than a widened
+# regex, because the `&&` is load-bearing — see carries_pr_subject().
 eval_if() {
     local expr=$1 ev=$2 norm lits
     norm=$(printf '%s' "$expr" | sed 's/[[:space:]][[:space:]]*/ /g; s/^ //; s/ $//')
     # A herestring, never `printf ... | grep -q`: on a pipe grep can exit 141 on
     # SIGPIPE despite having MATCHED, and this repository has shipped that four
     # times in one day.
-    if ! grep -Eq -- "^github\.event_name == '[a-z_]+'( \|\| github\.event_name == '[a-z_]+')*\$" <<<"$norm"; then
+    if ! grep -Eq -- "^github\.event_name == '[a-z_]+'( \|\| github\.event_name == '[a-z_]+')*\$" <<<"$norm" \
+       && ! grep -Eq -- "^github\.event_name == 'workflow_dispatch' && inputs\.[a-z_][a-z0-9_]* != ''\$" <<<"$norm"; then
+        # Shape B is admissible ONLY with the workflow_dispatch literal. The
+        # `inputs` context is populated on workflow_dispatch (and workflow_call)
+        # and is EMPTY on every other event, so
+        #   github.event_name == 'pull_request' && inputs.pr != \'\'
+        # is a job that never runs on any event — dark, and indistinguishable
+        # from a deliberate disable. Refused by name rather than accepted and
+        # then caught downstream, because "never runs" is the failure this rule
+        # exists to make impossible.
         return 2
     fi
     lits=$(grep -oE "'[a-z_]+'" <<<"$norm" | tr -d "'" | tr '\n' ' ')
@@ -169,7 +215,7 @@ eval_if() {
 # check_file <ci.yml> — R1..R4. 0 = all hold. Diagnostics on stdout.
 # ---------------------------------------------------------------------------
 check_file() {
-    local f=$1 job ifexpr ev filters rc
+    local f=$1 job ifexpr ev filters rc req_input runs_on
 
     if [ ! -f "$f" ]; then
         printf 'FAIL R0: no workflow at %s\n' "$f"
@@ -220,29 +266,71 @@ check_file() {
     fi
     printf 'ok  R3  job `%s` carries a job-level if: %s\n' "$job" "$ifexpr"
 
-    # R4 — both polarities.
+    # R4 — the job runs on EXACTLY the events that carry a PR subject.
+    #
+    # This used to be the fixed pair (TRUE on pull_request, FALSE on everything
+    # else), which encoded "pull_request is the only event with a PR number".
+    # That was true until PMAT-1091 gave workflow_dispatch a `pr` input, and a
+    # rule whose premise has changed is worse than no rule: it refuses the very
+    # wiring that makes the receipt path well-defined. The property, stated
+    # directly, is unchanged in substance — the receipt path
+    # evidence/pr-review/<pr>/<sha>/ must always have a subject:
+    #
+    #   pull_request       always carries one (github.event.pull_request.number)
+    #   workflow_dispatch  carries one IFF the `if:` REQUIRES a non-empty input,
+    #                      and that input is DECLARED. Dispatch without the
+    #                      requirement is refused: the run would proceed with an
+    #                      empty PR number, and the sweep it feeds does
+    #                      `merge-base origin/main "$SHA" || BASE=""` — it
+    #                      tolerates an empty base and would sweep nothing while
+    #                      reading green.
+    #   push, merge_group  never carry one, on any wiring.
+    req_input=$(if_required_input "$ifexpr")
+    if [ -n "$req_input" ] && ! dispatch_input_declared "$f" "$req_input"; then
+        printf 'FAIL R4: the if: requires `inputs.%s`, which on.workflow_dispatch.inputs\n' "$req_input"
+        printf '        does not declare. An undeclared input is ALWAYS empty, so the job\n'
+        printf '        would never run and would report nothing — dark, not refused.\n'
+        return 1
+    fi
+    # The test is a QUANTIFIER, not a list: every event the `if:` selects must
+    # carry a subject, and it must select at least one. Writing it as a fixed
+    # want-per-event table reintroduces exactly the staleness above — the first
+    # draft of this rewrite did, hardcoding pull_request -> runs, and refused
+    # the dispatch wiring it was written to admit.
     rc=0
-    for ev in $EVENTS_TRUE; do
+    runs_on=""
+    for ev in $EVENTS_ALL; do
         eval_if "$ifexpr" "$ev"
         case $? in
-            0) printf 'ok  R4  %-18s -> runs\n' "$ev" ;;
-            1) printf 'FAIL R4: %s -> SKIPPED, but the receipt is addressed to a PR.\n' "$ev"; rc=1 ;;
-            *) printf 'FAIL R4: this guard cannot evaluate `%s`.\n' "$ifexpr"
-               printf '        It understands only a disjunction of\n'
-               printf "        github.event_name == '<literal>'. Extend the evaluator and add a\n"
+            2) printf 'FAIL R4: this guard cannot evaluate `%s`.\n' "$ifexpr"
+               printf "        It understands a disjunction of github.event_name == '<literal>',\n"
+               printf "        or that && inputs.<name> != ''. Extend the evaluator and add a\n"
                printf '        case-table row; do not widen the pattern to make this pass.\n'
                return 1 ;;
+            1) printf 'ok  R4  %-18s -> skipped\n' "$ev"; continue ;;
+        esac
+        runs_on="$runs_on $ev"
+        case "$ev" in
+            pull_request)
+                printf 'ok  R4  %-18s -> runs (subject: the pull_request payload)\n' "$ev" ;;
+            workflow_dispatch)
+                if [ -n "$req_input" ]; then
+                    printf 'ok  R4  %-18s -> runs (subject: inputs.%s, declared)\n' "$ev" "$req_input"
+                else
+                    printf 'FAIL R4: %s -> runs with no required input, so the PR number can be\n' "$ev"
+                    printf '        empty and the receipt path evidence/pr-review/<pr>/<sha>/ has no\n'
+                    printf "        subject. Require one: && inputs.<name> != ''.\n"; rc=1
+                fi ;;
+            *)
+                printf 'FAIL R4: %s -> runs. There is no PR number on this event, so the\n' "$ev"
+                printf '        receipt path evidence/pr-review/<pr>/<sha>/ has no subject.\n'; rc=1 ;;
         esac
     done
-    for ev in $EVENTS_FALSE; do
-        eval_if "$ifexpr" "$ev"
-        case $? in
-            1) printf 'ok  R4  %-18s -> skipped\n' "$ev" ;;
-            0) printf 'FAIL R4: %s -> runs. There is no PR number on this event, so the\n' "$ev"
-               printf '        receipt path evidence/pr-review/<pr>/<sha>/ has no subject.\n'; rc=1 ;;
-            *) printf 'FAIL R4: this guard cannot evaluate `%s`.\n' "$ifexpr"; return 1 ;;
-        esac
-    done
+    if [ -z "$runs_on" ]; then
+        printf 'FAIL R4: `%s` runs on NONE of: %s.\n' "$ifexpr" "$EVENTS_ALL"
+        printf '        A gate that never runs is not a gate; "has an if:" is not the property.\n'
+        return 1
+    fi
     return "$rc"
 }
 
@@ -384,6 +472,34 @@ $INVOKE"
 
     emit_ci "$TD/r4-negated.yml" '' "    if: github.event_name != 'push'" "$INVOKE"
     assert_file 'R4 a negated if: is refused, not guessed' FAIL "$TD/r4-negated.yml"
+
+    # ---- shape B: ad-hoc dispatch (PMAT-1091, #3049) --------------------------
+    # emit_ci always writes a bare `workflow_dispatch:`, so a fixture that needs
+    # a DECLARED input is written directly. One row per FORM VARIANT, not per
+    # form: the census defect this fleet keeps re-learning is a detector that
+    # cannot see a variant it was never given a fixture for.
+    emit_dispatch_ci() {  # emit_dispatch_ci <file> <declared-input|""> <job-if>
+        {
+            printf 'name: CI\n\non:\n  push:\n    branches: [main]\n  pull_request:\n    branches: [main]\n  merge_group:\n  workflow_dispatch:\n'
+            [ -n "$2" ] && printf '    inputs:\n      %s:\n        required: false\n        type: string\n' "$2"
+            printf '\njobs:\n  pr-review-receipt:\n    runs-on: [self-hosted]\n%s\n    steps:\n%s\n' "$3" "$INVOKE"
+        } > "$1"
+    }
+
+    emit_dispatch_ci "$TD/r4-dispatch-ok.yml" pr "    if: github.event_name == 'workflow_dispatch' && inputs.pr != ''"
+    assert_file 'R4 ad-hoc dispatch requiring a DECLARED input' PASS "$TD/r4-dispatch-ok.yml"
+
+    emit_dispatch_ci "$TD/r4-dispatch-bare.yml" pr "    if: github.event_name == 'workflow_dispatch'"
+    assert_file 'R4 dispatch with NO required input has no PR subject' FAIL \
+        "$TD/r4-dispatch-bare.yml" 'runs with no required input'
+
+    emit_dispatch_ci "$TD/r4-dispatch-undeclared.yml" pr "    if: github.event_name == 'workflow_dispatch' && inputs.prr != ''"
+    assert_file 'R4 the required input is not declared: always empty, so DARK' FAIL \
+        "$TD/r4-dispatch-undeclared.yml" 'does not declare'
+
+    emit_dispatch_ci "$TD/r4-inputs-on-pr.yml" pr "    if: github.event_name == 'pull_request' && inputs.pr != ''"
+    assert_file 'R4 inputs.* outside workflow_dispatch is refused, not evaluated' FAIL \
+        "$TD/r4-inputs-on-pr.yml" 'cannot evaluate'
 
     # The evaluator's own truth table, independent of any workflow.
     eval_row() {  # eval_row <expr> <event> <0|1|2>
