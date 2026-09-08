@@ -46,10 +46,23 @@
 #       and a step's `if:` at 8 or more. A step-level `if:` would leave the JOB
 #       reporting success on an event where it checked nothing.
 #
-#   R4  that `if:` evaluates TRUE on `pull_request` and FALSE on `push`,
-#       `merge_group` and `workflow_dispatch` — both polarities, because
+#   R4  that `if:` evaluates TRUE on `workflow_dispatch` and FALSE on `push`,
+#       `pull_request` and `merge_group` — both polarities, because
 #       "it has an `if:`" is satisfied by `if: false`, which is a gate that
 #       never runs, and by `if: always()`, which is no gate at all.
+#
+#       `pull_request` MOVED FROM THE TRUE COLUMN TO THE FALSE ONE on
+#       2026-09-08 (BSE-15, BSE-001 §4 wave 5). This job is 150 minutes of two
+#       mutation sweeps on a clean-room runner, on every push to every open PR,
+#       and it gates nothing: `gate` deliberately stopped reading it (PP-066
+#       C0-5, #2982), no job `needs:` it, it is not a required context, and
+#       pr-review-quorum.yml judges the receipt from the BASE with its own
+#       script. It measured 96 h of aprender PR runner-time in the 30 days to
+#       2026-09-07 — the fleet's single largest consumer. So it is dispatch-only,
+#       and this table is what makes putting it back on every PR a RED check
+#       rather than a quiet reversion: the row "R4 the per-PR wiring this
+#       repository moved away from" carries that old `if:` verbatim, asserted
+#       FAIL.
 #
 # THE EVALUATOR IS DELIBERATELY NARROW, AND REFUSES RATHER THAN GUESSES.
 # It understands exactly one expression shape — a disjunction of
@@ -88,8 +101,8 @@ GUARD_RE="(^|[[:space:];&|(])((ba)?sh[[:space:]]+|[.]/)?[^[:space:]]*check_pr_re
 # Events the workflow can be triggered by, and whether the receipt job must run.
 # Driven as a table rather than asserted once: the FALSE rows are what stop
 # `if: always()` and a step-level `if:` from reading as compliance.
-EVENTS_TRUE='pull_request'
-EVENTS_FALSE='push merge_group workflow_dispatch'
+EVENTS_TRUE='workflow_dispatch'
+EVENTS_FALSE='push pull_request merge_group'
 
 # ---------------------------------------------------------------------------
 # invoking_job <ci.yml> — name of the job whose steps invoke the receipt guard.
@@ -226,7 +239,9 @@ check_file() {
         eval_if "$ifexpr" "$ev"
         case $? in
             0) printf 'ok  R4  %-18s -> runs\n' "$ev" ;;
-            1) printf 'FAIL R4: %s -> SKIPPED, but the receipt is addressed to a PR.\n' "$ev"; rc=1 ;;
+            1) printf 'FAIL R4: %s -> SKIPPED, which leaves the receipt sweep unreachable.\n' "$ev"
+               printf '        This is the one event that must still run it:\n'
+               printf '        gh workflow run ci.yml --ref <branch>\n'; rc=1 ;;
             *) printf 'FAIL R4: this guard cannot evaluate `%s`.\n' "$ifexpr"
                printf '        It understands only a disjunction of\n'
                printf "        github.event_name == '<literal>'. Extend the evaluator and add a\n"
@@ -238,8 +253,10 @@ check_file() {
         eval_if "$ifexpr" "$ev"
         case $? in
             1) printf 'ok  R4  %-18s -> skipped\n' "$ev" ;;
-            0) printf 'FAIL R4: %s -> runs. There is no PR number on this event, so the\n' "$ev"
-               printf '        receipt path evidence/pr-review/<pr>/<sha>/ has no subject.\n'; rc=1 ;;
+            0) printf 'FAIL R4: %s -> runs, and only workflow_dispatch may. On pull_request\n' "$ev"
+               printf '        this job cost 96 h of fleet runner-time in 30 days while gating\n'
+               printf '        nothing (BSE-15); on push and merge_group there is no PR number,\n'
+               printf '        so evidence/pr-review/<pr>/<sha>/ has no subject.\n'; rc=1 ;;
             *) printf 'FAIL R4: this guard cannot evaluate `%s`.\n' "$ifexpr"; return 1 ;;
         esac
     done
@@ -270,7 +287,7 @@ if [ "${1:-}" = "--self-test" ]; then
     }
 
     INVOKE='      - run: bash scripts/check_pr_review_receipt.sh tests/fixtures/pr-review/row-14-complete-gpu-review'
-    JOBIF="    if: github.event_name == 'pull_request'"
+    JOBIF="    if: github.event_name == 'workflow_dispatch'"
 
     # assert_file <label> <PASS|FAIL> <file> [<expected-message-substring>]
     #
@@ -371,12 +388,20 @@ $INVOKE"
 
     # R4: an if: that is never true.
     emit_ci "$TD/r4-never.yml" '' "    if: github.event_name == 'release'" "$INVOKE"
-    assert_file 'R4 if: that never runs on a PR' FAIL "$TD/r4-never.yml"
+    assert_file 'R4 if: that never runs on any trigger' FAIL "$TD/r4-never.yml"
+
+    # R4: the wiring this repository moved AWAY from on 2026-09-08 (BSE-15) —
+    # the old `if:`, verbatim. Putting the receipt job back on every PR is the
+    # reversion this row exists to turn RED. Without it the swap in EVENTS_TRUE
+    # / EVENTS_FALSE is a preference someone can undo in one line, and the 96 h
+    # comes straight back; with it, undoing the line fails a check.
+    emit_ci "$TD/r4-prback.yml" '' "    if: github.event_name == 'pull_request'" "$INVOKE"
+    assert_file 'R4 the per-PR wiring this repository moved away from' FAIL "$TD/r4-prback.yml"
 
     # R4: an if: that is always true — "has an if:" is not the property.
     emit_ci "$TD/r4-always.yml" '' \
-        "    if: github.event_name == 'pull_request' || github.event_name == 'push'" "$INVOKE"
-    assert_file 'R4 if: that also runs where there is no PR' FAIL "$TD/r4-always.yml"
+        "    if: github.event_name == 'workflow_dispatch' || github.event_name == 'push'" "$INVOKE"
+    assert_file 'R4 if: that also runs where the sweep has no subject' FAIL "$TD/r4-always.yml"
 
     # R4: a form the evaluator does not understand must FAIL, not pass.
     emit_ci "$TD/r4-opaque.yml" '' '    if: always()' "$INVOKE"

@@ -1830,13 +1830,39 @@ jobs:
     # out the first time the runner is busy, and a cancelled job reads as a failure
     # nobody can distinguish from a real one).
     timeout-minutes: 150
-    if: github.event_name == 'pull_request'
+    # NOT ON PULL REQUESTS, since 2026-09-08 (BSE-15, BSE-001 §4 wave 5). This job
+    # was the single largest consumer of fleet runner-hours: 96 h of aprender PR
+    # time over the 30 days ending 2026-09-07, third of a fleet total that threw
+    # away 42.1 % of everything it spent. It is 150 minutes of two mutation sweeps
+    # on a `clean-room` runner, on EVERY push to EVERY open PR, and it gates
+    # nothing: it is not a required context (`ci / gate` and `workspace-test` are),
+    # no job `needs:` it, and the `gate` job deliberately stopped reading it
+    # (PP-066 C0-5, PRQ-013, #2982 — a head-defined receipt job is a check the PR
+    # under review can edit, and `scripts/check_receipt_gate_base_owned.sh` now
+    # refuses any such `needs:`). What DOES gate the receipt is
+    # `.github/workflows/pr-review-quorum.yml`, which runs from the BASE on
+    # `pull_request_target` + `merge_group` and invokes
+    # `scripts/check_pr_review_arm4.sh` itself — it consumes no artifact from this
+    # job, so this job stopping changes no verdict anywhere.
+    #
+    # It stays FULLY WIRED and runnable on demand, which is the point of moving it
+    # to dispatch rather than deleting it:
+    #     gh workflow run ci.yml --ref <branch>
+    # On a dispatch there is no `pull_request` context, so PR_HEAD_SHA falls back
+    # to `github.sha` and the sweep runs against the dispatched ref; every trigger
+    # step below is already fail-closed on an unusable sha (it sweeps rather than
+    # skips), so the fallback cannot turn a dispatch into a silent no-op.
+    if: github.event_name == 'workflow_dispatch'
     env:
       # The `runner` context is NOT available in a job-level `env:` block —
       # GitHub rejects the workflow with `Unrecognized named-value: runner`
       # (#2791). $RUNNER_TEMP is read inside the run blocks instead.
       PR_NUMBER: ${{ github.event.pull_request.number }}
-      PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      # On workflow_dispatch there is no pull_request context; the dispatched ref
+      # is the thing to sweep. Empty would make every sha-consuming step take its
+      # fail-closed branch and sweep anyway, so this fallback is about naming the
+      # right commit in the log, not about reachability.
+      PR_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -2157,7 +2183,11 @@ jobs:
       pull-requests: write
     env:
       PR_NUMBER: ${{ github.event.pull_request.number }}
-      PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      # On workflow_dispatch there is no pull_request context; the dispatched ref
+      # is the thing to sweep. Empty would make every sha-consuming step take its
+      # fail-closed branch and sweep anyway, so this fallback is about naming the
+      # right commit in the log, not about reachability.
+      PR_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: Checkout
