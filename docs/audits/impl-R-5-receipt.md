@@ -107,7 +107,7 @@ absent". Read lazily now. The real-signature row (15) is exercised with verifica
 a live promotion.
 
 What this half does NOT do: build or sign the assets, or produce the receipts. The public key
-`.github/release-assets.pub` does not exist yet; it is created with the first signed manifest at
+`keys/apr-release-minisign.pub` does not exist yet; it is created with the first signed manifest at
 release time, and until then the gate refuses (absent key ⇒ nothing promotes), which is the
 correct default.
 
@@ -116,7 +116,7 @@ On a published release: `apr` is built for the five nightly.yml targets on hoste
 (`--locked`; Windows without the visualization feature, as nightly does), plus a `--features cuda`
 build on the gx10 runner. One sha256 manifest is written over every archive and signed with
 minisign under the scheme the repo already uses for PR-review receipts — committed
-`.github/release-assets.pub`, secret `RELEASE_ASSETS_SIGNING_KEY_B64` materialised to a file before
+`keys/apr-release-minisign.pub`, secret `RELEASE_ASSETS_SIGNING_KEY_B64` materialised to a file before
 `minisign -S` (S0-19: no third scheme) — and verified against the committed public key BEFORE
 upload. Archives, manifest and signature go to the release with `gh release upload`.
 
@@ -138,7 +138,7 @@ base-owned (I2).
   x86_64 cuda asset D-10 would want cannot be produced by any workflow today; that asset is
   absent from the manifest by construction, not silently mislabelled. Building it on lambda
   requires registering lambda as a runner, which is an infra decision, not this row's.
-- **The public key does not exist yet.** `.github/release-assets.pub` is created with the first
+- **The public key does not exist yet.** `keys/apr-release-minisign.pub` is created with the first
   signed manifest at release time (`minisign -G -W`, commit the .pub, set the secret). Until then
   the manifest job refuses (unset secret ⇒ exit 1) and the promotion gate refuses (absent key ⇒
   REFUSE). Both defaults are the correct direction.
@@ -160,8 +160,34 @@ literal grep FAILS here, but the intent HOLDS: all three occurrences
 (`binary-release.yml:5`, `ci.yml:1051`, `ci.yml:1517`) are **comments**, not commands. Same
 classifier class as PMAT-1074 — a textual token test over prose. Recorded rather than worked around.
 
+
+## Key path, and one false-green caught in this row's own acceptance (2026-09-08)
+
+**The key moved to `keys/apr-release-minisign.pub`** — the single path #3045 commits and the
+R-6 installer pins. A second copy under `.github/` would be a second root of trust, which is
+the one thing a signing scheme may not have. Changed in `release-assets.yml` (the
+`minisign -Vm … -p` line and the header), `check_promotion_receipts.sh`'s default `PUBKEY`,
+and `contracts/apr-release-assets-v1.yaml`.
+
+**`.pr/R-5/accept.sh` carried three `producer | grep -q` legs**, one of them
+`bashrs lint … | grep -qE "0 error"` — the pass-grep class this repo has a guard for
+(`0 error` is a substring of `10 error(s)`), and `producer | grep -q` SIGPIPEs the producer
+under `pipefail`. All three now capture first and test the captured string.
+
+The first rewrite of the lint leg was itself a false green and was caught by running it
+against a deliberately dirty script rather than by reading it:
+
+| predicate | on a script with a real finding | on `publish_cascade.sh` |
+|---|---|---|
+| `grep -cE "^[[:space:]]*[^0-9]*\[error\]"` (first attempt) | **0** — the line begins `✗ 86:1-214 … [error]`, so the digits defeat the anchor | 0 |
+| `grep -c "\[error\]"` (shipped) | **1** | 0 |
+
+An anchored pattern is not automatically the safer one; the anchor has to match the tool's
+actual output. Both polarities are recorded here because a leg that cannot go RED is not a
+leg. `accept.sh` 5/5.
+
 ## Gaps
-`.github/release-assets.pub` + the secret (created at the first signed release); the x86_64 cuda
+`keys/apr-release-minisign.pub` + the secret (created at the first signed release); the x86_64 cuda
 asset (no runner); `--from-release` in the dogfood script (R-2's file); `--dry-run` against
 the real registry (it runs `cargo publish --dry-run` per crate, which needs a full build of 71
 crates and is a release-time step); the live cascade itself at RELEASE; the 3-lane quorum; the CI

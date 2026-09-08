@@ -54,7 +54,7 @@ PY
 verify_manifest() { # verify_manifest <manifest> -> 0 signature ok
     local m=$1
     # read at call time, not at load: the case table overrides it after sourcing
-    local PUBKEY="${PROMOTION_PUBKEY:-$ROOT/.github/release-assets.pub}"
+    local PUBKEY="${PROMOTION_PUBKEY:-$ROOT/keys/apr-release-minisign.pub}"
     [ -f "$PUBKEY" ] || { printf 'REFUSE  public key %s is absent; an unverifiable manifest promotes nothing\n' "${PUBKEY#"$ROOT"/}"; return 1; }
     [ -f "$m.minisig" ] || { printf 'REFUSE  %s carries no .minisig; an unsigned manifest promotes nothing\n' "$m"; return 1; }
     if [ -n "${PROMOTION_SKIP_SIG_VERIFY:-}" ]; then

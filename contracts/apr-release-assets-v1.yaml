@@ -90,5 +90,5 @@ non_goals:
 
 binding_registry:
   guard: scripts/check_promotion_receipts.sh
-  pubkey: .github/release-assets.pub   # to be created alongside the first signed manifest; absent => refuse
+  pubkey: keys/apr-release-minisign.pub   # THE key (#3045); R-6 pins the same path; absent => refuse
   issue: "https://github.com/paiml/aprender/issues/2908"

@@ -11,7 +11,9 @@
 # SIGNING follows the scheme the repository already uses for PR-review receipts
 # (S0-19: a public key committed at .github/*.pub, the secret half escrowed as a
 # base64 repository secret and materialised to a file before use). No third
-# scheme. Public key: .github/release-assets.pub. Secret:
+# scheme. Public key: keys/apr-release-minisign.pub (the ONE key #3045 commits and the
+# R-6 installer pins; a second copy under .github/ would be a second root of trust).
+# Secret:
 # RELEASE_ASSETS_SIGNING_KEY_B64. Rotation: `minisign -G -W`, replace the .pub,
 # re-set the secret, re-sign.
 #
@@ -183,7 +185,7 @@ jobs:
           minisign -S -W -s "$RUNNER_TEMP/release-assets.key" -m "apr-$TAG.sha256"
           rm -f "$RUNNER_TEMP/release-assets.key"
           # verify what we just signed against the COMMITTED public key before uploading
-          minisign -Vm "apr-$TAG.sha256" -p ../.github/release-assets.pub
+          minisign -Vm "apr-$TAG.sha256" -p ../keys/apr-release-minisign.pub
       - name: Upload archives, manifest and signature to the release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
