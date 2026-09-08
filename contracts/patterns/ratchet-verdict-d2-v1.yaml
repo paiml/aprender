@@ -1,0 +1,255 @@
+metadata:
+  id: APR-RATCHET-D2-001
+  version: "1.0.0"
+  created: "2026-09-07"
+  author: PAIML Engineering
+  kind: pattern
+  status: enforced
+  description: |
+    A ratchet verdict depends on (comparand SHA, merge SHA, tool version) and
+    on NOTHING on disk outside the two SHA checkouts.
+
+    Cross-cutting, so `kind: pattern` rather than a kernel contract: the
+    numeric content is a polarity relation between two measurements, not a
+    formula over data.
+
+    WHY IT EXISTS. Three guards in this repository compared a measurement of
+    the WORKING TREE against a LITERAL ON DISK — a README count, a
+    `<path>::<fn> <cyc> <cog>` baseline row, a `const SATD_PRODUCTION_BASELINE`
+    in a test. All three therefore failed on MERGE COMMITS, at roughly 3/day:
+    the merged file is written by git, not by an author, so it is a claim about
+    a tree that did not exist until the merge created it. Two individually
+    legal branches produce a third state nobody recorded.
+
+    The fix is not a better literal. It is to stop storing the comparand: the
+    guard MEASURES `origin/main@SHA` and the merge commit in the same job, with
+    one instrument, and diffs the two measurements. A file on disk cannot be
+    the comparand because (a) the author can rewrite it in the same pull
+    request as the regression, (b) nobody writes it on a merge, and (c) a
+    threshold-crossing record cannot distinguish "fixed" from "deleted" from
+    "renamed" — only a measurement of the comparand can.
+
+    Model and attack surface: docs/audits/threat-model-bse-03-ratchets.md.
+    Rows: scripts/tests/ratchet_semantics_test.sh --class <readme|complexity|satd>.
+  references:
+    - docs/audits/threat-model-bse-03-ratchets.md
+    - docs/specifications/build-system-enhancement.md
+    - scripts/lib_baseline_ratchet.sh
+    - scripts/check_complexity_ratchet.sh
+    - scripts/check_readme_claims.sh
+    - crates/aprender-core/tests/includes/falsification_spec_v10_checklist.rs
+  depends_on: []
+equations:
+  verdict_is_a_function_of_two_revisions:
+    formula: |
+      V_c = f(M_c(base_sha), M_c(merge_sha), tool_version)
+        for every class c in {readme_counts, satd, complexity}
+      No input to V_c is a path in the working tree.
+    domain: |
+      A guard run on a commit that has a resolvable comparand on a protected
+      ref.
+    codomain: RED | GREEN
+    invariants:
+      - "no file outside the two SHA checkouts is read as a comparand"
+      - "mutating a tracked file that is not part of the measured universe leaves the verdict unchanged"
+    preconditions:
+      - "base_sha and merge_sha both resolve to commits"
+    postconditions:
+      - "the run prints both SHAs before it prints a verdict"
+  polarity_has_no_lower_bound:
+    formula: |
+      M_c(merge) worse than M_c(base)  => RED
+      M_c(merge) equal to M_c(base)    => GREEN
+      M_c(merge) better than M_c(base) => GREEN
+    domain: Two completed measurements of the same class.
+    codomain: RED | GREEN
+    invariants:
+      - "there is NO value of M_c(merge) better than M_c(base) that produces RED"
+      - "an improvement requires no edit to any recorded file: the comparand re-measures itself on the next merge"
+    preconditions:
+      - "both measurements completed"
+    postconditions:
+      - "the run prints the polarity rule it applied"
+  fail_closed_on_the_comparand:
+    formula: |
+      unresolvable(base_ref) or incomplete(M_c(rev)) => RED and the word UNMEASURED
+      Preflight precedes measurement: the comparand is resolved and printed
+      before the expensive scan runs.
+    domain: Any run, including one on a shallow CI checkout.
+    codomain: RED
+    invariants:
+      - "a missing comparand is never reported as 'no growth'"
+      - "the guard never degrades to comparing the branch against itself"
+    preconditions: []
+    postconditions:
+      - "on an unresolvable ref, no measurement line is printed at all"
+  one_resolver_one_instrument:
+    formula: |
+      base_sha = baseline_ratchet_resolve(root, ref, path)   -- and by no other code path
+      version(M_c(base)) == version(M_c(merge)) == recorded tool_version
+    domain: Any guard implementing this pattern.
+    codomain: bool
+    invariants:
+      - "a second function anywhere in the repository returning a comparand SHA is a contract violation"
+      - "two measurements produced by two tool versions are not a diff, and the run REDs naming both versions"
+      - "the universe is measured at both revisions; a change in its size is reported, never absorbed into 'improvement'"
+    preconditions:
+      - "the tool names itself at both revisions"
+    postconditions:
+      - "the run prints base, merge and recorded tool versions"
+proof_obligations:
+  - type: invariant
+    property: The verdict reads no comparand from the working tree
+    formal: "forall c: inputs(V_c) intersect working_tree_paths = {}"
+    applies_to: verdict_is_a_function_of_two_revisions
+  - type: invariant
+    property: No lower bound
+    formal: "forall c: M_c(merge) < M_c(base) -> V_c = GREEN"
+    applies_to: polarity_has_no_lower_bound
+  - type: frame
+    property: An unmeasured comparand is RED, before the measurement
+    formal: "unresolvable(base_ref) -> V_c = RED and measured(c) = false"
+    applies_to: fail_closed_on_the_comparand
+  - type: invariant
+    property: One instrument across both revisions
+    formal: "version(M_c(base)) != version(M_c(merge)) -> V_c = RED"
+    applies_to: one_resolver_one_instrument
+falsification_tests:
+  - id: FALSIFY-RATCHET-D2-001
+    rule: |
+      A regression against the comparand measurement is RED, for every class.
+    prediction: |
+      A merge tree carrying a function over a threshold that the comparand did
+      not carry exits 1 and names it NEW.
+    test: |
+      bash scripts/tests/ratchet_semantics_test.sh --class complexity
+    if_fails: |
+      The comparand diff is not detecting growth; check cx_verdict_d2 in
+      scripts/check_complexity_ratchet.sh.
+    ship_blocking: true
+    counter_example_classes:
+      - new_offender_admitted
+      - grown_offender_admitted
+  - id: FALSIFY-RATCHET-D2-002
+    rule: |
+      An improvement is GREEN and requires no edit to any recorded file. The
+      registered mutation reintroduces a lower bound (the pre-BSE-03 verdict,
+      read from the baseline FILE) and must turn the improvement row RED.
+    prediction: |
+      A merge tree that fixes a recorded function, with the baseline file left
+      exactly as the comparand carries it, exits 0 and names it RESOLVED; the
+      mutant copy of the guard exits non-zero on the same fixture.
+    test: |
+      bash scripts/tests/ratchet_semantics_test.sh --class complexity
+    if_fails: |
+      Either a lower bound has been reintroduced (the improvement redded), or
+      the mutation no longer discriminates and the row proves nothing.
+    ship_blocking: true
+    counter_example_classes:
+      - improvement_redded
+      - stale_row_lower_bound
+      - vacuous_mutation
+  - id: FALSIFY-RATCHET-D2-003
+    rule: |
+      An unresolvable comparand is RED at PREFLIGHT, before any measurement.
+    prediction: |
+      With BASELINE_RATCHET_BASE_REF pointing at a ref that does not exist, the
+      guard exits 1, names the ref, and prints NO measurement line.
+    test: |
+      bash scripts/tests/ratchet_semantics_test.sh --class complexity
+    if_fails: |
+      A missing comparand is being read as "no growth", or the expensive scan
+      runs before the failure that invalidates it.
+    ship_blocking: true
+    counter_example_classes:
+      - missing_comparand_reads_as_clean
+      - measurement_before_preflight
+  - id: FALSIFY-RATCHET-D2-004
+    rule: |
+      Two measurements produced by two different tool versions are not a diff:
+      the guard REDs and prints BOTH versions, and it also REDs when the
+      recorded `tool_version=` header disagrees with the tool that ran.
+    prediction: |
+      A fixture whose two revisions declare different pmat versions exits 1
+      naming both.
+    test: |
+      bash scripts/tests/ratchet_semantics_test.sh --class complexity
+    if_fails: |
+      Attack A6 is open: a tool that scores fewer functions makes any tree look
+      improved, and the guard is comparing incomparable numbers.
+    ship_blocking: true
+    counter_example_classes:
+      - two_tool_versions_one_verdict
+      - version_logged_but_not_asserted
+  - id: FALSIFY-RATCHET-D2-005
+    rule: |
+      The SATD ceiling is the comparand measurement when the job supplies it,
+      the constant only when it does not, and an unusable value is an ERROR
+      rather than a silent fall back to the constant.
+    prediction: |
+      satd_baseline_from(None) yields the constant tagged "constant";
+      satd_baseline_from(Some("12")) yields 12 tagged "comparand"; an empty or
+      unparseable value is Err.
+    test: |
+      bash scripts/tests/ratchet_semantics_test.sh --class satd
+    if_fails: |
+      The SATD class is judging a tree against a number nobody measured. Fix
+      satd_baseline_from in
+      crates/aprender-core/tests/includes/falsification_spec_v10_checklist.rs.
+    ship_blocking: true
+    counter_example_classes:
+      - empty_env_falls_back_silently
+      - env_ignored_when_set
+      - zero_reads_as_unset
+  - id: FALSIFY-RATCHET-D2-006
+    rule: |
+      The SATD polarity: a count above the ceiling fails, at or below passes,
+      and there is no lower bound.
+    prediction: |
+      With SATD_BASELINE one below the measured count the gate fails naming
+      both numbers; at the count, and well above it, the gate passes.
+    test: |
+      bash scripts/tests/ratchet_semantics_test.sh --class satd
+    if_fails: |
+      Either the ceiling is not enforced, or a lower bound has come back and a
+      tree whose debt FELL is being redded.
+    ship_blocking: true
+    counter_example_classes:
+      - improvement_redded
+      - regression_admitted
+  - id: FALSIFY-RATCHET-D2-007
+    rule: |
+      The README count claim is judged against the merge tree, not against a
+      literal, and the registered mutation (reading the count from a file on
+      disk) must turn the hand-edited rows GREEN.
+    prediction: |
+      bash scripts/tests/ratchet_semantics_test.sh --class readme reports 12
+      checks, 0 failed.
+    test: |
+      bash scripts/tests/ratchet_semantics_test.sh --class readme
+    if_fails: |
+      The README class regressed to comparing a literal against a literal.
+    ship_blocking: true
+    counter_example_classes:
+      - claim_judged_against_a_literal
+      - vacuous_mutation
+kani_harnesses: []
+qa_gate:
+  id: QA-RATCHET-D2-001
+  name: Ratchet verdict D2 normaliser
+  description: |
+    Every ratchet class judges a merge commit by diffing two measurements taken
+    in the same job by the same tool, never by comparing a measurement against
+    a stored literal.
+  checks:
+    - verdict_is_a_function_of_two_revisions
+    - polarity_has_no_lower_bound
+    - fail_closed_on_the_comparand
+    - one_resolver_one_instrument
+  pass_criteria: |
+    All seven falsification tests pass, and each class's registered mutation is
+    demonstrated to flip a row.
+  falsification: |
+    Reintroduce a lower bound (STALE -> RED, or a "must tighten" assertion): the
+    improvement rows of --class complexity and --class satd must go RED. If they
+    do not, the rows are not measuring the property.

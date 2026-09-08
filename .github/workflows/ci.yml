@@ -111,6 +111,10 @@ jobs:
     # the worst contended run, and a hang still fails at the step timeout.
     timeout-minutes: 150
     env:
+      # The sccache host directory, named ONCE per job: the machine-specific-path
+      # ratchet counts literals, and the quick-tier steps added two more copies
+      # of a path this job already spelled five times (PMAT-1077).
+      SCCACHE_HOST_DIR: /home/noah/data/sccache
       IMAGE: localhost:5000/sovereign-ci:stable
       PR_OR_REF: ${{ github.event.pull_request.number || github.ref_name }}
     steps:
@@ -274,14 +278,29 @@ jobs:
       - name: Create this run's target dir and registry on the host (before any bind mount)
         run: |
           set -euo pipefail
+          # heal_path ROOT PATH: on a merge_group event PR_OR_REF is the queue
+          # ref (gh-readonly-queue/main/pr-N-<sha>), so the per-ref dir is NESTED
+          # and an ancestor may already be root-owned from a build whose bind
+          # mount let the docker daemon create it (#3037's queue build: mkdir
+          # EACCES on .../aprender-ci/gh-readonly-queue/...). Walk every
+          # component from ROOT down; chown each existing unwritable one through
+          # the image (that directory only, never its contents); then mkdir -p.
+          heal_path() {
+            local root=$1 path=$2 cur=$1 rel part
+            rel=${path#"$root"/}
+            IFS=/ read -ra parts <<< "$rel"
+            for part in "${parts[@]}"; do
+              cur="$cur/$part"
+              if [ -d "$cur" ] && [ ! -w "$cur" ]; then
+                docker run --rm -v "$(dirname "$cur"):/p" "$IMAGE" chown "$(id -u):$(id -g)" "/p/$(basename "$cur")"
+              fi
+            done
+            mkdir -p "$path"
+          }
           parent="/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}"
           reg="/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}"
-          for d in "$parent" "$reg"; do
-            if [ -d "$d" ] && [ ! -w "$d" ]; then
-              docker run --rm -v "$(dirname "$d"):/p" "$IMAGE" chown "$(id -u):$(id -g)" "/p/$(basename "$d")"
-            fi
-          done
-          mkdir -p "${parent}/run-${GITHUB_RUN_ID}" "$reg"
+          heal_path /mnt/nvme-raid0/targets/aprender-ci "${parent}/run-${GITHUB_RUN_ID}"
+          heal_path /mnt/nvme-raid0/cargo-ci/registry "$reg"
           ls -ld "$parent" "${parent}/run-${GITHUB_RUN_ID}" "$reg"
       - name: Pre-build chown — fix per-RUN root ownership
         # Root cause (five-whys):
@@ -313,7 +332,46 @@ jobs:
             -v "/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}:/usr/local/cargo/registry" \
             "$IMAGE" \
             bash -c 'chown -R 1000:1000 /workspace/target /usr/local/cargo/registry 2>/dev/null || true'
+      # BSE-17 (PMAT-1077): which tier this run owes. quick on pull_request —
+      # the touched crates + direct reverse dependents (BSE-16's selection, cap
+      # -> full) plus EVERY test target that reads the tree, derived and
+      # registry-checked (drift is ENV, never a quick tier over a stale list);
+      # full on push/schedule/dispatch and on a merge_group whose tree is not
+      # the tree a green PR head already ran; reuse on a merge_group whose
+      # HEAD^{tree} equals the PR head's and whose workspace-test succeeded.
+      # The touched set is the TIP diff against the base (shallow checkout: no
+      # merge-base; tip-vs-tip is a superset, the safe direction) and the diff
+      # command itself must succeed — an empty diff from a failed git would
+      # read as "nothing touched", the fail-open shape. Feature-gated suites
+      # (model-tests, setfit) stay in the full tier.
+      - name: Decide the test tier (BSE-17, PMAT-1077)
+        id: tier
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          args=(--event "${GITHUB_EVENT_NAME}")
+          case "${GITHUB_EVENT_NAME}" in
+            pull_request)
+              git fetch --no-tags --depth=1 origin "+refs/heads/${GITHUB_BASE_REF}:refs/remotes/origin/${GITHUB_BASE_REF}"
+              git diff --name-only "origin/${GITHUB_BASE_REF}" HEAD > "$RUNNER_TEMP/touched.txt"
+              printf 'touched (tip vs tip): %s path(s)\n' "$(wc -l < "$RUNNER_TEMP/touched.txt" | tr -d ' ')"
+              args+=(--diff-from "$RUNNER_TEMP/touched.txt")
+              ;;
+            merge_group)
+              pr=$(printf '%s' "${GITHUB_REF_NAME}" | sed -n 's|^gh-readonly-queue/[^/]*/pr-\([0-9]*\)-.*|\1|p')
+              if [ -n "$pr" ]; then
+                head=$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${pr}" --jq .head.sha)
+                git fetch --no-tags --depth=1 origin "$head"
+                concl=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${head}/check-runs?check_name=workspace-test&per_page=20" --jq '[.check_runs[]|select(.status=="completed")]|sort_by(.completed_at)|last|.conclusion // "none"')
+                args+=(--pr-head "$head" --pr-head-conclusion "${concl:-none}")
+              fi
+              ;;
+          esac
+          bash scripts/ci_test_tier.sh "${args[@]}" | tee "$RUNNER_TEMP/tier.txt"
+          grep -E '^(tier|crates|targets|reason|cite)=' "$RUNNER_TEMP/tier.txt" >> "$GITHUB_OUTPUT"
       - name: Workspace lib tests (25,300+)
+        if: steps.tier.outputs.tier == 'full'
         # Excluded: aprender-gpu (cuBLAS), aprender-cuda-edge (CUDA), aprender-compute (SIMD SIGSEGV at exit)
         # Timeout: 75min (was 55, was 40).
         # 2026-05-15: bumped to 75min after the P0 per-run target-dir fix
@@ -345,7 +403,7 @@ jobs:
             -v "${GITHUB_WORKSPACE}:/workspace" \
             -v "/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}:/usr/local/cargo/registry" \
             -v "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}:/workspace/target" \
-            -v "/home/noah/data/sccache:/sccache" \
+            -v "${SCCACHE_HOST_DIR}:/sccache" \
             -w /workspace \
             -e CARGO_TARGET_DIR=/workspace/target \
             -e RUSTC_WRAPPER=rustc-sccache \
@@ -358,13 +416,14 @@ jobs:
             "$IMAGE" \
             cargo nextest run --profile ci --workspace --lib --exclude aprender-gpu --exclude aprender-cuda-edge --exclude aprender-compute
       - name: Compute tests (tolerate SIGSEGV at exit — all tests pass but harness crashes on cleanup)
+        if: steps.tier.outputs.tier == 'full'
         run: |
           docker run --rm \
           -e CI -e GITHUB_ACTIONS -e GITHUB_REF -e GITHUB_SHA -e GITHUB_REPOSITORY -e GITHUB_RUN_ID -e GITHUB_EVENT_NAME -e GITHUB_WORKFLOW \
             -v "${GITHUB_WORKSPACE}:/workspace" \
             -v "/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}:/usr/local/cargo/registry" \
             -v "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}:/workspace/target" \
-            -v "/home/noah/data/sccache:/sccache" \
+            -v "${SCCACHE_HOST_DIR}:/sccache" \
             -w /workspace \
             -e CARGO_TARGET_DIR=/workspace/target \
             -e RUSTC_WRAPPER=rustc-sccache \
@@ -375,6 +434,7 @@ jobs:
             "$IMAGE" \
             bash -c 'cargo test -p aprender-compute --lib 2>&1 | tee /tmp/compute-test.log; grep -q "test result: ok\." /tmp/compute-test.log && ! grep -q "test result: FAILED" /tmp/compute-test.log'
       - name: Integration tests
+        if: steps.tier.outputs.tier == 'full'
         # #2465: the four FALSIFY-AUTH targets were appended here because they
         # were DARK — `falsify_auth_002` appeared nowhere in .github/, scripts/
         # or Makefile, and neither did the contract loader
@@ -416,7 +476,7 @@ jobs:
             -v "${GITHUB_WORKSPACE}:/workspace" \
             -v "/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}:/usr/local/cargo/registry" \
             -v "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}:/workspace/target" \
-            -v "/home/noah/data/sccache:/sccache" \
+            -v "${SCCACHE_HOST_DIR}:/sccache" \
             -w /workspace \
             -e CARGO_TARGET_DIR=/workspace/target \
             -e RUSTC_WRAPPER=rustc-sccache \
@@ -426,6 +486,90 @@ jobs:
             -e CARGO_BUILD_JOBS=8 \
             "$IMAGE" \
             bash -c 'cargo test -p aprender-core --features setfit --lib setfit && cargo test -p aprender-core --features setfit,conformance-fixtures --test setfit_conformance && cargo test -p aprender-core --test monorepo_invariants && cargo test -p aprender-core --test readme_contract && cargo test -p apr-cli --test cli_commands && cargo test -p aprender-train-inspect --test falsify_no_fabricated_metadata_2519 && cargo test -p aprender-train-bench --test falsify_no_fabricated_benchmarks_2519 && cargo test -p aprender-train-shell --test falsify_no_fabricated_fetch_2519 && cargo test -p aprender-core --test beat_sklearn_iris && cargo test -p aprender-core --test beat_sklearn_nmi && cargo test -p aprender-core --test beat_sklearn_metrics_parity && cargo test -p aprender-core --test beat_sklearn_gaussiannb_accuracy && cargo test -p aprender-core --test beat_sklearn_svc_accuracy && cargo test -p aprender-core --test beat_sklearn_pipeline_encoder && cargo test -p aprender-serve --test beat_fail_closed_garbage && cargo test -p aprender-compute --lib beat_nf4_bitsandbytes_equivalence && cargo test -p aprender-core --test beat_pytorch_autograd_grad && cargo test -p aprender-train-lora --lib beat_lora_merge_forward_equivalence && cargo test -p apr-cli --release --test beat_pytorch_deploy_footprint && cargo test -p aprender-serve --test beat_fail_closed_structural && cargo test -p aprender-serve --test ollama_http_compat && cargo test -p apr-cli --test ollama_ndjson_streaming && cargo test -p apr-cli --test falsification_chat_http_cli && cargo test -p aprender-contracts --test apr_serve_api_key_auth_contract && cargo test -p apr-cli --test falsify_auth_001 --test falsify_auth_002 --test falsify_auth_003 --no-fail-fast && cargo test -p apr-cli --test beat_apr_data_alimentar_reach && cargo test -p apr-cli --test beat_apr_sibling_cli_reach && cargo test -p aprender-contracts-cli --test pv_surface_gate && cargo test -p aprender-contracts-cli --test cli_integration && cargo test -p aprender-contracts-cli --test ground_truth && cargo test -p aprender-contracts-cli --test version_identity && cargo build --examples --workspace --keep-going && cargo check --workspace --benches --locked'
+      # BSE-17 quick tier, part 1: the selected crates' unit and integration
+      # targets (default features) under the same image and mounts as the full
+      # tier. Empty selection (a scripts/docs PR) skips this step; part 2 still runs.
+      - name: "Quick tier: lib + integration tests of the selected crates (BSE-17)"
+        if: steps.tier.outputs.tier == 'quick' && steps.tier.outputs.crates != ''
+        timeout-minutes: 60
+        env:
+          CRATES: ${{ steps.tier.outputs.crates }}
+        run: |
+          set -euo pipefail
+          read -ra crates <<< "$CRATES"
+          pkgs=""; for c in "${crates[@]}"; do pkgs="$pkgs -p $c"; done
+          printf 'quick tier crates: %s\n' "$CRATES"
+          docker run --rm \
+          -e CI -e GITHUB_ACTIONS -e GITHUB_REF -e GITHUB_SHA -e GITHUB_REPOSITORY -e GITHUB_RUN_ID -e GITHUB_EVENT_NAME -e GITHUB_WORKFLOW \
+            -v "${GITHUB_WORKSPACE}:/workspace" \
+            -v "/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}:/usr/local/cargo/registry" \
+            -v "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}:/workspace/target" \
+            -v "${SCCACHE_HOST_DIR}:/sccache" \
+            -w /workspace \
+            -e CARGO_TARGET_DIR=/workspace/target \
+            -e RUSTC_WRAPPER=rustc-sccache \
+            -e SCCACHE_DIR=/sccache \
+            -e SCCACHE_CACHE_SIZE=50G \
+            -e CARGO_INCREMENTAL=0 \
+            -e CARGO_BUILD_JOBS=8 \
+            -e CARGO_PROFILE_TEST_DEBUG=line-tables-only \
+            -e CARGO_PROFILE_DEV_DEBUG=line-tables-only \
+            -e CARGO_TERM_COLOR=never \
+            "$IMAGE" \
+            bash -c "cargo nextest run --profile ci --lib --tests$pkgs"
+      # BSE-17 quick tier, part 2: every test target that reads the tree, from
+      # scripts/tree_reader_tests.txt (derived; the guard has already proved the
+      # registry equals the sources in this run). Grouped per crate: one cargo
+      # invocation per crate, --lib and/or its --test targets.
+      - name: "Quick tier: every test target that reads the tree (BSE-17)"
+        if: steps.tier.outputs.tier == 'quick'
+        timeout-minutes: 60
+        env:
+          TARGETS: ${{ steps.tier.outputs.targets }}
+        run: |
+          set -euo pipefail
+          read -ra targets <<< "$TARGETS"
+          printf 'tree-reader targets: %s\n' "${#targets[@]}"
+          script=""
+          for crate in $(printf '%s\n' "${targets[@]}" | cut -d: -f1 | sort -u); do
+            flags=""
+            for t in "${targets[@]}"; do
+              case "$t" in
+                "$crate:--lib") flags="$flags --lib" ;;
+                "$crate:--test:"*) flags="$flags --test ${t#"$crate:--test:"}" ;;
+              esac
+            done
+            script="$script cargo nextest run --profile ci -p $crate$flags &&"
+          done
+          script="${script% &&}"
+          printf '%s\n' "$script" | tr '&' '\n' | grep -v '^$' | sed 's/^/  + /'
+          docker run --rm \
+          -e CI -e GITHUB_ACTIONS -e GITHUB_REF -e GITHUB_SHA -e GITHUB_REPOSITORY -e GITHUB_RUN_ID -e GITHUB_EVENT_NAME -e GITHUB_WORKFLOW \
+            -v "${GITHUB_WORKSPACE}:/workspace" \
+            -v "/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}:/usr/local/cargo/registry" \
+            -v "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}:/workspace/target" \
+            -v "${SCCACHE_HOST_DIR}:/sccache" \
+            -w /workspace \
+            -e CARGO_TARGET_DIR=/workspace/target \
+            -e RUSTC_WRAPPER=rustc-sccache \
+            -e SCCACHE_DIR=/sccache \
+            -e SCCACHE_CACHE_SIZE=50G \
+            -e CARGO_INCREMENTAL=0 \
+            -e CARGO_BUILD_JOBS=8 \
+            -e CARGO_PROFILE_TEST_DEBUG=line-tables-only \
+            -e CARGO_PROFILE_DEV_DEBUG=line-tables-only \
+            -e CARGO_TERM_COLOR=never \
+            "$IMAGE" \
+            bash -c "set -e; $script"
+      # BSE-17 reuse: the queue ref's tree is byte-identical to a PR head whose
+      # workspace-test already succeeded; measuring it again is waste, not
+      # evidence. The tier step proved both facts (trees compared by hash, the
+      # check-run's conclusion read from GitHub); this step records the citation.
+      - name: "Reuse: this tree already passed workspace-test on the PR head (BSE-17)"
+        if: steps.tier.outputs.tier == 'reuse'
+        run: |
+          printf 'workspace-test REUSED: %s\n' "${{ steps.tier.outputs.reason }}"
+          printf 'cited PR head: %s\n' "${{ steps.tier.outputs.cite }}"
       - name: Build.rs crate-root escape check (v0.31.1 yank guard)
         # Static Poka-Yoke: flags build.rs files that panic on files outside
         # CARGO_MANIFEST_DIR, which break `cargo install` from crates.io.
@@ -879,13 +1023,27 @@ jobs:
           # A root-owned parent (created by the docker daemon for another job's
           # bind mount, #3039) is chowned through the image before the mkdir;
           # that one directory only, never its contents.
-          for d in "$(dirname "$GUARD_TARGET_DIR")" "$(dirname "$GUARD_CARGO_HOME")" "$GUARD_CARGO_HOME"; do
-            if [ -d "$d" ] && [ ! -w "$d" ]; then
-              docker run --rm -v "$(dirname "$d"):/p" "$IMAGE" chown "$(id -u):$(id -g)" "/p/$(basename "$d")"
-            fi
-          done
-          mkdir -p "$GUARD_TARGET_DIR"
-          mkdir -p "$GUARD_CARGO_HOME/registry"
+          # heal_path ROOT PATH: on a merge_group event PR_OR_REF is the queue
+          # ref (gh-readonly-queue/main/pr-N-<sha>), so the per-ref dir is NESTED
+          # and an ancestor may already be root-owned from a build whose bind
+          # mount let the docker daemon create it (#3037's queue build: mkdir
+          # EACCES on .../aprender-ci/gh-readonly-queue/...). Walk every
+          # component from ROOT down; chown each existing unwritable one through
+          # the image (that directory only, never its contents); then mkdir -p.
+          heal_path() {
+            local root=$1 path=$2 cur=$1 rel part
+            rel=${path#"$root"/}
+            IFS=/ read -ra parts <<< "$rel"
+            for part in "${parts[@]}"; do
+              cur="$cur/$part"
+              if [ -d "$cur" ] && [ ! -w "$cur" ]; then
+                docker run --rm -v "$(dirname "$cur"):/p" "$IMAGE" chown "$(id -u):$(id -g)" "/p/$(basename "$cur")"
+              fi
+            done
+            mkdir -p "$path"
+          }
+          heal_path /mnt/nvme-raid0/targets/aprender-ci "$GUARD_TARGET_DIR"
+          heal_path /mnt/nvme-raid0/cargo-ci/home "$GUARD_CARGO_HOME/registry"
           printf 'target dir: %s\n' "$GUARD_TARGET_DIR"
           printf 'cargo home: %s (registry/ .package-cache .package-cache-mutate travel together)\n' "$GUARD_CARGO_HOME"
       # Poka-yoke: a beat that no workflow executes reads as enforcement, is
@@ -1003,6 +1161,17 @@ jobs:
       # parse shell. Ratcheted rather than fixed: turning the glob on outright
       # surfaces ~851 diagnostics, most of them bashrs false positives on
       # hand-written bash, and a gate that cannot go green gets disabled.
+      # BSE-17 (PMAT-1077): the tier decision's case table and the tree-reader
+      # registry guard's, both polarities; cargo metadata is needed, so here.
+      - name: "Test-tier decision case table (BSE-17): quick/full/reuse, drift is ENV"
+        run: bash scripts/ci_test_tier.sh --self-test
+      - name: "Tree-reader registry guard case table (BSE-17)"
+        run: bash scripts/check_tree_reader_tests.sh --self-test
+      # The registry is the WIRED half; the unwired half is a ledger of tests
+      # that read the tree and that no lane runs (39 on 2026-09-07, one of them
+      # red on main). Both halves are checked here: drift either way is RED.
+      - name: "Tree-reader registry and unwired ledger agree with the sources (BSE-17)"
+        run: bash scripts/check_tree_reader_tests.sh
       - name: bashrs must see every script in scripts/ (shrink-only)
         run: bash scripts/check_shell_lint_ratchet.sh
       # PMAT-746. The ONLY complexity gate in this repository was the LOCAL pmat
@@ -1018,6 +1187,15 @@ jobs:
         run: |
           bash scripts/check_complexity_ratchet.sh --selftest
           bash scripts/check_complexity_ratchet.sh
+      # BSE-03 phase C (PMAT-1068): a ratchet verdict is a function of the
+      # (comparand SHA, merge SHA) pair and of nothing else -- not of a file a
+      # PR can rewrite, not of which pmat happened to be on PATH. The case
+      # tables prove it per class against fixtures with a pmat SHIM (cargo-free).
+      # The satd class builds the falsification suite and runs beside it below.
+      - name: "Ratchet verdicts depend on (comparand, merge) only -- readme + complexity case tables (BSE-03)"
+        run: |
+          bash scripts/tests/ratchet_semantics_test.sh --class readme
+          bash scripts/tests/ratchet_semantics_test.sh --class complexity
       # Hand-rolled argv parsing is banned. simular's `match args[1]` silently
       # DROPPED --seed: unknown flags fell through a catch-all, a valueless flag
       # was discarded, and an unparseable value became the default instead of an
@@ -1303,39 +1481,70 @@ jobs:
         run: bash scripts/check_model_tests_wired.sh
       - name: model-tests wiring case table
         run: bash scripts/check_model_tests_wired.sh --self-test
-      - name: model-tests falsification suites (was gated by nothing, aprender#2522)
-        # Runs INSIDE the image, on THIS job's own per-RUN target dir --
-        # `run-<RUN_ID>-guards`, never the `run-<RUN_ID>` that workspace-test
-        # mounts. Both jobs of one run used to bind-mount the same host path as
-        # /workspace/target and run cargo against it concurrently, which is the
-        # dep-info race (aprender#2822). Two mounts, two trees, no ordering.
-        #
-        # --user: the container ran as UID 0, so every artifact it wrote into
-        # the bind mounts came back root-owned and the NEXT run's checkout
-        # `git clean -ffdx` hit EACCES -- which is why this workflow already
-        # carries a "Pre-checkout ownership restore" step in three jobs. The
-        # host paths are created by the step above, from this same uid, because
-        # a bare --user EACCESs on a bind source docker had to auto-create.
+      # BSE-03 phase C (PMAT-1068): the SATD ceiling is MEASURED on the comparand
+      # by the SAME scanner, in this job, and exported as SATD_BASELINE; the
+      # constant in the checklist is the local fallback only (threat model
+      # class 2: the one number a PR could rewrite). The HEAD-built suite scans
+      # whatever tree is mounted at /workspace, so origin/main (fetched above)
+      # is archived to a directory and mounted in the workspace's place while
+      # the target dir stays the HEAD build. A ceiling of 0 makes the checklist
+      # name the count it measured; a comparand with no markers passes and
+      # measures 0. A count that cannot be read fails HERE -- the suite refuses
+      # an empty SATD_BASELINE on its own account, but a step that exported one
+      # would be reporting a measurement it did not take.
+      - name: model-tests falsification suites (was gated by nothing, aprender#2522) -- SATD ceiling measured on the comparand (BSE-03)
         run: |
-          docker run --rm \
-            --user "$(id -u):$(id -g)" \
-            -v "${GITHUB_WORKSPACE}:/workspace" \
-            -v "${GUARD_CARGO_HOME}:/cargo-home" \
-            -v "${GUARD_TARGET_DIR}:/workspace/target" \
-            -e CARGO_HOME=/cargo-home \
-            -v "/home/noah/data/sccache:/sccache" \
-            -w /workspace \
-            -e CARGO_TARGET_DIR=/workspace/target \
-            -e RUSTC_WRAPPER=rustc-sccache \
-            -e SCCACHE_DIR=/sccache \
-            -e SCCACHE_CACHE_SIZE=50G \
-            -e CARGO_INCREMENTAL=0 \
-            -e CARGO_BUILD_JOBS=8 \
-            "$IMAGE" \
-            cargo test -p aprender-core --features model-tests \
-              --test falsification_spec_v10_tests \
-              --test falsification_stress_tests \
-              --test falsification_gpu_state_tests
+          set -euo pipefail
+          dr() { # dr <dir mounted as /workspace> <cmd...>
+            local ws=$1; shift
+            docker run --rm \
+              --user "$(id -u):$(id -g)" \
+              -v "${ws}:/workspace" \
+              -v "${GUARD_CARGO_HOME}:/cargo-home" \
+              -v "${GUARD_TARGET_DIR}:/workspace/target" \
+              -e CARGO_HOME=/cargo-home \
+              -v "/home/noah/data/sccache:/sccache" \
+              -w /workspace \
+              -e CARGO_TARGET_DIR=/workspace/target \
+              -e RUSTC_WRAPPER=rustc-sccache \
+              -e SCCACHE_DIR=/sccache \
+              -e SCCACHE_CACHE_SIZE=50G \
+              -e CARGO_INCREMENTAL=0 \
+              -e CARGO_BUILD_JOBS=8 \
+              -e CARGO_TERM_COLOR=never \
+              "${DR_ENV[@]}" \
+              "$IMAGE" "$@"
+          }
+          DR_ENV=()
+          # 1. build the checklist suite once, at HEAD, and learn its executable
+          dr "$GITHUB_WORKSPACE" cargo test -p aprender-core --features model-tests \
+            --test falsification_spec_v10_tests --no-run 2>&1 | tee "$RUNNER_TEMP/satd-build.log"
+          bin=$(sed -e 's/\x1b\[[0-9;]*m//g' -e 's/\r$//' "$RUNNER_TEMP/satd-build.log" | sed -n 's|.*Executable tests/falsification_spec_v10_tests\.rs (\(.*\))$|\1|p' | tail -1)
+          [ -n "$bin" ] || { echo "FAIL: cargo did not name the falsification suite executable"; exit 1; }
+          # 2. measure the comparand with that same binary
+          # A detached worktree, not `git archive`: archive honours .gitattributes
+          # export-ignore, so an ignored source file would vanish from the
+          # comparand and lower the measured count (review m2-prb-review, 4/5 lanes).
+          comparand="$RUNNER_TEMP/comparand"; git worktree remove --force "$comparand" 2>/dev/null || rm -rf "$comparand"
+          git worktree add --detach "$comparand" origin/main
+          trap 'git worktree remove --force "$comparand" 2>/dev/null || true' EXIT
+          DR_ENV=(-e SATD_BASELINE=0)
+          set +e
+          out=$(dr "$comparand" "$bin" f_dod_001_satd_count_is_zero --exact --nocapture 2>&1); mrc=$?
+          set -e
+          n=$(printf '%s\n' "$out" | sed -n 's/.*BROKEN -- \([0-9][0-9]*\) markers in production source.*/\1/p' | head -1)
+          if [ "$mrc" -eq 0 ] && [ -z "$n" ] && printf '%s\n' "$out" | grep -q '^test result: ok'; then n=0; fi
+          case "$n" in ''|*[!0-9]*) printf '%s\n' "$out" | tail -20; echo "FAIL: the comparand measurement did not yield a count (rc=$mrc)"; exit 1 ;; esac
+          echo "SATD_BASELINE=$n measured on origin/main $(git rev-parse --short origin/main) by the HEAD-built suite"
+          # 3. the suites, judged against the measured ceiling
+          DR_ENV=(-e "SATD_BASELINE=$n")
+          dr "$GITHUB_WORKSPACE" cargo test -p aprender-core --features model-tests \
+            --test falsification_spec_v10_tests \
+            --test falsification_stress_tests \
+            --test falsification_gpu_state_tests
+          # 4. the satd class of the ratchet-semantics case table (rebuilds nothing)
+          DR_ENV=()
+          dr "$GITHUB_WORKSPACE" bash scripts/tests/ratchet_semantics_test.sh --class satd
       - name: Book rust examples compile
         run: bash scripts/check_book_examples_compile.sh
       # CB-510: a Cargo.toml `exclude` pattern can strip an include!() target

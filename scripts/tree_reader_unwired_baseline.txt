@@ -1,0 +1,43 @@
+# tool_version=none (derived by scripts/check_tree_reader_tests.sh --print-unwired; regenerate with --update, never edit)
+# Test targets that READ THE TREE and that no workflow runs. Not in the quick
+# tier (it must never be stricter than the full tier), and each line is a
+# finding: a test nothing executes (BSE-17, PMAT-1077).
+apr-cli	--test	falsification_crux_a_01
+apr-cli	--test	falsification_crux_a_03
+apr-cli	--test	falsification_crux_a_20
+apr-cli	--test	pixel_regression
+apr-format	--test	golden_fixtures
+aprender-cgp	--test	integration
+aprender-contracts	--test	apr_hnsw_persistence_contract
+aprender-contracts	--test	apr_hybrid_retrieval_contract
+aprender-contracts	--test	apr_mcp_server_contract
+aprender-contracts	--test	apr_mcp_tool_inventory_contract
+aprender-contracts	--test	apr_registry_snapshot_contract
+aprender-contracts	--test	apr_rerank_contract
+aprender-contracts-cli	--test	book_coverage
+aprender-contrastive-data	--test	goldens_regenerate
+aprender-contrastive-data	--test	negative_leaky
+aprender-contrastive-data	--test	negative_materializing
+aprender-contrastive-data	--test	reference_fixtures
+aprender-core	--test	realizar_integration_tests
+aprender-core	--test	spec_checklist_19_inference
+aprender-core	--test	spec_checklist_q_qwen_coder
+aprender-core	--test	spec_checklist_r_model_import
+aprender-core	--test	spec_checklist_t_realizar
+aprender-core	--test	spec_checklist_u_performance
+aprender-core	--test	spec_checklist_v_sovereign
+aprender-core	--test	spec_checklist_w_advanced_perf
+aprender-core	--test	spec_checklist_x_anti_stub
+aprender-core	--test	toyota_principles_tests
+aprender-mcp	--test	falsify_mcp_008
+aprender-present-lib	--test	showcase_shell_autocomplete
+aprender-present-terminal	--test	pixel_perfect_tests
+aprender-present-yaml	--test	examples
+aprender-present-yaml	--test	prs_examples
+aprender-profile	--test	sprint49_depyler_ingestion_tests
+aprender-serve	--test	fusion_gate_contract_falsify
+aprender-serve	--test	infer_deep_coverage
+aprender-serve	--test	parity_contract_falsify
+aprender-serve	--test	qwen3_moe_argmax_parity
+aprender-serve	--test	qwen3_moe_parity
+aprender-train	--test	yaml_mode_integration
