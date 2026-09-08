@@ -3,9 +3,9 @@
 | | |
 |---|---|
 | Ticket | PMAT-1092 |
-| Reviewed | `docs/specifications/release-process-aprender.md` v0.1 (463 lines) |
+| Reviewed | `docs/audits/release-process-review/release-process-aprender-v0.1-draft.md` v0.1 (463 lines) |
 | Against | `origin/main` @ `c04eda87d`, and the physical hosts, 2026-09-08 |
-| Method | one `agy /teamwork-preview` lane (agy 1.1.27, conversation `55b4205c`), every finding then re-run here |
+| Method | one `agy /teamwork-preview` lane, every finding re-run here, then three AD-04 quorum lanes over this review — which returned 3 × FAIL and corrected five things (see *Method*) |
 | Verdict | **do-not-implement-as-written** — adopt §1/§2/§5.2/§9/§10 now, block §3.4/§5.1/§5.3/§6/§7 on the items below |
 | Marks | `[V]` verified by a command printed here · `[C]` computed · `[A]` asserted, source named · `[U]` unverified, owner named |
 
@@ -105,16 +105,26 @@ $ echo $?
 255
 ```
 
-**Both polarities are broken.** "Lists no ELF section" is true of the `-cuda` artifact, of the
-`-cpu` artifact, of a build with CUDA compiled out entirely, and of `/bin/true` — the probe
-returns the same answer for every input, so it excludes nothing (§1.5). And a guard written
-literally from that sentence — `cuobjdump --list-elf apr` — exits **255** on a *correct*
-artifact, so the naive implementation is a false-RED generator.
+**Three independent reasons it cannot serve as the acceptance.**
 
-Note the lane's version of this finding was wrong on the mechanism: it claimed the gate fails
-because `cuobjdump` is not installed on the CPU-only clean room. It **is** installed —
-`/usr/bin/cuobjdump` on `intel`, `yoga` and `lambda-labs`, `/usr/local/cuda/bin/cuobjdump` on
-`gx10` `[V]`. The defect is vacuity, not absence.
+1. **It excludes nothing.** "Lists no ELF section" is true of the `-cuda` artifact, of the
+   `-cpu` artifact, of a build with CUDA compiled out entirely, and of `/bin/true` — the probe
+   returns the same answer for every input (§1.5).
+2. **Read literally it goes RED on a correct artifact.** `cuobjdump --list-elf apr` exits
+   **255**, so the naive implementation is a false-RED generator.
+3. **It is not installed on the host that gates the release.** `ssh intel 'command -v
+   cuobjdump || echo ABSENT'` → **ABSENT**. Present on `yoga`, `lambda-labs` (`/usr/bin`) and
+   `gx10` (`/usr/local/cuda/bin`). The clean-room CI job also runs **inside a container**
+   (`.github/workflows/ci.yml:85`), so the operative question is the image's contents —
+   unmeasured, `[U]`, owner Noah.
+
+**Correction of record.** An earlier revision of this review claimed `cuobjdump` was present
+on all four hosts and overturned the first lane on that basis. That claim came from running
+`command -v cuobjdump` on the local workstation (`hostname` → `noah-Lambda-Vector`) and
+labelling the row `intel`. It was a mislabelled probe — precisely the "never label a run by
+intent; prove the mechanism engaged" failure this repo's verification discipline names — and
+the AD-04 quorum caught it in all three lanes. **The first lane was right about absence.**
+Reason 1 is the deeper defect and stands on its own, but reason 3 belongs to the lane.
 
 **Smallest fix.** Assert on the emitter, where the invariant actually lives, not on the
 shipped ELF: a unit test over `PtxModule`'s emitted header asserting `.version` ≤ floor and
@@ -332,20 +342,45 @@ UNMEASURED verdict for unified memory.
 `§7.1`: "Budget: the check must complete inside the merge-queue ceiling (`[U]` — measure and
 record `basis=`; current workspace-test observed ≈ 34 min)."
 
-Measured, 25 completed `ci.yml` runs on pull requests
-(`gh run list --workflow ci.yml --limit 40 --json …`), minutes:
+Measured over the **28 `ci.yml` runs that actually succeeded** in the last 200
+(`gh run list --workflow ci.yml --limit 200 --json databaseId,status,conclusion,createdAt,updatedAt,event
+--jq '.[]|select(.status=="completed" and .conclusion=="success")|…'`), minutes:
 
 ```
-3  5  13  17  17  18  32  34  35  38  40  41  47  53  53  54  57  66  71  98
+38 40 46 46 49 54 55 56 58 59 62 64 65 65 68 71 77 78 78 82 83 85 87 97 117 119 124 129
+n=28   min=38   median=65   p90=117   max=129
 ```
 
-34 min is roughly the median of the non-trivial runs; **p90 ≈ 70 min, max 98 min**. Nearly
-every run is `cancelled` rather than completed — consistent with a queue that evicts on a
-newer push.
+and the `workspace-test` job alone, on the six most recent successes:
+`39 · 49 · 55 · 64 · 70 · 78` min.
 
-**Smallest fix.** RD-3's `basis=` is the distribution and the run list, not one number, and
-the budget is stated against the tail: adding a required check to a pipeline whose existing
-required check already spans 34–98 min is a throughput decision, not a rounding one.
+An earlier revision of this finding quoted a 3–98 min spread drawn from runs that were almost
+all `cancelled`. The quorum rejected that, correctly: a cancelled run's duration is a
+truncation, not a completion time, so mixing them cannot support a budget claim in either
+direction.
+
+**But the replacement is not settled either, and saying so is the finding.** Three
+populations are now on the table and they disagree:
+
+| population | source | figures (min) |
+|---|---|---|
+| `ci.yml`, `conclusion=success`, all refs | this review | 38 / **65** / 117 / 129 (min/median/p90/max, n=28) |
+| `workspace-test` job on `--branch main` | quorum lane 1, measured | 3 · 20 · 43 · 92 |
+| "current workspace-test observed" | the draft, unsourced | ≈ 34 |
+
+They are different workflows on different refs under different conclusion filters, so none
+refutes another. **Nobody has yet pinned which population RD-3's budget is stated against** —
+and that, not the arithmetic, is the defect: a budget whose population is unspecified cannot
+be exceeded, so it cannot fail.
+
+What *is* stable across every population measured here: the `workspace-test` job alone on the
+six most recent `ci.yml` successes ran `39 · 49 · 55 · 64 · 70 · 78` min, and no successful
+`ci.yml` run completed in under 38.
+
+**Smallest fix.** RD-3 names its population explicitly — workflow, ref, job, and conclusion
+filter — before it names a number, and carries the run list. Until then the budget is `[U]`,
+owner Noah. Adding a required GPU check to a pipeline whose existing required check is
+routinely an hour is a throughput decision either way.
 
 ---
 
@@ -418,13 +453,13 @@ Recommendations carry the finding that motivates them.
 | id | recommendation from this review | motivated by |
 |---|---|---|
 | **RD-1** | Decide before §3.1 can be adopted; whatever is chosen, amend PP-066 C13 **in the same PR**. Note the runner-class change is a separate consequence that survives every option (F11) | F11, F1 |
-| **RD-2** | No objection — FX-18 is a fixture with both polarities, admissible as written | — |
+| **RD-2** | No finding against it — FX-18 is stated with both polarities, so nothing in this review bears on the choice. Team's call | — |
 | **RD-3** | Advisory→required is sound, but the criterion must add a reachability term, else "0 false reds in 14 days" is satisfied by a box that was off; and the budget's `basis=` is the 3–98 min distribution, not "≈34 min" | F3, F10 |
 | **RD-4** | Unchanged; add that `check_host_slot.sh` does not exist yet (F1) | F1 |
 | **RD-5** | Cannot be decided while §9 says the opposite — resolve F8 first | F8 |
-| **RD-6** | Accept, and state the *other* asymmetry beside it: the two x86 GPU hosts are both sm_89 | S0 ledger |
-| **RD-7** | Reframe: the floor is a declared source constant asserted against the emitter; the fleet is a cross-check, not the source | F7, F2 |
-| **RD-8** | No objection — same-machine determinism now, cross-machine out of scope | — |
+| **RD-6** | Whatever the team decides, the ledger adds a second asymmetry that must be stated beside it: the two x86 GPU hosts are **both sm_89**, so §4's two-host row is redundancy, not cross-architecture coverage | S0 ledger |
+| **RD-7** | F7 is a finding against the basis as written, not a decision: the floor is a source constant in `PtxModule`, so deriving it from `nvidia-smi` makes a source constant float on hardware inventory. What the declared minimum *should be* remains the team's call | F7, F2 |
+| **RD-8** | No finding against it — nothing measured here bears on cross-machine reproducibility. Team's call | — |
 | **RD-9** | **Closed by Appendix A above** for `yoga`'s identity; S0-Y3/Y4/Y5 and S0-G1 remain `[U]` with Noah named | S0 ledger |
 
 ---
@@ -436,18 +471,40 @@ One `agy /teamwork-preview` lane (agy 1.1.27, `--sandbox`, `writes=false`, conve
 `do-not-implement-as-written` with 10 findings. `repo_root` was byte-identical before and
 after; no lane writes leaked.
 
-Every finding above was then re-executed here. Two lane findings were **overturned**:
+Every finding was then re-executed here, and this document was itself put through the AD-04
+merge quorum — three further independent agy lanes reviewing *this review*. **They returned
+3 × FAIL**, and they were right on five counts. What follows is what that changed, because a
+review that hides its own corrections is not evidence.
 
-1. The lane said §3.4's gate "will fail due to `command not found`" because `cuobjdump` is
-   absent on the clean room. `cuobjdump` is present on **all four** hosts. The real defect is
-   vacuity plus a 255 exit on a correct artifact (F2). The lane's proposed fix — grep for PTX
-   text — carries no RED-turning mutation and would not satisfy §1.1 either.
-2. The lane implied the 7B may be unprovisioned. It is present on **both** dogfood hosts; the
-   gap is `yoga`, which §7.1 assigns a 7B cell and which has no models directory (F9).
+**Overturned by the quorum — this review was wrong:**
 
-Three items the lane left uncovered are answered here: the merge-queue budget (F10), the
+1. **`cuobjdump` on `intel`.** This review claimed it present on all four hosts and overturned
+   the first lane on that basis. The row was a local probe on `noah-Lambda-Vector` mislabelled
+   as `intel`. `ssh intel` → **ABSENT**. The first lane was right; F2 now carries absence as
+   its third reason and the overturn is withdrawn.
+2. **The merge-queue distribution.** The first version mixed `cancelled` runs into a
+   completion-time claim. Re-derived over successful runs only: median **65 min**, min 38.
+   The lanes then disagreed with *each other* about the right population (lane 1 measured a
+   different one and called the original defensible), so F10 now reports all three and marks
+   the budget `[U]` rather than picking a winner — the unspecified population is the defect.
+3. **GT-1 arithmetic.** "20 of 21 non-new" was impossible; 21 named, 1 new, 1 present, **19 of
+   20 non-new absent**. The review body always said 19; the evidence pack's summary line did
+   not. Fixed.
+4. **Dispositions in the RD table.** "Accept" / "No objection" on RD-2, RD-6, RD-8 are
+   decisions, not escalations, in a document claiming to decide none. Rephrased.
+5. **Staging the draft into `docs/specifications/`.** All three lanes objected: a document
+   whose header reads "Not yet normative" landing in the normative specs directory will be
+   read — and RAG-indexed — as a spec. The draft now lives beside this review at
+   `docs/audits/release-process-review/release-process-aprender-v0.1-draft.md`.
+
+**Upheld:** the 7B *is* provisioned on both dogfood hosts, so that overturn of the first lane
+stands; the gap is `yoga`, which §7.1 assigns a 7B cell and which has no models directory
+(F9). All three quorum lanes independently confirmed F2's vacuity-and-255 core and F5's
+duplicate contract.
+
+Three items the first lane left uncovered are answered here: the merge-queue budget (F10), the
 `nightly.yml` runner class and feature set (F11), and the §12 adoption-plan dependency on
 R-5/R-6 (F1).
 
-Findings the lane raised that survive re-execution unchanged: F1, F3, F4, F6, F8.
-Findings originated here: F5, F7 (reframed), F10, F11, and the S0 ledger.
+Findings the first lane raised that survive unchanged: F1, F3, F4, F6, F8.
+Findings originated here: F5, F7, F10, F11, and the S0 ledger.

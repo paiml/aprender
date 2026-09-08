@@ -33,7 +33,10 @@ transcribed from the draft, from memory, or from another document.
 | `contracts/apr-dogfood-models-v1.yaml` | §8 (marked "new") | ABSENT (correctly marked new) |
 
 A `find . -name '*<basename>*'` over the whole tree (target/ excluded) finds none of
-them under any other path. **20 of 21 named non-new artifacts do not exist.**
+them under any other path. Of the **21** paths named: **1 exists**
+(`scripts/check_readme_claims.sh`), **1 is correctly marked "new"**
+(`contracts/apr-dogfood-models-v1.yaml`), and of the remaining **20 non-new** paths
+**19 are absent**.
 
 ## GT-2 — the fleet, measured on the hosts themselves
 
@@ -115,11 +118,31 @@ anywhere in the file**, and attaches them to the rolling `nightly` prerelease.
 `crates/aprender-gpu/Cargo.toml:7` — `description = "Pure Rust PTX generation for NVIDIA
 CUDA - no LLVM, no nvcc"`. PTX is emitted by aprender's own Rust code, so the emitted
 `.target`/`.version` is a property of the **source**, not of the builder's toolchain, and no
-CUDA toolkit is needed to build (consistent with §3.4's first bullet). `cuobjdump`, which
-§3.4 names as the acceptance instrument, ships only with the CUDA toolkit — it is absent on
-`intel`.
+CUDA toolkit is needed to build (consistent with §3.4's first bullet).
+
+Command: `grep -n 'description' crates/aprender-gpu/Cargo.toml | head -1`.
+
+`cuobjdump`, which §3.4 names as the acceptance instrument, ships only with the CUDA toolkit.
+Measured with `ssh <host> 'command -v cuobjdump || echo ABSENT'`:
+
+| host | `cuobjdump` |
+|---|---|
+| `intel` (the clean-room host, the publish gate) | **ABSENT** |
+| `yoga` | `/usr/bin/cuobjdump` |
+| `lambda-labs` | `/usr/bin/cuobjdump` |
+| `gx10` | `/usr/local/cuda/bin/cuobjdump` |
+
+**Correction of record.** An earlier draft of this pack recorded `cuobjdump` as PRESENT on
+`intel`. That row came from running `command -v cuobjdump` on the local workstation
+(`hostname` → `noah-Lambda-Vector`) and labelling it `intel`. It was a mislabelled probe, not
+a measurement of `intel`, and the AD-04 quorum caught it. The clean-room CI job additionally
+runs **inside a container** (`.github/workflows/ci.yml:85`), so the binding question is what
+the image contains — which is unmeasured here and is `[U]`, owner Noah.
 
 ## GT-8 — skill scope
+
+Commands: `sed -n '1,30p' .claude/skills/apr-dogfood/SKILL.md`;
+`ls -d .claude/skills/*dogfood* ~/.claude/skills/*dogfood*`.
 
 `.claude/skills/apr-dogfood/SKILL.md` is **repo-scope** and opens with a comment block
 explaining that it carries an explicit `name:` *because* a user-scope
