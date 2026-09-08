@@ -49,14 +49,18 @@ PY
 
 if [ "${1:-}" = "--self-test" ]; then
     TD=$(mktemp -d "${TMPDIR:-/tmp}/parity.XXXXXX"); trap 'rm -rf "${TD:?}"' EXIT
-    L="$ROOT/evidence/parity/l0-1/lambda"
+    L="$ROOT/evidence/parity/l0-1/lambda"; G="$ROOT/evidence/parity/l0-1/gx10"
     printf 'schema: apr-parity-thresholds/v1\nmin_positions: 64\ndefault: {min_cosine: 0.98, basis: "fixture: the gate constant, for the case table only"}\nmodels: {}\n' > "$TD/thr-fixture.yaml"
     export PARITY_THRESHOLDS="$TD/thr-fixture.yaml"; THRESH="$TD/thr-fixture.yaml"
     n=0; red=0
     row() { local want=$1 label=$2; shift 2; local rc=0 out; n=$((n + 1)); out=$("$@" 2>&1) || rc=$?
         if [ "$rc" = "$want" ]; then printf 'ok    row %-2s rc=%s  %s — %s\n' "$n" "$rc" "$label" "$(printf '%s' "$out" | tail -1 | cut -c1-90)"; else printf 'FAIL  row %-2s rc=%s (wanted %s)  %s\n        %s\n' "$n" "$rc" "$want" "$label" "$(printf '%s' "$out" | tail -2)"; red=1; fi; }
-    row 1 "the lambda 1.5B record is RED (position 0 at 0.9508 < 0.98 [U])"   judge "$L/qwen2.5-coder-1.5b-instruct-q4_k_m.json" qwen2.5-coder-1.5b-instruct
+    row 1 "the lambda 1.5B record is RED (position 0 at 0.9508 < 0.98)"       judge "$L/qwen2.5-coder-1.5b-instruct-q4_k_m.json" qwen2.5-coder-1.5b-instruct
     row 0 "the lambda 7B record is GREEN (min 0.9986)"                            judge "$L/qwen2.5-coder-7b-instruct-q4_k_m.json" qwen2.5-coder-7b-instruct
+    # BOTH polarities on BOTH required hosts: one host agreeing with itself is one host (I6/#2359).
+    # gx10 is a different GPU generation, ISA and host architecture, and runs the sm_121 JIT path.
+    row 1 "the gx10 1.5B record is RED too (0.9506 — sm_121, aarch64, a different kernel path)" judge "$G/qwen2.5-coder-1.5b-instruct-q4_k_m.json" qwen2.5-coder-1.5b-instruct
+    row 0 "the gx10 7B record is GREEN (min 0.9985)"                              judge "$G/qwen2.5-coder-7b-instruct-q4_k_m.json" qwen2.5-coder-7b-instruct
     python3 - "$L/qwen2.5-coder-7b-instruct-q4_k_m.json" "$TD/twin.json" "$TD/short.json" <<'PY'
 import json, sys
 d = json.load(open(sys.argv[1])); m = d["metrics"]

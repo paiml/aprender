@@ -1,5 +1,5 @@
 {
-  "model": "/home/noah/models/qwen2.5-coder-7b-instruct-q4_k_m.gguf",
+  "model": "./qwen2.5-coder-7b-instruct-q4_k_m.gguf",
   "tokens": 78,
   "passed": 78,
   "failed": 0,

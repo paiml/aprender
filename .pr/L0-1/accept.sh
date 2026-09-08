@@ -5,12 +5,14 @@
 set -uo pipefail; cd "$(dirname "$0")/../.."; rc=0
 run() { printf '== %s\n' "$*"; "$@"; local r=$?; printf 'rc=%s\n' "$r"; [ "$r" = 0 ] || rc=1; }
 expect_fail() { printf '== (must FAIL) %s\n' "$*"; if "$@"; then printf 'rc=0 (wanted non-zero)\n'; rc=1; else printf 'rc=%s (as required)\n' "$?"; fi; }
-CARGO=/home/noah/.cargo/bin/cargo; export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-/mnt/nvme-raid0/agent-wt/target-l01}"
+CARGO="${CARGO:-$HOME/.cargo/bin/cargo}";   # never a bare `cargo`: a shell function of that name overrides CARGO_TARGET_DIR (and never a machine path either) export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-/mnt/nvme-raid0/agent-wt/target-l01}"
 run bash scripts/derive_model_manifest.sh --self-test
 run bash scripts/derive_model_manifest.sh --check
 run bash scripts/check_model_parity.sh --self-test
 run bash scripts/check_model_parity.sh --judge evidence/parity/l0-1/lambda/qwen2.5-coder-7b-instruct-q4_k_m.json --model qwen2.5-coder-7b-instruct
 expect_fail bash scripts/check_model_parity.sh --judge evidence/parity/l0-1/lambda/qwen2.5-coder-1.5b-instruct-q4_k_m.json --model qwen2.5-coder-1.5b-instruct
+run bash scripts/check_model_parity.sh --judge evidence/parity/l0-1/gx10/qwen2.5-coder-7b-instruct-q4_k_m.json --model qwen2.5-coder-7b-instruct
+expect_fail bash scripts/check_model_parity.sh --judge evidence/parity/l0-1/gx10/qwen2.5-coder-1.5b-instruct-q4_k_m.json --model qwen2.5-coder-1.5b-instruct
 expect_fail bash scripts/check_model_parity.sh --judge tests/fixtures/parity/defective/one-position-at-0.5.json --model qwen2.5-coder-7b-instruct
 run env "$CARGO" test -p apr-cli --test reg15_admission
 run env "$CARGO" test -p apr-cli --lib sentinel_tests
