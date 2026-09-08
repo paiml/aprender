@@ -16795,3 +16795,41 @@ roadmap:
   - kind:docs
   - pp-066
   notes: 'minted by hand (pmat#1169); DAG row SPEC-2.0, owner spec-owner, expiry 2026-09-19.'
+- id: PMAT-1093
+  github_issue: null
+  item_type: task
+  title: 'kind labels are DERIVED from the DAG row, never typed: paiml-implement''s kind-gate refused 84 of 105 PP-066 tickets (Phase 0, AUTO-IMPL-SKILL-001 T-1); scripts/check_kind_labels_derived.sh derives and refuses drift both ways, reports the undecidable rather than guessing'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-09-08T14:00:00Z
+  updated: 2026-09-08T14:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'bash scripts/check_kind_labels_derived.sh --self-test exits 0 (7 rows, both polarities); bash scripts/check_kind_labels_derived.sh exits 0 with derived=103 missing=0 wrong=0'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - pp-066
+  notes: 'minted by hand (pmat#1169, and now pmat#1240 — parallel agents mint the same id and the merge deletes one). proof:scripts/check_kind_labels_derived.sh'
+- id: PMAT-1094
+  github_issue: 3055
+  item_type: task
+  title: 'apr *-lint --json emits an outcome in THREE shapes, one of them a Rust Debug string ("Ok { code: 134 }"): pick the structured object and emit it everywhere, so a consumer can write one parser'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-08T14:00:00Z
+  updated: 2026-09-08T14:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'cargo test -p apr-cli --tests -E "test(json_output_contains_outcomes)" passes with assert_outcome_ok''s two STRING arms deleted — their deletion is the falsifier that the migration is complete'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - pp-066
+  notes: 'minted by hand (pmat#1169). Found sweeping #3051: prometheus-lint emits two of the three shapes in ONE response (text_format an object, required_metrics the string "Ok"); nccl-diag-lint exit_code is "Ok { code: 134 }", a Debug string in a JSON API. Lane 0.67.'
