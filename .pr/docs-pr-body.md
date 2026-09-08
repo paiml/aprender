@@ -1,0 +1,11 @@
+PP-066 orchestrator docs PR — session of 2026-09-06 (driver v3 → v5.1). Branch `agent/pp-066-spec` (orchestrator: the only branch that writes the DAG, the spec block, the roadmap and the README counts under G-11a's rule). Epic #2873.
+
+**What lands (14 commits, every one verified by the guards it touches):**
+- **SPEC-2.0** (#3023): spec v2.0 §4.1 — three claims, the 18-row 0.66 scope, 39 rows cut to 0.67 each naming the claim it protected (generated from the DAG's `cut_by`/`claim_protected`), the claims ratchet, the executable criteria table; `scripts/release_criteria.sh` (nine credited criteria C0 C4 C6 C7 C8 C9 C11 C13 C14, one exit-coded command each, C0 first through the analyser pin, never vacuous — 6-row case table; C1 C2 C3 C5 C10 C12 → 0.67); `scripts/run_clean_room.sh` (C8 via `../infra`, ENV exit 2 otherwise); the rescope quorum record `docs/audits/pp-066-rescope-quorum.md` (scope-holds-with-changes; nine claim removals assigned to R-7; C5 → 0.67 by unanimous Q3).
+- **DAG** (102 rows, `check_dag_invariants.sh` exit 0, `render_dag.py --check` byte-identical): rows L0-1a/L0-1b (#2971), G-11 (#3012), G-11b (#3018), G-10b (#3013), G-10c (#3014), U-1 (#3015), S-0 (#3016), R-8 (#3019), SPEC-2.0 (#3023); R-0a/R-0b split folded from #3003; the v5 edges; amendments for every slack move; G-10 and the seven decision rows complete.
+- **Receipts**: G-10 (PMAT-1059, #3011 merged) complete; seven decision receipts (D-2/3/5/8/9/10/11) each citing its #2873 comment.
+- **Roadmap** (G-6 additive guard PASS after `roadmap_trim.py`): PMAT-1060..1069 minted by hand (pmat#1169), PMAT-1059 and the decision tickets completed with proof.
+- `docs/audits/pp-066-status-2026-09-06.md` (from `scripts/pp066_state.sh`), `docs/audits/driver-kaizen.md` (15 lines), `docs/audits/impl-estimates.jsonl` (+1).
+
+**Guards run on the branch:** `check_dag_invariants.sh` · `render_dag.py --check` · `check_receipt_complete.sh --dag` · `check_roadmap_diff_additive.sh` · `check_no_claim_literals.sh` · `check_perf_claims_cite_receipts.sh` · `release_criteria.sh --self-test` · `check_shell_lint_ratchet.sh` — all PASS.
+Nothing here is evidence for its own merge (I2): `ci / gate` and `workspace-test` decide.

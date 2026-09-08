@@ -2795,9 +2795,9 @@ rows:
   title: '[P0, bounded] Qwen2.5-1.5B on cuda computes a different function from cpu (cosine 0.9418, |Δlogit|max 5.38; hidden 1536 / heads 12 / kv 2) and apr then runs cpu under --gpu: model manifest evidence/models/supported.yaml
     derived (never typed); RED-first horizon test (1.5B RED / 7B GREEN before any kernel edit, must-RED twin); five whys by apr parity SPC to the op, then the fix; REG-15 model admission (forced backend
     never downgrades; unforced prints selected: cpu (reason: parity FAILED …); effective-config parity block; SKIP_PARITY_GATE prints override:, marks receipts INVALID-CORRECTNESS, asserted unset in dogfood
-    and ci / gate); threshold 0.98 [U] -> measured n>=5 per known-good pair with basis=; contract apr-gpu-cpu-parity-v1; dogfood P6 falsifier; C14 = scripts/check_model_parity.sh --manifest in apr-dogfood
+    and ci / gate); threshold 0.98 [U] -> measured n>=5 per known-good pair with basis=; contract apr-cpu-vs-gpu-output-parity-v1 (EXTENDED, not a second contract — B3); dogfood P6 falsifier; C14 = scripts/check_model_parity.sh --manifest in apr-dogfood
     --release, C4 post-publish, R-8 nightly; every existing (1.5B, cuda) receipt relabelled INVALID-CORRECTNESS — L0-1a: manifest (derived), horizon test with must-RED twin, REG-15 admission (forced never
-    downgrades; selected: line; effective-config parity block; SKIP_PARITY_GATE override printed + INVALID-CORRECTNESS + asserted unset), threshold file, contract apr-gpu-cpu-parity-v1, dogfood P6 falsifier,
+    downgrades; selected: line; effective-config parity block; SKIP_PARITY_GATE override printed + INVALID-CORRECTNESS + asserted unset), threshold file, contract apr-cpu-vs-gpu-output-parity-v1 (EXTENDED, not a second contract — B3), dogfood P6 falsifier,
     C14 in apr-dogfood --release/C4/R-8, receipts relabelled'
   epic: 2873
   track: L0
@@ -2815,7 +2815,7 @@ rows:
   - bash scripts/check_model_parity.sh --manifest exits 0 (C14)
   - revert the fix -> 1.5B RED, 7B GREEN (the must-RED twin)
   - SKIP_PARITY_GATE=1 exported in ci / gate -> RED (asserted unset)
-  contract: contracts/apr-gpu-cpu-parity-v1.yaml
+  contract: contracts/apr-cpu-vs-gpu-output-parity-v1.yaml
   mutations:
   - revert the op fix -> 1.5B RED, 7B GREEN
   - export SKIP_PARITY_GATE in dogfood -> every receipt INVALID-CORRECTNESS and the gate RED
@@ -2905,7 +2905,7 @@ rows:
   - make fleet-verify ROW=L0-1 GREEN on lambda and gx10 (the horizon test)
   - revert the fix -> 1.5B RED, 7B GREEN
   - m=1 greedy stream byte-identical on every other manifest model before/after (CF-4)
-  contract: contracts/apr-gpu-cpu-parity-v1.yaml
+  contract: contracts/apr-cpu-vs-gpu-output-parity-v1.yaml
   mutations:
   - revert the op fix -> 1.5B RED
   quorum: N-lane root cause (three model families)
