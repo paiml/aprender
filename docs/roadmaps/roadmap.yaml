@@ -16636,3 +16636,41 @@ roadmap:
   - kind:code
   - pp-066
   notes: 'minted by hand (pmat#1169); DAG row KEY, owner noahgift, expiry 2026-10-02. PMAT-1078 was not free: agent/R-5 contracts/apr-publish-cascade-v1.yaml:4 stamps it for the cascade (unminted in any roadmap), so KEY took the next id.'
+- id: PMAT-1080
+  github_issue: 3022
+  item_type: task
+  title: 'F-1: the model you named is the model that answers — apr chat silently loaded its built-in Demo model for a sharded SafeTensors index (exit 0, zero tokens, the real path in the banner); resolve_chat_format is ONE decision (suffix before extension, then magic bytes, then a refusal from error.rs), Demo is not an outcome for a path that exists, and .safetensors.index.json reaches the transformer through the same three calls apr run makes (PP-066 #2873, #3022, #3024)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-09-08T12:00:00Z
+  updated: 2026-09-08T12:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'see issue #3022 and DAG row F-1 (A + mutations); PR #3050; receipt docs/audits/impl-PMAT-1080-receipt.md'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - pp-066
+  notes: 'minted by hand (pmat#1169); DAG row F-1, owner perf-gate, expiry 2026-09-19. Closes #3024 asks 1, 2 and 4; ask 3 is PMAT-1081.'
+- id: PMAT-1081
+  github_issue: 3024
+  item_type: task
+  title: 'F-2: the live format x command matrix runs nightly against real models, and the two axes still uncovered are named rather than dropped — an apr serve column and a sharded-GGUF row (merge_gguf_shards) (PP-066 #2873, #3024 ask 3)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-08T12:00:00Z
+  updated: 2026-09-08T12:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'see issue #3024 and DAG row F-2 (A + mutation); F-1 ships the runner and its case tables, so this row is a wiring change and nothing else'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - pp-066
+  notes: 'minted by hand (pmat#1169); DAG row F-2, owner bse, expiry 2026-09-26.'

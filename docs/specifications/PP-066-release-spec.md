@@ -289,7 +289,7 @@ The cards below are prose; the obligation set is **data** in `docs/specification
 
 <!-- dag:table:begin (rendered by scripts/render_dag.py; do not edit by hand) -->
 
-_Rendered from `docs/specifications/pp-066-dag.yaml` (epic #2873, 103 rows). Edit the YAML, run `python3 scripts/render_dag.py render`, paste; `--check` refuses drift._
+_Rendered from `docs/specifications/pp-066-dag.yaml` (epic #2873, 105 rows). Edit the YAML, run `python3 scripts/render_dag.py render`, paste; `--check` refuses drift._
 
 ### Track I
 
@@ -451,6 +451,13 @@ _Rendered from `docs/specifications/pp-066-dag.yaml` (epic #2873, 103 rows). Edi
 | PVI-1.3-4.3 | PV-IMPROVE phases 1.3-4.3 under #2556: empty macro arm, scoped codegen, PV-ENF-003, one binding registry, Kani/Lean nightly receipts, registry:true removed, prose test -> prediction, score-floor ratchet, corpus scope, downstream smoke | P-1.1, P-0.2, P-0.5 | — | any | 2026-12-31 | spec-owner | per card when opened | #2978 | PMAT-1051 | open |
 | renames | §6.7: 51 [lib]/package renames phased per D-8; shim package only; dep keys and feature strings updated per PR (G-1 counters) | G-1, G-3, DEC-D-8 | #2470 | any | 2026-12-31 | spec-owner | per card when opened | #2979 | PMAT-1052 | open |
 | bar-gating | qwen-coder-deploy TTFT/ITL/agg(4) bar GATED after re-derivation per F-14 | I-18, W-E | — | lambda | 2026-12-31 | perf-gate | per card when opened | #2980 | PMAT-1053 | open |
+
+### Track F
+
+| id | title | blockers | issues | host | expiry | owner | quorum | issue | pmat | status |
+|---|---|---|---|---|---|---|---|---|---|---|
+| F-1 | [P0] the model you named is the model that answers: apr chat silently loaded its built-in Demo model for a sharded SafeTensors index (exit 0, zero tokens, the real path in the banner) because Path::extension() on model.safetensors.index.json is Some("json"); resolve_chat_format is ONE decision (suffix before extension, then magic bytes, then a refusal from error.rs) and Demo is not an outcome for a path that exists; ShardedSafeTensors reaches the transformer through the same three calls apr run makes; the load line reports the manifest total_size, never the manifest's own 20 KB; {sharded, single-file} x {run, chat} judged on four rules with an offline-derived shard fixture | — | #3022, #3024 | any (the live matrix needs one small SafeTensors model) | 2026-09-19 | perf-gate | single-lane (bounded CLI correctness; the falsifier carries both polarities and a measured RED leg on the merge base) | #3022 | PMAT-1080 | open |
+| F-2 | [CI lane] the live format x command matrix runs nightly against real models, and the two axes still uncovered are named rather than dropped: an apr serve column (needs a port and a client) and a sharded-GGUF row (merge_gguf_shards; no fixture builder exists and none was invented in F-1) | F-1 | #3024 | any (a runner holding one small SafeTensors model) | 2026-09-26 | bse | single-lane | #3024 | PMAT-1081 | open |
 
 ### Track L0
 

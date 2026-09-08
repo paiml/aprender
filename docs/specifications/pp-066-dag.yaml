@@ -2935,6 +2935,79 @@ rows:
   pmat_id: null
   status: open
   notes: orchestrator row (the spec and the DAG are its write set); ticket and issue minted in the session docs commit
+- id: F-1
+  title: '[P0] the model you named is the model that answers: apr chat silently loaded its built-in Demo
+    model for a sharded SafeTensors index (exit 0, zero tokens, the real path in the banner) because Path::extension()
+    on model.safetensors.index.json is Some("json"); resolve_chat_format is ONE decision (suffix before
+    extension, then magic bytes, then a refusal from error.rs) and Demo is not an outcome for a path that
+    exists; ShardedSafeTensors reaches the transformer through the same three calls apr run makes; the
+    load line reports the manifest total_size, never the manifest''s own 20 KB; {sharded, single-file}
+    x {run, chat} judged on four rules with an offline-derived shard fixture'
+  epic: 2873
+  track: F
+  lane: '0.66'
+  decision: false
+  blockers: []
+  issues:
+  - 3022
+  - 3024
+  host: any (the live matrix needs one small SafeTensors model)
+  queue_pos: null
+  expiry: '2026-09-19'
+  owner: perf-gate
+  A:
+  - bash scripts/check_format_command_matrix.sh --self-test exits 0 (7 rows, both polarities)
+  - python3 scripts/make_sharded_safetensors.py --self-test exits 0 (7 rows)
+  - cargo test -p apr-cli --lib -- the six format-honesty rows passes
+  - bash scripts/check_format_command_matrix.sh --matrix --apr <bin> exits 0 on a host with a model (4
+    cells)
+  - the same matrix against a binary built from the merge base exits 1 naming sharded x apr chat, with
+    the other three cells GREEN
+  contract: contracts/patterns/format-command-honesty-v1.yaml
+  mutations:
+  - detect_format's .safetensors.index.json arm never matches -> sharded_index_resolves_to_the_sharded_format_not_demo
+    RED
+  - resolve_chat_format returns Ok(Demo) instead of refusing -> the three refusal rows RED
+  quorum: single-lane (bounded CLI correctness; the falsifier carries both polarities and a measured RED
+    leg on the merge base)
+  spec: 'driver 2026-09-08 (operator ruling: tie #3022 and #3024 into the 0.66 release)'
+  gh_issue: 3022
+  pmat_id: PMAT-1080
+  status: open
+  notes: 'PR #3050. Corrects #3022''s framing: apr run on a sharded index WORKS on main (measured) - the
+    defect is apr chat alone; the reporter''s apr run failure on a real 7B pull is [U] and not reproduced
+    by the fixture. Closes #3024 asks 1, 2 and 4; ask 3 is F-2.'
+- id: F-2
+  title: '[CI lane] the live format x command matrix runs nightly against real models, and the two axes
+    still uncovered are named rather than dropped: an apr serve column (needs a port and a client) and
+    a sharded-GGUF row (merge_gguf_shards; no fixture builder exists and none was invented in F-1)'
+  epic: 2873
+  track: F
+  lane: '0.66'
+  decision: false
+  blockers:
+  - F-1
+  issues:
+  - 3024
+  host: any (a runner holding one small SafeTensors model)
+  queue_pos: null
+  expiry: '2026-09-26'
+  owner: bse
+  A:
+  - a nightly workflow (a qwen-story beat or qwen-story-format-axes.yml) runs check_format_command_matrix.sh
+    --matrix against a PINNED apr and fails the job on rc 1
+  - the matrix carries an apr serve column for both layouts
+  - a sharded-GGUF row exists, or the axis is recorded UNMEASURED with the reason
+  contract: contracts/patterns/format-command-honesty-v1.yaml
+  mutations:
+  - point the nightly at a binary built from before F-1 -> the job goes RED naming sharded x apr chat
+  quorum: single-lane
+  spec: 'driver 2026-09-08; #3024 ask 3'
+  gh_issue: 3024
+  pmat_id: PMAT-1081
+  status: open
+  notes: F-1 ships the runner, both case tables (wired model-free in ci / gate -> guard-tree) and a live
+    4-cell receipt from lambda, so this row is a wiring change and nothing else.
 amendments:
 - date: '2026-09-05'
   by: noahgift (driver STEP A)
