@@ -404,7 +404,7 @@ _Rendered from `docs/specifications/pp-066-dag.yaml` (epic #2873, 105 rows). Edi
 
 | id | title | blockers | issues | host | expiry | owner | quorum | issue | pmat | status |
 |---|---|---|---|---|---|---|---|---|---|---|
-| TAG-0.66.0 | the release cut: v0.66.0-rc1 as prerelease, promotion from four host receipts (R-5), crates.io cascade from the release workflow — cut only when C0..C13 hold by their own commands; C0 first | C0-1, C0-2, C0-4, G-10, G-10b, G-11, G-11b, L0-1a, L0-1b, R-0, R-0b, R-2, R-3, R-5, R-6, R-7, R-8, SPEC-2.0, KEY | #2850, #2869 | clean-room, then all four | 2026-10-30 | spec-owner | release policy (R-5 teamwork) | #2932 | PMAT-1017 | open |
+| TAG-0.66.0 | the release cut: v0.66.0-rc1 as prerelease, promotion from four host receipts (R-5), crates.io cascade from the release workflow — cut only when C0..C13 hold by their own commands; C0 first | G-10, G-11, L0-1a, L0-1b, SPEC-2.0, F-1 | #2850, #2869 | clean-room, then all four | 2026-10-30 | spec-owner | release policy (R-5 teamwork) | #2932 | PMAT-1017 | open |
 
 ### Decisions
 
