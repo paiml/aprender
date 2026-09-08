@@ -1,0 +1,191 @@
+{
+ "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+ "version": "2.1.0",
+ "runs": [
+  {
+   "tool": {
+    "driver": {
+     "name": "pmat",
+     "version": "3.39.0",
+     "informationUri": "https://github.com/paiml/paiml-mcp-agent-toolkit"
+    }
+   },
+   "invocations": [
+    {
+     "executionSuccessful": true,
+     "toolExecutionNotifications": [
+      {
+       "level": "note",
+       "message": {
+        "text": "Index built in THIS worktree at 30bacd1a6 (= reviewed head); 88,623 functions in 10,344 files, 47.4 s. index_is_ancestor computed, not asserted."
+       },
+       "properties": {
+        "grounding": "measured",
+        "command": [
+         "pmat",
+         "query",
+         "release process review evidence",
+         "--limit",
+         "3"
+        ],
+        "exit_code": 0
+       }
+      },
+      {
+       "level": "note",
+       "message": {
+        "text": "complexity_delta is empty because the diff changes no executable code: 0 of 5 changed paths match \\.(rs|py|sh|ts|js)$. Repo-wide complexity was still measured (163,600 functions) so the empty array is a measurement, not a skip."
+       },
+       "properties": {
+        "grounding": "measured",
+        "command": [
+         "git",
+         "diff",
+         "--name-only",
+         "74e3b254081ca4fe876a3223b87f1beef5cbe249",
+         "30bacd1a6c6108b16d3c261cc85e7ae2d0406895"
+        ],
+        "exit_code": 0
+       }
+      },
+      {
+       "level": "note",
+       "message": {
+        "text": "satd_introduced is empty: 0 added lines in the diff match TODO|FIXME|HACK|XXX. Repo-wide SATD is 4 markers in 4 files, unchanged by this diff."
+       },
+       "properties": {
+        "grounding": "measured",
+        "command": [
+         "git",
+         "diff",
+         "74e3b254081ca4fe876a3223b87f1beef5cbe249",
+         "30bacd1a6c6108b16d3c261cc85e7ae2d0406895",
+         "|",
+         "grep",
+         "^+",
+         "|",
+         "grep",
+         "-cE",
+         "\\b(TODO|FIXME|HACK|XXX)\\b"
+        ],
+        "exit_code": 0
+       }
+      }
+     ]
+    }
+   ],
+   "results": [
+    {
+     "ruleId": "pmat/tdg-changed-file",
+     "level": "note",
+     "message": {
+      "text": "docs/roadmaps/roadmap.yaml grades C- (58.79). Pre-existing: the file is 16,600+ lines accreted over 18 months and this diff appends one entry and edits one criterion. The four Markdown files added grade A (91.26-94.61). Recorded, not thresholded - no baseline exists for a per-file TDG ratchet on this path."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "docs/roadmaps/roadmap.yaml"
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "command": [
+       "pmat",
+       "tdg",
+       "docs/roadmaps/roadmap.yaml",
+       "--format",
+       "json"
+      ],
+      "grades": {
+       "docs/audits/impl-PMAT-1092-receipt.md": "A (94.61)",
+       "docs/audits/release-process-review/PMAT-1092-review.md": "A (91.26)",
+       "docs/audits/release-process-review/ground-truth.md": "A (94.34)",
+       "docs/audits/release-process-review/release-process-aprender-v0.1-draft.md": "A (91.85)",
+       "docs/roadmaps/roadmap.yaml": "C- (58.79)"
+      }
+     }
+    }
+   ]
+  },
+  {
+   "tool": {
+    "driver": {
+     "name": "antigravity/agy",
+     "version": "1.1.27",
+     "informationUri": "https://github.com/paiml/agy"
+    }
+   },
+   "invocations": [
+    {
+     "executionSuccessful": true,
+     "toolExecutionNotifications": [
+      {
+       "level": "note",
+       "message": {
+        "text": "Cross-vendor identity is NOT verifiable from this receipt. model_id records what was REQUESTED on argv (gemini-3.1-pro-high); nothing in agy's json or stream-json output carries the answering model. check_pr_review_receipt.sh --match-arm-e-same-family gemini-3.1-pro-high exited 1, i.e. not the reviewer's own family."
+       },
+       "properties": {
+        "grounding": "measured",
+        "command": [
+         "scripts/check_pr_review_receipt.sh",
+         "--match-arm-e-same-family",
+         "gemini-3.1-pro-high"
+        ],
+        "exit_code": 1
+       }
+      },
+      {
+       "level": "note",
+       "message": {
+        "text": "lane-reduce.sh cannot represent an agy-review-v1 lane: its is_verdict_obj requires .verdict in {PASS,FAIL,do-not-implement-as-written} and that schema defines no verdict field, so the reduction returned NO-VERDICT with an empty dissent. The finding below survives in the raw lane output, not in the reduction. An empty reduction here does NOT mean the lane found nothing."
+       },
+       "properties": {
+        "grounding": "measured",
+        "command": [
+         "bash",
+         "scripts/../.claude/skills/paiml-implement/scripts/lane-reduce.sh"
+        ],
+        "exit_code": 1
+       }
+      }
+     ]
+    }
+   ],
+   "results": [
+    {
+     "ruleId": "agy/stale-roadmap-entry",
+     "level": "warning",
+     "message": {
+      "text": "PMAT-1092's roadmap acceptance criterion read 'The draft names 12 scripts/workflows/contracts ... 11 of 12 are ABSENT' while the review's headline and GT-1 read 21 paths with 19 absent. The roadmap entry is the source of truth for what done means, so a criterion reading 11 of 12 is satisfied by fixing eleven paths and silently drops the other eight."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "docs/roadmaps/roadmap.yaml"
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "reviewer": "agy 1.1.27 / gemini-3.1-pro-high",
+      "command": [
+       "grep",
+       "-A",
+       "2",
+       "acceptance_criteria",
+       "docs/roadmaps/roadmap.yaml"
+      ],
+      "disposition": "fixed in cae443ae4, after the reviewed head",
+      "reverified_by_primary": true,
+      "reverification": "the primary re-read the criterion and GT-1 directly rather than re-running the lane's grep; both strings are as reported"
+     }
+    }
+   ]
+  }
+ ]
+}
