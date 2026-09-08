@@ -615,7 +615,6 @@ pub struct ParityReport {
 
 impl ParityReport {
     /// No GPU model is loaded, so no gate ran; the threshold reported is the gate's constant.
-    #[must_use]
     pub fn not_run(why: &str) -> Self {
         Self {
             status: "not-run".into(),

@@ -20,7 +20,35 @@ turns: 34
 |---|---|---|---|---|---|
 | qwen2.5-coder-1.5b-instruct-q4_k_m | 1 | **0.9508** | 0 (token 785, the prompt's first token — not BOS) | 11.97 | **RED** |
 | qwen2.5-coder-7b-instruct-q4_k_m | 0 | 0.9986 | 0 | 0.78 | GREEN |
-`bash scripts/check_model_parity.sh --self-test` rows 1–2 are exactly these two records; row 3 is the must-RED twin (`tests/fixtures/parity/defective/one-position-at-0.5.json`); row 4 refuses < 64 positions (I8). The driver's numbers (0.9418 / 5.38) are not lambda's; gx10 is reached through `make fleet-verify ROW=L0-1` (G-11b) once it lands — [U] until then.
+`bash scripts/check_model_parity.sh --self-test` rows 1–2 are exactly these two records. The driver's numbers (0.9418 / 5.38) are not lambda's.
+
+### The second required host — gx10, measured 2026-09-08 (card item vi)
+`make fleet-verify` does not exist (BSE row G-11b), so the measurement was taken directly rather
+than waited on. `evidence/parity/l0-1/gx10/RECORD.md` + the two `apr parity --json` files + `n5/`.
+Host `gx10-a5b5`, aarch64, **NVIDIA GB10** (sm_121), driver 590.48.01; binary `~/.cargo/bin/apr` =
+`apr 0.65.2 (c04eda87)` — built from the tip of `main` — sha256 `21d182d69505159c`. Mechanism
+ENGAGED, not intended: every run's stderr carries `[GH-480] Patched N backward branch(es) for
+sm_121 JIT workaround`, an sm_121-only path lambda does not have.
+
+| model | positions < 0.98 | min cosine | at | max abs Δlogit there | argmax mismatches | verdict |
+|---|---|---|---|---|---|---|
+| qwen2.5-coder-1.5b-instruct-q4_k_m | 1 | **0.950611** | 0 | 12.0087 | 4 | **RED** |
+| qwen2.5-coder-7b-instruct-q4_k_m | 0 | 0.998465 | 0 | 0.8032 | 1 | GREEN |
+
+**The finding that constrains L0-1b before a lane is dispatched.** Two GPU generations, two ISAs,
+two host architectures, one of them running a JIT workaround the other does not have — and the
+known-bad pair lands within **2.2e-4** of the same cosine (0.950827 vs 0.950611) while the
+known-good pair on the same silicon is 0.9985+ (Δ 1.4e-4). n=5 per cell, stdev **0.0** in all four.
+The divergence is selected by the MODEL (hidden 1536 / heads 12 / kv 2 / GQA 6 vs 3584 / 28 / 4 / 7),
+not by the device. Every hypothesis of the form *an sm_89 kernel is wrong* or *the sm_121 JIT patch
+corrupts a branch* is refuted by this table, and L0-1b's five whys start from the shape-selected
+path. Asserted, not merely written down: `the_two_hosts_agree_on_each_model_to_within_a_thousandth`
+(`crates/apr-cli/src/commands/parity_admission.rs`, sentinel_tests) goes RED if that stops holding.
+
+`check_model_parity.sh --self-test` is now **9 rows**: both polarities on BOTH hosts (1–4), the
+must-RED twin (`tests/fixtures/parity/defective/one-position-at-0.5.json`, 5), fewer than 64
+positions refused (I8, 6), the same 1.5B record PASSING under a 0.90 threshold (7 — the threshold
+is the decision), no-metrics RED (8), and a threshold with no basis refused at exit 2 (I4, 9).
 
 ## Landed on the branch (items 1, 2, 4-part, 6, 7-part)
 - **REG-15 admission** (`crates/apr-cli/src/commands/parity_admission.rs`, re-exported through `error.rs`): `ParityVerdict{status,cosine,positions,threshold,basis}`, `admit(forced, &verdict)` → `Refuse{code from CliError::ParityFailed, reason}` | `SelectCpu{line}` | `Proceed{line}`; `override_line()` for `SKIP_PARITY_GATE`; `parse_gate_error()` over the load-time gate's message; `on_cuda_load_error(msg, forced)` — the one decision every CUDA load-failure site makes. Seven hermetic tests (`crates/apr-cli/tests/reg15_admission.rs`; the refusal code is read from `error.rs` at test time, never typed). Wired: `apr chat` prints `selected: cpu (reason: parity FAILED cosine=… threshold=…)` instead of the silent `[CUDA init failed …, falling back to CPU]` (unforced today — `apr chat`/`apr run` carry no forced-GPU flag; R-0b's `--backend` passes `forced` and a forced request returns the refusal); `apr compare` prints the override line only when the user set `SKIP_PARITY_GATE` (its silent `set_var` removed). `cargo check -p apr-cli --features cuda` on lambda (CUDA 12.8) passes at 8ed09877a.
@@ -29,8 +57,15 @@ turns: 34
 - Every 0.65.2 (1.5B, cuda) dogfood receipt (`evidence/dogfood/0.65.2/{lambda,gx10}.json`) carries `validity.correctness: INVALID-CORRECTNESS` citing #2971.
 
 - `scripts/derive_model_manifest.sh` → `evidence/models/supported.yaml`: 18 models, every entry cites file:line in README/BEATS/book/dogfood receipts/perf-matrix; `--check` refuses a hand-typed entry (6-row case table).
-- `scripts/check_model_parity.sh` (C14): `--manifest` runs `apr parity` per manifest model present on the host over the 78-token corpus prompt, judges min cosine over ≥ 64 positions against `evidence/parity/thresholds.yaml`; UNMEASURED reported (RED when README cites the model); `SKIP_PARITY_GATE` prints `override:` and refuses to pass (REG-15); `--judge` for a recorded run; 6-row case table.
-- `evidence/parity/thresholds.yaml`: 0.98 = `PARITY_GATE_COSINE_MIN` (`crates/aprender-serve/src/gguf/cuda/mod.rs:803`), itself [U] — item 5 replaces it with n ≥ 5 per known-good pair.
+- `scripts/check_model_parity.sh` (C14): `--manifest` runs `apr parity` per manifest model present on the host over the 78-token corpus prompt, judges min cosine over ≥ 64 positions against `evidence/parity/thresholds.yaml`; UNMEASURED reported (RED when README cites the model); `SKIP_PARITY_GATE` prints `override:` and refuses to pass (REG-15); `--judge` for a recorded run; **9-row** case table (both polarities on both required hosts).
+- `evidence/parity/thresholds.yaml` (**card item 5 CLOSED, the `[U]` lifted 2026-09-08**): 0.98 =
+  `PARITY_GATE_COSINE_MIN` (`crates/aprender-serve/src/gguf/cuda/mod.rs:803`) is now measured against
+  **two** known-good pairs (7B@lambda 0.998607, 7B@gx10 0.998465) and **two** known-bad pairs
+  (1.5B@lambda 0.950827, 1.5B@gx10 0.950611), n=5 each, stdev 0 in all four cells. It separates the
+  populations with **0.0185** of margin under the lower known-good floor and 0.0294 above the higher
+  known-bad ceiling — asserted by `the_threshold_separates_the_good_and_bad_populations_on_both_hosts`,
+  which demands ≥ 0.01 on each side, because a gate that passes with no headroom is a finding
+  (0.63.0 hansei) and a bare-`Hello` argmax near-tie once inverted a whole diagnosis (#2359).
 - `.pr/L0-1/accept.sh` re-runs every A_i.
 
 ## What the tree already does (cited; the five-whys start here)
@@ -57,28 +92,28 @@ turns: 34
 | the retry decision is printed only under `verbose()` (`mod_parity_gate.rs:92-97`); no session records which precision path served it | 3/3 | cited | the one fix every lane supports, zero throughput risk: REG-15's `selected:` line + effective-config `parity:{…}` (Q3 option a) |
 | fix class | split: lane 3 kernel-only; lanes 1/2 both | — | with the fused path off by default, (b) is moot for THIS defect; (a) is the surviving policy fix; the kernel question waits for the experiment |
 | the threshold | 3/3: n ≥ 5 known-good model×host pairs; 0.98 (one zero-context token) and `parity.rs:41`'s 0.95 (full-sequence) measure different things | — | item 5's measurement design |
-| the driver's 0.9418 / 5.38 | 3/3 guess gx10/GB10 sm_121; none tested the non-coder variant or another prompt | — | [U]; `make fleet-verify ROW=L0-1` on gx10 when G-11b lands |
+| the driver's 0.9418 / 5.38 | 3/3 guessed gx10/GB10 sm_121 | **guess REFUTED 2026-09-08**: gx10 measures 0.950611 / 12.0087, not 0.9418 / 5.38 | the source report's numbers match NEITHER required host (lambda 0.950827 / 11.97, gx10 0.950611 / 12.01). Its provenance stays [U]; the defect it names is confirmed on both hosts, so nothing downstream depends on finding it |
 
-**Outstanding discriminating experiment (all three lanes name it):** a per-layer `APR_GPU_STAGE_DUMP` at position 0 (token 785) on the 1.5B, CPU vs GPU per stage, to separate attention-at-position-0 / RMSNorm / LM-head GEMV / FFN; plus the same token at position 1. Not run this session.
+**Outstanding discriminating experiment (all three lanes name it):** a per-layer `APR_GPU_STAGE_DUMP` at position 0 (token 785) on the 1.5B, CPU vs GPU per stage, to separate attention-at-position-0 / RMSNorm / LM-head GEMV / FFN; plus the same token at position 1. **That is L0-1b's step 1**, and the 2026-09-08 gx10 record narrows it before it runs: the arm may not be device-specific — an explanation that holds on sm_89 and not on sm_121 (or vice versa) is refuted in advance by two hosts landing within 2.2e-4 of each other on a different kernel path.
 
 ## Driver v5.2/v6 DONE-IF ledger (L0-1a)
 | item | state | artifact |
 |---|---|---|
 | (i) forced + parity FAIL ⇒ refusal code from error.rs, never `selected: cpu` | admission level ✓ (`forced_backend_over_a_failed_parity_gate_refuses_with_the_code_from_error_rs`); CLI level waits for R-0b's `--backend` (no `--gpu` flag exists on chat/run today) | `crates/apr-cli/tests/reg15_admission.rs` |
 | (ii) `GET /v1/effective-config` `parity:{status,cosine,positions,threshold,basis}` | ✓ — the gate returns its cosine, the CUDA model carries `ParityGateRecord`, the report is never absent; cuda build checked on lambda | `effective_config.rs::parity_report`, `parity_report_carries_the_five_keys_when_no_gate_ran` |
-| (iii) `apr devices --model <gguf>` serviceable column | blocked on R-0a (`apr devices`, #3004) | — |
-| (iv) threshold basis from n ≥ 5 per known-good pair | one pair measured (7B@lambda min 0.9986 ×5, stdev 0.0; the bad pair 0.9508 ×5); [U] until 7B@gx10 | `evidence/parity/thresholds.yaml`, `evidence/parity/l0-1/lambda/n5/` |
+| (iii) `apr devices --model <gguf>` serviceable column | blocked on R-0a (`apr devices`, #3004, inst:B) — A does not implement B's command (division of labour). The DATA the column renders is this row's and is landed: the manifest, the per-host records and the judge (`check_model_parity.sh --judge`), plus D-12's `UNSERVICEABLE(<backend>, #<issue>)` cell | `evidence/models/supported.yaml`, `evidence/parity/l0-1/{lambda,gx10}/`, `scripts/check_model_parity.sh` |
+| (iv) threshold basis from n ≥ 5 per known-good pair | **✓ CLOSED 2026-09-08**, `[U]` lifted: 7B@lambda 0.998607 ×5 and 7B@gx10 0.998465 ×5 (stdev 0), against 1.5B@lambda 0.950827 ×5 and 1.5B@gx10 0.950611 ×5 (stdev 0); 0.98 separates them with 0.0185 margin under the lower good floor | `evidence/parity/thresholds.yaml`, `evidence/parity/l0-1/{lambda,gx10}/n5/`, `the_threshold_separates_the_good_and_bad_populations_on_both_hosts` |
 | (v) diff-benchmark decomposition recorded | ✓ below | `.pr/L0-1/diff_benchmark_report.override.patch` |
-| (vi) `make fleet-verify ROW=L0-1` GREEN on gx10 and lambda | pending G-11b's target on main and a HEAD cuda build on gx10 | — |
-| (vii) PR-time gate = two sentinels in workspace-test | ✓ | `parity_admission.rs::sentinel_tests` (1.5B RED, 7B GREEN, ≥ 64 positions) |
+| (vi) `make fleet-verify ROW=L0-1` GREEN on gx10 and lambda | the target does not exist (BSE row G-11b) and was NOT waited on: the measurement is taken on both hosts and attached. GREEN-on-both is not reachable for the 1.5B pair until L0-1b's fix (or D-12's UNSERVICEABLE path) — what is proven here is that the horizon rule DISCRIMINATES on both hosts, both polarities, which is what this bounded row owes | `evidence/parity/l0-1/{lambda,gx10}/RECORD.md`, `check_model_parity.sh --self-test` rows 1–4 |
+| (vii) PR-time gate = two sentinels in workspace-test | ✓ — now two per host: 1.5B RED and 7B GREEN on lambda AND gx10, plus cross-host agreement and threshold-margin assertions (8 tests). The full manifest still runs only in dogfood / release / R-8 | `parity_admission.rs::sentinel_tests` |
 
 ## Gaps (each with the artifact that closes it)
 - ~~`diff_benchmark_report.rs:82` silent `SKIP_PARITY_GATE`~~ closed in `25a8f8683` (the GPU half extracted into `gpu_profile_or_none()`); the file's "PMAT-203: known false positive on CUDA 13.1 driver" comment is a claim L0-1b must test.
 - `GET /v1/effective-config` `parity:{…}` block: the handler is `crates/aprender-serve/src/api/effective_config.rs` (outside the worker's scope); not wired.
 - `apr devices --model <gguf>` serviceable column: after R-0a's `apr devices` lands.
 - `apr-dogfood --release` C14 row and the dogfood P6 falsifier: not wired (the release phase of `scripts/dogfood.sh`).
-- Threshold measurement (item 5): n ≥ 5 known-good pairs per model.
-- gx10: `make fleet-verify ROW=L0-1` after G-11b lands.
+- ~~Threshold measurement (item 5)~~ **closed 2026-09-08** — two known-good and two known-bad pairs, n=5 each.
+- ~~gx10 record~~ **closed 2026-09-08** — measured directly (`evidence/parity/l0-1/gx10/`); `make fleet-verify ROW=L0-1` remains BSE's G-11b, and is a convenience wrapper over a measurement this row has already taken on both hosts.
 
 ## Next (P2/P3)
 item 3 the discriminating experiment (apr parity with the unfused FFN forced — no switch exists today; a flag is part of the fix) and the fix; item 4 REG-15 admission in apr-cli (forced backend never downgrades; `selected: cpu (reason: parity FAILED …)`; effective-config `parity:{…}`; SKIP_PARITY_GATE printed as override, receipts INVALID-CORRECTNESS, asserted unset in dogfood and `ci / gate`; the two silent `set_var` sites removed); item 5 the threshold measurement; item 6 contract `apr-gpu-cpu-parity-v1.yaml`; item 7 C14 wired in `apr-dogfood --release`, C4, R-8; relabel every (1.5B, cuda) receipt INVALID-CORRECTNESS citing #2971.

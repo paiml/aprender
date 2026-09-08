@@ -11,6 +11,8 @@ run bash scripts/derive_model_manifest.sh --check
 run bash scripts/check_model_parity.sh --self-test
 run bash scripts/check_model_parity.sh --judge evidence/parity/l0-1/lambda/qwen2.5-coder-7b-instruct-q4_k_m.json --model qwen2.5-coder-7b-instruct
 expect_fail bash scripts/check_model_parity.sh --judge evidence/parity/l0-1/lambda/qwen2.5-coder-1.5b-instruct-q4_k_m.json --model qwen2.5-coder-1.5b-instruct
+run bash scripts/check_model_parity.sh --judge evidence/parity/l0-1/gx10/qwen2.5-coder-7b-instruct-q4_k_m.json --model qwen2.5-coder-7b-instruct
+expect_fail bash scripts/check_model_parity.sh --judge evidence/parity/l0-1/gx10/qwen2.5-coder-1.5b-instruct-q4_k_m.json --model qwen2.5-coder-1.5b-instruct
 expect_fail bash scripts/check_model_parity.sh --judge tests/fixtures/parity/defective/one-position-at-0.5.json --model qwen2.5-coder-7b-instruct
 run env "$CARGO" test -p apr-cli --test reg15_admission
 run env "$CARGO" test -p apr-cli --lib sentinel_tests

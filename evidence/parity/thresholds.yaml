@@ -1,16 +1,17 @@
 # evidence/parity/thresholds.yaml — the GPU/CPU parity thresholds C14 reads (L0-1, #2971).
-# EVERY threshold carries a basis. 0.98 is the driver's number and is [U] until item 5 of
-# the card measures n >= 5 known-good pairs per model and records the command here.
+# EVERY threshold carries a basis. 0.98 was the driver's number and was [U]; it is now MEASURED
+# against two known-good and two known-bad pairs, one of each on each required GPU host.
 schema: apr-parity-thresholds/v1
 min_positions: 64          # basis: I8 / CF-4 (#1864) — any autoregressive gate validates over >= 64 positions
 default:
   min_cosine: 0.98
-  # basis (item 5, first pair measured 2026-09-06): n=5 runs of the known-good pair
-  # (qwen2.5-coder-7b-instruct-q4_k_m @ lambda RTX 4090, apr 0.65.2 cuda c642576eecb62daa,
-  # the 78-token corpus prompt) — min cosine over positions 0.9986 in all five runs (stdev 0.0);
-  # the known-bad pair (1.5B @ lambda) 0.9508 in all five (stdev 0.0). 0.98 (= PARITY_GATE_COSINE_MIN,
-  # crates/aprender-serve/src/gguf/cuda/mod.rs:803) lies between them with 0.0186 of margin under the
-  # good floor. Records: evidence/parity/l0-1/lambda/n5/ (run.sh is the command).
-  # Stays [U] for the release until the second known-good pair (7B @ gx10) is measured with n>=5.
-  basis: 'measured n=5 on one known-good pair (7B@lambda, min 0.9986 ×5) vs the known-bad pair (1.5B@lambda, 0.9508 ×5); [U] until the gx10 pair'
+  # basis (card item 5, both pairs measured; n=5 each, the 78-token corpus prompt, min over >= 64 positions):
+  #   known-good  qwen2.5-coder-7b-instruct-q4_k_m  @ lambda (RTX 4090, sm_89, x86_64, apr 0.65.2 cuda c642576eecb62daa)  0.998607 x5, stdev 0
+  #   known-good  qwen2.5-coder-7b-instruct-q4_k_m  @ gx10   (GB10,     sm_121, aarch64, apr 0.65.2 c04eda87 21d182d69505159c) 0.998465 x5, stdev 0
+  #   known-bad   qwen2.5-coder-1.5b-instruct-q4_k_m @ lambda                                                            0.950827 x5, stdev 0
+  #   known-bad   qwen2.5-coder-1.5b-instruct-q4_k_m @ gx10                                                              0.950611 x5, stdev 0
+  # 0.98 (= PARITY_GATE_COSINE_MIN, crates/aprender-serve/src/gguf/cuda/mod.rs:803) separates the two
+  # populations with 0.0185 of margin under the LOWER known-good floor and 0.0294 above the HIGHER
+  # known-bad ceiling. Records: evidence/parity/l0-1/{lambda,gx10}/ (RECORD.md carries the command).
+  basis: 'measured n=5 on two known-good pairs (7B@lambda 0.998607, 7B@gx10 0.998465; stdev 0) against two known-bad pairs (1.5B@lambda 0.950827, 1.5B@gx10 0.950611); 0.98 separates them with 0.0185 margin under the lower good floor'
 models: {}                  # per-model overrides land here with n and the command that measured them
