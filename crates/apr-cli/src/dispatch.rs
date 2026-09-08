@@ -104,14 +104,18 @@ fn dispatch_sibling_cli_commands(cli: &Cli) -> Option<Result<(), CliError>> {
 /// Prints the backend override, resolves an explicit `--backend <kind>` and a
 /// `--gpu` request against the backend registry (R-0b, #3002: a build that
 /// lacks the kind refuses with `FeatureDisabled`; a host with nothing Ready
-/// refuses with `BackendUnavailable`; never a silent fall-back to wgpu/CPU —
-/// FALSIFY-BACKEND-CUDA-HONESTY-001 measured that path at ~20 tok/s where
-/// CUDA gives ~400, fabricating a 14x decode "regression"), then applies
-/// GH-326 (`--gpu` overrides `--no-gpu`). Returns `effective_no_gpu`.
+/// refuses with `BackendUnavailable`; never a silent fall-back to wgpu/CPU),
+/// then applies GH-326 (`--gpu` overrides `--no-gpu`). Returns `effective_no_gpu`.
 ///
-/// PERF-021: `apr run` is the surface #2696 was MEASURED through (15.7 tok/s,
-/// 0.099x llama.cpp) and the one with no guard; this runs ABOVE the
-/// `batch_jsonl` early return, which bypasses `dispatch_run` entirely.
+/// PERF-021: `apr run` is the surface #2696 was measured through and the one with
+/// no guard; this runs ABOVE the `batch_jsonl` early return, which bypasses
+/// `dispatch_run` entirely.
+// The throughput figures behind both paragraphs stay in `//` and out of rustdoc: the
+// claims ratchet treats a `///` number as a claim on a surface a user reads, and 0.66
+// makes no speed claims. The measurements themselves are in
+// FALSIFY-BACKEND-CUDA-HONESTY-001 and #2696, which is where a reader should get them
+// (and where they carry their basis) rather than from an API doc that cannot be
+// re-measured. Moving this prose from `//` to `///` is what made them newly visible.
 fn run_preflight(gpu: bool, no_gpu: bool, backend: Option<&str>) -> Result<bool, CliError> {
     if let Some(b) = backend.filter(|b| *b != "cpu") {
         eprintln!("Backend override: {b}");

@@ -206,10 +206,11 @@ pub(crate) fn resolve_gpu_layers(
 /// consulted, and the server starts on CPU having warned nobody.
 ///
 /// `cargo install aprender` produces exactly that build — root `Cargo.toml` has
-/// `default = ["cli"]` and `cuda` is opt-in. Measured on 2026-08-24 with an
-/// idle RTX 4090 in the machine: 15.7 tok/s decode against llama.cpp's 158.9,
-/// and 7.5 SECONDS to first token. A tenth of the speed, no diagnostic, and a
-/// plausible-looking number at the end of it.
+/// `default = ["cli"]` and `cuda` is opt-in. Measured on 2026-08-24 with an idle
+/// RTX 4090 in the machine, it decoded at a fraction of llama.cpp's rate with
+/// seconds to first token: no diagnostic, and a plausible-looking number at the
+/// end of it. The figures and their basis are in #2696, which is where a reader
+/// should get them.
 ///
 /// The remedy in the message is checked to be real. #2527 is the counter-case:
 /// `aprender-test-cli` printed "rebuild with --features llm" for a feature its
