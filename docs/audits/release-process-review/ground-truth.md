@@ -95,7 +95,7 @@ handling so 'yoga was off' is distinguishable from 'the lane died'."*
 |---|---|---|
 | #2696 | **CLOSED** | P0: published apr 0.64.0 SILENTLY IGNORES `--gpu` |
 | #2869 | OPEN | No pre-built apr binary on stable releases |
-| #2971 | OPEN (`bug,P0,pp-066`) | GPU inference refuses Qwen2.5-1.5B-Instruct GGUF (hidden=1536/heads=12/kv_heads=2): parity gate fails at cosine 0.94 |
+| #2971 | OPEN (`bug, P0, pp-066, inst:A`) | GPU inference refuses Qwen2.5-1.5B-Instruct GGUF (hidden=1536/heads=12/kv_heads=2): parity gate fails at cosine 0.94 |
 | #2982 | **CLOSED** | C0-5: PRQ-013 single base-owned quorum workflow |
 
 ## GT-6 — the PP-066 spec this draft extends

@@ -5,7 +5,7 @@
 | Ticket | PMAT-1092 |
 | Reviewed | `docs/audits/release-process-review/release-process-aprender-v0.1-draft.md` v0.1 (463 lines) |
 | Against | `origin/main` @ `c04eda87d`, and the physical hosts, 2026-09-08 |
-| Method | one `agy /teamwork-preview` lane, every finding re-run here, then **six** AD-04 quorum rounds over this review — rounds 1–4 and 6 returned 3 × FAIL, round 5 returned 2 × FAIL / 1 PASS; every objection was applied rather than argued (see *Method*) |
+| Method | one `agy /teamwork-preview` lane, every finding re-run here, then **seven** AD-04 quorum rounds over this review — rounds 1–4, 6 and 7 returned 3 × FAIL, round 5 returned 2 × FAIL / 1 PASS; every objection was applied rather than argued (see *Method*) |
 | Epic | **paiml/aprender#3058** — the build order, the two gates that cannot fail, and the decisions 0.66 is blocked on |
 | Verdict | **do-not-implement-as-written** — adopt §1/§2/§5.2/§10 now (and §9 bar the row RD-5 turns on), block §3.4/§5.1/§5.3/§6/§7 on the items below |
 | Marks | `[V]` verified by a command printed here · `[C]` computed · `[A]` asserted, source named · `[U]` unverified, owner named |
@@ -38,6 +38,7 @@ Evidence pack with every command: `docs/audits/release-process-review/ground-tru
 | §7 PR-time CUDA on yoga | **reject as written** | reopens a settled decision without answering it (F3); security config does not exist (F4) |
 | §8 guards | admissible as a *build list*, not as an enforcement table | F1, F5 |
 | §11 RD-1..RD-9 | escalated below — none decided here | Noah / team |
+| §12 adoption plan | **blocked** | F1 — it schedules all of §3–§7 for 0.66.0 without naming the dependency on open R-5/R-6 (PMAT-993/994, due 2026-10-09/16), which §5.3 and §6 step 8 cannot run without |
 
 ---
 
@@ -206,7 +207,9 @@ for the group holding `yoga-gpu`. A constraint no one can check is a comment (§
 
 `.github/workflows/nightly.yml` today: 5 targets on **GitHub-hosted** runners
 (`ubuntu-latest`, `ubuntu-24.04-arm`, `macos-latest` ×2, `windows-latest`), built with
-`cargo build --release -p apr-cli` — **default features**, and `grep -c cuda
+`cargo build --release -p apr-cli` — **default features** on the four unix targets (`:78`),
+with Windows alone (`:82`, guarded `if: runner.os == 'Windows'`) adding
+`--no-default-features --features inference`; and `grep -c cuda
 .github/workflows/nightly.yml` = **0**. There is no `-cuda` artifact anywhere in the fleet
 today.
 
@@ -217,8 +220,8 @@ two numbers in two documents" — while being the second document.
 
 **Smallest fix.** `§3.1` gains a sentence naming the runner-class change and its consequence
 (hosted minutes → house hardware; macOS/Windows lose their builder unless RD-1 keeps them),
-and whatever RD-1 resolves to lands in the same PR that amends C13, so the two documents
-never carry different counts.
+and the C13 disagreement is reconciled — until both documents are edited they carry
+different counts, which is the finding; the sequencing is the team's.
 
 ---
 
@@ -305,7 +308,7 @@ happens to own hardware.
 `§5.5` UNSERVICEABLE + RD-5: if #2971 is not root-caused by the tag, ship with the 1.5B row
 reading `UNSERVICEABLE(cuda, #2971)`.
 
-`gh issue view 2971` → **OPEN**, labels `bug,P0,pp-066` `[V]`.
+`gh issue view 2971 --json labels` → **OPEN**, labels `bug, P0, pp-066, inst:A` `[V]`.
 
 Shipping a release whose declared sentinel model diverges on GPU guarantees the baseline is
 not improved — it just moves who writes it down. The target and the escape hatch cannot both
@@ -441,6 +444,7 @@ Commands: `ssh <host> 'uname -m; nproc; free -g; df -h /'`,
 | **S0-G2** | `lambda-labs` | x86_64 · 48 cores · 125 GB · 376 G free · **RTX 4090** 24564 MiB · driver **570.207** · cap **8.9** · CUDA 12.8 · nvcc 12.8 · 23291 MiB free |
 | **S0-G2** | `gx10` | aarch64 · 20 cores · 119 GB · 324 G free · **GB10** VRAM `[N/A]` unified · driver **590.48.01** · cap **12.1 (sm_121)** · CUDA 13.1 · nvcc 13.0 |
 | **S0-M1** | both dogfood hosts | `qwen2.5-coder-7b-instruct-q4_k_m.gguf` **4 683 073 536 B** present on `lambda-labs` **and** `gx10`. Fits lambda (23291 MiB free) with ~18.6 GiB spare; gx10 unified, no VRAM figure exists |
+| **S0-M1 (ext.)** | `yoga` | Extended per F9's own Smallest fix, since §7.1 assigns yoga a 7B cell. **Capacity yes, provisioning no:** 7807 MiB free of 8188 against 4.36 GiB of weights (~3.3 GiB for KV and activations), but `ssh yoga 'ls ~/models'` → **no such directory**. No model is present to run |
 | **S0-R1** | org | groups `Default` / `gpu-nodes` / `gpu-x86`; **all three** `restricted_to_workflows: false`, `selected_workflows: []`; `gpu-x86` `allows_public_repositories: false`. Runners: `yoga-gpu` (online, `self-hosted,Linux,X64,gpu,cuda,yoga,ada`), `gx10-blackwell` (online), 17 × `intel-clean-room*`. **No `lambda-4090`.** Repo-scoped runners: `total_count: 0` |
 | **S0-R2** | repo | required contexts `["ci / gate","workspace-test"]`; rulesets *Green Main*, *workspace-test*, *Merge Queue (main)* all `active` |
 | **S0-N1** | `nightly.yml` | 5 targets, **GitHub-hosted** runners. `:78` (unix, 4 targets) is `cargo build --release -p apr-cli --target <t>` — **default features**; `:82` (Windows only, guarded `if: runner.os == 'Windows'`) adds `--no-default-features --features inference`. **Zero occurrences of `cuda`** in the file |
@@ -483,8 +487,8 @@ One `agy /teamwork-preview` lane (agy 1.1.27, `--sandbox`, `writes=false`, conve
 after; no lane writes leaked.
 
 Every finding was then re-executed here, and this document was itself put through the AD-04
-merge quorum **six times** — three independent agy lanes per round, reviewing *this review*.
-Rounds 1–4 and 6 returned **3 × FAIL**; round 5 returned **2 × FAIL and 1 PASS**. What follows is
+merge quorum **seven times** — three independent agy lanes per round, reviewing *this review*.
+Rounds 1–4, 6 and 7 returned **3 × FAIL**; round 5 returned **2 × FAIL and 1 PASS**. What follows is
 what that changed, because a review that hides its own corrections is not evidence. The quorum
 has not yet returned three PASS; that is stated here and in the receipt rather than left to be
 inferred from the absence of a green mark.
@@ -518,14 +522,16 @@ inferred from the absence of a green mark.
    | quorum 4 | F8's "Smallest fix" laid out the two readings of the §9-vs-§5.5 contradiction and picked one — RD-5 by the back door, while RD-5's row says "resolve F8 first"; and Appendix A still headed its results "§2's `[U]` rows now close as", the RD-9 defect verbatim one section further down | 2 |
    | quorum 5 | this table's own arithmetic (it read "ten rows" against nine enumerated, and "each finding exactly one more" against two rounds that found two), the §9 row of the verdict table, and S0-Y4/Y5's "F3's decision" | 3 |
    | quorum 6 | the §9 carve-out missing from the intro prose, §4 "admissible" while RD-6 governs it, RD-1's "amend C13 **in the same PR**" imperative, S0-N1's "default features" (true for 4 of 5 targets; Windows builds `--no-default-features --features inference`), and this paragraph's own stale "a fifth round may find an eleventh" | 5 |
+   | quorum 7 | F11's body still said "default features" for all five targets, contradicting the S0-N1 row round 6 had just made precise; F11's *Smallest fix* still carried the "in the same PR" imperative removed from RD-1; F8's `[V]` label list for #2971 omitted `inst:A` and so no longer reproduced; §12 was missing from the verdict table; S0-M1 had not been extended to yoga as F9's own Smallest fix asks; and the round-6 sentence above said "a sixteenth … a seventeenth" when round 6 found five | 6 |
 
-   **Twenty, over seven passes** — six quorum rounds and one sweep of my own. The pattern is more useful than the count: a document can
+   **Twenty-six, over eight passes** — seven quorum rounds and one sweep of my own. The pattern is more useful than the count: a document can
    declare "escalated, not decided" in its heading and mean it, and still decide by
    grammar — an imperative in a "Smallest fix", a "becomes", a "now closes". Every one of
    these was caught by a reader who was not the author. So this paragraph records the
-   history rather than certifying the table. Round 6 duly found a sixteenth, and a seventh
-   round may find a seventeenth — every round so far has raised *new* instances of this one
-   class rather than re-raising a fixed objection, which is the method working. It is also
+   history rather than certifying the table. Round 6 found five more — the sixteenth through
+   the twentieth — and round 7 found six after that. Every round so far has raised *new*
+   instances of this one class rather than re-raising a fixed objection, which is the method
+   working. It is also
    why nothing here should be read as "the sweep is finally complete": that sentence has been
    wrong five times.
 5. **Staging the draft into `docs/specifications/`.** All three lanes objected: a document
