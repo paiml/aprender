@@ -1,76 +1,57 @@
 #!/usr/bin/env bash
-# check_pr_review_wiring.sh — how the PR-review receipt guard is allowed to be
-# wired into ci.yml, made mechanical.
+# check_pr_review_wiring.sh — the PR-review receipt guard family is reachable,
+# and the 150-minute receipt JOB does not come back onto pull requests.
 #
-# WHY THIS EXISTS
-# ---------------
-# PR-REVIEW-SKILL-002 v2 §9 row 6 states the rule PRREV-006 must not get wrong:
+# WHAT CHANGED, AND WHY THIS FILE INVERTED (2026-09-08, BSE-15, BSE-001 §4 wave 5)
+# -------------------------------------------------------------------------------
+# Until today this guard asserted that ci.yml carried a `pr-review-receipt` job
+# with a job-level `if:`, and R4 asserted that `if:`'s polarity per event. The
+# job itself is now DELETED, so R1's old subject ("the job that invokes the
+# receipt guard") no longer exists and R3/R4 have nothing to evaluate. Asserting
+# the presence of a deleted job is not a weaker guard, it is a broken one.
 #
-#   "wire into ci.yml beside existing guards | job-level `if:`, **not**
-#    workflow-level `paths:` — a path-filtered required check never reports and
-#    blocks branch protection forever"
+# The deletion was gated on a query, recorded in ci.yml beside the removal:
+# nothing `needs:` the job, it uploaded no artifact so no consumer could read
+# one, and it is not a required context. `gate` had already stopped reading it
+# (PP-066 C0-5, PRQ-013, #2982). It cost 150 minutes of two mutation sweeps on a
+# clean-room runner on every push to every open PR.
 #
-# Both halves are scars, not style. A workflow-level `paths:` filter means the
-# workflow does not run at all on a PR that misses the filter, so a check
-# GitHub is told to require never produces a check run: the PR sits PENDING
-# forever and nothing can merge — the phantom-required-check deadlock this
-# repository has already hit once. A job-level `if:` is the opposite shape: the
-# workflow runs, the job reports `skipped`, and `gate` can read that result and
-# decide. `mutants` (ci.yml) is the in-repo precedent.
+# So the rules invert, and the FALSIFIER SURVIVES THE DELETION — that is the
+# whole point of keeping this file rather than deleting it too:
 #
-# Until now that rule lived in a COMMENT, and a comment is not a trigger. The
-# same file already carries the receipt of what that costs: check_hardcoded_paths.sh
-# was left unwired behind a comment saying to promote it "once the fleet carries
-# pmat >= 3.32.0", nothing re-evaluated the condition, and 20 machine-specific
-# paths landed through the gap. So the rule is checked here rather than written
-# down here.
+#   R1  ci.yml declares NO job that invokes check_pr_review_receipt.sh.
+#       This is the standing falsifier. Putting the job back — on
+#       `pull_request` as it used to be, or on any other event — turns this
+#       guard RED rather than passing quietly. The case table carries the old
+#       wiring VERBATIM, asserted FAIL, so the row is about the thing that
+#       actually happened and not about a shape someone invented.
 #
-# THE FOUR RULES
-#
-#   R1  ci.yml INVOKES scripts/check_pr_review_receipt.sh on a non-comment line.
-#       check_guards_are_wired.sh already asserts this generically, but through a
-#       shrink-only BASELINE — and a baseline entry is exactly what someone
-#       removing this wiring would reach for. Naming the file here means the
-#       wiring cannot be traded away for a line in a text file.
+#       Restoring the job deliberately is therefore a code change here plus a
+#       new case-table row, which is the friction this repository asks for. It
+#       is not a rule that can be traded away for a line in a baseline file.
 #
 #   R2  ci.yml declares NO workflow-level `paths:` / `paths-ignore:` filter.
-#       ci.yml is where BOTH required checks live (`ci / gate` and
-#       `workspace-test`), so a path filter here is the deadlock, not a
-#       hypothetical. Scoped to ci.yml and named: check_workflow_path_filters.sh
-#       governs the *other* workflows, where a filter is legal and the risk is
-#       going dark instead of deadlocking.
+#       UNCHANGED, and unrelated to the job: ci.yml is where BOTH required
+#       checks live (`ci / gate`, `workspace-test`), so a path filter here is a
+#       deadlock — every PR that misses the filter sits PENDING forever.
+#       check_workflow_path_filters.sh governs the other workflows, where a
+#       filter is legal and the risk is going dark instead of deadlocking.
 #
-#   R3  the job that invokes the receipt guard carries a JOB-level `if:`.
-#       Job-level and step-level are distinguished by indentation, which is what
-#       makes "job-level" mechanical: a job key sits at 2 spaces, its `if:` at 4,
-#       and a step's `if:` at 8 or more. A step-level `if:` would leave the JOB
-#       reporting success on an event where it checked nothing.
+#   R3  the receipt guard family is still REACHABLE. `check_pr_review_receipt.sh`
+#       is a tracked `scripts/check_*.sh`, which is exactly guard_tree.sh's
+#       derived universe (`git ls-files 'scripts/check_*.sh'`, BSE-001 PR-A), so
+#       it runs in `guard-tree`, a job `gate` needs. Without this rule the
+#       deletion could be followed by renaming or untracking the guard and
+#       nothing would notice: R1 would still hold, vacuously, over a family that
+#       no longer runs anywhere. R1 and R3 are the two halves of one claim —
+#       the job is gone AND the guards it used to carry still run.
 #
-#   R4  that `if:` evaluates TRUE on `workflow_dispatch` and FALSE on `push`,
-#       `pull_request` and `merge_group` — both polarities, because
-#       "it has an `if:`" is satisfied by `if: false`, which is a gate that
-#       never runs, and by `if: always()`, which is no gate at all.
-#
-#       `pull_request` MOVED FROM THE TRUE COLUMN TO THE FALSE ONE on
-#       2026-09-08 (BSE-15, BSE-001 §4 wave 5). This job is 150 minutes of two
-#       mutation sweeps on a clean-room runner, on every push to every open PR,
-#       and it gates nothing: `gate` deliberately stopped reading it (PP-066
-#       C0-5, #2982), no job `needs:` it, it is not a required context, and
-#       pr-review-quorum.yml judges the receipt from the BASE with its own
-#       script. It measured 96 h of aprender PR runner-time in the 30 days to
-#       2026-09-07 — the fleet's single largest consumer. So it is dispatch-only,
-#       and this table is what makes putting it back on every PR a RED check
-#       rather than a quiet reversion: the row "R4 the per-PR wiring this
-#       repository moved away from" carries that old `if:` verbatim, asserted
-#       FAIL.
-#
-# THE EVALUATOR IS DELIBERATELY NARROW, AND REFUSES RATHER THAN GUESSES.
-# It understands exactly one expression shape — a disjunction of
-# `github.event_name == '<literal>'` — and any other `if:` is a hard FAILURE
-# saying so. That is the correct direction: a guard that silently widens its
-# pattern to cover a form it cannot reason about is the defect this repository
-# has shipped six times. Extending the evaluator is a code change with a new
-# case-table row, not an accident.
+# WHAT THIS FILE DOES NOT CLAIM. The two mutation sweeps the job carried
+# (`scripts/mutate-guard.sh`, `scripts/mutate_quorum_arm.sh`) and its 43-row bats
+# fixture table are not `check_*.sh` and no workflow invokes them, so they run
+# nowhere in CI today. That is stated in ci.yml at the deletion site and in the
+# PR that removed them; it is deliberately NOT asserted here, because a rule
+# nobody can satisfy is the mirror of one that cannot fail.
 #
 #   bash scripts/check_pr_review_wiring.sh             # check
 #   bash scripts/check_pr_review_wiring.sh --self-test # case table, both polarities
@@ -80,8 +61,7 @@
 #                      Used by --self-test to drive fixtures; there is no value
 #                      of it that turns a check off.
 #
-# EXIT: 0 all four rules hold; 1 anything else, including an `if:` this guard
-# cannot evaluate.
+# EXIT: 0 all three rules hold; 1 anything else.
 
 set -uo pipefail
 
@@ -90,23 +70,13 @@ REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 CI_YML="${PR_REVIEW_CI_YML:-$REPO_ROOT/.github/workflows/ci.yml}"
 
 GUARD_BASENAME='check_pr_review_receipt.sh'
-# Same invocation shape check_guards_are_wired.sh uses: a MENTION is not an
-# invocation, and a trailing `#` comment defeated the first version of that
-# pattern, so comments are stripped from the first `#` before matching.
-# `[.]` and not `\.`: awk warns "escape sequence treated as plain ." on a
-# dynamic regex, and a warning on stderr from a guard is how a real diagnostic
-# gets scrolled past.
 GUARD_RE="(^|[[:space:];&|(])((ba)?sh[[:space:]]+|[.]/)?[^[:space:]]*check_pr_review_receipt[.]sh([[:space:]]|$|['\"])"
 
-# Events the workflow can be triggered by, and whether the receipt job must run.
-# Driven as a table rather than asserted once: the FALSE rows are what stop
-# `if: always()` and a step-level `if:` from reading as compliance.
-EVENTS_TRUE='workflow_dispatch'
-EVENTS_FALSE='push pull_request merge_group'
-
 # ---------------------------------------------------------------------------
-# invoking_job <ci.yml> — name of the job whose steps invoke the receipt guard.
-# Prints nothing when no job does.
+# invoking_job <ci.yml> — name of each job whose steps invoke the receipt guard.
+# Prints nothing when no job does. A MENTION is not an invocation: comments are
+# stripped from the first `#` before matching, because a trailing `#` comment
+# defeated the first version of this pattern.
 # ---------------------------------------------------------------------------
 invoking_job() {
     awk -v re="$GUARD_RE" '
@@ -119,26 +89,6 @@ invoking_job() {
             if (job != "" && line ~ re) { print job }
         }
     ' "$1" | LC_ALL=C sort -u
-}
-
-# ---------------------------------------------------------------------------
-# job_level_if <ci.yml> <job> — the job-level `if:` expression, verbatim.
-# Indentation IS the definition: 4 spaces is the job's own key, 6+ belongs to a
-# step. Prints nothing when the job has no job-level `if:`.
-# ---------------------------------------------------------------------------
-job_level_if() {
-    awk -v want="$2" '
-        /^jobs:[[:space:]]*$/  { injobs = 1; next }
-        !injobs                { next }
-        /^[^[:space:]#]/       { injobs = 0; next }
-        /^  [A-Za-z0-9_-]+:/   { cur = $0; sub(/^  /, "", cur); sub(/:.*$/, "", cur); inj = (cur == want); next }
-        inj && /^    if:[[:space:]]*[^[:space:]]/ {
-            line = $0
-            sub(/^    if:[[:space:]]*/, "", line)
-            sub(/[[:space:]]+$/, "", line)
-            print line
-        }
-    ' "$1"
 }
 
 # ---------------------------------------------------------------------------
@@ -157,55 +107,45 @@ workflow_path_filters() {
 }
 
 # ---------------------------------------------------------------------------
-# eval_if <expr> <event_name>
-#   0 -> the expression is TRUE for that event
-#   1 -> the expression is FALSE for that event
-#   2 -> this guard cannot evaluate the expression (a FAILURE, never a pass)
+# guard_is_tracked — R3. The receipt guard is a tracked scripts/check_*.sh, so
+# guard_tree.sh's derived universe runs it. `git ls-files` and not a filesystem
+# probe: guard_tree derives its universe the same way, and an untracked file is
+# invisible to it however present it looks on disk.
 # ---------------------------------------------------------------------------
-eval_if() {
-    local expr=$1 ev=$2 norm lits
-    norm=$(printf '%s' "$expr" | sed 's/[[:space:]][[:space:]]*/ /g; s/^ //; s/ $//')
-    # A herestring, never `printf ... | grep -q`: on a pipe grep can exit 141 on
-    # SIGPIPE despite having MATCHED, and this repository has shipped that four
-    # times in one day.
-    if ! grep -Eq -- "^github\.event_name == '[a-z_]+'( \|\| github\.event_name == '[a-z_]+')*\$" <<<"$norm"; then
-        return 2
-    fi
-    lits=$(grep -oE "'[a-z_]+'" <<<"$norm" | tr -d "'" | tr '\n' ' ')
-    case " $lits " in
-        *" $ev "*) return 0 ;;
-        *)         return 1 ;;
-    esac
+guard_is_tracked() {
+    git -C "$REPO_ROOT" ls-files --error-unmatch "scripts/$GUARD_BASENAME" >/dev/null 2>&1
 }
 
 # ---------------------------------------------------------------------------
-# check_file <ci.yml> — R1..R4. 0 = all hold. Diagnostics on stdout.
+# check_file <ci.yml> — R1..R3. 0 = all hold. Diagnostics on stdout.
 # ---------------------------------------------------------------------------
 check_file() {
-    local f=$1 job ifexpr ev filters rc
+    local f=$1 job filters n
 
     if [ ! -f "$f" ]; then
         printf 'FAIL R0: no workflow at %s\n' "$f"
         return 1
     fi
 
-    # R1
+    # R1 — the standing falsifier: the receipt job must not be back.
     job=$(invoking_job "$f")
-    if [ -z "$job" ]; then
-        printf 'FAIL R1: no job in %s invokes %s.\n' "$f" "$GUARD_BASENAME"
-        printf '        A guard named only in a comment is not wired (PRREV-006, spec 9.6).\n'
-        return 1
-    fi
-    if [ "$(printf '%s\n' "$job" | grep -c .)" -ne 1 ]; then
-        printf 'FAIL R1: %s is invoked by more than one job:\n' "$GUARD_BASENAME"
+    if [ -n "$job" ]; then
+        n=$(printf '%s\n' "$job" | grep -c .)
+        printf 'FAIL R1: %s job(s) in %s invoke %s:\n' "$n" "$f" "$GUARD_BASENAME"
         printf '%s\n' "$job" | sed 's|^|          |'
-        printf '        Two jobs means two `if:` conditions to keep in step; R3/R4 would\n'
-        printf '        then hold for one of them while the other went dark.\n'
+        printf '        That job was DELETED on 2026-09-08 (BSE-15): 150 minutes of two\n'
+        printf '        mutation sweeps on a clean-room runner, on every push to every open\n'
+        printf '        PR, gating nothing — no `needs:`, no artifact, not a required\n'
+        printf '        context, and `gate` had already stopped reading it (C0-5, #2982).\n'
+        printf '        The guard itself still runs: it is a scripts/check_*.sh and so is in\n'
+        printf '        guard_tree.sh'"'"'s derived universe (R3 below).\n'
+        printf '        Bringing the job back is a deliberate change to this rule plus a new\n'
+        printf '        case-table row — not an edit to ci.yml alone.\n'
         return 1
     fi
-    printf 'ok  R1  %s is invoked by job `%s`\n' "$GUARD_BASENAME" "$job"
+    printf 'ok  R1  no job in %s invokes %s (the receipt job stays deleted)\n' "$(basename "$f")" "$GUARD_BASENAME"
 
-    # R2
+    # R2 — unchanged.
     filters=$(workflow_path_filters "$f")
     if [ -n "$filters" ]; then
         printf 'FAIL R2: %s declares a workflow-level path filter:\n' "$f"
@@ -217,57 +157,25 @@ check_file() {
     fi
     printf 'ok  R2  no workflow-level paths:/paths-ignore: filter in %s\n' "$(basename "$f")"
 
-    # R3
-    ifexpr=$(job_level_if "$f" "$job")
-    if [ -z "$ifexpr" ]; then
-        printf 'FAIL R3: job `%s` has no JOB-level `if:` (4-space indent under the job key).\n' "$job"
-        printf '        A step-level `if:` leaves the JOB reporting success on an event\n'
-        printf '        where it checked nothing.\n'
+    # R3 — the other half of R1: deleted job, guards still reachable.
+    if ! guard_is_tracked; then
+        printf 'FAIL R3: scripts/%s is not tracked by git.\n' "$GUARD_BASENAME"
+        printf '        guard_tree.sh derives its universe from\n'
+        printf "        \`git ls-files 'scripts/check_*.sh'\`, so an untracked or renamed\n"
+        printf '        guard runs NOWHERE — and R1 would keep holding over a family that\n'
+        printf '        no longer exists. Track it under that name, or move its rules to a\n'
+        printf '        guard that is tracked and say so here.\n'
         return 1
     fi
-    if [ "$(printf '%s\n' "$ifexpr" | grep -c .)" -ne 1 ]; then
-        printf 'FAIL R3: job `%s` has %s job-level `if:` keys; YAML keeps the last and\n' \
-            "$job" "$(printf '%s\n' "$ifexpr" | grep -c .)"
-        printf '        the earlier ones read as enforcement that is not there.\n'
-        return 1
-    fi
-    printf 'ok  R3  job `%s` carries a job-level if: %s\n' "$job" "$ifexpr"
+    printf 'ok  R3  scripts/%s is tracked, so guard_tree.sh runs it\n' "$GUARD_BASENAME"
 
-    # R4 — both polarities.
-    rc=0
-    for ev in $EVENTS_TRUE; do
-        eval_if "$ifexpr" "$ev"
-        case $? in
-            0) printf 'ok  R4  %-18s -> runs\n' "$ev" ;;
-            1) printf 'FAIL R4: %s -> SKIPPED, which leaves the receipt sweep unreachable.\n' "$ev"
-               printf '        This is the one event that must still run it:\n'
-               printf '        gh workflow run ci.yml --ref <branch>\n'; rc=1 ;;
-            *) printf 'FAIL R4: this guard cannot evaluate `%s`.\n' "$ifexpr"
-               printf '        It understands only a disjunction of\n'
-               printf "        github.event_name == '<literal>'. Extend the evaluator and add a\n"
-               printf '        case-table row; do not widen the pattern to make this pass.\n'
-               return 1 ;;
-        esac
-    done
-    for ev in $EVENTS_FALSE; do
-        eval_if "$ifexpr" "$ev"
-        case $? in
-            1) printf 'ok  R4  %-18s -> skipped\n' "$ev" ;;
-            0) printf 'FAIL R4: %s -> runs, and only workflow_dispatch may. On pull_request\n' "$ev"
-               printf '        this job cost 96 h of fleet runner-time in 30 days while gating\n'
-               printf '        nothing (BSE-15); on push and merge_group there is no PR number,\n'
-               printf '        so evidence/pr-review/<pr>/<sha>/ has no subject.\n'; rc=1 ;;
-            *) printf 'FAIL R4: this guard cannot evaluate `%s`.\n' "$ifexpr"; return 1 ;;
-        esac
-    done
-    return "$rc"
+    return 0
 }
 
 # ---------------------------------------------------------------------------
-# --self-test — must-hold / must-fail rows over synthesized workflows, plus the
-# evaluator's own truth table. Every rule gets a mutation that turns it RED and
-# a control that must stay GREEN, because "refuse everything" reads green
-# otherwise.
+# --self-test — must-hold / must-fail rows over synthesized workflows. Every
+# rule gets a mutation that turns it RED and a control that must stay GREEN,
+# because "refuse everything" reads green otherwise.
 # ---------------------------------------------------------------------------
 if [ "${1:-}" = "--self-test" ]; then
     TD=$(mktemp -d) || exit 1
@@ -287,18 +195,13 @@ if [ "${1:-}" = "--self-test" ]; then
     }
 
     INVOKE='      - run: bash scripts/check_pr_review_receipt.sh tests/fixtures/pr-review/row-14-complete-gpu-review'
-    JOBIF="    if: github.event_name == 'workflow_dispatch'"
 
     # assert_file <label> <PASS|FAIL> <file> [<expected-message-substring>]
     #
-    # THE MESSAGE IS ASSERTED, NOT ONLY THE VERDICT, and that is measured rather
-    # than stylistic. R1 and R3 each have a zero branch and a more-than-one
-    # branch, and the more-than-one branch also rejects when the count is ZERO
-    # (0 != 1). So `if [ -z "$job" ]` -> `if false` left the guard still
-    # rejecting, on the neighbouring branch, with a message about "more than one
-    # job" for a file that had none: verdict-only, three mutants of this guard
-    # SURVIVED. This is the same finding tests/pr-review.bats records for the
-    # receipt guard's B1, one level up.
+    # THE MESSAGE IS ASSERTED, NOT ONLY THE VERDICT. R1 has a zero branch and a
+    # more-than-one branch and they reject on neighbouring conditions, so a
+    # verdict-only table let three mutants of the old guard SURVIVE: the wrong
+    # branch still said no.
     assert_file() {
         row=$((row + 1))
         local label=$1 want=$2 f=$3 msg=${4:-} out rc got
@@ -326,134 +229,82 @@ if [ "${1:-}" = "--self-test" ]; then
 
     # The control FIRST. Without a row that must stay GREEN, every mutation
     # below passes against a guard that refuses everything.
-    emit_ci "$TD/good.yml" '' "$JOBIF" "$INVOKE"
-    assert_file 'a correctly wired ci.yml' PASS "$TD/good.yml"
+    emit_ci "$TD/good.yml" '' '' ''
+    assert_file 'ci.yml with no receipt job at all (the state this repo is in)' PASS "$TD/good.yml"
 
-    # R1: the invocation removed.
-    emit_ci "$TD/r1-none.yml" '' "$JOBIF" ''
-    assert_file 'R1 no invocation at all' FAIL "$TD/r1-none.yml" 'no job in'
+    # R1, THE STANDING FALSIFIER — the wiring this repository ran until
+    # 2026-09-08, carried here verbatim. This row is why the job cannot come
+    # back quietly, and it is the reason this file was kept rather than deleted
+    # along with the job.
+    emit_ci "$TD/r1-prback.yml" '' "    if: github.event_name == 'pull_request'" "$INVOKE"
+    assert_file 'R1 the per-PR wiring this repository deleted on 2026-09-08' FAIL "$TD/r1-prback.yml" 'invoke check_pr_review_receipt.sh'
 
-    # R1: a MENTION, not an invocation. This is the exact defect
-    # check_guards_are_wired.sh had: the name inside a comment read as wiring.
-    emit_ci "$TD/r1-comment.yml" '' "$JOBIF" \
+    # R1: dispatch-only is ALSO refused. The deletion was not "move it to
+    # workflow_dispatch" — a dispatch-only job whose PR_NUMBER comes from a
+    # pull_request context it no longer has is reachable and non-functional,
+    # which is worse than absent. Restoring it needs this rule changed.
+    emit_ci "$TD/r1-dispatch.yml" '' "    if: github.event_name == 'workflow_dispatch'" "$INVOKE"
+    assert_file 'R1 a dispatch-only receipt job is refused too' FAIL "$TD/r1-dispatch.yml" 'invoke check_pr_review_receipt.sh'
+
+    # R1: no `if:` at all — the property is the invocation, not the condition.
+    emit_ci "$TD/r1-noif.yml" '' '' "$INVOKE"
+    assert_file 'R1 an unconditional receipt job is refused' FAIL "$TD/r1-noif.yml" 'invoke check_pr_review_receipt.sh'
+
+    # R1 must not fire on a MENTION. This is the exact defect
+    # check_guards_are_wired.sh had, in the opposite direction: the name inside
+    # a comment must NOT read as an invocation, or the guard reds a clean file.
+    emit_ci "$TD/r1-comment.yml" '' '' \
         '      - run: echo skipped # bash scripts/check_pr_review_receipt.sh'
-    assert_file 'R1 named only in a trailing comment' FAIL "$TD/r1-comment.yml" 'no job in'
+    assert_file 'R1 a name in a trailing comment is not an invocation' PASS "$TD/r1-comment.yml"
 
-    # R1: two jobs invoking it. Two jobs is two `if:` conditions to keep in step,
-    # and R3/R4 would then hold for whichever one this guard happened to pick.
-    emit_ci "$TD/r1-two.yml" '' "$JOBIF" "$INVOKE"
-    printf '  second-receipt-job:\n    runs-on: [self-hosted]\n%s\n    steps:\n%s\n' \
-        "$JOBIF" "$INVOKE" >> "$TD/r1-two.yml"
-    assert_file 'R1 two jobs invoke it' FAIL "$TD/r1-two.yml" 'more than one job'
+    # R2: a workflow-level path filter, both spellings.
+    emit_ci "$TD/r2-paths.yml" '    paths: [src/**]' '' ''
+    assert_file 'R2 workflow-level paths:' FAIL "$TD/r2-paths.yml" 'path filter'
+    emit_ci "$TD/r2-ignore.yml" '    paths-ignore: [docs/**]' '' ''
+    assert_file 'R2 workflow-level paths-ignore:' FAIL "$TD/r2-ignore.yml" 'path filter'
 
-    # R2 DISCRIMINATION: a `paths:` key inside a JOB is not a workflow filter and
-    # must stay GREEN. Several actions take one. Without this row, widening the
-    # `on:`-block terminator so the scan never leaves it is a SURVIVING mutant:
-    # the guard would start flagging `paths:` anywhere in the file, and every
-    # other fixture here happens to have none, so nothing would notice.
-    emit_ci "$TD/r2-injob.yml" '' "$JOBIF" \
-        "      - uses: some/action@v1
-        with:
-          paths: |
-            evidence/pr-review/**
-$INVOKE"
-    assert_file 'R2 a paths: key inside a job is not a workflow filter' PASS "$TD/r2-injob.yml"
+    # R0: a workflow that is not there is a failure, never a pass.
+    row=$((row + 1))
+    if out=$(check_file "$TD/nope.yml" 2>&1); then
+        printf 'FAIL  row %-2s R0 a missing workflow must FAIL\n' "$row"; fails=1
+    else
+        case "$out" in *'no workflow at'*) printf 'ok    row %-2s R0 a missing workflow fails\n' "$row" ;;
+                       *) printf 'FAIL  row %-2s R0 failed on the wrong branch: %s\n' "$row" "$out"; fails=1 ;; esac
+    fi
 
-    # R2: a workflow-level paths filter — the deadlock the spec names.
-    emit_ci "$TD/r2-paths.yml" '    paths:
-      - "evidence/pr-review/**"' "$JOBIF" "$INVOKE"
-    assert_file 'R2 workflow-level paths: filter' FAIL "$TD/r2-paths.yml"
-
-    emit_ci "$TD/r2-ignore.yml" '    paths-ignore:
-      - "docs/**"' "$JOBIF" "$INVOKE"
-    assert_file 'R2 workflow-level paths-ignore: filter' FAIL "$TD/r2-ignore.yml"
-
-    # R3: no job-level if: at all.
-    emit_ci "$TD/r3-noif.yml" '' '' "$INVOKE"
-    assert_file 'R3 job has no if:' FAIL "$TD/r3-noif.yml" 'has no JOB-level'
-
-    # R3: two job-level `if:` keys. YAML keeps the last, so the earlier one reads
-    # as enforcement that is not there.
-    emit_ci "$TD/r3-twoif.yml" '' "$JOBIF
-    if: github.event_name == 'push'" "$INVOKE"
-    assert_file 'R3 two job-level if: keys' FAIL "$TD/r3-twoif.yml" 'job-level `if:` keys'
-
-    # R3: a STEP-level if: is not a job-level if:. The job would report success
-    # on an event where the step was skipped.
-    emit_ci "$TD/r3-stepif.yml" '' '' \
-        "      - name: validate the receipt
-        if: github.event_name == 'pull_request'
-        run: bash scripts/check_pr_review_receipt.sh evidence/pr-review/1/deadbeef"
-    assert_file 'R3 step-level if: does not count' FAIL "$TD/r3-stepif.yml" 'has no JOB-level'
-
-    # R4: an if: that is never true.
-    emit_ci "$TD/r4-never.yml" '' "    if: github.event_name == 'release'" "$INVOKE"
-    assert_file 'R4 if: that never runs on any trigger' FAIL "$TD/r4-never.yml"
-
-    # R4: the wiring this repository moved AWAY from on 2026-09-08 (BSE-15) —
-    # the old `if:`, verbatim. Putting the receipt job back on every PR is the
-    # reversion this row exists to turn RED. Without it the swap in EVENTS_TRUE
-    # / EVENTS_FALSE is a preference someone can undo in one line, and the 96 h
-    # comes straight back; with it, undoing the line fails a check.
-    emit_ci "$TD/r4-prback.yml" '' "    if: github.event_name == 'pull_request'" "$INVOKE"
-    assert_file 'R4 the per-PR wiring this repository moved away from' FAIL "$TD/r4-prback.yml"
-
-    # R4: an if: that is always true — "has an if:" is not the property.
-    emit_ci "$TD/r4-always.yml" '' \
-        "    if: github.event_name == 'workflow_dispatch' || github.event_name == 'push'" "$INVOKE"
-    assert_file 'R4 if: that also runs where the sweep has no subject' FAIL "$TD/r4-always.yml"
-
-    # R4: a form the evaluator does not understand must FAIL, not pass.
-    emit_ci "$TD/r4-opaque.yml" '' '    if: always()' "$INVOKE"
-    assert_file 'R4 an if: this guard cannot evaluate' FAIL "$TD/r4-opaque.yml"
-
-    emit_ci "$TD/r4-negated.yml" '' "    if: github.event_name != 'push'" "$INVOKE"
-    assert_file 'R4 a negated if: is refused, not guessed' FAIL "$TD/r4-negated.yml"
-
-    # The evaluator's own truth table, independent of any workflow.
-    eval_row() {  # eval_row <expr> <event> <0|1|2>
-        row=$((row + 1))
-        eval_if "$1" "$2"; local got=$?
-        if [ "$got" -eq "$3" ]; then
-            printf 'ok    row %-2s want %-12s on %-16s -> %s\n' "$row" "$3" "$2" "$1"
-        else
-            printf 'FAIL  row %-2s check on %s of `%s`: wanted %s, got %s\n' "$row" "$2" "$1" "$3" "$got"
-            fails=1
-        fi
-    }
-    eval_row "github.event_name == 'pull_request'" pull_request      0
-    eval_row "github.event_name == 'pull_request'" push              1
-    eval_row "github.event_name == 'pull_request'" merge_group       1
-    eval_row "github.event_name == 'pull_request'" workflow_dispatch 1
-    eval_row "github.event_name == 'push' || github.event_name == 'pull_request'" push 0
-    # A LITERAL IS A WHOLE WORD, NOT A SUBSTRING. `pull_request` is a prefix of
-    # the real event names `pull_request_target` and `pull_request_review`, so
-    # dropping the space delimiters around the membership test turns a job
-    # gated on `pull_request_target` into one this guard reports as running on
-    # `pull_request`. Measured: without this row that mutation SURVIVES.
-    eval_row "github.event_name == 'pull_request_target'" pull_request 1
-    eval_row "github.event_name == 'pull_request'" pull_request_target 1
-    # Irregular spacing is still the same expression. Without the normaliser the
-    # shape check misses and every such `if:` is reported unevaluable, which is a
-    # hard FAIL — a guard that reds a correctly wired workflow. Also a surviving
-    # mutant without this row.
-    eval_row "github.event_name  ==   'pull_request'" pull_request      0
-    eval_row "always()"                            pull_request      2
-    eval_row "github.event_name != 'push'"         pull_request      2
-    eval_row "\${{ github.event_name == 'pull_request' }}" pull_request 2
+    # R3 both polarities, against real repositories rather than a stub: the
+    # rule is about `git ls-files`, so only a git tree can drive it.
+    row=$((row + 1))
+    R3REPO="$TD/r3repo"
+    mkdir -p "$R3REPO/scripts" && git -C "$R3REPO" init -q 2>/dev/null
+    : > "$R3REPO/scripts/$GUARD_BASENAME"
+    git -C "$R3REPO" add "scripts/$GUARD_BASENAME" >/dev/null 2>&1
+    if (REPO_ROOT="$R3REPO"; guard_is_tracked); then
+        printf 'ok    row %-2s R3 a tracked guard satisfies the reachability rule\n' "$row"
+    else
+        printf 'FAIL  row %-2s R3 a tracked guard was reported untracked\n' "$row"; fails=1
+    fi
+    row=$((row + 1))
+    git -C "$R3REPO" rm -q --cached "scripts/$GUARD_BASENAME" >/dev/null 2>&1
+    if (REPO_ROOT="$R3REPO"; guard_is_tracked); then
+        printf 'FAIL  row %-2s R3 an UNTRACKED guard passed — guard_tree.sh would never run it\n' "$row"; fails=1
+    else
+        printf 'ok    row %-2s R3 an untracked guard is refused (guard_tree derives from git ls-files)\n' "$row"
+    fi
 
     [ "$fails" -eq 0 ] || { printf '\nSELF-TEST FAILED\n'; exit 1; }
     printf '\nSELF-TEST PASSED (%s/%s)\n' "$row" "$row"
     exit 0
 fi
 
-printf '=== the PR-review receipt guard is wired job-level, not path-filtered (%s) ===\n' "$PROG"
+printf '=== the receipt JOB stays deleted and its guards stay reachable (%s) ===\n' "$PROG"
 printf 'workflow: %s\n' "$CI_YML"
 if check_file "$CI_YML"; then
     printf 'PASS\n'
     exit 0
 fi
-printf '\nPR-REVIEW-SKILL-002 v2 §9 row 6: job-level `if:`, never a workflow-level\n'
-printf '`paths:` filter. A path-filtered required check never reports and blocks\n'
-printf 'branch protection forever.\n'
+printf '\nBSE-15 (BSE-001 §4 wave 5): the pr-review-receipt job was deleted on\n'
+printf '2026-09-08 after a recorded query showed nothing needed it and nothing read\n'
+printf 'an artifact from it. Its guards still run through guard_tree.sh. Restoring\n'
+printf 'the job is a change to R1 plus a case-table row, never an edit to ci.yml alone.\n'
 exit 1
