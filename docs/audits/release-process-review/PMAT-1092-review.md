@@ -414,7 +414,8 @@ replaces a probe that cannot fail.
 ## Appendix A — the S0 ledger, executed
 
 The draft asks that each row "be executed and its output pasted into the review thread". Done.
-Every row is `[V]`. This closes **RD-9** and the four `[U]` rows in `§2`.
+Every row below is `[V]`. That fills the four `[U]` rows in `§2` and supplies what **RD-9** asks
+for; RD-9 itself stays open until Noah records it closed.
 
 Commands: `ssh <host> 'uname -m; nproc; free -g; df -h /'`,
 `nvidia-smi --query-gpu=name,memory.total,memory.used,memory.free,driver_version,compute_cap --format=csv,noheader`,
@@ -460,7 +461,7 @@ Recommendations carry the finding that motivates them.
 | **RD-6** | Whatever the team decides, the ledger adds a second asymmetry that must be stated beside it: the two x86 GPU hosts are **both sm_89**, so §4's two-host row is redundancy, not cross-architecture coverage | S0 ledger |
 | **RD-7** | F7 is a finding against the basis as written, not a decision: the floor is a source constant in `PtxModule`, so deriving it from `nvidia-smi` makes a source constant float on hardware inventory. What the declared minimum *should be* remains the team's call | F7, F2 |
 | **RD-8** | No finding against it — nothing measured here bears on cross-machine reproducibility. Team's call | — |
-| **RD-9** | **Closed by Appendix A above** for `yoga`'s identity; S0-Y3/Y4/Y5 and S0-G1 remain `[U]` with Noah named | S0 ledger |
+| **RD-9** | Appendix A executes the S0 rows RD-9 asks for, and `yoga`'s identity is now `[V]` rather than `[U]`. Whether that satisfies RD-9 is Noah's to record — a measurement being taken is not the same act as a decision being closed. S0-Y3/Y4/Y5 and S0-G1 are still unmeasured | S0 ledger |
 
 ---
 
@@ -492,10 +493,13 @@ review that hides its own corrections is not evidence.
    not. Fixed.
 4. **Dispositions in the RD table.** "Accept" / "No objection" / "Reframe" on RD-2, RD-6,
    RD-7 and RD-8 are decisions, not escalations, in a document claiming to decide none.
-   Rephrased — and a **second** quorum then caught two the first pass missed: RD-3 called
-   advisory→required "sound" and RD-4 said "Unchanged", while this section claimed the
-   dispositions had been removed. Both rewritten as findings; the claim above is now
-   accurate because the row it describes is.
+   Rephrased — and it took two further quorums to finish the job. The **second** caught RD-3
+   (which called advisory→required "sound", and still cited the 3–98 figure F10 had just
+   retracted) and RD-4 ("Unchanged"). The **third** caught RD-9, which declared itself
+   "Closed by Appendix A above" — a measurement I had taken, reported as a decision I had no
+   standing to make. Each round this section claimed the sweep was complete and each time a
+   row remained, so it now records the history instead: seven rows, three passes, and the
+   count is a fact about the passes rather than a guarantee about the table.
 5. **Staging the draft into `docs/specifications/`.** All three lanes objected: a document
    whose header reads "Not yet normative" landing in the normative specs directory will be
    read — and RAG-indexed — as a spec. The draft now lives beside this review at
