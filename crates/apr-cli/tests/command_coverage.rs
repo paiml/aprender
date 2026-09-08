@@ -193,10 +193,27 @@ fn test_coverage_validate_quality_rich() {
         .output()
         .expect("run validate --quality");
     let stdout = String::from_utf8_lossy(&output.stdout);
-    // Quality mode produces a score table
+    // The SECOND instance of the same stale assertion (#3051; the first is
+    // cli_integration.rs::test_qa_016_validate_quality_score). It asked for `/100`,
+    // `points` or `Score` — the first two are the wording #2394 finding 12 removed as
+    // dishonest, and the third never matched because the line reads `SCORE:` in caps.
+    // So all three arms were false and the test had simply never run: `command_coverage`
+    // is not on ci.yml's `--test` line either.
+    //
+    // Same rewrite as its sibling: assert the contract the code owes — a score measured
+    // against the checks that RAN — and require the retired wording to be ABSENT, so a
+    // regression to `/100 points` turns this test RED.
     assert!(
-        stdout.contains("/100") || stdout.contains("points") || stdout.contains("Score"),
-        "validate --quality must show score, got: {stdout}"
+        stdout.contains("SCORE:"),
+        "validate --quality must print a SCORE: line, got: {stdout}"
+    );
+    assert!(
+        stdout.contains("% of the checks that ran") || stdout.contains("SCORE: unavailable"),
+        "the score's denominator must be the checks that ran, got: {stdout}"
+    );
+    assert!(
+        !stdout.contains("/100 points"),
+        "the retired `/100 points` wording is back (#2394 finding 12), got: {stdout}"
     );
 }
 
