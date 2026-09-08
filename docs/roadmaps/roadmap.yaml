@@ -15237,7 +15237,7 @@ roadmap:
   labels: []
   notes: null
 - id: PMAT-993
-  github_issue: null
+  github_issue: 2908
   item_type: task
   title: 'GH-2908: R-5 apr-* assets for the 5 nightly.yml targets attached to every tagged release, built per D-10; sha256 + minisign-signed ma'
   status: planned
@@ -15251,8 +15251,10 @@ roadmap:
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
-  notes: null
+  labels:
+  - kind:code
+  - pp-066
+  notes: 'R-5 delta 2026-09-08 (driver v6.1): build != test — the clean-room recipe with the forjar pin builds, the fleet-verify receipt verifies; x86_64-cuda on a JIT ephemeral lambda runner in the gpu-release group at refs/tags/v*; base-owned promotion over four receipts (C14 PASS, parity != skipped); publish_cascade.sh derived and fail-closed; no workflow runs cargo publish. blocked_by KEY (#3045, PMAT-1079) and RUNNER-GROUP; blockers += G-11b. The acceptance set is the DAG row R-5 and issue #2908 (acceptance_criteria here is not a lifecycle field the additive guard admits). Authored on agent/R-5 at 19c015ff9 with three divergences the row PR closes.'
 - id: PMAT-994
   github_issue: null
   item_type: task
@@ -15269,7 +15271,7 @@ roadmap:
   subtasks: []
   estimated_effort: null
   labels: []
-  notes: null
+  notes: 'R-5 delta 2026-09-08: blockers += KEY (#3045, PMAT-1079) — the installer pins the fingerprint of keys/apr-release-minisign.pub; DONE-IF the file is present on main.'
 - id: PMAT-995
   github_issue: null
   item_type: task
@@ -16573,3 +16575,22 @@ roadmap:
   - kind:code
   - pp-066
   notes: 'see #3028; fleet pin drift paiml/infra#468; the identical dedup also rides #3027 (BSE-001 H4). Merged as #3030 on 2026-09-07 (main e4b423790, push run green). proof:PR#3030'
+- id: PMAT-1079
+  github_issue: 3045
+  item_type: task
+  title: 'KEY: keys/apr-release-minisign.pub on main — the one public key the R-5 release-assets manifest job signs against and the R-6 installer pins; until present the manifest job and the C13 gate refuse and R-5 stays blocked_by KEY (PP-066 #2873, R-5 delta 2026-09-08)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-09-08T07:08:00Z
+  updated: 2026-09-08T07:08:00Z
+  spec: null
+  acceptance_criteria:
+  - 'see issue #3045 (A + mutation)'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - pp-066
+  notes: 'minted by hand (pmat#1169); DAG row KEY, owner noahgift, expiry 2026-10-02. PMAT-1078 was not free: agent/R-5 contracts/apr-publish-cascade-v1.yaml:4 stamps it for the cascade (unminted in any roadmap), so KEY took the next id.'

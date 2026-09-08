@@ -16,7 +16,7 @@ track_parents:
   PVI-1.3-4.3: 2556
 filed: '2026-09-05: issues #2882-#2980 under the track parents (GitHub caps a parent at 100 sub-issues; the epic holds the 31 triage sub-issues plus the 11 track parents); pmat ids PMAT-968..PMAT-1053 plus
   PMAT-1057 for I-1 (its first id PMAT-967 collided with #2871''s ticket of the same number, minted in another session; re-minted 2026-09-05); 2026-09-06: G-11 #3012, G-10b #3013, G-10c #3014, U-1 #3015,
-  S-0 #3016 (labelled pp-066; track-parent linkage by body reference); 2026-09-06 (driver v4): L0-1 #3017 (P0), G-11b #3018, R-8 #3019; R-0b #3002 folded from #3003'
+  S-0 #3016 (labelled pp-066; track-parent linkage by body reference); 2026-09-06 (driver v4): L0-1 #3017 (P0), G-11b #3018, R-8 #3019; R-0b #3002 folded from #3003; 2026-09-08 (R-5 delta): KEY #3045 (labelled pp-066; parent #2963 by body reference), PMAT-1079 by hand (PMAT-1078 is stamped by agent/R-5)'
 receipts:
   policy: advisory
   since: '2026-09-05'
@@ -37,6 +37,7 @@ host_queues:
   - R-4
   - S-3
   - I-18
+  - R-5
   - S-1
   - S-2
   gx10:
@@ -850,8 +851,7 @@ rows:
   cut_by: SPEC-2.0
   claim_protected: claim (2)/(3) — the W5 CLI wall-clock workload (a speed number)
 - id: R-5
-  title: 'apr-* assets for the 5 nightly.yml targets attached to every tagged release, built per D-10; sha256 + minisign-signed manifest (S0-19: public-key scheme); release cut as prerelease; hosts pull
-    the asset, run C4 dogfood and bench_host_receipt.sh H12 on their target; the promotion job flips --prerelease=false from four green receipts'
+  title: 'apr-* assets for the 5 nightly.yml targets attached to every tagged release, built per D-10 — BUILD ≠ TEST: assets build under the clean-room recipe (scripts/run_clean_room.sh, the forjar-pinned toolchain, its fingerprint recorded) and GPU verification is the fleet-verify receipt; the x86_64-cuda asset (= apr-x86_64-unknown-linux-gnu carrying cli,cuda per D-10) builds on lambda only inside release-assets.yml at a v* tag (runner group gpu-release, a JIT ephemeral runner for one job, sm_89 SASS + PTX at the fleet minimum ISA), every other target on the CI clean-room runner; sha256 + minisign-signed manifest (S0-19: public-key scheme; the key is KEY); release cut as prerelease; a base-owned promotion job on manual dispatch flips --prerelease=false from four host receipts carrying the asset sha256 with C14 PASS and parity never skipped; scripts/publish_cascade.sh runs the crates.io cascade locally from the promoted tag — no workflow runs cargo publish'
   epic: 2873
   track: R
   lane: '0.66'
@@ -860,35 +860,76 @@ rows:
   - R-0
   - DEC-D-10
   - G-11
+  - G-11b
   - R-2
   - L0-1b
+  - KEY
   issues:
   - 2869
   - 2585
   - 2850
-  host: build on the nightly.yml runners; dogfood on all four
-  queue_pos: null
+  host: 'build: lambda for the x86_64-cuda asset (the JIT ephemeral gpu-release runner; lambda''s DAG queue slot claimed for the job) + the CI clean-room runner for every other target; verify: fleet-verify on lambda and gx10; dogfood on all four'
+  queue_pos:
+    lambda: 4
   expiry: '2026-10-09'
   owner: spec-owner
   A:
-  - make -C machines/clean-room clean-room-p1 exit 0 first
+  - bash scripts/run_clean_room.sh exit 0 first (C8) — the recipe every release-assets.yml build job runs, with the forjar-pinned toolchain; each job records its toolchain fingerprint in the manifest
+  - 'DONE-IF (Noah creates it; until then the row is blocked_by: RUNNER-GROUP): gh api /orgs/paiml/actions/runner-groups --jq ''.runner_groups[]|select(.name=="gpu-release")|[.restricted_to_workflows,.selected_workflows]'' prints [true, ["paiml/aprender/.github/workflows/release-assets.yml@refs/tags/v*"]]'
+  - 'the x86_64-cuda asset was built by release-assets.yml (absent from main; authored on agent/R-5 [V]) at refs/tags/v0.66.0-rc1 on runner group gpu-release, on a JIT ephemeral runner that make lambda-release-runner started immediately before the tag push and that is gone after one job; the job log names the runner and the toolchain fingerprint'
+  - 'ISA reach of the x86_64-cuda asset, re-based on the measured build model (the delta asked for embedded sm_89 SASS and this binary ships none — [V] 2026-09-08: PTX is generated as text in Rust, crates/aprender-gpu/src/ptx/, and JIT-compiled by the driver with cubins cached to ~/.cache/trueno/ptx/{sha256}.cubin, driver/ptx_cache.rs:3; REG-2/S0-20 forbid a cudart link): cuobjdump --list-elf on the asset''s apr lists NO ELF, and the PTX the asset emits on lambda and gx10 carries a .target each host accepts, read from the cache key or apr run --trace, basis= nvidia-smi on both (evidence/pp-066/s0/S0-22-{lambda,gx10}.txt). Should a future build embed a cubin, the first clause is the guard that catches it'
   - gh release view v0.66.0-rc1 --json assets --jq '[.assets[].name]' lists apr-{x86_64,aarch64}-unknown-linux-gnu, apr-{x86_64,aarch64}-apple-darwin, apr-x86_64-pc-windows-msvc tarballs + .sha256 + one
     signed manifest
   - on each host scripts/check_multiplatform_dogfood.sh --from-release v0.66.0-rc1 verifies and records asset_sha256
-  - bench_host_receipt.sh H12 on the aarch64 asset on gx10 and mini before promotion
-  - the promotion job refuses with one host receipt missing
-  contract: contracts/apr-release-assets-v1.yaml
+  - make fleet-verify ROW=R-5 (G-11b's deliverable; absent 2026-09-08 [V] — no fleet-verify target in the Makefile or in ../infra) GREEN on lambda and gx10 against the asset, never the build tree — the GPU verification receipt; bench_host_receipt.sh H12 on the aarch64 asset on gx10 and mini before promotion
+  - 'the promotion job (workflow_dispatch, base-owned) refuses unless four host receipts each carry the asset sha256 from the signed manifest, C14 PASS, and parity != skipped'
+  - 'while keys/apr-release-minisign.pub is absent from main the manifest job and the C13 gate (scripts/check_release_assets.sh — absent everywhere 2026-09-08 [V], an R-5 deliverable) refuse: exit non-zero, never a pass'
+  - 'no workflow runs cargo publish: every match in .github/workflows is a comment ([V] 2026-09-08: 3 hits, ci.yml:1051, ci.yml:1507, binary-release.yml:5, all comment lines — a bare grep -rL is defeated by a comment, so the probe strips comments and reads run: bodies)'
+  - 'scripts/publish_cascade.sh --list derives the publish set from cargo metadata (members with publish != false) in dependency-topological order, never a written list; --dry-run per crate writes docs/audits/publish-cascade-dryrun.md; --self-test drives both polarities'
+  - 'live mode refuses unless git describe --exact-match equals the tag, HEAD is detached, the tree is clean, gh release view <tag> --json isPrerelease is false, and CARGO_REGISTRY_TOKEN is unset; per crate it skips when cargo search already shows the version, else one cargo publish -p <crate>, stopping on the first non-zero and waiting for index availability; the receipt records every crate''s index sha'
+  contract: contracts/apr-release-assets-v1.yaml; contracts/apr-publish-cascade-v1.yaml
   mutations:
   - promote with one host receipt missing -> the promotion job refuses
+  - promote with a receipt whose parity is skipped -> the promotion job refuses
   - tamper one byte of the aarch64 tarball after signing -> the host --from-release verify step RED, no receipt written
+  - a pull_request workflow requesting the runner — by its label or by group -> never scheduled (recorded once, in the row PR)
+  - remove keys/apr-release-minisign.pub -> the manifest job and the C13 gate refuse
+  - 'publish_cascade.sh live on a branch, on a dirty tree, at a prerelease tag, or with CARGO_REGISTRY_TOKEN set -> refuses (four arms)'
   quorum: teamwork on the promotion protocol; review-only on the diff
-  spec: 'PP-066 §5 R-5; #2869; S0-16; S0-19 correction'
+  spec: 'PP-066 §5 R-5; #2869; S0-16; S0-19 correction; R-5 delta 2026-09-08 (driver v6.1)'
   gh_issue: 2908
   pmat_id: PMAT-993
   status: open
+  notes: 'blocked_by: RUNNER-GROUP — the gpu-release runner group and its workflow policy (release-assets.yml only, refs/tags/v* only) do not exist; Noah creates both, the row verifies with the A DONE-IF. [V] 2026-09-08: gh api /orgs/paiml/actions/runner-groups lists Default (16 runners, 15 carrying the clean-room label; intel-clean-room-16 is labelled perf-solo) and gpu-nodes (gx10-blackwell) only, and no runner is registered from lambda — the JIT ephemeral runner is the design, not a gap. make lambda-release-runner is a paiml/infra target (machines/lambda-labs/Makefile carries none on 2026-09-08 [V]; STOP class for paiml/infra). scripts/check_runner_labels.sh greps single-line runs-on: selectors that carry self-hosted on the SAME line [V] — an inline flow {group: gpu-release, labels: [self-hosted, ...]} IS read; the multi-line block form that group: usually takes is invisible to it, and the row PR widens the guard there, with a dropped label still RED. Blocked_by KEY until keys/apr-release-minisign.pub exists on main; DONE-IF present -> R-6 pins its fingerprint. AUTHORED on agent/R-5 (three commits at 19c015ff9: release-assets.yml, check_promotion_receipts.sh, publish_cascade.sh, two contracts, receipt status: partial) BEFORE this delta; three divergences the row PR closes: (1) it builds an aarch64-cuda asset on the gx10 runner ("x86_64+cuda has none") where the delta requires the x86_64-cuda asset on a JIT ephemeral lambda runner in gpu-release; (2) it pins .github/release-assets.pub where the delta names keys/apr-release-minisign.pub (KEY); (3) it builds on hosted runners where the delta requires the clean-room recipe with the forjar pin and a recorded fingerprint. Its promotion gate and cascade already match the delta [V]. nightly.yml builds every target on a GitHub-hosted native runner today [A]; the clean-room runner is x86_64 Linux, so darwin/windows on it is a cross-target premise [U] the row P0 re-runs S0-16 for.'
+- id: KEY
+  title: 'keys/apr-release-minisign.pub on main — the one public key (S0-19: minisign, the .github/pr-review.pub class, no third scheme) the R-5 manifest job signs against and the R-6 installer pins; the secret half never enters a session. Until the file exists on main the manifest job and the C13 gate refuse and R-5 stays blocked_by KEY; DONE-IF present -> R-6 pins its fingerprint'
+  epic: 2873
+  track: R
+  lane: '0.66'
+  decision: false
+  blockers:
+  - G-11
+  issues:
+  - 2869
+  host: any (main)
+  queue_pos: null
+  expiry: '2026-10-02'
+  owner: noahgift
+  A:
+  - git cat-file -e origin/main:keys/apr-release-minisign.pub exits 0 (DONE-IF)
+  - 'the file is a minisign public key (two lines; line 2 base64-decodes to 42 bytes beginning Ed); its key id and sha256 are recorded in the receipt — the fingerprint R-6 pins'
+  contract: null
+  mutations:
+  - remove the file on a branch -> the manifest job and the C13 gate refuse (exit non-zero, never a pass)
+  quorum: operator (the operator generates the keypair; the public half lands by PR)
+  spec: PP-066 §5 R-5 (R-5 delta 2026-09-08); S0-19
+  gh_issue: 3045
+  pmat_id: PMAT-1079
+  status: open
+  notes: 'expiry basis [U] (R-5 10-09 - 6 d - 1, the slack rule). Created by the R-5 delta of 2026-09-08: a blocked_by target must be a DAG row (D1), so the operator artifact is carded with an owner, an expiry and a DONE-IF command rather than left as prose on R-5. Ticket PMAT-1079 minted by hand (pmat#1169): PMAT-1078 was NOT free — agent/R-5''s contracts/apr-publish-cascade-v1.yaml:4 already stamps it for the cascade, unminted in any roadmap, so an id is taken the moment a branch writes it'
 - id: R-6
   title: 'one-line installer served at /releases/latest/download/install.sh: detect OS/arch, download the matching asset from the latest non-prerelease tag, verify .sha256 and the minisign-signed manifest
-    (public key pinned in the script; the PP-21 symmetric keys cannot be used — S0-19), place on PATH, then run apr devices'
+    (public key pinned in the script = keys/apr-release-minisign.pub, KEY; the PP-21 symmetric keys cannot be used — S0-19), place on PATH, then run apr devices'
   epic: 2873
   track: R
   lane: '0.66'
@@ -896,6 +937,7 @@ rows:
   blockers:
   - R-5
   - G-11
+  - KEY
   issues:
   - 2869
   host: all four (C4 path)
@@ -914,6 +956,7 @@ rows:
   gh_issue: 2909
   pmat_id: PMAT-994
   status: open
+  notes: 'R-5 delta 2026-09-08: DONE-IF keys/apr-release-minisign.pub is present on main -> R-6 pins its fingerprint (row KEY, #3045)'
 - id: R-7
   title: 'README leads with the installer one-liner; cargo install aprender second; the backend line generated from the registry kinds (+B-G1 folded: the backend line and the supported-model line are generated
     from the registry + manifest; every unreceipted claim removed)'
@@ -1242,7 +1285,7 @@ rows:
   - 2694
   host: lambda
   queue_pos:
-    lambda: 4
+    lambda: 5
   expiry: '2026-10-16'
   owner: perf-gate
   A:
@@ -1275,7 +1318,7 @@ rows:
   - 2766
   host: lambda
   queue_pos:
-    lambda: 5
+    lambda: 6
   expiry: '2026-10-23'
   owner: perf-gate
   A:
@@ -1574,6 +1617,7 @@ rows:
   - R-7
   - R-8
   - SPEC-2.0
+  - KEY
   issues:
   - 2850
   - 2869
@@ -2587,8 +2631,8 @@ rows:
   spec: driver R2 of 2026-09-06; PP-066 §2 (queue throughput)
   gh_issue: 3012
   pmat_id: PMAT-1062
-  status: open
-  notes: 'pmat_id PMAT-1062 minted 2026-09-06 (orchestrator, by hand: pmat work add mints colliding ids, pmat#1169)'
+  status: complete
+  notes: 'pmat_id PMAT-1062 minted 2026-09-06 (orchestrator, by hand: pmat work add mints colliding ids, pmat#1169) | complete: #3020 merged 3792afa3d 2026-09-06T17:38:42Z; receipt docs/audits/impl-PMAT-1062-receipt.md status: complete'
 - id: G-10b
   title: 'analyser pin guard: scripts/check_pmat_pinned.sh — every analyser reference under scripts/ and .github/workflows/ resolves through scripts/pmat_bin.sh; scripts/pmat_unpinned_baseline.txt 281 shrink-only;
     wired case table then live; extends apr-pinned-analyser-ratchet-v1 (PIN-OB-005)'
@@ -3005,3 +3049,41 @@ amendments:
   row: C5 / R-7 / L0-1a / L0-1b / SPEC-2.0
   change: 'C5 -> 0.67 with Track T (quorum Q3 unanimous); R-7 carries the nine claim removals; L0-1a/L0-1b cite #2971; SPEC-2.0 = #3023'
   why: docs/audits/pp-066-rescope-quorum.md
+- date: '2026-09-08'
+  by: noahgift via the R-5 delta prompt 2026-09-08
+  row: R-5
+  change: 'build ≠ test: assets build under the clean-room recipe (scripts/run_clean_room.sh, the forjar-pinned toolchain, its fingerprint recorded), GPU verification is the fleet-verify receipt; the x86_64-cuda asset builds on lambda only inside release-assets.yml at refs/tags/v* — runner group gpu-release restricted to that workflow (DONE-IF the group and the policy exist, Noah creates both; noted on the row), a JIT ephemeral runner via make lambda-release-runner for one job, lambda''s queue slot claimed; sm_89 SASS + PTX at the fleet minimum ISA, basis= nvidia-smi on lambda and gx10; every other target on the CI clean-room runner; mutation recorded once (a pull_request workflow requesting the group is never scheduled); blockers += KEY; host, A, mutations, notes rewritten'
+  why: 'the R-5 delta of 2026-09-08: the build host is not the test host, and the signing key is an operator artifact with its own DONE-IF'
+- date: '2026-09-08'
+  by: noahgift via the R-5 delta prompt 2026-09-08
+  row: KEY
+  change: 'new row (track R, lane 0.66, owner noahgift, #3045, PMAT-1079, expiry 2026-10-02): keys/apr-release-minisign.pub on main; blockers G-11'
+  why: 'R-5 stays blocked_by KEY until the file exists on main; D1 requires a blocked_by target to be a row, so the artifact is carded with an owner, an expiry and a DONE-IF command'
+  basis: '[U] expiry = R-5 10-09 - 6 d - 1 (the slack rule), takt not yet measured'
+- date: '2026-09-08'
+  by: noahgift via the R-5 delta prompt 2026-09-08
+  row: (edges)
+  change: 'R-5 <- KEY; R-6 <- KEY (it pins the fingerprint); TAG-0.66.0 <- KEY (every kept 0.66 row); host_queues.lambda += R-5 after I-18 (same expiry 10-09: the x86_64-cuda build claims lambda''s slot for the job)'
+  why: the R-5 delta of 2026-09-08
+- date: '2026-09-08'
+  by: noahgift via the R-5 delta prompt 2026-09-08
+  row: R-6
+  change: 'title names the pinned key file; note: DONE-IF keys/apr-release-minisign.pub is present on main -> R-6 pins its fingerprint'
+  why: the R-5 delta of 2026-09-08
+- date: '2026-09-08'
+  by: noahgift (orchestrator docs commit)
+  row: G-11
+  change: 'typed status open -> complete (a cache of the receipt docs/audits/impl-PMAT-1062-receipt.md; #3020 merged 3792afa3d); the §5.0 block re-rendered'
+  why: D7 and render_dag.py --check were RED on the orchestrator branch since #3020 merged; the derived status is the truth, the typed one a cache
+- date: '2026-09-08'
+  by: noahgift via the R-5 delta prompt 2026-09-08 (driver v6.1)
+  row: R-5
+  change: 'delta v6.1 folded: promotion job is base-owned on workflow_dispatch and requires four receipts with the asset sha256, C14 PASS and parity != skipped (three refusal mutations); no workflow runs cargo publish (probe corrected — a bare grep is defeated by the three comment hits, [V] 2026-09-08); scripts/publish_cascade.sh derives its set from cargo metadata in topological order, --dry-run receipt, four live-mode refusals, per-crate idempotence, contract apr-publish-cascade-v1.yaml; the mutation is stated in the operator''s words (by its label or by group); the x86_64-cuda asset is named as apr-x86_64-unknown-linux-gnu (cli,cuda per D-10); the runner-group DONE-IF is an A command and the row notes blocked_by: RUNNER-GROUP; blockers += G-11b (make fleet-verify is its deliverable, absent 2026-09-08 [V]); queue_pos lambda 4, S-1 -> 5, S-2 -> 6; the three divergences of the authored agent/R-5 branch recorded'
+  why: 'the R-5 delta of 2026-09-08 restated with the promotion and publish clauses; the coverage review found the label/group narrowing, the unflagged fleet-verify instrument, the unnamed x86_64-cuda asset and the queue_pos cache'
+  basis: '[V] 2026-09-08 for every absence claim (runner groups, fleet-verify, lambda-release-runner, cargo publish sites); [U] takt not yet measured'
+- date: '2026-09-08'
+  by: noahgift via the R-5 delta prompt 2026-09-08 (driver v6.1), corrected by this delta's own verification pass
+  row: R-5 / KEY
+  change: 'two corrections from measurement, not reading: (1) the delta''s embedded-SASS premise is false for this binary — apr generates PTX text in Rust and the driver JIT-compiles it, cubins landing in ~/.cache/trueno/ptx and never in the asset ([V] crates/aprender-gpu/src/ptx/, driver/ptx_cache.rs:3) — so the A now requires cuobjdump to list NO ELF and reads the emitted PTX''s .target on both hosts; (2) KEY takes PMAT-1079 because PMAT-1078 is stamped by agent/R-5''s contracts/apr-publish-cascade-v1.yaml:4. Also stated precisely: check_runner_labels.sh''s parse (single-line runs-on only), the Default group''s composition (15 of 16 carry clean-room), and release-assets.yml / check_release_assets.sh as R-5 deliverables rather than existing surfaces'
+  why: 'a clause premised on a build model the tree does not use cannot be run as written; an id a branch has stamped is taken even when no roadmap carries it (pmat#1169 class)'
+  basis: '[V] 2026-09-08 for every absence and mechanism claim; the ISA reach is measurable only once a cuda asset exists'
