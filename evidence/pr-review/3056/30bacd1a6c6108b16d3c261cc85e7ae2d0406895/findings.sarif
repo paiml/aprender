@@ -105,7 +105,8 @@
        "docs/audits/release-process-review/ground-truth.md": "A (94.34)",
        "docs/audits/release-process-review/release-process-aprender-v0.1-draft.md": "A (91.85)",
        "docs/roadmaps/roadmap.yaml": "C- (58.79)"
-      }
+      },
+      "failure_scenario": "If the roadmap's C- were read as introduced by this diff, a future ratchet would be stamped from a baseline this PR did not cause, and the next docs PR to touch the file would be blamed for it. Conversely, if the four A grades were read as a clean bill for the whole tree, a per-file grade would be mistaken for a repo-wide one."
      }
     }
    ]
@@ -113,7 +114,7 @@
   {
    "tool": {
     "driver": {
-     "name": "antigravity/agy",
+     "name": "antigravity",
      "version": "1.1.27",
      "informationUri": "https://github.com/paiml/agy"
     }
@@ -182,7 +183,117 @@
       ],
       "disposition": "fixed in cae443ae4, after the reviewed head",
       "reverified_by_primary": true,
-      "reverification": "the primary re-read the criterion and GT-1 directly rather than re-running the lane's grep; both strings are as reported"
+      "reverification": "the primary re-read the criterion and GT-1 directly rather than re-running the lane's grep; both strings are as reported",
+      "failure_scenario": "unspecified"
+     }
+    }
+   ]
+  },
+  {
+   "tool": {
+    "driver": {
+     "name": "nvidia-cuda-docs",
+     "version": "mcp/search_cuda_docs",
+     "informationUri": "https://docs.nvidia.com/cuda/"
+    }
+   },
+   "invocations": [
+    {
+     "executionSuccessful": true,
+     "toolExecutionNotifications": [
+      {
+       "level": "note",
+       "message": {
+        "text": "Trigger asked of the guard, not judged by eye. 0 of 5 changed paths match --match-path; --match-message returns 0 (TRIGGER) on the commit range. The firing token is sm_89, which appears in the commit messages recording yoga's and lambda-labs' compute capability. This is the deliberately over-broad trigger S3.B describes: the correct response is status=consulted with the trigger_reason naming the source, never not-triggered."
+       },
+       "properties": {
+        "grounding": "measured",
+        "command": [
+         "bash",
+         "scripts/check_pr_review_receipt.sh",
+         "--match-message",
+         "<commit range>"
+        ],
+        "exit_code": 0
+       }
+      },
+      {
+       "level": "note",
+       "message": {
+        "text": "DEVIATION, recorded rather than omitted: S3.B says dispatch the cuda-docs-reviewer agent, because an arm run by the same actor that wrote the diff is not an independent check (S5). That agent is a repo-scope definition at .claude/agents/cuda-docs-reviewer.md and is not in this session's agent registry, so the arm was run INLINE by the primary against the same MCP server. That is a weaker form of the check and the receipt says so."
+       },
+       "properties": {
+        "grounding": "measured",
+        "command": [
+         "ls",
+         "-la",
+         ".claude/agents/cuda-docs-reviewer.md"
+        ],
+        "exit_code": 0
+       }
+      }
+     ]
+    }
+   ],
+   "results": [
+    {
+     "ruleId": "cuda/ptx-version-semantics",
+     "level": "note",
+     "message": {
+      "text": "CITED. The PTX ISA guide, section 11.1.1: '.version ... Indicates that this module must be compiled with tools that support an equal or greater version number.' The Release History table (Table 62) maps each PTX ISA version to its CUDA release AND its driver (e.g. PTX ISA 6.0 -> CUDA 9.0, driver r384). This is authority FOR the review's F7: a PTX floor has a published mapping from ISA version to minimum driver, so it can be derived from a declared minimum rather than from whichever drivers happen to sit in one fleet. It also supports F2's replacement probe, since the constraint lives in the emitted .version directive."
+     },
+     "properties": {
+      "grounding": "cited",
+      "query": "PTX ISA .version directive compatibility with the CUDA driver JIT compiler - what happens when a PTX module declares a .version newer than the installed driver supports",
+      "source": "PTX ISA 11.1.1 PTX Module Directives: .version; and 13. Release Notes Table 62 (PTX ISA version -> CUDA release -> driver)",
+      "failure_scenario": "Without this citation, F7's recommendation - derive the PTX floor from a declared minimum rather than the fleet's drivers - would rest on the reviewer's reasoning alone, and a reader could reasonably answer 'there is no published mapping from ISA version to driver', which there is.",
+      "excerpt": "Indicates that this module must be compiled with tools that support an equal or greater version number.",
+      "excerpt_sha256": "1ec9cc871788a6f5b35bf821142e735fc89a8e7f5e3feba41a1d7355ba285689"
+     }
+    },
+    {
+     "ruleId": "cuda/target-arch-valid",
+     "level": "note",
+     "message": {
+      "text": "CITED. The .target directive's enumerated architecture list contains both sm_89 and sm_121, so both compute capabilities recorded in the review's S0 ledger are valid PTX targets and neither is a transcription error."
+     },
+     "properties": {
+      "grounding": "cited",
+      "query": "(same query as above; the .target enumeration was returned with it)",
+      "source": "PTX ISA 11.1.2 PTX Module Directives: .target",
+      "failure_scenario": "If sm_89 or sm_121 were not real PTX targets, the S0 ledger's compute-capability column would be a transcription error and every conclusion drawn from the fleet's silicon mix - including RD-6's single-host gap and its sm_89 mirror - would be built on a wrong number.",
+      "excerpt": "sm_80, sm_86, sm_87, sm_88, sm_89, // sm_8x target architectures ... sm_121a, sm_121f, sm_121, // sm_12x target architectures",
+      "excerpt_sha256": "3e7bb18db32d1e61ab5817b23530e1c0cfb5e6ee56cb9beb7825680ee48af3d4"
+     }
+    },
+    {
+     "ruleId": "cuda/driver-jit-from-ptx",
+     "level": "note",
+     "message": {
+      "text": "CITED. Driver-API samples returned by the corpus load PTX at runtime via cuModuleLoadDataEx / CU_JIT_INPUT_PTX with a JIT log, and one comments 'link to cuda driver dynamically' before cuInit. That is authority for the draft's own S3.4 model - PTX emitted as text, JITted by the driver, with the driver dlopen'ed rather than linked - which the review accepts and did not independently check before now."
+     },
+     "properties": {
+      "grounding": "cited",
+      "query": "cuobjdump command line tool options for extracting ELF and PTX sections from CUDA binaries and fatbinaries",
+      "source": "CUDA driver-API JIT samples (cuInit, cuLinkCreate, CU_JIT_INPUT_PTX, cuModuleLoadDataEx)",
+      "failure_scenario": "The review accepts the draft's claim that the driver is dlopen'ed and JITs PTX at runtime. If that model were wrong, F2's replacement probe would be aimed at the wrong artifact: asserting on an emitted PTX header would prove nothing about a binary that actually shipped SASS.",
+      "excerpt": "link to cuda driver dynamically ... cuModuleLoadDataEx(&g_cuModule, matrixMul_kernel_64_ptxdump, jitNumOptions, jitOptions, (void **)jitOptVals);",
+      "excerpt_sha256": "d51a90631acfe4cc2e92159e550d08f72da90f8599a87304e82ff52a4fea3832"
+     }
+    },
+    {
+     "ruleId": "cuda/no-authority-found",
+     "level": "note",
+     "message": {
+      "text": "NO AUTHORITY FOUND, and this entry is mandatory so that 'the docs said nothing' and 'I did not ask' are not the same artifact. The review's F2 asserts that cuobjdump --list-elf prints 'does not contain device code' and exits 255 on a binary with no embedded device code. Two queries returned no documentation of cuobjdump's exit status in that case. F2's claim therefore rests on the measurement in the review (the command and its rc are printed there) and NOT on NVIDIA documentation. The measurement stands; the appeal to authority does not exist."
+     },
+     "properties": {
+      "grounding": "measured",
+      "queries_returning_nothing": [
+       "cuobjdump --list-elf behaviour and exit status when the input host binary contains no embedded device code or fatbinary section",
+       "cuobjdump command line tool options for extracting ELF and PTX sections from CUDA binaries and fatbinaries"
+      ],
+      "failure_scenario": "Without this row, a reader would take F2's cuobjdump behaviour as documented by NVIDIA. It is not. It is a measurement on one binary on one host, and if cuobjdump's exit status differs by version or platform, a guard written from F2 would behave differently in CI than it did here - with nothing in the receipt to warn them."
      }
     }
    ]
