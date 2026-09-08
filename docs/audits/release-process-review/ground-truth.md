@@ -104,11 +104,12 @@ handling so 'yoga was off' is distinguishable from 'the lane died'."*
 
 `docs/specifications/PP-066-release-spec.md` (826 lines) is on `origin/main`.
 
-- **C13 says 5 targets**, and pins them to *the 5 `nightly.yml` targets*, with a signature
-  over the manifest — not to a cpu/cuda split.
+- **C13 says 5 targets** (`:159`: "carries `apr-*` assets for the 5 targets … and a signature
+  over the manifest") — not a cpu/cuda split. **C13 itself does not name `nightly.yml`**; the
+  row that pins the five to that workflow is **R-5** (`:218`).
 - **R-5 / R-6 / R-7 are `open`** (PMAT-993, PMAT-994, …), due 2026-10-09 / 2026-10-16.
   R-6 *is* the install script the draft's §5.3 requires every dogfood cell to use.
-- R-5's own text says the assets are "**built on the nightly.yml runners**".
+- R-5's own text (`:218`) says the assets **"build on the nightly.yml runners"** — verbatim; an earlier revision of this pack quoted it as "built on".
 
 `.github/workflows/nightly.yml` builds 5 targets on **GitHub-hosted** runners
 (`ubuntu-latest`, `ubuntu-24.04-arm`, `macos-latest`, `windows-latest`), `cargo build

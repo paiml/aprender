@@ -5,7 +5,7 @@
 | Ticket | PMAT-1092 |
 | Reviewed | `docs/audits/release-process-review/release-process-aprender-v0.1-draft.md` v0.1 (463 lines) |
 | Against | `origin/main` @ `c04eda87d`, and the physical hosts, 2026-09-08 |
-| Method | one `agy /teamwork-preview` lane, every finding re-run here, then **eight** AD-04 quorum rounds over this review — rounds 1–4, 6 and 7 returned 3 × FAIL; rounds 5 and 8 returned 2 × FAIL / 1 PASS; every objection was applied rather than argued (see *Method*) |
+| Method | one `agy /teamwork-preview` lane, every finding re-run here, then **nine** AD-04 quorum rounds over this review — rounds 1–4, 6, 7 and 9 returned 3 × FAIL; rounds 5 and 8 returned 2 × FAIL / 1 PASS; every objection was applied rather than argued (see *Method*) |
 | Epic | **paiml/aprender#3058** — the build order, the two gates that cannot fail, and the decisions 0.66 is blocked on |
 | Verdict | **do-not-implement-as-written** — adopt §1/§2/§5.2/§10 now (and §9 bar the row RD-5 turns on), block §3.4/§5.1/§5.3/§6/§7 on the items below |
 | Marks | `[V]` verified by a command printed here · `[C]` computed · `[A]` asserted, source named · `[U]` unverified, owner named |
@@ -217,8 +217,9 @@ with Windows alone (`:82`, guarded `if: runner.os == 'Windows'`) adding
 today.
 
 `§3.1` moves all four builds to self-hosted machines and adds `--features cli,cuda` to two of
-them. PP-066 **R-5's own text** says the assets are "built on the nightly.yml runners", and
-**C13 says five targets**. The draft's RD-1 spots the 4-vs-5 conflict and says "Do not leave
+them. PP-066 **R-5's own text** (`PP-066-release-spec.md:218`) says the assets **"build on the
+nightly.yml runners"**, and **C13 says five targets** — though C13 (`:159`) does not itself name
+`nightly.yml`; R-5 is the row that pins the five to that workflow. The draft's RD-1 spots the 4-vs-5 conflict and says "Do not leave
 two numbers in two documents" — while being the second document.
 
 **Smallest fix.** `§3.1` gains a sentence naming the runner-class change and its consequence
@@ -502,9 +503,11 @@ after; no lane writes leaked.
 
 Every finding was then re-executed here, and this document was itself put through the AD-04
 merge quorum **eight times** — three independent agy lanes per round, reviewing *this review*.
-Rounds 1–4, 6 and 7 returned **3 × FAIL**; rounds 5 and 8 returned **2 × FAIL and 1 PASS**.
-Round 8 was the first to audit the eleven findings as a *set* against the machine, and it is
-the round that caught measurements of mine that did not reproduce — three of them. What follows is
+Rounds 1–4, 6, 7 and 9 returned **3 × FAIL**; rounds 5 and 8 returned **2 × FAIL and 1 PASS**.
+Rounds 8 and 9 were the first to audit the evidence *as sets* rather than the prose, and they
+are the rounds that caught measurements of mine that did not reproduce — five in all. Round 9
+also re-tested **GT-1 in full**: all 21 paths, `find` included. It held, so the review's
+headline claim is machine-verified end to end rather than by sample. What follows is
 what that changed, because a review that hides its own corrections is not evidence. The quorum
 has not yet returned three PASS; that is stated here and in the receipt rather than left to be
 inferred from the absence of a green mark.
@@ -540,8 +543,9 @@ inferred from the absence of a green mark.
    | quorum 6 | the §9 carve-out missing from the intro prose, §4 "admissible" while RD-6 governs it, RD-1's "amend C13 **in the same PR**" imperative, S0-N1's "default features" (true for 4 of 5 targets; Windows builds `--no-default-features --features inference`), and this paragraph's own stale "a fifth round may find an eleventh" | 5 |
    | quorum 7 | F11's body still said "default features" for all five targets, contradicting the S0-N1 row round 6 had just made precise; F11's *Smallest fix* still carried the "in the same PR" imperative removed from RD-1; F8's `[V]` label list for #2971 omitted `inst:A` and so no longer reproduced; §12 was missing from the verdict table; S0-M1 had not been extended to yoga as F9's own Smallest fix asks; and the round-6 sentence above said "a sixteenth … a seventeenth" when round 6 found five | 6 |
    | quorum 8 | **three of my own measurements failed to reproduce** — Appendix A attributed `lspci`'s **AD107M** string to `nvidia-smi -L`; F5 repeated `mod.rs:268-279` for the `SKIP_PARITY_GATE` bypass, which lives at `:333`/`:349` (a range I copied from the contract without checking, and which is still wrong *in* the contract); and F10's rolling-window figures drift, so the sample is now dated. Plus a duplicated `S0-G2` id, two `[V]` marks with no printed command (F3, F4), and RD-6's "must be stated" | 6 |
+   | quorum 9 | the first full audit of GT-1 and GT-6. **GT-1 held** — all 21 paths re-tested, 1 present, 1 marked new, 19 of 20 non-new absent, and `find` confirmed none exists elsewhere, so the review's headline claim is machine-verified end to end. **GT-6 did not**: it attributed R-5's "5 `nightly.yml` targets" wording to C13, which never names the workflow, and quoted R-5 as "**built** on the nightly.yml runners" where the spec says "**build** on" | 2 |
 
-   **Thirty-two, over nine passes** — eight quorum rounds and one sweep of my own. The pattern is more useful than the count: a document can
+   **Thirty-four, over ten passes** — nine quorum rounds and one sweep of my own. The pattern is more useful than the count: a document can
    declare "escalated, not decided" in its heading and mean it, and still decide by
    grammar — an imperative in a "Smallest fix", a "becomes", a "now closes". Every one of
    these was caught by a reader who was not the author. So this paragraph records the
