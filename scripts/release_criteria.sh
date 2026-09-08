@@ -29,7 +29,27 @@ cmd_of() {
         *) return 1 ;;
     esac
 }
-CREDITED="C0 C4 C6 C7 C8 C9 C11 C13 C14"   # C5 moved to 0.67 by the rescope quorum (Q3 unanimous)
+# DERIVED, not chosen: a criterion is credited in 0.66 iff at least one row the spec's §4
+# table names as its owner is still lane 0.66 in docs/specifications/pp-066-dag.yaml.
+# Re-derived 2026-09-08 after D-14 rescoped the release to the CUDA parity fix:
+#
+#   C7  SPEC-2.0 (0.66)              KEEP   the claims ratchet — load-bearing for D-13/D-14's
+#                                           vocabulary obligations
+#   C8  SPEC-2.0 (0.66)              KEEP   clean-room before publish; `cargo publish` rests on it
+#   C9  C0-7     (0.66)              KEEP   every credited row has a complete receipt
+#   C14 L0-1a    (0.66)              KEEP   GPU = CPU per manifest model, or the GPU refuses it —
+#                                           this IS 0.66's single claim
+#   C0  C0-1,C0-2,C0-4  all 0.67     MOVE   cannot be satisfied in 0.66; keeping it made --all
+#                                           unpassable AND unrunnable (see the memo below)
+#   C4  R-6,R-2         all 0.67     MOVE   four host receipts THROUGH THE R-6 INSTALLER, which
+#                                           0.66 does not ship
+#   C6  G-10a,G-10b,G-11a            MOVE   two owners do not exist as rows; its script does not
+#                                           exist either (it returned ENV 2, never a pass)
+#   C11 R-0a,R-0b       0.67/absent  MOVE   the backend registry is 0.67
+#   C13 KEY,R-5,R-6     all 0.67     MOVE   no assets and no installer in 0.66 (D-13, D-14)
+#
+# `--self-test` re-derives this from the DAG and refuses a hand-edited disagreement.
+CREDITED="C7 C8 C9 C14"
 
 run_one() { # run_one <id> -> 0 credited · 1 not · 2 ENV
     local id=$1 line script
@@ -37,7 +57,21 @@ run_one() { # run_one <id> -> 0 credited · 1 not · 2 ENV
     case "$line" in 0.67*) printf '%s: %s is a 0.67 criterion — not credited in 0.66\n' "$PROG" "$id"; return 1 ;; esac
     script=$(printf '%s' "$line" | sed -E 's/^bash ([^ ]+).*/\1/')
     [ -f "$script" ] || { printf '%s: %s ENV — %s does not exist yet (the row that builds it is open); exit 2, never a pass\n' "$PROG" "$id" "$script"; return 2; }
-    if [ "$id" != C0 ] && ! bash "$0" C0 >/dev/null 2>&1; then printf '%s: %s [U] — C0 is not credited yet (I9: C0 gates credit)\n' "$PROG" "$id"; return 1; fi
+    # I9's credited-first rule applies only while C0 is itself a credited criterion, and it is
+    # evaluated ONCE per process, not once per criterion. Before this, `--all` re-ran C0 for
+    # every one of the nine — and C0 shells out to `pmat comply check` and a `gh api` call, so
+    # the first step of the release sequence could not return a verdict inside ten minutes.
+    # Measured 2026-09-08: C0, C4, C7 and C8 each hit a 120 s timeout; C7 alone runs in ~30 s.
+    case " $CREDITED " in
+        *" C0 "*)
+            if [ "$id" != C0 ]; then
+                if [ -z "${C0_VERDICT:-}" ]; then
+                    if bash "$0" C0 >/dev/null 2>&1; then C0_VERDICT=ok; else C0_VERDICT=no; fi
+                    export C0_VERDICT
+                fi
+                [ "$C0_VERDICT" = ok ] || { printf '%s: %s [U] — C0 is not credited yet (I9: C0 gates credit)\n' "$PROG" "$id"; return 1; }
+            fi ;;
+    esac
     printf '=== %s: %s\n' "$id" "${line%%#*}"
     local rc=0; bash -c "${line%%#*}" || rc=$?
     if [ "$rc" = 0 ]; then printf 'CREDITED %s\n' "$id"; else printf 'NOT CREDITED %s (rc=%s)\n' "$id" "$rc"; fi
@@ -56,16 +90,40 @@ c0() { # the spec's §4 C0 command, verbatim, through the analyser pin (I6); eve
 case "${1:-}" in
     --c0) c0; exit $? ;;
     --list) for c in C0 C1 C2 C3 C4 C5 C6 C7 C8 C9 C10 C11 C12 C13 C14; do printf '%-4s %s\n' "$c" "$(cmd_of "$c")"; done; exit 0 ;;
-    --all) rc=0; for c in $CREDITED; do run_one "$c" || rc=1; done; [ "$rc" = 0 ] && printf 'ALL CREDITED (C0 C4 C6 C7 C8 C9 C11 C13 C14)\n'; exit "$rc" ;;
+    # The success line prints $CREDITED itself. It used to carry a second, hand-typed copy of
+    # the list, so editing the set would have left the banner asserting the old one.
+    --all) rc=0; for c in $CREDITED; do run_one "$c" || rc=1; done; [ "$rc" = 0 ] && printf 'ALL CREDITED (%s)\n' "$CREDITED"; exit "$rc" ;;
     --self-test)
         n=0; red=0
         t() { local want=$1 label=$2; shift 2; local rc=0; n=$((n + 1)); "$@" >/dev/null 2>&1 || rc=$?; if [ "$rc" = "$want" ]; then printf 'ok    row %-2s rc=%s  %s\n' "$n" "$rc" "$label"; else printf 'FAIL  row %-2s rc=%s (wanted %s)  %s\n' "$n" "$rc" "$want" "$label"; red=1; fi; }
         t 0 "--list prints the fifteen criteria"                        bash -c "[ \$(bash '$0' --list | grep -c '^C') -eq 15 ]"
-        t 0 "--list names exactly nine credited commands and six 0.67"   bash -c "[ \$(bash '$0' --list | grep -c '^C[0-9]* *bash ') -eq 9 ] && [ \$(bash '$0' --list | grep -c '0.67 (SPEC-2.0') -eq 6 ]"
+        t 0 "--list still names every criterion with a command, credited or not" bash -c "[ \$(bash '$0' --list | grep -c '^C[0-9]* *bash ') -eq 9 ]"
         t 1 "a 0.67 criterion is never credited"                        bash "$0" C1
         t 2 "an unknown criterion is exit 2"                            bash "$0" C99
         t 2 "a criterion whose script does not exist yet is ENV (2), not a pass (C13 before R-5)" bash "$0" C13
-        t 1 "before C0 is credited every other criterion is [U] (1)"     bash "$0" C7
+        # D-14 removed C0 from the credited set, so the credited-first rule no longer fires and
+        # C7 stands on its own. The row that used to assert "[U] before C0" is replaced by the
+        # two that matter now: the set is DERIVED, and the banner is not a second copy of it.
+        t 0 "the credited set is exactly what the DAG derives (no hand-edited drift)" bash -c '
+            want=$(python3 - <<PYX
+import re, yaml
+spec = open("docs/specifications/PP-066-release-spec.md", encoding="utf-8").read().split("\n")
+lane = {r["id"]: str(r.get("lane")) for r in yaml.safe_load(open("docs/specifications/pp-066-dag.yaml", encoding="utf-8"))["rows"]}
+keep = []
+for l in spec:
+    m = re.match(r"^\|\s*(C\d+)\s*\|(.+)\|([^|]*)\|\s*$", l)
+    if not m or ("scripts/" not in m.group(2) and "--c0" not in m.group(2)):
+        continue
+    owners = [o.strip().split(" ")[0] for o in m.group(3).split(",") if o.strip() and o.strip() != "\u2014"]
+    if any(lane.get(o) == "0.66" for o in owners):
+        keep.append(m.group(1))
+print(" ".join(sorted(set(keep), key=lambda c: int(c[1:]))))
+PYX
+)
+            have=$(grep -E "^CREDITED=" '"$0"' | sed -E "s/^CREDITED=\"(.*)\"/\1/")
+            [ "$want" = "$have" ] || { echo "derived [$want] != CREDITED [$have]"; exit 1; }'
+        t 0 "the ALL-CREDITED banner prints the set, never a second copy of it" bash -c '
+            ! grep -qE "ALL CREDITED \(C[0-9]" '"$0"''
         printf '%s/%s rows\n' "$((n - red))" "$n"; [ "$red" = 0 ] || exit 1; exit 0 ;;
     C*) run_one "$1"; exit $? ;;
     *) printf 'usage: %s --list | --all | --self-test | C<n>\n' "$PROG" >&2; exit 2 ;;
