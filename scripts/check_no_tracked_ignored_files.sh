@@ -123,7 +123,7 @@ if [ ! -f "$BASELINE" ]; then
   printf 'FAIL: %s missing. Run --update once to establish it.\n' "$BASELINE"
   exit 1
 fi
-baseline="$(tr -d '[:space:]' < "$BASELINE")"
+baseline="$(grep -vE '^[[:space:]]*(#|$)' "$BASELINE" | tr -d '[:space:]')"
 
 printf '%s tracked-but-ignored file(s), baseline %s (of %s tracked)\n' \
   "$count" "$baseline" "$total_tracked"

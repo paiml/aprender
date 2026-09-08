@@ -37,7 +37,7 @@ SHELL := /bin/bash
 # Multi-line recipes execute in same shell
 .ONESHELL:
 
-.PHONY: all build test test-smoke test-fast test-quick test-full test-heavy lint lint-current fmt clean doc book book-build book-serve book-test tier1 tier2 tier3 tier4 coverage coverage-fast profile hooks-install hooks-verify lint-scripts bashrs-score bashrs-lint-makefile chaos-test chaos-test-full chaos-test-lite fuzz bench dev pre-push ci check run-ci run-bench audit deps-validate deny pmat-score pmat-gates quality-report semantic-search examples mutants mutants-fast property-test install-alsa test-alsa test-audio-full contract-validate contract-test contract-audit contract-regen contract-check dev-setup check-siblings check-wasm32 contrastive-data-boundary contrastive-data-boundary-cases
+.PHONY: all build test test-smoke test-fast test-quick test-full test-heavy lint lint-current fmt clean doc book book-build book-serve book-test tier1 tier2 tier3 tier4 coverage coverage-fast profile hooks-install hooks-verify lint-scripts bashrs-score bashrs-lint-makefile chaos-test chaos-test-full chaos-test-lite fuzz bench dev pre-push ci gate check run-ci run-bench audit deps-validate deny pmat-score pmat-gates quality-report semantic-search examples mutants mutants-fast property-test install-alsa test-alsa test-audio-full contract-validate contract-test contract-audit contract-regen contract-check dev-setup check-siblings check-wasm32 contrastive-data-boundary contrastive-data-boundary-cases
 
 # Default target
 all: tier2
@@ -540,6 +540,32 @@ COV_CARGO_ENV := $(if $(COV_TARGET_DIR),CARGO_TARGET_DIR=$(COV_TARGET_DIR))
 # survive it (31 present afterwards), so coverage-html still has data to work from.
 .PHONY: coverage-check contracts
 
+# BSE-03 phase A (Pmat-Ticket: PMAT-1068). The README's contract count is
+# DERIVED: scripts/readme_sync.sh rewrites the text between the
+# <!-- CONTRACT_COUNT_START/END --> markers with `find contracts/ -name '*.yaml'`
+# and nothing else in the file. Idempotent — running it twice is byte-identical.
+#
+# Before this, three literals in three prose sites were maintained by hand and
+# `--regen` only PRINTED the numbers for a human to copy; they sat two behind
+# the filesystem (1812 vs 1814) and were GREEN, because the guard lets the
+# README lag. scripts/check_readme_claims.sh judges the generated block by
+# EQUALITY against the MERGE TREE, with origin/main as the comparand.
+.PHONY: readme-sync readme-sync-check
+readme-sync: ## Regenerate the README's derived contract count (BSE-03)
+	@bash scripts/readme_sync.sh --write
+
+readme-sync-check: ## Fail if README.md is not what the generator produces
+	@bash scripts/readme_sync.sh --check
+
+# The polarity table of the D2 normaliser, on a throwaway git repo (BSE-03
+# phase A). It carries its own registered mutation: a copy of the guard whose
+# merge-tree measurement READS A FILE ON DISK must turn the hand-edited rows
+# GREEN, which is what makes their RED load-bearing rather than incidental.
+# `--class complexity` and `--class satd` are stubs and exit 3, never 0.
+.PHONY: ratchet-semantics-test
+ratchet-semantics-test: ## BSE-03: D2 ratchet polarity rows (--class readme)
+	@bash scripts/tests/ratchet_semantics_test.sh --class readme
+
 # Alias the dogfood pre-release protocol looks for. It expects `coverage-check`;
 # without it the gate reports WARN ("verify >=95% manually"), i.e. a release gate
 # that asks a human to do the measurement is not a gate. `coverage` already
@@ -692,6 +718,44 @@ pre-push: tier3
 
 # CI/CD checks
 ci: tier4
+
+# Fail-closed, comparand-pinned composite gate (BSE-16, docs/specifications/
+# build-system-enhancement.md, infra repo). Replaces both a bare `pmat verify`
+# (RED on pre-existing SATD, verify.rs:460,493) and `cargo test --workspace`
+# (42-94min measured, docs/reports/work-history-delay-optimization-report.md)
+# with: skip the SATD/tests stages pmat can't pass or can't scope correctly,
+# run the tree-property guard, then test only the touched crates and their
+# direct reverse dependents (scripts/gate_touched_crates.sh), falling back to
+# `cargo check --workspace --tests` when that selection can't be trusted.
+# `@set -e` is REQUIRED as the first recipe line: under .ONESHELL (see top of
+# this file) a failing line does NOT abort a multi-line recipe on its own —
+# only the shell's own exit status does, and without `set -e` that is just the
+# LAST command's exit code (measured: a `false` mid-recipe is otherwise silently
+# swallowed). This local `set -e` is scoped to this recipe's own shell
+# invocation only, not the file-wide .SHELLFLAGS (see that comment for why -e
+# is not applied globally).
+gate: ## Fail-closed, comparand-pinned composite gate (BSE-16)
+	@set -e
+	@echo "==> gate comparand: origin/main@$$(git rev-parse origin/main)"
+	pmat verify --format json --skip satd --skip tests
+	scripts/guard_tree.sh --no-cargo
+	scripts/gate_touched_crates.sh
+
+# Predict whether merge(origin/main, HEAD) will pass the tree-property
+# guards, BEFORE pushing (BSE-14, docs/specifications/build-system-
+# enhancement.md §4 wave 3, infra repo). `predict` builds the merge in a
+# throwaway `git worktree` (never touches this branch's own working tree),
+# runs guard_tree.sh --no-cargo and gate_touched_crates.sh --dry-run against
+# it, and records the verdict in .predict/last-<branch>.json. `predict-check`
+# is the cheap replay for a pre-push hook: it refuses (exit 3) rather than
+# reuse a verdict made stale by origin/main moving, HEAD moving, or the
+# working tree going dirty, and exits 4 (distinct) on a fetch/network
+# failure.
+predict: ## Predict merge(origin/main, HEAD) against the tree-property guards (BSE-14)
+	scripts/predict_merge.sh
+
+predict-check: ## Refuse a stale prediction; exit 0 only if still fresh (BSE-14)
+	scripts/predict_merge.sh --check
 
 # Quick check (compile only)
 check:
