@@ -3,9 +3,11 @@
 set -u
 APR=/mnt/nvme-raid0/targets/l0-1b/release/apr
 OUT="$(dirname "$0")"
-eval "$(grep '^PROMPT=' /home/noah/src/aprender-worktrees/L0-1/scripts/check_model_parity.sh)"
-M15=/home/noah/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
-M7=/home/noah/models/qwen2.5-coder-7b-instruct-q4_k_m.gguf
+ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../.." && pwd)"
+MODELS_DIR="${APR_MODELS_DIR:-$HOME/models}"
+eval "$(grep '^PROMPT=' "$ROOT/scripts/check_model_parity.sh")"
+M15=$MODELS_DIR/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
+M7=$MODELS_DIR/qwen2.5-coder-7b-instruct-q4_k_m.gguf
 run() { # run <arm> <model> [ENV=VAL ...]
   local arm=$1 model=$2; shift 2
   local t0=$(date +%s)

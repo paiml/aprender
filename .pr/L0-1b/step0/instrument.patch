@@ -1030,7 +1030,7 @@ index 000000000..e09565e7c
 +
 +Ticket PMAT-1070, issue #2971, PP-066 row L0-1b. Binary: `apr 0.65.2 (cbb511c55)` built with
 +`--features cuda` from agent/L0-1b (plan commit on top of agent/L0-1 @ 665b71194); model
-+`/home/noah/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf`; prompt = `PROMPT` in
++`$APR_MODELS_DIR/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf` (default `~/models`); prompt = `PROMPT` in
 +`scripts/check_model_parity.sh` (78 tokens); host lambda (RTX 4090, sm_89). Every number below
 +is a measurement of that binary on that host; nothing is inferred from a lane verdict (I16).
 +

@@ -1,7 +1,8 @@
+import os
 import numpy as np, struct, sys, math
 from gguf import GGUFReader
 from gguf.quants import dequantize
-M='/home/noah/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf'
+M=os.path.join(os.environ.get('APR_MODELS_DIR', os.path.expanduser('~/models')), 'qwen2.5-coder-1.5b-instruct-q4_k_m.gguf')
 R=sys.argv[1]  # per-op dump root (1.5B)
 def aprt(p):
     b=open(p,'rb').read(); return np.frombuffer(b[12:], dtype='<f4')

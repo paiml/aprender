@@ -1,7 +1,8 @@
+import os
 import numpy as np, sys
 from gguf import GGUFReader
 from gguf.quants import dequantize
-M='/home/noah/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf'; R=sys.argv[1]
+M=os.path.join(os.environ.get('APR_MODELS_DIR', os.path.expanduser('~/models')), 'qwen2.5-coder-1.5b-instruct-q4_k_m.gguf'); R=sys.argv[1]
 def aprt(p):
     b=open(p,'rb').read(); return np.frombuffer(b[12:], dtype='<f4')
 x=aprt(f"{R}/cpu/pos-0000/layer-26/ffn_norm.bin").astype(np.float64)

@@ -87,6 +87,38 @@ kernel (`quantize::direct_f32::fused_q4k_parallel_matvec_f32_into`, the `DIRECT_
 
 Revert falsifier (POP-F-003): make `has_crushed_block` return false → A5 RED (measured above); restore → 6/6.
 
+
+## The step-0 records are REPRODUCIBLE, not historical (2026-09-08)
+
+`check_hardcoded_paths.sh` refused 11 shipped machine-specific paths on this branch. Seven
+were real portability defects in the scripts (`accept.sh`, `probe26.py`, `probe26b.py`,
+`sweep.sh`, and `sweep.sh`'s absolute reference to a SIBLING WORKTREE's
+`check_model_parity.sh`) and are now `${APR_MODELS_DIR:-$HOME/models}` and a `$ROOT`
+derived from the script's own location.
+
+The other four were the recorded `apr parity` outputs, whose `model` field held the
+absolute path. Those could not simply be re-run: two of them are the PRE-FIX table, and
+the fix has since landed. So they were re-taken from a **pre-fix reproduction build** —
+the registered mutant, `has_crushed_block` returning false — with the model named
+relatively, and every one came back **bit-for-bit identical**:
+
+| record | comparand | result |
+|---|---|---|
+| `qwen2.5-coder-1.5b-instruct-q4_k_m.json` | 283 `rows` + every other key | identical; `first_divergence` still `post_ffn_residual` layer 26, min cosine 0.660150 @0 |
+| `qwen2.5-coder-7b-instruct-q4_k_m.json` | 283 `rows` + every other key | identical; `first_divergence` none |
+| `A7-cpu-fp32-gemv.json` | 78 `metrics` + every other key | identical |
+| `perop-A7-cpu-fp32.json` | 283 `rows` + every other key | identical |
+
+Only `model` differs (`/home/noah/models/…` → `./…`). Binary: `apr 0.65.2 (c08e2682d)`
+built `--features cuda` from this branch with the predicate flipped, sha256
+`0372f1cc846c0992`; the post-fix build of the same tree is `776cbbdb4306b5d8`.
+
+That is worth more than the path cleanup that prompted it. The step-0 evidence is not an
+artifact a reader has to take on trust: it is a **function of the committed tree**,
+recoverable by flipping one predicate, and the row's central finding — layer 26
+`post_ffn_residual` at cosine 0.660150 — reproduces to the bit. `check_hardcoded_paths.sh
+--full` → delta +0.
+
 ## Gaps / next
 - gx10 twin of the table and of the 1.5B gate (`make fleet-verify ROW=L0-1b` once G-11b lands) — the "resolved" line of
   the row needs lambda AND gx10; this receipt stays `partial` until the gx10 row is measured.
