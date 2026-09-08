@@ -20,7 +20,8 @@
 pub const F14_TIMEOUT_EXIT_CODE: i32 = 124;
 
 /// Outcome of `classify_timeout_dump`.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
 pub enum HangTimeoutOutcome {
     Ok {
         ranks_seen: usize,
@@ -40,14 +41,16 @@ pub enum HangTimeoutOutcome {
 }
 
 /// Outcome of `classify_empty_on_success`.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
 pub enum HangEmptyOnSuccessOutcome {
     Ok,
     UnexpectedFile { name: String },
 }
 
 /// Outcome of `classify_exit_code`.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
 pub enum HangExitOutcome {
     OkTimeout,
     OkOtherError { code: i32 },

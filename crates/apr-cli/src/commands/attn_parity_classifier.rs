@@ -33,7 +33,8 @@ pub const L02_DEFAULT_MIN_COSINE_SIM: f64 = 0.9999;
 pub const L02_KERNEL_SOURCE_PREFIX: &str = "hf-kernels-community:flash-attn2@";
 
 /// Outcome of `classify_parity_numerics`.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
 pub enum AttnParityNumericsOutcome {
     Ok { max_abs_diff: f64, cosine_sim: f64 },
     NotAnObject,
@@ -46,7 +47,8 @@ pub enum AttnParityNumericsOutcome {
 }
 
 /// Outcome of `classify_provenance`.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
 pub enum AttnProvenanceOutcome {
     OkFlash2 { sha: String },
     OkFallback { reason: String },
@@ -59,7 +61,8 @@ pub enum AttnProvenanceOutcome {
 }
 
 /// Outcome of `classify_head_dim_error`.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
 pub enum AttnHeadDimErrorOutcome {
     Ok { error: String },
     NotAnObject,

@@ -103,9 +103,9 @@ fn print_report(
     if json {
         let mut v = serde_json::json!({
             "report_path": path.display().to_string(),
-            "schema_outcome": format!("{:?}", schema),
-            "invariants_outcome": format!("{:?}", invariants),
-            "size_outcome": format!("{:?}", size),
+            "schema_outcome": schema,
+            "invariants_outcome": invariants,
+            "size_outcome": size,
             "schema_ok": matches!(schema, OomSchemaOutcome::Ok),
             "invariants_ok": matches!(invariants, OomInvariantsOutcome::Ok),
             "size_ok": matches!(size, OomSizeOutcome::Ok { .. }),

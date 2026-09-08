@@ -232,9 +232,9 @@ fn print_report(
     if json {
         let v = serde_json::json!({
             "observation_path": path.display().to_string(),
-            "shape":       shape.map(|o| format!("{o:?}")),
-            "schema":      schema.map(|o| format!("{o:?}")),
-            "passthrough": passthrough.map(|o| format!("{o:?}")),
+            "shape":       shape,
+            "schema":      schema,
+            "passthrough": passthrough,
         });
         println!(
             "{}",

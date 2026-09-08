@@ -59,7 +59,8 @@ pub enum ReactTerminationOutcome {
 }
 
 /// Outcome of `classify_scratchpad_grammar`.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
 pub enum ReactGrammarOutcome {
     Ok { blocks: usize },
     Empty,
@@ -69,7 +70,8 @@ pub enum ReactGrammarOutcome {
 }
 
 /// Outcome of `classify_iteration_bound`.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
 pub enum ReactBoundOutcome {
     Ok,
     IterationsExceedBudget { iterations: i64, max: i64 },

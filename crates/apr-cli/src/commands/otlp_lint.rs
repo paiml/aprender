@@ -105,9 +105,9 @@ fn print_report(
     if json {
         let obj = serde_json::json!({
             "file": path.display().to_string(),
-            "span_present": span.map(|s| format!("{s:?}")),
-            "genai_attributes": attrs.map(|a| format!("{a:?}")),
-            "trace_propagation": trace.map(|t| format!("{t:?}")),
+            "span_present": span,
+            "genai_attributes": attrs,
+            "trace_propagation": trace,
         });
         println!("{}", serde_json::to_string_pretty(&obj).unwrap_or_default());
         return;

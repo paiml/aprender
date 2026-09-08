@@ -85,7 +85,8 @@ pub enum ExplainSampledOutcome {
 }
 
 /// Outcome of `classify_greedy_picks_argmax`.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
 pub enum ExplainGreedyOutcome {
     Ok,
     NotArgmax {

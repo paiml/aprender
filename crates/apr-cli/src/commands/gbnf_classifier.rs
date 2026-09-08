@@ -24,7 +24,8 @@ use serde_json::Value;
 pub const GBNF_ALLOWED_FINISH_REASONS: &[&str] = &["stop", "length"];
 
 /// Outcome of `classify_json_grammar_output`.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
 pub enum JsonGrammarOutputOutcome {
     /// Completion parses as JSON and finish_reason is stop|length.
     Ok,
@@ -55,7 +56,8 @@ pub fn classify_json_grammar_output(output: &str, finish_reason: &str) -> JsonGr
 }
 
 /// Outcome of `classify_grammar_error_diagnostic`.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
 pub enum GrammarErrorDiagnosticOutcome {
     /// Exit code non-zero AND stderr mentions "grammar".
     Ok,
@@ -83,7 +85,8 @@ pub fn classify_grammar_error_diagnostic(
 }
 
 /// Outcome of `classify_illegal_token_masking`.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
 pub enum IllegalTokenMaskingOutcome {
     /// Every illegal position has logit == -INFINITY.
     Ok,

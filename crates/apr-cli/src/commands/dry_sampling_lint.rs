@@ -133,7 +133,8 @@ fn classify_identity(obs: &Value) -> Option<clf::IdentityOutcome> {
 }
 
 /// Outcome wrapper for match_len gate (comparison with declared expected value).
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
 pub(crate) enum MatchLenOutcome {
     Ok { match_len: u32 },
     Mismatch { expected: u32, actual: u32 },
@@ -282,11 +283,11 @@ fn print_report(
     if json {
         let v = serde_json::json!({
             "observation_path": path.display().to_string(),
-            "params":    params.map(|o| format!("{o:?}")),
-            "identity":  identity.map(|o| format!("{o:?}")),
-            "match_len": match_len.map(|o| format!("{o:?}")),
-            "penalty":   penalty.map(|o| format!("{o:?}")),
-            "monotone":  monotone.map(|o| format!("{o:?}")),
+            "params":    params,
+            "identity":  identity,
+            "match_len": match_len,
+            "penalty":   penalty,
+            "monotone":  monotone,
         });
         println!(
             "{}",

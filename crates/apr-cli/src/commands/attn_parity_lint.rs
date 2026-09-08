@@ -116,9 +116,9 @@ fn print_report(
             "parity_file": parity_file.map(|p| p.display().to_string()),
             "provenance_file": provenance_file.map(|p| p.display().to_string()),
             "head_dim_error_file": head_dim_error_file.map(|p| p.display().to_string()),
-            "parity_numerics": parity.map(|o| format!("{o:?}")),
-            "provenance": provenance.map(|o| format!("{o:?}")),
-            "head_dim_error": head_dim.map(|o| format!("{o:?}")),
+            "parity_numerics": parity,
+            "provenance": provenance,
+            "head_dim_error": head_dim,
         });
         println!("{}", serde_json::to_string_pretty(&obj).unwrap_or_default());
         return;

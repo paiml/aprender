@@ -40,7 +40,8 @@ pub const OOM_REPORT_MAX_SIZE_BYTES: u64 = 10 * 1024 * 1024;
 pub const OOM_REPORT_MAX_OPS: usize = 100;
 
 /// Outcome of `classify_oom_schema`.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
 pub enum OomSchemaOutcome {
     /// Report is a JSON object with all 7 required keys present and of correct type.
     Ok,
@@ -63,7 +64,8 @@ pub enum OomSchemaOutcome {
 }
 
 /// Outcome of `classify_oom_invariants`.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
 pub enum OomInvariantsOutcome {
     /// All invariants hold.
     Ok,
@@ -80,7 +82,8 @@ pub enum OomInvariantsOutcome {
 }
 
 /// Outcome of `classify_oom_size`.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
 pub enum OomSizeOutcome {
     /// Serialized file size < 10 MiB.
     Ok { bytes: u64 },

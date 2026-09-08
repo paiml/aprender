@@ -77,8 +77,8 @@ fn print_report(
         let obj = serde_json::json!({
             "file": path.display().to_string(),
             "termination": term,
-            "iteration_bound": bound.map(|o| format!("{o:?}")),
-            "scratchpad_grammar": grammar.map(|o| format!("{o:?}")),
+            "iteration_bound": bound,
+            "scratchpad_grammar": grammar,
         });
         println!("{}", serde_json::to_string_pretty(&obj).unwrap_or_default());
         return;

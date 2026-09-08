@@ -30,7 +30,8 @@ pub const K07_REQUIRED_METRICS: &[&str] = &[
 ];
 
 /// Outcome of `classify_content_type`.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
 pub enum PromContentTypeOutcome {
     /// Header is `text/plain; version=0.0.4` (optionally with `charset=utf-8`).
     Ok,
@@ -73,7 +74,8 @@ pub enum PromTextFormatOutcome {
 }
 
 /// Outcome of `classify_required_metrics`.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
 pub enum PromRequiredOutcome {
     /// Every required metric name (or its histogram/summary expansion) appears.
     Ok,

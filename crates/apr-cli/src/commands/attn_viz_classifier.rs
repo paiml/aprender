@@ -25,7 +25,8 @@
 use serde_json::Value;
 
 /// Outcome of `classify_row_softmax_normalization`.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
 pub enum AttnRowsOutcome {
     Ok {
         shape: (usize, usize, usize, usize),
@@ -43,7 +44,8 @@ pub enum AttnRowsOutcome {
 }
 
 /// Outcome of `classify_causal_mask`.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
 pub enum AttnCausalMaskOutcome {
     Ok,
     NonZeroFuturePosition {
@@ -57,7 +59,8 @@ pub enum AttnCausalMaskOutcome {
 }
 
 /// Outcome of `classify_html_heatmap_count`.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
 pub enum AttnHtmlOutcome {
     Ok { count: usize },
     TooFewHeatmaps { got: usize, expected: usize },

@@ -76,8 +76,8 @@ fn print_report(
         let obj = serde_json::json!({
             "file": path.display().to_string(),
             "schema": schema,
-            "doc_link": doc_link.map(|o| format!("{o:?}")),
-            "exit_code": exit.map(|o| format!("{o:?}")),
+            "doc_link": doc_link,
+            "exit_code": exit,
         });
         println!("{}", serde_json::to_string_pretty(&obj).unwrap_or_default());
         return;

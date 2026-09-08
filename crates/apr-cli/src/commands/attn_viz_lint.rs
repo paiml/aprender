@@ -112,9 +112,9 @@ fn print_report(
         let obj = serde_json::json!({
             "attn_file": attn_file.map(|p| p.display().to_string()),
             "html_file": html_file.map(|p| p.display().to_string()),
-            "row_softmax": rows.map(|o| format!("{o:?}")),
-            "causal_mask": mask.map(|o| format!("{o:?}")),
-            "html_heatmaps": html.map(|o| format!("{o:?}")),
+            "row_softmax": rows,
+            "causal_mask": mask,
+            "html_heatmaps": html,
         });
         println!("{}", serde_json::to_string_pretty(&obj).unwrap_or_default());
         return;

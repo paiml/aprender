@@ -146,8 +146,8 @@ fn print_non_streaming_report(
             "mode": "non_streaming",
             "response_path": path.display().to_string(),
             "declared_tool_names": declared,
-            "schema_outcome": format!("{:?}", schema),
-            "allowlist_outcome": format!("{:?}", allowlist),
+            "schema_outcome": schema,
+            "allowlist_outcome": allowlist,
             "schema_ok": matches!(schema, ToolCallSchemaOutcome::Ok),
             "allowlist_ok": matches!(allowlist, ToolNameAllowlistOutcome::Ok),
         });
@@ -174,7 +174,7 @@ fn print_stream_report(
             "mode": "streaming_ndjson",
             "response_path": path.display().to_string(),
             "num_frames": frame_count,
-            "ndjson_outcome": format!("{:?}", outcome),
+            "ndjson_outcome": outcome,
             "ndjson_ok": matches!(outcome, StreamingToolCallOutcome::Ok),
         });
         println!(

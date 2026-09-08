@@ -51,7 +51,8 @@ pub const K08_REQUIRED_ATTRIBUTES: &[&str] = &[
 pub const K08_ROOT_SPAN_NAME: &str = "apr.inference";
 
 /// Outcome of `classify_span_present`.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
 pub enum OtlpSpanPresentOutcome {
     /// At least one span with the requested name exists.
     Ok { count: usize },
@@ -67,7 +68,8 @@ pub enum OtlpSpanPresentOutcome {
 }
 
 /// Outcome of `classify_genai_attributes`.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
 pub enum OtlpAttributesOutcome {
     /// Every required attribute key appeared on at least one span.
     Ok,
@@ -76,7 +78,8 @@ pub enum OtlpAttributesOutcome {
 }
 
 /// Outcome of `classify_trace_propagation`.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
 pub enum OtlpTracePropagationOutcome {
     /// At least one span's `traceId` matches the expected trace-id (lowercase hex).
     Ok,

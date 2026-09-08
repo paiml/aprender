@@ -123,9 +123,9 @@ fn print_report(
     if json {
         let obj = serde_json::json!({
             "trace_dir": trace_dir.display().to_string(),
-            "timeout_dump": timeout_outcome.map(|o| format!("{o:?}")),
-            "empty_on_success": success_outcome.map(|o| format!("{o:?}")),
-            "exit_code": exit_outcome.map(|o| format!("{o:?}")),
+            "timeout_dump": timeout_outcome,
+            "empty_on_success": success_outcome,
+            "exit_code": exit_outcome,
         });
         println!("{}", serde_json::to_string_pretty(&obj).unwrap_or_default());
         return;

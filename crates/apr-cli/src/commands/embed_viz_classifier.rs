@@ -49,14 +49,16 @@ pub enum EmbedSchemaOutcome {
 }
 
 /// Outcome of `classify_row_count`.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
 pub enum EmbedRowCountOutcome {
     Ok,
     Mismatch { got: usize, expected: usize },
 }
 
 /// Outcome of `classify_determinism`.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
 pub enum EmbedDeterminismOutcome {
     Ok {
         bytes: usize,

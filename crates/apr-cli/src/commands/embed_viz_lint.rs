@@ -82,8 +82,8 @@ fn print_report(
             "csv_file": csv_file.display().to_string(),
             "csv_file_b": csv_file_b.map(|p| p.display().to_string()),
             "schema": schema,
-            "row_count": row_count.map(|o| format!("{o:?}")),
-            "determinism": determinism.map(|o| format!("{o:?}")),
+            "row_count": row_count,
+            "determinism": determinism,
         });
         println!("{}", serde_json::to_string_pretty(&obj).unwrap_or_default());
         return;

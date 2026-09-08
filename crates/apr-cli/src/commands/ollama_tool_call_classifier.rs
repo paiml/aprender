@@ -24,7 +24,8 @@
 use serde_json::Value;
 
 /// Outcome of `classify_tool_call_schema`.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
 pub enum ToolCallSchemaOutcome {
     /// `message.tool_calls` is a non-empty array of well-formed tool calls.
     Ok,
@@ -116,7 +117,8 @@ pub fn classify_tool_call_schema(response: &Value) -> ToolCallSchemaOutcome {
 }
 
 /// Outcome of `classify_tool_name_allowlist`.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
 pub enum ToolNameAllowlistOutcome {
     /// Every called tool name appears in the declared tool set.
     Ok,
@@ -174,7 +176,8 @@ pub fn classify_tool_name_allowlist(
 }
 
 /// Outcome of `classify_streaming_tool_call`.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
 pub enum StreamingToolCallOutcome {
     /// Exactly one `done == true` frame as the last frame, and `tool_calls`
     /// (if any) appear only in that terminator.

@@ -21,7 +21,8 @@ pub(crate) const TYPICAL_P_MAX_INCLUSIVE: f64 = 1.0;
 pub(crate) const RENORM_TOLERANCE: f64 = 1e-6;
 
 /// Parameter-range gate: p must be finite and in (0, 1].
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
 pub(crate) enum TypicalPRangeOutcome {
     Valid,
     NotFinite,
@@ -43,7 +44,8 @@ pub(crate) fn classify_typical_p_range(p: f64) -> TypicalPRangeOutcome {
 }
 
 /// Identity gate (FALSIFY-CRUX-C-22-001): p=1.0 returns every token.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
 pub(crate) enum IdentityOutcome {
     Ok {
         kept_count: usize,
@@ -98,7 +100,8 @@ pub(crate) fn classify_typical_p_identity(
 }
 
 /// Mass-coverage gate: kept probabilities must sum to ≥ p (minimal typical set).
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
 pub(crate) enum MassCoverageOutcome {
     Ok { kept_mass: f64 },
     InvalidInput { reason: &'static str },
@@ -144,7 +147,8 @@ pub(crate) fn classify_typical_p_mass_coverage(kept_probs: &[f64], p: f64) -> Ma
 }
 
 /// Renormalization gate: filtered distribution sums to 1.0 ± 1e-6.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
 pub(crate) enum RenormOutcome {
     Ok { sum: f64 },
     InvalidInput { reason: &'static str },
@@ -182,7 +186,8 @@ pub(crate) fn classify_typical_p_renormalization(filtered_probs: &[f64]) -> Reno
 /// Sort-order gate: kept tokens must be sorted by c_i = |−log p_i − H| ASC.
 /// `kept_probs_in_sort_order` lists the original probabilities of kept tokens
 /// in the order the filter emits them (should be c_i ASC).
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
 pub(crate) enum SortOrderOutcome {
     Ok,
     InvalidInput {

@@ -46,7 +46,8 @@ pub const F11_ERROR_JSON_KEYS: &[&str] =
 pub const F11_ALLOWED_VALUES: &[&str] = &["nan", "+inf", "-inf"];
 
 /// Outcome of `classify_error_json`.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
 pub enum CheckFiniteErrorOutcome {
     Ok,
     NotAnObject,
@@ -58,7 +59,8 @@ pub enum CheckFiniteErrorOutcome {
 }
 
 /// Outcome of `classify_layer_coverage`.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
 pub enum CheckFiniteCoverageOutcome {
     Ok { count: usize },
     NotAnObject,

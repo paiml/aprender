@@ -68,8 +68,8 @@ fn print_report(
         let obj = serde_json::json!({
             "file": path.display().to_string(),
             "text_format": text,
-            "required_metrics": required.map(|r| format!("{r:?}")),
-            "content_type": ct.map(|c| format!("{c:?}")),
+            "required_metrics": required,
+            "content_type": ct,
         });
         println!("{}", serde_json::to_string_pretty(&obj).unwrap_or_default());
         return;

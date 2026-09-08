@@ -40,7 +40,8 @@ pub struct ToolCall {
 }
 
 /// Outcome of the response-shape classifier.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
 pub enum ToolCallsShapeOutcome {
     Ok {
         n_calls: usize,
@@ -133,7 +134,8 @@ pub fn classify_tool_calls_shape(
 /// "array", "object", "null". Everything else is reported as
 /// `UnsupportedSchema` so we never silently pass.
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
 pub enum SchemaValidationOutcome {
     Ok,
     ArgumentsNotJson {
@@ -283,7 +285,8 @@ pub fn classify_arguments_against_schema(
 
 /// ─── FALSIFY-C-11-003 no-tools passthrough ──────────────────────────────
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
 pub enum NoToolsPassthroughOutcome {
     Ok,
     UnexpectedToolCalls {

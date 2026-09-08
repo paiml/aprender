@@ -20,7 +20,8 @@ pub(crate) const DEFAULT_DRY_BASE: f64 = 1.75;
 pub(crate) const DEFAULT_DRY_ALLOWED_LENGTH: u32 = 2;
 
 /// Parameter-range gate: multiplier ≥ 0, base ≥ 1, allowed_length ≥ 1.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
 pub(crate) enum DryParamOutcome {
     Valid,
     NotFinite { field: &'static str },
@@ -55,7 +56,8 @@ pub(crate) fn classify_dry_params(
 }
 
 /// Identity gate (FALSIFY-CRUX-C-23-001): multiplier=0 → every token unchanged.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
 pub(crate) enum IdentityOutcome {
     Ok,
     InvalidInput {
@@ -166,7 +168,8 @@ pub(crate) fn classify_dry_match_len(
 
 /// Penalty-formula gate: penalty = multiplier * base^(match_len - allowed_length)
 /// when match_len >= allowed_length; 0 otherwise; penalty ≥ 0 always.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
 pub(crate) enum PenaltyOutcome {
     Ok { penalty: f64 },
     InvalidInput { reason: &'static str },
@@ -218,7 +221,8 @@ pub(crate) fn classify_dry_penalty(
 
 /// Monotonicity gate: penalty grows monotonically (non-strictly) with match_len.
 /// This captures "DRY reduces exact-phrase repetition" algebraically.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
 pub(crate) enum MonotonicityOutcome {
     Ok,
     InvalidInput {

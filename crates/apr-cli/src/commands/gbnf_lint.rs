@@ -199,9 +199,9 @@ fn print_report(
     if json {
         let v = serde_json::json!({
             "observation_path": path.display().to_string(),
-            "json":      json_out.map(|o| format!("{o:?}")),
-            "diagnostic": err_diag.map(|o| format!("{o:?}")),
-            "masking":   masking.map(|o| format!("{o:?}")),
+            "json":      json_out,
+            "diagnostic": err_diag,
+            "masking":   masking,
         });
         println!(
             "{}",

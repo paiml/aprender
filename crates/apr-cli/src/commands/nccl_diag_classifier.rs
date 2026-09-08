@@ -53,14 +53,16 @@ pub enum NcclSchemaOutcome {
 }
 
 /// Outcome of `classify_exit_code`.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
 pub enum NcclExitOutcome {
     Ok { code: i32 },
     BelowThreshold { got: i32, threshold: i32 },
 }
 
 /// Outcome of `classify_doc_link`.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
 pub enum NcclDocLinkOutcome {
     Ok,
     NoDocLink { suggest: String },

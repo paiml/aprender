@@ -104,8 +104,8 @@ fn print_report(
         let obj = serde_json::json!({
             "error_file": error_file.map(|p| p.display().to_string()),
             "list_file": list_file.map(|p| p.display().to_string()),
-            "error_json": err.map(|o| format!("{o:?}")),
-            "layer_coverage": cov.map(|o| format!("{o:?}")),
+            "error_json": err,
+            "layer_coverage": cov,
         });
         println!("{}", serde_json::to_string_pretty(&obj).unwrap_or_default());
         return;

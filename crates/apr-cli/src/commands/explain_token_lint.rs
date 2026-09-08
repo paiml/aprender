@@ -86,7 +86,7 @@ fn print_report(
             "schema": schema,
             "probs_normalize": probs,
             "sampled_in_candidates": sampled,
-            "greedy_picks_argmax": greedy.map(|g| format!("{g:?}")),
+            "greedy_picks_argmax": greedy,
         });
         println!("{}", serde_json::to_string_pretty(&obj).unwrap_or_default());
         return;

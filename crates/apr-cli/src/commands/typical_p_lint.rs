@@ -280,11 +280,11 @@ fn print_report(
     if json {
         let v = serde_json::json!({
             "observation_path": path.display().to_string(),
-            "range":    range.map(|o| format!("{o:?}")),
-            "identity": identity.map(|o| format!("{o:?}")),
-            "mass":     mass.map(|o| format!("{o:?}")),
-            "sort":     sort.map(|o| format!("{o:?}")),
-            "renorm":   renorm.map(|o| format!("{o:?}")),
+            "range":    range,
+            "identity": identity,
+            "mass":     mass,
+            "sort":     sort,
+            "renorm":   renorm,
         });
         println!(
             "{}",
