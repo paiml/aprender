@@ -2,7 +2,6 @@
 # Test targets that READ THE TREE and that no workflow runs. Not in the quick
 # tier (it must never be stricter than the full tier), and each line is a
 # finding: a test nothing executes (BSE-17, PMAT-1077).
-apr-cli	--test	backend_refusal_case_table
 apr-cli	--test	falsification_crux_a_01
 apr-cli	--test	falsification_crux_a_03
 apr-cli	--test	falsification_crux_a_20

@@ -1,6 +1,7 @@
 # tool_version=none (derived by scripts/check_tree_reader_tests.sh from the test sources; regenerate with --update, never edit)
 # crate<TAB>--test<TAB>name | crate<TAB>--lib — every test target that reads the tree (BSE-17); the quick tier always runs these
 apr-cli	--lib
+apr-cli	--test	backend_refusal_case_table
 apr-cli	--test	beat_apr_sibling_cli_reach
 apr-cli	--test	cli_commands
 apr-cli	--test	registry_failure_catalogue
