@@ -159,9 +159,10 @@ The draft asks for something **strictly stronger** than what was rejected: not a
 on yoga, but a *required PR-time check* (RD-3). It cites neither the issue nor the cost.
 
 **Smallest fix.** `§7` cites infra#359, states that it is proposing Option B, and answers the
-intermittency cost with the dead-man's switch. RD-3's promotion criterion becomes
-`0 false reds in 14 days` **and** `yoga reachable ≥ N of the last M days, basis=` the run
-list — otherwise "no red in 14 days" is satisfied by a box that was off for 14 days.
+intermittency cost with the dead-man's switch. And whatever RD-3 decides about
+advisory-vs-required, its promotion criterion needs a reachability term beside `0 false reds
+in 14 days` — something of the form `yoga reachable ≥ N of the last M days, basis=` the run
+list — because otherwise "no red in 14 days" is satisfied by a box that was off for 14 days.
 
 ---
 
@@ -213,7 +214,8 @@ two numbers in two documents" — while being the second document.
 
 **Smallest fix.** `§3.1` gains a sentence naming the runner-class change and its consequence
 (hosted minutes → house hardware; macOS/Windows lose their builder unless RD-1 keeps them),
-and RD-1 is resolved *in the same PR* that amends C13.
+and whatever RD-1 resolves to lands in the same PR that amends C13, so the two documents
+never carry different counts.
 
 ---
 
@@ -286,9 +288,11 @@ owns hardware — buy a newer GPU, and the release silently stops supporting old
 `crates/aprender-gpu/src/ptx/mod.rs:43`. Re-deriving it from `nvidia-smi` each release makes a
 source constant float on hardware inventory.
 
-**Smallest fix.** RD-7 becomes: the floor is the project's **declared** minimum compute
-capability and PTX ISA, asserted against the emitter (F2's unit test). The fleet's drivers are
-a *cross-check that the declared floor is reachable*, never its source.
+**Smallest fix.** State the basis as: the floor is the project's **declared** minimum compute
+capability and PTX ISA, asserted against the emitter (F2's unit test), with the fleet's drivers
+a *cross-check that the declared floor is reachable* rather than its source. What that declared
+minimum should be is RD-7's to settle; this finding is only against deriving it from whoever
+happens to own hardware.
 
 ---
 
