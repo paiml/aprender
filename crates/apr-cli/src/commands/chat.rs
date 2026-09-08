@@ -142,6 +142,11 @@ pub(crate) fn run(
     let actual_path = resolve_chat_model(path_arg, offline)?;
     let path = actual_path.as_path();
 
+    // #3022: decide the format ONCE, here, and refuse rather than substitute. Everything
+    // downstream — the banner, the session, the tokenizer, the generator — is handed this
+    // one answer, so the banner can no longer name a format the loader did not use.
+    let format = resolve_chat_format(path)?;
+
     // GH-520: Warn on unimplemented trace/profile flags for chat mode
     if trace_steps.is_some() {
         eprintln!("Warning: --trace-steps is not yet implemented for chat. Flag ignored.");
@@ -188,7 +193,7 @@ pub(crate) fn run(
         trace_output,
     };
 
-    print_welcome_banner(path, &config);
+    print_welcome_banner_for(path, format, &config);
 
     // Run the REPL
     let result = run_repl(path, &config);
@@ -206,18 +211,99 @@ enum ModelFormat {
     Gguf,
     /// HuggingFace SafeTensors format
     SafeTensors,
+    /// HuggingFace SafeTensors split across shards, named by a
+    /// `model.safetensors.index.json` manifest (#3022).
+    ShardedSafeTensors,
     /// Demo mode with tiny random weights
     Demo,
 }
 
-/// Detect model format from file extension (Y14: format-agnostic)
+/// Detect model format from the file NAME (Y14: format-agnostic).
+///
+/// #3022: the sharded arm is matched on the SUFFIX, before `extension()`, and that
+/// ordering is the whole fix. `Path::extension()` returns the last dot-segment, so on
+/// `model.safetensors.index.json` it is `Some("json")` — which matched no arm and fell
+/// through to `Demo`, and `apr chat` then ran the toy demo model while printing the real
+/// model's path. Any future format whose name carries more than one dot must be matched
+/// here too, not in the `match` below.
 fn detect_format(path: &Path) -> ModelFormat {
+    if path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .is_some_and(|n| n.ends_with(".safetensors.index.json"))
+    {
+        return ModelFormat::ShardedSafeTensors;
+    }
     match path.extension().and_then(|e| e.to_str()) {
         Some("apr") => ModelFormat::Apr,
         Some("gguf") => ModelFormat::Gguf,
         Some("safetensors") => ModelFormat::SafeTensors,
         _ => ModelFormat::Demo,
     }
+}
+
+/// The ONE place `apr chat` decides what the user's file is — and the only place
+/// allowed to conclude "nothing I can load".
+///
+/// **`Demo` is never a resolution of a path the user named.** By the time this runs,
+/// `resolve_chat_model` has already proven the file exists, so every `Demo` here is a
+/// silent substitution of tiny random weights for a real model — which is exactly how
+/// #3022 read as a successful, empty 7B response: `Loaded Demo format in 0.00s (0.0 MB)`,
+/// zero tokens, **exit code 0**, under a banner printing the real model's path.
+///
+/// The magic-byte probe is not a fallback to guessing; it is the opposite. A model whose
+/// name carries an unusual extension is still a model, and reading its first 8 bytes says
+/// so with certainty (ALB-099: 8 bytes, never the whole file). Only when neither the name
+/// nor the bytes identify a format does this refuse — with a code from `error.rs`
+/// (`ModelLoadFailed`, exit 6), never by loading something else.
+///
+/// # Errors
+/// [`CliError::ModelLoadFailed`] when `path` is not a format `apr chat` can load.
+fn resolve_chat_format(path: &Path) -> Result<ModelFormat, CliError> {
+    let by_name = detect_format(path);
+    if by_name != ModelFormat::Demo {
+        return Ok(by_name);
+    }
+    if let Some(by_bytes) = format_from_leading_bytes(path) {
+        if by_bytes != ModelFormat::Demo {
+            return Ok(by_bytes);
+        }
+    }
+    Err(CliError::ModelLoadFailed(format!(
+        "{} is not a model format apr chat can load.\n  \
+         Recognised: .apr, .gguf, .safetensors, and a sharded SafeTensors index (*.safetensors.index.json).\n  \
+         apr chat will not substitute its built-in demo model for a file you named (#3022).",
+        path.display()
+    )))
+}
+
+/// `metadata.total_size` out of a `model.safetensors.index.json`, in bytes.
+///
+/// The manifest is the only place a sharded model states its own size before any shard is
+/// opened, and reporting it is what keeps the load line honest: the bytes of the index
+/// itself are ~20 KB regardless of whether it names a 0.5B or a 70B (#3022).
+fn sharded_total_size(index_bytes: &[u8]) -> Option<u64> {
+    let v: serde_json::Value = serde_json::from_slice(index_bytes).ok()?;
+    v.get("metadata")?.get("total_size")?.as_u64()
+}
+
+/// The first 8 bytes of `path`, classified — or `None` if it cannot be read.
+///
+/// Deliberately 8 bytes and not `read_to_end`: the caller may have been handed a 30 GB
+/// model, and the question ("what format is this?") is answered by the header.
+fn format_from_leading_bytes(path: &Path) -> Option<ModelFormat> {
+    use std::io::Read;
+    let mut head = [0_u8; 8];
+    let mut file = std::fs::File::open(path).ok()?;
+    let mut filled = 0;
+    while filled < head.len() {
+        match file.read(&mut head[filled..]) {
+            Ok(0) => break,
+            Ok(n) => filled += n,
+            Err(_) => return None,
+        }
+    }
+    Some(detect_format_from_bytes(&head[..filled]))
 }
 
 /// Try loading a tokenizer from a specific path, printing success/failure.
@@ -437,9 +523,12 @@ fn detect_format_from_bytes(data: &[u8]) -> ModelFormat {
     ModelFormat::Demo
 }
 
+#[cfg(test)]
 fn print_welcome_banner(path: &Path, config: &ChatConfig) {
-    let format = detect_format(path);
+    print_welcome_banner_for(path, detect_format(path), config);
+}
 
+fn print_welcome_banner_for(path: &Path, format: ModelFormat, config: &ChatConfig) {
     // Detect chat template format from model name (Toyota Way: Visual Control)
     let model_name = path
         .file_stem()
@@ -481,6 +570,14 @@ fn print_welcome_banner(path: &Path, config: &ChatConfig) {
             println!(
                 "{}",
                 "Using SafeTensors with mmap (Native Library Mandate)".cyan()
+            );
+        }
+        ModelFormat::ShardedSafeTensors => {
+            output::section("Model Chat (Sharded SafeTensors)");
+            println!();
+            println!(
+                "{}",
+                "Using a sharded SafeTensors index (model.safetensors.index.json)".cyan()
             );
         }
         ModelFormat::Demo => {

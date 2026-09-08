@@ -17,7 +17,9 @@ impl ChatSession {
 
             let result = match self.format {
                 ModelFormat::Apr => self.generate_apr(&prompt_tokens, config),
-                ModelFormat::SafeTensors => self.generate_safetensors(&prompt_tokens, config),
+                ModelFormat::SafeTensors | ModelFormat::ShardedSafeTensors => {
+                    self.generate_safetensors(&prompt_tokens, config)
+                }
                 ModelFormat::Demo => Ok(vec![]),
                 ModelFormat::Gguf => unreachable!(), // handled above
             };
