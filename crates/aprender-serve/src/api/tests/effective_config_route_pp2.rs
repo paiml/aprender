@@ -45,8 +45,11 @@ async fn get_json(state: AppState, uri: &str) -> (StatusCode, serde_json::Value)
 
 /// The key set every build must serve. Written out rather than derived, so a
 /// field that silently disappears is a test failure and not a shrinking loop.
-const REQUIRED_TOP_LEVEL_KEYS: [&str; 12] = [
+const REQUIRED_TOP_LEVEL_KEYS: [&str; 13] = [
     "schema_version",
+    // REG-15 / L0-1a (#2971): the load-time parity record {status, cosine, positions,
+    // threshold, basis} — present on every build (`not-run` without the cuda feature).
+    "parity",
     "server",
     "compute_class",
     "build_features",
