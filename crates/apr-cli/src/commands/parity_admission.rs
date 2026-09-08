@@ -346,9 +346,10 @@ pub fn on_cuda_load_error(msg: &str, forced: bool) -> Result<bool, String> {
     }
 }
 
-/// The PR-time gate (L0-1a item vii): two SENTINEL records ride `workspace-test` so the
-/// horizon rule can be seen to hold both polarities on every PR — the lambda 1.5B record
-/// must be RED and the lambda 7B record must be GREEN under `evidence/parity/thresholds.yaml`.
+/// The PR-time gate (L0-1a item vii): SENTINEL records ride `workspace-test` so the horizon
+/// rule can be seen to hold both polarities on every PR — the 1.5B record must be RED and the
+/// 7B record must be GREEN under `evidence/parity/thresholds.yaml`, on EACH of the two required
+/// GPU hosts (lambda / RTX 4090 / sm_89 / x86_64 and gx10 / GB10 / sm_121 / aarch64).
 /// The full manifest runs only in dogfood, the release and R-8 (C14).
 #[cfg(test)]
 mod sentinel_tests {
@@ -429,10 +430,92 @@ mod sentinel_tests {
     }
 
     #[test]
+    fn sentinel_1p5b_on_gx10_is_red_under_the_horizon_rule() {
+        assert!(
+            !judge("evidence/parity/l0-1/gx10/qwen2.5-coder-1.5b-instruct-q4_k_m.json"),
+            "the gx10 1.5B sentinel passed: either the record changed or the threshold moved without a re-measurement (#2971)"
+        );
+    }
+
+    #[test]
+    fn sentinel_7b_on_gx10_is_green_under_the_horizon_rule() {
+        assert!(
+            judge("evidence/parity/l0-1/gx10/qwen2.5-coder-7b-instruct-q4_k_m.json"),
+            "the gx10 7B sentinel failed: the horizon rule can no longer pass a known-good model"
+        );
+    }
+
+    /// The divergence is selected by the MODEL, not by the device (gx10 RECORD.md). Two GPU
+    /// generations, two ISAs, one of them running the sm_121 JIT workaround the other does not
+    /// have, and the known-bad pair lands within 2.2e-4 of the same cosine while the known-good
+    /// pair on the same silicon is 0.9985+. If a future change makes the two hosts disagree by
+    /// more than that, the "one op, both kernel paths" reading L0-1b starts from is no longer
+    /// what the evidence says, and this test says so before a lane is dispatched.
+    #[test]
+    fn the_two_hosts_agree_on_each_model_to_within_a_thousandth() {
+        for (a, b, label) in [
+            (
+                "evidence/parity/l0-1/lambda/qwen2.5-coder-1.5b-instruct-q4_k_m.json",
+                "evidence/parity/l0-1/gx10/qwen2.5-coder-1.5b-instruct-q4_k_m.json",
+                "1.5B (known-bad)",
+            ),
+            (
+                "evidence/parity/l0-1/lambda/qwen2.5-coder-7b-instruct-q4_k_m.json",
+                "evidence/parity/l0-1/gx10/qwen2.5-coder-7b-instruct-q4_k_m.json",
+                "7B (known-good)",
+            ),
+        ] {
+            let (_, min_a) = record(a);
+            let (_, min_b) = record(b);
+            let delta = (min_a - min_b).abs();
+            assert!(
+                delta < 1e-3,
+                "{label}: sm_89 min cosine {min_a:.6} vs sm_121 {min_b:.6} differ by {delta:.6} >= 1e-3 — the divergence is no longer architecture-independent (#2971)"
+            );
+        }
+    }
+
+    /// The two populations must stay separated by the threshold with real margin on BOTH hosts:
+    /// a gate that passes with no headroom is a finding (0.63.0 hansei), so the known-good floor
+    /// and the known-bad ceiling are asserted against 0.98 rather than merely ordered.
+    #[test]
+    fn the_threshold_separates_the_good_and_bad_populations_on_both_hosts() {
+        let (min_cosine, _) = thresholds();
+        let good = [
+            "evidence/parity/l0-1/lambda/qwen2.5-coder-7b-instruct-q4_k_m.json",
+            "evidence/parity/l0-1/gx10/qwen2.5-coder-7b-instruct-q4_k_m.json",
+        ];
+        let bad = [
+            "evidence/parity/l0-1/lambda/qwen2.5-coder-1.5b-instruct-q4_k_m.json",
+            "evidence/parity/l0-1/gx10/qwen2.5-coder-1.5b-instruct-q4_k_m.json",
+        ];
+        let good_floor = good
+            .iter()
+            .map(|r| record(r).1)
+            .fold(f32::INFINITY, f32::min);
+        let bad_ceiling = bad
+            .iter()
+            .map(|r| record(r).1)
+            .fold(f32::NEG_INFINITY, f32::max);
+        assert!(
+            good_floor - min_cosine >= 0.01,
+            "known-good floor {good_floor:.6} is only {:.6} above the threshold {min_cosine} — under 0.01 of margin the gate is a coin flip, not a decision",
+            good_floor - min_cosine
+        );
+        assert!(
+            min_cosine - bad_ceiling >= 0.01,
+            "known-bad ceiling {bad_ceiling:.6} is only {:.6} below the threshold {min_cosine}",
+            min_cosine - bad_ceiling
+        );
+    }
+
+    #[test]
     fn sentinels_carry_at_least_sixty_four_positions() {
         for rel in [
             "evidence/parity/l0-1/lambda/qwen2.5-coder-1.5b-instruct-q4_k_m.json",
             "evidence/parity/l0-1/lambda/qwen2.5-coder-7b-instruct-q4_k_m.json",
+            "evidence/parity/l0-1/gx10/qwen2.5-coder-1.5b-instruct-q4_k_m.json",
+            "evidence/parity/l0-1/gx10/qwen2.5-coder-7b-instruct-q4_k_m.json",
         ] {
             let (positions, _) = record(rel);
             assert!(positions >= 64, "{rel}: {positions} positions < 64 (I8)");
