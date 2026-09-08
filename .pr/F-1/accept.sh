@@ -4,7 +4,7 @@
 set -uo pipefail; cd "$(dirname "$0")/../.."; rc=0
 run() { printf '== %s\n' "$*"; "$@"; local r=$?; printf 'rc=%s\n' "$r"; [ "$r" = 0 ] || rc=1; }
 expect_fail() { printf '== (must FAIL) %s\n' "$*"; if "$@"; then printf 'rc=0 (wanted non-zero)\n'; rc=1; else printf 'rc=%s (as required)\n' "$?"; fi; }
-CARGO=/home/noah/.cargo/bin/cargo
+CARGO="${CARGO:-$HOME/.cargo/bin/cargo}"   # never a bare `cargo` (a shell function of that name overrides CARGO_TARGET_DIR), never a machine path
 run python3 scripts/make_sharded_safetensors.py --self-test
 run bash scripts/check_format_command_matrix.sh --self-test
 run env "$CARGO" test -p apr-cli --lib -- sharded_index_resolves an_existing_unrecognised resolve_never_answers a_truncated_file_is the_three_single_file odd_extension

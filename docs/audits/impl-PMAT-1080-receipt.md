@@ -29,7 +29,7 @@ Binary `apr 0.65.2 (c04eda87d)` — built in this worktree from the tip of `main
 | single-file × `apr run` | ok | ok |
 | single-file × `apr chat` | ok — `Loaded SafeTensors format in 0.50s (988.1 MB)` | ok |
 | sharded × `apr run` | **ok** — `Output: 2 + 2 equals 4.` | ok |
-| sharded × `apr chat` | **`Chat Demo (Tiny Model)` · `Loaded Demo format in 0.00s (0.0 MB)` · `[0 tokens in 0.0s]` · exit 0** | **`Model Chat (Sharded SafeTensors)` · `Loaded Sharded SafeTensors format in 0.00s (988.1 MB)` · `[12 tokens in 3.7s = 3.2 tok/s]` · `Assistant: 2 + 2 equals 4.`** |
+| sharded × `apr chat` | **`Chat Demo (Tiny Model)` · `Loaded Demo format in 0.00s (0.0 MB)` · `[0 tokens in 0.0s]` · exit 0** | **`Model Chat (Sharded SafeTensors)` · `Loaded Sharded SafeTensors format in 0.00s (988.1 MB)` · 12 tokens generated · `Assistant: 2 + 2 equals 4.`** |
 
 Records: `evidence/format-honesty/{before,after}/`, verdicts in `before/VERDICT.txt`.
 
