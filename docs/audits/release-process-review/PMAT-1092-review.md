@@ -5,14 +5,15 @@
 | Ticket | PMAT-1092 |
 | Reviewed | `docs/audits/release-process-review/release-process-aprender-v0.1-draft.md` v0.1 (463 lines) |
 | Against | `origin/main` @ `c04eda87d`, and the physical hosts, 2026-09-08 |
-| Method | one `agy /teamwork-preview` lane, every finding re-run here, then **five** AD-04 quorum rounds over this review — rounds 1–4 returned 3 × FAIL, round 5 returned 2 × FAIL / 1 PASS; every objection was applied rather than argued (see *Method*) |
+| Method | one `agy /teamwork-preview` lane, every finding re-run here, then **six** AD-04 quorum rounds over this review — rounds 1–4 and 6 returned 3 × FAIL, round 5 returned 2 × FAIL / 1 PASS; every objection was applied rather than argued (see *Method*) |
 | Epic | **paiml/aprender#3058** — the build order, the two gates that cannot fail, and the decisions 0.66 is blocked on |
 | Verdict | **do-not-implement-as-written** — adopt §1/§2/§5.2/§10 now (and §9 bar the row RD-5 turns on), block §3.4/§5.1/§5.3/§6/§7 on the items below |
 | Marks | `[V]` verified by a command printed here · `[C]` computed · `[A]` asserted, source named · `[U]` unverified, owner named |
 
 The draft is right about *what* to gate and mostly wrong about *what already exists*. Its
-doctrine (§1), its host ledger's shape (§2), its model manifest (§5.2), its Toyota targets
-(§9) and its refusals (§10) are admissible today. Its normative sequence is not.
+doctrine (§1), its host ledger's shape (§2), its model manifest (§5.2) and its refusals (§10)
+are admissible today, as are its Toyota targets (§9) apart from the one jidoka row that F8
+shows cannot hold alongside §5.5 until RD-5 settles it. Its normative sequence is not.
 
 Evidence pack with every command: `docs/audits/release-process-review/ground-truth.md`.
 
@@ -28,7 +29,7 @@ Evidence pack with every command: `docs/audits/release-process-review/ground-tru
 | §3.2 FX-16/17/18 | admissible **as fixtures**; the artifacts they test do not exist yet | F1 |
 | §3.3 one recipe | **blocked** | `run_clean_room.sh` does not exist (F1) |
 | §3.4 CUDA specifics | **reject as written** | the `cuobjdump` probe cannot fail (F2); the PTX floor is derived from the wrong population (F7) |
-| §4 verification matrix | admissible once §3.1 resolves | F1, RD-1 |
+| §4 verification matrix | admissible **once §3.1 resolves and RD-6 is settled** — RD-6 governs whether `arm-gpu-cuda` may ship with a single verification host, which is a claim §4's table makes | F1, RD-1, RD-6 |
 | §5.1 skill location | **reject as written** | user scope (F6) |
 | §5.3 cell matrix | **blocked** | `install.sh` is unwritten and owned by open R-6/PMAT-994 (F1); yoga has no models (F9) |
 | §5.4 M1–M8 | admissible; M6 needs a per-host instrument (F9) | — |
@@ -442,7 +443,7 @@ Commands: `ssh <host> 'uname -m; nproc; free -g; df -h /'`,
 | **S0-M1** | both dogfood hosts | `qwen2.5-coder-7b-instruct-q4_k_m.gguf` **4 683 073 536 B** present on `lambda-labs` **and** `gx10`. Fits lambda (23291 MiB free) with ~18.6 GiB spare; gx10 unified, no VRAM figure exists |
 | **S0-R1** | org | groups `Default` / `gpu-nodes` / `gpu-x86`; **all three** `restricted_to_workflows: false`, `selected_workflows: []`; `gpu-x86` `allows_public_repositories: false`. Runners: `yoga-gpu` (online, `self-hosted,Linux,X64,gpu,cuda,yoga,ada`), `gx10-blackwell` (online), 17 × `intel-clean-room*`. **No `lambda-4090`.** Repo-scoped runners: `total_count: 0` |
 | **S0-R2** | repo | required contexts `["ci / gate","workspace-test"]`; rulesets *Green Main*, *workspace-test*, *Merge Queue (main)* all `active` |
-| **S0-N1** | `nightly.yml` | 5 targets, **GitHub-hosted** runners, `cargo build --release -p apr-cli`, **default features**, zero occurrences of `cuda` |
+| **S0-N1** | `nightly.yml` | 5 targets, **GitHub-hosted** runners. `:78` (unix, 4 targets) is `cargo build --release -p apr-cli --target <t>` — **default features**; `:82` (Windows only, guarded `if: runner.os == 'Windows'`) adds `--no-default-features --features inference`. **Zero occurrences of `cuda`** in the file |
 | **S0-Y3** | `yoga` | `[U]` — not run here; needs a `cargo build -p apr-cli --release --features cuda` on yoga plus `ldd \| grep -c cudart` (owner: Noah). Note `crates/aprender-gpu` advertises "no LLVM, no nvcc", so the expected count of 0 is a property of the source, not of the box |
 | **S0-Y4/Y5** | `yoga` | `[U]` — CUDA unit-test execution and its wall-clock budget, unmeasured (owner: Noah). Blocked behind the decision F3 is a finding against — RD-3 — not behind the box |
 | **S0-G1** | `gx10` | `[U]` — per-artifact build wall clock, unmeasured (owner: Noah). Feeds RD-4 |
@@ -462,7 +463,7 @@ Recommendations carry the finding that motivates them.
 
 | id | recommendation from this review | motivated by |
 |---|---|---|
-| **RD-1** | Decide before §3.1 can be adopted; whatever is chosen, amend PP-066 C13 **in the same PR**. Note the runner-class change is a separate consequence that survives every option (F11) | F11, F1 |
+| **RD-1** | §3.1 cannot be adopted until this is settled, and PP-066 C13 carries the other number — so whichever way it goes, two documents will disagree until both are edited. How to sequence that is the team's; the finding is only that the disagreement exists. The runner-class change is a separate consequence that survives every option (F11) | F11, F1 |
 | **RD-2** | No finding against it — FX-18 is stated with both polarities, so nothing in this review bears on the choice. Team's call | — |
 | **RD-3** | Two findings against the criterion as written, neither of which decides advisory-vs-required: (a) "0 false reds in 14 days" is satisfied by a box that was powered off for 14 days unless a reachability term is added — F3; (b) the budget names no population, so it cannot be exceeded and cannot fail — F10. Whether `cuda-test` becomes required in 0.66 or 0.66.1 remains the team's call | F3, F10 |
 | **RD-4** | One finding, not a disposition: the slot discipline RD-4 relies on is enforced by `check_host_slot.sh`, which does not exist (F1), so "one role at a time" is currently unenforced however the team decides the rest | F1 |
@@ -482,8 +483,8 @@ One `agy /teamwork-preview` lane (agy 1.1.27, `--sandbox`, `writes=false`, conve
 after; no lane writes leaked.
 
 Every finding was then re-executed here, and this document was itself put through the AD-04
-merge quorum **five times** — three independent agy lanes per round, reviewing *this review*.
-Rounds 1–4 returned **3 × FAIL**; round 5 returned **2 × FAIL and 1 PASS**. What follows is
+merge quorum **six times** — three independent agy lanes per round, reviewing *this review*.
+Rounds 1–4 and 6 returned **3 × FAIL**; round 5 returned **2 × FAIL and 1 PASS**. What follows is
 what that changed, because a review that hides its own corrections is not evidence. The quorum
 has not yet returned three PASS; that is stated here and in the receipt rather than left to be
 inferred from the absence of a green mark.
@@ -516,13 +517,17 @@ inferred from the absence of a green mark.
    | my own sweep, after quorum 3 | F3's "RD-3's criterion **becomes**", F7's "RD-7 **becomes**", F11's "RD-1 **is resolved** in the same PR" | 3 |
    | quorum 4 | F8's "Smallest fix" laid out the two readings of the §9-vs-§5.5 contradiction and picked one — RD-5 by the back door, while RD-5's row says "resolve F8 first"; and Appendix A still headed its results "§2's `[U]` rows now close as", the RD-9 defect verbatim one section further down | 2 |
    | quorum 5 | this table's own arithmetic (it read "ten rows" against nine enumerated, and "each finding exactly one more" against two rounds that found two), the §9 row of the verdict table, and S0-Y4/Y5's "F3's decision" | 3 |
+   | quorum 6 | the §9 carve-out missing from the intro prose, §4 "admissible" while RD-6 governs it, RD-1's "amend C13 **in the same PR**" imperative, S0-N1's "default features" (true for 4 of 5 targets; Windows builds `--no-default-features --features inference`), and this paragraph's own stale "a fifth round may find an eleventh" | 5 |
 
-   **Fifteen, over six passes** — five quorum rounds and one sweep of my own. The pattern is more useful than the count: a document can
+   **Twenty, over seven passes** — six quorum rounds and one sweep of my own. The pattern is more useful than the count: a document can
    declare "escalated, not decided" in its heading and mean it, and still decide by
    grammar — an imperative in a "Smallest fix", a "becomes", a "now closes". Every one of
    these was caught by a reader who was not the author. So this paragraph records the
-   history rather than certifying the table; a fifth round may well find an eleventh, and
-   that would be the method working, not failing.
+   history rather than certifying the table. Round 6 duly found a sixteenth, and a seventh
+   round may find a seventeenth — every round so far has raised *new* instances of this one
+   class rather than re-raising a fixed objection, which is the method working. It is also
+   why nothing here should be read as "the sweep is finally complete": that sentence has been
+   wrong five times.
 5. **Staging the draft into `docs/specifications/`.** All three lanes objected: a document
    whose header reads "Not yet normative" landing in the normative specs directory will be
    read — and RAG-indexed — as a spec. The draft now lives beside this review at
