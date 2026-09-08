@@ -16354,7 +16354,7 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'BSE-01 guard job runs all, reports all; CARGO_TARGET_DIR per container step; aprender timeout-minutes'
-  status: planned
+  status: completed
   priority: high
   assigned_to: null
   created: 2026-09-07T01:23:54Z
@@ -16674,3 +16674,41 @@ roadmap:
   - kind:code
   - pp-066
   notes: 'minted by hand (pmat#1169); DAG row F-2, owner bse, expiry 2026-09-26.'
+- id: PMAT-1082
+  github_issue: 2971
+  item_type: task
+  title: 'L0-1b [P0, unbounded]: five whys by apr parity SPC to the OP — a crushed Q8_K activation block (max/second >= 8, one element setting the scale of 255 others) routes that matmul to the f32-activation kernel; the CPU reference was the inaccurate side, not the GPU; revert -> 1.5B RED / 7B GREEN; m=1 stream byte-identical on every other manifest model (PP-066 #2873, #2971)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-09-08T12:30:00Z
+  updated: 2026-09-08T12:30:00Z
+  spec: null
+  acceptance_criteria:
+  - 'see issue #2971 and DAG row L0-1b (A + mutations); PR #3032; arms table docs/audits/l0-1b-arms.md; receipt docs/audits/impl-PMAT-1070-receipt.md'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - pp-066
+  notes: 'minted by hand (pmat#1169); DAG row L0-1b, owner perf-gate, expiry 2026-09-26. The gx10 twin was measured 2026-09-08: 1.5B 0.950611 -> 0.999583, 7B 0.998465 -> 0.999782, first_divergence none on both.'
+- id: PMAT-1083
+  github_issue: 3023
+  item_type: task
+  title: 'SPEC-2.0: PP-066 spec v2.0 — the 18-row 0.66 scope with each cut row naming the claim it protected, the claims ratchet, and scripts/release_criteria.sh (C0 C4 C5 C6 C7 C8 C9 C11 C13 C14, one exit-coded command each)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-09-08T12:30:00Z
+  updated: 2026-09-08T12:30:00Z
+  spec: null
+  acceptance_criteria:
+  - 'see issue #3023 and DAG row SPEC-2.0 (A + mutations); PR #3025'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:docs
+  - pp-066
+  notes: 'minted by hand (pmat#1169); DAG row SPEC-2.0, owner spec-owner, expiry 2026-09-19.'

@@ -2900,7 +2900,7 @@ rows:
   quorum: N-lane root cause (three model families)
   spec: driver v5 L0-1b
   gh_issue: 2971
-  pmat_id: null
+  pmat_id: PMAT-1082
   status: open
   notes: 'shares issue #3017 with L0-1a; ticket minted in the session docs commit; the 2026-09-06 quorum (one family, refuted the fused-FFN hypothesis on default config) is the first session | issue #2971
     (the user report; #3017 closed as its duplicate, driver v5.1)'
@@ -2932,7 +2932,7 @@ rows:
   quorum: 'rescope quorum: three adversarial agy lanes'
   spec: driver v5 PHASE 0
   gh_issue: 3023
-  pmat_id: null
+  pmat_id: PMAT-1083
   status: open
   notes: orchestrator row (the spec and the DAG are its write set); ticket and issue minted in the session docs commit
 - id: F-1
