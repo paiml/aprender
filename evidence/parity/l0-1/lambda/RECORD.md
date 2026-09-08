@@ -10,3 +10,17 @@
   | qwen2.5-coder-7b-instruct-q4_k_m | 0 | 0.9986 (position 0) | 0.78 | 2 | passed 78/78 |
 - reading: under the L0-1 horizon rule (min over ≥ 64 positions ≥ 0.98 [U]) the 1.5B is RED and the 7B is GREEN on lambda/sm_89 — the pattern the driver names, at position 0 — the prompt's first token (785), a DIFFERENT token from the BOS the load-time gate measures, so a gate PASS and a parity RED are consistent. The driver's 0.9418 / 5.38 are not this host's numbers; gx10 (GB10) is the other required host and is reached only through fleet-verify (G-11b).
 - threshold 0.98 is [U] (driver); `apr parity` itself passed every position under its own bands — a threshold nobody measured decides RED here, which is exactly item (5) of the card.
+
+## The records are portable, and the five-run series is one file (2026-09-08)
+
+Every record here was re-taken with the model named RELATIVELY — `cd ~/models && apr parity
+./<model>.gguf --prompt "<the 78-token corpus prompt>" --json` — with the same pinned binary
+and the same prompt. The `metrics` array and every other key are byte-identical to the
+absolute-path run; only the `model` field differs. That keeps `check_hardcoded_paths.sh`'s
+shipped-path count flat without deleting a measurement: nothing is redacted, the run was
+simply invoked the way it should have been.
+
+`n5/` no longer carries five JSON files per model. All five runs were byte-identical to each
+other AND to the canonical record beside this file — `stdev 0` understates it; the whole file
+was the same file — so five copies carried nothing the recorded sha256 does not. See
+`n5/DETERMINISM.md` for the hashes and `n5/runs.log` for the ten exit codes.

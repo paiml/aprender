@@ -96,6 +96,38 @@ is the decision), no-metrics RED (8), and a threshold with no basis refused at e
 
 **Outstanding discriminating experiment (all three lanes name it):** a per-layer `APR_GPU_STAGE_DUMP` at position 0 (token 785) on the 1.5B, CPU vs GPU per stage, to separate attention-at-position-0 / RMSNorm / LM-head GEMV / FFN; plus the same token at position 1. **That is L0-1b's step 1**, and the 2026-09-08 gx10 record narrows it before it runs: the arm may not be device-specific — an explanation that holds on sm_89 and not on sm_121 (or vice versa) is refuted in advance by two hosts landing within 2.2e-4 of each other on a different kernel path.
 
+## The records are portable, and the five-run series is one file (2026-09-08)
+
+`check_hardcoded_paths.sh` refused the first push of these records: **+25 shipped
+machine-specific paths**, 24 of them `"model": "/home/noah/models/…"` inside the
+`apr parity --json` output and one a hardcoded `cargo` in `.pr/L0-1/accept.sh`. That guard
+has no allowlist by design, and its header sets the precedent for evidence: a receipt naming
+the machine it was measured on is the point, and redacting it "would delete the evidence and
+fabricate a cleaner history".
+
+Neither redaction nor an exemption was needed, because the path was never part of the
+measurement:
+
+- Every canonical record was **re-taken with the model named relatively** —
+  `cd ~/models && apr parity ./<model>.gguf --prompt "<the 78-token corpus prompt>" --json`
+  — with the same pinned binaries (lambda `c642576eecb62daa`, gx10 `21d182d69505159c`) and
+  the same prompt. The `metrics` array and every other key are **byte-identical** to the
+  absolute-path run; only `model` differs. Compared field by field, not asserted.
+- `n5/` dropped its ten JSON files per host. All five runs of each model were byte-identical
+  to each other **and to the canonical record** — `stdev 0` understates it; the whole file
+  was the same file — so five copies carried nothing their sha256 does not.
+  `n5/DETERMINISM.md` records the hashes and the distinct-count; `n5/runs.log` keeps the ten
+  exit codes.
+- `.pr/L0-1/accept.sh` now takes `CARGO="${CARGO:-$HOME/.cargo/bin/cargo}"` — still never a
+  bare `cargo` (a shell function of that name overrides `CARGO_TARGET_DIR`), and no longer a
+  machine path.
+
+`check_hardcoded_paths.sh --full` → **delta +0**, every number in the tables above unchanged,
+sentinels 8/8, `accept.sh` 12/12. `make readme-sync` also ran: the generated `CONTRACT_COUNT`
+block stated 1815 against a merge tree carrying 1816 (main's `ratchet-verdict-d2-v1.yaml`
+plus this row's `apr-gpu-cpu-parity-v1.yaml`) — a generated number is an equality, not a
+ratchet.
+
 ## Driver v5.2/v6 DONE-IF ledger (L0-1a)
 | item | state | artifact |
 |---|---|---|
