@@ -16616,3 +16616,22 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-1090
+  github_issue: 3047
+  item_type: task
+  title: 'B4: scripts/roadmap_trim.py had ZERO callers, and .githooks/pre-commit exits 2 on its own line 4 under dash'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-09-08T12:08:28Z
+  updated: 2026-09-08T12:08:28Z
+  spec: null
+  acceptance_criteria:
+  - 'D1: pmat work add / work complete re-serialise all of docs/roadmaps/roadmap.yaml on every call. check_roadmap_diff_additive.sh detects it and names scripts/roadmap_trim.py as the remedy - and that remedy had ZERO call sites. Every git grep -n roadmap_trim origin/main hit was prose: a contract remedy: field, an implementation receipt, the guard''s own RED footer, and its own docstring. No hook, no Makefile target, no workflow. So the only detector ran in guard-tree, ~11 minutes after push, and the only actuator was a human reading a footer. Measured live on PR #3026/#3025: VIOLATION reserialised id=PMAT-1077, reserialised=1, base=818 head=824 added=6 lifecycle=36 - one entry, and it turned the required gate red.'
+  - 'D2: .githooks/pre-commit was #!/bin/sh with set -euo pipefail. pipefail is not POSIX and /bin/sh is dash on this fleet, so following the install line printed in the hook''s OWN header (git config core.hooksPath .githooks) refused EVERY commit before cargo fmt ran: "4: set: Illegal option -o pipefail", exit 2. An unpassable gate trains --no-verify and is why core.hooksPath on this box points at a hand-installed chain instead. D2 is a PREREQUISITE for D1''s fix, not scope creep: a roadmap check added to a hook that dies on line 4 is unreachable, which is the same defect one layer up.'
+  - 'FIX: check_roadmap_diff_additive.sh --staged judges the INDEX. git write-tree makes the staged content a real tree object and roadmap_diff.py already resolves any ref via git show <ref>:<file>, so it is the IDENTICAL rule set CI applies against exactly the bytes about to be committed - one implementation, two entry points (a second copy of the rule list is how bashrs#266 happened). The base is plain merge-base(origin/main, HEAD), NOT resolve_base, because resolve_base''s push-shape branch exists to stop a COMMIT being judged against itself, which cannot arise when the head is the index tree; on a branch freshly cut from main it would return the tip''s PARENT and attribute main''s own entries to this commit. Case table 18 -> 22 rows, hermetic (scratch repos set core.hooksPath=/dev/null so the table judges the guard, not the developer''s hook install). Row 22 asserts the PASS AND the printed base sha, so it cannot pass for the wrong reason. Mutations: base <- resolve_base caught by row 22 (rc 0->1); run_check || true caught by row 20 (rc 1->0). Verified on the thing it fixes: guard-tree and guard-cargo and workspace-test all green on PR #3048.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: 'BSE-001 B4. PR #3048. Id reserved at 1090 rather than minted: pmat work add allocates from the roadmap it can see and would have collided with concurrent PP-066 minting (max across origin/main and the open pp-066 heads was 1079), and it re-serialises the whole file - the very defect this ticket fixes. Gap 1080-1089 is deliberate headroom. NOT delivered here: scripts/session_docs_commit.sh, the other half of B4''s DONE-IF, which belongs to G-11b (#3018, inst:A).'
