@@ -23,7 +23,7 @@ cmd_of() {
         C8)  echo 'bash scripts/run_clean_room.sh   # clean-room p1 via ../infra (hard gate)' ;;
         C9)  echo 'bash scripts/check_receipt_complete.sh --dag docs/specifications/pp-066-dag.yaml   # every 0.66 row credited has a receipt whose marker says complete' ;;
         C11) echo 'bash scripts/check_backend_registry.sh --static   # 15 fixtures (FX-1..15) each observed RED once; zero cfg!(feature) reads in apr-cli backend decisions' ;;
-        C13) echo 'bash scripts/check_release_assets.sh v0.66.0   # 5 apr-* tarballs + .sha256 + minisign signature; install.sh ends by printing apr devices' ;;
+        C13) echo 'bash scripts/check_release_assets.sh v0.66.0   # 5 apr-* tarballs + .sha256 (D-13: 0.66 assets are CHECKSUMMED, NOT SIGNED); install.sh ends by printing apr devices' ;;
         C14) echo 'bash scripts/check_model_parity.sh --manifest   # GPU=CPU per manifest model over >= 64 positions, or the GPU refuses it (L0-1a)' ;;
         C1|C2|C3|C5|C10|C12) echo '0.67 (SPEC-2.0: moved with its track; never credited in 0.66)' ;;
         *) return 1 ;;

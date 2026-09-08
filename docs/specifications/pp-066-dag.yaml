@@ -863,7 +863,6 @@ rows:
   - G-11b
   - R-2
   - L0-1b
-  - KEY
   issues:
   - 2869
   - 2585
@@ -905,7 +904,7 @@ rows:
   title: 'keys/apr-release-minisign.pub on main — the one public key (S0-19: minisign, the .github/pr-review.pub class, no third scheme) the R-5 manifest job signs against and the R-6 installer pins; the secret half never enters a session. Until the file exists on main the manifest job and the C13 gate refuse and R-5 stays blocked_by KEY; DONE-IF present -> R-6 pins its fingerprint'
   epic: 2873
   track: R
-  lane: '0.66'
+  lane: '0.67'
   decision: false
   blockers:
   - G-11
@@ -926,7 +925,7 @@ rows:
   gh_issue: 3045
   pmat_id: PMAT-1079
   status: open
-  notes: 'expiry basis [U] (R-5 10-09 - 6 d - 1, the slack rule). Created by the R-5 delta of 2026-09-08: a blocked_by target must be a DAG row (D1), so the operator artifact is carded with an owner, an expiry and a DONE-IF command rather than left as prose on R-5. Ticket PMAT-1079 minted by hand (pmat#1169): PMAT-1078 was NOT free — agent/R-5''s contracts/apr-publish-cascade-v1.yaml:4 already stamps it for the cascade, unminted in any roadmap, so an id is taken the moment a branch writes it'
+  notes: 'D-13 (2026-09-08): deferred out of 0.66 - 0.66 ships checksummed, UNSIGNED assets, and says so. moved_by: noahgift via driver prompt 2026-09-08, why: D-13. First row of the 0.67 provenance track. expiry basis [U] (R-5 10-09 - 6 d - 1, the slack rule). Created by the R-5 delta of 2026-09-08: a blocked_by target must be a DAG row (D1), so the operator artifact is carded with an owner, an expiry and a DONE-IF command rather than left as prose on R-5. Ticket PMAT-1079 minted by hand (pmat#1169): PMAT-1078 was NOT free — agent/R-5''''s contracts/apr-publish-cascade-v1.yaml:4 already stamps it for the cascade, unminted in any roadmap, so an id is taken the moment a branch writes it'
 - id: R-6
   title: 'one-line installer served at /releases/latest/download/install.sh: detect OS/arch, download the matching asset from the latest non-prerelease tag, verify .sha256 and the minisign-signed manifest
     (public key pinned in the script = keys/apr-release-minisign.pub, KEY; the PP-21 symmetric keys cannot be used — S0-19), place on PATH, then run apr devices'
@@ -937,7 +936,6 @@ rows:
   blockers:
   - R-5
   - G-11
-  - KEY
   issues:
   - 2869
   host: all four (C4 path)
