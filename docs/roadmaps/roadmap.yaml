@@ -16616,3 +16616,23 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-1092
+  github_issue: null
+  item_type: task
+  title: 'release-process-aprender.md v0.1 review: grill the draft against the measured fleet, close the Appendix A S0 ledger, and land what the review admits'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-09-08T00:00:00Z
+  updated: 2026-09-08T00:00:00Z
+  spec: docs/specifications/release-process-aprender.md
+  acceptance_criteria:
+  - 'The draft names 12 scripts/workflows/contracts as the release process of record; measured on origin/main c04eda87d, 11 of 12 are ABSENT (only scripts/check_readme_claims.sh exists). The review must state which sections are executable today and which describe artifacts that do not exist.'
+  - 'Appendix A S0 rows are measured on the physical hosts (ssh, nvidia-smi, uname) and written back into the spec, closing every [U] in section 2 and RD-9. A row transcribed rather than measured is RED.'
+  - 'Every finding carries the command that produced it; a finding with no command is [U] with a named owner.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
