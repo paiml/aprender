@@ -27,3 +27,4 @@
 {"repo":"aprender","ticket":"PMAT-1056","phase":"P_2","mode":"direct","est":46,"actual":1,"basis":"est=impl-estimates.jsonl:L1-L7 median; actual=orchestrator bash calls"}
 {"repo":"aprender","ticket":"PMAT-1056","phase":"P_3","mode":"direct","est":46,"actual":1,"basis":"est=impl-estimates.jsonl:L1-L7 median; actual=orchestrator bash calls"}
 {"repo":"aprender","ticket":"PMAT-1056","phase":"P_4","mode":"direct","est":46,"actual":1,"basis":"est=impl-estimates.jsonl:L1-L7 median; actual=orchestrator bash calls"}
+{"repo": "paiml/aprender", "ticket": "PMAT-1095", "phase": "all", "mode": "direct+agy-quorum", "est": 8, "actual": 100, "basis": "first-run[U]"}
