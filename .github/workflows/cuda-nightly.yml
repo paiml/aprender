@@ -94,10 +94,18 @@ jobs:
           - name: blackwell-gb10
             arch: ARM64
             select: blackwell
-    # LITERAL, not an expression. infra#352 requires a selector to name `gpu`,
-    # and a guard can only check labels it can see — labels hidden behind a
-    # matrix expression are invisible to it.
-    runs-on: [self-hosted, gpu, Linux, ARM64, cuda, blackwell]
+    # LITERAL, not an expression. infra#352 requires a selector to name a GPU
+    # opt-in label, and a guard can only check labels it can see — labels hidden
+    # behind a matrix expression are invisible to it.
+    #
+    # `gx10` added 2026-09-09 (infra#494). The opt-in label used to be `gpu`, and
+    # `gpu` stopped naming one box when yoga was registered carrying it too
+    # (`gpu,yoga,cuda,ada` against gx10's `gpu,gx10,cuda,blackwell,gb10`). Without
+    # the host label this selector is a subset of both label sets on everything
+    # but ARM64 — and relying on an architecture label to disambiguate two GPU
+    # boxes is what `cuda` did before `gpu`, and it failed the same way. Name the
+    # box.
+    runs-on: [self-hosted, gpu, gx10, Linux, ARM64, cuda, blackwell]
     timeout-minutes: 90
     env:
       APR_PARITY_MODEL: ${{ vars.APR_PARITY_MODEL || '/home/noah/models/qwen2.5-coder-1.5b-instruct-q4k.apr' }}
