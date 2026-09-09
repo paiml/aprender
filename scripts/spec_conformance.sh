@@ -84,6 +84,7 @@ selftest() {
     # guard is the one place a lint error is not cosmetic.
     local td pass=0 fail=0
     local BT ROW_ARMED ROW_OPEN DAG_OK LEDGER_ONE LEDGER_TWO LEDGER_TWO_COMMITS LEDGER_SPLIT
+    local SPEC_CONFORMANCE_TODAY root_marker
     local LEDGER_NOLEAD LEDGER_BACKTICK LEDGER_TRAILING LEDGER_EXTRA LEDGER_SIDE LEDGER_SUPERSEDED LEDGER_RESPEND_OUT
     local LEDGER_DUMMY_FIRST LEDGER_BOLD LEDGER_SIDE_SPLIT LEDGER_SIDE_WIDE LEDGER_SAME_HEADER LEDGER_EXTRA_OUT LEDGER_PRE
     local LEDGER_FOREIGN_HEADER LEDGER_THREE_OFF LEDGER_CONFORMANT_OUT LEDGER_NO_TIER_OUT
@@ -171,6 +172,13 @@ selftest() {
         fi
     }
 
+    # I-26 (PMAT-974): SPEC_CONFORMANCE_TODAY is what the scanner treats as
+    # "today" when deciding whether a §12 row is past its derived expiry (D6).
+    # Fixed well before every literal date any fixture below types, so none of
+    # them read as expired by accident; the two rows that exercise D6 override
+    # it themselves, per-call, to a date after their own row's expiry.
+    SPEC_CONFORMANCE_TODAY="2020-01-01"
+    export SPEC_CONFORMANCE_TODAY
     BT=$(printf '\140')          # a literal backtick, built rather than typed
     ROW_ARMED="| PP-1 | a rule | mutate | hold | ARMED | ${BT}scripts/x.sh${BT} · ${BT}pg:alpha${BT} / ${BT}pg:beta${BT} |\\n"
     ROW_OPEN="| PP-2 | a rule | mutate | hold | OPEN | ${BT}scripts/x.sh${BT} · ${BT}pg:gamma${BT} / ${BT}pg:delta${BT} |\\n"
@@ -343,6 +351,31 @@ selftest() {
         "$(mk_root dagnonroot "$ROW_ARMED" \
            "| r1 | a | o | — | 2026-01-01 |\\n| r2 | b | o | r1 | 2025-01-01 |\\n" \
            "$LEDGER_ONE" "alpha beta")"
+    # I-26 (PMAT-974, S0-2): a §12 cell's expiry is the `Expires **date**`
+    # MARKER, never the first date the cell happens to mention -- a root row
+    # narrates work ("witness taken 2026-09-02") before its actual expiry.
+    if _reg expiry_marker_wins; then
+        root_marker="$(mk_root exmarker "$ROW_ARMED" \
+            "| r1 | a | o | — | witness taken 2026-09-02 under v3.1. Expires **2026-09-19** |\\n" \
+            "$LEDGER_ONE" "alpha beta")"
+        MIN_ROWS=1 scan "$root_marker" --no-out > "$td/exmarker.tsv" 2>/dev/null
+        derived=$(LC_ALL=C awk -F'\t' '$1 == "DAG" && $2 == "r1" { print $3 }' "$td/exmarker.tsv")
+        if [ "$derived" = 2026-09-19 ]; then
+            printf '  ok    %-38s %s\n' expiry_marker_wins "r1 = Expires marker = 2026-09-19"
+            pass=$((pass + 1))
+        else
+            printf '  BROKE %-38s expected 2026-09-19 got [%s]\n' expiry_marker_wins "$derived"
+            fail=$((fail + 1))
+        fi
+    fi
+    # §4 andon: a row past its derived expiry and not LANDED must turn the
+    # whole scan RED (D6). The override date (2027-06-01) is AFTER the row's
+    # own expiry (2026-09-10) and the row's expiry is AFTER the fixture-wide
+    # default "today" (2020-01-01) set above -- so this only goes RED if the
+    # per-call SPEC_CONFORMANCE_TODAY override actually took hold.
+    SPEC_CONFORMANCE_TODAY=2027-06-01 row expired_row_is_red D6 \
+        "$(mk_root expired "$ROW_ARMED" \
+           "| r1 | a | o | — | Expires **2026-09-10** |\\n" "$LEDGER_ONE" "alpha beta")"
 
     if [ "$LIST_ONLY" = 1 ]; then
         rm -rf "${td:?refusing to rm an empty path}"
