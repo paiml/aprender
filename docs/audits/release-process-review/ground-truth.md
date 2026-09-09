@@ -33,7 +33,18 @@ transcribed from the draft, from memory, or from another document.
 | `contracts/apr-dogfood-models-v1.yaml` | §8 (marked "new") | ABSENT (correctly marked new) |
 
 A `find . -name '*<basename>*'` over the whole tree (target/ excluded) finds none of
-them under any other path. Of the **21** paths named: **1 exists**
+them under any other path.
+
+> **RE-MEASURED 2026-09-09 against `origin/main` @ `ebc9e9d81`: 4 present, 17 absent.**
+> `#3026` (L0-1a) landed after the measurement below and shipped three of them —
+> `scripts/check_model_parity.sh` (C14), `evidence/models/supported.yaml` (the derived
+> manifest) and `contracts/apr-gpu-cpu-parity-v1.yaml`. **This also overtakes finding
+> F5**: the draft's contract name was right and the file exists, so the concern becomes
+> "two parity contracts now cover one invariant and need an owner", not "do not mint it".
+> The original measurement, taken at `c04eda87d`, is preserved below because the review's
+> reasoning was built on it.
+
+Of the **21** paths named at `c04eda87d`: **1 exists**
 (`scripts/check_readme_claims.sh`), **1 is correctly marked "new"**
 (`contracts/apr-dogfood-models-v1.yaml`), and of the remaining **20 non-new** paths
 **19 are absent**.
