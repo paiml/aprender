@@ -7,7 +7,7 @@ branch: PMAT-1096-release-0-66-0
 base: main f34671a6b
 epic: 2873
 model: claude-fable-5-1 (orchestrator) · one agy quorum (width 3) via paiml-agy-delegate
-turns: 78
+turns: 118
 ---
 # impl receipt — PMAT-1096: the 0.66.0 release cut
 
@@ -29,7 +29,7 @@ fable_binding: true   quota_age_h: 47   quota_mark: A   k_measured_at_set: 37
 | statusLine `session_id` = hook `session_id` | true [V] | `discover.sh --state-dir` prints `session=d8a83629-…` and `events-d8a83629-….jsonl` carries the same id |
 | `tasks[].id` = hook `agent_id` | true [V] | events line `SubagentStart … agent_id=ab286307cd9f490cc` equals the Agent tool's returned `agentId` |
 | `transcript_path` present on subagentStatusLine stdin | [U] | not measured this run (no subagent-statusline invocation observed) |
-| `k_measured` vs `global=k` | 78 vs 78 [V] | the jq below over the session transcript |
+| `k_measured` vs `global=k` | 118 vs 118 [V] | the jq below over the session transcript |
 
 ```
 jq -r 'select(.type=="assistant" and ((.isSidechain // false)|not)) | (.message.id // .uuid)' <transcript> | sort -u | wc -l
@@ -106,6 +106,23 @@ exit 0; read back `gh issue view 2971 --json state` → `CLOSED` (closedAt 2026-
 `mutations.jsonl` carries the one `close` row.
 
 
+### Phase 3b — the pre-publish dogfood, run early on the branch, NO-GO → fixed at the root → GO
+
+`scripts/dogfood.sh --phase pre-publish` was run on the branch head (`c554a7731`) BEFORE the merge, to surface
+red rows while the fleet queue drains (the R5 receipt itself must be re-taken on the merge commit). Round 1:
+**NO-GO** on five rows, none of them introduced by the bump — every one came in on `main` since 0.65.2:
+
+| row | cause | fix (this branch, `b891ab789`) |
+|---|---|---|
+| `declared:check_no_claim_literals` FAIL | the `[0.66.0]` CHANGELOG insertion shifted six baselined historical lines (file:line-keyed, shrink-only ratchet reads a move as growth) | the six numeric claims deleted from the historical lines; baseline pruned 452→446 (`--update`); `check_baseline_ratchets.sh` PASS |
+| `declared:check_perf041_marker` FAIL | `evidence/perf041/lambda/marker.json` 7.1 days old (`witness.max_age_days=7`) | `scripts/perf041_batched_parity_probe.sh` re-run on lambda with the cuda `apr` at `c554a7731`: c=1/4/8/16 all PASS, `intra_agree_to=128`, `max_m=16`, `m1_agree_to=3` for c≥4 (the known kernel-family divergence at token 3, recorded not gated); marker + witness committed; guard PASS age=0.0d |
+| `bashrs` FAIL 8 SEC/DET/IDEM over 271 files | `.pr/L0-1b/{accept,step0/sweep}.sh` (#3032), `check_hardcoded_paths.sh`, `check_roadmap_diff_additive.sh`, `predict_merge.sh`, `tests/guard_tree_job_test.sh` (BSE PRs) | eval→sed-read of `PROMPT` (byte-identical, 445 chars), `${R:?}`/validated `rm -rf`, `..`-refusal before `mkdir`, `SECONDS` instead of `date`, `yq e`; per-file and single-invocation gating count 0; each guard's own selftest/run re-executed (`check_hardcoded_paths --selftest` PASS, `guard_tree_job_test` 4/4, `predict_merge` PASS; `check_roadmap_diff_additive --selftest` rc=1 **before and after**, row verdicts identical — a pre-existing selftest defect, filed below) |
+| `model-parity` FAIL "Feature not enabled: cuda" | dogfood's release-binary gate builds `--features cli` (no cuda) and C14 then ran that binary on a CUDA host — a tool defect read as a model defect | `scripts/dogfood.sh` C14 leg builds its own `--features cuda` apr into `<target>/dogfood-cuda` when `nvidia-smi -L` lists a device, records to a work dir (never `evidence/parity/<host>/`); GPU-less hosts unchanged |
+| `git-clean` WARN | the C14 run's stray `evidence/parity/noah-Lambda-Vector/` and the delegate's `.claude/agent-memory/` | stray dir removed; `/.claude/agent-memory/` gitignored |
+
+Round 2 at `b891ab789`: `make gate` exit 0; `scripts/dogfood.sh --phase pre-publish` → **GO** (43 rows; `model-parity PASS` 3 manifest models with `--features cuda`; `bashrs PASS`; only `reachability WARN`, informational). Receipt copied to
+`docs/audits/impl-PMAT-1096-logs/dogfood-pre-publish-b891ab789.json` (sha256 `539a919203588b98a4d2c777f9bae64985ddaf9066d9320a18f70efd85e5b75c`); it is NOT the R5 receipt — that one is re-taken on the merge commit.
+
 ## Verification (claimed vs my rerun)
 
 verification:
@@ -119,12 +136,17 @@ verification:
   cmd="APR_BIN=/mnt/nvme-raid0/targets/rel-066-cuda/release/apr bash scripts/apr_bin.sh"  claimed_exit=n/a  rerun_exit=0 (apr 0.66.0 (611989200) = HEAD at build)  log_path=evidence/parity/l0-1/lambda/qwen2.5-1.5b-instruct-q4_k_m.err  sha256=06709a1366b62e7c6b3684a20c486b3eaad0e5848f2d7b546a44b44b4a120e72
   cmd="bash scripts/check_model_parity.sh --judge evidence/parity/l0-1/lambda/qwen2.5-1.5b-instruct-q4_k_m.json --model qwen2.5-1.5b-instruct"  claimed_exit=0 (three lanes)  rerun_exit=0 (PASS 78 positions, min cosine 0.9978 at position 4)  log_path=evidence/parity/l0-1/lambda/qwen2.5-1.5b-instruct-q4_k_m.json  sha256=3dbd650563f114208f9d11a5b67a1249b39150b3d486e56bd5510dce62014e11
   cmd="gh issue view 2971 --json state -q .state"  claimed_exit=n/a  rerun_exit=0 (CLOSED)  log_path=docs/audits/quorum-PMAT-1096-2971.json  sha256=ce51c0acadcb9e02b21756a2750a4328b9a3eb245fc5e61b1a798a50213764a5
+  cmd="make gate (b891ab789)"  claimed_exit=n/a  rerun_exit=0  log_path=docs/audits/impl-PMAT-1096-logs/gate2.log  sha256=fab1037f1dabf52e75d19058b3afee00d16f75a562c20a2296c900374de53c31
+  cmd="bash scripts/dogfood.sh --phase pre-publish (b891ab789)"  claimed_exit=n/a  rerun_exit=0 (GO)  log_path=docs/audits/impl-PMAT-1096-logs/dogfood-pre-publish-b891ab789.json  sha256=539a919203588b98a4d2c777f9bae64985ddaf9066d9320a18f70efd85e5b75c
+  cmd="bash scripts/check_perf041_marker.sh"  claimed_exit=n/a  rerun_exit=0 (lambda PASS age=0.0d)  log_path=evidence/perf041/lambda/marker.json  sha256=fd254d58852f4a651e3d73dd5fb87128365e1385e92c12e074d1a933de54fc1b
+  cmd="bash scripts/check_no_claim_literals.sh && bash scripts/check_baseline_ratchets.sh"  claimed_exit=n/a  rerun_exit=0  log_path=scripts/claim_literal_baseline.txt  sha256=921afca893ad399db8cdd7954ff24c527b0a230afaf6e4eb1d1b2e6335d719d9
 
 Rows marked "claimed_exit=n/a" are the orchestrator's own runs with nothing claimed by a worker; the judge row's claim is the three lanes' PASS, re-run here. Logs are `gate-reduce.sh` reductions (≤ 1 KB head + fail_tail); the full logs live only in the session scratchpad.
 
 ## Jidoka log
 
-none (no red gate on this branch).
+- {ticket: PMAT-1096, phase: 3b, defect: pre-publish dogfood NO-GO on five rows (claim-literal shift, stale PP-26 witness, 8 bashrs findings, C14 on a non-cuda binary, stray untracked dirs), owner: release tooling + the merged PRs that introduced them, whys: (1) why NO-GO → five red rows; (2) why red → each row above; (3) why not caught on main → main's dogfood is not run per PR, only at release; (4) why the tool defect → the release-binary gate and the C14 gate disagree on features; (5) root fix → C14 builds its own cuda leg, findings fixed in their scripts} — resolved same branch.
+- filed: `scripts/check_roadmap_diff_additive.sh --selftest` exits 1 on `main` at `f34671a6b` (row 'push shape'/re-serialisation) — pre-existing, verdicts identical before and after the SEC011 edit; not a blocker for the cut (the guard's non-selftest path is what CI runs and it PASSes).
 
 ## Estimates
 
@@ -160,5 +182,9 @@ Gaps: (1) closed — #2971 was closed on the round-2 quorum (above); (2) phase 4
 [status] ticket=PMAT-1096 phase=2/6 global=78/6(K=150) k_measured=78 sub=0/0 basis=first-run[U]
          mode=quorum:agy trigger=Q1 route=agy-quorum w=1.00 basis=quota.json@46h q=fable_binding=true/age_h=47 gate=PASS slots=1/3 denied=0
          red=- filed=- blocker=- next=#2971 closed on a 3/3 quorum; wait for the fleet on #3050 #3063 #3069, then ready+arm #3069
+
+[status] ticket=PMAT-1096 phase=3/6 global=118/6(K=150) k_measured=118 sub=0/0 basis=first-run[U]
+         mode=direct trigger=- route=self w=11.11 basis=quota.json@46h q=fable_binding=true/age_h=47 gate=PASS slots=0/3 denied=0
+         red=- filed=check_roadmap_diff_additive-selftest blocker=fleet: clean-room pool 15/17 busy on other repos; #3063 PR run queued 5h, #3066 queue run queued 1h next=push the gate fixes once; wait for #3050/#3063; then ready+arm #3069
 
 verdict: PARTIAL(release in flight) — the bump is green locally and pushed; the tag, the cascade and the post-publish QA follow the merge.
