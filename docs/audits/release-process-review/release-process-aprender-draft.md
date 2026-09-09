@@ -333,19 +333,29 @@ detection to users no longer receiving the bad artifact.** `[U]` until the first
 
 ## §10 Decisions for review
 
-None are decided here.
+**None are decided here — but each now has a recommended answer, an argument, and a
+falsifier.** An `agy /grillme` lane was asked for positions rather than objections, after
+four revisions and thirteen review rounds moved none of these. Its answers are below,
+assessed. Two were rejected and one was rewritten; where that happened it says so and why.
 
-| id | question | what bears on it | owner |
-|---|---|---|---|
-| **RD-1** | which targets does a tagged release carry? | **Four** sets to reconcile: nightly's 5, binary-release's 4 **with musl**, C13's 5, §3.2's. Sub-questions: darwin/windows carry-drop-verify; **musl or not** (already shipped for `pv`; including it doubles the matrix); and whether `apr-cli` opts into `binary-release.yml`. C13 (`:159`) names five targets but not `nightly.yml` — **R-5** (`:218`) is what pins them to it | team |
-| **RD-2** | installer default when a driver is present | `-cuda`, choice and reason printed, `--backend` overriding (FX-18). No finding against it | team |
-| ~~**RD-3**~~ | ~~`cuda-test` on `yoga`: required in 0.66 or advisory→required in 0.66.1?~~ | **RETIRED, not answered.** The section it governed is deleted (§9.8): there is no PR-time GPU check to schedule. If a live-GPU PR check is ever proposed again it needs a new row, and `infra#359`'s intermittency cost is still the thing it must answer | — |
-| **RD-4** | `gx10` is the live-GPU lane **and** a perf host | Smaller than in v0.3, which also made it a builder — hosted CI now builds. What remains is nightly-vs-perf contention on one box | team |
-| **RD-5** | if #2971 is not root-caused by the tag | Cannot be settled while §8's jidoka target says the opposite. #2971 is OPEN, `bug, P0, pp-066, inst:A` `[V]` | Noah |
-| **RD-6** | `arm-gpu-cuda` has one verification host | **Still open, deliberately.** An earlier plan cut `gx10` and would have closed this by omission; dropping the only aarch64 host while shipping an aarch64 artifact is a regression, not a decision | team |
-| **RD-7** | the declared PTX floor | §3.3 replaces the *basis*, not the answer. The published ISA→driver mapping is the source; the number is this row's | team |
-| **RD-8** | bit-for-bit reproducibility across machines | **Recommend CLOSE — out of scope permanently, not deferred.** Cross-machine bit-reproducibility needs a reproducible-builds toolchain (pinned everything, no embedded paths, no timestamps) this project does not have and is not building. Same-machine determinism is required now and is enough for artifact identity, which is what M1 checks. Team to confirm the close | team |
-| **RD-9** | `yoga` specs | The measurement is **taken** (§2). `yoga` is not used by this process, so this row now only affects the build box. Recording it closed is Noah's — a measurement taken is not a decision made | Noah |
+**Blocking vs defaultable.** Four decide what gets built or whether it ships and must be
+answered: **RD-1, RD-5, RD-6, RD-7**. Four can be taken as recommended today and revisited:
+**RD-2, RD-4, RD-8, RD-9**. (The lane put RD-4 in the blocking set and RD-6 outside it;
+both are corrected here — RD-4 is now a three-line concurrency group, while RD-6 decides
+whether an artifact ships at all.)
+
+
+| id | question | recommended answer, and the argument | falsifier — what makes it wrong | owner |
+|---|---|---|---|---|
+| **RD-1** | which targets does a tagged release carry? | **Drop darwin and windows. Build without musl. Keep `binary-release.yml`.** Darwin and windows have **no verification host** — `mini` is not a CI runner — and §9.1 forbids publishing an artifact nothing can run; that argument is decisive and needs no measurement. musl doubles the matrix and interacts badly with §3.3's `dlopen` of `libcuda.so.1`. **The lane's fourth answer is rejected**: it proposed a new `release-assets.yml` built on self-hosted runners, reasoning from v0.3's text — v0.4 builds on hosted CI because no CUDA toolkit is needed, and it names `yoga`, which this process no longer uses | A musl `-cuda` build runs cleanly on Alpine with a real driver. **~15 min to settle**: `cargo build --target x86_64-unknown-linux-musl --features cuda`, run `apr devices` on an Alpine VM with driver 570.207 | team |
+| **RD-2** | installer default when a driver is present | **CLOSE as proposed.** `-cuda`, reason printed, `--backend` overrides. FX-16 guarantees a present-but-unusable driver falls back to CPU without crashing, and FX-18 makes the choice visible. No reviewer in thirteen rounds objected | A stub or corrupt `libcuda.so.1` slips past FX-16 and segfaults before `--backend cpu` can be applied | team |
+| ~~**RD-3**~~ | ~~`cuda-test` on `yoga`?~~ | **RETIRED, not answered.** The section it governed is deleted (§9.8) — there is no PR-time GPU check to schedule | A live-GPU PR check is proposed again; it needs a new row, and must answer `infra#359`'s intermittency cost | — |
+| **RD-4** | `gx10` is the live-GPU lane **and** a perf host | **Take the concurrency group.** A GitHub Actions `concurrency:` group shared by the nightly lane and any perf job makes them mutually exclusive — three lines, no new machinery. *The lane argued this from `check_host_slot.sh` and "a host holds one release role at a time"; neither exists in v0.4 — the slot scheduler was deleted. The mechanism is right, the citation was not* | Two jobs still overlap because a perf run started by hand over SSH never enters the group. If that happens, the lock has to move off Actions | team |
+| **RD-5** | if #2971 is not fixed by the tag | **Block the tag. Delete the `UNSERVICEABLE` hatch.** The lane took the harder road and the argument holds: M3 exists *because* of #2971, so an escape hatch on that one gate makes it theater by §1.1, and it contradicts §8's jidoka target outright. Deleting the hatch resolves the contradiction in the direction that keeps the gate | **#2971 is architecturally unfixable**, in which case blocking halts every release indefinitely and the hatch is the only honest option. That is the question to answer first, and it is why this row is Noah's | Noah |
+| **RD-6** | `arm-gpu-cuda` has one verification host | **Ship it; state the single-host limit in the notes.** The lane's supporting point is the strongest thing said about this row in four revisions: the **x86 pipeline is also single-capability** — `yoga` and `lambda-labs` are both sm_89 — so demanding a cross-check for aarch64 while accepting one for x86 is inconsistent. Not shipping punishes users who could use it | An sm_121-specific path silently returns garbage on Jetson Orin (sm_87) in the wild. That is a real class, and it is what a second aarch64 host would catch | team |
+| **RD-7** | the declared PTX floor | **The lane's number is rejected and the question is sharper than it looked.** It derived sm_89 → PTX ISA 7.8 → driver 525.60.13 from the *oldest* architecture — but its own RD-6 answer ships an **sm_121** artifact, and a PTX 7.8 floor cannot express sm_121. Its Table 62 row was also `recalled-not-cited`. **The real question this exposes: is the floor global or per-artifact?** A `-cuda` artifact per target can carry its own floor; one floor across both cannot. Decide that first, then one Table 62 lookup gives the number | A single global floor does express both targets, in which case the per-artifact split is unnecessary complexity | team |
+| **RD-8** | bit-for-bit reproducibility across machines | **CLOSE — permanently out of scope, not deferred.** Needs a hermetic toolchain the project is not building; same-machine determinism is what artifact identity (M1) actually checks. Lane agrees with §11's recommendation | A supply-chain compromise of `intel`'s toolchain stays undetectable precisely because the binary cannot be reproduced elsewhere. That is the real cost of closing this, and it should be closed with eyes open | team |
+| **RD-9** | `yoga`'s specs | **CLOSE.** Measured and in §2; `yoga` is no longer used by this process at all, so nothing turns on it | `yoga` is a dynamically provisioned VM whose core count or VRAM changes between invocations | Noah |
 
 ---
 
@@ -415,6 +425,7 @@ GPU lane already exists.
 | **`check_release_receipts.sh` kept** | deleting enforcement while keeping the receipt is the pendulum swinging |
 | **RD-8 recommended closed** by argument | 9 decisions → 8 |
 | absent artifacts | 17 → **12** |
+| **§10 gains recommended answers** | an `agy /grillme` lane asked for positions rather than objections; each row now carries an answer, its argument and its falsifier. Two rejected, one rewritten. Still not decided — the owner column is unchanged |
 
 **v0.3 — 2026-09-09.** Rewritten against what the tree already does: #3026 had shipped the
 manifest, C14, the parity contract and PR-time sentinels; `binary-release.yml` already
