@@ -16631,6 +16631,8 @@ roadmap:
   - 'cargo test -p aprender-gpu --features cuda --lib test_cublas_gemm_f16_training_shape has NO wall-clock TFLOP/s assertion; it asserts numerical parity vs a CPU reference and REPORTS throughput'
   - 'bash scripts/cuda_rust_fleet_check.sh --self-test exits 0, and its case table shows a seeded failing probe turns the receipt verdict to FAIL'
   - 'bash scripts/cuda_rust_fleet_check.sh --host gx10 writes evidence/cuda-rust-fleet/gx10.json with verdict PASS: cuda-core probe, launch_budget + determinism tests under --features cuda, cutile probe (CUDA >= 13.1)'
+  - 'bash scripts/cuda_rust_fleet_check.sh --host yoga writes evidence/cuda-rust-fleet/yoga.json with verdict PASS'
+  - 'evidence/cuda-rust-fleet/noah-Lambda-Vector.json is PASS, OR is INCOMPLETE with driver_floor as the ONLY skipped prerequisite and blocked_on naming the reboot that activates the staged 580 driver — an INCOMPLETE that names its blocker is the truthful artifact; a PASS reached by skipping it is not'
   phases: []
   subtasks: []
   estimated_effort: null

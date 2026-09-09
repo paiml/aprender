@@ -6,6 +6,30 @@ use crate::driver::memory::{classify_device_memory, DeviceMemoryClass};
 
 /// Falsification Test 1: Oversize Allocation
 /// Attempt to allocate 100GB - must return OOM, not panic or hang
+/// Sets an environment variable for the guard's lifetime and restores the PRIOR state
+/// (present-with-value or absent) on drop — including on unwind.
+struct EnvVarGuard {
+    key: &'static str,
+    prior: Option<std::ffi::OsString>,
+}
+
+impl EnvVarGuard {
+    fn set(key: &'static str, value: &str) -> Self {
+        let prior = std::env::var_os(key);
+        std::env::set_var(key, value);
+        Self { key, prior }
+    }
+}
+
+impl Drop for EnvVarGuard {
+    fn drop(&mut self) {
+        match self.prior.take() {
+            Some(v) => std::env::set_var(self.key, v),
+            None => std::env::remove_var(self.key),
+        }
+    }
+}
+
 #[test]
 fn test_alloc_oversize_100gb() {
     // GPU-ORD-4: "100GB must be impossible" is only true under the default
@@ -59,9 +83,12 @@ fn test_alloc_oversize_100gb() {
     // the allocator working as documented, not the property under test. The property
     // is "cuMemAlloc refuses more than the device", so ask for cuMemAlloc explicitly.
     // The exclusivity lock held above covers this env mutation (GPU-ORD-4).
-    std::env::set_var("MANAGED_MEMORY", "0");
+    // RAII, not set/remove: if `GpuBuffer::new` (or anything after it) panics, a bare
+    // `remove_var` never runs and MANAGED_MEMORY=0 leaks into every later test in this
+    // process; and an unconditional `remove_var` would also destroy a value the suite was
+    // launched with. The guard restores whatever was there, on every exit path.
+    let _env = EnvVarGuard::set("MANAGED_MEMORY", "0");
     let result = GpuBuffer::<f32>::new(&ctx, oversize);
-    std::env::remove_var("MANAGED_MEMORY");
 
     match result {
         Err(GpuError::OutOfMemory { .. }) => {

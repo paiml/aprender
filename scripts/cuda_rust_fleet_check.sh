@@ -46,6 +46,18 @@ verdict() {
   echo PASS
 }
 
+write_receipt() {
+python3 - "$OUT/$HOSTN.json" "$HOSTN" "$NOW" "$gpu" "$cc" "$driver" "${tk:-}" "$V" "$(sha256sum "$0" | cut -c1-16)" "$memavail_gb" "${IDS[@]}" "${STATUS[@]}" "${REASON[@]}" "${CMDS[@]}" <<'PY'
+import json,sys
+a=sys.argv[1:]; path,host,now,gpu,cc,drv,tk,verdict,sha,mem=a[:10]; rest=a[10:]; n=len(rest)//4
+ids,st,rs,cm=rest[:n],rest[n:2*n],rest[2*n:3*n],rest[3*n:]
+probes=[{"id":i,"status":s.split(":")[0],"reason":r,"cmd":c} for i,s,r,c in zip(ids,st,rs,cm)]
+blocked=[p["id"]+": "+p["reason"] for p in probes if p["status"]=="SKIP"]
+json.dump({"host":host,"utc":now,"gpu":gpu,"compute_cap":cc,"driver":drv,"toolkit_max":tk,"script_sha256_16":sha,"mem_available_gib":int(mem or 0),"blocked_on":blocked,
+           "probes":probes,"verdict":verdict},open(path,"w"),indent=2)
+PY
+}
+
 # ------------------------------------------------------------------- self-test -----
 if [ "$MODE" = selftest ]; then
   fail=0
@@ -60,6 +72,23 @@ if [ "$MODE" = selftest ]; then
   case_ FAIL       "SKIP:x" FAIL               # SKIP never masks a FAIL
   # the receipt writer must refuse an unknown status too
   if printf 'PASS\nMAYBE\n' | verdict | grep -qx FAIL; then echo "OK   FAIL <- [PASS MAYBE] (unknown status is RED)"; else echo "FAIL unknown status not RED"; fail=1; fi
+  # the RECEIPT WRITER, not just the verdict function: synthetic probes through the real python
+  # arrays cannot ride a command's env prefix (they arrive as the literal string "(a b)" —
+  # measured by this very test), so set them as real assignments inside a subshell
+  tmpd=$(mktemp -d)
+  ( OUT="$tmpd"; HOSTN=selftest; NOW=now; gpu=g; cc=8.9; driver=595; tk=13.3; memavail_gb=7; V=INCOMPLETE
+    IDS=(a b); STATUS=(PASS "SKIP:driver 570 < R580"); REASON=("ok" "driver 570 < R580"); CMDS=(x y)
+    write_receipt )
+  if python3 - "$tmpd/selftest.json" <<'PY2'
+import json,sys
+d=json.load(open(sys.argv[1]))
+assert d["verdict"]=="INCOMPLETE", d
+assert [p["status"] for p in d["probes"]]==["PASS","SKIP"], d
+assert d["blocked_on"]==["b: driver 570 < R580"], d
+assert d["mem_available_gib"]==7 and isinstance(d["mem_available_gib"],int), d
+PY2
+  then echo "OK   receipt writer: INCOMPLETE + blocked_on + typed mem field"; else echo "FAIL receipt writer"; fail=1; fi
+  [ -n "$tmpd" ] && [ "$tmpd" != / ] && [ -d "$tmpd" ] && rm -rf "$tmpd"
   [ "$fail" -eq 0 ] && { echo "SELF-TEST PASS"; exit 0; } || { echo "SELF-TEST FAIL"; exit 1; }
 fi
 
@@ -153,31 +182,33 @@ elif [ "$memavail_gb" -lt 12 ]; then add aprender_gpu_cuda SKIP "env: MemAvailab
 else
   log="$OUT/$HOSTN.aprender_gpu_cuda.log"; rc=0
   export CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-8}"
-  ( cd "$REPO" && nice -n 19 timeout 2400 cargo test -p aprender-gpu --features cuda --lib --no-run ) > "$log" 2>&1 || rc=$?
+  bcap=$(( memavail_gb * 60 / 100 )); [ "$bcap" -gt 48 ] && bcap=48; [ "$bcap" -lt 4 ] && bcap=4
+  brun=(nice -n 19); command -v systemd-run >/dev/null 2>&1 && brun=(systemd-run --user --scope -p "MemoryMax=${bcap}G" -p MemorySwapMax=0 --quiet -- nice -n 19)
+  ( cd "$REPO" && "${brun[@]}" timeout 2400 cargo test -p aprender-gpu --features cuda --lib --no-run ) > "$log" 2>&1 || rc=$?
+  # a CI job may have started during the build (TOCTOU on the earlier pgrep): check again before running
+  if [ "$rc" -eq 0 ] && pgrep -f '[R]unner.Worker' >/dev/null 2>&1; then rc=0; add aprender_gpu_cuda SKIP "env: a GitHub Actions job started during the build; not competing with CI" "pgrep Runner.Worker"; fi
+  if [ "$rc" -eq 0 ] && [ "${STATUS[${#STATUS[@]}-1]}" = SKIP ] && [ "${IDS[${#IDS[@]}-1]}" = aprender_gpu_cuda ]; then :; else
   if [ "$rc" -ne 0 ]; then add aprender_gpu_cuda FAIL "build exit=$rc $(grep -E '^error' "$log" | head -1 | cut -c1-120) (see $HOSTN.aprender_gpu_cuda.log)" "cargo test --no-run"; else
     # cargo prints the executable path RELATIVE to the manifest dir when CARGO_TARGET_DIR is
     # unset (measured on gx10: `target/debug/deps/trueno_gpu-…`) and absolute when it is set
     # (lambda-vector, which is why this bug hid there). Resolve against $REPO either way.
-    bin=$(grep -oE 'Executable unittests src/lib.rs \(([^)]+)\)' "$log" | sed -E 's/.*\((.*)\)/\1/' | head -1)
+    bin=$(grep -oE 'Executable unittests src/lib.rs \(([^)]+)\)' "$log" | sed -E 's/.*\((.*)\)/\1/' | head -1 || true)   # unmatched => empty, NOT a set -e abort
     case "$bin" in /*) ;; *) bin="$REPO/$bin";; esac
-    runner=(nice -n 19); command -v systemd-run >/dev/null 2>&1 && runner=(systemd-run --user --scope -p MemoryMax=48G -p MemorySwapMax=0 --quiet -- nice -n 19)
+    # MemoryMax = min(48 GiB, 60% of MemAvailable): a cap above physical memory protects nothing
+    # (yoga has ~31 GiB total), and 40% headroom is what the host keeps whatever the test does.
+    capg=$(( memavail_gb * 60 / 100 )); [ "$capg" -gt 48 ] && capg=48; [ "$capg" -lt 4 ] && capg=4
+    runner=(nice -n 19); command -v systemd-run >/dev/null 2>&1 && runner=(systemd-run --user --scope -p "MemoryMax=${capg}G" -p MemorySwapMax=0 --quiet -- nice -n 19)
     if [ ! -x "$bin" ]; then rc=127; echo "test binary not found: '$bin'" >> "$log"; else
     ( cd "$REPO" && "${runner[@]}" "$bin" launch_budget determinism test_alloc_oversize_100gb test_cublas_gemm_f16_training_shape ) >> "$log" 2>&1 || rc=$?
     fi
     line=$(grep -E '^test result:' "$log" | tail -1 || true); passed=$(printf '%s' "$line" | grep -oE '[0-9]+ passed' | grep -oE '[0-9]+' || echo 0)
-    if [ "$rc" -eq 0 ] && [ "${passed:-0}" -ge 1 ]; then add aprender_gpu_cuda PASS "$line (MemAvailable ${memavail_gb} GiB, cgroup=$( [ "${runner[0]}" = systemd-run ] && echo 48G || echo none))" "cargo test -p aprender-gpu --features cuda --lib -- <filters>"
+    if [ "$rc" -eq 0 ] && [ "${passed:-0}" -ge 1 ]; then add aprender_gpu_cuda PASS "$line (MemAvailable ${memavail_gb} GiB, cgroup=$( [ "${runner[0]}" = systemd-run ] && echo "${capg}G" || echo none))" "cargo test -p aprender-gpu --features cuda --lib -- <filters>"
     else add aprender_gpu_cuda FAIL "exit=$rc passed=${passed:-0} ${line:-no test result line} (see $HOSTN.aprender_gpu_cuda.log)" "cargo test -p aprender-gpu --features cuda --lib -- <filters>"; fi
+  fi
   fi
 fi
 
 V=$(printf '%s\n' "${STATUS[@]}" | verdict)
-python3 - "$OUT/$HOSTN.json" "$HOSTN" "$NOW" "$gpu" "$cc" "$driver" "${tk:-}" "$V" "$(sha256sum "$0" | cut -c1-16)" "$memavail_gb" "${IDS[@]}" "${STATUS[@]}" "${REASON[@]}" "${CMDS[@]}" <<'PY'
-import json,sys
-a=sys.argv[1:]; path,host,now,gpu,cc,drv,tk,verdict,sha,mem=a[:10]; rest=a[10:]; n=len(rest)//4
-ids,st,rs,cm=rest[:n],rest[n:2*n],rest[2*n:3*n],rest[3*n:]
-json.dump({"host":host,"utc":now,"gpu":gpu,"compute_cap":cc,"driver":drv,"toolkit_max":tk,"script_sha256_16":sha,"mem_available_gib":int(mem or 0),
-           "probes":[{"id":i,"status":s.split(":")[0],"reason":r,"cmd":c} for i,s,r,c in zip(ids,st,rs,cm)],
-           "verdict":verdict},open(path,"w"),indent=2)
-PY
+write_receipt
 echo "verdict=$V receipt=$OUT/$HOSTN.json"
 case "$V" in PASS) exit 0;; INCOMPLETE) exit 2;; *) exit 1;; esac
