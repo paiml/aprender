@@ -60,7 +60,10 @@ PY
 
 # stdin-free, pure: is this MemAvailable (GiB) enough to run a one-crate build + one test process?
 # Empty or non-numeric is NOT enough — a guard that cannot read its input must refuse, not fall through.
-mem_floor_ok() { case "${1:-}" in ''|*[!0-9]*) return 1;; esac; [ "$1" -ge 12 ]; }
+mem_floor_ok() {
+  if ! printf '%s' "${1:-}" | grep -qE '^[0-9]+$'; then return 1; fi
+  [ "$1" -ge 12 ]
+}
 
 # ------------------------------------------------------------------- self-test -----
 if [ "$MODE" = selftest ]; then
@@ -93,8 +96,12 @@ assert d["mem_available_gib"]==7 and isinstance(d["mem_available_gib"],int), d
 PY2
   then echo "OK   receipt writer: INCOMPLETE + blocked_on + typed mem field"; else echo "FAIL receipt writer"; fail=1; fi
   [ -n "$tmpd" ] && [ "$tmpd" != / ] && [ -d "$tmpd" ] && rm -rf "$tmpd"
-  for c in "" "x" "0" "5" "11"; do if mem_floor_ok "$c"; then echo "FAIL mem_floor_ok('$c') must REFUSE"; fail=1; else echo "OK   refuse mem_floor_ok('$c')"; fi; done
-  for c in "12" "20" "115"; do if mem_floor_ok "$c"; then echo "OK   allow  mem_floor_ok('$c')"; else echo "FAIL mem_floor_ok('$c') must allow"; fail=1; fi; done
+  for c in "" "x" "0" "5" "11"; do
+    if mem_floor_ok "$c"; then echo "FAIL mem_floor_ok('$c') must REFUSE"; fail=1; else echo "OK   refuse mem_floor_ok('$c')"; fi
+  done
+  for c in "12" "20" "115"; do
+    if mem_floor_ok "$c"; then echo "OK   allow  mem_floor_ok('$c')"; else echo "FAIL mem_floor_ok('$c') must allow"; fail=1; fi
+  done
   [ "$fail" -eq 0 ] && { echo "SELF-TEST PASS"; exit 0; } || { echo "SELF-TEST FAIL"; exit 1; }
 fi
 

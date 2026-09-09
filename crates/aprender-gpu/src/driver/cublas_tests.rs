@@ -9,7 +9,7 @@
 
 use crate::driver::{CublasHandle, CudaContext, CudaStream, GpuBuffer, LaunchConfig};
 
-/// FALSIFY-CUBLAS-005: CublasHandle creates and destroys cleanly
+/// Handle lifecycle: CublasHandle creates and destroys cleanly (no contract id: none exists under contracts/)
 #[test]
 fn test_cublas_handle_lifecycle() {
     let ctx = CudaContext::new(0).expect("CUDA context required");
