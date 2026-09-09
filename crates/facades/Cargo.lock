@@ -13,7 +13,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-contracts"
-version = "0.65.2"
+version = "0.66.0"
 dependencies = [
  "aprender-contracts-macros",
  "regex",
@@ -25,7 +25,7 @@ dependencies = [
 
 [[package]]
 name = "aprender-contracts-macros"
-version = "0.65.2"
+version = "0.66.0"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -254,3 +254,47 @@ name = "zmij"
 version = "1.0.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "29666d0abbfad1e3dc4dcf6144730dd3a3ab225bbbdac83319345b1b44ccfc1b"
+
+[[patch.unused]]
+name = "aprender"
+version = "0.65.2"
+
+[[patch.unused]]
+name = "entrenar"
+version = "0.7.13"
+
+[[patch.unused]]
+name = "entrenar-lora"
+version = "0.3.0"
+
+[[patch.unused]]
+name = "pacha"
+version = "0.2.6"
+
+[[patch.unused]]
+name = "provable-contracts"
+version = "0.3.1"
+
+[[patch.unused]]
+name = "provable-contracts-macros"
+version = "0.3.1"
+
+[[patch.unused]]
+name = "realizar"
+version = "0.8.6"
+
+[[patch.unused]]
+name = "renacer"
+version = "0.10.2"
+
+[[patch.unused]]
+name = "trueno"
+version = "0.18.0"
+
+[[patch.unused]]
+name = "trueno-gpu"
+version = "0.4.36"
+
+[[patch.unused]]
+name = "trueno-quant"
+version = "0.1.0"

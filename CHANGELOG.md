@@ -7,6 +7,85 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.66.0] - 2026-09-09
+
+The **honest-GPU model** release. Milestone `0.66.0` was narrowed by the operator
+on 2026-09-08 to the two P0 defects a user hits first, plus the CI change that
+makes the GPU crates' default-feature tests part of the required check. The
+PP-066 obligation rows (backend registry, release assets, installer, C0 gates)
+moved to `0.68.0` on 2026-09-09; no speed number ships in 0.66 — instruments
+and speed ship later (PP-066 claims ratchet).
+
+### Fixed
+
+- **`apr chat` answered with the toy demo model for a sharded SafeTensors
+  index** (#3022, #3024; PP-066 row F-1, PMAT-1080, #3050). `Path::extension()`
+  on `model.safetensors.index.json` — the exact file `apr pull` writes and then
+  recommends — is `json`, which matched no arm and fell through to the demo
+  model while the banner still printed the real path. One decision
+  (`resolve_chat_format`: suffix, then magic bytes, then a refusal with exit 6)
+  replaces the two that never compared notes; `Demo` is no longer an outcome for
+  a path that exists. Six-row case table, both polarities; before/after records
+  in `evidence/format-honesty/`.
+- **GPU inference computed a different function than CPU for Qwen2.5-1.5B
+  (hidden 1536, 12 heads, 2 KV heads)** (#2971, #3017; PP-066 rows L0-1a/L0-1b,
+  #3026, #3032). Every model in `evidence/models/supported.yaml` now computes the
+  same function on GPU as on CPU over at least 64 positions or the GPU refuses
+  it (C14, `scripts/check_model_parity.sh --manifest`; `SKIP_PARITY_GATE` is a
+  printed override that never passes). `apr parity --per-op` names the first
+  diverging op; for the 1.5B it was the post-FFN residual in layer 26 and the CPU
+  Q8_K reference was the inaccurate side. Measured green on lambda (sm_89) and
+  gx10 (sm_121); records under `evidence/parity/l0-1/`.
+- **apr-cli's integration surface went 14 red to 0 on a clean `main`** (#3051,
+  #3053) — three root causes, each fixed as a guard; the generated 28 MB
+  `test.apr` is untracked and the race it hid is fixed (#3059).
+- **`main` was red under pmat 3.39.0** (#3028, #3030): twelve legacy nested
+  subtask records the new validator refuses as duplicate ids are gone, and id
+  uniqueness is checked in-repo, independent of the analyser pin.
+- **Silicon Nightly tested a package that has never existed** (#2793,
+  paiml/infra#361).
+
+### Added
+
+- **`aprender-gpu` and `aprender-cuda-edge` run in `workspace-test`** (#3063;
+  T0 of the NVIDIA CUDA Rust spec, #3062). Both are `default = []` with no
+  `build.rs`; their default-feature tests had never been in a required check.
+  The `cuda`-gated modules (driver, kernels, memory, ptx) still run only under
+  `--features cuda` (#3067).
+- **Build-system enforcement (BSE-001 M2, BSE-17)** (#3037, #3039, #3044): a
+  fail-closed composite `make gate` pinned to `origin/main`, the `guard_tree`
+  dispatcher and `guard-tree` job, `predict_merge`, sorted-insert for the
+  roadmap, asserted tool pins; ratchet verdicts are a function of (comparand,
+  merge) only; two-tier tests — quick on the PR, full behind it.
+- **PP-066 guards** — G-10: the shipped-path ratchet runs under one pinned
+  analyser with a stamped baseline (#3011); G-11: row PRs never write the DAG,
+  roadmap, spec block or README counts — DAG status is derived (#3020, #3012);
+  G-4/G-6/C0-7: the obligation DAG as data with invariants in CI, the
+  roadmap-additive guard, the receipt terminal marker (#2987, #2981).
+- **PR review receipts judged from the base** (#2985, C0-5): one base-owned
+  quorum workflow on `pull_request_target` and `merge_group`.
+
+### Documentation
+
+- PP-066 release spec v1.5 → v1.6 with the S0 discovery ledger (23 premises
+  measured), the 0.66 parity report and the 0.65.2 post-publish host receipts
+  (parity NO-GO, measured) (#2872, #2875, #2868, #2871, #3000, #2858).
+
+## [0.65.2] - 2026-09-04
+
+Supersedes 0.65.0 and 0.65.1 for every crate (74 of 74 on crates.io).
+`aprender-test-lib` packages `perf-matrix.yaml` through `build.rs` and a
+vendored copy; the CB-510 guard reports any `include_str!`/`include_bytes!`
+in host-compiled code whose target escapes the crate (PMAT-958, #2866).
+
+## [0.65.1] - 2026-09-04
+
+The publish cycle: five sibling dev-dependencies are path-only and preflight
+rule R6 refuses a versioned one (PMAT-955, #2865); `cascade-drain.sh` keeps its
+`DEFER` lines (PMAT-954); the wgpu `shared_instance` initializer no longer
+re-takes `DEVICE_INIT_LOCK` (PMAT-952); a stdio MCP server that answers and
+exits before reading the request keeps its response and exit status (PMAT-953).
+
 ## [0.65.0] - 2026-09-02
 
 The **parity-instrument** release. v0.64.0 closed gates that could not fail;
