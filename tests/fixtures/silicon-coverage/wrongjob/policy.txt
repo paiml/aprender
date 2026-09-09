@@ -1,0 +1,7 @@
+# FIXTURE (R-5 §9.2, the second half) — THE `summary` DEFECT, committed. The
+# ledger below holds a job that carried the axis's labels PERFECTLY and ran no
+# silicon: it is the workflow's needs-aggregator, on the same pool. Measured for
+# real on this guard's first live run, where `x86_64-cpu` was scored covered by
+# `Silicon Nightly / summary`. A pool label set does not name an axis. With the
+# 4th column naming the job, correct verdict: UNCOVERED, exit 1.
+x86_64-cuda-sm89    required        self-hosted,gpu,yoga,cuda,ada    job:ada-yoga*

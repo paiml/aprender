@@ -1,0 +1,4 @@
+# FIXTURE (R-5 §9.2) — it RAN, then stopped. Newest carrying job is 10 days old
+# against a 3-day floor. Correct verdict: STALE, exit 1. Without this case a
+# guard that only ever asked "has it EVER run?" would pass every fixture here.
+x86_64-cuda-sm89    required        self-hosted,gpu,yoga,cuda,ada    job:ada-yoga*

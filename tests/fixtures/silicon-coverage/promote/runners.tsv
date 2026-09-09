@@ -1,0 +1,3 @@
+intel-clean-room-01	self-hosted,Linux,X64,clean-room,intel
+gx10-gpu	self-hosted,Linux,ARM64,gpu,gx10,cuda,blackwell,gb10
+yoga-gpu	self-hosted,Linux,X64,gpu,yoga,cuda,ada

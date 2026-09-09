@@ -1,0 +1,5 @@
+# FIXTURE (R-5 §9.2) — THE BEHAVIOUR THAT CHANGED. Same inputs as `uncovered`,
+# but the axis is DEFERRED. The old guard failed here ("PROMOTE — yoga-gpu can
+# serve it NOW") on runner existence alone, which is promotion with no evidence
+# that anything executed. Correct verdict now: ready, exit 0.
+x86_64-cuda-sm89    pending:361     self-hosted,gpu,yoga,cuda,ada    job:ada-yoga*
