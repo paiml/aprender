@@ -51,26 +51,52 @@ WF_DIR="${WORKFLOW_DIR:-$REPO_ROOT/.github/workflows}"
 # Package references in one file: `<file>\t<line>\t<token>` per hit.
 # Joins backslash continuations first, so a wrapped `cargo` invocation is one
 # logical line and its `-p` is attributed to the line the command STARTED on.
+# Package references in one file: `<file>\t<line>\t<token>` per hit.
+#
+# ONLY `run:` BLOCKS. The first version scanned every line and its own wiring
+# turned it red: the step
+#
+#     - name: "Every cargo -p in a workflow names a real crate (R-8)"
+#
+# contains `cargo` and `-p in`, so the guard reported `in` as a missing package.
+# A `name:`, an `if:` or a comment describing a command is not a command, and a
+# detector that cannot tell those apart reports findings that cannot be fixed —
+# which is how a gate gets bypassed. Blocks are tracked by INDENTATION, the only
+# thing that delimits a YAML block scalar.
+#
+# Continuations are joined first, so a `cargo test \` wrapped onto the next line
+# is one logical line and its `-p` is attributed to the line the command started
+# on. Reading physical lines would make those references invisible.
 refs_in() {
     awk '
+        function indent_of(s,   n) { n = match(s, /[^ ]/); return n ? n - 1 : -1 }
         {
             raw = $0
-            # STRIP COMMENTS FIRST. A `#` at line start or after whitespace opens
-            # a comment in BOTH languages here — YAML outside a `run:` block and
-            # sh inside one — and prose describing a cargo invocation is not a
-            # cargo invocation. Three of this guard'"'"'s first five findings were
-            # sentences in ci.yml comments quoting `cargo test -p X`.
+            # Strip comments in BOTH languages here — YAML outside a `run:` and
+            # sh inside one. Prose quoting a cargo invocation is not one.
             sub(/(^|[[:space:]])#.*$/, "", raw)
-        }
-        # accumulate a logical line
-        buf == "" { start = FNR }
-        {
+            ind = indent_of(raw)
+
+            # A `run:` key opens a block; anything indented deeper belongs to it.
+            # `- run: cargo …` puts the command on the same line, so emit the
+            # remainder immediately.
+            if (raw ~ /^[[:space:]]*(-[[:space:]]+)?run:/) {
+                match(raw, /run:/)
+                run_indent = ind
+                in_run = 1
+                rest = substr(raw, RSTART + 4)
+                if (rest ~ /[^[:space:]]/) { raw = rest } else { next }
+            } else if (in_run) {
+                if (ind >= 0 && ind <= run_indent) { in_run = 0 }
+            }
+            if (!in_run) { buf = ""; next }
+
+            if (buf == "") start = FNR
             sub(/[[:space:]]*\\[[:space:]]*$/, " ", raw)
             cont = ($0 ~ /\\[[:space:]]*$/)
             buf = buf raw
             if (cont) next
-        }
-        {
+
             if (buf ~ /cargo/) {
                 n = split(buf, w, /[[:space:]]+/)
                 for (i = 1; i <= n; i++) {
@@ -94,11 +120,15 @@ refs_in() {
 selftest() {
     _tmp="$(mktemp -d)" || return 2
     # One fixture per FORM VARIANT: inline, continued, --package=, a dynamic
-    # token, and a `-p` that belongs to mkdir rather than cargo.
+    # token, a `-p` that belongs to mkdir rather than cargo, and — added after
+    # this guard reported its OWN step name as a missing package — a `name:`
+    # and an `if:` whose text quotes a cargo invocation.
     cat > "$_tmp/wf.yml" <<'FIXTURE'
 jobs:
   a:
     steps:
+      - name: "Every cargo -p in a workflow names a real crate"
+        if: "cargo test -p decoy-in-an-if"
       - run: mkdir -p /tmp/not-a-package
       - run: cargo test -p real-one --lib
       - run: |
@@ -118,7 +148,7 @@ FIXTURE
         printf '  want: %s\n  got:  %s\n' "$_want" "$_got"
         return 2
     fi
-    printf 'self-test: 5 forms, extractor found 4 references and skipped `mkdir -p`\n'
+    printf 'self-test: 7 forms, 4 references found; skipped mkdir -p, a name: and an if: that quote cargo\n'
     return 0
 }
 
