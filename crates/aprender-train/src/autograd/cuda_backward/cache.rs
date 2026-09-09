@@ -29,6 +29,12 @@ pub(super) static KERNEL_CACHE: OnceLock<Mutex<KernelCache>> = OnceLock::new();
 pub(super) struct KernelCache {
     ctx: Arc<CudaContext>,
     modules: HashMap<String, CudaModule>,
+    /// JIT compiles since the last reset (PMAT-272, R-3). The cascade's
+    /// defects #1810 and #1813 were BACKWARD kernels — pre_warm_lora_backward
+    /// short-circuiting at lora_rank==0, and rms_norm_gamma_reduce stage 2
+    /// missing from the backward pre-warm — so a forward-only counter would
+    /// have missed two of the seven.
+    jit_compiles: usize,
     sm_target: String,
     /// cuBLAS handle for backward GEMMs (ALB-075). Uses CUBLAS_DEFAULT_MATH
     /// (SIMD, no tensor cores) per ALB-076/trueno#170 to avoid NaN in transposed GEMMs.
@@ -40,7 +46,7 @@ impl KernelCache {
     pub(super) fn new(ctx: Arc<CudaContext>) -> Self {
         let sm_target = ctx.sm_target().unwrap_or_else(|_| "sm_70".to_string());
         let cublas = CublasHandle::new(&ctx).ok();
-        Self { ctx, modules: HashMap::new(), sm_target, cublas }
+        Self { ctx, modules: HashMap::new(), sm_target, cublas, jit_compiles: 0 }
     }
 
     /// Get a reference to the cuBLAS handle, if available.
@@ -75,6 +81,17 @@ impl KernelCache {
         self.modules.get_mut(name)
     }
 
+    /// JIT compiles seen since construction or the last reset (R-3).
+    pub(super) fn jit_compiles(&self) -> usize {
+        self.jit_compiles
+    }
+
+    /// Zero the JIT counter. Call AFTER the backward pre-warm; see the forward
+    /// cache for why the reset boundary IS the assertion.
+    pub(super) fn reset_jit_counter(&mut self) {
+        self.jit_compiles = 0;
+    }
+
     pub(super) fn get_or_compile(&mut self, name: &str, ptx: &str) -> Result<&mut CudaModule> {
         use std::collections::hash_map::Entry;
 
@@ -93,6 +110,7 @@ impl KernelCache {
             Entry::Occupied(e) => Ok(e.into_mut()),
             Entry::Vacant(e) => {
                 eprintln!("[BWD-CACHE] Compiling '{name}' (ptx_len={})", ptx.len());
+                self.jit_compiles += 1;
 
                 // trueno#200: On Blackwell, CudaModule::from_ptx uses cuModuleLoadDataEx
                 // which poisons the CUDA context. Bypass it entirely with direct

@@ -37,6 +37,18 @@ pub(super) static FORWARD_KERNEL_CACHE: OnceLock<Mutex<ForwardKernelCache>> = On
 pub(super) struct ForwardKernelCache {
     ctx: std::sync::Arc<CudaContext>,
     modules: HashMap<String, CudaModule>,
+    /// JIT compiles observed since the last reset (PMAT-272, YOGA-NIGHTLY-001 R-3).
+    ///
+    /// A cache MISS after pre_warm_for_model is the Blackwell cascade's root
+    /// cause made countable: the `warm!` macro hardcoded one key, so eleven-plus
+    /// "pre-warmed" kernels silently JIT-compiled at runtime. On sm_121 that
+    /// corrupts the stream and fails hard; on sm_89 it SUCCEEDS, which is why an
+    /// sm_89 pass/fail lane was green through all seven defects.
+    ///
+    /// Counting it turns that silent success into an assertion any architecture
+    /// can make locally — no second machine, no cross-arch transcript diff, and
+    /// no confound from differing CUDA toolkits.
+    jit_compiles: usize,
     /// Device SM target string (e.g. "sm_89" for RTX 4090)
     sm_target: String,
     /// cuBLAS handle (ALB-075): forward=tensor cores, backward=SIMD (ALB-076/trueno#170)
@@ -65,7 +77,7 @@ impl ForwardKernelCache {
         };
 
         eprintln!("[CUDA] Kernel cache initialized for target: {sm_target}");
-        Self { ctx, modules: HashMap::new(), sm_target, cublas }
+        Self { ctx, modules: HashMap::new(), sm_target, cublas, jit_compiles: 0 }
     }
 
     /// Get a reference to the cuBLAS handle, if available.
@@ -88,6 +100,25 @@ impl ForwardKernelCache {
     /// Consumers MUST use this to emit PTX via `kernel.emit_ptx_for_target(cache.sm_target())`.
     pub(super) fn sm_target(&self) -> &str {
         &self.sm_target
+    }
+
+    /// JIT compiles seen since construction or the last reset (R-3).
+    pub(super) fn jit_compiles(&self) -> usize {
+        self.jit_compiles
+    }
+
+    /// Zero the JIT counter. Call this AFTER pre_warm_for_model.
+    ///
+    /// THE RESET IS THE WHOLE ASSERTION. Pre-warm legitimately compiles every
+    /// kernel it warms, so the counter is expected to be large at that point —
+    /// asserting zero there would be asserting pre-warm did nothing. The claim
+    /// worth making is the NEXT one: after pre-warm, a representative pass must
+    /// compile NOTHING. Any miss then means a kernel the pass needs was not
+    /// warmed, or was warmed under a key the pass does not use — which is
+    /// exactly the cascade's root cause and its Lesson-3 sequel (pre-warm and
+    /// runtime building keys with separate format! calls that drifted apart).
+    pub(super) fn reset_jit_counter(&mut self) {
+        self.jit_compiles = 0;
     }
 
     /// Look up a previously compiled module by key (KAIZEN-058).
@@ -127,6 +158,8 @@ impl ForwardKernelCache {
                 // JIT event with its kernel name so missing pre-warm entries
                 // are identifiable in O(1) instead of O(N) iterations.
                 eprintln!("[FWD-CACHE] Compiling '{name}' (ptx_len={})", ptx.len());
+                // R-3: a miss is the countable form of the cascade root cause.
+                self.jit_compiles += 1;
                 // trueno#200: Use from_ptx_direct on Blackwell
                 let (major, _) = self.ctx.compute_capability().map_err(|e| {
                     CudaTensorError::KernelError(format!("compute_capability: {e:?}"))
@@ -534,6 +567,47 @@ pub fn set_forward_cublas_stream(stream: &CudaStream) -> Result<()> {
     cache.set_cublas_stream(stream)
 }
 
+/// JIT compiles the forward cache has done since the last reset (R-3).
+///
+/// See `reset_forward_jit_counter` for why this is asserted AFTER a reset and
+/// not against zero directly.
+#[cfg(feature = "cuda")]
+pub fn forward_jit_compiles() -> Result<usize> {
+    let cache = FORWARD_KERNEL_CACHE.get().ok_or(CudaTensorError::DeviceNotInitialized)?;
+    let cache = cache.lock().map_err(|_err| {
+        CudaTensorError::KernelError("Failed to acquire kernel cache lock".to_string())
+    })?;
+    Ok(cache.jit_compiles())
+}
+
+/// Zero the forward cache's JIT counter — call AFTER pre-warm, before the pass
+/// under test (PMAT-272, YOGA-NIGHTLY-001 R-3).
+///
+/// THE INVARIANT THIS ENABLES: after pre-warm, a representative pass must
+/// compile NOTHING. A miss then means a kernel the pass needs was never warmed,
+/// or was warmed under a key the pass does not use.
+///
+/// That is the Blackwell cascade's root cause made assertable. The `warm!` macro
+/// hardcoded `"silu_forward"` as the key for every kernel, so eleven-plus
+/// "pre-warmed" kernels JIT-compiled at runtime under one colliding entry. On
+/// sm_121 that corrupts the stream and fails hard. On sm_89 it SUCCEEDS — which
+/// is precisely why an sm_89 pass/fail lane stayed green through all seven
+/// defects, and why yoga needs an assertion rather than a verdict.
+///
+/// Deliberately NOT a cross-architecture transcript diff: legitimate arch
+/// differences change cache keys (cuBLAS on sm_121 vs PTX GEMM on sm_89 IS
+/// cascade defect #1804), and yoga vs gx10 also differs in CUDA toolkit. This
+/// invariant is local, needs one machine, and has no such confound.
+#[cfg(feature = "cuda")]
+pub fn reset_forward_jit_counter() -> Result<()> {
+    let cache = FORWARD_KERNEL_CACHE.get().ok_or(CudaTensorError::DeviceNotInitialized)?;
+    let mut cache = cache.lock().map_err(|_err| {
+        CudaTensorError::KernelError("Failed to acquire kernel cache lock".to_string())
+    })?;
+    cache.reset_jit_counter();
+    Ok(())
+}
+
 /// Pre-warm forward kernels (C-PREWARM-001: JIT before block upload).
 #[cfg(feature = "cuda")]
 pub fn pre_warm_forward_kernels(
@@ -634,4 +708,139 @@ pub fn pre_warm_lora_backward_kernels(
         CudaTensorError::KernelError("Failed to acquire kernel cache lock".to_string())
     })?;
     cache.pre_warm_lora_backward(hidden_size, q_dim, kv_hidden_size, max_seq_len, lora_rank)
+}
+
+#[cfg(all(test, feature = "cuda"))]
+mod prewarm_coverage_falsifier {
+    use super::*;
+    use crate::autograd::cuda_tensor::CudaDevice;
+    use trueno_gpu::driver::GpuBuffer;
+
+    /// PMAT-272 / YOGA-NIGHTLY-001 R-3: after pre-warm, a representative pass
+    /// must JIT-compile NOTHING.
+    ///
+    /// # What this falsifies
+    ///
+    /// The Blackwell cascade (2026-05-19, 8 PRs / 7 defects / 1 root cause): the
+    /// `warm!` macro hardcoded `"silu_forward"` as the cache key for EVERY
+    /// kernel, so eleven-plus "pre-warmed" kernels silently JIT-compiled at
+    /// runtime, all colliding on one HashMap entry. Five single-kernel fixes
+    /// could not see it; `[FWD-CACHE] Compiling '{name}'` logging surfaced it in
+    /// one pass.
+    ///
+    /// # Why this test and not a cross-architecture diff
+    ///
+    /// The post-mortem's own recommendation #3 was differential testing between
+    /// sm_89 and sm_121. That design has three problems this one does not:
+    /// legitimate architecture differences change cache keys (cuBLAS on sm_121
+    /// versus PTX GEMM on sm_89 IS cascade defect #1804), the two hosts also
+    /// differ in CUDA toolkit (12.4 on yoga, 13.0 on gx10), and a transcript
+    /// nobody is obliged to read rots. This invariant is LOCAL: one machine, no
+    /// confound, and a verdict that fails.
+    ///
+    /// # Why it matters most on sm_89
+    ///
+    /// Post-mortem Lesson 4: the pre-warm bugs existed on sm_89 too, but
+    /// JIT-on-demand SUCCEEDED there — sm_121's stricter behaviour is what
+    /// turned them into hard failures. So an sm_89 lane whose only output is
+    /// pass/fail was GREEN through all seven defects. This assertion is what
+    /// gives that lane the power to go red.
+    ///
+    /// # Oracle
+    ///
+    /// `forward_jit_compiles() == 0` after `reset_forward_jit_counter()`, across
+    /// a forward pass over the pre-warmed config. Non-zero names the kernels:
+    /// each one is printed by the `[FWD-CACHE]`/`[BWD-CACHE]` logging as it
+    /// compiles, so a failure is directly actionable rather than a bare count.
+    #[test]
+    fn falsify_cuda_prewarm_covers_runtime_no_jit_001() {
+        // Qwen2.5-Coder-1.5B dims — the config the cascade was found on, and
+        // small enough for yoga's 8 GB (YOGA-NIGHTLY-001 §6).
+        let (hidden, inter, heads, kv_heads, head_dim, max_seq) =
+            (1536usize, 8960usize, 12usize, 2usize, 128usize, 512usize);
+        let batch = 4usize;
+
+        // No GPU here: the lane that matters runs this on yoga and gx10. A CPU
+        // box must not report a pass it did not measure — and must not fail
+        // either, since cuda-nightly selects this test by name and a bare
+        // `cargo test` on intel would otherwise go red for having no device.
+        let device = match CudaDevice::default_device() {
+            Ok(d) => d,
+            Err(e) => {
+                eprintln!(
+                    "SKIP falsify_cuda_prewarm_covers_runtime_no_jit_001: no CUDA device ({e})"
+                );
+                return;
+            }
+        };
+        let ctx = device.context().clone();
+        let stream = device.stream();
+        if let Err(e) = init_forward_kernel_cache(ctx.clone()) {
+            eprintln!("SKIP falsify_cuda_prewarm_covers_runtime_no_jit_001: cache init ({e})");
+            return;
+        }
+
+        pre_warm_forward_kernels(hidden, inter, heads, kv_heads, head_dim, max_seq)
+            .expect("pre-warm must succeed before the invariant means anything");
+
+        // THE RESET IS THE ASSERTION'S BOUNDARY. Pre-warm legitimately compiles
+        // everything it warms; asserting zero before this point would assert
+        // that pre-warm did nothing.
+        reset_forward_jit_counter().expect("reset");
+
+        let before = forward_jit_compiles().expect("counter readable");
+        assert_eq!(before, 0, "counter must be zero immediately after reset");
+
+        // A REAL FORWARD PASS, NOT A SECOND PRE-WARM.
+        //
+        // The first version of this test re-ran pre_warm_forward_kernels here
+        // and asserted zero. That was TAUTOLOGICAL and it was caught by the
+        // mutation in YOGA-NIGHTLY-001 §9.7 before it shipped: with the `warm!`
+        // key hardcoded, the second pre-warm writes the same colliding key,
+        // finds it cached, and reports zero misses. It compared pre-warm
+        // against pre-warm — the same key construction on both sides — so it
+        // could not see a defect that lives in the DIFFERENCE between pre-warm
+        // keys and runtime keys.
+        //
+        // That is post-mortem Lesson 5 in miniature ("smoke contracts test the
+        // smoke, not the pipeline"): a contract that cannot fail under any
+        // execution is a contract bug. The invariant is only meaningful against
+        // a pass that builds its keys the way production does.
+        let residual: Vec<f32> =
+            (0..batch * hidden).map(|i| ((i as f32) * 0.017).sin() * 0.02).collect();
+        let input: Vec<f32> =
+            (0..batch * hidden).map(|i| ((i as f32) * 0.011).cos() * 0.02).collect();
+        let gamma: Vec<f32> = vec![1.0f32; hidden];
+
+        let residual_gpu = GpuBuffer::from_host(&ctx, &residual).expect("residual");
+        let input_gpu = GpuBuffer::from_host(&ctx, &input).expect("input");
+        let gamma_gpu = GpuBuffer::from_host(&ctx, &gamma).expect("gamma");
+        let mut residual_out = GpuBuffer::<f32>::new(&ctx, residual.len()).expect("residual_out");
+        let mut output = GpuBuffer::<f32>::new(&ctx, residual.len()).expect("output");
+
+        crate::autograd::cuda_forward::normalization::fused_residual_rmsnorm_forward(
+            &residual_gpu,
+            &input_gpu,
+            &mut residual_out,
+            &mut output,
+            &gamma_gpu,
+            batch as u32,
+            hidden as u32,
+            1e-6,
+            stream,
+        )
+        .expect("forward pass");
+        stream.synchronize().expect("sync");
+
+        let after = forward_jit_compiles().expect("counter readable");
+        assert_eq!(
+            after, 0,
+            "after pre-warm, a real forward pass JIT-compiled {after} kernel(s). \
+             Every one was printed by [FWD-CACHE]/[BWD-CACHE] above with its name. \
+             A kernel compiled here was either never pre-warmed, or pre-warmed under \
+             a key this pass does not construct — the Blackwell cascade's root cause \
+             and its Lesson-3 sequel. See docs/specifications/aprender-gpu/\
+             blackwell-cascade-postmortem.md."
+        );
+    }
 }
