@@ -112,11 +112,26 @@ handling so 'yoga was off' is distinguishable from 'the lane died'."*
 
 ## GT-5 — issues the draft cites
 
-`gh issue view <n> --repo paiml/aprender --json number,state,title` — titles verbatim, not truncated:
+`gh issue view <n> --repo paiml/aprender --json number,state,title`. Titles are verbatim
+**except #2696's**, and the exception is marked rather than silent:
+
+> **Why one title is elided.** #2696's title carries three measured figures — a decode
+> rate, a time-to-first-token, and a ratio against a competitor. Reproducing them here
+> puts a claim literal on a user-facing surface, which `scripts/check_no_claim_literals.sh`
+> forbids and which failed CI on this branch. That guard is right: a competitor ratio in a
+> document a user reads is exactly the mechanism by which this project once published a
+> speed multiple against a competitor from a harness that never ran that competitor. The
+> ratio is not restated here either — writing it out to explain why it is banned trips the
+> same guard, which it duly did on the first attempt at this paragraph.
+>
+> Round 10's objection was that the titles were **silently** truncated under a heading
+> claiming `gh` output — not that they were shortened. So this one is shortened *and
+> labelled*, with the issue number to read it at source. Both rules are satisfied; neither
+> was traded away.
 
 | issue | state | title |
 |---|---|---|
-| #2696 | **CLOSED** | P0: published apr 0.64.0 SILENTLY IGNORES --gpu — 15.7 tok/s decode, 7.5s to first token, 0.099x llama.cpp |
+| #2696 | **CLOSED** | P0: published apr 0.64.0 SILENTLY IGNORES --gpu — *[three measured figures elided; see below]* |
 | #2869 | OPEN | No pre-built apr binary on stable releases — cargo install is the only path, and it's not beginner-friendly |
 | #2971 | OPEN (`bug, P0, pp-066, inst:A`) | GPU inference refuses Qwen2.5-1.5B-Instruct GGUF (hidden=1536/heads=12/kv_heads=2): parity gate fails at cosine 0.94, CPU works fine |
 | #2982 | **CLOSED** | C0-5: PRQ-013 single base-owned quorum workflow (pull_request_target/merge_group): the receipt/quorum check that gates a PR is defined by the base, never by the PR head |
