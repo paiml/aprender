@@ -17,7 +17,17 @@ fn test_alloc_oversize_100gb() {
     let ctx = CudaContext::new(0).expect("Context");
 
     // 100GB of f32 = 25 billion elements
-    let oversize = 25_000_000_000usize;
+    // Derive "oversize" from the DEVICE, never from a card. The old fixed 100 GB
+    // (25e9 f32) passed on a 24 GB RTX 4090 only by accident of that card's size and
+    // FAILED on gx10, an NVIDIA GB10 with ~128 GB of unified memory where a 100 GB
+    // allocation legitimately succeeds. It failed there under CUDA 13.0 and 13.3 alike
+    // (a control run), so it was a wrong-host assumption, not a toolkit regression.
+    // 2x the whole device exceeds physical memory on every CUDA device, unified or not.
+    let total_bytes = ctx.total_memory().expect("cuDeviceTotalMem MUST succeed");
+    let oversize = total_bytes
+        .checked_mul(2)
+        .expect("2x device memory overflows usize")
+        / std::mem::size_of::<f32>();
 
     let result = GpuBuffer::<f32>::new(&ctx, oversize);
 
@@ -33,7 +43,12 @@ fn test_alloc_oversize_100gb() {
             println!("Oversize alloc returned: {:?}", e);
         }
         Ok(_) => {
-            panic!("CRITICAL: 100GB allocation succeeded - this should be impossible on RTX 4090!");
+            panic!(
+                "CRITICAL: allocating {} bytes (2x the device's {} bytes) SUCCEEDED - an \
+                 allocation larger than the whole device must fail",
+                oversize * std::mem::size_of::<f32>(),
+                total_bytes
+            );
         }
     }
 }
