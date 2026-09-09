@@ -4,7 +4,7 @@
 
 | | |
 |---|---|
-| Status | **DRAFT v0.5.** Four decisions taken by the operator (RD-1, RD-5, RD-6, RD-7); four remain recommended-but-unconfirmed. |
+| Status | **DRAFT v0.6.** **All eight decisions taken** (Noah, 2026-09-09). What remains is implementation, and §11 names its one blocker. |
 | Author | Noah Gift (driver-assisted) |
 | Date | 2026-09-08 (v0.1) · 2026-09-09 (v0.2–v0.4) |
 | Applies from | v0.66.0 |
@@ -68,7 +68,9 @@ Only two things need silicon CI does not have, and they go to a lane that alread
 mirror is that the two x86 GPU hosts share a compute capability.
 
 v0.3 carried a host-slot scheduler here. **Deleted** — with the work automated onto CI and
-an existing nightly lane, there is no fleet to schedule.
+an existing nightly lane, there is no fleet to schedule. Contention on `gx10` is already
+handled (RD-4): all three of its consumers share the repo-wide job-level concurrency group
+`perf-gx10`, enforced by `scripts/check_perf_concurrency_groups.sh`.
 
 ---
 
@@ -340,22 +342,28 @@ falsifier.** An `agy /grillme` lane was asked for positions rather than objectio
 four revisions and thirteen review rounds moved none of these. Its answers are below,
 assessed. Two were rejected and one was rewritten; where that happened it says so and why.
 
-**Status: the four blocking decisions are TAKEN** (Noah, 2026-09-09) — RD-1, RD-5, RD-6
-and RD-7 below. **RD-2, RD-4, RD-8 and RD-9 remain recommended and unconfirmed**; each
-defaults safely and none blocks 0.66.
+**All eight are TAKEN** (Noah, 2026-09-09). Nothing in this document is now waiting on a
+decision.
+
+**Two of the eight needed no work at all — the tree already did the right thing**, and in
+both cases this document proposed a change before checking. RD-7's sm_70 floor and derived
+`.version` are implemented in `crates/aprender-gpu`; RD-4's `perf-gx10` concurrency group
+is implemented across all three gx10 consumers and guarded. Recorded because a spec that
+proposes what already exists wastes the implementer's time in exactly the way this process
+is supposed to prevent.
 
 
 | id | question | recommended answer, and the argument | falsifier — what makes it wrong | owner |
 |---|---|---|---|---|
 | **RD-1** | which targets does a tagged release carry? | **DECIDED — drop darwin, windows and musl.** The release carries **four artifacts**: `x86_64` and `aarch64`, linux-gnu, × `cpu` and `cuda`. Darwin and windows have no verification host and §9.1 forbids publishing what nothing can run. musl doubles the matrix and interacts badly with §3.3's `dlopen`. **`apr-cli` opts into `binary-release.yml`** rather than a new workflow. **PP-066 C13 must be amended from five targets to four in the PR that implements this** | A musl `-cuda` build runs cleanly on Alpine with a real driver — then musl is cheap and the drop was over-cautious | **taken** |
-| **RD-2** | installer default when a driver is present | *Recommended, unconfirmed.* `-cuda`, reason printed, `--backend` overrides. FX-16 covers a present-but-unusable driver; FX-18 makes the choice visible. No objection in thirteen rounds | A stub or corrupt `libcuda.so.1` slips past FX-16 and segfaults before `--backend cpu` applies | team |
+| **RD-2** | installer default when a driver is present | **DECIDED — `-cuda` when a driver is present**, the choice and reason printed, `--backend` overriding. FX-16 covers a present-but-unusable driver; FX-18 makes the choice visible. **Implementation blocked on `install.sh`** (PP-066 R-6 / PMAT-994) — this decision is what that script must implement, not a separate task | A stub or corrupt `libcuda.so.1` slips past FX-16 and segfaults before `--backend cpu` applies | **taken** |
 | ~~**RD-3**~~ | ~~`cuda-test` on `yoga`?~~ | **RETIRED, not answered.** The section it governed is deleted (§9.8) — there is no PR-time GPU check to schedule | A live-GPU PR check is proposed again; it needs a new row, and must answer `infra#359`'s intermittency cost | — |
-| **RD-4** | `gx10` is the live-GPU lane **and** a perf host | *Recommended, unconfirmed.* One GitHub Actions `concurrency:` group shared by the nightly lane and any perf job. Three lines, no new machinery | A perf run started by hand over SSH never enters the group and overlaps anyway; then the lock has to move off Actions | team |
+| **RD-4** | `gx10` is the live-GPU lane **and** a perf host | **DECIDED — and already implemented; nothing to build.** All three gx10 consumers carry a job-level `concurrency: group: perf-gx10, cancel-in-progress: false` — `cuda-nightly.yml:82`, `qwen-story-daily.yml:60`, `silicon-nightly.yml:86` — and `scripts/check_perf_concurrency_groups.sh` enforces it: *"36 job(s) scanned, 5 perf-sensitive, 0 finding(s) — PASS"*. The group is repo-wide, which is what makes it work across workflows (PP-19 §5.4) | A perf run started by hand over SSH never enters the group. The guard cannot see that, and it is the residual risk | **taken** |
 | **RD-5** | if #2971 is not fixed by the tag | **DECIDED — block the tag. The `UNSERVICEABLE` hatch is deleted** (§4.4). M3 exists because of #2971, so an escape hatch on that one gate makes it theater by §1.1, and it contradicted §8's jidoka target outright | #2971 proves architecturally unfixable, in which case blocking halts every release and this has to be revisited as an explicit, dated exception — not a standing hatch | **taken** |
 | **RD-6** | `arm-gpu-cuda` has one verification host | **DECIDED — ship it, and state the single-host limit in the release notes.** Not shipping punishes users who can use it, and the x86 pipeline is **also** single-capability (`yoga` and `lambda-labs` are both sm_89), so requiring a cross-check for aarch64 alone was inconsistent | An sm_121-specific path silently returns garbage on Jetson Orin (sm_87). That is what a second aarch64 host would catch, and it is the 0.67 fleet ask | **taken** |
 | **RD-7** | the declared PTX floor | **DECIDED — whatever is idiomatic for Hugging Face, which turns out to be what the code already does.** The HF/PyTorch wheel convention is a single global floor at **sm_70 (Volta)** with forward compatibility by driver JIT. `crates/aprender-gpu` already declares exactly that: `MIN_PTX_VERSION (7,0)`, `validate_target` rejects `sm_<70`, and `as_module()` says *"Uses sm_70 (Volta) as minimum baseline for broad compatibility"*. **The floor is GLOBAL, not per-artifact.** The `.version` is **derived per module, not declared**: `ptx_version_for_target()` (`kernels/mod.rs:139`) emits **8.8** for sm_100+ and **8.0** below (trueno#188) — cited: *"PTX ISA version 8.8 … Adds support for `sm_121` target architecture"*. **Consequence to write down: `.version 8.0` implies a driver supporting PTX ISA 8.0 (CUDA 12.0, ≈ r525), so the effective driver floor is r525, not sm_70's own r384.** `check_ptx_version.sh` asserts the mapping; its mutation is to raise a constant above the floor | A kernel needs an instruction above ISA 8.0 on a pre-Blackwell target, which would raise the driver floor again without anything noticing. That is exactly what the guard is for | **taken** |
-| **RD-8** | bit-for-bit reproducibility across machines | *Recommended, unconfirmed.* Close permanently out of scope: it needs a hermetic toolchain this project is not building, and same-machine determinism is what M1 checks | A supply-chain compromise of `intel`'s toolchain stays undetectable precisely because the binary cannot be reproduced elsewhere. Close with eyes open | team |
-| **RD-9** | `yoga`'s specs | *Recommended, unconfirmed.* Close — measured in §2, and `yoga` is not used by this process | `yoga` is a dynamically provisioned VM whose specs change between invocations | Noah |
+| **RD-8** | bit-for-bit reproducibility across machines | **DECIDED — closed permanently out of scope**, not deferred. It needs a hermetic toolchain this project is not building; same-machine determinism is what artifact identity (M1) actually checks | A supply-chain compromise of a builder stays undetectable precisely because the binary cannot be reproduced elsewhere. Closed with that understood | **taken** |
+| **RD-9** | `yoga`'s specs | **DECIDED — closed.** Measured in §2, and `yoga` is not used by this process at all | `yoga` is a dynamically provisioned VM whose specs change between invocations | **taken** |
 
 ---
 
@@ -405,6 +413,21 @@ docs/audits/release/<tag>/                  # every receipt for a release
 ---
 
 ## Changelog
+
+**v0.6 — 2026-09-09.** RD-2, RD-4, RD-8 and RD-9 confirmed. **All eight decisions taken.**
+
+- **RD-2** — installer defaults to `-cuda` with the reason printed. The only one of the
+  four with work attached, and it is not separate work: it is what `install.sh`
+  (R-6 / PMAT-994) must implement.
+- **RD-4** — **already implemented.** `perf-gx10` is on all three gx10 consumers and
+  guarded; the guard passes. Nothing to build.
+- **RD-8**, **RD-9** — closed.
+
+**Two of the last four needed no work because the tree already did the right thing**, and
+this document proposed changes for both before checking: RD-7's floor is in
+`crates/aprender-gpu`, RD-4's group is in the workflows with a guard over it. A spec that
+proposes what already exists costs the implementer the time this process exists to save.
+
 
 **v0.5 — 2026-09-09.** Four decisions taken by the operator; the spec records them.
 
