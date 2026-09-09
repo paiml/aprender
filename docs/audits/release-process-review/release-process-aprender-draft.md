@@ -4,7 +4,7 @@
 
 | | |
 |---|---|
-| Status | **DRAFT v0.4 — for team review.** Not yet normative: seven decisions (§10) are open and an eighth is recommended closed. |
+| Status | **DRAFT v0.5.** Four decisions taken by the operator (RD-1, RD-5, RD-6, RD-7); four remain recommended-but-unconfirmed. |
 | Author | Noah Gift (driver-assisted) |
 | Date | 2026-09-08 (v0.1) · 2026-09-09 (v0.2–v0.4) |
 | Applies from | v0.66.0 |
@@ -90,11 +90,13 @@ house hardware only verifies.
 
 `apr-<target-triple>-<backend>`, one signed `SHA256SUMS` manifest per tag.
 
-**Four target sets are in play and RD-1 must reconcile all four**: nightly's 5,
-binary-release's 4 (with musl), PP-066 C13's 5, and whatever this section lands on.
-**musl is the live sub-question** — tagged releases already ship it for `pv`; including it
-doubles the matrix, and musl × cuda is its own problem since §3.3's model is `dlopen`ing
-`libcuda.so.1`.
+**Decided (RD-1): four artifacts.** `x86_64-unknown-linux-gnu` and
+`aarch64-unknown-linux-gnu`, each × `cpu` and `cuda`. **Darwin and windows are dropped** —
+no verification host, and §9.1 forbids publishing what nothing can run. **musl is dropped**
+— it doubles the matrix and interacts badly with §3.3's `dlopen` of `libcuda.so.1`, though
+`binary-release.yml` keeps shipping it for `pv`.
+
+**PP-066 C13 says five targets and must be amended to four in the implementing PR.**
 
 Carry over from `nightly.yml`: default features on unix targets,
 `--no-default-features --features inference` on windows only.
@@ -203,7 +205,7 @@ recording the artifact sha256 from the signed manifest, host facts from
 |---|---|
 | **GO** | every cell green |
 | **NO-GO** | any cell red, **or missing**, or a receipt whose `asset_sha256` is not in the signed manifest |
-| **UNSERVICEABLE** | a (model, backend) pair whose parity legitimately fails **and** whose refusal is honest (M5 green). Only if the release notes carry that row with its issue number |
+| ~~UNSERVICEABLE~~ | **Deleted by RD-5.** A model whose parity fails blocks the tag. M3 exists because of #2971; an escape hatch on it makes it theater |
 
 A missing cell is NO-GO, not a skip.
 
@@ -303,7 +305,7 @@ detection to users no longer receiving the bad artifact.** `[U]` until the first
 
 | principle | target | instrument |
 |---|---|---|
-| **jidoka** | GPU/CPU divergence found by a **user**: **0 per release** (baseline 1 — #2971). **This and §4.4's UNSERVICEABLE cannot both hold as worded** — note the instrument already counts only *non-maintainer* filings, i.e. undeclared divergences. Which is meant is **RD-5's** | P0 issues filed by non-maintainers |
+| **jidoka** | GPU/CPU divergence found by a **user**: **0 per release** (baseline 1 — #2971). **Resolved by RD-5**: the `UNSERVICEABLE` hatch is deleted, so the target stands unqualified | P0 issues filed by non-maintainers |
 | **poka-yoke** | every artifact carries asset + sha256 + signature; every cell green before promotion | §6 guards |
 | **genchi genbutsu** | release claims verified on the hardware they name: **100%**; `verified_hardware: UNKNOWN` on a release-path feature: **0** | cell receipts |
 | **jidoka (build)** | `-cuda` artifact crashes on a driverless host: **0** | FX-16 |
@@ -338,24 +340,22 @@ falsifier.** An `agy /grillme` lane was asked for positions rather than objectio
 four revisions and thirteen review rounds moved none of these. Its answers are below,
 assessed. Two were rejected and one was rewritten; where that happened it says so and why.
 
-**Blocking vs defaultable.** Four decide what gets built or whether it ships and must be
-answered: **RD-1, RD-5, RD-6, RD-7**. Four can be taken as recommended today and revisited:
-**RD-2, RD-4, RD-8, RD-9**. (The lane put RD-4 in the blocking set and RD-6 outside it;
-both are corrected here — RD-4 is now a three-line concurrency group, while RD-6 decides
-whether an artifact ships at all.)
+**Status: the four blocking decisions are TAKEN** (Noah, 2026-09-09) — RD-1, RD-5, RD-6
+and RD-7 below. **RD-2, RD-4, RD-8 and RD-9 remain recommended and unconfirmed**; each
+defaults safely and none blocks 0.66.
 
 
 | id | question | recommended answer, and the argument | falsifier — what makes it wrong | owner |
 |---|---|---|---|---|
-| **RD-1** | which targets does a tagged release carry? | **Drop darwin and windows. Build without musl. Keep `binary-release.yml`.** Darwin and windows have **no verification host** — `mini` is not a CI runner — and §9.1 forbids publishing an artifact nothing can run; that argument is decisive and needs no measurement. musl doubles the matrix and interacts badly with §3.3's `dlopen` of `libcuda.so.1`. **The lane's fourth answer is rejected**: it proposed a new `release-assets.yml` built on self-hosted runners, reasoning from v0.3's text — v0.4 builds on hosted CI because no CUDA toolkit is needed, and it names `yoga`, which this process no longer uses | A musl `-cuda` build runs cleanly on Alpine with a real driver. **~15 min to settle**: `cargo build --target x86_64-unknown-linux-musl --features cuda`, run `apr devices` on an Alpine VM with driver 570.207 | team |
-| **RD-2** | installer default when a driver is present | **CLOSE as proposed.** `-cuda`, reason printed, `--backend` overrides. FX-16 guarantees a present-but-unusable driver falls back to CPU without crashing, and FX-18 makes the choice visible. No reviewer in thirteen rounds objected | A stub or corrupt `libcuda.so.1` slips past FX-16 and segfaults before `--backend cpu` can be applied | team |
+| **RD-1** | which targets does a tagged release carry? | **DECIDED — drop darwin, windows and musl.** The release carries **four artifacts**: `x86_64` and `aarch64`, linux-gnu, × `cpu` and `cuda`. Darwin and windows have no verification host and §9.1 forbids publishing what nothing can run. musl doubles the matrix and interacts badly with §3.3's `dlopen`. **`apr-cli` opts into `binary-release.yml`** rather than a new workflow. **PP-066 C13 must be amended from five targets to four in the PR that implements this** | A musl `-cuda` build runs cleanly on Alpine with a real driver — then musl is cheap and the drop was over-cautious | **taken** |
+| **RD-2** | installer default when a driver is present | *Recommended, unconfirmed.* `-cuda`, reason printed, `--backend` overrides. FX-16 covers a present-but-unusable driver; FX-18 makes the choice visible. No objection in thirteen rounds | A stub or corrupt `libcuda.so.1` slips past FX-16 and segfaults before `--backend cpu` applies | team |
 | ~~**RD-3**~~ | ~~`cuda-test` on `yoga`?~~ | **RETIRED, not answered.** The section it governed is deleted (§9.8) — there is no PR-time GPU check to schedule | A live-GPU PR check is proposed again; it needs a new row, and must answer `infra#359`'s intermittency cost | — |
-| **RD-4** | `gx10` is the live-GPU lane **and** a perf host | **Take the concurrency group.** A GitHub Actions `concurrency:` group shared by the nightly lane and any perf job makes them mutually exclusive — three lines, no new machinery. *The lane argued this from `check_host_slot.sh` and "a host holds one release role at a time"; neither exists in v0.4 — the slot scheduler was deleted. The mechanism is right, the citation was not* | Two jobs still overlap because a perf run started by hand over SSH never enters the group. If that happens, the lock has to move off Actions | team |
-| **RD-5** | if #2971 is not fixed by the tag | **Block the tag. Delete the `UNSERVICEABLE` hatch.** The lane took the harder road and the argument holds: M3 exists *because* of #2971, so an escape hatch on that one gate makes it theater by §1.1, and it contradicts §8's jidoka target outright. Deleting the hatch resolves the contradiction in the direction that keeps the gate | **#2971 is architecturally unfixable**, in which case blocking halts every release indefinitely and the hatch is the only honest option. That is the question to answer first, and it is why this row is Noah's | Noah |
-| **RD-6** | `arm-gpu-cuda` has one verification host | **Ship it; state the single-host limit in the notes.** The lane's supporting point is the strongest thing said about this row in four revisions: the **x86 pipeline is also single-capability** — `yoga` and `lambda-labs` are both sm_89 — so demanding a cross-check for aarch64 while accepting one for x86 is inconsistent. Not shipping punishes users who could use it | An sm_121-specific path silently returns garbage on Jetson Orin (sm_87) in the wild. That is a real class, and it is what a second aarch64 host would catch | team |
-| **RD-7** | the declared PTX floor | **The lane's number is rejected and the question is sharper than it looked.** It derived sm_89 → PTX ISA 7.8 → driver 525.60.13 from the *oldest* architecture — but its own RD-6 answer ships an **sm_121** artifact, and a PTX 7.8 floor cannot express sm_121. Its Table 62 row was also `recalled-not-cited`. **The real question this exposes: is the floor global or per-artifact?** A `-cuda` artifact per target can carry its own floor; one floor across both cannot. Decide that first, then one Table 62 lookup gives the number | A single global floor does express both targets, in which case the per-artifact split is unnecessary complexity | team |
-| **RD-8** | bit-for-bit reproducibility across machines | **CLOSE — permanently out of scope, not deferred.** Needs a hermetic toolchain the project is not building; same-machine determinism is what artifact identity (M1) actually checks. Lane agrees with §11's recommendation | A supply-chain compromise of `intel`'s toolchain stays undetectable precisely because the binary cannot be reproduced elsewhere. That is the real cost of closing this, and it should be closed with eyes open | team |
-| **RD-9** | `yoga`'s specs | **CLOSE.** Measured and in §2; `yoga` is no longer used by this process at all, so nothing turns on it | `yoga` is a dynamically provisioned VM whose core count or VRAM changes between invocations | Noah |
+| **RD-4** | `gx10` is the live-GPU lane **and** a perf host | *Recommended, unconfirmed.* One GitHub Actions `concurrency:` group shared by the nightly lane and any perf job. Three lines, no new machinery | A perf run started by hand over SSH never enters the group and overlaps anyway; then the lock has to move off Actions | team |
+| **RD-5** | if #2971 is not fixed by the tag | **DECIDED — block the tag. The `UNSERVICEABLE` hatch is deleted** (§4.4). M3 exists because of #2971, so an escape hatch on that one gate makes it theater by §1.1, and it contradicted §8's jidoka target outright | #2971 proves architecturally unfixable, in which case blocking halts every release and this has to be revisited as an explicit, dated exception — not a standing hatch | **taken** |
+| **RD-6** | `arm-gpu-cuda` has one verification host | **DECIDED — ship it, and state the single-host limit in the release notes.** Not shipping punishes users who can use it, and the x86 pipeline is **also** single-capability (`yoga` and `lambda-labs` are both sm_89), so requiring a cross-check for aarch64 alone was inconsistent | An sm_121-specific path silently returns garbage on Jetson Orin (sm_87). That is what a second aarch64 host would catch, and it is the 0.67 fleet ask | **taken** |
+| **RD-7** | the declared PTX floor | **DECIDED — whatever is idiomatic for Hugging Face, which turns out to be what the code already does.** The HF/PyTorch wheel convention is a single global floor at **sm_70 (Volta)** with forward compatibility by driver JIT. `crates/aprender-gpu` already declares exactly that: `MIN_PTX_VERSION (7,0)`, `validate_target` rejects `sm_<70`, and `as_module()` says *"Uses sm_70 (Volta) as minimum baseline for broad compatibility"*. **The floor is GLOBAL, not per-artifact.** The `.version` is **derived per module, not declared**: `ptx_version_for_target()` (`kernels/mod.rs:139`) emits **8.8** for sm_100+ and **8.0** below (trueno#188) — cited: *"PTX ISA version 8.8 … Adds support for `sm_121` target architecture"*. **Consequence to write down: `.version 8.0` implies a driver supporting PTX ISA 8.0 (CUDA 12.0, ≈ r525), so the effective driver floor is r525, not sm_70's own r384.** `check_ptx_version.sh` asserts the mapping; its mutation is to raise a constant above the floor | A kernel needs an instruction above ISA 8.0 on a pre-Blackwell target, which would raise the driver floor again without anything noticing. That is exactly what the guard is for | **taken** |
+| **RD-8** | bit-for-bit reproducibility across machines | *Recommended, unconfirmed.* Close permanently out of scope: it needs a hermetic toolchain this project is not building, and same-machine determinism is what M1 checks | A supply-chain compromise of `intel`'s toolchain stays undetectable precisely because the binary cannot be reproduced elsewhere. Close with eyes open | team |
+| **RD-9** | `yoga`'s specs | *Recommended, unconfirmed.* Close — measured in §2, and `yoga` is not used by this process | `yoga` is a dynamically provisioned VM whose specs change between invocations | Noah |
 
 ---
 
@@ -405,6 +405,24 @@ docs/audits/release/<tag>/                  # every receipt for a release
 ---
 
 ## Changelog
+
+**v0.5 — 2026-09-09.** Four decisions taken by the operator; the spec records them.
+
+- **RD-1** — four artifacts: x86_64 and aarch64, linux-gnu, × cpu/cuda. Darwin, windows
+  and musl dropped. `apr-cli` opts into `binary-release.yml`. **PP-066 C13 must be amended
+  from five targets to four.**
+- **RD-5** — the tag blocks on #2971. `UNSERVICEABLE` is **deleted** from §4.4, which
+  resolves the §8 jidoka contradiction the document has carried since v0.1.
+- **RD-6** — `arm-gpu-cuda` ships with its single-host limit stated in the notes.
+- **RD-7** — *"whatever is idiomatic for Hugging Face"*, which on inspection is what the
+  code already does. sm_70 global floor (PyTorch's, and `as_module()` says so in those
+  words); `.version` derived per target by `ptx_version_for_target()`, 8.8 for sm_100+ —
+  cited: *"PTX ISA version 8.8 … Adds support for `sm_121`"*. The decision ratifies the
+  implementation and writes down its consequence: **ISA 8.0 implies a driver ≈ r525**, so
+  that, not sm_70's r384, is the effective driver floor.
+
+RD-2, RD-4, RD-8 and RD-9 remain recommended and unconfirmed. None blocks 0.66.
+
 
 **v0.4 — 2026-09-09.** Cut to about a third. An `agy /grillme` lane returned
 `do-not-implement-as-written` — over-engineered for a project shipping via `cargo install`
