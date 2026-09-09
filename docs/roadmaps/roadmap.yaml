@@ -16452,7 +16452,10 @@ roadmap:
   - kind:code
   - bse-001
   - m2
-  notes: null
+  notes: 'BSE-01 landed in three parts, all on main: guard_tree.sh runs every guard
+    and reports every failure rather than stopping at the first, wired as the guard-tree
+    job with per-job timeout-minutes (90/90/22); the six container steps each carry
+    -e CARGO_TARGET_DIR=/workspace/target. proof:PR#3037 proof:scripts/guard_tree.sh'
 - id: PMAT-1063
   github_issue: null
   item_type: task
