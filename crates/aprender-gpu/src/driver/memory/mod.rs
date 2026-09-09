@@ -18,8 +18,8 @@ mod transfer;
 
 #[allow(unused_imports, unreachable_pub)] // Re-exported by driver/mod.rs
 pub use buffer::{
-    device_bytes_outstanding, device_memory_exclusive, DeviceMemoryExclusive, GpuBuffer,
-    GpuBufferView,
+    classify_device_memory, device_bytes_outstanding, device_memory_exclusive, DeviceMemoryClass,
+    DeviceMemoryExclusive, GpuBuffer, GpuBufferView,
 };
 
 // ============================================================================

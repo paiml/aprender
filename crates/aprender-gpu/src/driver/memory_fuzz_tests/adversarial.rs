@@ -2,6 +2,7 @@
 //! These tests try to BREAK the driver, not validate happy paths.
 
 use super::*;
+use crate::driver::memory::{classify_device_memory, DeviceMemoryClass};
 
 /// Falsification Test 1: Oversize Allocation
 /// Attempt to allocate 100GB - must return OOM, not panic or hang
@@ -24,17 +25,39 @@ fn test_alloc_oversize_100gb() {
     // (a control run), so it was a wrong-host assumption, not a toolkit regression.
     // 2x the whole device exceeds physical memory on every CUDA device, unified or not.
     let total_bytes = ctx.total_memory().expect("cuDeviceTotalMem MUST succeed");
-    let oversize = total_bytes
-        .checked_mul(2)
-        .expect("2x device memory overflows usize")
-        / std::mem::size_of::<f32>();
 
-    // Pin the DEVICE allocator. On integrated / unified-memory parts `GpuBuffer::new`
-    // routes to `cuMemAllocManaged` by default (buffer.rs, PMAT-769), and managed
-    // memory oversubscribes by design: measured on GB10, a 2x-the-device (257 GB
-    // against 128 GB) managed allocation SUCCEEDED. That is the allocator working as
-    // documented, not the property this test exists to falsify. The property is
-    // "cuMemAlloc refuses more than the device", so ask for cuMemAlloc explicitly.
+    // Two memory models, two DIFFERENT safe oversizes. This is not pedantry: the
+    // previous version of this test asked a GB10 (unified memory, 128 GB shared with
+    // the host) for 2x the device via cuMemAlloc. On a discrete card that fails
+    // instantly against the VRAM pool. On a unified-memory part the driver tried to
+    // BACK the request from system RAM, the box went global-OOM at 13:36 on 2026-09-09
+    // (the OOM table's top rows were this very test binary), and the host rebooted.
+    // A run that "passed in 34 s" the same afternoon was that thrash, survived by luck.
+    //
+    //  - discrete   (INTEGRATED == 0): 2x the device. Exceeds VRAM; the pool check
+    //    rejects it before any page is touched.
+    //  - integrated (INTEGRATED == 1): an address-space-scale request (2^60 bytes) that
+    //    fails VALIDATION -- there is no plausible pool to back it from, so nothing is
+    //    paged in. "Larger than the device" is still what is asserted; it is simply
+    //    larger by enough that the driver cannot try.
+    let integrated = matches!(
+        classify_device_memory(&ctx).expect("CU_DEVICE_ATTRIBUTE_INTEGRATED MUST be readable"),
+        DeviceMemoryClass::UnifiedMemory
+    );
+    let oversize_bytes: usize = if integrated {
+        1usize << 60
+    } else {
+        total_bytes
+            .checked_mul(2)
+            .expect("2x device memory overflows usize")
+    };
+    let oversize = oversize_bytes / std::mem::size_of::<f32>();
+
+    // Pin the DEVICE allocator. On integrated parts `GpuBuffer::new` routes to
+    // `cuMemAllocManaged` by default (buffer.rs, PMAT-769), and managed memory
+    // oversubscribes by design (a 257 GB managed request SUCCEEDED on GB10) -- that is
+    // the allocator working as documented, not the property under test. The property
+    // is "cuMemAlloc refuses more than the device", so ask for cuMemAlloc explicitly.
     // The exclusivity lock held above covers this env mutation (GPU-ORD-4).
     std::env::set_var("MANAGED_MEMORY", "0");
     let result = GpuBuffer::<f32>::new(&ctx, oversize);
@@ -53,10 +76,9 @@ fn test_alloc_oversize_100gb() {
         }
         Ok(_) => {
             panic!(
-                "CRITICAL: allocating {} bytes (2x the device's {} bytes) SUCCEEDED - an \
-                 allocation larger than the whole device must fail",
-                oversize * std::mem::size_of::<f32>(),
-                total_bytes
+                "CRITICAL: allocating {} bytes (device total {} bytes, integrated={}) SUCCEEDED - \
+                 an allocation larger than the whole device must fail",
+                oversize_bytes, total_bytes, integrated
             );
         }
     }
