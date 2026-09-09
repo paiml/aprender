@@ -185,9 +185,9 @@ impl OwnedQuantizedModelCuda {
     /// REG-15 (#2971): the one admission decision at load — the gate runs unless it is
     /// skipped (`SKIP_PARITY_GATE`, recorded as an override) or does not apply (MoE); a
     /// PASS records the cosine on the model, a failure refuses to construct it.
-    fn admit_by_parity_gate(mut self, skip_gate: bool) -> std::result::Result<Self, CudaInitError> {
-        if skip_gate {
-            self.parity = ParityGateRecord::skipped();
+    fn admit_by_parity_gate(mut self, skip: Option<ParityGateRecord>) -> std::result::Result<Self, CudaInitError> {
+        if let Some(record) = skip {
+            self.parity = record;
             return Ok(self);
         }
         if self.model.config.constraints.is_moe {

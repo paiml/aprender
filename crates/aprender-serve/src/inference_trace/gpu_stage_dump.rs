@@ -31,6 +31,9 @@
 //! maybe_dump_host_buffer(config.as_ref(), SaveTensorStage::Embedding, 0, &embed_buf)?;
 //! ```
 
+/// L0-1b per-op tap (thread-local plan + GPU dump config + gate bypass).
+pub mod per_op_tap;
+
 use std::path::{Path, PathBuf};
 
 use crate::inference_trace::save_tensor_emit::write_stage_file;
@@ -53,6 +56,9 @@ impl GpuStageDumpConfig {
     /// the env var is unset, empty, or whitespace-only.
     #[must_use]
     pub fn from_env() -> Option<Self> {
+        if let Some(armed) = per_op_tap::gpu_dump() {
+            return Some(armed);
+        }
         let raw = std::env::var("APR_GPU_STAGE_DUMP").ok()?;
         let trimmed = raw.trim();
         if trimmed.is_empty() {
