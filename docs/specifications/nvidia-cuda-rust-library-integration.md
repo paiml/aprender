@@ -1,6 +1,7 @@
 # NVIDIA CUDA Rust — Integration for GPU Quality Stabilization
 
-**Status:** PROPOSED · target release **0.67** · authored 2026-09-09 · HEAD `1faf09015`
+**Status:** PROPOSED · target release **0.68** · authored 2026-09-09 · HEAD `1faf09015`
+**Tracking issue:** [#3062](https://github.com/paiml/aprender/issues/3062) (milestone `0.68.0`) · **Spec PR:** [#3061](https://github.com/paiml/aprender/pull/3061)
 **Upstream trigger:** [Introducing CUDA Rust: Two Tracks for Writing GPU Kernels](https://developer.nvidia.com/blog/introducing-cuda-rust-two-tracks-for-writing-gpu-kernels/)
 **Goal (operator's words):** *stabilize quality*. Not throughput. Every proposal is judged by the
 defect class it makes impossible to ship, never by tok/s.
@@ -8,7 +9,7 @@ defect class it makes impossible to ship, never by tok/s.
 rescope) → this document. §9 records every finding, which were accepted, and which were wrong.
 
 > **Bottom line.** The blog's two-track choice is **not** the decision in front of aprender.
-> 0.67 should ship **T0 + O2**, and **neither needs an NVIDIA dependency**. The NVIDIA crates are
+> 0.68 should ship **T0 + O2**, and **neither needs an NVIDIA dependency**. The NVIDIA crates are
 > real and measured to work (§0 G7–G9), but every one of them is blocked behind a driver or toolkit
 > prerequisite no fleet host meets today, and they are answering a question aprender has not yet
 > earned the right to ask. See §7.
@@ -57,7 +58,7 @@ on crates.io, buildable on **stable** Rust (G7), a near 1:1 superset of aprender
 
 **Claim.** aprender does not lack ways to author kernels (G1). The one time it ported five kernels to
 cuda-oxide, they were *correct but 4× slower* and were retracted (G15). cutile cannot be built on any
-fleet host (G12). So no kernel track is schedulable into 0.67, and the question is what else the
+fleet host (G12). So no kernel track is schedulable into 0.68, and the question is what else the
 announcement makes possible.
 
 **The strongest objection, stated fairly.** The grill's RANK2: G4 and G5 are not incidental. A stack
@@ -72,19 +73,19 @@ pretend the debt is fine — §8 gives falsifiable **exit criteria** with named 
 
 **And G18 changes the argument.** The check this document proposes is not a new idea imported from
 NVIDIA. aprender has *declared* it since 2026-04-06 and never implemented it. The honest framing of
-0.67 is therefore not "adopt NVIDIA libraries" but **"make an existing safety contract fire, and put
+0.68 is therefore not "adopt NVIDIA libraries" but **"make an existing safety contract fire, and put
 a gate under the crate that carries it."** Neither needs a dependency.
 
 ---
 
-## §2. Scope decision for 0.67
+## §2. Scope decision for 0.68
 
-Both review lanes returned **do-not-implement-as-written** on a four-tier 0.67. The teamwork lane
+Both review lanes returned **do-not-implement-as-written** on a four-tier 0.68. The teamwork lane
 argued for T0 alone; it reached that partly on a misreading (it wrote that T0 "unlocks the 2,620
 existing tests" — T0 unlocks **444**, G3, which the spec states plainly). Its *direction* is right and
 its stopping point is too early.
 
-**Ship in 0.67:**
+**Ship in 0.68:**
 
 | | Item | Why it is the highest quality-per-risk |
 |---|---|---|
@@ -93,12 +94,12 @@ its stopping point is too early.
 
 | **T3** | cutile A/B evaluation on gx10 (§7) | **unblocked 2026-09-09** — operator ordered the toolkit upgrade; cutile now runs on sm_121 (G21) |
 
-**Defer to 0.68:** T1 loader-differential oracle (§5 — needs cuda-core, so gx10 only, driver R580+),
+**Defer to 0.69:** T1 loader-differential oracle (§5 — needs cuda-core, so gx10 only, driver R580+),
 T2 oxide verification tooling (§6).
 
 ---
 
-## §3. T0 — Un-dark the GPU crate  *(0.67, no dependency)*
+## §3. T0 — Un-dark the GPU crate  *(0.68, no dependency)*
 
 `aprender-gpu` carries 2,620 tests behind zero required checks (G2).
 
@@ -117,7 +118,7 @@ ci.yml line → goes GREEN. Guard and its classification in the same commit.
 
 ---
 
-## §4. O2 — Arm the `register_budget` contract  *(0.67, no dependency)*
+## §4. O2 — Arm the `register_budget` contract  *(0.68, no dependency)*
 
 **This is the headline change, and it is a contract-integrity fix, not an integration.**
 
@@ -154,7 +155,7 @@ without a dependency, on every host, including the CUDA-12 boxes `cuda-core` ref
 
 ---
 
-## §5. T1 — `cuda-core` as loader differential  *(0.68)*
+## §5. T1 — `cuda-core` as loader differential  *(0.69)*
 
 ### §5.1 What the grill killed
 
@@ -210,7 +211,7 @@ consecutive releases; or upstream API churn (G17) costs more than one fix per re
 
 ---
 
-## §6. T2 — cuda-oxide as a *verification tool*  *(0.68)*
+## §6. T2 — cuda-oxide as a *verification tool*  *(0.69)*
 
 The retraction stands (G15): **do not promote oxide kernels onto the decode path.** Adopt the two
 pieces aprender has never used, both aimed at classes it has been bitten by:
@@ -224,7 +225,7 @@ published crate). Nightly on gx10. Pin `nightly-2026-08-28` (G14), **not** the b
 
 ---
 
-## §7. T3 — cutile-rs on gx10  *(0.67; operator decision)*
+## §7. T3 — cutile-rs on gx10  *(0.68; operator decision)*
 
 **Operator ruling, 2026-09-09, verbatim: "false YOU WILL UPGRADE".** This overrules the grill's
 RANK3 objection and this document's own earlier recommendation, both of which argued against
@@ -282,7 +283,7 @@ script exists; that script ships with T0 or criterion 3 is struck.
 
 | # | Risk | Mitigation |
 |---|------|-----------|
-| R1 | **Alpha churn.** cutile 0.1.0→0.3.1 in <4 months (G17); cuda-oxide self-described alpha, re-pinned its nightly since the blog (G14) | Nothing NVIDIA ships **in the product** in 0.67. T3 is an out-of-workspace evaluation; never on the decode path, never in the shipped dependency graph |
+| R1 | **Alpha churn.** cutile 0.1.0→0.3.1 in <4 months (G17); cuda-oxide self-described alpha, re-pinned its nightly since the blog (G14) | Nothing NVIDIA ships **in the product** in 0.68. T3 is an out-of-workspace evaluation; never on the decode path, never in the shipped dependency graph |
 | R2 | **`--all-features` breakage** (G16); the draft's mitigation was insufficient | Own-`[workspace]` crate under `experiments/` (§5.3), verified by G20 |
 | R3 | **Driver floor R580.** lambda-vector (570.207) cannot run cuda-core (G8) | gx10 is the only T1 host; lambda-vector needs a driver bump or stays out |
 | R4 | **Licence / advisories.** Apache-2.0 is permitted by `deny.toml`, but root `cargo deny` **does not traverse an isolated workspace** | Explicit `cargo deny check --manifest-path experiments/cuda-core-oracle/Cargo.toml` (advisories, bans, sources — not licences alone) |
@@ -371,7 +372,7 @@ Neither had been visible, because `cuda-nightly.yml:242` runs only the `perf053`
 conversation `11f250f2-d5d1-438f-89c2-96cbd9a362b0`.
 *Accepted:* RANK1 (O1 as drafted is a tautology → §5.1/§5.2), RANK3 (gx10 SPOF → §7 withdrawal),
 RANK5/delegate-upgraded (`--all-features` → §5.3), RANK4 in part (build time → G3b, 31s).
-*Rejected with grounds:* RANK2's **remedy** (migrate kernels in 0.67) — refuted by G12 and G15. The
+*Rejected with grounds:* RANK2's **remedy** (migrate kernels in 0.68) — refuted by G12 and G15. The
 debt itself is conceded and answered by §8.
 *Corrected:* the lane's "~3.6s compilation time (measured)" was **never measured** (delegate-verified);
 real cold build is **31s** (G3b). Its cuBLAS-link hypothesis for T0 is **unsupported** —
@@ -385,7 +386,7 @@ but `complexity_baseline.txt` reach-in survives (G20); root `cargo deny` misses 
 *Rejected with grounds:* "rescope to T0 alone" — the lane reached it partly on a misreading, writing
 that T0 "unlocks the 2,620 existing tests" when T0 unlocks **444** (G3), which the reviewed text
 stated. O2 is dependency-free, works on hosts cuda-core refuses (G8), and repairs a contract that has
-been vacuous for five months (G18); it belongs in 0.67.
+been vacuous for five months (G18); it belongs in 0.68.
 *Correction made during citation verification:* the patcher call sites were written as `module.rs:206,293` — taken from the delegate's report rather than from this session's own earlier grep, which said **207/294**. 206/293 is the `if major >= 12` guard. A subagent's line numbers are a claim; re-run the grep.
 
 *Neither lane found G18* — the vacuous `register_budget` contract — which is the single strongest
