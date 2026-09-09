@@ -52,11 +52,15 @@ import json,sys
 a=sys.argv[1:]; path,host,now,gpu,cc,drv,tk,verdict,sha,mem=a[:10]; rest=a[10:]; n=len(rest)//4
 ids,st,rs,cm=rest[:n],rest[n:2*n],rest[2*n:3*n],rest[3*n:]
 probes=[{"id":i,"status":s.split(":")[0],"reason":r,"cmd":c} for i,s,r,c in zip(ids,st,rs,cm)]
-blocked=[p["id"]+": "+p["reason"] for p in probes if p["status"]=="SKIP"]
+blocked=[p["id"]+": "+p["reason"] for p in probes if p["status"]=="SKIP" and not p["reason"].startswith("prerequisite:")]  # ROOT causes only; a probe skipped BECAUSE of another is not a second blocker
 json.dump({"host":host,"utc":now,"gpu":gpu,"compute_cap":cc,"driver":drv,"toolkit_max":tk,"script_sha256_16":sha,"mem_available_gib":int(mem or 0),"blocked_on":blocked,
            "probes":probes,"verdict":verdict},open(path,"w"),indent=2)
 PY
 }
+
+# stdin-free, pure: is this MemAvailable (GiB) enough to run a one-crate build + one test process?
+# Empty or non-numeric is NOT enough — a guard that cannot read its input must refuse, not fall through.
+mem_floor_ok() { case "${1:-}" in ''|*[!0-9]*) return 1;; esac; [ "$1" -ge 12 ]; }
 
 # ------------------------------------------------------------------- self-test -----
 if [ "$MODE" = selftest ]; then
@@ -89,6 +93,8 @@ assert d["mem_available_gib"]==7 and isinstance(d["mem_available_gib"],int), d
 PY2
   then echo "OK   receipt writer: INCOMPLETE + blocked_on + typed mem field"; else echo "FAIL receipt writer"; fail=1; fi
   [ -n "$tmpd" ] && [ "$tmpd" != / ] && [ -d "$tmpd" ] && rm -rf "$tmpd"
+  for c in "" "x" "0" "5" "11"; do if mem_floor_ok "$c"; then echo "FAIL mem_floor_ok('$c') must REFUSE"; fail=1; else echo "OK   refuse mem_floor_ok('$c')"; fi; done
+  for c in "12" "20" "115"; do if mem_floor_ok "$c"; then echo "OK   allow  mem_floor_ok('$c')"; else echo "FAIL mem_floor_ok('$c') must allow"; fail=1; fi; done
   [ "$fail" -eq 0 ] && { echo "SELF-TEST PASS"; exit 0; } || { echo "SELF-TEST FAIL"; exit 1; }
 fi
 
@@ -128,7 +134,7 @@ echo "host=$HOSTN gpu='$gpu' cc=$cc driver=$driver toolkit_max=${tk:-none}"
 # P1 driver floor (cuda-bindings refuses < R580 at run time; measured: "built against 13.0 but runtime is 12.8")
 if [ -z "$driver" ]; then add driver_floor SKIP "no nvidia-smi / no driver" "nvidia-smi"
 elif [ "${driver%%.*}" -ge 580 ]; then add driver_floor PASS "driver $driver >= R580" "nvidia-smi"
-else add driver_floor SKIP "driver $driver < R580 (cuda-bindings runtime floor)" "nvidia-smi"; fi
+else add driver_floor SKIP "driver $driver < R580 (cuda-bindings runtime floor); needs an R580+ driver package AND a reboot to activate it -- installing one live replaces the userspace libs under the running module and breaks CUDA until then (measured 2026-09-09)" "nvidia-smi"; fi
 # P2 toolkit floor (cutile: 13.1+ for sm_100+, 13.2+ for sm_8x)
 need=13.1; case "$cc" in 8.*) need=13.2;; esac
 if [ -z "$tk" ]; then add toolkit_floor SKIP "no CUDA 13.x toolkit under /usr/local" "ls /usr/local/cuda-13.*"
@@ -175,10 +181,11 @@ run_probe cutile_probe "$PROBES/cutile" "$ok" "prerequisite: driver_floor=$p1 to
 # is unreachable on yoga, a laptop with ~31 GiB total), always nice'd with capped build
 # jobs, and the TEST PROCESS runs in
 # a memory cgroup when systemd-run is available so a regression can kill only itself.
-memavail_gb=$(awk '/MemAvailable/{printf "%d", $2/1048576}' /proc/meminfo 2>/dev/null || echo 0)
+memavail_gb=$(awk '/MemAvailable/{printf "%d", $2/1048576}' /proc/meminfo 2>/dev/null || true)
+memavail_gb=${memavail_gb:-0}   # an unreadable MemAvailable must fail CLOSED: awk prints nothing and exits 0, so `|| echo 0` never fires (measured)
 if [ -z "$REPO" ] || [ ! -f "$REPO/crates/aprender-gpu/Cargo.toml" ]; then add aprender_gpu_cuda SKIP "no aprender checkout at '${REPO:-<unset>}' (REPO_ROOT / --repo / --repo-remote)" "-"
 elif pgrep -f '[R]unner.Worker' >/dev/null 2>&1; then add aprender_gpu_cuda SKIP "env: a GitHub Actions job is running on this host; not competing with CI" "pgrep Runner.Worker"
-elif [ "$memavail_gb" -lt 12 ]; then add aprender_gpu_cuda SKIP "env: MemAvailable ${memavail_gb} GiB < 12 GiB floor" "/proc/meminfo"
+elif ! mem_floor_ok "$memavail_gb"; then add aprender_gpu_cuda SKIP "env: MemAvailable '${memavail_gb}' GiB below the 12 GiB floor, or unreadable" "/proc/meminfo"
 else
   log="$OUT/$HOSTN.aprender_gpu_cuda.log"; rc=0
   export CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-8}"

@@ -3,7 +3,9 @@
 //! Tests: handle lifecycle, FP16 GEMM correctness, FP32 GEMM, row-major helper,
 //! buffer overflow detection, throughput measurement.
 //!
-//! Contract: cublas-gemm-v1.yaml (FALSIFY-CUBLAS-001, -003, -005)
+//! Contracts: contracts/fp16-cublas-gemm-v1.yaml governs the FP16 GEMM parity asserted here.
+//! No contract under contracts/ carries a TFLOP/s floor for these tests (grep'd 2026-09-09);
+//! throughput is reported, never asserted -- a wall-clock floor cannot sit in a required check.
 
 use crate::driver::{CublasHandle, CudaContext, CudaStream, GpuBuffer, LaunchConfig};
 
