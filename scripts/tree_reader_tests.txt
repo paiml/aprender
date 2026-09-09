@@ -3,6 +3,7 @@
 apr-cli	--lib
 apr-cli	--test	beat_apr_sibling_cli_reach
 apr-cli	--test	cli_commands
+apr-cli	--test	pixel_regression
 apr-format	--lib
 aprender-cgp	--lib
 aprender-compute-xtask	--bins
