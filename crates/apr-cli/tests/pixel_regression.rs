@@ -50,6 +50,23 @@ fn test_apr_file() -> PathBuf {
     path
 }
 
+/// Publish `bytes` at `path` ATOMICALLY: write a pid-unique temp beside it, then rename.
+///
+/// #3051: nextest runs each test in its own PROCESS, and every test in this file calls
+/// `test_apr_file()`, which creates the shared fixture when it is missing. Five processes
+/// therefore raced to `fs::write` the same path, and a test that read a partially written
+/// file failed. Measured on the pre-fix tree with the fixture deleted first, three runs:
+/// 4 passed/1 failed, 3 passed/2 failed, 4 passed/1 failed — a DIFFERENT test each time,
+/// which is what a race looks like and why it was never reproducible by re-running one test.
+///
+/// `rename(2)` within a directory is atomic, so a racing reader sees either no file or a
+/// complete one, and a racing writer simply loses harmlessly.
+fn publish_atomically(path: &std::path::Path, bytes: &[u8]) {
+    let tmp = path.with_extension(format!("apr.tmp.{}", std::process::id()));
+    fs::write(&tmp, bytes).expect("write temp fixture");
+    fs::rename(&tmp, path).expect("publish fixture atomically");
+}
+
 fn is_v1_format(path: &std::path::Path) -> bool {
     let bytes = fs::read(path).unwrap_or_default();
     // v1 magic is "APR1" (0x41505231), v2 is "APR\0" (0x41505200)
@@ -84,7 +101,7 @@ fn create_v2_test_apr(path: &std::path::Path) {
     }
 
     let bytes = writer.write().expect("Failed to write v2 test APR");
-    fs::write(path, bytes).expect("write test.apr");
+    publish_atomically(path, &bytes);
 }
 
 /// Compare output against golden snapshot, stripping ANSI color codes
