@@ -1,5 +1,5 @@
 //! REG-15 model admission (#2971, PMAT-1065; contract
-//! `contracts/apr-gpu-cpu-parity-v1.yaml`, equation `model_admission_reg15`).
+//! `contracts/apr-cpu-vs-gpu-output-parity-v1.yaml`, FALSIFY-CPU-GPU-014).
 //!
 //! Hermetic, CPU-only: no CUDA feature, no model file, no GPU. Exercises
 //! `apr_cli::parity_admission` (re-exported from `crate::commands::parity_admission`)
