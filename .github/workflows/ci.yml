@@ -372,7 +372,13 @@ jobs:
           grep -E '^(tier|crates|targets|reason|cite)=' "$RUNNER_TEMP/tier.txt" >> "$GITHUB_OUTPUT"
       - name: Workspace lib tests (25,300+)
         if: steps.tier.outputs.tier == 'full'
-        # Excluded: aprender-gpu (cuBLAS), aprender-cuda-edge (CUDA), aprender-compute (SIMD SIGSEGV at exit)
+        # Excluded: aprender-compute only (SIMD SIGSEGV at exit; it runs as its own step below).
+        # aprender-gpu and aprender-cuda-edge were excluded here for a CUDA/cuBLAS link that
+        # their DEFAULT features do not have: both are `default = []` with no build.rs, so the
+        # 651 tests they contribute need no GPU and no CUDA toolkit. Measured 2026-09-09 with
+        # the exact CI harness -- `cargo nextest run --profile ci -p aprender-gpu
+        # -p aprender-cuda-edge --lib` -> `651 tests run: 651 passed, 0 skipped` in 0.193s,
+        # and still green with CUDA_VISIBLE_DEVICES="" and an empty HOME/XDG_CACHE_HOME.
         # Timeout: 75min (was 55, was 40).
         # 2026-05-15: bumped to 75min after the P0 per-run target-dir fix
         # (#1693) eliminated cargo-incremental cross-run warmth. Cold
@@ -414,7 +420,7 @@ jobs:
             -e CARGO_PROFILE_TEST_DEBUG=line-tables-only \
             -e CARGO_PROFILE_DEV_DEBUG=line-tables-only \
             "$IMAGE" \
-            cargo nextest run --profile ci --workspace --lib --exclude aprender-gpu --exclude aprender-cuda-edge --exclude aprender-compute
+            cargo nextest run --profile ci --workspace --lib --exclude aprender-compute
       - name: Compute tests (tolerate SIGSEGV at exit — all tests pass but harness crashes on cleanup)
         if: steps.tier.outputs.tier == 'full'
         run: |
