@@ -4,10 +4,11 @@
 
 | | |
 |---|---|
-| Status | **DRAFT v0.2 — for team review.** Not yet normative: nine decisions (§11) are open, and §6 depends on artifacts that do not exist. |
+| Status | **DRAFT v0.3 — for team review.** Not yet normative: nine decisions (§11) are open. |
 | Author | Noah Gift (driver-assisted) |
-| Date | 2026-09-08 (v0.1) · 2026-09-09 (v0.2) |
-| v0.2 changes | Facts and mechanisms only, from the PMAT-1092 review (#3056) and eleven quorum rounds. **No RD is decided here.** §2's `[U]` rows measured; §3.4's `cuobjdump` acceptance replaced (it could not fail); §3.4's PTX-floor *basis* reframed with a published citation; §5.1 skill moved to repo scope; §6 and §8 gain a `status` column and §6 is retitled; §7 cites `infra#359`; §8's contracts corrected to ones that exist; §12 names its blocker. Every RD row now carries the finding that bears on it. Changelog at the foot. |
+| Date | 2026-09-08 (v0.1) · 2026-09-09 (v0.2, v0.3) |
+| v0.2 changes | Facts and mechanisms corrected from the PMAT-1092 review (#3056). No RD decided. Changelog at the foot. |
+| v0.3 changes | **Rewritten against what the tree already does.** #3026 (L0-1a) shipped the model manifest, C14, the parity contract and a PR-time sentinel pair. `binary-release.yml` already builds and attaches tagged-release assets. Those are now the starting point, not things to build. §3.1, §5.2, §7 and §8 rewritten; RD-1 and RD-3 restated. No RD decided. |
 | Applies from | v0.66.0 |
 | Supersedes | `nightly.yml` as the artifact matrix of record; extends `apr-dogfood` v3.0 |
 | Related | PP-066 spec §5 R-5/R-6/R-7, §4 C4/C13/C14 · #2869 · #2971 · #2696 · #2982 |
@@ -123,7 +124,35 @@ Every tagged release carries these four Linux artifacts. Names are
 Each artifact ships with `<name>.tar.gz`, `<name>.tar.gz.sha256`, and is listed in
 **one** signed manifest per tag (`SHA256SUMS` + `SHA256SUMS.minisig`).
 
-**Two changes this table makes silently, neither of them decided here.** `nightly.yml`
+### What already ships, and from where
+
+Two workflows already build and publish `apr` or `pv`. The matrix below has to be
+reconciled with them, not invented beside them.
+
+| workflow | fires on | builds | targets | runs on |
+|---|---|---|---|---|
+| `nightly.yml` | cron 04:00, dispatch | `apr-cli` | **5**: linux x86_64, linux aarch64, darwin x86_64, darwin aarch64, windows x86_64 | GitHub-hosted |
+| `binary-release.yml` | `release: published` | **`pv` only** | **4**: x86_64/aarch64 × **musl/gnu** | `ubuntu-latest` + `cross` |
+
+`binary-release.yml`'s own header says other CLIs *"can opt in"*. That matters: it is
+already tag-scoped, multi-target, and uploads assets. **Adding `apr-cli` to it is a
+smaller change than building `release-assets.yml` from nothing.** §3.4 says no CUDA
+toolkit is needed to build, so the hosted runners can build every artifact here; house
+hardware is needed to *verify*, not to compile. That also removes most of RD-4's
+contention problem, because `gx10` stops being a builder.
+
+**There are four target sets in play, not two:** nightly's 5, binary-release's 4 (with
+musl), C13's 5, and this section's 4. RD-1 has to reconcile all four.
+
+**musl is not in this matrix and needs a decision.** Tagged releases already ship musl
+for `pv`. If `apr` follows, the matrix is 2 arch × 2 libc × 2 backends = **8** artifacts,
+not 4 — and musl × cuda is its own question, since §3.4's model is `dlopen`ing
+`libcuda.so.1`.
+
+**A feature-set difference to carry over:** `nightly.yml` builds default features on its
+four unix targets and adds `--no-default-features --features inference` on windows only.
+
+`nightly.yml`
 today builds its 5 targets on **GitHub-hosted** runners (`ubuntu-latest`,
 `ubuntu-24.04-arm`, `macos-latest` ×2, `windows-latest`) with **default features** on the
 four unix targets (`:78`); Windows alone (`:82`, guarded `if: runner.os == 'Windows'`)
@@ -259,10 +288,22 @@ It is a **sibling** of `apr-dogfood` v3.0, not a replacement: `apr-dogfood --rel
 remains the surface/coverage gate; `apr-dogfood-models` is the *model* gate. Both
 must be GO before promotion.
 
-### 5.2 The model manifest
+### 5.2 The model manifest — **it exists; this section must extend it**
 
-Models are **derived, never typed** — from `evidence/models/supported.yaml`, which is
-itself derived from what the README, docs, cookbook, and perf matrix name. Required
+`evidence/models/supported.yaml` **already exists** (#3026, L0-1a), derived by
+`scripts/derive_model_manifest.sh` from README, `docs/BEATS.md`, `book/src/**`,
+`evidence/dogfood/*` and `scripts/perf-matrix.yaml`. 18 models, every entry citing
+`file:line`. `--check` refuses a hand-typed entry. `check_model_parity.sh --manifest`
+(C14) iterates it and `check_readme_claims.sh` holds the README to it.
+
+**It is not the same shape as this section assumed.** What exists is a *citation index* —
+`name`, `family`, `size`, `cited_by`. What §5.2 wanted is a *pin* — `sha256`, `hidden`,
+`heads`, `kv_heads`, `intermediate`, `tie_word_embeddings`, `format`. Two different
+artifacts, one filename. Either §5.2 adds those fields to the existing deriver, or it
+uses a different file. **It must not hand-write a second manifest**, which is what the
+deriver's `--check` exists to prevent.
+
+The two release models below are already in it. Models are derived, never typed. Required
 entries for the release cells:
 
 | model | quant | role | why |
@@ -294,7 +335,7 @@ asset.
 |---|---|---|---|
 | **M1** | artifact identity | installed binary's sha256 == manifest entry for this target | edit one byte of the tarball → RED |
 | **M2** | registry readback | `apr devices --json` lists the expected backend `ready` on that host; `--model <m>` shows the model serviceable | force `selected: cuda` on a CPU cell → RED |
-| **M3** | **CPU/GPU parity, horizon** | same host, same model, same prompt/seed: cosine ≥ threshold over **≥ 64 cached positions**; per-op table retained | revert the #2971 kernel fix → 1.5B cell RED, 7B cell GREEN |
+| **M3** | **CPU/GPU parity, horizon** | same host, same model, same prompt/seed: cosine ≥ threshold over **≥ 64 cached positions**; per-op table retained. **The threshold is no longer `[U]`**: `evidence/parity/thresholds.yaml` sets 0.98, measured n=5 on both hosts against a known-good and a known-bad pair (7B 0.9986/0.9985, 1.5B 0.9508/0.9506, stdev 0). The gate is `check_model_parity.sh` (#3026) | revert the #2971 kernel fix → 1.5B cell RED, 7B cell GREEN |
 | **M4** | determinism | same cell, same seed, m=1 greedy, two runs → byte-identical token stream | inject nondeterminism (unordered reduction) → RED |
 | **M5** | refusal semantics | FX-16 / FX-17 / FX-18 on that cell | remove the refusal → silent CPU fallback → RED |
 | **M6** | 7B service smoke | 7B loads, produces > 0 tokens, records stop reason, no OOM, peak RSS/VRAM recorded with `basis=`. **Per-host instrument required**: `nvidia-smi` returns `[N/A]` for memory on `gx10` (unified), so that cell records an explicit `UNMEASURED(vram, unified-memory)` — a blank is the `verified_hardware: UNKNOWN` row §9 sets to zero | cap VRAM below need → refusal with reason, not a crash |
@@ -324,11 +365,11 @@ incomplete, and it may not silently become *more* incomplete.
 ## §6 Target release sequence — **not yet executable**
 
 v0.1 titled this "normative, end to end". It is not: of the 21 scripts, workflows,
-contracts, keys and manifests this document depends on, **1 exists**
-(`scripts/check_readme_claims.sh`), **1 is correctly marked new**
-(`contracts/apr-dogfood-models-v1.yaml`), and **19 of the remaining 20 are absent** —
-re-tested path by path, with `find` over the whole tree, by three independent review
-lanes. Step 1 and step 2 abort at `command not found`. The `status` column below says
+contracts, keys and manifests this document depends on, **4 exist**
+(`check_readme_claims.sh`, `check_model_parity.sh`, `evidence/models/supported.yaml`,
+`contracts/apr-gpu-cpu-parity-v1.yaml`) and **17 are absent** — re-tested path by path
+with `find` over the whole tree, against `origin/main` at `ebc9e9d81`. Three of the four
+present ones arrived in #3026 after v0.1 was written. Step 1 and step 2 abort at `command not found`. The `status` column below says
 which is which; the ordering and the content of the steps are unchanged.
 
 Each step is idempotent — the DONE-IF check runs first and the step is skipped if it
@@ -357,7 +398,17 @@ keys. Everything else is machine-decided.
 
 ## §7 PR-time CUDA testing on `yoga`
 
-> **This section proposes re-opening a decision that was made.** `paiml/infra#359`
+> **Most of what this section asks for already runs, without `yoga`.** #3026 shipped a
+> PR-time gate in `workspace-test`: two sentinels, the lambda 1.5B record RED and the 7B
+> record GREEN, both over ≥ 64 positions, read against `evidence/parity/thresholds.yaml`.
+> That is §7.1's sentinel pair, at PR time, today. It works by replaying **recorded**
+> evidence rather than driving a live GPU.
+>
+> So the real gap is narrower than this section claims: not "no parity check at PR time",
+> but "no *live* kernel execution at PR time". State the gap that size, and the case for a
+> required GPU runner has to be made on it.
+>
+> **This section also proposes re-opening a decision that was made.** `paiml/infra#359`
 > ("x86_64 GPU CI has no sanctioned runner", **OPEN**) put exactly this question and was
 > answered by Noah: *"Decision made: cuda-nightly is gx10-only. **Option A**."*,
 > implemented in #2740 by removing the `ada-4090` leg rather than relabelling it.
@@ -384,10 +435,12 @@ security surface. It is scoped deliberately.
 A new required check `cuda-test` on `yoga`, PR-time:
 
 - `cargo test -p aprender-gpu -p aprender-serve --features cuda` — the CUDA unit
-  tests that no runner could execute before.
-- **Two parity sentinels only** (1.5B RED-first, 7B witness) over ≥ 64 positions.
-  The *full* manifest runs at release, nightly, and post-publish — a PR must not pay
-  for sixteen cells.
+  tests that no runner could execute before. **This is the part that is genuinely new.**
+- ~~Two parity sentinels~~ — **already running** in `workspace-test` since #3026, against
+  recorded lambda evidence. What `yoga` would add is running them on a live GPU. Say which
+  of the two is being asked for; they are not the same check.
+- The *full* manifest runs at release, nightly and post-publish — a PR must not pay for
+  sixteen cells. Unchanged, and already how #3026 scoped it.
 - **`yoga` has no models.** `ssh yoga 'ls ~/models'` → no such directory. Capacity is
   fine — 7807 MiB free against 4.36 GiB of 7B Q4_K_M weights, ~3.3 GiB left for KV and
   activations — so the objection is provisioning and wall-clock, not VRAM. Appendix A's
@@ -445,8 +498,8 @@ A self-hosted runner executing PR code is arbitrary code execution on your hardw
 ## §8 What enforces each rule
 
 Every row is a guard with a self-test and both polarities. A rule with no guard is a
-comment — and **seven of these eight rows are currently comments**: only
-`check_readme_claims.sh` exists. The `status` column is the build list, not an excuse;
+comment. **Six of these eight rows are currently comments**: `check_readme_claims.sh`
+and `check_model_parity.sh` (C14, #3026) exist. The `status` column is the build list, not an excuse;
 the mutations are unchanged.
 
 | guard | status | enforces | mutation that must go RED |
@@ -455,24 +508,29 @@ the mutations are unchanged.
 | `check_no_cudart_link.sh` | **absent** | §3.4 — no `libcudart` in any `-cuda` artifact | link cudart → RED |
 | `check_ptx_version.sh` | **absent** (and see §3.4 — its acceptance changed) | §3.4 — emitted PTX `.version` ≤ fleet minimum | bump the target above the fleet minimum → RED |
 | `check_host_slot.sh` | **absent** | §2 — one release role per host | start a perf receipt while a build slot is held → RED |
-| `check_model_parity.sh` | **absent** | §5 M3 / criterion **C14** | revert the parity fix → RED on the sentinel |
+| `check_model_parity.sh` | **exists** (#3026) — `--manifest`, ≥ 64 positions, threshold from `evidence/parity/thresholds.yaml` | §5 M3 / criterion **C14** | revert the parity fix → RED on the sentinel |
 | `check_release_receipts.sh` | **absent** | §6 step 10 — promotion inputs | remove a cell receipt; tamper one byte; a receipt with `parity: skipped` |
 | `check_readme_claims.sh` | **exists**, 533 lines | §5.2 — README model ∉ manifest | add an unmanifested model name → RED |
 | `check_publish_cascade.sh` | **absent** | §6 step 12 — refuses on branch, dirty tree, prerelease, or a token in the environment | run from a branch → refuse |
 
-**Contracts — two of v0.1's four already exist under other names, and minting a second
-splits the ratchet.** M3/C14 must extend **`contracts/apr-cpu-vs-gpu-output-parity-v1.yaml`**,
-which is in the tree, passes `pv validate` clean, and already carries **11 falsification
-tests** (`FALSIFY-CPU-GPU-001..011`) plus 10 proof obligations — not a new
-`apr-gpu-cpu-parity-v1.yaml`. The publish-cascade contract extends
-**`contracts/apr-cli-publish-v1.yaml`**. Genuinely new:
-`contracts/apr-release-assets-v1.yaml` and `contracts/apr-dogfood-models-v1.yaml`.
+**Contracts.** `contracts/apr-gpu-cpu-parity-v1.yaml` **already exists** (#3026) and is
+C14's contract — PAR-OB-001..003, the horizon gate, the derived manifest, REG-15
+admission. This section does not create it; it uses it.
 
-*A defect found inside that existing contract while checking this:* it cites the
-`SKIP_PARITY_GATE` bypass at `crates/aprender-serve/src/gguf/cuda/mod.rs:268-279` (YAML
-lines 18 and 179). `grep` puts it at **`:333`** and **`:349`**; `:268-279` is the
-`HGEMM_PREFILL` warm-up block. A line-keyed citation inside a contract drifts silently.
-Fixing it belongs in this work.
+`contracts/apr-cpu-vs-gpu-output-parity-v1.yaml` also exists, with 11 falsification tests
+(`FALSIFY-CPU-GPU-001..011`). **Two contracts now cover CPU/GPU parity.** That split is a
+fact on main, not something this document introduces, but it needs an owner: a falsifier
+added to one does not constrain the other. **Which is authoritative is an open question**,
+and belongs on the ticket that reconciles them.
+
+The publish-cascade contract should extend **`contracts/apr-cli-publish-v1.yaml`**, which
+exists. Genuinely new: `contracts/apr-release-assets-v1.yaml` and
+`contracts/apr-dogfood-models-v1.yaml`.
+
+*A stale citation inside the older contract:* it puts the `SKIP_PARITY_GATE` bypass at
+`crates/aprender-serve/src/gguf/cuda/mod.rs:268-279` (YAML lines 18 and 179). `grep` puts
+it at **`:333`** and **`:349`**; `:268-279` is the `HGEMM_PREFILL` warm-up block. A
+line-keyed citation inside a contract drifts silently. Worth fixing here.
 
 ---
 
@@ -516,9 +574,9 @@ continuous thresholds.
 
 | id | question | recommendation | owner |
 |---|---|---|---|
-| **RD-1** | darwin/windows: carry, drop, or verify? C13 says five targets; this spec names four. | Unchanged from v0.1. Two findings bear on it, neither an answer: C13 (`PP-066-release-spec.md:159`) names five targets but does **not** itself name `nightly.yml` — **R-5** (`:218`) is the row that pins the five to that workflow — so the two documents will disagree until both are edited; and the runner-class plus feature-set change (§3.1) survives every option. | team |
+| **RD-1** | which targets does a tagged release carry? | Restated in v0.3, because there are **four** sets to reconcile, not two: `nightly.yml`'s 5, `binary-release.yml`'s 4 **with musl**, C13's 5, and §3.1's 4. Sub-questions: (a) darwin/windows — carry, drop or verify; (b) **musl or not** — tagged releases already ship it for `pv`, and including it doubles the matrix to 8; (c) whether `apr-cli` opts into `binary-release.yml` rather than a new workflow. Note C13 (`:159`) names five targets but not `nightly.yml`; **R-5** (`:218`) is what pins them to it. | team |
 | **RD-2** | installer default when a driver is present | `-cuda`, with the choice and reason printed and `--backend` overriding (FX-18) | team |
-| **RD-3** | `cuda-test` on `yoga`: required in 0.66 or advisory→required in 0.66.1 | Unchanged from v0.1, with two findings against the *criterion*: (a) `0 false reds in 14 days` is satisfied by a box that was powered off for 14 days, so it needs a reachability term — which is `infra#359`'s declined-Option-B precondition arriving by another route; (b) the budget names no population (§7.1), so it cannot be exceeded and cannot fail. | team |
+| **RD-3** | `cuda-test` on `yoga`: required in 0.66 or advisory→required in 0.66.1 | Restated in v0.3: the parity sentinels **already run at PR time** (#3026, `workspace-test`, recorded evidence). So this decision is now narrower — is *live kernel execution* at PR time worth a GPU runner, given the recorded-evidence gate already exists? Two findings still stand against the criterion: (a) `0 false reds in 14 days` is satisfied by a box powered off for 14 days, so it needs a reachability term — `infra#359`'s declined-Option-B precondition arriving by another route; (b) the budget names no population (§7.1), so it cannot be exceeded and cannot fail. | team |
 | **RD-4** | `gx10` builds two artifacts **and** hosts two dogfood cells **and** is a perf host | Unchanged from v0.1. One finding: the slot discipline it relies on is enforced by `check_host_slot.sh`, which does not exist (§8), so "one role at a time" is currently unenforced however this is decided. | team |
 | **RD-5** | if #2971 is not root-caused by the tag | Cannot be settled while §9's jidoka target says the opposite — the document has to state which of the two readings it means before this question is answerable. #2971 is OPEN, labels `bug, P0, pp-066, inst:A` `[V]`. | Noah |
 | **RD-6** | `arm-gpu-cuda` has exactly one verification host | Unchanged from v0.1. The measured ledger adds a second asymmetry beside it: `yoga` is **sm_89**, the same as `lambda-labs`, so `x86-gpu-cuda`'s two hosts are redundancy rather than cross-architecture coverage. Both facts are now in front of the decision. | team |
@@ -598,6 +656,24 @@ docs/audits/release/<tag>/                   # every receipt for a release lives
 ---
 
 ## Changelog
+
+**v0.3 — 2026-09-09.** Rewritten against what the tree already does. #3026 (L0-1a) landed
+after v0.1 was written and shipped four things this document called new: the derived model
+manifest, C14 (`check_model_parity.sh`), `contracts/apr-gpu-cpu-parity-v1.yaml`, and a
+PR-time sentinel pair in `workspace-test`. `binary-release.yml` already builds and attaches
+tagged-release assets on four targets. **No RD decided.**
+
+| § | change |
+|---|---|
+| §3.1 | what already ships, and from where. Four target sets to reconcile, not two. musl named as an open question — including it makes the matrix 8, not 4. `binary-release.yml` invites `apr-cli` to opt in, which is smaller than a new workflow, and lets hosted runners build while house hardware only verifies |
+| §5.2 | the manifest **exists** and is a citation index, not the field pin this section assumed. Extend the deriver or use a different file; do not hand-write a second |
+| §6, §8 | counts corrected: **4 of 21 present, 17 absent** (was 2/19) |
+| §7 | the sentinel pair already runs at PR time on recorded evidence. The real gap is *live* kernel execution, which is a narrower ask |
+| §8 | `apr-gpu-cpu-parity-v1.yaml` exists — this document uses it rather than creating it. Two parity contracts now exist and need an owner |
+| §5.4 M3 | threshold no longer `[U]`: 0.98, measured n=5 on both hosts, both polarities |
+| RD-1 | restated around four target sets and the musl question |
+| RD-3 | restated: narrower now that recorded-evidence sentinels ship |
+
 
 **v0.2 — 2026-09-09.** Facts and mechanisms only. **No RD is decided**; every RD row now
 carries the finding that bears on it and says what is still owed. Source: the PMAT-1092
