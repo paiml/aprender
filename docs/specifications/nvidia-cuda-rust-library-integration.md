@@ -42,6 +42,8 @@ sample.** Nothing here is quoted from the blog.
 | G17 | `cutile` 0.1.0 → 0.3.1 in under 4 months (0.3.1 published 2026-09-04, five days before this doc). Total downloads 5,873 | crates.io API |
 | **G18** | **aprender already declares the occupancy check — and it is vacuous.** `contracts/trueno/ptx-codegen-safety-v1.yaml` (2026-04-06) equation `register_budget` has postcondition `cuOccupancyMaxActiveBlocksPerMultiprocessor > 0`. Its generated macro `contract_register_budget!` (defined `generated_contracts.rs:18732`) is **invoked nowhere in the tree** — not by real code, not by tests, not by the generated file itself; and `cuOccupancyMaxActiveBlocksPerMultiprocessor` is an unbound identifier that would not compile if it ever were. Its falsifier FALSIFY-PTX-003 is **prose** (`"Parse ptxas output for register count, assert <= 128"`), and prose never runs. It carries `registry: true` — the exemption class the operator killed 2026-08-21 (**535** contracts still carry it). Its `domain` stops at sm_90, and it cites pre-monorepo paths | contract + `grep -rn 'contract_register_budget!'` |
 | G19 | `cuFuncGetAttribute` / `cuOccupancy*` are **absent from `crates/aprender-gpu/src/`** entirely. `driver/sys/mod.rs` already has **52** `load_sym!` bindings, so adding them is one line per symbol | grep |
+| **G21** | **cutile-rs 0.3.1 BUILDS AND RUNS on gx10 (GB10, sm_121)** after the CUDA 13.3 install — stable rustc 1.95, 18.13s, JIT through CUDA Tile IR, `len=1024 mismatches=0`. The T3 blocker is **gone** | probe on gx10, 2026-09-09 |
+| **G22** | `/usr/local/cuda` on gx10 is **not a plain symlink** — it is `-> /etc/alternatives/cuda`, a Debian alternatives link. `cuda-toolkit-13-3` registers priority **133** vs 13.0's **130**, so the default flipped to 13.3 at 11:32:57 (`/var/log/alternatives.log`). Rollback is one command: `update-alternatives --set cuda /usr/local/cuda-13.0` | `update-alternatives --query cuda` |
 | G20 | `experiments/` is invisible to cargo: `cargo metadata --no-deps` lists **79 packages, none under `experiments/`**; all six `experiments/cuda-oxide/*/Cargo.toml` carry their own `[workspace]`; no `Cargo.lock` there. **But** `scripts/complexity_baseline.txt:688-692` still names five `experiments/cuda-oxide/**` entries | delegate-verified in a clean export |
 
 ---
@@ -82,16 +84,17 @@ argued for T0 alone; it reached that partly on a misreading (it wrote that T0 "u
 existing tests" — T0 unlocks **444**, G3, which the spec states plainly). Its *direction* is right and
 its stopping point is too early.
 
-**Ship in 0.67 — both dependency-free:**
+**Ship in 0.67:**
 
 | | Item | Why it is the highest quality-per-risk |
 |---|---|---|
 | **T0** | Un-dark `aprender-gpu` in CI (§3) | Nothing else is measurable without it. 444 tests, 0.10s |
-| **O2** | Arm the vacuous `register_budget` contract (§4) | G18: aprender has *claimed* this check for 5 months. G19: ~1 line per symbol against 52 existing `load_sym!` bindings. Works on **every** host, CUDA-12 included |
+| **O2** | Arm the vacuous `register_budget` contract (§4) | dependency-free. G18: aprender has *claimed* this check for 5 months. G19: ~1 line per symbol against 52 existing `load_sym!` bindings. Works on **every** host, CUDA-12 included |
 
-**Defer to 0.68 — all blocked on a prerequisite no host meets:** T1 loader-differential oracle (§5,
-needs cuda-core ⇒ R580+ driver, gx10 only), T2 oxide verification tooling (§6), T3 cutile evaluation
-(§7, needs a CUDA 13.2+ toolkit that must not be installed on gx10).
+| **T3** | cutile A/B evaluation on gx10 (§7) | **unblocked 2026-09-09** — operator ordered the toolkit upgrade; cutile now runs on sm_121 (G21) |
+
+**Defer to 0.68:** T1 loader-differential oracle (§5 — needs cuda-core, so gx10 only, driver R580+),
+T2 oxide verification tooling (§6).
 
 ---
 
@@ -221,25 +224,40 @@ published crate). Nightly on gx10. Pin `nightly-2026-08-28` (G14), **not** the b
 
 ---
 
-## §7. T3 — cutile-rs: evaluation only  *(0.68)*
+## §7. T3 — cutile-rs on gx10  *(0.67; operator decision)*
 
-**Blocked today** (G12): no fleet host has CUDA ≥ 13.1.
+**Operator ruling, 2026-09-09, verbatim: "false YOU WILL UPGRADE".** This overrules the grill's
+RANK3 objection and this document's own earlier recommendation, both of which argued against
+touching gx10's toolkit. Per repo doctrine a review lane may not reopen an operator decision; the
+recommendation below is withdrawn and the upgrade is the decision of record.
 
-**The draft said "step 0 is a gx10 toolkit upgrade 13.0 → 13.3." Withdrawn.** The grill's RANK3 is
-correct: gx10 is the *only* Blackwell host **and** the only host running `cuda-nightly.yml`. Upgrading
-its toolkit risks changing `ptxas` behaviour underneath the GH-480 rewriter (G4) and taking the whole
-GPU CI lane down. That is the highest-risk action in this document, not a step 0.
+**Executed.** `cuda-toolkit-13-3` (13.3.1-1, sbsa/arm64, 66 packages) installed on gx10-a5b5.
+Deliberately *not* installed: any kernel-driver package — the plan was asserted driver-free before
+apt ran, and the driver is unchanged at **590.48.01**. CUDA 13.0 remains on disk and intact.
 
-**Revised: yoga is the evaluation host.** sm_89 (cutile needs CUDA 13.2+ for sm_8x, G12), driver
-595.91.07 (above the R580 floor), and **no CUDA toolkit at all** (G11) — installing 13.3 there *adds*
-a capability rather than mutating a working one, and yoga is rack-mounted and permanent. **gx10 is not
-touched.**
+**Result — the blocker is gone (G21).** cutile-rs 0.3.1 builds and runs on GB10 **sm_121**: stable
+rustc 1.95, 18.13s, JIT through CUDA Tile IR, `len=1024 mismatches=0`. Before the upgrade the fleet
+maximum was 13.0, below cutile's 13.1 floor, and this was untestable.
 
-Deliverable is a **measurement, not an adoption**: one cutile kernel vs the production hand-PTX
-equivalent, same-data A/B, plus build reproducibility. Precedent: HuggingFace **Grout**, a Qwen3
-inference engine on cutile — the direct analogue of `aprender-serve`.
+**What the upgrade actually changed, and what this document got wrong (G22).** `/usr/local/cuda` is
+a **Debian alternatives** link, not a plain symlink. `cuda-toolkit-13-3` registers priority 133
+against 13.0's 130, so **the default toolkit flipped to 13.3** — `nvcc` and `ptxas` on the CI PATH
+are now 13.3. The claim first reported here, that the install was purely side-by-side with the CI
+lane untouched, was **wrong**; see §9.4.
 
----
+**Rollback is one command and instant** (no reinstall, no download):
+
+```bash
+sudo update-alternatives --set cuda /usr/local/cuda-13.0    # and cuda-13 likewise
+```
+
+**Required before this lands:** the GH-480 rewriter (G4) now meets `ptxas` 13.3, which is exactly
+the interaction the objection named. `cargo test -p aprender-gpu --features cuda --lib --release`
+must pass on gx10 under 13.3 — see §9.5. A red result is a rollback, not a debate.
+
+**Deliverable:** a **measurement, not an adoption** — one cutile kernel vs the production hand-PTX
+equivalent, same-data A/B on gx10, plus build reproducibility. Precedent: HuggingFace **Grout**, a
+Qwen3 inference engine on cutile — the direct analogue of `aprender-serve`.
 
 ## §8. Exit criteria for the hand-PTX stack
 
@@ -264,12 +282,12 @@ script exists; that script ships with T0 or criterion 3 is struck.
 
 | # | Risk | Mitigation |
 |---|------|-----------|
-| R1 | **Alpha churn.** cutile 0.1.0→0.3.1 in <4 months (G17); cuda-oxide self-described alpha, re-pinned its nightly since the blog (G14) | Nothing NVIDIA ships in 0.67. Oracle/experiment only, never on the decode path, never in the shipped dependency graph |
+| R1 | **Alpha churn.** cutile 0.1.0→0.3.1 in <4 months (G17); cuda-oxide self-described alpha, re-pinned its nightly since the blog (G14) | Nothing NVIDIA ships **in the product** in 0.67. T3 is an out-of-workspace evaluation; never on the decode path, never in the shipped dependency graph |
 | R2 | **`--all-features` breakage** (G16); the draft's mitigation was insufficient | Own-`[workspace]` crate under `experiments/` (§5.3), verified by G20 |
 | R3 | **Driver floor R580.** lambda-vector (570.207) cannot run cuda-core (G8) | gx10 is the only T1 host; lambda-vector needs a driver bump or stays out |
 | R4 | **Licence / advisories.** Apache-2.0 is permitted by `deny.toml`, but root `cargo deny` **does not traverse an isolated workspace** | Explicit `cargo deny check --manifest-path experiments/cuda-core-oracle/Cargo.toml` (advisories, bans, sources — not licences alone) |
 | R5 | **Oracle disagreement ≠ hand-PTX bug.** cuda-core can be wrong | Every O1 verdict is three-way against the CPU reference (§5.2) before either side is blamed |
-| R6 | **gx10 SPOF** | gx10's toolkit is not upgraded; cutile evaluation moves to yoga (§7) |
+| R6 | **gx10 SPOF** — the only Blackwell host and the only `cuda-nightly` host now defaults to CUDA 13.3 | Operator-directed (§7). Driver untouched; 13.0 still on disk; rollback is one `update-alternatives --set` with no download. Gated on the §9.5 regression run |
 | R7 | **Neither review was a quorum.** grillme: `children=1, label=single-lane`. teamwork: `children=unknown, method=none` — the count was *never recorded*, which is not the same as zero | Both verdicts are one model's opinion. Every claim either lane made was re-verified here before acceptance |
 | R8 | **Re-arming a five-month-vacuous contract on assertion** | O2 ships only with the revert-to-RED mutation proof (§4) |
 
@@ -289,7 +307,65 @@ churn; the delegate corrected that — the document contains **zero** occurrence
 - **`cargo package` behaviour** for an isolated `experiments/` member is unverified against
   `scripts/check_include_files.sh`.
 
-### §9.3 Review record
+### §9.3 Operator decision
+
+**2026-09-09, verbatim: "false YOU WILL UPGRADE".** The grill's RANK3 (gx10 SPOF) and this
+document's own §7 recommendation are overruled. The gx10 toolkit upgrade was executed the same day
+(§7) and unblocked T3 (G21). A review lane may not reopen an operator decision.
+
+### §9.4 A false-green check in this document's own verification
+
+The upgrade was first reported here as "side-by-side, CI lane untouched". **That was wrong** (G22).
+The check that produced it was:
+
+```bash
+[ "$(readlink -f /usr/local/cuda)" = "$(cat $B/cuda-symlink.before)" ]; chk "still -> $(cat $B/cuda-symlink.before)" $?
+```
+
+The command substitution **inside the message argument** runs before `$?` is expanded, so `$?`
+carries `cat`'s status (0), never the test's. Mismatched strings printed `OK`. Verified by
+reproduction: with the substitution in the message the same failing test prints `OK`; without it,
+`FAIL`. This is the CLAUDE.md rule *"never read `$?` through a pipe"* generalised — **capture the
+status into a variable before any other command substitution appears on the line**:
+
+```bash
+[ "$a" = "$b" ]; rc=$?; chk "msg with $(cat file)" $rc
+```
+
+The error was caught only because a later, independent probe reported `ptxas release 13.3` on a
+path this document claimed was 13.0. A guard whose own status can be laundered is theater; this one
+was, for one turn.
+
+### §9.5 Post-upgrade regression gate — RUN, with a control
+
+`cargo test -p aprender-gpu --features cuda --lib --release` on gx10 under CUDA 13.3 (the GH-480
+rewriter, G4, meeting `ptxas` 13.3):
+
+> **`2568 passed; 2 failed; 12 ignored`** in 28.77s.
+
+Two failures is not a verdict until the mechanism is proven, so the alternative was rolled back to
+13.0 and the same two tests re-run — a control, then restored to 13.3:
+
+| Test | on 13.0 | on 13.3 | reading |
+|---|---|---|---|
+| `driver::memory_fuzz_tests::adversarial::test_alloc_oversize_100gb` | **FAIL** | **FAIL** | pre-existing; **not** caused by the upgrade |
+| `driver::cublas_tests::test_cublas_gemm_f16_training_shape` | **pass** (alone) | **pass** (alone) | passes alone on both, failed only inside the full suite ⇒ load-contended, **not** a toolkit regression |
+
+**Verdict: CUDA 13.3 caused neither failure. The upgrade is exonerated by control, not by assertion.**
+
+Both are pre-existing defects on this host and should be filed separately:
+
+1. `adversarial.rs:36` asserts a 100 GB allocation is *"impossible on RTX 4090"* — a hard-coded
+   host assumption. gx10 is a **GB10 with unified memory**, where the allocation legitimately
+   succeeds. The test encodes the wrong machine.
+2. `cublas_tests.rs:174` asserts `> 50 TFLOP/s` and measured 15.4 TFLOP/s under full-suite load,
+   while passing in isolation. This is a **wall-clock assertion**, the class the repo has already
+   been bitten by four times; it must not sit in a required check.
+
+Neither had been visible, because `cuda-nightly.yml:242` runs only the `perf053` filter — so the
+`--features cuda` suite has never been green on the Blackwell host, and nothing said so.
+
+### §9.6 Review record
 
 **Grill** — `agy --mode grillme`, agy 1.1.28, **1 lane**, 125.7s, `do-not-implement-as-written`,
 conversation `11f250f2-d5d1-438f-89c2-96cbd9a362b0`.
