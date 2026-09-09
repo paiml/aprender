@@ -574,3 +574,111 @@ jobs:
           # check_beats_gated.sh rule 1b now makes a build failure.
           nice -n 19 cargo test -p aprender-serve --release \
             --test beat_ollama_decode_throughput_speed -- --ignored --nocapture
+
+  # ── ada-yoga: the sm_89 leg, restored ─────────────────────────────────────
+  #
+  # RESTORING A DELETION, NOT INVENTING A LANE. #2740 removed the x86_64 leg
+  # because it ran on lambda-labs, which must never be a CI host (infra#359).
+  # That was correct and it left a named hole: `.github/silicon-coverage.txt`
+  # carries `x86_64-cuda-sm89  pending:361`, and infra has now stood up `yoga`
+  # (RTX 4060 Laptop, AD107M, sm_89, 8188 MiB, CUDA 12.4) as a sanctioned
+  # org-scoped runner in the `gpu-x86` group. Spec: paiml/infra
+  # docs/specifications/yoga-nightly-job.md (YOGA-NIGHTLY-001 R-4).
+  #
+  # WHY A SEPARATE JOB AND NOT A MATRIX ARM. `runs-on` above is LITERAL on
+  # purpose — infra#352's guard can only check labels it can see, and labels
+  # behind a matrix expression are invisible to it. A second architecture
+  # therefore needs a second job, not a second matrix row.
+  #
+  # WHY IT IS NOT A COPY OF `falsifiers`. yoga is 8 GB and a mobile Max-Q part;
+  # gx10 owns the QLoRA training work and yoga must not inherit it. What sm_89
+  # is FOR here is narrower and specific:
+  #
+  #   Post-mortem Lesson 4 — the pre-warm bugs existed on sm_89 too, but
+  #   JIT-on-demand SUCCEEDED there; sm_121's stricter behaviour is what turned
+  #   them into hard failures. So an sm_89 lane whose only output is pass/fail
+  #   was GREEN through all seven defects of the Blackwell cascade.
+  #
+  # The assertion that gives this lane the power to go red is therefore
+  # `cache_misses == 0` after pre-warm (falsify_cuda_prewarm_covers_runtime_no_jit_001),
+  # not a re-run of gx10's suite. It is mutation-proven in both directions on
+  # real sm_89 hardware: correct tree passes, `warm!` hardcoded-key reintroduced
+  # fails naming the kernel.
+  #
+  # NO PERFORMANCE ASSERTION HERE, deliberately. SILICON_FLOORS is keyed by
+  # compute capability and yoga answers `8.9` — the same key as the 24 GB /
+  # ~450 W desktop 4090 the floor was derived from, from an 8 GB / 100 W laptop.
+  # The UNCALIBRATED-SILICON refusal cannot fire because the key matches while
+  # the device does not (YOGA-NIGHTLY-001 §7, N-4).
+  #
+  # NO yield-to-training predicate either: gx10 has a competing QLoRA workload
+  # and yoga does not. Its declared roles are [gpu-compute, test-runner] and it
+  # is the only GPU box in the fleet with nothing else on it.
+  ada-yoga:
+    name: ada-yoga (x86_64, sm_89)
+    if: >-
+      ${{ vars.CUDA_RUNNER_READY == 'true' &&
+      (github.event_name != 'pull_request' || github.event.label.name == 'cuda-check') }}
+    # LITERAL, for the same reason the job above is: a guard must be able to see
+    # these labels. Matches yoga and only yoga — gx10 is ARM64.
+    runs-on: [self-hosted, gpu, Linux, X64, cuda, ada]
+    timeout-minutes: 30
+    env:
+      CARGO_TERM_COLOR: always
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Put the runner's Rust toolchain on PATH
+        run: echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+
+      # ASK THE BOX, NEVER THE LABEL. A label says what we intended; nvidia-smi
+      # says what is there. This gate has already been wrong once about which
+      # host it was running on (aprender#2835 — an sm_89 floor asserted on GB10,
+      # red four nights), so it asserts compute capability rather than trusting
+      # the selector that routed the job here.
+      - name: Preflight — this must be sm_89, and it must not be gx10
+        run: |
+          set -euo pipefail
+          nvidia-smi -L || { echo "::error::no CUDA device visible"; exit 1; }
+          nvidia-smi --query-gpu=name,compute_cap,memory.total,driver_version \
+            --format=csv,noheader
+          cc=$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader | head -1 | tr -d ' ')
+          if [ "$cc" != "8.9" ]; then
+            echo "::error::expected compute_cap 8.9 (Ada/sm_89), got '$cc'."
+            echo "::error::This job is the sm_89 axis. Running it elsewhere would"
+            echo "::error::report sm_89 coverage that was never measured."
+            exit 1
+          fi
+          test "$(uname -m)" = "x86_64" || { echo "::error::not x86_64"; exit 1; }
+
+      # THE ASSERTION THIS LANE EXISTS FOR (YOGA-NIGHTLY-001 R-3).
+      #
+      # --include-ignored is deliberate: the falsifier skips loudly with no CUDA
+      # device so a CPU box cannot report a pass it did not measure, and it is
+      # selected here BY NAME so a rename cannot silently drop it.
+      - name: Pre-warm covers runtime — zero JIT compiles on the pass (sm_89)
+        run: |
+          set -euo pipefail
+          nice -n 19 cargo test -p aprender-train --features cuda --lib --release -- \
+            --nocapture --include-ignored --exact \
+            autograd::cuda_forward::cache::prewarm_coverage_falsifier::falsify_cuda_prewarm_covers_runtime_no_jit_001
+
+      # VRAM CEILING, not throughput (YOGA-NIGHTLY-001 §6). 8188 MiB is the
+      # fleet's tightest x86 CUDA budget, and the cascade's two INDEPENDENT bugs
+      # were memory bugs (#1804 PTX GEMM pre-warm wasting VRAM, #1808 a 60 GB
+      # workspace per block). Both are latent on GB10's unified memory and on a
+      # 24 GB 4090; at 8 GB they are immediate. This records the peak so the
+      # headroom is a number rather than an assumption.
+      - name: VRAM headroom on the tightest x86 CUDA budget in the fleet
+        if: always()
+        run: |
+          set -euo pipefail
+          used=$(nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits | head -1)
+          total=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits | head -1)
+          printf 'VRAM after the pass: %s MiB used of %s MiB\n' "$used" "$total"
+          {
+            printf '### ada-yoga (x86_64, sm_89)\n\n'
+            printf -- '- compute_cap 8.9, %s MiB total, %s MiB used after the pass\n' "$total" "$used"
+            printf -- '- asserted: zero JIT compiles after pre-warm\n'
+            printf -- '- NOT asserted: throughput (SILICON_FLOORS is keyed on 8.9, see YOGA-NIGHTLY-001 §7)\n'
+          } >> "$GITHUB_STEP_SUMMARY"
