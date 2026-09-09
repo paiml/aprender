@@ -15,6 +15,9 @@ use crate::autograd::cuda_tensor::{CudaTensorError, Result};
 
 #[cfg(feature = "cuda")]
 use super::cache::FORWARD_KERNEL_CACHE;
+// Cache keys come from ONE place (YOGA-NIGHTLY-001 R-2). A `format!` here is
+// the defect that produced the Blackwell cascade five separate times.
+use super::keys;
 
 /// Layer normalization forward pass on GPU
 ///
@@ -136,7 +139,7 @@ pub fn rms_norm_forward_with_eps(
     // Cache key MUST include eps bits — different eps values compile to
     // different PTX (the constant is baked into `mov.f32`).
     let eps_bits = eps.to_bits();
-    let key = format!("batched_rmsnorm_fwd_{hidden_size}_eps{eps_bits:08x}");
+    let key = keys::batched_rmsnorm_fwd(hidden_size as u32, eps);
     let module = match cache.get_cached(&key) {
         Some(m) => m,
         None => {
@@ -342,7 +345,7 @@ pub fn batched_rope_neox_forward(
     // theta_bits (and seq_len, which is also baked in via grid sizing).
     // See `rope_neox_forward` rationale.
     let theta_bits = theta.to_bits();
-    let key = format!("batched_rope_neox_fwd_{num_heads}_{head_dim}_{seq_len}_th{theta_bits:08x}");
+    let key = keys::batched_rope_neox_fwd(num_heads as u32, head_dim as u32, seq_len as u32, theta);
     let module = match cache.get_cached(&key) {
         Some(m) => m,
         None => {
@@ -490,7 +493,7 @@ pub fn fused_residual_rmsnorm_forward(
     })?;
 
     let eps_bits = eps.to_bits();
-    let key = format!("batched_fused_residual_rmsnorm_{hidden_size}_eps{eps_bits:08x}");
+    let key = keys::batched_fused_residual_rmsnorm(hidden_size as u32, eps);
     let module = match cache.get_cached(&key) {
         Some(m) => m,
         None => {

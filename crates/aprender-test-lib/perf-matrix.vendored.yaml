@@ -160,6 +160,33 @@ hosts:
     date: '2026-09-02'
     github_issue: 2841
 
+  # yoga joined the fleet 2026-09-09 (paiml/infra#486, YOGA-NIGHTLY-001). It is
+  # declared here for ONE reason and its cells say so: PP-19's host-isolation
+  # rule reads its host vocabulary from this block, so cuda-nightly's `ada-yoga`
+  # job could not name a valid `perf-yoga` group until yoga existed here.
+  # scripts/check_perf_concurrency_groups.sh found that job ungrouped the hour
+  # it was written.
+  #
+  # NO PERFORMANCE CELL, deliberately, and this is not an oversight to be filled
+  # in later (YOGA-NIGHTLY-001 §7, N-4): SILICON_FLOORS is keyed on compute
+  # capability, and yoga answers `8.9` — the same key as the 24 GB / ~450 W
+  # desktop 4090 the floor was derived from, from an 8 GB / 100 W laptop. The
+  # UNCALIBRATED-SILICON refusal cannot fire because the key MATCHES while the
+  # device does not. Until that is re-keyed (R-7), any number measured here
+  # would be compared against a floor from another machine.
+  yoga:
+    accelerator: rtx-4060-laptop
+    compute_class: cuda
+    comparator: llamacpp
+    reachable_by: [cuda]
+    ci_runner: self-hosted
+    status: NA
+    reason: >-
+      correctness-only host. SILICON_FLOORS is keyed on compute capability and
+      yoga shares 8.9 with the 4090 the floor came from, so no throughput number
+      taken here is comparable to anything (YOGA-NIGHTLY-001 §7, R-7, N-4).
+    decided_by: spec-owner
+    date: '2026-09-09'
 workloads: [W1, W2]
 
 arms:
@@ -394,6 +421,12 @@ baselines:
         c16: {validity: 'INVALID-CORRECTNESS(#2753/#2776) — no PP-26 witness; not reported, not seeded (P-4)'}
   # An NA host has no denominator cells. Both are NA with a decider and a date;
   # `cell-completeness` passes an NA cell with no receipt at all, and says so.
+  # yoga is NA for the same STRUCTURAL reason mini is, with a different cause:
+  # mini has no Metal path to measure, and yoga has no floor its numbers could
+  # be compared against — 8.9 is the 4090's key (YOGA-NIGHTLY-001 §7, R-7).
+  yoga:
+    W1: {status: NA, reason: 'SILICON_FLOORS keyed on 8.9, shared with the 4090 (R-7)', decided_by: spec-owner, date: '2026-09-09'}
+    W2: {status: NA, reason: 'SILICON_FLOORS keyed on 8.9, shared with the 4090 (R-7)', decided_by: spec-owner, date: '2026-09-09'}
   mini:
     W1: {status: NA, reason: 'no Metal inference path (#2841)', decided_by: spec-owner, date: '2026-09-02'}
     W2: {status: NA, reason: 'no Metal inference path (#2841)', decided_by: spec-owner, date: '2026-09-02'}

@@ -20,6 +20,11 @@ use trueno_gpu::kernels::{
 
 use crate::autograd::cuda_tensor::{CudaTensorError, Result};
 
+// The cache keys. Deliberately NOT behind the `cuda` gate — see the module'"'"'s own
+// header and YOGA-NIGHTLY-001 R-2: the property test that guards this file must
+// run on a machine with no GPU.
+use super::keys;
+
 /// Cached compiled CUDA modules for forward kernels
 #[cfg(feature = "cuda")]
 pub(super) static FORWARD_KERNEL_CACHE: OnceLock<Mutex<ForwardKernelCache>> = OnceLock::new();
@@ -211,6 +216,11 @@ impl ForwardKernelCache {
         let si = s * i; // seq_len * intermediate_size
 
         let mut count = 0u32;
+        // Every key this function actually warms, so the pure model of it in
+        // `keys::prewarm_keys` can be CHECKED against reality rather than
+        // trusted. Two lists with nothing tying them together is the root cause
+        // this whole module exists to retire.
+        let mut warmed: Vec<String> = Vec::new();
         let target = self.sm_target.clone();
 
         // Helper: generate PTX and compile.
@@ -234,6 +244,7 @@ impl ForwardKernelCache {
                 let key = $key;
                 let ptx = $kernel.emit_ptx_for_target(&target);
                 self.get_or_compile(&key, &ptx)?;
+                warmed.push(key);
                 count += 1;
             }};
         }
@@ -254,15 +265,17 @@ impl ForwardKernelCache {
         // the pre-warm default to 1e-6 (Qwen2 standard) AND additionally
         // pre-warm 1e-5 (Llama/Mistral standard) for cross-family coverage.
         // The cost of pre-warming both is ~30 KB of cache headroom.
-        let qwen2_eps_bits = 1.0e-6_f32.to_bits(); // 0x358637bd
-        let llama_eps_bits = 1.0e-5_f32.to_bits(); // 0x3727c5ac
+        // The epsilons themselves now come from `keys`, so the pre-warm and the
+        // runtime cannot disagree about which two the corpus uses (PMAT-698n).
+        let qwen2_eps_bits = keys::QWEN2_RMS_EPS.to_bits(); // 0x358637bd
+        let llama_eps_bits = keys::LLAMA_RMS_EPS.to_bits(); // 0x3727c5ac
         warm!(
-            format!("batched_rmsnorm_fwd_{h}_eps{qwen2_eps_bits:08x}"),
+            keys::batched_rmsnorm_fwd(h, keys::QWEN2_RMS_EPS),
             BatchedVectorizedRmsNormKernel::new(h, 1)
         );
         if qwen2_eps_bits != llama_eps_bits {
             warm!(
-                format!("batched_rmsnorm_fwd_{h}_eps{llama_eps_bits:08x}"),
+                keys::batched_rmsnorm_fwd(h, keys::LLAMA_RMS_EPS),
                 BatchedVectorizedRmsNormKernel::new(h, 1)
             );
         }
@@ -274,10 +287,9 @@ impl ForwardKernelCache {
         // both Qwen2 (1e-6) and Llama (1e-5) eps like batched_rmsnorm_fwd.
         {
             use trueno_gpu::kernels::BatchedFusedResidualRmsNormKernel;
-            for eps in [1.0e-6_f32, 1.0e-5_f32] {
-                let eps_bits = eps.to_bits();
+            for eps in [keys::QWEN2_RMS_EPS, keys::LLAMA_RMS_EPS] {
                 warm!(
-                    format!("batched_fused_residual_rmsnorm_{h}_eps{eps_bits:08x}"),
+                    keys::batched_fused_residual_rmsnorm(h, eps),
                     BatchedFusedResidualRmsNormKernel::new(h, 1).with_epsilon(eps)
                 );
             }
@@ -301,18 +313,18 @@ impl ForwardKernelCache {
         let has_cublas = self.cublas.is_some();
         if !has_cublas {
             // 2. GEMM: Q/O projections (S, H, H)
-            warm!(format!("gemm_forward_{s}_{h}_{h}"), GemmKernel::naive(s, h, h));
+            warm!(keys::gemm_forward(s, h, h), GemmKernel::naive(s, h, h));
 
             // 3. GEMM: K/V projections (S, H, kv_hidden)
             if kv_h != h {
-                warm!(format!("gemm_forward_{s}_{h}_{kv_h}"), GemmKernel::naive(s, kv_h, h));
+                warm!(keys::gemm_forward(s, h, kv_h), GemmKernel::naive(s, kv_h, h));
             }
 
             // 4. GEMM: gate/up projections (S, H, I)
-            warm!(format!("gemm_forward_{s}_{h}_{i}"), GemmKernel::naive(s, i, h));
+            warm!(keys::gemm_forward(s, h, i), GemmKernel::naive(s, i, h));
 
             // 5. GEMM: down projection (S, I, H)
-            warm!(format!("gemm_forward_{s}_{i}_{h}"), GemmKernel::naive(s, h, i));
+            warm!(keys::gemm_forward(s, i, h), GemmKernel::naive(s, h, i));
         } else {
             eprintln!("[CUDA] Skipping PTX pre-warm for 4 GEMM kernels (cuBLAS active — PMAT-700)");
         }
@@ -326,8 +338,7 @@ impl ForwardKernelCache {
         // Compiling events post-pre-warm for rope_fwd at seq=256 — avoidable
         // JIT-cache pressure that PMAT-700-B closed for GEMMs.
         use trueno_gpu::kernels::BatchedRopeNeoxKernel;
-        let qwen_theta = 1_000_000.0_f32;
-        let qwen_theta_bits = qwen_theta.to_bits();
+        let qwen_theta = keys::QWEN_ROPE_THETA;
         let phase4_rope_seq: u32 = std::env::var("APR_DISTILL_SMOKE_SEQ_LEN")
             .ok()
             .and_then(|v| v.parse().ok())
@@ -335,63 +346,147 @@ impl ForwardKernelCache {
         let nkv = _nkv;
         for rope_seq in [1_u32, phase4_rope_seq] {
             warm!(
-                format!("batched_rope_neox_fwd_{nh}_{hd}_{rope_seq}_th{qwen_theta_bits:08x}"),
+                keys::batched_rope_neox_fwd(nh, hd, rope_seq, qwen_theta),
                 BatchedRopeNeoxKernel::new(nh, hd, rope_seq, qwen_theta)
             );
             if nkv != nh {
                 warm!(
-                    format!("batched_rope_neox_fwd_{nkv}_{hd}_{rope_seq}_th{qwen_theta_bits:08x}"),
+                    keys::batched_rope_neox_fwd(nkv, hd, rope_seq, qwen_theta),
                     BatchedRopeNeoxKernel::new(nkv, hd, rope_seq, qwen_theta)
                 );
             }
         }
 
         // 6. Fused SwiGLU
-        warm!("fused_swiglu_forward".to_string(), FusedSwigluKernel::new(si));
+        warm!(keys::fixed::FUSED_SWIGLU_FORWARD.to_string(), FusedSwigluKernel::new(si));
 
         // 7. Residual add (seq * hidden)
-        warm!("residual_add_forward".to_string(), ResidualAddKernel::new(sh));
+        warm!(keys::fixed::RESIDUAL_ADD_FORWARD.to_string(), ResidualAddKernel::new(sh));
 
         // 8. Interleaved-to-batched (dimension-independent: one module handles all dims)
-        warm!("interleaved_to_batched".to_string(), InterleavedToBatchedKernel::new(s, nh, hd));
+        warm!(
+            keys::fixed::INTERLEAVED_TO_BATCHED.to_string(),
+            InterleavedToBatchedKernel::new(s, nh, hd)
+        );
 
         // 9. Batched transpose (dimension-independent: one module handles all dims)
-        warm!("batched_transpose".to_string(), BatchedTransposeKernel::new(nh, s, hd));
+        warm!(keys::fixed::BATCHED_TRANSPOSE.to_string(), BatchedTransposeKernel::new(nh, s, hd));
 
         // 10. Batched 4D GEMM: Q@K^T (1, NH, S, S, HD)
-        warm!(
-            format!("batched_4d_gemm_1_{nh}_{s}_{s}_{hd}"),
-            Batched4DGemmKernel::new(1, nh, s, s, hd)
-        );
+        warm!(keys::batched_4d_gemm(1, nh, s, s, hd), Batched4DGemmKernel::new(1, nh, s, s, hd));
 
         // 11. Scale: attention scores (NH * S * S)
         let score_n = nh * s * s;
-        warm!("scale_forward".to_string(), ScaleKernel::new(score_n));
+        warm!(keys::fixed::SCALE_FORWARD.to_string(), ScaleKernel::new(score_n));
 
         // 12. Batched softmax (dimension-independent: one module handles all dims)
         let softmax_rows = nh * s;
-        warm!("batched_softmax_forward".to_string(), BatchedSoftmaxKernel::new(softmax_rows, s));
+        warm!(
+            keys::fixed::BATCHED_SOFTMAX_FORWARD.to_string(),
+            BatchedSoftmaxKernel::new(softmax_rows, s)
+        );
 
         // 13. Batched 4D GEMM: attn@V (1, NH, S, HD, S)
-        warm!(
-            format!("batched_4d_gemm_1_{nh}_{s}_{hd}_{s}"),
-            Batched4DGemmKernel::new(1, nh, s, hd, s)
-        );
+        warm!(keys::batched_4d_gemm(1, nh, s, hd, s), Batched4DGemmKernel::new(1, nh, s, hd, s));
 
         // 13b. Batched 4D GEMM: attention backward grad_V^T (1, NH, HD, S, S)
-        warm!(
-            format!("batched_4d_gemm_1_{nh}_{hd}_{s}_{s}"),
-            Batched4DGemmKernel::new(1, nh, hd, s, s)
-        );
+        warm!(keys::batched_4d_gemm(1, nh, hd, s, s), Batched4DGemmKernel::new(1, nh, hd, s, s));
 
         // 14. Batched-to-interleaved (dimension-independent: one module handles all dims)
-        warm!("batched_to_interleaved".to_string(), BatchedToInterleavedKernel::new(s, nh, hd));
+        warm!(
+            keys::fixed::BATCHED_TO_INTERLEAVED.to_string(),
+            BatchedToInterleavedKernel::new(s, nh, hd)
+        );
 
         // 15. Element-wise multiply (used in FFN backward for SwiGLU gate * up)
-        warm!("elementwise_mul_forward".to_string(), ElementwiseMulKernel::new(si));
+        warm!(keys::fixed::ELEMENTWISE_MUL_FORWARD.to_string(), ElementwiseMulKernel::new(si));
 
         // 16. SiLU forward activation (standalone, used in LoRA FFN path)
-        warm!("silu_forward".to_string(), SiluKernel::new(si));
+        warm!(keys::fixed::SILU_FORWARD.to_string(), SiluKernel::new(si));
+
+        // 17-22. NF4, split into its own method — see warm_nf4_projections.
+        count += self.warm_nf4_projections(s, h, i, q_dim, kv_h, &target, &mut warmed)?;
+        count += self.warm_nf4_backward(s, h, i, q_dim, kv_h, &target, &mut warmed)?;
+
+        // ── THE TIE (YOGA-NIGHTLY-001 R-2) ─────────────────────────────────
+        //
+        // `keys::prewarm_keys` is a pure model of everything above, and the
+        // CPU-only property test asserts that model covers every key the runtime
+        // asks for. A model nobody checks against reality is the SECOND list
+        // this refactor exists to abolish — so check it, here, on the box, with
+        // the keys this function actually warmed.
+        //
+        // Direction matters and both are fatal:
+        //   in the model, not warmed  -> the property test is passing on keys
+        //                                that were never compiled.
+        //   warmed, not in the model  -> a kernel the test has never seen, i.e.
+        //                                exactly the blind spot that let five
+        //                                pre-warm defects ship.
+        //
+        // It costs a BTreeSet of ~40 short strings once per cache init, next to
+        // ~40 PTX JIT compiles.
+        let spec = keys::PreWarmSpec {
+            shape: keys::ModelKeyShape {
+                hidden: h,
+                intermediate: i,
+                num_heads: nh,
+                num_kv_heads: _nkv,
+                head_dim: hd,
+                max_seq_len: s,
+            },
+            has_cublas,
+            rope_seq_lens: vec![1, phase4_rope_seq],
+        };
+        let modelled = keys::prewarm_keys(&spec);
+        let actual: std::collections::BTreeSet<String> = warmed.into_iter().collect();
+        if modelled != actual {
+            let only_modelled: Vec<&String> = modelled.difference(&actual).collect();
+            let only_actual: Vec<&String> = actual.difference(&modelled).collect();
+            return Err(CudaTensorError::KernelError(format!(
+                "pre-warm key model drift: {} key(s) modelled but not warmed {:?}; \
+                 {} key(s) warmed but not modelled {:?}. \
+                 keys::prewarm_keys no longer describes pre_warm_for_model, so the \
+                 CPU property test guarding this file is measuring the wrong set \
+                 (YOGA-NIGHTLY-001 R-2).",
+                only_modelled.len(),
+                only_modelled,
+                only_actual.len(),
+                only_actual
+            )));
+        }
+
+        eprintln!("[CUDA] Pre-warmed {count} forward kernels (JIT compiled before block upload)");
+        Ok(())
+    }
+
+    /// The NF4 quantised projections, forward and transposed-backward.
+    ///
+    /// Split out of `pre_warm_for_model` for the reason the complexity gate
+    /// gives: six nested `is_multiple_of(64)` block-size tests and GQA
+    /// asymmetries in one function put it at cognitive 38 against a threshold of
+    /// 25 — and it was already at 35 before this branch touched it. The split
+    /// mirrors `keys::nf4_keys`, which models exactly this set, so the two are
+    /// now the same shape as well as the same content.
+    fn warm_nf4_projections(
+        &mut self,
+        s: u32,
+        h: u32,
+        i: u32,
+        q_dim: u32,
+        kv_h: u32,
+        target: &str,
+        warmed: &mut Vec<String>,
+    ) -> Result<u32> {
+        let mut count = 0u32;
+        macro_rules! warm {
+            ($key:expr, $kernel:expr) => {{
+                let key = $key;
+                let ptx = $kernel.emit_ptx_for_target(target);
+                self.get_or_compile(&key, &ptx)?;
+                warmed.push(key);
+                count += 1;
+            }};
+        }
 
         // 17-20. NF4 quantized GEMM variants (trueno#108: QLoRA support)
         // Same 4 GEMM shapes but with Nf4GemmKernel instead of GemmKernel.
@@ -405,66 +500,81 @@ impl ForwardKernelCache {
             // Attention projections use q_dim (= num_heads * head_dim) which may
             // differ from hidden_size (e.g. Qwen3-4B: h=2560, q_dim=4096).
             // Q proj: input[S,h] @ W_q[h, q_dim] — key {h}_{q_dim}
-            warm!(format!("nf4_gemm_forward_{h}_{q_dim}"), Nf4GemmKernel::new(s, q_dim, h));
+            warm!(keys::nf4_gemm_forward(h, q_dim), Nf4GemmKernel::new(s, q_dim, h));
             // O proj: input[S,q_dim] @ W_o[q_dim, h] — key {q_dim}_{h}
             if q_dim != h {
-                warm!(format!("nf4_gemm_forward_{q_dim}_{h}"), Nf4GemmKernel::new(s, h, q_dim));
+                warm!(keys::nf4_gemm_forward(q_dim, h), Nf4GemmKernel::new(s, h, q_dim));
             }
             if kv_h != h && kv_h != q_dim && kv_h.is_multiple_of(64) {
-                warm!(format!("nf4_gemm_forward_{h}_{kv_h}"), Nf4GemmKernel::new(s, kv_h, h));
+                warm!(keys::nf4_gemm_forward(h, kv_h), Nf4GemmKernel::new(s, kv_h, h));
             }
             if i.is_multiple_of(64) {
-                warm!(format!("nf4_gemm_forward_{h}_{i}"), Nf4GemmKernel::new(s, i, h));
-                warm!(format!("nf4_gemm_forward_{i}_{h}"), Nf4GemmKernel::new(s, h, i));
+                warm!(keys::nf4_gemm_forward(h, i), Nf4GemmKernel::new(s, i, h));
+                warm!(keys::nf4_gemm_forward(i, h), Nf4GemmKernel::new(s, h, i));
             }
         }
 
         // PMAT-475: Fused NF4 Gate+Up GEMM for FFN (shared input load).
         if h.is_multiple_of(64) && i.is_multiple_of(64) {
             use trueno_gpu::kernels::FusedNf4GateUpGemmKernel;
-            warm!(format!("fused_nf4_gate_up_{h}_{i}"), FusedNf4GateUpGemmKernel::new(s, i, h));
+            warm!(keys::fused_nf4_gate_up(h, i), FusedNf4GateUpGemmKernel::new(s, i, h));
         }
         // PMAT-478: Fused K+V GEMM for GQA attention (reuses Gate+Up kernel).
         if h.is_multiple_of(64) && kv_h.is_multiple_of(64) && kv_h != i {
             use trueno_gpu::kernels::FusedNf4GateUpGemmKernel;
-            warm!(
-                format!("fused_nf4_gate_up_{h}_{kv_h}"),
-                FusedNf4GateUpGemmKernel::new(s, kv_h, h)
-            );
+            warm!(keys::fused_nf4_gate_up(h, kv_h), FusedNf4GateUpGemmKernel::new(s, kv_h, h));
+        }
+
+        Ok(count)
+    }
+
+    /// The NF4 transposed GEMMs — gradient propagation back through the frozen
+    /// quantised weights (ENT-153). A second method rather than a second half:
+    /// the forward and backward halves have the same four branches each, and
+    /// together they are cognitive 27 against a threshold of 25.
+    fn warm_nf4_backward(
+        &mut self,
+        s: u32,
+        h: u32,
+        i: u32,
+        q_dim: u32,
+        kv_h: u32,
+        target: &str,
+        warmed: &mut Vec<String>,
+    ) -> Result<u32> {
+        let mut count = 0u32;
+        macro_rules! warm {
+            ($key:expr, $kernel:expr) => {{
+                let key = $key;
+                let ptx = $kernel.emit_ptx_for_target(target);
+                self.get_or_compile(&key, &ptx)?;
+                warmed.push(key);
+                count += 1;
+            }};
         }
 
         // 19-22. NF4 transposed GEMM for QLoRA backward (ENT-153).
         // C[M×K] = A[M×N] @ B[K×N]^T — gradient propagation through frozen NF4 layers.
         if h.is_multiple_of(64) {
             // Q proj backward: grad[S,q_dim] @ W_q[h, q_dim]^T → [S,h]
-            warm!(
-                format!("nf4_gemm_transpose_{q_dim}_{h}"),
-                Nf4GemmTransposeKernel::new(s, q_dim, h)
-            );
+            warm!(keys::nf4_gemm_transpose(q_dim, h), Nf4GemmTransposeKernel::new(s, q_dim, h));
             // O proj backward: grad[S,h] @ W_o[q_dim, h]^T → [S,q_dim]
             if q_dim != h {
-                warm!(
-                    format!("nf4_gemm_transpose_{h}_{q_dim}"),
-                    Nf4GemmTransposeKernel::new(s, h, q_dim)
-                );
+                warm!(keys::nf4_gemm_transpose(h, q_dim), Nf4GemmTransposeKernel::new(s, h, q_dim));
             }
             if kv_h != h && kv_h != q_dim && kv_h.is_multiple_of(64) {
                 // K/V proj backward: grad[S,kv_h] @ W_k[h, kv_h]^T → [S,h]
-                warm!(
-                    format!("nf4_gemm_transpose_{kv_h}_{h}"),
-                    Nf4GemmTransposeKernel::new(s, kv_h, h)
-                );
+                warm!(keys::nf4_gemm_transpose(kv_h, h), Nf4GemmTransposeKernel::new(s, kv_h, h));
             }
             if i.is_multiple_of(64) {
                 // Gate/Up backward: grad[S,I] @ W_gate[h,I]^T → [S,h]
-                warm!(format!("nf4_gemm_transpose_{i}_{h}"), Nf4GemmTransposeKernel::new(s, i, h));
+                warm!(keys::nf4_gemm_transpose(i, h), Nf4GemmTransposeKernel::new(s, i, h));
                 // Down backward: grad[S,h] @ W_down[I,h]^T → [S,I]
-                warm!(format!("nf4_gemm_transpose_{h}_{i}"), Nf4GemmTransposeKernel::new(s, h, i));
+                warm!(keys::nf4_gemm_transpose(h, i), Nf4GemmTransposeKernel::new(s, h, i));
             }
         }
 
-        eprintln!("[CUDA] Pre-warmed {count} forward kernels (JIT compiled before block upload)");
-        Ok(())
+        Ok(count)
     }
 
     /// Pre-warm LoRA backward GEMM kernels for QLoRA training (ENT-153).

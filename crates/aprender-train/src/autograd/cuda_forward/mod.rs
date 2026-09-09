@@ -30,6 +30,11 @@
 mod activations;
 pub mod bf16_cast;
 mod cache;
+// The key constructors live OUTSIDE this module and outside the `cuda`
+// feature gate: `autograd::cuda_forward_keys`. That is R-2's whole point — the
+// property test must run on intel, with no GPU and no CUDA toolkit. Re-exported
+// here so the call sites in this module read `keys::...`.
+pub use crate::autograd::cuda_forward_keys as keys;
 mod elementwise;
 mod matmul;
 pub mod matmul_f16;
