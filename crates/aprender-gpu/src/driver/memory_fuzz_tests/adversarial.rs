@@ -29,7 +29,16 @@ fn test_alloc_oversize_100gb() {
         .expect("2x device memory overflows usize")
         / std::mem::size_of::<f32>();
 
+    // Pin the DEVICE allocator. On integrated / unified-memory parts `GpuBuffer::new`
+    // routes to `cuMemAllocManaged` by default (buffer.rs, PMAT-769), and managed
+    // memory oversubscribes by design: measured on GB10, a 2x-the-device (257 GB
+    // against 128 GB) managed allocation SUCCEEDED. That is the allocator working as
+    // documented, not the property this test exists to falsify. The property is
+    // "cuMemAlloc refuses more than the device", so ask for cuMemAlloc explicitly.
+    // The exclusivity lock held above covers this env mutation (GPU-ORD-4).
+    std::env::set_var("MANAGED_MEMORY", "0");
     let result = GpuBuffer::<f32>::new(&ctx, oversize);
+    std::env::remove_var("MANAGED_MEMORY");
 
     match result {
         Err(GpuError::OutOfMemory { .. }) => {
