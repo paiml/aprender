@@ -1,0 +1,9 @@
+A0-baseline              n=78 min_cos=0.9508 @pos0 tok785 lt098=1 argmax_ne=2
+A1-graph-off             n=78 min_cos=0.9508 @pos0 tok785 lt098=1 argmax_ne=2
+A2-fp8-decode-off        n=78 min_cos=0.9508 @pos0 tok785 lt098=1 argmax_ne=2
+A3-fp8-all-off           n=78 min_cos=0.9508 @pos0 tok785 lt098=1 argmax_ne=2
+A4-flash-off             n=78 min_cos=0.9508 @pos0 tok785 lt098=1 argmax_ne=2
+A5-fused-gateup-off      n=78 min_cos=0.9508 @pos0 tok785 lt098=1 argmax_ne=2
+A6-all-off               n=78 min_cos=0.9508 @pos0 tok785 lt098=1 argmax_ne=2
+A7-cpu-fp32-gemv         n=78 min_cos=0.9999 @pos22 tok23869 lt098=0 argmax_ne=0
+R7B-baseline             n=78 min_cos=0.9986 @pos0 tok785 lt098=0 argmax_ne=2

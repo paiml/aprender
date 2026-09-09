@@ -1497,9 +1497,17 @@ fn dispatch_profiling_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             file,
             prompt,
             assert,
+            per_op,
+            out,
+            threshold,
             // GH-636: pass cli.json to parity — was dropping the flag
-        } => crate::error::resolve_model_path(file)
-            .and_then(|r| commands::parity::run(&r, prompt, *assert, cli.verbose, cli.json)),
+        } => crate::error::resolve_model_path(file).and_then(|r| {
+            if *per_op {
+                commands::parity_per_op::run(&r, prompt, out.as_deref(), *threshold, cli.json)
+            } else {
+                commands::parity::run(&r, prompt, *assert, cli.verbose, cli.json)
+            }
+        }),
 
         ExtendedCommands::PtxMap {
             file,
