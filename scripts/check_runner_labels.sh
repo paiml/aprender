@@ -75,6 +75,36 @@ done < <(grep -rHnE '^[[:space:]]*runs-on:.*self-hosted' .github/workflows/*.yml
 # line number into $file and the annotation points at nothing. Harmless in this repo today
 # (many workflows) and wrong the moment a fixture has one — which is how it was found.
 
+# --- PASS 2: runs-on behind an expression (the hole PASS 1 cannot see) -------
+#
+# `runs-on: ${{ matrix.runner }}` carries no labels on its line, so PASS 1's
+# `grep self-hosted` skips the job entirely and it is neither checked nor reported.
+# Today nightly.yml:63 is the only one and every value in its matrix is
+# GitHub-hosted -- but that is a fact about the current file, not a guarantee, and
+# adding one self-hosted entry to that matrix would route a build to a GPU box with
+# nothing failing. So: resolve the referenced matrix key, and check every value it
+# can take. An expression we cannot resolve FAILS -- unresolvable is not proven safe.
+while IFS=: read -r file line _rest; do
+  [ -n "$file" ] || continue
+  key=$(sed -n "${line}p" "$file" | grep -oE '\$\{\{[[:space:]]*matrix\.[A-Za-z0-9_-]+' | grep -oE '[A-Za-z0-9_-]+$' || true)
+  if [ -z "$key" ]; then
+    echo "::error file=${file},line=${line}::runs-on is an expression this guard cannot resolve; it may select a self-hosted GPU box and nothing would fail. Use a literal selector."
+    fail=1; continue
+  fi
+  vals=$(grep -oE "^[[:space:]]*(- )?${key}:[[:space:]]*.*" "$file" | sed -E "s/^[[:space:]]*(- )?${key}:[[:space:]]*//; s/[[:space:]]*#.*$//; s/[[:space:]]*$//" | grep -v '^$' || true)
+  if [ -z "$vals" ]; then
+    echo "::error file=${file},line=${line}::runs-on references matrix.${key} but no ${key}: values were found; cannot prove it avoids the GPU runners."
+    fail=1; continue
+  fi
+  while IFS= read -r v; do
+    grep -q 'self-hosted' <<< "$v" || continue          # GitHub-hosted value: fine
+    if ! grep -qE "$DISCRIM" <<< "$v"; then
+      echo "::error file=${file},line=${line}::matrix.${key} value '${v}' is self-hosted without a discriminating label; it can land on gx10 or yoga."
+      fail=1
+    fi
+  done <<< "$vals"
+done < <(grep -rHnE '^[[:space:]]*runs-on:[[:space:]]*\$\{\{' .github/workflows/*.yml 2>/dev/null)
+
 if [ "$fail" -ne 0 ]; then
   echo "FAIL: pin each self-hosted job to a provisioned pool (clean-room) or a GPU/macOS label." >&2
   echo "      Bare [self-hosted, X64, Linux] can land on ANY self-hosted runner (incl. GPU dev boxes)." >&2
