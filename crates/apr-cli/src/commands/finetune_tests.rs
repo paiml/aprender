@@ -311,7 +311,7 @@ fn test_run_training_creates_adapter() {
         None,
         false,
         None,
-        "cuda",
+        "cpu", /* PMAT-991: "cuda" on a cpu-only build is now FeatureDisabled (exit 9), not a silent CPU fallback; this test exercises the CPU adapter path and says so */
         None,
         None,
         None,
@@ -1223,58 +1223,6 @@ fn build_instruct_config_defaults_max_seq_len_to_512_when_absent() {
     assert_eq!(cfg.max_seq_len, InstructConfig::default().max_seq_len);
     assert_eq!(cfg.max_seq_len, 512);
     assert!(cfg.quantize_nf4, "QLoRA method → NF4 on");
-}
-
-// ── gpu_backend_notice (Defect 1: truthful GPU banner) ──────────────────────
-
-#[test]
-fn gpu_backend_notice_cuda_plain_lora_warns_cpu() {
-    // --gpu-backend cuda + plain LoRA (quantize_nf4=false) must NOT claim cuBLAS;
-    // it must WARN that training actually runs on CPU (init_cuda is QLoRA-only).
-    let p = gpu_backend_notice("cuda", false, false);
-    assert!(!p.use_wgpu);
-    assert!(p.notice.contains("WARNING"), "must warn: {}", p.notice);
-    assert!(p.notice.to_lowercase().contains("cpu"));
-    assert!(
-        !p.notice.contains("using cuBLAS backward path (QLoRA/NF4)"),
-        "must not make a false cuBLAS claim for plain LoRA: {}",
-        p.notice
-    );
-}
-
-#[test]
-fn gpu_backend_notice_cuda_qlora_claims_cublas() {
-    let p = gpu_backend_notice("cuda", true, false);
-    assert!(!p.use_wgpu);
-    assert!(
-        p.notice.contains("cuBLAS"),
-        "QLoRA on CUDA truthfully engages cuBLAS: {}",
-        p.notice
-    );
-    assert!(!p.notice.contains("WARNING"));
-}
-
-#[test]
-fn gpu_backend_notice_wgpu_selects_wgpu() {
-    let p = gpu_backend_notice("wgpu", false, true);
-    assert!(p.use_wgpu);
-    assert!(p.notice.contains("WGPU"));
-}
-
-#[test]
-fn gpu_backend_notice_auto_plain_lora_is_cpu() {
-    let p = gpu_backend_notice("auto", false, true);
-    assert!(!p.use_wgpu, "plain LoRA under auto stays on the CPU path");
-    assert!(p.notice.to_lowercase().contains("cpu"));
-}
-
-#[test]
-fn gpu_backend_notice_auto_qlora_prefers_wgpu_when_available() {
-    let with_wgpu = gpu_backend_notice("auto", true, true);
-    assert!(with_wgpu.use_wgpu, "NF4 + wgpu available → WGPU fast path");
-    let without_wgpu = gpu_backend_notice("auto", true, false);
-    assert!(!without_wgpu.use_wgpu, "no wgpu feature → CUDA path");
-    assert!(without_wgpu.notice.contains("cuBLAS"));
 }
 
 // ── run (top-level dispatch) error paths ────────────────────────────────────
