@@ -16,7 +16,51 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-DISCRIM='clean-room|cuda|gpu|rtx4090|ada|blackwell|gb10|apple-silicon|m4'
+# A label DISCRIMINATES only if it names ONE box (or one provisioned pool). That is a
+# property of the fleet, not of the word, so it changes when the fleet does.
+#
+# 2026-09-09: `gpu` and `cuda` were REMOVED from this list. They were admitted when gx10
+# was the only GPU runner, so naming either did pick a single box. yoga-gpu is now
+# rack-mounted and permanent and carries BOTH — measured:
+#   gx10-blackwell  [self-hosted,Linux,ARM64,gpu,gx10,cuda,blackwell,gb10]
+#   yoga-gpu        [self-hosted,Linux,X64,gpu,cuda,yoga,ada]
+# so `[self-hosted, Linux, gpu, cuda]` reaches either one and this guard PASSED it. That
+# is the #2269 collision again with a new pair of boxes: a selector that looks pinned,
+# lands anywhere. Host and chip labels are what discriminate now.
+#
+# `perf-solo` is here because intel-clean-room-16 carries it INSTEAD of `clean-room`; a
+# job pinning it would otherwise be failed by this guard for naming a real, single host.
+DISCRIM='clean-room|perf-solo|gx10|yoga|rtx4090|ada|blackwell|gb10|apple-silicon|m4'
+
+# --- case table (house rule: a guard regex ships one; five were wrong before it did) ---
+# Re-run with: bash scripts/check_runner_labels.sh --self-test
+self_test() {
+  local rc=0
+  # NOTE: written with `if`, not `&&`/`||`. Under `set -e` a must_fail whose grep does
+  # not match returns non-zero from the `&&` chain and aborts the function mid-table —
+  # the table then reports nothing and looks like it ran. Measured here, 2026-09-09.
+  must_pass() { if grep -qE "$DISCRIM" <<< "$1"; then :; else echo "SELF-TEST FAIL (should pass): $1" >&2; rc=1; fi; }
+  must_fail() { if grep -qE "$DISCRIM" <<< "$1"; then echo "SELF-TEST FAIL (should fail): $1" >&2; rc=1; fi; }
+  # every selector in the tree today
+  must_pass '[self-hosted, clean-room, intel]'
+  must_pass '[self-hosted, gpu, gx10, cuda, blackwell]'
+  must_pass '[self-hosted, gpu, Linux, ARM64, cuda, blackwell]'
+  must_pass '[self-hosted, Linux, X64, clean-room]'
+  must_pass '[self-hosted, X64, Linux, clean-room]'
+  # a yoga-pinned CUDA unit-test job, the reason yoga is racked
+  must_pass '[self-hosted, gpu, Linux, X64, cuda, yoga]'
+  must_pass '[self-hosted, X64, Linux, perf-solo]'
+  # THE REGRESSION THIS CHANGE EXISTS FOR: reaches gx10 AND yoga
+  must_fail '[self-hosted, Linux, gpu, cuda]'
+  must_fail '[self-hosted, gpu]'
+  must_fail '[self-hosted, cuda]'
+  # the original #2269 shape
+  must_fail '[self-hosted, X64, Linux]'
+  must_fail '[self-hosted]'
+  [ "$rc" -eq 0 ] && echo "✓ check_runner_labels --self-test: 12 rows, both polarities"
+  return "$rc"
+}
+[ "${1:-}" = "--self-test" ] && { self_test; exit $?; }
 fail=0
 
 while IFS=: read -r file line sel; do
@@ -26,11 +70,15 @@ while IFS=: read -r file line sel; do
     echo "::error file=${file},line=${line}::self-hosted job lacks a discriminating runner label (need clean-room or a GPU/macOS label): ${sel# }"
     fail=1
   fi
-done < <(grep -rnE '^[[:space:]]*runs-on:.*self-hosted' .github/workflows/*.yml 2>/dev/null)
+done < <(grep -rHnE '^[[:space:]]*runs-on:.*self-hosted' .github/workflows/*.yml 2>/dev/null)
+# -H: with exactly ONE matching workflow file grep omits the filename, so `IFS=:` reads the
+# line number into $file and the annotation points at nothing. Harmless in this repo today
+# (many workflows) and wrong the moment a fixture has one — which is how it was found.
 
 if [ "$fail" -ne 0 ]; then
   echo "FAIL: pin each self-hosted job to a provisioned pool (clean-room) or a GPU/macOS label." >&2
   echo "      Bare [self-hosted, X64, Linux] can land on ANY self-hosted runner (incl. GPU dev boxes)." >&2
+  echo "      And [self-hosted, gpu, cuda] is NOT pinned: gx10 and yoga both carry those. Name the host." >&2
   exit 1
 fi
 echo "✓ check_runner_labels: every self-hosted job pins a discriminating runner label"
