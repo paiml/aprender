@@ -5,7 +5,6 @@
 apr-cli	--test	falsification_crux_a_01
 apr-cli	--test	falsification_crux_a_03
 apr-cli	--test	falsification_crux_a_20
-apr-cli	--test	pixel_regression
 apr-format	--test	golden_fixtures
 aprender-cgp	--test	integration
 aprender-contracts	--test	apr_hnsw_persistence_contract

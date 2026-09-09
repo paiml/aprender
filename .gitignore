@@ -122,3 +122,7 @@ __pycache__/
 # (BSE-09a, PMAT-1065, checked by scripts/check_roadmap_sorted.sh).
 docs/roadmaps/*.bak
 docs/roadmaps/*.lock
+
+# Generated on demand by crates/apr-cli/tests/pixel_regression.rs (28 MB; never commit it --
+# a committed copy makes publish_atomically() unreachable, which hid a real race, see #3051)
+/crates/apr-cli/playbooks/snapshots/test.apr

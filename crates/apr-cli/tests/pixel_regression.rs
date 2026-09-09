@@ -61,10 +61,56 @@ fn test_apr_file() -> PathBuf {
 ///
 /// `rename(2)` within a directory is atomic, so a racing reader sees either no file or a
 /// complete one, and a racing writer simply loses harmlessly.
+///
+/// The temp name must be unique per CALL, not per process. `std::process::id()` alone was
+/// not: `cargo test` runs this file's tests as THREADS in one process (only nextest gives
+/// each its own), so all five shared one temp path — thread A renamed it away and B..E
+/// died on `rename` with ENOENT. That was invisible while the fixture was committed,
+/// because a present fixture means this function is never called at all. A monotonic
+/// counter separates threads; the pid still separates processes.
 fn publish_atomically(path: &std::path::Path, bytes: &[u8]) {
-    let tmp = path.with_extension(format!("apr.tmp.{}", std::process::id()));
+    static SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let tmp = path.with_extension(format!(
+        "apr.tmp.{}.{}",
+        std::process::id(),
+        SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+    ));
     fs::write(&tmp, bytes).expect("write temp fixture");
     fs::rename(&tmp, path).expect("publish fixture atomically");
+}
+
+/// The uniqueness above, gated directly: N threads publishing at once must all succeed and
+/// the result must be one complete file. Reverting `publish_atomically` to a pid-only temp
+/// name turns this RED (ENOENT on rename), which is the failure the committed fixture hid.
+#[test]
+fn publish_atomically_is_unique_per_call_not_per_process() {
+    let dir = std::env::temp_dir().join(format!("apr-pub-{}", std::process::id()));
+    fs::create_dir_all(&dir).expect("scratch dir");
+    let target = dir.join("racy.apr");
+    let payload = vec![0xABu8; 4096];
+
+    std::thread::scope(|s| {
+        for _ in 0..8 {
+            let (t, p) = (target.clone(), payload.clone());
+            s.spawn(move || publish_atomically(&t, &p));
+        }
+    });
+
+    assert_eq!(
+        fs::read(&target).expect("published fixture is readable"),
+        payload,
+        "concurrent publishers must leave exactly one complete file"
+    );
+    let leftovers: Vec<_> = fs::read_dir(&dir)
+        .expect("scratch dir")
+        .filter_map(|e| e.ok().map(|e| e.file_name()))
+        .filter(|n| n.to_string_lossy().contains(".tmp."))
+        .collect();
+    assert!(
+        leftovers.is_empty(),
+        "temp files left behind: {leftovers:?}"
+    );
+    fs::remove_dir_all(&dir).ok();
 }
 
 fn is_v1_format(path: &std::path::Path) -> bool {
