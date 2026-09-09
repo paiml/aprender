@@ -1,0 +1,49 @@
+{
+  "host": "noah-Lambda-Vector",
+  "utc": "2026-09-09T13:58:23Z",
+  "gpu": "NVIDIA GeForce RTX 4090",
+  "compute_cap": "8.9",
+  "driver": "570.207",
+  "toolkit_max": "13.3",
+  "script_sha256_16": "294a608f9cb6ab40",
+  "mem_available_gib": 105,
+  "probes": [
+    {
+      "id": "driver_floor",
+      "status": "SKIP",
+      "reason": "driver 570.207 < R580 (cuda-bindings runtime floor)",
+      "cmd": "nvidia-smi"
+    },
+    {
+      "id": "toolkit_floor",
+      "status": "PASS",
+      "reason": "toolkit 13.3 >= 13.2 for sm_89",
+      "cmd": "nvcc --version"
+    },
+    {
+      "id": "clang_resource_dir",
+      "status": "PASS",
+      "reason": "clang -> /usr/lib/llvm-14/lib/clang/14.0.0",
+      "cmd": "clang -print-resource-dir"
+    },
+    {
+      "id": "cudacore_probe",
+      "status": "SKIP",
+      "reason": "prerequisite: driver_floor=SKIP clang_resource_dir=PASS",
+      "cmd": "-"
+    },
+    {
+      "id": "cutile_probe",
+      "status": "SKIP",
+      "reason": "prerequisite: driver_floor=SKIP toolkit_floor=PASS clang_resource_dir=PASS",
+      "cmd": "-"
+    },
+    {
+      "id": "aprender_gpu_cuda",
+      "status": "PASS",
+      "reason": "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 2590 filtered out; finished in 0.44s (MemAvailable 105 GiB, cgroup=48G)",
+      "cmd": "cargo test -p aprender-gpu --features cuda --lib -- <filters>"
+    }
+  ],
+  "verdict": "INCOMPLETE"
+}

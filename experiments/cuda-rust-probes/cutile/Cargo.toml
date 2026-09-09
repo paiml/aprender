@@ -1,0 +1,9 @@
+[workspace]
+[package]
+name = "cutile-probe"
+version = "0.0.0"
+edition = "2021"
+publish = false
+[dependencies]
+cutile = "0.3"
+cuda-core = "0.3"

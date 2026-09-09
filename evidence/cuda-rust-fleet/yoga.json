@@ -1,0 +1,49 @@
+{
+  "host": "yoga",
+  "utc": "2026-09-09T14:01:33Z",
+  "gpu": "NVIDIA GeForce RTX 4060 Laptop GPU",
+  "compute_cap": "8.9",
+  "driver": "595.91.07",
+  "toolkit_max": "13.3",
+  "script_sha256_16": "b818b9904ab8f2ad",
+  "mem_available_gib": 28,
+  "probes": [
+    {
+      "id": "driver_floor",
+      "status": "PASS",
+      "reason": "driver 595.91.07 >= R580",
+      "cmd": "nvidia-smi"
+    },
+    {
+      "id": "toolkit_floor",
+      "status": "PASS",
+      "reason": "toolkit 13.3 >= 13.2 for sm_89",
+      "cmd": "nvcc --version"
+    },
+    {
+      "id": "clang_resource_dir",
+      "status": "PASS",
+      "reason": "clang -> /usr/lib/llvm-21/lib/clang/21",
+      "cmd": "clang -print-resource-dir"
+    },
+    {
+      "id": "cudacore_probe",
+      "status": "PASS",
+      "reason": "compute_cap = sm_89",
+      "cmd": "cargo run --release (/home/noah/.cuda-rust-fleet/experiments/cuda-rust-probes/cudacore)"
+    },
+    {
+      "id": "cutile_probe",
+      "status": "PASS",
+      "reason": "cutile: sm_89 len=1024 mismatches=0",
+      "cmd": "cargo run --release (/home/noah/.cuda-rust-fleet/experiments/cuda-rust-probes/cutile)"
+    },
+    {
+      "id": "aprender_gpu_cuda",
+      "status": "PASS",
+      "reason": "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 2590 filtered out; finished in 0.61s (MemAvailable 28 GiB, cgroup=48G)",
+      "cmd": "cargo test -p aprender-gpu --features cuda --lib -- <filters>"
+    }
+  ],
+  "verdict": "PASS"
+}
