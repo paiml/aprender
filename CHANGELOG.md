@@ -1197,9 +1197,9 @@ proof-obligation + a RED-on-bug / GREEN-on-fix falsifier + a `pv`-validated cont
 - **Blackwell CUDA-graph replay fixed + re-enabled** (PMAT-886a) — the default sm_121 Q4K GEMV variant
   was not recorded into the manual graph, so graph replay dropped ~6 GEMVs/layer → stale buffers →
   garbage (cosine 0.53). Now recorded; parity 0.53→0.9934 (== eager, token-for-token), graph decode
-  re-defaulted ON for Blackwell, **+16% decode** (96→112 tok/s).
+  re-defaulted ON for Blackwell, decode improved on that PR's recorded receipt.
 - **Blackwell decode throughput-floor guard** (PMAT-885) — a stale-binary / F2-false-fallback that
-  silently drops the GPU path to ~10 tok/s CPU is now a falsifiable invariant (≥100 tok/s on GB10).
+  silently drops the GPU path to the CPU rate is now a falsifiable invariant (the GB10 floor lives in the test).
 
 ### Infrastructure
 
@@ -1961,7 +1961,7 @@ This release completes SHIP-TWO-001 MODEL-1: every acceptance criterion (SHIP-00
 | SHIP-004 | GGUF exports + loads in llama.cpp | §72 |
 | SHIP-005 | HumanEval pass@1 = 86.59% on gx10 164-run | §71 |
 | SHIP-006 | `apr qa` 12-gate aggregate PASS | §61.8 |
-| **SHIP-007** | **PARITY-GATE PASS + 124.6 tok/s @ 128-tok decode** | **§75** |
+| **SHIP-007** | **PARITY-GATE PASS + 128-tok decode receipt** | **§75** |
 | SHIP-008 | Chat template render | §61 |
 | SHIP-009 | License + provenance in `model.apr` metadata | §72 |
 | SHIP-010 | Published HF URL + sha256 match | §72 |
@@ -1976,7 +1976,7 @@ Fix: rewrite inner loop to iterate K within row `block_id` (row_base = a_ptr + b
 
 Empirical discharge on canonical 7B teacher, lambda-vector RTX 4090:
 - PARITY-GATE PASS (no error from `forward_gpu_resident`)
-- `apr bench` 5-iter 128-tok decode = **124.6 tok/s** (4.15× over AC-SHIP1-007 30 tok/s floor)
+- `apr bench` 5-iter 128-tok decode cleared the AC-SHIP1-007 floor (numbers in that PR's receipt)
 - Default path (CUDA graphed), no `SKIP_PARITY_GATE`, no `APR_SKIP_FP8_WARMUP`
 
 #### SHIP-005 — HumanEval harness RC3 fix (PR #1635, §70/§71)
@@ -2175,8 +2175,8 @@ This release closes a record contract algorithm-binding sweep — **150+ provabl
 ### Changed
 - **`scripts/ship-two-001/ex-06-pull-and-rerun.sh` harness v2** — relaxed AC-EX-006 verification to match spec §12.3 literal ("emits syntactically valid Python"). Prior harness required `def fib` to appear in the completion, which is stricter than the spec; Instruct models greedy-decoding a raw prompt don't reliably autocomplete (teacher's 84.76% HumanEval works via the eval harness's instruction wrapper, not raw completion). v2 finds the longest leading-line prefix that `ast.parse`s and requires ≥ 1 non-trivial statement (regression-checked against garbage/empty/comment-only inputs). Pre-upload local dry-run PASSES.
 - **GH-478: per-layer dequant for native Q4/Q8 tensors** — `apr run` on native-quantized .apr files now dequantizes layer-at-a-time instead of up-front, reducing peak memory on large models. (#750)
-- **Decode hot-path hygiene (HP-001 / HP-002 / HP-003)** — removed per-token `/tmp` writes, realizar#198 diagnostic eprintlns, and PMAT-450 prefix-cache eprintlns from the GPU decode path. 1.5B Q4_K_M: **184 → 382 tok/s (2.07×)**. Short-prompt 32-tok bench: 442.8 → 479.9 tok/s.
-- **F-FLASH-DECODE-REGRESSION-001: auto-disable split-K for small models** — FlashDecoding was hurting 1.5B decode throughput; gated by model size. 383 → 412 tok/s median.
+- **Decode hot-path hygiene (HP-001 / HP-002 / HP-003)** — removed per-token `/tmp` writes, realizar#198 diagnostic eprintlns, and PMAT-450 prefix-cache eprintlns from the GPU decode path. 1.5B Q4_K_M decode throughput improved (numbers in that PR's receipt).
+- **F-FLASH-DECODE-REGRESSION-001: auto-disable split-K for small models** — FlashDecoding was hurting 1.5B decode throughput; gated by model size. median decode improved (numbers in that PR's receipt).
 - **F-ATTN-MULTIWARP-WARPS-001: tuned `num_warps_per_head`** — 4 warps/head is optimal for small-model decode (2-warp −1.3%, 1-warp −7%).
 - **F-PROFILE-010: separate graphed throughput from ungraphed per-op hotspots** — `apr profile` output now labels methodology; launch-overhead metric normalized per-token.
 - **GH-378: Priority-queue BPE merge algorithm** — Replaced O(n^2) greedy-rescan with priority-queue (BinaryHeap) + doubly-linked symbol list. 2.06x encode speedup (145us -> 70us on Qwen3 151K vocab). Beats HuggingFace tokenizers v0.22 reference (104us). Zero allocation in merge loop. All 117 BPE tests pass.
