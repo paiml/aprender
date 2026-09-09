@@ -7,7 +7,7 @@ branch: PMAT-1096-release-0-66-0
 base: main f34671a6b
 epic: 2873
 model: claude-fable-5-1 (orchestrator) · one agy quorum (width 3) via paiml-agy-delegate
-turns: 118
+turns: 160
 ---
 # impl receipt — PMAT-1096: the 0.66.0 release cut
 
@@ -29,7 +29,7 @@ fable_binding: true   quota_age_h: 47   quota_mark: A   k_measured_at_set: 37
 | statusLine `session_id` = hook `session_id` | true [V] | `discover.sh --state-dir` prints `session=d8a83629-…` and `events-d8a83629-….jsonl` carries the same id |
 | `tasks[].id` = hook `agent_id` | true [V] | events line `SubagentStart … agent_id=ab286307cd9f490cc` equals the Agent tool's returned `agentId` |
 | `transcript_path` present on subagentStatusLine stdin | [U] | not measured this run (no subagent-statusline invocation observed) |
-| `k_measured` vs `global=k` | 118 vs 118 [V] | the jq below over the session transcript |
+| `k_measured` vs `global=k` | 160 vs 160 [V] | the jq below over the session transcript |
 
 ```
 jq -r 'select(.type=="assistant" and ((.isSidechain // false)|not)) | (.message.id // .uuid)' <transcript> | sort -u | wc -l
@@ -123,6 +123,26 @@ red rows while the fleet queue drains (the R5 receipt itself must be re-taken on
 Round 2 at `b891ab789`: `make gate` exit 0; `scripts/dogfood.sh --phase pre-publish` → **GO** (43 rows; `model-parity PASS` 3 manifest models with `--features cuda`; `bashrs PASS`; only `reachability WARN`, informational). Receipt copied to
 `docs/audits/impl-PMAT-1096-logs/dogfood-pre-publish-b891ab789.json` (sha256 `539a919203588b98a4d2c777f9bae64985ddaf9066d9320a18f70efd85e5b75c`); it is NOT the R5 receipt — that one is re-taken on the merge commit.
 
+### Phase 3c — #3025 merged under the queue and made #3050 and this branch DIRTY
+
+`#3025` (PP-066 SPEC-2.0: 866-line roadmap rewrite, README counts, ci.yml, five new scripts) merged at 21:09Z; the queue
+then dropped `#3050` (`removed_from_merge_queue`, `mergeable_state: dirty`, auto-merge off) and this branch went dirty.
+- **#3050**: the only conflict was README's derived contract count (branch 1818 vs main 1816). Resolved on a merge of
+  `origin/main` into `agent/F-1` by re-deriving on the merged tree (`find contracts -name '*.yaml' | wc -l` = 1817),
+  `check_readme_claims.sh` PASS, pushed `389d6b451`, auto-merge re-armed (queue method SQUASH, one entry at a time).
+- **this branch**: two append-only conflicts (`docs/roadmaps/roadmap.yaml` — main's mints vs the PMAT-1096 mint;
+  `docs/audits/impl-estimates.jsonl`) resolved as unions; `check_roadmap_diff_additive.sh` PASS (added=1),
+  `pmat work validate` PASS. The merged tree then failed two things the autopilot's dogfood would have refused:
+  `scripts/session_docs_commit.sh` (new on main) carried DET002 + SEC010 (fixed: SOURCE_DATE_EPOCH-derived date, the
+  fleet pattern; named, `..`-validated temp paths), and `make gate` refused `check_no_tracked_ignored_files.sh`
+  320→330 because **main now tracks `.claude/agent-memory/**` (10 subagent memory files committed by #3025)** and my
+  `/.claude/agent-memory/` ignore rule declared them ignored — the rule is withdrawn (`.gitignore` = main's), the
+  tracked agent memory is filed below as a finding. Merged tree: bashrs single-invocation gating 0 over 276 files,
+  `make gate` 41 checks 0 failed, claim-literal + ratchet + README + PP-26 guards PASS.
+- **#3070 filed**: BSE-17's quick tier ran 42 tree-reader targets serially for #3063 and hit its 60-minute step timeout
+  under fleet load (zero failing tests; annotation is the surviving truth); #3063 re-run via `gh pr update-branch`, now
+  in the queue.
+
 ## Verification (claimed vs my rerun)
 
 verification:
@@ -140,12 +160,16 @@ verification:
   cmd="bash scripts/dogfood.sh --phase pre-publish (b891ab789)"  claimed_exit=n/a  rerun_exit=0 (GO)  log_path=docs/audits/impl-PMAT-1096-logs/dogfood-pre-publish-b891ab789.json  sha256=539a919203588b98a4d2c777f9bae64985ddaf9066d9320a18f70efd85e5b75c
   cmd="bash scripts/check_perf041_marker.sh"  claimed_exit=n/a  rerun_exit=0 (lambda PASS age=0.0d)  log_path=evidence/perf041/lambda/marker.json  sha256=fd254d58852f4a651e3d73dd5fb87128365e1385e92c12e074d1a933de54fc1b
   cmd="bash scripts/check_no_claim_literals.sh && bash scripts/check_baseline_ratchets.sh"  claimed_exit=n/a  rerun_exit=0  log_path=scripts/claim_literal_baseline.txt  sha256=921afca893ad399db8cdd7954ff24c527b0a230afaf6e4eb1d1b2e6335d719d9
+  cmd="make gate (merged tree)"  claimed_exit=n/a  rerun_exit=0 (41 checks, 0 failed)  log_path=docs/audits/impl-PMAT-1096-logs/gate2.log  sha256=fab1037f1dabf52e75d19058b3afee00d16f75a562c20a2296c900374de53c31
+  cmd="bash scripts/check_no_tracked_ignored_files.sh"  claimed_exit=n/a  rerun_exit=0 (PASS ratcheted, after withdrawing the ignore rule)  log_path=docs/audits/impl-PMAT-1096-logs/gate2.log  sha256=fab1037f1dabf52e75d19058b3afee00d16f75a562c20a2296c900374de53c31
 
 Rows marked "claimed_exit=n/a" are the orchestrator's own runs with nothing claimed by a worker; the judge row's claim is the three lanes' PASS, re-run here. Logs are `gate-reduce.sh` reductions (≤ 1 KB head + fail_tail); the full logs live only in the session scratchpad.
 
 ## Jidoka log
 
 - {ticket: PMAT-1096, phase: 3b, defect: pre-publish dogfood NO-GO on five rows (claim-literal shift, stale PP-26 witness, 8 bashrs findings, C14 on a non-cuda binary, stray untracked dirs), owner: release tooling + the merged PRs that introduced them, whys: (1) why NO-GO → five red rows; (2) why red → each row above; (3) why not caught on main → main's dogfood is not run per PR, only at release; (4) why the tool defect → the release-binary gate and the C14 gate disagree on features; (5) root fix → C14 builds its own cuda leg, findings fixed in their scripts} — resolved same branch.
+- filed: `.claude/agent-memory/**` (10 subagent memory files) is TRACKED on main since #3025 — a scratch surface in the index; the delegate's writes now show as modifications of tracked files. Owner: the PP-066 driver session. Untracking is a decision for that owner, not the release.
+- filed: #3070 — BSE-17 quick tier 60-minute timeout on a CI-only PR.
 - filed: `scripts/check_roadmap_diff_additive.sh --selftest` exits 1 on `main` at `f34671a6b` (row 'push shape'/re-serialisation) — pre-existing, verdicts identical before and after the SEC011 edit; not a blocker for the cut (the guard's non-selftest path is what CI runs and it PASSes).
 
 ## Estimates
@@ -186,5 +210,9 @@ Gaps: (1) closed — #2971 was closed on the round-2 quorum (above); (2) phase 4
 [status] ticket=PMAT-1096 phase=3/6 global=118/6(K=150) k_measured=118 sub=0/0 basis=first-run[U]
          mode=direct trigger=- route=self w=11.11 basis=quota.json@46h q=fable_binding=true/age_h=47 gate=PASS slots=0/3 denied=0
          red=- filed=check_roadmap_diff_additive-selftest blocker=fleet: clean-room pool 15/17 busy on other repos; #3063 PR run queued 5h, #3066 queue run queued 1h next=push the gate fixes once; wait for #3050/#3063; then ready+arm #3069
+
+[status] ticket=PMAT-1096 phase=4/6 global=160/6(K=300) k_measured=160 sub=0/0 basis=first-run[U]
+         mode=direct trigger=- route=self w=11.11 basis=quota.json@46h q=fable_binding=true/age_h=47 gate=PASS slots=0/3 denied=0
+         red=- filed=#3070,tracked-agent-memory blocker=fleet queue (#3064 #3056 #3063 ahead; #3050 re-running CI after the README conflict) next=autopilot: merge→dogfood→tag→release→cascade; K raised 150→300 on the operator's re-issued instruction
 
 verdict: PARTIAL(release in flight) — the bump is green locally and pushed; the tag, the cascade and the post-publish QA follow the merge.

@@ -126,7 +126,3 @@ docs/roadmaps/*.lock
 # Generated on demand by crates/apr-cli/tests/pixel_regression.rs (28 MB; never commit it --
 # a committed copy makes publish_atomically() unreachable, which hid a real race, see #3051)
 /crates/apr-cli/playbooks/snapshots/test.apr
-
-# The paiml-agy-delegate writes its per-agent memory under the repo it runs in (PMAT-1096):
-# never a tracked surface, never a dirty tree for the release gates.
-/.claude/agent-memory/
