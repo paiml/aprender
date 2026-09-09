@@ -167,7 +167,14 @@ command -v cargo >/dev/null 2>&1 || {
 command -v jq >/dev/null 2>&1 || {
     printf '\nNO-GO: jq is not on PATH; cargo metadata cannot be read.\n'; exit 2; }
 
-MEMBERS="$(cargo metadata --no-deps --format-version 1 2>/dev/null | jq -r '.packages[].name' | LC_ALL=C sort -u)"
+# `--locked`, and it is not cosmetic: without it `cargo metadata` REWRITES
+# Cargo.lock. Measured by aprender#2793 on this repo — 44 added `[[patch.unused]]`
+# lines — which a read-only guard has no business doing and a lockfile gate would
+# rightly fail on. `--manifest-path`, so the answer does not depend on the cwd
+# the guard happened to be invoked from.
+MEMBERS="$(cargo metadata --no-deps --format-version 1 --locked \
+    --manifest-path "$REPO_ROOT/Cargo.toml" 2>/dev/null \
+    | jq -r '.packages[].name' | LC_ALL=C sort -u)"
 n_members="$(printf '%s\n' "$MEMBERS" | grep -c . || true)"
 printf '\nworkspace members: %s\n' "$n_members"
 if [ "${n_members:-0}" -lt 2 ]; then

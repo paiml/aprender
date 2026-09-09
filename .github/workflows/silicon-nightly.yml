@@ -70,11 +70,25 @@ jobs:
           bash scripts/check_silicon_cuda.sh --self-test
           bash scripts/check_silicon_cuda.sh
 
-      # And every `-p` in every workflow must name a crate that exists. This
-      # lane spent eight scheduled runs failing at exit 101 on a package name
-      # nothing checked (R-8).
+      # THE WORK ITSELF MUST BE RESOLVABLE, and this is the cheap place to find
+      # out (#2793, merged into this branch). Both legs below shipped naming
+      # `-p aprender-primitives`, a package that has never existed here, so the
+      # lane's first scheduled run did the real suite green and then died on the
+      # name — on BOTH silicons, at 03:30, nine minutes into a 90-minute leg. The
+      # guards above probe their own instruments thoroughly and only ever asked
+      # "can a runner serve this axis?" and "did a job carry it?"; nothing asked
+      # whether the lane's own commands could resolve.
+      #
+      # `cargo metadata` needs the toolchain, and the guard NO-GOes without it
+      # rather than reporting a clean bill it could not have measured — so PATH
+      # first. This step came from #2793 and is the reason that guard worked
+      # while this one would have exited 2.
+      - name: Put the runner's Rust toolchain on PATH
+        run: echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
       - name: Every cargo -p in a workflow names a real crate (R-8)
-        run: bash scripts/check_workflow_cargo_packages.sh
+        run: |
+          bash scripts/check_workflow_cargo_packages.sh --self-test
+          bash scripts/check_workflow_cargo_packages.sh
 
       # THE LIVE ONE, LAST: it needs the API, and everything above it can go
       # red without a network.
