@@ -1,22 +1,20 @@
 {
   "host": "noah-Lambda-Vector",
-  "utc": "2026-09-09T14:19:45Z",
+  "utc": "2026-09-09T14:38:30Z",
   "gpu": "NVIDIA GeForce RTX 4090",
   "compute_cap": "8.9",
   "driver": "570.207",
   "toolkit_max": "13.3",
-  "script_sha256_16": "d5f77ebe558ed441",
-  "mem_available_gib": 107,
+  "script_sha256_16": "1dfdea9ec2926fef",
+  "mem_available_gib": 104,
   "blocked_on": [
-    "driver_floor: driver 570.207 < R580 (cuda-bindings runtime floor)",
-    "cudacore_probe: prerequisite: driver_floor=SKIP clang_resource_dir=PASS",
-    "cutile_probe: prerequisite: driver_floor=SKIP toolkit_floor=PASS clang_resource_dir=PASS"
+    "driver_floor: driver 570.207 < R580 (cuda-bindings runtime floor); needs an R580+ driver package AND a reboot to activate it -- installing one live replaces the userspace libs under the running module and breaks CUDA until then (measured 2026-09-09)"
   ],
   "probes": [
     {
       "id": "driver_floor",
       "status": "SKIP",
-      "reason": "driver 570.207 < R580 (cuda-bindings runtime floor)",
+      "reason": "driver 570.207 < R580 (cuda-bindings runtime floor); needs an R580+ driver package AND a reboot to activate it -- installing one live replaces the userspace libs under the running module and breaks CUDA until then (measured 2026-09-09)",
       "cmd": "nvidia-smi"
     },
     {
@@ -46,7 +44,7 @@
     {
       "id": "aprender_gpu_cuda",
       "status": "PASS",
-      "reason": "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 2590 filtered out; finished in 0.35s (MemAvailable 107 GiB, cgroup=48G)",
+      "reason": "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 2590 filtered out; finished in 0.31s (MemAvailable 104 GiB, cgroup=48G)",
       "cmd": "cargo test -p aprender-gpu --features cuda --lib -- <filters>"
     }
   ],

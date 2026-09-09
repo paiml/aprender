@@ -1,11 +1,11 @@
 {
   "host": "yoga",
-  "utc": "2026-09-09T14:20:26Z",
+  "utc": "2026-09-09T14:39:13Z",
   "gpu": "NVIDIA GeForce RTX 4060 Laptop GPU",
   "compute_cap": "8.9",
   "driver": "595.91.07",
   "toolkit_max": "13.3",
-  "script_sha256_16": "d5f77ebe558ed441",
+  "script_sha256_16": "1dfdea9ec2926fef",
   "mem_available_gib": 28,
   "blocked_on": [],
   "probes": [
@@ -42,7 +42,7 @@
     {
       "id": "aprender_gpu_cuda",
       "status": "PASS",
-      "reason": "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 2590 filtered out; finished in 0.54s (MemAvailable 28 GiB, cgroup=16G)",
+      "reason": "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 2590 filtered out; finished in 0.52s (MemAvailable 28 GiB, cgroup=16G)",
       "cmd": "cargo test -p aprender-gpu --features cuda --lib -- <filters>"
     }
   ],
