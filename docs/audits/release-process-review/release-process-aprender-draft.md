@@ -9,6 +9,7 @@
 | Date | 2026-09-08 (v0.1) · 2026-09-09 (v0.2–v0.4) |
 | Applies from | v0.66.0 |
 | Extends | `binary-release.yml` (tagged assets) · `cuda-nightly.yml` (live GPU) · `apr-dogfood` v3.0 |
+| Interacts with | **0.67's CUDA-Rust work** (#3061 / #3062) — see §4.5. That spec moved gx10's toolkit under this one's feet |
 | Related | PP-066 §5 R-5/R-6/R-7, §4 C4/C13/C14 · #2869 · #2971 · #2696 · #2982 · `paiml/infra#359` |
 | Marks | `[V]` verified by a command here · `[C]` computed · `[A]` asserted, source named · `[U]` unverified, owner named |
 | v0.4 | **Cut to about a third of v0.3**, after an `agy /grillme` grill and an `agy /teamwork` review of the plan. Nothing is done by hand: every check runs in CI or on the existing gx10 nightly lane. §7 (a PR-time GPU runner) is gone. §7 (rollback) is new. Changelog at the foot. |
@@ -211,6 +212,38 @@ recording the artifact sha256 from the signed manifest, host facts from
 
 A missing cell is NO-GO, not a skip.
 
+### 4.5 What 0.67's CUDA-Rust work changes here
+
+0.67 (#3061, #3062) is a *quality* programme, not a throughput one, and three of its items
+touch this document. None of them is optional to know about, because two already happened.
+
+**T0 un-darks `aprender-gpu` in `workspace-test` — but only the CPU-reachable 17%.**
+444 of 2,620 tests run without a GPU (0.10 s, 31 s cold build); **~2,176 sit behind
+`--features cuda` and need hardware.** So T0 does not make GPU code covered — it makes the
+part of it that never needed a GPU stop being dark. The remainder is what a GPU runner is
+for, and yoga is the box the operator sanctioned for exactly that (basic CUDA unit
+testing). infra#494/#495 is what makes routing to it safe: `gpu` stopped naming one box
+when yoga was registered, so a selector must now name the host.
+
+**gx10's toolkit moved on 2026-09-09, and this document's §4 inherits it.** The operator
+ordered `cuda-toolkit-13-3` to unblock T3 (cutile-rs on sm_121). Measured after: `nvcc` and
+`ptxas` are **13.3**, `/usr/local/cuda` resolves to `13.3`, **driver unchanged at
+590.48.01**. `/usr/local/cuda` is a Debian *alternatives* link, so registering 13.3 at
+priority 133 against 13.0's 130 **flipped the CI default** — the 0.67 spec records that its
+own first report of a side-by-side install was wrong (§9.4 there).
+
+Every GPU cell in §4.1 runs on that lane, so **the release now verifies under 13.3**.
+0.67's §9.5 post-upgrade regression gate — `cargo test -p aprender-gpu --features cuda
+--lib --release` green on gx10 under 13.3 — is a **prerequisite for trusting a release
+receipt from that host**, not a separate concern. A red there is a rollback, not a debate.
+
+**The PTX floor (RD-7) is unaffected in substance, and it is worth saying why.** The
+emitted `.version` is a source constant chosen by `ptx_version_for_target()`, so a toolkit
+change cannot move it. What moved is the **consumer**: `ptxas` 13.3 now reads what the
+emitter writes, and the GH-480 sm_121 rewriter meets it. That interaction is 0.67's to
+verify; this document only records that the floor's *basis* did not change and its
+*consumer* did.
+
 ---
 
 ## §5 Release sequence
@@ -287,6 +320,12 @@ or `apr devices` on the published artifact disagreeing with its own receipt.
 
 **A yank is not a fix and not a delete.** Yanked versions still resolve for existing
 lockfiles; step 2 is what actually moves users.
+
+**A worked instance, from 0.67.** The gx10 toolkit flip (§4.5) shipped with its rollback
+stated and costed: `sudo update-alternatives --set cuda /usr/local/cuda-13.0`, one command,
+no download, because 13.0 was left on disk. That is the shape §7.2 is asking for — the
+reverse action named *before* the forward one is taken, and cheap enough that taking it is
+not a decision. It is also the first thing §7.3's drill should rehearse on the fleet.
 
 ### 7.3 The fire drill — rollback's registered mutation
 

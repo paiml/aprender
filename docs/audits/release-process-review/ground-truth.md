@@ -57,7 +57,17 @@ Of the **21** paths named at `c04eda87d`: **1 exists**
 |---|---|---|---|---|---|---|---|---|---|---|
 | `yoga` | x86_64 | 22 | 30 GB | 859 G | RTX 4060 **Laptop** | **8188 MiB** | 595.91.07 | **8.9** | 13.2 | 12.4 |
 | `lambda-labs` | x86_64 | 48 | 125 GB | 376 G | RTX 4090 | 24564 MiB | **570.207** | **8.9** | 12.8 | 12.8 |
-| `gx10` | aarch64 | 20 | 119 GB | 324 G | GB10 | [N/A] unified | 590.48.01 | **12.1** | 13.1 | 13.0 |
+| `gx10` | aarch64 | 20 | 119 GB | 324 G | GB10 | [N/A] unified | 590.48.01 | **12.1** | 13.1 | **13.3** ⚠ |
+
+> ⚠ **gx10's toolkit moved on 2026-09-09, one day after this table was taken.** The operator
+> ordered `cuda-toolkit-13-3` for the 0.67 CUDA-Rust work (T3, `#3061` §7). Re-measured:
+> `nvcc` and `ptxas` are **13.3**, `/usr/local/cuda` resolves to `/usr/local/cuda-13.3`, and
+> 13.0 is still on disk. **The driver is unchanged at 590.48.01** — no kernel-driver package
+> was installed. `/usr/local/cuda` is a Debian *alternatives* link, not a plain symlink, so
+> registering 13.3 at priority 133 against 13.0's 130 **flipped the default** — the CI PATH
+> moved with it. The 0.67 spec records that its own first report of a purely side-by-side
+> install was wrong (§9.4). Rollback is one command, no download:
+> `sudo update-alternatives --set cuda /usr/local/cuda-13.0`.
 
 `ssh yoga 'lsmod | grep -E "^(nvidia|nouveau)"'` → `nvidia`, `nvidia_uvm`, `nvidia_drm`,
 `nvidia_modeset` loaded; **no `nouveau`**. `ssh yoga 'nvidia-smi -L'` → `GPU 0: NVIDIA
