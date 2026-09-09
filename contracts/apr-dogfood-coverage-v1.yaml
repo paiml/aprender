@@ -77,7 +77,7 @@ metadata:
       note: >
         covered may never DECREASE for any binary; total may never decrease
         without a reconciliation finding recording which direction moved.
-      apr: {total: 370, covered: 143}
+      apr: {total: 373, covered: 143}
       aprender-orchestrate: {total: 184, covered: 0}
       aprender-test-cli: {total: 39, covered: 0}
       pv: {total: 38, covered: 0}
@@ -146,7 +146,7 @@ metadata:
       http-orchestrate-banco: {total: 95, covered: 0}       #  ZERO -- one HTTP harness, the cheapest large win
       contracts-pv: {total: 76, covered: 0}                 #  ZERO -- one contract-CLI harness, 76 pv subcommands
       data-pipeline: {total: 76, covered: 0}                #  ZERO
-      apr-lint-diag: {total: 68, covered: 55}               # 80.9% of cluster, 38.7% of gate effort
+      apr-lint-diag: {total: 71, covered: 55}               # 77.5% of cluster, 38.5% of gate effort
       orchestrate-agent-stack: {total: 56, covered: 0}      #  ZERO
       test-harness: {total: 49, covered: 0}                 #  ZERO
       http-apr-serve: {total: 45, covered: 40}              # 88.9% of cluster, 28.0% of gate effort
@@ -167,8 +167,8 @@ metadata:
       q1_2: {total: 80, covered: 58}     # 72.5%
       q3_4: {total: 49, covered: 27}     # 55.1%
       q5_6: {total: 675, covered: 29}    # 4.3%
-      q7_8: {total: 9, covered: 9}       # 100.0%
-      q9_10: {total: 20, covered: 20}    # 100.0%
+      q7_8: {total: 11, covered: 9}      # 81.8%
+      q9_10: {total: 21, covered: 20}    # 95.2%
 
     hardware_provenance:
       command: "python3 scripts/dogfood_baseline.py  # section: totals"

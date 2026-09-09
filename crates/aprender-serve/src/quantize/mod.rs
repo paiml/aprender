@@ -178,7 +178,9 @@ static F16_TO_F32_LUT: std::sync::LazyLock<Box<[f32; 65536]>> = std::sync::LazyL
 /// Fast f16 to f32 conversion using pre-computed LUT
 ///
 /// Takes raw u16 bits (little-endian) and returns f32 value.
-/// ~3x faster than half::f16::from_bits().to_f32() for hot paths.
+/// A direct table lookup, in place of the bit manipulation in
+/// half::f16::from_bits().to_f32(). No receipt measures the difference on this
+/// tree, so no speed factor is claimed for it.
 #[inline]
 pub(crate) fn f16_to_f32_lut(bits: u16) -> f32 {
     F16_TO_F32_LUT[bits as usize]
@@ -291,8 +293,9 @@ pub fn dequantize_q8_blocks(blocks: &[Q8_0Block]) -> Vec<f32> {
 /// PMAT-PERF-002: Pre-interleaved Q4_K weights for SIMD-friendly access
 ///
 /// Weights reordered at load time to eliminate gather operations during inference.
-/// This provides 2-4x speedup for Q4_K GEMV operations by enabling contiguous
-/// SIMD loads instead of scattered nibble extraction.
+/// This enables contiguous SIMD loads for Q4_K GEMV instead of scattered nibble
+/// extraction. The size of that win is unmeasured here; the op counts under
+/// `# Performance` below are structural, not benchmarked.
 ///
 /// # Layout
 ///
@@ -317,7 +320,8 @@ pub fn dequantize_q8_blocks(blocks: &[Q8_0Block]) -> Vec<f32> {
 ///
 /// # References
 ///
-/// - Intel AVX-512 Guide: Contiguous loads 5x faster than VPGATHERDD
+/// - Intel AVX-512 Guide: contiguous loads vs VPGATHERDD (vendor guidance, not
+///   a measurement of this code)
 /// - llama.cpp: Pre-interleaved layout in ggml-quants.c
 /// - CUTLASS: Tile-based weight layout for tensor cores
 #[derive(Debug, Clone)]
