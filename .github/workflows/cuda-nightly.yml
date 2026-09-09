@@ -203,6 +203,27 @@ jobs:
             falsify_cuda_eval_adapter_sync_001 \
             falsify_cuda_eval_gpu_forward_001
 
+      # THE ASSERTION THE BLACKWELL CASCADE ASKED FOR, ON BLACKWELL
+      # (YOGA-NIGHTLY-001 R-3: "on EVERY GPU runner — gx10 included").
+      #
+      # The cascade's root cause was `warm!` hardcoding one cache key, so
+      # pre-warm covered a key the runtime never asked for and every kernel
+      # JIT-compiled on demand. On sm_89 that SUCCEEDED — slowly — which is why
+      # the old sm_89 lane was green through all seven defects. On sm_121 it
+      # failed hard. The pass/fail suites above therefore cannot see the defect
+      # on the one architecture where it is silent, and can only see its
+      # CONSEQUENCE here. `cache_misses == 0` sees the cause on both.
+      #
+      # It is cheap: this job has already built `aprender-train --features cuda
+      # --release` in the step above, so this is one more test binary invocation
+      # against a warm target dir.
+      - name: Pre-warm covers runtime — zero JIT compiles on the pass (sm_121)
+        if: steps.decide.outputs.proceed == 'true'
+        run: |
+          nice -n 19 cargo test -p aprender-train --features cuda --lib --release -- \
+            --nocapture --include-ignored --exact \
+            autograd::cuda_forward::cache::prewarm_coverage_falsifier::falsify_cuda_prewarm_covers_runtime_no_jit_001
+
       - name: CUDA loss-window falsifier suite
         if: steps.decide.outputs.proceed == 'true'
         run: |
@@ -619,9 +640,26 @@ jobs:
     if: >-
       ${{ vars.CUDA_RUNNER_READY == 'true' &&
       (github.event_name != 'pull_request' || github.event.label.name == 'cuda-check') }}
+    # PP-19 HOST ISOLATION. scripts/check_perf_concurrency_groups.sh found this
+    # job ungrouped the hour it was written: a GPU job with no job-level group
+    # serialises against nothing, and yoga now has two consumers in this repo
+    # plus infra's own smoke lane. Job level, not workflow level, so a second
+    # workflow can join the same group. `perf-yoga` is only a valid group
+    # because yoga is declared in scripts/perf-matrix.yaml — as an NA host, with
+    # no performance cell (YOGA-NIGHTLY-001 §7, N-4).
+    concurrency:
+      group: perf-yoga
+      cancel-in-progress: false
     # LITERAL, for the same reason the job above is: a guard must be able to see
     # these labels. Matches yoga and only yoga — gx10 is ARM64.
-    runs-on: [self-hosted, gpu, Linux, X64, cuda, ada]
+    # `yoga` IS IN THIS LIST ON PURPOSE. .github/silicon-coverage.txt declares the
+    # x86_64-cuda-sm89 axis as `self-hosted,gpu,yoga,cuda,ada`, and R-5 scores an
+    # axis covered only when a job asked for a label set CONTAINING the
+    # selector. Without `yoga` here the leg would run every night and the ledger
+    # would still read UNCOVERED — a job and a policy describing the same machine
+    # in two vocabularies, which is how the fleet lost sight of this runner in
+    # the first place.
+    runs-on: [self-hosted, gpu, yoga, Linux, X64, cuda, ada]
     timeout-minutes: 30
     env:
       CARGO_TERM_COLOR: always
