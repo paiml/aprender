@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Ticket | PMAT-1092 |
-| Reviewed | `docs/audits/release-process-review/release-process-aprender-v0.1-draft.md` v0.1 (463 lines) |
+| Reviewed | `docs/audits/release-process-review/release-process-aprender-draft.md` v0.1 (463 lines) |
 | Against | `origin/main` @ `c04eda87d`, and the physical hosts, 2026-09-08 |
 | Method | one `agy /teamwork-preview` lane, every finding re-run here, then **eleven** AD-04 quorum rounds over this review — rounds 1–4, 6, 7, 9, 10 and 11 returned 3 × FAIL; rounds 5 and 8 returned 2 × FAIL / 1 PASS; every objection was applied rather than argued (see *Method*) |
 | Epic | **paiml/aprender#3058** — the build order, the two gates that cannot fail, and the decisions 0.66 is blocked on |
@@ -567,7 +567,7 @@ inferred from the absence of a green mark.
 5. **Staging the draft into `docs/specifications/`.** All three lanes objected: a document
    whose header reads "Not yet normative" landing in the normative specs directory will be
    read — and RAG-indexed — as a spec. The draft now lives beside this review at
-   `docs/audits/release-process-review/release-process-aprender-v0.1-draft.md`.
+   `docs/audits/release-process-review/release-process-aprender-draft.md`.
 
 **Upheld:** the 7B *is* provisioned on both dogfood hosts, so that overturn of the first lane
 stands; the gap is `yoga`, which §7.1 assigns a 7B cell and which has no models directory
