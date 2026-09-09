@@ -268,12 +268,32 @@ fn test_qa_016_validate_corrupted() {
 fn test_qa_016_validate_quality_score() {
     let file = create_test_apr_file();
 
-    // Minimal test APR file scores 4/100 — validate --quality exits non-zero (below 50% threshold).
-    // We verify the quality score output is present regardless of exit code.
+    // `--quality` must print a score whose DENOMINATOR is the checks that actually ran.
+    //
+    // This assertion used to demand `/100` or `points` — the wording #2394 finding 12
+    // removed, and the reason it removed it is recorded at
+    // `crates/apr-cli/src/commands/validate.rs::summary_line`: the report declares 26
+    // checks of which a handful run, so `✓ VALID 3/100 points` put a green badge next to
+    // what reads as 3%, against a denominator nothing was measured on. The producer was
+    // fixed; this test was not, and it had never run in CI (`cli_integration` is not on
+    // ci.yml's `--test` line), so it sat RED on main until BSE-17's quick tier selected
+    // it (#3051, the "integration targets never run" class of #2341).
+    //
+    // The rewrite is a GUARD for that fix rather than a relic of it: the retired wording
+    // must be ABSENT, so a regression to `/100 points` turns this test RED.
     apr()
         .args(["validate", file.path().to_str().unwrap(), "--quality"])
         .assert()
-        .stdout(predicate::str::contains("/100").or(predicate::str::contains("points")));
+        .stdout(predicate::str::contains("SCORE:"))
+        .stdout(
+            predicate::str::contains("% of the checks that ran")
+                .or(predicate::str::contains("SCORE: unavailable")),
+        )
+        .stdout(
+            predicate::str::contains("checks that ran")
+                .or(predicate::str::contains("nothing was measured")),
+        )
+        .stdout(predicate::str::contains("/100 points").not());
 }
 
 // ============================================================================
