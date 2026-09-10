@@ -11,6 +11,7 @@ mod encoder_decoder;
 mod forward_qwen3_moe;
 mod forward_qwen3_moe_gpu;
 mod forward_qwen3_moe_traced;
+mod forward_qwen35;
 mod single;
 mod traced;
 
