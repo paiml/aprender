@@ -115,7 +115,11 @@ case "${1:-}" in
             env RELEASE_ASSETS_FIXTURE="$C13_WORK/mutant.txt" bash "$0" C13
         t 2 "C13 ENV: an unreadable release is exit 2, never a credit" \
             env RELEASE_ASSETS_FIXTURE="$C13_WORK/absent.txt" bash "$0" C13
-        rm -rf "$C13_WORK"
+        # Guarded delete (SEC011): `:?` refuses an empty path, and only the
+        # three fixture files this table made are removed - never a directory
+        # tree, so an unset variable cannot become a recursive delete.
+        rm -f "${C13_WORK:?}/complete.txt" "${C13_WORK:?}/mutant.txt"
+        rmdir "${C13_WORK:?}" 2>/dev/null || true
         # D-14 removed C0 from the credited set, so the credited-first rule no longer fires and
         # C7 stands on its own. The row that used to assert "[U] before C0" is replaced by the
         # two that matter now: the set is DERIVED, and the banner is not a second copy of it.
