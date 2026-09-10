@@ -211,6 +211,15 @@ jobs:
         with:
           ref: ${{ steps.tag.outputs.tag }}
 
+      # FIRST thing this box does after it has a working tree. Run 34448908554
+      # built a 21 MB CUDA asset here and then died on `gh: command not found`
+      # at the upload — forty minutes of GPU spent on a shell error a one-second
+      # check names at second zero. `docker` and `objdump` are named because
+      # this job's later steps use them; `gh` is NOT, because the upload below
+      # is REST (#3074).
+      - name: Preflight — this box has the tools this job assumes
+        run: bash scripts/ci_self_hosted_preflight.sh --cuda --need docker objdump
+
       # The box's own rustup honours rust-toolchain.toml; the target is the native
       # one. The builder's glibc is the asset's floor — recorded, never assumed.
       - name: Record the builder (toolchain, glibc floor, device)
@@ -294,6 +303,15 @@ jobs:
     runs-on: [self-hosted, Linux, X64, clean-room]
     if: always()
     steps:
+      # This job had no checkout: it curled the API and parsed with python3. The
+      # preflight needs the tree, and the tree is one second on the clean-room
+      # pool — cheap enough to make "does this box have curl and python3" a
+      # checked fact rather than an assumption.
+      - uses: actions/checkout@v7
+
+      - name: Preflight — this box has the tools this job assumes
+        run: bash scripts/ci_self_hosted_preflight.sh
+
       - name: Require apr-<tag>-{x86_64,aarch64}-unknown-linux-gnu-cuda.tar.gz + .sha256
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -328,6 +346,20 @@ jobs:
             labels: '["self-hosted", "Linux", "ARM64", "cuda", "gx10"]'
     runs-on: ${{ fromJSON(matrix.labels) }}
     steps:
+      - uses: actions/checkout@v7
+
+      # The smoke step below needs curl, python3, sha256sum, tar and a visible
+      # device. Each of those is a separate way for this job to fail late and
+      # ambiguously; the preflight fails early and by name.
+      #
+      # `docker` and `objdump` are asserted on both GPU rows even though this
+      # job runs neither: both boxes carry `docker` as a RUNNER LABEL, and the
+      # build job on the same pool needs objdump. A pool that has stopped
+      # matching its own labels is a finding worth one second on every GPU job,
+      # not a surprise for whichever lane needs it next.
+      - name: Preflight — this box has the tools this job assumes
+        run: bash scripts/ci_self_hosted_preflight.sh --cuda --need docker objdump
+
       - name: Download, verify checksum, run
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -360,6 +392,11 @@ jobs:
     runs-on: [self-hosted, Linux, X64, clean-room]
     if: always()
     steps:
+      - uses: actions/checkout@v7
+
+      - name: Preflight — this box has the tools this job assumes
+        run: bash scripts/ci_self_hosted_preflight.sh
+
       - name: Write summary
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
