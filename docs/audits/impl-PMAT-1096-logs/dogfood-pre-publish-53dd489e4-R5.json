@@ -1,8 +1,8 @@
 {
   "crate": "aprender",
   "version": "0.66.0",
-  "timestamp": "20260909T183107Z",
-  "commit": "b891ab7899b761620f0a872139f3167d7169293f",
+  "timestamp": "20260910T051715Z",
+  "commit": "53dd489e44b6061d20f3131434a6d87f7d9b503e",
   "gates": [
     {
       "gate": "git-clean",
@@ -72,17 +72,17 @@
     {
       "gate": "clippy",
       "result": "PASS",
-      "note": "warning: patch `aprender v0.65.2 (~/src/aprender)` was not used in the crate graph"
+      "note": "warning: using config file `/mnt/nvme-raid0/agent-wt/rel-066-autopilot/wt/crates/aprender-viz/.clippy.toml`, `/mnt/nvme-"
     },
     {
       "gate": "test",
       "result": "PASS",
-      "note": "warning: patch `aprender v0.65.2 (~/src/aprender)` was not used in the crate graph"
+      "note": "warning: aprender-compute@0.66.0: provable-contracts binding.yaml not found at /mnt/nvme-raid0/agent-wt/rel-066-autopilo"
     },
     {
       "gate": "coverage",
       "result": "PASS",
-      "note": "warning: patch `aprender v0.65.2 (~/src/aprender)` was not used in the crate graph"
+      "note": "warning: aprender-compute@0.66.0: provable-contracts binding.yaml not found at /mnt/nvme-raid0/agent-wt/rel-066-autopilo"
     },
     {
       "gate": "security",
@@ -117,7 +117,7 @@
     {
       "gate": "pv-lint",
       "result": "PASS",
-      "note": "Summary: 0 errors, 11030 warnings, 0 suppressed, 9948 new"
+      "note": "Summary: 0 errors, 11032 warnings, 0 suppressed, 9950 new"
     },
     {
       "gate": "pv-bindings",
@@ -127,7 +127,7 @@
     {
       "gate": "bashrs",
       "result": "PASS",
-      "note": "271 file(s) linted (receipt confirmed), 0 SEC/DET/IDEM errors (1 SC10xx suppressed \u2014 bashrs#226; 6 other)"
+      "note": "278 file(s) linted (receipt confirmed), 0 SEC/DET/IDEM errors (1 SC10xx suppressed \u2014 bashrs#226; 6 other)"
     },
     {
       "gate": "renacer",
@@ -142,12 +142,12 @@
     {
       "gate": "pmat-comply",
       "result": "PASS",
-      "note": "CB-200 at or under its recorded baseline \u2014 debt held flat, NOT a clean tree; 8 other fail(s), 91 skip(s) of which 3 are Error-severity (#1008). Run `pmat comply check` (without --failures-only) for th"
+      "note": "CB-200 at or under its recorded baseline \u2014 debt held flat, NOT a clean tree; 9 other fail(s), 90 skip(s) of which 3 are Error-severity (#1008). Run `pmat comply check` (without --failures-only) for th"
     },
     {
       "gate": "reachability",
       "result": "WARN",
-      "note": "unreachable files/tests: 951 13203 (a file the build never compiles cannot be tested)"
+      "note": "unreachable files/tests: 952 13203 (a file the build never compiles cannot be tested)"
     },
     {
       "gate": "contracts-exit-integrity",
@@ -197,7 +197,7 @@
     {
       "gate": "probador-suite",
       "result": "PASS",
-      "note": "PASSED 4 tests in 66.82s (4 passed, 0 failed, 0 skipped)"
+      "note": "PASSED 4 tests in 67.85s (4 passed, 0 failed, 0 skipped)"
     },
     {
       "gate": "dogfood-use",
