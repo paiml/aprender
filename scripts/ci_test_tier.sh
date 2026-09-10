@@ -110,12 +110,18 @@ decide() {
 self_test() {
     local td n=0 red=0 out rc leaf
     td=$(mktemp -d "${TMPDIR:-/tmp}/ci-tier.XXXXXX"); trap 'rm -rf "${td:?}"' RETURN
+    # One decision, many rows. Each full decision re-runs check_tree_reader_tests.sh
+    # (~23s, it re-derives the registry from the sources), so a fixture is DECIDED
+    # once into a file and every assertion about it replays that file with its exit
+    # code. Same output, same rc — the rows are not weakened, only the wall clock.
+    cap() { local name=$1 r=0; shift; "$@" > "$td/$name.out" 2>&1 || r=$?; printf '%s' "$r" > "$td/$name.rc"; }
+    replay() { printf 'cat "%s/%s.out"; exit "$(cat "%s/%s.rc")"' "$td" "$1" "$td" "$1"; }
     row() { local want=$1 label=$2 pat=$3; shift 3; n=$((n + 1)); rc=0; out=$("$@" 2>&1) || rc=$?
         if [ "$rc" = "$want" ] && printf '%s\n' "$out" | grep -qE -- "$pat"; then printf 'ok    row %-2s rc=%s  %s\n' "$n" "$rc" "$label"
         else printf 'FAIL  row %-2s rc=%s (wanted %s, must match /%s/)  %s\n' "$n" "$rc" "$want" "$pat" "$label"; printf '%s\n' "$out" | sed 's/^/        /'; red=1; fi; }
     T=$0
-    row 0 "push -> full" '^tier=full' bash "$T" --event push
-    row 0 "schedule -> full" '^tier=full' bash "$T" --event schedule
+    row 0 "schedule -> full (FULL still lives on the nightlies — decision D-1)" '^tier=full' bash "$T" --event schedule
+    row 0 "workflow_dispatch -> full" '^tier=full' bash "$T" --event workflow_dispatch
     row 2 "unknown event -> ENV (exit 2), never a guess" 'refusing to guess' bash "$T" --event release
     printf 'scripts/foo.sh\n' > "$td/d-scripts.txt"
     row 0 "pull_request, scripts-only diff -> quick with NO crates" '^crates=$' bash "$T" --event pull_request --diff-from "$td/d-scripts.txt"
@@ -124,7 +130,11 @@ self_test() {
     printf 'Cargo.toml\n' > "$td/d-root.txt"
     row 0 "pull_request, root Cargo.toml touched -> full (fail closed)" '^tier=full' bash "$T" --event pull_request --diff-from "$td/d-root.txt"
     printf 'crates/aprender-core/src/lib.rs\n' > "$td/d-core.txt"
-    row 0 "pull_request, aprender-core touched -> full (reverse dependents exceed the cap)" 'tier=full' bash "$T" --event pull_request --diff-from "$td/d-core.txt"
+    cap pr-cap bash "$T" --event pull_request --diff-from "$td/d-core.txt"
+    row 0 "pull_request over the cap (aprender-core) -> quick, NOT an hour of full workspace tests" '^tier=quick' bash -c "$(replay pr-cap)"
+    row 0 "  ...with check_workspace=1: ONE cargo check --workspace covers every reverse dependent (rule (i))" '^check_workspace=1$' bash -c "$(replay pr-cap)"
+    row 0 "  ...and the touched crate itself still runs its tests" '^crates=.*aprender-core' bash -c "$(replay pr-cap)"
+    row 0 "pull_request WITHIN the cap emits NO check_workspace line (the workspace check is not free)" '^NO-CHECK-WORKSPACE$' bash -c "if bash '$T' --event pull_request --diff-from '$td/d-leaf.txt' | grep -q '^check_workspace='; then echo HAS-CHECK-WORKSPACE; else echo NO-CHECK-WORKSPACE; fi"
     leaf=$(cargo metadata --no-deps --format-version 1 2>/dev/null | jq -r '[.packages[]|select(.manifest_path|test("/crates/"))] | (map(.name) - (map(.dependencies[]?.name)|unique)) | sort | .[0]')
     printf 'crates/%s/src/lib.rs\n' "$leaf" > "$td/d-leaf.txt"
     row 0 "pull_request, a leaf crate ($leaf) touched -> quick with that crate" "^crates=.*$leaf" bash "$T" --event pull_request --diff-from "$td/d-leaf.txt"
@@ -138,8 +148,51 @@ self_test() {
     row 0 "merge_group, same tree + PR head workspace-test success -> reuse, citing the head" "^cite=$same" bash "$T" --event merge_group --repo-root "$td/repo" --pr-head "$same" --pr-head-conclusion success
     row 0 "merge_group, same tree but PR head conclusion failure -> full" 'concluded failure' bash "$T" --event merge_group --repo-root "$td/repo" --pr-head "$same" --pr-head-conclusion failure
     diff1=$(git -C "$td/repo" rev-parse HEAD~2)
-    row 0 "merge_group, different tree -> full (main moved under the PR)" 'differs from PR head tree' bash "$T" --event merge_group --repo-root "$td/repo" --pr-head "$diff1" --pr-head-conclusion success
+    row 0 "merge_group, different tree on a ref that is NOT a merge -> full (the PR diff cannot be re-derived)" 'not a merge commit' bash "$T" --event merge_group --repo-root "$td/repo" --pr-head "$diff1" --pr-head-conclusion success
     row 0 "merge_group without a PR head -> full" 'without a PR head' bash "$T" --event merge_group --repo-root "$td/repo"
+    # PMAT-1098 67-E2 (#3084): THE QUEUE MIRRORS THE PR. A rebase is not new
+    # evidence about the PR's diff, it is the same diff on a new base — so a
+    # merge_group whose tree moved re-derives the PR's OWN selection from the
+    # queue ref (first parent = main's tip, second = the PR head, so HEAD^1..HEAD
+    # IS the PR's diff) and runs the tier the PR ran. Same for a push to main.
+    # Both used to cost the full hour every time main moved.
+    mkqueue() { # $1 dir, $2 touched path -> HEAD = merge(main tip, PR head), a queue ref's shape
+        local d=$1 f=$2
+        git init -q -b main "$d"
+        ( cd "$d" \
+          && export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t \
+          && git commit -q --allow-empty -m base \
+          && git branch pr \
+          && printf 'moved\n' > main-moved.txt && git add -A && git commit -q -m "main moved under the PR" \
+          && git checkout -q pr && mkdir -p "$(dirname "$f")" && printf 'x\n' > "$f" && git add -A && git commit -q -m "the PR" \
+          && git checkout -q main && git merge -q --no-ff -m "queue merge" pr )
+    }
+    mkqueue "$td/q-leaf" "crates/$leaf/src/lib.rs"
+    mkqueue "$td/q-root" "Cargo.toml"
+    mkqueue "$td/q-cap"  "crates/aprender-core/src/lib.rs"
+    qh() { git -C "$1" rev-parse pr; }
+    cap mg-leaf bash "$T" --event merge_group --repo-root "$td/q-leaf" --pr-head "$(qh "$td/q-leaf")" --pr-head-conclusion success
+    row 0 "merge_group, different tree, the PR ran quick -> quick, not full (main moved is not new evidence)" '^tier=quick' bash -c "$(replay mg-leaf)"
+    row 0 "  ...with the SAME crates the PR ran ($leaf), re-derived from HEAD^1..HEAD on the queue ref" "^crates=.*$leaf" bash -c "$(replay mg-leaf)"
+    row 0 "  ...and the reason names the re-derivation, not a guess" 're-derived on the queue ref' bash -c "$(replay mg-leaf)"
+    row 0 "  ...and the tree-reader targets ride along (readme_contract, the reader that bit #3039)" 'aprender-core:--test:readme_contract' bash -c "$(replay mg-leaf)"
+    cap mg-root bash "$T" --event merge_group --repo-root "$td/q-root" --pr-head "$(qh "$td/q-root")" --pr-head-conclusion success
+    row 0 "merge_group, the PR touched a ROOT manifest -> full at the queue too (rule (ii))" '^tier=full' bash -c "$(replay mg-root)"
+    row 0 "  ...citing the root-manifest rule, so the escalation is auditable" 'root Cargo.toml' bash -c "$(replay mg-root)"
+    cap mg-cap bash "$T" --event merge_group --repo-root "$td/q-cap" --pr-head "$(qh "$td/q-cap")" --pr-head-conclusion success
+    row 0 "merge_group over the cap -> quick + check_workspace=1 (rule (i)), not full" '^check_workspace=1$' bash -c "$(replay mg-cap)"
+    cap push-leaf bash "$T" --event push --repo-root "$td/q-leaf"
+    row 0 "push (a queue merge of one PR) -> quick with the PUSH own diff, not the whole workspace" "^crates=.*$leaf" bash -c "$(replay push-leaf)"
+    row 0 "  ...and the reason names HEAD^1..HEAD, so the diff is auditable" 'HEAD\^1' bash -c "$(replay push-leaf)"
+    cap push-root bash "$T" --event push --repo-root "$td/q-root"
+    row 0 "push touching a ROOT manifest -> full on main too (rule (ii))" '^tier=full' bash -c "$(replay push-root)"
+    cap push-cap bash "$T" --event push --repo-root "$td/q-cap"
+    row 0 "push over the cap -> quick + check_workspace=1 (rule (i))" '^check_workspace=1$' bash -c "$(replay push-cap)"
+    row 0 "push whose diff cannot be derived (root commit, no reflog) -> full (fail closed)" '^tier=full' bash -c "d=$td/p-root; git init -q -b main \"\$d\"; git -C \"\$d\" -c user.name=t -c user.email=t@t commit -q --allow-empty -m only; bash '$T' --event push --repo-root \"\$d\""
+    # MUTANT: a copy whose queue branch ignores the re-derived diff and always
+    # says full is exactly today's behaviour — the rows above must lose the crates.
+    sed 's|^\( *\)selection "merge_group|\1printf "tier=full\\nreason=MUTANT\\n"; return 0; selection "merge_group|' "$T" > "$td/mutant-queue.sh"
+    row 0 "mutant queue branch (always full on a moved main) loses the crates — the rows discriminate" 'MUTANT-FULL' bash -c "if bash '$td/mutant-queue.sh' --event merge_group --repo-root '$td/q-leaf' --pr-head '$(qh "$td/q-leaf")' --pr-head-conclusion success | grep -q '^tier=quick'; then echo MUTANT-QUICK; else echo MUTANT-FULL; fi"
     # --filterset (PMAT-1098, #3084): the quick tier's 26-way `&&` chain of
     # per-crate cargo invocations became ONE build graph + one nextest run over a
     # filterset. These rows pin the token->clause translation in BOTH polarities:
