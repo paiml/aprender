@@ -1922,7 +1922,7 @@ jobs:
   # 3.32.0" is two steps above this one, and 20 machine-specific paths landed
   # through the gap while nothing re-read it.
   pr-review-receipt:
-    runs-on: [self-hosted, X64, Linux, build]   # BP-3 (#3100): any x86 box in the build pool (intel clean-room or yoga-eph)
+    runs-on: [self-hosted, X64, Linux, clean-room]   # NOT the build pool: a non-required review job must never hold a pool slot a required job needs (#3100)
     # 150, not 120: Arm 3 alone measured 3091s (51.5 min) on an idle 48-core box over
     # the 185-mutant set, and PRREV-015 adds Arms 5 and 6 — an 83-row bats table and a
     # second, 134-mutant sweep over scripts/pr_review_quorum_arm.sh. This number has
@@ -2243,7 +2243,7 @@ jobs:
   # rungs and 30 samples away.
   # ---------------------------------------------------------------------------
   pr-review-shadow:
-    runs-on: [self-hosted, X64, Linux, build]   # BP-3 (#3100): any x86 box in the build pool (intel clean-room or yoga-eph)
+    runs-on: [self-hosted, X64, Linux, clean-room]   # NOT the build pool: a non-required review job must never hold a pool slot a required job needs (#3100)
     # Text and one `gh pr view`; the arm script's own work is a receipt read. The
     # tool install is the only slow part. 20 is not a measured number, it is a
     # generous bound on a job with no build in it — and unlike the 150 above, a
@@ -2372,7 +2372,7 @@ jobs:
   # rather than failing them.
   # ---------------------------------------------------------------------------
   pr-review-sign:
-    runs-on: [self-hosted, X64, Linux, build]   # BP-3 (#3100): any x86 box in the build pool (intel clean-room or yoga-eph)
+    runs-on: [self-hosted, X64, Linux, clean-room]   # NOT the build pool: a non-required review job must never hold a pool slot a required job needs (#3100)
     timeout-minutes: 15
     if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
     permissions:
