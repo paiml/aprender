@@ -351,6 +351,26 @@ jobs:
         run: |
           set -euo pipefail
           args=(--event "${GITHUB_EVENT_NAME}")
+          # PMAT-1098 67-E2: the queue and a push to main re-derive their own
+          # diff from HEAD's FIRST PARENT (HEAD^1..HEAD is the PR's diff on the
+          # new base). actions/checkout is shallow, so that parent is not in the
+          # object store until we deepen -- and without it ci_test_tier.sh falls
+          # closed to `full` every single time, which would make the whole
+          # optimisation inert while looking like it worked. Best effort by
+          # design: if the deepen fails the decision still falls closed, and the
+          # warning below says so instead of the run silently paying the hour.
+          case "${GITHUB_EVENT_NAME}" in
+            merge_group|push)
+              git fetch --no-tags --depth=2 origin "${GITHUB_SHA}" 2>/dev/null \
+                || git fetch --no-tags --deepen=1 origin 2>/dev/null \
+                || true
+              if git rev-parse -q --verify 'HEAD^1' >/dev/null 2>&1; then
+                printf 'first parent available: %s\n' "$(git rev-parse HEAD^1)"
+              else
+                printf '::warning::first parent unavailable after deepen -- the tier falls closed to full\n'
+              fi
+              ;;
+          esac
           case "${GITHUB_EVENT_NAME}" in
             pull_request)
               git fetch --no-tags --depth=1 origin "+refs/heads/${GITHUB_BASE_REF}:refs/remotes/origin/${GITHUB_BASE_REF}"
@@ -369,7 +389,7 @@ jobs:
               ;;
           esac
           bash scripts/ci_test_tier.sh "${args[@]}" | tee "$RUNNER_TEMP/tier.txt"
-          grep -E '^(tier|crates|targets|reason|cite)=' "$RUNNER_TEMP/tier.txt" >> "$GITHUB_OUTPUT"
+          grep -E '^(tier|crates|targets|check_workspace|reason|cite)=' "$RUNNER_TEMP/tier.txt" >> "$GITHUB_OUTPUT"
       - name: Workspace lib tests (25,300+)
         if: steps.tier.outputs.tier == 'full'
         # Excluded: aprender-compute (SIMD SIGSEGV at exit), aprender-gpu and aprender-cuda-edge
@@ -614,6 +634,47 @@ jobs:
             -e CARGO_TERM_COLOR=never \
             "$IMAGE" \
             cargo nextest run --profile ci --workspace --lib --tests --exclude aprender-gpu --exclude aprender-cuda-edge --exclude aprender-compute -E "$EXPR"
+      # BSE-17 quick tier, part 3 (PMAT-1098 67-E2, #3084 — rule (i)): the
+      # selection was OVER THE CAP (touched crates + their direct reverse
+      # dependents exceed gate_touched_crates.sh's CAP=3). That used to escalate
+      # the entire run to the full tier — roughly an hour — for the ordinary case
+      # of touching a widely-depended-on crate. The touched crates' own tests ran
+      # in part 1; this step buys what the cap was really protecting, the reverse
+      # dependents' INTEGRATION, at compile level over the WHOLE workspace in one
+      # cargo invocation: minutes, not an hour. It catches exactly the class the
+      # cap exists for — signature changes, trait-impl breakage, type errors in
+      # every dependent, benches and examples included (--all-targets). A
+      # behaviour regression inside an untouched dependent is not caught here; it
+      # is what the nightly full tier is for (decision D-1).
+      #
+      # --locked: a quick tier that silently rewrites Cargo.lock would be a
+      # different dependency graph from the one the PR is proposing.
+      - name: "Quick tier: cargo check --workspace (over-the-cap integration, BSE-17 rule (i))"
+        if: steps.tier.outputs.tier == 'quick' && steps.tier.outputs.check_workspace == '1'
+        timeout-minutes: 20
+        env:
+          REASON: ${{ steps.tier.outputs.reason }}
+        run: |
+          set -euo pipefail
+          printf 'over the cap: %s\n' "$REASON"
+          docker run --rm \
+          -e CI -e GITHUB_ACTIONS -e GITHUB_REF -e GITHUB_SHA -e GITHUB_REPOSITORY -e GITHUB_RUN_ID -e GITHUB_EVENT_NAME -e GITHUB_WORKFLOW \
+            -v "${GITHUB_WORKSPACE}:/workspace" \
+            -v "/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}:/usr/local/cargo/registry" \
+            -v "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}:/workspace/target" \
+            -v "${SCCACHE_HOST_DIR}:/sccache" \
+            -w /workspace \
+            -e CARGO_TARGET_DIR=/workspace/target \
+            -e RUSTC_WRAPPER=rustc-sccache \
+            -e SCCACHE_DIR=/sccache \
+            -e SCCACHE_CACHE_SIZE=50G \
+            -e CARGO_INCREMENTAL=0 \
+            -e CARGO_BUILD_JOBS=8 \
+            -e CARGO_PROFILE_TEST_DEBUG=line-tables-only \
+            -e CARGO_PROFILE_DEV_DEBUG=line-tables-only \
+            -e CARGO_TERM_COLOR=never \
+            "$IMAGE" \
+            cargo check --workspace --all-targets --locked
       # BSE-17 reuse: the queue ref's tree is byte-identical to a PR head whose
       # workspace-test already succeeded; measuring it again is waste, not
       # evidence. The tier step proved both facts (trees compared by hash, the

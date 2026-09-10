@@ -2,19 +2,44 @@
 # ci_test_tier.sh — decide which test tier a CI run owes (BSE-17, PMAT-1077).
 #
 #   quick  pull_request: the touched crates + direct reverse dependents
-#          (scripts/gate_touched_crates.sh, cap -> full) PLUS every test target
-#          that reads the tree (scripts/tree_reader_tests.txt, derived and
-#          checked by scripts/check_tree_reader_tests.sh — drift is ENV, exit 2,
-#          never a quick tier over a stale registry).
-#   full   push, schedule, workflow_dispatch; pull_request when the selection
-#          falls closed (root manifests touched, or over the cap); merge_group
-#          when the queue ref's tree is not the tree a green PR head already ran.
+#          (scripts/gate_touched_crates.sh) PLUS every test target that reads
+#          the tree (scripts/tree_reader_tests.txt, derived and checked by
+#          scripts/check_tree_reader_tests.sh — drift is ENV, exit 2, never a
+#          quick tier over a stale registry). ALSO merge_group and push: see
+#          THE QUEUE MIRRORS THE PR below.
+#   full   schedule, workflow_dispatch — that is where FULL lives now
+#          (coverage-nightly, full-nightly, the pre-publish dogfood; PMAT-1098
+#          67-E2 decision D-1) — plus any event whose diff touches a ROOT
+#          manifest (rule (ii)) or whose own diff cannot be derived.
+#
+# THE QUEUE MIRRORS THE PR (PMAT-1098 67-E2, #3084). A rebase is not new
+# evidence about a PR's diff: it is the same diff on a new base. This script
+# used to answer `full` for every merge_group whose tree had moved and for
+# every push to main, so the queue paid a ~1h full workspace run each time main
+# moved under a PR — the single largest cost in the merge queue. Now:
+#   merge_group, tree moved: the queue ref's first parent is main's tip and its
+#     second is the PR head, so HEAD^1..HEAD IS the PR's diff on the new base.
+#     Re-derive the PR's own selection from it and run the tier the PR ran.
+#   push to main: the same, over the push's own diff (HEAD^1..HEAD for a queue
+#     merge; origin/main@{1}..HEAD for a non-merge tip; neither -> full).
+#   rule (ii): a diff touching a ROOT Cargo.toml / Cargo.lock /
+#     rust-toolchain.toml keeps `full` at the PR, in the queue and on push —
+#     dependency bumps are where compile-level integration breaks. The rule is
+#     gate_touched_crates.sh's own ("root Cargo.toml/Cargo.lock/
+#     rust-toolchain.toml touched -> full workspace check"), cited not copied.
+#   rule (i): a selection OVER THE CAP (gate_touched_crates.sh CAP=3, rule text
+#     "selection of N crate(s) exceeds cap") is no longer an hour of full
+#     workspace tests. It is `quick` over the TOUCHED crates + the tree readers
+#     plus one extra output line, check_workspace=1, which ci.yml turns into a
+#     single `cargo check --workspace --all-targets --locked` — the
+#     compile-level integration of every reverse dependent, in minutes.
 #   reuse  merge_group only: HEAD^{tree} equals the PR head's tree AND that
 #          head's workspace-test check-run concluded success — the same tree
 #          measured twice is the definition of waste. Any doubt -> full.
 #
 # Output: KEY=VALUE lines — tier, crates (space list), targets (crate:--lib or
-# crate:--test:name, space list), reason, cite (the PR head sha on reuse).
+# crate:--test:name, space list), check_workspace (1, only under rule (i)),
+# reason, cite (the PR head sha on reuse).
 # Feature-gated suites (model-tests, setfit, ...) belong to the full tier only;
 # the quick tier runs default features. Exit 2 on ENV (unknown event, registry
 # drift); 0 otherwise. `--self-test` runs the case table.
@@ -38,6 +63,11 @@
 set -euo pipefail
 
 EVENT=""; COMPARAND=""; DIFF_FROM=""; PR_HEAD=""; PR_CONCLUSION=""; REGISTRY="scripts/tree_reader_tests.txt"; ROOT="."
+# The sibling scripts and the registry always come from the checkout this script
+# runs in (cwd = repo root, in ci.yml and in the case table alike); --repo-root
+# re-points only the GIT queries — HEAD, its parents, their trees — which is how
+# the case table hands this a throwaway queue-shaped repository.
+TREE="."
 while [ $# -gt 0 ]; do
     case "$1" in
         --event) EVENT=$2; shift 2 ;;
@@ -80,29 +110,94 @@ filterset_from_targets() { # <space list of crate:--lib|crate:--bins|crate:--tes
     printf '%s\n' "$expr"
 }
 
+# The tier a given touched-path set owes. ONE function for all three events
+# that carry a diff (pull_request, merge_group on a moved main, push to main):
+# the queue and main must not answer a different question about the same diff
+# than the PR did, and one code path is how that stays true.
+selection() { # $1 = reason prefix (names the event and how the diff was derived), $2 = diff file ("" -> gate_touched_crates' own git diff)
+    local prefix=$1 diff=$2 chk sel crates rule touched nreg
+    if ! chk=$(bash "$TREE/scripts/check_tree_reader_tests.sh" 2>&1); then printf 'ENV: %s\n' "$chk" >&2; return 2; fi
+    sel=$(bash "$TREE/scripts/gate_touched_crates.sh" --print-selection ${COMPARAND:+--comparand "$COMPARAND"} ${diff:+--diff-from "$diff"} 2>/dev/null | tail -1)
+    crates=$(printf '%s' "$sel" | sed -n 's/^selection=[a-z]* crates=\(.*\) rule=.*$/\1/p'); rule=${sel#*rule=}
+    nreg=$(grep -vc '^#' "$TREE/$REGISTRY")
+    case "$sel" in
+        selection=full*)
+            # gate_touched_crates.sh prints `selection=full` for BOTH fail-closed
+            # rules and distinguishes them only in the rule text, so this reads
+            # the rule rather than duplicating either test (that script is the
+            # owner of both; PMAT-1098 67-E2 rule (i)/(ii)).
+            case "$rule" in
+                *"exceeds cap"*)
+                    # Rule (i): over the cap is not a reason to spend an hour. The
+                    # TOUCHED crates run their own tests (the reverse dependents
+                    # are what blew the cap, and a test-level run of all of them is
+                    # the expensive part), every tree reader still runs, and
+                    # check_workspace=1 buys the compile-level integration of the
+                    # whole workspace in one `cargo check` step.
+                    touched=$(bash "$TREE/scripts/gate_touched_crates.sh" --dry-run ${diff:+--diff-from "$diff"} 2>/dev/null | sed -n 's/^gate_touched_crates: touched crate(s): //p')
+                    if [ "$touched" = "(none)" ]; then touched=""; fi
+                    printf 'tier=quick\ncrates=%s\ntargets=%s\ncheck_workspace=1\nreason=%s: %s -- rule (i): the touched crate(s) run their tests and ONE cargo check --workspace --all-targets covers every reverse dependent at compile level; plus %s tree-reader target(s) from %s\n' \
+                        "$touched" "$(targets_from_registry "$TREE/$REGISTRY")" "$prefix" "$rule" "$nreg" "$REGISTRY" ;;
+                # Rule (ii): a ROOT manifest stays full at the PR, in the queue and
+                # on push alike — a dependency bump is exactly where compile-level
+                # integration breaks, and its blast radius is the whole workspace.
+                *) printf 'tier=full\nreason=%s: %s\n' "$prefix" "$rule" ;;
+            esac ;;
+        selection=quick*|selection=none*) printf 'tier=quick\ncrates=%s\ntargets=%s\nreason=%s: %s; plus %s tree-reader target(s) from %s\n' "$crates" "$(targets_from_registry "$TREE/$REGISTRY")" "$prefix" "$rule" "$nreg" "$REGISTRY" ;;
+        *) printf 'ENV: gate_touched_crates --print-selection gave "%s"\n' "$sel" >&2; return 2 ;;
+    esac
+}
+
+# The diff between a base revision and HEAD, as paths, into a file. Two-dot on
+# purpose: for a merge or a squash the base IS an ancestor of HEAD, so
+# base..HEAD and base...HEAD name the same tree comparison, and the two-dot form
+# needs no merge-base — which a shallow CI checkout usually cannot compute.
+diff_into() { # $1 = out file, $2 = base rev
+    git -C "$ROOT" diff --name-only "$2" HEAD > "$1" 2>/dev/null
+}
+
 decide() {
+    local df rc=0
     case "$EVENT" in
-        push|schedule|workflow_dispatch)
-            printf 'tier=full\nreason=%s event: the whole workspace, every feature-gated suite\n' "$EVENT" ;;
+        schedule|workflow_dispatch)
+            printf 'tier=full\nreason=%s event: the whole workspace, every feature-gated suite -- FULL lives here (coverage-nightly, full-nightly, the pre-publish dogfood; 67-E2 decision D-1)\n' "$EVENT" ;;
+        push)
+            # A push to main is the merge queue landing ONE PR, so the push's own
+            # diff is HEAD^1..HEAD. It used to be a flat `full`, which is how every
+            # landing paid an hour for work the PR and the queue had both already
+            # measured.
+            local base how
+            if git -C "$ROOT" rev-parse -q --verify 'HEAD^2' >/dev/null 2>&1; then
+                base='HEAD^1'; how="the merge commit's own diff, HEAD^1..HEAD"
+            elif git -C "$ROOT" rev-parse -q --verify 'origin/main@{1}' >/dev/null 2>&1; then
+                base='origin/main@{1}'; how='a non-merge tip diffed against the previous main, origin/main@{1}..HEAD'
+            else
+                printf 'tier=full\nreason=push: neither a merge commit (no HEAD^2) nor a previous origin/main in the reflog -- the pushed diff cannot be derived, so this falls closed to full\n'; return 0
+            fi
+            df=$(mktemp "${TMPDIR:-/tmp}/ci-tier-diff.XXXXXX")
+            if ! diff_into "$df" "$base"; then rm -f "$df"; printf 'tier=full\nreason=push: git diff %s..HEAD failed -- the pushed diff cannot be derived, so this falls closed to full\n' "$base"; return 0; fi
+            selection "push: $how" "$df" || rc=$?
+            rm -f "$df"; return $rc ;;
         merge_group)
             if [ -z "$PR_HEAD" ]; then printf 'tier=full\nreason=merge_group without a PR head to compare against\n'; return 0; fi
             local ht pt
             ht=$(git -C "$ROOT" rev-parse 'HEAD^{tree}' 2>/dev/null || true)
             pt=$(git -C "$ROOT" rev-parse "${PR_HEAD}^{tree}" 2>/dev/null || true)
             if [ -z "$ht" ] || [ -z "$pt" ]; then printf 'tier=full\nreason=merge_group: a tree could not be resolved (HEAD=%s pr-head=%s)\n' "${ht:-?}" "${pt:-?}"; return 0; fi
-            if [ "$ht" != "$pt" ]; then printf 'tier=full\nreason=merge_group: queue tree %s differs from PR head tree %s (main moved under the PR)\n' "${ht:0:9}" "${pt:0:9}"; return 0; fi
+            if [ "$ht" != "$pt" ]; then
+                # THE QUEUE MIRRORS THE PR: main moved, the PR's diff did not.
+                if ! git -C "$ROOT" rev-parse -q --verify 'HEAD^2' >/dev/null 2>&1; then
+                    printf 'tier=full\nreason=merge_group: main moved under the PR (queue tree %s != PR head tree %s) and the queue ref is not a merge commit, so the PR diff cannot be re-derived -- fail closed\n' "${ht:0:9}" "${pt:0:9}"; return 0
+                fi
+                df=$(mktemp "${TMPDIR:-/tmp}/ci-tier-diff.XXXXXX")
+                if ! diff_into "$df" 'HEAD^1'; then rm -f "$df"; printf 'tier=full\nreason=merge_group: main moved under the PR but git diff HEAD^1..HEAD failed, so the PR diff cannot be re-derived -- fail closed\n'; return 0; fi
+                selection "merge_group: main moved under the PR (queue tree ${ht:0:9} != PR head tree ${pt:0:9}); the PR's own selection re-derived on the queue ref" "$df" || rc=$?
+                rm -f "$df"; return $rc
+            fi
             if [ "$PR_CONCLUSION" != "success" ]; then printf 'tier=full\nreason=merge_group: same tree but the PR head'"'"'s workspace-test concluded %s, not success\n' "${PR_CONCLUSION:-unknown}"; return 0; fi
             printf 'tier=reuse\ncite=%s\nreason=merge_group: HEAD^{tree} %s equals PR head %s^{tree}, whose workspace-test succeeded — the same tree measured twice\n' "$PR_HEAD" "${ht:0:9}" "${PR_HEAD:0:9}" ;;
         pull_request)
-            local chk sel crates rule
-            if ! chk=$(bash "$ROOT/scripts/check_tree_reader_tests.sh" 2>&1); then printf 'ENV: %s\n' "$chk" >&2; return 2; fi
-            sel=$(bash "$ROOT/scripts/gate_touched_crates.sh" --print-selection ${COMPARAND:+--comparand "$COMPARAND"} ${DIFF_FROM:+--diff-from "$DIFF_FROM"} 2>/dev/null | tail -1)
-            crates=$(printf '%s' "$sel" | sed -n 's/^selection=[a-z]* crates=\(.*\) rule=.*$/\1/p'); rule=${sel#*rule=}
-            case "$sel" in
-                selection=full*) printf 'tier=full\nreason=pull_request: %s\n' "$rule" ;;
-                selection=quick*|selection=none*) printf 'tier=quick\ncrates=%s\ntargets=%s\nreason=pull_request: %s; plus %s tree-reader target(s) from %s\n' "$crates" "$(targets_from_registry "$ROOT/$REGISTRY")" "$rule" "$(grep -vc '^#' "$ROOT/$REGISTRY")" "$REGISTRY" ;;
-                *) printf 'ENV: gate_touched_crates --print-selection gave "%s"\n' "$sel" >&2; return 2 ;;
-            esac ;;
+            selection "pull_request" "$DIFF_FROM" || return $? ;;
         *) printf 'ENV: unknown event "%s" — refusing to guess a tier\n' "$EVENT" >&2; return 2 ;;
     esac
 }
@@ -161,6 +256,7 @@ self_test() {
         git init -q -b main "$d"
         ( cd "$d" \
           && export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t \
+          && export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=/dev/null \
           && git commit -q --allow-empty -m base \
           && git branch pr \
           && printf 'moved\n' > main-moved.txt && git add -A && git commit -q -m "main moved under the PR" \
@@ -209,7 +305,7 @@ self_test() {
     row 0 "--filterset reads stdin and translates EVERY registry token (no ':--' survives)" '^NONE-LEFT$' bash -c "e=\$(bash '$T' --event pull_request --diff-from '$td/d-scripts.txt' | sed -n 's/^targets=//p' | bash '$T' --filterset); if [ -z \"\$e\" ]; then echo EMPTY; elif printf '%s' \"\$e\" | grep -q ':--'; then echo LEFTOVER; else echo NONE-LEFT; fi"
     row 0 "--filterset over the registry: one clause per registry line (nothing dropped, nothing invented)" '^EQUAL$' bash -c "reg=\$(grep -vc '^#' scripts/tree_reader_tests.txt); n=\$(bash '$T' --event pull_request --diff-from '$td/d-scripts.txt' | sed -n 's/^targets=//p' | bash '$T' --filterset | tr '|' '\n' | wc -l); [ \"\$reg\" = \"\$n\" ] && echo EQUAL || echo \"DIFFER registry=\$reg clauses=\$n\""
     # MUTANT: a copy that drops the tree-reader targets from the quick tier must lose readme_contract — the falsifier discriminates
-    sed 's/targets=%s\\n/targets=\\n/; s/"\$(targets_from_registry "\$ROOT\/\$REGISTRY")" //' "$T" > "$td/mutant.sh"
+    sed 's/targets=%s\\n/targets=\\n/; s/"\$(targets_from_registry "\$TREE\/\$REGISTRY")" //' "$T" > "$td/mutant.sh"
     row 0 "mutant without tree-reader targets loses readme_contract (proves the inclusion is load-bearing)" 'MUTANT-LOST' bash -c "if bash '$td/mutant.sh' --event pull_request --diff-from '$td/d-scripts.txt' | grep -q readme_contract; then echo MUTANT-KEPT; else echo MUTANT-LOST; fi"
     printf '\n%s checks, %s failed\n' "$n" "$red"; [ "$red" -eq 0 ]
 }
