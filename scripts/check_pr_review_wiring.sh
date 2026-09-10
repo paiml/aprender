@@ -291,6 +291,16 @@ if [ "${1:-}" = "--self-test" ]; then
     else
         printf 'ok    row %-2s R3 an untracked guard is refused (guard_tree derives from git ls-files)\n' "$row"
     fi
+    # R3 through check_file, not only through its helper: with R3's BRANCH deleted, guard_is_tracked still
+    # works, so the two rows above stayed green over the missing rule (the mutation set's R3-drop survived,
+    # 2026-09-10). The rule is the branch, so the branch is driven — and the diagnostic asserted, so a
+    # neighbouring rule cannot answer for it. The guard is untracked in R3REPO at this point.
+    row=$((row + 1))
+    r3out=$(REPO_ROOT="$R3REPO"; check_file "$TD/good.yml" 2>&1) && r3rc=0 || r3rc=$?
+    case "$r3rc:$r3out" in
+        1:*'FAIL R3'*) printf 'ok    row %-2s R3 check_file refuses a workflow whose guard is untracked\n' "$row" ;;
+        *) printf 'FAIL  row %-2s R3 check_file passed an untracked guard (rc=%s)\n' "$row" "$r3rc"; fails=1 ;;
+    esac
 
     [ "$fails" -eq 0 ] || { printf '\nSELF-TEST FAILED\n'; exit 1; }
     printf '\nSELF-TEST PASSED (%s/%s)\n' "$row" "$row"
