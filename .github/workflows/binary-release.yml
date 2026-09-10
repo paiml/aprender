@@ -54,8 +54,8 @@ name: Binary Release
 #   - `workflow_dispatch` — manual re-run / backfill, takes a tag input
 #
 # pv targets: 4 Linux (x86_64/aarch64 × musl/gnu), each built natively on
-# the box of its architecture (x86_64 on yoga, aarch64 on gx10) inside
-# rust:1.93.0-bullseye. musl variants are static and ideal for Docker /
+# the box of its architecture (x86_64 on yoga, aarch64 on gx10): gnu inside
+# rust:1.93.0-bullseye, musl inside rust:1.93.0-bookworm. musl variants are static and ideal for Docker /
 # scratch / Alpine; gnu variants are smaller, match typical Linux
 # distributions, and import nothing above GLIBC_2.31. No GitHub-hosted
 # runner and no `cross` (#3073: the operator rule of 2026-09-10).
@@ -81,9 +81,9 @@ concurrency:
 jobs:
   # The pv lane on the fleet (#3073; operator rule 2026-09-10: no GitHub-hosted runners). It ran on
   # ubuntu-latest, with cross for aarch64. Each target now builds natively on the box of its architecture
-  # (x86_64 on yoga, aarch64 on gx10) inside rust:1.93.0-bullseye, the sibling-container pattern of
-  # build-apr-cpu: the container's glibc (2.31) is the gnu assets' floor (cross's aarch64 image was 2.31
-  # as well, so no floor rises) and the musl assets are static. Asset names are unchanged.
+  # (x86_64 on yoga, aarch64 on gx10) in a sibling container, the pattern of build-apr-cpu: gnu targets
+  # inside rust:1.93.0-bullseye, whose glibc (2.31) is their floor (cross's aarch64 image was 2.31 as
+  # well, so no floor rises), musl targets inside rust:1.93.0-bookworm (static). Asset names unchanged.
   build:
     name: pv ${{ matrix.target }} on ${{ matrix.host }}
     runs-on: ${{ fromJSON(matrix.labels) }}
@@ -92,15 +92,19 @@ jobs:
       matrix:
         include:
           - target: x86_64-unknown-linux-musl
+            image: rust:1.93.0-bookworm
             host: yoga
             labels: '["self-hosted", "Linux", "X64", "cuda", "yoga"]'
           - target: x86_64-unknown-linux-gnu
+            image: rust:1.93.0-bullseye
             host: yoga
             labels: '["self-hosted", "Linux", "X64", "cuda", "yoga"]'
           - target: aarch64-unknown-linux-musl
+            image: rust:1.93.0-bookworm
             host: gx10
             labels: '["self-hosted", "Linux", "ARM64", "cuda", "gx10"]'
           - target: aarch64-unknown-linux-gnu
+            image: rust:1.93.0-bullseye
             host: gx10
             labels: '["self-hosted", "Linux", "ARM64", "cuda", "gx10"]'
     steps:
@@ -127,8 +131,11 @@ jobs:
       # must exist on the HOST at the same path (the work root is mirrored host<->container; $HOME is
       # not), and the target mountpoint is pre-created as the runner so dockerd never creates it
       # root-owned (#3098). musl-gcc is named as the C compiler for the musl targets, so a C dependency
-      # cannot silently compile against glibc headers.
-      - name: Build pv inside rust:1.93.0-bullseye (glibc 2.31 floor; musl static)
+      # cannot silently compile against glibc headers. The musl targets build on bookworm: they need
+      # musl-tools from apt, and bullseye-security's Release file has expired (`apt-get update` exit 100
+      # on both musl lanes of rehearsal run 34543016302). A static musl binary carries no builder glibc,
+      # so the gnu lanes keep bullseye and the 2.31 floor.
+      - name: Build pv inside ${{ matrix.image }} (gnu - glibc 2.31 floor; musl - static)
         run: |
           DOCKER=docker; docker ps >/dev/null 2>&1 || DOCKER="sudo -n docker"
           T="${{ matrix.target }}"
@@ -142,7 +149,7 @@ jobs:
             -e CARGO_TARGET_DIR=/workspace/target \
             -e CARGO_INCREMENTAL=0 \
             -e T="$T" \
-            rust:1.93.0-bullseye \
+            "${{ matrix.image }}" \
             sh -c 'set -e
               case "$T" in
                 *-musl)
@@ -158,7 +165,7 @@ jobs:
           mkdir -p "target/$T/release"
           cp "$CACHE/target/$T/release/pv" "target/$T/release/pv"
           {
-            echo "### pv $T built on ${{ matrix.host }} inside rust:1.93.0-bullseye"
+            echo "### pv $T built on ${{ matrix.host }} inside ${{ matrix.image }}"
             echo "- toolchain: $(cat "$CACHE/target/BUILDER_RUSTC")"
             echo "- builder glibc: $(cat "$CACHE/target/BUILDER_GLIBC")"
           } >> "$GITHUB_STEP_SUMMARY"
