@@ -9,6 +9,7 @@
 #
 # Rule: any `runs-on:` that names `self-hosted` must ALSO name one of:
 #   - clean-room  (the provisioned sovereign-ci pool: registry + cached image)
+#   - build       (the aprender build pool: intel clean-room + yoga-eph + gx10-build; #3100)
 #   - a GPU label: cuda | gpu | rtx4090 | ada | blackwell | gb10
 #   - a macOS label: apple-silicon | m4
 # Reusable-workflow jobs (`uses:`) have no `runs-on` and are naturally exempt.
@@ -16,7 +17,11 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-DISCRIM='clean-room|cuda|gpu|rtx4090|ada|blackwell|gb10|apple-silicon|m4'
+# `build` is the aprender BUILD POOL (operator 2026-09-10, #3100): the label sits on the 16 intel
+# clean-room runners, yoga-eph and gx10-build (infra machines/*/forjar-*.yaml). It discriminates exactly
+# like clean-room does — a provisioned pool, never a stray dev box; a job that also names X64/ARM64 narrows
+# it to the boxes of that arch.
+DISCRIM='clean-room|build|cuda|gpu|rtx4090|ada|blackwell|gb10|apple-silicon|m4'
 fail=0
 
 while IFS=: read -r file line sel; do
