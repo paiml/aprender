@@ -30,7 +30,12 @@ name: Binary Release
 # (`libm.so.6: version GLIBC_2.43 not found`). The floor recorded in the
 # job summary is the CONTAINER's `ldd --version`, never the host's. gx10's
 # runner user is not in the docker group but has passwordless sudo, hence
-# the `sudo -n docker` fallback. What each check proves:
+# the `sudo -n docker` fallback (moot on the disposable runners, whose user
+# is in the docker group). The lane's runs-on carries `ephemeral,docker`: it
+# runs on the forjar-managed disposable runner containers (paiml/infra
+# machines/<box>/forjar-ephemeral.yaml — one container per job, --ephemeral,
+# nvidia runtime), never on the persistent actions.runner.* services.
+# What each check proves:
 # the loader string `libcuda.so` is in the artifact ONLY under `--features
 # cuda` (1 vs 0, measured on 0.66.0 builds of both kinds) — that proves
 # the feature is in the bytes; `apr gpu --json` on the yoga (sm_89) and
@@ -198,10 +203,10 @@ jobs:
         include:
           - target: x86_64-unknown-linux-gnu
             host: yoga
-            labels: '["self-hosted", "Linux", "X64", "cuda", "yoga"]'
+            labels: '["self-hosted", "Linux", "X64", "cuda", "yoga", "ephemeral", "docker"]'
           - target: aarch64-unknown-linux-gnu
             host: gx10
-            labels: '["self-hosted", "Linux", "ARM64", "cuda", "gx10"]'
+            labels: '["self-hosted", "Linux", "ARM64", "cuda", "gx10", "ephemeral", "docker"]'
     steps:
       - name: Resolve release tag
         id: tag
@@ -225,7 +230,11 @@ jobs:
       - name: Build apr with --features cuda inside rust:1.93.0-bullseye (glibc 2.31 floor)
         run: |
           DOCKER=docker; docker ps >/dev/null 2>&1 || DOCKER="sudo -n docker"
-          CACHE="$HOME/.cache/apr-cuda-release/${{ matrix.target }}"
+          # The runner is itself a disposable container (labels ephemeral,docker — infra
+          # machines/<box>/forjar-ephemeral.yaml): the bullseye build is a SIBLING container
+          # through the mounted socket, so every bind-mount path must exist on the HOST at
+          # the same path. The work root is mirrored host<->container; $HOME is not.
+          CACHE="$(cd "$GITHUB_WORKSPACE/../.." && pwd)/cache-apr-cuda/${{ matrix.target }}"
           mkdir -p "$CACHE/registry" "$CACHE/target"
           $DOCKER run --rm \
             -v "$GITHUB_WORKSPACE:/workspace" \
@@ -334,10 +343,10 @@ jobs:
         include:
           - target: x86_64-unknown-linux-gnu
             host: yoga
-            labels: '["self-hosted", "Linux", "X64", "cuda", "yoga"]'
+            labels: '["self-hosted", "Linux", "X64", "cuda", "yoga", "ephemeral", "docker"]'
           - target: aarch64-unknown-linux-gnu
             host: gx10
-            labels: '["self-hosted", "Linux", "ARM64", "cuda", "gx10"]'
+            labels: '["self-hosted", "Linux", "ARM64", "cuda", "gx10", "ephemeral", "docker"]'
     runs-on: ${{ fromJSON(matrix.labels) }}
     steps:
       - name: Download, verify checksum, run
