@@ -41,8 +41,13 @@ fn test_context_memory_info() {
     let ctx = CudaContext::new(0).expect("Context creation MUST succeed");
     let (free, total) = ctx.memory_info().expect("memory_info MUST succeed");
 
-    // RTX 4090 has 24GB VRAM
-    assert!(total > 20_000_000_000, "RTX 4090 should have >20GB VRAM");
+    // 67-B1: the suite runs on every CUDA host in the fleet — gx10 (GB10, unified),
+    // yoga (RTX 4060 Laptop, 8 GB), lambda (RTX 4090, 24 GB). ">20 GB" was a
+    // wrong-host assumption; the device-independent invariant is a sane non-zero total.
+    assert!(
+        total >= 1 << 30,
+        "device reports an implausible total VRAM: {total} bytes"
+    );
     assert!(free > 0, "Some VRAM MUST be free");
     assert!(free <= total, "Free memory cannot exceed total");
 }
@@ -89,8 +94,11 @@ fn test_context_device_name() {
 fn test_context_total_memory() {
     let ctx = CudaContext::new(0).expect("Context creation MUST succeed");
     let total = ctx.total_memory().expect("total_memory MUST succeed");
-    // RTX 4090 has 24GB VRAM
-    assert!(total > 20_000_000_000, "RTX 4090 should have >20GB VRAM");
+    // 67-B1: see test_context_memory_info — fleet hosts range from 8 GB to unified 128 GB.
+    assert!(
+        total >= 1 << 30,
+        "device reports an implausible total VRAM: {total} bytes"
+    );
 }
 
 #[test]
