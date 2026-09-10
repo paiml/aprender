@@ -188,7 +188,7 @@ fn from_architecture_generated(arch: &str) -> ArchConstraints {
         // Describes a hybrid architecture: Gated DeltaNet linear-attention layers
         // + gated full attention every full_attention_interval layers.
         // Conv kernel, state size, inner size, group count.
-        // Inference unsupported on BOTH backends (see PMAT-1098).
+        // Inference unsupported on GPU (see #3090). CPU supported.
         "qwen3_5" | "qwen3.5" | "qwen35" => ArchConstraints {
             norm_type: NormType::RmsNorm,
             activation: Activation::Silu,
