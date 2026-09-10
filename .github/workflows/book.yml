@@ -1,3 +1,5 @@
+# #3073 (operator rule 2026-09-10: no GitHub-hosted runners): every job runs on the
+# clean-room pool; X64 because the mdBook/tool installs below fetch x86_64 builds.
 name: mdBook CI
 
 on:
@@ -60,7 +62,7 @@ concurrency:
 jobs:
   build:
     name: Build Book
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, clean-room]
     steps:
       - uses: actions/checkout@v7
 
@@ -143,7 +145,7 @@ jobs:
 
   deploy:
     name: Deploy to GitHub Pages
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, clean-room]
     needs: build
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     permissions:

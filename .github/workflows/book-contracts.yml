@@ -1,3 +1,5 @@
+# #3073 (operator rule 2026-09-10: no GitHub-hosted runners): every job runs on the
+# clean-room pool; X64 because the mdBook/tool installs below fetch x86_64 builds.
 name: Book Contract Enforcement
 
 on:
@@ -43,7 +45,7 @@ jobs:
   # Job 1: All chapter examples compile
   chapter-examples-compile:
     name: Chapter Examples Compile
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, clean-room]
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
@@ -67,7 +69,7 @@ jobs:
   # Job 2: All chapter examples run with exit 0
   chapter-examples-run:
     name: Chapter Examples Run
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, clean-room]
     needs: chapter-examples-compile
     steps:
       - uses: actions/checkout@v7
@@ -100,7 +102,7 @@ jobs:
   # Job 3: Integration tests
   book-integration-tests:
     name: Book Integration Tests
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, clean-room]
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
@@ -113,7 +115,7 @@ jobs:
   # Job 4: Contract enforcement (no files without contracts)
   contract-enforcement:
     name: Contract Enforcement
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, clean-room]
     steps:
       - uses: actions/checkout@v7
       - name: Every chapter has a contract
@@ -173,7 +175,7 @@ jobs:
   # Job 5: Namespace discipline
   namespace-discipline:
     name: Namespace Discipline
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, clean-room]
     steps:
       - uses: actions/checkout@v7
       - name: No legacy imports in chapter examples
@@ -214,7 +216,7 @@ jobs:
   # Job 6: SUMMARY.md integrity
   summary-integrity:
     name: SUMMARY.md Integrity
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, clean-room]
     steps:
       - uses: actions/checkout@v7
       - name: No dead links in SUMMARY.md
