@@ -36,7 +36,7 @@ jobs:
       # APR-MONO monorepo: 879+ compile units, largest dep graph in the fleet.
       # Highest expected sccache hit-rate lift; without it each PR cold-compiles
       # in its per-PR-per-run target dir
-      # (`/mnt/nvme-raid0/targets/aprender-ci/<PR>/run-<RUN_ID>`)
+      # (`${CI_TARGETS_ROOT}/<PR>/run-<RUN_ID>`)
       # for ~34min, leaving only ~4min for tests inside the 40min timeout —
       # the entire merge queue saturates.
       #
@@ -54,7 +54,7 @@ jobs:
       # was missing the `rustc-sccache` wrapper script. Fixed upstream in
       # paiml/infra commit f4fccf9 (PR #66, "use exec script not symlink").
       # 2026-05-12: re-enabled — image verified to ship `/usr/local/bin/rustc-sccache`
-      # (sccache 0.14.0), shared cache at `/home/noah/data/sccache` (warm, ~11GB).
+      # (sccache 0.14.0), shared cache at `${SCCACHE_HOST_DIR}` (warm, ~11GB).
       # 2026-08-20: that "warm, ~11GB" was NOT health — it was the cache pinned
       # at sccache's DEFAULT 10 GiB cap. /var/log/ci-metrics/sccache-*.json has
       # recorded cache_size and max_cache_size on every job all along (18,292
@@ -86,7 +86,7 @@ jobs:
   # unconditional `docker pull` with only 3 retries / ~6s total backoff) to
   # explicit `docker run` steps with a 15-attempt linear-backoff pull retry.
   # The previous design conflated "image is required" with "registry must be
-  # reachable at pull time" — when `localhost:5000` blipped (registry restart,
+  # reachable at pull time" — when `${CI_REGISTRY}` blipped (registry restart,
   # network reload), the pull failed and the whole job died after ~25s. This
   # refactor preserves the same execution semantics (same image, same volume
   # mounts, same env) but moves the pull into a step the workflow controls,
@@ -114,10 +114,22 @@ jobs:
       # The sccache host directory, named ONCE per job: the machine-specific-path
       # ratchet counts literals, and the quick-tier steps added two more copies
       # of a path this job already spelled five times (PMAT-1077).
-      SCCACHE_HOST_DIR: /home/noah/data/sccache
-      IMAGE: localhost:5000/sovereign-ci:stable
       PR_OR_REF: ${{ github.event.pull_request.number || github.ref_name }}
     steps:
+      # BUILD POOL (operator 2026-09-10, #3100 BP-1): the host layout is a property of the BOX, not of
+      # this file. Every value below defaults to the intel clean-room layout this job always used, so on
+      # intel the rendered commands are byte-identical (the PR's case table diffs them); a runner that
+      # carries a different layout exports CI_TARGETS_ROOT / CI_CARGO_ROOT / SCCACHE_HOST_DIR /
+      # CI_REGISTRY / CI_IMAGE in its `.env` and every later step picks them up from GITHUB_ENV.
+      - name: Host layout (build pool defaults = intel clean-room)
+        run: |
+          {
+            echo "CI_TARGETS_ROOT=${CI_TARGETS_ROOT:-/mnt/nvme-raid0/targets/aprender-ci}"
+            echo "CI_CARGO_ROOT=${CI_CARGO_ROOT:-/mnt/nvme-raid0/cargo-ci}"
+            echo "SCCACHE_HOST_DIR=${SCCACHE_HOST_DIR:-/home/noah/data/sccache}"
+            echo "CI_REGISTRY=${CI_REGISTRY:-localhost:5000}"
+            echo "IMAGE=${CI_IMAGE:-${CI_REGISTRY:-localhost:5000}/sovereign-ci:stable}"
+          } >> "$GITHUB_ENV"
       - name: Pre-checkout ownership restore (EACCES self-heal)
         # Five-whys: the end-of-job "Fix file ownership" step is
         # `if: always()`, but a hard-killed job (runner death, forced
@@ -143,7 +155,7 @@ jobs:
           fi
       - uses: actions/checkout@v7
       - name: Pull sovereign-ci image (with retry + local-cache fallback)
-        # Self-hosted runner's local Docker registry at localhost:5000 is
+        # Self-hosted runner's local Docker registry at ${CI_REGISTRY} is
         # occasionally restarting OR experiencing extended outages
         # (paiml/infra ops). Two layers of resilience:
         #   1. Check the local Docker daemon cache first — the image was
@@ -171,7 +183,7 @@ jobs:
               exit 0
             fi
             if [ "$i" -eq "$max_attempts" ]; then
-              echo "::error::Registry localhost:5000 unreachable after $max_attempts attempts (~13min) AND image not in local cache"
+              echo "::error::Registry ${CI_REGISTRY} unreachable after $max_attempts attempts (~13min) AND image not in local cache"
               echo "::error::Suggests paiml/infra runner-side registry restart + initial image seed needed"
               exit 1
             fi
@@ -194,7 +206,7 @@ jobs:
         # cancelled:
         #
         #   docker run --rm \
-        #     -v "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}:/workspace/target" \
+        #     -v "${CI_TARGETS_ROOT}/${PR_OR_REF}:/workspace/target" \
         #     "$IMAGE" bash -c 'rm -rf /workspace/target/* /workspace/target/.[!.]* ...'
         #
         # It mounted the PARENT. The tree is `aprender-ci/<PR>/run-<RUN_ID>`
@@ -204,7 +216,7 @@ jobs:
         #
         # Its own five-whys (whose text is preserved below) was written against
         # a premise #1693 removed: "the target dir is bind-mounted from a per-PR
-        # persistent path /mnt/nvme-raid0/targets/aprender-ci/<PR>/, so partial-
+        # persistent path ${CI_TARGETS_ROOT}/<PR>/, so partial-
         # compile state survives across runs". Since #1693 the mount is per-RUN,
         # so no other run's state can reach this run at all. The parent-wide
         # removal bought nothing and could only take a sibling with it:
@@ -246,7 +258,7 @@ jobs:
         run: |
           set -uo pipefail
           set +e
-          PARENT="/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}"
+          PARENT="${CI_TARGETS_ROOT}/${PR_OR_REF}"
           PLAN="${RUNNER_TEMP:-/tmp}/reclaim-${GITHUB_RUN_ID}.txt"
           bash scripts/ci_reclaim_target_dirs.sh "$PARENT" "$GITHUB_RUN_ID" > "$PLAN"
           rc=$?
@@ -297,10 +309,10 @@ jobs:
             done
             mkdir -p "$path"
           }
-          parent="/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}"
-          reg="/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}"
-          heal_path /mnt/nvme-raid0/targets/aprender-ci "${parent}/run-${GITHUB_RUN_ID}"
-          heal_path /mnt/nvme-raid0/cargo-ci/registry "$reg"
+          parent="${CI_TARGETS_ROOT}/${PR_OR_REF}"
+          reg="${CI_CARGO_ROOT}/registry/${PR_OR_REF}"
+          heal_path ${CI_TARGETS_ROOT} "${parent}/run-${GITHUB_RUN_ID}"
+          heal_path ${CI_CARGO_ROOT}/registry "$reg"
           ls -ld "$parent" "${parent}/run-${GITHUB_RUN_ID}" "$reg"
       - name: Pre-build chown — fix per-RUN root ownership
         # Root cause (five-whys):
@@ -309,7 +321,7 @@ jobs:
         #      Cargo (running as user 1000 inside the container) can't
         #      write to /workspace/target/debug.
         #   2. Why can't it write? The bind-mount source dir on the host
-        #      (/mnt/nvme-raid0/targets/aprender-ci/<PR>/run-<RUN_ID>) is
+        #      (${CI_TARGETS_ROOT}/<PR>/run-<RUN_ID>) is
         #      owned by root:root.
         #   3. Why is it root-owned? Docker's bind-mount creates missing
         #      host directories with the daemon's uid (root). Per-RUN
@@ -328,8 +340,8 @@ jobs:
         # noah-owned (e.g. a rerun of the same run-id).
         run: |
           docker run --rm \
-            -v "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}:/workspace/target" \
-            -v "/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}:/usr/local/cargo/registry" \
+            -v "${CI_TARGETS_ROOT}/${PR_OR_REF}/run-${GITHUB_RUN_ID}:/workspace/target" \
+            -v "${CI_CARGO_ROOT}/registry/${PR_OR_REF}:/usr/local/cargo/registry" \
             "$IMAGE" \
             bash -c 'chown -R 1000:1000 /workspace/target /usr/local/cargo/registry 2>/dev/null || true'
       # BSE-17 (PMAT-1077): which tier this run owes. quick on pull_request —
@@ -411,8 +423,8 @@ jobs:
           docker run --rm \
           -e CI -e GITHUB_ACTIONS -e GITHUB_REF -e GITHUB_SHA -e GITHUB_REPOSITORY -e GITHUB_RUN_ID -e GITHUB_EVENT_NAME -e GITHUB_WORKFLOW \
             -v "${GITHUB_WORKSPACE}:/workspace" \
-            -v "/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}:/usr/local/cargo/registry" \
-            -v "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}:/workspace/target" \
+            -v "${CI_CARGO_ROOT}/registry/${PR_OR_REF}:/usr/local/cargo/registry" \
+            -v "${CI_TARGETS_ROOT}/${PR_OR_REF}/run-${GITHUB_RUN_ID}:/workspace/target" \
             -v "${SCCACHE_HOST_DIR}:/sccache" \
             -w /workspace \
             -e CARGO_TARGET_DIR=/workspace/target \
@@ -435,8 +447,8 @@ jobs:
           docker run --rm \
           -e CI -e GITHUB_ACTIONS -e GITHUB_REF -e GITHUB_SHA -e GITHUB_REPOSITORY -e GITHUB_RUN_ID -e GITHUB_EVENT_NAME -e GITHUB_WORKFLOW \
             -v "${GITHUB_WORKSPACE}:/workspace" \
-            -v "/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}:/usr/local/cargo/registry" \
-            -v "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}:/workspace/target" \
+            -v "${CI_CARGO_ROOT}/registry/${PR_OR_REF}:/usr/local/cargo/registry" \
+            -v "${CI_TARGETS_ROOT}/${PR_OR_REF}/run-${GITHUB_RUN_ID}:/workspace/target" \
             -v "${SCCACHE_HOST_DIR}:/sccache" \
             -w /workspace \
             -e CARGO_TARGET_DIR=/workspace/target \
@@ -455,8 +467,8 @@ jobs:
           docker run --rm \
           -e CI -e GITHUB_ACTIONS -e GITHUB_REF -e GITHUB_SHA -e GITHUB_REPOSITORY -e GITHUB_RUN_ID -e GITHUB_EVENT_NAME -e GITHUB_WORKFLOW \
             -v "${GITHUB_WORKSPACE}:/workspace" \
-            -v "/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}:/usr/local/cargo/registry" \
-            -v "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}:/workspace/target" \
+            -v "${CI_CARGO_ROOT}/registry/${PR_OR_REF}:/usr/local/cargo/registry" \
+            -v "${CI_TARGETS_ROOT}/${PR_OR_REF}/run-${GITHUB_RUN_ID}:/workspace/target" \
             -v "${SCCACHE_HOST_DIR}:/sccache" \
             -w /workspace \
             -e CARGO_TARGET_DIR=/workspace/target \
@@ -509,8 +521,8 @@ jobs:
           docker run --rm \
           -e CI -e GITHUB_ACTIONS -e GITHUB_REF -e GITHUB_SHA -e GITHUB_REPOSITORY -e GITHUB_RUN_ID -e GITHUB_EVENT_NAME -e GITHUB_WORKFLOW \
             -v "${GITHUB_WORKSPACE}:/workspace" \
-            -v "/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}:/usr/local/cargo/registry" \
-            -v "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}:/workspace/target" \
+            -v "${CI_CARGO_ROOT}/registry/${PR_OR_REF}:/usr/local/cargo/registry" \
+            -v "${CI_TARGETS_ROOT}/${PR_OR_REF}/run-${GITHUB_RUN_ID}:/workspace/target" \
             -v "${SCCACHE_HOST_DIR}:/sccache" \
             -w /workspace \
             -e CARGO_TARGET_DIR=/workspace/target \
@@ -537,8 +549,8 @@ jobs:
           docker run --rm \
           -e CI -e GITHUB_ACTIONS -e GITHUB_REF -e GITHUB_SHA -e GITHUB_REPOSITORY -e GITHUB_RUN_ID -e GITHUB_EVENT_NAME -e GITHUB_WORKFLOW \
             -v "${GITHUB_WORKSPACE}:/workspace" \
-            -v "/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}:/usr/local/cargo/registry" \
-            -v "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}:/workspace/target" \
+            -v "${CI_CARGO_ROOT}/registry/${PR_OR_REF}:/usr/local/cargo/registry" \
+            -v "${CI_TARGETS_ROOT}/${PR_OR_REF}/run-${GITHUB_RUN_ID}:/workspace/target" \
             -v "${SCCACHE_HOST_DIR}:/sccache" \
             -w /workspace \
             -e CARGO_TARGET_DIR=/workspace/target \
@@ -581,8 +593,8 @@ jobs:
           docker run --rm \
           -e CI -e GITHUB_ACTIONS -e GITHUB_REF -e GITHUB_SHA -e GITHUB_REPOSITORY -e GITHUB_RUN_ID -e GITHUB_EVENT_NAME -e GITHUB_WORKFLOW \
             -v "${GITHUB_WORKSPACE}:/workspace" \
-            -v "/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}:/usr/local/cargo/registry" \
-            -v "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}:/workspace/target" \
+            -v "${CI_CARGO_ROOT}/registry/${PR_OR_REF}:/usr/local/cargo/registry" \
+            -v "${CI_TARGETS_ROOT}/${PR_OR_REF}/run-${GITHUB_RUN_ID}:/workspace/target" \
             -v "${SCCACHE_HOST_DIR}:/sccache" \
             -w /workspace \
             -e CARGO_TARGET_DIR=/workspace/target \
@@ -639,8 +651,8 @@ jobs:
           docker run --rm \
           -e CI -e GITHUB_ACTIONS -e GITHUB_REF -e GITHUB_SHA -e GITHUB_REPOSITORY -e GITHUB_RUN_ID -e GITHUB_EVENT_NAME -e GITHUB_WORKFLOW \
             -v "${GITHUB_WORKSPACE}:/workspace" \
-            -v "/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}:/usr/local/cargo/registry" \
-            -v "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}:/workspace/target" \
+            -v "${CI_CARGO_ROOT}/registry/${PR_OR_REF}:/usr/local/cargo/registry" \
+            -v "${CI_TARGETS_ROOT}/${PR_OR_REF}/run-${GITHUB_RUN_ID}:/workspace/target" \
             "$IMAGE" \
             bash -c 'chown -R 1000:1000 /workspace || true; chown -R 1000:1000 /usr/local/cargo/registry || true; chown -R 1000:1000 /workspace/target || true'
 
@@ -659,7 +671,6 @@ jobs:
     # here, because this job strictly shrank.
     timeout-minutes: 90
     env:
-      IMAGE: localhost:5000/sovereign-ci:stable
       # Same definition as workspace-test (:106). aprender#2627: the
       # model-tests step below was added with workspace-test's mount lines
       # copied verbatim, but PR_OR_REF is JOB-level env there and this job
@@ -675,6 +686,20 @@ jobs:
       # not define.
       PR_OR_REF: ${{ github.event.pull_request.number || github.ref_name }}
     steps:
+      # BUILD POOL (operator 2026-09-10, #3100 BP-1): the host layout is a property of the BOX, not of
+      # this file. Every value below defaults to the intel clean-room layout this job always used, so on
+      # intel the rendered commands are byte-identical (the PR's case table diffs them); a runner that
+      # carries a different layout exports CI_TARGETS_ROOT / CI_CARGO_ROOT / SCCACHE_HOST_DIR /
+      # CI_REGISTRY / CI_IMAGE in its `.env` and every later step picks them up from GITHUB_ENV.
+      - name: Host layout (build pool defaults = intel clean-room)
+        run: |
+          {
+            echo "CI_TARGETS_ROOT=${CI_TARGETS_ROOT:-/mnt/nvme-raid0/targets/aprender-ci}"
+            echo "CI_CARGO_ROOT=${CI_CARGO_ROOT:-/mnt/nvme-raid0/cargo-ci}"
+            echo "SCCACHE_HOST_DIR=${SCCACHE_HOST_DIR:-/home/noah/data/sccache}"
+            echo "CI_REGISTRY=${CI_REGISTRY:-localhost:5000}"
+            echo "IMAGE=${CI_IMAGE:-${CI_REGISTRY:-localhost:5000}/sovereign-ci:stable}"
+          } >> "$GITHUB_ENV"
       - name: Pre-checkout ownership restore (EACCES self-heal)
         # Same guard as workspace-test (:92) and mutants (:435). This job was
         # the ONLY clean-room job missing it, and that asymmetry took main red
@@ -978,7 +1003,7 @@ jobs:
   #
   # workspace-test and the guard job are two jobs of the SAME run on two
   # runners of one host, and both bind-mounted
-  # `/mnt/nvme-raid0/targets/aprender-ci/<PR>/run-<RUN_ID>` as
+  # `${CI_TARGETS_ROOT}/<PR>/run-<RUN_ID>` as
   # `/workspace/target` while both ran cargo against it. That is the
   # dep-info race behind aprender#2822 / `could not parse/generate dep info
   # at .../deps/<crate>.d: No such file or directory`. This job's container
@@ -999,12 +1024,10 @@ jobs:
     # above the worst contended run of the strictly larger job it came from.
     timeout-minutes: 90
     env:
-      IMAGE: localhost:5000/sovereign-ci:stable
       PR_OR_REF: ${{ github.event.pull_request.number || github.ref_name }}
       # This job's OWN per-run target dir. The `-guards` suffix is the whole
       # point: workspace-test mounts `run-<RUN_ID>` and this job must never
       # resolve to the same path. Reaped by the same `run-*` sweep on intel.
-      GUARD_TARGET_DIR: /mnt/nvme-raid0/targets/aprender-ci/${{ github.event.pull_request.number || github.ref_name }}/run-${{ github.run_id }}-guards
       # PMAT-238 (paiml/infra#435): the CARGO_HOME mount is the WHOLE cargo
       # home, not `registry/` alone. `.package-cache` and
       # `.package-cache-mutate` are cargo's flock files and they live beside
@@ -1012,8 +1035,23 @@ jobs:
       # container its own private lock while they all share one registry —
       # which is infra#77 (16 private locks over one shared registry), and it
       # corrupts the registry rather than serialising access to it.
-      GUARD_CARGO_HOME: /mnt/nvme-raid0/cargo-ci/home/${{ github.event.pull_request.number || github.ref_name }}
     steps:
+      # BUILD POOL (operator 2026-09-10, #3100 BP-1): the host layout is a property of the BOX, not of
+      # this file. Every value below defaults to the intel clean-room layout this job always used, so on
+      # intel the rendered commands are byte-identical (the PR's case table diffs them); a runner that
+      # carries a different layout exports CI_TARGETS_ROOT / CI_CARGO_ROOT / SCCACHE_HOST_DIR /
+      # CI_REGISTRY / CI_IMAGE in its `.env` and every later step picks them up from GITHUB_ENV.
+      - name: Host layout (build pool defaults = intel clean-room)
+        run: |
+          {
+            echo "CI_TARGETS_ROOT=${CI_TARGETS_ROOT:-/mnt/nvme-raid0/targets/aprender-ci}"
+            echo "CI_CARGO_ROOT=${CI_CARGO_ROOT:-/mnt/nvme-raid0/cargo-ci}"
+            echo "SCCACHE_HOST_DIR=${SCCACHE_HOST_DIR:-/home/noah/data/sccache}"
+            echo "CI_REGISTRY=${CI_REGISTRY:-localhost:5000}"
+            echo "IMAGE=${CI_IMAGE:-${CI_REGISTRY:-localhost:5000}/sovereign-ci:stable}"
+            echo "GUARD_TARGET_DIR=${CI_TARGETS_ROOT:-/mnt/nvme-raid0/targets/aprender-ci}/${{ github.event.pull_request.number || github.ref_name }}/run-${GITHUB_RUN_ID}-guards"
+            echo "GUARD_CARGO_HOME=${CI_CARGO_ROOT:-/mnt/nvme-raid0/cargo-ci}/home/${{ github.event.pull_request.number || github.ref_name }}"
+          } >> "$GITHUB_ENV"
       - name: Pre-checkout ownership restore (EACCES self-heal)
         # Same guard as workspace-test (:92) and mutants (:435). This job was
         # the ONLY clean-room job missing it, and that asymmetry took main red
@@ -1099,8 +1137,8 @@ jobs:
             done
             mkdir -p "$path"
           }
-          heal_path /mnt/nvme-raid0/targets/aprender-ci "$GUARD_TARGET_DIR"
-          heal_path /mnt/nvme-raid0/cargo-ci/home "$GUARD_CARGO_HOME/registry"
+          heal_path ${CI_TARGETS_ROOT} "$GUARD_TARGET_DIR"
+          heal_path ${CI_CARGO_ROOT}/home "$GUARD_CARGO_HOME/registry"
           printf 'target dir: %s\n' "$GUARD_TARGET_DIR"
           printf 'cargo home: %s (registry/ .package-cache .package-cache-mutate travel together)\n' "$GUARD_CARGO_HOME"
       # Poka-yoke: a beat that no workflow executes reads as enforcement, is
@@ -1560,7 +1598,7 @@ jobs:
               -v "${GUARD_CARGO_HOME}:/cargo-home" \
               -v "${GUARD_TARGET_DIR}:/workspace/target" \
               -e CARGO_HOME=/cargo-home \
-              -v "/home/noah/data/sccache:/sccache" \
+              -v "${SCCACHE_HOST_DIR}:/sccache" \
               -w /workspace \
               -e CARGO_TARGET_DIR=/workspace/target \
               -e RUSTC_WRAPPER=rustc-sccache \
@@ -2512,12 +2550,25 @@ jobs:
     needs: [ci, workspace-test]
     if: github.event_name == 'pull_request'
     env:
-      IMAGE: localhost:5000/sovereign-ci:stable
       # Max surviving (missed) mutants tolerated on the PR diff. 0 = every
       # mutant introduced/touched by this PR must be caught by a test. Tune up
       # via repo variable MUTANTS_MAX_MISSED if a diff legitimately can't reach 0.
       MUTANTS_MAX_MISSED: ${{ vars.MUTANTS_MAX_MISSED || '0' }}
     steps:
+      # BUILD POOL (operator 2026-09-10, #3100 BP-1): the host layout is a property of the BOX, not of
+      # this file. Every value below defaults to the intel clean-room layout this job always used, so on
+      # intel the rendered commands are byte-identical (the PR's case table diffs them); a runner that
+      # carries a different layout exports CI_TARGETS_ROOT / CI_CARGO_ROOT / SCCACHE_HOST_DIR /
+      # CI_REGISTRY / CI_IMAGE in its `.env` and every later step picks them up from GITHUB_ENV.
+      - name: Host layout (build pool defaults = intel clean-room)
+        run: |
+          {
+            echo "CI_TARGETS_ROOT=${CI_TARGETS_ROOT:-/mnt/nvme-raid0/targets/aprender-ci}"
+            echo "CI_CARGO_ROOT=${CI_CARGO_ROOT:-/mnt/nvme-raid0/cargo-ci}"
+            echo "SCCACHE_HOST_DIR=${SCCACHE_HOST_DIR:-/home/noah/data/sccache}"
+            echo "CI_REGISTRY=${CI_REGISTRY:-localhost:5000}"
+            echo "IMAGE=${CI_IMAGE:-${CI_REGISTRY:-localhost:5000}/sovereign-ci:stable}"
+          } >> "$GITHUB_ENV"
       - name: Pre-checkout ownership restore (EACCES self-heal)
         # Same guard as workspace-test: a hard-killed docker job leaves
         # root-owned files that EACCES this job's `git clean` at checkout
@@ -2574,7 +2625,7 @@ jobs:
               exit 0
             fi
             if [ "$i" -eq "$max_attempts" ]; then
-              echo "::error::Registry localhost:5000 unreachable after $max_attempts attempts AND image not in local cache"
+              echo "::error::Registry ${CI_REGISTRY} unreachable after $max_attempts attempts AND image not in local cache"
               exit 1
             fi
             echo "Pull attempt $i/$max_attempts failed; sleeping ${delay}s"
