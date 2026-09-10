@@ -16,7 +16,7 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 SPEC="${1:-$ROOT/docs/specifications/PP-066-release-spec.md}"
-V15_SHA=42be1560b
+V15_SHA=42be1560bc078bee787feccd6336b0f22eefcc3c
 
 if [ "${1:-}" = "--v15-red" ]; then
     TMP=$(mktemp "${TMPDIR:-/tmp}/pp066-v15.XXXXXX.md")
