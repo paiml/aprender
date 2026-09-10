@@ -93,7 +93,7 @@ jobs:
   # giving us up to ~13 minutes of retry headroom before declaring the
   # registry unreachable. Mirrored in the `mutants` job below.
   workspace-test:
-    runs-on: [self-hosted, X64, Linux, clean-room]
+    runs-on: [self-hosted, X64, Linux, build]   # BP-3 (#3100): any x86 box in the build pool (intel clean-room or yoga-eph)
     # 100, not 85. The step below sets `timeout-minutes: 75`, but "Set up runner"
     # (image pull) has measured at 20 minutes, so 20 + 75 = 95 > 85 and the JOB
     # timeout always fired first -- producing a bare "The operation was canceled"
@@ -661,7 +661,7 @@ jobs:
   # can never again silently land a job on a GPU/dev runner without the
   # sovereign-ci registry. Pure text check; runs on the clean-room pool.
   guard-tree:
-    runs-on: [self-hosted, X64, Linux, clean-room]
+    runs-on: [self-hosted, X64, Linux, build]   # BP-3 (#3100): any x86 box in the build pool (intel clean-room or yoga-eph)
     # 90: the BSE-05 cap for a PR/merge-group job. Basis (BSE-05 formula
     # T = max(15, ceil(1.5*p99), p99+20) over the job's own history): p50 52.9 /
     # p99 85.1 minutes over the last 9 SUCCESSFUL runs of this job as it stood
@@ -1013,7 +1013,7 @@ jobs:
   # No `needs:` — running these AFTER workspace-test would serialise ~40
   # minutes onto every green run for no ordering that anything requires.
   guard-cargo:
-    runs-on: [self-hosted, X64, Linux, clean-room]
+    runs-on: [self-hosted, X64, Linux, build]   # BP-3 (#3100): any x86 box in the build pool (intel clean-room or yoga-eph)
     # 90: the BSE-05 cap for a PR/merge-group job. Basis (BSE-05 formula
     # T = max(15, ceil(1.5*p99), p99+20) over the job's own history): the
     # unsplit `guard-tree` measured p50 52.9 / p99 85.1 minutes over
@@ -1838,7 +1838,7 @@ jobs:
   # Both are non-zero: an unmeasured gate is not a passing gate. The distinct
   # code is so a broken box is never read as a broken tree.
   vendored-schemas:
-    runs-on: [self-hosted, X64, Linux, clean-room]
+    runs-on: [self-hosted, X64, Linux, build]   # BP-3 (#3100): any x86 box in the build pool (intel clean-room or yoga-eph)
     timeout-minutes: 15
     steps:
       - name: Checkout
@@ -1923,7 +1923,7 @@ jobs:
   # 3.32.0" is two steps above this one, and 20 machine-specific paths landed
   # through the gap while nothing re-read it.
   pr-review-receipt:
-    runs-on: [self-hosted, X64, Linux, clean-room]
+    runs-on: [self-hosted, X64, Linux, build]   # BP-3 (#3100): any x86 box in the build pool (intel clean-room or yoga-eph)
     # 150, not 120: Arm 3 alone measured 3091s (51.5 min) on an idle 48-core box over
     # the 185-mutant set, and PRREV-015 adds Arms 5 and 6 — an 83-row bats table and a
     # second, 134-mutant sweep over scripts/pr_review_quorum_arm.sh. This number has
@@ -2244,7 +2244,7 @@ jobs:
   # rungs and 30 samples away.
   # ---------------------------------------------------------------------------
   pr-review-shadow:
-    runs-on: [self-hosted, X64, Linux, clean-room]
+    runs-on: [self-hosted, X64, Linux, build]   # BP-3 (#3100): any x86 box in the build pool (intel clean-room or yoga-eph)
     # Text and one `gh pr view`; the arm script's own work is a receipt read. The
     # tool install is the only slow part. 20 is not a measured number, it is a
     # generous bound on a job with no build in it — and unlike the 150 above, a
@@ -2373,7 +2373,7 @@ jobs:
   # rather than failing them.
   # ---------------------------------------------------------------------------
   pr-review-sign:
-    runs-on: [self-hosted, X64, Linux, clean-room]
+    runs-on: [self-hosted, X64, Linux, build]   # BP-3 (#3100): any x86 box in the build pool (intel clean-room or yoga-eph)
     timeout-minutes: 15
     if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
     permissions:
@@ -2474,7 +2474,7 @@ jobs:
   # in the C0-5 PR body, never applied by the session that wrote this).
 
   gate:
-    runs-on: [self-hosted, X64, Linux, clean-room]
+    runs-on: [self-hosted, Linux, build]   # BP-3 (#3100): no image, no arch need — any pool box incl. gx10-build
     # 22: BSE-05 formula T = max(15, ceil(1.5*p99), p99+20) over this job's own
     # history -- p50 0.2 / p90 1.4 / p99 1.4 minutes over its last 7 successful
     # runs, so p99+20 = 21.4 binds and rounds to 22. This job only reads
@@ -2545,7 +2545,7 @@ jobs:
   # to scope against, so we skip rather than fall back to the old hours-long
   # full-tree run.
   mutants:
-    runs-on: [self-hosted, X64, Linux, clean-room]
+    runs-on: [self-hosted, X64, Linux, build]   # BP-3 (#3100): any x86 box in the build pool (intel clean-room or yoga-eph)
     timeout-minutes: 60
     needs: [ci, workspace-test]
     if: github.event_name == 'pull_request'
