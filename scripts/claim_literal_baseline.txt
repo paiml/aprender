@@ -175,12 +175,6 @@
 #
 # Recorded, not blessed. Shrink-only from here.
 #
-CHANGELOG.md:1121
-CHANGELOG.md:1123
-CHANGELOG.md:1885
-CHANGELOG.md:1900
-CHANGELOG.md:2099
-CHANGELOG.md:2100
 CLAUDE.md:218
 CLAUDE.md:222
 CLAUDE.md:685

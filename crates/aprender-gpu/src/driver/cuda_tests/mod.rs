@@ -50,6 +50,7 @@ pub(super) fn capture_vs_ctx_sync() -> std::sync::MutexGuard<'static, ()> {
 mod cuda_graph_tests;
 mod driver_and_context;
 mod gpu_buffer;
+mod launch_budget_hw;
 mod module_tests;
 mod streams;
 mod stress_and_advanced;
