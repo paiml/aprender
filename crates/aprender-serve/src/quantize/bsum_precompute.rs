@@ -182,8 +182,12 @@ unsafe fn fused_q4k_q8k_dot_with_bsums_avx2(
             let sum_hi_1 = _mm_madd_epi16(prod_hi_128, _mm_set1_epi16(1));
             let sum_hi_2 = _mm_madd_epi16(prod_hi_hi128, _mm_set1_epi16(1));
 
-            let sum_1 = _mm_add_epi32(sum_lo_1, sum_hi_1);
-            let sum_2 = _mm_add_epi32(sum_lo_2, sum_hi_2);
+            // One block per nibble half: low nibbles = block `is` (sc1), high nibbles = block
+            // `is + 1` (sc2). Pairing sum_lo_1 with sum_hi_1 (the pre-layout-fix order) put each
+            // scale on half of EACH block, the same defect as `fused_q4k_q8k_dot_avx2`; this
+            // dispatcher takes AVX2 on every x86 box, so only data with sc1 == sc2 ever passed.
+            let sum_1 = _mm_add_epi32(sum_lo_1, sum_lo_2);
+            let sum_2 = _mm_add_epi32(sum_hi_1, sum_hi_2);
 
             let sum_1_f = _mm_cvtepi32_ps(sum_1);
             let sum_2_f = _mm_cvtepi32_ps(sum_2);
