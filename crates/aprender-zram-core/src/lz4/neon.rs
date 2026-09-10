@@ -243,7 +243,7 @@ unsafe fn decompress_neon_impl(input: &[u8], output: &mut [u8; PAGE_SIZE]) -> Re
                 "unexpected end of input at offset".to_string(),
             ));
         }
-        let offset = std::ptr::read_unaligned(ip as *const u16) as usize;
+        let offset = std::ptr::read_unaligned(ip.cast::<u16>()) as usize;
         ip = ip.add(2);
 
         if offset == 0 {
@@ -285,10 +285,31 @@ unsafe fn decompress_neon_impl(input: &[u8], output: &mut [u8; PAGE_SIZE]) -> Re
             });
         }
 
-        // Copy match - use NEON for non-overlapping, byte-by-byte for overlapping
-        if offset >= 16 && match_len >= 16 {
-            // Non-overlapping: safe to use NEON wildcard copy
+        // Copy match. A wide copy is only correct when EVERY byte it loads has already been
+        // written: copy_32 needs offset >= 32, copy_64 and the 64-byte loop need offset >= 64.
+        // `offset >= 16` sent offsets 16..63 through them, so they loaded output bytes that did
+        // not exist yet (aarch64, gx10 2026-09-10: a 16-byte repeating pattern decompressed to
+        // zeros after byte 32). The wildcard path also writes up to 64 bytes past `match_len`,
+        // so it runs only with that much room left in the page.
+        let room = op_end as usize - op as usize;
+        if offset >= 64 && match_len >= 16 && room >= match_len + 64 {
             wildcard_copy_neon(op, match_src, match_len);
+        } else if offset >= 16 && match_len >= 16 {
+            // 16-byte steps: each load runs after every byte it reads was stored (offset >= 16),
+            // and the tail is copied exactly, never past `match_len`.
+            let mut src = match_src;
+            let mut dst = op;
+            let end = op.add(match_len);
+            while dst.add(16) <= end {
+                copy_16_neon(dst, src);
+                dst = dst.add(16);
+                src = src.add(16);
+            }
+            while dst < end {
+                *dst = *src;
+                dst = dst.add(1);
+                src = src.add(1);
+            }
         } else if offset == 1 {
             // RLE (repeat single byte) - use NEON memset
             let byte = *match_src;
@@ -300,7 +321,7 @@ unsafe fn decompress_neon_impl(input: &[u8], output: &mut [u8; PAGE_SIZE]) -> Re
                 let mut dst = op;
                 let end = op.add(match_len);
                 while dst.add(8) <= end {
-                    std::ptr::write_unaligned(dst as *mut u64, pattern);
+                    std::ptr::write_unaligned(dst.cast::<u64>(), pattern);
                     dst = dst.add(8);
                 }
                 while dst < end {
@@ -314,8 +335,8 @@ unsafe fn decompress_neon_impl(input: &[u8], output: &mut [u8; PAGE_SIZE]) -> Re
             let mut dst = op;
             let end = op.add(match_len);
             while dst.add(8) <= end {
-                let val = std::ptr::read_unaligned(src as *const u64);
-                std::ptr::write_unaligned(dst as *mut u64, val);
+                let val = std::ptr::read_unaligned(src.cast::<u64>());
+                std::ptr::write_unaligned(dst.cast::<u64>(), val);
                 dst = dst.add(8);
                 src = src.add(8);
             }
@@ -417,6 +438,27 @@ mod tests {
         }
     }
 
+    /// Regression (gx10, 2026-09-10): match offsets 16..63 went through the 32/64-byte copies and read
+    /// output that was not written yet. Every width boundary of the copy paths is covered here.
+    #[test]
+    #[cfg(target_arch = "aarch64")]
+    fn test_neon_roundtrip_offsets_around_copy_widths() {
+        // Test various small repeating patterns
+        for pattern_len in [15, 16, 17, 24, 31, 32, 33, 48, 63, 64, 65, 100, 255] {
+            let mut input = [0u8; PAGE_SIZE];
+            for (i, b) in input.iter_mut().enumerate() {
+                *b = (i % pattern_len) as u8;
+            }
+
+            let compressed = unsafe { compress_neon(&input) }.unwrap();
+            let mut output = [0u8; PAGE_SIZE];
+            let len = unsafe { decompress_neon(&compressed, &mut output) }.unwrap();
+
+            assert_eq!(len, PAGE_SIZE, "pattern_len={pattern_len}");
+            assert_eq!(input[..], output[..], "pattern_len={pattern_len}");
+        }
+    }
+
     #[test]
     #[cfg(target_arch = "aarch64")]
     fn test_neon_compression_ratio() {
@@ -437,6 +479,5 @@ mod tests {
     #[test]
     fn test_neon_module_compiles() {
         // This test just verifies the module compiles on all platforms
-        assert!(true);
     }
 }
