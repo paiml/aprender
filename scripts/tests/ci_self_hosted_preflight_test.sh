@@ -208,7 +208,13 @@ for wf in WANT:
     for jname, job in (doc.get("jobs") or {}).items():
         if not isinstance(job, dict):
             continue
-        if "self-hosted" not in str(job.get("runs-on", "")):
+        # THE UNIVERSE, BUILT FROM THE RIGHT SIDE. `runs-on` alone missed
+        # build-apr-cuda and smoke-cuda, whose selector is
+        # `${{ fromJSON(matrix.labels) }}` — the two GPU jobs this row exists
+        # for. A job is self-hosted if its selector OR the matrix that feeds it
+        # names the label (measured: 3 jobs seen, 5 present).
+        selector = str(job.get("runs-on", "")) + str(job.get("strategy", ""))
+        if "self-hosted" not in selector:
             continue
         seen += 1
         steps = job.get("steps") or []
