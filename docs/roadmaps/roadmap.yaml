@@ -16836,3 +16836,25 @@ roadmap:
   - kind:code
   - pp-066
   notes: 'minted by hand (pmat#1169). Found sweeping #3051: prometheus-lint emits two of the three shapes in ONE response (text_format an object, required_metrics the string "Ok"); nccl-diag-lint exit_code is "Ok { code: 134 }", a Debug string in a JSON API. Lane 0.67.'
+- id: PMAT-1096
+  github_issue: null
+  item_type: task
+  title: '0.66.0 release cut: milestone 0.66.0 drained (#3022 F-1 via #3050, #2971 L0-1 via #3026/#3032, #3063 T0), version bump, tag v0.66.0, GitHub release, crates.io cascade, post-publish QA'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-09-09T16:43:42Z
+  updated: 2026-09-09T16:43:42Z
+  spec: null
+  acceptance_criteria:
+  - 'orch-basis:release. Scope = the operator-curated 0.66.0 milestone as of 2026-09-09 (PP-066 rows R-0..R-8/C0/G/KEY moved to 0.68.0 by the operator 2026-09-09T12:06Z). Phases: P1 drain #3050 and #3063 through the fleet; P2 close #2971 with citation after a ledger quorum; P3 bump with scripts/bump-version.sh 0.66.0 + release notes + dogfood --phase pre-publish receipt; P4 merge bump, tag, gh release create; P5 cascade-drain to crates.io behind check_publish_preflight.sh; P6 post-publish QA + receipt.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - orch:fable
+  - pp-066
+  - release
+  - 0.66.0
+  notes: 'orch-basis:release — the 0.66.0 cut is a release-state ticket (AUTO-IMPL-SKILL-003 §2.1 basis=release); push, tag, gh release and the crates.io cascade are orchestration phases (route=self).'

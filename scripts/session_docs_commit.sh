@@ -16,17 +16,22 @@
 #   bash scripts/session_docs_commit.sh [--kaizen "<line>"]... [--arm]     # write, commit; --arm opens the PR with auto-merge
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+case "$ROOT" in *..*) printf 'session_docs_commit: refusing a ROOT with ..: %s\n' "$ROOT" >&2; exit 2 ;; esac   # bashrs SEC010
+PLAN="${TMPDIR:-/tmp}/sdc-plan.$$"; BLOCK="${TMPDIR:-/tmp}/sdc-block.$$"
+case "$PLAN$BLOCK" in *..*) printf 'session_docs_commit: refusing a TMPDIR with ..\n' >&2; exit 2 ;; esac   # bashrs SEC010
 PROG=session_docs_commit
 DRY=0; ARM=0; KAIZEN=()
 while [ $# -gt 0 ]; do case "$1" in --dry-run) DRY=1; shift ;; --arm) ARM=1; shift ;; --kaizen) KAIZEN+=("$2"); shift 2 ;; *) printf 'usage: %s [--dry-run] [--arm] [--kaizen "<line>"]...\n' "$PROG" >&2; exit 2 ;; esac; done
 BR=$(git -C "$ROOT" rev-parse --abbrev-ref HEAD)
 case "$BR" in agent/pp-066-*|agent/pr-triage*) ;; *) printf '%s: refused — %s is not an orchestrator branch (agent/pp-066-*); shared files are written there only (G-11)\n' "$PROG" "$BR" >&2; exit 1 ;; esac
 DAG="$ROOT/docs/specifications/pp-066-dag.yaml"; RM="$ROOT/docs/roadmaps/roadmap.yaml"; README="$ROOT/README.md"
-DATE=$(date -u +%F)
+# The date names the status doc; SOURCE_DATE_EPOCH-derived so a reproducible run
+# (bashrs DET002) names the same file — the fleet pattern (dispatch-phase5-humaneval-gx10.sh).
+DATE=$(date -u -d "@${SOURCE_DATE_EPOCH:-$(date +%s)}" +%F)
 say() { printf '%s\n' "$*"; }
 
 # 1+2: what the DAG and the receipts say vs the roadmap
-python3 - "$DAG" "$RM" "$ROOT" > "${TMPDIR:-/tmp}/sdc-plan.$$" <<'PY'
+python3 - "$DAG" "$RM" "$ROOT" > "$PLAN" <<'PY'
 import sys, os, yaml
 dag, rm, root = sys.argv[1:4]
 sys.path.insert(0, os.path.join(root, "scripts", "lib")); import dag_status as ds
@@ -42,13 +47,13 @@ for row in d["rows"]:
         print(f"MISSING-ENTRY\t{row['id']}\t{pid}\t(the DAG names a ticket the roadmap does not carry)")
 PY
 say "=== $PROG on $BR ($( [ "$DRY" = 1 ] && echo DRY-RUN || echo WRITE )) ==="
-say "--- 1. pmat work add (rows with an issue and no ticket):"; grep -c '^ADD' "${TMPDIR:-/tmp}/sdc-plan.$$" | sed 's/^/  count: /'; grep '^ADD' "${TMPDIR:-/tmp}/sdc-plan.$$" | sed 's/^/  /' || true
-say "--- 2. pmat work complete (receipt complete, roadmap not):"; grep '^COMPLETE' "${TMPDIR:-/tmp}/sdc-plan.$$" | sed 's/^/  /' || say '  none'
-grep '^MISSING-ENTRY' "${TMPDIR:-/tmp}/sdc-plan.$$" | sed 's/^/  WARN /' || true
+say "--- 1. pmat work add (rows with an issue and no ticket):"; grep -c '^ADD' "$PLAN" | sed 's/^/  count: /'; grep '^ADD' "$PLAN" | sed 's/^/  /' || true
+say "--- 2. pmat work complete (receipt complete, roadmap not):"; grep '^COMPLETE' "$PLAN" | sed 's/^/  /' || say '  none'
+grep '^MISSING-ENTRY' "$PLAN" | sed 's/^/  WARN /' || true
 say "--- 3. README counts (measured):"; bash "$ROOT/scripts/check_readme_claims.sh" --regen 2>/dev/null | sed 's/^/  /'
 say "--- 4. status doc: docs/audits/pp-066-status-$DATE.md (from scripts/pp066_state.sh)"
 say "--- 5. kaizen lines: ${#KAIZEN[@]}"; for k in ${KAIZEN[@]+"${KAIZEN[@]}"}; do say "  - $k"; done
-if [ "$DRY" = 1 ]; then rm -f "${TMPDIR:-/tmp}/sdc-plan.$$"; exit 0; fi
+if [ "$DRY" = 1 ]; then rm -f "$PLAN"; exit 0; fi
 
 # ---- writes ----
 . "$ROOT/scripts/pmat_bin.sh" || { printf '%s: ENV - no analyser at the pin; refusing to mint\n' "$PROG" >&2; exit 2; }
@@ -69,8 +74,8 @@ open(rm, "w", encoding="utf-8").write(s.replace(b, nb, 1))
 PY
         ;;
     esac
-done < "${TMPDIR:-/tmp}/sdc-plan.$$"
-rm -f "${TMPDIR:-/tmp}/sdc-plan.$$"
+done < "$PLAN"
+rm -f "$PLAN"
 bash "$ROOT/scripts/check_roadmap_diff_additive.sh" >/dev/null || { printf '%s: the roadmap diff is not additive; refusing\n' "$PROG" >&2; exit 1; }
 # 3. README counts: regenerate the three claims-table numbers from the measurement, then verify exactly
 crates=$(bash "$ROOT/scripts/check_readme_claims.sh" --regen 2>/dev/null | awk '/workspace members:/{print $3}')
@@ -81,7 +86,8 @@ README_EXACT=1 bash "$ROOT/scripts/check_readme_claims.sh" --claim crate_count >
 # 4. status doc
 bash "$ROOT/scripts/pp066_state.sh" > "$ROOT/docs/audits/pp-066-status-$DATE.md.tmp" 2>&1 || true
 { printf '# PP-066 status — %s (scripts/pp066_state.sh, one call)\n\n```\n' "$DATE"; cat "$ROOT/docs/audits/pp-066-status-$DATE.md.tmp"; printf '```\n'; } > "$ROOT/docs/audits/pp-066-status-$DATE.md.new"
-mv "$ROOT/docs/audits/pp-066-status-$DATE.md.new" "$ROOT/docs/audits/pp-066-status-$DATE.md"; rm -f "$ROOT/docs/audits/pp-066-status-$DATE.md.tmp"
+STATUS_TMP="$ROOT/docs/audits/pp-066-status-$DATE.md.tmp"
+mv "$ROOT/docs/audits/pp-066-status-$DATE.md.new" "$ROOT/docs/audits/pp-066-status-$DATE.md"; rm -f "${STATUS_TMP:?}"
 # 5. kaizen
 # NOT a one-liner: `if ...; then ...; for ...; do ...; done; fi` on a single line makes
 # bashrs 7.0.1 read the `do` as the `if`'s body opener (SC2136), and the shell-lint ratchet
@@ -95,14 +101,14 @@ if [ "${#KAIZEN[@]}" -gt 0 ]; then
     done
 fi
 # re-render and commit
-python3 "$ROOT/scripts/render_dag.py" render > "${TMPDIR:-/tmp}/sdc-block.$$"
-python3 - "$ROOT/docs/specifications/PP-066-release-spec.md" "${TMPDIR:-/tmp}/sdc-block.$$" <<'PY'
+python3 "$ROOT/scripts/render_dag.py" render > "$BLOCK"
+python3 - "$ROOT/docs/specifications/PP-066-release-spec.md" "$BLOCK" <<'PY'
 import sys
 p, blk = sys.argv[1:3]; s = open(p, encoding="utf-8").read(); b = open(blk, encoding="utf-8").read()
 B = "<!-- dag:table:begin (rendered by scripts/render_dag.py; do not edit by hand) -->"; E = "<!-- dag:table:end -->"
 i = s.index(B); j = s.index(E, i) + len(E) + 1; open(p, "w", encoding="utf-8").write(s[:i] + b + s[j:])
 PY
-rm -f "${TMPDIR:-/tmp}/sdc-block.$$"
+rm -f "$BLOCK"
 git -C "$ROOT" add docs/roadmaps/roadmap.yaml README.md "docs/audits/pp-066-status-$DATE.md" docs/specifications/PP-066-release-spec.md docs/audits/driver-kaizen.md 2>/dev/null || true
 git -C "$ROOT" commit -q -m "docs(PP-066): session docs commit $DATE — tickets minted/completed from the DAG and the receipts, README counts exact, status doc, kaizen" -m "Pmat-Ticket: PMAT-966" && say "committed $(git -C "$ROOT" rev-parse --short HEAD)"
 if [ "$ARM" = 1 ]; then git -C "$ROOT" push -q -u origin "$BR" && gh pr create --fill --base main --head "$BR" >/dev/null 2>&1 && gh pr merge --squash --auto "$BR" >/dev/null 2>&1 && say "armed"; fi
