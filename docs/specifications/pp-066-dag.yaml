@@ -2984,7 +2984,7 @@ rows:
   spec: 'driver 2026-09-08 (operator ruling: tie #3022 and #3024 into the 0.66 release)'
   gh_issue: 3022
   pmat_id: PMAT-1080
-  status: complete
+  status: open
   notes: 'PR #3050. Corrects #3022''s framing: apr run on a sharded index WORKS on main (measured) - the
     defect is apr chat alone; the reporter''s apr run failure on a real 7B pull is [U] and not reproduced
     by the fixture. Closes #3024 asks 1, 2 and 4; ask 3 is F-2.'
