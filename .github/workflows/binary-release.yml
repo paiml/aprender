@@ -7,10 +7,29 @@ name: Binary Release
 # aprender-contracts-cli --locked` (which compiles a large workspace
 # from source and is slow on cold caches).
 #
-# The aprender workspace ships dozens of crates; this workflow scopes
-# the release strictly to the `pv` binary from `aprender-contracts-cli`.
-# Other CLIs (apr-cli, aprender-zram-cli, etc.) can opt in by adding
-# their own analogous workflow file.
+# The aprender workspace ships dozens of crates; the `pv` lane scopes
+# itself to `aprender-contracts-cli`. The `apr-cuda` lane below ships the
+# `apr` binary built with `--features cuda` for BOTH Linux targets — an
+# operator HARD REQUIREMENT for every tag and every release (2026-09-10,
+# PMAT-1096, Alfredo's #2869): a release without both CUDA assets is not
+# done, and `verify-cuda-assets` FAILS the workflow when either is missing.
+#
+# The CUDA lane runs on the SELF-HOSTED fleet only — operator rule
+# (2026-09-10): we do not use hosted GitHub runners; we use gx10, lambda
+# or yoga. aarch64 builds on gx10 (GB10 sm_121), x86_64 on yoga (RTX 4090
+# sm_89; lambda when it is registered). No CUDA toolkit is needed at build
+# time — aprender-gpu's `cuda` feature is `dep:libloading`, the driver
+# (libcuda.so) is loaded at RUNTIME — but the builder's glibc IS the
+# binary's floor, so each build prints `ldd --version` into the summary
+# (the nightly's ubuntu-latest `apr` needs glibc 2.39 and does not run on
+# lambda's 22.04 — measured). What each check proves:
+# the loader string `libcuda.so` is in the artifact ONLY under `--features
+# cuda` (1 vs 0, measured on 0.66.0 builds of both kinds) — that proves
+# the feature is in the bytes; `apr gpu --json` on the yoga (sm_89) and
+# gx10 (sm_121) runners proves the asset runs and sees the device on a
+# real GPU host (it reads nvidia-smi, so it is a host proof, not a
+# feature proof). Together: the downloaded binary is a CUDA binary that
+# runs on both architectures.
 #
 # Triggered by:
 #   - `release: published` — fires automatically on each tagged release
@@ -162,10 +181,166 @@ jobs:
             "${{ steps.package.outputs.sha }}" \
             --clobber
 
+  build-apr-cuda:
+    name: apr (cuda) ${{ matrix.target }} on ${{ matrix.host }}
+    runs-on: ${{ fromJSON(matrix.labels) }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            host: yoga
+            labels: '["self-hosted", "Linux", "X64", "cuda", "yoga"]'
+          - target: aarch64-unknown-linux-gnu
+            host: gx10
+            labels: '["self-hosted", "Linux", "ARM64", "cuda", "gx10"]'
+    steps:
+      - name: Resolve release tag
+        id: tag
+        run: |
+          TAG="${{ github.event.release.tag_name || inputs.tag }}"
+          if [ -z "$TAG" ]; then
+            echo "::error::No tag resolved (release event missing tag_name and no dispatch input)"
+            exit 1
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Building apr --features cuda for $TAG → ${{ matrix.target }}"
+
+      - name: Checkout at tag
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ steps.tag.outputs.tag }}
+
+      # The box's own rustup honours rust-toolchain.toml; the target is the native
+      # one. The builder's glibc is the asset's floor — recorded, never assumed.
+      - name: Record the builder (toolchain, glibc floor, device)
+        run: |
+          rustup target add ${{ matrix.target }}
+          rustc --version; cargo --version
+          GLIBC=$(ldd --version | head -1)
+          echo "$GLIBC"
+          nvidia-smi -L | head -1
+          {
+            echo "### apr (cuda) ${{ matrix.target }} built on ${{ matrix.host }}"
+            echo "- toolchain: $(rustc --version)"
+            echo "- glibc floor of this asset: $GLIBC"
+            echo "- device present at build: $(nvidia-smi -L | head -1)"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Build apr with --features cuda
+        run: cargo build --release -p apr-cli --bin apr --target ${{ matrix.target }} --features cuda --locked
+
+      # The feature must be in the BYTES, not in the intent: the driver loader
+      # string exists only under --features cuda (0.66.0: cuda=1, non-cuda=0).
+      - name: Prove the cuda feature is in the artifact
+        run: |
+          BIN="target/${{ matrix.target }}/release/apr"
+          n=$(grep -ac 'libcuda.so' "$BIN" || true)
+          echo "libcuda.so loader strings in $BIN: $n"
+          if [ "$n" -lt 1 ]; then
+            echo "::error::$BIN carries no libcuda.so loader string — this is NOT a CUDA build"
+            exit 1
+          fi
+          "$BIN" --version
+
+      - name: Strip binary
+        run: |
+          BIN="target/${{ matrix.target }}/release/apr"
+          strip "$BIN"
+          ls -la "$BIN"
+
+      - name: Package archive
+        id: package
+        run: |
+          VERSION="${{ steps.tag.outputs.tag }}"
+          TARGET="${{ matrix.target }}"
+          ARCHIVE="apr-${VERSION}-${TARGET}-cuda"
+          mkdir -p "$ARCHIVE"
+          cp "target/${TARGET}/release/apr" "$ARCHIVE/"
+          for f in README.md LICENSE LICENSE-MIT LICENSE-APACHE; do
+            [ -f "$f" ] && cp "$f" "$ARCHIVE/"
+          done
+          tar czf "${ARCHIVE}.tar.gz" "$ARCHIVE"
+          shasum -a 256 "${ARCHIVE}.tar.gz" > "${ARCHIVE}.tar.gz.sha256"
+          echo "archive=${ARCHIVE}.tar.gz" >> "$GITHUB_OUTPUT"
+          echo "sha=${ARCHIVE}.tar.gz.sha256" >> "$GITHUB_OUTPUT"
+          du -h "${ARCHIVE}.tar.gz"
+
+      - name: Upload assets to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "${{ steps.tag.outputs.tag }}" \
+            "${{ steps.package.outputs.archive }}" \
+            "${{ steps.package.outputs.sha }}" \
+            --clobber
+
+  # The hard requirement, as a check that can fail: both CUDA assets (tarball +
+  # sha256) must be on the release. A missing one is a red workflow, never a
+  # partial summary.
+  verify-cuda-assets:
+    name: Both CUDA assets are on the release
+    needs: build-apr-cuda
+    runs-on: [self-hosted, Linux, X64, clean-room]
+    if: always()
+    steps:
+      - name: Require apr-<tag>-{x86_64,aarch64}-unknown-linux-gnu-cuda.tar.gz + .sha256
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ github.event.release.tag_name || inputs.tag }}"
+          assets=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name')
+          rc=0
+          for t in x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu; do
+            for ext in tar.gz tar.gz.sha256; do
+              want="apr-${TAG}-${t}-cuda.${ext}"
+              if printf '%s\n' "$assets" | grep -qx "$want"; then echo "ok    $want"; else echo "::error::MISSING $want on release $TAG (CUDA binaries for arm and x86 are a hard requirement for every tag and release)"; rc=1; fi
+            done
+          done
+          exit $rc
+
+  # The downloaded asset runs and sees the device on a real GPU host of each
+  # architecture (host proof; the feature proof is the loader-string step above).
+  smoke-cuda:
+    name: smoke apr (cuda) on ${{ matrix.host }}
+    needs: verify-cuda-assets
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            host: yoga
+            labels: '["self-hosted", "Linux", "X64", "cuda", "yoga"]'
+          - target: aarch64-unknown-linux-gnu
+            host: gx10
+            labels: '["self-hosted", "Linux", "ARM64", "cuda", "gx10"]'
+    runs-on: ${{ fromJSON(matrix.labels) }}
+    steps:
+      - name: Download, verify checksum, run
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ github.event.release.tag_name || inputs.tag }}"
+          T="${{ matrix.target }}"
+          D="$RUNNER_TEMP/apr-cuda-smoke"; rm -rf "$D"; mkdir -p "$D"; cd "$D"
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern "apr-${TAG}-${T}-cuda.tar.gz*"
+          sha256sum -c "apr-${TAG}-${T}-cuda.tar.gz.sha256"
+          tar xzf "apr-${TAG}-${T}-cuda.tar.gz"
+          BIN="$D/apr-${TAG}-${T}-cuda/apr"
+          v=$("$BIN" --version); echo "$v"
+          case "$v" in *"${TAG#v}"*) ;; *) echo "::error::asset reports '$v', not ${TAG#v}"; exit 1 ;; esac
+          [ "$(grep -ac 'libcuda.so' "$BIN")" -ge 1 ] || { echo "::error::downloaded asset is not a CUDA build"; exit 1; }
+          nvidia-smi -L
+          "$BIN" gpu --json | tee gpu.json
+          grep -q '"gpu_present": true' gpu.json || { echo "::error::apr gpu --json does not see the device on ${{ matrix.host }}"; exit 1; }
+          uuid=$(nvidia-smi --query-gpu=uuid --format=csv,noheader | head -1)
+          grep -q "$uuid" gpu.json || { echo "::error::apr gpu reports a different device than nvidia-smi ($uuid)"; exit 1; }
+          echo "smoke ok on ${{ matrix.host }}: $v sees $uuid"
+
   summary:
     name: Summary
-    needs: build
-    runs-on: ubuntu-latest
+    needs: [build, build-apr-cuda, verify-cuda-assets, smoke-cuda]
+    runs-on: [self-hosted, Linux, X64, clean-room]
     if: always()
     steps:
       - name: Write summary
@@ -187,4 +362,9 @@ jobs:
             echo "  - x86_64-unknown-linux-gnu"
             echo "  - aarch64-unknown-linux-musl"
             echo "  - aarch64-unknown-linux-gnu"
+            echo ""
+            echo "### apr (cuda) Binary Release: $TAG"
+            echo "- build: ${{ needs.build-apr-cuda.result }} · both assets on the release: ${{ needs.verify-cuda-assets.result }} · smoke on yoga+gx10: ${{ needs.smoke-cuda.result }}"
+            echo "  - apr-$TAG-x86_64-unknown-linux-gnu-cuda.tar.gz (+ .sha256)"
+            echo "  - apr-$TAG-aarch64-unknown-linux-gnu-cuda.tar.gz (+ .sha256)"
           } >> "$GITHUB_STEP_SUMMARY"
