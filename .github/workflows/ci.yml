@@ -887,6 +887,16 @@ jobs:
         run: bash scripts/derive_model_manifest.sh --check
       - name: C14 model-parity case table (L0-1a, #2971)
         run: bash scripts/check_model_parity.sh --self-test
+      # F-1 (#3022, #3024): a model file the user NAMED is the model that answers, or
+      # the command refuses — `apr chat` silently loaded its toy demo model for a
+      # `model.safetensors.index.json` (exit 0, zero tokens, the real path in the banner)
+      # and the nightly story could not see it: it never calls `apr chat` and never
+      # names a sharded model. Both case tables are cargo-free and model-free, so they
+      # run here; the live 4-cell matrix needs a model and runs on the fleet.
+      - name: "Sharded-fixture splitter case table (F-1, #3024)"
+        run: python3 scripts/make_sharded_safetensors.py --self-test
+      - name: "format x command honesty case table (F-1, #3022)"
+        run: bash scripts/check_format_command_matrix.sh --self-test
       # PP-23's bandwidth probe is release-phase INSTRUMENTATION (needs nvcc and an
       # idle GPU) and never runs its measurement here; its case table is GPU-free
       # and must, or the number the roofline rests on comes from a probe nobody
