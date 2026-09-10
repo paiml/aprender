@@ -20,6 +20,10 @@ V15_SHA=42be1560b
 
 if [ "${1:-}" = "--v15-red" ]; then
     TMP=$(mktemp "${TMPDIR:-/tmp}/pp066-v15.XXXXXX.md")
+    # A shallow CI checkout (a fresh ephemeral runner) lacks this commit even though main reaches it, and the
+    # intel runners only ever passed on leftover history in their long-lived workspaces (yoga, 2026-09-10:
+    # `fatal: invalid object name`, exit 128). Fetch the one object instead of depending on that.
+    git -C "$ROOT" cat-file -e "$V15_SHA^{commit}" 2>/dev/null || git -C "$ROOT" fetch -q --no-tags --depth=1 origin "$V15_SHA" 2>/dev/null || true
     git -C "$ROOT" show "$V15_SHA:docs/specifications/PP-066-release-spec.md" > "$TMP"
     rc=0; bash "$0" "$TMP" > /dev/null 2>&1 || rc=$?
     rm -f -- "$TMP"
