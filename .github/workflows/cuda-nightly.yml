@@ -414,6 +414,8 @@ jobs:
       #     the failure names the file before `witness_diff.sh` ever runs.
       - name: PP-26 - witness byte-compare against the previous run (BSE-11)
         if: ${{ !cancelled() && steps.decide.outputs.proceed == 'true' }}
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -uo pipefail
           observed="$PERF041_OUT/witness-line.observed.txt"
@@ -426,38 +428,49 @@ jobs:
 
           verdict=""
           rm -rf /tmp/pp26-prev-witness && mkdir -p /tmp/pp26-prev-witness
-          # gh's exit code is captured on its own (never folded into the
-          # emptiness check below): a `gh` failure - bad auth, an API error,
-          # a rate limit - is an ERROR, not "no prior successful run", even
-          # though both leave `run_id` unset under `set -uo pipefail`.
-          if ! run_id="$(gh run list --workflow=cuda-nightly.yml --status=success --limit=1 \
-                 --json databaseId --jq '.[0].databaseId')"; then
-            echo "::error::PP-26 witness: gh run list failed (auth/API error) - not a NO-BASELINE condition"
+          # 67-F1 (PMAT-1098): the self-hosted CUDA boxes carry no `gh` (#3083 / 67-C2), so
+          # this step failed every night on gx10 as "gh run list failed (auth/API error)" —
+          # `gh: command not found` wearing an auth error's label. Read-only REST with the
+          # job token + python3 instead, the same shape binary-release.yml uses (#3074).
+          # The three outcomes stay distinct: a REST/auth error is exit 1 (never a silent
+          # NO-BASELINE); "no such artifact on the last green run" is NO-BASELINE; a
+          # download or unzip failure is exit 1 with the error on stderr.
+          api="https://api.github.com/repos/${GITHUB_REPOSITORY}"
+          hdr_auth="Authorization: Bearer ${GITHUB_TOKEN}"
+          hdr_acc="Accept: application/vnd.github+json"
+          if ! run_id="$(curl -sSf -H "$hdr_auth" -H "$hdr_acc" \
+                 "$api/actions/workflows/cuda-nightly.yml/runs?status=success&per_page=1" \
+                 | python3 -c 'import json,sys; r=json.load(sys.stdin)["workflow_runs"]; print(r[0]["id"] if r else "")')"; then
+            echo "::error::PP-26 witness: listing the last successful cuda-nightly run failed (REST/auth error) - not a NO-BASELINE condition"
             exit 1
           fi
           if [ -z "$run_id" ]; then
-            # No prior successful run at all (e.g. the first run ever) - an
-            # honest "nothing to compare against yet", never a silent skip.
             verdict="NO-BASELINE"
           else
-            dl_err="$(mktemp)"
-            if gh run download "$run_id" -n "pp26-witness-${{ matrix.name }}" \
-                 -D /tmp/pp26-prev-witness 2>"$dl_err"; then
-              :
-            elif grep -qi 'no artifact' "$dl_err"; then
-              # This specific previous run has no witness artifact (e.g. it
-              # yielded to training that night) - still an honest
-              # "nothing to compare against", not a download failure.
-              verdict="NO-BASELINE"
-            else
-              echo "::error::PP-26 witness: gh run download failed for run $run_id (pp26-witness-${{ matrix.name }})"
-              cat "$dl_err" >&2
-              rm -f "$dl_err"
+            if ! art_url="$(curl -sSf -H "$hdr_auth" -H "$hdr_acc" \
+                   "$api/actions/runs/$run_id/artifacts?per_page=100" \
+                   | python3 -c 'import json,sys; want=sys.argv[1]; a=[x for x in json.load(sys.stdin)["artifacts"] if x["name"]==want and not x["expired"]]; print(a[0]["archive_download_url"] if a else "")' \
+                       "pp26-witness-${{ matrix.name }}")"; then
+              echo "::error::PP-26 witness: listing artifacts of run $run_id failed (REST/auth error) - not a NO-BASELINE condition"
               exit 1
             fi
-            rm -f "$dl_err"
+            if [ -z "$art_url" ]; then
+              verdict="NO-BASELINE"
+            else
+              dl_err="$(mktemp)"
+              if curl -sSfL -H "$hdr_auth" -o /tmp/pp26-prev-witness/witness.zip "$art_url" 2>"$dl_err" \
+                 && python3 -c 'import sys,zipfile; zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])' \
+                      /tmp/pp26-prev-witness/witness.zip /tmp/pp26-prev-witness 2>>"$dl_err"; then
+                :
+              else
+                echo "::error::PP-26 witness: artifact download/unzip failed for run $run_id (pp26-witness-${{ matrix.name }})"
+                cat "$dl_err" >&2
+                rm -f "$dl_err"
+                exit 1
+              fi
+              rm -f "$dl_err"
+            fi
           fi
-
           if [ "$verdict" != "NO-BASELINE" ]; then
             if [ -f /tmp/pp26-prev-witness/probe.log ]; then
               grep '^PP-26-WITNESS: ' /tmp/pp26-prev-witness/probe.log > "$expected" || : > "$expected"
