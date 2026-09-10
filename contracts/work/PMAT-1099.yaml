@@ -1,0 +1,139 @@
+contract: pvl-1-zero-contracts
+metadata:
+  kind: pattern
+  version: "1.0.0"
+  description: >
+    PVL-1 (PMAT-1099; paiml/infra docs/specifications/PVL-001-pv-lean-gate.md
+    row EV-1): `pv` refuses to report over an EMPTY corpus.
+
+    MEASURED before this contract (PV-LEAN-AUDIT-001, 2026-09-10, in-tree pv
+    0.66.0): `pv lint /nonexistent-path` exited 0 with `Result: PASS` (9 gates
+    over 0 contracts); `pv lint <empty dir>` likewise; `pv proof-status <empty
+    dir>` printed `Proof Status (0 contracts)` at exit 0; `pv verify-pipeline
+    <empty dir>` printed "No contracts found" and returned 0; `pv lint`,
+    `pv coverage` and `pv graph` given a single contract FILE walked it with
+    `read_dir`, found nothing, and passed over 0. A gate that measures nothing
+    and reports PASS is the fleet's signature defect ("0 violations over 0
+    files"); aprender's own Makefile records it as its former release-gate
+    defect.
+
+    Every reporting subcommand that walks a contract directory — lint,
+    proof-status, coverage, graph, lean-status, verify-pipeline — now exits 2
+    with one stderr line `error: 0 contracts under <path>` before any report is
+    printed. A single contract file is a one-contract corpus. A `--kind` filter
+    that empties a corpus is refused and named. Exit 2, not 1: 1 is "measured
+    and failed", 2 is "nothing was measured" (clap's usage-error code — the
+    invocation itself was wrong).
+  references:
+    - "docs/specifications/PVL-001-pv-lean-gate.md (paiml/infra), row EV-1"
+    - "crates/aprender-contracts-cli/src/contract_walk.rs"
+    - "crates/aprender-contracts-cli/src/commands/lint.rs"
+    - "crates/aprender-contracts/src/lint/gates.rs"
+    - "crates/aprender-contracts-cli/tests/pvl_zero_contracts.rs"
+
+equations:
+  empty_corpus_is_refused:
+    formula: >
+      forall s in {lint, proof-status, coverage, graph, lean-status,
+      verify-pipeline}, forall p . |corpus(p)| = 0
+        => exit_code(pv s p) = 2
+           and stderr(pv s p) contains "error: 0 contracts under " ++ p
+           and stdout(pv s p) contains no verdict line
+    domain: "p a missing path, an empty directory, or a directory holding only sidecars (binding.yaml, *playbook*.yaml)"
+    codomain: "{2}"
+    invariants:
+      - "no `Result: PASS`, `Proof Status (0 contracts)`, `Nodes: 0` or `Contracts: 0` is ever printed over an empty corpus"
+      - "the refusal is printed BEFORE the report, so a piped `| tail -1` never reads PASS"
+  one_file_is_one_contract:
+    formula: >
+      forall s in {lint, proof-status, coverage, graph}, f a parseable contract file
+        => exit_code(pv s f) = exit_code(pv s dir_of_only(f))
+           and the report counts exactly 1
+    domain: "f a `.yaml` file the contract schema owns (schema::parser::is_contract_yaml)"
+    codomain: "{0, 1}"
+    invariants:
+      - "a parse error of f is f's own failure (exit 1), never an empty corpus (exit 2)"
+      - "lint's corpus is what lint's own loader loads: the validate gate's `contracts` count (parsed + parse errors), never a second walker"
+  kind_filter_to_zero_is_refused:
+    formula: >
+      |corpus(p)| > 0 and |filter(corpus(p), kind = k)| = 0
+        => exit_code(pv proof-status --kind k p) = 2
+           and stderr names "(after --kind k)"
+    domain: "k in {kernel, registry, model-family, pattern, schema}"
+    codomain: "{2}"
+    invariants:
+      - "a filter that empties a corpus is an empty corpus, and the refusal says which filter did it"
+
+proof_obligations:
+  - type: invariant
+    property: "An empty corpus is refused with exit 2 and a named path by every reporting subcommand"
+    formal: "PVL-1-EMPTY-REFUSED"
+    applies_to: all
+  - type: invariant
+    property: "A one-contract corpus, directory or single file, is reported at exit 0 with a visible count of 1"
+    formal: "PVL-1-ONE-REPORTED"
+    applies_to: all
+  - type: invariant
+    property: "A --kind filter that empties the corpus is refused and the filter is named"
+    formal: "PVL-1-FILTER-REFUSED"
+    applies_to: all
+
+falsification_tests:
+  - id: FALSIFY-PVL-1-001
+    rule: "PVL-1-EMPTY-REFUSED"
+    prediction: >
+      Deleting the `require_contracts` call from `collect_corpus`
+      (crates/aprender-contracts-cli/src/contract_walk.rs) turns every
+      empty-dir and nonexistent-path case RED for proof-status, graph,
+      lean-status and verify-pipeline, while lint (its own guard) and coverage
+      (its own require_contracts call) stay GREEN — the walker is the shared
+      dependency, not the only guard.
+    test_harness: "cargo test -p aprender-contracts-cli --test pvl_zero_contracts"
+    expected_output: "exit 0 on an unmutated tree"
+    if_fails: >
+      MEASURED 2026-09-10 on 1ca5d39bf: mutation engaged, `cargo test -p aprender-contracts-cli --test pvl_zero_contracts` -> FAILED. 7 passed; 8 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.34s (rc=rc=101); RED: graph_empty_dir_is_refused graph_nonexistent_path_is_refused lean_status_empty_dir_is_refused proof_status_empty_dir_is_refused proof_status_nonexistent_path_is_refused sidecar_only_dir_is_refused verify_pipeline_empty_dir_is_refused verify_pipeline_nonexistent_path_is_refused ; after `git checkout` -> ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.34s
+  - id: FALSIFY-PVL-1-002
+    rule: "PVL-1-EMPTY-REFUSED"
+    prediction: >
+      Removing the validate-gate zero check from
+      crates/aprender-contracts-cli/src/commands/lint.rs turns
+      lint_nonexistent_path_is_refused and lint_empty_dir_is_refused RED while
+      every other case stays GREEN: the lint engine walks the directory itself,
+      so the walker's guard cannot cover it.
+    test_harness: "cargo test -p aprender-contracts-cli --test pvl_zero_contracts lint_"
+    expected_output: "exit 0 on an unmutated tree"
+    if_fails: >
+      MEASURED 2026-09-10 on 1ca5d39bf: mutation engaged, `cargo test -p aprender-contracts-cli --test pvl_zero_contracts` -> FAILED. 0 passed; 2 failed; 0 ignored; 0 measured; 13 filtered out; finished in 0.30s (rc=rc=101); RED: lint_empty_dir_is_refused lint_nonexistent_path_is_refused ; after `git checkout` -> ok. 2 passed; 0 failed; 0 ignored; 0 measured; 13 filtered out; finished in 0.30s
+  - id: FALSIFY-PVL-1-003
+    rule: "PVL-1-EMPTY-REFUSED"
+    prediction: >
+      Making `exit_code_for` return 1 unconditionally turns EVERY refused case
+      RED (the refusal line is still printed, but exit 1 is "measured and
+      failed", not "nothing was measured") while both controls stay GREEN.
+    test_harness: "cargo test -p aprender-contracts-cli --test pvl_zero_contracts is_refused"
+    expected_output: "exit 0 on an unmutated tree"
+    if_fails: >
+      MEASURED 2026-09-10 on 1ca5d39bf: mutation engaged, `cargo test -p aprender-contracts-cli --test pvl_zero_contracts` -> FAILED. 0 passed; 13 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.30s (rc=rc=101); RED: coverage_empty_dir_is_refused coverage_nonexistent_path_is_refused graph_empty_dir_is_refused graph_nonexistent_path_is_refused lean_status_empty_dir_is_refused lint_empty_dir_is_refused lint_nonexistent_path_is_refused proof_status_empty_dir_is_refused proof_status_kind_filter_to_zero_is_refused proof_status_nonexistent_path_is_refused sidecar_only_dir_is_refused verify_pipeline_empty_dir_is_refused verify_pipeline_nonexistent_path_is_refused ; after `git checkout` -> ok. 13 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.30s
+  - id: FALSIFY-PVL-1-004
+    rule: "PVL-1-ONE-REPORTED"
+    prediction: >
+      A guard that refuses everything (`require_contracts` returning Err
+      unconditionally) turns control_one_contract_is_reported_not_refused and
+      control_one_contract_file_is_reported_not_refused RED: they require exit
+      0 AND a printed count of ONE, so "everything exits 2" cannot pass. A
+      `!= 2` control was measured vacuous by the plan grill and replaced.
+    test_harness: "cargo test -p aprender-contracts-cli --test pvl_zero_contracts control_"
+    expected_output: "exit 0 on an unmutated tree"
+    if_fails: >
+      MEASURED 2026-09-10 on 1ca5d39bf: mutation engaged, `cargo test -p aprender-contracts-cli --test pvl_zero_contracts` -> FAILED. 0 passed; 2 failed; 0 ignored; 0 measured; 13 filtered out; finished in 0.31s (rc=rc=101); RED: control_one_contract_file_is_reported_not_refused control_one_contract_is_reported_not_refused ; after `git checkout` -> ok. 2 passed; 0 failed; 0 ignored; 0 measured; 13 filtered out; finished in 0.33s
+  - id: FALSIFY-PVL-1-005
+    rule: "PVL-1-FILTER-REFUSED"
+    prediction: >
+      Deleting the post-filter `require_contracts` call in
+      crates/aprender-contracts-cli/src/commands/proof_status.rs turns
+      proof_status_kind_filter_to_zero_is_refused RED (it asserts the
+      `(after --kind kernel)` suffix as well as the exit code).
+    test_harness: "cargo test -p aprender-contracts-cli --test pvl_zero_contracts proof_status_kind_filter_to_zero_is_refused"
+    expected_output: "exit 0 on an unmutated tree"
+    if_fails: >
+      MEASURED 2026-09-10 on 1ca5d39bf: mutation engaged, `cargo test -p aprender-contracts-cli --test pvl_zero_contracts` -> FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 14 filtered out; finished in 0.01s (rc=rc=101); RED: proof_status_kind_filter_to_zero_is_refused ; after `git checkout` -> ok. 1 passed; 0 failed; 0 ignored; 0 measured; 14 filtered out; finished in 0.01s
