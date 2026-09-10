@@ -1,5 +1,5 @@
 ---
-status: partial
+status: complete
 ticket: PMAT-1096
 kind: code
 milestone: 0.66.0
@@ -7,7 +7,7 @@ branch: PMAT-1096-release-0-66-0
 base: main f34671a6b
 epic: 2873
 model: claude-fable-5-1 (orchestrator) · one agy quorum (width 3) via paiml-agy-delegate
-turns: 213
+turns: 305
 ---
 # impl receipt — PMAT-1096: the 0.66.0 release cut
 
@@ -29,7 +29,7 @@ fable_binding: true   quota_age_h: 47   quota_mark: A   k_measured_at_set: 37
 | statusLine `session_id` = hook `session_id` | true [V] | `discover.sh --state-dir` prints `session=d8a83629-…` and `events-d8a83629-….jsonl` carries the same id |
 | `tasks[].id` = hook `agent_id` | true [V] | events line `SubagentStart … agent_id=ab286307cd9f490cc` equals the Agent tool's returned `agentId` |
 | `transcript_path` present on subagentStatusLine stdin | [U] | not measured this run (no subagent-statusline invocation observed) |
-| `k_measured` vs `global=k` | 213 vs 213 [V] | the jq below over the session transcript |
+| `k_measured` vs `global=k` | 305 vs 305 [V] | the jq below over the session transcript |
 
 ```
 jq -r 'select(.type=="assistant" and ((.isSidechain // false)|not)) | (.message.id // .uuid)' <transcript> | sort -u | wc -l
@@ -154,6 +154,24 @@ then dropped `#3050` (`removed_from_merge_queue`, `mergeable_state: dirty`, auto
 
 Also: #3063's first PR-level run died on BSE-17's quick tier 60-minute step timeout (42 tree-reader targets serially; zero failing tests) → **#3070**. Every one of these was invisible to the PR-level checks and only surfaced on the merged tree — the 0.66 lesson is that a per-package measurement never proves a `--workspace` line, and a nested worktree is not a clean cargo environment.
 
+### Phases 4–6 — merge, tag, release, cascade, post-publish QA (run by the autopilot, verified here)
+
+| step | result | witness |
+|---|---|---|
+| #3050, #3063, #3069 merged | 2026-09-10 03:13Z / 01:59Z / 04:04Z; `main` `7a33db8e0` = 0.66.0 | `gh pr view --json mergeCommit`; `release-autopilot-STATUS.txt` |
+| release commit | `53dd489e4` — main's tip after #3071 (one bashrs SEC010 in `check_format_command_matrix.sh` from #3050 turned the first dogfood on `7a33db8e0` NO-GO) | `dogfood-pre-publish-53dd489e4-R5.json` (**GO**, phase pre-publish, deferred: multiplatform, publish-dry-run) |
+| tag + GitHub release | `v0.66.0` at `53dd489e4`, released 05:39:21Z, `binary-release.yml` run 34441946736 success (8 `pv` assets) | `gh release view v0.66.0` |
+| publish preflight R1–R6 | PASS ("clean, versioned, tagged, on origin/main, dogfood GO") | `release-preflight.log` |
+| crates.io cascade | 74/74 at 0.66.0 in 11 passes (06:21Z); `cascade-publish.sh --check` crates_behind=0; last four re-read from the crates.io API | `release-cascade.log`, `release-cascade-check.log` |
+| install from the registry | `cargo install aprender --version 0.66.0 --force` rc=0 → `apr 0.66.0 (v0.66.0+no-git)` | `release-install.log` |
+| #3022 on the published CPU binary | `apr chat model.safetensors.index.json` (2-shard 0.5B fixture) → `Model Chat (Sharded SafeTensors)`, 988.1 MB loaded, answers | `published-cpu-3022-chat.txt` |
+| #2971 on the published crate + cuda | `cargo install aprender --version 0.66.0 --features cuda --root <sep>`; `apr chat --gpu` on the reporter's GGUF → `[GGUF CUDA: NVIDIA GeForce RTX 4090 …]`, no parity refusal, answers | `published-cuda-2971-chat.txt`; comment on #2971 |
+| post-publish dogfood | NO-GO on three non-runtime rows: `check_multiplatform_dogfood` (four host receipts owed), `version-unpublished` (by construction), `coverage` — OK on the SAME commit pre-publish 70 min earlier, red while the box ran the cascade's builds and two `cargo install`s (environment, filed below); every runtime row green | `release-dogfood-post-publish.log` |
+
+### The CUDA binaries — the operator's hard requirement
+
+"cuda binaries for arm and x86 are hard requirement for all tags and releases" and "WE DO NOT USE HOSTED GITHUB RUNNERS. WE USE GX10 AND LAMBDA-LABS OR YOGA" (operator, 2026-09-10, verbatim). v0.66.0 was cut without them (only `pv` assets; the nightly's `apr` is CPU-only and its `ubuntu-latest` build needs glibc 2.39, which lambda's 22.04 lacks). Landed: **#3072** — `binary-release.yml` lane `build-apr-cuda` on gx10 (aarch64) and yoga (x86_64), feature proven in the bytes (`libcuda.so` loader string: 1 on a cuda build, 0 on a non-cuda build of the same commit), `verify-cuda-assets` fails the workflow without both assets, `smoke-cuda` on both GPU hosts; **#3074** — the boxes carry no `gh`, so upload/verify/download go through the REST API (backfill run 34448908554 built the aarch64 asset, 21M, glibc floor 2.39, and failed only at upload). Backfill of v0.66.0: run 34460773060 (workflow_dispatch, after #3074): both `apr-v0.66.0-<target>-cuda.tar.gz` + `.sha256` on the release, `verify-cuda-assets` PASS, `smoke-cuda` PASS on yoga and gx10. The second backfill's x86_64 job sat `queued` on an idle yoga for 17 minutes: yoga is in org runner group `gpu-x86` (`allows_public_repositories=false`) while gx10's `gpu-nodes` allows public repos and aprender is public — the first backfill's yoga job had never been assigned either (`runner_name` empty). Fixed by opening the group to public repositories like gx10's (`PATCH orgs/paiml/actions/runner-groups/5`); the job started within a minute. Follow-ups filed: #3073 (nightly.yml and the pv lane still on hosted runners), #3070 (BSE-17 quick-tier timeout).
+
 ## Verification (claimed vs my rerun)
 
 verification:
@@ -173,6 +191,12 @@ verification:
   cmd="bash scripts/check_no_claim_literals.sh && bash scripts/check_baseline_ratchets.sh"  claimed_exit=n/a  rerun_exit=0  log_path=scripts/claim_literal_baseline.txt  sha256=921afca893ad399db8cdd7954ff24c527b0a230afaf6e4eb1d1b2e6335d719d9
   cmd="make gate (merged tree)"  claimed_exit=n/a  rerun_exit=0 (41 checks, 0 failed)  log_path=docs/audits/impl-PMAT-1096-logs/gate2.log  sha256=fab1037f1dabf52e75d19058b3afee00d16f75a562c20a2296c900374de53c31
   cmd="bash scripts/check_no_tracked_ignored_files.sh"  claimed_exit=n/a  rerun_exit=0 (PASS ratcheted, after withdrawing the ignore rule)  log_path=docs/audits/impl-PMAT-1096-logs/gate2.log  sha256=fab1037f1dabf52e75d19058b3afee00d16f75a562c20a2296c900374de53c31
+  cmd="gh release view v0.66.0 --json tagName,targetCommitish"  claimed_exit=0 (autopilot RELEASED)  rerun_exit=0 (v0.66.0 @ 53dd489e4, pre=false)  log_path=docs/audits/impl-PMAT-1096-logs/release-autopilot-STATUS.txt  sha256=ceec8306619203950484c62b9a4f32e92feef208aab9309afca8e5c277003672
+  cmd="bash scripts/check_publish_preflight.sh (53dd489e4)"  claimed_exit=0 (autopilot)  rerun_exit=n/a (read: PASS R1–R6)  log_path=docs/audits/impl-PMAT-1096-logs/release-preflight.log  sha256=1aa5cfdc8bc4ce7ca54ae2892d2952b924b07ba8c18df4b65af3789506fa6a13
+  cmd="bash scripts/cascade-publish.sh --check"  claimed_exit=0 crates_behind=0  rerun_exit=0 (crates.io API: apr-cli, aprender, aprender-tsp, aprender-monte-carlo max_version 0.66.0)  log_path=docs/audits/impl-PMAT-1096-logs/release-cascade-check.log  sha256=c0a1a331ac4af9396d9af6b7ce21ccb8ff104fe01d164d84b5d80c95a69f6baf
+  cmd="~/.cargo/bin/apr --version"  claimed_exit=0 (autopilot INSTALL)  rerun_exit=0 (apr 0.66.0 (v0.66.0+no-git))  log_path=docs/audits/impl-PMAT-1096-logs/release-install.log  sha256=01a82ae378a99dad55df93f82cd5edcb5e0579f256eafc4e887e3a4efe58ab67
+  cmd="apr chat <sharded index> (published CPU binary)"  claimed_exit=n/a  rerun_exit=0 (Model Chat (Sharded SafeTensors), 988.1 MB, answers)  log_path=docs/audits/impl-PMAT-1096-logs/published-cpu-3022-chat.txt  sha256=cdb32fe3012e67bad706a7712bb554007879bc301bafdfb33a62a9863a1581d7
+  cmd="apr chat --gpu qwen2.5-1.5b-instruct-q4_k_m.gguf (published crate, --features cuda)"  claimed_exit=n/a  rerun_exit=0 ([GGUF CUDA: NVIDIA GeForce RTX 4090], answers)  log_path=docs/audits/impl-PMAT-1096-logs/published-cuda-2971-chat.txt  sha256=a8dd8fc0033dccf79738df15c384a44d0fcdf26d506c6872d6dde403d8c6beb0
 
 Rows marked "claimed_exit=n/a" are the orchestrator's own runs with nothing claimed by a worker; the judge row's claim is the three lanes' PASS, re-run here. Logs are `gate-reduce.sh` reductions (≤ 1 KB head + fail_tail); the full logs live only in the session scratchpad.
 
@@ -181,6 +205,9 @@ Rows marked "claimed_exit=n/a" are the orchestrator's own runs with nothing clai
 - {ticket: PMAT-1096, phase: 3b, defect: pre-publish dogfood NO-GO on five rows (claim-literal shift, stale PP-26 witness, 8 bashrs findings, C14 on a non-cuda binary, stray untracked dirs), owner: release tooling + the merged PRs that introduced them, whys: (1) why NO-GO → five red rows; (2) why red → each row above; (3) why not caught on main → main's dogfood is not run per PR, only at release; (4) why the tool defect → the release-binary gate and the C14 gate disagree on features; (5) root fix → C14 builds its own cuda leg, findings fixed in their scripts} — resolved same branch.
 - filed: `.claude/agent-memory/**` (10 subagent memory files) is TRACKED on main since #3025 — a scratch surface in the index; the delegate's writes now show as modifications of tracked files. Owner: the PP-066 driver session. Untracking is a decision for that owner, not the release.
 - filed: #3070 — BSE-17 quick tier 60-minute timeout on a CI-only PR.
+- filed: #3073 — nightly.yml and the pv lane still run on hosted GitHub runners (operator rule: gx10, lambda or yoga; clean-room pool otherwise).
+- finding (not filed as code): post-publish dogfood `coverage` FAIL on `53dd489e4` while the same commit's pre-publish `coverage` was OK 70 minutes earlier; the box was running the cascade's `cargo publish` builds and two `cargo install`s at the time — an environment verdict; re-measure on a quiet box before treating it as a regression.
+- finding: the tree's own guards contradict each other for a row PR whose receipt is complete (G-11 forbids the DAG/spec write, D7 and `render_dag.py --check` demand it); the documented resolution is the row PR ships `status: partial` and the orchestrator docs commit flips it — F-1 (#3050) went that way; L0-1a/L0-1b/F-1 orchestrator flips are owed to the PP-066 driver.
 - filed: `scripts/check_roadmap_diff_additive.sh --selftest` exits 1 on `main` at `f34671a6b` (row 'push shape'/re-serialisation) — pre-existing, verdicts identical before and after the SEC011 edit; not a blocker for the cut (the guard's non-selftest path is what CI runs and it PASSes).
 
 ## Estimates
@@ -191,7 +218,7 @@ K̂=6 basis=first-run[U] (ROWS=0 — `docs/audits/impl-estimates.jsonl` has no q
 
 | part | state |
 |---|---|
-| merged green on `ci / gate`, `workspace-test`, `gate` | [U] — the PR is opened by this receipt's commit; result recorded post-merge |
+| merged green on `ci / gate`, `workspace-test`, `gate` | #3069 merged through the queue 04:04Z (queue run 34432550054: workspace-test + gate success) |
 | gate exists | `make gate` exit 0 at HEAD (above) |
 | mutation observed RED | not applicable — a version bump carries no guard; the RED-turning evidence for the release content lives in #3050 (RED sha `9d0ddcf31`) and #3026/#3032 (`evidence/parity/l0-1/`) |
 | `pv` contract same PR | `pv_lane=NotRun` — no contract changes in a bump; contracts_dir set; `pv validate` was exercised by `make gate`'s `pmat verify` only |
@@ -230,4 +257,8 @@ Gaps: (1) closed — #2971 was closed on the round-2 quorum (above); (2) phase 4
          mode=direct trigger=- route=self w=11.11 basis=quota.json@46h q=fable_binding=true/age_h=47 gate=PASS slots=0/3 denied=0
          red=- filed=#3070,#3067-comment,tracked-agent-memory blocker=fleet: three PR runs in progress on fixed heads next=queue #3050 → #3063 → autopilot readies+queues #3069 → dogfood → tag → cascade
 
-verdict: PARTIAL(release in flight) — the bump is green locally and pushed; the tag, the cascade and the post-publish QA follow the merge.
+[status] ticket=PMAT-1096 phase=6/6 global=305/6(K=300) k_measured=305 sub=0/0 basis=first-run[U]
+         mode=direct trigger=- route=self w=11.11 basis=quota.json@46h q=fable_binding=true/age_h=47 gate=PASS slots=0/3 denied=0
+         red=- filed=#3070,#3073 blocker=- next=CUDA-asset backfill of v0.66.0 after #3074 merges; then this receipt goes status: complete
+
+verdict: DONE — v0.66.0 tagged at 53dd489e4, released with pv + CUDA apr assets, 74/74 crates on crates.io, installed and re-verified on the published artifact; owed items are named in the gaps.
