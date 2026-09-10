@@ -7,7 +7,7 @@ branch: PMAT-1096-release-0-66-0
 base: main f34671a6b
 epic: 2873
 model: claude-fable-5-1 (orchestrator) · one agy quorum (width 3) via paiml-agy-delegate
-turns: 160
+turns: 213
 ---
 # impl receipt — PMAT-1096: the 0.66.0 release cut
 
@@ -29,7 +29,7 @@ fable_binding: true   quota_age_h: 47   quota_mark: A   k_measured_at_set: 37
 | statusLine `session_id` = hook `session_id` | true [V] | `discover.sh --state-dir` prints `session=d8a83629-…` and `events-d8a83629-….jsonl` carries the same id |
 | `tasks[].id` = hook `agent_id` | true [V] | events line `SubagentStart … agent_id=ab286307cd9f490cc` equals the Agent tool's returned `agentId` |
 | `transcript_path` present on subagentStatusLine stdin | [U] | not measured this run (no subagent-statusline invocation observed) |
-| `k_measured` vs `global=k` | 160 vs 160 [V] | the jq below over the session transcript |
+| `k_measured` vs `global=k` | 213 vs 213 [V] | the jq below over the session transcript |
 
 ```
 jq -r 'select(.type=="assistant" and ((.isSidechain // false)|not)) | (.message.id // .uuid)' <transcript> | sort -u | wc -l
@@ -143,6 +143,17 @@ then dropped `#3050` (`removed_from_merge_queue`, `mergeable_state: dirty`, auto
   under fleet load (zero failing tests; annotation is the surviving truth); #3063 re-run via `gh pr update-branch`, now
   in the queue.
 
+### Phase 3d — four more reds on the merged trees, each a tool-or-environment defect fixed at its root
+
+| PR | red | root cause | fix |
+|---|---|---|---|
+| #3063 | merge-queue `workspace-test` nextest exit 100: `driver::cublas_tests::*` panicked `CudaNotAvailable` on the clean-room | the PR measured `-p aprender-gpu -p aprender-cuda-edge` (per-package resolve, cuda off: 0 `driver::` tests) but changed the `--workspace` line, where cargo unifies features and **`aprender-explain` depends on `aprender-gpu` with `features=["cuda"]` non-optionally** (217 `driver::` tests listed) | `c6ce084ec`: the workspace line keeps its excludes; the two GPU crates run as their own `full`-tier per-package step (same container/mounts as the compute step); `tree_reader_tests.txt` re-derived (`a82983661`); tier case table 15/15; noted on #3067 |
+| #3069 | `guard-cargo` "Cargo.lock must match" + `bump --check` "facades lock stale" | a worktree nested under `/home/noah/src/aprender/.claude/worktrees/` inherits the checkout's `.cargo/config.toml` `[patch.crates-io]`; the bump's regenerated locks carried 11 `[[patch.unused]]` entries CI's clean cargo strips → `--locked` refuses | `52d65b6f3`: both locks re-derived with the cwd outside the checkout (0 `patch.unused`; both `--locked` PASS) |
+| #3050 | `guard-tree` G-4 `render_dag.py --check` DRIFT | the DAG status column is derived from receipts; F-1's receipt says `complete`, the committed block said `open` | `4ce257674`: block re-rendered and pasted (one row) |
+| #3069 | `guard-tree` machine-specific-path ratchet +1 | the new `apr parity --json` record stored `model: /home/noah/models/…` | model field written as `~/models/…` (the judge reads positions, not the path); ratchet delta +0 |
+
+Also: #3063's first PR-level run died on BSE-17's quick tier 60-minute step timeout (42 tree-reader targets serially; zero failing tests) → **#3070**. Every one of these was invisible to the PR-level checks and only surfaced on the merged tree — the 0.66 lesson is that a per-package measurement never proves a `--workspace` line, and a nested worktree is not a clean cargo environment.
+
 ## Verification (claimed vs my rerun)
 
 verification:
@@ -214,5 +225,9 @@ Gaps: (1) closed — #2971 was closed on the round-2 quorum (above); (2) phase 4
 [status] ticket=PMAT-1096 phase=4/6 global=160/6(K=300) k_measured=160 sub=0/0 basis=first-run[U]
          mode=direct trigger=- route=self w=11.11 basis=quota.json@46h q=fable_binding=true/age_h=47 gate=PASS slots=0/3 denied=0
          red=- filed=#3070,tracked-agent-memory blocker=fleet queue (#3064 #3056 #3063 ahead; #3050 re-running CI after the README conflict) next=autopilot: merge→dogfood→tag→release→cascade; K raised 150→300 on the operator's re-issued instruction
+
+[status] ticket=PMAT-1096 phase=4/6 global=213/6(K=300) k_measured=213 sub=0/0 basis=first-run[U]
+         mode=direct trigger=- route=self w=11.11 basis=quota.json@46h q=fable_binding=true/age_h=47 gate=PASS slots=0/3 denied=0
+         red=- filed=#3070,#3067-comment,tracked-agent-memory blocker=fleet: three PR runs in progress on fixed heads next=queue #3050 → #3063 → autopilot readies+queues #3069 → dogfood → tag → cascade
 
 verdict: PARTIAL(release in flight) — the bump is green locally and pushed; the tag, the cascade and the post-publish QA follow the merge.
