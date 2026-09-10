@@ -2,6 +2,4 @@
 # GitHub-hosted image while their migration is in flight. The list may only SHRINK: an entry
 # that matches no hosted line any more fails the guard until it is deleted here.
 #
-# binary-release.yml's pv build job moves to gx10 + yoga in #3092 (the pv lane, #3073).
-# Delete this line in the PR that lands after it.
-binary-release.yml:build
+# Empty: every workflow runs on the self-hosted fleet (#3073, #3092).
