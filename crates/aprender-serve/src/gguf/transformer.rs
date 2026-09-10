@@ -82,9 +82,8 @@ pub fn unsupported_architecture_reason<'n>(
     if let Some(tensor_name) = ssm_tensor {
         return Some(format!(
             "Architecture '{architecture}' uses SSM/Gated Delta Net layers (detected tensor '{tensor_name}'). \
-             NEITHER the CPU nor the GPU backend implements Gated DeltaNet/SSM layers yet. \
-             Tracking issues: #3090 (GPU) and #3091 (CPU). \
-             Use a standard transformer model (e.g., Qwen2.5, LLaMA, Mistral) or wait for SSM support in a future release."
+             The GPU backend does NOT implement Gated DeltaNet/SSM layers yet (#3090). \
+             Run with `--cpu-only` to use the CPU implementation."
         ));
     }
     None
@@ -155,17 +154,6 @@ impl<'a> QuantizedGGUFTransformer<'a> {
     pub fn from_gguf(model: &GGUFModel, data: &'a [u8]) -> Result<Self> {
         // Phase 2: Validate config at construction boundary.
         let config = ValidatedModelConfig::from_gguf(model)?.into_inner();
-
-        // GH-704: Detect hybrid SSM architectures (Qwen3.5 Gated Delta Net) early.
-        // These require a dedicated SSM inference path not yet implemented.
-        // The predicate lives in `unsupported_architecture_reason` so read-only
-        // tools (apr ptx-map) refuse the same files with the same words (#2399).
-        if let Some(reason) = unsupported_architecture_reason(
-            &config.architecture,
-            model.tensors.iter().map(|t| t.name.as_str()),
-        ) {
-            return Err(crate::RealizarError::FormatError { reason });
-        }
 
         // M32b: refuse Mixture-of-Experts architectures with a structured,
         // contract-named error before reaching the dense-FFN tensor lookup.
@@ -748,11 +736,11 @@ mod unsupported_architecture_tests {
             "refusal must name the architecture and the reason, got: {reason}"
         );
         assert!(
-            reason.contains("NEITHER the CPU nor the GPU backend implements"),
-            "must mention both backends"
+            reason.contains("The GPU backend does NOT implement"),
+            "must mention GPU backend"
         );
         assert!(reason.contains("#3090"), "must mention GPU #3090");
-        assert!(reason.contains("#3091"), "must mention CPU #3091");
+
         assert!(
             reason.contains("blk.0.ssm_conv1d.weight"),
             "must mention tensor name"
