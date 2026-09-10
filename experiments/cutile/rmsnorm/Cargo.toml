@@ -1,0 +1,27 @@
+# T3 of docs/specifications/nvidia-cuda-rust-library-integration.md.
+#
+# Own [workspace] on purpose: this is invisible to every workspace-wide cargo
+# command, so `--all-features` (Makefile:659/994/1010) cannot drag cuda-bindings'
+# build.rs — which hard-fails without a CUDA 13.0+ toolkit — into `make coverage`
+# or `make mutants` for contributors with no CUDA at all.
+#
+# Note what is NOT here: no git dependencies, no nightly, no LLVM. Every crate is
+# a published crates.io release on stable Rust. That is the difference between
+# the Tile track and experiments/cuda-oxide/*, which need
+# nightly-2026-08-28 + LLVM-21 + cargo-oxide and can never be a dependency of a
+# published crate.
+[workspace]
+
+[package]
+name = "cutile_rmsnorm_ab"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+cutile = "0.3"
+cuda-core = "0.3"
+cuda-async = "0.3"
+
+[profile.release]
+debug = false

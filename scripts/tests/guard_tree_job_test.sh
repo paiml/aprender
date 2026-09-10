@@ -129,7 +129,7 @@ run_text_of_job_block() {
 # not a functional change.
 assertions_yq() {
     yq \
-        eval '
+        e '
         (.jobs."guard-tree".needs == null)
         and (.jobs.gate.needs | contains(["guard-tree"]))
         and ((.jobs."guard-tree".steps | map(.run // "") | join(" ") | test("(^|[^a-z_-])cargo ")) | not)

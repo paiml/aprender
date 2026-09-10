@@ -49,6 +49,24 @@ is_allowed() {
                                                      # this it matches itself and
                                                      # inflates the baseline by one,
                                                      # hiding a real harness
+    */check_format_command_matrix.sh) return 0 ;;  # a GUARD, not a harness (F-1,
+                                         # #3022/#3024). It COMPUTES NO RATE and
+                                         # states no comparator: it asserts that
+                                         # the format a command NAMES is not the
+                                         # demo model, that the exit code is 0,
+                                         # that the token count is > 0 and that
+                                         # the reported size is > 0. It trips the
+                                         # predicate only through its own
+                                         # must-match fixtures — `[0 tokens in
+                                         # 0.0s = 0.0 tok/s]` is the DEFECT row
+                                         # of its case table, and its header
+                                         # names the axes `{apr run, apr chat}`
+                                         # — which is what a must-match fixture
+                                         # IS, the same reason this detector and
+                                         # check_no_fabricated_baselines.sh are
+                                         # exempt below. If it ever derives a
+                                         # throughput or a ratio, delete this
+                                         # line rather than widening the reason.
     */check_no_fabricated_baselines.sh) return 0 ;;  # a GUARD, not a harness: its
                                                      # must-match fixtures contain
                                                      # `command -v llama-bench` and
@@ -249,6 +267,11 @@ rec = json.load(open(path))'
     printf '  ok    %-40s expect=exempt\n' "perf_receipt.py is allowlisted"; pass=$((pass + 1))
   else
     printf '  BROKE %-40s\n' "perf_receipt.py should be allowlisted"; fail=$((fail + 1))
+  fi
+  if is_allowed "$ROOT/scripts/check_format_command_matrix.sh"; then
+    printf '  ok    %-40s expect=exempt\n' "check_format_command_matrix.sh is allowlisted"; pass=$((pass + 1))
+  else
+    printf '  BROKE %-40s\n' "check_format_command_matrix.sh should be allowlisted"; fail=$((fail + 1))
   fi
   if is_allowed "$tmp/scripts/probe.sh"; then
     printf '  BROKE %-40s\n' "allowlist must not exempt everything"; fail=$((fail + 1))
