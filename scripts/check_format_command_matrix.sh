@@ -149,6 +149,7 @@ esac; done
 SINGLE="$MODELS_DIR/qwen2.5-coder-0.5b-instruct-safetensors/model.safetensors"
 [ -f "$SINGLE" ] || { printf '%s: ENV - %s not on this host\n' "$PROG" "$SINGLE" >&2; exit 2; }
 OUT=${OUT:-$(mktemp -d "${TMPDIR:-/tmp}/fcm-live.XXXXXX")}
+case "$OUT" in *..*) printf '%s: refusing an --out with "..": %s\n' "$PROG" "$OUT" >&2; exit 2 ;; esac   # bashrs SEC010 (the 0.66.0 pre-publish dogfood, PMAT-1096)
 mkdir -p "$OUT"
 
 if [ -z "$FIXTURE" ]; then
