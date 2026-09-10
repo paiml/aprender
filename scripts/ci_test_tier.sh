@@ -99,6 +99,21 @@ self_test() {
     diff1=$(git -C "$td/repo" rev-parse HEAD~2)
     row 0 "merge_group, different tree -> full (main moved under the PR)" 'differs from PR head tree' bash "$T" --event merge_group --repo-root "$td/repo" --pr-head "$diff1" --pr-head-conclusion success
     row 0 "merge_group without a PR head -> full" 'without a PR head' bash "$T" --event merge_group --repo-root "$td/repo"
+    # --filterset (PMAT-1098, #3084): the quick tier's 26-way `&&` chain of
+    # per-crate cargo invocations became ONE build graph + one nextest run over a
+    # filterset. These rows pin the token->clause translation in BOTH polarities:
+    # every recognised token becomes exactly one clause, and anything else is ENV
+    # (exit 2) — a token silently dropped here is a tree-reader target that stops
+    # running while the step stays green, which is the failure mode this whole
+    # registry exists to prevent.
+    row 0 "--filterset: a lib token -> (package & kind(lib))" '^\(package\(apr-cli\) & kind\(lib\)\)$' bash "$T" --filterset 'apr-cli:--lib'
+    row 0 "--filterset: a test token -> binary_id(crate::name), nextest's id for an integration target" '^binary_id\(aprender-core::readme_contract\)$' bash "$T" --filterset 'aprender-core:--test:readme_contract'
+    row 0 "--filterset: a bins token -> (package & kind(bin)); a bin-only crate has NO lib target" '^\(package\(aprender-compute-xtask\) & kind\(bin\)\)$' bash "$T" --filterset 'aprender-compute-xtask:--bins'
+    row 0 "--filterset: two tokens are UNIONed with |" 'kind\(lib\)\) \| binary_id\(' bash "$T" --filterset 'apr-cli:--lib aprender-core:--test:readme_contract'
+    row 2 "--filterset: an unknown token -> ENV (exit 2), never a silently dropped target" 'unrecognised target token' bash "$T" --filterset 'apr-cli:--doc'
+    row 2 "--filterset: no targets -> ENV (exit 2); an empty -E would select the WHOLE workspace" 'empty filterset' bash "$T" --filterset ''
+    row 0 "--filterset reads stdin and translates EVERY registry token (no ':--' survives)" '^NONE-LEFT$' bash -c "e=\$(bash '$T' --event pull_request --diff-from '$td/d-scripts.txt' | sed -n 's/^targets=//p' | bash '$T' --filterset); if [ -z \"\$e\" ]; then echo EMPTY; elif printf '%s' \"\$e\" | grep -q ':--'; then echo LEFTOVER; else echo NONE-LEFT; fi"
+    row 0 "--filterset over the registry: one clause per registry line (nothing dropped, nothing invented)" '^EQUAL$' bash -c "reg=\$(grep -vc '^#' scripts/tree_reader_tests.txt); n=\$(bash '$T' --event pull_request --diff-from '$td/d-scripts.txt' | sed -n 's/^targets=//p' | bash '$T' --filterset | tr '|' '\n' | wc -l); [ \"\$reg\" = \"\$n\" ] && echo EQUAL || echo \"DIFFER registry=\$reg clauses=\$n\""
     # MUTANT: a copy that drops the tree-reader targets from the quick tier must lose readme_contract — the falsifier discriminates
     sed 's/targets=%s\\n/targets=\\n/; s/"\$(targets_from_registry "\$ROOT\/\$REGISTRY")" //' "$T" > "$td/mutant.sh"
     row 0 "mutant without tree-reader targets loses readme_contract (proves the inclusion is load-bearing)" 'MUTANT-LOST' bash -c "if bash '$td/mutant.sh' --event pull_request --diff-from '$td/d-scripts.txt' | grep -q readme_contract; then echo MUTANT-KEPT; else echo MUTANT-LOST; fi"
