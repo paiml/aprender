@@ -32,6 +32,9 @@ jobs:
     uses: paiml/.github/.github/workflows/sovereign-ci.yml@main
     with:
       repo: ${{ github.event.repository.name }}
+      # BUILD POOL (#3100): every job of the reusable workflow lands on any x86 box carrying `build`
+      # (paiml/.github#67 added the input; its default is the clean-room pool every other consumer uses).
+      runs_on: '["self-hosted","X64","Linux","build"]'
       # Phase 3 pilot (heavy workload) — build-performance.md §7 Phase 3.
       # APR-MONO monorepo: 879+ compile units, largest dep graph in the fleet.
       # Highest expected sccache hit-rate lift; without it each PR cold-compiles
