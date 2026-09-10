@@ -16703,7 +16703,6 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
-
 - id: PMAT-1078
   github_issue: 3046
   item_type: task
@@ -16721,6 +16720,14 @@ roadmap:
   - 'scripts/ci_job_minutes.sh makes the figure re-derivable: per-JOB (completed_at - started_at) from the jobs API, started_at not created_at so queue wait is excluded, skipped jobs contribute nothing, and a run count equal to --limit is exit 2 TRUNCATED rather than a silent floor. bash scripts/ci_job_minutes.sh --self-test -> 6/6. Measured 2026-08-08..2026-09-07 on pull_request: pr-review-receipt 326.8 h of a 850.6 h total (a floor; the 96 h this ticket opened with understated it by 3.4x).'
   - 'STATED LOSS: the two mutation sweeps (scripts/mutate-guard.sh, scripts/mutate_quorum_arm.sh) and the 43-row bats fixture table no longer run in CI - no other workflow invokes them and they are not check_*.sh, so guard_tree.sh does not reach them. check_pr_review_receipt.sh, check_pr_review_counts.sh and check_pr_review_arm4.sh DO still run, through guard_tree.sh''s derived universe; the PR''s own receipt is judged from the base by pr-review-quorum.yml.'
   - 'roadmap.yaml carries ONE addition (this entry) and no other change: check_roadmap_diff_additive.sh -> added=1 lifecycle=0 reserialised=0 deleted=0.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - pp-066
+  notes: 'BSE-15, BSE-001 §4 wave 5. Rescoped from dispatch-only to deletion; the ticket text is the standard the quorum judges the diff against, so it moved with the policy rather than leaving the diff contradicting it.'
+
 - id: PMAT-1079
   github_issue: 3045
   item_type: task
@@ -16739,7 +16746,6 @@ roadmap:
   labels:
   - kind:code
   - pp-066
-  notes: 'BSE-15, BSE-001 §4 wave 5. Rescoped from dispatch-only to deletion; the ticket text is the standard the quorum judges the diff against, so it moved with the policy rather than leaving the diff contradicting it.'
   notes: 'minted by hand (pmat#1169); DAG row KEY, owner noahgift, expiry 2026-10-02. PMAT-1078 was not free: agent/R-5 contracts/apr-publish-cascade-v1.yaml:4 stamps it for the cascade (unminted in any roadmap), so KEY took the next id.'
 - id: PMAT-1080
   github_issue: 3022
