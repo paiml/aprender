@@ -1,5 +1,5 @@
 ---
-status: complete
+status: partial
 ticket: PMAT-1080
 row: F-1
 issue: 3022
@@ -10,6 +10,7 @@ branch: agent/F-1
 kind: code
 model: claude-opus-5[1m]
 host: noah-Lambda-Vector
+status_note: 'partial on the row PR by G-11 rule (scripts/render_dag.py --check: a ROW PR ships its receipt as status: partial and never edits the spec); the work is complete per the DoD below and the orchestrator docs commit flips receipt, DAG row F-1 and the rendered block after merge (PMAT-1096 landed it)'
 ---
 # impl receipt — PMAT-1080 (PP-066 row F-1, #3022 / #3024): the model you named is the model that answers
 
