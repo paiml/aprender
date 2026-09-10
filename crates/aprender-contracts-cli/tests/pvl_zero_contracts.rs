@@ -177,14 +177,14 @@ fn graph_nonexistent_path_is_refused() {
 }
 
 /// Sidecars are not contracts: a directory holding only `binding.yaml` and a
-/// playbook is an empty corpus (the walker skips both), so it is refused too.
+/// dot-prefixed file is an empty corpus (`is_contract_yaml` skips both — the
+/// ONE file rule `pv lint` walks with), so it is refused too.
 #[test]
 fn sidecar_only_dir_is_refused() {
     let d = empty_dir();
     std::fs::write(d.path().join("binding.yaml"), "crates: []\nbindings: []\n")
         .expect("fixture is writable");
-    std::fs::write(d.path().join("softmax-playbook.yaml"), "steps: []\n")
-        .expect("fixture is writable");
+    std::fs::write(d.path().join(".draft.yaml"), "steps: []\n").expect("fixture is writable");
     assert_refused(
         &pv(&["proof-status", s(d.path())]),
         d.path(),
@@ -397,4 +397,86 @@ fn lint_diff_empty_dir_is_refused() {
         empty.to_str().expect("utf-8 path"),
     ]);
     assert_refused(&run, &empty, "lint --diff HEAD <empty dir>");
+}
+
+// ---------------------------------------------------------------------------
+// Second review quorum on PR #3093 (3/3 FAIL; agy lanes 39742bf6, 7a9f134e,
+// d12f6807): the walker silently DROPPED unparsable files, so a directory of
+// only broken YAML was "0 contracts" (exit 2) to proof-status and `lint --diff`
+// while `lint` measured it as `contracts: 1, errors: 1` (exit 1). One
+// definition now: a broken contract file was measured, and failed.
+// ---------------------------------------------------------------------------
+
+const BROKEN_CONTRACT: &str = "contract: pvl-broken\nmetadata: [not a map\n";
+
+fn assert_measured_failed(run: &Run, what: &str, file: &str) {
+    assert_eq!(
+        run.code, 1,
+        "{what}: a broken contract file is measured and FAILED (exit 1), got {}\n--- stdout\n{}\n--- stderr\n{}",
+        run.code, run.stdout, run.stderr
+    );
+    assert!(
+        !run.stderr.contains(REFUSAL),
+        "{what}: a broken file was reported as `0 contracts`\n--- stderr\n{}",
+        run.stderr
+    );
+    assert!(
+        run.stderr.contains(file),
+        "{what}: the broken file `{file}` is not named\n--- stderr\n{}",
+        run.stderr
+    );
+    assert!(
+        !run.stdout.contains("Result: PASS") && !run.stdout.contains("(0 contracts)"),
+        "{what}: a report was printed over a broken corpus\n--- stdout\n{}",
+        run.stdout
+    );
+}
+
+#[test]
+fn unparsable_only_dir_is_measured_not_refused() {
+    let d = empty_dir();
+    std::fs::write(d.path().join("broken.yaml"), BROKEN_CONTRACT).expect("fixture is writable");
+    let dir = s(d.path());
+    for cmd in [
+        "proof-status",
+        "coverage",
+        "graph",
+        "lean-status",
+        "verify-pipeline",
+    ] {
+        assert_measured_failed(
+            &pv(&[cmd, dir]),
+            &format!("pv {cmd} <broken only>"),
+            "broken.yaml",
+        );
+    }
+    // `lint` measures it through its validate gate: exit 1, never PASS, never a refusal.
+    let run = pv(&["lint", dir]);
+    assert_eq!(
+        run.code, 1,
+        "pv lint <broken only>: exit 1 expected, got {}\n{}",
+        run.code, run.stderr
+    );
+    assert!(!run.stdout.contains("Result: PASS") && !run.stderr.contains(REFUSAL));
+}
+
+#[test]
+fn mixed_dir_one_broken_file_fails_and_names_it() {
+    // One real contract beside one broken file: the broken one is NOT skipped
+    // (the old walker dropped it silently and reported over the rest).
+    let d = empty_dir();
+    let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../contracts/softmax-kernel-v1.yaml");
+    std::fs::copy(&src, d.path().join("softmax-kernel-v1.yaml")).expect("contract copies");
+    std::fs::write(d.path().join("broken.yaml"), BROKEN_CONTRACT).expect("fixture is writable");
+    let run = pv(&["proof-status", s(d.path())]);
+    assert_measured_failed(
+        &run,
+        "pv proof-status <one good + one broken>",
+        "broken.yaml",
+    );
+    assert!(
+        run.stderr.contains("1 of 2 contract files"),
+        "the count of measured files is not reported\n--- stderr\n{}",
+        run.stderr
+    );
 }

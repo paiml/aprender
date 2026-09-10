@@ -1,7 +1,7 @@
 contract: pvl-1-zero-contracts
 metadata:
   kind: pattern
-  version: "1.0.0"
+  version: "1.1.0"
   description: >
     PVL-1 (PMAT-1099; paiml/infra docs/specifications/PVL-001-pv-lean-gate.md
     row EV-1): `pv` refuses to report over an EMPTY corpus.
@@ -24,6 +24,17 @@ metadata:
     that empties a corpus is refused and named. Exit 2, not 1: 1 is "measured
     and failed", 2 is "nothing was measured" (clap's usage-error code — the
     invocation itself was wrong).
+
+    v1.1.0 (second review quorum on #3093, 3/3 FAIL): ONE definition of the
+    corpus. The walker used a private file rule (it skipped every `*playbook*`
+    stem — the corpus holds real contracts named that way) and silently DROPPED
+    files that failed to parse, so a directory of only broken YAML was "0
+    contracts" (exit 2) to proof-status and `lint --diff` while `lint` measured
+    it as `contracts: 1, errors: 1` (exit 1). Now every command walks the set
+    `pv lint` walks (`provable_contracts::lint::collect_yaml_files`), a file
+    that fails to parse is measured and FAILED (exit 1, every file named), and
+    `lint --watch` / `lint --diff` refuse an empty corpus like every other path
+    (diff mode probes for contract files without parsing: 31 ms over 1767).
   references:
     - "docs/specifications/PVL-001-pv-lean-gate.md (paiml/infra), row EV-1"
     - "crates/aprender-contracts-cli/src/contract_walk.rs"
@@ -39,7 +50,7 @@ equations:
         => exit_code(pv s p) = 2
            and stderr(pv s p) contains "error: 0 contracts under " ++ p
            and stdout(pv s p) contains no verdict line
-    domain: "p a missing path, an empty directory, or a directory holding only sidecars (binding.yaml, *playbook*.yaml)"
+    domain: "p a missing path, an empty directory, or a directory holding no contract file (is_contract_yaml: `.yaml`, not dot-prefixed, not binding.yaml — the ONE file rule pv lint walks with; a `*playbook*` stem is a contract)"
     codomain: "{2}"
     invariants:
       - "no `Result: PASS`, `Proof Status (0 contracts)`, `Nodes: 0` or `Contracts: 0` is ever printed over an empty corpus"
@@ -64,6 +75,21 @@ equations:
     invariants:
       - "a filter that empties a corpus is an empty corpus, and the refusal says which filter did it"
 
+  broken_file_is_measured:
+    formula: >
+      forall s in {proof-status, coverage, graph, lean-status, verify-pipeline},
+      forall p . files(p) != {} and exists f in files(p) . parse(f) fails
+        => exit_code(pv s p) = 1
+           and stderr(pv s p) contains "of " ++ |files(p)| ++ " contract files under " ++ p ++ " failed to parse"
+           and stderr(pv s p) contains f
+           and stdout(pv s p) contains no verdict line
+    domain: "files(p) = the set pv lint walks (provable_contracts::lint::collect_yaml_files over p)"
+    codomain: "{1}"
+    invariants:
+      - "a broken contract file is never `0 contracts` (exit 2) and never silently skipped: it was measured, and it failed"
+      - "every command sees the same files as `pv lint`: over contracts/ the counts are equal (measured 1767 = 1767 = 1767 for lint, proof-status, coverage)"
+      - "`pv lint --diff <ref>` with nothing changed does not parse the corpus: it probes for contract files and exits 0 in milliseconds"
+
 proof_obligations:
   - type: invariant
     property: "An empty corpus is refused with exit 2 and a named path by every reporting subcommand"
@@ -76,6 +102,10 @@ proof_obligations:
   - type: invariant
     property: "A --kind filter that empties the corpus is refused and the filter is named"
     formal: "PVL-1-FILTER-REFUSED"
+    applies_to: all
+  - type: invariant
+    property: "A contract file that fails to parse is measured and failed (exit 1, the file named) by every walking subcommand — never 0 contracts, never skipped"
+    formal: "PVL-1-BROKEN-MEASURED"
     applies_to: all
 
 falsification_tests:
@@ -98,12 +128,14 @@ falsification_tests:
       Removing the validate-gate zero check from
       crates/aprender-contracts-cli/src/commands/lint.rs turns
       lint_nonexistent_path_is_refused and lint_empty_dir_is_refused RED while
-      every other case stays GREEN: the lint engine walks the directory itself,
-      so the walker's guard cannot cover it.
+      every other case stays GREEN (the harness now runs four `lint_` tests:
+      lint_watch_empty_dir_is_refused and lint_diff_empty_dir_is_refused are
+      guarded in run_watch and run_diff_check, not by this call): the lint
+      engine walks the directory itself, so the walker's guard cannot cover it.
     test_harness: "cargo test -p aprender-contracts-cli --test pvl_zero_contracts lint_"
     expected_output: "exit 0 on an unmutated tree"
     if_fails: >
-      MEASURED 2026-09-10 on 1ca5d39bf: mutation engaged, `cargo test -p aprender-contracts-cli --test pvl_zero_contracts` -> FAILED. 0 passed; 2 failed; 0 ignored; 0 measured; 13 filtered out; finished in 0.30s (rc=rc=101); RED: lint_empty_dir_is_refused lint_nonexistent_path_is_refused ; after `git checkout` -> ok. 2 passed; 0 failed; 0 ignored; 0 measured; 13 filtered out; finished in 0.30s
+      MEASURED 2026-09-10 on 1ca5d39bf: mutation engaged, `cargo test -p aprender-contracts-cli --test pvl_zero_contracts` -> FAILED. 0 passed; 2 failed; 0 ignored; 0 measured; 13 filtered out; finished in 0.30s (rc=rc=101); RED: lint_empty_dir_is_refused lint_nonexistent_path_is_refused ; after `git checkout` -> ok. 2 passed; 0 failed; 0 ignored; 0 measured; 13 filtered out; finished in 0.30s. RE-MEASURED 2026-09-10 on the tree after the watch/diff and strict-walker fixes (parent 8bb0c2956): the `refuse_empty_corpus(&report, contract_dir)?;` line in lint::run deleted, `cargo test -p aprender-contracts-cli --test pvl_zero_contracts lint_` -> FAILED. 2 passed; 2 failed; 15 filtered out; RED: lint_empty_dir_is_refused lint_nonexistent_path_is_refused (watch and diff stay GREEN); source restored -> ok. 4 passed; 0 failed
   - id: FALSIFY-PVL-1-003
     rule: "PVL-1-EMPTY-REFUSED"
     prediction: >
@@ -137,3 +169,31 @@ falsification_tests:
     expected_output: "exit 0 on an unmutated tree"
     if_fails: >
       MEASURED 2026-09-10 on 1ca5d39bf: mutation engaged, `cargo test -p aprender-contracts-cli --test pvl_zero_contracts` -> FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 14 filtered out; finished in 0.01s (rc=rc=101); RED: proof_status_kind_filter_to_zero_is_refused ; after `git checkout` -> ok. 1 passed; 0 failed; 0 ignored; 0 measured; 14 filtered out; finished in 0.01s
+  - id: FALSIFY-PVL-1-006
+    rule: "PVL-1-EMPTY-REFUSED"
+    prediction: >
+      Deleting the `refuse_empty_corpus` call inside `run_watch` AND turning
+      the `has_contract_files` probe in `run_diff_check` into `if false` turns
+      lint_watch_empty_dir_is_refused RED (the watch loop prints `Result: PASS`
+      over 0 contracts every 5 s until the test's 20 s deadline kills it,
+      code -1) and lint_diff_empty_dir_is_refused RED (`Nothing to lint`, exit
+      0), while lint_nonexistent_path_is_refused and lint_empty_dir_is_refused
+      stay GREEN (the first review quorum on #3093 found exactly these two
+      bypasses).
+    test_harness: "cargo test -p aprender-contracts-cli --test pvl_zero_contracts lint_"
+    expected_output: "exit 0 on an unmutated tree"
+    if_fails: >
+      MEASURED 2026-09-10 on the tree after the watch/diff and strict-walker fixes (parent 8bb0c2956): both mutations engaged, `cargo test -p aprender-contracts-cli --test pvl_zero_contracts lint_` -> FAILED. 2 passed; 2 failed; 15 filtered out; finished in 20.02s; RED: lint_diff_empty_dir_is_refused lint_watch_empty_dir_is_refused ; source restored -> ok. 4 passed; 0 failed; finished in 0.30s
+  - id: FALSIFY-PVL-1-007
+    rule: "PVL-1-BROKEN-MEASURED"
+    prediction: >
+      Making `walk_contracts` drop a parse failure again (`Err(_) => {}` in
+      place of `errors.push(..)`) turns unparsable_only_dir_is_measured_not_refused
+      RED (every walking command reports `0 contracts`, exit 2, over a directory
+      holding one broken file) and mixed_dir_one_broken_file_fails_and_names_it
+      RED (proof-status exits 0 over the one good contract and never names
+      broken.yaml), while every other case stays GREEN.
+    test_harness: "cargo test -p aprender-contracts-cli --test pvl_zero_contracts -- unparsable_only mixed_dir"
+    expected_output: "exit 0 on an unmutated tree"
+    if_fails: >
+      MEASURED 2026-09-10 on the tree after the watch/diff and strict-walker fixes (parent 8bb0c2956): mutation engaged, `cargo test -p aprender-contracts-cli --test pvl_zero_contracts -- unparsable_only mixed_dir` -> FAILED. 0 passed; 2 failed; 17 filtered out; finished in 0.01s; RED: mixed_dir_one_broken_file_fails_and_names_it unparsable_only_dir_is_measured_not_refused ; source restored -> ok. 2 passed; 0 failed; finished in 0.02s

@@ -15,10 +15,23 @@
 //! [`ZeroContracts`] (exit [`ZERO_CONTRACTS_EXIT`]) for an empty or missing
 //! directory, and treats a single `.yaml` file as a one-contract corpus so
 //! `pv <cmd> <file>` reports that file instead of walking nothing.
+//!
+//! ONE definition of "empty". The set of contract files is the one `pv lint`
+//! walks — [`provable_contracts::lint::collect_yaml_files`] (the
+//! `is_contract_yaml` rule plus the skipped sidecar directories) — so no two
+//! commands can disagree on what is there. A contract file that fails to
+//! parse is NOT "no contract": it was measured, and it failed
+//! ([`ParseErrors`], exit 1, every file named). The second review quorum on
+//! #3093 measured `proof-status` and `lint --diff` refusing an
+//! unparsable-only directory as "0 contracts" (exit 2) while `lint` failed
+//! the same directory with `contracts: 1, errors: 1` (exit 1); this walker's
+//! old private rule also skipped every `*playbook*` stem, and the corpus holds
+//! real contracts named that way.
 
 use std::fmt;
 use std::path::{Path, PathBuf};
 
+use provable_contracts::lint::collect_yaml_files;
 use provable_contracts::schema::{parse_contract, Contract};
 
 /// Exit status of a refused empty corpus.
@@ -50,6 +63,36 @@ impl fmt::Display for ZeroContracts {
 
 impl std::error::Error for ZeroContracts {}
 
+/// Contract files under `path` that failed to parse: measured, and failed
+/// (exit 1) — never a silent skip, never "0 contracts".
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ParseErrors {
+    /// The directory that was asked for.
+    pub path: PathBuf,
+    /// Contract files seen (parsed + failed).
+    pub files: usize,
+    /// `(file, error)` per failure, in walk order.
+    pub errors: Vec<(PathBuf, String)>,
+}
+
+impl fmt::Display for ParseErrors {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{} of {} contract files under {} failed to parse",
+            self.errors.len(),
+            self.files,
+            self.path.display()
+        )?;
+        for (file, err) in &self.errors {
+            write!(f, "\n  {}: {err}", file.display())?;
+        }
+        Ok(())
+    }
+}
+
+impl std::error::Error for ParseErrors {}
+
 /// Refuse an empty corpus: `Err(ZeroContracts)` when `corpus` is empty.
 pub fn require_contracts<T>(
     path: &Path,
@@ -65,30 +108,51 @@ pub fn require_contracts<T>(
     Ok(())
 }
 
+/// Is there at least one contract file under `path`? The one definition of a
+/// non-empty corpus, answered WITHOUT parsing (diff mode asks this before it
+/// says "nothing changed"). A file path is a one-contract corpus.
+pub fn has_contract_files(path: &Path) -> bool {
+    if path.is_file() {
+        return true;
+    }
+    let mut files = Vec::new();
+    collect_yaml_files(path, &mut files);
+    !files.is_empty()
+}
+
 /// Load the corpus at `path` and refuse an empty one.
 ///
-/// - a directory is walked by [`collect_contracts`];
+/// - a directory is walked by [`walk_contracts`]; every contract file must
+///   parse — any failure is [`ParseErrors`] (exit 1), never a silent skip;
 /// - a single `.yaml` file is a one-contract corpus (a parse error is the
 ///   file's own error, exit 1 — it WAS measured);
-/// - a missing path is an empty corpus.
+/// - a missing path, or a directory without a contract file, is
+///   [`ZeroContracts`] (exit [`ZERO_CONTRACTS_EXIT`]).
+///
+/// The result is sorted by stem.
 pub fn collect_corpus(path: &Path) -> Result<Vec<(String, Contract)>, Box<dyn std::error::Error>> {
     let mut out = Vec::new();
+    let mut errors = Vec::new();
     if path.is_dir() {
-        collect_contracts(path, &mut out);
+        walk_contracts(path, &mut out, &mut errors);
     } else if path.is_file() {
-        let stem = path
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("unknown")
-            .to_string();
-        out.push((stem, parse_contract(path)?));
+        out.push((stem_of(path), parse_contract(path)?));
+    }
+    if !errors.is_empty() {
+        return Err(ParseErrors {
+            path: path.to_path_buf(),
+            files: out.len() + errors.len(),
+            errors,
+        }
+        .into());
     }
     require_contracts(path, &out, None)?;
+    out.sort_by(|a, b| a.0.cmp(&b.0));
     Ok(out)
 }
 
 /// Exit status for a `dispatch` error: [`ZERO_CONTRACTS_EXIT`] for a refused
-/// empty corpus, 1 for everything else.
+/// empty corpus, 1 for everything else (a parse failure included).
 pub fn exit_code_for(err: &(dyn std::error::Error + 'static)) -> i32 {
     if err.downcast_ref::<ZeroContracts>().is_some() {
         ZERO_CONTRACTS_EXIT
@@ -97,39 +161,39 @@ pub fn exit_code_for(err: &(dyn std::error::Error + 'static)) -> i32 {
     }
 }
 
-/// Walk `dir` recursively and collect every parseable `.yaml` contract
-/// into `out` as `(stem, contract)` pairs.
-///
-/// Skips:
-/// - `binding.yaml` / `binding.yml` (registry sidecar)
-/// - any file whose stem contains `playbook` (playbook sidecars)
-///
-/// Silently drops unparseable files — callers wanting strict loading
-/// should use `pv validate` or a bespoke loader. Callers that REPORT over
-/// the result must go through [`collect_corpus`], which refuses an empty
-/// one; this function alone answers "what is here", not "is there anything".
-pub fn collect_contracts(dir: &Path, out: &mut Vec<(String, Contract)>) {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return;
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.is_dir() {
-            collect_contracts(&path, out);
-        } else if path.extension().and_then(|e| e.to_str()) == Some("yaml") {
-            let stem = path
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .unwrap_or("unknown")
-                .to_string();
-            if stem == "binding" || stem.contains("playbook") {
-                continue;
-            }
-            if let Ok(c) = parse_contract(&path) {
-                out.push((stem, c));
-            }
+fn stem_of(path: &Path) -> String {
+    path.file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("unknown")
+        .to_string()
+}
+
+/// Walk `dir` recursively with `pv lint`'s file rule: every contract file is
+/// parsed into `out` as `(stem, contract)`, or recorded in `errors` as
+/// `(file, error)`. Nothing is dropped.
+pub fn walk_contracts(
+    dir: &Path,
+    out: &mut Vec<(String, Contract)>,
+    errors: &mut Vec<(PathBuf, String)>,
+) {
+    let mut files = Vec::new();
+    collect_yaml_files(dir, &mut files);
+    for path in files {
+        match parse_contract(&path) {
+            Ok(c) => out.push((stem_of(&path), c)),
+            Err(e) => errors.push((path, e.to_string())),
         }
     }
+}
+
+/// Walk `dir` and collect every PARSEABLE contract, dropping the rest.
+///
+/// Answers "what is here" for callers that do not report over the result;
+/// anything that REPORTS goes through [`collect_corpus`], which refuses an
+/// empty corpus and fails a broken file.
+pub fn collect_contracts(dir: &Path, out: &mut Vec<(String, Contract)>) {
+    let mut dropped = Vec::new();
+    walk_contracts(dir, out, &mut dropped);
 }
 
 #[cfg(test)]
@@ -159,15 +223,25 @@ mod tests {
             "expected > 100 contracts across the tree, got {}",
             out.len()
         );
-        // Every entry must have a non-empty stem.
+        // Every entry must have a non-empty stem, and the sidecar is skipped.
         for (stem, _) in &out {
             assert!(!stem.is_empty(), "empty stem in collected contracts");
-            assert!(
-                !stem.contains("playbook"),
-                "playbook sidecar was not skipped: {stem}"
-            );
             assert_ne!(stem, "binding", "binding sidecar was not skipped");
         }
+        // ONE file rule: the walker sees exactly the files `pv lint` walks — every
+        // one of them parses in this corpus (lint's validate gate: 0 errors), so
+        // the counts are equal; a `*playbook*` stem is a real contract, not a sidecar.
+        let mut files = Vec::new();
+        provable_contracts::lint::collect_yaml_files(&dir, &mut files);
+        assert_eq!(
+            out.len(),
+            files.len(),
+            "walker and lint disagree on the corpus"
+        );
+        assert!(
+            out.iter().any(|(stem, _)| stem.contains("playbook")),
+            "the corpus's playbook-named contracts were dropped"
+        );
     }
 
     #[test]

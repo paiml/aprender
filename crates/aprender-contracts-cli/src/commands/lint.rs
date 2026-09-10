@@ -231,9 +231,14 @@ fn run_diff_check(
     match provable_contracts::lint::diff::changed_contracts(contract_dir, base) {
         Ok(changed) if changed.is_empty() => {
             // PVL-1 (PMAT-1099): "nothing changed" over 0 contracts is the vacuous
-            // pass again — refuse the empty corpus (exit 2) before saying so.
-            if let Err(e) = crate::contract_walk::collect_corpus(contract_dir) {
-                return Some(Err(e));
+            // pass again — refuse a corpus with no contract file (exit 2) before
+            // saying so; the probe does not parse (nothing changed = fast path).
+            if !crate::contract_walk::has_contract_files(contract_dir) {
+                return Some(Err(crate::contract_walk::ZeroContracts {
+                    path: contract_dir.to_path_buf(),
+                    filter: None,
+                }
+                .into()));
             }
             println!("No contracts changed since {base}. Nothing to lint.");
             Some(Ok(()))

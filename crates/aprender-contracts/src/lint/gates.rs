@@ -64,7 +64,7 @@ pub(crate) fn load_contracts(dir: &Path) -> (Vec<(String, Contract)>, Vec<(Strin
 ///
 /// Emits entries in `read_dir` order, which is UNSPECIFIED. Every caller must
 /// impose its own total order before deriving a verdict from the result.
-pub(super) fn collect_yaml_files(dir: &Path, out: &mut Vec<std::path::PathBuf>) {
+pub fn collect_yaml_files(dir: &Path, out: &mut Vec<std::path::PathBuf>) {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return;
     };

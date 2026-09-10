@@ -3,9 +3,9 @@ use std::path::Path;
 use provable_contracts::binding::parse_binding;
 use provable_contracts::coverage::{coverage_report, overall_percentage, CoverageReport};
 use provable_contracts::reverse_coverage::reverse_coverage;
-use provable_contracts::schema::{parse_contract, Contract};
+use provable_contracts::schema::Contract;
 
-use crate::contract_walk::require_contracts;
+use crate::contract_walk::collect_corpus;
 
 pub fn run(
     contract_dir: &Path,
@@ -23,9 +23,8 @@ pub fn run(
         None => None,
     };
 
-    let contracts = load_yaml_contracts(contract_dir);
+    let contracts = collect_corpus(contract_dir)?;
     // PVL-1 (PMAT-1099): an empty corpus is refused (exit 2), never reported as 0/0.
-    require_contracts(contract_dir, &contracts, None)?;
     let refs: Vec<(String, &Contract)> = contracts.iter().map(|(s, c)| (s.clone(), c)).collect();
     let report = coverage_report(&refs, binding.as_ref());
     let pct = overall_percentage(&report);
@@ -88,33 +87,6 @@ fn print_unbound_functions(unbound: &[provable_contracts::reverse_coverage::PubF
     if unbound.len() > 20 {
         println!("  ... and {} more", unbound.len() - 20);
     }
-}
-
-/// Load, parse, and sort all contract `.yaml` files under `contract_dir`.
-fn load_yaml_contracts(contract_dir: &Path) -> Vec<(String, Contract)> {
-    let mut yaml_paths = Vec::new();
-    if contract_dir.is_file() {
-        // A single file is a one-contract corpus (PVL-1, PMAT-1099): report it
-        // rather than walk nothing.
-        yaml_paths.push(contract_dir.to_path_buf());
-    } else {
-        collect_yaml_files(contract_dir, &mut yaml_paths);
-    }
-
-    let mut contracts = Vec::new();
-    for path in &yaml_paths {
-        let stem = path
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("unknown")
-            .to_string();
-        match parse_contract(path) {
-            Ok(c) => contracts.push((stem, c)),
-            Err(e) => eprintln!("warning: skipping {}: {e}", path.display()),
-        }
-    }
-    contracts.sort_by(|a, b| a.0.cmp(&b.0));
-    contracts
 }
 
 fn print_coverage_report(report: &CoverageReport, pct: f64, has_binding: bool) {
@@ -323,26 +295,5 @@ fn classify_macro(macro_name: &str, gen_content: &str) -> EnforcementLevel {
         EnforcementLevel::E1
     } else {
         EnforcementLevel::E0
-    }
-}
-
-/// Recursively collect `.yaml` contract files, skipping non-contract directories.
-fn collect_yaml_files(dir: &Path, out: &mut Vec<std::path::PathBuf>) {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return;
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.is_dir() {
-            let dirname = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-            if dirname == "kaizen" || dirname == "legacy" || dirname == "pipelines" {
-                continue;
-            }
-            collect_yaml_files(&path, out);
-        } else if path.extension().and_then(|e| e.to_str()) == Some("yaml")
-            && path.file_name().and_then(|n| n.to_str()) != Some("binding.yaml")
-        {
-            out.push(path);
-        }
     }
 }
