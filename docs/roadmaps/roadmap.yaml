@@ -16858,3 +16858,23 @@ roadmap:
   - release
   - 0.66.0
   notes: 'orch-basis:release — the 0.66.0 cut is a release-state ticket (AUTO-IMPL-SKILL-003 §2.1 basis=release); push, tag, gh release and the crates.io cascade are orchestration phases (route=self).'
+- id: PMAT-1099
+  github_issue: null
+  item_type: task
+  title: 'PVL-1: pv lint/proof-status refuse zero contracts'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-09-10T11:52:02Z
+  updated: 2026-09-10T11:55:16.365550162+00:00
+  spec: null
+  acceptance_criteria:
+  - 'PVL-001 EV-1 (spec: infra docs/specifications/PVL-001-pv-lean-gate.md). RED: integration test spawning $PV lint on a nonexistent path and on an empty dir, asserting exit!=0; same for proof-status on an empty dir. Change: 0 contracts -> exit 2 with ''error: 0 contracts under <path>''; applies to lint, proof-status, coverage, graph. Mutation: revert the guard -> test RED. done_when: cd ~/src/aprender && . scripts/pv_bin.sh && "$PV" lint /nonexistent-pvl-path; test $? -ne 0'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - orch:fable
+  - pvl-001
+  notes: 'orch-basis:M>=3 - footprint measured by pmat query (contract_walk callers) and read at HEAD: crates/aprender-contracts-cli/src/{contract_walk.rs,lib.rs,commands/lint.rs,commands/coverage.rs,commands/graph.rs,commands/proof_status.rs} = 6 modules. Spec: paiml/infra docs/specifications/PVL-001-pv-lean-gate.md row EV-1. This session is the aprender driver instance for PVL rows (PVL-001 section 0).'
