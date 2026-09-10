@@ -30,3 +30,4 @@
 {"repo":"aprender","ticket":"PMAT-1059","phase":"row","mode":"direct+quorum:agy","est":null,"actual":15,"basis":"first-run[U]","turns":15,"tokens":64665,"wall_clock_s":2700,"model":"claude-fable-5-1","class":"ratchet-guard","pr":3011}
 {"repo":"aprender","ticket":"PMAT-1096","phase":"all","mode":"direct+agy-quorum","unit":"turn","est":6,"actual":null,"basis":"first-run[U]","pr_runs":0,"mg_runs":0}
 {"repo":"aprender","ticket":"PMAT-1099","phase":"all","mode":"direct+agy-plan+agy-quorum","unit":"tool_call","est":120,"actual":110,"basis":"PVL-001 §5 [A] operator estimate; actual [C] transcript count ±2","pr_runs":1,"mg_runs":0}
+{"repo":"aprender","ticket":"PMAT-1099","phase":"run2","mode":"direct+agy-quorum×2(direct-launch)","unit":"tool_call","est":120,"actual":36,"basis":"PVL-001 §5 [A] operator estimate; actual [C] count at receipt time (+≈5 for CI watch/merge)","pr_runs":1,"mg_runs":0}
