@@ -18,6 +18,23 @@
 # Feature-gated suites (model-tests, setfit, ...) belong to the full tier only;
 # the quick tier runs default features. Exit 2 on ENV (unknown event, registry
 # drift); 0 otherwise. `--self-test` runs the case table.
+#
+# `--filterset '<targets>'` (or the same list on stdin) prints the cargo-nextest
+# FILTERSET expression that selects exactly those targets — one clause per token,
+# UNIONed with `|`. It is the whole of PMAT-1098 (#3084): the quick tier used to
+# expand `targets` into a `&&` chain of one `cargo nextest run -p CRATE ...` per
+# crate — 26 cargo invocations, 26 compiles of the shared dependency graph, run
+# serially. Measured 55 min on a one-file YAML PR (run 34449608126) and killed at
+# the 60-minute step timeout under fleet load on #3063 (#3070). One invocation
+# over the filterset builds the union ONCE and runs the tests in parallel.
+#   crate:--lib        -> (package(crate) & kind(lib))
+#   crate:--bins       -> (package(crate) & kind(bin))    [bin-only crates: no lib target]
+#   crate:--test:NAME  -> binary_id(crate::NAME)
+# The binary-id forms are nextest's own, verified on cargo-nextest 0.9.132 against
+# this workspace (`cargo nextest list --message-format json`): a lib suite's id is
+# the bare package name, an integration target's is `package::target`, a bin's is
+# `package::bin/name`. `kind(lib)`/`kind(bin)` are equality matches on those kinds,
+# which is why the lib and bins tokens do not need to name the binary at all.
 set -euo pipefail
 
 EVENT=""; COMPARAND=""; DIFF_FROM=""; PR_HEAD=""; PR_CONCLUSION=""; REGISTRY="scripts/tree_reader_tests.txt"; ROOT="."
@@ -31,12 +48,36 @@ while [ $# -gt 0 ]; do
         --registry) REGISTRY=$2; shift 2 ;;
         --repo-root) ROOT=$2; shift 2 ;;
         --self-test) SELF_TEST=1; shift ;;
-        *) printf 'usage: %s --event EVENT [--comparand REF] [--diff-from FILE] [--pr-head SHA --pr-head-conclusion C] [--registry FILE] [--repo-root DIR] | --self-test\n' "$0" >&2; exit 2 ;;
+        # optional operand: `--filterset 'a:--lib b:--test:c'`, or nothing and the
+        # list comes from stdin (how ci.yml pipes steps.tier.outputs.targets in).
+        --filterset) FILTERSET=1; shift; if [ $# -gt 0 ]; then FS_TARGETS=$1; shift; fi ;;
+        *) printf 'usage: %s --event EVENT [--comparand REF] [--diff-from FILE] [--pr-head SHA --pr-head-conclusion C] [--registry FILE] [--repo-root DIR] | --filterset [TARGETS] | --self-test\n' "$0" >&2; exit 2 ;;
     esac
 done
 
 targets_from_registry() { # -> space list crate:--lib | crate:--test:name
     grep -v '^#' "$1" | grep -v '^[[:space:]]*$' | awk -F"\t" '{ if ($2=="--test") printf "%s:--test:%s ", $1, $3; else printf "%s:%s ", $1, $2 }' | sed 's/ $//'
+}
+
+filterset_from_targets() { # <space list of crate:--lib|crate:--bins|crate:--test:NAME> -> nextest -E expression
+    local t clause expr=""
+    for t in $1; do
+        case "$t" in
+            *:--lib)    clause="(package(${t%:--lib}) & kind(lib))" ;;
+            *:--bins)   clause="(package(${t%:--bins}) & kind(bin))" ;;
+            *:--test:*) clause="binary_id(${t%%:--test:*}::${t#*:--test:})" ;;
+            # Never a silent drop: a token this does not understand is a
+            # tree-reader target that would stop running while the step stayed
+            # green — exactly the darkness scripts/tree_reader_tests.txt exists
+            # to end. ENV, exit 2, name the token.
+            *) printf 'ENV: unrecognised target token "%s" — expected crate:--lib, crate:--bins or crate:--test:NAME\n' "$t" >&2; return 2 ;;
+        esac
+        expr="${expr:+$expr | }$clause"
+    done
+    # An empty -E is not "select nothing", it is `cargo nextest run --workspace`
+    # with no filter at all. Refuse rather than run the full tier by accident.
+    [ -n "$expr" ] || { printf 'ENV: no targets given — refusing to emit an empty filterset (nextest would then select the WHOLE workspace)\n' >&2; return 2; }
+    printf '%s\n' "$expr"
 }
 
 decide() {
@@ -121,5 +162,9 @@ self_test() {
 }
 
 if [ "${SELF_TEST:-0}" = 1 ]; then self_test; exit $?; fi
+if [ "${FILTERSET:-0}" = 1 ]; then
+    if [ -z "${FS_TARGETS+x}" ]; then FS_TARGETS=$(cat); fi
+    filterset_from_targets "$FS_TARGETS"; exit $?
+fi
 [ -n "$EVENT" ] || { printf 'usage: %s --event EVENT ...\n' "$0" >&2; exit 2; }
 decide

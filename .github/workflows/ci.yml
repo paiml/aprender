@@ -525,7 +525,12 @@ jobs:
       # tier. Empty selection (a scripts/docs PR) skips this step; part 2 still runs.
       - name: "Quick tier: lib + integration tests of the selected crates (BSE-17)"
         if: steps.tier.outputs.tier == 'quick' && steps.tier.outputs.crates != ''
-        timeout-minutes: 60
+        # 20, not 60 (PMAT-1098, #3084). A quick tier that is ALLOWED an hour is
+        # not a quick tier, and 60 is the number that let part 2 burn 55 minutes
+        # (run 34449608126) before dying at the cap under fleet load on #3063
+        # (#3070). The budget is the assertion: over 20 minutes, this tier has
+        # stopped being cheaper than the full one and should fail loudly.
+        timeout-minutes: 20
         env:
           CRATES: ${{ steps.tier.outputs.crates }}
         run: |
@@ -553,30 +558,44 @@ jobs:
             bash -c "cargo nextest run --profile ci --lib --tests$pkgs"
       # BSE-17 quick tier, part 2: every test target that reads the tree, from
       # scripts/tree_reader_tests.txt (derived; the guard has already proved the
-      # registry equals the sources in this run). Grouped per crate: one cargo
-      # invocation per crate, --lib and/or its --test targets.
+      # registry equals the sources in this run).
+      #
+      # PMAT-1098 (#3084) — ONE BUILD GRAPH. This step used to expand `targets`
+      # into a `&&` chain of one `cargo nextest run -p CRATE ...` per crate: 26
+      # cargo invocations for 41 targets, so the shared dependency graph was
+      # resolved and linked 26 times and the 26 test runs went one after another.
+      # Measured 55 minutes on a PR that touched a single YAML file (run
+      # 34449608126) and killed at the 60-minute cap under fleet load on #3063
+      # (#3070). A quick tier that costs more than the full tier is not an
+      # optimisation, it is a second full tier with a smaller test set.
+      #
+      # The same registry tokens now become ONE nextest filterset
+      # (`scripts/ci_test_tier.sh --filterset`, whose token->clause translation is
+      # pinned in both polarities by that script's --self-test case table, an
+      # unrecognised token being ENV rather than a silently dropped target). The
+      # union is built once and every selected test runs in the single parallel
+      # pool.
+      #
+      # `--workspace --lib --tests` is the BUILD set: nextest can only select from
+      # binaries it built, and -E narrows the RUN to the registry. The three
+      # `--exclude` crates are held verbatim from the full tier's `--workspace
+      # --lib` line above and for the same reason stated there — under --workspace
+      # feature unification pulls the cuda driver in, and those crates have their
+      # own steps. None of them appears in the registry (check_tree_reader_tests.sh
+      # reads this exclude list out of this file and drops their targets), so the
+      # exclusion removes nothing the filterset asks for.
       - name: "Quick tier: every test target that reads the tree (BSE-17)"
         if: steps.tier.outputs.tier == 'quick'
-        timeout-minutes: 60
+        timeout-minutes: 20
         env:
           TARGETS: ${{ steps.tier.outputs.targets }}
         run: |
           set -euo pipefail
           read -ra targets <<< "$TARGETS"
           printf 'tree-reader targets: %s\n' "${#targets[@]}"
-          script=""
-          for crate in $(printf '%s\n' "${targets[@]}" | cut -d: -f1 | sort -u); do
-            flags=""
-            for t in "${targets[@]}"; do
-              case "$t" in
-                "$crate:--lib") flags="$flags --lib" ;;
-                "$crate:--test:"*) flags="$flags --test ${t#"$crate:--test:"}" ;;
-              esac
-            done
-            script="$script cargo nextest run --profile ci -p $crate$flags &&"
-          done
-          script="${script% &&}"
-          printf '%s\n' "$script" | tr '&' '\n' | grep -v '^$' | sed 's/^/  + /'
+          EXPR="$(bash scripts/ci_test_tier.sh --filterset "$TARGETS")"
+          printf 'nextest filterset (%s clause(s)):\n' "$(printf '%s' "$EXPR" | tr '|' '\n' | wc -l)"
+          printf '%s\n' "$EXPR" | tr '|' '\n' | sed 's/^ *//; s/ *$//; s/^/  + /'
           docker run --rm \
           -e CI -e GITHUB_ACTIONS -e GITHUB_REF -e GITHUB_SHA -e GITHUB_REPOSITORY -e GITHUB_RUN_ID -e GITHUB_EVENT_NAME -e GITHUB_WORKFLOW \
             -v "${GITHUB_WORKSPACE}:/workspace" \
@@ -594,7 +613,7 @@ jobs:
             -e CARGO_PROFILE_DEV_DEBUG=line-tables-only \
             -e CARGO_TERM_COLOR=never \
             "$IMAGE" \
-            bash -c "set -e; $script"
+            cargo nextest run --profile ci --workspace --lib --tests --exclude aprender-gpu --exclude aprender-cuda-edge --exclude aprender-compute -E "$EXPR"
       # BSE-17 reuse: the queue ref's tree is byte-identical to a PR head whose
       # workspace-test already succeeded; measuring it again is waste, not
       # evidence. The tier step proved both facts (trees compared by hash, the
