@@ -729,14 +729,24 @@ jobs:
   # sovereign-ci registry. Pure text check; runs on the clean-room pool.
   guard-tree:
     runs-on: [self-hosted, X64, Linux, clean-room]
-    # 90: the BSE-05 cap for a PR/merge-group job. Basis (BSE-05 formula
-    # T = max(15, ceil(1.5*p99), p99+20) over the job's own history): p50 52.9 /
-    # p99 85.1 minutes over the last 9 SUCCESSFUL runs of this job as it stood
-    # BEFORE the cargo half moved to `guard-cargo` (cancelled runs excluded --
-    # a 0.0-minute cancellation is not a duration). T would be 128; the 90-minute
-    # PR cap binds instead. That measured p99 is an upper bound for what is left
-    # here, because this job strictly shrank.
-    timeout-minutes: 90
+    # 20: the operator's hard PR budget (rule E, 2026-09-10), and it OVERRIDES
+    # the BSE-05 formula rather than being derived from it.
+    #
+    # Measured basis, run 34449608126 (PR #3074, `gh api .../jobs` step
+    # timestamps): this job was 27.3 min, of which the ONE step
+    # "Every cargo-free guard runs, and every failure is reported" was
+    # 1105 s = 18.4 min, running ~35 independent guards strictly serially.
+    # That step now dispatches them through an xargs pool (PMAT-1098, row
+    # 67-E3; case table scripts/tests/guard_tree_parallel_test.sh), measured
+    # 289 s serial -> 43 s parallel on a 48-core box. Projected job:
+    # 27.3 - 18.4 + <=8 = <=17 min.
+    #
+    # BSE-05 would say T = max(15, ceil(1.5*p99), p99+20); with the pre-change
+    # p99 of 85.1 min it says 128, and even against the projected 17 it says
+    # 37. The 20-minute budget is SMALLER than the formula's answer, and it is
+    # the number the operator set. A run that exceeds it is meant to fail:
+    # that is the andon for this row, not a flake to widen away.
+    timeout-minutes: 20
     env:
       IMAGE: localhost:5000/sovereign-ci:stable
       # Same definition as workspace-test (:106). aprender#2627: the
@@ -850,6 +860,15 @@ jobs:
       # the job whose own dispatcher it verifies.
       - name: "guard_tree.sh's own case table (BSE-01, wired BSE-02)"
         run: bash scripts/tests/guard_tree_test.sh
+      # The dispatcher above runs its guards CONCURRENTLY (PMAT-1098, row
+      # 67-E3). This table proves the six properties concurrency can quietly
+      # take away -- the universe reached, a named failure, the count, byte-
+      # identical ordering across two runs, a guard that dies without a
+      # verdict counting as FAILED -- against throwaway fixture repos, in
+      # seconds, and WITHOUT asserting any duration (this is a required job;
+      # see scripts/check_no_timing_in_required.sh).
+      - name: "guard_tree.sh's parallel dispatcher case table (PMAT-1098)"
+        run: bash scripts/tests/guard_tree_parallel_test.sh
       - name: "target-watch: before-cargo-install-bashrs"
         # aprender#2822 boundary probe (2 stat, 1 readdir, 1 df, 1 pgrep).
         # Instrumentation, never a gate: the script always exits 0.
@@ -1068,15 +1087,21 @@ jobs:
   # minutes onto every green run for no ordering that anything requires.
   guard-cargo:
     runs-on: [self-hosted, X64, Linux, clean-room]
-    # 90: the BSE-05 cap for a PR/merge-group job. Basis (BSE-05 formula
-    # T = max(15, ceil(1.5*p99), p99+20) over the job's own history): the
-    # unsplit `guard-tree` measured p50 52.9 / p99 85.1 minutes over
-    # its last 9 successful runs, which is the upper bound for this job — it
-    # carries the cargo half of that job and nothing new. The cap is what
-    # binds, not the formula (T would be 128); a required check must not
-    # become a wall-clock assertion its neighbours decide, so the value sits
-    # above the worst contended run of the strictly larger job it came from.
-    timeout-minutes: 90
+    # 20: the operator's hard PR budget (rule E, 2026-09-10), and it OVERRIDES
+    # the BSE-05 formula rather than being derived from it.
+    #
+    # Measured basis, run 34449608126 (PR #3074, `gh api .../jobs` step
+    # timestamps): 43.8 min over 80 steps, 13 of them over 60 s. The seven
+    # tree-universe steps listed in scripts/guards_nightly_manifest.txt were
+    # 1607 s = 26.8 min of that, and they now run in guards-nightly.yml.
+    # Projected job: 43.8 - 26.8 = 17.0 min, three minutes of headroom.
+    #
+    # BSE-05 would say T = max(15, ceil(1.5*p99), p99+20) = 37 against a p99
+    # of 17. The 20-minute budget is SMALLER than the formula's answer, and it
+    # is the number the operator set (rule E). A run that exceeds it is meant
+    # to fail: the remedy is to move the next tree-universe step to the
+    # nightly, never to widen this number.
+    timeout-minutes: 20
     env:
       IMAGE: localhost:5000/sovereign-ci:stable
       PR_OR_REF: ${{ github.event.pull_request.number || github.ref_name }}
@@ -1299,8 +1324,10 @@ jobs:
       # hand-written bash, and a gate that cannot go green gets disabled.
       # BSE-17 (PMAT-1077): the tier decision's case table and the tree-reader
       # registry guard's, both polarities; cargo metadata is needed, so here.
-      - name: "Test-tier decision case table (BSE-17): quick/full/reuse, drift is ENV"
-        run: bash scripts/ci_test_tier.sh --self-test
+      # MOVED to .github/workflows/guards-nightly.yml (PMAT-1098, row 67-E3):
+      # "Test-tier decision case table (BSE-17): quick/full/reuse, drift..." -- 586 s of guard-cargo's measured 43.8 min on run
+      # 34449608126, and its universe is the tree, not the diff.
+      # scripts/guards_nightly_manifest.txt is the ledger of what moved.
       - name: "Tree-reader registry guard case table (BSE-17)"
         run: bash scripts/check_tree_reader_tests.sh --self-test
       # The registry is the WIRED half; the unwired half is a ledger of tests
@@ -1356,8 +1383,10 @@ jobs:
       # Text-only, no build. Self-test first (Verification Discipline #7).
       - name: "inherited-stdin guard must still turn RED (case table)"
         run: bash scripts/check_hermetic_stdin_tests.sh --self-test
-      - name: No test may assert about the fd 0 it inherited
-        run: bash scripts/check_hermetic_stdin_tests.sh
+      # MOVED to .github/workflows/guards-nightly.yml (PMAT-1098, row 67-E3):
+      # "No test may assert about the fd 0 it inherited" -- 135 s of guard-cargo's measured 43.8 min on run
+      # 34449608126, and its universe is the tree, not the diff.
+      # scripts/guards_nightly_manifest.txt is the ledger of what moved.
       # Poka-yoke: a contract may not name an enforcement command that cannot
       # run. #2504: apr-cli-commands-v1.yaml declared five falsification
       # conditions enforced by `cargo test --test apr_cli_commands ...`; there
@@ -1429,8 +1458,10 @@ jobs:
       # it. Its size check also looked at 2 of 72 publishable crates and never
       # measured a size, so the 5.4 MB of .pmat-baseline.json it now catches had
       # been shipping to crates.io unseen.
-      - name: Publish safety (binary/oversize files in published packages)
-        run: bash scripts/check_publish_safety.sh
+      # MOVED to .github/workflows/guards-nightly.yml (PMAT-1098, row 67-E3):
+      # "Publish safety (binary/oversize files in published packages)" -- 130 s of guard-cargo's measured 43.8 min on run
+      # 34449608126, and its universe is the tree, not the diff.
+      # scripts/guards_nightly_manifest.txt is the ledger of what moved.
       # #2512: these two were invoked by NO workflow -- one Makefile-only
       # (`make tier3`, which CI does not run), one reachable from nothing at all.
       # Both pass today and are cheap, so there was never a reason for them to be
@@ -1474,8 +1505,10 @@ jobs:
           cargo test -p aprender-contracts --test validate_contracts
           cargo test -p aprender-contracts --test kani_harness_generation
           cargo test -p aprender-contracts --test probar_test_generation
-      - name: aprender-core builds for wasm32
-        run: bash scripts/check_wasm32_core_builds.sh
+      # MOVED to .github/workflows/guards-nightly.yml (PMAT-1098, row 67-E3):
+      # "aprender-core builds for wasm32" -- 94 s of guard-cargo's measured 43.8 min on run
+      # 34449608126, and its universe is the tree, not the diff.
+      # scripts/guards_nightly_manifest.txt is the ledger of what moved.
       # aprender#2546: `provable-contracts*` were renamed to `aprender-contracts*`
       # and the published names left frozen at 0.3.1. A pin on the old name
       # resolved SILENTLY and installed a tool sixty versions behind. The names
@@ -1591,8 +1624,10 @@ jobs:
       # single stale binary name left by the APR-MONO rename, dead since. Gated
       # now so the crate cannot go dark again. --lib only: the integration
       # targets shell out to the built binary and take minutes.
-      - name: aprender-profile lib tests (was gated by nothing)
-        run: cargo test -p aprender-profile --lib
+      # MOVED to .github/workflows/guards-nightly.yml (PMAT-1098, row 67-E3):
+      # "aprender-profile lib tests (was gated by nothing)" -- 200 s of guard-cargo's measured 43.8 min on run
+      # 34449608126, and its universe is the tree, not the diff.
+      # scripts/guards_nightly_manifest.txt is the ledger of what moved.
       # aprender#2627: `PR_OR_REF` is job-level env on workspace-test. The
       # model-tests step below was written by copying workspace-test's docker
       # mount lines into THIS job, which did not define it -- so both bind
@@ -1628,61 +1663,14 @@ jobs:
       # measures 0. A count that cannot be read fails HERE -- the suite refuses
       # an empty SATD_BASELINE on its own account, but a step that exported one
       # would be reporting a measurement it did not take.
-      - name: model-tests falsification suites (was gated by nothing, aprender#2522) -- SATD ceiling measured on the comparand (BSE-03)
-        run: |
-          set -euo pipefail
-          dr() { # dr <dir mounted as /workspace> <cmd...>
-            local ws=$1; shift
-            docker run --rm \
-              --user "$(id -u):$(id -g)" \
-              -v "${ws}:/workspace" \
-              -v "${GUARD_CARGO_HOME}:/cargo-home" \
-              -v "${GUARD_TARGET_DIR}:/workspace/target" \
-              -e CARGO_HOME=/cargo-home \
-              -v "/home/noah/data/sccache:/sccache" \
-              -w /workspace \
-              -e CARGO_TARGET_DIR=/workspace/target \
-              -e RUSTC_WRAPPER=rustc-sccache \
-              -e SCCACHE_DIR=/sccache \
-              -e SCCACHE_CACHE_SIZE=50G \
-              -e CARGO_INCREMENTAL=0 \
-              -e CARGO_BUILD_JOBS=8 \
-              -e CARGO_TERM_COLOR=never \
-              "${DR_ENV[@]}" \
-              "$IMAGE" "$@"
-          }
-          DR_ENV=()
-          # 1. build the checklist suite once, at HEAD, and learn its executable
-          dr "$GITHUB_WORKSPACE" cargo test -p aprender-core --features model-tests \
-            --test falsification_spec_v10_tests --no-run 2>&1 | tee "$RUNNER_TEMP/satd-build.log"
-          bin=$(sed -e 's/\x1b\[[0-9;]*m//g' -e 's/\r$//' "$RUNNER_TEMP/satd-build.log" | sed -n 's|.*Executable tests/falsification_spec_v10_tests\.rs (\(.*\))$|\1|p' | tail -1)
-          [ -n "$bin" ] || { echo "FAIL: cargo did not name the falsification suite executable"; exit 1; }
-          # 2. measure the comparand with that same binary
-          # A detached worktree, not `git archive`: archive honours .gitattributes
-          # export-ignore, so an ignored source file would vanish from the
-          # comparand and lower the measured count (review m2-prb-review, 4/5 lanes).
-          comparand="$RUNNER_TEMP/comparand"; git worktree remove --force "$comparand" 2>/dev/null || rm -rf "$comparand"
-          git worktree add --detach "$comparand" origin/main
-          trap 'git worktree remove --force "$comparand" 2>/dev/null || true' EXIT
-          DR_ENV=(-e SATD_BASELINE=0)
-          set +e
-          out=$(dr "$comparand" "$bin" f_dod_001_satd_count_is_zero --exact --nocapture 2>&1); mrc=$?
-          set -e
-          n=$(printf '%s\n' "$out" | sed -n 's/.*BROKEN -- \([0-9][0-9]*\) markers in production source.*/\1/p' | head -1)
-          if [ "$mrc" -eq 0 ] && [ -z "$n" ] && printf '%s\n' "$out" | grep -q '^test result: ok'; then n=0; fi
-          case "$n" in ''|*[!0-9]*) printf '%s\n' "$out" | tail -20; echo "FAIL: the comparand measurement did not yield a count (rc=$mrc)"; exit 1 ;; esac
-          echo "SATD_BASELINE=$n measured on origin/main $(git rev-parse --short origin/main) by the HEAD-built suite"
-          # 3. the suites, judged against the measured ceiling
-          DR_ENV=(-e "SATD_BASELINE=$n")
-          dr "$GITHUB_WORKSPACE" cargo test -p aprender-core --features model-tests \
-            --test falsification_spec_v10_tests \
-            --test falsification_stress_tests \
-            --test falsification_gpu_state_tests
-          # 4. the satd class of the ratchet-semantics case table (rebuilds nothing)
-          DR_ENV=()
-          dr "$GITHUB_WORKSPACE" bash scripts/tests/ratchet_semantics_test.sh --class satd
-      - name: Book rust examples compile
-        run: bash scripts/check_book_examples_compile.sh
+      # MOVED to .github/workflows/guards-nightly.yml (PMAT-1098, row 67-E3):
+      # "model-tests falsification suites (was gated by nothing, aprende..." -- 256 s of guard-cargo's measured 43.8 min on run
+      # 34449608126, and its universe is the tree, not the diff.
+      # scripts/guards_nightly_manifest.txt is the ledger of what moved.
+      # MOVED to .github/workflows/guards-nightly.yml (PMAT-1098, row 67-E3):
+      # "Book rust examples compile" -- 206 s of guard-cargo's measured 43.8 min on run
+      # 34449608126, and its universe is the tree, not the diff.
+      # scripts/guards_nightly_manifest.txt is the ledger of what moved.
       # CB-510: a Cargo.toml `exclude` pattern can strip an include!() target
       # from the published crate while git still tracks it, so the crate compiles
       # in-tree and fails for everyone installing from crates.io. This guard is

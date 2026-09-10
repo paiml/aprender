@@ -1,0 +1,239 @@
+# guards-nightly.yml -- the guards whose universe is the whole tree, run once a
+# day on main instead of on every pull request (PMAT-1098, row 67-E3 of
+# docs/specifications/06x-release-schedule.md).
+#
+# THE BUDGET THAT CREATED THIS FILE
+# ---------------------------------
+# Operator, 2026-09-10: "We need to speed up PR iterations by limiting the
+# testing to at MOST 20 minutes ... then forcing the FULL test runs for
+# pre-release dogfood ONLY."
+#
+# Measured, not assumed -- `gh api repos/paiml/aprender/actions/runs/
+# 34449608126/jobs` (PR #3074, 2026-09-10, step timestamps):
+#
+#     guard-cargo   43.8 min   80 steps, 13 of them over 60 s
+#     guard-tree    27.3 min   45 steps, 2 of them over 60 s
+#
+# The seven steps below are 26.8 of guard-cargo's 43.8 minutes and they are
+# the ones whose verdict does NOT depend on the diff: they re-prove the same
+# property about the same files on every PR. scripts/guards_nightly_manifest.txt
+# is the join key -- one line per moved step, with the seconds it cost -- and
+# the first step of this job refuses to run if a name in it does not match a
+# step here (a manifest that has drifted from the workflow is how a moved
+# guard becomes a deleted one).
+#
+# WHAT DID NOT MOVE. Path-scoped guards stayed on the PR, and so did every
+# `--self-test` case table belonging to a guard that stayed: enforcement
+# integrity first. `workspace-test`, `gate` and `mutants` are untouched.
+#
+# THE RESIDUAL, NAMED. A defect in one of these classes can now reach main and
+# is caught within 24 h here, or at the pre-publish dogfood -- decision D-1 of
+# the 06x schedule, risk R2. That is the trade the 20-minute budget buys.
+#
+# RUNNER. [self-hosted, Linux, X64, clean-room] -- the provisioned sovereign-ci
+# pool, the same one guard-cargo uses, with the same image, the same per-ref
+# CARGO_HOME and its own target dir. NEVER a hosted runner (ubuntu-*/macos-*/
+# windows-*): operator rule, 2026-09-10.
+name: guards-nightly
+
+on:
+  schedule:
+    # 02:47Z -- an off-minute, and a slot no other nightly holds: cuda-nightly
+    # 01:30 (10 min), silicon-nightly 03:30, qwen-story-daily 04:17. A run of
+    # this job measured ~27 min of steps, so it lands clear of all three.
+    - cron: '47 2 * * *'
+  workflow_dispatch:
+
+# One at a time. Two of these jobs would share $GUARD_CARGO_HOME for the same
+# ref and race on cargo's .package-cache (PMAT-238 / paiml/infra#435), and a
+# manual dispatch during the scheduled run is exactly how that happens.
+concurrency:
+  group: guards-nightly-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  guards-nightly:
+    runs-on: [self-hosted, Linux, X64, clean-room]
+    # 60: BSE-05 formula T = max(15, ceil(1.5*p99), p99+20) over the measured
+    # cost of the steps this job carries -- 26.8 min of guard-cargo's own
+    # 43.8-min run 34449608126, plus checkout and the cargo-home heal. With
+    # p99 taken as that 30 min (this job has no history yet; the first three
+    # runs replace this basis), T = max(15, 45, 50) = 50, rounded to 60 because
+    # a nightly on a shared 32-core host pays contention a PR job does not and
+    # nothing is blocked while it waits.
+    timeout-minutes: 60
+    env:
+      IMAGE: localhost:5000/sovereign-ci:stable
+      # Same shape as guard-cargo (ci.yml). On a schedule/dispatch run there is
+      # no pull request, so the per-ref directories key on the branch name.
+      # aprender#2627: an UNDEFINED name here collapses the bind source to a
+      # trailing-slash path and every mount silently stops being the thing its
+      # comment describes, so this is defined at JOB level exactly as there.
+      PR_OR_REF: ${{ github.ref_name }}
+      GUARD_TARGET_DIR: /mnt/nvme-raid0/targets/aprender-ci/${{ github.ref_name }}/run-${{ github.run_id }}-guards-nightly
+      GUARD_CARGO_HOME: /mnt/nvme-raid0/cargo-ci/home/${{ github.ref_name }}
+    steps:
+      - name: Pre-checkout ownership restore (EACCES self-heal)
+        # Verbatim from ci.yml's guard-cargo. A hard-killed docker job leaves
+        # root-owned files in the runner checkout and the next job's
+        # `git clean -ffdx` dies with EACCES before a step runs.
+        run: |
+          if docker image inspect "$IMAGE" > /dev/null 2>&1; then
+            docker run --rm -v "${GITHUB_WORKSPACE}:/workspace" "$IMAGE" \
+              bash -c 'chown -R 1000:1000 /workspace 2>/dev/null || true'
+          else
+            echo "Image not cached — no prior docker job on this runner, nothing to restore"
+          fi
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+      # THE MANIFEST IS THE JOIN KEY, AND IT IS CHECKED BEFORE ANYTHING RUNS.
+      #
+      # A step that leaves ci.yml and never arrives here is a guard that was
+      # deleted while looking moved -- the quiet failure this whole row exists
+      # to avoid. Every non-comment line of scripts/guards_nightly_manifest.txt
+      # names a step; each must appear VERBATIM as a `- name:` in this file.
+      # Fail-closed: an empty manifest, a missing file or an unreadable line is
+      # a failure, never a pass.
+      - name: Every step the manifest says moved here must exist here
+        run: |
+          set -euo pipefail
+          manifest=scripts/guards_nightly_manifest.txt
+          [ -s "$manifest" ] || { echo "FAIL: $manifest missing or empty"; exit 1; }
+          n=0; bad=0
+          while IFS=$'\t' read -r secs name; do
+            case "${secs:-}" in ''|'#'*) continue ;; esac
+            [ -n "${name:-}" ] || { echo "FAIL: manifest line has no step name: $secs"; bad=1; continue; }
+            n=$((n + 1))
+            if ! grep -Fq -- "- name: $name" .github/workflows/guards-nightly.yml; then
+              echo "FAIL: manifest names a step this workflow does not run: $name"
+              bad=1
+            fi
+          done < <(grep -vE '^[[:space:]]*(#|$)' "$manifest")
+          [ "$n" -ge 5 ] || { echo "FAIL (vacuity): only $n manifest entries parsed"; exit 1; }
+          [ "$bad" -eq 0 ] || exit 1
+          echo "ok  $n manifest entries, every one a step in this workflow"
+      # THE COMPARAND, FETCHED ONCE, BEFORE ANY GUARD THAT NEEDS IT -- the
+      # SATD step below measures its ceiling on origin/main with the HEAD-built
+      # suite, and a depth-1 checkout has no such ref until this runs.
+      - name: Fetch origin/main as the comparand for every ratchet in this job
+        run: |
+          git fetch --no-tags --depth=1 origin +refs/heads/main:refs/remotes/origin/main
+      - name: Create this job's own target dir and CARGO_HOME (before any bind mount)
+        # Verbatim from ci.yml's guard-cargo (heal_path): a root-owned parent
+        # created by the docker daemon for another job's bind mount is chowned
+        # through the image before the mkdir -- that directory only, never its
+        # contents (#3037/#3039).
+        run: |
+          heal_path() {
+            local root=$1 path=$2 cur=$1 rel part
+            rel=${path#"$root"/}
+            IFS=/ read -ra parts <<< "$rel"
+            for part in "${parts[@]}"; do
+              cur="$cur/$part"
+              if [ -d "$cur" ] && [ ! -w "$cur" ]; then
+                docker run --rm -v "$(dirname "$cur"):/p" "$IMAGE" chown "$(id -u):$(id -g)" "/p/$(basename "$cur")"
+              fi
+            done
+            mkdir -p "$path"
+          }
+          heal_path /mnt/nvme-raid0/targets/aprender-ci "$GUARD_TARGET_DIR"
+          heal_path /mnt/nvme-raid0/cargo-ci/home "$GUARD_CARGO_HOME/registry"
+          printf 'target dir: %s\n' "$GUARD_TARGET_DIR"
+          printf 'cargo home: %s (registry/ .package-cache .package-cache-mutate travel together)\n' "$GUARD_CARGO_HOME"
+      - name: pmat/bashrs must match the pinned fleet versions (never install)
+        # The fleet pin is the only installer; this asserts the version on PATH
+        # matches tools.toml and fails closed. Placed before the first use.
+        run: bash scripts/check_tool_versions.sh
+      # ─────────────────────────────────────────────────────────────────────
+      # THE MOVED STEPS. Copied VERBATIM from ci.yml's guard-cargo job --
+      # same `name:`, same `run:`, same docker/mount shape -- because the name
+      # is what scripts/check_guards_are_wired.sh matches on (it greps every
+      # file under .github/workflows/, not ci.yml alone) and the mounts are
+      # what keep this job off workspace-test's target tree (aprender#2822).
+      # ─────────────────────────────────────────────────────────────────────
+      - name: "Test-tier decision case table (BSE-17): quick/full/reuse, drift is ENV"
+        run: bash scripts/ci_test_tier.sh --self-test
+      - name: aprender-core builds for wasm32
+        run: bash scripts/check_wasm32_core_builds.sh
+      - name: No test may assert about the fd 0 it inherited
+        run: bash scripts/check_hermetic_stdin_tests.sh
+      - name: Publish safety (binary/oversize files in published packages)
+        run: bash scripts/check_publish_safety.sh
+      - name: Book rust examples compile
+        run: bash scripts/check_book_examples_compile.sh
+      - name: aprender-profile lib tests (was gated by nothing)
+        run: cargo test -p aprender-profile --lib
+      - name: model-tests falsification suites (was gated by nothing, aprender#2522) -- SATD ceiling measured on the comparand (BSE-03)
+        run: |
+          set -euo pipefail
+          dr() { # dr <dir mounted as /workspace> <cmd...>
+            local ws=$1; shift
+            docker run --rm \
+              --user "$(id -u):$(id -g)" \
+              -v "${ws}:/workspace" \
+              -v "${GUARD_CARGO_HOME}:/cargo-home" \
+              -v "${GUARD_TARGET_DIR}:/workspace/target" \
+              -e CARGO_HOME=/cargo-home \
+              -v "/home/noah/data/sccache:/sccache" \
+              -w /workspace \
+              -e CARGO_TARGET_DIR=/workspace/target \
+              -e RUSTC_WRAPPER=rustc-sccache \
+              -e SCCACHE_DIR=/sccache \
+              -e SCCACHE_CACHE_SIZE=50G \
+              -e CARGO_INCREMENTAL=0 \
+              -e CARGO_BUILD_JOBS=8 \
+              -e CARGO_TERM_COLOR=never \
+              "${DR_ENV[@]}" \
+              "$IMAGE" "$@"
+          }
+          DR_ENV=()
+          # 1. build the checklist suite once, at HEAD, and learn its executable
+          dr "$GITHUB_WORKSPACE" cargo test -p aprender-core --features model-tests \
+            --test falsification_spec_v10_tests --no-run 2>&1 | tee "$RUNNER_TEMP/satd-build.log"
+          bin=$(sed -e 's/\x1b\[[0-9;]*m//g' -e 's/\r$//' "$RUNNER_TEMP/satd-build.log" | sed -n 's|.*Executable tests/falsification_spec_v10_tests\.rs (\(.*\))$|\1|p' | tail -1)
+          [ -n "$bin" ] || { echo "FAIL: cargo did not name the falsification suite executable"; exit 1; }
+          # 2. measure the comparand with that same binary
+          # A detached worktree, not `git archive`: archive honours .gitattributes
+          # export-ignore, so an ignored source file would vanish from the
+          # comparand and lower the measured count (review m2-prb-review, 4/5 lanes).
+          comparand="$RUNNER_TEMP/comparand"; git worktree remove --force "$comparand" 2>/dev/null || rm -rf "$comparand"
+          git worktree add --detach "$comparand" origin/main
+          trap 'git worktree remove --force "$comparand" 2>/dev/null || true' EXIT
+          DR_ENV=(-e SATD_BASELINE=0)
+          set +e
+          out=$(dr "$comparand" "$bin" f_dod_001_satd_count_is_zero --exact --nocapture 2>&1); mrc=$?
+          set -e
+          n=$(printf '%s\n' "$out" | sed -n 's/.*BROKEN -- \([0-9][0-9]*\) markers in production source.*/\1/p' | head -1)
+          if [ "$mrc" -eq 0 ] && [ -z "$n" ] && printf '%s\n' "$out" | grep -q '^test result: ok'; then n=0; fi
+          case "$n" in ''|*[!0-9]*) printf '%s\n' "$out" | tail -20; echo "FAIL: the comparand measurement did not yield a count (rc=$mrc)"; exit 1 ;; esac
+          echo "SATD_BASELINE=$n measured on origin/main $(git rev-parse --short origin/main) by the HEAD-built suite"
+          # 3. the suites, judged against the measured ceiling
+          DR_ENV=(-e "SATD_BASELINE=$n")
+          dr "$GITHUB_WORKSPACE" cargo test -p aprender-core --features model-tests \
+            --test falsification_spec_v10_tests \
+            --test falsification_stress_tests \
+            --test falsification_gpu_state_tests
+          # 4. the satd class of the ratchet-semantics case table (rebuilds nothing)
+          DR_ENV=()
+          dr "$GITHUB_WORKSPACE" bash scripts/tests/ratchet_semantics_test.sh --class satd
+      - name: Summary
+        if: always()
+        run: |
+          {
+            printf '## guards-nightly\n\n'
+            printf 'The tree-universe guards that left the PR path under the 20-minute\n'
+            printf 'budget (PMAT-1098, row 67-E3). Manifest: `scripts/guards_nightly_manifest.txt`.\n\n'
+            printf '| fact | value |\n|---|---|\n'
+            printf '| ref | `%s` |\n' "${GITHUB_REF_NAME}"
+            printf '| commit | `%s` |\n' "${GITHUB_SHA}"
+            printf '| steps moved here | %s |\n' "$(grep -cvE '^[[:space:]]*(#|$)' scripts/guards_nightly_manifest.txt)"
+            printf '| result | %s |\n' "${JOB_STATUS}"
+            printf '\nA red run here is a defect that reached main: the PR path no longer\n'
+            printf 'runs these. Fix it or move the step back -- do not disarm it.\n'
+          } >> "$GITHUB_STEP_SUMMARY"
+        env:
+          JOB_STATUS: ${{ job.status }}
