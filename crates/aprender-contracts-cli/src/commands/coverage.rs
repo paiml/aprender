@@ -5,6 +5,8 @@ use provable_contracts::coverage::{coverage_report, overall_percentage, Coverage
 use provable_contracts::reverse_coverage::reverse_coverage;
 use provable_contracts::schema::{parse_contract, Contract};
 
+use crate::contract_walk::require_contracts;
+
 pub fn run(
     contract_dir: &Path,
     binding_path: Option<&Path>,
@@ -22,6 +24,8 @@ pub fn run(
     };
 
     let contracts = load_yaml_contracts(contract_dir);
+    // PVL-1 (PMAT-1099): an empty corpus is refused (exit 2), never reported as 0/0.
+    require_contracts(contract_dir, &contracts, None)?;
     let refs: Vec<(String, &Contract)> = contracts.iter().map(|(s, c)| (s.clone(), c)).collect();
     let report = coverage_report(&refs, binding.as_ref());
     let pct = overall_percentage(&report);
@@ -89,7 +93,13 @@ fn print_unbound_functions(unbound: &[provable_contracts::reverse_coverage::PubF
 /// Load, parse, and sort all contract `.yaml` files under `contract_dir`.
 fn load_yaml_contracts(contract_dir: &Path) -> Vec<(String, Contract)> {
     let mut yaml_paths = Vec::new();
-    collect_yaml_files(contract_dir, &mut yaml_paths);
+    if contract_dir.is_file() {
+        // A single file is a one-contract corpus (PVL-1, PMAT-1099): report it
+        // rather than walk nothing.
+        yaml_paths.push(contract_dir.to_path_buf());
+    } else {
+        collect_yaml_files(contract_dir, &mut yaml_paths);
+    }
 
     let mut contracts = Vec::new();
     for path in &yaml_paths {

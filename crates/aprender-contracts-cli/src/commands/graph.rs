@@ -3,7 +3,7 @@ use std::str::FromStr;
 
 use provable_contracts::graph::{dependency_graph, graph_nodes, DependencyGraph};
 
-use crate::contract_walk::collect_contracts;
+use crate::contract_walk::collect_corpus;
 
 /// Output format for the dependency graph rendering
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -37,8 +37,8 @@ impl FromStr for GraphFormat {
 
 /// Load contracts from a directory and render their dependency graph
 pub fn run(contract_dir: &Path, format: GraphFormat) -> Result<(), Box<dyn std::error::Error>> {
-    let mut contracts = Vec::new();
-    collect_contracts(contract_dir, &mut contracts);
+    // PVL-1 (PMAT-1099): an empty corpus is refused (exit 2), never drawn as "Nodes: 0".
+    let mut contracts = collect_corpus(contract_dir)?;
     contracts.sort_by(|a, b| a.0.cmp(&b.0));
 
     let refs: Vec<(String, &provable_contracts::schema::Contract)> =

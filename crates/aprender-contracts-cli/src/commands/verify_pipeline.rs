@@ -13,20 +13,16 @@ use provable_contracts::graph::dependency_graph;
 use provable_contracts::schema::Contract;
 use serde_json::Value;
 
-use crate::contract_walk::collect_contracts;
+use crate::contract_walk::collect_corpus;
 use crate::json_obj::obj;
 
 /// Run the verify-pipeline command.
-pub fn run(contract_dir: &Path, format: &str) {
+pub fn run(contract_dir: &Path, format: &str) -> Result<(), Box<dyn std::error::Error>> {
     // 1. Load all contracts
-    let mut contracts = Vec::new();
-    collect_contracts(contract_dir, &mut contracts);
+    // PVL-1 (PMAT-1099): an empty corpus is refused (exit 2) — it used to print
+    // "No contracts found" and return at exit 0, a pass over nothing.
+    let mut contracts = collect_corpus(contract_dir)?;
     contracts.sort_by(|a, b| a.0.cmp(&b.0));
-
-    if contracts.is_empty() {
-        eprintln!("No contracts found in {}", contract_dir.display());
-        return;
-    }
 
     // 2. Build dependency graph + topological sort
     let refs: Vec<(String, &Contract)> = contracts.iter().map(|(s, c)| (s.clone(), c)).collect();
@@ -58,6 +54,8 @@ pub fn run(contract_dir: &Path, format: &str) {
     if !edges_broken.is_empty() {
         std::process::exit(1);
     }
+
+    Ok(())
 }
 
 /// Resolve one composition edge against the upstream contract it names.

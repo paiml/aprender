@@ -347,10 +347,7 @@ pub fn dispatch(command: Commands) -> Result<(), Box<dyn std::error::Error>> {
         Commands::VerifyPipeline {
             contract_dir,
             format,
-        } => {
-            commands::verify_pipeline::run(&contract_dir, &format);
-            Ok(())
-        }
+        } => commands::verify_pipeline::run(&contract_dir, &format),
         Commands::Migrate {
             contract_dir,
             dry_run,
@@ -366,7 +363,9 @@ pub fn run() {
 
     if let Err(e) = dispatch(cli.command) {
         eprintln!("error: {e}");
-        std::process::exit(1);
+        // PVL-1 (PMAT-1099): a refused EMPTY corpus exits 2 (nothing was measured);
+        // every other error keeps exit 1 (measured, failed).
+        std::process::exit(contract_walk::exit_code_for(e.as_ref()));
     }
 }
 

@@ -1,24 +1,19 @@
 use std::path::Path;
 
+use crate::contract_walk::collect_corpus;
 use provable_contracts::lean_gen::{format_status_report, lean_status};
-use provable_contracts::schema::parse_contract;
-
-use crate::contract_walk::collect_contracts;
 
 pub fn run(path: &Path) -> Result<(), Box<dyn std::error::Error>> {
-    let reports = if path.is_dir() {
-        let mut contracts = Vec::new();
-        collect_contracts(path, &mut contracts);
-        contracts.sort_by(|a, b| a.0.cmp(&b.0));
-        contracts
-            .into_iter()
-            .map(|(_, c)| lean_status(&c))
-            .filter(|r| r.with_lean > 0)
-            .collect()
-    } else {
-        let contract = parse_contract(path)?;
-        vec![lean_status(&contract)]
-    };
+    // PVL-1 (PMAT-1099): an empty corpus is refused (exit 2). A directory report
+    // lists only contracts that carry Lean metadata; a single file is always shown.
+    let is_dir = path.is_dir();
+    let mut contracts = collect_corpus(path)?;
+    contracts.sort_by(|a, b| a.0.cmp(&b.0));
+    let reports: Vec<_> = contracts
+        .into_iter()
+        .map(|(_, c)| lean_status(&c))
+        .filter(|r| !is_dir || r.with_lean > 0)
+        .collect();
 
     if reports.is_empty() {
         println!("No Lean proof metadata found in any contracts.");

@@ -5,6 +5,8 @@ use provable_contracts::lint::rules::RuleSeverity;
 use provable_contracts::lint::trend;
 use provable_contracts::lint::{run_lint, GateDetail, LintConfig, LintReport};
 
+use crate::contract_walk::ZeroContracts;
+
 #[path = "lint_render.rs"]
 mod lint_render;
 
@@ -94,6 +96,10 @@ pub fn run(
 
     let report = run_lint(&config);
 
+    // PVL-1 (PMAT-1099): an EMPTY corpus is refused (exit 2) before any report is
+    // printed — never `Result: PASS` over 0 contracts.
+    refuse_empty_corpus(&report, contract_dir)?;
+
     if cache_stats {
         print_cache_stats(&report);
     }
@@ -133,6 +139,34 @@ pub fn run(
         )
         .into())
     }
+}
+
+/// PVL-1 (PMAT-1099): the corpus is EMPTY when the gate NAMED `validate` counted
+/// nothing. Only that gate carries the count (parsed + parse errors):
+/// `duplicate-stems` reuses the `Validate` detail shape with zeros as a
+/// placeholder, so a shape-only match refused every VALID corpus — measured:
+/// one valid contract was refused while an invalid fixture, whose later gates
+/// are skipped, was counted. A corpus whose files all fail to parse is NOT
+/// empty (errors > 0): it was measured, and fails at exit 1.
+fn refuse_empty_corpus(report: &LintReport, contract_dir: &Path) -> Result<(), ZeroContracts> {
+    let empty = report.gates.iter().any(|g| {
+        g.name == "validate"
+            && matches!(
+                g.detail,
+                GateDetail::Validate {
+                    contracts: 0,
+                    errors: 0,
+                    ..
+                }
+            )
+    });
+    if empty {
+        return Err(ZeroContracts {
+            path: contract_dir.to_path_buf(),
+            filter: None,
+        });
+    }
+    Ok(())
 }
 
 struct CoverageResult {
