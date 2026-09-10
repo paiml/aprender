@@ -266,14 +266,24 @@ jobs:
           echo "sha=${ARCHIVE}.tar.gz.sha256" >> "$GITHUB_OUTPUT"
           du -h "${ARCHIVE}.tar.gz"
 
-      - name: Upload assets to release
+      # Self-hosted boxes carry no `gh` (measured: `gh: command not found` on gx10, run
+      # 34448908554). The REST API with the job token needs only curl + python3.
+      - name: Upload assets to release (REST, no gh)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release upload "${{ steps.tag.outputs.tag }}" \
-            "${{ steps.package.outputs.archive }}" \
-            "${{ steps.package.outputs.sha }}" \
-            --clobber
+          TAG="${{ steps.tag.outputs.tag }}"
+          API="https://api.github.com/repos/${GITHUB_REPOSITORY}"
+          rel=$(curl -sSf -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "$API/releases/tags/$TAG")
+          rid=$(printf '%s' "$rel" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
+          for f in "${{ steps.package.outputs.archive }}" "${{ steps.package.outputs.sha }}"; do
+            # --clobber semantics: delete an asset of the same name first
+            aid=$(printf '%s' "$rel" | python3 -c 'import json,sys; n=sys.argv[1]; print(next((a["id"] for a in json.load(sys.stdin)["assets"] if a["name"]==n), ""))' "$f")
+            [ -n "$aid" ] && curl -sSf -X DELETE -H "Authorization: Bearer $GH_TOKEN" "$API/releases/assets/$aid" > /dev/null
+            curl -sSf -X POST -H "Authorization: Bearer $GH_TOKEN" -H "Content-Type: application/octet-stream" \
+              --data-binary @"$f" "https://uploads.github.com/repos/${GITHUB_REPOSITORY}/releases/$rid/assets?name=$f" \
+              | python3 -c 'import json,sys; a=json.load(sys.stdin); print("uploaded", a["name"], a["size"], "bytes")'
+          done
 
   # The hard requirement, as a check that can fail: both CUDA assets (tarball +
   # sha256) must be on the release. A missing one is a red workflow, never a
@@ -289,7 +299,9 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TAG="${{ github.event.release.tag_name || inputs.tag }}"
-          assets=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name')
+          assets=$(curl -sSf -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/tags/$TAG" \
+            | python3 -c 'import json,sys; print("\n".join(a["name"] for a in json.load(sys.stdin)["assets"]))')
           rc=0
           for t in x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu; do
             for ext in tar.gz tar.gz.sha256; do
@@ -323,7 +335,12 @@ jobs:
           TAG="${{ github.event.release.tag_name || inputs.tag }}"
           T="${{ matrix.target }}"
           D="$RUNNER_TEMP/apr-cuda-smoke"; rm -rf "$D"; mkdir -p "$D"; cd "$D"
-          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern "apr-${TAG}-${T}-cuda.tar.gz*"
+          API="https://api.github.com/repos/${GITHUB_REPOSITORY}"
+          rel=$(curl -sSf -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "$API/releases/tags/$TAG")
+          for f in "apr-${TAG}-${T}-cuda.tar.gz" "apr-${TAG}-${T}-cuda.tar.gz.sha256"; do
+            aid=$(printf '%s' "$rel" | python3 -c 'import json,sys; n=sys.argv[1]; print(next(a["id"] for a in json.load(sys.stdin)["assets"] if a["name"]==n))' "$f")
+            curl -sSfL -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/octet-stream" -o "$f" "$API/releases/assets/$aid"
+          done
           sha256sum -c "apr-${TAG}-${T}-cuda.tar.gz.sha256"
           tar xzf "apr-${TAG}-${T}-cuda.tar.gz"
           BIN="$D/apr-${TAG}-${T}-cuda/apr"
