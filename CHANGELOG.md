@@ -7,6 +7,85 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.66.0] - 2026-09-09
+
+The **honest-GPU model** release. Milestone `0.66.0` was narrowed by the operator
+on 2026-09-08 to the two P0 defects a user hits first, plus the CI change that
+makes the GPU crates' default-feature tests part of the required check. The
+PP-066 obligation rows (backend registry, release assets, installer, C0 gates)
+moved to `0.68.0` on 2026-09-09; no speed number ships in 0.66 — instruments
+and speed ship later (PP-066 claims ratchet).
+
+### Fixed
+
+- **`apr chat` answered with the toy demo model for a sharded SafeTensors
+  index** (#3022, #3024; PP-066 row F-1, PMAT-1080, #3050). `Path::extension()`
+  on `model.safetensors.index.json` — the exact file `apr pull` writes and then
+  recommends — is `json`, which matched no arm and fell through to the demo
+  model while the banner still printed the real path. One decision
+  (`resolve_chat_format`: suffix, then magic bytes, then a refusal with exit 6)
+  replaces the two that never compared notes; `Demo` is no longer an outcome for
+  a path that exists. Six-row case table, both polarities; before/after records
+  in `evidence/format-honesty/`.
+- **GPU inference computed a different function than CPU for Qwen2.5-1.5B
+  (hidden 1536, 12 heads, 2 KV heads)** (#2971, #3017; PP-066 rows L0-1a/L0-1b,
+  #3026, #3032). Every model in `evidence/models/supported.yaml` now computes the
+  same function on GPU as on CPU over at least 64 positions or the GPU refuses
+  it (C14, `scripts/check_model_parity.sh --manifest`; `SKIP_PARITY_GATE` is a
+  printed override that never passes). `apr parity --per-op` names the first
+  diverging op; for the 1.5B it was the post-FFN residual in layer 26 and the CPU
+  Q8_K reference was the inaccurate side. Measured green on lambda (sm_89) and
+  gx10 (sm_121); records under `evidence/parity/l0-1/`.
+- **apr-cli's integration surface went 14 red to 0 on a clean `main`** (#3051,
+  #3053) — three root causes, each fixed as a guard; the generated 28 MB
+  `test.apr` is untracked and the race it hid is fixed (#3059).
+- **`main` was red under pmat 3.39.0** (#3028, #3030): twelve legacy nested
+  subtask records the new validator refuses as duplicate ids are gone, and id
+  uniqueness is checked in-repo, independent of the analyser pin.
+- **Silicon Nightly tested a package that has never existed** (#2793,
+  paiml/infra#361).
+
+### Added
+
+- **`aprender-gpu` and `aprender-cuda-edge` run in `workspace-test`** (#3063;
+  T0 of the NVIDIA CUDA Rust spec, #3062). Both are `default = []` with no
+  `build.rs`; their default-feature tests had never been in a required check.
+  The `cuda`-gated modules (driver, kernels, memory, ptx) still run only under
+  `--features cuda` (#3067).
+- **Build-system enforcement (BSE-001 M2, BSE-17)** (#3037, #3039, #3044): a
+  fail-closed composite `make gate` pinned to `origin/main`, the `guard_tree`
+  dispatcher and `guard-tree` job, `predict_merge`, sorted-insert for the
+  roadmap, asserted tool pins; ratchet verdicts are a function of (comparand,
+  merge) only; two-tier tests — quick on the PR, full behind it.
+- **PP-066 guards** — G-10: the shipped-path ratchet runs under one pinned
+  analyser with a stamped baseline (#3011); G-11: row PRs never write the DAG,
+  roadmap, spec block or README counts — DAG status is derived (#3020, #3012);
+  G-4/G-6/C0-7: the obligation DAG as data with invariants in CI, the
+  roadmap-additive guard, the receipt terminal marker (#2987, #2981).
+- **PR review receipts judged from the base** (#2985, C0-5): one base-owned
+  quorum workflow on `pull_request_target` and `merge_group`.
+
+### Documentation
+
+- PP-066 release spec v1.5 → v1.6 with the S0 discovery ledger (23 premises
+  measured), the 0.66 parity report and the 0.65.2 post-publish host receipts
+  (parity NO-GO, measured) (#2872, #2875, #2868, #2871, #3000, #2858).
+
+## [0.65.2] - 2026-09-04
+
+Supersedes 0.65.0 and 0.65.1 for every crate (74 of 74 on crates.io).
+`aprender-test-lib` packages `perf-matrix.yaml` through `build.rs` and a
+vendored copy; the CB-510 guard reports any `include_str!`/`include_bytes!`
+in host-compiled code whose target escapes the crate (PMAT-958, #2866).
+
+## [0.65.1] - 2026-09-04
+
+The publish cycle: five sibling dev-dependencies are path-only and preflight
+rule R6 refuses a versioned one (PMAT-955, #2865); `cascade-drain.sh` keeps its
+`DEFER` lines (PMAT-954); the wgpu `shared_instance` initializer no longer
+re-takes `DEVICE_INIT_LOCK` (PMAT-952); a stdio MCP server that answers and
+exits before reading the request keeps its response and exit status (PMAT-953).
+
 ## [0.65.0] - 2026-09-02
 
 The **parity-instrument** release. v0.64.0 closed gates that could not fail;
@@ -1118,9 +1197,9 @@ proof-obligation + a RED-on-bug / GREEN-on-fix falsifier + a `pv`-validated cont
 - **Blackwell CUDA-graph replay fixed + re-enabled** (PMAT-886a) — the default sm_121 Q4K GEMV variant
   was not recorded into the manual graph, so graph replay dropped ~6 GEMVs/layer → stale buffers →
   garbage (cosine 0.53). Now recorded; parity 0.53→0.9934 (== eager, token-for-token), graph decode
-  re-defaulted ON for Blackwell, **+16% decode** (96→112 tok/s).
+  re-defaulted ON for Blackwell, decode improved on that PR's recorded receipt.
 - **Blackwell decode throughput-floor guard** (PMAT-885) — a stale-binary / F2-false-fallback that
-  silently drops the GPU path to ~10 tok/s CPU is now a falsifiable invariant (≥100 tok/s on GB10).
+  silently drops the GPU path to the CPU rate is now a falsifiable invariant (the GB10 floor lives in the test).
 
 ### Infrastructure
 
@@ -1882,7 +1961,7 @@ This release completes SHIP-TWO-001 MODEL-1: every acceptance criterion (SHIP-00
 | SHIP-004 | GGUF exports + loads in llama.cpp | §72 |
 | SHIP-005 | HumanEval pass@1 = 86.59% on gx10 164-run | §71 |
 | SHIP-006 | `apr qa` 12-gate aggregate PASS | §61.8 |
-| **SHIP-007** | **PARITY-GATE PASS + 124.6 tok/s @ 128-tok decode** | **§75** |
+| **SHIP-007** | **PARITY-GATE PASS + 128-tok decode receipt** | **§75** |
 | SHIP-008 | Chat template render | §61 |
 | SHIP-009 | License + provenance in `model.apr` metadata | §72 |
 | SHIP-010 | Published HF URL + sha256 match | §72 |
@@ -1897,7 +1976,7 @@ Fix: rewrite inner loop to iterate K within row `block_id` (row_base = a_ptr + b
 
 Empirical discharge on canonical 7B teacher, lambda-vector RTX 4090:
 - PARITY-GATE PASS (no error from `forward_gpu_resident`)
-- `apr bench` 5-iter 128-tok decode = **124.6 tok/s** (4.15× over AC-SHIP1-007 30 tok/s floor)
+- `apr bench` 5-iter 128-tok decode cleared the AC-SHIP1-007 floor (numbers in that PR's receipt)
 - Default path (CUDA graphed), no `SKIP_PARITY_GATE`, no `APR_SKIP_FP8_WARMUP`
 
 #### SHIP-005 — HumanEval harness RC3 fix (PR #1635, §70/§71)
@@ -2096,8 +2175,8 @@ This release closes a record contract algorithm-binding sweep — **150+ provabl
 ### Changed
 - **`scripts/ship-two-001/ex-06-pull-and-rerun.sh` harness v2** — relaxed AC-EX-006 verification to match spec §12.3 literal ("emits syntactically valid Python"). Prior harness required `def fib` to appear in the completion, which is stricter than the spec; Instruct models greedy-decoding a raw prompt don't reliably autocomplete (teacher's 84.76% HumanEval works via the eval harness's instruction wrapper, not raw completion). v2 finds the longest leading-line prefix that `ast.parse`s and requires ≥ 1 non-trivial statement (regression-checked against garbage/empty/comment-only inputs). Pre-upload local dry-run PASSES.
 - **GH-478: per-layer dequant for native Q4/Q8 tensors** — `apr run` on native-quantized .apr files now dequantizes layer-at-a-time instead of up-front, reducing peak memory on large models. (#750)
-- **Decode hot-path hygiene (HP-001 / HP-002 / HP-003)** — removed per-token `/tmp` writes, realizar#198 diagnostic eprintlns, and PMAT-450 prefix-cache eprintlns from the GPU decode path. 1.5B Q4_K_M: **184 → 382 tok/s (2.07×)**. Short-prompt 32-tok bench: 442.8 → 479.9 tok/s.
-- **F-FLASH-DECODE-REGRESSION-001: auto-disable split-K for small models** — FlashDecoding was hurting 1.5B decode throughput; gated by model size. 383 → 412 tok/s median.
+- **Decode hot-path hygiene (HP-001 / HP-002 / HP-003)** — removed per-token `/tmp` writes, realizar#198 diagnostic eprintlns, and PMAT-450 prefix-cache eprintlns from the GPU decode path. 1.5B Q4_K_M decode throughput improved (numbers in that PR's receipt).
+- **F-FLASH-DECODE-REGRESSION-001: auto-disable split-K for small models** — FlashDecoding was hurting 1.5B decode throughput; gated by model size. median decode improved (numbers in that PR's receipt).
 - **F-ATTN-MULTIWARP-WARPS-001: tuned `num_warps_per_head`** — 4 warps/head is optimal for small-model decode (2-warp −1.3%, 1-warp −7%).
 - **F-PROFILE-010: separate graphed throughput from ungraphed per-op hotspots** — `apr profile` output now labels methodology; launch-overhead metric normalized per-token.
 - **GH-378: Priority-queue BPE merge algorithm** — Replaced O(n^2) greedy-rescan with priority-queue (BinaryHeap) + doubly-linked symbol list. 2.06x encode speedup (145us -> 70us on Qwen3 151K vocab). Beats HuggingFace tokenizers v0.22 reference (104us). Zero allocation in merge loop. All 117 BPE tests pass.
