@@ -127,9 +127,14 @@ unsafe fn fused_q4k_q8k_dot_avx2(
             let sum_hi_1 = _mm_madd_epi16(prod_hi_128, _mm_set1_epi16(1));
             let sum_hi_2 = _mm_madd_epi16(prod_hi_hi128, _mm_set1_epi16(1));
 
-            // Add low and high nibble products
-            let sum_1 = _mm_add_epi32(sum_lo_1, sum_hi_1);
-            let sum_2 = _mm_add_epi32(sum_lo_2, sum_hi_2);
+            // One block per nibble half: the low nibbles are block `is` (sc1/m1), the high
+            // nibbles block `is + 1` (sc2/m2), so each block's sum is its OWN two 128-bit halves.
+            // This used to pair sum_lo_1 with sum_hi_1 and sum_lo_2 with sum_hi_2 (the layout
+            // before the Q8 load fix), so each scale covered half of EACH block: rel_err 2.6% vs
+            // scalar on yoga's Core Ultra 9 185H, the first CI box without AVX-512 VNNI and so the
+            // first to reach this path at all (2026-09-10).
+            let sum_1 = _mm_add_epi32(sum_lo_1, sum_lo_2);
+            let sum_2 = _mm_add_epi32(sum_hi_1, sum_hi_2);
 
             // Apply scales (as f32 to avoid overflow)
             let sum_1_f = _mm_cvtepi32_ps(sum_1);
@@ -151,13 +156,18 @@ unsafe fn fused_q4k_q8k_dot_avx2(
                 _mm256_castsi256_si128(q8_sum_lo),
                 _mm256_extracti128_si256(q8_sum_lo, 1),
             );
-            let _hsum_hi = _mm_add_epi32(
+            let hsum_hi = _mm_add_epi32(
                 _mm256_castsi256_si128(q8_sum_hi),
                 _mm256_extracti128_si256(q8_sum_hi, 1),
             );
 
-            // Include both halves in block sum
-            let q8_block1_sum = _mm_add_epi32(hsum_lo, _mm_shuffle_epi32(hsum_lo, 0b10_11_00_01));
+            // Include both halves in the block sum: q8[j..j+16] AND q8[j+16..j+32]. The second
+            // half was computed as `_hsum_hi` and dropped, so block `is`'s min term missed 16 values.
+            let q8_block1_sum = _mm_add_epi32(hsum_lo, hsum_hi);
+            let q8_block1_sum = _mm_add_epi32(
+                q8_block1_sum,
+                _mm_shuffle_epi32(q8_block1_sum, 0b10_11_00_01),
+            );
             let q8_block1_sum = _mm_add_epi32(
                 q8_block1_sum,
                 _mm_shuffle_epi32(q8_block1_sum, 0b00_00_10_10),
