@@ -1822,6 +1822,8 @@ jobs:
         run: |
           docker run --rm \
             -v "${GITHUB_WORKSPACE}:/workspace" \
+            -v "${GUARD_CARGO_HOME}:/cargo-home" \
+            -e CARGO_HOME=/cargo-home \
             -w /workspace \
             -e CARGO_NET_OFFLINE=1 \
             "$IMAGE" \
@@ -1830,6 +1832,8 @@ jobs:
         run: |
           docker run --rm \
             -v "${GITHUB_WORKSPACE}:/workspace" \
+            -v "${GUARD_CARGO_HOME}:/cargo-home" \
+            -e CARGO_HOME=/cargo-home \
             -w /workspace \
             -e CARGO_NET_OFFLINE=1 \
             "$IMAGE" \
