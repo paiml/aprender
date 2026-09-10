@@ -230,6 +230,11 @@ fn run_diff_check(
 ) -> Option<Result<(), Box<dyn std::error::Error>>> {
     match provable_contracts::lint::diff::changed_contracts(contract_dir, base) {
         Ok(changed) if changed.is_empty() => {
+            // PVL-1 (PMAT-1099): "nothing changed" over 0 contracts is the vacuous
+            // pass again — refuse the empty corpus (exit 2) before saying so.
+            if let Err(e) = crate::contract_walk::collect_corpus(contract_dir) {
+                return Some(Err(e));
+            }
             println!("No contracts changed since {base}. Nothing to lint.");
             Some(Ok(()))
         }
@@ -342,6 +347,10 @@ fn run_watch(
         );
 
         let report = run_lint(&config);
+
+        // PVL-1 (PMAT-1099): watch mode is the same gate on a timer — an empty
+        // corpus is refused (exit 2) at the first tick, never reported over.
+        refuse_empty_corpus(&report, contract_dir)?;
 
         if cache_stats {
             print_cache_stats(&report);

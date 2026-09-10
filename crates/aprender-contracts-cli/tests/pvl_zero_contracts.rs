@@ -307,3 +307,94 @@ fn proof_status_kind_filter_to_zero_is_refused() {
         run.stderr
     );
 }
+
+// ---------------------------------------------------------------------------
+// Review quorum on PR #3093 (3/3 FAIL; agy lanes ae646ee3, a8b61a5b, 7ba5404a):
+// `--watch` and `--diff` returned from `lint::run` BEFORE the guard, so
+// `pv lint --watch <empty>` printed a report over 0 contracts every 5 s and
+// `pv lint --diff HEAD <empty>` said "Nothing to lint" at exit 0.
+// ---------------------------------------------------------------------------
+
+use std::process::Stdio;
+use std::time::{Duration, Instant};
+
+/// Like `pv`, but with a deadline: watch mode never returns on its own, so a
+/// build that loops instead of refusing is killed and reported as `code -1`.
+fn pv_deadline(args: &[&str], deadline: Duration) -> Run {
+    let scratch = tempfile::tempdir().expect("scratch cwd is creatable");
+    let mut child = Command::new(pv_bin())
+        .current_dir(scratch.path())
+        .args(args)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("failed to spawn pv");
+    let started = Instant::now();
+    let mut killed = false;
+    while child.try_wait().expect("try_wait").is_none() {
+        if started.elapsed() > deadline {
+            child.kill().expect("kill pv");
+            killed = true;
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    let out = child.wait_with_output().expect("collect pv output");
+    Run {
+        code: if killed {
+            -1
+        } else {
+            out.status.code().unwrap_or(-1)
+        },
+        stdout: String::from_utf8_lossy(&out.stdout).into_owned(),
+        stderr: String::from_utf8_lossy(&out.stderr).into_owned(),
+    }
+}
+
+#[test]
+fn lint_watch_empty_dir_is_refused() {
+    let dir = tempfile::tempdir().expect("empty dir");
+    let path = dir.path().to_str().expect("utf-8 path");
+    let run = pv_deadline(&["lint", "--watch", path], Duration::from_secs(20));
+    assert_refused(&run, dir.path(), "lint --watch <empty dir>");
+}
+
+#[test]
+fn lint_diff_empty_dir_is_refused() {
+    // `--diff` asks git for the contracts changed since <base>; the empty dir
+    // must sit inside a repository with a HEAD or the diff arm is never taken.
+    let repo = tempfile::tempdir().expect("repo dir");
+    let git = |args: &[&str]| {
+        let out = Command::new("git")
+            .current_dir(repo.path())
+            .args(args)
+            .output()
+            .expect("git is runnable");
+        assert!(
+            out.status.success(),
+            "git {args:?} failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    };
+    git(&["init", "-q"]);
+    git(&[
+        "-c",
+        "user.name=pvl",
+        "-c",
+        "user.email=pvl@test",
+        "commit",
+        "-q",
+        "--allow-empty",
+        "-m",
+        "init",
+    ]);
+    let empty = repo.path().join("empty");
+    std::fs::create_dir(&empty).expect("empty dir");
+    let run = pv(&[
+        "lint",
+        "--diff",
+        "HEAD",
+        empty.to_str().expect("utf-8 path"),
+    ]);
+    assert_refused(&run, &empty, "lint --diff HEAD <empty dir>");
+}
