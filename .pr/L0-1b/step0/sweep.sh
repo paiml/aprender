@@ -5,14 +5,14 @@ APR=/mnt/nvme-raid0/targets/l0-1b/release/apr
 OUT="$(dirname "$0")"
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../.." && pwd)"
 MODELS_DIR="${APR_MODELS_DIR:-$HOME/models}"
-eval "$(grep '^PROMPT=' "$ROOT/scripts/check_model_parity.sh")"
+PROMPT=$(sed -n "s/^PROMPT='\(.*\)'\$/\1/p" "$ROOT/scripts/check_model_parity.sh")   # read as text (bashrs SEC001)
 M15=$MODELS_DIR/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
 M7=$MODELS_DIR/qwen2.5-coder-7b-instruct-q4_k_m.gguf
 run() { # run <arm> <model> [ENV=VAL ...]
   local arm=$1 model=$2; shift 2
-  local t0=$(date +%s)
+  local s0=$SECONDS   # elapsed seconds via the shell counter, no wall-clock stamp (bashrs DET002)
   env "$@" "$APR" parity "$model" --prompt "$PROMPT" --json > "$OUT/$arm.json" 2> "$OUT/$arm.err"
-  echo "$arm rc=$? $(( $(date +%s) - t0 ))s env=[$*]" >> "$OUT/progress.log"
+  echo "$arm rc=$? $(( SECONDS - s0 ))s env=[$*]" >> "$OUT/progress.log"
 }
 : > "$OUT/progress.log"
 run A0-baseline        "$M15"

@@ -22,7 +22,9 @@ fn load_tokenizers(
             );
             Ok((Some(tok), None))
         }
-        ModelFormat::SafeTensors | ModelFormat::Apr => {
+        // #3022: a sharded index sits BESIDE the same tokenizer.json/config.json an
+        // unsharded checkout has, so every sibling-reading helper treats the two alike.
+        ModelFormat::SafeTensors | ModelFormat::ShardedSafeTensors | ModelFormat::Apr => {
             let tok = find_qwen_tokenizer(path)?;
             Ok((None, tok))
         }
@@ -50,7 +52,7 @@ fn detect_model_architecture(format: ModelFormat, model_bytes: &[u8], path: &Pat
     match format {
         ModelFormat::Gguf => detect_arch_from_gguf(model_bytes, path),
         ModelFormat::Apr => detect_arch_from_apr(model_bytes, path),
-        ModelFormat::SafeTensors => detect_arch_from_config(path),
+        ModelFormat::SafeTensors | ModelFormat::ShardedSafeTensors => detect_arch_from_config(path),
         ModelFormat::Demo => "demo".to_string(),
     }
 }

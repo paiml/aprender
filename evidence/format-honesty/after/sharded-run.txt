@@ -1,0 +1,9 @@
+=== APR Run ===
+
+Source: /mnt/nvme-raid0/agent-wt/sharded-fixture/model.safetensors.index.json
+[GH-189] Loaded tokenizer from /mnt/nvme-raid0/agent-wt/sharded-fixture/tokenizer.json: 22 special tokens
+
+Output:
+2 + 2 equals 4.
+
+Completed in 3.26s (cached)

@@ -372,7 +372,17 @@ jobs:
           grep -E '^(tier|crates|targets|reason|cite)=' "$RUNNER_TEMP/tier.txt" >> "$GITHUB_OUTPUT"
       - name: Workspace lib tests (25,300+)
         if: steps.tier.outputs.tier == 'full'
-        # Excluded: aprender-gpu (cuBLAS), aprender-cuda-edge (CUDA), aprender-compute (SIMD SIGSEGV at exit)
+        # Excluded: aprender-compute (SIMD SIGSEGV at exit), aprender-gpu and aprender-cuda-edge
+        # -- each runs as its own step below. The GPU crates are `default = []`, but they
+        # CANNOT ride this `--workspace` line: cargo unifies features across the whole
+        # workspace, and `aprender-explain` depends on `aprender-gpu` with
+        # `features = ["cuda"]` (non-optional), so under `--workspace` the cuda driver
+        # compiles and its 217 `driver::` tests run -- on a GPU-less clean-room they panic
+        # `CudaNotAvailable("CUDA driver not found")` (merge-queue run 34411725611, nextest
+        # exit 100). Measured 2026-09-09 on main: `cargo nextest list --workspace --lib
+        # -E 'package(aprender-gpu)'` lists 217 driver:: tests; `cargo nextest list
+        # -p aprender-gpu -p aprender-cuda-edge --lib` lists 0 (the per-package resolve
+        # this PR measured: 651 tests, 0.193s, green with CUDA_VISIBLE_DEVICES="").
         # Timeout: 75min (was 55, was 40).
         # 2026-05-15: bumped to 75min after the P0 per-run target-dir fix
         # (#1693) eliminated cargo-incremental cross-run warmth. Cold
@@ -415,6 +425,30 @@ jobs:
             -e CARGO_PROFILE_DEV_DEBUG=line-tables-only \
             "$IMAGE" \
             cargo nextest run --profile ci --workspace --lib --exclude aprender-gpu --exclude aprender-cuda-edge --exclude aprender-compute
+      - name: "GPU crates on their default features (per-package resolve, no device needed)"
+        if: steps.tier.outputs.tier == 'full'
+        # aprender-gpu + aprender-cuda-edge, un-darked from the required check (T0 of the
+        # NVIDIA CUDA Rust spec, #3062). A per-package resolve keeps `cuda` OFF (see the
+        # comment on the workspace line above); the `driver`/`kernels`/`memory`/`ptx` tests
+        # stay behind `--features cuda` in the gx10 nightly (#3067).
+        run: |
+          docker run --rm \
+          -e CI -e GITHUB_ACTIONS -e GITHUB_REF -e GITHUB_SHA -e GITHUB_REPOSITORY -e GITHUB_RUN_ID -e GITHUB_EVENT_NAME -e GITHUB_WORKFLOW \
+            -v "${GITHUB_WORKSPACE}:/workspace" \
+            -v "/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}:/usr/local/cargo/registry" \
+            -v "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}:/workspace/target" \
+            -v "${SCCACHE_HOST_DIR}:/sccache" \
+            -w /workspace \
+            -e CARGO_TARGET_DIR=/workspace/target \
+            -e RUSTC_WRAPPER=rustc-sccache \
+            -e SCCACHE_DIR=/sccache \
+            -e SCCACHE_CACHE_SIZE=50G \
+            -e CARGO_INCREMENTAL=0 \
+            -e CARGO_BUILD_JOBS=8 \
+            -e CARGO_PROFILE_TEST_DEBUG=line-tables-only \
+            -e CARGO_PROFILE_DEV_DEBUG=line-tables-only \
+            "$IMAGE" \
+            cargo nextest run --profile ci -p aprender-gpu -p aprender-cuda-edge --lib
       - name: Compute tests (tolerate SIGSEGV at exit — all tests pass but harness crashes on cleanup)
         if: steps.tier.outputs.tier == 'full'
         run: |
@@ -834,6 +868,14 @@ jobs:
         run: bash scripts/check_dag_invariants.sh docs/specifications/pp-066-dag.yaml --min-slack-days 6
       - name: A row PR writes no shared file (G-11, PMAT-1062)
         run: bash scripts/check_row_pr_write_set.sh --event "${GITHUB_EVENT_NAME:-pull_request}" --branch "${GITHUB_HEAD_REF:-}"
+      # PP-066 SPEC-2.0: scripts/release_criteria.sh is a decision surface
+      # (`--all` is the first RELEASE step), and it is NOT a scripts/check_*.sh
+      # file, so guard_tree.sh's universe (`git ls-files 'scripts/check_*.sh'`)
+      # does not reach it — while check_guards_are_wired.sh DOES claim it, because
+      # that universe is derived from shipping a `--self-test` mode. Named here so
+      # the criteria table proves it can still go RED rather than pass vacuously.
+      - name: "Release criteria can still go RED (release_criteria.sh --self-test)"
+        run: bash scripts/release_criteria.sh --self-test
       # L0-1a (#2971, PMAT-1065): the supported-model manifest is DERIVED from what the tree
       # names (README, BEATS, book, dogfood receipts, perf-matrix) — a named model absent from
       # the manifest, or a typed entry nothing cites, is DRIFT; C14's own case table runs over
@@ -845,6 +887,16 @@ jobs:
         run: bash scripts/derive_model_manifest.sh --check
       - name: C14 model-parity case table (L0-1a, #2971)
         run: bash scripts/check_model_parity.sh --self-test
+      # F-1 (#3022, #3024): a model file the user NAMED is the model that answers, or
+      # the command refuses — `apr chat` silently loaded its toy demo model for a
+      # `model.safetensors.index.json` (exit 0, zero tokens, the real path in the banner)
+      # and the nightly story could not see it: it never calls `apr chat` and never
+      # names a sharded model. Both case tables are cargo-free and model-free, so they
+      # run here; the live 4-cell matrix needs a model and runs on the fleet.
+      - name: "Sharded-fixture splitter case table (F-1, #3024)"
+        run: python3 scripts/make_sharded_safetensors.py --self-test
+      - name: "format x command honesty case table (F-1, #3022)"
+        run: bash scripts/check_format_command_matrix.sh --self-test
       # PP-23's bandwidth probe is release-phase INSTRUMENTATION (needs nvcc and an
       # idle GPU) and never runs its measurement here; its case table is GPU-free
       # and must, or the number the roofline rests on comes from a probe nobody

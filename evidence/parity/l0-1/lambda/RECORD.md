@@ -24,3 +24,22 @@ simply invoked the way it should have been.
 other AND to the canonical record beside this file — `stdev 0` understates it; the whole file
 was the same file — so five copies carried nothing the recorded sha256 does not. See
 `n5/DETERMINISM.md` for the hashes and `n5/runs.log` for the ten exit codes.
+
+
+## 2026-09-09 — the reporter's exact file, measured (PMAT-1096, the 0.66.0 cut)
+
+Issue #2971 names base **Qwen2.5-1.5B-Instruct** q4_k_m; every earlier record here is the Coder
+variant of the same shape (hidden 1536 / heads 12 / kv 2). The exact file was fetched from
+`Qwen/Qwen2.5-1.5B-Instruct-GGUF` (`qwen2.5-1.5b-instruct-q4_k_m.gguf`, 1117320736 bytes, sha256
+`6a1a2eb6d15622bf3c96857206351ba97e1af16c30d7a74ee38970e434e9407e`, verified against the HF LFS oid)
+and run through the same 78-token corpus prompt on lambda (RTX 4090, driver 580.119.02) with a cuda
+`apr` built from the release tree — `apr 0.66.0 (611989200)`, pinned by `scripts/apr_bin.sh`
+(binary sha256 prefix `342f4199a612c842`).
+
+| model | positions | min cosine | at | verdict (`check_model_parity.sh --judge`) |
+|---|---|---|---|---|
+| qwen2.5-1.5b-instruct-q4_k_m (base Instruct, the reporter's file) | 78 | **0.9978** | 4 | **PASS** ≥ 0.98 |
+
+Files: `qwen2.5-1.5b-instruct-q4_k_m.json` (the `apr parity --json` record) and `.err` (stderr, the
+mechanism lines). The same binary's `check_model_parity.sh --manifest` on this host: measured=3
+(qwen2.5-coder-0.5b/1.5b/7b-instruct) rc=0.
