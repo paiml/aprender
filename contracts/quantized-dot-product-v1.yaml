@@ -162,6 +162,8 @@ simd_dispatch:
     avx512_vnni: fused_q4k_dot_avx512_vnni
     q8k_scalar: fused_q4k_q8k_dot
     q8k_avx2: fused_q4k_q8k_dot_simd
+    q8k_avx2_kernel: fused_q4k_q8k_dot_avx2
+    q8k_bsums_avx2: fused_q4k_q8k_dot_with_bsums_avx2
     q8k_avx512_vnni: fused_q4k_q8k_dot_avx512vnni_v2
     q8k_4row_avx512_vnni: fused_q4k_q8k_dot_4rows_avx512vnni
   Q5_K:
@@ -235,6 +237,18 @@ falsification_tests:
   test: For each format in YAML, verify simd_dispatch has an entry with at least 'scalar'
     key
   if_fails: Format was added to registry but dispatch table not updated
+- id: FALSIFY-QDOT-006
+  rule: Every x86 Q4_K x Q8_K kernel matches scalar on every box that can run it, not only
+    on the box whose best CPU feature makes the dispatcher select it
+  prediction: fused_q4k_q8k_dot_avx2 and fused_q4k_q8k_dot_with_bsums_avx2 equal fused_q4k_q8k_dot
+    within 1e-3 relative on super-blocks whose 8 scales and 8 mins all differ, on any AVX2 box;
+    fused_q4k_q8k_dot_avx512vnni_v2 likewise on any AVX-512 VNNI box
+  test: cargo test -p aprender-serve --lib -- test_fused_q4k_q8k_dot_avx2_path_matches_scalar_on_every_avx2_box
+    test_fused_q4k_q8k_dot_with_bsums_matches_scalar_on_every_avx2_box test_fused_q4k_q8k_dot_avx512vnni_path_matches_scalar
+  if_fails: A kernel pairs a nibble half with the wrong block scale or drops part of a block's Q8 sum.
+    The dispatcher hid both AVX2 defects for as long as every x86 CI box had AVX-512 VNNI
+    (found 2026-09-10 when yoga, a Core Ultra 9 185H, joined the pool; reverting the fix gives
+    -3650.1 against scalar -25161.5)
 qa_gate:
   id: F-QDOT-001
   name: Quantized Dot Product Contract
@@ -244,7 +258,7 @@ qa_gate:
   - Format registry matches trait implementations
   - Dispatch table covers all formats
   - Cross-format isolation holds
-  pass_criteria: All 5 FALSIFY tests pass
+  pass_criteria: All 6 FALSIFY tests pass
   falsification: Introduce a sign error in nibble extraction — gate must catch it
 equations:
   identity:
