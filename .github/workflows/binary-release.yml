@@ -19,10 +19,18 @@ name: Binary Release
 # or yoga. aarch64 builds on gx10 (GB10 sm_121), x86_64 on yoga (RTX 4090
 # sm_89; lambda when it is registered). No CUDA toolkit is needed at build
 # time — aprender-gpu's `cuda` feature is `dep:libloading`, the driver
-# (libcuda.so) is loaded at RUNTIME — but the builder's glibc IS the
-# binary's floor, so each build prints `ldd --version` into the summary
-# (the nightly's ubuntu-latest `apr` needs glibc 2.39 and does not run on
-# lambda's 22.04 — measured). What each check proves:
+# (libcuda.so) is loaded at RUNTIME.
+#
+# The build runs INSIDE `rust:1.93.0-bullseye` (glibc 2.31, rustc 1.93.0 =
+# rust-toolchain.toml's pin; the x86_64 image on yoga, the arm64 image on
+# gx10 — both measured 2026-09-10), because a gnu binary's glibc floor is
+# its BUILDER's glibc: the first v0.66.0 assets were built natively and
+# came out needing GLIBC_2.43 (yoga is Ubuntu 26.04) and 2.39 (gx10 is
+# 24.04) — the x86_64 one does not even start on lambda's 22.04
+# (`libm.so.6: version GLIBC_2.43 not found`). The floor recorded in the
+# job summary is the CONTAINER's `ldd --version`, never the host's. gx10's
+# runner user is not in the docker group but has passwordless sudo, hence
+# the `sudo -n docker` fallback. What each check proves:
 # the loader string `libcuda.so` is in the artifact ONLY under `--features
 # cuda` (1 vs 0, measured on 0.66.0 builds of both kinds) — that proves
 # the feature is in the bytes; `apr gpu --json` on the yoga (sm_89) and
@@ -211,24 +219,34 @@ jobs:
         with:
           ref: ${{ steps.tag.outputs.tag }}
 
-      # The box's own rustup honours rust-toolchain.toml; the target is the native
-      # one. The builder's glibc is the asset's floor — recorded, never assumed.
-      - name: Record the builder (toolchain, glibc floor, device)
+      # Build inside rust:1.93.0-bullseye: the container's glibc (2.31) is the
+      # asset's floor, the image's rustc is the workspace pin, the target is the
+      # image's native one. Host caches for the registry and the target dir.
+      - name: Build apr with --features cuda inside rust:1.93.0-bullseye (glibc 2.31 floor)
         run: |
-          rustup target add ${{ matrix.target }}
-          rustc --version; cargo --version
-          GLIBC=$(ldd --version | head -1)
-          echo "$GLIBC"
-          nvidia-smi -L | head -1
+          DOCKER=docker; docker ps >/dev/null 2>&1 || DOCKER="sudo -n docker"
+          CACHE="$HOME/.cache/apr-cuda-release/${{ matrix.target }}"
+          mkdir -p "$CACHE/registry" "$CACHE/target"
+          $DOCKER run --rm \
+            -v "$GITHUB_WORKSPACE:/workspace" \
+            -v "$CACHE/registry:/usr/local/cargo/registry" \
+            -v "$CACHE/target:/workspace/target" \
+            -w /workspace \
+            -e CARGO_TARGET_DIR=/workspace/target \
+            -e CARGO_INCREMENTAL=0 \
+            rust:1.93.0-bullseye \
+            sh -c 'set -e; ldd --version | head -1 > /workspace/target/BUILDER_GLIBC; rustc --version > /workspace/target/BUILDER_RUSTC; cargo build --release -p apr-cli --bin apr --target ${{ matrix.target }} --features cuda --locked; strip target/${{ matrix.target }}/release/apr'
+          # the mounted target dir is the host cache; expose the binary where the next steps expect it
+          mkdir -p "target/${{ matrix.target }}/release"
+          cp "$CACHE/target/${{ matrix.target }}/release/apr" "target/${{ matrix.target }}/release/apr"
+          GLIBC=$(cat "$CACHE/target/BUILDER_GLIBC"); RUSTC=$(cat "$CACHE/target/BUILDER_RUSTC")
+          echo "builder glibc: $GLIBC"; echo "builder rustc: $RUSTC"; nvidia-smi -L | head -1
           {
-            echo "### apr (cuda) ${{ matrix.target }} built on ${{ matrix.host }}"
-            echo "- toolchain: $(rustc --version)"
-            echo "- glibc floor of this asset: $GLIBC"
-            echo "- device present at build: $(nvidia-smi -L | head -1)"
+            echo "### apr (cuda) ${{ matrix.target }} built on ${{ matrix.host }} inside rust:1.93.0-bullseye"
+            echo "- toolchain: $RUSTC"
+            echo "- glibc floor of this asset (the container's): $GLIBC"
+            echo "- device present on the builder host: $(nvidia-smi -L | head -1)"
           } >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Build apr with --features cuda
-        run: cargo build --release -p apr-cli --bin apr --target ${{ matrix.target }} --features cuda --locked
 
       # The feature must be in the BYTES, not in the intent: the driver loader
       # string exists only under --features cuda (0.66.0: cuda=1, non-cuda=0).
@@ -242,12 +260,6 @@ jobs:
             exit 1
           fi
           "$BIN" --version
-
-      - name: Strip binary
-        run: |
-          BIN="target/${{ matrix.target }}/release/apr"
-          strip "$BIN"
-          ls -la "$BIN"
 
       - name: Package archive
         id: package
@@ -347,6 +359,9 @@ jobs:
           v=$("$BIN" --version); echo "$v"
           case "$v" in *"${TAG#v}"*) ;; *) echo "::error::asset reports '$v', not ${TAG#v}"; exit 1 ;; esac
           [ "$(grep -ac 'libcuda.so' "$BIN")" -ge 1 ] || { echo "::error::downloaded asset is not a CUDA build"; exit 1; }
+          floor=$(objdump -T "$BIN" 2>/dev/null | grep -oE 'GLIBC_[0-9.]+' | sort -Vu | tail -1)
+          echo "highest GLIBC symbol version required: $floor"
+          case "$floor" in GLIBC_2.3[2-9]*|GLIBC_2.[4-9]*) echo "::error::asset requires $floor — built outside the bullseye container (floor must be <= GLIBC_2.31)"; exit 1 ;; esac
           nvidia-smi -L
           "$BIN" gpu --json | tee gpu.json
           grep -q '"gpu_present": true' gpu.json || { echo "::error::apr gpu --json does not see the device on ${{ matrix.host }}"; exit 1; }
