@@ -167,6 +167,178 @@ pub unsafe fn decompress_neon(input: &[u8], output: &mut [u8; PAGE_SIZE]) -> Res
 /// The complexity is **justified** - NEON decompression targets ≥4 GB/s and any
 /// refactoring would regress performance on the hot path.
 #[cfg(target_arch = "aarch64")]
+/// Copy one LZ4 match: `match_len` bytes from `offset` bytes behind `op`, with `room` bytes left
+/// in the page. A wide copy is only correct when EVERY byte it loads has already been written:
+/// copy_32 needs offset >= 32, copy_64 and the 64-byte loop need offset >= 64. `offset >= 16`
+/// once sent offsets 16..63 through them, so they loaded output bytes that did not exist yet
+/// (aarch64, gx10 2026-09-10: a 16-byte repeating pattern decompressed to zeros after byte 32).
+/// The wildcard path also writes up to 64 bytes past `match_len`, so it runs only with that much
+/// room left in the page.
+///
+/// # Safety
+/// `op - offset .. op + match_len` must be valid, `1 <= offset`, and `match_len <= room`.
+#[inline(always)]
+unsafe fn copy_match_neon(op: *mut u8, offset: usize, match_len: usize, room: usize) {
+    let match_src = op.sub(offset);
+    if offset >= 64 && match_len >= 16 && room >= match_len + 64 {
+        wildcard_copy_neon(op, match_src, match_len);
+    } else if offset >= 16 && match_len >= 16 {
+        // 16-byte steps: each load runs after every byte it reads was stored (offset >= 16)
+        copy_steps_16_neon(op, match_src, match_len);
+    } else if offset == 1 {
+        // RLE (repeat single byte)
+        fill_run(op, *match_src, match_len);
+    } else if offset >= 8 {
+        // Medium offset: 8-byte copies are safe
+        copy_steps_8(op, match_src, match_len);
+    } else {
+        // Small offset (2-7): byte-by-byte for correctness
+        for i in 0..match_len {
+            *op.add(i) = *match_src.add(i);
+        }
+    }
+}
+
+/// `len` bytes in exact 16-byte steps, then the tail byte by byte, never past `len`.
+#[inline(always)]
+unsafe fn copy_steps_16_neon(mut dst: *mut u8, mut src: *const u8, len: usize) {
+    let end = dst.add(len);
+    while dst.add(16) <= end {
+        copy_16_neon(dst, src);
+        dst = dst.add(16);
+        src = src.add(16);
+    }
+    copy_tail(dst, src, end);
+}
+
+/// `len` bytes in exact 8-byte steps, then the tail byte by byte, never past `len`.
+#[inline(always)]
+unsafe fn copy_steps_8(mut dst: *mut u8, mut src: *const u8, len: usize) {
+    let end = dst.add(len);
+    while dst.add(8) <= end {
+        let val = std::ptr::read_unaligned(src.cast::<u64>());
+        std::ptr::write_unaligned(dst.cast::<u64>(), val);
+        dst = dst.add(8);
+        src = src.add(8);
+    }
+    copy_tail(dst, src, end);
+}
+
+#[inline(always)]
+unsafe fn copy_tail(mut dst: *mut u8, mut src: *const u8, end: *mut u8) {
+    while dst < end {
+        *dst = *src;
+        dst = dst.add(1);
+        src = src.add(1);
+    }
+}
+
+/// An offset-1 match: `len` copies of `byte` (NEON memset from 16 bytes up).
+#[inline(always)]
+unsafe fn fill_run(op: *mut u8, byte: u8, len: usize) {
+    if len >= 16 {
+        memset_neon(op, byte, len);
+        return;
+    }
+    let pattern = 0x0101010101010101u64 * (byte as u64);
+    let mut dst = op;
+    let end = op.add(len);
+    while dst.add(8) <= end {
+        std::ptr::write_unaligned(dst.cast::<u64>(), pattern);
+        dst = dst.add(8);
+    }
+    while dst < end {
+        *dst = byte;
+        dst = dst.add(1);
+    }
+}
+
+/// An LZ4 length: `base` (the token nibble) plus, when `base` is 15, every continuation byte
+/// (each adds itself; a byte below 255 ends the run). `what` names the field in the error.
+#[inline(always)]
+unsafe fn read_len(
+    ip: &mut *const u8,
+    ip_end: *const u8,
+    base: usize,
+    what: &str,
+) -> Result<usize> {
+    let mut len = base;
+    if base != 15 {
+        return Ok(len);
+    }
+    loop {
+        if *ip >= ip_end {
+            return Err(crate::Error::CorruptedData(format!(
+                "unexpected end of input in {what}"
+            )));
+        }
+        let byte = **ip;
+        *ip = (*ip).add(1);
+        len += byte as usize;
+        if byte != 255 {
+            return Ok(len);
+        }
+    }
+}
+
+/// The 2-byte little-endian match offset: nonzero, and not reaching before the output start.
+#[inline(always)]
+unsafe fn read_offset(ip: &mut *const u8, ip_end: *const u8, current_pos: usize) -> Result<usize> {
+    if (*ip).add(2) > ip_end {
+        return Err(crate::Error::CorruptedData(
+            "unexpected end of input at offset".to_string(),
+        ));
+    }
+    let offset = std::ptr::read_unaligned((*ip).cast::<u16>()) as usize;
+    *ip = (*ip).add(2);
+    if offset == 0 {
+        return Err(crate::Error::CorruptedData("zero offset".to_string()));
+    }
+    if offset > current_pos {
+        return Err(crate::Error::CorruptedData(format!(
+            "offset {offset} exceeds output position {current_pos}"
+        )));
+    }
+    Ok(offset)
+}
+
+/// `len` more output bytes fit in the page, or the error that says how many were needed.
+#[inline(always)]
+unsafe fn ensure_room(op: *mut u8, op_start: *mut u8, op_end: *mut u8, len: usize) -> Result<()> {
+    if op.add(len) > op_end {
+        return Err(crate::Error::BufferTooSmall {
+            needed: (op as usize - op_start as usize) + len,
+            available: PAGE_SIZE,
+        });
+    }
+    Ok(())
+}
+
+/// Copy `literal_len` literal bytes from `ip` to `op` once both buffers are known to hold them.
+#[inline(always)]
+unsafe fn copy_literals(
+    ip: *const u8,
+    op: *mut u8,
+    literal_len: usize,
+    ip_end: *const u8,
+    op_start: *mut u8,
+    op_end: *mut u8,
+) -> Result<()> {
+    if ip.add(literal_len) > ip_end {
+        return Err(crate::Error::CorruptedData(
+            "literal extends past input".to_string(),
+        ));
+    }
+    ensure_room(op, op_start, op_end, literal_len)?;
+    // Use NEON for larger copies
+    if literal_len >= 16 && op.add(literal_len + 16) <= op_end {
+        wildcard_copy_neon(op, ip, literal_len);
+    } else {
+        std::ptr::copy_nonoverlapping(ip, op, literal_len);
+    }
+    Ok(())
+}
+
 #[inline(never)]
 unsafe fn decompress_neon_impl(input: &[u8], output: &mut [u8; PAGE_SIZE]) -> Result<usize> {
     use crate::Error;
@@ -190,44 +362,15 @@ unsafe fn decompress_neon_impl(input: &[u8], output: &mut [u8; PAGE_SIZE]) -> Re
         let token = *ip;
         ip = ip.add(1);
 
-        // Decode literal length
-        let mut literal_len = ((token >> 4) & 0x0F) as usize;
-        if literal_len == 15 {
-            loop {
-                if ip >= ip_end {
-                    return Err(Error::CorruptedData(
-                        "unexpected end of input in literal length".to_string(),
-                    ));
-                }
-                let byte = *ip;
-                ip = ip.add(1);
-                literal_len += byte as usize;
-                if byte != 255 {
-                    break;
-                }
-            }
-        }
-
-        // Copy literals using NEON
+        // Literals: the length (with continuation bytes), then the bounded copy
+        let literal_len = read_len(
+            &mut ip,
+            ip_end,
+            ((token >> 4) & 0x0F) as usize,
+            "literal length",
+        )?;
         if literal_len > 0 {
-            if ip.add(literal_len) > ip_end {
-                return Err(Error::CorruptedData(
-                    "literal extends past input".to_string(),
-                ));
-            }
-            if op.add(literal_len) > op_end {
-                return Err(Error::BufferTooSmall {
-                    needed: (op as usize - op_start as usize) + literal_len,
-                    available: PAGE_SIZE,
-                });
-            }
-
-            // Use NEON for larger copies
-            if literal_len >= 16 && op.add(literal_len + 16) <= op_end {
-                wildcard_copy_neon(op, ip, literal_len);
-            } else {
-                std::ptr::copy_nonoverlapping(ip, op, literal_len);
-            }
+            copy_literals(ip, op, literal_len, ip_end, op_start, op_end)?;
             ip = ip.add(literal_len);
             op = op.add(literal_len);
         }
@@ -237,120 +380,14 @@ unsafe fn decompress_neon_impl(input: &[u8], output: &mut [u8; PAGE_SIZE]) -> Re
             break;
         }
 
-        // Read offset
-        if ip.add(2) > ip_end {
-            return Err(Error::CorruptedData(
-                "unexpected end of input at offset".to_string(),
-            ));
-        }
-        let offset = std::ptr::read_unaligned(ip.cast::<u16>()) as usize;
-        ip = ip.add(2);
+        let offset = read_offset(&mut ip, ip_end, op as usize - op_start as usize)?;
+        // MIN_MATCH = 4 on top of the nibble and its continuation bytes
+        let match_len = read_len(&mut ip, ip_end, (token & 0x0F) as usize, "match length")? + 4;
+        ensure_room(op, op_start, op_end, match_len)?;
 
-        if offset == 0 {
-            return Err(Error::CorruptedData("zero offset".to_string()));
-        }
-
-        let current_pos = op as usize - op_start as usize;
-        if offset > current_pos {
-            return Err(Error::CorruptedData(format!(
-                "offset {offset} exceeds output position {current_pos}"
-            )));
-        }
-
-        let match_src = op.sub(offset);
-
-        // Decode match length
-        let mut match_len = (token & 0x0F) as usize + 4; // MIN_MATCH = 4
-        if (token & 0x0F) == 15 {
-            loop {
-                if ip >= ip_end {
-                    return Err(Error::CorruptedData(
-                        "unexpected end of input in match length".to_string(),
-                    ));
-                }
-                let byte = *ip;
-                ip = ip.add(1);
-                match_len += byte as usize;
-                if byte != 255 {
-                    break;
-                }
-            }
-        }
-
-        // Check output space
-        if op.add(match_len) > op_end {
-            return Err(Error::BufferTooSmall {
-                needed: (op as usize - op_start as usize) + match_len,
-                available: PAGE_SIZE,
-            });
-        }
-
-        // Copy match. A wide copy is only correct when EVERY byte it loads has already been
-        // written: copy_32 needs offset >= 32, copy_64 and the 64-byte loop need offset >= 64.
-        // `offset >= 16` sent offsets 16..63 through them, so they loaded output bytes that did
-        // not exist yet (aarch64, gx10 2026-09-10: a 16-byte repeating pattern decompressed to
-        // zeros after byte 32). The wildcard path also writes up to 64 bytes past `match_len`,
-        // so it runs only with that much room left in the page.
+        // Copy match: `copy_match_neon` picks the widest copy that is correct at this offset.
         let room = op_end as usize - op as usize;
-        if offset >= 64 && match_len >= 16 && room >= match_len + 64 {
-            wildcard_copy_neon(op, match_src, match_len);
-        } else if offset >= 16 && match_len >= 16 {
-            // 16-byte steps: each load runs after every byte it reads was stored (offset >= 16),
-            // and the tail is copied exactly, never past `match_len`.
-            let mut src = match_src;
-            let mut dst = op;
-            let end = op.add(match_len);
-            while dst.add(16) <= end {
-                copy_16_neon(dst, src);
-                dst = dst.add(16);
-                src = src.add(16);
-            }
-            while dst < end {
-                *dst = *src;
-                dst = dst.add(1);
-                src = src.add(1);
-            }
-        } else if offset == 1 {
-            // RLE (repeat single byte) - use NEON memset
-            let byte = *match_src;
-            if match_len >= 16 {
-                memset_neon(op, byte, match_len);
-            } else {
-                // Small RLE: unroll manually
-                let pattern = 0x0101010101010101u64 * (byte as u64);
-                let mut dst = op;
-                let end = op.add(match_len);
-                while dst.add(8) <= end {
-                    std::ptr::write_unaligned(dst.cast::<u64>(), pattern);
-                    dst = dst.add(8);
-                }
-                while dst < end {
-                    *dst = byte;
-                    dst = dst.add(1);
-                }
-            }
-        } else if offset >= 8 {
-            // Medium offset: 8-byte copies are safe
-            let mut src = match_src;
-            let mut dst = op;
-            let end = op.add(match_len);
-            while dst.add(8) <= end {
-                let val = std::ptr::read_unaligned(src.cast::<u64>());
-                std::ptr::write_unaligned(dst.cast::<u64>(), val);
-                dst = dst.add(8);
-                src = src.add(8);
-            }
-            while dst < end {
-                *dst = *src;
-                dst = dst.add(1);
-                src = src.add(1);
-            }
-        } else {
-            // Small offset (2-7): byte-by-byte for correctness
-            for i in 0..match_len {
-                *op.add(i) = *op.sub(offset).add(i);
-            }
-        }
+        copy_match_neon(op, offset, match_len, room);
         op = op.add(match_len);
     }
 
