@@ -16,6 +16,7 @@ aprender-contracts-cli	--lib
 aprender-contracts-cli	--test	cli_integration
 aprender-contracts-cli	--test	ground_truth
 aprender-contracts-cli	--test	pv_surface_gate
+aprender-contracts-cli	--test	pvl_zero_contracts
 aprender-core	--lib
 aprender-core	--test	beat_sklearn_gaussiannb_accuracy
 aprender-core	--test	beat_sklearn_iris
