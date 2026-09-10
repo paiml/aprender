@@ -383,20 +383,44 @@ jobs:
       - name: Preflight - this box has the tools this job assumes
         run: bash scripts/ci_self_hosted_preflight.sh --need docker objdump
 
-      - name: Record the builder (toolchain, glibc floor)
+      # Build inside rust:1.93.0-bullseye: the container's glibc (2.31) is the
+      # asset's floor, the image's rustc is the workspace pin, the target is the
+      # image's native one. Host caches for the registry and the target dir.
+      - name: Build apr on the default features (no cuda) inside rust:1.93.0-bullseye (glibc 2.31 floor)
         run: |
-          rustup target add ${{ matrix.target }}
-          rustc --version; cargo --version
-          GLIBC=$(ldd --version | head -1)
-          echo "$GLIBC"
+          DOCKER=docker; docker ps >/dev/null 2>&1 || DOCKER="sudo -n docker"
+          # The runner is itself a disposable container (labels ephemeral,docker — infra
+          # machines/<box>/forjar-ephemeral.yaml): the bullseye build is a SIBLING container
+          # through the mounted socket, so every bind-mount path must exist on the HOST at
+          # the same path. The work root is mirrored host<->container; $HOME is not.
+          CACHE="$(cd "$GITHUB_WORKSPACE/../.." && pwd)/cache-apr-cpu/${{ matrix.target }}"
+          mkdir -p "$CACHE/registry" "$CACHE/target"
+          # The bind-mount TARGET inside the workspace must exist BEFORE the container
+          # starts: when it does not, dockerd creates the mountpoint as root, and after
+          # the container exits the workspace carries an empty root-owned `target/` the
+          # runner (uid 1001) cannot write — run 34488955316 built the asset in 1m54s and
+          # then died on `mkdir: cannot create directory 'target/aarch64-unknown-linux-gnu':
+          # Permission denied`. Pre-creating it as the runner keeps the ownership.
+          mkdir -p "$GITHUB_WORKSPACE/target"
+          $DOCKER run --rm \
+            -v "$GITHUB_WORKSPACE:/workspace" \
+            -v "$CACHE/registry:/usr/local/cargo/registry" \
+            -v "$CACHE/target:/workspace/target" \
+            -w /workspace \
+            -e CARGO_TARGET_DIR=/workspace/target \
+            -e CARGO_INCREMENTAL=0 \
+            rust:1.93.0-bullseye \
+            sh -c 'set -e; ldd --version | head -1 > /workspace/target/BUILDER_GLIBC; rustc --version > /workspace/target/BUILDER_RUSTC; cargo build --release -p apr-cli --bin apr --target ${{ matrix.target }} --locked; strip target/${{ matrix.target }}/release/apr'
+          # the mounted target dir is the host cache; expose the binary where the next steps expect it
+          mkdir -p "target/${{ matrix.target }}/release"
+          cp "$CACHE/target/${{ matrix.target }}/release/apr" "target/${{ matrix.target }}/release/apr"
+          GLIBC=$(cat "$CACHE/target/BUILDER_GLIBC"); RUSTC=$(cat "$CACHE/target/BUILDER_RUSTC")
+          echo "builder glibc: $GLIBC"; echo "builder rustc: $RUSTC"
           {
-            echo "### apr (cpu) ${{ matrix.target }} built on ${{ matrix.host }}"
-            echo "- toolchain: $(rustc --version)"
-            echo "- builder glibc: $GLIBC"
+            echo "### apr (cpu) ${{ matrix.target }} built on ${{ matrix.host }} inside rust:1.93.0-bullseye"
+            echo "- toolchain: $RUSTC"
+            echo "- glibc floor of this asset (the container's): $GLIBC"
           } >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Build apr on the default features (no cuda)
-        run: cargo build --release -p apr-cli --bin apr --target ${{ matrix.target }} --locked
 
       # The INVERSE of the cuda lane's proof, on the same discriminator: the
       # driver loader string is in the bytes ONLY under --features cuda (0.66.0:
@@ -577,6 +601,11 @@ jobs:
   smoke-cpu:
     name: smoke apr (cpu) on ${{ matrix.host }}
     needs: verify-apr-assets
+    env:
+      # The CPU assets build inside rust:1.93.0-bullseye (glibc 2.31) like the cuda lane, so the floor is
+      # declared and GATED: an asset whose bytes import a newer GLIBC_* symbol fails here. 0.66.0 shipped a
+      # native x86_64 asset needing GLIBC_2.43 that did not start on Ubuntu 22.04.
+      APR_ASSET_GLIBC_FLOOR: GLIBC_2.31
     strategy:
       fail-fast: false
       matrix:
