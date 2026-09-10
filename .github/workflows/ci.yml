@@ -1837,7 +1837,7 @@ jobs:
   # Both are non-zero: an unmeasured gate is not a passing gate. The distinct
   # code is so a broken box is never read as a broken tree.
   vendored-schemas:
-    runs-on: [self-hosted, X64, Linux, build]   # BP-3 (#3100): any x86 box in the build pool (intel clean-room or yoga-eph)
+    runs-on: [self-hosted, Linux, build]   # BP-3 (#3100): pure scripts, no image, no arch need — any pool box incl. gx10-build
     timeout-minutes: 15
     steps:
       - name: Checkout
