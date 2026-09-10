@@ -14,12 +14,15 @@ name: Binary Release
 # PMAT-1096, Alfredo's #2869): a release without both CUDA assets is not
 # done, and `verify-cuda-assets` FAILS the workflow when either is missing.
 #
-# Why the CUDA lane builds on hosted runners with no CUDA toolkit:
-# aprender-gpu's `cuda` feature is `dep:libloading` — the driver
-# (libcuda.so) is loaded at RUNTIME, nothing links at build time. Why
-# ubuntu-22.04 and not -latest: the nightly's ubuntu-latest `apr` needs
-# glibc 2.39 and does not run on a 22.04 box (`GLIBC_2.39 not found`,
-# measured on lambda); 22.04 gives a 2.35 floor. What each check proves:
+# The CUDA lane runs on the SELF-HOSTED fleet only — operator rule
+# (2026-09-10): we do not use hosted GitHub runners; we use gx10, lambda
+# or yoga. aarch64 builds on gx10 (GB10 sm_121), x86_64 on yoga (RTX 4090
+# sm_89; lambda when it is registered). No CUDA toolkit is needed at build
+# time — aprender-gpu's `cuda` feature is `dep:libloading`, the driver
+# (libcuda.so) is loaded at RUNTIME — but the builder's glibc IS the
+# binary's floor, so each build prints `ldd --version` into the summary
+# (the nightly's ubuntu-latest `apr` needs glibc 2.39 and does not run on
+# lambda's 22.04 — measured). What each check proves:
 # the loader string `libcuda.so` is in the artifact ONLY under `--features
 # cuda` (1 vs 0, measured on 0.66.0 builds of both kinds) — that proves
 # the feature is in the bytes; `apr gpu --json` on the yoga (sm_89) and
@@ -179,16 +182,18 @@ jobs:
             --clobber
 
   build-apr-cuda:
-    name: apr (cuda) ${{ matrix.target }}
-    runs-on: ${{ matrix.runner }}
+    name: apr (cuda) ${{ matrix.target }} on ${{ matrix.host }}
+    runs-on: ${{ fromJSON(matrix.labels) }}
     strategy:
       fail-fast: false
       matrix:
         include:
           - target: x86_64-unknown-linux-gnu
-            runner: ubuntu-22.04        # glibc 2.35 floor (see header)
+            host: yoga
+            labels: '["self-hosted", "Linux", "X64", "cuda", "yoga"]'
           - target: aarch64-unknown-linux-gnu
-            runner: ubuntu-22.04-arm    # native ARM64, GA + free for public repos
+            host: gx10
+            labels: '["self-hosted", "Linux", "ARM64", "cuda", "gx10"]'
     steps:
       - name: Resolve release tag
         id: tag
@@ -206,18 +211,21 @@ jobs:
         with:
           ref: ${{ steps.tag.outputs.tag }}
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
-
-      - name: Install target on workspace-pinned toolchain
-        run: rustup target add ${{ matrix.target }}
-
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: apr-cuda-${{ matrix.target }}
+      # The box's own rustup honours rust-toolchain.toml; the target is the native
+      # one. The builder's glibc is the asset's floor — recorded, never assumed.
+      - name: Record the builder (toolchain, glibc floor, device)
+        run: |
+          rustup target add ${{ matrix.target }}
+          rustc --version; cargo --version
+          GLIBC=$(ldd --version | head -1)
+          echo "$GLIBC"
+          nvidia-smi -L | head -1
+          {
+            echo "### apr (cuda) ${{ matrix.target }} built on ${{ matrix.host }}"
+            echo "- toolchain: $(rustc --version)"
+            echo "- glibc floor of this asset: $GLIBC"
+            echo "- device present at build: $(nvidia-smi -L | head -1)"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Build apr with --features cuda
         run: cargo build --release -p apr-cli --bin apr --target ${{ matrix.target }} --features cuda --locked
@@ -273,7 +281,7 @@ jobs:
   verify-cuda-assets:
     name: Both CUDA assets are on the release
     needs: build-apr-cuda
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, clean-room]
     if: always()
     steps:
       - name: Require apr-<tag>-{x86_64,aarch64}-unknown-linux-gnu-cuda.tar.gz + .sha256
@@ -332,7 +340,7 @@ jobs:
   summary:
     name: Summary
     needs: [build, build-apr-cuda, verify-cuda-assets, smoke-cuda]
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, clean-room]
     if: always()
     steps:
       - name: Write summary
