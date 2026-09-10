@@ -416,7 +416,7 @@ jobs:
             -v "${SCCACHE_HOST_DIR}:/sccache" \
             -w /workspace \
             -e CARGO_TARGET_DIR=/workspace/target \
-            -e RUSTC_WRAPPER=rustc-sccache \
+            -e RUSTC_WRAPPER=/usr/local/cargo/bin/sccache \
             -e SCCACHE_DIR=/sccache \
             -e SCCACHE_CACHE_SIZE=50G \
             -e CARGO_INCREMENTAL=0 \
@@ -440,7 +440,7 @@ jobs:
             -v "${SCCACHE_HOST_DIR}:/sccache" \
             -w /workspace \
             -e CARGO_TARGET_DIR=/workspace/target \
-            -e RUSTC_WRAPPER=rustc-sccache \
+            -e RUSTC_WRAPPER=/usr/local/cargo/bin/sccache \
             -e SCCACHE_DIR=/sccache \
             -e SCCACHE_CACHE_SIZE=50G \
             -e CARGO_INCREMENTAL=0 \
@@ -460,7 +460,7 @@ jobs:
             -v "${SCCACHE_HOST_DIR}:/sccache" \
             -w /workspace \
             -e CARGO_TARGET_DIR=/workspace/target \
-            -e RUSTC_WRAPPER=rustc-sccache \
+            -e RUSTC_WRAPPER=/usr/local/cargo/bin/sccache \
             -e SCCACHE_DIR=/sccache \
             -e SCCACHE_CACHE_SIZE=50G \
             -e CARGO_INCREMENTAL=0 \
@@ -513,7 +513,7 @@ jobs:
             -v "${SCCACHE_HOST_DIR}:/sccache" \
             -w /workspace \
             -e CARGO_TARGET_DIR=/workspace/target \
-            -e RUSTC_WRAPPER=rustc-sccache \
+            -e RUSTC_WRAPPER=/usr/local/cargo/bin/sccache \
             -e SCCACHE_DIR=/sccache \
             -e SCCACHE_CACHE_SIZE=50G \
             -e CARGO_INCREMENTAL=0 \
@@ -541,7 +541,7 @@ jobs:
             -v "${SCCACHE_HOST_DIR}:/sccache" \
             -w /workspace \
             -e CARGO_TARGET_DIR=/workspace/target \
-            -e RUSTC_WRAPPER=rustc-sccache \
+            -e RUSTC_WRAPPER=/usr/local/cargo/bin/sccache \
             -e SCCACHE_DIR=/sccache \
             -e SCCACHE_CACHE_SIZE=50G \
             -e CARGO_INCREMENTAL=0 \
@@ -585,7 +585,7 @@ jobs:
             -v "${SCCACHE_HOST_DIR}:/sccache" \
             -w /workspace \
             -e CARGO_TARGET_DIR=/workspace/target \
-            -e RUSTC_WRAPPER=rustc-sccache \
+            -e RUSTC_WRAPPER=/usr/local/cargo/bin/sccache \
             -e SCCACHE_DIR=/sccache \
             -e SCCACHE_CACHE_SIZE=50G \
             -e CARGO_INCREMENTAL=0 \
@@ -1562,7 +1562,7 @@ jobs:
               -v "/home/noah/data/sccache:/sccache" \
               -w /workspace \
               -e CARGO_TARGET_DIR=/workspace/target \
-              -e RUSTC_WRAPPER=rustc-sccache \
+              -e RUSTC_WRAPPER=/usr/local/cargo/bin/sccache \
               -e SCCACHE_DIR=/sccache \
               -e SCCACHE_CACHE_SIZE=50G \
               -e CARGO_INCREMENTAL=0 \
