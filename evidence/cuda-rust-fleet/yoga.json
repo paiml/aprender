@@ -31,13 +31,13 @@
       "id": "cudacore_probe",
       "status": "PASS",
       "reason": "compute_cap = sm_89",
-      "cmd": "cargo run --release (/home/noah/.cuda-rust-fleet/experiments/cuda-rust-probes/cudacore)"
+      "cmd": "cargo run --release (~/.cuda-rust-fleet/experiments/cuda-rust-probes/cudacore)"
     },
     {
       "id": "cutile_probe",
       "status": "PASS",
       "reason": "cutile: sm_89 len=1024 mismatches=0",
-      "cmd": "cargo run --release (/home/noah/.cuda-rust-fleet/experiments/cuda-rust-probes/cutile)"
+      "cmd": "cargo run --release (~/.cuda-rust-fleet/experiments/cuda-rust-probes/cutile)"
     },
     {
       "id": "aprender_gpu_cuda",
