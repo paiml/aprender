@@ -187,3 +187,40 @@ on that one file even when the two sides touched unrelated tickets (measured 3×
 - **Registration is per invocation**: the steward/orchestrator passes
   `git -c merge.roadmap.driver="python3 scripts/lib/roadmap_merge.py %O %A %B" merge …`. Never `git config` in the
   shared `.git` — a worktree fleet shares that file, and a driver written there leaks into every other lane.
+
+### §6.5 Tree-reader rows at MODULE granularity (PMAT-3120, 2026-09-11)
+
+Issue #3120 measured where the PR quick tier's bill actually is: **88.08 % of ALL test-seconds came from the 18
+whole `--lib` crates in `scripts/tree_reader_tests.txt`** — the registry named a CRATE when one test FILE in it
+read the tree — while the touched-crate expansion adds ≤ 0.26 %. So `scripts/check_tree_reader_tests.sh` now
+derives `crate<TAB>--lib<TAB>module::path` (src/a/b.rs → `a::b`, src/a/mod.rs → `a`, src/lib.rs → `<root>`, an
+`include!()`-pulled or `#[path]`-attached file → the INCLUDING/DECLARING file's module). A module it cannot
+resolve falls back to the whole crate (2 columns) **and prints `WARN unresolved-include` on stderr** — a silent
+fallback restores the 88 % without anyone noticing. `scripts/ci_test_tier.sh` keeps `targets=` byte-compatible
+for ci.yml's "Quick tier" step (module rows collapse to `crate:--lib`) and adds **`filterset=`, the key CI should
+switch to**: `package(=C) & kind(lib) & test(/^(m1|m2)::/)` per crate, `package(=C) & kind(lib)` for `<root>` and
+for whole-crate fallbacks, `binary(=N)` for `--test` rows, `kind(bin)` for `--bins`. Until ci.yml reads
+`filterset=`, the quick tier still runs whole libs and the 88 % bill stands — the switch is phase 2.
+
+Re-measured read-only over the same last 25 merged PRs and the same `evidence/fleet/test-tier.tsv` prices
+(method: the measurement lane's `method.sh` + `remeasure_3120.py`; a module prices by its own key plus its
+submodule keys, which is what `test(/^M::/)` actually runs):
+
+| tier | test-seconds | % of the FULL suite (4,390.6 s) |
+|---|---|---|
+| tree-reader half, OLD (18 whole `--lib` crates) | 3,867.1 s / 64,884 tests | **88.08 %** |
+| tree-reader half, NEW (92 module rows + 3 whole-crate rows) | 1,083.3 s / 9,946 tests | **24.67 %** |
+| E1 (touched crates ∪ tree-readers), 25-PR sum | 102,435.9 s → 63,462.3 s | **93.32 % → 57.82 %** |
+| E1 on a PR that stays quick (14 of 25) | 3,867.1 s → 1,083.3 s each | **88.08 % → 24.67 %** |
+
+E1's 57.82 % is floored by the 11 of 25 PRs whose selection falls CLOSED to the full suite (100 % each,
+untouched by this change); on the 14 quick PRs the tier is 3.57× cheaper. Two findings ride along: **578.1 s
+of the remaining 1,083.3 s (53 %) is ONE unresolvable reader** — `crates/apr-cli/src/bin/apr-corpus-ingest.rs`,
+a `[[bin]]` target whose unit tests no tier runs today (neither `--workspace --lib` nor the quick tier's
+`-p apr-cli --lib`), so the fallback pays for apr-cli's whole lib to test a target it does not contain; wiring
+`src/bin/` readers needs a measured `--bins` run and is owed, not guessed. And the dir-scoped module resolution
+fixed a **silent-miss**: a crate-wide `mod tests;` match resolved `aprender-serve/src/cli/tests.rs` to
+`cli::tests`, an atom matching ZERO tests, where the real path is `cli::cli_tests` (10 rows, 18.1 s). 10 of 92
+module rows have no row in the table of record (feature-gated: `setfit::*`, `tui::*`, `orbit::wasm`, …) and are
+priced 0.
+
