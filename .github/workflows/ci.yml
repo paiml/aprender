@@ -436,7 +436,7 @@ jobs:
             -v "${SCCACHE_HOST_DIR}:/sccache" \
             -w /workspace \
             -e CARGO_TARGET_DIR=/workspace/target \
-            -e RUSTC_WRAPPER=rustc-sccache \
+            -e RUSTC_WRAPPER=/usr/local/cargo/bin/sccache \
             -e SCCACHE_DIR=/sccache \
             -e SCCACHE_CACHE_SIZE=50G \
             -e CARGO_INCREMENTAL=0 \
@@ -460,7 +460,7 @@ jobs:
             -v "${SCCACHE_HOST_DIR}:/sccache" \
             -w /workspace \
             -e CARGO_TARGET_DIR=/workspace/target \
-            -e RUSTC_WRAPPER=rustc-sccache \
+            -e RUSTC_WRAPPER=/usr/local/cargo/bin/sccache \
             -e SCCACHE_DIR=/sccache \
             -e SCCACHE_CACHE_SIZE=50G \
             -e CARGO_INCREMENTAL=0 \
@@ -480,7 +480,7 @@ jobs:
             -v "${SCCACHE_HOST_DIR}:/sccache" \
             -w /workspace \
             -e CARGO_TARGET_DIR=/workspace/target \
-            -e RUSTC_WRAPPER=rustc-sccache \
+            -e RUSTC_WRAPPER=/usr/local/cargo/bin/sccache \
             -e SCCACHE_DIR=/sccache \
             -e SCCACHE_CACHE_SIZE=50G \
             -e CARGO_INCREMENTAL=0 \
@@ -533,7 +533,7 @@ jobs:
             -v "${SCCACHE_HOST_DIR}:/sccache" \
             -w /workspace \
             -e CARGO_TARGET_DIR=/workspace/target \
-            -e RUSTC_WRAPPER=rustc-sccache \
+            -e RUSTC_WRAPPER=/usr/local/cargo/bin/sccache \
             -e SCCACHE_DIR=/sccache \
             -e SCCACHE_CACHE_SIZE=50G \
             -e CARGO_INCREMENTAL=0 \
@@ -566,7 +566,7 @@ jobs:
             -v "${SCCACHE_HOST_DIR}:/sccache" \
             -w /workspace \
             -e CARGO_TARGET_DIR=/workspace/target \
-            -e RUSTC_WRAPPER=rustc-sccache \
+            -e RUSTC_WRAPPER=/usr/local/cargo/bin/sccache \
             -e SCCACHE_DIR=/sccache \
             -e SCCACHE_CACHE_SIZE=50G \
             -e CARGO_INCREMENTAL=0 \
@@ -606,7 +606,11 @@ jobs:
       # exclusion removes nothing the filterset asks for.
       - name: "Quick tier: every test target that reads the tree (BSE-17)"
         if: steps.tier.outputs.tier == 'quick'
-        timeout-minutes: 20
+        # 45, not 20. Measured 2026-09-11 under train load, this PR's own runs never fit 20: run 34542045481 on
+        # yoga-build2 compiled 811 crates in ~9 min (cold per-run target dir, warm shared sccache) and was part way
+        # through 65,266 tests at the cap; attempt 2 on intel-clean-room-15 timed out at 20 min too. The ~6 min
+        # figure was never reproduced in CI. 45 still sits well under the serial tier's 60; re-tighten when measured.
+        timeout-minutes: 45
         env:
           TARGETS: ${{ steps.tier.outputs.targets }}
         run: |
@@ -624,7 +628,7 @@ jobs:
             -v "${SCCACHE_HOST_DIR}:/sccache" \
             -w /workspace \
             -e CARGO_TARGET_DIR=/workspace/target \
-            -e RUSTC_WRAPPER=rustc-sccache \
+            -e RUSTC_WRAPPER=/usr/local/cargo/bin/sccache \
             -e SCCACHE_DIR=/sccache \
             -e SCCACHE_CACHE_SIZE=50G \
             -e CARGO_INCREMENTAL=0 \
@@ -665,7 +669,7 @@ jobs:
             -v "${SCCACHE_HOST_DIR}:/sccache" \
             -w /workspace \
             -e CARGO_TARGET_DIR=/workspace/target \
-            -e RUSTC_WRAPPER=rustc-sccache \
+            -e RUSTC_WRAPPER=/usr/local/cargo/bin/sccache \
             -e SCCACHE_DIR=/sccache \
             -e SCCACHE_CACHE_SIZE=50G \
             -e CARGO_INCREMENTAL=0 \
@@ -746,7 +750,10 @@ jobs:
     # 37. The 20-minute budget is SMALLER than the formula's answer, and it is
     # the number the operator set. A run that exceeds it is meant to fail:
     # that is the andon for this row, not a flake to widen away.
-    timeout-minutes: 20
+    # 30, not 20 (67-E3 merge onto #3115 main, 2026-09-11): the fleet ledger measured p90 25 min for
+    # guard-tree and 45 min for guard-cargo BEFORE the seven moved steps (~23 min) left it; 30 is the
+    # measured remainder with a 1.3x margin under train load. Re-tighten from evidence/fleet/history.jsonl.
+    timeout-minutes: 30
     env:
       IMAGE: localhost:5000/sovereign-ci:stable
       # Same definition as workspace-test (:106). aprender#2627: the
@@ -869,6 +876,19 @@ jobs:
       # see scripts/check_no_timing_in_required.sh).
       - name: "guard_tree.sh's parallel dispatcher case table (PMAT-1098)"
         run: bash scripts/tests/guard_tree_parallel_test.sh
+      # Fleet hygiene case tables (docs/specifications/ci-fleet-hygiene.md §6): the queue
+      # steward, the packing/history ledgers, the tier ledger and the roadmap resolve-dirty
+      # runner each ship a hermetic --selftest; check_guards_are_wired.sh refuses a script
+      # that carries one and is named by no workflow. Each runs in under five seconds.
+      - name: Fleet hygiene case tables (steward, history, utilization, tier ledger, resolve-dirty)
+        run: |
+          set -euo pipefail
+          bash scripts/ci_queue_steward.sh --selftest
+          bash scripts/fleet_history.sh --selftest
+          bash scripts/fleet_utilization.sh --selftest
+          bash scripts/test_tier_ledger.sh --selftest
+          bash scripts/ci_resolve_dirty.sh --selftest
+          python3 scripts/lib/roadmap_merge.py --selftest
       - name: "target-watch: before-cargo-install-bashrs"
         # aprender#2822 boundary probe (2 stat, 1 readdir, 1 df, 1 pgrep).
         # Instrumentation, never a gate: the script always exits 0.
@@ -1101,7 +1121,10 @@ jobs:
     # is the number the operator set (rule E). A run that exceeds it is meant
     # to fail: the remedy is to move the next tree-universe step to the
     # nightly, never to widen this number.
-    timeout-minutes: 20
+    # 30, not 20 (67-E3 merge onto #3115 main, 2026-09-11): the fleet ledger measured p90 25 min for
+    # guard-tree and 45 min for guard-cargo BEFORE the seven moved steps (~23 min) left it; 30 is the
+    # measured remainder with a 1.3x margin under train load. Re-tighten from evidence/fleet/history.jsonl.
+    timeout-minutes: 30
     env:
       IMAGE: localhost:5000/sovereign-ci:stable
       PR_OR_REF: ${{ github.event.pull_request.number || github.ref_name }}
@@ -1663,10 +1686,63 @@ jobs:
       # measures 0. A count that cannot be read fails HERE -- the suite refuses
       # an empty SATD_BASELINE on its own account, but a step that exported one
       # would be reporting a measurement it did not take.
-      # MOVED to .github/workflows/guards-nightly.yml (PMAT-1098, row 67-E3):
-      # "model-tests falsification suites (was gated by nothing, aprende..." -- 256 s of guard-cargo's measured 43.8 min on run
-      # 34449608126, and its universe is the tree, not the diff.
-      # scripts/guards_nightly_manifest.txt is the ledger of what moved.
+      # KEPT in PR CI at the 67-E3 merge (PMAT-1098): this step is a RATCHET against the
+      # comparand origin/main — its universe is the diff, not the tree. On the nightly
+      # HEAD == origin/main, so there the ceiling equals the measurement and the step
+      # is vacuous; guards-nightly.yml still runs the suites whole (tree universe).
+      - name: model-tests falsification suites (was gated by nothing, aprender#2522) -- SATD ceiling measured on the comparand (BSE-03)
+        run: |
+          set -euo pipefail
+          dr() { # dr <dir mounted as /workspace> <cmd...>
+            local ws=$1; shift
+            docker run --rm \
+              --user "$(id -u):$(id -g)" \
+              -v "${ws}:/workspace" \
+              -v "${GUARD_CARGO_HOME}:/cargo-home" \
+              -v "${GUARD_TARGET_DIR}:/workspace/target" \
+              -e CARGO_HOME=/cargo-home \
+              -v "/home/noah/data/sccache:/sccache" \
+              -w /workspace \
+              -e CARGO_TARGET_DIR=/workspace/target \
+              -e RUSTC_WRAPPER=/usr/local/cargo/bin/sccache \
+              -e SCCACHE_DIR=/sccache \
+              -e SCCACHE_CACHE_SIZE=50G \
+              -e CARGO_INCREMENTAL=0 \
+              -e CARGO_BUILD_JOBS=8 \
+              -e CARGO_TERM_COLOR=never \
+              "${DR_ENV[@]}" \
+              "$IMAGE" "$@"
+          }
+          DR_ENV=()
+          # 1. build the checklist suite once, at HEAD, and learn its executable
+          dr "$GITHUB_WORKSPACE" cargo test -p aprender-core --features model-tests \
+            --test falsification_spec_v10_tests --no-run 2>&1 | tee "$RUNNER_TEMP/satd-build.log"
+          bin=$(sed -e 's/\x1b\[[0-9;]*m//g' -e 's/\r$//' "$RUNNER_TEMP/satd-build.log" | sed -n 's|.*Executable tests/falsification_spec_v10_tests\.rs (\(.*\))$|\1|p' | tail -1)
+          [ -n "$bin" ] || { echo "FAIL: cargo did not name the falsification suite executable"; exit 1; }
+          # 2. measure the comparand with that same binary
+          # A detached worktree, not `git archive`: archive honours .gitattributes
+          # export-ignore, so an ignored source file would vanish from the
+          # comparand and lower the measured count (review m2-prb-review, 4/5 lanes).
+          comparand="$RUNNER_TEMP/comparand"; git worktree remove --force "$comparand" 2>/dev/null || rm -rf "$comparand"
+          git worktree add --detach "$comparand" origin/main
+          trap 'git worktree remove --force "$comparand" 2>/dev/null || true' EXIT
+          DR_ENV=(-e SATD_BASELINE=0)
+          set +e
+          out=$(dr "$comparand" "$bin" f_dod_001_satd_count_is_zero --exact --nocapture 2>&1); mrc=$?
+          set -e
+          n=$(printf '%s\n' "$out" | sed -n 's/.*BROKEN -- \([0-9][0-9]*\) markers in production source.*/\1/p' | head -1)
+          if [ "$mrc" -eq 0 ] && [ -z "$n" ] && printf '%s\n' "$out" | grep -q '^test result: ok'; then n=0; fi
+          case "$n" in ''|*[!0-9]*) printf '%s\n' "$out" | tail -20; echo "FAIL: the comparand measurement did not yield a count (rc=$mrc)"; exit 1 ;; esac
+          echo "SATD_BASELINE=$n measured on origin/main $(git rev-parse --short origin/main) by the HEAD-built suite"
+          # 3. the suites, judged against the measured ceiling
+          DR_ENV=(-e "SATD_BASELINE=$n")
+          dr "$GITHUB_WORKSPACE" cargo test -p aprender-core --features model-tests \
+            --test falsification_spec_v10_tests \
+            --test falsification_stress_tests \
+            --test falsification_gpu_state_tests
+          # 4. the satd class of the ratchet-semantics case table (rebuilds nothing)
+          DR_ENV=()
+          dr "$GITHUB_WORKSPACE" bash scripts/tests/ratchet_semantics_test.sh --class satd
       # MOVED to .github/workflows/guards-nightly.yml (PMAT-1098, row 67-E3):
       # "Book rust examples compile" -- 206 s of guard-cargo's measured 43.8 min on run
       # 34449608126, and its universe is the tree, not the diff.
@@ -2232,9 +2308,34 @@ jobs:
       # 134/134 killed. It is a SEPARATE script from mutate-guard.sh rather than an
       # extension of it, because merging a 15-minute sweep into a 51-minute one buys
       # nothing and serialises them.
+      # Pareto (PMAT-1105 §6): this sweep is ~2 h of the receipt job on EVERY PR and sits in
+      # the merge queue's ALLGREEN set, so it was the critical path of every merge. Its
+      # inputs are five paths; a diff that touches none of them cannot change the score,
+      # which is main's. FAIL-CLOSED exactly like the §3.D trigger above: no merge-base,
+      # a crashed diff, or anything but a well-formed "no" runs the sweep.
+      - name: "Does this diff change anything the arm sweep reads? (S13.10 trigger)"
+        id: arm_needed
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=$(git merge-base origin/main "${PR_HEAD_SHA}" 2>/dev/null) || BASE=""
+          if [ -z "$BASE" ]; then echo "needed=yes" >> "$GITHUB_OUTPUT"; echo "::notice::merge-base unavailable; running the arm sweep (fail-closed)"; exit 0; fi
+          set +e
+          CHANGED=$(git diff --name-only "$BASE" "${PR_HEAD_SHA}" -- scripts/pr_review_quorum_arm.sh scripts/check_pr_review_receipt.sh scripts/mutate_quorum_arm.sh tests/pr-review-quorum.bats tests/fixtures/pr-review/)
+          rc=$?
+          set -e
+          if [ "$rc" -ne 0 ]; then echo "needed=yes" >> "$GITHUB_OUTPUT"; echo "::notice::git diff failed (rc=$rc); running the arm sweep (fail-closed)"; exit 0; fi
+          if [ -n "$CHANGED" ]; then printf 'arm inputs changed:\n%s\n' "$CHANGED"; echo "needed=yes" >> "$GITHUB_OUTPUT"; else echo "no arm input changed between $BASE and ${PR_HEAD_SHA}"; echo "needed=no" >> "$GITHUB_OUTPUT"; fi
       - name: "The arm script's 134-mutant set must kill 100% (S13.10, fixed at one)"
+        if: steps.arm_needed.outputs.needed == 'yes'
         shell: bash
         run: bash scripts/mutate_quorum_arm.sh
+      - name: "Arm sweep not triggered — record why (S13.10)"
+        if: steps.arm_needed.outputs.needed != 'yes'
+        shell: bash
+        run: |
+          echo "quorum_arm_mutation_score: NOT-TRIGGERED — none of scripts/pr_review_quorum_arm.sh, scripts/check_pr_review_receipt.sh, scripts/mutate_quorum_arm.sh, tests/pr-review-quorum.bats, tests/fixtures/pr-review/ changed in this diff."
+          echo "The score is unchanged from main's (S13.10); the sweep still runs on every push to main."
 
   # ---------------------------------------------------------------------------
   # PR-REVIEW-SKILL-002 v2 §13.11 RUNG 1 — the shadow lane.
