@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import sys, os, argparse, re, tempfile, subprocess
 
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from scripts.lib.roadmap_diff import split_entries
 
 def parse_id(eid):
@@ -87,10 +88,10 @@ def run_selftest():
 
     cases = [
         ("both-append", h+e1, h+e1+e2, h+e1+e3, False, False),
-        ("edit", h+e1, h+e1.replace("1", "11"), h+e1, False, False),
-        ("conflict", h+e1, h+e1.replace("1", "11"), h+e1.replace("1", "12"), True, False),
+        ("edit", h+e1, h+e1.replace("a: 1", "a: 11"), h+e1, False, False),
+        ("conflict", h+e1, h+e1.replace("a: 1", "a: 11"), h+e1.replace("a: 1", "a: 12"), True, False),
         ("del-unc", h+e1+e2, h+e1, h+e1+e2, False, False),
-        ("del-edit", h+e1+e2, h+e1, h+e1+e2.replace("2", "22"), True, False),
+        ("del-edit", h+e1+e2, h+e1, h+e1+e2.replace("a: 2", "a: 22"), True, False),
         ("mut", h+e1, h+e1+e10, h+e1+e2, False, True),
     ]
 
@@ -107,14 +108,14 @@ def run_selftest():
             
             p = subprocess.run([sys.executable, __file__, bp, op, tp, "--out", out], env=env)
             if (p.returncode != 0) != exp_err:
-                failed = 1
+                failed = 1; print(f"FAIL {name}: p.returncode={p.returncode}")
                 continue
             if exp_err: continue
             
             subprocess.run(["git", "init", "-q"], cwd=td)
-            chk = subprocess.run(["bash", "scripts/check_roadmap_sorted.sh", out], cwd=td, capture_output=True)
+            chk = subprocess.run(["bash", os.path.abspath("scripts/check_roadmap_sorted.sh"), out], cwd=td, capture_output=True)
             if (chk.returncode != 0) != mut:
-                failed = 1
+                failed = 1; print(f"FAIL {name}: p.returncode={p.returncode}")
 
     sys.exit(failed)
 
