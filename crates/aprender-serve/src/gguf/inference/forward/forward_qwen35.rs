@@ -29,6 +29,24 @@ pub fn l2_norm(x: &mut [f32], eps: f32) {
     }
 }
 
+/// Scale each `head_dim`-wide head of `x` to unit L2 norm on its own, as llama.cpp's
+/// `build_gdn_l2_norm` does for Gated `DeltaNet` q and k (`rms_norm(x, eps / n) / sqrt(n)`
+/// over one head is `x_h / sqrt(sum(x_h^2) + eps)`). One norm over all heads scales every
+/// head by the other heads' magnitudes.
+pub fn l2_norm_per_head(x: &mut [f32], head_dim: usize, eps: f32) {
+    for head in x.chunks_exact_mut(head_dim) {
+        l2_norm(head, eps);
+    }
+}
+
+/// Multiply `x` elementwise by `sigmoid(gate)`: the output gate of Qwen3.5's full-attention
+/// layers (llama.cpp's `attn_gated` node), applied before the output projection.
+pub fn apply_sigmoid_gate(x: &mut [f32], gate: &[f32]) {
+    for (o, g) in x.iter_mut().zip(gate) {
+        *o *= 1.0 / (1.0 + (-*g).exp());
+    }
+}
+
 /// Gated RMSNorm: (RMSNorm(input) * silu(gate))
 /// Norm is computed independently over chunks of size `head_v_dim`.
 pub fn gated_rmsnorm(
@@ -172,61 +190,31 @@ pub fn delta_rule_recurrence(
     }
 }
 
-/// Partial RoPE over rope_dimension_count dims honouring rope.dimension_sections.
-/// Sections are lengths of [rope, zero, rope, zero] applied to the feature dimension.
-pub fn apply_rope_sections(
-    q: &mut [f32],
-    k: &mut [f32],
-    pos: u32,
+/// Partial NEOX RoPE, exactly as llama.cpp ggml_rope_multi for text input (every position stream is the
+/// token position, so the sections do not change theta): for pair j in 0..n_rot/2 of each head,
+/// (x[j], x[j + n_rot/2]) rotates by theta_j = pos * theta_scale^j with theta_scale = freq_base^(-2/n_rot),
+/// computed iteratively as ggml does; dims n_rot..head_dim pass through unrotated.
+pub fn apply_partial_neox_rope(
+    x: &mut [f32],
+    num_heads: usize,
     head_dim: usize,
-    num_q_heads: usize,
-    num_k_heads: usize,
+    n_rot: usize,
+    pos: usize,
     freq_base: f32,
-    sections: &[usize; 4],
 ) {
-    let mut compute_rope = |x: &mut [f32], num_heads: usize| {
-        for h in 0..num_heads {
-            let x_h = &mut x[h * head_dim..(h + 1) * head_dim];
-            let mut offset = 0;
-
-            // Section 0: RoPE
-            let sec0 = sections[0];
-            for i in (0..sec0).step_by(2) {
-                let theta = (pos as f32) / freq_base.powf((i as f32) / (sec0 as f32));
-                let cos = theta.cos();
-                let sin = theta.sin();
-
-                let idx0 = offset + i;
-                let idx1 = offset + i + 1;
-                let x0 = x_h[idx0];
-                let x1 = x_h[idx1];
-                x_h[idx0] = x0 * cos - x1 * sin;
-                x_h[idx1] = x0 * sin + x1 * cos;
-            }
-            offset += sec0;
-
-            // Section 1: Skip
-            offset += sections[1];
-
-            // Section 2: RoPE
-            let sec2 = sections[2];
-            for i in (0..sec2).step_by(2) {
-                let theta = (pos as f32) / freq_base.powf((i as f32) / (sec2 as f32));
-                let cos = theta.cos();
-                let sin = theta.sin();
-
-                let idx0 = offset + i;
-                let idx1 = offset + i + 1;
-                let x0 = x_h[idx0];
-                let x1 = x_h[idx1];
-                x_h[idx0] = x0 * cos - x1 * sin;
-                x_h[idx1] = x0 * sin + x1 * cos;
-            }
+    let half = n_rot / 2;
+    let theta_scale = freq_base.powf(-2.0 / n_rot as f32);
+    for h in 0..num_heads {
+        let base = h * head_dim;
+        let mut theta = pos as f32;
+        for j in 0..half {
+            let (sin, cos) = theta.sin_cos();
+            let (a, b) = (x[base + j], x[base + j + half]);
+            x[base + j] = a * cos - b * sin;
+            x[base + j + half] = a * sin + b * cos;
+            theta *= theta_scale;
         }
-    };
-
-    compute_rope(q, num_q_heads);
-    compute_rope(k, num_k_heads);
+    }
 }
 
 #[cfg(test)]
@@ -330,25 +318,30 @@ mod tests {
     }
 }
 
+/// Per-sequence decode state for [`Qwen35Model`]: the attention layers' KV cache plus each
+/// Gated `DeltaNet` layer's causal-conv window and recurrent state. Build one with
+/// [`Qwen35Model::new_state`].
 pub struct Qwen35State {
-    pub conv_states: Vec<Vec<f32>>,
-    pub ssm_states: Vec<Vec<f32>>,
-    pub kv_cache: crate::gguf::OwnedQuantizedKVCache,
+    pub(crate) conv_states: Vec<Vec<f32>>,
+    pub(crate) ssm_states: Vec<Vec<f32>>,
+    pub(crate) kv_cache: crate::gguf::OwnedQuantizedKVCache,
 }
 
 impl Qwen35State {
-    pub fn new(
+    pub(crate) fn new(
         num_layers: usize,
         max_seq_len: usize,
         head_dim: usize,
         num_kv_heads: usize,
+        num_k_heads: usize,
+        head_k_dim: usize,
         num_v_heads: usize,
-        head_v_dim: usize,
+        head_value_dim: usize,
     ) -> Self {
-        let conv_dim = head_v_dim * num_kv_heads * 2 + head_v_dim * num_v_heads;
+        let convalue_dim = head_k_dim * num_k_heads * 2 + head_value_dim * num_v_heads;
         Self {
-            conv_states: vec![vec![0.0; conv_dim * 3]; num_layers], // kernel_size = 4, so (4-1)*conv_dim = 3*conv_dim
-            ssm_states: vec![vec![0.0; num_v_heads * head_v_dim * head_v_dim]; num_layers],
+            conv_states: vec![vec![0.0; convalue_dim * 3]; num_layers],
+            ssm_states: vec![vec![0.0; num_v_heads * head_value_dim * head_value_dim]; num_layers],
             kv_cache: crate::gguf::OwnedQuantizedKVCache::new(
                 num_layers,
                 num_kv_heads * head_dim,
@@ -358,68 +351,140 @@ impl Qwen35State {
     }
 }
 
-pub struct Qwen35OwnedDeltaNetLayer {
-    pub attn_norm: Vec<f32>,
-    pub attn_qkv: OwnedQuantizedTensor,
-    pub attn_gate: OwnedQuantizedTensor,
-    pub ssm_alpha: OwnedQuantizedTensor,
-    pub ssm_beta: OwnedQuantizedTensor,
-    pub ssm_a: Vec<f32>,
-    pub ssm_dt_bias: Vec<f32>,
+pub(crate) struct Qwen35OwnedDeltaNetLayer {
+    pub(crate) attn_norm: Vec<f32>,
+    pub(crate) attn_qkv: OwnedQuantizedTensor,
+    pub(crate) attn_gate: OwnedQuantizedTensor,
+    pub(crate) ssm_alpha: OwnedQuantizedTensor,
+    pub(crate) ssm_beta: OwnedQuantizedTensor,
+    pub(crate) ssm_a: Vec<f32>,
+    pub(crate) ssm_dt_bias: Vec<f32>,
     pub ssm_conv1d_weight: Vec<f32>,
-    pub ssm_norm_weight: Vec<f32>,
-    pub ssm_out: OwnedQuantizedTensor,
-    pub post_attention_norm: Vec<f32>,
-    pub ffn_gate: OwnedQuantizedTensor,
-    pub ffn_up: OwnedQuantizedTensor,
-    pub ffn_down: OwnedQuantizedTensor,
+    pub(crate) ssm_norm_weight: Vec<f32>,
+    pub(crate) ssm_out: OwnedQuantizedTensor,
+    pub(crate) post_attention_norm: Vec<f32>,
+    pub(crate) ffn_gate: OwnedQuantizedTensor,
+    pub(crate) ffn_up: OwnedQuantizedTensor,
+    pub(crate) ffn_down: OwnedQuantizedTensor,
 }
 
-pub struct Qwen35OwnedAttentionLayer {
-    pub attn_norm: Vec<f32>,
-    pub attn_q: OwnedQuantizedTensor,
-    pub attn_k: OwnedQuantizedTensor,
-    pub attn_v: OwnedQuantizedTensor,
-    pub attn_q_norm: Vec<f32>,
-    pub attn_k_norm: Vec<f32>,
-    pub attn_output: OwnedQuantizedTensor,
-    pub post_attention_norm: Vec<f32>,
-    pub ffn_gate: OwnedQuantizedTensor,
-    pub ffn_up: OwnedQuantizedTensor,
-    pub ffn_down: OwnedQuantizedTensor,
+pub(crate) struct Qwen35OwnedAttentionLayer {
+    pub(crate) attn_norm: Vec<f32>,
+    pub(crate) attn_q: OwnedQuantizedTensor,
+    pub(crate) attn_k: OwnedQuantizedTensor,
+    pub(crate) attn_v: OwnedQuantizedTensor,
+    pub(crate) attn_q_norm: Vec<f32>,
+    pub(crate) attn_k_norm: Vec<f32>,
+    pub(crate) attn_output: OwnedQuantizedTensor,
+    pub(crate) post_attention_norm: Vec<f32>,
+    pub(crate) ffn_gate: OwnedQuantizedTensor,
+    pub(crate) ffn_up: OwnedQuantizedTensor,
+    pub(crate) ffn_down: OwnedQuantizedTensor,
 }
 
-pub enum Qwen35OwnedLayer {
+pub(crate) enum Qwen35OwnedLayer {
     DeltaNet(Qwen35OwnedDeltaNetLayer),
     Attention(Qwen35OwnedAttentionLayer),
 }
 
+/// Qwen3.5 / Qwen3.8 hybrid decoder on the CPU (#3091): Gated `DeltaNet` layers (short causal
+/// conv, per-head recurrent state, gated delta rule) interleaved with gated full-attention
+/// layers, on top of the dense model's embeddings, final norm and `lm_head`.
 pub struct Qwen35Model<'a> {
-    pub base: &'a OwnedQuantizedModel,
-    pub layers: Vec<Qwen35OwnedLayer>,
-    pub head_dim: usize,
-    pub num_kv_heads: usize,
-    pub num_v_heads: usize,
-    pub head_v_dim: usize,
-    pub num_k_heads: usize,
-    pub head_k_dim: usize,
-    pub conv_kernel: usize,
-    pub rope_sections: [usize; 4],
+    pub(crate) base: &'a OwnedQuantizedModel,
+    pub(crate) layers: Vec<Qwen35OwnedLayer>,
+    pub(crate) head_dim: usize,
+    pub(crate) num_kv_heads: usize,
+    pub(crate) num_v_heads: usize,
+    pub(crate) head_v_dim: usize,
+    pub(crate) num_k_heads: usize,
+    pub(crate) head_k_dim: usize,
+    pub(crate) conv_kernel: usize,
+    pub(crate) rope_sections: [usize; 4],
 }
 
-fn load_f32_vec(tensor_ref: &QuantizedTensorRef, data: &[u8]) -> Vec<f32> {
-    assert_eq!(
-        tensor_ref.qtype,
-        crate::gguf::types::GGUF_TYPE_F32,
-        "Expected F32"
-    );
-    let bytes = &data[tensor_ref.offset..tensor_ref.offset + tensor_ref.byte_size];
-    let (head, body, tail) = unsafe { bytes.align_to::<f32>() };
-    assert!(head.is_empty() && tail.is_empty(), "Unaligned tensor data");
-    body.to_vec()
+fn load_f32_vec(tensor_ref: &QuantizedTensorRef, data: &[u8]) -> Result<Vec<f32>> {
+    if tensor_ref.qtype != crate::gguf::types::GGUF_TYPE_F32 {
+        return Err(crate::error::RealizarError::FormatError {
+            reason: format!(
+                "qwen35: expected an F32 tensor, found GGUF type {}",
+                tensor_ref.qtype
+            ),
+        });
+    }
+    let bytes = data
+        .get(tensor_ref.offset..tensor_ref.offset + tensor_ref.byte_size)
+        .ok_or_else(|| crate::error::RealizarError::FormatError {
+            reason: format!(
+                "qwen35: F32 tensor at byte {} (+{}) lies outside the file",
+                tensor_ref.offset, tensor_ref.byte_size
+            ),
+        })?;
+    // Decoded, not reinterpreted: an mmap offset carries no f32 alignment guarantee.
+    Ok(bytes
+        .chunks_exact(4)
+        .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+        .collect())
 }
 
 impl<'a> Qwen35Model<'a> {
+    /// Build the shared base (config, token embeddings, final norm, `lm_head`) without the
+    /// dense layer loader, which refuses hybrid files.
+    ///
+    /// # Errors
+    /// Missing or malformed base tensors or metadata.
+    pub fn create_base_model(
+        model: &crate::gguf::GGUFModel,
+        data: &[u8],
+    ) -> crate::error::Result<crate::gguf::OwnedQuantizedModel> {
+        let config = crate::gguf::config::ValidatedModelConfig::from_gguf(model)?.into_inner();
+
+        let token_embedding = model.get_tensor_f32("token_embd.weight", data)?;
+        let output_norm_weight = model.get_tensor_f32("output_norm.weight", data)?;
+
+        let lm_head_ref =
+            crate::gguf::QuantizedGGUFTransformer::get_tensor_ref(model, data, "output.weight")
+                .or_else(|_| {
+                    crate::gguf::QuantizedGGUFTransformer::get_tensor_ref(
+                        model,
+                        data,
+                        "token_embd.weight",
+                    )
+                })?;
+        let lm_head_weight = crate::gguf::OwnedQuantizedTensor::from_ref_with_dims(
+            &lm_head_ref,
+            data,
+            config.hidden_dim,
+            config.vocab_size,
+        );
+
+        Ok(crate::gguf::OwnedQuantizedModel {
+            config,
+            token_embedding,
+            position_embedding: None,
+            layers: vec![],
+            encoder_layers: vec![],
+            encoder_output_norm_weight: None,
+            encoder_output_norm_bias: None,
+            output_norm_weight,
+            output_norm_bias: None,
+            lm_head_weight,
+            lm_head_bias: None,
+            // A CUDA build carries these on every OwnedQuantizedModel (as in loading.rs); the
+            // Qwen3.5 base never uses them (the GPU path has no Gated DeltaNet yet, #3090).
+            #[cfg(feature = "cuda")]
+            cuda_executor: None,
+            #[cfg(feature = "cuda")]
+            cuda_kernel_count: std::sync::atomic::AtomicU64::new(0),
+            #[cfg(feature = "cuda")]
+            cached_weight_names: std::sync::Mutex::new(std::collections::HashSet::new()),
+        })
+    }
+
+    /// Load every hybrid layer of `model` on top of `base`.
+    ///
+    /// # Errors
+    /// A layer tensor that is missing, has an unexpected type, or lies outside the file.
     pub fn from_model_and_layers(
         base: &'a OwnedQuantizedModel,
         model: &GGUFModel,
@@ -476,11 +541,11 @@ impl<'a> Qwen35Model<'a> {
         let conv_dim = key_dim * 2 + value_dim;
 
         let mut owned = Vec::with_capacity(refs.len());
-        for layer_ref in refs.into_iter() {
+        for layer_ref in refs {
             match layer_ref {
                 crate::gguf::qwen35_load::Qwen35Layer::DeltaNet(d) => {
                     owned.push(Qwen35OwnedLayer::DeltaNet(Qwen35OwnedDeltaNetLayer {
-                        attn_norm: load_f32_vec(&d.attn_norm, data),
+                        attn_norm: load_f32_vec(&d.attn_norm, data)?,
                         attn_qkv: OwnedQuantizedTensor::from_ref_with_dims(
                             &d.attn_qkv,
                             data,
@@ -505,14 +570,14 @@ impl<'a> Qwen35Model<'a> {
                             hidden_dim,
                             num_v_heads,
                         ),
-                        ssm_a: load_f32_vec(&d.ssm_a, data),
-                        ssm_dt_bias: load_f32_vec(&d.ssm_dt_bias, data),
-                        ssm_conv1d_weight: load_f32_vec(&d.ssm_conv1d_weight, data),
-                        ssm_norm_weight: load_f32_vec(&d.ssm_norm_weight, data),
+                        ssm_a: load_f32_vec(&d.ssm_a, data)?,
+                        ssm_dt_bias: load_f32_vec(&d.ssm_dt_bias, data)?,
+                        ssm_conv1d_weight: load_f32_vec(&d.ssm_conv1d_weight, data)?,
+                        ssm_norm_weight: load_f32_vec(&d.ssm_norm_weight, data)?,
                         ssm_out: OwnedQuantizedTensor::from_ref_with_dims(
                             &d.ssm_out, data, value_dim, hidden_dim,
                         ),
-                        post_attention_norm: load_f32_vec(&d.post_attention_norm, data),
+                        post_attention_norm: load_f32_vec(&d.post_attention_norm, data)?,
                         ffn_gate: OwnedQuantizedTensor::from_ref_with_dims(
                             &d.ffn_gate,
                             data,
@@ -534,35 +599,38 @@ impl<'a> Qwen35Model<'a> {
                     }));
                 },
                 crate::gguf::qwen35_load::Qwen35Layer::Attention(a) => {
+                    let attn_q_norm = load_f32_vec(&a.attn_q_norm, data)?;
+                    let true_head_dim = attn_q_norm.len(); // 256 for Qwen3.5 standard attention
+
                     owned.push(Qwen35OwnedLayer::Attention(Qwen35OwnedAttentionLayer {
-                        attn_norm: load_f32_vec(&a.attn_norm, data),
+                        attn_norm: load_f32_vec(&a.attn_norm, data)?,
                         attn_q: OwnedQuantizedTensor::from_ref_with_dims(
                             &a.attn_q,
                             data,
                             hidden_dim,
-                            num_heads * head_dim,
+                            num_heads * true_head_dim * 2,
                         ),
                         attn_k: OwnedQuantizedTensor::from_ref_with_dims(
                             &a.attn_k,
                             data,
                             hidden_dim,
-                            num_kv_heads * head_dim,
+                            num_kv_heads * true_head_dim,
                         ),
                         attn_v: OwnedQuantizedTensor::from_ref_with_dims(
                             &a.attn_v,
                             data,
                             hidden_dim,
-                            num_kv_heads * head_dim,
+                            num_kv_heads * true_head_dim,
                         ),
-                        attn_q_norm: load_f32_vec(&a.attn_q_norm, data),
-                        attn_k_norm: load_f32_vec(&a.attn_k_norm, data),
+                        attn_q_norm,
+                        attn_k_norm: load_f32_vec(&a.attn_k_norm, data)?,
                         attn_output: OwnedQuantizedTensor::from_ref_with_dims(
                             &a.attn_output,
                             data,
-                            num_heads * head_dim,
+                            num_heads * true_head_dim,
                             hidden_dim,
                         ),
-                        post_attention_norm: load_f32_vec(&a.post_attention_norm, data),
+                        post_attention_norm: load_f32_vec(&a.post_attention_norm, data)?,
                         ffn_gate: OwnedQuantizedTensor::from_ref_with_dims(
                             &a.ffn_gate,
                             data,
@@ -586,10 +654,19 @@ impl<'a> Qwen35Model<'a> {
             }
         }
 
+        // Attention head width is key_length (= attn_q_norm width, 256), NOT hidden/heads (128):
+        // the KV cache and the attention loop used 128-wide heads over 256-wide q/k/v.
+        let attn_head_dim = owned
+            .iter()
+            .find_map(|l| match l {
+                Qwen35OwnedLayer::Attention(a) => Some(a.attn_q_norm.len()),
+                Qwen35OwnedLayer::DeltaNet(_) => None,
+            })
+            .unwrap_or(head_dim);
         Ok(Self {
             base,
             layers: owned,
-            head_dim,
+            head_dim: attn_head_dim,
             num_kv_heads,
             num_v_heads,
             head_v_dim,
@@ -600,6 +677,26 @@ impl<'a> Qwen35Model<'a> {
         })
     }
 
+    /// A fresh decode state with room for `max_seq_len` positions.
+    #[must_use]
+    pub fn new_state(&self, max_seq_len: usize) -> Qwen35State {
+        Qwen35State::new(
+            self.layers.len(),
+            max_seq_len,
+            self.head_dim,
+            self.num_kv_heads,
+            self.num_k_heads,
+            self.head_k_dim,
+            self.num_v_heads,
+            self.head_v_dim,
+        )
+    }
+
+    /// Run one token at `position` through every layer, updating `cache`, and return the
+    /// logits.
+    ///
+    /// # Errors
+    /// A matmul or shape failure in any layer.
     pub fn forward_single_qwen35(
         &self,
         token_id: u32,
@@ -697,6 +794,10 @@ impl<'a> Qwen35Model<'a> {
             conv_dim,
             &mut conv_out,
         );
+        for x in conv_out.iter_mut() {
+            *x = *x / (1.0 + (-*x).exp()); // silu/sigmoid
+        }
+        // SiLU ONCE, as llama.cpp (ggml_silu on conv_output_raw). A second identical loop applied silu(silu(x)).
 
         let k_dim = self.head_k_dim * self.num_k_heads;
         let v_dim = self.head_v_dim * self.num_v_heads;
@@ -704,28 +805,29 @@ impl<'a> Qwen35Model<'a> {
         let mut k = conv_out[k_dim..k_dim * 2].to_vec();
         let mut v = conv_out[k_dim * 2..conv_dim].to_vec();
 
-        apply_rope_sections(
-            &mut q,
-            &mut k,
-            position as u32,
-            self.head_k_dim,
-            self.num_k_heads,
-            self.num_k_heads,
-            self.base.config.rope_theta,
-            &self.rope_sections,
-        );
+        // Per-head L2 normalisation of q and k, as llama.cpp build_gdn_l2_norm:
+        // rms_norm(x, eps/n) * 1/sqrt(n) over ne[0] = head_k_dim, i.e. x_h / sqrt(sum(x_h^2) + eps)
+        // for EACH head. The earlier global norm over all heads (applied twice) scaled every head wrong.
+        l2_norm_per_head(&mut q, self.head_k_dim, self.base.config.eps);
+        l2_norm_per_head(&mut k, self.head_k_dim, self.base.config.eps);
+
+        // Gated DeltaNet applies NO RoPE: llama.cpp build_layer_attn_linear has none (position comes from the causal conv).
 
         let mut dt_raw = vec![0.0; self.num_v_heads];
         self.base
             .fused_matmul_into(normed, &d.ssm_alpha, &mut dt_raw)?;
         let mut dt = vec![0.0; self.num_v_heads];
         for (i, val) in dt_raw.iter().enumerate() {
-            dt[i] = fn_softplus(val + d.ssm_dt_bias[i]);
+            dt[i] = fn_softplus(val + d.ssm_dt_bias[i]) * d.ssm_a[i];
         }
 
         let mut beta = vec![0.0; self.num_v_heads];
         self.base
             .fused_matmul_into(normed, &d.ssm_beta, &mut beta)?;
+        // sigmoid ONCE, as llama.cpp: beta = sigmoid(ssm_beta . x). (It was applied twice.)
+        for x in beta.iter_mut() {
+            *x = 1.0 / (1.0 + (-*x).exp());
+        }
 
         let mut gate = vec![0.0; v_dim];
         self.base
@@ -753,6 +855,8 @@ impl<'a> Qwen35Model<'a> {
             self.head_v_dim,
             &mut ssm_out_in,
         );
+        // No normalisation after the gated RMS norm: llama.cpp goes from build_norm_gated straight to ssm_out.
+        // (Two extra global L2 norms here forced every DeltaNet output to unit length.)
 
         let mut ssm_out = vec![0.0; self.base.config.hidden_dim];
         self.base
@@ -801,17 +905,34 @@ impl<'a> Qwen35Model<'a> {
     ) -> Result<()> {
         crate::gguf::ops::rms_norm_into(hidden, &a.attn_norm, self.base.config.eps, normed);
 
-        let mut q = vec![0.0; a.attn_q.out_dim];
+        let mut q_full = vec![0.0; a.attn_q.out_dim];
         let mut k = vec![0.0; a.attn_k.out_dim];
         let mut v = vec![0.0; a.attn_v.out_dim];
-        self.base.fused_matmul_into(normed, &a.attn_q, &mut q)?;
+        self.base
+            .fused_matmul_into(normed, &a.attn_q, &mut q_full)?;
         self.base.fused_matmul_into(normed, &a.attn_k, &mut k)?;
         self.base.fused_matmul_into(normed, &a.attn_v, &mut v)?;
+
+        let num_heads = self.base.config.num_heads;
+        let head_dim = a.attn_q_norm.len(); // 256
+        let mut q = vec![0.0; num_heads * head_dim];
+        let mut gate = vec![0.0; num_heads * head_dim];
+
+        for h in 0..num_heads {
+            let offset_q_full = h * head_dim * 2;
+            let offset_q = h * head_dim;
+
+            // Split into Q and gate
+            q[offset_q..offset_q + head_dim]
+                .copy_from_slice(&q_full[offset_q_full..offset_q_full + head_dim]);
+            gate[offset_q..offset_q + head_dim]
+                .copy_from_slice(&q_full[offset_q_full + head_dim..offset_q_full + head_dim * 2]);
+        }
 
         crate::gguf::ops::apply_per_head_rms_norm(
             &mut q,
             &a.attn_q_norm,
-            self.base.config.num_heads,
+            num_heads,
             self.base.config.eps,
         );
         crate::gguf::ops::apply_per_head_rms_norm(
@@ -821,10 +942,20 @@ impl<'a> Qwen35Model<'a> {
             self.base.config.eps,
         );
 
-        self.base
-            .apply_rope(&mut q, position, self.base.config.num_heads);
-        self.base
-            .apply_rope(&mut k, position, self.base.config.num_kv_heads);
+        // Partial NEOX RoPE over n_rot = 2 * sum(rope.dimension_sections) = 64 of each 256-wide head, as
+        // llama.cpp ggml_rope_multi for text input. The base apply_rope assumed head_dim = hidden/heads = 128
+        // and a full rotation, both wrong for Qwen3.5 attention.
+        let n_rot = 2 * self.rope_sections.iter().sum::<usize>();
+        let freq_base = self.base.config.rope_theta;
+        apply_partial_neox_rope(&mut q, num_heads, head_dim, n_rot, position, freq_base);
+        apply_partial_neox_rope(
+            &mut k,
+            self.base.config.num_kv_heads,
+            head_dim,
+            n_rot,
+            position,
+            freq_base,
+        );
 
         cache.kv_cache.append(il, &k, &v);
         let k_cache = cache.kv_cache.get_k(il);
@@ -841,7 +972,7 @@ impl<'a> Qwen35Model<'a> {
             let q_h = &q[h * head_dim..(h + 1) * head_dim];
 
             let mut scores = vec![0.0; position + 1];
-            for p in 0..position + 1 {
+            for p in 0..=position {
                 let mut dot = 0.0;
                 let k_p = &k_cache[p * (num_kv_heads * head_dim) + kv_h * head_dim
                     ..p * (num_kv_heads * head_dim) + (kv_h + 1) * head_dim];
@@ -853,7 +984,7 @@ impl<'a> Qwen35Model<'a> {
             crate::gguf::ops::softmax(&mut scores);
 
             let out_h = &mut attn_out_in[h * head_dim..(h + 1) * head_dim];
-            for p in 0..position + 1 {
+            for p in 0..=position {
                 let w = scores[p];
                 let v_p = &v_cache[p * (num_kv_heads * head_dim) + kv_h * head_dim
                     ..p * (num_kv_heads * head_dim) + (kv_h + 1) * head_dim];
@@ -862,6 +993,9 @@ impl<'a> Qwen35Model<'a> {
                 }
             }
         }
+        // Output gate, as llama.cpp: attn_output * sigmoid(gate) before the output projection
+        // (the attn_gated node). The gate split off the joint Q projection was never applied.
+        apply_sigmoid_gate(&mut attn_out_in, &gate);
         let mut attn_out = vec![0.0; self.base.config.hidden_dim];
         self.base
             .fused_matmul_into(&attn_out_in, &a.attn_output, &mut attn_out)?;
@@ -893,5 +1027,107 @@ impl<'a> Qwen35Model<'a> {
             hidden[i] += ffn_down[i];
         }
         Ok(())
+    }
+}
+
+/// Prefill `input_tokens` through the Qwen3.5 CPU forward, then decode up to
+/// `gen_config.max_tokens` more with the dense path's token choice (argmax at temperature 0 or
+/// `top_k` 1, else seeded top-k/top-p). Returns the prompt followed by the new tokens. `apr run`
+/// and `apr chat` dispatch `qwen35` GGUFs here (#3091).
+///
+/// # Errors
+/// An empty prompt, a layer the Qwen3.5 loader cannot read, or a forward-pass failure.
+pub fn run_qwen35_generate(
+    mapped: &crate::gguf::MappedGGUFModel,
+    base: &OwnedQuantizedModel,
+    input_tokens: &[u32],
+    gen_config: &crate::gguf::QuantizedGenerateConfig,
+) -> Result<Vec<u32>> {
+    use rand::SeedableRng;
+    if input_tokens.is_empty() {
+        return Err(crate::error::RealizarError::InvalidShape {
+            reason: "run_qwen35_generate: prompt cannot be empty".to_string(),
+        });
+    }
+    let qwen = Qwen35Model::from_model_and_layers(base, &mapped.model, mapped.data())?;
+    let max_seq_len = input_tokens.len() + gen_config.max_tokens + 1;
+    let mut state = qwen.new_state(max_seq_len);
+    let mut rng = rand::rngs::StdRng::seed_from_u64(gen_config.seed);
+
+    let mut logits = Vec::new();
+    for (pos, &token) in input_tokens.iter().enumerate() {
+        logits = qwen.forward_single_qwen35(token, &mut state, pos)?;
+    }
+    let mut tokens = input_tokens.to_vec();
+    for _ in 0..gen_config.max_tokens {
+        let next = if gen_config.temperature == 0.0 || gen_config.top_k == 1 {
+            crate::gguf::ops::argmax(&logits)
+        } else {
+            OwnedQuantizedModel::sample_topk_seeded(
+                &logits,
+                gen_config.temperature,
+                gen_config.top_k,
+                gen_config.top_p,
+                &mut rng,
+            )
+        };
+        tokens.push(next);
+        if gen_config.stop_tokens.contains(&next) || tokens.len() >= max_seq_len {
+            break;
+        }
+        logits = qwen.forward_single_qwen35(next, &mut state, tokens.len() - 1)?;
+    }
+    Ok(tokens)
+}
+
+#[cfg(test)]
+mod qwen35_math_tests {
+    use super::*;
+
+    #[test]
+    fn test_l2_norm_per_head_normalises_each_head_on_its_own() {
+        // Two heads whose magnitudes differ 10x: each must come out as [0.6, 0.8].
+        let mut x = [3.0, 4.0, 30.0, 40.0];
+        l2_norm_per_head(&mut x, 2, 1e-12);
+        for (got, want) in x.iter().zip([0.6, 0.8, 0.6, 0.8]) {
+            assert!((got - want).abs() < 1e-6, "{x:?}");
+        }
+    }
+
+    #[test]
+    fn test_apply_sigmoid_gate_scales_by_sigmoid() {
+        let mut x = [2.0, 2.0, 2.0];
+        apply_sigmoid_gate(&mut x, &[0.0, 40.0, -40.0]);
+        assert!((x[0] - 1.0).abs() < 1e-6, "sigmoid(0) = 0.5: {x:?}");
+        assert!((x[1] - 2.0).abs() < 1e-6, "sigmoid(40) ~ 1: {x:?}");
+        assert!(x[2].abs() < 1e-6, "sigmoid(-40) ~ 0: {x:?}");
+    }
+
+    #[test]
+    fn test_partial_neox_rope_is_identity_at_position_zero() {
+        let orig: Vec<f32> = (0..8u8).map(|i| f32::from(i) + 1.0).collect();
+        let mut x = orig.clone();
+        apply_partial_neox_rope(&mut x, 1, 8, 4, 0, 10_000.0);
+        assert_eq!(x, orig);
+    }
+
+    #[test]
+    fn test_partial_neox_rope_rotates_half_pairs_and_leaves_the_tail() {
+        // head_dim 8, n_rot 4: the pairs are (0,2) and (1,3) (NEOX halves, not (0,1),(2,3)),
+        // and dims 4..8 are not rotated at all.
+        let base = 10_000.0f32;
+        let mut x = [0.0, 1.0, 0.0, 0.0, 5.0, 6.0, 7.0, 8.0];
+        apply_partial_neox_rope(&mut x, 1, 8, 4, 3, base);
+        let theta1 = 3.0 * base.powf(-2.0 / 4.0); // pair j = 1
+        assert!(
+            (x[1] - theta1.cos()).abs() < 1e-6 && (x[3] - theta1.sin()).abs() < 1e-6,
+            "{x:?}"
+        );
+        assert_eq!(
+            (x[0], x[2]),
+            (0.0, 0.0),
+            "the (0,2) pair was all zeros: {x:?}"
+        );
+        assert_eq!(&x[4..], &[5.0, 6.0, 7.0, 8.0]);
     }
 }
