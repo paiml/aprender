@@ -16858,3 +16858,22 @@ roadmap:
   - release
   - 0.66.0
   notes: 'orch-basis:release — the 0.66.0 cut is a release-state ticket (AUTO-IMPL-SKILL-003 §2.1 basis=release); push, tag, gh release and the crates.io cascade are orchestration phases (route=self).'
+- id: PMAT-1105
+  github_issue: null
+  item_type: task
+  title: 'CI target dirs leak: per-run targets/aprender-ci/<PR>/run-<ID> and queue-ref dirs are never removed — 629 GB filled yoga (ENOSPC evicted #3089), 374 GB on intel; add a sweeper + the end-of-job GC'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-11T06:31:20Z
+  updated: 2026-09-11T06:31:20Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - orch:fable
+  - ci
+  notes: null
