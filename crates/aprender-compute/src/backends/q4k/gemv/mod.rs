@@ -233,9 +233,11 @@ fn matmul_q4k_f32_parallel(
 ///
 ///   serial   median 2.17 ms   (2.166 - 2.181, 0.7% spread)
 ///   parallel median 1.79 ms   (1.757 - 1.811, 3% spread)
-///   speedup  1.21x
 ///
-/// 1.21x from up to 12 threads is modest, and the reason is in this file
+/// The raw bench output of that run was not preserved, so no ratio is
+/// stated here (PERF-010: a number a reader could quote must cite the
+/// evidence/ receipt that produced it; re-measure before citing one).
+/// 2.17 ms to 1.79 ms from up to 12 threads is modest, and the reason is in this file
 /// already: thread::scope spawns threads on EVERY CALL, and the x86 threshold
 /// comment above puts that overhead at ~40us. Twelve spawns is ~0.48 ms, about
 /// 27% of the 1.79 ms parallel time. It is not DRAM bandwidth — 7.4 MiB in
