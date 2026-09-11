@@ -2038,7 +2038,12 @@ jobs:
   # 3.32.0" is two steps above this one, and 20 machine-specific paths landed
   # through the gap while nothing re-read it.
   pr-review-receipt:
-    runs-on: [self-hosted, Linux, clean-room]   # arch-neutral: intel, yoga or gx10 (#3100)
+    # X64 for now, NOT arch-neutral (#3100): the first completed run on gx10 (train #3127 run
+    # 34648948737, gx10-pool1) left mutant reject-76-drop (check_pr_review_receipt.sh L1236,
+    # the tool.driver.name jq filter) SURVIVING — 232/233 killed — while every x86 run kills
+    # it. A job class goes to a box only once it is proven there; the arm64 survivor is
+    # its own ticket, and this line moves back when it is killed on gx10.
+    runs-on: [self-hosted, X64, Linux, clean-room]
     # 150, not 120: Arm 3 alone measured 3091s (51.5 min) on an idle 48-core box over
     # the 185-mutant set, and PRREV-015 adds Arms 5 and 6 — an 83-row bats table and a
     # second, 134-mutant sweep over scripts/pr_review_quorum_arm.sh. This number has
