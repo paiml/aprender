@@ -159,10 +159,13 @@ running more. Printed with it: `tier_of_record_{tests,modules,packages,seconds}`
 1,011.65 s on the committed table). `--union-touched` (with `--event pull_request --comparand REF`) ORs in
 `package(=C)` for every touched crate and prints `union_touched_crates=`, so a PR runs its own crates in full plus
 the cross-tree 20 %; when the quick tier falls closed it prints `tier=full` and NO filterset — the FULL suite runs.
+It also ORs in the quick tier's tree-reader targets, and it does so by handing `targets=` to the SAME
+`--filterset` token→clause translation ci.yml uses (§6.5), never a second implementation: exactly ONE
+`filterset=` line is printed, or a consumer would have to guess which of two it owed.
 
 **Exit 1 — never a silent full run, never a silent empty set:** missing/unreadable table, a first line that is not
 the header, a malformed row, zero `tier=pr` rows, or a `pr` row with an empty crate/module. Misusing
-`--union-touched` is exit 2. The mapping lives in `scripts/lib/test_tier.py::filterset_from_tsv`; 22 of the 37
+`--union-touched` is exit 2. The mapping lives in `scripts/lib/test_tier.py::filterset_from_tsv`; 24 of the 76
 `--self-test` rows cover it, hermetically, against `tests/fixtures/test_tier/tier-small.tsv` and its committed
 golden (`tier-small.filterset.txt`) — deleting one `pr` row changes the expression, which is the mutation row. The
 `.github/workflows/ci.yml` wiring is phase 2 and is NOT in this change: until then the filterset is measured only by
@@ -196,11 +199,23 @@ read the tree — while the touched-crate expansion adds ≤ 0.26 %. So `scripts
 derives `crate<TAB>--lib<TAB>module::path` (src/a/b.rs → `a::b`, src/a/mod.rs → `a`, src/lib.rs → `<root>`, an
 `include!()`-pulled or `#[path]`-attached file → the INCLUDING/DECLARING file's module). A module it cannot
 resolve falls back to the whole crate (2 columns) **and prints `WARN unresolved-include` on stderr** — a silent
-fallback restores the 88 % without anyone noticing. `scripts/ci_test_tier.sh` keeps `targets=` byte-compatible
-for ci.yml's "Quick tier" step (module rows collapse to `crate:--lib`) and adds **`filterset=`, the key CI should
-switch to**: `package(=C) & kind(lib) & test(/^(m1|m2)::/)` per crate, `package(=C) & kind(lib)` for `<root>` and
-for whole-crate fallbacks, `binary(=N)` for `--test` rows, `kind(bin)` for `--bins`. Until ci.yml reads
-`filterset=`, the quick tier still runs whole libs and the 88 % bill stands — the switch is phase 2.
+fallback restores the 88 % without anyone noticing.
+
+The narrowing is a **TOKEN** extension of the ONE build graph #3089 built (PMAT-1098 —
+`cargo nextest run --workspace --lib --tests -E "$EXPR"`): `targets=` gains
+`crate:--lib:module::path` beside `crate:--lib`, `crate:--bins` and `crate:--test:NAME`, and
+`ci_test_tier.sh --filterset` — the operand ci.yml already hands `targets=` to — maps it to
+`(package(C) & kind(lib) & test(/^module::/))`, one clause per token, UNIONed with `|` exactly as the other three
+tokens are. nextest matches a test's full path, so `^module::` is that module and its descendants and nothing
+else; the module is regex-escaped (`::` is not special, so it stays literal). `<root>` and a 2-column
+whole-crate fallback stay `(package(C) & kind(lib))`, and a crate carrying a whole-lib row WINS over its own
+module rows — the registry asking for the whole lib is never answered with a narrower atom.
+**`.github/workflows/ci.yml` needed no change at all**: the step reads the same `targets=` key and makes the same
+single `--filterset` call, so the 88 % → 25 % narrowing is live with this merge rather than a phase 2. The token
+grammar is pinned textually in both polarities by two committed goldens
+(`tests/fixtures/tree_reader/registry-small.{targets,filterset}.txt`) over a hand-written registry carrying one of
+every column shape, with a mutation row that drops the third column from every lib row and must turn the golden
+diff RED.
 
 Re-measured read-only over the same last 25 merged PRs and the same `evidence/fleet/test-tier.tsv` prices
 (method: the measurement lane's `method.sh` + `remeasure_3120.py`; a module prices by its own key plus its
