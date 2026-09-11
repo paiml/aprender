@@ -1,4 +1,4 @@
-//! FALSIFY-QDOT-009 (PMAT-1101): realizar's `Q5_K` reader decodes ggml's `block_q5_K`.
+//! FALSIFY-QDOT-007 (PMAT-1101): realizar's `Q5_K` reader decodes ggml's `block_q5_K`.
 //!
 //! The oracle is gguf-py, llama.cpp's own reader, applied to a super-block that llama.cpp
 //! quantized. It is never another aprender reader: before PMAT-1101 `dequantize_q5_k` and

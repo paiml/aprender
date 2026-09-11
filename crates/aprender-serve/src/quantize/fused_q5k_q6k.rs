@@ -362,7 +362,7 @@ pub fn fused_q5k_dot(q5k_data: &[u8], activations: &[f32]) -> Result<f32> {
         });
     }
 
-    // ggml block order, through the reader dequantize_q5_k uses (FALSIFY-QDOT-009)
+    // ggml block order, through the reader dequantize_q5_k uses (FALSIFY-QDOT-007)
     let mut acc = 0.0f32;
     for (sb, act) in q5k_data
         .chunks_exact(SUPER_BLOCK_BYTES)
