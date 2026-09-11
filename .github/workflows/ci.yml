@@ -606,7 +606,11 @@ jobs:
       # exclusion removes nothing the filterset asks for.
       - name: "Quick tier: every test target that reads the tree (BSE-17)"
         if: steps.tier.outputs.tier == 'quick'
-        timeout-minutes: 20
+        # 45, not 20. Measured 2026-09-11 under train load, this PR's own runs never fit 20: run 34542045481 on
+        # yoga-build2 compiled 811 crates in ~9 min (cold per-run target dir, warm shared sccache) and was part way
+        # through 65,266 tests at the cap; attempt 2 on intel-clean-room-15 timed out at 20 min too. The ~6 min
+        # figure was never reproduced in CI. 45 still sits well under the serial tier's 60; re-tighten when measured.
+        timeout-minutes: 45
         env:
           TARGETS: ${{ steps.tier.outputs.targets }}
         run: |
