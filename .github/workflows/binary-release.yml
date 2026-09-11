@@ -236,6 +236,13 @@ jobs:
           # the same path. The work root is mirrored host<->container; $HOME is not.
           CACHE="$(cd "$GITHUB_WORKSPACE/../.." && pwd)/cache-apr-cuda/${{ matrix.target }}"
           mkdir -p "$CACHE/registry" "$CACHE/target"
+          # The bind-mount TARGET inside the workspace must exist BEFORE the container
+          # starts: when it does not, dockerd creates the mountpoint as root, and after
+          # the container exits the workspace carries an empty root-owned `target/` the
+          # runner (uid 1001) cannot write — run 34488955316 built the asset in 1m54s and
+          # then died on `mkdir: cannot create directory 'target/aarch64-unknown-linux-gnu':
+          # Permission denied`. Pre-creating it as the runner keeps the ownership.
+          mkdir -p "$GITHUB_WORKSPACE/target"
           $DOCKER run --rm \
             -v "$GITHUB_WORKSPACE:/workspace" \
             -v "$CACHE/registry:/usr/local/cargo/registry" \
