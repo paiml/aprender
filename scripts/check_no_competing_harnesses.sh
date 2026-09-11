@@ -67,6 +67,18 @@ is_allowed() {
                                          # exempt below. If it ever derives a
                                          # throughput or a ratio, delete this
                                          # line rather than widening the reason.
+    */dogfood_examples.sh)          return 0 ;;  # a DOGFOOD LEDGER, not a harness
+                                         # (PMAT-3121): it builds and RUNS every
+                                         # workspace example once under a timeout
+                                         # and records the wall seconds of that
+                                         # one run as provenance of pass/fail/
+                                         # timeout. It starts no server, states
+                                         # no tok/s and no comparison; the
+                                         # number is never quoted as a result.
+                                         # It trips the predicate only because
+                                         # the needs-hardware classifier quotes
+                                         # the `apr run` idiom and the timeout
+                                         # is measured with `date +%s`.
     */check_no_fabricated_baselines.sh) return 0 ;;  # a GUARD, not a harness: its
                                                      # must-match fixtures contain
                                                      # `command -v llama-bench` and
