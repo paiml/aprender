@@ -170,6 +170,14 @@ jobs:
       - name: model-tests falsification suites (was gated by nothing, aprender#2522) -- SATD ceiling measured on the comparand (BSE-03)
         run: |
           set -euo pipefail
+          # The warm sccache lives under the runner user's data dir on the persistent intel
+          # runners; an ephemeral container has no such dir and gets a cold cache in its
+          # own temp instead. Derived, never a literal: the shipped-tier hardcoded-path
+          # ratchet (check_hardcoded_paths.sh) refused this file for `/home/<user>/…`
+          # (aprender run 34641537515, guard-tree step 43).
+          SCCACHE_HOST_DIR="$HOME/data/sccache"
+          [ -d "$SCCACHE_HOST_DIR" ] || SCCACHE_HOST_DIR="$RUNNER_TEMP/sccache"
+          mkdir -p "$SCCACHE_HOST_DIR"
           dr() { # dr <dir mounted as /workspace> <cmd...>
             local ws=$1; shift
             docker run --rm \
@@ -178,7 +186,7 @@ jobs:
               -v "${GUARD_CARGO_HOME}:/cargo-home" \
               -v "${GUARD_TARGET_DIR}:/workspace/target" \
               -e CARGO_HOME=/cargo-home \
-              -v "/home/noah/data/sccache:/sccache" \
+              -v "${SCCACHE_HOST_DIR}:/sccache" \
               -w /workspace \
               -e CARGO_TARGET_DIR=/workspace/target \
               -e RUSTC_WRAPPER=rustc-sccache \
