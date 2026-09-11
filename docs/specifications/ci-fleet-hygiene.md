@@ -86,3 +86,31 @@ Reading: intel is both the slowest box for workspace-test and the one jobs wait 
 shared across paiml repos; every X64 job moved to yoga saves ~24 min of test time and ~3 min of wait. gx10 takes
 only arch-neutral jobs until #3104 lands. Next samples go beside this table; a change to (A) or (B) is judged by
 the delta in these rows, never by intent.
+
+## §6 The 80/20 PR tier, measured (2026-09-11 07:50Z)
+
+Operator (verbatim): "Only 20% of tests should provide 80% of value. [Kaizen this]". Inputs, both measured:
+(i) per-test seconds from one full `cargo nextest run --profile ci --workspace --lib` on lambda-vector (48 cores):
+82,203 tests, 73 binaries, 67 crates, 4,391 CPU-test-seconds, 370 s wall; (ii) catch value = the number of
+times a crate's test files were touched by the 141 `fix` commits of the last 60 days (366 touches in measured
+crates). Table: `evidence/fleet/test-tier-2026-09-11.tsv` (crate, tests, seconds, touches, touches/second,
+cumulative %).
+
+| finding | value |
+|---|---|
+| crates that carry 80 % of fix-linked catches | 16 of 67, costing **43.4 %** of test seconds |
+| the four heaviest low-value crates | aprender-train 680 s / 5 touches, aprender-contracts 484 s / 17, aprender-core 460 s / 24, aprender-orchestrate 344 s / 18 |
+| crates with ZERO fix-linked touches | 46, costing 11.3 % of test seconds (aprender-qa-runner 201 s, aprender-registry 122 s, …) |
+| the densest value | aprender-serve: 15,775 tests, 877 s, 170 touches (46 % of all catches for 21 % of seconds) |
+
+**Rule for the PR tier (proposed; the ratchet is the falsifier):** PR/queue runs the E1 set (touched crates + direct
+reverse dependents + the 41 tree-reader targets) **∪ the catch-dense set** (every crate above the 80 % line in the
+table); everything below the line runs on `main` nightly and in the pre-publish FULL dogfood. Expected PR-tier
+cost from this sample: ≤ 43 % of the FULL suite's seconds when nothing dense is touched; the E1 union keeps a
+touched crate's own tests regardless of rank. Granularity is the crate; the next Kaizen step is per-test
+(`testcase` rows in the same junit), which will move the 80 % line well below 43 % because value inside
+aprender-serve and apr-cli is concentrated in their falsifier modules.
+
+**Ratchet (owed, §4):** `scripts/check_test_tier.sh` regenerates the table from the latest junit + git log and
+refuses a PR that moves a crate across the line without a new row in this section; a tier whose PR-tier seconds
+exceed the FULL suite's 50 % is RED (D-1's 20-min budget is the wall-clock counterpart).
