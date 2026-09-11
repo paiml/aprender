@@ -14,6 +14,7 @@ aprender."
 | 3 | A dequeued merge-queue entry's `merge_group` run keeps running and holds runners | 14 orphan runs cancelled by hand at 05:49Z–05:55Z |
 | 4 | `gh run cancel` on a *queued* run can silently no-op | 5 runs needed `POST …/runs/<id>/force-cancel` |
 | 6 | The sweeper's first live run deleted a fresh EMPTY mountpoint (`3112/run-34568509271-guards`): a files-only age test cannot see a dir that is used by being mounted; dockerd recreated it root-owned and guard-cargo died EACCES | job 103165670305, 07:18Z; fixed by paiml/infra#507 (dir mtime counts; 14-row selftest) |
+| 7 | guard-cargo's host-side cargo steps use the SHARED `~/.cargo` (16 runners, every paiml repo) while its container steps use the per-PR `GUARD_CARGO_HOME`; a concurrent job re-extracted `registry/src` and rustc got ENOENT on `y4m` — #3089's fourth eviction | job 103197449766 on intel-clean-room-7, 09:10Z; remedy in phase 2a: `CARGO_HOME=$GUARD_CARGO_HOME` for every host-side cargo step |
 | 5 | intel 15/16 busy (another repo's CI + `trueno-rag index --jobs 16`), 11 aprender runs queued ≥ 2 h, yoga 0/5 and gx10 0/4 busy | org runner list 05:39Z; every queued job asked `clean-room`, which only intel carried |
 
 ## §2 Disk: the sweeper (phase 1, LIVE)
