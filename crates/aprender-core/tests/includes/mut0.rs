@@ -153,13 +153,18 @@ fn mut04_return_value_mutation_detection() {
 /// MUT-05: CI mutation testing workflow exists
 #[test]
 fn mut05_ci_mutation_workflow_exists() {
-    let ci_path = Path::new(".github/workflows/ci.yml");
+    let workspace_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .canonicalize()
+        .expect("workspace root must resolve from crates/aprender-core");
+    let ci_path = workspace_root.join(".github/workflows/ci.yml");
     assert!(
         ci_path.exists(),
-        "MUT-05 FALSIFIED: No CI configuration found"
+        "MUT-05 FALSIFIED: No CI configuration found at {}",
+        ci_path.display()
     );
 
-    let ci_content = std::fs::read_to_string(ci_path).expect("read ci.yml");
+    let ci_content = std::fs::read_to_string(&ci_path).unwrap_or_else(|e| panic!("read {}: {}", ci_path.display(), e));
 
     let has_mutants_job = ci_content.contains("mutants:");
     assert!(has_mutants_job, "MUT-05 FALSIFIED: No mutants job in CI");
@@ -180,8 +185,12 @@ fn mut05_ci_mutation_workflow_exists() {
 /// MUT-06: Mutation results are captured as artifacts
 #[test]
 fn mut06_mutation_artifacts_captured() {
-    let ci_path = Path::new(".github/workflows/ci.yml");
-    let ci_content = std::fs::read_to_string(ci_path).expect("read ci.yml");
+    let workspace_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .canonicalize()
+        .expect("workspace root must resolve from crates/aprender-core");
+    let ci_path = workspace_root.join(".github/workflows/ci.yml");
+    let ci_content = std::fs::read_to_string(&ci_path).unwrap_or_else(|e| panic!("read {}: {}", ci_path.display(), e));
 
     let has_upload = ci_content.contains("upload-artifact");
     let has_mutants_results =
@@ -196,8 +205,12 @@ fn mut06_mutation_artifacts_captured() {
 /// MUT-07: Mutation timeout configured appropriately
 #[test]
 fn mut07_mutation_timeout_configured() {
-    let ci_path = Path::new(".github/workflows/ci.yml");
-    let ci_content = std::fs::read_to_string(ci_path).expect("read ci.yml");
+    let workspace_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .canonicalize()
+        .expect("workspace root must resolve from crates/aprender-core");
+    let ci_path = workspace_root.join(".github/workflows/ci.yml");
+    let ci_content = std::fs::read_to_string(&ci_path).unwrap_or_else(|e| panic!("read {}: {}", ci_path.display(), e));
 
     let has_timeout = ci_content.contains("--timeout");
 
