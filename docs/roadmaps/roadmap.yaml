@@ -16919,6 +16919,25 @@ roadmap:
   - kind:triage
   - orch:fable
   notes: null
+- id: PMAT-1101
+  github_issue: null
+  item_type: task
+  title: Q5_K dequant + fused dot read a non-ggml bit layout — every Q5_K tensor on the CPU path (realizar) and in apr import (aprender-quant) is wrong
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-09-11T03:40:49Z
+  updated: 2026-09-11T03:40:49Z
+  spec: null
+  acceptance_criteria:
+  - 'Measured on Qwen3.5-0.8B-Q4_K_M blk.0.attn_qkv (Q5_K, 6144x1024): realizar dequantize_q5_k mismatches gguf-py on 5,959,751/6,291,456 values; matvec sum +26.64 vs llama.cpp -17.06. A literal transcription of ggml dequantize_row_q5_K is bit-exact vs gguf-py. Blocks #3091 CPU parity.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - 0.67.0
+  notes: null
 - id: PMAT-1102
   github_issue: null
   item_type: task
