@@ -21,11 +21,23 @@ use aprender::text::bpe::Qwen2BpeTokenizer;
 
 /// R1: GGUF import detected (feature flag)
 /// Falsification: GGUF import silently fails
+
+fn workspace_root() -> std::path::PathBuf {
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .canonicalize()
+        .expect("workspace root must resolve from crates/aprender-core")
+}
+
 #[test]
 fn r1_gguf_import_feature() {
     // Check GGUF support is documented
-    let spec_path = "docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md";
-    let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
+    let spec_path = workspace_root()
+        .join("docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md");
+    let spec = std::fs::read_to_string(&spec_path).expect(&format!(
+        "Specification should exist, path: {:?}",
+        spec_path
+    ));
 
     assert!(spec.contains("GGUF"), "R1: Spec must mention GGUF format");
 }
@@ -35,8 +47,12 @@ fn r1_gguf_import_feature() {
 #[test]
 fn r2_phi3_imports() {
     // Verify architecture flexibility
-    let spec_path = "docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md";
-    let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
+    let spec_path = workspace_root()
+        .join("docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md");
+    let spec = std::fs::read_to_string(&spec_path).expect(&format!(
+        "Specification should exist, path: {:?}",
+        spec_path
+    ));
 
     assert!(
         spec.contains("Phi") || spec.contains("architecture"),
@@ -49,8 +65,12 @@ fn r2_phi3_imports() {
 #[test]
 fn r3_bert_imports() {
     // Check for encoder model support
-    let spec_path = "docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md";
-    let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
+    let spec_path = workspace_root()
+        .join("docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md");
+    let spec = std::fs::read_to_string(&spec_path).expect(&format!(
+        "Specification should exist, path: {:?}",
+        spec_path
+    ));
 
     // Whisper has encoder - so encoder models are supported
     assert!(
@@ -64,8 +84,12 @@ fn r3_bert_imports() {
 #[test]
 fn r4_safetensors_error_handling() {
     // Verify error handling is documented
-    let spec_path = "docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md";
-    let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
+    let spec_path = workspace_root()
+        .join("docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md");
+    let spec = std::fs::read_to_string(&spec_path).expect(&format!(
+        "Specification should exist, path: {:?}",
+        spec_path
+    ));
 
     assert!(
         spec.contains("error") || spec.contains("Error") || spec.contains("validation"),
@@ -78,8 +102,12 @@ fn r4_safetensors_error_handling() {
 #[test]
 fn r5_large_model_streaming() {
     // Check for streaming import
-    let spec_path = "docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md";
-    let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
+    let spec_path = workspace_root()
+        .join("docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md");
+    let spec = std::fs::read_to_string(&spec_path).expect(&format!(
+        "Specification should exist, path: {:?}",
+        spec_path
+    ));
 
     assert!(
         spec.contains("mmap") || spec.contains("streaming") || spec.contains("Streaming"),
@@ -92,8 +120,12 @@ fn r5_large_model_streaming() {
 #[test]
 fn r6_auto_architecture() {
     // Check for graceful handling
-    let spec_path = "docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md";
-    let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
+    let spec_path = workspace_root()
+        .join("docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md");
+    let spec = std::fs::read_to_string(&spec_path).expect(&format!(
+        "Specification should exist, path: {:?}",
+        spec_path
+    ));
 
     assert!(
         spec.contains("arch") || spec.contains("Architecture"),
@@ -106,8 +138,12 @@ fn r6_auto_architecture() {
 #[test]
 fn r7_cache_configurable() {
     // Check for cache configuration
-    let spec_path = "docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md";
-    let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
+    let spec_path = workspace_root()
+        .join("docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md");
+    let spec = std::fs::read_to_string(&spec_path).expect(&format!(
+        "Specification should exist, path: {:?}",
+        spec_path
+    ));
 
     assert!(
         spec.contains("cache") || spec.contains("Cache"),
@@ -120,8 +156,12 @@ fn r7_cache_configurable() {
 #[test]
 fn r8_offline_flag() {
     // Already verified in V1, cross-check here
-    let spec_path = "docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md";
-    let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
+    let spec_path = workspace_root()
+        .join("docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md");
+    let spec = std::fs::read_to_string(&spec_path).expect(&format!(
+        "Specification should exist, path: {:?}",
+        spec_path
+    ));
 
     assert!(
         spec.contains("offline"),
@@ -134,8 +174,12 @@ fn r8_offline_flag() {
 #[test]
 fn r9_checksum_verification() {
     // Check for checksum verification
-    let spec_path = "docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md";
-    let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
+    let spec_path = workspace_root()
+        .join("docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md");
+    let spec = std::fs::read_to_string(&spec_path).expect(&format!(
+        "Specification should exist, path: {:?}",
+        spec_path
+    ));
 
     assert!(
         spec.contains("checksum") || spec.contains("Checksum") || spec.contains("signature"),
@@ -148,8 +192,12 @@ fn r9_checksum_verification() {
 #[test]
 fn r10_import_progress() {
     // Check for progress indication
-    let spec_path = "docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md";
-    let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
+    let spec_path = workspace_root()
+        .join("docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md");
+    let spec = std::fs::read_to_string(&spec_path).expect(&format!(
+        "Specification should exist, path: {:?}",
+        spec_path
+    ));
 
     assert!(
         spec.contains("TUI") || spec.contains("progress"),
