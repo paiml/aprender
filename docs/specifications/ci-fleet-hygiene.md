@@ -146,3 +146,23 @@ commits, 241 touched modules, 3,523 `#[test]` touches, 26 integration-target mod
 4,390.6 s (23.04 %)**; the re-run without `--update` is green with no moves. The lane's earlier 3,920 / 16.8 % used a
 different module mapping and is superseded by this table; both are inside the 50 % budget. Kaizen from here: every
 PR that changes a tier carries its row; the table is regenerated from the nightly junit and the ledger.
+
+### §6.4 roadmap.yaml 3-way merge by id (PMAT-3118)
+
+A squash-merge from the queue re-serialises all of `docs/roadmaps/roadmap.yaml`, so every stacked branch goes DIRTY
+on that one file even when the two sides touched unrelated tickets (measured 3× in one hour, 2026-09-11).
+
+- **Driver**: `scripts/lib/roadmap_merge.py BASE OURS THEIRS [--out F]` merges by ENTRY ID over the byte-exact
+  `- id:` blocks `roadmap_diff.split_entries` already produces. Ours-only / theirs-only / identical changes resolve;
+  both-changed-differently and deleted-vs-edited CONFLICT, naming the id on stderr. Output order is
+  `check_roadmap_sorted.sh`'s order (ascending within each id-prefix, prefixes in first-appearance order), so a side
+  that tail-appended out of order is re-seated rather than merged unsorted. `--selftest` is an 8-row case table.
+- **Attribute**: `.gitattributes` carries `docs/roadmaps/roadmap.yaml merge=roadmap`. The attribute alone does
+  nothing: GitHub's merge engine never runs a local driver, so this is a LOCAL resolution path, not a merge-queue one.
+- **Runner**: `scripts/ci_resolve_dirty.sh` — `--list-only` prints the DIRTY selection, no args plans one line per
+  DIRTY PR, `--apply` merges in a throwaway worktree and prints the `git push` to run; `--pr N` restricts it.
+  `CI_RESOLVE_DIRTY_PRS_JSON=<file>` substitutes a canned `gh pr list --json …` payload, which is how `--selftest`
+  stays hermetic (a `gh` shim on PATH proves gh is never reached).
+- **Registration is per invocation**: the steward/orchestrator passes
+  `git -c merge.roadmap.driver="python3 scripts/lib/roadmap_merge.py %O %A %B" merge …`. Never `git config` in the
+  shared `.git` — a worktree fleet shares that file, and a driver written there leaks into every other lane.
