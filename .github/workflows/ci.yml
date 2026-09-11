@@ -1314,6 +1314,25 @@ jobs:
         run: bash scripts/check_tree_reader_tests.sh
       - name: bashrs must see every script in scripts/ (shrink-only)
         run: bash scripts/check_shell_lint_ratchet.sh
+      # SILICON LEDGER GUARDS (YOGA-NIGHTLY-001 R-5/R-6/R-8). All three are
+      # offline and take seconds, and they live HERE rather than only in
+      # silicon-nightly for the reason silicon-nightly itself demonstrates: that
+      # lane had not been green since it merged on 2026-08-29, so a guard whose
+      # only home is a red nightly is a guard nobody reads. Two of these were RED
+      # on the tree as committed when they were written, which is the strongest
+      # available proof that they discriminate.
+      - name: "Coverage is a RUN, not a runner: 6 fixtures + the probe-deletion mutation (R-5)"
+        run: |
+          bash scripts/check_silicon_coverage.sh --self-test
+          bash scripts/test_silicon_coverage_run_probe.sh
+      - name: "A cuda-named silicon axis must invoke CUDA (R-6)"
+        run: |
+          bash scripts/check_silicon_cuda.sh --self-test
+          bash scripts/check_silicon_cuda.sh
+      - name: "Every cargo -p in a workflow names a real crate (R-8)"
+        run: |
+          bash scripts/check_workflow_cargo_packages.sh --self-test
+          bash scripts/check_workflow_cargo_packages.sh
       # PMAT-746. The ONLY complexity gate in this repository was the LOCAL pmat
       # pre-commit hook (cyclomatic <= 30, cognitive <= 25, staged files only);
       # this workflow ran none. So the merge queue LANDS the debt and the

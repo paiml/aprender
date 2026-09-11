@@ -11,3 +11,11 @@ self-hosted-runner:
     - gx10
     - cuda
     - blackwell
+    # yoga: the fleet's x86_64 + Ada (sm_89) GPU runner, stood up 2026-09-08
+    # (paiml/infra PMAT-263). `ada` is the generation label, the counterpart of
+    # gx10's `blackwell`; `yoga` is the machine label. Added here because
+    # cuda-nightly's ada-yoga leg selects on them literally — infra#352 requires
+    # a guard to be able to SEE the labels a job selects, so they cannot be
+    # hidden behind a matrix expression to dodge this list.
+    - ada
+    - yoga

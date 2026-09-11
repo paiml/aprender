@@ -1,0 +1,4 @@
+# FIXTURE (R-5 §9.2) — the ledger caught lying. A deferred axis that a job
+# actually carried inside the window: the blocker is gone and the only thing
+# left is this line. Correct verdict: PROMOTE, exit 1.
+x86_64-cuda-sm89    pending:361     self-hosted,gpu,yoga,cuda,ada    job:ada-yoga*

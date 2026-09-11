@@ -30,6 +30,15 @@ mod context;
 pub mod cuda_backward;
 #[cfg(feature = "cuda")]
 pub mod cuda_forward;
+
+/// Kernel-cache keys — deliberately NOT behind the `cuda` feature gate.
+///
+/// The `pre_warm_keys ⊇ runtime_keys` property (YOGA-NIGHTLY-001 R-2) is the
+/// cheapest possible detector for the defect class that produced the Blackwell
+/// cascade, and it is only cheap if it runs WITHOUT a GPU: on intel, on every
+/// PR, in microseconds. Gating it behind `cuda` would confine it to the two
+/// nightly lanes that need the hardware the defect hides from.
+pub mod cuda_forward_keys;
 #[cfg(feature = "cuda")]
 pub mod cuda_optim;
 pub mod cuda_tensor;
