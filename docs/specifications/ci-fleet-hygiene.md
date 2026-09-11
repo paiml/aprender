@@ -13,6 +13,7 @@ aprender."
 | 2 | ENOSPC on yoga evicted #3089 from the merge queue (guard-cargo + workspace-test) | run 34568220853 jobs on yoga-build / yoga-build3 |
 | 3 | A dequeued merge-queue entry's `merge_group` run keeps running and holds runners | 14 orphan runs cancelled by hand at 05:49Z–05:55Z |
 | 4 | `gh run cancel` on a *queued* run can silently no-op | 5 runs needed `POST …/runs/<id>/force-cancel` |
+| 6 | The sweeper's first live run deleted a fresh EMPTY mountpoint (`3112/run-34568509271-guards`): a files-only age test cannot see a dir that is used by being mounted; dockerd recreated it root-owned and guard-cargo died EACCES | job 103165670305, 07:18Z; fixed by paiml/infra#507 (dir mtime counts; 14-row selftest) |
 | 5 | intel 15/16 busy (another repo's CI + `trueno-rag index --jobs 16`), 11 aprender runs queued ≥ 2 h, yoga 0/5 and gx10 0/4 busy | org runner list 05:39Z; every queued job asked `clean-room`, which only intel carried |
 
 ## §2 Disk: the sweeper (phase 1, LIVE)
@@ -23,7 +24,7 @@ than 120 min, or a `<PR>/run-*` dir with no file newer than 360 min, is removed;
 allow-list. `--selftest` = 11-row case table both polarities; mutation (drop the `-mmin` guard) turns it RED.
 First receipts: yoga 129 GB, intel 93 GB, gx10 3.4 GB.
 
-**Phase 2a (this repo):** every `ci.yml` job that bind-mounts `…/run-${GITHUB_RUN_ID}` removes it in an
+**Phase 2a (this repo):** every `ci.yml` job that bind-mounts a target dir pre-creates it with `heal_path` — `run-<ID>-guards` exactly as `run-<ID>`, since a missing mountpoint is created root-owned by dockerd whoever removed it (§1 #6) — and every `ci.yml` job that bind-mounts `…/run-${GITHUB_RUN_ID}` removes it in an
 `if: always()` step through the image (root-owned contents), so the sweeper only ever sees hard-killed jobs.
 Falsifier: a run's target dir must not exist 5 min after its job completed (`ci_target_gc_check.sh`, NotRun until landed).
 
