@@ -16911,3 +16911,20 @@ roadmap:
   labels:
   - kind:code
   notes: null
+- id: PMAT-3120
+  github_issue: 3120
+  item_type: task
+  title: 'tree-reader registry at MODULE granularity: 18 whole --lib crates = 88% of all test-seconds in every PR quick tier (E1 costs 93% of full)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-11T12:32:19Z
+  updated: 2026-09-11T12:32:19Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
