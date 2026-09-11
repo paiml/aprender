@@ -89,7 +89,7 @@ impl ChatSession {
                     Ok(mapped) => {
                         #[cfg(feature = "cuda")]
                         {
-                            let (cuda, failed) = try_init_gguf_cuda(&mapped);
+                            let (cuda, failed) = try_init_gguf_cuda(&mapped)?;
                             cached_gguf_cuda = cuda;
                             if failed { cuda_init_failed = true; }
                         }

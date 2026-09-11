@@ -51,6 +51,7 @@ mod owned;
 #[cfg(feature = "cuda")]
 pub mod parity;
 mod quantized;
+pub mod qwen35_load;
 pub mod qwen3_moe_load;
 mod runtime;
 mod transformer;
@@ -120,3 +121,7 @@ mod io_tests;
 mod quantized_tests;
 #[cfg(test)]
 mod tests;
+
+/// Qwen3.5 / Qwen3.8 hybrid (Gated `DeltaNet` + gated attention) CPU forward (#3091).
+#[path = "inference/forward/forward_qwen35.rs"]
+pub mod forward_qwen35;

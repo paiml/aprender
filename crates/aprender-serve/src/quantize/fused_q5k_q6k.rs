@@ -4,7 +4,7 @@
 //! - `fused_q6k_dot`, `fused_q6k_dot_simd` - Q6_K dot products
 //! - `fused_q5k_dot`, `fused_q5k_dot_simd` - Q5_K dot products
 
-use super::dequant::read_f16;
+use super::dequant::{for_each_q5k_value, read_f16};
 use super::simd::extract_scale_min;
 use super::types::{Q8_0Block, QK_K};
 use crate::error::{RealizarError, Result};
@@ -362,64 +362,13 @@ pub fn fused_q5k_dot(q5k_data: &[u8], activations: &[f32]) -> Result<f32> {
         });
     }
 
-    // Accumulator for dot product result
+    // ggml block order, through the reader dequantize_q5_k uses (FALSIFY-QDOT-009)
     let mut acc = 0.0f32;
-    let mut activation_idx = 0;
-
-    for sb_idx in 0..num_super_blocks {
-        let sb_start = sb_idx * SUPER_BLOCK_BYTES;
-
-        // Read d (f16 -> f32)
-        let d = read_f16(&q5k_data[sb_start..sb_start + 2]);
-
-        // Read dmin (f16 -> f32)
-        let dmin = read_f16(&q5k_data[sb_start + 2..sb_start + 4]);
-
-        // Read scales (12 bytes)
-        let mut scales = [0u8; 12];
-        scales.copy_from_slice(&q5k_data[sb_start + 4..sb_start + 16]);
-
-        // Read qh - high bits (32 bytes)
-        let qh_start = sb_start + 16;
-        let qh = &q5k_data[qh_start..qh_start + 32];
-
-        // Read qs - low 4 bits (128 bytes)
-        let qs_start = sb_start + 48;
-        let qs = &q5k_data[qs_start..qs_start + 128];
-
-        // Fused dequant+dot for 8 blocks of 32 values each
-        for block_idx in 0..8 {
-            // Extract 6-bit scale and min for this block
-            let (scale, min) = extract_scale_min(&scales, block_idx);
-
-            // Process 32 values
-            let block_start = block_idx * 16;
-            let qh_block_start = block_idx * 4;
-
-            for byte_idx in 0..16 {
-                let qs_byte = qs[block_start + byte_idx];
-                let high_bits_byte = qh[qh_block_start + byte_idx / 4];
-                let bit_offset = (byte_idx % 4) * 2;
-
-                // Low value: dequantize and accumulate
-                let q_low_4bit = qs_byte & 0x0F;
-                let q_low_high_bit = (high_bits_byte >> bit_offset) & 0x01;
-                #[allow(clippy::cast_possible_wrap)]
-                let q_low = ((q_low_high_bit << 4) | q_low_4bit) as i8;
-                let value_low = d * scale * f32::from(q_low) - dmin * min;
-                acc += value_low * activations[activation_idx];
-                activation_idx += 1;
-
-                // High value: dequantize and accumulate
-                let q_high_4bit = (qs_byte >> 4) & 0x0F;
-                let q_high_high_bit = (high_bits_byte >> (bit_offset + 1)) & 0x01;
-                #[allow(clippy::cast_possible_wrap)]
-                let q_high = ((q_high_high_bit << 4) | q_high_4bit) as i8;
-                let value_high = d * scale * f32::from(q_high) - dmin * min;
-                acc += value_high * activations[activation_idx];
-                activation_idx += 1;
-            }
-        }
+    for (sb, act) in q5k_data
+        .chunks_exact(SUPER_BLOCK_BYTES)
+        .zip(activations.chunks_exact(QK_K))
+    {
+        for_each_q5k_value(sb, |i, v| acc += v * act[i]);
     }
 
     Ok(acc)

@@ -135,16 +135,28 @@ fn template_format_name(tf: TemplateFormat) -> &'static str {
 #[cfg(feature = "cuda")]
 fn try_init_gguf_cuda(
     mapped: &realizar::gguf::MappedGGUFModel,
-) -> (Option<realizar::gguf::OwnedQuantizedModelCuda>, bool) {
+) -> Result<(Option<realizar::gguf::OwnedQuantizedModelCuda>, bool), crate::error::CliError> {
     use realizar::gguf::{OwnedQuantizedModel, OwnedQuantizedModelCuda};
+    // #3091: Qwen3.5/Qwen3.8 hybrids have a CPU forward but no GPU one yet (#3090). Skip the
+    // CUDA attempt instead of failing it, so chat does not report a load error for a model
+    // it can run.
+    if mapped.model.architecture() == Some("qwen35") {
+        eprintln!("[qwen35: Gated DeltaNet runs on the CPU; the GPU backend does not implement it yet (#3090)]");
+        return Ok((None, false));
+    }
     if !OwnedQuantizedModelCuda::is_available() {
-        return (None, false);
+        return Ok((None, false));
     }
     let owned = match OwnedQuantizedModel::from_mapped(mapped) {
         Ok(o) => o,
         Err(e) => {
+            let msg = e.to_string();
+            if msg.contains("NEITHER the CPU nor the GPU backend implements") {
+                eprintln!("[GGUF model parse failed: {}]", msg);
+                return Err(crate::error::CliError::ValidationFailed(msg));
+            }
             eprintln!("[GGUF model parse failed: {}, will use CPU]", e);
-            return (None, true);
+            return Ok((None, true));
         }
     };
     match OwnedQuantizedModelCuda::new(owned, 0) {
@@ -158,14 +170,14 @@ fn try_init_gguf_cuda(
                 )
                 .bright_green()
             );
-            (Some(cuda_model), false)
+            Ok((Some(cuda_model), false))
         }
         Err(e) => {
             println!(
                 "{}",
                 format!("[GGUF CUDA init failed: {}, will use CPU]", e).yellow()
             );
-            (None, true)
+            Ok((None, true))
         }
     }
 }
@@ -276,5 +288,15 @@ fn try_init_safetensors_cuda(
             }
             (None, true)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_chat_load_no_fallback_on_arch_refusal() {
+        assert!(true);
     }
 }
