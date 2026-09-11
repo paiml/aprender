@@ -147,6 +147,27 @@ commits, 241 touched modules, 3,523 `#[test]` touches, 26 integration-target mod
 different module mapping and is superseded by this table; both are inside the 50 % budget. Kaizen from here: every
 PR that changes a tier carries its row; the table is regenerated from the nightly junit and the ledger.
 
+### §6.3 Tier of record as a filterset (PMAT-3119, 2026-09-11)
+
+`bash scripts/ci_test_tier.sh --tier-of-record [--tsv evidence/fleet/test-tier.tsv]` turns the §6.2 table into ONE
+nextest filterset. A `tier=pr` lib module (column `kind` absent or `lib`) maps to
+`package(=CRATE) & kind(lib) & test(/^MODULE::/)`; an integration binary (`kind`=`test`) maps to
+`package(=CRATE) & binary(=MODULE)`. Atoms are grouped per package —
+`(package(=a) & kind(lib) & test(/^(m1|m2)::/)) | (package(=b) & binary(=x))` — so the expression stays short;
+module names are regex-escaped, and a parent-module row also matches its submodules' tests, which errs toward
+running more. Printed with it: `tier_of_record_{tests,modules,packages,seconds}` (594 modules, 11,313 tests,
+1,011.65 s on the committed table). `--union-touched` (with `--event pull_request --comparand REF`) ORs in
+`package(=C)` for every touched crate and prints `union_touched_crates=`, so a PR runs its own crates in full plus
+the cross-tree 20 %; when the quick tier falls closed it prints `tier=full` and NO filterset — the FULL suite runs.
+
+**Exit 1 — never a silent full run, never a silent empty set:** missing/unreadable table, a first line that is not
+the header, a malformed row, zero `tier=pr` rows, or a `pr` row with an empty crate/module. Misusing
+`--union-touched` is exit 2. The mapping lives in `scripts/lib/test_tier.py::filterset_from_tsv`; 22 of the 37
+`--self-test` rows cover it, hermetically, against `tests/fixtures/test_tier/tier-small.tsv` and its committed
+golden (`tier-small.filterset.txt`) — deleting one `pr` row changes the expression, which is the mutation row. The
+`.github/workflows/ci.yml` wiring is phase 2 and is NOT in this change: until then the filterset is measured only by
+the self-test.
+
 ### §6.4 roadmap.yaml 3-way merge by id (PMAT-3118)
 
 A squash-merge from the queue re-serialises all of `docs/roadmaps/roadmap.yaml`, so every stacked branch goes DIRTY
