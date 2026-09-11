@@ -16884,3 +16884,95 @@ roadmap:
   - release
   - 0.66.0
   notes: 'orch-basis:release — the 0.66.0 cut is a release-state ticket (AUTO-IMPL-SKILL-003 §2.1 basis=release); push, tag, gh release and the crates.io cascade are orchestration phases (route=self).'
+- id: PMAT-1098
+  github_issue: null
+  item_type: task
+  title: '0.67.0 release train (epic #3078, spec docs/specifications/06x-release-schedule.md §3): P0-1 67-A1 four apr assets + verify-apr-assets + check_release_assets.sh, P0-2 67-C2 self-hosted preflight + fleet toolset, P0-3 67-E1/E2 one build graph for tree-reader targets + queue mirrors the PR, 67-E3 guards under 20 min, 67-D0 yoga group restriction + smoke, 67-C1/D1 gpu-quick + cuda-unit, 67-B1 #3061/#3068/#3066 merged + cuda suites green, 67-E0 nightly FULL green, 67-R bump/tag/release/cascade by 2026-09-12T18:00Z'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-09-10T10:27:17Z
+  updated: 2026-09-10T10:27:17Z
+  spec: null
+  acceptance_criteria:
+  - 'orch-basis:release. Rows and acceptance commands are the spec''s §2/§3 (PR #3087); C3/D2/F1/F2 slip first per §1.2.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - orch:fable
+  - release
+  - 0.67.0
+  - epic-3078
+  notes: 'orch-basis:release — the 0.67.0 train (epic #3078) is a release-state ticket; orchestration phases (push, PR, tag, cascade) route=self'
+- id: PMAT-1105
+  github_issue: null
+  item_type: task
+  title: 'CI target dirs leak: per-run targets/aprender-ci/<PR>/run-<ID> and queue-ref dirs are never removed — 629 GB filled yoga (ENOSPC evicted #3089), 374 GB on intel; add a sweeper + the end-of-job GC'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-11T06:31:20Z
+  updated: 2026-09-11T06:31:20Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - orch:fable
+  - ci
+  notes: null
+- id: PMAT-3118
+  github_issue: 3118
+  item_type: task
+  title: 'roadmap.yaml 3-way merge by ticket id: merge driver + steward resolve-dirty so a queue squash never makes stacked PRs DIRTY'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-11T11:34:41Z
+  updated: 2026-09-11T11:34:41Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+- id: PMAT-3119
+  github_issue: 3119
+  item_type: task
+  title: '80/20 test tier as a nextest filterset: ci_test_tier.sh --tier-of-record for PR runs; full suite on merge_group/nightly/pre-release'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-11T11:34:55Z
+  updated: 2026-09-11T11:34:55Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+- id: PMAT-3120
+  github_issue: 3120
+  item_type: task
+  title: 'tree-reader registry at MODULE granularity: 18 whole --lib crates = 88% of all test-seconds in every PR quick tier (E1 costs 93% of full)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-11T12:32:19Z
+  updated: 2026-09-11T12:32:19Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
