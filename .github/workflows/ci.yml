@@ -2613,6 +2613,234 @@ jobs:
   # ruleset decides whether `pr-review-quorum / present` is required (recorded
   # in the C0-5 PR body, never applied by the session that wrote this).
 
+  # ==========================================================================
+  # ADVISORY GPU JOBS AT PR TIME
+  # spec docs/specifications/06x-release-schedule.md §2 row 67-C1 (`gpu-quick`,
+  # gx10) and §2 row 67-D1 (`cuda-unit`, yoga).
+  #
+  # WHY THEY ARE NOT IN `gate.needs`.
+  #   They are ADVISORY in 0.67, deliberately. Each becomes a REQUIRED check
+  #   only after FIVE CONSECUTIVE GREEN NIGHTLIES on its own host — rows 68-C3
+  #   (gpu-quick / gx10) and 68-D2 (cuda-unit / yoga), and that promotion is a
+  #   MEASUREMENT (`gh api …/check-runs?check_name=<job>` over five nightly
+  #   commits), not an assertion. Arming a check before its track record exists
+  #   is how one flake blocks every open PR — that has happened in this repo,
+  #   which is why the promotion rule is written as a measurement.
+  #   Advisory does NOT mean tolerant: `continue-on-error` is false on both, so
+  #   a real GPU failure is RED on the PR. It just is not a merge blocker yet.
+  #   Promotion is a one-line edit to `gate.needs` below, and
+  #   scripts/tests/ci_gpu_touched_test.sh has a row that must be DELETED when
+  #   it happens, so the promotion cannot be silent.
+  #
+  # WHY A SEPARATE `gpu-touched` DECISION JOB.
+  #   An `if:` that could only be evaluated ON the GPU runner would have to
+  #   QUEUE the job to answer it, and a queued job has already claimed the
+  #   runner. This fleet has ONE GB10 and ONE RTX 4060 Laptop. So the decision
+  #   is taken first, on the clean-room pool, and published as a job output —
+  #   a non-GPU PR SKIPS both jobs and never holds a GPU host.
+  #
+  # WHY NOT ON merge_group / push.
+  #   The queue has a hard 20-minute budget (67-E2, decision D-1) and these are
+  #   not required checks, so paying a GPU host there buys nothing. Both jobs
+  #   carry `github.event_name == 'pull_request'` in their OWN `if:` as well as
+  #   inheriting it through `gpu-touched`, so neither can be dragged into the
+  #   queue by a later edit to one condition alone.
+  #
+  # FORK PRs. ci.yml has no `authorize` / pr-gate `needs:` on ANY of its
+  #   self-hosted jobs; `.github/workflows/pr-gate.yml` is a separate
+  #   `pull_request_target` workflow that gates by contributor for the whole
+  #   repo. workspace-test, guard-tree, guard-cargo, mutants and gate all run
+  #   on self-hosted runners with no such `needs:`. These two MIRROR that
+  #   exactly (67-C1's instruction). Inventing a second mechanism for two jobs
+  #   would leave the other nine unguarded while looking like coverage.
+  gpu-touched:
+    # The decision runs on the CPU pool, never on a GPU host — that is the
+    # whole point of splitting it out.
+    runs-on: [self-hosted, X64, Linux, clean-room]
+    timeout-minutes: 10
+    if: github.event_name == 'pull_request'
+    outputs:
+      gpu_touched: ${{ steps.decide.outputs.gpu_touched }}
+      gpu_crates: ${{ steps.decide.outputs.gpu_crates }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+      # The decision script must be able to go RED somewhere a workflow runs
+      # (check_guards_are_wired.sh). Its case table is GPU-free, cargo-free and
+      # sub-second, so it runs right here, immediately before the decision it
+      # governs — a stale selector is caught on the same PR that broke it.
+      - name: The GPU selector can still go RED (case table, no GPU, no cargo)
+        run: bash scripts/ci_gpu_touched.sh --self-test
+      - name: Does this PR touch the GPU set? (rows 67-C1 / 67-D1)
+        id: decide
+        run: |
+          set -euo pipefail
+          # Shallow checkout: no merge-base. Tip-vs-tip is a SUPERSET of the
+          # PR's diff, which is the safe direction for a selector — it can only
+          # run the GPU jobs when they were not needed, never skip them when
+          # they were.
+          git fetch --no-tags --depth=1 origin \
+            "+refs/heads/${GITHUB_BASE_REF}:refs/remotes/origin/${GITHUB_BASE_REF}"
+          git diff --name-only "origin/${GITHUB_BASE_REF}" HEAD > "$RUNNER_TEMP/touched.txt"
+          printf 'touched (tip vs tip): %s path(s)\n' \
+            "$(wc -l < "$RUNNER_TEMP/touched.txt" | tr -d ' ')"
+          # No `|| true` and no pipe-swallowed status: the script exits 2 when
+          # the diff is undecidable, and an undecidable selection must fail the
+          # decision job rather than answer a green 0 that skips both GPU jobs
+          # forever.
+          bash scripts/ci_gpu_touched.sh --diff-from "$RUNNER_TEMP/touched.txt" \
+            > "$RUNNER_TEMP/gpu.txt"
+          cat "$RUNNER_TEMP/gpu.txt"
+          grep -E '^(gpu_touched|gpu_crates|reason)=' "$RUNNER_TEMP/gpu.txt" >> "$GITHUB_OUTPUT"
+
+  # ROW 67-C1 — `gpu-quick` on gx10 (GB10, sm_121, aarch64).
+  # Promotion to required: row 68-C3, after 5 consecutive green gx10 nightlies.
+  gpu-quick:
+    needs: [gpu-touched]
+    if: github.event_name == 'pull_request' && needs.gpu-touched.outputs.gpu_touched == '1'
+    # LITERAL, not an expression: a guard can only check labels it can see, and
+    # `runs-on: ${{ fromJSON(...) }}` hides them from check_runner_labels.sh.
+    # `ephemeral, docker` is the DISPOSABLE gx10 runner (operator rule): its
+    # work root is mirrored on the host, so the target dir below survives
+    # across jobs while the container itself does not.
+    runs-on: [self-hosted, Linux, ARM64, cuda, gx10, ephemeral, docker]
+    timeout-minutes: 15
+    # Advisory means "not in gate.needs", NOT "tolerated". An honest red on the
+    # PR is the entire point of running this at PR time.
+    continue-on-error: false
+    # PP-19 host isolation: one group per HOST, shared with every other
+    # consumer of gx10 (cuda-nightly, silicon-nightly), cancel-in-progress
+    # false so a queued run cannot kill a measurement mid-window.
+    concurrency:
+      group: perf-gx10
+      cancel-in-progress: false
+    env:
+      CARGO_TERM_COLOR: always
+      # The disposable runner mirrors its work root on the host, so a target
+      # dir under the workspace survives across jobs and the build is warm.
+      # CARGO_INCREMENTAL=0 because incremental state is the one part of that
+      # dir that is NOT safe to share across runs (the cancel-corrupt-state
+      # race the workspace-test job's comment describes).
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
+      CARGO_INCREMENTAL: "0"
+    steps:
+      - uses: actions/checkout@v7
+      # 67-C2. First substantive step on every self-hosted job: fail fast, and
+      # loudly, on a box that is missing a tool this job needs — instead of
+      # discovering it nine minutes into a GPU leg.
+      - name: Preflight — the self-hosted toolset this job needs (67-C2)
+        run: bash scripts/ci_self_hosted_preflight.sh --cuda
+      # YIELD TO TRAINING — reused from cuda-nightly.yml's `decide` step. gx10
+      # is a TRAINING box first; a PR advisory job must never contend with an
+      # overnight training run. Two things from the nightly's version are
+      # deliberately absent and neither changes the decision: the silicon
+      # matrix filter (this job has no matrix) and the PERF041 NOT_RUN marker
+      # (that is PP-26's release ledger, and a PR job writes no release
+      # evidence). The probe, the thresholds and the `::notice::` are verbatim.
+      # `procs` (compute contexts) is the primary, portable signal — it works
+      # on both sm_89 and GB10. `memory.used` is secondary and is [N/A] on
+      # GB10's unified memory. `tr -cd` (never non-zero) rather than a
+      # `grep -oE` that exits 1 when it finds no digit and, under -e, would
+      # kill this step on GB10.
+      - name: Decide whether to run (yield-to-training)
+        id: yield
+        run: |
+          set -uo pipefail
+          used=$(nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits 2>/dev/null | head -1 | tr -cd '0-9')
+          used=${used:-0}
+          procs=$(nvidia-smi --query-compute-apps=pid --format=csv,noheader 2>/dev/null | grep -c . || true)
+          procs=${procs:-0}
+          echo "gx10: GPU memory.used=${used} MiB, existing compute procs=${procs}"
+          if [ "${used:-0}" -gt 2000 ] || [ "${procs:-0}" -gt 0 ]; then
+            echo "::notice::gpu-quick: GPU busy (${used:-?} MiB, ${procs:-?} procs) — yielding to training, skipping the GPU leg on this PR"
+            echo "proceed=false" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          echo "proceed=true" >> "$GITHUB_OUTPUT"
+      # `nice` so the build never starves the CPU side of a job that started
+      # after our yield check.
+      - name: aprender-gpu cuda unit tests (--features cuda --lib --release)
+        if: steps.yield.outputs.proceed == 'true'
+        run: |
+          nice -n 19 cargo test -p aprender-gpu --features cuda --lib --release
+      # PERF-053 / aprender#2767, the filter cuda-nightly.yml runs: repeated
+      # IDENTICAL greedy batches must return the SAME continuation. ci.yml
+      # EXCLUDES aprender-gpu from the workspace --lib run, so without a line
+      # like this one the three perf053_* unit tests execute nowhere at PR time.
+      - name: PERF-053 determinism filter (the one cuda-nightly runs)
+        if: steps.yield.outputs.proceed == 'true'
+        run: |
+          set -euo pipefail
+          nice -n 19 cargo test -p aprender-gpu --features cuda --lib --release perf053 \
+            > "$RUNNER_TEMP/perf053.txt" 2>&1 || { cat "$RUNNER_TEMP/perf053.txt"; exit 1; }
+          cat "$RUNNER_TEMP/perf053.txt"
+          # A filter that selects ZERO tests passes silently — the dark-gate
+          # shape. Count the selected tests and refuse an empty selection.
+          n=$(grep -cE '^test .+ \.\.\. ok$' "$RUNNER_TEMP/perf053.txt" || true)
+          if [ "${n:-0}" -eq 0 ]; then
+            echo "::error::the perf053 filter selected ZERO tests — a filter that matches nothing is not a passing filter"
+            exit 1
+          fi
+          printf 'perf053: %s test(s) selected and passed\n' "$n"
+
+  # ROW 67-D1 — `cuda-unit` on yoga (RTX 4060 Laptop, sm_89, x86_64, 8 GB VRAM).
+  # Promotion to required: row 68-D2, after 5 consecutive green yoga nightlies
+  # (the yoga nightly axis is #3060 / YOGA-NIGHTLY-001).
+  cuda-unit:
+    needs: [gpu-touched]
+    if: github.event_name == 'pull_request' && needs.gpu-touched.outputs.gpu_touched == '1'
+    runs-on: [self-hosted, Linux, X64, cuda, yoga, ephemeral, docker]
+    timeout-minutes: 15
+    continue-on-error: false
+    concurrency:
+      group: perf-yoga
+      cancel-in-progress: false
+    env:
+      CARGO_TERM_COLOR: always
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
+      CARGO_INCREMENTAL: "0"
+    steps:
+      - uses: actions/checkout@v7
+      - name: Preflight — the self-hosted toolset this job needs (67-C2)
+        run: bash scripts/ci_self_hosted_preflight.sh --cuda
+      # No yield-to-training step here, and that is a decision rather than an
+      # omission: yoga is a rack-mounted CI box that runs basic CUDA unit tests
+      # (operator, 2026-09-09), not a training host. Nothing to yield to. The
+      # `perf-yoga` concurrency group above is what keeps two runs off it.
+      - name: aprender-gpu cuda unit tests (--features cuda --lib --release)
+        run: |
+          nice -n 19 cargo test -p aprender-gpu --features cuda --lib --release
+      # THE SERVE CUDA FILTER IS `gguf::cuda::` — the module path prefix.
+      # `crates/aprender-serve/src/gguf/mod.rs` declares `mod cuda;` under
+      # `#[cfg(feature = "cuda")]`, so every unit test that only exists with
+      # the cuda feature lives under `gguf::cuda::…` and nothing else does.
+      # A module-path prefix is the filter, not a hand-listed test set, so a
+      # new cuda test is selected the day it is written.
+      #
+      # 8 GB OF VRAM, AND WHY NOTHING IS EXCLUDED. Every test under that
+      # prefix is host-side: kernel-name construction, block/byte arithmetic,
+      # launch-config and dimension validation, PTX emission and its cache,
+      # and the batched-token selection guards (pmat764/pmat810). None loads a
+      # model or allocates device memory at model scale, so none can exceed
+      # 8 GB. If one ever does it must be excluded BY NAME with a comment
+      # here — never by weakening an assert. The model-scale CUDA falsifiers
+      # (falsify_stream_ordering_2767 and friends) are integration targets,
+      # are not selected by `--lib`, and stay on gx10 in cuda-nightly.
+      - name: aprender-serve cuda unit tests (filter gguf::cuda::)
+        run: |
+          set -euo pipefail
+          nice -n 19 cargo test -p aprender-serve --features cuda --lib --release gguf::cuda:: \
+            > "$RUNNER_TEMP/serve-cuda.txt" 2>&1 || { cat "$RUNNER_TEMP/serve-cuda.txt"; exit 1; }
+          cat "$RUNNER_TEMP/serve-cuda.txt"
+          # Same anti-vacuity rule as perf053 above: a module-path filter that
+          # selects nothing is a green that proves nothing.
+          n=$(grep -cE '^test .+ \.\.\. ok$' "$RUNNER_TEMP/serve-cuda.txt" || true)
+          if [ "${n:-0}" -eq 0 ]; then
+            echo "::error::the gguf::cuda:: filter selected ZERO tests — the module path moved, or the cuda feature did not engage"
+            exit 1
+          fi
+          printf 'gguf::cuda:: %s test(s) selected and passed\n' "$n"
+
   gate:
     runs-on: [self-hosted, Linux, clean-room]   # arch-neutral: intel, yoga or gx10 (#3100)
     # 22: BSE-05 formula T = max(15, ceil(1.5*p99), p99+20) over this job's own

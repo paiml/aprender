@@ -135,6 +135,16 @@ hosts:
     comparator: llamacpp
     reachable_by: [cuda]
     ci_runner: none
+  # yoga: rack-mounted, permanent, RTX 4060 Laptop GPU (sm_89, 8 GB), driver 595.
+  # Declared here so a GPU-labelled CI job on it can carry `concurrency: perf-yoga`
+  # (scripts/check_perf_concurrency_groups.sh) — 67-D1 cuda-unit, 67-D2 the sm_89
+  # parity host. No cell is MEASURED yet; the first RECORDED row is 67-D2/67-F2.
+  yoga:
+    accelerator: rtx-4060-laptop
+    compute_class: cuda
+    comparator: llamacpp
+    reachable_by: [cuda]
+    ci_runner: self-hosted
   intel:
     accelerator: cpu
     compute_class: cpu
