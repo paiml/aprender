@@ -550,7 +550,13 @@ jobs:
         # (run 34449608126) before dying at the cap under fleet load on #3063
         # (#3070). The budget is the assertion: over 20 minutes, this tier has
         # stopped being cheaper than the full one and should fail loudly.
-        timeout-minutes: 20
+        # 60 again, measured (2026-09-11, run 34617807644): the ONE-invocation quick
+        # tier still compiles the selected crates' test binaries, and on an intel box
+        # with 15/16 runners busy that build alone exceeded 20 minutes — the step was
+        # killed at 20:00 with every test that had run green. A step cap that fires
+        # under fleet load is a wall-clock assertion in a required check
+        # (feedback_no_wallclock_in_required_checks); the job's 150 stays the cap.
+        timeout-minutes: 60
         env:
           CRATES: ${{ steps.tier.outputs.crates }}
         run: |
