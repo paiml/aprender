@@ -1,5 +1,5 @@
-//! FALSIFY-QDOT-010 (#3111): the CUDA Q5_K GEMV decodes ggml's `block_q5_K`, judged against
-//! gguf-py's values of a llama.cpp-quantized super-block (the FALSIFY-QDOT-009 fixture), never
+//! FALSIFY-QDOT-008 (#3111): the CUDA Q5_K GEMV decodes ggml's `block_q5_K`, judged against
+//! gguf-py's values of a llama.cpp-quantized super-block (the FALSIFY-QDOT-007 fixture), never
 //! against another aprender reader.
 
 use super::CudaExecutor;

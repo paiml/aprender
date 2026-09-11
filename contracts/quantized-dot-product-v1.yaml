@@ -262,9 +262,9 @@ falsification_tests:
     with gguf-py on 5,959,751 of 6,291,456 values of blk.0.attn_qkv and its layer-0 QKV sum was
     +26.64 against llama.cpp's -17.06. The dequantizer and the fused dot shared the invented
     layout, so every test that compared one with the other passed
-- id: FALSIFY-QDOT-010
+- id: FALSIFY-QDOT-008
   rule: The CUDA Q5_K GEMV decodes ggml's block_q5_K, judged against the same gguf-py values as
-    FALSIFY-QDOT-009, never against another aprender reader
+    FALSIFY-QDOT-007, never against another aprender reader
   prediction: q5k_gemv on the golden super-block returns each of its 256 gguf-py values for a
     one-hot activation, and gguf-py's dot (1e-4 relative) for a ramp
   test: cargo test -p aprender-serve --features cuda --lib -- tests_q5k_ggml (needs an NVIDIA GPU)

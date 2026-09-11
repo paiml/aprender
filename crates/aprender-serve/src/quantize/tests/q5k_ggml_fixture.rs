@@ -1,4 +1,4 @@
-// FALSIFY-QDOT-009/010 fixture, shared by the CPU (`quantize::tests::q5k_ggml`) and CUDA
+// FALSIFY-QDOT-007/008 fixture, shared by the CPU (`quantize::tests::q5k_ggml`) and CUDA
 // (`cuda::executor::tests_q5k_ggml`) Q5_K tests through include!().
 
 /// 176 bytes: one ggml `block_q5_K` super-block, verbatim from a llama.cpp-quantized GGUF
