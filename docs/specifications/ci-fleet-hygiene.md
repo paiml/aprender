@@ -56,7 +56,7 @@ fails on any wrong action. Mutation: removing the two-sample agreement must turn
 - [ ] phase 2a `ci.yml` end-of-job GC + `ci_target_gc_check.sh` (this branch)
 - [ ] phase 2b steward script + selftest + forjar timer (infra), first receipts in `evidence/fleet/`
 - [ ] `scripts/check_test_tier.sh` (the §6 ratchet): a first agy lane's version is parked in the session scratchpad — its selftest FAILS rules (b) silent tier move and (c) falsifier-in-nightly, its fixtures are written at run time (mutating the tree), and its real-junit run reports 714 s / 16.27 % against the 737.7 s / 16.8 % of §6.1 (delta unexplained). Next lane brief: hermetic fixtures under tests/fixtures/, no `git commit --amend`, rules (b)/(c) proven by mutation before the receipt.
-- [ ] `scripts/fleet_utilization.sh` promoted from the session `pack-report.sh` (67-row artifact)
+- [x] `scripts/fleet_utilization.sh` — the per-box packing table (runners, busy, aprender-busy, share vs 80/80/50, queued jobs with their label sets); selftest 6 rows; run it at the top of every iteration report
 - [ ] contract `contracts/ci-fleet-hygiene-v1.yaml` (kind: pattern) binding §2/§3 falsifiers; `pv validate`
 
 ### §3.1 State Directory Layout & Fixture Format
