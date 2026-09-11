@@ -17082,3 +17082,20 @@ roadmap:
   labels:
   - kind:code
   notes: null
+- id: PMAT-3124
+  github_issue: 3124
+  item_type: task
+  title: 'Triage pass: label the 72 open issues that carry no label'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-11T15:07:05Z
+  updated: 2026-09-11T15:07:05Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:triage
+  notes: null
