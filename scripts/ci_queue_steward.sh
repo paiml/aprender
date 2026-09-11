@@ -95,9 +95,9 @@ process_tick() {
   local out_dir="$STATE_DIR/sample-$tick"
   
   mkdir -p "$out_dir"
-  cp "$s1_file" "$out_dir/s1.json"
-  cp "$s2_file" "$out_dir/s2.json"
-  cp "$s3_file" "$out_dir/s3.json"
+  [ "$s1_file" -ef "$out_dir/s1.json" ] || cp "$s1_file" "$out_dir/s1.json"
+  [ "$s2_file" -ef "$out_dir/s2.json" ] || cp "$s2_file" "$out_dir/s2.json"
+  [ "$s3_file" -ef "$out_dir/s3.json" ] || cp "$s3_file" "$out_dir/s3.json"
   
   # output packing table
   local intel_cap intel_busy yoga_cap yoga_busy gx10_cap gx10_busy
@@ -135,7 +135,8 @@ process_tick() {
   
   if [[ -z "$prev" ]]; then
     echo "quorum: first sample, no action"
-    echo "ci_queue_steward: tick=$tick mode=$mode q1=$q1 q2=$q2 q3=$q3 q4=$q4 writes=$writes refused=$refused" >> "$STATE_DIR/receipts.jsonl"
+    echo "ci_queue_steward: tick=$tick mode=$mode q1=$q1 q2=$q2 q3=$q3 q4=$q4 writes=$writes refused=$refused"
+    printf '{"tick":%s,"mode":"%s","q1":0,"q2":0,"q3":0,"q4":0,"writes":0,"refused":0,"note":"first sample, no action"}\n' "$tick" "$mode" >> "$STATE_DIR/receipts.jsonl"
     return
   fi
   
