@@ -292,13 +292,16 @@ impl SimdBackend {
         }
         #[cfg(target_arch = "aarch64")]
         {
-            return SimdBackend::Neon;
+            SimdBackend::Neon
         }
         #[cfg(target_arch = "wasm32")]
         {
             return SimdBackend::Wasm;
         }
-        SimdBackend::Scalar
+        #[cfg(not(target_arch = "aarch64"))]
+        {
+            SimdBackend::Scalar
+        }
     }
 
     pub fn expected_speedup(&self) -> f64 {

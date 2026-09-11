@@ -16858,3 +16858,22 @@ roadmap:
   - release
   - 0.66.0
   notes: 'orch-basis:release — the 0.66.0 cut is a release-state ticket (AUTO-IMPL-SKILL-003 §2.1 basis=release); push, tag, gh release and the crates.io cascade are orchestration phases (route=self).'
+- id: PMAT-1102
+  github_issue: null
+  item_type: task
+  title: 'gx10 cannot run ci / lint: 14 aarch64-only clippy errors in aprender-compute + present-terminal, and #2567''s aarch64 parallel Q4_K path was never called'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-09-11T04:06:14Z
+  updated: 2026-09-11T04:06:14Z
+  spec: null
+  acceptance_criteria:
+  - 'gx10-pool1 canary: ci / lint failed on #3089 (job 103137079500). x86 lint is clean; aarch64 has unreachable tails after unconditional NEON returns, x86-only helpers compiled dead on arm, and matmul_q4k_f32_parallel (non-x86, #2567) whose only caller is inside the x86_64 block.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - 0.67.0
+  notes: null
