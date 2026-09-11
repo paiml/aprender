@@ -56,3 +56,13 @@ fails on any wrong action. Mutation: removing the two-sample agreement must turn
 - [ ] phase 2b steward script + selftest + forjar timer (infra), first receipts in `evidence/fleet/`
 - [ ] `scripts/fleet_utilization.sh` promoted from the session `pack-report.sh` (67-row artifact)
 - [ ] contract `contracts/ci-fleet-hygiene-v1.yaml` (kind: pattern) binding §2/§3 falsifiers; `pv validate`
+
+### §3.1 State Directory Layout & Fixture Format
+
+The steward's state directory (`--state-dir`) organizes tick data chronologically.
+Each tick produces a directory `sample-<epoch>/` containing `s1.json`, `s2.json`, and `s3.json`.
+- `s1.json`: The GraphQL result for the merge queue and PRs in the open milestone.
+- `s2.json`: A unified JSON array of `merge_group` runs augmented with their jobs.
+- `s3.json`: A combined JSON object of `runners` and queued `jobs`.
+The steward writes a summary to `receipts.jsonl`.
+Under `--selftest`, fixtures follow the exact same format inside `tests/fixtures/ci_queue_steward/<case_name>/<epoch>/`. The selftest harnesses this by copying these files into a temporary state directory, tricking the steward into reading them as historical data.
