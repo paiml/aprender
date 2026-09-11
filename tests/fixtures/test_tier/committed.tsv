@@ -1,0 +1,5 @@
+key	module	crate	tests	seconds	touches	f_tests	tier
+crateA::dense	dense	crateA	2	2.0	8	0	pr
+crateA::guard	guard	crateA	2	3.0	0	1	pr
+crateB::light	light	crateB	1	1.0	2	0	nightly
+crateB::heavy	heavy	crateB	2	100.0	0	0	nightly

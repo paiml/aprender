@@ -16899,6 +16899,25 @@ roadmap:
   - kind:code
   - 0.67.0
   notes: null
+- id: PMAT-1105
+  github_issue: null
+  item_type: task
+  title: 'CI target dirs leak: per-run targets/aprender-ci/<PR>/run-<ID> and queue-ref dirs are never removed — 629 GB filled yoga (ENOSPC evicted #3089), 374 GB on intel; add a sweeper + the end-of-job GC'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-11T06:31:20Z
+  updated: 2026-09-11T06:31:20Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - orch:fable
+  - ci
+  notes: null
 - id: PMAT-1106
   github_issue: null
   item_type: task
@@ -16917,4 +16936,55 @@ roadmap:
   - kind:code
   - orch:fable
   - ci
+  notes: null
+- id: PMAT-3118
+  github_issue: 3118
+  item_type: task
+  title: 'roadmap.yaml 3-way merge by ticket id: merge driver + steward resolve-dirty so a queue squash never makes stacked PRs DIRTY'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-11T11:34:41Z
+  updated: 2026-09-11T11:34:41Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+- id: PMAT-3119
+  github_issue: 3119
+  item_type: task
+  title: '80/20 test tier as a nextest filterset: ci_test_tier.sh --tier-of-record for PR runs; full suite on merge_group/nightly/pre-release'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-11T11:34:55Z
+  updated: 2026-09-11T11:34:55Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+- id: PMAT-3120
+  github_issue: 3120
+  item_type: task
+  title: 'tree-reader registry at MODULE granularity: 18 whole --lib crates = 88% of all test-seconds in every PR quick tier (E1 costs 93% of full)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-11T12:32:19Z
+  updated: 2026-09-11T12:32:19Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
   notes: null
