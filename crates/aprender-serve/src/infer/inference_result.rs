@@ -184,7 +184,15 @@ fn run_gguf_inference(
     let load_start = Instant::now();
     let mapped = MappedGGUFModel::from_path(&config.model_path)?;
     prefault_mmap(mapped.data());
-    let model = OwnedQuantizedModel::from_mapped(&mapped)?;
+    // #3091: Qwen3.5/Qwen3.8 hybrids (Gated DeltaNet) have their own CPU forward. The dense
+    // loader refuses them, so only the shared base (embeddings, final norm, lm_head) is built
+    // here and generation dispatches to `run_qwen35_generate` below.
+    let is_qwen35 = mapped.model.architecture() == Some("qwen35");
+    let model = if is_qwen35 {
+        crate::gguf::forward_qwen35::Qwen35Model::create_base_model(&mapped.model, mapped.data())?
+    } else {
+        OwnedQuantizedModel::from_mapped(&mapped)?
+    };
     let load_ms = load_start.elapsed().as_secs_f64() * 1000.0;
 
     // PMAT-109: Architecture from GGUF metadata (not filename)
@@ -233,6 +241,17 @@ fn run_gguf_inference(
             &gen_config,
         )?;
         (tokens, false) // CPU-only path; GPU MoE wiring is M32d follow-up
+    } else if is_qwen35 {
+        if !config.no_gpu && cfg!(feature = "cuda") {
+            eprintln!("[qwen35: Gated DeltaNet runs on the CPU; the GPU backend does not implement it yet (#3090)]");
+        }
+        let tokens = crate::gguf::forward_qwen35::run_qwen35_generate(
+            &mapped,
+            &model,
+            &input_tokens,
+            &gen_config,
+        )?;
+        (tokens, false)
     } else {
         run_gguf_generate(model, &input_tokens, &gen_config, config)?
     };
@@ -571,6 +590,29 @@ not CUDA."
     )
 }
 
+/// The F2 probe: the real prompt context (a peaked distribution) when there is one, else the
+/// BOS token (batch model-init has no prompt yet), capped to bound the one-time CPU/GPU
+/// prefill cost. BOS flows from GGUF metadata. Returns `(kv_dim, num_layers, probe)`, or
+/// `None` when there is neither context nor a known BOS, so nothing to validate against.
+#[cfg(feature = "cuda")]
+fn gpu_probe(
+    model: &crate::gguf::OwnedQuantizedModel,
+    probe_context: &[u32],
+) -> Option<(usize, usize, Vec<u32>)> {
+    const PROBE_MAX_CTX: usize = 64;
+    let kv_dim = model.config.num_kv_heads * (model.config.hidden_dim / model.config.num_heads);
+    let probe = if probe_context.is_empty() {
+        let Some(id) = model.config.bos_token_id else {
+            eprintln!("warning: no prompt context and no BOS token — skipping the GPU-vs-CPU output check");
+            return None;
+        };
+        vec![id]
+    } else {
+        probe_context[probe_context.len().saturating_sub(PROBE_MAX_CTX)..].to_vec()
+    };
+    Some((kv_dim, model.config.num_layers, probe))
+}
+
 #[cfg(feature = "cuda")]
 fn validate_gpu_first_token(
     cuda_model: &mut crate::gguf::OwnedQuantizedModelCuda,
@@ -587,29 +629,8 @@ fn validate_gpu_first_token(
         return true;
     }
 
-    // Build the probe: real prompt context (peaked distribution) when available,
-    // else the BOS token (batch model-init has no prompt yet). Cap the context to
-    // bound the one-time CPU/GPU prefill cost. BOS flows from GGUF metadata; if it
-    // is unknown for a context-less probe there is nothing to validate against.
-    const PROBE_MAX_CTX: usize = 64;
-    let (kv_dim, num_layers, probe): (usize, usize, Vec<u32>) = {
-        let model = cuda_model.model();
-        let kv_dim =
-            model.config.num_kv_heads * (model.config.hidden_dim / model.config.num_heads);
-        let num_layers = model.config.num_layers;
-        let probe: Vec<u32> = if probe_context.is_empty() {
-            match model.config.bos_token_id {
-                Some(id) => vec![id],
-                None => {
-                    eprintln!("warning: no prompt context and no BOS token — skipping the GPU-vs-CPU output check");
-                    return true;
-                },
-            }
-        } else {
-            let start = probe_context.len().saturating_sub(PROBE_MAX_CTX);
-            probe_context[start..].to_vec()
-        };
-        (kv_dim, num_layers, probe)
+    let Some((kv_dim, num_layers, probe)) = gpu_probe(cuda_model.model(), probe_context) else {
+        return true;
     };
 
     // A single-token probe (context-less BOS) has NO real position (≥1) to validate
