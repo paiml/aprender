@@ -63,10 +63,39 @@ run_check() {
   return "$rc"
 }
 
+# committed_check COMMITTED BUDGET -> the guard-tree shape (no junit on a bare runner): the
+# COMMITTED table must be well-formed (8 columns, tier in {pr,nightly}), within budget (a),
+# and keep every module that carries a falsifier in the nightly tier out of it (c). Rule (b)
+# needs a fresh junit and is only judged when --junit is given. Exit 2 = no table at all.
+committed_check() {
+  local committed="$1" budget="$2" rc=0
+  [ -f "$committed" ] || { echo "check_test_tier: no committed table at $committed" >&2; return 2; }
+  local shape; shape=$(awk -F'\t' 'NR==1 && $0!="key\tmodule\tcrate\ttests\tseconds\ttouches\tf_tests\ttier"{print "header"} NR>1 && NF!=8{print "cols@"NR} NR>1 && $8!="pr" && $8!="nightly"{print "tier@"NR}' "$committed" | head -3 | tr '\n' ' ')
+  if [ -n "$shape" ]; then echo "FAIL  committed table malformed: $shape"; return 1; fi
+  local pct; pct=$(awk -F'\t' 'NR>1{t+=$5; if($8=="pr")p+=$5} END{if(t>0)printf "%.2f",100*p/t; else print "0"}' "$committed")
+  local prn; prn=$(awk -F'\t' 'NR>1{t+=$4; if($8=="pr")p+=$4} END{print p" / "t" tests"}' "$committed")
+  echo "tier (committed): pr = $prn = ${pct}% of seconds (budget ${budget}%)"
+  if python3 -c "import sys; sys.exit(0 if float('$pct') > float('$budget') else 1)"; then
+    echo "FAIL  (a) PR tier ${pct}% of seconds exceeds the ${budget}% budget"; rc=1
+  fi
+  local bad_f; bad_f=$(awk -F'\t' 'NR>1 && $7>0 && $8=="nightly"{print $1}' "$committed" | head -5 | tr '\n' ' ')
+  if [ -n "$bad_f" ]; then echo "FAIL  (c) modules with a falsif test are nightly: $bad_f"; rc=1; fi
+  [ "$rc" = 0 ] && echo "PASS  committed tier table: within budget, every falsifier in the pr tier"
+  return "$rc"
+}
+
 if [ "$SELFTEST" = 1 ]; then
   FX="$HERE/../tests/fixtures/test_tier"; T="$(mktemp -d)"; trap '[ -n "$T" ] && [ "$T" != "/" ] && rm -rf "$T"' EXIT
   err=0
   row() { if [ "$2" = "$3" ]; then echo "ok    $1"; else echo "FAIL  $1: got rc=$2 want $3"; err=1; fi; }
+  # bare (committed-table) mode rows
+  r=0; committed_check "$FX/committed.tsv" 50 >/dev/null || r=$?; row "committed: fixture table passes" "$r" 0
+  r=0; committed_check "$T/absent.tsv" 50 >/dev/null 2>&1 || r=$?; row "committed: absent table is ENV (2)" "$r" 2
+  awk -F'\t' 'BEGIN{OFS="\t"} NR==1{print;next} {$8="pr"; print}' "$FX/committed.tsv" > "$T/allpr.tsv"
+  r=0; committed_check "$T/allpr.tsv" 50 >/dev/null || r=$?; row "committed: every module pr -> over budget (a) rc 1" "$r" 1
+  awk -F'\t' 'BEGIN{OFS="\t"} NR==1{print;next} $7>0{$8="nightly"} {print}' "$FX/committed.tsv" > "$T/fnight.tsv"
+  r=0; committed_check "$T/fnight.tsv" 50 >/dev/null || r=$?; row "committed: falsifier moved to nightly (c) rc 1" "$r" 1
+  printf 'key\tmodule\tcrate\n' > "$T/badhdr.tsv"; r=0; committed_check "$T/badhdr.tsv" 50 >/dev/null || r=$?; row "committed: malformed header rc 1" "$r" 1
   cp "$FX/committed.tsv" "$T/c.tsv"
   r=0; run_check "$FX/junit.xml" "$FX/ledger.json" "$T/c.tsv" 50 0 >/dev/null || r=$?; row "budget respected, table matches -> ok" "$r" 0
   r=0; run_check "$FX/junit.xml" "$FX/ledger.json" "$T/c.tsv" 3 0 >/dev/null || r=$?; row "budget 3% exceeded (tier is 4.72%) -> RED" "$r" 1
@@ -90,6 +119,12 @@ if [ "$SELFTEST" = 1 ]; then
   exit "$err"
 fi
 
-[ -n "$JUNIT" ] && [ -f "$JUNIT" ] || { echo "check_test_tier: --junit FILE is required (nextest junit)" >&2; exit 2; }
+if [ -z "$JUNIT" ]; then
+  # bare invocation (guard_tree.sh dispatches every check_*.sh with no arguments): judge the
+  # COMMITTED table — shape, budget (a), falsifier placement (c). Rule (b) needs a junit.
+  if [ "$UPDATE" = 1 ]; then echo "check_test_tier: --update needs --junit FILE (nextest junit)" >&2; exit 2; fi
+  committed_check "$COMMITTED" "$BUDGET"; exit $?
+fi
+[ -f "$JUNIT" ] || { echo "check_test_tier: --junit $JUNIT: no such file" >&2; exit 2; }
 [ -n "$LEDGER" ] && [ -f "$LEDGER" ] || { echo "check_test_tier: --catch-ledger FILE is required ({\"crate::module\": touches})" >&2; exit 2; }
 run_check "$JUNIT" "$LEDGER" "$COMMITTED" "$BUDGET" "$UPDATE"
