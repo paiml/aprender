@@ -15,6 +15,7 @@ pub mod diff;
 pub mod duplicate_stems;
 pub mod finding;
 mod gates;
+pub use gates::collect_yaml_files;
 mod gates_extended;
 pub mod rules;
 pub mod sarif;

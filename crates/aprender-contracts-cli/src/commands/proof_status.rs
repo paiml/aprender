@@ -3,9 +3,9 @@ use std::path::Path;
 use provable_contracts::binding::parse_binding;
 use provable_contracts::obligation_matrix::{format_obligation_table, obligation_matrix};
 use provable_contracts::proof_status::{format_text, proof_status_report};
-use provable_contracts::schema::{parse_contract, ContractKind};
+use provable_contracts::schema::ContractKind;
 
-use crate::contract_walk::collect_contracts;
+use crate::contract_walk::{collect_corpus, require_contracts};
 
 pub fn run(
     path: &Path,
@@ -28,22 +28,13 @@ pub fn run(
 
     let kind = kind_filter.map(parse_kind).transpose()?;
 
-    // Collect contracts (single file or directory tree)
-    let mut contracts = Vec::new();
-    if path.is_dir() {
-        collect_contracts(path, &mut contracts);
-    } else {
-        let stem = path
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("unknown")
-            .to_string();
-        let c = parse_contract(path)?;
-        contracts.push((stem, c));
-    }
+    // Collect contracts (single file or directory tree). PVL-1 (PMAT-1099): an
+    // empty corpus is refused (exit 2), and so is one that `--kind` filters to zero.
+    let mut contracts = collect_corpus(path)?;
 
     if let Some(k) = kind {
         contracts.retain(|(_, c)| c.kind() == k);
+        require_contracts(path, &contracts, kind_filter)?;
     }
 
     contracts.sort_by(|a, b| a.0.cmp(&b.0));

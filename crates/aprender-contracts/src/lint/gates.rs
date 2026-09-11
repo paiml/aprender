@@ -26,7 +26,14 @@ pub(crate) fn load_contracts(dir: &Path) -> (Vec<(String, Contract)>, Vec<(Strin
     let mut contracts = Vec::new();
     let mut parse_errors = Vec::new();
     let mut yaml_paths = Vec::new();
-    collect_yaml_files(dir, &mut yaml_paths);
+    if dir.is_file() {
+        // PVL-1 (PMAT-1099): `pv lint <file>` lints THAT file. Before this, a file
+        // path was walked with `read_dir`, found nothing, and reported PASS over
+        // 0 contracts.
+        yaml_paths.push(dir.to_path_buf());
+    } else {
+        collect_yaml_files(dir, &mut yaml_paths);
+    }
     // DETERMINISM: `read_dir` order is unspecified (on ext4 it is a filename-hash
     // order, so it changes when a DIRECTORY IS RENAMED even though no file content
     // changed). Sorting by full path imposes a total order, so everything derived
@@ -57,7 +64,7 @@ pub(crate) fn load_contracts(dir: &Path) -> (Vec<(String, Contract)>, Vec<(Strin
 ///
 /// Emits entries in `read_dir` order, which is UNSPECIFIED. Every caller must
 /// impose its own total order before deriving a verdict from the result.
-pub(super) fn collect_yaml_files(dir: &Path, out: &mut Vec<std::path::PathBuf>) {
+pub fn collect_yaml_files(dir: &Path, out: &mut Vec<std::path::PathBuf>) {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return;
     };

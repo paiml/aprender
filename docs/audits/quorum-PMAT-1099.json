@@ -1,0 +1,252 @@
+{
+  "ticket": "PMAT-1099",
+  "base": "origin/main",
+  "base_resolved": "origin/main",
+  "base_note": "no origin/origin/main exists; judged against the local ref",
+  "head": "5f6acd76b376606a8365a770903f462484ce15cb",
+  "diff_sha256": "72a1de3ab3187d14be28393204f83ef480cbd36a7b58319b46d1c774e73237ed",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "file",
+  "prompt_bytes": 123020,
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "I have completely read the provided PR diff and all requirements in the PMAT-1099 ticket specifications. The diff elegantly and accurately implements the requirements. `pv validate` handles non-existent paths and empty directories appropriately, outputting the correct exit code (2) and exact `decline: 0 contracts under <path>` text without leaking OS errors. The `.pv` cache leak in `pv lint` has been closed by eagerly probing `has_contract_files`. The `collect_corpus` robustly enforces that unparsable files result in an exit 1 defect rather than being silently ignored. The zero-contract conditions have been flawlessly integrated and tests fortified to avoid vacuous passes. No gates are weakened and no tests assert opposite conditions. The diff performs exactly what is requested without scope creep. Verdict is PASS.",
+      "findings": [
+        {
+          "claim": "pv validate correctly implements the zero-input guard, exiting with 2 (ZeroContracts) when a directory is empty or a path is nonexistent, completely resolving the OS error defect.",
+          "file": "crates/aprender-contracts-cli/src/commands/validate.rs",
+          "grounding": "cited",
+          "line": 29
+        },
+        {
+          "claim": "pv lint correctly guards against an empty corpus ahead of any cache-creation or diff probe, preventing the .pv cache leak.",
+          "file": "crates/aprender-contracts-cli/src/commands/lint.rs",
+          "grounding": "cited",
+          "line": 46
+        },
+        {
+          "claim": "assert_refused correctly strictly asserts that exactly one line of stderr is produced, closing the weakness of using .contains().",
+          "file": "crates/aprender-contracts-cli/tests/pvl_zero_contracts.rs",
+          "grounding": "cited",
+          "line": 77
+        },
+        {
+          "claim": "The directory walk in pv validate accurately employs lint's own file rule via collect_yaml_files, sorting and failing at exit 1 appropriately on unparsable files.",
+          "file": "crates/aprender-contracts-cli/src/commands/validate.rs",
+          "grounding": "cited",
+          "line": 44
+        },
+        {
+          "claim": "ci.yml changes correctly wire the new pvl_zero_contracts integration test.",
+          "file": ".github/workflows/ci.yml",
+          "grounding": "cited",
+          "line": 26
+        }
+      ],
+      "raw_bytes": 5123,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS"
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff perfectly implements the requirements of PMAT-1099 (PVL-1). It adds appropriate empty corpus guards across all reporting commands (`validate`, `lint`, `proof-status`, `coverage`, `graph`, `lean-status`, `verify-pipeline`), ensuring they exit with code 2 and print `decline: 0 contracts under <path>` without leaking cache warnings. It correctly treats files with parsing errors as 'measured and failed' (exit 1), and sidecar files are handled properly. Tests are comprehensive and correctly verify these edge cases. No negative side effects or test regressions were found.",
+      "findings": [
+        {
+          "claim": "pv validate correctly adds a zero-input guard for nonexistent paths and empty directories, returning a ZeroContracts error (exit 2).",
+          "file": "crates/aprender-contracts-cli/src/commands/validate.rs",
+          "grounding": "cited",
+          "line": 29
+        },
+        {
+          "claim": "pv lint correctly calls refuse_missing_corpus before processing, avoiding any cache creation leaks when the corpus is missing.",
+          "file": "crates/aprender-contracts-cli/src/commands/lint.rs",
+          "grounding": "cited",
+          "line": 46
+        },
+        {
+          "claim": "The global error handler correctly formats the output with a 'decline:' prefix when the exit code is 2 (ZERO_CONTRACTS_EXIT), perfectly matching the specification.",
+          "file": "crates/aprender-contracts-cli/src/lib.rs",
+          "grounding": "cited",
+          "line": 1164
+        }
+      ],
+      "raw_bytes": 3718,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS"
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff perfectly implements the PMAT-1099 ticket requirements. All commands (lint, proof-status, coverage, graph, lean-status, verify-pipeline, and validate) now consistently refuse empty corpora (or zeroed kind filters) with exit code 2 and the standard 'decline: 0 contracts' message, without leaking side-effects like `.pv` creation. Broken contracts are correctly measured and failed (exit code 1). The logic correctly supports edge cases such as TOCTOU directory emptying during watch mode. All test assertions are preserved, no gates are weakened, and the CI test execution is correctly wired.",
+      "findings": [
+        {
+          "claim": "validate command handles zero-input correctly by returning ZeroContracts, avoiding exit 1 OS errors.",
+          "file": "crates/aprender-contracts-cli/src/commands/validate.rs",
+          "fix": "Added `if !path.exists() || (path.is_dir() && !has_contract_files(path)) { return Err(ZeroContracts...`",
+          "grounding": "cited",
+          "line": 628
+        },
+        {
+          "claim": "lint command protects against .pv directory creation leaks for non-existent paths, and protects watch/diff against TOCTOU races.",
+          "file": "crates/aprender-contracts-cli/src/commands/lint.rs",
+          "fix": "Added `refuse_missing_corpus(contract_dir)?;` to `run` and preserved `refuse_empty_corpus(&report, contract_dir)?;` for `run_watch`.",
+          "grounding": "cited",
+          "line": 511
+        },
+        {
+          "claim": "collect_corpus refuses empty directories and missing paths across all reporting subcommands while correctly bubbling parse errors as exit code 1.",
+          "file": "crates/aprender-contracts-cli/src/contract_walk.rs",
+          "fix": "Introduced `ZeroContracts` error mapping to exit code 2, and `ParseErrors` mapping to exit code 1.",
+          "grounding": "cited",
+          "line": 936
+        },
+        {
+          "claim": "proof-status cleanly refuses corpora emptied by kind filters.",
+          "file": "crates/aprender-contracts-cli/src/commands/proof_status.rs",
+          "fix": "Added `require_contracts(path, &contracts, kind_filter)?;` after `.retain` filtering.",
+          "grounding": "cited",
+          "line": 590
+        },
+        {
+          "claim": "CI integration wire-up adds pvl_zero_contracts without weakening existing tests.",
+          "file": ".github/workflows/ci.yml",
+          "fix": "Injected `cargo test -p aprender-contracts-cli --test pvl_zero_contracts` within the job's command chain.",
+          "grounding": "cited",
+          "line": 37
+        }
+      ],
+      "raw_bytes": 5559,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS"
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": ".github/workflows/ci.yml",
+      "line": 26,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "ci.yml changes correctly wire the new pvl_zero_contracts integration test."
+      ]
+    },
+    {
+      "file": ".github/workflows/ci.yml",
+      "line": 37,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "CI integration wire-up adds pvl_zero_contracts without weakening existing tests."
+      ]
+    },
+    {
+      "file": "crates/aprender-contracts-cli/src/commands/lint.rs",
+      "line": 46,
+      "lanes_agreeing": [
+        1,
+        2
+      ],
+      "claims": [
+        "pv lint correctly calls refuse_missing_corpus before processing, avoiding any cache creation leaks when the corpus is missing.",
+        "pv lint correctly guards against an empty corpus ahead of any cache-creation or diff probe, preventing the .pv cache leak."
+      ]
+    },
+    {
+      "file": "crates/aprender-contracts-cli/src/commands/lint.rs",
+      "line": 511,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "lint command protects against .pv directory creation leaks for non-existent paths, and protects watch/diff against TOCTOU races."
+      ]
+    },
+    {
+      "file": "crates/aprender-contracts-cli/src/commands/proof_status.rs",
+      "line": 590,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "proof-status cleanly refuses corpora emptied by kind filters."
+      ]
+    },
+    {
+      "file": "crates/aprender-contracts-cli/src/commands/validate.rs",
+      "line": 29,
+      "lanes_agreeing": [
+        1,
+        2
+      ],
+      "claims": [
+        "pv validate correctly adds a zero-input guard for nonexistent paths and empty directories, returning a ZeroContracts error (exit 2).",
+        "pv validate correctly implements the zero-input guard, exiting with 2 (ZeroContracts) when a directory is empty or a path is nonexistent, completely resolving the OS error defect."
+      ]
+    },
+    {
+      "file": "crates/aprender-contracts-cli/src/commands/validate.rs",
+      "line": 44,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "The directory walk in pv validate accurately employs lint's own file rule via collect_yaml_files, sorting and failing at exit 1 appropriately on unparsable files."
+      ]
+    },
+    {
+      "file": "crates/aprender-contracts-cli/src/commands/validate.rs",
+      "line": 628,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "validate command handles zero-input correctly by returning ZeroContracts, avoiding exit 1 OS errors."
+      ]
+    },
+    {
+      "file": "crates/aprender-contracts-cli/src/contract_walk.rs",
+      "line": 936,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "collect_corpus refuses empty directories and missing paths across all reporting subcommands while correctly bubbling parse errors as exit code 1."
+      ]
+    },
+    {
+      "file": "crates/aprender-contracts-cli/src/lib.rs",
+      "line": 1164,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "The global error handler correctly formats the output with a 'decline:' prefix when the exit code is 2 (ZERO_CONTRACTS_EXIT), perfectly matching the specification."
+      ]
+    },
+    {
+      "file": "crates/aprender-contracts-cli/tests/pvl_zero_contracts.rs",
+      "line": 77,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "assert_refused correctly strictly asserts that exactly one line of stderr is produced, closing the weakness of using .contains()."
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": []
+}
