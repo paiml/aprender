@@ -43,6 +43,7 @@ pub fn run(
     watch: bool,
     strict_test_binding: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    refuse_missing_corpus(contract_dir)?;
     if watch {
         return run_watch(
             contract_dir,
@@ -224,6 +225,23 @@ fn show_trend_history(contract_dir: &Path) {
 
 /// Returns `Some(Ok(()))` to short-circuit when no contracts changed,
 /// or `None` to continue with full lint.
+/// PVL-1 (PMAT-1099): refuse an empty corpus BEFORE anything touches the tree —
+/// the `.pv` cache directory, the diff probe, the watcher. The third review
+/// quorum on #3093 measured `pv lint /nonexistent` leaking `cannot create /.pv:
+/// Permission denied` AHEAD of the refusal: two stderr lines for one decline,
+/// three under `--diff`. `has_contract_files` does not parse; the post-report
+/// guard in `run` stays for a corpus that parses to nothing.
+fn refuse_missing_corpus(contract_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    if crate::contract_walk::has_contract_files(contract_dir) {
+        return Ok(());
+    }
+    Err(crate::contract_walk::ZeroContracts {
+        path: contract_dir.to_path_buf(),
+        filter: None,
+    }
+    .into())
+}
+
 fn run_diff_check(
     contract_dir: &Path,
     base: &str,

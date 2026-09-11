@@ -362,10 +362,18 @@ pub fn run() {
     let _ = (cli.quiet, cli.verbose); // Flags accepted; used by subcommands via Cli struct
 
     if let Err(e) = dispatch(cli.command) {
-        eprintln!("error: {e}");
-        // PVL-1 (PMAT-1099): a refused EMPTY corpus exits 2 (nothing was measured);
-        // every other error keeps exit 1 (measured, failed).
-        std::process::exit(contract_walk::exit_code_for(e.as_ref()));
+        // PVL-1 (PMAT-1099): a refused EMPTY corpus is a DECLINE — exit 2 and the
+        // `decline:` prefix (nothing was measured; the word names the verdict class
+        // the way the exit code does — PVL-001 §0 vocabulary). Every other error
+        // keeps `error:` and exit 1 (measured, failed).
+        let code = contract_walk::exit_code_for(e.as_ref());
+        let verdict = if code == contract_walk::ZERO_CONTRACTS_EXIT {
+            "decline"
+        } else {
+            "error"
+        };
+        eprintln!("{verdict}: {e}");
+        std::process::exit(code);
     }
 }
 

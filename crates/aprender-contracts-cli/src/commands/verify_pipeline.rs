@@ -276,8 +276,9 @@ mod tests {
         if !dir.exists() {
             return; // skip in CI without contracts
         }
-        // Should not panic
-        run(&dir, "text");
+        // PVL-1 (PMAT-1099): `run` is fallible now — an ignored Result is a test
+        // that cannot fail. The real corpus verifies (measured 2026-09-11, rc 0).
+        run(&dir, "text").expect("the real corpus under contracts/ verifies");
     }
 
     #[test]
@@ -286,12 +287,20 @@ mod tests {
         if !dir.exists() {
             return;
         }
-        run(&dir, "json");
+        run(&dir, "json").expect("the real corpus under contracts/ verifies as json");
     }
 
     #[test]
     fn verify_pipeline_empty_dir() {
         let tmp = tempfile::tempdir().expect("temp dir is creatable");
-        run(tmp.path(), "text");
+        // PVL-1 (PMAT-1099): an empty directory is REFUSED (exit-2 class), never
+        // reported. Before this assertion the test called `run` and ignored the
+        // Result, so it passed over a vacuous PASS and over the refusal alike.
+        let err = run(tmp.path(), "text").expect_err("an empty dir is refused, never reported");
+        assert!(
+            err.downcast_ref::<crate::contract_walk::ZeroContracts>()
+                .is_some(),
+            "not the empty-corpus refusal: {err}"
+        );
     }
 }

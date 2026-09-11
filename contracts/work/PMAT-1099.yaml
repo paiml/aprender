@@ -19,7 +19,7 @@ metadata:
 
     Every reporting subcommand that walks a contract directory — lint,
     proof-status, coverage, graph, lean-status, verify-pipeline — now exits 2
-    with one stderr line `error: 0 contracts under <path>` before any report is
+    with one stderr line `decline: 0 contracts under <path>` before any report is
     printed. A single contract file is a one-contract corpus. A `--kind` filter
     that empties a corpus is refused and named. Exit 2, not 1: 1 is "measured
     and failed", 2 is "nothing was measured" (clap's usage-error code — the
@@ -48,7 +48,7 @@ equations:
       forall s in {lint, proof-status, coverage, graph, lean-status,
       verify-pipeline}, forall p . |corpus(p)| = 0
         => exit_code(pv s p) = 2
-           and stderr(pv s p) contains "error: 0 contracts under " ++ p
+           and stderr(pv s p) contains "decline: 0 contracts under " ++ p
            and stdout(pv s p) contains no verdict line
     domain: "p a missing path, an empty directory, or a directory holding no contract file (is_contract_yaml: `.yaml`, not dot-prefixed, not binding.yaml — the ONE file rule pv lint walks with; a `*playbook*` stem is a contract)"
     codomain: "{2}"
@@ -197,3 +197,26 @@ falsification_tests:
     expected_output: "exit 0 on an unmutated tree"
     if_fails: >
       MEASURED 2026-09-10 on the tree after the watch/diff and strict-walker fixes (parent 8bb0c2956): mutation engaged, `cargo test -p aprender-contracts-cli --test pvl_zero_contracts -- unparsable_only mixed_dir` -> FAILED. 0 passed; 2 failed; 17 filtered out; finished in 0.01s; RED: mixed_dir_one_broken_file_fails_and_names_it unparsable_only_dir_is_measured_not_refused ; source restored -> ok. 2 passed; 0 failed; finished in 0.02s
+  - id: FALSIFY-PVL-1-008
+    rule: "PVL-1-EMPTY-REFUSED"
+    prediction: >
+      Deleting the guard at the top of `validate::run`
+      (crates/aprender-contracts-cli/src/commands/validate.rs) turns
+      validate_nonexistent_path_is_refused and validate_empty_dir_is_refused
+      RED — exit 1 with an OS error (`No such file or directory`,
+      `Is a directory`) in place of the exit-2 decline — while every other
+      case stays GREEN: validate reads one artifact and never went through the
+      walker, which is how the third review quorum on #3093 (2026-09-11) found
+      it unguarded after two PASS quorums on the other five commands.
+    test_harness: "cargo test -p aprender-contracts-cli --test pvl_zero_contracts validate_"
+    expected_output: "exit 0 on an unmutated tree"
+    if_fails: >
+      MEASURED 2026-09-11 on the tree after the validate guard (parent 77187ac51):
+      guard lines deleted from validate::run, `cargo test -p aprender-contracts-cli
+      --test pvl_zero_contracts validate_` -> FAILED. 1 passed; 2 failed; 19 filtered
+      out; RED: validate_nonexistent_path_is_refused (expected exit 2, got 1),
+      validate_empty_dir_is_refused (expected exit 2, got 0 — the directory walk
+      over zero files reported `0 artifact(s), 0 failed` and exited 0: the vacuous
+      PASS this row exists to end, reachable again the moment the guard is gone);
+      control_validate_one_contract_is_reported_not_refused stays GREEN; source
+      restored -> ok. 3 passed; 0 failed; 19 filtered out

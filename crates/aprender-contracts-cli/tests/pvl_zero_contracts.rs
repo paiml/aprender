@@ -13,7 +13,7 @@
 //! reporting subcommand that walks a contract directory — `lint`,
 //! `proof-status`, `coverage`, `graph`, `lean-status`, `verify-pipeline` —
 //! must refuse an empty corpus with
-//! exit 2 and one stderr line, `error: 0 contracts under <path>`.
+//! exit 2 and one stderr line, `decline: 0 contracts under <path>`.
 //!
 //! Exit 2, not 1: exit 1 means "the corpus was measured and failed"; exit 2
 //! means "nothing was measured" — the invocation itself is wrong, which is
@@ -59,7 +59,7 @@ fn pv(args: &[&str]) -> Run {
     }
 }
 
-const REFUSAL: &str = "error: 0 contracts under ";
+const REFUSAL: &str = "decline: 0 contracts under ";
 const REFUSAL_EXIT: i32 = 2;
 
 fn assert_refused(run: &Run, path: &Path, what: &str) {
@@ -72,6 +72,12 @@ fn assert_refused(run: &Run, path: &Path, what: &str) {
     assert!(
         run.stderr.contains(&expected),
         "{what}: stderr lacks `{expected}`\n--- stderr\n{}",
+        run.stderr
+    );
+    assert_eq!(
+        run.stderr.lines().count(),
+        1,
+        "{what}: a decline is ONE stderr line — the refusal and nothing leaked ahead of it (the third quorum on #3093 measured a `.pv` cache warning printed first)\n--- stderr\n{}",
         run.stderr
     );
     assert!(
@@ -478,5 +484,48 @@ fn mixed_dir_one_broken_file_fails_and_names_it() {
         run.stderr.contains("1 of 2 contract files"),
         "the count of measured files is not reported\n--- stderr\n{}",
         run.stderr
+    );
+}
+
+// ---------------------------------------------------------------------------
+// `pv validate` — added after the third review quorum on #3093 (2026-09-11)
+// found it unguarded: it reads one artifact and never went through the walker,
+// so `pv validate <empty dir>` answered `Is a directory (os error 21)` at exit 1
+// and `pv validate /nonexistent` answered `No such file or directory` at exit 1,
+// while the spec row lists validate beside lint, proof-status, coverage, graph.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn validate_nonexistent_path_is_refused() {
+    let p = nonexistent();
+    assert_refused(&pv(&["validate", s(&p)]), &p, "pv validate <nonexistent>");
+}
+
+#[test]
+fn validate_empty_dir_is_refused() {
+    let d = empty_dir();
+    assert_refused(
+        &pv(&["validate", s(d.path())]),
+        d.path(),
+        "pv validate <empty dir>",
+    );
+}
+
+/// A directory holding one contract is validated file by file (exit 0, the file
+/// named); a single contract file validates as before.
+#[test]
+fn control_validate_one_contract_is_reported_not_refused() {
+    let d = empty_dir();
+    let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../contracts/softmax-kernel-v1.yaml");
+    std::fs::copy(&src, d.path().join("softmax-kernel-v1.yaml")).expect("contract copies");
+    assert_reported(
+        &pv(&["validate", s(d.path())]),
+        "pv validate <one contract dir>",
+        "1 artifact(s) under",
+    );
+    assert_reported(
+        &pv(&["validate", s(&src)]),
+        "pv validate <file>",
+        "Contract is valid.",
     );
 }

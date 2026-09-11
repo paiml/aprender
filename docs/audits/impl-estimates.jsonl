@@ -31,3 +31,4 @@
 {"repo":"aprender","ticket":"PMAT-1096","phase":"all","mode":"direct+agy-quorum","unit":"turn","est":6,"actual":null,"basis":"first-run[U]","pr_runs":0,"mg_runs":0}
 {"repo":"aprender","ticket":"PMAT-1099","phase":"all","mode":"direct+agy-plan+agy-quorum","unit":"tool_call","est":120,"actual":110,"basis":"PVL-001 §5 [A] operator estimate; actual [C] transcript count ±2","pr_runs":1,"mg_runs":0}
 {"repo":"aprender","ticket":"PMAT-1099","phase":"run2","mode":"direct+agy-quorum×2(direct-launch)","unit":"tool_call","est":120,"actual":36,"basis":"PVL-001 §5 [A] operator estimate; actual [C] count at receipt time (+≈5 for CI watch/merge)","pr_runs":1,"mg_runs":0}
+{"repo":"aprender","ticket":"PMAT-1099","phase":"session-3-quorum-fix","mode":"direct+agy-quorum:3","est":120,"actual":30,"basis":"[A] PVL-001 §5"}
