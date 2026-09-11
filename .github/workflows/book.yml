@@ -66,11 +66,15 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # Self-hosted (#3073): tools go into this run's private $RUNNER_TEMP, never a $HOME path that every
+      # runner on the box execs from (the aprender#2353 race; check_cargo_install_private_root.sh enforces
+      # the cargo half). The private cargo root is added to PATH last, so it resolves first.
       - name: Install mdBook
         run: |
-          mkdir -p ~/bin
-          curl -sSL https://github.com/rust-lang/mdBook/releases/download/v0.4.40/mdbook-v0.4.40-x86_64-unknown-linux-gnu.tar.gz | tar -xz -C ~/bin
-          echo "$HOME/bin" >> $GITHUB_PATH
+          mkdir -p "$RUNNER_TEMP/bin" "$RUNNER_TEMP/cargo-tools/bin"
+          curl -sSL https://github.com/rust-lang/mdBook/releases/download/v0.4.40/mdbook-v0.4.40-x86_64-unknown-linux-gnu.tar.gz | tar -xz -C "$RUNNER_TEMP/bin"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+          echo "$RUNNER_TEMP/cargo-tools/bin" >> "$GITHUB_PATH"
 
       - name: Build book
         run: mdbook build book
@@ -78,7 +82,7 @@ jobs:
       # BOOK-CLOSEOUT-001 § Phase 1: shell-script quality (per CLAUDE.md, use bashrs not shellcheck)
       - name: bashrs lint book check scripts (FALSIFY-BOOK-SHELL-QUALITY-001)
         run: |
-          cargo install bashrs --locked --quiet
+          cargo install bashrs --locked --quiet --root "$RUNNER_TEMP/cargo-tools"
           # Lint only check scripts; gen-*-stubs.sh contain markdown heredocs with em-dashes
           # that bashrs flags as SC1100, but those are intentional in the generated book output.
           bashrs lint scripts/check_book_*.sh 2>&1 | tee /tmp/bashrs.log
@@ -92,7 +96,7 @@ jobs:
       - name: CLI parity gate (FALSIFY-BOOK-CLI-PARITY-001)
         run: |
           # apr CLI binary needed for parity check
-          cargo install --path crates/apr-cli --locked --quiet
+          cargo install --path crates/apr-cli --locked --quiet --root "$RUNNER_TEMP/cargo-tools"
           bash scripts/check_book_cli_parity.sh
 
       # BOOK-CLOSEOUT-001 § Phase 4: every CLI stub has a runnable example
@@ -114,7 +118,7 @@ jobs:
         run: |
           # Install pmat if not present (most CI runners have it cached)
           if ! command -v pmat >/dev/null 2>&1; then
-            cargo install pmat --locked --quiet || true
+            cargo install pmat --locked --quiet --root "$RUNNER_TEMP/cargo-tools" || true
           fi
           # Validate the book-completeness contract via pv.
           #
