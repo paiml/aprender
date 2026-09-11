@@ -16894,3 +16894,20 @@ roadmap:
   labels:
   - kind:code
   notes: null
+- id: PMAT-3119
+  github_issue: 3119
+  item_type: task
+  title: '80/20 test tier as a nextest filterset: ci_test_tier.sh --tier-of-record for PR runs; full suite on merge_group/nightly/pre-release'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-11T11:34:55Z
+  updated: 2026-09-11T11:34:55Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
