@@ -56,7 +56,7 @@ fails on any wrong action. Mutation: removing the two-sample agreement must turn
 
 - [ ] phase 2a `ci.yml` end-of-job GC + `ci_target_gc_check.sh` (this branch)
 - [ ] phase 2b steward script + selftest + forjar timer (infra), first receipts in `evidence/fleet/`
-- [ ] `scripts/check_test_tier.sh` (the §6 ratchet): a first agy lane's version is parked in the session scratchpad — its selftest FAILS rules (b) silent tier move and (c) falsifier-in-nightly, its fixtures are written at run time (mutating the tree), and its real-junit run reports 714 s / 16.27 % against the 737.7 s / 16.8 % of §6.1 (delta unexplained). Next lane brief: hermetic fixtures under tests/fixtures/, no `git commit --amend`, rules (b)/(c) proven by mutation before the receipt.
+- [x] `scripts/check_test_tier.sh` + `scripts/lib/test_tier.py` + `tests/fixtures/test_tier/` — the §6 ratchet, hermetic (temp dirs, committed fixtures), selftest 7 rows both polarities, mutation (rule b removed) turns the silent-move row RED. Owed beside it: `scripts/test_tier_ledger.sh` (the catch ledger from `git log`, with the SAME module convention as the helper) and the first committed `evidence/fleet/test-tier.tsv` from it.
 - [x] `scripts/fleet_utilization.sh` — the per-box packing table (runners, busy, aprender-busy, share vs 80/80/50, queued jobs with their label sets); selftest 6 rows; run it at the top of every iteration report
 - [ ] contract `contracts/ci-fleet-hygiene-v1.yaml` (kind: pattern) binding §2/§3 falsifiers; `pv validate`
 
@@ -136,3 +136,12 @@ themselves are ~12 s. Together with E1's touched-crate set this is the PR tier; 
 pre-publish. Caveats carried from the lane: tests in `[[bin]]` targets are not in the `--lib` junit (recorded as
 not-measured); 46 crates have zero touches and are excluded until a fix lands in them — a reviewer may add a module
 by hand with its row; root-module tests are matched by regex and deserve a per-test audit before the ratchet lands.
+
+### §6.2 Ratchet run on the real junit (2026-09-11 09:35Z)
+
+`bash scripts/check_test_tier.sh --junit <junit> --catch-ledger <ledger> --update` → **10,887 / 82,203 tests,
+1,002.9 s / 4,390.6 s = 22.84 %** of seconds. The lane's §6.1 figure was 3,920 tests / 16.8 %. The delta is the
+module convention: the helper keys a test by its own module path (everything before the last `::`), the lane's
+ledger keys touches by its "longest valid module" mapping, so some touches do not join and the 80 % line spreads
+over more modules. Both numbers are inside the 50 % budget; the ledger script (owed) removes the ambiguity by
+deriving touches with the helper's convention, and the committed table is written only from that run.
