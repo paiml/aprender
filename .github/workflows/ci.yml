@@ -351,6 +351,26 @@ jobs:
         run: |
           set -euo pipefail
           args=(--event "${GITHUB_EVENT_NAME}")
+          # PMAT-1098 67-E2: the queue and a push to main re-derive their own
+          # diff from HEAD's FIRST PARENT (HEAD^1..HEAD is the PR's diff on the
+          # new base). actions/checkout is shallow, so that parent is not in the
+          # object store until we deepen -- and without it ci_test_tier.sh falls
+          # closed to `full` every single time, which would make the whole
+          # optimisation inert while looking like it worked. Best effort by
+          # design: if the deepen fails the decision still falls closed, and the
+          # warning below says so instead of the run silently paying the hour.
+          case "${GITHUB_EVENT_NAME}" in
+            merge_group|push)
+              git fetch --no-tags --depth=2 origin "${GITHUB_SHA}" 2>/dev/null \
+                || git fetch --no-tags --deepen=1 origin 2>/dev/null \
+                || true
+              if git rev-parse -q --verify 'HEAD^1' >/dev/null 2>&1; then
+                printf 'first parent available: %s\n' "$(git rev-parse HEAD^1)"
+              else
+                printf '::warning::first parent unavailable after deepen -- the tier falls closed to full\n'
+              fi
+              ;;
+          esac
           case "${GITHUB_EVENT_NAME}" in
             pull_request)
               git fetch --no-tags --depth=1 origin "+refs/heads/${GITHUB_BASE_REF}:refs/remotes/origin/${GITHUB_BASE_REF}"
@@ -369,7 +389,7 @@ jobs:
               ;;
           esac
           bash scripts/ci_test_tier.sh "${args[@]}" | tee "$RUNNER_TEMP/tier.txt"
-          grep -E '^(tier|crates|targets|reason|cite)=' "$RUNNER_TEMP/tier.txt" >> "$GITHUB_OUTPUT"
+          grep -E '^(tier|crates|targets|check_workspace|reason|cite)=' "$RUNNER_TEMP/tier.txt" >> "$GITHUB_OUTPUT"
       - name: Workspace lib tests (25,300+)
         if: steps.tier.outputs.tier == 'full'
         # Excluded: aprender-compute (SIMD SIGSEGV at exit), aprender-gpu and aprender-cuda-edge
@@ -416,7 +436,7 @@ jobs:
             -v "${SCCACHE_HOST_DIR}:/sccache" \
             -w /workspace \
             -e CARGO_TARGET_DIR=/workspace/target \
-            -e RUSTC_WRAPPER=rustc-sccache \
+            -e RUSTC_WRAPPER=/usr/local/cargo/bin/sccache \
             -e SCCACHE_DIR=/sccache \
             -e SCCACHE_CACHE_SIZE=50G \
             -e CARGO_INCREMENTAL=0 \
@@ -440,7 +460,7 @@ jobs:
             -v "${SCCACHE_HOST_DIR}:/sccache" \
             -w /workspace \
             -e CARGO_TARGET_DIR=/workspace/target \
-            -e RUSTC_WRAPPER=rustc-sccache \
+            -e RUSTC_WRAPPER=/usr/local/cargo/bin/sccache \
             -e SCCACHE_DIR=/sccache \
             -e SCCACHE_CACHE_SIZE=50G \
             -e CARGO_INCREMENTAL=0 \
@@ -460,7 +480,7 @@ jobs:
             -v "${SCCACHE_HOST_DIR}:/sccache" \
             -w /workspace \
             -e CARGO_TARGET_DIR=/workspace/target \
-            -e RUSTC_WRAPPER=rustc-sccache \
+            -e RUSTC_WRAPPER=/usr/local/cargo/bin/sccache \
             -e SCCACHE_DIR=/sccache \
             -e SCCACHE_CACHE_SIZE=50G \
             -e CARGO_INCREMENTAL=0 \
@@ -514,7 +534,7 @@ jobs:
             -v "${SCCACHE_HOST_DIR}:/sccache" \
             -w /workspace \
             -e CARGO_TARGET_DIR=/workspace/target \
-            -e RUSTC_WRAPPER=rustc-sccache \
+            -e RUSTC_WRAPPER=/usr/local/cargo/bin/sccache \
             -e SCCACHE_DIR=/sccache \
             -e SCCACHE_CACHE_SIZE=50G \
             -e CARGO_INCREMENTAL=0 \
@@ -526,7 +546,12 @@ jobs:
       # tier. Empty selection (a scripts/docs PR) skips this step; part 2 still runs.
       - name: "Quick tier: lib + integration tests of the selected crates (BSE-17)"
         if: steps.tier.outputs.tier == 'quick' && steps.tier.outputs.crates != ''
-        timeout-minutes: 60
+        # 20, not 60 (PMAT-1098, #3084). A quick tier that is ALLOWED an hour is
+        # not a quick tier, and 60 is the number that let part 2 burn 55 minutes
+        # (run 34449608126) before dying at the cap under fleet load on #3063
+        # (#3070). The budget is the assertion: over 20 minutes, this tier has
+        # stopped being cheaper than the full one and should fail loudly.
+        timeout-minutes: 20
         env:
           CRATES: ${{ steps.tier.outputs.crates }}
         run: |
@@ -542,7 +567,7 @@ jobs:
             -v "${SCCACHE_HOST_DIR}:/sccache" \
             -w /workspace \
             -e CARGO_TARGET_DIR=/workspace/target \
-            -e RUSTC_WRAPPER=rustc-sccache \
+            -e RUSTC_WRAPPER=/usr/local/cargo/bin/sccache \
             -e SCCACHE_DIR=/sccache \
             -e SCCACHE_CACHE_SIZE=50G \
             -e CARGO_INCREMENTAL=0 \
@@ -554,30 +579,48 @@ jobs:
             bash -c "cargo nextest run --profile ci --lib --tests$pkgs"
       # BSE-17 quick tier, part 2: every test target that reads the tree, from
       # scripts/tree_reader_tests.txt (derived; the guard has already proved the
-      # registry equals the sources in this run). Grouped per crate: one cargo
-      # invocation per crate, --lib and/or its --test targets.
+      # registry equals the sources in this run).
+      #
+      # PMAT-1098 (#3084) — ONE BUILD GRAPH. This step used to expand `targets`
+      # into a `&&` chain of one `cargo nextest run -p CRATE ...` per crate: 26
+      # cargo invocations for 41 targets, so the shared dependency graph was
+      # resolved and linked 26 times and the 26 test runs went one after another.
+      # Measured 55 minutes on a PR that touched a single YAML file (run
+      # 34449608126) and killed at the 60-minute cap under fleet load on #3063
+      # (#3070). A quick tier that costs more than the full tier is not an
+      # optimisation, it is a second full tier with a smaller test set.
+      #
+      # The same registry tokens now become ONE nextest filterset
+      # (`scripts/ci_test_tier.sh --filterset`, whose token->clause translation is
+      # pinned in both polarities by that script's --self-test case table, an
+      # unrecognised token being ENV rather than a silently dropped target). The
+      # union is built once and every selected test runs in the single parallel
+      # pool.
+      #
+      # `--workspace --lib --tests` is the BUILD set: nextest can only select from
+      # binaries it built, and -E narrows the RUN to the registry. The three
+      # `--exclude` crates are held verbatim from the full tier's `--workspace
+      # --lib` line above and for the same reason stated there — under --workspace
+      # feature unification pulls the cuda driver in, and those crates have their
+      # own steps. None of them appears in the registry (check_tree_reader_tests.sh
+      # reads this exclude list out of this file and drops their targets), so the
+      # exclusion removes nothing the filterset asks for.
       - name: "Quick tier: every test target that reads the tree (BSE-17)"
         if: steps.tier.outputs.tier == 'quick'
-        timeout-minutes: 60
+        # 45, not 20. Measured 2026-09-11 under train load, this PR's own runs never fit 20: run 34542045481 on
+        # yoga-build2 compiled 811 crates in ~9 min (cold per-run target dir, warm shared sccache) and was part way
+        # through 65,266 tests at the cap; attempt 2 on intel-clean-room-15 timed out at 20 min too. The ~6 min
+        # figure was never reproduced in CI. 45 still sits well under the serial tier's 60; re-tighten when measured.
+        timeout-minutes: 45
         env:
           TARGETS: ${{ steps.tier.outputs.targets }}
         run: |
           set -euo pipefail
           read -ra targets <<< "$TARGETS"
           printf 'tree-reader targets: %s\n' "${#targets[@]}"
-          script=""
-          for crate in $(printf '%s\n' "${targets[@]}" | cut -d: -f1 | sort -u); do
-            flags=""
-            for t in "${targets[@]}"; do
-              case "$t" in
-                "$crate:--lib") flags="$flags --lib" ;;
-                "$crate:--test:"*) flags="$flags --test ${t#"$crate:--test:"}" ;;
-              esac
-            done
-            script="$script cargo nextest run --profile ci -p $crate$flags &&"
-          done
-          script="${script% &&}"
-          printf '%s\n' "$script" | tr '&' '\n' | grep -v '^$' | sed 's/^/  + /'
+          EXPR="$(bash scripts/ci_test_tier.sh --filterset "$TARGETS")"
+          printf 'nextest filterset (%s clause(s)):\n' "$(printf '%s' "$EXPR" | tr '|' '\n' | wc -l)"
+          printf '%s\n' "$EXPR" | tr '|' '\n' | sed 's/^ *//; s/ *$//; s/^/  + /'
           docker run --rm \
           -e CI -e GITHUB_ACTIONS -e GITHUB_REF -e GITHUB_SHA -e GITHUB_REPOSITORY -e GITHUB_RUN_ID -e GITHUB_EVENT_NAME -e GITHUB_WORKFLOW \
             -v "${GITHUB_WORKSPACE}:/workspace" \
@@ -586,7 +629,7 @@ jobs:
             -v "${SCCACHE_HOST_DIR}:/sccache" \
             -w /workspace \
             -e CARGO_TARGET_DIR=/workspace/target \
-            -e RUSTC_WRAPPER=rustc-sccache \
+            -e RUSTC_WRAPPER=/usr/local/cargo/bin/sccache \
             -e SCCACHE_DIR=/sccache \
             -e SCCACHE_CACHE_SIZE=50G \
             -e CARGO_INCREMENTAL=0 \
@@ -595,7 +638,48 @@ jobs:
             -e CARGO_PROFILE_DEV_DEBUG=line-tables-only \
             -e CARGO_TERM_COLOR=never \
             "$IMAGE" \
-            bash -c "set -e; $script"
+            cargo nextest run --profile ci --workspace --lib --tests --exclude aprender-gpu --exclude aprender-cuda-edge --exclude aprender-compute -E "$EXPR"
+      # BSE-17 quick tier, part 3 (PMAT-1098 67-E2, #3084 — rule (i)): the
+      # selection was OVER THE CAP (touched crates + their direct reverse
+      # dependents exceed gate_touched_crates.sh's CAP=3). That used to escalate
+      # the entire run to the full tier — roughly an hour — for the ordinary case
+      # of touching a widely-depended-on crate. The touched crates' own tests ran
+      # in part 1; this step buys what the cap was really protecting, the reverse
+      # dependents' INTEGRATION, at compile level over the WHOLE workspace in one
+      # cargo invocation: minutes, not an hour. It catches exactly the class the
+      # cap exists for — signature changes, trait-impl breakage, type errors in
+      # every dependent, benches and examples included (--all-targets). A
+      # behaviour regression inside an untouched dependent is not caught here; it
+      # is what the nightly full tier is for (decision D-1).
+      #
+      # --locked: a quick tier that silently rewrites Cargo.lock would be a
+      # different dependency graph from the one the PR is proposing.
+      - name: "Quick tier: cargo check --workspace (over-the-cap integration, BSE-17 rule (i))"
+        if: steps.tier.outputs.tier == 'quick' && steps.tier.outputs.check_workspace == '1'
+        timeout-minutes: 20
+        env:
+          REASON: ${{ steps.tier.outputs.reason }}
+        run: |
+          set -euo pipefail
+          printf 'over the cap: %s\n' "$REASON"
+          docker run --rm \
+          -e CI -e GITHUB_ACTIONS -e GITHUB_REF -e GITHUB_SHA -e GITHUB_REPOSITORY -e GITHUB_RUN_ID -e GITHUB_EVENT_NAME -e GITHUB_WORKFLOW \
+            -v "${GITHUB_WORKSPACE}:/workspace" \
+            -v "/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}:/usr/local/cargo/registry" \
+            -v "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}:/workspace/target" \
+            -v "${SCCACHE_HOST_DIR}:/sccache" \
+            -w /workspace \
+            -e CARGO_TARGET_DIR=/workspace/target \
+            -e RUSTC_WRAPPER=/usr/local/cargo/bin/sccache \
+            -e SCCACHE_DIR=/sccache \
+            -e SCCACHE_CACHE_SIZE=50G \
+            -e CARGO_INCREMENTAL=0 \
+            -e CARGO_BUILD_JOBS=8 \
+            -e CARGO_PROFILE_TEST_DEBUG=line-tables-only \
+            -e CARGO_PROFILE_DEV_DEBUG=line-tables-only \
+            -e CARGO_TERM_COLOR=never \
+            "$IMAGE" \
+            cargo check --workspace --all-targets --locked
       # BSE-17 reuse: the queue ref's tree is byte-identical to a PR head whose
       # workspace-test already succeeded; measuring it again is waste, not
       # evidence. The tier step proved both facts (trees compared by hash, the
@@ -1563,7 +1647,7 @@ jobs:
               -v "/home/noah/data/sccache:/sccache" \
               -w /workspace \
               -e CARGO_TARGET_DIR=/workspace/target \
-              -e RUSTC_WRAPPER=rustc-sccache \
+              -e RUSTC_WRAPPER=/usr/local/cargo/bin/sccache \
               -e SCCACHE_DIR=/sccache \
               -e SCCACHE_CACHE_SIZE=50G \
               -e CARGO_INCREMENTAL=0 \
