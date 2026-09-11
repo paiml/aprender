@@ -249,9 +249,7 @@ falsification_tests:
     The dispatcher hid both AVX2 defects for as long as every x86 CI box had AVX-512 VNNI
     (found 2026-09-10 when yoga, a Core Ultra 9 185H, joined the pool; reverting the fix gives
     -3650.1 against scalar -25161.5)
-# 007 and 008 are taken by crates/aprender-serve/src/quantize/contract_tests.rs
-# (FALSIFY-007 catch-all dispatch audit, FALSIFY-QDOT-008 cross-format garbage).
-- id: FALSIFY-QDOT-009
+- id: FALSIFY-QDOT-007
   rule: Every CPU Q5_K reader decodes ggml's block_q5_K, judged against gguf-py (llama.cpp's
     own reader) on a block llama.cpp quantized, never against another aprender reader
   prediction: realizar dequantize_q5_k and aprender-quant dequantize_q5_k_to_f32 reproduce all
