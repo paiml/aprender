@@ -16880,3 +16880,20 @@ roadmap:
   - 0.67.0
   - epic-3078
   notes: 'orch-basis:release — the 0.67.0 train (epic #3078) is a release-state ticket; orchestration phases (push, PR, tag, cascade) route=self'
+- id: PMAT-3121
+  github_issue: 3121
+  item_type: task
+  title: 'pre-release dogfood: every workspace example builds AND runs, apr-cookbook updated, release notes written — three rows on every tagged release (operator 2026-09-11)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-11T12:32:25Z
+  updated: 2026-09-11T12:32:25Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
