@@ -16899,3 +16899,22 @@ roadmap:
   - kind:code
   - 0.67.0
   notes: null
+- id: PMAT-1106
+  github_issue: null
+  item_type: task
+  title: 'coverage nightly RED 6 days: GPU-conditional tests panic without an adapter (compute backward.rs x9, cgp x2) — skip, never expect'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-11T09:00:10Z
+  updated: 2026-09-11T09:00:10Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - orch:fable
+  - ci
+  notes: null
