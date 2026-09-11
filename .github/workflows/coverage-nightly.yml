@@ -37,8 +37,12 @@ jobs:
   coverage:
     # intel-clean-room pool (15 runners, large RAM) — right fit for a heavy
     # full-workspace llvm-cov run. The `clean-room` label pins to that pool.
-    runs-on: [self-hosted, Linux, X64, clean-room]
-    timeout-minutes: 75
+    # LOW PRIORITY (operator 2026-09-11: "nightly we should have a low priority code
+    # coverage run with goal of eventually getting to 95% coverage"): the yoga pool only,
+    # so a 75-minute llvm-cov build never takes an intel PR slot; intel and gx10 keep
+    # the PR/merge-queue path. `yoga` is a runner label on yoga-build/build2/build3/eph.
+    runs-on: [self-hosted, Linux, X64, clean-room, yoga]
+    timeout-minutes: 150   # yoga has fewer cores than intel; the run was 60-70 min there
     env:
       IMAGE: localhost:5000/sovereign-ci:stable
       # PER-RUN PRIVATE TOOL ROOT (#2353). mac-server runs 16 runners under ONE
