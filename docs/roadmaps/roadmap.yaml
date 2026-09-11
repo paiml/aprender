@@ -16877,3 +16877,22 @@ roadmap:
   - kind:code
   - 0.67.0
   notes: null
+- id: PMAT-1104
+  github_issue: null
+  item_type: task
+  title: CUDA Q5_K GEMV reads the fifth bit from a sequential bitmask instead of ggml's qh[l] bit s (#3111)
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-09-11T04:56:39Z
+  updated: 2026-09-11T04:56:39Z
+  spec: null
+  acceptance_criteria:
+  - 'Q5KGemvKernel: qh byte val_idx/8, bit val_idx%8; ggml: byte val_idx%32, bit val_idx/32. Golden GPU test from the FALSIFY-QDOT-009 fixture; Q5KKernel (gemm) is unreachable from inference and tracked separately in #3111.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - 0.67.0
+  notes: null
