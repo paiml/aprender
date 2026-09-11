@@ -1,1 +1,394 @@
-{"width":3,"executor":"agy","lanes":[{"lane":1,"status":"SUCCESS","verdict":"PASS","summary":"The PR accurately unifies the corpus definition across all reporting tools, successfully failing and naming broken files (exit 1) instead of skipping them. `pv lint --diff` safely rejects empty directories (exit 2), sharing the `collect_yaml_files` probe rule. Tests are discriminating and sound, verifying the expected strict behavior. All automation passes against the uncorrupted `contracts/` directory. No blocking defects were found.","findings":[{"claim":"The corpus definition is fully unified. Running `pv lint contracts/` validate gate, `pv proof-status`, and `pv coverage` all report exactly 1767 contracts. Scratch tests show that a broken file is never skipped: an unparsable-only directory and a mixed directory both fail (exit 1) and name the broken file, never reporting an empty corpus (exit 2).","file":"crates/aprender-contracts/src/lint/gates.rs","grounding":"measured","line":67},{"claim":"The strictness change (failing on broken files) does not break existing CI or callers. Tests run successfully (`cargo test` passes), and automation exclusively targets `contracts/` or valid individual files, which `pv lint contracts/` confirms are all parseable (0 errors).","file":"scripts/check_apr_bin_pinned.sh","grounding":"measured","line":489},{"claim":"In diff mode, `pv lint --diff HEAD <ref>` on a directory with no contract file does not print \"Nothing to lint\" — it safely exits with code 2, properly guarded by `has_contract_files`. The probe logic correctly utilizes `collect_yaml_files`, the identical file-gathering rule as the lint engine.","file":"crates/aprender-contracts-cli/src/commands/lint.rs","grounding":"measured","line":227},{"claim":"The test suite is highly discriminating. The new tests verify strict exit 1 logic and the precise \"1 of 2 contract files\" formatting. If the walker silently skipped files, both assertions would fail. The 20s watch deadline is sound on CI because standard execution returns code 2 practically instantaneously on empty directories.","file":"crates/aprender-contracts-cli/tests/pvl_zero_contracts.rs","grounding":"measured","line":436},{"claim":"The contract `PMAT-1099.yaml` correctly cites existing tests matching current test counts (15 vs 19). The `broken_file_is_measured` equation formatting string explicitly asserts `\"of \" ++ |files(p)| ...` which aligns accurately with the format structure in `contract_walk.rs`.","file":"contracts/work/PMAT-1099.yaml","grounding":"cited","line":78},{"claim":"The `collect_from_real_contracts_dir` unit test asserts that the walker count equals `collect_yaml_files` count. Since the `contracts/` directory contains no broken files, it would pass even if the walker dropped unparseable files, missing a potential regression.","file":"crates/aprender-contracts-cli/src/contract_walk.rs","grounding":"cited","line":213}],"raw_bytes":6832,"err_bytes":0,"envelope_status":"SUCCESS"},{"lane":2,"status":"SUCCESS","verdict":"PASS","summary":"The PR successfully unifies the corpus definition and fixes the silent dropping of broken YAML files. Empty corpus handling is robust, exiting 2 across all subcommands (including diff and watch), and broken files are correctly measured and failed (exit 1).","findings":[{"claim":"Corpus definition is now ONE (`provable_contracts::lint::collect_yaml_files`): `pv lint`, `pv proof-status`, and `pv coverage` all report exactly 1767 contracts.","file":"crates/aprender-contracts-cli/src/contract_walk.rs","grounding":"measured","line":133},{"claim":"The `broken_only` and `mixed` test directories exit 1 and report the broken file for all commands; no path reports over an empty corpus.","file":"crates/aprender-contracts-cli/src/contract_walk.rs","grounding":"measured","line":78},{"claim":"`lint --diff HEAD` on an empty directory exits 2 instead of saying 'Nothing to lint', and its `has_contract_files` check matches the lint engine's `collect_yaml_files` rule.","file":"crates/aprender-contracts-cli/src/commands/lint.rs","grounding":"measured","line":243},{"claim":"The tests `unparsable_only_dir_is_measured_not_refused` and `mixed_dir_one_broken_file_fails_and_names_it` correctly assert exit 1 instead of exit 2 or 0, discriminating against silent skips.","file":"crates/aprender-contracts-cli/tests/pvl_zero_contracts.rs","grounding":"cited","line":436},{"claim":"The `pv_deadline` of 20 seconds is sound on a loaded CI box because a correct startup refusal happens in milliseconds, meaning 20 seconds avoids flakiness while still catching infinite loops.","file":"crates/aprender-contracts-cli/tests/pvl_zero_contracts.rs","grounding":"cited","line":323},{"claim":"The falsification tests exist and their names match the test suite; the `broken_file_is_measured` equation accurately maps to `ParseErrors::fmt` in code.","file":"contracts/work/PMAT-1099.yaml","grounding":"cited","line":111},{"claim":"The `collect_from_real_contracts_dir` unit test discriminates against filtering playbooks, but would miss if a new filter dropped other valid contracts in `collect_yaml_files` (as both counts would drop equally).","file":"crates/aprender-contracts-cli/src/contract_walk.rs","grounding":"cited","line":213}],"raw_bytes":5537,"err_bytes":0,"envelope_status":"SUCCESS"},{"lane":3,"status":"SUCCESS","verdict":"PASS","summary":"The PR successfully unifies the corpus definition across all CLI commands to `provable_contracts::lint::collect_yaml_files`, correctly handles parse errors via exit 1 without silently dropping files, and strictly refuses empty corpora (exit 2). All questions have been verified as correct.","findings":[{"claim":"The corpus definition is now ONE. `pv lint`, `proof-status`, and `coverage` all measure exactly 1767 contracts over `contracts/`. Empty directories are refused with exit 2, and broken files are parsed and exit 1 instead of being dropped.","file":"crates/aprender-contracts-cli/src/contract_walk.rs","grounding":"measured","line":114},{"claim":"No external caller (in scripts/, Makefile, CI) breaks due to the new strictness. Running tests and `pv lint` confirms no regressions.","file":"crates/aprender-contracts-cli/src/contract_walk.rs","grounding":"measured"},{"claim":"`pv lint --diff HEAD` refuses an empty corpus with exit 2 via `has_contract_files`. It only reports \"Nothing to lint\" on a valid corpus where no contracts changed.","file":"crates/aprender-contracts-cli/src/commands/lint.rs","grounding":"measured","line":236},{"claim":"The test `unparsable_only_dir_is_measured_not_refused` and its siblings are discriminating and fail without the fixes (verified on commit a9db6505f). The 20s watch deadline is sound on CI.","file":"crates/aprender-contracts-cli/tests/pvl_zero_contracts.rs","grounding":"measured","line":436},{"claim":"The contract v1.1.0 citations exist, recorded mutations match the test counts, and the `broken_file_is_measured` equation accurately reflects the exit code 1 behavior.","file":"contracts/work/PMAT-1099.yaml","grounding":"cited","line":78},{"claim":"The `collect_from_real_contracts_dir` unit test is tautological regarding the file rule since both sides now call `provable_contracts::lint::collect_yaml_files`, meaning it would miss an omission in that shared function. However, it still correctly discriminates against parse errors in the real tree.","file":"crates/aprender-contracts-cli/src/contract_walk.rs","grounding":"cited","line":236}],"raw_bytes":5338,"err_bytes":0,"envelope_status":"SUCCESS"}],"agreed":true,"dissent":[],"dedup":[{"file":"contracts/work/PMAT-1099.yaml","line":78,"lanes_agreeing":[1,3],"claims":["The contract `PMAT-1099.yaml` correctly cites existing tests matching current test counts (15 vs 19). The `broken_file_is_measured` equation formatting string explicitly asserts `\"of \" ++ |files(p)| ...` which aligns accurately with the format structure in `contract_walk.rs`.","The contract v1.1.0 citations exist, recorded mutations match the test counts, and the `broken_file_is_measured` equation accurately reflects the exit code 1 behavior."]},{"file":"contracts/work/PMAT-1099.yaml","line":111,"lanes_agreeing":[2],"claims":["The falsification tests exist and their names match the test suite; the `broken_file_is_measured` equation accurately maps to `ParseErrors::fmt` in code."]},{"file":"crates/aprender-contracts-cli/src/commands/lint.rs","line":227,"lanes_agreeing":[1],"claims":["In diff mode, `pv lint --diff HEAD <ref>` on a directory with no contract file does not print \"Nothing to lint\" — it safely exits with code 2, properly guarded by `has_contract_files`. The probe logic correctly utilizes `collect_yaml_files`, the identical file-gathering rule as the lint engine."]},{"file":"crates/aprender-contracts-cli/src/commands/lint.rs","line":236,"lanes_agreeing":[3],"claims":["`pv lint --diff HEAD` refuses an empty corpus with exit 2 via `has_contract_files`. It only reports \"Nothing to lint\" on a valid corpus where no contracts changed."]},{"file":"crates/aprender-contracts-cli/src/commands/lint.rs","line":243,"lanes_agreeing":[2],"claims":["`lint --diff HEAD` on an empty directory exits 2 instead of saying 'Nothing to lint', and its `has_contract_files` check matches the lint engine's `collect_yaml_files` rule."]},{"file":"crates/aprender-contracts-cli/src/contract_walk.rs","line":null,"lanes_agreeing":[3],"claims":["No external caller (in scripts/, Makefile, CI) breaks due to the new strictness. Running tests and `pv lint` confirms no regressions."]},{"file":"crates/aprender-contracts-cli/src/contract_walk.rs","line":78,"lanes_agreeing":[2],"claims":["The `broken_only` and `mixed` test directories exit 1 and report the broken file for all commands; no path reports over an empty corpus."]},{"file":"crates/aprender-contracts-cli/src/contract_walk.rs","line":114,"lanes_agreeing":[3],"claims":["The corpus definition is now ONE. `pv lint`, `proof-status`, and `coverage` all measure exactly 1767 contracts over `contracts/`. Empty directories are refused with exit 2, and broken files are parsed and exit 1 instead of being dropped."]},{"file":"crates/aprender-contracts-cli/src/contract_walk.rs","line":133,"lanes_agreeing":[2],"claims":["Corpus definition is now ONE (`provable_contracts::lint::collect_yaml_files`): `pv lint`, `pv proof-status`, and `pv coverage` all report exactly 1767 contracts."]},{"file":"crates/aprender-contracts-cli/src/contract_walk.rs","line":213,"lanes_agreeing":[1,2],"claims":["The `collect_from_real_contracts_dir` unit test asserts that the walker count equals `collect_yaml_files` count. Since the `contracts/` directory contains no broken files, it would pass even if the walker dropped unparseable files, missing a potential regression.","The `collect_from_real_contracts_dir` unit test discriminates against filtering playbooks, but would miss if a new filter dropped other valid contracts in `collect_yaml_files` (as both counts would drop equally)."]},{"file":"crates/aprender-contracts-cli/src/contract_walk.rs","line":236,"lanes_agreeing":[3],"claims":["The `collect_from_real_contracts_dir` unit test is tautological regarding the file rule since both sides now call `provable_contracts::lint::collect_yaml_files`, meaning it would miss an omission in that shared function. However, it still correctly discriminates against parse errors in the real tree."]},{"file":"crates/aprender-contracts-cli/tests/pvl_zero_contracts.rs","line":323,"lanes_agreeing":[2],"claims":["The `pv_deadline` of 20 seconds is sound on a loaded CI box because a correct startup refusal happens in milliseconds, meaning 20 seconds avoids flakiness while still catching infinite loops."]},{"file":"crates/aprender-contracts-cli/tests/pvl_zero_contracts.rs","line":436,"lanes_agreeing":[1,2,3],"claims":["The test `unparsable_only_dir_is_measured_not_refused` and its siblings are discriminating and fail without the fixes (verified on commit a9db6505f). The 20s watch deadline is sound on CI.","The test suite is highly discriminating. The new tests verify strict exit 1 logic and the precise \"1 of 2 contract files\" formatting. If the walker silently skipped files, both assertions would fail. The 20s watch deadline is sound on CI because standard execution returns code 2 practically instantaneously on empty directories.","The tests `unparsable_only_dir_is_measured_not_refused` and `mixed_dir_one_broken_file_fails_and_names_it` correctly assert exit 1 instead of exit 2 or 0, discriminating against silent skips."]},{"file":"crates/aprender-contracts/src/lint/gates.rs","line":67,"lanes_agreeing":[1],"claims":["The corpus definition is fully unified. Running `pv lint contracts/` validate gate, `pv proof-status`, and `pv coverage` all report exactly 1767 contracts. Scratch tests show that a broken file is never skipped: an unparsable-only directory and a mixed directory both fail (exit 1) and name the broken file, never reporting an empty corpus (exit 2)."]},{"file":"scripts/check_apr_bin_pinned.sh","line":489,"lanes_agreeing":[1],"claims":["The strictness change (failing on broken files) does not break existing CI or callers. Tests run successfully (`cargo test` passes), and automation exclusively targets `contracts/` or valid individual files, which `pv lint contracts/` confirms are all parseable (0 errors)."]}],"uncovered":[],"coverage_source":"lanes","partial":false,"partial_reasons":[],"extra":{}}
+{
+  "width": 3,
+  "executor": "agy",
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "I have completed the review of PR #3093 (commit d2b64d508) against spec EV-1 and the three defects previously found.\n\n1. **Findings (a), (b), (c) closed**:\n   - (a) `pv validate` zero-input guard: **Measured**. Ran `target/debug/pv validate /tmp/my_real_empty_dir_12345` and `target/debug/pv validate /nonexistent_path`. Both exited with 2 and correctly output precisely `decline: 0 contracts under <path>`.\n   - (b) `pv lint /nonexistent` cache leak: **Measured**. Ran `target/debug/pv lint /nonexistent_path`. Output was perfectly isolated to the `decline:` message without any cache creation warnings, and exit code was 2.\n   - (c) `assert_refused` weakness: **Cited**. Read `crates/aprender-contracts-cli/tests/pvl_zero_contracts.rs:77`. The macro now asserts `run.stderr.lines().count() == 1`, enforcing exactly one line of output.\n\n2. **Directory walk correctness**:\n   - **Measured**. Created a mixed directory `/tmp/mixed_contracts` with a valid contract and an unparsable YAML string. `pv validate` correctly utilized lint's rule, named both files sequentially, printed the parse error for the invalid one, and returned exit 1. Ran `pv validate contracts/work/PMAT-1099.yaml` directly; it passed seamlessly with 0 errors and exit 0.\n\n3. **`decline:` prefix breakage**:\n   - **Measured**. Ran `cargo test -p aprender-contracts-cli`. All 188 integration tests (`cli_integration`, `pv_surface_gate`, `ground_truth`, etc.) passed in 0.57s. The string change correctly avoided regressing any downstream expectations.\n\n4. **CI Workflow diff**:\n   - **OPEN FINDING (Asserted)**. Since the supplied environment is a detached worktree with a broken `.git` repository link (`fatal: not a git repository`), a strict `git diff origin/main...HEAD` command could not be run to measure the absence of other deltas. Upon inspection of `.github/workflows/ci.yml`, the wiring addition for `pvl_zero_contracts` and its multi-line comment exist exactly as claimed at lines 503-504 and 523, but because the diff could not be generated programmatically, this finding remains asserted.\n\n5. **Correctness, silent pass, `|| true`, or skipped tests**:\n   - **Cited**. `verify_pipeline.rs` tests (e.g. `verify_pipeline_empty_dir`) have been updated to call `.expect_err()` and actively assert the result against `ZeroContracts` rather than silently ignoring it. No skipped tests or scope creep were detected.\n\nAll measurable conditions have been met and verified against the binary exactly as requested. Verdict is PASS.",
+      "findings": [
+        {
+          "claim": "pv validate had no zero-input guard",
+          "file": "crates/aprender-contracts-cli/src/commands/validate.rs",
+          "grounding": "measured"
+        },
+        {
+          "claim": "pv lint /nonexistent leaked a .pv cache-creation warning AHEAD of the refusal",
+          "file": "crates/aprender-contracts-cli/src/commands/lint.rs",
+          "grounding": "measured"
+        },
+        {
+          "claim": "tests/pvl_zero_contracts.rs assert_refused used contains, so a leak could not fail a test",
+          "file": "crates/aprender-contracts-cli/tests/pvl_zero_contracts.rs",
+          "grounding": "cited",
+          "line": 77
+        },
+        {
+          "claim": "pv validate <dir with contracts> new directory walk is correct (lint's own file rule, sorted, every failure named, exit 1 on any failure, exit 0 otherwise) and pv validate contracts/work/PMAT-1099.yaml passes",
+          "file": "crates/aprender-contracts-cli/src/commands/validate.rs",
+          "grounding": "measured"
+        },
+        {
+          "claim": "decline: prefix does not break anything else in the crate (grep for 'error: 0 contracts' consumers; cli_integration/ground_truth/pv_surface_gate expectations)",
+          "file": "crates/aprender-contracts-cli/src/lib.rs",
+          "grounding": "measured"
+        },
+        {
+          "claim": ".github/workflows/ci.yml delta against origin/main is exactly the one-line pvl_zero_contracts wiring plus a comment",
+          "file": ".github/workflows/ci.yml",
+          "grounding": "asserted",
+          "line": 503
+        },
+        {
+          "claim": "verify_pipeline.rs unit tests no longer ignore run()'s Result",
+          "file": "crates/aprender-contracts-cli/src/commands/verify_pipeline.rs",
+          "grounding": "cited",
+          "line": 136
+        }
+      ],
+      "raw_bytes": 9096,
+      "err_bytes": 120,
+      "envelope_status": "SUCCESS"
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Completed review of PMAT-1099-pvl-1-zero-contracts. All three defects (a, b, c) are fixed: pv validate correctly returns exit 2 on empty dirs/nonexistent paths, pv lint refuses before leaking the cache warning, and assert_refused strictly asserts exactly one stderr line. The pv validate directory walk is implemented correctly, sorts files, and successfully passes on valid contracts. The decline prefix did not break cli_integration or ground_truth tests. Verified the ci.yml changes include the pvl_zero_contracts wiring and comment via grep (full git diff against origin/main was unmeasurable due to broken gitdir). verify_pipeline tests now properly check the Result. No scope creep or silent passes found.",
+      "findings": [
+        {
+          "claim": "(a) pv validate zero-input guard exits 2 instead of 1",
+          "file": "crates/aprender-contracts-cli/src/commands/validate.rs",
+          "fix": "Added ZeroContracts guard before directory check",
+          "grounding": "measured",
+          "line": 30
+        },
+        {
+          "claim": "(b) pv lint /nonexistent leaked cache-creation warning",
+          "file": "crates/aprender-contracts-cli/src/commands/lint.rs",
+          "fix": "Added refuse_missing_corpus check before processing",
+          "grounding": "measured",
+          "line": 46
+        },
+        {
+          "claim": "(c) assert_refused used contains instead of exact assert",
+          "file": "crates/aprender-contracts-cli/tests/pvl_zero_contracts.rs",
+          "fix": "assert_refused now checks exact stderr count (run.stderr.lines().count(), 1)",
+          "grounding": "cited",
+          "line": 78
+        },
+        {
+          "claim": "pv validate directory walk is correct",
+          "file": "crates/aprender-contracts-cli/src/commands/validate.rs",
+          "fix": "run_dir uses collect_yaml_files, sorts, loops, and aggregates failures",
+          "grounding": "measured",
+          "line": 44
+        },
+        {
+          "claim": "decline prefix does not break other crate features",
+          "file": "crates/aprender-contracts-cli/src/commands/lint.rs",
+          "fix": "grep -rn \"error: 0 contracts\" returned nothing and cli_integration tests passed",
+          "grounding": "measured",
+          "line": 0
+        },
+        {
+          "claim": "ci.yml delta contains wiring and comment",
+          "file": ".github/workflows/ci.yml",
+          "fix": "grep confirmed pvl_zero_contracts added with comment, but git diff against origin/main failed due to detached gitdir",
+          "grounding": "measured",
+          "line": 503
+        },
+        {
+          "claim": "verify_pipeline unit tests check Result",
+          "file": "crates/aprender-contracts-cli/src/commands/verify_pipeline.rs",
+          "fix": "Added .expect() and .expect_err() to test results",
+          "grounding": "cited",
+          "line": 299
+        }
+      ],
+      "raw_bytes": 5837,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS"
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "All five numbered questions have been verified with passing findings. Findings (a), (b), and (c) are verifiably closed with no cache-creation leak. The new `pv validate` directory walk correctly employs `collect_yaml_files`, sorting, and aggregated failure reporting, and `validate` continues to succeed on valid files. Changing `error:` to `decline:` on zero-contract conditions causes no regressions across the 178 passing cargo tests. The `ci.yml` diff against `origin/main` was checked using the clone at `/tmp/aprender/` and strictly consists of the `pvl_zero_contracts` wiring. No instances of `|| true`, `#[ignore]`, or ignored `Result` values in `verify_pipeline.rs` were observed. This commit strictly fixes the deficiencies raised by the previous quorum.",
+      "findings": [
+        {
+          "claim": "`pv validate` zero-input guard (nonexistent or empty dir) returns decline at exit 2",
+          "file": "crates/aprender-contracts-cli/src/commands/validate.rs",
+          "fix": "Verified via shell: `mkdir -p /tmp/empty_dir_pv && ./target/debug/pv validate /nonexistent_pv_dir 2>&1` -> `decline: 0 contracts under /nonexistent_pv_dir`, EXIT: 2. Similar result for `/tmp/empty_dir_pv`.",
+          "grounding": "measured",
+          "line": 29
+        },
+        {
+          "claim": "`pv lint /nonexistent` does not leak a `.pv` cache-creation warning ahead of the refusal",
+          "file": "crates/aprender-contracts-cli/src/commands/lint.rs",
+          "fix": "Verified via shell: `./target/debug/pv lint --diff main /nonexistent_pv_dir 2>&1` output exactly one line (`decline: 0 contracts under /nonexistent_pv_dir`) and exited 2. Cache creation warning is completely absent.",
+          "grounding": "measured",
+          "line": 535
+        },
+        {
+          "claim": "`assert_refused` correctly fails a test if more than one line is printed (preventing leaks)",
+          "file": "crates/aprender-contracts-cli/tests/pvl_zero_contracts.rs",
+          "fix": "`assert_eq!(run.stderr.lines().count(), 1, ...)` asserts exactly ONE stderr line is produced.",
+          "grounding": "cited",
+          "line": 78
+        },
+        {
+          "claim": "The directory walk for `pv validate` correctly uses lint's own file rule, is sorted, names every failure, exits 1 on failure, and exits 0 otherwise.",
+          "file": "crates/aprender-contracts-cli/src/commands/validate.rs",
+          "fix": "`run_dir` uses `provable_contracts::lint::collect_yaml_files` (lint's own rule), calls `files.sort()`, loops `run_file` over each file pushing to `failed`, and returns `Err` (exit 1) if `!failed.is_empty()`. Checked by reading lines 44-72.",
+          "grounding": "cited",
+          "line": 44
+        },
+        {
+          "claim": "`pv validate contracts/work/PMAT-1099.yaml` still passes",
+          "file": "crates/aprender-contracts-cli/src/commands/validate.rs",
+          "fix": "Verified via shell: `./target/debug/pv validate contracts/work/PMAT-1099.yaml` outputs `Contract is valid. EXIT: 0`",
+          "grounding": "measured",
+          "line": 75
+        },
+        {
+          "claim": "The `decline:` prefix does not break other crate logic (consumers expecting 'error: 0 contracts' etc.)",
+          "file": "crates/aprender-contracts-cli/src/lib.rs",
+          "fix": "Verified via shell: `cargo test -p aprender-contracts-cli` passed 178 tests with 0 failures, meaning no integration tests or consumers broke from the string change. `grep -rn \"error: 0 contracts\" crates/ tests/` was empty.",
+          "grounding": "measured",
+          "line": 1
+        },
+        {
+          "claim": "The .github/workflows/ci.yml delta against origin/main is exactly the one-line pvl_zero_contracts wiring plus a comment.",
+          "file": ".github/workflows/ci.yml",
+          "fix": "Verified via shell: `diff -u /tmp/aprender/.github/workflows/ci.yml .github/workflows/ci.yml` (comparing to the original repo clone in `/tmp/aprender`) shows exactly 2 changed lines: `pvl_zero_contracts` added to the comment string and the `cargo test -p aprender-contracts-cli --test pvl_zero_contracts` invocation.",
+          "grounding": "measured",
+          "line": 499
+        },
+        {
+          "claim": "No correctness defect, silent pass, `|| true`, skipped test, or scope creep. verify_pipeline.rs unit tests no longer ignore run()'s Result.",
+          "file": "crates/aprender-contracts-cli/src/commands/verify_pipeline.rs",
+          "fix": "Verified via shell: `grep -R \"|| true\" crates/ tests/` found no additions in the PR's files. `grep \"ignore\" crates/aprender-contracts-cli/tests/pvl_zero_contracts.rs` found no skipped tests. `verify_pipeline.rs` now properly consumes the Result via `.expect()` and `.expect_err()` (lines 144, 160) rather than ignoring it.",
+          "grounding": "cited",
+          "line": 144
+        }
+      ],
+      "raw_bytes": 9745,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS"
+    }
+  ],
+  "agreed": true,
+  "dissent": [],
+  "dedup": [
+    {
+      "file": ".github/workflows/ci.yml",
+      "line": 499,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "The .github/workflows/ci.yml delta against origin/main is exactly the one-line pvl_zero_contracts wiring plus a comment."
+      ]
+    },
+    {
+      "file": ".github/workflows/ci.yml",
+      "line": 503,
+      "lanes_agreeing": [
+        1,
+        2
+      ],
+      "claims": [
+        ".github/workflows/ci.yml delta against origin/main is exactly the one-line pvl_zero_contracts wiring plus a comment",
+        "ci.yml delta contains wiring and comment"
+      ]
+    },
+    {
+      "file": "crates/aprender-contracts-cli/src/commands/lint.rs",
+      "line": null,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "pv lint /nonexistent leaked a .pv cache-creation warning AHEAD of the refusal"
+      ]
+    },
+    {
+      "file": "crates/aprender-contracts-cli/src/commands/lint.rs",
+      "line": 0,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "decline prefix does not break other crate features"
+      ]
+    },
+    {
+      "file": "crates/aprender-contracts-cli/src/commands/lint.rs",
+      "line": 46,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "(b) pv lint /nonexistent leaked cache-creation warning"
+      ]
+    },
+    {
+      "file": "crates/aprender-contracts-cli/src/commands/lint.rs",
+      "line": 535,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "`pv lint /nonexistent` does not leak a `.pv` cache-creation warning ahead of the refusal"
+      ]
+    },
+    {
+      "file": "crates/aprender-contracts-cli/src/commands/validate.rs",
+      "line": null,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "pv validate <dir with contracts> new directory walk is correct (lint's own file rule, sorted, every failure named, exit 1 on any failure, exit 0 otherwise) and pv validate contracts/work/PMAT-1099.yaml passes",
+        "pv validate had no zero-input guard"
+      ]
+    },
+    {
+      "file": "crates/aprender-contracts-cli/src/commands/validate.rs",
+      "line": 29,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "`pv validate` zero-input guard (nonexistent or empty dir) returns decline at exit 2"
+      ]
+    },
+    {
+      "file": "crates/aprender-contracts-cli/src/commands/validate.rs",
+      "line": 30,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "(a) pv validate zero-input guard exits 2 instead of 1"
+      ]
+    },
+    {
+      "file": "crates/aprender-contracts-cli/src/commands/validate.rs",
+      "line": 44,
+      "lanes_agreeing": [
+        2,
+        3
+      ],
+      "claims": [
+        "The directory walk for `pv validate` correctly uses lint's own file rule, is sorted, names every failure, exits 1 on failure, and exits 0 otherwise.",
+        "pv validate directory walk is correct"
+      ]
+    },
+    {
+      "file": "crates/aprender-contracts-cli/src/commands/validate.rs",
+      "line": 75,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "`pv validate contracts/work/PMAT-1099.yaml` still passes"
+      ]
+    },
+    {
+      "file": "crates/aprender-contracts-cli/src/commands/verify_pipeline.rs",
+      "line": 136,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "verify_pipeline.rs unit tests no longer ignore run()'s Result"
+      ]
+    },
+    {
+      "file": "crates/aprender-contracts-cli/src/commands/verify_pipeline.rs",
+      "line": 144,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "No correctness defect, silent pass, `|| true`, skipped test, or scope creep. verify_pipeline.rs unit tests no longer ignore run()'s Result."
+      ]
+    },
+    {
+      "file": "crates/aprender-contracts-cli/src/commands/verify_pipeline.rs",
+      "line": 299,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "verify_pipeline unit tests check Result"
+      ]
+    },
+    {
+      "file": "crates/aprender-contracts-cli/src/lib.rs",
+      "line": null,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "decline: prefix does not break anything else in the crate (grep for 'error: 0 contracts' consumers; cli_integration/ground_truth/pv_surface_gate expectations)"
+      ]
+    },
+    {
+      "file": "crates/aprender-contracts-cli/src/lib.rs",
+      "line": 1,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "The `decline:` prefix does not break other crate logic (consumers expecting 'error: 0 contracts' etc.)"
+      ]
+    },
+    {
+      "file": "crates/aprender-contracts-cli/tests/pvl_zero_contracts.rs",
+      "line": 77,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "tests/pvl_zero_contracts.rs assert_refused used contains, so a leak could not fail a test"
+      ]
+    },
+    {
+      "file": "crates/aprender-contracts-cli/tests/pvl_zero_contracts.rs",
+      "line": 78,
+      "lanes_agreeing": [
+        2,
+        3
+      ],
+      "claims": [
+        "(c) assert_refused used contains instead of exact assert",
+        "`assert_refused` correctly fails a test if more than one line is printed (preventing leaks)"
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": true,
+  "partial_reasons": [
+    "lane 1: non-empty .err (120 bytes)"
+  ],
+  "extra": {
+    "ticket": "PMAT-1099",
+    "base": "origin/main",
+    "head": "d2b64d50897b2e0abc3f96535e61a53fa953cc08",
+    "diff_sha256": "f7e6e40d43b84f702a11a0e8883e62878a369eec51fdde2a14240794d499e7d5",
+    "phase": "ph4",
+    "prior_quorum": "77187ac51: 3/3 FAIL (validate unguarded; .pv leak; contains-assert)"
+  },
+  "ticket": "PMAT-1099",
+  "base": "origin/main",
+  "head": "d2b64d50897b2e0abc3f96535e61a53fa953cc08",
+  "diff_sha256": "f7e6e40d43b84f702a11a0e8883e62878a369eec51fdde2a14240794d499e7d5",
+  "session": "7b062f39",
+  "phase": "ph4",
+  "prior_quorum": "77187ac51: 3/3 FAIL (validate unguarded; .pv leak; contains-assert)"
+}
