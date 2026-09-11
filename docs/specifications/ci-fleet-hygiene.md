@@ -114,3 +114,23 @@ aprender-serve and apr-cli is concentrated in their falsifier modules.
 **Ratchet (owed, §4):** `scripts/check_test_tier.sh` regenerates the table from the latest junit + git log and
 refuses a PR that moves a crate across the line without a new row in this section; a tier whose PR-tier seconds
 exceed the FULL suite's 50 % is RED (D-1's 20-min budget is the wall-clock counterpart).
+
+### §6.1 Per-module granularity (2026-09-11 08:15Z, one agy research lane, re-run by the orchestrator)
+
+Same two inputs, aggregated at `crate::module` (junit `testcase` rows mapped to the longest valid module path; fix
+commits' `#[test]` hunks mapped to their module). Artifacts: `evidence/fleet/test-tier-2026-09-11/`
+(per-module.tsv, pr-tier-filterset.txt, README.md, simulate_filterset.py — the simulation was re-run in this tree:
+identical numbers).
+
+| line | modules | % of test seconds |
+|---|---|---|
+| 80 % of fix-linked catches | 222 | **0.28 %** |
+| 90 % | 268 | 0.91 % |
+| 95 % | 299 | 1.63 % |
+
+PR tier = modules above the 80 % line ∪ every test whose name contains `falsif` (the designed catches): **3,920 of
+82,203 tests (4.77 %) costing 737.7 s of 4,390.6 s (16.8 %)**. The falsifiers are ~670 s of that; the dense modules
+themselves are ~12 s. Together with E1's touched-crate set this is the PR tier; the FULL suite stays nightly and
+pre-publish. Caveats carried from the lane: tests in `[[bin]]` targets are not in the `--lib` junit (recorded as
+not-measured); 46 crates have zero touches and are excluded until a fix lands in them — a reviewer may add a module
+by hand with its row; root-module tests are matched by regex and deserve a per-test audit before the ratchet lands.
