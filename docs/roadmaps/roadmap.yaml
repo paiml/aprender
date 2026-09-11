@@ -16858,6 +16858,27 @@ roadmap:
   - release
   - 0.66.0
   notes: 'orch-basis:release — the 0.66.0 cut is a release-state ticket (AUTO-IMPL-SKILL-003 §2.1 basis=release); push, tag, gh release and the crates.io cascade are orchestration phases (route=self).'
+- id: PMAT-1097
+  github_issue: null
+  item_type: task
+  title: '06x release schedule spec: 0.67.0/0.68.0/0.69.0/0.70.0 at a 2-3 day 24/7 cadence, one GitHub epic per release, priorities A-G (four binaries per tag, NVIDIA CUDA Rust default, gx10 never idle, yoga CUDA tests, 20-minute PR gate, Qwen2.5-Coder-7B parity, declarative fine-tune) + release-schedule contract + docs drift gate'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-09-10T09:12:19Z
+  updated: 2026-09-10T09:12:19Z
+  spec: docs/specifications/06x-release-schedule.md
+  acceptance_criteria:
+  - 'orch-basis:release — a release-schedule spec is a release-state ticket (AUTO-IMPL-SKILL-003 §2.1 basis=release). Operator 2026-09-10 verbatim: ''override "kind:docs" block if needed'' — kind:code because the ticket ships contracts/release-schedule-06x-v1.yaml (pv-validated) and extends FALSIFY-DOCS-CLAUDE-001 to the spec (mutation-verified), alongside the spec and four epics.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - orch:fable
+  - release
+  - 06x-schedule
+  notes: 'orch-basis:release — a release-schedule spec is a release-state ticket (AUTO-IMPL-SKILL-003 §2.1 basis=release); the spec, its contract, the drift-gate extension and the four epics are one PR; epic creation, push and PR are orchestration phases (route=self).'
 - id: PMAT-1098
   github_issue: null
   item_type: task
