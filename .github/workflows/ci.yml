@@ -854,6 +854,19 @@ jobs:
       # the job whose own dispatcher it verifies.
       - name: "guard_tree.sh's own case table (BSE-01, wired BSE-02)"
         run: bash scripts/tests/guard_tree_test.sh
+      # Fleet hygiene case tables (docs/specifications/ci-fleet-hygiene.md §6): the queue
+      # steward, the packing/history ledgers, the tier ledger and the roadmap resolve-dirty
+      # runner each ship a hermetic --selftest; check_guards_are_wired.sh refuses a script
+      # that carries one and is named by no workflow. Each runs in under five seconds.
+      - name: Fleet hygiene case tables (steward, history, utilization, tier ledger, resolve-dirty)
+        run: |
+          set -euo pipefail
+          bash scripts/ci_queue_steward.sh --selftest
+          bash scripts/fleet_history.sh --selftest
+          bash scripts/fleet_utilization.sh --selftest
+          bash scripts/test_tier_ledger.sh --selftest
+          bash scripts/ci_resolve_dirty.sh --selftest
+          python3 scripts/lib/roadmap_merge.py --selftest
       - name: "target-watch: before-cargo-install-bashrs"
         # aprender#2822 boundary probe (2 stat, 1 readdir, 1 df, 1 pgrep).
         # Instrumentation, never a gate: the script always exits 0.
@@ -2244,9 +2257,34 @@ jobs:
       # 134/134 killed. It is a SEPARATE script from mutate-guard.sh rather than an
       # extension of it, because merging a 15-minute sweep into a 51-minute one buys
       # nothing and serialises them.
+      # Pareto (PMAT-1105 §6): this sweep is ~2 h of the receipt job on EVERY PR and sits in
+      # the merge queue's ALLGREEN set, so it was the critical path of every merge. Its
+      # inputs are five paths; a diff that touches none of them cannot change the score,
+      # which is main's. FAIL-CLOSED exactly like the §3.D trigger above: no merge-base,
+      # a crashed diff, or anything but a well-formed "no" runs the sweep.
+      - name: "Does this diff change anything the arm sweep reads? (S13.10 trigger)"
+        id: arm_needed
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=$(git merge-base origin/main "${PR_HEAD_SHA}" 2>/dev/null) || BASE=""
+          if [ -z "$BASE" ]; then echo "needed=yes" >> "$GITHUB_OUTPUT"; echo "::notice::merge-base unavailable; running the arm sweep (fail-closed)"; exit 0; fi
+          set +e
+          CHANGED=$(git diff --name-only "$BASE" "${PR_HEAD_SHA}" -- scripts/pr_review_quorum_arm.sh scripts/check_pr_review_receipt.sh scripts/mutate_quorum_arm.sh tests/pr-review-quorum.bats tests/fixtures/pr-review/)
+          rc=$?
+          set -e
+          if [ "$rc" -ne 0 ]; then echo "needed=yes" >> "$GITHUB_OUTPUT"; echo "::notice::git diff failed (rc=$rc); running the arm sweep (fail-closed)"; exit 0; fi
+          if [ -n "$CHANGED" ]; then printf 'arm inputs changed:\n%s\n' "$CHANGED"; echo "needed=yes" >> "$GITHUB_OUTPUT"; else echo "no arm input changed between $BASE and ${PR_HEAD_SHA}"; echo "needed=no" >> "$GITHUB_OUTPUT"; fi
       - name: "The arm script's 134-mutant set must kill 100% (S13.10, fixed at one)"
+        if: steps.arm_needed.outputs.needed == 'yes'
         shell: bash
         run: bash scripts/mutate_quorum_arm.sh
+      - name: "Arm sweep not triggered — record why (S13.10)"
+        if: steps.arm_needed.outputs.needed != 'yes'
+        shell: bash
+        run: |
+          echo "quorum_arm_mutation_score: NOT-TRIGGERED — none of scripts/pr_review_quorum_arm.sh, scripts/check_pr_review_receipt.sh, scripts/mutate_quorum_arm.sh, tests/pr-review-quorum.bats, tests/fixtures/pr-review/ changed in this diff."
+          echo "The score is unchanged from main's (S13.10); the sweep still runs on every push to main."
 
   # ---------------------------------------------------------------------------
   # PR-REVIEW-SKILL-002 v2 §13.11 RUNG 1 — the shadow lane.
