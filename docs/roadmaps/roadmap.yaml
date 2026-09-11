@@ -16877,3 +16877,20 @@ roadmap:
   - orch:fable
   - ci
   notes: null
+- id: PMAT-3118
+  github_issue: 3118
+  item_type: task
+  title: 'roadmap.yaml 3-way merge by ticket id: merge driver + steward resolve-dirty so a queue squash never makes stacked PRs DIRTY'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-11T11:34:41Z
+  updated: 2026-09-11T11:34:41Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
