@@ -1,0 +1,1 @@
+(package(crateA) & kind(lib)) | (package(crateB) & kind(lib) & test(/^deep::leaf::/)) | (package(crateB) & kind(lib) & test(/^inc::/)) | binary_id(crateC::it) | binary_id(crateC::other) | (package(crateD) & kind(bin)) | (package(crateE) & kind(lib))
