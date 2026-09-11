@@ -12,9 +12,11 @@
 # (ubuntu|macos|windows)-(latest|<version>[-arm]); `ubuntu:22.04` (a docker image, colon)
 # is not one.
 #
-# THE BASELINE IS A RATCHET. scripts/hosted_runner_baseline.txt names `file:job` entries
-# still allowed to run hosted while their migration is in flight. A hit outside it is RED,
-# and so is an entry that no longer matches any hit (stale), so the list can only shrink.
+# THE BASELINE IS A RATCHET, AND IT IS ABSENT. scripts/hosted_runner_baseline.txt, when present,
+# names `file:job` entries still allowed to run hosted while a migration is in flight; a hit
+# outside it is RED, and so is an entry that no longer matches any hit (stale). Absent means no
+# exemption at all, which is the state since every workflow moved to the fleet (#3073). A file
+# added later must also be classified in check_baseline_ratchets.sh, or that guard is RED.
 #
 #   bash scripts/check_no_hosted_runners.sh               # scan .github/workflows
 #   bash scripts/check_no_hosted_runners.sh --self-test   # the case table (both polarities)
