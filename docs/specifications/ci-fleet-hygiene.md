@@ -67,3 +67,22 @@ Each tick produces a directory `sample-<epoch>/` containing `s1.json`, `s2.json`
 - `s3.json`: A combined JSON object of `runners` and queued `jobs`.
 The steward writes a summary to `receipts.jsonl`.
 Under `--selftest`, fixtures follow the exact same format inside `tests/fixtures/ci_queue_steward/<case_name>/<epoch>/`. The selftest harnesses this by copying these files into a temporary state directory, tricking the steward into reading them as historical data.
+
+## §5 Measured baseline for the build-time objective (2026-09-11 07:48Z, `scripts/fleet_history.sh --limit 60`)
+
+Objective (operator, verbatim): "shortest total duration of build time for each tagged released until Pareto Optimal
+by measured history of logs we capture and report". Variables: (A) the PR-tier test set, (B) placement across
+intel / gx10 / yoga. `evidence/fleet/history.jsonl` is the ledger (one row per completed run, idempotent append).
+
+| measure (p50 over the last 60 completed runs, orphaned/cancelled included) | value |
+|---|---|
+| run wall, `pull_request` | 1912 s |
+| run wall, `merge_group` | 754 s |
+| `workspace-test` duration on intel / on yoga | 3295 s / 1869 s — yoga is 1.76× faster for the same job on the shared intel box |
+| job queue wait: intel / yoga / gx10 | 350 s / 171 s / 107 s |
+| jobs placed: intel / yoga / gx10 / hosted | 128 / 66 / 13 / 22 (the 22 hosted are the book workflows, #3073) |
+
+Reading: intel is both the slowest box for workspace-test and the one jobs wait longest for, because it is
+shared across paiml repos; every X64 job moved to yoga saves ~24 min of test time and ~3 min of wait. gx10 takes
+only arch-neutral jobs until #3104 lands. Next samples go beside this table; a change to (A) or (B) is judged by
+the delta in these rows, never by intent.
