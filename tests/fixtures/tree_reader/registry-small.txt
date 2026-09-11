@@ -1,0 +1,11 @@
+# A hand-written tree-reader registry, ONE of each column shape, for
+# scripts/ci_test_tier.sh --self-test (PMAT-3120). Not derived from any tree:
+# the point is the MAPPING to `targets=` and to `filterset=`.
+crateA	--lib	<root>
+crateB	--lib	deep::leaf
+crateB	--lib	inc
+crateC	--test	it
+crateC	--test	other
+crateD	--bins
+crateE	--lib
+crateE	--lib	commands::x

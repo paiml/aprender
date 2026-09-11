@@ -53,8 +53,44 @@ while [ $# -gt 0 ]; do
     esac
 done
 
-targets_from_registry() { # -> space list crate:--lib | crate:--test:name
-    grep -v '^#' "$1" | grep -v '^[[:space:]]*$' | awk -F"\t" '{ if ($2=="--test") printf "%s:--test:%s ", $1, $3; else printf "%s:%s ", $1, $2 }' | sed 's/ $//'
+# The registry (scripts/tree_reader_tests.txt) carries THREE column shapes:
+#   crate  --lib  module::path   a lib module (PMAT-3120; `<root>` = the crate root)
+#   crate  --lib                 the WHOLE lib (the module was unresolvable)
+#   crate  --test  name          an integration binary
+#   crate  --bins                a bin-only crate
+# Two outputs, on purpose:
+#   targets=   crate:--lib | crate:--bins | crate:--test:name — the CONTRACT with
+#              ci.yml's "Quick tier" step, which reads it into a bash array and
+#              builds one `cargo nextest run -p CRATE …` per crate. Module rows
+#              COLLAPSE to `crate:--lib` here: this key must keep meaning exactly
+#              what it meant before, or the switch becomes a silent scope change.
+#   filterset= ONE nextest filterset that honours the module granularity. This is
+#              the key CI should switch to (spec §6.5); until it does, `targets=`
+#              still runs the whole lib and the 88 % bill stands.
+targets_from_registry() { # -> space list crate:--lib | crate:--bins | crate:--test:name
+    grep -v '^#' "$1" | grep -v '^[[:space:]]*$' | awk -F"\t" '
+        { t = ($2 == "--test") ? $1 ":--test:" $3 : $1 ":" $2
+          if (!(t in seen)) { seen[t] = 1; printf "%s%s", (n++ ? " " : ""), t } }'
+}
+
+filterset_from_registry() { # -> ONE nextest filterset over every registry row
+    grep -v '^#' "$1" | grep -v '^[[:space:]]*$' | LC_ALL=C sort -u | awk -F"\t" '
+        { c = $1; k = $2; m = $3
+          if (!(c in seen)) { seen[c] = 1; order[++n] = c }
+          if (k == "--lib") { lib[c] = 1
+              if (m == "" || m == "<root>") whole[c] = 1
+              else mods[c] = mods[c] (mods[c] == "" ? "" : "|") m }
+          else if (k == "--bins") bins[c] = 1
+          else if (k == "--test") tst[c] = tst[c] (tst[c] == "" ? "" : " | ") "binary(=" m ")" }
+        END { out = ""
+              for (i = 1; i <= n; i++) { c = order[i]
+                  if (c in lib) out = out (out == "" ? "" : " | ") \
+                      ((c in whole) ? "(package(=" c ") & kind(lib))" \
+                                    : "(package(=" c ") & kind(lib) & test(/^(" mods[c] ")::/))")
+                  if (c in bins) out = out (out == "" ? "" : " | ") "(package(=" c ") & kind(bin))"
+                  if (c in tst) { t = tst[c]; if (index(t, "|")) t = "(" t ")"
+                      out = out (out == "" ? "" : " | ") "(package(=" c ") & " t ")" } }
+              print out }'
 }
 
 decide() {
@@ -77,7 +113,8 @@ decide() {
             crates=$(printf '%s' "$sel" | sed -n 's/^selection=[a-z]* crates=\(.*\) rule=.*$/\1/p'); rule=${sel#*rule=}
             case "$sel" in
                 selection=full*) printf 'tier=full\nreason=pull_request: %s\n' "$rule" ;;
-                selection=quick*|selection=none*) printf 'tier=quick\ncrates=%s\ntargets=%s\nreason=pull_request: %s; plus %s tree-reader target(s) from %s\n' "$crates" "$(targets_from_registry "$ROOT/$REGISTRY")" "$rule" "$(grep -vc '^#' "$ROOT/$REGISTRY")" "$REGISTRY" ;;
+                selection=quick*|selection=none*) printf 'tier=quick\ncrates=%s\ntargets=%s\nfilterset=%s\nreason=pull_request: %s; plus %s tree-reader target(s) from %s\n' \
+                    "$crates" "$(targets_from_registry "$ROOT/$REGISTRY")" "$(filterset_from_registry "$ROOT/$REGISTRY")" "$rule" "$(grep -vc '^#' "$ROOT/$REGISTRY")" "$REGISTRY" ;;
                 *) printf 'ENV: gate_touched_crates --print-selection gave "%s"\n' "$sel" >&2; return 2 ;;
             esac ;;
         *) printf 'ENV: unknown event "%s" — refusing to guess a tier\n' "$EVENT" >&2; return 2 ;;
@@ -91,23 +128,28 @@ tier_of_record() { # -> filterset= + tier_of_record_* KEY=VALUE lines; 1 on an u
     printf '%s\n' "$out"
 }
 
-union_touched() { # tier of record OR the touched crates; 1 on an unusable table, 2 on ENV
-    local tor dec crates expr pkgs
+union_touched() { # tier of record OR the touched crates OR the tree-readers; 1 on an unusable table, 2 on ENV
+    local tor dec crates expr pkgs trfs
     tor=$(tier_of_record) || return 1
     dec=$(decide) || return $?
-    printf '%s\n' "$dec"
+    # The quick tier's own `filterset=` (the tree-reader MODULES) is folded into
+    # the union expression below — exactly one `filterset=` line is printed, or a
+    # consumer would have to guess which of two it owed.
+    printf '%s\n' "$dec" | grep -v '^filterset='
     if printf '%s\n' "$dec" | grep -qx 'tier=full'; then
         printf 'union_touched_crates=\n'
         printf '%s\n' "$tor" | grep -v '^filterset='
         return 0
     fi
     crates=$(printf '%s\n' "$dec" | sed -n 's/^crates=//p')
+    trfs=$(printf '%s\n' "$dec" | sed -n 's/^filterset=//p')
     expr=$(printf '%s\n' "$tor" | sed -n 's/^filterset=//p')
     pkgs=$(printf '%s' "$crates" | awk '{ for (i = 1; i <= NF; i++) printf "%spackage(=%s)", (i > 1 ? " | " : ""), $i }')
     case "$crates" in
-        "") printf 'filterset=%s\n' "$expr" ;;
-        *)  printf 'filterset=%s | (%s)\n' "$expr" "$pkgs" ;;
+        "") printf 'filterset=%s' "$expr" ;;
+        *)  printf 'filterset=%s | (%s)' "$expr" "$pkgs" ;;
     esac
+    if [ -n "$trfs" ]; then printf ' | %s\n' "$trfs"; else printf '\n'; fi
     printf 'union_touched_crates=%s\n' "$crates"
     printf '%s\n' "$tor" | grep -v '^filterset='
 }
@@ -146,7 +188,11 @@ self_test() {
     row 0 "merge_group, different tree -> full (main moved under the PR)" 'differs from PR head tree' bash "$T" --event merge_group --repo-root "$td/repo" --pr-head "$diff1" --pr-head-conclusion success
     row 0 "merge_group without a PR head -> full" 'without a PR head' bash "$T" --event merge_group --repo-root "$td/repo"
     # MUTANT: a copy that drops the tree-reader targets from the quick tier must lose readme_contract — the falsifier discriminates
-    sed 's/targets=%s\\n/targets=\\n/; s/"\$(targets_from_registry "\$ROOT\/\$REGISTRY")" //' "$T" > "$td/mutant.sh"
+    # Both accessors are neutered, not just `targets=`: since PMAT-3120 the quick
+    # tier also emits `filterset=`, and a mutant that dropped only `targets=` was
+    # still shipping readme_contract through the filterset — the row passed while
+    # measuring nothing.
+    sed 's/targets_from_registry "$ROOT\/$REGISTRY"/true/; s/filterset_from_registry "$ROOT\/$REGISTRY"/true/' "$T" > "$td/mutant.sh"
     row 0 "mutant without tree-reader targets loses readme_contract (proves the inclusion is load-bearing)" 'MUTANT-LOST' bash -c "if bash '$td/mutant.sh' --event pull_request --diff-from '$td/d-scripts.txt' | grep -q readme_contract; then echo MUTANT-KEPT; else echo MUTANT-LOST; fi"
     # --- PMAT-3119: the tier of record as a filterset. Hermetic: committed fixture + temp copies, no cargo.
     local FX GOLD tor_expr realn
@@ -202,6 +248,41 @@ self_test() {
     row 0 "--union-touched, leaf crate touched -> the tier of record OR that crate's package() atom" '^ALL-PRESENT$' contains_all "$td/u-leaf.out" "filterset=$tor_expr | (package(=$leaf)" "union_touched_crates=$leaf"
     bash "$T" --tier-of-record --tsv "$FX" --union-touched --event pull_request --diff-from "$td/d-root.txt" > "$td/u-root.out" 2>&1 || true
     row 0 "--union-touched when the quick tier falls closed -> tier=full and NO filterset (fail open to more tests)" '^FULL-NO-FILTERSET$' full_ok "$td/u-root.out"
+    # --- PMAT-3120: the tree-reader registry's 3-column lib rows. Hermetic: a
+    # committed hand-written registry (one of each column shape) + two goldens.
+    local RFX
+    RFX="tests/fixtures/tree_reader/registry-small.txt"
+    bash "$T" --event pull_request --diff-from "$td/d-scripts.txt" --registry "$RFX" > "$td/r3.out" 2>&1 || true
+    grep '^filterset=' "$td/r3.out" > "$td/r3-fs.txt" || true
+    grep '^targets=' "$td/r3.out" > "$td/r3-tg.txt" || true
+    row 0 "3-column registry -> the committed GOLDEN filterset: <root> and an unresolvable whole-crate row map to package() & kind(lib), a nested module to test(/^M::/), grouped per package" \
+        '^$' diff "tests/fixtures/tree_reader/registry-small.filterset.txt" "$td/r3-fs.txt"
+    row 0 "  ...and targets= is UNCHANGED in shape (module rows collapse to crate:--lib, deduped) — the ci.yml contract" \
+        '^$' diff "tests/fixtures/tree_reader/registry-small.targets.txt" "$td/r3-tg.txt"
+    row 0 "  ...a --test row maps to binary(=name), grouped: (package(=crateC) & (binary(=it) | binary(=other)))" \
+        'package\(=crateC\) & \(binary\(=it\) \| binary\(=other\)\)' cat "$td/r3-fs.txt"
+    row 0 "  ...a --bins row maps to kind(bin), never kind(lib)" 'package\(=crateD\) & kind\(bin\)' cat "$td/r3-fs.txt"
+    row 0 "  ...crateE carries BOTH a whole-lib row and a module row: the whole lib WINS (never a narrower atom than the registry asks for)" \
+        'package\(=crateE\) & kind\(lib\)\)$' cat "$td/r3-fs.txt"
+    row 0 "  ...and crateE's module atom is NOT emitted alongside it" '^ABSENT$' lacks "$td/r3-fs.txt" "commands::x"
+    # MUTATION: collapse every lib row to the whole crate (the pre-PMAT-3120 shape)
+    # -> the filterset loses the module atom. This row proves the 3rd column is load-bearing.
+    awk -F"\t" -v OFS="\t" '/^#/ { print; next } $2 == "--lib" { print $1, $2; next } { print }' "$RFX" | LC_ALL=C sort -u > "$td/flat-reg.txt"
+    bash "$T" --event pull_request --diff-from "$td/d-scripts.txt" --registry "$td/flat-reg.txt" > "$td/r2.out" 2>&1 || true
+    grep '^filterset=' "$td/r2.out" > "$td/r2-fs.txt" || true
+    row 1 "MUTATION: the module column dropped from every lib row -> the filterset DIFFERS from the golden" '^[<>]' \
+        diff "tests/fixtures/tree_reader/registry-small.filterset.txt" "$td/r2-fs.txt"
+    row 0 "  ...crateB becomes the WHOLE lib (the 88 %-of-seconds shape this ticket removes)" '^ABSENT$' lacks "$td/r2-fs.txt" "deep::leaf"
+    # the REAL registry: one filterset, and every module atom anchored at ^
+    bash "$T" --event pull_request --diff-from "$td/d-scripts.txt" > "$td/real.out" 2>&1 || true
+    row 0 "the real registry -> exactly ONE filterset= line" '^1$' bash -c "grep -c '^filterset=' '$td/real.out'"
+    row 0 "  ...naming the module that holds the reader, not the crate (aprender-contracts lint::strict_test_binding)" \
+        'test\(/\^\(.*strict_test_binding' cat "$td/real.out"
+    row 0 "  ...and targets= still carries the whole-lib contract for ci.yml (aprender-contracts:--lib)" \
+        '^targets=.*aprender-contracts:--lib' cat "$td/real.out"
+    bash "$T" --tier-of-record --union-touched --event pull_request --diff-from "$td/d-leaf.txt" > "$td/u3.out" 2>&1 || true
+    row 0 "--union-touched folds the tree-reader modules into the ONE union filterset (never two filterset= lines)" '^1$' \
+        bash -c "grep -c '^filterset=' '$td/u3.out'"
     printf '\n%s checks, %s failed\n' "$n" "$red"; [ "$red" -eq 0 ]
 }
 
