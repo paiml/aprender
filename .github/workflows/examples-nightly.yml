@@ -1,0 +1,54 @@
+# examples-nightly.yml — every workspace example BUILDS AND RUNS, nightly, low priority (PMAT-3121, #3121).
+#
+# Operator 2026-09-11: "ensure you update apr-cookbook and release notes and cargo run
+# --examples as part of pre-release to each tagged release -- dogfood skill". CI compiled
+# 981 examples and ran none; this workflow runs them on the yoga pool (never the PR path,
+# never the merge queue) and publishes evidence/dogfood/<version>/examples.tsv as an
+# artifact. The pre-release gate G3.EX (.claude/skills/apr-dogfood/SKILL.md) reads the
+# same script on the release candidate.
+name: examples-nightly
+
+on:
+  schedule:
+    - cron: '30 3 * * *'   # 03:30 UTC, after the coverage nightly's usual window
+  workflow_dispatch:
+    inputs:
+      filter:
+        description: 'regex over "<package>/<example>" (empty = every example)'
+        required: false
+        default: ''
+
+concurrency:
+  group: examples-nightly
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  examples:
+    # yoga only: low-priority work that must never take an intel or gx10 PR slot
+    runs-on: [self-hosted, Linux, X64, clean-room, yoga]
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: dogfood_examples.sh case table (hermetic, scratch workspace)
+        run: bash scripts/dogfood_examples.sh --selftest
+
+      - name: Every example builds and runs (pass / fail / timeout / needs-args / needs-hardware)
+        env:
+          FILTER: ${{ github.event.inputs.filter }}
+        run: |
+          set -euo pipefail
+          args=(--timeout-secs 180)
+          if [ -n "${FILTER:-}" ]; then args+=(--filter "$FILTER"); fi
+          bash scripts/dogfood_examples.sh "${args[@]}"
+
+      - name: Publish the examples ledger
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: examples-ledger
+          path: evidence/dogfood/*/examples.tsv
+          if-no-files-found: error

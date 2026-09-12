@@ -168,8 +168,11 @@ impl Kernel for Q5KGemvKernel {
                     // Load high bit from qh (offset 16: d=2 + dmin=2 + scales=12)
                     let qh_offset = ctx.mov_u64_imm(16);
                     let qh_base = ctx.add_u64(sb_addr, qh_offset);
-                    let qh_byte_idx = ctx.div_u32(val_idx, 8);
-                    let qh_bit_idx = ctx.rem_u32(val_idx, 8);
+                    // ggml block_q5_K: the fifth bit of value l in sub-block s is bit s of
+                    // qh[l], i.e. byte val_idx % 32, bit val_idx / 32 (#3111). It was read
+                    // as a sequential bitmask, byte val_idx / 8, bit val_idx % 8.
+                    let qh_byte_idx = ctx.rem_u32(val_idx, 32);
+                    let qh_bit_idx = ctx.div_u32(val_idx, 32);
                     let qh_byte_idx_64 = ctx.cvt_u64_u32(qh_byte_idx);
                     let qh_addr = ctx.add_u64(qh_base, qh_byte_idx_64);
                     let qh_byte = ctx.ld_global_u8(qh_addr);

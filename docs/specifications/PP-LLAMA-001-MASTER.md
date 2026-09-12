@@ -245,6 +245,16 @@ At merge: receipt schema; every `ARMED` L1 rule, statically; `scripts/spec_confo
 
 Plus: every cell in the matrix `MEASURED`, `UNMEASURED{owner, expires}` unexpired, or `NA{decided_by}`.
 
+**Pre-tag checklist (dogfood Tier 3, added 2026-09-11 per the operator instruction in [#3121](https://github.com/paiml/aprender/issues/3121)).** These three run BEFORE the annotated tag, on the release candidate, and each is a NO-GO on its own. Bodies: `.claude/skills/apr-dogfood/SKILL.md` §G3.EX / §G3.CB / §G3.RN.
+
+| row | check | command | NO-GO when |
+|---|---|---|---|
+| **T3.6** | every workspace example builds AND runs | `bash scripts/dogfood_examples.sh` | any row classes `fail` or `timeout` (rc 1), or the enumeration is empty (rc 2). Evidence: `evidence/dogfood/<version>/examples.tsv`. `needs-hardware` rows cite the line that classified them and are re-run on the CUDA host before the verdict |
+| **T3.7** | `paiml/apr-cookbook` updated for the version | `gh api "repos/paiml/apr-cookbook/commits?sha=main&since=<previous tag date>"` | no commit on `main` since the previous tag names the version. A `gh` error is `SKIP: env` and must be re-run, never a PASS |
+| **T3.8** | release notes exist and are what is published | `CHANGELOG.md` carries `## [<version>]` with a non-empty body | the section is missing or empty, or `gh release create` did not publish it with `--notes-file` |
+
+`cargo run --example` is the only one of the three that is a measurement, and it is the one CI never made: the workspace builds `--examples` and has never executed one.
+
 ### §7.3 Kernel microbenchmark — `DESIGNED, NOT ARMED`
 
 Target: batched Q4_K GEMV at `M ∈ {4, 8}` against the `M ∈ {16, 32}` multi-warp path as control (§9 #6). In-process, socket-free, `cargo bench`, ratchet-down against a committed self-baseline; PP-6 permits it because it is not a comparator ratio. Arms after §12 row 13; its variance obeys §4.3 (`n >= 5`) before it ratchets.
