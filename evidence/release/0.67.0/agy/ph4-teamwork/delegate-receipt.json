@@ -1,0 +1,60 @@
+{
+ "ticket": "PMAT-1098",
+ "lane": "goal",
+ "width": 1,
+ "agy_version": "1.2.2",
+ "conversations": [
+  "5aa7d8b2-11d6-4ad6-802a-8630b43abd45"
+ ],
+ "child_conversations": 1,
+ "results": [
+  {
+   "lane": 1,
+   "exit": 3,
+   "file": "/run/user/1000/paiml-implement/agy/PMAT-1098/015f707f-e00a-479a-90db-31a5d46913ef/ph4-g3ex/lane-1.json",
+   "verdict": "FAILED (exit 3, LANE ISOLATION VIOLATED) — lane's own structured_output said outcome=achieved; reduced NO-VERDICT (goal schema has no verdict key)",
+   "summary": "agy envelope status=SUCCESS, num_turns=1, duration=448.6s, tree_witness present (5ab7220b7d8c84bc31db030e941feefa; agy-lane printed 'tree witness verified'). structured_output.outcome=achieved, 4 evidence items all grounding=measured but NONE carries a command or any output. agy-lane.sh then exited 3 on TWO isolation violations, so the lane is FAILED and is not reducible to a pass. Work product exists as commit cf655b7cd71078a68e8ce80364a6f055f0d80c90 on the DETACHED HEAD of the lane worktree /mnt/nvme-raid0/agent-wt/fix-g3ex/.claude/worktrees/lane-a1645cebf-4111031 (author=committer=paiml-implement lane <noreply@paiml.invalid>, subject + 'Pmat-Ticket: PMAT-1098' trailer exactly as briefed, 3 files / +32 -13: scripts/dogfood_examples.sh, tests/fixtures/dogfood_examples/examples/nodata.rs, .claude/skills/apr-dogfood/SKILL.md); worktree is clean at that commit (git diff --stat HEAD empty), so the committed tree is the tree the lane last had.",
+   "model": "gemini-3.1-pro-high"
+  }
+ ],
+ "consensus": "SINGLE-LANE goal dispatch, no agreement is claimed. fanout measured: children=1 method=lane-files label=single-lane (measured before any reduce artifact was written into out_dir). LANE FAILED: agy-lane.sh exit 3. agy-lane stderr, all 5 lines verbatim: [1] 'agy-lane: asserting git config /home/noah/src/aprender/.git/config' [2] 'agy-lane: lane worktree /mnt/nvme-raid0/agent-wt/fix-g3ex/.claude/worktrees/lane-a1645cebf-4111031 (from a1645cebf)' [3] 'agy-lane: tree witness verified: the lane read its workspace' [4] 'agy-lane: LANE ISOLATION VIOLATED - a shared ref changed: a lane created or moved a branch or tag (refs/heads/feat/linfa-burn-pareto-tickets)' [5] 'agy-lane: LANE ISOLATION VIOLATED - the shared checkout content changed (PMAT-060: .claude/skills/apr-dogfood/SKILL.md); a lane wrote outside its worktree'. No KEPT line and no LANE BLIND line (writes lane, witness verified); no '--concurrent-scope' line, as briefed none was declared and none was invented. COMMITTED SHA AS READ BY ME after the lane returned: `git -C /mnt/nvme-raid0/agent-wt/fix-g3ex log -1` = a1645cebff1c8999c5002d9df84454637dbd3c7a 'ci(cuda-nightly): 67-F1 ...' - i.e. branch PMAT-1098-g3ex-needs-data did NOT move and carries NO new commit; baseline HEAD before launch was the same a1645cebf. `git branch --contains cf655b7cd` is EMPTY: the lane's commit is reachable only through the lane worktree's detached HEAD (object present in the shared store). The lane's claim 'created on the current branch' is therefore false as stated. ATTRIBUTION of the two violations (measured, not guessed): (a) refs/heads/feat/linfa-burn-pareto-tickets points at f7dfd9561 = the HEAD of the MAIN checkout /home/noah/src/aprender (branch PMAT-272-yoga-nightly-implementation), reflog 'branch: Created from HEAD', ref file mtime 13:42:30 - the lane's HEAD was a1645cebf and never held f7dfd9561, so this line is a concurrent actor in another worktree of the same common .git, not this lane; (b) the dirty shared path .claude/skills/apr-dogfood/SKILL.md (mtime 13:42:15, inside the lane window 13:35-13:43) is BYTE-IDENTICAL to that same path in the lane's own commit cf655b7cd (diff -q: IDENTICAL) - the lane applied its docs edit twice, once inside its worktree and once in the shared checkout. That one IS the lane. Either way exit 3 stands and the lane is reported failed. I did not revert, stage or edit anything under repo_root, and I added no --concurrent-scope. Shared checkout is left as the lane left it: HEAD a1645cebf, porcelain ' M .claude/skills/apr-dogfood/SKILL.md', lane worktree still REGISTERED at /mnt/nvme-raid0/agent-wt/fix-g3ex/.claude/worktrees/lane-a1645cebf-4111031. lane-reduce partial_reasons are embedded verbatim under lane_reduce: the 547-byte .err is the 3-line agy-lane narration PLUS the 2 violation lines (the reducer says so itself), and NO-VERDICT is the known goal-schema/verdict-enum shape mismatch, not a silent lane. lane-reduce.sh exited 1. No acceptance command was run by me.",
+ "lane_reduce": {
+  "dedup": [],
+  "uncovered": [],
+  "dissent": [
+   {
+    "lane": 1,
+    "verdict": "NO-VERDICT",
+    "summary": "",
+    "findings": []
+   }
+  ],
+  "partial_reasons": [
+   "lane 1: non-empty .err (547 bytes, 2 line(s) beyond agy-lane's workspace narration)",
+   "lane 1: no verdict object found in lane file (status=SUCCESS)"
+  ],
+  "coverage_source": "lanes",
+  "author": {
+   "model": "fable-5-1",
+   "family": "claude"
+  },
+  "lanes": [
+   {
+    "lane": 1,
+    "model": "gemini-3.1-pro-high",
+    "model_measured": "gemini-3.1-pro-high",
+    "model_source": "measured",
+    "family": "gemini"
+   }
+  ]
+ },
+ "open_questions": [
+  "DECISION FOR FABLE: the shared checkout /mnt/nvme-raid0/agent-wt/fix-g3ex is left dirty on .claude/skills/apr-dogfood/SKILL.md, byte-identical to the version inside commit cf655b7cd. Rule 2 forbids me editing repo_root, so I left it. Reverting it (git checkout -- .claude/skills/apr-dogfood/SKILL.md) loses nothing, since the same hunk is in the commit.",
+  "DECISION FOR FABLE: the lane's commit cf655b7cd is on the lane worktree's detached HEAD and no branch contains it. To keep the work, cherry-pick it onto PMAT-1098-g3ex-needs-data; otherwise it dies with the worktree. The worktree is still registered (git worktree list shows it) and is a stray under repo_root.",
+  "ACCEPTANCE IS UNVERIFIED. The brief demanded the selftest output (last 20 lines) and the mutation RED/GREEN pair be returned; the lane returned neither - num_turns=1 and goal-schema evidence[] with 4 claims all labelled grounding=measured and no `command` field and no output anywhere in `response`. Treat 'selftest exits 0', 'bashrs no new findings' and 'mutation proves NEEDS_DATA_RE' as CLAIMS. I did not re-run them (rule 6).",
+  "SCOPE GAP (not an escape): tests/fixtures/dogfood_examples/README.md is in the brief's scope_paths and documents each fixture example with its expected class (it has a `nohw` row); the commit does NOT add a `nodata` row. The commit touches only scripts/dogfood_examples.sh, tests/fixtures/dogfood_examples/examples/nodata.rs and .claude/skills/apr-dogfood/SKILL.md - all inside scope, nothing outside it.",
+  "FYI: the lane amended once (its own 1a72c02dcdea3d41f21d65dba14c88c44c1ec3a0 -> cf655b7cd, to fold in SKILL.md). Amending its OWN commit kept the harness identity, so the PMAT-020 identity assert did not fire; the two violations above are unrelated to the amend.",
+  "OPEN: how the lane reached <repo_root>/.claude/skills/... from <repo_root>/.claude/worktrees/lane-*/ is not established from the envelope (num_turns=1, no tool trace in the output). If Fable re-dispatches, consider telling the lane explicitly to resolve every path against $PWD of its workspace and never to walk up out of it."
+ ],
+ "partial": true
+}

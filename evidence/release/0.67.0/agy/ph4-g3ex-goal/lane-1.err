@@ -1,0 +1,5 @@
+agy-lane: asserting git config /home/noah/src/aprender/.git/config
+agy-lane: lane worktree /mnt/nvme-raid0/agent-wt/fix-g3ex/.claude/worktrees/lane-a1645cebf-4111031 (from a1645cebf)
+agy-lane: tree witness verified: the lane read its workspace
+agy-lane: LANE ISOLATION VIOLATED — a shared ref changed: a lane created or moved a branch or tag (refs/heads/feat/linfa-burn-pareto-tickets)
+agy-lane: LANE ISOLATION VIOLATED — the shared checkout's content changed (PMAT-060: .claude/skills/apr-dogfood/SKILL.md); a lane wrote outside its worktree
