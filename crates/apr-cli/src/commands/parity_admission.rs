@@ -1,5 +1,5 @@
 //! REG-15 model admission (#2971, PMAT-1065; contract
-//! `contracts/apr-gpu-cpu-parity-v1.yaml`, equation `model_admission_reg15`).
+//! `contracts/apr-cpu-vs-gpu-output-parity-v1.yaml`, FALSIFY-CPU-GPU-014).
 //!
 //! `#2971`'s second half: when the CUDA load-time parity gate
 //! (`crates/aprender-serve/src/gguf/cuda/mod_parity_gate.rs`) fails, `apr-cli`

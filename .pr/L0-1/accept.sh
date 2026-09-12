@@ -17,6 +17,6 @@ expect_fail bash scripts/check_model_parity.sh --judge tests/fixtures/parity/def
 run env "$CARGO" test -p apr-cli --test reg15_admission
 run env "$CARGO" test -p apr-cli --lib sentinel_tests
 run env "$CARGO" test -p aprender-serve --lib parity_report_carries
-. scripts/pv_bin.sh >/dev/null 2>&1 && run "$PV" validate contracts/apr-gpu-cpu-parity-v1.yaml
+. scripts/pv_bin.sh >/dev/null 2>&1 && run "$PV" validate contracts/apr-cpu-vs-gpu-output-parity-v1.yaml
 if [ -d "${APR_MODELS_DIR:-$HOME/models}" ] && [ -n "${APR_BIN_FOR_C14:-}" ]; then run bash scripts/check_model_parity.sh --manifest --apr "$APR_BIN_FOR_C14"; else printf '== check_model_parity.sh --manifest: not on this host (no models dir / no cuda apr) — the fleet-verify leg on lambda and gx10\n'; fi
 exit "$rc"

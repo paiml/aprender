@@ -351,6 +351,26 @@ jobs:
         run: |
           set -euo pipefail
           args=(--event "${GITHUB_EVENT_NAME}")
+          # PMAT-1098 67-E2: the queue and a push to main re-derive their own
+          # diff from HEAD's FIRST PARENT (HEAD^1..HEAD is the PR's diff on the
+          # new base). actions/checkout is shallow, so that parent is not in the
+          # object store until we deepen -- and without it ci_test_tier.sh falls
+          # closed to `full` every single time, which would make the whole
+          # optimisation inert while looking like it worked. Best effort by
+          # design: if the deepen fails the decision still falls closed, and the
+          # warning below says so instead of the run silently paying the hour.
+          case "${GITHUB_EVENT_NAME}" in
+            merge_group|push)
+              git fetch --no-tags --depth=2 origin "${GITHUB_SHA}" 2>/dev/null \
+                || git fetch --no-tags --deepen=1 origin 2>/dev/null \
+                || true
+              if git rev-parse -q --verify 'HEAD^1' >/dev/null 2>&1; then
+                printf 'first parent available: %s\n' "$(git rev-parse HEAD^1)"
+              else
+                printf '::warning::first parent unavailable after deepen -- the tier falls closed to full\n'
+              fi
+              ;;
+          esac
           case "${GITHUB_EVENT_NAME}" in
             pull_request)
               git fetch --no-tags --depth=1 origin "+refs/heads/${GITHUB_BASE_REF}:refs/remotes/origin/${GITHUB_BASE_REF}"
@@ -369,10 +389,20 @@ jobs:
               ;;
           esac
           bash scripts/ci_test_tier.sh "${args[@]}" | tee "$RUNNER_TEMP/tier.txt"
-          grep -E '^(tier|crates|targets|reason|cite)=' "$RUNNER_TEMP/tier.txt" >> "$GITHUB_OUTPUT"
+          grep -E '^(tier|crates|targets|check_workspace|reason|cite)=' "$RUNNER_TEMP/tier.txt" >> "$GITHUB_OUTPUT"
       - name: Workspace lib tests (25,300+)
         if: steps.tier.outputs.tier == 'full'
-        # Excluded: aprender-gpu (cuBLAS), aprender-cuda-edge (CUDA), aprender-compute (SIMD SIGSEGV at exit)
+        # Excluded: aprender-compute (SIMD SIGSEGV at exit), aprender-gpu and aprender-cuda-edge
+        # -- each runs as its own step below. The GPU crates are `default = []`, but they
+        # CANNOT ride this `--workspace` line: cargo unifies features across the whole
+        # workspace, and `aprender-explain` depends on `aprender-gpu` with
+        # `features = ["cuda"]` (non-optional), so under `--workspace` the cuda driver
+        # compiles and its 217 `driver::` tests run -- on a GPU-less clean-room they panic
+        # `CudaNotAvailable("CUDA driver not found")` (merge-queue run 34411725611, nextest
+        # exit 100). Measured 2026-09-09 on main: `cargo nextest list --workspace --lib
+        # -E 'package(aprender-gpu)'` lists 217 driver:: tests; `cargo nextest list
+        # -p aprender-gpu -p aprender-cuda-edge --lib` lists 0 (the per-package resolve
+        # this PR measured: 651 tests, 0.193s, green with CUDA_VISIBLE_DEVICES="").
         # Timeout: 75min (was 55, was 40).
         # 2026-05-15: bumped to 75min after the P0 per-run target-dir fix
         # (#1693) eliminated cargo-incremental cross-run warmth. Cold
@@ -406,7 +436,7 @@ jobs:
             -v "${SCCACHE_HOST_DIR}:/sccache" \
             -w /workspace \
             -e CARGO_TARGET_DIR=/workspace/target \
-            -e RUSTC_WRAPPER=rustc-sccache \
+            -e RUSTC_WRAPPER=/usr/local/cargo/bin/sccache \
             -e SCCACHE_DIR=/sccache \
             -e SCCACHE_CACHE_SIZE=50G \
             -e CARGO_INCREMENTAL=0 \
@@ -415,6 +445,30 @@ jobs:
             -e CARGO_PROFILE_DEV_DEBUG=line-tables-only \
             "$IMAGE" \
             cargo nextest run --profile ci --workspace --lib --exclude aprender-gpu --exclude aprender-cuda-edge --exclude aprender-compute
+      - name: "GPU crates on their default features (per-package resolve, no device needed)"
+        if: steps.tier.outputs.tier == 'full'
+        # aprender-gpu + aprender-cuda-edge, un-darked from the required check (T0 of the
+        # NVIDIA CUDA Rust spec, #3062). A per-package resolve keeps `cuda` OFF (see the
+        # comment on the workspace line above); the `driver`/`kernels`/`memory`/`ptx` tests
+        # stay behind `--features cuda` in the gx10 nightly (#3067).
+        run: |
+          docker run --rm \
+          -e CI -e GITHUB_ACTIONS -e GITHUB_REF -e GITHUB_SHA -e GITHUB_REPOSITORY -e GITHUB_RUN_ID -e GITHUB_EVENT_NAME -e GITHUB_WORKFLOW \
+            -v "${GITHUB_WORKSPACE}:/workspace" \
+            -v "/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}:/usr/local/cargo/registry" \
+            -v "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}:/workspace/target" \
+            -v "${SCCACHE_HOST_DIR}:/sccache" \
+            -w /workspace \
+            -e CARGO_TARGET_DIR=/workspace/target \
+            -e RUSTC_WRAPPER=/usr/local/cargo/bin/sccache \
+            -e SCCACHE_DIR=/sccache \
+            -e SCCACHE_CACHE_SIZE=50G \
+            -e CARGO_INCREMENTAL=0 \
+            -e CARGO_BUILD_JOBS=8 \
+            -e CARGO_PROFILE_TEST_DEBUG=line-tables-only \
+            -e CARGO_PROFILE_DEV_DEBUG=line-tables-only \
+            "$IMAGE" \
+            cargo nextest run --profile ci -p aprender-gpu -p aprender-cuda-edge --lib
       - name: Compute tests (tolerate SIGSEGV at exit — all tests pass but harness crashes on cleanup)
         if: steps.tier.outputs.tier == 'full'
         run: |
@@ -426,7 +480,7 @@ jobs:
             -v "${SCCACHE_HOST_DIR}:/sccache" \
             -w /workspace \
             -e CARGO_TARGET_DIR=/workspace/target \
-            -e RUSTC_WRAPPER=rustc-sccache \
+            -e RUSTC_WRAPPER=/usr/local/cargo/bin/sccache \
             -e SCCACHE_DIR=/sccache \
             -e SCCACHE_CACHE_SIZE=50G \
             -e CARGO_INCREMENTAL=0 \
@@ -479,7 +533,7 @@ jobs:
             -v "${SCCACHE_HOST_DIR}:/sccache" \
             -w /workspace \
             -e CARGO_TARGET_DIR=/workspace/target \
-            -e RUSTC_WRAPPER=rustc-sccache \
+            -e RUSTC_WRAPPER=/usr/local/cargo/bin/sccache \
             -e SCCACHE_DIR=/sccache \
             -e SCCACHE_CACHE_SIZE=50G \
             -e CARGO_INCREMENTAL=0 \
@@ -491,6 +545,17 @@ jobs:
       # tier. Empty selection (a scripts/docs PR) skips this step; part 2 still runs.
       - name: "Quick tier: lib + integration tests of the selected crates (BSE-17)"
         if: steps.tier.outputs.tier == 'quick' && steps.tier.outputs.crates != ''
+        # 20, not 60 (PMAT-1098, #3084). A quick tier that is ALLOWED an hour is
+        # not a quick tier, and 60 is the number that let part 2 burn 55 minutes
+        # (run 34449608126) before dying at the cap under fleet load on #3063
+        # (#3070). The budget is the assertion: over 20 minutes, this tier has
+        # stopped being cheaper than the full one and should fail loudly.
+        # 60 again, measured (2026-09-11, run 34617807644): the ONE-invocation quick
+        # tier still compiles the selected crates' test binaries, and on an intel box
+        # with 15/16 runners busy that build alone exceeded 20 minutes — the step was
+        # killed at 20:00 with every test that had run green. A step cap that fires
+        # under fleet load is a wall-clock assertion in a required check
+        # (feedback_no_wallclock_in_required_checks); the job's 150 stays the cap.
         timeout-minutes: 60
         env:
           CRATES: ${{ steps.tier.outputs.crates }}
@@ -507,7 +572,7 @@ jobs:
             -v "${SCCACHE_HOST_DIR}:/sccache" \
             -w /workspace \
             -e CARGO_TARGET_DIR=/workspace/target \
-            -e RUSTC_WRAPPER=rustc-sccache \
+            -e RUSTC_WRAPPER=/usr/local/cargo/bin/sccache \
             -e SCCACHE_DIR=/sccache \
             -e SCCACHE_CACHE_SIZE=50G \
             -e CARGO_INCREMENTAL=0 \
@@ -519,30 +584,48 @@ jobs:
             bash -c "cargo nextest run --profile ci --lib --tests$pkgs"
       # BSE-17 quick tier, part 2: every test target that reads the tree, from
       # scripts/tree_reader_tests.txt (derived; the guard has already proved the
-      # registry equals the sources in this run). Grouped per crate: one cargo
-      # invocation per crate, --lib and/or its --test targets.
+      # registry equals the sources in this run).
+      #
+      # PMAT-1098 (#3084) — ONE BUILD GRAPH. This step used to expand `targets`
+      # into a `&&` chain of one `cargo nextest run -p CRATE ...` per crate: 26
+      # cargo invocations for 41 targets, so the shared dependency graph was
+      # resolved and linked 26 times and the 26 test runs went one after another.
+      # Measured 55 minutes on a PR that touched a single YAML file (run
+      # 34449608126) and killed at the 60-minute cap under fleet load on #3063
+      # (#3070). A quick tier that costs more than the full tier is not an
+      # optimisation, it is a second full tier with a smaller test set.
+      #
+      # The same registry tokens now become ONE nextest filterset
+      # (`scripts/ci_test_tier.sh --filterset`, whose token->clause translation is
+      # pinned in both polarities by that script's --self-test case table, an
+      # unrecognised token being ENV rather than a silently dropped target). The
+      # union is built once and every selected test runs in the single parallel
+      # pool.
+      #
+      # `--workspace --lib --tests` is the BUILD set: nextest can only select from
+      # binaries it built, and -E narrows the RUN to the registry. The three
+      # `--exclude` crates are held verbatim from the full tier's `--workspace
+      # --lib` line above and for the same reason stated there — under --workspace
+      # feature unification pulls the cuda driver in, and those crates have their
+      # own steps. None of them appears in the registry (check_tree_reader_tests.sh
+      # reads this exclude list out of this file and drops their targets), so the
+      # exclusion removes nothing the filterset asks for.
       - name: "Quick tier: every test target that reads the tree (BSE-17)"
         if: steps.tier.outputs.tier == 'quick'
-        timeout-minutes: 60
+        # 45, not 20. Measured 2026-09-11 under train load, this PR's own runs never fit 20: run 34542045481 on
+        # yoga-build2 compiled 811 crates in ~9 min (cold per-run target dir, warm shared sccache) and was part way
+        # through 65,266 tests at the cap; attempt 2 on intel-clean-room-15 timed out at 20 min too. The ~6 min
+        # figure was never reproduced in CI. 45 still sits well under the serial tier's 60; re-tighten when measured.
+        timeout-minutes: 45
         env:
           TARGETS: ${{ steps.tier.outputs.targets }}
         run: |
           set -euo pipefail
           read -ra targets <<< "$TARGETS"
           printf 'tree-reader targets: %s\n' "${#targets[@]}"
-          script=""
-          for crate in $(printf '%s\n' "${targets[@]}" | cut -d: -f1 | sort -u); do
-            flags=""
-            for t in "${targets[@]}"; do
-              case "$t" in
-                "$crate:--lib") flags="$flags --lib" ;;
-                "$crate:--test:"*) flags="$flags --test ${t#"$crate:--test:"}" ;;
-              esac
-            done
-            script="$script cargo nextest run --profile ci -p $crate$flags &&"
-          done
-          script="${script% &&}"
-          printf '%s\n' "$script" | tr '&' '\n' | grep -v '^$' | sed 's/^/  + /'
+          EXPR="$(bash scripts/ci_test_tier.sh --filterset "$TARGETS")"
+          printf 'nextest filterset (%s clause(s)):\n' "$(printf '%s' "$EXPR" | tr '|' '\n' | wc -l)"
+          printf '%s\n' "$EXPR" | tr '|' '\n' | sed 's/^ *//; s/ *$//; s/^/  + /'
           docker run --rm \
           -e CI -e GITHUB_ACTIONS -e GITHUB_REF -e GITHUB_SHA -e GITHUB_REPOSITORY -e GITHUB_RUN_ID -e GITHUB_EVENT_NAME -e GITHUB_WORKFLOW \
             -v "${GITHUB_WORKSPACE}:/workspace" \
@@ -551,7 +634,7 @@ jobs:
             -v "${SCCACHE_HOST_DIR}:/sccache" \
             -w /workspace \
             -e CARGO_TARGET_DIR=/workspace/target \
-            -e RUSTC_WRAPPER=rustc-sccache \
+            -e RUSTC_WRAPPER=/usr/local/cargo/bin/sccache \
             -e SCCACHE_DIR=/sccache \
             -e SCCACHE_CACHE_SIZE=50G \
             -e CARGO_INCREMENTAL=0 \
@@ -560,7 +643,48 @@ jobs:
             -e CARGO_PROFILE_DEV_DEBUG=line-tables-only \
             -e CARGO_TERM_COLOR=never \
             "$IMAGE" \
-            bash -c "set -e; $script"
+            cargo nextest run --profile ci --workspace --lib --tests --exclude aprender-gpu --exclude aprender-cuda-edge --exclude aprender-compute -E "$EXPR"
+      # BSE-17 quick tier, part 3 (PMAT-1098 67-E2, #3084 — rule (i)): the
+      # selection was OVER THE CAP (touched crates + their direct reverse
+      # dependents exceed gate_touched_crates.sh's CAP=3). That used to escalate
+      # the entire run to the full tier — roughly an hour — for the ordinary case
+      # of touching a widely-depended-on crate. The touched crates' own tests ran
+      # in part 1; this step buys what the cap was really protecting, the reverse
+      # dependents' INTEGRATION, at compile level over the WHOLE workspace in one
+      # cargo invocation: minutes, not an hour. It catches exactly the class the
+      # cap exists for — signature changes, trait-impl breakage, type errors in
+      # every dependent, benches and examples included (--all-targets). A
+      # behaviour regression inside an untouched dependent is not caught here; it
+      # is what the nightly full tier is for (decision D-1).
+      #
+      # --locked: a quick tier that silently rewrites Cargo.lock would be a
+      # different dependency graph from the one the PR is proposing.
+      - name: "Quick tier: cargo check --workspace (over-the-cap integration, BSE-17 rule (i))"
+        if: steps.tier.outputs.tier == 'quick' && steps.tier.outputs.check_workspace == '1'
+        timeout-minutes: 20
+        env:
+          REASON: ${{ steps.tier.outputs.reason }}
+        run: |
+          set -euo pipefail
+          printf 'over the cap: %s\n' "$REASON"
+          docker run --rm \
+          -e CI -e GITHUB_ACTIONS -e GITHUB_REF -e GITHUB_SHA -e GITHUB_REPOSITORY -e GITHUB_RUN_ID -e GITHUB_EVENT_NAME -e GITHUB_WORKFLOW \
+            -v "${GITHUB_WORKSPACE}:/workspace" \
+            -v "/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}:/usr/local/cargo/registry" \
+            -v "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}:/workspace/target" \
+            -v "${SCCACHE_HOST_DIR}:/sccache" \
+            -w /workspace \
+            -e CARGO_TARGET_DIR=/workspace/target \
+            -e RUSTC_WRAPPER=/usr/local/cargo/bin/sccache \
+            -e SCCACHE_DIR=/sccache \
+            -e SCCACHE_CACHE_SIZE=50G \
+            -e CARGO_INCREMENTAL=0 \
+            -e CARGO_BUILD_JOBS=8 \
+            -e CARGO_PROFILE_TEST_DEBUG=line-tables-only \
+            -e CARGO_PROFILE_DEV_DEBUG=line-tables-only \
+            -e CARGO_TERM_COLOR=never \
+            "$IMAGE" \
+            cargo check --workspace --all-targets --locked
       # BSE-17 reuse: the queue ref's tree is byte-identical to a PR head whose
       # workspace-test already succeeded; measuring it again is waste, not
       # evidence. The tier step proved both facts (trees compared by hash, the
@@ -614,15 +738,28 @@ jobs:
   # can never again silently land a job on a GPU/dev runner without the
   # sovereign-ci registry. Pure text check; runs on the clean-room pool.
   guard-tree:
-    runs-on: [self-hosted, X64, Linux, clean-room]
-    # 90: the BSE-05 cap for a PR/merge-group job. Basis (BSE-05 formula
-    # T = max(15, ceil(1.5*p99), p99+20) over the job's own history): p50 52.9 /
-    # p99 85.1 minutes over the last 9 SUCCESSFUL runs of this job as it stood
-    # BEFORE the cargo half moved to `guard-cargo` (cancelled runs excluded --
-    # a 0.0-minute cancellation is not a duration). T would be 128; the 90-minute
-    # PR cap binds instead. That measured p99 is an upper bound for what is left
-    # here, because this job strictly shrank.
-    timeout-minutes: 90
+    runs-on: [self-hosted, Linux, clean-room]   # arch-neutral: intel, yoga or gx10 (#3100)
+    # 20: the operator's hard PR budget (rule E, 2026-09-10), and it OVERRIDES
+    # the BSE-05 formula rather than being derived from it.
+    #
+    # Measured basis, run 34449608126 (PR #3074, `gh api .../jobs` step
+    # timestamps): this job was 27.3 min, of which the ONE step
+    # "Every cargo-free guard runs, and every failure is reported" was
+    # 1105 s = 18.4 min, running ~35 independent guards strictly serially.
+    # That step now dispatches them through an xargs pool (PMAT-1098, row
+    # 67-E3; case table scripts/tests/guard_tree_parallel_test.sh), measured
+    # 289 s serial -> 43 s parallel on a 48-core box. Projected job:
+    # 27.3 - 18.4 + <=8 = <=17 min.
+    #
+    # BSE-05 would say T = max(15, ceil(1.5*p99), p99+20); with the pre-change
+    # p99 of 85.1 min it says 128, and even against the projected 17 it says
+    # 37. The 20-minute budget is SMALLER than the formula's answer, and it is
+    # the number the operator set. A run that exceeds it is meant to fail:
+    # that is the andon for this row, not a flake to widen away.
+    # 30, not 20 (67-E3 merge onto #3115 main, 2026-09-11): the fleet ledger measured p90 25 min for
+    # guard-tree and 45 min for guard-cargo BEFORE the seven moved steps (~23 min) left it; 30 is the
+    # measured remainder with a 1.3x margin under train load. Re-tighten from evidence/fleet/history.jsonl.
+    timeout-minutes: 30
     env:
       IMAGE: localhost:5000/sovereign-ci:stable
       # Same definition as workspace-test (:106). aprender#2627: the
@@ -736,6 +873,28 @@ jobs:
       # the job whose own dispatcher it verifies.
       - name: "guard_tree.sh's own case table (BSE-01, wired BSE-02)"
         run: bash scripts/tests/guard_tree_test.sh
+      # The dispatcher above runs its guards CONCURRENTLY (PMAT-1098, row
+      # 67-E3). This table proves the six properties concurrency can quietly
+      # take away -- the universe reached, a named failure, the count, byte-
+      # identical ordering across two runs, a guard that dies without a
+      # verdict counting as FAILED -- against throwaway fixture repos, in
+      # seconds, and WITHOUT asserting any duration (this is a required job;
+      # see scripts/check_no_timing_in_required.sh).
+      - name: "guard_tree.sh's parallel dispatcher case table (PMAT-1098)"
+        run: bash scripts/tests/guard_tree_parallel_test.sh
+      # Fleet hygiene case tables (docs/specifications/ci-fleet-hygiene.md §6): the queue
+      # steward, the packing/history ledgers, the tier ledger and the roadmap resolve-dirty
+      # runner each ship a hermetic --selftest; check_guards_are_wired.sh refuses a script
+      # that carries one and is named by no workflow. Each runs in under five seconds.
+      - name: Fleet hygiene case tables (steward, history, utilization, tier ledger, resolve-dirty)
+        run: |
+          set -euo pipefail
+          bash scripts/ci_queue_steward.sh --selftest
+          bash scripts/fleet_history.sh --selftest
+          bash scripts/fleet_utilization.sh --selftest
+          bash scripts/test_tier_ledger.sh --selftest
+          bash scripts/ci_resolve_dirty.sh --selftest
+          python3 scripts/lib/roadmap_merge.py --selftest
       - name: "target-watch: before-cargo-install-bashrs"
         # aprender#2822 boundary probe (2 stat, 1 readdir, 1 df, 1 pgrep).
         # Instrumentation, never a gate: the script always exits 0.
@@ -834,6 +993,14 @@ jobs:
         run: bash scripts/check_dag_invariants.sh docs/specifications/pp-066-dag.yaml --min-slack-days 6
       - name: A row PR writes no shared file (G-11, PMAT-1062)
         run: bash scripts/check_row_pr_write_set.sh --event "${GITHUB_EVENT_NAME:-pull_request}" --branch "${GITHUB_HEAD_REF:-}"
+      # PP-066 SPEC-2.0: scripts/release_criteria.sh is a decision surface
+      # (`--all` is the first RELEASE step), and it is NOT a scripts/check_*.sh
+      # file, so guard_tree.sh's universe (`git ls-files 'scripts/check_*.sh'`)
+      # does not reach it — while check_guards_are_wired.sh DOES claim it, because
+      # that universe is derived from shipping a `--self-test` mode. Named here so
+      # the criteria table proves it can still go RED rather than pass vacuously.
+      - name: "Release criteria can still go RED (release_criteria.sh --self-test)"
+        run: bash scripts/release_criteria.sh --self-test
       # L0-1a (#2971, PMAT-1065): the supported-model manifest is DERIVED from what the tree
       # names (README, BEATS, book, dogfood receipts, perf-matrix) — a named model absent from
       # the manifest, or a typed entry nothing cites, is DRIFT; C14's own case table runs over
@@ -845,6 +1012,16 @@ jobs:
         run: bash scripts/derive_model_manifest.sh --check
       - name: C14 model-parity case table (L0-1a, #2971)
         run: bash scripts/check_model_parity.sh --self-test
+      # F-1 (#3022, #3024): a model file the user NAMED is the model that answers, or
+      # the command refuses — `apr chat` silently loaded its toy demo model for a
+      # `model.safetensors.index.json` (exit 0, zero tokens, the real path in the banner)
+      # and the nightly story could not see it: it never calls `apr chat` and never
+      # names a sharded model. Both case tables are cargo-free and model-free, so they
+      # run here; the live 4-cell matrix needs a model and runs on the fleet.
+      - name: "Sharded-fixture splitter case table (F-1, #3024)"
+        run: python3 scripts/make_sharded_safetensors.py --self-test
+      - name: "format x command honesty case table (F-1, #3022)"
+        run: bash scripts/check_format_command_matrix.sh --self-test
       # PP-23's bandwidth probe is release-phase INSTRUMENTATION (needs nvcc and an
       # idle GPU) and never runs its measurement here; its case table is GPU-free
       # and must, or the number the roofline rests on comes from a probe nobody
@@ -935,16 +1112,25 @@ jobs:
   # No `needs:` — running these AFTER workspace-test would serialise ~40
   # minutes onto every green run for no ordering that anything requires.
   guard-cargo:
-    runs-on: [self-hosted, X64, Linux, clean-room]
-    # 90: the BSE-05 cap for a PR/merge-group job. Basis (BSE-05 formula
-    # T = max(15, ceil(1.5*p99), p99+20) over the job's own history): the
-    # unsplit `guard-tree` measured p50 52.9 / p99 85.1 minutes over
-    # its last 9 successful runs, which is the upper bound for this job — it
-    # carries the cargo half of that job and nothing new. The cap is what
-    # binds, not the formula (T would be 128); a required check must not
-    # become a wall-clock assertion its neighbours decide, so the value sits
-    # above the worst contended run of the strictly larger job it came from.
-    timeout-minutes: 90
+    runs-on: [self-hosted, Linux, clean-room]   # arch-neutral: intel, yoga or gx10 (#3100)
+    # 20: the operator's hard PR budget (rule E, 2026-09-10), and it OVERRIDES
+    # the BSE-05 formula rather than being derived from it.
+    #
+    # Measured basis, run 34449608126 (PR #3074, `gh api .../jobs` step
+    # timestamps): 43.8 min over 80 steps, 13 of them over 60 s. The seven
+    # tree-universe steps listed in scripts/guards_nightly_manifest.txt were
+    # 1607 s = 26.8 min of that, and they now run in guards-nightly.yml.
+    # Projected job: 43.8 - 26.8 = 17.0 min, three minutes of headroom.
+    #
+    # BSE-05 would say T = max(15, ceil(1.5*p99), p99+20) = 37 against a p99
+    # of 17. The 20-minute budget is SMALLER than the formula's answer, and it
+    # is the number the operator set (rule E). A run that exceeds it is meant
+    # to fail: the remedy is to move the next tree-universe step to the
+    # nightly, never to widen this number.
+    # 30, not 20 (67-E3 merge onto #3115 main, 2026-09-11): the fleet ledger measured p90 25 min for
+    # guard-tree and 45 min for guard-cargo BEFORE the seven moved steps (~23 min) left it; 30 is the
+    # measured remainder with a 1.3x margin under train load. Re-tighten from evidence/fleet/history.jsonl.
+    timeout-minutes: 30
     env:
       IMAGE: localhost:5000/sovereign-ci:stable
       PR_OR_REF: ${{ github.event.pull_request.number || github.ref_name }}
@@ -1167,8 +1353,10 @@ jobs:
       # hand-written bash, and a gate that cannot go green gets disabled.
       # BSE-17 (PMAT-1077): the tier decision's case table and the tree-reader
       # registry guard's, both polarities; cargo metadata is needed, so here.
-      - name: "Test-tier decision case table (BSE-17): quick/full/reuse, drift is ENV"
-        run: bash scripts/ci_test_tier.sh --self-test
+      # MOVED to .github/workflows/guards-nightly.yml (PMAT-1098, row 67-E3):
+      # "Test-tier decision case table (BSE-17): quick/full/reuse, drift..." -- 586 s of guard-cargo's measured 43.8 min on run
+      # 34449608126, and its universe is the tree, not the diff.
+      # scripts/guards_nightly_manifest.txt is the ledger of what moved.
       - name: "Tree-reader registry guard case table (BSE-17)"
         run: bash scripts/check_tree_reader_tests.sh --self-test
       # The registry is the WIRED half; the unwired half is a ledger of tests
@@ -1224,8 +1412,10 @@ jobs:
       # Text-only, no build. Self-test first (Verification Discipline #7).
       - name: "inherited-stdin guard must still turn RED (case table)"
         run: bash scripts/check_hermetic_stdin_tests.sh --self-test
-      - name: No test may assert about the fd 0 it inherited
-        run: bash scripts/check_hermetic_stdin_tests.sh
+      # MOVED to .github/workflows/guards-nightly.yml (PMAT-1098, row 67-E3):
+      # "No test may assert about the fd 0 it inherited" -- 135 s of guard-cargo's measured 43.8 min on run
+      # 34449608126, and its universe is the tree, not the diff.
+      # scripts/guards_nightly_manifest.txt is the ledger of what moved.
       # Poka-yoke: a contract may not name an enforcement command that cannot
       # run. #2504: apr-cli-commands-v1.yaml declared five falsification
       # conditions enforced by `cargo test --test apr_cli_commands ...`; there
@@ -1297,8 +1487,10 @@ jobs:
       # it. Its size check also looked at 2 of 72 publishable crates and never
       # measured a size, so the 5.4 MB of .pmat-baseline.json it now catches had
       # been shipping to crates.io unseen.
-      - name: Publish safety (binary/oversize files in published packages)
-        run: bash scripts/check_publish_safety.sh
+      # MOVED to .github/workflows/guards-nightly.yml (PMAT-1098, row 67-E3):
+      # "Publish safety (binary/oversize files in published packages)" -- 130 s of guard-cargo's measured 43.8 min on run
+      # 34449608126, and its universe is the tree, not the diff.
+      # scripts/guards_nightly_manifest.txt is the ledger of what moved.
       # #2512: these two were invoked by NO workflow -- one Makefile-only
       # (`make tier3`, which CI does not run), one reachable from nothing at all.
       # Both pass today and are cheap, so there was never a reason for them to be
@@ -1342,8 +1534,10 @@ jobs:
           cargo test -p aprender-contracts --test validate_contracts
           cargo test -p aprender-contracts --test kani_harness_generation
           cargo test -p aprender-contracts --test probar_test_generation
-      - name: aprender-core builds for wasm32
-        run: bash scripts/check_wasm32_core_builds.sh
+      # MOVED to .github/workflows/guards-nightly.yml (PMAT-1098, row 67-E3):
+      # "aprender-core builds for wasm32" -- 94 s of guard-cargo's measured 43.8 min on run
+      # 34449608126, and its universe is the tree, not the diff.
+      # scripts/guards_nightly_manifest.txt is the ledger of what moved.
       # aprender#2546: `provable-contracts*` were renamed to `aprender-contracts*`
       # and the published names left frozen at 0.3.1. A pin on the old name
       # resolved SILENTLY and installed a tool sixty versions behind. The names
@@ -1459,8 +1653,10 @@ jobs:
       # single stale binary name left by the APR-MONO rename, dead since. Gated
       # now so the crate cannot go dark again. --lib only: the integration
       # targets shell out to the built binary and take minutes.
-      - name: aprender-profile lib tests (was gated by nothing)
-        run: cargo test -p aprender-profile --lib
+      # MOVED to .github/workflows/guards-nightly.yml (PMAT-1098, row 67-E3):
+      # "aprender-profile lib tests (was gated by nothing)" -- 200 s of guard-cargo's measured 43.8 min on run
+      # 34449608126, and its universe is the tree, not the diff.
+      # scripts/guards_nightly_manifest.txt is the ledger of what moved.
       # aprender#2627: `PR_OR_REF` is job-level env on workspace-test. The
       # model-tests step below was written by copying workspace-test's docker
       # mount lines into THIS job, which did not define it -- so both bind
@@ -1496,6 +1692,10 @@ jobs:
       # measures 0. A count that cannot be read fails HERE -- the suite refuses
       # an empty SATD_BASELINE on its own account, but a step that exported one
       # would be reporting a measurement it did not take.
+      # KEPT in PR CI at the 67-E3 merge (PMAT-1098): this step is a RATCHET against the
+      # comparand origin/main — its universe is the diff, not the tree. On the nightly
+      # HEAD == origin/main, so there the ceiling equals the measurement and the step
+      # is vacuous; guards-nightly.yml still runs the suites whole (tree universe).
       - name: model-tests falsification suites (was gated by nothing, aprender#2522) -- SATD ceiling measured on the comparand (BSE-03)
         run: |
           set -euo pipefail
@@ -1510,7 +1710,7 @@ jobs:
               -v "/home/noah/data/sccache:/sccache" \
               -w /workspace \
               -e CARGO_TARGET_DIR=/workspace/target \
-              -e RUSTC_WRAPPER=rustc-sccache \
+              -e RUSTC_WRAPPER=/usr/local/cargo/bin/sccache \
               -e SCCACHE_DIR=/sccache \
               -e SCCACHE_CACHE_SIZE=50G \
               -e CARGO_INCREMENTAL=0 \
@@ -1549,8 +1749,10 @@ jobs:
           # 4. the satd class of the ratchet-semantics case table (rebuilds nothing)
           DR_ENV=()
           dr "$GITHUB_WORKSPACE" bash scripts/tests/ratchet_semantics_test.sh --class satd
-      - name: Book rust examples compile
-        run: bash scripts/check_book_examples_compile.sh
+      # MOVED to .github/workflows/guards-nightly.yml (PMAT-1098, row 67-E3):
+      # "Book rust examples compile" -- 206 s of guard-cargo's measured 43.8 min on run
+      # 34449608126, and its universe is the tree, not the diff.
+      # scripts/guards_nightly_manifest.txt is the ledger of what moved.
       # CB-510: a Cargo.toml `exclude` pattern can strip an include!() target
       # from the published crate while git still tracks it, so the crate compiles
       # in-tree and fails for everyone installing from crates.io. This guard is
@@ -1702,6 +1904,8 @@ jobs:
         run: |
           docker run --rm \
             -v "${GITHUB_WORKSPACE}:/workspace" \
+            -v "${GUARD_CARGO_HOME}:/cargo-home" \
+            -e CARGO_HOME=/cargo-home \
             -w /workspace \
             -e CARGO_NET_OFFLINE=1 \
             "$IMAGE" \
@@ -1710,6 +1914,8 @@ jobs:
         run: |
           docker run --rm \
             -v "${GITHUB_WORKSPACE}:/workspace" \
+            -v "${GUARD_CARGO_HOME}:/cargo-home" \
+            -e CARGO_HOME=/cargo-home \
             -w /workspace \
             -e CARGO_NET_OFFLINE=1 \
             "$IMAGE" \
@@ -1747,7 +1953,7 @@ jobs:
   # Both are non-zero: an unmeasured gate is not a passing gate. The distinct
   # code is so a broken box is never read as a broken tree.
   vendored-schemas:
-    runs-on: [self-hosted, X64, Linux, clean-room]
+    runs-on: [self-hosted, Linux, clean-room]   # arch-neutral: intel, yoga or gx10 (#3100)
     timeout-minutes: 15
     steps:
       - name: Checkout
@@ -1832,6 +2038,11 @@ jobs:
   # 3.32.0" is two steps above this one, and 20 machine-specific paths landed
   # through the gap while nothing re-read it.
   pr-review-receipt:
+    # X64 for now, NOT arch-neutral (#3100): the first completed run on gx10 (train #3127 run
+    # 34648948737, gx10-pool1) left mutant reject-76-drop (check_pr_review_receipt.sh L1236,
+    # the tool.driver.name jq filter) SURVIVING — 232/233 killed — while every x86 run kills
+    # it. A job class goes to a box only once it is proven there; the arm64 survivor is
+    # its own ticket, and this line moves back when it is killed on gx10.
     runs-on: [self-hosted, X64, Linux, clean-room]
     # 150, not 120: Arm 3 alone measured 3091s (51.5 min) on an idle 48-core box over
     # the 185-mutant set, and PRREV-015 adds Arms 5 and 6 — an 83-row bats table and a
@@ -2108,9 +2319,34 @@ jobs:
       # 134/134 killed. It is a SEPARATE script from mutate-guard.sh rather than an
       # extension of it, because merging a 15-minute sweep into a 51-minute one buys
       # nothing and serialises them.
+      # Pareto (PMAT-1105 §6): this sweep is ~2 h of the receipt job on EVERY PR and sits in
+      # the merge queue's ALLGREEN set, so it was the critical path of every merge. Its
+      # inputs are five paths; a diff that touches none of them cannot change the score,
+      # which is main's. FAIL-CLOSED exactly like the §3.D trigger above: no merge-base,
+      # a crashed diff, or anything but a well-formed "no" runs the sweep.
+      - name: "Does this diff change anything the arm sweep reads? (S13.10 trigger)"
+        id: arm_needed
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=$(git merge-base origin/main "${PR_HEAD_SHA}" 2>/dev/null) || BASE=""
+          if [ -z "$BASE" ]; then echo "needed=yes" >> "$GITHUB_OUTPUT"; echo "::notice::merge-base unavailable; running the arm sweep (fail-closed)"; exit 0; fi
+          set +e
+          CHANGED=$(git diff --name-only "$BASE" "${PR_HEAD_SHA}" -- scripts/pr_review_quorum_arm.sh scripts/check_pr_review_receipt.sh scripts/mutate_quorum_arm.sh tests/pr-review-quorum.bats tests/fixtures/pr-review/)
+          rc=$?
+          set -e
+          if [ "$rc" -ne 0 ]; then echo "needed=yes" >> "$GITHUB_OUTPUT"; echo "::notice::git diff failed (rc=$rc); running the arm sweep (fail-closed)"; exit 0; fi
+          if [ -n "$CHANGED" ]; then printf 'arm inputs changed:\n%s\n' "$CHANGED"; echo "needed=yes" >> "$GITHUB_OUTPUT"; else echo "no arm input changed between $BASE and ${PR_HEAD_SHA}"; echo "needed=no" >> "$GITHUB_OUTPUT"; fi
       - name: "The arm script's 134-mutant set must kill 100% (S13.10, fixed at one)"
+        if: steps.arm_needed.outputs.needed == 'yes'
         shell: bash
         run: bash scripts/mutate_quorum_arm.sh
+      - name: "Arm sweep not triggered — record why (S13.10)"
+        if: steps.arm_needed.outputs.needed != 'yes'
+        shell: bash
+        run: |
+          echo "quorum_arm_mutation_score: NOT-TRIGGERED — none of scripts/pr_review_quorum_arm.sh, scripts/check_pr_review_receipt.sh, scripts/mutate_quorum_arm.sh, tests/pr-review-quorum.bats, tests/fixtures/pr-review/ changed in this diff."
+          echo "The score is unchanged from main's (S13.10); the sweep still runs on every push to main."
 
   # ---------------------------------------------------------------------------
   # PR-REVIEW-SKILL-002 v2 §13.11 RUNG 1 — the shadow lane.
@@ -2153,7 +2389,7 @@ jobs:
   # rungs and 30 samples away.
   # ---------------------------------------------------------------------------
   pr-review-shadow:
-    runs-on: [self-hosted, X64, Linux, clean-room]
+    runs-on: [self-hosted, Linux, clean-room]   # arch-neutral: intel, yoga or gx10 (#3100)
     # Text and one `gh pr view`; the arm script's own work is a receipt read. The
     # tool install is the only slow part. 20 is not a measured number, it is a
     # generous bound on a job with no build in it — and unlike the 150 above, a
@@ -2282,7 +2518,7 @@ jobs:
   # rather than failing them.
   # ---------------------------------------------------------------------------
   pr-review-sign:
-    runs-on: [self-hosted, X64, Linux, clean-room]
+    runs-on: [self-hosted, Linux, clean-room]   # arch-neutral: intel, yoga or gx10 (#3100)
     timeout-minutes: 15
     if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
     permissions:
@@ -2382,8 +2618,236 @@ jobs:
   # ruleset decides whether `pr-review-quorum / present` is required (recorded
   # in the C0-5 PR body, never applied by the session that wrote this).
 
-  gate:
+  # ==========================================================================
+  # ADVISORY GPU JOBS AT PR TIME
+  # spec docs/specifications/06x-release-schedule.md §2 row 67-C1 (`gpu-quick`,
+  # gx10) and §2 row 67-D1 (`cuda-unit`, yoga).
+  #
+  # WHY THEY ARE NOT IN `gate.needs`.
+  #   They are ADVISORY in 0.67, deliberately. Each becomes a REQUIRED check
+  #   only after FIVE CONSECUTIVE GREEN NIGHTLIES on its own host — rows 68-C3
+  #   (gpu-quick / gx10) and 68-D2 (cuda-unit / yoga), and that promotion is a
+  #   MEASUREMENT (`gh api …/check-runs?check_name=<job>` over five nightly
+  #   commits), not an assertion. Arming a check before its track record exists
+  #   is how one flake blocks every open PR — that has happened in this repo,
+  #   which is why the promotion rule is written as a measurement.
+  #   Advisory does NOT mean tolerant: `continue-on-error` is false on both, so
+  #   a real GPU failure is RED on the PR. It just is not a merge blocker yet.
+  #   Promotion is a one-line edit to `gate.needs` below, and
+  #   scripts/tests/ci_gpu_touched_test.sh has a row that must be DELETED when
+  #   it happens, so the promotion cannot be silent.
+  #
+  # WHY A SEPARATE `gpu-touched` DECISION JOB.
+  #   An `if:` that could only be evaluated ON the GPU runner would have to
+  #   QUEUE the job to answer it, and a queued job has already claimed the
+  #   runner. This fleet has ONE GB10 and ONE RTX 4060 Laptop. So the decision
+  #   is taken first, on the clean-room pool, and published as a job output —
+  #   a non-GPU PR SKIPS both jobs and never holds a GPU host.
+  #
+  # WHY NOT ON merge_group / push.
+  #   The queue has a hard 20-minute budget (67-E2, decision D-1) and these are
+  #   not required checks, so paying a GPU host there buys nothing. Both jobs
+  #   carry `github.event_name == 'pull_request'` in their OWN `if:` as well as
+  #   inheriting it through `gpu-touched`, so neither can be dragged into the
+  #   queue by a later edit to one condition alone.
+  #
+  # FORK PRs. ci.yml has no `authorize` / pr-gate `needs:` on ANY of its
+  #   self-hosted jobs; `.github/workflows/pr-gate.yml` is a separate
+  #   `pull_request_target` workflow that gates by contributor for the whole
+  #   repo. workspace-test, guard-tree, guard-cargo, mutants and gate all run
+  #   on self-hosted runners with no such `needs:`. These two MIRROR that
+  #   exactly (67-C1's instruction). Inventing a second mechanism for two jobs
+  #   would leave the other nine unguarded while looking like coverage.
+  gpu-touched:
+    # The decision runs on the CPU pool, never on a GPU host — that is the
+    # whole point of splitting it out.
     runs-on: [self-hosted, X64, Linux, clean-room]
+    timeout-minutes: 10
+    if: github.event_name == 'pull_request'
+    outputs:
+      gpu_touched: ${{ steps.decide.outputs.gpu_touched }}
+      gpu_crates: ${{ steps.decide.outputs.gpu_crates }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+      # The decision script must be able to go RED somewhere a workflow runs
+      # (check_guards_are_wired.sh). Its case table is GPU-free, cargo-free and
+      # sub-second, so it runs right here, immediately before the decision it
+      # governs — a stale selector is caught on the same PR that broke it.
+      - name: The GPU selector can still go RED (case table, no GPU, no cargo)
+        run: bash scripts/ci_gpu_touched.sh --self-test
+      - name: Does this PR touch the GPU set? (rows 67-C1 / 67-D1)
+        id: decide
+        run: |
+          set -euo pipefail
+          # Shallow checkout: no merge-base. Tip-vs-tip is a SUPERSET of the
+          # PR's diff, which is the safe direction for a selector — it can only
+          # run the GPU jobs when they were not needed, never skip them when
+          # they were.
+          git fetch --no-tags --depth=1 origin \
+            "+refs/heads/${GITHUB_BASE_REF}:refs/remotes/origin/${GITHUB_BASE_REF}"
+          git diff --name-only "origin/${GITHUB_BASE_REF}" HEAD > "$RUNNER_TEMP/touched.txt"
+          printf 'touched (tip vs tip): %s path(s)\n' \
+            "$(wc -l < "$RUNNER_TEMP/touched.txt" | tr -d ' ')"
+          # No `|| true` and no pipe-swallowed status: the script exits 2 when
+          # the diff is undecidable, and an undecidable selection must fail the
+          # decision job rather than answer a green 0 that skips both GPU jobs
+          # forever.
+          bash scripts/ci_gpu_touched.sh --diff-from "$RUNNER_TEMP/touched.txt" \
+            > "$RUNNER_TEMP/gpu.txt"
+          cat "$RUNNER_TEMP/gpu.txt"
+          grep -E '^(gpu_touched|gpu_crates|reason)=' "$RUNNER_TEMP/gpu.txt" >> "$GITHUB_OUTPUT"
+
+  # ROW 67-C1 — `gpu-quick` on gx10 (GB10, sm_121, aarch64).
+  # Promotion to required: row 68-C3, after 5 consecutive green gx10 nightlies.
+  gpu-quick:
+    needs: [gpu-touched]
+    if: github.event_name == 'pull_request' && needs.gpu-touched.outputs.gpu_touched == '1'
+    # LITERAL, not an expression: a guard can only check labels it can see, and
+    # `runs-on: ${{ fromJSON(...) }}` hides them from check_runner_labels.sh.
+    # `ephemeral, docker` is the DISPOSABLE gx10 runner (operator rule): its
+    # work root is mirrored on the host, so the target dir below survives
+    # across jobs while the container itself does not.
+    runs-on: [self-hosted, Linux, ARM64, cuda, gx10, ephemeral, docker]
+    timeout-minutes: 15
+    # Advisory means "not in gate.needs", NOT "tolerated". An honest red on the
+    # PR is the entire point of running this at PR time.
+    continue-on-error: false
+    # PP-19 host isolation: one group per HOST, shared with every other
+    # consumer of gx10 (cuda-nightly, silicon-nightly), cancel-in-progress
+    # false so a queued run cannot kill a measurement mid-window.
+    concurrency:
+      group: perf-gx10
+      cancel-in-progress: false
+    env:
+      CARGO_TERM_COLOR: always
+      # The disposable runner mirrors its work root on the host, so a target
+      # dir under the workspace survives across jobs and the build is warm.
+      # CARGO_INCREMENTAL=0 because incremental state is the one part of that
+      # dir that is NOT safe to share across runs (the cancel-corrupt-state
+      # race the workspace-test job's comment describes).
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
+      CARGO_INCREMENTAL: "0"
+    steps:
+      - uses: actions/checkout@v7
+      # 67-C2. First substantive step on every self-hosted job: fail fast, and
+      # loudly, on a box that is missing a tool this job needs — instead of
+      # discovering it nine minutes into a GPU leg.
+      - name: Preflight — the self-hosted toolset this job needs (67-C2)
+        run: bash scripts/ci_self_hosted_preflight.sh --cuda
+      # YIELD TO TRAINING — reused from cuda-nightly.yml's `decide` step. gx10
+      # is a TRAINING box first; a PR advisory job must never contend with an
+      # overnight training run. Two things from the nightly's version are
+      # deliberately absent and neither changes the decision: the silicon
+      # matrix filter (this job has no matrix) and the PERF041 NOT_RUN marker
+      # (that is PP-26's release ledger, and a PR job writes no release
+      # evidence). The probe, the thresholds and the `::notice::` are verbatim.
+      # `procs` (compute contexts) is the primary, portable signal — it works
+      # on both sm_89 and GB10. `memory.used` is secondary and is [N/A] on
+      # GB10's unified memory. `tr -cd` (never non-zero) rather than a
+      # `grep -oE` that exits 1 when it finds no digit and, under -e, would
+      # kill this step on GB10.
+      - name: Decide whether to run (yield-to-training)
+        id: yield
+        run: |
+          set -uo pipefail
+          used=$(nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits 2>/dev/null | head -1 | tr -cd '0-9')
+          used=${used:-0}
+          procs=$(nvidia-smi --query-compute-apps=pid --format=csv,noheader 2>/dev/null | grep -c . || true)
+          procs=${procs:-0}
+          echo "gx10: GPU memory.used=${used} MiB, existing compute procs=${procs}"
+          if [ "${used:-0}" -gt 2000 ] || [ "${procs:-0}" -gt 0 ]; then
+            echo "::notice::gpu-quick: GPU busy (${used:-?} MiB, ${procs:-?} procs) — yielding to training, skipping the GPU leg on this PR"
+            echo "proceed=false" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          echo "proceed=true" >> "$GITHUB_OUTPUT"
+      # `nice` so the build never starves the CPU side of a job that started
+      # after our yield check.
+      - name: aprender-gpu cuda unit tests (--features cuda --lib --release)
+        if: steps.yield.outputs.proceed == 'true'
+        run: |
+          nice -n 19 cargo test -p aprender-gpu --features cuda --lib --release
+      # PERF-053 / aprender#2767, the filter cuda-nightly.yml runs: repeated
+      # IDENTICAL greedy batches must return the SAME continuation. ci.yml
+      # EXCLUDES aprender-gpu from the workspace --lib run, so without a line
+      # like this one the three perf053_* unit tests execute nowhere at PR time.
+      - name: PERF-053 determinism filter (the one cuda-nightly runs)
+        if: steps.yield.outputs.proceed == 'true'
+        run: |
+          set -euo pipefail
+          nice -n 19 cargo test -p aprender-gpu --features cuda --lib --release perf053 \
+            > "$RUNNER_TEMP/perf053.txt" 2>&1 || { cat "$RUNNER_TEMP/perf053.txt"; exit 1; }
+          cat "$RUNNER_TEMP/perf053.txt"
+          # A filter that selects ZERO tests passes silently — the dark-gate
+          # shape. Count the selected tests and refuse an empty selection.
+          n=$(grep -cE '^test .+ \.\.\. ok$' "$RUNNER_TEMP/perf053.txt" || true)
+          if [ "${n:-0}" -eq 0 ]; then
+            echo "::error::the perf053 filter selected ZERO tests — a filter that matches nothing is not a passing filter"
+            exit 1
+          fi
+          printf 'perf053: %s test(s) selected and passed\n' "$n"
+
+  # ROW 67-D1 — `cuda-unit` on yoga (RTX 4060 Laptop, sm_89, x86_64, 8 GB VRAM).
+  # Promotion to required: row 68-D2, after 5 consecutive green yoga nightlies
+  # (the yoga nightly axis is #3060 / YOGA-NIGHTLY-001).
+  cuda-unit:
+    needs: [gpu-touched]
+    if: github.event_name == 'pull_request' && needs.gpu-touched.outputs.gpu_touched == '1'
+    runs-on: [self-hosted, Linux, X64, cuda, yoga, ephemeral, docker]
+    timeout-minutes: 15
+    continue-on-error: false
+    concurrency:
+      group: perf-yoga
+      cancel-in-progress: false
+    env:
+      CARGO_TERM_COLOR: always
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
+      CARGO_INCREMENTAL: "0"
+    steps:
+      - uses: actions/checkout@v7
+      - name: Preflight — the self-hosted toolset this job needs (67-C2)
+        run: bash scripts/ci_self_hosted_preflight.sh --cuda
+      # No yield-to-training step here, and that is a decision rather than an
+      # omission: yoga is a rack-mounted CI box that runs basic CUDA unit tests
+      # (operator, 2026-09-09), not a training host. Nothing to yield to. The
+      # `perf-yoga` concurrency group above is what keeps two runs off it.
+      - name: aprender-gpu cuda unit tests (--features cuda --lib --release)
+        run: |
+          nice -n 19 cargo test -p aprender-gpu --features cuda --lib --release
+      # THE SERVE CUDA FILTER IS `gguf::cuda::` — the module path prefix.
+      # `crates/aprender-serve/src/gguf/mod.rs` declares `mod cuda;` under
+      # `#[cfg(feature = "cuda")]`, so every unit test that only exists with
+      # the cuda feature lives under `gguf::cuda::…` and nothing else does.
+      # A module-path prefix is the filter, not a hand-listed test set, so a
+      # new cuda test is selected the day it is written.
+      #
+      # 8 GB OF VRAM, AND WHY NOTHING IS EXCLUDED. Every test under that
+      # prefix is host-side: kernel-name construction, block/byte arithmetic,
+      # launch-config and dimension validation, PTX emission and its cache,
+      # and the batched-token selection guards (pmat764/pmat810). None loads a
+      # model or allocates device memory at model scale, so none can exceed
+      # 8 GB. If one ever does it must be excluded BY NAME with a comment
+      # here — never by weakening an assert. The model-scale CUDA falsifiers
+      # (falsify_stream_ordering_2767 and friends) are integration targets,
+      # are not selected by `--lib`, and stay on gx10 in cuda-nightly.
+      - name: aprender-serve cuda unit tests (filter gguf::cuda::)
+        run: |
+          set -euo pipefail
+          nice -n 19 cargo test -p aprender-serve --features cuda --lib --release gguf::cuda:: \
+            > "$RUNNER_TEMP/serve-cuda.txt" 2>&1 || { cat "$RUNNER_TEMP/serve-cuda.txt"; exit 1; }
+          cat "$RUNNER_TEMP/serve-cuda.txt"
+          # Same anti-vacuity rule as perf053 above: a module-path filter that
+          # selects nothing is a green that proves nothing.
+          n=$(grep -cE '^test .+ \.\.\. ok$' "$RUNNER_TEMP/serve-cuda.txt" || true)
+          if [ "${n:-0}" -eq 0 ]; then
+            echo "::error::the gguf::cuda:: filter selected ZERO tests — the module path moved, or the cuda feature did not engage"
+            exit 1
+          fi
+          printf 'gguf::cuda:: %s test(s) selected and passed\n' "$n"
+
+  gate:
+    runs-on: [self-hosted, Linux, clean-room]   # arch-neutral: intel, yoga or gx10 (#3100)
     # 22: BSE-05 formula T = max(15, ceil(1.5*p99), p99+20) over this job's own
     # history -- p50 0.2 / p90 1.4 / p99 1.4 minutes over its last 7 successful
     # runs, so p99+20 = 21.4 binds and rounds to 22. This job only reads
@@ -2454,7 +2918,7 @@ jobs:
   # to scope against, so we skip rather than fall back to the old hours-long
   # full-tree run.
   mutants:
-    runs-on: [self-hosted, X64, Linux, clean-room]
+    runs-on: [self-hosted, Linux, clean-room]   # arch-neutral: intel, yoga or gx10 (#3100)
     timeout-minutes: 60
     needs: [ci, workspace-test]
     if: github.event_name == 'pull_request'

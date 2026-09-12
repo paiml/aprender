@@ -1,0 +1,6 @@
+reader_mods	--lib
+reader_mods	--lib	<root>
+reader_mods	--lib	deep
+reader_mods	--lib	deep::leaf
+reader_mods	--test	it
+reader_orphan	--lib

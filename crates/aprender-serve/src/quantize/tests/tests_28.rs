@@ -154,37 +154,37 @@ fn test_simd_performance_speedup() {
     );
 }
 
-/// Verify SIMD dispatch is happening by checking runtime feature detection
+/// Runtime feature detection obeys the ISA hierarchy, and realizar's backend choice follows what
+/// the CPU reports. This test used to assert AVX-512 because it was written on a Threadripper
+/// 7960X: on yoga's Core Ultra 9 185H (AVX2 + AVX-VNNI, no AVX-512, in the build pool since
+/// 2026-09-10) it failed by construction, and it asserted nothing about realizar's own dispatch.
 #[test]
 fn test_simd_feature_detection() {
-    // This test verifies that the CPU features are detected correctly
-    // On AMD Threadripper 7960X, we expect AVX-512 and AVX-512 VNNI
+    use crate::quantize::{detect_simd_backend, SimdBackend};
 
     #[cfg(target_arch = "x86_64")]
     {
+        let has_sse2 = std::is_x86_feature_detected!("sse2");
         let has_avx2 = std::is_x86_feature_detected!("avx2");
         let has_avx512f = std::is_x86_feature_detected!("avx512f");
         let has_avx512vnni = std::is_x86_feature_detected!("avx512vnni");
-
-        println!("CPU Feature Detection:");
-        println!("  AVX2:        {}", has_avx2);
-        println!("  AVX512F:     {}", has_avx512f);
-        println!("  AVX512VNNI:  {}", has_avx512vnni);
-
-        // Threadripper 7960X should have all these features
-        assert!(has_avx2, "AVX2 not detected on Threadripper 7960X");
-        assert!(has_avx512f, "AVX512F not detected on Threadripper 7960X");
-        assert!(
-            has_avx512vnni,
-            "AVX512VNNI not detected on Threadripper 7960X"
+        println!(
+            "CPU features: sse2={has_sse2} avx2={has_avx2} avx512f={has_avx512f} avx512vnni={has_avx512vnni}"
         );
+
+        // x86_64 guarantees SSE2; every AVX-512F CPU has AVX2; AVX-512 VNNI needs AVX-512F.
+        assert!(has_sse2, "an x86_64 CPU without SSE2 is not an x86_64 CPU");
+        assert!(!has_avx512f || has_avx2, "AVX-512F reported without AVX2");
+        assert!(!has_avx512vnni || has_avx512f, "AVX-512 VNNI reported without AVX-512F");
+
+        // The dispatch follows the CPU: AVX2 when present, else SSE2 — never a backend the CPU
+        // lacks, never a slower one than it has.
+        let expected = if has_avx2 { SimdBackend::Avx2 } else { SimdBackend::Sse2 };
+        assert_eq!(detect_simd_backend(), expected, "the backend must follow the detected features");
     }
 
-    #[cfg(not(target_arch = "x86_64"))]
-    {
-        // On non-x86 platforms, just verify the function runs
-        println!("Non-x86 platform - SIMD features not checked");
-    }
+    #[cfg(target_arch = "aarch64")]
+    assert_eq!(detect_simd_backend(), SimdBackend::Neon, "aarch64 always has NEON");
 }
 
 /// Test SIMD path with various data sizes to verify vectorization

@@ -226,3 +226,79 @@ fn test_live_range_fields() {
     assert_eq!(range.start, 5);
     assert_eq!(range.end, 15);
 }
+
+/// PTX emission must be a PURE FUNCTION of its inputs.
+///
+/// `emit_declarations` iterates a map to produce `.reg` lines. With the `HashMap` this
+/// used to be, iteration order was randomised per map instance, so the SAME kernel emitted
+/// twice produced two different PTX strings — measured as 5 distinct outputs from 5
+/// emissions in one process.
+///
+/// That is not cosmetic. The cubin disk cache is keyed on
+/// `sha256(patched_ptx ‖ jit_target ‖ driver_version)` (`driver/ptx_cache.rs`), so a
+/// non-deterministic emitter mints a fresh key every time and the cache can never hit.
+/// Measured fallout before the fix: **42,880 distinct cubins / 498 MB** in
+/// `~/.cache/trueno/ptx/` on one dev box and **25,216 / 274 MB** on gx10, for a few dozen
+/// real kernels.
+#[cfg(test)]
+mod determinism {
+    use super::super::RegisterAllocator;
+    use crate::ptx::types::PtxType;
+
+    /// Allocate a fixed, prefix-colliding set: several types share a `.reg` prefix
+    /// (`U64`/`B64` → `%rd`, `U8`/`B8` → `%rs`), which is what the grouping map exists for.
+    fn allocate_fixed() -> RegisterAllocator {
+        let mut a = RegisterAllocator::new();
+        for ty in [
+            PtxType::Pred,
+            PtxType::F32,
+            PtxType::U32,
+            PtxType::U64,
+            PtxType::S32,
+            PtxType::U16,
+            PtxType::F32,
+            PtxType::U64,
+        ] {
+            let _ = a.allocate_virtual(ty);
+        }
+        a
+    }
+
+    #[test]
+    fn emit_declarations_is_stable_across_allocator_instances() {
+        // Two independent allocators, identical allocation sequence. Under a HashMap these
+        // are two different map instances with two different iteration orders, so this is
+        // the assertion that turns RED if the BTreeMap is reverted.
+        let first = allocate_fixed().emit_declarations();
+        for i in 0..32 {
+            let again = allocate_fixed().emit_declarations();
+            assert_eq!(
+                first, again,
+                "emit_declarations must be a pure function of its inputs (iteration {i}); \
+                 a non-deterministic emitter mints a fresh cubin cache key every call"
+            );
+        }
+    }
+
+    #[test]
+    fn emit_declarations_is_stable_within_one_allocator() {
+        let a = allocate_fixed();
+        let first = a.emit_declarations();
+        assert_eq!(first, a.emit_declarations());
+    }
+
+    #[test]
+    fn declarations_are_sorted_by_register_prefix() {
+        // Order is arbitrary but must be STABLE. Asserting the actual order pins it, so a
+        // future refactor back to an unordered container is caught rather than absorbed.
+        let out = allocate_fixed().emit_declarations();
+        let prefixes: Vec<&str> = out
+            .lines()
+            .filter_map(|l| l.split_whitespace().nth(2))
+            .map(|d| d.split('<').next().unwrap_or(d))
+            .collect();
+        let mut sorted = prefixes.clone();
+        sorted.sort_unstable();
+        assert_eq!(prefixes, sorted, "`.reg` declarations must be emitted in a stable (sorted) prefix order, got {prefixes:?}");
+    }
+}

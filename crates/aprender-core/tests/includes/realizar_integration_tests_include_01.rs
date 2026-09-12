@@ -94,9 +94,12 @@ fn integration_trueno_simd_saturation() {
 /// Verify spec documents 300/300 points
 #[test]
 fn integration_spec_complete() {
-    let spec =
-        std::fs::read_to_string("docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md")
-            .expect("Spec file must exist (archived)");
+    // The test runs with the CRATE dir as cwd (crates/aprender-core), so a repo-relative
+    // path never resolved: this target was dark until the quick tier ran it (#3112).
+    let spec_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md");
+    let spec = std::fs::read_to_string(&spec_path)
+        .unwrap_or_else(|e| panic!("Spec file must exist (archived) at {}: {e}", spec_path.display()));
 
     assert!(
         spec.contains("300/300") || spec.contains("Complete"),

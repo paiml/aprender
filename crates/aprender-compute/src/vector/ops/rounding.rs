@@ -5,8 +5,6 @@
 //! - Parts: `fract` (fractional part)
 //! - Sign: `signum`, `copysign`, `neg`
 
-#[cfg(any(target_arch = "aarch64", target_arch = "arm"))]
-use crate::backends::neon::NeonBackend;
 #[cfg(target_arch = "wasm32")]
 use crate::backends::wasm::WasmBackend;
 use crate::backends::VectorBackend;
