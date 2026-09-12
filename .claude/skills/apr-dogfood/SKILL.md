@@ -1253,6 +1253,9 @@ token-for-token. FAIL on garbage (the PMAT-888 regression). SKIP if no GGUF mode
 | T3.3 | version-unpublished | depends on G0.2 |
 | T3.4 | security, second source | cargo-deny's GREEN is only as wide as RustSec |
 | T3.5 | **Clean-room publishability** | **the hard gate — every crate builds from crates.io alone, no sibling-path tricks. Runs on `intel`. Name it first in any release plan.** |
+| T3.6 | Every example runs | **G3.EX** below — `scripts/dogfood_examples.sh` |
+| T3.7 | apr-cookbook updated for the version | **G3.CB** below |
+| T3.8 | Release notes exist for the version | **G3.RN** below |
 T3.1's body is carried **verbatim** from v2.0 Gate 17.
 
 ### Gate 17: 7B Inference Smoke (F-7B-INFERENCE-001)
@@ -1283,6 +1286,89 @@ fi
 PASS when `apr qa` Golden Output gate passes on the 7B Q4_K model. FAIL on
 the regression that #1864 captured. SKIP when the 7B model isn't available
 or the gate didn't run.
+## G3.EX — Every example runs (dogfood_examples.sh)
+
+Operator instruction, 2026-09-11 (#3121): running the examples is part of every
+tagged release. CI compiles them (`--examples`) and has never executed one.
+
+```bash
+bash scripts/dogfood_examples.sh                 # release run, 120 s per example
+bash scripts/dogfood_examples.sh --selftest      # the case table, before trusting a run
+```
+
+Universe: every `kind == ["example"]` target from `cargo metadata --no-deps`, with
+its owning package and `required-features` — never a directory listing. Evidence:
+`evidence/dogfood/<version>/examples.tsv`, one
+`pkg<TAB>example<TAB>class<TAB>rc<TAB>secs<TAB>cite` row per target plus a
+`# summary pass=… fail=… timeout=… needs-args=… needs-hardware=…` trailer.
+
+| class | meaning |
+|---|---|
+| `pass` | rc 0 |
+| `fail` | rc ≠ 0 and none of the rows below — a defect, named by the ticket |
+| `timeout` | killed by `timeout --signal=KILL` (rc 124/137); a defect |
+| `needs-args` | rc ≠ 0 and stderr opens a clap usage line, cited — not runnable bare, not broken |
+| `needs-hardware` | stderr names a missing CUDA/wgpu device, cited — a SKIP, never a pass |
+
+Exit contract: **1** if any row is `fail` or `timeout`, **2** if the enumeration is
+empty (vacuity: a run with nothing to run is not a pass), 0 otherwise. No row is
+written without a class.
+
+`needs-hardware` rows must cite the line that classified them, and they are
+**re-run on the CUDA host (`gx10`/`lambda`) before the release verdict** — a green
+TSV from a driver-less box says nothing about the CUDA examples, and a skip that
+is never re-run is how a broken GPU example ships. The `--selftest` case table is
+hermetic (`tests/fixtures/dogfood_examples/`, no network, no dependencies) and
+carries the mutation row that proves the timeout wrapper is what classifies a
+hang.
+
+## G3.CB — apr-cookbook updated for the version
+
+The cookbook is the documented surface of the release. A release whose cookbook
+still describes the previous version ships a doc defect, so this is a **NO-GO**,
+not a warning:
+
+```bash
+V=$(cargo metadata --no-deps --format-version 1 \
+    | jq -r '[.packages[] | select(.name == "aprender") | .version] | first')
+PREV=$(git tag --sort=-creatordate | head -1)
+SINCE=$(git log -1 --format=%aI "$PREV")
+gh api "repos/paiml/apr-cookbook/commits?sha=main&since=${SINCE}" \
+    --jq '.[].commit.message' | grep -F "$V" \
+  || echo "G3.CB NO-GO: no apr-cookbook commit since $PREV ($SINCE) mentions $V"
+```
+
+Measured 2026-09-11: `paiml/apr-cookbook@main` was last pushed 2026-08-28 and has
+**zero** commits since the `v0.66.0` tag (2026-09-10), so 0.66.0 shipped with no
+cookbook update. This gate is RED on the released version today — which is why it
+is a row and not a note.
+
+PASS when at least one commit on `paiml/apr-cookbook@main` since the previous
+tag's date names the version being released. `--jq` on `gh api` keeps the check
+out of a shell JSON parser. An empty commit list and a network failure are
+different outcomes: an `gh api` error is `SKIP: env` and must be re-run, never a
+PASS (a gate that goes green on "we could not tell" is this repo's signature
+defect).
+
+## G3.RN — Release notes
+
+```bash
+V=$(cargo metadata --no-deps --format-version 1 \
+    | jq -r '[.packages[] | select(.name == "aprender") | .version] | first')
+awk -v v="## [$V]" 'index($0, v) == 1 { inb = 1; next }
+     inb && /^## / { exit }
+     inb && NF { body++ }
+     END { exit !(body > 0) }' CHANGELOG.md \
+  || echo "G3.RN NO-GO: CHANGELOG.md has no ## [$V] section with a non-empty body"
+```
+
+PASS when `CHANGELOG.md` carries a `## [<version>]` section whose body has at
+least one non-blank line. The same section is what `gh release create` must
+publish — `--notes-file` pointing at the extracted section, never
+`--generate-notes` and never a hand-typed summary, so the published notes and
+the changelog cannot diverge. A release created without `--notes-file` fails
+this gate retroactively.
+
 ## Pre-Gate Note: Exit-Code Capture Methodology (lesson from 2026-05-22 dogfood)
 
 When a falsifier needs to assert "command X exits Y", **never** chain through

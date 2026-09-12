@@ -524,7 +524,12 @@ fn test_ffn_paths_differ() {
     let gelu_layer = create_gelu_layer(&config);
     let swiglu_layer = create_fused_swiglu_layer(&config);
 
-    let gelu_model = create_model(&config, gelu_layer);
+    let mut gelu_config = config.clone();
+    // Stale test (the contract moved, the code is right): 'llama' uses SwiGLU. To test GELU path, we must use an architecture that uses GELU, e.g. phi2.
+    gelu_config.constraints = ArchConstraints::from_architecture("phi2");
+    gelu_config.architecture = "phi2".to_string();
+
+    let gelu_model = create_model(&gelu_config, gelu_layer);
     let swiglu_model = create_model(&config, swiglu_layer);
 
     let mut cache1 = OwnedQuantizedKVCache::from_config(&config, 64);

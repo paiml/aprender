@@ -252,14 +252,16 @@ fn pack_q5k_high_bits(q5_vals: &[u8; 256]) -> [u8; 32] {
     qh
 }
 
-/// Pack `Q5_K` low nibbles: combine pairs of 4-bit values into 128 bytes.
+/// Pack `Q5_K` low nibbles as ggml's `block_q5_K` does: sub-blocks `2c` and `2c + 1` share
+/// `qs[32c..32c + 32]`, the even sub-block in the low nibbles and the odd one in the high
+/// nibbles. Before PMAT-1101 each sub-block got its own 16 bytes, a layout no llama.cpp reader
+/// decodes.
 fn pack_q5k_low_nibbles(q5_vals: &[u8; 256]) -> [u8; 128] {
     let mut qs = [0u8; 128];
-    for j in 0..8 {
-        for k in 0..16 {
-            let idx1 = j * 32 + k;
-            let idx2 = j * 32 + k + 16;
-            qs[j * 16 + k] = (q5_vals[idx1] & 0x0F) | ((q5_vals[idx2] & 0x0F) << 4);
+    for c in 0..4 {
+        for l in 0..32 {
+            let (even, odd) = (q5_vals[c * 64 + l], q5_vals[c * 64 + 32 + l]);
+            qs[c * 32 + l] = (even & 0x0F) | ((odd & 0x0F) << 4);
         }
     }
     qs

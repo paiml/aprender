@@ -236,6 +236,11 @@ bench-http = ["dep:reqwest"]  # Real HTTP benchmarking of external model servers
 # Testing features
 load-test-enabled = ["server"]  # Enable load tests (requires running server)
 heavy-tests = []  # Include 29k lines of gguf.rs tests (OOMs on <16GB RAM)
+# Wall-clock throughput gates (T-QA-021 `tests/benchmark_parity_safetensors.rs`: GFLOPS floors,
+# SIMD-vs-scalar ratios). Placement, not tuning: they run at RELEASE time on a quiet host, never in
+# the PR tier — eleven timing assertions have failed required checks here
+# (scripts/check_no_timing_in_required.sh). Without this feature the target is not even built.
+bench-gates = []
 
 # Debugging features
 trace = []  # Phase 14: Enable BrickTracer for GPU/CPU parity debugging
@@ -291,6 +296,10 @@ harness = false
 [[bench]]
 name = "external_matrix"
 harness = false
+
+[[test]]
+name = "benchmark_parity_safetensors"
+required-features = ["bench-gates"]
 
 [[bench]]
 name = "performance_parity"
