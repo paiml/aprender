@@ -16836,32 +16836,6 @@ roadmap:
   - kind:code
   - pp-066
   notes: 'minted by hand (pmat#1169). Found sweeping #3051: prometheus-lint emits two of the three shapes in ONE response (text_format an object, required_metrics the string "Ok"); nccl-diag-lint exit_code is "Ok { code: 134 }", a Debug string in a JSON API. Lane 0.67.'
-- id: PMAT-1095
-  github_issue: 3067
-  item_type: task
-  title: '0.67 CUDA Rust fleet readiness: fix the two wrong-host GPU tests (adversarial.rs:36 hard-codes RTX 4090, cublas_tests.rs:174 asserts >50 TFLOP/s wall-clock) and add scripts/cuda_rust_fleet_check.sh emitting a per-host receipt for gx10 / yoga / lambda-vector'
-  status: planned
-  priority: high
-  assigned_to: null
-  created: 2026-09-09T15:00:00Z
-  updated: 2026-09-09T15:00:00Z
-  spec: docs/specifications/nvidia-cuda-rust-library-integration.md
-  acceptance_criteria:
-  - 'cargo test -p aprender-gpu --features cuda --lib test_alloc_oversize_100gb passes on gx10 (GB10, unified memory) AND on an RTX 4090 host: the test asserts the DEVICE-REPORTED total, not a hard-coded 24 GB card'
-  - 'cargo test -p aprender-gpu --features cuda --lib test_cublas_gemm_f16_training_shape has NO wall-clock TFLOP/s assertion; it asserts numerical parity vs a CPU reference and REPORTS throughput'
-  - 'bash scripts/cuda_rust_fleet_check.sh --self-test exits 0, and its case table shows a seeded failing probe turns the receipt verdict to FAIL'
-  - 'bash scripts/cuda_rust_fleet_check.sh --host gx10 writes evidence/cuda-rust-fleet/gx10.json with verdict PASS: cuda-core probe, launch_budget + determinism tests under --features cuda, cutile probe (CUDA >= 13.1)'
-  - 'bash scripts/cuda_rust_fleet_check.sh --host yoga writes evidence/cuda-rust-fleet/yoga.json with verdict PASS'
-  - 'evidence/cuda-rust-fleet/noah-Lambda-Vector.json is PASS, OR is INCOMPLETE with driver_floor as the ONLY skipped prerequisite and blocked_on naming the reboot that activates the staged 580 driver — an INCOMPLETE that names its blocker is the truthful artifact; a PASS reached by skipping it is not'
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels:
-  - kind:code
-  - orch:fable
-  - cuda-check
-  notes: 'minted by hand (pmat#1169). orch-basis:release — this is the 0.67 crates.io readiness lane for NVIDIA CUDA Rust (cuda-core / cutile / cuda-oxide) across the three GPU hosts, per EPIC #3062 and docs/specifications/nvidia-cuda-rust-library-integration.md. Both wrong-host tests were found by the post-upgrade regression run on gx10 (2568 passed / 2 failed) and shown NOT to be caused by CUDA 13.3 via a 13.0 control. The fleet runner is the falsifiable form of "0.67 works flawlessly on gx10, yoga, lambda-vector".'
-
 - id: PMAT-1096
   github_issue: null
   item_type: task
@@ -17125,3 +17099,29 @@ roadmap:
   labels:
   - kind:triage
   notes: null
+- id: PMAT-1095
+  github_issue: 3067
+  item_type: task
+  title: '0.67 CUDA Rust fleet readiness: fix the two wrong-host GPU tests (adversarial.rs:36 hard-codes RTX 4090, cublas_tests.rs:174 asserts >50 TFLOP/s wall-clock) and add scripts/cuda_rust_fleet_check.sh emitting a per-host receipt for gx10 / yoga / lambda-vector'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-09-09T15:00:00Z
+  updated: 2026-09-09T15:00:00Z
+  spec: docs/specifications/nvidia-cuda-rust-library-integration.md
+  acceptance_criteria:
+  - 'cargo test -p aprender-gpu --features cuda --lib test_alloc_oversize_100gb passes on gx10 (GB10, unified memory) AND on an RTX 4090 host: the test asserts the DEVICE-REPORTED total, not a hard-coded 24 GB card'
+  - 'cargo test -p aprender-gpu --features cuda --lib test_cublas_gemm_f16_training_shape has NO wall-clock TFLOP/s assertion; it asserts numerical parity vs a CPU reference and REPORTS throughput'
+  - 'bash scripts/cuda_rust_fleet_check.sh --self-test exits 0, and its case table shows a seeded failing probe turns the receipt verdict to FAIL'
+  - 'bash scripts/cuda_rust_fleet_check.sh --host gx10 writes evidence/cuda-rust-fleet/gx10.json with verdict PASS: cuda-core probe, launch_budget + determinism tests under --features cuda, cutile probe (CUDA >= 13.1)'
+  - 'bash scripts/cuda_rust_fleet_check.sh --host yoga writes evidence/cuda-rust-fleet/yoga.json with verdict PASS'
+  - 'evidence/cuda-rust-fleet/noah-Lambda-Vector.json is PASS, OR is INCOMPLETE with driver_floor as the ONLY skipped prerequisite and blocked_on naming the reboot that activates the staged 580 driver — an INCOMPLETE that names its blocker is the truthful artifact; a PASS reached by skipping it is not'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - orch:fable
+  - cuda-check
+  notes: 'minted by hand (pmat#1169). orch-basis:release — this is the 0.67 crates.io readiness lane for NVIDIA CUDA Rust (cuda-core / cutile / cuda-oxide) across the three GPU hosts, per EPIC #3062 and docs/specifications/nvidia-cuda-rust-library-integration.md. Both wrong-host tests were found by the post-upgrade regression run on gx10 (2568 passed / 2 failed) and shown NOT to be caused by CUDA 13.3 via a 13.0 control. The fleet runner is the falsifiable form of "0.67 works flawlessly on gx10, yoga, lambda-vector".'
+
