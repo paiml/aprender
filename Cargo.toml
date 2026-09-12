@@ -775,11 +775,51 @@ debug = "line-tables-only"
 #
 # Fix: disable debug-assertions for the proptest crate ONLY. This removes the
 # false panic from 3rd-party code while keeping OUR debug_asserts fully active
-# (overflow-checks left on). Verified: `PROPTEST_CASES=2000000` no longer panics.
-# Profiles must live in the workspace-root manifest, so they live here.
-[profile.test.package.proptest]
-debug-assertions = false
-
+# (overflow-checks left on). Profiles must live in the workspace-root manifest,
+# so they live here.
+#
+# #2571 — WHY THERE IS ONLY ONE BLOCK NOW, AND WHY IT CANNOT BE ZERO.
+# This manifest is BOTH the workspace root AND the published `aprender` package,
+# so every profile block here is shipped to crates.io and re-validated by
+# `cargo install aprender`. That resolve excludes dev-dependencies entirely, so a
+# spec naming a dev-only crate matches nothing and cargo opens the install with
+#     warning: profile package spec `proptest` in profile `<p>` did not match any packages
+# There used to be two such blocks, hence two warnings on every install.
+#
+# The `test`-profile block was DEAD and is deleted. proptest is only ever built as
+# a *dependency*, and dependencies build under `dev` even when the test target
+# builds under `test`. Measured on the full workspace test graph
+# (`cargo +nightly test --no-run --workspace --lib -Z unstable-options --unit-graph`):
+# exactly ONE proptest unit exists among 1110 units, and with this `dev` block
+# alone it already carries `debug_assertions: false`. Deleting the `test` block
+# changed no unit and removed one install warning (verified end-to-end: a real
+# `cargo install --path .` printed 2 warnings before, 1 after).
+#
+# The `dev` block is LOAD-BEARING — do not "clean it up". Measured both ways with
+# `PROPTEST_CASES=1000000 cargo test -p aprender-train --lib config::validate::proptests`
+# (the module #1989 named; PROPTEST_CASES engagement proven by 10x time scaling,
+# 5.45s at 100k -> ~55s at 1M):
+#   block removed  -> rc=101, "assertion failed: self.low - result < self.intervals.step"
+#                     at proptest-1.11.0/src/num/float_samplers.rs:466, in
+#                     prop_negative_lr_fails  (unit graph: debug_assertions=true)
+#   block present  -> rc=0, 21 passed in 57.33s  (unit graph: debug_assertions=false)
+# Downgrading is not an escape either: float_samplers.rs is byte-identical between
+# proptest 1.8.0 and 1.11.0 apart from the f16 feature, and 1.11.0 is still newest.
+#
+# The one remaining warning is irreducible without paying somewhere worse; four
+# alternatives were measured and rejected:
+#   - declaring proptest in the root [dev-dependencies]: still warns (cargo install
+#     skips dev-deps), so the spec still matches nothing.
+#   - `[target.'cfg(any())'.dependencies] proptest`: silences it, but injects 39
+#     phantom packages (proptest, rustix, libc, getrandom, ...) into EVERY
+#     downstream consumer's Cargo.lock, and so into their cargo-audit/deny/vendor
+#     surface, for a crate that is never built.
+#   - `[profile.dev.package."*"]`: silences it (cargo never validates `*`), but
+#     disables debug-assertions for ALL third-party crates in our dev/test builds —
+#     weakening a real check to remove a cosmetic line.
+#   - a no-op `"*"` block alongside the named spec: still warns.
+# The only cost-free fix is structural: split the `aprender` facade out of the
+# workspace root so dev-only profiles stop being published. Tracked in #2571.
 [profile.dev.package.proptest]
 debug-assertions = false
 
