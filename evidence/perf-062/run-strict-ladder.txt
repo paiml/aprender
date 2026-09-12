@@ -1,0 +1,242 @@
+########## ARM A0_racy_default ##########
+ARM A0_racy_default RC=1
+PERF-059 band ladder
+  binary : /tmp/claude-1000/-home-noah-src-aprender/2256679c-128a-431a-b273-4d5e2aa6fdcd/scratchpad/y5-pin/apr.a866988e4
+  model  : /home/noah/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
+  ctx    : 2048   max_tokens: 40
+  route  : APR_STREAM_LEGACY=0 CUBLAS_GEMM_THRESHOLD=default FP8_DECODE=default
+  dispatch: gpu-layers: requested=all resolved=28 total=28 (backend=cuda)
+reference: c=1
+reference text: ```python
+def sum_list(numbers):
+    # Initialize the sum to 0
+    total_sum = 0
+    # Iterate through each number in th
+  FAIL band=1: 1/1 diverged, 0/1 empty
+    first divergent: ```python
+def sum_list(numbers):
+    # Initialize the sum to 0
+    total_sum = 0
+    
+    # Iterate through each number 
+  FAIL band=2: 2/2 diverged, 0/2 empty
+    first divergent: 1:=\).\0).\).AI).00=1).".().).Ắ).IZ(isis).).ir big acuerdo two(\" pri(isis baño
+  FAIL band=4: 4/4 diverged, 0/4 empty
+    first divergent: 10dexeratalinerical destinyideroicalericalỹ\1-producingical1ilerceo soonerical).1xили<!--[icalx/*ylocalical_1x1xFD
+  FAIL band=6: 6/6 diverged, 0/6 empty
+    first divergent: . exitingceecocedure').".re1odata(ITxomo1 additionally additionally additionally additionally additionally gereobject ad
+  FAIL band=8: 8/8 diverged, 0/8 empty
+    first divergent: dexreмерical appropriately011ceiderical°cece1 beginner//projectasta1.optionalineticalilerce.optionalecessecessecesso
+  FAIL band=16: 16/16 diverged, 0/16 empty
+    first divergent: *certre1isse1.1 exiting-producing.,0/*! necessary-producing.optional基础-producing
+batch sizes actually formed:
+        2 [PMAT-044] Batch m=1
+        1 [PMAT-044] Batch m=16
+        1 [PMAT-044] Batch m=2
+        1 [PMAT-044] Batch m=4
+        1 [PMAT-044] Batch m=6
+        1 [PMAT-044] Batch m=8
+LADDER FAIL: 6 band(s) diverged from the c=1 reference
+
+########## ARM A1_legacy_thrdef_fpdef ##########
+ARM A1_legacy_thrdef_fpdef RC=1
+PERF-059 band ladder
+  binary : /tmp/claude-1000/-home-noah-src-aprender/2256679c-128a-431a-b273-4d5e2aa6fdcd/scratchpad/y5-pin/apr.a866988e4
+  model  : /home/noah/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
+  ctx    : 2048   max_tokens: 40
+  route  : APR_STREAM_LEGACY=1 CUBLAS_GEMM_THRESHOLD=default FP8_DECODE=default
+  dispatch: gpu-layers: requested=all resolved=28 total=28 (backend=cuda)
+reference: c=1
+reference text: ```python
+def sum_list(numbers):
+    # Initialize the sum to 0
+    total_sum = 0
+    # Iterate through each number in th
+  FAIL band=1: 1/1 diverged, 0/1 empty
+    first divergent: ```python
+def sum_list(numbers):
+    # Initialize the sum to 0
+    total_sum = 0
+    
+    # Iterate through each number 
+  FAIL band=2: 2/2 diverged, 0/2 empty
+    first divergent: ```python
+def sum_list(numbers):
+    # Initialize the sum to 0
+    total_sum = 0
+    
+    # Iterate through each number 
+  FAIL band=4: 4/4 diverged, 0/4 empty
+    first divergent: ```python
+def sum_list(numbers):
+    return sum(numbers)
+```
+  FAIL band=6: 6/6 diverged, 0/6 empty
+    first divergent: ```python
+def sum_list(numbers):
+    return sum(numbers)
+```
+  FAIL band=8: 8/8 diverged, 0/8 empty
+    first divergent: ```python
+def sum_list(numbers):
+    return sum(numbers)
+```
+  FAIL band=16: 16/16 diverged, 0/16 empty
+    first divergent: ```python
+def sum_list(numbers):
+    return sum(numbers)
+```
+batch sizes actually formed:
+        4 [PMAT-044] Batch m=1
+        1 [PMAT-044] Batch m=16
+        1 [PMAT-044] Batch m=4
+        1 [PMAT-044] Batch m=6
+        1 [PMAT-044] Batch m=8
+LADDER FAIL: 6 band(s) diverged from the c=1 reference
+
+########## ARM A2_legacy_thr32_fpdef ##########
+ARM A2_legacy_thr32_fpdef RC=1
+PERF-059 band ladder
+  binary : /tmp/claude-1000/-home-noah-src-aprender/2256679c-128a-431a-b273-4d5e2aa6fdcd/scratchpad/y5-pin/apr.a866988e4
+  model  : /home/noah/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
+  ctx    : 2048   max_tokens: 40
+  route  : APR_STREAM_LEGACY=1 CUBLAS_GEMM_THRESHOLD=32 FP8_DECODE=default
+  dispatch: gpu-layers: requested=all resolved=28 total=28 (backend=cuda)
+reference: c=1
+reference text: ```python
+def sum_list(numbers):
+    # Initialize the sum to 0
+    total_sum = 0
+    # Iterate through each number in th
+  FAIL band=1: 1/1 diverged, 0/1 empty
+    first divergent: ```python
+def sum_list(numbers):
+    # Initialize the sum to 0
+    total_sum = 0
+    
+    # Iterate through each number 
+  PASS band=2: 2/2 match the c=1 reference
+  PASS band=4: 4/4 match the c=1 reference
+  FAIL band=6: 6/6 diverged, 0/6 empty
+    first divergent: ```python
+def sum_list(numbers):
+    return sum(numbers)
+```
+  FAIL band=8: 8/8 diverged, 0/8 empty
+    first divergent: ```python
+def sum_list(numbers):
+    return sum(numbers)
+```
+  FAIL band=16: 16/16 diverged, 0/16 empty
+    first divergent: ```python
+def sum_list(numbers):
+    return sum(numbers)
+```
+batch sizes actually formed:
+        2 [PMAT-044] Batch m=1
+        1 [PMAT-044] Batch m=15
+        1 [PMAT-044] Batch m=2
+        1 [PMAT-044] Batch m=4
+        1 [PMAT-044] Batch m=6
+        1 [PMAT-044] Batch m=8
+LADDER FAIL: 4 band(s) diverged from the c=1 reference
+
+########## ARM A3_legacy_thr32_fp0 ##########
+ARM A3_legacy_thr32_fp0 RC=1
+PERF-059 band ladder
+  binary : /tmp/claude-1000/-home-noah-src-aprender/2256679c-128a-431a-b273-4d5e2aa6fdcd/scratchpad/y5-pin/apr.a866988e4
+  model  : /home/noah/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
+  ctx    : 2048   max_tokens: 40
+  route  : APR_STREAM_LEGACY=1 CUBLAS_GEMM_THRESHOLD=32 FP8_DECODE=0
+  dispatch: gpu-layers: requested=all resolved=28 total=28 (backend=cuda)
+reference: c=1
+reference text: Lambda***4*4*4*4*4*4*4*4*4*4*4*4*4*4*4*4*4*4*4
+  FAIL band=1: 1/1 diverged, 0/1 empty
+    first divergent: *10*1*1111111111111111111111111111111111
+  FAIL band=2: 2/2 diverged, 0/2 empty
+    first divergent: *10*1*1111111111111111111111111111111111
+  FAIL band=4: 4/4 diverged, 0/4 empty
+    first divergent: *10*1*1111111111111111111111111111111111
+  FAIL band=6: 6/6 diverged, 0/6 empty
+    first divergent: ```python
+def sum_list(numbers):
+    # Initialize the sum to 0
+    total_sum = 0
+    # Iterate through each number in th
+  FAIL band=8: 8/8 diverged, 0/8 empty
+    first divergent: ```python
+def sum_list(numbers):
+    # Initialize the sum to 0
+    total_sum = 0
+    # Iterate through each number in th
+  FAIL band=16: 16/16 diverged, 0/16 empty
+    first divergent: ```python
+def sum_list(numbers):
+    # Initialize the sum to 0
+    total_sum = 0
+    # Iterate through each number in th
+batch sizes actually formed:
+        5 [PMAT-044] Batch m=1
+        1 [PMAT-044] Batch m=16
+        1 [PMAT-044] Batch m=3
+        1 [PMAT-044] Batch m=6
+        1 [PMAT-044] Batch m=8
+LADDER FAIL: 6 band(s) diverged from the c=1 reference
+
+########## ARM A4_legacy_thrdef_fp0 ##########
+ARM A4_legacy_thrdef_fp0 RC=1
+PERF-059 band ladder
+  binary : /tmp/claude-1000/-home-noah-src-aprender/2256679c-128a-431a-b273-4d5e2aa6fdcd/scratchpad/y5-pin/apr.a866988e4
+  model  : /home/noah/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
+  ctx    : 2048   max_tokens: 40
+  route  : APR_STREAM_LEGACY=1 CUBLAS_GEMM_THRESHOLD=default FP8_DECODE=0
+  dispatch: gpu-layers: requested=all resolved=28 total=28 (backend=cuda)
+reference: c=1
+reference text: ```python
+def sum_list(numbers):
+    # Initialize the sum to 0
+    total_sum = 0
+    # Iterate through each number in th
+  FAIL band=1: 1/1 diverged, 0/1 empty
+    first divergent: ```python
+def sum_list(numbers):
+    # Initialize the sum to 0
+    total_sum = 0
+    
+    # Iterate through each number 
+  FAIL band=2: 2/2 diverged, 0/2 empty
+    first divergent: ```python
+def sum_list(numbers):
+    # Initialize the sum to 0
+    total_sum = 0
+    
+    # Iterate through each number 
+  FAIL band=4: 4/4 diverged, 0/4 empty
+    first divergent: ```python
+def sum_list(numbers):
+    return sum(numbers)
+```
+  FAIL band=6: 6/6 diverged, 0/6 empty
+    first divergent: ```python
+def sum_list(numbers):
+    return sum(numbers)
+```
+  FAIL band=8: 8/8 diverged, 0/8 empty
+    first divergent: ```python
+def sum_list(numbers):
+    return sum(numbers)
+```
+  FAIL band=16: 16/16 diverged, 0/16 empty
+    first divergent: ```python
+def sum_list(numbers):
+    return sum(numbers)
+```
+batch sizes actually formed:
+        4 [PMAT-044] Batch m=1
+        1 [PMAT-044] Batch m=16
+        1 [PMAT-044] Batch m=4
+        1 [PMAT-044] Batch m=6
+        1 [PMAT-044] Batch m=8
+LADDER FAIL: 6 band(s) diverged from the c=1 reference
+
+ALL ARMS DONE
