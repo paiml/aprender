@@ -1,0 +1,989 @@
+# dogfood_examples.sh (G3.EX) — aprender 0.67.0 release sweep
+# universe: every kind==["example"] target from cargo metadata --no-deps, with its owning package
+# pass 1: the whole universe at train-A head 0b6b329de, classifier as shipped in 0.66.0
+# pass 2: the 214 fail/timeout rows of pass 1, re-run at the 0.67.0 bump head e1548f34b with the
+#         needs-data classifier of PR #3163; those rows replace pass 1's verdict below
+# timeout_secs=120  host=lambda-vector (x86_64, RTX 4090 sm_89)
+# columns: pkg  example  class  rc  secs  cite
+apr-cli	gpu_chat_inference	pass	0	72	
+apr-cli	ptx_parity_validation	pass	0	57	
+apr-cli	serve_with_tracing	pass	0	24	
+apr-cli	tool_calling_demo	pass	0	25	
+aprender-data	basic_loading	pass	0	19	
+aprender-data	cli_batch_commands	pass	0	17	
+aprender-data	dataloader_batching	pass	0	1	
+aprender-data	doctest_extraction	pass	0	12	
+aprender-data	drift_detection	pass	0	2	
+aprender-data	federated_split	pass	0	1	
+aprender-data	generate_fixtures	pass	0	2	
+aprender-data	hub_publishing	pass	0	17	
+aprender-data	prose_detection	fail	1	13	run: Run with: cargo run --example prose_detection --features doctest
+aprender-data	quality_check	pass	0	1	
+aprender-data	registry_publish	pass	0	1	
+aprender-data	repl_commands	pass	0	1	
+aprender-data	repl_completer	pass	0	1	
+aprender-data	repl_display_config	pass	0	1	
+aprender-data	repl_health_status	pass	0	1	
+aprender-data	repl_session	pass	0	1	
+aprender-data	streaming_large	pass	0	2	
+aprender-data	transforms_pipeline	pass	0	1	
+aprender-data	tui_viewer	pass	0	1	
+aprender-test-lib	accessibility_demo	pass	0	20	
+aprender-test-lib	audio_emulation	pass	0	1	
+aprender-test-lib	basic_test	pass	0	1	
+aprender-test-lib	brick_demo	pass	0	1	
+aprender-test-lib	brick_tui_demo	pass	0	3	
+aprender-test-lib	comply_demo	pass	0	1	
+aprender-test-lib	coverage_demo	pass	0	1	
+aprender-test-lib	distributed_worker_demo	pass	0	1	
+aprender-test-lib	docker_demo	pass	0	20	
+aprender-test-lib	element_assertions	pass	0	1	
+aprender-test-lib	equation_verify	pass	0	1	
+aprender-test-lib	execution_trace	pass	0	1	
+aprender-test-lib	gui_coverage	pass	0	1	
+aprender-test-lib	locator_demo	pass	0	1	
+aprender-test-lib	locator_operations	pass	0	2	
+aprender-test-lib	mouse_actions	pass	0	1	
+aprender-test-lib	multi_context	pass	0	1	
+aprender-test-lib	network_intercept	pass	0	1	
+aprender-test-lib	page_object	pass	0	1	
+aprender-test-lib	panic_paths_demo	pass	0	1	
+aprender-test-lib	performance_profile	pass	0	1	
+aprender-test-lib	pixel_coverage_heatmap	pass	0	2	
+aprender-test-lib	playbook_testing	pass	0	1	
+aprender-test-lib	pmat_bridge_demo	pass	0	1	
+aprender-test-lib	pong_simulation	pass	0	2	
+aprender-test-lib	presentar_demo	pass	0	1	
+aprender-test-lib	retry_assertions	pass	0	1	
+aprender-test-lib	semantic_locators	pass	0	1	
+aprender-test-lib	soft_assertions	pass	0	1	
+aprender-test-lib	streaming_ux_demo	pass	0	1	
+aprender-test-lib	visual_regression_demo	pass	0	1	
+aprender-test-lib	wait_mechanisms	pass	0	1	
+aprender-test-lib	wasm_capabilities	pass	0	1	
+aprender-test-lib	wasm_pixel_gui_demo	pass	0	16	
+aprender-test-lib	watch_mode	pass	0	2	
+aprender-test-lib	web_builders_demo	pass	0	1	
+aprender-test-lib	web_sys_gen_demo	pass	0	1	
+aprender-test-lib	web_validation_demo	pass	0	1	
+aprender-test-lib	websocket_monitor	pass	0	1	
+aprender-test-lib	worker_brick_demo	pass	0	1	
+aprender-test-lib	worker_harness_demo	pass	0	1	
+aprender-test-lib	zero_js_demo	pass	0	2	
+aprender-present-core	hello_widget	pass	0	7	
+aprender-present-terminal	batch_progress	pass	0	7	
+aprender-present-terminal	cbtop-bench	pass	0	8	
+aprender-present-terminal	cluster_status	pass	0	3	
+aprender-present-terminal	cpu_monitor	pass	0	4	
+aprender-present-terminal	direct_benchmark	pass	0	4	
+aprender-present-terminal	direct_canvas_demo	pass	0	3	
+aprender-present-terminal	gpu_compute	pass	0	4	
+aprender-present-terminal	inference_server	pass	0	3	
+aprender-present-terminal	memory_monitor	pass	0	3	
+aprender-present-terminal	ml_visualization	pass	0	4	
+aprender-present-terminal	network_traffic	pass	0	3	
+aprender-present-terminal	queue_monitor	pass	0	4	
+aprender-present-terminal	sensor_dashboard	pass	0	3	
+aprender-present-terminal	system_dashboard	pass	0	3	
+aprender-present-terminal	test_connections	pass	0	9	
+aprender-present-terminal	test_display_rules	pass	0	3	
+aprender-present-terminal	training_metrics	pass	0	3	
+aprender-present-terminal	ttop_cpu_pane	pass	0	34	
+aprender-present-terminal	tui-compare	needs-args	2	5	error: the following required arguments were not provided:
+aprender-compute	activation_functions	pass	0	28	
+aprender-compute	b4_fault_simulation	pass	0	11	
+aprender-compute	backend_detection	pass	0	10	
+aprender-compute	bench_profiling_primitives	pass	0	13	
+aprender-compute	benchmark_matrix_suite	pass	0	21	
+aprender-compute	benchmark_matvec	pass	0	11	
+aprender-compute	benchmark_matvec_parallel	pass	0	11	
+aprender-compute	benchmark_parallel	pass	0	16	
+aprender-compute	blis_benchmark	pass	0	79	
+aprender-compute	brick_profiler_v2	pass	0	10	
+aprender-compute	coop_gemm_bench	fail	101	18	build: error[E0433]: failed to resolve: could not find `cooperative` in `shaders`
+aprender-compute	design_by_contract	pass	0	47	
+aprender-compute	execution_graph	pass	0	17	
+aprender-compute	gpu_batch_demo	pass	0	24	
+aprender-compute	gpu_monitor_demo	pass	0	191	
+aprender-compute	gpu_tiled_reduction	pass	0	11	
+aprender-compute	hash_demo	pass	0	10	
+aprender-compute	inference_demo	needs-args	1	10	Usage: target/debug/examples/inference_demo <model.gguf> [prompt] [--temp T] [--max-tokens N]
+aprender-compute	matrix_operations	pass	0	10	
+aprender-compute	ml_similarity	pass	0	10	
+aprender-compute	ml_tuner_demo	pass	0	10	
+aprender-compute	ml_tuner_evolution	pass	0	10	
+aprender-compute	model_tracing	pass	0	9	
+aprender-compute	perf_tui	pass	0	20	
+aprender-compute	performance_demo	pass	0	10	
+aprender-compute	profile_vocab	pass	0	11	
+aprender-compute	quickstart	pass	0	10	
+aprender-compute	regression_test	pass	0	11	
+aprender-compute	simd_comparison	pass	0	12	
+aprender-compute	simd_softmax_quant	pass	0	11	
+aprender-compute	symmetric_eigen	pass	0	17	
+aprender-compute	tile_profiler_demo	pass	0	12	
+aprender-compute	tiled_reduction_demo	pass	0	11	
+aprender-compute	tiling_demo	pass	0	11	
+aprender-compute	tuner_usage	pass	0	11	
+aprender-compute	vocab_bench	pass	0	16	
+aprender-compute	wgpu_backward_demo	pass	0	11	
+aprender-simulate	contract_pipeline_demo	pass	0	17	
+aprender-simulate	edd_falsification	pass	0	4	
+aprender-simulate	edd_model_card	pass	0	5	
+aprender-simulate	edd_operations	pass	0	5	
+aprender-simulate	edd_tps_validation	pass	0	5	
+aprender-simulate	edd_yaml_loader	pass	0	5	
+aprender-simulate	gui_coverage_demo	pass	0	5	
+aprender-simulate	jidoka_guards	pass	0	4	
+aprender-simulate	monte_carlo	pass	0	5	
+aprender-simulate	optimization	pass	0	5	
+aprender-simulate	orbit_demo	pass	0	5	
+aprender-simulate	physics_simulation	pass	0	5	
+aprender-simulate	reproducibility	pass	0	5	
+aprender-simulate	tsp_grasp_demo	pass	0	5	
+aprender-contracts	audit	needs-args	1	7	Usage: audit <contract.yaml> [binding.yaml]
+aprender-contracts	codegen	needs-args	1	2	Usage: codegen <contract.yaml>
+aprender-contracts	coq	needs-args	1	2	Usage: coq <contract.yaml>
+aprender-contracts	coverage	needs-args	1	0	Usage: coverage <dir/> [binding.yaml]
+aprender-contracts	cross_project_query	pass	0	52	
+aprender-contracts	design_by_contract	pass	0	1	
+aprender-contracts	doc_integrity	pass	0	1	
+aprender-contracts	explain	needs-args	1	1	Usage: explain <contract.yaml>
+aprender-contracts	extract_pytorch	pass	0	1	
+aprender-contracts	flux	needs-args	1	0	Usage: flux <contract.yaml>
+aprender-contracts	fuzz	needs-args	1	1	Usage: fuzz <contract.yaml>
+aprender-contracts	infrastructure_contracts	pass	0	1	
+aprender-contracts	invariants	needs-args	1	0	Usage: invariants <contract.yaml>
+aprender-contracts	lean_codegen	needs-args	1	0	Usage: lean_codegen <contract.yaml>
+aprender-contracts	lean_proofs	pass	0	1	
+aprender-contracts	lean_status	needs-args	1	1	Usage: lean_status <contracts-dir/>
+aprender-contracts	lint	needs-args	1	1	Usage: lint <contracts-dir/> [min-score] [format] [flags]
+aprender-contracts	mirai	needs-args	1	0	Usage: mirai <contract.yaml>
+aprender-contracts	pipeline	needs-args	1	1	Usage: pipeline <contracts-dir/>
+aprender-contracts	proof_status	needs-args	1	1	Usage: proof_status <dir/>
+aprender-contracts	query	pass	0	2	
+aprender-contracts	scaffold	needs-args	1	1	Usage: scaffold <contract.yaml>
+aprender-contracts	scaffold_generation	pass	0	1	
+aprender-contracts	score	pass	0	6	
+aprender-contracts	score_contracts	pass	0	2	
+aprender-contracts	tla	needs-args	1	1	Usage: tla <dir/>
+aprender-contracts	validate	needs-args	1	1	Usage: validate <contract.yaml>
+aprender-contracts	validate_contracts	pass	0	1	
+aprender-core	aco_tsp	pass	0	42	
+aprender-core	admm_optimization	pass	0	17	
+aprender-core	advanced_merge	pass	0	17	
+aprender-core	apr_cache	pass	0	17	
+aprender-core	apr_checkpoint_lifecycle	pass	0	17	
+aprender-core	apr_cli_commands	pass	0	17	
+aprender-core	apr_embed	pass	0	23	
+aprender-core	apr_inspection	pass	0	17	
+aprender-core	apr_loading_modes	pass	0	17	
+aprender-core	apr_scoring	pass	0	17	
+aprender-core	apr_with_metadata	pass	0	20	
+aprender-core	automl_clustering	pass	0	20	
+aprender-core	batch_optimization	pass	0	20	
+aprender-core	bayesian_blocks_histogram	pass	0	19	
+aprender-core	bayesian_linear_regression	pass	0	20	
+aprender-core	bayesian_logistic_regression	pass	0	20	
+aprender-core	bench_bpe	needs-data	101	39	Failed to load tokenizer from 'tokenizer.json': Invalid model format: Failed to read tokenizer file 'tokenizer.json': No such file or directory (os error 2)
+aprender-core	bench_comparison	pass	0	20	
+aprender-core	beta_binomial_inference	pass	0	20	
+aprender-core	boston_housing	pass	0	20	
+aprender-core	bundle_trace_demo	pass	0	18	
+aprender-core	ch01_hello_apr	pass	0	18	
+aprender-core	ch02_tensors	pass	0	17	
+aprender-core	ch03_apr_format	pass	0	17	
+aprender-core	ch04_supervised	pass	0	17	
+aprender-core	ch05_unsupervised	pass	0	17	
+aprender-core	ch06_ensembles	pass	0	18	
+aprender-core	ch07_model_selection	pass	0	17	
+aprender-core	ch08_transformer	pass	0	16	
+aprender-core	ch09_inference	pass	0	17	
+aprender-core	ch10_training	pass	0	17	
+aprender-core	ch11_formats	pass	0	17	
+aprender-core	ch12_serving	pass	0	17	
+aprender-core	ch13_profiling	pass	0	17	
+aprender-core	ch14_contracts	pass	0	17	
+aprender-core	ch15_orchestrate	pass	0	17	
+aprender-core	ch16_timeseries	pass	0	17	
+aprender-core	ch17_bayesian	pass	0	17	
+aprender-core	ch18_graphs	pass	0	17	
+aprender-core	ch19_text	pass	0	17	
+aprender-core	ch20_rag	pass	0	17	
+aprender-core	ch21_vs_candle	pass	0	18	
+aprender-core	ch22_vs_llamacpp	pass	0	17	
+aprender-core	ch23_training_bench	pass	0	18	
+aprender-core	ch24_switch_pytorch	pass	0	17	
+aprender-core	ch25_switch_ollama	pass	0	18	
+aprender-core	ch26_switch_ndarray	pass	0	17	
+aprender-core	ch27_switch_unsloth	pass	0	17	
+aprender-core	chat_template	pass	0	18	
+aprender-core	classification_training	pass	0	18	
+aprender-core	code_analysis	pass	0	17	
+aprender-core	community_detection	pass	0	18	
+aprender-core	constrained_optimization	pass	0	22	
+aprender-core	continual_pretraining	pass	0	22	
+aprender-core	conv_layout_dogfood	pass	0	22	
+aprender-core	convex_optimization	pass	0	21	
+aprender-core	create_test_apr	pass	0	19	
+aprender-core	create_test_transformer_apr	pass	0	18	
+aprender-core	cross_validation	pass	0	18	
+aprender-core	cuda_backend	pass	0	25	
+aprender-core	dam_merge	pass	0	21	
+aprender-core	data_preprocessing_scalers	pass	0	17	
+aprender-core	data_quality_pipeline	pass	0	26	
+aprender-core	dataframe_basics	pass	0	17	
+aprender-core	dbscan_clustering	pass	0	33	
+aprender-core	decision_tree_iris	pass	0	18	
+aprender-core	decision_tree_regression	pass	0	18	
+aprender-core	descriptive_statistics	pass	0	18	
+aprender-core	design_by_contract	pass	0	18	
+aprender-core	dirichlet_multinomial_inference	pass	0	18	
+aprender-core	distillation_advanced	pass	0	17	
+aprender-core	dpo_preference	pass	0	17	
+aprender-core	eval_harness	pass	0	17	
+aprender-core	evolutionary_merge	pass	0	17	
+aprender-core	gamma_poisson_inference	pass	0	18	
+aprender-core	gbm_iris	pass	0	17	
+aprender-core	gmm_clustering	pass	0	18	
+aprender-core	gpu_fallback_dogfood	needs-data	1	17	Model not found at ../tiny-model-ground-truth/models/qwen2-0.5b-int8.apr
+aprender-core	graph_algorithms_comprehensive	pass	0	17	
+aprender-core	graph_social_network	pass	0	18	
+aprender-core	grid_search_tuning	pass	0	18	
+aprender-core	hex_forensics	pass	0	18	
+aprender-core	hierarchical_clustering	pass	0	17	
+aprender-core	iris_clustering	pass	0	18	
+aprender-core	isolation_forest_anomaly	pass	0	17	
+aprender-core	knn_iris	pass	0	17	
+aprender-core	lof_anomaly	pass	0	17	
+aprender-core	logic_family_tree	pass	0	18	
+aprender-core	logistic_regression	pass	0	17	
+aprender-core	lottery_ticket_pruning	pass	0	25	
+aprender-core	market_basket_apriori	pass	0	19	
+aprender-core	mem_test	timeout	137	129	run killed after 120s
+aprender-core	metaheuristics_optimization	pass	0	18	
+aprender-core	mixture_of_experts	pass	0	17	
+aprender-core	model_merge_strategies	pass	0	23	
+aprender-core	model_serialization	pass	0	17	
+aprender-core	model_zoo	pass	0	17	
+aprender-core	moe_construction	pass	0	16	
+aprender-core	naive_bayes_iris	pass	0	17	
+aprender-core	negative_binomial_glm	pass	0	17	
+aprender-core	neural_network_training	pass	0	17	
+aprender-core	nlp_advanced	pass	0	17	
+aprender-core	normal_inverse_gamma_inference	pass	0	18	
+aprender-core	online_learning	pass	0	16	
+aprender-core	optimizer_demo	pass	0	17	
+aprender-core	pca_iris	pass	0	17	
+aprender-core	per_layer_merge	pass	0	16	
+aprender-core	phi_hf_import	pass	0	20	
+aprender-core	pii_filtering	pass	0	17	
+aprender-core	pipeline_verification	pass	0	17	
+aprender-core	poka_yoke_validation	pass	0	17	
+aprender-core	predator_prey_optimization	pass	0	16	
+aprender-core	pruning_magnitude	pass	0	17	
+aprender-core	publish_shell_safety	pass	0	17	
+aprender-core	qa_chat	fail	1	127	run: [0;34m╔══════════════════════════════════════════════════════════════╗
+aprender-core	qa_falsify	pass	0	19	
+aprender-core	qa_run	needs-data	2	17	    hf://Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
+aprender-core	qa_serve	fail	2	17	run: [0;34m╔══════════════════════════════════════════════════════════════╗
+aprender-core	qa_verify	timeout	137	128	run killed after 120s
+aprender-core	qwen_apr_native	pass	0	18	
+aprender-core	qwen_chat	pass	0	17	
+aprender-core	random_forest_iris	pass	0	17	
+aprender-core	random_forest_regression	pass	0	18	
+aprender-core	recommend_content	pass	0	17	
+aprender-core	regularized_regression	pass	0	17	
+aprender-core	rlvr	pass	0	27	
+aprender-core	rosetta_stone	pass	0	23	
+aprender-core	shell_encryption_demo	pass	0	40	
+aprender-core	shell_model_format	pass	0	17	
+aprender-core	shell_safety_inference	pass	0	17	
+aprender-core	shell_safety_training	pass	0	19	
+aprender-core	showcase_benchmark	pass	0	17	
+aprender-core	sovereign_offline	pass	0	17	
+aprender-core	sovereign_stack	pass	0	17	
+aprender-core	spectral_clustering	pass	0	17	
+aprender-core	svm_iris	pass	0	17	
+aprender-core	synthetic_data_generation	pass	0	17	
+aprender-core	tabu_tsp	pass	0	17	
+aprender-core	text_classification	pass	0	17	
+aprender-core	text_preprocessing	pass	0	17	
+aprender-core	time_series_forecasting	pass	0	16	
+aprender-core	tokenizer_surgery	pass	0	17	
+aprender-core	topic_sentiment_analysis	pass	0	17	
+aprender-core	trueno_compute_integration	pass	0	17	
+aprender-core	tsne_visualization	pass	0	16	
+aprender-core	validated_tensors	pass	0	16	
+aprender-core	whisper_transcribe	pass	0	17	
+aprender-core	xor_training	pass	0	16	
+aprender-rand	rng_demo	pass	0	6	
+aprender-zram-core	compress_benchmark	pass	0	4	
+aprender-zram-core	debug_batch_compressor	pass	0	0	
+aprender-zram-core	debug_decompress	pass	0	1	
+aprender-zram-core	decompress_throughput	pass	0	1	
+aprender-zram-core	g119_parallel_benchmark	pass	0	0	
+aprender-zram-core	gpu_decompress_benchmark	pass	0	1	
+aprender-zram-core	gpu_info	fail	101	3	build: error[E0432]: unresolved import `trueno_gpu::driver::PinnedBuffer`
+aprender-zram-core	parallel_scaling	pass	0	7	
+aprender-train	aprender-train	needs-args	2	38	Usage: aprender-train [OPTIONS] <COMMAND>
+aprender-train	calibration_check	pass	0	17	
+aprender-train	citl	pass	0	27	
+aprender-train	classify_tune_demo	pass	0	18	
+aprender-train	cli_audit	pass	0	16	
+aprender-train	cli_bench	pass	0	16	
+aprender-train	cli_inspect	pass	0	17	
+aprender-train	cli_monitor	pass	0	15	
+aprender-train	cluster_training	pass	0	27	
+aprender-train	contract_pipeline_demo	pass	0	17	
+aprender-train	cuda_backend	pass	0	16	
+aprender-train	cuda_training_benchmark	fail	1	51	run: This benchmark requires the 'cuda' feature.
+aprender-train	design_by_contract	pass	0	17	
+aprender-train	distillation	pass	0	17	
+aprender-train	drift_simulation	pass	0	17	
+aprender-train	encoder_linear_probe	pass	0	17	
+aprender-train	explainability	pass	0	17	
+aprender-train	finetune_real	fail	101	42	run: warning: unnecessary parentheses around block return value
+aprender-train	finetune_test_gen	pass	0	24	
+aprender-train	gemm_bench	pass	0	16	
+aprender-train	gpu_ledger	pass	0	18	
+aprender-train	hf_distillation	pass	0	18	
+aprender-train	inference_monitor	pass	0	18	
+aprender-train	llama2-finetune-lora	pass	0	62	
+aprender-train	llama2-finetune-qlora	pass	0	63	
+aprender-train	llama2-memory-benchmarks	pass	0	18	
+aprender-train	llama2-train	fail	101	17	run: 🦙 LLaMA 2 Training from Scratch
+aprender-train	merge_models	pass	0	17	
+aprender-train	mnist_train	pass	0	104	
+aprender-train	mnist_train_gpu	pass	0	112	
+aprender-train	model_io	pass	0	18	
+aprender-train	monitoring	pass	0	19	
+aprender-train	multi_adapter_training	pass	0	18	
+aprender-train	nvml_test	pass	0	29	
+aprender-train	open_asr_leaderboard	pass	0	18	
+aprender-train	profile_cuda_trainer	fail	1	16	run: This example requires --features cuda
+aprender-train	pruning_pipeline	pass	0	19	
+aprender-train	research	pass	0	18	
+aprender-train	shell_safety_classify	pass	0	47	
+aprender-train	sovereign	pass	0	18	
+aprender-train	ssc_eval	fail	101	17	run: thread 'main' (2987340) panicked at crates/aprender-train/examples/ssc_eval.rs:19:70:
+aprender-train	ssc_preflight	fail	101	17	run: thread 'main' (3016343) panicked at crates/aprender-train/examples/ssc_preflight.rs:21:70:
+aprender-train	train_from_yaml	pass	0	18	
+aprender-train	train_from_yaml_example	needs-data	1	17	Training failed: Configuration error: Failed to read config file examples/config.yaml: No such file or directory (os error 2)
+aprender-train	training_loop	pass	0	18	
+aprender-train	wgpu_canary	pass	0	48	
+aprender-train	wgpu_eval	timeout	137	151	run killed after 120s
+aprender-train	wgpu_train	timeout	137	129	run killed after 120s
+aprender-train	wgpu_train_step	pass	0	18	
+aprender-serve	api_server	timeout	137	141	run killed after 120s
+aprender-serve	apr_benchmark	pass	0	15	
+aprender-serve	apr_gpu_benchmark	fail	101	53	run: ═══════════════════════════════════════════════════════════════
+aprender-serve	apr_loading	pass	0	11	
+aprender-serve	apr_mmap_loading	pass	0	10	
+aprender-serve	aprender-serve	needs-args	2	12	Usage: aprender-serve <COMMAND>
+aprender-serve	attention_manual_verify	pass	0	10	
+aprender-serve	bench_apr_gpu	pass	0	17	
+aprender-serve	bench_apr_vs_gguf	pass	0	28	
+aprender-serve	bench_barrier_overhead	pass	0	25	
+aprender-serve	bench_batched_forward	pass	0	18	
+aprender-serve	bench_batched_gemv	pass	0	16	
+aprender-serve	bench_chunk_sizes	pass	0	16	
+aprender-serve	bench_chunked_matmul	pass	0	31	
+aprender-serve	bench_comparison	pass	0	11	
+aprender-serve	bench_continuous_batching	pass	0	23	
+aprender-serve	bench_cpu_util	pass	0	16	
+aprender-serve	bench_flash_decoding	pass	0	25	
+aprender-serve	bench_forward	needs-args	1	12	Usage: bench_forward <model.gguf>
+aprender-serve	bench_gemv	pass	0	14	
+aprender-serve	bench_kernel_variants	pass	0	11	
+aprender-serve	bench_manual_threads	pass	0	35	
+aprender-serve	bench_matmul_breakdown	pass	0	13	
+aprender-serve	bench_matmul_only	needs-data	1	10	Error: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /home/noah/models/TinyLlama-1.1B-Chat-v1.0-Q4_K_M.gguf: No such file or directory (os error 2)" }
+aprender-serve	bench_multisequence_graph	pass	0	19	
+aprender-serve	bench_q4k_detect	pass	0	12	
+aprender-serve	bench_q4k_parallel	pass	0	11	
+aprender-serve	bench_q4k_simd	pass	0	11	
+aprender-serve	bench_q8k_speedup	pass	0	12	
+aprender-serve	bench_qwen	timeout	137	126	run killed after 120s
+aprender-serve	bench_rayon_overhead	pass	0	22	
+aprender-serve	bench_realistic	pass	0	17	
+aprender-serve	bench_scaling	pass	0	26	
+aprender-serve	bench_scratch	needs-data	1	10	Error: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /home/noah/models/TinyLlama-1.1B-Chat-v1.0-Q4_K_M.gguf: No such file or directory (os error 2)" }
+aprender-serve	bench_seq_vs_par	pass	0	26	
+aprender-serve	bench_simd_dot	pass	0	17	
+aprender-serve	bench_speculative	pass	0	14	
+aprender-serve	bench_tiled_q4k	pass	0	13	
+aprender-serve	bench_toks	needs-args	101	12	Usage: bench_toks <model.gguf>
+aprender-serve	bench_v2_kernel	pass	0	57	
+aprender-serve	bench_vnni_vs_avx2	pass	0	13	
+aprender-serve	benchmark_cpu	pass	0	31	
+aprender-serve	brick_divergence_trace	pass	0	18	
+aprender-serve	chat_template	pass	0	11	
+aprender-serve	check_apr_tensors	needs-args	1	10	Usage: check_apr_tensors <model.apr>
+aprender-serve	check_arch_detection	needs-data	1	25	Error: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /tmp/tinyllama.gguf: No such file or directory (os error 2)" }
+aprender-serve	check_bias	needs-data	101	11	load: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open ../aprender/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	check_bias_format	needs-data	101	10	read file: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+aprender-serve	check_bias_raw	pass	0	11	
+aprender-serve	check_biases	pass	0	28	
+aprender-serve	check_dims	needs-data	101	10	test: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+aprender-serve	check_embed	needs-data	101	10	test: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+aprender-serve	check_embed_layout	needs-data	1	10	Error: UnsupportedOperation { operation: "open_safetensors", reason: "Failed to open file '/home/noah/models/qwen2.5-coder-0.5b-instruct/model.safetensors': No such file or directory (os error 2)" }
+aprender-serve	check_embedding	needs-data	101	10	load: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open ../aprender/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	check_embeddings	needs-data	101	10	test: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+aprender-serve	check_ffn_down_col_5475	needs-data	101	10	Failed: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /tmp/parity-bench/tinyllama-1.1b-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	check_ffn_down_types	needs-data	101	10	Failed: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /tmp/parity-bench/tinyllama-1.1b-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	check_ffn_down_weight	needs-data	101	10	Failed: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /tmp/parity-bench/tinyllama-1.1b-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	check_ffn_hidden	needs-data	101	10	Failed: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /tmp/parity-bench/tinyllama-1.1b-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	check_final_hidden	needs-data	101	10	Failed: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /tmp/parity-bench/tinyllama-1.1b-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	check_forward	needs-data	101	10	test: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /home/noah/src/aprender/tinyllama-1.1b-chat-v1.0.Q4_0.gguf: No such file or directory (os error 2)" }
+aprender-serve	check_gate_up_correlation	needs-data	101	10	Failed: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /tmp/parity-bench/tinyllama-1.1b-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	check_gguf_meta	needs-data	101	10	read file: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+aprender-serve	check_gguf_metadata	needs-data	101	10	Failed to read file: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+aprender-serve	check_gguf_model_version	needs-data	101	10	load: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open ../aprender/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	check_gpu_logits	pass	0	34	
+aprender-serve	check_idx_5475	needs-data	101	10	Failed: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /tmp/parity-bench/tinyllama-1.1b-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	check_layer2_ffn_down	needs-data	101	10	Failed: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /tmp/parity-bench/tinyllama-1.1b-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	check_layer4	fail	101	10	run: thread 'main' (3548955) panicked at crates/aprender-serve/examples/check_layer4.rs:4:46:
+aprender-serve	check_layer_structure	pass	0	43	
+aprender-serve	check_layer_weights	needs-data	101	10	Failed: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /tmp/parity-bench/tinyllama-1.1b-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	check_lm_head	pass	0	31	
+aprender-serve	check_matmul	needs-data	101	10	test: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /home/noah/src/aprender/tinyllama-1.1b-chat-v1.0.Q4_0.gguf: No such file or directory (os error 2)" }
+aprender-serve	check_newlines	needs-data	101	10	load: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open ../aprender/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	check_norm_weight	needs-data	101	10	Failed: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /tmp/parity-bench/tinyllama-1.1b-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	check_norm_weights	needs-data	101	10	test: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+aprender-serve	check_paris	needs-data	101	11	test: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /home/noah/src/aprender/tinyllama-1.1b-chat-v1.0.Q4_0.gguf: No such file or directory (os error 2)" }
+aprender-serve	check_prefill_logits	needs-data	101	11	load: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open ../aprender/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	check_q4k_layout	needs-data	1	10	Error: IoError { message: "Failed to open APR file: No such file or directory (os error 2)" }
+aprender-serve	check_q4k_population	needs-data	1	11	Error: IoError { message: "Failed to open APR file: No such file or directory (os error 2)" }
+aprender-serve	check_q8k_accuracy	pass	0	22	
+aprender-serve	check_qkv_bias	pass	0	21	
+aprender-serve	check_qkv_dims	needs-data	101	10	load: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open ../aprender/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	check_qkv_tensors	needs-data	1	10	Error: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /tmp/tinyllama.gguf: No such file or directory (os error 2)" }
+aprender-serve	check_qtype	pass	0	15	
+aprender-serve	check_qtypes	pass	0	14	
+aprender-serve	check_raw_bias	needs-data	101	11	read file: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+aprender-serve	check_raw_bias_v2	needs-data	101	10	read file: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+aprender-serve	check_raw_tensors	needs-data	101	10	test: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+aprender-serve	check_rmsnorm_params	needs-data	101	11	load: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open ../aprender/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	check_space_token	pass	0	52	
+aprender-serve	check_tensor_names	needs-data	101	10	load: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open ../aprender/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	check_tensor_order	needs-data	101	11	read file: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+aprender-serve	check_tensors	needs-data	101	10	Failed to read file: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+aprender-serve	check_theta	pass	0	28	
+aprender-serve	check_token0	pass	0	12	
+aprender-serve	check_token0_emb	pass	0	32	
+aprender-serve	check_token_74403	pass	0	26	
+aprender-serve	check_token_scores	needs-data	101	10	Failed: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /tmp/parity-bench/tinyllama-1.1b-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	check_token_scores_v2	needs-data	101	10	Failed: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /tmp/parity-bench/tinyllama-1.1b-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	check_tokenization	needs-data	101	10	load: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open ../aprender/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	check_tokenizer	needs-data	101	10	test: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+aprender-serve	check_tokens	pass	0	14	
+aprender-serve	check_v_weight	needs-data	101	11	Failed: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /tmp/parity-bench/tinyllama-1.1b-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	check_v_weights	needs-data	101	10	Failed to load model: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /tmp/parity-bench/tinyllama-1.1b-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	check_weight_layout	pass	0	19	
+aprender-serve	check_weight_scales	needs-data	101	10	Failed: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /tmp/parity-bench/tinyllama-1.1b-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	check_weight_stats	pass	0	46	
+aprender-serve	compare_all_layers	pass	0	16	
+aprender-serve	compare_apr_gguf_forward	needs-data	1	11	Error: IoError { message: "Failed to open APR file: No such file or directory (os error 2)" }
+aprender-serve	compare_configs	pass	0	38	
+aprender-serve	compare_cpu_gpu	pass	0	18	
+aprender-serve	compare_cpu_paths	pass	0	16	
+aprender-serve	compare_embed	pass	0	52	
+aprender-serve	compare_embedding_index	pass	0	32	
+aprender-serve	compare_forward_methods	needs-data	101	10	Failed: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /tmp/parity-bench/tinyllama-1.1b-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	compare_forward_paths	pass	0	36	
+aprender-serve	compare_hidden_before_norm	pass	0	19	
+aprender-serve	compare_l0_v	pass	0	13	
+aprender-serve	compare_layer0	needs-data	101	10	Failed to load: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open ../aprender/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	compare_layer0_full	pass	0	20	
+aprender-serve	compare_layer_outputs	needs-data	101	11	Failed: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /tmp/parity-bench/tinyllama-1.1b-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	compare_layers	pass	0	21	
+aprender-serve	compare_lm_head_input	pass	0	20	
+aprender-serve	compare_logits	pass	0	34	
+aprender-serve	compare_matmul	pass	0	11	
+aprender-serve	compare_matmul2	pass	0	11	
+aprender-serve	compare_q4k_bytes	pass	0	66	
+aprender-serve	compare_q_projection	pass	0	21	
+aprender-serve	compare_qkv_structure	pass	0	25	
+aprender-serve	compare_rope	pass	0	14	
+aprender-serve	compare_v_weight	needs-data	101	10	Failed: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /tmp/parity-bench/tinyllama-1.1b-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	compare_weights	pass	0	18	
+aprender-serve	contract_pipeline_demo	pass	0	10	
+aprender-serve	convert_and_bench_apr	needs-data	101	10	Failed to read GGUF file: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+aprender-serve	convert_apr_q4k	pass	0	13	
+aprender-serve	cpu_hidden	pass	0	15	
+aprender-serve	cpu_hidden_state_trace	pass	0	14	
+aprender-serve	cpu_hidden_trace	pass	0	15	
+aprender-serve	cublas_fp8_7b_reproducer	fail	2	10	run: This example requires the 'cuda' feature. Run with --features cuda
+aprender-serve	cuda_chat_completions	pass	0	12	
+aprender-serve	cuda_debug	pass	0	12	
+aprender-serve	debug_apr_divergence	needs-data	1	10	Error: IoError { message: "Failed to open APR file: No such file or directory (os error 2)" }
+aprender-serve	debug_apr_embedding	pass	0	38	
+aprender-serve	debug_attention_output	needs-data	1	11	Error: IoError { message: "Failed to open APR file: No such file or directory (os error 2)" }
+aprender-serve	debug_chat_template	needs-data	101	10	load: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open ../aprender/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	debug_cpu_forward	pass	0	15	
+aprender-serve	debug_cpu_gpu_divergence	pass	0	20	
+aprender-serve	debug_early_layers	needs-data	101	11	Failed: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /tmp/parity-bench/tinyllama-1.1b-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	debug_embed_test	needs-data	1	10	Error: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open ../aprender/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	debug_embedding	needs-data	101	10	Failed: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /tmp/parity-bench/tinyllama-1.1b-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	debug_embedding_qtype	needs-data	101	10	Failed: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /tmp/parity-bench/tinyllama-1.1b-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	debug_embedding_simple	pass	0	35	
+aprender-serve	debug_embeddings	pass	0	13	
+aprender-serve	debug_first_q_proj	needs-data	101	10	Failed: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /tmp/parity-bench/tinyllama-1.1b-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	debug_forward	needs-data	101	11	test: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /home/noah/src/aprender/tinyllama-1.1b-chat-v1.0.Q4_0.gguf: No such file or directory (os error 2)" }
+aprender-serve	debug_forward_bias	pass	0	15	
+aprender-serve	debug_gen_detailed	needs-args	101	12	Usage: debug_gen_detailed <model.gguf>
+aprender-serve	debug_gpu_divergence	pass	0	19	
+aprender-serve	debug_gpu_layer4	pass	0	14	
+aprender-serve	debug_hidden_state	pass	0	19	
+aprender-serve	debug_inference	timeout	137	125	run killed after 120s
+aprender-serve	debug_layer0_compare	pass	0	18	
+aprender-serve	debug_layer0_divergence	pass	0	19	
+aprender-serve	debug_layer0_stepwise	pass	0	18	
+aprender-serve	debug_layer0_trace	needs-data	101	10	Failed: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /tmp/parity-bench/tinyllama-1.1b-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	debug_layer21_ffn	needs-data	101	11	Failed: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /tmp/parity-bench/tinyllama-1.1b-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	debug_layer2_ffn	needs-data	101	10	Failed: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /tmp/parity-bench/tinyllama-1.1b-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	debug_layer2_gate	needs-data	101	11	Failed: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /tmp/parity-bench/tinyllama-1.1b-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	debug_layer_by_layer	pass	0	19	
+aprender-serve	debug_layer_compare	pass	0	11	
+aprender-serve	debug_lm_head	pass	0	18	
+aprender-serve	debug_lm_head_direct	fail	101	15	run: CORRECTNESS-002: Direct LM head GPU vs CPU comparison
+aprender-serve	debug_lm_head_divergence	pass	0	19	
+aprender-serve	debug_lm_head_weights	pass	0	29	
+aprender-serve	debug_matmul_convention	needs-data	1	11	Error: IoError { message: "Failed to open APR file: No such file or directory (os error 2)" }
+aprender-serve	debug_matvec_compare	needs-data	101	10	Failed: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /tmp/parity-bench/tinyllama-1.1b-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	debug_normed_hidden	pass	0	20	
+aprender-serve	debug_normed_hidden_compare	pass	0	20	
+aprender-serve	debug_o_weight	needs-data	101	11	Failed: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /tmp/parity-bench/tinyllama-1.1b-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	debug_o_weight_layout	needs-data	101	10	Failed: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /tmp/parity-bench/tinyllama-1.1b-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	debug_pos1	pass	0	20	
+aprender-serve	debug_ptx	pass	0	13	
+aprender-serve	debug_q4_0	pass	0	26	
+aprender-serve	debug_q4k_attn_output	needs-data	1	11	Error: IoError { message: "Failed to open APR file: No such file or directory (os error 2)" }
+aprender-serve	debug_q4k_controlled	pass	0	15	
+aprender-serve	debug_q4k_down_weight	needs-data	101	10	Failed: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /tmp/parity-bench/tinyllama-1.1b-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	debug_q4k_embedding_raw	needs-data	101	11	Failed: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /tmp/parity-bench/tinyllama-1.1b-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	debug_q4k_gemv	pass	0	16	
+aprender-serve	debug_q4k_gemv_layer0	pass	0	19	
+aprender-serve	debug_q4k_gemv_tiled	pass	0	16	
+aprender-serve	debug_q4k_real_input	pass	0	15	
+aprender-serve	debug_q4k_rmsnorm_input	pass	0	17	
+aprender-serve	debug_q6k_controlled	fail	101	12	run: CORRECTNESS-002: Controlled Q6K test
+aprender-serve	debug_q6k_gemv	pass	0	19	
+aprender-serve	debug_q6k_layout	needs-data	101	10	Failed: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /tmp/parity-bench/tinyllama-1.1b-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	debug_q6k_lm_head_test	pass	0	20	
+aprender-serve	debug_q6k_row	pass	0	19	
+aprender-serve	debug_q6k_single_row	pass	0	14	
+aprender-serve	debug_q_weight_compare	needs-data	101	11	Failed: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /tmp/parity-bench/tinyllama-1.1b-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	debug_qkv_compare	pass	0	14	
+aprender-serve	debug_qkv_matmul	needs-data	1	11	Error: IoError { message: "Failed to open APR file: No such file or directory (os error 2)" }
+aprender-serve	debug_qwen	needs-data	1	10	Error: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open ../aprender/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	debug_rmsnorm_layer0	pass	0	19	
+aprender-serve	debug_single_row	pass	0	20	
+aprender-serve	debug_speculative	pass	0	13	
+aprender-serve	debug_tensor_layout	pass	0	11	
+aprender-serve	debug_tiled_q4k	pass	0	19	
+aprender-serve	debug_v_weight	needs-data	101	11	Failed: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /tmp/parity-bench/tinyllama-1.1b-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	debug_v_weight_layout	needs-data	101	10	Failed: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /tmp/parity-bench/tinyllama-1.1b-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	debug_weights	pass	0	14	
+aprender-serve	design_by_contract	pass	0	11	
+aprender-serve	detailed_profile	timeout	137	126	run killed after 120s
+aprender-serve	diag_apr_determinism	needs-data	1	10	Error: IoError { message: "Failed to open APR file: No such file or directory (os error 2)" }
+aprender-serve	diag_apr_qkv_layer0	needs-data	1	11	Error: IoError { message: "Failed to open APR file: No such file or directory (os error 2)" }
+aprender-serve	diag_compare_layer3_ffn	needs-data	1	11	Error: IoError { message: "Failed to open APR file: No such file or directory (os error 2)" }
+aprender-serve	diag_compare_qkv_bias	needs-data	1	10	Error: IoError { message: "Failed to open APR file: No such file or directory (os error 2)" }
+aprender-serve	diag_q4k_dequant_cpu_vs_gpu	needs-data	1	11	Error: IoError { message: "Failed to open .apr file: No such file or directory (os error 2)" }
+aprender-serve	diag_qkv_bisection_layer0	needs-data	1	10	Error: IoError { message: "Failed to open APR file: No such file or directory (os error 2)" }
+aprender-serve	digit_combo_test	timeout	137	126	run killed after 120s
+aprender-serve	dump_config	needs-data	101	10	Failed: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /tmp/parity-bench/tinyllama-1.1b-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	dump_def_embedding	needs-data	101	10	load model: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open ../aprender/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	dump_gguf_dims	needs-data	101	10	Failed to load model: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /tmp/parity-bench/tinyllama-1.1b-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	dump_layer0_tensors	needs-data	101	10	load: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open ../aprender/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	dump_q6k_ptx	pass	0	13	
+aprender-serve	final_hidden_compare	pass	0	19	
+aprender-serve	find_ffn_outliers	needs-data	101	10	Failed: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /tmp/parity-bench/tinyllama-1.1b-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	fresh_compare	pass	0	20	
+aprender-serve	gguf_debug	needs-data	101	10	read file: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+aprender-serve	gguf_loading	pass	0	11	
+aprender-serve	gpu_gemm_benchmark	pass	0	67	
+aprender-serve	gpu_matvec_benchmark	timeout	137	125	run killed after 120s
+aprender-serve	gpu_showcase_benchmark	pass	0	26	
+aprender-serve	hidden_compare	pass	0	23	
+aprender-serve	imp800_gpu_parity	pass	0	15	
+aprender-serve	imp900_optimized_gpu	pass	0	15	
+aprender-serve	imp_1010_full_cuda_benchmark	timeout	137	126	run killed after 120s
+aprender-serve	imp_700_realworld_verification	pass	0	14	
+aprender-serve	imp_701_performance_gap	pass	0	11	
+aprender-serve	imp_800_kv_cache_falsification	pass	0	10	
+aprender-serve	imp_801_flash_attention_falsification	pass	0	12	
+aprender-serve	inference	pass	0	11	
+aprender-serve	instrumented_forward	timeout	137	125	run killed after 120s
+aprender-serve	layer0_attention_compare	pass	0	19	
+aprender-serve	layer0_step_compare	pass	0	20	
+aprender-serve	layer_by_layer_debug	pass	0	48	
+aprender-serve	layer_by_layer_trace	pass	0	19	
+aprender-serve	layer_compare	pass	0	14	
+aprender-serve	layer_profile	pass	0	110	
+aprender-serve	measure_forward_time	timeout	137	125	run killed after 120s
+aprender-serve	micro_profile	pass	0	15	
+aprender-serve	model_cache	pass	0	13	
+aprender-serve	observability_demo	pass	0	11	
+aprender-serve	par_001_check_dims	needs-data	101	10	Failed: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /tmp/parity-bench/tinyllama-1.1b-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	par_001_check_embed	needs-data	101	10	Failed: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /tmp/parity-bench/tinyllama-1.1b-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	par_001_check_embeddings	needs-data	101	11	Failed to load model: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /tmp/parity-bench/tinyllama-1.1b-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	par_001_check_lm_head	needs-data	101	10	Failed to load model: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /tmp/parity-bench/tinyllama-1.1b-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	par_001_check_output_norm	needs-data	101	10	Failed to load model: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /tmp/parity-bench/tinyllama-1.1b-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	par_001_check_q6k_superblocks	needs-data	101	10	Failed to load model: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /tmp/parity-bench/tinyllama-1.1b-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	par_001_compare_data	needs-data	101	10	Failed to load model: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /tmp/parity-bench/tinyllama-1.1b-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	par_001_debug_forward	needs-data	101	10	Failed to load model: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /tmp/parity-bench/tinyllama-1.1b-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	par_001_full_forward	needs-data	101	10	Failed to load model: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /tmp/parity-bench/tinyllama-1.1b-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	par_001_fused_vs_naive	needs-data	101	10	Failed to load model: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /tmp/parity-bench/tinyllama-1.1b-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	par_001_list_q6k	needs-data	101	11	Failed to load model: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /tmp/parity-bench/tinyllama-1.1b-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	par_001_qkv_parity	needs-data	101	10	Failed to load model: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /tmp/parity-bench/tinyllama-1.1b-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	par_001_qv_comparison	needs-data	101	10	Failed to load model: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /tmp/parity-bench/tinyllama-1.1b-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	par_001_tensor_offset	needs-data	101	10	Failed to load model: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /tmp/parity-bench/tinyllama-1.1b-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	par_001_test_chat	needs-data	101	10	Failed: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /tmp/parity-bench/tinyllama-1.1b-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	par_001_test_chatml	needs-data	101	10	Failed: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /tmp/parity-bench/tinyllama-1.1b-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	par_001_test_math	needs-data	101	10	Failed to load model: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /tmp/parity-bench/tinyllama-1.1b-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	par_001_trace_all_layers	needs-data	101	10	Failed: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /tmp/parity-bench/tinyllama-1.1b-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	par_001_trace_hidden	needs-data	101	10	Failed: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /tmp/parity-bench/tinyllama-1.1b-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	par_001_trace_layers	needs-data	101	10	Failed to load model: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /tmp/parity-bench/tinyllama-1.1b-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	par_001_trace_pos1	needs-data	101	10	Failed to load model: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /tmp/parity-bench/tinyllama-1.1b-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	par_001_trace_token	needs-data	101	10	Failed to load model: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /tmp/parity-bench/tinyllama-1.1b-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	par_001_trace_v	needs-data	101	10	Failed to load model: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /tmp/parity-bench/tinyllama-1.1b-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	par_001_transpose_test	needs-data	101	11	Failed to load model: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /tmp/parity-bench/tinyllama-1.1b-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	par_001_verify_colmajor	needs-data	101	10	Failed to load model: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /tmp/parity-bench/tinyllama-1.1b-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	par_001_verify_ffn_down	needs-data	101	11	Failed to load model: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /tmp/parity-bench/tinyllama-1.1b-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	par_001_verify_lm_head	needs-data	101	10	Failed to load model: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /tmp/parity-bench/tinyllama-1.1b-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	par_001_verify_q4k_dot	needs-data	101	11	Failed to load model: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /tmp/parity-bench/tinyllama-1.1b-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	par_001_verify_q4k_matvec	needs-data	101	10	Failed to load model: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /tmp/parity-bench/tinyllama-1.1b-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	par_001_verify_q6k_rowmajor	needs-data	101	10	Failed: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /tmp/parity-bench/tinyllama-1.1b-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	par_001_verify_v_real	needs-data	101	10	Failed to load model: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /tmp/parity-bench/tinyllama-1.1b-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	par_001_weight_alignment	needs-data	101	10	Failed to load model: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /tmp/parity-bench/tinyllama-1.1b-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	parity_035_m4_verification	pass	0	13	
+aprender-serve	parity_036_gpu_attention	pass	0	16	
+aprender-serve	parity_038_async_streams	pass	0	13	
+aprender-serve	parity_039_flash_attention	pass	0	12	
+aprender-serve	parity_040_fp16_attention	pass	0	13	
+aprender-serve	performance_parity	fail	101	57	run: ╔═════════════════════════════════════════════════════════════════�
+aprender-serve	pipeline_tui	timeout	137	125	run killed after 120s
+aprender-serve	pmat_benchmark_matrix	timeout	137	126	run killed after 120s
+aprender-serve	position_trace	pass	0	66	
+aprender-serve	predict_after_layer1	needs-data	101	10	Failed: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /tmp/parity-bench/tinyllama-1.1b-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	profile_7b	pass	0	27	
+aprender-serve	profile_all_layers	pass	0	26	
+aprender-serve	profile_all_matmuls	pass	0	16	
+aprender-serve	profile_attention	pass	0	60	
+aprender-serve	profile_cached_forward	needs-data	101	11	Failed to load model: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /home/noah/.cache/gguf/tinyllama-1.1b-chat-v1.0.Q4_0.gguf: No such file or directory (os error 2)" }
+aprender-serve	profile_cpu_breakdown	pass	0	99	
+aprender-serve	profile_cpu_kernel	pass	0	16	
+aprender-serve	profile_detailed	needs-data	1	10	Error: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /home/noah/models/TinyLlama-1.1B-Chat-v1.0-Q4_K_M.gguf: No such file or directory (os error 2)" }
+aprender-serve	profile_ffn	pass	0	13	
+aprender-serve	profile_forward_breakdown	timeout	137	125	run killed after 120s
+aprender-serve	profile_forward_detailed	pass	0	113	
+aprender-serve	profile_forward_instrumented	pass	0	118	
+aprender-serve	profile_forward_pass	needs-data	1	10	Error: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /home/noah/models/TinyLlama-1.1B-Chat-v1.0-Q4_K_M.gguf: No such file or directory (os error 2)" }
+aprender-serve	profile_full_forward	timeout	137	126	run killed after 120s
+aprender-serve	profile_inference	needs-data	1	10	Error: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /home/noah/models/TinyLlama-1.1B-Chat-v1.0-Q4_K_M.gguf: No such file or directory (os error 2)" }
+aprender-serve	profile_layer_breakdown	pass	0	14	
+aprender-serve	profile_lm_head	pass	0	15	
+aprender-serve	profile_matmul_cold	pass	0	17	
+aprender-serve	profile_matmul_detail	pass	0	14	
+aprender-serve	profile_matmul_sizes	pass	0	19	
+aprender-serve	profile_non_matmul	pass	0	14	
+aprender-serve	profile_phi2_simple	needs-data	101	11	Failed to load: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /mnt/ssd/models/phi-2.Q4_0.gguf: No such file or directory (os error 2)" }
+aprender-serve	profile_q8k_quant	pass	0	12	
+aprender-serve	profile_rayon_overhead	pass	0	12	
+aprender-serve	profile_scratch_vs_cache	needs-data	1	10	Error: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /home/noah/models/Qwen2.5-Coder-0.5B-Instruct-Q4_K_M.gguf: No such file or directory (os error 2)" }
+aprender-serve	q6k_bench	pass	0	13	
+aprender-serve	quick_generate	needs-data	101	11	Failed to load model: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /home/noah/src/aprender/tinyllama-1.1b-chat-v1.0.Q4_0.gguf: No such file or directory (os error 2)" }
+aprender-serve	qwen_apr_demo	needs-data	1	10	Error: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /home/noah/src/single-shot-eval/models/raw/qwen2.5-coder-0.5b-instruct-q4_0.gguf: No such file or directory (os erro
+aprender-serve	safetensors_loading	pass	0	11	
+aprender-serve	test_0_5b_raw	pass	0	43	
+aprender-serve	test_1_5b_raw	pass	0	24	
+aprender-serve	test_apr_q4k_forward	needs-data	1	10	Error: IoError { message: "Failed to open APR file: No such file or directory (os error 2)" }
+aprender-serve	test_apr_q4k_generate	pass	0	105	
+aprender-serve	test_apr_quantized_cache	needs-args	1	13	Usage: test_apr_quantized_cache <model.apr>
+aprender-serve	test_attention_debug	pass	0	13	
+aprender-serve	test_attention_phi2_dims	pass	0	13	
+aprender-serve	test_chat_format	pass	0	44	
+aprender-serve	test_coherence	needs-data	101	11	test: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /home/noah/src/aprender/tinyllama-1.1b-chat-v1.0.Q4_0.gguf: No such file or directory (os error 2)" }
+aprender-serve	test_cpu_chat	pass	0	30	
+aprender-serve	test_cuda_minimal	pass	0	12	
+aprender-serve	test_ffn_q4k	pass	0	36	
+aprender-serve	test_forward	needs-data	1	10	Error: IoError { message: "Failed to open APR file: No such file or directory (os error 2)" }
+aprender-serve	test_gemv_correctness	pass	0	13	
+aprender-serve	test_generation	pass	0	29	
+aprender-serve	test_gguf_baseline	pass	0	81	
+aprender-serve	test_gpu_bias	pass	0	19	
+aprender-serve	test_graphed	pass	0	23	
+aprender-serve	test_inference	needs-data	1	11	Error: IoError { message: "Failed to open APR file: No such file or directory (os error 2)" }
+aprender-serve	test_lm_head_direct	pass	0	29	
+aprender-serve	test_lm_head_only	pass	0	20	
+aprender-serve	test_m16	pass	0	18	
+aprender-serve	test_multiple_prompts	needs-data	101	10	test: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /home/noah/src/aprender/tinyllama-1.1b-chat-v1.0.Q4_0.gguf: No such file or directory (os error 2)" }
+aprender-serve	test_no_bias	needs-data	101	11	load: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open ../aprender/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	test_ollama_match	needs-data	101	10	load: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open ../aprender/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	test_q4_0_parity	pass	0	11	
+aprender-serve	test_q4k_cuda	pass	0	13	
+aprender-serve	test_q4k_phi2_dims	pass	0	12	
+aprender-serve	test_q6k_correctness	pass	0	16	
+aprender-serve	test_q6k_gemv_direct	pass	0	49	
+aprender-serve	test_q6k_single_row	pass	0	19	
+aprender-serve	test_qkv_matmul	needs-data	101	11	load: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open ../aprender/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	test_qkv_with_bias	needs-data	101	11	load: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open ../aprender/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	test_qwen_prompt	pass	0	28	
+aprender-serve	test_qwen_seq	pass	0	33	
+aprender-serve	test_rope_override	pass	0	54	
+aprender-serve	test_tc_attention	pass	0	13	
+aprender-serve	test_tiled_vs_cpu	pass	0	19	
+aprender-serve	test_tinyllama	needs-data	101	10	load: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /home/noah/models/TinyLlama-1.1B-Chat-v1.0-Q4_K_M.gguf: No such file or directory (os error 2)" }
+aprender-serve	test_tinyllama_simple	needs-data	1	11	Error: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /tmp/tinyllama.gguf: No such file or directory (os error 2)" }
+aprender-serve	test_transpose	needs-data	101	10	Failed: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /tmp/parity-bench/tinyllama-1.1b-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	test_v_matvec	needs-data	101	10	Failed: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /tmp/parity-bench/tinyllama-1.1b-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	tinyllama_survey	pass	0	12	
+aprender-serve	token_survey	pass	0	85	
+aprender-serve	tokenization	pass	0	11	
+aprender-serve	trace_2plus2	pass	0	36	
+aprender-serve	trace_all_layers	pass	0	18	
+aprender-serve	trace_attention	pass	0	27	
+aprender-serve	trace_attention_scores	pass	0	26	
+aprender-serve	trace_attn_weights	pass	0	27	
+aprender-serve	trace_buggy_vs_ok	pass	0	36	
+aprender-serve	trace_causal_attn	pass	0	10	
+aprender-serve	trace_cpu_forward	pass	0	15	
+aprender-serve	trace_divergence	pass	0	15	
+aprender-serve	trace_final	pass	0	20	
+aprender-serve	trace_final_hidden	pass	0	32	
+aprender-serve	trace_forward	needs-data	101	10	load: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open ../aprender/models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	trace_forward_detailed	pass	0	27	
+aprender-serve	trace_full_layer0	pass	0	29	
+aprender-serve	trace_hidden_flow	pass	0	26	
+aprender-serve	trace_layer0_detailed	needs-data	101	10	Failed to load model: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /tmp/parity-bench/tinyllama-1.1b-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	trace_layer0_qkv	needs-data	101	10	Failed: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /tmp/parity-bench/tinyllama-1.1b-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	trace_layer0_qkv_fixed	needs-data	101	10	Failed: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /tmp/parity-bench/tinyllama-1.1b-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	trace_layer21	needs-data	101	11	Failed: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /tmp/parity-bench/tinyllama-1.1b-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	trace_layer2_detail	needs-data	101	10	Failed: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /tmp/parity-bench/tinyllama-1.1b-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	trace_lm_head	pass	0	29	
+aprender-serve	trace_pos1_divergence	pass	0	19	
+aprender-serve	trace_qkv_output	pass	0	26	
+aprender-serve	trace_qkv_step	pass	0	28	
+aprender-serve	trace_qwen_qkv	needs-data	1	26	Error: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /tmp/tinyllama.gguf: No such file or directory (os error 2)" }
+aprender-serve	trace_safetensors	needs-data	1	11	Error: UnsupportedOperation { operation: "open_safetensors", reason: "Failed to open file '/home/noah/models/qwen2.5-coder-0.5b-instruct/model.safetensors': No such file or directory (os error 2)" }
+aprender-serve	trace_single_layer	pass	0	26	
+aprender-serve	trace_single_token_full	pass	0	30	
+aprender-serve	trace_single_vs_multi	pass	0	32	
+aprender-serve	trueno_ab_test	pass	0	14	
+aprender-serve	trueno_dot_test	pass	0	11	
+aprender-serve	validated_tensors	pass	0	12	
+aprender-serve	verify_apr_q4k	pass	0	11	
+aprender-serve	verify_attention_kernel	pass	0	12	
+aprender-serve	verify_embed	pass	0	14	
+aprender-serve	verify_embedding	needs-data	101	10	Failed: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /tmp/parity-bench/tinyllama-1.1b-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	verify_embeddings	pass	0	27	
+aprender-serve	verify_input_token	needs-data	101	10	Failed: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /tmp/parity-bench/tinyllama-1.1b-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	verify_lm_head	needs-data	101	11	Failed to load model: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /tmp/parity-bench/tinyllama-1.1b-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	verify_offsets	needs-data	101	10	test: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+aprender-serve	verify_q4_0_correct	pass	0	26	
+aprender-serve	verify_q4_0_full	pass	0	26	
+aprender-serve	verify_q4_0_matmul	pass	0	26	
+aprender-serve	verify_q4k_layout	needs-data	1	11	Error: IoError { message: "Failed to open APR file: No such file or directory (os error 2)" }
+aprender-serve	verify_q8_0	pass	0	26	
+aprender-serve	verify_rmsnorm	needs-data	101	10	Failed: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /tmp/parity-bench/tinyllama-1.1b-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	verify_rope	pass	0	10	
+aprender-serve	verify_rope_pos0	pass	0	10	
+aprender-serve	verify_rope_type	pass	0	26	
+aprender-serve	verify_tensor_offsets	needs-data	101	11	Failed: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /tmp/parity-bench/tinyllama-1.1b-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	verify_tinyllama_multitoken	needs-data	1	10	Error: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /tmp/tinyllama.gguf: No such file or directory (os error 2)" }
+aprender-serve	verify_v_parallel_matvec	needs-data	101	11	Failed: UnsupportedOperation { operation: "open_model_file", reason: "Failed to open /tmp/parity-bench/tinyllama-1.1b-q4_k_m.gguf: No such file or directory (os error 2)" }
+aprender-serve	weight_check	pass	0	14	
+aprender-serve	wgpu_parity_test	needs-data	1	10	Error: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+aprender-serve	wine_lambda	pass	0	11	
+aprender-registry	content_addressing	pass	0	7	
+aprender-registry	crypto_demo	pass	0	16	
+aprender-registry	experiment_tracking	pass	0	1	
+aprender-registry	lineage_tracking	pass	0	1	
+aprender-registry	model_versioning	pass	0	1	
+aprender-registry	quick_start	pass	0	1	
+aprender-registry	signing_demo	pass	0	0	
+aprender-graph	comprehensive_demo	pass	0	24	
+aprender-graph	graph_algorithms	pass	0	11	
+aprender-graph	paging_demo	pass	0	52	
+aprender-graph	simple_graph	pass	0	10	
+aprender-db	backend_selection	pass	0	14	
+aprender-db	basic_usage	pass	0	4	
+aprender-db	benchmark_shootout	pass	0	4	
+aprender-db	complete_pipeline	pass	0	6	
+aprender-db	compressed_kv	fail	1	5	run: This example requires the 'compression' feature.
+aprender-db	experiment_tracking	pass	0	3	
+aprender-db	gaming_leaderboards	pass	0	4	
+aprender-db	gpu_aggregations	pass	0	12	
+aprender-db	gpu_sales_analytics	pass	0	4	
+aprender-db	kv_store	pass	0	3	
+aprender-db	market_crashes	pass	0	4	
+aprender-db	simd_acceleration	pass	0	3	
+aprender-db	sql_query_interface	pass	0	3	
+aprender-db	topk_selection	pass	0	4	
+aprender-viz	aprender_integration	pass	0	24	
+aprender-viz	box_violin	pass	0	7	
+aprender-viz	confusion_matrix_ml	pass	0	3	
+aprender-viz	dashboard_widgets	pass	0	4	
+aprender-viz	force_graph	pass	0	3	
+aprender-viz	grammar_of_graphics	pass	0	4	
+aprender-viz	heatmap_correlation	pass	0	3	
+aprender-viz	loss_training	pass	0	4	
+aprender-viz	readme_demo	pass	0	3	
+aprender-viz	roc_pr_curves	pass	0	4	
+aprender-viz	scatter_basic	pass	0	3	
+aprender-viz	svg_output	pass	0	4	
+aprender-viz	terminal_output	pass	0	3	
+aprender-viz	text_prompt	pass	0	4	
+aprender-viz	trueno_graph_integration	pass	0	13	
+aprender-cuda-edge	falsification_report_demo	pass	0	8	
+aprender-cuda-edge	null_fuzzer_demo	pass	0	1	
+aprender-cuda-edge	ptx_verifier_demo	pass	0	1	
+aprender-cuda-edge	quant_oracle_demo	pass	0	1	
+aprender-profile	brick_trace_demo	pass	0	28	
+aprender-profile	buggy_server	timeout	137	138	run killed after 120s
+aprender-profile	build_time_assertions	pass	0	12	
+aprender-profile	process_tracer_demo	pass	0	12	
+aprender-profile	validate_golden_trace	pass	0	11	
+aprender-rag	basic_rag	pass	0	7	
+aprender-rag	chunking_strategies	pass	0	3	
+aprender-rag	compressed_index	fail	1	5	run: This example requires the 'compression' feature.
+aprender-rag	eval_hybrid	pass	0	3	
+aprender-rag	hybrid_search	pass	0	4	
+aprender-rag	metrics_evaluation	pass	0	3	
+aprender-rag	nemotron_embeddings	pass	0	3	
+aprender-rag	semantic_embeddings	fail	1	3	run: This example requires the 'embeddings' feature.
+aprender-rag	sqlite_export	pass	0	3	
+aprender-solve	solver_demo	pass	0	3	
+aprender-sparse	sparse_spmv	pass	0	1	
+aprender-orchestrate	agent_contracts	pass	0	64	
+aprender-orchestrate	agent_demo	pass	0	19	
+aprender-orchestrate	agent_guard	pass	0	19	
+aprender-orchestrate	agent_memory	pass	0	18	
+aprender-orchestrate	agent_pool	pass	0	19	
+aprender-orchestrate	agent_routing	pass	0	19	
+aprender-orchestrate	agent_signing	pass	0	18	
+aprender-orchestrate	backend_selection	pass	0	18	
+aprender-orchestrate	bug_hunter_demo	pass	0	103	
+aprender-orchestrate	content_demo	pass	0	18	
+aprender-orchestrate	custom_plugin	pass	0	18	
+aprender-orchestrate	design_by_contract	pass	0	102	
+aprender-orchestrate	full_transpilation	pass	0	18	
+aprender-orchestrate	graph_tui_demo	pass	0	18	
+aprender-orchestrate	hf_catalog_demo	pass	0	18	
+aprender-orchestrate	int8_rescore_demo	pass	0	17	
+aprender-orchestrate	mcp_demo	pass	0	17	
+aprender-orchestrate	moe_routing	pass	0	18	
+aprender-orchestrate	multi_machine_demo	pass	0	17	
+aprender-orchestrate	numpy_conversion	pass	0	17	
+aprender-orchestrate	oracle_demo	pass	0	19	
+aprender-orchestrate	oracle_local_demo	pass	0	22	
+aprender-orchestrate	parf_analysis	pass	0	18	
+aprender-orchestrate	pepita_kernel_demo	pass	0	17	
+aprender-orchestrate	pipeline_demo	pass	0	21	
+aprender-orchestrate	playbook_demo	pass	0	18	
+aprender-orchestrate	pmat_query_demo	pass	0	16	
+aprender-orchestrate	publish_status_demo	pass	0	19	
+aprender-orchestrate	pytorch_conversion	pass	0	18	
+aprender-orchestrate	rag_oracle_demo	pass	0	19	
+aprender-orchestrate	rag_profiling_demo	pass	0	18	
+aprender-orchestrate	repartir_distributed	pass	0	16	
+aprender-orchestrate	serve_demo	pass	0	18	
+aprender-orchestrate	sklearn_conversion	pass	0	18	
+aprender-orchestrate	sovereign_stack_e2e	pass	0	25	
+aprender-orchestrate	stack_comply_demo	timeout	137	151	run killed after 120s
+aprender-orchestrate	stack_diagnostics_demo	pass	0	18	
+aprender-orchestrate	stack_dogfood	pass	0	18	
+aprender-orchestrate	stack_graph_tui	pass	0	19	
+aprender-orchestrate	stack_quality_demo	pass	0	18	
+aprender-orchestrate	svg_generation_demo	pass	0	18	
+aprender-orchestrate	trueno_ublk_demo	pass	0	16	
+aprender-orchestrate	trueno_zram_demo	pass	0	16	
+aprender-distribute	checkpoint_example	pass	0	16	
+aprender-distribute	gpu_detect	pass	0	1	
+aprender-distribute	hello_repartir	pass	0	1	
+aprender-distribute	pubsub_example	pass	0	1	
+aprender-distribute	pushpull_example	pass	0	1	
+aprender-distribute	tensor_example	fail	1	9	run: Error: This example requires the 'tensor' feature.
+aprender-distribute	test_mac_worker	timeout	137	121	run killed after 120s
+aprender-distribute	tls_example	pass	0	1	
+aprender-distribute	v1_1_showcase	pass	0	2	
+aprender-explain	analyze_realizar	pass	0	7	
+aprender-explain	deep_bug_hunt	pass	0	7	
+aprender-explain	ptx_inspector	pass	0	4	
+aprender-tsp	aprender-tsp	needs-args	2	57	Usage: aprender-tsp <COMMAND>
+aprender-tsp	tsp_algorithm_comparison	pass	0	27	
+aprender-tsp	tsp_benchmark	pass	0	28	
+aprender-tsp	tsp_model_persistence	pass	0	26	
+aprender-monte-carlo	aprender-monte-carlo	needs-args	2	25	Usage: aprender-monte-carlo [OPTIONS] <COMMAND>
+aprender-cbtop	adaptive_ml_demo	pass	0	19	
+aprender-cbtop	federated_metrics_demo	pass	0	6	
+aprender-cbtop	incremental_snapshot_demo	pass	0	4	
+aprender-cbtop	predictive_scheduler_demo	pass	0	5	
+aprender-fft	fft_demo	pass	0	1	
+aprender-image	image_demo	pass	0	1	
+aprender-tensor	tensor_demo	pass	0	1	
+aprender-verify	quality_check	pass	0	2	
+aprender-verify-ml	backend_selector	pass	0	15	
+aprender-verify-ml	experiment_tracking	pass	0	11	
+aprender-verify-ml	generator_basic	pass	0	11	
+aprender-verify-ml	grammar_validation	pass	0	11	
+aprender-present-yaml	validate_prs	needs-args	1	6	Usage: validate_prs [-v|--verbose] <file.prs> [file2.prs ...]
+aprender-present-lib	ald_batch_upload	pass	0	7	
+aprender-present-lib	ald_correlation_heatmap	pass	0	4	
+aprender-present-lib	ald_lineage	pass	0	4	
+aprender-present-lib	apr_ald_display	pass	0	7	
+aprender-present-lib	apr_architecture	pass	0	4	
+aprender-present-lib	apr_size_breakdown	pass	0	4	
+aprender-present-lib	apr_version_history	pass	0	4	
+aprender-present-lib	apr_weight_histograms	pass	0	3	
+aprender-present-lib	brick_computer	timeout	137	126	run killed after 120s
+aprender-present-lib	cht_area_stacked	pass	0	4	
+aprender-present-lib	cht_boxplot	pass	0	4	
+aprender-present-lib	cht_donut	pass	0	4	
+aprender-present-lib	cht_heatmap_basic	pass	0	3	
+aprender-present-lib	cht_multi_axis	pass	0	4	
+aprender-present-lib	cht_scatter_bubble	pass	0	4	
+aprender-present-lib	cht_sparkline	pass	0	3	
+aprender-present-lib	dashboard	pass	0	4	
+aprender-present-lib	demo_10x_comparison	pass	0	4	
+aprender-present-lib	dsh_alerts	pass	0	4	
+aprender-present-lib	dsh_infrastructure	pass	0	3	
+aprender-present-lib	dsh_performance	pass	0	4	
+aprender-present-lib	dsh_pipeline	pass	0	4	
+aprender-present-lib	dsh_research	pass	0	4	
+aprender-present-lib	edg_a11y_audit	pass	0	3	
+aprender-present-lib	edg_high_cardinality	pass	0	4	
+aprender-present-lib	edg_memory_soak	pass	0	9	
+aprender-present-lib	edg_numeric	pass	0	4	
+aprender-present-lib	edg_rtl	pass	0	3	
+aprender-present-lib	edg_slow_data	pass	0	4	
+aprender-present-lib	edg_theme_switching	pass	0	4	
+aprender-present-lib	edg_unicode	pass	0	3	
+aprender-present-lib	form_inputs	pass	0	4	
+aprender-present-lib	generate_demo_assets	needs-data	101	3	Failed to write .apr file: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+aprender-present-lib	hello_world	pass	0	4	
+aprender-present-lib	showcase_gpu	pass	0	4	
+aprender-present-lib	showcase_shell	fail	101	4	run: thread 'main' (955598) panicked at crates/aprender-present-lib/examples/showcase_shell.rs:11:39:
+aprender-present-lib	visual_demo	pass	0	3	
+aprender-present-lib	yaml_manifest	pass	0	4	
+aprender-test-cli	stress_testing	pass	0	57	
+aprender-test-showcase	calculator_tui	fail	1	11	run: Error: Os { code: 6, kind: Uncategorized, message: "No such device or address" }
+aprender-test-showcase	calculator_tui_demo	pass	0	4	
+aprender-test-showcase	calculator_wasm_demo	pass	0	3	
+aprender-test-showcase	gui_coverage_report	pass	0	5	
+aprender-qa-gen	bootstrap_playbook	pass	0	2	
+aprender-qa-gen	generate_scenarios	pass	0	1	
+aprender-qa-runner	collect_evidence	pass	0	15	
+aprender-qa-runner	contract_demo	pass	0	1	
+aprender-qa-runner	provable_contracts_demo	pass	0	2	
+aprender-qa-runner	rosetta_testing	pass	0	1	
+aprender-qa-report	calculate_mqs	pass	0	21	
+aprender-qa-report	generate_certificate	pass	0	1	
+aprender-qa-report	generate_rag_markdown	pass	0	1	
+aprender-qa-cli	fail_fast_demo	pass	0	20	
+aprender-qa-cli	integrity_lock_demo	pass	0	1	
+# summary fail=23 needs-args=29 needs-data=168 pass=740 timeout=21
