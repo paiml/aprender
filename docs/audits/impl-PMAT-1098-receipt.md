@@ -123,6 +123,27 @@ trains below 10 PRs/train" does not fire.
 
 The gate that should have caught the last two is `dogfood.sh:473` — `grep -qF "$VERSION" CHANGELOG.md` — which a heading alone satisfies; filed as #3183 with the two-direction predicate.
 
+## T-1 stand-in on the idle GPU hosts, dispatched on the cut (aa61219ef, 15:31Z)
+
+At 15:30Z the fleet was 2/27 busy — `workspace-test` on intel-clean-room-15 and `pr-review-receipt` on intel-clean-room-9 — because `workspace-test` is pinned `runs-on: [self-hosted, X64, Linux, clean-room]` (#3104 kept it: "every PR still runs the x86 SIMD paths") and §3.4 allows one PR. Four nightlies were dispatched on the bump branch head so the idle GPU boxes produce T-1 evidence for this cut instead of nothing (`gh workflow run … --ref PMAT-1098-release-0.67.0`):
+
+| workflow | run | host | what it is for the train | result |
+|---|---|---|---|---|
+| examples-nightly | 34702488724 | yoga-build3 | T-1 "every `cargo run --example`" on a GPU host | in flight |
+| coverage-nightly | 34702490406 | yoga-build2 | §5 P3 baseline for 0.67.0, report-only | in flight |
+| cuda-nightly | 34702491646 | gx10-blackwell | T-1 GPU: the falsifiers build on sm_121 (they did), PP-26 witness | **RED, standing**: the same two steps (`PP-26 batch-invariance witness`, `witness byte-compare`) failed on every run on main since 53dd489e4 = the v0.66.0 sha (34445264201, 34570149942, 34590185667, 34677677292). c=1/4/8 PASS, c=16 diverges at token 31 (#2753 class); the byte-compare dies on `gh: command not found` on gx10 (#3096/#3097 residue). Not caused by the cut → §3.1 does not fire; recorded, not waived |
+| qwen-story-daily | 34702492822 | gx10-blackwell | T-2 inference dogfood on GB10 (`pmat_hunt=0 file_issue=false`) | in flight, queued behind cuda-nightly on the one blackwell runner |
+
+Advisory PR jobs on the bump run: `gpu-quick` (gx10-eph) RED on #3129 + #3135; `cuda-unit` (yoga-eph) RED on #3135 + a new one, **#3184** (`cta64_vs_cta32_vs_cublas_fp16` OOMs the 8 GB 4060) — `cuda-unit` has concluded failure on all six ci.yml runs that reached it today, i.e. an advisory job nobody reads.
+
+**Why gx10 is idle most of every run (measured, for the operator's question).** Ledger, 231 records: intel 73.5 % of gate seconds, gx10 18.7 %, yoga 7.7 %. gx10 ran 130 jobs to intel's 73, all short. The long pole never lands there by construction. #3139 lifts the `X64` pin and fixes four aarch64-only reds; its merge-group run on gx10-pool3 (34693750990) ran all 82,085 tests in **794.6 s** against intel's 1,000–6,000 s, then died on `disk was full` at `/home/noah/eph-pool3` — no disk check runs at job start on gx10 and `machines/gx10/forjar.yaml` declares no reaper/disk-watch (intel has `ci-reaper` + `ci-disk-watch`, infra#311). #3139's roadmap diff is additive against `origin/main` now (`roadmap_diff.py check`: added=1, reserialised=0). It is first in the post-tag re-arm order.
+
+## §6 triage pass (done inside this train, 15:12Z)
+Since v0.66.0 (2026-09-10T05:39Z): issues arrival 68, closure 17; PRs opened 44, closed or merged 13; open PRs 40 (6 drafts), age p95 15.2 d, max 21.1 d; open issues 303. `untriaged` was 11 (no labels) + 4 (no milestone) → **0 and 0** after 22 label writes through `mutate.sh label` (ledger `triage-0.67/mutations.jsonl`) and 4 milestone edits (#3140 #3141 #3142 #3133 → 0.68.0). Labels used: `bug`/`enhancement` + `P1`–`P3`.
+
+## Post-tag drain (replaces post-tag.sh steps 1–2; step 3 is NOT run)
+`drain-held.sh` re-arms the held PRs **one at a time** — arm, wait for MERGED / dropped / never-queued, next — so §3.4 holds while the freeze lifts. Order: 3139 3163 3134 3093 3052 3046 3068 3175 3056 3048. post-tag.sh's step 3 (`ssh yoga … sed -i /etc/github-runner-ephemeral.env` to restore `clean-room` on yoga-eph) is ad-hoc SSH and stays unrun (§3.5); the yoga label lives in the P2 infra PR.
+
 ## T-2 evidence for this cut
 
 | gate | verdict | how |
@@ -137,6 +158,7 @@ The gate that should have caught the last two is `dogfood.sh:473` — `grep -qF 
 - A concurrent actor created `feat/linfa-burn-pareto-tickets` in the main checkout during the lane window — not this session's; named so the next reader does not attribute it to the lane.
 - The CHANGELOG heading sweep (292572fe4): a structural rule applied file-wide instead of to the section being edited deleted 31 headings and was pushed before the count was checked. Reverted in 71305ff93; the rule now: scope every structural edit to the section you own and compare a heading count before and after, before the push.
 - Four merged PRs absent from the 0.67.0 CHANGELOG (aa61219ef) — no gate can see it (#3183).
+- Every push to this docs branch started a full CI run next to the train (34694025825, 34700216664, 34701097504, all cancelled by hand); pushes now carry `[skip ci]` until the tag. The 14:45Z run also found the shipped-tier path ratchet RED on two absolute paths in the ph4 delegate receipt — scrubbed in 2dc645cc7 (`check_hardcoded_paths.sh` differential +0 locally).
 - `pmat hooks install --strict --force` fails in a linked worktree ("Not a directory (os error 20)"): `.git` is a file there; the shared hooks dir carries `pre-commit` only, so `Pmat-Ticket:` trailers are written by hand.
 
 ## Estimates
