@@ -16950,3 +16950,23 @@ roadmap:
   labels:
   - kind:code
   notes: null
+- id: PMAT-3133
+  github_issue: 3133
+  item_type: task
+  title: 'CI artifact rows for Arbiter R2a: junit + sccache-metrics from workspace-test, llvm-cov JSON from Coverage Nightly; Coverage Nightly red since 2026-08-29 (two GPU tests panic bare-metal)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-12T04:52:57Z
+  updated: 2026-09-12T04:52:57Z
+  spec: null
+  acceptance_criteria:
+  - paiml/aprender#3133, infra#532 (PMAT-532). See the issue for the measured baseline and the deliverable.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - ci
+  - arbiter
+  notes: null

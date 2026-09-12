@@ -1059,6 +1059,35 @@ fn uniform_entry(binding: u32) -> wgpu::BindGroupLayoutEntry {
 mod tests {
     use super::*;
 
+    /// The crate's convention for a GPU test, applied here: ASK whether an
+    /// adapter exists, and skip with a printed reason when it does not
+    /// (`backends/gpu/batch/tests.rs` does the same).
+    ///
+    /// Why this module needed it (aprender#3133). Every test below opened with
+    /// `GpuDevice::new().expect("GPU device")`. `Coverage Nightly` runs
+    /// bare-metal on the clean-room runner, where there is no Vulkan adapter,
+    /// so `test_silu_backward_at_zero` and `test_silu_backward_length_mismatch`
+    /// panicked and the lane has been RED every day since 2026-08-29 --
+    /// long enough for the fleet dead-man's switch to call it DEAD. Their seven
+    /// siblings survived only because their names contain `wgpu_` and the
+    /// coverage recipe passes `--skip gpu_`: a NAME filter, which the two newer
+    /// tests happened not to match. A name is not a capability, so all nine go
+    /// through this function and none of them depends on the skip list.
+    ///
+    /// This is not a way to make the tests disappear. Where an adapter exists
+    /// they run exactly as before; measured on this box's RTX 4090, all nine
+    /// still run and pass. Only a host without an adapter sees a SKIP, and it
+    /// sees it on stdout with the reason.
+    fn device_or_skip(test: &str) -> Option<GpuDevice> {
+        if !GpuDevice::is_available() {
+            eprintln!(
+                "SKIP {test}: no GPU adapter (GpuDevice::is_available() == false) -- bare-metal clean-room runner, aprender#3133"
+            );
+            return None;
+        }
+        Some(GpuDevice::new().expect("GPU device: is_available() said yes"))
+    }
+
     /// CPU reference: SiLU backward
     fn silu_backward_cpu(input: &[f32], grad_output: &[f32]) -> Vec<f32> {
         input
@@ -1076,7 +1105,9 @@ mod tests {
     /// FALSIFY-WGPU-001: SiLU backward matches CPU within ε < 1e-4
     #[test]
     fn test_falsify_wgpu_001_silu_backward_parity() {
-        let device = GpuDevice::new().expect("GPU device");
+        let Some(device) = device_or_skip("test_falsify_wgpu_001_silu_backward_parity") else {
+            return;
+        };
 
         let input: Vec<f32> = (-50..50).map(|i| i as f32 * 0.1).collect();
         let grad_output: Vec<f32> = (0..100).map(|i| (i as f32 - 50.0) * 0.01).collect();
@@ -1100,7 +1131,9 @@ mod tests {
     /// SiLU backward at x=0 (sigmoid=0.5, silu'=0.5)
     #[test]
     fn test_silu_backward_at_zero() {
-        let device = GpuDevice::new().expect("GPU device");
+        let Some(device) = device_or_skip("test_silu_backward_at_zero") else {
+            return;
+        };
 
         let input = vec![0.0f32; 4];
         let grad_output = vec![1.0f32; 4];
@@ -1117,7 +1150,9 @@ mod tests {
     /// SiLU backward length mismatch error
     #[test]
     fn test_silu_backward_length_mismatch() {
-        let device = GpuDevice::new().expect("GPU device");
+        let Some(device) = device_or_skip("test_silu_backward_length_mismatch") else {
+            return;
+        };
 
         let input = vec![1.0f32; 10];
         let grad_output = vec![1.0f32; 5]; // wrong length
@@ -1148,7 +1183,9 @@ mod tests {
     /// Which is matmul(grad_c, B^T, M, N, K) but our shader handles the transpose internally.
     #[test]
     fn test_falsify_wgpu_001_gemm_backward_a_parity() {
-        let device = GpuDevice::new().expect("GPU device");
+        let Some(device) = device_or_skip("test_falsify_wgpu_001_gemm_backward_a_parity") else {
+            return;
+        };
 
         let (m, k, n) = (4, 8, 6);
 
@@ -1185,7 +1222,9 @@ mod tests {
     /// grad_b[K,N] = A^T[K,M] @ grad_c[M,N]
     #[test]
     fn test_falsify_wgpu_001_gemm_backward_b_parity() {
-        let device = GpuDevice::new().expect("GPU device");
+        let Some(device) = device_or_skip("test_falsify_wgpu_001_gemm_backward_b_parity") else {
+            return;
+        };
 
         let (m, k, n) = (4, 8, 6);
 
@@ -1218,7 +1257,9 @@ mod tests {
     /// FALSIFY-WGPU-001: RoPE backward matches CPU
     #[test]
     fn test_falsify_wgpu_001_rope_backward_parity() {
-        let device = GpuDevice::new().expect("GPU device");
+        let Some(device) = device_or_skip("test_falsify_wgpu_001_rope_backward_parity") else {
+            return;
+        };
 
         let (num_heads, head_dim, seq_len) = (2, 4, 3);
         let theta = 10000.0f32;
@@ -1278,7 +1319,9 @@ mod tests {
     /// FALSIFY-WGPU-001: AdamW step matches CPU
     #[test]
     fn test_falsify_wgpu_001_adamw_step_parity() {
-        let device = GpuDevice::new().expect("GPU device");
+        let Some(device) = device_or_skip("test_falsify_wgpu_001_adamw_step_parity") else {
+            return;
+        };
 
         let n = 16;
         let mut params: Vec<f32> = (0..n).map(|i| i as f32 * 0.1).collect();
@@ -1334,7 +1377,9 @@ mod tests {
     /// FALSIFY-WGPU-001: RMSNorm backward matches CPU
     #[test]
     fn test_falsify_wgpu_001_rmsnorm_backward_parity() {
-        let device = GpuDevice::new().expect("GPU device");
+        let Some(device) = device_or_skip("test_falsify_wgpu_001_rmsnorm_backward_parity") else {
+            return;
+        };
 
         let (num_rows, hidden_dim) = (3, 8);
         let eps: f32 = 1e-5;
@@ -1417,7 +1462,9 @@ mod tests {
     /// FALSIFY-WGPU-003: NF4 dequant matches CPU
     #[test]
     fn test_falsify_wgpu_003_nf4_dequant_parity() {
-        let device = GpuDevice::new().expect("GPU device");
+        let Some(device) = device_or_skip("test_falsify_wgpu_003_nf4_dequant_parity") else {
+            return;
+        };
 
         // NF4 codebook
         let nf4_lut: [f32; 16] = [
