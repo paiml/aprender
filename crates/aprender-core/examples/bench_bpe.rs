@@ -3,9 +3,10 @@
 //! Loads a HuggingFace tokenizer.json and measures encode throughput.
 //!
 //! Usage:
-//!   cargo run --release --example bench_bpe [-- /path/to/tokenizer.json]
+//!   cargo run --release --example bench_bpe -- /path/to/tokenizer.json
 //!
-//! Defaults to ./tokenizer.json (Qwen2.5 shipped in repo root).
+//! Defaults to ./tokenizer.json when no path is given; the repo ships none, so a
+//! missing file prints the usage line and exits 2 (G3.EX classifies it needs-args).
 
 use aprender::text::bpe::BpeTokenizer;
 use std::time::{Duration, Instant};
@@ -56,6 +57,11 @@ fn main() {
     eprintln!();
 
     // ---- Load ----
+    if !std::path::Path::new(&path).is_file() {
+        eprintln!("Usage: cargo run --release --example bench_bpe -- /path/to/tokenizer.json");
+        eprintln!("(no tokenizer at '{path}'; the repository ships none)");
+        std::process::exit(2);
+    }
     let t0 = Instant::now();
     let tokenizer = BpeTokenizer::from_huggingface(&path)
         .unwrap_or_else(|e| panic!("Failed to load tokenizer from '{path}': {e}"));

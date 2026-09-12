@@ -175,6 +175,12 @@ harness = false
 name = "doctest_extraction"
 required-features = ["doctest"]
 
+# G3.EX (#3121): the body is #[cfg(feature = "doctest")]; without the stanza cargo built it
+# featureless and it exited 1 with "Run with: … --features doctest" on every release dogfood.
+[[example]]
+name = "prose_detection"
+required-features = ["doctest"]
+
 [[example]]
 name = "hub_publishing"
 required-features = ["hf-hub"]
