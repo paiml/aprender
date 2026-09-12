@@ -435,19 +435,48 @@ stories:
   - { id: CRUX-K-20, title: "TensorRT-LLM export",                 competitor: ecosystem,   demand_score: 3, status: missing,   contract: crux-K-20-v1.yaml }
   - { id: CRUX-K-21, title: "MLX backend (Apple Silicon native)",  competitor: ecosystem,   demand_score: 3, status: missing,   contract: crux-K-21-v1.yaml }
 
+  # -- N: Rust ML Framework Parity (aprender#3146, added 2026-09-12) ----------
+  # The two Rust-native ML frameworks. Derived by enumerating BOTH sides, not
+  # recalled: linfa 0.8.1 (18 algorithm sub-crates) and burn 0.21.0 (35 crates)
+  # against aprender's ~55 fittable types and 21 transformer-path autodiff ops.
+  # Neither is a BEAT pillar - aprender claims no pinned-benchmark win over
+  # either; they are capability/UX sources. The registry edit that admits them
+  # is CRUX_COMPETITORS in crates/aprender-contracts/src/schema/validator.rs.
+  - { id: CRUX-N-01, title: "SVD substrate (Golub-Reinsch + randomized)",        competitor: burn,    demand_score: 5, status: missing,  contract: crux-N-01-v1.yaml }
+  - { id: CRUX-N-02, title: "PCA on SVD + TruncatedSVD",                         competitor: linfa,   demand_score: 5, status: partial,  contract: crux-N-02-v1.yaml }
+  - { id: CRUX-N-03, title: "Spatial neighbour index (kd-tree + ball-tree)",     competitor: linfa,   demand_score: 5, status: missing,  contract: crux-N-03-v1.yaml }
+  - { id: CRUX-N-04, title: "Const-generic rank-checked tensor",                 competitor: burn,    demand_score: 5, status: missing,  contract: crux-N-04-v1.yaml }
+  - { id: CRUX-N-05, title: "Autodiff ops: conv, pooling, embedding, gather",    competitor: burn,    demand_score: 4, status: partial,  contract: crux-N-05-v1.yaml }
+  - { id: CRUX-N-06, title: "ONNX import",                                       competitor: burn,    demand_score: 4, status: missing,  contract: crux-N-06-v1.yaml }
+  - { id: CRUX-N-07, title: "AdaBoost + generic Bagging/Voting",                 competitor: linfa,   demand_score: 4, status: missing,  contract: crux-N-07-v1.yaml }
+  - { id: CRUX-N-08, title: "FTRL-Proximal + SGDClassifier/SGDRegressor",        competitor: linfa,   demand_score: 4, status: missing,  contract: crux-N-08-v1.yaml }
+  - { id: CRUX-N-09, title: "OPTICS clustering",                                 competitor: linfa,   demand_score: 3, status: missing,  contract: crux-N-09-v1.yaml }
+  - { id: CRUX-N-10, title: "PLSRegression / PLSCanonical",                      competitor: linfa,   demand_score: 3, status: missing,  contract: crux-N-10-v1.yaml }
+  - { id: CRUX-N-11, title: "LARS / LassoLars / lars_path",                      competitor: linfa,   demand_score: 3, status: missing,  contract: crux-N-11-v1.yaml }
+  - { id: CRUX-N-12, title: "KernelPCA + Nystroem + RBFSampler",                 competitor: linfa,   demand_score: 3, status: missing,  contract: crux-N-12-v1.yaml }
+  - { id: CRUX-N-13, title: "Gaussian + Sparse random projection (JL bound)",    competitor: linfa,   demand_score: 2, status: missing,  contract: crux-N-13-v1.yaml }
+  - { id: CRUX-N-14, title: "Graph intermediate representation (IR)",            competitor: burn,    demand_score: 4, status: missing,  contract: crux-N-14-v1.yaml }
+  - { id: CRUX-N-15, title: "General RL algorithms (PPO / DQN / A2C)",           competitor: burn,    demand_score: 2, status: partial,  contract: crux-N-15-v1.yaml }
+  - { id: CRUX-N-16, title: "Barnes-Hut t-SNE (O(n log n))",                     competitor: linfa,   demand_score: 3, status: partial,  contract: crux-N-16-v1.yaml }
+  - { id: CRUX-N-17, title: "Vision ops: NMS, GPU connected components",         competitor: burn,    demand_score: 2, status: partial,  contract: crux-N-17-v1.yaml }
+
 # ─────────────────────────────────────────────────────────────
 # Coverage — intake v2.0.0 (verified by awk over §5 of subspec)
 # ─────────────────────────────────────────────────────────────
 coverage_intake:
   supported: 43
-  partial:   67
-  missing:   140
+  partial:   72
+  missing:   152
   unclear:    0
-  total:    250
+  total:    267
   notes: |
     ID gaps at C-14, F-10, H-04, I-05, K-06 are intentional — those
     five stories were dropped pre-v1.0.0 as duplicative (see inline
     comments in stories[]).
+    Category N (17 rows, aprender#3146) was added 2026-09-12: 12 missing,
+    5 partial. It is the first category whose competitors are Rust-native
+    frameworks rather than Python/C++ incumbents, which is why it required
+    a CRUX_COMPETITORS registry edit rather than reuse of an existing source.
 
 # ─────────────────────────────────────────────────────────────
 # Falsification conditions

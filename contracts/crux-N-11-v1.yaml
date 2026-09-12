@@ -1,0 +1,86 @@
+# CRUX-N-11 — LARS / LassoLars / lars_path
+# CRUX category N: Rust ML Framework Parity (linfa + burn).
+# Filed from the 2026-09-12 competitive sweep. Tracks GitHub #3157, epic #3146.
+# registry: false — this contract carries real falsification gates and claims no
+# exemption (operator ruling 2026-08-21, "no contract exemptions").
+
+metadata:
+  id: CRUX-N-11
+  version: "1.0.0"
+  created: "2026-09-12"
+  updated: "2026-09-12"
+  author: PAIML Engineering
+  registry: false
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "N — Rust ML Framework Parity"
+  competitor: linfa
+  demand_score: 3  # 1..5, medium priority in pmat work
+  intake_status: missing
+  github_issue: 3157
+  description: >
+    Least Angle Regression and the full regularization path. linfa-lars ships LARS, marked Tested. aprender has Lasso and ElasticNet fitted by coordinate descent at a SINGLE alpha. The value here is the PATH: lars_path computes every Lasso solution for all alphas in roughly one OLS fit, where alpha selection today means refitting per candidate (crates/aprender-core/src/model_selection/alpha.rs suggests that cost is already being paid).
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - 'epic: https://github.com/paiml/aprender/issues/3146'
+  - 'story: https://github.com/paiml/aprender/issues/3157'
+  - 'competitor: https://github.com/rust-ml/linfa'
+
+equations:
+  path_agrees_with_coordinate_descent:
+    formula: |
+      ∀ α ∈ path (>=20 sampled):
+        ‖coef_LassoLars(α) − coef_Lasso_cd(α)‖_inf ≤ 1e-8
+    domain: "alpha sweep over the path"
+    codomain: "coefficient deviation"
+    invariants:
+    - "two INDEPENDENT implementations cross-checking each other is the load-bearing test"
+    - "coefficients are piecewise linear in the path parameter between knots"
+    - "variables enter the active set in order of decreasing |corr(x_j, residual)|"
+
+  path_is_cheaper_than_refitting:
+    formula: |
+      flops(lars_path) < flops(Σ_α coordinate_descent(α))   -- COUNTED, not timed
+    domain: "same number of alphas"
+    codomain: "flop counts"
+    invariants:
+    - "counted via an instrumented counter; the repo forbids wall-clock in required checks"
+
+falsification_tests:
+- id: FALSIFY-CRUX-N-11-001
+  rule: "LassoLars agrees with coordinate-descent Lasso along the path"
+  prediction: "at >=20 alphas spanning the path, coefficients from the two independent implementations match within 1e-8"
+  test: >-
+    LIVE-PENDING - LassoLars agrees with coordinate-descent Lasso along the path. No test surface exists today because the capability is unimplemented: LARS / LassoLars / lars_path (aprender#3157, CRUX-N-11). PROMOTE by authoring a test named path_matches_coordinate_descent in module `linear_model/lars/tests` of crate `aprender-core`; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED and unfalsifiable-by-absence, NOT satisfied.
+  if_fails: rule 'LassoLars agrees with coordinate-descent Lasso along the path' is violated — the linfa parity claim for CRUX-N-11 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation
+- id: FALSIFY-CRUX-N-11-002
+  rule: "the active set enters in correlation order"
+  prediction: "at each knot the entering variable has the largest absolute residual correlation"
+  test: >-
+    LIVE-PENDING - the active set enters in correlation order. No test surface exists today because the capability is unimplemented: LARS / LassoLars / lars_path (aprender#3157, CRUX-N-11). PROMOTE by authoring a test named active_set_enters_in_correlation_order in module `linear_model/lars/tests` of crate `aprender-core`; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED and unfalsifiable-by-absence, NOT satisfied.
+  if_fails: rule 'the active set enters in correlation order' is violated — the linfa parity claim for CRUX-N-11 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation
+- id: FALSIFY-CRUX-N-11-003
+  rule: "the path costs fewer flops than refitting"
+  prediction: "an instrumented flop counter shows the full path below the sum of per-alpha coordinate-descent fits"
+  test: >-
+    LIVE-PENDING - the path costs fewer flops than refitting. No test surface exists today because the capability is unimplemented: LARS / LassoLars / lars_path (aprender#3157, CRUX-N-11). PROMOTE by authoring a test named path_flops_below_refit in module `linear_model/lars/tests` of crate `aprender-core`; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED and unfalsifiable-by-absence, NOT satisfied.
+  if_fails: rule 'the path costs fewer flops than refitting' is violated — the linfa parity claim for CRUX-N-11 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation
+
+proof_obligations:
+- type: invariant
+  property: "LassoLars agrees with coordinate-descent Lasso along the path"
+- type: invariant
+  property: "the active set enters in correlation order"
+- type: invariant
+  property: "the path costs fewer flops than refitting"
+
+kani_harnesses:
+- id: KH-CRUX-N-11-001
+  obligation: path_agrees_with_coordinate_descent
+  property: path_agrees_with_coordinate_descent_holds_on_bounded_input
+  bound: 4
+- id: KH-CRUX-N-11-002
+  obligation: path_is_cheaper_than_refitting
+  property: path_is_cheaper_than_refitting_holds_on_bounded_input
+  bound: 4

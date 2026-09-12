@@ -1,0 +1,89 @@
+# CRUX-N-06 — ONNX import
+# CRUX category N: Rust ML Framework Parity (linfa + burn).
+# Filed from the 2026-09-12 competitive sweep. Tracks GitHub #3152, epic #3146.
+# registry: false — this contract carries real falsification gates and claims no
+# exemption (operator ruling 2026-08-21, "no contract exemptions").
+
+metadata:
+  id: CRUX-N-06
+  version: "1.0.0"
+  created: "2026-09-12"
+  updated: "2026-09-12"
+  author: PAIML Engineering
+  registry: false
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "N — Rust ML Framework Parity"
+  competitor: burn
+  demand_score: 4  # 1..5, high priority in pmat work
+  intake_status: missing
+  github_issue: 3152
+  description: >
+    Import an ONNX graph into a runnable aprender model. burn ships burn-onnx, converting ONNX into Rust against burn's native API. aprender has no import path, and its ONNX EXPORT is a reachable stub: crates/apr-cli/src/commands/export.rs:7 marks it "(planned)" while the CLI still offers onnx as a valid format -- the advertised-but-absent defect class from the 0.63.0 dogfood audit.
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - 'epic: https://github.com/paiml/aprender/issues/3146'
+  - 'story: https://github.com/paiml/aprender/issues/3152'
+  - 'competitor: https://github.com/tracel-ai/burn'
+
+equations:
+  supported_op_set_is_closed:
+    formula: |
+      import(model) :
+        ∀ node ∈ graph.nodes:
+          node.op_type ∈ SUPPORTED  =>  lowered
+          node.op_type ∉ SUPPORTED  =>  Err(msg) where node.op_type ⊆ msg
+        SUPPORTED is declared in this contract, never only in a doc comment
+    domain: "ONNX protobuf + opset version"
+    codomain: "runnable .apr model, or an error naming the unsupported op"
+    invariants:
+    - "FAIL-CLOSED: silent partial import is the defect this excludes"
+    - "a blacklist that fails open on its complement is not a gate"
+    - "unsupported opset is refused with the version in the message"
+
+  numerical_parity_with_onnxruntime:
+    formula: |
+      ∀ op ∈ SUPPORTED: ‖apr(x) − onnxruntime(x)‖_inf ≤ 1e-5
+    domain: "pinned fixture models under tests/fixtures/onnx/"
+    codomain: "per-op max abs deviation"
+    invariants:
+    - "end-to-end: a real model matches onnxruntime top-1 on 20 pinned inputs"
+
+falsification_tests:
+- id: FALSIFY-CRUX-N-06-001
+  rule: "unsupported operators fail loudly and by name"
+  prediction: "a model containing an op outside SUPPORTED is refused with that op's name in the error; import never partially succeeds"
+  test: >-
+    LIVE-PENDING - unsupported operators fail loudly and by name. No test surface exists today because the capability is unimplemented: ONNX import (aprender#3152, CRUX-N-06). PROMOTE by authoring a test named unsupported_op_fails_closed in module `onnx_import` of crate `apr-cli`; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED and unfalsifiable-by-absence, NOT satisfied.
+  if_fails: rule 'unsupported operators fail loudly and by name' is violated — the burn parity claim for CRUX-N-06 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation
+- id: FALSIFY-CRUX-N-06-002
+  rule: "per-op parity against onnxruntime"
+  prediction: "each supported op matches onnxruntime within 1e-5 on pinned fixtures"
+  test: >-
+    LIVE-PENDING - per-op parity against onnxruntime. No test surface exists today because the capability is unimplemented: ONNX import (aprender#3152, CRUX-N-06). PROMOTE by authoring a test named per_op_parity_onnxruntime in module `onnx_import` of crate `apr-cli`; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED and unfalsifiable-by-absence, NOT satisfied.
+  if_fails: rule 'per-op parity against onnxruntime' is violated — the burn parity claim for CRUX-N-06 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation
+- id: FALSIFY-CRUX-N-06-003
+  rule: "the advertised export stub is resolved"
+  prediction: "apr export --format onnx either works or onnx is no longer offered in the CLI format list; a test asserts whichever was chosen"
+  test: >-
+    LIVE-PENDING - the advertised export stub is resolved. No test surface exists today because the capability is unimplemented: ONNX import (aprender#3152, CRUX-N-06). PROMOTE by authoring a test named onnx_export_not_advertised_unless_implemented in module `cli_commands` of crate `apr-cli`; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED and unfalsifiable-by-absence, NOT satisfied.
+  if_fails: rule 'the advertised export stub is resolved' is violated — the burn parity claim for CRUX-N-06 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation
+
+proof_obligations:
+- type: invariant
+  property: "unsupported operators fail loudly and by name"
+- type: invariant
+  property: "per-op parity against onnxruntime"
+- type: invariant
+  property: "the advertised export stub is resolved"
+
+kani_harnesses:
+- id: KH-CRUX-N-06-001
+  obligation: supported_op_set_is_closed
+  property: supported_op_set_is_closed_holds_on_bounded_input
+  bound: 4
+- id: KH-CRUX-N-06-002
+  obligation: numerical_parity_with_onnxruntime
+  property: numerical_parity_with_onnxruntime_holds_on_bounded_input
+  bound: 4

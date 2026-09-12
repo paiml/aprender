@@ -1,0 +1,86 @@
+# CRUX-N-13 — Gaussian + Sparse random projection (JL bound)
+# CRUX category N: Rust ML Framework Parity (linfa + burn).
+# Filed from the 2026-09-12 competitive sweep. Tracks GitHub #3159, epic #3146.
+# registry: false — this contract carries real falsification gates and claims no
+# exemption (operator ruling 2026-08-21, "no contract exemptions").
+
+metadata:
+  id: CRUX-N-13
+  version: "1.0.0"
+  created: "2026-09-12"
+  updated: "2026-09-12"
+  author: PAIML Engineering
+  registry: false
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "N — Rust ML Framework Parity"
+  competitor: linfa
+  demand_score: 2  # 1..5, low priority in pmat work
+  intake_status: missing
+  github_issue: 3159
+  description: >
+    Distance-preserving random projection. linfa-reduction ships random projections, marked Tested. aprender has none. It is the only reduction method with a DATA-INDEPENDENT guarantee: Johnson-Lindenstrauss preserves all pairwise distances within (1±ε) at O(log n / ε²) dimensions with no fit pass. Directly useful here -- the CRUX-N-03 index degrades in high dimension, and crates/aprender-core/src/citl/pattern/mod.rs:25 already notes a "simplified linear scan for now".
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - 'epic: https://github.com/paiml/aprender/issues/3146'
+  - 'story: https://github.com/paiml/aprender/issues/3159'
+  - 'competitor: https://github.com/rust-ml/linfa'
+
+equations:
+  johnson_lindenstrauss_tail_bound:
+    formula: |
+      k = jl_min_dim(n, ε);  P = project(X ∈ R^{n×d} -> R^{n×k})
+        |{ (i,j) : | ‖Px_i − Px_j‖ / ‖x_i − x_j‖ − 1 | > ε }| / C(n,2)  ≤  δ
+    domain: "n = 1000, d = 5000, ε = 0.1"
+    codomain: "fraction of pairs exceeding the distortion bound"
+    invariants:
+    - "the TAIL is checked, not the mean -- a mean distortion does not test the lemma"
+    - "distortion tightens monotonically as ε tightens, over >=3 values"
+
+  sparse_variant_is_actually_sparse:
+    formula: |
+      density(P_sparse) < 1/3  AND  P_sparse is never materialized densely
+    domain: "sparse random projection matrix"
+    codomain: "(density, allocation count)"
+    invariants:
+    - "sparse-that-allocates-dense is the defect this excludes"
+    - "identical seed => identical projection matrix"
+
+falsification_tests:
+- id: FALSIFY-CRUX-N-13-001
+  rule: "the JL tail bound holds"
+  prediction: "for 1000 points in 5000 dims projected to jl_min_dim(1000, 0.1), the FRACTION of pairs distorted beyond 10% is below the documented failure probability"
+  test: >-
+    LIVE-PENDING - the JL tail bound holds. No test surface exists today because the capability is unimplemented: Gaussian + Sparse random projection (JL bound) (aprender#3159, CRUX-N-13). PROMOTE by authoring a test named jl_tail_bound_holds in module `random_projection/tests` of crate `aprender-core`; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED and unfalsifiable-by-absence, NOT satisfied.
+  if_fails: rule 'the JL tail bound holds' is violated — the linfa parity claim for CRUX-N-13 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation
+- id: FALSIFY-CRUX-N-13-002
+  rule: "the sparse matrix is never densely materialized"
+  prediction: "an allocation-count check asserts the sparse variant's density below 1/3 and no dense allocation"
+  test: >-
+    LIVE-PENDING - the sparse matrix is never densely materialized. No test surface exists today because the capability is unimplemented: Gaussian + Sparse random projection (JL bound) (aprender#3159, CRUX-N-13). PROMOTE by authoring a test named sparse_never_materialized_dense in module `random_projection/tests` of crate `aprender-core`; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED and unfalsifiable-by-absence, NOT satisfied.
+  if_fails: rule 'the sparse matrix is never densely materialized' is violated — the linfa parity claim for CRUX-N-13 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation
+- id: FALSIFY-CRUX-N-13-003
+  rule: "jl_min_dim matches the sklearn oracle exactly"
+  prediction: "johnson_lindenstrauss_min_dim agrees with sklearn as an exact integer"
+  test: >-
+    LIVE-PENDING - jl_min_dim matches the sklearn oracle exactly. No test surface exists today because the capability is unimplemented: Gaussian + Sparse random projection (JL bound) (aprender#3159, CRUX-N-13). PROMOTE by authoring a test named jl_min_dim_oracle_parity in module `random_projection/tests` of crate `aprender-core`; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED and unfalsifiable-by-absence, NOT satisfied.
+  if_fails: rule 'jl_min_dim matches the sklearn oracle exactly' is violated — the linfa parity claim for CRUX-N-13 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation
+
+proof_obligations:
+- type: invariant
+  property: "the JL tail bound holds"
+- type: invariant
+  property: "the sparse matrix is never densely materialized"
+- type: invariant
+  property: "jl_min_dim matches the sklearn oracle exactly"
+
+kani_harnesses:
+- id: KH-CRUX-N-13-001
+  obligation: johnson_lindenstrauss_tail_bound
+  property: johnson_lindenstrauss_tail_bound_holds_on_bounded_input
+  bound: 4
+- id: KH-CRUX-N-13-002
+  obligation: sparse_variant_is_actually_sparse
+  property: sparse_variant_is_actually_sparse_holds_on_bounded_input
+  bound: 4
