@@ -63,6 +63,11 @@ members = [
     # streaming/federated weight which must not flow into a training crate or a
     # future Lambda consumer.
     "crates/aprender-contrastive-data",
+    # Thin single-model MCP servers: one ML model per server, built directly on
+    # the pmcp SDK and calling aprender-core's verified inference in-process.
+    # `publish = false` — these are deployment units, not libraries to depend on.
+    "crates/aprender-mcp-setfit",
+    "crates/aprender-mcp-setfit-lambda",
     "crates/aprender-simulate",
     "crates/aprender-distribute",
     "crates/aprender-registry",
