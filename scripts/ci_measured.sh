@@ -96,11 +96,36 @@ collect() { # $1 name, $2 art dir, $3 junit source -> prints the summary fields
 }
 
 run_measured() { # $1 name, rest: the command, passed through UNPARSED
-    local name=$1
+    local name=$1 td art junit_src
     shift
-    # STUB. The collectors are not wired yet; the self-test below is the RED.
-    "$@"
-    return $?
+    td=$(target_dir)
+    art="$td/$ART_SUBDIR"
+    junit_src="$td/nextest/ci/junit.xml"
+    mkdir -p "$art" || return 2
+
+    trap 'forward TERM' TERM
+    trap 'forward INT' INT
+    trap 'forward HUP' HUP
+
+    # The child runs in the BACKGROUND so that a signal arriving at this shell
+    # interrupts `wait` and runs the trap. A foreground child would make this
+    # shell die of the signal with the collectors never reached.
+    "$@" &
+    CHILD=$!
+    RC=0
+    while : ; do
+        wait "$CHILD"
+        RC=$?
+        # A status above 128 from `wait` means either the child died of a signal
+        # or a trapped signal interrupted the wait. Only the second leaves the
+        # child alive, and only then is there anything left to wait for.
+        if [ "$RC" -gt 128 ] && kill -0 "$CHILD" 2>/dev/null; then continue; fi
+        break
+    done
+    trap - TERM INT HUP
+
+    collect "$name" "$art" "$junit_src"
+    return "$RC"
 }
 
 self_test() {
