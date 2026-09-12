@@ -298,7 +298,10 @@ SHIM
     fixture_apply_setup "a"
     local origin_a repo_a pr_head_a main_head_a merge_sha_a p1_a p2_a
     read -r origin_a < "$td/fa_origin_a"
-    read -r repo_a < "$td/fa_repo_a"
+    repo_a=$(cat "$td/fa_repo_a")
+    if [[ "$repo_a" == *..* ]] || [[ "$repo_a" != /* ]]; then
+        echo "refused: fixture repo path must be absolute and free of .. — got '$repo_a'" >&2; exit 2
+    fi
     read -r pr_head_a < "$td/fa_pr_head_a"
     read -r main_head_a < "$td/fa_main_head_a"
     rc=0
@@ -317,7 +320,10 @@ SHIM
     fixture_apply_setup "b"
     local origin_b repo_b pr_head_b main_head_b local_sha_b remote_sha_b p1_b p2_b
     read -r origin_b < "$td/fa_origin_b"
-    read -r repo_b < "$td/fa_repo_b"
+    repo_b=$(cat "$td/fa_repo_b")
+    if [[ "$repo_b" == *..* ]] || [[ "$repo_b" != /* ]]; then
+        echo "refused: fixture repo path must be absolute and free of .. — got '$repo_b'" >&2; exit 2
+    fi
     read -r pr_head_b < "$td/fa_pr_head_b"
     read -r main_head_b < "$td/fa_main_head_b"
     rc=0
@@ -337,7 +343,10 @@ SHIM
     fixture_apply_setup "c"
     local origin_c repo_c
     read -r origin_c < "$td/fa_origin_c"
-    read -r repo_c < "$td/fa_repo_c"
+    repo_c=$(cat "$td/fa_repo_c")
+    if [[ "$repo_c" == *..* ]] || [[ "$repo_c" != /* ]]; then
+        echo "refused: fixture repo path must be absolute and free of .. — got '$repo_c'" >&2; exit 2
+    fi
     chmod -R a-w "$origin_c"
     rc=0
     out=$(cd "$repo_c" && CI_RESOLVE_DIRTY_PRS_JSON="$repo_c/prs.json" bash "$REPO_ROOT/scripts/$PROG" --apply 2>&1) || rc=$?
