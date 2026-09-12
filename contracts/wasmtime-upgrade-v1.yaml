@@ -1,12 +1,17 @@
 metadata:
-  version: "1.0.0"
+  version: "2.0.0"
   created: "2026-04-12"
   author: PAIML Engineering
   registry: true
   description: >
-    Provable contract for wasmtime 27→43 upgrade. Ensures the upgrade
-    preserves all WasmRuntime functionality and eliminates security
-    advisory exemptions.
+    Provable contract for the wasmtime upgrade path. v2.0.0 records the
+    43→47.0.4 bump (RUSTSEC-2026-0269, CVSS 8.8 filesystem sandbox escape).
+    The 27→43 step satisfied api_compatibility and behavioral_parity but
+    NEVER satisfied advisory_elimination -- eleven wasmtime/cranelift ids stayed
+    exempt in .cargo/audit.toml for the whole life of 43.x, the last of them
+    added on the final day of it. 47.0.4 discharges
+    all three: zero source changes, 73 runtime tests pass, and every wasmtime
+    exemption is deleted.
   references:
   - "docs/specifications/wasmtime-upgrade-v1.md"
   - "crates/aprender-test-lib/src/runtime.rs"
@@ -32,7 +37,7 @@ equations:
   behavioral_parity:
     formula: |
       For all test cases T in WasmRuntime tests:
-        result(T, wasmtime_43) == result(T, wasmtime_27)
+        result(T, wasmtime_47) == result(T, wasmtime_43)
     domain: WasmRuntime test suite
     codomain: bool
     invariants:
@@ -48,14 +53,14 @@ equations:
     domain: security advisory database
     codomain: bool
     invariants:
-    - "No wasmtime advisory in RUSTSEC database for v43"
+    - "No wasmtime advisory in RUSTSEC database for the pinned version (47.0.4)"
     - ".cargo/audit.toml has zero wasmtime entries"
     - "deny.toml has zero wasmtime entries"
 
 falsification_tests:
 - id: FALSIFY-WASM-001
   rule: api_compatibility
-  prediction: "cargo check -p aprender-test-lib --features runtime compiles"
+  prediction: "cargo check -p aprender-test-lib --features runtime compiles (needs Rust >=1.94; wasmtime 47 MSRV)"
   test: "cargo check -p aprender-test-lib --features runtime"
   if_fails: "API signature changed — check compiler errors for specific methods"
 
@@ -69,13 +74,13 @@ falsification_tests:
   rule: advisory_elimination
   prediction: "cargo deny check advisories passes without wasmtime exemptions"
   test: "cargo deny check advisories"
-  if_fails: "wasmtime 43 still has active advisories — check RUSTSEC database"
+  if_fails: "the pinned wasmtime still has active advisories — check RUSTSEC database"
 
 - id: FALSIFY-WASM-004
   rule: api_compatibility
   prediction: "wasm_reference_types works with gc feature"
   test: "cargo check -p aprender-test-lib --features runtime"
-  if_fails: "gc feature not enabled or wasm_reference_types removed in v43"
+  if_fails: "gc feature not enabled or wasm_reference_types removed in the pinned version"
 
 proof_obligations:
 - type: postcondition
