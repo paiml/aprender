@@ -16858,6 +16858,27 @@ roadmap:
   - release
   - 0.66.0
   notes: 'orch-basis:release — the 0.66.0 cut is a release-state ticket (AUTO-IMPL-SKILL-003 §2.1 basis=release); push, tag, gh release and the crates.io cascade are orchestration phases (route=self).'
+- id: PMAT-1097
+  github_issue: null
+  item_type: task
+  title: '06x release schedule spec: 0.67.0/0.68.0/0.69.0/0.70.0 at a 2-3 day 24/7 cadence, one GitHub epic per release, priorities A-G (four binaries per tag, NVIDIA CUDA Rust default, gx10 never idle, yoga CUDA tests, 20-minute PR gate, Qwen2.5-Coder-7B parity, declarative fine-tune) + release-schedule contract + docs drift gate'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-09-10T09:12:19Z
+  updated: 2026-09-10T09:12:19Z
+  spec: docs/specifications/06x-release-schedule.md
+  acceptance_criteria:
+  - 'orch-basis:release — a release-schedule spec is a release-state ticket (AUTO-IMPL-SKILL-003 §2.1 basis=release). Operator 2026-09-10 verbatim: ''override "kind:docs" block if needed'' — kind:code because the ticket ships contracts/release-schedule-06x-v1.yaml (pv-validated) and extends FALSIFY-DOCS-CLAUDE-001 to the spec (mutation-verified), alongside the spec and four epics.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - orch:fable
+  - release
+  - 06x-schedule
+  notes: 'orch-basis:release — a release-schedule spec is a release-state ticket (AUTO-IMPL-SKILL-003 §2.1 basis=release); the spec, its contract, the drift-gate extension and the four epics are one PR; epic creation, push and PR are orchestration phases (route=self).'
 - id: PMAT-1098
   github_issue: null
   item_type: task
@@ -16880,6 +16901,81 @@ roadmap:
   - 0.67.0
   - epic-3078
   notes: 'orch-basis:release — the 0.67.0 train (epic #3078) is a release-state ticket; orchestration phases (push, PR, tag, cascade) route=self'
+- id: PMAT-1100
+  github_issue: null
+  item_type: task
+  title: 'Triage: file every open issue and PR without a milestone into a release train, link duplicates, Alfredo first'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-10T14:03:43Z
+  updated: 2026-09-10T14:03:43Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:triage
+  - orch:fable
+  notes: null
+- id: PMAT-1101
+  github_issue: null
+  item_type: task
+  title: Q5_K dequant + fused dot read a non-ggml bit layout — every Q5_K tensor on the CPU path (realizar) and in apr import (aprender-quant) is wrong
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-09-11T03:40:49Z
+  updated: 2026-09-11T03:40:49Z
+  spec: null
+  acceptance_criteria:
+  - 'Measured on Qwen3.5-0.8B-Q4_K_M blk.0.attn_qkv (Q5_K, 6144x1024): realizar dequantize_q5_k mismatches gguf-py on 5,959,751/6,291,456 values; matvec sum +26.64 vs llama.cpp -17.06. A literal transcription of ggml dequantize_row_q5_K is bit-exact vs gguf-py. Blocks #3091 CPU parity.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - 0.67.0
+  notes: null
+- id: PMAT-1102
+  github_issue: null
+  item_type: task
+  title: 'gx10 cannot run ci / lint: 14 aarch64-only clippy errors in aprender-compute + present-terminal, and #2567''s aarch64 parallel Q4_K path was never called'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-09-11T04:06:14Z
+  updated: 2026-09-11T04:06:14Z
+  spec: null
+  acceptance_criteria:
+  - 'gx10-pool1 canary: ci / lint failed on #3089 (job 103137079500). x86 lint is clean; aarch64 has unreachable tails after unconditional NEON returns, x86-only helpers compiled dead on arm, and matmul_q4k_f32_parallel (non-x86, #2567) whose only caller is inside the x86_64 block.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - 0.67.0
+  notes: null
+- id: PMAT-1104
+  github_issue: null
+  item_type: task
+  title: CUDA Q5_K GEMV reads the fifth bit from a sequential bitmask instead of ggml's qh[l] bit s (#3111)
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-09-11T04:56:39Z
+  updated: 2026-09-11T04:56:39Z
+  spec: null
+  acceptance_criteria:
+  - 'Q5KGemvKernel: qh byte val_idx/8, bit val_idx%8; ggml: byte val_idx%32, bit val_idx/32. Golden GPU test from the FALSIFY-QDOT-009 fixture; Q5KKernel (gemm) is unreachable from inference and tracked separately in #3111.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - 0.67.0
+  notes: null
 - id: PMAT-1105
   github_issue: null
   item_type: task
@@ -16889,6 +16985,25 @@ roadmap:
   assigned_to: null
   created: 2026-09-11T06:31:20Z
   updated: 2026-09-11T06:31:20Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - orch:fable
+  - ci
+  notes: null
+- id: PMAT-1106
+  github_issue: null
+  item_type: task
+  title: 'coverage nightly RED 6 days: GPU-conditional tests panic without an adapter (compute backward.rs x9, cgp x2) — skip, never expect'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-11T09:00:10Z
+  updated: 2026-09-11T09:00:10Z
   spec: null
   acceptance_criteria: []
   phases: []
@@ -16949,6 +17064,40 @@ roadmap:
   estimated_effort: null
   labels:
   - kind:code
+  notes: null
+- id: PMAT-3121
+  github_issue: 3121
+  item_type: task
+  title: 'pre-release dogfood: every workspace example builds AND runs, apr-cookbook updated, release notes written — three rows on every tagged release (operator 2026-09-11)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-11T12:32:25Z
+  updated: 2026-09-11T12:32:25Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+- id: PMAT-3124
+  github_issue: 3124
+  item_type: task
+  title: 'Triage pass: label the 72 open issues that carry no label'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-11T15:07:05Z
+  updated: 2026-09-11T15:07:05Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:triage
   notes: null
 - id: PMAT-3133
   github_issue: 3133
