@@ -93,41 +93,30 @@ list_only = os.environ["LIST_ONLY"] == "1"
 src = guard.read_text()
 
 # id -> (rule, what it removes, anchor, replacement)
+#
+# RE-DERIVED 2026-09-10 from the rules the guard now STATES. BSE-15 (#3046) deleted the receipt job, so the
+# guard became: R1 = no job invokes the receipt guard (one presence branch), R2 = unchanged, R3 = the guard
+# is still tracked (so guard_tree.sh's derived universe runs it). The old set still mutated R1's zero and
+# many-job branches, R3's job-level if: and the whole R4 event evaluator -- code the rewrite removed -- so
+# 11 of 15 anchors matched nothing and the set reported 4/4 killed over rules half of which no longer exist.
 MUTANTS = [
- ("R1-zero", "R1", "the no-invocation rejection",
-  '    if [ -z "$job" ]; then', '    if false; then'),
- ("R1-many", "R1", "the more-than-one-job rejection",
-  """    if [ "$(printf '%s\\n' "$job" | grep -c .)" -ne 1 ]; then""", "    if false; then"),
+ ("R1-drop", "R1", "the receipt-job-is-back rejection",
+  '    if [ -n "$job" ]; then', '    if false; then'),
  ("R1-mention", "R1", "comment stripping, so a MENTION reads as an invocation",
   '            line = $0; sub(/#.*$/, "", line)\n            if (job != "" && line ~ re) { print job }',
   '            line = $0\n            if (job != "" && line ~ re) { print job }'),
+ ("R1-jobscope", "R1", "entry to the jobs: block, so no invocation is ever seen",
+  '        /^jobs:[[:space:]]*$/            { injobs = 1; next }', '        /^ZZZNEVER/                      { injobs = 1; next }'),
  ("R2-drop", "R2", "the workflow-level path-filter rejection",
   '    if [ -n "$filters" ]; then', '    if false; then'),
  ("R2-onstart", "R2", "entry to the on: block, so no filter is ever seen",
   '        /^on:/            { ino = 1; next }', '        /^ZZZNEVER/       { ino = 1; next }'),
  ("R2-onblock", "R2", "exit from the on: block, so paths: anywhere reads as a filter",
   'ino && /^[^[:space:]#]/ { ino = 0 }', 'ino && /^ZZZNEVER/ { ino = 0 }'),
- ("R3-zero", "R3", "the no-job-level-if rejection",
-  '    if [ -z "$ifexpr" ]; then', '    if false; then'),
- ("R3-many", "R3", "the two-job-level-if rejection",
-  """    if [ "$(printf '%s\\n' "$ifexpr" | grep -c .)" -ne 1 ]; then""", "    if false; then"),
- ("R3-indent", "R3", "job-level indentation, so a STEP-level if: counts",
-  'inj && /^    if:[[:space:]]*[^[:space:]]/ {', 'inj && /^ *if:[[:space:]]*[^[:space:]]/ {'),
- ("R4-true-arm", "R4", "the must-RUN events, so if: false would pass",
-  'for ev in $EVENTS_TRUE; do', 'for ev in ; do'),
- ("R4-false-arm", "R4", "the must-SKIP events, so if: always() would pass",
-  'for ev in $EVENTS_FALSE; do', 'for ev in ; do'),
- ("R4-refusal", "R4", "the refusal, so an unparseable if: reads as TRUE",
-  '        return 2\n    fi', '        return 0\n    fi'),
- ("eval-delims", "R4", "word delimiters, so pull_request matches pull_request_target",
-  '    case " $lits " in\n        *" $ev "*) return 0 ;;',
-  '    case "$lits" in\n        *"$ev"*) return 0 ;;'),
- ("eval-invert", "R4", "the sense of the membership test",
-  '        *" $ev "*) return 0 ;;\n        *)         return 1 ;;',
-  '        *" $ev "*) return 1 ;;\n        *)         return 0 ;;'),
- ("eval-normalise", "R4", "whitespace normalisation, so a respaced if: is unevaluable",
-  """    norm=$(printf '%s' "$expr" | sed 's/[[:space:]][[:space:]]*/ /g; s/^ //; s/ $//')""",
-  "    norm=$expr"),
+ ("R3-drop", "R3", "the untracked-guard rejection",
+  '    if ! guard_is_tracked; then', '    if false; then'),
+ ("R3-lsfiles", "R3", "the git ls-files probe, so an untracked guard reads as tracked",
+  '    git -C "$REPO_ROOT" ls-files --error-unmatch "scripts/$GUARD_BASENAME" >/dev/null 2>&1', '    true'),
 ]
 
 if list_only:
