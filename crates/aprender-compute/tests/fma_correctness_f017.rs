@@ -283,9 +283,16 @@ fn f022_fma_dot_product_accuracy() {
 
     let relative_error = (dot - expected).abs() / expected;
 
-    // FMA-accelerated dot product should have low error
+    // FMA-accelerated dot product should have low error. The bound is the
+    // blocked-accumulation model, not one box's lane count: 10^4 terms of
+    // ~0.01 summed in f32 (ulp 7.6e-6 near 100) with k independent
+    // accumulators carry at most n * eps / (2k) relative error -- 7.5e-5 for
+    // k = 4 (NEON f32x4, the narrowest SIMD path), 1.9e-5 measured on gx10;
+    // a scalar sequential sum can reach 3e-4 and still fails. The old 1e-5
+    // held only with >= 8 accumulators (AVX2/AVX-512) and was RED on aarch64
+    // (2026-09-12).
     assert!(
-        relative_error < 1e-5,
+        relative_error < 1e-4,
         "F022 FALSIFIED: dot product error too large: {} (expected {}, got {})",
         relative_error,
         expected,

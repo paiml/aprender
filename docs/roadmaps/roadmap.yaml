@@ -17099,3 +17099,22 @@ roadmap:
   labels:
   - kind:triage
   notes: null
+- id: PMAT-3138
+  github_issue: 3138
+  item_type: task
+  title: 'workspace-test on ARM64: route arch-neutral after the four aarch64-only reds; scope the tree-reader step to its packages'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-09-12T08:54:56Z
+  updated: 2026-09-12T08:54:56Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - ci
+  - fleet
+  - gx10
+  notes: null

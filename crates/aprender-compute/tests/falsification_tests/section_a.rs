@@ -266,8 +266,14 @@ fn test_a004_gpu_tolerance() {
 }
 
 /// A-013: NEON provides >= 2x speedup over Scalar on ARM64
+///
+/// A wall-clock RATIO, so it is a `bench-gates` test and never part of a required
+/// check (scripts/check_no_timing_in_required.sh). It was live on every aarch64
+/// run and vacuous on x86: gx10 measured 0.87x on 2026-09-12 because LLVM
+/// autovectorises the "scalar" `iter().zip().map().collect()` baseline -- the
+/// ratio measures the optimiser, not NEON. Measured, not asserted, at PR time.
 #[test]
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(target_arch = "aarch64", feature = "bench-gates"))]
 fn test_a013_neon_speedup() {
     use std::time::Instant;
 
@@ -295,9 +301,10 @@ fn test_a013_neon_speedup() {
     assert!(speedup >= 2.0, "A-013 FALSIFIED: NEON speedup {} is less than 2x", speedup);
 }
 
-/// A-013: NEON speedup test placeholder for non-ARM64
+/// A-013: NEON speedup test placeholder for non-ARM64 and for aarch64 without
+/// `bench-gates` (the ratio itself is an opt-in bench gate, see above)
 #[test]
-#[cfg(not(target_arch = "aarch64"))]
+#[cfg(not(all(target_arch = "aarch64", feature = "bench-gates")))]
 fn test_a013_neon_speedup_placeholder() {
     // NEON is ARM64-only, test passes trivially on other architectures
     // This ensures the claim number exists for tracking purposes

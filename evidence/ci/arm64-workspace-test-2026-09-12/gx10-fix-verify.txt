@@ -1,0 +1,93 @@
+info: syncing channel updates for 1.93.0-aarch64-unknown-linux-gnu
+info: latest update on 2026-01-22 for version 1.93.0 (254b59607 2026-01-19)
+info: downloading 5 components
+   Compiling aprender-compute v0.66.0 (/workspace/crates/aprender-compute)
+   Compiling aprender-core v0.66.0 (/workspace/crates/aprender-core)
+   Compiling aprender-simulate v0.66.0 (/workspace/crates/aprender-simulate)
+warning: aprender-compute@0.66.0: provable-contracts binding.yaml not found at /workspace/crates/aprender-compute/../../../provable-contracts/contracts/trueno/binding.yaml; CONTRACT_* env vars will not be set (CI/crates.io build)
+warning: aprender-core@0.66.0: provable-contracts binding.yaml not found at /workspace/crates/aprender-core/../../../provable-contracts/contracts/aprender/binding.yaml; CONTRACT_* env vars will not be set (CI/crates.io build)
+warning: aprender-simulate@0.66.0: [contract] Assertions: 2 preconditions, 1 postconditions from YAML
+warning: unused variable: `mr_block`
+  --> crates/aprender-compute/src/blis/compute.rs:94:5
+   |
+94 |     mr_block: usize,
+   |     ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_mr_block`
+   |
+   = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `nr_block`
+  --> crates/aprender-compute/src/blis/compute.rs:95:5
+   |
+95 |     nr_block: usize,
+   |     ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_nr_block`
+
+warning: unused variable: `backend`
+   --> crates/aprender-compute/src/brick/quant_ops/mod.rs:219:43
+    |
+219 |     fn execute(&self, input: Self::Input, backend: Backend) -> Result<Self::Output, TruenoError> {
+    |                                           ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_backend`
+
+warning: unused variable: `backend`
+   --> crates/aprender-compute/src/brick/quant_ops/mod.rs:318:43
+    |
+318 |     fn execute(&self, input: Self::Input, backend: Backend) -> Result<Self::Output, TruenoError> {
+    |                                           ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_backend`
+
+warning: `aprender-compute` (lib) generated 4 warnings (run `cargo fix --lib -p aprender-compute` to apply 4 suggestions)
+warning: unused imports: `OperationType`, `select_backend_for_operation`, and `select_best_available_backend`
+ --> crates/aprender-compute/tests/falsification_tests/section_a.rs:5:5
+  |
+5 |     select_backend_for_operation, select_best_available_backend, Backend, OperationType, Vector,
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^           ^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `Backend`
+ --> crates/aprender-compute/tests/falsification_tests/section_e.rs:5:45
+  |
+5 | use trueno::{select_best_available_backend, Backend, Vector};
+  |                                             ^^^^^^^
+
+warning: `aprender-compute` (test "falsification_tests") generated 2 warnings (run `cargo fix --test "falsification_tests" -p aprender-compute` to apply 2 suggestions)
+warning: unused import: `super::super::*`
+ --> crates/aprender-compute/src/backends/q4k/tests_core/avx2.rs:3:5
+  |
+3 | use super::super::*;
+  |     ^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `crate::blis::*`
+ --> crates/aprender-compute/src/blis/tests/numerical/asm_coverage/asm_microkernel.rs:1:5
+  |
+1 | use crate::blis::*;
+  |     ^^^^^^^^^^^^^^
+
+warning: unused variable: `backend`
+   --> crates/aprender-compute/src/eigen/tests.rs:231:9
+    |
+231 |     let backend = eigen.backend();
+    |         ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_backend`
+
+warning: unused variable: `expected`
+  --> crates/aprender-compute/src/matrix/ops/linear/tests/parallel.rs:35:9
+   |
+35 |     let expected = m_scalar.matvec(&v).unwrap();
+   |         ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_expected`
+
+warning: function `assert_activation_in_range` is never used
+  --> crates/aprender-compute/src/vector/ops/activations/tests/mod.rs:32:4
+   |
+32 | fn assert_activation_in_range(
+   |    ^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `aprender-compute` (lib test) generated 9 warnings (4 duplicates) (run `cargo fix --lib -p aprender-compute --tests` to apply 4 suggestions)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 21.03s
+────────────
+ Nextest run ID d7108cc1-cfe2-4880-a1ce-b65b1cf294d2 with nextest profile: ci
+    Starting 4 tests across 17 binaries (3739 tests skipped)
+────────────
+     Summary [   0.340s] 4 tests run: 4 passed, 3739 skipped
+rc=0
