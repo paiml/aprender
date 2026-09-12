@@ -35,7 +35,6 @@ The seventeen rows below marked *via train #3127* landed as one squash (cb829fcb
 ### Changed
 
 - ci(fleet): workspace-test runs on any clean-room box — gx10 measured 3–4× faster than intel; four aarch64-only reds fixed; tree-reader step builds 20 packages, not 686 binaries (PMAT-3138) (#3139; receipt evidence/ci/arm64-workspace-test-2026-09-12/gx10-summary.txt)
-- perf(ci): pr-review-receipt is dispatch-only — 96 h of fleet runner-time for a job that gates nothing (PMAT-1078) (#3046)
 - dogfood(examples): G3.EX found a dead example, an undeclared feature gate and a panicking benchmark — coop_gemm_bench deleted with its feature, prose_detection gets required-features, bench_bpe prints usage (#3136)
 - ci(cuda-nightly): 67-F1 — PP-26 byte-compare via REST with the job token; gx10 host receipt (#3097)
 - ci: arch-neutral jobs run on any clean-room box (intel, yoga, gx10); workspace-test keeps X64; perf benchmarks pin intel (#3100) (#3104, via train #3127)
