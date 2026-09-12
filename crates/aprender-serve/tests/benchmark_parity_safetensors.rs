@@ -1,5 +1,13 @@
 //! SafeTensors vs GGUF Performance Parity Benchmarks (T-QA-021)
 //!
+//! RELEASE-TIME GATE, NOT A PR TEST. Every assertion below is a wall-clock floor or ratio, which
+//! is a coin flip under CI load (measured: `matmul_throughput` and `parity_gate_critical` failed
+//! on a 48-core host at load 80 with correct code). The target is declared with
+//! `required-features = ["bench-gates"]` in Cargo.toml, so the PR tier never builds it; run it on
+//! a quiet host with `cargo nextest run -p aprender-serve --features bench-gates --test
+//! benchmark_parity_safetensors`. See scripts/check_no_timing_in_required.sh for why tuning the
+//! thresholds is not the remedy.
+//!
 //! Measures tok/s for both GGUF (Q4_K) and SafeTensors (BF16) formats
 //! to verify SafeTensors performance is within 80% of GGUF throughput.
 //!

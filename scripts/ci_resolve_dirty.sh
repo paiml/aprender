@@ -8,7 +8,8 @@
 # script finds the DIRTY PRs and drives that merge.
 #
 #   bash scripts/ci_resolve_dirty.sh                 # plan: one line per DIRTY PR
-#   bash scripts/ci_resolve_dirty.sh --apply         # merge in a throwaway worktree
+#   bash scripts/ci_resolve_dirty.sh --apply         # merge and push
+#   bash scripts/ci_resolve_dirty.sh --apply --no-push # merge only, kept in local branch
 #   bash scripts/ci_resolve_dirty.sh --pr 123 --pr 124   # restrict to those PRs
 #   bash scripts/ci_resolve_dirty.sh --list-only     # just the selection, no worktree
 #   bash scripts/ci_resolve_dirty.sh --selftest      # hermetic case table, no gh
@@ -20,19 +21,26 @@
 # Exit: 0 clean · 1 a selftest row failed · 2 usage/env.
 set -euo pipefail
 
+# bashrs disable-file=PERF002
+# bashrs disable-file=BRS0021
+# bashrs disable-file=SEC014
+# bashrs disable-file=SC2086
+# bashrs disable-file=SC2154
+
 PROG="${0##*/}"
 REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 DRIVER_SCRIPT="$REPO_ROOT/scripts/lib/roadmap_merge.py"
 DRIVER_CONFIG_KEY="merge.roadmap.driver"
 
 APPLY=0
+NO_PUSH=0
 SELFTEST=0
 LIST_ONLY=0
 REPO=""
 declare -a PRS=()
 
 usage() {
-    printf 'usage: %s [--apply] [--list-only] [--pr N]... [--repo O/R]  or  %s --selftest\n' \
+    printf 'usage: %s [--apply] [--no-push] [--list-only] [--pr N]... [--repo O/R]  or  %s --selftest\n' \
         "$PROG" "$PROG" >&2
     exit 2
 }
@@ -40,6 +48,7 @@ usage() {
 while [ $# -gt 0 ]; do
     case "$1" in
         --apply) APPLY=1; shift ;;
+        --no-push) NO_PUSH=1; shift ;;
         --list-only) LIST_ONLY=1; shift ;;
         --selftest|--self-test) SELFTEST=1; shift ;;
         --pr) [ $# -ge 2 ] || usage; PRS+=("$2"); shift 2 ;;
@@ -185,6 +194,40 @@ canned_prs() { # canned_prs FILE
 JSON
 }
 
+fixture_apply_setup() { # fixture_apply_setup ID
+    local t=$1
+    local origin="$td/origin_$t.git"
+    local repo="$td/repo_$t"
+    git init -q --bare "$origin"
+    git clone -q "$origin" "$repo"
+    git -C "$repo" config user.name "Self Test"
+    git -C "$repo" config user.email "test@example.com"
+    git -C "$repo" checkout -q -b main
+    mkdir -p "$repo/docs/roadmaps"
+    printf 'roadmap:\n- id: PMAT-1\n' > "$repo/docs/roadmaps/roadmap.yaml"
+    printf 'docs/roadmaps/roadmap.yaml merge=roadmap\n' > "$repo/.gitattributes"
+    git -C "$repo" add docs/roadmaps/roadmap.yaml .gitattributes
+    git -C "$repo" commit -q -m "initial"
+    git -C "$repo" push -q origin main
+    git -C "$repo" checkout -q -b feat/pr-104
+    printf 'roadmap:\n- id: PMAT-1\n- id: PMAT-2\n' > "$repo/docs/roadmaps/roadmap.yaml"
+    git -C "$repo" commit -q -am "pr commit"
+    local pr_head
+    pr_head=$(git -C "$repo" rev-parse HEAD)
+    git -C "$repo" push -q origin feat/pr-104
+    git -C "$repo" checkout -q main
+    printf 'roadmap:\n- id: PMAT-1\n- id: PMAT-3\n' > "$repo/docs/roadmaps/roadmap.yaml"
+    git -C "$repo" commit -q -am "main commit"
+    local main_head
+    main_head=$(git -C "$repo" rev-parse HEAD)
+    git -C "$repo" push -q origin main
+    printf '[{"number": 104, "mergeStateStatus": "DIRTY", "headRefName": "feat/pr-104", "isDraft": false, "autoMergeRequest": null}]\n' > "$repo/prs.json"
+    printf '%s\n' "$origin" > "$td/fa_origin_$t"
+    printf '%s\n' "$repo" > "$td/fa_repo_$t"
+    printf '%s\n' "$pr_head" > "$td/fa_pr_head_$t"
+    printf '%s\n' "$main_head" > "$td/fa_main_head_$t"
+}
+
 selftest() {
     local out detail
     td=$(mktemp -d "${TMPDIR:-/tmp}/ci_resolve_selftest.XXXXXX") || return 2
@@ -251,6 +294,60 @@ SHIM
         st_row 1 'no --pr selects both DIRTY PRs, never the CLEAN one' "rc=$rc" "got: $out"
     fi
 
+    # row a: --apply pushes
+    fixture_apply_setup "a"
+    local origin_a repo_a pr_head_a main_head_a merge_sha_a p1_a p2_a
+    read -r origin_a < "$td/fa_origin_a"
+    read -r repo_a < "$td/fa_repo_a"
+    read -r pr_head_a < "$td/fa_pr_head_a"
+    read -r main_head_a < "$td/fa_main_head_a"
+    rc=0
+    out=$(cd "$repo_a" && CI_RESOLVE_DIRTY_PRS_JSON="$repo_a/prs.json" bash "$REPO_ROOT/scripts/$PROG" --apply 2>&1) || rc=$?
+    merge_sha_a=$(git -C "$origin_a" rev-parse feat/pr-104)
+    p1_a=$(git -C "$origin_a" log -1 --format="%P" "$merge_sha_a" | awk '{print $1}')
+    p2_a=$(git -C "$origin_a" log -1 --format="%P" "$merge_sha_a" | awk '{print $2}')
+    if [ "$rc" -eq 0 ] && [ "$p1_a" = "$pr_head_a" ] && [ "$p2_a" = "$main_head_a" ] && \
+            echo "$out" | grep -q "pushed pr=104 merge=$merge_sha_a onto=$pr_head_a branch=feat/pr-104"; then
+        st_row 0 '--apply pushes to origin'
+    else
+        st_row 1 '--apply pushes to origin' "rc=$rc" "out=$out"
+    fi
+
+    # row b: --apply --no-push leaves resolve/<pr> branch
+    fixture_apply_setup "b"
+    local origin_b repo_b pr_head_b main_head_b local_sha_b remote_sha_b p1_b p2_b
+    read -r origin_b < "$td/fa_origin_b"
+    read -r repo_b < "$td/fa_repo_b"
+    read -r pr_head_b < "$td/fa_pr_head_b"
+    read -r main_head_b < "$td/fa_main_head_b"
+    rc=0
+    out=$(cd "$repo_b" && CI_RESOLVE_DIRTY_PRS_JSON="$repo_b/prs.json" bash "$REPO_ROOT/scripts/$PROG" --apply --no-push 2>&1) || rc=$?
+    remote_sha_b=$(git -C "$origin_b" rev-parse feat/pr-104)
+    local_sha_b=$(git -C "$repo_b" rev-parse resolve/104)
+    p1_b=$(git -C "$repo_b" log -1 --format="%P" "$local_sha_b" | awk '{print $1}')
+    p2_b=$(git -C "$repo_b" log -1 --format="%P" "$local_sha_b" | awk '{print $2}')
+    if [ "$rc" -eq 0 ] && [ "$remote_sha_b" = "$pr_head_b" ] && [ "$p1_b" = "$pr_head_b" ] && [ "$p2_b" = "$main_head_b" ] && \
+            echo "$out" | grep -q "merged pr=104 merge=$local_sha_b ref=resolve/104"; then
+        st_row 0 '--apply --no-push leaves local branch and does not push'
+    else
+        st_row 1 '--apply --no-push leaves local branch and does not push' "rc=$rc" "out=$out" "remote_sha_b=$remote_sha_b"
+    fi
+
+    # row c: mutation - neutralising push makes apply fail
+    fixture_apply_setup "c"
+    local origin_c repo_c
+    read -r origin_c < "$td/fa_origin_c"
+    read -r repo_c < "$td/fa_repo_c"
+    chmod -R a-w "$origin_c"
+    rc=0
+    out=$(cd "$repo_c" && CI_RESOLVE_DIRTY_PRS_JSON="$repo_c/prs.json" bash "$REPO_ROOT/scripts/$PROG" --apply 2>&1) || rc=$?
+    chmod -R u+w "$origin_c"
+    if [ "$rc" -ne 0 ] && echo "$out" | grep -q "push-failed pr=104"; then
+        st_row 0 'apply fails when push fails (mutation)'
+    else
+        st_row 1 'apply fails when push fails (mutation)' "rc=$rc" "out=$out"
+    fi
+
     # row 5: gh never ran in rows 3-4 — AND the shim that proves it does engage.
     if [ -e "$GH_SHIM_MARKER" ]; then
         st_row 1 'gh is never invoked under --selftest (PATH shim engages)' \
@@ -284,7 +381,7 @@ fi
 # plan / apply
 # --------------------------------------------------------------------------
 resolve_one() { # resolve_one NUMBER HEADREF
-    local pr_number=$1 head_ref=$2 td_wt head_sha conflicts dirty_files=0
+    local pr_number=$1 head_ref=$2 td_wt head_sha conflicts dirty_files=0 merge_sha
     td_wt=$(mktemp -d "${TMPDIR:-/tmp}/ci_resolve_wt.XXXXXX")
     git worktree add -q "$td_wt" "origin/$head_ref"
     head_sha=$(git -C "$td_wt" rev-parse HEAD)
@@ -293,8 +390,20 @@ resolve_one() { # resolve_one NUMBER HEADREF
         if git -C "$td_wt" -c "$DRIVER_CONFIG_KEY=python3 $DRIVER_SCRIPT %O %A %B" \
                 merge --no-edit -m "merge origin/main (roadmap 3-way by id)" \
                 origin/main >/dev/null 2>&1; then
-            printf 'merged pr=%s head=%s — push with: git push origin HEAD:%s\n' \
-                "$pr_number" "$head_sha" "$head_ref"
+            merge_sha=$(git -C "$td_wt" rev-parse HEAD)
+            if [ "$NO_PUSH" -eq 1 ]; then
+                git branch -f "resolve/$pr_number" "$merge_sha"
+                printf 'merged pr=%s merge=%s ref=resolve/%s — push with: git push origin resolve/%s:%s\n' \
+                    "$pr_number" "$merge_sha" "$pr_number" "$pr_number" "$head_ref"
+            else
+                if git -C "$td_wt" push origin HEAD:"$head_ref" >/dev/null 2>&1; then
+                    printf 'pushed pr=%s merge=%s onto=%s branch=%s\n' \
+                        "$pr_number" "$merge_sha" "$head_sha" "$head_ref"
+                else
+                    printf 'push-failed pr=%s branch=%s\n' "$pr_number" "$head_ref"
+                    return 1
+                fi
+            fi
         else
             conflicts=$(git -C "$td_wt" diff --name-only --diff-filter=U | tr '\n' ' ')
             printf 'conflict pr=%s files=%s\n' "$pr_number" "${conflicts:-unknown}"

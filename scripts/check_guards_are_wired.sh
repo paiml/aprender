@@ -230,8 +230,50 @@ if [ "${1:-}" = "--self-test" ]; then
         printf 'FAIL  row 4 got [%s], expected [check_dispatched.sh ]\n' "$got4"; fails=1
     fi
 
+    # ── Rows 5-7: THE UNIVERSE IS EVERY WORKFLOW FILE, NOT ci.yml ─────────
+    #
+    # PMAT-1098 (row 67-E3) moved seven tree-universe steps out of ci.yml's
+    # guard-cargo job into .github/workflows/guards-nightly.yml to hold a PR
+    # under 20 minutes. If this scan only read ci.yml, every one of those
+    # guards would be reported unwired the moment it moved -- and the obvious
+    # "fix" for that report is to add them to the shrink-only baseline, which
+    # is how a moved guard becomes an accepted gap. The scan above already
+    # greps the whole .github/workflows/ tree; these rows PIN that, because a
+    # property nothing asserts is a property that lasts until the next edit.
+    #
+    # Row 5: wired ONLY by a workflow that is not ci.yml -> wired.
+    # Row 6: wired by no workflow at all -> still reported (the control that
+    #        makes row 5 mean something).
+    # Row 7: delete the nightly workflow and the row-5 guard comes back --
+    #        without it, row 5 also passes for a scan that reports nothing.
+    TD3=$(mktemp -d) || exit 1
+    trap 'rm -rf "${TD:?}" "${TD2:?}" "${TD3:?}"' EXIT
+    mkdir -p "$TD3/scripts" "$TD3/.github/workflows"
+    : > "$TD3/scripts/check_nightly_only.sh"
+    : > "$TD3/scripts/check_nowhere.sh"
+    printf 'jobs:\n  ci:\n    steps:\n      - run: echo ci.yml names neither guard\n' \
+        > "$TD3/.github/workflows/ci.yml"
+    printf 'jobs:\n  guards-nightly:\n    steps:\n      - name: Publish safety\n        run: bash scripts/check_nightly_only.sh\n' \
+        > "$TD3/.github/workflows/guards-nightly.yml"
+
+    got5=$(unwired_in "$TD3" | tr '\n' ' ')
+    if [ "$got5" = "check_nowhere.sh " ]; then
+        printf 'ok    row 5 a guard wired only in guards-nightly.yml counts as wired\n'
+        printf 'ok    row 6 a guard wired in no workflow at all is still reported\n'
+    else
+        printf 'FAIL  rows 5/6 got [%s], expected [check_nowhere.sh ]\n' "$got5"; fails=1
+    fi
+
+    rm -f "$TD3/.github/workflows/guards-nightly.yml"
+    got7=$(unwired_in "$TD3" | tr '\n' ' ')
+    if [ "$got7" = "check_nightly_only.sh check_nowhere.sh " ]; then
+        printf 'ok    row 7 deleting the nightly workflow brings its guard back as unwired\n'
+    else
+        printf 'FAIL  row 7 got [%s], expected [check_nightly_only.sh check_nowhere.sh ]\n' "$got7"; fails=1
+    fi
+
     [ "$fails" -eq 0 ] || { printf '\nSELF-TEST FAILED\n'; exit 1; }
-    printf '\nSELF-TEST PASSED (4/4)\n'
+    printf '\nSELF-TEST PASSED (7/7)\n'
     exit 0
 fi
 

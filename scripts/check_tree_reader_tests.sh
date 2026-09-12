@@ -224,7 +224,13 @@ wired_targets() { # wired_targets <root> -- the derived set, wired half only
     derive "$root" | while IFS=$'\t' read -r c kind name; do
         if [ "$kind" = "--lib" ] || [ "$kind" = "--bins" ]; then
             # excluded from --workspace --lib by the full tier (hardware, own step)?
-            printf '%s\n' "$ex" | grep -qxF "$c" && continue
+            # A here-string, never `printf | grep -q`: under pipefail, grep -q exiting on
+            # its first match leaves printf writing into a closed pipe (EPIPE, "write
+            # error: Broken pipe", run 34634920736 line 227) and the pipeline FAILS on
+            # the producer's status although grep MATCHED -- so the excluded crate was
+            # NOT skipped and `aprender-gpu --lib driver::memory::transfer` was derived
+            # on CI and not locally (a race, box-dependent). The SIGPIPE+pipefail class.
+            grep -qxF -- "$c" <<< "$ex" && continue
             if [ -n "$name" ]; then printf '%s\t%s\t%s\n' "$c" "$kind" "$name"
             else printf '%s\t%s\n' "$c" "$kind"; fi
         elif grep -rqF -- "--test $name" "$root"/.github/workflows/ 2>/dev/null; then
@@ -306,14 +312,14 @@ self_test() {
     row() { # row WANT_RC LABEL MUST_MATCH -- CMD...
         local want=$1 label=$2 pat=$3; shift 3; n=$((n + 1))
         rc=0; out=$("$@" 2>&1) || rc=$?
-        if [ "$rc" = "$want" ] && printf '%s\n' "$out" | grep -qE -- "$pat"; then printf 'ok    row %-2s rc=%s  %s\n' "$n" "$rc" "$label"
+        if [ "$rc" = "$want" ] && grep -qE -- "$pat" <<< "$out"; then printf 'ok    row %-2s rc=%s  %s\n' "$n" "$rc" "$label"
         else printf 'FAIL  row %-2s rc=%s (wanted %s, must match /%s/)  %s\n' "$n" "$rc" "$want" "$pat" "$label"; printf '%s\n' "$out" | sed 's/^/        /'; red=1; fi
     }
     row 0 "derive: alpha reads_readme (README path), beta --lib lint (cfg(test) + scripts/ path), gamma manifest_dir (CARGO_MANIFEST_DIR); NOT alpha pure, NOT gamma --lib (reader without cfg(test))" \
         '^alpha	--test	reads_readme$' bash "$T" --derive "$td"
     out=$(bash "$T" --derive "$td" 2>/dev/null) || true
     n=$((n + 1))
-    if printf '%s\n' "$out" | grep -q '^beta	--lib	lint$' && printf '%s\n' "$out" | grep -q '^gamma	--test	manifest_dir$' && ! printf '%s\n' "$out" | grep -q 'pure' && ! printf '%s\n' "$out" | grep -q '^gamma	--lib'; then
+    if grep -q '^beta	--lib	lint$' <<< "$out" && grep -q '^gamma	--test	manifest_dir$' <<< "$out" && ! grep -q 'pure' <<< "$out" && ! grep -q '^gamma	--lib' <<< "$out"; then
         printf 'ok    row %-2s        derived set is exactly {alpha reads_readme, beta --lib lint, gamma manifest_dir} — the beta row names the MODULE (src/lint/mod.rs -> lint), not the crate\n' "$n"
     else
         printf 'FAIL  row %-2s        derived set wrong:\n%s\n' "$n" "$out"; red=1
@@ -325,7 +331,7 @@ self_test() {
     mkdir -p "$td/crates/delta/src"
     printf 'fn main() {}\n#[cfg(test)]\nmod tests { #[test] fn t() { let _ = std::fs::read_to_string("scripts/d.txt"); } }\n' > "$td/crates/delta/src/main.rs"
     n=$((n + 1))
-    if bash "$T" --derive "$td" 2>/dev/null | grep -q '^delta	--bins$' && ! bash "$T" --derive "$td" 2>/dev/null | grep -q '^delta	--lib'; then
+    if grep -q '^delta	--bins$' <<< "$(bash "$T" --derive "$td" 2>/dev/null)" && ! grep -q '^delta	--lib' <<< "$(bash "$T" --derive "$td" 2>/dev/null)"; then
         printf 'ok    row %-2s        a bin-only crate (cfg(test) reader, no src/lib.rs) is --bins, never --lib\n' "$n"
     else
         printf 'FAIL  row %-2s        bin-only crate mis-targeted: %s\n' "$n" "$(bash "$T" --derive "$td" 2>/dev/null | grep '^delta' | tr '\n' ';')"; red=1
@@ -337,7 +343,7 @@ self_test() {
     printf 'jobs:\n  t:\n    steps:\n      - run: cargo test -p alpha --test reads_readme\n' > "$td/.github/workflows/ci.yml"
     n=$((n + 1))
     w=$(bash "$T" --print "$td" 2>/dev/null); u=$(bash "$T" --print-unwired "$td" 2>/dev/null)
-    if printf '%s\n' "$w" | grep -q '^alpha' && printf '%s\n' "$w" | grep -q '^beta	--lib	lint$' && printf '%s\n' "$u" | grep -q '^gamma' && ! printf '%s\n' "$u" | grep -q '^alpha'; then
+    if grep -q '^alpha' <<< "$w" && grep -q '^beta	--lib	lint$' <<< "$w" && grep -q '^gamma' <<< "$u" && ! grep -q '^alpha' <<< "$u"; then
         printf 'ok    row %-2s        WIRED/UNWIRED split: a lane names alpha reads_readme (quick tier), gamma manifest_dir is run by nothing (ledger), beta --lib lint is covered by --workspace --lib\n' "$n"
     else
         printf 'FAIL  row %-2s        split wrong. wired=[%s] unwired=[%s]\n' "$n" "$(printf '%s' "$w" | tr '\n' ';')" "$(printf '%s' "$u" | tr '\n' ';')"; red=1

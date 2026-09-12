@@ -59,6 +59,9 @@ pub fn dequantize_q4_k(data: &[u8]) -> Result<Vec<f32>> {
 }
 
 /// Dequantize `Q5_K` format weights
+///
+/// One super-block is ggml's `block_q5_K`, 176 bytes for 256 values; [`for_each_q5k_value`]
+/// documents the layout.
 pub fn dequantize_q5_k(data: &[u8]) -> Result<Vec<f32>> {
     const SUPER_BLOCK_BYTES: usize = 176;
 
@@ -72,54 +75,48 @@ pub fn dequantize_q5_k(data: &[u8]) -> Result<Vec<f32>> {
         });
     }
 
-    let num_super_blocks = data.len() / SUPER_BLOCK_BYTES;
-    let mut result = Vec::with_capacity(num_super_blocks * QK_K);
-
-    for sb_idx in 0..num_super_blocks {
-        let sb_start = sb_idx * SUPER_BLOCK_BYTES;
-
-        let d = read_f16(&data[sb_start..sb_start + 2]);
-        let dmin = read_f16(&data[sb_start + 2..sb_start + 4]);
-
-        let mut scales = [0u8; 12];
-        scales.copy_from_slice(&data[sb_start + 4..sb_start + 16]);
-
-        let qh_start = sb_start + 16;
-        let qh = &data[qh_start..qh_start + 32];
-
-        let qs_low_start = sb_start + 48;
-        let qs = &data[qs_low_start..qs_low_start + 128];
-
-        for block_idx in 0..8 {
-            let (scale, min) = extract_scale_min(&scales, block_idx);
-
-            let block_start = block_idx * 16;
-            let qh_block_start = block_idx * 4;
-
-            for byte_idx in 0..16 {
-                let qs_byte = qs[block_start + byte_idx];
-
-                let high_bits_byte = qh[qh_block_start + byte_idx / 4];
-                let bit_offset = (byte_idx % 4) * 2;
-
-                let q_low_4bit = qs_byte & 0x0F;
-                let q_low_high_bit = (high_bits_byte >> bit_offset) & 0x01;
-                #[allow(clippy::cast_possible_wrap)]
-                let q_low = ((q_low_high_bit << 4) | q_low_4bit) as i8;
-                let value_low = d * scale * f32::from(q_low) - dmin * min;
-                result.push(value_low);
-
-                let q_high_4bit = (qs_byte >> 4) & 0x0F;
-                let q_high_high_bit = (high_bits_byte >> (bit_offset + 1)) & 0x01;
-                #[allow(clippy::cast_possible_wrap)]
-                let q_high = ((q_high_high_bit << 4) | q_high_4bit) as i8;
-                let value_high = d * scale * f32::from(q_high) - dmin * min;
-                result.push(value_high);
-            }
-        }
+    let mut result = vec![0.0f32; data.len() / SUPER_BLOCK_BYTES * QK_K];
+    for (sb, out) in data
+        .chunks_exact(SUPER_BLOCK_BYTES)
+        .zip(result.chunks_exact_mut(QK_K))
+    {
+        for_each_q5k_value(sb, |i, v| out[i] = v);
     }
 
     Ok(result)
+}
+
+/// Walk one `Q5_K` super-block in the order of ggml's `dequantize_row_q5_K`, calling
+/// `emit(i, value)` for every `i` in `0..256`.
+///
+/// The block is `d` and `dmin` (f16), 12 bytes of 6-bit scales and mins, `qh[32]`, then
+/// `qs[128]`. Sub-blocks `2c` and `2c + 1` share the 32 bytes `qs[32c..32c + 32]`: the even
+/// sub-block is their LOW nibbles, the odd one their HIGH nibbles. The fifth bit of value `l`
+/// of sub-block `s` is bit `s` of `qh[l]`.
+///
+/// `dequantize_q5_k` and `fused_q5k_dot` both read blocks through this function. Before
+/// PMAT-1101 each carried its own copy of an invented layout (the two nibbles of one byte as
+/// neighbouring values, the fifth bit from `qh[4s + l/8]`), and because every test compared
+/// one copy against the other, nothing noticed that neither matched ggml. FALSIFY-QDOT-007
+/// pins this function to values produced by gguf-py, llama.cpp's own reader.
+pub(crate) fn for_each_q5k_value(sb: &[u8], mut emit: impl FnMut(usize, f32)) {
+    let d = read_f16(&sb[0..2]);
+    let dmin = read_f16(&sb[2..4]);
+    let mut scales = [0u8; 12];
+    scales.copy_from_slice(&sb[4..16]);
+    let qh = &sb[16..48];
+    let qs = &sb[48..176];
+
+    for sub in 0..8 {
+        let (scale, min) = extract_scale_min(&scales, sub);
+        let (d_scale, d_min) = (d * scale, dmin * min);
+        let ql = &qs[(sub / 2) * 32..(sub / 2) * 32 + 32];
+        let shift = 4 * (sub % 2);
+        for (l, (&q, &h)) in ql.iter().zip(qh).enumerate() {
+            let q5 = ((q >> shift) & 0x0F) | (((h >> sub) & 1) << 4);
+            emit(sub * 32 + l, d_scale * f32::from(q5) - d_min);
+        }
+    }
 }
 
 /// Dequantize `Q6_K` format weights

@@ -113,6 +113,8 @@ classify() { # classify <basename> -> "<kind>[<TAB>reason]", rc 1 if unclassifie
         # line is a reviewed claim that two packages must ship one bin name.
         # Freezing it against main would forbid renaming a crate. Growth here
         # is a decision, not a leak — the distinction this guard exists to keep.
+        guards_nightly_manifest.txt)
+            printf 'none\tledger of steps moved to guards-nightly.yml; exact-match against that workflow, a name that is not a step FAILS there\n' ;;
         duplicate_bin_names_allowlist.txt)
             printf 'none\tintent model, exact-match against the observed set (stale entries FAIL)\n' ;;
         *) return 1 ;;
