@@ -15,9 +15,6 @@ The seventeen rows below marked *via train #3127* landed as one squash (cb829fcb
 
 ### Added
 
-- feat(PMAT-1095): 0.67 CUDA Rust fleet readiness — fix the two wrong-host GPU tests, add scripts/cuda_rust_fleet_check.sh with per-host receipts (gx10 PASS, yoga PASS, lambda-vector blocked on a reboot) (#3068)
-- feat(gpu): O2 — arm the register_budget contract, vacuous since 2026-04-06 (#3064)
-- feat(experiments): T3 — cutile-rs vs hand-PTX RMSNorm A/B on GB10 sm_121 (parity yes, faster no) (#3065)
 
 ### Fixed
 
@@ -34,7 +31,6 @@ The seventeen rows below marked *via train #3127* landed as one squash (cb829fcb
 
 ### Changed
 
-- ci(fleet): workspace-test runs on any clean-room box — gx10 measured 3–4× faster than intel; four aarch64-only reds fixed; tree-reader step builds 20 packages, not 686 binaries (PMAT-3138) (#3139; receipt evidence/ci/arm64-workspace-test-2026-09-12/gx10-summary.txt)
 - dogfood(examples): G3.EX found a dead example, an undeclared feature gate and a panicking benchmark — coop_gemm_bench deleted with its feature, prose_detection gets required-features, bench_bpe prints usage (#3136)
 - ci(cuda-nightly): 67-F1 — PP-26 byte-compare via REST with the job token; gx10 host receipt (#3097)
 - ci: arch-neutral jobs run on any clean-room box (intel, yoga, gx10); workspace-test keeps X64; perf benchmarks pin intel (#3100) (#3104, via train #3127)
