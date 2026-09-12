@@ -375,6 +375,34 @@ EOF
         *"never the tree against itself"*) printf 'ok    row %-2s push shape, parent not fetched (depth-1): refused by name, never HEAD itself\n' "$row" ;;
         *) printf 'FAIL  row %-2s push shape, parent not fetched: refused for the wrong reason (rc=%s): %s\n' "$row" "$rc5" "$err5"; fails=1 ;;
     esac
+    # Rows 19-20: a STACKED merge-group entry at depth 1 — the head's single parent
+    # is the previous entry's squash, not the origin/main tip. Under merge_group it
+    # deepens and names that parent; with deepening disabled (the mutation) it is
+    # refused by name — the shape that turned two of every three queue builds RED
+    # on 2026-09-12 (runs 34704287677, 34704288441). Self-contained repo: main =
+    # c1 (the tip the queue started from) -> c2 (entry 1's squash) -> c3 (entry 2's
+    # squash); origin/main := c1; a depth-1 clone sees c3 with c2 not fetched.
+    row=$((row + 1))
+    Q="$TD/stacked-src"; rm -rf "${Q:?}"; ( git init -q -b main "$Q" && cd "$Q" && git config user.email t@t && git config user.name t \
+        && cp "$TD/base.yaml" r.yaml && git add r.yaml && git commit -qm c1 \
+        && cp "$TD/append.yaml" r.yaml && git commit -qam c2-entry-1-squash \
+        && printf 'entry-2\n' > other.txt && git add other.txt && git commit -qm c3-entry-2-squash && git branch -q queue-base 'HEAD~2' ) 2>/dev/null
+    # The job fetches origin/main at depth 1 (its object IS present); c2 is not. A shallow clone cannot
+    # point a ref at an object it lacks, so the tip is fetched by name instead of update-ref'd.
+    rm -rf "${Q:?}.clone"; git clone -q --depth=1 -b main "file://$Q" "$Q.clone" 2>/dev/null; git -C "$Q.clone" fetch -q --depth=1 origin '+queue-base:refs/remotes/origin/main' 2>/dev/null
+    want6=$( git -C "$Q" rev-parse 'HEAD^1' )
+    got6=$( cd "$Q.clone" && GITHUB_EVENT_NAME=merge_group bash -c '. "$0" --lib-only; REPO_ROOT="$1"; resolve_base HEAD && printf "%s|%s" "$BASE_REF" "$BASE_HOW"' "$SELF" "$Q.clone" 2>/dev/null ) || true
+    case "$got6" in "$want6|single parent (stacked merge_group entry"*) printf 'ok    row %-2s stacked merge_group entry at depth-1 -> deepened, base = the previous entry squash\n' "$row" ;;
+        *) printf 'FAIL  row %-2s stacked merge_group entry: wanted %s|single parent (stacked merge_group entry..., got %s\n' "$row" "$want6" "$got6"; fails=1 ;; esac
+    row=$((row + 1))
+    rm -rf "${Q:?}.clone"; git clone -q --depth=1 -b main "file://$Q" "$Q.clone" 2>/dev/null; git -C "$Q.clone" fetch -q --depth=1 origin '+queue-base:refs/remotes/origin/main' 2>/dev/null
+    rc7=0; err7=$( cd "$Q.clone" && GITHUB_EVENT_NAME=merge_group ROADMAP_DIFF_NO_DEEPEN=1 bash -c '. "$0" --lib-only; REPO_ROOT="$1"; resolve_base HEAD' "$SELF" "$Q.clone" 2>&1 >/dev/null ) || rc7=$?
+    case "$rc7:$err7" in
+        0:*) printf 'FAIL  row %-2s stacked entry with deepening disabled: resolved a base (rc=0) — the mutation did not bite\n' "$row"; fails=1 ;;
+        *"is not a merge commit nor a commit on the origin/main tip"*) printf 'ok    row %-2s stacked entry with deepening disabled (mutation): refused by name\n' "$row" ;;
+        *) printf 'FAIL  row %-2s stacked entry with deepening disabled: refused for the wrong reason (rc=%s): %s\n' "$row" "$rc7" "$err7"; fails=1 ;;
+    esac
+    rm -rf "${Q:?}" "${Q:?}.clone"
 
     if [ "$fails" -ne 0 ]; then
         printf '\nSELF-TEST FAILED (%s/%s rows)\n' "$((row - fails + fails))" "$row"

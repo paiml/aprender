@@ -17099,3 +17099,19 @@ roadmap:
   labels:
   - kind:triage
   notes: null
+- id: PMAT-3186
+  github_issue: 3186
+  item_type: task
+  title: 'guard: resolve_base refuses every stacked merge-group entry (#3186, packing P0)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-12T16:34:18Z
+  updated: 2026-09-12T16:34:18Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
