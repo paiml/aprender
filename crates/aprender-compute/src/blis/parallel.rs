@@ -188,51 +188,32 @@ pub fn gemm_blis_parallel_shared_b(
         return Err(TruenoError::InvalidInput("Dimension mismatch".to_string()));
     }
 
-    // For small problems, use single-thread path
     let flops = m * n * k;
-    if flops < 8_000_000 {
+    if !shared_b_path_available(flops) {
         return gemm_blis(m, n, k, a, b, c, None);
     }
 
-    // Require AVX-512 for the 8×32 microkernel
-    #[cfg(target_arch = "x86_64")]
-    if !std::arch::is_x86_feature_detected!("avx512f") {
-        return gemm_blis(m, n, k, a, b, c, None);
-    }
-
-    let phys_cores = num_cpus::get_physical();
-    let max_threads = if flops < 64_000_000 {
-        2.min(phys_cores)
-    } else if flops < 512_000_000 {
-        4.min(phys_cores)
-    } else if flops < 4_000_000_000 {
-        // Shared-B means less L3 pressure per thread, so we can potentially
-        // use more threads than the per-thread-B path. Try phys_cores/2.
-        (phys_cores / 2).max(8).min(phys_cores)
-    } else {
-        (phys_cores / 2).max(8).min(phys_cores)
+    let num_threads = shared_b_thread_count(flops).min(rayon::current_num_threads());
+    let blk = super::cache_topology::blocking_8x32();
+    let geo = SharedBGeometry {
+        mr: blk.mr, // 8
+        nr: blk.nr, // 32
+        mc: blk.mc.min(m),
+        nc: blk.nc.min(n),
+        kc: blk.kc,
     };
 
-    let blk = super::cache_topology::blocking_8x32();
-    let mr = blk.mr; // 8
-    let nr = blk.nr; // 32
-    let mc = blk.mc.min(m);
-    let nc = blk.nc.min(n);
-    let kc = blk.kc;
-
     // Shared packed B: one allocation for the largest B panel
-    let b_panels = (nc + nr - 1) / nr;
-    let packed_b_size = b_panels * nr * kc;
-    let mut packed_b = vec![0.0f32; packed_b_size];
+    let b_panels = geo.nc.div_ceil(geo.nr);
+    let mut packed_b = vec![0.0f32; b_panels * geo.nr * geo.kc];
 
     let c_ptr = c.as_mut_ptr() as usize;
-    let num_threads = max_threads.min(rayon::current_num_threads());
 
-    for jc in (0..n).step_by(nc) {
-        let nc_block = nc.min(n - jc);
+    for jc in (0..n).step_by(geo.nc) {
+        let nc_block = geo.nc.min(n - jc);
 
-        for pc in (0..k).step_by(kc) {
-            let kc_block = kc.min(k - pc);
+        for pc in (0..k).step_by(geo.kc) {
+            let kc_block = geo.kc.min(k - pc);
 
             // Pack B ONCE (sequential) — shared by all threads
             super::compute::pack_b_block_generic(
@@ -242,101 +223,215 @@ pub fn gemm_blis_parallel_shared_b(
                 jc,
                 kc_block,
                 nc_block,
-                nr,
+                geo.nr,
                 &mut packed_b,
             );
-            let shared_b: &[f32] = &packed_b;
+            let block = SharedBBlock {
+                a,
+                k,
+                n,
+                c_ptr,
+                jc,
+                pc,
+                nc_block,
+                kc_block,
+                geo: &geo,
+                shared_b: &packed_b,
+            };
 
             // Parallel ic loop: each thread gets a slice of M
-            let m_per_thread = ((m + num_threads - 1) / num_threads + mr - 1) / mr * mr;
+            let m_per_thread = m.div_ceil(num_threads).div_ceil(geo.mr) * geo.mr;
 
             (0..num_threads).into_par_iter().for_each(|tid| {
                 let ic_start = tid * m_per_thread;
-                if ic_start >= m {
-                    return;
+                if ic_start < m {
+                    block.run_slice(ic_start, (ic_start + m_per_thread).min(m), m_per_thread);
                 }
-                let ic_end = (ic_start + m_per_thread).min(m);
-
-                // Thread-local packed A — reuse across (jc, pc) iterations
-                // via thread_local! to avoid heap allocation per iteration.
-                thread_local! {
-                    static TL_A: std::cell::RefCell<Vec<f32>> =
-                        const { std::cell::RefCell::new(Vec::new()) };
-                }
-                TL_A.with(|tl| {
-                    let a_panels = (m_per_thread + mr - 1) / mr;
-                    let needed = a_panels * mr * kc_block;
-                    let mut packed_a = tl.borrow_mut();
-                    if packed_a.len() < needed {
-                        packed_a.resize(needed, 0.0);
-                    }
-
-                    let panels_n = (nc_block + nr - 1) / nr;
-
-                    for ic in (ic_start..ic_end).step_by(mc) {
-                        let mc_block = mc.min(ic_end - ic);
-
-                        super::packing::pack_a_block(
-                            a,
-                            k,
-                            ic,
-                            pc,
-                            mc_block,
-                            kc_block,
-                            &mut packed_a,
-                        );
-
-                        let panels_m = (mc_block + mr - 1) / mr;
-
-                        for ir_panel in 0..panels_m {
-                            let ir = ir_panel * mr;
-                            let mr_block = mr.min(mc_block - ir);
-
-                            for jr_panel in 0..panels_n {
-                                let jr = jr_panel * nr;
-                                let nr_block = nr.min(nc_block - jr);
-
-                                let a_panel = &packed_a[ir_panel * mr * kc_block..];
-                                let b_panel = &shared_b[jr_panel * nr * kc_block..];
-
-                                if mr_block == 8 && nr_block == 32 {
-                                    #[cfg(target_arch = "x86_64")]
-                                    unsafe {
-                                        super::compute::avx512_microkernel_8x32_rowmajor(
-                                            kc_block,
-                                            a_panel.as_ptr(),
-                                            b_panel.as_ptr(),
-                                            (c_ptr as *mut f32).add((ic + ir) * n + (jc + jr)),
-                                            n,
-                                        );
-                                    }
-                                } else {
-                                    // Scalar fallback for edge tiles
-                                    for ir_local in 0..mr_block {
-                                        for jr_local in 0..nr_block {
-                                            let mut sum = 0.0f32;
-                                            for p in 0..kc_block {
-                                                sum += a_panel[p * mr + ir_local]
-                                                    * b_panel[p * nr + jr_local];
-                                            }
-                                            unsafe {
-                                                let c = c_ptr as *mut f32;
-                                                *c.add(
-                                                    (ic + ir + ir_local) * n + (jc + jr + jr_local),
-                                                ) += sum;
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }); // TL_A.with
             });
         }
     }
 
     Ok(())
+}
+
+/// Whether the shared-B path may run at all: big enough to pay for the
+/// packing, and on a target that has the 8×32 microkernel.
+///
+/// FALSIFY-SHARED-B-001 on aarch64 (gx10, 2026-09-12): the AVX-512 check used
+/// to exist only under `cfg(target_arch = "x86_64")`, and the microkernel call
+/// in the tile loop is `cfg(x86_64)` inside an `if` with no other arm — so on
+/// every other target the full 8×32 tiles were silently SKIPPED and only the
+/// edge tiles were computed: max diff 39.2 against the reference at 256³ (the
+/// 100×96 row passed only because it sits under the 8M-flop cut). The shared-B
+/// path is AVX-512-only by construction; everything else takes the same plain
+/// BLIS path a no-AVX-512 x86 box takes.
+#[cfg(feature = "parallel")]
+fn shared_b_path_available(flops: usize) -> bool {
+    if flops < 8_000_000 {
+        return false;
+    }
+    #[cfg(target_arch = "x86_64")]
+    {
+        std::arch::is_x86_feature_detected!("avx512f")
+    }
+    #[cfg(not(target_arch = "x86_64"))]
+    {
+        false
+    }
+}
+
+/// Thread budget by problem size. Shared-B means less L3 pressure per thread
+/// than the per-thread-B path, so the large tiers use phys_cores/2 (≥ 8).
+#[cfg(feature = "parallel")]
+fn shared_b_thread_count(flops: usize) -> usize {
+    let phys_cores = num_cpus::get_physical();
+    if flops < 64_000_000 {
+        2.min(phys_cores)
+    } else if flops < 512_000_000 {
+        4.min(phys_cores)
+    } else {
+        (phys_cores / 2).max(8).min(phys_cores)
+    }
+}
+
+/// The 8×32 blocking the shared-B path packs for.
+#[cfg(feature = "parallel")]
+struct SharedBGeometry {
+    mr: usize,
+    nr: usize,
+    mc: usize,
+    nc: usize,
+    kc: usize,
+}
+
+/// One (jc, pc) block: B is packed once and read by every thread; each thread
+/// packs its own A slice and writes a disjoint row range of C.
+#[cfg(feature = "parallel")]
+struct SharedBBlock<'a> {
+    a: &'a [f32],
+    k: usize,
+    n: usize,
+    /// `*mut f32` of C as usize so the block is `Sync`; every write lands in
+    /// this thread's own row range (see `run_slice`).
+    c_ptr: usize,
+    jc: usize,
+    pc: usize,
+    nc_block: usize,
+    kc_block: usize,
+    geo: &'a SharedBGeometry,
+    shared_b: &'a [f32],
+}
+
+#[cfg(feature = "parallel")]
+impl SharedBBlock<'_> {
+    /// This thread's M-slice `[ic_start, ic_end)`: pack A per mc block into a
+    /// thread-local buffer (reused across (jc, pc) iterations — no allocation
+    /// per iteration) and run the panel loop over it.
+    fn run_slice(&self, ic_start: usize, ic_end: usize, m_per_thread: usize) {
+        thread_local! {
+            static TL_A: std::cell::RefCell<Vec<f32>> =
+                const { std::cell::RefCell::new(Vec::new()) };
+        }
+        TL_A.with(|tl| {
+            let geo = self.geo;
+            let needed = m_per_thread.div_ceil(geo.mr) * geo.mr * self.kc_block;
+            let mut packed_a = tl.borrow_mut();
+            if packed_a.len() < needed {
+                packed_a.resize(needed, 0.0);
+            }
+
+            for ic in (ic_start..ic_end).step_by(geo.mc) {
+                let mc_block = geo.mc.min(ic_end - ic);
+                super::packing::pack_a_block(
+                    self.a,
+                    self.k,
+                    ic,
+                    self.pc,
+                    mc_block,
+                    self.kc_block,
+                    &mut packed_a,
+                );
+                self.run_panels(&packed_a, ic, mc_block);
+            }
+        });
+    }
+
+    /// Every (mr × nr) tile of one packed-A block against the shared B.
+    fn run_panels(&self, packed_a: &[f32], ic: usize, mc_block: usize) {
+        let geo = self.geo;
+        let panels_n = self.nc_block.div_ceil(geo.nr);
+        for ir_panel in 0..mc_block.div_ceil(geo.mr) {
+            let ir = ir_panel * geo.mr;
+            let mr_block = geo.mr.min(mc_block - ir);
+            for jr_panel in 0..panels_n {
+                let jr = jr_panel * geo.nr;
+                let nr_block = geo.nr.min(self.nc_block - jr);
+                let a_panel = &packed_a[ir_panel * geo.mr * self.kc_block..];
+                let b_panel = &self.shared_b[jr_panel * geo.nr * self.kc_block..];
+                self.tile(a_panel, b_panel, ic + ir, self.jc + jr, mr_block, nr_block);
+            }
+        }
+    }
+
+    /// One tile at C[row.., col..]: the AVX-512 microkernel for a full 8×32,
+    /// the scalar loop for every edge tile (and for every full tile on a
+    /// target without the microkernel — reachable only if the path guard is
+    /// ever widened).
+    fn tile(
+        &self,
+        a_panel: &[f32],
+        b_panel: &[f32],
+        row: usize,
+        col: usize,
+        mr_block: usize,
+        nr_block: usize,
+    ) {
+        #[cfg(target_arch = "x86_64")]
+        if mr_block == 8 && nr_block == 32 {
+            // SAFETY: the path guard proved avx512f; a_panel/b_panel hold
+            // kc_block × 8 and kc_block × 32 packed floats; (row, col) is
+            // inside this thread's disjoint row range of C, which outlives
+            // the block.
+            unsafe {
+                super::compute::avx512_microkernel_8x32_rowmajor(
+                    self.kc_block,
+                    a_panel.as_ptr(),
+                    b_panel.as_ptr(),
+                    (self.c_ptr as *mut f32).add(row * self.n + col),
+                    self.n,
+                );
+            }
+            return;
+        }
+        self.scalar_tile(a_panel, b_panel, row, col, mr_block, nr_block);
+    }
+
+    /// Scalar fallback for edge tiles.
+    fn scalar_tile(
+        &self,
+        a_panel: &[f32],
+        b_panel: &[f32],
+        row: usize,
+        col: usize,
+        mr_block: usize,
+        nr_block: usize,
+    ) {
+        let geo = self.geo;
+        for ir_local in 0..mr_block {
+            for jr_local in 0..nr_block {
+                let mut sum = 0.0f32;
+                for p in 0..self.kc_block {
+                    sum += a_panel[p * geo.mr + ir_local] * b_panel[p * geo.nr + jr_local];
+                }
+                // SAFETY: (row + ir_local, col + jr_local) is inside this
+                // thread's disjoint row range of C (see `run_slice`).
+                unsafe {
+                    let c = self.c_ptr as *mut f32;
+                    *c.add((row + ir_local) * self.n + (col + jr_local)) += sum;
+                }
+            }
+        }
+    }
 }
 
 /// Non-parallel fallback

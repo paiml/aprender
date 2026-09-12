@@ -93,7 +93,14 @@ jobs:
   # giving us up to ~13 minutes of retry headroom before declaring the
   # registry unreachable. Mirrored in the `mutants` job below.
   workspace-test:
-    runs-on: [self-hosted, X64, Linux, clean-room]
+    # PMAT-3138 (#3138): arch-neutral -- intel, yoga OR gx10. Measured 2026-09-12 on
+    # gx10 with this image and env, --no-fail-fast: step 1 (59k tests) 10.6 min vs
+    # 34.5 on intel, step 2 (102 tree readers) 6.7 vs 27.4, the over-the-cap
+    # cargo check 84 s; test EXECUTION runs 3-4x faster on the idle 20-core box.
+    # The four aarch64-only reds that pin found are fixed in the same PR (an x86
+    # example, a shared-B GEMM defect, a wall-clock ratio moved to bench-gates, a
+    # lane-count tolerance). pr-review-receipt keeps X64 until #3132.
+    runs-on: [self-hosted, Linux, clean-room]
     # 100, not 85. The step below sets `timeout-minutes: 75`, but "Set up runner"
     # (image pull) has measured at 20 minutes, so 20 + 75 = 95 > 85 and the JOB
     # timeout always fired first -- producing a bare "The operation was canceled"
@@ -623,6 +630,18 @@ jobs:
           set -euo pipefail
           read -ra targets <<< "$TARGETS"
           printf 'tree-reader targets: %s\n' "${#targets[@]}"
+          # PMAT-1098 67-F2: build ONLY the packages the targets name. `--workspace
+          # --lib --tests` built every test binary of every member to run 41 of
+          # them: run 34680214617 attempt 1 compiled 421 crates after step 1 had
+          # compiled 703, linked 686 binaries it then skipped, and spent 27.4 min
+          # on 17 min of tests. A token is crate:--lib[:MOD] | crate:--bins |
+          # crate:--test:NAME, so the package is the first field. The three
+          # GPU/SIMD crates are excluded by the registry guard already
+          # (check_tree_reader_tests.sh); filtered here again so a registry
+          # drift can never pull them into a clean-room run.
+          pkgs="$(printf '%s\n' "${targets[@]}" | cut -d: -f1 | sort -u \
+                  | grep -vxE 'aprender-(gpu|cuda-edge|compute)' | sed 's/^/-p /' | tr '\n' ' ')"
+          printf 'packages built: %s\n' "$(printf '%s' "$pkgs" | grep -o -- '-p ' | wc -l)"
           EXPR="$(bash scripts/ci_test_tier.sh --filterset "$TARGETS")"
           printf 'nextest filterset (%s clause(s)):\n' "$(printf '%s' "$EXPR" | tr '|' '\n' | wc -l)"
           printf '%s\n' "$EXPR" | tr '|' '\n' | sed 's/^ *//; s/ *$//; s/^/  + /'
@@ -643,7 +662,7 @@ jobs:
             -e CARGO_PROFILE_DEV_DEBUG=line-tables-only \
             -e CARGO_TERM_COLOR=never \
             "$IMAGE" \
-            cargo nextest run --profile ci --workspace --lib --tests --exclude aprender-gpu --exclude aprender-cuda-edge --exclude aprender-compute -E "$EXPR"
+            cargo nextest run --profile ci $pkgs --lib --tests -E "$EXPR"
       # BSE-17 quick tier, part 3 (PMAT-1098 67-E2, #3084 — rule (i)): the
       # selection was OVER THE CAP (touched crates + their direct reverse
       # dependents exceed gate_touched_crates.sh's CAP=3). That used to escalate
