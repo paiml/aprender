@@ -1,0 +1,14 @@
+# Renamed to Cargo.toml when scripts/dogfood_examples.sh --selftest copies this
+# fixture into its scratch directory. See README.md for why it is not committed
+# under the real name.
+[package]
+name = "dogfood-examples-fixture"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+
+# Detach from any enclosing workspace: the fixture must resolve standalone
+# wherever it is copied.
+[workspace]

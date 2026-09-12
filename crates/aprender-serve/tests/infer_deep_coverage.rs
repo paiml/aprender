@@ -373,7 +373,12 @@ fn test_run_inference_nonexistent_file() {
     let result = realizar::infer::run_inference(&config);
     assert!(result.is_err());
     let err_msg = result.unwrap_err().to_string();
-    assert!(err_msg.contains("Failed to read") || err_msg.contains("read model"));
+    // Stale test: infer/inference_result.rs refuses a missing path with
+    // `File not found: <path>` before any read happens (the old "Failed to read" wording is gone).
+    assert!(
+        err_msg.contains("File not found: /nonexistent/path/to/model.gguf"),
+        "the refusal must name the missing path, got: {err_msg}"
+    );
 }
 
 #[test]

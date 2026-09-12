@@ -5,7 +5,6 @@
 apr-cli	--test	falsification_crux_a_01
 apr-cli	--test	falsification_crux_a_03
 apr-cli	--test	falsification_crux_a_20
-apr-cli	--test	pixel_regression
 apr-format	--test	golden_fixtures
 aprender-cgp	--test	integration
 aprender-contracts	--test	apr_hnsw_persistence_contract
@@ -21,6 +20,7 @@ aprender-contrastive-data	--test	negative_materializing
 aprender-contrastive-data	--test	reference_fixtures
 aprender-core	--test	realizar_integration_tests
 aprender-core	--test	spec_checklist_19_inference
+aprender-core	--test	spec_checklist_f_wasm
 aprender-core	--test	spec_checklist_q_qwen_coder
 aprender-core	--test	spec_checklist_r_model_import
 aprender-core	--test	spec_checklist_t_realizar

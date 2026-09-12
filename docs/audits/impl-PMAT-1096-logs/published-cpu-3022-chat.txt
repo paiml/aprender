@@ -1,0 +1,28 @@
+
+=== Model Chat (Sharded SafeTensors) ===
+
+Using a sharded SafeTensors index (model.safetensors.index.json)
+
+  Model: <fixture>/model.safetensors.index.json
+  Chat Template: Raw
+  Temperature: 0.7
+  Top-P: 0.9
+  Max Tokens: 512
+
+Commands:
+  /quit     Exit the chat
+  /clear    Clear conversation history
+  /system   Set system prompt
+  /help     Show help
+
+════════════════════════════════════════════════════════════
+
+Loading model...
+Loaded Sharded SafeTensors format in 0.00s (988.1 MB)
+Loaded tokenizer: <fixture>/tokenizer.json (151936 tokens)
+Loaded config: 24 layers, 896 hidden, 14 heads
+Detected ChatML chat template
+You: [512 tokens in 25.2s = 20.3 tok/s]
+Assistant: 2 + 2 equals 4.
+
+You: Goodbye!

@@ -1,0 +1,6 @@
+=== format x command matrix on noah-Lambda-Vector (apr 0.65.2 (c04eda87d)) ===
+ok    single-file x apr run              honest: Output:
+ok    single-file x apr chat             honest: Loaded SafeTensors format in 0.50s (988.1 MB)
+ok    sharded x apr run                  honest: Output:
+FAIL  sharded x apr chat                 the DEMO model answered for a file the user named (#3022)
+matrix: 4 cells, rc=1 (records in /tmp/claude-1000/-home-noah-src-aprender-worktrees-pp-066-spec/b0a54db6-c087-463b-b3d3-9ba0190ae9ff/scratchpad/matrix-before)

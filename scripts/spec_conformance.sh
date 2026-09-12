@@ -79,6 +79,11 @@ _reg() {
 }
 
 selftest() {
+    # Fixtures below go through printf '%b', so they are bytes, and the bytes must not depend on the
+    # runner. Under a POSIX locale bash leaves a \u escape as literal text: the zero-width key row went
+    # CLEAN on yoga's runner image while intel's en_US.UTF-8 rendered it (main, run 34529896596).
+    # Pinning C makes every box render the same bytes, and a \u fixture fail on every box.
+    local -x LC_ALL=C
     # Declared HERE, before the nested helpers: `local` after a nested function
     # definition parses as top-level to bashrs (SC2168), and a lint error in a
     # guard is the one place a lint error is not cosmetic.
@@ -203,7 +208,7 @@ selftest() {
     LEDGER_UNDERSCORED_TIER="${LEDGER_ONE}| 2 | t | lambda | cuda | q · q4 | W1 | ${BT}aaaa${BT} | false | e | __RECORDED__ |\\n"
     LEDGER_RESPEND_CONFORMANT="| 1 | t | lambda | cuda | q · q4 | W1 | ${BT}aaaa${BT} | false | e | CONFORMANT |\\n| 2 | t | lambda | cuda | q · q4 | W1 | ${BT}aaaa${BT} | false | e | CONFORMANT |\\n"
     LEDGER_RESPEND_EMPHASISED_KEY="${LEDGER_ONE}| 2 | t | __lambda__ | cuda | q · q4 | W1 | <code>aaaa</code> | false | e | RECORDED |\\n"
-    LEDGER_RESPEND_ZWSP_KEY="${LEDGER_ONE}| 2 | t | lam\\u200bbda | cuda | q · q4 | W1 | ${BT}AAAA${BT} | false | e | RECORDED |\\n"
+    LEDGER_RESPEND_ZWSP_KEY="${LEDGER_ONE}| 2 | t | lam\\xe2\\x80\\x8bbda | cuda | q · q4 | W1 | ${BT}AAAA${BT} | false | e | RECORDED |\\n"
 
     # §6 -- the join itself.
     row conformance_ok CLEAN \

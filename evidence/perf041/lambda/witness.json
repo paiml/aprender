@@ -343,8 +343,8 @@
       ]
     }
   ],
-  "binary_sha256": "4f779da59dc67aa13f8e42fc6add0d071cb960c49d16a505a718399fdd7c54d6",
-  "commit": "a765c86a5f5437c01bb327848787bbcda15249c7",
+  "binary_sha256": "61a78292b94f3053e93026c6c5114fb127b90a5dd8e78643bf9de144a6a95fea",
+  "commit": "c554a7731de46ad56622ab5d835e63b6116a524d",
   "declared_min": 64,
   "env": {
     "APR_DECODE_GEMM": null,

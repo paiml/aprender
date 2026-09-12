@@ -7,6 +7,7 @@
 
 ## Core Specifications
 
+- [06x Release Schedule](06x-release-schedule.md) — 0.67.0 → 0.70.0 at a 2–3 day cadence, one epic per release, priorities A–G with acceptance commands, contract `release-schedule-06x-v1`
 - [Apr Cli Qa Spec](apr-cli-qa-spec.md)
 - [Aprender Monorepo Consolidation](aprender-monorepo-consolidation.md)
 - [Aprender Readme Book Rewrite](aprender-readme-book-rewrite.md)

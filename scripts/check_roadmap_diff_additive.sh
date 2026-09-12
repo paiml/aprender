@@ -375,7 +375,7 @@ EOF
     case "$got4" in "$want4|first parent of HEAD (HEAD is the origin/main tip"*) printf 'ok    row %-2s push shape: HEAD on the origin/main tip -> its first parent, never HEAD itself\n' "$row" ;;
         *) printf 'FAIL  row %-2s push shape: wanted %s|first parent of HEAD (HEAD is the origin/main tip..., got %s\n' "$row" "$want4" "$got4"; fails=1 ;; esac
     row=$((row + 1))
-    rm -rf "$R.shallow"; git clone -q --depth=1 -b main "file://$R" "$R.shallow" 2>/dev/null; git -C "$R.shallow" update-ref refs/remotes/origin/main HEAD
+    rm -rf "${R:?}.shallow"; git clone -q --depth=1 -b main "file://$R" "$R.shallow" 2>/dev/null; git -C "$R.shallow" update-ref refs/remotes/origin/main HEAD
     rc5=0; err5=$( cd "$R.shallow" && bash -c '. "$0" --lib-only; REPO_ROOT="$1"; resolve_base HEAD' "$SELF" "$R.shallow" 2>&1 >/dev/null ) || rc5=$?
     case "$rc5:$err5" in
         0:*) printf 'FAIL  row %-2s push shape, parent not fetched: resolved a base (rc=0) instead of refusing\n' "$row"; fails=1 ;;

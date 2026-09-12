@@ -238,14 +238,24 @@ fn falsify_alg_297_compile_time_proofs_count() {
 }
 
 fn find_project_root() -> std::path::PathBuf {
-    let mut dir = std::env::current_dir().expect("current dir");
+    // The WORKSPACE root, not the first crate dir. `cargo test`/nextest run a test with
+    // cwd = the package's manifest dir, and crates/aprender-core has a Cargo.toml AND a
+    // src/ — so the old "Cargo.toml + src/" walk stopped one level too early and
+    // `.clippy.toml` read as empty. This target was dark in the full tier; the quick
+    // tier (BSE-17) was the first CI run to execute it (#3112, 2026-09-11).
+    let mut dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     loop {
-        if dir.join("Cargo.toml").exists() && dir.join("src").exists() {
+        let manifest = dir.join("Cargo.toml");
+        if manifest.exists()
+            && std::fs::read_to_string(&manifest)
+                .map(|t| t.contains("[workspace]"))
+                .unwrap_or(false)
+        {
             return dir;
         }
         assert!(
             dir.pop(),
-            "Could not find project root (looking for Cargo.toml + src/)"
+            "Could not find the workspace root (a Cargo.toml containing [workspace]) above CARGO_MANIFEST_DIR"
         );
     }
 }
