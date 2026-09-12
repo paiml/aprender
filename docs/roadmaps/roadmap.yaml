@@ -17099,3 +17099,23 @@ roadmap:
   labels:
   - kind:triage
   notes: null
+- id: PMAT-3161
+  github_issue: 3161
+  item_type: task
+  title: 'P1: three license states across 79 crates — 14 publishable crates offer Apache-2.0 with no LICENSE-APACHE'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-09-12T11:50:05Z
+  updated: 2026-09-12T11:50:05Z
+  spec: null
+  acceptance_criteria:
+  - 'cargo metadata 2026-09-12: 62 crates MIT, 14 ''MIT OR Apache-2.0'' (all PUBLISHABLE), 3 absent (all publish=false, so hygiene only). Root ships only LICENSE (MIT); there is NO root LICENSE-APACHE — the only Apache text is crates/aprender-zram/LICENSE-APACHE, and that crate is not among the 14. Apache-2.0 §4(a) requires recipients get the License text, so the Apache arm (and its §3 patent grant, the whole reason to offer it) is asserted but unsupported in the published tarball. OPERATOR DECISION NEEDED: MIT-only (fix 14 down) vs dual (fix 62 up + add LICENSE-APACHE). Both linfa 0.8.1 and Burn 0.21.0 are dual; recommendation is dual because it costs one file today and cannot be added later without every contributor''s consent. deny.toml:59 already allows both. FALSIFIABLE: guard asserts exactly one license expression across publishable crates, with its universe from cargo metadata filtered by publish!=false — NOT a hand-list, which free-passes every crate added after it; the 3 exempt BY publish status, not by name; every named license file verified present in ''cargo package --list'' output, not just the working tree (CB-510 lesson); aprender-zram/LICENSE-APACHE reconciled or removed; readme_contract.rs stays green; flipping one crate''s license field must turn the guard RED. Milestone 0.68.0.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - P1
+  - bug
+  - documentation
+  notes: null
