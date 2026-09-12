@@ -47,6 +47,10 @@ t() { # t <want-rc> <label> <cmd...>
 [ -f "$GUARD" ] || { printf 'FAIL  %s does not exist — the asset set is asserted by nothing\n' "$GUARD"; exit 1; }
 
 WORK=$(mktemp -d)
+if [ -z "$WORK" ] || [ ! -d "$WORK" ] || [[ "$WORK" == *..* ]] || [[ "$WORK" != /* ]]; then
+  echo "refused: invalid WORK directory" >&2
+  exit 2
+fi
 trap 'rm -rf "$WORK"' EXIT
 
 # The COMPLETE set the operator's rule requires, written out by hand here so this
