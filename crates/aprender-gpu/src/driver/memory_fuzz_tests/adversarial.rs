@@ -2,9 +2,34 @@
 //! These tests try to BREAK the driver, not validate happy paths.
 
 use super::*;
+use crate::driver::memory::{classify_device_memory, DeviceMemoryClass};
 
 /// Falsification Test 1: Oversize Allocation
 /// Attempt to allocate 100GB - must return OOM, not panic or hang
+/// Sets an environment variable for the guard's lifetime and restores the PRIOR state
+/// (present-with-value or absent) on drop — including on unwind.
+struct EnvVarGuard {
+    key: &'static str,
+    prior: Option<std::ffi::OsString>,
+}
+
+impl EnvVarGuard {
+    fn set(key: &'static str, value: &str) -> Self {
+        let prior = std::env::var_os(key);
+        std::env::set_var(key, value);
+        Self { key, prior }
+    }
+}
+
+impl Drop for EnvVarGuard {
+    fn drop(&mut self) {
+        match self.prior.take() {
+            Some(v) => std::env::set_var(self.key, v),
+            None => std::env::remove_var(self.key),
+        }
+    }
+}
+
 #[test]
 fn test_alloc_oversize_100gb() {
     // GPU-ORD-4: "100GB must be impossible" is only true under the default
@@ -17,8 +42,52 @@ fn test_alloc_oversize_100gb() {
     let ctx = CudaContext::new(0).expect("Context");
 
     // 100GB of f32 = 25 billion elements
-    let oversize = 25_000_000_000usize;
+    // Derive "oversize" from the DEVICE, never from a card. The old fixed 100 GB
+    // (25e9 f32) passed on a 24 GB RTX 4090 only by accident of that card's size and
+    // FAILED on gx10, an NVIDIA GB10 with ~128 GB of unified memory where a 100 GB
+    // allocation legitimately succeeds. It failed there under CUDA 13.0 and 13.3 alike
+    // (a control run), so it was a wrong-host assumption, not a toolkit regression.
+    // 2x the whole device exceeds physical memory on every CUDA device, unified or not.
+    let total_bytes = ctx.total_memory().expect("cuDeviceTotalMem MUST succeed");
 
+    // Two memory models, two DIFFERENT safe oversizes. This is not pedantry: the
+    // previous version of this test asked a GB10 (unified memory, 128 GB shared with
+    // the host) for 2x the device via cuMemAlloc. On a discrete card that fails
+    // instantly against the VRAM pool. On a unified-memory part the driver tried to
+    // BACK the request from system RAM, the box went global-OOM at 13:36 on 2026-09-09
+    // (the OOM table's top rows were this very test binary), and the host rebooted.
+    // A run that "passed in 34 s" the same afternoon was that thrash, survived by luck.
+    //
+    //  - discrete   (INTEGRATED == 0): 2x the device. Exceeds VRAM; the pool check
+    //    rejects it before any page is touched.
+    //  - integrated (INTEGRATED == 1): an address-space-scale request (2^60 bytes) that
+    //    fails VALIDATION -- there is no plausible pool to back it from, so nothing is
+    //    paged in. "Larger than the device" is still what is asserted; it is simply
+    //    larger by enough that the driver cannot try.
+    let integrated = matches!(
+        classify_device_memory(&ctx).expect("CU_DEVICE_ATTRIBUTE_INTEGRATED MUST be readable"),
+        DeviceMemoryClass::UnifiedMemory
+    );
+    let oversize_bytes: usize = if integrated {
+        1usize << 60
+    } else {
+        total_bytes
+            .checked_mul(2)
+            .expect("2x device memory overflows usize")
+    };
+    let oversize = oversize_bytes / std::mem::size_of::<f32>();
+
+    // Pin the DEVICE allocator. On integrated parts `GpuBuffer::new` routes to
+    // `cuMemAllocManaged` by default (buffer.rs, PMAT-769), and managed memory
+    // oversubscribes by design (a 257 GB managed request SUCCEEDED on GB10) -- that is
+    // the allocator working as documented, not the property under test. The property
+    // is "cuMemAlloc refuses more than the device", so ask for cuMemAlloc explicitly.
+    // The exclusivity lock held above covers this env mutation (GPU-ORD-4).
+    // RAII, not set/remove: if `GpuBuffer::new` (or anything after it) panics, a bare
+    // `remove_var` never runs and MANAGED_MEMORY=0 leaks into every later test in this
+    // process; and an unconditional `remove_var` would also destroy a value the suite was
+    // launched with. The guard restores whatever was there, on every exit path.
+    let _env = EnvVarGuard::set("MANAGED_MEMORY", "0");
     let result = GpuBuffer::<f32>::new(&ctx, oversize);
 
     match result {
@@ -33,7 +102,11 @@ fn test_alloc_oversize_100gb() {
             println!("Oversize alloc returned: {:?}", e);
         }
         Ok(_) => {
-            panic!("CRITICAL: 100GB allocation succeeded - this should be impossible on RTX 4090!");
+            panic!(
+                "CRITICAL: allocating {} bytes (device total {} bytes, integrated={}) SUCCEEDED - \
+                 an allocation larger than the whole device must fail",
+                oversize_bytes, total_bytes, integrated
+            );
         }
     }
 }

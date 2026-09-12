@@ -1,4 +1,11 @@
 //! CUDA graph capture, instantiate, and replay tests
+//!
+//! GPU-ORD-5 (67-B1): every capture here opens on a NON-BLOCKING stream. A capture on a
+//! blocking stream makes each legacy-stream transfer in the process (`GpuBuffer::from_host`,
+//! `copy_to_host`, every cuBLAS test's upload) fail with CUDA_ERROR_STREAM_CAPTURE_IMPLICIT
+//! (906) and invalidates the capture (901) — measured on gx10: 5 cuBLAS tests + this file's
+//! kernel test, only when they overlapped. `capture_vs_ctx_sync()` is kept for the
+//! `ctx.synchronize()` neighbour; the stream flag is what removes the legacy-stream hazard.
 
 use super::*;
 
@@ -28,7 +35,7 @@ fn test_cuda_graph_instantiate_empty() {
 fn test_cuda_graph_capture_and_replay() {
     let _capture_lock = super::capture_vs_ctx_sync();
     let ctx = CudaContext::new(0).expect("Context creation MUST succeed");
-    let stream = CudaStream::new(&ctx).expect("Stream creation MUST succeed");
+    let stream = CudaStream::new_non_blocking(&ctx).expect("Stream creation MUST succeed");
 
     // GPU-ORD-4: ThreadLocal, not Global. `CaptureMode::Global` makes every
     // legacy-stream synchronous API illegal in the WHOLE PROCESS for as long as
@@ -66,7 +73,7 @@ fn test_cuda_graph_capture_and_replay() {
 fn test_cuda_graph_capture_modes() {
     let _capture_lock = super::capture_vs_ctx_sync();
     let ctx = CudaContext::new(0).expect("Context creation MUST succeed");
-    let stream = CudaStream::new(&ctx).expect("Stream creation MUST succeed");
+    let stream = CudaStream::new_non_blocking(&ctx).expect("Stream creation MUST succeed");
 
     // GPU-ORD-4: `CaptureMode::Global` is deliberately absent. Opening a Global
     // capture makes every legacy-stream synchronous API illegal across the
@@ -91,7 +98,7 @@ fn test_cuda_graph_capture_modes() {
 fn test_cuda_graph_with_kernel() {
     let _capture_lock = super::capture_vs_ctx_sync();
     let ctx = CudaContext::new(0).expect("Context creation MUST succeed");
-    let stream = CudaStream::new(&ctx).expect("Stream creation MUST succeed");
+    let stream = CudaStream::new_non_blocking(&ctx).expect("Stream creation MUST succeed");
 
     // Create a simple add kernel PTX
     let ptx = r#".version 8.0
