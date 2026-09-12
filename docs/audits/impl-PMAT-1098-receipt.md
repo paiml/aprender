@@ -4,13 +4,13 @@ merged: "[U] — this docs PR lands after the v0.67.0 tag; amended with the squa
 ticket: PMAT-1098
 row: APR-RELEASE-001 §0 selector row 1 — the 0.67.0 train (session 1 of the spec; epic #3078)
 epic: 3078
-model: "orchestrator claude-opus-5 from mid-phase 4 (opus -> fable-5-1 at phase 4 entry, then fable-5-1 -> claude-opus-5 mid-phase; both movements are rows in docs/audits/impl-routing.jsonl via route.sh record-event)"
+model: "orchestrator claude-fable-5-1 from 15:00Z (opus -> fable-5-1 at phase 4 entry; fable-5-1 -> claude-opus-5 mid-phase 4; claude-opus-5 -> claude-fable-5-1 at 15:00Z, `model-gate.sh --recheck` rc=0 against the admitted claude-fable-5-1; all three movements are rows in docs/audits/impl-routing.jsonl via route.sh record-event)"
 tokens_used: "orchestrator [U] (not instrumented); delegate ph4.teamwork 145,813 tokens / 42 tool uses; delegate ph4.g3ex 115,537 tokens / 38 tool uses (harness usage lines)"
 wall_clock_s: "[U] — session spans a compaction; the train's own step timestamps are in rel-067-autopilot/STATUS"
-orch_model: claude-opus-5
+orch_model: claude-fable-5-1
 orch_class: orchestration
 orch_decision: "self for every orchestration phase (queue, autopilot, tag, dry-run receipt, receipt); agy teamwork lane for the plan grill (Q2: spec artifact); agy goal lane (R-4, single module) for the G3.EX classifier fix, which failed isolation and was cherry-picked and re-verified"
-fable_binding: false  # binding held while fable-5-1 drove phases 1-4; the harness moved the session to claude-opus-5 mid-phase-4 and the move is recorded, not asserted
+fable_binding: false  # binding held while fable-5-1 drove phases 1-4; the harness moved the session to claude-opus-5 mid-phase-4 and back to claude-fable-5-1 at 15:00Z — both moves recorded, and the interval on opus keeps the session binding false even though the session ends on fable
 quota_age_h: absent
 quota_mark: U
 k_measured_at_set: 32
@@ -53,7 +53,7 @@ Declared 5 phases at 06:36Z under the earlier plan (train #3127, fleet, post-tra
 | 4.g3ex | G3.EX classifier learns `needs-data` (#3163) | `bash scripts/dogfood_examples.sh --selftest` exit 0 with the nodata rows; mutation RED | `route=agy-goal w=1.00 basis=absent note=fable-binding effort=1[U]` | R-4 single module |
 | 5 | train record + receipt + §7 report | `receipt-lint.sh`; `status-lint.sh` | `route=self w=100.00 basis=absent` | – |
 
-phase-boundary line: `phase-boundary: ticket=PMAT-1098 phase=4 orch_model=fable-5-1 change=opus->fable-5-1 recorded=1`.
+phase-boundary line: `phase-boundary: ticket=PMAT-1098 phase=4 orch_model=fable-5-1 change=opus->fable-5-1 recorded=1`. Later movements, recorded with `route.sh record-event` (`recorded=1` each): `claude-fable-5-1 -> claude-opus-5` (mid-phase 4) and `claude-opus-5 -> claude-fable-5-1` (15:00Z, recheck rc=0).
 
 ## Dispatch ledger
 | dispatch | mode | agent id | lane / width | agy conversations | turns / maxTurns | resumed | outcome |
@@ -108,19 +108,35 @@ trains below 10 PRs/train" does not fire.
 | cut #3046 from the 0.67.0 CHANGELOG | §4: scope is assigned to a train after the fact, and a PR that cannot precede the cut is not in it | bump commit e1548f34b |
 | moved #3046 to milestone 0.68.0 | same | comment 5645837638 |
 | cancelled CI on #3163 and #3164 | six aprender `workspace-test` jobs were live on intel at once against §3.4; two of them were mine and were not on the train | runs 34692405792, 34692277291 |
+| dequeued #3068 and #3139 | the same `check_roadmap_diff_additive.sh` RED as #3046 on every group they entered: a squash ahead of a stacked branch re-renders `roadmap.yaml` non-additively (`feedback_squash_merge_makes_every_stacked_branch_dirty`); each entry re-entered and failed again | #3068 runs 34689871244 (10:59Z), 34693750005 (12:28Z); #3139 runs 34693108322 (12:13Z), 34693750990 (12:28Z) |
+| moved #3068 and #3139 to milestone 0.68.0, remedy named | `scripts/roadmap_trim.py` / `roadmap_diff.py trim` on each; §4: scope is assigned after the fact | comments 5646163679 (#3068), 5646164109 (#3139) |
+| dequeued #3175 | §3.4 alone — nothing wrong with the PR (roadmap-only, +95/-0, additive): its merge-group run held seven intel jobs plus `workspace-test` on yoga-build2 concurrently with #3145's `workspace-test` on intel-clean-room-4 (memory: two concurrent workspace-tests starve the box). Re-armed after the tag from `automerge-held.txt` | run 34699000300; comment 5646676737; `dequeuePullRequest` on the PR node id |
+| discarded #3145's PR run 34696494933 (workspace-test 1 h 22 min in, step 14) by pushing aa61219ef | T-0 rule: the CHANGELOG missed four PRs merged after the v0.66.0 tag; a correct cut outranks a sunk CI hour on a train with 14 h left on the §3.2 clock | new run 34700990505 (15:01:50Z), the only aprender run in CI |
+
+## T-0 corrections on the bump branch (each one a measured predicate, in order)
+| commit | what | predicate |
+|---|---|---|
+| e1548f34b | dropped the `(#3046)` row | #3046 left the queue and cannot precede the cut |
+| 6b8950e21 | dropped `(#3068)`, `(#3139)` — dequeued — and `(#3064)`, `(#3065)` | `git merge-base --is-ancestor <merge-sha> v0.66.0` rc=0 for #3064/#3065: already shipped in 0.66.0. "Merged after the last CHANGELOG entry" ≠ "merged after the last tag" |
+| 292572fe4 → 71305ff93 | a file-wide "heading with no bullets" sweep removed **31 headings across eight years** (`### Migration Guide`, `### Quality Metrics`, …, prose sections); reverted and re-done scoped to the `[0.67.0]` section | heading count 225 → 194 (bad) → 224 (exactly one removed, the empty `### Added`) |
+| aa61219ef | added `(#3072)`, `(#3074)`, `(#3085)`, `(#3086)` — merged after the tag, absent from the log | `git log --format=%s v0.66.0..origin/main` PR numbers minus CHANGELOG PR numbers = ∅ (was 4); each merge sha `--is-ancestor v0.66.0` rc=1; rows 27 → 31; `release_notes.md` carries the same four |
+
+The gate that should have caught the last two is `dogfood.sh:473` — `grep -qF "$VERSION" CHANGELOG.md` — which a heading alone satisfies; filed as #3183 with the two-direction predicate.
 
 ## T-2 evidence for this cut
 
 | gate | verdict | how |
 |---|---|---|
 | G3.CB apr-cookbook names 0.67.0 | **PASS** | `gh api repos/paiml/apr-cookbook/commits?since=2026-09-10T04:55:52Z` returns "docs: aprender 0.67.0 - what changes for cookbook users (Refs #434) (#435)" |
-| G3.RN CHANGELOG `[0.67.0]` non-empty | PASS | bump worktree, 4 sections |
-| G3.EX every example runs | in flight | see the sweep section |
+| G3.RN CHANGELOG `[0.67.0]` non-empty | PASS (and complete at aa61219ef) | 31 rows: `### Fixed` 10, `### Changed` 21; coverage predicate merged-since-tag minus listed = ∅; false-row predicate `--is-ancestor v0.66.0` = none. The gate itself only checks the version string (#3183) |
+| G3.EX every example runs | **GO** on e1548f34b; delta on the release commit pending | 981 targets: pass 740 · needs-args 29 · needs-data 168 · timeout 21 · fail 23 → the 44 non-pass rows re-run with their `required-features`, logs kept → 6 genuine defects (#3178 CUDA Q6K panic, #3179 zram-core cuda never compiled, #3180 llama2-train cwd config, #3181 performance_parity Q4_0 block), 38 classifier gaps (#3182); every defect byte-identical at v0.66.0 — the previous tag shipped them under a gate that did not exist, so the cut did not cause them (§3.1). Evidence `evidence/dogfood/0.67.0/{examples.tsv,examples-triage.tsv,G3.EX-verdict.md}` (267c9120d). The 20 timeouts are long-running by design and were not individually verified — stated in the verdict, not claimed healthy. Release-commit delta owed: `prose_detection`, `bench_bpe` (changed by #3136) |
 
 ## Jidoka
 - G3.EX classifier gap (173 rows read as defects): fixed in #3163, held until post-tag (`automerge-held.txt`); the release-grade sweep re-runs with it.
 - agy goal lane isolation exit 3 (two causes above); the stray lane worktree under `fix-g3ex/.claude/worktrees/` was removed; the shared-checkout SKILL.md dirt reverted (byte-identical to the commit).
 - A concurrent actor created `feat/linfa-burn-pareto-tickets` in the main checkout during the lane window — not this session's; named so the next reader does not attribute it to the lane.
+- The CHANGELOG heading sweep (292572fe4): a structural rule applied file-wide instead of to the section being edited deleted 31 headings and was pushed before the count was checked. Reverted in 71305ff93; the rule now: scope every structural edit to the section you own and compare a heading count before and after, before the push.
+- Four merged PRs absent from the 0.67.0 CHANGELOG (aa61219ef) — no gate can see it (#3183).
 - `pmat hooks install --strict --force` fails in a linked worktree ("Not a directory (os error 20)"): `.git` is a file there; the shared hooks dir carries `pre-commit` only, so `Pmat-Ticket:` trailers are written by hand.
 
 ## Estimates
