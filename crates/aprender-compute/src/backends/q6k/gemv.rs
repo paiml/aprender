@@ -87,6 +87,7 @@ pub fn matmul_q6k_f32_scalar(
 }
 
 /// Extract 8 Q6K quantized values from packed ql/qh arrays.
+#[cfg(target_arch = "x86_64")]
 #[inline(always)]
 fn extract_q6k_values(ql: &[u8], qh: &[u8], idx_base: usize) -> [i32; 8] {
     let mut q6_vals = [0i32; 8];
@@ -375,6 +376,7 @@ unsafe fn compute_chunk_avx2(
     }
 }
 
+#[cfg(any(target_arch = "x86_64", test))]
 pub(crate) fn compute_chunk_scalar(
     q6k_data: &[u8],
     input: &[f32],

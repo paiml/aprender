@@ -298,10 +298,12 @@ fn test_cov_scratch_buffer_from_config() {
 
     assert_eq!(scratch.hidden.len(), 2048);
     assert_eq!(scratch.normed.len(), 2048);
-    assert_eq!(scratch.qkv.len(), 2048 * 3); // Q + K + V
+    // Stale test (the contract moved, the code is right): QKV buffer now correctly allocates only what is needed for GQA.
+    // Q = 2048, K = 8 * (2048/32) = 512, V = 512. Total = 3072.
+    assert_eq!(scratch.qkv.len(), 3072); // Q + K + V (GQA)
     assert_eq!(scratch.q.len(), 2048);
-    assert_eq!(scratch.k.len(), 2048);
-    assert_eq!(scratch.v.len(), 2048);
+    assert_eq!(scratch.k.len(), 512); // 8 kv_heads * (2048/32) head_dim
+    assert_eq!(scratch.v.len(), 512); // Same as K
     assert_eq!(scratch.attn_out.len(), 2048);
     assert_eq!(scratch.attn_proj.len(), 2048);
     assert_eq!(scratch.ffn_up.len(), 8192);

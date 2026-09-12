@@ -208,9 +208,12 @@ fn falsify_bgn_002_all_families_have_required_fields() {
 
 #[test]
 fn falsify_bgn_002_build_rs_exists_and_references_contracts() {
-    // Verify the build.rs file exists and references the contracts directory
-    let project_root = find_project_root();
-    let build_rs = project_root.join("build.rs");
+    // Verify the build.rs file exists and references the contracts directory.
+    // build.rs is the CRATE's (crates/aprender-core/build.rs), so this test wants
+    // CARGO_MANIFEST_DIR, not the workspace root find_project_root() now returns
+    // (the workspace root has no build.rs; the quick tier surfaced this, #3112).
+    let crate_root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let build_rs = crate_root.join("build.rs");
     assert!(
         build_rs.exists(),
         "FALSIFY-BGN-002: build.rs must exist for YAML-to-Rust codegen"

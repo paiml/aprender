@@ -57,10 +57,25 @@ async fn test_real_server_health_endpoint() {
         .await
         .expect("request");
 
-    assert_eq!(resp.status(), 200);
+    // CRUX-C-34 (api/router.rs health_status_code): /health is 200 iff status == "ok", and
+    // status is "loading" while no model is resident. demo_mock() has no model, so the
+    // liveness probe is a documented 503 here; /health/live is 200 once the port is bound.
+    assert_eq!(resp.status(), 503);
 
     let body: Value = resp.json().await.expect("json");
-    assert_eq!(body["status"], "ok");
+    assert_eq!(body["status"], "loading");
+    assert_eq!(body["model_loaded"], false);
+
+    let live = client
+        .get(format!("http://127.0.0.1:{}/health/live", port))
+        .send()
+        .await
+        .expect("request");
+    assert_eq!(
+        live.status(),
+        200,
+        "/health/live is 200 once the port is bound"
+    );
 
     handle.abort();
 }
@@ -396,10 +411,11 @@ async fn test_real_server_concurrent_health_checks() {
 
     let results = futures::future::join_all(futures).await;
 
-    // All should succeed
+    // Every request is answered; the answer is the CRUX-C-34 503 (no model in demo_mock),
+    // the same status ten times — a mixed set would mean the handler is racy.
     for result in results {
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap().status(), 200);
+        let resp = result.expect("every concurrent /health request is answered");
+        assert_eq!(resp.status(), 503);
     }
 
     handle.abort();

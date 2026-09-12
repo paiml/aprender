@@ -156,6 +156,19 @@ jobs:
       - uses: actions/checkout@v7
         if: steps.decide.outputs.proceed == 'true'
 
+      # The first thing gx10 does once it has a tree. NOT before `decide` and
+      # NOT before the checkout, for the reason the comment below spells out:
+      # on a yield night there is no working tree, so a step that `bash`es a
+      # repo path exits 127 and turns a deliberately-yielded night RED. It
+      # carries the same `if:` as the checkout it follows.
+      #
+      # gx10 is the box where run 34448908554 died on `gh: command not found`
+      # after a 21 MB CUDA build. Everything below this line assumes cargo,
+      # rustup and a visible device; this is where that assumption is checked.
+      - name: Preflight — this box has the tools this job assumes
+        if: steps.decide.outputs.proceed == 'true'
+        run: bash scripts/ci_self_hosted_preflight.sh --cuda
+
       # PP-26's release-phase marker gate (scripts/check_perf041_marker.sh, a
       # dogfood gate) may not be named in a REQUIRED workflow
       # (check_no_timing_in_required.sh), yet every guard must be able to fail
