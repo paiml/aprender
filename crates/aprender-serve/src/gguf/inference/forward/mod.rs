@@ -19,9 +19,12 @@ pub use encoder_decoder::EncoderOutput;
 
 #[cfg(test)]
 mod batch_tests;
+// PREFILL-CPU (#2787): batched-vs-per-token equality falsifier.
 #[cfg(test)]
 mod core_tests;
 #[cfg(test)]
 mod encoder_decoder_tests;
+#[cfg(test)]
+mod falsify_batched_prefill;
 #[cfg(test)]
 mod single_tests;
