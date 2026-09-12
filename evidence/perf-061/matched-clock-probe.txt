@@ -1,0 +1,15 @@
+Matched-clock probe -- SM clock / power / temp while each engine DECODES
+same GPU, same session, the two runs ~5 s apart, sampling every 200 ms
+busy sample := utilization.gpu > 50%
+
+   engine  n_busy  sm_MHz med   W med   W max  degC max  util med
+      apr      94        2411    48.8    65.3        96        70
+   ollama      32        2411    53.1    53.9        93        71
+
+  apr    : 1024 tokens, apr-reported 17968.4 ms for the invocation
+  ollama : 1278 tokens in 7.05912 s -> eval rate 181.04 tok/s
+
+  Both decode in P0 at the SAME median SM clock (2411 MHz).
+  After this probe, LIFETIME throttle counters were still:
+    HW Thermal Slowdown 0 us | SW Thermal Slowdown 0 us | HW Power Braking 0 us
+  i.e. the GPU never throttled, at any point, including 96 degC peaks.

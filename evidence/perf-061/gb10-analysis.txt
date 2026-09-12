@@ -1,0 +1,77 @@
+================================================================================
+CB-006-OUT / APR_LAYER_TRACE contamination check
+  total CB-006-OUT lines across every apr invocation: 0  (must be 0)
+
+================================================================================
+ARM 3 — ollama reference (EVERY replicate)
+  trial  eval_count  eval_duration  eval_rate
+      1        1112      6.078335s     182.94
+      2        1068      5.830142s     183.19
+      3        None             NA         NA   <- killed at 283 s: unbounded `ollama run` ran away (context shifting)
+      4         758      4.147171s     182.78
+      5        1280       7.10132s     180.25
+  median eval_rate = 182.86 tok/s over a median of 1090 generated tokens
+  CV = 0.75%
+
+================================================================================
+ARM 1 — token ladder (EVERY replicate), apr-reported ms
+       N      rep1      rep2      rep3      rep4
+     128   10239.9    9812.5    9611.3    9686.5
+     256   10945.1   10857.5   10866.0   11079.8
+     384   11791.9   12178.5   12098.1   12531.0
+     512   13217.3   13164.7   13251.4   13725.8
+     768   15676.7   15639.5   15862.1   15955.9
+    1024   18054.6   18029.9   18055.2   18725.7
+
+  OLS  t(N) = C + N/R   over n=24 points
+    R (steady-state decode) =    106.4 tok/s   [95% CI 103.1 .. 110.0]
+    C (fixed per-invocation cost, in apr's own timer) =     8566 ms
+    residual sd about the fit = 233 ms   (this is the per-invocation jitter)
+    ratio vs ollama at the fitted steady state: 0.582x
+
+  Per-segment MARGINAL rates (does the rate decay with sequence length?)
+      128 ->   256 :   181.5   122.5   102.0    91.9   median   112.3 tok/s
+      256 ->   384 :   151.2    96.9   103.9    88.2   median   100.4 tok/s
+      384 ->   512 :    89.8   129.8   111.0   107.1   median   109.1 tok/s
+      512 ->   768 :   104.1   103.4    98.1   114.8   median   103.8 tok/s
+      768 ->  1024 :   107.7   107.1   116.7    92.4   median   107.4 tok/s
+
+================================================================================
+ARM 2 — the gate's own 128/384 differential: COLD vs WARM (EVERY replicate)
+  trial   arm   t128_ms   t384_ms     d_ms    tok/s   ratio
+      1  cold   10231.4   12340.9   2109.5   121.36   0.664
+      1  warm   10259.7   12531.3   2271.6   112.70   0.616
+      2  cold    9826.2   12301.7   2475.5   103.41   0.566
+      2  warm    9954.2   12700.2   2746.0    93.23   0.510
+      3  cold   10175.1   12382.2   2207.1   115.99   0.634
+      3  warm   10256.2   12359.1   2102.9   121.74   0.666
+      4  cold   10125.7   12598.2   2472.5   103.54   0.566
+      4  warm   10046.5   12024.4   1977.9   129.43   0.708
+      5  cold    9917.5   12333.5   2416.0   105.96   0.579
+      5  warm    9853.1   12291.5   2438.4   104.99   0.574
+      6  cold    9829.4   12482.3   2652.9    96.50   0.528
+      6  warm   10256.2   12528.6   2272.4   112.66   0.616
+      7  cold   10248.7   12101.2   1852.5   138.19   0.756
+      7  warm   10167.6   12148.6   1981.0   129.23   0.707
+
+   cold: n=7  median= 105.96 tok/s  ratio=0.579x  min=96.50 max=138.19  CV=12.7%  best_ratio=0.756x
+   warm: n=7  median= 112.70 tok/s  ratio=0.616x  min=93.23 max=129.43  CV=11.5%  best_ratio=0.708x
+
+  DISCRIMINATOR 2: warm median - cold median = +6.74 tok/s (+6.4%)
+  two-sided permutation p (median difference, 20000 shuffles) = 0.650
+  fitted steady-state R = 106.4 tok/s; cold gate median = 106.0; warm gate median = 112.7
+
+================================================================================
+ARM 1b — robust slope (Theil-Sen) and curvature check
+  Theil-Sen slope = 9.3392 ms/token  -> R_robust =    107.1 tok/s   ratio 0.586x
+  OLS       slope = 9.3970 ms/token  -> R_ols    =    106.4 tok/s   ratio 0.582x
+  quadratic fit t = 8660 + 8.9395*N + 3.946e-04*N^2
+    marginal rate at N=256  :   109.4 tok/s
+    marginal rate at N=1024 :   102.6 tok/s
+    residual sd linear 233 ms  vs quadratic 236 ms
+
+  What the gate's estimator does with this jitter:
+    the gate reads rate = 256000 / (t384 - t128).
+    at R=106 tok/s the TRUE t384-t128 is 2406 ms,
+    while each of t384 and t128 carries sd ~= 233 ms of per-invocation jitter,
+    so the differential carries sd ~= 330 ms  =  14% of the signal.

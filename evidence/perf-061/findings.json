@@ -1,0 +1,116 @@
+{
+  "ticket": "PERF-061",
+  "date": "2026-08-30",
+  "epic": "APR-PERF-GATE-001 (paiml/aprender#2706)",
+  "issue": "paiml/aprender#2786",
+  "briefed_task": "Settle whether #2786's GB10 decode shortfall (ratio_median 0.579x) is warm-up or a real deficit. Two discriminators: (1) plot the trial ordering, (2) does a longer warmup move the median.",
+
+  "verdict": "REAL DEFICIT. Not warm-up, not clock settling, not thermal.",
+
+  "headline": "apr's steady-state decode on GB10 is 106.4 tok/s [95% CI 103.1-110.0] against ollama's 182.9 on the same box = 0.582x, measured by a 24-point token ladder that does not use the gate's differencing estimator at all. That is, to three digits, what the gate already reported. The ratio_best/ratio_median gap that motivated the warm-up hypothesis is a property of the estimator (256000/Delta is a reciprocal, hence right-skewed) and is reproduced exactly by simulating a CONSTANT 106.4 tok/s.",
+
+  "provenance": {
+    "host": "gx10-a5b5, NVIDIA GB10, aarch64, driver 590.48.01, CUDA 13.1",
+    "binary": "/home/noah/perf061-target/release/apr, cargo build --release --features cuda --bin apr",
+    "source": "/home/noah/perf061-wt, detached worktree at a866988e4, git status --porcelain = 0 lines",
+    "provenance_proved_by_content": "strings -a $BIN | grep -c '^/home/noah/perf061-wt/' -> 16 ; grep -c '^/home/noah/src/aprender/' -> 0. The other apr on the box inverts both counts (0 / 15). Version strings deliberately NOT used (#2768).",
+    "cuda_proved_by_content": "libcuda.so x1, cuModuleLoad x6, cuLaunchKernel x1",
+    "apr_layer_trace": "0 [CB-006-OUT] lines across all 66 apr invocations (#2764)",
+    "hw_dp4a_q4k": "absent from gx10's environment - confirms #2786 cause (3)",
+    "comparator": "ollama 0.33.2, qwen2.5-coder:1.5b-instruct-q4_K_M, resident daemon",
+    "box_state_at_start": "load 0.00, 0 compute procs, GPU 0% / 208 MHz / 4.5 W"
+  },
+
+  "protocol_honesty": "NOT APR-PERF-GATE-001 §4.4.2. §4.4.2 (2 x c warmup + 5 s quiesce) governs the perf-matrix BAND harness and §4.4.3 defines decode_tok_s INSIDE a request. beat_ollama_decode_throughput_speed.rs is a different harness with NO warmup step at all, deriving a rate by differencing two independent cold one-shot process invocations. There was no §4.4.2 knob to enlarge, so discriminator 2 was implemented directly (a full discard invocation before each measured pair) and backed by a token ladder that removes the differencing entirely.",
+
+  "discriminator_1_trial_ordering": {
+    "verdict": "NO TREND - warm-up weakened before any GPU time was spent",
+    "full_ordered_series_33292383055": [111.80015721897114, 96.78273033155645, 96.41095168154254, 99.01373041964803, 111.42546245919478, 105.61927551778203, 139.95189153728398],
+    "full_ordered_series_33298580389": [90.46895430611016, 107.41859684457867, 142.70583644573279, 132.87657012353367, 124.4651886425516, 106.7645341563099, 117.86372007366482],
+    "spearman_33292383055": {"rho": 0.393, "exact_permutation_p_one_tailed": 0.198, "argmax_at_trial": 7, "argmin_at_trial": 3},
+    "spearman_33298580389": {"rho": 0.179, "exact_permutation_p_one_tailed": 0.357, "argmax_at_trial": 3, "argmin_at_trial": 1},
+    "fisher_pooled_p": 0.445,
+    "note": "The two runs put the maximum in different places (trial 7 vs trial 3). No ramp."
+  },
+
+  "discriminator_2_longer_warmup": {
+    "verdict": "DOES NOT MOVE THE MEDIAN",
+    "design": "7 trials per arm, arms INTERLEAVED (cold, warm, cold, warm...) against host drift. cold = exactly the gate's protocol. warm = a full 384-token discard invocation immediately before the measured pair.",
+    "cold": {"n": 7, "median_tok_s": 105.96, "ratio": 0.579, "min": 96.50, "max": 138.19, "cv_pct": 12.7, "best_ratio": 0.756},
+    "warm": {"n": 7, "median_tok_s": 112.70, "ratio": 0.616, "min": 93.23, "max": 129.43, "cv_pct": 11.5, "best_ratio": 0.708},
+    "delta": "+6.74 tok/s (+6.4%)",
+    "permutation_p_two_sided_20000_shuffles": 0.650,
+    "floor_gap": "the floor needs +55%; a 6.4% non-significant shift is not the explanation",
+    "key_corroboration": "The COLD arm reproduces CI run 33292383055 EXACTLY at 0.579x. The gate is repeatable."
+  },
+
+  "discriminator_3_added_token_ladder": {
+    "verdict": "STEADY-STATE RATE IS 106.4 tok/s AND IS FLAT WITH DEPTH",
+    "design": "apr run --gpu --benchmark --max-tokens N for N in {128,256,384,512,768,1024}, 4 reps, fit t(N) = C + N/R. Removes the gate's differencing entirely.",
+    "ols": {"R_tok_s": 106.4, "ci95": [103.1, 110.0], "ratio": 0.582, "C_ms": 8566, "residual_sd_ms": 233, "n_points": 24},
+    "theil_sen": {"R_tok_s": 107.1, "ratio": 0.586},
+    "marginal_rate_by_segment_median": {"128-256": 112.3, "256-384": 100.4, "384-512": 109.1, "512-768": 103.8, "768-1024": 107.4},
+    "quadratic_check": "marginal 109.4 tok/s at N=256 -> 102.6 at N=1024; residual sd 233 -> 236 ms, so the linear model stands. No regime the gate's 128->384 window is missing.",
+    "three_estimators_agree": "ladder OLS 0.582x, ladder Theil-Sen 0.586x, cold gate arm 0.579x, against the CI's 0.579x / 0.647x"
+  },
+
+  "discriminator_4_added_estimator_skew": {
+    "verdict": "ratio_best > ratio_median NEEDS NO WARM REGIME - it is a property of the estimator",
+    "mechanism": "rate = 256000 / Delta is the RECIPROCAL of a noisy difference, so its sampling distribution is right-skewed: when Delta lands low the reported rate blows up. best sits far above median even at a perfectly constant rate.",
+    "simulation": "constant R = 106.4 tok/s (the ladder fit), per-invocation jitter 233 ms each side => 330 ms on the difference, median-of-7 and best-of-7, 200000 draws",
+    "predicted_vs_observed": {
+      "ratio_median": {"predicted": 0.584, "band95": [0.520, 0.665], "observed": [0.579, 0.647], "both_inside": true},
+      "ratio_best": {"predicted": 0.712, "band95": [0.602, 0.924], "observed": [0.768, 0.783], "both_inside": true},
+      "best_over_median": {"predicted": 1.212, "band95": [1.052, 1.582], "observed": [1.326, 1.210], "both_inside": true}
+    },
+    "conclusion": "All six observed values fall inside the constant-rate prediction. Nothing is left for warm-up, scheduling or clock settling to explain."
+  },
+
+  "discriminator_5_added_gpu_clocking": {
+    "verdict": "THE GPU IS NOT CLOCKING DOWN",
+    "clock_trace_100ms_of_one_cold_apr_run_1024_tokens": {
+      "phase_1_0_to_3.45s": "P8, 208 MHz, 4.4 W, util 0 - host-side load, GPU asleep",
+      "phase_2_3.45_to_9.58s": "P0, 2411 MHz, ~11 W, util 0 - CUDA context up, GPU IDLE",
+      "phase_3_9.58_to_12.46s": "P0, 2411 MHz, 15->60 W, util 0 - weight cache / graph capture",
+      "phase_4_12.46_to_20.38s": "P0, 2522 MHz, ~60 W, util 96 - decode"
+    },
+    "no_ramp": "P8 -> P0 is a SINGLE 120 ms sample: 208 MHz -> 2411 MHz. There is no gradual ramp to settle into. Ceiling is 3003 MHz; decode ran 2411-2522 MHz at 43-56 degC.",
+    "matched_clock_probe": {
+      "apr": {"median_sm_mhz": 2411, "median_w": 48.8, "max_degc": 96},
+      "ollama": {"median_sm_mhz": 2411, "median_w": 53.1, "max_degc": 93, "result": "1278 tokens in 7.059 s -> 181.04 tok/s"},
+      "reading": "same clock, comparable power, ~1.7x the throughput for ollama"
+    },
+    "lifetime_throttle_counters_after_1h_of_benchmarking_peaking_at_96C": "HW Thermal Slowdown 0 us | SW Thermal Slowdown 0 us | HW Power Braking 0 us",
+    "sw_power_cap_note": "'SW Power Cap: Active' reads at IDLE on this part at 4.5 W and goes Not Active under load - an idle-state artifact, not a workload throttle."
+  },
+
+  "what_the_harness_does_get_wrong": {
+    "verdict": "NOISE, NOT BIAS - the gate is noisy, not wrong",
+    "mechanism": "The differential's signal is Delta ~ 2.4 s sitting on a fixed cost of C ~ 8.6 s in apr's own timer (~12.5 s of process wall before the first decoded token = 61% of a 20 s invocation). Per-invocation jitter of 233 ms becomes 14% CV in the reported rate.",
+    "evidence": "apr CV 12.7-15.0% vs ollama CV 0.41-0.75%, same box, minutes apart. apr's median moved 11.6% between the two CI runs; ollama's moved 0.04%.",
+    "unbiasedness": "cold gate median 106.0 vs ladder fit 106.4 - the noise is symmetric and the median is unbiased.",
+    "practical_consequence": "a single night's ratio_median carries a simulated 95% band of 0.520-0.665 around the truth, so the gate should not be read to two decimal places.",
+    "I9_consequence": "These gx10 runs were NOT spent through an inadequate warmup. The measurement is sound and the cells it informs are not burned."
+  },
+
+  "side_finding_A_yield_guard_blind_on_gb10": {
+    "verdict": "CONFIRMED, did NOT cause the shortfall, but is a real hole",
+    "what": "Both failing runs logged 'GPU memory.used=0 MiB, existing compute procs=0' while PID 32612 -- ./target/release/apr serve run ...q4_k_m.gguf --gpu-layers all --port 8451 -- had been resident since 2026-08-27 17:45 (66 h at measurement time).",
+    "why": "nvidia-smi --query-compute-apps returns nothing on GB10's unified memory, and memory.used reads [N/A]. cuda-nightly.yml calls procs 'the primary, portable signal - it works on both sm_89 and GB10'. On this silicon it does not.",
+    "not_the_cause": "that serve process is idle - GPU measured 0% / 208 MHz / 4.5 W with it resident",
+    "consequence": "the guard cannot see a busy GB10 and so cannot yield to training on it"
+  },
+
+  "side_finding_B_ollama_arm_can_run_away": {
+    "verdict": "CONFIRMED, a live flake source in the comparator arm",
+    "what": "`ollama run <model> <prompt> --verbose` is unbounded; ollama context-shifts and keeps generating. One of five trials here ran 283 s before being killed by PID; its neighbours produced 758-1280 tokens in 4-7 s.",
+    "corroboration": "run 33292383055's ollama trials=[154.99, 182.79, 182.9, 182.35, 100.85] - a first-trial warm-up plus a 45% collapse on trial 5 - is consistent with this. Median-of-5 absorbed it that night."
+  },
+
+  "scope": {
+    "says": "on GB10, apr decodes this model at ~106 tok/s against ollama's ~183, at the same SM clock, on the same weights, with no throttling and no warm-up effect. The >=0.90x no-collapse floor is genuinely violated by a genuine ~1.7x kernel/pipeline gap.",
+    "does_not_say": "nothing about Ada; not that GB10 is a slow machine (the gate is a RATIO on one box, and ollama reaches 183 tok/s on that same box); does not identify the responsible kernel.",
+    "next_question": "which kernel - this is now a kernel question rather than a measurement question",
+    "spec_note": "APR-PERF-GATE-001 §4.3.1's 'GB10 legitimately loses ~4x on decode while winning prefill' concerns ABSOLUTE decode against other silicon; it does not excuse a ratio measured against a comparator on the same GB10."
+  }
+}
