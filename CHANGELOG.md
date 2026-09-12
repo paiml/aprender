@@ -1843,6 +1843,12 @@ Llama2 double-BOS, per-request sampling isolation, dense-decode `repeat_penalty`
 
 ## [0.35.2] - 2026-05-23
 
+### Bug fixes + DX (last release for 3 months)
+
+Two-PR drain before the 3-month hiatus: mega-bundle PR #1898 (subsumed
+#1880/#1883/#1886/#1891/#1896/#1897, which itself subsumed #1874/#1877/#1879/#1881)
++ PR #1888 PMAT-706 smoke mode.
+
 ### Fixed
 
 - **#1874 / PMAT-702**: `apr eval` no longer reports fake `pass@1=1.0` on
@@ -1900,6 +1906,14 @@ Llama2 double-BOS, per-request sampling isolation, dense-decode `repeat_penalty`
 
 ## [0.35.0] - 2026-05-22
 
+### 🎉 Dogfood-driven release — Qwen end-to-end story, multi-step parity safety net, #1864 closed (it was a 5-line config gap, not a deep numerical bug)
+
+81 commits since v0.34.0. Major work landed across three threads:
+
+1. **Distill on NVIDIA GB10 Blackwell**: Phase 1-3 of SPEC-DISTILL-001 working end-to-end on sm_121 — 62 steps in 82.1s after the 8-PR PMAT-698 cascade unwound a single one-character bug (`warm!` macro hardcoded `"silu_forward"` for every kernel cache key). Phase 4 ladder running.
+2. **MoE (Qwen3) inference**: M32d KV cache (19× speedup), streaming SSE per-token emit, full temperature/top_k/top_p sampling. New contracts `qwen3-moe-streaming-sse-v1` and `qwen3-moe-sampling-v1`. M-GPU-MOE-3 cascade identified that CPU uses Q8K activation quant while CUDA uses f32 → 237,775× Q4_K matvec divergence (still tracked as #1583).
+3. **2026-05-22 dogfood pass**: 8 bugs filed, 7 fixed (#1862 #1865 #1866 README drift + serve syntax + deny advisory). The eighth, #1864 cuBLAS FP8 "gibberish", turned out to be a **missing `stop_tokens` in the QA gate** — not a numerical bug. The user-visible `apr serve` path was never affected.
+
 ### Added
 
 - **`apr` Qwen end-to-end story in README** (#1875) — 8-beat narrative (Discover → Trust → Explore → Adapt → Use → Serve → Operate → Scale) anchored on the Qwen scale ladder (0.5B safetensors → 30B-MoE GGUF). Every beat is a falsifier in `contracts/qwen-story-v1.yaml`; runnable as `scripts/qwen-story.sh`; nightly cron in `.github/workflows/qwen-story-daily.yml` with pmat bug-hunt manifest emitted per beat.
@@ -1945,6 +1959,12 @@ Llama2 double-BOS, per-request sampling isolation, dense-decode `repeat_penalty`
 
 ## [0.34.0] - 2026-05-18
 
+### 🎉 MODEL-2 §88 stack-existence-proof published — paiml/albor-370m-v1 LIVE on HF Hub
+
+End-to-end publish of the first model trained with the Sovereign AI Stack: https://huggingface.co/paiml/albor-370m-v1. 494M-parameter Qwen2 architecture (init from Qwen2.5-Coder-0.5B-Instruct, fine-tuned on bigcode/the-stack-dedup + codeparrot/codeparrot-clean Python permissive subset), val_loss=4.6227, all 3 binary artifacts (.apr, .gguf, .safetensors) + tokenizer + config + 11.6KB model card. GGUF verified loadable by llama.cpp.
+
+PMAT-690 P3-C-prep defect cascade (Class-3 wave of 5):
+
 ### Added
 
 - **`apr stamp --tokenizer <DIR>`** (#1769) — embeds `vocab.json` + `merges.txt` (or `tokenizer.json`) into APR `custom.tokenizer.vocabulary` + sets `HAS_VOCAB` flag. Closes the §86 salvage workflow: pre-P0-K APRs that lacked embedded vocab can now be elevated to publish quality without re-training.
@@ -1967,6 +1987,23 @@ Llama2 double-BOS, per-request sampling isolation, dense-decode `repeat_penalty`
 - **Tests**: 7 new `q4k_divisibility_tests` (including `q4k_byte_count_matches_llama_cpp_expectation`); all 55 pre-existing q4k tests pass; 13,805 aprender-core lib tests pass.
 
 ## [0.33.0] - 2026-05-13
+
+### 🎉 MODEL-1 SHIP % = 100% — all 10 AC-SHIP1-* LIVE-DISCHARGED
+
+This release completes SHIP-TWO-001 MODEL-1: every acceptance criterion (SHIP-001 through SHIP-010) is LIVE-discharged on the canonical 7B Qwen2.5-Coder-Instruct Q4_K_M teacher on RTX 4090 with `--features cuda`.
+
+| AC | What | Discharge §  |
+|----|------|-------------|
+| SHIP-001 | `apr run <safetensors>` loads via realizar | §72 |
+| SHIP-002 | `apr run "def fib(n):"` valid Python | §61 |
+| SHIP-003 | q4_k_m round-trip cos ≥ 0.999 | §72 |
+| SHIP-004 | GGUF exports + loads in llama.cpp | §72 |
+| SHIP-005 | HumanEval pass@1 = 86.59% on gx10 164-run | §71 |
+| SHIP-006 | `apr qa` 12-gate aggregate PASS | §61.8 |
+| **SHIP-007** | **PARITY-GATE PASS + 128-tok decode receipt** | **§75** |
+| SHIP-008 | Chat template render | §61 |
+| SHIP-009 | License + provenance in `model.apr` metadata | §72 |
+| SHIP-010 | Published HF URL + sha256 match | §72 |
 
 ### Fixed
 
@@ -2018,6 +2055,20 @@ Lessons #16-#22 in `MEMORY.md`:
 - #20 Re-measure cascade layers before continuing (§73)
 - #21 Stage-by-stage numerical analysis localizes bug class without per-element diffing (§74)
 - #22 Symptom analysis → bug class localization in O(1); methodology lessons compose (§75)
+
+### Spec versions
+
+`docs/specifications/aprender-train/ship-two-models-spec.md`: 3.13.0 → **3.21.0** across §67, §68, §69, §70, §71, §72, §73, §74, §75 (9 amendments over 2 days).
+
+### Cascade arc summary
+
+| Date | § | What |
+|------|---|------|
+| 2026-05-12 | 67-72 | SHIP-005 cascade: H4 → RC3 → LIVE-DISCHARGED at 86.59% pass@1; 5-AC LIVE evidence cascade (SHIP-001/003/004/009/010 PARTIAL→LIVE) |
+| 2026-05-12 | 73 | SHIP-007 cascade scope reduced from 3 layers to 1 (FP8 + throughput already fixed; only parity blocks) |
+| 2026-05-13 | 74-75 | SHIP-007 bug LOCALIZED to F32 GEMV via PR-B stage bisection → 1-PR layout fix → MODEL-1 100% |
+
+13 PRs shipped over 2 calendar days. PR-E (#1651) was the single-file layout fix.
 
 ## [0.32.0] - 2026-05-05
 
@@ -2079,6 +2130,12 @@ Two release-engineering fix PRs were required:
 ### Documentation
 
 - **README claims** updated against `contracts/readme-claims-v1.yaml` drift gate: 1096 → **1105 contracts**, 79 → **80 CLI commands**. `bash scripts/check_readme_claims.sh` is GREEN against HEAD.
+
+### Provable contracts (algorithm-binding sweep)
+
+This release closes a record contract algorithm-binding sweep — **150+ provable contracts** flipped from `unbound` to `PARTIAL_ALGORITHM_LEVEL` across kernel, format, training, GPU-backend, and CLI families (commits in the 50-200 range above v0.31.2). Each binding ties an existing falsifier to a concrete, executable algorithm reference, preserving the YAML→code audit story without claiming live discharge.
+
+**Sweep highlights**: AdamW, RMSNorm, GQA, RoPE, SwiGLU, Q4K/Q6K superblocks, paged-KV-cache, sliding-window attention, attention-scaling, fused-QKV, NF4 fused gate-up/RMSNorm-GEMV/QKV/tensor-core GEMM, LoRA algebra, QLoRA hyperparameters, online-softmax, flash-attention, speculative-decoding, MoE router/dispatch, classification metrics, regression metrics, ranking metrics, clustering metrics, BPE training/loading, dataset-thestack-python, document-integrity, eval-harness HumanEval, GPU multi-backend parity, training-loop-pretrain, eval-sharding, chat-template, qwen2/qwen3/qwen3-moe/qwen35 shapes + e2e-verification, `apr-cli-{publish,pull-dataset,qa,operations,coverage,publish-extra,dep-migration,command-safety,distill-train}-v1`, `apr-{provenance,inspect-*,model-{diagnostics,graph,lifecycle,optimization,qa,security},mcp-server,mono-binary-rule,chat-session,claude-proxy,chrome-trace,gpu-{presence,diagnostics,parity-consistency},docs,org-taxonomy,page-*,corpus-*,book-*,tool-*,qa-{chaos,coverage,differential,metamorphic,silent-fallback},serve,stochastic-lr,zero-feature-gate,version-traceability,compare-hf-nonvacuous,architecture-schema}-v1`.
 
 ## [0.31.1] - 2026-04-19
 
@@ -2428,6 +2485,10 @@ cargo run --example qa_run -- --with-ollama
 
 ## [0.12.0] - 2025-11-27
 
+### ✨ **Major Release: Advanced Neural Networks & Program Repair**
+
+This release adds cutting-edge ML capabilities including Graph Neural Networks, RNN/LSTM/GRU, Variational Autoencoders, and a novel Compiler-in-the-Loop Learning system.
+
 ### Added
 
 #### Compiler-in-the-Loop Learning (`citl` module)
@@ -2475,6 +2536,13 @@ cargo run --example qa_run -- --with-ollama
 - **Model Quantization** (`nn/quantization`): INT8 quantization for inference
 - **Text Generation** (`nn/generation`): Autoregressive text generation
 
+### Quality Metrics
+
+**Test Count:** 3,331 tests (unit + property + integration + doc)
+**Test Coverage:** 96.94% line coverage
+**Clippy:** 0 warnings in production code
+**Zero Defects:** Toyota Way compliance maintained
+
 ### Documentation
 
 - Book chapters for all new modules
@@ -2482,6 +2550,10 @@ cargo run --example qa_run -- --with-ollama
 - Examples for GNN, RNN, VAE usage
 
 ## [0.8.0] - 2025-11-25
+
+### ✨ **NEW FEATURE: Content-Based Recommendation System**
+
+This minor release adds a production-ready content-based recommendation system with HNSW indexing.
 
 ### Added
 
@@ -2514,6 +2586,14 @@ cargo run --example qa_run -- --with-ollama
 - Re-vectorization of all items on vocabulary expansion
 - Eliminated -inf and NaN similarity scores
 
+### Quality Metrics
+
+**Test Coverage:** 96.00% line coverage (maintained ≥95% requirement)
+**Test Count:** 1,293 tests (7 new recommender tests, 10 new property tests)
+**Benchmarks:** <100ms latency for 10,000 items (verified)
+**Clippy:** 0 warnings in new modules
+**Zero Defects:** Toyota Way compliance maintained
+
 ### Documentation
 
 - **Book Chapter**: Comprehensive EXTREME TDD case study (`book/src/examples/content-recommender.md`)
@@ -2529,6 +2609,10 @@ cargo run --example qa_run -- --with-ollama
 - `examples/recommend_content.rs` (128 lines)
 
 ## [0.7.1] - 2024-11-24
+
+### 🔧 **DEPENDENCY UPGRADE & QUALITY IMPROVEMENTS**
+
+This patch release upgrades the trueno dependency and improves documentation quality.
 
 ### Changed
 
@@ -2556,7 +2640,29 @@ cargo run --example qa_run -- --with-ollama
   - Corrected `Vector` import paths from `trueno::` to `aprender::primitives::` (3 fixes)
   - Relaxed numeric precision assertions to handle implementation variations
 
+### Quality Metrics
+
+**Test Coverage:** 96.27% line coverage (exceeds ≥95% requirement)
+**Test Count:** 1446 tests (1165 unit + 36 integration + 36 property + 209 doc)
+**Clippy:** 0 warnings (strict mode: `-D warnings`)
+**Zero Defects:** Toyota Way compliance maintained
+
+### Migration
+
+No breaking changes. Drop-in replacement for 0.7.0:
+
+```toml
+[dependencies]
+aprender = "0.7.1"
+```
+
+All existing code continues to work without modification.
+
 ## [0.7.0] - 2025-11-22
+
+### 🎯 **STATISTICAL RIGOR RELEASE - Negative Binomial GLM & IRLS Stabilization**
+
+This release demonstrates Toyota Way problem-solving methodology, applying 5 Whys root cause analysis to eliminate defects and implement peer-reviewed statistical solutions for overdispersed count data.
 
 ### Added
 
@@ -2597,6 +2703,41 @@ cargo run --example qa_run -- --with-ollama
 - Mathematical justification: V(Y) = E[Y] + α*(E[Y])²
 - Consequences of ignoring overdispersion (narrow posteriors, Type I errors)
 
+### Quality Metrics
+
+**Test Count:** 1039 tests (1036 passing, 0 failing, 3 doc tests need import fixes)
+**GLM Tests:** 15/15 passing (added 3 NB tests)
+**Coverage:** 96.94% (maintained)
+**Clippy:** 0 warnings
+**Zero Defects:** Toyota Way compliance - no known issues shipped
+
+### References
+
+1. Cameron, A. C., & Trivedi, P. K. (2013). *Regression Analysis of Count Data*. Cambridge University Press.
+2. Hilbe, J. M. (2011). *Negative Binomial Regression*. Cambridge University Press.
+3. Gelman, A., et al. (2013). *Bayesian Data Analysis, Third Edition*. CRC Press.
+4. Gardner, W., et al. (1995). Regression analyses of counts and rates. *Psychological Bulletin*, 118(3), 392–404.
+5. Ver Hoef, J. M., & Boveng, P. L. (2007). Quasi-Poisson vs. negative binomial regression. *Ecology*, 88(11), 2766-2772.
+
+### Migration Guide
+
+No breaking changes. Negative Binomial is additive:
+
+```rust
+use aprender::glm::{GLM, Family};
+use aprender::primitives::{Matrix, Vector};
+
+// Before: Poisson (assumes mean = variance)
+let mut model = GLM::new(Family::Poisson);
+
+// After: Negative Binomial (handles overdispersion)
+let mut model = GLM::new(Family::NegativeBinomial)
+    .with_dispersion(0.5); // Control overdispersion level
+
+model.fit(&x, &y)?;
+let predictions = model.predict(&x_test)?;
+```
+
 ### Toyota Way Principles Demonstrated
 
 - **Genchi Genbutsu**: Read peer-reviewed literature to understand root cause
@@ -2605,6 +2746,10 @@ cargo run --example qa_run -- --with-ollama
 - **Kaizen**: Continuous improvement - eliminated technical debt instead of documenting it
 
 ## [0.6.0] - 2025-11-22
+
+### 🚀 **GRAPH ALGORITHMS COMPLETE - 26/26 ALGORITHMS (100%)**
+
+This major release completes all 26 graph algorithms from the specification, adding 11 new algorithms across pathfinding, components, traversal, community detection, and link prediction.
 
 ### Added
 
@@ -2734,6 +2879,14 @@ cargo run --example qa_run -- --with-ollama
 - **Link prediction:** <500ns (sub-microsecond) for typical graphs
 - **Perfect linear scaling:** Verified for all O(n+m) algorithms
 
+### Quality Metrics
+
+**Test Count:** 900+ tests (120 new graph algorithm tests)
+**Coverage:** 96.94% line, 95.46% region, 96.62% function
+**Clippy Warnings:** 0 (lib target)
+**GH-41 Compliance:** 0 unwrap() calls in src/ (100% .expect() with messages)
+**Mutation Score:** 85.3% (target: ≥85%)
+
 ### Documentation Summary
 
 - 4 comprehensive book chapters (pathfinding, components, link prediction, performance)
@@ -2743,6 +2896,42 @@ cargo run --example qa_run -- --with-ollama
 - 1 specification (updated to 100% complete)
 
 **Total documentation:** ~2,400 lines of theory, examples, and benchmarks
+
+### Migration Guide
+
+No breaking changes. All new functionality is additive:
+
+```rust
+use aprender::graph::Graph;
+
+// Pathfinding
+let g = Graph::from_weighted_edges(&[(0,1,1.0), (1,2,2.0)], false);
+let (path, dist) = g.dijkstra(0, 2).expect("path exists");
+
+// Components
+let components = g.connected_components();
+let sccs = g.strongly_connected_components();
+
+// Traversal
+let order = g.dfs(0).expect("node exists");
+let topo = g.topological_sort(); // Some(order) or None (cycle)
+
+// Link Prediction
+let cn = g.common_neighbors(0, 1).expect("nodes exist");
+let aa = g.adamic_adar_index(0, 1).expect("nodes exist");
+
+// Community Detection
+let communities = g.label_propagation(10, Some(42));
+```
+
+### References
+
+1. Dijkstra, E. W. (1959). "A note on two problems in connexion with graphs."
+2. Hart, P. E., et al. (1968). "A formal basis for heuristic determination of minimum cost paths."
+3. Tarjan, R. E. (1972). "Depth-first search and linear graph algorithms."
+4. Tarjan, R. E. (1975). "Efficiency of a good but not linear set union algorithm."
+5. Raghavan, U. N., et al. (2007). "Near linear time algorithm to detect community structures."
+6. Adamic, L. A., & Adar, E. (2003). "Friends and neighbors on the Web."
 
 ## [0.5.1] - 2025-11-21
 
@@ -2788,7 +2977,18 @@ cargo run --example qa_run -- --with-ollama
   - rand 0.8→0.9 (model_selection dependency)
   - bincode 1.3→2.0 (serialization - breaking changes)
 
+### Quality Metrics
+
+**Test Count:** 742 tests (all passing)
+**Clippy Warnings:** 801 → 89 (89% improvement, 712 fixed)
+**Production Code:** 100% clippy-clean
+**Coverage:** 96.94% (maintained)
+
 ## [0.4.2] - 2025-11-21
+
+### 🎯 **TESTING EXCELLENCE & DEPENDENCY UPDATE RELEASE**
+
+This release achieves 96.94% code coverage, integrates mutation testing, implements workspace-level lints, and upgrades core dependencies.
 
 ### Changed
 
@@ -2843,7 +3043,18 @@ cargo run --example qa_run -- --with-ollama
   - `test_forest_different_n_estimators`: Changed from exact match to 75% match threshold for predictions after serialization roundtrip
   - All 742 tests passing with new trueno version
 
+### Quality Metrics
+
+**Test Count:** 742 tests (unit + property + integration + doc)
+**Coverage:** 96.94% line, 95.46% region, 96.62% function
+**Rust Project Score:** Improved Testing Excellence category
+**PMAT Score:** Code Quality improvements via workspace lints
+
 ## [0.4.1] - 2025-11-21
+
+### 🎯 **QUALITY & INFRASTRUCTURE HARDENING RELEASE**
+
+This release focuses on eliminating technical debt, improving code quality, and establishing robust CI/CD infrastructure for long-term maintainability.
 
 ### Changed
 
@@ -2915,7 +3126,14 @@ cargo run --example qa_run -- --with-ollama
 - **Known Defects:** 100% (zero unwrap() calls)
 - **Rust Tooling Score:** Improved from 37.3% with new CI workflows
 
+### Notes
+This release significantly improves code quality, stability, and automation infrastructure. No breaking API changes - fully backward compatible with v0.4.0. The elimination of unwrap() calls prevents an entire class of production panics, while new CI workflows provide continuous security monitoring and automated dependency management.
+
 ## [0.4.0] - 2025-11-19
+
+### 🎉 **MAJOR MILESTONE: TOP 10 ML ALGORITHMS - 100% COMPLETE!**
+
+This release completes all 10 of the most popular machine learning algorithms used in industry, achieving full coverage of the Analytics Vidhya 2025 TOP 10 list.
 
 ### Added
 
@@ -3001,6 +3219,21 @@ cargo run --example qa_run -- --with-ollama
 - Comprehensive error handling (untrained models, dimension mismatches, empty data)
 - Builder patterns for ergonomic API
 - Probabilistic predictions where applicable (`predict_proba`)
+
+### TOP 10 Algorithms - Complete List
+
+1. ✅ **Linear Regression** (v0.1.0)
+2. ✅ **Logistic Regression** (v0.2.0)
+3. ✅ **Decision Tree** (v0.2.0)
+4. ✅ **Random Forest** (v0.2.0)
+5. ✅ **K-Means** (v0.1.0)
+6. ✅ **PCA** (v0.4.0) - NEW
+7. ✅ **K-Nearest Neighbors** (v0.4.0) - NEW
+8. ✅ **Naive Bayes** (v0.4.0) - NEW
+9. ✅ **Support Vector Machine** (v0.4.0) - NEW
+10. ✅ **Gradient Boosting** (v0.4.0) - NEW
+
+**All industry-standard ML algorithms are now available in aprender!**
 
 ## [0.3.1] - 2025-11-19
 
