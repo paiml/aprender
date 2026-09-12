@@ -1,7 +1,39 @@
-#!/bin/sh
+#!/usr/bin/env bash
 # Aprender Pre-Commit Hook (JA-01, JA-02, JA-08, JA-09, JA-10)
 # Install: git config core.hooksPath .githooks
+#
+# THE SHEBANG IS LOAD-BEARING. This file used to say `#!/bin/sh` while line 4
+# said `set -euo pipefail`. `pipefail` is not POSIX; on any box where /bin/sh is
+# dash (Ubuntu's default, and this fleet's) the hook died on its own fourth line:
+#
+#   $ /bin/sh .githooks/pre-commit ; echo $?
+#   .githooks/pre-commit: 4: set: Illegal option -o pipefail
+#   2
+#
+# Following the install line above therefore refused EVERY commit before running
+# a single check — an unpassable gate, which trains `--no-verify` and gets the
+# hooksPath pointed somewhere else instead (B4, #3047).
 set -euo pipefail
+
+ROOT="$(git rev-parse --show-toplevel)"
+
+# ── B4: roadmap.yaml stays ADDITIVE (PMAT-980, G-6, #2874, #3047) ────────────
+# FIRST, because it is the cheapest check here and the one that costs the most
+# when it is missed: `pmat work add`/`work complete` re-serialise the whole file,
+# and the only thing that noticed was `guard-tree` in CI — 11 minutes after the
+# push, with the remedy (scripts/roadmap_trim.py) named in a footer nobody was
+# obliged to read. It had ZERO call sites before this hook.
+#
+# `--staged` judges `git write-tree` — the exact bytes about to be committed —
+# with the identical rule set CI applies. rc 2 is "this box cannot judge" (no
+# origin/main): warn, do not block, because CI's guard-tree still refuses.
+roadmap_rc=0
+bash "$ROOT/scripts/check_roadmap_diff_additive.sh" --staged || roadmap_rc=$?
+case "$roadmap_rc" in
+  0) ;;
+  2) echo "WARN: roadmap guard could not judge on this box (see above); CI still will." >&2 ;;
+  *) exit "$roadmap_rc" ;;
+esac
 
 echo "── Tier 1: Format + Lint ──"
 cargo fmt -- --check
