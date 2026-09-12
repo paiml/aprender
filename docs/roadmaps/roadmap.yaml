@@ -16798,6 +16798,25 @@ roadmap:
   - kind:docs
   - pp-066
   notes: 'minted by hand (pmat#1169); DAG row SPEC-2.0, owner spec-owner, expiry 2026-09-19.'
+- id: PMAT-1091
+  github_issue: 3049
+  item_type: task
+  title: 'B5: pr-review-receipt moves off pull_request to ad-hoc workflow_dispatch — 39.4% of the PR merge path for ONE verdict in 30 days'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-09-08T12:39:33Z
+  updated: 2026-09-08T12:39:33Z
+  spec: null
+  acceptance_criteria:
+  - 'MEASURED with machines/clean-room/ci-occupancy.sh over 30 days of aprender PR-event runs (302-run newest-first sample): PR-event CI costs 286.56 runner-hours and pr-review-receipt is 112.88 h of it — 39.4% — over 76 runs at a 95.7-minute median. It returned ONE verdict: cancelled n=71 (110.83 h), success n=1 (2.05 h). The cancels are not all supersedes: p75=150.3 min against the job own declared timeout-minutes of 150, and GitHub reports a timeout kill as CANCELLED, not FAILED, so 32 of 71 ran the full 2.5 hours holding a clean-room slot and were then killed. PRREV-015 own comment on that timeout predicted it — "a job that times out the first time the runner is busy" — and the measurement is that prediction coming true ~32 times a month on a 16-slot fleet.'
+  - 'THE THREE QUERIES, recorded at the change site: (1) required? gh api repos/paiml/aprender/rules/branches/main returns ["gate","workspace-test"], not this job — note the classic branch-protection API says "ci / gate" while the RULESET says "gate", and they are different jobs; the ruleset is what blocks. (2) needs-ed? grep pr-review-receipt over every .github/workflows file on origin/main gives 7 hits, SIX are comments and the seventh is its own job key; no job consumes it. (3) still covered? YES and far more cheaply — the base-owned "present" job in pr-review-quorum.yml (pull_request_target) judges receipt presence at 98 runs / 1.7-min median / 5.93 h total, 5% of the price, and pr-review-sign still signs on every PR. What moves is the mutation sweep OVER those guards, nothing else.'
+  - 'CHANGE: the job gate becomes workflow_dispatch with a non-empty pr input, and workflow_dispatch gains that input. PR_HEAD_SHA is REMOVED from the job-level env, because on workflow_dispatch there is no github.event.pull_request and it would be the empty string — and the sweep does git merge-base origin/main "$PR_HEAD_SHA" falling back to an empty BASE, which TOLERATES an empty base and would sweep nothing while reading green. A first step resolves the head from the PR number via gh, asserts a 40-char sha, asserts it is fetchable, and REFUSES otherwise; it runs before both PR_HEAD_SHA consumers. Invocation: gh workflow run ci.yml -f pr=NUMBER, run deliberately when a pr_review guard changes. NOT deleted — that would remove mutation coverage of the receipt guards; moved, so it can actually finish.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: 'BSE-001 B5. Id reserved at 1091, hand-appended because pmat work add re-serialises the file (the defect PMAT-1090 fixes). Predicted saving ~112.9 runner-hours per 30 days off the PR merge path, of which ~80 h was pure timeout.'
 - id: PMAT-1093
   github_issue: null
   item_type: task

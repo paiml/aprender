@@ -22,6 +22,11 @@ on:
   # every PR (no checks ever run on the merge_group ref → nothing merges).
   merge_group:
   workflow_dispatch:
+    inputs:
+      pr:
+        description: 'PR number to run the pr-review-receipt sweep against (PMAT-1091). Required by that lane; every other job ignores it.'
+        required: false
+        type: string
 
 concurrency:
   group: ci-${{ github.event.pull_request.number || github.ref }}
@@ -2052,16 +2057,71 @@ jobs:
     # out the first time the runner is busy, and a cancelled job reads as a failure
     # nobody can distinguish from a real one).
     timeout-minutes: 150
-    if: github.event_name == 'pull_request'
+    # AD HOC, NOT ON EVERY PR (PMAT-1091, #3049). Measured over 30 days of
+    # aprender PR-event runs with machines/clean-room/ci-occupancy.sh:
+    #
+    #   pr-review-receipt   76 runs   95.7 min median   112.88 runner-h   39.4%
+    #   ------------------------------------------------  of ALL PR-event hours
+    #   cancelled n=71 (110.83 h)   success n=1 (2.05 h)
+    #   cancelled durations: p25=34.1  med=95.7  p75=150.3  p90=150.4  max=151.1
+    #
+    # p75 sits ON the `timeout-minutes: 150` above, and GitHub reports a timeout
+    # kill as `cancelled`, not `failed` — so 32 of those 71 ran the full 2.5 hours
+    # holding a clean-room slot and were then killed. ONE verdict in thirty days.
+    # The comment on the timeout above predicted exactly this in PRREV-015's own
+    # words — "a job that times out the first time the runner is busy" — and the
+    # measurement is that prediction coming true 32 times a month.
+    #
+    # A sweep that completes 1 run in 76 is not mutation coverage; it is the
+    # `0 violations over 0 files` shape aimed at this repo's own mutation gate.
+    # THE THREE QUERIES, so the next reader does not have to re-derive them:
+    #
+    #   1. required?   gh api repos/paiml/aprender/rules/branches/main
+    #                  -> ["gate","workspace-test"]. Not this job. (The classic
+    #                  branch-protection API says `ci / gate`; the RULESET is what
+    #                  blocks, and they name different jobs.)
+    #   2. needs:-ed?  grep 'pr-review-receipt' over every .github/workflows/* on
+    #                  origin/main -> 7 hits, SIX are comments and the seventh is
+    #                  this job key. No job consumes it.
+    #   3. covered?    receipts are still judged, and cheaply: `present` in
+    #                  pr-review-quorum.yml (pull_request_target, base-owned) is
+    #                  98 runs at a 1.7-min median = 5.93 h — 5% of the price —
+    #                  and `pr-review-sign` still signs on every PR. What moves
+    #                  here is the mutation sweep OVER those guards, nothing else.
+    #
+    # Run it deliberately, when a pr_review_* guard changes:
+    #     gh workflow run ci.yml -f pr=<number>
+    if: github.event_name == 'workflow_dispatch' && inputs.pr != ''
     env:
       # The `runner` context is NOT available in a job-level `env:` block —
       # GitHub rejects the workflow with `Unrecognized named-value: runner`
       # (#2791). $RUNNER_TEMP is read inside the run blocks instead.
-      PR_NUMBER: ${{ github.event.pull_request.number }}
-      PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      #
+      # PR_HEAD_SHA is NOT set here any more: on workflow_dispatch there is no
+      # `github.event.pull_request`, so it would be the empty string, and the
+      # sweep below does `git merge-base origin/main "${PR_HEAD_SHA}" || BASE=""`
+      # — it TOLERATES an empty base and would sweep nothing while reading green.
+      # It is resolved from PR_NUMBER in the first step, which refuses instead.
+      PR_NUMBER: ${{ inputs.pr }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+
+      - name: Resolve the PR head, or refuse
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [ -n "${PR_NUMBER:-}" ] || { echo "::error::pr-review-receipt: no -f pr=<number> given"; exit 1; }
+          sha=$(gh pr view "$PR_NUMBER" -R "$GITHUB_REPOSITORY" --json headRefOid --jq .headRefOid)
+          case "$sha" in
+            ????????????????????????????????????????) ;;
+            *) echo "::error::pr-review-receipt: PR #$PR_NUMBER did not resolve to a 40-char head sha (got '$sha')"; exit 1 ;;
+          esac
+          git fetch -q origin "$sha" || { echo "::error::pr-review-receipt: head $sha is not fetchable"; exit 1; }
+          echo "PR_HEAD_SHA=$sha" >> "$GITHUB_ENV"
+          echo "pr-review-receipt: PR #$PR_NUMBER head $sha"
 
       # The guard REFUSES to run without minisign, check-jsonschema, bats and jq:
       # "a gate that cannot run must not read green". They go into a per-JOB

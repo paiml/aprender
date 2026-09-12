@@ -1,0 +1,46 @@
+{
+  "ticket": "PMAT-1091",
+  "base": "origin/main",
+  "head": "80ea9ce0780fc7a2ac0ae62602350b524182e774",
+  "diff_sha256": "72683663af21be9ec6c2293680d1f916f35edc7f8c3c87ce17825eb980d9c3e7",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 24207,
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff correctly implements all requirements of PMAT-1091. It shifts the `pr-review-receipt` job to an ad-hoc `workflow_dispatch` trigger, sets up the `pr` input, removes `PR_HEAD_SHA` from the job-level environment, and introduces the required bash step to securely resolve, validate, and fetch the SHA using `gh`. It also carefully updates the `check_pr_review_wiring.sh` script to parse and enforce this new ad-hoc syntax without weakening the underlying PR review security constraints. No unauthorized changes or weakened gates were found.",
+      "findings": [],
+      "raw_bytes": 2126,
+      "err_bytes": 0
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff perfectly satisfies all requirements of PMAT-1091 without any unintended side effects or weakened gates.\n\n- The `pr-review-receipt` job is successfully migrated from a `pull_request` trigger to an ad-hoc `workflow_dispatch` trigger. \n- The `pr` input is introduced, and the job-level `if` clause correctly enforces its presence.\n- The `PR_HEAD_SHA` was correctly removed from the environment block. A defensive bash step handles fetching and validating the PR's 40-character SHA via the GitHub CLI before exporting it back to the environment, preventing any sweeping of empty bases if no PR was provided.\n- The `scripts/check_pr_review_wiring.sh` script is accurately updated to parse and enforce the new shape (`workflow_dispatch` combined with an `inputs.<name> != ''` check), ensuring no PR subject is empty and preventing typos/silent omissions. The corresponding bash logic has proper unit tests.\n- Comments accurately document the \"three queries\" and rationale precisely as the ticket specified.\n\nNo invalid paths, no test failures, and no weakened checks.",
+      "findings": [],
+      "raw_bytes": 4394,
+      "err_bytes": 0
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff precisely implements the requested changes for PMAT-1091. The `pr-review-receipt` job was successfully shifted from `pull_request` to an ad-hoc `workflow_dispatch` trigger requiring the `pr` input. The job's environment was appropriately stripped of `PR_HEAD_SHA`, and a defensive script was added prior to the mutation sweep consumers to strictly query and validate the PR's head SHA via the GitHub CLI before dynamically exporting it to the environment. Furthermore, the mandatory CI gate `check_pr_review_wiring.sh` was accurately adapted to validate this new Shape B wiring without weakening any invariants, effectively translating the 'must have a PR subject' property to the `workflow_dispatch` event context. No unrequested or conflicting modifications were found.",
+      "findings": [],
+      "raw_bytes": 2606,
+      "err_bytes": 0
+    }
+  ],
+  "dissent": [],
+  "dedup": [],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": []
+}
