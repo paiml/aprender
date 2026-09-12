@@ -444,7 +444,7 @@ jobs:
             -e CARGO_PROFILE_TEST_DEBUG=line-tables-only \
             -e CARGO_PROFILE_DEV_DEBUG=line-tables-only \
             "$IMAGE" \
-            cargo nextest run --profile ci --workspace --lib --exclude aprender-gpu --exclude aprender-cuda-edge --exclude aprender-compute
+            bash scripts/ci_measured.sh lib cargo nextest run --profile ci --workspace --lib --exclude aprender-gpu --exclude aprender-cuda-edge --exclude aprender-compute
       - name: "GPU crates on their default features (per-package resolve, no device needed)"
         if: steps.tier.outputs.tier == 'full'
         # aprender-gpu + aprender-cuda-edge, un-darked from the required check (T0 of the
@@ -468,7 +468,7 @@ jobs:
             -e CARGO_PROFILE_TEST_DEBUG=line-tables-only \
             -e CARGO_PROFILE_DEV_DEBUG=line-tables-only \
             "$IMAGE" \
-            cargo nextest run --profile ci -p aprender-gpu -p aprender-cuda-edge --lib
+            bash scripts/ci_measured.sh gpu cargo nextest run --profile ci -p aprender-gpu -p aprender-cuda-edge --lib
       - name: Compute tests (tolerate SIGSEGV at exit — all tests pass but harness crashes on cleanup)
         if: steps.tier.outputs.tier == 'full'
         run: |
@@ -486,7 +486,7 @@ jobs:
             -e CARGO_INCREMENTAL=0 \
             -e CARGO_BUILD_JOBS=8 \
             "$IMAGE" \
-            bash -c 'cargo test -p aprender-compute --lib 2>&1 | tee /tmp/compute-test.log; grep -q "test result: ok\." /tmp/compute-test.log && ! grep -q "test result: FAILED" /tmp/compute-test.log'
+            bash scripts/ci_measured.sh compute bash -c 'cargo test -p aprender-compute --lib 2>&1 | tee /tmp/compute-test.log; grep -q "test result: ok\." /tmp/compute-test.log && ! grep -q "test result: FAILED" /tmp/compute-test.log'
       - name: Integration tests
         if: steps.tier.outputs.tier == 'full'
         # #2465: the four FALSIFY-AUTH targets were appended here because they
@@ -539,7 +539,7 @@ jobs:
             -e CARGO_INCREMENTAL=0 \
             -e CARGO_BUILD_JOBS=8 \
             "$IMAGE" \
-            bash -c 'cargo test -p aprender-core --features setfit --lib setfit && cargo test -p aprender-core --features setfit,conformance-fixtures --test setfit_conformance && cargo test -p aprender-core --test monorepo_invariants && cargo test -p aprender-core --test readme_contract && cargo test -p apr-cli --test cli_commands && cargo test -p apr-cli --test reg15_admission && cargo test -p aprender-train-inspect --test falsify_no_fabricated_metadata_2519 && cargo test -p aprender-train-bench --test falsify_no_fabricated_benchmarks_2519 && cargo test -p aprender-train-shell --test falsify_no_fabricated_fetch_2519 && cargo test -p aprender-core --test beat_sklearn_iris && cargo test -p aprender-core --test beat_sklearn_nmi && cargo test -p aprender-core --test beat_sklearn_metrics_parity && cargo test -p aprender-core --test beat_sklearn_gaussiannb_accuracy && cargo test -p aprender-core --test beat_sklearn_svc_accuracy && cargo test -p aprender-core --test beat_sklearn_pipeline_encoder && cargo test -p aprender-serve --test beat_fail_closed_garbage && cargo test -p aprender-compute --lib beat_nf4_bitsandbytes_equivalence && cargo test -p aprender-core --test beat_pytorch_autograd_grad && cargo test -p aprender-train-lora --lib beat_lora_merge_forward_equivalence && cargo test -p apr-cli --release --test beat_pytorch_deploy_footprint && cargo test -p aprender-serve --test beat_fail_closed_structural && cargo test -p aprender-serve --test ollama_http_compat && cargo test -p apr-cli --test ollama_ndjson_streaming && cargo test -p apr-cli --test falsification_chat_http_cli && cargo test -p aprender-contracts --test apr_serve_api_key_auth_contract && cargo test -p apr-cli --test falsify_auth_001 --test falsify_auth_002 --test falsify_auth_003 --no-fail-fast && cargo test -p apr-cli --test beat_apr_data_alimentar_reach && cargo test -p apr-cli --test beat_apr_sibling_cli_reach && cargo test -p aprender-contracts-cli --test pv_surface_gate && cargo test -p aprender-contracts-cli --test cli_integration && cargo test -p aprender-contracts-cli --test ground_truth && cargo test -p aprender-contracts-cli --test version_identity && cargo test -p apr-cli --test pixel_regression && cargo build --examples --workspace --keep-going && cargo check --workspace --benches --locked'
+            bash scripts/ci_measured.sh integration bash -c 'cargo test -p aprender-core --features setfit --lib setfit && cargo test -p aprender-core --features setfit,conformance-fixtures --test setfit_conformance && cargo test -p aprender-core --test monorepo_invariants && cargo test -p aprender-core --test readme_contract && cargo test -p apr-cli --test cli_commands && cargo test -p apr-cli --test reg15_admission && cargo test -p aprender-train-inspect --test falsify_no_fabricated_metadata_2519 && cargo test -p aprender-train-bench --test falsify_no_fabricated_benchmarks_2519 && cargo test -p aprender-train-shell --test falsify_no_fabricated_fetch_2519 && cargo test -p aprender-core --test beat_sklearn_iris && cargo test -p aprender-core --test beat_sklearn_nmi && cargo test -p aprender-core --test beat_sklearn_metrics_parity && cargo test -p aprender-core --test beat_sklearn_gaussiannb_accuracy && cargo test -p aprender-core --test beat_sklearn_svc_accuracy && cargo test -p aprender-core --test beat_sklearn_pipeline_encoder && cargo test -p aprender-serve --test beat_fail_closed_garbage && cargo test -p aprender-compute --lib beat_nf4_bitsandbytes_equivalence && cargo test -p aprender-core --test beat_pytorch_autograd_grad && cargo test -p aprender-train-lora --lib beat_lora_merge_forward_equivalence && cargo test -p apr-cli --release --test beat_pytorch_deploy_footprint && cargo test -p aprender-serve --test beat_fail_closed_structural && cargo test -p aprender-serve --test ollama_http_compat && cargo test -p apr-cli --test ollama_ndjson_streaming && cargo test -p apr-cli --test falsification_chat_http_cli && cargo test -p aprender-contracts --test apr_serve_api_key_auth_contract && cargo test -p apr-cli --test falsify_auth_001 --test falsify_auth_002 --test falsify_auth_003 --no-fail-fast && cargo test -p apr-cli --test beat_apr_data_alimentar_reach && cargo test -p apr-cli --test beat_apr_sibling_cli_reach && cargo test -p aprender-contracts-cli --test pv_surface_gate && cargo test -p aprender-contracts-cli --test cli_integration && cargo test -p aprender-contracts-cli --test ground_truth && cargo test -p aprender-contracts-cli --test version_identity && cargo test -p apr-cli --test pixel_regression && cargo build --examples --workspace --keep-going && cargo check --workspace --benches --locked'
       # BSE-17 quick tier, part 1: the selected crates' unit and integration
       # targets (default features) under the same image and mounts as the full
       # tier. Empty selection (a scripts/docs PR) skips this step; part 2 still runs.
@@ -575,7 +575,7 @@ jobs:
             -e CARGO_PROFILE_DEV_DEBUG=line-tables-only \
             -e CARGO_TERM_COLOR=never \
             "$IMAGE" \
-            bash -c "cargo nextest run --profile ci --lib --tests$pkgs"
+            bash scripts/ci_measured.sh quicklib bash -c "cargo nextest run --profile ci --lib --tests$pkgs"
       # BSE-17 quick tier, part 2: every test target that reads the tree, from
       # scripts/tree_reader_tests.txt (derived; the guard has already proved the
       # registry equals the sources in this run).
@@ -637,7 +637,7 @@ jobs:
             -e CARGO_PROFILE_DEV_DEBUG=line-tables-only \
             -e CARGO_TERM_COLOR=never \
             "$IMAGE" \
-            cargo nextest run --profile ci --workspace --lib --tests --exclude aprender-gpu --exclude aprender-cuda-edge --exclude aprender-compute -E "$EXPR"
+            bash scripts/ci_measured.sh treeread cargo nextest run --profile ci --workspace --lib --tests --exclude aprender-gpu --exclude aprender-cuda-edge --exclude aprender-compute -E "$EXPR"
       # BSE-17 quick tier, part 3 (PMAT-1098 67-E2, #3084 — rule (i)): the
       # selection was OVER THE CAP (touched crates + their direct reverse
       # dependents exceed gate_touched_crates.sh's CAP=3). That used to escalate
@@ -726,6 +726,39 @@ jobs:
             -v "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}:/workspace/target" \
             "$IMAGE" \
             bash -c 'chown -R 1000:1000 /workspace || true; chown -R 1000:1000 /usr/local/cargo/registry || true; chown -R 1000:1000 /workspace/target || true'
+      # ARBITER-001 R2a (#3133, infra#532): the sccache stats and per-invocation
+      # junit that scripts/ci_measured.sh dropped into the container's
+      # /workspace/target/ci-artifacts (host path below) become named artifacts
+      # so Arbiter's s-practice sensor can see 'this main run measured its
+      # tests and its cache'. Ownership was just restored to noah:1000 above,
+      # so these read cleanly. `if-no-files-found: ignore` because the reuse
+      # tier runs no tests (the reused run already carries them).
+      - name: Stamp the test tier into the artifact dir (Arbiter R2a, #3133)
+        if: '!cancelled()'
+        run: |
+          d="/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}/ci-artifacts"
+          mkdir -p "$d"
+          printf '%s\n' "${{ steps.tier.outputs.tier }}" > "$d/tier"
+      - name: Upload junit (Arbiter R2a, #3133)
+        if: '!cancelled()'
+        uses: actions/upload-artifact@v7
+        with:
+          name: junit
+          path: |
+            /mnt/nvme-raid0/targets/aprender-ci/${{ env.PR_OR_REF }}/run-${{ github.run_id }}/ci-artifacts/junit-*.xml
+            /mnt/nvme-raid0/targets/aprender-ci/${{ env.PR_OR_REF }}/run-${{ github.run_id }}/ci-artifacts/tier
+          if-no-files-found: ignore
+          retention-days: 90
+      - name: Upload sccache-metrics (Arbiter R2a, #3133)
+        if: '!cancelled()'
+        uses: actions/upload-artifact@v7
+        with:
+          name: sccache-metrics
+          path: |
+            /mnt/nvme-raid0/targets/aprender-ci/${{ env.PR_OR_REF }}/run-${{ github.run_id }}/ci-artifacts/sccache-*.json
+            /mnt/nvme-raid0/targets/aprender-ci/${{ env.PR_OR_REF }}/run-${{ github.run_id }}/ci-artifacts/tier
+          if-no-files-found: ignore
+          retention-days: 90
 
   # Poka-yoke (aprender#2269): fail fast if ANY self-hosted job omits a
   # discriminating runner label, so a bare [self-hosted, X64, Linux] selector

@@ -201,6 +201,28 @@ jobs:
           # ARMED, it just reports a value first.
           exit "$cov_rc"
 
+      # ARBITER-001 R2a (#3133, infra#532): re-emit the coverage the step above
+      # just measured as a machine-readable JSON summary and upload it under the
+      # name `llvm-cov`, so Arbiter's s-practice sensor sees that aprender's main
+      # carries a coverage artifact (and R7 can later pair it by sha with the
+      # push run's junit). `report` re-reads the profdata `make coverage` already
+      # produced — it runs no tests. It only runs when the coverage step passed,
+      # so a coverage regression still fails first and this never masks it.
+      - name: llvm-cov JSON summary for Arbiter (R2a, #3133)
+        run: |
+          export PATH="$COV_TOOLS/bin:$HOME/.cargo/bin:$HOME/.local/bin:$PATH"
+          mkdir -p target/coverage
+          cargo llvm-cov report --json --summary-only --output-path target/coverage/llvm-cov.json
+          test -s target/coverage/llvm-cov.json
+      - name: Upload llvm-cov (Arbiter R2a, #3133)
+        if: '!cancelled()'
+        uses: actions/upload-artifact@v7
+        with:
+          name: llvm-cov
+          path: target/coverage/llvm-cov.json
+          if-no-files-found: warn
+          retention-days: 90
+
       # pmat (crates.io) for the dogfooded gap analysis — BEST-EFFORT. cargo isn't
       # on PATH for raw run: steps on these runners, so source the cargo env; and
       # `|| true` keeps a pmat failure from aborting the job (the coverage % below
