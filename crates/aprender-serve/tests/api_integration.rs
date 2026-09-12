@@ -391,11 +391,16 @@ async fn test_apr_explain_exercises_handler() {
         "feature_names": ["a", "b", "c", "d"]
     });
     let response = app.oneshot(json_post("/v1/explain", body)).await.unwrap();
-    // Exercises handler - may return 200 or error depending on model setup
-    assert!(
-        response.status() == StatusCode::OK
-            || response.status() == StatusCode::BAD_REQUEST
-            || response.status() == StatusCode::SERVICE_UNAVAILABLE
+    // aprender#2375(2): /v1/explain refuses to fabricate attributions. AppState::demo()
+    // loads a demo APR model (mod_app_state_new.rs), so a well-formed request reaches the
+    // handler's terminal branch and is answered NOT_IMPLEMENTED — never a 200 with
+    // invented SHAP numbers, never a 400 (the body is valid), never 503 (a model is
+    // loaded). The old row accepted {200, 400, 503}, none of which is the contract; it
+    // was dark until the quick tier ran this target (#3130 class, train #3127 run 8).
+    assert_eq!(
+        response.status(),
+        StatusCode::NOT_IMPLEMENTED,
+        "a well-formed /v1/explain request against the demo model must be refused as not implemented"
     );
 }
 
