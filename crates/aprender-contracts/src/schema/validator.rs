@@ -82,15 +82,34 @@ pub fn validate_contract(contract: &Contract) -> Vec<Violation> {
 /// - `ecosystem` (30), `openclaw` (20), `hf-kernels-community` (15),
 ///   `apr-qa-playbook` (9), `openclip` (2), `none` (1).
 ///
+/// Extended 2026-09-12 (aprender#3146): category N adds `burn` (7 stories) and
+/// `linfa` (10), the two Rust-native ML frameworks. Neither is substring-matched
+/// by `BEAT_INCUMBENTS`, so neither could be named by reusing that list.
+///
 /// So this registry is the corpus vocabulary, exactly. Every member is
 /// exercised by at least one contract in `contracts/`; adding a competitor is a
 /// deliberate one-line edit here plus a test, which is the point — an open
 /// domain is what let `THIS-COMPETITOR-DOES-NOT-EXIST` validate.
-pub(crate) const CRUX_COMPETITORS: [&str; 12] = [
+pub(crate) const CRUX_COMPETITORS: [&str; 14] = [
     "apr-qa-playbook",
+    // Burn (tracel-ai/burn) — the Rust deep-learning framework, 0.21.0 / 15.9k
+    // stars / 312 reverse-dependencies at admission. Added 2026-09-12 with 7
+    // category-N stories extracted from its crate surface: burn-linalg (SVD),
+    // burn-tensor (const-generic rank), burn-autodiff (op coverage), ONNX
+    // import, burn-ir, burn-rl, burn-vision. NOT a BEAT pillar — aprender makes
+    // no claim to beat Burn on a pinned benchmark; this is a capability/UX
+    // source, which is exactly the distinction this registry exists to keep.
+    "burn",
     "ecosystem",
     "hf-kernels-community",
     "huggingface",
+    // linfa (rust-ml/linfa) — the Rust classical-ML toolkit, 0.8.1 / 18
+    // algorithm sub-crates at admission. Added 2026-09-12 with 10 category-N
+    // stories: linfa-nn (spatial index), linfa-pls, linfa-lars, linfa-kernel,
+    // linfa-ftrl, linfa-ensemble (AdaBoost/bagging), OPTICS, Barnes-Hut t-SNE,
+    // random projection, PCA-on-SVD. `scikit-learn` is the BEAT pillar on this
+    // axis and is deliberately NOT here; linfa is the Rust-native UX source.
+    "linfa",
     "llama_cpp",
     "none",
     "ollama",

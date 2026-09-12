@@ -29,6 +29,12 @@ CATEGORY_NAMES = {
     "I": "Observability & Metrics",
     "J": "Vision-Language (OpenCLIP/OpenCLAW)",
     "K": "Ecosystem & Integration",
+    # L, M and N were absent until 2026-09-12 (aprender#3146): contracts for
+    # these categories already existed, so the scaffolder would have emitted a
+    # bare letter as the category name had anyone re-run it over them.
+    "L": "HF kernels-community integration",
+    "M": "APR-QA Playbook Canonicalization",
+    "N": "Rust ML Framework Parity",
 }
 
 STATUS_BADGE = {

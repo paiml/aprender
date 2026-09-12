@@ -1,0 +1,89 @@
+# CRUX-N-01 — SVD substrate (Golub-Reinsch + randomized)
+# CRUX category N: Rust ML Framework Parity (linfa + burn).
+# Filed from the 2026-09-12 competitive sweep. Tracks GitHub #3147, epic #3146.
+# registry: false — this contract carries real falsification gates and claims no
+# exemption (operator ruling 2026-08-21, "no contract exemptions").
+
+metadata:
+  id: CRUX-N-01
+  version: "1.0.0"
+  created: "2026-09-12"
+  updated: "2026-09-12"
+  author: PAIML Engineering
+  registry: false
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "N — Rust ML Framework Parity"
+  competitor: burn
+  demand_score: 5  # 1..5, critical priority in pmat work
+  intake_status: missing
+  github_issue: 3147
+  description: >
+    Singular value decomposition as a reusable primitive. burn ships burn-linalg ("Linear algebra operations for Burn tensors"). aprender has NO SVD anywhere: only SymmetricEigen at crates/aprender-compute/src/eigen/mod.rs:72. Five downstream capabilities are blocked or degraded by its absence.
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - 'epic: https://github.com/paiml/aprender/issues/3146'
+  - 'story: https://github.com/paiml/aprender/issues/3147'
+  - 'competitor: https://github.com/tracel-ai/burn'
+
+equations:
+  thin_svd_reconstruction:
+    formula: |
+      svd(A) -> (U, S, V) with A ∈ R^{m×n}
+        ‖A − U·diag(S)·Vᵀ‖_F / ‖A‖_F ≤ 1e-10   (f64)
+        shapes: U ∈ R^{m×k}, S ∈ R^k, V ∈ R^{n×k}, k = min(m,n)
+    domain: "A ∈ R^{m×n}, f64, m<n ∨ m=n ∨ m>n, cond(A) ≤ 1e8"
+    codomain: "(U, S, V) with reconstruction error ≤ 1e-10"
+    invariants:
+    - "handles m<n and m>n without caller transposition"
+    - "S is non-negative and sorted descending"
+    - "sign convention: max-|·| component of each u_i is positive => deterministic output"
+
+  randomized_svd_topk:
+    formula: |
+      rsvd(A, k, p, q) -> (U_k, S_k, V_k)
+        ∀ i ≤ k: |S_k[i] − S_exact[i]| / S_exact[i] ≤ 0.01   for p=10, q=2
+    domain: "A with a rank-k spectrum plus noise"
+    codomain: "top-k singular triplets within 1% of exact"
+    invariants:
+    - "oversampling p and power iterations q are explicit parameters"
+    - "never forms AᵀA"
+
+falsification_tests:
+- id: FALSIFY-CRUX-N-01-001
+  rule: "reconstruction holds across shape and conditioning classes"
+  prediction: "200 random f64 matrices spanning m<n, m=n, m>n, rank-deficient and cond>=1e8 all reconstruct within 1e-10"
+  test: >-
+    LIVE-PENDING - reconstruction holds across shape and conditioning classes. No test surface exists today because the capability is unimplemented: SVD substrate (Golub-Reinsch + randomized) (aprender#3147, CRUX-N-01). PROMOTE by authoring a test named reconstruction_across_shape_classes in module `svd/tests` of crate `aprender-compute`; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED and unfalsifiable-by-absence, NOT satisfied.
+  if_fails: rule 'reconstruction holds across shape and conditioning classes' is violated — the burn parity claim for CRUX-N-01 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation
+- id: FALSIFY-CRUX-N-01-002
+  rule: "U and V are orthonormal"
+  prediction: "proptest over generated shapes asserts ‖UᵀU − I‖_inf <= 1e-10 and likewise for V"
+  test: >-
+    LIVE-PENDING - U and V are orthonormal. No test surface exists today because the capability is unimplemented: SVD substrate (Golub-Reinsch + randomized) (aprender#3147, CRUX-N-01). PROMOTE by authoring a test named prop_orthonormal_factors in module `svd/tests` of crate `aprender-compute`; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED and unfalsifiable-by-absence, NOT satisfied.
+  if_fails: rule 'U and V are orthonormal' is violated — the burn parity claim for CRUX-N-01 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation
+- id: FALSIFY-CRUX-N-01-003
+  rule: "singular values match the scipy oracle"
+  prediction: "singular VALUES match scipy.linalg.svd within 1e-9 relative on pinned fixtures"
+  test: >-
+    LIVE-PENDING - singular values match the scipy oracle. No test surface exists today because the capability is unimplemented: SVD substrate (Golub-Reinsch + randomized) (aprender#3147, CRUX-N-01). PROMOTE by authoring a test named oracle_parity_scipy in module `svd/tests` of crate `aprender-compute`; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED and unfalsifiable-by-absence, NOT satisfied.
+  if_fails: rule 'singular values match the scipy oracle' is violated — the burn parity claim for CRUX-N-01 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation
+
+proof_obligations:
+- type: invariant
+  property: "reconstruction holds across shape and conditioning classes"
+- type: invariant
+  property: "U and V are orthonormal"
+- type: invariant
+  property: "singular values match the scipy oracle"
+
+kani_harnesses:
+- id: KH-CRUX-N-01-001
+  obligation: thin_svd_reconstruction
+  property: thin_svd_reconstruction_holds_on_bounded_input
+  bound: 4
+- id: KH-CRUX-N-01-002
+  obligation: randomized_svd_topk
+  property: randomized_svd_topk_holds_on_bounded_input
+  bound: 4

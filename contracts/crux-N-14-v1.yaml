@@ -1,0 +1,98 @@
+# CRUX-N-14 — Graph intermediate representation (IR)
+# CRUX category N: Rust ML Framework Parity (linfa + burn).
+# Filed from the 2026-09-12 competitive sweep. Tracks GitHub #3165, epic #3146.
+# registry: false — this contract carries real falsification gates and claims no
+# exemption (operator ruling 2026-08-21, "no contract exemptions").
+
+metadata:
+  id: CRUX-N-14
+  version: "1.0.0"
+  created: "2026-09-12"
+  updated: "2026-09-12"
+  author: PAIML Engineering
+  registry: false
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "N — Rust ML Framework Parity"
+  competitor: burn
+  demand_score: 4  # 1..5, high priority in pmat work
+  intake_status: missing
+  github_issue: 3165
+  description: >
+    A typed graph IR between model front-ends and execution backends. burn ships burn-ir ("Intermediate representation for the Burn framework"). aprender has NO IR: verified 2026-09-12, no ir/ module in any of the 79 workspace crates. Without one, ONNX import (CRUX-N-06) is a one-off translator rather than a front-end, kernel fusion has nothing to fuse over, and multi-backend routing must be hand-written per path.
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - 'epic: https://github.com/paiml/aprender/issues/3146'
+  - 'story: https://github.com/paiml/aprender/issues/3165'
+  - 'competitor: https://github.com/tracel-ai/burn'
+
+equations:
+  lowering_preserves_semantics:
+    formula: |
+      ∀ graph G:  execute(lower(G))  ≡  execute_direct(G)   BYTE-IDENTICAL
+    domain: "pinned fixture graphs"
+    codomain: "output tensors"
+    invariants:
+    - "the IR is a refactor, not a rewrite -- a changed result is a regression"
+
+  layout_is_carried_and_checked:
+    formula: |
+      ∀ edge e ∈ G:  e.layout ∈ {RowMajor, ColMajor} is REQUIRED
+        mixing layouts without an explicit transpose node => validate(G) = Err
+    domain: "graph with mixed-layout edges"
+    codomain: "validation result"
+    invariants:
+    - "this is where LAYOUT-001 becomes checkable at graph level, not per call site"
+    - "wired to contracts/tensor-layout-v1.yaml"
+
+  passes_are_effective:
+    formula: |
+      nodes(constant_fold(G)) < nodes(G) for a G with a foldable subtree
+      AND dead_node_elim removes an unreachable node AND retains every reachable one
+    domain: "graphs with foldable / unreachable subtrees"
+    codomain: "node counts"
+    invariants:
+    - "both halves of DCE are asserted -- removing everything also shrinks the count"
+
+falsification_tests:
+- id: FALSIFY-CRUX-N-14-001
+  rule: "lowering is byte-identical to the direct path"
+  prediction: "graphs lowered through the IR produce byte-identical output to the current direct execution path on pinned fixtures"
+  test: >-
+    LIVE-PENDING - lowering is byte-identical to the direct path. No test surface exists today because the capability is unimplemented: Graph intermediate representation (IR) (aprender#3165, CRUX-N-14). PROMOTE by authoring a test named lowering_byte_identical in module `ir/tests` of crate `aprender-core`; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED and unfalsifiable-by-absence, NOT satisfied.
+  if_fails: rule 'lowering is byte-identical to the direct path' is violated — the burn parity claim for CRUX-N-14 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation
+- id: FALSIFY-CRUX-N-14-002
+  rule: "mixed-layout graphs are rejected"
+  prediction: "a graph mixing row-major and column-major edges without an explicit transpose node fails validation"
+  test: >-
+    LIVE-PENDING - mixed-layout graphs are rejected. No test surface exists today because the capability is unimplemented: Graph intermediate representation (IR) (aprender#3165, CRUX-N-14). PROMOTE by authoring a test named mixed_layout_rejected in module `ir/tests` of crate `aprender-core`; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED and unfalsifiable-by-absence, NOT satisfied.
+  if_fails: rule 'mixed-layout graphs are rejected' is violated — the burn parity claim for CRUX-N-14 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation
+- id: FALSIFY-CRUX-N-14-003
+  rule: "constant folding and DCE both fire and are bounded"
+  prediction: "constant folding strictly reduces node count on a foldable graph; DCE removes an unreachable node and retains every reachable one"
+  test: >-
+    LIVE-PENDING - constant folding and DCE both fire and are bounded. No test surface exists today because the capability is unimplemented: Graph intermediate representation (IR) (aprender#3165, CRUX-N-14). PROMOTE by authoring a test named passes_effective_and_bounded in module `ir/tests` of crate `aprender-core`; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED and unfalsifiable-by-absence, NOT satisfied.
+  if_fails: rule 'constant folding and DCE both fire and are bounded' is violated — the burn parity claim for CRUX-N-14 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation
+
+proof_obligations:
+- type: idempotency
+  property: "lowering is byte-identical to the direct path"
+- type: invariant
+  property: "mixed-layout graphs are rejected"
+- type: invariant
+  property: "constant folding and DCE both fire and are bounded"
+
+kani_harnesses:
+- id: KH-CRUX-N-14-001
+  obligation: lowering_preserves_semantics
+  property: lowering_preserves_semantics_holds_on_bounded_input
+  bound: 4
+- id: KH-CRUX-N-14-002
+  obligation: layout_is_carried_and_checked
+  property: layout_is_carried_and_checked_holds_on_bounded_input
+  bound: 4
+- id: KH-CRUX-N-14-003
+  obligation: passes_are_effective
+  property: passes_are_effective_holds_on_bounded_input
+  bound: 4

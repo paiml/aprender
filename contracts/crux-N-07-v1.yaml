@@ -1,0 +1,87 @@
+# CRUX-N-07 — AdaBoost + generic Bagging/Voting meta-estimators
+# CRUX category N: Rust ML Framework Parity (linfa + burn).
+# Filed from the 2026-09-12 competitive sweep. Tracks GitHub #3153, epic #3146.
+# registry: false — this contract carries real falsification gates and claims no
+# exemption (operator ruling 2026-08-21, "no contract exemptions").
+
+metadata:
+  id: CRUX-N-07
+  version: "1.0.0"
+  created: "2026-09-12"
+  updated: "2026-09-12"
+  author: PAIML Engineering
+  registry: false
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "N — Rust ML Framework Parity"
+  competitor: linfa
+  demand_score: 4  # 1..5, high priority in pmat work
+  intake_status: missing
+  github_issue: 3153
+  description: >
+    Ensemble meta-estimators over an arbitrary base estimator. linfa-ensemble ships bagging, random forest and AdaBoost. aprender's ensembles (RandomForestClassifier/Regressor, GradientBoostingClassifier) are concrete and hard-wired; AdaBoost is absent and there is no generic wrapper. The missing piece is the WRAPPER: BaggingClassifier<E: Estimator> makes all ~55 fittable types ensembleable in one change.
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - 'epic: https://github.com/paiml/aprender/issues/3146'
+  - 'story: https://github.com/paiml/aprender/issues/3153'
+  - 'competitor: https://github.com/rust-ml/linfa'
+
+equations:
+  boosting_improves_a_weak_learner:
+    formula: |
+      acc(AdaBoost(base, n=50)) > τ  AND  acc(base) < 0.70
+        on a fixture chosen so the weak learner provably underperforms
+    domain: "fixture where a depth-1 tree scores below 0.70"
+    codomain: "accuracy of both, asserted separately"
+    invariants:
+    - "a test asserting only fit().is_ok() LOCKS THE DEFECT IN and does not discharge this"
+    - "sample weights are asserted to CHANGE between rounds, with misclassified samples gaining weight"
+
+  bagging_is_genuinely_generic:
+    formula: |
+      BaggingClassifier<E> instantiated over E ∈ {DecisionTreeClassifier,
+        KNearestNeighbors, GaussianNB} -- at least three distinct base types
+    domain: "any E: Estimator"
+    codomain: "fitted ensemble per base type"
+    invariants:
+    - "genericity proven by instantiation over >=3 bases, not by the signature alone"
+    - "soft voting fails at CONSTRUCTION for bases lacking predict_proba"
+
+falsification_tests:
+- id: FALSIFY-CRUX-N-07-001
+  rule: "AdaBoost beats its own weak learner"
+  prediction: "on a fixture where a depth-1 tree scores <0.70, the 50-estimator ensemble exceeds an asserted threshold; both halves checked"
+  test: >-
+    LIVE-PENDING - AdaBoost beats its own weak learner. No test surface exists today because the capability is unimplemented: AdaBoost + generic Bagging/Voting meta-estimators (aprender#3153, CRUX-N-07). PROMOTE by authoring a test named boosts_a_weak_learner in module `ensemble/adaboost/tests` of crate `aprender-core`; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED and unfalsifiable-by-absence, NOT satisfied.
+  if_fails: rule 'AdaBoost beats its own weak learner' is violated — the linfa parity claim for CRUX-N-07 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation
+- id: FALSIFY-CRUX-N-07-002
+  rule: "sample weights are updated between rounds"
+  prediction: "the weight vector changes across rounds and misclassified samples gain weight"
+  test: >-
+    LIVE-PENDING - sample weights are updated between rounds. No test surface exists today because the capability is unimplemented: AdaBoost + generic Bagging/Voting meta-estimators (aprender#3153, CRUX-N-07). PROMOTE by authoring a test named weights_update_toward_errors in module `ensemble/adaboost/tests` of crate `aprender-core`; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED and unfalsifiable-by-absence, NOT satisfied.
+  if_fails: rule 'sample weights are updated between rounds' is violated — the linfa parity claim for CRUX-N-07 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation
+- id: FALSIFY-CRUX-N-07-003
+  rule: "bagging works over three different base estimators"
+  prediction: "BaggingClassifier is instantiated and fitted over tree, KNN and GaussianNB in the test suite"
+  test: >-
+    LIVE-PENDING - bagging works over three different base estimators. No test surface exists today because the capability is unimplemented: AdaBoost + generic Bagging/Voting meta-estimators (aprender#3153, CRUX-N-07). PROMOTE by authoring a test named generic_over_three_bases in module `ensemble/bagging/tests` of crate `aprender-core`; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED and unfalsifiable-by-absence, NOT satisfied.
+  if_fails: rule 'bagging works over three different base estimators' is violated — the linfa parity claim for CRUX-N-07 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation
+
+proof_obligations:
+- type: invariant
+  property: "AdaBoost beats its own weak learner"
+- type: invariant
+  property: "sample weights are updated between rounds"
+- type: invariant
+  property: "bagging works over three different base estimators"
+
+kani_harnesses:
+- id: KH-CRUX-N-07-001
+  obligation: boosting_improves_a_weak_learner
+  property: boosting_improves_a_weak_learner_holds_on_bounded_input
+  bound: 4
+- id: KH-CRUX-N-07-002
+  obligation: bagging_is_genuinely_generic
+  property: bagging_is_genuinely_generic_holds_on_bounded_input
+  bound: 4

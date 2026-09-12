@@ -17099,3 +17099,87 @@ roadmap:
   labels:
   - kind:triage
   notes: null
+- id: PMAT-3165
+  github_issue: 3165
+  item_type: task
+  title: 'P1: graph intermediate representation (IR) — CRUX-N-14'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-09-12T12:16:04Z
+  updated: 2026-09-12T12:16:04Z
+  spec: null
+  acceptance_criteria:
+  - 'CRUX-N-14, competitor burn, demand 4. burn ships burn-ir; aprender has NO ir/ module in any of 79 crates (verified 2026-09-12). Substrate under ONNX import (#3152), kernel fusion (CUT on the epic largely BECAUSE there is no IR), and multi-backend routing. FALSIFIABLE (contracts/crux-N-14-v1.yaml): lowering an IR graph is BYTE-IDENTICAL to the direct execution path on pinned fixtures (the IR is a refactor, not a rewrite); a graph mixing row-major and column-major edges without an explicit transpose node is REJECTED at validation — this is where LAYOUT-001 becomes checkable at graph level rather than per call site; constant folding strictly reduces node count on a foldable graph AND dead-node elimination removes an unreachable node while retaining every reachable one (both halves, since removing everything also shrinks the count). Milestone 0.69.0.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - P1
+  - enhancement
+  - crux
+  - pareto-linfa-burn
+  notes: null
+- id: PMAT-3166
+  github_issue: 3166
+  item_type: task
+  title: 'P2: general RL algorithms (PPO/DQN/A2C) — CRUX-N-15'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-12T12:16:04Z
+  updated: 2026-09-12T12:16:04Z
+  spec: null
+  acceptance_criteria:
+  - 'CRUX-N-15, competitor burn, demand 2. burn ships burn-rl. aprender has RL only in the RLHF sense (online/dpo.rs, online/rlvr.rs); PPO, DQN, A2C, SAC and Q-learning are absent — the single apparent PPO hit is a comment at online/dpo.rs:7 naming PPO to say it is NOT doing PPO. Demand 2 is honest: general RL is not on the four-pillar mission and nothing else in the epic depends on it. FALSIFIABLE (contracts/crux-N-15-v1.yaml): PPO exceeds a return threshold on CartPole-equivalent within a bounded episode budget AND a random policy is asserted below it (both halves — a threshold only the agent is measured against proves nothing); a ratio outside [1-eps,1+eps] selects the CLIPPED branch of the surrogate; the DQN target network is asserted to LAG (differs between syncs, matches right after). Milestone 0.70.0.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - P2
+  - enhancement
+  - crux
+  - pareto-linfa-burn
+  notes: null
+- id: PMAT-3167
+  github_issue: 3167
+  item_type: task
+  title: 'P2: Barnes-Hut t-SNE (O(n log n)) — CRUX-N-16'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-12T12:16:04Z
+  updated: 2026-09-12T12:16:04Z
+  spec: null
+  acceptance_criteria:
+  - 'CRUX-N-16, competitor linfa, demand 3. linfa-tsne is explicitly Barnes-Hut; aprender''s preprocessing/tsne.rs has no barnes/quadtree/octree markers — naive O(n^2). SAME DEFECT CLASS as the neighbour index (#3149): an algorithm that is PRESENT but asymptotically worse than the comparator''s. Presence is not parity — the first sweep marked t-SNE present and never examined it. FALSIFIABLE (contracts/crux-N-16-v1.yaml): at theta=0.0 Barnes-Hut must DEGENERATE to the naive path within 1e-9 (this is what proves the quadtree correct); quadtree node-visit counts across n=1e3,1e4,1e5 grow O(n log n) where naive is asserted O(n^2) — COUNTED, not timed, per the repo rule against wall-clock in required checks; the dense O(n^2) P-matrix is asserted NOT materialized on the Barnes-Hut path. Milestone 0.70.0.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - P2
+  - enhancement
+  - crux
+  - pareto-linfa-burn
+  notes: null
+- id: PMAT-3168
+  github_issue: 3168
+  item_type: task
+  title: 'P2: vision ops — NMS, GPU connected components, tensor integration — CRUX-N-17'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-12T12:16:04Z
+  updated: 2026-09-12T12:16:04Z
+  spec: null
+  acceptance_criteria:
+  - 'CRUX-N-17, competitor burn, demand 2. burn-vision ships NMS, GPU connected components (Spaghetti/Spaghetti4C plus a cube backend with prefix sum), VGG19 gram-matrix perceptual loss and 2D transforms, all on burn tensors. aprender-image has real coverage burn does not emphasise (canny, morphology, histogram equalization, gradient magnitude) but is CPU-only, has no NMS, and operates on its own buf.rs type rather than aprender-tensor — so vision ops cannot join an autodiff graph or a GPU pipeline. The tensor integration is the piece with cross-cutting value. Demand 2: vision is not a pillar. FALSIFIABLE (contracts/crux-N-17-v1.yaml): NMS kept-index sets identical to a pinned torchvision.ops.nms fixture including the IoU-at-boundary case; the GPU connected-components path labels IDENTICALLY to CPU (a faster path that labels differently is a defect); migrated ops are byte-identical to the buf.rs path. Milestone 0.70.0.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - P2
+  - enhancement
+  - crux
+  - pareto-linfa-burn
+  notes: null

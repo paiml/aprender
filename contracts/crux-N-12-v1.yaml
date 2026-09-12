@@ -1,0 +1,88 @@
+# CRUX-N-12 — KernelPCA + Nystroem + RBFSampler
+# CRUX category N: Rust ML Framework Parity (linfa + burn).
+# Filed from the 2026-09-12 competitive sweep. Tracks GitHub #3158, epic #3146.
+# registry: false — this contract carries real falsification gates and claims no
+# exemption (operator ruling 2026-08-21, "no contract exemptions").
+
+metadata:
+  id: CRUX-N-12
+  version: "1.0.0"
+  created: "2026-09-12"
+  updated: "2026-09-12"
+  author: PAIML Engineering
+  registry: false
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "N — Rust ML Framework Parity"
+  competitor: linfa
+  demand_score: 3  # 1..5, medium priority in pmat work
+  intake_status: missing
+  github_issue: 3158
+  description: >
+    Reusable kernel methods. linfa-kernel ships "Kernel methods for non-linear algorithms", marked Tested. aprender evaluates kernels inside SVCRbf/MultiClassSVC but never exposes them as a transform; KernelPCA, Nystroem and RBFSampler are all absent. Two wins: nonlinear reduction, and letting the fast LinearSVM do the accurate SVCRbf's job at linear cost.
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - 'epic: https://github.com/paiml/aprender/issues/3146'
+  - 'story: https://github.com/paiml/aprender/issues/3158'
+  - 'competitor: https://github.com/rust-ml/linfa'
+
+equations:
+  kernel_pca_unfolds_what_linear_pca_cannot:
+    formula: |
+      on concentric circles:
+        acc(linear PCA -> linear clf) ≤ 0.60  AND  acc(RBF KernelPCA -> same clf) ≥ 0.95
+    domain: "concentric-circles fixture"
+    codomain: "both accuracies, asserted separately"
+    invariants:
+    - "showing only the success half demonstrates nothing"
+    - "the centered Gram matrix has zero row and column means within 1e-10"
+
+  nystroem_approximation_converges:
+    formula: |
+      ‖K − K_approx(m)‖_F / ‖K‖_F is non-increasing in m, over >=5 values of m
+      AND acc(Nystroem + LinearSVM) ≥ acc(SVCRbf) − 0.03
+           where acc(LinearSVM alone) < acc(SVCRbf) − 0.03
+    domain: "m = n_components"
+    codomain: "relative Frobenius error; accuracies"
+    invariants:
+    - "the LinearSVM-alone half is asserted, so the gain is attributable to the kernel map"
+    - "SVCRbf and KernelPCA produce IDENTICAL kernel matrix values at the same gamma"
+
+falsification_tests:
+- id: FALSIFY-CRUX-N-12-001
+  rule: "kernel PCA separates concentric circles where linear PCA cannot"
+  prediction: "linear PCA + linear classifier at chance (<=0.60) AND RBF KernelPCA + same classifier >=0.95"
+  test: >-
+    LIVE-PENDING - kernel PCA separates concentric circles where linear PCA cannot. No test surface exists today because the capability is unimplemented: KernelPCA + Nystroem + RBFSampler (aprender#3158, CRUX-N-12). PROMOTE by authoring a test named unfolds_concentric_circles in module `decomposition/kernel_pca/tests` of crate `aprender-core`; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED and unfalsifiable-by-absence, NOT satisfied.
+  if_fails: rule 'kernel PCA separates concentric circles where linear PCA cannot' is violated — the linfa parity claim for CRUX-N-12 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation
+- id: FALSIFY-CRUX-N-12-002
+  rule: "Nystroem error decreases monotonically in n_components"
+  prediction: "relative Frobenius reconstruction error is non-increasing over >=5 values of n_components"
+  test: >-
+    LIVE-PENDING - Nystroem error decreases monotonically in n_components. No test surface exists today because the capability is unimplemented: KernelPCA + Nystroem + RBFSampler (aprender#3158, CRUX-N-12). PROMOTE by authoring a test named nystroem_error_monotone in module `kernel_approximation/tests` of crate `aprender-core`; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED and unfalsifiable-by-absence, NOT satisfied.
+  if_fails: rule 'Nystroem error decreases monotonically in n_components' is violated — the linfa parity claim for CRUX-N-12 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation
+- id: FALSIFY-CRUX-N-12-003
+  rule: "the Kernel trait is genuinely shared with the SVM"
+  prediction: "SVCRbf and KernelPCA produce identical kernel matrix values for the same gamma"
+  test: >-
+    LIVE-PENDING - the Kernel trait is genuinely shared with the SVM. No test surface exists today because the capability is unimplemented: KernelPCA + Nystroem + RBFSampler (aprender#3158, CRUX-N-12). PROMOTE by authoring a test named shared_between_svm_and_kernel_pca in module `kernel/tests` of crate `aprender-core`; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED and unfalsifiable-by-absence, NOT satisfied.
+  if_fails: rule 'the Kernel trait is genuinely shared with the SVM' is violated — the linfa parity claim for CRUX-N-12 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation
+
+proof_obligations:
+- type: invariant
+  property: "kernel PCA separates concentric circles where linear PCA cannot"
+- type: monotonicity
+  property: "Nystroem error decreases monotonically in n_components"
+- type: invariant
+  property: "the Kernel trait is genuinely shared with the SVM"
+
+kani_harnesses:
+- id: KH-CRUX-N-12-001
+  obligation: kernel_pca_unfolds_what_linear_pca_cannot
+  property: kernel_pca_unfolds_what_linear_pca_cannot_holds_on_bounded_input
+  bound: 4
+- id: KH-CRUX-N-12-002
+  obligation: nystroem_approximation_converges
+  property: nystroem_approximation_converges_holds_on_bounded_input
+  bound: 4

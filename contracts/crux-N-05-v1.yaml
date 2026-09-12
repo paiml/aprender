@@ -1,0 +1,75 @@
+# CRUX-N-05 — Autodiff op coverage: conv, pooling, embedding, gather
+# CRUX category N: Rust ML Framework Parity (linfa + burn).
+# Filed from the 2026-09-12 competitive sweep. Tracks GitHub #3151, epic #3146.
+# registry: false — this contract carries real falsification gates and claims no
+# exemption (operator ruling 2026-08-21, "no contract exemptions").
+
+metadata:
+  id: CRUX-N-05
+  version: "1.0.0"
+  created: "2026-09-12"
+  updated: "2026-09-12"
+  author: PAIML Engineering
+  registry: false
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "N — Rust ML Framework Parity"
+  competitor: burn
+  demand_score: 4  # 1..5, high priority in pmat work
+  intake_status: partial
+  github_issue: 3151
+  description: >
+    Differentiable operator coverage beyond the transformer path. burn-autodiff differentiates any graph expressible in its tensor API. aprender's autograd has 21 ops, all transformer-path (add, matmul, gelu, layer_norm, attention, softmax, ...). conv1d, conv2d, max_pool, avg_pool, gather and scatter are absent; embedding exists only inside wgpu_block.rs. aprender cannot train a CNN.
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - 'epic: https://github.com/paiml/aprender/issues/3146'
+  - 'story: https://github.com/paiml/aprender/issues/3151'
+  - 'competitor: https://github.com/tracel-ai/burn'
+
+equations:
+  gradcheck:
+    formula: |
+      ∀ op ∈ {conv1d, conv2d, max_pool2d, avg_pool2d, embedding, gather, scatter_add,
+              mean, max, min, prod, batch_norm}:
+        |∂f/∂x_analytic − (f(x+h) − f(x−h)) / 2h| / |∂f/∂x_analytic| ≤ 1e-6   at h = 1e-5, f64
+    domain: "randomized shapes × stride × padding × dilation × groups"
+    codomain: "relative gradient error"
+    invariants:
+    - "central differences, f64, over parameter combinations -- not a single shape"
+    - "embedding backward ACCUMULATES for repeated indices; the test asserts the summed gradient"
+    - "max/max_pool tie subgradient convention is documented AND tested"
+
+falsification_tests:
+- id: FALSIFY-CRUX-N-05-001
+  rule: "every new op passes finite-difference gradcheck"
+  prediction: "central-difference gradcheck at h=1e-5 on f64 with relative error <=1e-6 across stride/padding/dilation/groups"
+  test: >-
+    LIVE-PENDING - every new op passes finite-difference gradcheck. No test surface exists today because the capability is unimplemented: Autodiff op coverage: conv, pooling, embedding, gather (aprender#3151, CRUX-N-05). PROMOTE by authoring a test named gradcheck_all_new_ops in module `autograd/ops/correctness_tests` of crate `aprender-train`; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED and unfalsifiable-by-absence, NOT satisfied.
+  if_fails: rule 'every new op passes finite-difference gradcheck' is violated — the burn parity claim for CRUX-N-05 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation
+- id: FALSIFY-CRUX-N-05-002
+  rule: "embedding backward accumulates on repeated indices"
+  prediction: "a batch containing the same index twice yields the SUMMED gradient, asserted by value, not merely non-zero"
+  test: >-
+    LIVE-PENDING - embedding backward accumulates on repeated indices. No test surface exists today because the capability is unimplemented: Autodiff op coverage: conv, pooling, embedding, gather (aprender#3151, CRUX-N-05). PROMOTE by authoring a test named embedding_repeated_index_accumulates in module `autograd/ops/correctness_tests` of crate `aprender-train`; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED and unfalsifiable-by-absence, NOT satisfied.
+  if_fails: rule 'embedding backward accumulates on repeated indices' is violated — the burn parity claim for CRUX-N-05 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation
+- id: FALSIFY-CRUX-N-05-003
+  rule: "a CNN actually trains end to end"
+  prediction: "a small CNN reaches an asserted loss floor on an MNIST-like fixture"
+  test: >-
+    LIVE-PENDING - a CNN actually trains end to end. No test surface exists today because the capability is unimplemented: Autodiff op coverage: conv, pooling, embedding, gather (aprender#3151, CRUX-N-05). PROMOTE by authoring a test named cnn_trains_to_loss_floor in module `autograd/tests` of crate `aprender-train`; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED and unfalsifiable-by-absence, NOT satisfied.
+  if_fails: rule 'a CNN actually trains end to end' is violated — the burn parity claim for CRUX-N-05 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation
+
+proof_obligations:
+- type: invariant
+  property: "every new op passes finite-difference gradcheck"
+- type: invariant
+  property: "embedding backward accumulates on repeated indices"
+- type: invariant
+  property: "a CNN actually trains end to end"
+
+kani_harnesses:
+- id: KH-CRUX-N-05-001
+  obligation: gradcheck
+  property: gradcheck_holds_on_bounded_input
+  bound: 4
