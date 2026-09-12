@@ -17099,3 +17099,282 @@ roadmap:
   labels:
   - kind:triage
   notes: null
+- id: PMAT-3146
+  github_issue: 3146
+  item_type: task
+  title: 'EPIC: Pareto gap-closure vs linfa 0.8.1 and Burn 0.21.0 — 4 substrates, 4 breadth, 5 completions'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-09-12T11:44:58Z
+  updated: 2026-09-12T11:44:58Z
+  spec: null
+  acceptance_criteria:
+  - 13 children in 3 tiers across 0.68.0/0.69.0/0.70.0. Gap set derived 2026-09-12 by enumerating both sides. P0 = substrates (SVD, PCA-on-SVD, neighbor index, rank-typed tensor); P1 = breadth (autodiff conv ops, ONNX import, AdaBoost/Bagging, FTRL/SGD); P2 = completions gated on the P0s. CUT list recorded on the issue.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - epic
+  - enhancement
+  notes: null
+- id: PMAT-3147
+  github_issue: 3147
+  item_type: task
+  title: 'P0: SVD substrate in aprender-compute (Golub-Reinsch + randomized)'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-09-12T11:45:15Z
+  updated: 2026-09-12T11:45:15Z
+  spec: null
+  acceptance_criteria:
+  - 'No SVD exists repo-wide (only SymmetricEigen, crates/aprender-compute/src/eigen/mod.rs:72). Lands thin SVD + randomized (Halko) + deterministic sign convention. FALSIFIABLE: reconstruction ||A-USV^T||_F/||A||_F <= 1e-10 over 200 random f64 matrices spanning m<n, m=n, m>n, rank-deficient, cond>=1e8; U/V orthonormality proptest <= 1e-10; singular values match scipy.linalg.svd within 1e-9 relative on pinned fixtures; randomized path with p=10,q=2 recovers top-k within 1%; reverting the bidiagonalization step must turn the reconstruction test RED. Unlocks #3148 #3156 #3158. Milestone 0.68.0.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - P0
+  - enhancement
+  - pareto-linfa-burn
+  notes: null
+- id: PMAT-3148
+  github_issue: 3148
+  item_type: task
+  title: 'P0: rewire PCA onto SVD + add TruncatedSVD'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-09-12T11:45:15Z
+  updated: 2026-09-12T11:45:15Z
+  spec: null
+  acceptance_criteria:
+  - 'preprocessing/pca.rs:334 forms the covariance matrix then eigendecomposes — squares the condition number and is O(d^3) in FEATURES. docs/BEATS.md records the only measured sklearn loss: PCA fit_transform 18.6x slower. FALSIFIABLE: a guard asserts no d-x-d covariance is constructed in pca.rs; on singular values spanning 1e0..1e-9 the new path matches SVD-exact within 1e-7 where the covariance path is asserted to FAIL the same tolerance; explained_variance_ratio_ sums to 1.0 within 1e-12; sklearn component parity within 1e-8 up to sign; beat-sklearn-pca-speed-v1.yaml lands with the RE-MEASURED ratio and BEATS.md''s loss row is retired by measurement, not deletion — a still-losing number closes this honestly. Depends on #3147. Milestone 0.68.0.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - P0
+  - enhancement
+  - pareto-linfa-burn
+  notes: null
+- id: PMAT-3149
+  github_issue: 3149
+  item_type: task
+  title: 'P0: spatial neighbor index substrate (kd-tree + ball-tree + brute)'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-09-12T11:45:15Z
+  updated: 2026-09-12T11:45:15Z
+  spec: null
+  acceptance_criteria:
+  - 'KdTree/BallTree absent repo-wide; KNearestNeighbors is a linear scan. ASYMPTOTIC gap, not constant-factor. Six consumers pay O(n) today: KNN (classification/mod.rs), DBSCAN (cluster/dbscan.rs), LOF (cluster/lof.rs), TSNE (preprocessing/tsne.rs), SpectralClustering (cluster/spectral.rs), OPTICS (#3155). FALSIFIABLE: proptest over n in 10..2000, d in 1..30 asserts kd-tree and ball-tree return the IDENTICAL k-nearest set as brute force including tie handling; node-visit counts (not wall-clock) grow sub-linearly across n=1e3/1e4/1e5; DBSCAN/LOF/KNN produce identical labels before and after the rewire; perturbing the splitting plane turns the exactness proptest RED. Rewiring the consumers is IN scope — a substrate nobody calls is dead code. Milestone 0.68.0.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - P0
+  - enhancement
+  - pareto-linfa-burn
+  notes: null
+- id: PMAT-3150
+  github_issue: 3150
+  item_type: task
+  title: 'P0: const-generic rank-checked tensor — make LAYOUT-001 a compile error'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-09-12T11:45:15Z
+  updated: 2026-09-12T11:45:15Z
+  spec: null
+  acceptance_criteria:
+  - 'aprender-tensor/src/tensor.rs:10 is shape: Vec<usize> — rank is runtime-only. CLAUDE.md records LAYOUT-001 as having occurred 100+ times, defended only by runtime contracts and a hand-maintained FORBIDDEN IMPORTS list. Burn''s Tensor<B, const D: usize, K> makes rank mismatch a compile error. SCOPE IS NARROW ON PURPOSE: land the type + a RowMajor/ColMajor marker + trybuild proof + migrate exactly ONE hot path; whole-tree migration is the expensive 80% and is explicitly out. FALSIFIABLE: >= 8 trybuild compile-fail cases with committed expected stderr, plus a pass-suite so the type is not merely rejecting everything; zero runtime cost shown on the migrated path; byte-identical output before/after; a deliberate rank error in the migrated path must turn the build RED. Closing this as CUT with the trybuild evidence is a legitimate outcome if ergonomics are bad — record it, do not silently abandon. Milestone 0.68.0.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - P0
+  - enhancement
+  - pareto-linfa-burn
+  notes: null
+- id: PMAT-3151
+  github_issue: 3151
+  item_type: task
+  title: 'P1: autodiff op coverage — conv/pool/embedding/gather'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-09-12T11:45:15Z
+  updated: 2026-09-12T11:45:15Z
+  spec: null
+  acceptance_criteria:
+  - 'The 21 autograd fns are all transformer-path (add, matmul, gelu, layer_norm, attention, softmax, ...). conv1d, conv2d, max_pool, avg_pool, gather, scatter are ABSENT; embedding exists only inside wgpu_block.rs, not as a differentiable op. Consequence: aprender cannot train a CNN, or anything that is not a transformer. FALSIFIABLE: finite-difference gradcheck at h=1e-5 on f64 with relative error <= 1e-6 for every new op across stride/padding/dilation/groups combinations; PyTorch autograd parity on pinned fixtures per the existing beat_pytorch_autograd_grad.rs pattern; embedding backward ACCUMULATES correctly for repeated indices (asserts the summed gradient, not merely non-zero); max-tie subgradient convention documented AND tested; an end-to-end CNN trains to an asserted loss floor; CUDA/WGPU paths implement each op or fail loudly naming it — never silent CPU fallback while reporting a GPU device. Milestone 0.69.0.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - P1
+  - enhancement
+  - pareto-linfa-burn
+  notes: null
+- id: PMAT-3152
+  github_issue: 3152
+  item_type: task
+  title: 'P1: ONNX import — and resolve the advertised-but-stubbed export'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-09-12T11:45:15Z
+  updated: 2026-09-12T11:45:15Z
+  spec: null
+  acceptance_criteria:
+  - 'apr-cli/src/commands/export.rs:7 marks ONNX export ''(planned)'' while ExportFormat::Onnx is reachable and the error string offers onnx as valid — an advertised surface that does not work, the 0.63.0 dogfood defect class. Import is entirely absent; Burn ships burn-onnx. FALSIFIABLE: unsupported operators FAIL LOUDLY naming the op (fail-closed test — silent partial import is the defect this excludes); per-op numerical parity vs onnxruntime within 1e-5 on pinned fixtures; a real small model imports and matches onnxruntime top-1 on 20 pinned inputs; unsupported opset refused with the version in the message; the supported-op list lives in a contract YAML so it cannot drift from the implementation; apr-cli-commands-v1.yaml and registered_commands updated with FALSIFY-CLI-001/002 green. Export is either implemented or removed from the reachable format list — reachable-and-stubbed is not an option. Milestone 0.69.0.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - P1
+  - enhancement
+  - pareto-linfa-burn
+  notes: null
+- id: PMAT-3153
+  github_issue: 3153
+  item_type: task
+  title: 'P1: AdaBoost + generic Bagging/Voting meta-estimators'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-09-12T11:45:15Z
+  updated: 2026-09-12T11:45:15Z
+  spec: null
+  acceptance_criteria:
+  - 'AdaBoost absent repo-wide. aprender''s ensembles (RandomForestClassifier/Regressor, GradientBoostingClassifier) are all concrete and hard-wired — there is no generic meta-estimator over an arbitrary base. THE MISSING PIECE IS THE WRAPPER, not AdaBoost: BaggingClassifier<E: Estimator> makes all ~55 fittable types ensembleable in one change. FALSIFIABLE: on a fixture where a depth-1 tree scores below 0.70, the 50-estimator AdaBoost must exceed an asserted threshold — a test checking only fit().is_ok() locks the defect in and does not satisfy this; sample weights asserted to CHANGE between rounds with misclassified samples gaining weight; BaggingClassifier instantiated over three different base estimators (tree, KNN, GaussianNB) to prove genericity; OOB score within tolerance of held-out; sklearn AdaBoost accuracy parity within 2 points on iris/wine with pinned seed; soft voting fails at construction for bases lacking predict_proba. Milestone 0.69.0.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - P1
+  - enhancement
+  - pareto-linfa-burn
+  notes: null
+- id: PMAT-3154
+  github_issue: 3154
+  item_type: task
+  title: 'P1: FTRL-Proximal + SGDClassifier/SGDRegressor'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-09-12T11:45:15Z
+  updated: 2026-09-12T11:45:15Z
+  spec: null
+  acceptance_criteria:
+  - 'linfa-ftrl exists (Tested/Benchmarked); aprender has no FTRL and no classical SGD linear learner. CHEAP because the seam exists: online/mod.rs:61 already declares partial_fit with two implementors, so this adds learners to an existing trait rather than designing an architecture. Note online/ is otherwise aimed at LLM post-training (DPO, RLVR, distillation) — classical streaming linear models are a different use case the directory name over-promises. FALSIFIABLE: windowed running loss decreases monotonically on a separable stream; SPARSITY IS THE POINT — with lambda1>0 on 10,000 features where only 50 are informative, >= 90% of weights must be EXACTLY zero (a test that skips this tests the wrong thing); two shuffles converge within a documented tolerance; chunked partial_fit comparable to one batch fit; sklearn SGDClassifier parity within 2 points; every loss gradient finite-difference-checked; both compose inside the existing Pipeline. Milestone 0.69.0.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - P1
+  - enhancement
+  - pareto-linfa-burn
+  notes: null
+- id: PMAT-3155
+  github_issue: 3155
+  item_type: task
+  title: 'P2: OPTICS clustering'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-12T11:45:25Z
+  updated: 2026-09-12T11:45:25Z
+  spec: null
+  acceptance_criteria:
+  - 'OPTICS absent repo-wide; linfa-clustering ships it. Generalizes DBSCAN: one reachability ordering yields clusterings at EVERY density, fixing DBSCAN''s single real weakness (a global eps cannot find clusters of differing density). FALSIFIABLE: extract_dbscan(eps) must produce labels IDENTICAL to DBSCAN(eps) for >= 5 eps values on 3 fixtures — this is what proves the ordering correct; a varying-density fixture that DBSCAN provably cannot separate at ANY eps (asserted by sweeping eps and showing every result wrong) must be separated by extract_xi, otherwise the ticket has not demonstrated why OPTICS exists; noise gets reachability infinity and label -1; sklearn OPTICS ARI >= 0.95 on pinned fixtures; a test asserts the brute-force path is NOT taken above the auto-select threshold. DEPENDS ON #3149 — started early it grows its own O(n^2) scan. Milestone 0.70.0.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - P2
+  - enhancement
+  - pareto-linfa-burn
+  notes: null
+- id: PMAT-3156
+  github_issue: 3156
+  item_type: task
+  title: 'P2: PLSRegression / PLSCanonical'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-12T11:45:25Z
+  updated: 2026-09-12T11:45:25Z
+  spec: null
+  acceptance_criteria:
+  - 'PLS absent repo-wide; linfa-pls ships it. Standard method wherever predictors are many, collinear, and fewer samples than features (chemometrics, spectroscopy, genomics) — its absence is a hard no for that whole audience. PCA cannot substitute: PCA maximizes variance in X, PLS maximizes covariance with y. FALSIFIABLE: THE DIFFERENTIATING TEST is a synthetic dataset whose predictive signal lies in a LOW-variance direction of X — PCA-then-regression asserted BELOW a threshold and PLS above it on the same data; if both pass the fixture is wrong and does not demonstrate PLS. Also: successive components orthogonal within 1e-10; n_components=rank(X) reproduces OLS within 1e-8; duplicated columns fit where naive OLS is asserted to fail; sklearn PLSRegression coefficient parity within 1e-6 up to sign; multi-output y (PLS2) tested with a 3-column y. DEPENDS ON #3147. Milestone 0.70.0.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - P2
+  - enhancement
+  - pareto-linfa-burn
+  notes: null
+- id: PMAT-3157
+  github_issue: 3157
+  item_type: task
+  title: 'P2: LARS / LassoLars / lars_path'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-12T11:45:25Z
+  updated: 2026-09-12T11:45:25Z
+  spec: null
+  acceptance_criteria:
+  - 'LARS absent; linfa ships it. The value is the REGULARIZATION PATH, not another sparse regressor: lars_path computes every Lasso solution for all alphas in roughly one OLS fit, where today alpha selection for the existing coordinate-descent Lasso means refitting per candidate (model_selection/alpha.rs suggests that cost is already being paid). Makes an existing feature cheaper rather than only adding surface. FALSIFIABLE: for 20 alphas spanning the path, LassoLars coefficients match the existing coordinate-descent Lasso within 1e-8 — two independent implementations cross-checking each other is the load-bearing test; coefficients asserted piecewise-linear between knots; variables enter the active set in order of decreasing absolute residual correlation, asserted at each knot; THE EFFICIENCY CLAIM IS COUNTED IN FLOPS, NOT TIMED (repo rule: no wall-clock in required checks); LassoLarsIC picks the same alpha as an exhaustive AIC/BIC sweep; sklearn lars_path parity within 1e-8; n<p, collinear, and zero-variance columns each have a documented outcome, not a panic. Milestone 0.70.0.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - P2
+  - enhancement
+  - pareto-linfa-burn
+  notes: null
+- id: PMAT-3158
+  github_issue: 3158
+  item_type: task
+  title: 'P2: KernelPCA + Nystroem + RBFSampler'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-12T11:45:25Z
+  updated: 2026-09-12T11:45:25Z
+  spec: null
+  acceptance_criteria:
+  - 'KernelPca/Nystroem absent; linfa-kernel ships feature-space transformation. Kernel EVALUATION already exists inside SVCRbf/MultiClassSVC — it is just not exposed as a reusable transform. Two wins: KernelPCA gives nonlinear reduction; Nystroem/RBFSampler give a linear model kernel-like accuracy at linear cost, which matters here because LinearSVM is fast and SVCRbf is O(n^2)-ish. FALSIFIABLE: THE DIFFERENTIATING TEST asserts BOTH halves on concentric circles — linear PCA + linear classifier at chance (<= 0.6) AND RBF KernelPCA + the same classifier above 0.95; showing only the success half demonstrates nothing. Also: centered Gram matrix row/column means zero within 1e-10; Nystroem reconstruction error decreases monotonically over >= 5 n_components values; Nystroem+LinearSVM within 3 points of SVCRbf where LinearSVM alone is asserted worse by more than that margin; sklearn KernelPCA/Nystroem parity on pinned fixtures; the Kernel trait proven genuinely shared by asserting SVCRbf and KernelPCA produce identical kernel matrix values at the same gamma. DEPENDS ON #3147. Milestone 0.70.0.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - P2
+  - enhancement
+  - pareto-linfa-burn
+  notes: null
+- id: PMAT-3159
+  github_issue: 3159
+  item_type: task
+  title: 'P2: Gaussian + Sparse random projection with the JL bound'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-12T11:45:25Z
+  updated: 2026-09-12T11:45:25Z
+  spec: null
+  acceptance_criteria:
+  - 'RandomProjection absent; linfa-reduction ships it. Cheapest item in the epic, and the only reduction method with a DATA-INDEPENDENT guarantee: Johnson-Lindenstrauss preserves all pairwise distances within (1 +/- eps) at O(log n / eps^2) dimensions with no fit pass. Directly useful to work already here — the #3149 neighbour index degrades in high dimension as every kd-tree does, and citl/pattern/mod.rs:25 already carries a ''simplified linear scan for now'' comment. FALSIFIABLE: the JL guarantee is tested AS A GUARANTEE — for 1000 points in 5000 dims projected to johnson_lindenstrauss_min_dim(1000, 0.1), the FRACTION OF PAIRWISE DISTANCES distorted beyond 10% must be below a documented failure probability; checking a mean distortion would not test the lemma. Also: distortion tightens monotonically across >= 3 eps values; sparse variant meets the same bound at asserted density < 1/3; identical seed gives an identical projection matrix; the sparse matrix is never materialized densely, asserted by an allocation-count check (sparse-that-allocates-dense is the defect here); exact integer agreement with sklearn on johnson_lindenstrauss_min_dim; composes with #3149 — project then k-NN, asserting recall against exact search in the ORIGINAL space. Milestone 0.70.0.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - P2
+  - enhancement
+  - pareto-linfa-burn
+  notes: null
