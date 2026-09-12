@@ -38,6 +38,10 @@
 #                   a driver-less host must not be readable as "the CUDA example
 #                   works". These rows are re-run on the CUDA host before the
 #                   release verdict (G3.EX).
+#   needs-data      (Added 2026-09-12): 173 rows on the 0.67 train head (981
+#                   example targets) were classified `fail` whose stderr says
+#                   the example needs a FILE the repository does not ship.
+#                   Those are not runnable bare, but are not broken.
 #
 # Exit 1 if any row is `fail` or `timeout`. Exit 2 if the enumeration is EMPTY —
 # a gate that finds nothing to run and exits 0 is the vacuity defect this repo
@@ -71,6 +75,7 @@ SELFTEST=0
 # table first.
 NEEDS_ARGS_RE='^(Usage|error: the following required arguments)'
 NEEDS_HW_RE='(CUDA_ERROR_[A-Z_]+|no CUDA-capable device|CUDA driver version is insufficient|cuInit|libcuda\.so|libnvidia-ml|[Nn]o (suitable )?(graphics )?adapter|RequestAdapterError|NoAdapter|wgpu.*(device|adapter) (not|un)|Metal device (not|un))'
+NEEDS_DATA_RE='No such file or directory|[Mm]odel not found|not found at |Failed to open |[Nn]o tokenizer|Download with:|does not exist|hf://|apr pull '
 
 # ---------------------------------------------------------------------------
 # helpers
@@ -183,6 +188,11 @@ classify() {
         printf 'needs-hardware\t%s\n' "$(oneline "${line}")"
         return 0
     fi
+    line=$(grep -m1 -E "${NEEDS_DATA_RE}" "${log}" 2> /dev/null) || line=''
+    if [ -n "${line}" ]; then
+        printf 'needs-data\t%s\n' "$(oneline "${line}")"
+        return 0
+    fi
     line=$(grep -m1 -E '[^[:space:]]' "${log}" 2> /dev/null) || line=''
     printf 'fail\t%s: %s\n' "${stage}" "$(oneline "${line:-no output}")"
 }
@@ -230,7 +240,7 @@ build_then_run() {
 main_run() {
     local meta_file rows count out ver ws_root
     local td pkg name feats stage rc secs t0 class cite row note
-    local n_pass=0 n_fail=0 n_timeout=0 n_args=0 n_hw=0
+    local n_pass=0 n_fail=0 n_timeout=0 n_args=0 n_hw=0 n_data=0
 
     require_tools
     td=$(mktemp -d)
@@ -291,14 +301,15 @@ main_run() {
             timeout) n_timeout=$((n_timeout + 1)) ;;
             needs-args) n_args=$((n_args + 1)) ;;
             needs-hardware) n_hw=$((n_hw + 1)) ;;
+            needs-data) n_data=$((n_data + 1)) ;;
         esac
     done < <(printf '%s\n' "${rows}")
 
-    printf '# summary pass=%s fail=%s timeout=%s needs-args=%s needs-hardware=%s\n' \
-        "${n_pass}" "${n_fail}" "${n_timeout}" "${n_args}" "${n_hw}" >> "${out}"
+    printf '# summary pass=%s fail=%s timeout=%s needs-args=%s needs-hardware=%s needs-data=%s\n' \
+        "${n_pass}" "${n_fail}" "${n_timeout}" "${n_args}" "${n_hw}" "${n_data}" >> "${out}"
     printf 'wrote %s\n' "${out}"
-    printf 'summary pass=%s fail=%s timeout=%s needs-args=%s needs-hardware=%s\n' \
-        "${n_pass}" "${n_fail}" "${n_timeout}" "${n_args}" "${n_hw}"
+    printf 'summary pass=%s fail=%s timeout=%s needs-args=%s needs-hardware=%s needs-data=%s\n' \
+        "${n_pass}" "${n_fail}" "${n_timeout}" "${n_args}" "${n_hw}" "${n_data}"
 
     if [ "${n_fail}" -gt 0 ] || [ "${n_timeout}" -gt 0 ]; then
         printf 'FAIL: %s example(s) failed, %s timed out.\n' "${n_fail}" "${n_timeout}"
@@ -387,6 +398,7 @@ selftest() {
     st_expect 'class: hang -> timeout' "${out}" "${p}" hang timeout
     st_expect 'class: needs_arg -> needs-args' "${out}" "${p}" needs_arg needs-args
     st_expect 'class: nohw -> needs-hardware' "${out}" "${p}" nohw needs-hardware
+    st_expect 'class: nodata -> needs-data' "${out}" "${p}" nodata needs-data
 
     # rc of the failing example is recorded, not flattened to 1.
     if awk -F'\t' '$2 == "bad" && $4 == 3 { f = 1 } END { exit !f }' "${out}"; then
@@ -397,15 +409,15 @@ selftest() {
     fi
 
     # Every citing class cites a LINE, not an empty cell.
-    if awk -F'\t' '$3 == "needs-args" || $3 == "needs-hardware" { if ($6 == "") bad = 1 } END { exit bad }' \
+    if awk -F'\t' '$3 == "needs-args" || $3 == "needs-hardware" || $3 == "needs-data" { if ($6 == "") bad = 1 } END { exit bad }' \
             "${out}"; then
-        st_row PASS 'cite: needs-args and needs-hardware rows cite a line'
+        st_row PASS 'cite: the three skip classes cite a line'
     else
-        st_row FAIL 'cite: needs-args and needs-hardware rows cite a line'
+        st_row FAIL 'cite: the three skip classes cite a line'
     fi
 
     # Trailer counts.
-    if grep -qxF '# summary pass=1 fail=1 timeout=1 needs-args=1 needs-hardware=1' "${out}"; then
+    if grep -qxF '# summary pass=1 fail=1 timeout=1 needs-args=1 needs-hardware=1 needs-data=1' "${out}"; then
         st_row PASS 'trailer: summary counts'
     else
         st_row FAIL 'trailer: summary counts' "$(oneline "$(grep '^# summary' "${out}" || true)")"
@@ -419,11 +431,11 @@ selftest() {
     fi
 
     # No unclassified row.
-    if awk -F'\t' '/^#/ { next } { if ($3 !~ /^(pass|fail|timeout|needs-args|needs-hardware)$/) bad = 1 } END { exit bad }' \
+    if awk -F'\t' '/^#/ { next } { if ($3 !~ /^(pass|fail|timeout|needs-args|needs-hardware|needs-data)$/) bad = 1 } END { exit bad }' \
             "${out}"; then
-        st_row PASS 'rows: every row carries one of the five classes'
+        st_row PASS 'rows: every row carries one of the six classes'
     else
-        st_row FAIL 'rows: every row carries one of the five classes'
+        st_row FAIL 'rows: every row carries one of the six classes'
     fi
 
     st_mutation_row "${td}" "${ws}" "${p}"
