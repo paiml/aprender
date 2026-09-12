@@ -7,6 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.67.0] - 2026-09-12
+
+0.67.0 is the first train of the 06x schedule (docs/specifications/06x-release-schedule.md, epic #3078): a release every 2–3 days whose PR tier is one build graph and whose CI runs on all three self-hosted boxes. Correctness: every Q5_K tensor decoded wrong on the CPU path, in `apr import` and in the CUDA GEMV — all three readers had invented a layout; the oracle is now gguf-py on a real block (#3110, #3113). Qwen3.5/Qwen3.8 hybrid GGUFs are refused honestly on both backends instead of promising a CPU fallback (#3099; the CPU forward itself ships in 0.68 behind the parity gate, #3091). aarch64: NEON LZ4 read unwritten output at offsets 16..63 (#3103) and the ARM-only clippy errors that kept gx10 out of `ci / lint` are gone (#3112). Fleet: arch-neutral jobs run on any clean-room box — intel, yoga, gx10 (#3104); every self-hosted job checks the box's toolset before spending an hour (#3088); guard-cargo/guard-tree fit the 20-minute budget with seven nightly-class steps moved to guards-nightly.yml (#3094); advisory gpu-quick (gx10) and cuda-unit (yoga) PR jobs (#3095); the quick tier is one nextest invocation, 55 min → ~6 min, and the merge queue mirrors the PR (#3089); tree-reader modules cut quick-tier seconds 93 % → 58 %, the 2-h mutant arm sweep is input-gated, and DIRTY roadmap conflicts merge by id (#3115). Release integrity: four apr binaries on every tag ({cuda,cpu} × {x86_64,aarch64}) verified by `check_release_assets.sh` (#3092); every workspace example must build AND run before a tag, plus apr-cookbook and release-notes gates (#3122); a low-priority nightly coverage run on yoga toward the 95 % target (#3123). Dark targets: the quick tier runs every integration target of a touched crate, which surfaced 77 vacuous spec_checklist rows (#3131), 20 stale aprender-serve rows (GH-438 dtype bytes, PMAT-855 byte glyphs, GH-213 load-time truncation, CRUX-C-34 health codes, GGUF v2 support) and one wall-clock benchmark posing as a test — now behind `bench-gates`. Triage: every open issue and PR carries a milestone and a type + priority label (#3102, #3125). Release assets: the CUDA `apr` binaries are built inside rust:1.93.0-bullseye on gx10/yoga for a glibc 2.31 floor — the native v0.66.0 x86_64 asset needed GLIBC_2.43 and did not start on Ubuntu 22.04 — and the CUDA lane moves its assets through the REST API because the self-hosted boxes carry no gh (#3072, #3074, #3086).
+
+The seventeen rows below marked *via train #3127* landed as one squash (cb829fcb9, 2026-09-12T09:12Z, merge-queue run 34684644616); their row PRs are closed as ancestors of the train head, not merged, so a merged-PR listing alone would miss them.
+
+### Fixed
+
+- fix(compute,aarch64): gx10 could not run ci / lint — ARM-only clippy errors, and #2567's parallel Q4_K path was never called (PMAT-1102) (#3112, via train #3127)
+- fix(guard): spec-conformance fixtures are bytes — the zero-width key rendered only under a UTF-8 locale (#3109, via train #3127)
+- fix(quantize): Q5_K readers decoded an invented layout — every Q5_K tensor on the CPU path and in apr import was wrong (PMAT-1101) (#3110, via train #3127)
+- fix(cuda): the Q5_K GEMV read each value's fifth bit from a sequential bitmask — every Q5_K tensor decoded wrong on the GPU (#3111) (#3113, via train #3127)
+- fix(gguf): Qwen3.5/Qwen3.8 hybrid GGUFs — the refusal names BOTH backends and the CLI stops promising a CPU fallback (#3091 ask 2, #3090 related; PMAT-1098) (#3099, via train #3127)
+- fix(tests): eight spec_checklist targets read repo paths from the crate dir — 77 vacuous rows now read the tree (#3130) (#3131, via train #3127)
+- fix(compute): nine GPU tests panicked without an adapter — the nightly coverage run was RED six days on an environment fact (PMAT-1106) (#3116, via train #3127)
+- fix(ptx): emitter was non-deterministic — the cubin cache has NEVER hit (42,880 stale cubins / 498 MB) (#3066)
+- fix(zram-core,aarch64): NEON LZ4 match copy read unwritten output at offsets 16..63; orchestrate test hard-coded an x86_64 'native' target (gx10 CI P0, PMAT-1098) (#3103)
+- fix(serve,x86): AVX2 Q4_K×Q8_K kernels paired each block with the wrong scale — no CI box ever ran them (#3106)
+
+### Changed
+
+- dogfood(examples): G3.EX found a dead example, an undeclared feature gate and a panicking benchmark — coop_gemm_bench deleted with its feature, prose_detection gets required-features, bench_bpe prints usage (#3136)
+- ci(cuda-nightly): 67-F1 — PP-26 byte-compare via REST with the job token; gx10 host receipt (#3097)
+- ci: arch-neutral jobs run on any clean-room box (intel, yoga, gx10); workspace-test keeps X64; perf benchmarks pin intel (#3100) (#3104, via train #3127)
+- ci(67-C2): every self-hosted job asks the box what it has before it spends an hour — ci_self_hosted_preflight.sh + fleet-toolset.yml (P0-2 #3083, PMAT-1098) (#3088, via train #3127)
+- perf(ci): 67-E3 — guard-cargo and guard-tree under the 20-minute budget: 7 nightly-class steps move to guards-nightly.yml, guard_tree.sh dispatches in parallel (289 s → 96 s) ( (#3094, via train #3127)
+- ci(gpu): 67-C1/D1 — advisory gpu-quick (gx10) and cuda-unit (yoga) PR jobs that skip the hosts a change does not touch (#3095, via train #3127)
+- ci(release): P0-1 — four apr binaries on every tag ({cuda,cpu} × {x86_64,aarch64}), verify-apr-assets requires all four, check_release_assets.sh + C13 + a post-publish dogfood r (#3092, via train #3127)
+- spec(release): 06x release schedule — 0.67.0→0.70.0 every 2–3 days, one epic per train, priorities A–G with acceptance commands; contract + drift gate (PMAT-1097) (#3087, via train #3127)
+- docs(audits): PMAT-1100 triage receipt — every open issue/PR without a milestone filed into a release train (263 rows, 33/33 verified; Alfredo's first) (#3102, via train #3127)
+- dogfood(release): every example builds AND runs, apr-cookbook and release-notes gates, nightly examples on yoga (PMAT-3121, #3121) (#3122, via train #3127)
+- ci(coverage-nightly): low-priority coverage run on the yoga pool, timeout 150 min (operator 2026-09-11: nightly low-priority coverage toward 95%) (#3123, via train #3127)
+- audit(triage): PMAT-3124 — the 72 unlabeled open issues now carry a type + priority label; 0 remain (#3124) (#3125, via train #3127)
+- docs(spec): NVIDIA CUDA Rust integration for GPU quality stabilization (0.67) (#3061, via train #3127)
+- ci(release): the workspace target/ mountpoint is pre-created before the bullseye CUDA build — the root-owned mountpoint killed rebuilds (#3098, via train #3127)
+- perf(ci): P0-3 — the quick tier is ONE build graph (55 min → ~6 min) and the merge queue mirrors the PR instead of paying an hour for a moved main (67-E1 + 67-E2, #3084, PMAT-1098) (#3089)
+- ci(fleet): sweeper+steward+ledgers, roadmap 3-way merge driver, 80/20 tier filterset, tree-reader MODULES (93%→58% quick-tier seconds), 2-h arm sweep input-gated (PMAT-1105/3118/3119/3120) (#3115)
+- release(0.67): train A — 17 row PRs of the 0.67.0 train in one build graph (PMAT-1098) (#3127)
+- ci(release): CUDA apr binaries for x86_64 and aarch64 on every release — a hard requirement, verified in the bytes and on both GPU hosts (PMAT-1096, #2869) (#3072)
+- ci(release): the CUDA lane uploads, verifies and downloads through the REST API — the self-hosted boxes carry no gh (gx10: 'gh: command not found', run 34448908554, after a green build: 21M asset, glibc 2.39 floor) (#3074)
+- docs(audits): PMAT-1096 receipt status: complete — v0.66.0 tagged, released (pv + CUDA apr assets), 74/74 on crates.io, re-verified on the published artifact (#3085)
+- ci(release): CUDA apr assets built inside rust:1.93.0-bullseye on gx10/yoga — glibc 2.31 floor; the native v0.66.0 x86_64 asset needs GLIBC_2.43 and does not start on 22.04 (#3086)
+
 ## [0.66.0] - 2026-09-09
 
 The **honest-GPU model** release. Milestone `0.66.0` was narrowed by the operator
