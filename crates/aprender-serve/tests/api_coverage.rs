@@ -3779,7 +3779,12 @@ fn test_completion_request_with_all_params() {
     let deserialized: CompletionRequest = serde_json::from_str(&json).expect("should deserialize");
 
     assert_eq!(deserialized.max_tokens, Some(256));
-    assert_eq!(deserialized.temperature, Some(0.7));
+    // The temperature deserializer narrows through f32 on purpose (types.rs
+    // deserialize_temperature_f64: "the value still narrows to f32 before it reaches a
+    // sampler, so the narrowing is checked here too"), so a round trip of 0.7 yields
+    // f64::from(0.7f32), never 0.7 exactly. Asserting the narrowed value is asserting
+    // the contract; asserting 0.7 was a dark row that could never pass (#3130, train #3127).
+    assert_eq!(deserialized.temperature, Some(f64::from(0.7_f32)));
 }
 
 #[test]
