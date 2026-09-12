@@ -4,13 +4,13 @@ merged: "[U] — this docs PR lands after the v0.67.0 tag; amended with the squa
 ticket: PMAT-1098
 row: APR-RELEASE-001 §0 selector row 1 — the 0.67.0 train (session 1 of the spec; epic #3078)
 epic: 3078
-model: "orchestrator claude-fable-5-1 from phase 4 (opus before; phase-boundary.sh recorded opus->fable-5-1, docs/audits/impl-routing.jsonl)"
+model: "orchestrator claude-opus-5 from mid-phase 4 (opus -> fable-5-1 at phase 4 entry, then fable-5-1 -> claude-opus-5 mid-phase; both movements are rows in docs/audits/impl-routing.jsonl via route.sh record-event)"
 tokens_used: "orchestrator [U] (not instrumented); delegate ph4.teamwork 145,813 tokens / 42 tool uses; delegate ph4.g3ex 115,537 tokens / 38 tool uses (harness usage lines)"
 wall_clock_s: "[U] — session spans a compaction; the train's own step timestamps are in rel-067-autopilot/STATUS"
-orch_model: claude-fable-5-1
+orch_model: claude-opus-5
 orch_class: orchestration
 orch_decision: "self for every orchestration phase (queue, autopilot, tag, dry-run receipt, receipt); agy teamwork lane for the plan grill (Q2: spec artifact); agy goal lane (R-4, single module) for the G3.EX classifier fix, which failed isolation and was cherry-picked and re-verified"
-fable_binding: true
+fable_binding: false  # binding held while fable-5-1 drove phases 1-4; the harness moved the session to claude-opus-5 mid-phase-4 and the move is recorded, not asserted
 quota_age_h: absent
 quota_mark: U
 k_measured_at_set: 32
@@ -76,6 +76,46 @@ Slots: never more than 1 Claude subagent live (both dispatches sequential; `live
 | goal lane: bashrs no new findings | not returned | origin/main: 0 error 16 warning 60 info; branch: 0 error 16 warning 63 info; `comm` on normalised lines shows no new warning text |
 | goal lane: "committed on the current branch" | claimed | FALSE as stated — branch head unchanged; the commit lived on the lane worktree's detached HEAD (`git branch --contains cf655b7cd` empty) until cherry-picked |
 | G3.EX sweep on the train head (lambda, launched 07:03Z, `--out …/dogfood-examples`) | #3136's body: "classified three rows outside pass/args/hw" over 981 targets | at 937/981 rows: pass=542 fail=173 timeout=18 needs-args=26 — the body read a partial sweep; corrected by comment on #3136. Re-runs with stderr kept: `bench_bpe` rc=2 Usage (needs-args after #3136), `gpu_fallback_dogfood` rc=1 "Model not found at ../tiny-model-ground-truth/…", `bench_matmul_only` rc=1 "Failed to open /home/noah/models/TinyLlama-…gguf: No such file or directory" — needs-data, the class #3163 adds |
+
+## Build ledger (§3.6 / §5 P0) — 182 records, written this train
+
+`docs/build-ledger/2026-09-12/`, one JSON per (sha, host, job), from
+`gh api repos/paiml/aprender/actions/runs/<run>/jobs`. `peak_rss_mb` and
+`free_disk_gb` are `null` with `[U]` in `unmeasured[]`: the REST API does not
+expose them and an absent measurement must not read as a zero. 182 > the 20 that
+§8 requires before P0 stops being a stop condition.
+
+| job | intel p50/p95 | gx10 p50/p95 | yoga p50/p95 |
+|---|---|---|---|
+| workspace-test | 1790 / 4148 s | 790 / 790 s | 259 / 3167 s |
+| guard-cargo | 1201 / 1820 s | 422 / 516 s | 830 / 1046 s |
+| guard-tree | 604 / 879 s | 192 / 213 s | 379 / 379 s |
+| queue wait p95 | 2995 s | 233 s | 1654 s |
+
+Per-run required-check wall clock by the host mix the run touched: gx10 only
+9.4 min (n=4); gx10+yoga 11.3 min (n=4); gx10+intel 42.6 min (n=10);
+gx10+intel+yoga 31.6 min (n=11). Every run that touched intel cost 32-43 min.
+
+**§1 coupling is no longer `[U]`.** p95 required-check wall clock = 72.3 min over
+29 runs, so `max PRs per train = 72 h / 72.3 min = 59.7`. §8's "stop cutting
+trains below 10 PRs/train" does not fire.
+
+## Queue actions taken on this train (§3.4 heijunka)
+
+| action | why | evidence |
+|---|---|---|
+| dequeued #3046 | its merge-group CI was RED on `guard-tree` (`check_roadmap_diff_additive.sh`, 44 checks / 1 failed) and the entry held a build slot it could never use | run 34689617187; `dequeuePullRequest` mutation |
+| cut #3046 from the 0.67.0 CHANGELOG | §4: scope is assigned to a train after the fact, and a PR that cannot precede the cut is not in it | bump commit e1548f34b |
+| moved #3046 to milestone 0.68.0 | same | comment 5645837638 |
+| cancelled CI on #3163 and #3164 | six aprender `workspace-test` jobs were live on intel at once against §3.4; two of them were mine and were not on the train | runs 34692405792, 34692277291 |
+
+## T-2 evidence for this cut
+
+| gate | verdict | how |
+|---|---|---|
+| G3.CB apr-cookbook names 0.67.0 | **PASS** | `gh api repos/paiml/apr-cookbook/commits?since=2026-09-10T04:55:52Z` returns "docs: aprender 0.67.0 - what changes for cookbook users (Refs #434) (#435)" |
+| G3.RN CHANGELOG `[0.67.0]` non-empty | PASS | bump worktree, 4 sections |
+| G3.EX every example runs | in flight | see the sweep section |
 
 ## Jidoka
 - G3.EX classifier gap (173 rows read as defects): fixed in #3163, held until post-tag (`automerge-held.txt`); the release-grade sweep re-runs with it.
