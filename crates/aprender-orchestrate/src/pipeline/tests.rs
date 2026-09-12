@@ -1325,8 +1325,17 @@ edition = "2021"
     .unwrap();
     std::fs::write(project_dir.join("src/main.rs"), "fn main() {}\n").unwrap();
 
-    // Use the native target so compilation should succeed
-    let stage = BuildStage::new(false, Some("x86_64-unknown-linux-gnu".to_string()), false);
+    // Use the HOST triple so compilation succeeds on any architecture. The literal
+    // "x86_64-unknown-linux-gnu" failed on aarch64 (gx10, 2026-09-10): building for a
+    // non-host triple needs a cross toolchain the box does not have.
+    let host = std::process::Command::new("rustc")
+        .arg("-vV")
+        .output()
+        .ok()
+        .and_then(|o| String::from_utf8(o.stdout).ok())
+        .and_then(|s| s.lines().find_map(|l| l.strip_prefix("host: ").map(str::to_string)))
+        .expect("rustc -vV must report the host triple");
+    let stage = BuildStage::new(false, Some(host), false);
     let ctx = PipelineContext::new(PathBuf::from("/tmp/input"), project_dir.clone());
 
     let result = stage.execute(ctx).await;

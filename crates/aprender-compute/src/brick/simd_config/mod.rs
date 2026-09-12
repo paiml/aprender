@@ -83,9 +83,12 @@ impl LazySimdConfig {
         #[cfg(target_arch = "aarch64")]
         {
             // NEON is always available on aarch64
-            return ComputeBackend::Neon;
+            ComputeBackend::Neon
         }
-        ComputeBackend::Scalar
+        #[cfg(not(target_arch = "aarch64"))]
+        {
+            ComputeBackend::Scalar
+        }
     }
 
     /// Detect AMX support (Intel Sapphire Rapids+).

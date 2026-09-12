@@ -17,6 +17,9 @@ impl CudaExecutor {
         skip_debug: bool,
         profiling: bool,
     ) -> Result<(), GpuError> {
+        self.dump_stage(crate::inference_trace::save_tensor_stage::SaveTensorStage::AttnNorm, layer_idx as u32, hidden_buf1, hidden_dim as usize);
+        self.dump_stage(crate::inference_trace::save_tensor_stage::SaveTensorStage::QPostRope, layer_idx as u32, q_buf, q_dim as usize);
+        self.dump_stage(crate::inference_trace::save_tensor_stage::SaveTensorStage::KPostRope, layer_idx as u32, k_buf, k_buf.len());
         // PERF-050 round 8: ORACLE side of the layer-0 stage differential.
         //
         // These q/k/v are the OUTPUT of workspace_qkv_rope_phase, which lives in apply.rs and
@@ -126,6 +129,9 @@ impl CudaExecutor {
             self.debug_check_buf(input_staging, "Residual1", layer_idx)?;
         }
 
+        self.dump_stage(crate::inference_trace::save_tensor_stage::SaveTensorStage::Attention, layer_idx as u32, attn_out_buf, q_dim as usize);
+        self.dump_stage(crate::inference_trace::save_tensor_stage::SaveTensorStage::AttnOut, layer_idx as u32, hidden_buf1, hidden_dim as usize);
+        self.dump_stage(crate::inference_trace::save_tensor_stage::SaveTensorStage::PostAttnResidual, layer_idx as u32, input_staging, hidden_dim as usize);
         Ok(())
     }
 }

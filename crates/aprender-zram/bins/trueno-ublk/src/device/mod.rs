@@ -610,10 +610,13 @@ fn detect_simd_backend() -> String {
 
     #[cfg(target_arch = "aarch64")]
     {
-        return "neon".to_string();
+        "neon".to_string()
     }
 
-    "scalar".to_string()
+    #[cfg(not(target_arch = "aarch64"))]
+    {
+        "scalar".to_string()
+    }
 }
 
 // ============================================================================

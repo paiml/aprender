@@ -21,6 +21,14 @@ use aprender::text::bpe::Qwen2BpeTokenizer;
 
 /// X1: No todo!() in release path
 /// Falsification: Release binary panics on todo!()
+
+fn workspace_root() -> std::path::PathBuf {
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .canonicalize()
+        .expect("workspace root must resolve from crates/aprender-core")
+}
+
 #[test]
 fn x1_no_todo_in_release_path() {
     // Check that key production modules have ZERO todo!()
@@ -34,7 +42,7 @@ fn x1_no_todo_in_release_path() {
     ];
 
     for module in &core_production_modules {
-        if let Ok(content) = std::fs::read_to_string(module) {
+        if let Ok(content) = std::fs::read_to_string(&module) {
             let count = content.matches("todo!()").count();
             assert!(
                 count == 0,
@@ -61,7 +69,7 @@ fn x2_no_unimplemented_in_public_api() {
     ];
 
     for module in &inference_modules {
-        if let Ok(content) = std::fs::read_to_string(module) {
+        if let Ok(content) = std::fs::read_to_string(&module) {
             let count = content.matches("unimplemented!()").count();
             assert!(
                 count == 0,
@@ -78,7 +86,11 @@ fn x2_no_unimplemented_in_public_api() {
 #[test]
 fn x3_trueno_dependency_documented() {
     // Verify trueno is a mandatory dependency in Cargo.toml
-    let cargo_toml = std::fs::read_to_string("Cargo.toml").expect("Cargo.toml should exist");
+    let cargo_toml =
+        std::fs::read_to_string(&workspace_root().join("Cargo.toml")).expect(&format!(
+            "Cargo.toml should exist, path: {:?}",
+            workspace_root().join("Cargo.toml")
+        ));
 
     assert!(
         cargo_toml.contains("trueno"),
@@ -114,8 +126,12 @@ fn x3_trueno_dependency_documented() {
 #[test]
 fn x4_architecture_layers_documented() {
     // Check spec documents layer separation
-    let spec_path = "docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md";
-    let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
+    let spec_path = workspace_root()
+        .join("docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md");
+    let spec = std::fs::read_to_string(&spec_path).expect(&format!(
+        "Specification should exist, path: {:?}",
+        spec_path
+    ));
 
     assert!(
         spec.contains("aprender") && spec.contains("realizar") && spec.contains("trueno"),
@@ -140,7 +156,11 @@ fn x5_no_duplicate_http_server() {
 #[test]
 fn x6_no_axum_in_aprender() {
     // Check Cargo.toml doesn't have axum in core deps
-    let cargo_toml = std::fs::read_to_string("Cargo.toml").expect("Cargo.toml should exist");
+    let cargo_toml =
+        std::fs::read_to_string(&workspace_root().join("Cargo.toml")).expect(&format!(
+            "Cargo.toml should exist, path: {:?}",
+            workspace_root().join("Cargo.toml")
+        ));
 
     // axum should be in apr-cli with inference feature, not in aprender core
     let lines: Vec<&str> = cargo_toml.lines().collect();
@@ -170,8 +190,12 @@ fn x6_no_axum_in_aprender() {
 #[test]
 fn x7_tests_detect_logic_errors() {
     // Verify test coverage is meaningful
-    let spec_path = "docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md";
-    let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
+    let spec_path = workspace_root()
+        .join("docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md");
+    let spec = std::fs::read_to_string(&spec_path).expect(&format!(
+        "Specification should exist, path: {:?}",
+        spec_path
+    ));
 
     assert!(
         spec.contains("96.94%") || spec.contains("coverage"),
@@ -213,8 +237,12 @@ fn x8_benchmarks_vary_with_input() {
 #[test]
 fn x9_profile_metrics_vary_with_model() {
     // This is a specification check - actual profiling is implementation-dependent
-    let spec_path = "docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md";
-    let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
+    let spec_path = workspace_root()
+        .join("docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md");
+    let spec = std::fs::read_to_string(&spec_path).expect(&format!(
+        "Specification should exist, path: {:?}",
+        spec_path
+    ));
 
     assert!(
         spec.contains("GFLOPS") || spec.contains("Roofline"),
@@ -227,7 +255,11 @@ fn x9_profile_metrics_vary_with_model() {
 #[test]
 fn x10_binary_size_realistic() {
     // Check that we have substantial dependencies
-    let cargo_toml = std::fs::read_to_string("Cargo.toml").expect("Cargo.toml should exist");
+    let cargo_toml =
+        std::fs::read_to_string(&workspace_root().join("Cargo.toml")).expect(&format!(
+            "Cargo.toml should exist, path: {:?}",
+            workspace_root().join("Cargo.toml")
+        ));
 
     let dep_count = cargo_toml.matches("[dependencies]").count()
         + cargo_toml

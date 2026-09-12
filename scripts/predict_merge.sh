@@ -164,6 +164,7 @@ else
     echo "predict_merge: merge(origin/main, HEAD) has conflicts -- cannot predict" >&2
 fi
 
+case "$record_dir" in *..*) echo "predict_merge: refusing a record dir with '..': $record_dir" >&2; exit 1 ;; esac
 mkdir -p "$record_dir" || exit 1
 printf '{"origin_main_sha":"%s","head_sha":"%s","tree_clean":%s}\n' \
     "$origin_main_sha" "$head_sha" "$tree_clean" > "$record_file" || exit 1

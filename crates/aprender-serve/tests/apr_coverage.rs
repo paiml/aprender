@@ -509,14 +509,19 @@ fn test_tensor_entry_dtypes() {
         (3, "Q4_1"),
         (6, "Q5_0"),
         (7, "Q5_1"),
-        (8, "Q8_0"),
-        (9, "Q8_1"),
+        // GH-438: bytes 8/9 are the LEGACY APR-native ids (they collided with GGML
+        // Q8_0/Q8_1); the reader maps them to "q4"/"q8", never to the GGML names.
+        (8, "q4"),
+        (9, "q8"),
         (10, "Q2_K"),
         (11, "Q3_K"),
         (12, "Q4_K"),
         (13, "Q5_K"),
         (14, "Q6_K"),
         (30, "BF16"),
+        // GH-438: the APR-native ids outside the GGML range
+        (128, "q4"),
+        (129, "q8"),
     ];
     for (dtype_byte, expected) in dtypes {
         let data = create_binary_tensor_entry("test", dtype_byte, &[1], 0, 4);
@@ -2003,11 +2008,12 @@ fn test_tensor_entry_dtype_q5_1() {
 }
 
 #[test]
-fn test_tensor_entry_dtype_q8_1() {
-    // Q8_1 = GGML dtype byte 9
+fn test_tensor_entry_dtype_byte_9_is_legacy_apr_q8() {
+    // GH-438: byte 9 collided with GGML Q8_1 and is read as the legacy AprQ8 id
     let data = create_binary_tensor_entry("test", 9, &[1], 0, 4);
     let (entry, _) = TensorEntry::from_binary(&data).expect("should parse");
-    assert_eq!(entry.dtype, "Q8_1");
+    assert_eq!(entry.dtype, "q8");
+    assert_ne!(entry.dtype, "Q8_1", "pre-GH-438 mapping must not come back");
 }
 
 #[test]
@@ -2194,17 +2200,22 @@ fn test_apr_model_q6k_tensor_loading() {
     assert_eq!(tensor.unwrap().dtype, "Q6_K");
 }
 
-/// Helper to create APR model with Q8_0 tensor
-fn create_apr_model_with_q8_0_tensor() -> Vec<u8> {
+/// Helper to create an APR model with an APR-native Q8 tensor (dtype byte 129).
+///
+/// GH-438: the tensor-index dtype byte 8 is the LEGACY AprQ4 id, not GGML Q8_0 —
+/// `AprV2Model` maps 8 → "q4" for backwards compatibility, so a GGML Q8_0 block
+/// cannot be addressed from an APR v2 tensor index at all. The int8 path the
+/// format actually ships is AprQ8 (id 129): `[f32 scale] + [i8 x N]`.
+fn create_apr_model_with_apr_q8_tensor() -> Vec<u8> {
     let metadata = r#"{"architecture":"test","vocab_size":100,"hidden_size":64}"#;
     let metadata_bytes = metadata.as_bytes();
     let metadata_padded_size = metadata_bytes.len().div_ceil(64) * 64;
 
-    // Q8_0 tensor: dtype=8 (GGML Q8_0), shape [32] (one block)
-    let tensor_entry = create_binary_tensor_entry("test.q8_0", 8, &[32], 0, 34);
+    // AprQ8 tensor: dtype=129, shape [32], data = f32 scale + 32 i8 values
+    let data_size = 4usize + 32;
+    let tensor_entry = create_binary_tensor_entry("test.q8", 129, &[32], 0, data_size as u64);
     let tensor_index_offset = HEADER_SIZE as u64 + metadata_padded_size as u64;
     let data_offset = tensor_index_offset + tensor_entry.len() as u64;
-    let data_size = 34usize; // Q8_0: 34 bytes per block (2 + 32)
     let total_size = data_offset as usize + data_size;
     let mut data = vec![0u8; total_size];
 
@@ -2226,24 +2237,83 @@ fn create_apr_model_with_q8_0_tensor() -> Vec<u8> {
     let idx_start = tensor_index_offset as usize;
     data[idx_start..idx_start + tensor_entry.len()].copy_from_slice(&tensor_entry);
 
-    // Q8_0 tensor data (simulated)
-    // scale (f16) + 32 int8 values
+    // AprQ8 tensor data: scale (f32 = 1.0) + 32 int8 values 0..31
     let data_start = data_offset as usize;
-    data[data_start..data_start + 2].copy_from_slice(&0x3C00u16.to_le_bytes()); // scale = 1.0
+    data[data_start..data_start + 4].copy_from_slice(&1.0f32.to_le_bytes());
     for i in 0..32 {
-        data[data_start + 2 + i] = i as u8; // quant values 0-31
+        data[data_start + 4 + i] = i as u8;
     }
 
     data
 }
 
+/// GH-438 collision falsifier: dtype byte 8 is legacy AprQ4, never GGML Q8_0.
+fn create_apr_model_with_legacy_dtype_byte_8() -> Vec<u8> {
+    let metadata = r#"{"architecture":"test","vocab_size":100,"hidden_size":64}"#;
+    let metadata_bytes = metadata.as_bytes();
+    let metadata_padded_size = metadata_bytes.len().div_ceil(64) * 64;
+
+    // 32 elements of AprQ4 = one 18-byte block [f16 scale + 16 nibble bytes]
+    let data_size = 18usize;
+    let tensor_entry = create_binary_tensor_entry("test.legacy8", 8, &[32], 0, data_size as u64);
+    let tensor_index_offset = HEADER_SIZE as u64 + metadata_padded_size as u64;
+    let data_offset = tensor_index_offset + tensor_entry.len() as u64;
+    let total_size = data_offset as usize + data_size;
+    let mut data = vec![0u8; total_size];
+
+    data[0..4].copy_from_slice(&MAGIC);
+    data[4] = 2;
+    data[6..8].copy_from_slice(&AprFlags::QUANTIZED.to_le_bytes());
+    data[8..12].copy_from_slice(&1u32.to_le_bytes());
+    data[12..20].copy_from_slice(&(HEADER_SIZE as u64).to_le_bytes());
+    data[20..24].copy_from_slice(&(metadata_bytes.len() as u32).to_le_bytes());
+    data[24..32].copy_from_slice(&tensor_index_offset.to_le_bytes());
+    data[32..40].copy_from_slice(&data_offset.to_le_bytes());
+    data[HEADER_SIZE..HEADER_SIZE + metadata_bytes.len()].copy_from_slice(metadata_bytes);
+    let idx_start = tensor_index_offset as usize;
+    data[idx_start..idx_start + tensor_entry.len()].copy_from_slice(&tensor_entry);
+    // scale = 1.0 (f16 0x3C00), every nibble = 8 → (8 - 8) * 1.0 = 0.0
+    let data_start = data_offset as usize;
+    data[data_start..data_start + 2].copy_from_slice(&0x3C00u16.to_le_bytes());
+    for b in &mut data[data_start + 2..data_start + 18] {
+        *b = 0x88;
+    }
+    data
+}
+
 #[test]
-fn test_apr_model_q8_0_tensor_loading() {
-    let data = create_apr_model_with_q8_0_tensor();
-    let model = AprV2Model::from_bytes(data).expect("should load Q8_0 model");
-    let tensor = model.get_tensor("test.q8_0");
+fn test_apr_model_apr_q8_tensor_loading() {
+    let data = create_apr_model_with_apr_q8_tensor();
+    let model = AprV2Model::from_bytes(data).expect("should load AprQ8 model");
+    let tensor = model.get_tensor("test.q8");
     assert!(tensor.is_some());
-    assert_eq!(tensor.unwrap().dtype, "Q8_0");
+    assert_eq!(
+        tensor.unwrap().dtype,
+        "q8",
+        "dtype byte 129 is APR-native Q8 (GH-438)"
+    );
+}
+
+/// GH-438: dtype byte 8 collided with GGML Q8_0 and is read as legacy AprQ4.
+/// A reader that resurrects the pre-GH-438 mapping ("Q8_0") fails here.
+#[test]
+fn test_apr_model_dtype_byte_8_is_legacy_apr_q4_not_ggml_q8_0() {
+    let data = create_apr_model_with_legacy_dtype_byte_8();
+    let model = AprV2Model::from_bytes(data).expect("should load legacy-id model");
+    let tensor = model.get_tensor("test.legacy8").expect("tensor indexed");
+    assert_eq!(tensor.dtype, "q4", "byte 8 is legacy AprQ4 since GH-438");
+    assert_ne!(
+        tensor.dtype, "Q8_0",
+        "pre-GH-438 mapping must not come back"
+    );
+    let floats = model
+        .get_tensor_f32("test.legacy8")
+        .expect("legacy byte 8 dequantizes through the AprQ4 path");
+    assert_eq!(floats.len(), 32);
+    assert!(
+        floats.iter().all(|v| *v == 0.0),
+        "nibble 8 with scale 1.0 is exactly 0.0 under AprQ4 (a Q8_0 read of the same bytes is -120 * scale)"
+    );
 }
 
 // ============================================================================
@@ -2437,10 +2507,16 @@ fn test_mapped_apr_model_dtype_to_qtype_q5_k_extended() {
 }
 
 #[test]
-fn test_mapped_apr_model_dtype_to_qtype_case_sensitive() {
-    // The function is case-sensitive, lowercase should return unknown (0)
+fn test_mapped_apr_model_dtype_to_qtype_case_insensitive() {
+    // GH-321: the compiled impl (apr/special_tokens.rs, include!d by apr/mod.rs) goes
+    // through GgmlQuantType::from_str_lossy, which folds case: "q4_k" is Q4_K (12).
+    // F32 is id 0 either way, so it cannot discriminate; Q4_K can.
     assert_eq!(MappedAprModel::dtype_to_qtype("f32"), 0);
-    assert_eq!(MappedAprModel::dtype_to_qtype("q4_k"), 0);
+    assert_eq!(MappedAprModel::dtype_to_qtype("q4_k"), 12);
+    assert_eq!(
+        MappedAprModel::dtype_to_qtype("q4_k"),
+        MappedAprModel::dtype_to_qtype("Q4_K")
+    );
 }
 
 #[test]
@@ -3047,14 +3123,12 @@ fn test_apr_model_f16_tensor_special_values() {
 // ============================================================================
 
 #[test]
-fn test_apr_model_q8_0_tensor_dequantize() {
-    let data = create_apr_model_with_q8_0_tensor();
-    let model = AprV2Model::from_bytes(data).expect("should load Q8_0 model");
-    let floats = model
-        .get_tensor_f32("test.q8_0")
-        .expect("should dequantize");
+fn test_apr_model_apr_q8_tensor_dequantize() {
+    let data = create_apr_model_with_apr_q8_tensor();
+    let model = AprV2Model::from_bytes(data).expect("should load AprQ8 model");
+    let floats = model.get_tensor_f32("test.q8").expect("should dequantize");
 
-    // Q8_0: 32 elements, scale * int8 values
+    // AprQ8: 32 elements, f32 scale * int8 values
     // With scale=1.0 and quant values 0-31, we expect 0.0, 1.0, 2.0, ... 31.0
     assert_eq!(floats.len(), 32);
     for (i, &val) in floats.iter().enumerate() {
@@ -3069,16 +3143,17 @@ fn test_apr_model_q8_0_tensor_dequantize() {
 }
 
 #[test]
-fn test_apr_model_q8_0_multiple_blocks() {
-    // Create Q8_0 tensor with 64 elements (2 blocks)
+fn test_apr_model_apr_q8_negative_values_and_scale() {
+    // AprQ8 tensor with 64 elements, scale 0.5, values -32..31 (one f32 scale for the whole tensor)
     let metadata = r#"{"architecture":"test","vocab_size":100,"hidden_size":64}"#;
     let metadata_bytes = metadata.as_bytes();
     let metadata_padded_size = metadata_bytes.len().div_ceil(64) * 64;
 
-    let tensor_entry = create_binary_tensor_entry("test.q8_0_multi", 8, &[64], 0, 68);
+    let data_size = 4usize + 64;
+    let tensor_entry =
+        create_binary_tensor_entry("test.q8_signed", 129, &[64], 0, data_size as u64);
     let tensor_index_offset = HEADER_SIZE as u64 + metadata_padded_size as u64;
     let data_offset = tensor_index_offset + tensor_entry.len() as u64;
-    let data_size = 68usize; // 2 blocks * 34 bytes
     let total_size = data_offset as usize + data_size;
     let mut data = vec![0u8; total_size];
 
@@ -3093,27 +3168,27 @@ fn test_apr_model_q8_0_multiple_blocks() {
     let idx_start = tensor_index_offset as usize;
     data[idx_start..idx_start + tensor_entry.len()].copy_from_slice(&tensor_entry);
 
-    // Block 1: scale=1.0, values 0-31
     let data_start = data_offset as usize;
-    data[data_start..data_start + 2].copy_from_slice(&0x3C00u16.to_le_bytes()); // scale=1.0
-    for i in 0..32 {
-        data[data_start + 2 + i] = i as u8;
-    }
-
-    // Block 2: scale=0.5 (0x3800), values 0-31
-    data[data_start + 34..data_start + 36].copy_from_slice(&0x3800u16.to_le_bytes()); // scale=0.5
-    for i in 0..32 {
-        data[data_start + 36 + i] = i as u8;
+    data[data_start..data_start + 4].copy_from_slice(&0.5f32.to_le_bytes());
+    for i in 0..64 {
+        data[data_start + 4 + i] = (i as i32 - 32) as i8 as u8;
     }
 
     let model = AprV2Model::from_bytes(data).expect("should load");
     let floats = model
-        .get_tensor_f32("test.q8_0_multi")
+        .get_tensor_f32("test.q8_signed")
         .expect("should dequantize");
 
     assert_eq!(floats.len(), 64);
-    // Block 1 should have values 0-31
-    // Block 2 should have values 0-15.5 (scale=0.5)
+    for (i, &val) in floats.iter().enumerate() {
+        let expected = (i as f32 - 32.0) * 0.5;
+        assert!(
+            (val - expected).abs() < 1e-6,
+            "Element {i} expected {expected}, got {val}"
+        );
+    }
+    assert!(floats[0] < 0.0, "signed int8 must dequantize negative");
+    assert!((floats[63] - 15.5).abs() < 1e-6);
 }
 
 // ============================================================================

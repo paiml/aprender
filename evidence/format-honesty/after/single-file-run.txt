@@ -1,0 +1,9 @@
+=== APR Run ===
+
+Source: /home/noah/models/qwen2.5-coder-0.5b-instruct-safetensors/model.safetensors
+[GH-189] Loaded tokenizer from /home/noah/models/qwen2.5-coder-0.5b-instruct-safetensors/tokenizer.json: 22 special tokens
+
+Output:
+4
+
+Completed in 3.90s (cached)

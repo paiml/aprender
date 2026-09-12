@@ -41,8 +41,7 @@ fn test_context_memory_info() {
     let ctx = CudaContext::new(0).expect("Context creation MUST succeed");
     let (free, total) = ctx.memory_info().expect("memory_info MUST succeed");
 
-    // RTX 4090 has 24GB VRAM
-    assert!(total > 20_000_000_000, "RTX 4090 should have >20GB VRAM");
+    assert_vram_floor(&ctx, total);
     assert!(free > 0, "Some VRAM MUST be free");
     assert!(free <= total, "Free memory cannot exceed total");
 }
@@ -89,8 +88,7 @@ fn test_context_device_name() {
 fn test_context_total_memory() {
     let ctx = CudaContext::new(0).expect("Context creation MUST succeed");
     let total = ctx.total_memory().expect("total_memory MUST succeed");
-    // RTX 4090 has 24GB VRAM
-    assert!(total > 20_000_000_000, "RTX 4090 should have >20GB VRAM");
+    assert_vram_floor(&ctx, total);
 }
 
 #[test]
@@ -133,4 +131,22 @@ fn test_launch_config_total_threads() {
         * config.block.1
         * config.block.2;
     assert!(total >= 1000);
+}
+
+/// Nominal VRAM floors for the boxes this suite runs on, keyed by a substring of the CUDA device name:
+/// lambda's RTX 4090 (24 GB) and yoga's RTX 4060 Laptop GPU (8 GB). Both tests used to hold EVERY device to
+/// the 4090's ">20 GB", which failed on yoga's 8 GB card in the cuda-unit job (#3095) while saying nothing
+/// true about it. A listed device is held to its own size; an unlisted one (gx10's GB10 reports unified
+/// memory) gets the structural check only. The 4090's floor is unchanged.
+const VRAM_FLOORS: &[(&str, usize)] = &[("RTX 4090", 20_000_000_000), ("RTX 4060", 7_000_000_000)];
+
+fn assert_vram_floor(ctx: &CudaContext, total: usize) {
+    let name = ctx.device_name().expect("device_name MUST succeed");
+    assert!(total > 0, "{name}: total VRAM must be positive");
+    if let Some(&(key, floor)) = VRAM_FLOORS.iter().find(|(k, _)| name.contains(k)) {
+        assert!(
+            total > floor,
+            "{name} ({key}) should have >{floor} bytes of VRAM, got {total}"
+        );
+    }
 }

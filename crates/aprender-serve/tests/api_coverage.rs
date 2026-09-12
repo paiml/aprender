@@ -2838,33 +2838,34 @@ fn test_stream_token_event_special_chars() {
 // ============================================================================
 
 #[test]
-fn test_chat_completion_request_n_multiple() {
+fn test_chat_completion_request_n_multiple_is_refused() {
+    // ChoiceCount admits exactly ONE: this server returns one choice per request and the
+    // deserializer refuses anything else with a client-visible message (types.rs). This
+    // row used to set ONE and assert `"n":5` — impossible, and dark until the quick tier
+    // ran aprender-serve's integration targets (#3130, train #3127). Now it asserts the
+    // contract in both directions: ONE serialises as 1, and n=5 is refused, not clamped.
     let request = ChatCompletionRequest {
         model: "gpt-4".to_string(),
         messages: vec![ChatMessage {
             role: "user".to_string(),
             content: "Hello".to_string(),
-            name: None,
-
             ..Default::default()
         }],
-        max_tokens: Some(100),
-        temperature: Some(0.9),
-        top_p: None,
-        top_k: None,
-        repeat_penalty: None,
-        repeat_last_n: None,
-        seed: None,
-        n: realizar::api::ChoiceCount::ONE, // Request 5 completions
-        stream: false,
-        stop: None,
-        user: None,
-
+        n: realizar::api::ChoiceCount::ONE,
         ..Default::default()
     };
-
     let json = serde_json::to_string(&request).expect("should serialize");
-    assert!(json.contains(r#""n":5"#));
+    assert!(
+        json.contains(r#""n":1"#),
+        "ONE must serialise as n=1, got {json}"
+    );
+
+    let refused = serde_json::from_value::<realizar::api::ChoiceCount>(serde_json::json!(5));
+    let err = refused.expect_err("n=5 must be refused, never clamped to 1");
+    assert!(
+        err.to_string().contains("n must be 1"),
+        "the refusal must name the contract, got: {err}"
+    );
 }
 
 #[test]
@@ -3778,7 +3779,12 @@ fn test_completion_request_with_all_params() {
     let deserialized: CompletionRequest = serde_json::from_str(&json).expect("should deserialize");
 
     assert_eq!(deserialized.max_tokens, Some(256));
-    assert_eq!(deserialized.temperature, Some(0.7));
+    // The temperature deserializer narrows through f32 on purpose (types.rs
+    // deserialize_temperature_f64: "the value still narrows to f32 before it reaches a
+    // sampler, so the narrowing is checked here too"), so a round trip of 0.7 yields
+    // f64::from(0.7f32), never 0.7 exactly. Asserting the narrowed value is asserting
+    // the contract; asserting 0.7 was a dark row that could never pass (#3130, train #3127).
+    assert_eq!(deserialized.temperature, Some(f64::from(0.7_f32)));
 }
 
 #[test]

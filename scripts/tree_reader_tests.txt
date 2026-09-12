@@ -1,21 +1,71 @@
 # tool_version=none (derived by scripts/check_tree_reader_tests.sh from the test sources; regenerate with --update, never edit)
-# crate<TAB>--test<TAB>name | crate<TAB>--lib — every test target that reads the tree (BSE-17); the quick tier always runs these
+# Every test target that reads the tree (BSE-17); the quick tier always runs these.
+# COLUMNS (PMAT-3120): crate<TAB>--lib<TAB>module::path — the module that holds
+#   the reader (src/a/b.rs -> a::b, src/a/mod.rs -> a, src/lib.rs -> <root>, an
+#   include!()-pulled file -> the INCLUDING file's module). A 2-column
+#   crate<TAB>--lib is the WHOLE crate: the module was unresolvable and the
+#   derivation said so on stderr (WARN unresolved-include).
+# Also: crate<TAB>--test<TAB>name (integration binary) and crate<TAB>--bins.
 apr-cli	--lib
+apr-cli	--lib	commands::aliases
+apr-cli	--lib	commands::eval
+apr-cli	--lib	commands::glob_filter
+apr-cli	--lib	commands::kernel_explain
+apr-cli	--lib	commands::lint_family_guard
+apr-cli	--lib	commands::parity_admission
+apr-cli	--lib	commands::ptx_map
+apr-cli	--lib	commands::publish
+apr-cli	--lib	commands::pull
+apr-cli	--lib	commands::qualify
+apr-cli	--lib	commands::serve
+apr-cli	--lib	commands::serve_plan
+apr-cli	--lib	commands::test_llm_band
+apr-cli	--lib	commands::tokenize
 apr-cli	--test	beat_apr_sibling_cli_reach
 apr-cli	--test	cli_commands
-apr-format	--lib
-aprender-cgp	--lib
+apr-cli	--test	pixel_regression
+apr-format	--lib	falsifiers
+aprender-cgp	--lib	analysis::contracts
 aprender-compute-xtask	--bins
-aprender-contracts	--lib
+aprender-contracts	--lib	binding
+aprender-contracts	--lib	build_helper
+aprender-contracts	--lib	lint::diff
+aprender-contracts	--lib	lint::duplicate_stems
+aprender-contracts	--lib	lint::finding
+aprender-contracts	--lib	lint::gates
+aprender-contracts	--lib	lint::gates_extended
+aprender-contracts	--lib	lint::sarif
+aprender-contracts	--lib	lint::strict_test_binding
+aprender-contracts	--lib	pipeline
+aprender-contracts	--lib	query
+aprender-contracts	--lib	query::index
+aprender-contracts	--lib	query::persist
+aprender-contracts	--lib	readme_gen
+aprender-contracts	--lib	schema::kind
+aprender-contracts	--lib	scoring::drift
 aprender-contracts	--test	apr_serve_api_key_auth_contract
 aprender-contracts	--test	kani_harness_generation
 aprender-contracts	--test	probar_test_generation
 aprender-contracts	--test	validate_contracts
-aprender-contracts-cli	--lib
+aprender-contracts-cli	--lib	commands::certify
+aprender-contracts-cli	--lib	commands::verify_pipeline
+aprender-contracts-cli	--lib	contract_walk
 aprender-contracts-cli	--test	cli_integration
 aprender-contracts-cli	--test	ground_truth
 aprender-contracts-cli	--test	pv_surface_gate
-aprender-core	--lib
+aprender-core	--lib	format::metadata_bounds_contract_falsify
+aprender-core	--lib	format::model_family_loader
+aprender-core	--lib	format::ship_001
+aprender-core	--lib	format::ship_003
+aprender-core	--lib	format::ship_004
+aprender-core	--lib	format::ship_010
+aprender-core	--lib	format::special_tokens_contract_falsify
+aprender-core	--lib	format::tokenizer_vocab_contract_falsify
+aprender-core	--lib	qa::docs
+aprender-core	--lib	qa::velocity
+aprender-core	--lib	setfit::artifact
+aprender-core	--lib	setfit::classify
+aprender-core	--lib	setfit::model_tests
 aprender-core	--test	beat_sklearn_gaussiannb_accuracy
 aprender-core	--test	beat_sklearn_iris
 aprender-core	--test	beat_sklearn_metrics_parity
@@ -27,16 +77,48 @@ aprender-core	--test	falsification_spec_v10_tests
 aprender-core	--test	monorepo_invariants
 aprender-core	--test	readme_contract
 aprender-core	--test	setfit_conformance
-aprender-orchestrate	--lib
+aprender-orchestrate	--lib	agent::contracts
+aprender-orchestrate	--lib	agent::repl_directives
+aprender-orchestrate	--lib	analyzer
+aprender-orchestrate	--lib	cli::agent
+aprender-orchestrate	--lib	cli::falsify
+aprender-orchestrate	--lib	falsification::auditors::tests
+aprender-orchestrate	--lib	falsification::invariants
+aprender-orchestrate	--lib	falsification::jidoka
+aprender-orchestrate	--lib	falsification::model_cards
+aprender-orchestrate	--lib	falsification::sovereign_data
+aprender-orchestrate	--lib	falsification::technical_debt
+aprender-orchestrate	--lib	hf::client
+aprender-orchestrate	--lib	oracle::rag
+aprender-orchestrate	--lib	stack::hero_image
+aprender-orchestrate	--lib	stack::quality_checker
+aprender-orchestrate	--lib	stack::quality_format
 aprender-present-cli	--bins
-aprender-present-lib	--lib
-aprender-profile	--lib
-aprender-qa-certify	--lib
-aprender-rag	--lib
-aprender-rag-cli	--lib
-aprender-serve	--lib
-aprender-shell	--lib
-aprender-simulate	--lib
-aprender-test-cli	--lib
-aprender-test-lib	--lib
-aprender-train	--lib
+aprender-present-lib	--lib	browser::shell_autocomplete
+aprender-profile	--lib	cluster::registry
+aprender-qa-certify	--lib	<root>
+aprender-rag	--lib	loader::text
+aprender-rag-cli	--lib	<root>
+aprender-serve	--lib	cli::cli_tests
+aprender-serve	--lib	quantize::contract_tests
+aprender-shell	--lib	model
+aprender-simulate	--lib	demos::tsp_grasp
+aprender-simulate	--lib	demos::tsp_instance
+aprender-simulate	--lib	edd::runner
+aprender-simulate	--lib	edd::v2
+aprender-simulate	--lib	orbit::wasm
+aprender-simulate	--lib	tui::orbit_app
+aprender-simulate	--lib	tui::tsp_app
+aprender-test-cli	--lib	dev_server
+aprender-test-cli	--lib	handlers::llm
+aprender-test-cli	--lib	score
+aprender-test-cli	--lib	tree
+aprender-test-lib	--lib	file_ops
+aprender-test-lib	--lib	llm::prompts
+aprender-test-lib	--lib	perf_gate
+aprender-test-lib	--lib	perf_gate::drain
+aprender-test-lib	--lib	perf_gate::protocol
+aprender-test-lib	--lib	perf_gate::witness
+aprender-train	--lib	hf_pipeline::export::pipeline
+aprender-train	--lib	models::llama_370m
+aprender-train	--lib	research::archive::tests

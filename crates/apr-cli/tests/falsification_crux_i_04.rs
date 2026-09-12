@@ -180,6 +180,13 @@ fn falsify_crux_i_04_rejects_stringified_arguments() {
     resp["message"]["tool_calls"][0]["function"]["arguments"] =
         serde_json::json!("{\"location\":\"San Francisco\"}");
     let f = write_json(&resp);
+    // #3051: this call omitted --request-file, which the command now REQUIRES in
+    // non-streaming mode ("the tool-name allowlist gate has nothing to check a response
+    // against without the request that declared the tools"). So it exited 5 on a USAGE
+    // error and never reached the schema check: the `!success` assertion passed for the
+    // wrong reason and the stderr assertion failed. A test whose failure is
+    // indistinguishable from a usage error excludes no outcome.
+    let req_f = write_json(&weather_request());
 
     let output = Command::cargo_bin("apr")
         .unwrap()
@@ -187,6 +194,8 @@ fn falsify_crux_i_04_rejects_stringified_arguments() {
             "ollama-tools-lint",
             "--response-file",
             f.path().to_str().unwrap(),
+            "--request-file",
+            req_f.path().to_str().unwrap(),
         ])
         .output()
         .expect("apr binary runs");
@@ -195,6 +204,10 @@ fn falsify_crux_i_04_rejects_stringified_arguments() {
         "stringified arguments must be rejected (drift bug)"
     );
     let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("--request-file is required"),
+        "the lint refused on usage, not on the schema — this test would then prove nothing about stringified arguments: {stderr}"
+    );
     assert!(
         stderr.contains("FunctionArgumentsIsString") || stderr.contains("schema"),
         "stderr should explain stringified-arguments violation; got: {stderr}"

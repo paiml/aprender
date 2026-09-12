@@ -364,15 +364,18 @@ fn detect_simd() -> SimdWidth {
     #[cfg(target_arch = "aarch64")]
     {
         // NEON is always available on aarch64
-        return SimdWidth::Neon128;
+        SimdWidth::Neon128
     }
 
     #[cfg(target_arch = "wasm32")]
     {
-        return SimdWidth::WasmSimd128;
+        SimdWidth::WasmSimd128
     }
 
-    SimdWidth::Scalar
+    #[cfg(not(any(target_arch = "aarch64", target_arch = "wasm32")))]
+    {
+        SimdWidth::Scalar
+    }
 }
 
 /// Detect GPU capabilities

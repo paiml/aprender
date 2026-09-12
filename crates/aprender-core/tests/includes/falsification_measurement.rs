@@ -6,6 +6,8 @@ fn m001_headless_exits_cleanly() {
             "run",
             "-p",
             "apr-cli",
+            "--bin",
+            "apr",
             "--",
             "cbtop",
             "--headless",
@@ -41,6 +43,8 @@ fn m002_json_output_valid() {
             "run",
             "-p",
             "apr-cli",
+            "--bin",
+            "apr",
             "--",
             "cbtop",
             "--headless",
@@ -88,6 +92,8 @@ fn m003_brick_scores_present() {
             "run",
             "-p",
             "apr-cli",
+            "--bin",
+            "apr",
             "--",
             "cbtop",
             "--headless",
@@ -175,6 +181,8 @@ fn m007_ci_exit_code_on_failure() {
             "run",
             "-p",
             "apr-cli",
+            "--bin",
+            "apr",
             "--",
             "cbtop",
             "--headless",
@@ -208,6 +216,8 @@ fn m008_ci_exit_code_on_pass() {
             "run",
             "-p",
             "apr-cli",
+            "--bin",
+            "apr",
             "--",
             "cbtop",
             "--headless",
@@ -222,9 +232,26 @@ fn m008_ci_exit_code_on_pass() {
 
     match output {
         Ok(result) => {
+            // `--simulated` draws jittered brick timings, so whether the thresholds are met is a
+            // coin flip per run (measured 2026-09-11: "Falsification: 3/7 passed", CV 88 %). The
+            // contract M008 names is that the EXIT CODE follows the verdict: 0 iff the run prints
+            // `Status: PASS`. Assert that equivalence, which is deterministic, instead of assuming
+            // the simulated run passes.
+            let stdout = String::from_utf8_lossy(&result.stdout);
+            let stderr = String::from_utf8_lossy(&result.stderr);
+            let text = format!("{stdout}{stderr}");
+            let verdict_pass = text.contains("Status: PASS");
+            let verdict_fail = text.contains("Status: FAIL");
             assert!(
+                verdict_pass || verdict_fail,
+                "M008 FALSIFIED: CI mode printed no `Status: PASS|FAIL` verdict:\n{text}"
+            );
+            assert_eq!(
                 result.status.success(),
-                "M008 FALSIFIED: CI mode should return 0 when thresholds met"
+                verdict_pass,
+                "M008 FALSIFIED: CI exit code must be 0 exactly when the verdict is PASS (success={}, verdict_pass={})",
+                result.status.success(),
+                verdict_pass
             );
         }
         Err(_) => {
@@ -265,6 +292,8 @@ fn m010_output_file_created() {
             "run",
             "-p",
             "apr-cli",
+            "--bin",
+            "apr",
             "--",
             "cbtop",
             "--headless",

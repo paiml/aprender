@@ -1,0 +1,26 @@
+
+=== Chat Demo (Tiny Model) ===
+
+Note: Using tiny demo model. Pass .apr, .gguf, or .safetensors file for full model.
+
+  Model: /mnt/nvme-raid0/agent-wt/sharded-fixture/model.safetensors.index.json
+  Chat Template: Raw
+  Temperature: 0.7
+  Top-P: 0.9
+  Max Tokens: 12
+
+Commands:
+  /quit     Exit the chat
+  /clear    Clear conversation history
+  /system   Set system prompt
+  /help     Show help
+
+════════════════════════════════════════════════════════════
+
+Loading model...
+Loaded Demo format in 0.00s (0.0 MB)
+Warning: Could not detect chat template for 'demo', using raw format (no ChatML/Instruct wrapping)
+You: [0 tokens in 0.0s = 0.0 tok/s]
+Assistant: 
+
+You: Goodbye!
