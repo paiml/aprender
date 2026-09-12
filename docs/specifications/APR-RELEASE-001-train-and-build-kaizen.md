@@ -16,6 +16,7 @@ Implement docs/specifications/APR-RELEASE-001-train-and-build-kaizen.md autonomo
 
 | # | If | Do |
 |---|---|---|
+| **0** | `yoga` or `gx10` is under-utilised (§1 packing rule) while intel has queue pressure | **P0, minutes not a session:** arm every green PR, route what can leave intel, reap disk (§5 P0·Pack, P0·Reap); record the `pack:` line; then continue to the first matching row below |
 | 1 | ≥ 48 h since the last tag on `main` **and** no SKIPPED record for the current HEAD | run the train (§4) |
 | 2 | else a §5 row whose *Done* test fails at HEAD | do the first such row, one PR |
 | 3 | else the last train (shipped or skipped) has no triage record | do the triage pass (§6) |
@@ -27,7 +28,13 @@ Nothing in this spec asks a question. Running it ten times a day is safe.
 
 Ship a tag every 48–72 h (`0.67 → 0.68 → …`) **on a clock, not on scope**, and keep
 shrinking the wall-clock from *PR opened* to *tag published* so the clock stays cheap.
-The objective is elapsed time and green trains — never machine utilisation.
+The objective is elapsed time and green trains. **Packing rule (operator, 2026-09-12, verbatim):** "these two boxes: yoga and gx10 should be always 80% full of PRs from aprender if ANY queue pressure on intel … not acceptable to have slow releases when boxes are idel". Utilisation is not the goal for its own sake; an idle GPU box next to an intel queue is lost release time and is a **P0 defect**, not a state to tolerate. Measure it every wakeup:
+
+```
+gh api --paginate orgs/paiml/actions/runners --jq '.runners[] | "\(.name) \(.status) \(.busy)"'   # busy/online per host prefix
+intel pressure  = any aprender job queued, or a workspace-test running, on intel
+under-utilised  = intel pressure AND (busy/online < 0.8 on yoga OR on gx10)
+```
 
 Coupling, one line:
 
@@ -48,6 +55,8 @@ train. p95 is `[U]` until §5 P0 lands.
 | `main` protected; required check literally named `ci / gate` | org ruleset | `[V]` |
 | Last tag = `git describe --tags --abbrev=0` on `main`; next minor = that + 1 | git | `[V]` live |
 | p95 `ci / gate`, tag→publish, attended cascade time | — | `[U]` unmeasured |
+| `workspace-test` is pinned `runs-on: [self-hosted, X64, Linux, clean-room]` (#3104) — the long pole never lands on gx10; #3139 lifts the pin (795 s on gx10-pool3, 34693750990) | `.github/workflows/ci.yml` | `[V]` 2026-09-12 |
+| gx10 and yoga: `/mnt/nvme-raid0 -> /home/noah/eph-work/intel-mirror`; per-PR target dirs under `targets/{aprender-ci,sovereign-ci-aprender}/<pr>`; pool runners are docker containers (`sovereign-gpu-runner:2.337.0`); no reaper existed until 2026-09-12 (gx10 hit 100 %, 146 GB reclaimed by hand, then declared in forjar) | `ssh gx10`, `ssh yoga`, `machines/{gx10,yoga}/forjar.yaml` | `[V]` 2026-09-12 |
 
 Live `forjar.yaml` beats this table. Record the diff in the receipt and continue.
 
@@ -59,12 +68,23 @@ Live `forjar.yaml` beats this table. Record the diff in the receipt and continue
    Stop, five-whys terminating in a mechanism, escalate. Do not cut a third.
 3. **No invented numbers.** Every threshold cites its measurement command or carries `[U]`
    and is not a gate. No build target is set before P0 has ≥ 20 ledger records.
-4. **Heijunka holds.** One aprender PR in CI at a time. Speed comes from splitting *one*
-   gate across hosts, never from two PRs. "Parallel" means ≤ 3 read-only subagents inside a
-   session (dogfood-skill style), never two sessions merging.
-5. **No ad-hoc SSH.** Host changes are `machines/<host>/forjar.yaml` → `forjar apply` →
-   `make -C machines/<host> verify-systemd-units`. Repo edits are inert until deployed
-   (2026-04-26 ENOSPC was exactly this).
+4. **Heijunka is bounded by the fleet, not by one.** WIP = what the fleet can build without
+   starving a box: the merge queue builds 3 entries in parallel (ruleset 17836320, by design).
+   **Never dequeue a PR because another is in CI**; dequeue only a group that is *known* RED
+   (roadmap-additive guard, a red required check) and fix or trim it rather than park it. Under
+   intel pressure, arm every green PR and prefer the ones whose jobs can land on `yoga`/`gx10`.
+   Splitting *one* gate across hosts (§5 P2) is the other half of the same rule. "Parallel"
+   inside a session still means ≤ 3 read-only subagents, never two sessions merging.
+   *(Amended 2026-09-12 by operator ruling; the previous text said "one aprender PR in CI at a
+   time" and this session dequeued four PRs on it — #3175's group was running its workspace-test
+   on yoga at the time.)*
+5. **No ad-hoc host CONFIG.** Durable host changes are `machines/<host>/forjar.yaml` →
+   `forjar apply` → `make -C machines/<host> verify-systemd-units`. Repo edits are inert until
+   deployed (2026-04-26 ENOSPC was exactly this). **SSH for measurement and for unclogging is
+   expected** (`ssh gx10`, `ssh yoga`: `df`, `du`, `systemctl status`, `docker system df`,
+   reclaiming a full disk that is blocking the queue right now). The reclaim and its forjar
+   encoding are one piece of work: what was done by hand once is declared so the next time is
+   automatic. *(Amended 2026-09-12: "you DO HAVE SSH (ssh gx10, ssh yoga)".)*
 6. **Ledger is append-only, one file per run:** `docs/build-ledger/<YYYY-MM-DD>/<sha>-<host>-<job>.json`.
    Never a shared file (G-11 rebuild-storm class). The ledger *is* the project memory.
 7. **Publishing is unchanged and attended.** Clean-room is the hard gate, named first. Then
@@ -89,6 +109,25 @@ Any step RED → SKIPPED, no partial promotion. Scope is assigned to trains afte
 0.67 contains whatever merged before the 0.67 cut, by definition.
 
 ## §5 Build rows — in order, one PR each, only when no train is due
+
+**P0 · Pack** *(operator 2026-09-12; precedes everything while it fails)*. Every wakeup: sample
+busy/online per host (§1), decide `intel pressure`, and act in minutes — arm every green PR, re-run
+withdrawn CI, trim non-additive roadmap diffs, route arch-neutral work off intel, dispatch the
+nightlies that produce T-1 evidence on the idle GPU boxes. Record the sample as a ledger record
+`docs/build-ledger/<date>/<sha>-fleet-pack.json` `{at, intel_busy, intel_online, gx10_busy,
+gx10_online, yoga_busy, yoga_online, intel_pressure, verdict}`.
+*Done:* over the trailing 10 trains, in every sample with `intel_pressure=true`, median busy/online
+≥ 0.8 on both `yoga` and `gx10`; the §7 `pack:` line is never `P0-UNDERUTILIZED` two wakeups in a row.
+The structural lever is `workspace-test` leaving its `X64` pin (#3139: 82,085 tests in 795 s on gx10
+against 1,000–6,000 s on intel); until it lands, `pack` is bounded by the short jobs.
+
+**P0 · Reap** *(operator 2026-09-12: "automated disk clearing/reaping … managed by forjar and p0 if
+it gets blocked")*. `ci-reaper` + `ci-disk-watch` (one script, per-host thresholds citing a
+measurement) declared in `machines/{intel,gx10,yoga}/forjar.yaml`, applied, timers verified active;
+`/mnt/nvme-raid0 → ~/eph-work/intel-mirror` declared on gx10/yoga so a reimage keeps the layout.
+Admission at job start: `ci_self_hosted_preflight.sh` prints `disk_free_gb` (measurement first; the
+gate threshold waits for 20 records, §3.3). *Done:* zero ENOSPC across 10 trains; a queue blocked on
+disk is P0 and stops the current build row.
 
 **P0 · Instrument.** One ledger record per gate job: `sha host job queue_wait_s exec_s
 total_s peak_rss_mb free_disk_gb exit`. Add `make build-report`: p50/p95 `total_s` and
@@ -144,6 +183,7 @@ APR-RELEASE-001 | did=<TRAIN|BUILD|TRIAGE|NOOP> | train=v0.<N>.0 | verdict=<SHIP
 train:   step reached <T-0..T-4> | skip reason <none|…> | attended min <n|[U]>
 build:   row <P0..P3|none> | PR <url|none> | records added <n>
 gate:    p95 ci/gate <min|[U]> | max PRs/train <n|[U]> | queue p95 intel <s> yoga <s> gx10 <s>
+pack:    intel <busy>/<online> | gx10 <busy>/<online> | yoga <busy>/<online> | intel-pressure <yes|no> | verdict <OK|P0-UNDERUTILIZED>
 triage:  arrival <n> | closure <n> | open PRs <n> (age p95 <d>) | untriaged <n>
 stops:   <none|list>
 next:    train eligible at <timestamp>
@@ -157,6 +197,10 @@ next:    train eligible at <timestamp>
 - Measured max PRs/train < 10 `[A]` → stop cutting trains; finish P1/P2 first.
 - `yoga` or `gx10` has no runner unit in live `forjar.yaml` and the infra PR is unmerged → stop at P2.
 - Fewer than 20 ledger records → stop at P0.
+- `yoga` or `gx10` under-utilised (§1) while intel has queue pressure, two wakeups in a row → P0:
+  stop the current build row, pack first (arm, route, reap), report the `pack:` line.
+- A runner box at or below `REAPER_CRITICAL_GB` free, or any job dead on ENOSPC → P0: reclaim
+  over SSH now, then land the forjar change that makes it automatic, before anything else.
 - Any step would need an invented threshold, a second concurrent aprender PR in CI,
   `--allow-dirty`, or SSH into a host → stop.
 
