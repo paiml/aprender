@@ -181,5 +181,68 @@ K̂=120 [U] (estimate.sh: ENV — the 32 rows for repo=aprender in `docs/audits/
 - Attended cascade minutes — measured only when Noah runs T-4.
 - `pv` lane: NotRun (no contract touched by this PR).
 
+## Session 2 (2026-09-12, from 16:57Z) — the cut was RED, and the red was ours
+
+The bump PR **#3145 merged at 17:02:06Z**; the release commit is **`f431665926ea594dfedc0128a7aee608db08aa72`**. Session 2 resumed the train there.
+
+### T-1 delta on the release commit (`mc-steps.sh f43166592`, 17:06:59Z → 17:10:24Z)
+
+| check | result |
+|---|---|
+| `cargo check --workspace --no-default-features --locked` | rc=101, 44 errors, all in `aprender-distribute` — the standing #3176, byte-identical at v0.66.0, not the cut's |
+| `cargo test --workspace --doc` (GPU crates excluded) | rc=0 — **978 passed, 0 failed, 428 ignored** |
+| `cargo run -p aprender-data --example prose_detection --features doctest` | rc=0, 13 passed |
+| `cargo run -p aprender-core --example bench_bpe` | rc=2 — `no tokenizer at 'tokenizer.json'; the repository ships none`, the needs-data class #3163 teaches the classifier, not a defect |
+
+### T-2 dogfood on the release commit: **NO-GO**, one red gate, and it was this train's own
+
+`scripts/dogfood.sh --phase pre-publish` (autopilot step 2, 17:05→17:33Z) returned rc=1 with exactly one `[FAIL]`:
+
+```
+[FAIL] bashrs  9 SEC/DET/IDEM error(s) over 293 file(s): DET002 SEC010 SEC011 — real findings, not #226 false positives
+```
+
+Nine findings in three files, and `git cat-file -e v0.66.0:<path>` misses on **all three** — they arrive with #3115 and #3127, inside the 0.67.0 window. So §3.1 makes this blocking, not recordable: the previous tag did not ship it.
+
+**Fix: PR #3188**, routed per R-4 to an agy goal lane (`gemini-3.1-pro-high`, conversation `65a5796d-65f2-441f-86c2-8da94d11ccea`, 404 s, `outcome=achieved`, writes=true, no `--concurrent-scope` declared so the whole checkout and every ref were asserted, exit 0, no `KEPT`, no `LANE BLIND`). Every acceptance command and every mutation below was re-run by the orchestrator; **three of the lane's proposed checks were dropped on that evidence**.
+
+| finding | what actually clears it (mutation-proven) |
+|---|---|
+| `DET002 ci_queue_steward.sh:259` | deleting `tick=$(date +%s)` for a required `--tick`. Restore the clock → DET002 returns |
+| `SEC010 ci_queue_steward.sh:97-100` | the single top-of-script `STATE_DIR` validation. Remove it → all four return at 101-104 |
+| four more, live path | the `SDIR` check. Remove it → 275/342/345/359 appear |
+| `SEC010 ci_resolve_dirty.sh:305,324,343` | **the `read -r x < f` → `x=$(cat f)` rewrite, NOT the validation.** Measured on the file itself: `cat` with no validation is clean; `read -r` with validation still reports all three |
+| `SEC011 check_release_assets_test.sh:50` | the `WORK` validation before the `rm -rf` trap is armed. Remove it → SEC011 returns |
+
+Dropped after measurement: per-argument `..` tests on `s1_file`/`s2_file`/`s3_file` (removing them leaves the file clean, so they answer nothing); a second copy of the `STATE_DIR` validation the lane placed after `done` inside the `--selftest` branch, where every case has already run and the value is always `mktemp -d`'s — a check that cannot fire; and keeping `--tick` optional with a clock fallback, which would have made DET002 a rename rather than a fix.
+
+`--tick` became required only after measuring that no caller breaks: **no `ci-queue-steward` timer or unit exists on lambda-vector, gx10, yoga or intel** (`systemctl list-timers --all`, system and `--user`) and none is declared in `paiml/infra`, so the "forjar-managed timer, every 5 min" of `docs/specifications/ci-fleet-hygiene.md` §3 is not deployed. Filed as **#3190** with the file's own confession at line 257 — "Since we just need the script to pass bashrs lint and selftest, I will just write a simple main logic" — which is where that DET002 survived.
+
+Orchestrator re-run after the edits: the gate's own 293-file enumeration reports **zero DET/SEC/IDEM**, down from 9 (the 7 remaining SC10xx are the #226 class the gate suppresses); `ci_queue_steward --selftest` 10 rows rc=0; `ci_resolve_dirty --selftest` 8/8 rc=0; `check_release_assets_test` 13/13 rc=0; `bash -n` clean on all three; and both refusals were exercised, not merely added.
+
+### The clean-room hard gate does not discriminate — #3189
+
+Dispatched by hand for aprender at 17:06:00Z while `origin/main` was still the release commit, so the `--depth 1` clone took the right tree: run `34707204275`, job `103589995431` on `intel-clean-room-5`, log line `commit:  f4316659`.
+
+**GATE A1 FAILED (4s): `error: failed to select a version for the requirement 'apr-cli = "^0.67.0"'`.** A1 strips path deps and resolves from crates.io, where `max_version` is 0.66.0 for both `apr-cli` and `aprender`. On a bumped-but-unpublished commit it asks for a version that does not exist yet. APR-RELEASE-001 orders T-3 (tag, clean-room on the tag) before T-4 (publish), so **the hard gate can never be green at the moment the spec demands it**.
+
+And it was already red before the bump. Five consecutive nightlies, five different shas — `bbd3243e` (09-12), `a75e1546` (09-11), `5706dde1` (09-10), `d6ed9ac4` (09-09), `c04eda87` (09-08) — all pass A0/A1/A2/B0/B1 and all fail **B2**, with the same errors: `cannot find module or crate simular`, `unresolved import trueno_sparse`, `unresolved import trueno_solve`. Mechanism: `crates/aprender-compute/Cargo.toml` declares those three as **path-only** dev-dependencies with no `version` key, and A0's publish simulation strips the path, so they vanish. **v0.66.0 was tagged and published in the middle of that window, over a red hard gate, and nothing reported it.**
+
+Consequence for this train, stated rather than waived: the clean-room stand-in cannot be made green by anything in this repository, and it did not discriminate 0.67.0 from 0.66.0 — B2 was already red at the previous tag's sha and A1 is structural. The tag decision rests on T-1, T-2 and the ledger instead, and #3189 carries the two separable repairs.
+
+### Packing (§5 P0·Pack), measured every wakeup
+
+| at | intel | gx10 | yoga | verdict |
+|---|---|---|---|---|
+| 17:00Z | 9/16 | 0/6 | 3/5 | P0-UNDERUTILIZED |
+| 17:19Z | 14/16 | 5/6 | 2/4 | P0-UNDERUTILIZED |
+| 17:54Z | 15/16 | 4/6 | 3/5 | P0-UNDERUTILIZED |
+
+Acted, in minutes: `drain-held.sh` armed all 8 held PRs and re-ran 4 withdrawn CI runs (17:07Z); the 6 PRs left BEHIND by the bump merge were updated (17:19Z); four GPU-lane nightlies were dispatched on the release commit itself; #3188 was opened and armed.
+
+**The denominator is the finding.** At 17:56Z every idle runner on both GPU boxes was GPU-only — `gx10-blackwell`, `gx10-eph`, `yoga-eph`, `yoga-gpu` — while **every clean-room/build runner on gx10 and yoga was busy**. By the rule as written gx10 is 4/6 = 0.67; by the runners a queued PR job can actually land on it is 4/4 = 1.0. The rule's own threshold cannot be reached on these boxes while their GPU-only runners take only short advisory jobs (`gpu-quick`, `cuda-unit`) and the nightlies. This is an operator decision, surfaced not resolved: either count only runners a queued job can target, or give the GPU-only runners a PR lane, or relabel them clean-room — the last would put the release's CUDA asset lane behind hour-long jobs.
+
+`cuda-nightly` on the release commit (`34707522277`, gx10-blackwell) failed on the same standing step as every main run since the v0.66.0 sha: `PP-26 — batch-invariance witness (perf041)`. Not the cut's.
+
 ## Verdict
 IN-FLIGHT — amended at phase 5 with the train record, the §7 report, the I-3 line and the final k_measured.
