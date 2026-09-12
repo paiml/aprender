@@ -17099,3 +17099,98 @@ roadmap:
   labels:
   - kind:triage
   notes: null
+- id: PMAT-3170
+  github_issue: 3170
+  item_type: task
+  title: apr-agent accepts any flag as a task slug
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-09-12T12:28:29Z
+  updated: 2026-09-12T12:28:29Z
+  spec: null
+  acceptance_criteria:
+  - 'VERIFIED 2026-09-12: ''apr-agent --help'' created worktree /home/noah/src/aprender-worktrees/--help, branch agent/--help, and claim ~/.config/apr-agent/claims/--help.lock, then tried to launch claude. ROOT CAUSE: the slug guard is ''case $slug in *[!a-zA-Z0-9._-]*) die'' — it rejects characters OUTSIDE that class, and ''-'' is INSIDE it, so --help, -h, --version all pass. No --help handler, no leading-dash check. Same class as the repo''s no-hand-rolled-arg-parsers rule (simular''s match args[1] dropped --seed). SECOND DEFECT: apr-agent is NOT tracked (git ls-files returns 0) and nothing in scripts/ or the Makefile installs it, yet .git/hooks/pre-commit refuses every commit in the main checkout and directs the user to it — a required workflow step enforced by an untracked hook naming an untracked tool. FALSIFIABLE: --help/-h print usage, exit 0, and create NO worktree/branch/claim (all three asserted absent); a committed case table of must-reject flags and must-accept slugs is RE-RUN not re-read; a forced launch failure rolls back the worktree, branch and claim; apr-agent is committed to the repo and the hook installed from a tracked source. Milestone 0.68.0.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - P1
+  - bug
+  notes: null
+- id: PMAT-3171
+  github_issue: 3171
+  item_type: task
+  title: .claude/ holds 58 stray worktrees, 25 GB, 571,815 .rs files in the repo root
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-09-12T12:28:29Z
+  updated: 2026-09-12T12:28:29Z
+  spec: null
+  acceptance_criteria:
+  - 'VERIFIED 2026-09-12: a tree-wide line count returned 222,601,319 lines across 581,978 .rs files; the true figure is 3,947,294 across 10,274 — wrong by ~56x. Cause: .claude/ inside the repo root holds 58 agent worktrees, each a full checkout plus build artifacts. du -sh .claude/ = 25G; 571,815 .rs files; only 6 files tracked. NOT just disk: it silently corrupts any tree-wide tool that does not special-case it (line counters, find-based guards, grep sweeps, embedding indexers) and the wrong answer looks plausible — the guard-universe-from-the-wrong-side class. WORSE: the exclusion lives in .git/info/exclude:5, which is PER-CLONE and never committed, so every other clone and every CI runner has no such protection. FALSIFIABLE: the exclusion moves to a TRACKED .gitignore and a test asserts git check-ignore resolves to .gitignore NOT .git/info/exclude (asserting merely that it is ignored passes today and proves nothing); lanes create worktrees outside the repo root or remove them on exit; a reaper that does NOT date dirs by newest file (a sweeper already deleted a live empty mountpoint on that heuristic); a guard fails on >N worktrees in the repo root, mutation-verified by planting one. Milestone 0.68.0.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - P1
+  - bug
+  notes: null
+- id: PMAT-3172
+  github_issue: 3172
+  item_type: task
+  title: 'CRUX master registry drift: 250 stories vs 275 contracts'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-12T12:28:29Z
+  updated: 2026-09-12T12:28:29Z
+  spec: null
+  acceptance_criteria:
+  - 'VERIFIED 2026-09-12 on main: contracts/crux-competitive-research-ux-v1.yaml declares 250 stories in categories A-K, while contracts/ holds 275 crux-[A-Z]-*.yaml files. Category L (HF kernels-community) has 15 contracts and 0 story rows; category M (APR-QA Playbook) has 9 and 0 — 24 contracts absent from the registry that is supposed to enumerate them. coverage_intake declares total: 250, so any report derived from it under-counts by 24, and nothing validates the two against each other. The scaffolder''s round-trip is broken for L and M: it emits contracts FROM stories, so stories that do not exist cannot regenerate contracts that do. Category N (#3146) deliberately did not repeat this — all 17 registered, coverage_intake asserted against the histogram — but that was a choice, not something the tooling enforced. RELATED, fixed in #3169: scripts/crux_scaffold_contracts.py CATEGORY_NAMES stopped at K, so L and M would have scaffolded with a bare letter as their category name; nothing detected it for months, same root cause. FALSIFIABLE: a BIJECTION test failing in BOTH directions (orphan contract and orphan story are each an error); the 24 orphans registered or explicitly recorded out-of-registry with a reason (silently baselining all 24 does not satisfy this); coverage_intake asserted equal to the status histogram; CATEGORY_NAMES asserted to cover every letter present in contracts/; mutation-verified by deleting a story row. Milestone 0.69.0.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - P2
+  - bug
+  notes: null
+- id: PMAT-3173
+  github_issue: 3173
+  item_type: task
+  title: verify gate reads descriptive prose as a test citation
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-12T12:28:29Z
+  updated: 2026-09-12T12:28:29Z
+  spec: null
+  acceptance_criteria:
+  - 'VERIFIED 2026-09-12: crates/aprender-contracts/src/lint/gates_extended.rs:81 does ''let name = raw.rsplit("::").next()'' over the ENTIRE test: string and treats a tail starting with test_/prop_ as a citation of a Rust test that must exist. It cannot distinguish a CITATION from a DESCRIPTION. A LIVE-PENDING body — the repo''s own sanctioned state for a gate that cannot bind yet (strict_test_binding.rs:119) — that names the test it will one day bind to is reported as PV-VER-001 Unfalsifiable. The garbled name in the message, running from prop_orthonormal_factors to the end of the sentence, is itself the tell that prose was parsed as an identifier. TWO CLASSIFIERS DISAGREE: classify_binding has a considered taxonomy (CargoTest/ShellHarness/BareRustFn/Unbindable) handling LIVE-PENDING and ''pv '' explicitly; the verify gate re-implements detection with a weaker rule and never consults it. It is an ERROR not a warning, so it fails pv lint and lint_passes_on_real_contracts — blocking a build over a sentence — and it penalises exactly the honest LIVE-PENDING form that names its promotion path. Workaround used in #3169 was to write module paths with / instead of :: — changing DOCUMENTATION wording to satisfy a CODE heuristic, the wrong direction. FALSIFIABLE: verify calls classify_binding and skips Unbindable; a genuine bare citation still raises PV-VER-001 (both directions — a fix that just stops reporting passes the first half alone); the extracted name must be a valid Rust identifier, with a must-match/must-not-match case table; mutation-verified by reverting to rsplit over the raw string. Milestone 0.69.0.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - P2
+  - bug
+  notes: null
+- id: PMAT-3174
+  github_issue: 3174
+  item_type: task
+  title: aprender-train-canary is dark — no measured trueno-vs-Burn number exists
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-12T12:28:29Z
+  updated: 2026-09-12T12:28:29Z
+  spec: null
+  acceptance_criteria:
+  - 'VERIFIED 2026-09-12: crates/aprender-train-canary is the ONLY thing in the tree measuring aprender against Burn (trueno WGPU matmul vs burn::tensor matmul across five LLM-shaped sizes, printing a ratio). It never runs, for three independent reasons: (1) excluded from the workspace at Cargo.toml:114 for a sqlite3/burn link conflict, so it has its own [workspace] and is invisible to cargo metadata and every workspace-wide CI job; (2) named in no .github/workflows/*.yml; (3) pinned to burn 0.21.0-pre.2 while 0.21.0 released 2026-05-07 and 0.22.0-pre.3 on 2026-08-25. CONSEQUENCE: there is NO current measured trueno-vs-Burn number — the comparison is asserted by the file''s existence and nothing else. Same dark-target class as benches (CI builds --examples, never benches) and new tests/*.rs (dark until added to the one explicit ci.yml line), via a third mechanism: workspace exclusion. Cargo.toml:143 says the exclusion is intentional; being UNRUNNABLE is a different decision and the two have been conflated. FALSIFIABLE: the pin moves to a released version with a guard asserting it is not a pre-release; a CI job BUILDS AND RUNS it (compiling is not enough — a canary that never executes is the same defect in a new place); the ratio is COMPARED against a floor or a prior run and fails on collapse (a number was once recorded 18,292 times and never compared); or the crate is DELETED and the claim withdrawn — leaving it dark closes nothing; a guard enumerates excluded members from the exclude list itself and asserts each is exercised or recorded as deliberately unbuilt. Milestone 0.69.0.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - P2
+  - bug
+  notes: null
