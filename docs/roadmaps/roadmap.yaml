@@ -16703,6 +16703,31 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-1078
+  github_issue: 3046
+  item_type: task
+  title: 'pr-review-receipt is DELETED: 326.8 h of PR runner-time (floor, measured) for a job nothing needs, reads or requires'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-09-08T07:28:32Z
+  updated: 2026-09-08T11:20:00Z
+  spec: null
+  acceptance_criteria:
+  - 'RESCOPED 2026-09-08 by operator ruling, after a 3/3 FAIL quorum on the dispatch-only attempt: the job is DELETED outright, not moved to workflow_dispatch. The dispatch-only diff gave PR_HEAD_SHA a `|| github.sha` fallback and left PR_NUMBER bound to the pull_request context, which is empty on a dispatch, while check_pr_review_arm4.sh:372 refuses on empty - the job would have been reachable and non-functional, which is worse than absent.'
+  - 'DONE-IF the deletion is gated on a recorded query: no `needs:` names the job (grep over .github/workflows -> no match); it uploads no artifact and the only download-artifact in the tree is nightly.yml:141 for its own build assets; it is not a required context (branch protection -> ["ci / gate", "workspace-test"]).'
+  - 'check_pr_review_wiring.sh INVERTS rather than dying with its subject: R4 (the if: polarity table) and its evaluator are deleted with the job; R1 becomes the standing falsifier - no ci.yml job may invoke the receipt guard, with the old `if: github.event_name == ''pull_request''` wiring carried VERBATIM in the case table and asserted FAIL, and a dispatch-only job refused too; R3 is new - the guard must stay a tracked scripts/check_*.sh or R1 holds vacuously. bash scripts/check_pr_review_wiring.sh --self-test -> 10/10, both polarities on every rule.'
+  - 'scripts/ci_job_minutes.sh makes the figure re-derivable: per-JOB (completed_at - started_at) from the jobs API, started_at not created_at so queue wait is excluded, skipped jobs contribute nothing, and a run count equal to --limit is exit 2 TRUNCATED rather than a silent floor. bash scripts/ci_job_minutes.sh --self-test -> 6/6. Measured 2026-08-08..2026-09-07 on pull_request: pr-review-receipt 326.8 h of a 850.6 h total (a floor; the 96 h this ticket opened with understated it by 3.4x).'
+  - 'STATED LOSS: the two mutation sweeps (scripts/mutate-guard.sh, scripts/mutate_quorum_arm.sh) and the 43-row bats fixture table no longer run in CI - no other workflow invokes them and they are not check_*.sh, so guard_tree.sh does not reach them. check_pr_review_receipt.sh, check_pr_review_counts.sh and check_pr_review_arm4.sh DO still run, through guard_tree.sh''s derived universe; the PR''s own receipt is judged from the base by pr-review-quorum.yml.'
+  - 'roadmap.yaml carries ONE addition (this entry) and no other change: check_roadmap_diff_additive.sh -> added=1 lifecycle=0 reserialised=0 deleted=0.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - pp-066
+  notes: 'BSE-15, BSE-001 §4 wave 5. Rescoped from dispatch-only to deletion; the ticket text is the standard the quorum judges the diff against, so it moved with the policy rather than leaving the diff contradicting it.'
+
 - id: PMAT-1079
   github_issue: 3045
   item_type: task
