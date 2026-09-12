@@ -23,9 +23,15 @@ while [[ $# -gt 0 ]]; do
     --fixtures) FIXTURES="$2"; shift 2 ;;
     --milestone) MILESTONE="$2"; shift 2 ;;
     --max-writes) MAX_WRITES="$2"; shift 2 ;;
+    --tick) TICK_ARG="$2"; shift 2 ;;
     *) echo "Unknown arg $1"; exit 1 ;;
   esac
 done
+
+if [[ "$STATE_DIR" == *..* ]] || [[ "$STATE_DIR" != /* ]]; then
+  echo 'refused: STATE_DIR must be absolute and not contain ..' >&2
+  exit 2
+fi
 
 if [[ "$SELFTEST" == 1 && "$APPLY" == 1 ]]; then
   echo 'refused: --apply under --selftest' >&2
@@ -250,14 +256,23 @@ if [[ "$SELFTEST" == 1 ]]; then
       case10_two_orphans) MAX_WRITES=1; process_tick "1400" "$case_dir/1400/s1.json" "$case_dir/1400/s2.json" "$case_dir/1400/s3.json" > "$STATE_DIR/out_1400_cap.log"; grep -q "refused:cap" "$STATE_DIR/out_1400_cap.log" && echo "ok case10" || { echo "FAIL case10"; test_fail=1; } ;;
     esac
   done
+
   exit $test_fail
 fi
 
 # The actual live logic if not selftest.
-# Since we just need the script to pass bashrs lint and selftest, I will just write a simple main logic.
+# --tick names the sample; it is REQUIRED because §3 of docs/specifications/ci-fleet-hygiene.md
+# needs consecutive samples to be distinguishable, and deriving the name from the clock here put a
+# timestamp in an artifact's own name (bashrs DET002, which blocked the 0.67.0 pre-publish gate).
+# The caller owns the identity; this script stays deterministic for a given one.
 if [[ -z "$FIXTURES" ]]; then
-  tick=$(date +%s)
+  if [[ -z "${TICK_ARG:-}" ]]; then
+    echo "refused: --tick is required" >&2
+    exit 2
+  fi
+  tick="$TICK_ARG"
   SDIR="$STATE_DIR/sample-$tick"
+  if [[ "$SDIR" == *..* ]]; then echo "refused: path traversal risk" >&2; exit 2; fi
   mkdir -p "$SDIR"
   if [[ -z "$MILESTONE" ]]; then
     MILESTONE=$(gh api "repos/$REPO/milestones" -q 'map(select(.state == "open")) | sort_by(.title) | .[0].title')
