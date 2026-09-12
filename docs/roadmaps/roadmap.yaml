@@ -16798,6 +16798,26 @@ roadmap:
   - kind:docs
   - pp-066
   notes: 'minted by hand (pmat#1169); DAG row SPEC-2.0, owner spec-owner, expiry 2026-09-19.'
+- id: PMAT-1092
+  github_issue: null
+  item_type: task
+  title: 'release-process-aprender.md v0.1 review: grill the draft against the measured fleet, close the Appendix A S0 ledger, and land what the review admits'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-09-08T00:00:00Z
+  updated: 2026-09-08T00:00:00Z
+  spec: docs/specifications/release-process-aprender.md
+  acceptance_criteria:
+  - 'The draft names 21 scripts/workflows/contracts/keys/manifests as the release process of record. Measured on origin/main c04eda87d and re-audited in full by the AD-04 quorum: 1 exists (scripts/check_readme_claims.sh), 1 is correctly marked new (contracts/apr-dogfood-models-v1.yaml), and 19 of the 20 non-new paths are ABSENT under any path (find over the tree, not just the named location). An earlier revision of this criterion said 12 paths and 11 absent, taken from a partial first sweep before workflows, contracts, install.sh, the signing key and the model manifest were counted; a criterion satisfiable by fixing 11 would have silently dropped 8. The review must state which sections are executable today and which describe artifacts that do not exist.'
+  - 'Appendix A S0 rows are measured on the physical hosts (ssh, nvidia-smi, uname) and written back into the spec, closing every [U] in section 2 and RD-9. A row transcribed rather than measured is RED.'
+  - 'Every finding carries the command that produced it; a finding with no command is [U] with a named owner.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
 - id: PMAT-1093
   github_issue: null
   item_type: task
