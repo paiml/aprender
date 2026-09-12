@@ -1300,7 +1300,7 @@ Universe: every `kind == ["example"]` target from `cargo metadata --no-deps`, wi
 its owning package and `required-features` — never a directory listing. Evidence:
 `evidence/dogfood/<version>/examples.tsv`, one
 `pkg<TAB>example<TAB>class<TAB>rc<TAB>secs<TAB>cite` row per target plus a
-`# summary pass=… fail=… timeout=… needs-args=… needs-hardware=…` trailer.
+`# summary pass=… fail=… timeout=… needs-args=… needs-hardware=… needs-data=…` trailer.
 
 | class | meaning |
 |---|---|
@@ -1309,6 +1309,7 @@ its owning package and `required-features` — never a directory listing. Eviden
 | `timeout` | killed by `timeout --signal=KILL` (rc 124/137); a defect |
 | `needs-args` | rc ≠ 0 and stderr opens a clap usage line, cited — not runnable bare, not broken |
 | `needs-hardware` | stderr names a missing CUDA/wgpu device, cited — a SKIP, never a pass |
+| `needs-data` | rc ≠ 0 and stderr names a file/model/tokenizer the repository does not ship, cited — a SKIP, never a pass; re-run with the data present before a release verdict |
 
 Exit contract: **1** if any row is `fail` or `timeout`, **2** if the enumeration is
 empty (vacuity: a run with nothing to run is not a pass), 0 otherwise. No row is
