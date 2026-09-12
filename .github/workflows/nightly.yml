@@ -1,12 +1,20 @@
-# Nightly binary builds — cross-compiled for 5 targets
+# Nightly binary builds for Linux x86_64 and aarch64, on the self-hosted fleet.
 # APR-MONO: All deps are in-tree. No sibling repo checkouts needed.
 # Spec: docs/specifications/release-system.md
 #
 # Schedule: daily 4am UTC. Manual trigger via workflow_dispatch.
 # Skips build if no commits in the last 24 hours.
 #
-# Produces: apr-{target}.tar.gz (linux/mac) or .zip (windows)
-# Published as GitHub prerelease under the "nightly" tag.
+# Produces: apr-{target}.tar.gz (+ .sha256), published as a GitHub prerelease
+# under the "nightly" tag.
+#
+# #3073 (operator rule 2026-09-10: "WE DO NOT USE HOSTED GITHUB RUNNERS"): every
+# job runs on the fleet. x86_64 builds on yoga and aarch64 natively on gx10, both
+# inside rust:1.93.0-bullseye (binary-release.yml's CPU-lane pattern), so the
+# nightly's glibc floor is 2.31; the ubuntu-latest build needed GLIBC_2.39 and did
+# not run on lambda's 22.04. The macOS and Windows targets are gone: no self-hosted
+# macOS or Windows runner is registered in the org, and there is no hosted
+# fallback. They come back when a box for them does.
 
 name: Nightly
 
@@ -21,7 +29,7 @@ permissions:
 jobs:
   # ── Check for recent activity ────────────────────────────
   check-activity:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, clean-room]
     outputs:
       has_commits: ${{ steps.check.outputs.has_commits }}
     steps:
@@ -42,49 +50,51 @@ jobs:
             echo "No commits in last 24h — skipping nightly build"
           fi
 
-  # ── Cross-compile binaries (5 targets) ───────────────────
+  # ── Build apr: Linux x86_64 on yoga, aarch64 natively on gx10 ──
   build:
     needs: check-activity
     if: needs.check-activity.outputs.has_commits == 'true'
+    name: apr ${{ matrix.target }} on ${{ matrix.host }}
     strategy:
       fail-fast: false
       matrix:
         include:
           - target: x86_64-unknown-linux-gnu
-            runner: ubuntu-latest
+            host: yoga
+            labels: '["self-hosted", "Linux", "X64", "cuda", "yoga"]'
           - target: aarch64-unknown-linux-gnu
-            runner: ubuntu-24.04-arm    # native ARM64, GA + free for public repos
-          - target: x86_64-apple-darwin
-            runner: macos-latest
-          - target: aarch64-apple-darwin
-            runner: macos-latest
-          - target: x86_64-pc-windows-msvc
-            runner: windows-latest
-    runs-on: ${{ matrix.runner }}
+            host: gx10
+            labels: '["self-hosted", "Linux", "ARM64", "cuda", "gx10"]'
+    runs-on: ${{ fromJSON(matrix.labels) }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
+      # A sibling container through the mounted socket, as in binary-release.yml's
+      # CPU lanes: every bind-mount path must exist on the HOST (the work root is
+      # mirrored host<->container; $HOME is not), and the target mountpoint is
+      # pre-created as the runner so dockerd never creates it root-owned (#3098).
+      - name: Build apr inside rust:1.93.0-bullseye (glibc 2.31 floor)
+        run: |
+          DOCKER=docker; docker ps >/dev/null 2>&1 || DOCKER="sudo -n docker"
+          T="${{ matrix.target }}"
+          CACHE="$(cd "$GITHUB_WORKSPACE/../.." && pwd)/cache-nightly/$T"
+          mkdir -p "$CACHE/registry" "$CACHE/target" "$GITHUB_WORKSPACE/target"
+          $DOCKER run --rm \
+            -v "$GITHUB_WORKSPACE:/workspace" \
+            -v "$CACHE/registry:/usr/local/cargo/registry" \
+            -v "$CACHE/target:/workspace/target" \
+            -w /workspace \
+            -e CARGO_TARGET_DIR=/workspace/target \
+            -e CARGO_INCREMENTAL=0 \
+            -e T="$T" \
+            rust:1.93.0-bullseye \
+            sh -c 'set -e; ldd --version | head -1; cargo build --release -p apr-cli --target "$T"'
+          mkdir -p "target/$T/release"
+          cp "$CACHE/target/$T/release/apr" "target/$T/release/apr"
+          "target/$T/release/apr" --version
 
-      - name: Ensure target is installed
-        run: rustup target add ${{ matrix.target }}
-
-      - name: Build release binary (unix)
-        if: runner.os != 'Windows'
-        run: cargo build --release -p apr-cli --target ${{ matrix.target }}
-
-      - name: Build release binary (windows — no visualization feature)
-        if: runner.os == 'Windows'
-        run: cargo build --release -p apr-cli --target ${{ matrix.target }} --no-default-features --features inference
-        # renacer 0.11 on crates.io uses nix::sys without #[cfg(unix)].
-        # Drop optional visualization feature on Windows until crates.io updated.
-
-      - name: Package (unix)
-        if: runner.os != 'Windows'
+      - name: Package
         run: |
           ARCHIVE="apr-${{ matrix.target }}"
           mkdir -p "$ARCHIVE"
@@ -96,23 +106,7 @@ jobs:
           shasum -a 256 "${ARCHIVE}.tar.gz" > "${ARCHIVE}.tar.gz.sha256"
           echo "Packaged: ${ARCHIVE}.tar.gz ($(du -h "${ARCHIVE}.tar.gz" | cut -f1))"
 
-      - name: Package (windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $archive = "apr-${{ matrix.target }}"
-          New-Item -ItemType Directory -Force -Path $archive
-          Copy-Item "target/${{ matrix.target }}/release/apr.exe" "$archive/"
-          foreach ($f in @("README.md", "LICENSE", "LICENSE-MIT", "COPYING", "UNLICENSE")) {
-            if (Test-Path $f) { Copy-Item $f "$archive/" }
-          }
-          Compress-Archive -Path "$archive/*" -DestinationPath "$archive.zip"
-          $hash = (Get-FileHash "$archive.zip" -Algorithm SHA256).Hash.ToLower()
-          "$hash  $archive.zip" | Out-File -Encoding ascii "$archive.zip.sha256"
-          Write-Host "Packaged: $archive.zip"
-
-      - name: Upload artifact (unix)
-        if: runner.os != 'Windows'
+      - name: Upload artifact
         uses: actions/upload-artifact@v7
         with:
           name: apr-${{ matrix.target }}
@@ -120,19 +114,10 @@ jobs:
             apr-${{ matrix.target }}.tar.gz
             apr-${{ matrix.target }}.tar.gz.sha256
 
-      - name: Upload artifact (windows)
-        if: runner.os == 'Windows'
-        uses: actions/upload-artifact@v7
-        with:
-          name: apr-${{ matrix.target }}
-          path: |
-            apr-${{ matrix.target }}.zip
-            apr-${{ matrix.target }}.zip.sha256
-
   # ── Create/update nightly prerelease ─────────────────────
   release:
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, clean-room]
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -143,11 +128,21 @@ jobs:
           path: artifacts
           merge-multiple: true
 
+      # REST, not `gh`: the fleet boxes carry no gh (binary-release.yml, run
+      # 34448908554). Tolerant like the `gh release delete ... || true` it replaces.
       - name: Delete existing nightly release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release delete nightly --yes --cleanup-tag 2>/dev/null || true
+          API="https://api.github.com/repos/${GITHUB_REPOSITORY}"
+          rid=$(curl -sS -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "$API/releases/tags/nightly" \
+            | python3 -c 'import json,sys; print(json.load(sys.stdin).get("id", ""))' || true)
+          if [ -n "$rid" ]; then
+            code=$(curl -sS -o /dev/null -w '%{http_code}' -X DELETE -H "Authorization: Bearer $GH_TOKEN" "$API/releases/$rid")
+            echo "release $rid delete: HTTP $code"
+          fi
+          code=$(curl -sS -o /dev/null -w '%{http_code}' -X DELETE -H "Authorization: Bearer $GH_TOKEN" "$API/git/refs/tags/nightly")
+          echo "tag nightly delete: HTTP $code (204 deleted; 404/422 already absent)"
 
       - name: Create nightly release
         uses: softprops/action-gh-release@v3

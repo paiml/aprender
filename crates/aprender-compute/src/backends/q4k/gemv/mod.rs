@@ -79,6 +79,16 @@ pub fn matmul_q4k_f32_dispatch(
     }
 
     // Fallback to scalar with 4-way unroll
+    // #2567 made the non-x86 `matmul_q4k_f32_parallel` really parallel, but its only
+    // caller sat inside the x86_64 block above, so aarch64 kept running the serial
+    // kernel below. The dead function surfaced only when gx10 began running lint.
+    #[cfg(not(target_arch = "x86_64"))]
+    {
+        if out_dim * in_dim >= 8_000_000 {
+            return matmul_q4k_f32_parallel(q4k_data, input, out_dim, in_dim);
+        }
+    }
+
     scalar::matmul_q4k_f32(q4k_data, input, out_dim, in_dim)
 }
 
@@ -223,9 +233,11 @@ fn matmul_q4k_f32_parallel(
 ///
 ///   serial   median 2.17 ms   (2.166 - 2.181, 0.7% spread)
 ///   parallel median 1.79 ms   (1.757 - 1.811, 3% spread)
-///   speedup  1.21x
 ///
-/// 1.21x from up to 12 threads is modest, and the reason is in this file
+/// The raw bench output of that run was not preserved, so no ratio is
+/// stated here (PERF-010: a number a reader could quote must cite the
+/// evidence/ receipt that produced it; re-measure before citing one).
+/// 2.17 ms to 1.79 ms from up to 12 threads is modest, and the reason is in this file
 /// already: thread::scope spawns threads on EVERY CALL, and the x86 threshold
 /// comment above puts that overhead at ~40us. Twelve spawns is ~0.48 ms, about
 /// 27% of the 1.79 ms parallel time. It is not DRAM bandwidth — 7.4 MiB in
@@ -524,5 +536,42 @@ mod issue_2567_measure {
             ms_p <= ms_s * 1.5,
             "parallel ({ms_p:.2} ms) is materially slower than serial ({ms_s:.2} ms)"
         );
+    }
+}
+
+#[cfg(test)]
+mod parallel_matches_serial {
+    use super::*;
+
+    /// The threaded Q4_K path computes what the serial kernel computes, on every arch. The
+    /// x86_64-only coverage module never ran the non-x86 variant, which aarch64 now uses.
+    #[test]
+    fn test_q4k_parallel_matches_serial_on_every_arch() {
+        let (out_dim, in_dim) = (96, 512);
+        let mut state = 0x2545_F491_u32;
+        let mut next = move || {
+            state ^= state << 13;
+            state ^= state >> 17;
+            state ^= state << 5;
+            state
+        };
+        let mut q4k = vec![0u8; out_dim * (in_dim / SUPER_BLOCK_SIZE) * SUPER_BLOCK_BYTES];
+        for b in &mut q4k {
+            *b = (next() >> 24) as u8;
+        }
+        for sb in q4k.chunks_exact_mut(SUPER_BLOCK_BYTES) {
+            sb[..4].copy_from_slice(&[0x66, 0x2E, 0x66, 0x22]); // d ~ 0.1, dmin ~ 0.012 (f16)
+        }
+        let input: Vec<f32> =
+            (0..in_dim).map(|_| (next() >> 8) as f32 / 16_777_216.0 - 0.5).collect();
+        let want = scalar::matmul_q4k_f32(&q4k, &input, out_dim, in_dim);
+        let got = matmul_q4k_f32_parallel(&q4k, &input, out_dim, in_dim);
+        assert_eq!(got.len(), want.len());
+        for (row, (g, w)) in got.iter().zip(&want).enumerate() {
+            assert!(
+                (g - w).abs() <= 1e-3 * w.abs().max(1.0),
+                "row {row}: parallel {g}, serial {w}"
+            );
+        }
     }
 }

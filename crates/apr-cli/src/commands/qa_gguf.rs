@@ -79,73 +79,53 @@ fn run_qa(path: &Path, config: &QaConfig) -> Result<QaReport> {
         "Not requested (use --assert-classifier-head)",
         || run_classifier_head_gate(path, config),
     )?;
-    dispatch_gate(
-        &mut gates,
-        config.json,
-        config.skip_golden,
-        "golden_output",
-        "Skipped by --skip-golden",
-        || run_golden_output_gate(path, config),
-    )?;
-    dispatch_gate(
-        &mut gates,
-        config.json,
-        config.skip_throughput,
-        "throughput",
-        "Skipped by --skip-throughput",
-        || run_throughput_gate(path, config),
-    )?;
-    dispatch_gate(
-        &mut gates,
-        config.json,
-        config.skip_ollama,
-        "ollama_parity",
-        "Skipped by --skip-ollama",
-        || {
-            if is_gguf_format(path) {
-                run_ollama_parity_gate(path, config)
-            } else {
-                Ok(GateResult::skipped(
-                    "ollama_parity",
-                    "Non-GGUF format (F32/F16 lacks fused kernels for Ollama parity)",
-                ))
-            }
-        },
-    )?;
-    dispatch_gate(
-        &mut gates,
-        config.json,
-        config.skip_gpu_speedup,
-        "gpu_speedup",
-        "Skipped by --skip-gpu-speedup",
-        || run_gpu_speedup_gate(path, config),
-    )?;
+    let capability_match_failed = gates
+        .iter()
+        .find(|g| g.name == "capability_match")
+        .map_or(false, |g| !g.passed);
+
+    let get_skip = |skip: bool, reason: &'static str| -> (bool, &'static str) {
+        if capability_match_failed {
+            (true, "Skipped due to capability match failure")
+        } else {
+            (skip, reason)
+        }
+    };
+
+    let (s, r) = get_skip(config.skip_golden, "Skipped by --skip-golden");
+    dispatch_gate(&mut gates, config.json, s, "golden_output", r, || run_golden_output_gate(path, config))?;
+
+    let (s, r) = get_skip(config.skip_throughput, "Skipped by --skip-throughput");
+    dispatch_gate(&mut gates, config.json, s, "throughput", r, || run_throughput_gate(path, config))?;
+
+    let is_ollama_fmt = is_gguf_format(path);
+    let orig_skip_ollama = config.skip_ollama || !is_ollama_fmt;
+    let orig_reason_ollama = if !is_ollama_fmt {
+        "Non-GGUF format (F32/F16 lacks fused kernels for Ollama parity)"
+    } else {
+        "Skipped by --skip-ollama"
+    };
+    let (s, r) = get_skip(orig_skip_ollama, orig_reason_ollama);
+    dispatch_gate(&mut gates, config.json, s, "ollama_parity", r, || run_ollama_parity_gate(path, config))?;
+
+    let (s, r) = get_skip(config.skip_gpu_speedup, "Skipped by --skip-gpu-speedup");
+    dispatch_gate(&mut gates, config.json, s, "gpu_speedup", r, || run_gpu_speedup_gate(path, config))?;
 
     let (skip_format, format_skip_reason) = format_parity_skip_status(config);
-    dispatch_gate(
-        &mut gates,
-        config.json,
-        skip_format,
-        "format_parity",
-        format_skip_reason,
-        || run_format_parity_gate(path, config),
-    )?;
-    dispatch_gate(
-        &mut gates,
-        config.json,
-        config.skip_ptx_parity,
-        "ptx_parity",
-        "Skipped by --skip-ptx-parity",
-        || run_ptx_parity_gate(path, config),
-    )?;
-    dispatch_gate(
-        &mut gates,
-        config.json,
-        config.skip_gpu_state,
-        "gpu_state_isolation",
-        "Skipped by --skip-gpu-state",
-        || run_gpu_state_isolation_gate(path, config),
-    )?;
+    // get_skip expects &'static str, but format_skip_reason is &str.
+    // So we just inline the check.
+    let (s, r) = if capability_match_failed {
+        (true, "Skipped due to capability match failure")
+    } else {
+        (skip_format, format_skip_reason)
+    };
+    dispatch_gate(&mut gates, config.json, s, "format_parity", r, || run_format_parity_gate(path, config))?;
+
+    let (s, r) = get_skip(config.skip_ptx_parity, "Skipped by --skip-ptx-parity");
+    dispatch_gate(&mut gates, config.json, s, "ptx_parity", r, || run_ptx_parity_gate(path, config))?;
+
+    let (s, r) = get_skip(config.skip_gpu_state, "Skipped by --skip-gpu-state");
+    dispatch_gate(&mut gates, config.json, s, "gpu_state_isolation", r, || run_gpu_state_isolation_gate(path, config))?;
 
     // Gate 9: Performance regression detection (auto-discovers previous report)
     dispatch_regression_gate(path, &mut gates, config)?;
