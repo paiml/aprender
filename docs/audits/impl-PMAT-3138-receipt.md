@@ -18,6 +18,8 @@ k_measured_at_set: 4
 ---
 # impl-PMAT-3138 — workspace-test on ARM64: gx10 runs the quick tier 3–4× faster than intel; four aarch64-only reds fixed; the tree-reader step builds 20 packages, not 686 binaries (#3138)
 
+Receipt for the comparison in the title: `evidence/ci/arm64-workspace-test-2026-09-12/gx10-summary.txt` (per-step rc and seconds on gx10) and `evidence/ci/arm64-workspace-test-2026-09-12/gx10-tiers.txt` (the Starting/Summary lines of every tier), against intel's run 34680214617 attempt 1 (step timestamps in the Verification table below). Measured, not a target.
+
 ## Identity
 ticket PMAT-3138 · kind code+ci · operator instruction 2026-09-12 08:20Z: "STOP the entire build system, and unclog gx10, then continue". gx10 read 0 % busy while PRs queued on intel because every long job pinned `X64`.
 
@@ -36,15 +38,15 @@ routes:
   ph3  class=verify  route=self  w=11.11  basis=first-run[U]   # x86 (AVX-512 box) + gx10 re-verification, guards, lint
 
 verification:
-  cmd="cargo fmt --all -- --check"  claimed_exit=0  rerun_exit=0  log_path=docs/audits/impl-PMAT-3138-logs/fmt.log  sha256=ac8582433c5eba13abd955caf91e8d716ce92cd77971a68eb4cf3cae698d171a
-  cmd="bash scripts/check_runner_labels.sh && bash scripts/check_no_timing_in_required.sh"  claimed_exit=0  rerun_exit=0 (both rc 0)  log_path=docs/audits/impl-PMAT-3138-logs/guards.log  sha256=42fdf9e8118584215862df453732ef614b4f04a2bd5dca46bb9842c36e76f0fc
-  cmd="cargo nextest run --profile ci --no-fail-fast -p aprender-compute --lib --tests --features parallel -E 'test(/blis::/) | test(f022_fma) | test(a013)'  [x86_64, avx512f]"  claimed_exit=0  rerun_exit=0 (306 passed)  log_path=docs/audits/impl-PMAT-3138-logs/x86-compute-tests.log  sha256=26bd469fb2b01c7c44336309db6caa79bd30fe0a4ca44a62e7773e89117d7b87
-  cmd="cargo clippy -p aprender-compute --lib --features parallel -- -D warnings  [x86_64]"  claimed_exit=0  rerun_exit=0  log_path=docs/audits/impl-PMAT-3138-logs/x86-clippy.log  sha256=d4c756ad12014c9e82f8acbca2c2e85974215a709739f74da1689b86a5470de7
-  cmd="cargo check -p aprender-serve --example bench_simd_dot  [x86_64]"  claimed_exit=0  rerun_exit=0  log_path=docs/audits/impl-PMAT-3138-logs/x86-bench-simd-dot-check.log  sha256=a97f10e12a61a6a2a1e5752a0d8cc7b62087bb367986f0645b95c7268199c9d5
-  cmd="gx10: cargo nextest run --profile ci --no-fail-fast -p aprender-compute --lib --tests --features parallel -E 'test(shared_b) | test(f022_fma) | test(a013)'  [aarch64, after the fixes]"  claimed_exit=0  rerun_exit=0 (4 passed; the same four were 3 FAIL + 1 vacuous before)  log_path=docs/audits/impl-PMAT-3138-logs/gx10-fix-verify.txt  sha256=1338e624cb462932fa676c4803130f45dbd0252c7be950359f10acedf5823990
-  cmd="gx10: cargo check --workspace --all-targets --locked  [aarch64, after the bench_simd_dot gate; was rc 101]"  claimed_exit=0  rerun_exit=0 (check2_rc=0 in 84 s)  log_path=docs/audits/impl-PMAT-3138-logs/gx10-check2-tail.txt  sha256=2935c8ccae0da02aa20eb83cbc5caef19dbba856fe8148c443025a22cabc7d54
-  cmd="gx10: quick step 1 / step 2 / FULL lib / GPU crates / compute lib — the Starting/Summary lines of every tier"  claimed_exit=0  rerun_exit=n/a (measurement; 59,359/59,362 pre-fix, 10,325/10,325, 82,085/82,085, rc 0, rc 0)  log_path=docs/audits/impl-PMAT-3138-logs/gx10-tiers.txt  sha256=727c3c726c5565ec03ba4e24ffae3fc2034e13ebacbaebbf5057b8baff7249fd
-  cmd="gx10: arm-sweep summary (tier decision, per-step rc and seconds)"  claimed_exit=0  rerun_exit=n/a (measurement)  log_path=docs/audits/impl-PMAT-3138-logs/gx10-summary.txt  sha256=b4285607a7f912c546065cbb777c8edc0f8e6b9489707a74287a3b07151f5efa
+  cmd="cargo fmt --all -- --check"  claimed_exit=0  rerun_exit=0  log_path=evidence/ci/arm64-workspace-test-2026-09-12/fmt.log  sha256=ac8582433c5eba13abd955caf91e8d716ce92cd77971a68eb4cf3cae698d171a
+  cmd="bash scripts/check_runner_labels.sh && bash scripts/check_no_timing_in_required.sh"  claimed_exit=0  rerun_exit=0 (both rc 0)  log_path=evidence/ci/arm64-workspace-test-2026-09-12/guards.log  sha256=42fdf9e8118584215862df453732ef614b4f04a2bd5dca46bb9842c36e76f0fc
+  cmd="cargo nextest run --profile ci --no-fail-fast -p aprender-compute --lib --tests --features parallel -E 'test(/blis::/) | test(f022_fma) | test(a013)'  [x86_64, avx512f]"  claimed_exit=0  rerun_exit=0 (306 passed)  log_path=evidence/ci/arm64-workspace-test-2026-09-12/x86-compute-tests.log  sha256=26bd469fb2b01c7c44336309db6caa79bd30fe0a4ca44a62e7773e89117d7b87
+  cmd="cargo clippy -p aprender-compute --lib --features parallel -- -D warnings  [x86_64]"  claimed_exit=0  rerun_exit=0  log_path=evidence/ci/arm64-workspace-test-2026-09-12/x86-clippy.log  sha256=d4c756ad12014c9e82f8acbca2c2e85974215a709739f74da1689b86a5470de7
+  cmd="cargo check -p aprender-serve --example bench_simd_dot  [x86_64]"  claimed_exit=0  rerun_exit=0  log_path=evidence/ci/arm64-workspace-test-2026-09-12/x86-bench-simd-dot-check.log  sha256=a97f10e12a61a6a2a1e5752a0d8cc7b62087bb367986f0645b95c7268199c9d5
+  cmd="gx10: cargo nextest run --profile ci --no-fail-fast -p aprender-compute --lib --tests --features parallel -E 'test(shared_b) | test(f022_fma) | test(a013)'  [aarch64, after the fixes]"  claimed_exit=0  rerun_exit=0 (4 passed; the same four were 3 FAIL + 1 vacuous before)  log_path=evidence/ci/arm64-workspace-test-2026-09-12/gx10-fix-verify.txt  sha256=1338e624cb462932fa676c4803130f45dbd0252c7be950359f10acedf5823990
+  cmd="gx10: cargo check --workspace --all-targets --locked  [aarch64, after the bench_simd_dot gate; was rc 101]"  claimed_exit=0  rerun_exit=0 (check2_rc=0 in 84 s)  log_path=evidence/ci/arm64-workspace-test-2026-09-12/gx10-check2-tail.txt  sha256=2935c8ccae0da02aa20eb83cbc5caef19dbba856fe8148c443025a22cabc7d54
+  cmd="gx10: quick step 1 / step 2 / FULL lib / GPU crates / compute lib — the Starting/Summary lines of every tier"  claimed_exit=0  rerun_exit=n/a (measurement; 59,359/59,362 pre-fix, 10,325/10,325, 82,085/82,085, rc 0, rc 0)  log_path=evidence/ci/arm64-workspace-test-2026-09-12/gx10-tiers.txt  sha256=727c3c726c5565ec03ba4e24ffae3fc2034e13ebacbaebbf5057b8baff7249fd
+  cmd="gx10: arm-sweep summary (tier decision, per-step rc and seconds)"  claimed_exit=0  rerun_exit=n/a (measurement)  log_path=evidence/ci/arm64-workspace-test-2026-09-12/gx10-summary.txt  sha256=b4285607a7f912c546065cbb777c8edc0f8e6b9489707a74287a3b07151f5efa
 
 ## Verification
 Measurement harness: `gx10:~/eph-work/arm-sweep{,-2,-3,-5}.sh`, results `gx10:~/eph-work/arm-sweep/20260912T082818Z/summary.txt` — same `localhost:5000/sovereign-ci:stable` image and env block as ci.yml, train tree a6148ab72, `--no-fail-fast`, `CARGO_BUILD_JOBS=12` (CI uses 8).
