@@ -252,7 +252,7 @@ fn test_driver_cpu_forward_phi2_single_token() {
     // Illuminates: forward/core.rs LayerNorm path, GELU path
     let config = GGUFConfig {
         query_pre_attn_scalar: None,
-        architecture: "phi".to_string(),
+        architecture: "phi2".to_string(),
         hidden_dim: 64,
         intermediate_dim: 128,
         num_layers: 2,
@@ -266,7 +266,8 @@ fn test_driver_cpu_forward_phi2_single_token() {
         bos_token_id: None,
         eos_token_id: None,
         explicit_head_dim: None,
-        constraints: ArchConstraints::from_architecture("phi"),
+        // Stale test (the contract moved, the code is right): 'phi' now implies Phi-3 (SwiGLU). Use 'phi2' for GELU.
+        constraints: ArchConstraints::from_architecture("phi2"),
     };
 
     let model = create_phi2_style_test_model(&config);
