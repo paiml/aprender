@@ -904,11 +904,20 @@ EOF
         printf 'FAIL  CLASSIFIER    cargo_classify.sh case table is red here\n'; fails=1
     fi
 
-    # The two logs. The ENV one is verbatim from the #3212 job; the CODE one is
-    # a real rustc diagnostic, present so the ENV arm cannot be widened into
-    # something that swallows a genuine build defect.
+    # The two logs. The ENV one is from the #3212 job; the CODE one is a real
+    # rustc diagnostic, present so the ENV arm cannot be widened into something
+    # that swallows a genuine build defect.
+    #
+    # The runner's absolute path is elided to <workdir>. Pasting it verbatim put
+    # a machine-specific path into a shipped script and
+    # check_hardcoded_paths.sh caught it on the first run — correctly: a
+    # /home/<user>/... literal in scripts/ is its own defect, and the shipped
+    # tier is a differential ratchet, so one is one too many. Nothing is lost.
+    # The classifier anchors on cargo's own framing (`could not parse/generate
+    # dep info`, `(os error 2)`), never on the path, so the fixture proves
+    # exactly what it did before.
     cat > "$td/pvbuild-env.log" <<'ENVLOG'
-error: could not parse/generate dep info at: /home/noah/data/actions-runner-2/_work/aprender/aprender/target/debug/deps/regex-24de62961e5f8d77.d
+error: could not parse/generate dep info at: <workdir>/target/debug/deps/regex-24de62961e5f8d77.d
 
 Caused by:
   No such file or directory (os error 2)
