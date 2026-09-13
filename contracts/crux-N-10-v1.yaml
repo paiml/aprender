@@ -1,0 +1,86 @@
+# CRUX-N-10 — PLSRegression / PLSCanonical
+# CRUX category N: Rust ML Framework Parity (linfa + burn).
+# Filed from the 2026-09-12 competitive sweep. Tracks GitHub #3156, epic #3146.
+# registry: false — this contract carries real falsification gates and claims no
+# exemption (operator ruling 2026-08-21, "no contract exemptions").
+
+metadata:
+  id: CRUX-N-10
+  version: "1.0.0"
+  created: "2026-09-12"
+  updated: "2026-09-12"
+  author: PAIML Engineering
+  registry: false
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "N — Rust ML Framework Parity"
+  competitor: linfa
+  demand_score: 3  # 1..5, medium priority in pmat work
+  intake_status: missing
+  github_issue: 3156
+  description: >
+    Partial Least Squares. linfa-pls ships the PLS family, marked Tested. aprender has none. PLS is the default method wherever predictors are many, collinear and fewer than samples (chemometrics, spectroscopy, genomics); its absence is a hard no for that audience. PCA cannot substitute -- PCA maximizes variance in X, PLS maximizes covariance with y.
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - 'epic: https://github.com/paiml/aprender/issues/3146'
+  - 'story: https://github.com/paiml/aprender/issues/3156'
+  - 'competitor: https://github.com/rust-ml/linfa'
+
+equations:
+  pls_beats_pca_on_low_variance_signal:
+    formula: |
+      on X whose predictive direction has LOW variance:
+        score(PCA -> regression) < τ_low  AND  score(PLS) > τ_high
+    domain: "synthetic X with signal in a low-variance direction"
+    codomain: "both scores, asserted separately"
+    invariants:
+    - "if BOTH pass the fixture is wrong and does not demonstrate PLS"
+    - "successive components are orthogonal within 1e-10"
+
+  degenerates_to_ols_at_full_rank:
+    formula: |
+      n_components = rank(X)  =>  ‖coef_PLS − coef_OLS‖_inf ≤ 1e-8
+    domain: "well-conditioned X"
+    codomain: "coefficient deviation"
+    invariants:
+    - "duplicated columns fit where a naive OLS is asserted to fail"
+    - "multi-output y (PLS2) is supported and tested with a 3-column y"
+
+falsification_tests:
+- id: FALSIFY-CRUX-N-10-001
+  rule: "PLS succeeds where PCA-regression fails"
+  prediction: "on a low-variance-signal fixture, PCA-then-regression is asserted below a threshold and PLS above it"
+  test: >-
+    LIVE-PENDING - PLS succeeds where PCA-regression fails. No test surface exists today because the capability is unimplemented: PLSRegression / PLSCanonical (aprender#3156, CRUX-N-10). PROMOTE by authoring a test named beats_pca_on_low_variance_signal in module `cross_decomposition/pls/tests` of crate `aprender-core`; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED and unfalsifiable-by-absence, NOT satisfied.
+  if_fails: rule 'PLS succeeds where PCA-regression fails' is violated — the linfa parity claim for CRUX-N-10 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation
+- id: FALSIFY-CRUX-N-10-002
+  rule: "full-rank PLS reproduces OLS"
+  prediction: "with n_components = rank(X), coefficients match OLS within 1e-8"
+  test: >-
+    LIVE-PENDING - full-rank PLS reproduces OLS. No test surface exists today because the capability is unimplemented: PLSRegression / PLSCanonical (aprender#3156, CRUX-N-10). PROMOTE by authoring a test named degenerates_to_ols in module `cross_decomposition/pls/tests` of crate `aprender-core`; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED and unfalsifiable-by-absence, NOT satisfied.
+  if_fails: rule 'full-rank PLS reproduces OLS' is violated — the linfa parity claim for CRUX-N-10 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation
+- id: FALSIFY-CRUX-N-10-003
+  rule: "collinear input fits where naive OLS fails"
+  prediction: "on duplicated columns PLS fits and OLS is asserted to fail"
+  test: >-
+    LIVE-PENDING - collinear input fits where naive OLS fails. No test surface exists today because the capability is unimplemented: PLSRegression / PLSCanonical (aprender#3156, CRUX-N-10). PROMOTE by authoring a test named handles_collinearity in module `cross_decomposition/pls/tests` of crate `aprender-core`; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED and unfalsifiable-by-absence, NOT satisfied.
+  if_fails: rule 'collinear input fits where naive OLS fails' is violated — the linfa parity claim for CRUX-N-10 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation
+
+proof_obligations:
+- type: invariant
+  property: "PLS succeeds where PCA-regression fails"
+- type: invariant
+  property: "full-rank PLS reproduces OLS"
+- type: invariant
+  property: "collinear input fits where naive OLS fails"
+
+kani_harnesses:
+- id: KH-CRUX-N-10-001
+  obligation: pls_beats_pca_on_low_variance_signal
+  property: pls_beats_pca_on_low_variance_signal_holds_on_bounded_input
+  bound: 4
+- id: KH-CRUX-N-10-002
+  obligation: degenerates_to_ols_at_full_rank
+  property: degenerates_to_ols_at_full_rank_holds_on_bounded_input
+  bound: 4

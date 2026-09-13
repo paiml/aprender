@@ -1,0 +1,76 @@
+# CRUX-N-04 — Const-generic rank-checked tensor
+# CRUX category N: Rust ML Framework Parity (linfa + burn).
+# Filed from the 2026-09-12 competitive sweep. Tracks GitHub #3150, epic #3146.
+# registry: false — this contract carries real falsification gates and claims no
+# exemption (operator ruling 2026-08-21, "no contract exemptions").
+
+metadata:
+  id: CRUX-N-04
+  version: "1.0.0"
+  created: "2026-09-12"
+  updated: "2026-09-12"
+  author: PAIML Engineering
+  registry: false
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "N — Rust ML Framework Parity"
+  competitor: burn
+  demand_score: 5  # 1..5, critical priority in pmat work
+  intake_status: missing
+  github_issue: 3150
+  description: >
+    Tensor rank carried in the type system. burn's core type is Tensor<B, const D: usize, K>, so a rank mismatch fails to compile. aprender's crates/aprender-tensor/src/tensor.rs:10 carries shape: Vec<usize>, making rank a runtime property. CLAUDE.md records LAYOUT-001 as having occurred 100+ times, defended only by runtime contracts and a hand-maintained FORBIDDEN IMPORTS list.
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - 'epic: https://github.com/paiml/aprender/issues/3146'
+  - 'story: https://github.com/paiml/aprender/issues/3150'
+  - 'competitor: https://github.com/tracel-ai/burn'
+
+equations:
+  rank_is_static:
+    formula: |
+      Tensor<const D: usize, L: Layout>
+        matmul : Tensor<2,L> × Tensor<2,L> -> Tensor<2,L>     (only D=2)
+        reshape::<D2> : Tensor<D,L> -> Tensor<D2,L>
+        add : Tensor<D,L> × Tensor<D,L> -> Tensor<D,L>        (same D required)
+    domain: "Rust type level"
+    codomain: "compile success or compile ERROR"
+    invariants:
+    - "a rank mismatch is a compile error, not a runtime Result::Err"
+    - "Layout ∈ {RowMajor, ColMajor} is a type parameter wired to tensor-layout-v1.yaml"
+    - "the wrapper is zero-cost: same codegen as the untyped path"
+
+falsification_tests:
+- id: FALSIFY-CRUX-N-04-001
+  rule: "rank mismatch fails to COMPILE"
+  prediction: ">=8 trybuild compile-fail cases (2D matmul on 3D, incompatible reshape, mismatched-rank add, ColMajor where RowMajor required) each fail with committed expected stderr"
+  test: >-
+    LIVE-PENDING - rank mismatch fails to COMPILE. No test surface exists today because the capability is unimplemented: Const-generic rank-checked tensor (aprender#3150, CRUX-N-04). PROMOTE by authoring a test named trybuild_rank in crate `aprender-tensor`; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED and unfalsifiable-by-absence, NOT satisfied.
+  if_fails: rule 'rank mismatch fails to COMPILE' is violated — the burn parity claim for CRUX-N-04 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation
+- id: FALSIFY-CRUX-N-04-002
+  rule: "the type is not merely rejecting everything"
+  prediction: "a trybuild PASS suite compiles the legal forms of every operation above"
+  test: >-
+    LIVE-PENDING - the type is not merely rejecting everything. No test surface exists today because the capability is unimplemented: Const-generic rank-checked tensor (aprender#3150, CRUX-N-04). PROMOTE by authoring a test named trybuild_rank_pass in crate `aprender-tensor`; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED and unfalsifiable-by-absence, NOT satisfied.
+  if_fails: rule 'the type is not merely rejecting everything' is violated — the burn parity claim for CRUX-N-04 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation
+- id: FALSIFY-CRUX-N-04-003
+  rule: "the migrated path is unchanged and zero-cost"
+  prediction: "the one migrated hot path produces byte-identical output before and after, and shows no added runtime cost"
+  test: >-
+    LIVE-PENDING - the migrated path is unchanged and zero-cost. No test surface exists today because the capability is unimplemented: Const-generic rank-checked tensor (aprender#3150, CRUX-N-04). PROMOTE by authoring a test named byte_identical_after_typing in module `migration/tests` of crate `aprender-tensor`; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED and unfalsifiable-by-absence, NOT satisfied.
+  if_fails: rule 'the migrated path is unchanged and zero-cost' is violated — the burn parity claim for CRUX-N-04 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation
+
+proof_obligations:
+- type: invariant
+  property: "rank mismatch fails to COMPILE"
+- type: invariant
+  property: "the type is not merely rejecting everything"
+- type: invariant
+  property: "the migrated path is unchanged and zero-cost"
+
+kani_harnesses:
+- id: KH-CRUX-N-04-001
+  obligation: rank_is_static
+  property: rank_is_static_holds_on_bounded_input
+  bound: 4

@@ -1,0 +1,86 @@
+# CRUX-N-03 — Spatial neighbour index (kd-tree + ball-tree + brute)
+# CRUX category N: Rust ML Framework Parity (linfa + burn).
+# Filed from the 2026-09-12 competitive sweep. Tracks GitHub #3149, epic #3146.
+# registry: false — this contract carries real falsification gates and claims no
+# exemption (operator ruling 2026-08-21, "no contract exemptions").
+
+metadata:
+  id: CRUX-N-03
+  version: "1.0.0"
+  created: "2026-09-12"
+  updated: "2026-09-12"
+  author: PAIML Engineering
+  registry: false
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "N — Rust ML Framework Parity"
+  competitor: linfa
+  demand_score: 5  # 1..5, critical priority in pmat work
+  intake_status: missing
+  github_issue: 3149
+  description: >
+    Exact nearest-neighbour search backed by a spatial index. linfa ships linfa-nn ("A collection of nearest neighbour algorithms") marked Tested/Benchmarked. aprender has no index at all: KdTree and BallTree are absent repo-wide and KNearestNeighbors performs a linear scan. Six existing consumers pay O(n) per query.
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - 'epic: https://github.com/paiml/aprender/issues/3146'
+  - 'story: https://github.com/paiml/aprender/issues/3149'
+  - 'competitor: https://github.com/rust-ml/linfa'
+
+equations:
+  index_exactness:
+    formula: |
+      ∀ query q, ∀ k:  k_nearest_index(q, k) ≡ k_nearest_bruteforce(q, k)
+        as SETS, including tie handling
+    domain: "point clouds n ∈ [10, 2000], d ∈ [1, 30], any supported metric"
+    codomain: "identical neighbour set"
+    invariants:
+    - "an index returning different neighbours is a DEFECT, not an optimization"
+    - "radius queries agree with brute force on the same data"
+
+  sublinear_query_growth:
+    formula: |
+      visits(n) counted as node expansions, NOT wall-clock:
+        visits(1e4)/visits(1e3) < 10  AND  visits(1e5)/visits(1e4) < 10
+    domain: "n ∈ {1e3, 1e4, 1e5}"
+    codomain: "node-visit counts"
+    invariants:
+    - "counted, never timed -- the repo forbids wall-clock in required checks"
+
+falsification_tests:
+- id: FALSIFY-CRUX-N-03-001
+  rule: "index returns the identical neighbour set as brute force"
+  prediction: "proptest over n in 10..2000 and d in 1..30 asserts set equality with brute force including ties"
+  test: >-
+    LIVE-PENDING - index returns the identical neighbour set as brute force. No test surface exists today because the capability is unimplemented: Spatial neighbour index (kd-tree + ball-tree + brute) (aprender#3149, CRUX-N-03). PROMOTE by authoring a test named prop_exact_vs_bruteforce in module `neighbors/tests` of crate `aprender-core`; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED and unfalsifiable-by-absence, NOT satisfied.
+  if_fails: rule 'index returns the identical neighbour set as brute force' is violated — the linfa parity claim for CRUX-N-03 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation
+- id: FALSIFY-CRUX-N-03-002
+  rule: "query cost grows sub-linearly"
+  prediction: "node-visit counts across n=1e3,1e4,1e5 grow sub-linearly; measured by counter, not clock"
+  test: >-
+    LIVE-PENDING - query cost grows sub-linearly. No test surface exists today because the capability is unimplemented: Spatial neighbour index (kd-tree + ball-tree + brute) (aprender#3149, CRUX-N-03). PROMOTE by authoring a test named visits_sublinear_in_n in module `neighbors/tests` of crate `aprender-core`; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED and unfalsifiable-by-absence, NOT satisfied.
+  if_fails: rule 'query cost grows sub-linearly' is violated — the linfa parity claim for CRUX-N-03 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation
+- id: FALSIFY-CRUX-N-03-003
+  rule: "rewired consumers are unchanged"
+  prediction: "DBSCAN, LOF and KNearestNeighbors produce identical labels/scores before and after the rewire on pinned fixtures"
+  test: >-
+    LIVE-PENDING - rewired consumers are unchanged. No test surface exists today because the capability is unimplemented: Spatial neighbour index (kd-tree + ball-tree + brute) (aprender#3149, CRUX-N-03). PROMOTE by authoring a test named consumers_unchanged_after_rewire in module `neighbors/tests` of crate `aprender-core`; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED and unfalsifiable-by-absence, NOT satisfied.
+  if_fails: rule 'rewired consumers are unchanged' is violated — the linfa parity claim for CRUX-N-03 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation
+
+proof_obligations:
+- type: invariant
+  property: "index returns the identical neighbour set as brute force"
+- type: invariant
+  property: "query cost grows sub-linearly"
+- type: invariant
+  property: "rewired consumers are unchanged"
+
+kani_harnesses:
+- id: KH-CRUX-N-03-001
+  obligation: index_exactness
+  property: index_exactness_holds_on_bounded_input
+  bound: 4
+- id: KH-CRUX-N-03-002
+  obligation: sublinear_query_growth
+  property: sublinear_query_growth_holds_on_bounded_input
+  bound: 4
