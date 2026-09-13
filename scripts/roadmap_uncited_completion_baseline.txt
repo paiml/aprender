@@ -1,3 +1,4 @@
+# tool_version=none (measured by this script's own YAML parse of roadmap.yaml; not a versioned analyser)
 # Roadmap entries claiming `status: completed` that cite nothing, as of
 # the day check_roadmap_completion_is_cited.sh was written. RECORDED,
 # NOT BLESSED — PERF-004 is in this file and is known to be FALSE: its

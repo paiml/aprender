@@ -1,0 +1,153 @@
+metadata:
+  version: 1.0.0
+  created: '2026-09-10'
+  author: PAIML Engineering
+  description: "Release schedule 0.67.0 → 0.70.0 — the property that the schedule is a mechanism, not a memo. A release train leaves in a fixed 48–72 h window; every tag carries four apr binaries ({cuda,cpu} × {x86_64,aarch64}); a PR's tests fit in 20 minutes and the FULL tier runs only nightly on main and in the pre-publish dogfood; every row of the plan is a GitHub-epic row with an acceptance command; and the specification describes the tree it governs (every path it cites resolves, every train section carries its epic and its release row). v0.66.0 shipped with zero apr binaries because the asset set lived in a decision row nobody's gate read — this contract is the gate."
+  kind: pattern
+  references:
+    - "docs/specifications/06x-release-schedule.md — the schedule, §0 measured ground truth, §2 rows, §8 obligation DAG"
+    - "crates/aprender-core/tests/readme_contract.rs — FALSIFY-DOCS-CLAUDE-001 extended to the schedule (DOCS_WITH_PATHS)"
+    - "contracts/apr-docs-v1.yaml — the docs contract whose path-gate row names the schedule"
+    - ".github/workflows/binary-release.yml — the release lane: build-apr-cuda, verify-cuda-assets (67-A1 widens it to four apr assets)"
+    - "scripts/ci_test_tier.sh — the BSE-17 tier decision the 20-minute budget (67-E1/E2) is applied to"
+    - "docs/specifications/PP-066-release-spec.md — §4 release criteria C0–C13; C13 is narrowed by row 67-A1"
+    - "docs/audits/impl-PMAT-1096-receipt.md — the 0.66.0 cut this schedule's release-day protocol (§4) is derived from"
+
+five_whys:
+  symptom: "v0.66.0 was tagged and published on 2026-09-10 with eight pv tarballs and no apr binary at all; the CUDA backfill then failed because the self-hosted builders have no gh. Meanwhile a one-file PR costs 66 minutes of CI and the merge queue re-runs the FULL tier whenever main moved, so a 2–3 day release cadence cannot be sustained on the fleet as it stands."
+  why_1: "The asset set of a release was a decision row (PP-066 D-10) and a nightly's side effect, never a gate: nothing read `gh release view --json assets` before the tag was promoted."
+  why_2: "The release protocol lived in a receipt and an autopilot script; the receipt records what was done, it cannot refuse what was skipped."
+  why_3: "PR-time testing grew by accretion — 41 tree-reader targets chained serially, 26 cargo builds in one step — and no budget existed for a job to exceed, so nothing ever said 'this is too slow'."
+  why_4: "The GPU hosts ran nothing at PR time and one hour a day at night, so the CUDA suites that would catch a GPU defect never ran where they could fail before a release."
+  why_5: "The schedule itself was prose: dates without windows, priorities without rows, rows without acceptance commands — so it could not be checked by anything, and a plan nothing checks is a plan that slips silently."
+  root_cause: "Release cadence, asset set, test budget and fleet utilisation were each described but none was mechanised. The remedy is one specification whose every row has an acceptance command, a contract whose falsification tests run those commands, and a drift gate that fails when the specification stops describing the tree."
+
+equations:
+  train_leaves_in_window:
+    formula: "for every train n > 0: T(n) in [T(n-1) + 48h, T(n-1) + 72h], where T is `gh release view vX.Y.0 --json publishedAt`; a red release gate may hold T(n) at most 12h past the planned instant"
+    domain: "the tags v0.67.0, v0.68.0, v0.69.0, v0.70.0"
+    codomain: "one row per train in the release epic's closing comment: planned, actual, delta; a train outside its window is a §11 amendment naming why"
+    invariants:
+      - "Scope slips forward to the next train; a date never slips for scope (D-5)"
+      - "T(n) is read from GitHub, never typed"
+      - "A held train names the refusing gate in a STOP line (§4)"
+
+  four_apr_assets_per_tag:
+    formula: "for every tag vX.Y.0 with X.Y >= 0.67: {apr-vX.Y.0-<t>-<f>.tar.gz, .sha256 : t in {x86_64,aarch64}-unknown-linux-gnu, f in {cuda,cpu}} is a subset of assets(vX.Y.0)"
+    domain: "the GitHub release's asset list"
+    codomain: "exit code of the verify-apr-assets job and of scripts/check_release_assets.sh (owed by 67-A1)"
+    invariants:
+      - "A missing asset is a red workflow and a NO-GO dogfood row, never a manual look (operator directive 2026-09-10)"
+      - "Every asset is built on the self-hosted fleet — gx10 for aarch64, yoga or the clean-room pool for x86_64 — never a hosted runner"
+      - "The builder's glibc is the asset's floor and is printed into the job summary"
+
+  pr_budget_twenty_minutes:
+    formula: "for every pull_request run of ci.yml: max(job.duration) <= 20 min and wall(first job start, gate completion) <= 20 min"
+    domain: "the last N pull_request runs (N = 10 for 68-E1, 20 for 70-E1)"
+    codomain: "exit code of scripts/check_pr_budget.sh (owed by 68-E1); until it exists, the §2 E acceptance commands"
+    invariants:
+      - "A job that cannot fit is scoped down or moved to nightly; its timeout is never raised"
+      - "The FULL tier runs only in the nightly on main and in scripts/dogfood.sh --phase pre-publish (D-1)"
+      - "merge_group runs reuse or quick, never full (67-E2)"
+
+  spec_describes_the_tree:
+    formula: "the schedule exists, is listed in docs/specifications/TOC.md, is named in DOCS_WITH_PATHS of readme_contract.rs, every backticked repo path in it resolves, and every train section carries `· epic #<n>` and its `<train>-R` release row"
+    domain: "docs/specifications/06x-release-schedule.md at HEAD"
+    codomain: "FALSIFY-REL-06X-001..005 exit codes"
+    invariants:
+      - "An owed artifact is written without backticks so the drift gate is never asked to check a file the document is asking someone to create"
+      - "A ratio or throughput figure appears only beside its evidence/ receipt path (PP-12; scripts/check_no_claim_literals.sh scans docs/specifications/)"
+
+  obligation_dag_is_acyclic_and_forward:
+    formula: "for every edge (row -> blocker) in §8: train(blocker) <= train(row); the graph has no cycle; every root names a train"
+    domain: "the yaml block of §8"
+    codomain: "FALSIFY-REL-06X-006 exit code"
+    invariants:
+      - "A row never waits on a later train"
+      - "A blocked row carries no date of its own — its expiry is its latest blocker's train"
+
+proof_obligations:
+  - type: invariant
+    property: "Every tag from v0.67.0 on carries the four apr assets with sha256"
+    formal: "verify-apr-assets exit 0 on the release run; scripts/check_release_assets.sh vX.Y.0 exit 0"
+    applies_to: four_apr_assets_per_tag
+  - type: invariant
+    property: "A pull_request run of ci.yml fits in 20 minutes"
+    formal: "scripts/check_pr_budget.sh exit 0 over the window"
+    applies_to: pr_budget_twenty_minutes
+  - type: invariant
+    property: "The FULL tier is absent from pull_request and merge_group runs"
+    formal: "scripts/ci_test_tier.sh --self-test rows `merge_group different tree -> quick` and `push -> quick` PASS"
+    applies_to: pr_budget_twenty_minutes
+  - type: invariant
+    property: "The schedule describes the tree it governs"
+    formal: "cargo test -p aprender-core --test readme_contract test_documented_paths_exist exit 0 with the schedule in DOCS_WITH_PATHS"
+    applies_to: spec_describes_the_tree
+  - type: invariant
+    property: "The obligation DAG is acyclic and never waits on a later train"
+    formal: "FALSIFY-REL-06X-006 exit 0"
+    applies_to: obligation_dag_is_acyclic_and_forward
+  - type: invariant
+    property: "Each train left inside its window or the amendment log says why"
+    formal: "the closing comment of each release epic carries planned/actual/delta"
+    applies_to: train_leaves_in_window
+
+falsification_tests:
+  - id: FALSIFY-REL-06X-001
+    rule: "The schedule exists"
+    prediction: "docs/specifications/06x-release-schedule.md is a regular file"
+    test: "test -f docs/specifications/06x-release-schedule.md"
+    if_fails: "The plan was deleted or moved; every epic row points at nothing"
+
+  - id: FALSIFY-REL-06X-002
+    rule: "The schedule is registered where readers look for specs"
+    prediction: "docs/specifications/TOC.md links 06x-release-schedule.md"
+    test: "grep -q '06x-release-schedule.md' docs/specifications/TOC.md"
+    if_fails: "A spec nobody can find is a spec nobody follows"
+
+  - id: FALSIFY-REL-06X-003
+    rule: "Every train section carries its epic and its release row"
+    prediction: "For each of 0.67.0, 0.68.0, 0.69.0, 0.70.0 the §3 heading ends in `· epic #<digits>` and a `<train>-R` row exists"
+    test: "f=docs/specifications/06x-release-schedule.md; for v in 67 68 69 70; do grep -qE \"^### 0\\.$v\\.0 .*· epic #[0-9]+\" \"$f\" && grep -qE \"^\\| $v-R \\|\" \"$f\" || exit 1; done"
+    if_fails: "A train without an epic cannot be commented on; a train without a release row has no protocol to run"
+
+  - id: FALSIFY-REL-06X-004
+    rule: "The drift gate names the schedule"
+    prediction: "DOCS_WITH_PATHS in readme_contract.rs contains the schedule's path"
+    test: "grep -q 'docs/specifications/06x-release-schedule.md' crates/aprender-core/tests/readme_contract.rs"
+    if_fails: "Paths cited by the schedule are checked by nothing — the CLAUDE.md defect class (six dead paths for months)"
+
+  - id: FALSIFY-REL-06X-005
+    rule: "Every backticked repo path in the schedule resolves (mutation-verified: a bogus citation turns this RED)"
+    prediction: "test_documented_paths_exist passes with the schedule in its universe"
+    test: "cargo test -p aprender-core --test readme_contract test_documented_paths_exist"
+    if_fails: "The schedule sends readers to files that do not exist; fix the document or mark a deliberately absent path [gitignored]"
+
+  - id: FALSIFY-REL-06X-006
+    rule: "The §8 obligation DAG is acyclic and no row waits on a later train"
+    prediction: "Parsing the yaml block under '## §8' yields a DAG whose every edge points to an equal-or-earlier train"
+    test: "python3 -c \"import re,sys;s=open('docs/specifications/06x-release-schedule.md').read();b=s.split('## §8')[1].split('\\x60\\x60\\x60yaml')[1].split('\\x60\\x60\\x60')[0];rows={};\nfor l in b.splitlines():\n  m=re.match(r'^(\\S+):\\s+\\[([^\\]]*)\\]\\s+(\\d+\\.\\d+)',l)\n  if m: rows[m.group(1)]=([x.strip() for x in m.group(2).split(',') if x.strip()],float(m.group(3)))\nassert len(rows)>=40,len(rows)\nfor r,(bl,t) in rows.items():\n  for b2 in bl:\n    if b2 in rows: assert rows[b2][1]<=t,(r,b2)\nseen=set()\ndef v(n,st):\n  assert n not in st,('cycle',n); st=st|{n}\n  for b2 in rows.get(n,([],0))[0]: v(b2,st)\nfor r in rows: v(r,set())\nprint('dag ok',len(rows))\""
+    if_fails: "A cycle means every row in it waits for itself; a backward edge means a train is blocked by work scheduled after it — the plan cannot be executed as written"
+
+  - id: FALSIFY-REL-06X-007
+    rule: "The release lane carries an asset gate that can fail"
+    prediction: "binary-release.yml has a job that requires the apr assets on the release"
+    test: "grep -qE 'verify-(cuda|apr)-assets' .github/workflows/binary-release.yml"
+    if_fails: "A release without its binaries goes out green again (v0.66.0, 2026-09-10)"
+
+  - id: FALSIFY-REL-06X-008
+    rule: "The claim guard scans this directory, so the schedule's figures are held to PP-12"
+    prediction: "check_no_claim_literals.sh names docs/specifications/ in its universe"
+    test: "grep -q 'docs/specifications' scripts/check_no_claim_literals.sh"
+    if_fails: "A ratio typed into the schedule without a receipt would pass unread"
+
+qa_gate:
+  id: F-REL-06X-001
+  name: "06x release schedule — trains leave in their window, every tag carries four apr binaries, PRs fit in 20 minutes, the spec describes the tree"
+  description: "Mechanises the 2–3 day 24/7 cadence for 0.67.0–0.70.0: the falsification tests above are the commands the release epics and the pre-publish dogfood run; the owed scripts (check_release_assets.sh, check_pr_budget.sh, fleet_utilization.sh) each land with their own contract row in the train that owes them."
+  checks:
+    - "train_leaves_in_window"
+    - "four_apr_assets_per_tag"
+    - "pr_budget_twenty_minutes"
+    - "spec_describes_the_tree"
+    - "obligation_dag_is_acyclic_and_forward"

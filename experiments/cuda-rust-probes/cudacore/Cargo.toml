@@ -1,0 +1,11 @@
+# Fleet probe: does NVIDIA's cuda-core (crates.io, stable Rust) drive THIS host's GPU end to end?
+# Own [workspace]: invisible to every workspace-wide cargo command (--all-features cannot pull
+# cuda-bindings' build.rs, which hard-fails without a CUDA 13.0+ toolkit, into make coverage).
+[workspace]
+[package]
+name = "cudacore-probe"
+version = "0.0.0"
+edition = "2021"
+publish = false
+[dependencies]
+cuda-core = "=0.3.1"

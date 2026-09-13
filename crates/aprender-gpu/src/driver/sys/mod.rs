@@ -173,6 +173,31 @@ pub const CU_TARGET_COMPUTE_89: c_uint = 89;
 /// SM 9.0 (Hopper)
 pub const CU_TARGET_COMPUTE_90: c_uint = 90;
 
+// CUfunction_attribute — read back a COMPILED kernel's resource usage. Unlike the
+// CU_TARGET_COMPUTE_* table above (which stops at 90 and needs an edit per GPU
+// generation), these are architecture-independent: they do not change when a new SM
+// ships, which is why the launch-budget check is built on them.
+/// Max threads per block this kernel can be launched with.
+pub const CU_FUNC_ATTRIBUTE_MAX_THREADS_PER_BLOCK: c_int = 0;
+/// Statically declared shared memory, bytes.
+pub const CU_FUNC_ATTRIBUTE_SHARED_SIZE_BYTES: c_int = 1;
+/// User-declared constant memory, bytes.
+pub const CU_FUNC_ATTRIBUTE_CONST_SIZE_BYTES: c_int = 2;
+/// Per-thread local memory, bytes. Non-zero means registers spilled.
+pub const CU_FUNC_ATTRIBUTE_LOCAL_SIZE_BYTES: c_int = 3;
+/// Registers used per thread.
+pub const CU_FUNC_ATTRIBUTE_NUM_REGS: c_int = 4;
+
+// CUdevice_attribute — queried, never tabulated, so a new architecture needs no edit here.
+/// Max threads per block the device supports.
+pub const CU_DEVICE_ATTRIBUTE_MAX_THREADS_PER_BLOCK: c_int = 1;
+/// Max shared memory per block, bytes.
+pub const CU_DEVICE_ATTRIBUTE_MAX_SHARED_MEMORY_PER_BLOCK: c_int = 8;
+/// Warp size in threads.
+pub const CU_DEVICE_ATTRIBUTE_WARP_SIZE: c_int = 10;
+/// Max 32-bit registers available per block.
+pub const CU_DEVICE_ATTRIBUTE_MAX_REGISTERS_PER_BLOCK: c_int = 12;
+
 // ============================================================================
 // CUDA Stream Flags
 // ============================================================================
@@ -414,6 +439,19 @@ pub struct CudaDriver {
     pub cuLinkDestroy: unsafe extern "C" fn(state: CUlinkState) -> CUresult,
 
     // Driver Version Query (PTX disk cache key component)
+    // Launch budget / occupancy (O2 — enforces contracts/trueno/ptx-codegen-safety-v1.yaml
+    // `register_budget`, whose generated macro was invoked nowhere in the tree)
+    /// cuFuncGetAttribute - Read a compiled kernel's resource usage (regs, shared, local)
+    pub cuFuncGetAttribute:
+        unsafe extern "C" fn(pi: *mut c_int, attrib: c_int, func: CUfunction) -> CUresult,
+    /// cuOccupancyMaxActiveBlocksPerMultiprocessor - the contract's own postcondition
+    pub cuOccupancyMaxActiveBlocksPerMultiprocessor: unsafe extern "C" fn(
+        num_blocks: *mut c_int,
+        func: CUfunction,
+        block_size: c_int,
+        dynamic_smem_bytes: usize,
+    ) -> CUresult,
+
     /// cuDriverGetVersion - Get CUDA driver version
     pub cuDriverGetVersion: unsafe extern "C" fn(version: *mut c_int) -> CUresult,
 }
@@ -494,6 +532,10 @@ mod loading {
                 type FnDeviceTotalMem = unsafe extern "C" fn(*mut usize, CUdevice) -> CUresult;
                 type FnDeviceGetAttribute =
                     unsafe extern "C" fn(*mut c_int, c_int, CUdevice) -> CUresult;
+                type FnFuncGetAttribute =
+                    unsafe extern "C" fn(*mut c_int, c_int, CUfunction) -> CUresult;
+                type FnOccupancyMaxActiveBlocks =
+                    unsafe extern "C" fn(*mut c_int, CUfunction, c_int, usize) -> CUresult;
                 type FnPrimaryCtxRetain =
                     unsafe extern "C" fn(*mut CUcontext, CUdevice) -> CUresult;
                 type FnPrimaryCtxRelease = unsafe extern "C" fn(CUdevice) -> CUresult;
@@ -670,6 +712,12 @@ mod loading {
                     cuLinkAddData: load_sym!(cuLinkAddData_v2, FnLinkAddData),
                     cuLinkComplete: load_sym!(cuLinkComplete, FnLinkComplete),
                     cuLinkDestroy: load_sym!(cuLinkDestroy, FnLinkDestroy),
+                    // Launch budget / occupancy (O2)
+                    cuFuncGetAttribute: load_sym!(cuFuncGetAttribute, FnFuncGetAttribute),
+                    cuOccupancyMaxActiveBlocksPerMultiprocessor: load_sym!(
+                        cuOccupancyMaxActiveBlocksPerMultiprocessor,
+                        FnOccupancyMaxActiveBlocks
+                    ),
                     // Driver version
                     cuDriverGetVersion: load_sym!(cuDriverGetVersion, FnDriverGetVersion),
                 })

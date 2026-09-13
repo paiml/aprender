@@ -1,0 +1,63 @@
+{
+  "ticket": "PMAT-1090",
+  "base": "origin/main",
+  "head": "6b90c14437ad98588b1fa3a9c5e79eb93ef94da4",
+  "diff_sha256": "6bcb4c42de1240add6b6d6a99a3e271b58889891dd0bc2e5881f4e629eba5b7f",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 15696,
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff perfectly implements the requirements of PMAT-1090. It successfully replaces the shebang in `.githooks/pre-commit` to `#!/usr/bin/env bash` to resolve the `pipefail` error under `dash`. It also integrates the `--staged` check into the pre-commit hook, catching `roadmap.yaml` re-serialization at commit time instead of in CI. The implementation of `--staged` in `check_roadmap_diff_additive.sh` correctly evaluates the index tree against the plain `merge-base(origin/main, HEAD)`. The case table was hermetically expanded from 18 to 22 rows exactly as requested, correctly guarding against mutations like `resolve_base` (Row 22) and `run_check || true` (Row 20). No forbidden changes were introduced.",
+      "findings": [],
+      "raw_bytes": 2443,
+      "err_bytes": 0
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Initial logic and parameters are validated. The changes perfectly address the `pipefail` issue in the pre-commit hook and add the missing `--staged` capability to `check_roadmap_diff_additive.sh`, backed by hermetic test cases asserting correct behavior (18 -> 22 rows). Scope creep is avoided, and no forbidden scripts are modified.",
+      "findings": [
+        {
+          "claim": "The diff strictly follows the requirements outlined in PMAT-1090.",
+          "file": "docs/roadmaps/roadmap.yaml",
+          "grounding": "asserted"
+        }
+      ],
+      "raw_bytes": 2545,
+      "err_bytes": 0
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff implements the requirements outlined in PMAT-1090 perfectly. It resolves the unpassable gate by switching the shebang in `.githooks/pre-commit` from `/bin/sh` to `/usr/bin/env bash` to correctly support `set -euo pipefail`. It successfully adds the `--staged` entry point to `scripts/check_roadmap_diff_additive.sh` using `git write-tree` as the `HEAD` tree object and `merge-base(origin/main, HEAD)` as the `BASE_REF`, bringing the CI-level validations directly into the pre-commit hook. The added self-tests (Rows 19-22) thoroughly cover the new indexing behaviors as detailed in the ticket's Acceptance Criteria. No violations or conflicting changes were found.",
+      "findings": [],
+      "raw_bytes": 3121,
+      "err_bytes": 0
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": "docs/roadmaps/roadmap.yaml",
+      "line": null,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "The diff strictly follows the requirements outlined in PMAT-1090."
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": []
+}
