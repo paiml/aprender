@@ -205,8 +205,21 @@ fn falsify_cgp_043_profile_binary() {
         .output()
         .expect("Failed to run cgp profile binary");
 
-    // Should succeed (even if nsys finds no kernels — nvidia-smi doesn't launch kernels)
-    assert!(output.status.success());
+    // Should succeed (even if nsys finds no kernels — nvidia-smi doesn't launch kernels).
+    //
+    // A bare `assert!(output.status.success())` says only that it did not. This
+    // row failed twice on gx10-pool1 (job 103764…, nextest TRY 1 and TRY 2) and
+    // the whole report was the word `false` — nothing about the exit code, the
+    // stderr, or whether nvidia-smi was even on the box. A falsifier that cannot
+    // say which of those it is costs a round trip every time it fires.
+    assert!(
+        output.status.success(),
+        "FALSIFY-CGP-043: `cgp profile binary nvidia-smi` exited {}.\n         This is an ENV death when nvidia-smi or nsys is absent from the runner, \
+         and a CODE defect when they are present and cgp still failed.\n         --- stderr ---\n{}\n--- stdout ---\n{}",
+        output.status,
+        String::from_utf8_lossy(&output.stderr),
+        String::from_utf8_lossy(&output.stdout),
+    );
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
         stdout.contains("Binary Profile")
@@ -1106,31 +1119,77 @@ fn falsify_cgp_090_trueno_gemm_at_peak() {
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
 
-    // If measured (M label), check GFLOPS > 100 (reasonable for parallel GEMM)
-    if stdout.contains("M") {
-        // Parse TFLOP/s from output
-        for line in stdout.lines() {
-            if line.contains("avx512") && line.contains("M") {
-                // The line has TFLOP/s field
-                let parts: Vec<&str> = line.split_whitespace().collect();
-                // Find the TFLOP/s value (after time)
-                for (i, p) in parts.iter().enumerate() {
-                    if let Ok(tflops) = p.parse::<f64>() {
-                        if tflops > 0.01 && i > 1 {
-                            let gflops = tflops * 1000.0;
-                            eprintln!("FALSIFY-CGP-090: Measured GEMM 1024 = {:.0} GFLOPS", gflops);
-                            assert!(
-                                gflops > 100.0,
-                                "FALSIFY-CGP-090: GEMM 1024 {gflops:.0} GFLOPS must be > 100"
-                            );
-                            return;
-                        }
-                    }
-                }
-            }
-        }
+    let Some(gflops) = first_measured_avx512_gflops(&stdout) else {
+        eprintln!("FALSIFY-CGP-090: No measured data available, test inconclusive");
+        return;
+    };
+    eprintln!("FALSIFY-CGP-090: Measured GEMM 1024 = {gflops:.0} GFLOPS");
+    assert!(
+        gflops > 100.0,
+        "FALSIFY-CGP-090: GEMM 1024 {gflops:.0} GFLOPS must be > 100"
+    );
+}
+
+/// The first measured TFLOP/s on an `avx512` row of `cgp profile compare`, as GFLOPS.
+///
+/// Lifted out of `falsify_cgp_090_trueno_gemm_at_peak` UNCHANGED: `M` is the
+/// measured-data label, only an `avx512` row counts, fields 0 and 1 are the
+/// backend and the label rather than numbers, and a value at or below 0.01 is
+/// not a measurement. Five nested levels inside a `#[test]` is how that
+/// function reached Cognitive 37 against a ceiling of 30.
+///
+/// WHAT THE EXTRACTION EXPOSED, and deliberately did not change: "first
+/// parseable field after index 1" is the TIME column on a `backend label time
+/// tflops` row, not the TFLOP/s column. So FALSIFY-CGP-090 has been asserting
+/// `time * 1000 > 100`, which is a claim about microseconds wearing the name
+/// GFLOPS. The rows below pin the behaviour as it IS -- renaming it or moving
+/// to the right column changes what that gate asserts and belongs in its own
+/// change, not smuggled in under a complexity decomposition. Filed separately.
+fn first_measured_avx512_gflops(stdout: &str) -> Option<f64> {
+    if !stdout.contains('M') {
+        return None;
     }
-    eprintln!("FALSIFY-CGP-090: No measured data available, test inconclusive");
+    stdout
+        .lines()
+        .filter(|l| l.contains("avx512") && l.contains('M'))
+        .find_map(measured_value_on_row)
+}
+
+/// The first number past the backend and label fields that clears the 0.01
+/// floor, scaled by 1000. Split out from the caller for the same reason the
+/// caller was split from the test: five levels of nesting in one body is what
+/// the complexity ceiling is measuring.
+fn measured_value_on_row(line: &str) -> Option<f64> {
+    line.split_whitespace()
+        .skip(2)
+        .filter_map(|p| p.parse::<f64>().ok())
+        .find(|v| *v > 0.01)
+        .map(|v| v * 1000.0)
+}
+
+#[test]
+fn first_measured_avx512_gflops_takes_the_first_number_after_the_label() {
+    // `backend label time tflops`: index 2 is the TIME, and it is what the
+    // shipped predicate returns -- 1234.5 * 1000, not 0.85 * 1000. This row
+    // exists to make that visible rather than to bless it.
+    let out = "backend  label  time  tflops\navx512 M 1234.5 0.85\n";
+    assert_eq!(first_measured_avx512_gflops(out), Some(1_234_500.0));
+    // and when the time column IS the only number, the same path is taken
+    assert_eq!(first_measured_avx512_gflops("avx512 M 0.85"), Some(850.0));
+}
+
+#[test]
+fn first_measured_avx512_gflops_refuses_what_is_not_a_measurement() {
+    // no M label anywhere
+    assert_eq!(first_measured_avx512_gflops("avx512 E 1.0 0.85"), None);
+    // an M row for a DIFFERENT backend
+    assert_eq!(first_measured_avx512_gflops("scalar M 1.0 0.85"), None);
+    // an avx512 M row whose numbers are all at or below the 0.01 floor
+    assert_eq!(first_measured_avx512_gflops("avx512 M 0.004 0.002"), None);
+    // fields 0 and 1 are never read as the value, however numeric they look
+    assert_eq!(first_measured_avx512_gflops("0.85 M avx512"), None);
+    // an empty input is not a measurement
+    assert_eq!(first_measured_avx512_gflops(""), None);
 }
 
 // ══════════════════════════════════════════════════════════════════════
