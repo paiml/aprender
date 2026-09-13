@@ -151,7 +151,11 @@ main() {
         echo "REFUSED: --update may only lower the baseline ($base -> $count is a RISE)"
         cat "$findings"; rm -f "$findings"; return 1
       fi
-      printf '# `producer | grep -q` sites under pipefail. This number may only FALL.\n# Re-stamp with: bash %s --update\n%s\n' "$SELF" "$count" > "$BASELINE"
+      # The tool_version header is CARRIED, not rewritten. An --update that
+      # drops it is aprender#3217's first complaint: the ratchet silently loses
+      # its instrument record, and check_baseline_ratchets.sh then counts this
+      # file against the no-instrument ceiling.
+      printf '# tool_version=none (measured by grep over tracked+working-tree shell sources; not a versioned analyser)\n# `producer | grep -q` sites under pipefail. This number may only FALL.\n# Re-stamp with: bash %s --update\n%s\n' "$SELF" "$count" > "$BASELINE"
       echo "baseline restamped: $base -> $count"; rm -f "$findings"; return 0 ;;
   esac
 

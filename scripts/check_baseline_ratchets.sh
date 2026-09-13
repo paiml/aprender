@@ -485,6 +485,13 @@ rc=0
 n_total=0
 n_ratchet=0
 n_none=0
+n_probed=0
+n_noheader=0
+# Baselines that do not yet name an instrument. MAY ONLY FALL. At the time this
+# check was wired: hardcoded_path_shipped_baseline.txt (the very file whose
+# 277-vs-317 drift is quoted in lib_baseline_ratchet.sh) and
+# shell_lint_baseline.txt (aprender#3214 stamps it).
+NOHEADER_CEILING=2
 
 while IFS= read -r f; do
     [ -n "$f" ] || continue
@@ -505,6 +512,28 @@ while IFS= read -r f; do
         continue
     fi
     n_ratchet=$((n_ratchet + 1))
+    # THE INSTRUMENT, BEFORE THE COMPARISON. lib_baseline_ratchet.sh has shipped
+    # baseline_require_tool_version since BSE-10a and NOTHING has ever called it
+    # (aprender#3217) -- a facility with a self-test and no caller. It is in
+    # scope here already, because this file sources that library.
+    #
+    # It matters because a ratchet compares (tree, instrument) and a count that
+    # moved because the ANALYSER moved is not a regression. PMAT-1059 measured
+    # 277 vs 317 on an UNCHANGED tree when the fleet went 3.31.0 -> 3.37.0.
+    # Comparing two instruments' verdicts is the defect; refuse before comparing.
+    tv_out=$(baseline_require_tool_version "scripts/$f" 2>&1); tv_rc=$?
+    case "$tv_rc" in
+        0)  if ! grep -qE '^#[[:space:]]*tool_version=none' "$REPO_ROOT/scripts/$f" 2>/dev/null; then
+                n_probed=$((n_probed + 1))
+            fi ;;
+        1)  n_noheader=$((n_noheader + 1))
+            printf 'REPORT   %-44s names no instrument yet (# tool_version=)\n' "scripts/$f" ;;
+        *)  printf 'FAIL  %s\n' "$tv_out"
+            printf '      Re-measure and restamp this baseline under the instrument the\n'
+            printf '      FLEET runs, or converge the box. Two analysers, two verdicts.\n'
+            rc=1
+            continue ;;
+    esac
     baseline_ratchet_check "$REPO_ROOT" "scripts/$f" "$kind" "${entry#*$'\t'}" || rc=1
 done <<< "$(universe)"
 
@@ -518,6 +547,24 @@ fi
 
 printf '\n%s baseline file(s): %s ratcheted, %s exempt with a stated reason\n' \
     "$n_total" "$n_ratchet" "$n_none"
+printf '%s ratchet baseline(s) name a versioned instrument and it was PROBED; %s name none yet (ceiling %s)\n' \
+    "$n_probed" "$n_noheader" "$NOHEADER_CEILING"
+# VACUITY FLOOR. If nothing named a real analyser, baseline_require_tool_version
+# ran over `none` rows only and this check measured no instrument at all -- which
+# is the state aprender#3217 describes, just one level up.
+if [ "$n_probed" -lt 1 ]; then
+    printf 'FAIL (vacuity): no ratchet baseline named a versioned instrument, so no\n'
+    printf '      analyser version was compared. A tool_version check that probes\n'
+    printf '      nothing is the shape this wiring exists to remove.\n'
+    rc=1
+fi
+if [ "$n_noheader" -gt "$NOHEADER_CEILING" ]; then
+    printf 'FAIL  %s ratchet baseline(s) name no instrument, ceiling %s. A new baseline\n' \
+        "$n_noheader" "$NOHEADER_CEILING"
+    printf '      must carry "# tool_version=<tool> <version>" (or "none" with the\n'
+    printf '      reason). Do not raise the ceiling.\n'
+    rc=1
+fi
 if [ "$rc" -ne 0 ]; then
     printf 'FAIL  see rows above (#2706 PERF-028).\n'
 else
