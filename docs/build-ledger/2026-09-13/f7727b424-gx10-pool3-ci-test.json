@@ -1,0 +1,27 @@
+{
+  "spec": "APR-RELEASE-001",
+  "section": "3.6",
+  "sha": "f7727b424538298267ba48c2df13f99da8bb7f10",
+  "host": "gx10-pool3",
+  "host_class": "gx10",
+  "job": "ci / test",
+  "workflow": "CI",
+  "event": "merge_group",
+  "run_id": "34719221357",
+  "job_id": "103621871454",
+  "queue_wait_s": 1368,
+  "exec_s": 210,
+  "total_s": 1578,
+  "peak_rss_mb": null,
+  "free_disk_gb": null,
+  "exit": 0,
+  "conclusion": "success",
+  "created_at": "2026-09-12T21:11:12Z",
+  "started_at": "2026-09-12T21:34:00Z",
+  "completed_at": "2026-09-12T21:37:30Z",
+  "unmeasured": [
+    "peak_rss_mb [U] — not exposed by the Actions REST API",
+    "free_disk_gb [U] — not exposed by the Actions REST API"
+  ],
+  "source": "gh api repos/paiml/aprender/actions/runs/<run>/jobs"
+}
