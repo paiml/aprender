@@ -1,0 +1,27 @@
+{
+  "spec": "APR-RELEASE-001",
+  "section": "3.6",
+  "sha": "0a7ad0c887c9df2035917b74674e7d46d38bc747",
+  "host": "yoga-build",
+  "host_class": "yoga",
+  "job": "ci / test",
+  "workflow": "CI",
+  "event": "push",
+  "run_id": "34743631035",
+  "job_id": "103687421079",
+  "queue_wait_s": 132,
+  "exec_s": 152,
+  "total_s": 284,
+  "peak_rss_mb": null,
+  "free_disk_gb": null,
+  "exit": 0,
+  "conclusion": "success",
+  "created_at": "2026-09-13T06:47:51Z",
+  "started_at": "2026-09-13T06:50:03Z",
+  "completed_at": "2026-09-13T06:52:35Z",
+  "unmeasured": [
+    "peak_rss_mb [U] — not exposed by the Actions REST API",
+    "free_disk_gb [U] — not exposed by the Actions REST API"
+  ],
+  "source": "gh api repos/paiml/aprender/actions/runs/<run>/jobs"
+}
