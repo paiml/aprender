@@ -1,0 +1,44 @@
+aprender-data	prose_detection	fail	pass	0		ran clean
+aprender-compute	coop_gemm_bench	fail	build-defect	101		error[E0433]: failed to resolve: could not find `cooperative` in `shaders`
+aprender-core	mem_test	timeout	pass	0		ran clean
+aprender-core	qa_chat	fail	defect	1		╔════════════════════════════════════════════════════�
+aprender-core	qa_serve	fail	needs-data-missed	2		ERROR: No model found.
+aprender-core	qa_verify	timeout	timeout	137		killed after 120s
+aprender-zram-core	gpu_info	fail	build-defect	101		error[E0432]: unresolved import `trueno_gpu::driver::PinnedBuffer`
+aprender-train	cuda_training_benchmark	fail	pass	0	re-run with --features cuda	═══════════════════════════════════════════════════════════════
+aprender-train	finetune_real	fail	panic-defect	101		thread 'main' (1009703) panicked at crates/aprender-train/examples/finetune_real.rs:2010:39:
+aprender-train	llama2-train	fail	panic-defect	101		thread 'main' (1012149) panicked at crates/aprender-train/examples/llama2/train.rs:240:29:
+aprender-train	profile_cuda_trainer	fail	pass	0		ran clean
+aprender-train	ssc_eval	fail	panic-defect	101		thread 'main' (1019023) panicked at crates/aprender-train/examples/ssc_eval.rs:19:70:
+aprender-train	ssc_preflight	fail	panic-defect	101		thread 'main' (1020989) panicked at crates/aprender-train/examples/ssc_preflight.rs:21:70:
+aprender-train	wgpu_eval	timeout	timeout	137		killed after 120s
+aprender-train	wgpu_train	timeout	timeout	137		killed after 120s
+aprender-serve	api_server	timeout	timeout	137		killed after 120s
+aprender-serve	apr_gpu_benchmark	fail	panic-defect	101		thread 'main' (1046942) panicked at crates/aprender-serve/examples/apr_gpu_benchmark.rs:177:67:
+aprender-serve	bench_qwen	timeout	timeout	137		killed after 120s
+aprender-serve	check_layer4	fail	panic-defect	101		thread 'main' (1058085) panicked at crates/aprender-serve/examples/check_layer4.rs:4:46:
+aprender-serve	cublas_fp8_7b_reproducer	fail	pass	0	re-run with --features cuda	{"cpu_argmax_idx":75311,"cpu_argmax_val":11.554419,"gpu_argmax_idx":75311,"gpu_argmax_val":11.655166,"correlation":0.999781,"cpu_logits_fnv1a":"dd5d13626cb48c40
+aprender-serve	debug_inference	timeout	timeout	137		killed after 120s
+aprender-serve	debug_lm_head_direct	fail	panic-defect	101		thread 'main' (1069619) panicked at /mnt/nvme-raid0/agent-wt/train-A/crates/aprender-serve/src/cuda/executor/weight.rs:356:14:
+aprender-serve	debug_q6k_controlled	fail	panic-defect	101		thread 'main' (1071349) panicked at /mnt/nvme-raid0/agent-wt/train-A/crates/aprender-serve/src/cuda/executor/weight.rs:356:14:
+aprender-serve	detailed_profile	timeout	timeout	137		killed after 120s
+aprender-serve	digit_combo_test	timeout	timeout	137		killed after 120s
+aprender-serve	gpu_matvec_benchmark	timeout	timeout	137		killed after 120s
+aprender-serve	imp_1010_full_cuda_benchmark	timeout	timeout	137		killed after 120s
+aprender-serve	instrumented_forward	timeout	timeout	137		killed after 120s
+aprender-serve	measure_forward_time	timeout	timeout	137		killed after 120s
+aprender-serve	performance_parity	fail	panic-defect	101		thread 'main' (1122684) panicked at crates/aprender-serve/examples/performance_parity.rs:493:45:
+aprender-serve	pipeline_tui	timeout	timeout	137		killed after 120s
+aprender-serve	pmat_benchmark_matrix	timeout	timeout	137		killed after 120s
+aprender-serve	profile_forward_breakdown	timeout	timeout	137		killed after 120s
+aprender-serve	profile_full_forward	timeout	timeout	137		killed after 120s
+aprender-db	compressed_kv	fail	pass	0	re-run with --features compression	=== Trueno-DB Compressed KV Store Demo ===
+aprender-profile	buggy_server	timeout	timeout	137		killed after 120s
+aprender-rag	compressed_index	fail	pass	0	re-run with --features compression	=== Trueno-RAG Compressed Index Demo ===
+aprender-rag	semantic_embeddings	fail	env	101	rust-lld: undefined symbol __isoc23_strtoll — a prebuilt ort artifact wants a newer glibc than this box	error: linking with `cc` failed: exit status: 1
+aprender-orchestrate	stack_comply_demo	timeout	timeout	137		killed after 120s
+aprender-distribute	tensor_example	fail	pass	0	re-run with --features tensor	=== Repartir v2.0: Tensor Operations Example ===
+aprender-distribute	test_mac_worker	timeout	timeout	137		killed after 120s
+aprender-present-lib	brick_computer	timeout	timeout	137		killed after 120s
+aprender-present-lib	showcase_shell	fail	build-defect	101		error: the package 'aprender-present-lib' does not contain this feature: feature
+aprender-test-showcase	calculator_tui	fail	defect	1		Error: Os { code: 6, kind: Uncategorized, message: "No such device or address" }

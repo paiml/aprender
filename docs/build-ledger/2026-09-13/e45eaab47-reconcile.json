@@ -1,0 +1,372 @@
+{
+ "spec": "APR-RELEASE-001",
+ "section": "6/T-5",
+ "job": "reconcile",
+ "host": "lambda-vector",
+ "host_class": "lambda",
+ "sha": "e45eaab4796d02c6140c6cc89e146c07c0ed4c48",
+ "tag": "v0.67.0",
+ "window": [
+  "v0.66.0",
+  "v0.67.0"
+ ],
+ "measured_at": "2026-09-13T09:07:57Z",
+ "before": {
+  "open_issues": 308,
+  "opened_30d": 424,
+  "closed_30d": 124,
+  "open_prs": 33,
+  "dirty_prs": 13,
+  "remote_branches": 880,
+  "branches_without_pr": 847,
+  "merged_prs_7d": 48,
+  "with_closing_ref_7d": 9
+ },
+ "predicates": {
+  "R1": {
+   "count": 0,
+   "list": []
+  },
+  "R2": {
+   "count": 28,
+   "list": [
+    "2659",
+    "3046",
+    "3048",
+    "3050",
+    "3063",
+    "3066",
+    "3068",
+    "3069",
+    "3071",
+    "3072",
+    "3074",
+    "3085",
+    "3086",
+    "3089",
+    "3097",
+    "3127",
+    "3136",
+    "3139",
+    "3145",
+    "3160",
+    "3175",
+    "3187",
+    "3188",
+    "3191",
+    "3192",
+    "3194",
+    "3197",
+    "3198"
+   ]
+  },
+  "R3": {
+   "count": 0,
+   "list": []
+  },
+  "R4": {
+   "count": 1,
+   "list": [
+    "3060"
+   ]
+  },
+  "R5": {
+   "arrival": 61,
+   "closure": 22,
+   "ratio": 0.3607
+  }
+ },
+ "predicate_note": "R3 measured AFTER the archive (776 PR-less branches older than 14 d moved to refs/archive/<branch> and deleted from refs/heads; remote heads 880 -> 104). R2=28 is the window's merged PRs without a closing keyword; check_pr_closes_issue.sh (PR #3200) makes it 0 going forward. R1=0 by keyword; the 22 cited-without-keyword issues were judged by an agy lane: DONE 2 (closed), PARTIAL 3, UNRELATED 17.",
+ "r1_verdicts": [
+  {
+   "confidence": "high",
+   "issue": 2567,
+   "receipt_sha": "cb829fcb9",
+   "remaining": "NEON path for Q4_K and Q6_K GEMV, and an ARM speed gate.",
+   "title": "Q4_K GEMV has no aarch64 SIMD and its \"parallel\" variant calls the scalar path",
+   "verdict": "PARTIAL"
+  },
+  {
+   "confidence": "high",
+   "issue": 2869,
+   "receipt_sha": "2c584a168",
+   "remaining": "",
+   "title": "No pre-built apr binary on stable releases \u2014 cargo install is the only path, and it's not beginner-friendly",
+   "verdict": "DONE"
+  },
+  {
+   "confidence": "high",
+   "issue": 2890,
+   "receipt_sha": "",
+   "remaining": "",
+   "title": "C0-1: cargo-deny (advisories, bans, licenses, sources) as a blocking job defined in this repo and named in required_status_checks.contexts (CB-1701)",
+   "verdict": "UNRELATED"
+  },
+  {
+   "confidence": "high",
+   "issue": 2891,
+   "receipt_sha": "",
+   "remaining": "",
+   "title": "C0-2: ci / gate readable: sovereign-ci.yml pinned by sha and emitting a comply manifest pmat can read \u2014 or its gate steps vendored into ci.yml \u2014 so the nine unreachable severity=error ru",
+   "verdict": "UNRELATED"
+  },
+  {
+   "confidence": "high",
+   "issue": 2893,
+   "receipt_sha": "",
+   "remaining": "",
+   "title": "C0-4: perf_gate.sh arm_a_scaling: an arm that emits nothing on a c=1-only receipt is REPORT/FAIL, never PASS; selftest rows both polarities (#2830)",
+   "verdict": "UNRELATED"
+  },
+  {
+   "confidence": "high",
+   "issue": 2904,
+   "receipt_sha": "",
+   "remaining": "",
+   "title": "R-0: [premises discharged: S0-7 CONFIRMED, S0-14 CONFIRMED] BackendRegistry: enumerate cpu/cuda/wgpu at startup from the machine (dlopen libcuda.so.1, wgpu adapters, cpu always); one pr",
+   "verdict": "UNRELATED"
+  },
+  {
+   "confidence": "high",
+   "issue": 2905,
+   "receipt_sha": "",
+   "remaining": "",
+   "title": "R-2: [premises discharged: S0-14 CONFIRMED, S0-15 measured] W-I: cuda joins default features iff S0-14 passed on all four hosts (D-9) and only behind R-0; apr serve run --gpu refuses vi",
+   "verdict": "UNRELATED"
+  },
+  {
+   "confidence": "high",
+   "issue": 2906,
+   "receipt_sha": "",
+   "remaining": "",
+   "title": "R-3: T-6 honest training banner: -m lora --gpu-backend cuda refuses or trains on the GPU; the cuBLAS-backward line prints only when a cuBLAS backward ran",
+   "verdict": "UNRELATED"
+  },
+  {
+   "confidence": "high",
+   "issue": 2908,
+   "receipt_sha": "",
+   "remaining": "",
+   "title": "R-5: apr-* assets for the 5 nightly.yml targets attached to every tagged release, built per D-10; sha256 + minisign-signed manifest (S0-19: public-key scheme); release cut as prerelease",
+   "verdict": "UNRELATED"
+  },
+  {
+   "confidence": "high",
+   "issue": 2909,
+   "receipt_sha": "",
+   "remaining": "",
+   "title": "R-6: one-line installer served at /releases/latest/download/install.sh: detect OS/arch, download the matching asset from the latest non-prerelease tag, verify .sha256 and the minisign-s",
+   "verdict": "UNRELATED"
+  },
+  {
+   "confidence": "high",
+   "issue": 2910,
+   "receipt_sha": "",
+   "remaining": "",
+   "title": "R-7: README leads with the installer one-liner; cargo install aprender second; the backend line generated from the registry kinds",
+   "verdict": "UNRELATED"
+  },
+  {
+   "confidence": "high",
+   "issue": 3002,
+   "receipt_sha": "",
+   "remaining": "",
+   "title": "R-0b: backend resolution reads the registry \u2014 accel.rs/serve/dispatch stop consulting cfg!(feature=\u2026); --backend/--gpu/--device refused by enumeration with the registry's reason; BACKEND_VALUES widened to the REG-11 kinds with runtime Unavailable(NotCompiled) (split of R-0 per the design quorum 2026-09-06)",
+   "verdict": "UNRELATED"
+  },
+  {
+   "confidence": "high",
+   "issue": 3013,
+   "receipt_sha": "",
+   "remaining": "",
+   "title": "PP-066 G-10b: analyser pin guard \u2014 every pmat reference under scripts/ and workflows resolves through scripts/pmat_bin.sh (baseline 281, shrink-only)",
+   "verdict": "UNRELATED"
+  },
+  {
+   "confidence": "high",
+   "issue": 3018,
+   "receipt_sha": "",
+   "remaining": "",
+   "title": "PP-066 G-11b: one-call state (scripts/pp066_state.sh), the session docs commit (scripts/session_docs_commit.sh), .pr/<row>/accept.sh convention, make fleet-verify ROW=<row>",
+   "verdict": "UNRELATED"
+  },
+  {
+   "confidence": "high",
+   "issue": 3019,
+   "receipt_sha": "",
+   "remaining": "",
+   "title": "PP-066 R-8: nightly-latest-dogfood \u2014 install from latest on four hosts, apr devices --json, C14; drift files an issue",
+   "verdict": "UNRELATED"
+  },
+  {
+   "confidence": "high",
+   "issue": 3078,
+   "receipt_sha": "cb829fcb9",
+   "remaining": "Tagging the release, crates.io publish, and the remaining queued PRs.",
+   "title": "EPIC: release train 0.67.0 \u2014 06x-release-schedule.md \u00a73 (0.67.0)",
+   "verdict": "PARTIAL"
+  },
+  {
+   "confidence": "high",
+   "issue": 3090,
+   "receipt_sha": "",
+   "remaining": "",
+   "title": "GPU: implement Gated DeltaNet / SSM inference for Qwen3.5 / Qwen3.8 hybrid GGUFs",
+   "verdict": "UNRELATED"
+  },
+  {
+   "confidence": "high",
+   "issue": 3091,
+   "receipt_sha": "",
+   "remaining": "",
+   "title": "CPU: Qwen3.5 / Qwen3.8 hybrid GGUFs are refused entirely \u2014 no fallback exists",
+   "verdict": "UNRELATED"
+  },
+  {
+   "confidence": "high",
+   "issue": 3096,
+   "receipt_sha": "",
+   "remaining": "",
+   "title": "PP-26 witness RED on gx10 (GB10 sm_121, CUDA 13.3): c=16 batch loses slot invariance at token 31; c=4 and lambda sm_89 stay invariant to 128",
+   "verdict": "UNRELATED"
+  },
+  {
+   "confidence": "high",
+   "issue": 3111,
+   "receipt_sha": "cb829fcb9",
+   "remaining": "The GEMM qh/qs offsets half.",
+   "title": "CUDA Q5_K gemv/gemm read a non-ggml block layout (qh bit order; gemm also qh/qs offsets and scale unpacking)",
+   "verdict": "PARTIAL"
+  },
+  {
+   "confidence": "high",
+   "issue": 3130,
+   "receipt_sha": "cb829fcb9",
+   "remaining": "",
+   "title": "Dark-in-FULL, light-in-QUICK: tree-reading integration tests read repo paths from the crate dir \u2014 4 targets failed on first run today, 77 more sites are vacuous",
+   "verdict": "DONE"
+  },
+  {
+   "confidence": "high",
+   "issue": 3146,
+   "receipt_sha": "",
+   "remaining": "",
+   "title": "EPIC: Pareto gap-closure vs linfa 0.8.1 and Burn 0.21.0 \u2014 4 substrates, 4 breadth, 5 completions",
+   "verdict": "UNRELATED"
+  }
+ ],
+ "r4_verdicts": [
+  {
+   "pr": "#3134",
+   "verdict": "SPLIT",
+   "reason": "lanes 1+6 (independent, agreeing): keep the ci.yml ARBITER-001 R2a ci_measured wrappers + artifact uploads; drop backward.rs (superseded by main cb829fcb9)",
+   "lanes": 2
+  },
+  {
+   "pr": "#3114",
+   "verdict": "CLOSE",
+   "reason": "lane 2: Q5_K/Qwen3.5 CPU content already on main via cb829fcb9; all 7 conflicting files superseded",
+   "lanes": 1
+  },
+  {
+   "pr": "#3060",
+   "verdict": "REBASE",
+   "reason": "lane 3: yoga nightly still wanted; per-file: actionlint combine, binary-release main wins (d45793187), ci.yml PR appends, cuda-nightly combine, perf-matrix PR wins",
+   "lanes": 1
+  },
+  {
+   "pr": "#3056",
+   "verdict": "SPLIT",
+   "reason": "lane 4: drop .github/workflows/cuda-nightly.yml (superseded by 658c3cb5d); keep receipts/docs/scripts",
+   "lanes": 1
+  },
+  {
+   "pr": "#3052",
+   "verdict": "CLOSE",
+   "reason": "lane 5: pr-review-receipt job deleted and wiring script rewritten on main by #3046",
+   "lanes": 1
+  },
+  {
+   "pr": "#3041",
+   "verdict": "SPLIT",
+   "reason": "follow-up lane: L0-1a part landed via #3026 (drop .pr/L0-1/*, evidence/parity/l0-1/*, parity_admission, check_model_parity.sh); keep R-0a/R-0b BackendRegistry + apr devices files",
+   "lanes": 1
+  },
+  {
+   "pr": "#3031",
+   "verdict": "REBASE",
+   "reason": "lanes 1+6 (independent, agreeing): keep the sovereign-ci sha pin + bash guards; ci.yml conflict is main's guard-tree/guard-cargo split",
+   "lanes": 2
+  },
+  {
+   "pr": "#3021",
+   "verdict": "REBASE",
+   "reason": "lane 2: check_pmat_pinned.sh ratchet not on main; ci.yml + check_baseline_ratchets.sh are union merges",
+   "lanes": 1
+  },
+  {
+   "pr": "#3006",
+   "verdict": "REBASE",
+   "reason": "lane 3: parity-block selftest wanted; README main wins (auto-generated markers), ci.yml insert step, impl-estimates.jsonl append",
+   "lanes": 1
+  },
+  {
+   "pr": "#3004",
+   "verdict": "REBASE",
+   "reason": "lane 4: wanted; mechanical union merges across Cargo.lock, apr-cli command modules, ci.yml (PR tests + main runs-on/env), complexity_baseline",
+   "lanes": 1
+  },
+  {
+   "pr": "#2838",
+   "verdict": "REBASE",
+   "reason": "lane 5: silicon calibration fix wanted; ci.yml main wins (main deleted the hardcoded test enumeration, PR's addition drops out)",
+   "lanes": 1
+  },
+  {
+   "pr": "#2720",
+   "verdict": "REBASE",
+   "reason": "follow-up lane: combine main's repo-wide concurrency group with the PR's perf-solo runner label + receipt steps in beat-speed-nightly.yml",
+   "lanes": 1
+  }
+ ],
+ "r4_consensus_note": "12/12 DIRTY PRs now carry a verdict: 7 REBASE (#3060 #3031 #3021 #3006 #3004 #2838 #2720), 3 SPLIT (#3134 #3056 #3041), 2 CLOSE (#3114 #3052). Only #3134 and #3031 were judged twice (lanes 1 and 6 agreed); every other verdict is ONE lane.",
+ "actions": {
+  "issues_closed": [
+   2869,
+   3130
+  ],
+  "branches_archived": 776,
+  "prs_resolved_and_armed": [
+   3008,
+   3005,
+   3093
+  ],
+  "prs_closed": [
+   3052
+  ],
+  "prs_pending_rebase_or_split": [
+   3134,
+   3060,
+   3056,
+   3041,
+   3031,
+   3021,
+   3006,
+   3004,
+   2838,
+   2720
+  ],
+  "prs_kept_open": {
+   "3114": "draft with unique Qwen3.5 CPU content; lane verdict CLOSE rejected: files existing on main is not supersession \u2014 0.68.0"
+  },
+  "guards_shipped": [
+   "PR #3200 check_pr_closes_issue.sh + check_reconcile.sh",
+   "PR #3201 resolve_base push-behind-tip (main red 6157d1924)",
+   "PR #3202 dogfood post-publish version row"
+  ]
+ },
+ "unmeasured": [
+  "R4 rebase/split for 10 PRs [U] \u2014 verdicts are single-lane claims except #3134/#3031; applied only after a second reading per PR"
+ ],
+ "source": "scripts/check_reconcile.sh v0.67.0 --prev-tag v0.66.0 (PR #3200 tree) + agy lanes ph9r1/ph9r4 + gh"
+}
