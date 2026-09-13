@@ -40,11 +40,14 @@ pub fn detect_simd_backend() -> SimdBackend {
     // pmat-ignore: hardware-path (NEON path only on aarch64)
     #[cfg(target_arch = "aarch64")]
     {
-        return SimdBackend::Neon;
+        SimdBackend::Neon
     }
 
     // pmat-ignore: hardware-path (scalar fallback never reached when SIMD available)
-    SimdBackend::Scalar
+    #[cfg(not(target_arch = "aarch64"))]
+    {
+        SimdBackend::Scalar
+    }
 }
 
 #[cfg(test)]

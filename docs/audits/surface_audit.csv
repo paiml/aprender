@@ -237,6 +237,9 @@ apr,apr oom-lint,1,x86_64-linux,NONE,yes,1,apr-lint-diag,crates/apr-cli/src/exte
 apr,apr oracle,9,x86_64-linux,NONE,yes,10,apr-core-commands,crates/apr-cli/src/tool_commands.rs:84,medium
 apr,apr otlp-lint,1,x86_64-linux,NONE,yes,1,apr-lint-diag,crates/apr-cli/src/extended_commands.rs:1090,high
 apr,apr parity,9,x86_64-linux,NONE,yes,1,apr-lint-diag,crates/apr-cli/src/extended_commands.rs:317,medium
+apr,apr parity --per-op,9,"x86_64-linux,aarch64-linux",NONE,no,1,apr-lint-diag,crates/apr-cli/src/extended_commands.rs:330 (dispatch crates/apr-cli/src/dispatch_analysis.rs:1505),high
+apr,apr parity --out,7,"x86_64-linux,aarch64-linux",NONE,no,1,apr-lint-diag,crates/apr-cli/src/extended_commands.rs:333 (dispatch crates/apr-cli/src/dispatch_analysis.rs:1506),high
+apr,apr parity --threshold,7,"x86_64-linux,aarch64-linux",NONE,no,1,apr-lint-diag,crates/apr-cli/src/extended_commands.rs:336 (dispatch crates/apr-cli/src/dispatch_analysis.rs:1506),high
 apr,apr pipeline apply,6,x86_64-linux,huggingface-transformers,no,10,apr-core-commands,crates/apr-cli/src/pipeline_commands.rs:28,low
 apr,apr pipeline plan,6,x86_64-linux,huggingface-transformers,no,10,apr-core-commands,crates/apr-cli/src/pipeline_commands.rs:9,low
 apr,apr pipeline status,6,x86_64-linux,huggingface-transformers,no,10,apr-core-commands,crates/apr-cli/src/pipeline_commands.rs:51,low

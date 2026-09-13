@@ -1,0 +1,5 @@
+# cutile searches /usr/local/cuda-13.3, -13.2, -13, then /usr/local/cuda. gx10 has
+# BOTH 13.0 and 13.3; pin 13.3 explicitly so this never silently resolves to the
+# 13.0 tree, which is below cutile's sm_100+ floor of 13.1.
+[env]
+CUDA_TOOLKIT_PATH = { value = "/usr/local/cuda-13.3", relative = false }

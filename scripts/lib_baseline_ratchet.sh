@@ -151,6 +151,65 @@
 BASELINE_RATCHET_BASE_REF="${BASELINE_RATCHET_BASE_REF:-origin/main}"
 
 # ---------------------------------------------------------------------------
+# baseline_require_tool_version — a ratchet compares (tree, instrument), and a
+# baseline that never names its instrument cannot tell "the count changed"
+# from "the tool changed" (see check_hardcoded_paths.sh / PMAT-1059: 277 vs
+# 317 on an UNCHANGED tree, once the fleet moved from 3.31.0 to 3.37.0). This
+# is the same discipline made generic: every baseline this library ratchets
+# carries a leading comment line
+#
+#     # tool_version=<tool> <version>
+#
+# where <tool> is the binary whose OUTPUT the baseline records (`pmat` for a
+# complexity/TDG count, `bashrs` for a lint-error count), or the literal
+# `none` for a baseline produced by grep/git/cargo-metadata alone -- there is
+# no versioned instrument to drift. Comment stripping happens in grep, not in
+# the caller, per the convention below.
+#
+#   * header absent               -> FAIL, rc 1. Not a ratchet baseline.
+#   * tool == none                -> rc 0, no probe.
+#   * tool not on PATH             -> rc 4. Never a pass: an absent instrument
+#                                    is not "no drift", it is "unmeasurable".
+#   * `$tool --version`'s first line != "$tool $version" -> rc 4, ONE line,
+#     naming the file and both versions. Two verdicts from two instruments
+#     are not comparable, so this is refused before the comparator runs.
+#   * versions agree               -> rc 0.
+baseline_require_tool_version() { # baseline_require_tool_version <baseline-file>
+    local file="$1" raw tool version live_line live_ver
+    raw=$(grep -m1 -E '^#[[:space:]]*tool_version=' "$file" 2>/dev/null) || raw=""
+    raw=${raw#*tool_version=}
+    if [ -z "$raw" ]; then
+        printf 'FAIL  ratchet  %s carries no "# tool_version=<tool> <version>" header.\n' "$file"
+        printf '               A baseline without a version claim is not a ratchet\n'
+        printf '               baseline -- add the header before this file can be ratcheted.\n'
+        return 1
+    fi
+    # shellcheck disable=SC2086
+    set -- $raw
+    tool=${1:-}
+    version=${2:-}
+    if [ "$tool" = "none" ]; then
+        return 0
+    fi
+    if ! command -v "$tool" >/dev/null 2>&1; then
+        printf 'tool_version: %s was recorded under %s %s, runner has no %s on PATH — verdicts would compare two instruments\n' \
+            "$file" "$tool" "$version" "$tool"
+        return 4
+    fi
+    live_line=$("$tool" --version 2>/dev/null)
+    live_line=${live_line%%$'\n'*}
+    # --- TOOLVER-CMP-BEGIN ---
+    if [ "$live_line" != "$tool $version" ]; then
+        live_ver=${live_line#* }
+        printf 'tool_version: %s was recorded under %s %s, runner has %s %s — verdicts would compare two instruments\n' \
+            "$file" "$tool" "$version" "$tool" "$live_ver"
+        return 4
+    fi
+    # --- TOOLVER-CMP-END ---
+    return 0
+}
+
+# ---------------------------------------------------------------------------
 # Readers. Deliberately no pipe whose READER can exit early: `grep … | head -1`
 # returns 141 under pipefail when the writer takes SIGPIPE, which is
 # input-size dependent and therefore green locally and red in CI at random.
@@ -274,12 +333,17 @@ _br_cmp_set_aperture() { # <base-file> <cur-file> <root> <ref> <owning-guard-pat
     [ -z "$BR_DELTA" ]
 }
 
+# A STAMPED count baseline (PMAT-1059) carries `count: N` beside `pmat_version:`
+# and `basis:`; the number is that line, never the file's other text.
+_br_stamped_count() { # _br_stamped_count <file> -> N | rc 1 when the file carries no stamped line
+    sed -nE 's/^count:[[:space:]]*([0-9]+)[[:space:]]*(#.*)?$/\1/p' "$1" | grep -m1 .
+}
 _br_cmp_count() { # _br_cmp_count <base-file> <cur-file>
     local b c
     BR_DELTA=""
     BR_REMOVED=0
-    b=$(_br_number "$1") || { BR_DELTA="        comparand holds no integer"; return 2; }
-    c=$(_br_number "$2") || { BR_DELTA="        working tree holds no integer"; return 2; }
+    b=$(_br_stamped_count "$1" || _br_number "$1") || { BR_DELTA="        comparand holds no integer"; return 2; }
+    c=$(_br_stamped_count "$2" || _br_number "$2") || { BR_DELTA="        working tree holds no integer"; return 2; }
     if [ "$c" -gt "$b" ]; then
         BR_DELTA=$(printf '        + the recorded count rose %s -> %s' "$b" "$c")
         return 1

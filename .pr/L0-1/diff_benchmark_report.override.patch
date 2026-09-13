@@ -1,0 +1,18 @@
+diff --git a/crates/apr-cli/src/commands/diff_benchmark_report.rs b/crates/apr-cli/src/commands/diff_benchmark_report.rs
+index 74a4a3a43..88e5242f6 100644
+--- a/crates/apr-cli/src/commands/diff_benchmark_report.rs
++++ b/crates/apr-cli/src/commands/diff_benchmark_report.rs
+@@ -79,7 +79,12 @@ pub(crate) fn run(
+             // PMAT-203: Skip parity gate for profiling — known false positive on CUDA 13.1 driver.
+             // The parity gate compares GPU/CPU logits and fails spuriously, but profiling
+             // only needs generation throughput, not parity verification.
+-            std::env::set_var("SKIP_PARITY_GATE", "1");
++            // REG-15 (#2971): the load-time parity gate is never disabled silently. If the user set
++            // SKIP_PARITY_GATE themselves it is printed as an override (every receipt of this run is
++            // INVALID-CORRECTNESS); otherwise the gate runs and a failing model is refused by name.
++            if let Some(line) = crate::commands::parity_admission::override_line() {
++                eprintln!("{line}");
++            }
+ 
+             // GH-578: Spawn GPU profiling on a thread with 16MB stack.
+             // The deep call chain (profile_gpu_generation → generate_gpu_resident →
