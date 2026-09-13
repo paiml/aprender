@@ -1,0 +1,27 @@
+{
+  "spec": "APR-RELEASE-001",
+  "section": "3.6",
+  "sha": "0fd6fbcb0c3df19d857180113d616631e818cdb0",
+  "host": "yoga-build2",
+  "host_class": "yoga",
+  "job": "guard-tree",
+  "workflow": "CI",
+  "event": "merge_group",
+  "run_id": "34720686062",
+  "job_id": "103625847370",
+  "queue_wait_s": 91,
+  "exec_s": 293,
+  "total_s": 384,
+  "peak_rss_mb": null,
+  "free_disk_gb": null,
+  "exit": 0,
+  "conclusion": "success",
+  "created_at": "2026-09-12T21:41:53Z",
+  "started_at": "2026-09-12T21:43:24Z",
+  "completed_at": "2026-09-12T21:48:17Z",
+  "unmeasured": [
+    "peak_rss_mb [U] — not exposed by the Actions REST API",
+    "free_disk_gb [U] — not exposed by the Actions REST API"
+  ],
+  "source": "gh api repos/paiml/aprender/actions/runs/<run>/jobs"
+}
