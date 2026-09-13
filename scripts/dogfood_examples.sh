@@ -75,7 +75,7 @@ SELFTEST=0
 # table first.
 NEEDS_ARGS_RE='^(Usage|error: the following required arguments)'
 NEEDS_HW_RE='(CUDA_ERROR_[A-Z_]+|no CUDA-capable device|CUDA driver version is insufficient|cuInit|libcuda\.so|libnvidia-ml|[Nn]o (suitable )?(graphics )?adapter|RequestAdapterError|NoAdapter|wgpu.*(device|adapter) (not|un)|Metal device (not|un))'
-NEEDS_DATA_RE='No such file or directory|[Mm]odel not found|not found at |Failed to open |[Nn]o tokenizer|Download with:|does not exist|hf://|apr pull '
+NEEDS_DATA_RE='No such file or directory|[Mm]odel not found|not found at |Failed to open |[Nn]o tokenizer|Download with:|does not exist|hf://'
 
 # ---------------------------------------------------------------------------
 # helpers
