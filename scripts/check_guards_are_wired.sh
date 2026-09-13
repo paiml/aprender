@@ -41,9 +41,64 @@ set -uo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BASELINE="${REPO_ROOT}/scripts/unwired_guards_baseline.txt"
 
+# dispatcher_wired ROOT -- guards a workflow wires by DISPATCHING them.
+#
+# WHY NAME-MATCHING STOPPED BEING THE WHOLE ANSWER
+# -------------------------------------------------
+# ci.yml used to carry ~53 `bash scripts/check_X.sh` steps, so "named by a
+# workflow" and "run by a workflow" were the same sentence. BSE-01 replaced
+# them with ONE step -- `bash scripts/guard_tree.sh --no-cargo` -- because
+# GitHub Actions steps are fail-fast and each red run named exactly one guard.
+# Those 53 guards are run by CI on every PR and are named by nothing, and this
+# meta-guard read that as 29 newly dark guards (4 -> 33). A guard that reports
+# enforcement as absence is worse than no guard.
+#
+# The remedy is NOT a list of the dispatched names here -- that is the same
+# hand-maintained-second-list defect this file's own header argues against, and
+# it would go stale the first time a guard is added. The subset is DERIVED by
+# asking the dispatcher, in the mode the workflow actually invokes it in.
+#
+# --dry-run, NOT --list. `--list` prints the raw cargo-classified subset;
+# --dry-run prints the DECISION, so the guards guard_tree.sh skips (release-
+# time, or argument/env-wired) come back as `skipped:` rows and are NOT
+# counted wired by the dispatcher. Reporting a skipped guard as wired would be
+# this repo's signature defect -- claiming a result that was never measured --
+# committed by the very guard that exists to catch it. An argument-wired guard
+# is still named by its own workflow and is found by the scan below on that
+# account; a release-time guard is deliberately unwired and stays reported.
+dispatcher_wired() {
+    local root="$1" lines modes mode flag out
+    [ -f "$root/scripts/guard_tree.sh" ] || return 0
+    lines=$(grep -rh --include='*.yml' --include='*.yaml' -- 'guard_tree.sh' \
+                "$root"/.github/workflows/ 2>/dev/null | sed 's/#.*$//') || lines=''
+    # Invocation, not mention -- same test as the scan below.
+    lines=$(grep -E "(^|[[:space:];&|(])((ba)?sh[[:space:]]+|\\./)?[^[:space:]]*guard_tree\\.sh([[:space:]]|$|['\"])" \
+                <<< "$lines") || lines=''
+    [ -n "$lines" ] || return 0
+    modes=$(
+        while IFS= read -r l; do
+            case "$l" in
+                *--no-cargo*)   printf 'no-cargo\n' ;;
+                *--cargo-only*) printf 'cargo-only\n' ;;
+                *)              printf 'all\n' ;;
+            esac
+        done <<< "$lines" | sort -u
+    )
+    for mode in $modes; do
+        case "$mode" in
+            no-cargo)   flag="--no-cargo" ;;
+            cargo-only) flag="--cargo-only" ;;
+            *)          flag= ;;
+        esac
+        out=$( cd "$root" && bash scripts/guard_tree.sh --dry-run $flag 2>/dev/null ) || out=''
+        printf '%s\n' "$out" | sed -n 's|^run: .*/||p; s|^run: \([^/]*\)$|\1|p'
+    done | LC_ALL=C sort -u
+}
+
 # Guards named by no workflow, one per line, sorted.
 unwired_in() {
-    local root="$1" g base seen=""
+    local root="$1" g base seen="" dispatched
+    dispatched=" $(dispatcher_wired "$root" | tr '\n' ' ') "
     # THE UNIVERSE WAS BUILT FROM THE FILENAME, AND A GUARD HID BEHIND ITS OWN.
     #
     # This globbed scripts/check_*.sh only. scripts/perf_gate.sh — which
@@ -73,6 +128,11 @@ unwired_in() {
         case " $seen " in *" $(basename "$g") "*) continue ;; esac
         seen="$seen $(basename "$g")"
         base=$(basename "$g")
+        # Wired by dispatch: a workflow runs guard_tree.sh in a mode whose RUN
+        # set contains this guard. No name appears anywhere; the wiring is real.
+        case "$dispatched" in
+            *" $base "*) continue ;;
+        esac
         # EXECUTION, not mention. `grep -rqF -- "$base"` matched the script's
         # NAME anywhere in the workflows tree -- including inside a `#` comment.
         # So a guard could be documented and never run, and this meta-guard,
@@ -128,8 +188,92 @@ if [ "${1:-}" = "--self-test" ]; then
         printf 'FAIL  row 2 still reports: %s\n' "$(unwired_in "$TD" | tr '\n' ' ')"; fails=1
     fi
 
+    # ── Rows 3 and 4: WIRED BY DISPATCH, named by nothing ──────────────────
+    #
+    # The fixture workflow contains ONE line and no guard name anywhere:
+    #     bash scripts/guard_tree.sh --no-cargo
+    # That is literally what ci.yml does since BSE-01, and it is what took this
+    # guard from 4 unwired to 33. Row 3 asserts the dispatched guard is not
+    # reported; row 4 deletes the dispatcher line from the SAME fixture and
+    # asserts it comes back — without row 4, row 3 passes just as well for a
+    # scan that reports nothing at all.
+    #
+    # A real git repo, because guard_tree.sh derives its universe from
+    # `git ls-files` and would otherwise answer nothing — and answering nothing
+    # is indistinguishable here from answering "wired".
+    TD2=$(mktemp -d) || exit 1
+    trap 'rm -rf "${TD:?}" "${TD2:?}"' EXIT
+    mkdir -p "$TD2/scripts" "$TD2/.github/workflows"
+    cp "$REPO_ROOT/scripts/guard_tree.sh" "$TD2/scripts/guard_tree.sh"
+    printf '#!/usr/bin/env bash\nexit 0\n' > "$TD2/scripts/check_dispatched.sh"
+    printf 'jobs:\n  gate:\n    steps:\n      - run: bash scripts/guard_tree.sh --no-cargo\n' \
+        > "$TD2/.github/workflows/ci.yml"
+    mkdir -p "$TD2/.empty-git-template"
+    git -C "$TD2" init -q --template="$TD2/.empty-git-template"
+    git -C "$TD2" config user.email test@example.invalid
+    git -C "$TD2" config user.name "check_guards_are_wired self-test"
+    git -C "$TD2" add -A
+    git -C "$TD2" -c commit.gpgsign=false commit -q -m fixture
+
+    if [ -z "$(unwired_in "$TD2")" ]; then
+        printf 'ok    row 3 a guard dispatched by guard_tree.sh --no-cargo counts as wired\n'
+    else
+        printf 'FAIL  row 3 dispatched guard still reported unwired: [%s]\n' "$(unwired_in "$TD2" | tr '\n' ' ')"; fails=1
+    fi
+
+    printf 'jobs:\n  gate:\n    steps:\n      - run: echo no dispatcher here\n' \
+        > "$TD2/.github/workflows/ci.yml"
+    got4=$(unwired_in "$TD2" | tr '\n' ' ')
+    if [ "$got4" = "check_dispatched.sh " ]; then
+        printf 'ok    row 4 removing the dispatcher line brings the guard back as unwired\n'
+    else
+        printf 'FAIL  row 4 got [%s], expected [check_dispatched.sh ]\n' "$got4"; fails=1
+    fi
+
+    # ── Rows 5-7: THE UNIVERSE IS EVERY WORKFLOW FILE, NOT ci.yml ─────────
+    #
+    # PMAT-1098 (row 67-E3) moved seven tree-universe steps out of ci.yml's
+    # guard-cargo job into .github/workflows/guards-nightly.yml to hold a PR
+    # under 20 minutes. If this scan only read ci.yml, every one of those
+    # guards would be reported unwired the moment it moved -- and the obvious
+    # "fix" for that report is to add them to the shrink-only baseline, which
+    # is how a moved guard becomes an accepted gap. The scan above already
+    # greps the whole .github/workflows/ tree; these rows PIN that, because a
+    # property nothing asserts is a property that lasts until the next edit.
+    #
+    # Row 5: wired ONLY by a workflow that is not ci.yml -> wired.
+    # Row 6: wired by no workflow at all -> still reported (the control that
+    #        makes row 5 mean something).
+    # Row 7: delete the nightly workflow and the row-5 guard comes back --
+    #        without it, row 5 also passes for a scan that reports nothing.
+    TD3=$(mktemp -d) || exit 1
+    trap 'rm -rf "${TD:?}" "${TD2:?}" "${TD3:?}"' EXIT
+    mkdir -p "$TD3/scripts" "$TD3/.github/workflows"
+    : > "$TD3/scripts/check_nightly_only.sh"
+    : > "$TD3/scripts/check_nowhere.sh"
+    printf 'jobs:\n  ci:\n    steps:\n      - run: echo ci.yml names neither guard\n' \
+        > "$TD3/.github/workflows/ci.yml"
+    printf 'jobs:\n  guards-nightly:\n    steps:\n      - name: Publish safety\n        run: bash scripts/check_nightly_only.sh\n' \
+        > "$TD3/.github/workflows/guards-nightly.yml"
+
+    got5=$(unwired_in "$TD3" | tr '\n' ' ')
+    if [ "$got5" = "check_nowhere.sh " ]; then
+        printf 'ok    row 5 a guard wired only in guards-nightly.yml counts as wired\n'
+        printf 'ok    row 6 a guard wired in no workflow at all is still reported\n'
+    else
+        printf 'FAIL  rows 5/6 got [%s], expected [check_nowhere.sh ]\n' "$got5"; fails=1
+    fi
+
+    rm -f "$TD3/.github/workflows/guards-nightly.yml"
+    got7=$(unwired_in "$TD3" | tr '\n' ' ')
+    if [ "$got7" = "check_nightly_only.sh check_nowhere.sh " ]; then
+        printf 'ok    row 7 deleting the nightly workflow brings its guard back as unwired\n'
+    else
+        printf 'FAIL  row 7 got [%s], expected [check_nightly_only.sh check_nowhere.sh ]\n' "$got7"; fails=1
+    fi
+
     [ "$fails" -eq 0 ] || { printf '\nSELF-TEST FAILED\n'; exit 1; }
-    printf '\nSELF-TEST PASSED (2/2)\n'
+    printf '\nSELF-TEST PASSED (7/7)\n'
     exit 0
 fi
 

@@ -3,7 +3,7 @@ metadata:
   created: '2026-08-22'
   author: PAIML Engineering
   references:
-  - 'docs/audits/surface_audit.csv — 142 of 830 features gated, across 28 binaries and 14 clusters, measured 2026-08-22 @ 4bbfeb07f; 142 of 832 features gated after the PERF-046 partial re-audit (PR #2742); 143 of 833 features gated after the PP-LLAMA-001 re-audit (GET /v1/effective-config added and swept by the dogfood route enumeration, router.rs rows re-pointed)'
+  - 'docs/audits/surface_audit.csv — 142 of 830 features gated, across 28 binaries and 14 clusters, measured 2026-08-22 @ 4bbfeb07f; 142 of 832 features gated after the PERF-046 partial re-audit (PR #2742); 143 of 833 features gated after the PP-LLAMA-001 re-audit (GET /v1/effective-config added and swept by the dogfood route enumeration, router.rs rows re-pointed); 143 of 836 features gated after PP-066 L0-1b added the three `apr parity` flag rows (--per-op, --out, --threshold), which the dogfood sweep does not reach -- the denominator grew and the numerator did not'
   - 'docs/audits/surface_audit_elbow.png — k-selection evidence: inertia knee and silhouette over k in [2,45]'
   - 'scripts/dogfood_cluster.py — the k-sweep that produced the elbow plot (k-selection ONLY; it does not write the columns)'
   - 'scripts/check_no_cluster_id_keys.sh — T1 enforcement: nothing may key on `cluster_id`'
@@ -15,11 +15,16 @@ metadata:
     denominator reports a clean sweep over whatever subset it happens to cover; this
     contract supplies the denominator and ratchets it. Measured baseline: 142 of 830
     shipped features carry a gate (17.1%), all 142 in the `apr` binary, 27 of 28
-    binaries at zero. The denominator is 833 today: PERF-046 added the two
-    `apr test llm bench` rows, which no gate covers either, and PP-LLAMA-001
+    binaries at zero. The denominator is 836 today: PERF-046 added the two
+    `apr test llm bench` rows, which no gate covers either, PP-LLAMA-001
     added `GET /v1/effective-config`, which the dogfood route sweep enumerates
-    and hits (143 gated). Coverage is ALLOWED to be 17.2%. It is not allowed to
-    become 17.1%.
+    and hits (143 gated), and PP-066 L0-1b added the three `apr parity` flag
+    rows, which the sweep does not reach. The floor is on the COUNTS -- covered
+    rows may not fall below 143, nor may any per-binary count -- and NEVER on
+    the ratio, because new ungated surface must be allowed to lower it. A ratio
+    floor would price honesty: the only ways to hold a ratio while shipping
+    three uncovered flags are to leave them out of the ledger or to mark them
+    gated, and both are the theatre this contract exists to stop.
 
   # ---------------------------------------------------------------------------
   # G2.3 BASELINES -- measured 2026-08-22 at cbb1ccd78, never rounded.
@@ -55,9 +60,9 @@ metadata:
 
     overall:
       command: "python3 scripts/dogfood_baseline.py  # section: totals"
-      rows: 833
+      rows: 836
       covered: 143
-      ratio: 0.1717            # 143/833 -- 17.2%, NOT "about 17%"
+      ratio: 0.1711            # 143/836 -- 17.1%, NOT "about 17%"
       binaries: 28
       binaries_at_zero_coverage: 27
       clusters: 14
@@ -72,7 +77,7 @@ metadata:
       note: >
         covered may never DECREASE for any binary; total may never decrease
         without a reconciliation finding recording which direction moved.
-      apr: {total: 370, covered: 143}
+      apr: {total: 373, covered: 143}
       aprender-orchestrate: {total: 184, covered: 0}
       aprender-test-cli: {total: 39, covered: 0}
       pv: {total: 38, covered: 0}
@@ -141,7 +146,7 @@ metadata:
       http-orchestrate-banco: {total: 95, covered: 0}       #  ZERO -- one HTTP harness, the cheapest large win
       contracts-pv: {total: 76, covered: 0}                 #  ZERO -- one contract-CLI harness, 76 pv subcommands
       data-pipeline: {total: 76, covered: 0}                #  ZERO
-      apr-lint-diag: {total: 68, covered: 55}               # 80.9% of cluster, 38.7% of gate effort
+      apr-lint-diag: {total: 71, covered: 55}               # 77.5% of cluster, 38.5% of gate effort
       orchestrate-agent-stack: {total: 56, covered: 0}      #  ZERO
       test-harness: {total: 49, covered: 0}                 #  ZERO
       http-apr-serve: {total: 45, covered: 40}              # 88.9% of cluster, 28.0% of gate effort
@@ -162,8 +167,8 @@ metadata:
       q1_2: {total: 80, covered: 58}     # 72.5%
       q3_4: {total: 49, covered: 27}     # 55.1%
       q5_6: {total: 675, covered: 29}    # 4.3%
-      q7_8: {total: 9, covered: 9}       # 100.0%
-      q9_10: {total: 20, covered: 20}    # 100.0%
+      q7_8: {total: 11, covered: 9}      # 81.8%
+      q9_10: {total: 21, covered: 20}    # 95.2%
 
     hardware_provenance:
       command: "python3 scripts/dogfood_baseline.py  # section: totals"
@@ -272,7 +277,7 @@ equations:
     codomain: bool
     invariants:
     - "T2. Cluster coverage is a PROXY: one gate in a 95-member cluster is 1%, not covered"
-    - "5/14 clusters (35.7%) and 143/833 features (17.2%) are reported together, always"
+    - "5/14 clusters (35.7%) and 143/836 features (17.1%) are reported together, always"
     - "Enforced mechanically by enforce_pairing(); deleting the feature fraction from the emitter turns the gate RED"
     - "This is the single most important trap: reporting the proxy alone is how a coverage gate becomes theatre while looking stricter"
 
@@ -661,7 +666,7 @@ falsification_tests:
     Every emitted line stating a CLUSTER-level ratio also states the underlying
     FEATURE-level ratio, on EVERY channel one can be emitted through: this gate's
     report, the receipt, scripts/dogfood_baseline.py and
-    .claude/skills/apr-dogfood/SKILL.md. 5 of 14 clusters (35.7%) is a proxy and 143 of 833 features (17.2%) is the thing.
+    .claude/skills/apr-dogfood/SKILL.md. 5 of 14 clusters (35.7%) is a proxy and 143 of 836 features (17.1%) is the thing.
     One gate in a 95-member cluster is
     1%. The rule keys on the NUMBER -- a denominator equal to the cluster count
     -- not on a phrase, because a phrase can be reworded and a denominator cannot;
