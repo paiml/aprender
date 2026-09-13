@@ -1,0 +1,61 @@
+{
+ "spec": "APR-RELEASE-001",
+ "section": "3.6/\u00a74",
+ "job": "train",
+ "host": "lambda-vector",
+ "host_class": "lambda",
+ "sha": "e45eaab4796d02c6140c6cc89e146c07c0ed4c48",
+ "tag": "v0.67.0",
+ "release_url": "https://github.com/paiml/aprender/releases/tag/v0.67.0",
+ "assets_on_release": 16,
+ "asset_run_id": "34745616168",
+ "dogfood_attempts": [
+  {
+   "at": "2026-09-12T17:05:26Z",
+   "sha": "f43166592",
+   "pr": 3145,
+   "verdict": "NO-GO",
+   "stopped_at": "2026-09-12T17:33:54Z"
+  },
+  {
+   "at": "2026-09-12T20:35:05Z",
+   "sha": "ee76ee39c",
+   "pr": 3188,
+   "verdict": "NO-GO",
+   "stopped_at": "2026-09-12T20:58:13Z"
+  },
+  {
+   "at": "2026-09-12T22:25:24Z",
+   "sha": "0fd6fbcb0",
+   "pr": 3194,
+   "verdict": "NO-GO",
+   "stopped_at": "2026-09-12T22:48:01Z"
+  },
+  {
+   "at": "2026-09-13T07:11:17Z",
+   "sha": "e45eaab47",
+   "pr": 3198,
+   "verdict": "GO",
+   "go_at": "2026-09-13T07:35:31Z"
+  },
+  {
+   "at": "2026-09-13T08:01:09Z",
+   "sha": "e45eaab47",
+   "pr": 3198,
+   "verdict": null
+  }
+ ],
+ "steps": {
+  "T-0": "done \u2014 bump #3145 merged 2026-09-12T17:02:06Z",
+  "T-1": "green on the cut (doctests 978/0/428; --no-default-features RED only on standing #3176)",
+  "T-2": "5 pre-publish dogfood attempt(s): 3 NO-GO on f43166592 (#3145), ee76ee39c (#3188), 0fd6fbcb0 (#3194); GO on e45eaab47 (#3198) \u2014 cause per NO-GO: bashrs SEC/DET rows on this train's own shell files (session record; dogfood-pre-publish.log is overwritten per attempt); durable PR-side gate #3199",
+  "T-3": "tag + release + 16 asset(s) on the release; autopilot terminal line: 2026-09-13T07:56:23Z PREFLIGHT PASS; clean-room stand-in RED and non-discriminating \u2014 see #3189",
+  "T-4": "AUTOMATED (operator ruling 2026-09-13: never attended) \u2014 cascade-drain.sh --passes 30 run by the autopilot; published=1; terminal: 2026-09-13T09:11:23Z STOP milestone 0.67.0 still has 3 open item(s); not closing"
+ },
+ "published": true,
+ "t4_wall_minutes": 70,
+ "preflight_pass": true,
+ "attended_minutes": 0,
+ "unmeasured": [],
+ "source": "autopilot STATUS + gh release view + git ls-remote"
+}
