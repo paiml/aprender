@@ -2697,7 +2697,23 @@ jobs:
         run: |
           set -euo pipefail
           export PATH="$HOME/.cargo/bin:/opt/homebrew/bin:$PATH"
-          cargo test --workspace --lib --locked \
+          # --no-fail-fast, and it is not a nicety. Plain `cargo test` stops
+          # after the first failing test BINARY, so this leg reports ONE crate
+          # per run and every fix costs another ~25-minute round trip to learn
+          # the next. That is exactly what it cost: apr-cli, then aprender-mcp,
+          # then aprender-orchestrate, then aprender-test-lib, then
+          # aprender-train, then aprender-verify-ml -- six runs for six
+          # independent darwin defects one run could have listed.
+          #
+          # workspace-test does not have this problem because it runs nextest,
+          # whose measurement note above was taken with --no-fail-fast. nextest
+          # 0.9.137 IS installed on mini, so this leg could match it -- and
+          # deliberately does not. nextest gives every test its own PROCESS;
+          # plain `cargo test -- --test-threads=4` shares one, which is a
+          # different isolation model and therefore different coverage. Keeping
+          # them different is the point; it just means the flag has to be
+          # written out here rather than coming from a nextest profile.
+          cargo test --workspace --lib --locked --no-fail-fast \
             --exclude aprender-gpu --exclude aprender-cuda-edge --exclude aprender-compute \
             -- --test-threads=4
 
