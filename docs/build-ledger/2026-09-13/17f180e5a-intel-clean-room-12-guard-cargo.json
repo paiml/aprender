@@ -1,0 +1,27 @@
+{
+  "spec": "APR-RELEASE-001",
+  "section": "3.6",
+  "sha": "17f180e5ab845d14d775d6ed15a51ac416341652",
+  "host": "intel-clean-room-12",
+  "host_class": "intel",
+  "job": "guard-cargo",
+  "workflow": "CI",
+  "event": "merge_group",
+  "run_id": "34746523285",
+  "job_id": "103695347668",
+  "queue_wait_s": 2,
+  "exec_s": 1116,
+  "total_s": 1118,
+  "peak_rss_mb": null,
+  "free_disk_gb": null,
+  "exit": 0,
+  "conclusion": "success",
+  "created_at": "2026-09-13T07:58:30Z",
+  "started_at": "2026-09-13T07:58:32Z",
+  "completed_at": "2026-09-13T08:17:08Z",
+  "unmeasured": [
+    "peak_rss_mb [U] — not exposed by the Actions REST API",
+    "free_disk_gb [U] — not exposed by the Actions REST API"
+  ],
+  "source": "gh api repos/paiml/aprender/actions/runs/<run>/jobs"
+}

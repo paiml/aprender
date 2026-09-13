@@ -23,12 +23,24 @@ resolve_base() {
     local PROG="${PROG:-resolve_base}"
     headid=$(git -C "$REPO_ROOT" rev-parse "$head^{commit}" 2>/dev/null || true)
     main_tip=$(git -C "$REPO_ROOT" rev-parse origin/main 2>/dev/null || true)
-    if [ -n "$headid" ] && [ "$headid" = "$main_tip" ]; then
-        # push shape: HEAD IS the origin/main tip. merge-base(origin/main, HEAD) is HEAD, and a
-        # differential of HEAD against itself passes vacuously. The change under judgment is
-        # what the tip's first parent lacks; a depth-1 checkout must deepen by one to hold it.
+    # push shape: HEAD is ON origin/main -- the tip, or a commit BEHIND the tip when a later merge
+    # landed before this run checked out (run 34747052599: origin/main had moved one squash past
+    # HEAD; merge-base(origin/main, HEAD) was HEAD itself and the run was refused "never the tree
+    # against itself"). Either way merge-base is HEAD and a differential of HEAD against itself
+    # passes vacuously. The change under judgment is what the first parent lacks; a depth-1
+    # checkout must deepen by one to hold it.
+    local on_main=0
+    if [ -n "$headid" ] && [ -n "$main_tip" ]; then
+        # On main's FIRST-PARENT line, not merely an ancestor: a feature commit merged into main is an
+        # ancestor too, and its base is the merge-base, not its own parent (case-table row 15).
+        if [ "$headid" = "$main_tip" ] || git -C "$REPO_ROOT" rev-list --first-parent "$main_tip" 2>/dev/null | grep -qx "$headid"; then on_main=1; fi
+    fi
+    if [ "$on_main" = 1 ]; then
         local p; p=$(git -C "$REPO_ROOT" rev-parse -q --verify "$head^1^{commit}" 2>/dev/null || true)
-        if [ -n "$p" ]; then BASE_REF="$p"; BASE_HOW="first parent of $head (HEAD is the origin/main tip: push shape)"; return 0; fi
+        if [ -n "$p" ]; then
+            if [ "$headid" = "$main_tip" ]; then BASE_HOW="first parent of $head (HEAD is the origin/main tip: push shape)"; else BASE_HOW="first parent of $head (HEAD is on origin/main, behind the tip: push shape, a later merge landed first)"; fi
+            BASE_REF="$p"; return 0
+        fi
         printf '%s: %s is the origin/main tip and its first parent is not fetched, so the only base would be %s itself; refused (never the tree against itself). Deepen the checkout: git fetch --deepen=1 origin +refs/heads/main:refs/remotes/origin/main\n' "$PROG" "$head" "$head" >&2
         return 1
     fi
