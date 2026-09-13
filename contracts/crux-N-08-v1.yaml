@@ -1,0 +1,87 @@
+# CRUX-N-08 — FTRL-Proximal + SGDClassifier/SGDRegressor
+# CRUX category N: Rust ML Framework Parity (linfa + burn).
+# Filed from the 2026-09-12 competitive sweep. Tracks GitHub #3154, epic #3146.
+# registry: false — this contract carries real falsification gates and claims no
+# exemption (operator ruling 2026-08-21, "no contract exemptions").
+
+metadata:
+  id: CRUX-N-08
+  version: "1.0.0"
+  created: "2026-09-12"
+  updated: "2026-09-12"
+  author: PAIML Engineering
+  registry: false
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "N — Rust ML Framework Parity"
+  competitor: linfa
+  demand_score: 4  # 1..5, high priority in pmat work
+  intake_status: missing
+  github_issue: 3154
+  description: >
+    Classical streaming linear learners. linfa-ftrl ships Follow The Regularized Leader, marked Tested/Benchmarked. aprender has neither FTRL nor a classical SGD linear learner, though the seam exists: crates/aprender-core/src/online/mod.rs:61 already declares partial_fit with two implementors. aprender's online/ is otherwise aimed at LLM post-training (DPO, RLVR), a different use case the directory name over-promises.
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - 'epic: https://github.com/paiml/aprender/issues/3146'
+  - 'story: https://github.com/paiml/aprender/issues/3154'
+  - 'competitor: https://github.com/rust-ml/linfa'
+
+equations:
+  ftrl_produces_sparse_solutions:
+    formula: |
+      with λ₁ > 0 on d = 10000 features of which 50 are informative:
+        |{ j : w_j = 0 exactly }| / d  ≥  0.90
+    domain: "high-dimensional sparse-signal stream"
+    codomain: "fraction of exactly-zero weights"
+    invariants:
+    - "EXACT zeros, not small magnitudes -- L1 proximal truncation is the mechanism"
+    - "sparsity is FTRL's entire reason to exist; a test that omits it tests the wrong thing"
+
+  streaming_convergence:
+    formula: |
+      windowed mean loss L_w is non-increasing over a separable stream,
+        and final accuracy > τ
+    domain: "linearly separable stream"
+    codomain: "(loss trajectory, final accuracy)"
+    invariants:
+    - "two different shuffles converge within a documented tolerance"
+    - "chunked partial_fit ≈ one batch fit within a documented tolerance"
+
+falsification_tests:
+- id: FALSIFY-CRUX-N-08-001
+  rule: "FTRL yields exactly-zero weights under L1"
+  prediction: "with lambda1>0 on 10,000 features where 50 are informative, >=90% of weights are exactly zero"
+  test: >-
+    LIVE-PENDING - FTRL yields exactly-zero weights under L1. No test surface exists today because the capability is unimplemented: FTRL-Proximal + SGDClassifier/SGDRegressor (aprender#3154, CRUX-N-08). PROMOTE by authoring a test named l1_yields_exact_zeros in module `online/ftrl/tests` of crate `aprender-core`; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED and unfalsifiable-by-absence, NOT satisfied.
+  if_fails: rule 'FTRL yields exactly-zero weights under L1' is violated — the linfa parity claim for CRUX-N-08 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation
+- id: FALSIFY-CRUX-N-08-002
+  rule: "running loss decreases on a separable stream"
+  prediction: "the windowed mean loss is non-increasing and final accuracy exceeds an asserted threshold"
+  test: >-
+    LIVE-PENDING - running loss decreases on a separable stream. No test surface exists today because the capability is unimplemented: FTRL-Proximal + SGDClassifier/SGDRegressor (aprender#3154, CRUX-N-08). PROMOTE by authoring a test named windowed_loss_decreases in module `online/ftrl/tests` of crate `aprender-core`; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED and unfalsifiable-by-absence, NOT satisfied.
+  if_fails: rule 'running loss decreases on a separable stream' is violated — the linfa parity claim for CRUX-N-08 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation
+- id: FALSIFY-CRUX-N-08-003
+  rule: "both learners compose inside Pipeline"
+  prediction: "a Pipeline containing SGDClassifier fits and predicts"
+  test: >-
+    LIVE-PENDING - both learners compose inside Pipeline. No test surface exists today because the capability is unimplemented: FTRL-Proximal + SGDClassifier/SGDRegressor (aprender#3154, CRUX-N-08). PROMOTE by authoring a test named composes_in_pipeline in module `online/sgd/tests` of crate `aprender-core`; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED and unfalsifiable-by-absence, NOT satisfied.
+  if_fails: rule 'both learners compose inside Pipeline' is violated — the linfa parity claim for CRUX-N-08 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation
+
+proof_obligations:
+- type: invariant
+  property: "FTRL yields exactly-zero weights under L1"
+- type: monotonicity
+  property: "running loss decreases on a separable stream"
+- type: invariant
+  property: "both learners compose inside Pipeline"
+
+kani_harnesses:
+- id: KH-CRUX-N-08-001
+  obligation: ftrl_produces_sparse_solutions
+  property: ftrl_produces_sparse_solutions_holds_on_bounded_input
+  bound: 4
+- id: KH-CRUX-N-08-002
+  obligation: streaming_convergence
+  property: streaming_convergence_holds_on_bounded_input
+  bound: 4

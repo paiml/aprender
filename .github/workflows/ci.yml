@@ -1386,6 +1386,20 @@ jobs:
         run: bash scripts/check_tree_reader_tests.sh
       - name: bashrs must see every script in scripts/ (shrink-only)
         run: bash scripts/check_shell_lint_ratchet.sh
+      # THE RELEASE'S bashrs GATE, ON THE PR (#3196). dogfood.sh's `bashrs` row
+      # stopped the 0.67.0 train three times in one day (17:33Z, 20:58Z, 22:48Z)
+      # on SEC/DET/IDEM findings that #3115/#3127, #3187 and #3068 had merged and
+      # nothing checked, because the only copy of that filter ran at release
+      # time. Same enumeration (git ls-files, asserted N+1 receipt), same positive
+      # control (a DET002 sentinel that must fire), same code filter (SEC/DET/IDEM
+      # gating; SC1020/1035/1140 = bashrs#226 suppressed). The self-test's drift
+      # gate greps dogfood.sh for the identical rule tuples, so the two cannot
+      # diverge silently. 3 s over 294 files. Exit 1 names each finding as
+      # file:line CODE; exit 2 is "the gate did not run" and is RED too.
+      - name: "bashrs SEC/DET/IDEM: the release gate, on the PR (#3196)"
+        run: |
+          bash scripts/check_bashrs_gate.sh --self-test
+          bash scripts/check_bashrs_gate.sh
       # PMAT-746. The ONLY complexity gate in this repository was the LOCAL pmat
       # pre-commit hook (cyclomatic <= 30, cognitive <= 25, staged files only);
       # this workflow ran none. So the merge queue LANDS the debt and the
