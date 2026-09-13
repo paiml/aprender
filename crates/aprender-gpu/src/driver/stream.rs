@@ -96,6 +96,37 @@ impl CudaStream {
         Ok(Self { stream })
     }
 
+    /// Create a stream with `CU_STREAM_NON_BLOCKING`: NOT ordered against the legacy
+    /// default stream.
+    ///
+    /// The one legitimate use in this crate is **stream capture** (GPU-ORD-5, 67-B1). A
+    /// capture opened on a *blocking* stream makes every legacy-stream operation in the
+    /// whole process — including the synchronous `cuMemcpyHtoD` / `cuMemcpyDtoH` behind
+    /// `GpuBuffer` — fail with `CUDA_ERROR_STREAM_CAPTURE_IMPLICIT` (906) for as long as
+    /// the capture is open, and the first such call invalidates the capture itself
+    /// (`CUDA_ERROR_STREAM_CAPTURE_INVALIDATED`, 901). Measured on gx10: five cuBLAS
+    /// tests died with 906 and `test_cuda_graph_with_kernel` with 901 whenever they
+    /// overlapped `nextest`'s thread pool. A non-blocking capture stream has no implicit
+    /// dependency with the legacy stream, so neither error can occur.
+    ///
+    /// Callers MUST `synchronize()` this stream before reading its results through a
+    /// legacy-stream transfer — see [`stream_create_flags`] for why that ordering is
+    /// not free and why it is not the default.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err(GpuError::StreamCreate)` if stream creation fails.
+    pub fn new_non_blocking(_ctx: &CudaContext) -> Result<Self, GpuError> {
+        let driver = get_driver()?;
+
+        let mut stream: CUstream = ptr::null_mut();
+        // SAFETY: stream pointer is valid; CU_STREAM_NON_BLOCKING is a documented flag.
+        let result = unsafe { (driver.cuStreamCreate)(&mut stream, CU_STREAM_NON_BLOCKING) };
+        CudaDriver::check(result).map_err(|e| GpuError::StreamCreate(e.to_string()))?;
+
+        Ok(Self { stream })
+    }
+
     /// Get raw stream handle
     ///
     /// # Safety

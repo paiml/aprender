@@ -1,0 +1,4 @@
+# cutile searches /usr/local/cuda-13.3, -13.2, -13, /usr/local/cuda. Hosts here carry BOTH 13.0
+# and 13.3 side by side; pin 13.3 so this never resolves to 13.0, below cutile's 13.1 floor.
+[env]
+CUDA_TOOLKIT_PATH = { value = "/usr/local/cuda-13.3", relative = false }

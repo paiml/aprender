@@ -4,48 +4,48 @@ expression: stage_info
 ---
 [
   {
-    "name": "Idle",
     "is_active": false,
-    "is_terminal": false
+    "is_terminal": false,
+    "name": "Idle"
   },
   {
-    "name": "Calibrating",
     "is_active": true,
-    "is_terminal": false
+    "is_terminal": false,
+    "name": "Calibrating"
   },
   {
-    "name": "Computing Importance",
     "is_active": true,
-    "is_terminal": false
+    "is_terminal": false,
+    "name": "Computing Importance"
   },
   {
-    "name": "Pruning",
     "is_active": true,
-    "is_terminal": false
+    "is_terminal": false,
+    "name": "Pruning"
   },
   {
-    "name": "Fine-Tuning",
     "is_active": true,
-    "is_terminal": false
+    "is_terminal": false,
+    "name": "Fine-Tuning"
   },
   {
-    "name": "Evaluating",
     "is_active": true,
-    "is_terminal": false
+    "is_terminal": false,
+    "name": "Evaluating"
   },
   {
-    "name": "Exporting",
     "is_active": true,
-    "is_terminal": false
+    "is_terminal": false,
+    "name": "Exporting"
   },
   {
-    "name": "Complete",
     "is_active": false,
-    "is_terminal": true
+    "is_terminal": true,
+    "name": "Complete"
   },
   {
-    "name": "Failed",
     "is_active": false,
-    "is_terminal": true
+    "is_terminal": true,
+    "name": "Failed"
   }
 ]

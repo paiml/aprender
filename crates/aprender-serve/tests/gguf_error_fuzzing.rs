@@ -93,12 +93,28 @@ fn test_unsupported_version_v1() {
 }
 
 #[test]
-fn test_unsupported_version_v2() {
+fn test_unsupported_version_v99() {
+    // Stale test (the contract moved, the code is right): V2 is now supported. This row now checks v99.
+    let mut data = vec![0u8; 24];
+    data[0..4].copy_from_slice(&GGUF_MAGIC.to_le_bytes());
+    data[4..8].copy_from_slice(&99u32.to_le_bytes()); // Version 99
+    let result = GGUFModel::from_bytes(&data);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_supported_version_v2_empty_fails_validation() {
+    // V2 is supported, but an empty model will fail validation, not version check.
     let mut data = vec![0u8; 24];
     data[0..4].copy_from_slice(&GGUF_MAGIC.to_le_bytes());
     data[4..8].copy_from_slice(&2u32.to_le_bytes()); // Version 2
+    data[8..16].copy_from_slice(&0u64.to_le_bytes()); // tensor_count
+    data[16..24].copy_from_slice(&0u64.to_le_bytes()); // metadata_kv_count
     let result = GGUFModel::from_bytes(&data);
-    assert!(result.is_err());
+    assert!(
+        result.is_ok(),
+        "V2 empty model should be successfully loaded"
+    );
 }
 
 #[test]

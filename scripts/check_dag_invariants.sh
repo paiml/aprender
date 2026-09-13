@@ -105,10 +105,10 @@ rows:
   status: open
 EOF
     n=0; red=0
-    row() { # row <id> <want rc> <label> <fixture>
-        local id=$1 want=$2 label=$3 f=$4 rc=0
+    row() { # row <id> <want rc> <label> <fixture> [<root holding docs/audits/impl-*-receipt.md>]
+        local id=$1 want=$2 label=$3 f=$4 root=${5:-$TD/root} rc=0
         n=$((n + 1))
-        python3 "$LIB" check "$f" --min-slack-days 6 --today 2026-09-05 >"$TD/out.$n" 2>&1 || rc=$?
+        python3 "$LIB" check "$f" --min-slack-days 6 --today 2026-09-05 --root "$root" >"$TD/out.$n" 2>&1 || rc=$?
         if [ "$rc" = "$want" ]; then
             printf 'ok    row %-2s %-6s rc=%s  %s\n' "$n" "$id" "$rc" "$label"
         else
@@ -139,6 +139,15 @@ PY
     mut d6c 'rows["I-15"]["expiry"] = {"anchor": "GHOST", "days": 7}';     row D6 1 "an anchor that is not a row" "$TD/d6c.yaml"
     mut rep 'rows["R-4"]["expiry"] = "2026-09-01"';                        row REP 0 "a past-expiry row is REPORTED, not a violation here" "$TD/rep.yaml"
     grep -q "REPORT past-expiry" "$TD/out.$n" || { printf 'FAIL  row %-2s the past-expiry report line is missing\n' "$n"; red=1; }
+    # D7 (G-11, PMAT-1062): status is DERIVED from docs/audits/impl-<pmat_id>-receipt.md; a typed status is at most a cache
+    mkdir -p "$TD/root/docs/audits"; printf -- '---\nstatus: complete\n---\n' > "$TD/root/docs/audits/impl-PMAT-7-receipt.md"; printf -- '---\nstatus: partial\n---\n' > "$TD/root/docs/audits/impl-PMAT-8-receipt.md"
+    mut d7a 'rows["R-4"]["status"] = "complete"';                                       row D7 1 "typed status: complete on a row with no receipt (the registered mutation)" "$TD/d7a.yaml"
+    mut d7b 'rows["R-4"]["pmat_id"] = "PMAT-7"; rows["R-4"]["status"] = "complete"';    row D7 0 "typed status: complete agrees with a complete receipt (a cache, tolerated)" "$TD/d7b.yaml"
+    mut d7c 'rows["R-4"]["pmat_id"] = "PMAT-8"; rows["R-4"]["status"] = "complete"';    row D7 1 "typed status: complete over a receipt that says partial" "$TD/d7c.yaml"
+    mut d7d 'del rows["R-4"]["status"]; rows["R-4"]["pmat_id"] = "PMAT-7"; rows["R-4"]["expiry"] = "2026-09-01"'; row D7 0 "no typed status: a complete receipt makes a past-expiry row NOT expired (derived)" "$TD/d7d.yaml"
+    if grep -q 'expired' "$TD/out.$n"; then printf 'FAIL  row %-2s D7     the complete receipt was not read: the row still reports as expired\n' "$n"; fails=1; fi
+    printf -- '---\r\nstatus: complete\r\n---\r\n' > "$TD/root/docs/audits/impl-PMAT-9-receipt.md"
+    mut d7e 'rows["R-4"]["pmat_id"] = "PMAT-9"; rows["R-4"]["status"] = "complete"';    row D7 1 "a CRLF receipt is no front matter for bash (head -n1 keeps the CR) and none for python too: typed complete is RED" "$TD/d7e.yaml"
     printf '%s/%s rows\n' "$((n - red))" "$n"
     [ "$red" = 0 ] || exit 1
     exit 0
@@ -161,7 +170,7 @@ done
 rc=0
 python3 "$LIB" check "$DAG" "${ARGS[@]+"${ARGS[@]}"}" || rc=$?
 if [ "$rc" = 0 ]; then
-    printf 'PASS  every DAG invariant holds (D1 edges, D2 acyclic, D3 slack, D4 queues, D5 owner, D6 expiry form)\n'
+    printf 'PASS  every DAG invariant holds (D1 edges, D2 acyclic, D3 slack, D4 queues, D5 owner, D6 expiry form, D7 status derived from receipts)\n'
 else
     printf 'FAIL  a DAG invariant is violated (rc=%s). Amend the DAG with a dated row under `amendments:` naming who, why, date — never by editing a blocker away.\n' "$rc" >&2
 fi

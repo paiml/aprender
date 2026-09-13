@@ -75,37 +75,8 @@ pub(crate) fn run(
         let mut use_cpu = no_gpu;
 
         #[cfg(feature = "cuda")]
-        let gpu_fallback_result: Option<RealProfileResults> = if !use_cpu {
-            // PMAT-203: Skip parity gate for profiling — known false positive on CUDA 13.1 driver.
-            // The parity gate compares GPU/CPU logits and fails spuriously, but profiling
-            // only needs generation throughput, not parity verification.
-            std::env::set_var("SKIP_PARITY_GATE", "1");
-
-            // GH-578: Spawn GPU profiling on a thread with 16MB stack.
-            // The deep call chain (profile_gpu_generation → generate_gpu_resident →
-            // forward_all_layers_gpu_to_logits → transformer_layer_workspace_inner)
-            // overflows the default 8MB stack on constrained hardware (RTX 4060 Yoga).
-            let path_owned = path.to_path_buf();
-            let gpu_result = std::thread::Builder::new()
-                .name("gpu-profile".into())
-                .stack_size(16 * 1024 * 1024)
-                .spawn(move || profile_gpu_generation(&path_owned, tokens, warmup_passes, measure_passes))
-                .map_err(|e| CliError::ValidationFailed(format!("Failed to spawn profiling thread: {e}")))?
-                .join()
-                .map_err(|_| CliError::ValidationFailed("GPU profiling thread panicked".into()))?;
-
-            match gpu_result {
-                Ok(r) => Some(r),
-                Err(e) => {
-                    if matches!(format, OutputFormat::Human) {
-                        output::warn(&format!("GPU profiling failed: {e}, falling back to CPU per-op profiling"));
-                    }
-                    None
-                }
-            }
-        } else {
-            None
-        };
+        let gpu_fallback_result: Option<RealProfileResults> =
+            gpu_profile_or_none(use_cpu, path, tokens, warmup_passes, measure_passes, &format)?;
         #[cfg(not(feature = "cuda"))]
         let gpu_fallback_result: Option<RealProfileResults> = None;
 
@@ -195,6 +166,56 @@ pub(crate) fn run(
     }
 
     Ok(())
+}
+
+/// The GPU half of the benchmark (REG-15, #2971): profile on the GPU when the user did not force
+/// the CPU. The load-time parity gate is NEVER disabled here — if the user set SKIP_PARITY_GATE
+/// themselves it is printed as an override (every receipt of this run is INVALID-CORRECTNESS);
+/// otherwise the gate runs and a failing model is refused by name.
+#[cfg(feature = "cuda")]
+#[allow(clippy::too_many_arguments)]
+fn gpu_profile_or_none(
+    use_cpu: bool,
+    path: &Path,
+    tokens: usize,
+    warmup_passes: usize,
+    measure_passes: usize,
+    format: &OutputFormat,
+) -> Result<Option<RealProfileResults>, CliError> {
+    let r: Option<RealProfileResults> = if !use_cpu {
+            // PMAT-203: Skip parity gate for profiling — known false positive on CUDA 13.1 driver.
+        // The parity gate compares GPU/CPU logits and fails spuriously, but profiling
+        // only needs generation throughput, not parity verification.
+        if let Some(line) = crate::commands::parity_admission::override_line() {
+            eprintln!("{line}");
+        }
+
+        // GH-578: Spawn GPU profiling on a thread with 16MB stack.
+        // The deep call chain (profile_gpu_generation → generate_gpu_resident →
+        // forward_all_layers_gpu_to_logits → transformer_layer_workspace_inner)
+        // overflows the default 8MB stack on constrained hardware (RTX 4060 Yoga).
+        let path_owned = path.to_path_buf();
+        let gpu_result = std::thread::Builder::new()
+            .name("gpu-profile".into())
+            .stack_size(16 * 1024 * 1024)
+            .spawn(move || profile_gpu_generation(&path_owned, tokens, warmup_passes, measure_passes))
+            .map_err(|e| CliError::ValidationFailed(format!("Failed to spawn profiling thread: {e}")))?
+            .join()
+            .map_err(|_| CliError::ValidationFailed("GPU profiling thread panicked".into()))?;
+
+        match gpu_result {
+            Ok(r) => Some(r),
+            Err(e) => {
+                if matches!(format, OutputFormat::Human) {
+                    output::warn(&format!("GPU profiling failed: {e}, falling back to CPU per-op profiling"));
+                }
+                None
+            }
+        }
+    } else {
+        None
+    };
+    Ok(r)
 }
 
 #[allow(clippy::too_many_arguments)]

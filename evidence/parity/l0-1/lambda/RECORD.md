@@ -1,0 +1,45 @@
+# L0-1 RED-first record — lambda (2026-09-06T13:5xZ), BEFORE any kernel edit
+- host: noah-Lambda-Vector, GPU 0 NVIDIA GeForce RTX 4090 (`nvidia-smi -L`)
+- binary: `/tmp/apr-0652-cuda/bin/apr` = `apr 0.65.2 (v0.65.2+no-git)`, sha256 prefix `c642576eecb62daa` (the 0.65.2 post-publish cuda install, `evidence/dogfood/0.65.2/lambda-cuda-install.txt`)
+- command: `apr parity <model> --prompt "<78-token English paragraph>" --json` (files beside this record; stderr tails kept)
+- models: `/home/noah/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf`, `/home/noah/models/qwen2.5-coder-7b-instruct-q4_k_m.gguf`
+- result (78 positions each, `metrics[].cosine_similarity`, derive: `python3 -c` over the JSON):
+  | model | positions < 0.98 | min cosine (position) | max |Δlogit| at that position | argmax mismatches | apr parity verdict |
+  |---|---|---|---|---|---|
+  | qwen2.5-coder-1.5b-instruct-q4_k_m | **1** | **0.9508 (position 0 = the prompt's first token, token_id 785 — NOT the BOS 151643 the load-time gate measures; corrected by the root-cause quorum)** | 11.97 | 2 | passed 78/78 (its own per-position thresholds) |
+  | qwen2.5-coder-7b-instruct-q4_k_m | 0 | 0.9986 (position 0) | 0.78 | 2 | passed 78/78 |
+- reading: under the L0-1 horizon rule (min over ≥ 64 positions ≥ 0.98 [U]) the 1.5B is RED and the 7B is GREEN on lambda/sm_89 — the pattern the driver names, at position 0 — the prompt's first token (785), a DIFFERENT token from the BOS the load-time gate measures, so a gate PASS and a parity RED are consistent. The driver's 0.9418 / 5.38 are not this host's numbers; gx10 (GB10) is the other required host and is reached only through fleet-verify (G-11b).
+- threshold 0.98 is [U] (driver); `apr parity` itself passed every position under its own bands — a threshold nobody measured decides RED here, which is exactly item (5) of the card.
+
+## The records are portable, and the five-run series is one file (2026-09-08)
+
+Every record here was re-taken with the model named RELATIVELY — `cd ~/models && apr parity
+./<model>.gguf --prompt "<the 78-token corpus prompt>" --json` — with the same pinned binary
+and the same prompt. The `metrics` array and every other key are byte-identical to the
+absolute-path run; only the `model` field differs. That keeps `check_hardcoded_paths.sh`'s
+shipped-path count flat without deleting a measurement: nothing is redacted, the run was
+simply invoked the way it should have been.
+
+`n5/` no longer carries five JSON files per model. All five runs were byte-identical to each
+other AND to the canonical record beside this file — `stdev 0` understates it; the whole file
+was the same file — so five copies carried nothing the recorded sha256 does not. See
+`n5/DETERMINISM.md` for the hashes and `n5/runs.log` for the ten exit codes.
+
+
+## 2026-09-09 — the reporter's exact file, measured (PMAT-1096, the 0.66.0 cut)
+
+Issue #2971 names base **Qwen2.5-1.5B-Instruct** q4_k_m; every earlier record here is the Coder
+variant of the same shape (hidden 1536 / heads 12 / kv 2). The exact file was fetched from
+`Qwen/Qwen2.5-1.5B-Instruct-GGUF` (`qwen2.5-1.5b-instruct-q4_k_m.gguf`, 1117320736 bytes, sha256
+`6a1a2eb6d15622bf3c96857206351ba97e1af16c30d7a74ee38970e434e9407e`, verified against the HF LFS oid)
+and run through the same 78-token corpus prompt on lambda (RTX 4090, driver 580.119.02) with a cuda
+`apr` built from the release tree — `apr 0.66.0 (611989200)`, pinned by `scripts/apr_bin.sh`
+(binary sha256 prefix `342f4199a612c842`).
+
+| model | positions | min cosine | at | verdict (`check_model_parity.sh --judge`) |
+|---|---|---|---|---|
+| qwen2.5-1.5b-instruct-q4_k_m (base Instruct, the reporter's file) | 78 | **0.9978** | 4 | **PASS** ≥ 0.98 |
+
+Files: `qwen2.5-1.5b-instruct-q4_k_m.json` (the `apr parity --json` record) and `.err` (stderr, the
+mechanism lines). The same binary's `check_model_parity.sh --manifest` on this host: measured=3
+(qwen2.5-coder-0.5b/1.5b/7b-instruct) rc=0.

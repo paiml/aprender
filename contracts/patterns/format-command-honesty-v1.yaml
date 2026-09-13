@@ -1,0 +1,180 @@
+metadata:
+  id: APR-FORMAT-HONESTY-001
+  version: "1.0.0"
+  created: "2026-09-08"
+  author: PAIML Engineering
+  kind: pattern
+  status: enforced
+  description: |
+    A model file the user NAMED is the model that answers, or the command refuses.
+    No command substitutes a different model and reports success.
+
+    Cross-cutting, so `kind: pattern` rather than a kernel contract: the content is a
+    relation between what a command PRINTS and what it LOADED, not a formula over data.
+
+    WHY IT EXISTS (#3022). `apr chat` decided the format with
+    `Path::extension()`, which returns the LAST dot-segment — `Some("json")` on
+    `model.safetensors.index.json`, the exact filename `apr pull` writes and then
+    recommends. That matched no arm, fell through to `ModelFormat::Demo`, and the command
+    loaded its built-in toy model: `Loaded Demo format in 0.00s (0.0 MB)`, zero tokens,
+    **exit 0**, under a banner printing the real 7B model's path. Nothing failed. A user
+    reasonably reads that as "my model produced an empty answer".
+
+    Two independent decisions made it invisible. The banner asked the PATH what the format
+    was; the session asked the first eight BYTES. They could disagree, and no test compared
+    them, so a banner naming SafeTensors over a session loading Demo was a reachable state
+    with no falsifier anywhere in the tree.
+
+    WHY THE GATE MISSED IT (#3024). qwen-story-daily is the nightly gate for the CLI's
+    real-model story and was green the same night. `grep -c "apr chat" scripts/qwen-story.sh`
+    is 0 and `grep -c "index.json"` is 0: the command and the layout the defect needs are
+    both absent from the matrix. A gate and a defect that never intersect say nothing about
+    each other.
+
+    THE FIX IS STRUCTURAL, NOT A NEW ARM. `resolve_chat_format` is the single decision:
+    name first (suffix before extension), then the magic bytes of an odd-named file, then a
+    refusal from error.rs — and `Demo` is not an outcome for a path that exists. The
+    sharded arm is one case of that rule, not the rule.
+  references:
+    - crates/apr-cli/src/commands/chat.rs
+    - crates/apr-cli/src/commands/chat_format_honesty_tests.rs
+    - scripts/check_format_command_matrix.sh
+    - scripts/make_sharded_safetensors.py
+    - docs/audits/impl-PMAT-1080-receipt.md
+  depends_on: []
+equations:
+  named_model_is_the_loaded_model:
+    formula: |
+      exists(p) => resolve(p) in {Apr, Gguf, SafeTensors, ShardedSafeTensors}
+                   OR refuse(p) with a code from error.rs
+      resolve(p) = Demo  is unreachable for any p the user named
+    domain: Any path accepted by a model-taking apr command after existence is proven.
+    codomain: ModelFormat | refusal
+    invariants:
+      - "no existing path resolves to the built-in demo model"
+      - "a refusal names the file and carries a non-zero exit code"
+      - "an unusual extension over real magic bytes still resolves to that format"
+    preconditions:
+      - "the path exists (the resolver has already proven it)"
+    postconditions:
+      - "the banner, the tokenizer and the generator are handed ONE format value"
+  suffix_before_extension:
+    formula: |
+      name ends with ".safetensors.index.json" => ShardedSafeTensors
+      evaluated BEFORE extension(name)
+    domain: Any model file name.
+    codomain: ModelFormat
+    invariants:
+      - "extension() is never the first question for a name carrying more than one dot"
+      - "every multi-dot format is matched on the suffix, in one place"
+    preconditions: []
+    postconditions:
+      - "the same function answers for the banner and for the loader"
+  reported_size_is_the_model_size:
+    formula: |
+      sharded => reported_bytes = index.metadata.total_size
+      otherwise => reported_bytes = len(model bytes read)
+    domain: A load line printed by a chat session.
+    codomain: bytes
+    invariants:
+      - "a ~20 KB manifest is never reported as the size of the model it names"
+      - "0.0 MB is never printed for a model that loaded"
+    preconditions:
+      - "the format has been resolved"
+    postconditions:
+      - "the printed size is a property of the model, not of the file opened"
+  the_gate_intersects_the_defect:
+    formula: |
+      matrix = {sharded, single-file} x {apr run, apr chat}
+      cell honest <=> (exit 0) and (format != Demo) and (tokens > 0) and (size > 0)
+    domain: Any build of apr and any host holding one small SafeTensors model.
+    codomain: GREEN | RED
+    invariants:
+      - "the sharded fixture is DERIVED from a model already present, never downloaded"
+      - "a cell that cannot run is RED, never skipped"
+      - "the three unaffected cells stay GREEN on a defective build, so the gate discriminates"
+    preconditions:
+      - "the apr binary is named explicitly; a bare PATH `apr` is refused"
+    postconditions:
+      - "the run prints one verdict line per cell and the records it judged"
+proof_obligations:
+  - type: invariant
+    property: The demo model is not a resolution of a named file
+    formal: "forall p: exists(p) -> resolve(p) != Demo"
+    applies_to: named_model_is_the_loaded_model
+  - type: invariant
+    property: The multi-dot suffix is matched before the extension
+    formal: "endswith(p, '.safetensors.index.json') -> resolve(p) = ShardedSafeTensors"
+    applies_to: suffix_before_extension
+  - type: frame
+    property: One decision reaches every consumer
+    formal: "banner_format(p) = session_format(p) for all p"
+    applies_to: named_model_is_the_loaded_model
+  - type: invariant
+    property: A manifest's own size is never the model's size
+    formal: "sharded(p) -> reported(p) = total_size(index(p))"
+    applies_to: reported_size_is_the_model_size
+  - type: invariant
+    property: The gate fires on the defect it was written for
+    formal: "build_without_the_sharded_arm -> matrix = RED on (sharded, chat)"
+    applies_to: the_gate_intersects_the_defect
+falsification_tests:
+  - id: FALSIFY-FMT-HONESTY-001
+    rule: |
+      A sharded SafeTensors index resolves to the sharded format, never to Demo.
+    prediction: |
+      Removing the `.safetensors.index.json` arm from `detect_format` turns
+      `sharded_index_resolves_to_the_sharded_format_not_demo` RED.
+    test: |
+      cargo test -p apr-cli --lib -- sharded_index_resolves_to_the_sharded_format_not_demo
+    if_fails: |
+      detect_format is asking extension() first again; the suffix arm must precede it.
+    ship_blocking: true
+    counter_example_classes:
+      - multi_dot_name_misfiled
+      - demo_substituted_for_a_named_file
+  - id: FALSIFY-FMT-HONESTY-002
+    rule: |
+      An existing file that is not a loadable model is REFUSED, with error.rs's code.
+    prediction: |
+      Replacing the refusal with `Ok(ModelFormat::Demo)` turns three rows RED:
+      an_existing_unrecognised_file_is_refused_not_demoted,
+      resolve_never_answers_demo_for_a_file_the_user_named,
+      a_truncated_file_is_refused_rather_than_read_as_a_format.
+    test: |
+      cargo test -p apr-cli --lib -- an_existing_unrecognised resolve_never_answers a_truncated_file_is
+    if_fails: |
+      The resolver has a path back to Demo; every such path is #3022 again.
+    ship_blocking: true
+    counter_example_classes:
+      - silent_substitution
+      - success_exit_on_a_model_that_never_loaded
+  - id: FALSIFY-FMT-HONESTY-003
+    rule: |
+      The {sharded, single-file} x {run, chat} matrix judges a substituted cell RED,
+      and leaves the unaffected cells GREEN.
+    prediction: |
+      Run against a build without the fix, the matrix exits 1 naming
+      `sharded x apr chat`; the other three cells stay GREEN.
+    test: |
+      bash scripts/check_format_command_matrix.sh --self-test
+    if_fails: |
+      The judge is not reading the banner/size/token rules; a Demo cell would pass.
+    ship_blocking: true
+    counter_example_classes:
+      - gate_and_defect_never_intersect
+      - zero_token_cell_admitted
+  - id: FALSIFY-FMT-HONESTY-004
+    rule: |
+      The sharded fixture is derived offline and every tensor survives the split.
+    prediction: |
+      The splitter's case table proves byte-identical tensors, a 2-shard index and
+      determinism; a one-shard request is refused.
+    test: |
+      python3 scripts/make_sharded_safetensors.py --self-test
+    if_fails: |
+      The fixture is not a sharded model, so a green matrix would prove nothing.
+    ship_blocking: true
+    counter_example_classes:
+      - fixture_is_not_actually_sharded
+      - tensor_bytes_lost_in_the_split

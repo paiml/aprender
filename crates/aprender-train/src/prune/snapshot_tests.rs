@@ -7,6 +7,15 @@
 //! - Metrics computation consistency
 
 #[cfg(test)]
+// BSE-17 (PMAT-1077): every assertion below sorts map keys. The snapshots had
+// been recorded with maps in insertion order, an ordering this crate gets only
+// when a SIBLING enables serde_json/preserve_order and the build unifies
+// features workspace-wide (`cargo test --workspace`); built alone (`-p`) the
+// maps came out sorted and three snapshots failed. Declaring the feature here
+// was tried and reverted: aprender-core depends on this crate, so the flag
+// leaked into core and flipped the setfit artifact golden hash. Sorting at the
+// assertion makes the snapshot a function of the value, not of who else is
+// being built.
 mod tests {
     use crate::prune::{
         CalibrationConfig, PruneMethod, PruningConfig, PruningMetrics, PruningSchedule,
@@ -22,7 +31,7 @@ mod tests {
         // TEST_ID: SNAP-001
         // Snapshot test for OneShot schedule JSON serialization
         let schedule = PruningSchedule::OneShot { step: 1000 };
-        insta::assert_json_snapshot!("oneshot_schedule", schedule);
+        insta::with_settings!({ sort_maps => true }, { insta::assert_json_snapshot!("oneshot_schedule", schedule); });
     }
 
     #[test]
@@ -36,7 +45,7 @@ mod tests {
             final_sparsity: 0.5,
             frequency: 100,
         };
-        insta::assert_json_snapshot!("gradual_schedule", schedule);
+        insta::with_settings!({ sort_maps => true }, { insta::assert_json_snapshot!("gradual_schedule", schedule); });
     }
 
     #[test]
@@ -45,7 +54,7 @@ mod tests {
         // Snapshot test for Cubic schedule JSON serialization
         let schedule =
             PruningSchedule::Cubic { start_step: 0, end_step: 10000, final_sparsity: 0.7 };
-        insta::assert_json_snapshot!("cubic_schedule", schedule);
+        insta::with_settings!({ sort_maps => true }, { insta::assert_json_snapshot!("cubic_schedule", schedule); });
     }
 
     #[test]
@@ -63,7 +72,7 @@ mod tests {
         let progression: Vec<(usize, f32)> =
             (0..=100).step_by(10).map(|step| (step, schedule.sparsity_at_step(step))).collect();
 
-        insta::assert_json_snapshot!("gradual_sparsity_progression", progression);
+        insta::with_settings!({ sort_maps => true }, { insta::assert_json_snapshot!("gradual_sparsity_progression", progression); });
     }
 
     #[test]
@@ -75,7 +84,7 @@ mod tests {
         let progression: Vec<(usize, f32)> =
             (0..=100).step_by(10).map(|step| (step, schedule.sparsity_at_step(step))).collect();
 
-        insta::assert_json_snapshot!("cubic_sparsity_progression", progression);
+        insta::with_settings!({ sort_maps => true }, { insta::assert_json_snapshot!("cubic_sparsity_progression", progression); });
     }
 
     // =========================================================================
@@ -87,7 +96,7 @@ mod tests {
         // TEST_ID: SNAP-010
         // Snapshot default PruningConfig to detect breaking changes
         let config = PruningConfig::default();
-        insta::assert_json_snapshot!("default_pruning_config", config);
+        insta::with_settings!({ sort_maps => true }, { insta::assert_json_snapshot!("default_pruning_config", config); });
     }
 
     #[test]
@@ -105,7 +114,7 @@ mod tests {
                 final_sparsity: 0.5,
                 frequency: 100,
             });
-        insta::assert_json_snapshot!("wanda_config", config);
+        insta::with_settings!({ sort_maps => true }, { insta::assert_json_snapshot!("wanda_config", config); });
     }
 
     #[test]
@@ -118,7 +127,7 @@ mod tests {
             .with_pattern(SparsityPatternConfig::Unstructured)
             .with_fine_tune(true)
             .with_fine_tune_steps(2000);
-        insta::assert_json_snapshot!("sparsegpt_config", config);
+        insta::with_settings!({ sort_maps => true }, { insta::assert_json_snapshot!("sparsegpt_config", config); });
     }
 
     #[test]
@@ -133,7 +142,7 @@ mod tests {
             ("row", SparsityPatternConfig::Row),
             ("column", SparsityPatternConfig::Column),
         ];
-        insta::assert_json_snapshot!("all_sparsity_patterns", patterns);
+        insta::with_settings!({ sort_maps => true }, { insta::assert_json_snapshot!("all_sparsity_patterns", patterns); });
     }
 
     #[test]
@@ -159,7 +168,7 @@ mod tests {
             })
             .collect();
 
-        insta::assert_json_snapshot!("all_prune_methods", method_info);
+        insta::with_settings!({ sort_maps => true }, { insta::assert_json_snapshot!("all_prune_methods", method_info); });
     }
 
     // =========================================================================
@@ -193,7 +202,7 @@ mod tests {
             })
             .collect();
 
-        insta::assert_json_snapshot!("pipeline_stages", stage_info);
+        insta::with_settings!({ sort_maps => true }, { insta::assert_json_snapshot!("pipeline_stages", stage_info); });
     }
 
     #[test]
@@ -201,7 +210,7 @@ mod tests {
         // TEST_ID: SNAP-021
         // Snapshot initial metrics state
         let metrics = PruningMetrics::new(0.5);
-        insta::assert_json_snapshot!("initial_metrics", metrics);
+        insta::with_settings!({ sort_maps => true }, { insta::assert_json_snapshot!("initial_metrics", metrics); });
     }
 
     #[test]
@@ -215,7 +224,7 @@ mod tests {
         metrics.add_layer_sparsity("layer1", 0.25);
         metrics.add_layer_sparsity("layer2", 0.25);
         metrics.add_layer_sparsity("layer3", 0.30);
-        insta::assert_json_snapshot!("metrics_with_sparsity", metrics);
+        insta::with_settings!({ sort_maps => true }, { insta::assert_json_snapshot!("metrics_with_sparsity", metrics); });
     }
 
     // =========================================================================
@@ -227,7 +236,7 @@ mod tests {
         // TEST_ID: SNAP-030
         // Snapshot default calibration configuration
         let config = CalibrationConfig::default();
-        insta::assert_json_snapshot!("calibration_config_default", config);
+        insta::with_settings!({ sort_maps => true }, { insta::assert_json_snapshot!("calibration_config_default", config); });
     }
 
     #[test]
@@ -238,7 +247,7 @@ mod tests {
             .with_num_samples(1024)
             .with_batch_size(16)
             .with_sequence_length(4096);
-        insta::assert_json_snapshot!("calibration_config_custom", config);
+        insta::with_settings!({ sort_maps => true }, { insta::assert_json_snapshot!("calibration_config_custom", config); });
     }
 
     // =========================================================================
@@ -300,7 +309,7 @@ mod tests {
             })
             .collect();
 
-        insta::assert_json_snapshot!("schedule_validation_errors", errors);
+        insta::with_settings!({ sort_maps => true }, { insta::assert_json_snapshot!("schedule_validation_errors", errors); });
     }
 
     // =========================================================================
