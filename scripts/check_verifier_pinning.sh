@@ -92,6 +92,11 @@
 #
 set -uo pipefail
 
+# Rows that measured NOTHING because the pv build died for environment reasons
+# (verifier_pin_pv rc=3). Counted, never netted against real failures — see the
+# final verdict.
+VP_ENV_DEATHS=0
+
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 # The two files that ARE the protocol. Every other in-scope file is derived from
@@ -872,6 +877,90 @@ EOF
         pin_audit "$td/good-calls.sh" 2>&1 | sed 's/^/        /'; fails=1
     fi
 
+    # -----------------------------------------------------------------------
+    # ENV-vs-CODE for the pv build itself (#3212).
+    #
+    # guard-cargo went red on #3212 with "FAIL pv-pin ... a release cannot be
+    # decided by a verifier that did not build" while the cause was a runner
+    # fault: cargo died with `could not parse/generate dep info ... No such file
+    # or directory (os error 2)`, and the NEXT row of the same job built the
+    # same pv from the same tree 39 s later and passed. The repo already shipped
+    # the discrimination -- cargo_classify.sh row C8 IS this signature -- and the
+    # pin never asked it. These rows are why that cannot silently come back.
+    # Both libraries are sourced HERE, in the self-test's own scope: the rest of
+    # this guard loads verifier_pin.sh inside behaviour_test(), so a row written
+    # without this would report `command not found` and be counted as a failure
+    # of the thing it was meant to prove. A library that will not source is a
+    # FAIL row, never a skipped one.
+    if . "$REPO_ROOT/scripts/cargo_classify.sh" && . "$REPO_ROOT/scripts/verifier_pin.sh"; then
+        printf 'ok    LIBS          cargo_classify.sh + verifier_pin.sh source cleanly\n'
+    else
+        printf 'FAIL  LIBS          could not source the classifier / pin libraries\n'; fails=1
+    fi
+
+    if cargo_classify_selftest --quiet; then
+        printf 'ok    CLASSIFIER    cargo_classify.sh case table passes in THIS guard scope\n'
+    else
+        printf 'FAIL  CLASSIFIER    cargo_classify.sh case table is red here\n'; fails=1
+    fi
+
+    # The two logs. The ENV one is verbatim from the #3212 job; the CODE one is
+    # a real rustc diagnostic, present so the ENV arm cannot be widened into
+    # something that swallows a genuine build defect.
+    cat > "$td/pvbuild-env.log" <<'ENVLOG'
+error: could not parse/generate dep info at: /home/noah/data/actions-runner-2/_work/aprender/aprender/target/debug/deps/regex-24de62961e5f8d77.d
+
+Caused by:
+  No such file or directory (os error 2)
+pv_bin: cargo build of aprender-contracts-cli failed
+ENVLOG
+    cat > "$td/pvbuild-code.log" <<'CODELOG'
+error[E0425]: cannot find value `contract_path` in this scope
+  --> crates/aprender-contracts-cli/src/main.rs:42:18
+pv_bin: cargo build of aprender-contracts-cli failed
+CODELOG
+
+    got=$(classify_cargo_failure "$td/pvbuild-env.log")
+    if [ "$got" = 'ENV' ]; then
+        printf 'ok    ENV-LOG       the #3212 dep-info death classifies ENV\n'
+    else
+        printf 'FAIL  ENV-LOG       got [%s], want [ENV]\n' "$got"; fails=1
+    fi
+    got=$(classify_cargo_failure "$td/pvbuild-code.log")
+    if [ "$got" = 'CODE' ]; then
+        printf 'ok    CODE-LOG      a real compile error still classifies CODE\n'
+    else
+        printf 'FAIL  CODE-LOG      got [%s], want [CODE] — the ENV arm swallows defects\n' "$got"; fails=1
+    fi
+
+    # THE PLUMBING ROWS. The two above judge a pure function and would stay
+    # green with verifier_pin_pv left entirely unwired — which is exactly how
+    # #3207 shipped 26 green rows that recorded nothing. These call
+    # verifier_pin_pv for real, against a throwaway git repo whose pv_bin.sh is
+    # a stub reproducing each death, and assert the RETURN CODE callers switch
+    # on. Break the rc=3 arm and PIN-RC(env) goes red immediately.
+    for _vp_case in env:3 code:1; do
+        _vp_kind=${_vp_case%%:*}; _vp_want=${_vp_case##*:}
+        _vp_repo="$td/pinrepo-$_vp_kind"
+        mkdir -p "$_vp_repo/scripts"
+        git init -q "$_vp_repo" 2>/dev/null
+        cp "$REPO_ROOT/scripts/cargo_classify.sh" "$_vp_repo/scripts/" 2>/dev/null
+        {
+            printf '#!/usr/bin/env bash\n'
+            printf 'cat %s >&2\n' "$td/pvbuild-$_vp_kind.log"
+            printf 'PV=""\n'
+            printf 'return 1 2>/dev/null || exit 1\n'
+        } > "$_vp_repo/scripts/pv_bin.sh"
+        got=$( cd "$_vp_repo" && verifier_pin_pv 2>/dev/null; printf '%s' "$?" )
+        if [ "$got" = "$_vp_want" ]; then
+            printf 'ok    PIN-RC        %s pv-build death returns rc=%s from verifier_pin_pv\n' \
+                "$_vp_kind" "$_vp_want"
+        else
+            printf 'FAIL  PIN-RC        %s death returned rc=%s, want %s\n' \
+                "$_vp_kind" "$got" "$_vp_want"; fails=1
+        fi
+    done
+
     rm -rf "${td:?}"
     return "$fails"
 }
@@ -1002,6 +1091,12 @@ behaviour_test() {
         PV=""
         verifier_pin_pv
         pv_rc=$?
+        if [ "$pv_rc" -eq 3 ]; then
+            printf 'ENV   pv-pin     the pv build did not reach a verdict on this host, so this\n'
+            printf '                 row measured NOTHING. cargo_classify.sh read the build log\n'
+            printf '                 and returned ENV: a runner fault, not a pinning defect.\n'
+            exit 3
+        fi
         # The decoy is named directly, not via `command -v`: this file must not
         # itself contain a PATH resolution of a verifier, and naming the path we
         # planted is strictly more precise than asking PATH what it found.
@@ -1020,7 +1115,11 @@ behaviour_test() {
             exit 1
         fi
         printf 'ok    pv-pin     resolved pv is %s, NOT the PATH decoy %s\n' "$PV" "$decoy"
-    ) || fails=1
+    ); pv_row_rc=$?
+    if [ "$pv_row_rc" -ne 0 ]; then
+        fails=1
+        [ "$pv_row_rc" -eq 3 ] && VP_ENV_DEATHS=$((VP_ENV_DEATHS + 1))
+    fi
 
     # Row 4b — the PV_BIN environment channel is CLEARED before the pin sources
     # pv_bin.sh: an inherited PV_BIN short-circuits the cargo build pv_bin.sh
@@ -1035,6 +1134,12 @@ behaviour_test() {
         PV=""
         verifier_pin_pv
         pv_rc=$?
+        if [ "$pv_rc" -eq 3 ]; then
+            printf 'ENV   pv-pin     the pv build did not reach a verdict on this host, so this\n'
+            printf '                 row measured NOTHING. cargo_classify.sh read the build log\n'
+            printf '                 and returned ENV: a runner fault, not a pinning defect.\n'
+            exit 3
+        fi
         if [ "$pv_rc" -eq 0 ] && [ "$PV" = "$td/pv-poison" ]; then
             printf 'FAIL  pv-pin     an inherited PV_BIN (%s) rode through the pin —\n' "$PV_BIN"
             printf '                 the freshness authority was bypassed by the environment\n'
@@ -1046,7 +1151,11 @@ behaviour_test() {
             exit 1
         fi
         printf 'ok    pv-pin     an inherited PV_BIN is cleared; the pin resolved %s\n' "$PV"
-    ) || fails=1
+    ); pv_row_rc=$?
+    if [ "$pv_row_rc" -ne 0 ]; then
+        fails=1
+        [ "$pv_row_rc" -eq 3 ] && VP_ENV_DEATHS=$((VP_ENV_DEATHS + 1))
+    fi
 
     # Row 4c — the pin works from a SUBDIRECTORY of the repo. The cwd-relative
     # form returned 2 ("this repo ships no pin") from anywhere below the root —
@@ -1056,6 +1165,12 @@ behaviour_test() {
         PV=""
         verifier_pin_pv
         pv_rc=$?
+        if [ "$pv_rc" -eq 3 ]; then
+            printf 'ENV   pv-pin     the pv build did not reach a verdict on this host, so this\n'
+            printf '                 row measured NOTHING. cargo_classify.sh read the build log\n'
+            printf '                 and returned ENV: a runner fault, not a pinning defect.\n'
+            exit 3
+        fi
         if [ "$pv_rc" -eq 2 ]; then
             printf 'FAIL  pv-pin     from scripts/ the pin says "this repo ships no pin" — the\n'
             printf '                 discovery is cwd-relative and lies from any subdirectory\n'
@@ -1066,7 +1181,11 @@ behaviour_test() {
             exit 1
         fi
         printf 'ok    pv-pin     the pin resolves from a subdirectory of the repo\n'
-    ) || fails=1
+    ); pv_row_rc=$?
+    if [ "$pv_row_rc" -ne 0 ]; then
+        fails=1
+        [ "$pv_row_rc" -eq 3 ] && VP_ENV_DEATHS=$((VP_ENV_DEATHS + 1))
+    fi
 
     # Row 5 — this guard must not have moved Cargo.lock.
     #
@@ -1275,6 +1394,14 @@ printf '\n'
 if [ "$rc" -eq 0 ]; then
     printf 'PASS  the release runner resolves every pinned verifier through its pin.\n'
 else
+    # The ENV note is ADDITIVE and never replaces the FAIL line: a run can carry
+    # both a runner fault and a real pinning defect, and a summary that reported
+    # only the first would be the same mistake one level up.
+    if [ "${VP_ENV_DEATHS:-0}" -gt 0 ]; then
+        printf 'ENV   %s pv row(s) measured NOTHING: the pv build died before reaching a\n' "$VP_ENV_DEATHS"
+        printf '      verdict and cargo_classify.sh classified the log ENV. Those rows are\n'
+        printf '      unmeasured, not failed. Triage the runner, then re-run.\n'
+    fi
     printf 'FAIL  see rows above. A gate measured with an unknown binary is not a gate.\n'
 fi
 exit "$rc"
