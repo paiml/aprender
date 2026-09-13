@@ -17,20 +17,35 @@
 # do NOT cover are the interesting number. A `matrix:` lists what runs; this
 # lists what SHOULD run and makes the gap a value rather than an absence.
 #
-# The gap is real and was widened deliberately: paiml/aprender#2740 makes
-# cuda-nightly gx10-only because its x86_64 GPU leg ran on lambda-labs, which
-# must never be a CI host (paiml/infra#359). sm_89 was the STABLE reference and
-# sm_121 the higher-risk target with a history of JIT bugs; we now gate only the
-# risky one. `x86_64-cuda-sm89` below is that hole, named.
+# The gap was widened deliberately once: paiml/aprender#2740 made cuda-nightly
+# gx10-only because its x86_64 GPU leg ran on lambda-labs, which must never be a
+# CI host (paiml/infra#359). sm_89 was the STABLE reference and sm_121 the
+# higher-risk target with a history of JIT bugs, so we gated only the risky one.
+# That hole is CLOSED as of 2026-09-13 -- see the promotion note below -- and
+# the remaining gap is one axis, aarch64-cuda-sm87.
 
 x86_64-cpu          required        self-hosted,clean-room,intel
 aarch64-cuda-sm121  required        self-hosted,gpu,gx10,cuda,blackwell
 
+# ── promoted 2026-09-13: the runners appeared, so the hole closed ───────────
+# The policy's own rule is that a pending axis CANNOT ROT: when a runner able
+# to serve the selector shows up, the only thing between us and the coverage is
+# the line. Both of these tripped that rule on the same day.
+#
+#   x86_64-cuda-sm89  yoga-gpu (self-hosted,Linux,X64,gpu,cuda,yoga,ada).
+#                     The hole existed because the x86_64 GPU leg used to run on
+#                     lambda-labs, which must never be a CI host (infra#359).
+#                     yoga-gpu is a proper self-hosted Ada card, so the reason is
+#                     gone. ci.yml's `cuda-unit` does touch yoga, but only on a
+#                     pull_request AND only when gpu_touched==1 -- conditional
+#                     coverage is not an axis, which is why this lane now runs it.
+#   aarch64-macos     mini-m4 (self-hosted,ARM64,macOS,apple-silicon,m4,mini).
+#                     The only darwin/arm64 silicon the repo has.
+#
+# Each has a job below; `required` here and no job there would claim coverage
+# this lane does not produce.
+x86_64-cuda-sm89    required        self-hosted,gpu,yoga,cuda,ada
+aarch64-macos       required        self-hosted,mini,macos,arm64
+
 # ── declared, not yet runnable ──────────────────────────────────────────────
-# Each of these has `runner-register` make targets in paiml/infra and no
-# registration. Standing one up needs the paiml/infra#352 treatment: an opt-in
-# label, never the default pool, and a guard that nothing can select it
-# implicitly.
-x86_64-cuda-sm89    pending:361     self-hosted,gpu,yoga,cuda,ada
 aarch64-cuda-sm87   pending:361     self-hosted,gpu,jetson,cuda,orin
-aarch64-macos       pending:361     self-hosted,mini,macos,arm64

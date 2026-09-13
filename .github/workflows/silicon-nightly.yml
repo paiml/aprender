@@ -114,10 +114,61 @@ jobs:
           nice -n 19 cargo test -p aprender-compute --release --lib
           nice -n 19 cargo test -p aprender-core --release --lib
 
+  x86_64-cuda-sm89:
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.axis == 'all' || inputs.axis == 'x86_64-cuda-sm89' }}
+    # Promoted from pending:361 on 2026-09-13. The hole existed because the
+    # x86_64 GPU leg used to run on lambda-labs, which must never be a CI host
+    # (paiml/infra#359); yoga-gpu is a self-hosted Ada card, so the reason is
+    # gone. ci.yml's `cuda-unit` does reach yoga, but only on a pull_request and
+    # only when gpu_touched==1 -- conditional coverage is not an axis.
+    #
+    # yoga-gpu is also binary-release.yml's x86_64 CUDA asset runner, so this
+    # takes the same treatment gx10 got: a named concurrency group, so a nightly
+    # and a release cut queue behind each other instead of contending.
+    concurrency:
+      group: perf-yoga
+      cancel-in-progress: false
+    # LITERAL LABELS for the same reason as the gx10 job: a guard can only check
+    # labels it can see, and labels behind ${{ }} are invisible to it.
+    runs-on: [self-hosted, gpu, yoga, cuda, ada]
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: Put the runner's Rust toolchain on PATH
+        run: echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+      - name: SIMD and numeric paths (x86_64, on the Ada host)
+        run: |
+          set -euo pipefail
+          nice -n 19 cargo test -p aprender-compute --release --lib
+          nice -n 19 cargo test -p aprender-core --release --lib
+
+  aarch64-macos:
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.axis == 'all' || inputs.axis == 'aarch64-macos' }}
+    # Promoted from pending:361 on 2026-09-13: mini-m4 registered, and it is the
+    # ONLY darwin/arm64 silicon the repo has. Everything else in this lane is
+    # Linux, so every macOS-specific assumption in the tree is invisible to it by
+    # construction -- the first full darwin run of the workspace found two
+    # (a /proc/meminfo read and an ETXTBSY premise that is a Linux guarantee).
+    runs-on: [self-hosted, macOS, ARM64, apple-silicon, mini]
+    timeout-minutes: 90
+    env:
+      CARGO_BUILD_JOBS: 6        # 16 GB box: never all 10 cores on a release build
+      CARGO_INCREMENTAL: 0
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: Put the runner's Rust toolchain on PATH
+        run: echo "$HOME/.cargo/bin:/opt/homebrew/bin" >> "$GITHUB_PATH"
+      - name: NEON and numeric paths (aarch64-apple-darwin)
+        run: |
+          set -euo pipefail
+          rustc -vV | grep -E '^host: aarch64-apple-darwin$'
+          nice -n 19 cargo test -p aprender-compute --release --lib
+          nice -n 19 cargo test -p aprender-core --release --lib
+
   # PER-SILICON REPORTING. The table is the deliverable: "silicon-nightly failed"
   # is not actionable, "aarch64-cuda-sm121 failed and x86_64-cpu passed" is.
   summary:
-    needs: [coverage, x86_64-cpu, aarch64-cuda-sm121]
+    needs: [coverage, x86_64-cpu, aarch64-cuda-sm121, x86_64-cuda-sm89, aarch64-macos]
     if: always()
     runs-on: [self-hosted, clean-room, intel]
     steps:
@@ -131,6 +182,8 @@ jobs:
             echo "| coverage policy | ${{ needs.coverage.result }} |"
             echo "| x86_64-cpu | ${{ needs.x86_64-cpu.result }} |"
             echo "| aarch64-cuda-sm121 | ${{ needs['aarch64-cuda-sm121'].result }} |"
+            echo "| x86_64-cuda-sm89 | ${{ needs['x86_64-cuda-sm89'].result }} |"
+            echo "| aarch64-macos | ${{ needs['aarch64-macos'].result }} |"
           } >> "$GITHUB_STEP_SUMMARY"
 
           # A deselected axis reports `skipped`; that is a scoped manual run, not
@@ -141,7 +194,9 @@ jobs:
           for pair in \
             "coverage:${{ needs.coverage.result }}" \
             "x86_64-cpu:${{ needs.x86_64-cpu.result }}" \
-            "aarch64-cuda-sm121:${{ needs['aarch64-cuda-sm121'].result }}"; do
+            "aarch64-cuda-sm121:${{ needs['aarch64-cuda-sm121'].result }}" \
+            "x86_64-cuda-sm89:${{ needs['x86_64-cuda-sm89'].result }}" \
+            "aarch64-macos:${{ needs['aarch64-macos'].result }}"; do
             name="${pair%%:*}"; res="${pair#*:}"
             if [ "$res" != "success" ] && [ "$res" != "skipped" ]; then
               echo "::error::silicon axis $name: $res"
