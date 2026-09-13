@@ -1,0 +1,15 @@
+{
+ "spec": "APR-RELEASE-001 \u00a75 P0\u00b7Pack",
+ "at": "2026-09-12T16:29:04Z",
+ "sha": "81da9bc63",
+ "intel_busy": 15,
+ "intel_online": 16,
+ "gx10_busy": 2,
+ "gx10_online": 6,
+ "yoga_busy": 2,
+ "yoga_online": 5,
+ "aprender_runs_live": 5,
+ "intel_pressure": true,
+ "source": "gh api orgs/paiml/actions/runners; gh run list --status in_progress|queued",
+ "verdict": "P0-UNDERUTILIZED"
+}
