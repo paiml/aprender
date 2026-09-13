@@ -47,7 +47,7 @@ jobs:
     concurrency:
       group: perf-intel
       cancel-in-progress: false
-    runs-on: [self-hosted, X64, Linux, clean-room]
+    runs-on: [self-hosted, X64, Linux, clean-room, intel]   # perf: the SAME box as the recorded baselines — clean-room now spans intel + yoga + gx10 (#3100)
     timeout-minutes: 45
     env:
       # Every beat step tees here; the final step audits it for completeness.

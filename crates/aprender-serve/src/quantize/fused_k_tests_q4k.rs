@@ -443,3 +443,95 @@ fn test_fused_q4k_dot_activation_error_message() {
         msg
     );
 }
+
+// ---- every x86 path against scalar, on every box that can run it -------------------------------
+// `fused_q4k_q8k_dot_simd` takes the BEST path the box has. Every x86 CI box had AVX-512 VNNI
+// (intel Xeon W-3245, lambda Threadripper 7960X) until yoga (Core Ultra 9 185H, AVX2 + AVX-VNNI
+// only) joined on 2026-09-10, so the parity tests above only ever judged the VNNI kernel and the
+// AVX2 kernel shipped two defects: nibble halves paired with the wrong block scale, and half of
+// one block's Q8 sum dropped from the min term. Each path is now called directly.
+
+#[cfg(target_arch = "x86_64")]
+fn q4k_q8k_every_scale_distinct(n_sb: usize) -> (Vec<u8>, Vec<f32>, Vec<i8>) {
+    let mut data = vec![0u8; 144 * n_sb];
+    for (sb, b) in data.chunks_exact_mut(144).enumerate() {
+        b[0..2].copy_from_slice(&0x3C00u16.to_le_bytes()); // d = 1.0
+        b[2..4].copy_from_slice(&0x3800u16.to_le_bytes()); // dmin = 0.5
+        // all 12 packed bytes vary (top bits included): the 8 scales and the 8 mins all differ
+        for (i, v) in b[4..16].iter_mut().enumerate() {
+            *v = ((i * 37 + sb * 11 + 5) % 251) as u8;
+        }
+        for (i, v) in b[16..144].iter_mut().enumerate() {
+            *v = ((i * 7 + 11 + sb * 3) % 256) as u8;
+        }
+    }
+    let scales = (0..n_sb).map(|sb| 0.25 + 0.125 * sb as f32).collect();
+    // Q8 differs between the two 16-value halves of every 32-value block
+    let quants = (0..256 * n_sb)
+        .map(|i| (((i * 29 + (i / 16) * 13) % 255) as i32 - 127) as i8)
+        .collect();
+    (data, scales, quants)
+}
+
+#[cfg(target_arch = "x86_64")]
+fn assert_path_matches_scalar(path: &str, got: f32, want: f32) {
+    let tol = 1e-3 * want.abs().max(1.0);
+    assert!(
+        (got - want).abs() <= tol,
+        "{path}: {got} vs scalar {want} (|diff| {} > tol {tol})",
+        (got - want).abs()
+    );
+}
+
+#[test]
+#[cfg(target_arch = "x86_64")]
+fn test_fused_q4k_q8k_dot_avx2_path_matches_scalar_on_every_avx2_box() {
+    assert!(
+        is_x86_feature_detected!("avx2"),
+        "every x86 CI box has AVX2; a box without it must not read this test as passed"
+    );
+    for n_sb in [1usize, 2, 5] {
+        let (data, scales, quants) = q4k_q8k_every_scale_distinct(n_sb);
+        let want = fused_q4k_q8k_dot(&data, &scales, &quants).expect("scalar");
+        // SAFETY: AVX2 asserted above; the buffers hold exactly n_sb super-blocks.
+        let got = unsafe { fused_q4k_q8k_dot_avx2(&data, &scales, &quants) }.expect("avx2");
+        assert_path_matches_scalar(&format!("avx2 n_sb={n_sb}"), got, want);
+    }
+}
+
+#[test]
+#[cfg(target_arch = "x86_64")]
+fn test_fused_q4k_q8k_dot_with_bsums_matches_scalar_on_every_avx2_box() {
+    use crate::quantize::bsum_precompute::{fused_q4k_q8k_dot_with_bsums_simd, precompute_q8k_bsums};
+    assert!(
+        is_x86_feature_detected!("avx2"),
+        "every x86 CI box has AVX2; a box without it must not read this test as passed"
+    );
+    for n_sb in [1usize, 2, 5] {
+        let (data, scales, quants) = q4k_q8k_every_scale_distinct(n_sb);
+        let want = fused_q4k_q8k_dot(&data, &scales, &quants).expect("scalar");
+        let bsums = precompute_q8k_bsums(&quants, n_sb).expect("bsums");
+        // this dispatcher has no AVX-512 branch: it takes its AVX2 kernel on every AVX2 box
+        let got = fused_q4k_q8k_dot_with_bsums_simd(&data, &scales, &quants, &bsums).expect("bsums dot");
+        assert_path_matches_scalar(&format!("avx2+bsums n_sb={n_sb}"), got, want);
+    }
+}
+
+#[test]
+#[cfg(target_arch = "x86_64")]
+fn test_fused_q4k_q8k_dot_avx512vnni_path_matches_scalar() {
+    if !(is_x86_feature_detected!("avx512f")
+        && is_x86_feature_detected!("avx512vnni")
+        && is_x86_feature_detected!("avx512bw"))
+    {
+        eprintln!("SKIP avx512vnni path: no AVX-512 VNNI on this box (the AVX2 tests cover it)");
+        return;
+    }
+    for n_sb in [1usize, 2, 5] {
+        let (data, scales, quants) = q4k_q8k_every_scale_distinct(n_sb);
+        let want = fused_q4k_q8k_dot(&data, &scales, &quants).expect("scalar");
+        // SAFETY: avx512f + avx512vnni + avx512bw detected above
+        let got = unsafe { fused_q4k_q8k_dot_avx512vnni_v2(&data, &scales, &quants) }.expect("vnni");
+        assert_path_matches_scalar(&format!("avx512vnni_v2 n_sb={n_sb}"), got, want);
+    }
+}
