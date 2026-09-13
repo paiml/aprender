@@ -105,25 +105,43 @@ fn level_l3_kani_without_enough_tests() {
 #[test]
 fn level_l4_all_lean_proved() {
     let c = contract_with_lean(3, 3);
-    assert_eq!(compute_proof_level(&c, None), ProofLevel::L4);
+    // ONT-2a: grounded — the tree has the theorems the equations name.
+    assert_eq!(
+        compute_proof_level_with_grounding(&c, None, 3),
+        ProofLevel::L4
+    );
+    // …and the same contract with nothing grounding it is the andon's case.
+    assert_eq!(
+        compute_proof_level_with_grounding(&c, None, 0),
+        ProofLevel::L3
+    );
 }
 
 #[test]
 fn level_l4_partial_lean_stays_l3() {
     let c = contract_with_lean(3, 2);
-    assert_eq!(compute_proof_level(&c, None), ProofLevel::L3);
+    assert_eq!(
+        compute_proof_level_with_grounding(&c, None, 2),
+        ProofLevel::L3
+    );
 }
 
 #[test]
 fn level_l5_lean_plus_all_bound() {
     let c = contract_with_lean(3, 3);
-    assert_eq!(compute_proof_level(&c, Some((1, 1))), ProofLevel::L5);
+    assert_eq!(
+        compute_proof_level_with_grounding(&c, Some((1, 1)), 3),
+        ProofLevel::L5
+    );
 }
 
 #[test]
 fn level_l4_when_bindings_incomplete() {
     let c = contract_with_lean(3, 3);
-    assert_eq!(compute_proof_level(&c, Some((0, 1))), ProofLevel::L4);
+    assert_eq!(
+        compute_proof_level_with_grounding(&c, Some((0, 1)), 3),
+        ProofLevel::L4
+    );
 }
 
 /// Build a contract with an explicit not-applicable count in its summary.
@@ -146,9 +164,15 @@ fn contract_with_lean_na(total: u32, lean_proved: u32, not_applicable: u32) -> C
 /// `lora-algebra`/`attention-kernel` case (4-of-6, 0-of-5, …).
 #[test]
 fn level_strict_partial_coverage_stays_l3_even_when_bound() {
-    let c = contract_with_lean_na(6, 4, 1); // 4 proved + 1 N/A = 5 < 6
-    assert_eq!(compute_proof_level(&c, None), ProofLevel::L3);
-    assert_eq!(compute_proof_level(&c, Some((3, 3))), ProofLevel::L3);
+    let c = contract_with_lean_na(6, 4, 1); // 4 grounded + 1 N/A = 5 < 6
+    assert_eq!(
+        compute_proof_level_with_grounding(&c, None, 4),
+        ProofLevel::L3
+    );
+    assert_eq!(
+        compute_proof_level_with_grounding(&c, Some((3, 3)), 4),
+        ProofLevel::L3
+    );
 }
 
 /// STRICT: a contract whose provable obligations are ALL discharged — some
@@ -156,9 +180,20 @@ fn level_strict_partial_coverage_stays_l3_even_when_bound() {
 /// case: 5 proved + 4 N/A of 9).
 #[test]
 fn level_strict_full_coverage_with_na_is_l4() {
-    let c = contract_with_lean_na(9, 5, 4); // 5 + 4 == 9
-    assert_eq!(compute_proof_level(&c, None), ProofLevel::L4);
-    assert_eq!(compute_proof_level(&c, Some((1, 1))), ProofLevel::L5);
+    let c = contract_with_lean_na(9, 5, 4); // 5 grounded + 4 N/A == 9
+    assert_eq!(
+        compute_proof_level_with_grounding(&c, None, 5),
+        ProofLevel::L4
+    );
+    assert_eq!(
+        compute_proof_level_with_grounding(&c, Some((1, 1)), 5),
+        ProofLevel::L5
+    );
+    // ONT-2a: the SAME coverage, claimed and not grounded, is not L4.
+    assert_eq!(
+        compute_proof_level_with_grounding(&c, Some((1, 1)), 0),
+        ProofLevel::L3
+    );
 }
 
 /// STRICT: `total` is `proof_obligations.len()`, NOT `verification_summary.
@@ -177,7 +212,10 @@ fn level_strict_summary_cannot_understate_total() {
         l4_sorry_count: 0,
         l4_not_applicable: 0,
     });
-    assert_eq!(compute_proof_level(&c, None), ProofLevel::L3);
+    assert_eq!(
+        compute_proof_level_with_grounding(&c, None, 3),
+        ProofLevel::L3
+    );
 }
 
 #[test]
@@ -520,8 +558,14 @@ fn is_fully_bound_edge_cases() {
     let c1 = minimal_contract(1, 1, 1);
     assert_eq!(compute_proof_level(&c1, None), ProofLevel::L3);
     let c2 = contract_with_lean(1, 1);
-    assert_eq!(compute_proof_level(&c2, Some((0, 0))), ProofLevel::L4);
-    assert_eq!(compute_proof_level(&c2, Some((1, 2))), ProofLevel::L4);
+    assert_eq!(
+        compute_proof_level_with_grounding(&c2, Some((0, 0)), 1),
+        ProofLevel::L4
+    );
+    assert_eq!(
+        compute_proof_level_with_grounding(&c2, Some((1, 2)), 1),
+        ProofLevel::L4
+    );
 }
 
 #[test]

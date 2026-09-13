@@ -294,102 +294,128 @@ pub(crate) const LEAN_THEOREM_BASES: &[&str] = &[
     "../provable-contracts/lean",
 ];
 
+/// Register the three naming forms a single label contributes: namespaced, bare, and lowercased.
+fn insert_name_forms(names: &mut std::collections::HashSet<String>, label: &str) {
+    names.insert(format!("Theorems.{label}"));
+    names.insert(label.to_string());
+    names.insert(label.to_lowercase());
+}
+
+/// `relu_nonneg` → `ReluNonneg`.
+fn camel_case(snake: &str) -> String {
+    snake
+        .split('_')
+        .map(|s| {
+            let mut c = s.chars();
+            match c.next() {
+                None => String::new(),
+                Some(f) => f.to_uppercase().chain(c).collect(),
+            }
+        })
+        .collect()
+}
+
+/// `ReluNonneg` → `Relu`: the leading word of a CamelCase name.
+fn first_camel_word(camel: &str) -> String {
+    camel
+        .chars()
+        .enumerate()
+        .take_while(|(i, c)| *i == 0 || !c.is_uppercase())
+        .map(|(_, c)| c)
+        .collect()
+}
+
+/// Register every `theorem <name>` a file declares, in the forms a contract may cite it by.
+fn insert_theorem_names_from_content(names: &mut std::collections::HashSet<String>, content: &str) {
+    for line in content.lines() {
+        let Some(pos) = line.find("theorem ") else {
+            continue;
+        };
+        let tname: String = line[pos + 8..]
+            .chars()
+            .take_while(|c| c.is_alphanumeric() || *c == '_')
+            .collect();
+        if tname.is_empty() {
+            continue;
+        }
+        let camel = camel_case(&tname);
+        names.insert(format!("Theorems.{camel}"));
+        names.insert(camel.clone());
+        let first_word = first_camel_word(&camel);
+        if first_word.len() >= 3 {
+            names.insert(format!("Theorems.{first_word}"));
+            names.insert(first_word);
+        }
+    }
+}
+
+/// Register the names contributed by one domain directory's sorry-free `.lean` files.
+///
+/// A file containing `sorry` contributes NOTHING: an admitted proof grounds no claim, which is the whole
+/// reason this scan is the grounding ONT-2a trusts over a contract's own summary.
+fn insert_domain_theorems(names: &mut std::collections::HashSet<String>, domain: &std::path::Path) {
+    let domain_name = domain
+        .file_name()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .to_string();
+    let Ok(files) = std::fs::read_dir(domain) else {
+        return;
+    };
+    for file in files.flatten() {
+        let path = file.path();
+        if !path.extension().is_some_and(|e| e == "lean") {
+            continue;
+        }
+        let Ok(content) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        if content.contains("sorry") {
+            continue;
+        }
+        let stem = path
+            .file_stem()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string();
+        insert_name_forms(names, &domain_name);
+        insert_name_forms(names, &stem);
+        insert_theorem_names_from_content(names, &content);
+    }
+}
+
+/// Every theorem name one base directory contributes; empty when the base is absent.
+fn scan_theorem_base(base: &str) -> std::collections::HashSet<String> {
+    let mut names = std::collections::HashSet::new();
+    let search_dir = std::path::Path::new(base).join("ProvableContracts/Theorems");
+    if !search_dir.exists() {
+        return names;
+    }
+    let Ok(domains) = std::fs::read_dir(&search_dir) else {
+        return names;
+    };
+    for domain_entry in domains.flatten() {
+        let path = domain_entry.path();
+        if path.is_dir() {
+            insert_domain_theorems(&mut names, &path);
+        }
+    }
+    names
+}
+
 /// Build a set of all sorry-free Lean theorem names from the Theorems/ directory.
 /// Scans once, caches the result in a thread-local for repeated calls.
 fn lean_theorem_names() -> &'static std::collections::HashSet<String> {
     use std::sync::OnceLock;
     static CACHE: OnceLock<std::collections::HashSet<String>> = OnceLock::new();
     CACHE.get_or_init(|| {
-        let mut names = std::collections::HashSet::new();
         for base in LEAN_THEOREM_BASES {
-            let search_dir = std::path::Path::new(base).join("ProvableContracts/Theorems");
-            if !search_dir.exists() {
-                continue;
-            }
-            // Walk all domain dirs and collect theorem names
-            if let Ok(domains) = std::fs::read_dir(&search_dir) {
-                for domain_entry in domains.flatten() {
-                    if !domain_entry.path().is_dir() {
-                        continue;
-                    }
-                    let domain_name = domain_entry.file_name().to_string_lossy().to_string();
-                    if let Ok(files) = std::fs::read_dir(domain_entry.path()) {
-                        for file in files.flatten() {
-                            let path = file.path();
-                            if path.extension().is_some_and(|e| e == "lean") {
-                                if let Ok(content) = std::fs::read_to_string(&path) {
-                                    if !content.contains("sorry") {
-                                        let stem = path
-                                            .file_stem()
-                                            .unwrap_or_default()
-                                            .to_string_lossy()
-                                            .to_string();
-                                        // Register domain, stem, and namespace forms
-                                        names.insert(format!("Theorems.{domain_name}"));
-                                        names.insert(domain_name.clone());
-                                        names.insert(domain_name.to_lowercase());
-                                        names.insert(format!("Theorems.{stem}"));
-                                        names.insert(stem.clone());
-                                        names.insert(stem.to_lowercase());
-                                        // Extract theorem names from content
-                                        // e.g., "theorem relu_nonneg" → "Relu"
-                                        for line in content.lines() {
-                                            if let Some(pos) = line.find("theorem ") {
-                                                let rest = &line[pos + 8..];
-                                                let tname: String = rest
-                                                    .chars()
-                                                    .take_while(|c| {
-                                                        c.is_alphanumeric() || *c == '_'
-                                                    })
-                                                    .collect();
-                                                if !tname.is_empty() {
-                                                    // CamelCase the theorem name for matching
-                                                    let camel: String = tname
-                                                        .split('_')
-                                                        .map(|s| {
-                                                            let mut c = s.chars();
-                                                            match c.next() {
-                                                                None => String::new(),
-                                                                Some(f) => f
-                                                                    .to_uppercase()
-                                                                    .chain(c)
-                                                                    .collect(),
-                                                            }
-                                                        })
-                                                        .collect();
-                                                    names.insert(format!("Theorems.{camel}"));
-                                                    names.insert(camel.clone());
-                                                    // Also register first CamelCase word
-                                                    // e.g., "ReluNonneg" → "Relu"
-                                                    let first_word: String = camel
-                                                        .chars()
-                                                        .enumerate()
-                                                        .take_while(|(i, c)| {
-                                                            *i == 0 || !c.is_uppercase()
-                                                        })
-                                                        .map(|(_, c)| c)
-                                                        .collect();
-                                                    if first_word.len() >= 3 {
-                                                        names.insert(format!(
-                                                            "Theorems.{first_word}"
-                                                        ));
-                                                        names.insert(first_word);
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+            let names = scan_theorem_base(base);
             if !names.is_empty() {
-                break;
+                return names;
             }
         }
-        names
+        std::collections::HashSet::new()
     })
 }
 
