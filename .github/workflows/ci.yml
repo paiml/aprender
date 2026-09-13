@@ -2547,6 +2547,45 @@ jobs:
           fi
           printf 'gguf::cuda:: %s test(s) selected and passed\n' "$n"
 
+  # ── macOS / arm64 leg on mini (Apple M4) — #3204 ───────────────────────
+  # Operator 2026-09-13: mini is a full-time aprender build host. It is the
+  # fleet's only Apple-Silicon node, so it is the only place the NEON SIMD path
+  # runs at all (intel/yoga are AVX; gx10 is aarch64 but its lanes are cuda),
+  # and the only place `cargo install aprender` on a Mac is ever compiled.
+  # Bare metal: macOS has no docker and no sovereign-ci image, so the pinned
+  # toolchain comes from rust-toolchain.toml and the target dir is the
+  # workspace default (one persistent runner; the mini-reaper sweeps _work).
+  # NOT in `gate`'s needs. One runner, 16 GB: a box that is down or busy must
+  # never hold a merge, so this job reports and the required check ignores it.
+  # 40 [U]: first run in this repo, no history yet — re-derive from
+  # evidence/fleet/history.jsonl once it has rows. Native measurement on mini,
+  # 2026-09-13T10:11Z, main @ 3786870d9: `cargo test -p aprender-compute --lib
+  # -j6` rc=0 and `cargo check -p aprender-core --lib` rc=0 (~/mini-measure.log).
+  macos-arm64:
+    runs-on: [self-hosted, macOS, ARM64, apple-silicon, mini]
+    timeout-minutes: 40
+    env:
+      CARGO_BUILD_JOBS: 6        # 16 GB box: never all 10 cores on a workspace build
+      CARGO_INCREMENTAL: 0
+    steps:
+      - uses: actions/checkout@v7
+      - name: The toolchain is the pinned one, natively on darwin/arm64
+        run: |
+          set -euo pipefail
+          export PATH="$HOME/.cargo/bin:/opt/homebrew/bin:$PATH"
+          rustup show active-toolchain
+          rustc -vV | grep -E '^host: aarch64-apple-darwin$'
+      - name: Check the core library
+        run: |
+          set -euo pipefail
+          export PATH="$HOME/.cargo/bin:/opt/homebrew/bin:$PATH"
+          cargo check -p aprender-core --lib --locked
+      - name: SIMD crate unit tests — the NEON path no Linux runner exercises
+        run: |
+          set -euo pipefail
+          export PATH="$HOME/.cargo/bin:/opt/homebrew/bin:$PATH"
+          cargo test -p aprender-compute --lib --locked -- --test-threads=4
+
   gate:
     runs-on: [self-hosted, Linux, clean-room]   # arch-neutral: intel, yoga or gx10 (#3100)
     # 22: BSE-05 formula T = max(15, ceil(1.5*p99), p99+20) over this job's own
