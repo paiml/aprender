@@ -42,13 +42,20 @@ size_variants:
     rms_norm_eps: 0.000001
 
 constraints:
-  attention_type: gqa
+  attention_type: hybrid_gated_deltanet
   activation: silu
   norm_type: rmsnorm
   has_bias: false
   tied_embeddings: false
   positional_encoding: rope
   mlp_type: swiglu
+  is_supported_cpu: false
+  is_supported_gpu: false
+  full_attention_interval: 4
+  conv_kernel: 4
+  state_size: 128
+  inner_size: 2048
+  group_count: 8
 
 tensor_template:
   embedding: "model.embed_tokens.weight"
