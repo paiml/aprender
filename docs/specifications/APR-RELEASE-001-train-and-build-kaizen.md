@@ -106,6 +106,7 @@ Live `forjar.yaml` beats this table. Record the diff in the receipt and continue
 | **T-2 Dogfood** | `apr-dogfood` skill go/no-go receipt; `apr-cookbook` current; release notes generated | receipt exists for this sha |
 | **T-3 Promote** | tag; clean-room on the tag; GitHub release with T-2 receipt attached | release `v0.N.0` exists |
 | **T-4 Publish** | **automated** — the autopilot runs `cascade-drain.sh` after T-3's preflight; record cascade wall minutes; attended minutes are 0 by construction | all crates at `0.N.0` on crates.io |
+| **T-5 Reconcile** | **hard gate (operator 2026-09-13: kaizen)** — the §6 reconcile predicates hold, receipt `docs/build-ledger/<date>/<sha>-reconcile.json` committed; the train has no `DONE` line without it | receipt exists for this sha and every predicate reads 0 |
 
 Any step RED → SKIPPED, no partial promotion. Scope is assigned to trains after the fact:
 0.67 contains whatever merged before the 0.67 cut, by definition.
@@ -165,7 +166,31 @@ zero ENOSPC in 10 trains.
 job, low priority, report-only: target = measured baseline + 2 points per ratchet toward
 95 %. Re-evaluate each train; ratchet downward only, ≤ 10 % per step.
 
-## §6 Triage pass — once per train, no judgement calls
+## §6 Triage pass — once per train, no judgement calls — and the T-5 reconcile, a HARD gate
+
+**Measured 2026-09-13 (0.67.0 train):** 308 open issues, 424 opened vs 124 closed in 30 d, 95 open
+issues already cited by a commit on `main`, 48 merged PRs of which 9 carried a closing reference,
+880 remote branches of which 847 have no PR and 832 are unmerged, 13 DIRTY PRs listed and never
+decided. Filing was the work product and closing was nobody's; the milestone pass assigned
+attributes, not decisions. **Operator ruling: reconciliation is part of every train (kaizen), not
+a separate chore.** A train that ships code and leaves its own tickets, branches and dead PRs
+behind is not done.
+
+### T-5 reconcile predicates — every one must read 0 in the receipt
+
+| Predicate | Derive with | Fix |
+|---|---|---|
+| R-1 fixed-but-open | open issues cited by a `main` commit since the previous tag whose subject/body uses `Closes/Fixes/Resolves #N` or is `fix(...)`: must be ∅ | close with the commit sha as receipt |
+| R-2 closing-reference | merged PRs since the previous tag whose body cites an issue without a closing keyword: must be ∅ going forward (guard `scripts/check_pr_closes_issue.sh` on the PR; `Refs #N` is allowed only with `no-close:` and a reason) | the guard refuses the PR |
+| R-3 dead branches | remote branches with no open PR and a tip older than 14 d: must be ∅ | archive to `refs/archive/<branch>` (objects kept, reversible), then delete the head |
+| R-4 dirty PRs | PRs `DIRTY` for more than one train: must be ∅ | a verdict per PR in the train: rebase (union tool, or by hand) or close with the reason |
+| R-5 ratio | `closure / arrival` over the train window, recorded; ratchet as below | — |
+
+The receipt is `{sha, window:[prev_tag, tag], R1..R5: {count, list}, actions:{closed, archived, rebased, pr_closed}}`
+and is committed to the ledger; the autopilot writes `DONE` only after `check_reconcile.sh <tag>` reads
+every predicate 0. Falsifier: seed one fixed-but-open issue (a closed test issue reopened) — the check
+must go RED.
+
 
 Queues stabilise when closure ≥ arrival; age falls when WIP is capped. That is the whole
 mechanism.
@@ -187,6 +212,7 @@ build:   row <P0..P3|none> | PR <url|none> | records added <n>
 gate:    p95 ci/gate <min|[U]> | max PRs/train <n|[U]> | queue p95 intel <s> yoga <s> gx10 <s>
 pack:    intel <busy>/<online> | gx10 <busy>/<online> | yoga <busy>/<online> | intel-pressure <yes|no> | verdict <OK|P0-UNDERUTILIZED>
 triage:  arrival <n> | closure <n> | open PRs <n> (age p95 <d>) | untriaged <n>
+reconcile: R1 fixed-open <n> | R2 no-close <n> | R3 dead-branches <n> | R4 dirty>1train <n> | R5 closure/arrival <x> | receipt <path|MISSING>
 stops:   <none|list>
 next:    train eligible at <timestamp>
 ```
