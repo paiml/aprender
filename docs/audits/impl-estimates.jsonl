@@ -33,3 +33,5 @@
 {"repo": "paiml/aprender", "ticket": "PMAT-1095", "phase": "all", "mode": "direct+agy-quorum", "est": 8, "actual": 100, "basis": "first-run[U]"}
 {"repo":"aprender","ticket":"PMAT-978","phase":"P_1","mode":"subagent:sonnet","est":3,"actual":40,"basis":"est=first-run[U]; actual=worker maxTurns (40) + one resume (40); both commits landed"}
 {"repo":"aprender","ticket":"PMAT-978","phase":"P_2","mode":"direct","est":3,"actual":4,"basis":"est=first-run[U]; actual=orchestrator bash calls (mutation, contract, receipt)"}
+{"repo":"aprender","ticket":"PMAT-974","phase":"P_1","mode":"subagent:sonnet","est":3,"actual":40,"basis":"est=first-run[U]; actual=worker maxTurns (40) + one resume; both commits landed"}
+{"repo":"aprender","ticket":"PMAT-974","phase":"P_2","mode":"direct","est":3,"actual":3,"basis":"est=first-run[U]; actual=orchestrator bash calls (mutation, contract, receipt)"}
