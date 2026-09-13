@@ -59,7 +59,7 @@ fn test_cuda_stress_memory_pressure() {
     // We should have allocated at least 8 chunks (2GB) on RTX 4090
     assert!(
         buffers.len() >= 8,
-        "RTX 4090 should handle at least 2GB allocation"
+        "every fleet CUDA host (>= 8 GB) should handle a 2GB allocation"
     );
 
     // Drop all buffers - verify cleanup
