@@ -258,6 +258,18 @@ fn falsify_iter7_attention_type_matches_head_config() {
                     "ITER7: {family_name} declared GQA but no size has kv_heads < heads"
                 );
             }
+            AttentionType::HybridGatedDeltaNet => {
+                // Qwen3.5-class hybrid (33c79fdb9, #3091/#3099): the YAML loads so the
+                // refusal can name the family; the softmax-attention layers are GQA-shaped,
+                // so no size may declare more kv heads than heads. The unsupported-on-CPU/GPU
+                // contract itself is judged by the refusal tests, not here.
+                for (size_name, sc) in &config.size_variants {
+                    assert!(
+                        sc.num_kv_heads <= sc.num_heads,
+                        "ITER7: {family_name}/{size_name} hybrid Gated DeltaNet but kv_heads > heads"
+                    );
+                }
+            }
             AttentionType::Mqa => {
                 let has_mqa_size = config.size_variants.values().any(|sc| sc.num_kv_heads == 1);
                 assert!(

@@ -51,10 +51,10 @@ jobs:
     concurrency:
       group: perf-intel
       cancel-in-progress: false
-    runs-on: [self-hosted, X64, Linux, clean-room]
+    runs-on: [self-hosted, X64, Linux, clean-room, intel]   # perf: the SAME box as the recorded baselines — clean-room now spans intel + yoga + gx10 (#3100)
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       # The receipt validator's own case table must discriminate before any
       # number it blesses means anything.

@@ -1085,6 +1085,40 @@ if [ "$DOGFOOD_PHASE" = pre-publish ]; then
 elif [ $DRC -eq 0 ]; then mark publish-dry-run PASS "packages cleanly"
 else mark publish-dry-run FAIL "$(printf '%s' "$DRY" | grep -iE 'error' | head -1)"; fi
 
+# ── 10b. the four apr binaries the tag owes (row 67-A1, PMAT-1098, #3082) ───
+# v0.66.0 shipped eight `pv` tarballs and ZERO `apr` binaries, and no gate said
+# so. The asset set is a POST-PUBLISH question by construction: binary-release.yml
+# fires on `release: published`, so the assets do not exist until the tag does.
+#
+# It is a SKIP, not a DEFER, before that. DEFER is spelled by
+# scripts/check_publish_preflight.sh's PREPUBLISH_DEFERRABLE list
+# ("publish-dry-run declared:check_multiplatform_dogfood"); a pre-publish receipt
+# that defers a row that list does not name is REFUSED by the publish gate. Adding
+# `release-assets` to that list is the honest shape and is owed by a follow-up
+# (that file is outside PMAT-1098's scope) — until then this row names the phase
+# that owes the measurement instead of borrowing a word that would turn the
+# preflight red.
+if [ "$DOGFOOD_PHASE" = post-publish ]; then
+  if [ -f scripts/check_release_assets.sh ]; then
+    run_to "$WORKLOG/release-assets.log" bash scripts/check_release_assets.sh "v$VERSION"
+    RA_RC=$RUN_RC
+    RA_MISS=$(grep -c '^MISSING ' "$WORKLOG/release-assets.log" 2>/dev/null || true)
+    if [ "$RA_RC" -eq 0 ]; then
+      mark release-assets PASS "v$VERSION carries all 16 assets (4 apr {cuda,cpu}x{x86_64,aarch64} + 4 sha256 + 8 pv)"
+    elif [ "$RA_RC" -eq 2 ]; then
+      # ENV is a FAIL here on purpose: "the release could not be read" is not
+      # evidence that the release is complete.
+      mark release-assets FAIL "ENV — the release v$VERSION could not be read (no gh, no token, no network); that is not a pass"
+    else
+      mark release-assets FAIL "v$VERSION is missing ${RA_MISS:-?} asset(s): $(grep -m1 '^MISSING ' "$WORKLOG/release-assets.log" | sed 's/^MISSING //')"
+    fi
+  else
+    mark release-assets FAIL "scripts/check_release_assets.sh is absent — the four apr binaries are asserted by nothing"
+  fi
+else
+  mark release-assets SKIP "assets exist only after the tag; measured by the post-publish dogfood (DOGFOOD_PHASE=post-publish), not by this phase"
+fi
+
 # ── 11. DOGFOOD: use the crate's own release binary on real data ────────────
 # The repo supplies scripts/dogfood-use.sh (given $BIN = built release binary +
 # $WORK = a scratch dir). It must exit non-zero if the tool misbehaves on real data.

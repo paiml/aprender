@@ -36,6 +36,10 @@ pub enum AttentionType {
     Ssm,
     /// Linear Attention (WKV recurrence, no softmax)
     Linear,
+    /// Hybrid: Gated DeltaNet linear-attention layers interleaved with full softmax-attention
+    /// layers (the Qwen3.5 family). apr declares it unsupported on CPU and GPU (#3091); the
+    /// family YAML must still LOAD, so the refusal can name the family instead of failing to parse.
+    HybridGatedDeltaNet,
 }
 
 impl fmt::Display for AttentionType {
@@ -46,6 +50,7 @@ impl fmt::Display for AttentionType {
             Self::Mqa => write!(f, "MQA"),
             Self::Ssm => write!(f, "SSM"),
             Self::Linear => write!(f, "Linear"),
+            Self::HybridGatedDeltaNet => write!(f, "Hybrid Gated DeltaNet"),
         }
     }
 }
@@ -59,9 +64,10 @@ impl AttentionType {
             "mqa" => Ok(Self::Mqa),
             "ssm" => Ok(Self::Ssm),
             "linear" => Ok(Self::Linear),
+            "hybrid_gated_deltanet" => Ok(Self::HybridGatedDeltaNet),
             _ => Err(AprenderError::FormatError {
                 message: format!(
-                    "Unknown attention type: {s}. Expected: mha, gqa, mqa, ssm, linear"
+                    "Unknown attention type: {s}. Expected: mha, gqa, mqa, ssm, linear, hybrid_gated_deltanet"
                 ),
             }),
         }

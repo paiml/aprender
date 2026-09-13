@@ -88,7 +88,6 @@ crates/apr-cli/src/commands/kernel.rs:346
 crates/apr-cli/src/commands/ollama.rs:24
 crates/apr-cli/src/commands/qa.rs:152
 crates/aprender-compute-xtask/src/check_simd/mod.rs:10
-crates/aprender-compute/src/backends/q4k/gemv/mod.rs:226
 crates/aprender-compute/src/blis/transpose.rs:18
 crates/aprender-compute/src/brick/quant_ops/mod.rs:18
 crates/aprender-compute/src/matrix/ops/arithmetic.rs:16

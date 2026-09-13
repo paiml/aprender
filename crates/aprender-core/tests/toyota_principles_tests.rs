@@ -15,6 +15,22 @@ use std::path::Path;
 // Application: Building a "Sovereign AI" stack > Short-term features
 // ============================================================================
 
+/// Tests run with the CRATE dir as cwd (crates/aprender-core), so every repo-relative
+/// path below resolves from the workspace root instead — the same pattern as
+/// `monorepo_invariants.rs`. Before this, p1b could not pass and p13/p14 were vacuous
+/// (`if spec_path.exists()` skipped them) on every box; the target was dark (#3112).
+fn workspace_root() -> std::path::PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .canonicalize()
+        .expect("workspace root must resolve from crates/aprender-core")
+}
+
+/// Paths under `src/` belong to THIS crate (crates/aprender-core), not the workspace root.
+fn crate_root() -> &'static Path {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+}
+
 /// P1: Long-term philosophy documented
 /// FALSIFICATION: No mention of sovereign AI or long-term vision in docs
 #[test]
@@ -37,7 +53,8 @@ fn p1_long_term_philosophy_documented() {
 /// FALSIFICATION: No specification documents exist
 #[test]
 fn p1b_architecture_specs_exist() {
-    let spec_dir = Path::new("docs/specifications");
+    let spec_dir = workspace_root().join("docs/specifications");
+    let spec_dir = spec_dir.as_path();
     assert!(
         spec_dir.exists(),
         "P1 FALSIFIED: No specifications directory exists"
@@ -62,7 +79,7 @@ fn p1b_architecture_specs_exist() {
 #[test]
 fn p2_continuous_flow_streaming() {
     // Check for streaming module in audio
-    let has_stream_module = Path::new("src/audio/stream.rs").exists();
+    let has_stream_module = crate_root().join("src/audio/stream.rs").exists();
 
     // Check lib.rs for streaming references
     let lib_rs = include_str!("../src/lib.rs");
@@ -91,7 +108,7 @@ fn p3_pull_system_lazy_loading() {
     let has_mmap = cargo_toml.contains("memmap2");
 
     // Also check for lazy loading patterns in v2.rs
-    let v2_has_lazy = Path::new("src/format/v2.rs").exists();
+    let v2_has_lazy = crate_root().join("src/format/v2.rs").exists();
 
     assert!(
         has_mmap || v2_has_lazy,
@@ -110,7 +127,7 @@ fn p3_pull_system_lazy_loading() {
 #[test]
 fn p4_heijunka_level_workload() {
     // Check for chunk-based processing patterns
-    let mel_path = Path::new("src/audio/mel.rs");
+    let mel_path = crate_root().join("src/audio/mel.rs");
 
     if mel_path.exists() {
         let mel_rs = std::fs::read_to_string(mel_path).expect("Failed to read mel.rs");
@@ -135,7 +152,7 @@ fn p4_heijunka_level_workload() {
 /// FALSIFICATION: No CI configuration or quality checks
 #[test]
 fn p5_jidoka_quality_gates() {
-    let ci_path = Path::new(".github/workflows/ci.yml");
+    let ci_path = workspace_root().join(".github/workflows/ci.yml");
     assert!(ci_path.exists(), "P5 FALSIFIED: No CI configuration found");
 
     let ci_config = std::fs::read_to_string(ci_path).expect("read ci.yml");
@@ -156,7 +173,7 @@ fn p5_jidoka_quality_gates() {
 /// FALSIFICATION: No apr validate command
 #[test]
 fn p5b_validate_command_exists() {
-    let validate_path = Path::new("crates/apr-cli/src/commands/validate.rs");
+    let validate_path = workspace_root().join("crates/apr-cli/src/commands/validate.rs");
     assert!(
         validate_path.exists(),
         "P5 FALSIFIED: No validate command implementation"
@@ -173,7 +190,7 @@ fn p5b_validate_command_exists() {
 /// FALSIFICATION: No Makefile or missing standard targets
 #[test]
 fn p6_standardized_tasks_makefile() {
-    let makefile_path = Path::new("Makefile");
+    let makefile_path = workspace_root().join("Makefile");
     assert!(makefile_path.exists(), "P6 FALSIFIED: No Makefile found");
 
     let makefile = std::fs::read_to_string(makefile_path).expect("read Makefile");
@@ -214,8 +231,12 @@ fn p6b_cargo_workflows_documented() {
 /// FALSIFICATION: No inspect or debug commands
 #[test]
 fn p7_visual_control_inspection() {
-    let inspect_exists = Path::new("crates/apr-cli/src/commands/inspect.rs").exists();
-    let debug_exists = Path::new("crates/apr-cli/src/commands/debug.rs").exists();
+    let inspect_exists = workspace_root()
+        .join("crates/apr-cli/src/commands/inspect.rs")
+        .exists();
+    let debug_exists = workspace_root()
+        .join("crates/apr-cli/src/commands/debug.rs")
+        .exists();
 
     assert!(
         inspect_exists || debug_exists,
@@ -233,7 +254,7 @@ fn p7_visual_control_inspection() {
 /// FALSIFICATION: Project is not Rust
 #[test]
 fn p8_reliable_technology_rust() {
-    let cargo_toml = Path::new("Cargo.toml");
+    let cargo_toml = workspace_root().join("Cargo.toml");
     assert!(
         cargo_toml.exists(),
         "P8 FALSIFIED: Not a Rust project (no Cargo.toml)"
@@ -251,11 +272,13 @@ fn p8_reliable_technology_rust() {
 /// FALSIFICATION: unsafe_code is not forbidden
 #[test]
 fn p8b_no_unsafe_code() {
-    let cargo_toml = include_str!("../Cargo.toml");
-
-    // Check for unsafe_code = "forbid" in lints
-    let forbids_unsafe = cargo_toml.contains("unsafe_code")
-        && (cargo_toml.contains("forbid") || cargo_toml.contains("deny"));
+    // The crate manifest inherits `[lints] workspace = true`; the lint itself lives in the
+    // workspace root manifest (`[workspace.lints.rust] unsafe_code = …`). Judge both.
+    let crate_toml = include_str!("../Cargo.toml");
+    let root_toml = include_str!("../../../Cargo.toml");
+    let forbids =
+        |t: &str| t.contains("unsafe_code") && (t.contains("forbid") || t.contains("deny"));
+    let forbids_unsafe = forbids(crate_toml) || forbids(root_toml);
 
     assert!(
         forbids_unsafe,
@@ -273,9 +296,9 @@ fn p8b_no_unsafe_code() {
 /// FALSIFICATION: No documentation beyond code
 #[test]
 fn p9_grow_leaders_documentation() {
-    let has_book = Path::new("book").exists();
-    let has_docs = Path::new("docs").exists();
-    let has_readme = Path::new("README.md").exists();
+    let has_book = workspace_root().join("book").exists();
+    let has_docs = workspace_root().join("docs").exists();
+    let has_readme = workspace_root().join("README.md").exists();
 
     assert!(
         has_book || has_docs || has_readme,
@@ -293,8 +316,8 @@ fn p9_grow_leaders_documentation() {
 /// FALSIFICATION: No contributor guidance
 #[test]
 fn p10_develop_people_guidelines() {
-    let has_contributing = Path::new("CONTRIBUTING.md").exists();
-    let has_claude_md = Path::new("CLAUDE.md").exists();
+    let has_contributing = workspace_root().join("CONTRIBUTING.md").exists();
+    let has_claude_md = workspace_root().join("CLAUDE.md").exists();
 
     // CLAUDE.md serves as contributor guidance for AI and humans
     assert!(
@@ -313,10 +336,10 @@ fn p10_develop_people_guidelines() {
 /// FALSIFICATION: No license acknowledgment
 #[test]
 fn p11_respect_partners_license() {
-    let has_license = Path::new("LICENSE").exists()
-        || Path::new("LICENSE.md").exists()
-        || Path::new("LICENSE-MIT").exists()
-        || Path::new("LICENSE-APACHE").exists();
+    let has_license = workspace_root().join("LICENSE").exists()
+        || workspace_root().join("LICENSE.md").exists()
+        || workspace_root().join("LICENSE-MIT").exists()
+        || workspace_root().join("LICENSE-APACHE").exists();
 
     assert!(
         has_license,
@@ -347,9 +370,15 @@ fn p11b_dependencies_credited() {
 /// FALSIFICATION: No profiling or debugging commands
 #[test]
 fn p12_genchi_genbutsu_debugging() {
-    let has_debug = Path::new("crates/apr-cli/src/commands/debug.rs").exists();
-    let has_trace = Path::new("crates/apr-cli/src/commands/trace.rs").exists();
-    let has_profile = Path::new("crates/apr-cli/src/commands/profile.rs").exists();
+    let has_debug = workspace_root()
+        .join("crates/apr-cli/src/commands/debug.rs")
+        .exists();
+    let has_trace = workspace_root()
+        .join("crates/apr-cli/src/commands/trace.rs")
+        .exists();
+    let has_profile = workspace_root()
+        .join("crates/apr-cli/src/commands/profile.rs")
+        .exists();
 
     assert!(
         has_debug || has_trace || has_profile,
@@ -367,8 +396,9 @@ fn p12_genchi_genbutsu_debugging() {
 /// FALSIFICATION: No versioned specification
 #[test]
 fn p13_decide_slowly_versioned_spec() {
-    let spec_path =
-        Path::new("docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md");
+    let spec_path = workspace_root()
+        .join("docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md");
+    let spec_path = spec_path.as_path();
 
     if spec_path.exists() {
         let spec = std::fs::read_to_string(spec_path).expect("read spec");
@@ -397,8 +427,9 @@ fn p13_decide_slowly_versioned_spec() {
 #[test]
 fn p14_hansei_reflection() {
     // Check for GitHub issue references in specs or docs
-    let spec_path =
-        Path::new("docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md");
+    let spec_path = workspace_root()
+        .join("docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md");
+    let spec_path = spec_path.as_path();
 
     if spec_path.exists() {
         let spec = std::fs::read_to_string(spec_path).expect("read spec");
@@ -417,11 +448,11 @@ fn p14_hansei_reflection() {
 /// FALSIFICATION: No record of changes
 #[test]
 fn p14b_change_history() {
-    let has_changelog = Path::new("CHANGELOG.md").exists()
-        || Path::new("CHANGES.md").exists()
-        || Path::new("HISTORY.md").exists();
+    let has_changelog = workspace_root().join("CHANGELOG.md").exists()
+        || workspace_root().join("CHANGES.md").exists()
+        || workspace_root().join("HISTORY.md").exists();
 
-    let has_git = Path::new(".git").exists();
+    let has_git = workspace_root().join(".git").exists();
 
     assert!(
         has_changelog || has_git,

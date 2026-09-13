@@ -1,0 +1,36 @@
+# guards_nightly_manifest.txt -- the steps that left the PR path (PMAT-1098,
+# row 67-E3 of docs/specifications/06x-release-schedule.md).
+#
+# WHY A MANIFEST AND NOT A COMMENT
+# --------------------------------
+# The operator's rule E caps a PR at 20 minutes. Measured on run 34449608126
+# (PR #3074, 2026-09-10, `gh api .../jobs` step timestamps): `guard-cargo`
+# 43.8 min, `guard-tree` 27.3 min. Every line below names a step whose
+# UNIVERSE IS THE WHOLE TREE rather than the diff -- it re-proves the same
+# property about the same files on every PR, whether or not the PR touched
+# them -- and whose measured cost is listed beside it. Together they are
+# 26.8 of guard-cargo's 43.8 minutes, and they now run once a day on main in
+# .github/workflows/guards-nightly.yml instead of on every pull request.
+#
+# Path-scoped guards (the ones whose verdict a diff can change) stayed at PR
+# time, and so did every `--self-test` case table of a guard that stayed,
+# because a guard that can no longer turn RED is worse than a slow one.
+#
+# THE COST OF THIS TRADE, NAMED: a defect in one of these classes now reaches
+# main and is caught within 24 h by the nightly, or at the pre-publish dogfood
+# (`scripts/dogfood.sh --phase pre-publish`), instead of being blocked at the
+# PR. That is decision D-1 of the 06x release schedule.
+#
+# FORMAT: `<seconds on run 34449608126><TAB><step name, verbatim>`. The step
+# name is the join key: it must appear VERBATIM as a `- name:` in
+# .github/workflows/guards-nightly.yml (that workflow's first step asserts it,
+# and fails closed if a line here names a step nothing runs), and it is also
+# what keeps scripts/check_guards_are_wired.sh finding these guards wired --
+# that guard greps every file under .github/workflows/, not ci.yml alone.
+586	Test-tier decision case table (BSE-17): quick/full/reuse, drift is ENV
+256	model-tests falsification suites (was gated by nothing, aprender#2522) -- SATD ceiling measured on the comparand (BSE-03)
+206	Book rust examples compile
+200	aprender-profile lib tests (was gated by nothing)
+135	No test may assert about the fd 0 it inherited
+130	Publish safety (binary/oversize files in published packages)
+94	aprender-core builds for wasm32
