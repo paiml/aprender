@@ -1,3 +1,13 @@
+metadata:
+  kind: kaizen
+  version: "1.0.0"
+  created: "2026-03-04"
+  author: "PAIML Engineering"
+  description: "Lazy PTX Generation for Cached Kernel Modules"
+  references:
+    - "KAIZEN-058"
+    - "parent contract: C-PREWARM-001"
+
 contract: C-LPTX-001
 title: Lazy PTX Generation for Cached Kernel Modules
 kaizen: KAIZEN-058

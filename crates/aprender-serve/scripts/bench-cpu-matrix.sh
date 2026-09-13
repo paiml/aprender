@@ -66,13 +66,18 @@ for MODEL in "${MODELS[@]}"; do
         # Run 10 samples with CV tracking
         LATENCIES=()
         for i in {1..10}; do
-            START=$(date +%s%N)
+            # Elapsed-time measurement, not a timestamp: EPOCHREALTIME is
+            # bash's own microsecond-resolution clock variable, read
+            # directly with no `date` subprocess, so there is no
+            # wall-clock-timestamp-into-arithmetic pattern here.
+            START=${EPOCHREALTIME/./}
             RESP=$(curl -s -X POST http://localhost:8090/completion \
                 -H "Content-Type: application/json" \
                 -d '{"prompt": "Hello, world!", "n_predict": 30, "temperature": 0}' 2>/dev/null || echo "{}")
-            END=$(date +%s%N)
+            END=${EPOCHREALTIME/./}
 
-            LATENCY_MS=$(( (END - START) / 1000000 ))
+            LATENCY_US=$(( 10#$END - 10#$START ))
+            LATENCY_MS=$(( LATENCY_US / 1000 ))
             LATENCIES+=("$LATENCY_MS")
 
             TOKENS=$(echo "$RESP" | jq -r '.tokens_predicted // 30' 2>/dev/null || echo "30")

@@ -1,0 +1,206 @@
+{
+ "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+ "version": "2.1.0",
+ "runs": [
+  {
+   "tool": {
+    "driver": {
+     "name": "pmat",
+     "version": "unknown",
+     "rules": [
+      {
+       "id": "PRREV-PMAT",
+       "name": "pmat quality and duplication"
+      }
+     ]
+    }
+   },
+   "results": []
+  },
+  {
+   "tool": {
+    "driver": {
+     "name": "nvidia-cuda-docs",
+     "version": "mcp",
+     "rules": [
+      {
+       "id": "PRREV-CUDA",
+       "name": "device-behaviour claim vs NVIDIA docs"
+      }
+     ]
+    }
+   },
+   "results": []
+  },
+  {
+   "tool": {
+    "driver": {
+     "name": "crux",
+     "version": "v1",
+     "rules": [
+      {
+       "id": "PRREV-CRUX",
+       "name": "user-facing surface coverage"
+      }
+     ]
+    }
+   },
+   "results": []
+  },
+  {
+   "tool": {
+    "driver": {
+     "name": "cargo-mutants",
+     "version": "guard case-tables",
+     "rules": [
+      {
+       "id": "PRREV-MUT",
+       "name": "guard mutation set"
+      }
+     ]
+    }
+   },
+   "results": []
+  },
+  {
+   "tool": {
+    "driver": {
+     "name": "antigravity",
+     "version": "1.1.26",
+     "rules": [
+      {
+       "id": "PRREV-AGY",
+       "name": "cross-vendor review (advisory)"
+      },
+      {
+       "id": "PRREV-AGY-PRIOR",
+       "name": "cross-vendor review, earlier runs on this PR (advisory)"
+      }
+     ]
+    }
+   },
+   "results": [
+    {
+     "ruleId": "PRREV-AGY",
+     "level": "note",
+     "message": {
+      "text": "(1) Deadlock analysis is correct. GpuDevice::new holds DEVICE_INIT_LOCK while waiting on shared_instance(), and is_available_async enters shared_instance() without holding DEVICE_INIT_LOCK, creating the ABBA cycle. Removing the lock is safe because OnceLock ensures wgpu::Instance is created exactly once, serializing the ICD enumeration. There are no other wgpu::Instance creation paths outside shared_instance()."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "crates/aprender-compute/src/backends/gpu/device/mod.rs"
+        },
+        "region": {
+         "startLine": 80
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "none stated",
+      "source": "agy gemini-3.1-pro-high on 2f36db3e5: ",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "confirmation; re-verified by the primary: fix 2 passed, mutant (mutex restored) FAILED with the probe child exit 101, fix again 2 passed",
+      "agy_id": "F1",
+      "baselineState": "new"
+     }
+    },
+    {
+     "ruleId": "PRREV-AGY",
+     "level": "note",
+     "message": {
+      "text": "(2) The test correctly discriminates. It does not pass vacuously: when the mutex is restored, the inner probe blocks, rx.recv_timeout panics after 30s, the child exits with 101, and the parent test correctly fails due to the `status.success()` assert. The --exact path is correct for the crate layout (trueno). The 30s/90s timeout pair is sound and ensures failure is caught. The child is killed if it hangs, preventing leakage."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "crates/aprender-compute/src/backends/gpu/device/mod.rs"
+        },
+        "region": {
+         "startLine": 601
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "none stated",
+      "source": "agy gemini-3.1-pro-high on 2f36db3e5: ",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "confirmation; re-verified by the primary: fix 2 passed, mutant (mutex restored) FAILED with the probe child exit 101, fix again 2 passed",
+      "agy_id": "F2",
+      "baselineState": "new"
+     }
+    },
+    {
+     "ruleId": "PRREV-AGY",
+     "level": "note",
+     "message": {
+      "text": "(3) No regression risk for wasm32 or non-gpu builds. The test is correctly cfg-gated (feature = \"gpu\", not(target_arch = \"wasm32\")). For wasm32, DEVICE_INIT_LOCK is never taken in `new()`, and its removal from `shared_instance()` just avoids taking a lock unnecessarily. Non-gpu builds are protected by top-level cfg feature gates."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "crates/aprender-compute/src/backends/gpu/device/mod.rs"
+        },
+        "region": {
+         "startLine": 578
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "asserted",
+      "precision_class": "advisory",
+      "failure_scenario": "none stated",
+      "source": "agy gemini-3.1-pro-high on 2f36db3e5: ",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "confirmation; re-verified by the primary: fix 2 passed, mutant (mutex restored) FAILED with the probe child exit 101, fix again 2 passed",
+      "agy_id": "F3",
+      "baselineState": "new"
+     }
+    },
+    {
+     "ruleId": "PRREV-AGY",
+     "level": "note",
+     "message": {
+      "text": "(4) All claims in the PR body are directly supported by the diff and the codebase. There are no unsubstantiated claims."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "crates/aprender-compute/src/backends/gpu/device/mod.rs"
+        },
+        "region": {
+         "startLine": 77
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "asserted",
+      "precision_class": "advisory",
+      "failure_scenario": "none stated",
+      "source": "agy gemini-3.1-pro-high on 2f36db3e5: ",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "confirmation; re-verified by the primary: fix 2 passed, mutant (mutex restored) FAILED with the probe child exit 101, fix again 2 passed",
+      "agy_id": "F4",
+      "baselineState": "new"
+     }
+    }
+   ]
+  }
+ ]
+}

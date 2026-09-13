@@ -4,6 +4,15 @@ impl ChatSession {
             println!("{}", "Loading model...".cyan());
             let start = Instant::now();
 
+            // #3022: the format is decided ONCE, by name-then-magic-bytes, and the same
+            // answer drives the banner, the tokenizer and the generator. Reading the file
+            // and classifying its first eight bytes used to be the session's own
+            // independent decision, so the banner could say "SafeTensors" while the
+            // session loaded `Demo` — which is precisely how a 7B model reported a
+            // successful empty answer. `resolve_chat_format` refuses instead of
+            // substituting, so `Demo` is not reachable from a path the user named.
+            let format = resolve_chat_format(path)?;
+
             // Read file bytes
             let mut file = File::open(path).map_err(|e| {
                 CliError::ValidationFailed(format!("Failed to open model file: {e}"))
@@ -13,27 +22,36 @@ impl ChatSession {
                 CliError::ValidationFailed(format!("Failed to read model file: {e}"))
             })?;
 
-            // Detect format from magic bytes (Y14)
-            let format = detect_format_from_bytes(&model_bytes);
-
             let elapsed = start.elapsed();
             let format_name = match format {
                 ModelFormat::Apr => "APR",
                 ModelFormat::Gguf => "GGUF",
                 ModelFormat::SafeTensors => "SafeTensors",
+                ModelFormat::ShardedSafeTensors => "Sharded SafeTensors",
                 ModelFormat::Demo => "Demo",
+            };
+            // For a sharded index the bytes just read are the ~20 KB manifest, not the
+            // model: printing their length would report "0.0 MB" for a 7B model — the
+            // same lie under a different name. The manifest states the real total.
+            let reported_bytes = if format == ModelFormat::ShardedSafeTensors {
+                sharded_total_size(&model_bytes).unwrap_or(0)
+            } else {
+                model_bytes.len() as u64
             };
             println!(
                 "{} {} format in {:.2}s ({:.1} MB)",
                 "Loaded".green(),
                 format_name,
                 elapsed.as_secs_f32(),
-                model_bytes.len() as f32 / 1_000_000.0
+                reported_bytes as f32 / 1_000_000.0
             );
 
             let (llama_tokenizer, qwen_tokenizer) = load_tokenizers(format, &model_bytes, path)?;
 
-            if format == ModelFormat::SafeTensors {
+            if matches!(
+                format,
+                ModelFormat::SafeTensors | ModelFormat::ShardedSafeTensors
+            ) {
                 print_safetensors_config(path);
             }
 
@@ -71,7 +89,7 @@ impl ChatSession {
                     Ok(mapped) => {
                         #[cfg(feature = "cuda")]
                         {
-                            let (cuda, failed) = try_init_gguf_cuda(&mapped);
+                            let (cuda, failed) = try_init_gguf_cuda(&mapped)?;
                             cached_gguf_cuda = cuda;
                             if failed { cuda_init_failed = true; }
                         }

@@ -35,6 +35,7 @@ impl CudaExecutor {
             self.stop_brick_id(timer_rmsnorm2, 1);
         }
 
+        self.dump_stage(crate::inference_trace::save_tensor_stage::SaveTensorStage::FfnNorm, layer_idx as u32, hidden_buf1, hidden_dim as usize);
         // 7+8. FFN gate/up projections + SwiGLU
         // PMAT-027: Invalidate Q8 cache — hidden_buf1 was just written by FFN RMSNorm.
         self.q8_activation_valid = false;
@@ -61,6 +62,7 @@ impl CudaExecutor {
             self.debug_check_buf(ffn_act_buf, "SwiGLU", layer_idx)?;
         }
 
+        self.dump_stage(crate::inference_trace::save_tensor_stage::SaveTensorStage::FfnSwigl, layer_idx as u32, ffn_act_buf, intermediate_dim as usize);
         // 9. FFN down projection: ffn_act -> hidden_buf1 (reuse, ffn_normed no longer needed)
         // PAR-058: Use correct kernel based on FFN down quantization type
         // PAR-105-FIX: Only override qtype if metadata qtype doesn't match expected size
@@ -103,6 +105,7 @@ impl CudaExecutor {
             self.debug_check_buf(hidden_buf1, "FFN down", layer_idx)?;
         }
 
+        self.dump_stage(crate::inference_trace::save_tensor_stage::SaveTensorStage::FfnOut, layer_idx as u32, hidden_buf1, hidden_dim as usize);
         // 10. Second residual: residual1 (input_staging) + ffn_out (hidden_buf1) -> hidden_buf2
         // PAR-044 FIX: Now safe because residual1 is in input_staging, not hidden_buf2
         let timer_res2 = if profiling {
@@ -127,6 +130,7 @@ impl CudaExecutor {
             self.debug_check_buf(hidden_buf2, "Layer output", layer_idx)?;
         }
 
+        self.dump_stage(crate::inference_trace::save_tensor_stage::SaveTensorStage::PostFfnResidual, layer_idx as u32, hidden_buf2, hidden_dim as usize);
         Ok(())
     }
 

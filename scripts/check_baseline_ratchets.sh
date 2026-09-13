@@ -57,6 +57,11 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 #           a swap, which is an append wearing the old total.
 #   count — the file holds one integer, which may only fall.
 #   keyed — lines are <path><TAB><count>; no key may rise, no key may appear.
+#   keyed2 — lines are <key> <int> <int>; NEITHER number may rise, no key may
+#           appear. The complexity ratchet records a pair per function
+#           (cyclomatic AND cognitive) and its rule is "over EITHER", so a
+#           baseline ratcheting one of them would cover half the predicate
+#           while looking complete.
 #   none  — not a ratchet by its own stated contract; the reason is the value.
 #   set-aperture
 #         — `set`, plus the ONE admission a widened guard needs (PERF-049): an
@@ -75,6 +80,7 @@ classify() { # classify <basename> -> "<kind>[<TAB>reason]", rc 1 if unclassifie
         claim_literal_baseline.txt)              printf 'set-aperture\tscripts/check_no_claim_literals.sh\n' ;;
         contract_duplicate_stem_baseline.txt)    printf 'set\n' ;;
         contract_test_binding_baseline.txt)      printf 'keyed\n' ;;
+        complexity_baseline.txt)                 printf 'keyed2\n' ;;
         fabricated_baseline_rust_sites.txt)      printf 'set\n' ;;
         hand_rolled_parsers_baseline.txt)        printf 'set\n' ;;
         hardcoded_path_shipped_baseline.txt)     printf 'count\n' ;;
@@ -82,15 +88,33 @@ classify() { # classify <basename> -> "<kind>[<TAB>reason]", rc 1 if unclassifie
         perf_claim_citation_baseline.txt)        printf 'set-aperture\tscripts/check_perf_claims_cite_receipts.sh\n' ;;
         roadmap_uncited_completion_baseline.txt) printf 'set\n' ;;
         shell_lint_baseline.txt)                 printf 'count\n' ;;
+        cb200_baseline.txt)                      printf 'count\n' ;;   # mirrors .pmat-gates.toml [tdg] baseline (PMAT-937)
         test_fixture_path_baseline.txt)          printf 'count\n' ;;
         tracked_ignored_baseline.txt)            printf 'count\n' ;;
         unwired_guards_baseline.txt)             printf 'set\n' ;;
+        # NOT a ratchet either, and for the same reason one level along: this
+        # registry is DERIVED from the test sources on every run
+        # (scripts/check_tree_reader_tests.sh) and must equal that derivation
+        # EXACTLY — a stale line FAILS as drift, a missing one FAILS as drift,
+        # and the set grows whenever someone writes a test that reads the tree.
+        # Freezing it against main would forbid adding such a test; the guard
+        # that owns it already fails in both directions (BSE-17, PMAT-1077).
+        # The UNWIRED half: tree-reader targets no workflow runs. Same kind of
+        # file, same reason it is not a ratchet — it is an exact match against
+        # the sources, and drift FAILS in both directions in its own guard.
+        tree_reader_unwired_baseline.txt)
+            printf 'none\tderived ledger of tree-reader targets no lane runs (exact-match against the sources, scripts/check_tree_reader_tests.sh)\n' ;;
+        tree_reader_tests.txt)
+            printf 'none	derived registry, exact-match against the sources (drift FAILS both ways, scripts/check_tree_reader_tests.sh)
+' ;;
         # NOT a ratchet, and deliberately so. This file MODELS INTENT: its own
         # header says the declared set must match the OBSERVED set EXACTLY, an
         # entry whose duplicate no longer exists FAILS as stale, and adding a
         # line is a reviewed claim that two packages must ship one bin name.
         # Freezing it against main would forbid renaming a crate. Growth here
         # is a decision, not a leak — the distinction this guard exists to keep.
+        guards_nightly_manifest.txt)
+            printf 'none\tledger of steps moved to guards-nightly.yml; exact-match against that workflow, a name that is not a step FAILS there\n' ;;
         duplicate_bin_names_allowlist.txt)
             printf 'none\tintent model, exact-match against the observed set (stale entries FAIL)\n' ;;
         *) return 1 ;;
@@ -183,6 +207,25 @@ if [ "${1:-}" = "--self-test" ] || [ "${1:-}" = "--selftest" ]; then
     _br_cmp_keyed "$TD/kv_base" "$TD/kv_lower";  say_row 'keyed one key lowered'         0 $?
     _br_cmp_keyed "$TD/kv_base" "$TD/kv_drop";   say_row 'keyed one key dropped'         0 $?
     _br_cmp_keyed "$TD/kv_base" "$TD/kv_swap";   say_row 'keyed raise + deeper fall'     1 $?
+
+    # -- keyed2: the same rule over a PAIR, and the rows that matter are the
+    #    ones a single-number comparator would pass: the second integer rising
+    #    on its own, and the second rising while the first falls.
+    printf 'a 30 20\nb 10 10\n'        > "$TD/k2_base"
+    printf '# hdr\na 30 20\nb 10 10\n' > "$TD/k2_same"
+    printf 'a 31 20\nb 10 10\n'        > "$TD/k2_raise1"
+    printf 'a 30 21\nb 10 10\n'        > "$TD/k2_raise2"
+    printf 'a 29 21\nb 10 10\n'        > "$TD/k2_trade"
+    printf 'a 29 19\nb 10 10\n'        > "$TD/k2_lower"
+    printf 'a 30 20\nb 10 10\nc 1 1\n' > "$TD/k2_newkey"
+    printf 'a 30 20\n'                  > "$TD/k2_drop"
+    _br_cmp_keyed2 "$TD/k2_base" "$TD/k2_same";   say_row 'keyed2 unchanged (header added)'   0 $?
+    _br_cmp_keyed2 "$TD/k2_base" "$TD/k2_raise1"; say_row 'keyed2 first integer raised'       1 $?
+    _br_cmp_keyed2 "$TD/k2_base" "$TD/k2_raise2"; say_row 'keyed2 second integer raised'      1 $?
+    _br_cmp_keyed2 "$TD/k2_base" "$TD/k2_trade";  say_row 'keyed2 second up while first down' 1 $?
+    _br_cmp_keyed2 "$TD/k2_base" "$TD/k2_lower";  say_row 'keyed2 both integers lowered'      0 $?
+    _br_cmp_keyed2 "$TD/k2_base" "$TD/k2_newkey"; say_row 'keyed2 new key appears'            1 $?
+    _br_cmp_keyed2 "$TD/k2_base" "$TD/k2_drop";   say_row 'keyed2 one key dropped'            0 $?
 
     # -- THE COMPARAND RESOLVER, against a scratch repository. The branch that
     #    must NEVER be taken is "fall back to comparing this branch against
@@ -428,7 +471,7 @@ if [ "${1:-}" = "--self-test" ] || [ "${1:-}" = "--selftest" ]; then
         printf '\nSELF-TEST FAILED\n'
         exit 1
     fi
-    printf 'PASS  case table only: %s rows (set, count, keyed, comparand resolver,\n' "$rows"
+    printf 'PASS  case table only: %s rows (set, count, keyed, keyed2, comparand resolver,\n' "$rows"
     printf '      end-to-end, classification totality). NO baseline in this tree was\n'
     printf '      compared — run with no arguments for that.\n'
     exit 0
@@ -447,7 +490,7 @@ while IFS= read -r f; do
     n_total=$((n_total + 1))
     if ! entry=$(classify "$f"); then
         printf 'FAIL  %s is not classified.\n' "scripts/$f"
-        printf '      Every baseline is either shrink-only (set / count / keyed) or is\n'
+        printf '      Every baseline is either shrink-only (set / count / keyed / keyed2) or is\n'
         printf '      NOT a ratchet and says why. An unclassified file is neither, and\n'
         printf '      "no rule" is how a baseline arrives that nothing ever compares.\n'
         printf '      Add it to classify() in %s.\n' "$(basename "$0")"

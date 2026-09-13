@@ -22,6 +22,14 @@
 
 set -euo pipefail
 
+# Reproducibility escape hatch (bashrs DET002): SOURCE_DATE_EPOCH, when a
+# caller sets it, pins the clock this discharge stamps its evidence with.
+# Unset -- the normal case for a live discharge run -- these fall through to
+# the real wall clock, so the measured dispatch duration and the discharge
+# date are unchanged from before.
+_epoch_now() { printf '%s' "${SOURCE_DATE_EPOCH:-$(date -u +%s)}"; }
+_date_utc_today() { date -u -d "@$(_epoch_now)" +%Y-%m-%d; }
+
 # --- Defaults -----------------------------------------------------------
 # Default: the binary THIS CHECKOUT builds (#2358). The previous default was a
 # hardcoded /mnt/nvme-raid0/targets/aprender/release/apr - a path nothing writes
@@ -82,14 +90,14 @@ echo ""
 
 # --- Step 1: dispatch apr bench -----------------------------------------
 echo "Step 1: apr bench --iterations $ITERATIONS --max-tokens $MAX_TOKENS $MODEL --json"
-START_EPOCH=$(date -u +%s)
+START_EPOCH=$(_epoch_now)
 BENCH_EXIT=0
 "$APR_BINARY" bench \
     --iterations "$ITERATIONS" \
     --max-tokens "$MAX_TOKENS" \
     "$MODEL" \
     --json > "$BENCH_RAW_FILE" 2>&1 || BENCH_EXIT=$?
-END_EPOCH=$(date -u +%s)
+END_EPOCH=$(_epoch_now)
 DURATION_SEC=$(( END_EPOCH - START_EPOCH ))
 
 echo "  raw output -> $BENCH_RAW_FILE (${DURATION_SEC} sec, exit=$BENCH_EXIT)"
@@ -141,7 +149,7 @@ fi
 # --- Step 4: emit evidence JSON -----------------------------------------
 HOSTNAME_VAL="$(hostname)"
 APR_VERSION="$( "$APR_BINARY" --version 2>/dev/null || echo "unknown" )"
-DATE_UTC="$(date -u +%Y-%m-%d)"
+DATE_UTC="$(_date_utc_today)"
 
 cat > "$EVIDENCE_FILE" <<JSON
 {

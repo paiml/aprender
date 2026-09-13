@@ -1,0 +1,857 @@
+{
+ "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+ "version": "2.1.0",
+ "runs": [
+  {
+   "tool": {
+    "driver": {
+     "name": "pmat",
+     "version": "unknown",
+     "rules": [
+      {
+       "id": "PRREV-PMAT",
+       "name": "pmat quality and duplication"
+      }
+     ]
+    }
+   },
+   "results": [
+    {
+     "ruleId": "PRREV-PMAT",
+     "level": "note",
+     "message": {
+      "text": "lexical name match `_resolve` at crates/aprender-contracts-staging/mermaid.min.js:814 (lexical); not duplicated logic: a minified mermaid.js identifier, not Python; this PR's _Expiries._resolve resolves a \u00a712 row's expiry"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "crates/aprender-contracts-staging/mermaid.min.js"
+        },
+        "region": {
+         "startLine": 814
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "if the two symbols were the same logic, this PR would re-implement it; they are not (read on both sides)",
+      "source": "scripts/pr_review_duplication_scan.sh --base 68b059ca9 --head 3c646f55b --rust-semantic",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "name collision, no duplication"
+     }
+    },
+    {
+     "ruleId": "PRREV-PMAT",
+     "level": "note",
+     "message": {
+      "text": "lexical name match `_row_id` at crates/aprender-db/src/storage/mod.rs:182 (lexical); not duplicated logic: an aprender-db storage row-id helper in Rust; this PR's _row_id parses a markdown cell"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "crates/aprender-db/src/storage/mod.rs"
+        },
+        "region": {
+         "startLine": 182
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "if the two symbols were the same logic, this PR would re-implement it; they are not (read on both sides)",
+      "source": "scripts/pr_review_duplication_scan.sh --base 68b059ca9 --head 3c646f55b --rust-semantic",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "name collision, no duplication"
+     }
+    },
+    {
+     "ruleId": "PRREV-PMAT",
+     "level": "note",
+     "message": {
+      "text": "lexical name match `check_ledger` at crates/aprender-train/src/gpu/guard.rs:338 (lexical); not duplicated logic: aprender-train's GPU guard ledger check and a prior receipt's text; this PR's check_ledger reads evidence/parity/LEDGER.md for PP-9"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "crates/aprender-train/src/gpu/guard.rs"
+        },
+        "region": {
+         "startLine": 338
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "if the two symbols were the same logic, this PR would re-implement it; they are not (read on both sides)",
+      "source": "scripts/pr_review_duplication_scan.sh --base 68b059ca9 --head 3c646f55b --rust-semantic",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "name collision, no duplication"
+     }
+    },
+    {
+     "ruleId": "PRREV-PMAT",
+     "level": "note",
+     "message": {
+      "text": "lexical name match `check_ledger` at crates/aprender-train/src/gpu/guard.rs:339 (lexical); not duplicated logic: aprender-train's GPU guard ledger check and a prior receipt's text; this PR's check_ledger reads evidence/parity/LEDGER.md for PP-9"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "crates/aprender-train/src/gpu/guard.rs"
+        },
+        "region": {
+         "startLine": 339
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "if the two symbols were the same logic, this PR would re-implement it; they are not (read on both sides)",
+      "source": "scripts/pr_review_duplication_scan.sh --base 68b059ca9 --head 3c646f55b --rust-semantic",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "name collision, no duplication"
+     }
+    },
+    {
+     "ruleId": "PRREV-PMAT",
+     "level": "note",
+     "message": {
+      "text": "lexical name match `check_ledger` at evidence/pr-review/2851/abb48c5cfafd0b8ffe1b63cb5e07cebe483e67b9/receipt.intoto.jsonl:1 (lexical); not duplicated logic: aprender-train's GPU guard ledger check and a prior receipt's text; this PR's check_ledger reads evidence/parity/LEDGER.md for PP-9"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "evidence/pr-review/2851/abb48c5cfafd0b8ffe1b63cb5e07cebe483e67b9/receipt.intoto.jsonl"
+        },
+        "region": {
+         "startLine": 1
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "if the two symbols were the same logic, this PR would re-implement it; they are not (read on both sides)",
+      "source": "scripts/pr_review_duplication_scan.sh --base 68b059ca9 --head 3c646f55b --rust-semantic",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "name collision, no duplication"
+     }
+    }
+   ]
+  },
+  {
+   "tool": {
+    "driver": {
+     "name": "nvidia-cuda-docs",
+     "version": "mcp",
+     "rules": [
+      {
+       "id": "PRREV-CUDA",
+       "name": "device-behaviour claim vs NVIDIA docs"
+      }
+     ]
+    }
+   },
+   "results": []
+  },
+  {
+   "tool": {
+    "driver": {
+     "name": "crux",
+     "version": "v1",
+     "rules": [
+      {
+       "id": "PRREV-CRUX",
+       "name": "user-facing surface coverage"
+      }
+     ]
+    }
+   },
+   "results": []
+  },
+  {
+   "tool": {
+    "driver": {
+     "name": "cargo-mutants",
+     "version": "guard case-tables",
+     "rules": [
+      {
+       "id": "PRREV-MUT",
+       "name": "guard mutation set"
+      }
+     ]
+    }
+   },
+   "results": []
+  },
+  {
+   "tool": {
+    "driver": {
+     "name": "antigravity",
+     "version": "1.1.25",
+     "rules": [
+      {
+       "id": "PRREV-AGY",
+       "name": "cross-vendor review (advisory)"
+      },
+      {
+       "id": "PRREV-AGY-PRIOR",
+       "name": "cross-vendor review, earlier runs on this PR (advisory)"
+      }
+     ]
+    }
+   },
+   "results": [
+    {
+     "ruleId": "PRREV-AGY",
+     "level": "note",
+     "message": {
+      "text": "No mutant covers the L1 rule"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "scripts/mutate_spec_conformance.sh"
+        },
+        "region": {
+         "startLine": 20
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "Running the mutation script shows 10 mutants, none of which mutate the L1 rule (the re-spend check logic in _check_ledger_spends). The L1 rule has no mutant covering it.",
+      "source": "agy gemini-3.1-pro-high on 3c646f55b: bash scripts/mutate_spec_conformance.sh",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "confirmed on the catalogue (no mutant touched the L1 re-spend logic; the rule was fixture-covered, `if key in seen` -> `if False` broke 5 cases); fixed after this head in d9d77704a: mutants l1-respend-check-removed and l1-tier-filter-narrowed, both killed",
+      "agy_id": "d",
+      "baselineState": "new"
+     }
+    },
+    {
+     "ruleId": "PRREV-AGY",
+     "level": "note",
+     "message": {
+      "text": "Decomposition leak changes old rule LEDGER output"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "scripts/lib/spec_conformance.py"
+        },
+        "region": {
+         "startLine": 586
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "In tests with a blank line before row 5 and a row with no leading pipe, the LEDGER metric output by the old rule changed (from 'LEDGER 4 4' to 'LEDGER 4 6' and 'LEDGER 2 2' to 'LEDGER 2 6' respectively). The L2 rule firing leaked new rows into the universe of the old rules, changing their output.",
+      "source": "agy gemini-3.1-pro-high on 3c646f55b: python3 scripts/lib/spec_conformance.py . --no-out",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "confirmed (LEDGER drew its two counts from different sets after the universe widened); fixed after this head in d9d77704a: LEDGER reports the universe count; the live tree still reports LEDGER 6 6; every other TSV difference against the base scanner is a new rule (L0/L2/L3) or L1 on the widened universe, none an old rule weakened",
+      "agy_id": "e",
+      "baselineState": "new"
+     }
+    },
+    {
+     "ruleId": "PRREV-AGY-PRIOR",
+     "level": "note",
+     "message": {
+      "text": "A ledger row without its leading pipe escapes both the first-table parse and L2, so a RECORDED key can be re-spent unseen. (found on 386b0bd40 by agy1; confirmed by re-run on 386b0bd40 (a copy of row 6 without its leading pipe: no VIOLATION, LEDGER 6 6))"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "scripts/lib/spec_conformance.py"
+        },
+        "region": {
+         "startLine": 158
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "An author appends a re-spent row that omits the optional leading pipe; the first table ends at that line and _outside_row returns nothing for it; PP-9 is not enforced.",
+      "source": "agy gemini-3.1-pro-high on 386b0bd40 (df32ef55)",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "confirmed by re-run on 386b0bd40 (a copy of row 6 without its leading pipe: no VIOLATION, LEDGER 6 6); fixed in 45588b6d1 (_pipe_cells needs two pipes, not a leading one); fixture ledger_row_no_leading_pipe",
+      "agy_id": "FN-1"
+     },
+     "baselineState": "absent"
+    },
+    {
+     "ruleId": "PRREV-AGY-PRIOR",
+     "level": "note",
+     "message": {
+      "text": "A backticked row id (`| `7` |`) fails ROW_ID_CELL outside the first table because strip_md keeps backticks. (found on 386b0bd40 by agy1; confirmed on the source (strip_md at :83 strips emphasis, not backticks))"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "scripts/lib/spec_conformance.py"
+        },
+        "region": {
+         "startLine": 164
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "A re-spent row after a blank line carries a backticked id; L2's row-id test fails and the row is dropped.",
+      "source": "agy gemini-3.1-pro-high on 386b0bd40 (df32ef55)",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "confirmed on the source (strip_md at :83 strips emphasis, not backticks); inside the first table L1 still fired on re-run; fixed in 45588b6d1 (_row_id strips backticks); fixture ledger_row_backticked_id",
+      "agy_id": "FN-2"
+     },
+     "baselineState": "absent"
+    },
+    {
+     "ruleId": "PRREV-AGY-PRIOR",
+     "level": "note",
+     "message": {
+      "text": "A row ending `||` loses both trailing pipes to a greedy strip and its cell count no longer matches the header. (found on 386b0bd40 by agy1; confirmed by re-run inside the first table (L1 fired only because the width still matched in that probe))"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "scripts/lib/spec_conformance.py"
+        },
+        "region": {
+         "startLine": 161
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "A short row whose last cell is empty is parsed one cell short; the exact-width test drops it outside the table, and inside it the conformance column is read from the wrong cell.",
+      "source": "agy gemini-3.1-pro-high on 386b0bd40 (df32ef55)",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "confirmed by re-run inside the first table (L1 fired only because the width still matched in that probe); the class is closed by L3 in 45588b6d1 (a first-table row whose width differs from the header is refused) and by the spend-claim universe in 50716c749; fixture ledger_row_trailing_pipes",
+      "agy_id": "FN-3"
+     },
+     "baselineState": "absent"
+    },
+    {
+     "ruleId": "PRREV-AGY-PRIOR",
+     "level": "note",
+     "message": {
+      "text": "An accidental extra pipe makes a re-spent row invisible to both L1 (columns shift) and L2 (exact width). (found on 386b0bd40 by agy1; confirmed by re-run on 386b0bd40 (a copy of row 6 with one extra pipe: no VIOLATION))"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "scripts/lib/spec_conformance.py"
+        },
+        "region": {
+         "startLine": 167
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "A re-spent row with one extra empty cell inside the first table reads a non-RECORDED conformance cell and is skipped; outside the table its width fails L2.",
+      "source": "agy gemini-3.1-pro-high on 386b0bd40 (df32ef55)",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "confirmed by re-run on 386b0bd40 (a copy of row 6 with one extra pipe: no VIOLATION); fixed in 45588b6d1 (L3) and 50716c749 (width is no condition outside the table); fixtures ledger_row_extra_pipe, ledger_row_extra_pipe_outside",
+      "agy_id": "FN-4"
+     },
+     "baselineState": "absent"
+    },
+    {
+     "ruleId": "PRREV-AGY-PRIOR",
+     "level": "note",
+     "message": {
+      "text": "A run of pipe lines whose first line carries no row id is skipped whole, so a dummy first line hides every ledger row after it. (found on 45588b6d1 by agy2; confirmed by re-run on 45588b6d1 (no VIOLATION, LEDGER 6 6))"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "scripts/lib/spec_conformance.py"
+        },
+        "region": {
+         "startLine": 212
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "An author writes `| dummy | x |` and then a re-spent RECORDED row; _fragment_rows skips the run; neither L2 nor the L1 spend check sees the row.",
+      "source": "agy gemini-3.1-pro-high on 45588b6d1 (519483fd)",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "confirmed by re-run on 45588b6d1 (no VIOLATION, LEDGER 6 6); fixed in 334590957 (row-by-row reading) and closed for good in 50716c749; fixture ledger_fragment_after_dummy_line",
+      "agy_id": "a-escape-dummy-header"
+     },
+     "baselineState": "absent"
+    },
+    {
+     "ruleId": "PRREV-AGY-PRIOR",
+     "level": "note",
+     "message": {
+      "text": "A bold row id (`| **7** |`) yields no row id and, as the first line of a run, triggers the skip. (found on 45588b6d1 by agy2; REFUTED by re-run on 45588b6d1: `| **7** |` and `| ** 7 ** |` both fired L1,L2 (strip_md strips emphasis in _pipe_cells before _row_id sees the cell))"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "scripts/lib/spec_conformance.py"
+        },
+        "region": {
+         "startLine": 187
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "A re-spent row with a bold id after a blank line is dropped by L2.",
+      "source": "agy gemini-3.1-pro-high on 45588b6d1 (519483fd)",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "REFUTED by re-run on 45588b6d1: `| **7** |` and `| ** 7 ** |` both fired L1,L2 (strip_md strips emphasis in _pipe_cells before _row_id sees the cell); fixture ledger_row_bold_id records the behaviour",
+      "agy_id": "a-escape-bold-row-id"
+     },
+     "baselineState": "absent"
+    },
+    {
+     "ruleId": "PRREV-AGY-PRIOR",
+     "level": "note",
+     "message": {
+      "text": "A blank line inside the \u00a713 superseded-documents table splits it; the second half opens with a numeric cell and L2 flags eleven legitimate rows. (found on 45588b6d1 by agy2; confirmed by re-run on 45588b6d1 (VIOLATION L2 6 7 8 9 10 11 12 13 14 15 16))"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "evidence/parity/LEDGER.md"
+        },
+        "region": {
+         "startLine": 93
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "An editor adds a blank line at LEDGER.md:100; spec_conformance.sh turns RED on rows that spend nothing.",
+      "source": "agy gemini-3.1-pro-high on 45588b6d1 (519483fd)",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "confirmed by re-run on 45588b6d1 (VIOLATION L2 6 7 8 9 10 11 12 13 14 15 16); fixed in 50716c749 (a row that claims no tier is not in the universe); live shape blank-line-inside-section-13-table -> CLEAN",
+      "agy_id": "b-false-positive-blank-line"
+     },
+     "baselineState": "absent"
+    },
+    {
+     "ruleId": "PRREV-AGY-PRIOR",
+     "level": "note",
+     "message": {
+      "text": "A mutant that crashes the scanner turns every case BROKE and is scored killed. (found on 45588b6d1 by agy2; confirmed by re-run on 45588b6d1 (a `def (` mutant: 22 BROKE, 21 `scanner errored`, scored killed))"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "scripts/mutate_spec_conformance.sh"
+        },
+        "region": {
+         "startLine": 68
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "A syntax-error mutant reports 22 BROKE and counts as a kill indistinguishable from semantic detection.",
+      "source": "agy gemini-3.1-pro-high on 45588b6d1 (519483fd)",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "confirmed by re-run on 45588b6d1 (a `def (` mutant: 22 BROKE, 21 `scanner errored`, scored killed); fixed in 334590957 (a run printing `scanner errored` is UNVIABLE and fails the set)",
+      "agy_id": "d-unearned-kill-crash"
+     },
+     "baselineState": "absent"
+    },
+    {
+     "ruleId": "PRREV-AGY-PRIOR",
+     "level": "note",
+     "message": {
+      "text": "The mutant loop runs with no proof that the unmutated case table is green. (found on 45588b6d1 by agy2; confirmed on the source)"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "scripts/mutate_spec_conformance.sh"
+        },
+        "region": {
+         "startLine": 42
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "A case table red for an unrelated reason kills every mutant and prints PASS.",
+      "source": "agy gemini-3.1-pro-high on 45588b6d1 (519483fd)",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "confirmed on the source; fixed in 334590957 (the unmutated table must exit 0 with 0 BROKE before any mutant runs)",
+      "agy_id": "d-no-green-baseline"
+     },
+     "baselineState": "absent"
+    },
+    {
+     "ruleId": "PRREV-AGY-PRIOR",
+     "level": "note",
+     "message": {
+      "text": "A run that opens with a header different from the ledger's is skipped whole, so a dummy header and separator shield a full-width RECORDED re-spend from L2 and L1. (found on fa6cf7706 by agy3; confirmed by re-run on fa6cf7706 (no VIOLATION))"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "scripts/lib/spec_conformance.py"
+        },
+        "region": {
+         "startLine": 232
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "An author writes `| dummy |`, `|---|`, then a re-spent RECORDED row; the run's header differs from the ledger's; no violation.",
+      "source": "agy gemini-3.1-pro-high on fa6cf7706 (611de8db)",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "confirmed by re-run on fa6cf7706 (no VIOLATION); fixed in 50716c749 (no run or header condition remains); fixture ledger_row_under_foreign_header -> L1,L2",
+      "agy_id": "escape_via_dummy_header"
+     },
+     "baselineState": "absent"
+    },
+    {
+     "ruleId": "PRREV-AGY-PRIOR",
+     "level": "note",
+     "message": {
+      "text": "A RECORDED row three or more columns off the ledger width outside the first table fails the width tolerance and is dropped; L3 reads only the first table, so nothing refuses it. (found on fa6cf7706 by agy3; confirmed by re-run of the pre-fix scanner (fa6cf7706) with `| 7 | lambda | W1 | a765c86a5 | false | RECORDED |`: no VIOLATION)"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "scripts/lib/spec_conformance.py"
+        },
+        "region": {
+         "startLine": 222
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "An author writes a short RECORDED re-spend row after a blank line; no violation.",
+      "source": "agy gemini-3.1-pro-high on fa6cf7706 (611de8db)",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "confirmed by re-run of the pre-fix scanner (fa6cf7706) with `| 7 | lambda | W1 | a765c86a5 | false | RECORDED |`: no VIOLATION; on 7ff61b831 the same probe is L2; fixed in 50716c749; fixture ledger_row_three_columns_off_outside",
+      "agy_id": "escape_via_11_column_row"
+     },
+     "baselineState": "absent"
+    },
+    {
+     "ruleId": "PRREV-AGY-PRIOR",
+     "level": "note",
+     "message": {
+      "text": "A RECORDED row outside the first table whose first cell is not a row id (`_7_`, `foo`, `#0c`, `7bis`) is not in L2's universe. (found on 7ff61b831 by agy4; confirmed by re-run on 7ff61b831 (`| foo |` copy of row 6: no VIOLATION))"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "scripts/lib/spec_conformance.py"
+        },
+        "region": {
+         "startLine": 188
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "An author writes a re-spent RECORDED row with any first cell that is not a row id; no violation.",
+      "source": "agy gemini-3.1-pro-high on 7ff61b831 (f5451570)",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "confirmed by re-run on 7ff61b831 (`| foo |` copy of row 6: no VIOLATION); fixed in ec7be112c (PMAT-934); fixture ledger_row_nonnumeric_id_outside",
+      "agy_id": "a-escape-found"
+     },
+     "baselineState": "absent"
+    },
+    {
+     "ruleId": "PRREV-AGY-PRIOR",
+     "level": "note",
+     "message": {
+      "text": "A tier word starting a non-conformance cell of the \u00a713 documents table is a false-positive L2. (found on 7ff61b831 by agy4; confirmed by measurement)"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "scripts/lib/spec_conformance.py"
+        },
+        "region": {
+         "startLine": 200
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "An editor writes `RECORDED as retained` in the documents table; the scan turns RED.",
+      "source": "agy gemini-3.1-pro-high on 7ff61b831 (f5451570)",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "confirmed by measurement; ACCEPTED as fail-closed and documented (RATIONALE, docstring, fixture ledger_reserved_word_in_side_table): RECORDED and CONFORMANT are reserved words wherever they start a cell in LEDGER.md; today's vocabulary does not collide",
+      "agy_id": "c-escape-found"
+     },
+     "baselineState": "absent"
+    },
+    {
+     "ruleId": "PRREV-AGY-PRIOR",
+     "level": "note",
+     "message": {
+      "text": "_claims_spend read the tier without the backtick strip the other cell readers apply, so a backticked RECORDED outside the table claimed no spend. (found on 7ff61b831 by agy4; confirmed by re-run on 7ff61b831 (no VIOLATION))"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "scripts/lib/spec_conformance.py"
+        },
+        "region": {
+         "startLine": 200
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "A re-spent row with its tier in backticks after a blank line; no violation.",
+      "source": "agy gemini-3.1-pro-high on 7ff61b831 (f5451570)",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "confirmed by re-run on 7ff61b831 (no VIOLATION); fixed in ec7be112c; fixture ledger_row_backticked_tier_outside",
+      "agy_id": "F2-backticked-tier"
+     },
+     "baselineState": "absent"
+    },
+    {
+     "ruleId": "PRREV-AGY-PRIOR",
+     "level": "note",
+     "message": {
+      "text": "No catalogue mutant touched the L1 re-spend logic (the rule itself was fixture-covered: `if key in seen` -> `if False` broke 5 cases). (found on 3c646f55b by agy5; confirmed on the catalogue)"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "scripts/mutate_spec_conformance.sh"
+        },
+        "region": {
+         "startLine": 25
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "A regression in the re-spend check would be caught by the case table but never attributed by the mutation set.",
+      "source": "agy gemini-3.1-pro-high on 3c646f55b (044542d6)",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "confirmed on the catalogue; fixed in d9d77704a (mutants l1-respend-check-removed, l1-tier-filter-narrowed, both killed)",
+      "agy_id": "d"
+     },
+     "baselineState": "absent"
+    },
+    {
+     "ruleId": "PRREV-AGY-PRIOR",
+     "level": "note",
+     "message": {
+      "text": "After the universe widened, `LEDGER <rows> <recorded>` drew its fields from different sets (`LEDGER 4 6`). (found on 3c646f55b by agy5; confirmed)"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "scripts/lib/spec_conformance.py"
+        },
+        "region": {
+         "startLine": 604
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "A reader of the TSV sees more recorded rows than rows.",
+      "source": "agy gemini-3.1-pro-high on 3c646f55b (044542d6)",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "confirmed; fixed in d9d77704a (LEDGER reports the universe count); the live tree still reports LEDGER 6 6",
+      "agy_id": "e"
+     },
+     "baselineState": "absent"
+    },
+    {
+     "ruleId": "PRREV-AGY-PRIOR",
+     "level": "note",
+     "message": {
+      "text": "strip_md removes `**`/`*` but not `__`/`_`, so `__RECORDED__` was not a tier for L2 or L1. (found on 3c646f55b by agy5-lanes; confirmed by re-run on 45b29e793 (no VIOLATION))"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "scripts/lib/spec_conformance.py"
+        },
+        "region": {
+         "startLine": 83
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "A re-spent row whose tier is bold in underscores; no violation.",
+      "source": "agy gemini-3.1-pro-high on 3c646f55b (1ca23c06)",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "confirmed by re-run on 45b29e793 (no VIOLATION); fixed in d9d77704a (`_norm` strips wrapping underscores); fixture ledger_row_underscored_tier; mutant wrap-emphasis-strip-removed",
+      "agy_id": "U1-underscore-tier"
+     },
+     "baselineState": "absent"
+    },
+    {
+     "ruleId": "PRREV-AGY-PRIOR",
+     "level": "note",
+     "message": {
+      "text": "The spend key was normalised only by strip_md and a backtick strip: `__lambda__`, `<code>aaaa</code>`, a zero-width space and inner spaces made new keys (pre-existing at base). (found on 3c646f55b by agy5-lanes; confirmed by re-run on 45b29e793 (`__lambda__`: no VIOLATION))"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "scripts/lib/spec_conformance.py"
+        },
+        "region": {
+         "startLine": 536
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "A re-spent row whose host or commit is emphasised or wrapped in code tags is a new cell.",
+      "source": "agy gemini-3.1-pro-high on 3c646f55b (1ca23c06)",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "confirmed by re-run on 45b29e793 (`__lambda__`: no VIOLATION); fixed in d9d77704a (one `_norm` for every key cell, casefolded); fixtures ledger_respend_emphasised_key, ledger_respend_zero_width_key; mutants key-normaliser-bypassed, key-casefold-removed; the threat model bounds the class",
+      "agy_id": "U2-key-renderings"
+     },
+     "baselineState": "absent"
+    },
+    {
+     "ruleId": "PRREV-AGY-PRIOR",
+     "level": "note",
+     "message": {
+      "text": "L1 filtered on startswith(RECORDED) while the universe admits CONFORMANT, so two CONFORMANT rows sharing a key were never compared. (found on 3c646f55b by agy5-delegate; confirmed by re-run on 45b29e793 (no VIOLATION))"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "scripts/lib/spec_conformance.py"
+        },
+        "region": {
+         "startLine": 559
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "Two CONFORMANT runs at the same key; no L1.",
+      "source": "agy gemini-3.1-pro-high on 3c646f55b (044542d6)",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "confirmed by re-run on 45b29e793 (no VIOLATION); fixed in d9d77704a (L1 keys on SPEND_TIERS); fixture ledger_respend_conformant; mutant l1-tier-filter-narrowed",
+      "agy_id": "U3-conformant-not-deduped"
+     },
+     "baselineState": "absent"
+    }
+   ]
+  }
+ ]
+}

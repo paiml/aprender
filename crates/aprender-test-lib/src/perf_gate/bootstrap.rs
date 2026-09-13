@@ -16,6 +16,7 @@
 
 use serde::{Deserialize, Serialize};
 
+use super::join::{Ratio, RatioMethod};
 use super::metrics::{percentile, RequestSample};
 use super::protocol::{BOOTSTRAP_RESAMPLES, BOOTSTRAP_SEED};
 
@@ -53,6 +54,7 @@ impl SplitMix64 {
 
 /// A bootstrap percentile interval, with everything needed to re-derive it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct BootstrapCi {
     /// The statistic on the observed sample.
     pub point: f64,
@@ -160,6 +162,151 @@ pub fn bootstrap_ci_with(
 #[must_use]
 pub fn bootstrap_agg_tok_s_ci(samples: &[RequestSample], confidence: f64) -> Option<BootstrapCi> {
     bootstrap_ci(samples, confidence, super::metrics::agg_tok_s)
+}
+
+/// PP-LLAMA-001 v3.0 §4.3 — the **request-unit** estimator: a paired percentile
+/// bootstrap of the ratio of a per-request statistic across the two lanes.
+///
+/// # What "paired" means here, said explicitly
+///
+/// The two lanes issue their own requests; there is no per-request pairing key,
+/// and there cannot be one — request 7 of the subject and request 7 of the
+/// comparator are not the same event. "Paired" is therefore *pairing of the
+/// resample index*: draw `k` runs one resample of the subject lane and one of
+/// the comparator lane from **one** `SplitMix64(2026)` stream, and the ratio of
+/// the two statistics is draw `k` of the ratio distribution. The lanes are
+/// independent within a draw; what is shared is the seed and the draw index, so
+/// the whole distribution is reproducible from the retained samples of both
+/// lanes and nothing else (§4.4.4's requirement, applied to two lanes).
+///
+/// # The verdict statistic
+///
+/// The **5th percentile** of the ratio draws — a one-sided 95% lower bound.
+/// Not the 2.5th: P-5 asks "is the lower bound at or above `1 − δ`", which is a
+/// one-sided question, and taking `alpha/2` there would report a looser bound
+/// as if it were the same guarantee.
+///
+/// Returns `None` when either lane has fewer than two retained requests, when
+/// `confidence` is not in `(0, 1)`, or when the comparator's statistic is not
+/// positive — a ratio with a zero denominator is not a large ratio.
+#[must_use]
+pub fn paired_ratio_lcb(
+    subject: &[RequestSample],
+    comparator: &[RequestSample],
+    statistic: Statistic,
+    confidence: f64,
+) -> Option<Ratio> {
+    let draws = paired_ratio_draws(
+        subject,
+        comparator,
+        statistic,
+        BOOTSTRAP_RESAMPLES,
+        BOOTSTRAP_SEED,
+        confidence,
+    )?;
+    let denominator = statistic(comparator);
+    Some(Ratio {
+        point: statistic(subject) / denominator,
+        lcb95: percentile(&draws, 1.0 - confidence),
+        method: RatioMethod::PairedPercentileBootstrap,
+        n: subject.len() + comparator.len(),
+    })
+}
+
+/// The sorted ratio draws behind [`paired_ratio_lcb`].
+///
+/// Public so a test can assert *which* percentile the bound is, rather than
+/// re-implementing the draw loop and proving only that two copies of the same
+/// code agree.
+///
+/// Returns `None` under the same conditions as [`paired_ratio_lcb`].
+#[must_use]
+pub fn paired_ratio_draws(
+    subject: &[RequestSample],
+    comparator: &[RequestSample],
+    statistic: Statistic,
+    resamples: usize,
+    seed: u64,
+    confidence: f64,
+) -> Option<Vec<f64>> {
+    let (n_s, n_c) = (subject.len(), comparator.len());
+    if n_s < 2 || n_c < 2 || resamples == 0 || !(0.0..1.0).contains(&confidence) {
+        return None;
+    }
+    if statistic(comparator) <= 0.0 {
+        return None;
+    }
+    let mut rng = SplitMix64::new(seed);
+    let mut draws = Vec::with_capacity(resamples);
+    let mut lane_s: Vec<RequestSample> = Vec::with_capacity(n_s);
+    let mut lane_c: Vec<RequestSample> = Vec::with_capacity(n_c);
+    for _ in 0..resamples {
+        lane_s.clear();
+        for _ in 0..n_s {
+            lane_s.push(subject[rng.index_below(n_s)].clone());
+        }
+        lane_c.clear();
+        for _ in 0..n_c {
+            lane_c.push(comparator[rng.index_below(n_c)].clone());
+        }
+        let denominator = statistic(&lane_c);
+        if denominator > 0.0 {
+            draws.push(statistic(&lane_s) / denominator);
+        }
+    }
+    if draws.is_empty() {
+        return None;
+    }
+    draws.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    Some(draws)
+}
+
+/// §3 `dec` — the band's per-request decode rate: the **median** over retained
+/// requests of `(completion_tokens − 1) / (e2e − ttft)`.
+///
+/// `0.0` for a set with no streamed request, where the quantity is undefined;
+/// [`paired_ratio_lcb`] then refuses the ratio rather than dividing by it.
+#[must_use]
+pub fn median_decode_tok_s(samples: &[RequestSample]) -> f64 {
+    let mut rates: Vec<f64> = samples
+        .iter()
+        .filter(|s| s.counts_toward_aggregate())
+        .filter_map(RequestSample::decode_tok_s)
+        .collect();
+    rates.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    percentile(&rates, 0.50).unwrap_or(0.0)
+}
+
+/// §3 `ttft` — p50 time-to-first-token, in milliseconds.
+#[must_use]
+pub fn ttft_p50_ms(samples: &[RequestSample]) -> f64 {
+    ttft_percentile_ms(samples, 0.50)
+}
+
+/// §3 `itl_p95` — the 95th percentile of the **pooled** inter-token intervals.
+///
+/// Pooled across requests, not a percentile of per-request percentiles: the
+/// tail this metric exists to expose is a few very late tokens, and averaging
+/// each request's own p95 first hides exactly those.
+#[must_use]
+pub fn itl_p95_ms(samples: &[RequestSample]) -> f64 {
+    let mut gaps: Vec<f64> = samples
+        .iter()
+        .filter(|s| s.counts_toward_aggregate())
+        .flat_map(RequestSample::itl_gaps_ms)
+        .collect();
+    gaps.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    percentile(&gaps, 0.95).unwrap_or(0.0)
+}
+
+fn ttft_percentile_ms(samples: &[RequestSample], p: f64) -> f64 {
+    let mut v: Vec<f64> = samples
+        .iter()
+        .filter(|s| s.counts_toward_aggregate())
+        .filter_map(RequestSample::ttft_ms)
+        .collect();
+    v.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    percentile(&v, p).unwrap_or(0.0)
 }
 
 #[cfg(test)]
@@ -323,5 +470,183 @@ mod tests {
         let s = deck(10);
         assert!(bootstrap_ci(&s, 1.0, agg_tok_s).is_none());
         assert!(bootstrap_ci(&s, -0.1, agg_tok_s).is_none());
+    }
+
+    /// A lane whose per-request rate is `rate` tok/s, `n` requests.
+    fn lane(n: usize, rate: f64, jitter: f64) -> Vec<RequestSample> {
+        (0..n)
+            .map(|i| {
+                let start = i as f64 * 0.25;
+                // Distinct per-request rates: a median over a handful of
+                // repeated values is a step function, and its bootstrap
+                // percentile would be identical under every seed — which would
+                // make the seed test pass for the wrong reason.
+                let r = rate + jitter * (((i * 7 + 3) % 23) as f64 / 23.0 - 0.5);
+                // 128 tokens; 127 gaps at 1/r seconds each.
+                let step = 1.0 / r;
+                let times: Vec<f64> = (0..128)
+                    .map(|k| start + 0.05 + f64::from(k) * step)
+                    .collect();
+                let end = times[127] + 0.01;
+                RequestSample {
+                    index: i,
+                    worker: i % 4,
+                    start_s: start,
+                    end_s: end,
+                    token_times_s: times,
+                    generated_tokens: 128,
+                    prompt_tokens: 512,
+                    outcome: Outcome::Completed,
+                    in_flight_at_start: 1,
+                    drained: false,
+                }
+            })
+            .collect()
+    }
+
+    /// §4.4.4 applied to two lanes: the same two sample sets and seed 2026 give
+    /// the identical bound, bit for bit, twice.
+    #[test]
+    fn paired_ratio_lcb_is_reproducible_bit_for_bit_at_seed_2026() {
+        let subject = lane(30, 100.0, 3.0);
+        let comparator = lane(30, 90.0, 3.0);
+        let a = paired_ratio_lcb(&subject, &comparator, median_decode_tok_s, 0.95)
+            .expect("both lanes have n >= 2");
+        let b = paired_ratio_lcb(&subject, &comparator, median_decode_tok_s, 0.95)
+            .expect("both lanes have n >= 2");
+        assert_eq!(a, b, "the bound must be reproducible from the samples");
+        assert_eq!(BOOTSTRAP_SEED, 2026);
+        assert_eq!(BOOTSTRAP_RESAMPLES, 10_000);
+        assert_eq!(a.method, RatioMethod::PairedPercentileBootstrap);
+        assert_eq!(a.n, 60, "both lanes' retained requests");
+
+        // And the seed is load-bearing: a different stream moves the bound.
+        let other = paired_ratio_draws(
+            &subject,
+            &comparator,
+            median_decode_tok_s,
+            10_000,
+            2027,
+            0.95,
+        )
+        .expect("draws");
+        let mine = paired_ratio_draws(
+            &subject,
+            &comparator,
+            median_decode_tok_s,
+            10_000,
+            2026,
+            0.95,
+        )
+        .expect("draws");
+        assert_ne!(
+            percentile(&other, 0.05),
+            percentile(&mine, 0.05),
+            "seed 2026 must not be decoration"
+        );
+    }
+
+    /// P-5 is a ONE-SIDED question. Taking `alpha/2` would report a looser
+    /// bound under the same name.
+    #[test]
+    fn lcb95_is_the_fifth_percentile_not_the_2_5th() {
+        let subject = lane(30, 100.0, 8.0);
+        let comparator = lane(30, 90.0, 8.0);
+        let draws = paired_ratio_draws(
+            &subject,
+            &comparator,
+            median_decode_tok_s,
+            BOOTSTRAP_RESAMPLES,
+            BOOTSTRAP_SEED,
+            0.95,
+        )
+        .expect("draws");
+        let bound = paired_ratio_lcb(&subject, &comparator, median_decode_tok_s, 0.95)
+            .expect("bound")
+            .lcb95
+            .expect("lcb95");
+        let p05 = percentile(&draws, 0.05).expect("p05");
+        let p025 = percentile(&draws, 0.025).expect("p025");
+        assert_eq!(bound, p05, "the bound is the 5th percentile");
+        assert_ne!(
+            p05, p025,
+            "the two percentiles must differ, or this test proves nothing"
+        );
+        assert!(p025 < p05, "the 2.5th percentile is the looser bound");
+    }
+
+    /// A lane divided by itself is 1.0 exactly, and its bound brackets it from
+    /// below. If the point estimate drifted off 1.0 the statistic would be
+    /// resample-dependent, which it must not be.
+    #[test]
+    fn identical_lanes_give_point_one() {
+        let l = lane(30, 100.0, 4.0);
+        for statistic in [
+            median_decode_tok_s as Statistic,
+            ttft_p50_ms as Statistic,
+            itl_p95_ms as Statistic,
+        ] {
+            let r = paired_ratio_lcb(&l, &l, statistic, 0.95).expect("n >= 2");
+            assert_eq!(r.point, 1.0, "a lane against itself is parity");
+            let lcb = r.lcb95.expect("bounded");
+            assert!(lcb <= r.point, "{r:?}");
+            assert!(lcb > 0.0, "{r:?}");
+        }
+    }
+
+    /// The point estimate tracks the lanes: a faster subject raises it, and the
+    /// direction is subject-over-comparator, never the reverse.
+    #[test]
+    fn the_ratio_is_subject_over_comparator() {
+        let fast = lane(30, 120.0, 2.0);
+        let slow = lane(30, 60.0, 2.0);
+        let up = paired_ratio_lcb(&fast, &slow, median_decode_tok_s, 0.95).expect("n >= 2");
+        let down = paired_ratio_lcb(&slow, &fast, median_decode_tok_s, 0.95).expect("n >= 2");
+        assert!(up.point > 1.5, "{up:?}");
+        assert!(down.point < 0.7, "{down:?}");
+        assert!(
+            (up.point * down.point - 1.0).abs() < 1e-9,
+            "{up:?} {down:?}"
+        );
+    }
+
+    /// A lane with one retained request supports no bootstrap, and a lane whose
+    /// statistic is zero is not a denominator.
+    #[test]
+    fn a_degenerate_lane_has_no_paired_bound() {
+        let ok = lane(30, 100.0, 2.0);
+        assert!(paired_ratio_lcb(&ok[..1], &ok, median_decode_tok_s, 0.95).is_none());
+        assert!(paired_ratio_lcb(&ok, &ok[..1], median_decode_tok_s, 0.95).is_none());
+        assert!(paired_ratio_lcb(&ok, &ok, median_decode_tok_s, 1.0).is_none());
+
+        let unstreamed: Vec<RequestSample> = ok
+            .iter()
+            .map(|s| RequestSample {
+                token_times_s: Vec::new(),
+                ..s.clone()
+            })
+            .collect();
+        assert!(
+            paired_ratio_lcb(&ok, &unstreamed, median_decode_tok_s, 0.95).is_none(),
+            "a zero denominator is not a large ratio"
+        );
+    }
+
+    /// The three request-unit statistics are the §3 definitions, computed over
+    /// completed requests only.
+    #[test]
+    fn the_request_unit_statistics_are_the_section_3_definitions() {
+        let l = lane(4, 100.0, 0.0);
+        // 128 tokens at 100 tok/s: 127 gaps of 10 ms, decode = 127/1.27 = 100.
+        assert!(
+            (median_decode_tok_s(&l) - 100.0).abs() < 1e-6,
+            "{}",
+            median_decode_tok_s(&l)
+        );
+        assert!((ttft_p50_ms(&l) - 50.0).abs() < 1e-6, "{}", ttft_p50_ms(&l));
+        assert!((itl_p95_ms(&l) - 10.0).abs() < 1e-6, "{}", itl_p95_ms(&l));
+        assert_eq!(median_decode_tok_s(&[]), 0.0);
+        assert_eq!(ttft_p50_ms(&[]), 0.0);
+        assert_eq!(itl_p95_ms(&[]), 0.0);
     }
 }

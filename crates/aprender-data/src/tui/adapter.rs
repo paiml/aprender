@@ -248,26 +248,22 @@ impl DatasetAdapter {
         }
         let query_lower = query.to_lowercase();
 
-        for row in start_row..self.row_count() {
-            for col in 0..self.column_count() {
-                if let Ok(Some(value)) = self.get_cell(row, col) {
-                    if value.to_lowercase().contains(&query_lower) {
-                        return Some(row);
-                    }
+        (start_row..self.row_count())
+            .find(|&row| self.row_contains(row, &query_lower))
+            // Wrap around to beginning
+            .or_else(|| (0..start_row).find(|&row| self.row_contains(row, &query_lower)))
+    }
+
+    /// Whether any cell in `row` contains `query_lower`, which must already be lower-cased.
+    fn row_contains(&self, row: usize, query_lower: &str) -> bool {
+        for col in 0..self.column_count() {
+            if let Ok(Some(value)) = self.get_cell(row, col) {
+                if value.to_lowercase().contains(query_lower) {
+                    return true;
                 }
             }
         }
-        // Wrap around to beginning
-        for row in 0..start_row {
-            for col in 0..self.column_count() {
-                if let Ok(Some(value)) = self.get_cell(row, col) {
-                    if value.to_lowercase().contains(&query_lower) {
-                        return Some(row);
-                    }
-                }
-            }
-        }
-        None
+        false
     }
 }
 
@@ -463,7 +459,7 @@ impl StreamingAdapter {
             schema,
             total_rows,
             column_count,
-            loaded_batches: batches, // TODO: Replace with lazy loading
+            loaded_batches: batches, // Deferred (PMAT-754): Replace with lazy loading
             batch_offsets,
         })
     }

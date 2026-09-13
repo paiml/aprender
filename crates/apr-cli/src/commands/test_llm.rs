@@ -446,6 +446,20 @@ async fn dispatch_band(command: &LlmSubcommand) -> Result<()> {
         counts_prompt_echo,
         commit,
         comparator_owner,
+        comparator_url,
+        comparator_model,
+        comparator_commit,
+        comparator_cmake,
+        comparator_sha256,
+        comparator_pin_expiry,
+        comparator_n_batch,
+        comparator_n_ctx_slot,
+        comparator_fa,
+        comparator_kv_type,
+        witness_json,
+        subject_binary,
+        key_id,
+        keyring,
         ..
     } = command;
     // Unreachable: clap's `requires = "receipt"` enforces it. Stated rather
@@ -475,6 +489,20 @@ async fn dispatch_band(command: &LlmSubcommand) -> Result<()> {
         profile,
         prompts: prompts.as_deref(),
         comparator_owner,
+        comparator_url: comparator_url.as_deref(),
+        comparator_model: comparator_model.as_deref(),
+        comparator_commit: comparator_commit.as_deref(),
+        comparator_cmake: comparator_cmake.as_deref(),
+        comparator_sha256: comparator_sha256.as_deref(),
+        comparator_pin_expiry: comparator_pin_expiry.as_deref(),
+        comparator_n_batch: *comparator_n_batch,
+        comparator_n_ctx_slot: *comparator_n_ctx_slot,
+        comparator_fa: comparator_fa.as_deref(),
+        comparator_kv_type: comparator_kv_type.as_deref(),
+        key_id: key_id.as_deref(),
+        keyring: keyring.as_deref(),
+        witness_json: witness_json.as_deref(),
+        subject_binary: subject_binary.as_deref(),
     })
     .await
 }

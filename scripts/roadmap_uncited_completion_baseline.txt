@@ -1,3 +1,4 @@
+# tool_version=none (measured by this script's own YAML parse of roadmap.yaml; not a versioned analyser)
 # Roadmap entries claiming `status: completed` that cite nothing, as of
 # the day check_roadmap_completion_is_cited.sh was written. RECORDED,
 # NOT BLESSED — PERF-004 is in this file and is known to be FALSE: its
@@ -948,10 +949,8 @@ docs/roadmaps/roadmap.yaml	Implement extractive summarization (TextRank, TF-IDF)
 docs/roadmaps/roadmap.yaml	Implement pattern-based entity extraction (emails, URLs, keywords)
 docs/roadmaps/roadmap.yaml	LAYOUT-001: Fix Q4K kernel layout mismatch - use row-major kernel for APR/GGUF
 docs/roadmaps/roadmap.yaml	PERF-000
-docs/roadmaps/roadmap.yaml	PERF-001
 docs/roadmaps/roadmap.yaml	PERF-002
 docs/roadmaps/roadmap.yaml	PERF-003
-docs/roadmaps/roadmap.yaml	PERF-004
 docs/roadmaps/roadmap.yaml	PERF-005
 docs/roadmaps/roadmap.yaml	PERF-009
 docs/roadmaps/roadmap.yaml	PERF-014

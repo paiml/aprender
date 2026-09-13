@@ -54,11 +54,22 @@ DEST=${1:?usage: make-fixture-repo.sh <destination-dir>}
 HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 
 # This expands into rm -rf, so refuse anything that is not a plausible destination.
+# The '..' check also covers every mkdir this script issues below: they all
+# derive from this same validated $DEST, so a caller-controlled '../' segment
+# is refused once, here, rather than trusted at each of the nine call sites.
 if [ -z "$DEST" ] || [ "$DEST" = "/" ]; then
   echo "refusing to build a fixture repo at $DEST" >&2
   exit 1
 fi
-rm -rf -- "$DEST"
+case "$DEST" in
+  *..*)
+    echo "refusing a destination containing '..': $DEST" >&2
+    exit 1
+    ;;
+esac
+if [ -n "$DEST" ] && [ "$DEST" != "/" ]; then
+  rm -rf -- "$DEST"
+fi
 mkdir -p -- "$DEST"
 
 # Hermetic: fixed identity and timestamps make the SHAs reproducible; hooksPath and

@@ -363,6 +363,9 @@ fn test_chat_completion_chunk_serialize_more_cov() {
             },
             finish_reason: None,
         }],
+    stream_mode: None,
+    usage: None,
+    timings: None,
     };
     let json = serde_json::to_string(&chunk).expect("serialize");
     assert!(json.contains("chunk-1"));

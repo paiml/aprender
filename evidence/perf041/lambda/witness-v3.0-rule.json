@@ -1,0 +1,313 @@
+{
+  "bands": [
+    {
+      "c": 1,
+      "declared_min": 64,
+      "divergence_at": 100,
+      "m_formed": 1,
+      "reason": null,
+      "result": "PASS",
+      "slots": [
+        {
+          "agree_to": 100,
+          "completion_tokens": 128,
+          "finish_reason": "length",
+          "i": 0,
+          "refused": null,
+          "token_count_source": "usage"
+        }
+      ]
+    },
+    {
+      "c": 4,
+      "declared_min": 64,
+      "divergence_at": 3,
+      "m_formed": 4,
+      "reason": null,
+      "result": "FAIL",
+      "slots": [
+        {
+          "agree_to": 3,
+          "completion_tokens": 128,
+          "finish_reason": "length",
+          "i": 0,
+          "refused": null,
+          "token_count_source": "usage"
+        },
+        {
+          "agree_to": 3,
+          "completion_tokens": 128,
+          "finish_reason": "length",
+          "i": 1,
+          "refused": null,
+          "token_count_source": "usage"
+        },
+        {
+          "agree_to": 3,
+          "completion_tokens": 128,
+          "finish_reason": "length",
+          "i": 2,
+          "refused": null,
+          "token_count_source": "usage"
+        },
+        {
+          "agree_to": 3,
+          "completion_tokens": 128,
+          "finish_reason": "length",
+          "i": 3,
+          "refused": null,
+          "token_count_source": "usage"
+        }
+      ]
+    },
+    {
+      "c": 8,
+      "declared_min": 64,
+      "divergence_at": 3,
+      "m_formed": 8,
+      "reason": null,
+      "result": "FAIL",
+      "slots": [
+        {
+          "agree_to": 3,
+          "completion_tokens": 128,
+          "finish_reason": "length",
+          "i": 0,
+          "refused": null,
+          "token_count_source": "usage"
+        },
+        {
+          "agree_to": 3,
+          "completion_tokens": 128,
+          "finish_reason": "length",
+          "i": 1,
+          "refused": null,
+          "token_count_source": "usage"
+        },
+        {
+          "agree_to": 3,
+          "completion_tokens": 128,
+          "finish_reason": "length",
+          "i": 2,
+          "refused": null,
+          "token_count_source": "usage"
+        },
+        {
+          "agree_to": 3,
+          "completion_tokens": 128,
+          "finish_reason": "length",
+          "i": 3,
+          "refused": null,
+          "token_count_source": "usage"
+        },
+        {
+          "agree_to": 3,
+          "completion_tokens": 128,
+          "finish_reason": "length",
+          "i": 4,
+          "refused": null,
+          "token_count_source": "usage"
+        },
+        {
+          "agree_to": 3,
+          "completion_tokens": 128,
+          "finish_reason": "length",
+          "i": 5,
+          "refused": null,
+          "token_count_source": "usage"
+        },
+        {
+          "agree_to": 3,
+          "completion_tokens": 128,
+          "finish_reason": "length",
+          "i": 6,
+          "refused": null,
+          "token_count_source": "usage"
+        },
+        {
+          "agree_to": 3,
+          "completion_tokens": 128,
+          "finish_reason": "length",
+          "i": 7,
+          "refused": null,
+          "token_count_source": "usage"
+        }
+      ]
+    },
+    {
+      "c": 16,
+      "declared_min": 64,
+      "divergence_at": 3,
+      "m_formed": 16,
+      "reason": null,
+      "result": "FAIL",
+      "slots": [
+        {
+          "agree_to": 3,
+          "completion_tokens": 128,
+          "finish_reason": "length",
+          "i": 0,
+          "refused": null,
+          "token_count_source": "usage"
+        },
+        {
+          "agree_to": 3,
+          "completion_tokens": 128,
+          "finish_reason": "length",
+          "i": 1,
+          "refused": null,
+          "token_count_source": "usage"
+        },
+        {
+          "agree_to": 3,
+          "completion_tokens": 128,
+          "finish_reason": "length",
+          "i": 2,
+          "refused": null,
+          "token_count_source": "usage"
+        },
+        {
+          "agree_to": 3,
+          "completion_tokens": 128,
+          "finish_reason": "length",
+          "i": 3,
+          "refused": null,
+          "token_count_source": "usage"
+        },
+        {
+          "agree_to": 3,
+          "completion_tokens": 128,
+          "finish_reason": "length",
+          "i": 4,
+          "refused": null,
+          "token_count_source": "usage"
+        },
+        {
+          "agree_to": 3,
+          "completion_tokens": 128,
+          "finish_reason": "length",
+          "i": 5,
+          "refused": null,
+          "token_count_source": "usage"
+        },
+        {
+          "agree_to": 3,
+          "completion_tokens": 128,
+          "finish_reason": "length",
+          "i": 6,
+          "refused": null,
+          "token_count_source": "usage"
+        },
+        {
+          "agree_to": 3,
+          "completion_tokens": 128,
+          "finish_reason": "length",
+          "i": 7,
+          "refused": null,
+          "token_count_source": "usage"
+        },
+        {
+          "agree_to": 3,
+          "completion_tokens": 128,
+          "finish_reason": "length",
+          "i": 8,
+          "refused": null,
+          "token_count_source": "usage"
+        },
+        {
+          "agree_to": 3,
+          "completion_tokens": 128,
+          "finish_reason": "length",
+          "i": 9,
+          "refused": null,
+          "token_count_source": "usage"
+        },
+        {
+          "agree_to": 3,
+          "completion_tokens": 128,
+          "finish_reason": "length",
+          "i": 10,
+          "refused": null,
+          "token_count_source": "usage"
+        },
+        {
+          "agree_to": 3,
+          "completion_tokens": 128,
+          "finish_reason": "length",
+          "i": 11,
+          "refused": null,
+          "token_count_source": "usage"
+        },
+        {
+          "agree_to": 3,
+          "completion_tokens": 128,
+          "finish_reason": "length",
+          "i": 12,
+          "refused": null,
+          "token_count_source": "usage"
+        },
+        {
+          "agree_to": 3,
+          "completion_tokens": 128,
+          "finish_reason": "length",
+          "i": 13,
+          "refused": null,
+          "token_count_source": "usage"
+        },
+        {
+          "agree_to": 3,
+          "completion_tokens": 128,
+          "finish_reason": "length",
+          "i": 14,
+          "refused": null,
+          "token_count_source": "usage"
+        },
+        {
+          "agree_to": 3,
+          "completion_tokens": 128,
+          "finish_reason": "length",
+          "i": 15,
+          "refused": null,
+          "token_count_source": "usage"
+        }
+      ]
+    }
+  ],
+  "binary_sha256": "4f779da59dc67aa13f8e42fc6add0d071cb960c49d16a505a718399fdd7c54d6",
+  "commit": "a765c86a5f5437c01bb327848787bbcda15249c7",
+  "declared_min": 64,
+  "env": {
+    "APR_DECODE_GEMM": null,
+    "BATCHED_PREFILL": null,
+    "CUBLAS_GEMM_THRESHOLD": null,
+    "CUDA_BATCH_WINDOW_MS": "200",
+    "FP8_DECODE": null,
+    "FP8_PREFILL": null,
+    "FUSED_GATE_UP": null,
+    "ITERATION_SCHEDULER": null,
+    "MULTI_PROMPT_PREFILL": null
+  },
+  "exit": 1,
+  "host": "lambda",
+  "model": {
+    "dir": "APR_MODELS (default $HOME/models)",
+    "path": "qwen2.5-coder-1.5b-instruct-q4_k_m.gguf",
+    "sha256": "cc324af070c2ecbfd324a30884d2f951a7ff756aba85cb811a6ec436933bb046"
+  },
+  "notes": [],
+  "probe": "perf041",
+  "prompt_sha256": "3e31578371f85f23c8fa13b7b287e65bad7e0c09584bc79d3064feab3d1ab7e5",
+  "reference": {
+    "self_divergence_at": 100,
+    "stable": true,
+    "token_count_source": "usage",
+    "tokens": 128
+  },
+  "sampler": {
+    "ignore_eos": true,
+    "n_predict": 128,
+    "seed": 0,
+    "temperature": 0.0
+  },
+  "witness_version": 1
+}

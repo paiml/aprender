@@ -255,6 +255,12 @@ pub fn build_architecture_explanation(
              O(1) state per token — constant memory in sequence length.",
             size.num_heads
         ),
+        AttentionType::HybridGatedDeltaNet => format!(
+            "Hybrid attention (Gated DeltaNet): linear-attention layers with a constant-size \
+             recurrent state, interleaved with full softmax-attention layers ({} heads x {} dim) \
+             that keep a KV cache. apr refuses this family on CPU and GPU.",
+            size.num_heads, size.head_dim
+        ),
     };
 
     let ffn_explanation = match constraints.mlp_type {

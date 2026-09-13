@@ -1,3 +1,13 @@
+metadata:
+  kind: kaizen
+  version: "1.0.0"
+  created: "2026-03-04"
+  author: "PAIML Engineering"
+  description: "Pre-allocated CPU Staging Buffer for Backward Mean-Pool Gradient"
+  references:
+    - "KAIZEN-061"
+    - "parent contract: C-GPUTRAINIT-002"
+
 contract: C-BWDSTG-001
 title: Pre-allocated CPU Staging Buffer for Backward Mean-Pool Gradient
 kaizen: KAIZEN-061

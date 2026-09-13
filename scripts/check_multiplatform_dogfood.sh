@@ -35,7 +35,27 @@ cd "$(dirname "$0")/.." || exit 2
 #   mini        arm64 macOS   + Metal                Apple silicon, no /proc, APFS
 HOSTS="lambda intel gx10 mini"
 
-VERSION="$(awk -F'"' '/^version *=/{print $2; exit}' Cargo.toml)"
+# The version comes from cargo, not from a grep of Cargo.toml: under
+# `version.workspace = true` the grep is empty and every receipt reads as STALE
+# (review quorum on #2859, lane 3, measured). The grep stays as the fallback
+# for a tree whose metadata cannot be resolved; an empty result is a refusal.
+VERSION="$(cargo metadata --no-deps --offline --format-version 1 --manifest-path Cargo.toml 2>/dev/null \
+  | python3 -c '
+import json, os, sys
+try:
+    m = json.load(sys.stdin)
+except ValueError:
+    sys.exit(1)
+root = os.path.realpath("Cargo.toml")
+for p in m.get("packages", []):
+    if os.path.realpath(p["manifest_path"]) == root:
+        print(p["version"]); sys.exit(0)
+sys.exit(1)' 2>/dev/null)" || VERSION=""
+[ -n "$VERSION" ] || VERSION="$(awk -F'"' '/^version *=/{print $2; exit}' Cargo.toml)"
+if [ -z "$VERSION" ]; then
+    printf 'FAIL  the version being cut cannot be resolved (cargo metadata names no root package version; Cargo.toml has no literal)\n'
+    exit 1
+fi
 DIR="evidence/dogfood/$VERSION"
 # ONE validator, shared with scripts/check_bench_receipt.sh. Two readers of one
 # schema is the divergence class #2640 exists to close.
@@ -103,6 +123,18 @@ else
         "$(printf '%s\n' $main_hosts | grep -c .)"
 fi
 
+# PRE-PUBLISH PHASE (scripts/dogfood.sh --phase pre-publish, PMAT-745). Every
+# receipt this gate reads comes from `cargo install aprender --version X` on a
+# host, so before X is on crates.io there is nothing any host could have
+# installed: the gate is DEFERRED with the obligation named, after the matrix
+# floor above has been checked. In every other phase a missing receipt is the
+# FAIL it always was. dogfood.sh records a DEFERRED line as DEFER only in the
+# pre-publish phase and as FAIL anywhere else.
+if [ "${DOGFOOD_PHASE:-full}" = pre-publish ]; then
+    printf 'DEFERRED: %s is not on crates.io yet, so no host can have run `cargo install aprender --version %s`; owed by the post-publish dogfood as %s/{%s}.json\n' \
+        "$VERSION" "$VERSION" "$DIR" "$(printf '%s' "$HOSTS" | tr ' ' ',')"
+    exit 0
+fi
 for h in $HOSTS; do
     f="$DIR/$h.json"
     if [ ! -f "$f" ]; then

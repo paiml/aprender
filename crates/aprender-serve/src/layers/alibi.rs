@@ -128,7 +128,7 @@ impl ALiBi {
 // ============================================================================
 // PMAT-858: ALiBi slope exponent falsifier
 //
-// Bug: compute_slopes used exponent = -h * (8/n), giving slope[h] = 2^(-8h/n).
+// Defect (since fixed): compute_slopes used exponent = -h * (8/n), giving slope[h] = 2^(-8h/n).
 // For h=0 that is 2^0 = 1.0 — every head carried an extra factor of m0 = 2^(8/n)
 // vs the reference. The correct ALiBi slope (Press et al. 2021 + llama.cpp ggml
 // soft_max_ext: m0 = 2^(-8/n), slope = m0^(h+1)) is slope[h] = 2^(-8(h+1)/n).

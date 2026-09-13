@@ -91,8 +91,18 @@ fn start_apr_server_gpu(
 ///   - Pool allocator: single cuMemAlloc for all tensors (~17 GB)
 ///   - Dedicated thread: CudaExecutor is !Send, owns GPU context
 ///   - Channel-based: HTTP handler → mpsc → inference thread → oneshot → response
+///
+/// PP-LLAMA-001 §9 #8: gated on `cuda`, NOT `cuda-batch`. The implication ran
+/// the wrong way — `cuda-batch = ["cuda"]` means enabling `cuda-batch` enables
+/// `cuda`, not the reverse, so every plain `--features cuda` build compiled a
+/// stub in place of this function ("Q4K batch scheduler not available") and
+/// `handlers.rs` caught that `Err` and printed "path declined, trying generic
+/// GPU path". A `--features cuda` build therefore served the 30B Q4K MoE
+/// through the per-tensor `cuMemAlloc` path that hangs on it, quietly. The
+/// stub is deleted; the realizar scheduler this calls is itself
+/// `#[cfg(feature = "cuda")]`, so the extra feature bought nothing.
 #[cfg_attr(coverage_nightly, coverage(off))]
-#[cfg(all(feature = "inference", feature = "cuda-batch"))]
+#[cfg(all(feature = "inference", feature = "cuda"))]
 fn start_apr_q4k_server_gpu(
     model_path: &Path,
     config: &ServerConfig,
@@ -141,18 +151,6 @@ fn start_apr_q4k_server_gpu(
 
     let app = create_router_with_config(state, config.router_config());
     run_server_async(app, &config.bind_addr(), "APR GPU (Q4K CUDA — ALB-095)")
-}
-
-/// Stub: Q4K batch scheduler requires cuda-batch feature (realizar >=0.9).
-#[cfg_attr(coverage_nightly, coverage(off))]
-#[cfg(all(feature = "inference", feature = "cuda", not(feature = "cuda-batch")))]
-fn start_apr_q4k_server_gpu(
-    _model_path: &Path,
-    _config: &ServerConfig,
-) -> Result<()> {
-    Err(CliError::InferenceFailed(
-        "Q4K batch scheduler not available (build without cuda-batch feature)".to_string(),
-    ))
 }
 
 /// GH-88 / F-KERNEL-DISPATCH-001: SafeTensors GPU serve using fused Q4K kernels.
@@ -298,7 +296,9 @@ fn start_safetensors_server_cpu_quantized(
     println!("{}", "Q4K CPU inference ready (GH-99)".green());
 
     // aprender#1789 Option B: APR-format CPU path has no GGUF mmap.
-    run_cpu_server(quantized, vocab, None, config)
+    // This path (APR/SafeTensors CPU) does not resolve a GGUF layer count, so
+    // it reports no offload block rather than a fabricated one.
+    run_cpu_server(quantized, vocab, None, config, None)
 }
 
 /// Build the axum Router for GPU inference endpoints.

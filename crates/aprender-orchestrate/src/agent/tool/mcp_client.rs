@@ -257,13 +257,19 @@ impl StdioMcpTransport {
             cmd.env(k, v);
         }
         let mut child = cmd.spawn().map_err(|e| format!("spawn {}: {e}", self.command[0]))?;
+        // A write failure is not returned yet: a server that exits (or closes
+        // its stdin) before reading the request surfaces here as EPIPE, and
+        // the useful error is the child's exit status and stderr, not "Broken
+        // pipe". Wait for the child first; only a child that exited cleanly
+        // leaves the write error as the answer (PMAT-950).
+        let mut write_err: Option<String> = None;
         if let Some(mut stdin) = child.stdin.take() {
             use tokio::io::AsyncWriteExt;
-            stdin
-                .write_all(request_str.as_bytes())
-                .await
-                .map_err(|e| format!("write stdin: {e}"))?;
-            stdin.write_all(b"\n").await.map_err(|e| format!("write newline: {e}"))?;
+            let written = match stdin.write_all(request_str.as_bytes()).await {
+                Ok(()) => stdin.write_all(b"\n").await.map_err(|e| format!("write newline: {e}")),
+                Err(e) => Err(format!("write stdin: {e}")),
+            };
+            write_err = written.err();
             drop(stdin);
         }
         let result = child.wait_with_output().await.map_err(|e| format!("wait: {e}"))?;
@@ -272,6 +278,16 @@ impl StdioMcpTransport {
             return Err(format!("process exited {}: {}", result.status, stderr.trim()));
         }
         let stdout = String::from_utf8_lossy(&result.stdout);
+        // PMAT-953: a server that exits 0 without reading the request (its
+        // stdin closed, EPIPE on our write) has still answered if it wrote a
+        // response; the write error only matters when there is nothing to
+        // parse. PMAT-950 covered the non-zero exit above; this is the clean
+        // exit, which four stdio tests hit under load on 2026-09-04.
+        if stdout.trim().is_empty() {
+            if let Some(e) = write_err {
+                return Err(e);
+            }
+        }
         let response: serde_json::Value =
             serde_json::from_str(stdout.trim()).map_err(|e| format!("parse response: {e}"))?;
         if let Some(error) = response.get("error") {

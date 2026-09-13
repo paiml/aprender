@@ -108,7 +108,7 @@ impl WgslBackwardPass {
         // For now, approximate: treat as element-wise multiply backward
         // grad_gate ≈ grad_silu * up (ignoring SiLU derivative — simplified)
         // grad_up = grad_silu * gate (ignoring SiLU — simplified)
-        // TODO: proper SiLU backward via SILU_BACKWARD_SHADER
+        // Deferred (PMAT-762): proper SiLU backward via SILU_BACKWARD_SHADER
 
         // Gate/Up backward → grad_norm (pre-FFN norm gradient)
         let grad_norm = self.trainer.zeros((seq_len * h) as usize);
@@ -139,14 +139,14 @@ impl WgslBackwardPass {
         );
 
         // grad_norm += grad_norm2 (add both contributions)
-        // TODO: WGSL elementwise add shader. For now, download-add-upload.
+        // Deferred (PMAT-763): WGSL elementwise add shader. For now, download-add-upload.
         let gn1 = self.trainer.download(&grad_norm);
         let gn2 = self.trainer.download(&grad_norm2);
         let combined: Vec<f32> = gn1.iter().zip(gn2.iter()).map(|(a, b)| a + b).collect();
         let _grad_ffn_norm = self.trainer.upload(&combined);
 
         // RMSNorm backward: skip for now (pass through)
-        // TODO: RMSNORM_BACKWARD_SHADER
+        // Deferred (PMAT-764): RMSNORM_BACKWARD_SHADER
 
         // === Attention backward path ===
         // For QLoRA, we need gradients through Q/K/V projections (they have LoRA)
@@ -176,7 +176,7 @@ impl WgslBackwardPass {
         // For proper implementation: grad_input = grad_ffn_norm_bwd + grad_attn_norm_bwd
         // Both go through RMSNorm backward which is complex.
         // For now, use the residual identity: grad_input = grad_output
-        // TODO: proper RMSNorm backward + accumulation
+        // Deferred (PMAT-765): proper RMSNorm backward + accumulation
 
         // LoRA gradient computation (the part that actually updates weights)
         if let Some(lora) = &block.lora {
@@ -248,7 +248,7 @@ impl WgslBackwardPass {
         );
 
         // Apply LoRA gradients via AdamW (for Q projection)
-        // TODO: accumulate gradients across layers, then step once per training step
+        // Deferred (PMAT-766): accumulate gradients across layers, then step once per training step
         // For now, this is the gradient computation — optimizer step happens in the pipeline
     }
 

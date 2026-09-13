@@ -197,6 +197,10 @@ ssh "${GX10_USER}@${GX10_HOST}" bash <<REMOTE_DISPATCH
 REMOTE_DISPATCH
 
 mkdir -p "${EVIDENCE_DIR}"
+# DET002: reproducible under SOURCE_DATE_EPOCH (falls back to the real wall
+# clock when it's unset -- this is an audit timestamp of when the run was
+# actually dispatched, so it must stay real time by default).
+DISPATCHED_AT="$(date -u -d "@${SOURCE_DATE_EPOCH:-$(date +%s)}" +%Y-%m-%dT%H:%M:%SZ)"
 cat > "${EVIDENCE_DIR}/dispatch.json" <<JSON
 {
   "ticket": "SPEC-DISTILL-001 Phase 4 Stage D -- post-PMAT-701 cascade",
@@ -217,7 +221,7 @@ cat > "${EVIDENCE_DIR}/dispatch.json" <<JSON
   "dataset_dir": "${DATASET_DIR}",
   "remote_run_dir": "${RUN_DIR_REMOTE}",
   "remote_log": "${LOG_REMOTE}",
-  "dispatched_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  "dispatched_at": "${DISPATCHED_AT}"
 }
 JSON
 

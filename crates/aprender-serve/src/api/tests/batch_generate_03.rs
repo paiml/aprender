@@ -224,6 +224,7 @@ fn test_chat_completion_response_serde() {
         brick_trace: None,
         step_trace: None,
         layer_trace: None,
+    timings: None,
     };
     let json = serde_json::to_string(&resp).expect("JSON serialization failed");
     let parsed: ChatCompletionResponse = serde_json::from_str(&json).expect("JSON deserialization failed");

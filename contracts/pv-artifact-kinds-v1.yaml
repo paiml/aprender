@@ -1,0 +1,297 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# pv-artifact-kinds-v1
+#
+# `pv validate` must answer for every artifact the repo keeps under contracts/,
+# and must answer with the rules that artifact is actually held to.
+#
+# ORIGIN (PMAT-749, the dogfood `pv-contracts` row)
+# On 68b059ca90febbb99159ea80956334b7a966b6ae, 51 of the 1727 tracked YAML files
+# under contracts/ were rejected by `pv validate`, in four classes:
+#
+#   44  ``missing field `metadata` ``  — 42 kaizen improvement records, plus pv's
+#                                        OWN two binding registries
+#    3  ``missing field `metadata` ``  — the three model publish manifests
+#    3  PROVABILITY-001 no kani_harnesses — the 3 kaizen records that DID carry a
+#                                        `metadata:` block, and therefore fell
+#                                        through to the `kernel` default
+#    1  YAML block-scalar syntax error — gradient-accumulation-canary-v1.yaml
+#
+# The 3-file PROVABILITY-001 class is the whole argument for this contract. Those
+# records were not missing a kind; they had a `metadata:` block and were told to
+# grow Kani harnesses, because `metadata.kind` defaults to `kernel` and nothing
+# had ever declared what a kaizen record IS. Adding `metadata:` to the other 43
+# without adding a KIND would have converted 43 parse errors into 43 demands for
+# proofs of a measurement — a worse outcome that would still have read as
+# progress in the sweep.
+#
+# WHY NOTHING CAUGHT IT
+# The repo already KNEW these files were not contracts. `is_contract_yaml`
+# (schema/parser.rs) excludes `binding.yaml` by name, and
+# `lint::gates::collect_yaml_files` skips `kaizen/`, `legacy/`, `pipelines/` and
+# `publish-manifests/` outright, with a comment explaining that publish manifests
+# are "PublishManifest artifacts … not Contract schemas". The knowledge lived in
+# the DIRECTORY walker and never reached the SINGLE-FILE surface, so `pv lint
+# contracts/` reported PASS while `pv validate <that same file>` failed. Two
+# walkers, disagreeing about what a contract is — the identical defect the
+# `is_contract_yaml` doc comment was written to close.
+#
+# PROOF LADDER (crates/aprender-contracts/src/proof_status.rs):
+#   * L1 — YAML + obligations (this file).
+#   * L2 — falsification tests cover obligations. >>> ACHIEVED <<<: every
+#          obligation below is discharged by a unit test that ships BOTH arms —
+#          a must-reject case and the must-accept case that proves the rule is
+#          not simply refusing everything (`kaizen_006_accepts_the_unreversed_record`
+#          is the explicit mutation counterpart of
+#          `reversed_baseline_and_target_is_rejected`).
+#   * L3 — Kani BMC. NOT APPLICABLE and deliberately not declared: the subject is
+#          YAML shape classification over unbounded documents, not a bounded
+#          arithmetic kernel. Declaring an un-backed harness to inflate the level
+#          would be theater. This contract honestly reports L2.
+# ─────────────────────────────────────────────────────────────────────────────
+name: pv-artifact-kinds
+version: "1.0.0"
+status: active
+scope: >
+  What `pv validate <path>` does with a `.yaml` file under contracts/: which of
+  the three artifact shapes it recognises, and which rules each shape is held
+  to. Out of scope: the network- and bytes-dependent publish-manifest gates
+  (FALSIFY-PM-002/003/005/007/008/009), which remain with
+  `apr validate-manifest` and which pv does not pretend to have run.
+
+metadata:
+  kind: pattern     # a cross-cutting rule about how the validator DISPATCHES,
+                    # not a math kernel. Declared EXPLICITLY so the `kernel`
+                    # default never silently applies — which is the very defect
+                    # this contract exists to close.
+  version: "1.0.0"
+  created: '2026-09-03'
+  author: PAIML Engineering
+  description: >
+    Every YAML artifact under contracts/ is validated by the rules of the kind
+    it actually is. A kaizen improvement record is held to a falsifiable
+    baseline→target delta rather than to PROVABILITY-001; a pv binding registry
+    and a model publish manifest are recognised as themselves rather than
+    reported as contracts missing a `metadata:` block.
+  references:
+    - 'crates/aprender-contracts/src/schema/kaizen.rs — ContractKind::Kaizen and rules KAIZEN-001..006'
+    - 'crates/aprender-contracts/src/schema/artifact.rs — artifact classification and PM-SHAPE-000..005'
+    - 'crates/aprender-contracts/src/binding.rs — BINDING-001..006'
+    - 'crates/aprender-contracts/src/schema/parser.rs — is_contract_yaml, the pre-existing filename exclusion'
+    - 'crates/aprender-contracts/src/lint/gates.rs — collect_yaml_files, the pre-existing directory exclusion'
+    - 'contracts/publish-manifest-v1.yaml — §schema.required_fields, the list PM-SHAPE-001/002 read'
+    - 'crates/apr-cli/src/commands/validate_manifest.rs — FALSIFY-PM-001..009, the gate that owns the online half'
+
+contract: |
+  Let D be a YAML document at path P under contracts/.
+
+    (1) CLASSIFICATION. D is a Contract iff it is not a mapping or its mapping
+        has a `metadata:` key. Otherwise D is a Binding registry iff it has both
+        `bindings:` and `target_crate:`, and a PublishManifest iff it has both
+        `model_id:` and `provenance:`. Any other mapping without `metadata:`
+        stays a Contract and therefore still fails — recognising an artifact is
+        never a route to passing unchecked.
+
+    (2) KAIZEN. A Contract whose `metadata.kind` is `kaizen` is exempt from
+        PROVABILITY-001 and is instead held to KAIZEN-001..006: it names itself,
+        declares a `status:` from the closed corpus vocabulary, states something
+        that can fail, and — when it pins a `baseline:`/`target:` — shares at
+        least one metric with it, moves at least one comparable metric, and does
+        not raise every cost metric it measures while lowering none.
+
+    (3) BINDING. A Binding registry is held to BINDING-001..006: a version, a
+        target crate, at least one binding, per-entry contract+equation, one
+        binding per (contract, equation) pair, and — for any entry claiming
+        `implemented` or `partial` — either a Rust `module_path:`+`function:` or
+        `notes:` naming what discharges it.
+
+    (4) PUBLISH MANIFEST. A PublishManifest is held to PM-SHAPE-000..005, whose
+        required-field lists are READ FROM `contracts/publish-manifest-v1.yaml`
+        §schema rather than copied into pv. When that schema contract cannot be
+        located, validation FAILS (PM-SHAPE-000) rather than passing vacuously.
+
+equations:
+  - name: PVAK-EQ-001
+    statement: "kind(D) = Contract ⟸ ¬mapping(D) ∨ 'metadata' ∈ keys(D)"
+    description: >
+      `metadata:` is a required field of every Contract, so its absence is a
+      total, decidable test for "not a contract". Classification is total: every
+      document lands in exactly one arm and none is skipped.
+  - name: PVAK-EQ-002
+    statement: "kaizen_valid(D) ⟺ names_itself(D) ∧ status(D) ∈ KAIZEN_STATUSES ∧ claims_something(D) ∧ delta_is_a_claim(D)"
+    description: >
+      A kaizen record is a MEASUREMENT, not a theorem. Its falsifiable content
+      is the baseline→target delta, so the rules test the delta's coherence
+      rather than demanding proofs the record cannot have.
+  - name: PVAK-EQ-003
+    statement: "cost_regression(D) ⟺ (∃ cost metric in D) ∧ (∄ cost metric that falls) ∧ (∃ cost metric that rises)"
+    description: >
+      The direction rule that survived the corpus. Two stronger rules did not
+      and are recorded as rejected in schema/kaizen.rs: "every shared numeric key
+      must fall" is falsified by gpu-workspace-clip-v1 (d2h_per_block 0 → 9), and
+      "all shared numeric keys move one way" by gradient-accumulation-canary-v1
+      (batch_size 4 → 1 while gradient_accumulation_steps 1 → 4).
+
+proof_obligations:
+  - id: PVAK-OB-001
+    statement: "Every artifact shape is classified by its own shape, and an unrecognised shape is not silently accepted."
+    discharged_by: falsification_tests[0]
+  - id: PVAK-OB-002
+    statement: "A kaizen record validates without Kani harnesses, and PROVABILITY-001 does not fire on it."
+    discharged_by: falsification_tests[1]
+  - id: PVAK-OB-003
+    statement: "A kaizen record whose baseline and target are written the wrong way round is REJECTED, and the same numbers in the right order are ACCEPTED."
+    discharged_by: falsification_tests[2]
+  - id: PVAK-OB-004
+    statement: "A kaizen record that claims no measurable movement, names no id, or declares a status outside the closed vocabulary is REJECTED."
+    discharged_by: falsification_tests[3]
+  - id: PVAK-OB-005
+    statement: "A binding registry with a malformed entry is REJECTED, and both real registries in the tree are ACCEPTED."
+    discharged_by: falsification_tests[4]
+  - id: PVAK-OB-006
+    statement: "A publish manifest is checked against the field list its own schema contract declares, and a manifest missing one of those fields is REJECTED."
+    discharged_by: falsification_tests[5]
+  - id: PVAK-OB-007
+    statement: "The quantity reader accepts real measurements ('<5', '1000+', '100%') and refuses non-measurements ('2026-03-04', 'CUBLAS_COMPUTE_32F') — it may not invent a number out of a date."
+    discharged_by: falsification_tests[6]
+  - id: PVAK-OB-008
+    statement: "The kaizen parse pass runs only for kind: kaizen, so it can never turn a contract of another kind into a parse error."
+    discharged_by: falsification_tests[7]
+
+falsification_tests:
+  - id: FALSIFY-PVAK-001
+    obligation: PVAK-OB-001
+    test: classification_case_table
+    rule: "Shape classification is total and conservative"
+    prediction: >
+      A document with `metadata:` classifies as Contract even when it also
+      carries `bindings:`+`target_crate:`; a registry shape classifies as
+      Binding; a manifest shape as PublishManifest; and an unrecognised mapping,
+      a sequence, and unparseable YAML all stay Contract so they keep failing.
+    if_fails: >
+      The discriminator has stopped being `metadata:`-presence. Check that the
+      Binding/PublishManifest arms are tested AFTER the metadata arm — reordering
+      them lets a contract that happens to carry `model_id:` skip contract rules.
+  - id: FALSIFY-PVAK-002
+    obligation: PVAK-OB-002
+    test: healthy_kaizen_record_validates_and_is_exempt_from_provability
+    rule: "A measurement is not asked for proofs"
+    prediction: >
+      A well-formed kaizen record validates with zero errors, reports
+      ContractKind::Kaizen, has requires_proofs() false and carries no
+      kani_harnesses.
+    if_fails: >
+      Either the kind is not reaching the validator (check metadata.kind
+      deserialization) or the kernel branch is still running for it — which is
+      the original defect, restored.
+  - id: FALSIFY-PVAK-003
+    obligation: PVAK-OB-003
+    test: reversed_baseline_and_target_is_rejected
+    rule: "KAIZEN-006 — a kaizen may not raise every cost it measures"
+    prediction: >
+      backward-cpu-staging-v1's three cost metrics with baseline and target
+      swapped raise KAIZEN-006; the SAME numbers in the correct order do not
+      (kaizen_006_accepts_the_unreversed_record), and neither does a record that
+      buys a win with one cost (a_cost_bought_win_is_accepted) or moves two
+      metrics in opposite directions (a_mixed_direction_record_is_accepted).
+    if_fails: >
+      If only the reject arm fails, the cost-name table has lost a fragment. If
+      the ACCEPT arms fail, the rule has hardened into "every cost must fall" —
+      the exact rule the corpus falsified.
+  - id: FALSIFY-PVAK-004
+    obligation: PVAK-OB-004
+    test: target_restating_baseline_unchanged_is_rejected
+    rule: "KAIZEN-004/005 — the delta must be a claim"
+    prediction: >
+      A target that restates the baseline unchanged raises KAIZEN-005; a target
+      with no baseline, or sharing no key with it, raises KAIZEN-004; an
+      anonymous record raises KAIZEN-001 and an invented status KAIZEN-002.
+    if_fails: >
+      A record that pins no number is validating. Check that comparable_metrics
+      is finding shared keys at all before suspecting the comparison.
+  - id: FALSIFY-PVAK-005
+    obligation: PVAK-OB-005
+    test: malformed_binding_entries_are_rejected
+    rule: "BINDING-001..006 — pv validates its own artifact"
+    prediction: >
+      An empty target_crate raises BINDING-002, an empty equation BINDING-004, an
+      `implemented` entry naming neither a Rust path nor notes BINDING-005, a
+      repeated (contract, equation) pair BINDING-006, and an empty registry
+      BINDING-003 — while both real registries in the tree validate clean
+      (real_binding_registries_validate).
+    if_fails: >
+      If the real registries fail, BINDING-005 has stopped accepting the five
+      shell-discharged entries in contracts/binding.yaml, which are discharged by
+      scripts/check_pr_review_receipt.sh and say so in `notes:`.
+  - id: FALSIFY-PVAK-006
+    obligation: PVAK-OB-006
+    test: a_manifest_missing_a_required_field_is_rejected
+    rule: "PM-SHAPE-001 — RJ-PM-002, a manifest missing a required field cannot ship"
+    prediction: >
+      Removing `license:` from a real manifest raises PM-SHAPE-001. Because the
+      field list is read from publish-manifest-v1.yaml §schema, this also proves
+      that file is being read rather than a copy of the list living in pv.
+    if_fails: >
+      Either the schema contract moved (PM-SHAPE-000 would fire instead) or
+      §schema.required_fields has been renamed — in which case pv is checking an
+      empty list and every manifest passes vacuously.
+  - id: FALSIFY-PVAK-007
+    obligation: PVAK-OB-007
+    test: quantity_parse_case_table
+    rule: "A quantity reader may not invent a number"
+    prediction: >
+      '<5', '<= 12', '1000+', '100%', '6 ms', '1_310_720' and '-3' read as
+      quantities; '2026-03-04', 'CUBLAS_COMPUTE_32F', 'fp32', 'OOM', 'pytorch',
+      '131,072x fewer bytes transferred' and '' do NOT.
+    if_fails: >
+      The suffix table has been widened into "strip anything non-numeric", which
+      reads the date 2026-03-04 as the number 2026 and manufactures a movement
+      out of a timestamp.
+  - id: FALSIFY-PVAK-008
+    obligation: PVAK-OB-008
+    test: kaizen_pass_does_not_run_on_other_kinds
+    rule: "A new parse pass may not become a new way to fail"
+    prediction: >
+      A `kind: registry` contract carrying a top-level `status:` LIST still
+      parses, and its kaizen_record is None.
+    if_fails: >
+      The kaizen pass has been hoisted out of its kind guard and now runs on
+      every document, where an unrelated contract's `status:` of an incompatible
+      shape becomes a hard parse error.
+
+non_goals:
+  - "Running the publish-manifest gates that need bytes or a network. FALSIFY-PM-002/003/005/007/008/009 stay with `apr validate-manifest`; pv checks the shape and says so."
+  - "Widening `lint::gates::collect_yaml_files` to walk kaizen/ and publish-manifests/. That changes which corpus every lint gate scores and which stems collide, and is a separate decision with its own ratchets."
+  - "Rewriting any kaizen record's content. The 46 records gained a `metadata:` block derived entirely from fields they already carried; not one other line was touched."
+  - "Proving a kaizen record's numbers are TRUE. This proves the record makes a claim that a measurement could contradict."
+
+binding_registry:
+  kaizen_rules: crates/aprender-contracts/src/schema/kaizen.rs
+  artifact_dispatch: crates/aprender-contracts/src/schema/artifact.rs
+  binding_rules: crates/aprender-contracts/src/binding.rs
+  cli_surface: crates/aprender-contracts-cli/src/commands/validate.rs
+  issue: "PMAT-749 — dogfood pv-contracts row"
+
+# VERIFICATION NARRATIVE (prose in a comment; the field below is typed)
+#   Measured with the pv built from this tree (scripts/pv_bin.sh):
+#     before  51 of 1727 tracked contracts/**.yaml rejected by `pv validate`
+#     after    0 of 1728 rejected  (1728 = +1, this file)
+#   `pv lint contracts --strict-test-binding` reports Result: PASS, 0 errors,
+#   both before and after — which is exactly the disagreement this contract
+#   names: the directory gate was already green while 51 single-file
+#   validations were red, because the directory walker skips the four
+#   directories those files live in.
+#
+#   L3/Kani is counted NOT APPLICABLE rather than un-proved: classification of
+#   unbounded YAML documents is not a bounded arithmetic kernel.
+verification_summary:
+  total_obligations: 8
+  l2_property_tested: 8
+  l3_kani_proved: 0
+  l4_not_applicable: 8
+
+formal_verification_roadmap: >
+  L3/Kani not applicable — the subject is shape classification over unbounded
+  YAML. The real next rung is a property test over generated kaizen records:
+  for any baseline/target pair, validating the pair and validating its reversal
+  must never both pass, which turns KAIZEN-006 from a table of cases into a
+  law over the whole input space.

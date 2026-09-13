@@ -193,7 +193,9 @@ OLD_FACADE_OWN="$(facade_own_version "$REPO_ROOT")"
 printf '=== bumping to %s ===\n' "$NEW"
 
 printf -- '--- root workspace (cargo set-version --workspace) ---\n'
-if ! ( cd "$REPO_ROOT" && cargo set-version --workspace "$NEW" ); then
+# --manifest-path targets the root manifest directly, so this never has to
+# `cd` into $REPO_ROOT before the mutating command runs.
+if ! cargo set-version --manifest-path "$REPO_ROOT/Cargo.toml" --workspace "$NEW"; then
     printf 'FAIL  cargo set-version failed (is cargo-edit installed?)\n' >&2
     exit 1
 fi

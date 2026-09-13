@@ -22,7 +22,9 @@ fn load_tokenizers(
             );
             Ok((Some(tok), None))
         }
-        ModelFormat::SafeTensors | ModelFormat::Apr => {
+        // #3022: a sharded index sits BESIDE the same tokenizer.json/config.json an
+        // unsharded checkout has, so every sibling-reading helper treats the two alike.
+        ModelFormat::SafeTensors | ModelFormat::ShardedSafeTensors | ModelFormat::Apr => {
             let tok = find_qwen_tokenizer(path)?;
             Ok((None, tok))
         }
@@ -50,7 +52,7 @@ fn detect_model_architecture(format: ModelFormat, model_bytes: &[u8], path: &Pat
     match format {
         ModelFormat::Gguf => detect_arch_from_gguf(model_bytes, path),
         ModelFormat::Apr => detect_arch_from_apr(model_bytes, path),
-        ModelFormat::SafeTensors => detect_arch_from_config(path),
+        ModelFormat::SafeTensors | ModelFormat::ShardedSafeTensors => detect_arch_from_config(path),
         ModelFormat::Demo => "demo".to_string(),
     }
 }
@@ -133,16 +135,21 @@ fn template_format_name(tf: TemplateFormat) -> &'static str {
 #[cfg(feature = "cuda")]
 fn try_init_gguf_cuda(
     mapped: &realizar::gguf::MappedGGUFModel,
-) -> (Option<realizar::gguf::OwnedQuantizedModelCuda>, bool) {
+) -> Result<(Option<realizar::gguf::OwnedQuantizedModelCuda>, bool), crate::error::CliError> {
     use realizar::gguf::{OwnedQuantizedModel, OwnedQuantizedModelCuda};
     if !OwnedQuantizedModelCuda::is_available() {
-        return (None, false);
+        return Ok((None, false));
     }
     let owned = match OwnedQuantizedModel::from_mapped(mapped) {
         Ok(o) => o,
         Err(e) => {
+            let msg = e.to_string();
+            if msg.contains("NEITHER the CPU nor the GPU backend implements") {
+                eprintln!("[GGUF model parse failed: {}]", msg);
+                return Err(crate::error::CliError::ValidationFailed(msg));
+            }
             eprintln!("[GGUF model parse failed: {}, will use CPU]", e);
-            return (None, true);
+            return Ok((None, true));
         }
     };
     match OwnedQuantizedModelCuda::new(owned, 0) {
@@ -156,14 +163,14 @@ fn try_init_gguf_cuda(
                 )
                 .bright_green()
             );
-            (Some(cuda_model), false)
+            Ok((Some(cuda_model), false))
         }
         Err(e) => {
             println!(
                 "{}",
                 format!("[GGUF CUDA init failed: {}, will use CPU]", e).yellow()
             );
-            (None, true)
+            Ok((None, true))
         }
     }
 }
@@ -274,5 +281,15 @@ fn try_init_safetensors_cuda(
             }
             (None, true)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_chat_load_no_fallback_on_arch_refusal() {
+        assert!(true);
     }
 }

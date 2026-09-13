@@ -13,7 +13,7 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-use crate::error::ContractError;
+use crate::error::{ContractError, Severity, Violation};
 
 /// Top-level binding registry parsed from YAML.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -226,6 +226,153 @@ fn extract_fn_names(content: &str, names: &mut std::collections::HashSet<String>
             }
             rest = after;
         }
+    }
+}
+
+/// Validate a binding registry's OWN shape (rules BINDING-001..006).
+///
+/// # Why pv validates its own artifact
+///
+/// `contracts/binding.yaml` and `contracts/aprender/binding.yaml` are pv's
+/// output and pv's input: `pv audit --binding` reports coverage from them and
+/// `pv probar --binding` generates property tests that call the functions they
+/// name. Until now `pv validate` could not read either — both failed with
+/// ``missing field `metadata` ``, because the single-file surface parsed
+/// everything as a `Contract` while `is_contract_yaml` had already excluded
+/// them BY NAME from the directory surface. The tool's own manifest was the
+/// one file it could not check.
+///
+/// The rules below are the ones a registry can be wrong about in a way that
+/// silently degrades a downstream gate: an unnamed target crate, an entry that
+/// binds nothing, two entries claiming the same equation, and — the one that
+/// matters most — a binding that says `implemented` while naming nothing a
+/// reader could go and look at.
+#[must_use]
+pub fn validate_binding_registry(registry: &BindingRegistry) -> Vec<Violation> {
+    let mut violations = Vec::new();
+    let err = |rule: &str, message: String, location: String| Violation {
+        severity: Severity::Error,
+        rule: rule.to_string(),
+        message,
+        location: Some(location),
+    };
+
+    if registry.version.trim().is_empty() {
+        violations.push(err(
+            "BINDING-001",
+            "binding registry has no `version:` — every consumer of this file records \
+             which version of the mapping it audited against"
+                .to_string(),
+            "version".to_string(),
+        ));
+    }
+    if registry.target_crate.trim().is_empty() {
+        violations.push(err(
+            "BINDING-002",
+            "binding registry has no `target_crate:` — a mapping from equations to \
+             functions is meaningless without saying which crate those functions live in"
+                .to_string(),
+            "target_crate".to_string(),
+        ));
+    }
+    if registry.bindings.is_empty() {
+        violations.push(err(
+            "BINDING-003",
+            "binding registry declares no `bindings:` — `pv audit --binding` would \
+             report 0/0 coverage, which reads as clean"
+                .to_string(),
+            "bindings".to_string(),
+        ));
+    }
+
+    let mut seen: std::collections::HashSet<(String, String)> = std::collections::HashSet::new();
+    for (i, binding) in registry.bindings.iter().enumerate() {
+        validate_one_binding(i, binding, &mut seen, &mut violations);
+    }
+    violations
+}
+
+/// BINDING-004/005/006 for a single entry.
+fn validate_one_binding(
+    index: usize,
+    binding: &KernelBinding,
+    seen: &mut std::collections::HashSet<(String, String)>,
+    violations: &mut Vec<Violation>,
+) {
+    let at = |field: &str| format!("bindings[{index}].{field}");
+    let err = |rule: &str, message: String, location: String| Violation {
+        severity: Severity::Error,
+        rule: rule.to_string(),
+        message,
+        location: Some(location),
+    };
+
+    if binding.contract.trim().is_empty() {
+        violations.push(err(
+            "BINDING-004",
+            format!(
+                "bindings[{index}] names no `contract:` — the entry binds an equation to nothing"
+            ),
+            at("contract"),
+        ));
+    }
+    if binding.equation.trim().is_empty() {
+        violations.push(err(
+            "BINDING-004",
+            format!(
+                "bindings[{index}] names no `equation:` — `bindings_for()` matches on the \
+                 contract/equation pair, so an entry without one can never be found"
+            ),
+            at("equation"),
+        ));
+    }
+
+    // BINDING-005: an entry claiming an implementation must name where it is.
+    //
+    // `module_path` + `function` is the usual answer. `notes` is accepted as
+    // the other one because five entries in `contracts/binding.yaml` are
+    // discharged by a shell guard rather than a Rust function
+    // (`scripts/check_pr_review_receipt.sh`) and say so at length. What is
+    // rejected is the entry that claims `implemented` and points at NOTHING —
+    // an implementation claim no reader can go and check.
+    let claims_implementation = matches!(
+        binding.status,
+        ImplStatus::Implemented | ImplStatus::Partial
+    );
+    let names_rust = binding.module_path.is_some() && binding.function.is_some();
+    let names_evidence = binding
+        .notes
+        .as_deref()
+        .is_some_and(|n| !n.trim().is_empty());
+    if claims_implementation && !names_rust && !names_evidence {
+        violations.push(err(
+            "BINDING-005",
+            format!(
+                "bindings[{index}] ({}::{}) is `status: {}` but names neither a \
+                 `module_path:`+`function:` nor any `notes:` saying what discharges it — \
+                 an implementation claim nobody can go and look at",
+                binding.contract, binding.equation, binding.status
+            ),
+            at("status"),
+        ));
+    }
+
+    // BINDING-006: one equation, one binding. `find_binding` returns the FIRST
+    // match, so a duplicate silently decides which implementation is audited.
+    let key = (
+        normalize_contract_id(&binding.contract).to_string(),
+        binding.equation.clone(),
+    );
+    if !seen.insert(key) {
+        violations.push(err(
+            "BINDING-006",
+            format!(
+                "duplicate binding for {}::{} — `find_binding()` returns the first match, \
+                 so the second entry is audited by nothing and can drift unnoticed",
+                binding.contract, binding.equation
+            ),
+            at("equation"),
+        ));
     }
 }
 

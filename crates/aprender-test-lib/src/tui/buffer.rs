@@ -95,13 +95,18 @@ impl TextGrid {
     /// Write a string starting at (x, y).
     /// Characters that would exceed the grid width are truncated.
     pub fn write_str(&mut self, x: u16, y: u16, s: &str) {
-        let mut pos_x = x;
-        for ch in s.chars() {
+        for (i, ch) in s.chars().enumerate() {
+            // Offset from x, not a running counter: u16::try_from cannot fail before
+            // the width check below trips, and checked_add keeps the far-right edge
+            // of the grid from wrapping instead of truncating.
+            let Ok(off) = u16::try_from(i) else { break };
+            let Some(pos_x) = x.checked_add(off) else {
+                break;
+            };
             if pos_x >= self.width {
                 break;
             }
             self.set(pos_x, y, ch);
-            pos_x += 1;
         }
     }
 
