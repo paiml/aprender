@@ -77,8 +77,10 @@ pub fn dequantize_q5_k(data: &[u8]) -> Result<Vec<f32>> {
 
     let mut result = vec![0.0f32; data.len() / SUPER_BLOCK_BYTES * QK_K];
     for (sb, out) in data
-        .chunks_exact(SUPER_BLOCK_BYTES)
-        .zip(result.chunks_exact_mut(QK_K))
+        .as_chunks::<SUPER_BLOCK_BYTES>()
+        .0
+        .iter()
+        .zip(result.as_chunks_mut::<QK_K>().0.iter_mut())
     {
         for_each_q5k_value(sb, |i, v| out[i] = v);
     }
