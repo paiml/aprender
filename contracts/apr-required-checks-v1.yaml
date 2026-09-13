@@ -66,15 +66,22 @@
 #          Kani harness to inflate the level would be theater.
 # ─────────────────────────────────────────────────────────────────────────────
 name: apr-required-checks
-version: "1.0.0"
+version: "1.1.0"
 scope: >
   The workflow that invokes scripts/check_pr_review_arm4.sh without
   --self-test (today: .github/workflows/pr-review-quorum.yml, job `present`),
   its top-level `on:` and job-level `if:`, and the `gate` job of
-  .github/workflows/ci.yml. Out of scope: whether any status-check context is
-  a REQUIRED context in branch protection or a ruleset — that is an operator
-  decision recorded in a pull request body, never applied by this contract or
-  by the session that authors it.
+  .github/workflows/ci.yml. Also (v1.1.0, C0-2): the `uses:` reference in
+  .github/workflows/ci.yml's `ci` job, which calls the paiml/.github
+  sovereign-ci.yml reusable workflow — that reference must name an immutable
+  commit sha, never a branch or tag. Out of scope, both areas: whether any
+  status-check context is a REQUIRED context in branch protection or a
+  ruleset — that is an operator decision recorded in a pull request body,
+  never applied by this contract or by the session that authors it. Also out
+  of scope: whether pinning the sha makes `pmat comply check`'s CB-2100 rule
+  reachable — verified against pmat 3.39.0 source that it does not (see
+  scripts/check_ci_reusable_workflow_pinned.sh's header); that is a separate,
+  still-open question tracked in issue #2891, not a claim this contract makes.
 status: active
 
 metadata:
@@ -237,6 +244,36 @@ equations:
     postconditions:
     - 'a PR that reverts either step is caught by guard-runner-labels before gate can pass'
 
+  c0_2_reusable_workflow_pinned_by_sha:
+    formula: |
+      let UP = uses_ref(ci.yml, job = "ci")   -- the ref after `@` on the
+                                               -- `uses: paiml/.github/.../sovereign-ci.yml@...` line
+      UP is defined
+      and len(UP) = 40
+      and forall c in UP: c in {0..9, a..f}
+    domain: 'the `uses:` line of job `ci` in .github/workflows/ci.yml naming paiml/.github/.github/workflows/sovereign-ci.yml'
+    codomain: 'bool — the ref is a full 40-char lowercase-hex commit sha; a branch, tag, or short sha is a FAIL'
+    invariants:
+    - >-
+      A MUTABLE REF RE-RESOLVES ON EVERY PUSH. `@main` means whatever
+      paiml/.github merges next runs on this repo's next CI invocation, with
+      no diff in THIS repository's history to review. A sha is immutable: the
+      callee's content at pin time is exactly what re-runs until a human
+      deliberately re-pins it, and re-pinning is then a reviewable one-line
+      diff (PMAT-976, C0-2, #2891).
+    - >-
+      PINNING ALONE DOES NOT CLOSE CB-2100. Read directly from pmat 3.39.0
+      source (services/gate_effect/resolve.rs::local_reusable_path): any
+      external `uses:` reference — branch, tag, or sha alike — resolves to
+      `Resolution::Opaque`, never `Resolution::Job`; only `uses: ./...`
+      (local to this repository) is readable. This equation proves pin
+      hygiene only, not gate-effect reachability — conflating the two would
+      misrepresent what closing CB-2100 actually requires.
+    preconditions:
+    - 'ci.yml exists and parses; a missing or unparsable workflow is a FAIL, never a vacuous pass'
+    postconditions:
+    - 'a PR that re-points the ref at @main, @master, or any tag is caught before merge, in CI, by the same guard that proves the current pin (registered mutation)'
+
 proof_obligations:
   - id: RC-OB-001
     statement: "Exactly one workflow job invokes check_pr_review_arm4.sh without --self-test."
@@ -259,6 +296,9 @@ proof_obligations:
   - id: RC-OB-007
     statement: "Re-adding pr-review-present to gate's needs: (under either its own name or a renamed job invoking the same guard) turns the guard RED."
     discharged_by: falsification_tests[6]
+  - id: RC-OB-008
+    statement: "ci.yml job `ci`'s `uses:` reference to paiml/.github/.github/workflows/sovereign-ci.yml names a full 40-char lowercase-hex commit sha, never a branch or tag."
+    discharged_by: falsification_tests[7]
 
 falsification_tests:
 
@@ -399,10 +439,32 @@ falsification_tests:
       scripts/check_pr_review_arm4.sh` and list it in gate.needs;
       check_receipt_gate_base_owned.sh must turn RED naming "custom-receipt".
 
+  - id: RC-F-008
+    rule: "ci.yml's `ci` job pins the sovereign-ci.yml `uses:` reference to a full commit sha (C0-2, PMAT-976)"
+    prediction: >-
+      A `uses:` line naming a 40-char lowercase-hex ref PASSES; `@main`,
+      `@master`, a tag (`@v1.2.3`), a short/abbreviated sha, and a 40-char ref
+      containing a non-hex character all FAIL. A missing `uses:` line for the
+      named callee, and a missing ci.yml, both FAIL closed (never a vacuous
+      pass). Verified both in synthetic fixtures (--self-test) and against the
+      real tree: the guard reports FAIL against origin/main's ci.yml (which
+      carries `@main`) and PASS against this PR's ci.yml (which carries the
+      pinned sha), on the same command with only the file swapped.
+    test: 'bash scripts/check_ci_reusable_workflow_pinned.sh --self-test'
+    if_fails: >-
+      the reusable-workflow reference could silently re-resolve to whatever
+      paiml/.github merges next, on every push, with no diff in this
+      repository's history — and nothing here would say so
+    mutation: >-
+      change ci.yml's `uses: paiml/.github/.github/workflows/sovereign-ci.yml@<sha>`
+      back to `@main`; check_ci_reusable_workflow_pinned.sh must turn RED
+      naming "not a full 40-char commit sha".
+
 non_goals:
   - "Verifying the CONTENT of scripts/check_pr_review_arm4.sh's receipt judgement (Arm 4 itself) — that is pr-review-skill-v2's subject; this contract governs only WHERE and UNDER WHICH TRIGGER that judgement is invoked."
   - "Deciding whether pr-review-quorum / present is a REQUIRED branch-protection or ruleset context. That is an operator decision recorded in the pull request body."
   - "Auditing every workflow in .github/workflows/ for pull_request_target security hygiene beyond the one job this contract's scope names; the checkout-permissions comment in pr-review-quorum.yml is the security note, not a claim this contract re-verifies."
+  - "Making CB-2100 (pmat comply check's gate-effect rule) reachable. Pinning the ref does not do this — verified against pmat 3.39.0 source, see scripts/check_ci_reusable_workflow_pinned.sh's header and issue #2891. That needs a required, local job invoking `pmat comply check` unsuppressed, which is not landable today without first clearing six untracked, pre-existing comply failures (CB-040, CB-081, CB-400, CB-1305, CB-1308, CB-1650) that own no ticket in the PP-066 DAG."
 
 binding_registry:
   guard: scripts/check_receipt_gate_base_owned.sh
