@@ -1,0 +1,85 @@
+{
+  "ticket": "PMAT-3222",
+  "base": "origin/main",
+  "base_resolved": "origin/main",
+  "base_note": "no origin/origin/main exists; judged against the local ref",
+  "head": "34877899d42f241982089f224bbf46d63c741543",
+  "diff_sha256": "b65174611ff497e6ab1dc52c54da9d36384bda2db3c9f952ef4de18f385ea719",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 30337,
+  "author": {
+    "model": "Opus 5 (1M context)",
+    "family": "claude",
+    "source": "measured"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff correctly implements the ONT-2a andon by separating Lean proof claims from their grounded status. It verifies that self-declared L4/L5 claims with no supporting sorry-free in-tree theorems are downgraded to L3, marked as 'self-declared' in the new L4 evidence column, and excluded from the L4 totals, exactly as requested by PMAT-3222. The refactoring of Lean theorem scanning is safely preserved.",
+      "findings": [],
+      "raw_bytes": 2172,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff for PMAT-3222 (ONT-2a: andon — L4/L5 print self-declared until grounded) completely and faithfully implements the requirements without weakening any gates or adding out-of-scope changes:\n1. Proof level derivation in `compute_proof_level_with_grounding` requires sorry-free in-tree Lean theorems (`lean_grounded > 0 && lean_grounded + not_applicable >= total`) to grant L4/L5 status. Contracts that claim L4 solely in `verification_summary` without in-tree theorem grounding are downgraded (to L3/L2/L1) and classified as `self-declared`.\n2. The `ContractProofStatus`, `ProofStatusReport`, and `ProofStatusTotals` structures are extended with `lean_grounded`, `l4_self_declared`, and `l4_self_declared_excluded` fields.\n3. `format_text` outputs the new `L4 evidence` column marking entries as `self-declared`, `grounded`, or `-`, and displays aggregate totals showing claimed vs grounded counts alongside excluded self-declared contracts.\n4. Comprehensive unit tests covering grounded vs ungrounded behavior, report output format, and non-flagged quiet contracts pass cleanly (`cargo test -p aprender-contracts --lib -- proof_status`).\n5. Roadmap tracking for PMAT-3222 is properly registered in `docs/roadmaps/roadmap.yaml`.",
+      "findings": [],
+      "raw_bytes": 10848,
+      "err_bytes": 79,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "model": "gemini-3.7-flash-high",
+      "model_measured": "gemini-3.7-flash-high",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Reviewed diff for PMAT-3222 (ONT-2a: andon — L4/L5 print self-declared until grounded). The diff enforces strict Lean grounding by requiring in-tree sorry-free theorem evidence (`grounded > 0`) for L4/L5 proof levels, flags ungrounded summary claims as `self-declared`, excludes them from L4 totals, updates report data structures and formatted text output, adds comprehensive test coverage in `proof_status_tests.rs`, and registers task PMAT-3222 in `roadmap.yaml`. All unit tests passed (`cargo test -p aprender-contracts`). No refuting findings found. Verdict: PASS.",
+      "findings": [],
+      "raw_bytes": 4635,
+      "err_bytes": 79,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "model": "gemini-3.6-flash-high",
+      "model_measured": "gemini-3.6-flash-high",
+      "model_source": "measured",
+      "family": "gemini"
+    }
+  ],
+  "dissent": [],
+  "dedup": [],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [
+    "lane 2: grounding NOT COMPARED — structured_output holds a verdict but no single verdict object could be read out of .response (10848 raw bytes), so agy's labels stand unchecked for this lane (PMAT-082)",
+    "lane 3: grounding NOT COMPARED — structured_output holds a verdict but no single verdict object could be read out of .response (4635 raw bytes), so agy's labels stand unchecked for this lane (PMAT-082)"
+  ],
+  "auto_merge": {
+    "checked": true,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "auto-merge not armed"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=Opus 5 (1M context)/claude"
+  }
+}
