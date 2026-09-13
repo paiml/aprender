@@ -37,8 +37,8 @@ trap 'rm -rf "${TMP:?}"' EXIT
 # committed literal would turn `covered` into `stale` three days after it was
 # written, and a fixture that changes its own verdict with the calendar proves
 # whatever the calendar says.
-FRESH="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-STALE="$(date -u -d '-10 days' +%Y-%m-%dT%H:%M:%SZ)"
+FRESH="$(date -u +%Y-%m-%dT%H:%M:%SZ)"  # bashrs disable-line=DET002
+STALE="$(date -u -d '-10 days' +%Y-%m-%dT%H:%M:%SZ)"  # bashrs disable-line=DET002
 
 materialise() { # $1 = case name -> prints the scratch dir
     _m_src="$FIXTURES/$1"; _m_dst="$TMP/$1"

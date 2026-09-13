@@ -151,7 +151,8 @@ selftest() {
 # Parses a timestamp the API GAVE us; the only wall clock read is `now` below.
 iso_epoch() {
     [ -n "${1:-}" ] || return 1
-    date -u -d "$1" +%s 2>/dev/null
+    # Deterministic: the instant comes from $1, an API timestamp, not the clock.
+    date -u -d "$1" +%s 2>/dev/null  # bashrs disable-line=DET002
 }
 
 # ── THE RUN PROBE ───────────────────────────────────────────────────────────
@@ -340,7 +341,10 @@ fi
 
 # ── the axes ────────────────────────────────────────────────────────────────
 printf -- '\n-- axes --\n'
-now=$(date -u +%s)   # the ONLY wall-clock read; everything else is an API timestamp
+# The ONLY wall-clock read in this guard; everything else is an API timestamp.
+# Freshness is a distance from now, so this read is the measurement, not an
+# impurity to design away (the same call is disable-lined in ci_target_watch.sh).
+now=$(date -u +%s)  # bashrs disable-line=DET002
 axes=0; required=0; covered=0; uncovered=0; stale=0; missing=0
 deferred=0; promotable=0; ready=0
 fail=0
