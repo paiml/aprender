@@ -44,14 +44,26 @@ set -uo pipefail
 PROG=${0##*/}
 REPO_DEFAULT=paiml/aprender
 
-# The gate jobs §5 P0 instruments. `ci / gate` carries a space and a slash, which is
-# why this is an anchored alternation over the WHOLE name and never a substring test:
-# an unanchored `gate` also matches `gpu-quick ... gate` and `guard-tree`.
+# WHICH JOBS ARE RECORDED: all of them. WHICH ARE GATE JOBS: this regex.
+#
+# §5 P0 asks for a record per GATE job, and an earlier draft of this file wrote only
+# those. Measured over four hours of every event: the gate set is 33.0 of 44.4
+# runner-hours — **74.3%**. The other 11.4 h across 285 jobs (ci / coverage,
+# vendored-schemas, cuda-unit, ci / security, pr-review-shadow, mutants, gpu-touched…)
+# was invisible, so every occupancy figure derived from the ledger was low by a
+# quarter and no box could ever read "80% full" no matter how full it was.
+#
+# A denominator fix without this is half a fix: CAP counted runners that cannot take
+# the work (1.5x on gx10), and the numerator skipped a quarter of the work that did.
+# So every completed job gets a record and carries `gate_job`, and a reader that wants
+# §5 P0's gate set filters on that field instead of losing the rest.
+#
+# `ci / gate` carries a space and a slash, which is why this is an anchored alternation
+# over the WHOLE name and never a substring test: unanchored, `gate` also matches
+# `gpu-quick … gate` and `guard-tree`.
 #
 # macos-arm64 is here because mini is a full-time build host (operator 2026-09-13).
-# Without it mini's occupancy reads 0.0%(0) forever and the number looks like an idle
-# box rather than an uninstrumented one — the failure this file's header is about.
-LEDGER_JOBS_RE='^(workspace-test|ci / gate|gate|guard-tree|guard-cargo|ci / test|ci / lint|macos-arm64)$'
+LEDGER_GATE_JOBS_RE='^(workspace-test|ci / gate|gate|guard-tree|guard-cargo|ci / test|ci / lint|macos-arm64)$'
 
 usage() { printf 'usage: %s --out DIR [--limit N] [--repo OWNER/REPO] | --self-test\n' "$PROG" >&2; exit 2; }
 
@@ -91,15 +103,16 @@ record() {
     # parses to bashrs as a shell assignment with `$` on the left (SC1066) — a false
     # positive, but the shell knows the answer already, so the jq stays data-only.
     _exit=1; [ "$_concl" = "success" ] && _exit=0
+    _gate=false; printf '%s' "$_job" | grep -qE "$LEDGER_GATE_JOBS_RE" && _gate=true
     _f="$_out/${_sha:0:9}-${_host}-$(job_slug "$_job").json"
     jq -n --arg sha "$_sha" --arg host "$_host" --arg box "$_box" --arg job "$_job" \
           --arg event "$_event" --arg wf "$_wf" --arg run "$_run" --arg jid "$_jid" \
           --arg concl "$_concl" --arg created "$_created" --arg started "$_started" \
           --arg completed "$_completed" \
           --argjson qw "$_qw" --argjson ex "$_ex" --argjson tot "$((_qw + _ex))" \
-          --argjson rc "$_exit" \
+          --argjson rc "$_exit" --argjson gate "$_gate" \
       '{spec:"APR-RELEASE-001", section:"3.6", sha:$sha, host:$host, host_class:$box,
-        job:$job, workflow:$wf, event:$event, run_id:$run, job_id:$jid,
+        job:$job, gate_job:$gate, workflow:$wf, event:$event, run_id:$run, job_id:$jid,
         queue_wait_s:$qw, exec_s:$ex, total_s:$tot,
         peak_rss_mb:null, free_disk_gb:null,
         exit:$rc, conclusion:$concl,
@@ -121,7 +134,6 @@ ingest_jobs_tsv() {
     _i_n=0
     while IFS=$'\t' read -r _job _host _created _started _completed _concl _jid; do
         [ -n "$_job" ] || continue
-        printf '%s' "$_job" | grep -qE "$LEDGER_JOBS_RE" || continue
         _p=$(record "$_i_out" "$_i_sha" "$_host" "$_job" "$_i_event" "$_i_wf" "$_i_run" "$_jid" \
                     "$_concl" "$_created" "$_started" "$_completed") || continue
         printf '%s\n' "$_p" >&2
@@ -159,15 +171,16 @@ self_test() {
     # job_slug: the name with a space and a slash is the one that breaks a filename.
     _row "slug 'ci / gate'" "ci-gate" "$(job_slug 'ci / gate')"
 
-    # The job filter. Both polarities: an anchored alternation, so a name that merely
-    # CONTAINS a gate word is not instrumented.
-    _match() { printf '%s' "$1" | grep -qE "$LEDGER_JOBS_RE" && echo yes || echo no; }
-    _row "filter takes workspace-test" "yes" "$(_match 'workspace-test')"
-    _row "filter takes 'ci / gate'"    "yes" "$(_match 'ci / gate')"
-    _row "filter takes macos-arm64"    "yes" "$(_match 'macos-arm64')"
-    _row "filter skips ci / bench"     "no"  "$(_match 'ci / bench')"
-    _row "filter skips gpu-quick gate" "no"  "$(_match 'gpu-quick gate')"
-    _row "filter skips present"        "no"  "$(_match 'present')"
+    # The gate-job CLASSIFIER. Both polarities: an anchored alternation, so a name that
+    # merely CONTAINS a gate word is not misread as a gate job. It decides a FIELD now,
+    # never whether a record exists — that distinction is the point of this file.
+    _match() { printf '%s' "$1" | grep -qE "$LEDGER_GATE_JOBS_RE" && echo yes || echo no; }
+    _row "gate_job workspace-test"    "yes" "$(_match 'workspace-test')"
+    _row "gate_job 'ci / gate'"       "yes" "$(_match 'ci / gate')"
+    _row "gate_job macos-arm64"       "yes" "$(_match 'macos-arm64')"
+    _row "not a gate job: ci / bench" "no"  "$(_match 'ci / bench')"
+    _row "not a gate job: gpu-quick gate" "no" "$(_match 'gpu-quick gate')"
+    _row "not a gate job: present"    "no"  "$(_match 'present')"
 
     # A written record: the fields the packer's occupancy actually reads.
     _f=$(record "$_td" abcdef1234567890 mini-m4 macos-arm64 pull_request CI 42 99 \
@@ -179,6 +192,7 @@ self_test() {
     _row "record exec_s"       "600"  "$(jq -r .exec_s        "$_f" 2>/dev/null)"
     _row "record total_s"      "620"  "$(jq -r .total_s       "$_f" 2>/dev/null)"
     _row "record exit"         "0"    "$(jq -r .exit          "$_f" 2>/dev/null)"
+    _row "record gate_job"     "true" "$(jq -r .gate_job      "$_f" 2>/dev/null)"
 
     # The unmeasured fields are null AND named. A reader that sees 0 here would
     # compute a peak-RSS average over machines that never reported one.
@@ -213,10 +227,16 @@ self_test() {
 "macos-arm64\tmini-m4\t2026-09-13T09:50:00Z\t2026-09-13T09:50:05Z\t2026-09-13T10:02:05Z\tsuccess\t103" \
 "present\tintel-clean-room-2\t2026-09-13T09:50:00Z\t2026-09-13T09:50:02Z\t2026-09-13T09:51:08Z\tfailure\t104")
     _got=$(printf '%s\n' "$_tsv" | ingest_jobs_tsv "$_td2" deadbeefcafe0000 pull_request CI 7 2>/dev/null)
-    _row "ingest counts only gate jobs" "2" "$_got"
-    _row "ingest wrote 2 files" "2" "$(find "$_td2" -name '*.json' | wc -l | tr -d ' ')"
+    # EVERY completed job is recorded — 4 rows in, 4 records out. The earlier draft
+    # wrote 2 and lost a quarter of the fleet's runner-hours to the occupancy figure.
+    _row "ingest records every job" "4" "$_got"
+    _row "ingest wrote 4 files" "4" "$(find "$_td2" -name '*.json' | wc -l | tr -d ' ')"
     _row "ingest records mini"  "1" "$(grep -l '\"host_class\": \"mini\"' "$_td2"/*.json 2>/dev/null | wc -l | tr -d ' ')"
-    _row "ingest skipped present" "0" "$(find "$_td2" -name '*present*' | wc -l | tr -d ' ')"
+    # `present` is NOT a gate job and IS recorded: that is the whole correction.
+    _row "present recorded" "1" "$(find "$_td2" -name '*present*' | wc -l | tr -d ' ')"
+    _row "present not a gate job" "false" "$(jq -r .gate_job "$_td2"/deadbeefc-intel-clean-room-2-present.json 2>/dev/null)"
+    _row "workspace-test is a gate job" "true" "$(jq -r .gate_job "$_td2"/deadbeefc-intel-clean-room-8-workspace-test.json 2>/dev/null)"
+    _row "gate jobs are 2 of 4" "2" "$(grep -l '\"gate_job\": true' "$_td2"/*.json 2>/dev/null | wc -l | tr -d ' ')"
     _row "ingest queue wait measured" "38" "$(jq -r .queue_wait_s "$_td2"/deadbeefc-intel-clean-room-8-workspace-test.json 2>/dev/null)"
     # An empty TSV (a run whose jobs are all still going) is 0 records, not an error.
     _row "empty tsv -> 0" "0" "$(printf '' | ingest_jobs_tsv "$_td2" deadbeefcafe0000 pull_request CI 7 2>/dev/null)"
