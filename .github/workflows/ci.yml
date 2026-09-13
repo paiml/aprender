@@ -2636,6 +2636,22 @@ jobs:
   # 2026-09-13T10:11Z, main @ 3786870d9: `cargo test -p aprender-compute --lib
   # -j6` rc=0 and `cargo check -p aprender-core --lib` rc=0 (~/mini-measure.log).
   macos-arm64:
+    # NOT on merge_group, and that is an optimisation rather than an omission.
+    # mini is ONE runner (10 cores / 16 GB; a second would overcommit a
+    # workspace build the way cuda-unit overcommits yoga, #3234), so these jobs
+    # serialise at ~15-20 min each. This job is in nothing's `needs:` and is not
+    # a required check, so a merge group NEVER waits for it -- the group reaches
+    # its verdict from `gate` + `workspace-test` and merges while mini is still
+    # building. A result that arrives after the decision it could have informed
+    # is load without signal, and it is load on the one platform with no spare
+    # capacity.
+    #
+    # pull_request KEEPS it: that is where a darwin defect is still actionable.
+    # push-to-main KEEPS it: that is main's only darwin andon.
+    #
+    # Eight jobs in this file already carry the stronger `== 'pull_request'`
+    # (cuda-unit, gpu-quick, ...); this one wants push as well, hence `!=`.
+    if: github.event_name != 'merge_group'
     runs-on: [self-hosted, macOS, ARM64, apple-silicon, mini]
     # 60, and the basis is honest about what it does NOT know. BSE-05 derives T
     # from this job's own p99, and this job has no history for the workspace
