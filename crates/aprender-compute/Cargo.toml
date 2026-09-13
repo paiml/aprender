@@ -115,6 +115,10 @@ matrixmultiply = "0.3"  # Direct matrixmultiply crate benchmark (engine behind n
 [features]
 default = []
 parallel = ["rayon"]
+# Opt-in wall-clock gates (speedup ratios, throughput floors). Never part of a
+# required check: scripts/check_no_timing_in_required.sh -- they belong to the
+# nightly bench lane. A-013 (NEON >= 2x scalar) lives here.
+bench-gates = []
 gpu = ["wgpu", "pollster", "bytemuck", "futures-intrusive"]
 # GPU for WASM (WebGPU) - uses wasm-bindgen-futures instead of pollster
 gpu-wasm = ["wgpu", "bytemuck", "futures-intrusive", "wasm-bindgen-futures", "wasm-bindgen", "web-sys"]
