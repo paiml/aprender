@@ -185,6 +185,10 @@ fn from_architecture_generated(arch: &str) -> ArchConstraints {
             is_moe: false,
         },
         // qwen3_5.yaml
+        // Describes a hybrid architecture: Gated DeltaNet linear-attention layers
+        // + gated full attention every full_attention_interval layers.
+        // Conv kernel, state size, inner size, group count.
+        // Inference unsupported on BOTH backends (see PMAT-1098).
         "qwen3_5" | "qwen3.5" | "qwen35" => ArchConstraints {
             norm_type: NormType::RmsNorm,
             activation: Activation::Silu,

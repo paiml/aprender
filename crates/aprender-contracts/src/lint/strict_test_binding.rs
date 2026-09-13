@@ -1134,6 +1134,11 @@ fn ignored_test_still_counts() {}
             if line.is_empty() {
                 continue;
             }
+            if line.starts_with('#') {
+                // BSE-10a (PMAT-1066): every ratchet baseline carries a
+                // `# tool_version=` header, read by lib_baseline_ratchet.sh.
+                continue;
+            }
             let (p, c) = line
                 .split_once('\t')
                 .unwrap_or_else(|| panic!("baseline line is not `path<TAB>count`: {line:?}"));

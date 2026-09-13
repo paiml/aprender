@@ -130,12 +130,9 @@ pub fn dequantize_q5_k_to_f32(data: &[u8], num_elements: usize) -> Vec<f32> {
             let min_val = dmin * f32::from(mins[j]);
             for k in 0..32 {
                 let idx = j * 32 + k;
-                let qs_idx = j * 16 + (k % 16);
-                let q_lo = if k < 16 {
-                    qs[qs_idx] & 0x0F
-                } else {
-                    (qs[qs_idx] >> 4) & 0x0F
-                };
+                // ggml block_q5_K: sub-blocks 2c and 2c + 1 share qs[32c..32c + 32], the even
+                // one in the low nibbles and the odd one in the high nibbles (PMAT-1101).
+                let q_lo = (qs[(j / 2) * 32 + k] >> (4 * (j % 2))) & 0x0F;
                 let q_hi = (qh[k] >> j) & 1;
                 let q = q_lo | (q_hi << 4);
                 result[out_start + idx] = scale * f32::from(q) - min_val;

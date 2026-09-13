@@ -94,10 +94,19 @@ jobs:
           - name: blackwell-gb10
             arch: ARM64
             select: blackwell
-    # LITERAL, not an expression. infra#352 requires a selector to name `gpu`,
-    # and a guard can only check labels it can see — labels hidden behind a
-    # matrix expression are invisible to it.
-    runs-on: [self-hosted, gpu, Linux, ARM64, cuda, blackwell]
+    # LITERAL, not an expression: a guard can only check labels it can see, and labels
+    # hidden behind a matrix expression are invisible to it.
+    #
+    # NAMES THE BOX. infra#352 asked a GPU selector to name `gpu`; infra#494/#495
+    # superseded that when yoga arrived and registered `gpu,yoga,cuda,ada` beside gx10's
+    # `gpu,gx10,cuda,blackwell,gb10` -- `gpu` stopped naming one machine, so a selector
+    # built on it resolves to aarch64 GB10 or x86_64 Ada at compile time. The opt-in
+    # label must name ONE BOX, and gx10 declares exactly one:
+    #   machines/gx10/forjar.yaml  params.runner_opt_in_labels: "gx10"
+    # `blackwell` is a capability, not that label -- it is unambiguous only for as long
+    # as gx10 is the fleet's only Blackwell box, which is the assumption `gpu` was
+    # making right up until it broke.
+    runs-on: [self-hosted, gpu, Linux, ARM64, cuda, blackwell, gx10]
     timeout-minutes: 90
     env:
       APR_PARITY_MODEL: ${{ vars.APR_PARITY_MODEL || '/home/noah/models/qwen2.5-coder-1.5b-instruct-q4k.apr' }}
@@ -155,6 +164,19 @@ jobs:
 
       - uses: actions/checkout@v7
         if: steps.decide.outputs.proceed == 'true'
+
+      # The first thing gx10 does once it has a tree. NOT before `decide` and
+      # NOT before the checkout, for the reason the comment below spells out:
+      # on a yield night there is no working tree, so a step that `bash`es a
+      # repo path exits 127 and turns a deliberately-yielded night RED. It
+      # carries the same `if:` as the checkout it follows.
+      #
+      # gx10 is the box where run 34448908554 died on `gh: command not found`
+      # after a 21 MB CUDA build. Everything below this line assumes cargo,
+      # rustup and a visible device; this is where that assumption is checked.
+      - name: Preflight — this box has the tools this job assumes
+        if: steps.decide.outputs.proceed == 'true'
+        run: bash scripts/ci_self_hosted_preflight.sh --cuda
 
       # PP-26's release-phase marker gate (scripts/check_perf041_marker.sh, a
       # dogfood gate) may not be named in a REQUIRED workflow
@@ -343,6 +365,177 @@ jobs:
                fail=1 ;;
           esac
           exit "$fail"
+
+      # BSE-11 (docs/specifications/build-system-enhancement.md wave 3,
+      # `paiml/infra`, PMAT-1067): byte-compare tonight's witness line(s)
+      # against the last successful run's, instead of leaving the release
+      # checklist to re-diagnose this job's GitHub status colour. The PP-26
+      # witness has printed the SAME `^PP-26-WITNESS: ` line(s) — a standing
+      # INVALID-CORRECTNESS band, not a regression — every night since
+      # 2026-08-30 (docs/reports/work-history-delay-optimization-report.md);
+      # a colour is red either way, so a real regression and a known-stable
+      # failure are indistinguishable without opening the log. `witness_diff.sh`
+      # answers exactly "did the bytes change?" and nothing else, so the
+      # checklist can read the single word `CHANGED` and skip the rest on a
+      # night that says `UNCHANGED`.
+      #
+      # `proceed == 'true'` (not just `!cancelled()`) is required: on a yield
+      # night `decide` writes only marker.json, never probe.log, so this step
+      # would read a file that does not exist. Mirrors the witness step's own
+      # condition immediately above.
+      #
+      # SAME ARTIFACT NAME the next step uploads (`pp26-witness-${{ matrix.name
+      # }}`) is downloaded here for the PREVIOUS run — this job already
+      # produces it nightly, so no new artifact is introduced. `gh run list`/
+      # `gh run download` read-only calls need no token beyond the runner's own
+      # ambient gh auth (the same pattern qwen-story-daily.yml's manifest step
+      # already uses); no `permissions:` change.
+      # D1 revision (BSE-11, Pmat-Ticket: PMAT-1067): this step used to be
+      # fail-OPEN. `set -uo pipefail` has no `-e`, `gh run download ... ||
+      # true` swallowed a genuine download failure, and `verdict=$(...)`'s
+      # output was never checked against the two words witness_diff.sh can
+      # print - a missing/unreadable script (exit 127) or witness_diff.sh's
+      # own exit 2 landed silently in `$verdict`, the step echoed an empty
+      # (or garbage) word, and the job went green. Fixed two ways:
+      #   1. `gh run download` failure is now handled explicitly instead of
+      #      `|| true` - genuinely missing baseline artifact -> NO-BASELINE
+      #      (a third, documented verdict word the checklist treats like
+      #      CHANGED - i.e. "look at it"); any other download failure fails
+      #      the step.
+      #   2. the verdict word is asserted with a `case` after the command
+      #      substitution (chosen over bare `set -e`, because `set -e` alone
+      #      would still let witness_diff.sh's own STDOUT - empty or
+      #      malformed on some other unanticipated exit path - pass through
+      #      unexamined; the `case` inspects the actual word, not just the
+      #      exit code of the substitution).
+      # D1 follow-up (BSE-11, Pmat-Ticket: PMAT-1067): the D1 fix above still
+      # conflated two different failures behind `run_id="$(gh run list ...)"`
+      # + `[ -z "$run_id" ]`. Under `set -uo pipefail` (no `-e`), a `gh`
+      # invocation that fails outright - bad/expired auth, an API 5xx, a rate
+      # limit - ALSO leaves `run_id` empty, so it read exactly like "no prior
+      # successful run", the legitimate NO-BASELINE case. A broken `gh` must
+      # not silently masquerade as "nothing to compare against"; only an
+      # `rc=0` empty result is NO-BASELINE. `gh run list`'s exit status is now
+      # captured directly (`if ! run_id=$(...); then ... exit 1; fi`) before
+      # the emptiness check ever runs, mirroring the same distinction already
+      # made below for `gh run download` (download failure -> exit 1;
+      # "no artifact" -> NO-BASELINE).
+      #
+      # Two further D1-follow-up fixes, same ticket:
+      #   - The "checklist" this step's `NO-BASELINE`/`CHANGED`/`UNCHANGED`
+      #     word feeds (O12, docs/reports/work-history-delay-optimization-report.md)
+      #     is a human release-day process outside this repo, not an in-repo
+      #     document this workflow can update - so the three-word semantics
+      #     are now stated directly in the job's own step summary line below,
+      #     which is what a release-day reader actually opens.
+      #   - When a downloaded baseline's `probe.log` HAS the file but its
+      #     witness line is absent (an empty `$expected`/`$observed`), the
+      #     step already failed closed via `witness_diff.sh`'s own exit 2 -
+      #     but the resulting "unexpected verdict: ''" message did not say
+      #     WHICH of the two files was empty. Checked explicitly below so
+      #     the failure names the file before `witness_diff.sh` ever runs.
+      - name: PP-26 - witness byte-compare against the previous run (BSE-11)
+        if: ${{ !cancelled() && steps.decide.outputs.proceed == 'true' }}
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -uo pipefail
+          observed="$PERF041_OUT/witness-line.observed.txt"
+          expected="$PERF041_OUT/witness-line.expected.txt"
+          # $log is a previous step's local variable, not inherited across
+          # `run:` blocks (each is its own shell) - recompute the same path
+          # the witness step above wrote it to ($PERF041_OUT/probe.log).
+          log="$PERF041_OUT/probe.log"
+          grep '^PP-26-WITNESS: ' "$log" > "$observed" || : > "$observed"
+
+          verdict=""
+          rm -rf /tmp/pp26-prev-witness && mkdir -p /tmp/pp26-prev-witness
+          # 67-F1 (PMAT-1098): the self-hosted CUDA boxes carry no `gh` (#3083 / 67-C2), so
+          # this step failed every night on gx10 as "gh run list failed (auth/API error)" —
+          # `gh: command not found` wearing an auth error's label. Read-only REST with the
+          # job token + python3 instead, the same shape binary-release.yml uses (#3074).
+          # The three outcomes stay distinct: a REST/auth error is exit 1 (never a silent
+          # NO-BASELINE); "no such artifact on the last green run" is NO-BASELINE; a
+          # download or unzip failure is exit 1 with the error on stderr.
+          api="https://api.github.com/repos/${GITHUB_REPOSITORY}"
+          hdr_auth="Authorization: Bearer ${GITHUB_TOKEN}"
+          hdr_acc="Accept: application/vnd.github+json"
+          if ! run_id="$(curl -sSf -H "$hdr_auth" -H "$hdr_acc" \
+                 "$api/actions/workflows/cuda-nightly.yml/runs?status=success&per_page=1" \
+                 | python3 -c 'import json,sys; r=json.load(sys.stdin)["workflow_runs"]; print(r[0]["id"] if r else "")')"; then
+            echo "::error::PP-26 witness: listing the last successful cuda-nightly run failed (REST/auth error) - not a NO-BASELINE condition"
+            exit 1
+          fi
+          if [ -z "$run_id" ]; then
+            verdict="NO-BASELINE"
+          else
+            if ! art_url="$(curl -sSf -H "$hdr_auth" -H "$hdr_acc" \
+                   "$api/actions/runs/$run_id/artifacts?per_page=100" \
+                   | python3 -c 'import json,sys; want=sys.argv[1]; a=[x for x in json.load(sys.stdin)["artifacts"] if x["name"]==want and not x["expired"]]; print(a[0]["archive_download_url"] if a else "")' \
+                       "pp26-witness-${{ matrix.name }}")"; then
+              echo "::error::PP-26 witness: listing artifacts of run $run_id failed (REST/auth error) - not a NO-BASELINE condition"
+              exit 1
+            fi
+            if [ -z "$art_url" ]; then
+              verdict="NO-BASELINE"
+            else
+              dl_err="$(mktemp)"
+              if curl -sSfL -H "$hdr_auth" -o /tmp/pp26-prev-witness/witness.zip "$art_url" 2>"$dl_err" \
+                 && python3 -c 'import sys,zipfile; zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])' \
+                      /tmp/pp26-prev-witness/witness.zip /tmp/pp26-prev-witness 2>>"$dl_err"; then
+                :
+              else
+                echo "::error::PP-26 witness: artifact download/unzip failed for run $run_id (pp26-witness-${{ matrix.name }})"
+                cat "$dl_err" >&2
+                rm -f "$dl_err"
+                exit 1
+              fi
+              rm -f "$dl_err"
+            fi
+          fi
+          if [ "$verdict" != "NO-BASELINE" ]; then
+            if [ -f /tmp/pp26-prev-witness/probe.log ]; then
+              grep '^PP-26-WITNESS: ' /tmp/pp26-prev-witness/probe.log > "$expected" || : > "$expected"
+            else
+              # Download succeeded but this run's artifact had no probe.log
+              # (e.g. a yielded night) - still nothing to compare against.
+              verdict="NO-BASELINE"
+            fi
+          fi
+
+          if [ "$verdict" != "NO-BASELINE" ]; then
+            # Fail closed and name which file is empty before handing off to
+            # witness_diff.sh, whose own "unexpected verdict: ''" message
+            # (below) does not say which side was the problem.
+            if [ ! -s "$expected" ]; then
+              echo "::error::PP-26 witness: expected witness line is empty (previous run's probe.log had no '^PP-26-WITNESS: ' line)"
+              exit 1
+            fi
+            if [ ! -s "$observed" ]; then
+              echo "::error::PP-26 witness: observed witness line is empty (this run's probe.log had no '^PP-26-WITNESS: ' line)"
+              exit 1
+            fi
+            verdict="$(bash scripts/witness_diff.sh "$expected" "$observed")"
+          fi
+
+          # Fail loudly instead of fail-open: an unexpected word here means
+          # witness_diff.sh errored (missing/unreadable script, empty
+          # witness, usage error) and must not read as a quiet no-op.
+          case "$verdict" in
+            UNCHANGED|CHANGED|NO-BASELINE) ;;
+            *)
+              echo "::error::PP-26 witness byte-compare produced an unexpected verdict: '$verdict'"
+              exit 1
+              ;;
+          esac
+
+          echo "PP-26 witness byte-compare: $verdict"
+          echo "PP-26 witness byte-compare: **$verdict**" >> "$GITHUB_STEP_SUMMARY"
+          # The release-day reader of this summary is a human process outside
+          # this repo (O12, docs/reports/work-history-delay-optimization-report.md)
+          # with no in-repo checklist document to carry this instead - so the
+          # three words are defined right here, where that reader looks.
+          echo "> UNCHANGED = same witness bytes as the last successful run (no action). CHANGED = witness bytes differ (investigate). NO-BASELINE = nothing to compare against yet (treat like CHANGED - look at it)." >> "$GITHUB_STEP_SUMMARY"
 
       # `!cancelled()` with NO proceed condition, on purpose: when `decide`
       # yields to training it writes a NOT_RUN marker, and a yielded night is

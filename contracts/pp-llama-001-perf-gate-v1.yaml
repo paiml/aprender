@@ -60,6 +60,7 @@ equations:
       - "scaling_efficiency FALLS when agg(1) improves, so ratcheting it up-only punished the work it existed to protect"
       - "n < n_min reports the point estimate and declines a verdict — a ratchet that fires on one sample fires on noise"
       - "A cell that is not MEASURED gates nothing: a ratchet needs a measurement to ratchet FROM"
+      - "AN ARM THAT MEASURED NOTHING SAYS SO (#2830, PP-066 C0-4): on a receipt whose only band is c=1 Arm A prints `REPORT ArmA scaling: c=1 only, no scaling measured`; an arm that emitted no line is a REPORT, never a PASS — the gate never turns silence into VERDICT PASS"
 
 proof_obligations:
   - type: invariant
@@ -156,6 +157,12 @@ falsification_tests:
     prediction: "perf_gate.sh --selftest keeps historical_unmeasured_release_reports and historical_unmeasured_armd_reports green, and historical_measured_release_fails and v3_unsigned_unmeasured_release_fails red; dropping either condition of historical_for_unmeasured turns one must-not-fire row green"
     test: "bash scripts/perf_gate.sh --selftest"
     if_fails: "Either the release phase cannot PASS in the UNMEASURED state §7.2 permits (a gate bypassed for substance), or an unsigned or mis-cited receipt passes the release phase"
+
+  - id: FALSIFY-PP-LLAMA-001-PERF-GATE-012
+    rule: "An Arm A that measured nothing on a c=1-only receipt reports it by name; the gate never reads an arm's silence as PASS (#2830, PP-066 C0-4)"
+    prediction: "perf_gate.sh --selftest keeps arm_a_c1_only_not_pass red-polarity green (the output carries `REPORT ArmA scaling: c=1 only, no scaling measured` and never `VERDICT PASS`) and arm_a_multi_band_ok green (the c=1 + c=8 fixture prints the normal Arm A lines); removing the REPORT line turns arm_a_c1_only_not_pass RED"
+    test: "bash scripts/perf_gate.sh --selftest"
+    if_fails: "A pre-flight run with one band walks every print in Arm A, fires none, and the gate says VERDICT PASS over a measurement that never happened — the exact run observed on lambda in #2830"
 
 qa_gate:
   id: F-PP-LLAMA-001-PERF-GATE-001

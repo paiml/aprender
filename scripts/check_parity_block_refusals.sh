@@ -26,14 +26,20 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PROG=check_parity_block_refusals
 export PBS_ROOT="$ROOT"
 
+# guard_tree.sh (the one step that runs every cargo-free guard) invokes a guard
+# BARE and, when its --help mentions self-test, with --self-test first. This
+# guard has no other mode -- the case table IS the guard -- so bare, --selftest
+# and --self-test all run it; anything else is a usage error (rc=2).
 usage() {
-    printf 'usage: %s --selftest\n' "$PROG" >&2
+    printf 'usage: %s [--self-test | --selftest]   # the case table (default)\n' "$PROG" >&2
     exit 2
 }
 
-if [ "${1:-}" != "--selftest" ]; then
-    usage
-fi
+case "${1:-}" in
+    ""|--selftest|--self-test) ;;
+    --help|-h) usage ;;
+    *) usage ;;
+esac
 
 command -v python3 >/dev/null 2>&1 || { printf '%s: ENV - python3 is missing\n' "$PROG" >&2; exit 2; }
 
