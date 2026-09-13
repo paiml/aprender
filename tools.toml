@@ -5,7 +5,22 @@
 # runner (paiml/infra, machines/intel/forjar.yaml):
 #
 #   stack-tool-pmat    (line 784)  version: "3.39.0"   # infra ef0ec4c, 2026-09-06
-#   stack-tool-bashrs  (line 810)  version: "7.0.1"
+#   stack-tool-bashrs  (line 811)  version: "7.0.4"
+#
+# THIS FILE WAS THE STALE MIRROR, not the fleet (measured 2026-09-13). It said
+# bashrs 7.0.1 while all five machines/*/forjar.yaml declared 7.0.4 — and the
+# fleet itself agreed with neither: intel 7.0.1, gx10 and mini 7.0.4, yoga no
+# bashrs at all, with pmat spread over 3.20.0 / 3.31.0 / 3.39.0. The assertion
+# below could not see any of that, because it only ever ran on the runner that
+# took the job and guard-cargo lands on intel nearly every time. All four hosts
+# are converged now, and .github/workflows/fleet-tools.yml asserts this file on
+# each of them nightly so the next drift is visible on the box it happens to.
+#
+# 7.0.1 -> 7.0.4 is not a behaviour change, measured rather than assumed: both
+# versions built and run over all 195 scripts in scripts/ return the same 6
+# error lines, identical after stripping positions. shell_lint_baseline.txt is
+# re-stamped to that measured 6 in this commit — it had been carrying 8, taken
+# by an instrument the header named and nothing compared against.
 #
 # ci.yml used to run, per job:
 #   command -v pmat > /dev/null 2>&1 || cargo install pmat --locked --quiet || true
@@ -26,4 +41,4 @@
 version = "3.39.0"
 
 [bashrs]
-version = "7.0.1"
+version = "7.0.4"

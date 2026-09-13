@@ -1,2 +1,2 @@
-# tool_version=bashrs 7.0.1
-8
+# tool_version=bashrs 7.0.4
+6
