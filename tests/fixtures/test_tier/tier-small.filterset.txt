@@ -1,0 +1,1 @@
+filterset=(package(=crateA) & kind(lib) & test(/^(dense|guard)::/)) | (package(=crateB) & kind(lib) & test(/^(light)::/)) | (package(=crateC) & binary(=readme_contract))

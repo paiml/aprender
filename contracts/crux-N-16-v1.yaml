@@ -1,0 +1,86 @@
+# CRUX-N-16 — Barnes-Hut t-SNE (O(n log n))
+# CRUX category N: Rust ML Framework Parity (linfa + burn).
+# Filed from the 2026-09-12 competitive sweep. Tracks GitHub #3167, epic #3146.
+# registry: false — this contract carries real falsification gates and claims no
+# exemption (operator ruling 2026-08-21, "no contract exemptions").
+
+metadata:
+  id: CRUX-N-16
+  version: "1.0.0"
+  created: "2026-09-12"
+  updated: "2026-09-12"
+  author: PAIML Engineering
+  registry: false
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "N — Rust ML Framework Parity"
+  competitor: linfa
+  demand_score: 3  # 1..5, medium priority in pmat work
+  intake_status: partial
+  github_issue: 3167
+  description: >
+    Barnes-Hut approximation for t-SNE. linfa-tsne describes itself as "Barnes-Hut t-distributed stochastic neighbor embedding". aprender has TSNE at crates/aprender-core/src/preprocessing/tsne.rs but a scan for barnes, quadtree and octree found nothing -- it is the naive O(n^2) formulation. Same defect class as CRUX-N-03: an algorithm that is PRESENT but asymptotically worse than the comparator's. Presence is not parity.
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - 'epic: https://github.com/paiml/aprender/issues/3146'
+  - 'story: https://github.com/paiml/aprender/issues/3167'
+  - 'competitor: https://github.com/rust-ml/linfa'
+
+equations:
+  theta_zero_degenerates_to_exact:
+    formula: |
+      BarnesHut(X, θ = 0.0)  ≡  Naive(X)   within 1e-9
+    domain: "any X"
+    codomain: "embedding deviation"
+    invariants:
+    - "at θ=0 the approximation MUST reduce to the exact computation -- this is what proves the quadtree correct"
+    - "at θ=0.5 the KL divergence is within a documented tolerance of exact"
+
+  n_log_n_force_computation:
+    formula: |
+      visits(n) counted as quadtree node expansions:
+        visits(n) = O(n log n)  where naive = O(n²) on the same inputs
+    domain: "n ∈ {1e3, 1e4, 1e5}"
+    codomain: "node-visit counts"
+    invariants:
+    - "counted, never timed -- the repo forbids wall-clock in required checks"
+    - "the O(n²) P-matrix is NOT materialized on the Barnes-Hut path"
+
+falsification_tests:
+- id: FALSIFY-CRUX-N-16-001
+  rule: "theta=0 reproduces the exact embedding"
+  prediction: "Barnes-Hut with theta=0.0 matches the naive path within 1e-9"
+  test: >-
+    LIVE-PENDING - theta=0 reproduces the exact embedding. No test surface exists today because the capability is unimplemented: Barnes-Hut t-SNE (O(n log n)) (aprender#3167, CRUX-N-16). PROMOTE by authoring a test named theta_zero_equals_exact in module `preprocessing/tsne/tests` of crate `aprender-core`; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED and unfalsifiable-by-absence, NOT satisfied.
+  if_fails: rule 'theta=0 reproduces the exact embedding' is violated — the linfa parity claim for CRUX-N-16 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation
+- id: FALSIFY-CRUX-N-16-002
+  rule: "force computation grows as n log n, not n squared"
+  prediction: "quadtree node-visit counts across n=1e3,1e4,1e5 grow as O(n log n) where the naive path is asserted O(n^2)"
+  test: >-
+    LIVE-PENDING - force computation grows as n log n, not n squared. No test surface exists today because the capability is unimplemented: Barnes-Hut t-SNE (O(n log n)) (aprender#3167, CRUX-N-16). PROMOTE by authoring a test named visits_n_log_n in module `preprocessing/tsne/tests` of crate `aprender-core`; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED and unfalsifiable-by-absence, NOT satisfied.
+  if_fails: rule 'force computation grows as n log n, not n squared' is violated — the linfa parity claim for CRUX-N-16 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation
+- id: FALSIFY-CRUX-N-16-003
+  rule: "the O(n^2) P-matrix is not materialized"
+  prediction: "an allocation or peak-RSS check asserts the dense P-matrix is absent on the Barnes-Hut path"
+  test: >-
+    LIVE-PENDING - the O(n^2) P-matrix is not materialized. No test surface exists today because the capability is unimplemented: Barnes-Hut t-SNE (O(n log n)) (aprender#3167, CRUX-N-16). PROMOTE by authoring a test named no_dense_p_matrix in module `preprocessing/tsne/tests` of crate `aprender-core`; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED and unfalsifiable-by-absence, NOT satisfied.
+  if_fails: rule 'the O(n^2) P-matrix is not materialized' is violated — the linfa parity claim for CRUX-N-16 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation
+
+proof_obligations:
+- type: invariant
+  property: "theta=0 reproduces the exact embedding"
+- type: invariant
+  property: "force computation grows as n log n, not n squared"
+- type: invariant
+  property: "the O(n^2) P-matrix is not materialized"
+
+kani_harnesses:
+- id: KH-CRUX-N-16-001
+  obligation: theta_zero_degenerates_to_exact
+  property: theta_zero_degenerates_to_exact_holds_on_bounded_input
+  bound: 4
+- id: KH-CRUX-N-16-002
+  obligation: n_log_n_force_computation
+  property: n_log_n_force_computation_holds_on_bounded_input
+  bound: 4

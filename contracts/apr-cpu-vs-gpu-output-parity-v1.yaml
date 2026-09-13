@@ -15,7 +15,7 @@ metadata:
   - 'crates/aprender-serve/src/cuda/executor/layers/graphed_capture.rs graph_cc_default (PMAT-886a: cc>=89 re-includes Blackwell)'
   - 'crates/aprender-serve/src/cli/apr_inference.rs (line 46 comment: "Both ... produce garbage on GPU")'
   - 'crates/aprender-serve/src/gguf/cuda/mod_parity_gate.rs (existing gate for gguf::cuda path)'
-  - 'crates/aprender-serve/src/gguf/cuda/mod.rs:268-279 (gate enforcement, with SKIP_PARITY_GATE=1 bypass)'
+  - 'crates/aprender-serve/src/gguf/cuda/mod.rs — the SKIP_PARITY_GATE bypass, anchored by SYMBOL not line: grep for the literal SKIP_PARITY_GATE. The former anchor :268-279 was stale (it is a doc comment about qtype resolution), and the review that caught it proposed :333/:349 — which had ALREADY drifted to :390/:406 by the time it was read. A line number inside a contract is not an anchor.'
   - 'crates/aprender-serve/src/infer/gguf_gpu_generate.rs:487-494 (load_apr_cuda_model — visible-fallback log added 2026-05-03)'
   changelog:
   - '1.11.0 - 2026-06-21 - added FALSIFY-CPU-GPU-011 + a Blackwell GRAPH-replay-parity invariant (PMAT-886a), and FIXED the PMAT-810 root cause so Blackwell now uses the fast graphed decode. ROOT CAUSE (gx10 GB10 sm_121, on-device GRAPH_AB_TEST per-buffer scan): the plain MWV (fp32-activation) Q4K GEMV mwv_q4k_gemv_into — the DEFAULT Q4K variant on Blackwell (Q4kVariant::Mwv, PMAT-806) — was MISSING its `if self.graph_recording { graph_recorded_kernels.push(...) }` block, while the sibling mwv_dp4a/hw_dp4a variants (used on discrete sm_89 DP4A GPUs) HAVE it (realizr#198). So on Blackwell the ~6 Q4K GEMVs/layer (Q,K,V,output,gate-or-fused,up,down) executed during the eager capture pass but were NEVER added to the manual graph; on cuGraphLaunch replay those kernels were ABSENT, leaving q/k/v + residual + ffn buffers STALE -> garbage (apr parity avg cosine 0.5336/0.1912). RTX 4090 (sm_89) was unaffected because it routes Q4K to the recorded DP4A variant. The CUDA graph mechanism itself is correct on sm_121 (a manual add_kernel_node reproducer + the stream-capture test both pass). Fix: record mwv_q4k_gemv_into too (5 LOC mirroring mwv_dp4a). Recorded kernel count 451 -> 619 (the previously-dropped ~168 MWV GEMVs). VERIFIED LIVE on gx10 sm_121: GRAPH_AB_TEST per-buffer diff 0.000000 across the whole transformer stack (hidden_buf1/2, q/k/v, attn, ffn_gate/up/act); apr parity (CUDA_GRAPH_ENABLE) 0.5336 -> 0.993437 (== eager, argmax matches 6/6 positions); default apr run (no env) now fires the graph AND matches --no-gpu token-for-token on Qwen2.5-coder-1.5B (3 prompts) and Qwen3-8B; apr bench 96.4 (eager) -> 112.1 tok/s (graph), +16%. graph_cc_default re-defaulted cc>=89 (was cc>=89 && cc<120), so PMAT-810 supersedes the Blackwell carve-out; CUDA_GRAPH_ENABLE/SKIP_CUDA_GRAPH escape hatches kept. total_obligations 10 -> 11.'
@@ -176,7 +176,7 @@ falsification_tests:
   binds_to: greedy_argmax_parity
   status: DISCHARGED
   algorithm_evidence:
-  - "Existing `parity_gate` function in crates/aprender-serve/src/gguf/cuda/mod_parity_gate.rs IS wired into `OwnedQuantizedModelCuda::with_max_seq_len` (mod.rs:268-279)"
+  - "Existing `parity_gate` function in crates/aprender-serve/src/gguf/cuda/mod_parity_gate.rs IS wired into `OwnedQuantizedModelCuda::with_max_seq_len` — anchored by SYMBOL, not line: the former `mod.rs:268-279` had drifted onto an unrelated doc comment"
   - "Empirical 2026-05-03: that gate IS exercised on the .apr GPU path because load_apr_cuda_model:487 calls with_max_seq_len → preload_and_verify → parity_gate. The trueno-graph claim from v1.0.0 was incorrect."
   - "Empirical 2026-05-03 with `apr -v run` on canonical 7B teacher: gate's GPU forward errors with `CUDA_ERROR_ILLEGAL_ADDRESS (code: 700)` during forward_all_layers_gpu_to_logits_graphed, surfaced via verbose-only line `Backend: CPU (GPU unavailable: Inference error: PARITY-GATE: GPU forward failed: ...)` — see findings-v6"
   - "User-visible regression: pre-fix the verbose-only log meant default `apr run` on the broken canonical teacher produced wgpu-gibberish output with NO stderr signal that GPU had been rejected"
@@ -489,6 +489,82 @@ falsification_tests:
   - "ROOT CAUSE: deployed gx10 `apr` was v0.4.11 (4b030b0c, Apr 6) — predates PMAT-742 (validate_gpu_first_token near-tie, inference_result.rs:455 gpu_probe_token_acceptable, Jun 13). Trace: `[GH-480] F2 validation FAILED — falling back to CPU` with no [F2-VALIDATION] reason line = pre-PMAT-742 hard-argmax gate. GPU never engaged: nvidia-smi dmon SM peak ~8% during decode."
   - "ISOLATION: SKIP_PARITY_GATE=1 on the SAME v0.4.11 binary -> `[GH-480] F2 validation PASSED` -> 647-kernel CUDA graph runs -> 125.7 tok/s. Proves the GPU kernels are fine on GB10; the F2 gate was the sole blocker. apr qa (gate-free GPU path) independently PASSED golden_output at 97.6 tok/s."
   - "LIVE DISCHARGE 2026-06-21 on gx10 (GB10 sm_121): a current binary (v0.49.1 7966da8ee, contains PMAT-742 + PMAT-806 + PMAT-810) with NO env vars passes F2 (`F2 validation PASSED`), runs ON GPU (SM peak 95%), emits coherent output matching --no-gpu (`def add_numbers(a, b): return a + b`), and decodes 112.9 tok/s — up from 10.4 tok/s (10.9x). Remediation: reinstalled v0.49.1 as the gx10 default `apr` (old binary backed up to ~/.cargo/bin/apr.v0.4.11.bak.pmat885)."
+
+- id: FALSIFY-CPU-GPU-012
+  rule: >
+    The set of models this contract governs is DERIVED from what the shipped
+    documents name, never typed. A model a document names but the manifest omits
+    is drift; a manifest entry no document cites is drift.
+  prediction: |
+    `scripts/derive_model_manifest.sh --self-test` is 6/6: three models derived
+    from README, perf-matrix and a dogfood receipt; names case-folded with the
+    quant suffix and `.gguf` stripped; the 1.5B cited twice (README + dogfood);
+    `--check` PASSES on an identical committed manifest, reports DRIFT (rc 1) on
+    a hand-typed entry nothing cites, and is NOT a pass on a missing manifest.
+  test: bash scripts/derive_model_manifest.sh --self-test
+  mutation: >
+    Append a hand-typed entry to evidence/models/supported.yaml;
+    `bash scripts/derive_model_manifest.sh --check` MUST turn RED (DRIFT).
+  if_fails: >
+    A model nobody documents is claimed supported, or a documented one is never
+    measured — either way the parity claim covers a set nobody can check.
+  status: DISCHARGED
+  ticket: PMAT-1087
+  issue: "https://github.com/paiml/aprender/issues/2971"
+
+- id: FALSIFY-CPU-GPU-013
+  rule: >
+    The gate's DOMAIN is >= 64 autoregressive positions, not one. This is the
+    direct answer to this contract's own #1864 five-whys, whose root cause was
+    recorded as "the gate's domain was too narrow (single-step instead of
+    multi-step)" — FALSIFY-CPU-GPU-005 widened it to N=3; C14 widens it to the
+    horizon the invariant actually needs, and adds a threshold with a basis.
+  prediction: |
+    `scripts/check_model_parity.sh --self-test` is 9/9, both polarities on BOTH
+    required GPU hosts: the lambda 1.5B record is RED (position 0 at 0.9508) and
+    the gx10 1.5B record is RED too (0.950611, sm_121, a different kernel path);
+    the 7B records are GREEN on both; the must-RED twin (one position forced to
+    0.5) is RED naming the position; 20 positions is REFUSED, never judged; the
+    same 1.5B record PASSES under a 0.90 threshold (the threshold is the
+    decision); an output with no metrics is RED; a threshold with no basis is
+    refused at exit 2, never defaulted.
+  test: bash scripts/check_model_parity.sh --self-test
+  mutation: >
+    Set `min_positions: 1` in evidence/parity/thresholds.yaml — the 20-position
+    row MUST turn RED (a one-token record must never admit a backend). Export
+    SKIP_PARITY_GATE=1 and run `--manifest`: the first line MUST read `override:`
+    and the exit MUST be 1.
+  if_fails: >
+    A model that computes a different function on the GPU ships as supported,
+    because the gate looked at a position where the two paths happen to agree.
+  status: DISCHARGED
+  ticket: PMAT-1087
+  issue: "https://github.com/paiml/aprender/issues/2971"
+
+- id: FALSIFY-CPU-GPU-014
+  rule: >
+    A forced backend NEVER silently downgrades. On a failed parity gate a forced
+    request is refused with a code read from crates/apr-cli/src/error.rs; an
+    unforced request prints `selected: cpu (reason: parity FAILED …)`;
+    `GET /v1/effective-config` carries `parity: {status, cosine, positions,
+    threshold, basis}`; and the SKIP_PARITY_GATE bypass this contract already
+    documents is PRINTED as `override:` and marks every receipt of that run
+    INVALID-CORRECTNESS.
+  prediction: |
+    `cargo test -p apr-cli --test reg15_admission` is 7/7, the refusal code read
+    from error.rs at test time rather than typed.
+  test: cargo test -p apr-cli --test reg15_admission
+  mutation: >
+    Restore the `[CUDA init failed: …, falling back to CPU]` catch in
+    chat_generate_session_02.rs; the forced-cuda REG-15 row MUST turn RED.
+  if_fails: >
+    `apr chat --gpu` runs on the CPU while printing the model's path — the second
+    half of #2971, and the failure this contract's own SKIP_PARITY_GATE clause
+    exists to keep visible.
+  status: DISCHARGED
+  ticket: PMAT-1087
+  issue: "https://github.com/paiml/aprender/issues/2971"
+
 
 proof_obligations:
 - type: invariant

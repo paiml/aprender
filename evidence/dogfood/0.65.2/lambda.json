@@ -148708,5 +148708,11 @@
   "wall_seconds": 167,
   "source": "evidence/dogfood/0.65.2/lambda-cuda-install.txt",
   "started": "2026-09-05 ~00:44Z on lambda"
+ },
+ "validity": {
+  "correctness": "INVALID-CORRECTNESS",
+  "why": "this receipt measured qwen2.5-coder-1.5b on cuda before #2971 (GPU computes a different function from CPU at position 0: cosine 0.9508 on lambda); every number here is a throughput of a wrong computation",
+  "issue": "https://github.com/paiml/aprender/issues/2971",
+  "relabelled": "2026-09-06 (L0-1a)"
  }
 }

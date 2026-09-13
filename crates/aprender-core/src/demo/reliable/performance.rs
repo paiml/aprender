@@ -121,9 +121,12 @@ pub fn detect_backend() -> String {
     }
     #[cfg(target_arch = "aarch64")]
     {
-        return "NEON".to_string();
+        "NEON".to_string()
     }
-    "Scalar".to_string()
+    #[cfg(not(target_arch = "aarch64"))]
+    {
+        "Scalar".to_string()
+    }
 }
 
 // ============================================================================
