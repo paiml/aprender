@@ -52,6 +52,12 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: "."
+          # cache-bin false: these run on the shared clean-room runners, where all 16
+          # listeners share ONE $CARGO_HOME. rust-cache's POST step PRUNES ~/.cargo/bin,
+          # so one job here deletes the fleet toolchain out from under the other fifteen
+          # (infra#208, #320, #381 -- it has happened three times in a day). infra's
+          # shared-cargo-home-guard BLOCKs on this exact step.
+          cache-bin: "false"
       - name: Build all 27 chapter examples
         run: |
           for ch in ch01_hello_apr ch02_tensors ch03_apr_format ch04_supervised \
@@ -77,6 +83,12 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: "."
+          # cache-bin false: these run on the shared clean-room runners, where all 16
+          # listeners share ONE $CARGO_HOME. rust-cache's POST step PRUNES ~/.cargo/bin,
+          # so one job here deletes the fleet toolchain out from under the other fifteen
+          # (infra#208, #320, #381 -- it has happened three times in a day). infra's
+          # shared-cargo-home-guard BLOCKs on this exact step.
+          cache-bin: "false"
       - name: Run all 27 chapter examples
         run: |
           PASS=0; FAIL=0
@@ -109,6 +121,12 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: "."
+          # cache-bin false: these run on the shared clean-room runners, where all 16
+          # listeners share ONE $CARGO_HOME. rust-cache's POST step PRUNES ~/.cargo/bin,
+          # so one job here deletes the fleet toolchain out from under the other fifteen
+          # (infra#208, #320, #381 -- it has happened three times in a day). infra's
+          # shared-cargo-home-guard BLOCKs on this exact step.
+          cache-bin: "false"
       - name: Run book_contracts tests
         run: cargo test -p aprender-core --test book_contracts
 

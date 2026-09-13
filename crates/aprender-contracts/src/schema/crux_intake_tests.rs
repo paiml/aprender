@@ -212,6 +212,10 @@ fn competitor_registry_covers_the_corpus_vocabulary() {
         "apr-qa-playbook",
         "openclip",
         "none",
+        // Category N — Rust ML Framework Parity (aprender#3146, 2026-09-12).
+        // 17 contracts: burn ×7, linfa ×10.
+        "burn",
+        "linfa",
     ] {
         assert!(
             CRUX_COMPETITORS.contains(&required),
@@ -250,6 +254,10 @@ fn beat_incumbents_cannot_name_the_crux_corpus() {
         "apr-qa-playbook",
         "openclip",
         "none",
+        // The two Rust-native frameworks: BEAT_INCUMBENTS names neither, which
+        // is why category N required a registry edit rather than a reuse.
+        "burn",
+        "linfa",
     ] {
         assert!(!beat_accepts(c), "BEAT_INCUMBENTS unexpectedly accepts {c}");
     }
