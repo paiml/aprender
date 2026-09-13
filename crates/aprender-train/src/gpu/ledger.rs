@@ -974,8 +974,24 @@ mod tests {
             started: now,
             lease_expires: now + chrono::Duration::hours(24),
         };
-        assert!(!reservation.is_alive());
-        assert!(reservation.should_prune());
+        // Linux can read /proc and tell. Everywhere else liveness is unknown
+        // and resolves to ALIVE deliberately -- see Reservation::is_alive. This
+        // row asserts what the platform it runs on actually does, rather than
+        // skipping: a bare #[cfg] here would have left darwin proving nothing
+        // about the very predicate that broke it.
+        #[cfg(target_os = "linux")]
+        {
+            assert!(!reservation.is_alive());
+            assert!(reservation.should_prune());
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            assert!(reservation.is_alive(), "no /proc: unknown must not read as dead");
+            assert!(
+                !reservation.should_prune(),
+                "an unexpired lease must survive when liveness cannot be determined"
+            );
+        }
     }
 
     #[test]
@@ -1064,8 +1080,27 @@ mod tests {
             ],
         };
         data.prune_dead();
-        assert_eq!(data.reservations.len(), 1);
-        assert_eq!(data.reservations[0].task, "alive");
+        // The EXPIRED row goes on every platform -- lease expiry needs no /proc.
+        assert!(
+            !data.reservations.iter().any(|r| r.task == "expired"),
+            "an expired lease is pruned everywhere"
+        );
+        // The DEAD-PID row only goes where liveness is knowable.
+        #[cfg(target_os = "linux")]
+        {
+            assert_eq!(data.reservations.len(), 1);
+            assert_eq!(data.reservations[0].task, "alive");
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            assert_eq!(
+                data.reservations.len(),
+                2,
+                "no /proc: the dead-pid row is kept until its lease expires"
+            );
+            assert!(data.reservations.iter().any(|r| r.task == "alive"));
+            assert!(data.reservations.iter().any(|r| r.task == "dead"));
+        }
     }
 
     #[test]
