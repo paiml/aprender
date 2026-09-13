@@ -1,0 +1,169 @@
+metadata:
+  version: 1.0.0
+  created: '2026-09-02'
+  author: PAIML Engineering
+  description: "The llama.cpp comparator declaration is COMPLETE, DECIDED and DATED — a per-band template (`-np {c}`, `-c {c}*{n_ctx_slot}`) with every 2026-mobile default pinned, an expiry that can emit COMPARATOR_STALE, a cmake line the resolved build's own CMakeCache corroborates, and no boolean accelerator flag anywhere in the harness. Binds scripts/llama_pin.toml + scripts/llama_bin.sh to the three guards that read them (check_llama_pin.sh, check_comparator_flags.sh, check_bench_protocol.sh) so a knob cannot be declared without being passed, or passed without being declared."
+  kind: pattern
+  references:
+    - "docs/specifications/PP-LLAMA-001-MASTER.md §5.3 — comparator decided (spec-owner, v3.0)"
+    - "docs/specifications/PP-LLAMA-001-MASTER.md §6 PP-15, PP-20, PP-22, PP-24"
+    - "docs/specifications/PP-LLAMA-001-MASTER.md §12 rows 0d, 3, 12"
+    - "scripts/llama_pin.toml — the declaration"
+    - "scripts/llama_bin.sh — the only producer of the comparator's flags and of the pin verdict"
+    - "evidence/parity/props-39173bcac-template.json — GET /props at the old template argv"
+    - "evidence/parity/props-39173bcac-np16.json — GET /props at the decided band argv"
+    - "paiml/aprender#2676 (PARITY-009, the pin), #2677 (PARITY-010, the protocol), #2737 (`-b 1`)"
+  tags:
+    - parity
+    - comparator
+    - llama.cpp
+    - pin
+    - pp-llama-001
+
+five_whys:
+  symptom: "The comparator declaration and the comparator that ran could disagree in five independent ways at once, and no check could say so: `flash_attention = false` was read by nothing while the pinned build resolved AUTO; `comparator_parallel = \"default\"` gave 4 slots against 16 clients; `batch_size = 1` — the configuration that once inflated the c=16 aggregate ratio 2.03x to 4.85x — was BLESSED by a guard row asserting it emits `-b 1` with rc 0; `build_flags_lambda` named a cmake line the binary was not built with; and the pin had no expiry, so §7.4's COMPARATOR_STALE had no producer."
+  why_1: "Each knob was added as a declaration first and a consumer second, and the second half was sometimes never written. A key nothing reads is a comment that looks enforceable."
+  why_2: "The one guard that compared declaration to invocation compared only the four knobs that already had a producer, so adding a knob without a producer also added no coverage."
+  why_3: "The comparator was launched ONCE PER LANE, outside the band loop, so no per-band configuration was expressible at all — `-np {c}` had nowhere to go and PP-24's `slots_admitted >= c` was false at c=8 and c=16 by construction."
+  why_4: "The pin's own comments argued FOR the configuration §5.3 overrules, in ~90 lines, so a reader of the declaration alone learned the dissent as the rule."
+  why_5: "Nothing dated the pin. A denominator frozen at a 2026-01 llama.cpp is a comparison against software no user runs, and there was no mechanism that could ever notice."
+  root_cause: "The declaration was treated as documentation rather than as an input with exactly one reader. Every knob now flows declaration -> llama_comparator_server_flags -> the run, the producer REFUSES rather than emitting a partial list, and the three guards assert the round trip; the pin carries pinned_on/pin_expiry and the resolver returns a distinct rc 4 for COMPARATOR_STALE."
+
+equations:
+  comparator_flags_from_declaration:
+    formula: "llama_comparator_server_flags(ngl, c, pin) = `-ngl {ngl} -c {c*n_ctx_slot} -t {threads} [-b {batch_size}] -np {c} -fa {flash_attention} -ub {n_ubatch} -ctk {cache_type_k} -ctv {cache_type_v} {-cb|-nocb} --no-warmup` when comparator_parallel = band"
+    domain: "ngl >= 0; c >= 1 integral; a pin file declaring context_length, threads, batch_size, comparator_parallel, n_ctx_slot, flash_attention, n_ubatch, cache_type_k, cache_type_v, cont_batching, slot_save"
+    codomain: "one line of flags on stdout, or an empty stdout and a non-zero status"
+    invariants:
+      - "There is exactly ONE producer; scripts/parity_host_receipt.sh retypes no knob"
+      - "rc 2: the arguments or the pin file are missing; c must be a positive integer"
+      - "rc 3: any declared key is absent or malformed, or n_ctx_slot < 640 (W1 is 512 prompt + 128 generated), or slot_save is not false"
+      - "rc 4: batch_size is numeric and <= 1 — the CRIPPLE, refused rather than declared"
+      - "Every non-zero return prints NOTHING: a caller that word-splits the output gets an empty invocation, never a truncated one"
+      - "comparator_parallel = band derives -c from the band; default passes no -np and uses the declared context_length"
+
+  pin_verdict:
+    formula: "llama_bin_resolve() -> {0 pinned, 1 wrong build or cmake mismatch, 2 unpinned, 3 incomplete declaration, 4 COMPARATOR_STALE}, with LLAMA_PIN_REASON naming which"
+    domain: "LLAMA_BENCH_PATH naming a candidate; scripts/llama_pin.toml; ${LLAMA_PIN_TODAY:-date -u +%F}"
+    codomain: "a return status plus LLAMA_BENCH, LLAMA_BUILD, LLAMA_PIN_REASON, LLAMA_PIN_EXPIRY, LLAMA_CMAKE_CUDA, LLAMA_CMAKE_ARCHS"
+    invariants:
+      - "NEVER PATH: LLAMA_BENCH_PATH is the only input, and it is still verified"
+      - "BUILD, NOT VERSION: the build id comes from an ORACLE (llama-cli, else llama-server) beside the candidate, because llama-bench cannot self-report its build"
+      - "HOW IT WAS BUILT: the resolved build's own CMakeCache.txt must agree with build_flags_<host> on GGML_CUDA and CMAKE_CUDA_ARCHITECTURES; an absent cache is rc 1, never a pass with a shrug"
+      - "A missing or unparseable pin_expiry is rc 3, not 'not expired' — the check requires a well-formed date rather than merely refusing a bad one"
+      - "The expiry boundary is INCLUSIVE: a pin expiring today is still fresh"
+      - "A WRONG BINARY outranks a stale pin: rc 1, because the remedy differs"
+      - "The status is captured on its own line, never read as $? through a negation or a pipe"
+
+  no_boolean_accelerator_flag:
+    formula: "tokens(harness commands ∪ executor ∪ every `serve run` line in scripts/) ∩ {--gpu, --no-gpu} = ∅"
+    domain: "scripts/llama_pin.toml *_command values; scripts/parity_host_receipt.sh in full; every other scripts/*.sh `serve run` line, full-line comments and this guard's own accel_row fixtures excluded"
+    codomain: "the offending tokens, or nothing"
+    invariants:
+      - "An accelerator setting is a QUANTITY (`--gpu-layers all|N|0`), because a quantity has an observable RESOLUTION the loader must print"
+      - "`--gpu-layers` is not `--gpu`: the predicate matches whole tokens only"
+      - "The two exclusions are STRUCTURAL, not a filename allowlist — the selftest injects a real boolean into a copy of the guard itself and requires RED"
+      - "The accel lane is taken iff the loader reports `gpu-layers: … resolved=N …` with N > 0, never iff `--gpu` appears in --help"
+
+proof_obligations:
+  - type: invariant
+    property: "The producer refuses rather than emitting a partial flag list"
+    formal: "For every malformed declaration, llama_comparator_server_flags returns non-zero AND prints nothing"
+    applies_to: comparator_flags_from_declaration
+  - type: invariant
+    property: "batch_size <= 1 is unreachable as a comparator configuration"
+    formal: "batch_size numeric and <= 1 => rc 4 and empty stdout; no guard row asserts it emits -b"
+    applies_to: comparator_flags_from_declaration
+  - type: invariant
+    property: "The per-slot context is never below the workload"
+    formal: "n_ctx_slot < 640 => rc 3; and at run time props.default_generation_settings.n_ctx < 640 refuses the band"
+    applies_to: comparator_flags_from_declaration
+  - type: invariant
+    property: "A stale pin has a producer"
+    formal: "pin_expiry < today => llama_bin_resolve returns 4 and parity_host_receipt.sh exits 4"
+    applies_to: pin_verdict
+  - type: invariant
+    property: "The declared cmake line is corroborated by the build tree"
+    formal: "CMakeCache.txt(GGML_CUDA, CMAKE_CUDA_ARCHITECTURES) == build_flags_<host>(-DGGML_CUDA, -DCMAKE_CUDA_ARCHITECTURES), or rc 1"
+    applies_to: pin_verdict
+  - type: invariant
+    property: "No boolean accelerator flag survives anywhere the harness reaches"
+    formal: "boolean_accel_tokens over the declaration, the executor and every serve-run line is empty"
+    applies_to: no_boolean_accelerator_flag
+
+falsification_tests:
+  - id: FALSIFY-PPL-PIN-001
+    rule: "The pin guard's case table discriminates, including pin_stale / pin_fresh"
+    prediction: "scripts/check_llama_pin.sh exits 0: right build, wrong build, no oracle, mute oracle, server-only tree, a directory, an absent path, the unpinned bootstrap, an expiry in the past (rc 4), an expiry in the future (rc 0), an absent expiry (rc 3), an unparseable expiry (rc 3), a CMakeCache that disagrees (rc 1) and one that agrees (rc 0)"
+    test: "bash scripts/check_llama_pin.sh"
+    if_fails: "The pin cannot tell the declared build from any other, or cannot emit COMPARATOR_STALE at all. Before this contract, scripts/verifier_pin.sh:36 had cited the unpinned llama.cpp comparator as instance FIVE of the unpinned-verifier table for months, and llama_pin.toml carried no expiry field, so §7.4's COMPARATOR_STALE had no producer anywhere in the tree."
+
+  - id: FALSIFY-PPL-PIN-002
+    rule: "The comparator-flag guard runs its case table and its repo verdict"
+    prediction: "scripts/check_comparator_flags.sh exits 0: band mode emits -np c and -c c*n_ctx_slot, batch_size = 1 REFUSES with rc 4 and no output, n_ctx_slot < 640 REFUSES, every 2026-mobile default is passed, the template agrees flag by flag, and no boolean accelerator flag survives"
+    test: "bash scripts/check_comparator_flags.sh"
+    if_fails: "A declared knob is not passed, or a passed knob is not declared. Row :98 of the previous version asserted that `batch_size = 1` DOES emit `-b 1` with rc 0 — the guard BLESSED the exact configuration §5.3 names as the cripple, so a 2.39x overstatement in apr's favour was one declaration edit away and no CI step would have noticed."
+
+  - id: FALSIFY-PPL-PIN-003
+    rule: "The guards' case tables run standalone, in front of any repo verdict"
+    prediction: "Both --selftest entry points exit 0 with no access to this repo's declaration"
+    test: "bash scripts/check_comparator_flags.sh --selftest && bash scripts/check_bench_protocol.sh --selftest"
+    if_fails: "A guard whose only evidence is 'it passed on the current tree' has not shown it can fail. Both tables are driven from fixture declarations built inside a temp dir, so a green row is a statement about the predicate rather than about today's pin."
+
+  - id: FALSIFY-PPL-PIN-004
+    rule: "The protocol declaration is complete and every placeholder resolves"
+    prediction: "scripts/check_bench_protocol.sh exits 0: 34 required keys declared, the retired llama-bench lane absent, every {key} in every *_command either a declared key or one of the nine run-time names, and comparator_parallel = band"
+    test: "bash scripts/check_bench_protocol.sh"
+    if_fails: "An unstated knob is not neutral: it becomes whatever each side defaults to and the difference lands in the ratio wearing the label of a performance result. `harness_command` referenced `{http_concurrency}` for months after that key was replaced by `http_concurrency_bands`, so the declaration was not reproducible even in principle and nothing said so."
+
+  - id: FALSIFY-PPL-PIN-005
+    rule: "The pin carries an expiry"
+    prediction: "scripts/llama_pin.toml declares pin_expiry as a YYYY-MM-DD date"
+    test: "grep -qE '^[[:space:]]*pin_expiry[[:space:]]*=[[:space:]]*\"[0-9]{4}-[0-9]{2}-[0-9]{2}\"' scripts/llama_pin.toml"
+    if_fails: "A pin with no expiry is a pin nobody revisits. The commit freezes the denominator, which is the point; left alone forever it also freezes the comparison to a llama.cpp no user runs, and PP-20's COMPARATOR_STALE becomes a status with no path to it."
+
+  - id: FALSIFY-PPL-PIN-006
+    rule: "No boolean accelerator flag is left in the declaration"
+    prediction: "No `--gpu` or `--no-gpu` token appears in scripts/llama_pin.toml"
+    test: "! grep -qE -- '(^|[[:space:]\"])--(gpu|no-gpu)([[:space:]]|\"|$)' scripts/llama_pin.toml"
+    if_fails: "`apr serve run --gpu` on the published binary printed no CUDA banner, held zero VRAM, and ran on CPU at 15.7 tok/s while the receipt labelled the lane accelerated (#2696). A boolean accelerator flag has no observable resolution; `--gpu-layers all` resolves to a number the loader must state."
+
+  - id: FALSIFY-PPL-PIN-007
+    rule: "The producer refuses the cripple and prints nothing"
+    prediction: "With batch_size = 1 declared, llama_comparator_server_flags returns 4 and emits no output"
+    test: "bash -c '. scripts/llama_bin.sh >/dev/null 2>&1; d=$(mktemp -d); printf %s\\\\n \"batch_size = 1\" \"comparator_parallel = \\\"band\\\"\" \"context_length = 4096\" \"threads = 8\" \"n_ctx_slot = 1024\" \"flash_attention = \\\"auto\\\"\" \"n_ubatch = 512\" \"cache_type_k = \\\"f16\\\"\" \"cache_type_v = \\\"f16\\\"\" \"cont_batching = true\" \"slot_save = false\" > $d/p.toml; o=$(llama_comparator_server_flags 999 16 $d/p.toml); r=$?; rm -rf $d; [ $r = 4 ] && [ -z \"$o\" ]'"
+    if_fails: "`-b 1` switches llama.cpp's batching off. Measured on gx10 against the pinned build, medians of 2: the c=1 arm is unchanged (0.3%) while the c=16 aggregate ratio moves 2.03x -> 4.85x. The c=1 row is the falsifier — it was never a general slowdown, it was the batching path being turned off, and the 2.39x is manufactured by handicapping the baseline."
+
+  - id: FALSIFY-PPL-PIN-008
+    rule: "The comparator template serves the band"
+    prediction: "comparator_serve_command passes -np {c} and derives -c from the band"
+    test: "grep -q 'comparator_serve_command.*-np {c}' scripts/llama_pin.toml && grep -q 'comparator_serve_command.*-c {c_ctx}' scripts/llama_pin.toml"
+    if_fails: "At the pin the auto slot count is the CONSTANT 4 (tools/server/server.cpp:86-89), measured here as total_slots=4 at the old template argv (evidence/parity/props-39173bcac-template.json). At c=16 a comparator at defaults queues 12 of the 16 offered requests while the receipt calls the result parity; under -np 16 -c 16384 the same build reports total_slots=16, n_ctx=1024 per slot and kv_unified=false (evidence/parity/props-39173bcac-np16.json)."
+
+  - id: FALSIFY-PPL-PIN-009
+    rule: "Both /props reads are committed with their argv"
+    prediction: "evidence/parity/props-39173bcac-{template,np16}.json each carry argv, started_utc, host, build and the verbatim props body"
+    test: "for f in template np16; do jq -e '.argv and .started_utc and .host and .build and .props.total_slots' evidence/parity/props-39173bcac-$f.json > /dev/null || exit 1; done"
+    if_fails: "The withdrawn 2026-08-25 run's own comparator argv is unrecoverable from this tree (not in any evidence file, commit message or doc), so the '4 slots by design' premise cannot be settled from it. These two reads settle it at the pin instead, and a props body without the argv beside it would repeat the same omission."
+
+  - id: FALSIFY-PPL-PIN-010
+    rule: "The declared cmake line is what the resolved build was configured with"
+    prediction: "llama_bin.sh reads the resolved build's CMakeCache.txt and returns rc 1 with LLAMA_PIN_REASON=cmake_mismatch when it disagrees with build_flags_<host>"
+    test: "grep -q 'CMakeCache.txt' scripts/llama_bin.sh && grep -q 'cmake_mismatch' scripts/llama_bin.sh && grep -q 'pin_cmake_mismatch' scripts/check_llama_pin.sh"
+    if_fails: "build_flags_lambda declared -DCMAKE_CUDA_ARCHITECTURES=89 while the binary every ratio to date used carries sm_86, sm_89 and sm_120a (cuobjdump --list-elf) from ggml's default non-native list, and its CMakeCache has no CMAKE_CUDA_ARCHITECTURES entry at all. build_flags_gx10 named GGML_CUDA_ARCHITECTURES, which is not a variable in the pinned checkout: cmake accepts it as an unused cache entry and builds the default list, JITting from PTX on Blackwell — correct output, slowly, firing no correctness gate."
+
+  - id: FALSIFY-PPL-PIN-011
+    rule: "bashrs lints the pin's scripts clean"
+    prediction: "bashrs reports zero errors on the resolver and the three guards"
+    test: "[ \"$(bashrs lint scripts/llama_bin.sh scripts/check_llama_pin.sh scripts/check_comparator_flags.sh scripts/check_bench_protocol.sh 2>&1 | grep -c '\\[error\\]')\" = '0' ]"
+    if_fails: "Shell quality regression in the files every parity run sources. Counted rather than pattern-matched on a summary line: `0 error` is a substring of `10 error(s)`, which is the pass-grep class this repo has closed before."
+
+qa_gate:
+  id: F-PPL-PIN-001
+  name: "llama.cpp comparator pin: declared, decided, dated, corroborated"
+  description: "The comparator declaration is the only source of the comparator's knobs; the producer refuses a cripple, an incomplete declaration and a per-slot context below the workload; the pin carries an expiry that can emit COMPARATOR_STALE and a cmake line the build tree corroborates; and no accelerator flag anywhere in the harness is a boolean."
+  checks:
+    - "comparator_flags_from_declaration"
+    - "pin_verdict"
+    - "no_boolean_accelerator_flag"
+  pass_criteria: "FALSIFY-PPL-PIN-{001..011} all PASS"

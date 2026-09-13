@@ -1,5 +1,5 @@
 metadata:
-  version: 1.3.0
+  version: 1.4.0
   created: '2026-03-09'
   author: PAIML Engineering
   description: Continuous batching scheduler — unified prefill/decode with token budget
@@ -144,8 +144,35 @@ falsification_tests:
 - id: FALSIFY-CB-006
   rule: Correctness under batching
   prediction: Same prompt at c=1 and c=4 produces equivalent output
-  test: 'scripts/perf041_batched_parity_probe.sh (GPU; exits 0 PASS, 1 code
-    defect, 2 UNMEASURABLE)'
+  test: >-
+    GPU: scripts/perf041_batched_parity_probe.sh (exits 0 PASS, 1 code defect,
+    2 UNMEASURABLE; writes witness.json + marker.json, prints one
+    `PP-26-WITNESS: host=<h> c=<c> m_formed=<m> result=<R> divergence_at=<n>`
+    line per band). Wired in .github/workflows/cuda-nightly.yml, step
+    "PP-26 - batch-invariance witness (perf041)", and consumed at release by
+    scripts/check_perf041_marker.sh.
+
+    CPU (no device needed, runs in `ci / gate`):
+    `python3 scripts/perf041_batched_parity_probe.py --selftest` --
+    the probe's own case table, seven rows:
+    witness_constant_token_m3, witness_no_batch_formed_is_unmeasurable,
+    witness_identical_128_ok, witness_cross_band_log_not_credited,
+    witness_short_reference_is_unmeasurable, witness_short_slot_is_unmeasurable,
+    witness_c1_only_is_not_a_pass. `--list-selftests` prints the names.
+    PP-LLAMA-001 §6 PP-26 names witness_constant_token_m3 (must-fire) and
+    witness_identical_128_ok (must-not-fire) as this row's selftest pair.
+
+    WHAT IS COMPARED, since v3.0 of the master: the TOKEN SEQUENCE, not decoded
+    text. Every request carries temperature/seed/ignore_eos/n_predict from
+    scripts/perf-matrix.yaml `protocol.sampler` and `protocol.n_predict`, and
+    `stream: true`; one SSE content chunk is one generated token's delta; the
+    probe records `divergence_at` = the index of the first differing chunk
+    between the m=1 reference and each slot inside the m=c batch, and PASSes a
+    band iff `divergence_at >= witness.min_agree_tokens` (64, matrix, policy,
+    spec-owner). A sample whose token count is not exactly `n_predict` is
+    REFUSED as UNMEASURABLE rather than compared over its shared prefix (PP-28).
+    Engagement is attributed PER BAND from the server log's byte offset taken
+    before that band; a band at c>1 with `m_formed < 2` is UNMEASURABLE.
   measured: >-
     RED 2026-08-29 (PERF-041), RTX 4090, apr 0.64.0 (3eb2dae6a),
     qwen2.5-coder-1.5b-instruct-q4_k_m, greedy, 400-token cap.
@@ -175,15 +202,39 @@ falsification_tests:
     CB-008 states precisely the observed signature ("All M slots produce
     distinct tokens per decode step (not constant)") and has never run.
   mutation: >-
-    OBSERVED 2026-08-29. Neutralise the comparison in
-    perf041_batched_parity_probe.py (`ok = got == ref_prefix` -> `ok = True`):
-    the probe reports GREEN on the identical `!!!!` output, exit 0. Reverted:
-    RED, exit 1. So the verdict is driven by the comparison and nothing else.
-    Setting PREFIX_CHARS = 0 does NOT yield a false pass -- the positive
-    control rejects an empty reference and the probe exits 2 UNMEASURABLE.
-    Firing 2 requests that arrive apart likewise exits 2 rather than passing:
-    two m=1 batches form, the batched path is never exercised, and a probe
-    that cannot see the mechanism must not return a verdict about it.
+    OBSERVED 2026-09-02, on the rewritten probe, GPU-free, via
+    `python3 scripts/perf041_batched_parity_probe.py --selftest`. Each row below
+    is a source mutation whose effect on the seven-row case table was RUN, not
+    reasoned about:
+
+      neutralise the chunk comparison (divergence_index never reports a
+        difference)                 -> witness_constant_token_m3 BROKE (exit 0
+                                       where 1 is required)
+      delete the engagement rule (`c > 1 and m_formed < 2`)
+                                    -> witness_no_batch_formed_is_unmeasurable
+                                       and witness_cross_band_log_not_credited
+                                       both BROKE (exit 0). This is the ORIGINAL
+                                       defect: the pre-v3.0 probe `continue`d a
+                                       band that formed no batch and returned 0.
+      restore the cumulative log scan (seek(0) instead of seek(offset))
+                                    -> witness_cross_band_log_not_credited BROKE
+                                       (c=4 credited with the c=2 band's m=2)
+      delete the per-slot PP-28 refusal
+                                    -> witness_short_slot_is_unmeasurable BROKE
+      delete the vacuity rule (`no c>1 band measured` -> 2)
+                                    -> witness_c1_only_is_not_a_pass BROKE
+
+    The last two rows EXIST BECAUSE the first five did not kill those mutants:
+    the table was 5/5 green under both, which is the "a gate that cannot fail"
+    class this row was rewritten to close. They were added, and the mutations
+    re-run, in the same change.
+
+    HISTORICAL, 2026-08-29, on the prefix-of-decoded-text probe this replaced:
+    neutralising `ok = got == ref_prefix` -> `ok = True` reported GREEN on the
+    identical `!!!!` output, exit 0; reverted, RED, exit 1. Setting
+    PREFIX_CHARS = 0 did not yield a false pass -- the positive control rejects
+    an empty reference. That evidence stands for the comparison; it never
+    covered the no-batch-formed branch, which returned 0.
 
     STILL RED 2026-08-29 after PERF-050. Re-run of THIS field's own command,
     scripts/perf041_batched_parity_probe.sh, on an RTX 4090 with
@@ -659,9 +710,25 @@ falsification_tests:
       batched path PROVEN engaged: max batch m=4 -- all slots OK
       FALSIFY-CB-006 GREEN: every batched output matches the m=1 reference
 
-    TWO CONDITIONS REMAIN BEFORE IT IS GREEN BY DEFAULT, and both are named:
+    TWO CONDITIONS REMAINED BEFORE IT WAS GREEN BY DEFAULT. ONE IS NOW
+    DISCHARGED (round 10, PERF-053 / #2767) and one is still open:
 
-      - APR_STREAM_LEGACY=1 pins the #2767 race, which is diagnosed and unrepaired.
+      - APR_STREAM_LEGACY=1 pinned the #2767 race. NO LONGER NEEDED: the race is
+        REPAIRED, and CU_STREAM_DEFAULT is now what CudaStream::new produces with
+        no env var at all. The knob is INVERTED rather than deleted --
+        APR_STREAM_NONBLOCKING=1 restores the old racy stream flag -- so the
+        measured cost of the repair stays reproducible in ONE binary. That cost is
+        real and is stated here rather than buried: agg_tok_s ratio 1.006 at c=1
+        (no measurable cost), 0.893 at c=4, 0.817 at c=8, replicate ranges
+        DISJOINT at c=4 and c=8. Against 11 distinct continuations out of 40 on
+        identical greedy input, that is the price of answering at all.
+        Falsifier: crates/aprender-serve/tests/falsify_stream_ordering_2767.rs
+        (perf053_identical_greedy_batches_return_one_continuation), wired into
+        .github/workflows/cuda-nightly.yml. Mutation-verified on RTX 4090 sm_89:
+        4 distinct continuations from 4 identical greedy batches of 4 with the
+        default reverted in source, 1 with it restored; and the per-BATCH (not
+        per-slot) signature #2767 reported was reproduced exactly -- all 4 slots
+        within a round agreed, the answer changed across rounds.
       - CUBLAS_GEMM_THRESHOLD=32 keeps m>=4 off the cuBLAS decode route. With the
         default threshold of 4, c=2 PASSES and c=4 DIVERGES -- and the c=4 output
         is coherent English on a different continuation
@@ -671,6 +738,160 @@ falsification_tests:
         at precision or correctness in cublas_prefill_gemm on the decode path and
         wants its own ticket; it is a different class from the three structural
         defects this epic fixed.
+
+    #2770 ANSWERED 2026-08-29: CORRECTNESS, in the Q6_K dequant -- and then a
+    SECOND, separable cause that IS precision. RTX 4090 sm_89, driver as installed,
+    qwen2.5-coder-1.5b-instruct-q4_k_m, greedy, APR_STREAM_LEGACY=1 throughout.
+    Two binaries, each attributed to its own worktree by cargo dep-info:
+    apr 0.64.0 (c00ba00cb) = origin/main, apr 0.64.0 (cc9bfb966) = the fix.
+
+    THE DIVERGENCE REPRODUCES AT m=1, so it was never about batching. Forcing the
+    batched forward onto the cuBLAS route with CUBLAS_GEMM_THRESHOLD=1 (plus
+    APR_FORCE_BATCHED_PATH=1) puts it under the existing APR_PARITY_PROBE M=1
+    oracle differential, with no batch and no concurrency. Pre-fix, ORACLE cosine
+    and max|d| against the M=1 oracle, by GEMM precision:
+
+      GEMV, route not taken     Q4_K/Q6_K native   0.999987   0.0867
+      FP8 E4M3  (default m>=4)  3 mantissa bits    0.966582   5.3081
+      HGEMM FP16 (FP8_PREFILL=0)  11 bits          0.967242   5.3313
+      SGEMM FP32 (+HGEMM_PREFILL=0) 24 bits        0.967283   5.3724
+      fused Q4K direct (no dequant at all)         0.965791   5.6955
+
+    Spanning 3 to 24 mantissa bits moves the error by 1.2%. A precision hypothesis
+    predicts the error collapses at FP32; it does not. Precision FALSIFIED as the
+    cause of this component.
+
+    THE STAGE DIFFERENTIAL NAMES THE TENSOR. APR_LAYER_TRACE=1 at layer 0, oracle
+    side bit-identical across every arm, at SGEMM FP32:
+
+      g_rmsnorm#0          45.246795  ==  o_hidden_buf1  45.246795
+      g_q_buf   Q4_K      232.814586  vs  o_q_buf       232.814592   (8 figures)
+      g_k_buf   Q4_K     1437.771829  vs  o_k_buf      1437.771832   (9 figures)
+      g_v_buf   Q6_K        2.928788  vs  o_v_buf         5.812629   WRONG
+
+    At full FP32 the Q4_K projections are exact and only the Q6_K one is wrong.
+    blk.0.attn_v is the sole Q6_K weight in layer 0 (apr tensors: [1536,256] Q6_K).
+
+    ROOT CAUSE: Q6KDequantKernel swapped the two bits of the group index. Q6_K
+    packs each 128-value half as four groups of 32 where the +32 ql byte step is
+    group & 1 and the high nibble is group >= 2; the kernel took the byte offset
+    from group >> 1 and the nibble from group & 1. Correct for groups 0 and 3,
+    where both bits agree; groups 1 and 2 exchange their low four bits while their
+    qh bits and sub-block scale stay right. Half of every super-block came out
+    near-but-not-right, so the model stayed fluent on a different continuation
+    instead of producing garbage. This kernel is the ONLY Q6_K reader on the cuBLAS
+    path -- FP8 caches from it, FP16 caches from it, SGEMM uses it directly --
+    which is exactly why the error was invariant to GEMM precision. The Q6_K GEMV
+    kernel always had it right and reads Q6_K in place, so m < 4 was unaffected and
+    the m>=4 boundary was only use_cublas firing. In Q4_K_M this corrupts attn_v,
+    ffn_down and the LM head of every layer, in prefill as well as decode.
+
+    AFTER THE FIX the ladder collapses, and what is left is a clean precision
+    effect that only FP8 shows:
+
+      GEMV                      0.999983   0.0905
+      FP8 E4M3                  0.998774   0.8655   <- the only remaining gap
+      HGEMM FP16                0.999983   0.0905   <- identical to GEMV
+      SGEMM FP32                0.999983   0.0905   <- identical to GEMV
+
+    FP16 and FP32 are now bit-identical to the GEMV route's own residual. The
+    remaining FP8 gap is max|d| 0.8655 on logits of absmax ~14, which is enough to
+    flip a greedy argmax on a near-tie into a different, coherent continuation.
+
+    END-TO-END, FOUR PROMPTS, c=8, batched path proven engaged at m=7 (perf041,
+    80-token cap). Four prompts because one is an anecdote:
+
+                          FP8 on (default)   FP8 off (FP16)
+      pre-fix  c00ba00cb      2 / 4 pass        1 / 4 pass
+      post-fix cc9bfb966      3 / 4 pass        4 / 4 pass
+
+    With FP8 removed as a confounder the fix takes CB-006 from 1/4 to 4/4. With FP8
+    on it goes 2/4 -> 3/4. The pre-fix row is not monotonic because two error
+    sources can cancel on a given prompt; stated rather than smoothed.
+
+    SO CB-006 IS STILL NOT GREEN BY DEFAULT, and the reason is now named and is a
+    different class: FP8 E4M3 decode precision, not a structural fault. The choice
+    it forces is a real one -- route decode off FP8, or state a tolerance the
+    parity probe honours -- and it is not made here.
+
+    TWO OBSERVATIONS ABOUT THE PROBE ITSELF, both measured:
+      - "batched path PROVEN engaged" only asserts m > 1. At the default threshold
+        a c=4 run formed max m=3 and passed while never reaching the m>=4 cuBLAS
+        route at all. Proving a batch formed is not proving the route under test
+        ran.
+      - CUBLAS_GEMM_THRESHOLD=32 combined with FP8_DECODE=0 makes the m=1
+        REFERENCE itself garbage ('Lambda*****' / '**0*0000...') on 80-token
+        prompts, so the probe returns 2 UNMEASURABLE. Reproduced byte-identically
+        on unmodified main, so it is pre-existing, not a regression. The two knobs
+        were not separated, and CUBLAS_GEMM_THRESHOLD=32 alone was not retested.
+    ROUND 10 (#2753 close-out, 2026-08-31, RTX 4090 sm_89, apr 0.64.0, ordered
+    streams). The FROZEN-TOKEN defect this whole thread opened with is GONE, and
+    what is left of CB-006 is one named mechanism with a price tag.
+
+    FIRST, THE HALF THAT IS FIXED. On origin/main (745fa8588) at its DEFAULT
+    configuration -- no knobs -- a c=4 round formed `[PMAT-044] Batch m=3 done`
+    and every batched slot returned `</iang.").` while the slot served by the m=1
+    fast path returned the reference. BATCHED_DECODE_TRACE=1 shows why: token id
+    151662 held for steps 0..115 of 120. Setting APR_STREAM_LEGACY=1 in the SAME
+    binary turns that into coherent English. So at HEAD the garbage IS the #2767
+    race and nothing else, and #2776 (ordered streams by default) closes it. With
+    it, four prompts x {c=2, c=4, c=8}: every batched slot reaches
+    finish_reason=stop wherever the m=1 reference does, and two of the four
+    prompts are byte-identical to their m=1 reference at every concurrency.
+
+    SECOND, THE RESIDUAL, and it is FP8 E4M3 on the DECODE GEMM. Measured with
+    APR_PARITY_PROBE=1 at m=1 forced onto the batched path
+    (APR_FORCE_BATCHED_PATH=1 CUBLAS_GEMM_THRESHOLD=1), all four probe controls
+    passing (SELF 1.000000, SENSITIVE and PERTURBED diverging), ONE binary, one
+    env var each:
+
+      APR_DECODE_GEMM   route                ORACLE cosine   max|d|   answer
+      cublas (default)  FP8 E4M3             0.998774        0.8655   "a crucial component of computer programming"
+      nolmhead          FP8 except LM head   0.999184        0.6662   "software programs that convert"
+      gemv              DP4A / per-row GEMV  0.999983        0.0905   "software programs that take"
+      -- m=1 reference (fast path)                                    "software programs that translate"
+
+    on logits of absmax ~14. The FP8 route is 9.6x the GEMV route's residual and
+    that is enough to move the greedy argmax at the third generated token. It is
+    NOT a batching defect: it reproduces at m=1 through the batched path, and the
+    m-dependence users see (m<4 answers `take`, m>=4 answers `a crucial
+    component`) is only `use_cublas` firing at m >= cublas_gemm_threshold().
+
+    THE FP8_DECODE KNOB DOES NOT CONTROL THIS, which is why round 9 and #2789
+    disagreed about it. cublas_prefill_gemm selects FP8 on gpu_profile.fp8_prefill,
+    so once decode reaches it at m >= 4 the route is FP8 regardless of FP8_DECODE;
+    that variable only guards the separate `m >= 5` shortcut. Measured: at the
+    default threshold, FP8_DECODE=0 leaves the c=4 and c=8 output BYTE-IDENTICAL.
+    #2789 saw FP8_DECODE=0 restore m=6/8/16 because it also set
+    CUBLAS_GEMM_THRESHOLD=32, which is what actually moved the route.
+
+    ALSO REPRODUCED, and it is pre-existing rather than new:
+    CUBLAS_GEMM_THRESHOLD=32 together with FP8_DECODE=0 makes the m=1 REFERENCE
+    itself garbage ('Lambda*****' / '**0*000...'), because prefill then falls into
+    batched_gemv_with_fallback's per-sequence loop (#2761). The probe returns 2
+    UNMEASURABLE rather than a verdict, which is correct.
+
+    WHY THE DEFAULT DOES NOT CHANGE HERE, with the number that decided it.
+    APR_DECODE_GEMM ships default `cublas` -- unchanged -- because routing decode
+    off cuBLAS costs aggregate throughput, measured on one binary, median of 3,
+    120 tokens per request so the rate is token-normalised by construction:
+
+      route      c=1     c=4              c=8
+      cublas     196.9   457.2            900.8       tok/s aggregate
+      nolmhead   193.2   400.8  (0.877x)  724.0 (0.804x)
+      gemv       200.2   288.8  (0.632x)  351.6 (0.390x)
+
+    Paying 37-61% of aggregate throughput to move a near-tie, when the cheaper
+    `nolmhead` arm buys only 23% of the error for 12-20% of the throughput, is the
+    wrong trade -- and it would have to be undone by the real repair anyway. The
+    real repair is named: at m=1 the ACTIVATION scale is already per-row, so the
+    error is weight-side, and get_or_cache_fp8_weight quantizes a whole [n x k]
+    weight through a SINGLE per-tensor absmax into 3 mantissa bits. Per-output-
+    channel scales keep the tensor-core GEMM and its throughput. That is a
+    separate ticket with this ladder as its evidence.
+
+    CB-006 therefore stays RED, for the first time with a residual that is one
+    mechanism, one file, and no dependence on batching or concurrency.
   if_fails: Cross-request KV cache contamination or batch indexing error
 - id: FALSIFY-CB-007
   rule: No empty outputs
@@ -693,6 +914,32 @@ falsification_tests:
     BATCHED_DECODE_TRACE=1 additionally emits one `[CB-008] step=N m=M
     token_ids=[..]` line per batched decode step. The variable this field used to
     name did not exist, so the log it described could never have been read.
+
+    (3) THE RULE ITSELF, end to end, added 2026-08-31 (#2753). The two layers
+    above assert about ONE mechanism's PTX; neither states the rule, and the rule
+    is what shipped broken. It is now decided by one pure function and exercised
+    from two places:
+
+      cargo test -p aprender-serve --lib cb008_checker_controls
+
+    -- realizar::cb008_frozen_slots, ten controls, NO GPU and no `cuda` feature,
+    so they run in ci.yml's ordinary workspace --lib line on every PR. They
+    assert the checker REJECTS the two recorded signatures verbatim (token id 0
+    to the 400-token cap, and id 151662 for 116 of 120 steps), rejects a long
+    stall that variety would otherwise excuse, reports a too-short stream as a
+    FAILURE rather than a pass, names which slot froze, and pins both thresholds
+    from each side. "Can this checker fire?" is therefore answered on hosts with
+    no CUDA at all, which is where every PR runs.
+
+      APR_FALSIFY_MODEL=<gguf> cargo test -p aprender-serve --features cuda
+        --release --test falsify_cb008_no_frozen_slots_2753 -- --nocapture
+
+    -- the same function over a REAL batched decode, at m=3 (the batch size in
+    #2753's evidence table) and m=8 (across cublas_gemm_threshold() and the m>=5
+    FP8 shortcut, so both decode GEMM routes are covered). The batched path is
+    engaged by construction: m prompts go to generate_batched_streaming, not m
+    HTTP requests and a hope that a batch formed. It FAILS rather than skips when
+    no model is named. Wired in .github/workflows/cuda-nightly.yml.
   measured: >-
     PARTIAL 2026-08-29 (PERF-050), RTX 4090, apr 0.64.0 (ee420e8c5),
     qwen2.5-coder-1.5b-instruct-q4_k_m, greedy.
@@ -728,6 +975,54 @@ falsification_tests:
     KV cache in different ways, and at m=4 they produced token-for-token
     identical decode output (3156 then 46539 at steps 0 and 1). Two unrelated
     writers agreeing exactly locates the fault in the reader.
+
+    GREEN 2026-08-31 (#2753), RTX 4090 sm_89, apr 0.64.0 (745fa8588 = origin/main
+    for the RED arm; the branch build for the GREEN), qwen2.5-coder-1.5b-instruct-
+    q4_k_m, greedy. The rule now has an end-to-end check and that check has a
+    verdict.
+
+    BEFORE, on origin/main at its default configuration, with
+    `[PMAT-044] Batch m=3 done` in the server log proving the batched path
+    engaged and BATCHED_DECODE_TRACE=1 printing the ids:
+
+      [CB-008] step=0   m=3 token_ids=[151662, 151662, 151662] done=[f, f, f]
+      ...                   the SAME id for steps 0..115
+      [CB-008] step=119 m=3 token_ids=[98401, 98401, 98401]
+
+    120 of 120 steps at the cap, finish_reason=length on all three slots, while
+    the one request served by the m=1 fast path in the same run returned
+    'Compilers are software programs that tra...'. That is #2753's table
+    reproduced two years of releases later, on the tip of main.
+
+    AFTER, same harness: m=3 slots carry 41 distinct ids over 64 tokens with a
+    longest single-id run of 1; m=8 slots carry 22 with a run of 1. At the HTTP
+    level over four prompts x {c=2, c=4, c=8}, every batched slot now reaches
+    finish_reason=stop wherever the m=1 reference does, and two of the four
+    prompts are byte-identical to their m=1 reference at every concurrency. The
+    other two differ by ONE near-tie token (`translate` vs `take`); that residual
+    belongs to CB-006 and is recorded there, not here.
+
+    WHAT THIS CHECK DOES NOT COVER, stated so the next reader does not
+    over-trust it. Under the mutation below, the m=8 arm passes CB-008: its
+    slots carry 31 distinct ids with a run of 2. They are garbage
+    (104133, 102495, 43160 ... for an English prompt) but they are not FROZEN,
+    and CB-008 is a frozen-slot property. Varied-garbage is caught by
+    FALSIFY-CB-006's probe and by perf053_identical_greedy_batches_return_one_
+    continuation (#2767), which is why all three exist. The RED below comes from
+    the m=3 arm.
+
+    A SECOND MODEL CHANGED THE TEST, which is the reason for varying it. On
+    qwen2.5-coder-0.5b-instruct-q4_k_m the batched slots ARE frozen on this
+    branch (m=3: one id, 537, for all 64 steps; m=8: 151661 for 37) -- and so is
+    that model's M=1 path, whose greedy output for four ordinary prompts is
+    `# This is the first / # This is the second`, "```" repeated, `#1 #2 #3`, and
+    `@1 @1 @1`, all at the cap. Reporting that as a batching defect would be the
+    "named a code cause for a box it could not evaluate" failure, so the
+    falsifier now runs the M=1 path FIRST through the same checker and exits
+    UNMEASURABLE -- non-zero, never silent, and explicitly not a code verdict --
+    when the reference is itself frozen. Measured: 1.5b m=1 distinct=33 run=1
+    (proceeds), 0.5b m=1 distinct=4 run=32 (refuses). The 0.5b's own degeneracy
+    is a separate question and is not answered here.
   mutation: >-
     OBSERVED 2026-08-29, both layers, on an RTX 4090. Reverting the one-line fix
     to `let old_max = max_score;`:
@@ -754,6 +1049,37 @@ falsification_tests:
     into a test that scans nothing and passes. The GPU test's K is chosen so the
     running max grows at every position -- a flat score sequence passes WITH the
     bug in place, so the input is part of the assertion.
+
+    OBSERVED 2026-08-31 (#2753) for the end-to-end layer, ONE binary and ONE env
+    var. APR_STREAM_NONBLOCKING=1 restores the pre-#2767 stream flag, so the
+    batched decode's host transfers (cuMemcpyHtoD/DtoH, legacy stream) stop being
+    ordered against the stream its kernels run on:
+
+      default              m=1 distinct=33 run=1  (reference control passes)
+                           m=3 distinct=41 run=1 | m=8 distinct=22 run=1   ok
+      APR_STREAM_NONBLOCKING=1
+                           m=1 distinct=33 run=1  (reference control STILL passes)
+                           m=3 distinct=4  run=35
+                           head=[104017, 151662, 151662, 151662, 151662, ...]
+                           FAILED, all three slots named
+
+    The M=1 control holding under the mutation is what makes the RED
+    attributable: the same binary, the same prompt and the same env produce a
+    healthy M=1 stream and a frozen batched one, so the difference is the path.
+
+    exit 0 vs exit 101 on the same binary, 3.5s per run. The RED reproduces the
+    recorded id (151662) and the recorded shape (one id held to the cap), which
+    is the point: the checker was written against the defect's own signature and
+    it fires on the defect's own signature.
+
+    The ten workspace-lib controls are the other half, and they are the half that
+    runs on every PR. checker-can-fire is proven there by construction: three of
+    them REJECT streams (id 0 to the cap, id 151662 to the cap, a 60-token stall)
+    and two of them ACCEPT (a varied stream, exactly MIN_DISTINCT ids), so a
+    change that made the verdict return Ok unconditionally fails five tests on a
+    host with no GPU. The GPU falsifier additionally runs that same verdict over
+    a synthetic frozen batch IN-PROCESS before touching the device, so a
+    neutralised assertion is caught in the same run rather than a later audit.
   if_fails: KV cache not populated for slot, or hidden state not indexed by slot
 - id: FALSIFY-CB-009
   rule: KV cache populated for all slots after prefill

@@ -1,0 +1,44 @@
+F6 -- B4's diff scan over the REAL publication, both guards, same diff.
+
+SUBJECT: da069a25f "docs: Showcase complete - 851.8 tok/s (2.93x Ollama)" (SHOWCASE-BRICK-001)
+
+THE BOUNDARY, STATED RATHER THAN ASSUMED. `git merge-base origin/main da069a25f` returns
+EMPTY: da069a25f predates the APR-MONO history rewrite and shares NO ancestry with today's
+origin/main. There is therefore no merge base to use, and the honest boundary is the
+commit's own parent, 099c32287. That is recorded here rather than papered over with a
+substitute base, and it is why the end-to-end run below is done in a scratch clone whose
+origin/main ref is moved to that parent -- the commit, its parent and all content are the
+real ones; the only thing moved is a ref pointer.
+
+METHOD: published_claim composed from the guard's own exported predicates, one process per
+predicate per added line -- --match-shipped-surface, then --match-rs-published for .rs,
+then --match-comparative, then --match-target as the suppressor. That is exactly the
+composition published_claim() performs internally.
+
+changed files in da069a25f^..da069a25f:
+  .github/showcase-hero.svg
+  README.md
+  book/src/examples/showcase-benchmark.md
+  crates/apr-cli/src/commands/bench.rs
+  crates/apr-cli/src/commands/qa.rs
+  docs/specifications/qwen2.5-coder-showcase-demo.md
+
+=== PRE-F6 guard (e875f5912, sha256 fecd9eca78de400e) ===
+  TOTAL 0
+
+=== POST-F6 guard (this branch, sha256 ec1c41f7a955cc96) ===
+  FIRE  book/src/examples/showcase-benchmark.md: **CORRECTNESS-012 fixed! Both GGUF and APR formats exceed 2X Ollama on GPU.**
+  FIRE  book/src/examples/showcase-benchmark.md: - **GGUF GPU**: 851.8 tok/s = **2.93x Ollama** (291 tok/s baseline)
+  TOTAL 2
+
+0 -> 2. Both fires are the published claim itself; neither is a bar, a target or a
+quotation. The suppressor was live in the same run (--match-target ran on every candidate
+line), so the two survivors are survivors of it, not lines it never saw.
+
+WHY THE OTHER FIVE CHANGED FILES DO NOT FIRE, checked rather than assumed:
+  README.md                                   root prose, outside B4's scope by design
+  .github/showcase-hero.svg                   not a scanned surface
+  crates/apr-cli/src/commands/{bench,qa}.rs   in scope as .rs, but no ADDED line in them
+                                              passes match_comparative
+  docs/specifications/qwen2.5-coder-...md     docs/ prose -- MEASURED OUT at 40% precision
+                                              by PRREV-008, deliberately unchanged by F6

@@ -1,0 +1,36 @@
+host=mini sha=da49c1081 2026-09-05T08:14:37Z
+=== S0-12b: cargo test -p aprender-gpu -- metal   (no `metal` feature exists; default features) ===
+     Running unittests src/lib.rs (/tmp/apr-s0-target/debug/deps/trueno_gpu-179145bea507e6d0)
+test backend::metal_shaders::tests::test_shaders_not_empty ... ok
+test backend::tests::test_detect_backend_metal_not_returned_on_linux ... ok
+test backend::metal_shaders::tests::test_activations_use_metal_math ... ok
+test backend::metal_shaders::tests::test_gemm_tiled_has_tile_size ... ok
+test backend::tests::test_metal_backend_device_count ... ok
+test backend::tests::test_metal_backend_default ... ok
+test backend::tests::test_detect_backend_wgpu_priority_over_metal_and_vulkan ... ok
+test backend::tests::test_metal_backend_name ... ok
+test backend::tests::test_metal_backend_debug ... ok
+test backend::metal_shaders::tests::test_shaders_contain_kernel_declaration ... ok
+test backend::tests::test_metal_backend_unavailable ... ok
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 433 filtered out; finished in 0.00s
+   Doc-tests trueno_gpu
+test crates/aprender-gpu/src/backend/metal_shaders.rs - backend::metal_shaders (line 13) ... ignored
+rc=0
+=== S0-12c: cargo test -p aprender-gpu --features wgpu -- metal ===
+     Running unittests src/lib.rs (/tmp/apr-s0-target/debug/deps/trueno_gpu-3197a86b59e95476)
+test backend::tests::test_metal_backend_device_count ... ok
+test backend::tests::test_detect_backend_wgpu_priority_over_metal_and_vulkan ... ok
+test backend::metal_shaders::tests::test_activations_use_metal_math ... ok
+test backend::tests::test_metal_backend_name ... ok
+test backend::tests::test_metal_backend_debug ... ok
+test backend::metal_shaders::tests::test_gemm_tiled_has_tile_size ... ok
+test backend::tests::test_detect_backend_metal_not_returned_on_linux ... ok
+test backend::metal_shaders::tests::test_shaders_contain_kernel_declaration ... ok
+test backend::tests::test_metal_backend_default ... ok
+test backend::metal_shaders::tests::test_shaders_not_empty ... ok
+test backend::tests::test_metal_backend_unavailable ... ok
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 433 filtered out; finished in 0.00s
+   Doc-tests trueno_gpu
+test crates/aprender-gpu/src/backend/metal_shaders.rs - backend::metal_shaders (line 13) ... ignored
+rc=0
+S0-12b-DONE

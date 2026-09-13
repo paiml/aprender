@@ -1077,7 +1077,9 @@ fn test_cov_gguf_config_defaults_vocab_size() {
     let model = GGUFModel::from_bytes(&data).expect("parse");
     let config = GGUFConfig::from_gguf(&model).expect("config");
 
-    assert_eq!(config.vocab_size, 32000); // Default
+    // Stale test (the contract moved, the code is right): vocab_size now defaults to 0 when token_embd.weight is missing,
+    // which correctly fails validation downstream instead of using a silently wrong 32000.
+    assert_eq!(config.vocab_size, 0); // Default is now 0
 }
 
 #[test]

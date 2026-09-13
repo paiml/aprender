@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 pub use super::composition::{ShapeContract, ShapeExpr};
+pub use super::kaizen::{KaizenRecord, KAIZEN_STATUSES};
 pub use super::kind::ContractKind;
 
 /// A complete YAML kernel contract.
@@ -100,6 +101,21 @@ pub struct Contract {
     /// Not serialized: it is a parse artifact, not contract content.
     #[serde(skip)]
     pub unknown_top_level_keys: Vec<String>,
+    /// The kaizen-record blocks (`contract:`, `kaizen:`, `baseline:`,
+    /// `target:`, …) captured by a second parse pass when — and only when —
+    /// `metadata.kind` is `kaizen`.
+    ///
+    /// Kept OUT of the serde surface of `Contract` on purpose. The corpus
+    /// carries `status:`, `version:`, `invariants:` and `files:` at top level
+    /// on documents of several kinds with incompatible shapes, so promoting
+    /// them to real `Contract` fields would change how all 1726 contracts
+    /// parse in order to validate 46 kaizen records. Scoping the second pass
+    /// to `kind: kaizen` means a type mismatch in some unrelated contract's
+    /// `status:` can never reach this struct.
+    ///
+    /// Not serialized: it is a parse artifact, not contract content.
+    #[serde(skip)]
+    pub kaizen_record: Option<KaizenRecord>,
     /// The error a strict YAML reader produced on a document this schema
     /// nonetheless accepted, captured by
     /// [`crate::schema::parse_contract_str`]. `None` is the healthy case.

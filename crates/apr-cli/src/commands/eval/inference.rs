@@ -339,11 +339,7 @@ fn run_humaneval_inference(
     let mut results = Vec::new();
 
     for (i, problem) in problems.iter().enumerate() {
-        let entry = problem
-            .entry_point
-            .as_deref()
-            .or_else(|| extract_function_name(&problem.prompt))
-            .unwrap_or("unknown");
+        let entry = humaneval_entry_point(problem);
 
         let prompt_tokens = tokenizer.encode(&problem.prompt);
         if prompt_tokens.is_empty() {
@@ -377,54 +373,7 @@ fn run_humaneval_inference(
             }
         };
 
-        // Try to extract a Python code block from the assistant response.
-        // On instruct-family models the response is wrapped in markdown;
-        // on base models the response is raw continuation — both are handled.
-        //
-        // R1+R2: pass `entry_point` so multi-block completions resolve to
-        // the block containing `def {entry_point}(` (not the first
-        // explanatory snippet the model may emit).
-        let completion =
-            if let Some(code) = extract_python_code_block_targeted(&result.text, Some(entry)) {
-                // ChatML/markdown path: assistant emitted `\`\`\`python\n…\n\`\`\``.
-                //
-                // §69 RC3 FIX: the extracted code block contains the function
-                // (signature + body) but NOT the prompt's preamble — typing
-                // imports (`from typing import List`), constants, helpers, etc.
-                // Concatenating ONLY the code block drops those, producing
-                // `NameError: List is not defined` when the function signature
-                // uses typing aliases. Prepend the prompt's preamble (everything
-                // before `def {entry_point}(`) so imports survive.
-                let preamble = extract_prompt_preamble(&problem.prompt, entry);
-                if preamble.is_empty() {
-                    code
-                } else {
-                    format!("{preamble}\n{code}")
-                }
-            } else {
-                // Raw-continuation fallback (pre-H4 path). Slice off the prompt
-                // prefix when it's verbatim in result.text; otherwise decode
-                // tokens past `input_token_count`. Apply dedent residual fix.
-                let raw = if let Some(stripped) = result.text.strip_prefix(&problem.prompt) {
-                    stripped.to_string()
-                } else {
-                    let completion_tokens = if result.tokens.len() > result.input_token_count {
-                        &result.tokens[result.input_token_count..]
-                    } else {
-                        &result.tokens[..]
-                    };
-                    tokenizer.decode(completion_tokens)
-                };
-                let truncated = truncate_at_function_boundary(&raw);
-                // The aligned form goes APPENDED to the prompt; encode that as
-                // the full continuation. We then split the prompt back off in
-                // the program-build step below.
-                format!(
-                    "{}{}",
-                    problem.prompt,
-                    align_continuation_indent(&problem.prompt, truncated)
-                )
-            };
+        let completion = build_humaneval_completion(problem, entry, &result, &tokenizer);
 
         // Build the test program. Two cases:
         //   - ChatML path: `completion` is a complete function from the
@@ -453,18 +402,120 @@ fn run_humaneval_inference(
 
         results.push((problem.task_id.clone(), entry.to_string(), ok));
 
-        if !json_output && (i + 1) % 10 == 0 {
-            println!(
-                "  {} {}/{} problems evaluated ({} passed)",
-                "→".dimmed(),
-                i + 1,
-                problems.len(),
-                passed
-            );
-        }
+        report_eval_progress(json_output, i, problems.len(), passed, 10);
     }
 
     Ok((passed, results))
+}
+
+/// The entry-point function name for a HumanEval problem.
+///
+/// Prefers the explicit `entry_point` field, falls back to the first `def`
+/// in the prompt, then to the literal `"unknown"`. Extracted verbatim from
+/// the HumanEval eval loops (PMAT-746); behaviour is unchanged.
+#[cfg(feature = "inference")]
+fn humaneval_entry_point(problem: &HumanEvalProblem) -> &str {
+    problem
+        .entry_point
+        .as_deref()
+        .or_else(|| extract_function_name(&problem.prompt))
+        .unwrap_or("unknown")
+}
+
+/// The generated-token slice of an inference result.
+///
+/// Everything past `input_token_count`, or the whole buffer when the model
+/// returned no more tokens than it was handed (defensive: a shorter-than-
+/// prompt token vector must not panic on the slice).
+#[cfg(feature = "inference")]
+fn completion_token_slice(result: &realizar::InferenceResult) -> &[u32] {
+    if result.tokens.len() > result.input_token_count {
+        &result.tokens[result.input_token_count..]
+    } else {
+        &result.tokens[..]
+    }
+}
+
+/// Print the periodic "N/M problems evaluated" progress line.
+///
+/// No-op under `--json` and on every index that is not the last of a group
+/// of `every`. Extracted verbatim from the four eval loops (PMAT-746).
+#[cfg(feature = "inference")]
+fn report_eval_progress(
+    json_output: bool,
+    index: usize,
+    total: usize,
+    passed: usize,
+    every: usize,
+) {
+    if json_output || (index + 1) % every != 0 {
+        return;
+    }
+    println!(
+        "  {} {}/{} problems evaluated ({} passed)",
+        "→".dimmed(),
+        index + 1,
+        total,
+        passed
+    );
+}
+
+/// Raw-continuation completion for a HumanEval problem (the pre-H4 path).
+///
+/// Slices off the prompt prefix when it is verbatim in `result.text`;
+/// otherwise decodes the tokens past `input_token_count`. The aligned form
+/// goes APPENDED to the prompt, so the returned string already carries the
+/// prompt prefix — the caller splits it back off in the program-build step.
+#[cfg(feature = "inference")]
+fn humaneval_raw_completion(
+    problem: &HumanEvalProblem,
+    result: &realizar::InferenceResult,
+    tokenizer: &realizar::apr::BpeTokenizer,
+) -> String {
+    let raw = if let Some(stripped) = result.text.strip_prefix(&problem.prompt) {
+        stripped.to_string()
+    } else {
+        tokenizer.decode(completion_token_slice(result))
+    };
+    let truncated = truncate_at_function_boundary(&raw);
+    format!(
+        "{}{}",
+        problem.prompt,
+        align_continuation_indent(&problem.prompt, truncated)
+    )
+}
+
+/// Turn an assistant response into the HumanEval completion to test.
+///
+/// On instruct-family models the response is wrapped in markdown; on base
+/// models it is a raw continuation — both are handled.
+///
+/// R1+R2: `entry_point` is passed down so multi-block completions resolve to
+/// the block containing `def {entry_point}(` (not the first explanatory
+/// snippet the model may emit).
+///
+/// §69 RC3 FIX: the extracted code block contains the function (signature +
+/// body) but NOT the prompt's preamble — typing imports (`from typing import
+/// List`), constants, helpers, etc. Concatenating ONLY the code block drops
+/// those, producing `NameError: List is not defined` when the function
+/// signature uses typing aliases. Prepend the prompt's preamble (everything
+/// before `def {entry_point}(`) so imports survive.
+#[cfg(feature = "inference")]
+fn build_humaneval_completion(
+    problem: &HumanEvalProblem,
+    entry: &str,
+    result: &realizar::InferenceResult,
+    tokenizer: &realizar::apr::BpeTokenizer,
+) -> String {
+    let Some(code) = extract_python_code_block_targeted(&result.text, Some(entry)) else {
+        return humaneval_raw_completion(problem, result, tokenizer);
+    };
+    let preamble = extract_prompt_preamble(&problem.prompt, entry);
+    if preamble.is_empty() {
+        code
+    } else {
+        format!("{preamble}\n{code}")
+    }
 }
 
 #[cfg(not(feature = "inference"))]
@@ -513,7 +564,8 @@ fn load_transformer_config(
 /// GPU-accelerated HumanEval inference via entrenar CudaTransformerTrainer (ALB-089).
 ///
 /// Uses `forward_logits()` for autoregressive generation. No KV cache -- each step
-/// reprocesses the full sequence. Still 20-40x faster than CPU for 350M model.
+/// reprocesses the full sequence; the GPU-vs-CPU ratio is a measured figure that
+/// belongs in an `evidence/` receipt, not in this comment.
 #[cfg_attr(coverage_nightly, coverage(off))]
 #[cfg(all(feature = "cuda", feature = "training"))]
 fn run_humaneval_inference_cuda(
@@ -522,50 +574,14 @@ fn run_humaneval_inference_cuda(
     _k_values: &[usize],
     json_output: bool,
 ) -> std::result::Result<(usize, Vec<(String, String, bool)>), String> {
-    // ALB-089: resolve to checkpoint directory (model_path may be a .apr file)
-    let checkpoint_dir = if model_path.is_file() {
-        model_path.parent().unwrap_or(model_path)
-    } else {
-        model_path
-    };
-
-    let config = load_transformer_config(checkpoint_dir)?;
-    let max_seq = config.max_position_embeddings;
-
-    if !json_output {
-        println!(
-            "  {} Loading model onto GPU for inference (ALB-089)...",
-            "→".dimmed()
-        );
-    }
-
-    let mut trainer =
-        entrenar::train::CudaTransformerTrainer::for_inference(checkpoint_dir, config)
-            .map_err(|e| format!("CUDA inference init failed: {e}"))?;
-
-    // Load tokenizer -- use original model_path (file) for sibling lookup
-    let tokenizer = realizar::apr::AprV2Model::load_tokenizer(model_path)
-        .or_else(|| {
-            // Fallback: try tokenizer.json directly in checkpoint dir
-            let tok_path = checkpoint_dir.join("tokenizer.json");
-            realizar::apr::AprV2Model::load_tokenizer_from_path(&tok_path)
-        })
-        .ok_or_else(|| format!("No tokenizer found in {}", checkpoint_dir.display()))?;
-
-    if !json_output {
-        println!("  {} GPU inference ready", "✓".green());
-    }
+    let (mut trainer, tokenizer, max_seq) = init_cuda_eval(model_path, json_output)?;
 
     let mut passed = 0usize;
     let mut results = Vec::new();
     let mut rng_state: u64 = 42;
 
     for (i, problem) in problems.iter().enumerate() {
-        let entry = problem
-            .entry_point
-            .as_deref()
-            .or_else(|| extract_function_name(&problem.prompt))
-            .unwrap_or("unknown");
+        let entry = humaneval_entry_point(problem);
 
         let prompt_tokens = tokenizer.encode(&problem.prompt);
         if prompt_tokens.is_empty() {
@@ -574,27 +590,8 @@ fn run_humaneval_inference_cuda(
         }
 
         // Autoregressive generation: build sequence incrementally
-        let mut tokens: Vec<u32> = prompt_tokens.clone();
-        let max_new = 256;
-
-        for _ in 0..max_new {
-            if tokens.len() >= max_seq {
-                break;
-            }
-
-            // Forward full sequence, get last-position logits
-            let logits = trainer
-                .forward_logits(&tokens)
-                .ok_or_else(|| "forward_logits failed".to_string())?;
-
-            let next = sample_token(&logits, 0.0, &mut rng_state);
-            tokens.push(next);
-
-            // Stop at EOS or token 0
-            if next == 0 {
-                break;
-            }
-        }
+        let tokens =
+            generate_tokens_cuda(&mut trainer, &prompt_tokens, max_seq, 256, &mut rng_state)?;
 
         // Decode completion
         let completion_tokens = &tokens[prompt_tokens.len()..];
@@ -613,18 +610,122 @@ fn run_humaneval_inference_cuda(
         }
         results.push((problem.task_id.clone(), entry.to_string(), ok));
 
-        if !json_output && (i + 1) % 10 == 0 {
-            println!(
-                "  {} {}/{} problems evaluated ({} passed)",
-                "→".dimmed(),
-                i + 1,
-                problems.len(),
-                passed
-            );
-        }
+        report_eval_progress(json_output, i, problems.len(), passed, 10);
     }
 
     Ok((passed, results))
+}
+
+/// Resolve a model path to its checkpoint directory.
+///
+/// ALB-089: `model_path` may be a `.apr` file that lives inside the
+/// checkpoint directory; a directory is already the checkpoint directory.
+#[cfg_attr(coverage_nightly, coverage(off))]
+#[cfg(all(feature = "cuda", feature = "training"))]
+fn resolve_checkpoint_dir(model_path: &Path) -> &Path {
+    if model_path.is_file() {
+        model_path.parent().unwrap_or(model_path)
+    } else {
+        model_path
+    }
+}
+
+/// Load the tokenizer for a CUDA eval run.
+///
+/// Sibling lookup off the original `model_path` (a file), falling back to
+/// `tokenizer.json` in the checkpoint directory.
+#[cfg_attr(coverage_nightly, coverage(off))]
+#[cfg(all(feature = "cuda", feature = "training"))]
+fn load_cuda_eval_tokenizer(
+    model_path: &Path,
+    checkpoint_dir: &Path,
+) -> std::result::Result<realizar::apr::BpeTokenizer, String> {
+    realizar::apr::AprV2Model::load_tokenizer(model_path)
+        .or_else(|| {
+            // Fallback: try tokenizer.json directly in checkpoint dir
+            let tok_path = checkpoint_dir.join("tokenizer.json");
+            realizar::apr::AprV2Model::load_tokenizer_from_path(&tok_path)
+        })
+        .ok_or_else(|| format!("No tokenizer found in {}", checkpoint_dir.display()))
+}
+
+/// GPU eval context: the trainer, its tokenizer, and the model's context
+/// window (`max_position_embeddings`).
+#[cfg(all(feature = "cuda", feature = "training"))]
+type CudaEvalContext = (
+    entrenar::train::CudaTransformerTrainer,
+    realizar::apr::BpeTokenizer,
+    usize,
+);
+
+/// Initialise a CUDA eval run: config → GPU trainer → tokenizer.
+#[cfg_attr(coverage_nightly, coverage(off))]
+#[cfg(all(feature = "cuda", feature = "training"))]
+fn init_cuda_eval(
+    model_path: &Path,
+    json_output: bool,
+) -> std::result::Result<CudaEvalContext, String> {
+    let checkpoint_dir = resolve_checkpoint_dir(model_path);
+
+    let config = load_transformer_config(checkpoint_dir)?;
+    let max_seq = config.max_position_embeddings;
+
+    if !json_output {
+        println!(
+            "  {} Loading model onto GPU for inference (ALB-089)...",
+            "→".dimmed()
+        );
+    }
+
+    let trainer = entrenar::train::CudaTransformerTrainer::for_inference(checkpoint_dir, config)
+        .map_err(|e| format!("CUDA inference init failed: {e}"))?;
+
+    // Load tokenizer -- use original model_path (file) for sibling lookup
+    let tokenizer = load_cuda_eval_tokenizer(model_path, checkpoint_dir)?;
+
+    if !json_output {
+        println!("  {} GPU inference ready", "✓".green());
+    }
+
+    Ok((trainer, tokenizer, max_seq))
+}
+
+/// Greedy autoregressive generation on the GPU.
+///
+/// No KV cache -- each step reprocesses the full sequence via
+/// `forward_logits()`. Stops at `max_new` steps, at the context window, or
+/// on token 0 (EOS). Returns prompt tokens + generated tokens.
+#[cfg_attr(coverage_nightly, coverage(off))]
+#[cfg(all(feature = "cuda", feature = "training"))]
+fn generate_tokens_cuda(
+    trainer: &mut entrenar::train::CudaTransformerTrainer,
+    prompt_tokens: &[u32],
+    max_seq: usize,
+    max_new: usize,
+    rng_state: &mut u64,
+) -> std::result::Result<Vec<u32>, String> {
+    let mut tokens: Vec<u32> = prompt_tokens.to_vec();
+
+    for _ in 0..max_new {
+        if tokens.len() >= max_seq {
+            break;
+        }
+
+        // Forward full sequence, get last-position logits
+        let logits = trainer
+            .forward_logits(&tokens)
+            .ok_or_else(|| "forward_logits failed".to_string())?;
+
+        let next = sample_token(&logits, 0.0, rng_state);
+        tokens.push(next);
+
+        // Stop at EOS or token 0
+        if next == 0 {
+            break;
+        }
+    }
+
+    Ok(tokens)
 }
 
 #[cfg(not(all(feature = "cuda", feature = "training")))]
@@ -643,7 +744,7 @@ fn run_humaneval_inference_cuda(
 /// Instruct-family models (Qwen-Coder-Instruct, etc.) respond to a coding
 /// prompt with a markdown-wrapped solution like:
 ///
-/// ```text
+/// ~~~text
 /// Certainly! Here's a solution:
 /// ```python
 /// def truncate_number(number: float) -> float:
@@ -651,7 +752,7 @@ fn run_humaneval_inference_cuda(
 ///     fractional_part, _ = math.modf(number)
 ///     return fractional_part
 /// ```
-/// ```
+/// ~~~
 ///
 /// This helper extracts the inner code between the first ```python fence
 /// and the next ``` fence. Returns `None` when no fenced Python block is
@@ -684,39 +785,7 @@ pub(super) fn extract_python_code_block_targeted(
     text: &str,
     entry_point: Option<&str>,
 ) -> Option<String> {
-    // Collect all fenced blocks (any of the accepted opening fences).
-    let mut blocks: Vec<String> = Vec::new();
-    let mut cursor = 0usize;
-    while cursor < text.len() {
-        let remainder = &text[cursor..];
-        // Find the next opening fence (any variant); pick the earliest match.
-        let mut best: Option<(usize, usize)> = None;
-        for fence in ["```python\n", "```py\n", "```\n"] {
-            if let Some(rel) = remainder.find(fence) {
-                let after_open = rel + fence.len();
-                match best {
-                    None => best = Some((rel, after_open)),
-                    Some((br, _)) if rel < br => best = Some((rel, after_open)),
-                    _ => {}
-                }
-            }
-        }
-        let (_start_rel, after_open_rel) = match best {
-            Some(p) => p,
-            None => break,
-        };
-        let after_open = cursor + after_open_rel;
-        if let Some(rel_end) = text[after_open..].find("\n```") {
-            let code = &text[after_open..after_open + rel_end];
-            if !code.trim().is_empty() {
-                blocks.push(code.to_string());
-            }
-            cursor = after_open + rel_end + "\n```".len();
-        } else {
-            break;
-        }
-    }
-
+    let blocks = collect_fenced_blocks(text);
     if blocks.is_empty() {
         return None;
     }
@@ -724,15 +793,53 @@ pub(super) fn extract_python_code_block_targeted(
     // R2: prefer block containing `def {entry_point}(`.
     if let Some(ep) = entry_point {
         let needle = format!("def {ep}(");
-        for block in &blocks {
-            if block.contains(&needle) {
-                return Some(block.clone());
-            }
+        if let Some(hit) = blocks.iter().find(|block| block.contains(&needle)) {
+            return Some(hit.clone());
         }
     }
 
     // Fallback: first non-empty block (legacy behaviour preserved).
     Some(blocks[0].clone())
+}
+
+/// Byte offset just past the EARLIEST opening code fence in `remainder`.
+///
+/// The accepted opening fences are the same three variants the extractor has
+/// always tolerated, in this precedence order for a tie: ```` ```python\n ````,
+/// ```` ```py\n ````, ```` ```\n ````. `None` when no fence remains.
+fn find_fence_open(remainder: &str) -> Option<usize> {
+    ["```python\n", "```py\n", "```\n"]
+        .iter()
+        .filter_map(|fence| remainder.find(fence).map(|rel| (rel, rel + fence.len())))
+        .min_by_key(|&(rel, _)| rel)
+        .map(|(_, after_open)| after_open)
+}
+
+/// Collect every non-empty fenced block in `text`, in source order.
+///
+/// A block runs from just past an opening fence to the next `\n``` `. An
+/// unterminated final fence is dropped (the scan stops there), matching the
+/// behaviour this loop has always had.
+fn collect_fenced_blocks(text: &str) -> Vec<String> {
+    let mut blocks: Vec<String> = Vec::new();
+    let mut cursor = 0usize;
+
+    while cursor < text.len() {
+        let Some(after_open_rel) = find_fence_open(&text[cursor..]) else {
+            break;
+        };
+        let after_open = cursor + after_open_rel;
+        let Some(rel_end) = text[after_open..].find("\n```") else {
+            break;
+        };
+        let code = &text[after_open..after_open + rel_end];
+        if !code.trim().is_empty() {
+            blocks.push(code.to_string());
+        }
+        cursor = after_open + rel_end + "\n```".len();
+    }
+
+    blocks
 }
 
 /// Truncate completion at the next top-level function/class definition.
@@ -1623,29 +1730,8 @@ fn run_mbpp_inference(
     let mut results = Vec::new();
 
     for (i, problem) in problems.iter().enumerate() {
-        let task_id = match &problem.task_id {
-            serde_json::Value::Number(n) => format!("MBPP/{n}"),
-            serde_json::Value::String(s) => s.clone(),
-            v => format!("MBPP/{v}"),
-        };
-
-        // MBPP canonical prompt format: NL description + test_list hint.
-        //
-        // Without the test_list hint, the model invents its own function name
-        // (e.g., `remove_first_last_occurrence` for MBPP/11) and fails the
-        // assertion (`remove_Occ` expected). The standard MBPP format used by
-        // Bigcode + lm-eval-harness + the canonical paper includes the first
-        // 1-3 test assertions as `Your code should pass these tests:` hints —
-        // this implicitly specifies the function name and signature.
-        let test_hints = if problem.test_list.is_empty() {
-            String::new()
-        } else {
-            format!(
-                "\nYour code should pass these tests:\n{}\n",
-                problem.test_list.join("\n")
-            )
-        };
-        let prompt = format!("{}{}", problem.text, test_hints);
+        let task_id = mbpp_task_id(problem);
+        let prompt = mbpp_chat_prompt(problem);
 
         // H4 fix: route through ChatML auto-wrap via `with_prompt` (instruct
         // models). Raw NL → ChatML user message → assistant emits markdown
@@ -1667,38 +1753,9 @@ fn run_mbpp_inference(
             }
         };
 
-        // R1+R2: extract Python code block. MBPP has no entry_point in the
-        // problem schema (unlike HumanEval), so we pass None — the
-        // first-non-empty-block fallback is appropriate.
-        let completion_owned =
-            if let Some(code) = extract_python_code_block_targeted(&result.text, None) {
-                // ChatML/markdown path: assistant emitted `\`\`\`python\n…\n\`\`\``.
-                code
-            } else {
-                // Raw-continuation fallback (no code block found). Slice past the
-                // prompt; truncate at next top-level def.
-                let raw = if let Some(stripped) = result.text.strip_prefix(&prompt) {
-                    stripped.to_string()
-                } else {
-                    let completion_tokens = if result.tokens.len() > result.input_token_count {
-                        &result.tokens[result.input_token_count..]
-                    } else {
-                        &result.tokens[..]
-                    };
-                    tokenizer.decode(completion_tokens)
-                };
-                truncate_at_function_boundary(&raw).to_string()
-            };
-        let completion: &str = &completion_owned;
+        let completion = build_mbpp_completion(&prompt, &result, &tokenizer);
 
-        // Build test program: completion + setup_code + test assertions
-        let setup = problem.test_setup_code.as_deref().unwrap_or("").trim();
-        let tests = problem.test_list.join("\n");
-        let full_program = if setup.is_empty() {
-            format!("{completion}\n{tests}\n")
-        } else {
-            format!("{completion}\n{setup}\n{tests}\n")
-        };
+        let full_program = mbpp_full_program(&completion, problem);
 
         let exec_result = execute_python_test_with_diagnostics(&full_program, 10);
         let ok = exec_result.success;
@@ -1708,7 +1765,7 @@ fn run_mbpp_inference(
                 &task_id,
                 &prompt,
                 &result.text,
-                completion,
+                &completion,
                 &full_program,
                 &exec_result,
             );
@@ -1720,18 +1777,79 @@ fn run_mbpp_inference(
 
         results.push((task_id, String::new(), ok));
 
-        if !json_output && (i + 1) % 50 == 0 {
-            println!(
-                "  {} {}/{} problems evaluated ({} passed)",
-                "→".dimmed(),
-                i + 1,
-                problems.len(),
-                passed
-            );
-        }
+        report_eval_progress(json_output, i, problems.len(), passed, 50);
     }
 
     Ok((passed, results))
+}
+
+/// MBPP task identifier, rendered from the JSON `task_id` field.
+///
+/// MBPP numbers its tasks; a string id is passed through verbatim, anything
+/// else is rendered through its JSON `Display`.
+#[cfg(feature = "inference")]
+fn mbpp_task_id(problem: &MbppProblem) -> String {
+    match &problem.task_id {
+        serde_json::Value::Number(n) => format!("MBPP/{n}"),
+        serde_json::Value::String(s) => s.clone(),
+        v => format!("MBPP/{v}"),
+    }
+}
+
+/// MBPP canonical prompt format: NL description + `test_list` hint.
+///
+/// Without the `test_list` hint, the model invents its own function name
+/// (e.g., `remove_first_last_occurrence` for MBPP/11) and fails the
+/// assertion (`remove_Occ` expected). The standard MBPP format used by
+/// Bigcode + lm-eval-harness + the canonical paper includes the first
+/// 1-3 test assertions as `Your code should pass these tests:` hints —
+/// this implicitly specifies the function name and signature.
+#[cfg(feature = "inference")]
+fn mbpp_chat_prompt(problem: &MbppProblem) -> String {
+    if problem.test_list.is_empty() {
+        return problem.text.clone();
+    }
+    format!(
+        "{}\nYour code should pass these tests:\n{}\n",
+        problem.text,
+        problem.test_list.join("\n")
+    )
+}
+
+/// Turn an assistant response into the MBPP completion to test.
+///
+/// R1+R2: extract the Python code block. MBPP has no `entry_point` in the
+/// problem schema (unlike HumanEval), so `None` is passed — the
+/// first-non-empty-block fallback is appropriate. When no block is found,
+/// fall back to raw continuation: slice past the prompt, truncate at the
+/// next top-level `def`.
+#[cfg(feature = "inference")]
+fn build_mbpp_completion(
+    prompt: &str,
+    result: &realizar::InferenceResult,
+    tokenizer: &realizar::apr::BpeTokenizer,
+) -> String {
+    if let Some(code) = extract_python_code_block_targeted(&result.text, None) {
+        return code;
+    }
+    let raw = if let Some(stripped) = result.text.strip_prefix(prompt) {
+        stripped.to_string()
+    } else {
+        tokenizer.decode(completion_token_slice(result))
+    };
+    truncate_at_function_boundary(&raw).to_string()
+}
+
+/// Build the MBPP test program: completion + `test_setup_code` + assertions.
+#[cfg(feature = "inference")]
+fn mbpp_full_program(completion: &str, problem: &MbppProblem) -> String {
+    let setup = problem.test_setup_code.as_deref().unwrap_or("").trim();
+    let tests = problem.test_list.join("\n");
+    if setup.is_empty() {
+        format!("{completion}\n{tests}\n")
+    } else {
+        format!("{completion}\n{setup}\n{tests}\n")
+    }
 }
 
 #[cfg(not(feature = "inference"))]
@@ -1753,48 +1871,14 @@ fn run_mbpp_inference_cuda(
     _k_values: &[usize],
     json_output: bool,
 ) -> std::result::Result<(usize, Vec<(String, String, bool)>), String> {
-    // ALB-089: resolve to checkpoint directory (model_path may be a .apr file)
-    let checkpoint_dir = if model_path.is_file() {
-        model_path.parent().unwrap_or(model_path)
-    } else {
-        model_path
-    };
-
-    let config = load_transformer_config(checkpoint_dir)?;
-    let max_seq = config.max_position_embeddings;
-
-    if !json_output {
-        println!(
-            "  {} Loading model onto GPU for inference (ALB-089)...",
-            "→".dimmed()
-        );
-    }
-
-    let mut trainer =
-        entrenar::train::CudaTransformerTrainer::for_inference(checkpoint_dir, config)
-            .map_err(|e| format!("CUDA inference init failed: {e}"))?;
-
-    let tokenizer = realizar::apr::AprV2Model::load_tokenizer(model_path)
-        .or_else(|| {
-            let tok_path = checkpoint_dir.join("tokenizer.json");
-            realizar::apr::AprV2Model::load_tokenizer_from_path(&tok_path)
-        })
-        .ok_or_else(|| format!("No tokenizer found in {}", checkpoint_dir.display()))?;
-
-    if !json_output {
-        println!("  {} GPU inference ready", "✓".green());
-    }
+    let (mut trainer, tokenizer, max_seq) = init_cuda_eval(model_path, json_output)?;
 
     let mut passed = 0usize;
     let mut results = Vec::new();
     let mut rng_state: u64 = 42;
 
     for (i, problem) in problems.iter().enumerate() {
-        let task_id = match &problem.task_id {
-            serde_json::Value::Number(n) => format!("MBPP/{n}"),
-            serde_json::Value::String(s) => s.clone(),
-            v => format!("MBPP/{v}"),
-        };
+        let task_id = mbpp_task_id(problem);
 
         let prompt = format!("{}\n", problem.text);
         let prompt_tokens = tokenizer.encode(&prompt);
@@ -1803,36 +1887,14 @@ fn run_mbpp_inference_cuda(
             continue;
         }
 
-        let mut tokens: Vec<u32> = prompt_tokens.clone();
-        let max_new = 512;
-
-        for _ in 0..max_new {
-            if tokens.len() >= max_seq {
-                break;
-            }
-            let logits = trainer
-                .forward_logits(&tokens)
-                .ok_or_else(|| "forward_logits failed".to_string())?;
-
-            let next = sample_token(&logits, 0.0, &mut rng_state);
-            tokens.push(next);
-
-            if next == 0 {
-                break;
-            }
-        }
+        let tokens =
+            generate_tokens_cuda(&mut trainer, &prompt_tokens, max_seq, 512, &mut rng_state)?;
 
         let completion_tokens = &tokens[prompt_tokens.len()..];
         let completion = tokenizer.decode(completion_tokens);
         let completion = truncate_at_function_boundary(&completion);
 
-        let setup = problem.test_setup_code.as_deref().unwrap_or("").trim();
-        let tests = problem.test_list.join("\n");
-        let full_program = if setup.is_empty() {
-            format!("{completion}\n{tests}\n")
-        } else {
-            format!("{completion}\n{setup}\n{tests}\n")
-        };
+        let full_program = mbpp_full_program(completion, problem);
 
         let exec_result = execute_python_test_with_diagnostics(&full_program, 10);
         let ok = exec_result.success;
@@ -1853,15 +1915,7 @@ fn run_mbpp_inference_cuda(
         }
         results.push((task_id, String::new(), ok));
 
-        if !json_output && (i + 1) % 50 == 0 {
-            println!(
-                "  {} {}/{} problems evaluated ({} passed)",
-                "→".dimmed(),
-                i + 1,
-                problems.len(),
-                passed
-            );
-        }
+        report_eval_progress(json_output, i, problems.len(), passed, 50);
     }
 
     Ok((passed, results))

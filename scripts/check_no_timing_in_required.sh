@@ -35,7 +35,29 @@ cd "$(dirname "$0")/.." || exit 2
 RELEASE_TIME_ONLY="
 check_multiplatform_dogfood.sh
 check_bench_receipt.sh
+check_perf041_marker.sh
 "
+
+# --list — the registry, one basename per line, and nothing else.
+#
+# WHY A LISTING MODE EXISTS
+# -------------------------
+# scripts/guard_tree.sh runs every guard in the universe from ONE required CI
+# step. Without a way to ASK this file which guards are release-time, that
+# dispatcher would have to carry a second copy of the registry — two
+# hand-maintained lists with nothing tying them together, which is the exact
+# root cause behind bashrs#266 and the four stale python-census paragraphs in
+# paiml/infra. So the registry is declared once, here, and read from there.
+#
+# This must stay the FIRST thing this script does: guard_tree.sh calls it, and
+# PART 1 below calls guard_tree.sh. The recursion terminates only because
+# --list returns before reaching that call.
+if [ "${1:-}" = "--list" ]; then
+    for guard in $RELEASE_TIME_ONLY; do
+        printf '%s\n' "$guard"
+    done
+    exit 0
+fi
 
 # The workflows whose jobs are REQUIRED status checks on main.
 REQUIRED_WORKFLOWS="
@@ -45,6 +67,55 @@ REQUIRED_WORKFLOWS="
 
 rc=0
 printf -- '--- no timing gate in a required check ------------------------------\n'
+
+# ── PART 1a: what a required workflow reaches by DISPATCH, naming nothing ───
+#
+# NAME-MATCHING ALONE STOPPED BEING SUFFICIENT THE DAY ci.yml GOT A RUNNER.
+# BSE-01 replaced ~53 `bash scripts/check_X.sh` steps with one
+# `bash scripts/guard_tree.sh --no-cargo` step in a REQUIRED job. That step
+# names no guard at all, so the `grep -q "$guard" "$wf"` below — this gate's
+# entire mechanism — passes over it while the dispatcher happily executes
+# whatever its universe contains. check_bench_receipt.sh and
+# check_perf041_marker.sh ARE in that cargo-free universe: without this part,
+# both would have run in a required check with this gate reporting PASS, which
+# is precisely the placement failure the header calls the poka-yoke for.
+#
+# The set is DERIVED, never listed: `guard_tree.sh --dry-run <mode>` prints the
+# decision it will act on, and guard_tree.sh builds its skip set by calling
+# `check_no_timing_in_required.sh --list` — this file. One registry, read from
+# both ends. Delete the skip in guard_tree.sh and this part turns RED.
+DISPATCHED=""
+dispatch_modes=""
+for wf in $REQUIRED_WORKFLOWS; do
+    [ -f "$wf" ] || continue
+    while IFS= read -r l; do
+        [ -n "$l" ] || continue
+        case "$l" in
+            *--no-cargo*)   dispatch_modes="$dispatch_modes no-cargo" ;;
+            *--cargo-only*) dispatch_modes="$dispatch_modes cargo-only" ;;
+            *)              dispatch_modes="$dispatch_modes all" ;;
+        esac
+    done <<< "$(sed 's/#.*$//' "$wf" | grep -E "(^|[[:space:];&|(])((ba)?sh[[:space:]]+|\./)?[^[:space:]]*guard_tree\.sh([[:space:]]|$|['\"])" || true)"
+done
+dispatch_modes=$(printf '%s\n' $dispatch_modes | sort -u)
+for mode in $dispatch_modes; do
+    case "$mode" in
+        no-cargo)   dflag="--no-cargo" ;;
+        cargo-only) dflag="--cargo-only" ;;
+        *)          dflag="" ;;
+    esac
+    dout=$(bash scripts/guard_tree.sh --dry-run $dflag 2>/dev/null) || dout=""
+    # VACUITY: a dispatcher that answers nothing is not a dispatcher that runs
+    # nothing. Refuse to grade it rather than sweep clean over an empty answer.
+    if [ -z "$(printf '%s\n' "$dout" | grep -c . )" ] || [ "$(printf '%s\n' "$dout" | grep -c '^run: ')" -eq 0 ]; then
+        printf 'FAIL  a required workflow dispatches guard_tree.sh %s, and that\n' "${dflag:-(all)}"
+        printf '      dispatcher reported no run set. An oracle that answers nothing\n'
+        printf '      cannot clear anything; fix the dispatcher, not this check.\n'
+        rc=1
+        continue
+    fi
+    DISPATCHED="$DISPATCHED $(printf '%s\n' "$dout" | sed -n 's|^run: ||p' | xargs -r -n1 basename | tr '\n' ' ')"
+done
 
 # ── PART 1: the registry may not appear in a required workflow ──────────────
 printf 'PART 1 — release-time gates stay out of the required workflows\n'
@@ -66,6 +137,16 @@ for guard in $RELEASE_TIME_ONLY; do
             rc=1
         fi
     done
+    case " $DISPATCHED " in
+        *" $guard "*)
+            printf 'FAIL  %s is RUN by scripts/guard_tree.sh from a required workflow.\n' "$guard"
+            printf '      Nothing names it — the dispatcher reached it by universe. A\n'
+            printf '      release-time gate reached by dispatch is still in a required\n'
+            printf '      check. guard_tree.sh reads this registry via --list and must\n'
+            printf '      emit `skipped: ... release-time` for it.\n'
+            rc=1
+            ;;
+    esac
 done
 
 # VACUITY: a registry that names nothing sweeps clean.
@@ -93,6 +174,8 @@ check_llama_pin.sh
 check_no_fabricated_baselines.sh
 check_no_timing_in_required.sh
 check_perf_claims_cite_receipts.sh
+check_perf_concurrency_groups.sh
+check_perf_matrix_schema.sh
 check_perf_receipt_fields_have_producers.sh
 "
 # check_perf_claims_cite_receipts.sh (PERF-010) matches `check_*perf*.sh` and
@@ -112,6 +195,17 @@ check_perf_receipt_fields_have_producers.sh
 # reader scripts. Its one timing-shaped token is the word `timeouts` inside a
 # comment, naming a RECEIPT FIELD rather than a bound. Verified by reading it
 # rather than by trusting the name, which is what the heuristic above cannot do.
+# check_perf_matrix_schema.sh matched on `perf` and reads only YAML: host
+# classes, threshold_class/author coverage, cell statuses, anchor resolution. It
+# compares no quantity to a clock.
+# check_perf_concurrency_groups.sh matched on `perf` and reads only workflow
+# YAML, asserting that a bench job declares a concurrency group. It is a
+# statement about ISOLATION, not about duration.
+# check_perf041_marker.sh is the opposite case and is in RELEASE_TIME_ONLY
+# above: it compares a marker's `started_utc` against the matrix's
+# `witness.max_age_days`, which IS a duration, and it belongs to the release
+# surface (root Cargo.toml `[package.metadata.dogfood] gates`) rather than to a
+# required workflow.
 
 unclassified=""
 while IFS= read -r f; do

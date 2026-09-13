@@ -149,7 +149,7 @@ for pass in $(seq 1 "$PASSES"); do
 
     # A stale CARGO_REGISTRY_TOKEN 403s every upload; the credentials file wins.
     ( unset CARGO_REGISTRY_TOKEN; bash scripts/cascade-publish.sh ) 2>&1 \
-        | grep -E "PUBLISHED|FATAL|already ${TARGET}|TIER|RETRY" | tail -40
+        | grep -E "PUBLISHED|FATAL|DEFER|already ${TARGET}|TIER|RETRY" | tail -60
 
     n2=$(count_pub)
     echo "=== PASS $pass END: $n2/$TOTAL ==="

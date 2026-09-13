@@ -1,0 +1,476 @@
+{
+  "bands": [
+    {
+      "aggregate_tok_per_sec": 100.0,
+      "baseline": null,
+      "comparator_owner": "perf-gate",
+      "comparator_reason": "no comparator lane was driven by this client in this run",
+      "comparator_status": "UNMEASURED",
+      "completed": 4,
+      "concurrency": 1,
+      "decode_tok_per_sec": 110.0,
+      "drain_ms": 120.0,
+      "errors": 0,
+      "join_key": {
+        "band": 1,
+        "fa": "auto",
+        "host": "lambda",
+        "interleaved": true,
+        "kv_type": "f16",
+        "model": "qwen2.5-coder-7b-instruct",
+        "n_batch": 2048,
+        "n_ctx_slot": 1024,
+        "n_predict": 128,
+        "quant": "q4_k_m",
+        "replicates": 5,
+        "tokenization": "hf-tokenizers",
+        "window_ms": 60000,
+        "workload": "W1"
+      },
+      "overhead_share": 0.909,
+      "prefill_source": "server",
+      "prefill_tok_per_sec": 900.0,
+      "ratios": null,
+      "replicate": 1,
+      "requested": 4,
+      "roofline_tok_per_sec": 1000.0,
+      "samples": [
+        {
+          "generated_tokens": 128,
+          "in_flight_at_start": 0,
+          "index": 0,
+          "issued_ms": 0.0,
+          "outcome": "completed",
+          "prompt_tokens": 512,
+          "settled_ms": 1200.0,
+          "ttft_ms": 30.0
+        },
+        {
+          "generated_tokens": 128,
+          "in_flight_at_start": 0,
+          "index": 1,
+          "issued_ms": 100.0,
+          "outcome": "completed",
+          "prompt_tokens": 512,
+          "settled_ms": 1300.0,
+          "ttft_ms": 30.0
+        },
+        {
+          "generated_tokens": 128,
+          "in_flight_at_start": 0,
+          "index": 2,
+          "issued_ms": 200.0,
+          "outcome": "completed",
+          "prompt_tokens": 512,
+          "settled_ms": 1400.0,
+          "ttft_ms": 30.0
+        }
+      ],
+      "samples_file": null,
+      "scaling_efficiency": null,
+      "short_of_n_predict": 0,
+      "span_ms": 60000.0,
+      "status": "UNMEASURED",
+      "stream_mode": "live",
+      "stream_witness": {
+        "client_ttft_over_e2e_median": 0.05,
+        "verdict": "live"
+      },
+      "suspect": [],
+      "timeouts": 0,
+      "tokens_total": 900,
+      "truncated": 0,
+      "window_ms": 60000.0,
+      "witness": null
+    },
+    {
+      "aggregate_tok_per_sec": 360.0,
+      "baseline": null,
+      "comparator_owner": "perf-gate",
+      "comparator_reason": "no comparator lane was driven by this client in this run",
+      "comparator_status": "UNMEASURED",
+      "completed": 16,
+      "concurrency": 4,
+      "decode_tok_per_sec": 112.0,
+      "drain_ms": 120.0,
+      "errors": 0,
+      "join_key": {
+        "band": 4,
+        "fa": "auto",
+        "host": "lambda",
+        "interleaved": true,
+        "kv_type": "f16",
+        "model": "qwen2.5-coder-7b-instruct",
+        "n_batch": 2048,
+        "n_ctx_slot": 1024,
+        "n_predict": 128,
+        "quant": "q4_k_m",
+        "replicates": 5,
+        "tokenization": "hf-tokenizers",
+        "window_ms": 60000,
+        "workload": "W1"
+      },
+      "overhead_share": null,
+      "prefill_source": "server",
+      "prefill_tok_per_sec": 3200.0,
+      "ratios": null,
+      "replicate": 1,
+      "requested": 16,
+      "roofline_tok_per_sec": 1000.0,
+      "samples": [
+        {
+          "generated_tokens": 128,
+          "in_flight_at_start": 0,
+          "index": 0,
+          "issued_ms": 0.0,
+          "outcome": "completed",
+          "prompt_tokens": 512,
+          "settled_ms": 1200.0,
+          "ttft_ms": 30.0
+        },
+        {
+          "generated_tokens": 128,
+          "in_flight_at_start": 0,
+          "index": 1,
+          "issued_ms": 100.0,
+          "outcome": "completed",
+          "prompt_tokens": 512,
+          "settled_ms": 1300.0,
+          "ttft_ms": 30.0
+        },
+        {
+          "generated_tokens": 128,
+          "in_flight_at_start": 0,
+          "index": 2,
+          "issued_ms": 200.0,
+          "outcome": "completed",
+          "prompt_tokens": 512,
+          "settled_ms": 1400.0,
+          "ttft_ms": 30.0
+        }
+      ],
+      "samples_file": null,
+      "scaling_efficiency": 0.9,
+      "short_of_n_predict": 0,
+      "span_ms": 60000.0,
+      "status": "UNMEASURED",
+      "stream_mode": "live",
+      "stream_witness": {
+        "client_ttft_over_e2e_median": 0.05,
+        "verdict": "live"
+      },
+      "suspect": [],
+      "timeouts": 0,
+      "tokens_total": 900,
+      "truncated": 0,
+      "window_ms": 60000.0,
+      "witness": {
+        "batch_invariance": "PASS",
+        "declared_min": 128,
+        "divergence_at": null,
+        "m_formed": 4,
+        "source": "server",
+        "intra_agree_to": 128,
+        "max_constant_run": 2
+      }
+    },
+    {
+      "aggregate_tok_per_sec": 700.0,
+      "baseline": null,
+      "comparator_owner": "perf-gate",
+      "comparator_reason": "no comparator lane was driven by this client in this run",
+      "comparator_status": "UNMEASURED",
+      "completed": 32,
+      "concurrency": 8,
+      "decode_tok_per_sec": 111.0,
+      "drain_ms": 120.0,
+      "errors": 0,
+      "join_key": {
+        "band": 8,
+        "fa": "auto",
+        "host": "lambda",
+        "interleaved": true,
+        "kv_type": "f16",
+        "model": "qwen2.5-coder-7b-instruct",
+        "n_batch": 2048,
+        "n_ctx_slot": 1024,
+        "n_predict": 128,
+        "quant": "q4_k_m",
+        "replicates": 5,
+        "tokenization": "hf-tokenizers",
+        "window_ms": 60000,
+        "workload": "W1"
+      },
+      "overhead_share": null,
+      "prefill_source": "server",
+      "prefill_tok_per_sec": 6000.0,
+      "ratios": null,
+      "replicate": 1,
+      "requested": 32,
+      "roofline_tok_per_sec": 1000.0,
+      "samples": [
+        {
+          "generated_tokens": 128,
+          "in_flight_at_start": 0,
+          "index": 0,
+          "issued_ms": 0.0,
+          "outcome": "completed",
+          "prompt_tokens": 512,
+          "settled_ms": 1200.0,
+          "ttft_ms": 30.0
+        },
+        {
+          "generated_tokens": 128,
+          "in_flight_at_start": 0,
+          "index": 1,
+          "issued_ms": 100.0,
+          "outcome": "completed",
+          "prompt_tokens": 512,
+          "settled_ms": 1300.0,
+          "ttft_ms": 30.0
+        },
+        {
+          "generated_tokens": 128,
+          "in_flight_at_start": 0,
+          "index": 2,
+          "issued_ms": 200.0,
+          "outcome": "completed",
+          "prompt_tokens": 512,
+          "settled_ms": 1400.0,
+          "ttft_ms": 30.0
+        }
+      ],
+      "samples_file": null,
+      "scaling_efficiency": 0.875,
+      "short_of_n_predict": 0,
+      "span_ms": 60000.0,
+      "status": "UNMEASURED",
+      "stream_mode": "live",
+      "stream_witness": {
+        "client_ttft_over_e2e_median": 0.05,
+        "verdict": "live"
+      },
+      "suspect": [],
+      "timeouts": 0,
+      "tokens_total": 900,
+      "truncated": 0,
+      "window_ms": 60000.0,
+      "witness": {
+        "batch_invariance": "PASS",
+        "declared_min": 128,
+        "divergence_at": null,
+        "m_formed": 8,
+        "source": "server",
+        "intra_agree_to": 128,
+        "max_constant_run": 2
+      }
+    },
+    {
+      "aggregate_tok_per_sec": 1300.0,
+      "baseline": null,
+      "comparator_owner": "perf-gate",
+      "comparator_reason": "no comparator lane was driven by this client in this run",
+      "comparator_status": "UNMEASURED",
+      "completed": 64,
+      "concurrency": 16,
+      "decode_tok_per_sec": 110.0,
+      "drain_ms": 120.0,
+      "errors": 0,
+      "join_key": {
+        "band": 16,
+        "fa": "auto",
+        "host": "lambda",
+        "interleaved": true,
+        "kv_type": "f16",
+        "model": "qwen2.5-coder-7b-instruct",
+        "n_batch": 2048,
+        "n_ctx_slot": 1024,
+        "n_predict": 128,
+        "quant": "q4_k_m",
+        "replicates": 5,
+        "tokenization": "hf-tokenizers",
+        "window_ms": 60000,
+        "workload": "W1"
+      },
+      "overhead_share": null,
+      "prefill_source": "server",
+      "prefill_tok_per_sec": 11000.0,
+      "ratios": null,
+      "replicate": 1,
+      "requested": 64,
+      "roofline_tok_per_sec": 1000.0,
+      "samples": [
+        {
+          "generated_tokens": 128,
+          "in_flight_at_start": 0,
+          "index": 0,
+          "issued_ms": 0.0,
+          "outcome": "completed",
+          "prompt_tokens": 512,
+          "settled_ms": 1200.0,
+          "ttft_ms": 30.0
+        },
+        {
+          "generated_tokens": 128,
+          "in_flight_at_start": 0,
+          "index": 1,
+          "issued_ms": 100.0,
+          "outcome": "completed",
+          "prompt_tokens": 512,
+          "settled_ms": 1300.0,
+          "ttft_ms": 30.0
+        },
+        {
+          "generated_tokens": 128,
+          "in_flight_at_start": 0,
+          "index": 2,
+          "issued_ms": 200.0,
+          "outcome": "completed",
+          "prompt_tokens": 512,
+          "settled_ms": 1400.0,
+          "ttft_ms": 30.0
+        }
+      ],
+      "samples_file": null,
+      "scaling_efficiency": 0.8125,
+      "short_of_n_predict": 0,
+      "span_ms": 60000.0,
+      "status": "UNMEASURED",
+      "stream_mode": "live",
+      "stream_witness": {
+        "client_ttft_over_e2e_median": 0.05,
+        "verdict": "live"
+      },
+      "suspect": [],
+      "timeouts": 0,
+      "tokens_total": 900,
+      "truncated": 0,
+      "window_ms": 60000.0,
+      "witness": {
+        "batch_invariance": "PASS",
+        "declared_min": 128,
+        "divergence_at": null,
+        "m_formed": 16,
+        "source": "server",
+        "intra_agree_to": 128,
+        "max_constant_run": 2
+      }
+    }
+  ],
+  "client_model": "closed_loop",
+  "commit": "2222222222222222222222222222222222222222",
+  "completed": 16,
+  "drain_ms": 12.0,
+  "errors": 0,
+  "injector": {
+    "arrival_index": 7,
+    "stall_p95_ms": 42.0
+  },
+  "itl": {
+    "p95_w1_ms": 10.0,
+    "p95_w2_ms": 14.0
+  },
+  "kv": {
+    "admission_rejected": 0,
+    "bytes_reserved": 100,
+    "bytes_used": 50,
+    "preempted_swap": 0
+  },
+  "ladder": {
+    "declared": [
+      1,
+      4,
+      8,
+      16
+    ],
+    "derived": [
+      1,
+      4,
+      8,
+      16
+    ],
+    "slots_admitted": {
+      "apr": 16,
+      "llama": 16
+    }
+  },
+  "n": 5,
+  "protocol": {
+    "cooldown_ms": 10000,
+    "interleaved": true,
+    "n_predict": 128,
+    "quiesce_ms": 5000,
+    "replicates": 5,
+    "sampler": {
+      "ignore_eos": true,
+      "seed": 0,
+      "temperature": 0.0
+    },
+    "warmup_requests_per_worker": 2,
+    "window_ms": 60000
+  },
+  "provenance": {
+    "accelerator": "rtx-4090",
+    "binary_path": "/opt/pinned-binary",
+    "binary_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "client": {
+      "commit": "__ANCESTOR__",
+      "path": "/opt/apr",
+      "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+    },
+    "clock_source": "std::time::SystemTime (CLOCK_REALTIME)",
+    "comparator": null,
+    "compute_class": "cuda",
+    "feature_set": [
+      "cuda"
+    ],
+    "host": "lambda",
+    "model": "qwen2.5-coder-7b-instruct",
+    "model_file": {
+      "bytes": 4700000000,
+      "path": "/models/q.gguf",
+      "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+    },
+    "quantization": "q4_k_m",
+    "resolution": "apr_bin.sh",
+    "server_config": {
+      "backend_loaded": [
+        "cuda"
+      ],
+      "compute_class": "cuda",
+      "offload": {
+        "autofit_applied": false,
+        "explicit_args": []
+      },
+      "slots": 16
+    },
+    "started_utc": "2026-09-01T10:11:12.345Z",
+    "subject": {
+      "commit": "__ANCESTOR__",
+      "feature_set": [
+        "cuda"
+      ],
+      "path": "/opt/apr",
+      "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+    }
+  },
+  "requested": 16,
+  "run_id": "0123456789abcdef0123456789abcdef",
+  "samples_ms": [
+    10.0,
+    11.0,
+    10.5,
+    10.2,
+    10.8
+  ],
+  "schema_version": 3,
+  "short_of_n_predict": 0,
+  "spec": "PP-LLAMA-001 v3.0",
+  "timeouts": 0,
+  "tokenization": {
+    "method": "hf-tokenizers"
+  },
+  "truncated": 0,
+  "unproduced_fields": [],
+  "workload": "W1"
+}

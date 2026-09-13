@@ -295,7 +295,21 @@ impl OwnedQuantizedModelCuda {
         // GH-141 ILLEGAL_ADDRESS was from a different root cause (stale graph pointers).
         // PMAT-073: Pre-allocate batched KV for max_kv_slots to enable mid-batch joins.
         // Extra slots cost ~224 MB/slot but avoid reallocation when new requests join.
-        let kv_alloc = max_kv_slots.max(m);
+        //
+        // X1-KVALLOC (#2774): ...but only the extra slots that FIT. `max_kv_slots`
+        // is `CUDA_MAX_BATCH`, which `compute_max_batch_for_memory` auto-sizes
+        // against VRAM measured BEFORE the weights are resident -- so on a 24 GB
+        // RTX 4090 the 7B model got the clamp ceiling, 32, and this line
+        // preallocated 32 slots for a batch of 3:
+        //
+        //   Failed to init batched KV cache for M=32: CUDA_ERROR_OUT_OF_MEMORY
+        //
+        // Three of four concurrent requests returned HTTP 500. `m` is the floor
+        // because those sequences are already admitted; the ceiling is now what
+        // the device can actually hold.
+        let kv_alloc = self
+            .executor
+            .fit_batched_kv_alloc(num_layers, max_kv_slots.max(m), m);
         self.executor
             .init_batched_kv_cache_gpu(num_layers, kv_alloc)
             .map_err(|e| RealizarError::UnsupportedOperation {
@@ -856,6 +870,27 @@ impl OwnedQuantizedModelCuda {
             }
         }
 
+        // PP-LLAMA-001 §9 #1a / PP-26: the second unguarded entry into
+        // `prefill_multi_prompt`. `:853` says "Always use prefill_multi_prompt
+        // path, even for N=1" — which on Blackwell means every slot recycle
+        // wrote a corrupt KV cache for the request that just joined. The
+        // per-slot `recycle_slot` below is the serial equivalent (run_prefill,
+        // which IS guarded, plus `scatter_single_kv_to_batched`), so the
+        // refusal has a real path to fall back to rather than a failure.
+        if !self.executor.gpu_profile.multi_prompt_prefill_allowed() {
+            let num_refused = slots_and_requests.len();
+            eprintln!(
+                "[PMAT-810] cc={} >= {}: multi-prompt prefill refused, {num_refused} prompts \
+                 prefilled serially (BATCHED_PREFILL=1 to override)",
+                self.executor.gpu_profile.cc,
+                crate::cuda::gpu_profile::SM12X_MIN_CC,
+            );
+            for (slot_idx, prompt, config, on_token) in slots_and_requests {
+                self.recycle_slot(state, slot_idx, prompt, config, on_token)?;
+            }
+            return Ok(());
+        }
+
         let prefill_start = std::time::Instant::now();
         let num_recycles = slots_and_requests.len();
 
@@ -999,8 +1034,26 @@ impl OwnedQuantizedModelCuda {
         // PMAT-051: Multi-prompt batched prefill — read weights once for all prompts.
         // Concatenate all prompts' tokens, run GEMM once per layer (M_total tokens),
         // only attention is per-prompt (prompt-local causal mask).
+        // PP-LLAMA-001 §9 #1a / PP-26: the multi-prompt kernel shares
+        // `batched_qkv_rope_phase` and the packed KV scatter with the
+        // single-prompt batched prefill, so wherever THAT is refused this must
+        // be refused too. It was not: `prefill_multi_prompt` had no compute-
+        // capability test at all, and the default scheduler's initial batch runs
+        // straight through here — so on Blackwell every m>1 batch took the
+        // PMAT-810 path while the single-prompt path was carefully serial.
+        // Same predicate, one answer.
+        let multi_prompt_allowed = self.executor.gpu_profile.multi_prompt_prefill_allowed();
         let use_multi_prompt = m > 1
-            && std::env::var("MULTI_PROMPT_PREFILL").as_deref() != Ok("0");
+            && std::env::var("MULTI_PROMPT_PREFILL").as_deref() != Ok("0")
+            && multi_prompt_allowed;
+        if m > 1 && !multi_prompt_allowed {
+            eprintln!(
+                "[PMAT-810] cc={} >= {}: multi-prompt prefill refused, {m} prompts \
+                 prefilled serially (BATCHED_PREFILL=1 to override)",
+                self.executor.gpu_profile.cc,
+                crate::cuda::gpu_profile::SM12X_MIN_CC,
+            );
+        }
 
         if use_multi_prompt {
             let hidden_dim = self.model.config.hidden_dim;
@@ -1162,3 +1215,111 @@ mod pmat764_select_batched_token_tests {
 }
 
 include!("cb006_parity_probe.rs");
+
+/// X1-KVALLOC (#2774) source gate.
+///
+/// The behaviour test for the sizing rule
+/// (`CudaExecutor::batched_kv_slots_that_fit`) needs `--features cuda` to
+/// compile, which is the same blind spot the defect lived in. This one is a
+/// source scan with no cfg, so it runs on every build and fails if the call
+/// site goes back to handing the scheduler's ceiling straight to the allocator.
+#[cfg(test)]
+mod x1_kvalloc_2774_source_gate {
+    #[test]
+    fn batched_kv_is_sized_against_the_device_not_the_ceiling() {
+        let src = include_str!("generate_batched_streaming.rs");
+        assert!(
+            src.contains("fit_batched_kv_alloc(num_layers, max_kv_slots.max(m), m)"),
+            "batched_setup_and_prefill no longer clamps the KV allocation to \
+             what fits: `max_kv_slots` is CUDA_MAX_BATCH, which on a 24 GB 4090 \
+             with the 7B model was the clamp ceiling 32, so a batch of 3 asked \
+             the driver for 14336 MiB and got CUDA_ERROR_OUT_OF_MEMORY (#2774)"
+        );
+        // Assembled at runtime: a source scan whose needle is written out
+        // literally matches ITS OWN source and fails on a correct tree. That is
+        // not hypothetical -- the first version of this test did exactly that.
+        let unclamped = format!("let kv_alloc = {}", "max_kv_slots.max(m);");
+        assert!(
+            !src.contains(&unclamped),
+            "the unclamped sizing is back (#2774)"
+        );
+    }
+}
+
+#[cfg(test)]
+mod pmat810_multi_prompt_guard_tests {
+    use crate::cuda::gpu_profile::{
+        select_prefill_path, GpuProfile, PrefillPath, Q4kVariant, Q6kVariant, SM12X_MIN_CC,
+    };
+
+    /// A profile as `GpuProfile::detect` would resolve it on a card with this
+    /// compute capability and this `BATCHED_PREFILL` setting.
+    fn profile(cc: u32, env: Option<&str>) -> GpuProfile {
+        GpuProfile {
+            q4k: Q4kVariant::Mwv,
+            q6k: Q6kVariant::HwDp4a,
+            mwv_warps: 3,
+            prefill_path: select_prefill_path(cc, env),
+            hgemm_decode: false,
+            fused_gate_up: false,
+            fp8_prefill: cc >= 89,
+            fp8_decode: cc >= 89,
+            w4a16_interleaved: false,
+            sm_target: format!("sm_{cc}"),
+            cc,
+        }
+    }
+
+    /// §9 #1a: `prefill_and_scatter` and `recycle_slots_batch` both gate on
+    /// this predicate, so a `false` here is what makes the packed multi-prompt
+    /// kernel unreachable on the sm_12x family and the serial per-prompt
+    /// fallback run instead. The predicate is numeric (`cc >= 120`), so a
+    /// higher cc is refused too — by number, not by architecture name.
+    #[test]
+    fn multi_prompt_prefill_is_refused_on_sm12x_by_default() {
+        for cc in [SM12X_MIN_CC, 121, 130] {
+            let p = profile(cc, None);
+            assert!(
+                !p.multi_prompt_prefill_allowed(),
+                "cc={cc} must refuse the packed multi-prompt prefill by default"
+            );
+            assert_eq!(p.prefill_path().path, PrefillPath::Serial);
+            assert_eq!(p.prefill_path().reason, "sm12x default");
+        }
+    }
+
+    /// Every cc below the sm_12x line keeps the packed prefill — including
+    /// datacenter Blackwell (sm_100/sm_103) and Thor (sm_110): the corruption
+    /// is recorded on GB10 only and the guard must not cost the fast path
+    /// where the KV scatter is not known bad.
+    #[test]
+    fn multi_prompt_prefill_is_allowed_below_sm12x() {
+        for cc in [75u32, 80, 86, 89, 90, 100, 103, 110] {
+            assert!(
+                profile(cc, None).multi_prompt_prefill_allowed(),
+                "cc={cc} must keep the packed multi-prompt prefill"
+            );
+        }
+    }
+
+    /// The A/B override still reaches the refused path, which is what makes the
+    /// KV-scatter root cause investigable on the box that has the bug.
+    #[test]
+    fn env_1_opts_in_on_blackwell() {
+        let p = profile(121, Some("1"));
+        assert!(p.multi_prompt_prefill_allowed());
+        assert_eq!(p.prefill_path().path, PrefillPath::Batched);
+        assert_eq!(p.prefill_path().reason, "env forced");
+    }
+
+    /// `BATCHED_PREFILL=0` refuses it everywhere, including on cards where it
+    /// is the default — the documented opt-out must reach BOTH prefill paths.
+    #[test]
+    fn env_0_refuses_multi_prompt_everywhere() {
+        for cc in [89u32, 121] {
+            let p = profile(cc, Some("0"));
+            assert!(!p.multi_prompt_prefill_allowed(), "cc={cc}");
+            assert_eq!(p.prefill_path().reason, "env=0");
+        }
+    }
+}

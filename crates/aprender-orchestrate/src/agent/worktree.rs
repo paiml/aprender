@@ -17,7 +17,7 @@
 //! # Example
 //!
 //! ```rust,ignore
-//! use aprender_orchestrate::agent::worktree::WorktreeSession;
+//! use batuta::agent::worktree::WorktreeSession;
 //!
 //! let repo = std::path::Path::new(".");
 //! let session = WorktreeSession::create(repo, "agent/xyz")?;

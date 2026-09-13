@@ -682,15 +682,16 @@ async fn send_one_request(
     if use_stream {
         match client.chat_completion_stream(prompt).await {
             Ok(streamed) => {
-                let token_count = streamed.token_timestamps.len() as u32;
-                let usage_tokens = streamed
-                    .usage
-                    .as_ref()
-                    .map_or(token_count, |u| u.completion_tokens);
-                let prompt_tokens = streamed.usage.as_ref().map_or_else(
-                    || estimate_prompt_tokens(&prompt.messages),
-                    |u| u.prompt_tokens,
-                );
+                // PP-27: the counts are the SERVER's. There is no chunk-count
+                // fallback here any more, and there is nowhere for one to
+                // return: `chat_completion_stream` refuses a stream whose
+                // terminal chunk carried no `usage`, so an `Ok` response always
+                // has one. The frame count and the token count are different
+                // quantities -- a frame carries whatever the server chose to
+                // flush -- and substituting one for the other produced a number
+                // with the shape of a measurement.
+                let usage_tokens = streamed.usage.completion_tokens;
+                let prompt_tokens = streamed.usage.prompt_tokens;
                 let content = if capture_content {
                     Some(streamed.content.clone())
                 } else {
@@ -1477,16 +1478,6 @@ fn stddev(values: &[f64]) -> f64 {
     variance.sqrt()
 }
 
-/// Estimate prompt tokens from message content when server doesn't report usage.
-/// Uses words × 1.3 heuristic (approximation for GPT-2/BPE tokenizers).
-fn estimate_prompt_tokens(messages: &[ChatMessage]) -> u32 {
-    let total_words: usize = messages
-        .iter()
-        .map(|m| m.content.split_whitespace().count() + 4) // +4 for role/delimiter tokens
-        .sum();
-    (total_words as f64 * 1.3) as u32
-}
-
 /// Default prompt for load testing.
 fn default_prompt() -> ChatRequest {
     ChatRequest {
@@ -1500,6 +1491,9 @@ fn default_prompt() -> ChatRequest {
         stream: Some(false),
         seed: None,
         ignore_eos: None,
+        // PP-27: set on the wire by `LlmClient::wire_request` when (and only
+        // when) the request actually streams; a profile never asks for it.
+        stream_options: None,
     }
 }
 

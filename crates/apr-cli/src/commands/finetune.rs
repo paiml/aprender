@@ -406,29 +406,7 @@ fn execute_training(
     }
 
     // 2. Load training data from JSONL
-    let corpus: Vec<InstructSample> = {
-        let file = std::fs::File::open(data_path)
-            .map_err(|e| CliError::ValidationFailed(format!("Failed to open data: {e}")))?;
-        let reader = std::io::BufReader::new(file);
-        let mut samples = Vec::new();
-        for line in std::io::BufRead::lines(reader) {
-            let line = line.map_err(|e| CliError::ValidationFailed(format!("Read error: {e}")))?;
-            let line = line.trim().to_string();
-            if line.is_empty() {
-                continue;
-            }
-            let sample: InstructSample = serde_json::from_str(&line)
-                .map_err(|e| CliError::ValidationFailed(format!("Invalid JSONL: {e}")))?;
-            samples.push(sample);
-        }
-        samples
-    };
-
-    if corpus.is_empty() {
-        return Err(CliError::ValidationFailed(
-            "Training data is empty".to_string(),
-        ));
-    }
+    let corpus: Vec<InstructSample> = load_instruct_corpus(data_path)?;
 
     if !json_output {
         output::pipeline_stage("Loading model", output::StageStatus::Done);
@@ -506,6 +484,55 @@ fn execute_training(
 
     // PMAT-512: Print training result to both stdout (human) and stderr (canary parser).
     // Canary parser reads stderr for loss extraction.
+    report_final_loss_to_stderr(&result);
+
+    display_training_result(&result, json_output);
+
+    // 5. Export trained LoRA adapters to APR
+    // Deferred (PMAT-750): export trained weights from the pipeline; for now the checkpoint dir is saved.
+    report_checkpoint_output(output_path, json_output);
+
+    Ok(())
+}
+
+/// Read the JSONL instruction corpus, rejecting an empty training set.
+///
+/// Extracted from `execute_training` (PMAT-938) so the training entry point
+/// stays under the cognitive-complexity cap. Behaviour is unchanged: the same
+/// per-line errors, the same blank-line skip, the same empty-corpus rejection.
+#[cfg(feature = "training")]
+fn load_instruct_corpus(
+    data_path: &Path,
+) -> Result<Vec<entrenar::finetune::instruct_corpus::InstructSample>> {
+    use entrenar::finetune::instruct_corpus::InstructSample;
+
+    let file = std::fs::File::open(data_path)
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to open data: {e}")))?;
+    let reader = std::io::BufReader::new(file);
+    let mut samples = Vec::new();
+    for line in std::io::BufRead::lines(reader) {
+        let line = line.map_err(|e| CliError::ValidationFailed(format!("Read error: {e}")))?;
+        let line = line.trim().to_string();
+        if line.is_empty() {
+            continue;
+        }
+        let sample: InstructSample = serde_json::from_str(&line)
+            .map_err(|e| CliError::ValidationFailed(format!("Invalid JSONL: {e}")))?;
+        samples.push(sample);
+    }
+
+    if samples.is_empty() {
+        return Err(CliError::ValidationFailed(
+            "Training data is empty".to_string(),
+        ));
+    }
+
+    Ok(samples)
+}
+
+/// PMAT-512: the canary parser reads the final loss from stderr.
+#[cfg(feature = "training")]
+fn report_final_loss_to_stderr(result: &entrenar::finetune::instruct_trainer::InstructTrainResult) {
     if let Some(last) = result.epoch_metrics.last() {
         eprintln!(
             "[training] final_loss={:.4} val_loss={:.4} epochs={}",
@@ -514,32 +541,45 @@ fn execute_training(
             result.epoch_metrics.len(),
         );
     }
+}
 
-    if !json_output {
-        output::pipeline_stage("Training", output::StageStatus::Done);
-        println!();
-        println!("  Epochs completed: {}", result.epoch_metrics.len());
-        println!(
-            "  Best epoch: {} (val_loss: {:.4})",
-            result.best_epoch, result.best_val_loss
-        );
-        if let Some(first) = result.epoch_metrics.first() {
-            if let Some(last) = result.epoch_metrics.last() {
-                println!(
-                    "  Loss: {:.4} → {:.4} (train), {:.4} → {:.4} (val)",
-                    first.train_loss, last.train_loss, first.val_loss, last.val_loss,
-                );
-            }
-        }
-        if result.stopped_early {
-            println!("  Early stopping triggered");
-        }
+/// Human-readable training summary (suppressed under `--json`).
+#[cfg(feature = "training")]
+fn display_training_result(
+    result: &entrenar::finetune::instruct_trainer::InstructTrainResult,
+    json_output: bool,
+) {
+    if json_output {
+        return;
     }
 
-    // 5. Export trained LoRA adapters to APR
-    // TODO: Export trained weights from pipeline. For now, save the checkpoint dir.
-    // The trainer saves checkpoints to train_config.checkpoint_dir.
-    // A proper export would extract LoRA A/B tensors and write an APR adapter file.
+    output::pipeline_stage("Training", output::StageStatus::Done);
+    println!();
+    println!("  Epochs completed: {}", result.epoch_metrics.len());
+    println!(
+        "  Best epoch: {} (val_loss: {:.4})",
+        result.best_epoch, result.best_val_loss
+    );
+    if let Some(first) = result.epoch_metrics.first() {
+        if let Some(last) = result.epoch_metrics.last() {
+            println!(
+                "  Loss: {:.4} → {:.4} (train), {:.4} → {:.4} (val)",
+                first.train_loss, last.train_loss, first.val_loss, last.val_loss,
+            );
+        }
+    }
+    if result.stopped_early {
+        println!("  Early stopping triggered");
+    }
+}
+
+/// Report where the trainer's checkpoints landed.
+///
+/// The trainer saves checkpoints to `train_config.checkpoint_dir`. A proper
+/// export would extract LoRA A/B tensors and write an APR adapter file
+/// (deferred, PMAT-750).
+#[cfg(feature = "training")]
+fn report_checkpoint_output(output_path: &Path, json_output: bool) {
     if !json_output {
         output::pipeline_stage("Saving", output::StageStatus::Running);
     }
@@ -562,8 +602,6 @@ fn execute_training(
             checkpoint_dir.display()
         );
     }
-
-    Ok(())
 }
 
 /// §26.11.7: GPU-only training via WgpuInstructPipeline.
@@ -614,32 +652,7 @@ fn execute_training_wgpu(
     );
 
     // 3. Streaming dequant + upload weights to GPU
-    let weights = realizar::gpu::adapters::wgpu_adapter::dequant_model_weights(&q_model)
-        .map_err(|e| CliError::ValidationFailed(format!("Dequant: {e}")))?;
-
-    let mut lm_head_f32 = Vec::new();
-
-    for (name, data, rows, cols) in weights {
-        if name == "lm_head" {
-            lm_head_f32 = data;
-        } else if name.contains("_norm") || rows == 1 || cols == 1 {
-            // Norm weights and biases are 1D — no transpose needed
-            fwd.upload_weight(&name, &data);
-        } else {
-            // PMAT-497: Transpose weight from [out_dim, in_dim] (GGUF/GEMV layout)
-            // to [in_dim, out_dim] (tiled GEMM layout: B[K, N]).
-            // The tiled GEMM computes C[M,N] = A[M,K] @ B[K,N], so B must be [K=in, N=out].
-            // Without this transpose, non-square projections (k_proj 256×1536, gate_proj
-            // 8960×1536) read wrong data, producing loss 18.9 (worse than random 11.93).
-            let mut transposed = vec![0.0f32; data.len()];
-            for r in 0..rows {
-                for c in 0..cols {
-                    transposed[c * rows + r] = data[r * cols + c];
-                }
-            }
-            fwd.upload_weight(&name, &transposed);
-        }
-    }
+    let lm_head_f32 = dequant_and_upload_weights(&mut fwd, &q_model)?;
 
     // Get embed + output_norm directly from OwnedQuantizedModel
     let embed_f32 = q_model.token_embedding().to_vec();
@@ -666,29 +679,15 @@ fn execute_training_wgpu(
     let max_chunk_cols = (max_binding / hidden as u64) as usize;
 
     // Forward chunks: lm_head_t [hidden, vocab] chunked along vocab (columns)
-    let mut lm_head_t_chunks = Vec::new();
-    let mut col = 0usize;
-    while col < vocab {
-        let chunk_n = (vocab - col).min(max_chunk_cols);
-        let mut chunk = vec![0.0f32; hidden * chunk_n];
-        for h in 0..hidden {
-            for v in 0..chunk_n {
-                chunk[h * chunk_n + v] = lm_head_f32[(col + v) * hidden + h];
-            }
-        }
-        lm_head_t_chunks.push((trainer.upload(&chunk), chunk_n as u32));
-        col += chunk_n;
-    }
+    let lm_head_t_chunks =
+        chunk_lm_head_transposed(&lm_head_f32, hidden, vocab, max_chunk_cols, |c| {
+            trainer.upload(c)
+        });
 
     // Backward chunks: lm_head [vocab, hidden] chunked along vocab (rows)
-    let mut lm_head_chunks = Vec::new();
-    let mut row = 0usize;
-    while row < vocab {
-        let chunk_k = (vocab - row).min(max_chunk_cols);
-        let chunk = &lm_head_f32[row * hidden..(row + chunk_k) * hidden];
-        lm_head_chunks.push((trainer.upload(chunk), chunk_k as u32));
-        row += chunk_k;
-    }
+    let lm_head_chunks = chunk_lm_head_rows(&lm_head_f32, hidden, vocab, max_chunk_cols, |c| {
+        trainer.upload(c)
+    });
 
     eprintln!(
         "[wgpu] lm_head uploaded in {:.1}s",
@@ -733,77 +732,12 @@ fn execute_training_wgpu(
 
     // 7. Train — detect DPO vs SFT from data format
     // DPO data has "chosen" field; SFT data has "instruction"/"response"
-    let is_dpo = std::fs::read_to_string(data_path)
-        .map(|s| {
-            s.lines()
-                .next()
-                .map(|l| l.contains("chosen"))
-                .unwrap_or(false)
-        })
-        .unwrap_or(false);
+    let is_dpo = wgpu_data_is_dpo(data_path);
 
     if is_dpo {
-        // DPO alignment training
-        let pairs = entrenar::finetune::instruct_corpus::load_preference_pairs(data_path)
-            .map_err(|e| CliError::ValidationFailed(format!("DPO data: {e}")))?;
-        eprintln!(
-            "[wgpu] DPO training: {} preference pairs, beta=0.1",
-            pairs.len()
-        );
-        for epoch in 0..epochs {
-            let mut total_loss = 0.0f32;
-            for (i, pair) in pairs.iter().enumerate() {
-                let prompt_ids = pipeline.encode(&pair.prompt);
-                let chosen_ids = pipeline.encode(&pair.chosen);
-                let rejected_ids = pipeline.encode(&pair.rejected);
-                let loss = pipeline.dpo_step(&prompt_ids, &chosen_ids, &rejected_ids, 0.1);
-                total_loss += loss;
-                if !json_output && (i + 1) % 10 == 0 {
-                    eprintln!(
-                        "  Epoch {}/{} pair {}/{}: dpo_loss={:.4}",
-                        epoch + 1,
-                        epochs,
-                        i + 1,
-                        pairs.len(),
-                        loss
-                    );
-                }
-            }
-            let avg = total_loss / pairs.len().max(1) as f32;
-            eprintln!("  Epoch {} complete: avg_dpo_loss={:.4}", epoch + 1, avg);
-        }
+        train_wgpu_dpo(&mut pipeline, data_path, epochs, json_output)?;
     } else {
-        // Standard SFT training
-        for epoch in 0..epochs {
-            let mut total_loss = 0.0f32;
-            let mut total_tokens = 0usize;
-
-            for (i, sample) in corpus.iter().enumerate() {
-                let prompt_ids = pipeline.encode(&sample.instruction);
-                let response_ids = pipeline.encode(&sample.response);
-                let result = pipeline.train_step(&prompt_ids, &response_ids);
-                total_loss += result.loss * result.num_response_tokens as f32;
-                total_tokens += result.num_response_tokens;
-
-                if !json_output {
-                    eprintln!(
-                        "  Epoch {}/{} sample {}/{}: loss={:.4}",
-                        epoch + 1,
-                        epochs,
-                        i + 1,
-                        corpus.len(),
-                        result.loss,
-                    );
-                }
-            }
-
-            let avg_loss = if total_tokens > 0 {
-                total_loss / total_tokens as f32
-            } else {
-                0.0
-            };
-            eprintln!("  Epoch {} complete: avg_loss={:.4}", epoch + 1, avg_loss);
-        }
+        train_wgpu_sft(&mut pipeline, &corpus, epochs, json_output);
     }
 
     eprintln!(
@@ -813,13 +747,212 @@ fn execute_training_wgpu(
 
     // Save LoRA adapter in PEFT format
     let lora_alpha = config.alpha;
+    export_wgpu_adapter(&pipeline, output_path, lora_alpha);
+
+    Ok(())
+}
+
+/// Dequant every model weight and upload it to the GPU, returning `lm_head`
+/// (which is chunked separately, not uploaded as a forward weight).
+///
+/// Extracted from `execute_training_wgpu` (PMAT-938); the transpose rule and
+/// the 1D/norm special case are unchanged.
+#[cfg(feature = "training")]
+#[cfg(feature = "wgpu")]
+fn dequant_and_upload_weights(
+    fwd: &mut trueno::backends::gpu::WgslForwardPass,
+    q_model: &realizar::gguf::OwnedQuantizedModel,
+) -> Result<Vec<f32>> {
+    let weights = realizar::gpu::adapters::wgpu_adapter::dequant_model_weights(q_model)
+        .map_err(|e| CliError::ValidationFailed(format!("Dequant: {e}")))?;
+
+    let mut lm_head_f32 = Vec::new();
+
+    for (name, data, rows, cols) in weights {
+        if name == "lm_head" {
+            lm_head_f32 = data;
+        } else if name.contains("_norm") || rows == 1 || cols == 1 {
+            // Norm weights and biases are 1D — no transpose needed
+            fwd.upload_weight(&name, &data);
+        } else {
+            // PMAT-497: Transpose weight from [out_dim, in_dim] (GGUF/GEMV layout)
+            // to [in_dim, out_dim] (tiled GEMM layout: B[K, N]).
+            // The tiled GEMM computes C[M,N] = A[M,K] @ B[K,N], so B must be [K=in, N=out].
+            // Without this transpose, non-square projections (k_proj 256×1536, gate_proj
+            // 8960×1536) read wrong data, producing loss 18.9 (worse than random 11.93).
+            let mut transposed = vec![0.0f32; data.len()];
+            for r in 0..rows {
+                for c in 0..cols {
+                    transposed[c * rows + r] = data[r * cols + c];
+                }
+            }
+            fwd.upload_weight(&name, &transposed);
+        }
+    }
+
+    Ok(lm_head_f32)
+}
+
+/// Forward chunks: `lm_head_t` [hidden, vocab] chunked along vocab (columns).
+///
+/// Generic over the buffer the uploader returns so the CLI need not name
+/// `wgpu::Buffer` (apr-cli does not depend on wgpu directly).
+#[cfg(feature = "training")]
+#[cfg(feature = "wgpu")]
+fn chunk_lm_head_transposed<B>(
+    lm_head_f32: &[f32],
+    hidden: usize,
+    vocab: usize,
+    max_chunk_cols: usize,
+    upload: impl Fn(&[f32]) -> B,
+) -> Vec<(B, u32)> {
+    let mut lm_head_t_chunks = Vec::new();
+    let mut col = 0usize;
+    while col < vocab {
+        let chunk_n = (vocab - col).min(max_chunk_cols);
+        let mut chunk = vec![0.0f32; hidden * chunk_n];
+        for h in 0..hidden {
+            for v in 0..chunk_n {
+                chunk[h * chunk_n + v] = lm_head_f32[(col + v) * hidden + h];
+            }
+        }
+        lm_head_t_chunks.push((upload(&chunk), chunk_n as u32));
+        col += chunk_n;
+    }
+    lm_head_t_chunks
+}
+
+/// Backward chunks: `lm_head` [vocab, hidden] chunked along vocab (rows).
+#[cfg(feature = "training")]
+#[cfg(feature = "wgpu")]
+fn chunk_lm_head_rows<B>(
+    lm_head_f32: &[f32],
+    hidden: usize,
+    vocab: usize,
+    max_chunk_cols: usize,
+    upload: impl Fn(&[f32]) -> B,
+) -> Vec<(B, u32)> {
+    let mut lm_head_chunks = Vec::new();
+    let mut row = 0usize;
+    while row < vocab {
+        let chunk_k = (vocab - row).min(max_chunk_cols);
+        let chunk = &lm_head_f32[row * hidden..(row + chunk_k) * hidden];
+        lm_head_chunks.push((upload(chunk), chunk_k as u32));
+        row += chunk_k;
+    }
+    lm_head_chunks
+}
+
+/// DPO data has a "chosen" field; SFT data has "instruction"/"response".
+/// An unreadable or empty file reads as SFT, as before.
+#[cfg(feature = "training")]
+#[cfg(feature = "wgpu")]
+fn wgpu_data_is_dpo(data_path: &Path) -> bool {
+    std::fs::read_to_string(data_path)
+        .map(|s| {
+            s.lines()
+                .next()
+                .map(|l| l.contains("chosen"))
+                .unwrap_or(false)
+        })
+        .unwrap_or(false)
+}
+
+/// DPO alignment training on the WGPU pipeline.
+#[cfg(feature = "training")]
+#[cfg(feature = "wgpu")]
+fn train_wgpu_dpo(
+    pipeline: &mut entrenar::finetune::wgpu_pipeline::WgpuInstructPipeline,
+    data_path: &Path,
+    epochs: u32,
+    json_output: bool,
+) -> Result<()> {
+    let pairs = entrenar::finetune::instruct_corpus::load_preference_pairs(data_path)
+        .map_err(|e| CliError::ValidationFailed(format!("DPO data: {e}")))?;
+    eprintln!(
+        "[wgpu] DPO training: {} preference pairs, beta=0.1",
+        pairs.len()
+    );
+    for epoch in 0..epochs {
+        let mut total_loss = 0.0f32;
+        for (i, pair) in pairs.iter().enumerate() {
+            let prompt_ids = pipeline.encode(&pair.prompt);
+            let chosen_ids = pipeline.encode(&pair.chosen);
+            let rejected_ids = pipeline.encode(&pair.rejected);
+            let loss = pipeline.dpo_step(&prompt_ids, &chosen_ids, &rejected_ids, 0.1);
+            total_loss += loss;
+            if !json_output && (i + 1) % 10 == 0 {
+                eprintln!(
+                    "  Epoch {}/{} pair {}/{}: dpo_loss={:.4}",
+                    epoch + 1,
+                    epochs,
+                    i + 1,
+                    pairs.len(),
+                    loss
+                );
+            }
+        }
+        let avg = total_loss / pairs.len().max(1) as f32;
+        eprintln!("  Epoch {} complete: avg_dpo_loss={:.4}", epoch + 1, avg);
+    }
+    Ok(())
+}
+
+/// Standard SFT training on the WGPU pipeline.
+#[cfg(feature = "training")]
+#[cfg(feature = "wgpu")]
+fn train_wgpu_sft(
+    pipeline: &mut entrenar::finetune::wgpu_pipeline::WgpuInstructPipeline,
+    corpus: &[entrenar::finetune::instruct_corpus::InstructSample],
+    epochs: u32,
+    json_output: bool,
+) {
+    for epoch in 0..epochs {
+        let mut total_loss = 0.0f32;
+        let mut total_tokens = 0usize;
+
+        for (i, sample) in corpus.iter().enumerate() {
+            let prompt_ids = pipeline.encode(&sample.instruction);
+            let response_ids = pipeline.encode(&sample.response);
+            let result = pipeline.train_step(&prompt_ids, &response_ids);
+            total_loss += result.loss * result.num_response_tokens as f32;
+            total_tokens += result.num_response_tokens;
+
+            if !json_output {
+                eprintln!(
+                    "  Epoch {}/{} sample {}/{}: loss={:.4}",
+                    epoch + 1,
+                    epochs,
+                    i + 1,
+                    corpus.len(),
+                    result.loss,
+                );
+            }
+        }
+
+        let avg_loss = if total_tokens > 0 {
+            total_loss / total_tokens as f32
+        } else {
+            0.0
+        };
+        eprintln!("  Epoch {} complete: avg_loss={:.4}", epoch + 1, avg_loss);
+    }
+}
+
+/// Save the LoRA adapter in PEFT format; a failed export warns, it does not
+/// fail the run (unchanged from the inline tail of `execute_training_wgpu`).
+#[cfg(feature = "training")]
+#[cfg(feature = "wgpu")]
+fn export_wgpu_adapter(
+    pipeline: &entrenar::finetune::wgpu_pipeline::WgpuInstructPipeline,
+    output_path: &Path,
+    lora_alpha: f32,
+) {
     if let Err(e) = pipeline.export_adapter(output_path, lora_alpha) {
         eprintln!("[wgpu] WARNING: adapter export failed: {e}");
     } else {
         eprintln!("[wgpu] Adapter saved to {}", output_path.display());
     }
-
-    Ok(())
 }
 
 /// Fallback: adapter-only creation when training feature is disabled.

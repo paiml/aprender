@@ -68,7 +68,8 @@
             "decode_tok_per_sec": [
               150,
               151
-            ]
+            ],
+            "client_concurrency": 1
           },
           "comparator": {
             "aggregate_tok_per_sec": [
@@ -78,7 +79,8 @@
             "decode_tok_per_sec": [
               171,
               172
-            ]
+            ],
+            "client_concurrency": 1
           },
           "ratio_aggregate_tok_per_sec": 0.8961,
           "ratio_decode_tok_per_sec": 0.8776,
@@ -94,7 +96,8 @@
             "decode_tok_per_sec": [
               115,
               116
-            ]
+            ],
+            "client_concurrency": 4
           },
           "comparator": {
             "aggregate_tok_per_sec": [
@@ -104,7 +107,8 @@
             "decode_tok_per_sec": [
               123,
               124
-            ]
+            ],
+            "client_concurrency": 4
           },
           "ratio_aggregate_tok_per_sec": 0.8918,
           "ratio_decode_tok_per_sec": 0.9352,
@@ -120,7 +124,8 @@
             "decode_tok_per_sec": [
               100,
               101
-            ]
+            ],
+            "client_concurrency": 8
           },
           "comparator": {
             "aggregate_tok_per_sec": [
@@ -130,7 +135,8 @@
             "decode_tok_per_sec": [
               83,
               84
-            ]
+            ],
+            "client_concurrency": 8
           },
           "ratio_aggregate_tok_per_sec": 0.9255,
           "ratio_decode_tok_per_sec": 1.2036,
@@ -146,7 +152,8 @@
             "decode_tok_per_sec": [
               85,
               86
-            ]
+            ],
+            "client_concurrency": 16
           },
           "comparator": {
             "aggregate_tok_per_sec": [
@@ -156,7 +163,8 @@
             "decode_tok_per_sec": [
               71,
               72
-            ]
+            ],
+            "client_concurrency": 16
           },
           "ratio_aggregate_tok_per_sec": 0.8787,
           "ratio_decode_tok_per_sec": 1.1958,

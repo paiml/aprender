@@ -768,7 +768,9 @@ impl Default for EstimateConfig {
 /// against `total_docs` and the operator-configured shard size /
 /// worker count. AC4 formula:
 ///
-///     estimated_wall = (sample_wall / sample_size) × total_docs / num_workers
+/// ```text
+/// estimated_wall = (sample_wall / sample_size) × total_docs / num_workers
+/// ```
 ///
 /// Pure-function so unit tests can pin the math on a tiny synthetic
 /// fixture without involving the BPE tokenizer or filesystem.
@@ -1000,74 +1002,67 @@ fn resolve_num_workers(num_workers: Option<usize>) -> Result<usize> {
     }
 }
 
-/// Run `apr tokenize encode-corpus` — pretokenize a JSONL corpus into `.bin`
-/// shards per contracts/pretokenize-bin-v1.yaml. Emits flat little-endian u32
-/// streams (the exact format ShardBatchIter expects at MODEL-2 pretrain time).
+/// Two-format tokenizer dispatch for `apr tokenize encode-corpus`.
 ///
-/// Requires the `training` feature so `entrenar::tokenizer::BPETokenizer`
-/// is linked; without it, encode-corpus is unavailable (matching `run_train`).
+/// `Hex` — aprender-train's `BPETokenizer` (hex-byte format). Used
+/// when vocab.json contains canonical `00..ff` hex tokens (i.e.,
+/// trained by `apr tokenize train`).
 ///
-/// `num_workers` controls per-document BPE encoding parallelism (issue #1547).
-/// `Some(1)` runs the byte-identical single-threaded legacy path; `None` uses
-/// `available_parallelism`; `Some(N)` for N > 1 uses chunked rayon while
-/// preserving original document order per `parallel_correctness` invariant
-/// in `contracts/apr-tokenize-parallel-bpe-v1.yaml`.
+/// `ByteLevel` — aprender-core's `BpeTokenizer` (GPT-2 byte-level
+/// + Ġ-prefix). Used when vocab.json is HuggingFace-format (i.e.,
+/// extracted by `apr tokenize import-hf` from Qwen2/Llama2/Mistral
+/// tokenizer.json). This path closes the SHIP-TWO §60 silent-`<unk>`
+/// defect class — pre-this-PR, the hex loader fail-fasted with
+/// FALSIFY-BPE-FORMAT-MISMATCH-001 (PR #1585) instead of routing
+/// through the byte-level encoder.
 #[cfg(feature = "training")]
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn run_encode_corpus(
+enum EncodeTokenizer {
+    Hex(entrenar::tokenizer::BPETokenizer),
+    ByteLevel(aprender::text::bpe::BpeTokenizer),
+}
+
+#[cfg(feature = "training")]
+impl EncodeTokenizer {
+    fn vocab_size(&self) -> usize {
+        match self {
+            Self::Hex(t) => entrenar::tokenizer::Tokenizer::vocab_size(t),
+            Self::ByteLevel(t) => t.vocab_size(),
+        }
+    }
+    fn token_to_id(&self, name: &str) -> Option<u32> {
+        match self {
+            Self::Hex(t) => entrenar::tokenizer::Tokenizer::token_to_id(t, name),
+            Self::ByteLevel(t) => t.token_to_id(name),
+        }
+    }
+    fn encode(&self, text: &str) -> std::result::Result<Vec<u32>, String> {
+        match self {
+            Self::Hex(t) => {
+                entrenar::tokenizer::Tokenizer::encode(t, text).map_err(|e| format!("{e}"))
+            }
+            Self::ByteLevel(t) => Ok(t.encode(text)),
+        }
+    }
+}
+
+/// Validate every `apr tokenize encode-corpus` argument that can be
+/// rejected before the corpus is walked. Preserves the pre-decomposition
+/// rejection ORDER exactly — normalization, then eos_policy, then
+/// shard_tokens, then `--num-workers`, then each `--corpus` path, then
+/// vocab.json, then merges.txt — because the operator-visible error for a
+/// call that is wrong in two ways is the first one in that list.
+///
+/// Returns the resolved worker count plus the two tokenizer file paths so
+/// the caller does not re-derive them.
+#[cfg(feature = "training")]
+fn validate_encode_corpus_args(
     corpus: &[std::path::PathBuf],
     tokenizer_dir: &Path,
-    output_dir: &Path,
     shard_tokens: usize,
-    content_field: &str,
     normalization: &str,
     eos_policy: &str,
     num_workers: Option<usize>,
-    progress: ProgressConfig,
-    estimate: EstimateConfig,
-    json_output: bool,
-) -> Result<()> {
-    use entrenar::tokenizer::{BPETokenizer, Normalization, Tokenizer, TokenizerConfig};
-    use std::io::Write as IoWrite;
-
-    /// Two-format tokenizer dispatch for `apr tokenize encode-corpus`.
-    ///
-    /// `Hex` — aprender-train's `BPETokenizer` (hex-byte format). Used
-    /// when vocab.json contains canonical `00..ff` hex tokens (i.e.,
-    /// trained by `apr tokenize train`).
-    ///
-    /// `ByteLevel` — aprender-core's `BpeTokenizer` (GPT-2 byte-level
-    /// + Ġ-prefix). Used when vocab.json is HuggingFace-format (i.e.,
-    /// extracted by `apr tokenize import-hf` from Qwen2/Llama2/Mistral
-    /// tokenizer.json). This path closes the SHIP-TWO §60 silent-`<unk>`
-    /// defect class — pre-this-PR, the hex loader fail-fasted with
-    /// FALSIFY-BPE-FORMAT-MISMATCH-001 (PR #1585) instead of routing
-    /// through the byte-level encoder.
-    enum EncodeTokenizer {
-        Hex(BPETokenizer),
-        ByteLevel(aprender::text::bpe::BpeTokenizer),
-    }
-    impl EncodeTokenizer {
-        fn vocab_size(&self) -> usize {
-            match self {
-                Self::Hex(t) => Tokenizer::vocab_size(t),
-                Self::ByteLevel(t) => t.vocab_size(),
-            }
-        }
-        fn token_to_id(&self, name: &str) -> Option<u32> {
-            match self {
-                Self::Hex(t) => Tokenizer::token_to_id(t, name),
-                Self::ByteLevel(t) => t.token_to_id(name),
-            }
-        }
-        fn encode(&self, text: &str) -> std::result::Result<Vec<u32>, String> {
-            match self {
-                Self::Hex(t) => Tokenizer::encode(t, text).map_err(|e| format!("{e}")),
-                Self::ByteLevel(t) => Ok(t.encode(text)),
-            }
-        }
-    }
-
+) -> Result<(usize, PathBuf, PathBuf)> {
     validate_normalization(normalization)?;
     match eos_policy {
         "none" | "between" | "after" => {}
@@ -1097,126 +1092,553 @@ pub(crate) fn run_encode_corpus(
     if !merges_path.exists() {
         return Err(CliError::FileNotFound(merges_path));
     }
+    Ok((workers, vocab_path, merges_path))
+}
 
-    let norm = match normalization {
-        "nfc" => Normalization::NFC,
-        "none" => Normalization::None,
+/// Render a tokenizer file path as `&str`, rejecting non-UTF-8 bytes with
+/// the same message the inline block used (`what` is the file's basename).
+#[cfg(feature = "training")]
+fn tokenizer_path_str(path: &Path, what: &str) -> Result<String> {
+    path.to_str()
+        .map(std::string::ToString::to_string)
+        .ok_or_else(|| CliError::ValidationFailed(format!("{what} path has non-utf8 bytes")))
+}
+
+/// Normalization dispatch for encode-corpus. `validate_normalization` has
+/// already rejected anything outside {`nfc`, `none`}.
+#[cfg(feature = "training")]
+fn encode_normalization(normalization: &str) -> entrenar::tokenizer::Normalization {
+    match normalization {
+        "nfc" => entrenar::tokenizer::Normalization::NFC,
+        "none" => entrenar::tokenizer::Normalization::None,
         _ => unreachable!("validated above"),
-    };
-    let config = TokenizerConfig::bpe().with_normalization(norm);
-    let vocab_path_str = vocab_path
-        .to_str()
-        .ok_or_else(|| {
-            CliError::ValidationFailed("vocab.json path has non-utf8 bytes".to_string())
-        })?
-        .to_string();
-    let merges_path_str = merges_path
-        .to_str()
-        .ok_or_else(|| {
-            CliError::ValidationFailed("merges.txt path has non-utf8 bytes".to_string())
-        })?
-        .to_string();
+    }
+}
 
-    // Two-format dispatch (PMAT-CODE-TOKENIZE-BPE-UPSTREAM-001 follow-up
-    // to PR #1596's initial dispatch). DETECT FORMAT UPFRONT by counting
-    // canonical hex-byte tokens "00".."ff" in vocab.json. A legitimate
-    // hex-byte vocab from `apr tokenize train` always has all 256.
-    // A GPT-2 byte-level vocab (from `apr tokenize import-hf` of Qwen
-    // /Llama2/Mistral) has < 200. This detection is independent of
-    // BPETokenizer::from_vocab_merges's behavior — works whether or
-    // not the upstream fail-fast (PR #1585) has merged.
-    //
-    // Discovery: PR #1596's "try hex first, fall through on FALSIFY-001"
-    // strategy depended on PR #1585's fail-fast, which was not yet on
-    // main. With #1585 absent, the hex loader silently succeeded on
-    // Qwen-format vocabs and produced 99% `<unk>`. Upfront detection
-    // eliminates the dependency.
-    //
-    // Verified: aprender::text::bpe::load_from_json on real Qwen
-    // tokenizer.json produces 0% unk (test
-    // falsify_bpe_qwen_encode_python_does_not_unk_99pct in
-    // crates/aprender-core/src/text/bpe/tests_encode_decode.rs).
+/// Detect the vocab.json flavour by counting canonical hex-byte tokens
+/// `"00".."ff"`. A legitimate hex-byte vocab from `apr tokenize train`
+/// always has all 256; a GPT-2 byte-level vocab (from
+/// `apr tokenize import-hf` of Qwen/Llama2/Mistral) has < 200.
+///
+/// This detection is independent of `BPETokenizer::from_vocab_merges`'s
+/// behavior — it works whether or not the upstream fail-fast (PR #1585)
+/// has merged. Discovery: PR #1596's "try hex first, fall through on
+/// FALSIFY-001" strategy depended on PR #1585's fail-fast, which was not
+/// yet on main. With #1585 absent, the hex loader silently succeeded on
+/// Qwen-format vocabs and produced 99% `<unk>`. Upfront detection
+/// eliminates the dependency.
+#[cfg(feature = "training")]
+fn detect_hex_byte_vocab(vocab_json: &str) -> Result<bool> {
+    const MIN_HEX_BYTES: usize = 200;
+    let vocab: std::collections::HashMap<String, u32> = serde_json::from_str(vocab_json)
+        .map_err(|e| CliError::ValidationFailed(format!("vocab.json is not valid JSON: {e}")))?;
+    let hex_byte_count = (0u8..=255)
+        .map(|b| format!("{b:02x}"))
+        .filter(|hex| vocab.contains_key(hex))
+        .count();
+    Ok(hex_byte_count >= MIN_HEX_BYTES)
+}
+
+/// Load the GPT-2 byte-level tokenizer (from `apr tokenize import-hf` or a
+/// direct tokenizer.json). Prefers a sibling tokenizer.json when present
+/// (canonical HF format with added_tokens registered); falls back to
+/// vocab.json + merges.txt.
+///
+/// NOTE on naming: `load_from_files` takes JSON STRING and MERGES STRING
+/// as CONTENT (not file paths). We read the contents and pass them.
+///
+/// Verified: `aprender::text::bpe::load_from_json` on a real Qwen
+/// tokenizer.json produces 0% unk (test
+/// `falsify_bpe_qwen_encode_python_does_not_unk_99pct` in
+/// `crates/aprender-core/src/text/bpe/tests_encode_decode.rs`).
+#[cfg(feature = "training")]
+fn load_byte_level_tokenizer(
+    tokenizer_dir: &Path,
+    vocab_json: &str,
+    merges_path_str: &str,
+) -> Result<aprender::text::bpe::BpeTokenizer> {
+    let tokenizer_json_path = tokenizer_dir.join("tokenizer.json");
+    if tokenizer_json_path.exists() {
+        let json = std::fs::read_to_string(&tokenizer_json_path).map_err(|e| {
+            CliError::ValidationFailed(format!(
+                "byte-level loader: cannot read {}: {e}",
+                tokenizer_json_path.display()
+            ))
+        })?;
+        aprender::text::bpe::load_from_json(&json).map_err(|byte_err| {
+            CliError::ValidationFailed(format!("byte-level loader (tokenizer.json): {byte_err}"))
+        })
+    } else {
+        let merges_txt = std::fs::read_to_string(merges_path_str).map_err(|e| {
+            CliError::ValidationFailed(format!(
+                "byte-level loader: cannot read merges.txt {merges_path_str}: {e}"
+            ))
+        })?;
+        aprender::text::bpe::load_from_files(vocab_json, &merges_txt).map_err(|byte_err| {
+            CliError::ValidationFailed(format!(
+                "byte-level loader (vocab.json+merges.txt): {byte_err}"
+            ))
+        })
+    }
+}
+
+/// Two-format dispatch (PMAT-CODE-TOKENIZE-BPE-UPSTREAM-001 follow-up to
+/// PR #1596's initial dispatch). Detects the vocab flavour UPFRONT, then
+/// builds either the hex-byte `BPETokenizer` or the byte-level
+/// `BpeTokenizer`.
+#[cfg(feature = "training")]
+fn load_encode_tokenizer(
+    tokenizer_dir: &Path,
+    vocab_path: &Path,
+    merges_path: &Path,
+    normalization: &str,
+) -> Result<EncodeTokenizer> {
+    let config = entrenar::tokenizer::TokenizerConfig::bpe()
+        .with_normalization(encode_normalization(normalization));
+    let vocab_path_str = tokenizer_path_str(vocab_path, "vocab.json")?;
+    let merges_path_str = tokenizer_path_str(merges_path, "merges.txt")?;
+
     let vocab_json_for_detect = std::fs::read_to_string(&vocab_path_str).map_err(|e| {
         CliError::ValidationFailed(format!("cannot read vocab.json {vocab_path_str}: {e}"))
     })?;
-    let detected_vocab: std::collections::HashMap<String, u32> =
-        serde_json::from_str(&vocab_json_for_detect).map_err(|e| {
-            CliError::ValidationFailed(format!("vocab.json is not valid JSON: {e}"))
-        })?;
-    let hex_byte_count = (0u8..=255)
-        .map(|b| format!("{b:02x}"))
-        .filter(|hex| detected_vocab.contains_key(hex))
-        .count();
-    const MIN_HEX_BYTES: usize = 200;
 
-    let tokenizer: EncodeTokenizer = if hex_byte_count >= MIN_HEX_BYTES {
+    if detect_hex_byte_vocab(&vocab_json_for_detect)? {
         // Hex-byte format (legacy `apr tokenize train` output).
-        BPETokenizer::from_vocab_merges(&vocab_path_str, &merges_path_str, config)
-            .map(EncodeTokenizer::Hex)
-            .map_err(|e| CliError::ValidationFailed(format!("Cannot load tokenizer: {e}")))?
+        entrenar::tokenizer::BPETokenizer::from_vocab_merges(
+            &vocab_path_str,
+            &merges_path_str,
+            config,
+        )
+        .map(EncodeTokenizer::Hex)
+        .map_err(|e| CliError::ValidationFailed(format!("Cannot load tokenizer: {e}")))
     } else {
-        // GPT-2 byte-level format (from `apr tokenize import-hf` or
-        // direct tokenizer.json). Prefer sibling tokenizer.json when
-        // present (canonical HF format with added_tokens registered);
-        // fall back to vocab.json + merges.txt.
-        //
-        // NOTE on naming: `load_from_files` takes JSON STRING and
-        // MERGES STRING as CONTENT (not file paths). We read the
-        // contents and pass them.
-        let tokenizer_json_path = tokenizer_dir.join("tokenizer.json");
-        let bpe = if tokenizer_json_path.exists() {
-            let json = std::fs::read_to_string(&tokenizer_json_path).map_err(|e| {
-                CliError::ValidationFailed(format!(
-                    "byte-level loader: cannot read {}: {e}",
-                    tokenizer_json_path.display()
-                ))
-            })?;
-            aprender::text::bpe::load_from_json(&json).map_err(|byte_err| {
-                CliError::ValidationFailed(format!(
-                    "byte-level loader (tokenizer.json): {byte_err}"
-                ))
-            })?
-        } else {
-            let merges_txt = std::fs::read_to_string(&merges_path_str).map_err(|e| {
-                CliError::ValidationFailed(format!(
-                    "byte-level loader: cannot read merges.txt {merges_path_str}: {e}"
-                ))
-            })?;
-            aprender::text::bpe::load_from_files(&vocab_json_for_detect, &merges_txt).map_err(
-                |byte_err| {
-                    CliError::ValidationFailed(format!(
-                        "byte-level loader (vocab.json+merges.txt): {byte_err}"
-                    ))
-                },
-            )?
-        };
-        EncodeTokenizer::ByteLevel(bpe)
+        load_byte_level_tokenizer(tokenizer_dir, &vocab_json_for_detect, &merges_path_str)
+            .map(EncodeTokenizer::ByteLevel)
+    }
+}
+
+/// SPEC §83 P2-C: collect across all `--corpus` paths into a tagged list,
+/// then derive the two legacy views the rest of the run needs.
+///
+/// When a single `--corpus` is passed (back-compat path), behaviour is
+/// byte-identical to pre-P2-C since the tagged list collapses to the
+/// legacy `(files, format)` shape on the legacy iterator wrapper. When the
+/// sources are mixed-format, the reported format is Parquet — its
+/// per-row-group streaming semantics are what the `--estimate-only` path
+/// wants; the actual encode loop dispatches per-file via
+/// `iter_corpus_texts_tagged` and never consults this value.
+#[cfg(feature = "training")]
+struct CorpusLayout {
+    /// Every input file paired with the format it was detected as, in
+    /// `--corpus` argument order. Drives the real encode loop.
+    tagged_files: Vec<(std::path::PathBuf, CorpusFormat)>,
+    /// The same files without their tags — the legacy `files` view used by
+    /// the `--estimate-only` path and by the manifest's `input_files`.
+    files: Vec<std::path::PathBuf>,
+    /// The single detected format, or Parquet when the sources are mixed.
+    format: CorpusFormat,
+}
+
+#[cfg(feature = "training")]
+fn resolve_corpus_layout(corpus: &[std::path::PathBuf]) -> Result<CorpusLayout> {
+    let tagged_files = collect_corpus_files_multi(corpus)?;
+    let files: Vec<std::path::PathBuf> = tagged_files.iter().map(|(p, _)| p.clone()).collect();
+    let unique_formats: std::collections::HashSet<CorpusFormat> =
+        tagged_files.iter().map(|(_, f)| *f).collect();
+    let format = if unique_formats.len() == 1 {
+        *unique_formats.iter().next().expect("non-empty")
+    } else {
+        CorpusFormat::Parquet
     };
+    Ok(CorpusLayout {
+        tagged_files,
+        files,
+        format,
+    })
+}
+
+/// Sequential shard-writing state for `apr tokenize encode-corpus`.
+///
+/// Both the single-threaded and the chunked-parallel encode paths drive
+/// this same struct through `push_doc`, so the output bytes for a document
+/// are determined purely by (doc_index, tokenizer, eos_policy) and never by
+/// the worker count — the `parallel_correctness` invariant of
+/// `contracts/apr-tokenize-parallel-bpe-v1.yaml`.
+#[cfg(feature = "training")]
+struct ShardWriter<'a> {
+    output_dir: &'a Path,
+    shard_tokens: usize,
+    eos_policy: &'a str,
+    eos_id: Option<u32>,
+    vocab_size: usize,
+    writer: std::io::BufWriter<std::fs::File>,
+    shard_idx: usize,
+    tokens_in_shard: usize,
+    total_tokens: u64,
+    total_docs: u64,
+    eos_count: u64,
+    doc_iter_count: u64,
+}
+
+#[cfg(feature = "training")]
+impl<'a> ShardWriter<'a> {
+    /// Open shard 0 and zero every counter.
+    fn new(
+        output_dir: &'a Path,
+        shard_tokens: usize,
+        eos_policy: &'a str,
+        eos_id: Option<u32>,
+        vocab_size: usize,
+    ) -> Result<Self> {
+        Ok(Self {
+            output_dir,
+            shard_tokens,
+            eos_policy,
+            eos_id,
+            vocab_size,
+            writer: open_shard(output_dir, 0)?,
+            shard_idx: 0,
+            tokens_in_shard: 0,
+            total_tokens: 0,
+            total_docs: 0,
+            eos_count: 0,
+            doc_iter_count: 0,
+        })
+    }
+
+    /// Append one little-endian u32 to the open shard, updating the shard
+    /// and run token counters.
+    fn write_token(&mut self, id: u32) -> Result<()> {
+        use std::io::Write as _;
+        self.writer
+            .write_all(&id.to_le_bytes())
+            .map_err(|e| CliError::ValidationFailed(format!("Shard write failed: {e}")))?;
+        self.tokens_in_shard += 1;
+        self.total_tokens += 1;
+        Ok(())
+    }
+
+    /// Append the EOS token when the tokenizer defines one. A tokenizer
+    /// with no recognisable EOS id writes nothing — the pre-decomposition
+    /// `if let Some(eos)` had no else arm either.
+    fn write_eos(&mut self) -> Result<()> {
+        if let Some(eos) = self.eos_id {
+            self.write_token(eos)?;
+            self.eos_count += 1;
+        }
+        Ok(())
+    }
+
+    /// Emit one document's encoded ids under the configured EOS policy,
+    /// fail-fasting on any id outside the vocabulary (INV-PRETOK-001).
+    fn emit_doc(&mut self, file_display: &str, locator: &str, ids: &[u32]) -> Result<()> {
+        if self.eos_policy == "between" && self.doc_iter_count > 0 {
+            self.write_eos()?;
+        }
+
+        for id in ids {
+            if (*id as usize) >= self.vocab_size {
+                let vocab_size = self.vocab_size;
+                return Err(CliError::ValidationFailed(format!(
+                    "Token id {id} >= vocab_size {vocab_size} at {file_display} {locator} \
+                     (INV-PRETOK-001 violation)"
+                )));
+            }
+            self.write_token(*id)?;
+        }
+
+        if self.eos_policy == "after" {
+            self.write_eos()?;
+        }
+
+        self.doc_iter_count += 1;
+        Ok(())
+    }
+
+    /// Flush and roll to the next shard once the current one has reached
+    /// its token budget.
+    fn rotate_if_full(&mut self) -> Result<()> {
+        if self.tokens_in_shard >= self.shard_tokens {
+            self.flush()?;
+            self.shard_idx += 1;
+            self.tokens_in_shard = 0;
+            self.writer = open_shard(self.output_dir, self.shard_idx)?;
+        }
+        Ok(())
+    }
+
+    /// The whole per-document step, shared by both encode paths: emit the
+    /// ids, count the doc, rotate the shard when full, then let the
+    /// emitter decide whether this doc warrants a `[progress]` line.
+    ///
+    /// The OR-cadence is: emit when either N docs OR S seconds have
+    /// accumulated since the last tick (issue #1547 / contract v1.2.0).
+    /// `quiet=true` short-circuits inside `emit_tick`/`should_emit`.
+    fn push_doc(
+        &mut self,
+        emitter: &mut ProgressEmitter,
+        file_display: &str,
+        locator: &str,
+        ids: &[u32],
+    ) -> Result<()> {
+        self.emit_doc(file_display, locator, ids)?;
+        self.total_docs += 1;
+        self.rotate_if_full()?;
+        let now = Instant::now();
+        if emitter.should_emit(self.total_docs, now) {
+            emitter.emit_tick(self.total_docs, self.total_tokens, now);
+        }
+        Ok(())
+    }
+
+    /// Flush the open shard's buffer to disk.
+    fn flush(&mut self) -> Result<()> {
+        use std::io::Write as _;
+        self.writer
+            .flush()
+            .map_err(|e| CliError::ValidationFailed(format!("Shard flush failed: {e}")))
+    }
+
+    /// Number of shard files written so far (shards are 0-indexed).
+    fn shard_count(&self) -> usize {
+        self.shard_idx + 1
+    }
+}
+
+/// Legacy single-threaded encode path. MUST stay byte-identical to
+/// pre-#1547 output for any operator job that pinned `--num-workers 1`.
+#[cfg(feature = "training")]
+fn encode_corpus_single_threaded(
+    source: &mut dyn Iterator<Item = Result<(String, String, String)>>,
+    tokenizer: &EncodeTokenizer,
+    shards: &mut ShardWriter<'_>,
+    emitter: &mut ProgressEmitter,
+) -> Result<()> {
+    for triple in source {
+        let (file_display, locator, text) = triple?;
+        let ids = tokenizer.encode(&text).map_err(|e| {
+            CliError::ValidationFailed(format!("Encoding failed at {file_display} {locator}: {e}"))
+        })?;
+        shards.push_doc(emitter, &file_display, &locator, &ids)?;
+    }
+    Ok(())
+}
+
+/// Pull the next chunk of documents from the canonical source iterator.
+/// Errors here are JSON-parse / IO errors — surfaced before the chunk is
+/// dispatched so the failing locator is precise.
+#[cfg(feature = "training")]
+fn next_encode_chunk(
+    source: &mut dyn Iterator<Item = Result<(String, String, String)>>,
+) -> Result<Vec<(String, String, String)>> {
+    let mut chunk: Vec<(String, String, String)> = Vec::with_capacity(ENCODE_CHUNK_SIZE);
+    for _ in 0..ENCODE_CHUNK_SIZE {
+        match source.next() {
+            Some(Ok(triple)) => chunk.push(triple),
+            Some(Err(e)) => return Err(e),
+            None => break,
+        }
+    }
+    Ok(chunk)
+}
+
+/// Parallel encode of one chunk inside the caller's rayon pool.
+/// `par_iter` over a slice preserves index order in the collected `Vec`,
+/// so the sequential write phase sees docs in original input order.
+#[cfg(feature = "training")]
+fn encode_chunk_parallel(
+    pool: &rayon::ThreadPool,
+    tokenizer: &EncodeTokenizer,
+    chunk: &[(String, String, String)],
+) -> Vec<Result<(String, String, Vec<u32>)>> {
+    use rayon::prelude::*;
+    pool.install(|| {
+        chunk
+            .par_iter()
+            .map(|(file_display, locator, text)| {
+                tokenizer
+                    .encode(text)
+                    .map(|ids| (file_display.clone(), locator.clone(), ids))
+                    .map_err(|e| {
+                        CliError::ValidationFailed(format!(
+                            "Encoding failed at {file_display} {locator}: {e}"
+                        ))
+                    })
+            })
+            .collect()
+    })
+}
+
+/// Chunked parallel encode path. Read CHUNK docs sequentially, encode them
+/// in parallel via rayon (preserving chunk-local order via index), then
+/// drain into the shard writer sequentially. This bounds memory at roughly
+/// `CHUNK * avg_doc_token_count * 4` bytes and bounds rayon spawn overhead
+/// at `total_docs / CHUNK` dispatches.
+#[cfg(feature = "training")]
+fn encode_corpus_parallel(
+    source: &mut dyn Iterator<Item = Result<(String, String, String)>>,
+    tokenizer: &EncodeTokenizer,
+    shards: &mut ShardWriter<'_>,
+    emitter: &mut ProgressEmitter,
+    workers: usize,
+) -> Result<()> {
+    let pool = rayon::ThreadPoolBuilder::new()
+        .num_threads(workers)
+        .build()
+        .map_err(|e| {
+            CliError::ValidationFailed(format!("Cannot build rayon pool ({workers}): {e}"))
+        })?;
+
+    loop {
+        let chunk = next_encode_chunk(source)?;
+        if chunk.is_empty() {
+            break;
+        }
+        for result in encode_chunk_parallel(&pool, tokenizer, &chunk) {
+            let (file_display, locator, ids) = result?;
+            shards.push_doc(emitter, &file_display, &locator, &ids)?;
+        }
+    }
+    Ok(())
+}
+
+/// The fixed inputs of one `encode-corpus` run that the manifest and the
+/// operator summary need after the encode loop finishes. Grouped so the
+/// report step takes three arguments instead of fifteen.
+#[cfg(feature = "training")]
+struct EncodeRun<'a> {
+    corpus: &'a [std::path::PathBuf],
+    files: &'a [std::path::PathBuf],
+    corpus_format: CorpusFormat,
+    tokenizer_dir: &'a Path,
+    output_dir: &'a Path,
+    content_field: &'a str,
+    normalization: &'a str,
+    eos_policy: &'a str,
+    workers: usize,
+    json_output: bool,
+}
+
+/// Build the `pretokenize-bin-v1` manifest for a finished run.
+#[cfg(feature = "training")]
+fn build_encode_manifest(
+    run: &EncodeRun<'_>,
+    shards: &ShardWriter<'_>,
+    elapsed: std::time::Duration,
+) -> serde_json::Value {
+    serde_json::json!({
+        "schema": "pretokenize-bin-v1",
+        "tokenizer_dir": run.tokenizer_dir.display().to_string(),
+        "vocab_size": shards.vocab_size,
+        "eos_policy": run.eos_policy,
+        "eos_token_id": shards.eos_id,
+        "eos_token_count": shards.eos_count,
+        "shard_count": shards.shard_count(),
+        "total_tokens": shards.total_tokens,
+        "total_documents": shards.total_docs,
+        "content_field": run.content_field,
+        "normalization": run.normalization,
+        "input_format": match run.corpus_format {
+            CorpusFormat::Jsonl => "jsonl",
+            CorpusFormat::Parquet => "parquet",
+        },
+        "input_files": run.files.iter().map(|p| p.display().to_string()).collect::<Vec<_>>(),
+        // SPEC §83 P2-C: `corpus_roots` tracks the distinct `--corpus`
+        // arguments passed to this run. Discharges INV-MERGE-001 (≥ 2
+        // sources) of contracts/corpus-merge-v3-v1.yaml at the manifest
+        // level. Per-shard provenance tagging is a v1.1 follow-up.
+        "corpus_roots": run.corpus.iter().map(|p| p.display().to_string()).collect::<Vec<_>>(),
+        "num_workers": run.workers,
+        "elapsed_seconds": elapsed.as_secs_f64(),
+    })
+}
+
+/// Write `manifest.json` and emit the operator-facing summary — the JSON
+/// manifest on stdout under `--json`, the human table otherwise.
+#[cfg(feature = "training")]
+fn report_encode_result(
+    run: &EncodeRun<'_>,
+    shards: &ShardWriter<'_>,
+    elapsed: std::time::Duration,
+) -> Result<()> {
+    let manifest = build_encode_manifest(run, shards, elapsed);
+    let manifest_path = run.output_dir.join("manifest.json");
+    std::fs::write(
+        &manifest_path,
+        serde_json::to_string_pretty(&manifest)
+            .map_err(|e| CliError::InvalidFormat(e.to_string()))?,
+    )
+    .map_err(|e| CliError::ValidationFailed(format!("Cannot write manifest: {e}")))?;
+
+    if run.json_output {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&manifest)
+                .map_err(|e| CliError::InvalidFormat(e.to_string()))?
+        );
+    } else {
+        output::header("apr tokenize encode-corpus — Pretokenization Result");
+        output::kv("  Shards", format_number(shards.shard_count()));
+        output::kv(
+            "  Total tokens",
+            format_number(shards.total_tokens as usize),
+        );
+        output::kv(
+            "  Total documents",
+            format_number(shards.total_docs as usize),
+        );
+        output::kv("  Vocab size", format_number(shards.vocab_size));
+        output::kv("  Workers", run.workers.to_string());
+        output::kv("  Elapsed", format!("{:.1}s", elapsed.as_secs_f64()));
+        output::kv("  Manifest", manifest_path.display().to_string());
+    }
+
+    Ok(())
+}
+
+/// Run `apr tokenize encode-corpus` — pretokenize a JSONL corpus into `.bin`
+/// shards per contracts/pretokenize-bin-v1.yaml. Emits flat little-endian u32
+/// streams (the exact format ShardBatchIter expects at MODEL-2 pretrain time).
+///
+/// Requires the `training` feature so `entrenar::tokenizer::BPETokenizer`
+/// is linked; without it, encode-corpus is unavailable (matching `run_train`).
+///
+/// `num_workers` controls per-document BPE encoding parallelism (issue #1547).
+/// `Some(1)` runs the byte-identical single-threaded legacy path; `None` uses
+/// `available_parallelism`; `Some(N)` for N > 1 uses chunked rayon while
+/// preserving original document order per `parallel_correctness` invariant
+/// in `contracts/apr-tokenize-parallel-bpe-v1.yaml`.
+#[cfg(feature = "training")]
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn run_encode_corpus(
+    corpus: &[std::path::PathBuf],
+    tokenizer_dir: &Path,
+    output_dir: &Path,
+    shard_tokens: usize,
+    content_field: &str,
+    normalization: &str,
+    eos_policy: &str,
+    num_workers: Option<usize>,
+    progress: ProgressConfig,
+    estimate: EstimateConfig,
+    json_output: bool,
+) -> Result<()> {
+    let (workers, vocab_path, merges_path) = validate_encode_corpus_args(
+        corpus,
+        tokenizer_dir,
+        shard_tokens,
+        normalization,
+        eos_policy,
+        num_workers,
+    )?;
+
+    let tokenizer = load_encode_tokenizer(tokenizer_dir, &vocab_path, &merges_path, normalization)?;
     let vocab_size = tokenizer.vocab_size();
     let eos_id = ["</s>", "<|endoftext|>", "<eos>", "<|eos|>"]
         .iter()
         .find_map(|name| tokenizer.token_to_id(name));
 
-    // SPEC §83 P2-C: collect across all --corpus paths into a tagged
-    // list. When a single --corpus is passed (back-compat path), behaviour
-    // is byte-identical to pre-P2-C since the tagged list collapses to the
-    // legacy (files, format) shape on the legacy iterator wrapper.
-    let tagged_files = collect_corpus_files_multi(corpus)?;
-    // Legacy compatibility for estimate_only and the rest of the loop:
-    // when all files share a single format, expose (files, format); when
-    // mixed, treat as Parquet for estimate sizing (the dominant case)
-    // and use the per-file tagged dispatch for the actual encode loop.
-    let files: Vec<std::path::PathBuf> = tagged_files.iter().map(|(p, _)| p.clone()).collect();
-    let unique_formats: std::collections::HashSet<CorpusFormat> =
-        tagged_files.iter().map(|(_, f)| *f).collect();
-    let corpus_format = if unique_formats.len() == 1 {
-        *unique_formats.iter().next().expect("non-empty")
-    } else {
-        // Mixed multi-format: prefer Parquet's per-row-group streaming
-        // semantics for the estimate-only path. The actual encode loop
-        // dispatches per-file via iter_corpus_texts_tagged.
-        CorpusFormat::Parquet
-    };
+    let layout = resolve_corpus_layout(corpus)?;
 
     // Pre-flight: --estimate-only path (issue #1547 / contract v1.3.0).
     // Sample the first `sample_docs` docs, encode them, observe (tokens,
@@ -1228,8 +1650,8 @@ pub(crate) fn run_encode_corpus(
         let workers = resolve_num_workers(num_workers)?;
         return run_estimate_only_path(
             |text| tokenizer.encode(text),
-            &files,
-            corpus_format,
+            &layout.files,
+            layout.format,
             content_field,
             estimate.sample_docs,
             shard_tokens,
@@ -1245,13 +1667,7 @@ pub(crate) fn run_encode_corpus(
     })?;
 
     let start = Instant::now();
-    let mut shard_idx: usize = 0;
-    let mut tokens_in_shard: usize = 0;
-    let mut total_tokens: u64 = 0;
-    let mut total_docs: u64 = 0;
-    let mut eos_count: u64 = 0;
-    let mut writer = open_shard(output_dir, shard_idx)?;
-    let mut doc_iter_count: u64 = 0;
+    let mut shards = ShardWriter::new(output_dir, shard_tokens, eos_policy, eos_id, vocab_size)?;
 
     // Per-doc progress emitter (issue #1547 / contract v1.2.0). The
     // total-docs hint is currently `None` — counting the input would
@@ -1267,252 +1683,39 @@ pub(crate) fn run_encode_corpus(
     // tagged dispatch so mixed-format multi-source --corpus calls (e.g.
     // codeparrot JSONL + the-stack-v2 parquet) encode correctly per file.
     let tagged_iter: Box<dyn Iterator<Item = (std::path::PathBuf, CorpusFormat)>> =
-        Box::new(tagged_files.iter().cloned());
+        Box::new(layout.tagged_files.iter().cloned());
     let mut source = iter_corpus_texts_tagged(tagged_iter, content_field);
 
-    // Closure: emit a single doc's encoded ids into `writer`, applying the
-    // EOS policy and shard rotation. Identical bookkeeping for both paths
-    // — the only invariant difference is when (and on what thread) the
-    // `tokenizer.encode()` call happened. Output bytes per doc are
-    // independent of worker count.
-    let emit = |writer: &mut std::io::BufWriter<std::fs::File>,
-                shard_idx: &mut usize,
-                tokens_in_shard: &mut usize,
-                total_tokens: &mut u64,
-                eos_count: &mut u64,
-                doc_iter_count: &mut u64,
-                file_display: &str,
-                locator: &str,
-                ids: &[u32]|
-     -> Result<()> {
-        if eos_policy == "between" && *doc_iter_count > 0 {
-            if let Some(eos) = eos_id {
-                writer
-                    .write_all(&eos.to_le_bytes())
-                    .map_err(|e| CliError::ValidationFailed(format!("Shard write failed: {e}")))?;
-                *tokens_in_shard += 1;
-                *total_tokens += 1;
-                *eos_count += 1;
-            }
-        }
-
-        for id in ids {
-            if (*id as usize) >= vocab_size {
-                return Err(CliError::ValidationFailed(format!(
-                    "Token id {id} >= vocab_size {vocab_size} at {file_display} {locator} \
-                     (INV-PRETOK-001 violation)"
-                )));
-            }
-            writer
-                .write_all(&id.to_le_bytes())
-                .map_err(|e| CliError::ValidationFailed(format!("Shard write failed: {e}")))?;
-            *tokens_in_shard += 1;
-            *total_tokens += 1;
-        }
-
-        if eos_policy == "after" {
-            if let Some(eos) = eos_id {
-                writer
-                    .write_all(&eos.to_le_bytes())
-                    .map_err(|e| CliError::ValidationFailed(format!("Shard write failed: {e}")))?;
-                *tokens_in_shard += 1;
-                *total_tokens += 1;
-                *eos_count += 1;
-            }
-        }
-
-        *doc_iter_count += 1;
-        Ok(())
-    };
-
     if workers <= 1 {
-        // Legacy single-threaded path. MUST stay byte-identical to pre-#1547
-        // output for any operator job that pinned `--num-workers 1`.
-        for triple in source.by_ref() {
-            let (file_display, locator, text) = triple?;
-            let ids = tokenizer.encode(&text).map_err(|e| {
-                CliError::ValidationFailed(format!(
-                    "Encoding failed at {file_display} {locator}: {e}"
-                ))
-            })?;
-            emit(
-                &mut writer,
-                &mut shard_idx,
-                &mut tokens_in_shard,
-                &mut total_tokens,
-                &mut eos_count,
-                &mut doc_iter_count,
-                &file_display,
-                &locator,
-                &ids,
-            )?;
-            total_docs += 1;
-            if tokens_in_shard >= shard_tokens {
-                writer
-                    .flush()
-                    .map_err(|e| CliError::ValidationFailed(format!("Shard flush failed: {e}")))?;
-                shard_idx += 1;
-                tokens_in_shard = 0;
-                writer = open_shard(output_dir, shard_idx)?;
-            }
-            // Per-doc progress emission (issue #1547 / contract v1.2.0).
-            // The OR-cadence is: emit when either N docs OR S seconds have
-            // accumulated since the last tick. `quiet=true` short-circuits
-            // inside `emit_tick`/`should_emit`.
-            let now = Instant::now();
-            if emitter.should_emit(total_docs, now) {
-                emitter.emit_tick(total_docs, total_tokens, now);
-            }
-        }
+        encode_corpus_single_threaded(&mut source, &tokenizer, &mut shards, &mut emitter)?;
     } else {
-        // Chunked parallel path. Read CHUNK docs sequentially, encode in
-        // parallel via rayon (preserving chunk-local order via index), then
-        // drain into `writer` sequentially. This bounds memory at roughly
-        // `CHUNK * avg_doc_token_count * 4` bytes and bounds rayon spawn
-        // overhead at `total_docs / CHUNK` dispatches.
-        use rayon::prelude::*;
-        let pool = rayon::ThreadPoolBuilder::new()
-            .num_threads(workers)
-            .build()
-            .map_err(|e| {
-                CliError::ValidationFailed(format!("Cannot build rayon pool ({workers}): {e}"))
-            })?;
-
-        loop {
-            // 1. Pull next chunk from the canonical source iterator. Errors
-            //    here are JSON-parse / IO errors — surface them before
-            //    dispatching the chunk so the failing locator is precise.
-            let mut chunk: Vec<(String, String, String)> = Vec::with_capacity(ENCODE_CHUNK_SIZE);
-            for _ in 0..ENCODE_CHUNK_SIZE {
-                match source.next() {
-                    Some(Ok(triple)) => chunk.push(triple),
-                    Some(Err(e)) => return Err(e),
-                    None => break,
-                }
-            }
-            if chunk.is_empty() {
-                break;
-            }
-
-            // 2. Parallel encode within this rayon pool. `par_iter` over a
-            //    Vec<T> preserves index order in the output Vec, so the
-            //    write phase below sees docs in original input order.
-            let encoded: Vec<Result<(String, String, Vec<u32>)>> = pool.install(|| {
-                chunk
-                    .par_iter()
-                    .map(|(file_display, locator, text)| {
-                        tokenizer
-                            .encode(text)
-                            .map(|ids| (file_display.clone(), locator.clone(), ids))
-                            .map_err(|e| {
-                                CliError::ValidationFailed(format!(
-                                    "Encoding failed at {file_display} {locator}: {e}"
-                                ))
-                            })
-                    })
-                    .collect()
-            });
-
-            // 3. Sequential write phase — same emit closure as the
-            //    single-threaded path, so output bytes are determined
-            //    purely by (doc_index, tokenizer, eos_policy) and not by
-            //    worker count.
-            for result in encoded {
-                let (file_display, locator, ids) = result?;
-                emit(
-                    &mut writer,
-                    &mut shard_idx,
-                    &mut tokens_in_shard,
-                    &mut total_tokens,
-                    &mut eos_count,
-                    &mut doc_iter_count,
-                    &file_display,
-                    &locator,
-                    &ids,
-                )?;
-                total_docs += 1;
-                if tokens_in_shard >= shard_tokens {
-                    writer.flush().map_err(|e| {
-                        CliError::ValidationFailed(format!("Shard flush failed: {e}"))
-                    })?;
-                    shard_idx += 1;
-                    tokens_in_shard = 0;
-                    writer = open_shard(output_dir, shard_idx)?;
-                }
-                // Per-doc progress emission (issue #1547 / contract v1.2.0).
-                // Same OR-cadence as the single-thread path; placed inside
-                // the per-doc loop so the emitter sees per-doc granularity
-                // even in chunked mode.
-                let now = Instant::now();
-                if emitter.should_emit(total_docs, now) {
-                    emitter.emit_tick(total_docs, total_tokens, now);
-                }
-            }
-        }
+        encode_corpus_parallel(&mut source, &tokenizer, &mut shards, &mut emitter, workers)?;
     }
 
-    writer
-        .flush()
-        .map_err(|e| CliError::ValidationFailed(format!("Shard flush failed: {e}")))?;
-    let shard_count = shard_idx + 1;
+    shards.flush()?;
     let elapsed = start.elapsed();
 
     // Final progress emission (issue #1547 §AC4 / contract v1.2.0). Suppressed
     // when `quiet=true`. The stdout/JSON summary below is always emitted —
     // this is the operator-facing stderr line.
-    emitter.emit_final(total_docs, total_tokens);
+    emitter.emit_final(shards.total_docs, shards.total_tokens);
 
-    let manifest = serde_json::json!({
-        "schema": "pretokenize-bin-v1",
-        "tokenizer_dir": tokenizer_dir.display().to_string(),
-        "vocab_size": vocab_size,
-        "eos_policy": eos_policy,
-        "eos_token_id": eos_id,
-        "eos_token_count": eos_count,
-        "shard_count": shard_count,
-        "total_tokens": total_tokens,
-        "total_documents": total_docs,
-        "content_field": content_field,
-        "normalization": normalization,
-        "input_format": match corpus_format {
-            CorpusFormat::Jsonl => "jsonl",
-            CorpusFormat::Parquet => "parquet",
+    report_encode_result(
+        &EncodeRun {
+            corpus,
+            files: &layout.files,
+            corpus_format: layout.format,
+            tokenizer_dir,
+            output_dir,
+            content_field,
+            normalization,
+            eos_policy,
+            workers,
+            json_output,
         },
-        "input_files": files.iter().map(|p| p.display().to_string()).collect::<Vec<_>>(),
-        // SPEC §83 P2-C: `corpus_roots` tracks the distinct `--corpus`
-        // arguments passed to this run. Discharges INV-MERGE-001 (≥ 2
-        // sources) of contracts/corpus-merge-v3-v1.yaml at the manifest
-        // level. Per-shard provenance tagging is a v1.1 follow-up.
-        "corpus_roots": corpus.iter().map(|p| p.display().to_string()).collect::<Vec<_>>(),
-        "num_workers": workers,
-        "elapsed_seconds": elapsed.as_secs_f64(),
-    });
-    let manifest_path = output_dir.join("manifest.json");
-    std::fs::write(
-        &manifest_path,
-        serde_json::to_string_pretty(&manifest)
-            .map_err(|e| CliError::InvalidFormat(e.to_string()))?,
+        &shards,
+        elapsed,
     )
-    .map_err(|e| CliError::ValidationFailed(format!("Cannot write manifest: {e}")))?;
-
-    if json_output {
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&manifest)
-                .map_err(|e| CliError::InvalidFormat(e.to_string()))?
-        );
-    } else {
-        output::header("apr tokenize encode-corpus — Pretokenization Result");
-        output::kv("  Shards", format_number(shard_count));
-        output::kv("  Total tokens", format_number(total_tokens as usize));
-        output::kv("  Total documents", format_number(total_docs as usize));
-        output::kv("  Vocab size", format_number(vocab_size));
-        output::kv("  Workers", workers.to_string());
-        output::kv("  Elapsed", format!("{:.1}s", elapsed.as_secs_f64()));
-        output::kv("  Manifest", manifest_path.display().to_string());
-    }
-
-    Ok(())
 }
 
 #[cfg(feature = "training")]

@@ -1,0 +1,20 @@
+{
+  "host": "lambda",
+  "device_name": "NVIDIA GeForce RTX 4090",
+  "started_utc": "2026-09-02T11:02:27Z",
+  "method": "cudaMemcpy D2D 1GiB",
+  "traffic_model": "median_bytes_per_sec is DRAM TRAFFIC per second, not copy size per second, and one timed window is a BURST of copies_per_replicate copies rather than a single copy: each D2D copy of 1073741824 B both reads and writes, moving 2147483648 B through the memory system, so the reported rate is copies_per_replicate * 2147483648 B divided by the elapsed time of the whole window. Reading the window as one copy understates the rate by a factor of copies_per_replicate. This is the quantity a vendor peak names and the quantity per-sequence decode is bounded by.",
+  "copy_bytes": 1073741824,
+  "copies_per_replicate": 32,
+  "warmup_ms": 5000,
+  "warmup_copies": 2140,
+  "mem_clock_mhz_before_warmup": 405,
+  "mem_clock_mhz_after_run": 10501,
+  "n": 15,
+  "median_bytes_per_sec": 913207675149,
+  "min": 860458306883,
+  "max": 936633643937,
+  "max_over_min": 1.0885,
+  "replicates": [933753510154,913617555872,936581344168,913207675149,913132778526,930063330547,911952720721,892155942154,936633643937,860458306883,913480795446,935771687018,912488286910,911792828766,912251422024],
+  "provenance": "[V]"
+}

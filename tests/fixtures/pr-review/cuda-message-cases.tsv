@@ -1,0 +1,24 @@
+# S3.B CUDA commit-message trigger — must-match / must-not-match case table.
+#
+# Driven by tests/pr-review.bats against
+#   scripts/check_pr_review_receipt.sh --match-message <subject>
+#
+# CASE-SENSITIVE, unlike the path trigger. S3.B writes cu[A-Z]\w+ and cuda[A-Z]\w+
+# with explicitly uppercase classes; folding case here would silently rewrite the
+# spec's pattern into a broader one. That asymmetry is the single most likely place
+# for this matcher to be wrong, so both polarities are pinned below.
+#
+# expect	subject	why
+MATCH	perf: tune the tile for sm_90 occupancy	sm_\d+
+MATCH	fix: call cuMemcpyAsync on the compute stream	cu[A-Z]\w+
+MATCH	fix: cudaStreamSynchronize was missing before the read	cuda[A-Z]\w+
+MATCH	feat: Blackwell GB10 fused NF4 path	architecture name (#2786)
+MATCH	perf: Hopper wgmma path for the 7B decode	architecture name
+MATCH	fix: guard against cuBLAS handle reuse across streams	cu[A-Z]\w+ matches cuBLAS
+NO-MATCH	docs: fix a typo in the README	no device claim
+NO-MATCH	refactor: accumulate values in a wider type	"accumulate" contains cu followed by LOWERCASE m — the uppercase class is what keeps this out
+NO-MATCH	chore: bump curl to 8.9	"curl" contains cu followed by lowercase r
+NO-MATCH	feat: add a custom allocator for the KV cache	"custom" contains cu followed by lowercase s
+NO-MATCH	fix: CUDA build flags on the runner	KNOWN GAP, recorded not widened: an all-caps CUDA matches none of S3.B's three message regexes. The PATH trigger is case-insensitive; the MESSAGE trigger, as specified, is not. A message-only all-caps CUDA change is not caught.
+NO-MATCH	refactor: rename the enum to PascalCase	Pascal is deliberately NOT in the architecture list: PascalCase is far commoner in this repo's messages than the 2016 architecture, and a blocking-tier class must hold >=90% precision to stay armed (S7 admission rule)
+NO-MATCH	docs: note that the parser is Turing complete	Turing is deliberately NOT in the architecture list, for the same reason

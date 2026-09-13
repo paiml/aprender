@@ -1,0 +1,40 @@
+$ ls ../qwen-train-canary/README.md  (sibling checkout = /home/noah/src/qwen-train-canary)
+-rw-rw-r-- 1 noah noah 5023 Apr  6 13:41 /home/noah/src/qwen-train-canary/README.md
+$ grep -n 'tok/s' /home/noah/src/qwen-train-canary/README.md
+13:| **apr** (cuBLAS) | entrenar (Rust) | TBD | **2,101 tok/s** (4.5x over WGPU) | — |
+14:| **apr** (WGPU) | entrenar (Rust) | BLOCKED (PMAT-498) | **470 tok/s** (loss 11.74) | — |
+15:| **unsloth** | Python QLoRA | **6,697 tok/s** (loss 0.47) | **16,118 tok/s** (loss 0.14) | — |
+16:| **pytorch** | Python full FT | OOM (F-EXEC-02) | **3,957 tok/s** (loss 0.009) | — |
+17:| **cublas** | Python parity | OOM | **4,000 tok/s** | divergence: 0.000 |
+18:| **wgpu** (synthetic) | burn (Rust) | — | — | **6,730 tok/s** (hidden=1536, not real model) |
+26:- Throughput regressions >10% (tok/s)
+35:├── apr QLoRA (Sovereign Stack)            ├── apr QLoRA cuBLAS (2,101 tok/s)
+36:├── unsloth QLoRA (6,697 tok/s)            ├── apr QLoRA WGPU (470 tok/s)
+37:└── Clock-locked 1900 MHz                  ├── unsloth QLoRA (16,118 tok/s)
+38:                                           ├── pytorch full FT (3,957 tok/s)
+41:└── wgpu/burn (6,730 tok/s @ hidden=1536, synthetic MLP)
+78:**F-WL-06 (apr gap narrowing):** 65+ upstream fixes. **cuBLAS routing fix (PMAT-494): 2,101 tok/s** — 4.5x over WGPU 470. Gap vs unsloth: 2.5x (cuBLAS) / 11.2x (WGPU), down from 151x on 2026-03-3
+84:**WGPU parity (synthetic only):** burn/Vulkan at 6,730 tok/s matches unsloth/CUDA at 6,697 tok/s on equivalent hidden dim — but this is a synthetic MLP, NOT real Qwen model training.
+$ git -C /home/noah/src/qwen-train-canary log -1 --format='%h %ad'
+af23a25 Mon Apr 6 15:36:04 2026 +0200 spec: v6.29.0 — PMAT-517 publish safety gate, 19 incidents researched, permanent
+$ git ls-files crates/aprender-train-canary | wc -l; head -3
+3
+crates/aprender-train-canary/Cargo.toml
+crates/aprender-train-canary/README.md
+crates/aprender-train-canary/src/main.rs
+$ grep -n "tok/s" crates/aprender-train-canary/README.md
+$ sed -n 105,116p Cargo.toml
+    # "crates/aprender-present",
+    # "crates/aprender-test",
+]
+exclude = [
+    # Pulls burn 0.21 -> rusqlite 0.37 -> libsqlite3-sys 0.35, while aprender-rag
+    # pins rusqlite 0.32 -> libsqlite3-sys 0.30. A `-sys` crate that links the
+    # native `sqlite3` may appear only ONCE in a dependency graph, so this crate
+    # cannot be a workspace member until one side moves. That is why the comment
+    # below says to build it manually — the reason was never written down.
+    'crates/aprender-train-canary',
+    # 29,541 lines that NO cargo command has ever built. Bringing it in as a
+    # member surfaced `error[E0433]: could not find visualize in renacer` — it
+$ diff sibling vs in-tree README
+Files /home/noah/src/qwen-train-canary/README.md and crates/aprender-train-canary/README.md differ

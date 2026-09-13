@@ -32,6 +32,36 @@ pub struct IterationSchedulerConfig {
 }
 
 #[cfg(feature = "cuda")]
+impl IterationSchedulerConfig {
+    /// PP-13/PP-24: this scheduler's identity and admission ceiling, for
+    /// `/v1/effective-config`.
+    ///
+    /// `in_flight_now`/`peak_in_flight` stay `null`: this scheduler is not
+    /// instrumented with an [`InFlightCounter`](crate::api::InFlightCounter),
+    /// and reporting `0` would be indistinguishable from an idle instrumented
+    /// scheduler. It is opt-in (`ITERATION_SCHEDULER=1`) and not the path §5.2's
+    /// argv reaches.
+    #[must_use]
+    pub fn report(&self, admission_ceiling_reason: &'static str) -> crate::api::SchedulerReport {
+        crate::api::SchedulerReport {
+            kind: "iteration",
+            max_in_flight: self.max_slots,
+            // PMAT-088: this scheduler forms an initial batch of 1 and joins
+            // the rest between decode steps; there is no batch window.
+            window_ms: 0,
+            prefill_chunk_size: Some(self.prefill_chunk_size),
+            // 0 means unlimited in the config; on the wire that is `null`, not
+            // a budget of zero tokens.
+            token_budget: (self.token_budget > 0).then_some(self.token_budget),
+            slots_admitted: self.max_slots,
+            admission_ceiling_reason,
+            in_flight_now: None,
+            peak_in_flight: None,
+        }
+    }
+}
+
+#[cfg(feature = "cuda")]
 impl Default for IterationSchedulerConfig {
     fn default() -> Self {
         let max_slots = std::env::var("CUDA_MAX_BATCH")

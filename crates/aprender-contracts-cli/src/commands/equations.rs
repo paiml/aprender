@@ -293,13 +293,22 @@ mod tests {
 
     #[test]
     fn test_output_format_from_str() {
-        assert_eq!(OutputFormat::from_str("text").unwrap(), OutputFormat::Text);
         assert_eq!(
-            OutputFormat::from_str("latex").unwrap(),
+            OutputFormat::from_str("text").expect("the format name is recognised"),
+            OutputFormat::Text
+        );
+        assert_eq!(
+            OutputFormat::from_str("latex").expect("the format name is recognised"),
             OutputFormat::Latex
         );
-        assert_eq!(OutputFormat::from_str("ptx").unwrap(), OutputFormat::Ptx);
-        assert_eq!(OutputFormat::from_str("asm").unwrap(), OutputFormat::Asm);
+        assert_eq!(
+            OutputFormat::from_str("ptx").expect("the format name is recognised"),
+            OutputFormat::Ptx
+        );
+        assert_eq!(
+            OutputFormat::from_str("asm").expect("the format name is recognised"),
+            OutputFormat::Asm
+        );
         assert!(OutputFormat::from_str("json").is_err());
     }
 
@@ -333,7 +342,7 @@ mod tests {
         let yaml = "metadata:\n  version: '1.0'\n  description: test\n\
                      equations:\n  eq1:\n    formula: 'y = x'\n\
                      simd_dispatch:\n  k:\n    scalar: s\n    avx2: a\n";
-        let contract = parse_contract_str(yaml).unwrap();
+        let contract = parse_contract_str(yaml).expect("fixture contract parses");
         let isa = detect_simd_isa(&contract);
         assert_eq!(isa.suffix, "avx2");
         assert_eq!(isa.width, 256);

@@ -108,7 +108,86 @@ impl std::fmt::Debug for CudaInitError {
 /// // GPU-accelerated forward pass
 /// let logits = cuda_model.forward_cuda(&tokens)?;
 /// ```
+/// What the load-time parity gate measured for THIS model (REG-15, PP-066 #2971): the
+/// record `GET /v1/effective-config` reports as `parity`. Never absent: `not-run` when
+/// no gate applies (MoE), `skipped` under the `SKIP_PARITY_GATE` override (every
+/// receipt of that run is INVALID-CORRECTNESS), `PASS` with the cosine otherwise —
+/// a failing gate never constructs the model, so `FAIL` is a refusal, not a record.
+#[derive(Clone, Debug)]
+pub struct ParityGateRecord {
+    /// `PASS` | `skipped` | `not-run`
+    pub status: &'static str,
+    /// The cosine the gate measured, when it ran.
+    pub cosine: Option<f32>,
+    /// Positions the gate compared (the load-time gate: one token).
+    pub positions: usize,
+    /// The threshold the verdict was judged against.
+    pub threshold: f32,
+    /// Where the threshold and the measurement come from.
+    pub basis: &'static str,
+}
+
+impl ParityGateRecord {
+    const BASIS_GATE: &'static str = "load-time gate, one token (crates/aprender-serve/src/gguf/cuda/mod_parity_gate.rs); the >= 64-position horizon is C14 (scripts/check_model_parity.sh)";
+
+    /// The gate has not run on this model (no dense gate applies).
+    #[must_use]
+    pub fn not_run(why: &'static str) -> Self {
+        Self {
+            status: "not-run",
+            cosine: None,
+            positions: 0,
+            threshold: PARITY_GATE_COSINE_MIN,
+            basis: why,
+        }
+    }
+
+    /// The `SKIP_PARITY_GATE` override: printed, never silent.
+    #[must_use]
+    pub fn skipped() -> Self {
+        Self { status: "skipped", cosine: None, positions: 0, threshold: PARITY_GATE_COSINE_MIN, basis: "SKIP_PARITY_GATE override — every receipt of this run is INVALID-CORRECTNESS (REG-15)" }
+    }
+
+    /// `apr parity --per-op` (L0-1b): the table is the verdict, so the model is
+    /// admitted without the one-token gate — an INTERNAL bypass, recorded here.
+    #[must_use]
+    pub fn skipped_for_diagnosis() -> Self {
+        Self {
+            status: "skipped",
+            cosine: None,
+            positions: 0,
+            threshold: PARITY_GATE_COSINE_MIN,
+            basis: "apr parity --per-op: internal bypass — the per-op table is the verdict (never SKIP_PARITY_GATE)",
+        }
+    }
+    /// The load-time skip decision: the `SKIP_PARITY_GATE` operator override, or
+    /// the diagnostic command's internal bypass; `None` means the gate runs.
+    #[must_use]
+    pub fn load_time_skip() -> Option<Self> {
+        if std::env::var("SKIP_PARITY_GATE").as_deref() == Ok("1") {
+            return Some(Self::skipped());
+        }
+        crate::inference_trace::gpu_stage_dump::per_op_tap::gate_bypass_armed()
+            .then(Self::skipped_for_diagnosis)
+    }
+    /// The gate ran and passed at `cosine`.
+    #[must_use]
+    pub fn passed(cosine: f32) -> Self {
+        Self {
+            status: "PASS",
+            cosine: Some(cosine),
+            positions: 1,
+            threshold: PARITY_GATE_COSINE_MIN,
+            basis: Self::BASIS_GATE,
+        }
+    }
+}
+
+/// A quantized GGUF model with its weights resident on one CUDA device, admitted by the
+/// load-time parity gate (`parity` records what the gate measured, REG-15).
 pub struct OwnedQuantizedModelCuda {
+    /// REG-15: what the load-time parity gate measured for this model.
+    pub parity: ParityGateRecord,
     /// Inner model
     pub(crate) model: OwnedQuantizedModel,
     /// Cached CUDA executor
@@ -126,6 +205,18 @@ pub struct OwnedQuantizedModelCuda {
     /// On cache hit, skip prefill entirely (TTFT ~900ms → ~5ms).
     #[cfg(feature = "gpu")]
     prefix_cache: crate::gguf::batch_scheduler::PrefixCache,
+    /// PP-LLAMA-001 §10: every input the `max_batch` ceiling was sized from,
+    /// captured BEFORE `CUDA_MAX_BATCH` is written, plus which of the two
+    /// sources produced it. `None` on a model built before sizing ran.
+    max_batch_sizing: Option<crate::cuda::gpu_profile::MaxBatchSizing>,
+    /// §9 #7: free VRAM measured AFTER weights and every warmed cache are
+    /// resident. With `memory_info` (taken before) this gives the measured cost
+    /// of preload — the bulk of the 9.5 GB the accounting is missing.
+    free_after_preload: Option<usize>,
+    /// §3: the phase split of the LAST request this model served on the
+    /// serialized (write-lock) path. Valid only while that write lock is held,
+    /// which is exactly when the handler reads it.
+    last_phase_timings: crate::api::PhaseTimings,
 }
 
 impl OwnedQuantizedModelCuda {
@@ -334,17 +425,16 @@ impl OwnedQuantizedModelCuda {
         // is exercised by `qwen3_moe_gpu_parity.rs` which uses the
         // MoE forward methods directly, bypassing the dense path
         // this gate runs.
-        let skip_gate = std::env::var("SKIP_PARITY_GATE")
-            .map(|v| v == "1")
-            .unwrap_or(false);
+        let skip = ParityGateRecord::load_time_skip();
+        self = self.admit_by_parity_gate(skip)?;
 
-        if !skip_gate && !self.model.config.constraints.is_moe {
-            if let Err(e) = parity_gate(&mut self) {
-                return Err(CudaInitError {
-                    error: e,
-                    model: Box::new(self.into_model()),
-                });
-            }
+        // §9 #7: the ONE snapshot that makes preload's VRAM cost accountable.
+        // `memory_info` was taken before `init_kv_cache_gpu`, weight upload and
+        // every cache warmup, so on its own it says nothing about what this
+        // process is holding. The delta between the two is measured, not
+        // estimated, and it is what the effective-config endpoint reports.
+        if let Some((free, _total, _peak)) = self.executor.sample_vram_used() {
+            self.free_after_preload = Some(free);
         }
 
         Ok(self)
@@ -423,19 +513,6 @@ impl OwnedQuantizedModelCuda {
             });
         }
 
-        // PMAT-399: Auto-size max_batch if env var not set
-        if std::env::var("CUDA_MAX_BATCH").is_err() {
-            let auto_batch = executor.compute_max_batch_for_memory(
-                num_layers,
-                num_kv_heads,
-                head_dim,
-                max_seq_len,
-            );
-            // GH-611: Suppressed — was noisy in non-verbose mode
-            // Store for scheduler to pick up
-            std::env::set_var("CUDA_MAX_BATCH", auto_batch.to_string());
-        }
-
         // PAR-118: Initialize Flash Decoding for split-K attention acceleration.
         // Five-Whys: batched_incremental_attention uses Grid=(num_heads,M,1) Block=(32,1,1)
         // = only 896 threads on RTX 4090 for 7B (28 heads). Flash Decoding splits KV cache
@@ -499,6 +576,7 @@ impl OwnedQuantizedModelCuda {
         let embed_buf = vec![0.0f32; model.config.hidden_dim];
 
         let cuda_model = Self {
+            parity: ParityGateRecord::not_run("the gate has not run yet"),
             model,
             executor,
             device_name,
@@ -506,10 +584,63 @@ impl OwnedQuantizedModelCuda {
             embed_buf,
             #[cfg(feature = "gpu")]
             prefix_cache: crate::gguf::batch_scheduler::PrefixCache::new(16),
+            max_batch_sizing: None,
+            free_after_preload: None,
+            last_phase_timings: crate::api::PhaseTimings::default(),
         };
 
         // GH-199 ROOT CAUSE B + PARITY-GATE: preload weights and verify GPU correctness.
-        cuda_model.preload_and_verify()
+        let cuda_model = cuda_model.preload_and_verify()?;
+
+        // PMAT-399 / X1-KVALLOC (#2774): auto-size max_batch AFTER the weights
+        // and the FP8/FP16 prefill cache are resident.
+        //
+        // This ran BEFORE `preload_and_verify`, where `memory_info()` still
+        // reports an essentially empty card, so the budget overstated free VRAM
+        // by the entire model. Measured on lambda-4090 with
+        // `qwen2.5-coder-7b-instruct-q4_k_m` at `--context-length 4096`: 4.4 GB
+        // of Q4_K weights plus a 6.7 GB FP8 prefill cache are invisible at the
+        // old call site, so `compute_max_batch_for_memory` returned its clamp
+        // ceiling of 32 and the scheduler advertised `max_batch=32`. Measured
+        // after this move, the same server advertises `max_batch=12` and serves
+        // c=4/8/16 at 100% 200s with a 20471 MiB peak of 24564 MiB.
+        // `CUDA_MAX_BATCH` is the ADMISSION ceiling,
+        // and X1-KVALLOC's allocation floor is the admitted batch -- so an
+        // admission ceiling computed against fictional VRAM is still an OOM,
+        // one clamp further out. Both ends have to be measured against the
+        // same device state.
+        //
+        // PP-LLAMA-001 §10 / §12 kill criterion: the sizing INPUTS are captured
+        // BEFORE `set_var`, and the source is recorded. The env-var transport
+        // is what erased the distinction — after load, an operator ceiling and
+        // a loader-computed one were the same string in the same variable, so
+        // no receipt could say which one the server enforced.
+        let mut cuda_model = cuda_model;
+        let mut sizing = cuda_model.executor.compute_max_batch_sizing(
+            num_layers,
+            num_kv_heads,
+            head_dim,
+            max_seq_len,
+        );
+        match std::env::var("CUDA_MAX_BATCH")
+            .ok()
+            .and_then(|v| v.parse::<usize>().ok())
+        {
+            Some(operator_ceiling) => {
+                // The measured inputs are kept: they are what makes an operator
+                // ceiling of 4 over a card that would have sized 11 visible.
+                sizing.resolved = operator_ceiling;
+                sizing.source = crate::cuda::gpu_profile::MAX_BATCH_SOURCE_ENV;
+            },
+            None => {
+                // GH-611: Suppressed — was noisy in non-verbose mode
+                // Store for scheduler to pick up
+                std::env::set_var("CUDA_MAX_BATCH", sizing.resolved.to_string());
+            },
+        }
+        cuda_model.max_batch_sizing = Some(sizing);
+
+        Ok(cuda_model)
     }
 
     /// GH-129: Free CPU projection weight copies after GPU preload.
@@ -554,10 +685,90 @@ impl OwnedQuantizedModelCuda {
         &self.device_name
     }
 
-    /// Get GPU memory info (free, total) in bytes
+    /// Get GPU memory info (free, total) in bytes.
+    ///
+    /// NOTE the provenance: this snapshot is taken BEFORE the KV cache, the
+    /// weights and the FP8/FP16 prefill cache are uploaded. `vram_report()`
+    /// labels it `free_at_load_bytes` for that reason and reports the
+    /// post-preload measurement beside it.
     #[must_use]
     pub fn memory_info(&self) -> (usize, usize) {
         self.memory_info
+    }
+
+    /// PP-LLAMA-001 §5.2: the CUDA executor, for reporting its resolved
+    /// configuration under a READ lock.
+    #[must_use]
+    pub fn executor(&self) -> &crate::cuda::CudaExecutor {
+        &self.executor
+    }
+
+    /// §9 #1: the prefill path this model will run, resolved once at profile
+    /// detection and shared with the engine and the multi-prompt guard.
+    #[must_use]
+    pub fn prefill_path(&self) -> crate::cuda::gpu_profile::PrefillPathChoice {
+        self.executor.gpu_profile().prefill_path()
+    }
+
+    /// §10: the `max_batch` decision and every input it was made from.
+    #[must_use]
+    pub fn max_batch_sizing(&self) -> Option<crate::cuda::gpu_profile::MaxBatchSizing> {
+        self.max_batch_sizing
+    }
+
+    /// §3: take the phase split of the request that just finished, clearing it.
+    ///
+    /// TAKING rather than reading is the poka-yoke: the caller holds the same
+    /// exclusive lock the request ran under, so what it takes belongs to that
+    /// request — and a later request that skipped prefill (prefix-cache hit)
+    /// finds the slot empty instead of inheriting its predecessor's numbers.
+    pub fn take_phase_timings(&mut self) -> crate::api::PhaseTimings {
+        std::mem::take(&mut self.last_phase_timings)
+    }
+
+    /// §5.2 / §9 #7: what this process can honestly say about its VRAM.
+    ///
+    /// Every field states its provenance — see
+    /// [`VramReport`](crate::cuda::gpu_profile::VramReport). Nothing here is
+    /// estimated: a driver query that fails leaves the corresponding field
+    /// `None`.
+    #[must_use]
+    pub fn vram_report(&self) -> crate::cuda::gpu_profile::VramReport {
+        let (free_at_load, total_at_load) = self.memory_info;
+        let sample = self.executor.sample_vram_used();
+        let (free_now, total_now, used_peak) = match sample {
+            Some((free, total, peak)) => (Some(free), total, Some(peak)),
+            None => (None, total_at_load, self.executor.vram_used_peak()),
+        };
+        let num_layers = self.model.config.num_layers;
+        let kv_per_slot_bytes = self.executor.batched_kv_bytes_per_slot(num_layers);
+        let kv_slots_allocated = self.executor.batched_kv_allocated_slots();
+        let kv_single_seq_bytes = self.executor.kv_single_sequence_bytes(num_layers);
+        crate::cuda::gpu_profile::VramReport {
+            device_name: self.device_name.clone(),
+            total_bytes: if total_now > 0 {
+                total_now
+            } else {
+                total_at_load
+            },
+            free_at_load_bytes: free_at_load,
+            free_after_preload_bytes: self.free_after_preload,
+            preload_delta_bytes: self
+                .free_after_preload
+                .map(|after| free_at_load.saturating_sub(after)),
+            free_now_bytes: free_now,
+            used_now_bytes: free_now.map(|free| total_now.saturating_sub(free)),
+            used_peak_bytes: used_peak,
+            recorded_alloc_peak_bytes: self.executor.pool_stats().peak_usage,
+            kv_single_seq_bytes,
+            kv_per_slot_bytes,
+            kv_slots_allocated,
+            kv_slots_max: crate::cuda::CudaExecutor::MAX_BATCH_CLAMP.1,
+            kv_bytes_reserved: kv_single_seq_bytes
+                .saturating_add(kv_per_slot_bytes.saturating_mul(kv_slots_allocated)),
+            kv_blocks_total: None,
+            kv_layout: crate::cuda::gpu_profile::KV_LAYOUT,
+        }
     }
 
     /// Get VRAM usage in MB

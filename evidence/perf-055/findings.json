@@ -1,0 +1,63 @@
+{
+  "ticket": "PERF-055",
+  "date": "2026-08-29",
+  "epic": "APR-PERF-GATE-001 (paiml/aprender#2706)",
+  "briefed_task": "Give the conformant receipt emitter a caller: make `apr test llm bench --band` emit a receipt scripts/perf_gate.sh accepts.",
+
+  "headline": "The briefed code change was ALREADY IMPLEMENTED on an unmerged branch. What was genuinely missing was the PROOF, and producing it surfaced a new defect in the schema authority on main.",
+
+  "finding_1_the_bridge_already_exists": {
+    "verdict": "PERF-055 duplicates PERF-025",
+    "evidence": "crates/apr-cli/src/commands/test_llm_band.rs on feat/r1-2719 (PR #2742, OPEN, head a184073ef) calls ReceiptInput::render_string() and writes receipt.rN.json. Its own module docs state the defect and close it: 'Both halves close here.'",
+    "feat/v7-receipt": "3bb5eb4f6, unmerged, is a superset lineage (NOT a descendant of feat/r1-2719 -- git merge-base --is-ancestor says NO). It adds the PERF-048 provenance fixes for #2754/#2755/#2756.",
+    "consequence": "Re-implementing the bridge on main would have duplicated ~7,200 lines across 46 files and conflicted with both branches. Not done. PERF-055 should be closed as a duplicate of PERF-025, or re-scoped to 'land r1/v7'."
+  },
+
+  "finding_2_the_proof_never_existed": {
+    "verdict": "CLOSED BY THIS TICKET",
+    "before": "`git grep 'VERDICT PASS'` over the whole repo, all branches checked, matched only perf_gate.sh's own source. The gate's real mode (--host/--phase/--workload/--receipt) had never been shown accepting a receipt produced by an actual run, on main or on either feature branch.",
+    "run": {
+      "binary": "apr 0.64.0 built from feat/r1-2719 a184073ef, sha256 70e62d71a39e418ed1deb377c5056e48d77463c768be1a510d107b068cda8d81",
+      "provenance_proved_by_content": "strings -a $BIN | grep -cF \"exceeds the receipt's u32 concurrency field\" -> 1 (string exists only on r1/v7, not on main)",
+      "server": "apr serve run qwen2.5-coder-0.5b-instruct-q4_k_m.gguf --port 8137 --no-gpu",
+      "band": "--band --bands 1 --replicates 1 --workload W1 --profile micro",
+      "result": "30 requested, 30 completed, 0 timeouts, drain 0.0 ms"
+    },
+    "verdict_line": "VERDICT PASS host=lambda phase=merge workload=W1"
+  },
+
+  "finding_3_new_defect_the_join_key_is_unvalidated_on_both_ends": {
+    "verdict": "CONFIRMED, FIXED HERE",
+    "severity": "the field exists solely to make cross-model comparison inexpressible, and it did not",
+    "what_happened": "The first real receipt read \"model\": \"default\" and scripts/perf_gate.sh returned VERDICT PASS on it.",
+    "producer_side": "test_llm_band.rs does `model: args.model.to_string()` -- provenance.model is the operator's --model flag, whose clap default is the literal string `default`. Present on feat/r1-2719 AND on feat/v7-receipt (line 223); NOT among the three defects v7 fixes.",
+    "server_side": "apr serve echoes any model string it is handed. Measured: a request for `llama3-70b-there-is-no-such-model` was answered by the loaded 0.5B Qwen with \"model\":\"llama3-70b-there-is-no-such-model\". The CLI help's claim that `apr serve` does not ignore the request model name is therefore false for this path.",
+    "validator_side_before": "bench_receipt.py::_check_join_key checked only ABSENCE, and recorded it by mutating the receipt dict with `_join_key_incomplete` -- a marker that `git grep` shows is written at bench_receipt.py:56 and read by ZERO other lines in the repo. A placeholder value produced no marker at all.",
+    "fix": "A join-key value that is present and meaningless is now an error. Absence is deliberately left as-is: that is the documented #2696 deferral, scoped 'until every producer emits it', and 00_pristine.json depends on it. A producer emitting `default` HAS emitted it -- it asserted a fact it does not have, which the deferral does not cover.",
+    "follow_up_for_whoever_lands_r1_or_v7": "provenance.model should be read from the server, not copied from the request flag. GET /api/tags on apr serve already returns the loaded model (`qwen2.5-coder-0.5b-instruct-q4_k_m:latest`); GET /v1/models returns only the echoed placeholder `default`."
+  },
+
+  "three_states_measured": {
+    "1-placeholder-receipt-UNFIXED-gate.txt": "VERDICT PASS  <- the defect: a meaningless join key sails through",
+    "2-placeholder-receipt-FIXED-gate.txt": "VERDICT FAIL  <- the fix bites on a REAL artifact, not a fixture",
+    "3-honest-receipt-FIXED-gate.txt": "VERDICT PASS  <- acceptance: a real run whose join key says what it measured"
+  },
+
+  "mutation_verification": {
+    "guard": "scripts/check_bench_receipt.sh (case table, floor raised 14 -> 18)",
+    "baseline": "exit=0, all 18 cases behaved as declared",
+    "M1_drop_default_from_placeholder_set": "exit=1, 14_join_key_placeholder_model expected RED got GREEN; reverted -> exit=0",
+    "M2_drop_value_equals_field_name_clause": "exit=1, 16_join_key_echoes_field_name expected RED got GREEN; reverted -> exit=0",
+    "M3_drop_strip_lower_normalisation": "exit=1, 17_join_key_placeholder_mixed_case expected RED got GREEN; reverted -> exit=0",
+    "M4_over_reach_always_placeholder": "exit=1, 15_join_key_real_values expected GREEN got RED; reverted -> exit=0 -- the discrimination case, proving the rule is not 'reject every join key'"
+  },
+
+  "not_fixed_here_reported_instead": {
+    "arm_A_is_silent_on_a_single_band_receipt": "arm_a_scaling loops `for c in sorted(bands): if c==1: continue`. A receipt carrying only c=1 therefore produces ZERO Arm A output and exits 0. The c=1 acceptance run above passed Arm A without Arm A evaluating anything. Defensible (scaling_efficiency needs c>1) but it means a single-band receipt is gated by Arm C alone.",
+    "arm_C_swallows_the_schema_reason": "main's perf_gate.sh:30 runs bench_receipt.py with >/dev/null 2>&1 and prints only 'bench_receipt.py rejected the receipt' -- visible in 2-placeholder-receipt-FIXED-gate.txt, where the actual reason is lost. Already fixed on feat/r1-2719 (it captures and prints schema_out); not duplicated here.",
+    "workload_label_is_decoupled_from_the_prompts": "#2756, open on r1, fixed on v7. Reproduced live: the run declared `--workload W1` while sending `--profile micro` prompts (10 in / 1 out) and the receipt records \"workload\": \"W1\" regardless. §4.3.1 W1 is 512+-8 in / 128 out.",
+    "api_tags_quantization_is_wrong": "GET /api/tags reports quantization_level \"Q5_0\" for qwen2.5-coder-0.5b-instruct-q4_k_m.gguf. Not chased; noted for the GGUF file_type advisory class."
+  },
+
+  "matrix_untouched": "scripts/perf-matrix.yaml is byte-identical to origin/main. All 8 cells remain UNMEASURED. The measurement above is a c=1 schema proof on a 0.5B model at 0.20 tok/s aggregate; it is not a §4.4 campaign and fills no cell."
+}

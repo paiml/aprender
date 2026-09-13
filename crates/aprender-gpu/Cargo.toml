@@ -41,10 +41,6 @@ crossterm = { version = "0.28", optional = true }
 # WGPU for cross-platform WebGPU compute (Vulkan/Metal/DX12/WebGPU)
 wgpu = { version = "24", optional = true }
 
-# Apple Metal backend via manzana (macOS only)
-[target.'cfg(target_os = "macos")'.dependencies]
-manzana = { version = "0.2.0", optional = true }
-
 [dev-dependencies]
 proptest = "1.9"
 criterion = { workspace = true }
@@ -81,8 +77,6 @@ tui-monitor = ["stress-test", "dep:crossterm"]
 gpu-pixels = ["dep:crossterm"]
 # WGPU backend for cross-platform GPU compute (WebGPU via wgpu crate)
 wgpu = ["dep:wgpu"]
-# Apple Metal backend via manzana (macOS only)
-metal = ["dep:manzana"]
 
 [package.metadata.wasm-pack.profile.release]
 wasm-opt = false

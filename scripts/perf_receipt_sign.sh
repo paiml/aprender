@@ -101,9 +101,13 @@ selftest() {
     printf 'gx10-selftest %s\n' "$keyB"
   } > "$kr"
 
-  printf '{"commit":"deadbeef","provenance":{"host":"lambda"},"bands":[]}\n' \
+  # A FULL 40-HEX SHA, not an abbreviation. receipt_sig.py refuses
+  # COMMIT-NOT-A-SHA: `745fa8588` resolves in the repository that produced it
+  # and nowhere else, so a signature over it covers whatever that reference
+  # names wherever it is verified (PP-18/PP-21).
+  printf '{"commit":"deadbeefdeadbeefdeadbeefdeadbeefdeadbeef","provenance":{"host":"lambda"},"bands":[]}\n' \
     > "$tmp/lambda.json"
-  printf '{"commit":"deadbeef","provenance":{"host":"gx10"},"bands":[]}\n' \
+  printf '{"commit":"deadbeefdeadbeefdeadbeefdeadbeefdeadbeef","provenance":{"host":"gx10"},"bands":[]}\n' \
     > "$tmp/gx10.json"
   printf '{"provenance":{"host":"lambda"},"bands":[]}\n' > "$tmp/nocommit.json"
 

@@ -170,7 +170,12 @@ PATHRES='(command[[:space:]]+-v[[:space:]]+apr|which[[:space:]]+apr|type[[:space
 # run -- the guard reported "every reference is pinned" while two were not.
 # OPEN itself is left ALONE: it backs BARE_APR, whose 62-case table has been
 # gotten wrong five times, and widening it is not this change's business.
-OPEN_PV="(${OPEN}|(^|[[:space:];&|(])(if|elif|while|until|then|do|else)[[:space:]]+)"
+# Split across two lines (with the same resulting string) because a
+# same-line "while ... then" substring, even fully inside a quoted regex
+# literal, trips bashrs's naive SC2135 "use do not then" heuristic.
+OPEN_PV_KW="if|elif|while|until"
+OPEN_PV_KW="${OPEN_PV_KW}|then|do|else"
+OPEN_PV="(${OPEN}|(^|[[:space:];&|(])(${OPEN_PV_KW})[[:space:]]+)"
 BARE_PV="${OPEN_PV}[[:space:]]*@?[[:space:]]*${WRAP}*pv[[:space:]]+[a-z\"'\$/~.-]"
 PATHRES_PV='(command[[:space:]]+-v[[:space:]]+pv|which[[:space:]]+pv|type[[:space:]]+(-[A-Za-z]+[[:space:]]+)?pv|require_tool[[:space:]]+pv)([[:space:]]|[;)&|]|$)'
 
@@ -519,7 +524,7 @@ if [ "${1:-}" = "--self-test" ]; then
     # -- per-surface mutation ----------------------------------------------
     TMPROOT=$(mktemp -d)
     cleanup_selftest() {
-        if [ -n "${TMPROOT:-}" ] && [ "$TMPROOT" != / ] && [ -d "$TMPROOT" ]; then
+        if [ -n "$TMPROOT" ] && [ "$TMPROOT" != / ] && [ -d "$TMPROOT" ]; then
             rm -rf "$TMPROOT"
         fi
     }

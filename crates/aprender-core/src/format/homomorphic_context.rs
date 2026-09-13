@@ -102,8 +102,10 @@ impl HeContext {
         // Stub: decode bytes as f64
         let values: Vec<f64> = ciphertext
             .data
-            .chunks_exact(8)
-            .map(|chunk| f64::from_le_bytes(chunk.try_into().unwrap_or([0; 8])))
+            .as_chunks::<8>()
+            .0
+            .iter()
+            .map(|chunk| f64::from_le_bytes(*chunk))
             .collect();
 
         Ok(values)
@@ -129,8 +131,10 @@ impl HeContext {
         // Stub: decode bytes as u64
         let values: Vec<u64> = ciphertext
             .data
-            .chunks_exact(8)
-            .map(|chunk| u64::from_le_bytes(chunk.try_into().unwrap_or([0; 8])))
+            .as_chunks::<8>()
+            .0
+            .iter()
+            .map(|chunk| u64::from_le_bytes(*chunk))
             .collect();
 
         Ok(values)

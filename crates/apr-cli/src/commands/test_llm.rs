@@ -26,9 +26,9 @@ use crate::error::{CliError, Result};
 use apr_test::llm::{
     benchmark::{Benchmark, BenchmarkConfig, BenchmarkReport},
     client::ChatRequest,
-    load_profile, load_prompts_from_file,
+    load_profile, load_prompt_corpus,
     loadtest::LoadTestResult,
-    PromptProfile,
+    Corpus, PromptProfile,
 };
 use std::path::Path;
 use std::time::Duration;
@@ -200,8 +200,20 @@ pub async fn run_bench(args: BenchArgs<'_>) -> Result<()> {
 /// than quietly falling back to a default, since a silent substitution changes
 /// the workload the report then claims to have run.
 pub(crate) fn resolve_prompts(profile: &str, file: Option<&Path>) -> Result<Vec<ChatRequest>> {
+    resolve_corpus(profile, file).map(|c| c.requests)
+}
+
+/// As [`resolve_prompts`], but keeping the §4.3.1 prompt-length band the
+/// corpus declared in its own `_meta` header.
+///
+/// The band is DROPPED by `resolve_prompts` and kept here because only the
+/// §4.4-conformant band mode can check it: the invariant is over token counts
+/// the *server* reports, so it cannot be evaluated until requests have run.
+/// A built-in `--profile` declares no band — those prompt sets are not W1 and
+/// synthesising a 512 ± 8 claim for them would be inventing the threshold.
+pub(crate) fn resolve_corpus(profile: &str, file: Option<&Path>) -> Result<Corpus> {
     if let Some(p) = file {
-        return load_prompts_from_file(p)
+        return load_prompt_corpus(p)
             .map_err(|e| CliError::InvalidFormat(format!("prompt corpus {e}")));
     }
     let parsed = PromptProfile::from_name(profile).ok_or_else(|| {
@@ -209,7 +221,10 @@ pub(crate) fn resolve_prompts(profile: &str, file: Option<&Path>) -> Result<Vec<
             "unknown prompt profile {profile:?}; expected micro, short, medium or long"
         ))
     })?;
-    Ok(load_profile(parsed))
+    Ok(Corpus {
+        requests: load_profile(parsed),
+        band: None,
+    })
 }
 
 /// One line naming the workload, so the report is self-describing.
@@ -431,6 +446,20 @@ async fn dispatch_band(command: &LlmSubcommand) -> Result<()> {
         counts_prompt_echo,
         commit,
         comparator_owner,
+        comparator_url,
+        comparator_model,
+        comparator_commit,
+        comparator_cmake,
+        comparator_sha256,
+        comparator_pin_expiry,
+        comparator_n_batch,
+        comparator_n_ctx_slot,
+        comparator_fa,
+        comparator_kv_type,
+        witness_json,
+        subject_binary,
+        key_id,
+        keyring,
         ..
     } = command;
     // Unreachable: clap's `requires = "receipt"` enforces it. Stated rather
@@ -460,6 +489,20 @@ async fn dispatch_band(command: &LlmSubcommand) -> Result<()> {
         profile,
         prompts: prompts.as_deref(),
         comparator_owner,
+        comparator_url: comparator_url.as_deref(),
+        comparator_model: comparator_model.as_deref(),
+        comparator_commit: comparator_commit.as_deref(),
+        comparator_cmake: comparator_cmake.as_deref(),
+        comparator_sha256: comparator_sha256.as_deref(),
+        comparator_pin_expiry: comparator_pin_expiry.as_deref(),
+        comparator_n_batch: *comparator_n_batch,
+        comparator_n_ctx_slot: *comparator_n_ctx_slot,
+        comparator_fa: comparator_fa.as_deref(),
+        comparator_kv_type: comparator_kv_type.as_deref(),
+        key_id: key_id.as_deref(),
+        keyring: keyring.as_deref(),
+        witness_json: witness_json.as_deref(),
+        subject_binary: subject_binary.as_deref(),
     })
     .await
 }

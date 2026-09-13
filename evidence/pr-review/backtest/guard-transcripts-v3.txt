@@ -1,0 +1,73 @@
+PRREV-012 backtest transcripts. Every verdict below was produced by RUNNING a guard,
+never by reading one. Each probe is signed with the committed TEST-ONLY key
+(tests/fixtures/pr-review/keys/pr-review-test-TEST-ONLY.key) and verified against the
+committed test pubkey, so none can pass on the signature branch, and every run reports
+how many of the four S6.1 positive controls fired before it reached a verdict.
+
+TWO GUARDS, ONE RECEIPT. The E-SHOWCASE pair below is run against BOTH trees with
+BYTE-IDENTICAL receipts (sha256 recorded), so the guard is the only variable.
+
+  PRE-F6   $SCR/wt011  = origin/feat/prrev-011-rebacktest, e875f5912 (as handed over)
+  POST-F6  $SCR/wt012  = this branch
+
+receipt sha256 (E-SHOWCASE-A): cf75b7b7367f2f3880c433ff7f29daf5ad8ca08a41928a4c273d745a8a0c80e3
+receipt sha256 (E-SHOWCASE-B): f7a8cbe41a7a8376eeee373db0a4931e8fcf9259edb17d99988070146a0a9c67
+guard sha256   PRE-F6 : fecd9eca78de400ef7029937a0fdb555cd37c2185d0c2210fdf6483cabd921cd
+guard sha256   POST-F6: ec1c41f7a955cc960c3f4ef539793200f64bc555fc75c8db53be2b0317f39322
+
+======================================================================
+== E-SHOWCASE  pre-A  (da069a25f, the commit that published 2.93x Ollama)
+======================================================================
+positive-control  schema-invalid  fired (B1: receipt fails schemas/in-toto-statement-v1.json: Schema validati)
+positive-control  self-review     fired (B2: reviewer_actor.id = author_actor.id = 'agent:positive-control'; )
+positive-control  findings-digest fired (B1: findings_ref.sha256 (0000000000000000000000000000000000000000000)
+positive-control  cost-missing    fired (B1: predicate.cost must carry numeric input_tokens, output_tokens an)
+ACCEPT  /tmp/claude-1000/-home-noah-src-aprender/2256679c-128a-431a-b273-4d5e2aa6fdcd/scratchpad/probe-E-SHOWCASE-A
+
+======================================================================
+== E-SHOWCASE  pre-B  (da069a25f, the commit that published 2.93x Ollama)
+======================================================================
+positive-control  schema-invalid  fired (B1: receipt fails schemas/in-toto-statement-v1.json: Schema validati)
+positive-control  self-review     fired (B2: reviewer_actor.id = author_actor.id = 'agent:positive-control'; )
+positive-control  findings-digest fired (B1: findings_ref.sha256 (0000000000000000000000000000000000000000000)
+positive-control  cost-missing    fired (B1: predicate.cost must carry numeric input_tokens, output_tokens an)
+ACCEPT  /tmp/claude-1000/-home-noah-src-aprender/2256679c-128a-431a-b273-4d5e2aa6fdcd/scratchpad/probe-E-SHOWCASE-B
+
+======================================================================
+== E-SHOWCASE  post-A  (da069a25f, the commit that published 2.93x Ollama)
+======================================================================
+positive-control  schema-invalid  fired (B1: receipt fails schemas/in-toto-statement-v1.json: Schema validati)
+positive-control  self-review     fired (B2: reviewer_actor.id = author_actor.id = 'agent:positive-control'; )
+positive-control  findings-digest fired (B1: findings_ref.sha256 (0000000000000000000000000000000000000000000)
+positive-control  cost-missing    fired (B1: predicate.cost must carry numeric input_tokens, output_tokens an)
+REJECT  /tmp/claude-1000/-home-noah-src-aprender/2256679c-128a-431a-b273-4d5e2aa6fdcd/scratchpad/probe-E-SHOWCASE-A  [B4]
+    the diff publishes a comparative claim on a user-facing surface -- book/src/examples/showcase-benchmark.md: **CORRECTNESS-012 fixed! Both GGUF and APR formats exceed 2X Ollama on -- while consultations.crux.comparative_claims is empty; a competitor ratio the review never recorded is unverified and blocks (S3.C.1)
+
+======================================================================
+== E-SHOWCASE  post-B  (da069a25f, the commit that published 2.93x Ollama)
+======================================================================
+positive-control  schema-invalid  fired (B1: receipt fails schemas/in-toto-statement-v1.json: Schema validati)
+positive-control  self-review     fired (B2: reviewer_actor.id = author_actor.id = 'agent:positive-control'; )
+positive-control  findings-digest fired (B1: findings_ref.sha256 (0000000000000000000000000000000000000000000)
+positive-control  cost-missing    fired (B1: predicate.cost must carry numeric input_tokens, output_tokens an)
+ACCEPT  /tmp/claude-1000/-home-noah-src-aprender/2256679c-128a-431a-b273-4d5e2aa6fdcd/scratchpad/probe-E-SHOWCASE-B
+
+======================================================================
+== E-2771-A  (#2771, base = git merge-base origin/main 05d2c0a63)
+======================================================================
+positive-control  schema-invalid  fired (B1: receipt fails schemas/in-toto-statement-v1.json: Schema validati)
+positive-control  self-review     fired (B2: reviewer_actor.id = author_actor.id = 'agent:positive-control'; )
+positive-control  findings-digest fired (B1: findings_ref.sha256 (0000000000000000000000000000000000000000000)
+positive-control  cost-missing    fired (B1: predicate.cost must carry numeric input_tokens, output_tokens an)
+REJECT  /tmp/claude-1000/-home-noah-src-aprender/2256679c-128a-431a-b273-4d5e2aa6fdcd/scratchpad/probe-E-2771-A  [B1]
+    cuda.status is consulted with queries: []; a consultation that asked nothing is DEGRADED, not clean, exactly as mutation.attempted=0 is (S3.B, S8 vacuous_consultations)
+
+======================================================================
+== E-2771-B  (#2771, base = git merge-base origin/main 05d2c0a63)
+======================================================================
+positive-control  schema-invalid  fired (B1: receipt fails schemas/in-toto-statement-v1.json: Schema validati)
+positive-control  self-review     fired (B2: reviewer_actor.id = author_actor.id = 'agent:positive-control'; )
+positive-control  findings-digest fired (B1: findings_ref.sha256 (0000000000000000000000000000000000000000000)
+positive-control  cost-missing    fired (B1: predicate.cost must carry numeric input_tokens, output_tokens an)
+ACCEPT  /tmp/claude-1000/-home-noah-src-aprender/2256679c-128a-431a-b273-4d5e2aa6fdcd/scratchpad/probe-E-2771-B
+

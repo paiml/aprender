@@ -442,3 +442,152 @@
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("not enabled"));
     }
+
+    // ========================================================================
+    // X1-KVALLOC (#2774): batched KV allocation is sized from the batch, not 32
+    // ========================================================================
+    //
+    // MEASURED on lambda-4090 (RTX 4090, 24564 MiB) with
+    // qwen2.5-coder-7b-instruct-q4_k_m.gguf, num_layers=28, num_kv_heads=4,
+    // head_dim=128, --context-length 4096:
+    //
+    //   VRAM after load ......... 14961 MiB (4.4 GB Q4_K + 6.7 GB FP8 cache + ctx)
+    //   free at admission ....... 24564 - 14961 = 9603 MiB
+    //   bytes per slot .......... 2*4*4096*128*4*28 = 469_762_048  (448 MiB)
+    //   32 slots ................ 14336 MiB  -> CUDA_ERROR_OUT_OF_MEMORY
+    //   admitted batch .......... 3
+    //
+    // Pre-fix the allocation was `max_kv_slots.max(m)` = 32 regardless of m,
+    // and the server returned HTTP 500 for 3 of 4 concurrent requests:
+    //
+    //   [PMAT-072] Setup+prefill ERROR (m=3): Failed to init batched KV cache
+    //   for M=32: CUDA driver error: CUDA_ERROR_OUT_OF_MEMORY (code: 2)
+
+    /// Bytes-per-slot for the measured 7B/4096 configuration.
+    const W1_7B_SLOT_BYTES: usize = 2 * 4 * 4096 * 128 * 4 * 28;
+    /// Free VRAM measured at admission time on lambda-4090, in bytes.
+    const W1_7B_FREE_BYTES: usize = 9603 * 1024 * 1024;
+
+    /// RED without the fix. `requested` is the scheduler's ceiling; pre-fix it
+    /// was passed through untouched, which is the OOM above.
+    #[test]
+    fn x1_kvalloc_2774_does_not_allocate_a_ceiling_that_cannot_fit() {
+        let slots = CudaExecutor::batched_kv_slots_that_fit(
+            W1_7B_FREE_BYTES,
+            CudaExecutor::BATCHED_KV_VRAM_RESERVE_BYTES,
+            W1_7B_SLOT_BYTES,
+            32,
+            3,
+        );
+        assert_ne!(
+            slots, 32,
+            "sized the allocation from the scheduler's ceiling, not the device \
+             (#2774): 32 x 448 MiB = 14336 MiB into 9603 MiB free"
+        );
+        assert!(
+            slots * W1_7B_SLOT_BYTES
+                <= W1_7B_FREE_BYTES - CudaExecutor::BATCHED_KV_VRAM_RESERVE_BYTES,
+            "sized {slots} slots ({} MiB) past the spendable budget",
+            slots * W1_7B_SLOT_BYTES / (1024 * 1024)
+        );
+    }
+
+    /// RED without the fix, and the acceptance case for #2774: the W1 model at
+    /// the c=4 band must get exactly the four slots it admitted.
+    #[test]
+    fn x1_kvalloc_2774_c4_band_gets_four_slots_not_thirty_two() {
+        let slots = CudaExecutor::batched_kv_slots_that_fit(
+            W1_7B_FREE_BYTES,
+            CudaExecutor::BATCHED_KV_VRAM_RESERVE_BYTES,
+            W1_7B_SLOT_BYTES,
+            32,
+            4,
+        );
+        assert!(slots >= 4, "c=4 admitted 4 sequences, sized {slots} slots");
+        assert!(
+            slots < 32,
+            "c=4 still took the whole ceiling ({slots}); that is the #2774 OOM"
+        );
+        assert!(
+            slots * W1_7B_SLOT_BYTES + CudaExecutor::BATCHED_KV_VRAM_RESERVE_BYTES
+                <= W1_7B_FREE_BYTES,
+            "{slots} slots does not fit the measured budget"
+        );
+    }
+
+    /// The floor is the ADMITTED batch. Sizing may not silently hand back fewer
+    /// slots than there are sequences: slot i>=alloc would scatter its prefill
+    /// past the end of the K/V buffers. Under-provisioning is admission's job,
+    /// and it must be an error, not a quiet truncation.
+    #[test]
+    fn x1_kvalloc_2774_never_returns_fewer_slots_than_admitted() {
+        // A budget that fits nothing at all.
+        let slots = CudaExecutor::batched_kv_slots_that_fit(
+            1024,
+            CudaExecutor::BATCHED_KV_VRAM_RESERVE_BYTES,
+            W1_7B_SLOT_BYTES,
+            32,
+            8,
+        );
+        assert_eq!(slots, 8, "sizing must never drop an admitted sequence");
+    }
+
+    /// DISCRIMINATION: stays GREEN before and after. When the ceiling genuinely
+    /// fits, the fix must not shrink it — mid-batch joins (PMAT-073) depend on
+    /// the spare slots, and a fix that always returned `m` would trade an OOM
+    /// for a reallocation on every join.
+    #[test]
+    fn x1_kvalloc_2774_leaves_a_ceiling_that_fits_alone() {
+        // 1.5B at ctx 2048: 2*2*2048*128*4*28 = 58_720_256 bytes/slot (56 MiB).
+        let slot = 2 * 2 * 2048 * 128 * 4 * 28;
+        let slots = CudaExecutor::batched_kv_slots_that_fit(
+            20 * 1024 * 1024 * 1024,
+            CudaExecutor::BATCHED_KV_VRAM_RESERVE_BYTES,
+            slot,
+            32,
+            4,
+        );
+        assert_eq!(slots, 32, "32 x 56 MiB fits in 20 GiB; do not shrink it");
+    }
+
+    /// DISCRIMINATION: the reserve is load-bearing. Deleting it (a plausible
+    /// simplification) lets the allocation consume the last byte, leaving the
+    /// prefill workspace and captured graphs nothing.
+    #[test]
+    fn x1_kvalloc_2774_reserve_is_honoured() {
+        // Exactly 4 slots' worth of VRAM, and a reserve of one slot.
+        let with_reserve = CudaExecutor::batched_kv_slots_that_fit(
+            4 * W1_7B_SLOT_BYTES,
+            W1_7B_SLOT_BYTES,
+            W1_7B_SLOT_BYTES,
+            4,
+            1,
+        );
+        assert_eq!(with_reserve, 3, "reserve must be subtracted before dividing");
+    }
+
+    /// #2762's shape, guarded inside #2774's fix: per-slot bytes are derived
+    /// from `kv_cache_max_len` — the CONFIGURED context — so doubling the
+    /// context doubles the slot. A hardcoded 2048 here would make the two
+    /// contexts indistinguishable, which is exactly how #2762 stayed invisible.
+    #[test]
+    fn x1_kvalloc_bytes_per_slot_tracks_the_configured_context() {
+        let Some(mut exec) = create_executor() else {
+            return;
+        };
+        exec.init_kv_cache_gpu(2, 4, 4, 128, 2048).expect("kv cache");
+        let at_2048 = exec.batched_kv_bytes_per_slot(2);
+        assert_eq!(at_2048, 2 * 4 * 2048 * 128 * 4 * 2);
+
+        let Some(mut exec4k) = create_executor() else {
+            return;
+        };
+        exec4k
+            .init_kv_cache_gpu(2, 4, 4, 128, 4096)
+            .expect("kv cache");
+        assert_eq!(
+            exec4k.batched_kv_bytes_per_slot(2),
+            2 * at_2048,
+            "per-slot size did not follow the configured context (#2762)"
+        );
+    }

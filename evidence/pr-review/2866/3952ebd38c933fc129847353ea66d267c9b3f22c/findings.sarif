@@ -1,0 +1,703 @@
+{
+ "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+ "version": "2.1.0",
+ "runs": [
+  {
+   "tool": {
+    "driver": {
+     "name": "pmat",
+     "version": "unknown",
+     "rules": [
+      {
+       "id": "PRREV-PMAT",
+       "name": "pmat quality and duplication"
+      }
+     ]
+    }
+   },
+   "results": [
+    {
+     "ruleId": "PRREV-PMAT",
+     "level": "note",
+     "message": {
+      "text": "lexical name match `item_end` at crates/aprender-present-widgets/src/list.rs:255 (lexical); not duplicated logic: a different module shares the identifier"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "crates/aprender-present-widgets/src/list.rs"
+        },
+        "region": {
+         "startLine": 255
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "if the two symbols were the same logic, this PR would re-implement it; they are not (read on both sides)",
+      "source": "scripts/pr_review_duplication_scan.sh --base 752f55346 --head 3952ebd38 --rust-semantic",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "name collision, no duplication"
+     }
+    },
+    {
+     "ruleId": "PRREV-PMAT",
+     "level": "note",
+     "message": {
+      "text": "lexical name match `item_end` at crates/aprender-present-widgets/src/list.rs:261 (lexical); not duplicated logic: a different module shares the identifier"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "crates/aprender-present-widgets/src/list.rs"
+        },
+        "region": {
+         "startLine": 261
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "if the two symbols were the same logic, this PR would re-implement it; they are not (read on both sides)",
+      "source": "scripts/pr_review_duplication_scan.sh --base 752f55346 --head 3952ebd38 --rust-semantic",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "name collision, no duplication"
+     }
+    },
+    {
+     "ruleId": "PRREV-PMAT",
+     "level": "note",
+     "message": {
+      "text": "lexical name match `item_end` at crates/aprender-present-widgets/src/list.rs:263 (lexical); not duplicated logic: a different module shares the identifier"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "crates/aprender-present-widgets/src/list.rs"
+        },
+        "region": {
+         "startLine": 263
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "if the two symbols were the same logic, this PR would re-implement it; they are not (read on both sides)",
+      "source": "scripts/pr_review_duplication_scan.sh --base 752f55346 --head 3952ebd38 --rust-semantic",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "name collision, no duplication"
+     }
+    },
+    {
+     "ruleId": "PRREV-PMAT",
+     "level": "note",
+     "message": {
+      "text": "lexical name match `strip_comments` at scripts/check_verifier_pinning.sh:213 (lexical); not duplicated logic: a different module shares the identifier"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "scripts/check_verifier_pinning.sh"
+        },
+        "region": {
+         "startLine": 213
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "if the two symbols were the same logic, this PR would re-implement it; they are not (read on both sides)",
+      "source": "scripts/pr_review_duplication_scan.sh --base 752f55346 --head 3952ebd38 --rust-semantic",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "name collision, no duplication"
+     }
+    },
+    {
+     "ruleId": "PRREV-PMAT",
+     "level": "note",
+     "message": {
+      "text": "lexical name match `strip_comments` at scripts/check_verifier_pinning.sh:343 (lexical); not duplicated logic: a different module shares the identifier"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "scripts/check_verifier_pinning.sh"
+        },
+        "region": {
+         "startLine": 343
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "if the two symbols were the same logic, this PR would re-implement it; they are not (read on both sides)",
+      "source": "scripts/pr_review_duplication_scan.sh --base 752f55346 --head 3952ebd38 --rust-semantic",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "name collision, no duplication"
+     }
+    },
+    {
+     "ruleId": "PRREV-PMAT",
+     "level": "note",
+     "message": {
+      "text": "lexical name match `strip_comments` at scripts/check_verifier_pinning.sh:511 (lexical); not duplicated logic: a different module shares the identifier"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "scripts/check_verifier_pinning.sh"
+        },
+        "region": {
+         "startLine": 511
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "if the two symbols were the same logic, this PR would re-implement it; they are not (read on both sides)",
+      "source": "scripts/pr_review_duplication_scan.sh --base 752f55346 --head 3952ebd38 --rust-semantic",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "name collision, no duplication"
+     }
+    },
+    {
+     "ruleId": "PRREV-PMAT",
+     "level": "note",
+     "message": {
+      "text": "lexical name match `strip_comments` at scripts/check_verifier_pinning.sh:532 (lexical); not duplicated logic: a different module shares the identifier"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "scripts/check_verifier_pinning.sh"
+        },
+        "region": {
+         "startLine": 532
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "if the two symbols were the same logic, this PR would re-implement it; they are not (read on both sides)",
+      "source": "scripts/pr_review_duplication_scan.sh --base 752f55346 --head 3952ebd38 --rust-semantic",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "name collision, no duplication"
+     }
+    }
+   ]
+  },
+  {
+   "tool": {
+    "driver": {
+     "name": "nvidia-cuda-docs",
+     "version": "mcp",
+     "rules": [
+      {
+       "id": "PRREV-CUDA",
+       "name": "device-behaviour claim vs NVIDIA docs"
+      }
+     ]
+    }
+   },
+   "results": []
+  },
+  {
+   "tool": {
+    "driver": {
+     "name": "crux",
+     "version": "v1",
+     "rules": [
+      {
+       "id": "PRREV-CRUX",
+       "name": "user-facing surface coverage"
+      }
+     ]
+    }
+   },
+   "results": []
+  },
+  {
+   "tool": {
+    "driver": {
+     "name": "cargo-mutants",
+     "version": "guard case-tables",
+     "rules": [
+      {
+       "id": "PRREV-MUT",
+       "name": "guard mutation set"
+      }
+     ]
+    }
+   },
+   "results": []
+  },
+  {
+   "tool": {
+    "driver": {
+     "name": "antigravity",
+     "version": "1.1.26",
+     "rules": [
+      {
+       "id": "PRREV-AGY",
+       "name": "cross-vendor review (advisory)"
+      },
+      {
+       "id": "PRREV-AGY-PRIOR",
+       "name": "cross-vendor review, earlier runs on this PR (advisory)"
+      }
+     ]
+    }
+   },
+   "results": [
+    {
+     "ruleId": "PRREV-AGY",
+     "level": "note",
+     "message": {
+      "text": "build.rs correctly uses the vendored file in published crates, correctly gates rerun-if-changed on the workspace file's existence, and emits an actionable drift panic message."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "crates/aprender-test-lib/build.rs"
+        },
+        "region": {
+         "startLine": 44
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "asserted",
+      "precision_class": "advisory",
+      "failure_scenario": "none stated",
+      "source": "agy gemini-3.1-pro-high on 3952ebd38: ",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "confirmation; re-verified by the primary: self-test rows 5-13 ok, mutation RED, tree PASS, drift mutation RED, dry-run verified at 0.65.1 deps",
+      "agy_id": "build-rs-correctness",
+      "baselineState": "new"
+     }
+    },
+    {
+     "ruleId": "PRREV-AGY",
+     "level": "note",
+     "message": {
+      "text": "Cargo correctly includes the vendored file in the package tarball by default. The byte-identity check correctly maintains the workspace source-of-truth invariant."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "crates/aprender-test-lib/build.rs"
+        },
+        "region": {
+         "startLine": 42
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "asserted",
+      "precision_class": "advisory",
+      "failure_scenario": "none stated",
+      "source": "agy gemini-3.1-pro-high on 3952ebd38: ",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "confirmation; re-verified by the primary: self-test rows 5-13 ok, mutation RED, tree PASS, drift mutation RED, dry-run verified at 0.65.1 deps",
+      "agy_id": "vendored-copy-inclusion",
+      "baselineState": "new"
+     }
+    },
+    {
+     "ruleId": "PRREV-AGY",
+     "level": "note",
+     "message": {
+      "text": "Brace matching correctly drops `#[cfg(test)]` modules while preserving subsequent production code, fixing the truncation false negative."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "scripts/lib/resolve_includes.py"
+        },
+        "region": {
+         "startLine": 85
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "asserted",
+      "precision_class": "advisory",
+      "failure_scenario": "none stated",
+      "source": "agy gemini-3.1-pro-high on 3952ebd38: ",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "confirmation; re-verified by the primary: self-test rows 5-13 ok, mutation RED, tree PASS, drift mutation RED, dry-run verified at 0.65.1 deps",
+      "agy_id": "resolver-test-truncation-fixed",
+      "baselineState": "new"
+     }
+    },
+    {
+     "ruleId": "PRREV-AGY",
+     "level": "note",
+     "message": {
+      "text": "String literals are not stripped, so an `include_str!` inside a raw string literal will cause a false positive."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "scripts/lib/resolve_includes.py"
+        },
+        "region": {
+         "startLine": 71
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "asserted",
+      "precision_class": "advisory",
+      "failure_scenario": "A developer legitimately using the string `include_str!(\"../../foo\")` inside a raw string literal will fail the CI check unnecessarily.",
+      "source": "agy gemini-3.1-pro-high on 3952ebd38: ",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "re-verified by the primary: a string-literal edge case of a textual resolver (an include_str! spelled inside a raw string, block-comment delimiters split across two strings, or `use wasm_bindgen` inside a multi-line string). No such site exists in the tree (the --escapes sweep and the full guard pass on all 10 crates); the two false-negative shapes are backstopped by cargo publish's own verification build, which is the gate this guard defends in depth. Recorded as a documented residual, not fixed.",
+      "agy_id": "string-literal-false-positive",
+      "baselineState": "new"
+     }
+    },
+    {
+     "ruleId": "PRREV-AGY",
+     "level": "note",
+     "message": {
+      "text": "`strip_comments` does not respect string boundaries, so a `/*` in one string and `*/` in another will delete the code between them, potentially hiding escapes."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "scripts/lib/resolve_includes.py"
+        },
+        "region": {
+         "startLine": 57
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "asserted",
+      "precision_class": "advisory",
+      "failure_scenario": "An escaping include between two strings containing fake block comment delimiters will be skipped.",
+      "source": "agy gemini-3.1-pro-high on 3952ebd38: ",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "re-verified by the primary: a string-literal edge case of a textual resolver (an include_str! spelled inside a raw string, block-comment delimiters split across two strings, or `use wasm_bindgen` inside a multi-line string). No such site exists in the tree (the --escapes sweep and the full guard pass on all 10 crates); the two false-negative shapes are backstopped by cargo publish's own verification build, which is the gate this guard defends in depth. Recorded as a documented residual, not fixed.",
+      "agy_id": "string-literal-comment-false-negative",
+      "baselineState": "new"
+     }
+    },
+    {
+     "ruleId": "PRREV-AGY",
+     "level": "note",
+     "message": {
+      "text": "The `WASM_USE` regex will match `use wasm_bindgen` inside a multi-line string literal, causing the file to be incorrectly skipped."
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "scripts/lib/resolve_includes.py"
+        },
+        "region": {
+         "startLine": 91
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "asserted",
+      "precision_class": "advisory",
+      "failure_scenario": "An escaping include in a file that happens to have a multi-line string matching `use wasm_bindgen` will not be reported.",
+      "source": "agy gemini-3.1-pro-high on 3952ebd38: ",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "re-verified by the primary: a string-literal edge case of a textual resolver (an include_str! spelled inside a raw string, block-comment delimiters split across two strings, or `use wasm_bindgen` inside a multi-line string). No such site exists in the tree (the --escapes sweep and the full guard pass on all 10 crates); the two false-negative shapes are backstopped by cargo publish's own verification build, which is the gate this guard defends in depth. Recorded as a documented residual, not fixed.",
+      "agy_id": "wasm-use-string-literal-false-negative",
+      "baselineState": "new"
+     }
+    },
+    {
+     "ruleId": "PRREV-AGY-PRIOR",
+     "level": "note",
+     "message": {
+      "text": "cargo:rerun-if-changed on a non-existent file forces Cargo to run the build script on every invocation, destroying build caching for downstream users of the published crate. (found on ba4876b75 by PR #2866 \u00a73.E lane, round 1; major)"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "crates/aprender-test-lib/build.rs"
+        },
+        "region": {
+         "startLine": 19
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "Downstream consumers will experience poor build performance because the crate and its dependents will be recompiled/relinked unnecessarily on every `cargo build`.",
+      "source": "agy gemini-3.1-pro-high on ba4876b75 (agy-PMAT)",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "major; do-not-implement-as-written; re-verified by the primary and APPLIED in 3952ebd38 (rows 9-13)",
+      "agy_id": "r1:cache-invalidation-missing-file"
+     },
+     "baselineState": "absent"
+    },
+    {
+     "ruleId": "PRREV-AGY-PRIOR",
+     "level": "note",
+     "message": {
+      "text": "build.rs can falsely panic for downstream consumers (e.g. if used as a git/path dependency) if they have a colliding file at `../../scripts/perf-matrix.yaml`. (found on ba4876b75 by PR #2866 \u00a73.E lane, round 1; major)"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "crates/aprender-test-lib/build.rs"
+        },
+        "region": {
+         "startLine": 31
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "A downstream user's build breaks because they happen to have an unrelated file at `scripts/perf-matrix.yaml` relative to their repo root, colliding with the hardcoded relative path.",
+      "source": "agy gemini-3.1-pro-high on ba4876b75 (agy-PMAT)",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "major; do-not-implement-as-written; re-verified by the primary and APPLIED in 3952ebd38 (rows 9-13)",
+      "agy_id": "r1:false-drift-panic-vendored"
+     },
+     "baselineState": "absent"
+    },
+    {
+     "ruleId": "PRREV-AGY-PRIOR",
+     "level": "note",
+     "message": {
+      "text": "`host_body` truncates at the first `#[cfg(test)]`, missing escaping includes in any legitimate production code that follows a test module. (found on ba4876b75 by PR #2866 \u00a73.E lane, round 1; major)"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "scripts/lib/resolve_includes.py"
+        },
+        "region": {
+         "startLine": 39
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "An escaping include in production code is not reported, causing `cargo publish` to fail in CI later, defeating the purpose of the script.",
+      "source": "agy gemini-3.1-pro-high on ba4876b75 (agy-PMAT)",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "major; do-not-implement-as-written; re-verified by the primary and APPLIED in 3952ebd38 (rows 9-13)",
+      "agy_id": "r1:truncate-after-first-cfg-test"
+     },
+     "baselineState": "absent"
+    },
+    {
+     "ruleId": "PRREV-AGY-PRIOR",
+     "level": "note",
+     "message": {
+      "text": "The `wasm32-only` check can skip files if 'use wasm_bindgen' appears in a comment or string literal. (found on ba4876b75 by PR #2866 \u00a73.E lane, round 1; minor)"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "scripts/lib/resolve_includes.py"
+        },
+        "region": {
+         "startLine": 46
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "An escaping include is missed because the file was falsely identified as wasm32-only due to a comment, allowing a bad include to break publish.",
+      "source": "agy gemini-3.1-pro-high on ba4876b75 (agy-PMAT)",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "minor; do-not-implement-as-written; re-verified by the primary and APPLIED in 3952ebd38 (rows 9-13)",
+      "agy_id": "r1:wasm32-only-false-negative"
+     },
+     "baselineState": "absent"
+    },
+    {
+     "ruleId": "PRREV-AGY-PRIOR",
+     "level": "note",
+     "message": {
+      "text": "Block comments and string literals are not stripped, leading to false positives for `include_str!` inside them. (found on ba4876b75 by PR #2866 \u00a73.E lane, round 1; minor)"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "scripts/lib/resolve_includes.py"
+        },
+        "region": {
+         "startLine": 17
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "A developer comments out an escaping include using `/* */` (or mentions it in a string), and the script falsely flags it, requiring them to remove the comment.",
+      "source": "agy gemini-3.1-pro-high on ba4876b75 (agy-PMAT)",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "minor; do-not-implement-as-written; re-verified by the primary and APPLIED in 3952ebd38 (rows 9-13)",
+      "agy_id": "r1:block-comments-string-literals-false-positive"
+     },
+     "baselineState": "absent"
+    },
+    {
+     "ruleId": "PRREV-AGY-PRIOR",
+     "level": "note",
+     "message": {
+      "text": "The regex misses escaping includes that use `concat!` since it expects a simple string literal. (found on ba4876b75 by PR #2866 \u00a73.E lane, round 1; minor)"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "scripts/lib/resolve_includes.py"
+        },
+        "region": {
+         "startLine": 17
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "A developer uses `concat!` to construct an escaping path, and the script misses it, leading to a broken publish.",
+      "source": "agy gemini-3.1-pro-high on ba4876b75 (agy-PMAT)",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "minor; do-not-implement-as-written; re-verified by the primary and APPLIED in 3952ebd38 (rows 9-13)",
+      "agy_id": "r1:concat-false-negative"
+     },
+     "baselineState": "absent"
+    },
+    {
+     "ruleId": "PRREV-AGY-PRIOR",
+     "level": "note",
+     "message": {
+      "text": "The byte-identity check correctly enforces that the vendored copy does not drift from the workspace source of truth. (found on ba4876b75 by PR #2866 \u00a73.E lane, round 1; note)"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "crates/aprender-test-lib/build.rs"
+        },
+        "region": {
+         "startLine": 30
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "none stated",
+      "source": "agy gemini-3.1-pro-high on ba4876b75 (agy-PMAT)",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "note; do-not-implement-as-written; re-verified by the primary and APPLIED in 3952ebd38 (rows 9-13)",
+      "agy_id": "r1:byte-identity-invariant-correct"
+     },
+     "baselineState": "absent"
+    },
+    {
+     "ruleId": "PRREV-AGY-PRIOR",
+     "level": "note",
+     "message": {
+      "text": "The vendored copy will be correctly included in the published crate because Cargo packages all tracked files by default when include/exclude lists are absent. (found on ba4876b75 by PR #2866 \u00a73.E lane, round 1; note)"
+     },
+     "locations": [
+      {
+       "physicalLocation": {
+        "artifactLocation": {
+         "uri": "crates/aprender-test-lib/build.rs"
+        },
+        "region": {
+         "startLine": 20
+        }
+       }
+      }
+     ],
+     "properties": {
+      "grounding": "measured",
+      "precision_class": "advisory",
+      "failure_scenario": "none stated",
+      "source": "agy gemini-3.1-pro-high on ba4876b75 (agy-PMAT)",
+      "excerpt": "",
+      "excerpt_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "disposition": "note; do-not-implement-as-written; re-verified by the primary and APPLIED in 3952ebd38 (rows 9-13)",
+      "agy_id": "r1:vendored-copy-inclusion-correct"
+     },
+     "baselineState": "absent"
+    }
+   ]
+  }
+ ]
+}

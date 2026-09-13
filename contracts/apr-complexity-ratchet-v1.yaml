@@ -1,0 +1,153 @@
+metadata:
+  version: 1.0.0
+  created: '2026-09-03'
+  author: PAIML Engineering
+  description: "PMAT-746 — per-function complexity may only fall. The only complexity gate in this repository was the LOCAL pmat pre-commit hook (cyclomatic <= 30, cognitive <= 25, staged files only); .github/workflows/ci.yml ran none, so the merge queue LANDS the debt and the individual developer pays it on unrelated work. This contract owns the CI-side ratchet (scripts/check_complexity_ratchet.sh): its universe, its three findings NEW/GROWN/STALE, its shrink-only baseline, and the case table that proves each finding can still turn RED."
+  kind: pattern
+  references:
+    - "scripts/check_complexity_ratchet.sh — the guard"
+    - "scripts/lib/complexity_rows.py — the pmat-JSON reader that emits the rows"
+    - "scripts/complexity_baseline.txt — the shrink-only ratchet (keyed2, scripts/lib_baseline_ratchet.sh)"
+    - "scripts/check_baseline_ratchets.sh — classifies the baseline and carries the keyed2 case table"
+    - ".github/workflows/ci.yml — wired per-PR in guard-runner-labels (gate depends on it)"
+    - ".git/hooks/pre-commit — the LOCAL gate whose two thresholds this guard reproduces"
+
+five_whys:
+  symptom: "crates/apr-cli/src/commands/serve/handlers.rs::wgpu_chat_completion sits at cognitive 69, tokenize.rs::run_encode_corpus at cyclomatic 34 / cognitive 89, and five functions in eval/inference.rs between 31 and 40 — all on main, all merged green, and every one of them refuses the next LOCAL commit that touches its file."
+  why_1: "The merge queue never looked. ci.yml runs check, fmt, clippy, tests, coverage and 40+ shell guards, and not one of them reads a complexity number."
+  why_2: "The only enforcement is .git/hooks/pre-commit, which is per-developer, per-STAGED-file, and not present in CI at all — so the rule binds the author of an unrelated change and not the author of the offending one."
+  why_3: "Turning the hook's rule on in CI outright was not available: 715 functions in the tree are already over one threshold or the other, so the gate would have redded every pull request from the first one, and a gate that cannot go green gets disabled."
+  why_4: "The obvious middle ground — an allowlist — is not a ratchet: a row survives its own repair, and the next regression at that coordinate is admitted for free by an entry nobody noticed was spent. STALE is the rule that closes that, and it is the one an allowlist never has."
+  why_5: "A baseline compared only against the WORKING TREE is not a ratchet either: NEW and STALE are the only two properties a tree can answer, and a commit that appends a row AND lands the matching offender satisfies both at once. Twelve guards in this repository failed exactly that probe."
+  root_cause: "Enforcement sat entirely on the side that pays rather than the side that writes, and no shrink-only record existed for a gate to ratchet against. The remedy is all three at once: measure the same universe the hook measures, record the existing offenders, and compare the record against a ref a pull request cannot rewrite."
+
+equations:
+  complexity_may_only_fall:
+    formula: "for every Rust function F over a threshold: recorded(F) exists AND cyclomatic(F) <= recorded_cyclomatic(F) AND cognitive(F) <= recorded_cognitive(F); and for every recorded R: R is still over a threshold"
+    domain: "every .rs file tracked by git UNION present in the working tree, minus target/, target_disk/, node_modules/, .git/ and .claude/worktrees/"
+    codomain: "exit code of scripts/check_complexity_ratchet.sh"
+    invariants:
+      - "over a threshold means cyclomatic > 30 OR cognitive > 25, the two values read verbatim out of .git/hooks/pre-commit"
+      - "NEW is a function over a threshold with no row; GROWN is a recorded number that rose; STALE is a row whose function is now under BOTH thresholds"
+      - "STALE is a FAILURE, not a courtesy: a spent row admits the next regression at that coordinate for free"
+      - "the key is <path>::<function> and never carries a line number, because a file:line baseline drifts on any edit above it and CI reads the drift as growth"
+      - "a key naming two functions in one file carries the MAX of each metric, which can decline to attribute a violation but can never hide one"
+      - "the universe is tracked UNION working tree, because tracked-only gives an untracked file a free pass"
+      - "the universe is NOT pmat's own project scan: .pmatignore hides 1336 tracked .rs files that the pre-commit hook still reads, and a CI universe narrower than the hook's leaves exactly the blocking debt unguarded"
+
+  baseline_is_shrink_only:
+    formula: "for every key K in the baseline at HEAD: K exists at the comparand AND baseline_cyclomatic(K) <= comparand_cyclomatic(K) AND baseline_cognitive(K) <= comparand_cognitive(K)"
+    domain: "scripts/complexity_baseline.txt against merge-base(HEAD, origin/main), falling back to the origin/main tip"
+    codomain: "exit code of baseline_ratchet_check(..., keyed2)"
+    invariants:
+      - "a key may only LEAVE the baseline; appending one is REFUSED, so a row and its violation in one commit cannot launder each other"
+      - "NEITHER integer may rise, because the rule is over EITHER and a single-number comparator would ratchet half the predicate while looking complete"
+      - "either integer may FALL, so a partial refactor is recordable rather than a diff the meta-gate refuses"
+      - "an unresolvable or absent comparand is a HARD FAILURE, never degraded to comparing the branch against itself"
+
+  guard_is_not_vacuous:
+    formula: "rs_files_scanned >= 5000 AND selftest_rows >= 9 AND selftest_failures == 0"
+    domain: "the guard's file universe and its --selftest case table"
+    codomain: "exit code of scripts/check_complexity_ratchet.sh and of its --selftest"
+    invariants:
+      - "a scan that collapsed would report zero offenders and read exactly like a clean tree, so an undersized universe is a hard failure"
+      - "the case table carries both polarities for every rule: a must-fire and a must-not-fire row for NEW, for GROWN and for STALE"
+      - "the table is built over a throwaway crate whose four functions were MEASURED, not guessed: tidy 1/0, nested 7/21, cognitive_only 8/28, branchy 35/34"
+      - "cognitive_only is over cognitive and under cyclomatic, which is what makes either-threshold a measured claim rather than a sentence in a header"
+      - "nested at 7/21 is the near-miss control that says the detector is not simply reporting everything it sees"
+
+proof_obligations:
+  - type: invariant
+    property: "No function may be over a threshold without a row, and no recorded number may rise"
+    formal: "scripts/check_complexity_ratchet.sh exits 0"
+    applies_to: complexity_may_only_fall
+  - type: invariant
+    property: "A repaired function's row must be deleted in the same commit"
+    formal: "the STALE finding is emitted for a baselined key absent from the current scan, and it fails the guard"
+    applies_to: complexity_may_only_fall
+  - type: invariant
+    property: "The guard can turn RED on every finding it claims to make"
+    formal: "--selftest carries must-fire and must-not-fire rows for NEW, GROWN (both metrics) and STALE, and exits non-zero if any fails"
+    applies_to: guard_is_not_vacuous
+  - type: invariant
+    property: "The thresholds are the pre-commit hook's, not a dial"
+    formal: "MAX_CYCLOMATIC=30 and MAX_COGNITIVE=25 appear in the guard, matching PMAT_MAX_CYCLOMATIC_COMPLEXITY / PMAT_MAX_COGNITIVE_COMPLEXITY"
+    applies_to: complexity_may_only_fall
+  - type: invariant
+    property: "The baseline may only shrink against a ref a pull request cannot rewrite"
+    formal: "baseline_ratchet_check with kind keyed2, and the baseline is classified in check_baseline_ratchets.sh"
+    applies_to: baseline_is_shrink_only
+  - type: invariant
+    property: "The guard is enforced per-PR, not merely present in the tree"
+    formal: "ci.yml invokes it in guard-runner-labels, which `gate` lists in its needs"
+    applies_to: complexity_may_only_fall
+
+falsification_tests:
+  - id: FALSIFY-CX-RATCHET-001
+    rule: "The guard and its row reader exist and are readable"
+    prediction: "scripts/check_complexity_ratchet.sh is executable and scripts/lib/complexity_rows.py is a regular file"
+    test: "test -x scripts/check_complexity_ratchet.sh && test -f scripts/lib/complexity_rows.py"
+    if_fails: "The guard was deleted or unmarked — the complexity class is back to being enforced only on the developer who did not create it."
+
+  - id: FALSIFY-CX-RATCHET-002
+    rule: "Every finding the guard can make demonstrably turns RED, and every must-not-fire control stays GREEN"
+    prediction: "The --selftest case table passes all ten of its rows over a throwaway crate"
+    test: "bash scripts/check_complexity_ratchet.sh --selftest"
+    if_fails: "A rule has gone blind. Deleting the cyclomatic or the cognitive growth comparison in cx_verdict takes the matching `a baselined offender grown on ...` row to BROKE — that is the mutation this table exists to catch. Re-run the table; do not re-read the comparison."
+
+  - id: FALSIFY-CX-RATCHET-003
+    rule: "No function is over a threshold without a row, no recorded number rose, and no row is stale"
+    prediction: "The guard exits 0 on the current tree"
+    test: "bash scripts/check_complexity_ratchet.sh"
+    if_fails: "A pull request landed NEW complexity debt, grew a recorded function, or repaired one without deleting its row. The report names <path>::<function> and both numbers."
+
+  - id: FALSIFY-CX-RATCHET-004
+    rule: "Both polarities of the either-threshold rule are in the case table BY NAME"
+    prediction: "--selftest prints an ok row for the cognitive-only offender and an ok row for the under-both control"
+    test: "[ \"$(bash scripts/check_complexity_ratchet.sh --selftest | grep -c 'both offenders found, cognitive-only included')\" -eq 1 ] && [ \"$(bash scripts/check_complexity_ratchet.sh --selftest | grep -c 'a function under both thresholds is NOT reported')\" -eq 1 ]"
+    if_fails: "Either the must-fire half is gone (a function over cognitive alone is invisible, and cognitive is the metric all three named offenders fail) or the must-not-fire half is gone (the guard reports every function it sees and its 715-row baseline means nothing)."
+
+  - id: FALSIFY-CX-RATCHET-005
+    rule: "STALE is enforced — a repaired function's row may not be kept"
+    prediction: "--selftest prints an ok row for the fixed-but-row-kept case"
+    test: "[ \"$(bash scripts/check_complexity_ratchet.sh --selftest | grep -c 'a fixed function whose row was kept')\" -eq 1 ]"
+    if_fails: "The baseline has decayed from a ratchet into an allowlist. A row that outlives its own repair silently re-admits the next regression at that coordinate."
+
+  - id: FALSIFY-CX-RATCHET-006
+    rule: "The thresholds are the pre-commit hook's two numbers, not a dial the guard may loosen"
+    prediction: "The guard sets MAX_CYCLOMATIC=30 and MAX_COGNITIVE=25"
+    test: "grep -q '^MAX_CYCLOMATIC=30$' scripts/check_complexity_ratchet.sh && grep -q '^MAX_COGNITIVE=25$' scripts/check_complexity_ratchet.sh"
+    if_fails: "CI would bless code the developer's own commit then refuses, which is the defect this contract is about, inverted."
+
+  - id: FALSIFY-CX-RATCHET-007
+    rule: "The baseline is ratcheted, not merely present: it is classified shrink-only and compared against a protected ref"
+    prediction: "check_baseline_ratchets.sh classifies complexity_baseline.txt as keyed2, and the guard calls baseline_ratchet_check with that kind"
+    test: "grep -q 'complexity_baseline.txt)' scripts/check_baseline_ratchets.sh && grep -q 'baseline_ratchet_check \"$REPO_ROOT\" \"$BASELINE_REL\" keyed2' scripts/check_complexity_ratchet.sh"
+    if_fails: "The baseline becomes an append-only allowlist: a row and its violation added in one commit satisfy NEW and STALE simultaneously, which is the laundering shape twelve guards in this repository accepted."
+
+  - id: FALSIFY-CX-RATCHET-008
+    rule: "The keyed2 comparator refuses a rise in EITHER integer, proved by its own case table"
+    prediction: "check_baseline_ratchets.sh --self-test carries rows for both integers rising and for the second rising while the first falls"
+    test: "[ \"$(grep -c 'keyed2 second integer raised' scripts/check_baseline_ratchets.sh)\" -ge 1 ] && [ \"$(grep -c 'keyed2 second up while first down' scripts/check_baseline_ratchets.sh)\" -ge 1 ] && bash scripts/check_baseline_ratchets.sh --self-test"
+    if_fails: "The pair is being ratcheted by one number. A cognitive regression under a falling cyclomatic would then be recordable, and cognitive is the metric every named offender in this contract fails."
+
+  - id: FALSIFY-CX-RATCHET-009
+    rule: "The guard is wired into the per-PR gate, not merely present in the tree"
+    prediction: "ci.yml names the guard in guard-runner-labels, both the case table and the check"
+    test: "[ \"$(grep -c 'check_complexity_ratchet.sh' .github/workflows/ci.yml)\" -ge 2 ]"
+    if_fails: "A reference is not an execution — the guard would sit unexecuted while being counted as enforcement (the #2327 defect class)."
+
+  - id: FALSIFY-CX-RATCHET-010
+    rule: "The universe is the hook's, not pmat's project scan, and it is not vacuous"
+    prediction: "The guard builds its file list from git ls-files UNION find, and refuses a universe under 5000 .rs files"
+    test: "grep -q 'MIN_RS_FILES=5000' scripts/check_complexity_ratchet.sh && grep -q \"git -C \\\"\\$root\\\" ls-files -- '\\*.rs'\" scripts/check_complexity_ratchet.sh"
+    if_fails: "Either the vacuity floor is gone — a collapsed scan reports zero offenders and reads exactly like a clean tree — or the universe narrowed to pmat's project scan, which .pmatignore trims by 1336 tracked .rs files the pre-commit hook still reads."
+
+qa_gate:
+  id: F-CX-RATCHET-001
+  name: "PMAT-746 — per-function complexity may only fall"
+  description: "Measures every tracked-or-present .rs file with pmat, reports every function over cyclomatic 30 or cognitive 25, and compares that set against a 715-row baseline: a function with no row is NEW, a recorded number that rose is GROWN, and a row whose function is repaired is STALE. The baseline itself is compared against origin/main with the keyed2 comparator, so a row may only leave it."
+  checks:
+    - "complexity_may_only_fall"
+    - "baseline_is_shrink_only"
+    - "guard_is_not_vacuous"

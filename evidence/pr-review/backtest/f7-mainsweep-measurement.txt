@@ -1,0 +1,10 @@
+# F7 remedy (b), measured: one git grep over origin/main with #2781's own needles
+# base c00ba00cb  head 808f1a9b2  22 needles  ->  rc=0, 1s, 1636 lines
+# of #2742's 46 added files, these 5 are hit:
+.claude/skills/apr-dogfood/SKILL.md
+contracts/apr-dogfood-coverage-v1.yaml
+crates/apr-cli/src/commands/test_llm_band.rs
+docs/benchmarking-gate-spec.md
+scripts/perf-receipt-fields.yaml
+# the hit on the prior art, verbatim:
+origin/main:crates/apr-cli/src/commands/test_llm_band.rs:51://! `receipt.r1.json` … `receipt.rN.json`. The cell's verdict is the conjunction

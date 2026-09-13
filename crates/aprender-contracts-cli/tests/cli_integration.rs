@@ -65,7 +65,7 @@ mod validate {
     #[test]
     fn valid_softmax_contract() {
         let path = super::contract_path("softmax-kernel-v1.yaml");
-        let contract = parse_contract(&path).unwrap();
+        let contract = parse_contract(&path).expect("fixture contract parses");
         let violations = validate_contract(&contract);
         let errors: Vec<_> = violations
             .iter()
@@ -77,7 +77,7 @@ mod validate {
     #[test]
     fn valid_rmsnorm_contract() {
         let path = super::contract_path("rmsnorm-kernel-v1.yaml");
-        let contract = parse_contract(&path).unwrap();
+        let contract = parse_contract(&path).expect("fixture contract parses");
         let violations = validate_contract(&contract);
         let errors: Vec<_> = violations
             .iter()
@@ -89,7 +89,7 @@ mod validate {
     #[test]
     fn valid_rope_contract() {
         let path = super::contract_path("rope-kernel-v1.yaml");
-        let contract = parse_contract(&path).unwrap();
+        let contract = parse_contract(&path).expect("fixture contract parses");
         let violations = validate_contract(&contract);
         let errors: Vec<_> = violations
             .iter()
@@ -101,7 +101,7 @@ mod validate {
     #[test]
     fn valid_activation_contract() {
         let path = super::contract_path("activation-kernel-v1.yaml");
-        let contract = parse_contract(&path).unwrap();
+        let contract = parse_contract(&path).expect("fixture contract parses");
         let violations = validate_contract(&contract);
         let errors: Vec<_> = violations
             .iter()
@@ -113,7 +113,7 @@ mod validate {
     #[test]
     fn valid_attention_contract() {
         let path = super::contract_path("attention-kernel-v1.yaml");
-        let contract = parse_contract(&path).unwrap();
+        let contract = parse_contract(&path).expect("fixture contract parses");
         let violations = validate_contract(&contract);
         let errors: Vec<_> = violations
             .iter()
@@ -125,7 +125,7 @@ mod validate {
     #[test]
     fn valid_matmul_contract() {
         let path = super::contract_path("matmul-kernel-v1.yaml");
-        let contract = parse_contract(&path).unwrap();
+        let contract = parse_contract(&path).expect("fixture contract parses");
         let violations = validate_contract(&contract);
         let errors: Vec<_> = violations
             .iter()
@@ -137,7 +137,7 @@ mod validate {
     #[test]
     fn valid_flash_attention_contract() {
         let path = super::contract_path("flash-attention-v1.yaml");
-        let contract = parse_contract(&path).unwrap();
+        let contract = parse_contract(&path).expect("fixture contract parses");
         let violations = validate_contract(&contract);
         let errors: Vec<_> = violations
             .iter()
@@ -148,9 +148,9 @@ mod validate {
 
     #[test]
     fn invalid_yaml_fails() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().expect("temp dir is creatable");
         let path = dir.path().join("bad.yaml");
-        std::fs::write(&path, "not: [valid: {{").unwrap();
+        std::fs::write(&path, "not: [valid: {{").expect("fixture file is writable");
         let result = parse_contract(&path);
         assert!(result.is_err());
     }
@@ -173,7 +173,7 @@ mod scaffold {
     #[test]
     fn scaffold_softmax() {
         let path = super::contract_path("softmax-kernel-v1.yaml");
-        let contract = parse_contract(&path).unwrap();
+        let contract = parse_contract(&path).expect("fixture contract parses");
         let trait_code = generate_trait(&contract);
         let test_code = generate_contract_tests(&contract);
         assert!(trait_code.contains("trait"));
@@ -183,7 +183,7 @@ mod scaffold {
     #[test]
     fn scaffold_activation() {
         let path = super::contract_path("activation-kernel-v1.yaml");
-        let contract = parse_contract(&path).unwrap();
+        let contract = parse_contract(&path).expect("fixture contract parses");
         let trait_code = generate_trait(&contract);
         assert!(trait_code.contains("fn"));
     }
@@ -200,7 +200,7 @@ mod kani {
     #[test]
     fn kani_softmax() {
         let path = super::contract_path("softmax-kernel-v1.yaml");
-        let contract = parse_contract(&path).unwrap();
+        let contract = parse_contract(&path).expect("fixture contract parses");
         let code = generate_kani_harnesses(&contract);
         assert!(code.contains("kani"));
     }
@@ -208,7 +208,7 @@ mod kani {
     #[test]
     fn kani_matmul() {
         let path = super::contract_path("matmul-kernel-v1.yaml");
-        let contract = parse_contract(&path).unwrap();
+        let contract = parse_contract(&path).expect("fixture contract parses");
         let code = generate_kani_harnesses(&contract);
         assert!(!code.is_empty());
     }
@@ -226,7 +226,7 @@ mod probar {
     #[test]
     fn probar_softmax_plain() {
         let path = super::contract_path("softmax-kernel-v1.yaml");
-        let contract = parse_contract(&path).unwrap();
+        let contract = parse_contract(&path).expect("fixture contract parses");
         let code = generate_probar_tests(&contract);
         assert!(code.contains("probar_tests"));
         assert!(code.contains("#[test]"));
@@ -236,8 +236,8 @@ mod probar {
     fn probar_softmax_wired() {
         let path = super::contract_path("softmax-kernel-v1.yaml");
         let bp = super::binding_path();
-        let contract = parse_contract(&path).unwrap();
-        let binding = parse_binding(&bp).unwrap();
+        let contract = parse_contract(&path).expect("fixture contract parses");
+        let binding = parse_binding(&bp).expect("fixture binding registry parses");
         let code = generate_wired_probar_tests(&contract, "softmax-kernel-v1.yaml", &binding);
         assert!(code.contains("proptest!"));
         assert!(code.contains("softmax"));
@@ -247,8 +247,8 @@ mod probar {
     fn probar_activation_wired() {
         let path = super::contract_path("activation-kernel-v1.yaml");
         let bp = super::binding_path();
-        let contract = parse_contract(&path).unwrap();
-        let binding = parse_binding(&bp).unwrap();
+        let contract = parse_contract(&path).expect("fixture contract parses");
+        let binding = parse_binding(&bp).expect("fixture binding registry parses");
         let code = generate_wired_probar_tests(&contract, "activation-kernel-v1.yaml", &binding);
         assert!(code.contains("CONTRACT: activation"));
     }
@@ -256,7 +256,7 @@ mod probar {
     #[test]
     fn probar_rmsnorm_plain() {
         let path = super::contract_path("rmsnorm-kernel-v1.yaml");
-        let contract = parse_contract(&path).unwrap();
+        let contract = parse_contract(&path).expect("fixture contract parses");
         let code = generate_probar_tests(&contract);
         assert!(code.contains("#[test]"));
     }
@@ -272,7 +272,7 @@ mod status {
     #[test]
     fn status_softmax_has_qa_gate() {
         let path = super::contract_path("softmax-kernel-v1.yaml");
-        let contract = parse_contract(&path).unwrap();
+        let contract = parse_contract(&path).expect("fixture contract parses");
         assert!(contract.qa_gate.is_some());
         assert_eq!(contract.equations.len(), 1);
         assert_eq!(contract.proof_obligations.len(), 9);
@@ -283,7 +283,7 @@ mod status {
     #[test]
     fn status_matmul_has_no_qa_gate() {
         let path = super::contract_path("matmul-kernel-v1.yaml");
-        let contract = parse_contract(&path).unwrap();
+        let contract = parse_contract(&path).expect("fixture contract parses");
         // matmul may or may not have qa_gate, just check it parses
         assert!(!contract.equations.is_empty());
     }
@@ -301,7 +301,7 @@ mod status {
         ];
         for name in contracts {
             let path = super::contract_path(name);
-            let contract = parse_contract(&path).unwrap();
+            let contract = parse_contract(&path).expect("fixture contract parses");
             assert!(
                 !contract.metadata.description.is_empty(),
                 "{name} has empty description"
@@ -323,7 +323,7 @@ mod audit {
     #[test]
     fn audit_softmax_contract() {
         let path = super::contract_path("softmax-kernel-v1.yaml");
-        let contract = parse_contract(&path).unwrap();
+        let contract = parse_contract(&path).expect("fixture contract parses");
         let report = audit_contract(&contract);
         assert_eq!(report.equations, 1);
         assert_eq!(report.obligations, 9);
@@ -335,8 +335,8 @@ mod audit {
     fn audit_softmax_with_binding() {
         let path = super::contract_path("softmax-kernel-v1.yaml");
         let bp = super::binding_path();
-        let contract = parse_contract(&path).unwrap();
-        let binding = parse_binding(&bp).unwrap();
+        let contract = parse_contract(&path).expect("fixture contract parses");
+        let binding = parse_binding(&bp).expect("fixture binding registry parses");
         let report = audit_binding(&[("softmax-kernel-v1.yaml", &contract)], &binding);
         assert_eq!(report.total_equations, 1);
         assert_eq!(report.implemented, 1);
@@ -350,8 +350,8 @@ mod audit {
     fn audit_activation_with_binding() {
         let path = super::contract_path("activation-kernel-v1.yaml");
         let bp = super::binding_path();
-        let contract = parse_contract(&path).unwrap();
-        let binding = parse_binding(&bp).unwrap();
+        let contract = parse_contract(&path).expect("fixture contract parses");
+        let binding = parse_binding(&bp).expect("fixture binding registry parses");
         let report = audit_binding(&[("activation-kernel-v1.yaml", &contract)], &binding);
         // activation has 3+ equations, silu is not_implemented
         assert!(report.total_equations >= 2);
@@ -360,7 +360,7 @@ mod audit {
     #[test]
     fn audit_flash_attention_no_binding() {
         let path = super::contract_path("flash-attention-v1.yaml");
-        let contract = parse_contract(&path).unwrap();
+        let contract = parse_contract(&path).expect("fixture contract parses");
         let report = audit_contract(&contract);
         assert!(report.equations > 0);
     }

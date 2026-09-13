@@ -3,10 +3,9 @@
 //! Provides a unified interface for different GPU backends:
 //! - CUDA (NVIDIA) - Primary, uses PTX
 //! - WGPU (WebGPU) - Cross-platform, uses WGSL (Vulkan/Metal/DX12/WebGPU)
-//! - Metal (Apple) - Native Apple GPU compute via manzana crate
+//! - Metal (Apple) - shader source only; no dispatcher (see `metal_shaders`)
 //! - Vulkan (cross-platform, future)
 
-#[cfg(all(target_os = "macos", feature = "metal"))]
 pub mod metal_shaders;
 
 /// Backend trait for GPU operations
@@ -57,10 +56,13 @@ impl Backend for CudaBackend {
     }
 }
 
-/// Metal backend (Apple GPUs)
+/// Metal backend (Apple GPUs) - placeholder
 ///
-/// Uses manzana crate for safe Rust Metal bindings on macOS.
-/// Enable with `--features metal` on macOS.
+/// Reports unavailable on every platform. This crate contains Metal shader
+/// source (`metal_shaders`) but no dispatcher: nothing here calls
+/// `MTLDevice::newLibraryWithSource` or `MTLComputeCommandEncoder`. On macOS,
+/// use the `wgpu` feature, which reaches Apple GPUs through wgpu's Metal
+/// backend and does execute.
 #[derive(Debug, Default)]
 pub struct MetalBackend;
 
@@ -69,30 +71,14 @@ impl Backend for MetalBackend {
         "Metal"
     }
 
-    #[cfg(all(target_os = "macos", feature = "metal"))]
     fn is_available(&self) -> bool {
-        manzana::metal::is_available()
+        false // No dispatcher; see struct docs.
     }
 
-    #[cfg(not(all(target_os = "macos", feature = "metal")))]
-    fn is_available(&self) -> bool {
-        false
-    }
-
-    #[cfg(all(target_os = "macos", feature = "metal"))]
-    fn device_count(&self) -> usize {
-        manzana::metal::MetalCompute::devices().len()
-    }
-
-    #[cfg(not(all(target_os = "macos", feature = "metal")))]
     fn device_count(&self) -> usize {
         0
     }
 }
-
-/// Metal device information (re-exported from manzana when feature enabled)
-#[cfg(all(target_os = "macos", feature = "metal"))]
-pub use manzana::metal::{CompiledShader as MetalShader, MetalBuffer, MetalCompute, MetalDevice};
 
 /// Vulkan backend (cross-platform) - placeholder
 #[derive(Debug, Default)]
