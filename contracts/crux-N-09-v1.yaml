@@ -1,0 +1,86 @@
+# CRUX-N-09 — OPTICS clustering
+# CRUX category N: Rust ML Framework Parity (linfa + burn).
+# Filed from the 2026-09-12 competitive sweep. Tracks GitHub #3155, epic #3146.
+# registry: false — this contract carries real falsification gates and claims no
+# exemption (operator ruling 2026-08-21, "no contract exemptions").
+
+metadata:
+  id: CRUX-N-09
+  version: "1.0.0"
+  created: "2026-09-12"
+  updated: "2026-09-12"
+  author: PAIML Engineering
+  registry: false
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "N — Rust ML Framework Parity"
+  competitor: linfa
+  demand_score: 3  # 1..5, medium priority in pmat work
+  intake_status: missing
+  github_issue: 3155
+  description: >
+    Density-based clustering with a reachability ordering. linfa-clustering ships OPTICS alongside K-Means, GMM and DBSCAN. aprender has DBSCAN but not OPTICS, so it cannot separate clusters of differing density -- DBSCAN's single global eps cannot do it at any value. Depends on the neighbour index (CRUX-N-03); started before it, OPTICS grows its own O(n^2) scan.
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - 'epic: https://github.com/paiml/aprender/issues/3146'
+  - 'story: https://github.com/paiml/aprender/issues/3155'
+  - 'competitor: https://github.com/rust-ml/linfa'
+
+equations:
+  dbscan_equivalence:
+    formula: |
+      ∀ eps: OPTICS(X).extract_dbscan(eps)  ≡  DBSCAN(X, eps)   as labelings
+    domain: "eps over >=5 values, >=3 fixtures"
+    codomain: "identical cluster labels"
+    invariants:
+    - "this is what proves the reachability ordering correct"
+    - "noise points receive reachability ∞ and label −1"
+
+  varying_density_separation:
+    formula: |
+      on a fixture with two clusters of different density:
+        (∀ eps: DBSCAN(X, eps) is wrong)  AND  extract_xi(ξ) is correct
+    domain: "varying-density fixture"
+    codomain: "bool (both halves)"
+    invariants:
+    - "the DBSCAN-fails half is asserted by SWEEPING eps, not assumed"
+    - "without both halves the ticket has not demonstrated why OPTICS exists"
+
+falsification_tests:
+- id: FALSIFY-CRUX-N-09-001
+  rule: "extract_dbscan reproduces DBSCAN exactly"
+  prediction: "for >=5 eps values on 3 fixtures, extract_dbscan(eps) labels are identical to DBSCAN(eps)"
+  test: >-
+    LIVE-PENDING - extract_dbscan reproduces DBSCAN exactly. No test surface exists today because the capability is unimplemented: OPTICS clustering (aprender#3155, CRUX-N-09). PROMOTE by authoring a test named extract_dbscan_equivalence in module `cluster/optics/tests` of crate `aprender-core`; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED and unfalsifiable-by-absence, NOT satisfied.
+  if_fails: rule 'extract_dbscan reproduces DBSCAN exactly' is violated — the linfa parity claim for CRUX-N-09 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation
+- id: FALSIFY-CRUX-N-09-002
+  rule: "varying density is separated where DBSCAN provably cannot be"
+  prediction: "an eps sweep shows every DBSCAN result wrong on the fixture, and extract_xi is correct"
+  test: >-
+    LIVE-PENDING - varying density is separated where DBSCAN provably cannot be. No test surface exists today because the capability is unimplemented: OPTICS clustering (aprender#3155, CRUX-N-09). PROMOTE by authoring a test named varying_density_where_dbscan_fails in module `cluster/optics/tests` of crate `aprender-core`; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED and unfalsifiable-by-absence, NOT satisfied.
+  if_fails: rule 'varying density is separated where DBSCAN provably cannot be' is violated — the linfa parity claim for CRUX-N-09 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation
+- id: FALSIFY-CRUX-N-09-003
+  rule: "the neighbour index is actually used"
+  prediction: "above the auto-select threshold the brute-force path is asserted NOT taken"
+  test: >-
+    LIVE-PENDING - the neighbour index is actually used. No test surface exists today because the capability is unimplemented: OPTICS clustering (aprender#3155, CRUX-N-09). PROMOTE by authoring a test named uses_spatial_index in module `cluster/optics/tests` of crate `aprender-core`; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED and unfalsifiable-by-absence, NOT satisfied.
+  if_fails: rule 'the neighbour index is actually used' is violated — the linfa parity claim for CRUX-N-09 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation
+
+proof_obligations:
+- type: invariant
+  property: "extract_dbscan reproduces DBSCAN exactly"
+- type: invariant
+  property: "varying density is separated where DBSCAN provably cannot be"
+- type: invariant
+  property: "the neighbour index is actually used"
+
+kani_harnesses:
+- id: KH-CRUX-N-09-001
+  obligation: dbscan_equivalence
+  property: dbscan_equivalence_holds_on_bounded_input
+  bound: 4
+- id: KH-CRUX-N-09-002
+  obligation: varying_density_separation
+  property: varying_density_separation_holds_on_bounded_input
+  bound: 4

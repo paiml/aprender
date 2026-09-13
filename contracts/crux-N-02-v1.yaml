@@ -1,0 +1,91 @@
+# CRUX-N-02 — PCA on SVD + TruncatedSVD
+# CRUX category N: Rust ML Framework Parity (linfa + burn).
+# Filed from the 2026-09-12 competitive sweep. Tracks GitHub #3148, epic #3146.
+# registry: false — this contract carries real falsification gates and claims no
+# exemption (operator ruling 2026-08-21, "no contract exemptions").
+
+metadata:
+  id: CRUX-N-02
+  version: "1.0.0"
+  created: "2026-09-12"
+  updated: "2026-09-12"
+  author: PAIML Engineering
+  registry: false
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "N — Rust ML Framework Parity"
+  competitor: linfa
+  demand_score: 5  # 1..5, critical priority in pmat work
+  intake_status: partial
+  github_issue: 3148
+  description: >
+    PCA computed via SVD on centered data rather than eigendecomposition of the covariance matrix. crates/aprender-core/src/preprocessing/pca.rs:334 currently forms the covariance matrix and calls SymmetricEigen, which squares the condition number and is O(d^3) in FEATURES. docs/BEATS.md records the resulting 18.6x loss vs sklearn -- the only measured sklearn loss in the scoreboard.
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - 'epic: https://github.com/paiml/aprender/issues/3146'
+  - 'story: https://github.com/paiml/aprender/issues/3148'
+  - 'competitor: https://github.com/rust-ml/linfa'
+
+equations:
+  pca_via_svd_not_covariance:
+    formula: |
+      fit(X) :  X_c = X − mean(X)
+                (U, S, V) = svd(X_c)
+                components_ = Vᵀ[:k] ;  explained_variance_ = S² / (n−1)
+        FORBIDDEN: any construction of Xᵀ·X (d×d covariance)
+    domain: "X ∈ R^{n×d}"
+    codomain: "components_ ∈ R^{k×d}, explained_variance_ratio_ ∈ [0,1]^k"
+    invariants:
+    - "covariance matrix is never materialized"
+    - "Σ explained_variance_ratio_ = 1.0 ± 1e-12 when k = min(n,d)"
+    - "deterministic sign convention => two fits give byte-identical components"
+
+  conditioning_advantage_is_real:
+    formula: |
+      for X with singular values spanning 1e0..1e-9:
+        ‖components_svd − components_exact‖_inf ≤ 1e-7
+        AND ‖components_covariance − components_exact‖_inf > 1e-7
+    domain: "ill-conditioned X"
+    codomain: "bool (both halves must hold)"
+    invariants:
+    - "the covariance path is asserted to FAIL the tolerance the SVD path passes"
+    - "a test showing only the success half does not discharge this obligation"
+
+falsification_tests:
+- id: FALSIFY-CRUX-N-02-001
+  rule: "the covariance path is gone"
+  prediction: "preprocessing/pca.rs constructs no d×d covariance matrix; anchored guard with a must-match/must-not-match case table"
+  test: >-
+    LIVE-PENDING - the covariance path is gone. No test surface exists today because the capability is unimplemented: PCA on SVD + TruncatedSVD (aprender#3148, CRUX-N-02). PROMOTE by authoring a test named the test named in the ticket in crate `the owning crate`; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED and unfalsifiable-by-absence, NOT satisfied.
+  if_fails: rule 'the covariance path is gone' is violated — the linfa parity claim for CRUX-N-02 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation
+- id: FALSIFY-CRUX-N-02-002
+  rule: "ill-conditioned input separates the two paths"
+  prediction: "on singular values spanning 1e0..1e-9 the SVD path is within 1e-7 of exact and the covariance path is asserted to exceed it"
+  test: >-
+    LIVE-PENDING - ill-conditioned input separates the two paths. No test surface exists today because the capability is unimplemented: PCA on SVD + TruncatedSVD (aprender#3148, CRUX-N-02). PROMOTE by authoring a test named ill_conditioned_separates_paths in module `preprocessing/pca/tests` of crate `aprender-core`; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED and unfalsifiable-by-absence, NOT satisfied.
+  if_fails: rule 'ill-conditioned input separates the two paths' is violated — the linfa parity claim for CRUX-N-02 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation
+- id: FALSIFY-CRUX-N-02-003
+  rule: "the BEATS.md loss row is re-measured, not deleted"
+  prediction: "beat-sklearn-pca-speed-v1.yaml exists with a measured ratio; a still-losing number is a PASS for this gate, a missing row is a FAIL"
+  test: >-
+    LIVE-PENDING - the BEATS.md loss row is re-measured, not deleted. No test surface exists today because the capability is unimplemented: PCA on SVD + TruncatedSVD (aprender#3148, CRUX-N-02). PROMOTE by authoring a test named readme_contract in crate `aprender-core`; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED and unfalsifiable-by-absence, NOT satisfied.
+  if_fails: rule 'the BEATS.md loss row is re-measured, not deleted' is violated — the linfa parity claim for CRUX-N-02 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation
+
+proof_obligations:
+- type: invariant
+  property: "the covariance path is gone"
+- type: invariant
+  property: "ill-conditioned input separates the two paths"
+- type: invariant
+  property: "the BEATS.md loss row is re-measured, not deleted"
+
+kani_harnesses:
+- id: KH-CRUX-N-02-001
+  obligation: pca_via_svd_not_covariance
+  property: pca_via_svd_not_covariance_holds_on_bounded_input
+  bound: 4
+- id: KH-CRUX-N-02-002
+  obligation: conditioning_advantage_is_real
+  property: conditioning_advantage_is_real_holds_on_bounded_input
+  bound: 4

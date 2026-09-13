@@ -328,7 +328,8 @@
    "PP-25 client sha256"
   ],
   "started_utc": "2026-09-04T23:54:26.923Z",
-  "started_utc_source": "apr-cpu-c1.config.json server.started_utc in the kept work dir on the host (copied here so the ledger row traces to the receipt)"
+  "started_utc_source": "apr-cpu-c1.config.json server.started_utc in the kept work dir on the host (copied here so the ledger row traces to the receipt)",
+  "validity_by_band_source": "hand-annotated 2026-09-05 by the release orchestrator (PMAT-966): the harness emitted c>1 bands with witness=null and no validity mark; --witness-json is opt-in"
  },
  "bench_attempt": {
   "status": "refused",
@@ -339,5 +340,11 @@
   "decided_by": "noah",
   "date": "2026-09-05",
   "text": "0.65.2 stays published. No yank, no 0.65.3. These four host receipts are the 0.66 baseline."
+ },
+ "validity": {
+  "correctness": "INVALID-CORRECTNESS",
+  "why": "this receipt measured qwen2.5-coder-1.5b on cuda before #2971 (GPU computes a different function from CPU at position 0: cosine 0.9508 on lambda); every number here is a throughput of a wrong computation",
+  "issue": "https://github.com/paiml/aprender/issues/2971",
+  "relabelled": "2026-09-06 (L0-1a)"
  }
 }

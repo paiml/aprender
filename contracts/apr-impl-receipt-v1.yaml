@@ -1,0 +1,195 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# apr-impl-receipt-v1 — an implementation receipt is complete only when its
+# terminal marker says so (PP-066 DAG row C0-7, epic #2873, issue #2984;
+# ticket PMAT-1056; driver STEP A6)
+#
+# WHAT IT GOVERNS
+#   docs/audits/impl-<ticket>-receipt.md: the leading YAML front matter's
+#   `status:` key (complete | partial), the write discipline (`.tmp` then
+#   `mv`), and the DAG write-back (docs/specifications/pp-066-dag.yaml may
+#   mark a row `status: complete` only over a receipt whose marker says
+#   complete). The PP-066 driver resumes from these receipts after any
+#   interruption; a receipt half-written when a usage limit hit, or whose
+#   prose says "done" while its DoD is open, must not read as finished.
+#
+# PROOF LADDER, STATED HONESTLY (PP-066 §5 contract discipline, F-26)
+#   * L1 — the resolver exists: scripts/check_receipt_complete.sh, wired in
+#          ci.yml job guard-runner-labels (case table, then the DAG).
+#   * L2 — falsification tests cover obligations, MEASURED: `--selftest`
+#          passes 13/13 (2026-09-05), including the registered mutation (a
+#          row marked complete over a partial receipt → RED).
+#   * L3/L4 — NOT APPLICABLE and deliberately not declared: markdown front
+#          matter and a YAML data file, not a kernel. No self-exemption
+#          flag, no hand-typed proof summary block, no Kani, no Lean.
+# ─────────────────────────────────────────────────────────────────────────────
+name: apr-impl-receipt
+version: "1.0.0"
+scope: >
+  The leading front matter of docs/audits/impl-*-receipt.md and the `status`
+  field of rows in docs/specifications/pp-066-dag.yaml. Out of scope: the
+  receipt's prose (what a receipt must SAY is AUTO-IMPL-SKILL-001 §7's
+  subject), and receipts written before this rule (they carry no marker and
+  read as `partial`; the rule arms forward through the DAG — a legacy row is
+  RED only once the DAG claims it complete).
+status: active
+
+metadata:
+  kind: pattern     # a marker-and-write-discipline rule over markdown and a
+                    # YAML data file, not a math kernel. Set EXPLICITLY so
+                    # `pv validate`'s `kernel` default never silently applies.
+  version: "1.0.0"
+  created: '2026-09-05'
+  last_modified: '2026-09-05'
+  author: PAIML Engineering
+  references:
+    - 'scripts/check_receipt_complete.sh — the guard: <receipt> · --dag [<dag>] · --selftest (13 rows)'
+    - '.github/workflows/ci.yml — job guard-runner-labels (case table, then the DAG)'
+    - 'docs/audits/pp-066-driver-prompt.md STEP A6 / STEP C — the resume rule (a receipt without status: complete is not complete)'
+    - 'docs/audits/impl-PMAT-1054-receipt.md, impl-PMAT-980-receipt.md, impl-PMAT-987-receipt.md — the first receipts written under the marker (status: partial until merged)'
+    - 'PP-066 DAG row C0-7, epic #2873, issue #2984'
+  description: >
+    A receipt opens with YAML front matter whose `status:` is `complete` or
+    `partial`; that key is set LAST by the writer, after every DoD item, and
+    the file is written as `<path>.tmp` then moved into place so it is either
+    wholly present or absent. A `partial=false` inside the prose is not a
+    marker. The DAG may mark a row `status: complete` only when its receipt's
+    marker says complete; the resume logic reads the marker and nothing else.
+    A tracked `*.tmp` receipt is a torn write that was committed and is
+    refused.
+
+equations:
+  marker_is_in_the_leading_front_matter:
+    formula: |
+      status(receipt) = the value of `status:` inside the block delimited by
+                        the FIRST line `---` and the next `---`
+                      ∈ { complete, partial }
+      any other shape (no front matter, no status key, a `---` block that is
+      not the first line, a prose `partial=false`) resolves to `none`
+    domain: 'every docs/audits/impl-*-receipt.md'
+    codomain: 'complete | partial | none | torn'
+    invariants:
+    - 'THE MARKER IS SET LAST, AND ONLY THE MARKER COUNTS (selftest rows 1–4, 7): a legacy receipt with `partial=false` in its prose resolves to none (row 3) — prose is what a half-written receipt already has.'
+    - 'A QUOTED VALUE STILL RESOLVES (row 6): `status: "complete"` is complete; the guard strips quotes and whitespace, never widens the vocabulary.'
+    preconditions: []
+    postconditions:
+    - 'check_one exits 0 only for complete; 1 for partial, none and torn'
+
+  torn_writes_are_refused:
+    formula: |
+      path ends with .tmp  =>  status = torn  (exit 1)
+      git ls-files 'docs/audits/impl-*-receipt.md.tmp' = ∅
+    domain: 'the receipt path, and the tracked tree'
+    codomain: 'bool'
+    invariants:
+    - 'WRITE .tmp, THEN mv (rows 5, 12): a receipt is wholly present or absent; a tracked .tmp is a torn write that a commit froze.'
+    preconditions: []
+    postconditions:
+    - '--dag names every tracked *.tmp receipt'
+
+  dag_completion_requires_a_complete_receipt:
+    formula: |
+      for r in dag.rows with r.status == "complete":
+        status(docs/audits/impl-<r.pmat_id>-receipt.md) == complete
+    domain: 'every DAG row marked complete'
+    codomain: 'bool'
+    invariants:
+    - 'THE DAG CLAIMS NOTHING THE RECEIPT DOES NOT (rows 9–11): complete over complete passes; complete over partial is the registered mutation and is RED; complete with no receipt is RED; an open row needs no receipt.'
+    - 'A MISSING DAG IS EXIT 2, NEVER A PASS (row 13): until the DAG lands on main (PR #2981) the live step is RED by design on a branch without it.'
+    preconditions:
+    - 'the DAG parses and every complete row carries a pmat_id (a row without one is reported with UNKNOWN and fails)'
+    postconditions:
+    - 'the PASS line is printed only when every complete row resolved to complete and no torn receipt is tracked'
+
+  enforcement_is_wired_case_table_then_dag:
+    formula: |
+      ci.yml job "guard-runner-labels" contains, in order:
+        step: run "bash scripts/check_receipt_complete.sh --selftest"
+        step: run "bash scripts/check_receipt_complete.sh --dag docs/specifications/pp-066-dag.yaml"
+    domain: 'the step list of job guard-runner-labels in .github/workflows/ci.yml'
+    codomain: 'bool'
+    invariants:
+    - 'CASE TABLE BEFORE THE LIVE CHECK (Verification Discipline #7).'
+    preconditions:
+    - 'guard-runner-labels is in gate.needs, so a RED here fails gate transitively'
+    postconditions:
+    - 'check_guards_are_wired.sh names the guard as wired'
+
+proof_obligations:
+  - id: RCPT-OB-001
+    statement: "Only the status key of the leading front matter decides completeness; prose never does."
+    discharged_by: falsification_tests[0]
+  - id: RCPT-OB-002
+    statement: "A *.tmp receipt is refused, on disk and in the tracked tree."
+    discharged_by: falsification_tests[1]
+  - id: RCPT-OB-003
+    statement: "A DAG row marked complete requires a receipt whose marker says complete; a missing DAG is exit 2."
+    discharged_by: falsification_tests[2]
+  - id: RCPT-OB-004
+    statement: "The guard is wired in ci.yml's guard-runner-labels, case table before the DAG."
+    discharged_by: falsification_tests[3]
+
+falsification_tests:
+
+  - id: RCPT-F-001
+    rule: the marker, and only the marker
+    prediction: >-
+      status: complete PASSES (row 1); status: partial FAILS (row 2); a legacy
+      receipt with prose partial=false FAILS (row 3); front matter without a
+      status key FAILS (row 4); a quoted value PASSES (row 6); a `---` block
+      that is not the first line FAILS (row 7); a missing file FAILS (row 8).
+      One --selftest run exercises every row; there is no per-row filter.
+    test: 'bash scripts/check_receipt_complete.sh --selftest'
+    if_fails: >-
+      a half-written receipt resumes as finished and a ticket is never
+      re-entered
+    mutation: >-
+      make receipt_status accept `partial=false` anywhere in the file as
+      complete; row 3 must turn RED.
+
+  - id: RCPT-F-002
+    rule: torn writes are refused
+    prediction: >-
+      A *.tmp path FAILS (row 5); a tracked *.tmp receipt makes --dag FAIL
+      naming it (row 12).
+    test: 'bash scripts/check_receipt_complete.sh --selftest'
+    if_fails: >-
+      a truncated receipt committed mid-write reads as a receipt
+    mutation: >-
+      drop the `git ls-files '*.tmp'` clause from check_dag; row 12 must turn
+      RED.
+
+  - id: RCPT-F-003
+    rule: DAG completion requires a complete receipt
+    prediction: >-
+      A complete row over a complete receipt PASSES (row 9); over a partial
+      receipt FAILS (row 10, the registered mutation); with no receipt FAILS
+      (row 11); a missing DAG is exit 2 (row 13).
+    test: 'bash scripts/check_receipt_complete.sh --selftest'
+    if_fails: >-
+      the DAG becomes the record of completion and the receipt a decoration
+    mutation: >-
+      flip a DAG row to status: complete while its receipt says partial;
+      `bash scripts/check_receipt_complete.sh --dag` must turn RED naming the
+      row and the receipt.
+
+  - id: RCPT-F-004
+    rule: the guard is wired, case table then DAG
+    prediction: >-
+      check_guards_are_wired.sh names no unwired guard while ci.yml carries
+      both steps; removing both lines makes it name check_receipt_complete.sh.
+    test: 'bash scripts/check_guards_are_wired.sh'
+    if_fails: >-
+      the guard exists and gates nothing (class #2878)
+    mutation: >-
+      delete the two `run: bash scripts/check_receipt_complete.sh` lines from
+      ci.yml; check_guards_are_wired.sh must turn RED naming the script.
+
+non_goals:
+  - "What a receipt must contain (identity, dispatch ledger, verification table, gaps) — AUTO-IMPL-SKILL-001 §7 and receipt-lint.sh own that."
+  - "Rewriting receipts that predate the marker; they read as partial, and the rule arms forward through the DAG."
+
+binding_registry:
+  guard: scripts/check_receipt_complete.sh
+  ci_job: guard-runner-labels          # inside gate.needs (.github/workflows/ci.yml)
+  make_target: tier3
+  issue: "https://github.com/paiml/aprender/issues/2984"

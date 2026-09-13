@@ -1,6 +1,6 @@
 ---
-status: partial
-partial_reason: "this PR is not yet merged on the required check; flip to complete with the DAG status write-back after merge"
+status: complete
+merged: "PR #2985 squash cdc0acb99, 2026-09-05T16:44:33Z, through the merge queue (queue CI run 33975501157: ci / gate + workspace-test green)"
 ticket: PMAT-1054
 row: C0-5
 issue: 2982
@@ -65,5 +65,10 @@ Discrimination: under mutation 1 `scripts/check_pr_review_wiring.sh` stays rc 0 
 ## Estimates
 `K̂=184 basis=docs/audits/impl-estimates.jsonl:L1-L7`; actual orchestrator turns ≈ 13 for P_0–P_4; rows appended to `docs/audits/impl-estimates.jsonl`.
 
+## Merge evidence (orchestrator, after the fact)
+- Merged as `cdc0acb99` (#2985) at 2026-09-05T16:44:33Z through the merge queue; queue CI run 33975501157: `ci / gate` and `workspace-test` green; the pull_request run 33972942257 had every gate leg green (`ci / gate`, `workspace-test`, `mutants`, `guard-runner-labels`).
+- The mechanism engaged on the queue: `pr-review-quorum.yml` fired on `merge_group` (run 33975500851, job `present`, runner intel-clean-room-8), resolved `pr=2985` from the queue ref and `head=cdc0acb99` (the queue's merge commit, of which the PR head is an ancestor; Arm 4 accepts an ancestor-bound receipt), and reported `A2 no receipt directory at evidence/pr-review/2985` → RED. That RED is the missing receipt this session does not produce (driver A1: receipts advisory), on a context no ruleset requires; it did not block the merge and is the expected shape until receipts are re-armed.
+- A1–A3 re-run on the merged tree (main `cdc0acb99` + the plan docs): `check_receipt_gate_base_owned.sh --self-test` rc 0, live rc 0; `check_pr_review_wiring.sh` rc 0 (and `--selftest` rc 0); `gate.needs = [ci, workspace-test, mutants, guard-runner-labels]`; the quorum workflow's `on:` = `[pull_request_target, merge_group]`, job `present` gated on exactly those two events. A3: protection contexts `ci / gate`, `workspace-test` (strict) and ruleset "Green Main" → `gate`, unchanged by the session (read back after the merge).
+
 ## Verdict
-PENDING-MERGE (`status: partial`): every A_i re-run green by the orchestrator; DoD's "merged green on the required check" is the one open item.
+DONE (`status: complete`): every A_i re-run green by the orchestrator on the merged tree; merged green on the required checks.

@@ -59,6 +59,10 @@ pub fn build_kernel_compatibility(
             "Linear attention WKV recurrence (no softmax): {} channels",
             size.num_heads
         ),
+        AttentionType::HybridGatedDeltaNet => format!(
+            "Hybrid Gated DeltaNet: gated-delta-rule linear-attention layers + full attention layers ({} Q / {} KV heads); refused by apr on CPU and GPU",
+            size.num_heads, size.num_kv_heads
+        ),
     };
 
     // FFN kernel description

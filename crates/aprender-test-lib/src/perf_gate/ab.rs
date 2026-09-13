@@ -225,7 +225,7 @@ impl AbRecord {
             return None;
         }
         let mut pairs = Vec::with_capacity(self.order.len() / 2);
-        for (k, chunk) in self.order.chunks_exact(2).enumerate() {
+        for (k, chunk) in self.order.as_chunks::<2>().0.iter().enumerate() {
             let (first, second) = (chunk[0], chunk[1]);
             if first == second {
                 // Two runs of the same arm back to back: this is a block, not

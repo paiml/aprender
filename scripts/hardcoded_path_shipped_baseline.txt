@@ -1,1 +1,10 @@
-277
+# scripts/hardcoded_path_shipped_baseline.txt - the shipped-tier machine-specific-path count, STAMPED (PMAT-1059, G-10, #2999).
+# A baseline is (count, pmat_version, basis). Without all three it is INVALID and is not a number:
+# check_hardcoded_paths.sh never compares a count across instruments. It REPORTs BASELINE-STALE or
+# BASELINE-INVALID and decides HEAD vs merge-base under the pin in scripts/pmat_bin.sh (delta <= 0 passes).
+# Re-baselining is its own ticket, re-measured under the pin, stamped, never a raise.
+# 277 was recorded 2026-09-05 (#2985) with no instrument named; the pin (3.37.0) and 3.38.0 both count 317
+# on that tree. It stays INVALID until the re-baseline ticket (PMAT-1061) measures it under the pin.
+count: 277
+pmat_version: INVALID
+basis: UNMEASURED

@@ -1,0 +1,1 @@
+{"data": {"repository": {"mergeQueue": {"entries": {"nodes": [{"pullRequest": {"number": 100, "id": "PR_node_100"}, "state": "AWAITING_CHECKS", "headCommit": {"oid": "abc"}}]}}, "milestones": {"nodes": [{"title": "0.67.0", "pullRequests": {"nodes": []}}]}}}}

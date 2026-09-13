@@ -284,13 +284,13 @@ fn plan_byte_determinism_across_two_runs() {
 }
 
 #[test]
-fn plan_all_keyword_writes_18_per_layer_files_for_one_layer() {
-    // The `all` keyword expands to 18 stages. With layer range `0..1` and
-    // a single layer, we expect 16 per-layer files + 2 whole-model files.
+fn plan_all_keyword_writes_23_per_layer_files_for_one_layer() {
+    // The `all` keyword expands to 23 stages. With layer range `0..1` and
+    // a single layer, we expect 21 per-layer files + 2 whole-model files.
     let tmp = tempfile::tempdir().expect("tempdir");
     let plan =
         SaveTensorPlan::from_cli("all", "0..1", tmp.path().to_path_buf()).expect("plan parses");
-    assert_eq!(plan.stages.len(), 18);
+    assert_eq!(plan.stages.len(), 23);
 
     // Build a sequence with one entry per stage, all on layer 0.
     let sequence: Vec<_> = SaveTensorStage::ALL
@@ -299,10 +299,34 @@ fn plan_all_keyword_writes_18_per_layer_files_for_one_layer() {
         .collect();
 
     let written = execute_plan_against_sequence(&plan, &sequence);
+
+    // Stale test (the contract moved, the code is right): Enumerate all 23 expected stages to verify growth
+    let mut actual_names: Vec<String> = written
+        .iter()
+        .map(|p| {
+            p.file_stem()
+                .and_then(|s| s.to_str())
+                .expect("every written path has a utf-8 stem")
+                .to_string()
+        })
+        .collect();
+    actual_names.sort();
+
+    let mut expected_names: Vec<String> = SaveTensorStage::ALL
+        .iter()
+        .map(|s| s.canonical_name().to_string())
+        .collect();
+    expected_names.sort();
+
+    assert_eq!(
+        actual_names, expected_names,
+        "`all` + layer 0..1 should produce exactly these 23 stage files"
+    );
+
     assert_eq!(
         written.len(),
-        18,
-        "`all` + layer 0..1 should produce all 18 stage files"
+        23,
+        "`all` + layer 0..1 should produce all 23 stage files"
     );
 
     // Per-layer stages live under layer-0/; whole-model stages live at root.
@@ -310,11 +334,22 @@ fn plan_all_keyword_writes_18_per_layer_files_for_one_layer() {
         .iter()
         .filter(|s| s.is_per_layer())
         .count();
-    let whole_model_count = SaveTensorStage::ALL
+    let whole_model_count = SaveTensorStage::ALL.len() - per_layer_count;
+
+    assert_eq!(per_layer_count, 21);
+    assert_eq!(whole_model_count, 2);
+
+    let per_layer_written = written
         .iter()
-        .filter(|s| !s.is_per_layer())
+        .filter(|p| p.parent().is_some_and(|d| d.ends_with("layer-0")))
         .count();
-    assert_eq!(per_layer_count + whole_model_count, 18);
+    let root_written = written
+        .iter()
+        .filter(|p| p.parent() == Some(tmp.path()))
+        .count();
+
+    assert_eq!(per_layer_written, 21);
+    assert_eq!(root_written, 2);
 
     // Sanity-check: layer-0/ contains the per-layer files; root contains
     // the whole-model files.
