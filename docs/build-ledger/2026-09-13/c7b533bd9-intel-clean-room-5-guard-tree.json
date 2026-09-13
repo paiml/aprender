@@ -1,0 +1,27 @@
+{
+  "spec": "APR-RELEASE-001",
+  "section": "3.6",
+  "sha": "c7b533bd9ebd5e0ecb53e8d9ddc432a721fed0ed",
+  "host": "intel-clean-room-5",
+  "host_class": "intel",
+  "job": "guard-tree",
+  "workflow": "CI",
+  "event": "pull_request",
+  "run_id": "34717514157",
+  "job_id": "103617298901",
+  "queue_wait_s": 31,
+  "exec_s": 144,
+  "total_s": 175,
+  "peak_rss_mb": null,
+  "free_disk_gb": null,
+  "exit": 1,
+  "conclusion": "cancelled",
+  "created_at": "2026-09-12T20:35:00Z",
+  "started_at": "2026-09-12T20:35:31Z",
+  "completed_at": "2026-09-12T20:37:55Z",
+  "unmeasured": [
+    "peak_rss_mb [U] — not exposed by the Actions REST API",
+    "free_disk_gb [U] — not exposed by the Actions REST API"
+  ],
+  "source": "gh api repos/paiml/aprender/actions/runs/<run>/jobs"
+}
