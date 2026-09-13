@@ -11,6 +11,7 @@ classification the script is allowed to emit:
 | `hang` | sleeps forever | `timeout` (only the `timeout(1)` wrapper can decide this) |
 | `needs_arg` | prints a `Usage:` line to stderr, exits 2 | `needs-args`, citing that line |
 | `nohw` | prints a CUDA driver error to stderr, exits 1 | `needs-hardware`, citing that line |
+| `nodata` | prints `Model not found at …` and `Download with: apr pull hf://…` to stderr, exits 1 | `needs-data`, citing that line |
 
 The manifest is `Cargo.toml.in`, not `Cargo.toml`, on purpose: a nested real
 manifest inside the repo tree is a second package that `cargo metadata`,
