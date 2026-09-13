@@ -2637,7 +2637,14 @@ jobs:
   # -j6` rc=0 and `cargo check -p aprender-core --lib` rc=0 (~/mini-measure.log).
   macos-arm64:
     runs-on: [self-hosted, macOS, ARM64, apple-silicon, mini]
-    timeout-minutes: 40
+    # 60, and the basis is honest about what it does NOT know. BSE-05 derives T
+    # from this job's own p99, and this job has no history for the workspace
+    # step added below: 3m43s was measured WARM on the box, and the first CI run
+    # after a cache wipe builds 79 packages cold on 10 cores at
+    # CARGO_BUILD_JOBS=6. That number is unmeasured, so the timeout is set wide
+    # enough that the first run reports a RESULT rather than a timeout, and
+    # tightened from evidence once this leg has a p99 like every other job.
+    timeout-minutes: 60
     env:
       CARGO_BUILD_JOBS: 6        # 16 GB box: never all 10 cores on a workspace build
       CARGO_INCREMENTAL: 0
@@ -2659,6 +2666,40 @@ jobs:
           set -euo pipefail
           export PATH="$HOME/.cargo/bin:/opt/homebrew/bin:$PATH"
           cargo test -p aprender-compute --lib --locked -- --test-threads=4
+      # THE WHOLE WORKSPACE, because two crates was not coverage and was not work.
+      #
+      # This leg ran for 32 SECONDS per PR (measured 2026-09-13, job
+      # 103736930145: 5s checking aprender-core, 20s on the SIMD tests) while
+      # intel spent an hour on the same commit. mini is 10 cores / 16 GB and the
+      # operator's ruling makes it a full-time aprender build host; a 32-second
+      # job is neither.
+      #
+      # MEASURED ON THE BOX BEFORE BEING WRITTEN HERE: `cargo check --workspace
+      # --lib` is 1m01s over 79 packages and the suite below is 3m43s, warm.
+      # That is 7x the work, and it is the ONLY darwin/arm64 coverage the repo
+      # has.
+      #
+      # It pays for itself immediately. The first full run produced exactly one
+      # failure — `test_read_system_memory_total_mb` asserting /proc/meminfo
+      # exists — a Linux assumption that had been sitting in a test whose own
+      # doc line said "On Linux". No Linux runner can find that class, by
+      # construction.
+      #
+      # THE THREE EXCLUSIONS ARE THE SAME ONES workspace-test USES, for the same
+      # reason: aprender-gpu, aprender-cuda-edge and aprender-compute need a CUDA
+      # toolchain. aprender-compute is tested on its own above, natively, which is
+      # the point of this runner.
+      #
+      # --test-threads=4, not the default 10: a 16 GB box running 10 test threads
+      # over 79 packages is how a runner starts swapping and reports a timeout
+      # instead of a result.
+      - name: Workspace unit tests, natively on darwin/arm64
+        run: |
+          set -euo pipefail
+          export PATH="$HOME/.cargo/bin:/opt/homebrew/bin:$PATH"
+          cargo test --workspace --lib --locked \
+            --exclude aprender-gpu --exclude aprender-cuda-edge --exclude aprender-compute \
+            -- --test-threads=4
 
   gate:
     runs-on: [self-hosted, Linux, clean-room]   # arch-neutral: intel, yoga or gx10 (#3100)
