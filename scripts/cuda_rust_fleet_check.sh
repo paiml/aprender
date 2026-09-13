@@ -31,6 +31,17 @@ while [ $# -gt 0 ]; do
     *) echo "unknown arg: $1" >&2; exit 64;;
   esac; shift
 done
+# REPO is a path this script will `cd` into and build in. It arrives from the environment
+# (REPO_ROOT) or the command line (--repo), so refuse anything relative or traversing before
+# the first use — a relative or ..-bearing path would build somewhere other than what was named.
+if [ -n "$REPO" ]; then
+  case "$REPO" in
+    /*) ;; *) echo "refused: --repo/REPO_ROOT must be an absolute path, got '$REPO'" >&2; exit 2;;
+  esac
+  case "$REPO" in
+    *..*) echo "refused: --repo/REPO_ROOT must not contain '..', got '$REPO'" >&2; exit 2;;
+  esac
+fi
 [ -n "$MODE" ] || { echo "usage: --local | --host H | --self-test" >&2; exit 64; }
 
 # ---------------------------------------------------------------- verdict (pure) ----
@@ -126,7 +137,7 @@ fi
 # ----------------------------------------------------------------- local mode ------
 export PATH="$HOME/.cargo/bin:/usr/local/cuda/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
 OUT="${OUT:-$HERE/evidence/cuda-rust-fleet}"; mkdir -p "$OUT"
-HOSTN=$(hostname); NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+HOSTN=$(hostname); NOW=$(date -u -d "@${SOURCE_DATE_EPOCH:-$(date +%s)}" +%Y-%m-%dT%H:%M:%SZ)
 PROBES=$(cd "$HERE/experiments/cuda-rust-probes" 2>/dev/null && pwd || true)
 [ -n "$PROBES" ] || PROBES="$HOME/.cuda-rust-fleet/experiments/cuda-rust-probes"
 declare -a IDS STATUS REASON CMDS
