@@ -498,7 +498,8 @@ self_test() {
 # ---------------------------------------------------------------------------
 
 main() {
-    if [ "${1:-}" = "--self-test" ]; then
+    # No arguments (guard_tree.sh runs every cargo-free guard bare): the self-test IS the bare run.
+    if [ $# -eq 0 ] || [ "${1:-}" = "--self-test" ]; then
         self_test
         exit $?
     fi
