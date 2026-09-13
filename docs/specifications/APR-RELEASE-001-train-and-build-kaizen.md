@@ -54,7 +54,7 @@ train. p95 is `[U]` until §5 P0 lands.
 | `gx10` — aarch64 GB10, sm_121, 120 GB unified; **not** a documented general runner | `infra/machines/gx10/forjar.yaml` | `[V]` snapshot |
 | `main` protected; required check literally named `ci / gate` | org ruleset | `[V]` |
 | Last tag = `git describe --tags --abbrev=0` on `main`; next minor = that + 1 | git | `[V]` live |
-| p95 `ci / gate`, tag→publish, attended cascade time | — | `[U]` unmeasured |
+| p95 `ci / gate`, tag→publish, cascade wall time (automated) | — | `[U]` unmeasured |
 | `workspace-test` is pinned `runs-on: [self-hosted, X64, Linux, clean-room]` (#3104) — the long pole never lands on gx10; #3139 lifts the pin (795 s on gx10-pool3, 34693750990) | `.github/workflows/ci.yml` | `[V]` 2026-09-12 |
 | gx10 and yoga: `/mnt/nvme-raid0 -> /home/noah/eph-work/intel-mirror`; per-PR target dirs under `targets/{aprender-ci,sovereign-ci-aprender}/<pr>`; pool runners are docker containers (`sovereign-gpu-runner:2.337.0`); no reaper existed until 2026-09-12 (gx10 hit 100 %, 146 GB reclaimed by hand, then declared in forjar) | `ssh gx10`, `ssh yoga`, `machines/{gx10,yoga}/forjar.yaml` | `[V]` 2026-09-12 |
 
@@ -87,11 +87,13 @@ Live `forjar.yaml` beats this table. Record the diff in the receipt and continue
    automatic. *(Amended 2026-09-12: "you DO HAVE SSH (ssh gx10, ssh yoga)".)*
 6. **Ledger is append-only, one file per run:** `docs/build-ledger/<YYYY-MM-DD>/<sha>-<host>-<job>.json`.
    Never a shared file (G-11 rebuild-storm class). The ledger *is* the project memory.
-7. **Publishing is unchanged and attended.** Clean-room is the hard gate, named first. Then
-   `scripts/publish_cascade.sh` from a detached checkout of the promoted tag — dry-run
-   receipt, one crate per call, stop on first non-zero, never `--allow-dirty`. No workflow
-   runs `cargo publish`. This is the **only** attended step; anything else needing Noah is
-   a §8 stop.
+7. **Publishing is automated — the train publishes itself (operator ruling 2026-09-13:
+   "T4 is never mine … releases are automated by release train … for ALL releases").**
+   Pre-publish dogfood GO on the release commit, every release asset present and verified,
+   publish preflight R1–R6 green ⟹ `scripts/cascade-drain.sh --target 0.N.0 --passes 30`
+   runs from the detached checkout of the promoted tag, one crate per call, never
+   `--allow-dirty`. No workflow runs `cargo publish`; the autopilot on the driver host does.
+   There is **no** attended step; anything needing Noah is a §8 stop.
 8. `pmat work add` from the driver session only. Stop the line on RED — no reruns-as-passes,
    no `--skip`, no waivers.
 
@@ -103,7 +105,7 @@ Live `forjar.yaml` beats this table. Record the diff in the receipt and continue
 | **T-1 Deep** | `ci / deep` green on cut sha: full tests, doctests, `--no-default-features`, feature matrix, GPU, every `cargo run --example` | green run recorded for this sha |
 | **T-2 Dogfood** | `apr-dogfood` skill go/no-go receipt; `apr-cookbook` current; release notes generated | receipt exists for this sha |
 | **T-3 Promote** | tag; clean-room on the tag; GitHub release with T-2 receipt attached | release `v0.N.0` exists |
-| **T-4 Publish** | **attended** — cascade dry-run receipt, then Noah runs the cascade; record attended minutes | all crates at `0.N.0` on crates.io |
+| **T-4 Publish** | **automated** — the autopilot runs `cascade-drain.sh` after T-3's preflight; record cascade wall minutes; attended minutes are 0 by construction | all crates at `0.N.0` on crates.io |
 
 Any step RED → SKIPPED, no partial promotion. Scope is assigned to trains after the fact:
 0.67 contains whatever merged before the 0.67 cut, by definition.
@@ -180,7 +182,7 @@ mechanism.
 
 ```
 APR-RELEASE-001 | did=<TRAIN|BUILD|TRIAGE|NOOP> | train=v0.<N>.0 | verdict=<SHIPPED|SKIPPED|MERGED|NOOP>
-train:   step reached <T-0..T-4> | skip reason <none|…> | attended min <n|[U]>
+train:   step reached <T-0..T-4> | skip reason <none|…> | cascade wall min <n|[U]> | attended min 0
 build:   row <P0..P3|none> | PR <url|none> | records added <n>
 gate:    p95 ci/gate <min|[U]> | max PRs/train <n|[U]> | queue p95 intel <s> yoga <s> gx10 <s>
 pack:    intel <busy>/<online> | gx10 <busy>/<online> | yoga <busy>/<online> | intel-pressure <yes|no> | verdict <OK|P0-UNDERUTILIZED>
@@ -209,6 +211,6 @@ next:    train eligible at <timestamp>
 K̂ = 14 sessions (10 trains to `0.76` + P0, P1, infra, P2) · K = 18 · andon at 16 sessions
 or 2 consecutive skips `[A]`.
 
-The 82-crate cascade is the only attended step and is unmeasured. Record attended minutes
-at T-4 on the `0.67` train. Above ~20 min `[A]`, a 48–72 h takt costs ~4 h/month of
-babysitting and the cascade — not the build — becomes the next kaizen target.
+The 82-crate cascade is automated (ruling 2026-09-13) and its wall time is unmeasured.
+Record cascade wall minutes at T-4 on the `0.67` train. Above ~20 min `[A]` it delays the
+post-publish receipts and the cascade — not the build — becomes the next kaizen target.
