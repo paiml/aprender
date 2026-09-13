@@ -28,7 +28,14 @@
 # are new or genuinely edited.
 #
 #   bash scripts/check_roadmap_diff_additive.sh [<base-ref> [<head-ref>]]
+#   bash scripts/check_roadmap_diff_additive.sh --staged      # judge the INDEX
 #   bash scripts/check_roadmap_diff_additive.sh --self-test
+#
+# --staged is the pre-commit entry point (.githooks/pre-commit, B4, #3047): the
+# same rule set, run against `git write-tree` — the bytes that would be
+# committed — so the remedy is named at `git commit` instead of eleven minutes
+# later in CI. Before it, scripts/roadmap_trim.py had ZERO call sites: every
+# reference to the repo's own remedy was prose.
 #
 # DEFAULTS: base = `git merge-base origin/main HEAD`, head = `HEAD` — the
 # same base a PR will be merged against and the tip it currently sits at. A
@@ -368,12 +375,102 @@ EOF
     case "$got4" in "$want4|first parent of HEAD (HEAD is the origin/main tip"*) printf 'ok    row %-2s push shape: HEAD on the origin/main tip -> its first parent, never HEAD itself\n' "$row" ;;
         *) printf 'FAIL  row %-2s push shape: wanted %s|first parent of HEAD (HEAD is the origin/main tip..., got %s\n' "$row" "$want4" "$got4"; fails=1 ;; esac
     row=$((row + 1))
-    rm -rf "$R.shallow"; git clone -q --depth=1 -b main "file://$R" "$R.shallow" 2>/dev/null; git -C "$R.shallow" update-ref refs/remotes/origin/main HEAD
+    rm -rf "${R:?}.shallow"; git clone -q --depth=1 -b main "file://$R" "$R.shallow" 2>/dev/null; git -C "$R.shallow" update-ref refs/remotes/origin/main HEAD
     rc5=0; err5=$( cd "$R.shallow" && bash -c '. "$0" --lib-only; REPO_ROOT="$1"; resolve_base HEAD' "$SELF" "$R.shallow" 2>&1 >/dev/null ) || rc5=$?
     case "$rc5:$err5" in
         0:*) printf 'FAIL  row %-2s push shape, parent not fetched: resolved a base (rc=0) instead of refusing\n' "$row"; fails=1 ;;
         *"never the tree against itself"*) printf 'ok    row %-2s push shape, parent not fetched (depth-1): refused by name, never HEAD itself\n' "$row" ;;
         *) printf 'FAIL  row %-2s push shape, parent not fetched: refused for the wrong reason (rc=%s): %s\n' "$row" "$rc5" "$err5"; fails=1 ;;
+    esac
+    # Rows 19-20: a STACKED merge-group entry at depth 1 — the head's single parent
+    # is the previous entry's squash, not the origin/main tip. Under merge_group it
+    # deepens and names that parent; with deepening disabled (the mutation) it is
+    # refused by name — the shape that turned two of every three queue builds RED
+    # on 2026-09-12 (runs 34704287677, 34704288441). Self-contained repo: main =
+    # c1 (the tip the queue started from) -> c2 (entry 1's squash) -> c3 (entry 2's
+    # squash); origin/main := c1; a depth-1 clone sees c3 with c2 not fetched.
+    row=$((row + 1))
+    Q="$TD/stacked-src"; rm -rf "${Q:?}"; ( git init -q -b main "$Q" && cd "$Q" && git config user.email t@t && git config user.name t \
+        && cp "$TD/base.yaml" r.yaml && git add r.yaml && git commit -qm c1 \
+        && cp "$TD/append.yaml" r.yaml && git commit -qam c2-entry-1-squash \
+        && printf 'entry-2\n' > other.txt && git add other.txt && git commit -qm c3-entry-2-squash && git branch -q queue-base 'HEAD~2' ) 2>/dev/null
+    # The job fetches origin/main at depth 1 (its object IS present); c2 is not. A shallow clone cannot
+    # point a ref at an object it lacks, so the tip is fetched by name instead of update-ref'd.
+    rm -rf "${Q:?}.clone"; git clone -q --depth=1 -b main "file://$Q" "$Q.clone" 2>/dev/null; git -C "$Q.clone" fetch -q --depth=1 origin '+queue-base:refs/remotes/origin/main' 2>/dev/null
+    want6=$( git -C "$Q" rev-parse 'HEAD^1' )
+    got6=$( GITHUB_EVENT_NAME=merge_group bash -c 'cd "$2" || exit 2; . "$0" --lib-only; REPO_ROOT="$1"; resolve_base HEAD && printf "%s|%s" "$BASE_REF" "$BASE_HOW"' "$SELF" "$Q.clone" "$Q.clone" 2>/dev/null ) || true
+    case "$got6" in "$want6|single parent (stacked merge_group entry"*) printf 'ok    row %-2s stacked merge_group entry at depth-1 -> deepened, base = the previous entry squash\n' "$row" ;;
+        *) printf 'FAIL  row %-2s stacked merge_group entry: wanted %s|single parent (stacked merge_group entry..., got %s\n' "$row" "$want6" "$got6"; fails=1 ;; esac
+    row=$((row + 1))
+    rm -rf "${Q:?}.clone"; git clone -q --depth=1 -b main "file://$Q" "$Q.clone" 2>/dev/null; git -C "$Q.clone" fetch -q --depth=1 origin '+queue-base:refs/remotes/origin/main' 2>/dev/null
+    rc7=0; err7=$( GITHUB_EVENT_NAME=merge_group ROADMAP_DIFF_NO_DEEPEN=1 bash -c 'cd "$2" || exit 2; . "$0" --lib-only; REPO_ROOT="$1"; resolve_base HEAD' "$SELF" "$Q.clone" "$Q.clone" 2>&1 >/dev/null ) || rc7=$?
+    case "$rc7:$err7" in
+        0:*) printf 'FAIL  row %-2s stacked entry with deepening disabled: resolved a base (rc=0) — the mutation did not bite\n' "$row"; fails=1 ;;
+        *"is not a merge commit nor a commit on the origin/main tip"*) printf 'ok    row %-2s stacked entry with deepening disabled (mutation): refused by name\n' "$row" ;;
+        *) printf 'FAIL  row %-2s stacked entry with deepening disabled: refused for the wrong reason (rc=%s): %s\n' "$row" "$rc7" "$err7"; fails=1 ;;
+    esac
+    rm -rf "${Q:?}" "${Q:?}.clone"
+
+    # Rows 19-22: --staged, the pre-commit entry point (B4, #3047). A scratch
+    # repo carrying the REAL scripts in a real layout — REPO_ROOT is derived
+    # from BASH_SOURCE, so the guard under test here is genuinely this file
+    # running somewhere it was not born, not a seam that only exists for tests.
+    SR="$TD/staged"; mkdir -p "$SR/scripts/lib" "$SR/docs/roadmaps"
+    cp "$REPO_ROOT/scripts/check_roadmap_diff_additive.sh" "$SR/scripts/"
+    cp "$REPO_ROOT/scripts/roadmap_trim.py" "$SR/scripts/"
+    cp "$REPO_ROOT/scripts/lib/roadmap_diff.py" "$REPO_ROOT/scripts/lib/resolve_base.sh" "$SR/scripts/lib/"
+    RM=docs/roadmaps/roadmap.yaml
+    ( cd "$SR" && git init -q -b main . && git config user.email t@t && git config user.name t \
+        && git config core.hooksPath /dev/null \
+        && cp "$TD/base.yaml" "$RM" && git add -A && git commit -qm base \
+        && git update-ref refs/remotes/origin/main "$(git rev-parse main)" \
+        && git checkout -qb work )
+    # staged_run <verdict-var> — run the guard on the scratch repo's index.
+    staged_run() { ( cd "$SR" && bash scripts/check_roadmap_diff_additive.sh --staged 2>&1 ); }
+
+    row=$((row + 1))
+    cp "$TD/append.yaml" "$SR/$RM"; ( cd "$SR" && git add "$RM" )
+    out=$(staged_run); rc=$?
+    case "$rc:$out" in
+        0:*added=1*) printf 'ok    row %-2s --staged: an appended entry in the index PASSes\n' "$row" ;;
+        *) printf 'FAIL  row %-2s --staged: wanted rc=0 with added=1, got rc=%s\n%s\n' "$row" "$rc" "$out" | sed 's|^|             |'; fails=1 ;;
+    esac
+
+    row=$((row + 1))
+    cp "$TD/reserial.yaml" "$SR/$RM"; ( cd "$SR" && git add "$RM" )
+    out=$(staged_run); rc=$?
+    case "$rc:$out" in
+        1:*reserialised=3*roadmap_trim.py*) printf 'ok    row %-2s --staged: a re-serialisation in the index FAILs and names roadmap_trim.py\n' "$row" ;;
+        *) printf 'FAIL  row %-2s --staged: wanted rc=1 naming the remedy, got rc=%s\n%s\n' "$row" "$rc" "$out" | sed 's|^|             |'; fails=1 ;;
+    esac
+
+    row=$((row + 1))
+    ( cd "$SR" && git checkout -q -- "$RM" && git reset -q )   # nothing staged
+    out=$(staged_run); rc=$?
+    case "$rc:$out" in
+        0:*"is not staged"*) printf 'ok    row %-2s --staged: no staged roadmap is a fast PASS, by name\n' "$row" ;;
+        *) printf 'FAIL  row %-2s --staged: wanted rc=0 "is not staged", got rc=%s\n%s\n' "$row" "$rc" "$out" | sed 's|^|             |'; fails=1 ;;
+    esac
+
+    # Row 22 is the one that discriminates against resolve_base. HEAD *is* the
+    # origin/main tip (a session-docs commit on a branch freshly cut from main)
+    # and that tip's own commit re-serialised an entry. Base = the tip: only our
+    # append is judged -> PASS. Base = the tip's first parent, which is what
+    # resolve_base's push-shape branch returns: main's own re-serialisation is
+    # attributed to this commit -> FAIL. The row asserts the PASS *and* that the
+    # base printed is the tip, so it cannot pass for the wrong reason.
+    row=$((row + 1))
+    ( cd "$SR" && git checkout -q main \
+        && sed "s/title: 'first entry'/title: 'first\n    entry'/" "$TD/base.yaml" >"$RM" \
+        && git commit -qam 'main re-serialises one entry' \
+        && git update-ref refs/remotes/origin/main "$(git rev-parse main)" )
+    tip=$( cd "$SR" && git rev-parse main )
+    cp "$TD/append.yaml" "$SR/$RM"
+    ( cd "$SR" && sed -i "s/title: 'first entry'/title: 'first\n    entry'/" "$RM" && git add "$RM" )
+    out=$(staged_run); rc=$?
+    case "$rc:$out" in
+        0:*"base=$tip"*) printf 'ok    row %-2s --staged: HEAD on the origin/main tip -> base is the TIP, not its parent (resolve_base would misattribute)\n' "$row" ;;
+        *) printf 'FAIL  row %-2s --staged: wanted rc=0 with base=%s, got rc=%s\n%s\n' "$row" "$tip" "$rc" "$out" | sed 's|^|             |'; fails=1 ;;
     esac
 
     if [ "$fails" -ne 0 ]; then
@@ -382,6 +479,70 @@ EOF
     fi
     printf '\n%s/%s rows\n' "$row" "$row"
     exit 0
+fi
+
+# ---------------------------------------------------------------------------
+# --staged — judge the INDEX, so the violation is caught at `git commit` and
+# not eleven minutes later in CI (B4, #3047).
+# ---------------------------------------------------------------------------
+#
+# THE HEAD IS THE INDEX. `git write-tree` writes the staged content as a real
+# tree object, and roadmap_diff.py resolves any ref via `git show <ref>:<file>`
+# (a tree-ish is a ref like any other). So this judges EXACTLY the bytes that
+# would be committed, under the IDENTICAL rule set `guard-tree` applies in CI —
+# one implementation, two entry points. A second copy of the rule list here is
+# how bashrs#266 happened: two hand-maintained lists with nothing tying them
+# together, and a suite that asserted the wrong half.
+#
+# THE BASE IS PLAIN merge-base(origin/main, HEAD), NOT resolve_base. That is a
+# deliberate divergence, not an oversight: resolve_base's push-shape branch
+# exists because a COMMIT judged against itself is a vacuous pass. That cannot
+# arise here — the head is the index tree and HEAD's tree is the base, so they
+# differ by construction. On a branch freshly cut from main (HEAD *is* the
+# origin/main tip, the common case for a session-docs commit) resolve_base
+# would hand back the tip's PARENT, and every entry main itself added would
+# then read as this commit's work. Row 22 of the case table holds that shape.
+#
+# EXIT 2 is "this box cannot judge" and the hook does not block on it; CI's
+# guard-tree still refuses, so nothing goes silently green.
+if [ "${1:-}" = "--staged" ]; then
+    if git -C "$REPO_ROOT" diff --cached --quiet -- "$ROADMAP_FILE" 2>/dev/null; then
+        printf '%s: %s is not staged — nothing to judge.\n' "$PROG" "$ROADMAP_FILE"
+        exit 0
+    fi
+    if ! git -C "$REPO_ROOT" ls-files --cached --error-unmatch -- "$ROADMAP_FILE" >/dev/null 2>&1; then
+        printf '%s: %s is staged for DELETION — the id set may only grow.\n' "$PROG" "$ROADMAP_FILE" >&2
+        exit 1
+    fi
+    if ! BASE_REF=$(git -C "$REPO_ROOT" merge-base origin/main HEAD 2>/dev/null) || [ -z "$BASE_REF" ]; then
+        printf '%s: no base is nameable here (origin/main missing, or no common ancestor with HEAD).\n' "$PROG" >&2
+        printf '    An environment gap, not a roadmap defect: this hook cannot judge, and does not block.\n' >&2
+        printf '    CI (guard-tree) still refuses a non-additive diff. To judge it locally:\n' >&2
+        printf '    git -C %s fetch origin main\n' "$REPO_ROOT" >&2
+        exit 2
+    fi
+    if ! INDEX_TREE=$(git -C "$REPO_ROOT" write-tree 2>/dev/null) || [ -z "$INDEX_TREE" ]; then
+        printf '%s: git write-tree failed — the index cannot be read as a tree.\n' "$PROG" >&2
+        exit 2
+    fi
+    printf '=== roadmap.yaml STAGED diff is additive: base=%s (merge-base(origin/main, HEAD)) head=%s (index tree) ===\n' \
+        "$BASE_REF" "$INDEX_TREE"
+    if out=$(run_check "$BASE_REF" "$INDEX_TREE" 2>&1); then
+        printf '%s\n' "$out"
+        printf 'PASS\n'
+        exit 0
+    fi
+    rc=$?
+    printf '%s\n' "$out"
+    if [ "$rc" -eq 2 ]; then
+        printf '\n%s: usage/read error (see above).\n' "$PROG" >&2
+        exit 2
+    fi
+    printf '\nPMAT-980 (#2874): a roadmap.yaml diff may only ADD entries or edit a\n'
+    printf 'ticket''s own lifecycle fields. `pmat work add` / `work complete` re-serialise\n'
+    printf 'the WHOLE file on every call; collapse that back to base bytes and re-stage:\n\n'
+    printf '    python3 scripts/roadmap_trim.py && git add %s\n\n' "$ROADMAP_FILE"
+    exit 1
 fi
 
 # ---------------------------------------------------------------------------

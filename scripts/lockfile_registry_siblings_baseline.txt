@@ -1,1 +1,2 @@
+# tool_version=none (measured by cargo metadata + grep over Cargo.lock; not a versioned analyser)
 batuta-common

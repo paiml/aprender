@@ -1059,6 +1059,20 @@ fn uniform_entry(binding: u32) -> wgpu::BindGroupLayoutEntry {
 mod tests {
     use super::*;
 
+    /// A GPU test on a box without an adapter is not a failure of the kernel under test; it is an
+    /// environment fact. `expect("GPU device")` turned that fact into a panic and kept the nightly
+    /// coverage run RED for six days (runs 34451014241, 34575134766 — PMAT-1106). Skip, say so on
+    /// stdout so the skip is visible in the log, and let the box that HAS an adapter be the gate.
+    fn device_or_skip() -> Option<GpuDevice> {
+        match GpuDevice::new() {
+            Ok(device) => Some(device),
+            Err(err) => {
+                println!("SKIP: no GPU adapter on this host ({err}); nothing here is asserted");
+                None
+            }
+        }
+    }
+
     /// CPU reference: SiLU backward
     fn silu_backward_cpu(input: &[f32], grad_output: &[f32]) -> Vec<f32> {
         input
@@ -1076,7 +1090,7 @@ mod tests {
     /// FALSIFY-WGPU-001: SiLU backward matches CPU within ε < 1e-4
     #[test]
     fn test_falsify_wgpu_001_silu_backward_parity() {
-        let device = GpuDevice::new().expect("GPU device");
+        let Some(device) = device_or_skip() else { return };
 
         let input: Vec<f32> = (-50..50).map(|i| i as f32 * 0.1).collect();
         let grad_output: Vec<f32> = (0..100).map(|i| (i as f32 - 50.0) * 0.01).collect();
@@ -1100,7 +1114,7 @@ mod tests {
     /// SiLU backward at x=0 (sigmoid=0.5, silu'=0.5)
     #[test]
     fn test_silu_backward_at_zero() {
-        let device = GpuDevice::new().expect("GPU device");
+        let Some(device) = device_or_skip() else { return };
 
         let input = vec![0.0f32; 4];
         let grad_output = vec![1.0f32; 4];
@@ -1117,7 +1131,7 @@ mod tests {
     /// SiLU backward length mismatch error
     #[test]
     fn test_silu_backward_length_mismatch() {
-        let device = GpuDevice::new().expect("GPU device");
+        let Some(device) = device_or_skip() else { return };
 
         let input = vec![1.0f32; 10];
         let grad_output = vec![1.0f32; 5]; // wrong length
@@ -1148,7 +1162,7 @@ mod tests {
     /// Which is matmul(grad_c, B^T, M, N, K) but our shader handles the transpose internally.
     #[test]
     fn test_falsify_wgpu_001_gemm_backward_a_parity() {
-        let device = GpuDevice::new().expect("GPU device");
+        let Some(device) = device_or_skip() else { return };
 
         let (m, k, n) = (4, 8, 6);
 
@@ -1185,7 +1199,7 @@ mod tests {
     /// grad_b[K,N] = A^T[K,M] @ grad_c[M,N]
     #[test]
     fn test_falsify_wgpu_001_gemm_backward_b_parity() {
-        let device = GpuDevice::new().expect("GPU device");
+        let Some(device) = device_or_skip() else { return };
 
         let (m, k, n) = (4, 8, 6);
 
@@ -1218,7 +1232,7 @@ mod tests {
     /// FALSIFY-WGPU-001: RoPE backward matches CPU
     #[test]
     fn test_falsify_wgpu_001_rope_backward_parity() {
-        let device = GpuDevice::new().expect("GPU device");
+        let Some(device) = device_or_skip() else { return };
 
         let (num_heads, head_dim, seq_len) = (2, 4, 3);
         let theta = 10000.0f32;
@@ -1278,7 +1292,7 @@ mod tests {
     /// FALSIFY-WGPU-001: AdamW step matches CPU
     #[test]
     fn test_falsify_wgpu_001_adamw_step_parity() {
-        let device = GpuDevice::new().expect("GPU device");
+        let Some(device) = device_or_skip() else { return };
 
         let n = 16;
         let mut params: Vec<f32> = (0..n).map(|i| i as f32 * 0.1).collect();
@@ -1334,7 +1348,7 @@ mod tests {
     /// FALSIFY-WGPU-001: RMSNorm backward matches CPU
     #[test]
     fn test_falsify_wgpu_001_rmsnorm_backward_parity() {
-        let device = GpuDevice::new().expect("GPU device");
+        let Some(device) = device_or_skip() else { return };
 
         let (num_rows, hidden_dim) = (3, 8);
         let eps: f32 = 1e-5;
@@ -1417,7 +1431,7 @@ mod tests {
     /// FALSIFY-WGPU-003: NF4 dequant matches CPU
     #[test]
     fn test_falsify_wgpu_003_nf4_dequant_parity() {
-        let device = GpuDevice::new().expect("GPU device");
+        let Some(device) = device_or_skip() else { return };
 
         // NF4 codebook
         let nf4_lut: [f32; 16] = [
