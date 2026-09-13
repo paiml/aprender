@@ -3,7 +3,7 @@
 //! Provides register allocation with liveness analysis to prevent spills (Muda).
 
 use super::types::PtxType;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fmt;
 
 /// Special PTX registers (read-only hardware registers)
@@ -264,7 +264,16 @@ impl RegisterAllocator {
         // BUG FIX: previously grouped by PtxType → duplicate .reg lines for
         // types sharing a prefix (U64+B64→%rd, U8+B8→%rs, etc.).
         // Now groups by prefix; declaration type is taken from first type in group.
-        let mut by_prefix: HashMap<&'static str, (PtxType, Vec<&VirtualReg>)> = HashMap::new();
+        // BTreeMap, NOT HashMap: this map is ITERATED to emit `.reg` declarations, and
+        // Rust's HashMap iteration order is randomised per process. With a HashMap the
+        // SAME kernel emitted twice produced two different PTX strings (measured: 5
+        // emissions in one process -> 5 distinct outputs), and since the cubin disk cache
+        // is keyed on sha256(patched_ptx ‖ target ‖ driver), every emission minted a fresh
+        // key and the cache could never hit. Measured fallout before this fix: 42,880
+        // distinct cubins / 498 MB on one dev box, 25,216 / 274 MB on gx10, for a few dozen
+        // real kernels. Ordering by prefix is arbitrary but STABLE, which is all the
+        // declarations need.
+        let mut by_prefix: BTreeMap<&'static str, (PtxType, Vec<&VirtualReg>)> = BTreeMap::new();
         for vreg in &self.allocated {
             let prefix = vreg.ty().register_prefix();
             by_prefix
@@ -278,7 +287,7 @@ impl RegisterAllocator {
         // NOTE: PTX only supports register declarations of 16-bit or wider types.
         // 8-bit types (.u8, .s8, .b8) must be widened to their 16-bit equivalent.
         // Values are automatically zero/sign-extended to 16 bits by the hardware.
-        for (prefix, (ty, regs)) in by_prefix {
+        for (prefix, (ty, regs)) in &by_prefix {
             if !regs.is_empty() {
                 let count = regs.len();
                 let decl_type = ty.register_declaration_type();

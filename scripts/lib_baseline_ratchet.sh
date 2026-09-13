@@ -151,6 +151,65 @@
 BASELINE_RATCHET_BASE_REF="${BASELINE_RATCHET_BASE_REF:-origin/main}"
 
 # ---------------------------------------------------------------------------
+# baseline_require_tool_version — a ratchet compares (tree, instrument), and a
+# baseline that never names its instrument cannot tell "the count changed"
+# from "the tool changed" (see check_hardcoded_paths.sh / PMAT-1059: 277 vs
+# 317 on an UNCHANGED tree, once the fleet moved from 3.31.0 to 3.37.0). This
+# is the same discipline made generic: every baseline this library ratchets
+# carries a leading comment line
+#
+#     # tool_version=<tool> <version>
+#
+# where <tool> is the binary whose OUTPUT the baseline records (`pmat` for a
+# complexity/TDG count, `bashrs` for a lint-error count), or the literal
+# `none` for a baseline produced by grep/git/cargo-metadata alone -- there is
+# no versioned instrument to drift. Comment stripping happens in grep, not in
+# the caller, per the convention below.
+#
+#   * header absent               -> FAIL, rc 1. Not a ratchet baseline.
+#   * tool == none                -> rc 0, no probe.
+#   * tool not on PATH             -> rc 4. Never a pass: an absent instrument
+#                                    is not "no drift", it is "unmeasurable".
+#   * `$tool --version`'s first line != "$tool $version" -> rc 4, ONE line,
+#     naming the file and both versions. Two verdicts from two instruments
+#     are not comparable, so this is refused before the comparator runs.
+#   * versions agree               -> rc 0.
+baseline_require_tool_version() { # baseline_require_tool_version <baseline-file>
+    local file="$1" raw tool version live_line live_ver
+    raw=$(grep -m1 -E '^#[[:space:]]*tool_version=' "$file" 2>/dev/null) || raw=""
+    raw=${raw#*tool_version=}
+    if [ -z "$raw" ]; then
+        printf 'FAIL  ratchet  %s carries no "# tool_version=<tool> <version>" header.\n' "$file"
+        printf '               A baseline without a version claim is not a ratchet\n'
+        printf '               baseline -- add the header before this file can be ratcheted.\n'
+        return 1
+    fi
+    # shellcheck disable=SC2086
+    set -- $raw
+    tool=${1:-}
+    version=${2:-}
+    if [ "$tool" = "none" ]; then
+        return 0
+    fi
+    if ! command -v "$tool" >/dev/null 2>&1; then
+        printf 'tool_version: %s was recorded under %s %s, runner has no %s on PATH — verdicts would compare two instruments\n' \
+            "$file" "$tool" "$version" "$tool"
+        return 4
+    fi
+    live_line=$("$tool" --version 2>/dev/null)
+    live_line=${live_line%%$'\n'*}
+    # --- TOOLVER-CMP-BEGIN ---
+    if [ "$live_line" != "$tool $version" ]; then
+        live_ver=${live_line#* }
+        printf 'tool_version: %s was recorded under %s %s, runner has %s %s — verdicts would compare two instruments\n' \
+            "$file" "$tool" "$version" "$tool" "$live_ver"
+        return 4
+    fi
+    # --- TOOLVER-CMP-END ---
+    return 0
+}
+
+# ---------------------------------------------------------------------------
 # Readers. Deliberately no pipe whose READER can exit early: `grep … | head -1`
 # returns 141 under pipefail when the writer takes SIGPIPE, which is
 # input-size dependent and therefore green locally and red in CI at random.
@@ -274,12 +333,17 @@ _br_cmp_set_aperture() { # <base-file> <cur-file> <root> <ref> <owning-guard-pat
     [ -z "$BR_DELTA" ]
 }
 
+# A STAMPED count baseline (PMAT-1059) carries `count: N` beside `pmat_version:`
+# and `basis:`; the number is that line, never the file's other text.
+_br_stamped_count() { # _br_stamped_count <file> -> N | rc 1 when the file carries no stamped line
+    sed -nE 's/^count:[[:space:]]*([0-9]+)[[:space:]]*(#.*)?$/\1/p' "$1" | grep -m1 .
+}
 _br_cmp_count() { # _br_cmp_count <base-file> <cur-file>
     local b c
     BR_DELTA=""
     BR_REMOVED=0
-    b=$(_br_number "$1") || { BR_DELTA="        comparand holds no integer"; return 2; }
-    c=$(_br_number "$2") || { BR_DELTA="        working tree holds no integer"; return 2; }
+    b=$(_br_stamped_count "$1" || _br_number "$1") || { BR_DELTA="        comparand holds no integer"; return 2; }
+    c=$(_br_stamped_count "$2" || _br_number "$2") || { BR_DELTA="        working tree holds no integer"; return 2; }
     if [ "$c" -gt "$b" ]; then
         BR_DELTA=$(printf '        + the recorded count rose %s -> %s' "$b" "$c")
         return 1
@@ -307,6 +371,41 @@ _br_cmp_keyed() { # _br_cmp_keyed <base-file> <cur-file>   (lines are <key><TAB>
     BR_REMOVED=$(LC_ALL=C awk -F'\t' '
         NR == FNR { c[$1] = $2; next }
         { if (!($1 in c) || c[$1]+0 < $2+0) { n++ } }
+        END { print n+0 }
+    ' <(_br_data "$2") <(_br_data "$1"))
+    [ -z "$BR_DELTA" ]
+}
+
+# `keyed2`. The same rule as `keyed` over lines carrying TWO integers,
+# `<key> <a> <b>`, whitespace-separated. It exists because the complexity
+# ratchet records a pair per function -- cyclomatic AND cognitive -- and the
+# rule is "over EITHER", so a baseline holding only one of them would ratchet
+# only half the predicate while looking complete.
+#
+# Splitting the pair into two `keyed` rows was the alternative and it is worse:
+# the key would have to carry the metric name, and a reader of
+# scripts/complexity_baseline.txt could no longer see, on one line, what a
+# function costs.
+#
+# No key may appear and neither number may rise. Either number may FALL, which
+# is what makes a partial refactor recordable rather than a diff the meta-gate
+# refuses. Comment stripping happens in grep, not in awk: an awk program
+# carrying a bracket-and-paren regex reads to bashrs as a `[ ` test and lands
+# SC1028 error lines in a shrink-only lint baseline.
+_br_cmp_keyed2() { # _br_cmp_keyed2 <base-file> <cur-file>  (lines are <key> <int> <int>)
+    BR_DELTA=$(LC_ALL=C awk '
+        NR == FNR { a[$1] = $2; b[$1] = $3; seen[$1] = 1; next }
+        {
+            if (!($1 in seen))    { printf "        + NEW KEY  %s (%s %s)\n", $1, $2, $3 }
+            else {
+                if ($2+0 > a[$1]+0) { printf "        + RAISED   %s  %s -> %s\n", $1, a[$1], $2 }
+                if ($3+0 > b[$1]+0) { printf "        + RAISED   %s  %s -> %s\n", $1, b[$1], $3 }
+            }
+        }
+    ' <(_br_data "$1") <(_br_data "$2"))
+    BR_REMOVED=$(LC_ALL=C awk '
+        NR == FNR { a[$1] = $2; b[$1] = $3; seen[$1] = 1; next }
+        { if (!($1 in seen) || a[$1]+0 < $2+0 || b[$1]+0 < $3+0) { n++ } }
         END { print n+0 }
     ' <(_br_data "$2") <(_br_data "$1"))
     [ -z "$BR_DELTA" ]
@@ -363,7 +462,7 @@ baseline_ratchet_resolve() { # baseline_ratchet_resolve <root> <ref> <path>
 # ---------------------------------------------------------------------------
 # The entry point every guard calls.
 #
-#     baseline_ratchet_check <root> <baseline-path> <set|count|keyed|set-aperture> [<owning-guard-path>]
+#     baseline_ratchet_check <root> <baseline-path> <set|count|keyed|keyed2|set-aperture> [<owning-guard-path>]
 #
 # `set-aperture` takes a fifth argument, the owning guard, and without it every
 # addition is refused — see (b) in the header.
@@ -438,6 +537,7 @@ baseline_ratchet_check() {
         set)   if _br_cmp_set   "$base_copy" "$root/$path"; then cmp_rc=0; else cmp_rc=$?; fi ;;
         count) if _br_cmp_count "$base_copy" "$root/$path"; then cmp_rc=0; else cmp_rc=$?; fi ;;
         keyed) if _br_cmp_keyed "$base_copy" "$root/$path"; then cmp_rc=0; else cmp_rc=$?; fi ;;
+        keyed2) if _br_cmp_keyed2 "$base_copy" "$root/$path"; then cmp_rc=0; else cmp_rc=$?; fi ;;
         set-aperture)
             if _br_cmp_set_aperture "$base_copy" "$root/$path" "$root" "$ref" "$guard"; then
                 cmp_rc=0

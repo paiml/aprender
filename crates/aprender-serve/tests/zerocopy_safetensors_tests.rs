@@ -654,9 +654,16 @@ mod error_tests {
         file.write_all(&[0u8; 100]).expect("write");
         file.flush().expect("flush");
 
-        let model = MappedSafeTensorsModel::load(file.path()).expect("load");
-        let result = model.get_tensor_bytes("weight");
-        assert!(result.is_err());
+        // GH-213: the overrun is refused at LOAD (a truncated download must never mmap
+        // successfully), not lazily at the first get_tensor_bytes. The message names both sizes.
+        let err = match MappedSafeTensorsModel::load(file.path()) {
+            Ok(_) => panic!("a file whose tensor data exceeds its length must not load"),
+            Err(e) => e.to_string(),
+        };
+        assert!(
+            err.contains("is truncated") && err.contains("requires"),
+            "load must name the truncation, got: {err}"
+        );
     }
 
     // F32 tensor with wrong size (not multiple of 4)

@@ -1,0 +1,14 @@
+{
+  "_type": "https://in-toto.io/Statement/v1",
+  "subject": [
+    { "name": "git+https://github.com/paiml/aprender",
+      "uri": "git+https://github.com/paiml/aprender",
+      "mediaType": "application/vnd.paiml.git-tree",
+      "annotations": { "paimlWorktree": true },
+      "paimlExtensionField": "producers MAY add extension fields to any JSON object",
+      "digest": { "sha1": "745fa8588783413669f4ac6170d4645e39c15be4" } }
+  ],
+  "predicateType": "https://paiml.dev/attestations/pr-review/v2",
+  "predicate": { "skill_version": "2.0.0" },
+  "paimlTopLevelExtension": "consumers MUST ignore unrecognized fields"
+}

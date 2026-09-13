@@ -64,3 +64,5 @@ mod completions_stop_2465; // aprender#2465(2): /v1/completions must END at a st
 mod batch_completions_tokenizer_2465; // aprender#2465(3): /v1/batch/completions tokenized from UTF-8 byte values, not tokens
 mod chat_stream_route_2375; // aprender#2375(4): POST /v1/chat/completions/stream is mounted — it must serve, and answer 503 (not 404) with no model
 mod apr_model_routes_2609; // aprender#2609: routed endpoints on an AprTransformer server; one condition, one status
+mod effective_config_route_pp2; // PP-LLAMA-001 §12 row 6 / PP-2 / PP-13 / PP-14 / PP-24 / PP-30: GET /v1/effective-config reports residency, not cfg!
+mod stream_mode_pp27; // PP-LLAMA-001 PP-27 / §3: an SSE stream declares live vs replayed, and the terminal chunk carries usage + measured timings

@@ -1,0 +1,23 @@
+2026-09-09T18:57:24Z START autopilot pid=2481089
+2026-09-10T03:13:53Z MERGED #3050 and #3063
+2026-09-10T03:13:56Z ARMED #3069 auto-merge
+2026-09-10T04:04:01Z MERGED #3069 merge_commit=7a33db8e0442da095bd18ee5062418e00922f8aa
+VERDICT: ❌ NO-GO — fix the ROOT CAUSE (Toyota way), never bypass. Re-run dogfood.
+2026-09-10T04:28:18Z STOP dogfood pre-publish NO-GO rc=1 (see /mnt/nvme-raid0/agent-wt/rel-066-autopilot/dogfood-pre-publish.log)
+2026-09-10T05:17:11Z START autopilot pid=1085110
+2026-09-10T05:17:11Z RESUME autopilot2 at 53dd489e44b6061d20f3131434a6d87f7d9b503e pid=1085110
+VERDICT: ✅ GO (phase pre-publish) — every measurable gate green; the DEFER rows above are owed by the post-publish dogfood on the published crate.
+2026-09-10T05:39:21Z DOGFOOD GO at 53dd489e44b6061d20f3131434a6d87f7d9b503e
+2026-09-10T05:39:23Z TAGGED v0.66.0 at 53dd489e44b6061d20f3131434a6d87f7d9b503e
+2026-09-10T05:39:25Z RELEASED https://github.com/paiml/aprender/releases/tag/v0.66.0
+ok    R5 dogfood receipt receipt-20260910T051715Z.json: GO for 53dd489e4 at 0.66.0 (phase pre-publish, deferred: declared:check_multiplatform_dogfood,publish-dry-run)
+ok    R6 no sibling dev-dependency carries a version (path-only, stripped at publish)
+PASS  check_publish_preflight.sh: clean, versioned, tagged, on origin/main, dogfood GO
+2026-09-10T05:39:25Z PREFLIGHT PASS
+2026-09-10T06:20:59Z CASCADE drain rc=0
+2026-09-10T06:21:28Z CASCADE check rc=0 crates_behind=0
+2026-09-10T06:21:28Z PUBLISHED 0.66.0 on crates.io
+2026-09-10T06:27:08Z INSTALL cargo install aprender --version 0.66.0 rc=0: apr 0.66.0 (v0.66.0+no-git)
+VERDICT: ❌ NO-GO — fix the ROOT CAUSE (Toyota way), never bypass. Re-run dogfood.
+2026-09-10T06:48:27Z DOGFOOD post-publish rc=1
+2026-09-10T06:48:27Z DONE 0.66.0 released, published, installed. Owed: receipt status:complete docs PR, milestone 3 close, host receipts under evidence/dogfood/0.66.0/

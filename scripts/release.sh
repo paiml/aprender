@@ -18,7 +18,7 @@ if [ -z "$VERSION" ]; then
 fi
 
 # Validate version format
-if ! echo "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+if ! grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$' <<< "$VERSION" ; then
     echo "❌ Invalid version format: $VERSION"
     echo "   Expected: MAJOR.MINOR.PATCH (e.g., 0.1.0)"
     exit 1

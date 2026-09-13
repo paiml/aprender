@@ -131,7 +131,12 @@ if [ -d "$ARCHIVES" ]; then
     # find, not `ls` - archive names are content hashes, so iterate directories
     # directly. A cached *environment* is venv-shaped (bin/python3 exists); a
     # cached *package* is just an unpacked wheel and is skipped by that test.
-    while IFS= read -r archive; do
+    # mapfile + for (rather than `while read ... done < <(find ...)`) so the
+    # rm -rf below is a plain command in a plain loop body, not one hop away
+    # through a process-substitution pipeline.
+    found_archives=()
+    mapfile -t found_archives < <(find "$ARCHIVES" -mindepth 1 -maxdepth 1 -type d 2>/dev/null)
+    for archive in "${found_archives[@]}"; do
         [ -n "$archive" ] || continue
         # A cached *environment* is venv-shaped and healthy ones always carry
         # pyvenv.cfg (plus CACHEDIR.TAG); a cached *package* is just an unpacked
@@ -158,7 +163,7 @@ if [ -d "$ARCHIVES" ]; then
                 removed=$((removed + 1))
             fi
         fi
-    done < <(find "$ARCHIVES" -mindepth 1 -maxdepth 1 -type d 2>/dev/null)
+    done
 fi
 echo "swept $removed poisoned env archive(s) from $ARCHIVES"
 

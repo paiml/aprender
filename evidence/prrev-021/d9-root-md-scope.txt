@@ -1,0 +1,90 @@
+PRREV-021 / D9 — a root-level *.md joins B4's scope, and the sibling universe moves with it.
+
+D9 was left OPEN by PRREV-012 with the measurement already taken, and with the condition
+under which it could be closed stated in f9-root-readme-measurement.txt: a scope change
+ships with its precision measurement over the same window AND moves the sibling
+definition in check_no_claim_literals.sh in the same commit, or the two drift silently.
+Both are done here.
+
+=== 1. THE TRUE POSITIVE — da069a25f, the commit S3.C.1, S9 and S11 are written about ===
+
+That commit published `2.93x Ollama` to TWO files. F6 recovered the first
+(book/src/examples/showcase-benchmark.md). The second was README.md and stayed invisible
+to both definitions.
+
+  BEFORE (origin/main, dda1aa202):  root-.md fires at da069a25f = 0
+  AFTER  (this commit):             root-.md fires at da069a25f = 1
+
+    FIRE: The `apr` CLI achieves **2.93x Ollama** performance on Qwen2.5-Coder-1.5B
+          with GPU acceleration:
+
+  $ bash scripts/check_pr_review_receipt.sh --match-shipped-surface README.md ; echo $?
+  0        (was 1 at dda1aa202)
+
+=== 2. THE PRECISION MEASUREMENT — same window F9 used ===
+
+  universe: ADDED lines in root-level *.md over the last 300 commits of origin/main,
+            pathspec ':(glob)*.md'
+
+  added root-level *.md lines = 1438   would-fire = 0
+
+  F9 recorded 1457 / 0 on a window ending 300 commits before dda1aa202; the window has
+  since moved, the false-positive count has not. ZERO false positives, ONE true positive.
+
+  The predicate is measured with match_comparative and match_target EXTRACTED from
+  scripts/check_pr_review_receipt.sh, and the extraction is proved to agree with the
+  guard itself on a five-line probe set before a single commit is walked — an extracted
+  copy that has drifted would measure a predicate nothing ships.
+
+=== 3. THE ANCHOR IS THE RULE ===
+
+`*.md` alone matches `docs/x.md` and `evidence/**/results.md`: bash case globs do not
+stop at `/`. That would re-admit the docs/ surface PRREV-012 deliberately MEASURED OUT
+at 2/5 = 40% precision, below S7's >=90% admission bar. `*/*) : ;;` consumes every path
+carrying a separator. Three committed rows hold it:
+
+  MATCH     README.md                    the scar
+  MATCH     CHANGELOG.md                 the row that used to record the gap
+  NO-MATCH  crates/apr-cli/CHANGELOG.md  single-variable control: same filename, nested
+  NO-MATCH  docs/README.md               the anchor's own control: same filename, docs/
+
+In check_no_claim_literals.sh the same anchor is the `:(glob)` pathspec magic. A bare
+'*.md' matches 3460 files there against 6.
+
+  $ git ls-files ':(glob)*.md' | wc -l   ->  6
+  $ git ls-files '*.md'        | wc -l   ->  3460
+
+=== 4. WHAT THE WIDENING REVEALED — 12 claims, and one of them is debt ===
+
+The sibling universe grew 6911 -> 6917 files and surfaced 12 claim literals no version
+of this guard could read:
+
+  CHANGELOG.md:955,957,1719,1734,1933,1934   dated historical record
+  CLAUDE.md:218,222,685                      a WRONG/CORRECT code illustration
+  README.md:233,234,235                      A PUBLISHED THROUGHPUT TABLE
+
+Admitted through `set-aperture`, which verifies each line PREDATES the comparand
+(byte-identical there, or moved with its text intact) and that the owning guard changed
+in this diff. Every admitted entry is NAMED in the verdict row; none is blessed.
+
+  known (baselined, must shrink): 211 -> 223   new: 0   PASS
+
+README.md:233-235 is the one that is debt rather than record:
+
+  | Qwen2.5-Coder 1.5B | Q4_K | 40+ tok/s  | CPU (AVX2)        |
+  | Qwen2.5-Coder 7B   | Q4_K | 225+ tok/s | RTX 4090          |
+  | TinyLlama 1.1B     | Q4_0 | 17 tok/s   | CPU (APR format)  |
+
+A published throughput table on the first page a user reads, with no receipt behind it,
+and a GPU row on a binary whose published build is CPU-only. It is now inside a ratchet
+that only lets it shrink. Deriving or deleting it is a follow-up ticket, not this one —
+this commit is the scope change and its measurement.
+
+=== 5. MUTANTS ===
+
+  root-md-removed-from-b4-scope   `*.md) return 0` -> `return 1`   restores the exact
+                                  pre-D9 behaviour; killed by the README.md/CHANGELOG.md
+                                  MATCH rows
+  root-md-anchor-removed          `*/*) : ;;` -> a pattern that never matches, so every
+                                  .md at any depth enters scope; killed by the
+                                  docs/README.md and crates/apr-cli/CHANGELOG.md rows

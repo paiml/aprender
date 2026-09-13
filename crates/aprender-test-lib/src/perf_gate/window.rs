@@ -155,6 +155,7 @@ impl WindowController {
 
 /// What the controller observed, for the receipt.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct WindowReport {
     /// Requests admitted before `T`.
     pub requested: usize,

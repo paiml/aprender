@@ -7,22 +7,9 @@ fn test_cuda_backend_name() {
 }
 
 #[test]
-#[cfg(not(all(target_os = "macos", feature = "metal")))]
 fn test_metal_backend_unavailable() {
     let backend = MetalBackend;
     assert!(!backend.is_available());
-}
-
-#[test]
-#[cfg(all(target_os = "macos", feature = "metal"))]
-fn test_metal_backend_available() {
-    let backend = MetalBackend;
-    // On macOS with metal feature, should detect GPUs
-    assert!(backend.is_available(), "Metal should be available on macOS");
-    assert!(
-        backend.device_count() > 0,
-        "Should have at least one Metal device"
-    );
 }
 
 #[test]
@@ -60,21 +47,9 @@ fn test_cuda_backend_device_count() {
 }
 
 #[test]
-#[cfg(not(all(target_os = "macos", feature = "metal")))]
 fn test_metal_backend_device_count() {
     let backend = MetalBackend;
     assert_eq!(backend.device_count(), 0);
-}
-
-#[test]
-#[cfg(all(target_os = "macos", feature = "metal"))]
-fn test_metal_backend_device_count_macos() {
-    let backend = MetalBackend;
-    // On macOS with metal feature, should have at least 1 GPU
-    assert!(
-        backend.device_count() >= 1,
-        "Should have at least one Metal device"
-    );
 }
 
 #[test]
@@ -286,13 +261,10 @@ fn test_detect_backend_wgpu_priority_over_metal_and_vulkan() {
 
 #[test]
 fn test_detect_backend_metal_not_returned_on_linux() {
-    // On Linux (non-macOS without metal feature), Metal should never be returned
-    #[cfg(not(all(target_os = "macos", feature = "metal")))]
-    {
-        let metal = MetalBackend;
-        assert!(!metal.is_available());
-        // Metal branch in detect_backend is unreachable on Linux
-    }
+    // MetalBackend has no dispatcher, so it never reports available and the
+    // Metal branch in detect_backend is unreachable on every platform.
+    let metal = MetalBackend;
+    assert!(!metal.is_available());
 }
 
 #[test]

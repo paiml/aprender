@@ -53,7 +53,30 @@ falsification_tests:
   prediction: >-
     For c in {2, 4, 8}, serialization_index(c) < c by a margin outside the
     measured run-to-run dispersion. The pre-fix tree scores ~c and fails.
-  test: 'LIVE-PENDING — scripts/perf000_serialization_probe.sh'
+  test: >-
+    UNMEASURED{owner: perf-gate, expires: derived from PP-LLAMA-001 §12 row 0b}.
+
+    The conformant producer is `apr test llm bench --stream --band` driven by
+    scripts/perf_gate.sh, whose receipt carries per-band `aggregate_tok_per_sec`
+    and `decode_tok_per_sec` under the §4.4 protocol (closed-loop client, 2xc
+    warmup, 5s quiesce, max(30, 8xc) samples, >=60s window, interleaved
+    replicates) with `completion_tokens == n_predict` enforced per sample. The
+    serialization index is then a function of two bands of ONE receipt, joined
+    on PP-22's join key, rather than of two independent wall-clock runs.
+
+    THE PREVIOUS VALUE NAMED A HARNESS THAT IS NOW DELETED.
+    scripts/perf000_serialization_probe.sh was removed in the PP-LLAMA-001
+    change; `measurement_provenance` below already recorded that it could not
+    have produced the numbers this row's `measured` block reports, and a `test:`
+    pointing at a harness the contract itself disqualifies is worse than an
+    honest UNMEASURED. It also carried its own verdict literals (`r > 0.7*N`,
+    `r > 1.15`) and a fixed world-writable /tmp log — a second encoding of a
+    threshold PP-33 says lives only in scripts/perf-matrix.yaml.
+
+    NOT re-pointed at scripts/perf041_client.py either: that client counts
+    tokens and reports the token-normalised index honestly, but PP-25 requires
+    ONE client binary across both lanes, and it is scheduled for deletion when
+    §12 row 7 gives `apr test llm bench` the token-normalised index.
   measured: >-
     2026-08-25, RTX 4090, qwen2.5-coder-1.5b-instruct-q4_k_m, 400-token
     generations, median of 3, same commit both sides. BEFORE (--features cuda,
@@ -170,8 +193,10 @@ falsification_tests:
     A c=8 pass here is not evidence of correct batching.
 
   measurement_provenance: >-
-    THE HARNESS THIS TEST NAMES CANNOT HAVE PRODUCED THE NUMBERS IT RECORDS.
-    `test:` above points at scripts/perf000_serialization_probe.sh. At the
+    THE HARNESS THIS TEST ONCE NAMED CANNOT HAVE PRODUCED THE NUMBERS IT
+    RECORDS. `test:` above pointed at scripts/perf000_serialization_probe.sh
+    until PP-LLAMA-001 replaced it with an honest UNMEASURED and DELETED the
+    script; this paragraph is why. At the
     commit that introduced this contract (ce712eae0) and at 50d2bc2bb that
     script runs the 7B model at max_tokens=64, one replicate per band, with no
     per-band warmup and no quiesce; the `measured` block records the 1.5B model

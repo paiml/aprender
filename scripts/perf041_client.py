@@ -1,15 +1,22 @@
 #!/usr/bin/env python3
 """PERF-041 closed-loop measurement client (APR-PERF-GATE-001 v2.2 §4.4).
 
-Why this exists rather than reusing scripts/perf000_serialization_probe.sh:
-that script fires N requests once, waits for all of them, and divides wall
-times. It takes no warmup per band, no quiesce, ONE replicate, and -- the part
-that matters -- it never counts a single token. `wall(c)/wall(1)` measures
-serialization only if both bands generated the same number of tokens, and a
-harness that does not count them cannot know. This one counts them and reports
+Why this exists: it replaced scripts/perf000_serialization_probe.sh, which is
+DELETED as of PP-LLAMA-001 (§12 row 0b). That script fired N requests once,
+waited for all of them, and divided wall times. It took no warmup per band, no
+quiesce, ONE replicate, and -- the part that matters -- it never counted a
+single token. `wall(c)/wall(1)` measures serialization only if both bands
+generated the same number of tokens, and a harness that does not count them
+cannot know; contracts/batch-admission-v1.yaml records that the numbers
+attributed to it could not have come from it. This one counts them and reports
 the token-normalised index beside the wall-clock one, so a divergence in
 generation length shows up as a gap between the two rather than as
 "serialization".
+
+THIS FILE IS ITSELF SCHEDULED FOR DELETION. PP-25 says one client binary drives
+both lanes; the canonical one is `apr test llm bench`. When §12 row 7 gives it
+the token-normalised index, delete this file and its allowlist entry in
+scripts/check_no_competing_harnesses.sh together.
 
 §4.4.1 client model: closed-loop, fixed concurrency c, external HTTP.
 §4.4.3 metrics: agg_tok_s is wall-clock aggregate, never a mean of rates.

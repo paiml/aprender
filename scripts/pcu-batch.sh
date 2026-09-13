@@ -142,7 +142,7 @@ falsification:
 YAML
 
     # Prepend PCU frontmatter to .md (if not already present)
-    if ! head -1 "$md" | grep -q "PCU:"; then
+    if ! grep -q "PCU:" <<< "$(head -1 "$md")" ; then
         TMPF=$(mktemp)
         echo "<!-- PCU: ${ID} | contract: ${CONTRACT} -->" > "$TMPF"
         echo "<!-- Example: cargo run -p aprender-core --example ${EXAMPLE:-none} -->" >> "$TMPF"

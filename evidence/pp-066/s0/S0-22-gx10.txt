@@ -1,0 +1,24 @@
+$ make -C ~/src/infra/machines/gx10 gpu-status   # = $(SSH) "nvidia-smi"
+Sat Sep  5 08:01:58 2026       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 590.48.01              Driver Version: 590.48.01      CUDA Version: 13.1     |
++-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA GB10                    On  |   0000000F:01:00.0 Off |                  N/A |
+| N/A   39C    P8              4W /  N/A  | Not Supported          |      0%      Default |
+|                                         |                        |                  N/A |
++-----------------------------------------+------------------------+----------------------+
+$ make -C ~/src/infra/machines/gx10 --eval="s0:; @\$(SSH) \"nvidia-smi -L; nvidia-smi --query-gpu=name,driver_version,memory.total --format=csv; uname -m; free -g | head -2; cargo --version; ls -d ~/src/aprender\"" s0
+GPU 0: NVIDIA GB10 (UUID: GPU-e9e2a99f-b8a7-94e0-c7b5-142a88ba9ff4)
+name, driver_version, memory.total [MiB]
+NVIDIA GB10, 590.48.01, [N/A]
+aarch64
+               total        used        free      shared  buff/cache   available
+Mem:             119           3          81           0          35         115
+cargo 1.95.0 (f2d3ce0bd 2026-03-21)
+/home/noah/src/aprender
+de0e3e182
+rc=0

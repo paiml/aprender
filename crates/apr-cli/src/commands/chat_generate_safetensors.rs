@@ -33,8 +33,27 @@ impl ChatSession {
             use realizar::apr_transformer::GenerateConfig;
             use realizar::safetensors_infer::SafetensorsToAprConverter;
 
-            let transformer = SafetensorsToAprConverter::convert(&self.model_path)
-                .map_err(|e| format!("SafeTensors conversion failed: {e}"))?;
+            // #3022: a sharded checkout reaches the SAME transformer, through the same
+            // three calls `apr run` already makes (infer/mod_log_transformer_eos.rs:116).
+            // `convert` takes a path to tensor bytes and cannot be pointed at a manifest,
+            // so the index gets its own two lines rather than a second code path.
+            let transformer = if self.format == ModelFormat::ShardedSafeTensors {
+                use realizar::safetensors::{SafetensorsConfig, ShardedSafeTensorsModel};
+                let sharded = ShardedSafeTensorsModel::load_from_index(&self.model_path)
+                    .map_err(|e| format!("Sharded SafeTensors index load failed: {e}"))?;
+                let st_config = SafetensorsConfig::load_from_sibling(&self.model_path)
+                    .ok_or_else(|| {
+                        format!(
+                            "config.json not found beside {} (required for SafeTensors inference)",
+                            self.model_path.display()
+                        )
+                    })?;
+                SafetensorsToAprConverter::convert_sharded(&sharded, &st_config)
+                    .map_err(|e| format!("Sharded SafeTensors conversion failed: {e}"))?
+            } else {
+                SafetensorsToAprConverter::convert(&self.model_path)
+                    .map_err(|e| format!("SafeTensors conversion failed: {e}"))?
+            };
 
             let gen_config = GenerateConfig {
                 max_tokens: config.max_tokens,

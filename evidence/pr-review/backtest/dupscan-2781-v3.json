@@ -1,0 +1,46 @@
+{
+  "duplication_hits": [
+    {
+      "needle": "receipt.r1.json",
+      "kind": "name",
+      "where": "main",
+      "ref": "origin/main",
+      "path": "crates/apr-cli/src/commands/test_llm_band.rs",
+      "line": 51,
+      "method": "lexical"
+    }
+  ],
+  "duplication_coverage": {
+    "rust": "lexical",
+    "shell": "lexical",
+    "python": "lexical",
+    "config": "lexical",
+    "docs": "lexical",
+    "other": "lexical",
+    "sibling_branches": "lexical",
+    "merge_base_to_main": "lexical"
+  },
+  "duplication_horizon": [
+    "head=808f1a9b2bf04174345e530c984c4eb8f1e88937",
+    "siblings=refs/remotes/origin/* unmerged into origin/main",
+    "merge_base_to_main=c00ba00cb746d9c938feb551905819afa57efaaa..refs/remotes/origin/main"
+  ],
+  "horizon_branches_total": 775,
+  "horizon_branches_scanned": 775,
+  "horizon_refs": {
+    "local_origin_refs": 790,
+    "remote_heads": 790
+  },
+  "merge_base_to_main_files": 75,
+  "symbols_searched": 23,
+  "needles": {
+    "symbol": 1,
+    "filename": 22,
+    "min_length": 6,
+    "dropped_ambient": 2,
+    "ambient_max_hits": 8
+  },
+  "hits_total": 1,
+  "hits_recorded": 1,
+  "wall_seconds": 22
+}

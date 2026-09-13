@@ -18,6 +18,14 @@ use aprender::models::Qwen2Model;
 
 /// F1: WASI Build target verification
 /// Tests that the codebase has WASM-compatible structure
+
+fn workspace_root() -> std::path::PathBuf {
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .canonicalize()
+        .expect("workspace root must resolve from crates/aprender-core")
+}
+
 #[test]
 fn f1_wasm_compatible_codebase() {
     // Verify no_std compatibility markers exist

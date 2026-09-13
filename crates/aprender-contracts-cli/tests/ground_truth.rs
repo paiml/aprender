@@ -33,7 +33,7 @@ fn run_equations(contract: &str, format: &str) -> String {
         "pv equations --format {format} failed for {contract}: {}",
         String::from_utf8_lossy(&output.stderr)
     );
-    String::from_utf8(output.stdout).unwrap()
+    String::from_utf8(output.stdout).expect("command stdout is valid UTF-8")
 }
 
 // Part 1: Golden-file comparison tests

@@ -1,0 +1,6 @@
+$ gh api -X PATCH repos/paiml/aprender/branches/main/protection/required_status_checks -F strict=true   # pre-authorized (epic #2873, driver STEP 2)
+{"contexts":["ci / gate","workspace-test"],"strict":true}
+rc=0
+patched_at=2026-09-05T07:58:08Z
+$ gh api repos/paiml/aprender/branches/main/protection --jq '{...}'   # AFTER
+{"contexts":["ci / gate","workspace-test"],"del":false,"force":false,"reviews":null,"strict":true}

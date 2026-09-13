@@ -293,7 +293,7 @@ fn run_headless_real(config: CbtopConfig) -> Result<()> {
     cuda_model.enable_profiling();
     // GH-176: Set Immediate sync mode so start/stop_brick actually calls
     // stream.synchronize() — without this, timings are CPU-side launch latency only.
-    // TODO: trueno version mismatch (crates.io 0.16 vs realizar's local 0.17)
+    // Deferred (PMAT-939): trueno version mismatch (crates.io 0.16 vs realizar's local 0.17)
     // cuda_model.executor_mut().set_profiler_sync_mode(trueno::SyncMode::Immediate);
     cuda_model.reset_profiler();
     eprintln!("cbtop: BrickProfiler enabled (PAR-073, Immediate sync)");

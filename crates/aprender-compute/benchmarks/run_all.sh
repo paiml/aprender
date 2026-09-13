@@ -27,7 +27,9 @@ echo "📦 Checking UV (Rust-based Python package manager)..."
 if ! command -v uv &> /dev/null; then
     echo -e "${YELLOW}⚠️  UV not found. Please install UV first:${NC}"
     echo ""
-    echo "  curl -LsSf https://astral.sh/uv/install.sh | sh"
+    echo "  curl -LsSf -o /tmp/uv-install.sh https://astral.sh/uv/install.sh"
+    echo "  less /tmp/uv-install.sh   # inspect before running"
+    echo "  sh /tmp/uv-install.sh"
     echo ""
     echo "Or visit: https://docs.astral.sh/uv/getting-started/installation/"
     exit 1
