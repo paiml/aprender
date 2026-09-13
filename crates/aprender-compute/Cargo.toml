@@ -41,11 +41,11 @@ futures-intrusive = { version = "0.5", optional = true }
 wasm-bindgen-futures = { version = "0.4", optional = true }
 wasm-bindgen = { version = "0.2", optional = true }
 # Native CUDA monitoring via trueno-gpu (TRUENO-SPEC-010)
-trueno-gpu = { version = "0.66.0", path = "../aprender-gpu", optional = true, package = "aprender-gpu" }
+trueno-gpu = { version = "0.67.0", path = "../aprender-gpu", optional = true, package = "aprender-gpu" }
 # PMAT-336: Provable contracts compile-time enforcement
 provable-contracts-macros = { workspace = true }
 # P1a: Sovereign GEMM microkernel codegen (compile-time shape specialization)
-trueno-gemm-codegen = { version = "0.66.0", path = "../aprender-gemm-codegen", package = "aprender-gemm-codegen" }
+trueno-gemm-codegen = { version = "0.67.0", path = "../aprender-gemm-codegen", package = "aprender-gemm-codegen" }
 # Tracing/profiling support (renacer integration)
 tracing = { version = "0.1", optional = true }
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"], optional = true }
@@ -115,12 +115,11 @@ matrixmultiply = "0.3"  # Direct matrixmultiply crate benchmark (engine behind n
 [features]
 default = []
 parallel = ["rayon"]
+# Opt-in wall-clock gates (speedup ratios, throughput floors). Never part of a
+# required check: scripts/check_no_timing_in_required.sh -- they belong to the
+# nightly bench lane. A-013 (NEON >= 2x scalar) lives here.
+bench-gates = []
 gpu = ["wgpu", "pollster", "bytemuck", "futures-intrusive"]
-# Opt-in: builds the cooperative-matrix GEMM bench example. The underlying
-# cooperative-matrix capability was a Vulkan-specific extension dropped by wgpu 27
-# (cooperative_matrix_properties / COOPERATIVE_GEMM_SHADER are gone), so this
-# example does not compile against wgpu 27 and is gated off by default.
-cooperative-matrix = ["gpu"]
 # GPU for WASM (WebGPU) - uses wasm-bindgen-futures instead of pollster
 gpu-wasm = ["wgpu", "bytemuck", "futures-intrusive", "wasm-bindgen-futures", "wasm-bindgen", "web-sys"]
 # Native CUDA monitoring via trueno-gpu (TRUENO-SPEC-010)
@@ -204,11 +203,6 @@ required-features = ["gpu"]
 name = "wgpu_backward_demo"
 required-features = ["gpu"]
 
-[[example]]
-name = "coop_gemm_bench"
-# Requires the opt-in cooperative-matrix feature: relies on the wgpu Vulkan
-# cooperative-matrix extension that wgpu 27 removed (does not build otherwise).
-required-features = ["cooperative-matrix"]
 
 [[example]]
 name = "gpu_monitor_demo"

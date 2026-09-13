@@ -249,6 +249,28 @@ falsification_tests:
     The dispatcher hid both AVX2 defects for as long as every x86 CI box had AVX-512 VNNI
     (found 2026-09-10 when yoga, a Core Ultra 9 185H, joined the pool; reverting the fix gives
     -3650.1 against scalar -25161.5)
+- id: FALSIFY-QDOT-007
+  rule: Every CPU Q5_K reader decodes ggml's block_q5_K, judged against gguf-py (llama.cpp's
+    own reader) on a block llama.cpp quantized, never against another aprender reader
+  prediction: realizar dequantize_q5_k and aprender-quant dequantize_q5_k_to_f32 reproduce all
+    256 gguf-py values of a real Qwen3.5-0.8B-Q4_K_M super-block bit-exactly; fused_q5k_dot with
+    a one-hot activation returns each of them; quantize_q5_k round-trips through the fixed reader
+  test: cargo test -p aprender-serve --lib -- q5k_ggml; cargo test -p aprender-quant --lib -- q5k_ggml
+  if_fails: A reader packs a sub-block's 32 values into its own 16 qs bytes, or takes the fifth
+    bit from the wrong qh byte, and every Q5_K tensor decodes to other numbers. Found 2026-09-11
+    (PMAT-1101) on Qwen3.5-0.8B-Q4_K_M, whose attn_qkv and ssm_out are Q5_K; realizar disagreed
+    with gguf-py on 5,959,751 of 6,291,456 values of blk.0.attn_qkv and its layer-0 QKV sum was
+    +26.64 against llama.cpp's -17.06. The dequantizer and the fused dot shared the invented
+    layout, so every test that compared one with the other passed
+- id: FALSIFY-QDOT-008
+  rule: The CUDA Q5_K GEMV decodes ggml's block_q5_K, judged against the same gguf-py values as
+    FALSIFY-QDOT-007, never against another aprender reader
+  prediction: q5k_gemv on the golden super-block returns each of its 256 gguf-py values for a
+    one-hot activation, and gguf-py's dot (1e-4 relative) for a ramp
+  test: cargo test -p aprender-serve --features cuda --lib -- tests_q5k_ggml (needs an NVIDIA GPU)
+  if_fails: The kernel takes a value's fifth bit from the wrong qh byte or bit. Found 2026-09-11
+    (#3111, PMAT-1104) - the shipped kernel read byte val_idx/8, bit val_idx%8 instead of byte
+    val_idx%32, bit val_idx/32; on the golden block its ramp dot was 2.659 against gguf-py's 0.622
 qa_gate:
   id: F-QDOT-001
   name: Quantized Dot Product Contract
@@ -258,7 +280,7 @@ qa_gate:
   - Format registry matches trait implementations
   - Dispatch table covers all formats
   - Cross-format isolation holds
-  pass_criteria: All 6 FALSIFY tests pass
+  pass_criteria: All 8 FALSIFY tests pass
   falsification: Introduce a sign error in nibble extraction — gate must catch it
 equations:
   identity:

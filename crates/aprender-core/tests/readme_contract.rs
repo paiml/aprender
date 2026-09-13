@@ -462,7 +462,7 @@ fn test_beats_md_publishes_every_contract_measurement() {
 // ---------------------------------------------------------------------------
 
 /// FALSIFY-DOCS-CLAUDE-001: every repo-relative source path cited in CLAUDE.md
-/// (and docs/BEATS.md) resolves on disk.
+/// (and docs/BEATS.md, and docs/specifications/06x-release-schedule.md) resolves on disk.
 ///
 /// CLAUDE.md advertised six pre-monorepo paths for months —
 /// `realizar/src/inference_trace.rs`, `realizar/src/quantize/fused_gate_up.rs`,
@@ -476,7 +476,14 @@ fn test_beats_md_publishes_every_contract_measurement() {
 /// metacharacters, and ends in a source extension. A path that legitimately is
 /// not in the tree (e.g. the gitignored `.cargo/config.toml`) is marked
 /// `[gitignored]` on the same line — information the reader wants anyway.
-const DOCS_WITH_PATHS: [&str; 2] = ["CLAUDE.md", "docs/BEATS.md"];
+const DOCS_WITH_PATHS: [&str; 3] = [
+    "CLAUDE.md",
+    "docs/BEATS.md",
+    // PMAT-1097: the 06x release schedule cites the workflows, scripts and
+    // contracts its rows act on; an owed (not yet existing) artifact is written
+    // WITHOUT backticks there, so a backticked path is a claim this gate checks.
+    "docs/specifications/06x-release-schedule.md",
+];
 
 /// Does this backticked token look like a repo-relative source path we can check?
 fn looks_like_repo_path(token: &str) -> bool {
