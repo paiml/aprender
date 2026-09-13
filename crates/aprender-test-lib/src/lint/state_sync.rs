@@ -6,7 +6,7 @@
 //!
 //! The WAPR-QA-REGRESSION-005 bug occurred because:
 //! ```rust,ignore
-//! // BUG: spawn() created LOCAL state_ptr, not using self.state_ptr
+//! // Defect: spawn() created LOCAL state_ptr, not using self.state_ptr
 //! pub fn spawn(&mut self) {
 //!     let state_ptr = Rc::new(RefCell::new(State::Spawning));  // LOCAL!
 //!     let closure = move || {
@@ -275,84 +275,32 @@ impl StateSyncLinter {
             }
 
             // WASM-SS-001: Local Rc::new() in method with closure
-            if let Some(var_name) = self.detect_local_rc_new(line) {
-                let fn_name = current_fn
-                    .clone()
-                    .unwrap_or_else(|| "<unknown>".to_string());
-                self.local_rcs
-                    .entry(fn_name.clone())
-                    .or_default()
-                    .push((var_name.clone(), line_num));
-
-                // If this function creates closures, this is suspicious
-                let fn_has_any_closure = fn_has_closure
-                    || fns_with_closures.contains(&fn_name)
-                    || self.function_likely_creates_closure(&fn_name);
-                if fn_has_any_closure {
-                    report.errors.push(LintError {
-                        rule: "WASM-SS-001".to_string(),
-                        message: format!(
-                            "Local `{var_name}` creates new Rc - if captured by closure, \
-                             it will be disconnected from self"
-                        ),
-                        file: self.current_file.clone(),
-                        line: line_num,
-                        column: line.find(&var_name).unwrap_or(0) + 1,
-                        severity: LintSeverity::Error,
-                        suggestion: Some(format!(
-                            "Use `let {var_name}_clone = self.{var_name}.clone()` instead"
-                        )),
-                    });
-                }
-            }
+            self.check_local_rc_new(
+                line,
+                line_num,
+                current_fn.as_deref(),
+                fn_has_closure,
+                &fns_with_closures,
+                &mut report,
+            );
 
             // WASM-SS-006: Type alias ::new() pattern
-            if let Some((alias_name, var_name)) = self.detect_type_alias_new(line) {
-                if fn_has_closure
-                    || self.function_likely_creates_closure(
-                        current_fn.as_deref().unwrap_or("<unknown>"),
-                    )
-                {
-                    report.errors.push(LintError {
-                        rule: "WASM-SS-006".to_string(),
-                        message: format!(
-                            "Type alias `{alias_name}::new()` creates local Rc - \
-                             may cause state desync if captured in closure"
-                        ),
-                        file: self.current_file.clone(),
-                        line: line_num,
-                        column: line.find(&var_name).unwrap_or(0) + 1,
-                        severity: LintSeverity::Warning,
-                        suggestion: Some(format!(
-                            "Use `self.{var_name}.clone()` instead of `{alias_name}::new()`"
-                        )),
-                    });
-                }
-            }
+            self.check_type_alias_new(
+                line,
+                line_num,
+                current_fn.as_deref(),
+                fn_has_closure,
+                &mut report,
+            );
 
             // WASM-SS-007: Helper function returning Rc pattern
-            if let Some((fn_name_called, var_name)) = self.detect_rc_function_call(line) {
-                if fn_has_closure
-                    || self.function_likely_creates_closure(
-                        current_fn.as_deref().unwrap_or("<unknown>"),
-                    )
-                {
-                    report.errors.push(LintError {
-                        rule: "WASM-SS-007".to_string(),
-                        message: format!(
-                            "Function `{fn_name_called}()` returns Rc - \
-                             local assignment may cause state desync in closure"
-                        ),
-                        file: self.current_file.clone(),
-                        line: line_num,
-                        column: line.find(&var_name).unwrap_or(0) + 1,
-                        severity: LintSeverity::Warning,
-                        suggestion: Some(
-                            "Clone from self instead of calling helper function".to_string(),
-                        ),
-                    });
-                }
-            }
+            self.check_rc_function_call(
+                line,
+                line_num,
+                current_fn.as_deref(),
+                fn_has_closure,
+                &mut report,
+            );
 
             // WASM-SS-003: Closure captures local instead of self field
             if self.line_creates_closure(line) {
@@ -367,6 +315,111 @@ impl StateSyncLinter {
         }
 
         Ok(report)
+    }
+
+    /// WASM-SS-001: local `Rc::new()` in a method that also creates closures.
+    fn check_local_rc_new(
+        &mut self,
+        line: &str,
+        line_num: usize,
+        current_fn: Option<&str>,
+        fn_has_closure: bool,
+        fns_with_closures: &HashSet<String>,
+        report: &mut StateSyncReport,
+    ) {
+        let Some(var_name) = self.detect_local_rc_new(line) else {
+            return;
+        };
+        let fn_name = current_fn.unwrap_or("<unknown>").to_string();
+        self.local_rcs
+            .entry(fn_name.clone())
+            .or_default()
+            .push((var_name.clone(), line_num));
+
+        // If this function creates closures, this is suspicious
+        let fn_has_any_closure = fn_has_closure
+            || fns_with_closures.contains(&fn_name)
+            || self.function_likely_creates_closure(&fn_name);
+        if fn_has_any_closure {
+            report.errors.push(LintError {
+                rule: "WASM-SS-001".to_string(),
+                message: format!(
+                    "Local `{var_name}` creates new Rc - if captured by closure, \
+                     it will be disconnected from self"
+                ),
+                file: self.current_file.clone(),
+                line: line_num,
+                column: line.find(&var_name).unwrap_or(0) + 1,
+                severity: LintSeverity::Error,
+                suggestion: Some(format!(
+                    "Use `let {var_name}_clone = self.{var_name}.clone()` instead"
+                )),
+            });
+        }
+    }
+
+    /// WASM-SS-006: type alias `::new()` creating a local Rc in a closure-bearing fn.
+    fn check_type_alias_new(
+        &self,
+        line: &str,
+        line_num: usize,
+        current_fn: Option<&str>,
+        fn_has_closure: bool,
+        report: &mut StateSyncReport,
+    ) {
+        let Some((alias_name, var_name)) = self.detect_type_alias_new(line) else {
+            return;
+        };
+        if !fn_has_closure
+            && !self.function_likely_creates_closure(current_fn.unwrap_or("<unknown>"))
+        {
+            return;
+        }
+        report.errors.push(LintError {
+            rule: "WASM-SS-006".to_string(),
+            message: format!(
+                "Type alias `{alias_name}::new()` creates local Rc - \
+                 may cause state desync if captured in closure"
+            ),
+            file: self.current_file.clone(),
+            line: line_num,
+            column: line.find(&var_name).unwrap_or(0) + 1,
+            severity: LintSeverity::Warning,
+            suggestion: Some(format!(
+                "Use `self.{var_name}.clone()` instead of `{alias_name}::new()`"
+            )),
+        });
+    }
+
+    /// WASM-SS-007: helper function returning Rc, bound locally in a closure-bearing fn.
+    fn check_rc_function_call(
+        &self,
+        line: &str,
+        line_num: usize,
+        current_fn: Option<&str>,
+        fn_has_closure: bool,
+        report: &mut StateSyncReport,
+    ) {
+        let Some((fn_name_called, var_name)) = self.detect_rc_function_call(line) else {
+            return;
+        };
+        if !fn_has_closure
+            && !self.function_likely_creates_closure(current_fn.unwrap_or("<unknown>"))
+        {
+            return;
+        }
+        report.errors.push(LintError {
+            rule: "WASM-SS-007".to_string(),
+            message: format!(
+                "Function `{fn_name_called}()` returns Rc - \
+                 local assignment may cause state desync in closure"
+            ),
+            file: self.current_file.clone(),
+            line: line_num,
+            column: line.find(&var_name).unwrap_or(0) + 1,
+            severity: LintSeverity::Warning,
+            suggestion: Some("Clone from self instead of calling helper function".to_string()),
+        });
     }
 
     /// Pre-pass to collect type aliases and function signatures
@@ -470,22 +523,31 @@ impl StateSyncLinter {
             ];
 
             for pattern in &patterns {
-                if trimmed.contains(pattern) {
-                    // Extract variable name if it's an assignment
-                    if let Some(after_let) = trimmed.strip_prefix("let ") {
-                        let after_mut = after_let.strip_prefix("mut ").unwrap_or(after_let);
-                        let name_end = after_mut
-                            .find(|c: char| !c.is_alphanumeric() && c != '_')
-                            .unwrap_or(after_mut.len());
-                        let var_name = &after_mut[..name_end];
-                        if !var_name.is_empty() {
-                            return Some((fn_name.clone(), var_name.to_string()));
-                        }
-                    }
+                if !trimmed.contains(pattern) {
+                    continue;
+                }
+                // Extract variable name if it's an assignment
+                if let Some(var_name) = Self::let_binding_name(trimmed) {
+                    return Some((fn_name.clone(), var_name));
                 }
             }
         }
         None
+    }
+
+    /// Name bound by `let` / `let mut`, if `trimmed` starts such a statement.
+    fn let_binding_name(trimmed: &str) -> Option<String> {
+        let after_let = trimmed.strip_prefix("let ")?;
+        let after_mut = after_let.strip_prefix("mut ").unwrap_or(after_let);
+        let name_end = after_mut
+            .find(|c: char| !c.is_alphanumeric() && c != '_')
+            .unwrap_or(after_mut.len());
+        let var_name = &after_mut[..name_end];
+        if var_name.is_empty() {
+            None
+        } else {
+            Some(var_name.to_string())
+        }
     }
 
     /// Detect function/method start, return function name

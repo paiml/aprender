@@ -170,7 +170,7 @@ generate_report() {
     cat > "$RESULTS_DIR/report.md" << EOF
 # Chaos Test Report
 
-Generated: $(date -Iseconds)
+Generated: $(date -d "@${SOURCE_DATE_EPOCH:-$(date +%s)}" -Iseconds)
 Binary: $BINARY
 Model: $MODEL
 

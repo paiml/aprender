@@ -21,6 +21,15 @@ pub struct CudaBatchRequest {
     pub non_streaming: bool,
     /// PMAT-086: Timestamp when request was enqueued (for queue latency measurement)
     pub enqueue_time: std::time::Instant,
+    /// PP-LLAMA-001 §3: return path for the SERVER-measured phase split.
+    ///
+    /// Filled on the single-request fast path, which is the c=1 regime §7.2
+    /// gates `prefill_ratio` in. On the batched path it is DROPPED, and the
+    /// handler therefore reports no `timings`: a batch's prefill is shared
+    /// across m prompts and its decode is interleaved, so there is no per-request
+    /// phase split to report and inventing one would put a fabricated numerator
+    /// into a gated ratio.
+    pub timing_tx: Option<tokio::sync::oneshot::Sender<crate::api::PhaseTimings>>,
 }
 
 /// PMAT-044: Batch scheduler configuration
@@ -30,6 +39,33 @@ pub struct CudaBatchConfig {
     pub max_batch: usize,
     /// Window timeout in ms — how long to wait for batch to fill (default 10ms)
     pub window_ms: u64,
+}
+
+#[cfg(feature = "cuda")]
+impl CudaBatchConfig {
+    /// PP-13/PP-24: this scheduler's identity and admission ceiling, for
+    /// `/v1/effective-config`.
+    ///
+    /// The identity and these numbers used to be printed to stdout and then
+    /// MOVED into the spawned task, so after startup nothing could say which of
+    /// the two schedulers was running or how many requests it would admit —
+    /// which is exactly what PP-24 derives the concurrency ladder from.
+    #[must_use]
+    pub fn report(&self, admission_ceiling_reason: &'static str) -> crate::api::SchedulerReport {
+        crate::api::SchedulerReport {
+            kind: "cuda_batch",
+            max_in_flight: self.max_batch,
+            window_ms: self.window_ms,
+            // This scheduler prefills whole prompts; it has no chunk size and
+            // no per-step token budget, and says so rather than reporting 0.
+            prefill_chunk_size: None,
+            token_budget: None,
+            slots_admitted: self.max_batch,
+            admission_ceiling_reason,
+            in_flight_now: None,
+            peak_in_flight: None,
+        }
+    }
 }
 
 #[cfg(feature = "cuda")]
@@ -57,6 +93,28 @@ impl Default for CudaBatchConfig {
 /// Shared by both batch scheduler (PMAT-044) and iteration scheduler (PMAT-088).
 #[cfg(feature = "cuda")]
 pub fn generate_single_request(cuda_model: &mut OwnedQuantizedModelCuda, req: CudaBatchRequest) {
+    let timing_tx = req.timing_tx;
+    let req = CudaBatchRequest {
+        timing_tx: None,
+        ..req
+    };
+    let generate_start = std::time::Instant::now();
+    generate_single_request_inner(cuda_model, req);
+    // §3: the engine timed prefill; decode is the remainder of the call this
+    // function made. Both phases are measured — `PhaseTimings::to_timings`
+    // refuses to build a wire block unless they are.
+    if let Some(tx) = timing_tx {
+        let mut phases = cuda_model.take_phase_timings();
+        if let Some(prefill_ms) = phases.prefill_ms {
+            let total_ms = generate_start.elapsed().as_secs_f64() * 1000.0;
+            phases.decode_ms = Some((total_ms - prefill_ms).max(0.0));
+        }
+        let _ = tx.send(phases);
+    }
+}
+
+#[cfg(feature = "cuda")]
+fn generate_single_request_inner(cuda_model: &mut OwnedQuantizedModelCuda, req: CudaBatchRequest) {
     if req.non_streaming {
         let mut tokens = Vec::new();
         let result =
@@ -94,6 +152,7 @@ pub fn generate_single_request(cuda_model: &mut OwnedQuantizedModelCuda, req: Cu
 pub fn spawn_cuda_batch_scheduler(
     model: Arc<std::sync::RwLock<OwnedQuantizedModelCuda>>,
     config: CudaBatchConfig,
+    in_flight: Arc<crate::api::InFlightCounter>,
 ) -> tokio::sync::mpsc::Sender<CudaBatchRequest> {
     let (tx, rx) = tokio::sync::mpsc::channel::<CudaBatchRequest>(256);
 
@@ -105,11 +164,45 @@ pub fn spawn_cuda_batch_scheduler(
             .expect("PMAT-044: failed to create scheduler runtime");
 
         rt.block_on(async move {
-            cuda_batch_scheduler_loop(model, config, rx).await;
+            cuda_batch_scheduler_loop(model, config, rx, in_flight).await;
         });
     });
 
     tx
+}
+
+/// PP-24: holds the in-flight count for one batch and releases it on EVERY
+/// exit, including the four early returns `process_cuda_batch` takes on error.
+///
+/// A hand-placed decrement would have to be repeated at each of them, and the
+/// one that gets forgotten leaves `in_flight_now` permanently above zero — a
+/// counter that only ever rises is worse than no counter, because a reader
+/// cannot tell it from a busy server.
+///
+/// The count MIRRORS `BatchState::m`, the scheduler's own number of live
+/// slots, synced once per decode step. Counting requests as they were pulled
+/// in was measured wrong twice over (cross-vendor review of PP-24): a staggered
+/// prompt was counted in the batch it arrived with AND again when it joined,
+/// and a request taking a recycled slot was never counted at all.
+#[cfg(feature = "cuda")]
+struct BatchInFlight<'a> {
+    counter: &'a crate::api::InFlightCounter,
+}
+
+#[cfg(feature = "cuda")]
+impl BatchInFlight<'_> {
+    /// Publish the scheduler's live slot count as the in-flight figure.
+    fn sync(&self, live_slots: usize) {
+        self.counter.set(live_slots);
+    }
+}
+
+#[cfg(feature = "cuda")]
+impl Drop for BatchInFlight<'_> {
+    fn drop(&mut self) {
+        // The batch ended on this path, whichever path it was.
+        self.counter.set(0);
+    }
 }
 
 #[cfg(feature = "cuda")]
@@ -117,6 +210,7 @@ async fn cuda_batch_scheduler_loop(
     model: Arc<std::sync::RwLock<OwnedQuantizedModelCuda>>,
     config: CudaBatchConfig,
     mut rx: tokio::sync::mpsc::Receiver<CudaBatchRequest>,
+    in_flight: Arc<crate::api::InFlightCounter>,
 ) {
     eprintln!(
         "[PMAT-044] Batch scheduler started: max_batch={}, window={}ms",
@@ -190,7 +284,13 @@ async fn cuda_batch_scheduler_loop(
                     Ok(None) => {
                         eprintln!("[PMAT-044] Channel closed during accumulation");
                         if !batch.is_empty() {
-                            process_cuda_batch(&model, batch, &mut rx, config.max_batch);
+                            process_cuda_batch(
+                                &model,
+                                batch,
+                                &mut rx,
+                                config.max_batch,
+                                &in_flight,
+                            );
                         }
                         return;
                     },
@@ -206,7 +306,7 @@ async fn cuda_batch_scheduler_loop(
         recent_batch_gt1 = batch_size > 1;
 
         // Process the batch (PMAT-073: pass rx for mid-batch joins)
-        process_cuda_batch(&model, batch, &mut rx, config.max_batch);
+        process_cuda_batch(&model, batch, &mut rx, config.max_batch, &in_flight);
 
         let elapsed = batch_start.elapsed();
         eprintln!(
@@ -228,8 +328,13 @@ fn process_cuda_batch(
     batch: Vec<CudaBatchRequest>,
     rx: &mut tokio::sync::mpsc::Receiver<CudaBatchRequest>,
     max_batch: usize,
+    counter: &crate::api::InFlightCounter,
 ) {
     let m = batch.len();
+    // PP-24: what this server ACTUALLY ran concurrently, as opposed to the
+    // ceiling it advertises. The ladder is derived from the ceiling (known
+    // before the band) and checked against this peak (known after it).
+    let in_flight = BatchInFlight { counter };
 
     // PERF-041: `channel_empty` is passed as `true` because THIS scheduler does
     // not consult `rx` before taking the fast path — that omission is F-BATCH-003
@@ -353,6 +458,8 @@ fn process_cuda_batch(
     // Phase 2: Decode loop with mid-batch joins (PMAT-073/099) and slot recycling (PMAT-074)
     // Lock per step (~19ms per acquire vs ~660ms total).
     // PMAT-099: Pending staggered joins are processed one-per-step for progressive ramp-up.
+    // PP-24: the initial batch is live from here, joins or not.
+    in_flight.sync(state.m);
     while !state.all_done() && state.gen_idx < state.max_tokens_max {
         let token_ids = {
             let mut cuda_model = model.write().expect("PMAT-072: model lock poisoned");
@@ -406,6 +513,10 @@ fn process_cuda_batch(
                     Err(_) => break, // No pending requests
                 }
             }
+
+            // PP-24: publish what this batch actually holds, after every join
+            // and recycle path above has run and before the step decodes it.
+            in_flight.sync(state.m);
 
             // PMAT-074: Slot recycling — reuse finished slots for pending requests.
             // Check staggered pending joins first, then external channel.

@@ -76,14 +76,15 @@ pub fn unsupported_architecture_reason<'n>(
     architecture: &str,
     tensor_names: impl IntoIterator<Item = &'n str>,
 ) -> Option<String> {
-    let has_ssm = tensor_names
+    let ssm_tensor = tensor_names
         .into_iter()
-        .any(|name| name.contains("ssm_") || name.contains("ssm."));
-    if has_ssm {
+        .find(|name| name.contains("ssm_") || name.contains("ssm."));
+    if let Some(tensor_name) = ssm_tensor {
         return Some(format!(
-            "Architecture '{architecture}' uses SSM/Gated Delta Net layers which are not yet \
-             supported for inference. Use a standard transformer model (e.g., Qwen2.5, \
-             LLaMA, Mistral) or wait for SSM support in a future release."
+            "Architecture '{architecture}' uses SSM/Gated Delta Net layers (detected tensor '{tensor_name}'). \
+             NEITHER the CPU nor the GPU backend implements Gated DeltaNet/SSM layers yet. \
+             Tracking issues: #3090 (GPU) and #3091 (CPU). \
+             Use a standard transformer model (e.g., Qwen2.5, LLaMA, Mistral) or wait for SSM support in a future release."
         ));
     }
     None
@@ -745,6 +746,16 @@ mod unsupported_architecture_tests {
         assert!(
             reason.contains("qwen35") && reason.contains("SSM/Gated Delta Net"),
             "refusal must name the architecture and the reason, got: {reason}"
+        );
+        assert!(
+            reason.contains("NEITHER the CPU nor the GPU backend implements"),
+            "must mention both backends"
+        );
+        assert!(reason.contains("#3090"), "must mention GPU #3090");
+        assert!(reason.contains("#3091"), "must mention CPU #3091");
+        assert!(
+            reason.contains("blk.0.ssm_conv1d.weight"),
+            "must mention tensor name"
         );
     }
 

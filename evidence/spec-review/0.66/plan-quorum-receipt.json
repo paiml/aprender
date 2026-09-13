@@ -1,0 +1,201 @@
+{
+ "workflow": "wf_2faf0298-d56",
+ "stages": [
+  {
+   "agent": "a3514bdfe3c212337",
+   "label": null,
+   "result": {
+    "raw": ""
+   }
+  },
+  {
+   "agent": "ac9e62bc4c5daa78d",
+   "label": null,
+   "result": {
+    "lane": "quorum",
+    "mode": "plan",
+    "width": 3,
+    "consensus": "implement-with-changes (3/3 lanes require changes; no lane found the spec sound as written). Lanes 1 and 2 returned do-not-implement-as-written, lane 3 returned FAIL in the schema while its own prose verdict was implement-with-changes. NOTE: the quorum schema's verdict enum is PASS|FAIL|do-not-implement-as-written and does not contain the prompt's implement-as-written|implement-with-changes wording, so every lane had to map its verdict on the way out \u2014 treat the enum values as approximations of the prose. The one finding all three lanes made is real and I confirmed it: the \u00a711 obligations table (36 rows, header `| row | obligation | blockers | host | expiry |`) has no owner column, and grepping the whole document shows only 2 of 36 rows name an owner inline (row 27 spec-owner, row 33 perf-gate), the rest deferring to perf-matrix.yaml. Beyond the lanes I independently re-derived the DAG and the crate table: there is NO cycle and NO expiry inversion (my first parse reported a self-loop on row 10, which was my own bug \u2014 `gx10` in a blockers cell matched as row 10; corrected), and the \u00a76.7 rename table is COMPLETE \u2014 scanning every crates/*/Cargo.toml at origin/main 587ad0797 yields exactly 52 non-conformant [lib] names = the spec's 51 rows plus the aprender-core decision row. Three findings none of the lanes made are in the list below (B5 release-criteria self-contradiction, B6 root manifest outside the rename guard's universe, B4's row-35 zero-slack pairs). I also refuted one lane finding: lane 2's major claim that four figures are unsourced is wrong \u2014 each names an issue or memory doc listed in \u00a712.",
+    "dissent": "Lane 2 vs lane 3 on sourcing (criterion 1): lane 2 finding 1.1, grounding=measured, severity=major \u2014 '405 tok/s, 20.3 tok/s, 43x latency, 5.01 ms/token lack a source tag ... cannot be found in origin/main'; lane 3 note numbers-sourced \u2014 'All checked figures carry explicit citations tracing back to \u00a712. Verifying origin/main files matched the claims perfectly.' I adjudicated FOR lane 3: 405 tok/s (line 143) ends '(#2002)', 20.3 tok/s (line 146) names '#2323', both issues listed verbatim in \u00a712; 43x traces to project_adoption_killers_2026_08_25, cited in \u00a712; 5.01 ms/token carries a file:line at line 278 (cublas_prefill/attention.rs:995,1022). Lane 2's finding is downgraded to note B10. || Lanes 2 and 3 vs the document on AMD: lane 2 finding 2.1 (blocker) 'Drop AMD until hardware is acquired', lane 3 finding B-A2-no-host (blocker) 'Remove B-A2 from the 0.66 obligations'. Both contradict \u00a711's explicit, argued position at lines 571-575 ('Row 21 and row 36 will still be open at the tag \u2014 that is the intended shape, not a miss'). The defect is real but is a column-semantics defect, not grounds for deleting the vendor: see B7. || Lane 2 alone raised the shim-mechanism blocker (B8); lane 3 alone raised the row-28 external blocker (B3); lane 1 alone raised the clauses 5/6 gap (B2) \u2014 the strongest unique finding in the quorum.",
+    "findings": [
+     {
+      "id": "B1",
+      "severity": "major",
+      "section": "\u00a711 (line 529-531 header; whole table)",
+      "claim": "The obligations DAG has no owner column and 34 of its 36 rows name no owner anywhere in the document.",
+      "evidence": "3/3 lanes; confirmed by me. Table header at line 530 is `| row | obligation | blockers | host | expiry |`. `grep -n owner` over the file shows inline owners only for row 27 (spec-owner) and row 33 (perf-gate). \u00a75 and \u00a76.5 workstream tables also have no owner column. Prose at line 568 defers ownership to perf-matrix.yaml, so an owner exists only once a row is already past expiry.",
+      "suggested_change": "Add an `owner` column to the \u00a711 table and fill all 36 rows, or state in the table caption that the owner of record is the perf-matrix.yaml cell named in each row and give every row that cell name."
+     },
+     {
+      "id": "B2",
+      "severity": "major",
+      "section": "\u00a72 clauses 5-6 vs \u00a76.5 vs \u00a711 row 35",
+      "claim": "Row 35 is a release criterion asserting wgpu, Metal and wasm32 at 7/7 against the \u00a72 definition, but no workstream in \u00a76.5 establishes clause 5 (post-publish dogfood records the backend VALUE used) or clause 6 (GGUF+APR+SafeTensors all load, or exclusions enumerated) for wgpu or Metal.",
+      "evidence": "Lane 1 (unique). Confirmed: grep -iE 'safetensors|dogfood|post-publish' over \u00a76.5 (lines 221-256) returns NOTHING. B-S1 covers GGUF and APR under wasm only and never mentions SafeTensors or its exclusion. B-W4's falsifier mentions a missing adapter line, which is adjacent to clause 5 but is about the measurement run, not the post-publish dogfood.",
+      "suggested_change": "Add B-W5/B-M4/B-S4 rows covering clauses 5 and 6 per backend (dogfood records the resolved backend value; the three formats load or the exclusion is enumerated with a reason), and make them blockers of row 35 \u2014 otherwise row 35 cannot be truthfully scored."
+     },
+     {
+      "id": "B3",
+      "severity": "major",
+      "section": "\u00a711 rows 28, 34, 35",
+      "claim": "Release criterion row 35 is blocked by row 28, whose only blocker is an external network reachability, and by row 34, whose sizing \u00a76.7 declares UNMEASURED and unsequenceable.",
+      "evidence": "Lane 3 raised row 28; extended by me. Parsed blockers of row 35 = {20..34}, which contains 28 and 34. Row 28's blockers cell reads '`nvidia-cuda-docs` reachability (`ETIMEOUT` 2026-09-04)'. \u00a711 line 568: rows past expiry 'block the 0.66 tag under PP-6'. \u00a76.7 line 422: the count of `use <old>::` sites 'has not been counted, owner spec-owner, and no rename PR is sequenced until it is'. So a documentation row gated on a third-party server, and 51 unsequenced rename PRs, both gate a parity release criterion.",
+      "suggested_change": "Narrow row 35's blockers from the blanket 20-34 to the rows that actually establish first-class status (20-24, 26-27, 29-33), and move rows 28 and 34 to their own non-release-blocking track \u2014 or state explicitly that the 0.66 tag is gated on a CUDA doc merge and 51 rename PRs."
+     },
+     {
+      "id": "B4",
+      "severity": "major",
+      "section": "\u00a711 rows 13/14, 33/34/35",
+      "claim": "Three dependency pairs have zero slack \u2014 the blocker and its dependent expire on the same day \u2014 and two of them terminate on release criterion row 35.",
+      "evidence": "Measured by me after correcting my parser (host token `gx10` had fabricated a self-loop; corrected result: no cycle, no expiry inversion). Same-day pairs: row 14 (T-4 bf16 + checkpointing) and its blocker row 13 (T-3 fused NF4 matmul), both 2026-10-17; row 35 and its blockers row 33 (B-S2/B-S3) and row 34 (renames executed), all three 2026-10-23. Lane 2 caught only the 13/14 pair.",
+      "suggested_change": "Pull each blocker's expiry at least one week ahead of its dependent, most importantly rows 33 and 34 ahead of row 35, so the release criterion is not scheduled to be satisfied the same day its inputs are due."
+     },
+     {
+      "id": "B5",
+      "severity": "major",
+      "section": "\u00a711 lines 568 and 570",
+      "claim": "\u00a711 states the release criteria twice, with different content, two lines apart.",
+      "evidence": "Missed by all three lanes; found by me. Line 568: 'Rows 17 and 18 are the release criteria for 0.66.' Line 570: 'Rows 17, 18 and **35** are the release criteria for 0.66'. Whether row 35 (the first-class scorecard, and the payload of the whole backend section) gates the tag is left ambiguous by the document that defines the gate.",
+      "suggested_change": "Delete the first sentence at line 568 and keep its second clause (the PP-6 expiry rule) attached to the three-row statement at line 570."
+     },
+     {
+      "id": "B6",
+      "severity": "major",
+      "section": "\u00a76.7 migration rule 4",
+      "claim": "The rename guard's stated universe, `crates/*/Cargo.toml`, structurally excludes the ROOT manifest \u2014 which declares `[lib] name = \"aprender\"`, the same lib name as crates/aprender-core, the one row the spec defers as DECISION REQUIRED.",
+      "evidence": "Measured by me at origin/main 587ad0797. `git show origin/main:Cargo.toml` \u2192 [package] name = \"aprender\", [lib] name = \"aprender\", path = \"src/lib.rs\". `git show origin/main:crates/aprender-core/Cargo.toml` \u2192 [lib] name = \"aprender\". Two manifests in one workspace declare the same [lib] name, and \u00a76.7 never mentions the root manifest (`grep -inE 'root (manifest|Cargo)|facade'` matches only line 384, about the facades under crates/facades/). A `crates/*/Cargo.toml` glob also misses crates/facades/*/Cargo.toml at depth 2, though those three are conformant today.",
+      "suggested_change": "State the guard's universe as the workspace member set (or `git ls-files '*/Cargo.toml' Cargo.toml` union the working tree), add the root manifest and crates/facades/* to the case table, and record the root/aprender-core duplicate `aprender` lib name in the DECISION REQUIRED row \u2014 the decision is about two crates, not one."
+     },
+     {
+      "id": "B7",
+      "severity": "minor",
+      "section": "\u00a76.5 rows B-A1, B-A2 (lines 238-239); \u00a711 rows 21, 36",
+      "claim": "The `host` column conflates 'no device of this vendor exists' with 'no host can execute this obligation', which is what made two lanes call AMD a blocker and recommend deleting it.",
+      "evidence": "Lanes 2 and 3 (blocker, 'drop AMD'); adjudicated down by me. B-A1's work is a perf-matrix.yaml edit and its falsifier ('the cell is created with a compute_class no build reaches, or with an `expires` date typed instead of the acquisition anchor') is checkable with no AMD device; B-A2's falsifier ('the wgpu lane is written with any NVIDIA-specific or Vulkan-extension-specific assumption') is checkable on `intel`. \u00a711 lines 571-575 argue explicitly that rows 21 and 36 staying open at the tag is the intended shape. The lanes' prescription contradicts a position the document already defends; the column wording is what misled them.",
+      "suggested_change": "Split the column into `device under test` and `host that runs the obligation`, or write B-A1 host as 'CPU-runnable (matrix edit); no AMD device in the fleet' so a reviewer cannot read 'none' as unrunnable."
+     },
+     {
+      "id": "B8",
+      "severity": "major",
+      "section": "\u00a76.7 migration rule 3",
+      "claim": "CONTESTED (lane 2 only, mechanism plausible, not verified by me): a shim package published under the old name `trueno` does not reach a downstream that depends on package `aprender-compute` and writes `use trueno::\u2026`, because that consumer has no dependency edge to a package called `trueno`.",
+      "evidence": "Lane 2 finding 5.1, grounding=asserted. The mechanism is sound for external consumers: rule 3 makes 'crate trueno' a shim whose content is `pub use aprender_compute::*;`, which serves consumers still depending on the OLD published package trueno, not consumers of aprender-compute whose `use trueno::` paths break the moment the [lib] name changes. In-workspace consumers are handled \u2014 rule 2 requires each PR to update 'every `use` in the workspace'. I did not verify what aprender-compute's external downstreams depend on (no network), so this is forwarded as a claim to check, not a confirmed blocker.",
+      "suggested_change": "State in rule 3 which population each shim serves (old-package-name consumers vs current-package consumers with old `use` paths), and for the latter either accept and announce a hard breaking change with the minor-version bump, or ship a deprecated `pub use` alias module inside aprender_compute itself for the two-version window."
+     },
+     {
+      "id": "B9",
+      "severity": "note",
+      "section": "\u00a76.7 crate table",
+      "claim": "The rename table is complete and its count is accurate \u2014 no action needed.",
+      "evidence": "Verified by me at origin/main 587ad0797, independently of the lanes (lane 3 also checked and agreed). Scanning every `crates/*/Cargo.toml` for a [lib] name != directory-with-hyphens-underscored yields exactly 52 crates; the spec lists 51 rows plus the `crates/aprender-core` DECISION REQUIRED row = 52. Crates absent from the table (apr-cli\u2192apr_cli, apr-format\u2192apr_format, aprender-present, aprender-test, crates/facades/*) are conformant as the spec claims; crates/aprender-contracts-staging has no Cargo.toml as the spec claims.",
+      "suggested_change": "None."
+     },
+     {
+      "id": "B10",
+      "severity": "note",
+      "section": "\u00a73 history table (lines 143, 146, 150)",
+      "claim": "DOWNGRADED from lane 2's major: the \u00a73 history table carries its figures by prose reference (issue numbers, memory doc names) rather than by the document's own [X]/[V] tagging convention. The figures are sourced; only the tag is missing.",
+      "evidence": "See the dissent field for the per-figure resolution. This is a convention inconsistency, since \u00a71.1-\u00a71.5 and \u00a76.5-\u00a76.7 do use [X]/[V] marks.",
+      "suggested_change": "Either tag the \u00a73 rows with [X] for consistency, or note once under the \u00a73 heading that history rows cite by issue number rather than by grounding mark."
+     }
+    ],
+    "conversations": [
+     "9912fb72-35a5-4880-a0c6-74a2fe96ba5b",
+     "b18366c9-e0f4-4bae-af02-e6034994d88f",
+     "8fe8106e-0c98-46e0-a8a2-1224c857a1c9"
+    ],
+    "child_conversations": [],
+    "commands": [
+     {
+      "cmd": "agy --dangerously-skip-permissions --print-timeout 25m --output-format json --json-schema /home/noah/.claude/skills/paiml-implement/agy/quorum-schema.json --mode plan -p=<prompt>  (x3, via agy-lane.sh --mode plan --writes, launched with setsid nohup in per-lane trees)",
+      "exit": 0
+     },
+     {
+      "cmd": "git clone --shared --no-checkout /home/noah/src/aprender tree-{1,2,3} && git update-ref refs/remotes/origin/main 587ad0797 && git checkout --detach 587ad0797",
+      "exit": 0
+     },
+     {
+      "cmd": "git ls-tree -r --name-only origin/main | grep -E '^crates/[^/]+/Cargo.toml$' | derive non-conformant [lib] names  -> 52",
+      "exit": 0
+     },
+     {
+      "cmd": "python3 parse of \u00a711 obligations table: cycles, expiry inversions, zero-slack pairs",
+      "exit": 0
+     },
+     {
+      "cmd": "diff repo_root.before.txt repo_root.after.txt && md5sum -c spec.before.md5",
+      "exit": 0
+     }
+    ],
+    "unreachable": false
+   }
+  },
+  {
+   "agent": "abc852a56cb56fe15",
+   "label": null,
+   "result": {
+    "ticket": "PMAT-951",
+    "phase": "apply",
+    "files_changed": [
+     "/home/noah/src/aprender/docs/specifications/0.66-performance-parity-report.md",
+     "/home/noah/src/aprender/.claude/agent-memory/paiml-impl-worker/feedback_markdown_dag_table_parsing_pitfalls.md",
+     "/home/noah/src/aprender/.claude/agent-memory/paiml-impl-worker/MEMORY.md"
+    ],
+    "commands": [
+     {
+      "cmd": "git show origin/main:Cargo.toml | grep -n -A5 '^\\[lib\\]'",
+      "exit": 0
+     },
+     {
+      "cmd": "git show origin/main:crates/aprender-core/Cargo.toml | grep -n -A4 '^\\[lib\\]'",
+      "exit": 0
+     },
+     {
+      "cmd": "git ls-tree -r --name-only origin/main | grep -E '^crates/facades/.*Cargo.toml$'",
+      "exit": 0
+     },
+     {
+      "cmd": "sed -n '221,256p' docs/specifications/0.66-performance-parity-report.md | grep -inE 'safetensors|dogfood|post-publish'",
+      "exit": 1
+     },
+     {
+      "cmd": "python3 apply.py (cell-split rewrite of the \u00a711 table + 8 anchored replacements)",
+      "exit": 0
+     },
+     {
+      "cmd": "python3 - (DAG re-parse: cycles, expiry inversions, slack)",
+      "exit": 0
+     }
+    ],
+    "tests_added": [],
+    "acceptance": {
+     "cmd": "cd /home/noah/src/aprender && python3 - <<'PY' ... need=[...] ... PY",
+     "exit": 0
+    },
+    "gate": {
+     "cmd": "bash -c 'test -s /home/noah/src/aprender/docs/specifications/0.66-performance-parity-report.md && grep -c \"^## \" /home/noah/src/aprender/docs/specifications/0.66-performance-parity-report.md'",
+     "ok": true,
+     "stages_measured": 1,
+     "not_measured": []
+    },
+    "open_questions": [
+     "B1 partially deferred: the document names exactly two owner identities (`spec-owner`, `perf-gate`), so the new \u00a711 owner column is filled by a stated, auditable rule (perf-gate = measurement/receipt/matrix-cell/armed-gate rows; spec-owner = code/guard/document/naming/schema rows), with the six rows whose owner the body already names left unchanged. Which person or team answers to each identity is a spec-owner decision this worker did not make; the caption says so explicitly.",
+     "B3 side effect flagged: rows 28 and 34 now block nothing, so \u00a711's PP-6 sentence was rewritten to say they still go RED at expiry but on a non-release-blocking track. Whether the 0.66 tag should in fact be gated on the CUDA doc merge and the 51 rename PRs is a spec-owner call; the finding offered both options and this applies the narrowing option.",
+     "B8 half-unverifiable: the doc now names the two downstream populations and defaults to an in-crate `#[deprecated] pub mod trueno` alias, but the actual count of external downstreams in each population is written into \u00a76.7 as UNMEASURED with owner spec-owner \u2014 there was no network access to check crates.io reverse dependencies.",
+     "B4: eliminating zero slack required moving rows 12 (2026-10-10 -> 2026-10-03) and 13 (2026-10-17 -> 2026-10-10) earlier and row 33 to 2026-10-17. Minimum slack in the table is now 6 days, not the 7 the finding suggested; going to 7 everywhere would have moved release rows 17, 18 and 35 past 2026-10-23, which reads as a tag-date change and is not this worker's call."
+    ],
+    "partial": false,
+    "applied": [
+     "B1",
+     "B2",
+     "B3",
+     "B4",
+     "B5",
+     "B6",
+     "B7",
+     "B8"
+    ]
+   }
+  }
+ ]
+}

@@ -25,6 +25,7 @@ fn test_chat_completion_response_serialize() {
         brick_trace: None,
         step_trace: None,
         layer_trace: None,
+    timings: None,
     };
     let json = serde_json::to_string(&response).expect("test");
     assert!(json.contains("chat-123"));

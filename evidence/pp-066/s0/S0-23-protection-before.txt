@@ -1,0 +1,3 @@
+$ gh api repos/paiml/aprender/branches/main/protection --jq '{strict,contexts,force,del}'   # BEFORE
+{"contexts":["ci / gate","workspace-test"],"del":false,"force":false,"reviews":null,"strict":false}
+read_at=2026-09-05T07:57:50Z

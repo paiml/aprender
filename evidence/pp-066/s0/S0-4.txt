@@ -1,0 +1,7 @@
+$ git grep -nE "list-adapters|list_adapters" -- crates/apr-cli/src crates/aprender-serve/src
+hits=1
+$ git grep -nE "request_adapter|enumerate_adapters" -- crates/aprender-compute/src | head -4
+crates/aprender-compute/src/backends/gpu/device/mod.rs:56:/// `enumerate_adapters` call site.
+crates/aprender-compute/src/backends/gpu/device/mod.rs:125:            .request_adapter(&wgpu::RequestAdapterOptions {
+crates/aprender-compute/src/backends/gpu/device/mod.rs:158:    /// Adapter indices correspond to `Instance::enumerate_adapters()` ordering.
+crates/aprender-compute/src/backends/gpu/device/mod.rs:169:    /// Adapter indices correspond to `Instance::enumerate_adapters()` ordering.

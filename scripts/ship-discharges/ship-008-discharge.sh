@@ -97,7 +97,10 @@ echo "Step 1: wrote golden - ${GOLDEN_BYTES} bytes, sha256=${GOLDEN_SHA_SHORT}..
 echo "Step 2: apr run + capture rendered prompt"
 
 CAPTURE_MODE=""
-START_EPOCH=$(date -u +%s)
+# START_EPOCH/END_EPOCH measure the actual wall-clock duration of the apr run
+# below; SOURCE_DATE_EPOCH, when set, pins them for a reproducible/test
+# invocation instead of the real clock.
+START_EPOCH=${SOURCE_DATE_EPOCH:-$(date -u +%s)}
 RUN_EXIT=0
 if grep -q -- '--print-prompt' <<< "$("$APR_BINARY" run --help 2>&1)" ; then
     "$APR_BINARY" run "$MODEL" --system "$SYSTEM_MSG" --prompt "$USER_MSG" --print-prompt >"$RENDERED_FILE" 2>&1 || RUN_EXIT=$?
@@ -108,7 +111,7 @@ else
     "$APR_BINARY" run "$MODEL" --system "$SYSTEM_MSG" --prompt "$USER_MSG" --max-tokens 1 --debug >"$RENDERED_FILE" 2>&1 || RUN_EXIT=$?
     CAPTURE_MODE="--debug --max-tokens 1 (fallback)"
 fi
-END_EPOCH=$(date -u +%s)
+END_EPOCH=${SOURCE_DATE_EPOCH:-$(date -u +%s)}
 DURATION_SEC=$(( END_EPOCH - START_EPOCH ))
 
 echo "  capture mode: $CAPTURE_MODE"
@@ -148,7 +151,7 @@ fi
 # --- Step 5: emit evidence JSON -----------------------------------------
 HOSTNAME_VAL="$(hostname)"
 APR_VERSION="$( "$APR_BINARY" --version 2>/dev/null || echo "unknown" )"
-DATE_UTC="$(date -u +%Y-%m-%d)"
+DATE_UTC="$(date -u -d "@${SOURCE_DATE_EPOCH:-$(date +%s)}" +%Y-%m-%d)"
 
 # JSON-encode the diff details (single-line excerpt).
 DIFF_DETAILS_JSON="$(printf '%s' "$DIFF_DETAILS" | jq -Rs . 2>/dev/null || printf '"%s"' "$DIFF_DETAILS")"

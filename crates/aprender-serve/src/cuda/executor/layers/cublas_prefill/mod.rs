@@ -31,7 +31,7 @@ use super::super::*;
 /// Default=4: cuBLAS SGEMM beats batched GEMV at M=4 (51 vs 35 tok/s).
 /// Batched Q4K GEMV at M<=8 uses single warp (32 threads/block) — insufficient
 /// parallelism. Multi-warp specializations only exist for M=16/32.
-/// TODO: Add M=4 multi-warp kernel, then raise threshold to 8+.
+/// Deferred (PMAT-759): Add M=4 multi-warp kernel, then raise threshold to 8+.
 pub(crate) fn cublas_gemm_threshold() -> u32 {
     std::env::var("CUBLAS_GEMM_THRESHOLD")
         .ok()

@@ -199,31 +199,49 @@ mod server_commands {
             let use_iteration_scheduler =
                 std::env::var("ITERATION_SCHEDULER").as_deref() == Ok("1");
 
-            let batch_tx = if use_iteration_scheduler {
+            // PP-13/PP-24: the identity and the admission ceiling are no longer
+            // only printed. They are RETAINED on the state, so a harness can ask
+            // the running server which scheduler it got and how many slots it
+            // will admit — the number the concurrency ladder is derived from.
+            let admission_reason = crate::api::admission_ceiling_reason(
+                state
+                    .cuda_model()
+                    .and_then(|m| m.read().ok().and_then(|m| m.max_batch_sizing()))
+                    .map(|s| s.source),
+            );
+            let in_flight = crate::api::InFlightCounter::new();
+            let (batch_tx, report, counter) = if use_iteration_scheduler {
                 let iter_config =
                     crate::api::iteration_scheduler::IterationSchedulerConfig::default();
                 println!(
                     "  ITERATION SCHEDULER: max_slots={}, prefill_chunk={} (PMAT-088)",
                     iter_config.max_slots, iter_config.prefill_chunk_size,
                 );
-                crate::api::iteration_scheduler::spawn_iteration_scheduler(
+                let report = iter_config.report(admission_reason);
+                let tx = crate::api::iteration_scheduler::spawn_iteration_scheduler(
                     cuda_model_arc,
                     iter_config,
-                )
+                );
+                (tx, report, None)
             } else {
                 let batch_config = crate::api::cuda_batch_scheduler::CudaBatchConfig::default();
                 println!(
                     "  CONTINUOUS BATCHING: max_batch={}, window={}ms (PMAT-044)",
                     batch_config.max_batch, batch_config.window_ms
                 );
-                crate::api::cuda_batch_scheduler::spawn_cuda_batch_scheduler(
+                let report = batch_config.report(admission_reason);
+                let tx = crate::api::cuda_batch_scheduler::spawn_cuda_batch_scheduler(
                     cuda_model_arc,
                     batch_config,
-                )
+                    in_flight.clone(),
+                );
+                (tx, report, Some(in_flight))
             };
             println!();
 
-            Ok(state.with_cuda_batch_tx(batch_tx))
+            Ok(state
+                .with_cuda_batch_tx(batch_tx)
+                .with_scheduler_report(report, counter))
         }
 
         #[cfg(not(feature = "cuda"))]

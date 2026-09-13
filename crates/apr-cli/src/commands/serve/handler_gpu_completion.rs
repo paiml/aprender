@@ -419,6 +419,9 @@ fn start_gguf_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
         config
             .gpu_layers
             .map_or_else(|| "none".to_string(), |r| r.to_string()),
+        // NOTE: a BUILD label, not a residency claim. What actually loaded is
+        // reported by `/v1/effective-config`'s `backend_loaded`, which is
+        // derived from the AppState and can say `cpu` on this very build.
         if cfg!(feature = "cuda") {
             "cuda"
         } else if cfg!(feature = "wgpu") {
@@ -427,6 +430,8 @@ fn start_gguf_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
             "cpu"
         }
     );
+    // PP-14/PP-15: the same resolution, as a value the served process reports.
+    let offload = super::offload_report(config, resolved_layers, total_layers);
 
     #[cfg(feature = "cuda")]
     if config.wants_accelerator() && config.batch {
@@ -435,10 +440,10 @@ fn start_gguf_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
 
     #[cfg(feature = "cuda")]
     if config.wants_accelerator() {
-        return start_gguf_server_cuda(quantized_model, vocab, mapped_model, config);
+        return start_gguf_server_cuda(quantized_model, vocab, mapped_model, config, offload);
     }
 
-    run_cpu_server(quantized_model, vocab, Some(mapped_model), config)
+    run_cpu_server(quantized_model, vocab, Some(mapped_model), config, Some(offload))
 }
 
 /// Extract vocabulary from GGUF model, falling back to placeholder tokens.
@@ -511,6 +516,7 @@ fn start_gguf_server_cuda(
     vocab: Vec<String>,
     mapped_model: std::sync::Arc<realizar::gguf::MappedGGUFModel>,
     config: &ServerConfig,
+    offload: realizar::api::OffloadReport,
 ) -> Result<()> {
     use realizar::api::{create_router_with_config, AppState, BatchConfig};
     use realizar::gguf::{OwnedQuantizedModel, OwnedQuantizedModelCuda};
@@ -543,7 +549,12 @@ fn start_gguf_server_cuda(
 
             let state = AppState::with_cuda_model_and_vocab(cuda_model, vocab)
                 .map_err(|e| CliError::InferenceFailed(format!("Failed to create state: {e}")))?
-                .with_mapped_gguf_model(mapped_model.clone());
+                .with_mapped_gguf_model(mapped_model.clone())
+                // PP-14/PP-15/§9 #8: the resolved offload AND this binary's
+                // `cfg!` feature list (including `cuda-batch`) reach the served
+                // process, so a receipt records what the build was rather than
+                // what the operator typed at `--server-feature`.
+                .with_offload_report(offload);
 
             // PMAT-044/088: Spawn continuous batch scheduler for concurrent request handling
             // ITERATION_SCHEDULER=1 enables decode-maximal scheduling (Orca/Sarathi-Serve)
@@ -560,6 +571,18 @@ fn start_gguf_server_cuda(
             let state = {
                 let cuda_model_arc = state.cuda_model().expect("just created").clone();
                 let use_iteration = std::env::var("ITERATION_SCHEDULER").as_deref() == Ok("1");
+                // PP-13/PP-24: where the admission ceiling came from. The
+                // `CUDA_MAX_BATCH` env transport made an operator-set ceiling
+                // and a loader-computed one the same string in the same
+                // variable; `MaxBatchSizing::source` is what recovers it.
+                let admission_reason = realizar::api::admission_ceiling_reason(
+                    cuda_model_arc
+                        .read()
+                        .ok()
+                        .and_then(|m| m.max_batch_sizing())
+                        .map(|s| s.source),
+                );
+                let in_flight = realizar::api::InFlightCounter::new();
                 if use_iteration {
                     let iter_config =
                         realizar::api::iteration_scheduler::IterationSchedulerConfig::default();
@@ -567,12 +590,16 @@ fn start_gguf_server_cuda(
                         "  ITERATION SCHEDULER: max_slots={}, prefill_chunk={} (PMAT-088)",
                         iter_config.max_slots, iter_config.prefill_chunk_size
                     );
+                    let report = iter_config.report(admission_reason);
                     let batch_tx =
                         realizar::api::iteration_scheduler::spawn_iteration_scheduler(
                             cuda_model_arc,
                             iter_config,
                         );
-                    state.with_cuda_batch_tx(batch_tx).with_verbose(config.verbose)
+                    state
+                        .with_cuda_batch_tx(batch_tx)
+                        .with_scheduler_report(report, None)
+                        .with_verbose(config.verbose)
                 } else {
                     let batch_config =
                         realizar::api::cuda_batch_scheduler::CudaBatchConfig::default();
@@ -580,12 +607,17 @@ fn start_gguf_server_cuda(
                         "  CONTINUOUS BATCHING: max_batch={}, window={}ms (PMAT-044)",
                         batch_config.max_batch, batch_config.window_ms
                     );
+                    let report = batch_config.report(admission_reason);
                     let batch_tx =
                         realizar::api::cuda_batch_scheduler::spawn_cuda_batch_scheduler(
                             cuda_model_arc,
                             batch_config,
+                            in_flight.clone(),
                         );
-                    state.with_cuda_batch_tx(batch_tx).with_verbose(config.verbose)
+                    state
+                        .with_cuda_batch_tx(batch_tx)
+                        .with_scheduler_report(report, Some(in_flight))
+                        .with_verbose(config.verbose)
                 }
             };
             #[cfg(not(feature = "cuda"))]
@@ -603,7 +635,12 @@ fn start_gguf_server_cuda(
                 CliError::ModelLoadFailed(format!("Failed to rebuild quantized model: {e}"))
             })?;
             let vocab = extract_gguf_vocab(&mapped_model, quantized_model.config().vocab_size);
-            run_cpu_server(quantized_model, vocab, Some(mapped_model), config)
+            // CUDA init failed and this process fell back to CPU. The offload
+            // report travels with it UNCHANGED, so `/v1/effective-config` shows
+            // `gpu_layers_resolved` beside `backend_loaded: ["cpu"]` — which is
+            // the fallback, visible, rather than a report that quietly agrees
+            // with whatever happened.
+            run_cpu_server(quantized_model, vocab, Some(mapped_model), config, Some(offload))
         }
     }
 }

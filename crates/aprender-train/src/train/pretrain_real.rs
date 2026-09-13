@@ -129,43 +129,17 @@ where
     // an Qwen2-0.5B APR (~291 tensors) this is negligible.
     let names: Vec<&str> = names.into_iter().collect();
 
-    let any_contains = |needle: &str| names.iter().any(|k| k.contains(needle));
-    let any_starts_with = |pfx: &str| names.iter().any(|k| k.starts_with(pfx));
+    if let Some(family) = family_from_distinctive_prefix(&names) {
+        return family;
+    }
 
-    // PMAT-546: Mamba (SSM)
-    if any_contains("mixer.in_proj") || any_contains("mixer.out_proj") {
-        return "mamba";
-    }
-    // PMAT-546: RWKV
-    if any_starts_with("rwkv.blocks.") || any_contains("blocks.0.att.") {
-        return "rwkv";
-    }
-    // GH-311: GPT-NeoX (must precede model.layers)
-    if any_starts_with("gpt_neox.") {
-        return "gpt-neox";
-    }
-    // GH-311: OPT
-    if any_starts_with("model.decoder.layers.") {
-        return "opt";
-    }
-    // GH-311: BERT
-    if any_starts_with("bert.") {
-        return "bert";
-    }
+    let any_contains = |needle: &str| names.iter().any(|k| k.contains(needle));
     let has_model_layers = any_contains("model.layers");
     let has_transformer_h = any_contains("transformer.h")
         || names.iter().any(|k| k.starts_with("h.") && k.contains(".attn."));
     let has_blk = any_contains("blk.");
     if has_model_layers {
-        // Qwen3 — unique QK-norm signal
-        if any_contains("self_attn.q_norm.weight") {
-            return "qwen3";
-        }
-        // Qwen2 — distinguished from Llama by attention bias / fused QKV
-        if any_contains("self_attn.q_proj.bias") || any_contains("qkv_proj.weight") {
-            return "qwen2";
-        }
-        return "llama";
+        return family_from_model_layers(&names);
     }
     if has_transformer_h {
         return "gpt2";
@@ -174,6 +148,51 @@ where
         return "unknown"; // GGUF-naming, can't disambiguate
     }
     "unknown"
+}
+
+/// Families carrying a distinctive tensor-name prefix or infix. Checked before
+/// the generic `model.layers` decoder shapes, so the ordering here is load
+/// bearing (GPT-NeoX and OPT both also match `model.layers`).
+fn family_from_distinctive_prefix(names: &[&str]) -> Option<&'static str> {
+    let any_contains = |needle: &str| names.iter().any(|k| k.contains(needle));
+    let any_starts_with = |pfx: &str| names.iter().any(|k| k.starts_with(pfx));
+
+    // PMAT-546: Mamba (SSM)
+    if any_contains("mixer.in_proj") || any_contains("mixer.out_proj") {
+        return Some("mamba");
+    }
+    // PMAT-546: RWKV
+    if any_starts_with("rwkv.blocks.") || any_contains("blocks.0.att.") {
+        return Some("rwkv");
+    }
+    // GH-311: GPT-NeoX (must precede model.layers)
+    if any_starts_with("gpt_neox.") {
+        return Some("gpt-neox");
+    }
+    // GH-311: OPT
+    if any_starts_with("model.decoder.layers.") {
+        return Some("opt");
+    }
+    // GH-311: BERT
+    if any_starts_with("bert.") {
+        return Some("bert");
+    }
+    None
+}
+
+/// Disambiguate the `model.layers` decoder families.
+fn family_from_model_layers(names: &[&str]) -> &'static str {
+    let any_contains = |needle: &str| names.iter().any(|k| k.contains(needle));
+
+    // Qwen3 — unique QK-norm signal
+    if any_contains("self_attn.q_norm.weight") {
+        return "qwen3";
+    }
+    // Qwen2 — distinguished from Llama by attention bias / fused QKV
+    if any_contains("self_attn.q_proj.bias") || any_contains("qkv_proj.weight") {
+        return "qwen2";
+    }
+    "llama"
 }
 
 /// SPEC §86 / INV-INIT-ARCH-MATCH-001 — normalize an APR metadata
@@ -466,7 +485,7 @@ impl StepFn for RealStepFn {
         };
         let mut trainer = self.trainer.borrow_mut();
         let loss = trainer.train_batch(&batch);
-        // TODO(task #111 follow-up): expose AdamW pre-clip grad norm.
+        // Deferred (PMAT-945, task #111 follow-up): expose AdamW pre-clip grad norm.
         // Placeholder = 1.0 keeps INV-TRAIN-007 satisfied (finite) and
         // INV-TRAIN-008 satisfied (≥ 0); the real grad norm is a
         // downstream ticket that needs TransformerTrainer extension.

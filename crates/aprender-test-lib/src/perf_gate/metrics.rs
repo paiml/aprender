@@ -14,6 +14,7 @@ use super::protocol::Outcome;
 /// from a single band-wide origin, so the wall-clock span is computable across
 /// workers without reconstructing anything.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RequestSample {
     /// Monotone index in issue order.
     pub index: usize,
@@ -91,6 +92,7 @@ impl RequestSample {
 
 /// §4.4.3 — one band's metrics.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct BandMetrics {
     /// Fixed concurrency `c`.
     pub concurrency: usize,

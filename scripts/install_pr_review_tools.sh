@@ -42,6 +42,14 @@ if [ -z "$BINDIR" ]; then
     echo "$PROG: usage: $PROG <bindir>" >&2
     exit 2
 fi
+# Path-traversal guard: BINDIR is caller-supplied, so refuse a '..' component
+# before it is ever used to create or enter a directory.
+case "$BINDIR" in
+    *..*)
+        echo "$PROG: refusing BINDIR with a '..' path component: $BINDIR" >&2
+        exit 2
+        ;;
+esac
 mkdir -p "$BINDIR"
 BINDIR=$(cd -- "$BINDIR" && pwd)
 
@@ -96,7 +104,17 @@ fi
 
 # --- bats ------------------------------------------------------------------
 if [ ! -x "$BINDIR/bats" ]; then
-    git clone --quiet --depth 1 --branch "$BATS_VERSION" \
+    # Anonymous git over HTTPS from mac-server's shared egress IP is throttled
+    # by GitHub once 16 runners have each cloned a few times (measured
+    # 2026-09-02: `git ls-remote` answered "could not read Username" while the
+    # same request with the job token answered). With a token present the
+    # clone authenticates the way actions/checkout does; without one it stays
+    # anonymous and the failure is still classified as environment below.
+    git_auth=()
+    if [ -n "${GITHUB_TOKEN:-}" ]; then
+        git_auth=(-c "http.https://github.com/.extraheader=AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 | tr -d '\n')")
+    fi
+    GIT_TERMINAL_PROMPT=0 git "${git_auth[@]}" clone --quiet --depth 1 --branch "$BATS_VERSION" \
         https://github.com/bats-core/bats-core.git "$WORK/bats-core" \
         || die_env "cannot clone bats-core $BATS_VERSION"
     head=$(git -C "$WORK/bats-core" rev-parse HEAD) || die_env "cannot read the bats-core HEAD"

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites>
+  <testsuite name="crateA::crateA" tests="4">
+    <testcase classname="crateA" name="dense::test_one" time="1.0"/>
+    <testcase classname="crateA" name="dense::test_two" time="1.0"/>
+    <testcase classname="crateA" name="guard::test_falsify_x_001" time="2.0"/>
+    <testcase classname="crateA" name="guard::test_plain" time="1.0"/>
+  </testsuite>
+  <testsuite name="crateB::crateB" tests="3">
+    <testcase classname="crateB" name="heavy::test_a" time="50.0"/>
+    <testcase classname="crateB" name="heavy::test_b" time="50.0"/>
+    <testcase classname="crateB" name="light::test_c" time="1.0"/>
+  </testsuite>
+</testsuites>

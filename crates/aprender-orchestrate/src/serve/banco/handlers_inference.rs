@@ -45,12 +45,27 @@ pub fn try_inference(
     }
 }
 
+/// A stream this server GENERATED, with the token counts it measured.
+///
+/// PP-27 needs `usage` on the terminal SSE chunk, and the two numbers have to
+/// be the ones the generation actually used. `prompt_tokens` is the tokenizer's
+/// own count of the formatted prompt — the exact slice fed to the prefill loop
+/// — rather than the char-based estimate the dry-run path falls back to, so a
+/// stream produced by a model reports what the model saw.
+#[cfg(feature = "realizar")]
+pub struct StreamedGeneration {
+    /// Per-token `(text, finish_reason)` frames, terminal marker last.
+    pub frames: Vec<(String, Option<String>)>,
+    /// Tokens in the formatted prompt, as the tokenizer counted them.
+    pub prompt_tokens: u32,
+}
+
 /// Try to generate streaming tokens via inference.
-/// Returns Some(vec of (text, optional_finish_reason)) on success.
+/// Returns the frames and the measured prompt length on success.
 pub fn try_stream_inference(
     state: &BancoState,
     request: &BancoChatRequest,
-) -> Option<Vec<(String, Option<String>)>> {
+) -> Option<StreamedGeneration> {
     let model = state.model.quantized_model()?;
     let vocab = state.model.vocabulary();
     if vocab.is_empty() {
@@ -77,11 +92,10 @@ pub fn try_stream_inference(
     drop(server_params);
 
     match super::inference::generate_stream_tokens(&model, &vocab, &prompt_tokens, &params) {
-        Ok(stream_tokens) => {
-            let result: Vec<(String, Option<String>)> =
-                stream_tokens.into_iter().map(|st| (st.text, st.finish_reason)).collect();
-            Some(result)
-        }
+        Ok(stream_tokens) => Some(StreamedGeneration {
+            frames: stream_tokens.into_iter().map(|st| (st.text, st.finish_reason)).collect(),
+            prompt_tokens: u32::try_from(prompt_tokens.len()).unwrap_or(u32::MAX),
+        }),
         Err(e) => {
             eprintln!("[banco] stream inference error: {e}");
             None

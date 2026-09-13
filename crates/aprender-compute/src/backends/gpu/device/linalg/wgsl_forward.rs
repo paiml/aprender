@@ -771,7 +771,7 @@ impl WgslForwardPass {
         // PMAT-346: GPU tiled GEMM expects weight in [K,N] layout but lm_head is [N,K].
         // CPU path reads weight[v * hd + j] which matches the [vocab, hidden] layout.
         // GPU LM head via GEMV is blocked by vocab > 65535 dispatch limit.
-        // TODO: add upload_weight_transposed() for GPU-accelerated LM head.
+        // Deferred (PMAT-751): add upload_weight_transposed() for GPU-accelerated LM head.
         let mut logits = vec![0.0f32; vocab_size];
         for v in 0..vocab_size {
             let mut sum = 0.0f32;
@@ -993,41 +993,27 @@ impl WgslForwardPass {
         for h in 0..num_heads {
             let kv_h = h / kv_group;
             let q_offset = h * head_dim;
+            let kv_offset = kv_h * head_dim;
 
             // Compute attention scores: Q[h] · K[kv_h, :seq_len]^T / sqrt(d)
-            let mut scores = vec![0.0f32; seq_len];
-            for s in 0..seq_len {
-                let k_offset = s * kv_dim_usize + kv_h * head_dim;
-                let mut dot = 0.0f32;
-                for d in 0..head_dim {
-                    dot += q_data[q_offset + d] * kv_cache_k[k_offset + d];
-                }
-                scores[s] = dot * scale;
-            }
-
-            // Softmax
-            let max_score = scores.iter().copied().fold(f32::NEG_INFINITY, f32::max);
-            let mut sum = 0.0f32;
-            for s in scores.iter_mut() {
-                *s = (*s - max_score).exp();
-                sum += *s;
-            }
-            if sum > 0.0 {
-                for s in scores.iter_mut() {
-                    *s /= sum;
-                }
-            }
+            let scores = Self::attention_scores(
+                &q_data[q_offset..q_offset + head_dim],
+                kv_cache_k,
+                kv_offset,
+                kv_dim_usize,
+                seq_len,
+                scale,
+            );
 
             // Weighted sum of V
             let out_offset = h * head_dim;
-            for d in 0..head_dim {
-                let mut val = 0.0f32;
-                for s in 0..seq_len {
-                    let v_offset = s * kv_dim_usize + kv_h * head_dim;
-                    val += scores[s] * kv_cache_v[v_offset + d];
-                }
-                attn_out[out_offset + d] = val;
-            }
+            Self::attention_weighted_v(
+                &scores,
+                kv_cache_v,
+                &mut attn_out[out_offset..out_offset + head_dim],
+                kv_offset,
+                kv_dim_usize,
+            );
         }
 
         // Upload attention output back to GPU for O projection
@@ -1136,6 +1122,63 @@ impl WgslForwardPass {
         self.staging_buf.unmap();
 
         Ok(())
+    }
+
+    /// Softmaxed attention scores for one head over `seq_len` cached steps.
+    ///
+    /// `kv_offset` is this head's offset inside each cached step, and each
+    /// cached step is `kv_dim` floats wide. Head dimension is `q_head.len()`.
+    fn attention_scores(
+        q_head: &[f32],
+        kv_cache_k: &[f32],
+        kv_offset: usize,
+        kv_dim: usize,
+        seq_len: usize,
+        scale: f32,
+    ) -> Vec<f32> {
+        let mut scores = vec![0.0f32; seq_len];
+        for (s, score) in scores.iter_mut().enumerate() {
+            let k_offset = s * kv_dim + kv_offset;
+            let mut dot = 0.0f32;
+            for (d, q) in q_head.iter().enumerate() {
+                dot += q * kv_cache_k[k_offset + d];
+            }
+            *score = dot * scale;
+        }
+
+        // Softmax
+        let max_score = scores.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+        let mut sum = 0.0f32;
+        for s in scores.iter_mut() {
+            *s = (*s - max_score).exp();
+            sum += *s;
+        }
+        if sum > 0.0 {
+            for s in scores.iter_mut() {
+                *s /= sum;
+            }
+        }
+        scores
+    }
+
+    /// Weighted sum of V for one head, written into `out_head`.
+    ///
+    /// `kv_offset` and `kv_dim` are as in `attention_scores`.
+    fn attention_weighted_v(
+        scores: &[f32],
+        kv_cache_v: &[f32],
+        out_head: &mut [f32],
+        kv_offset: usize,
+        kv_dim: usize,
+    ) {
+        for (d, out) in out_head.iter_mut().enumerate() {
+            let mut val = 0.0f32;
+            for (s, score) in scores.iter().enumerate() {
+                let v_offset = s * kv_dim + kv_offset;
+                val += score * kv_cache_v[v_offset + d];
+            }
+            *out = val;
+        }
     }
 
     /// Training forward pass for a single transformer layer.

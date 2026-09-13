@@ -228,11 +228,20 @@ mod tests {
 
     #[test]
     fn test_graph_format_from_str() {
-        assert_eq!(GraphFormat::from_str("text").unwrap(), GraphFormat::Text);
-        assert_eq!(GraphFormat::from_str("dot").unwrap(), GraphFormat::Dot);
-        assert_eq!(GraphFormat::from_str("json").unwrap(), GraphFormat::Json);
         assert_eq!(
-            GraphFormat::from_str("mermaid").unwrap(),
+            GraphFormat::from_str("text").expect("the format name is recognised"),
+            GraphFormat::Text
+        );
+        assert_eq!(
+            GraphFormat::from_str("dot").expect("the format name is recognised"),
+            GraphFormat::Dot
+        );
+        assert_eq!(
+            GraphFormat::from_str("json").expect("the format name is recognised"),
+            GraphFormat::Json
+        );
+        assert_eq!(
+            GraphFormat::from_str("mermaid").expect("the format name is recognised"),
             GraphFormat::Mermaid
         );
         assert!(GraphFormat::from_str("xml").is_err());

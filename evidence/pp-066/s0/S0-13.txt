@@ -1,0 +1,85 @@
+$ pmat query --literal 'Q4K_GEMV_SHADER' --path crates
+crates/aprender-compute/src/backends/gpu/device/linalg/wgsl_forward.rs:299-552 │ new │ TDG: A │ O(1)
+crates/aprender-compute/src/backends/gpu/shaders/basic_ops.rs:555:pub(crate) const Q4K_GEMV_SHADER: &str = r#"
+$ pmat query --literal 'UnsupportedOperation' --path crates/aprender-serve/src/gguf/wgpu_backend
+crates/aprender-serve/src/gguf/wgpu_backend/mod.rs:103-105 │ new │ TDG: A+ │ O(1)
+crates/aprender-serve/src/gguf/wgpu_backend/mod.rs:156-209 │ forward_qwen3_moe_wgpu │ TDG: A │ O(1)
+$ git grep -n Q4K_GEMV_SHADER -- crates | head -5
+crates/aprender-compute/src/backends/gpu/device/linalg/wgsl_forward.rs:424:            source: wgpu::ShaderSource::Wgsl(crate::backends::gpu::shaders:
+crates/aprender-compute/src/backends/gpu/shaders/basic_ops.rs:555:pub(crate) const Q4K_GEMV_SHADER: &str = r#"
+$ sed -n 136,148p crates/aprender-serve/src/gguf/wgpu_backend/mod.rs
+    ///
+    /// `Vec<f32>` logits with shape `[vocab_size]` for the LAST token.
+    ///
+    /// # Errors
+    ///
+    /// At M-GPU-MOE-2.0: returns `RealizarError::UnsupportedOperation`
+    /// whose `reason` mentions `qwen3-moe-forward-gpu-v1` v1.2.0
+    /// option I and points callers at the v1.2.0 amendment block in
+    /// the contract for the staging plan.
+    ///
+    /// At M-GPU-MOE-2.1+: propagates errors from wgpu compute
+    /// pipeline submission, buffer mapping, and expert dispatch.
+    ///
+$ git grep -n "to_f32\|dequant" -- crates/aprender-serve/src/api/handlers.rs | sed -n 1,6p
+$ git grep -n "OwnedQuantizedModelWgpu" -- crates | head -6
+crates/aprender-serve/src/gguf/wgpu_backend/mod.rs:12://! lives at a NEW wrapper type `OwnedQuantizedModelWgpu` analog of
+crates/aprender-serve/src/gguf/wgpu_backend/mod.rs:67:/// use realizar::gguf::{OwnedQuantizedModel, OwnedQuantizedModelWgpu};
+crates/aprender-serve/src/gguf/wgpu_backend/mod.rs:70:/// let mut wgpu_model = OwnedQuantizedModelWgpu::new(model)?;
+crates/aprender-serve/src/gguf/wgpu_backend/mod.rs:78:pub struct OwnedQuantizedModelWgpu {
+crates/aprender-serve/src/gguf/wgpu_backend/mod.rs:88:impl OwnedQuantizedModelWgpu {
+crates/aprender-serve/src/gguf/wgpu_backend/mod.rs:199:            reason: "M-GPU-MOE-2.0 stub on OwnedQuantizedModelWgpu. \
+$ sed -n 150,165p crates/aprender-serve/src/gguf/wgpu_backend/mod.rs
+    ///
+    /// - `moe_layers.len() == self.model.layers.len()`
+    /// - `num_experts > 0 && num_experts_per_tok > 0 && moe_intermediate > 0`
+    /// - `num_experts_per_tok <= num_experts`
+    /// - `token_ids` is non-empty
+    #[allow(clippy::too_many_arguments)]
+    pub fn forward_qwen3_moe_wgpu(
+        &self,
+        token_ids: &[u32],
+        moe_layers: &[Qwen3MoeQuantizedLayer],
+        num_experts: usize,
+        num_experts_per_tok: usize,
+        moe_intermediate: usize,
+        _data: &[u8],
+    ) -> Result<Vec<f32>> {
+        if token_ids.is_empty() {
+$ git grep -n "dequant\|to_f32\|f32" -- crates/aprender-serve/src/api/handlers.rs | sed -n 1,5p
+$ ls crates/aprender-serve/src/api/ | head; wc -l crates/aprender-serve/src/api/handlers.rs
+wc: crates/aprender-serve/src/api/handlers.rs: No such file or directory
+crates/aprender-serve/src/api/effective_config.rs
+$ git ls-files crates/aprender-serve | grep -i handlers
+crates/aprender-serve/coverage_report/html/coverage/home/noah/src/realizar/src/api/apr_handlers.rs.html
+crates/aprender-serve/coverage_report/html/coverage/home/noah/src/realizar/src/api/gpu_handlers.rs.html
+crates/aprender-serve/coverage_report/html/coverage/home/noah/src/realizar/src/api/openai_handlers.rs.html
+crates/aprender-serve/coverage_report/html/coverage/home/noah/src/realizar/src/api/realize_handlers.rs.html
+crates/aprender-serve/src/api/apr_handlers.rs
+crates/aprender-serve/src/api/gpu_handlers.rs
+crates/aprender-serve/src/api/gpu_handlers_tests.rs
+crates/aprender-serve/src/api/gpu_handlers_tests_continuous_batch.rs
+crates/aprender-serve/src/api/ollama_handlers.rs
+crates/aprender-serve/src/api/openai_handlers.rs
+$ git grep -ln "wgpu" -- crates/aprender-serve/src | head -12
+crates/aprender-serve/src/api/effective_config.rs
+crates/aprender-serve/src/bench/compute_backend_type_tests.rs
+crates/aprender-serve/src/bench/matrix.rs
+crates/aprender-serve/src/bench/tests_036.rs
+crates/aprender-serve/src/bench/tests_04.rs
+crates/aprender-serve/src/bench/tests_benchmark_matrix.rs
+crates/aprender-serve/src/bench/tests_distributed_bench.rs
+crates/aprender-serve/src/bench/tests_parse_llama.rs
+crates/aprender-serve/src/cuda/executor/cuda_vs_wgpu.rs
+crates/aprender-serve/src/cuda/executor/layers/cublas_prefill/attention.rs
+crates/aprender-serve/src/cuda/executor/reference.rs
+crates/aprender-serve/src/cuda/executor/tests.rs
+$ git grep -nE "dequantize|to_f32" -- $(git grep -ln "wgpu" -- crates/aprender-serve/src | grep -v test | head -12) | grep -iE "wgpu|f32" | head -8
+crates/aprender-serve/src/cuda/executor/layers/cublas_prefill/attention.rs:1345:                            let _ = handle.gemm_f16_to_f32(
+crates/aprender-serve/src/generated_contracts.rs:10608:/// Preconditions for equation `f16_to_f32_bias`.
+crates/aprender-serve/src/generated_contracts.rs:10609:/// Domain-specific. Call: `contract_pre_f16_to_f32_bias!(slice_expr)`
+crates/aprender-serve/src/generated_contracts.rs:10610:macro_rules! contract_pre_f16_to_f32_bias {
+crates/aprender-serve/src/generated_contracts.rs:10616:            "Contract f16_to_f32_bias: precondition violated — input.len() > 0"
+crates/aprender-serve/src/generated_contracts.rs:10621:/// Invariants for equation `f16_to_f32_bias`.
+crates/aprender-serve/src/generated_contracts.rs:10622:/// Check after computation: `contract_inv_f16_to_f32_bias!(result_expr)`
+crates/aprender-serve/src/generated_contracts.rs:10623:macro_rules! contract_inv_f16_to_f32_bias {

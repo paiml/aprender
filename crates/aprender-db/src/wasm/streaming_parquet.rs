@@ -126,7 +126,7 @@ impl StreamingParquetReader {
 
     /// Parse Parquet footer bytes into metadata
     ///
-    /// TODO: Full Thrift deserialization
+    /// Deferred (PMAT-755): Full Thrift deserialization
     /// For now, returns stub metadata for demonstration
     fn parse_footer(&self, _data: &[u8]) -> Result<ParquetMetadata, JsValue> {
         // Stub implementation - real version needs Thrift deserialization

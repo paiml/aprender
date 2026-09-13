@@ -274,6 +274,7 @@ mod layers;
 mod q4k;
 mod q_basic;
 mod quantized;
+mod stage_dump;
 mod weights;
 mod workspace;
 
@@ -292,6 +293,10 @@ mod test_fixtures;
 
 #[cfg(test)]
 mod poison_trace_test;
+
+// FALSIFY-QDOT-008 (#3111): the Q5_K GEMV against gguf-py's values of a llama.cpp block
+#[cfg(test)]
+mod tests_q5k_ggml;
 
 // COV-003 through COV-006 (layer preload, kv_cache, attention, quantized)
 #[cfg(test)]
@@ -645,6 +650,11 @@ pub struct CudaExecutor {
     // when FP16 weight cache is retained during decode. Routes batched GEMV
     // through cuBLAS tensor cores instead of compute-bound DP4A GEMV.
     pub(crate) hgemm_batched_decode_active: bool,
+    // PP-LLAMA-001 §5.2 / §9 #7: highest `total - free` this process has
+    // sampled from the driver. Atomic because the sampler runs from the
+    // scheduler thread and from the effective-config handler, which only holds
+    // a READ lock. 0 means "never sampled" and is reported as absent.
+    vram_used_peak: std::sync::atomic::AtomicUsize,
     // CUDA context — declared last so all GPU resources above drop first
     // (they need the context alive for cuMemFree etc.).
     //
