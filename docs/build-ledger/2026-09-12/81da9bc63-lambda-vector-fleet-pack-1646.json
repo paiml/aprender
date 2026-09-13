@@ -1,0 +1,25 @@
+{
+ "spec": "APR-RELEASE-001 \u00a75 P0\u00b7Pack",
+ "at": "2026-09-12T16:46:49Z",
+ "sha": "81da9bc63",
+ "intel_busy": 11,
+ "intel_online": 16,
+ "gx10_busy": 4,
+ "gx10_online": 6,
+ "yoga_busy": 3,
+ "yoga_online": 5,
+ "aprender_runs_live": 6,
+ "intel_pressure": true,
+ "idle_gpu_runners": {
+  "gx10": [
+   "gx10-blackwell",
+   "gx10-eph"
+  ],
+  "yoga": [
+   "yoga-eph",
+   "yoga-gpu"
+  ]
+ },
+ "verdict": "P0-UNDERUTILIZED",
+ "source": "gh api orgs/paiml/actions/runners; gh run list"
+}
