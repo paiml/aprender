@@ -600,3 +600,63 @@ fn lean_scan_in_tree_is_primary_and_self_sufficient() {
          reproducible on CI"
     );
 }
+
+// ── ONT-2a (ONT-001 R-4, andon): a claim is not a proof ───────────
+
+/// A summary that claims Lean proof, with no in-tree theorem to ground it, is SELF-DECLARED. It does not
+/// reach L4, and bindings cannot promote it to L5 either: `is_lean_proved` now reads the tree, not the
+/// contract's opinion of itself.
+#[test]
+fn ont2a_a_claim_with_nothing_under_it_is_not_l4() {
+    let c = contract_with_lean(3, 3); // the summary says 3 of 3 proved; no .lean theorem resolves
+    assert!(
+        is_l4_self_declared(&c),
+        "the claim covers every obligation and nothing in the tree grounds it"
+    );
+    assert_eq!(compute_proof_level(&c, None), ProofLevel::L3);
+    assert_eq!(
+        compute_proof_level(&c, Some((1, 1))),
+        ProofLevel::L3,
+        "bindings must not promote an ungrounded claim to L5"
+    );
+}
+
+/// The report performs the withdrawal in the open: the contract is flagged, its grounded count is zero,
+/// and the report says the L4 total excludes such contracts.
+#[test]
+fn ont2a_the_report_flags_the_claim_and_says_the_total_excludes_it() {
+    let c = contract_with_lean(2, 2);
+    let report = proof_status_report(&[("claims-l4".to_string(), &c)], None, false);
+    assert!(report.l4_self_declared_excluded);
+    assert_eq!(report.totals.l4_self_declared, 1);
+    assert_eq!(report.totals.lean_grounded, 0);
+    assert!(report.contracts[0].l4_self_declared);
+    assert_ne!(report.contracts[0].proof_level, ProofLevel::L4);
+}
+
+/// Both words are printed. A withdrawal nobody can see on the line is the silence this row exists to end.
+#[test]
+fn ont2a_the_text_output_prints_self_declared_and_grounded() {
+    let c = contract_with_lean(2, 2);
+    let report = proof_status_report(&[("claims-l4".to_string(), &c)], None, false);
+    let text = format_text(&report);
+    assert!(
+        text.contains("self-declared"),
+        "the line must say it:\n{text}"
+    );
+    assert!(
+        text.contains("grounded"),
+        "and the other column must be named:\n{text}"
+    );
+}
+
+/// The flag marks an unbacked CLAIM, not the mere absence of a proof: a contract that claims nothing is
+/// not self-declared, it is just not L4.
+#[test]
+fn ont2a_a_contract_that_claims_nothing_is_not_flagged() {
+    let c = minimal_contract(2, 2, 2);
+    assert!(!is_l4_self_declared(&c));
+    let report = proof_status_report(&[("quiet".to_string(), &c)], None, false);
+    assert_eq!(report.totals.l4_self_declared, 0);
+    assert!(report.l4_self_declared_excluded);
+}
