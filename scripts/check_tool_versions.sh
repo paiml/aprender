@@ -96,7 +96,37 @@ check_one() { # check_one TOOL TOMLFILE
 # complexity ratchet refused every merge as an instrument mismatch; this makes
 # the pin bump and the header move together or fail here.
 check_headers() { # check_headers TOMLFILE
-    local f=$1 bad=0 n=0 b tool ver pinned
+    local f=$1 bad=0 n=0 total=0 b tool ver pinned
+    # VACUITY FLOOR (#3217). `n` below counts only baselines naming a PINNED
+    # tool, and nothing required that count to hold. Delete the header from
+    # shell_lint_baseline.txt — which is exactly what
+    # `check_shell_lint_ratchet.sh --update` did — and this row goes from
+    #     3 baseline header(s) name a pinned tool; all agree with tools.toml
+    # to
+    #     2 baseline header(s) name a pinned tool; all agree with tools.toml
+    # and still PASSES. A third of the universe vanished and the audit reported
+    # agreement over what was left.
+    #
+    # The floor is not a magic number, because a magic number rots the moment a
+    # baseline is added or retired. Every baseline must DECLARE its instrument,
+    # in one of the two spellings this repo uses:
+    #     # tool_version=<tool> <version>   lib_baseline_ratchet.sh, 16 files
+    #     pmat_version: <version>           the richer count/version/basis
+    #                                       schema of hardcoded_path_shipped
+    # A count whose analyser nobody recorded is not a baseline — it is a number.
+    # Adding one now goes RED on the commit that adds it.
+    for b in scripts/*baseline*.txt; do
+        [ -f "$b" ] || continue
+        total=$((total + 1))
+        grep -qE '^#[[:space:]]*tool_version=|^[[:space:]]*pmat_version:' "$b" && continue
+        printf 'FAIL  header   %s declares no instrument — a count with no\n' "$b"
+        printf '               analyser version behind it is not a baseline\n'
+        bad=1
+    done
+    if [ "$total" -eq 0 ]; then
+        printf 'FAIL  header   no baseline files found — this audit swept nothing\n'
+        return 1
+    fi
     for b in scripts/*baseline*.txt; do
         [ -f "$b" ] || continue
         read -r tool ver < <(sed -n 's/^#[[:space:]]*tool_version=\([a-z]*\) \([0-9][0-9.]*\).*/\1 \2/p' "$b" | head -1)
@@ -109,7 +139,8 @@ check_headers() { # check_headers TOMLFILE
             bad=1
         fi
     done
-    printf '%s baseline header(s) name a pinned tool; %s\n' "$n" "$([ "$bad" -eq 0 ] && echo 'all agree with tools.toml' || echo 'MISMATCH')"
+    printf '%s of %s baseline(s) name a pinned tool; %s\n' "$n" "$total" \
+        "$([ "$bad" -eq 0 ] && echo 'all declare an instrument and agree with tools.toml' || echo 'MISMATCH')"
     return "$bad"
 }
 # audit_workflow FILE -- REDs a workflow that still installs pmat/bashrs, or
@@ -233,6 +264,24 @@ TOML
     n=$((n + 1)); if ( cd "$TD/tree" && check_headers "$TD/tools.toml" > /dev/null 2>&1 ); then printf 'ok    row %-2s rc=0  baseline headers at the pin -> GREEN\n' "$n"; else printf 'FAIL  row %-2s  headers at the pin should be GREEN\n' "$n"; fails=1; fi
     printf '# tool_version=pmat 1.2.2\n1\n' > "$TD/tree/scripts/a_baseline.txt"
     n=$((n + 1)); if ( cd "$TD/tree" && check_headers "$TD/tools.toml" > /dev/null 2>&1 ); then printf 'FAIL  row %-2s  a header behind the pin should be RED\n' "$n"; fails=1; else printf 'ok    row %-2s rc=1  a baseline header behind the pin -> RED\n' "$n"; fi
+
+    # --- the vacuity floor (#3217) ------------------------------------------
+    # These three rows are the ones that were missing. Without them the audit
+    # above passed on a SHRINKING universe: deleting a header took it from
+    # "3 baseline header(s) ... all agree" to "2 ... all agree", green both
+    # times. Each row here removes something and requires RED.
+    printf '# tool_version=pmat 1.2.3\n1\n' > "$TD/tree/scripts/a_baseline.txt"
+    printf '1\n' > "$TD/tree/scripts/c_baseline.txt"
+    n=$((n + 1)); if ( cd "$TD/tree" && check_headers "$TD/tools.toml" > /dev/null 2>&1 ); then printf 'FAIL  row %-2s  a baseline declaring NO instrument must be RED\n' "$n"; fails=1; else printf 'ok    row %-2s rc=1  a baseline with no instrument header -> RED\n' "$n"; fi
+    # The floor must accept BOTH spellings, or it would force a false edit on
+    # hardcoded_path_shipped_baseline.txt, whose count/pmat_version/basis schema
+    # records the instrument more strictly than the one-line header does.
+    printf 'count: 1\npmat_version: INVALID\nbasis: UNMEASURED\n' > "$TD/tree/scripts/c_baseline.txt"
+    n=$((n + 1)); if ( cd "$TD/tree" && check_headers "$TD/tools.toml" > /dev/null 2>&1 ); then printf 'ok    row %-2s rc=0  the `pmat_version:` schema also declares an instrument\n' "$n"; else printf 'FAIL  row %-2s  the count/version/basis schema must be accepted\n' "$n"; fails=1; fi
+    rm -f "$TD/tree/scripts/c_baseline.txt"
+    # Sweeping nothing is the oldest way for an audit to be green.
+    mkdir -p "$TD/empty/scripts"
+    n=$((n + 1)); if ( cd "$TD/empty" && check_headers "$TD/tools.toml" > /dev/null 2>&1 ); then printf 'FAIL  row %-2s  an audit that found NO baselines must not pass\n' "$n"; fails=1; else printf 'ok    row %-2s rc=1  no baseline files at all -> RED (vacuity)\n' "$n"; fi
 
     # --- audit_workflow: prose vs code, both polarities ------------------------
     # The regex shipped without a case table and immediately produced a false
