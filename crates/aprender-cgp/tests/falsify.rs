@@ -205,21 +205,8 @@ fn falsify_cgp_043_profile_binary() {
         .output()
         .expect("Failed to run cgp profile binary");
 
-    // Should succeed (even if nsys finds no kernels — nvidia-smi doesn't launch kernels).
-    //
-    // A bare `assert!(output.status.success())` says only that it did not. This
-    // row failed twice on gx10-pool1 (job 103764…, nextest TRY 1 and TRY 2) and
-    // the whole report was the word `false` — nothing about the exit code, the
-    // stderr, or whether nvidia-smi was even on the box. A falsifier that cannot
-    // say which of those it is costs a round trip every time it fires.
-    assert!(
-        output.status.success(),
-        "FALSIFY-CGP-043: `cgp profile binary nvidia-smi` exited {}.\n         This is an ENV death when nvidia-smi or nsys is absent from the runner, \
-         and a CODE defect when they are present and cgp still failed.\n         --- stderr ---\n{}\n--- stdout ---\n{}",
-        output.status,
-        String::from_utf8_lossy(&output.stderr),
-        String::from_utf8_lossy(&output.stdout),
-    );
+    // Should succeed (even if nsys finds no kernels — nvidia-smi doesn't launch kernels)
+    assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
         stdout.contains("Binary Profile")
