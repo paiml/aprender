@@ -447,6 +447,7 @@
 - [aprender::regularization](./lib/regularization.md)
 - [aprender::scoring](./lib/scoring.md)
 - [aprender::serialization](./lib/serialization.md)
+- [aprender::setfit](./lib/setfit.md)
 - [aprender::showcase](./lib/showcase.md)
 - [aprender::speech](./lib/speech.md)
 - [aprender::stack](./lib/stack.md)

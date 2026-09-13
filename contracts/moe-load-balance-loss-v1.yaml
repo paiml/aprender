@@ -34,7 +34,6 @@ metadata:
   - 'crates/aprender-core/src/ensemble/moe.rs — MixtureOfExperts::compute_load_balance_loss'
   - 'crates/aprender-core/src/ensemble/gating.rs — SoftmaxGating::forward (full softmax over experts)'
 
-kind: KernelContract
 name: moe-load-balance-loss
 version: 1.0.0
 scope: aprender-core MoE Switch-Transformer load-balance auxiliary loss (ensemble/moe.rs)

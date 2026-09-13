@@ -42,7 +42,6 @@ metadata:
     - 'Malkov & Yashunin (2018) HNSW — https://arxiv.org/abs/1603.09320'
   depends_on: []
 
-kind: AprHnswPersistenceContract
 name: apr-hnsw-persistence
 version: "1.3.0"
 status: ACTIVE

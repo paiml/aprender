@@ -1,0 +1,7 @@
+agy_version=1.1.27
+binary_path=/home/noah/.local/bin/agy
+model=gemini-3.1-pro-high
+review_tree=/tmp/tmp.OA310JwH6O
+files_extracted=20067
+diff_bytes=182305
+prompt_bytes=727

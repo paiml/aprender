@@ -94,6 +94,11 @@ fn create_benchmark_transformer() -> GGUFTransformer {
         bos_token_id: None,
         eos_token_id: None,
         explicit_head_dim: None,
+        // PMAT-810 added this field to GGUFConfig; this bench's initializer was
+        // never updated, so `cargo check -p aprender-serve --all-targets` has
+        // been red. `None` is the non-Gemma2 fallback (scale = 1/sqrt(head_dim)),
+        // which is correct for this synthetic llama-constraints config.
+        query_pre_attn_scalar: None,
     };
 
     let layers: Vec<GGUFTransformerLayer> = (0..num_layers)
@@ -130,7 +135,7 @@ fn create_benchmark_transformer() -> GGUFTransformer {
 }
 
 /// Benchmark realizar native CPU inference with CV-based stopping
-/// FIXME: GGUFTransformer no longer has forward() - use OwnedQuantizedModel
+/// Deferred (PMAT-758): GGUFTransformer no longer has forward() - use OwnedQuantizedModel
 #[allow(dead_code)]
 fn benchmark_realizar_native_cv() -> Vec<f64> {
     let _transformer = create_benchmark_transformer();
@@ -328,12 +333,11 @@ fn generate_benchmark_matrix() -> BenchmarkMatrix {
     println!("║  Methodology: CV-based stopping (Hoefler & Belli SC'15)         ║");
     println!("╚════════════════════════════════════════════════════════════════╝\n");
 
-    let hardware = HardwareSpec {
-        cpu: "Benchmark CPU".to_string(),
-        gpu: Some("Benchmark GPU".to_string()),
-        memory_gb: 32,
-        storage: "SSD".to_string(),
-    };
+    // PARITY-007: READ the host, never assert it. This block used to write
+    // `cpu: "Benchmark CPU", gpu: Some("Benchmark GPU"), memory_gb: 32` into
+    // the receipt — placeholder provenance in a document that looked complete
+    // (F12, aprender#2679).
+    let hardware = HardwareSpec::detect();
 
     let mut matrix = BenchmarkMatrix::new("phi-2-q4_k_m", hardware);
 

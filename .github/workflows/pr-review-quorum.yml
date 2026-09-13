@@ -1,0 +1,126 @@
+# pr-review-quorum.yml — the PR's own review receipt is judged from the BASE,
+# never from the PR head (PRQ-013; PP-066 DAG row C0-5, #2982).
+#
+# WHY A SEPARATE WORKFLOW
+# -----------------------
+# Until 2026-09-05 the job that judged a pull request's own review receipt
+# (`pr-review-present`, Arm 4) lived in ci.yml under
+# `if: github.event_name == 'pull_request'`, and the required `gate` job waited
+# on it. GitHub reads a `pull_request` workflow's definition from the PR HEAD,
+# so the check that decided whether a PR's receipt was acceptable was defined by
+# the PR under review: a PR could edit the check. That is theater with a green
+# badge (PP-066 §1 F-28 class; measured in docs/audits/pp-066-plan-quorum.md).
+#
+# `pull_request_target` runs with the BASE branch's workflow definition and
+# checks out the BASE by default. The PR head is fetched as a ref and ONLY its
+# receipt directory (evidence/pr-review/<pr>/) is materialised with `git
+# archive` — data files, never executed. Every script that runs here is the
+# base's copy. `merge_group` is declared too so the context reports on the
+# queue's merge ref and cannot deadlock the queue; on that event the ref is the
+# merge commit (which contains the PR), the accepted GitHub limit that
+# scripts/check_receipt_gate_base_owned.sh records rather than hides.
+#
+# SECURITY (pull_request_target has a write-capable token by default):
+#   - permissions are pinned to contents: read; nothing here writes.
+#   - no step checks out or executes head code; the head's tree is read with
+#     `git archive <sha> evidence/pr-review/<pr>` only.
+#   - the fork guard on the signer (ci.yml pr-review-sign) is unchanged.
+#
+# GUARDS THAT READ THIS FILE: scripts/check_receipt_gate_base_owned.sh (B1..B4:
+# exactly one workflow invokes check_pr_review_arm4.sh without --self-test, it
+# is triggered by pull_request_target + merge_group and not pull_request, the
+# invoking job's job-level `if:` is true on exactly those two events, and
+# ci.yml's `gate` needs no head-defined receipt job). Moving this job back to
+# `on: pull_request` turns that guard RED (the registered mutation).
+name: pr-review-quorum
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review]
+  merge_group:
+
+permissions:
+  contents: read
+
+jobs:
+  present:
+    runs-on: [self-hosted, X64, Linux, clean-room]
+    timeout-minutes: 20
+    if: github.event_name == 'pull_request_target' || github.event_name == 'merge_group'
+    env:
+      # pull_request_target carries the PR; merge_group carries the queue ref
+      # `refs/heads/gh-readonly-queue/main/pr-<N>-<base sha>` and the merge
+      # commit as head_sha. The `resolve` step turns both into step OUTPUTS
+      # (`steps.resolve.outputs.pr` / `.head`) that the later steps bind as their
+      # own `env:` — every name a `run:` block reads is defined on the step or
+      # the job that reads it (scripts/check_workflow_env_defined.sh fails closed
+      # on anything else; a GITHUB_ENV write is invisible to it by design).
+      EVENT_PR_NUMBER: ${{ github.event.pull_request.number }}
+      EVENT_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      EVENT_MG_HEAD_REF: ${{ github.event.merge_group.head_ref }}
+      EVENT_MG_HEAD_SHA: ${{ github.event.merge_group.head_sha }}
+    steps:
+      - name: Checkout the BASE (pull_request_target) or the queue ref (merge_group)
+        uses: actions/checkout@v7
+        with:
+          # Arm 4 resolves ancestry with `git merge-base`, which a shallow
+          # clone cannot answer (the script exits 2, never 1, on that).
+          fetch-depth: 0
+
+      - name: Resolve the PR number and head sha from the event
+        id: resolve
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$GITHUB_EVENT_NAME" in
+            pull_request_target)
+              pr="$EVENT_PR_NUMBER"; head="$EVENT_PR_HEAD_SHA" ;;
+            merge_group)
+              # refs/heads/gh-readonly-queue/main/pr-2875-42be1560b... -> 2875
+              pr=$(printf '%s\n' "$EVENT_MG_HEAD_REF" | sed -nE 's#.*/pr-([0-9]+)-[0-9a-f]+$#\1#p')
+              head="$EVENT_MG_HEAD_SHA" ;;
+            *) echo "unsupported event: $GITHUB_EVENT_NAME" >&2; exit 2 ;;
+          esac
+          case "$pr" in ''|*[!0-9]*) echo "could not resolve a PR number from the event" >&2; exit 2 ;; esac
+          case "$head" in ''|*[!0-9a-f]*) echo "could not resolve a head sha from the event" >&2; exit 2 ;; esac
+          printf 'pr=%s\nhead=%s\n' "$pr" "$head" >> "$GITHUB_OUTPUT"
+          echo "PR #$pr head $head ($GITHUB_EVENT_NAME)"
+
+      - name: Fetch the PR head and materialise ONLY its receipt directory (data, never code)
+        if: github.event_name == 'pull_request_target'
+        shell: bash
+        env:
+          PR_NUMBER: ${{ steps.resolve.outputs.pr }}
+          PR_HEAD_SHA: ${{ steps.resolve.outputs.head }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin "refs/pull/${PR_NUMBER}/head:refs/remotes/pr/${PR_NUMBER}"
+          git rev-parse --verify --quiet "${PR_HEAD_SHA}^{commit}" >/dev/null \
+            || { echo "head $PR_HEAD_SHA is not reachable after fetching refs/pull/$PR_NUMBER/head" >&2; exit 2; }
+          if git cat-file -e "${PR_HEAD_SHA}:evidence/pr-review/${PR_NUMBER}" 2>/dev/null; then
+            git archive "$PR_HEAD_SHA" "evidence/pr-review/${PR_NUMBER}" | tar -x
+            echo "materialised evidence/pr-review/${PR_NUMBER} from $PR_HEAD_SHA:"
+            find "evidence/pr-review/${PR_NUMBER}" -type f | sort
+          else
+            echo "the head carries no evidence/pr-review/${PR_NUMBER} — Arm 4 decides what that means"
+          fi
+
+      - name: Install the tools Arm 4 refuses to run without
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          bash scripts/install_pr_review_tools.sh "$RUNNER_TEMP/pr-review-tools/bin"
+          echo "$RUNNER_TEMP/pr-review-tools/bin" >> "$GITHUB_PATH"
+
+      - name: "Arm 4 case table: 10 rows, both polarities of the cutoff"
+        shell: bash
+        run: bash scripts/check_pr_review_arm4.sh --self-test
+
+      - name: This PR's own receipt, judged by the base's Arm 4 under the base's public key
+        shell: bash
+        env:
+          PR_NUMBER: ${{ steps.resolve.outputs.pr }}
+          PR_HEAD_SHA: ${{ steps.resolve.outputs.head }}
+        run: bash scripts/check_pr_review_arm4.sh

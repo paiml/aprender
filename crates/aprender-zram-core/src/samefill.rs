@@ -146,8 +146,12 @@ unsafe fn page_same_filled_avx512(page: &[u8; PAGE_SIZE]) -> Option<u64> {
 pub fn fill_page_word(page: &mut [u8; PAGE_SIZE], value: u64) {
     // Convert u64 to bytes and fill - safe regardless of alignment
     let bytes = value.to_ne_bytes();
-    for chunk in page.chunks_exact_mut(8) {
-        chunk.copy_from_slice(&bytes);
+    // `as_chunks_mut::<8>()` yields `&mut [u8; 8]`, so this is a whole-array
+    // assignment instead of a length-checked `copy_from_slice`.
+    // clippy::chunks_exact_to_as_chunks (new in 1.98).
+    let (chunks, _rest) = page.as_chunks_mut::<8>();
+    for chunk in chunks {
+        *chunk = bytes;
     }
 }
 
@@ -175,12 +179,13 @@ pub fn detect_same_fill(page: &[u8; PAGE_SIZE]) -> SameFillResult {
     let fill_word = u64::from_ne_bytes([first_byte; 8]);
 
     // Check 8 bytes at a time
-    let chunks = page.chunks_exact(8);
-    let remainder = chunks.remainder();
+    // `as_chunks::<8>()` yields `&[u8; 8]` directly, so the fallible
+    // `try_into().expect(...)` below is gone: the 8-byte width is now a type,
+    // not a runtime claim. clippy::chunks_exact_to_as_chunks (new in 1.98).
+    let (chunks, remainder) = page.as_chunks::<8>();
 
     for chunk in chunks {
-        // chunks_exact guarantees exactly 8-byte chunks, so try_into always succeeds
-        let word = u64::from_ne_bytes(chunk.try_into().expect("chunks_exact guarantees 8 bytes"));
+        let word = u64::from_ne_bytes(*chunk);
         if word != fill_word {
             return SameFillResult::NotSameFill;
         }

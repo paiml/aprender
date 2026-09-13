@@ -175,7 +175,11 @@ metadata:
   description: Hermetic fixture for the contract test-binding guard.
   references:
     - 'scripts/check_contract_test_binding.sh'
-kind: KernelContract
+# (top-level `kind:` deliberately ABSENT. It was `kind: KernelContract` here,
+# which serde has always dropped -- metadata.kind above is the real one --
+# and which this branch's new SCHEMA rule now REJECTS, so the fixture failed
+# to parse and every case silently went unreported. Fixing the fixture, not
+# the rule: the rule is correct and this file was one of the 119 offenders.)
 name: selftest
 version: "1.0.0"
 status: ACTIVE
@@ -231,7 +235,7 @@ self_test() {
 
     # MUST flag: one per binding field.
     for want in MUTANT_absent_alpha MUTANT_absent_bravo MUTANT_absent_charlie; do
-        if printf '%s\n' "$msg" | grep -qF "$want"; then
+        if grep -qF "$want" <<< "$msg" ; then
             printf '  ok    must-flag   %s\n' "$want"
         else
             printf '  FAIL  must-flag   %s (not reported)\n' "$want"
@@ -241,7 +245,7 @@ self_test() {
 
     # MUST NOT flag: the shell harness and the fn that really exists.
     for unwanted in module_mentioned real_test_exists; do
-        if printf '%s\n' "$msg" | grep -qF "$unwanted"; then
+        if grep -qF "$unwanted" <<< "$msg" ; then
             printf '  FAIL  must-not-flag %s (false positive)\n' "$unwanted"
             rc=1
         else
@@ -251,7 +255,7 @@ self_test() {
 
     # The field name must appear in the finding, so an operator knows the line.
     for field in '].test)' '].test_harness)' '].name)'; do
-        if printf '%s\n' "$msg" | grep -qF "$field"; then
+        if grep -qF "$field" <<< "$msg" ; then
             printf '  ok    names field  %s\n' "$field"
         else
             printf '  FAIL  names field  %s (missing from message)\n' "$field"
@@ -367,6 +371,27 @@ main() {
     fi
 
     [ -f "$BASELINE" ] || die "missing baseline file: $BASELINE, create it with --update-baseline"
+
+    # THE RATCHET IS A PROPERTY OF THE DIFF, NOT OF THE TREE.
+    #
+    # Everything above compares the scan against the baseline AS IT STANDS IN THE
+    # WORKING TREE, and that is not a ratchet. NEW (a finding with no entry) and
+    # STALE (an entry with no finding) are the only two properties a working tree
+    # can answer, and a commit that appends one line AND lands the matching
+    # violation satisfies both at once: not new, because it is baselined; not
+    # stale, because the finding is real.
+    #
+    # Measured, not argued: appending one entry cloned from this file's own last
+    # real entry returned rc=0 from this guard, under its own words:
+    #     "the committed sum can only fall"
+    # Twelve guards in scripts/ failed the same probe.
+    #
+    # So growth is now compared against merge-base(HEAD, origin/main), falling
+    # back to the origin/main TIP because CI checks out shallow — a ref this
+    # branch cannot rewrite, and never the branch against itself.
+    # shellcheck source=scripts/lib_baseline_ratchet.sh
+    . "${REPO_ROOT}/scripts/lib_baseline_ratchet.sh" || exit 1
+    baseline_ratchet_check "${REPO_ROOT}" scripts/contract_test_binding_baseline.txt keyed || exit 1
 
     printf 'Resolved %s test references; %s dangling across %s contract(s).\n' \
         "$refs" "$total" "$(wc -l < "$observed" | tr -d ' ')"

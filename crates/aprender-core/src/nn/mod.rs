@@ -65,6 +65,15 @@ pub mod ssm;
 pub(crate) mod transformer;
 pub mod vae;
 
+/// Named-parameter traversal / mode-propagation tests (ENC-04, ENC-05).
+///
+/// `pub(crate)` and NOT nested inside a `mod tests` block so that
+/// `tests_named_module::snapshot_named` is reachable from other modules'
+/// test code (the encoder conformance tests reuse it).
+#[cfg(test)]
+#[path = "tests_named_module.rs"]
+pub(crate) mod tests_named_module;
+
 pub use activation::{LeakyReLU, ReLU, Sigmoid, Softmax, Tanh, GELU};
 pub use container::{ModuleDict, ModuleList, Sequential};
 pub use conv::{

@@ -1,0 +1,22 @@
+# Fixture for check_hardcoded_paths.sh --self-test. MUST NOT be flagged.
+# Non-vacuity control: the guard must return 0 hits on this file even though it
+# is dense with path-shaped text, otherwise "0 hits" on contracts/ proves nothing.
+metadata:
+  version: 1.0.0
+falsification_tests:
+  - id: F-GOOD-001
+    test: |
+      GOLD=${APR_CRUX_GOLDENS:-evidence/crux}/huggingface/g.json
+      [ -f "$GOLD" ] || exit 2
+  - id: F-GOOD-002
+    test: "apr qa ${APR_MODELS:?}/qwen.gguf"
+  - id: F-GOOD-003
+    test: "apr qa $HOME/.cache/huggingface/hub/model.safetensors"
+  - id: F-GOOD-004
+    test: "apr qa ~/models/qwen.gguf"
+model_registry:
+  binary: target/release/apr
+  scratch: /tmp/apr-scratch
+  device: /dev/null
+  system: /usr/bin/env
+  leaderboard: ${APR_LEADERBOARD_ROOT:?}/checkpoints/x.apr

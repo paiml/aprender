@@ -69,6 +69,7 @@ fn run_cpu_server(
     vocab: Vec<String>,
     mapped_model: Option<std::sync::Arc<realizar::gguf::MappedGGUFModel>>,
     config: &ServerConfig,
+    offload: Option<realizar::api::OffloadReport>,
 ) -> Result<()> {
     use realizar::api::{create_router_with_config, AppState};
 
@@ -83,7 +84,14 @@ fn run_cpu_server(
     if let Some(mapped) = mapped_model {
         state = state.with_mapped_gguf_model(mapped);
     }
-    let state = state.with_verbose(config.verbose); // GH-152: Pass verbose flag to handlers
+    let mut state = state.with_verbose(config.verbose); // GH-152: Pass verbose flag to handlers
+    // PP-14/PP-15: the resolution the loader printed, retained so
+    // `/v1/effective-config` reports it. `None` on the paths that do not know
+    // the layer count — absent, never a fabricated zero.
+    if let Some(offload) = offload {
+        state = state.with_offload_report(offload);
+    }
+    let state = state;
 
     // Create realizar's full inference router (Ollama-parity endpoints).
     // --no-cors / --no-metrics must reach the router, not stop at the banner.
@@ -138,7 +146,7 @@ fn run_cpu_server(
 /// Start GGUF server with GPU batched inference (2X+ Ollama performance)
 ///
 /// Uses OwnedQuantizedModelCachedSync with continuous batching scheduler
-/// for maximum throughput on GPU. Achieves 800+ tok/s (2.8x Ollama).
+/// for maximum throughput on GPU. Measure it with `apr test llm bench`;
 #[cfg_attr(coverage_nightly, coverage(off))]
 #[cfg(all(feature = "inference", feature = "cuda"))]
 fn start_gguf_server_gpu_batched(
@@ -233,7 +241,12 @@ fn start_gguf_server_gpu_batched(
         println!();
         println!(
             "{}",
-            "Performance: 800+ tok/s (2.8x Ollama) with batched requests".yellow()
+            // #2696: this printed "Performance: 800+ tok/s (2.8x Ollama)" —
+            // a throughput comparison asserted by a server that had measured
+            // nothing, on a path that in fact HANGS on four concurrent chat
+            // requests. A claim a user reads as a result must come from a
+            // measurement; there is none here, so there is no claim.
+            "Batched inference enabled. Measure with `apr test llm bench`.".yellow()
         );
         println!("{}", "Press Ctrl+C to stop".dimmed());
 

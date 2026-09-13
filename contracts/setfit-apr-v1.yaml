@@ -1,0 +1,1302 @@
+contract: setfit-apr
+metadata:
+  version: 1.0.0
+  created: '2026-08-15'
+  author: PAIML Engineering
+  kind: kernel
+  description: >
+    The `setfit-apr-v1` ARTIFACT SCHEMA: what a SetFit APR file contains, where each item lives,
+    how it maps back to the value the trainer held, what a loader must check before it may predict,
+    and the constants every later comparison is judged against. Covers APR-01 (checksummed F32
+    artifact carrying tensors, tokenizer bytes, resolved configuration, evidence and provenance),
+    APR-02 (fail-closed offline load), APR-04 (no consumer accepts an unverified model), APR-05
+    (inspection recovers the metadata) and SAFE-01 (three-surface parity).
+
+    Implemented by `aprender-core` (`setfit::artifact`, the writer/loader/doc), `aprender-train`
+    (`train::setfit`, the codec adapter and the bundle it transports), `apr-cli` and
+    `aprender-serve` (transport only). Every constant below is committed BEFORE the code that
+    compares against it exists (Ph1 D-14), so a threshold cannot be chosen after seeing a result.
+
+    WHY THIS CONTRACT EXISTS, AND WHY IT IS SHAPED LIKE THIS. A cross-AI review of the phase plan
+    set found that three plans — the writer, the loader and the codec — each described the artifact
+    and DESCRIBED IT DIFFERENTLY, while no plan wrote the schema down. Classifier-head coefficients
+    had no storage location at all (review B1); the one-key metadata document had three
+    incompatible field lists (B2); and nothing showed that every serialized field could be
+    recovered from the value the codec deserializes into, so byte-canonical closure was asserted
+    rather than shown (B3). This file is the single reconciliation point: ONE storage map, ONE
+    document field list, ONE bijection table. Later plans READ their schema from here instead of
+    restating it. A schema restated in three places is a schema that disagrees with itself.
+
+    THE HEAD IS TENSORS, NOT METADATA (B1). Classifier weights and intercepts are named F32
+    tensors. An array of `K*d` floats inside a JSON document would be lossy at the text boundary,
+    unaligned, invisible to generic `apr tensors`, and would push the metadata section toward the
+    container's 16 MiB `MAX_METADATA_SIZE`. The storage map binds them to `setfit.head.weight` and
+    `setfit.head.bias`; the loader's tensor-set rule refuses an artifact missing either.
+
+    THE NULL GUARD IS AN ALLOWLIST, AND THE ALLOWLIST IS DERIVED (CR-03). `serde_json` maps every
+    non-finite `f64` to `null` SILENTLY — `+inf`, `-inf` and every `NaN` payload render
+    identically — so a stray `null` IS the CR-03 signature and a blanket null-scan is this house's
+    guard for it (`UpdateEvidence::to_canonical_bytes`, evidence.rs:456-483). That guard's own
+    comment records the PRECONDITION it rests on: a blanket scan is exact only over types with no
+    `Option` field, because only then can a `null` mean nothing but a non-finite float. Phase 4
+    does NOT satisfy that precondition — three of the five embedded sub-documents carry `Option`
+    fields — so this contract owns the exception set. The allowlist is FOUR paths; the WALK is FIVE
+    sub-documents; `nullable_path_allowlist` below records why those two numbers differ and why the
+    difference is the design rather than an oversight.
+
+    PROVABILITY HONESTY. `cargo-kani` is not installed in this repository and there is not one
+    `#[kani::proof]` harness anywhere under `crates/`. The `kani_harnesses:` entries below are
+    DECLARED and NOT EXECUTED; each names the runnable, identically bounded test that is the actual
+    evidence. Nothing here should be read as a machine-checked proof.
+
+    ANNOTATION HONESTY. The `#[contract]` attribute in this repository is METADATA-ONLY:
+    aprender-core's build.rs looks for a binding.yaml at a sibling provable-contracts/ path that the
+    APR-MONO merge deleted, so CONTRACT_* environment variables are never set and no preconditions
+    or postconditions are injected into the annotated function. The enforcement mechanism for
+    everything below is the named test, never the annotation.
+
+    BINDING HONESTY. Every equation below is registered in `contracts/aprender/binding.yaml` with
+    `status: pending` at the moment this contract lands, because the modules that implement them do
+    not exist yet — this contract is deliberately committed FIRST. `pending` is a BIND-004 warning,
+    not a BIND-001 error, so `make contract-audit-phase4` passes on a pending equation and fails on
+    an equation with no binding entry at all. Each binding is flipped to `implemented` by the plan
+    that lands its module; a plan that lands a module and leaves the binding `pending` has recorded
+    a claim nothing checks.
+  references:
+    - 'Tunstall et al. (2022) Efficient Few-Shot Learning Without Prompts (SetFit)'
+    - 'Reimers & Gurevych (2019) Sentence-BERT — the pooled-embedding encoder this artifact stores'
+    - 'contracts/setfit-train-lifecycle-v1.yaml — the bundle_completeness field list this artifact serializes'
+    - 'contracts/setfit-encoder-conformance-v1.yaml — the frozen tolerance table the probe tolerances cite'
+    - 'contracts/tensor-names-v1.yaml — the canonical naming scheme the encoder tensors are written under'
+    - 'contracts/tensor-layout-v1.yaml — row-major is mandatory for every tensor written here'
+    - 'contracts/apr-model-lifecycle-v1.yaml — the APR lifecycle this artifact coexists with'
+    - 'crates/apr-format/src/v2/ — the APR v2 container (header, typed metadata, checksums, tensor index)'
+    - 'crates/aprender-train/src/train/setfit/bundle.rs — SetFitBundle, the value the codec transports'
+    - 'crates/aprender-core/src/setfit/ — SetFitMiniLm, the encoder rebuilt from this artifact'
+  depends_on:
+    - setfit-train-lifecycle-v1
+    - setfit-encoder-conformance-v1
+
+equations:
+
+  # ==========================================================================
+  # 1. The storage map — every APR-01 item, its location, its source, its
+  #    serialized form, its loader destination (review B1 + B2)
+  # ==========================================================================
+
+  artifact_storage_map:
+    formula: 'setfit_apr_v1 = AprV2Container(header, typed_metadata{model_type="setfit"}, custom_metadata{"setfit": SetFitArtifactDoc}, tensor_index, tensor_payload) ; tensor_payload = encoder_tensors(canonical names) ++ {setfit.head.weight, setfit.head.bias} ++ {tokenizer.blob}'
+    domain: 'a SetFitBundle produced by a run that reached ArtifactReloadedAndVerified'
+    codomain: 'a checksummed APR v2 file sufficient to rebuild the encoder, the tokenizer and the head from bytes alone, offline'
+    preconditions:
+      - 'the run reached ArtifactReloadedAndVerified, so the bundle being serialized is one the train-time round trip already accepted'
+      - 'the head reports a fitted feature dimension; a head that never fitted has no coefficients to place in the map'
+    postconditions:
+      - 'every F32 tensor written is row-major (tensor-layout-v1); the only non-F32 entry is the U8 tokenizer.blob'
+      - 'the output carries no timestamp and exactly one custom metadata key, so two writes of the same bundle are byte-identical'
+    # THE NORMATIVE STORAGE MAP. One row per APR-01 item. Columns: storage
+    # location | SetFitBundle source field | serialized representation | loader
+    # destination. This is the table review finding B1/B2 asked for; the writer
+    # (04-02), the loader (04-03) and the codec (04-05) all read it from HERE.
+    storage_map:
+      encoder_tensors:
+        storage_location: 'named F32 tensors under the tensor-names-v1 canonical names of `canonical_tensor_names` below'
+        bundle_source_field: 'tensors (BTreeMap<String, BundleTensor>, keyed by HF dotted name)'
+        serialized_representation: 'little-endian f32 payload, ROW-MAJOR (tensor-layout-v1), one TensorIndexEntry per tensor'
+        loader_destination: 'an HF-named map rebuilt by inverting hf_name_map, fed to SetFitMiniLm::from_bundle_parts'
+      classifier_head_weights:
+        storage_location: 'named F32 tensor `setfit.head.weight`, shape [num_labels, head_n_features]'
+        bundle_source_field: 'head_weights_hex'
+        serialized_representation: 'little-endian f32 payload, ROW-MAJOR; row i is the weight vector of ordered_labels[i]'
+        loader_destination: 'MultinomialLogisticRegression::from_stored_coefficients'
+      classifier_head_intercepts:
+        storage_location: 'named F32 tensor `setfit.head.bias`, shape [num_labels]'
+        bundle_source_field: 'head_intercepts_hex'
+        serialized_representation: 'little-endian f32 payload'
+        loader_destination: 'MultinomialLogisticRegression::from_stored_coefficients (same call as the weights)'
+      tokenizer_bytes:
+        storage_location: 'named U8 tensor `tokenizer.blob`, shape [len]'
+        bundle_source_field: 'tokenizer_bytes_hex'
+        serialized_representation: 'raw bytes, BYTE-IDENTICAL to the pinned upstream tokenizer.json (466247 bytes for the pinned MiniLM)'
+        loader_destination: 'the tokenizer-bytes argument of SetFitMiniLm::from_bundle_parts'
+      family_detection_tag:
+        storage_location: 'TYPED container metadata `model_type = "setfit"`'
+        bundle_source_field: '(constant — not a bundle field; the schema itself is the source)'
+        serialized_representation: 'JSON string in the typed metadata section'
+        loader_destination: 'D-04 explicit-tag detection in generic apr inspect/eval/predict and apr serve'
+      everything_else:
+        storage_location: 'the ONE custom metadata key `"setfit"`, holding the SetFitArtifactDoc object of `artifact_doc_schema`'
+        bundle_source_field: 'see the bijection table in `doc_bundle_bijection`'
+        serialized_representation: 'a single JSON object; serde_json::Map is BTreeMap-backed, so key order is deterministic'
+        loader_destination: 'one deny_unknown_fields parse into SetFitArtifactDoc, then the validation ladder'
+    invariants:
+      - 'HEAD COEFFICIENTS ARE TENSORS AND NEVER METADATA (review B1). An array of `K*d` floats
+        inside the JSON document would be lossy (float text formatting is not the identity on f32),
+        unaligned (no 64-byte tensor alignment), invisible to `apr tensors`/`apr diff`/`apr qa`, and
+        would inflate the metadata section toward the container''s 16 MiB MAX_METADATA_SIZE. The two
+        head tensors are therefore first-class named F32 entries in the tensor index, and an
+        artifact missing either is refused by the architecture-derived tensor-set rule before any
+        prediction.'
+      - 'EXACTLY ONE CUSTOM METADATA KEY. `AprV2Metadata.custom` is a `HashMap<String, Value>` with
+        `#[serde(flatten)]` (header_impl.rs:297-299), and HashMap iteration order is not specified.
+        N top-level custom keys therefore serialize in an unspecified order and the container
+        checksum over them is not reproducible across processes. ONE key holding one
+        `serde_json::Map` object is reproducible, because serde_json::Map is BTreeMap-backed and no
+        workspace crate enables `preserve_order`.'
+      - 'THE TOKENIZER BYTES TRAVEL, NOT JUST THEIR DIGEST. An artifact carrying only
+        `tokenizer_sha256` can DETECT a substituted tokenizer and cannot REBUILD the right one, so a
+        reload from it could not re-encode a single string. This restates
+        setfit-train-lifecycle-v1''s bundle_completeness invariant at the APR boundary; APR-02
+        forbids a sidecar file, so the bytes are in the artifact.'
+      - 'ROW-MAJOR, ALWAYS (tensor-layout-v1). Every F32 tensor written here is row-major. There is
+        no GGUF import path into this writer, so there is no transpose at this boundary and no
+        column-major kernel may ever be pointed at these tensors.'
+      - 'NO TIMESTAMP IS WRITTEN. `AprV2Metadata.created_at` stays `None`. A timestamp would make
+        two artifacts of the same run differ, which would break both the closure equation and the
+        artifact-hash identity every response carries.'
+
+  # ==========================================================================
+  # 2. The normative SetFitArtifactDoc field list (review B2)
+  # ==========================================================================
+
+  artifact_doc_schema:
+    formula: 'SetFitArtifactDoc = (schema, schema_version, bundle_schema_version, format_id, architecture, tokenizer_sha256, preprocessing, root_seed, head, ordered_labels, requested_config, resolved_config, evidence, provenance, hf_name_map, probes)'
+    domain: 'the single value held at custom metadata key "setfit"'
+    codomain: 'a deny_unknown_fields struct that parses fail-closed or not at all'
+    preconditions:
+      - 'aprender-core owns this type and CANNOT name the aprender-train types behind four of the five sub-documents, so each arrives already reduced to a serde_json::Value by the writer'
+      - 'no workspace crate enables serde_json''s preserve_order feature, so serde_json::Map is BTreeMap-backed and key order is sorted'
+    postconditions:
+      - 'an unknown key is a typed parse refusal, never a silently ignored field'
+      - 'schema and schema_version are checked before any other field is read, so a future schema cannot be partially interpreted by this build'
+    # THE NORMATIVE FIELD LIST, in declaration (= serialized) order. snake_case,
+    # deny_unknown_fields, NO OTHER FIELDS. A field missing from an
+    # implementation is a finding, not a simplification.
+    doc_fields:
+      schema: 'const string "setfit-apr-v1"'
+      schema_version: 'const u32 1'
+      bundle_schema_version: 'u32 — the SetFitBundle wire version this artifact was written from'
+      format_id: 'string — the codec identifier that wrote the payload'
+      architecture: 'embedded sub-document — to_value(EncoderArchitecture)'
+      tokenizer_sha256: 'string — lowercase hex, first-level for zero-SetFit-knowledge inspection'
+      preprocessing:
+        pooling: 'string'
+        normalization: 'string'
+        l2_epsilon_hex: 'string — the f32 BIT PATTERN as hex, never a JSON number'
+        truncation_max_sequence_length: 'u32'
+        padding_mode: 'string'
+        max_length: 'u32'
+      root_seed: 'u64'
+      head:
+        n_features: 'usize'
+        num_labels: 'usize'
+      ordered_labels: 'array of string — index i is the label of head weight row i'
+      requested_config: 'embedded sub-document — to_value(SetFitTrainConfig)'
+      resolved_config: 'embedded sub-document — to_value(ResolvedConfigRecord)'
+      evidence: 'embedded sub-document — to_value(EvidenceSummary)'
+      provenance: 'embedded sub-document — to_value(ProvenanceRecord), bundle field 20 (plan 04-13)'
+      hf_name_map: 'object — HF dotted name -> canonical tensor name'
+      probes: 'array of probe records — see probe_policy'
+    invariants:
+      - 'THE FIVE EMBEDDED SUB-DOCUMENTS ARE OPAQUE JSON OBJECTS, and that is a crate-boundary
+        consequence rather than a preference. `architecture`, `requested_config`, `resolved_config`,
+        `evidence` and `provenance` are carried as the `serde_json::Value` produced by
+        `serde_json::to_value` over the corresponding aprender-train types, because `aprender-core`
+        — which owns the doc — CANNOT NAME those types: train depends on core, never the reverse.
+        `EncoderArchitecture` is the one exception that core does own, and it is carried the same
+        way so the five are handled uniformly by one walk.'
+      - 'THEIR KEY ORDER IS DETERMINISTIC. `serde_json::Map` is BTreeMap-backed by default and no
+        workspace crate enables `preserve_order`, so `to_value` over a struct yields sorted keys and
+        the same struct value always yields the same bytes.'
+      - '`provenance` IS ONE OF THE FIVE AND NOT AN EXCEPTION. It is `to_value(bundle.provenance)`
+        exactly like the other four, so the null walk of `nullable_path_allowlist` covers it on the
+        same terms. Recording this explicitly because a reader who treats provenance as "just
+        strings" would reasonably skip walking it, which is the precise mistake that walk exists to
+        prevent.'
+      - 'EVERY FLOAT THE DOC ITSELF OWNS IS A BIT-PATTERN HEX STRING, never a JSON number:
+        `preprocessing.l2_epsilon_hex` and every probe expectation. So no doc-OWNED field can reach
+        the null path at all, and the allowlist governs only the five opaque sub-documents. This is
+        also why the doc''s own floats are exact: hex of the little-endian bit pattern round-trips
+        an f32 losslessly, and decimal text does not.'
+      - 'FIRST-LEVEL IDENTITY FIELDS ARE GENERICALLY INSPECTABLE. `schema`, `schema_version`,
+        `ordered_labels` and `tokenizer_sha256` sit at the top level of the doc, so a reader with
+        zero SetFit knowledge recovers the artifact''s identity by printing one JSON object. See
+        `d02_typed_key_amendment` for why they are doc fields rather than typed container keys.'
+
+  # ==========================================================================
+  # 3. The nullable-path allowlist — CR-03 hardening (review T-04-58)
+  # ==========================================================================
+
+  nullable_path_allowlist:
+    formula: 'write_setfit_apr(doc) fails NonFiniteValue{path} <=> exists p in null_paths(doc) : p not in NULLABLE_PATH_ALLOWLIST ; NULLABLE_PATH_ALLOWLIST = {architecture.vocab_remap, requested_config.pair_config.budget, requested_config.pair_config.hard_cap, evidence.epsilon_used} ; |NULLABLE_PATH_ALLOWLIST| = 4 ; |WALKED_SUBDOCUMENTS| = 5'
+    domain: 'the serialized SetFitArtifactDoc, walked over all FIVE embedded sub-documents'
+    codomain: 'unit on pass; SetFitArtifactError::NonFiniteValue { path } at write time on fail'
+    preconditions:
+      - 'none of the five sub-document types carries skip_serializing_if, so every None emits an EXPLICIT null the walk can see; a type that gained one would make this guard silently vacuous'
+      - 'the walk runs on the doc PARSED BACK from the emitted bytes, never on a Value used to produce them — routing emission through a Value could reorder keys and invalidate every recorded digest'
+    postconditions:
+      - 'a refusal names the exact dotted path of the first offending null, so the diagnosis does not require reading this file'
+      - 'the four allowlisted paths are read from ONE named constant, so the writer''s walk and the 04-13 completeness gate cannot disagree about the allowlist''s contents'
+      - 'all FIVE sub-documents were visited, including the two contributing zero allowlisted paths'
+    # THE ALLOWLIST IS DERIVED FROM THE TYPES, NEVER HAND-LISTED. It is exactly
+    # the set of paths at which an `Option`-typed field of the five walked
+    # sub-documents can serialize. None of these types carries
+    # `skip_serializing_if`, so every `None` emits an explicit `null`.
+    allowlist:
+      - path: 'architecture.vocab_remap'
+        owning_type: 'EncoderArchitecture'
+        option_field_type: 'Option<Vec<u32>>'
+        source: 'crates/aprender-core/src/setfit/mod.rs:126-127'
+        note: >
+          `None` is the FULL PIN — the PRODUCTION shape. `Some` occurs only on the slice-fixture
+          path (import.rs:501 sets `None`, import.rs:620 sets `Some`). An allowlist omitting this
+          path refuses EVERY pinned MiniLM artifact while every test built on a slice fixture stays
+          green, because the fixture is the one input shape at which the guard cannot fire.
+      - path: 'requested_config.pair_config.budget'
+        owning_type: 'PairConfigWire'
+        option_field_type: 'Option<u64>'
+        source: 'crates/aprender-train/src/train/setfit/config.rs:716'
+        note: 'Reached through SetFitTrainConfig''s serde wire form; `pair_config` is field 7 of SetFitTrainConfigWire (config.rs:747).'
+      - path: 'requested_config.pair_config.hard_cap'
+        owning_type: 'PairConfigWire'
+        option_field_type: 'Option<u64>'
+        source: 'crates/aprender-train/src/train/setfit/config.rs:717'
+        note: 'Same struct as budget; both are absent-by-default knobs, so both are routinely null on an honest artifact.'
+      - path: 'evidence.epsilon_used'
+        owning_type: 'EvidenceSummary'
+        option_field_type: 'Option<f64>'
+        source: 'crates/aprender-train/src/train/setfit/evidence.rs:599'
+        note: 'The ONE allowlisted path whose Option wraps a float — see the residual invariant below.'
+    zero_contribution_subdocuments:
+      - subdocument: 'resolved_config'
+        owning_type: 'ResolvedConfigRecord'
+        fields: 'one String (resolved_device)'
+        source: 'crates/aprender-train/src/train/setfit/bundle.rs:292-301'
+        contributes: 0
+        still_walked: true
+      - subdocument: 'provenance'
+        owning_type: 'ProvenanceRecord'
+        fields: 'four String, one u64, one u32 — dataset_fingerprint, validation_split_fingerprint, selection_semantic_hash, selection_ledger_hash, selection_root_seed, shots_per_class'
+        source: 'crates/aprender-train/src/train/setfit/bundle.rs — bundle field 20, landed by plan 04-13, which FORBIDS an Option field on it'
+        contributes: 0
+        still_walked: true
+    invariants:
+      - 'THE POLARITY IS THE SHIPPED PRECEDENT AND IS KEPT. `first_null_path` guards
+        `UpdateEvidence::to_canonical_bytes` (evidence.rs:199-215 and 456-483) and that comment
+        records WHY a null-scan beats an enumerated float-field list, in its own words: "An
+        enumerated field list is the guard that silently stops covering the newest field, which is
+        how these checks rot." This contract keeps the scan and adds the exception set the scan now
+        needs.'
+      - 'THE PRECONDITION THE PRECEDENT NAMES IS NOT SATISFIED HERE, AND THAT IS WHY THIS BLOCK
+        EXISTS. A blanket null-scan is EXACT only over types with NO `Option` field, because only
+        then can a `null` mean nothing but a non-finite float. `UpdateEvidence` and `EvidenceRow`
+        have none, so the shipped guard is exact. THREE of the five embedded sub-documents DO have
+        `Option` fields, so a blanket scan over the doc would refuse honest artifacts. The allowlist
+        is the minimum widening that keeps the guard armed.'
+      - 'THE WALKED SET IS FIVE SUB-DOCUMENTS; THE ALLOWLIST IS FOUR PATHS. The two numbers differ on
+        purpose and the difference is the design. The writer WALKS all five — INCLUDING
+        `resolved_config` and `provenance`, which contribute zero allowlisted paths today. Walking a
+        zero-path subtree is not redundant; it is the whole point. An UNWALKED subtree cannot reject
+        anything, so a future `Option` field added to `ResolvedConfigRecord` or `ProvenanceRecord`
+        would fail SILENTLY on the first production artifact instead of loudly at the guard — the
+        exact inversion of the fail-loud asymmetry this design rests on.'
+      - 'ANY SUB-DOCUMENT ADDED TO THE DOC LATER IS WALKED FROM THE MOMENT IT IS ADDED, contributing
+        an EMPTY allowlist entry until a written analysis in this contract says otherwise. "Walked
+        with an empty allowlist" is the safe default; "not walked yet" is not a state this schema
+        admits.'
+      - 'THE RESIDUAL IS RECORDED RATHER THAN CLAIMED AWAY. At the three `Option<non-float>` paths a
+        `null` is UNAMBIGUOUS: no f64 can produce a null at a `Vec<u32>` or `u64` field, so `None`
+        and a smuggled non-finite value are distinguishable there. At `evidence.epsilon_used`, which
+        is `Option<f64>`, `None` and a non-finite epsilon render IDENTICALLY and the writer cannot
+        separate them. Today that residual is EMPTY: `epsilon_used` has exactly one assignment in
+        the tree and it is `None` (evidence.rs:655, asserted by the test at evidence.rs:1144), i.e.
+        the judged path does not exist yet. When it lands, the value comes from the frozen per-class
+        epsilon table in setfit-train-lifecycle-v1, so a non-finite value there is a
+        contract-authoring defect `pv validate` catches, not a run-time divergence.'
+      - 'NO FURTHER PATH MAY ENTER THE ALLOWLIST WITHOUT THE SAME WRITTEN ANALYSIS: the owning type,
+        the `Option<...>` field type, the source location, whether `None` is the production shape,
+        and whether the Option wraps a float (and therefore whether a residual exists).'
+      - 'OBLIGATION (a), BINDING ON 04-02: the allowlist ships as ONE named constant listing exactly
+        these four paths, CITED by the writer''s walk rather than scattered as inline literals, and
+        that walk is pointed at ALL FIVE sub-documents. A literal repeated at two call sites is two
+        allowlists that will diverge.'
+      - 'OBLIGATION (b), BINDING ON 04-13: a COMPLETENESS GATE lives in the only crate that can name
+        all five types — `aprender-train` — and asserts that serializing an all-`None` instance of
+        each sub-document type produces EXACTLY this four-path null set, with the `resolved_config`
+        and `provenance` subtrees each asserted BY NAME to contribute an EMPTY set. A new `Option`
+        field on any of the five then fails that gate by name, in that crate, instead of failing on
+        the first production artifact.'
+      - 'ADDING `skip_serializing_if` TO ANY OF THE FIVE TYPES IS FORBIDDEN. It would change
+        `SetFitBundle::to_canonical_bytes` output and break Phase 3''s committed bundle closure and
+        round-trip tests. It would also silently empty this allowlist, converting a guarded schema
+        into an unguarded one with no test turning red.'
+      - 'THE WALK DOES NOT COVER THE CONTAINER''S TYPED METADATA. `license`, `data_source` and
+        `data_license` serialize as explicit `null` by container design (header_impl.rs:149-167, no
+        `skip_serializing_if`, required by FALSIFY-SHIP-022). Those three nulls are deterministic,
+        expected, and OUTSIDE this scope — see `d02_typed_key_amendment`. Pointing the walk at the
+        typed section would refuse every artifact this writer produces.'
+
+  # ==========================================================================
+  # 4. The doc <-> bundle bijection and the closure equation (review B3)
+  # ==========================================================================
+
+  doc_bundle_bijection:
+    formula: 'serialize(deserialize(bytes)) == bytes at Tolerance::EXACT ; every SetFitArtifactDoc field is either bundle.<field> or f(bundle...) with f deterministic ; every one of SetFitBundle''s 20 fields is recovered by deserialize'
+    domain: 'the bytes of a setfit-apr-v1 artifact written by write_setfit_apr'
+    codomain: 'a SetFitBundle byte-identical under re-serialization to the one that produced the artifact'
+    preconditions:
+      - 'the bundle carries all 20 fields INCLUDING provenance (bundle field 20, plan 04-13), so no doc field is written without a recoverable source'
+      - 'probes are recomputed rather than carried, so they are a function of the bundle and not a 21st field'
+    postconditions:
+      - 'the closure check is a BYTE comparison at Tolerance::EXACT; no float tolerance participates in it'
+      - 'a closure failure names the first differing byte offset and the doc field that owns it'
+    forward_doc_to_bundle:
+      bundle_schema_version: '= bundle.schema_version'
+      format_id: '= bundle.format_id'
+      architecture: '= to_value(bundle.architecture)'
+      tokenizer_sha256: '= bundle.architecture.tokenizer_sha256'
+      preprocessing.pooling: '= bundle.pooling'
+      preprocessing.normalization: '= bundle.normalization'
+      preprocessing.l2_epsilon_hex: '= f32_to_hex(bundle.l2_epsilon)'
+      preprocessing.truncation_max_sequence_length: '= bundle.truncation_max_sequence_length'
+      preprocessing.padding_mode: '= bundle.padding_mode'
+      preprocessing.max_length: '= bundle.max_length'
+      root_seed: '= bundle.root_seed'
+      head.n_features: '= bundle.head_n_features'
+      head.num_labels: '= bundle.ordered_labels.len()'
+      ordered_labels: '= bundle.ordered_labels'
+      requested_config: '= to_value(bundle.requested_config)'
+      resolved_config: '= to_value(bundle.resolved_config)'
+      evidence: '= to_value(bundle.evidence)'
+      provenance: '= to_value(bundle.provenance)'
+      hf_name_map: '= f(bundle.tensors.keys(), canonical_tensor_names) — the canonical-name table of this contract applied to each HF key'
+      probes: '= f(rebuild(bundle), probe_policy.inputs) — RECOMPUTED, never carried'
+      schema: '= const "setfit-apr-v1"'
+      schema_version: '= const 1'
+    reverse_bundle_from_doc:
+      schema_version: '= doc.bundle_schema_version'
+      format_id: '= doc.format_id'
+      architecture: '= from_value(doc.architecture)'
+      tokenizer_bytes_hex: '= hex(payload of the tokenizer.blob U8 tensor)'
+      pooling: '= doc.preprocessing.pooling'
+      normalization: '= doc.preprocessing.normalization'
+      l2_epsilon: '= hex_to_f32(doc.preprocessing.l2_epsilon_hex)'
+      truncation_max_sequence_length: '= doc.preprocessing.truncation_max_sequence_length'
+      padding_mode: '= doc.preprocessing.padding_mode'
+      max_length: '= doc.preprocessing.max_length'
+      root_seed: '= doc.root_seed'
+      tensors: '= f(tensor payloads, invert(doc.hf_name_map)) — canonical names mapped back to HF dotted names'
+      head_weights_hex: '= hex(payload of setfit.head.weight)'
+      head_intercepts_hex: '= hex(payload of setfit.head.bias)'
+      head_n_features: '= doc.head.n_features'
+      ordered_labels: '= doc.ordered_labels'
+      requested_config: '= from_value(doc.requested_config)'
+      resolved_config: '= from_value(doc.resolved_config)'
+      evidence: '= from_value(doc.evidence)'
+      provenance: '= from_value(doc.provenance)'
+    invariants:
+      - 'THE BIJECTION IS THE POINT, NOT THE TABLE. Review B3 found that byte-canonical closure was
+        asserted by 04-05 and shown nowhere: anything in the artifact that is neither a bundle field
+        nor a deterministic function of bundle fields is unrecoverable, and `serialize(deserialize(
+        bytes)) == bytes` fails the moment such a field is written. Both directions above are
+        total: every doc field has a named source, and all 20 bundle fields are recovered.'
+      - 'PROBES ARE RECOMPUTED ON EVERY SERIALIZE, WHICH IS WHAT MAKES THEM CLOSURE-SAFE. They are
+        not a bundle field and never become one. A deterministic CPU encode of a fixed input set
+        through a rebuilt model reproduces identical records, so re-serializing a deserialized
+        artifact reproduces identical probe bytes. A probe set CARRIED rather than recomputed would
+        be a 21st bundle field with no source.'
+      - 'PROVENANCE IS NOT DERIVABLE, WHICH IS WHY BUNDLE FIELD 20 EXISTS. Dataset fingerprint,
+        validation-split fingerprint, selection semantic hash, selection ledger hash, selection root
+        seed and shots-per-class are facts about the run''s inputs; no function of the other 19
+        fields produces them. Plan 04-13 extends the trusted bundle rather than letting the writer
+        emit an unrecoverable field.'
+      - 'CLOSURE ALONE DOES NOT SUBSUME THE NULL GUARD. A `null` at an allowlisted `Option` path
+        round-trips to `None` and back to `null`, so closure HOLDS while the value is GONE. That is
+        exactly why the null scan runs at WRITE time and not only as a byte comparison. A phase that
+        relied on closure to catch non-finite values would have a green closure test over an
+        artifact whose epsilon was silently destroyed.'
+      - 'THE TOLERANCE IS `Tolerance::EXACT` (Ph3 A2). The payload is raw little-endian f32 bit
+        patterns and the re-encode runs the same CPU path, so there is no float comparison in the
+        closure check at all — it is a byte comparison. A tolerance appearing here later would mean
+        a rebuild-path divergence, and it must be introduced in trusted code keyed on the codec, not
+        by widening this equation.'
+      - 'THE HF NAME MAP IS THE ONLY INVERSION AT THE NAME BOUNDARY. `hf_name_map` is written into
+        the doc precisely so `deserialize` never re-derives names from a table that might have moved
+        between the write and the read. The writer validates the map is TOTAL over
+        `bundle.tensors.keys()` and INJECTIVE; a missing or colliding entry is a typed error at
+        write time.'
+
+  # ==========================================================================
+  # 5. The canonical tensor name table
+  # ==========================================================================
+
+  canonical_tensor_names:
+    formula: 'canonical(hf_name) = tensor_names_v1_fallback(role(hf_name)) when role(hf_name) exists and its _fallback is non-empty ; = setfit_owned(hf_name) otherwise ; expected_names(arch) = global_names ++ concat over n in 0..arch.num_layers of layer_names(n) ++ {setfit.head.weight, setfit.head.bias, tokenizer.blob}'
+    domain: 'the HF dotted names SetFitMiniLm::named_parameters() emits, verbatim (Ph1 D-18)'
+    codomain: 'canonical APR tensor names, pairwise distinct, generic-tooling-visible'
+    preconditions:
+      - 'the HF side is exactly SetFitMiniLm::named_parameters() output, pinned name-for-name AND in order against the frozen parameter_order array of tests/fixtures/setfit/gradients.json'
+      - 'the pooler is excluded from named_parameters(), so no pooler name needs a canonical form'
+    postconditions:
+      - 'hf_name_map is WRITTEN INTO the artifact, so deserialize inverts a map the artifact carries rather than re-deriving names from a table that may have moved since the write'
+      - 'the map is total over the artifact''s tensor set and injective; a missing or colliding entry is a typed writer error, never a dropped or overwritten tensor'
+    global_names:
+      - hf: 'embeddings.word_embeddings.weight'
+        canonical: 'token_embd.weight'
+        provenance: 'tensor-names-v1 global_roles.embedding — bert alias at line 132, _fallback at line 142'
+      - hf: 'embeddings.position_embeddings.weight'
+        canonical: 'position_embd.weight'
+        provenance: 'tensor-names-v1 global_roles.position_embedding names the bert alias (line 261) but its _fallback is EMPTY (line 265) — SETFIT-SCHEMA-OWNED, see the D-01 amendment invariant'
+      - hf: 'embeddings.token_type_embeddings.weight'
+        canonical: 'token_types.weight'
+        provenance: 'no tensor-names-v1 role — SETFIT-SCHEMA-OWNED'
+      - hf: 'embeddings.LayerNorm.weight'
+        canonical: 'token_embd_norm.weight'
+        provenance: 'no tensor-names-v1 role — SETFIT-SCHEMA-OWNED'
+      - hf: 'embeddings.LayerNorm.bias'
+        canonical: 'token_embd_norm.bias'
+        provenance: 'no tensor-names-v1 role — SETFIT-SCHEMA-OWNED'
+    layer_names:
+      - hf: 'encoder.layer.{n}.attention.self.query.weight'
+        canonical: 'blk.{n}.attn_q.weight'
+        provenance: 'tensor-names-v1 layer_roles.q_proj_weight _fallback (line 366)'
+      - hf: 'encoder.layer.{n}.attention.self.query.bias'
+        canonical: 'blk.{n}.attn_q.bias'
+        provenance: 'tensor-names-v1 layer_roles.q_proj_bias _fallback (line 725)'
+      - hf: 'encoder.layer.{n}.attention.self.key.weight'
+        canonical: 'blk.{n}.attn_k.weight'
+        provenance: 'tensor-names-v1 layer_roles.k_proj_weight _fallback (line 399)'
+      - hf: 'encoder.layer.{n}.attention.self.key.bias'
+        canonical: 'blk.{n}.attn_k.bias'
+        provenance: 'tensor-names-v1 layer_roles.k_proj_bias _fallback (line 749)'
+      - hf: 'encoder.layer.{n}.attention.self.value.weight'
+        canonical: 'blk.{n}.attn_v.weight'
+        provenance: 'tensor-names-v1 layer_roles.v_proj_weight _fallback (line 432)'
+      - hf: 'encoder.layer.{n}.attention.self.value.bias'
+        canonical: 'blk.{n}.attn_v.bias'
+        provenance: 'tensor-names-v1 layer_roles.v_proj_bias _fallback (line 773)'
+      - hf: 'encoder.layer.{n}.attention.output.dense.weight'
+        canonical: 'blk.{n}.attn_output.weight'
+        provenance: 'tensor-names-v1 layer_roles.o_proj_weight _fallback (line 470)'
+      - hf: 'encoder.layer.{n}.attention.output.dense.bias'
+        canonical: 'blk.{n}.attn_output.bias'
+        provenance: 'no tensor-names-v1 role (there is no o_proj_bias role) — SETFIT-SCHEMA-OWNED'
+      - hf: 'encoder.layer.{n}.attention.output.LayerNorm.weight'
+        canonical: 'blk.{n}.attn_norm.weight'
+        provenance: 'tensor-names-v1 layer_roles.attn_norm_weight _fallback (line 305)'
+      - hf: 'encoder.layer.{n}.attention.output.LayerNorm.bias'
+        canonical: 'blk.{n}.attn_norm.bias'
+        provenance: 'tensor-names-v1 layer_roles.attn_norm_bias _fallback (line 332)'
+      - hf: 'encoder.layer.{n}.intermediate.dense.weight'
+        canonical: 'blk.{n}.ffn_up.weight'
+        provenance: 'tensor-names-v1 layer_roles.ffn_up_weight _fallback (line 607)'
+      - hf: 'encoder.layer.{n}.intermediate.dense.bias'
+        canonical: 'blk.{n}.ffn_up.bias'
+        provenance: 'no tensor-names-v1 role (there is no ffn_up_bias role) — SETFIT-SCHEMA-OWNED'
+      - hf: 'encoder.layer.{n}.output.dense.weight'
+        canonical: 'blk.{n}.ffn_down.weight'
+        provenance: 'tensor-names-v1 layer_roles.ffn_down_weight _fallback (line 648)'
+      - hf: 'encoder.layer.{n}.output.dense.bias'
+        canonical: 'blk.{n}.ffn_down.bias'
+        provenance: 'no tensor-names-v1 role (there is no ffn_down_bias role) — SETFIT-SCHEMA-OWNED'
+      - hf: 'encoder.layer.{n}.output.LayerNorm.weight'
+        canonical: 'blk.{n}.ffn_norm.weight'
+        provenance: 'tensor-names-v1 layer_roles.ffn_norm_weight _fallback (line 508)'
+      - hf: 'encoder.layer.{n}.output.LayerNorm.bias'
+        canonical: 'blk.{n}.ffn_norm.bias'
+        provenance: 'tensor-names-v1 layer_roles.ffn_norm_bias _fallback (line 534)'
+    setfit_schema_owned_entries:
+      - canonical: 'setfit.head.weight'
+        dtype: 'F32'
+        shape: '[num_labels, head_n_features]'
+        note: 'tensor-names-v1 has NO role for a classification head over pooled embeddings — every lm_head entry is a vocabulary projection, which this is not. Reserved by THIS contract.'
+      - canonical: 'setfit.head.bias'
+        dtype: 'F32'
+        shape: '[num_labels]'
+        note: 'Same reservation as setfit.head.weight.'
+      - canonical: 'tokenizer.blob'
+        dtype: 'U8'
+        shape: '[len]'
+        note: 'tensor-names-v1 has NO role for a tokenizer blob — it is not a model parameter at all. Reserved by THIS contract; dtype U8 makes the byte-exactness structural.'
+    invariants:
+      - 'THE HF SIDE IS VERBATIM (Ph1 D-18) AND MEASURED, NOT GUESSED. The 21 templates above are
+        exactly what `BertSentenceEncoder::named_parameters` emits (encoder.rs:1064-1125 with
+        `hf_attention_name` at encoder.rs:1020 and `layer_prefix` at encoder.rs:982), and that
+        function is pinned name-for-name and in order against the frozen `parameter_order` array of
+        `crates/aprender-core/tests/fixtures/setfit/gradients.json` by
+        `encoder_named_parameters_match_the_frozen_parameter_order_exactly`.'
+      - 'D-01 AMENDMENT, RECORDED RATHER THAN SILENT: SIX of the 21 HF templates have NO canonical
+        form in tensor-names-v1. Four have no role at all (`token_type_embeddings`, both
+        `embeddings.LayerNorm` leaves, and the three per-layer dense biases — there is no
+        `o_proj_bias`, `ffn_up_bias` or `ffn_down_bias` role), and one has a role whose `_fallback`
+        list is EMPTY (`position_embedding`, line 265). On the pinned 6-layer reference that is 22
+        of 101 encoder tensors with no canonical name. D-01 said tensors are stored under
+        tensor-names-v1 canonical names; for these six that instruction has no referent, so THIS
+        contract owns their names. They are RESERVED here, follow the same `blk.{n}.` / global
+        convention so generic tooling sees one coherent scheme, and MUST NOT collide with any
+        tensor-names-v1 canonical form.'
+      - 'THE NON-COLLISION WAS CHECKED, NOT ASSUMED. tensor-names-v1''s complete `_fallback` set is
+        {token_embd.weight, output_norm.weight, output_norm.bias, output.weight} for global roles and
+        {blk.{n}.attn_norm.weight, blk.{n}.attn_norm.bias, blk.{n}.attn_q.weight, blk.{n}.attn_k.weight,
+        blk.{n}.attn_v.weight, blk.{n}.attn_output.weight, blk.{n}.ffn_norm.weight, blk.{n}.ffn_norm.bias,
+        blk.{n}.ffn_gate.weight, blk.{n}.ffn_up.weight, blk.{n}.ffn_down.weight, blk.{n}.ffn_gate_inp.weight,
+        blk.{n}.ffn_gate_exps.weight, blk.{n}.ffn_up_exps.weight, blk.{n}.ffn_down_exps.weight,
+        blk.{n}.attn_q.bias, blk.{n}.attn_k.bias, blk.{n}.attn_v.bias, blk.{n}.attn_q_norm.weight,
+        blk.{n}.attn_k_norm.weight} for layer roles, plus {blk.{n}.attn_qkv.weight, blk.{n}.attn_qkv.bias}
+        for fused roles. None of the nine names this contract reserves — position_embd.weight,
+        token_types.weight, token_embd_norm.weight, token_embd_norm.bias, blk.{n}.attn_output.bias,
+        blk.{n}.ffn_up.bias, blk.{n}.ffn_down.bias, setfit.head.weight, setfit.head.bias,
+        tokenizer.blob — appears in that set.'
+      - 'DEFERRED ITEM, NOT A LICENCE TO EDIT: upstreaming the six gap names into tensor-names-v1 as
+        proper roles (`o_proj_bias`, `ffn_up_bias`, `ffn_down_bias`, `token_type_embedding`,
+        `token_embd_norm_weight`/`_bias`, and a `_fallback` for `position_embedding`) is a
+        deliberate, `pv diff`-flagged edit to a contract this phase does not own (Ph1 D-23:
+        reference, never edit). Phase 4 reserves and records; it does not amend that file.'
+      - 'THE MAP MUST BE TOTAL AND INJECTIVE OVER THE ARTIFACT''S OWN TENSOR SET. A HF name with no
+        canonical entry, or two HF names resolving to one canonical name, is a typed writer error —
+        never a silently dropped or overwritten tensor.'
+
+  # ==========================================================================
+  # 6. The architecture-derived tensor set (closes the tiny-fixture finding)
+  # ==========================================================================
+
+  architecture_derived_tensor_set:
+    formula: 'expected(arch) = {token_embd.weight, position_embd.weight, token_types.weight, token_embd_norm.weight, token_embd_norm.bias} union {expand(t, n) : t in layer_templates, n in 0..arch.num_layers} union {setfit.head.weight, setfit.head.bias, tokenizer.blob} ; |expected(arch)| = 5 + 16*arch.num_layers + 3 ; VALID <=> tensor_index_names == expected(doc.architecture)'
+    domain: 'the artifact''s OWN declared architecture record, read from the doc'
+    codomain: 'the exact expected tensor-name set; set inequality is a typed InconsistentArtifact refusal'
+    preconditions:
+      - 'the doc parsed and its architecture record is available, so num_layers is known BEFORE the expected set is computed — the set is never derived from the tensor index it is meant to judge'
+      - 'architecture.num_layers is bounded by the tensor-count limit, so the expansion cannot itself become the allocation attack'
+    postconditions:
+      - 'a mismatch names the MISSING and the UNEXPECTED tensors, not merely the two counts'
+      - 'the same rule judged the fixture and the pinned model; no test-only branch was taken'
+    reference_architecture:
+      note: 'The pinned all-MiniLM-L6-v2. Used ONLY for the size derivation below and as the worked expansion example — it is NOT the validation rule.'
+      num_layers: 6
+      hidden: 384
+      heads: 12
+      head_dim: 32
+      intermediate: 1536
+      vocab: 30522
+      positions: 512
+      type_vocab_size: 2
+      encoder_tensor_count: 101
+      encoder_element_count: 22565376
+    invariants:
+      - 'THE EXPECTED SET IS COMPUTED FROM THE ARTIFACT''S OWN `architecture`, NEVER FROM A
+        HARDCODED SIX-LAYER LIST. `expected` is a FUNCTION of `architecture.num_layers`; the
+        per-layer templates are expanded over it. This is what makes the rule apply identically to
+        the pinned model and to a reduced fixture.'
+      - 'THERE IS NO TEST-ONLY SCHEMA EXCEPTION. A fixture keeps the exact per-layer NAME TOPOLOGY
+        at reduced dimensions and layer count, and is validated by the SAME production rule. A
+        test-only architecture would weaken the production contract to make a test convenient, which
+        is the trade this invariant refuses.'
+      - 'THE FIXTURE MUST ALSO KEEP THE PRODUCTION NULLABILITY TOPOLOGY, and this is not optional
+        because `nullable_path_allowlist` depends on it. `vocab_remap: None` is the PINNED shape; a
+        fixture that sets `Some` exercises the one input shape at which the null guard cannot fire
+        at that path, so a suite built only on it would earn every green count on the wrong shape.
+        At least one fixture in every suite that touches the writer must carry
+        `vocab_remap: None`.'
+      - 'THE COUNT IS DERIVED, NOT QUOTED. 5 global + 16 per layer + 3 schema-owned. For the
+        reference architecture: 5 + 96 + 3 = 104 index entries, of which 101 are encoder tensors —
+        the same 101 `MAX_TENSOR_COUNT`''s doc comment records for the full pin
+        (bundle.rs:76-81), derived independently here from the name table.'
+      - 'STRUCTURAL SIZE CHECK, PER ENTRY: `TensorIndexEntry.size == product(shape) * dtype_width`,
+        with dtype_width = 1 for the U8 `tokenizer.blob` and 4 for every F32 entry. A declared size
+        that disagrees with the declared shape is an inconsistent artifact and is refused before any
+        payload is read into a tensor.'
+
+  # ==========================================================================
+  # 7. D-03 size bounds, with the derivation recorded
+  # ==========================================================================
+
+  artifact_size_bounds:
+    formula: 'ACCEPT(file) => file_len <= max_artifact_bytes AND metadata_len <= MAX_METADATA_SIZE AND for all e in tensor_index: e.size == product(e.shape) * dtype_width(e.dtype)'
+    domain: 'any byte stream presented as a setfit-apr-v1 artifact, including a hostile one'
+    codomain: 'unit on pass; a typed refusal naming the bound and the observed value on fail'
+    preconditions:
+      - 'the raw length is known before any parse — from the bounded read for a file source, from the slice length for an in-memory source'
+      - 'the structural per-entry check runs on the DECLARED shape and dtype, before any payload is decoded into a tensor'
+    postconditions:
+      - 'a refusal names the bound AND the observed value, so an operator can distinguish a too-large artifact from a malformed one'
+      - 'no allocation proportional to the declared size occurred before the bound was applied'
+    constants:
+      max_artifact_bytes: 268435456
+      max_artifact_bytes_note: '256 MiB'
+      metadata_bound: 16777216
+      metadata_bound_note: 'the container''s existing MAX_METADATA_SIZE (apr-format/src/v2/mod.rs:80) — reused, not re-derived'
+      f32_dtype_width: 4
+      u8_dtype_width: 1
+    derivation:
+      encoder_payload_bytes: 90261504
+      encoder_payload_note: '22565376 f32 elements x 4 bytes, computed from the reference architecture'
+      tokenizer_blob_bytes: 466247
+      tokenizer_blob_note: 'the pinned tokenizer.json, byte count restated from setfit-train-lifecycle-v1 bundle_completeness'
+      head_payload_bytes_at_k3: 4620
+      head_payload_note: '(3*384 + 3) f32 x 4 bytes for a three-label head'
+      legitimate_artifact_bytes_approx: 90800000
+      legitimate_artifact_note: 'payload + tokenizer + head + index/header/one-key doc overhead, rounded up'
+      headroom_factor: 2.9
+      headroom_note: '268435456 / ~90.8e6 ~= 2.96, mirroring the BundleLimits precedent (MAX_BUNDLE_BYTES 536870912 over the ~182 MB hex-encoded bundle, ~2.9x)'
+    invariants:
+      - 'THE CAP IS AN OUTER RESOURCE BOUND, NOT A CORRECTNESS CHECK. Correctness is the structural
+        per-entry size rule and the architecture-derived tensor set; the cap exists so a hostile
+        input cannot exhaust memory before either of those can run.'
+      - 'THE HEADROOM IS DERIVED FROM A COMPUTED ARTIFACT SIZE, not chosen for roundness. Both
+        inputs to the derivation — 22565376 elements and 466247 tokenizer bytes — are figures the
+        Phase 3 code already computes and records, so a future architecture change moves the
+        derivation rather than invalidating it silently.'
+      - 'THE METADATA BOUND IS THE CONTAINER''S OWN. A second, SetFit-specific metadata limit would
+        be a number that could drift from the limit the container actually enforces.'
+      - 'A CAP THAT ONLY EXISTS IN MEMORY IS NOT A CAP — see `bounded_read`.'
+
+  # ==========================================================================
+  # 8. The bounded-read obligation (review B5)
+  # ==========================================================================
+
+  bounded_read:
+    formula: 'read_setfit_apr_bytes_bounded(reader, declared_len) = Err(TooLarge) if declared_len > max_artifact_bytes ; else read at most max_artifact_bytes + 1 bytes and Err(TooLarge) if that many were read'
+    domain: 'any file-backed or stream-backed source of artifact bytes: apr-cli adapters, aprender-serve startup, the codec'
+    codomain: 'at most max_artifact_bytes bytes in memory, or a typed refusal'
+    preconditions:
+      - 'the source can report a declared length, or the absence of one is itself treated as an over-cap claim rather than as permission to read'
+    postconditions:
+      - 'at most max_artifact_bytes + 1 bytes are resident when the refusal returns — for EVERY source, including one whose declared length lies'
+      - 'when the declared length is already over cap, zero bytes were read'
+    invariants:
+      - 'THE CAP MUST BITE BEFORE THE CALLER ALLOCATES. A loader taking `&[u8]` enforces its cap
+        AFTER the caller has already read the file, so `fs::read` on a multi-gigabyte hostile file
+        exhausts memory before the 256 MiB check ever executes. Review B5. The cap belongs at the
+        read, not only after it.'
+      - 'TWO CHECKS, BECAUSE ONE IS NOT ENOUGH. (a) Consult the declared file length and refuse
+        over-cap BEFORE reading a byte. (b) Read through a reader bounded at
+        `max_artifact_bytes + 1` anyway, so a length that LIES — a FIFO, a growing file, a
+        filesystem that reports zero — still cannot exhaust memory. Check (a) alone trusts metadata
+        an attacker controls; check (b) alone reads 256 MiB of garbage before refusing.'
+      - 'THE `+ 1` IS LOAD-BEARING. Reading exactly `max_artifact_bytes` cannot distinguish "a
+        legal artifact of exactly the cap size" from "a larger stream truncated at the cap". Reading
+        one byte more makes the distinction observable.'
+      - 'THE IN-MEMORY CAP STAYS AS DEFENSE IN DEPTH. `load_setfit_apr(&[u8])` keeps its own length
+        check; the bounded reader does not replace it, because a caller that already holds bytes
+        from some other source still needs the refusal.'
+      - 'ONE API, SHARED BY EVERY ADAPTER: `read_setfit_apr_bytes_bounded(reader, declared_len)`
+        lives in core and is what apr-cli and aprender-serve both call. Two adapters with two
+        bounded-read implementations are two places for the bound to be forgotten.'
+
+  # ==========================================================================
+  # 9. D-11 probe policy
+  # ==========================================================================
+
+  probe_policy:
+    formula: 'probes = [probe(x) : x in PROBE_INPUTS] ; probe(x) = (input, embedding_hex[], logits_hex[], probabilities_hex[], label) ; |PROBE_INPUTS| = 6 ; a fresh consumer must replay all 6 within tolerance BEFORE it may predict'
+    domain: 'a rebuilt SetFit model, at train time (to record) and in every fresh consumer process (to replay)'
+    codomain: 'ArtifactReloadedAndVerified on full agreement; a typed ProbeMismatch refusal naming the probe index and the offending component otherwise'
+    preconditions:
+      - 'the probes were computed at train time through the SAME encode-once path production uses (eval mode, inside no_grad, every result detached), not through a second encode written for verification'
+      - 'the rebuild succeeded and the tokenizer hash already matched, so a probe mismatch cannot be a mis-paired tokenizer wearing a math-divergence diagnosis'
+    postconditions:
+      - 'no probe input is derived from the dataset or the selection, so no corpus text is embedded in any shipped artifact'
+      - 'all six replayed before the model became usable; a partial replay is not a pass'
+    inputs:
+      - id: 'probe_ascii_pangram'
+        value: 'the quick brown fox jumps over the lazy dog'
+        covers: 'plain lowercase ASCII, the baseline case'
+      - id: 'probe_unicode'
+        value: 'El rapido zorro marron salta sobre el perro perezoso — naive cafe, pi = 3.14159'
+        covers: 'multi-byte UTF-8 (em dash), non-English words, digits and punctuation'
+      - id: 'probe_truncation_boundary'
+        construction: 'repeat_unit repeated exactly repeat_count times, no separator'
+        repeat_unit: 'few shot classification with contrastive pairs '
+        repeat_count: 64
+        covers: 'exceeds the pinned 256-token truncation bound, so truncated == true and token_count == MAX_SEQUENCE_LENGTH'
+      - id: 'probe_minimal'
+        value: 'ok'
+        covers: 'the shortest non-empty input; two characters plus special tokens'
+      - id: 'probe_social'
+        value: 'Stance detection: I firmly support this position!!! #debate @user123 https://example.com'
+        covers: 'hashtags, mentions, URLs, repeated punctuation — the shapes a stance corpus contains, written synthetically'
+      - id: 'probe_whitespace'
+        value: "line one\nline two\ttabbed   spaced"
+        escaped_form: 'line one\nline two\ttabbed   spaced'
+        covers: 'an embedded newline, a tab and a run of spaces — the input that proves a line-delimited CLI format cannot carry the same text set'
+    record_fields:
+      input: 'the probe string, verbatim'
+      embedding_hex: 'array of string — the pooled, normalized embedding, each f32 as its bit pattern in hex'
+      logits_hex: 'array of string — one per label, in ordered_labels order'
+      probabilities_hex: 'array of string — one per label, in ordered_labels order'
+      label: 'string — the argmax label, compared EXACTLY'
+    invariants:
+      - 'PROBE INPUTS ARE FIXED, SYNTHETIC AND CONTRACT-RESIDENT. They are never sampled from the
+        dataset or the selection. Research Pitfall 8: train-time `VerifyProbe` rows come from the
+        selection, and reusing that source would embed TweetEval text in every shipped artifact —
+        colliding with the project''s deliberate no-vendored-corpus posture (DATA-01) as well as
+        making probes dataset-dependent and therefore useless for Phase 5 cross-cell comparison.'
+      - 'THE SIX COVER SIX DIFFERENT FAILURE SHAPES, not six samples of one. ASCII baseline,
+        multi-byte UTF-8, the truncation boundary, a minimal input, social-media punctuation, and
+        embedded control whitespace. A probe set of six near-identical sentences would replay six
+        times and prove one thing once.'
+      - 'EVERY FLOAT IN A PROBE RECORD IS A BIT-PATTERN HEX STRING. Decimal text is not the identity
+        on f32, and a `null` from a non-finite value would be indistinguishable from a missing one.
+        Hex makes probe expectations exact and keeps them off the null path entirely.'
+      - 'EVERY FRESH CONSUMER REPLAYS ALL SIX BEFORE IT MAY PREDICT — eval, predict, serve. This is
+        the production-side mirror of the train-time round trip (Ph3 D-07): it catches
+        corrupted-but-checksummed states, wrong-loader states and platform math divergence, none of
+        which a checksum can see. "The served model is the evaluated model" becomes a property each
+        process RE-PROVES offline rather than a training-time memory.'
+      - 'PROBES ARE RECOMPUTED ON SERIALIZE, NEVER CARRIED THROUGH THE BUNDLE — see
+        `doc_bundle_bijection`.'
+
+  # ==========================================================================
+  # 10. Tolerances (Ph1 D-14)
+  # ==========================================================================
+
+  probe_and_parity_tolerances:
+    formula: 'within(delta, bound) <=> matches!(delta.partial_cmp(&bound), Some(Less | Equal)) ; PASS <=> within(|observed - expected|, bound) for every compared component AND observed_label == expected_label'
+    domain: 'probe replay in a fresh consumer, and pairwise comparison across the three parity surfaces'
+    codomain: 'agreement, or a typed mismatch naming the component and both values'
+    preconditions:
+      - 'both compared values are finite — a non-finite value is a typed refusal at an earlier rung and never reaches a tolerance decision'
+      - 'the bound is the contract-resident constant, read from one place; a bound computed at the comparison site is a bound that can be tuned after seeing the result'
+    postconditions:
+      - 'a NaN reaching the comparator returns false in EVERY argument position, so a diverged run cannot pass by comparing unordered'
+      - 'labels compared exactly; a mismatch reports both label strings, never a distance'
+    tolerances:
+      probe_embedding_abs: 7.62939453e-06
+      probe_embedding_provenance: 'setfit-encoder-conformance-v1''s frozen pooled-output family (pooling_normalize, loss_pair and batch_invariance rows all carry this value) — CITED, not re-derived'
+      probe_logits_abs: 1.0e-5
+      probe_probabilities_abs: 1.0e-5
+      parity_logits_abs: 1.0e-5
+      parity_probabilities_abs: 1.0e-5
+      label_comparison: 'EXACT — string equality, no tolerance exists'
+      train_time_roundtrip: 'Tolerance::EXACT — a byte comparison, not a float comparison (Ph3 A2)'
+      per_layer_reference: 1.52587891e-05
+      per_layer_reference_note: 'setfit-encoder-conformance-v1''s forward_per_layer bound; recorded here only so a reader can see this contract does not contradict it. Nothing in Phase 4 compares per-layer activations.'
+    invariants:
+      - 'THE EMBEDDING TOLERANCE IS CITED, NOT CHOSEN. It is setfit-encoder-conformance-v1''s frozen
+        pooled-output value. A Phase 4 number here would be a second tolerance for the same
+        quantity, and the looser of two would silently become the real one.'
+      - 'NaN-VISIBLE COMPARISON IS MANDATED. Use
+        `matches!(delta.partial_cmp(&bound), Some(Less | Equal))`. A bare `delta <= bound` is a
+        CONTRACT VIOLATION: `NaN <= x` is false, so it happens to reject NaN in this direction — but
+        the idiom is fragile under the obvious refactor to `!(delta > bound)`, which ACCEPTS NaN
+        silently. The explicit `partial_cmp` form cannot be refactored into acceptance by accident.'
+      - 'THE `within` HELPER IS UNIT-TESTED AGAINST `f32::NAN` AND `f64::NAN` and must return false
+        for both, in both argument positions. A comparison helper that has only ever been called
+        with finite values is not evidence about non-finite ones.'
+      - 'LABELS ARE COMPARED EXACTLY. A tolerance on a label is a category error, and a "close
+        enough" label is a wrong answer.'
+      - 'THE LOGIT AND PROBABILITY BOUND IS ABSOLUTE, NOT RELATIVE. Probabilities live in [0,1] and
+        a relative bound near zero would be unboundedly strict; logits are small and a relative
+        bound near zero would be unboundedly loose.'
+
+  # ==========================================================================
+  # 11. Request/response schema obligations (review M1 + M2)
+  # ==========================================================================
+
+  classify_response_schema:
+    formula: 'ClassifyResponse = (schema_version, artifact_sha256, backend, latency_ms, results[]) ; results[i] = (label, probabilities[], logits?[], margin, token_count, truncated) ; ClassifyRequestDocument = (texts[], include_logits)'
+    domain: 'the single core-owned envelope serialized identically by `apr --json` and by POST /v1/classify'
+    codomain: 'byte-identical JSON for the same inputs on both surfaces (D-08 field parity by construction)'
+    preconditions:
+      - 'the model is a VerifiedSetFitModel, so the full ladder including probe replay already ran; no surface constructs a response from an unverified model'
+      - 'the request arrived as a ClassifyRequestDocument, so the CLI and HTTP surfaces received the SAME ordered text set'
+    postconditions:
+      - 'a non-finite value is unrepresentable: no public field exists, the sole constructor validates, and Deserialize routes through that same constructor'
+      - 'latency_ms is finite and >= 0.0 and participates in no equality comparison'
+      - 'artifact_sha256 is present on every response from every surface'
+    bounds:
+      max_batch_texts: 256
+      max_request_body_bytes: 1048576
+    invariants:
+      - 'EVERY FIELD IS PRIVATE WITH READ ACCESSORS, the only constructor validates, and
+        `Deserialize` routes through that SAME validating constructor via a private wire struct
+        (`#[serde(try_from = ...)]`, the `SetFitTrainConfig` precedent at config.rs:782-814). This
+        is what makes "a non-finite value is unrepresentable in a ClassifyResponse" a TRUE STATEMENT
+        rather than a claim a public field falsifies. Review M2 found the weaker design: derived
+        `Deserialize` over public fields lets any caller — including the parity harness building its
+        own skewed negative — construct a response that bypasses validation, so the claim would have
+        been about the happy path only.'
+      - 'THE PARITY HARNESS''S IN-BAND NEGATIVE THEREFORE OPERATES ON A SEPARATE COMPARISON FIXTURE,
+        not on a mutated ClassifyResponse. A skewed surface is built by skewing the SURFACE, not by
+        forging the envelope the surface produces.'
+      - '`latency_ms` IS FINITE AND >= 0.0, AND IS A MEASUREMENT. It is EXCLUDED from every equality
+        comparison across surfaces, and NO GATE MAY ASSERT IT IS STRICTLY POSITIVE: a fast operation
+        under a coarse timer legitimately reports 0.0, and a gate asserting > 0 is a flake with a
+        schedule.'
+      - '`token_count` IS DEFINED AS THE NUMBER OF POSITIONS THE MODEL ACTUALLY CONSUMED for that
+        text — the attention-mask length after truncation. NOT a tokenizer-internal count, which
+        varies with whether special tokens are counted. Under this definition a truncated text has
+        `token_count == MAX_SEQUENCE_LENGTH` BY CONSTRUCTION, so gates assert
+        `truncated == true` TOGETHER WITH `token_count == MAX_SEQUENCE_LENGTH` — the exported
+        constant (aprender-core setfit::tokenizer::MAX_SEQUENCE_LENGTH, value 256), never a literal
+        256 in a test.'
+      - 'ONE SHARED REQUEST DOCUMENT, `ClassifyRequestDocument { texts: [string], include_logits: bool }`,
+        `deny_unknown_fields`, used BYTE-IDENTICALLY by the CLI `--input` file and the HTTP request
+        body. The rationale is a defect the review found in the alternative: a line-delimited CLI
+        format CANNOT carry a text containing a newline, so `probe_whitespace` alone would arrive as
+        two CLI texts and one HTTP text — the three parity surfaces would receive DIFFERENT ordered
+        input sets while appearing to agree on everything they did compare.'
+      - 'HTTP BOUNDS ARE ENFORCED BEFORE WORK: `max_batch_texts = 256` and
+        `max_request_body_bytes = 1048576`. A batch bound that is checked after tokenization is not
+        a bound on the work an attacker can request.'
+      - '`artifact_sha256` IS PRESENT ON EVERY RESPONSE from every surface, so Phase 5 can attribute
+        a measurement to an artifact without trusting the caller''s bookkeeping.'
+
+  # ==========================================================================
+  # 12. Backend identity grammar (review B6, D-12)
+  # ==========================================================================
+
+  backend_identity:
+    formula: 'backend = "<device>:<implementation>:<kernel>" ; v1 = "cpu:setfit-core:autograd-trueno-matmul" ; the value is RETURNED BY the encode invocation that ran'
+    domain: 'the compute path that actually executed the encode for this request'
+    codomain: 'a three-segment identity string naming the kernel entry point that ran'
+    preconditions:
+      - 'the encode invocation returned to the caller, so an identity exists to report; a failed encode produces a refusal and no response at all'
+      - 'resolve_device already passed at startup, so an explicitly requested unavailable device failed closed before any request was served (OPS-06)'
+    postconditions:
+      - 'the value names the kernel ENTRY POINT the encoder invoked — never the host capability set, never a configured or environment-supplied device'
+      - 'the string has exactly three colon-separated segments, so a future GPU identity is comparable to this one'
+    invariants:
+      - 'THE VALUE MUST BE PRODUCED BY THE ENCODE INVOCATION THAT RAN AND RETURNED TO THE CALLER.
+        The classify path may not construct it. D-12: identity is reported FROM EXECUTION, never
+        echoed from configuration; CLAUDE.md Verification Discipline rule 2, "never label a run by
+        intent — prove the mechanism engaged".'
+      - 'A CPU-FEATURE DETECTION RESULT MUST NOT APPEAR IN THIS FIELD. `trueno::Backend::AVX2`,
+        `Backend::NEON` and the `select_backend*` family report what the HOST CAN DO, not what RAN.
+        VERIFIED AT PLAN TIME, not assumed: `trueno::Matrix::matmul` dispatches on SIZE —
+        `SIMD_THRESHOLD` is 64, below which it calls `matmul_naive` and at or above which it calls
+        `blis::parallel::gemm_blis_parallel`, with a GPU path when compiled in
+        (aprender-compute/src/matrix/ops/arithmetic.rs:68-126). So an AVX2 DETECTION result is fully
+        consistent with a SCALAR execution, and reporting it would be exactly the fraudulent
+        capability claim D-12 exists to prevent.'
+      - 'A CONFIG, ENVIRONMENT OR CLI VALUE MUST NOT REACH THIS FIELD. `resolve_device` remains the
+        fail-closed STARTUP gate for an explicitly requested device (OPS-06); it is not a source of
+        response identity.'
+      - 'THE v1 LIMITATION IS RECORDED HONESTLY. trueno exposes no per-dispatch execution report, so
+        the identity names the kernel ENTRY POINT the encoder invoked, NOT the innermost dispatch
+        chosen inside it. `autograd-trueno-matmul` is therefore a true statement about what the
+        encoder called and an incomplete one about what silicon executed. Upgrading to per-dispatch
+        reporting requires a trueno API and is a recorded DEFERRED ITEM, not a Phase 4 deliverable.'
+      - 'THE GRAMMAR IS THREE SEGMENTS AND STAYS THREE, so a future GPU path produces a value that
+        is comparable to this one rather than a differently-shaped string.'
+
+  # ==========================================================================
+  # 13. Selection-lock artifact lifecycle (review B4, TRN-07 positive half)
+  # ==========================================================================
+
+  selection_lock_lifecycle:
+    formula: 'canonical_test_access REQUIRES a durable lock written by a PRIOR validation evaluation ; validation_eval -> write(SelectionLock::to_canonical_bytes()) ; test_eval -> read(lock) -> mint_test_token(run) -> CanonicalTestAccess::grant(token, run, dataset)'
+    domain: 'the `apr eval` workflow across two separate processes'
+    codomain: 'a grant over the canonical test split, or a typed refusal'
+    preconditions:
+      - 'a validation evaluation ran in a PRIOR process and wrote the lock; the test command cannot create the lock it consumes'
+      - 'the lock file''s recorded lock_hash recomputes over its own bytes, so a corrupted record is refused before its contents are believed'
+    postconditions:
+      - 'absent, stale and dataset-mismatched locks are three DISTINCT typed refusals with three distinct operator diagnostics'
+      - 'the grant is over the dataset''s OWN test split, carrying that dataset''s provenance — never a bare split'
+    refusals:
+      absent_lock: 'test evaluation without a lock path is refused; the lock cannot be created by the command that consumes it'
+      StaleLock: 'the lock''s chosen artifact hash is not the hash of the run presented'
+      TokenDatasetMismatch: 'the dataset''s fingerprint is not the one the lock recorded'
+      LockHashMismatch: 'the lock file''s recorded lock_hash disagrees with a recompute over its own bytes'
+    invariants:
+      - 'THE LOCK IS DURABLE AND WRITTEN BY A DIFFERENT PROCESS THAN THE ONE THAT CONSUMES IT.
+        Review B4: a separate `apr eval --split test` process has no in-memory lock, and minting the
+        lock INSIDE the test command would defeat the "created before test access" requirement
+        entirely — the requirement would be satisfied by an object created one line earlier.'
+      - 'VALIDATION EVALUATION WRITES IT ATOMICALLY to an operator-named path; test evaluation
+        REQUIRES that path, reconstructs the lock, verifies its self-hash, and only then reaches the
+        test split through `mint_test_token(run)` and `CanonicalTestAccess::grant(token, run, dataset)`.'
+      - 'THE TRUST MODEL IS RECORDED HONESTLY: the lock file is an INTEGRITY-CHECKED RECORD, NOT AN
+        UNFORGEABLE CREDENTIAL. Its `lock_hash` is a digest OF ITS OWN BYTES (lock.rs:388-402), so a
+        hand-written file with a correctly recomputed hash is possible. What the mechanism
+        GUARANTEES is narrower and still worth having: test access cannot be reached without a
+        recorded, hash-committing selection decision naming the candidates and the chosen artifact,
+        and every downstream door re-checks identity against the REAL run and the REAL dataset —
+        so a forged lock still cannot make a mismatched artifact or corpus pass.'
+      - 'THE THREE REFUSALS ARE TYPED AND DISTINCT. "No lock", "wrong artifact" and "wrong dataset"
+        are three different operator errors and must not collapse into one message.'
+
+  # ==========================================================================
+  # 14. D-02 typed-key amendment (recorded, not silent)
+  # ==========================================================================
+
+  d02_typed_key_amendment:
+    formula: 'typed_keys_written = {model_type = "setfit"} ; {schema, schema_version, ordered_labels, tokenizer_sha256} are FIRST-LEVEL fields of the single "setfit" custom document'
+    domain: 'the container metadata section of a setfit-apr-v1 artifact'
+    codomain: 'generic inspectability with zero SetFit knowledge, at one typed key plus one JSON object'
+    preconditions:
+      - 'AprV2Metadata has no typed slot for a schema id, a label list or a tokenizer digest — READ off header_impl.rs:131-299, not assumed'
+      - 'adding container fields would touch 39 files across 77 use sites (RESEARCH), so the amendment is cheaper than the alternative AND is recorded rather than silent'
+    postconditions:
+      - 'a reader with zero SetFit knowledge recovers schema, schema_version, ordered_labels and tokenizer_sha256 from one typed key plus one JSON object'
+      - 'the writer sets no provenance typed field, so license/data_source/data_license remain the container''s deterministic explicit nulls and closure is preserved'
+    container_typed_fields:
+      - model_type
+      - name
+      - description
+      - author
+      - license
+      - data_source
+      - data_license
+      - version
+      - source
+      - original_format
+      - created_at
+      - total_size
+      - param_count
+      - quantization
+      - sharding
+    invariants:
+      - 'D-02(a) ASKED FOR WELL-KNOWN TYPED KEYS FOR FAMILY, SCHEMA, SCHEMA VERSION, ORDERED LABELS
+        AND TOKENIZER HASH. `AprV2Metadata` (header_impl.rs:131-299) has NO typed slot for a schema
+        id, a label list or a tokenizer digest, and adding container fields touches 39 files across
+        77 use sites (RESEARCH). THEREFORE: `model_type = "setfit"` is the ONLY typed key this
+        writer sets, and the other four are first-level fields of the one `"setfit"` custom
+        document — still generically inspectable as JSON, still zero-SetFit-knowledge readable.
+        THIS IS AN EXPLICIT, RECORDED AMENDMENT OF D-02(a), not a silent change.'
+      - 'DETECTION STILL READS A TYPED KEY (D-04). `model_type == "setfit"` is the whole detection
+        rule; no tensor-name sniffing, no shape inference. A SetFit-shaped tensor set without the
+        tag is a plain APR.'
+      - 'THE THREE PROVENANCE NULLS ARE EXPECTED AND OUT OF SCOPE. `license`, `data_source` and
+        `data_license` serialize as explicit `null` by container design (no `skip_serializing_if`,
+        required by FALSIFY-SHIP-022 so provenance keys cannot be silently skipped). That is
+        DETERMINISTIC. The writer sets none of them, because a value not derivable from the bundle
+        would break the closure equation. These three nulls are OUTSIDE `nullable_path_allowlist`''s
+        scope: the walk covers the five embedded sub-documents only and MUST NOT be pointed at the
+        container''s typed fields.'
+
+  # ==========================================================================
+  # 15. The load-validation ladder (APR-02)
+  # ==========================================================================
+
+  load_validation_ladder:
+    formula: 'load = bounded_read -> raw_length_cap -> header+CRC+row_major -> typed_tag+one_key_doc_parse+schema_version -> structural(tensor_set, per_entry_size, tokenizer_hash) -> non_finite_scan -> rebuild -> probe_replay -> VerifiedSetFitModel'
+    domain: 'artifact bytes of unknown provenance, offline'
+    codomain: 'VerifiedSetFitModel (the only value with a classify method), or a typed refusal naming the rung'
+    preconditions:
+      - 'the caller obtained the bytes through read_setfit_apr_bytes_bounded, so rung 1 has already run by the time rung 2 begins'
+      - 'the process is offline: no rung consults the network, so a load that succeeds here succeeds on an air-gapped host (APR-02)'
+    postconditions:
+      - 'VerifiedSetFitModel exists only after all eight rungs passed; its constructor is private and no other path reaches it'
+      - 'a refusal names the RUNG and what it observed; "invalid artifact" alone is not an admissible diagnosis'
+    rungs:
+      1: 'bounded read / declared-length refusal — before allocation (see bounded_read)'
+      2: 'raw length against max_artifact_bytes — before any parse'
+      3: 'container header, CRC checksum, row-major flag'
+      4: 'typed tag model_type == "setfit"; parse the ONE custom key into SetFitArtifactDoc (deny_unknown_fields); schema and schema_version match'
+      5: 'structural: the architecture-derived tensor-name set, per-entry size == product(shape) * dtype_width, sha256(tokenizer.blob payload) == doc.tokenizer_sha256'
+      6: 'non-finite scan over every decoded f32 (tensors, head, probe expectations)'
+      7: 'rebuild the encoder, tokenizer and head from bytes'
+      8: 'replay all 6 probes within tolerance'
+    invariants:
+      - 'THE ORDER IS LOAD-BEARING AND IS PART OF THE CONTRACT. Every rung runs only on input the
+        rung above it has already bounded. Reordering rung 2 after rung 3 means parsing a header out
+        of an unbounded buffer; reordering rung 5 after rung 7 means installing tensors from an
+        artifact whose tokenizer may not match the encoder it was paired with.'
+      - 'THE TOKENIZER HASH IS CHECKED BEFORE A TENSOR IS INSTALLED. An encoder rebuilt with a
+        substituted tokenizer produces confidently wrong embeddings for every input and looks
+        structurally valid the whole time.'
+      - 'FAILURE IS TYPED AND NAMES THE RUNG. "Invalid artifact" is not a diagnosis; the refusal
+        says which rung refused and what it observed.'
+      - 'NO CONSUMER MAY SKIP A RUNG OR ADD A SECOND MINTING PATH. `VerifiedSetFitModel` has a
+        private constructor reachable only from this ladder, proven non-constructible from outside
+        the crate by a trybuild compile-fail test (APR-04). A consumer with its own load path would
+        be a second verification policy with its own tolerances — the drift Pitfall 9 names.'
+      - 'THE PARITY GATE CARRIES AN IN-BAND NEGATIVE that must be RED under the same gate that
+        accepts the honest artifact, in every `cargo test` (Ph1 D-24 / Ph2 D-25 / Ph3 D-08). A gate
+        that has only ever been observed passing is not evidence.'
+
+proof_obligations:
+
+  - type: completeness
+    property: 'Every APR-01 item has exactly one storage location in the storage map, and every location is either a typed metadata key, a named tensor, or a field of the one custom document'
+    formal: 'forall item in APR_01_ITEMS: exists! loc in storage_map: loc.item == item'
+    applies_to: all
+
+  - type: invariant
+    property: 'Classifier head weights and intercepts are stored as named F32 tensors, never as metadata'
+    formal: 'setfit.head.weight in tensor_index && setfit.head.bias in tensor_index && head_coefficients not in metadata'
+    applies_to: all
+
+  - type: determinism
+    property: 'Writing the same SetFitBundle twice, in two different processes, produces byte-identical artifacts'
+    formal: 'write(b) == write(b) across processes; no timestamp, exactly one custom metadata key, BTreeMap-ordered doc'
+    applies_to: all
+
+  - type: roundtrip
+    property: 'serialize(deserialize(bytes)) == bytes at Tolerance::EXACT for every artifact this writer produces'
+    formal: 'forall bytes in image(write_setfit_apr): serialize(deserialize(bytes)) == bytes'
+    applies_to: all
+
+  - type: completeness
+    property: 'Every SetFitArtifactDoc field is either a SetFitBundle field or a named deterministic function of bundle fields, and all 20 bundle fields are recovered by deserialize'
+    formal: 'forall f in doc_fields: source(f) in bundle_fields union derived_functions; forall g in bundle_fields: exists path in doc union tensor_payload recovering g'
+    applies_to: all
+
+  - type: soundness
+    property: 'The nullable-path allowlist names exactly the paths at which an Option-typed field of the five walked sub-documents can serialize — no more, no fewer'
+    formal: 'null_paths(all_none_instance(subdoc)) for subdoc in FIVE == NULLABLE_PATH_ALLOWLIST; |NULLABLE_PATH_ALLOWLIST| == 4'
+    applies_to: all
+
+  - type: safety
+    property: 'A non-finite value smuggled into any non-allowlisted path is refused at write time with a typed NonFiniteValue naming the path'
+    formal: 'exists p in null_paths(doc) \\ ALLOWLIST => write_setfit_apr(doc) == Err(NonFiniteValue{path: p})'
+    applies_to: all
+
+  - type: invariant
+    property: 'The pinned production artifact shape (vocab_remap: None, budget: None, hard_cap: None, epsilon_used: None) is ACCEPTED by the null guard'
+    formal: 'write_setfit_apr(full_pin_doc).is_ok()'
+    applies_to: all
+
+  - type: invariant
+    property: 'The writer walks all FIVE embedded sub-documents, including the two that contribute zero allowlisted paths'
+    formal: 'walked_subdocuments == {architecture, requested_config, resolved_config, evidence, provenance}; |walked| == 5'
+    applies_to: all
+
+  - type: bound
+    property: 'An artifact larger than max_artifact_bytes is refused before the reader allocates it, both by declared length and by a bounded read of cap+1'
+    formal: 'declared_len > 268435456 => Err(TooLarge) before any read; bytes_read <= 268435457 always'
+    applies_to: all
+
+  - type: invariant
+    property: 'The expected tensor-name set is computed from the artifact own declared architecture, with no hardcoded layer count and no test-only schema exception'
+    formal: 'expected_names == f(doc.architecture.num_layers); |expected_names| == 5 + 16*num_layers + 3'
+    applies_to: all
+
+  - type: equivalence
+    property: 'Every TensorIndexEntry size equals product(shape) * dtype_width for its declared dtype'
+    formal: 'forall e in tensor_index: e.size == product(e.shape) * dtype_width(e.dtype)'
+    applies_to: all
+
+  - type: classification
+    property: 'Probe replay agrees within tolerance on embeddings, logits and probabilities, and EXACTLY on labels, for all six probes, before any prediction is served'
+    formal: 'forall i in 0..6: within(|obs_i - exp_i|, bound) && obs_label_i == exp_label_i'
+    tolerance: 7.62939453e-06
+    applies_to: all
+
+  - type: invariant
+    property: 'Float comparison is NaN-visible: within(NaN, bound) is false in every argument position'
+    formal: 'within(d, b) == matches!(d.partial_cmp(&b), Some(Less | Equal)); within(NaN, b) == false; within(d, NaN) == false'
+    applies_to: all
+
+  - type: invariant
+    property: 'A ClassifyResponse carrying a non-finite value is unconstructible: fields are private, the sole constructor validates, and Deserialize routes through it'
+    formal: 'no public field; ClassifyResponse::new validates; Deserialize via try_from(wire)'
+    applies_to: all
+
+  - type: invariant
+    property: 'The backend identity is produced by the encode invocation that ran, and never by capability detection or configuration'
+    formal: 'backend == encode_result.backend_identity; backend not in {Backend::AVX2, Backend::NEON, select_backend*(..), config.device}'
+    applies_to: all
+
+  - type: state_machine
+    property: 'Canonical test access requires a durable lock written by a prior validation evaluation; absent, stale and dataset-mismatched locks are three distinct typed refusals'
+    formal: 'grant(token, run, dataset) reachable only from mint_test_token(run) reachable only from a lock read off disk'
+    applies_to: all
+
+  - type: invariant
+    property: 'A truncated text reports truncated == true together with token_count == MAX_SEQUENCE_LENGTH, read from the exported constant rather than a literal'
+    formal: 'truncated => token_count == aprender::setfit::MAX_SEQUENCE_LENGTH'
+    applies_to: all
+
+falsification_tests:
+
+  - id: FALSIFY-APR-001
+    rule: 'Head coefficients are tensors'
+    prediction: 'An artifact written by write_setfit_apr contains tensor index entries named exactly `setfit.head.weight` (shape [num_labels, head_n_features], F32) and `setfit.head.bias` (shape [num_labels], F32), and the metadata document contains no coefficient array.'
+    test: 'Write a fixture artifact; assert both index entries exist with the declared shapes and dtypes; assert the serialized doc contains no array of length num_labels*head_n_features.'
+    if_fails: 'The writer put the head in metadata (review B1 regression), or the storage map was not consulted. Any classification path that rebuilds the head from stored coefficients is broken.'
+
+  - id: FALSIFY-APR-002
+    rule: 'Cross-process byte determinism'
+    prediction: 'The same SetFitBundle written in two different OS processes produces byte-identical artifacts and identical sha256.'
+    test: 'Write in the parent; re-exec a child with a marker env var to write the same bundle; compare bytes and digests.'
+    if_fails: 'A HashMap iteration order, a timestamp, or a second custom metadata key leaked into the payload. The artifact hash in every response would then be per-process rather than per-model.'
+
+  - id: FALSIFY-APR-003
+    rule: 'Byte-canonical codec closure'
+    prediction: 'serialize(deserialize(bytes)) == bytes exactly, for a full-pin fixture artifact.'
+    test: 'Round-trip a fixture artifact through the codec and compare the byte vectors at Tolerance::EXACT.'
+    if_fails: 'Some doc field is neither a bundle field nor a deterministic function of one — the bijection table is wrong or the writer emitted an unrecoverable field. Review B3.'
+
+  - id: FALSIFY-APR-004
+    rule: 'The nullable-path allowlist is complete against the shipped types'
+    prediction: 'Serializing an all-None instance of each of the five embedded sub-document types yields exactly the four allowlisted null paths; `resolved_config` and `provenance` each yield the EMPTY set.'
+    test: 'In aprender-train (the only crate that can name all five types), build an all-None instance of each, collect null paths, and compare to the four-path constant by name.'
+    if_fails: 'A new Option field appeared on one of the five types, or skip_serializing_if was added. Either the allowlist is now incomplete (honest artifacts get refused) or the guard is now blind (non-finite values pass).'
+
+  - id: FALSIFY-APR-005
+    rule: 'The null guard fires on a smuggled non-finite value'
+    prediction: 'A doc with a null injected at a path outside the four-entry allowlist is refused with NonFiniteValue naming that exact path.'
+    test: 'Inject a null at `evidence.per_class.embedding.worst` and at `architecture.hidden`; assert both refuse and both name the injected path.'
+    if_fails: 'The walk does not reach that subtree, or the allowlist was widened. CR-03 is re-opened: a non-finite value would ride into an artifact whose digest cannot distinguish it from two other divergences.'
+
+  - id: FALSIFY-APR-006
+    rule: 'The pinned production shape is accepted'
+    prediction: 'A full-pin fixture with vocab_remap: None, pair_config.budget: None, pair_config.hard_cap: None and evidence.epsilon_used: None is written successfully.'
+    test: 'Write an artifact from a bundle carrying the full-pin nullability topology; assert Ok.'
+    if_fails: 'The allowlist omits a production path — most likely `architecture.vocab_remap`, whose None IS the production shape. Every pinned MiniLM artifact would be refused while a slice-fixture suite stayed green.'
+
+  - id: FALSIFY-APR-007
+    rule: 'All five sub-documents are walked'
+    prediction: 'A null injected into the `resolved_config` subtree and a null injected into the `provenance` subtree are each refused, even though those subtrees contribute zero allowlisted paths.'
+    test: 'Inject a null at `resolved_config.resolved_device` and at `provenance.dataset_fingerprint`; assert both are refused by path.'
+    if_fails: 'The walk skips zero-path subtrees, so a future Option field on ResolvedConfigRecord or ProvenanceRecord would fail silently on the first production artifact instead of loudly at the guard.'
+
+  - id: FALSIFY-APR-008
+    rule: 'The size cap bites before allocation'
+    prediction: 'A source declaring a length above 268435456 is refused before a byte is read, and a source that lies about its length still reads at most 268435457 bytes.'
+    test: 'Call read_setfit_apr_bytes_bounded with an over-cap declared length (assert no read occurred) and with an understated length over a longer stream (assert the read stopped at cap+1).'
+    if_fails: 'Review B5 is re-opened: a multi-gigabyte hostile file exhausts memory before the loader cap executes.'
+
+  - id: FALSIFY-APR-009
+    rule: 'The tensor set is architecture-derived, not hardcoded'
+    prediction: 'A reduced fixture with num_layers = 2 validates under the same production rule as the 6-layer pin, with |expected| == 5 + 32 + 3 == 40.'
+    test: 'Build a 2-layer fixture artifact; assert it loads and that the expected-name computation returned 40 names.'
+    if_fails: 'A six-layer list was hardcoded, so either the fixture needs a test-only exception (weakening the production contract) or the production rule cannot see a legitimate architecture.'
+
+  - id: FALSIFY-APR-010
+    rule: 'Per-entry structural size'
+    prediction: 'An artifact whose tensor index declares a size disagreeing with product(shape)*dtype_width is refused before any payload is decoded.'
+    test: 'Corrupt one entry size by +4; assert an InconsistentArtifact refusal naming that tensor, and assert no tensor was installed.'
+    if_fails: 'D-03''s structural half is not enforced; a truncated or padded payload could be read as valid data.'
+
+  - id: FALSIFY-APR-011
+    rule: 'Tokenizer hash precedes tensor installation'
+    prediction: 'An artifact whose tokenizer.blob payload does not hash to doc.tokenizer_sha256 is refused, and no encoder tensor was installed at the time of refusal.'
+    test: 'Flip one byte of the tokenizer blob; assert the typed refusal and that the rebuild never began.'
+    if_fails: 'Rung 5 runs after rung 7, so a substituted tokenizer produces confidently wrong embeddings from a structurally valid artifact.'
+
+  - id: FALSIFY-APR-012
+    rule: 'Probe replay is mandatory and discriminating'
+    prediction: 'All six probes replay within tolerance on an honest artifact; perturbing one stored embedding expectation by 10x the tolerance makes the load fail, naming the probe index.'
+    test: 'Load an honest fixture (assert Ok); rewrite one probe expectation and reload (assert ProbeMismatch naming the index).'
+    if_fails: 'Probe replay is decorative. "The served model is the evaluated model" reverts to a training-time memory that no consumer re-proves.'
+
+  - id: FALSIFY-APR-013
+    rule: 'NaN-visible comparison'
+    prediction: 'within(f32::NAN, bound), within(delta, f32::NAN) and the f64 equivalents all return false.'
+    test: 'Unit-test the within helper against NaN in both argument positions for both float widths.'
+    if_fails: 'A refactor to `!(delta > bound)` silently accepts NaN, and every tolerance gate in the phase would pass on a diverged run.'
+
+  - id: FALSIFY-APR-014
+    rule: 'Probe tolerance provenance'
+    prediction: 'The probe embedding tolerance constant in Rust equals 7.62939453e-06, the value parsed from setfit-encoder-conformance-v1.'
+    test: 'Parse the pooled-output tolerance from the conformance contract and compare it to the Rust constant.'
+    if_fails: 'Phase 4 grew a second tolerance for the same quantity; the looser of the two silently becomes the real one.'
+
+  - id: FALSIFY-APR-015
+    rule: 'ClassifyResponse cannot carry a non-finite value'
+    prediction: 'No public field exists on ClassifyResponse; deserializing a JSON body with a non-finite-derived null in probabilities is rejected by the validating constructor.'
+    test: 'Compile-fail (trybuild) on direct field construction; runtime assert on a hostile JSON body.'
+    if_fails: 'Review M2 is re-opened: the "unrepresentable" claim is false because a caller can bypass the validating constructor.'
+
+  - id: FALSIFY-APR-016
+    rule: 'latency_ms is never asserted strictly positive'
+    prediction: 'A response with latency_ms == 0.0 passes every parity and probe gate; latency_ms is excluded from cross-surface equality.'
+    test: 'Construct a response with latency_ms 0.0 and run it through the parity comparator; assert agreement.'
+    if_fails: 'A fast operation under a coarse timer turns the gate red for a reason unrelated to correctness — a flake with a schedule.'
+
+  - id: FALSIFY-APR-017
+    rule: 'Backend identity is not a capability detection'
+    prediction: 'The backend string equals `cpu:setfit-core:autograd-trueno-matmul` and is produced by the encode call; no trueno capability-detection API appears on the classify path.'
+    test: 'Assert the exact value on a CPU run; assert by source scan that Backend::AVX2 / Backend::NEON / select_backend* do not appear in the classify or response-construction path.'
+    if_fails: 'Review B6 is re-opened. Because Matrix::matmul dispatches on SIZE (SIMD_THRESHOLD 64), a reported AVX2 is consistent with a scalar execution and the field would be a capability claim wearing a measurement''s clothes.'
+
+  - id: FALSIFY-APR-018
+    rule: 'The shared request document survives embedded newlines'
+    prediction: 'The probe_whitespace string arrives as ONE text on all three parity surfaces (library, spawned CLI, in-process HTTP).'
+    test: 'Feed the six probe inputs through all three surfaces via ClassifyRequestDocument; assert each surface received exactly six texts and that text 6 contains a newline.'
+    if_fails: 'The CLI is line-delimited, so the surfaces receive different ordered input sets while appearing to agree on the five texts that survived.'
+
+  - id: FALSIFY-APR-019
+    rule: 'Canonical test access requires a prior durable lock'
+    prediction: 'apr eval --split test without a lock path is refused; with a lock naming a different artifact it is refused StaleLock; with a different dataset it is refused TokenDatasetMismatch.'
+    test: 'Three spawned-CLI cases against a written lock file; assert three distinct typed refusals and three distinct exit diagnostics.'
+    if_fails: 'TRN-07''s positive half is unproven at the CLI, and the "lock created before test access" requirement is satisfiable by an object created one line earlier.'
+
+  - id: FALSIFY-APR-020
+    rule: 'Detection is explicit-tag-only'
+    prediction: 'An APR carrying the full SetFit tensor topology but no `model_type == "setfit"` typed key is NOT detected as SetFit by any generic command.'
+    test: 'Strip the typed tag from a fixture artifact; assert apr inspect/eval/predict treat it as a plain APR.'
+    if_fails: 'Tensor-name sniffing leaked into detection (D-04 violation), so a foreign model with similar names could be routed into the SetFit path.'
+
+  - id: FALSIFY-APR-021
+    rule: 'The canonical name map is total and injective'
+    prediction: 'Every HF name the encoder emits has exactly one canonical name in hf_name_map, and no two HF names share a canonical name.'
+    test: 'Build the map for a fixture; assert map.len() == named_parameters().len() and that the canonical value set has the same cardinality.'
+    if_fails: 'A tensor is silently dropped or overwritten at the write boundary, and the reload rebuilds an encoder missing a parameter while looking structurally valid.'
+
+  - id: FALSIFY-APR-022
+    rule: 'Truncation reports the consumed length'
+    prediction: 'probe_truncation_boundary yields truncated == true and token_count == MAX_SEQUENCE_LENGTH (the exported constant), on every surface.'
+    test: 'Classify the truncation probe on all three surfaces; assert both fields against the imported constant, never a literal 256.'
+    if_fails: 'token_count is a tokenizer-internal count that varies with special-token handling, so the field means different things on different surfaces.'
+
+  - id: FALSIFY-APR-023
+    rule: 'The contract is reachable by a blocking gate'
+    prediction: 'contracts/setfit-apr-v1.yaml appears in the Makefile $(CONTRACTS) explicit list and in PHASE4_CONTRACTS, and make contract-audit-phase4 fails when a Phase 4 equation has no binding entry.'
+    test: 'Grep the Makefile for both occurrences with an explicit count comparison; delete a Phase 4 binding entry and observe contract-audit-phase4 go red; restore.'
+    if_fails: 'The contract is decoration. A contract file that merely EXISTS in contracts/ is validated by nothing — the Ph2 lesson recorded above the $(CONTRACTS) list.'
+
+kani_harnesses:
+
+  # DECLARED, NOT EXECUTED. cargo-kani is not installed in this repository and no
+  # #[kani::proof] harness exists anywhere under crates/. Each entry names the
+  # runnable, identically bounded test that is the ACTUAL evidence.
+  - id: KANI-APR-001
+    obligation: 'The nullable-path allowlist is complete against the shipped types'
+    property: 'For every subset of Option fields set to None across the five sub-documents, the null-path set is a subset of the four-entry allowlist'
+    bound: 5
+    strategy: bounded_int
+    harness: 'NOT EXECUTED — the evidence is the bounded proptest `allowlist_is_complete_over_all_none_combinations` in aprender-train (FALSIFY-APR-004), which enumerates the same 2^k combinations exhaustively for k <= 5'
+
+  - id: KANI-APR-002
+    obligation: 'An artifact larger than max_artifact_bytes is refused before the reader allocates it'
+    property: 'For every declared_len and every stream length, bytes_read <= max_artifact_bytes + 1'
+    bound: 16
+    strategy: bounded_int
+    harness: 'NOT EXECUTED — the evidence is `bounded_read_never_exceeds_cap_plus_one` (FALSIFY-APR-008), run against a limit-injected helper so the test does not allocate 256 MiB to learn that a comparison compares'
+
+  - id: KANI-APR-003
+    obligation: 'Every TensorIndexEntry size equals product(shape) * dtype_width for its declared dtype'
+    property: 'For every shape vector of length <= 4 with bounded dims, the structural size check accepts iff the declared size matches'
+    bound: 4
+    strategy: bounded_int
+    harness: 'NOT EXECUTED — the evidence is the bounded proptest `entry_size_matches_shape_and_dtype` (FALSIFY-APR-010)'
+
+  - id: KANI-APR-004
+    obligation: 'Float comparison is NaN-visible'
+    property: 'within(d, b) is false whenever either argument is NaN, for all f32 and f64 inputs'
+    bound: 8
+    strategy: stub_float
+    harness: 'NOT EXECUTED — the evidence is the exhaustive NaN-position unit test `within_is_nan_visible` (FALSIFY-APR-013). Kani cannot reason about f32 semantics without stubbing, which would prove a property about the stub'
+
+qa_gate:
+  id: F-APR-SETFIT-001
+  name: 'SetFit APR artifact schema gate'
+  description: >
+    The blocking gate for the setfit-apr-v1 artifact. Every check below must be RED under an
+    in-band negative before it is trusted: a gate that has only ever been observed passing is not
+    evidence. Wired into tier3 via `contract-validate` (schema) and `contract-audit-phase4`
+    (binding coverage), and into the test suites named by the falsification tests.
+  checks:
+    - 'contract schema validity (pv validate, zero errors)'
+    - 'binding coverage for every Phase 4 equation (pending is a warning, unbound is an error)'
+    - 'byte-canonical closure at Tolerance::EXACT'
+    - 'nullable-path allowlist completeness against the shipped types'
+    - 'the pinned production nullability shape is accepted'
+    - 'all five sub-documents are walked'
+    - 'bounded read before allocation'
+    - 'architecture-derived tensor set with no test-only exception'
+    - 'six-probe replay before any prediction'
+    - 'NaN-visible tolerance comparison'
+    - 'backend identity from execution, not detection'
+    - 'durable selection lock before canonical test access'
+  pass_criteria: 'All 23 falsification tests pass, and each has been observed failing under its own induced negative.'
+  falsification: >
+    Add an Option field to ResolvedConfigRecord without updating the allowlist: FALSIFY-APR-004 must
+    go red by naming the new path, and it must go red in aprender-train rather than on the first
+    production artifact. Separately, replace the backend identity with a trueno capability detection:
+    FALSIFY-APR-017's source scan must go red.

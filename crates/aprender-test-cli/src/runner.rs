@@ -89,7 +89,7 @@ impl TestResults {
 
     /// Get total number of tests
     #[must_use]
-    pub fn total(&self) -> usize {
+    pub const fn total(&self) -> usize {
         self.results.len()
     }
 

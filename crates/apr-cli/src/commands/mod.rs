@@ -124,18 +124,31 @@ pub(crate) mod oracle;
 pub(crate) mod otlp_classifier;
 pub(crate) mod otlp_lint;
 pub(crate) mod parity;
+/// REG-15 model admission (#2971, PMAT-1065): a forced backend never
+/// downgrades on a load-time parity-gate failure. Re-exported publicly at
+/// `apr_cli::parity_admission` (see `lib.rs`) so `tests/reg15_admission.rs`
+/// can exercise it without reaching into the private `commands` tree.
+pub(crate) mod parity_admission;
+pub(crate) mod parity_per_op;
+pub(crate) mod parity_per_op_table;
 pub(crate) mod pipeline;
 pub(crate) mod png_encode;
 pub(crate) mod ppl;
 #[cfg(feature = "training")]
 pub(crate) mod pretrain;
 pub(crate) mod probar;
+// GH-876 Milestone 2: `apr test llm`, a surface over the in-tree llm module.
 pub(crate) mod profile;
 pub(crate) mod progress;
 pub(crate) mod prometheus_classifier;
 pub(crate) mod prometheus_lint;
 pub(crate) mod prune;
 pub(crate) mod ps_schema;
+pub(crate) mod test_llm;
+// PERF-025: the `--band` mode of `apr test llm bench`. Its own file so that
+// `test_llm.rs`'s complexity is untouched by it -- the PMAT pre-commit gate
+// blocks a FILE with any pre-existing violation, not a function.
+pub(crate) mod test_llm_band;
 // #2399: gated on the crate it actually needs (aprender-explain, aliased
 // `trueno-explain`) rather than on `full`, so `--features ptx` is enough and a
 // user does not have to pull CUDA + training to analyze a .ptx file.

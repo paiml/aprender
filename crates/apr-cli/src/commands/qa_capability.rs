@@ -79,8 +79,8 @@ pub fn run_capability_gate(path: &Path, config: &QaConfig) -> Result<GateResult>
         ));
     }
 
-    // Parse GGUF to get architecture string
-    let Some(arch) = extract_gguf_architecture(&data) else {
+    // Parse GGUF to get architecture string and tensor names
+    let Some((arch, tensor_names)) = extract_gguf_arch_and_tensors(&data) else {
         let duration = start.elapsed();
         return Ok(GateResult::passed(
             "capability_match",
@@ -90,6 +90,22 @@ pub fn run_capability_gate(path: &Path, config: &QaConfig) -> Result<GateResult>
             duration,
         ));
     };
+
+    // PMAT-1098: Check for globally unsupported architectures (like SSM/Gated Delta Net)
+    #[cfg(feature = "inference")]
+    {
+        let tensor_refs: Vec<&str> = tensor_names.iter().map(|s| s.as_str()).collect();
+        if let Some(reason) = realizar::gguf::unsupported_architecture_reason(&arch, tensor_refs) {
+            let duration = start.elapsed();
+            return Ok(GateResult::failed(
+                "capability_match",
+                &reason,
+                Some(1.0),
+                Some(0.0),
+                duration,
+            ));
+        }
+    }
 
     // A build without the `cuda` feature has no GPU backend compiled in, so
     // "all N required ops supported by GPU" would be a claim about kernels
@@ -162,7 +178,9 @@ pub fn run_capability_gate(path: &Path, config: &QaConfig) -> Result<GateResult>
 /// Extract the architecture string from GGUF metadata.
 ///
 /// Uses aprender's GGUF reader to parse metadata without loading tensors.
-fn extract_gguf_architecture(data: &[u8]) -> Option<String> {
+fn extract_gguf_arch_and_tensors(data: &[u8]) -> Option<(String, Vec<String>)> {
     let reader = aprender::format::gguf::reader::GgufReader::from_bytes(data.to_vec()).ok()?;
-    reader.architecture()
+    let arch = reader.architecture()?;
+    let tensors = reader.tensors.into_iter().map(|t| t.name).collect();
+    Some((arch, tensors))
 }

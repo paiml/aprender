@@ -11,7 +11,6 @@ metadata:
     actually zeroed MUST equal the user's requested sparsity, and the output metadata MUST
     not misreport it. Pillar-adjacent (model-ops CLI) provable correctness.
 
-kind: KernelContract
 name: prune-sparsity-correctness
 version: "1.0.0"
 scope: "crates/apr-cli/src/commands/prune.rs"

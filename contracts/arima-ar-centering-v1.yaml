@@ -30,7 +30,6 @@ metadata:
   - 'PMAT-862 (this contract): ARIMA AR estimation on uncentered levels collapses phi to ~1.0'
   - 'PMAT-834 (arima-v1.yaml FALSIFY-ARIMA-INTEGRATE-D2) -- the distinct reverse-differencing defect'
 
-kind: KernelContract
 name: arima-ar-centering
 version: 1.0.0
 scope: aprender-core time_series ARIMA::estimate_ar_parameters + fit (constant term) + forecast

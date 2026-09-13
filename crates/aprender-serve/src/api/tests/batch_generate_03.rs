@@ -224,6 +224,7 @@ fn test_chat_completion_response_serde() {
         brick_trace: None,
         step_trace: None,
         layer_trace: None,
+    timings: None,
     };
     let json = serde_json::to_string(&resp).expect("JSON serialization failed");
     let parsed: ChatCompletionResponse = serde_json::from_str(&json).expect("JSON deserialization failed");
@@ -278,11 +279,12 @@ async fn test_chat_completions_with_trace_header() {
         .await
         .expect("test value should be present");
     // Just verify the endpoint accepts the trace header without error
-    assert!(
-        response.status() == StatusCode::OK
-            || response.status() == StatusCode::NOT_FOUND
-            || response.status() == StatusCode::INTERNAL_SERVER_ERROR
-    );
+    // aprender#2609: this was a disjunction over four or five statuses (several
+    // listing NOT_FOUND twice), so it excluded nothing and passed against the
+    // very behaviour #2609 reports. The shared test app is `demo_mock()` — a
+    // server with no model of any kind — so the one correct answer for a
+    // MOUNTED route is 503, and that is now what is asserted.
+    crate::api::test_helpers::assert_no_model_status(response.status());
 }
 
 // ============================================================================

@@ -180,9 +180,7 @@ fn get_git_branch() -> String {
 fn get_git_dirty() -> bool {
     Command::new("git")
         .args(["status", "--porcelain"])
-        .output()
-        .ok()
-        .is_some_and(|o| !o.stdout.is_empty())
+        .output().is_ok_and(|o| !o.stdout.is_empty())
 }
 
 /// Get the rustc compiler version string

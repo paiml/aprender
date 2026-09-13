@@ -12,6 +12,26 @@ use trueno_gpu::GpuError;
 
 use super::CudaExecutor;
 
+impl CudaExecutor {
+    /// PERF-050: map the GGML type code carried on a graph node back to the executor's enum.
+    ///
+    /// Unknown codes fall back to Q4_K, which is what this dispatcher assumed for every weight
+    /// before the code was carried at all -- so an unrecognised type is no worse than the old
+    /// behaviour, and the types this model actually uses are all named.
+    fn qtype_from_ggml(code: u32) -> crate::cuda::types::WeightQuantType {
+        use crate::cuda::types::WeightQuantType as W;
+        match code {
+            2 => W::Q4_0,
+            3 => W::Q4_1,
+            6 => W::Q5_0,
+            8 => W::Q8_0,
+            13 => W::Q5K,
+            14 => W::Q6K,
+            _ => W::Q4K,
+        }
+    }
+}
+
 impl KernelDispatch for CudaExecutor {
     fn dispatch_mul_mat(
         &mut self,
@@ -33,10 +53,32 @@ impl KernelDispatch for CudaExecutor {
             trueno_gpu::driver::GpuBuffer::<f32>::from_raw_parts(output_ptr, (m * n) as usize)
         };
 
+        // PERF-050 (aprender#2753): use the weight's ACTUAL quantization type.
+        //
+        // This dispatcher passed WeightQuantType::Q4K unconditionally, because OpParams carried
+        // only a pointer and the type was discarded at graph-build time. In
+        // qwen2.5-coder-1.5b-instruct-q4_k_m that is correct for 170 tensors and wrong for 29 --
+        // attn_v, ffn_down and the LM head are Q6_K -- so the first Q6_K weight the forward
+        // reached, blk.0.attn_v, was dequantized with the Q4_K kernel and produced absmax 4.9e8
+        // with 47 of 256 values non-finite, which became NaN across the whole layer and the
+        // constant-token output of aprender#2753.
+        // APR_GRAPH_QTYPE_HARDCODE=1 restores the pre-fix behaviour so the two can be compared
+        // in ONE binary. Comparing across two builds was tried and could not be attributed:
+        // apr-cli embeds the git SHA via its build script, and in this worktree the binary kept
+        // reporting a stale SHA after HEAD moved, so `apr --version` could not identify which
+        // source a given artifact came from.
+        let qtype = if std::env::var("APR_GRAPH_QTYPE_HARDCODE").as_deref() == Ok("1") {
+            crate::cuda::types::WeightQuantType::Q4K
+        } else {
+            Self::qtype_from_ggml(node.params.weight_qtype)
+        };
+
         // PMAT-295: Use inline Q8 DP4A GEMV when enabled.
         // Single kernel launch (Q8 quantize fused into DP4A) for M=2-4 Q4K.
         // At M>=5, FP8 cuBLASLt fires. At M=1, existing DP4A with Q8 cache works.
+        // PERF-050: this kernel is Q4K-only, so it must not claim a Q6_K weight.
         let use_inline_q8 = Self::use_inline_q8_gemv()
+            && qtype == crate::cuda::types::WeightQuantType::Q4K
             && m >= 2
             && m <= 8
             && self.gpu_profile.q4k == crate::cuda::gpu_profile::Q4kVariant::HwDp4a
@@ -46,7 +88,7 @@ impl KernelDispatch for CudaExecutor {
             self.inline_q8_dp4a_q4k_gemv_into(weight_ptr, &input_buf, &output_buf, m, n, k)?;
         } else {
             self.batched_gemv_or_gemm(
-                crate::cuda::types::WeightQuantType::Q4K,
+                qtype,
                 weight_ptr,
                 &input_buf,
                 &output_buf,
@@ -60,6 +102,24 @@ impl KernelDispatch for CudaExecutor {
 
         std::mem::forget(input_buf);
         std::mem::forget(output_buf);
+
+        // PERF-050 (aprender#2769): apply the bias the graph never had a node for.
+        //
+        // apply.rs does this on the M=1 path right after the GEMV -- "BIAS-FIX: Add QKV bias
+        // after GEMV (Qwen2.5 models have QKV bias)" -- and this path did not, because OpParams
+        // could not express a bias. blk.0.attn_k.bias[0] alone is 4.09375, the scale of the
+        // entire graph-side k_buf, so dropping it is not a rounding-level omission.
+        //
+        // `bias_len == 0` means no bias, so nodes that do not carry one are untouched.
+        // APR_GRAPH_NO_BIAS=1 restores the previous behaviour inside ONE binary, which is the
+        // only form of A/B this investigation trusts.
+        let bias_ptr = node.params.bias_ptr;
+        if bias_ptr != 0
+            && node.params.bias_len > 0
+            && std::env::var("APR_GRAPH_NO_BIAS").as_deref() != Ok("1")
+        {
+            self.batched_bias_broadcast_add(output_ptr, bias_ptr, n, m)?;
+        }
         Ok(())
     }
 
@@ -106,6 +166,25 @@ impl KernelDispatch for CudaExecutor {
 
         std::mem::forget(input_buf);
         std::mem::forget(output_buf);
+
+        // PERF-050 round 8: graph-side RMSNorm output, to split "the norm differs" from "the
+        // projections differ". The layer input is already proven identical between the graph
+        // and the M=1 oracle, and all of Q, K and V differ, so it is one of those two.
+        //
+        // A sequence number is emitted because hidden_buf1 is written twice per layer -- the
+        // attention norm and the FFN norm -- and the post-layer snapshot only ever saw the
+        // second. Only call #0 of a forward is layer 0's attention norm.
+        if Self::layer_trace_enabled() {
+            static N: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+            let i = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            if i < 3 {
+                self.trace_buffer(
+                    &format!("g_rmsnorm#{i}"),
+                    output_ptr,
+                    (m * hidden_dim) as usize,
+                );
+            }
+        }
         Ok(())
     }
 

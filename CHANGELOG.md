@@ -7,6 +7,494 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.67.0] - 2026-09-12
+
+0.67.0 is the first train of the 06x schedule (docs/specifications/06x-release-schedule.md, epic #3078): a release every 2–3 days whose PR tier is one build graph and whose CI runs on all three self-hosted boxes. Correctness: every Q5_K tensor decoded wrong on the CPU path, in `apr import` and in the CUDA GEMV — all three readers had invented a layout; the oracle is now gguf-py on a real block (#3110, #3113). Qwen3.5/Qwen3.8 hybrid GGUFs are refused honestly on both backends instead of promising a CPU fallback (#3099; the CPU forward itself ships in 0.68 behind the parity gate, #3091). aarch64: NEON LZ4 read unwritten output at offsets 16..63 (#3103) and the ARM-only clippy errors that kept gx10 out of `ci / lint` are gone (#3112). Fleet: arch-neutral jobs run on any clean-room box — intel, yoga, gx10 (#3104); every self-hosted job checks the box's toolset before spending an hour (#3088); guard-cargo/guard-tree fit the 20-minute budget with seven nightly-class steps moved to guards-nightly.yml (#3094); advisory gpu-quick (gx10) and cuda-unit (yoga) PR jobs (#3095); the quick tier is one nextest invocation, 55 min → ~6 min, and the merge queue mirrors the PR (#3089); tree-reader modules cut quick-tier seconds 93 % → 58 %, the 2-h mutant arm sweep is input-gated, and DIRTY roadmap conflicts merge by id (#3115). Release integrity: four apr binaries on every tag ({cuda,cpu} × {x86_64,aarch64}) verified by `check_release_assets.sh` (#3092); every workspace example must build AND run before a tag, plus apr-cookbook and release-notes gates (#3122); a low-priority nightly coverage run on yoga toward the 95 % target (#3123). Dark targets: the quick tier runs every integration target of a touched crate, which surfaced 77 vacuous spec_checklist rows (#3131), 20 stale aprender-serve rows (GH-438 dtype bytes, PMAT-855 byte glyphs, GH-213 load-time truncation, CRUX-C-34 health codes, GGUF v2 support) and one wall-clock benchmark posing as a test — now behind `bench-gates`. Triage: every open issue and PR carries a milestone and a type + priority label (#3102, #3125). Release assets: the CUDA `apr` binaries are built inside rust:1.93.0-bullseye on gx10/yoga for a glibc 2.31 floor — the native v0.66.0 x86_64 asset needed GLIBC_2.43 and did not start on Ubuntu 22.04 — and the CUDA lane moves its assets through the REST API because the self-hosted boxes carry no gh (#3072, #3074, #3086).
+
+The seventeen rows below marked *via train #3127* landed as one squash (cb829fcb9, 2026-09-12T09:12Z, merge-queue run 34684644616); their row PRs are closed as ancestors of the train head, not merged, so a merged-PR listing alone would miss them.
+
+### Fixed
+
+- fix(compute,aarch64): gx10 could not run ci / lint — ARM-only clippy errors, and #2567's parallel Q4_K path was never called (PMAT-1102) (#3112, via train #3127)
+- fix(guard): spec-conformance fixtures are bytes — the zero-width key rendered only under a UTF-8 locale (#3109, via train #3127)
+- fix(quantize): Q5_K readers decoded an invented layout — every Q5_K tensor on the CPU path and in apr import was wrong (PMAT-1101) (#3110, via train #3127)
+- fix(cuda): the Q5_K GEMV read each value's fifth bit from a sequential bitmask — every Q5_K tensor decoded wrong on the GPU (#3111) (#3113, via train #3127)
+- fix(gguf): Qwen3.5/Qwen3.8 hybrid GGUFs — the refusal names BOTH backends and the CLI stops promising a CPU fallback (#3091 ask 2, #3090 related; PMAT-1098) (#3099, via train #3127)
+- fix(tests): eight spec_checklist targets read repo paths from the crate dir — 77 vacuous rows now read the tree (#3130) (#3131, via train #3127)
+- fix(compute): nine GPU tests panicked without an adapter — the nightly coverage run was RED six days on an environment fact (PMAT-1106) (#3116, via train #3127)
+- fix(ptx): emitter was non-deterministic — the cubin cache has NEVER hit (42,880 stale cubins / 498 MB) (#3066)
+- fix(zram-core,aarch64): NEON LZ4 match copy read unwritten output at offsets 16..63; orchestrate test hard-coded an x86_64 'native' target (gx10 CI P0, PMAT-1098) (#3103)
+- fix(serve,x86): AVX2 Q4_K×Q8_K kernels paired each block with the wrong scale — no CI box ever ran them (#3106)
+
+### Changed
+
+- dogfood(examples): G3.EX found a dead example, an undeclared feature gate and a panicking benchmark — coop_gemm_bench deleted with its feature, prose_detection gets required-features, bench_bpe prints usage (#3136)
+- ci(cuda-nightly): 67-F1 — PP-26 byte-compare via REST with the job token; gx10 host receipt (#3097)
+- ci: arch-neutral jobs run on any clean-room box (intel, yoga, gx10); workspace-test keeps X64; perf benchmarks pin intel (#3100) (#3104, via train #3127)
+- ci(67-C2): every self-hosted job asks the box what it has before it spends an hour — ci_self_hosted_preflight.sh + fleet-toolset.yml (P0-2 #3083, PMAT-1098) (#3088, via train #3127)
+- perf(ci): 67-E3 — guard-cargo and guard-tree under the 20-minute budget: 7 nightly-class steps move to guards-nightly.yml, guard_tree.sh dispatches in parallel (289 s → 96 s) ( (#3094, via train #3127)
+- ci(gpu): 67-C1/D1 — advisory gpu-quick (gx10) and cuda-unit (yoga) PR jobs that skip the hosts a change does not touch (#3095, via train #3127)
+- ci(release): P0-1 — four apr binaries on every tag ({cuda,cpu} × {x86_64,aarch64}), verify-apr-assets requires all four, check_release_assets.sh + C13 + a post-publish dogfood r (#3092, via train #3127)
+- spec(release): 06x release schedule — 0.67.0→0.70.0 every 2–3 days, one epic per train, priorities A–G with acceptance commands; contract + drift gate (PMAT-1097) (#3087, via train #3127)
+- docs(audits): PMAT-1100 triage receipt — every open issue/PR without a milestone filed into a release train (263 rows, 33/33 verified; Alfredo's first) (#3102, via train #3127)
+- dogfood(release): every example builds AND runs, apr-cookbook and release-notes gates, nightly examples on yoga (PMAT-3121, #3121) (#3122, via train #3127)
+- ci(coverage-nightly): low-priority coverage run on the yoga pool, timeout 150 min (operator 2026-09-11: nightly low-priority coverage toward 95%) (#3123, via train #3127)
+- audit(triage): PMAT-3124 — the 72 unlabeled open issues now carry a type + priority label; 0 remain (#3124) (#3125, via train #3127)
+- docs(spec): NVIDIA CUDA Rust integration for GPU quality stabilization (0.67) (#3061, via train #3127)
+- ci(release): the workspace target/ mountpoint is pre-created before the bullseye CUDA build — the root-owned mountpoint killed rebuilds (#3098, via train #3127)
+- perf(ci): P0-3 — the quick tier is ONE build graph (55 min → ~6 min) and the merge queue mirrors the PR instead of paying an hour for a moved main (67-E1 + 67-E2, #3084, PMAT-1098) (#3089)
+- ci(fleet): sweeper+steward+ledgers, roadmap 3-way merge driver, 80/20 tier filterset, tree-reader MODULES (93%→58% quick-tier seconds), 2-h arm sweep input-gated (PMAT-1105/3118/3119/3120) (#3115)
+- release(0.67): train A — 17 row PRs of the 0.67.0 train in one build graph (PMAT-1098) (#3127)
+- ci(release): CUDA apr binaries for x86_64 and aarch64 on every release — a hard requirement, verified in the bytes and on both GPU hosts (PMAT-1096, #2869) (#3072)
+- ci(release): the CUDA lane uploads, verifies and downloads through the REST API — the self-hosted boxes carry no gh (gx10: 'gh: command not found', run 34448908554, after a green build: 21M asset, glibc 2.39 floor) (#3074)
+- docs(audits): PMAT-1096 receipt status: complete — v0.66.0 tagged, released (pv + CUDA apr assets), 74/74 on crates.io, re-verified on the published artifact (#3085)
+- ci(release): CUDA apr assets built inside rust:1.93.0-bullseye on gx10/yoga — glibc 2.31 floor; the native v0.66.0 x86_64 asset needs GLIBC_2.43 and does not start on 22.04 (#3086)
+
+## [0.66.0] - 2026-09-09
+
+The **honest-GPU model** release. Milestone `0.66.0` was narrowed by the operator
+on 2026-09-08 to the two P0 defects a user hits first, plus the CI change that
+makes the GPU crates' default-feature tests part of the required check. The
+PP-066 obligation rows (backend registry, release assets, installer, C0 gates)
+moved to `0.68.0` on 2026-09-09; no speed number ships in 0.66 — instruments
+and speed ship later (PP-066 claims ratchet).
+
+### Fixed
+
+- **`apr chat` answered with the toy demo model for a sharded SafeTensors
+  index** (#3022, #3024; PP-066 row F-1, PMAT-1080, #3050). `Path::extension()`
+  on `model.safetensors.index.json` — the exact file `apr pull` writes and then
+  recommends — is `json`, which matched no arm and fell through to the demo
+  model while the banner still printed the real path. One decision
+  (`resolve_chat_format`: suffix, then magic bytes, then a refusal with exit 6)
+  replaces the two that never compared notes; `Demo` is no longer an outcome for
+  a path that exists. Six-row case table, both polarities; before/after records
+  in `evidence/format-honesty/`.
+- **GPU inference computed a different function than CPU for Qwen2.5-1.5B
+  (hidden 1536, 12 heads, 2 KV heads)** (#2971, #3017; PP-066 rows L0-1a/L0-1b,
+  #3026, #3032). Every model in `evidence/models/supported.yaml` now computes the
+  same function on GPU as on CPU over at least 64 positions or the GPU refuses
+  it (C14, `scripts/check_model_parity.sh --manifest`; `SKIP_PARITY_GATE` is a
+  printed override that never passes). `apr parity --per-op` names the first
+  diverging op; for the 1.5B it was the post-FFN residual in layer 26 and the CPU
+  Q8_K reference was the inaccurate side. Measured green on lambda (sm_89) and
+  gx10 (sm_121); records under `evidence/parity/l0-1/`.
+- **apr-cli's integration surface went 14 red to 0 on a clean `main`** (#3051,
+  #3053) — three root causes, each fixed as a guard; the generated 28 MB
+  `test.apr` is untracked and the race it hid is fixed (#3059).
+- **`main` was red under pmat 3.39.0** (#3028, #3030): twelve legacy nested
+  subtask records the new validator refuses as duplicate ids are gone, and id
+  uniqueness is checked in-repo, independent of the analyser pin.
+- **Silicon Nightly tested a package that has never existed** (#2793,
+  paiml/infra#361).
+
+### Added
+
+- **`aprender-gpu` and `aprender-cuda-edge` run in `workspace-test`** (#3063;
+  T0 of the NVIDIA CUDA Rust spec, #3062). Both are `default = []` with no
+  `build.rs`; their default-feature tests had never been in a required check.
+  The `cuda`-gated modules (driver, kernels, memory, ptx) still run only under
+  `--features cuda` (#3067).
+- **Build-system enforcement (BSE-001 M2, BSE-17)** (#3037, #3039, #3044): a
+  fail-closed composite `make gate` pinned to `origin/main`, the `guard_tree`
+  dispatcher and `guard-tree` job, `predict_merge`, sorted-insert for the
+  roadmap, asserted tool pins; ratchet verdicts are a function of (comparand,
+  merge) only; two-tier tests — quick on the PR, full behind it.
+- **PP-066 guards** — G-10: the shipped-path ratchet runs under one pinned
+  analyser with a stamped baseline (#3011); G-11: row PRs never write the DAG,
+  roadmap, spec block or README counts — DAG status is derived (#3020, #3012);
+  G-4/G-6/C0-7: the obligation DAG as data with invariants in CI, the
+  roadmap-additive guard, the receipt terminal marker (#2987, #2981).
+- **PR review receipts judged from the base** (#2985, C0-5): one base-owned
+  quorum workflow on `pull_request_target` and `merge_group`.
+
+### Documentation
+
+- PP-066 release spec v1.5 → v1.6 with the S0 discovery ledger (23 premises
+  measured), the 0.66 parity report and the 0.65.2 post-publish host receipts
+  (parity NO-GO, measured) (#2872, #2875, #2868, #2871, #3000, #2858).
+
+## [0.65.2] - 2026-09-04
+
+Supersedes 0.65.0 and 0.65.1 for every crate (74 of 74 on crates.io).
+`aprender-test-lib` packages `perf-matrix.yaml` through `build.rs` and a
+vendored copy; the CB-510 guard reports any `include_str!`/`include_bytes!`
+in host-compiled code whose target escapes the crate (PMAT-958, #2866).
+
+## [0.65.1] - 2026-09-04
+
+The publish cycle: five sibling dev-dependencies are path-only and preflight
+rule R6 refuses a versioned one (PMAT-955, #2865); `cascade-drain.sh` keeps its
+`DEFER` lines (PMAT-954); the wgpu `shared_instance` initializer no longer
+re-takes `DEVICE_INIT_LOCK` (PMAT-952); a stdio MCP server that answers and
+exits before reading the request keeps its response and exit status (PMAT-953).
+
+## [0.65.0] - 2026-09-02
+
+The **parity-instrument** release. v0.64.0 closed gates that could not fail;
+this one replaces the inference-performance specification that had been
+redesigned five times and armed zero times with one that every gate reads, and
+lands the instrument the spec describes — a receipt that witnesses correctness,
+names the mechanism engaged, carries prefill, decode and aggregate on every
+band, and is decided by a stated statistical rule on interleaved replicates.
+Governing document: `docs/specifications/PP-LLAMA-001-MASTER.md` (status
+`VERIFIED, NOT ARMED`; it arms on the first conformant reference-cell receipt,
+never by date).
+
+### Added — the specification and its companions (PP-LLAMA-001 §0–§13)
+
+- **One spec, one matrix, one ledger.** `PP-LLAMA-001-MASTER.md` (33 invariants
+  PP-1…PP-33, each with a must-fire and a must-not-fire selftest named in the
+  table), `PP-LLAMA-001-RATIONALE.md` (why each rule), the audit it answers
+  (`docs/audits/parity-spec-audit-2026-09-02.md`), and `evidence/parity/LEDGER.md`
+  rewritten to Appendix C (validity by band: the two 2026-09-01 cells are
+  `NONCONFORMANT-VALID` at c=1 and `INVALID-CORRECTNESS` at c>1, with the log
+  lines that prove it). Fifteen predecessor documents are archived
+  (`docs/archive/perf-2026-09-02/`). (#2843, supersedes #2845 and #2706)
+- **`scripts/spec_conformance.sh` (PP-29)** joins the §6 table to the selftest
+  surfaces (`perf_gate.sh --list-selftests`, each guard's case table, Rust
+  `#[test]` names), parses the LEDGER for PP-9 (a cell is spent once per key)
+  and derives every non-root §12 expiry from its blockers into
+  `evidence/parity/derived_expiries.json`. It replaces
+  `check_mutation_registry.sh`, whose universe the archive move had emptied.
+- **`scripts/perf-matrix.yaml` schema 2 (PP-33):** every threshold, floor,
+  ratchet direction and phase the gate reads, each with `threshold_class` and
+  `author`; a `protocol:` block (window, warmup, quiesce, cooldown, n_predict,
+  replicates ≥ 5, interleaved, sampler); a derived `ladder:`; the batch-
+  invariance witness policy; Arm A rewritten as per-band self-regression on
+  `agg`/`dec`/`prefill` (the `scaling_efficiency` up-only ratchet, which
+  rejected the single-stream fix it protected, is REPORTED and never gated);
+  Arm B replaced by the L3 non-inferiority rule with declared `δ` and
+  `armed_by`; `mini` is `NA{decided_by}` (#2841). New guards
+  `check_thresholds_in_matrix.sh` and `check_perf_matrix_schema.sh` keep it so.
+- **The v3 receipt (Appendix B)** in `crates/aprender-test-lib/src/perf_gate/`:
+  `run_id`, `started_utc`/`clock_source` (PP-30), subject/client/comparator
+  provenance with the verbatim `GET /v1/effective-config` body (PP-2/18/20/25),
+  the protocol block, a derived ladder from server-reported admission (PP-24),
+  per-band `status` in the §7.4 vocabulary, `stream_mode` with a client-side
+  witness (PP-27), the batch-invariance witness (PP-26), `short_of_n_predict`
+  (PP-28), per-band `samples[]` (PP-7), a `JoinKey` that refuses every mismatch
+  and the `-b 1` cripple (PP-22), `ComparatorStatus::Measured{baseline, ratios}`
+  constructible only from two same-run lanes (PP-3), the request-level paired
+  bootstrap and the replicate-level one-sided t bound of §4.3, the `AbRecord`
+  engine-track artifact (PP-32), and a typed reader with `deny_unknown_fields`.
+  The zero-GPU JOIN fixture reproduces the eight recorded ratios to four
+  decimals (§10).
+- **`apr test llm bench --band` is now a two-lane, interleaved producer:**
+  `--comparator-url` drives the comparator with the same client binary
+  (A,B,A,B… across replicates, matrix cooldown between lanes), `--band`
+  requires `--stream` and a 40-hex `--commit`, `--key-id` signs the receipt on
+  the measuring host, `--witness-json` attaches the PP-26 witness, and the
+  effective-config endpoint is read before the first request. Default
+  replicates: 5.
+- **`GET /v1/effective-config` (§5.2, §12 row 6)** on every `apr serve`
+  router: server clock, resolved compute class from residency, build features
+  (including apr-cli's), backend loaded, model, offload report
+  (`gpu_layers_{requested,resolved,total}`, `autofit_applied ∩ explicit_args = ∅`,
+  PP-14), scheduler report with `slots_admitted` and a live in-flight counter,
+  and — on CUDA builds — the resolved `GpuProfile`, graph configuration, the
+  prefill path `run_prefill` will select, the `max_batch` sizing with its four
+  inputs and `source` (`computed`|`env`), and a VRAM report. The JSON key set is
+  identical on CPU and CUDA builds.
+- **SSE declares itself (PP-27):** the first chunk carries `stream_mode`
+  (`live` from the token channel, `replayed` from the pregenerated builder), the
+  terminal chunk carries `usage` and llama.cpp-shaped `timings`
+  (`prompt_ms`, `prompt_per_second`, …) where the backend measured them.
+- **PP-26 witness (`scripts/perf041_batched_parity_probe.py`)** rewritten as a
+  token-level batch-invariance probe: pinned sampler, per-band engagement
+  attribution from the log offset, `divergence_at` against the declared point,
+  never exit 0 on a vacuous run, a replay `--selftest`, `witness.json` +
+  `marker.json`; wired into `cuda-nightly.yml` before the Pillar-4 beat (the
+  first gx10 night is EXPECTED RED per §9 #1a) and consumed at release by
+  `scripts/check_perf041_marker.sh` (missing marker = RED).
+- **The comparator is decided (§5.3):** `llama-server` configured to serve the
+  band (`-np c`, `-c c·n_ctx_slot`, `n_ctx_slot = 1024`, every 2026 default
+  pinned, `-b 1` refused as a cripple), pin `pinned_on`/`pin_expiry` with a
+  `COMPARATOR_STALE` verdict, cmake line corroborated against the resolved
+  build's `CMakeCache.txt`. `evidence/parity/props-39173bcac-{template,np16}.json`
+  record `GET /props` at both argvs (4 slots × 4096 vs 16 slots × 1024).
+- **`scripts/parity_host_receipt.sh`** relaunches the comparator per band, reads
+  `/props` and `/v1/effective-config`, interleaves replicates, and records the
+  `nvidia-smi` foreign-PID isolation before and after each band
+  (`scripts/perf_isolation.sh`, PP-19); every `--gpu` boolean in the harness is
+  now `--gpu-layers <N|all>` (PP-15).
+- **`scripts/measure_bandwidth.sh` (PP-23):** device-to-device memcpy bandwidth
+  with a duration warm-up and burst replicates; `evidence/bandwidth/lambda.json`
+  is the first `[V]` bandwidth in the tree, and the derived per-sequence decode
+  ceiling for the 7B Q4_K_M is below the vendor figure §2.4 used.
+- **Perf hosts are serialised (PP-19):** job-level `concurrency: perf-gx10` /
+  `perf-intel` with `cancel-in-progress: false` on every GPU or `--ignored`
+  bench job, enforced by `scripts/check_perf_concurrency_groups.sh`.
+- **PP-12 widened:** `check_no_claim_literals.sh` now reads
+  `docs/specifications/`, drops a hit only when it cites a resolving `evidence/`
+  path (the exemption `check_perf_claims_cite_receipts.sh` shares via
+  `scripts/lib/perf_claim_cite.sh`), detects ratio cells under a competitor
+  table header, and no longer lets a bare `require`/`expect` mask a claim. The
+  README performance table and the comparator ratio and throughput figure in
+  the MCP server spec are withdrawn (no receipt exists for any of them).
+
+### Fixed — defects the spec named (§9)
+
+- **§9 #1a:** `prefill_multi_prompt` had no `cc ≥ 120` guard; the batched
+  scheduler now refuses it there and prefills each prompt serially, through
+  the same pure `select_prefill_path` predicate `run_prefill` uses. The dead,
+  cc-blind `GpuProfile.batched_prefill` field is gone. The predicate is
+  numeric and named so (`SM12X_MIN_CC`, reason `sm12x default`): datacenter
+  Blackwell (sm_100/103) and Thor (sm_110) are below it and keep the batched
+  path, because the corruption is recorded on GB10 (sm_121) only — the CUDA
+  docs review arm caught the earlier "blackwell default" label as a
+  wire-visible misnomer on `/v1/effective-config`.
+- **§9 #8:** the `cuda-batch = ["cuda"]` implication ran the wrong way and the
+  APR-Q4K GPU pool path was silently downgraded under `--features cuda`; the
+  stub is deleted and the path is gated on `cuda` alone.
+- **§10 refusal:** `FUSED_GATE_UP=1` selected an uncompiled module whenever the
+  Q4_K variant was not `HwDp4a`; it is now refused with a printed reason.
+- **§12 row 0b's real blocker:** the subject's SSE terminal chunk carried no
+  `usage`, so a streamed W1 band could never produce a receipt.
+- **PP-28:** the stream and blocking client paths dropped `seed` and
+  `ignore_eos` on the wire; `prompts-w1.jsonl` never carried `ignore_eos`
+  (regenerated; the corpus digest rotates by design).
+- **PP-20/P-6:** a pin past its expiry is a release-phase `COMPARATOR_STALE`
+  verdict, never a merge-phase FAIL by calendar.
+- **PP-21:** the band producer defaulted `commit` to the literal `UNPINNED`;
+  `receipt_sig.py` now refuses any commit that is not a 40-hex sha.
+- **Audit CO-1:** the LEDGER attributed "batching compiled out" to the wrong run.
+- **PP-24 in-flight counter (cross-vendor review finding):** the CUDA batch
+  scheduler entered the counter once per initial slot and again per staggered
+  join, so `scheduler.in_flight_peak` on `/v1/effective-config` could report
+  up to `2·M−1` for a batch that never held more than `M`; recycled slots
+  were never counted at all. The counter now mirrors the scheduler's own
+  live slot count (`BatchState::m`) at every step and is zeroed when the
+  batch drains.
+- **PP-26 amended to v3.1 after the first lambda witness.** The v3.0 bar — the
+  `m=1` and `m=c` greedy streams agree for 64 tokens — was DEFECT on every
+  `c>1` band of the release host, and the parting was not batching: three
+  kernel families (`m=1`; `m=2,3`; `m=4,8,16`) each agree with themselves to
+  the end and part from each other at the first near-tie with coherent text
+  on both sides (`evidence/parity/LEDGER.md` row 6, `evidence/perf041/lambda/`).
+  The witness now gates what batch invariance means — every slot of a batch
+  agrees with every other to `witness.min_agree_tokens`, and no slot repeats
+  one token id for `witness.max_constant_run` steps (#2753's signature) — and
+  records the `m=1` agreement per band instead of failing on it. The margin
+  instrument that would turn that record back into a gate is §12 row 22.
+  `scripts/check_perf041_marker.sh` reads the committed lambda marker (PASS)
+  at release.
+- **DP4A comments corrected (CUDA docs arm):** the `has_dp4a` gate stays at
+  sm_75 (the DP4A kernels are validated from Turing), but its comments no
+  longer claim DP4A itself begins there — the PTX ISA puts it at sm_61.
+
+### Changed
+
+- `jugar_probar::llm::client::StreamedChatResponse.usage` is `Usage`, not
+  `Option<Usage>`: a stream without a terminal `usage` is
+  `LlmClientError::StreamNoUsage`, and the chunk-count fallback no longer exists.
+- `realizar::api::cuda_batch_scheduler::spawn_cuda_batch_scheduler` takes an
+  `Arc<InFlightCounter>`; the SSE builders take `prompt_tokens`;
+  `ChatCompletionChunk`/`ChatCompletionResponse` gain optional fields.
+- `scripts/perf000_serialization_probe.sh` (a probe its own contract said could
+  not measure) and `check_mutation_registry.sh` are deleted.
+
+
+## [0.64.0] - 2026-08-23
+
+The **fail-closed** release. v0.62.0 fixed gates that could not fail and v0.63.0
+added provenance; this one is about guards that reported success for a question
+they never asked.
+
+### Fixed — guards that could not fail
+
+- **The release cascade could publish a facade before its upstream.**
+  `facade_upstream_ready` read the requirement with a line-anchored regex and
+  returned READY for any manifest it could not parse. Cargo treats the inline and
+  multi-line dependency table as identical; the guard understood one. Because it
+  also (correctly) returns READY for the dependency-free signpost facade,
+  "no upstream by design" and "an upstream exists and I failed to parse it" took
+  the same silent path — there was no observable difference between the gate
+  working and being off. (#2628, #2629)
+- **A required check's verdict was decided by directory order.** (#2562)
+- **The meta-guard passed on a COMMENT, so the MSRV floor ran nowhere.** (#2551)
+- **Makefile recipes ran without pipefail**, so the release gate could not
+  fail. (#2550)
+- **coverage-nightly reported a BLANK percentage** whenever measurement failed,
+  which read as a pass. (#2538)
+- **The publish cascade could not SEE the three facades it must ship**, and a
+  dev-dep alias reinstated the publish cycle it had been added to remove.
+  (#2561, #2560, #2553)
+- **`apr qa --assert-tps` divided its threshold by ten, or discarded it** — the
+  release gate could not fail. (#2372)
+- **`deny.toml` was 7.2 KB of security policy that ran in no workflow**, and had
+  drifted until it failed on main. (#2523)
+- **FALSIFY-MONO-011 had never once scanned a crate.** (#2476)
+- **Every verdict `apr rosetta` printed was unfalsifiable** — compare-inference,
+  fingerprint and verify all exited 0 no matter what. (#2420)
+- **Three different contract counts in the README**, and the guard that watches
+  them ran nowhere. (#2485)
+- **`check_beats_gated` reported a FALSE 'UNGATED BEAT' at random.** (#2542)
+- **The README CLI-count guard did a 14-minute build, then failed printing
+  nothing.** (#2536)
+- The dogfood protocol was audited against itself across five batches — "nine
+  gates that could not fail, found in the tooling that judges us" — and the
+  0.63.0 crates.io dogfood produced a 190-finding defect ledger, each finding
+  mapped to its issue. (#2449, #2451, #2453, #2457, #2458, #2409)
+
+### Fixed — tools that answered confidently about work they had not done
+
+- **`apr inspect` certified a 1 KiB fragment of a 991 MB model as `valid: true`.**
+  (#2564)
+- **`apr validate` exited 0 on a 95.5%-truncated `.apr`** — 13 of 17 APR
+  integrity checks were `Not implemented` stubs. The check exists and is correct
+  for GGUF; on APR it did not exist. (#2612)
+- **`apr tensors` reported a tensor table that does not fit the file**, and
+  **`apr tune` fabricated the parameter count from file size** — `file_bytes / 2`,
+  never opening the model. (#2569, #2570)
+- **Two MCP tools spawned a bare `apr`**, so the server reported results for code
+  it was not running. (#2563)
+- **MCP `apr.serve` reported a pid and URL for a child that died instantly** with
+  clap exit code 2. (#2606)
+- **`apr code` with no arguments** auto-discovered the largest local GGUF and
+  orphaned a detached server child. (#2607)
+- **Four routed HTTP endpoints were dead** on the third resident `.apr` backend
+  while `/health` reported `model_loaded: true`. (#2609)
+- **Three train-* binaries reported confident results without doing the work.**
+  (#2519)
+- **A tensor that could not be read was dropped, and the count only saw the
+  survivors.** (#2428)
+- **An unknown quantisation type was written to APR labelled F32.** (#2488)
+- **`apr explain` printed "File not found" on stdout and exited 0.** (#2368)
+- **MCP `apr.serve` never started a server and called it success.** (#2415)
+- **`apr rerank` aborted with a library panic on ordinary flag values**, and
+  **`apr data` crashed on `--ngram 0`** while reporting 49 duplicates as
+  zero. (#2414, #2423)
+- **`apr` 0.63.0 ran `apr` 0.60.0**: both subprocess backends resolved a bare
+  `apr` through `$PATH`. (#2424)
+
+### Fixed — the release gate itself
+
+The dogfood protocol that certifies this release was audited adversarially and
+returned 45 findings, 34 fixed here. The pattern is the one above, turned on
+the tooling: gates that reported success over a measurement they never made.
+
+- **A version already published on crates.io could pass `version-unpublished`
+  as "not yet published."** `printf | grep -q` under `pipefail`: with the
+  marker ahead of more than a pipe buffer of dry-run output, grep exits at the
+  first match, printf takes SIGPIPE, and the `if` reads 141. Demonstrated live
+  at 307 KB. The gate that exists to stop an immutable double-publish failed
+  open on exactly that question. (QUAL-009)
+- **The verifier pins were delivered to nobody.** They were shell-local and
+  resolved *after* the discovered gates had already run, so every gate ran
+  against a PATH-resolved binary while `pin_audit` certified consumption the
+  environment never carried. Pins are now exported, resolved first, verified by
+  behaviour (`--version`, not `-x` — which accepts a broken stub and even a
+  directory), and fail closed. (QUAL-014)
+- **A dead `gh api` call read as a clean security scan** — `2>/dev/null ||
+  true` made an empty result from a failed call indistinguishable from zero
+  alerts, on the second advisory source that exists because the first one
+  silently missed a CVE. The rule this encodes: a probe whose empty output
+  means PASS must FAIL on rc≠0. (QUAL-009)
+- **The contracts gate silently skipped for every workspace member**, looking
+  only at `./Makefile` while changelog and coverage had been fixed to search
+  upward; and `pv-contracts` validated only `contracts/*.yaml`, leaving 549 of
+  1791 contracts in subdirectories unchecked. (QUAL-009)
+- **A crashed `--help` cascaded into a vacuous pass**: a binary that could not
+  answer `--help` read as "advertises no subcommands", and the transport gate
+  then certified the absence of undeclared transports over that empty parse.
+  (QUAL-009)
+- **A receipt now exists only if it is complete** — absolute path, commit SHA
+  stamped in, written as `.partial` and atomically renamed, so a crashed run
+  leaves *no* receipt rather than a previous verdict readable as current.
+  (QUAL-013)
+- **One parser for the gate declaration.** The runner and its guard each had
+  their own reader of `[package.metadata.dogfood]`; the guard's was strictly
+  narrower, so a gate the release *executed* could never be scanned for
+  unpinned verifiers. (QUAL-015)
+
+Regex-based shell scanning is retired as a strategy after 16 wrong verdicts in
+one programme (#2653): four remaining tokeniser gaps ship as an executable
+known-gap corpus that reds if a gap widens *or* is silently closed.
+
+### Fixed — user-visible correctness
+
+- **SSE streaming deleted every space and newline** — responses arrived as
+  `Thequickbrownfox`. (#2367)
+- **Ollama clients silently dropped every `apr` response**: `created_at` was a
+  bare epoch instead of RFC 3339. (#2371)
+- **Six native routes were dead** on every `apr serve run model.gguf`, and one
+  request could kill the server; three more Ollama routes were mounted and
+  advertised to nobody. (#2429, #2475)
+- **A GGUF without a context-length key refused every prompt.** (#2479)
+- **A complete MoE model was rejected as truncated/corrupt.** (#2541)
+- **`--offline` downloaded anyway** on pull, chat and showcase. (#2416)
+- `apr lint --json` handed consumers a Rust `Debug` string where they asked for
+  a field. (#2454)
+- Two book chapter examples had trained to NaN, on main, for three months; three
+  further examples had rotted, one since a module was deleted under it. (#2459,
+  #2480)
+
+### Fixed — publishing
+
+- **A bare `tests/` exclude is not root-anchored** — it dropped 443 files from
+  the published `aprender-serve`; separately, 5.4 MB of build scratch was
+  shipping to crates.io, unseen by the guard meant to stop it. (#2365, #2487)
+- **`apr-cli` could not be published at all**: it depended on a `publish = false`
+  crate. (#2540)
+- **An unused dependency was breaking docs.rs for every downstream crate.**
+  (#2468)
+- **`make publish` could destroy `.cargo/config.toml`** with no recoverable
+  backup. (#2637)
+
+### Fixed — pv / provable-contracts hardening
+
+- **`pv validate` accepted `intake_status: banana`, `demand_score: 99999` and an
+  invented `competitor`** with 0 errors and exit 0 — serde dropped the fields, so
+  no validator could check what it never parsed. An invented enum value now fails
+  to PARSE, not merely lint. (#2555)
+- **`pv --version` could not tell you WHICH pv you have** — four things claim the
+  name. (#2559)
+- **`contracts-pv` had 76 features at 0% coverage** — not because nobody wrote
+  tests, but because CI ran none of pv's. (#2589)
+- **The release receipt was citing pv 0.49.0** while the in-tree crate was
+  0.63.0 — and the two disagree on the gate that decides the release. (#2552)
+
+### Fixed — security
+
+- **`thrift 0.17.0` (CVE-2026-43868)** removed by moving arrow/parquet 57 → 59
+  across eight crates. `cargo deny` was GREEN on the vulnerable tree: RustSec
+  carries no thrift advisory, so the gap is exactly *GHSA minus RustSec*. A new
+  `check_no_ghsa_banned_crates.sh` closes it. (#2531)
+
+### Fixed — infrastructure
+
+- **The disk guard's idle test sat one directory ABOVE the thing being written.**
+  (#2565)
+- **The #2607 stdin test asserted about the fd 0 it inherited**, so it passed
+  under nextest (which supplies `/dev/null`) and failed under plain `cargo test`
+  — blocking every coverage measurement while the required check stayed
+  green. (#2632)
+- **`falsification_spec_v10`: 140 gates named in no workflow**, 38 failing.
+  (#2522)
+- **Crypto surface** (keygen/encrypt/decrypt/sign) gained its first real
+  coverage; the homebrew XOR fallback is replaced by ChaCha20-Poly1305 and now
+  fails closed rather than silently downgrading. (#2590)
+- **Three wall-clock assertions made the required `workspace-test` check
+  non-deterministic**, and a 100 ns comparison in a required check blocked every
+  open PR. (#2425, #2490)
+- **`workspace-test` used a different sccache cap and evicted the shared
+  cache.** (#2545)
+- **Two lib tests asserted nothing and took 19 minutes.** (#2533)
+- **The monorepo pulled its own siblings from crates.io**, and the gate that
+  should have caught it could not fail; a member could not compile and nine
+  manifests no cargo command could load. (#2471, #2472)
+- A mock binary raced its own spawn (ETXTBSY), in two copies. (#2469)
+- CLAUDE.md gained a **Verification Discipline** section enumerating the ways
+  the 0.63.0 sweep fooled itself. (#2363)
+
+### Changed
+
+- `apr serve run --backend` validates its argument against one shared
+  declaration, rather than three hand-copied parsers of which the third had
+  dropped the validator. (#2583)
+
+
 ## [0.63.0] - 2026-08-01
 
 The **provenance** release. v0.62.0 fixed gates that could not fail; this one
@@ -752,9 +1240,9 @@ proof-obligation + a RED-on-bug / GREEN-on-fix falsifier + a `pv`-validated cont
 - **Blackwell CUDA-graph replay fixed + re-enabled** (PMAT-886a) — the default sm_121 Q4K GEMV variant
   was not recorded into the manual graph, so graph replay dropped ~6 GEMVs/layer → stale buffers →
   garbage (cosine 0.53). Now recorded; parity 0.53→0.9934 (== eager, token-for-token), graph decode
-  re-defaulted ON for Blackwell, **+16% decode** (96→112 tok/s).
+  re-defaulted ON for Blackwell, decode improved on that PR's recorded receipt.
 - **Blackwell decode throughput-floor guard** (PMAT-885) — a stale-binary / F2-false-fallback that
-  silently drops the GPU path to ~10 tok/s CPU is now a falsifiable invariant (≥100 tok/s on GB10).
+  silently drops the GPU path to the CPU rate is now a falsifiable invariant (the GB10 floor lives in the test).
 
 ### Infrastructure
 
@@ -1516,7 +2004,7 @@ This release completes SHIP-TWO-001 MODEL-1: every acceptance criterion (SHIP-00
 | SHIP-004 | GGUF exports + loads in llama.cpp | §72 |
 | SHIP-005 | HumanEval pass@1 = 86.59% on gx10 164-run | §71 |
 | SHIP-006 | `apr qa` 12-gate aggregate PASS | §61.8 |
-| **SHIP-007** | **PARITY-GATE PASS + 124.6 tok/s @ 128-tok decode** | **§75** |
+| **SHIP-007** | **PARITY-GATE PASS + 128-tok decode receipt** | **§75** |
 | SHIP-008 | Chat template render | §61 |
 | SHIP-009 | License + provenance in `model.apr` metadata | §72 |
 | SHIP-010 | Published HF URL + sha256 match | §72 |
@@ -1531,7 +2019,7 @@ Fix: rewrite inner loop to iterate K within row `block_id` (row_base = a_ptr + b
 
 Empirical discharge on canonical 7B teacher, lambda-vector RTX 4090:
 - PARITY-GATE PASS (no error from `forward_gpu_resident`)
-- `apr bench` 5-iter 128-tok decode = **124.6 tok/s** (4.15× over AC-SHIP1-007 30 tok/s floor)
+- `apr bench` 5-iter 128-tok decode cleared the AC-SHIP1-007 floor (numbers in that PR's receipt)
 - Default path (CUDA graphed), no `SKIP_PARITY_GATE`, no `APR_SKIP_FP8_WARMUP`
 
 #### SHIP-005 — HumanEval harness RC3 fix (PR #1635, §70/§71)
@@ -1730,8 +2218,8 @@ This release closes a record contract algorithm-binding sweep — **150+ provabl
 ### Changed
 - **`scripts/ship-two-001/ex-06-pull-and-rerun.sh` harness v2** — relaxed AC-EX-006 verification to match spec §12.3 literal ("emits syntactically valid Python"). Prior harness required `def fib` to appear in the completion, which is stricter than the spec; Instruct models greedy-decoding a raw prompt don't reliably autocomplete (teacher's 84.76% HumanEval works via the eval harness's instruction wrapper, not raw completion). v2 finds the longest leading-line prefix that `ast.parse`s and requires ≥ 1 non-trivial statement (regression-checked against garbage/empty/comment-only inputs). Pre-upload local dry-run PASSES.
 - **GH-478: per-layer dequant for native Q4/Q8 tensors** — `apr run` on native-quantized .apr files now dequantizes layer-at-a-time instead of up-front, reducing peak memory on large models. (#750)
-- **Decode hot-path hygiene (HP-001 / HP-002 / HP-003)** — removed per-token `/tmp` writes, realizar#198 diagnostic eprintlns, and PMAT-450 prefix-cache eprintlns from the GPU decode path. 1.5B Q4_K_M: **184 → 382 tok/s (2.07×)**. Short-prompt 32-tok bench: 442.8 → 479.9 tok/s.
-- **F-FLASH-DECODE-REGRESSION-001: auto-disable split-K for small models** — FlashDecoding was hurting 1.5B decode throughput; gated by model size. 383 → 412 tok/s median.
+- **Decode hot-path hygiene (HP-001 / HP-002 / HP-003)** — removed per-token `/tmp` writes, realizar#198 diagnostic eprintlns, and PMAT-450 prefix-cache eprintlns from the GPU decode path. 1.5B Q4_K_M decode throughput improved (numbers in that PR's receipt).
+- **F-FLASH-DECODE-REGRESSION-001: auto-disable split-K for small models** — FlashDecoding was hurting 1.5B decode throughput; gated by model size. median decode improved (numbers in that PR's receipt).
 - **F-ATTN-MULTIWARP-WARPS-001: tuned `num_warps_per_head`** — 4 warps/head is optimal for small-model decode (2-warp −1.3%, 1-warp −7%).
 - **F-PROFILE-010: separate graphed throughput from ungraphed per-op hotspots** — `apr profile` output now labels methodology; launch-overhead metric normalized per-token.
 - **GH-378: Priority-queue BPE merge algorithm** — Replaced O(n^2) greedy-rescan with priority-queue (BinaryHeap) + doubly-linked symbol list. 2.06x encode speedup (145us -> 70us on Qwen3 151K vocab). Beats HuggingFace tokenizers v0.22 reference (104us). Zero allocation in merge loop. All 117 BPE tests pass.

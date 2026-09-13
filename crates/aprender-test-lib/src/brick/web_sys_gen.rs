@@ -261,7 +261,12 @@ impl FetchClient {
 
     /// Fetch bytes from a URL (native fallback - returns error)
     #[cfg(not(target_arch = "wasm32"))]
-    #[allow(clippy::unused_async)] // Must be async for API compatibility with WASM target
+    // Same reason as the `unused_async` allow that has been here since this
+    // fallback was written: the wasm32 sibling of this method IS async, and the
+    // two must have the same signature. clippy::unused_async_trait_impl is new
+    // in 1.98 and fires here despite `FetchClient` being an inherent impl, not
+    // a trait impl.
+    #[allow(unknown_lints, clippy::unused_async, clippy::unused_async_trait_impl)] // Must be async for API compatibility with WASM target
     pub async fn fetch_bytes(&self, _url: &str) -> Result<Vec<u8>, WebSysError> {
         Err(WebSysError::NotInBrowser)
     }

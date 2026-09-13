@@ -158,6 +158,12 @@ pub mod regularization;
 /// 100-point model quality scoring system (spec §7)
 pub mod scoring;
 pub mod serialization;
+/// SetFit / all-MiniLM-L6-v2 conformance boundary (ENC-01, ENC-02).
+///
+/// Gated on `setfit`, the only feature that pulls in the `tokenizers`
+/// dependency (D-06: a build without it has no `tokenizers` node).
+#[cfg(feature = "setfit")]
+pub mod setfit;
 /// GPU Inference Showcase with PMAT verification (PAR-040)
 ///
 /// Benchmark harness for Qwen2.5-Coder showcase demonstrating >2x performance:

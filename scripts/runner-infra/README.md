@@ -33,7 +33,42 @@ Each runner's `.env` must point to the pre-job hook:
 ACTIONS_RUNNER_HOOK_JOB_STARTED=/usr/local/bin/runner-pre-job.sh
 ```
 
-(Already wired on intel's 16 clean-room runners as of 2026-04-22.)
+**This is no longer true, and has not been since GH-202 (2026-08-16.)** MEASURED
+on mac-server, 2026-08-22:
+
+```
+$ grep -rhs ACTIONS_RUNNER_HOOK_JOB_STARTED /etc/systemd/system/actions.runner.*.service.d/*.conf | sort | uniq -c
+     17 Environment="ACTIONS_RUNNER_HOOK_JOB_STARTED=/home/noah/data/actions-runner/pre-job.sh"
+$ ls -la /usr/local/bin/runner-pre-job.sh
+-rwxr-xr-x 1 root root 2879 Aug 18 17:18 /usr/local/bin/runner-pre-job.sh     # orphaned
+```
+
+All 17 runners invoke `/home/noah/data/actions-runner/pre-job.sh` — a different
+script, owned by paiml/infra, which calls `ci-reaper.sh` and never mentions
+`runner-disk-guard.sh`. So `runner-pre-job.sh` here, and with it the
+`--pre-job` mode of `runner-disk-guard.sh`, is DEAD on the fleet; the installed
+copy at `/usr/local/bin/runner-pre-job.sh` is a shadowed artifact that nothing
+executes. Only the `--nightly` timer path of `runner-disk-guard.sh` actually
+runs. Editing the `--pre-job` path and expecting a fleet effect will do nothing
+— check `type -aP` / the unit drop-ins first.
+
+## Case table
+
+```bash
+bash scripts/runner-infra/runner-disk-guard.sh --self-test   # 7 rows, rc=0
+```
+
+Seven rows over a throwaway tree, covering both directions of the only judgement
+this guard makes: which directories it refuses to touch. R3 and R6 are the ones
+that matter — a live build under a parent whose mtime froze hours ago, in both
+the `<PR>/run-<ID>` and the merge-queue `gh-readonly-queue/…/run-<ID>` shapes.
+They are RED against the pre-2026-08-22 selection, which tested the mtime of the
+depth-1 directory rather than of anything actually being written. R1, R5 and R7
+fail if a "fix" simply stops reclaiming, which would trade a deleted build for a
+full disk.
+
+NOT WIRED INTO CI. This is a host script, deployed by hand (see Installation),
+so nothing re-runs the table on a change to it. Run it before you `scp`.
 
 ## Tuning
 
@@ -42,8 +77,9 @@ Environment variables honored by `runner-disk-guard.sh`:
 | Var | Default | Meaning |
 |---|---|---|
 | `HIGH_WATER_PCT` | 85 | Pre-job prune threshold |
-| `STALE_DAYS` | 7 | Nightly: mtime age cutoff for target/ |
+| `STALE_DAYS` | 7 | Nightly: age cutoff — no write ANYWHERE below the dir |
 | `RUNNERS_ROOT` | `/home/noah/data` | Parent of `actions-runner*` dirs |
+| `BIND_MOUNT_ROOTS` | `/mnt/nvme-raid0/targets/aprender-ci` | CI bind-mount target roots |
 
 ## Manual recovery
 

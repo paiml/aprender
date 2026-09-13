@@ -37,7 +37,7 @@ SHELL := /bin/bash
 # Multi-line recipes execute in same shell
 .ONESHELL:
 
-.PHONY: all build test test-smoke test-fast test-quick test-full test-heavy lint lint-current fmt clean doc book book-build book-serve book-test tier1 tier2 tier3 tier4 coverage coverage-fast profile hooks-install hooks-verify lint-scripts bashrs-score bashrs-lint-makefile chaos-test chaos-test-full chaos-test-lite fuzz bench dev pre-push ci check run-ci run-bench audit deps-validate deny pmat-score pmat-gates quality-report semantic-search examples mutants mutants-fast property-test install-alsa test-alsa test-audio-full contract-validate contract-test contract-audit contract-regen contract-check dev-setup check-siblings check-wasm32
+.PHONY: all build test test-smoke test-fast test-quick test-full test-heavy lint lint-current fmt clean doc book book-build book-serve book-test tier1 tier2 tier3 tier4 coverage coverage-fast profile hooks-install hooks-verify lint-scripts bashrs-score bashrs-lint-makefile chaos-test chaos-test-full chaos-test-lite fuzz bench dev pre-push ci gate check run-ci run-bench audit deps-validate deny pmat-score pmat-gates quality-report semantic-search examples mutants mutants-fast property-test install-alsa test-alsa test-audio-full contract-validate contract-test contract-audit contract-regen contract-check dev-setup check-siblings check-wasm32 contrastive-data-boundary contrastive-data-boundary-cases
 
 # Default target
 all: tier2
@@ -122,22 +122,38 @@ test-heavy: ## Heavy/slow tests (ignored tests)
 	@time PROPTEST_CASES=256 QUICKCHECK_TESTS=256 cargo test --workspace -- --ignored
 	@echo "✅ Heavy tests passed"
 
+# aprender#2522: both targets below piped cargo into `grep`, so make read
+# GREP's exit status and never cargo's. `test-spec` therefore printed
+# "✅ Spec tests complete" for months while the suite was 38-red — grep found
+# the "test result:" line, which is exactly what it does when tests FAIL. These
+# were the suite's only callers anywhere, so nothing could observe the failures.
+# CLAUDE.md "Verification Discipline" rule 1: never read `$?` through a pipe.
 test-model: ## Run model falsification tests ONE AT A TIME (requires models/, ollama, GPU)
 	@echo "🧪 Running model falsification tests (one at a time to avoid OOM)..."
-	@for test in f_ollama_001 f_ollama_002 f_ollama_003 f_ollama_004 f_ollama_005 \
+	@rc=0; for test in f_ollama_001 f_ollama_002 f_ollama_003 f_ollama_004 f_ollama_005 \
 	             f_perf_003 f_trueno_004 f_trueno_008 f_rosetta_002 f_qa_002; do \
 		echo "  ⏳ $$test"; \
 		PROPTEST_CASES=10 QUICKCHECK_TESTS=10 \
-		cargo test --features model-tests --test falsification_spec_v10_tests "$$test" 2>&1 \
-			| grep "test result:" || echo "  ❌ $$test FAILED"; \
-	done
+		cargo test --features model-tests --test falsification_spec_v10_tests "$$test" \
+			> /tmp/apr-test-model-$$test.log 2>&1 \
+			|| { rc=1; echo "  ❌ $$test FAILED"; }; \
+		grep "test result:" /tmp/apr-test-model-$$test.log || true; \
+	done; \
+	[ "$$rc" -eq 0 ] || { echo "❌ Model tests FAILED"; exit 1; }
 	@echo "✅ Model tests complete"
 
 test-spec: ## Run ALL spec falsification tests (structural only, no models)
 	@echo "🔬 Running spec structural tests..."
 	@PROPTEST_CASES=10 QUICKCHECK_TESTS=10 \
-		cargo test --features model-tests --test falsification_spec_v10_tests 2>&1 \
-		| grep "test result:"
+		cargo test --features model-tests \
+			--test falsification_spec_v10_tests \
+			--test falsification_stress_tests \
+			--test falsification_gpu_state_tests \
+		> /tmp/apr-test-spec.log 2>&1; \
+	rc=$$?; \
+	grep "test result:" /tmp/apr-test-spec.log || true; \
+	[ "$$rc" -eq 0 ] || { sed -n '/^failures:/,$$p' /tmp/apr-test-spec.log; \
+		echo "❌ Spec tests FAILED"; exit 1; }
 	@echo "✅ Spec tests complete"
 
 # Linting
@@ -248,6 +264,9 @@ tier3:
 	@echo "Checking no contract names an enforcement command that cannot run (aprender#2504)..."
 	@bash scripts/check_contract_enforcement.sh --self-test
 	@bash scripts/check_contract_enforcement.sh
+	@echo "Checking no test asserts about the fd 0 it inherited (aprender#2307)..."
+	@bash scripts/check_hermetic_stdin_tests.sh --self-test
+	@bash scripts/check_hermetic_stdin_tests.sh
 	@if [ -d tests/golden ]; then \
 		if . scripts/apr_bin.sh 2>/dev/null; then \
 			echo "Running probar golden regression with profiling... ($$APR)"; \
@@ -256,7 +275,173 @@ tier3:
 			echo "Skipping probar golden regression: no apr built from HEAD (scripts/apr_bin.sh)"; \
 		fi; \
 	fi
+# D-04, wired here because a target outside the tiers is a target that stops
+# being run. `make contrastive-data-boundary` was run STANDALONE first with its
+# status captured directly (`> /tmp/cdb.log 2>&1; rc=$$?`, never through a pipe):
+# rc=0 in 1 s wall. Its four failure modes were each induced, observed and
+# reverted rather than assumed — see the target's own comment block.
+	@$(MAKE) contrastive-data-boundary
 	@echo "Tier 3: PASSED"
+
+# D-04: the aprender-contrastive-data bytes boundary. Wired into tier3 above.
+#
+# BOTH HALVES ARE POSITIVE CHECKS, and that is the whole design. The first draft
+# of this gate was a dependency DENY-list plus a grep that skipped #[cfg(test)],
+# and both can report PASS while the property is false: a deny-list only ever
+# catches the hazards someone already enumerated, so the first dependency nobody
+# thought to name passes silently; and a cfg-blind grep cannot actually tell test
+# code from library code, so it either exempts too much or claims a precision it
+# does not have. Replaced by (a) a POSITIVE allowlist compared against the
+# resolved closure, so a new transitive dependency fails by DEFAULT, and (b) a
+# src/-wide symbol ban with NO cfg(test) exemption, which turns "the public API
+# contains no path types" into a mechanical consequence.
+#
+# EVERY FAILURE MODE WAS OBSERVED, not assumed (2026-08-08, each mutation applied,
+# run, and reverted):
+#   add `tempfile` to [dependencies] ........ FAIL, prints tempfile as an offender
+#   `use std::path::PathBuf;` in src/schema.rs FAIL, names schema.rs and the line
+#   the same line inside #[cfg(test)] mod tests FAIL (no exemption, by design)
+#   rename allowed-deps.txt away ............ FAIL with a missing-allowlist message,
+#                                             NOT a vacuous pass on an empty list
+# Standalone timing before wiring: 1 s wall, rc=0.
+contrastive-data-boundary: ## D-04: bytes boundary for aprender-contrastive-data (positive allowlist + src symbol ban)
+	@echo "Bytes boundary: aprender-contrastive-data (D-04)"
+	@mkdir -p target
+# (a) DEPENDENCY ALLOWLIST. cargo tree's OWN status is checked FIRST. Piping it
+# into the comparison would read the comparison's status (CLAUDE.md rule 1), and
+# a cargo tree that failed outright would feed an EMPTY closure into a subset
+# test — which passes vacuously and silently disarms the supply-chain half.
+# stderr goes to its OWN file, never into the one parsed as the closure. It used to be
+# `2>&1`, and cargo writes progress to stderr: `Blocking waiting for file lock on package
+# cache`, `Updating crates.io index`, `Downloading ...`. Each contributes a first field
+# that `awk` below turns into a phantom package name and `comm -23` reports as an
+# unlisted dependency. That fired twice unprompted during review (rc=2, offender
+# `Blocking`) on a tree that was clean seconds earlier -- so any concurrent cargo, a
+# rust-analyzer or a parallel CI job, reds this gate at random. The FAIL text says do not
+# widen the allowlist, which leaves a developer no lever except to add `Blocking` to
+# allowed-deps.txt permanently. A required gate that reds at random is worse than one
+# that never reds.
+	@cargo tree -p aprender-contrastive-data -e normal --prefix none --no-dedupe \
+		> target/contrastive-data-tree.txt 2> target/contrastive-data-tree.err || \
+		{ echo "FAIL: cargo tree failed; the D-04 dependency check would pass vacuously"; \
+		  cat target/contrastive-data-tree.txt target/contrastive-data-tree.err; exit 1; }
+	@if [ ! -s target/contrastive-data-tree.txt ]; then \
+		echo "FAIL: cargo tree produced no output; the D-04 dependency check would pass vacuously"; \
+		exit 1; \
+	fi
+	@awk 'NF { print $$1 }' target/contrastive-data-tree.txt | sort -u \
+		> target/contrastive-data-deps.txt
+	@if [ ! -f crates/aprender-contrastive-data/allowed-deps.txt ]; then \
+		echo "FAIL: crates/aprender-contrastive-data/allowed-deps.txt is MISSING."; \
+		echo "      Without it every dependency would be admitted and this gate would"; \
+		echo "      report PASS while checking nothing."; \
+		exit 1; \
+	fi
+	@grep -v '^[[:space:]]*#' crates/aprender-contrastive-data/allowed-deps.txt \
+		| grep -v '^[[:space:]]*$$' | sort -u > target/contrastive-data-allowed.txt
+	@if [ ! -s target/contrastive-data-allowed.txt ]; then \
+		echo "FAIL: allowed-deps.txt has no entries. An empty allowlist cannot admit even"; \
+		echo "      the crate itself, so this is a broken gate rather than a strict one."; \
+		exit 1; \
+	fi
+	@comm -23 target/contrastive-data-deps.txt target/contrastive-data-allowed.txt \
+		> target/contrastive-data-offenders.txt
+	@if [ -s target/contrastive-data-offenders.txt ]; then \
+		echo "FAIL: packages in the resolved normal-dependency closure but ABSENT from"; \
+		echo "      crates/aprender-contrastive-data/allowed-deps.txt (D-04):"; \
+		sed 's/^/        /' target/contrastive-data-offenders.txt; \
+		echo "      Do NOT widen the allowlist just to turn this green: the allowlist"; \
+		echo "      entry IS the review. Read what the package pulls in first."; \
+		exit 1; \
+	fi
+	@echo "  deps:   resolved closure is a subset of allowed-deps.txt"
+# (b) SOURCE SURFACE BAN. Matches are taken with true line numbers first, then
+# comment lines are dropped from the RESULTS, so a doc comment can neither trip
+# the gate nor satisfy it and the reported line number still points at the real
+# file. There is deliberately NO #[cfg(test)] exemption — tests that genuinely
+# need a filesystem belong in tests/ (outside the library boundary) or in apr-cli.
+	@find crates/aprender-contrastive-data/src -type f -name '*.rs' \
+		> target/contrastive-data-srcfiles.txt 2>&1 || \
+		{ echo "FAIL: could not enumerate src/; the D-04 source check would pass vacuously"; \
+		  exit 1; }
+	@if [ ! -s target/contrastive-data-srcfiles.txt ]; then \
+		echo "FAIL: no .rs files found under crates/aprender-contrastive-data/src;"; \
+		echo "      the D-04 source check would pass vacuously"; \
+		exit 1; \
+	fi
+	@: > target/contrastive-data-symbols.txt
+# The third detector is not decoration. The first two match five literal spellings, and
+# `use std::{fs, net::TcpStream};` contains NONE of them -- the text is `std::{fs` -- while
+# binding `fs` and `TcpStream` into scope identically. This is what rustfmt emits under
+# `imports_granularity = "Crate"`, which is exactly what rustfmt.toml asks for here, so it
+# is the DEFAULT spelling rather than an exotic one. Verified against a compiled mutation:
+# a module doing `fs::File::create(...).write_all(...)` and `TcpStream::connect(...)`
+# compiled with rc=0 AND passed the gate with rc=0 before this line existed.
+#
+# awk, not grep, because a grouped import spans lines: it accumulates a `use` statement
+# until the `;` and tests the whole statement. The pattern set is a case table, not a
+# guess -- 6 must-match and 6 must-not-match cases live in
+# tests/gate_cases/, and `make contrastive-data-boundary-cases` re-runs them. Re-run the
+# table rather than re-reading the pattern.
+	@while IFS= read -r srcfile; do \
+		{ grep -nE 'std::fs|std::net|std::path' "$$srcfile" || true; \
+		  grep -nwE 'Path|PathBuf' "$$srcfile" || true; \
+		  awk -f scripts/lib/d04_grouped_std_import.awk "$$srcfile" || true; } \
+		| grep -vE '^[0-9]+:[[:space:]]*//' \
+		| sed "s|^|$$srcfile:|" >> target/contrastive-data-symbols.txt || true; \
+	done < target/contrastive-data-srcfiles.txt
+	@if [ -s target/contrastive-data-symbols.txt ]; then \
+		echo "FAIL: forbidden filesystem/network/path symbols under src/ (D-04)."; \
+		echo "      The crate is bytes-in/bytes-out; apr-cli owns every fs adapter."; \
+		sort -u target/contrastive-data-symbols.txt | sed 's/^/        /'; \
+		exit 1; \
+	fi
+	@echo "  source: no fs/net/path symbols under src/ (no cfg(test) exemption)"
+	@$(MAKE) --no-print-directory contrastive-data-boundary-cases
+	@echo "contrastive-data-boundary: PASSED"
+
+# D-04 CASE TABLE. The source half is a set of text patterns, and the ONLY thing that ever
+# caught one of its misses was a case -- never a review. So the patterns carry a table and
+# the gate runs it on every invocation: a detector that has silently stopped matching
+# fails HERE, loudly, instead of passing a violation through in silence.
+#
+# The filename IS the expectation. must_match_* must be flagged, must_not_match_* must not.
+# Both directions matter: a pattern that flags everything is as broken as one that flags
+# nothing, and only the must_not_match half can tell them apart.
+contrastive-data-boundary-cases: ## D-04: prove the source detectors still match what they claim
+	@cases=crates/aprender-contrastive-data/tests/gate_cases; \
+	if [ ! -d "$$cases" ]; then \
+		echo "FAIL: $$cases is MISSING. Without it the detectors are unproven and this"; \
+		echo "      target would report PASS while checking nothing."; \
+		exit 1; \
+	fi; \
+	n=0; bad=0; \
+	for f in "$$cases"/must_*.rs; do \
+		[ -e "$$f" ] || continue; \
+		n=$$((n + 1)); \
+		hits=$$({ grep -nE 'std::fs|std::net|std::path' "$$f" || true; \
+		          grep -nwE 'Path|PathBuf' "$$f" || true; \
+		          awk -f scripts/lib/d04_grouped_std_import.awk "$$f" || true; } \
+		        | grep -vE '^[0-9]+:[[:space:]]*//' | wc -l); \
+		case "$$(basename "$$f")" in \
+		  must_match_*)     want=1 ;; \
+		  must_not_match_*) want=0 ;; \
+		  *) echo "FAIL: $$f is neither must_match_* nor must_not_match_*"; exit 1 ;; \
+		esac; \
+		if [ "$$want" = 1 ] && [ "$$hits" -eq 0 ]; then \
+			echo "FAIL: $$f MUST be flagged and was not -- a detector stopped matching"; \
+			bad=$$((bad + 1)); \
+		fi; \
+		if [ "$$want" = 0 ] && [ "$$hits" -ne 0 ]; then \
+			echo "FAIL: $$f MUST NOT be flagged and was -- a detector is over-broad"; \
+			bad=$$((bad + 1)); \
+		fi; \
+	done; \
+	if [ "$$n" -eq 0 ]; then \
+		echo "FAIL: no case files found; the case table would pass vacuously"; exit 1; \
+	fi; \
+	if [ "$$bad" -ne 0 ]; then echo "  $$bad of $$n case(s) WRONG"; exit 1; fi; \
+	echo "  cases:  $$n/$$n (6 must-match, 6 must-not-match)"
 
 # Tier 4: CI/CD (5-60 minutes, heavyweight)
 tier4: tier3
@@ -355,6 +540,32 @@ COV_CARGO_ENV := $(if $(COV_TARGET_DIR),CARGO_TARGET_DIR=$(COV_TARGET_DIR))
 # survive it (31 present afterwards), so coverage-html still has data to work from.
 .PHONY: coverage-check contracts
 
+# BSE-03 phase A (Pmat-Ticket: PMAT-1068). The README's contract count is
+# DERIVED: scripts/readme_sync.sh rewrites the text between the
+# <!-- CONTRACT_COUNT_START/END --> markers with `find contracts/ -name '*.yaml'`
+# and nothing else in the file. Idempotent — running it twice is byte-identical.
+#
+# Before this, three literals in three prose sites were maintained by hand and
+# `--regen` only PRINTED the numbers for a human to copy; they sat two behind
+# the filesystem (1812 vs 1814) and were GREEN, because the guard lets the
+# README lag. scripts/check_readme_claims.sh judges the generated block by
+# EQUALITY against the MERGE TREE, with origin/main as the comparand.
+.PHONY: readme-sync readme-sync-check
+readme-sync: ## Regenerate the README's derived contract count (BSE-03)
+	@bash scripts/readme_sync.sh --write
+
+readme-sync-check: ## Fail if README.md is not what the generator produces
+	@bash scripts/readme_sync.sh --check
+
+# The polarity table of the D2 normaliser, on a throwaway git repo (BSE-03
+# phase A). It carries its own registered mutation: a copy of the guard whose
+# merge-tree measurement READS A FILE ON DISK must turn the hand-edited rows
+# GREEN, which is what makes their RED load-bearing rather than incidental.
+# `--class complexity` and `--class satd` are stubs and exit 3, never 0.
+.PHONY: ratchet-semantics-test
+ratchet-semantics-test: ## BSE-03: D2 ratchet polarity rows (--class readme)
+	@bash scripts/tests/ratchet_semantics_test.sh --class readme
+
 # Alias the dogfood pre-release protocol looks for. It expects `coverage-check`;
 # without it the gate reports WARN ("verify >=95% manually"), i.e. a release gate
 # that asks a human to do the measurement is not a gate. `coverage` already
@@ -399,7 +610,7 @@ coverage: ## Coverage summary + threshold check (warm: ~3min)
 	if [ "$$LF" -gt 0 ]; then COV_PCT=$$((LH * 100 / LF)); else COV_PCT=0; fi; \
 	echo "TOTAL: $$LH/$$LF lines covered ($${COV_PCT}%)"; \
 	echo "TOTAL $$LH $$LF $${COV_PCT}%" > target/coverage/summary.txt; \
-	mkdir -p .pmat-metrics; \
+	mkdir -p .pmat-metrics || exit 1; \
 	printf '{"coverage_pct":%s}' "$$COV_PCT" > .pmat-metrics/coverage.result; \
 	echo "   wrote .pmat-metrics/coverage.result ($${COV_PCT}%) for pmat score"; \
 	test -f ~/.cargo/config.toml.bak && mv ~/.cargo/config.toml.bak ~/.cargo/config.toml || true; \
@@ -508,6 +719,44 @@ pre-push: tier3
 # CI/CD checks
 ci: tier4
 
+# Fail-closed, comparand-pinned composite gate (BSE-16, docs/specifications/
+# build-system-enhancement.md, infra repo). Replaces both a bare `pmat verify`
+# (RED on pre-existing SATD, verify.rs:460,493) and `cargo test --workspace`
+# (42-94min measured, docs/reports/work-history-delay-optimization-report.md)
+# with: skip the SATD/tests stages pmat can't pass or can't scope correctly,
+# run the tree-property guard, then test only the touched crates and their
+# direct reverse dependents (scripts/gate_touched_crates.sh), falling back to
+# `cargo check --workspace --tests` when that selection can't be trusted.
+# `@set -e` is REQUIRED as the first recipe line: under .ONESHELL (see top of
+# this file) a failing line does NOT abort a multi-line recipe on its own —
+# only the shell's own exit status does, and without `set -e` that is just the
+# LAST command's exit code (measured: a `false` mid-recipe is otherwise silently
+# swallowed). This local `set -e` is scoped to this recipe's own shell
+# invocation only, not the file-wide .SHELLFLAGS (see that comment for why -e
+# is not applied globally).
+gate: ## Fail-closed, comparand-pinned composite gate (BSE-16)
+	@set -e
+	@echo "==> gate comparand: origin/main@$$(git rev-parse origin/main)"
+	pmat verify --format json --skip satd --skip tests
+	scripts/guard_tree.sh --no-cargo
+	scripts/gate_touched_crates.sh
+
+# Predict whether merge(origin/main, HEAD) will pass the tree-property
+# guards, BEFORE pushing (BSE-14, docs/specifications/build-system-
+# enhancement.md §4 wave 3, infra repo). `predict` builds the merge in a
+# throwaway `git worktree` (never touches this branch's own working tree),
+# runs guard_tree.sh --no-cargo and gate_touched_crates.sh --dry-run against
+# it, and records the verdict in .predict/last-<branch>.json. `predict-check`
+# is the cheap replay for a pre-push hook: it refuses (exit 3) rather than
+# reuse a verdict made stale by origin/main moving, HEAD moving, or the
+# working tree going dirty, and exits 4 (distinct) on a fetch/network
+# failure.
+predict: ## Predict merge(origin/main, HEAD) against the tree-property guards (BSE-14)
+	scripts/predict_merge.sh
+
+predict-check: ## Refuse a stale prediction; exit 0 only if still fresh (BSE-14)
+	scripts/predict_merge.sh --check
+
 # Quick check (compile only)
 check:
 	cargo check --all
@@ -539,6 +788,8 @@ deps-validate:
 deny:
 	@echo "🔒 Running cargo-deny checks..."
 	@bash scripts/check_deny_exemptions_live.sh
+	@bash scripts/check_no_ghsa_banned_crates.sh --self-test
+	@bash scripts/check_no_ghsa_banned_crates.sh
 	@if command -v cargo-deny >/dev/null 2>&1; then \
 		cargo deny check; \
 	else \
@@ -597,7 +848,7 @@ run-bench: ## Run benchmark suite
 
 pmat-score: ## Calculate Rust project quality score
 	@echo "📊 Calculating Rust project quality score..."
-	@pmat rust-project-score || echo "⚠️  pmat not found. Install with: cargo install pmat"
+	@pmat rust-project-score || echo "⚠️  pmat not found — run: cargo install pmat"
 	@echo ""
 
 pmat-gates: ## Run pmat quality gates
@@ -804,13 +1055,13 @@ install-alsa: ## Install ALSA development libraries (Linux only)
 			sudo apt-get update && sudo apt-get install -y libasound2-dev; \
 		elif command -v dnf >/dev/null 2>&1; then \
 			echo "  Detected: Fedora/RHEL"; \
-			sudo dnf install -y alsa-lib-devel; \
+			sudo dnf install -y alsa-lib-devel || exit 1; \
 		elif command -v pacman >/dev/null 2>&1; then \
 			echo "  Detected: Arch Linux"; \
 			sudo pacman -S --noconfirm alsa-lib; \
 		elif command -v zypper >/dev/null 2>&1; then \
 			echo "  Detected: openSUSE"; \
-			sudo zypper install -y alsa-devel; \
+			sudo zypper install -y alsa-devel || exit 1; \
 		else \
 			echo "❌ Unknown package manager. Please install ALSA dev libraries manually:"; \
 			echo "   - Debian/Ubuntu: sudo apt-get install libasound2-dev"; \
@@ -943,10 +1194,10 @@ contract-check: contract-validate contract-test contract-audit ## Full contract 
 # Sibling repos required for full-stack development
 SIBLINGS := ../realizar ../entrenar ../trueno ../renacer ../provable-contracts ../pacha
 
-dev-setup: ## Set up local dev environment with sibling repo overrides
+dev-setup: ## Set up the dev environment with sibling repo overrides
 	@echo "Setting up full-stack development environment..."
 	@if [ ! -f .cargo/config.toml ]; then \
-		cp .cargo/config.toml.dev-overrides .cargo/config.toml; \
+		cp .cargo/config.toml.dev-overrides .cargo/config.toml || exit 1; \
 		echo "Created .cargo/config.toml with sibling overrides"; \
 	elif ! grep -q '\[patch.crates-io\]' .cargo/config.toml; then \
 		echo "" >> .cargo/config.toml; \
@@ -961,7 +1212,7 @@ dev-setup: ## Set up local dev environment with sibling repo overrides
 publish: ## Publish crate(s) to crates.io — strips [patch], publishes, then verifies cargo install
 	@echo "Publishing to crates.io (removing [patch.crates-io] temporarily)..."
 	@if [ -f .cargo/config.toml ]; then \
-		cp .cargo/config.toml .cargo/config.toml.publish-backup; \
+		cp .cargo/config.toml .cargo/config.toml.publish-backup || exit 1; \
 		echo "# Clean config for publishing" > .cargo/config.toml; \
 	fi
 	@CRATE=$(CRATE); \
@@ -973,7 +1224,7 @@ publish: ## Publish crate(s) to crates.io — strips [patch], publishes, then ve
 		echo "          before aprender#2559."; \
 		echo "Restoring config..."; \
 		if [ -f .cargo/config.toml.publish-backup ]; then \
-			cp .cargo/config.toml.publish-backup .cargo/config.toml; \
+			cp .cargo/config.toml.publish-backup .cargo/config.toml && \
 			rm -f .cargo/config.toml.publish-backup; \
 		fi; \
 		exit 1; \
@@ -986,7 +1237,7 @@ publish: ## Publish crate(s) to crates.io — strips [patch], publishes, then ve
 		echo "FAIL: $$CRATE is not a publishable crate in ANY workspace here."; \
 		echo "      (scripts/lib/cascade_universe.py enumerates all of them)"; \
 		if [ -f .cargo/config.toml.publish-backup ]; then \
-			cp .cargo/config.toml.publish-backup .cargo/config.toml; \
+			cp .cargo/config.toml.publish-backup .cargo/config.toml && \
 			rm -f .cargo/config.toml.publish-backup; \
 		fi; \
 		exit 1; \
@@ -1005,7 +1256,7 @@ publish: ## Publish crate(s) to crates.io — strips [patch], publishes, then ve
 	STATUS=$$?; \
 	echo "Restoring .cargo/config.toml..."; \
 	if [ -f .cargo/config.toml.publish-backup ]; then \
-		cp .cargo/config.toml.publish-backup .cargo/config.toml; \
+		cp .cargo/config.toml.publish-backup .cargo/config.toml && \
 		rm -f .cargo/config.toml.publish-backup; \
 	fi; \
 	if [ $$STATUS -ne 0 ]; then \

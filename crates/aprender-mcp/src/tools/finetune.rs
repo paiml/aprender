@@ -95,7 +95,13 @@ pub fn call_with_sink(
     let argv: Vec<&str> = owned.iter().map(String::as_str).collect();
 
     match (sink, progress_token) {
-        (Some(sink), Some(token)) => stream_with_sink("apr", &argv, sink, &token),
+        // aprender#2563: same bare-"apr" PATH resolution as serve.rs had.
+        (Some(sink), Some(token)) => stream_with_sink(
+            &crate::apr_bin::apr_binary().to_string_lossy(),
+            &argv,
+            sink,
+            &token,
+        ),
         _ => run_apr(&argv),
     }
 }

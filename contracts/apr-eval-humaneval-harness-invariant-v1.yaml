@@ -251,8 +251,8 @@ ship_impact:
 validation_result_v1_1:
   date: 2026-05-12
   host: gx10-a5b5 (Blackwell GB10, aarch64)
-  binary: /home/noah/src/aprender/target/release/apr (commit 3b59b434a)
-  artifact: /home/noah/src/apr-leaderboard/checkpoints/qwen2.5-coder-7b-instruct-q4k.apr
+  binary: target/release/apr (commit 3b59b434a)
+  artifact: ${APR_LEADERBOARD_ROOT}/checkpoints/qwen2.5-coder-7b-instruct-q4k.apr
   problem: HumanEval/1 (separate_paren_groups)
   apr_eval_verdict: FAIL (pass_at_1 = 0.0)
   diagnostic_dump:

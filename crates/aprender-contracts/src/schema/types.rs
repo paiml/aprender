@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 pub use super::composition::{ShapeContract, ShapeExpr};
+pub use super::kaizen::{KaizenRecord, KAIZEN_STATUSES};
 pub use super::kind::ContractKind;
 
 /// A complete YAML kernel contract.
@@ -49,7 +50,137 @@ pub struct Contract {
     /// CI fails when aprender regresses below it on the incumbent's canonical task.
     #[serde(default)]
     pub beat: Option<Beat>,
+    /// CRUX master-registry story rows (`contracts/crux-competitive-research-ux-v1.yaml`).
+    ///
+    /// THIS is the list the competitive-research programme actually sorts by.
+    /// aprender#2555 originally range-checked only `metadata.demand_score` and
+    /// justified it as "the ranking signal the whole programme sorts by" — but
+    /// MEASURED, nothing in the repo reads `metadata.demand_score`; the 250
+    /// rows below are what §12.1 of
+    /// `docs/specifications/crux-competitive-research-ux-workflows.md` maps to
+    /// `pmat work` priority. They were entirely ungated. Validating them is
+    /// what makes that justification true.
+    #[serde(default)]
+    pub stories: Vec<CruxStory>,
+    /// Legacy free-form top-level `falsification:` block.
+    ///
+    /// 400 contracts in `contracts/` carry this key, every one of them holding
+    /// a structured list (shapes seen in the wild: `{condition, action,
+    /// severity}`, `{name, description, check}`, `{id, assertion,
+    /// test_harness}`). `Contract` is not `deny_unknown_fields`, so before this
+    /// field existed serde dropped all of it silently — the same mechanism as
+    /// #2465 (`test_harness`) and #2504. `contracts/publish-workspace-v1.yaml`
+    /// is the canonical victim: four FALSIFY-PUB-* entries live here and `pv
+    /// status` reported "Falsification tests: 0" while the file read as
+    /// governance.
+    ///
+    /// It is deliberately `serde_yaml::Value`: the block is NOT
+    /// `falsification_tests` and must never be counted as one — it is captured
+    /// so that tooling can SEE it and report the contract as inert. Migrating
+    /// these entries into real `falsification_tests` is contract-by-contract
+    /// work, not a schema change.
+    #[serde(default)]
+    pub falsification: Option<serde_yaml::Value>,
+    /// Legacy free-form top-level `falsification_conditions:` block — the same
+    /// silent-drop class as [`Contract::falsification`], used by 12 contracts.
+    /// Kept as a distinct field (not a serde `alias`) so a contract carrying
+    /// both keys still parses instead of failing on a duplicate field.
+    #[serde(default)]
+    pub falsification_conditions: Option<serde_yaml::Value>,
+    /// Top-level YAML keys that are not fields of `Contract`, captured verbatim
+    /// by [`crate::schema::parse_contract_str`].
+    ///
+    /// The schema deliberately tolerates unknown top-level keys — model-family,
+    /// spec and registry YAMLs carry downstream-owned blocks (see
+    /// `parse_contract_with_kind_model_family`), and 1224 of the 1726 contracts
+    /// `pv lint` walks have at least one. `deny_unknown_fields` is therefore not
+    /// an option. Instead the validator uses this list to reject the two shapes
+    /// that are never legitimate: a top-level `kind:` (SCHEMA-018) and a
+    /// near-miss misspelling of a real block name (SCHEMA-019).
+    ///
+    /// Not serialized: it is a parse artifact, not contract content.
+    #[serde(skip)]
+    pub unknown_top_level_keys: Vec<String>,
+    /// The kaizen-record blocks (`contract:`, `kaizen:`, `baseline:`,
+    /// `target:`, …) captured by a second parse pass when — and only when —
+    /// `metadata.kind` is `kaizen`.
+    ///
+    /// Kept OUT of the serde surface of `Contract` on purpose. The corpus
+    /// carries `status:`, `version:`, `invariants:` and `files:` at top level
+    /// on documents of several kinds with incompatible shapes, so promoting
+    /// them to real `Contract` fields would change how all 1726 contracts
+    /// parse in order to validate 46 kaizen records. Scoping the second pass
+    /// to `kind: kaizen` means a type mismatch in some unrelated contract's
+    /// `status:` can never reach this struct.
+    ///
+    /// Not serialized: it is a parse artifact, not contract content.
+    #[serde(skip)]
+    pub kaizen_record: Option<KaizenRecord>,
+    /// The error a strict YAML reader produced on a document this schema
+    /// nonetheless accepted, captured by
+    /// [`crate::schema::parse_contract_str`]. `None` is the healthy case.
+    ///
+    /// The derived deserializer skips unknown subtrees without reading them, so
+    /// a contract can parse cleanly here and be rejected by `yq`, PyYAML, or a
+    /// `serde_yaml::Value` round-trip. SCHEMA-020 turns that divergence into an
+    /// error instead of leaving it to be discovered downstream.
+    ///
+    /// Not serialized: it is a parse artifact, not contract content.
+    #[serde(skip)]
+    pub strict_yaml_error: Option<String>,
 }
+
+/// One row of the CRUX master registry's `stories:` list.
+///
+/// Fields beyond the three domain-checked ones are accepted and ignored — the
+/// registry carries `title`/`contract`/`category` that no rule constrains.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct CruxStory {
+    /// Story id, e.g. `CRUX-A-01`. Used only to locate a violation.
+    #[serde(default)]
+    pub id: String,
+    /// Which competitor's UX the story was extracted from. Membership-checked
+    /// against `CRUX_COMPETITORS` (rule CRUX-002), the same registry that
+    /// governs `metadata.competitor`, and trimmed on parse for the same reason.
+    #[serde(default, deserialize_with = "deserialize_trimmed_opt_string")]
+    pub competitor: Option<String>,
+    /// Demand, documented `1..=5`. Range-checked by rule CRUX-001 — the same
+    /// `DEMAND_SCORE_RANGE` that governs `metadata.demand_score`.
+    ///
+    /// `i64` for the same reason as [`Metadata::demand_score`]: an out-of-range
+    /// value must REACH the validator and be named, not die in serde.
+    #[serde(default)]
+    pub demand_score: Option<i64>,
+    /// Story status. A closed enum, so an invented value FAILS TO PARSE — the
+    /// registry is held to exactly the vocabulary `IntakeStatus` defines.
+    #[serde(default)]
+    pub status: Option<IntakeStatus>,
+}
+
+/// Every top-level key `Contract` deserializes, in declaration order.
+///
+/// This list is the allow-list SCHEMA-019 checks near-misses against, and it is
+/// pinned to the struct by `contract_fields_match_struct` in `types_tests.rs`:
+/// adding a field to `Contract` without adding it here turns the new block into
+/// a "near-miss of itself" and fails that test.
+pub const CONTRACT_TOP_LEVEL_FIELDS: [&str; 16] = [
+    "metadata",
+    "equations",
+    "proof_obligations",
+    "kernel_structure",
+    "simd_dispatch",
+    "enforcement",
+    "falsification_tests",
+    "kani_harnesses",
+    "qa_gate",
+    "verification_summary",
+    "type_invariants",
+    "coq_spec",
+    "beat",
+    "stories",
+    "falsification",
+    "falsification_conditions",
+];
 
 /// Parameters of a head-to-head BEAT benchmark (`metadata.kind: beat-benchmark`,
 /// PMAT-741): a falsifiable, CI-wired claim that aprender meets-or-beats an
@@ -169,6 +300,27 @@ impl Contract {
         self.kind() == ContractKind::Kernel
     }
 
+    /// How many entries sit in the legacy top-level `falsification:` /
+    /// `falsification_conditions:` blocks — content the schema captures but
+    /// does NOT count as `falsification_tests`.
+    ///
+    /// A non-zero result together with an empty `falsification_tests` is the
+    /// inert-contract signature (#2504): the file reads as enforced and
+    /// enforces nothing. `pv status` reports it so the reader is never told
+    /// "Falsification tests: 0" without being told where the entries went.
+    #[must_use]
+    pub fn legacy_falsification_entries(&self) -> usize {
+        fn count(v: Option<&serde_yaml::Value>) -> usize {
+            match v {
+                Some(serde_yaml::Value::Sequence(s)) => s.len(),
+                Some(serde_yaml::Value::Mapping(m)) => m.len(),
+                Some(serde_yaml::Value::Null) | None => 0,
+                Some(_) => 1,
+            }
+        }
+        count(self.falsification.as_ref()) + count(self.falsification_conditions.as_ref())
+    }
+
     /// Enforce the provability invariant: kernel contracts MUST have
     /// `proof_obligations`, `falsification_tests`, and `kani_harnesses`.
     /// Returns a list of violations. Empty list = contract is valid.
@@ -227,6 +379,88 @@ pub struct Metadata {
     /// without an explicit `pv unlock` (Section 17, Gap 5).
     #[serde(default)]
     pub locked_level: Option<String>,
+    /// CRUX competitive-research story: which competitor's UX the story was
+    /// extracted from. Membership-checked against the `CRUX_COMPETITORS`
+    /// registry in `schema/validator.rs` (rule CRUX-002).
+    ///
+    /// NORMALISED ON PARSE (trimmed). The validator used to `.trim()` before
+    /// comparing, so `competitor: "  ecosystem  "` passed CRUX-002 while the
+    /// stored value kept its padding: the gate laundered a value it never
+    /// fixed, and every consumer reading this field still saw the untrimmed
+    /// string. Trimming here means the checked value and the stored value are
+    /// the same value.
+    #[serde(default, deserialize_with = "deserialize_trimmed_opt_string")]
+    pub competitor: Option<String>,
+    /// CRUX competitive-research story: demand, documented `1..=5` by
+    /// `contracts/crux-competitive-research-ux-v1.yaml` §"demand_score (1..5)".
+    /// Range-checked by rule CRUX-001.
+    ///
+    /// Deliberately `i64`, not `u8`: an out-of-range value must reach the
+    /// validator and be reported as `demand_score 99999 is outside 1..=5`,
+    /// not die in serde as an opaque integer-overflow message.
+    #[serde(default)]
+    pub demand_score: Option<i64>,
+    /// CRUX competitive-research story: intake status. A closed enum, so an
+    /// invented value FAILS TO PARSE (see [`IntakeStatus`]).
+    #[serde(default)]
+    pub intake_status: Option<IntakeStatus>,
+}
+
+/// Deserialize an optional string, trimming surrounding whitespace.
+///
+/// aprender#2555 follow-up: a domain check that trims before comparing accepts
+/// `"  ecosystem  "` and then stores it verbatim. Normalising at the parse
+/// boundary is the fix — it is done once, before any rule runs, so no rule has
+/// to remember to trim and none can disagree about whether it did.
+///
+/// PRESENT-BUT-EMPTY IS NOT ABSENT. A trimmed-to-empty value stays
+/// `Some(String::new())` rather than collapsing to `None`, so `competitor: ''`
+/// and `competitor: '   '` are still REPORTED by CRUX-002 as unregistered.
+/// Collapsing them would have quietly widened the presence gap this field
+/// already has: omission is invisible to the gate, and turning a written-down
+/// blank into another invisible case makes that worse, not better.
+fn deserialize_trimmed_opt_string<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let raw: Option<String> = Option::deserialize(deserializer)?;
+    Ok(raw.map(|v| v.trim().to_string()))
+}
+
+/// Intake status of a CRUX competitive-research story (`metadata.intake_status`).
+///
+/// The vocabulary is closed and is exactly `STATUS_BADGE` in
+/// `scripts/crux_scaffold_contracts.py`, the generator that emits all 275
+/// `crux-*-v1.yaml` files: `supported`, `partial`, `missing`, `unclear`.
+///
+/// This is an ENUM rather than a `String` on purpose (aprender#2555). A field
+/// serde never parsed cannot be checked by any validator, and a field parsed as
+/// `String` can only be *linted* — a lint is advisory and the caller may ignore
+/// it. Making the type closed pushes the check into deserialization, so an
+/// invented value is not a warning about a contract, it is not a contract.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum IntakeStatus {
+    /// apr has no surface for this story.
+    Missing,
+    /// apr has a partial surface; parity gaps remain.
+    Partial,
+    /// apr reaches parity with the competitor's canonical verb.
+    Supported,
+    /// The competitor's behaviour has not been pinned down yet.
+    Unclear,
+}
+
+impl std::fmt::Display for IntakeStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            Self::Missing => "missing",
+            Self::Partial => "partial",
+            Self::Supported => "supported",
+            Self::Unclear => "unclear",
+        };
+        write!(f, "{s}")
+    }
 }
 
 /// Per-contract enforcement level (gradual enforcement, Section 17).

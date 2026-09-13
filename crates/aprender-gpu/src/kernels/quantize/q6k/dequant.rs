@@ -150,22 +150,41 @@ impl Kernel for Q6KDequantKernel {
                     // The Q6K layout packs 256 values into two 128-value halves.
                     // For half h (0 or 1), within each half there are 4 groups of 32:
                     //   group g, lane l (0..31):
-                    //     ql_byte = ql[64*h + 32*((g>>1)) + l]
-                    //     ql_nibble = (g & 1) == 0 ? (ql_byte & 0xF) : (ql_byte >> 4)
+                    //     ql_byte = ql[64*h + 32*(g & 1) + l]
+                    //     ql_nibble = g < 2 ? (ql_byte & 0xF) : (ql_byte >> 4)
                     //     qh_byte = qh[32*h + l]
                     //     qh_bits = (qh_byte >> (2*g)) & 0x3
                     //     q6 = ql_nibble | (qh_bits << 4)
                     //     sub_block = 8*h + 2*g + l/16
                     //     value = d * scales[sub_block] * (q6 - 32)
                     //
-                    // val_idx = 32*group_in_half + lane, where group_in_half = step
-                    // half = step >= 4 ? 1 : 0
+                    // aprender#2770: the two bits of `g` mean DIFFERENT things and this
+                    // kernel had them the wrong way round -- it took the byte offset from
+                    // `g >> 1` and the nibble from `g & 1`. ggml's dequantize_row_q6_K
+                    // emits, per lane l:
+                    //     q1 = ql[l     ] & 0xF | qh[l] >> 0   -> y[l     ]   (g = 0)
+                    //     q2 = ql[l + 32] & 0xF | qh[l] >> 2   -> y[l + 32]  (g = 1)
+                    //     q3 = ql[l     ] >>  4 | qh[l] >> 4   -> y[l + 64]  (g = 2)
+                    //     q4 = ql[l + 32] >>  4 | qh[l] >> 6   -> y[l + 96]  (g = 3)
+                    // so the +32 byte step belongs to `g & 1` and the high nibble to
+                    // `g >= 2`. Swapping them is correct for g = 0 and g = 3, where both
+                    // bits agree, and exchanges the low four bits of groups 1 and 2 --
+                    // while their qh bits and sub-block scale stay correct. Half of every
+                    // super-block therefore came out near-but-not-right rather than
+                    // broken, and the model kept emitting fluent text on a different
+                    // continuation. Q6_K is attn_v, ffn_down and output in Q4_K_M, and
+                    // this kernel is the ONLY Q6_K reader on the cuBLAS GEMM path (FP8,
+                    // FP16 and FP32 all build from its output), so the error was
+                    // invariant to GEMM precision -- which is what ruled precision out.
+                    // The Q6_K GEMV kernel (q6k/gemv.rs) always had this right, which is
+                    // why m < 4 was unaffected.
+                    // Guarded by tests/falsify_q6k_dequant_parity_2770.rs.
 
                     let half = step / 4; // 0 for steps 0-3, 1 for steps 4-7
                     let group = step % 4; // 0-3 within each half
 
-                    // ql_byte_idx = 64*half + 32*(group/2) + thread_id
-                    let ql_byte_offset = 64 * half + 32 * (group / 2);
+                    // ql_byte_idx = 64*half + 32*(group & 1) + thread_id
+                    let ql_byte_offset = 64 * half + 32 * (group % 2);
                     let ql_off_reg = ctx.mov_u32_imm(ql_byte_offset);
                     let ql_idx = ctx.add_u32_reg(ql_off_reg, thread_id);
                     let ql_idx_64 = ctx.cvt_u64_u32(ql_idx);
@@ -173,8 +192,8 @@ impl Kernel for Q6KDequantKernel {
                     let ql_byte = ctx.ld_global_u8(ql_addr);
                     let ql_u32 = ctx.cvt_u32_u8(ql_byte);
 
-                    // Extract nibble: low if group is even, high if odd
-                    let ql_nibble = if group % 2 == 0 {
+                    // Extract nibble: low for groups 0-1, high for groups 2-3
+                    let ql_nibble = if group < 2 {
                         ctx.and_u32(ql_u32, mask_0f)
                     } else {
                         ctx.shr_u32(ql_u32, four_u32)

@@ -287,5 +287,5 @@ qa_gate:
   - fused_equivalence
   - silu_bound
   - simd_equivalence
-  pass_criteria: All 6 falsification tests pass + Kani harnesses verify
+  pass_criteria: All 8 falsification tests pass + Kani harnesses verify
   falsification: Replace SiLU with ReLU in gate path

@@ -1,0 +1,206 @@
+contract: pv-cli-surface
+metadata:
+  kind: pattern
+  version: "1.0.0"
+  description: >
+    contracts-pv first-tranche surface contract (#2589). `pv` is the tool that
+    decides whether a release is contractually sound; the surface audit read
+    "cluster contracts-pv: 76 features, 0.0% covered, 0 UNKNOWN hardware" — the
+    features were hardware-verified and simply UNGATED. This contract pins the
+    invariants that the gate `crates/aprender-contracts-cli/tests/pv_surface_gate.rs`
+    enforces against the pv binary built from HEAD.
+
+    TWO measured causes at 4bbfeb07f, both addressed:
+    (1) pv's three integration targets spawned the binary but appeared in ZERO
+        CI invocations — `workspace-test` is `--workspace --lib`, and the
+        explicit integration list named 23 targets, none from
+        aprender-contracts-cli. Tests that never execute are not coverage.
+    (2) The tests that did exist asserted `status.success()` on GOOD contracts,
+        which `fn main() { exit(0) }` also satisfies. Per
+        project_assertions_exclude_guard, an assertion no wrong behaviour can
+        violate is not a control.
+  references:
+    - "https://github.com/paiml/aprender/issues/2589"
+    - "crates/aprender-contracts-cli/tests/pv_surface_gate.rs"
+    - "crates/aprender-contracts/src/schema/validator.rs"
+
+equations:
+  rule_reachability:
+    formula: >
+      forall r in rules(validator.rs) . exists c . pv_validate(trip(c, r))
+      emits line "[{severity(r)}] {r}:"
+    domain: "r ∈ rule ids of shape FAMILY-NNN declared in validator.rs"
+    codomain: "{reported, unreported}"
+    invariants:
+      - "the rule universe is read from validator.rs, never from the test's own table"
+      - "a rule added to the validator must ENTER the loop, never fall outside it"
+
+  baseline_silence:
+    formula: "rules(pv_validate(clean_contract)) = {}"
+    domain: "a contract with zero defects"
+    codomain: "the empty set of rule ids"
+    invariants:
+      - "without this, a pv printing all rules unconditionally satisfies every trip case"
+
+  exit_code_follows_severity:
+    formula: "exit_code(pv validate c) = 0 iff count(errors(c)) = 0"
+    domain: "any contract file"
+    codomain: "{0, 1}"
+    invariants:
+      - "warnings alone must NOT fail the command"
+      - "any error must fail it"
+
+  advertised_implies_reachable:
+    formula: "forall s in subcommands(pv --help) . exit_code(pv s --help) = 0"
+    domain: "the subcommand list parsed from the binary AT RUNTIME"
+    codomain: "{0, non-zero}"
+    invariants:
+      - "the universe is enumerated from the binary, not hardcoded"
+
+  unusable_input_is_rejected:
+    formula: >
+      forall s in contract_taking(pv), forall i in {nonexistent, malformed_yaml,
+      empty, well_formed_non_contract} . exit_code(pv s i) != 0
+    domain: "every subcommand whose usage line names <CONTRACT>|<PATH>|<FILE>"
+    codomain: "{0, non-zero}"
+    invariants:
+      - "this is the assertion the pre-existing pv suite never made"
+
+proof_obligations:
+  - type: invariant
+    property: "Every validator rule is reachable through the CLI at its declared severity"
+    formal: "PV-SURFACE-RULE-REACH"
+    applies_to: all
+  - type: invariant
+    property: "A clean contract emits no rule id and exits 0"
+    formal: "PV-SURFACE-BASELINE-SILENT"
+    applies_to: all
+  - type: invariant
+    property: "The decision table stays exhaustive over the validator's rule set"
+    formal: "PV-SURFACE-TABLE-EXHAUSTIVE"
+    applies_to: all
+  - type: invariant
+    property: "Every subcommand advertised by --help is reachable"
+    formal: "PV-SURFACE-ADVERTISED-REACHABLE"
+    applies_to: all
+  - type: invariant
+    property: "Contract-taking subcommands reject input they cannot process"
+    formal: "PV-SURFACE-REJECTS-GARBAGE"
+    applies_to: all
+  - type: invariant
+    property: "pv --version reports the version of the crate it was built from"
+    formal: "PV-SURFACE-VERSION-PINNED"
+    applies_to: all
+
+falsification_tests:
+  - id: FALSIFY-PV-SURFACE-001
+    rule: "PV-SURFACE-RULE-REACH"
+    prediction: >
+      Deleting the violation-printing loop from
+      crates/aprender-contracts-cli/src/commands/validate.rs turns the gate RED
+      while `cargo test -p aprender-contracts library schema:: tests` stay GREEN.
+    test_harness: "cargo test -p aprender-contracts-cli --test pv_surface_gate"
+    expected_output: "exit 0 on an unmutated tree"
+    if_fails: >
+      MEASURED 2026-08-22: mutation engaged (3 lines removed), gate rc=101 with
+      3 tests failing, library rc=0 with 55 passed. The GREEN library result is
+      the point: it proves this gate covers CLI surface the library tests cannot
+      see, i.e. it is new coverage rather than a duplicate.
+
+  - id: FALSIFY-PV-SURFACE-002
+    rule: "PV-SURFACE-BASELINE-SILENT"
+    prediction: >
+      `pv validate` on the gate's clean fixture reports 0 errors, 0 warnings and
+      none of the known rule ids.
+    test_harness: "cargo test -p aprender-contracts-cli --test pv_surface_gate validate_baseline"
+    expected_output: "exit 0"
+    if_fails: >
+      Either the fixture is no longer clean or pv emits rule ids unconditionally.
+      The second case would make every trip case in the table vacuous.
+
+  - id: FALSIFY-PV-SURFACE-003
+    rule: "PV-SURFACE-RULE-REACH"
+    prediction: >
+      Replacing the error return in validate.rs with Ok(()) turns the gate RED on
+      the exit-code half.
+    test_harness: "cargo test -p aprender-contracts-cli --test pv_surface_gate"
+    expected_output: "exit 0 on an unmutated tree"
+    if_fails: >
+      MEASURED 2026-08-22: mutation engaged (1 line replaced), gate rc=101, 2
+      tests failing. This is the mutation the pre-existing suite could not detect,
+      because it only ever asserted success on good input.
+
+  - id: FALSIFY-PV-SURFACE-004
+    rule: "PV-SURFACE-TABLE-EXHAUSTIVE"
+    prediction: >
+      Renaming a validator rule to an id with no row in the table turns the
+      exhaustiveness guard RED and names the orphan.
+    test_harness: "cargo test -p aprender-contracts-cli --test pv_surface_gate every_rule_in_the_validator"
+    expected_output: "exit 0 on an unmutated tree"
+    if_fails: >
+      MEASURED 2026-08-22: SCHEMA-013 -> SCHEMA-999, mutation engaged, gate
+      rc=101 naming the orphan. This guard found a real gap on first run:
+      BEAT-001 had no row. Widening the extractor then revealed BEAT-002..007,
+      which are emitted through a closure rather than a `rule: "..."` literal and
+      were invisible to the first version of the extractor.
+
+  - id: FALSIFY-PV-SURFACE-005
+    rule: "PV-SURFACE-RULE-REACH"
+    prediction: >
+      Disabling the BEAT_INCUMBENTS membership arm turns the gate RED on the
+      BEAT-002 membership row, proving that row exercises the list.
+    test_harness: "cargo test -p aprender-contracts-cli --test pv_surface_gate validate_reaches_every_beat_rule"
+    expected_output: "exit 0 on an unmutated tree"
+    if_fails: >
+      MEASURED 2026-08-22: membership condition replaced with `false`, mutation
+      engaged, gate rc=101 with exactly the BEAT test failing.
+
+  - id: FALSIFY-PV-SURFACE-006
+    rule: "PV-SURFACE-ADVERTISED-REACHABLE"
+    prediction: >
+      Every one of the 38 subcommands `pv --help` advertises exits 0 for
+      `pv <cmd> --help`.
+    test_harness: "cargo test -p aprender-contracts-cli --test pv_surface_gate every_advertised_subcommand"
+    expected_output: "exit 0"
+    if_fails: >
+      A command is advertised but unreachable — the `apr test llm` defect class
+      (#2527), where the advertised command's own remedy was impossible to run.
+
+  - id: FALSIFY-PV-SURFACE-007
+    rule: "PV-SURFACE-REJECTS-GARBAGE"
+    prediction: >
+      Each of the 16 contract-taking subcommands exits non-zero on a nonexistent
+      path, malformed YAML, an empty file, and well-formed YAML that is not a
+      contract.
+    test_harness: "cargo test -p aprender-contracts-cli --test pv_surface_gate contract_taking_subcommands"
+    expected_output: "exit 0"
+    if_fails: >
+      A subcommand accepted input it cannot process. Assertions that only check
+      success on good input cannot see this; that is why the tranche adds it.
+
+  - id: FALSIFY-PV-SURFACE-008
+    rule: "PV-SURFACE-VERSION-PINNED"
+    prediction: "`pv --version` contains this crate's CARGO_PKG_VERSION."
+    test_harness: "cargo test -p aprender-contracts-cli --test pv_surface_gate version_reports"
+    expected_output: "exit 0"
+    if_fails: >
+      #2552: a `pv` on PATH was 0.49.0 while in-tree was 0.63.0 and the two
+      disagreed on the release-deciding gate, with the stale one cited in the
+      release receipt as evidence of correctness. The gate resolves the binary
+      via CARGO_BIN_EXE_pv, which cannot fall back to PATH. The check is a
+      substring match on the semver only, so #2559's work on --version IDENTITY
+      is free to change the surrounding text.
+
+qa_gate:
+  id: F-PV-SURFACE-001
+  name: "pv CLI surface gate (contracts-pv tranche 1)"
+  checks:
+    - "rule_reachability"
+    - "baseline_silence"
+    - "exit_code_follows_severity"
+    - "advertised_implies_reachable"
+    - "unusable_input_is_rejected"
+  pass_criteria: >
+    All 8 falsification tests pass via
+    `cargo test -p aprender-contracts-cli --test pv_surface_gate`, which is wired
+    into the required `workspace-test` integration step in .github/workflows/ci.yml.

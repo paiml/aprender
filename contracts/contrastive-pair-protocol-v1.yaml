@@ -1,0 +1,1313 @@
+contract: contrastive-pair-protocol
+metadata:
+  version: 1.0.0
+  created: '2026-08-08'
+  author: PAIML Engineering
+  description: >
+    The dataset-agnostic contrastive data protocol (decision D-24): typed split roles,
+    dataset attestation, cross-split leakage handling, balanced few-shot selection,
+    bounded pair sampling, budget and singleton semantics, RNG derivation, and the
+    bytes-in/bytes-out boundary. Covers DATA-03, DATA-04, DATA-05, DATA-06 and the
+    dataset-agnostic half of DATA-02. The dataset-SPECIFIC half (split sizes, label map,
+    provenance, the contracted seed set) stays in tweet-eval-stance-benchmark-v1.yaml.
+
+    Implemented by crates/aprender-contrastive-data. SetFit is the first consumer of this
+    protocol, not its owner: nothing below mentions an encoder, a loss, or a trainer, so a
+    later forecasting or object-storage consumer inherits a contract that is not
+    SetFit-shaped.
+
+    WHY THIS CONTRACT EXISTS. Two of this protocol's claims are trivially fakeable by a
+    passing test suite. "No leakage" is satisfied by any implementation that was never
+    handed a validation row, and "bounded memory" is satisfied by any self-report. Both
+    are therefore written here as properties an in-band NEGATIVE implementation must
+    violate: a leaky sampler and a materializing sampler are compiled into every test run
+    and must be RED under the same gates that accept the honest implementations. A gate
+    that has only ever been observed passing is not evidence.
+
+    RNG OBLIGATIONS ARE STATED INLINE. This contract deliberately does NOT cite any
+    external RNG contract. The crate-level doc comment of aprender-rand names a Philox
+    contract file under a `# Contract:` heading, but no file of that name exists anywhere
+    in this repository — it stayed behind in the pre-monorepo trueno repo. A dangling
+    cross-reference inside a gate is worse than an inline statement, because it reads as
+    though something checked it. The key derivation, counter mapping, domain-string table
+    and bounded-draw derivation are therefore all frozen below, byte for byte, and this
+    file contains no reference to that name (a grep for it must return zero).
+
+    DECLARED DEVIATION FROM SetFit (three clauses, see OBLIG-CPP-DEVIATION-DECLARED).
+    These are explicit Aprender policies and are NEVER attributed to SetFit.
+
+    PROVABILITY HONESTY. `cargo-kani` is not installed in this repository and there is not
+    one `#[kani::proof]` harness anywhere under `crates/`. The `kani_harnesses:` entries
+    below are DECLARED and NOT EXECUTED; each names the runnable, identically bounded
+    proptest that is the actual evidence. Nothing here should be read as a machine-checked
+    proof.
+  references:
+    - 'Salmon et al. (2011) Parallel Random Numbers: As Easy as 1, 2, 3 (Philox)'
+    - 'Tunstall et al. (2022) Efficient Few-Shot Learning Without Prompts (SetFit)'
+    - 'https://huggingface.co/docs/setfit/en/conceptual_guides/sampling_strategies'
+    - 'setfit==1.1.3 setfit/sampler.py — pinned reference, READ AND EXECUTED 2026-08-08'
+    - 'crates/aprender-contrastive-data/'
+    - 'crates/aprender-rand/src/philox.rs'
+    - 'contracts/tweet-eval-stance-benchmark-v1.yaml — the dataset-specific sibling (D-24)'
+
+equations:
+
+  # ==========================================================================
+  # 1. Determinism primitives (D-20/D-21)
+  # ==========================================================================
+
+  rng_key_derivation:
+    formula: 'key = trunc64_le(SHA256(DOMAIN_TAG || root_seed.to_le_bytes() || domain.as_bytes())) ; counter = [ordinal_lo_u32, ordinal_hi_u32, stream_id, 0] ; draw(i) = Philox4x32::generate_at(key, counter)'
+    domain: 'root_seed in u64, domain in the frozen table of rng_domain_strings, ordinal in u64, stream_id in u32'
+    codomain: '[u32; 4] — one Philox 4x32-10 output block'
+    invariants:
+      - 'DOMAIN_TAG is the byte string b"apr-contrastive-v1\x00" — eighteen ASCII bytes
+        followed by one NUL. The NUL is load-bearing: without a terminator, tag and seed
+        bytes are ambiguous under concatenation.'
+      - 'root_seed is serialized LITTLE-ENDIAN as exactly 8 bytes (`u64::to_le_bytes`).
+        Stated explicitly because a big-endian host would otherwise derive different keys
+        for the same seed and the divergence would show up only as different sampled IDs.'
+      - 'trunc64_le takes digest bytes 0..8 and forms the two Philox key lanes as
+        `[u32::from_le_bytes(d[0..4]), u32::from_le_bytes(d[4..8])]` — LITTLE-ENDIAN in
+        both lanes. Digest bytes 8..32 are discarded.'
+      - 'A 64-bit value is assembled from an output block as
+        `((lanes[1] as u64) << 32) | (lanes[0] as u64)`. Lane 0 is the LOW half. Stated
+        explicitly for the same reason as the seed encoding.'
+      - 'PURITY: draw i is a pure function of (key, counter) and of nothing else. No
+        mutable RNG state crosses a function boundary, so worker-count independence is
+        STRUCTURAL (D-20) rather than a discipline the implementation must maintain.
+        Draw 7 cannot depend on draw 6, because draw 6 is not consulted.'
+      - 'This also makes every stream shardable and resumable from an offset without
+        replaying the prefix, which is what lets D-09 persist a ~200-byte replay tuple
+        instead of a pair file.'
+      - 'The generator is Philox 4x32-10, a STATISTICAL RNG. It is used only for sampling
+        determinism and must never be described or reused as cryptographic randomness.'
+    preconditions:
+      - 'domain is one of the six strings frozen in rng_domain_strings'
+    postconditions:
+      - 'generate_at(key, counter) is total — every (key, counter) yields a block'
+
+  rng_domain_strings:
+    formula: 'Domains(v1) = { "select/{label}", "pairs/pos/class", "pairs/pos/rank", "pairs/neg/class", "pairs/neg/first", "pairs/neg/second" }'
+    domain: 'label in usize (the class label of the bucket being selected from)'
+    codomain: 'the six domain strings above, and no others'
+    invariants:
+      - 'FROZEN TABLE. Exactly six domain strings exist in v1. Introducing a seventh, or
+        changing the rendering of an existing one, is a versioned contract change — not an
+        implementation detail — because either alters every sampled identity.'
+      - '"select/{label}" renders {label} as a base-10 usize with NO zero padding, NO
+        thousands separator and NO locale awareness: class 7 is "select/7", never
+        "select/07" and never "select/ 7". Cross-platform formatting drift here would
+        silently change which examples are selected on a different host.'
+      - 'The other five strings are literals and contain no interpolation.'
+      - 'Domain separation is the ONLY mechanism keeping the selection stream and the two
+        pair streams independent; they share a root_seed by design, so if two domains ever
+        collided the streams would become correlated without any test failing.'
+    preconditions:
+      - 'label < number_of_classes'
+    postconditions:
+      - 'distinct (domain, root_seed) pairs derive distinct keys with probability 1 - 2^-64'
+
+  bounded_draw:
+    formula: 'bounded(key, stream, ordinal, n) = ((x as u128 * n as u128) >> 64) as u64, where x = assemble64(generate_at(key, counter(ordinal, stream)))'
+    domain: 'n: NonZeroU64, x uniform in [0, 2^64)'
+    codomain: 'u64 in [0, n)'
+    invariants:
+      - 'THE bound is NonZeroU64, so a zero bound is UNREPRESENTABLE rather than silently
+        misbehaving. A `u64` bound would make `bounded(.., 0)` either a division fault or
+        a constant 0 depending on the derivation, and both are worse than a type error.'
+      - 'This 64-bit multiply-shift IS the contracted derivation, not an approximation of
+        some other one. Its non-uniformity is below 2^-44 for every range this protocol
+        reaches (buckets <= 587, pair spaces <= ~10^5), and it is branch-free and
+        index-pure.'
+      - 'MODULO draws are FORBIDDEN. Modulo bias is real at the top of the range and, worse,
+        is unauditable: two implementations can both look correct and disagree.'
+      - '`next_f32` draws are FORBIDDEN for index selection. It carries 23 mantissa bits,
+        so a float-scaled index cannot address a bucket larger than 2^24 without
+        collisions, and float rounding makes the derivation host-fragile.'
+    preconditions:
+      - 'n > 0 (enforced by the type)'
+    postconditions:
+      - 'result < n'
+
+  # ==========================================================================
+  # 2. Content identity (D-17)
+  # ==========================================================================
+
+  normalized_content_hash:
+    formula: 'normalized_hash(s) = SHA256(collapse_ws(trim(NFC(s)))) ; exact_hash(s) = SHA256(s.as_bytes())'
+    domain: 's — the raw `input` field of a labeled example, valid UTF-8'
+    codomain: '[u8; 32] each'
+    invariants:
+      - 'Two hashes per row, for two DIFFERENT jobs. The exact hash over the raw bytes is
+        IDENTITY and provenance; the normalized hash is LEAKAGE DETECTION. Collapsing them
+        into one would either miss the retweet-with-a-trailing-space variant or destroy
+        byte-level provenance.'
+      - 'Normalization is NFC, then trim, then collapse every internal whitespace run to a
+        single U+0020. Version tag: `nfc-trim-ws-v1`, recorded in every manifest that
+        depends on it.'
+      - 'NO CASEFOLDING — deliberate (D-17). Casefolding collides legitimately distinct
+        short posts, and a false leakage positive silently removes a training row.'
+      - 'The version tag is what stops the normalization from drifting. Changing any step
+        is a new tag and a contract change, never an in-place edit, because the exclusion
+        record of every previously produced manifest was computed under the old one.'
+      - 'HASH-FROM-PARSED-BYTES: the buffer that is hashed is the SAME buffer that was
+        parsed and count-checked. Reading a source twice would let the recorded digest
+        describe content that never passed validation.'
+    preconditions:
+      - 's is valid UTF-8'
+    postconditions:
+      - 'exact_hash(s) == exact_hash(t) implies normalized_hash(s) == normalized_hash(t)'
+
+  # ==========================================================================
+  # 3. The bytes -> typed boundary (D-16, DATA-02)
+  # ==========================================================================
+
+  split_ingest_boundary:
+    formula: 'ingest(bytes, decl) -> Result<(SourceHash, Split<R>), ContrastiveDataError>'
+    domain: 'bytes — a JSONL buffer of untrusted origin; decl — the caller''s SplitDeclaration'
+    codomain: 'a typed Split<R> plus the digest of the ingested buffer, or a typed error'
+    invariants:
+      - 'ONE buffer is parsed and hashed. Not two reads, not a re-serialization.'
+      - 'Deserialization is `deny_unknown_fields`. Bytes from object storage are untrusted,
+        and an ignored extra field is how a schema drift becomes a silent data change.'
+      - 'GATE LADDER, in order, each a typed error naming split and index: (1) UTF-8 ->
+        InvalidUtf8; (2) JSON/schema parse -> MalformedRow; (3) empty or whitespace-only
+        input -> EmptyInput; (4) label outside the declared map -> UnknownLabel;
+        (5) label_text != label_names[label] -> LabelTextMismatch; (6) repeated id within
+        the split -> DuplicateId; (7) embedded source_split != the role being constructed
+        -> SplitRoleMismatch; (8) per-class counts != declaration -> InvalidClassCounts.'
+      - 'Clause (7) is the point of the whole equation. The typestate makes leakage
+        inexpressible for a library caller, but a mislabeled `source_split` inside
+        honest-looking bytes would otherwise become a Split<Train> the compiler is happy
+        with (D-16). Runtime validation at the boundary is not redundant with the
+        typestate; it is what makes the typestate mean anything for deserialized input.'
+      - 'The PUBLIC entry points are the PreparedDataset constructors, not a bare
+        per-split constructor: a split validated in isolation carries no evidence about
+        its siblings, and cross-split exclusion needs all of them at once.'
+      - 'NO PATHS. `bytes: &[u8]` in, typed values out. There is no overload taking a path.'
+    preconditions:
+      - 'decl declares the role, the label map, and the expected per-class counts'
+    postconditions:
+      - 'on Ok, every row''s embedded source_split equals decl.role'
+      - 'on Ok, row ids are unique within the split'
+
+  prepared_dataset_typestate:
+    formula: 'PreparedDataset<Canonical> and PreparedDataset<Compatibility> are DISTINCT TYPES ; select(&PreparedDataset<Canonical>, ..) is the only selection entry point'
+    domain: 'attested split buffers plus a DatasetAttestation'
+    codomain: 'PreparedDataset<P> for exactly one profile type P'
+    invariants:
+      - 'The profile is a TYPE PARAMETER, never a runtime field. `validation_witness()` is
+        implemented only on PreparedDataset<Canonical>; on the compatibility type the
+        method DOES NOT EXIST, so the failure is "no method named validation_witness",
+        emitted by rustc, pinned by a trybuild .stderr snapshot.'
+      - 'WHY THIS IS NOT A RUNTIME FIELD. With `profile` as a field on SplitDeclaration,
+        `Split::<Validation>::from_jsonl_bytes(bytes, &compat_decl)` COMPILES and merely
+        returns Err(ConflictingSourceRole) at run time. DATA-06 asks for "cannot be
+        constructed", and a compile-fail proof of that is unobtainable against an
+        expression that compiles. The type parameter is what makes the trybuild evidence
+        exist.'
+      - 'Selection consumes `&PreparedDataset<Canonical>`, so train rows, the validation
+        witness, the exclusion record and the dataset fingerprint are all bound to ONE
+        dataset VALUE. Two arguments could be crossed; one cannot.'
+      - 'The compatibility profile emits NO validation split at all (D-19), which is why
+        a compatibility-profile selection run cannot be assembled even by a caller willing
+        to ignore every warning.'
+    preconditions:
+      - 'the attestation re-derives (see dataset_attestation) before any split is exposed'
+    postconditions:
+      - 'no value of type PreparedDataset<Compatibility> can be passed to selection'
+
+  dataset_attestation:
+    formula: 'from_attested_bytes(attestation, buffers) -> Result<PreparedDataset<P>, ContrastiveDataError>'
+    domain: 'a DatasetAttestation record plus the raw split buffers it claims to describe'
+    codomain: 'a PreparedDataset<P>, or a typed error naming the first field that disagreed'
+    invariants:
+      - 'The attestation carries: profile, schema_version, label map, per-split JSONL
+        SHA-256, per-class counts, normalization version, the cross-split exclusion record,
+        and the dataset fingerprint.'
+      - 'EVERY field is RE-DERIVED from the supplied buffers and compared. An attestation
+        that is merely quoted back proves nothing about the bytes in hand — that is the
+        difference between provenance and decoration.'
+      - 'Disagreements are typed and specific: ProfileMismatch, SplitHashMismatch,
+        FingerprintMismatch, ExclusionRecordMismatch, UnsupportedSchemaVersion,
+        MissingSplit. A single "attestation invalid" error would be undiagnosable.'
+      - 'Canonical splits are NOT exposed until every comparison passes. Exposure-then-
+        validate would let a caller read rows out of a dataset that is about to be
+        rejected.'
+    preconditions:
+      - 'a buffer is supplied for every split role the attestation names'
+    postconditions:
+      - 'on Ok, recomputed(field) == attested(field) for every attested field'
+
+  # ==========================================================================
+  # 4. Cross-split leakage (D-17, D-18, D-27)
+  # ==========================================================================
+
+  cross_split_exclusion:
+    formula: 'groups = connected_components(union(exact_hash_edges, normalized_hash_edges)) ; pool(train) = train \ affected_rows(groups)'
+    domain: 'all rows of all splits of one PreparedDataset'
+    codomain: 'an ExclusionRecord: excluded ids (sorted) plus the reduced per-class pool sizes'
+    invariants:
+      - 'GROUPING IS BY CONNECTED COMPONENT (union-find) over the UNION of exact-hash and
+        normalized-hash edges. Each component is exactly ONE group and records which
+        detection kinds fired inside it.'
+      - 'WHY COALESCED. An exact duplicate is NECESSARILY also a normalized duplicate, so
+        grouping independently by both keys double-counts the same rows and can decrement
+        a class pool twice. The reduced pool would then be understated, and a pool that is
+        understated near the boundary produces a spurious CrossSplitDuplicateUnderflow —
+        a failure invented by the detector rather than present in the data.'
+      - 'PREPARE-TIME DUPLICATE CONTENT IS NEVER FATAL (D-18, upheld verbatim by D-27).
+        Affected TRAIN rows are deterministically removed from the selection pool and every
+        excluded id plus every reduced per-class pool size is recorded in the manifest.'
+      - 'RATIONALE, unchanged from D-18: hard-failing at SELECTION time makes failures
+        seed-dependent, so some benchmark cells die and a completeness gate rejects the run
+        for a reason unrelated to the method; hard-failing at PREPARE time hands upstream
+        data quality a veto over the whole dataset.'
+      - 'The ONLY typed error here is CrossSplitDuplicateUnderflow, raised when the reduced
+        pool of some class can no longer supply shots_per_class. That is a real failure.'
+      - 'Exclusion order is deterministic (sorted ids), because the excluded set reaches a
+        manifest and therefore a hash.'
+    preconditions:
+      - 'every split of the dataset has been ingested and hashed'
+    postconditions:
+      - 'no two groups share a row'
+      - 'sum over classes of reduced_pool <= |train|'
+
+  split_span_fail_closed:
+    formula: 'endpoints(pair) subset SelectedId(selection) AND selection derives from exactly one PreparedDataset<Canonical>'
+    domain: 'any pair or selection, whether constructed in-process or replayed from bytes'
+    codomain: 'accepted, or EndpointNotInSelection naming the offending identifier'
+    invariants:
+      - 'D-27''s other half, and the precise reading of "rejected fail-closed". Typed
+        failure is reserved for actual SPAN — an endpoint that crosses split roles — not
+        for prepare-time duplicate CONTENT, which is excluded and recorded (see
+        cross_split_exclusion).'
+      - 'For in-process construction the guarantee is STRUCTURAL: pair endpoints are
+        SelectedId ordinals into one Selection, and that Selection consumed one
+        PreparedDataset<Canonical>. There is no value a caller could pass that names a
+        validation row, so there is nothing to check.'
+      - 'For UNTRUSTED replayed input the guarantee is a typed error, because a
+        deserialized record can name anything at all. See untrusted_pair_ingest.'
+      - 'The error NAMES the offending identifier and where it was found. "Leakage
+        detected" is not diagnosable; "endpoint validation:3 is not in the selection" is.'
+    preconditions:
+      - 'the selection is available to check membership against'
+    postconditions:
+      - 'no accepted pair has an endpoint outside the selection'
+
+  # ==========================================================================
+  # 5. Few-shot selection (DATA-03)
+  # ==========================================================================
+
+  few_shot_selection:
+    formula: 'for each class k in ascending label order: partial_fisher_yates(sorted_pool_k, shots, domain = "select/{k}") ; selection = concat over k of the first `shots` drawn'
+    domain: 'the reduced per-class pools of a PreparedDataset<Canonical>, shots_per_class in {8, 16, 32, 64}, root_seed in u64'
+    codomain: 'an ORDERED Selection of shots_per_class * num_classes SelectedExamples'
+    invariants:
+      - 'Buckets are SORTED Vecs, never HashMap iteration. Any collection whose order
+        reaches a hash must have a defined order, or determinism becomes a property of the
+        allocator.'
+      - 'The swap index for step i comes from draw ordinal i in domain "select/{label}" —
+        so step i is a pure function of i, and running the classes on different threads
+        cannot change the result.'
+      - 'OUTPUT ORDER IS DRAW ORDER, classes concatenated in ASCENDING label order. This
+        is chosen over keyed bottom-k precisely because the order is self-evidently the
+        draw order and can therefore be stated as an equation rather than as a sorting
+        convention nobody can check.'
+      - 'shots_per_class is validated against {8, 16, 32, 64} BEFORE any draw. An invalid
+        request must not consume an ordinal and must not leave a partially built
+        selection; the error is InvalidShots.'
+      - 'A class whose reduced pool is smaller than shots_per_class is
+        CrossSplitDuplicateUnderflow — an unambiguous failure, distinct from the singleton
+        case, which concerns SELECTED class sizes and is handled by singleton_policy.'
+      - 'Selection consumes ONLY the canonical training pool. It never reads validation or
+        test rows, and the access ledger records that.'
+    preconditions:
+      - 'shots_per_class in {8, 16, 32, 64}'
+      - 'every class''s reduced pool has at least shots_per_class rows'
+    postconditions:
+      - 'the selection contains exactly shots_per_class rows of every class'
+      - 'all selected ids are distinct'
+
+  selection_canonical_payload:
+    formula: 'semantic_hash = SHA256(payload_bytes) ; manifest_file = { payload, semantic_hash, volatile_metadata }'
+    domain: 'a completed Selection'
+    codomain: 'canonical payload bytes plus their digest, wrapped in an outer envelope'
+    invariants:
+      - 'THE HASHED PAYLOAD EXCLUDES ITS OWN DIGEST. A payload containing its own hash
+        cannot be recomputed by anyone, which turns the digest into an unverifiable
+        decoration. The digest lives in the OUTER envelope alongside the unhashed volatile
+        metadata (created-at, tool version, host).'
+      - 'No timestamp, no path, no hostname is inside the hashed region. Two identical runs
+        must produce byte-identical payloads.'
+      - 'Payload contents, in a fixed order: schema_version, algorithm_version, profile,
+        dataset_fingerprint, validation_fingerprint, label map, normalization version,
+        root_seed, shots_per_class, the ORDERED SelectedExample list (id, label,
+        exact_hash, normalized_hash), the exclusion record (excluded ids plus reduced
+        per-class pools), and the access-ledger hash.'
+      - 'BTreeMap for every keyed structure that reaches these bytes.'
+      - 'The manifest is a MATERIALIZED artifact (D-08), not a recomputation: a downstream
+        consumer must be able to be handed THE identical sampled-ID set, and a shared file
+        makes that a fact where two independent regenerations only make it a hash
+        comparison.'
+    preconditions:
+      - 'the selection is complete and the access ledger is closed'
+    postconditions:
+      - 'SHA256(payload_bytes) == envelope.semantic_hash'
+
+  selection_replay:
+    formula: 'replay(manifest, &PreparedDataset<Canonical>) -> Result<Selection, ContrastiveDataError>'
+    domain: 'a selection manifest of untrusted origin plus a canonical prepared dataset'
+    codomain: 'the validated Selection, or a typed error naming the first disagreement'
+    invariants:
+      - 'Replay consumes a CANONICAL PREPARED DATASET, never bare bytes. Handing replay raw
+        buffers would re-open every boundary question the attestation already settled.'
+      - 'Revalidated, all of it: profile (structurally, by type); dataset and validation
+        fingerprints; exclusion-record equality; membership of every id; per-row exact AND
+        normalized hashes; id uniqueness; per-class balance equal to shots_per_class;
+        ordering; supported schema and algorithm versions; and recomputed semantic_hash
+        equality.'
+      - 'AND — because selection is deterministic — recomputing the selection from
+        (dataset, root_seed, shots_per_class) must reproduce the recorded ordered list
+        exactly. Anything else is SelectionReplayMismatch naming the field.'
+      - 'That last clause is what makes the manifest evidence rather than an assertion. A
+        manifest whose hash is internally consistent but whose contents no seed could have
+        produced is exactly what a hand-edited manifest looks like.'
+    preconditions:
+      - 'the manifest declares a supported schema_version and algorithm_version'
+    postconditions:
+      - 'on Ok, the returned Selection equals a fresh selection from the same tuple'
+
+  access_ledger_persistence:
+    formula: 'ledger_hash = SHA256(AccessLedger::to_canonical_bytes()) ; both the records and ledger_hash are embedded in the selection payload'
+    domain: 'the sequence of split accesses performed while building a selection'
+    codomain: 'canonical ledger bytes plus their digest, inside the hashed selection payload'
+    invariants:
+      - 'The ledger records every split role touched and the profile identity under which
+        it was touched.'
+      - 'It has a DETERMINISTIC canonical byte form, so its hash is reproducible.'
+      - 'The records AND the hash live INSIDE the selection manifest payload. A ledger that
+        exists only in memory is not evidence: the downstream selection-lock gate needs an
+        artifact it can read after the process that built it has exited.'
+      - 'Because the ledger hash is inside the hashed payload, tampering with the ledger
+        invalidates the selection''s semantic_hash. The two cannot be desynchronized.'
+    preconditions:
+      - 'the ledger is closed before the payload is serialized'
+    postconditions:
+      - 'selection payload contains ledger_hash == SHA256(ledger canonical bytes)'
+
+  # ==========================================================================
+  # 6. Pair identity and capacity (DATA-04, DATA-05)
+  # ==========================================================================
+
+  canonical_pair:
+    formula: 'CanonicalPair::new(a, b) = Ok{lo: min(a,b), hi: max(a,b)} if a != b else Err(SelfPair) ; target = 1.0 if class(lo) == class(hi) else 0.0'
+    domain: 'a, b — SelectedId ordinals into one Selection'
+    codomain: 'an unordered, self-pair-free CanonicalPair with a derived target'
+    invariants:
+      - 'The fields are PRIVATE and this is the SOLE constructor, so both orientations of
+        the same unordered pair are the same value and (x, x) is unrepresentable (D-12).
+        No configuration value can resurrect a self-pair.'
+      - 'The 1.0 / 0.0 target is DERIVED from the endpoints'' classes at emission. It is
+        never accepted from caller input, because a caller-supplied target is precisely how
+        a poisoned pair claims to be a positive.'
+      - 'Structural impossibility, not a scattered `assert!(a != b)` at call sites: the
+        latter is a property of the call sites, which grow.'
+    preconditions:
+      - 'a and b are ordinals of the same Selection'
+    postconditions:
+      - 'result.lo < result.hi'
+
+  untrusted_pair_ingest:
+    formula: 'UntrustedPairRecord { lo: String, hi: String, target: f32 } -> Result<LabeledPair, ContrastiveDataError>'
+    domain: 'replayed or dumped pair bytes of untrusted origin, plus the Selection they claim to belong to'
+    codomain: 'a trusted LabeledPair, or a typed error'
+    invariants:
+      - 'A SEPARATE DTO with `deny_unknown_fields` parses the bytes. A trusted pair type
+        with a private constructor CANNOT REPRESENT poisoned input, so validating "at the
+        boundary" is impossible without an untrusted representation to validate FROM. This
+        is why the DTO exists rather than deserializing straight into CanonicalPair.'
+      - 'Validation, in order: membership of both endpoints in the Selection
+        (EndpointNotInSelection, naming the offending id); canonical ordering (lo < hi);
+        distinctness (SelfPair); and agreement of the declared target with the target
+        DERIVED from the endpoints'' classes (PairTargetMismatch).'
+      - 'The target check is not redundant with membership: a record naming two legitimate
+        same-class endpoints while declaring target 0.0 is a semantically poisoned pair
+        made entirely of valid parts.'
+    preconditions:
+      - 'the Selection the record claims membership in is available'
+    postconditions:
+      - 'every accepted LabeledPair satisfies canonical_pair''s postconditions'
+
+  positive_capacity:
+    formula: 'positive_capacity(n) = checked_sum over k of checked(n_k * (n_k - 1) / 2)'
+    domain: 'n — the per-class sizes of a Selection, n_k >= 0'
+    codomain: 'Result<u64, ContrastiveDataError>'
+    invariants:
+      - 'O(K) in the number of classes. Computing the count is cheap; only ENUMERATING the
+        pairs is quadratic, which is the whole reason fidelity and boundedness are
+        compatible here (D-14).'
+      - 'RETURNS A TYPED RESULT, NOT A BARE u64. Every step uses checked arithmetic and
+        overflow is ArithmeticOverflow{operation}. A wrapped capacity is not a large
+        number — it is a small, plausible-looking one, and it would silently under-sample
+        forever.'
+      - 'Self-pairs are EXCLUDED, hence n_k * (n_k - 1) / 2 rather than n_k * (n_k + 1) / 2.
+        This is an Aprender policy (deviation clause 3), not SetFit''s behavior.'
+      - 'A singleton class contributes exactly 0, which is what makes singleton_policy''s
+        NegativesOnly fall out of the arithmetic instead of needing a special case.'
+    preconditions:
+      - 'n is the per-class size vector of a completed Selection'
+    postconditions:
+      - 'result >= 0 and no intermediate wrapped'
+
+  negative_capacity:
+    formula: 'negative_capacity(n) = checked((S*S - sum_k n_k*n_k) / 2), S = checked_sum(n) ; equivalently sum over j<k of n_j*n_k'
+    domain: 'n — the per-class sizes of a Selection'
+    codomain: 'Result<u64, ContrastiveDataError>'
+    invariants:
+      - 'O(K), computed from S and the sum of squares — never by iterating over unordered
+        class PAIRS, which would be O(K^2).'
+      - 'Checked arithmetic throughout; overflow is ArithmeticOverflow{operation}. S*S is
+        the first thing to overflow and it does so long before the true capacity would.'
+      - 'A single-class Selection has negative_capacity 0, which degenerate-policy handles
+        explicitly rather than dividing by it.'
+    preconditions:
+      - 'n is the per-class size vector of a completed Selection'
+    postconditions:
+      - 'result == sum over j<k of n_j*n_k, exactly'
+
+  default_epoch_budget:
+    formula: 'closed_form = 2 * max(positive_capacity, negative_capacity) ; effective_default_budget = min(closed_form, hard_cap)'
+    domain: 'per-class sizes n, hard_cap: u64'
+    codomain: 'Result<u64, ContrastiveDataError>'
+    invariants:
+      - 'DEFAULT_HARD_CAP = 1048576 (2^20), a contract-resident constant and a PairConfig
+        field. It is chosen so the clamp NEVER engages for any contracted layout: the
+        largest contracted closed form is 24576, forty-two times below the cap. The cap is
+        a denial-of-service ceiling for adversarial inputs, not a tuning knob that quietly
+        reshapes normal runs.'
+      - 'WORKED VALUES under the default cap, balanced 3-class: 8-shot (n = [8,8,8], S=24)
+        -> positives 84, negatives 192, closed form 384, clamp INACTIVE. 64-shot
+        (n = [64,64,64], S=192) -> positives 6048, negatives 12288, closed form 24576,
+        clamp INACTIVE.'
+      - 'CLAMP-ENGAGES example, so the clamped branch is exercised somewhere: n = [64,64,64]
+        with hard_cap 10000 -> effective default 10000, and the manifest records that the
+        clamp engaged.'
+      - 'For every balanced 3-class layout with n >= 2 the negatives dominate, which is why
+        these values coincide with the pinned reference''s epoch length despite the
+        reference including self-pairs. On DEGENERATE layouts they diverge, deliberately —
+        see pair_stream_degenerate_policy and the [4,1] prediction.'
+      - 'The manifest always records WHETHER the clamp engaged. A budget that silently
+        differs from the closed form is a reproducibility hazard.'
+    preconditions:
+      - 'hard_cap > 0'
+    postconditions:
+      - 'effective_default_budget <= hard_cap'
+
+  budget_resolution:
+    formula: 'resolve(budget: Option<u64>, hard_cap: u64) = ZeroHardCap if hard_cap == 0 ; ZeroBudget if budget == Some(0) ; BudgetExceedsHardCap if budget == Some(b) and b > hard_cap ; b if budget == Some(b) ; min(closed_form, hard_cap) if budget == None'
+    domain: 'budget: Option<u64>, hard_cap: u64, the layout''s closed form'
+    codomain: 'Result<u64, ContrastiveDataError>'
+    invariants:
+      - 'THE HARD CAP IS NOT BYPASSABLE. An explicit budget above the cap is
+        BudgetExceedsHardCap{budget, hard_cap} — it FAILS LOUDLY. It is NOT silently
+        clamped.'
+      - 'WHY FAIL RATHER THAN CLAMP. Silent clamping preserves the cap''s DoS role while
+        discarding a number the user typed, so the run succeeds and produces a different
+        dataset than the one requested — the single worst outcome for reproducibility. A
+        user who genuinely wants more raises --hard-cap deliberately, and that decision is
+        then visible in the config record.'
+      - 'A zero hard cap is a CONFIGURATION defect (ZeroHardCap); a zero explicit budget is
+        a REQUEST defect (ZeroBudget). They are separate variants because they are fixed in
+        different places.'
+      - 'Only the None branch clamps, and only that branch records clamp engagement.'
+    preconditions:
+      - 'the layout''s closed form has been computed without overflow'
+    postconditions:
+      - 'on Ok, result > 0'
+      - 'on Ok, result <= hard_cap'
+
+  # ==========================================================================
+  # 7. The pair stream (DATA-05 — the non-quadratic core)
+  # ==========================================================================
+
+  pair_stream:
+    formula: 'ordinal 2t -> positive draw t ; ordinal 2t+1 -> negative draw t ; w_c = n_c * (S - n_c) with S = sum_i n_i ; sum_c w_c = 2 * negative_capacity'
+    domain: 'a Selection''s sorted class buckets, an effective budget, a root_seed'
+    codomain: 'a stream of at most `budget` CanonicalPairs with derived targets'
+    invariants:
+      - 'ALTERNATION: even ordinals are POSITIVE, odd ordinals are NEGATIVE. This matches
+        the pinned reference''s interleave and gives strict balance at every even prefix.'
+      - 'POSITIVE DRAW: choose class k with weight C(n_k, 2) via an O(K) prefix-sum array
+        and a binary search, then triangular-unrank a uniform index in [0, C(n_k,2)) to an
+        (a, b) member pair. No rejection loop.'
+      - 'NEGATIVE DRAW IS O(K), NOT O(K^2). Keep the per-class weight array
+        w_c = n_c * (S - n_c) — O(K) entries whose sum is exactly 2 * negative_capacity.
+        Draw the first class j against those weights; draw the first endpoint uniformly
+        inside class j; draw t uniformly in [0, S - n_j); map t to a global bucket index
+        that SKIPS class j''s contiguous block using the O(K) class-offset array
+        (`t < offset_j ? t : t + n_j`); resolve the second class by binary search over the
+        offsets.'
+      - 'WHY THAT IS EQUIVALENT: sampling ORDERED cross-class endpoint pairs uniformly this
+        way induces exactly weight n_j * n_k on each UNORDERED class pair {j,k}, because
+        the pair is reachable as (j then k) and as (k then j). The D-14 semantics are
+        therefore unchanged.'
+      - 'THE REJECTED ALTERNATIVE, named so it is not reinvented: enumerating unordered
+        class pairs and building class-pair prefix sums. That is O(K^2) retained state,
+        which is fine at K = 3 and fatal at K ~ N — the adversarial layout where every
+        class is a singleton. It is FORBIDDEN here.'
+      - 'RETAINED STATE: sorted buckets O(N) + class weights O(K) + class offsets O(K) + a
+        cursor. K <= N always, so the bound is O(examples + classes), independent of the
+        budget and independent of how many pairs have already been emitted.'
+      - 'ONE STREAM per (selection_hash, root_seed, strategy_version,
+        singleton_policy_version, budget). The stream is EPOCH-INDEPENDENT and
+        offset-resumable: a consumer that wants a different order across epochs adds
+        `epoch` to the domain string, which is a versioned, non-breaking policy extension
+        and is documented as such rather than left to be discovered.'
+      - 'v1 ships the OVERSAMPLING strategy only, as a versioned one-variant enum, so
+        adding `unique` or `undersampling` later is non-breaking.'
+    preconditions:
+      - 'the effective budget has been resolved (see budget_resolution)'
+      - 'at least one of positive_capacity, negative_capacity is non-zero'
+    postconditions:
+      - 'exactly `budget` pairs are emitted, or the degenerate policy applies'
+      - 'retained state never exceeds c * (examples + classes)'
+
+  pair_stream_degenerate_policy:
+    formula: 'degenerate_policy_version = 1 ; hard_cap == 0 -> ZeroHardCap ; effective budget == 0 -> ZeroBudget ; pos == 0 and neg == 0 -> NoPairCapacity ; pos == 0 and neg > 0 -> negatives_only ; neg == 0 and pos > 0 -> positives_only ; otherwise alternate'
+    domain: 'any per-class size vector, including empty, single-class, and all-singleton layouts'
+    codomain: 'either a typed error or a stream with a recorded `emitted_kinds`'
+    invariants:
+      - 'EVERY degenerate case is DEFINED and version-tagged. An undefined degenerate case
+        is not an edge case; it is a place where two implementations silently disagree.'
+      - 'pos == 0 AND neg == 0 (a single class of size <= 1, or no examples at all) is
+        NoPairCapacity{positive_capacity, negative_capacity}. There is nothing to emit.'
+      - 'pos == 0 AND neg > 0 — every class a singleton, the K ~ N adversarial layout —
+        emits NEGATIVES ONLY, and the replay record states `emitted_kinds:
+        negatives_only`. It is not an error: the layout is legal and its pair space is
+        non-empty.'
+      - 'neg == 0 AND pos > 0 — one class with two or more members — emits POSITIVES ONLY,
+        recorded the same way.'
+      - 'ODD effective budget with both kinds available: alternation yields ceil(B/2)
+        positives and floor(B/2) negatives. The balance invariant is therefore
+        |#pos - #neg| <= 1 at EVERY prefix and == 0 at every EVEN prefix. Stating it as
+        "strict 1:1" would be false for odd budgets and the test would be quietly relaxed.'
+      - 'OVERSAMPLING DRAWS WITH REPLACEMENT, so budget > capacity is NOT an error on this
+        strategy. BudgetExceedsCapacity is reserved for the unique-capacity check and must
+        not be raised here — conflating them would reject a legal oversampling request.'
+      - 'The emitted_kinds field is always recorded, including in the ordinary both-kinds
+        case, so its absence cannot be confused with the ordinary case.'
+    preconditions:
+      - 'capacities were computed without overflow'
+    postconditions:
+      - 'the replay record states emitted_kinds and degenerate_policy_version'
+
+  singleton_policy:
+    formula: 'SingletonPolicy(v1) = { NegativesOnly } ; singleton_policy_version = 1'
+    domain: 'a Selection in which some class has exactly one selected example'
+    codomain: 'the policy plus the count of affected classes, recorded in the manifest'
+    invariants:
+      - 'v1 has exactly ONE variant, NegativesOnly: a singleton class produces NO positives
+        — its C(1,2) = 0 weight makes that arithmetic, not a special case — still appears
+        in negatives, and still contributes its one row to any downstream head.'
+      - 'NEVER SILENT. The manifest records the policy, its version, and the number of
+        affected classes. A dataset whose singleton classes were quietly dropped looks
+        identical to one that had none.'
+      - 'The pinned reference gives a singleton class a positive SELF-pair. Aprender does
+        not, because self-pairs are excluded (deviation clause 3). The divergence is
+        recorded in the fixture families, not hidden inside a tolerance.'
+      - 'DISTINCT from the underflow case: singleton_policy concerns a class with one
+        SELECTED example; CrossSplitDuplicateUnderflow concerns a class whose POOL cannot
+        supply shots_per_class. The first is legal, the second is an error.'
+      - 'Version-tagged so that adding a second variant later is a detectable, non-breaking
+        change rather than a silent behavior swap.'
+    preconditions:
+      - 'the selection is complete'
+    postconditions:
+      - 'manifest.singleton_policy and manifest.singleton_policy_version are present'
+
+  # ==========================================================================
+  # 8. Pair manifests (D-09)
+  # ==========================================================================
+
+  pair_manifest_replay:
+    formula: 'PairReplayRecord = (selection_semantic_hash, root_seed, strategy_version, singleton_policy_version, degenerate_policy_version, budget, hard_cap, clamp_engaged, emitted_kinds)'
+    domain: 'a completed pair stream'
+    codomain: 'a small record from which the identical stream regenerates'
+    invariants:
+      - 'PAIRS ARE REPLAYED, NOT STORED (D-09). Only the record and the manifest hash are
+        persisted. Storing pair bytes for many cells and epochs is gigabytes of derivable
+        data, and a serverless consumer can carry a ~200-byte record instead of a file.'
+      - 'An explicit DUMP path exists for audit and fixture generation. It is a flag on the
+        consumer, not the default, and it is the only thing that ever writes pair bytes.'
+      - 'The record is sufficient: given the same PreparedDataset<Canonical> and the same
+        record, the regenerated stream is identical pair-for-pair, in order.'
+      - 'Every field is present even when it is the default — an absent field is
+        indistinguishable from a field that was never considered.'
+    preconditions:
+      - 'the selection referenced by selection_semantic_hash is available'
+    postconditions:
+      - 'regenerate(record) is pairwise identical to the original stream'
+
+  pair_manifest_hash:
+    formula: 'pair_manifest_hash = SHA256( PairReplayRecord::to_canonical_bytes() || 0x1E || pair_0_bytes || pair_1_bytes || ... )'
+    domain: 'a PairReplayRecord and the stream it describes'
+    codomain: '[u8; 32]'
+    invariants:
+      - 'THE HASH COMMITS THE TUPLE, NOT JUST THE PAIRS. The replay record''s canonical
+        bytes are hashed FIRST, separated from the stream by a single 0x1E (ASCII record
+        separator).'
+      - 'WHY. Hashing pair bytes alone would let two different seeds, budgets or policy
+        versions that happen to produce the same stream collide to the same manifest hash —
+        so a manifest could attest a stream while saying nothing about how it was
+        produced, which is exactly what the hash is for.'
+      - 'The digest is computed STREAMING. Pairs are fed to the hasher as they are emitted
+        and never collected into a Vec: collecting would reintroduce the O(budget) memory
+        the whole design exists to avoid, in the one place nobody would look for it.'
+      - 'The 0x1E separator prevents a record/stream boundary ambiguity under
+        concatenation.'
+    preconditions:
+      - 'the replay record is complete before the first pair is emitted'
+    postconditions:
+      - 'identical (record, stream) pairs hash identically on any host and any worker count'
+
+proof_obligations:
+
+- type: safety
+  property: >
+    OBLIG-CPP-BYTES-BOUNDARY: the crate's public API contains no path-shaped types, the
+    crate performs no filesystem or network access, and its resolved NORMAL dependency
+    closure is a SUBSET of crates/aprender-contrastive-data/allowed-deps.txt. All three
+    are checked mechanically by `make contrastive-data-boundary`, which (a) resolves
+    `cargo tree -p aprender-contrastive-data -e normal --prefix none --no-dedupe`, checks
+    cargo tree's OWN status first, and fails on any package absent from the allowlist, and
+    (b) scans every file under src/ for `std::fs`, `std::net`, `std::path`, `PathBuf` and
+    `Path`, with NO `#[cfg(test)]` exemption. The allowlist is POSITIVE, not a deny-list:
+    a deny-list only ever catches the hazards someone already enumerated, so a new
+    transitive dependency would pass it silently. The src/-wide ban has no cfg(test)
+    exemption because a cfg-aware grep is not reliably possible, and forbidding the
+    symbols everywhere makes "the public API contains no path types" a mechanical
+    consequence rather than an unverifiable claim; tests that genuinely need a filesystem
+    belong in tests/ or in apr-cli. Owned by plan 02-02.
+  formal: >
+    resolved_normal_closure ⊆ allowed_deps && grep_src(fs|net|path|Path|PathBuf) == {}
+  applies_to: all
+
+- type: soundness
+  property: >
+    OBLIG-CPP-LEAKAGE-NOT-CONSTRUCTIBLE: a selection run on the compatibility profile
+    CANNOT BE CONSTRUCTED, not merely rejected. Selection consumes
+    `&PreparedDataset<Canonical>`; `PreparedDataset<Compatibility>` is a DIFFERENT TYPE
+    and has no `validation_witness` method, so passing one to selection is a compile
+    error, pinned by a trybuild .stderr snapshot (D-19). The earlier runtime-field design
+    could not discharge this obligation: with `profile` as a field,
+    `Split::<Validation>::from_jsonl_bytes(bytes, &compat_decl)` compiles and returns
+    Err(ConflictingSourceRole) at run time, so the compile-fail evidence DATA-06 asks for
+    would not have existed. Owned by plan 02-06.
+  formal: 'compile_fail(select(&PreparedDataset::<Compatibility>)) && !exists(PreparedDataset::<Compatibility>::validation_witness)'
+  applies_to: all
+
+- type: classification
+  property: >
+    OBLIG-CPP-BOUNDARY-VALIDATION: honest-looking JSONL bytes whose embedded
+    `source_split` disagrees with the role being constructed are a TYPED error
+    (SplitRoleMismatch), never a successfully constructed Split of the requested role
+    (D-16). The typestate protects a library caller who writes code; this obligation
+    protects against bytes, which is a different adversary. Every other DATA-02 ingest
+    class is likewise typed and names split and index: InvalidUtf8, MalformedRow,
+    EmptyInput, UnknownLabel, LabelTextMismatch, DuplicateId, InvalidClassCounts. Owned by
+    plan 02-03.
+  formal: 'row.source_split != decl.role => Err(SplitRoleMismatch{expected_role, embedded_role})'
+  applies_to: all
+
+- type: soundness
+  property: >
+    OBLIG-CPP-ATTESTATION-BEFORE-EXPOSURE: canonical splits are exposed to a consumer only
+    after the attestation's profile, schema version, per-split hashes, dataset fingerprint
+    and exclusion record have ALL been re-derived from the supplied buffers and matched.
+    Any disagreement is a specific typed error (ProfileMismatch, SplitHashMismatch,
+    FingerprintMismatch, ExclusionRecordMismatch, UnsupportedSchemaVersion, MissingSplit),
+    never a generic failure and never a warning. An attestation that is quoted back rather
+    than recomputed attests nothing about the bytes in hand. Owned by plan 02-06.
+  formal: 'expose(splits) requires forall f in attested_fields: rederive(f, buffers) == attested(f)'
+  applies_to: all
+
+- type: conservation
+  property: >
+    OBLIG-CPP-DUP-GROUP-COALESCED: a row pair that is BOTH an exact duplicate and a
+    normalized duplicate forms exactly ONE duplicate group and decrements the affected
+    class pool exactly ONCE. Grouping is by connected component over the union of
+    exact-hash and normalized-hash edges. Independent grouping by the two keys
+    double-counts — every exact duplicate is also a normalized duplicate — and an
+    understated pool near the boundary manufactures a CrossSplitDuplicateUnderflow that
+    the data does not contain. Owned by plan 02-03.
+  formal: 'forall groups g1 != g2: rows(g1) ∩ rows(g2) == {} && reduced_pool_k == |pool_k| - |affected_k|'
+  applies_to: all
+
+- type: bound
+  property: >
+    OBLIG-CPP-CAPACITY-INVARIANT: retained sampler state never exceeds
+    c * (examples + classes) and is INDEPENDENT of the budget and of how many pairs have
+    already been emitted. Measured STRUCTURALLY through the public `state_report()`
+    diagnostics — allocation counts and container lengths — never by self-report, because
+    a self-reported retained-state size is exactly as trustworthy as a self-reported
+    decreasing loss. The in-band MATERIALIZING negative, which builds the Cartesian
+    product, must be RED under this same gate at a size where the honest sampler passes
+    (D-25). Owned by plans 02-07 and 02-08.
+  formal: 'state_report().retained_bytes <= c * (examples + classes) && d(state)/d(emitted) == 0'
+  applies_to: all
+
+- type: bound
+  property: >
+    OBLIG-CPP-KN-ADVERSARIAL: the capacity invariant holds at K ~ N — every class a
+    singleton — under a fixed small budget. This is the layout the rejected O(K^2)
+    class-pair design would have violated, and it is precisely the layout a 3-class test
+    can NEVER expose: at K = 3, K^2 and K are indistinguishable. The negative sampler must
+    therefore retain only the O(K) per-class weight and offset arrays. Owned by plan
+    02-07.
+  formal: 'for n = [1;N], state_report().retained_bytes <= c * (N + N) and no class-pair array is allocated'
+  applies_to: all
+
+- type: soundness
+  property: >
+    OBLIG-CPP-LEAKY-RED: an untrusted pair record naming an identifier that is not in the
+    selection is rejected with EndpointNotInSelection, and the error NAMES the offending
+    identifier. The in-band LEAKY negative — a sampler that reaches for validation ids —
+    must be RED under the same membership gate that ACCEPTS the honest sampler (D-25). The
+    mirror half is mandatory: without it, "the gate rejects the leaky sampler" would also
+    be satisfied by a gate that rejects everything. Owned by plans 02-07 and 02-08.
+  formal: 'reject(leaky_sampler) && accept(honest_sampler) && error.contains(offending_id)'
+  applies_to: all
+
+- type: safety
+  property: >
+    OBLIG-CPP-BUDGET-FAIL-CLOSED: every budget pathology is a typed error and none is a
+    silent adjustment. hard_cap == 0 -> ZeroHardCap; resolved budget 0 -> ZeroBudget;
+    explicit budget > hard_cap -> BudgetExceedsHardCap (the cap BINDS EXPLICIT BUDGETS —
+    it is not silently clamped, because a run that succeeds with a different dataset than
+    the one requested is the worst reproducibility outcome available); no capacity of
+    either kind -> NoPairCapacity; and BudgetExceedsCapacity strictly reserved for the
+    unique-capacity check, since oversampling draws with replacement. Owned by plans 02-02
+    (error surface) and 02-07 (resolution).
+  formal: 'budget > hard_cap => Err(BudgetExceedsHardCap) && never silently_clamped(explicit_budget)'
+  applies_to: all
+
+- type: determinism
+  property: >
+    OBLIG-CPP-REPLAY-DETERMINISM: an identical replay tuple regenerates an identical pair
+    sequence and an identical manifest hash, on any host and INDEPENDENT OF WORKER COUNT.
+    Worker independence is structural, not asserted: draw i is a pure function of
+    (key, counter) via Philox generate_at, so there is no ordering for a scheduler to
+    perturb. The manifest hash COMMITS THE REPLAY TUPLE as well as the stream (record
+    bytes, then 0x1E, then the streamed pairs), so two different seeds cannot collide to
+    the same attestation. Owned by plans 02-04 and 02-07.
+  formal: 'regenerate(record) == original && hash(record, stream) == SHA256(record_bytes || 0x1E || pair_bytes...)'
+  applies_to: all
+
+- type: soundness
+  property: >
+    OBLIG-CPP-SELECTION-REPLAY-STRICT: a selection manifest is rejected with a typed error
+    naming the first disagreeing field if ANY of the following fails — profile
+    (structurally, by type), dataset fingerprint, validation fingerprint, exclusion-record
+    equality, membership, per-row exact AND normalized hashes, id uniqueness, per-class
+    balance equal to shots_per_class, ordering, supported schema and algorithm versions,
+    recomputed semantic_hash, or — because selection is deterministic — reproduction of
+    the recorded ordered list from (dataset, root_seed, shots_per_class). That last clause
+    is what separates a manifest that is internally consistent from one that some seed
+    could actually have produced. Owned by plan 02-05.
+  formal: 'replay(manifest, dataset) == Ok(s) => s == select(dataset, manifest.root_seed, manifest.shots)'
+  applies_to: all
+
+- type: completeness
+  property: >
+    OBLIG-CPP-LEDGER-PERSISTED: the access ledger's canonical bytes AND its hash are
+    inside the selection manifest payload — the HASHED region, so the ledger cannot be
+    desynchronized from the selection it describes without invalidating semantic_hash. A
+    ledger that exists only in memory is not evidence, because the gate that reads it runs
+    after the process that built it has exited. Owned by plan 02-04.
+  formal: 'selection_payload.ledger_hash == SHA256(ledger.to_canonical_bytes()) && ledger_hash ∈ hashed_region'
+  applies_to: all
+
+- type: completeness
+  property: >
+    OBLIG-CPP-SINGLETON-EXPLICIT: whenever a class has exactly one selected example, the
+    manifest records the singleton policy, its version, and the number of affected classes
+    — never silently. Default and sole v1 variant is NegativesOnly: no positives (C(1,2) =
+    0 falls out of the arithmetic), still present in negatives, still contributing its row
+    downstream. This closes the recorded planning blocker "decide and version
+    singleton-class and bounded-oversampling behavior". Owned by plan 02-07.
+  formal: 'exists k: n_k == 1 => manifest.singleton_policy == NegativesOnly && manifest.singleton_policy_version == 1 && manifest.singleton_affected_classes == |{k : n_k == 1}|'
+  applies_to: all
+
+- type: classification
+  property: >
+    OBLIG-CPP-ERROR-TAXONOMY: every failure of this protocol is one of the enumerated
+    typed variants of ContrastiveDataError, and none is a panic, a sentinel value, or an
+    untyped string. Ingest: MalformedRow, InvalidUtf8, EmptyInput, UnknownLabel,
+    LabelTextMismatch, InvalidClassCounts, DuplicateId, ConflictingSourceRole,
+    SplitRoleMismatch, RowHashMismatch, CrossSplitDuplicateUnderflow. Selection and
+    manifest: InvalidShots, SemanticHashMismatch, SelectionReplayMismatch,
+    EndpointNotInSelection. Attestation: ProfileMismatch, MissingSplit, SplitHashMismatch,
+    FingerprintMismatch, ExclusionRecordMismatch. Pairs: SelfPair, NoPairCapacity,
+    ZeroBudget, ZeroHardCap, BudgetExceedsHardCap, BudgetExceedsCapacity,
+    OrdinalOutOfRange, PairTargetMismatch. Version, arithmetic and plumbing:
+    UnsupportedSchemaVersion, UnsupportedPolicyVersion, UnsupportedAlgorithmVersion,
+    UnsupportedNormalizationVersion, ArithmeticOverflow, Serialization, Io. The enum is
+    #[non_exhaustive]: this list is an exhaustive INITIAL design, not a permanent freeze.
+    A later plan MAY add a variant provided it (1) records the addition and its reason in
+    that plan's SUMMARY and (2) extends this obligation's list. Extending the taxonomy is
+    a contract change. Owned by plan 02-02.
+
+    TAXONOMY EXTENSION, plan 02-06: UnsupportedNormalizationVersion. The dataset
+    attestation carries the content-normalization tag its exclusion record was computed
+    under, and that tag is a STRING rather than an integer, so UnsupportedSchemaVersion
+    (whose got/supported are u32) cannot carry it. It is a separate failure in substance
+    too: a foreign schema version means the artifact's FIELDS are unknown, while a foreign
+    normalization version means a known field MEANS something else — an exclusion record
+    computed under different collapsing rules would otherwise be replayed as if it had been
+    computed under these ones, which is exactly the drift D-17 versions the pipeline to
+    prevent. Raised only by attestation::preflight; discharged by FALSIFY-CPP-015.
+  formal: 'forall fallible paths f: f returns Result<_, ContrastiveDataError> && no panic on caller input'
+  applies_to: all
+
+- type: equivalence
+  property: >
+    OBLIG-CPP-DEVIATION-DECLARED: the deviation from SetFit is stated in three clauses, in
+    both the contract and every manifest, and is labeled an explicit APRENDER POLICY. It
+    is NEVER attributed to SetFit. Clause 1 — pair IDENTITIES are SAMPLED from the pair
+    space, not enumerated-then-shuffled, so identities cannot match the reference's Python
+    RNG and only counts are comparable. Clause 2 — the per-epoch count is CAPPED above N
+    by a configurable hard cap. Clause 3 — SELF-PAIRS ARE EXCLUDED, whereas the pinned
+    setfit 1.1.3 implementation INCLUDES the diagonal
+    (`shuffle_combinations` defaults to replacement=True, i.e. `np.triu_indices(n, k=0)`),
+    which contradicts SetFit's own published documentation; the exclusion is therefore
+    ours and matches the docs, not the pinned code. Reference fixtures record MEASURED
+    reference behavior in one family and Aprender's contracted counts in another, so the
+    divergence is visible and versioned rather than absorbed. Owned by plans 02-02 and
+    02-08.
+  formal: 'manifest.deviation_clauses == [sampled_identities, capped_count, self_pairs_excluded] && attribution == "aprender"'
+  applies_to: all
+
+# ============================================================================
+# COMMAND FORM. Every `test:` below carries AT MOST ONE positional filter.
+# `cargo test` accepts exactly one TESTNAME; a second positional exits with
+# "error: unexpected argument '<name>' found" — verified against this crate
+# on 2026-08-08, not assumed. Two filters require the `--` form
+# (`cargo test -p <crate> -- a b`), which libtest treats as a UNION, so it is
+# the wrong tool for naming one test. A contract that names an invocation
+# which cannot run is the same defect these gates exist to catch.
+# ============================================================================
+falsification_tests:
+
+- id: FALSIFY-CPP-001
+  rule: 'OBLIG-CPP-BYTES-BOUNDARY — the D-04 boundary is enforced, not aspirational'
+  prediction: >
+    `make contrastive-data-boundary` exits 0 against the crate as shipped. Adding any
+    dependency absent from allowed-deps.txt (e.g. tempfile) makes it exit non-zero and
+    PRINT the offending package name; adding `use std::path::PathBuf;` anywhere under
+    src/ — including inside a `#[cfg(test)] mod tests` block — makes it exit non-zero
+    naming the file and line; and renaming allowed-deps.txt makes it FAIL rather than
+    pass on an empty allowlist.
+  test: make contrastive-data-boundary
+  test_harness: make contrastive-data-boundary
+  expected_output: 'contrastive-data-boundary: PASSED'
+  if_fails: >
+    Either a filesystem/network/async dependency entered the closure a serverless
+    consumer inherits, or the crate grew a path-shaped API and stopped being wrappable.
+    Do not widen allowed-deps.txt to make the gate green — the allowlist entry IS the
+    review, so adding a line without reading what the package pulls in converts the
+    control into a rubber stamp.
+
+- id: FALSIFY-CPP-002
+  rule: 'OBLIG-CPP-LEAKAGE-NOT-CONSTRUCTIBLE — compatibility-profile selection does not compile'
+  prediction: >
+    The trybuild suite compiles a program that passes a
+    `PreparedDataset<Compatibility>` to selection and one that calls
+    `validation_witness()` on it. BOTH fail to compile, and the committed .stderr
+    snapshots pin the messages (no method named `validation_witness`; mismatched types
+    Canonical vs Compatibility). The mirror case — the identical call against
+    `PreparedDataset<Canonical>` — COMPILES.
+  test: cargo test -p aprender-contrastive-data --test ui
+  test_harness: cargo test -p aprender-contrastive-data --test ui
+  expected_output: 'test result: ok'
+  if_fails: >
+    If the compile-fail cases now compile, the profile has regressed from a type
+    parameter to a runtime field and DATA-06's "cannot be constructed" has silently
+    become "is rejected at run time" — a strictly weaker guarantee that no runtime test
+    can distinguish. If the MIRROR case fails to compile, the type parameter has made
+    the honest path unusable and the gate would pass by rejecting everything.
+
+- id: FALSIFY-CPP-003
+  rule: 'OBLIG-CPP-BOUNDARY-VALIDATION — mislabeled source_split in honest bytes is typed'
+  prediction: >
+    Constructing a train split from bytes whose rows embed
+    `"source_split": "validation"` returns
+    Err(SplitRoleMismatch{expected_role: "train", embedded_role: "validation"}) — it does
+    NOT return a Split<Train>, and it does not warn. The sibling ingest classes each
+    return their own variant naming split and index: InvalidUtf8, MalformedRow,
+    EmptyInput, UnknownLabel, LabelTextMismatch, DuplicateId, InvalidClassCounts.
+  test: cargo test -p aprender-contrastive-data split
+  test_harness: cargo test -p aprender-contrastive-data split
+  expected_output: 'test result: ok'
+  if_fails: >
+    The typestate is being trusted to do a job it cannot do. It constrains code, not
+    bytes; deserialized object-storage input carries whatever role string an attacker or
+    a buggy exporter wrote. Validate the embedded role against the role being constructed
+    at the boundary, before the typed value exists.
+
+- id: FALSIFY-CPP-004
+  rule: 'OBLIG-CPP-ATTESTATION-BEFORE-EXPOSURE — every attested field is re-derived'
+  prediction: >
+    Flipping one byte in any supplied split buffer makes `from_attested_bytes` return
+    SplitHashMismatch naming that split; substituting a compatibility attestation returns
+    ProfileMismatch; omitting a named split returns MissingSplit; a bumped schema version
+    returns UnsupportedSchemaVersion; and a doctored exclusion record returns
+    ExclusionRecordMismatch. In every case NO split is exposed to the caller first.
+  test: cargo test -p aprender-contrastive-data attestation
+  test_harness: cargo test -p aprender-contrastive-data attestation
+  expected_output: 'test result: ok'
+  if_fails: >
+    The attestation is being quoted rather than recomputed, which makes it decoration:
+    it then proves only that someone wrote a JSON file, not that the bytes in hand are
+    the bytes it describes. Re-derive every field from the supplied buffers before
+    exposing anything.
+
+- id: FALSIFY-CPP-005
+  rule: 'OBLIG-CPP-DUP-GROUP-COALESCED — an exact+normalized duplicate is ONE group'
+  prediction: >
+    On a fixture where one train row is byte-identical to a validation row, the exclusion
+    record contains exactly ONE group (recording that both detection kinds fired) and the
+    affected class pool decreases by exactly ONE. On the pinned canonical dataset the
+    real duplicate (train row 70 = validation row 3) reduces the `none` pool from 159 to
+    158 — never to 157 — and the manifest's excluded_ids list is NOT empty.
+  test: cargo test -p aprender-contrastive-data dedup
+  test_harness: cargo test -p aprender-contrastive-data dedup
+  expected_output: 'test result: ok'
+  if_fails: >
+    A pool that shrinks by two for one duplicate means the exact-hash and normalized-hash
+    groupings ran independently and double-counted. That understates every pool, and near
+    the boundary it manufactures a CrossSplitDuplicateUnderflow that the data does not
+    contain — a failure invented by the detector. Group by connected component over the
+    UNION of both edge kinds.
+
+- id: FALSIFY-CPP-006
+  rule: 'OBLIG-CPP-CAPACITY-INVARIANT — the in-band materializing sampler is RED'
+  prediction: >
+    The MaterializingSampler, which builds the Cartesian product, EXCEEDS the retained-
+    state ceiling and its gate assertion fails, while the honest sampler passes the
+    identical gate at the identical size. Retained state is read from the public
+    `state_report()` structural diagnostics, and scaling N by 10x under a FIXED budget
+    leaves the honest sampler's retained state growing linearly in N and not at all in
+    the budget.
+  test: cargo test -p aprender-contrastive-data --test negative_materializing
+  test_harness: cargo test -p aprender-contrastive-data --test negative_materializing
+  expected_output: 'test result: ok'
+  if_fails: >
+    If the materializing variant PASSES, the memory gate cannot distinguish a streaming
+    sampler from one that enumerates, and every "O(examples + budget)" claim in this
+    phase is unevidenced. If the honest sampler fails, the ceiling is wrong or the
+    sampler started retaining per-draw state. A self-reported size is exactly as
+    trustworthy as a self-reported decreasing loss — measure structurally.
+
+- id: FALSIFY-CPP-007
+  rule: 'OBLIG-CPP-KN-ADVERSARIAL — the invariant holds at K ~ N, not just at K = 3'
+  prediction: >
+    With N = 512 singleton classes (n = [1; 512]) and a FIXED budget of 64, the sampler
+    emits negatives only and its retained state stays within c * (N + K); no array of
+    size proportional to K*K is ever allocated. positive_capacity is 0,
+    negative_capacity is C(512, 2) = 130816, and the run does not error.
+  test: cargo test -p aprender-contrastive-data --test negative_materializing falsify_cpp_007
+  test_harness: cargo test -p aprender-contrastive-data --test negative_materializing falsify_cpp_007
+  expected_output: 'test result: ok. 1 passed'
+  if_fails: >
+    The negative sampler is enumerating unordered CLASS pairs — the rejected O(K^2)
+    design. At the 3-class layouts every other test uses, K^2 = 9 and K = 3 are
+    indistinguishable, so this is the only shape of test that can see the defect.
+    Replace the class-pair prefix sums with the per-class weights n_c * (S - n_c) plus
+    the block-skipping offset map.
+
+- id: FALSIFY-CPP-008
+  rule: 'OBLIG-CPP-LEAKY-RED — the in-band leaky sampler is RED, and the mirror is GREEN'
+  prediction: >
+    The LeakySampler, which reaches for a validation id, is rejected by the endpoint-
+    membership gate with EndpointNotInSelection, and the error message NAMES the
+    offending identifier. The mirror test asserts the IDENTICAL gate call ACCEPTS the
+    honest sampler.
+  test: cargo test -p aprender-contrastive-data --test negative_leaky
+  test_harness: cargo test -p aprender-contrastive-data --test negative_leaky
+  expected_output: 'test result: ok'
+  if_fails: >
+    If the leaky variant is accepted, "no leakage" is a claim about which inputs the
+    suite happened to try, not a property of the code. If the mirror fails, the gate
+    rejects everything and its passing half proves nothing. If the error does not name
+    the id, a real leak is red but undiagnosable.
+
+- id: FALSIFY-CPP-009
+  rule: 'OBLIG-CPP-BUDGET-FAIL-CLOSED — an explicit over-cap budget FAILS, never clamps'
+  prediction: >
+    With hard_cap = 10000 and an explicit budget of 20000, pair-stream construction
+    returns Err(BudgetExceedsHardCap{budget: 20000, hard_cap: 10000}). It does NOT
+    return a stream of 10000 pairs. Separately hard_cap = 0 returns ZeroHardCap, an
+    explicit budget of 0 returns ZeroBudget, and a single class of size 1 returns
+    NoPairCapacity.
+  test: cargo test -p aprender-contrastive-data pairs
+  test_harness: cargo test -p aprender-contrastive-data pairs
+  expected_output: 'test result: ok'
+  if_fails: >
+    A silent clamp keeps the DoS ceiling while discarding a number the user typed, so
+    the run succeeds and produces a different dataset than the one requested — the worst
+    reproducibility outcome available, because nothing is red and the manifest looks
+    fine. Fail loudly and let the user raise --hard-cap deliberately.
+
+- id: FALSIFY-CPP-010
+  rule: 'OBLIG-CPP-BUDGET-FAIL-CLOSED — the DEFAULT budget clamps, and says so'
+  prediction: >
+    With n = [64,64,64] the closed form is 24576 (positives 6048, negatives 12288). Under
+    the default hard cap of 1048576 the effective default budget is 24576 and the
+    manifest records clamp_engaged = false. Under an explicit hard_cap of 10000 the
+    effective default budget is 10000 and the manifest records clamp_engaged = true. The
+    8-shot layout n = [8,8,8] gives 384 with the clamp inactive.
+  test: cargo test -p aprender-contrastive-data pairs
+  test_harness: cargo test -p aprender-contrastive-data pairs
+  expected_output: 'test result: ok'
+  if_fails: >
+    If 384 or 24576 is wrong, the closed form diverged from D-14 and every downstream
+    epoch-length comparison is meaningless. If clamp_engaged is absent or always false,
+    a clamped run is indistinguishable from an unclamped one in the artifact, which
+    defeats the point of recording it.
+
+- id: FALSIFY-CPP-011
+  rule: 'OBLIG-CPP-REPLAY-DETERMINISM — draw i is a pure function of i'
+  prediction: >
+    For a fixed (root_seed, domain), draw ordinal i is byte-identical across repeated
+    calls, across process runs, and across 1 vs N worker threads; drawing ordinals in
+    reverse or in random order yields the same values as drawing them in sequence. The
+    frozen key derivation reproduces its committed test vectors, and the bounded draw
+    returns values strictly below its NonZeroU64 bound for every ordinal in the sweep.
+  test: cargo test -p aprender-contrastive-data rng
+  test_harness: cargo test -p aprender-contrastive-data rng
+  expected_output: 'test result: ok'
+  if_fails: >
+    Any order-dependence means a stateful stream crept back in and worker independence
+    is being defended by discipline rather than by construction — exactly what D-20/D-21
+    exist to prevent. A key-derivation vector mismatch means an endianness or tag-
+    encoding assumption drifted, which silently changes every sampled id while every
+    other test stays green.
+
+- id: FALSIFY-CPP-012
+  rule: 'OBLIG-CPP-SELECTION-REPLAY-STRICT — a manifest no seed could have produced is rejected'
+  prediction: >
+    Replay accepts an untouched manifest. Reordering two selected ids, swapping one id
+    for another legitimate pool member, editing a per-row hash, dropping one row so a
+    class is short, or editing the exclusion record each returns a typed error naming the
+    disagreeing field — SelectionReplayMismatch, SemanticHashMismatch, or
+    ExclusionRecordMismatch as appropriate.
+  test: cargo test -p aprender-contrastive-data select
+  test_harness: cargo test -p aprender-contrastive-data select
+  expected_output: 'test result: ok'
+  if_fails: >
+    A replay that only re-checks the semantic hash accepts any internally consistent
+    hand-edited manifest, which is precisely the artifact this gate exists to reject.
+    Recompute the selection from (dataset, root_seed, shots) and compare the ordered
+    list.
+
+- id: FALSIFY-CPP-013
+  rule: 'OBLIG-CPP-LEDGER-PERSISTED — the ledger is inside the hashed payload'
+  prediction: >
+    The serialized selection manifest contains the access-ledger records and
+    ledger_hash == SHA256(ledger canonical bytes), and ledger_hash sits INSIDE the hashed
+    payload — so mutating any ledger record changes the selection's semantic_hash and
+    replay rejects it. The ledger records the split roles touched and the profile
+    identity.
+  test: cargo test -p aprender-contrastive-data ledger
+  test_harness: cargo test -p aprender-contrastive-data ledger
+  expected_output: 'test result: ok'
+  if_fails: >
+    A ledger that lives only in memory, or one recorded outside the hashed region, can be
+    edited after the fact without invalidating anything. The downstream selection-lock
+    gate reads this artifact after the producing process has exited; if it is not
+    committed by the hash, it is a note, not evidence.
+
+- id: FALSIFY-CPP-014
+  rule: 'OBLIG-CPP-SINGLETON-EXPLICIT — singleton handling is recorded, never silent'
+  prediction: >
+    For a selection containing a class of exactly one example, the manifest records
+    singleton_policy = negatives_only, singleton_policy_version = 1, and the count of
+    affected classes; the singleton class contributes zero positives and still appears in
+    negatives. The value is present even when zero classes are affected.
+  test: cargo test -p aprender-contrastive-data pairs
+  test_harness: cargo test -p aprender-contrastive-data pairs
+  expected_output: 'test result: ok'
+  if_fails: >
+    An absent field is indistinguishable from a field nobody considered, and a dataset
+    whose singleton classes were quietly dropped from the positive stream looks identical
+    to one that had none. If the singleton produced a positive self-pair, the
+    CanonicalPair constructor is not the sole path into the stream.
+
+- id: FALSIFY-CPP-015
+  rule: 'OBLIG-CPP-ERROR-TAXONOMY — every failure is a typed variant, never a panic'
+  prediction: >
+    Every enumerated variant of ContrastiveDataError is reachable from at least one test,
+    each Display message names the specific offender (split, index, id, expected and got),
+    and no hostile input — empty buffer, truncated JSON, absurd label, duplicate id,
+    zero budget, overflowing class sizes — produces a panic or an untyped string.
+  test: cargo test -p aprender-contrastive-data error
+  test_harness: cargo test -p aprender-contrastive-data error
+  expected_output: 'test result: ok'
+  if_fails: >
+    A panic on caller input is unrecoverable in a serverless consumer and takes the whole
+    invocation with it. A message that omits the offender turns a five-second fix into a
+    bisect. If a variant is unreachable, either the code path that should raise it is
+    missing or the variant is dead and should be removed by a recorded contract change.
+
+- id: FALSIFY-CPP-016
+  rule: 'OBLIG-CPP-DEVIATION-DECLARED — fixtures record MEASURED reference behavior'
+  prediction: >
+    The reference fixture family records the pinned setfit 1.1.3 MEASURED counts
+    including self-pairs (for classes of 8/4/8: 82 stored positives = 62 + 20 self-pairs,
+    128 negatives, epoch length 256), and a SEPARATE family records Aprender's contracted
+    counts with self-pairs excluded. Every fixture's digest is covered by
+    manifest.sha256 and verified in-test.
+  test: cargo test -p aprender-contrastive-data --test reference_fixtures
+  test_harness: cargo test -p aprender-contrastive-data --test reference_fixtures
+  expected_output: 'test result: ok'
+  if_fails: >
+    A fixture asserting "no self-pairs" against the REFERENCE is red on day one, because
+    the pinned implementation includes the diagonal and contradicts its own
+    documentation. A fixture hand-written from the docs is worse: it is green and it
+    falsely attests reference parity. Record what was measured, and keep Aprender's
+    contracted counts in their own family.
+
+- id: FALSIFY-CPP-017
+  rule: 'OBLIG-CPP-DEVIATION-DECLARED — the degenerate-layout divergence is visible and versioned'
+  prediction: >
+    On class layout [4, 1] the two fixture families DISAGREE, deliberately and by exactly
+    these numbers: the pinned reference epoch length is 22 (11 stored positives, of which
+    5 are self-pairs), while Aprender's contracted default budget is 12
+    (positives C(4,2) + C(1,2) = 6, negatives 4*1 = 4, 2 * max(6, 4) = 12). Both numbers
+    are present in the fixtures and the test asserts the divergence rather than either
+    number alone.
+  test: cargo test -p aprender-contrastive-data --test reference_fixtures
+  test_harness: cargo test -p aprender-contrastive-data --test reference_fixtures
+  expected_output: 'test result: ok'
+  if_fails: >
+    If the two families now AGREE on [4, 1], either the reference fixture was regenerated
+    from the docs instead of the pinned code, or Aprender started emitting self-pairs. If
+    the test asserts only one number, the divergence has become invisible and the next
+    reader will "fix" the correct side.
+
+- id: FALSIFY-CPP-018
+  rule: 'OBLIG-CPP-LEAKAGE-NOT-CONSTRUCTIBLE — the runtime half, for bytes rather than code'
+  prediction: >
+    The compatibility profile produces NO validation split at all, and
+    PreparedDataset<Compatibility> exposes no validation_witness. Attempting to build a
+    canonical PreparedDataset from compatibility bytes returns ProfileMismatch or
+    ConflictingSourceRole rather than a canonical dataset, so the compile-time guarantee
+    is not bypassable by feeding the canonical constructor the wrong bytes.
+  test: cargo test -p aprender-contrastive-data prepared
+  test_harness: cargo test -p aprender-contrastive-data prepared
+  expected_output: 'test result: ok'
+  if_fails: >
+    A compile-time guarantee with a runtime back door is not a guarantee: the trybuild
+    snapshot stays green while a caller reaches the same state through the canonical
+    constructor. Both halves must hold.
+
+- id: FALSIFY-CPP-019
+  rule: 'KANI-CPP-001 backing proptest — canonical pair ordering, bound 4'
+  prediction: >
+    Over all endpoint values in [0, 4), CanonicalPair::new(a, b) yields lo < hi whenever
+    a != b, yields the SAME value for (a, b) and (b, a), and returns
+    Err(SelfPair{id: a}) whenever a == b. No input in the bounded space produces lo == hi
+    or lo > hi.
+  test: cargo test -p aprender-contrastive-data canonical_pair_ordering
+  test_harness: cargo test -p aprender-contrastive-data canonical_pair_ordering
+  expected_output: 'test result: ok'
+  if_fails: >
+    Either the constructor stopped canonicalizing — so the two orientations of one
+    unordered pair became two distinct values, and a conflicting-label pair becomes
+    expressible — or the equality branch stopped rejecting, which resurrects the
+    self-pairs D-12 makes structurally impossible. This proptest is the RUNNABLE evidence
+    for KANI-CPP-001, which is declared and not executed.
+
+- id: FALSIFY-CPP-020
+  rule: 'KANI-CPP-002 backing proptest — capacity closed forms never wrap, bound 4'
+  prediction: >
+    Over all class-size vectors of length up to 4 with entries in [0, 4),
+    positive_capacity and negative_capacity return Ok with values equal to a naive
+    reference enumeration, and for adversarial vectors near u64::MAX they return
+    Err(ArithmeticOverflow{operation}) rather than a wrapped value. No input produces a
+    silent wrap.
+  test: cargo test -p aprender-contrastive-data capacity_no_overflow
+  test_harness: cargo test -p aprender-contrastive-data capacity_no_overflow
+  expected_output: 'test result: ok'
+  if_fails: >
+    A wrapped capacity is not an obviously wrong huge number — it is a small, plausible
+    one, and it would silently under-sample forever while every balance and membership
+    test stayed green. Use checked arithmetic at every step and return the typed error.
+    This proptest is the RUNNABLE evidence for KANI-CPP-002, which is declared and not
+    executed.
+
+kani_harnesses:
+- id: KANI-CPP-001
+  obligation: OBLIG-CPP-ERROR-TAXONOMY
+  property: >
+    CanonicalPair::new never yields lo == hi and never yields lo > hi — the equal case is
+    rejected with SelfPair before any value is constructed, and the unequal case is
+    ordered.
+
+    DECLARED AND NOT EXECUTED HERE. cargo-kani is not installed in this repository and
+    there is not one #[kani::proof] harness anywhere under crates/ (verified 2026-08-08).
+    Nothing in this entry is a machine-checked proof. The RUNNABLE evidence is the
+    identically bounded proptest named by FALSIFY-CPP-019,
+    `cargo test -p aprender-contrastive-data canonical_pair_ordering`, which sweeps the
+    same bound of 4. A harness whose named proptest is not green is a FAILED gate, not a
+    pending one.
+  bound: 4
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_canonical_pair_ordering
+- id: KANI-CPP-002
+  obligation: OBLIG-CPP-BUDGET-FAIL-CLOSED
+  property: >
+    positive_capacity and negative_capacity never wrap for class sizes within the
+    harness bound — every multiplication, addition and subtraction is checked, and
+    overflow is the typed ArithmeticOverflow rather than a wrapped u64.
+
+    DECLARED AND NOT EXECUTED HERE, for the same reason as KANI-CPP-001. The RUNNABLE
+    evidence is the identically bounded proptest named by FALSIFY-CPP-020,
+    `cargo test -p aprender-contrastive-data capacity_no_overflow`, which sweeps class
+    vectors of length up to 4 with entries below 4 plus the adversarial near-u64::MAX
+    cases. Read no claim of machine-checked verification into this entry.
+  bound: 4
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_capacity_no_overflow
+
+qa_gate:
+  id: F-CONTRASTIVE-001
+  name: contrastive-pair-protocol-v1 Contract
+  description: >
+    Phase 2 gate — the contrastive data protocol is deterministic, leakage-safe,
+    provenance-complete, and non-quadratic, and both of its fakeable claims are
+    disproven by in-band negatives rather than asserted.
+  checks:
+  - validation
+  - falsification
+  pass_criteria: >
+    pv validate exits 0; every falsification test above is green; AND both in-band
+    negative variants are RED under the SAME gates that ACCEPT the honest
+    implementations — the leaky sampler must be rejected by the endpoint-membership gate
+    with EndpointNotInSelection naming the offending id, and the materializing sampler
+    must exceed the retained-state ceiling at a size where the streaming sampler passes.
+    A run in which either negative is green is a FAILED gate, not a passing one, because
+    a gate that has only ever been observed passing is not evidence. Equally, a run in
+    which the MIRROR half fails is a failed gate: a gate that rejects everything would
+    otherwise satisfy the negative half by accident.
+  falsification: >
+    Replace the O(K) negative sampler's per-class weight array with an enumeration of
+    unordered class pairs — every 3-class test stays green and FALSIFY-CPP-007 (K ~ N,
+    512 singleton classes) must turn RED. Independently, delete the equality branch of
+    CanonicalPair::new so (x, x) becomes constructible — FALSIFY-CPP-019 must turn RED.
+    Independently, silently clamp an explicit over-cap budget instead of returning
+    BudgetExceedsHardCap — FALSIFY-CPP-009 must turn RED.

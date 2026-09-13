@@ -36,7 +36,6 @@ metadata:
   - 'evidence/distill-7b-vocab-aligned-hang-2026-05-22/findings.json (5-whys identifying Bug B as a wrong turn)'
   - 'feedback_smoke_defaults_leak_into_production.md (cascade-momentum anti-pattern that produced Bug B)'
 
-kind: KernelContract
 name: apr-distill-teacher-backend-selection
 version: 1.0.0
 scope: apr-cli run_cuda_backend — Q4K teacher backend dispatch

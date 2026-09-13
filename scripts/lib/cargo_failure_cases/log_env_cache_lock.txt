@@ -1,0 +1,4 @@
+error: failed to acquire package cache lock
+
+Caused by:
+  Resource temporarily unavailable (os error 11)

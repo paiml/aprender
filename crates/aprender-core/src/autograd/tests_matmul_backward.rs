@@ -135,6 +135,10 @@
                 x: Tensor::from_slice(&[1.0]),
             }
             .name(),
+            crate::autograd::grad_fn::GeluExactBackward {
+                local_grad: vec![1.0],
+            }
+            .name(),
             SoftmaxBackward {
                 output: Tensor::from_slice(&[1.0]),
             }
@@ -163,7 +167,57 @@
                 y_shape: vec![1],
             }
             .name(),
+            // Phase 01 SetFit primitives — a backward struct that is not
+            // registered here is one nobody notices going missing.
+            MaskedMeanPoolBackward {
+                mask: vec![1],
+                batch: 1,
+                seq: 1,
+                hidden: 1,
+            }
+            .name(),
+            crate::autograd::grad_fn::L2NormalizeRowsBackward {
+                output: Tensor::new(&[1.0], &[1, 1]),
+                norms: vec![1.0],
+                eps: 1e-12,
+                batch: 1,
+                hidden: 1,
+            }
+            .name(),
+            crate::autograd::grad_fn::CosineSimilarityBackward {
+                a: Tensor::new(&[1.0], &[1, 1]),
+                b: Tensor::new(&[1.0], &[1, 1]),
+                similarity: Tensor::new(&[1.0], &[1]),
+                norms_a: vec![1.0],
+                norms_b: vec![1.0],
+                eps: 1e-12,
+                batch: 1,
+                hidden: 1,
+            }
+            .name(),
+            crate::autograd::grad_fn::MseBackward {
+                pred: Tensor::new(&[1.0], &[1]),
+                target: vec![0.0],
+            }
+            .name(),
         ];
+
+        assert!(
+            names.contains(&"MaskedMeanPoolBackward"),
+            "MaskedMeanPoolBackward must be registered in test_all_backward_names"
+        );
+        assert!(
+            names.contains(&"L2NormalizeRowsBackward"),
+            "L2NormalizeRowsBackward must be registered in test_all_backward_names"
+        );
+        assert!(
+            names.contains(&"CosineSimilarityBackward"),
+            "CosineSimilarityBackward must be registered in test_all_backward_names"
+        );
+        assert!(
+            names.contains(&"MseBackward"),
+            "MseBackward must be registered in test_all_backward_names"
+        );
 
         // All names should be unique
         let unique: std::collections::HashSet<_> = names.iter().collect();

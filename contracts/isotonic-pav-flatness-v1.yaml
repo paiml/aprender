@@ -7,7 +7,6 @@
 # constant pooled value, and interpolation only happens BETWEEN the max-x edge of
 # one block and the min-x edge of the next. This matches sklearn's
 # IsotonicRegression (X_thresholds_ / y_thresholds_).
-kind: KernelContract
 metadata:
   version: 1.0.0
   created: '2026-06-20'

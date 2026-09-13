@@ -362,21 +362,135 @@ pub(super) fn scale_tensor(x: &Tensor, scale: f32) -> Tensor {
     x.mul_scalar(scale)
 }
 
-/// Add attention mask to scores (SIMD-accelerated).
-pub(super) fn add_mask(scores: &Tensor, mask: &Tensor) -> Tensor {
-    // Mask contains 0 for valid positions and -inf for masked positions
-    // Use SIMD-accelerated add if shapes match, otherwise broadcast
-    if scores.shape() == mask.shape() {
-        return scores.add(mask);
+/// Materialize `mask` broadcast to exactly `target_shape`, as a CONSTANT tensor.
+///
+/// Right-aligned (numpy/torch) broadcasting: the mask's trailing dimensions are
+/// aligned with the target's trailing dimensions; a mask dimension of extent 1 is
+/// repeated across the corresponding target dimension.
+///
+/// The result deliberately does NOT require grad — an attention mask has no
+/// differentiable input. It is a constant, exactly like the `additive_attention_mask`
+/// builder. Graph connectivity is provided by the caller applying it through the
+/// autograd-aware `Tensor::add` (the PMAT-922 pattern).
+///
+/// Non-broadcastable shapes are a programming error inside this crate (`add_mask` is
+/// `pub(super)` with a single caller). They trip a `debug_assert!` in every test and
+/// debug build. In release the index is clamped into range, which is deterministic and
+/// panic-free; it deliberately does NOT fall back to "return scores unmodified",
+/// because that would silently DISABLE masking and let padded keys contribute to
+/// attention (threat T-1-18, information disclosure).
+fn broadcast_mask_to(target_shape: &[usize], mask: &Tensor) -> Tensor {
+    let mask_shape = mask.shape();
+    let mask_data = mask.data();
+    let rank = target_shape.len();
+    let m_rank = mask_shape.len();
+
+    debug_assert!(
+        m_rank <= rank,
+        "add_mask: mask rank {m_rank} exceeds scores rank {rank} — not broadcastable"
+    );
+
+    // Row-major strides over the mask.
+    let mut m_strides = vec![0usize; m_rank];
+    let mut acc = 1usize;
+    for (stride, &extent) in m_strides.iter_mut().zip(mask_shape.iter()).rev() {
+        *stride = acc;
+        acc *= extent;
     }
-    // Fallback for broadcast (SIMD broadcast_add deferred to trueno)
-    let data: Vec<f32> = scores
-        .data()
-        .iter()
-        .zip(mask.data().iter())
-        .map(|(&s, &m)| s + m)
-        .collect();
-    Tensor::from_vec(data, scores.shape())
+
+    // Right-alignment. `offset` covers the usual case (mask rank <= scores rank);
+    // `skip` only matters in the pathological over-rank case the debug_assert catches.
+    let offset = rank.saturating_sub(m_rank);
+    let skip = m_rank.saturating_sub(rank);
+
+    let total: usize = target_shape.iter().product();
+    let mut out = vec![0.0f32; total];
+    let mut idx = vec![0usize; rank];
+
+    for slot in &mut out {
+        let mut m_off = 0usize;
+        for (d, (&extent, &stride)) in mask_shape
+            .iter()
+            .zip(m_strides.iter())
+            .enumerate()
+            .skip(skip)
+        {
+            let t_d = d - skip + offset;
+            let i = if extent == 1 {
+                0
+            } else if extent == target_shape[t_d] {
+                idx[t_d]
+            } else {
+                debug_assert!(
+                    false,
+                    "add_mask: mask dim {d} (extent {extent}) is not broadcastable \
+                     against scores dim {t_d} (extent {})",
+                    target_shape[t_d]
+                );
+                idx[t_d].min(extent - 1)
+            };
+            m_off += i * stride;
+        }
+        *slot = mask_data[m_off];
+
+        // Odometer increment over the target index.
+        for d in (0..rank).rev() {
+            idx[d] += 1;
+            if idx[d] < target_shape[d] {
+                break;
+            }
+            idx[d] = 0;
+        }
+    }
+
+    Tensor::from_vec(out, target_shape)
+}
+
+/// Add an additive attention mask to attention scores, broadcasting the mask over the
+/// batch, head and query axes as needed.
+///
+/// Contract: `setfit-encoder-conformance-v1`, equation `apply_additive_mask`.
+/// This function is ON THE ENC-03 GRADIENT PATH.
+///
+/// # Repaired defect (plan 01-09, amendment A-02)
+///
+/// The previous body returned `scores.add(mask)` — which records a graph edge — ONLY
+/// when the two shapes matched exactly, and otherwise fell through to
+/// `Tensor::from_vec(scores.data().iter().zip(mask.data().iter())...)`. That fallback
+/// had two independent defects:
+///
+/// 1. `.zip()` truncates to the SHORTER iterator, so a `[B,1,1,S]` mask against
+///    `[B,heads,T,S]` scores produced `B*S` values where `B*heads*T*S` were needed. It
+///    never broadcast at all; `Tensor::from_vec` asserts on the length, so the call
+///    panicked outright at every realistic attention shape.
+/// 2. It built the result with a bare `Tensor::from_vec` and recorded no grad_fn, so
+///    masking SEVERED the autograd tape (the PMAT-913/914/922 class).
+///
+/// The repair expands the mask into a constant of exactly the scores' shape and then
+/// applies it with the autograd-aware `Tensor::add`. Because the expanded tensor
+/// matches shape exactly, the existing `AddBackward` records the edge back to `scores`
+/// — no new backward struct, and no new severable code path.
+///
+/// Any future edit MUST keep both the elementwise-correctness and the
+/// graph-preservation tests in `tests_attention_mask_broadcast.rs` green.
+#[provable_contracts_macros::contract(
+    "setfit-encoder-conformance-v1",
+    equation = "apply_additive_mask"
+)]
+pub(super) fn add_mask(scores: &Tensor, mask: &Tensor) -> Tensor {
+    contract_pre_apply_additive_mask!(scores.data());
+
+    // Mask holds 0 for valid positions and a large negative value for masked positions.
+    let result = if scores.shape() == mask.shape() {
+        // Fast path: shapes already agree, SIMD add records AddBackward directly.
+        scores.add(mask)
+    } else {
+        let expanded = broadcast_mask_to(scores.shape(), mask);
+        scores.add(&expanded)
+    };
+
+    contract_post_apply_additive_mask!(result.data());
+    result
 }
 
 /// Softmax over last dimension.
@@ -400,6 +514,34 @@ pub(super) fn softmax_last_dim(x: &Tensor) -> Tensor {
 /// ONE PATH: Delegates to `nn::functional::dropout` (UCBD §4).
 pub(super) fn apply_dropout(x: &Tensor, p: f32) -> Tensor {
     crate::nn::functional::dropout(x, p, true)
+}
+
+/// Seeded variant of [`apply_dropout`] (plan 01-06, A5).
+///
+/// `nn::functional::dropout(x, p, training)` takes **no seed** — confirmed by
+/// inspection in 01-03's spike and by 01-09 — so the attention-probs dropout
+/// inside `scaled_dot_product_attention` was not reproducible. This is the hook
+/// that makes it so, added ADDITIVELY:
+///
+/// * `None` delegates to [`apply_dropout`] verbatim, so every existing caller is
+///   byte-for-byte unchanged. That is the whole default path.
+/// * `Some(seed)` routes through [`crate::nn::Dropout::with_seed`], the crate's
+///   audited seeded dropout — ONE PATH, not a second hand-rolled RNG loop. Its
+///   mask construction is the same PMAT-922 constant-mask `mul` that
+///   `functional::dropout` uses, so the only difference is which RNG produced
+///   the mask; the autograd edge is identical.
+///
+/// The result is a pure function of `(seed, p, x.len())`. `MultiHeadAttention`
+/// therefore mixes a per-call counter into the seed it passes, so the stream
+/// ADVANCES across forward passes instead of replaying one fixed mask.
+pub(super) fn apply_dropout_seeded(x: &Tensor, p: f32, seed: Option<u64>) -> Tensor {
+    match seed {
+        None => apply_dropout(x, p),
+        Some(seed) => {
+            use crate::nn::module::Module as _;
+            crate::nn::Dropout::with_seed(p, seed).forward(x)
+        }
+    }
 }
 
 /// Reshape for multi-head attention: [batch, seq, embed] -> [batch, heads, seq, `head_dim`]

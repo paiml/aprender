@@ -22,7 +22,6 @@ metadata:
   - 'crates/aprender-core/src/nn/linear.rs — Linear::with_seed bias init'
   - 'crates/aprender-core/src/nn/init.rs — uniform(shape, low, high, seed)'
 
-kind: KernelContract
 name: linear-bias-init
 version: 1.0.0
 scope: aprender-core Linear layer bias initialization (nn/linear.rs Linear::with_seed)

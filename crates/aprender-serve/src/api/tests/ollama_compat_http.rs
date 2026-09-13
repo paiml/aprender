@@ -223,7 +223,13 @@ async fn api_chat_with_stream_true_returns_ndjson_terminated_by_done() {
         .await
         .expect("response");
 
-    assert_eq!(response.status(), StatusCode::OK);
+    // aprender#2609: these two routes answered 200 OK for a server with NO model,
+    // with "Model registry error: No model available" folded into the assistant's
+    // own reply — undetectable by any client, and the only rows on the whole
+    // surface that did not report the outage at all. The status now propagates;
+    // every wire fact below is unchanged, which is the point: the Ollama framing
+    // survives a failure, it just no longer disguises one as an answer.
+    crate::api::test_helpers::assert_no_model_status(response.status());
     let content_type = response
         .headers()
         .get(axum::http::header::CONTENT_TYPE)
@@ -269,7 +275,13 @@ async fn api_generate_with_stream_true_returns_ndjson_terminated_by_done() {
         .await
         .expect("response");
 
-    assert_eq!(response.status(), StatusCode::OK);
+    // aprender#2609: these two routes answered 200 OK for a server with NO model,
+    // with "Model registry error: No model available" folded into the assistant's
+    // own reply — undetectable by any client, and the only rows on the whole
+    // surface that did not report the outage at all. The status now propagates;
+    // every wire fact below is unchanged, which is the point: the Ollama framing
+    // survives a failure, it just no longer disguises one as an answer.
+    crate::api::test_helpers::assert_no_model_status(response.status());
     // Same two wire facts as /api/chat. Without them this test passes on the
     // 0.63.0 behaviour: one buffered object IS one parseable NDJSON line with
     // done:true, so only the FRAMING distinguishes fixed from broken.

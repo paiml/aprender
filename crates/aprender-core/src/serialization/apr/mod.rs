@@ -45,6 +45,108 @@ pub struct AprReader {
     data_offset: usize,
 }
 
+/// Flatten an APR v2 binary header's typed metadata into the string-keyed
+/// `AprMetadata` map.
+///
+/// Split out of `AprReader::from_bytes`, which the repo's own pre-commit gate
+/// reports at Cognitive 26 > 25 — on `origin/main` as well as here, since this
+/// is 20 straight `if let Some(..)` field copies and none of the decisions
+/// interact. The gate only inspects STAGED files, so the debt was invisible
+/// until an unrelated line in this file was touched.
+fn v2_metadata_to_flat(meta: &crate::format::v2::AprV2Metadata) -> AprMetadata {
+    // Build flat metadata from typed + custom fields
+    let mut metadata = AprMetadata::new();
+    if !meta.model_type.is_empty() {
+        metadata.insert(
+            "model_type".to_string(),
+            JsonValue::String(meta.model_type.clone()),
+        );
+    }
+    if let Some(ref name) = meta.name {
+        metadata.insert("model_name".to_string(), JsonValue::String(name.clone()));
+    }
+    if let Some(ref desc) = meta.description {
+        metadata.insert("description".to_string(), JsonValue::String(desc.clone()));
+    }
+    if let Some(ref author) = meta.author {
+        metadata.insert("author".to_string(), JsonValue::String(author.clone()));
+    }
+    if let Some(ref license) = meta.license {
+        metadata.insert("license".to_string(), JsonValue::String(license.clone()));
+    }
+    if let Some(ref version) = meta.version {
+        metadata.insert("version".to_string(), JsonValue::String(version.clone()));
+    }
+    if let Some(ref arch) = meta.architecture {
+        metadata.insert("architecture".to_string(), JsonValue::String(arch.clone()));
+    }
+    // Transformer config fields (V2 binary header → flat metadata)
+    if let Some(v) = meta.hidden_size {
+        metadata.insert(
+            "hidden_size".into(),
+            JsonValue::Number(serde_json::Number::from(v)),
+        );
+    }
+    if let Some(v) = meta.num_layers {
+        metadata.insert(
+            "num_layers".into(),
+            JsonValue::Number(serde_json::Number::from(v)),
+        );
+    }
+    if let Some(v) = meta.num_heads {
+        metadata.insert(
+            "num_heads".into(),
+            JsonValue::Number(serde_json::Number::from(v)),
+        );
+    }
+    if let Some(v) = meta.num_kv_heads {
+        metadata.insert(
+            "num_kv_heads".into(),
+            JsonValue::Number(serde_json::Number::from(v)),
+        );
+    }
+    if let Some(v) = meta.vocab_size {
+        metadata.insert(
+            "vocab_size".into(),
+            JsonValue::Number(serde_json::Number::from(v)),
+        );
+    }
+    if let Some(v) = meta.intermediate_size {
+        metadata.insert(
+            "intermediate_size".into(),
+            JsonValue::Number(serde_json::Number::from(v)),
+        );
+    }
+    if let Some(v) = meta.max_position_embeddings {
+        metadata.insert(
+            "max_position_embeddings".into(),
+            JsonValue::Number(serde_json::Number::from(v)),
+        );
+    }
+    if let Some(v) = meta.rope_theta {
+        if let Some(n) = serde_json::Number::from_f64(v as f64) {
+            metadata.insert("rope_theta".into(), JsonValue::Number(n));
+        }
+    }
+    if let Some(v) = meta.rms_norm_eps {
+        if let Some(n) = serde_json::Number::from_f64(v as f64) {
+            metadata.insert("rms_norm_eps".into(), JsonValue::Number(n));
+        }
+    }
+    if let Some(v) = meta.head_dim {
+        metadata.insert(
+            "head_dim".into(),
+            JsonValue::Number(serde_json::Number::from(v)),
+        );
+    }
+    // Include custom fields
+    for (k, v) in &meta.custom {
+        metadata.insert(k.clone(), v.clone());
+    }
+
+    metadata
+}
+
 impl AprReader {
     /// Load APR file from path
     ///
@@ -67,95 +169,7 @@ impl AprReader {
 
         let meta = reader.metadata();
 
-        // Build flat metadata from typed + custom fields
-        let mut metadata = AprMetadata::new();
-        if !meta.model_type.is_empty() {
-            metadata.insert(
-                "model_type".to_string(),
-                JsonValue::String(meta.model_type.clone()),
-            );
-        }
-        if let Some(ref name) = meta.name {
-            metadata.insert("model_name".to_string(), JsonValue::String(name.clone()));
-        }
-        if let Some(ref desc) = meta.description {
-            metadata.insert("description".to_string(), JsonValue::String(desc.clone()));
-        }
-        if let Some(ref author) = meta.author {
-            metadata.insert("author".to_string(), JsonValue::String(author.clone()));
-        }
-        if let Some(ref license) = meta.license {
-            metadata.insert("license".to_string(), JsonValue::String(license.clone()));
-        }
-        if let Some(ref version) = meta.version {
-            metadata.insert("version".to_string(), JsonValue::String(version.clone()));
-        }
-        if let Some(ref arch) = meta.architecture {
-            metadata.insert("architecture".to_string(), JsonValue::String(arch.clone()));
-        }
-        // Transformer config fields (V2 binary header → flat metadata)
-        if let Some(v) = meta.hidden_size {
-            metadata.insert(
-                "hidden_size".into(),
-                JsonValue::Number(serde_json::Number::from(v)),
-            );
-        }
-        if let Some(v) = meta.num_layers {
-            metadata.insert(
-                "num_layers".into(),
-                JsonValue::Number(serde_json::Number::from(v)),
-            );
-        }
-        if let Some(v) = meta.num_heads {
-            metadata.insert(
-                "num_heads".into(),
-                JsonValue::Number(serde_json::Number::from(v)),
-            );
-        }
-        if let Some(v) = meta.num_kv_heads {
-            metadata.insert(
-                "num_kv_heads".into(),
-                JsonValue::Number(serde_json::Number::from(v)),
-            );
-        }
-        if let Some(v) = meta.vocab_size {
-            metadata.insert(
-                "vocab_size".into(),
-                JsonValue::Number(serde_json::Number::from(v)),
-            );
-        }
-        if let Some(v) = meta.intermediate_size {
-            metadata.insert(
-                "intermediate_size".into(),
-                JsonValue::Number(serde_json::Number::from(v)),
-            );
-        }
-        if let Some(v) = meta.max_position_embeddings {
-            metadata.insert(
-                "max_position_embeddings".into(),
-                JsonValue::Number(serde_json::Number::from(v)),
-            );
-        }
-        if let Some(v) = meta.rope_theta {
-            if let Some(n) = serde_json::Number::from_f64(v as f64) {
-                metadata.insert("rope_theta".into(), JsonValue::Number(n));
-            }
-        }
-        if let Some(v) = meta.rms_norm_eps {
-            if let Some(n) = serde_json::Number::from_f64(v as f64) {
-                metadata.insert("rms_norm_eps".into(), JsonValue::Number(n));
-            }
-        }
-        if let Some(v) = meta.head_dim {
-            metadata.insert(
-                "head_dim".into(),
-                JsonValue::Number(serde_json::Number::from(v)),
-            );
-        }
-        // Include custom fields
-        for (k, v) in &meta.custom {
-            metadata.insert(k.clone(), v.clone());
-        }
+        let metadata = v2_metadata_to_flat(meta);
 
         // Build tensor descriptors
         let tensor_names = reader.tensor_names();
@@ -264,7 +278,9 @@ impl AprReader {
             ));
         }
         Ok(bytes
-            .chunks_exact(4)
+            .as_chunks::<4>()
+            .0
+            .iter()
             .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
             .collect())
     }
@@ -284,15 +300,21 @@ impl AprReader {
 
         match desc.dtype.as_str() {
             "F32" => Ok(bytes
-                .chunks_exact(4)
+                .as_chunks::<4>()
+                .0
+                .iter()
                 .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
                 .collect()),
             "F16" => Ok(bytes
-                .chunks_exact(2)
+                .as_chunks::<2>()
+                .0
+                .iter()
                 .map(|c| trueno::f16_to_f32(u16::from_le_bytes([c[0], c[1]])))
                 .collect()),
             "BF16" => Ok(bytes
-                .chunks_exact(2)
+                .as_chunks::<2>()
+                .0
+                .iter()
                 .map(|c| {
                     let bits = u16::from_le_bytes([c[0], c[1]]);
                     f32::from_bits(u32::from(bits) << 16)

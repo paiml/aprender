@@ -137,5 +137,5 @@ qa_gate:
   - matmul_equivalence
   - no_extra_parameters
   - finite_output
-  pass_criteria: All 4 falsification tests pass + Kani harnesses verify
+  pass_criteria: All 6 falsification tests pass + Kani harnesses verify
   falsification: Allocate separate W_head matrix instead of reusing W_embed

@@ -253,3 +253,281 @@ fn cargo_built_binary() -> std::path::PathBuf {
     }
     found.expect("cargo reported no executable for aprender-train-shell")
 }
+
+// ---------------------------------------------------------------------------
+// FALSIFY-SHELL-SESSION-2519: the SECOND door.
+//
+// The eight tests above all drive state through `fetch`, so they can only ever
+// observe the door `fetch` closed. `--session` is a second entrance into the
+// same room: `LoadedModel` derives `Deserialize`, and `main.rs` fed
+// `SessionState::load` straight from a user-supplied path. Measured on
+// origin/main 5c08e771f, AFTER the fetch fix, with a hand-written sess.json
+// naming /nonexistent:
+//
+//     $ aprender-train-shell --session sess.json -c distill
+//     Loaded session from sess.json
+//     Training started... (simulated)                              # exit 0
+//     $ aprender-train-shell --session sess.json -c "distill --dry-run"
+//     Teacher: does-not-exist/totally-fake-7b (7.0B)
+//     Student: does-not-exist/totally-fake-1b (1.0B)
+//     Ready to train                                               # exit 0
+//     $ aprender-train-shell --session sess.json -c memory
+//     Model: 16.0 GB / Total: 20.3 GB                              # exit 0
+//
+// Every figure there was typed into a JSON file. This is the project-memory
+// lesson "a guard's UNIVERSE built from the wrong side": the falsifier
+// enumerated the fetch path, and the defect simply was not in it.
+// ---------------------------------------------------------------------------
+
+use entrenar_shell::state::{LoadedModel, Preferences, SessionMetrics};
+use std::path::{Path, PathBuf};
+
+/// The exact session file used for the reproduction above.
+fn crafted_session_json(teacher_path: &str, student_path: &str) -> String {
+    format!(
+        r#"{{
+  "models": {{
+    "teacher": {{"id":"does-not-exist/totally-fake-7b","path":"{teacher_path}",
+      "architecture":"llama","parameters":7000000000,"layers":32,
+      "hidden_dim":4096,"role":"Teacher"}},
+    "student": {{"id":"does-not-exist/totally-fake-1b","path":"{student_path}",
+      "architecture":"llama","parameters":1000000000,"layers":16,
+      "hidden_dim":2048,"role":"Student"}}
+  }},
+  "history": [],
+  "preferences": {{"output_format":"table","show_progress":true,
+    "auto_save_history":true,"default_batch_size":32,"default_seq_len":512}},
+  "metrics": {{"total_commands":0,"successful_commands":0,"total_duration_ms":0}}
+}}"#
+    )
+}
+
+fn write_session(dir: &Path, name: &str, body: &str) -> PathBuf {
+    let p = dir.join(name);
+    std::fs::write(&p, body).expect("temp write");
+    p
+}
+
+/// Rule 1: a model the session says is cached must actually be on disk.
+#[test]
+fn a_session_may_not_claim_a_model_that_is_not_on_disk() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = write_session(
+        dir.path(),
+        "sess.json",
+        &crafted_session_json("/nonexistent/teacher", "/nonexistent/student"),
+    );
+
+    let err = SessionState::load(&path).expect_err(
+        "a session naming /nonexistent was accepted -- the shell adopted a model \
+         nobody has, which is the #2519 defect reached through --session",
+    );
+    let text = format!("{err}");
+    assert!(text.contains("nonexistent"), "got: {text}");
+    assert!(text.contains("2519"), "got: {text}");
+}
+
+/// Rule 2, the discriminating case: paths that DO exist are still not enough,
+/// because nothing in this crate can produce a `LoadedModel` at all. Rule 1
+/// alone would be defeated by `touch`.
+#[test]
+fn existing_paths_do_not_make_hand_written_model_facts_true() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let t = dir.path().join("teacher.bin");
+    let s = dir.path().join("student.bin");
+    std::fs::write(&t, b"not a model").expect("write");
+    std::fs::write(&s, b"not a model").expect("write");
+
+    let path = write_session(
+        dir.path(),
+        "sess.json",
+        &crafted_session_json(
+            &t.display().to_string().replace('\\', "/"),
+            &s.display().to_string().replace('\\', "/"),
+        ),
+    );
+
+    let err = SessionState::load(&path).expect_err(
+        "11 bytes of `not a model` at an existing path was accepted as a 7.0B \
+         32-layer llama -- rule 1 (path exists) is defeated by `touch`, so rule 2 \
+         must reject any model this shell cannot have loaded",
+    );
+    let text = format!("{err}");
+    assert!(text.contains("2519"), "got: {text}");
+    assert!(
+        !text.contains("Ready to train"),
+        "the refusal must not also report the configuration: {text}"
+    );
+}
+
+/// Non-vacuity control 1: `--session` still works. A session with no models
+/// round-trips through save/load with its preferences intact, so the two tests
+/// above are not observing a loader that refuses every file.
+#[test]
+fn an_honest_session_still_loads_and_keeps_its_preferences() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("honest.json");
+
+    let mut state = SessionState::new();
+    state.preferences_mut().default_batch_size = 64;
+    state.preferences_mut().default_seq_len = 128;
+    state.save(&path).expect("save must succeed");
+
+    let loaded = SessionState::load(&path).expect(
+        "a session the shell wrote itself must load back -- if this fails the \
+         provenance check is a blanket refusal, not a ratchet",
+    );
+    assert_eq!(loaded.preferences().default_batch_size, 64);
+    assert_eq!(loaded.preferences().default_seq_len, 128);
+    assert!(loaded.loaded_models().is_empty());
+}
+
+/// Non-vacuity control 2: the provenance rule is a property of the MODELS, not
+/// of deserialization. A directly-constructed empty state passes it.
+#[test]
+fn provenance_check_passes_on_a_state_with_no_models() {
+    let state = SessionState::new();
+    assert!(state.validate_model_provenance().is_ok());
+    assert_eq!(state.metrics(), &SessionMetrics::default());
+    assert_eq!(state.preferences(), &Preferences::default());
+}
+
+/// The independent second rule, which holds even if a real loader lands one
+/// day: `distill` must not report training it did not run. This drives state
+/// through `add_model` directly, so it bypasses `load` entirely -- if the only
+/// fix were in `load`, this test would still be RED.
+#[test]
+fn distill_never_reports_training_it_did_not_run() {
+    let mut state = SessionState::new();
+    for (name, id, role, params) in [
+        (
+            "teacher",
+            "a/teacher-7b",
+            ModelRole::Teacher,
+            7_000_000_000u64,
+        ),
+        (
+            "student",
+            "b/student-1b",
+            ModelRole::Student,
+            1_000_000_000u64,
+        ),
+    ] {
+        state.add_model(
+            name.to_string(),
+            LoadedModel {
+                id: id.to_string(),
+                path: PathBuf::from("/tmp"),
+                architecture: "llama".to_string(),
+                parameters: params,
+                layers: 32,
+                hidden_dim: 4096,
+                role,
+            },
+        );
+    }
+
+    let err = run("distill", &mut state).expect_err(
+        "distill returned Ok with two models in the session -- it has no training \
+         loop, so any success string here is fabricated (#2519)",
+    );
+    let text = format!("{err}");
+    assert!(!text.contains("Training started"), "got: {text}");
+    assert!(!text.contains("simulated"), "got: {text}");
+
+    // Discriminating companion: `--dry-run` only restates the session, so it
+    // stays Ok. If BOTH refused, this test would prove nothing about the
+    // difference between describing a plan and claiming to have executed it.
+    let dry = run("distill --dry-run", &mut state).expect("--dry-run only describes");
+    assert!(dry.contains("Ready to train"));
+    assert!(!dry.contains("Training started"));
+}
+
+/// End-to-end through the binary, which is the form #2519 was reported in.
+#[test]
+fn the_session_flag_surface_exits_non_zero_and_prints_nothing_confident() {
+    let exe = cargo_built_binary();
+    let dir = tempfile::tempdir().expect("tempdir");
+    let sess = write_session(
+        dir.path(),
+        "sess.json",
+        &crafted_session_json("/nonexistent/teacher", "/nonexistent/student"),
+    );
+
+    for args in [
+        vec!["distill"],
+        vec!["distill --dry-run"],
+        vec!["memory"],
+        vec!["inspect"],
+    ] {
+        let output = std::process::Command::new(&exe)
+            .arg("--session")
+            .arg(&sess)
+            .arg("-c")
+            .arg(args[0])
+            .output()
+            .expect("binary should run");
+        let stdout = String::from_utf8_lossy(&output.stdout);
+
+        assert!(
+            !output.status.success(),
+            "`--session <crafted> -c {}` exited 0:\n{stdout}",
+            args[0]
+        );
+        for forbidden in [
+            "simulated",
+            "Ready to train",
+            "7.0B",
+            "16.0 GB",
+            "32 layers",
+        ] {
+            assert!(
+                !stdout.contains(forbidden),
+                "`-c {}` still prints `{forbidden}`:\n{stdout}",
+                args[0]
+            );
+        }
+    }
+}
+
+/// A session file that is not valid JSON must also fail CLOSED. It used to
+/// print "Failed to load session: ..." and then run against a silently
+/// different (empty) session, exiting 0 -- so `--session` could be a no-op
+/// nobody noticed.
+#[test]
+fn an_unreadable_session_file_does_not_silently_become_an_empty_one() {
+    let exe = cargo_built_binary();
+    let dir = tempfile::tempdir().expect("tempdir");
+    let bad = write_session(dir.path(), "bad.json", "not json");
+
+    let output = std::process::Command::new(&exe)
+        .arg("--session")
+        .arg(&bad)
+        .args(["-c", "help"])
+        .output()
+        .expect("binary should run");
+
+    assert!(
+        !output.status.success(),
+        "a corrupt --session file exited 0:\n{}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+
+    // Control: the SAME invocation with a session the shell wrote itself must
+    // exit 0, so the assertion above is about the corrupt file and not about
+    // `--session` being broken outright.
+    let good = dir.path().join("good.json");
+    SessionState::new().save(&good).expect("save");
+    let ok = std::process::Command::new(&exe)
+        .arg("--session")
+        .arg(&good)
+        .args(["-c", "memory --batch 8 --seq 512"])
+        .output()
+        .expect("binary should run");
+    assert!(
+        ok.status.success(),
+        "a valid --session file must still work:\n{}",
+        String::from_utf8_lossy(&ok.stderr)
+    );
+    assert!(String::from_utf8_lossy(&ok.stdout).contains("batch=8"));
+}

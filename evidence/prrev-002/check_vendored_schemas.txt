@@ -1,0 +1,40 @@
+check_vendored_schemas.sh - PRREV-002 / PR-REVIEW-SKILL-002 v2 §6.2
+
+== validator
+  check-jsonschema check-jsonschema, version 0.38.0
+
+== positive control 1/4: $ref classification case table
+  OK - 9 rows, 4 must-match / 5 must-not-match
+
+== positive control 2/4: an edited schema must fail the manifest
+  OK - one appended newline turns sha256sum -c RED
+
+== positive control 3/4: a manifest that lists nothing must not pass
+  OK - empty manifest counts 0 entries, below the required floor of 2
+
+== positive control 4/4: the validator must reject a malformed document
+  OK - malformed Statement rejected (exit 1)
+
+== integrity: schemas/MANIFEST.sha256
+  schemas/in-toto-statement-v1.json: OK
+  schemas/sarif-2.1.0.json: OK
+
+== completeness: every schemas/*.json is in the manifest
+  OK - 2 schema(s), manifest and directory agree
+
+== cross-check: schemas/sources.json vs schemas/MANIFEST.sha256
+  OK - schemas/in-toto-statement-v1.json 1f8ccf54b998c7d11f6fd6596a42bc20c5c111a56d527550a3a7a2bb9d6a7152
+  OK - schemas/sarif-2.1.0.json c3b4bb2d6093897483348925aaa73af03b3e3f4bd4ca38cef26dcb4212a2682e
+
+== self-containment: no $ref resolves off-file
+  OK - schemas/in-toto-statement-v1.json: every $ref is a local JSON Pointer
+  OK - schemas/sarif-2.1.0.json: every $ref is a local JSON Pointer
+
+== offline case table: in-toto Statement v1
+  OK - 7 accept / 13 reject, all validated offline under unshare -r -n with an empty XDG_CACHE_HOME
+
+== offline case table: SARIF 2.1.0
+  OK - 3 accept / 6 reject, all validated offline under unshare -r -n with an empty XDG_CACHE_HOME
+
+PASS: schemas vendored, hashes recorded and matching, self-contained,
+      and validated by check-jsonschema with no network namespace attached.

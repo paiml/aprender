@@ -129,7 +129,16 @@ pub fn call_with_sink(
     let argv: Vec<&str> = owned.iter().map(String::as_str).collect();
 
     match (streaming, sink, progress_token) {
-        (true, Some(sink), Some(token)) => stream_with_sink("apr", &argv, sink, &token),
+        // aprender#2563: third site with the same bare-"apr" PATH resolution as
+        // serve.rs and finetune.rs. Found by the static guard, NOT by the
+        // behavioural sweep -- which drove apr.serve and apr.finetune and so
+        // never reached this branch of apr.run.
+        (true, Some(sink), Some(token)) => stream_with_sink(
+            &crate::apr_bin::apr_binary().to_string_lossy(),
+            &argv,
+            sink,
+            &token,
+        ),
         _ => run_apr_cancellable(&argv, cancel_rx, CANCEL_GRACE_MS),
     }
 }

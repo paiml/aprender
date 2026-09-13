@@ -65,7 +65,10 @@ pub enum ModelOpsCommands {
         #[arg(long, value_name = "INDICES")]
         gpus: Option<String>,
         /// GPU backend selection: auto, cuda, wgpu
-        #[arg(long, default_value = "auto")]
+        // #2583: no `value_parser` here meant `--gpu-backend cudaa` parsed and
+        // silently took the `_ =>` ("auto") arm of `gpu_backend_notice`.
+        #[arg(long, value_name = "BACKEND", value_parser = FINETUNE_GPU_BACKEND_VALUES)]
+        #[arg(default_value = "auto")]
         gpu_backend: String,
         /// Distributed training role: coordinator or worker
         #[arg(long, value_name = "ROLE")]
@@ -177,7 +180,10 @@ pub enum ModelOpsCommands {
         /// `cuda` constructs CudaTrainerTeacher + CudaStudentProvider from
         /// the on-disk teacher / student checkpoints — required for the
         /// real F-DISTILL-SMOKE-001 falsifier on GPU hardware.
-        #[arg(long, value_name = "BACKEND", default_value = "fixture")]
+        // The runtime check in `distill::run()` already rejects an unknown value
+        // by name; this makes `--help` advertise the set too (#2583 follow-up).
+        #[arg(long, value_name = "BACKEND", value_parser = DISTILL_BACKEND_VALUES)]
+        #[arg(default_value = "fixture")]
         backend: String,
         /// SPEC-DISTILL-001 Phase 4 Stage B-2: real-corpus training data.
         /// Path to a directory containing `.bin` token shards (u32 LE,

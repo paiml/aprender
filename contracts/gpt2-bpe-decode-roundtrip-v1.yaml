@@ -10,7 +10,6 @@ metadata:
     Correctness contract for GPT-2 byte-level BPE decoding in the serve tokenizer
     (aprender-serve BPETokenizer::decode). Pillar-4 (Ollama/serve) correctness: non-ASCII
     generated text must decode to the real characters, not mojibake.
-kind: KernelContract
 name: gpt2-bpe-decode-roundtrip
 version: "1.0.0"
 scope: "crates/aprender-serve/src/tokenizer.rs"

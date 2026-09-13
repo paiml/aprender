@@ -19,6 +19,24 @@ effort: high          # MACS F4: pinned for reproducible cost/behavior - gates a
 - Uncommitted changes: !`git status --short | wc -l`
 - Test count: !`cargo test -p apr-cli --lib 2>&1 | grep 'test result' | tail -1`
 
+## Three documents, three scopes — and only one of them is the fleet protocol
+
+Written down because three skills describe overlapping release work and the
+duplication is harder to see in prose than in code: nothing runs it, and no diff
+surfaces it (aprender#2640, D6).
+
+| skill | scope | source of truth for |
+|---|---|---|
+| `dogfood` (`.claude/skills/dogfood/SKILL.md`) | ANY Rust crate in the fleet | the generic pre-release protocol and `scripts/dogfood.sh` |
+| `apr-dogfood` | this repo's shipped surface | gate coverage against the surface ledger |
+| `pre-release` (this file) | `apr-cli` only | the crates.io publish gates below |
+
+**Do not restate a gate that lives in another of the three.** If a gate here also
+belongs to the fleet protocol, it belongs in `scripts/dogfood.sh` and this file
+should reference it — that is exactly how the runner came to exist twice.
+
+Run all independent gates in parallel where possible.
+
 ## Your Task
 
 Run the apr-cli pre-release QA checklist below. This checklist was derived from 5 historical release failures (CB-510, PMAT-262, GH-342, GH-343, GH-344/345) using Five-Whys root cause analysis on git history.
@@ -219,6 +237,109 @@ declares a FAILURE, so post-bump Gate 11 self-reports a defect that does not
 exist. Run Gate 11 before `cargo set-version`; after the bump, the equivalent
 signal is Gate 5 on a zero-sibling crate plus
 `scripts/check_gate5_stage.sh --explain <crate>`.
+
+
+### Gate 12: Multi-Platform Dogfood (MANDATORY — aprender#2566)
+
+```bash
+bash scripts/check_multiplatform_dogfood.sh
+```
+
+**Every release is dogfooded on EVERY supported platform, not just the one the release
+engineer is sitting at.** This gate does not check that someone ran a sweep — it checks
+that a dated **receipt** exists for each host, for the version being cut. A receipt is
+evidence; a checklist tick is not. A receipt from a previous release is STALE and fails.
+
+| host | platform | why it is in the matrix |
+|---|---|---|
+| `lambda` | x86_64 Linux + RTX 4090 (sm_89) | consumer x86, AVX2 path |
+| `intel` | x86_64 Linux, Xeon W-3245 | **AVX-512 + VNNI** path |
+| `gx10` | aarch64 Linux + GB10 (sm_121) | ARM server, unified memory |
+| `mini` | arm64 macOS + Metal | Apple silicon, **no /proc**, APFS case-insensitive |
+
+Each host is in the matrix because it is a distinct combination of **ISA, OS and
+accelerator** — not because we happen to own it.
+
+**What one afternoon of this bought (the 0.64.0 cut).** The published crate had never
+been verified on either arm64 platform:
+
+- **#2567** — Q4_K GEMV, the hottest kernel in quantized inference, has **zero aarch64
+  SIMD**, and `matmul_q4k_f32_parallel` on non-x86 is a direct call to the *serial
+  scalar* routine. The numbers are correct and only the speed is wrong, so **no
+  correctness gate could ever have caught it.**
+- **#2568** — the OOM guard reads `/proc/meminfo` and `.unwrap_or(u64::MAX)`, so on macOS
+  the threshold becomes ~12.8 **exabytes** and the guard can never fire. Its only test
+  self-skips with `cfg!(target_os = "linux")` — the platform where it is broken.
+- **#2572** — `block v0.1.6` faces future-rustc rejection and sits under `wgpu -> metal`,
+  the only GPU backend macOS has. Entirely absent from the Linux dependency graph.
+
+Each is invisible from a single host **by construction**. That is the argument for this
+gate: not diligence theatre, but the only way to see this class of defect.
+
+**PHASE. This gate's subject is the PUBLISHED ARTIFACT, so it cannot be satisfied before
+the cascade.** `install_rc` is the exit status of `cargo install aprender`, which resolves
+from crates.io — a pre-cut receipt would have to install a version that does not exist yet.
+The evidence for that is the repo's own history: 0.63.0 published 2026-08-01 and its
+receipts are dated 2026-08-22, and until 0.64.0 **this gate had never passed for any
+release**. It is a RELEASE-COMPLETION gate, not a cut gate (aprender#2658).
+
+So a release is not *complete* until every declared host carries a receipt for the exact
+version published. That is the andon: the cut may proceed on a GO from the other gates,
+and the release stays open until the sweep lands.
+
+**The bench field (aprender#2667).** Each receipt also carries a `bench` block, and it is
+deliberately **CPU-class, apr-vs-apr, with no comparator**:
+
+```json
+{"bench": {"samples_ms": [...], "n": 7, "runs_discarded": 0,
+           "provenance": {"compute_class": "cpu", "binary_sha256": "...",
+                          "resolution": "path", "feature_set": ["inference"]}}}
+```
+
+A llama.cpp ratio here would be **uncomputable, not merely unwise**. `cargo install
+aprender` builds CPU-only on all four hosts (`crates/apr-cli/Cargo.toml` `default` carries
+no `cuda` and no `wgpu`) while the comparator runs CUDA on lambda/gx10 and Metal on mini.
+The ratio would read ~0.05–0.10, nobody would red a release over it (correctly), the row
+would go EXISTENCE-ONLY and **the threshold would never arm** — the same shape as this
+gate before #2658. The tree already documents that collapse at
+`crates/apr-cli/src/dispatch.rs:165`: `ratio_median=0.070x … a fabricated 14x regression
+with nothing wrong in apr's decode path`.
+
+An **apr-vs-apr self-ratchet** catches our own regressions, which is the actual goal,
+without inventing a number nobody will act on. The comparator ratio lives in the
+**pre-publish** phase, from the tree, where `--features cuda` exists.
+
+**Threshold.** Derived per host by bootstrap over the recorded raw samples, armed only
+once ≥3 receipts carrying a bench block exist at `origin/main` for that host. No human
+types a number. Do **not** use `3 × pooled relative stddev`: it returns GREEN on the only
+regression this repo has on record, and its power *falls* as data accumulates
+(aprender#2675, falsified by execution in `scripts/check_bench_threshold.sh`).
+
+**Recording a receipt.** Run the sweep on the host, then write
+`evidence/dogfood/<version>/<host>.json` with at least:
+
+```json
+{"host":"gx10","arch":"aarch64-unknown-linux-gnu","version_tested":"0.64.0",
+ "date":"2026-08-22","install_rc":0}
+```
+
+Richer fields (surface counts, findings, notable, verdict) are encouraged — the receipts
+already under `evidence/dogfood/` are the worked examples.
+
+**The sweep must `cargo install` the PUBLISHED crate**, not build the local tree.
+Building the tree tests what you have; installing tests what a user gets. On a box with a
+pre-existing `apr` the install correctly fails closed (rc=101) *before* compiling — use
+`--force` and record that in the receipt.
+
+**Watch the CI host.** `intel` runs all 16 self-hosted runners. Build there with
+`-j 6`, not the default 32: the merge-queue timeout counts runner wait, so a build that
+steals cores is indistinguishable from a flake and can evict queued PRs.
+
+**Non-vacuity:** the gate refuses a matrix of fewer than 4 hosts, because a shrinking
+matrix silently narrows what "verified" means. Mutation-verified in all three directions —
+a stale receipt version, a non-zero `install_rc`, and a shortened host list each turn it
+RED.
+
 
 ## Verdict
 

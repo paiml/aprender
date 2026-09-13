@@ -1,0 +1,7 @@
+key	module	crate	tests	seconds	touches	f_tests	tier	kind
+crateA::dense	dense	crateA	2	2.00	8	0	pr	lib
+crateA::guard	guard	crateA	2	3.00	0	1	pr	lib
+crateB::light	light	crateB	1	1.50	2	0	pr	lib
+crateC::readme_contract	readme_contract	crateC	3	4.25	5	0	pr	test
+crateB::heavy	heavy	crateB	2	100.00	0	0	nightly	lib
+crateD::slow	slow	crateD	9	42.00	0	0	full	lib

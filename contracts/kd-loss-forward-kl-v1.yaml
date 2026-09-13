@@ -1,4 +1,3 @@
-kind: KernelContract
 metadata:
   version: 1.0.0
   created: '2026-06-19'
@@ -172,5 +171,5 @@ qa_gate:
   checks:
   - forward_kl_direction
   - loss_gradient_consistency
-  pass_criteria: All 4 falsification tests pass; pmat_868_kd_loss_soft_term_is_forward_kl is GREEN
+  pass_criteria: All 6 falsification tests pass; pmat_868_kd_loss_soft_term_is_forward_kl is GREEN
   falsification: Reverse the KL direction to KL(student || teacher) — falsifier F-KD-FORWARD-KL-001 goes RED

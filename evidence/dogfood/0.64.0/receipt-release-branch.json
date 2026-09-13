@@ -1,0 +1,168 @@
+{
+  "crate": "aprender",
+  "version": "0.64.0",
+  "timestamp": "20260823T174343Z",
+  "gates": [
+    {
+      "gate": "git-clean",
+      "result": "PASS",
+      "note": "working tree clean"
+    },
+    {
+      "gate": "version-unpublished",
+      "result": "PASS",
+      "note": "0.64.0 not yet published"
+    },
+    {
+      "gate": "changelog",
+      "result": "PASS",
+      "note": "CHANGELOG has 0.64.0"
+    },
+    {
+      "gate": "feature-scope",
+      "result": "INFO",
+      "note": "clippy/test run with: --features cli"
+    },
+    {
+      "gate": "fmt",
+      "result": "PASS",
+      "note": "Warning: can't set `wrap_comments = true`, unstable features are only available in nightly channel."
+    },
+    {
+      "gate": "clippy",
+      "result": "PASS",
+      "note": "   Compiling thiserror v2.0.18"
+    },
+    {
+      "gate": "test",
+      "result": "PASS",
+      "note": "   Compiling thiserror-impl v2.0.18"
+    },
+    {
+      "gate": "coverage",
+      "result": "PASS",
+      "note": "warning: aprender-compute@0.64.0: provable-contracts binding.yaml not found at /tmp/claude-1000/-home-noah-src-aprender/"
+    },
+    {
+      "gate": "security",
+      "result": "PASS",
+      "note": "advisories ok"
+    },
+    {
+      "gate": "security-2nd-source",
+      "result": "PASS",
+      "note": "GitHub Advisory DB (independent of RustSec): 0 open Dependabot alerts"
+    },
+    {
+      "gate": "release-binary",
+      "result": "PASS",
+      "note": "built: /tmp/claude-1000/-home-noah-src-aprender/3e7b3507-59c1-4c5a-873b-c4003bfeca64/scratchpad/wtrel/target/release/apr"
+    },
+    {
+      "gate": "deterministic-tools",
+      "result": "PASS",
+      "note": "pv 0.64.0, bashrs 6.67.0, pmat 3.32.0, probador 1.0.3"
+    },
+    {
+      "gate": "pv-contracts",
+      "result": "PASS",
+      "note": "1240 contract(s) valid (positive control fired)"
+    },
+    {
+      "gate": "pv-lint",
+      "result": "FAIL",
+      "note": "lint failed \u2014 see /tmp/tmp.LMp6ATGG5W/pv-lint.log"
+    },
+    {
+      "gate": "pv-bindings",
+      "result": "FAIL",
+      "note": "`pv verify-bindings` produced no verification line (exit=1): "
+    },
+    {
+      "gate": "bashrs",
+      "result": "FAIL",
+      "note": "175 SEC/DET/IDEM error(s) over 182 file(s): DET002 SEC001 SEC002 SEC005 SEC008 SEC010 SEC011 SEC012 SEC015 SEC021 \u2014 real findings, not #226 false positives"
+    },
+    {
+      "gate": "renacer",
+      "result": "SKIP",
+      "note": "no renacer.toml \u2014 golden tracing not configured for this crate"
+    },
+    {
+      "gate": "pmat-verify",
+      "result": "FAIL",
+      "note": "      \"detail\": \"27 strict-mode SATD violation(s) (TODO/FIXME/HACK/BUG)\\n    {\\n      \\\"file\\\": \\\"./crates/aprender-cont"
+    },
+    {
+      "gate": "pmat-comply",
+      "result": "FAIL",
+      "note": "CB-200 (TDG Grade Gate) = Fail \u2014 see `pmat comply check`; 5 total fail(s), 0 Error-severity checks dark (#1008, not gated)"
+    },
+    {
+      "gate": "reachability",
+      "result": "WARN",
+      "note": "unreachable files/tests: 933 13168 (a file the build never compiles cannot be tested)"
+    },
+    {
+      "gate": "contracts-exit-integrity",
+      "result": "PASS",
+      "note": "`contracts:` recipe propagates failure (no bare for-loop, no `|| true`)"
+    },
+    {
+      "gate": "contracts",
+      "result": "PASS",
+      "note": "Summary: 0 errors, 979 warnings, 0 suppressed, 5 new"
+    },
+    {
+      "gate": "publish-dry-run",
+      "result": "FAIL",
+      "note": "error: failed to prepare local package for uploading"
+    },
+    {
+      "gate": "cli-surface",
+      "result": "FAIL",
+      "note": "advertised but unusable: apr aprender binary clip cross-encoder existing model no producer same the yet (of 122 checked)"
+    },
+    {
+      "gate": "transport-decl",
+      "result": "FAIL",
+      "note": "no [package.metadata.transports] in Cargo.toml. Declare every interface this release ships, e.g.  [package.metadata.transports]  cli = { e2e = \"e2e_cli_t\" }  mcp = { e2e = \"e2e_mcp_stdio_t\", features "
+    },
+    {
+      "gate": "transport-absence",
+      "result": "SKIP",
+      "note": "not evaluated: no [package.metadata.transports] declaration (transport-decl is RED above)"
+    },
+    {
+      "gate": "interface-parity",
+      "result": "SKIP",
+      "note": "not evaluated: no [package.metadata.transports] declaration (transport-decl is RED above)"
+    },
+    {
+      "gate": "transport-invariance",
+      "result": "SKIP",
+      "note": "no [package.metadata.unified_surface] \u2014 declare list/cli/http/probe to enable the simultaneous cross-transport check"
+    },
+    {
+      "gate": "surface-derivation",
+      "result": "REPORT",
+      "note": "no manifest declared in [package.metadata.transports] \u2014 the interface may be hand-rolled per transport; nothing here can tell single-sourcing from three lists that agree (declare manifest = { path, re"
+    },
+    {
+      "gate": "probador-suite",
+      "result": "PASS",
+      "note": "WARN No tests found"
+    },
+    {
+      "gate": "dogfood-use",
+      "result": "PASS",
+      "note": "  7 pass / 0 fail / 0 skip"
+    },
+    {
+      "gate": "clean-room",
+      "result": "MANUAL",
+      "note": "run `make -C ../infra/machines/clean-room clean-room-aprender` (MANDATORY release gate)"
+    }
+  ],
+  "verdict": "NO-GO"
+}

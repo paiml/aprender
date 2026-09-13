@@ -9,6 +9,22 @@
 /// - After: 0 allocations per token (all reused)
 #[derive(Default)]
 pub struct TransformerWorkspace {
+    /// #2697: which prompt prefix the GPU KV buffers currently hold — the FNV
+    /// hash of the prompt tokens and their count.
+    ///
+    /// Decode only ever APPENDS at positions >= seq_len, so once a prompt has
+    /// been prefilled its K/V for positions 0..seq_len is never overwritten. A
+    /// repeat of that prompt therefore needs no data movement at all, only the
+    /// lengths reset. Without this a prefix-cache hit clones ~234 MB on the
+    /// host and uploads it again, per request.
+    ///
+    /// It lives here rather than on `CudaExecutor` because both are
+    /// per-executor state with the same lifetime, and `CudaExecutor::new` is a
+    /// 178-line literal that already exceeds this repo's complexity gate — one
+    /// more line in it makes the file uncommittable. The claim is never
+    /// trusted on its own (see `kv_prefix_is_resident`), so its storage
+    /// location cannot make it unsafe.
+    pub resident_kv_prefix: Option<(u64, usize)>,
     /// Hidden state buffer 1 (hidden_dim) - for normed, projected, ffn_normed, ffn_down
     pub hidden_buf1: Option<GpuBuffer<f32>>,
     /// Hidden state buffer 2 (hidden_dim) - for residual1, output

@@ -10,6 +10,14 @@ use clap::{Parser, Subcommand};
 
 use crate::{analysis, doctor, profilers};
 
+/// Backends `cgp profile compare --backends` accepts.
+///
+/// Kept in lockstep with the `match` in `analysis::compare::measure_backend`:
+/// every arm there except the catch-all appears here, so a value that parses is
+/// a value that is actually measured.
+pub const CGP_BACKEND_VALUES: [&str; 7] =
+    ["scalar", "avx2", "avx512", "neon", "cuda", "cublas", "wgpu"];
+
 /// CGP: Compute-GPU-Profile — Unified Performance Analysis CLI
 ///
 /// Own the Stack: One Binary, All Backends, Zero Blind Spots.
@@ -243,8 +251,15 @@ pub enum ProfileTarget {
         #[arg(long)]
         size: u32,
         /// Backends to compare (comma-separated)
-        #[arg(long)]
-        backends: String,
+        ///
+        /// #2583: this was a free-form `String`, split on `,` and matched in
+        /// `analysis::compare::measure_backend`, whose `other =>` arm warns to
+        /// stderr and `continue`s. So `--backends avx2,cudaa` exited 0 and
+        /// printed a comparison table silently missing the CUDA row — and under
+        /// `--json` the omitted row is the only signal. Rejecting the typo at
+        /// parse time is the same fix `apr serve run --backend` got.
+        #[arg(long, value_delimiter = ',', value_parser = CGP_BACKEND_VALUES)]
+        backends: Vec<String>,
     },
     /// Parallel scaling sweep (thread count vs throughput)
     Scaling {
@@ -475,7 +490,7 @@ pub fn dispatch_profile(target: ProfileTarget, json: bool) -> Result<()> {
             kernel,
             size,
             backends,
-        } => analysis::compare::run_compare(&kernel, size, &backends, json),
+        } => analysis::compare::run_compare(&kernel, size, &backends.join(","), json),
         ProfileTarget::Scaling {
             size,
             max_threads,

@@ -243,6 +243,8 @@ impl CudaExecutor {
 
     /// Clear KV cache for a new generation (reset sequence position to 0)
     pub fn reset_kv_cache_gpu(&mut self) {
+        // #2697: a reset invalidates any residency claim.
+        self.workspace.resident_kv_prefix = None;
         for len in self.kv_cache_lengths.values_mut() {
             *len = 0;
         }

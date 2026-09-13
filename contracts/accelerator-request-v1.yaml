@@ -1,0 +1,230 @@
+metadata:
+  version: 2.0.0
+  created: '2026-08-25'
+  author: PAIML Engineering
+  description: >-
+    An accelerator request must resolve observably. A build that cannot honour
+    the request must refuse it, never satisfy it silently on another path.
+  references:
+  - APR-PERF-GATE-001 v2.2 §7.5, §5 (mutation registry row "Jidoka --gpu")
+  - aprender#2696 — published binary is CPU-only; --gpu accepted and ignored
+  - 'Measured 2026-08-25: 15.7 tok/s decode and 7.5s TTFT on an idle RTX 4090,
+    against llama.cpp 158.9, because the request was dropped in silence'
+equations:
+  accelerator_request_resolves:
+    formula: >-
+      requested(accel) AND NOT can_dispatch(accel) => error(exit != 0)
+    domain: >-
+      requested(accel) is (config.gpu AND NOT config.no_gpu) OR
+      config.backend in {gpu, cuda, wgpu}; can_dispatch(accel) is
+      cfg!(any(feature = "cuda", feature = "wgpu"))
+    codomain: Result<(), CliError> — Err(FeatureDisabled) or Ok(())
+    invariants:
+    - >-
+      REFUSAL. requested AND NOT can_dispatch implies Err. A request the build
+      cannot honour is never satisfied by falling through to another path.
+    - >-
+      SILENCE IS PRESERVED. NOT requested implies Ok on every build. The default
+      and explicit-CPU paths are untouched, so the guard cannot make a working
+      configuration fail.
+    - >-
+      OVERRIDE IS HONOURED. no_gpu AND gpu implies Ok. --no-gpu continues to win,
+      as it always did; this is the deliberate-CPU escape hatch the error names.
+    - >-
+      CAPABLE BUILDS PASS. can_dispatch implies Ok for every request. A build
+      with the feature is never blocked by its own guard.
+    - >-
+      THE REMEDY IS REAL. The error names an install command whose feature is
+      declared at the facade. aprender#2527 shipped an error naming a rebuild
+      that could not be performed; the message is worthless if it cannot be
+      followed.
+    - >-
+      THE CALL SITE IS THE GATE. serve::run invokes the check before any server
+      starts. The function existing is not the property; being reached is.
+    preconditions:
+    - config.gpu || config.no_gpu || config.backend.is_some() || true
+    postconditions:
+    - >-
+      result.is_err() == (requested_accelerator(config) && !accelerator_linked())
+falsification_tests:
+- id: F-ACCEL-001
+  rule: an accelerator request the build cannot honour must be refused
+  prediction: >-
+    On a build with no accelerator feature, `--gpu` returns Err naming both
+    `cargo install aprender --features cuda` and the `--no-gpu` escape hatch.
+    Exit code is non-zero.
+  test: 'cargo test -p apr-cli --lib accelerator_guard'
+  if_fails: >-
+    the request is dropped in silence and the server runs on CPU. Measured
+    2026-08-25 on an idle RTX 4090: 15.7 tok/s decode and 7.5s TTFT against
+    llama.cpp's 158.9 (aprender#2696).
+  mutation: >-
+    delete the `if cfg!(any(feature = "cuda", feature = "wgpu"))` early return;
+    a capable build must then FAIL its own guard
+- id: F-ACCEL-002
+  rule: naming an unreachable backend takes the same path
+  prediction: >-
+    `--backend wgpu|cuda|gpu` errors on a build without the feature, and the
+    message quotes back the flag the user typed rather than a generic one.
+  test: 'cargo test -p apr-cli --lib accelerator_guard'
+  if_fails: the same defect wearing a different flag ships unguarded
+  mutation: >-
+    drop `wants_backend` from the `wants_gpu` disjunction; the
+    an_unreachable_backend_is_also_an_error case must turn RED
+- id: F-ACCEL-003
+  rule: silence is preserved and --no-gpu still wins
+  prediction: >-
+    default, `--no-gpu`, `--no-gpu` together with `--gpu`, and `--backend cpu`
+    all return Ok on every build.
+  test: 'cargo test -p apr-cli --lib accelerator_guard'
+  if_fails: >-
+    the guard breaks working configurations, which is how a gate gets reverted
+    wholesale instead of satisfied
+  mutation: >-
+    remove the `!config.no_gpu` conjunct; cpu_paths_are_untouched must turn RED
+- id: F-ACCEL-004
+  rule: the call site is the gate, not the function
+  prediction: >-
+    `serve::run` contains `ensure_accelerator_available(config)?` before any
+    server starts.
+  test: 'cargo test -p apr-cli --lib accelerator_guard'
+  if_fails: >-
+    `--gpu` is silently ignored again while the unit tests stay green, because
+    they call the function directly and cannot see the wiring
+  mutation: >-
+    remove the call from serve::run — observed RED 2026-08-25
+    (the_guard_is_actually_wired_into_run FAILED; the other three PASSED, which
+    is the discrimination evidence)
+
+proof_obligations:
+- type: invariant
+  property: >-
+    An unhonourable request is refused (F-ACCEL-001). The predicate is pure
+    boolean logic over four inputs, so this is decidable by exhaustion.
+  formal: >-
+    forall c: requested(c) and not can_dispatch => result(c) = Err
+- type: invariant
+  property: >-
+    A request that is not made, or is overridden by --no-gpu, is never refused
+    (F-ACCEL-003). This is the half that keeps the guard from being a blanket
+    rejection.
+  formal: >-
+    forall c: (not requested(c)) => result(c) = Ok
+- type: soundness
+  property: >-
+    A build that CAN dispatch never refuses (F-ACCEL-003). Together with the
+    first obligation this makes result a total function of
+    (requested, can_dispatch), with exactly one Err cell.
+  formal: >-
+    forall c: can_dispatch => result(c) = Ok
+kani_harnesses:
+# The predicate is pure boolean logic over four bools — no floats, no loops, no
+# allocation — so this is one of the rare properties genuinely decidable by
+# exhaustion rather than bounded. The harness is DECLARED AND NOT YET WRITTEN.
+# Stated plainly because the #2644 audit found declared-but-unwritten harnesses
+# inflating the score, and the remedy there was to say so rather than hide it.
+# 16 concrete cases is also within reach of a plain #[test] loop, which is the
+# cheaper first move.
+- id: KH-ACCEL-001
+  obligation: an_unhonourable_request_is_refused
+  property: >-
+    for all (gpu, no_gpu, backend_is_accel, feature_linked) in 2^4,
+    ensure_accelerator_available returns Err exactly when
+    ((gpu and not no_gpu) or backend_is_accel) and not feature_linked
+  status: declared-not-written
+  cheaper_alternative: >-
+    an exhaustive #[test] over the 16 assignments; the same statement, today,
+    without a solver
+qa_gate:
+  certeza:
+    min_score: 0.0
+    note: >-
+      No numeric quality gate is claimed. This contract governs a boolean
+      refusal, not a measured quantity, and a fabricated score here would be
+      the very class of defect the parent spec exists to remove (CF-5).
+mutation_registry:
+# WHICH BUILD A MUTATION CAN FIRE ON IS PART OF THE RECORD. Three of these are
+# only observable on a CPU-only build and one only on a build with the feature —
+# running the whole set on one build would have reported a dead rule that is not
+# dead. The first attempt did exactly that: F-ACCEL-001's mutation came back
+# GREEN because `cfg!(any(feature = "cuda", feature = "wgpu"))` is already false
+# without the feature, so replacing it with `false` is a no-op there.
+- gate: Jidoka --gpu (F-ACCEL-004, the registry row)
+  mutation: remove the ensure_accelerator_available(config)? call from serve::run
+  build: default (no accelerator feature)
+  expected: RED
+  observed: >-
+    RED 2026-08-25 — 4 passed, 1 failed. Only
+    the_guard_is_actually_wired_into_run fell over; the other three PASSED. That
+    is the discrimination evidence for this row: the pre-existing unit tests
+    call the function directly and were blind to removal of the call site.
+- gate: refusal is total (F-ACCEL-003)
+  mutation: drop the `!config.no_gpu` conjunct from wants_gpu
+  build: default
+  expected: RED
+  observed: RED 2026-08-25 — 3 passed, 2 failed
+- gate: unreachable backend takes the same path (F-ACCEL-002)
+  mutation: drop the `matches!(wants_backend, ...)` disjunct
+  build: default
+  expected: RED
+  observed: RED 2026-08-25 — 3 passed, 2 failed
+- gate: capable builds are never blocked (F-ACCEL-001)
+  mutation: replace the `cfg!(any(feature = ...))` early return with `false`
+  build: --features cuda  # NOT OBSERVABLE on a default build: no-op there
+  expected: RED
+  observed: >-
+    RED 2026-08-25 under --features cuda — 2 passed, 2 failed, against a 4/4
+    green baseline on the same build.
+  discrimination: >-
+    reverted, 5/5 green on default and 4/4 on cuda. A CPU run without --gpu
+    succeeds under every mutated build too, so the guard is not simply
+    rejecting everything.
+# v2.0 (PERF-021) closes the N4 limitation v1.0 recorded.
+- id: F-ACCEL-005
+  rule: an explicit instruction is never lowered by automation (I-17)
+  prediction: >-
+    `--gpu-layers all` on a model that does not fit, and `--gpu-layers N` with
+    N above what fits, both ERROR. Only `auto` is reduced, because `auto` is the
+    value that asked to be fitted.
+  test: 'cargo test -p apr-cli --lib commands::serve::'
+  if_fails: >-
+    automation overrides an explicit user instruction and the override is
+    unobservable — the v2.2 root cause of defect #1, restored
+  mutation: >-
+    replace the `fits >= total_layers` guard with `true` (RED 2026-08-25,
+    250 passed 1 failed); likewise `n <= fits` (RED, 250 passed 1 failed)
+- id: F-ACCEL-006
+  rule: the quantity reaches the same refusal as the boolean (I-18)
+  prediction: >-
+    `--gpu-layers all` on a build with no accelerator is refused with a message
+    quoting `--gpu-layers`; `--gpu-layers 0` is NOT an accelerator request and
+    passes.
+  test: 'cargo test -p apr-cli --lib commands::serve::'
+  if_fails: >-
+    retiring the boolean reopens the hole the boolean's guard closed
+  mutation: >-
+    set `wants_layers = false` (RED 2026-08-25, 250 passed 1 failed)
+- id: F-ACCEL-007
+  rule: a mistyped request is rejected, not defaulted
+  prediction: >-
+    `--gpu-layers gpu`, `--gpu-layers -1` and an empty value are errors naming
+    the legal values.
+  test: 'cargo test -p apr-cli --lib commands::serve::'
+  if_fails: >-
+    a typo silently becomes CPU, which is silent degradation in miniature
+  mutation: make the fallback arm return Ok(Self::None) instead of Err
+
+known_limitations:
+- >-
+  RESOLVED-VS-REQUESTED IS NOT YET WIRED TO THE RECEIPT. `resolve_gpu_layers`
+  computes it and `--list-devices` reports build capability, but
+  `gpu_layers_requested` / `_resolved` / `_total` do not yet appear in the perf
+  receipt. That is v2.2 §10.1 step 2 (receipt schema), not this ticket.
+- >-
+  `--gpu` is KEPT as a deprecated alias meaning `--gpu-layers all`, so existing
+  scripts keep working. Retiring it outright is a breaking CLI change and needs
+  its own deprecation window.
+- >-
+  Scope is the REQUEST, not the DISTRIBUTION. That `cargo install aprender`
+  produces a CPU-only binary at all is aprender#2696's open half and is not
+  addressed here.

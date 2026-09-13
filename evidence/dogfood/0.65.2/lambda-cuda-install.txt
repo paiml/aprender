@@ -1,0 +1,4 @@
+rc=0 wall=167s
+  Installing /tmp/apr-0652-cuda/bin/apr
+   Installed package `aprender v0.65.2` (executable `apr`)
+warning: be sure to add `/tmp/apr-0652-cuda/bin` to your PATH to be able to run the installed binaries

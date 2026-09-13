@@ -25,7 +25,6 @@ metadata:
   - 'crates/aprender-core/src/model_selection/tests_stratified.rs — FALSIFY-SKF-BAL-001..003'
   - 'scikit-learn StratifiedKFold / _make_test_folds — per-fold sizes differ by at most 1'
 
-kind: KernelContract
 name: stratified-kfold-balance
 version: 1.0.0
 scope: aprender-core model_selection StratifiedKFold::split fold-size balance

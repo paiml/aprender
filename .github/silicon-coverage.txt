@@ -1,0 +1,36 @@
+# SILICON COVERAGE POLICY — one axis per line (paiml/infra#361).
+#
+#   <axis-id>  <status>  <runs-on labels, comma-separated>  # note
+#
+# STATUS is one of:
+#   required        this axis MUST have a runner that can serve its selector.
+#                   If none exists, silicon-nightly FAILS — a lane that silently
+#                   stops covering an architecture is indistinguishable from one
+#                   that never covered it.
+#   pending:<issue> the axis is declared but not yet runnable. It does NOT fail
+#                   the lane — AND IT CANNOT ROT: the preflight fails if a runner
+#                   able to serve the selector APPEARS, because at that point the
+#                   only thing standing between us and the coverage is this line.
+#
+# WHY A POLICY FILE AND NOT A MATRIX. aprender's correctness is silicon-dependent
+# — SIMD paths, CUDA kernels, arch intrinsics, float behaviour — and the axes we
+# do NOT cover are the interesting number. A `matrix:` lists what runs; this
+# lists what SHOULD run and makes the gap a value rather than an absence.
+#
+# The gap is real and was widened deliberately: paiml/aprender#2740 makes
+# cuda-nightly gx10-only because its x86_64 GPU leg ran on lambda-labs, which
+# must never be a CI host (paiml/infra#359). sm_89 was the STABLE reference and
+# sm_121 the higher-risk target with a history of JIT bugs; we now gate only the
+# risky one. `x86_64-cuda-sm89` below is that hole, named.
+
+x86_64-cpu          required        self-hosted,clean-room,intel
+aarch64-cuda-sm121  required        self-hosted,gpu,gx10,cuda,blackwell
+
+# ── declared, not yet runnable ──────────────────────────────────────────────
+# Each of these has `runner-register` make targets in paiml/infra and no
+# registration. Standing one up needs the paiml/infra#352 treatment: an opt-in
+# label, never the default pool, and a guard that nothing can select it
+# implicitly.
+x86_64-cuda-sm89    pending:361     self-hosted,gpu,yoga,cuda,ada
+aarch64-cuda-sm87   pending:361     self-hosted,gpu,jetson,cuda,orin
+aarch64-macos       pending:361     self-hosted,mini,macos,arm64

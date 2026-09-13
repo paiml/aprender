@@ -1,0 +1,7 @@
+error: could not compile `equivalent` (lib)
+
+Caused by:
+  could not execute process `/home/noah/data/toolchains/.../bin/rustc --crate-name equivalent` (never executed)
+
+Caused by:
+  No such file or directory (os error 2)

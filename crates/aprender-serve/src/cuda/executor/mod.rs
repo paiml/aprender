@@ -274,6 +274,7 @@ mod layers;
 mod q4k;
 mod q_basic;
 mod quantized;
+mod stage_dump;
 mod weights;
 mod workspace;
 
@@ -292,6 +293,10 @@ mod test_fixtures;
 
 #[cfg(test)]
 mod poison_trace_test;
+
+// FALSIFY-QDOT-008 (#3111): the Q5_K GEMV against gguf-py's values of a llama.cpp block
+#[cfg(test)]
+mod tests_q5k_ggml;
 
 // COV-003 through COV-006 (layer preload, kv_cache, attention, quantized)
 #[cfg(test)]
@@ -427,10 +432,18 @@ pub struct CudaExecutor {
     // Compute stream for kernel execution (PARITY-038)
     // PoolableStream: returned to pool on executor drop, not destroyed.
     compute_stream: PoolableStream,
-    // Transfer stream for async H2D/D2H copies (PARITY-038)
-    // Runs in parallel with compute_stream for overlapped execution
+    // Transfer stream for async H2D/D2H copies (PARITY-038).
+    //
+    // PERF-053 (aprender#2767): it carries NO production work. Its only users are
+    // `copy_to_gpu_async` / `copy_from_gpu_async` (zero callers anywhere, tests included) and
+    // `synchronize_transfer` / `synchronize_all` (test callers only). The "runs in parallel with
+    // compute_stream for overlapped execution" this comment used to claim does not happen.
     transfer_stream: PoolableStream,
-    // Legacy alias for compute_stream (kept for backward compatibility)
+    // A THIRD stream, distinct from compute_stream -- NOT an alias, whatever this comment used
+    // to say. `checkout_streams` mints three, and CORRECTNESS-011/012 deliberately move work onto
+    // THIS one ("Use self.stream (NOT compute_stream) to ensure synchronization"), which is only
+    // meaningful because they are different streams. Reading it as an alias makes those fixes
+    // look like no-ops.
     stream: PoolableStream,
     // PAR-054: CUDA Graph Capture for decode loop optimization
     // Captures ~280 kernel launches into single graph replay (~10us vs ~5.6ms)
@@ -637,6 +650,11 @@ pub struct CudaExecutor {
     // when FP16 weight cache is retained during decode. Routes batched GEMV
     // through cuBLAS tensor cores instead of compute-bound DP4A GEMV.
     pub(crate) hgemm_batched_decode_active: bool,
+    // PP-LLAMA-001 §5.2 / §9 #7: highest `total - free` this process has
+    // sampled from the driver. Atomic because the sampler runs from the
+    // scheduler thread and from the effective-config handler, which only holds
+    // a READ lock. 0 means "never sampled" and is reported as absent.
+    vram_used_peak: std::sync::atomic::AtomicUsize,
     // CUDA context — declared last so all GPU resources above drop first
     // (they need the context alive for cuMemFree etc.).
     //

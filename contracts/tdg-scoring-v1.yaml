@@ -7,7 +7,6 @@ metadata:
   references:
     - "Provable contract for tdg-scoring-v1"
 
-kind: AlgorithmContract
 name: tdg-scoring
 version: "1.0.0"
 scope: "crates/aprender-contracts/src/"

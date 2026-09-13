@@ -24,7 +24,6 @@ metadata:
   - 'crates/aprender-train-distill/src/kd_step.rs:103-107 (assert_eq! that the alignment must satisfy)'
   - 'crates/apr-cli/src/commands/distill_q4k_teacher.rs (fix site)'
 
-kind: KernelContract
 name: apr-distill-teacher-vocab-alignment
 version: 1.0.0
 scope: aprender-train-distill teacher-provider boundary — vocab alignment between teacher and student

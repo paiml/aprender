@@ -1,0 +1,26 @@
+host=mac-server started=2026-09-05T08:03:11Z base=da49c1081 nproc=32
+Preparing worktree (detached HEAD da49c1081)
+HEAD is now at da49c1081 docs(audits): impl-PMAT-929 receipt + 0.65.2 post-publish host receipts (parity NO-GO, measured) + 0.66 parity report + delay report (#2868)
+worktree_sha=da49c108116ca8be0f7cd81a9379b7e333d17d6c dirty=0
+rustc 1.93.0 (254b59607 2026-01-19)
+cargo 1.93.0 (083ac5135 2025-12-15)
+no /usr/local/cuda*
+no nvcc
+3
+=== BUILD cli: cargo build -p apr-cli --release --no-default-features --features cli (CARGO_TARGET_DIR=/tmp/apr-s0-target-cli) ===
+error: the package 'apr-cli' does not contain this feature: cli
+help: packages with the missing feature: aprender, aprender-data, aprender-serve, aprender-registry
+BUILD cli rc=101 wall_s=1
+=== BUILD cli-cuda: cargo build -p apr-cli --release --no-default-features --features cli,cuda (CARGO_TARGET_DIR=/tmp/apr-s0-target-cli-cuda) ===
+error: the package 'apr-cli' does not contain this feature: cli
+help: packages with the missing feature: aprender, aprender-data, aprender-serve, aprender-registry
+BUILD cli-cuda rc=101 wall_s=0
+=== BUILD default-cuda: cargo build -p apr-cli --release --features cuda (CARGO_TARGET_DIR=/tmp/apr-s0-target-default-cuda) ===
+   Compiling aprender-train-lora v0.65.2 (/home/noah/src/aprender-s0/crates/aprender-train-lora)
+    Finished `release` profile [optimized] target(s) in 6m 24s
+BUILD default-cuda rc=0 wall_s=385
+size_bytes=79094584 sha256=e8094438b872ec22
+ldd_cuda_cublas_count=0
+apr 0.65.2 (da49c1081)
+finished=2026-09-05T08:09:46Z
+S0-BUILD-DONE

@@ -10,7 +10,6 @@ metadata:
     Correctness contract for the GLM IRLS solver (aprender-core glm). Pillar-1 (sklearn/statsmodels
     parity): GLM::fit must converge to the correct maximum-likelihood coefficients for the
     exponential family.
-kind: KernelContract
 name: glm-irls-link-derivative
 version: "1.0.0"
 scope: "crates/aprender-core/src/glm/mod.rs"

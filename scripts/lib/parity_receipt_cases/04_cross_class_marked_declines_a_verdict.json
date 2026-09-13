@@ -1,0 +1,52 @@
+{
+  "instrument": "apr test llm bench",
+  "protocol_ref": "scripts/llama_pin.toml#protocol.http",
+  "model": "qwen2.5-coder-7b-instruct-q4_k_m.gguf",
+  "lanes": [
+    {
+      "lane": "gpu-published",
+      "subject": {
+        "provenance": {
+          "binary_path": "/x/apr",
+          "binary_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "resolution": "scripts/apr_bin.sh",
+          "compute_class": "cpu"
+        },
+        "aggregate_tok_per_sec": [
+          15.7,
+          15.6
+        ],
+        "decode_tok_per_sec": [
+          15.7,
+          15.6
+        ],
+        "install_source": "crates.io"
+      },
+      "comparator": {
+        "name": "llama.cpp",
+        "build_commit": "39173bcac",
+        "provenance": {
+          "binary_path": "/x/llama-server",
+          "binary_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "resolution": "scripts/llama_bin.sh",
+          "compute_class": "cuda"
+        },
+        "aggregate_tok_per_sec": [
+          158.0,
+          159.0
+        ],
+        "decode_tok_per_sec": [
+          158.0,
+          159.0
+        ]
+      },
+      "ratio_decode": 0.0989,
+      "verdict": "EXISTENCE-ONLY",
+      "comparability": "cross-class-existence-only"
+    }
+  ],
+  "_expect": {
+    "result": "valid",
+    "why": "#2696's own shape written honestly: cross-class, no floor, no PASS, and no bands demanded"
+  }
+}

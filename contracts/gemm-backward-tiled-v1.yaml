@@ -7,7 +7,6 @@ metadata:
   references:
     - "Provable contract for gemm-backward-tiled-v1"
 
-kind: KernelContract
 name: gemm-backward-tiled
 version: "1.0.0"
 scope: "crates/aprender-compute/src/backends/"

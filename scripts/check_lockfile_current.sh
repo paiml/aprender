@@ -40,6 +40,8 @@ set -uo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
+. "${REPO_ROOT}/scripts/cargo_classify.sh" || exit 1
+
 # ---------------------------------------------------------------------------
 if [ "${1:-}" = "--self-test" ]; then
     fails=0
@@ -78,8 +80,14 @@ if [ "${1:-}" = "--self-test" ]; then
         printf 'ok    row 2 --locked refuses a stale lockfile\n'
     fi
 
+    # Rows 1-2 probe `--locked` itself. The ENV/CODE classifier is a DIFFERENT
+    # surface -- it decides whether a non-zero `cargo metadata` gets to be named
+    # "the lockfile is stale" -- so it is re-mutated here rather than inheriting
+    # rows 1-2's green.
+    cargo_classify_selftest || fails=1
+
     [ "$fails" -eq 0 ] || { printf '\nSELF-TEST FAILED\n'; exit 1; }
-    printf '\nSELF-TEST PASSED (2/2)\n'
+    printf '\nSELF-TEST PASSED (2/2 locked + classifier table above)\n'
     exit 0
 fi
 
@@ -97,6 +105,16 @@ trap 'rm -f "${ERR:?}"' EXIT
 
 cargo metadata --format-version 1 --locked > /dev/null 2> "$ERR"
 rc=$?
+
+# `rc` was read correctly here from the start; the residual is the CLAIM. Any
+# non-zero exit was named "the committed Cargo.lock does not match the
+# manifests", and `cargo metadata` also exits non-zero when it cannot reach the
+# registry, cannot take the package cache lock, or cannot write. On 2026-08-27
+# that reading -- from a sibling guard -- blocked every open PR in this repo.
+if [ "$rc" -ne 0 ] && [ "$( classify_cargo_failure "$ERR" )" = 'ENV' ]; then
+    report_cargo_env_failure "$ERR" 'whether Cargo.lock matches the manifests'
+    exit 1
+fi
 
 if [ "$rc" -ne 0 ]; then
     printf '\nFAIL: the committed Cargo.lock does not match the manifests.\n\n'

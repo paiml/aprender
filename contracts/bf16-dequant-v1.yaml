@@ -20,7 +20,6 @@ metadata:
   - 'crates/aprender-serve/src/inference/simd.rs:264 — simd_bf16_to_f32 (reused converter)'
   - 'contracts/q3k-dequant-v1.yaml — the sibling missing-dispatch fix this mirrors'
 
-kind: KernelContract
 name: bf16-dequant
 version: 1.0.0
 scope: aprender-serve GGUF loader BF16 (type 30) dispatch — get_tensor_f32 + tensor_byte_size

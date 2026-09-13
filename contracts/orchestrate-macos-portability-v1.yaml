@@ -10,7 +10,6 @@ metadata:
     Portability contract for aprender-orchestrate's parent-death-signal helper. `cargo install
     aprender` must build on macOS — apr-cli depends on aprender-orchestrate (as `batuta`), so a
     non-portable orchestrate breaks the published `apr` binary on Darwin.
-kind: KernelContract
 name: orchestrate-macos-portability
 version: "1.0.0"
 scope: "crates/aprender-orchestrate/src/agent/driver/apr_serve.rs"

@@ -10,7 +10,6 @@ metadata:
     - "paiml/aprender qwen3-moe-sampling-v1.yaml v1.1.0 — the MoE path ALREADY seeds StdRng from QuantizedGenerateConfig.seed (sample_from_logits); the dense path did not"
   description: "OpenAI `seed` determinism on the dense GGUF /v1/chat/completions decode path"
 
-kind: KernelContract
 name: openai-serve-sampling-determinism
 version: "1.0.0"
 scope: "crates/aprender-serve/src/gguf/inference/generate_quantized.rs::{sample_topk_seeded, generate, generate_with_cache, generate_with_cache_streaming}"

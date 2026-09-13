@@ -58,7 +58,6 @@ metadata:
     round-toward-zero bug class cannot recur. The GPU encoders remain an
     on-device follow-up outside this CPU contract's scope.
 
-kind: KernelContract
 name: quant-solve-f16-round
 version: "1.1.0"
 scope: "crates/aprender-solve/src/blas3.rs ; crates/aprender-quant/src/lib.rs ; crates/aprender-core/src/format/converter/convert_report.rs"

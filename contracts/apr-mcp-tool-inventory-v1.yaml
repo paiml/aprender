@@ -44,7 +44,6 @@ metadata:
     - apr-mcp-server-v1
     - apr-mcp-tool-schemas-v1
 
-kind: AprMcpToolInventoryContract
 name: apr-mcp-tool-inventory
 version: "1.0.0"
 status: ACTIVE

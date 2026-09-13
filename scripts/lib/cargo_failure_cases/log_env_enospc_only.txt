@@ -1,0 +1,4 @@
+error: failed to write `/work/target/debug/deps/libserde-3f1.rmeta`
+
+Caused by:
+  No space left on device (os error 28)

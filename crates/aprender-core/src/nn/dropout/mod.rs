@@ -133,6 +133,22 @@ impl Module for Dropout {
         input.mul(&mask)
     }
 
+    // Dropout registers NO learnable parameters: `p`, the RNG, the seed, and the
+    // training flag are all module state, never parameters. Naming any of them would
+    // put non-learnable state into optimizer and freeze-group partitions (ENC-05) —
+    // and would break the mode-flip byte-identity proof, since RNG state legitimately
+    // changes across a forward pass.
+    //
+    // `named_parameters`/`named_parameters_mut` are deliberately NOT overridden here.
+    // The trait defaults derive them from `parameters()`, which is empty, so the two
+    // already agree by construction. Overriding them to return `Vec::new()` would
+    // restate "I have no parameters" a second time and independently — and if this
+    // type ever gains a learnable tensor (an `AlphaDropout` scale, a learnable `p`),
+    // the natural edit of adding it to `parameters()` would leave the named accessors
+    // at zero and silently drop it from the freeze partition. That is precisely the
+    // defect the delegating default exists to prevent.
+    // Pinned by `dropout_reports_no_parameters_through_either_accessor`.
+
     fn train(&mut self) {
         self.training = true;
     }
@@ -425,3 +441,30 @@ pub struct DropBlock {
 
 mod drop_connect;
 pub use drop_connect::*;
+
+#[cfg(test)]
+mod tests_no_parameters {
+    use super::Dropout;
+    use crate::nn::Module;
+
+    /// `Dropout` must report zero parameters through BOTH accessors.
+    ///
+    /// It deliberately overrides neither `named_parameters` nor `parameters`, relying
+    /// on the trait default to derive one from the other. This pins that agreement so
+    /// a future learnable tensor cannot be added to one accessor alone — the failure
+    /// mode being silent removal from optimizer and freeze-group partitions.
+    #[test]
+    fn dropout_reports_no_parameters_through_either_accessor() {
+        let d = Dropout::new(0.5);
+        assert!(
+            d.parameters().is_empty(),
+            "Dropout gained a positional parameter; if that is intended it must also \
+             appear in named_parameters() or freeze groups will silently miss it"
+        );
+        assert!(
+            d.named_parameters().is_empty(),
+            "Dropout gained a named parameter without a positional one"
+        );
+        assert_eq!(d.parameters().len(), d.named_parameters().len());
+    }
+}

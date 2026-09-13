@@ -1,0 +1,13 @@
+# #2742 HEAD-side duplication: (needle, path) pairs classified
+# A pair counts only if the UNCHANGED hit file DEFINES the name.
+# It is a duplication only if #2742 adds a SECOND definition site.
+
+name<TAB>definition sites at a184073ef (#2742 head)
+resolve_base_ref	scripts/check_dogfood_coverage.sh scripts/check_no_fabricated_baselines.sh 
+itl_gaps_ms	crates/aprender-test-lib/src/perf_gate/drain.rs crates/aprender-test-lib/src/perf_gate/metrics.rs 
+exceeds_budget	crates/aprender-test-lib/src/llm/experiment.rs crates/aprender-test-lib/src/perf_gate/samples.rs 
+a_dominating_request_is_annotated_suspect	crates/aprender-test-lib/src/perf_gate/drain.rs crates/aprender-test-lib/src/perf_gate/window.rs 
+resolve_prompts	crates/aprender-test-cli/src/handlers/llm.rs 
+
+# resolve_prompts has ONE site -> the hit is a use, NOT a duplication.
+# grep -c over #2742's PR body and merge-commit message, all four names: 0

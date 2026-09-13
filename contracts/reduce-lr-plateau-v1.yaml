@@ -30,7 +30,6 @@ metadata:
   - 'crates/aprender-core/src/nn/scheduler/improvement.rs — ReduceLROnPlateau::step_with_metric reduction guard (num_bad_epochs > patience)'
   - 'crates/aprender-core/src/nn/scheduler/tests.rs — test_reduce_on_plateau_patience_strictly_greater (PMAT-850 falsifier)'
 
-kind: KernelContract
 name: reduce-lr-plateau-patience-strictly-greater
 version: 1.0.0
 scope: aprender-core ReduceLROnPlateau patience semantics (nn/scheduler/improvement.rs)

@@ -11,7 +11,6 @@ metadata:
     lora::adapter::LoRAAdapter). Pillar-3 (Unsloth fine-tune) provable correctness:
     a saved adapter must reload to a numerically-identical layer.
 
-kind: KernelContract
 name: lora-adapter-scale-roundtrip
 version: "1.0.0"
 scope: "crates/aprender-train/src/lora/adapter/lora_adapter.rs"

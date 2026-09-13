@@ -60,6 +60,8 @@ async fn l2_chat_completion_valid_structure() {
         temperature: None,
         max_tokens: Some(32),
         stream: None,
+        seed: None,
+        ignore_eos: None,
     };
 
     let timed = client.send(&request).await.unwrap();
@@ -90,6 +92,8 @@ async fn l2_chat_completion_has_content() {
         temperature: None,
         max_tokens: Some(64),
         stream: None,
+        seed: None,
+        ignore_eos: None,
     };
 
     let timed = client.send(&request).await.unwrap();
@@ -117,6 +121,8 @@ async fn l2_chat_latency_under_budget() {
         temperature: None,
         max_tokens: Some(8),
         stream: None,
+        seed: None,
+        ignore_eos: None,
     };
 
     let timed = client.send(&request).await.unwrap();
@@ -147,6 +153,8 @@ async fn l2_chat_streaming_sse() {
         temperature: None,
         max_tokens: Some(16),
         stream: Some(true),
+        seed: None,
+        ignore_eos: None,
     };
 
     let streamed = client.chat_completion_stream(&request).await.unwrap();

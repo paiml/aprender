@@ -1,0 +1,28 @@
+{
+  "host": "mini",
+  "arch": "aarch64-apple-darwin",
+  "os": "Darwin 25.5.0",
+  "cpu": "Apple M4",
+  "accelerator": "Apple M4, Metal, unified memory",
+  "version_tested": "0.64.0",
+  "date": "2026-08-24",
+  "install_source": "crates.io",
+  "install_command": "cargo install aprender --version 0.64.0 --locked --force",
+  "install_root": "default (~/.cargo/bin) \u2014 overrides whatever the host had",
+  "version_before_install": "apr 0.63.0 (v0.63.0+no-git)",
+  "install_rc": 0,
+  "install_wall_seconds": 199,
+  "crates_compiled": 531,
+  "path_resolved_apr": "/Users/noahgift/.cargo/bin/apr",
+  "binary_sha256": "240219b8736aea4b55f3ef30aafc709997f22e699a42c7ecc7b6858c0c035e12",
+  "binary_version_output": "apr 0.64.0 (v0.64.0+no-git)",
+  "bare_apr_is_0_64_0": true,
+  "surface": {
+    "cli_subcommands": 111,
+    "cli_subcommands_answering_help": 111,
+    "unusable": 0
+  },
+  "notable": "apr gpu reports 'No discrete GPU detected' and steers to --device cpu, while the SAME command reports unified memory on GB10 (#2661). OOM guard (#2568) and block v0.1.6 under wgpu->metal (#2572) remain open from the 0.63.0 sweep. No Gatekeeper quarantine on the cargo-installed binary.",
+  "verdict": "CONDITIONAL GO",
+  "collection_note": "Post-publish by construction: install_rc comes from `cargo install aprender` against crates.io, so this receipt cannot exist before the cascade (#2658). On gx10, intel and mini the binary hashed IDENTICALLY across two independent installs (scratch root, then default root) \u2014 the build is reproducible per target."
+}

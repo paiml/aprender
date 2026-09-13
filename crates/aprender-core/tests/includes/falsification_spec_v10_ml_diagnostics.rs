@@ -4,14 +4,16 @@
 #[test]
 fn f_diag_001_kmeans_clusters_failure_modes() {
     // F-DIAG-001: Structural check — KMeans is available for diagnostic clustering
-    let types_path = project_root().join("src").join("format").join("types.rs");
-    let content = std::fs::read_to_string(&types_path).expect("types.rs must exist");
+    // #2522: `src/format/types.rs` was lifted out into the sovereign
+    // `apr-format` leaf crate by #2231/#2236. The ModelType discriminants did
+    // not change; only the crate that owns them did.
+    let content = model_type_source();
     assert!(
         content.contains("KMeans"),
         "F-DIAG-001: KMeans must exist in model types"
     );
     // Also verify the cluster module exists
-    let cluster_path = project_root().join("src").join("cluster");
+    let cluster_path = crate_dir("aprender-core").join("src").join("cluster");
     assert!(
         cluster_path.exists(),
         "F-DIAG-001: cluster module must exist at src/cluster/"
@@ -21,14 +23,16 @@ fn f_diag_001_kmeans_clusters_failure_modes() {
 #[test]
 fn f_diag_002_linear_regression_predicts_error_magnitude() {
     // F-DIAG-002: Structural check — LinearRegression exists for error prediction
-    let types_path = project_root().join("src").join("format").join("types.rs");
-    let content = std::fs::read_to_string(&types_path).expect("types.rs must exist");
+    // #2522: `src/format/types.rs` was lifted out into the sovereign
+    // `apr-format` leaf crate by #2231/#2236. The ModelType discriminants did
+    // not change; only the crate that owns them did.
+    let content = model_type_source();
     assert!(
         content.contains("LinearRegression"),
         "F-DIAG-002: LinearRegression must exist in model types"
     );
     // Also verify the linear_model module exists
-    let lr_path = project_root().join("src").join("linear_model");
+    let lr_path = crate_dir("aprender-core").join("src").join("linear_model");
     assert!(
         lr_path.exists(),
         "F-DIAG-002: linear_model module must exist"
@@ -38,14 +42,16 @@ fn f_diag_002_linear_regression_predicts_error_magnitude() {
 #[test]
 fn f_diag_003_pca_separates_corrupted_from_valid() {
     // F-DIAG-003: Structural check — PCA exists for data separation
-    let types_path = project_root().join("src").join("format").join("types.rs");
-    let content = std::fs::read_to_string(&types_path).expect("types.rs must exist");
+    // #2522: `src/format/types.rs` was lifted out into the sovereign
+    // `apr-format` leaf crate by #2231/#2236. The ModelType discriminants did
+    // not change; only the crate that owns them did.
+    let content = model_type_source();
     assert!(
         content.contains("Pca"),
         "F-DIAG-003: Pca must exist in model types"
     );
     // Verify the decomposition module exists
-    let pca_path = project_root().join("src").join("decomposition");
+    let pca_path = crate_dir("aprender-core").join("src").join("decomposition");
     assert!(
         pca_path.exists(),
         "F-DIAG-003: decomposition module must exist (contains PCA)"
@@ -55,14 +61,16 @@ fn f_diag_003_pca_separates_corrupted_from_valid() {
 #[test]
 fn f_diag_004_naive_bayes_classifies_fix_category() {
     // F-DIAG-004: Structural check — NaiveBayes exists for classification
-    let types_path = project_root().join("src").join("format").join("types.rs");
-    let content = std::fs::read_to_string(&types_path).expect("types.rs must exist");
+    // #2522: `src/format/types.rs` was lifted out into the sovereign
+    // `apr-format` leaf crate by #2231/#2236. The ModelType discriminants did
+    // not change; only the crate that owns them did.
+    let content = model_type_source();
     assert!(
         content.contains("NaiveBayes"),
         "F-DIAG-004: NaiveBayes must exist in model types"
     );
     // Verify the classification module exists (contains NaiveBayes)
-    let nb_path = project_root().join("src").join("classification");
+    let nb_path = crate_dir("aprender-core").join("src").join("classification");
     assert!(
         nb_path.exists(),
         "F-DIAG-004: classification module must exist (contains NaiveBayes)"
@@ -123,15 +131,13 @@ fn f_perf_001_kv_cache_is_on_not_on2() {
 #[test]
 fn f_perf_002_fused_q4k_matches_reference() {
     // F-PERF-002: Structural check — fused Q4K kernel exists in trueno
-    let trueno_dir = project_root()
-        .parent()
-        .expect("parent dir")
-        .join("trueno")
-        .join("src");
-    if !trueno_dir.exists() {
-        eprintln!("SKIP: trueno not found at sibling path");
-        return;
-    }
+    // #2522: this looked for a SIBLING `../trueno` checkout. APR-MONO
+    // consolidated trueno into `crates/aprender-compute` ([lib] name = "trueno")
+    // and archived the sibling repo, so the directory has not existed for
+    // months -- and the gate's response was `return`, which the harness reports
+    // as `ok`. A gate that passes because its subject is missing is worse than
+    // one that fails.
+    let trueno_dir = crate_dir("aprender-compute").join("src");
     let mut has_fused = false;
     for path in collect_rs_files(&trueno_dir) {
         let content = std::fs::read_to_string(&path).unwrap_or_default();
@@ -310,3 +316,31 @@ fn f_perf_007_cbtop_monitors_pipeline() {
 }
 
 // =============================================================================
+
+/// The file that declares the `ModelType` discriminants.
+///
+/// It was `<root>/src/format/types.rs`, then `crates/aprender-core/src/format/
+/// types.rs`, and is now `crates/apr-format/src/types.rs` after the sovereign
+/// leaf-crate extraction (#2231/#2236). Four F-DIAG gates died on each move.
+fn model_type_source() -> String {
+    let candidates = [
+        crate_dir("apr-format").join("src").join("types.rs"),
+        crate_dir("aprender-core")
+            .join("src")
+            .join("format")
+            .join("types.rs"),
+    ];
+    for path in &candidates {
+        if let Ok(content) = std::fs::read_to_string(path) {
+            return content;
+        }
+    }
+    panic!(
+        "ModelType source found at none of: {}",
+        candidates
+            .iter()
+            .map(|p| p.display().to_string())
+            .collect::<Vec<_>>()
+            .join(", ")
+    )
+}

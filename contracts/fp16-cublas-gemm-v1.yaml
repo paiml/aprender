@@ -7,7 +7,6 @@ metadata:
     - "NVIDIA cuBLAS documentation; Micikevicius et al. (2018). Mixed Precision Training."
   description: "FP16 cuBLAS GEMM for inference"
 
-kind: KernelContract
 name: fp16-cublas-gemm
 version: "1.0.0"
 scope: "crates/aprender-compute/src/backends/gpu/"

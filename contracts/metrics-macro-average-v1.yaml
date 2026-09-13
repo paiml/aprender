@@ -11,7 +11,6 @@ metadata:
     - "PMAT-844 — macro divisor counted absent intermediate labels (max+1) instead of present labels"
   description: "Macro averaging must average per-class metrics only over labels present in y_true ∪ y_pred (scikit-learn parity)"
 
-kind: KernelContract
 name: metrics-macro-average
 version: "1.0.0"
 scope: "crates/aprender-core/src/metrics/classification.rs::{precision,recall,f1_score,jaccard_score,fbeta_score} (Average::Macro) + classification_include_01.rs::present_classes"

@@ -13,7 +13,6 @@ metadata:
     (aprender-core stats::hypothesis::t_distribution_pvalue) for ALL degrees of
     freedom. Pillar-1 (scipy/sklearn parity) provable-correctness, ticket PMAT-853.
 
-kind: KernelContract
 name: ttest-exact-pvalue
 version: "1.0.0"
 scope: "crates/aprender-core/src/stats/hypothesis.rs"

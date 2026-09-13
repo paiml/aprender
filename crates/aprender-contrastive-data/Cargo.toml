@@ -1,0 +1,40 @@
+[package]
+name = "aprender-contrastive-data"
+version.workspace = true
+edition = "2021"
+rust-version.workspace = true
+description = "Deterministic, leakage-safe contrastive data construction: class buckets, balanced few-shot selection, bounded pair sampling"
+license = "MIT"
+repository = "https://github.com/paiml/aprender"
+authors = ["PAIML <hello@paiml.com>"]
+keywords = ["contrastive", "few-shot", "sampling", "deterministic", "setfit"]
+categories = ["science", "algorithms"]
+
+# NO `publish = false`. `apr-cli` is published on crates.io and depends on this crate,
+# so publishing is MANDATORY (02-RESEARCH.md Finding F5 / Pitfall 8) and this crate MUST
+# enter the publish cascade BEFORE apr-cli. Until that human-approved publish happens,
+# the VERIFYING `cargo package -p apr-cli` cannot resolve this crate from the registry —
+# that red state is expected and is recorded in 02-02-SUMMARY.md and STATE.md.
+
+[lints]
+workspace = true
+
+# D-04 BYTES BOUNDARY. The dependency list below is the runtime closure the Lambda-bound
+# consumer inherits. NOTHING filesystem-, network-, or async-shaped may appear here:
+# no ureq, tokio, reqwest, hyper, arrow, memmap2, tempfile, aws-*. This is enforced
+# mechanically by `make contrastive-data-boundary`, which compares the resolved
+# `cargo tree -e normal` closure against `allowed-deps.txt` (a POSITIVE allowlist, so a
+# new transitive dependency fails by DEFAULT rather than passing unnoticed).
+[dependencies]
+# D-20: counter-based Philox. Library name is `trueno_rand` — use that in imports.
+aprender-rand = { workspace = true }
+sha2 = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+unicode-normalization = { workspace = true }
+provable-contracts-macros = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+trybuild = { workspace = true }

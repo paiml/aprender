@@ -12,7 +12,6 @@ metadata:
     (aprender-core stats::hypothesis::incomplete_beta) and the t- / F-distribution
     p-values that depend on it. Pillar-1 (scipy/sklearn parity) provable-correctness.
 
-kind: KernelContract
 name: incomplete-beta-correctness
 version: "1.1.0"
 scope: "crates/aprender-core/src/stats/hypothesis.rs"

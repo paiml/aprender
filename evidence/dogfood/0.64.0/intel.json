@@ -1,0 +1,28 @@
+{
+  "host": "intel",
+  "arch": "x86_64-unknown-linux-gnu",
+  "os": "Linux 6.8.0-136-generic",
+  "cpu": "Intel(R) Xeon(R) W-3245 CPU @ 3.20GHz",
+  "accelerator": "none (AVX-512 + VNNI)",
+  "version_tested": "0.64.0",
+  "date": "2026-08-24",
+  "install_source": "crates.io",
+  "install_command": "cargo install aprender --version 0.64.0 --locked --force",
+  "install_root": "default (~/.cargo/bin) \u2014 overrides whatever the host had",
+  "version_before_install": "apr 0.63.0 (v0.63.0+no-git)",
+  "install_rc": 0,
+  "install_wall_seconds": 264,
+  "crates_compiled": 532,
+  "path_resolved_apr": "/home/noah/.cargo/bin/apr",
+  "binary_sha256": "771627f834009b54395edf3bc69fc1ef928238375486abbe1f74aabccfdb25dc",
+  "binary_version_output": "apr 0.64.0 (v0.64.0+no-git)",
+  "bare_apr_is_0_64_0": true,
+  "surface": {
+    "cli_subcommands": 111,
+    "cli_subcommands_answering_help": 111,
+    "unusable": 0
+  },
+  "notable": "apr gpu correctly reports no discrete GPU and hints --device cpu, which is right here. This is the CI runner host; the install ran at load ~9.8 without disturbing it.",
+  "verdict": "GO",
+  "collection_note": "Post-publish by construction: install_rc comes from `cargo install aprender` against crates.io, so this receipt cannot exist before the cascade (#2658). On gx10, intel and mini the binary hashed IDENTICALLY across two independent installs (scratch root, then default root) \u2014 the build is reproducible per target."
+}

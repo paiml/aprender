@@ -1,0 +1,667 @@
+{
+  "duplication_hits": [
+    {
+      "needle": "bootstrap.rs",
+      "kind": "name",
+      "where": "HEAD",
+      "ref": "HEAD",
+      "path": ".pmat-baseline.json",
+      "line": 78601,
+      "method": "lexical"
+    },
+    {
+      "needle": "bootstrap.rs",
+      "kind": "name",
+      "where": "HEAD",
+      "ref": "HEAD",
+      "path": ".pmat-baseline.json",
+      "line": 78648,
+      "method": "lexical"
+    },
+    {
+      "needle": "usage_counts",
+      "kind": "name",
+      "where": "HEAD",
+      "ref": "HEAD",
+      "path": "crates/aprender-core/src/citl/metrics.rs",
+      "line": 201,
+      "method": "lexical"
+    },
+    {
+      "needle": "usage_counts",
+      "kind": "name",
+      "where": "HEAD",
+      "ref": "HEAD",
+      "path": "crates/aprender-core/src/citl/metrics.rs",
+      "line": 211,
+      "method": "lexical"
+    },
+    {
+      "needle": "usage_counts",
+      "kind": "name",
+      "where": "HEAD",
+      "ref": "HEAD",
+      "path": "crates/aprender-core/src/citl/metrics.rs",
+      "line": 218,
+      "method": "lexical"
+    },
+    {
+      "needle": "usage_counts",
+      "kind": "name",
+      "where": "HEAD",
+      "ref": "HEAD",
+      "path": "crates/aprender-core/src/citl/metrics.rs",
+      "line": 227,
+      "method": "lexical"
+    },
+    {
+      "needle": "usage_counts",
+      "kind": "name",
+      "where": "HEAD",
+      "ref": "HEAD",
+      "path": "crates/aprender-core/src/citl/metrics.rs",
+      "line": 245,
+      "method": "lexical"
+    },
+    {
+      "needle": "usage_counts",
+      "kind": "name",
+      "where": "HEAD",
+      "ref": "HEAD",
+      "path": "crates/aprender-core/src/citl/metrics.rs",
+      "line": 251,
+      "method": "lexical"
+    },
+    {
+      "needle": "peak_in_flight",
+      "kind": "name",
+      "where": "HEAD",
+      "ref": "HEAD",
+      "path": "crates/aprender-present-terminal/src/perf_trace/helpers_batch.rs",
+      "line": 135,
+      "method": "lexical"
+    },
+    {
+      "needle": "peak_in_flight",
+      "kind": "name",
+      "where": "HEAD",
+      "ref": "HEAD",
+      "path": "crates/aprender-present-terminal/src/perf_trace/helpers_batch.rs",
+      "line": 156,
+      "method": "lexical"
+    },
+    {
+      "needle": "peak_in_flight",
+      "kind": "name",
+      "where": "HEAD",
+      "ref": "HEAD",
+      "path": "crates/aprender-present-terminal/src/perf_trace/helpers_batch.rs",
+      "line": 167,
+      "method": "lexical"
+    },
+    {
+      "needle": "peak_in_flight",
+      "kind": "name",
+      "where": "HEAD",
+      "ref": "HEAD",
+      "path": "crates/aprender-present-terminal/src/perf_trace/helpers_batch.rs",
+      "line": 168,
+      "method": "lexical"
+    },
+    {
+      "needle": "peak_in_flight",
+      "kind": "name",
+      "where": "HEAD",
+      "ref": "HEAD",
+      "path": "crates/aprender-present-terminal/src/perf_trace/helpers_batch.rs",
+      "line": 194,
+      "method": "lexical"
+    },
+    {
+      "needle": "peak_in_flight",
+      "kind": "name",
+      "where": "HEAD",
+      "ref": "HEAD",
+      "path": "crates/aprender-present-terminal/src/perf_trace/helpers_batch.rs",
+      "line": 240,
+      "method": "lexical"
+    },
+    {
+      "needle": "warmup_requests",
+      "kind": "name",
+      "where": "HEAD",
+      "ref": "HEAD",
+      "path": "crates/aprender-serve/benches/comparative/serve_benchmark.py",
+      "line": 263,
+      "method": "lexical"
+    },
+    {
+      "needle": "_fixture",
+      "kind": "name",
+      "where": "HEAD",
+      "ref": "HEAD",
+      "path": "crates/aprender-serve/src/fixtures/falsification_tests.rs",
+      "line": 340,
+      "method": "lexical"
+    },
+    {
+      "needle": "resolve_prompts",
+      "kind": "name",
+      "where": "HEAD",
+      "ref": "HEAD",
+      "path": "crates/aprender-test-cli/src/handlers/llm.rs",
+      "line": 219,
+      "method": "lexical"
+    },
+    {
+      "needle": "resolve_prompts",
+      "kind": "name",
+      "where": "HEAD",
+      "ref": "HEAD",
+      "path": "crates/aprender-test-cli/src/handlers/llm.rs",
+      "line": 878,
+      "method": "lexical"
+    },
+    {
+      "needle": "resolve_prompts",
+      "kind": "name",
+      "where": "HEAD",
+      "ref": "HEAD",
+      "path": "crates/aprender-test-cli/src/handlers/llm.rs",
+      "line": 1102,
+      "method": "lexical"
+    },
+    {
+      "needle": "resolve_prompts",
+      "kind": "name",
+      "where": "HEAD",
+      "ref": "HEAD",
+      "path": "crates/aprender-test-cli/src/handlers/llm.rs",
+      "line": 1224,
+      "method": "lexical"
+    },
+    {
+      "needle": "exceeds_budget",
+      "kind": "name",
+      "where": "HEAD",
+      "ref": "HEAD",
+      "path": "crates/aprender-test-lib/src/llm/experiment.rs",
+      "line": 173,
+      "method": "lexical"
+    },
+    {
+      "needle": "exceeds_budget",
+      "kind": "name",
+      "where": "HEAD",
+      "ref": "HEAD",
+      "path": "crates/aprender-test-lib/src/llm/experiment.rs",
+      "line": 667,
+      "method": "lexical"
+    },
+    {
+      "needle": "exceeds_budget",
+      "kind": "name",
+      "where": "HEAD",
+      "ref": "HEAD",
+      "path": "crates/aprender-test-lib/src/llm/experiment.rs",
+      "line": 668,
+      "method": "lexical"
+    },
+    {
+      "needle": "exceeds_budget",
+      "kind": "name",
+      "where": "HEAD",
+      "ref": "HEAD",
+      "path": "crates/aprender-test-lib/src/llm/experiment.rs",
+      "line": 678,
+      "method": "lexical"
+    },
+    {
+      "needle": "exceeds_budget",
+      "kind": "name",
+      "where": "HEAD",
+      "ref": "HEAD",
+      "path": "crates/aprender-test-lib/src/llm/experiment.rs",
+      "line": 679,
+      "method": "lexical"
+    },
+    {
+      "needle": "itl_gaps_ms",
+      "kind": "name",
+      "where": "HEAD",
+      "ref": "HEAD",
+      "path": "crates/aprender-test-lib/src/perf_gate/drain.rs",
+      "line": 126,
+      "method": "lexical"
+    },
+    {
+      "needle": "comparator_status",
+      "kind": "name",
+      "where": "HEAD",
+      "ref": "HEAD",
+      "path": "crates/aprender-test-lib/src/perf_gate/drain.rs",
+      "line": 160,
+      "method": "lexical"
+    },
+    {
+      "needle": "itl_gaps_ms",
+      "kind": "name",
+      "where": "HEAD",
+      "ref": "HEAD",
+      "path": "crates/aprender-test-lib/src/perf_gate/drain.rs",
+      "line": 343,
+      "method": "lexical"
+    },
+    {
+      "needle": "a_dominating_request_is_annotated_suspect",
+      "kind": "name",
+      "where": "HEAD",
+      "ref": "HEAD",
+      "path": "crates/aprender-test-lib/src/perf_gate/drain.rs",
+      "line": 528,
+      "method": "lexical"
+    },
+    {
+      "needle": "perf-receipt-fields.yaml",
+      "kind": "name",
+      "where": "HEAD",
+      "ref": "HEAD",
+      "path": "docs/roadmaps/roadmap.yaml",
+      "line": 13221,
+      "method": "lexical"
+    },
+    {
+      "needle": "check_perf_receipt_fields_have_producers.sh",
+      "kind": "name",
+      "where": "HEAD",
+      "ref": "HEAD",
+      "path": "docs/roadmaps/roadmap.yaml",
+      "line": 13222,
+      "method": "lexical"
+    },
+    {
+      "needle": "check_comparator_one_client.sh",
+      "kind": "name",
+      "where": "HEAD",
+      "ref": "HEAD",
+      "path": "docs/roadmaps/roadmap.yaml",
+      "line": 13533,
+      "method": "lexical"
+    },
+    {
+      "needle": "band.rs",
+      "kind": "name",
+      "where": "HEAD",
+      "ref": "HEAD",
+      "path": "docs/roadmaps/roadmap.yaml",
+      "line": 13642,
+      "method": "lexical"
+    },
+    {
+      "needle": "_probe",
+      "kind": "name",
+      "where": "HEAD",
+      "ref": "HEAD",
+      "path": "scripts/_build_rust_compile_test.py",
+      "line": 5,
+      "method": "lexical"
+    },
+    {
+      "needle": "_probe",
+      "kind": "name",
+      "where": "HEAD",
+      "ref": "HEAD",
+      "path": "scripts/_build_rust_compile_test.py",
+      "line": 75,
+      "method": "lexical"
+    },
+    {
+      "needle": "_probe",
+      "kind": "name",
+      "where": "HEAD",
+      "ref": "HEAD",
+      "path": "scripts/cargo_classify.sh",
+      "line": 155,
+      "method": "lexical"
+    },
+    {
+      "needle": "_probe",
+      "kind": "name",
+      "where": "HEAD",
+      "ref": "HEAD",
+      "path": "scripts/cargo_classify.sh",
+      "line": 243,
+      "method": "lexical"
+    },
+    {
+      "needle": "_probe",
+      "kind": "name",
+      "where": "HEAD",
+      "ref": "HEAD",
+      "path": "scripts/cargo_classify.sh",
+      "line": 245,
+      "method": "lexical"
+    },
+    {
+      "needle": "resolve_base_ref",
+      "kind": "name",
+      "where": "HEAD",
+      "ref": "HEAD",
+      "path": "scripts/check_dogfood_coverage.sh",
+      "line": 108,
+      "method": "lexical"
+    },
+    {
+      "needle": "resolve_base_ref",
+      "kind": "name",
+      "where": "HEAD",
+      "ref": "HEAD",
+      "path": "scripts/check_dogfood_coverage.sh",
+      "line": 218,
+      "method": "lexical"
+    },
+    {
+      "needle": "resolve_base_ref",
+      "kind": "name",
+      "where": "HEAD",
+      "ref": "HEAD",
+      "path": "scripts/check_dogfood_coverage.sh",
+      "line": 294,
+      "method": "lexical"
+    },
+    {
+      "needle": "resolve_base_ref",
+      "kind": "name",
+      "where": "HEAD",
+      "ref": "HEAD",
+      "path": "scripts/check_dogfood_coverage.sh",
+      "line": 310,
+      "method": "lexical"
+    },
+    {
+      "needle": "resolve_base_ref",
+      "kind": "name",
+      "where": "HEAD",
+      "ref": "HEAD",
+      "path": "scripts/check_dogfood_coverage.sh",
+      "line": 318,
+      "method": "lexical"
+    },
+    {
+      "needle": "perf_receipt.py",
+      "kind": "name",
+      "where": "HEAD",
+      "ref": "HEAD",
+      "path": "scripts/check_roadmap_completion_is_cited.sh",
+      "line": 18,
+      "method": "lexical"
+    },
+    {
+      "needle": "check_perf_receipt_fields_have_producers.sh",
+      "kind": "name",
+      "where": "HEAD",
+      "ref": "HEAD",
+      "path": "scripts/check_roadmap_completion_is_cited.sh",
+      "line": 19,
+      "method": "lexical"
+    },
+    {
+      "needle": "resolve_base_ref",
+      "kind": "name",
+      "where": "HEAD",
+      "ref": "HEAD",
+      "path": "scripts/lib/dogfood_coverage_gate.py",
+      "line": 773,
+      "method": "lexical"
+    },
+    {
+      "needle": "band.rs",
+      "kind": "filename",
+      "where": "branch",
+      "ref": "origin/feat/n1-band-cli",
+      "path": "crates/aprender-test-lib/src/llm/band.rs",
+      "line": 0,
+      "method": "lexical"
+    },
+    {
+      "needle": "bootstrap.rs",
+      "kind": "filename",
+      "where": "branch",
+      "ref": "origin/feat/n1-band-cli",
+      "path": "crates/aprender-test-lib/src/perf_gate/bootstrap.rs",
+      "line": 0,
+      "method": "lexical"
+    },
+    {
+      "needle": "protocol.rs",
+      "kind": "filename",
+      "where": "branch",
+      "ref": "origin/feat/n1-band-cli",
+      "path": "crates/aprender-test-lib/src/perf_gate/protocol.rs",
+      "line": 0,
+      "method": "lexical"
+    },
+    {
+      "needle": "samples.rs",
+      "kind": "filename",
+      "where": "branch",
+      "ref": "origin/feat/n1-band-cli",
+      "path": "crates/aprender-test-lib/src/perf_gate/samples.rs",
+      "line": 0,
+      "method": "lexical"
+    },
+    {
+      "needle": "window.rs",
+      "kind": "filename",
+      "where": "branch",
+      "ref": "origin/feat/n1-band-cli",
+      "path": "crates/aprender-test-lib/src/perf_gate/window.rs",
+      "line": 0,
+      "method": "lexical"
+    },
+    {
+      "needle": "perf-024-measurement-protocol.md",
+      "kind": "filename",
+      "where": "branch",
+      "ref": "origin/feat/n1-band-cli",
+      "path": "docs/perf-024-measurement-protocol.md",
+      "line": 0,
+      "method": "lexical"
+    },
+    {
+      "needle": "test_llm_band.rs",
+      "kind": "filename",
+      "where": "branch",
+      "ref": "origin/feat/v7-receipt",
+      "path": "crates/apr-cli/src/commands/test_llm_band.rs",
+      "line": 0,
+      "method": "lexical"
+    },
+    {
+      "needle": "band.rs",
+      "kind": "filename",
+      "where": "branch",
+      "ref": "origin/feat/v7-receipt",
+      "path": "crates/aprender-test-lib/src/llm/band.rs",
+      "line": 0,
+      "method": "lexical"
+    },
+    {
+      "needle": "bootstrap.rs",
+      "kind": "filename",
+      "where": "branch",
+      "ref": "origin/feat/v7-receipt",
+      "path": "crates/aprender-test-lib/src/perf_gate/bootstrap.rs",
+      "line": 0,
+      "method": "lexical"
+    },
+    {
+      "needle": "protocol.rs",
+      "kind": "filename",
+      "where": "branch",
+      "ref": "origin/feat/v7-receipt",
+      "path": "crates/aprender-test-lib/src/perf_gate/protocol.rs",
+      "line": 0,
+      "method": "lexical"
+    },
+    {
+      "needle": "samples.rs",
+      "kind": "filename",
+      "where": "branch",
+      "ref": "origin/feat/v7-receipt",
+      "path": "crates/aprender-test-lib/src/perf_gate/samples.rs",
+      "line": 0,
+      "method": "lexical"
+    },
+    {
+      "needle": "window.rs",
+      "kind": "filename",
+      "where": "branch",
+      "ref": "origin/feat/v7-receipt",
+      "path": "crates/aprender-test-lib/src/perf_gate/window.rs",
+      "line": 0,
+      "method": "lexical"
+    },
+    {
+      "needle": "perf-024-measurement-protocol.md",
+      "kind": "filename",
+      "where": "branch",
+      "ref": "origin/feat/v7-receipt",
+      "path": "docs/perf-024-measurement-protocol.md",
+      "line": 0,
+      "method": "lexical"
+    },
+    {
+      "needle": "check_comparator_one_client.sh",
+      "kind": "filename",
+      "where": "branch",
+      "ref": "origin/feat/v7-receipt",
+      "path": "scripts/check_comparator_one_client.sh",
+      "line": 0,
+      "method": "lexical"
+    },
+    {
+      "needle": "check_perf_receipt_fields_have_producers.sh",
+      "kind": "filename",
+      "where": "branch",
+      "ref": "origin/feat/v7-receipt",
+      "path": "scripts/check_perf_receipt_fields_have_producers.sh",
+      "line": 0,
+      "method": "lexical"
+    },
+    {
+      "needle": "perf_receipt.py",
+      "kind": "filename",
+      "where": "branch",
+      "ref": "origin/feat/v7-receipt",
+      "path": "scripts/lib/perf_receipt.py",
+      "line": 0,
+      "method": "lexical"
+    },
+    {
+      "needle": "perf-receipt-fields.yaml",
+      "kind": "filename",
+      "where": "branch",
+      "ref": "origin/feat/v7-receipt",
+      "path": "scripts/perf-receipt-fields.yaml",
+      "line": 0,
+      "method": "lexical"
+    },
+    {
+      "needle": "peak_in_flight",
+      "kind": "name",
+      "where": "main",
+      "ref": "origin/main",
+      "path": "evidence/perf-055/0-band-run-stdout.txt",
+      "line": 9,
+      "method": "lexical"
+    },
+    {
+      "needle": "test_llm_band.rs",
+      "kind": "name",
+      "where": "main",
+      "ref": "origin/main",
+      "path": "evidence/perf-055/findings.json",
+      "line": 11,
+      "method": "lexical"
+    },
+    {
+      "needle": "test_llm_band.rs",
+      "kind": "name",
+      "where": "main",
+      "ref": "origin/main",
+      "path": "evidence/perf-055/findings.json",
+      "line": 33,
+      "method": "lexical"
+    },
+    {
+      "needle": "comparator_status",
+      "kind": "name",
+      "where": "main",
+      "ref": "origin/main",
+      "path": "evidence/perf-055/receipt.r1.json",
+      "line": 77,
+      "method": "lexical"
+    },
+    {
+      "needle": "test_llm_band.rs",
+      "kind": "name",
+      "where": "main",
+      "ref": "origin/main",
+      "path": "scripts/lib/bench_receipt.py",
+      "line": 52,
+      "method": "lexical"
+    },
+    {
+      "needle": "run_band",
+      "kind": "name",
+      "where": "main",
+      "ref": "origin/main",
+      "path": "scripts/perf041_client.py",
+      "line": 158,
+      "method": "lexical"
+    },
+    {
+      "needle": "run_band",
+      "kind": "name",
+      "where": "main",
+      "ref": "origin/main",
+      "path": "scripts/perf041_client.py",
+      "line": 199,
+      "method": "lexical"
+    }
+  ],
+  "duplication_coverage": {
+    "rust": "lexical",
+    "shell": "lexical",
+    "python": "lexical",
+    "config": "lexical",
+    "docs": "lexical",
+    "other": "lexical",
+    "sibling_branches": "lexical",
+    "merge_base_to_main": "lexical"
+  },
+  "duplication_horizon": [
+    "head=a184073efc1c0f6e1d077fb23cefe2cfcc6f1aaa",
+    "siblings=refs/remotes/origin/* unmerged into origin/main",
+    "merge_base_to_main=a596b063f2605390ad674f4acaeaea16d05cb225..refs/remotes/origin/main"
+  ],
+  "horizon_branches_total": 769,
+  "horizon_branches_scanned": 769,
+  "horizon_refs": {
+    "local_origin_refs": 790,
+    "remote_heads": 790
+  },
+  "merge_base_to_main_files": 106,
+  "symbols_searched": 246,
+  "needles": {
+    "symbol": 223,
+    "filename": 23,
+    "min_length": 6,
+    "dropped_ambient": 42,
+    "ambient_max_hits": 8
+  },
+  "hits_total": 70,
+  "hits_recorded": 70,
+  "wall_seconds": 370
+}

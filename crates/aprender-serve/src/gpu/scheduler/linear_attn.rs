@@ -109,9 +109,7 @@ impl LinearAttnState {
         for b in &mut self.conv_buf {
             b.fill(0.0);
         }
-        for c in &mut self.conv_steps {
-            *c = 0;
-        }
+        self.conv_steps.fill(0);
     }
 }
 

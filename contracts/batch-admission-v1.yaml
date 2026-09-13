@@ -1,0 +1,358 @@
+metadata:
+  version: 1.0.0
+  created: '2026-08-25'
+  author: PAIML Engineering
+  description: >-
+    A request that arrives while another is generating must not wait for that
+    generation to finish. Admission is the property; throughput is its
+    consequence.
+  references:
+  - APR-PERF-GATE-001 v2.2 §10.1 step 6 (PERF-001/PERF-002), §7.1 (PERF-000)
+  - 'crates/aprender-serve/src/api/cuda_batch_scheduler.rs:234 — the `m == 1` branch'
+  - 'Measured 2026-08-25 (lambda, RTX 4090, llama.cpp pinned 39173bcac):
+    aggregate 0.097x the comparator at c=16 while per-user decode read 1.554x'
+  - 'PERF-000: wall time linear in concurrency to two decimals —
+    N=1/2/4/8 -> 1.00x/1.97x/3.94x/7.86x'
+equations:
+  admission_is_not_serialized:
+    formula: >-
+      serialization_index(c) = wall(c) / wall(1)
+      ADMITTED(r, t) => not blocked_until(completion(r_inflight))
+    domain: >-
+      c in {1, 4, 8, 16} concurrent clients, one shared model, staggered
+      arrivals (the shape a real client fleet produces)
+    codomain: "serialization_index in [1, c]; 1 is perfect sharing, c is a queue"
+    invariants:
+    - >-
+      SERIALIZATION_INDEX(c) ~= c IS THE DEFECT SIGNATURE. Wall time linear in
+      concurrency to two decimals is not a scheduling-policy question, it is an
+      exclusive lock held across a whole generation. Measured 1.00/1.97/3.94/7.86
+      at N=1/2/4/8 before this contract existed.
+    - >-
+      THE FAST PATH IS PRESERVED WHEN THE SERVER IS IDLE. The single-request path
+      is genuinely faster at c=1 (138 vs 46 tok/s measured in the source comment),
+      so it must remain reachable. Deleting it to fix concurrency trades one
+      regression for another; the fix is to take it only when nothing is pending.
+    - >-
+      A PENDING REQUEST JOINS RATHER THAN QUEUES. `add_slot_to_batch` already
+      fills empty slots while `state.m < state.max_kv_slots`; the defect is that
+      the `m == 1` early return skips the loop containing it. The capability is
+      unreachable, not absent.
+    - >-
+      RISING PER-USER DECODE IS NOT A WIN. decode_ratio rising while agg_ratio
+      falls is the signature of each request owning the whole device in turn. Any
+      verdict must read BOTH, which is why APR-PERF-GATE-001 Arm B requires B1
+      and B2 jointly.
+    preconditions:
+    - "c >= 1 and the server holds exactly one model instance"
+    postconditions:
+    - "serialization_index(c) < c for every c > 1"
+falsification_tests:
+- id: F-BATCH-001
+  rule: wall time must be sublinear in concurrency
+  prediction: >-
+    For c in {2, 4, 8}, serialization_index(c) < c by a margin outside the
+    measured run-to-run dispersion. The pre-fix tree scores ~c and fails.
+  test: >-
+    UNMEASURED{owner: perf-gate, expires: derived from PP-LLAMA-001 §12 row 0b}.
+
+    The conformant producer is `apr test llm bench --stream --band` driven by
+    scripts/perf_gate.sh, whose receipt carries per-band `aggregate_tok_per_sec`
+    and `decode_tok_per_sec` under the §4.4 protocol (closed-loop client, 2xc
+    warmup, 5s quiesce, max(30, 8xc) samples, >=60s window, interleaved
+    replicates) with `completion_tokens == n_predict` enforced per sample. The
+    serialization index is then a function of two bands of ONE receipt, joined
+    on PP-22's join key, rather than of two independent wall-clock runs.
+
+    THE PREVIOUS VALUE NAMED A HARNESS THAT IS NOW DELETED.
+    scripts/perf000_serialization_probe.sh was removed in the PP-LLAMA-001
+    change; `measurement_provenance` below already recorded that it could not
+    have produced the numbers this row's `measured` block reports, and a `test:`
+    pointing at a harness the contract itself disqualifies is worse than an
+    honest UNMEASURED. It also carried its own verdict literals (`r > 0.7*N`,
+    `r > 1.15`) and a fixed world-writable /tmp log — a second encoding of a
+    threshold PP-33 says lives only in scripts/perf-matrix.yaml.
+
+    NOT re-pointed at scripts/perf041_client.py either: that client counts
+    tokens and reports the token-normalised index honestly, but PP-25 requires
+    ONE client binary across both lanes, and it is scheduled for deletion when
+    §12 row 7 gives `apr test llm bench` the token-normalised index.
+  measured: >-
+    2026-08-25, RTX 4090, qwen2.5-coder-1.5b-instruct-q4_k_m, 400-token
+    generations, median of 3, same commit both sides. BEFORE (--features cuda,
+    scheduler absent): 1.00/1.99/3.98/7.96 at N=1/2/4/8 -- linear to two
+    decimals, aggregate flat at ~335 tok/s. AFTER (same flag, gating fixed):
+    1.00/2.45/2.29/2.39 -- flat from N=2, ~1100 tok/s at N=8. 3.32x aggregate
+    at N=8, N=1 unchanged at 1.20s.
+  verdict: >-
+    RED AT c=2. This is stated as a verdict, not narrated as a caveat, because
+    the postcondition above is `serialization_index(c) < c for every c > 1` and
+    the measurement is 2.45 at c=2. 2.45 >= 2. The test FAILS.
+
+    An earlier revision of this block recorded the same number as "N=2 regresses
+    1.99 -> 2.45 (~23%), the batched path's per-token cost before batching pays
+    off". That sentence is true and it is not a verdict: it explains WHY the
+    postcondition is violated while leaving the contract reading as discharged.
+    A falsification test whose own recorded data violates its own postcondition,
+    written up as an explanation, is how a ratchet becomes decoration -- and it
+    is the precise defect APR-PERF-GATE-001 exists to remove, appearing inside
+    the contract written to enforce it.
+
+    c=4 (2.29 < 4) and c=8 (2.39 < 8) PASS. The aggregate win at N=8 is real:
+    3.32x, ~335 -> ~1100 tok/s. PERF-001 is therefore REAL BUT PARTIAL, which is
+    the same conclusion F-BATCH-003 reaches independently ("staggered arrivals
+    still queue"), and it is consistent with the two serialized fallbacks that
+    survive at cuda_chat_backend.rs:148/204 -- the `.apr` and SafeTensors paths
+    still take `cuda_model_lock.write()` across the whole generate call.
+
+    DO NOT discharge this by weakening the postcondition to exempt c=2. §10.1:
+    "The floor is not temporarily lowered. Lowering a floor to permit a release
+    is the defect this document exists to prevent." Either the two-request
+    admission path improves, or the contract states a regime of validity that
+    is itself measured -- not one chosen to fit the number we got.
+  if_fails: >-
+    the server is a queue with extra steps: a sixteen-user deployment runs at a
+    tenth of llama.cpp while every single-user benchmark looks healthy
+  root_cause: >-
+    PERF-041, 2026-08-29, RTX 4090, apr 0.64.0 (3eb2dae6a),
+    qwen2.5-coder-1.5b-instruct-q4_k_m, 400-token cap, greedy.
+
+    THE INDEX WAS NEVER MEASURING SERIALIZATION, AND THE NUMBERS ABOVE SAY SO
+    BEFORE ANY NEW RUN DOES. wall(1) = 1.20s makes the recorded band walls
+    1.20 / 2.94 / 2.75 / 2.87. wall(2) > wall(4). Adding two clients cannot
+    make a serialized server faster, so the quantity charged at c=2 is a
+    CONSTANT, not a function of c. Both independent recordings of that run
+    agree on the direction (this block: 2.45/2.29/2.39; the source comment in
+    handler_gpu_completion.rs: 2.45/2.32/2.41).
+
+    The constant has two components, and the larger one is a CORRECTNESS
+    DEFECT, not a performance property:
+
+    (1) BATCHED DECODE PRODUCES GARBAGE FOR EVERY m > 1, so no c > 1 request
+    ever reaches its stop token and every one runs to the max_tokens cap.
+    Measured with scripts/perf041_batched_parity_probe.sh: the m=1 reference
+    is coherent English, finish_reason=stop, 286 and 319 completion_tokens on
+    two consecutive calls. In the SAME concurrent round, with `[PMAT-044]
+    Batch m=3 done` in the server log proving the batched path engaged, the
+    one request that happened to be served on the m=1 fast path returned the
+    identical coherent prefix and finish_reason=stop, while all three served
+    from the batch returned `!!!!...` -- token id 0, four hundred times,
+    finish_reason=length. At m=4 on the same model the garbage is
+    `strarstrarstrar...` and `001.CompilerServicesétique...`. Reproduced on
+    qwen2.5-coder-0.5b (m=3 slots garbage, m=1 slots fine in the same run), so
+    it is not model-specific. This is exactly what continuous-batching-v1
+    forbids -- correctness_under_batching, "No garbage or empty outputs", and
+    FALSIFY-CB-008's "All M slots produce distinct tokens per decode step (not
+    constant)". All three were narrative `test:` strings that nothing ran.
+
+    So the ratio compares a ~300-token EOS-terminated generation against a
+    400-token non-terminating loop. That alone contributes 400/319 = 1.25x,
+    and it is why the index is FLAT: every batched band generates exactly
+    max_tokens regardless of c, so wall(c) is constant by construction.
+
+    (2) A REAL PER-TOKEN PATH PENALTY, because c=1 and c>1 do not run the same
+    decode. c=1 takes generate_single_request -> generate_gpu_resident_streaming
+    -> forward_gpu_resident_to_token_id, which replays a captured CUDA decode
+    graph ("CUDA graph replay executes all kernels in one opaque launch",
+    gguf/cuda/uses.rs; PMAT-109 keeps the graph alive across calls). c>1 takes
+    batched_decode_step -> forward_batched_to_token_ids, eager: the graphed
+    variant is behind BATCHED_GRAPH and is documented as "still 25% slower than
+    eager due to capture overhead" (PMAT-056). The batched loop also retakes
+    model.write() every step, rescans for recycle/join, embeds per slot on the
+    CPU and try_sends per slot -- per TOKEN, where the m=1 path takes the lock
+    once per generation.
+
+    THE MAGNITUDE IS WITHDRAWN (PERF-050, 2026-08-29). This paragraph used to
+    carry a token-normalised path_penalty of 1.71x, from latency_fast(1) = 0.934s
+    for 319 tokens against latency_batched(1) = 2.003s for 400 tokens. That
+    comparison divided a run that TERMINATED on a stop token by one that ran to
+    the max_tokens cap emitting garbage, so its denominator was a defect, not a
+    decode speed. The batched side also carried an unconditional per-layer
+    synchronize and device-to-host copy in the decode loop (aprender#2764), and
+    the two figures it was bracketed against -- 138 vs 46 tok/s, and PAR-106/108's
+    360 vs 225 -- have since been deleted from the source for the same reason.
+
+    The MECHANISM above stands: c=1 replays a captured graph, c>1 launches
+    eagerly and retakes the model lock per token. Only the number is gone. As of
+    aprender#2753 the batched path terminates on a stop token and matches the m=1
+    reference, so a path penalty can now be measured honestly for the first time
+    -- and per PERF-009 it must be measured through scripts/perf_gate.sh, which is
+    why the one-off harness that produced 1.71x
+    (scripts/perf041_path_penalty_probe.sh) was deleted rather than allowlisted.
+
+    Neither component scales with m. That is the whole explanation of the flat
+    2.45/2.29/2.39, and neither component is serialization.
+
+    WHY THE POSTCONDITION IS NOT WEAKENED. It still fails, and it should. But
+    the honest statement of the failure is not "2.45 >= 2": it is that
+    aggregate throughput at c=2 is 2/2.45 = 0.82x of a SINGLE client, so
+    batching two clients is a net loss, and the tokens it produces are garbage
+    besides. The postcondition fails wherever c < path_penalty, which on these
+    numbers is c=2 and nowhere else -- so c=4 and c=8 "PASS" only because the
+    threshold rises faster than a constant does, not because anything improved.
+    A c=8 pass here is not evidence of correct batching.
+
+  measurement_provenance: >-
+    THE HARNESS THIS TEST ONCE NAMED CANNOT HAVE PRODUCED THE NUMBERS IT
+    RECORDS. `test:` above pointed at scripts/perf000_serialization_probe.sh
+    until PP-LLAMA-001 replaced it with an honest UNMEASURED and DELETED the
+    script; this paragraph is why. At the
+    commit that introduced this contract (ce712eae0) and at 50d2bc2bb that
+    script runs the 7B model at max_tokens=64, one replicate per band, with no
+    per-band warmup and no quiesce; the `measured` block records the 1.5B model
+    at 400 tokens, median of 3. It also violates §4.4 on every sampling row
+    (closed-loop client, 2xc warmup, 5s quiesce, max(30, 8xc) samples, >=60s
+    per band, N=3) and, decisively, it never counts a token -- so it cannot
+    detect the 319-vs-400 divergence that dominates the ratio it reports.
+    scripts/perf041_client.py is the §4.4-conformant replacement; it counts
+    tokens and prints the token-normalised index beside the wall-clock one, so
+    a length divergence surfaces as a gap between the two rather than as
+    "serialization".
+
+  mutation: >-
+    revert the cfg from `cuda` to `cuda-batch` -- OBSERVED RED 2026-08-25: the
+    same binary flag then yields 1.00/1.99/3.98/7.96 and the server announces
+    `scheduler=none(serialized-fallback)` instead of CONTINUOUS_BATCHING. Both
+    builds came from one commit, which is the discrimination evidence.
+- id: F-BATCH-002
+  rule: the fast path is taken only when nothing else is pending
+  prediction: >-
+    With one request in flight and a second already in the channel, the
+    scheduler enters the batched loop. With a single request and an empty
+    channel, it takes the fast path.
+  test: 'LIVE-PENDING — cargo test -p aprender-serve --features cuda --lib batch_admission'
+  test_harness_status: >-
+    THE NAMED FILTER MATCHES NOTHING TODAY. `grep -rn batch_admission
+    crates/aprender-serve/src/` returns 0 references (measured 2026-08-27), and
+    `cargo test -p aprender-serve --lib <no-such-filter>` exits 0 while printing
+    `test result: ok. 0 passed`. So the moment the LIVE-PENDING marker is
+    removed, this harness reports a pass having executed nothing.
+
+    LIVE-PENDING is doing real work here and must not be stripped until a test
+    named by this filter exists. Recorded rather than left implicit because the
+    failure mode is silent: a pass-shaped line from a filter that selected zero
+    tests is indistinguishable from a pass, which is this repo's documented
+    pass-grep class.
+  if_fails: >-
+    either concurrency stays serialized (fast path always) or c=1 regresses ~3x
+    (fast path never). Both are observable and neither is acceptable.
+  mutation: >-
+    make the pending check constant-true, then constant-false; the c=1 case and
+    the c>1 case must fail respectively
+- id: F-BATCH-003
+  rule: a request arriving mid-generation joins the running batch
+  prediction: >-
+    A request enqueued after decode has started is admitted into a free KV slot
+    and begins emitting tokens before the in-flight request completes.
+  test: 'LIVE-PENDING — cargo test -p aprender-serve --features cuda --lib mid_batch_join'
+  test_harness_status: >-
+    Same as F-BATCH-002: `mid_batch_join` has 0 references in
+    crates/aprender-serve/src/ (measured 2026-08-27). The filter selects no
+    tests and would exit 0. LIVE-PENDING must not be stripped until it does.
+  measured: >-
+    RED 2026-08-26 on the POST-PERF-001 tree, RTX 4090, 400-token generations.
+    Predict-then-verify with two competing predictions stated before the run:
+    JOINED implies B's latency ~= solo (ratio 1.00); QUEUED implies
+    (solo - delay) + solo (ratio 1.60). Request B was issued 40% of the way
+    through A's generation. Measured ratio over 3 reps: 1.59 / 1.58 / 1.59 --
+    within 0.02 of the QUEUED prediction and 0.58 from JOINED. A's own latency
+    was unaffected (1.27s vs 1.29s solo), which is the signature of B waiting
+    rather than the two sharing.
+    A simultaneous-fire harness CANNOT see this: firing N at once forms a batch
+    of N at the window and never exercises the m == 1 path. Staggered arrival is
+    the shape a real client fleet produces and the only one that exposes it.
+  if_fails: >-
+    admission still waits on completion; `add_slot_to_batch` stays unreachable
+    from a batch that started at one
+  mutation: >-
+    skip the join loop for batches that started at m == 1; the joining request
+    must then emit nothing until the first finishes
+- id: F-BATCH-004
+  rule: c=1 latency does not regress
+  prediction: >-
+    Single-client decode tok/s and TTFT stay within measured dispersion of the
+    pre-fix tree. This is the guard against "fixing" concurrency by deleting the
+    fast path.
+  test: 'LIVE-PENDING — apr test llm bench --concurrency 1'
+  if_fails: >-
+    the fix trades the c=16 regression for a c=1 regression, which the earlier
+    source comment correctly feared
+  mutation: >-
+    force the batched path unconditionally; the c=1 case must turn RED
+proof_obligations:
+- type: invariant
+  property: >-
+    Admission never blocks on an unrelated request's completion (F-BATCH-001,
+    F-BATCH-003).
+  formal: "forall r: admitted(r, t) => t < completion(r_inflight) when slots free"
+- type: soundness
+  property: >-
+    The fast path remains reachable exactly when the server is idle
+    (F-BATCH-002, F-BATCH-004), so the fix is not a trade of one regression for
+    another.
+  formal: "fast_path(batch) <=> (len(batch) == 1 and channel_empty)"
+kani_harnesses:
+# The admission predicate is boolean over (batch_len == 1, channel_empty) --
+# four assignments, no floats, no loops. DECLARED AND NOT YET WRITTEN, said
+# plainly because the #2644 audit found declared-but-unwritten harnesses
+# inflating the score. The THROUGHPUT property it protects is a measurement and
+# is not solver-decidable at all; only the branch choice is.
+- id: KANI-BATCH-001
+  obligation: fast_path_taken_exactly_when_idle
+  property: >-
+    for all (batch_len_is_one, channel_empty) in 2^2, fast_path is chosen iff
+    both hold
+  status: declared-not-written
+  cheaper_alternative: >-
+    an exhaustive four-case table test over the branch predicate, which is the
+    same statement without a solver
+
+qa_gate:
+  certeza:
+    min_score: 0.0
+    note: >-
+      No numeric quality score is claimed. The thresholds that DO apply live in
+      scripts/perf-matrix.yaml (Arm A ratchet, Arm B1 policy 0.80, Arm B2
+      inherited 1.00); duplicating a number here would create a second source of
+      truth for a bound this contract does not own.
+known_limitations:
+- >-
+  ROOT CAUSE ESTABLISHED 2026-08-25, AND IT IS FEATURE GATING, NOT ALGORITHM.
+  crates/apr-cli/src/commands/serve/handler_gpu_completion.rs:485-518 wires the
+  scheduler under `#[cfg(feature = "cuda-batch")]` and, under
+  `#[cfg(not(feature = "cuda-batch"))]`, builds the state with NO batch_tx at
+  all. So on a `--features cuda` build `cuda_batch_tx()` is None and every
+  request takes the cuda_chat_backend "direct RwLock path (serialized)"
+  fallback -- which is exactly serialization_index(c) ~= c. The continuous
+  batching implementation is not missing; it is not compiled into any build a
+  user is instructed to make.
+- >-
+  THE `m == 1` BRANCH IS CONFIRMED RED AND IS NOT FIXED BY PERF-001. Measured
+  2026-08-26 on the post-fix tree (see F-BATCH-003): a request arriving
+  mid-generation still QUEUES. PERF-001 fixed admission for requests that arrive
+  together; it did not fix admission for requests that arrive apart, and the
+  aggregate win it delivers (3.32x at N=8) is real but orthogonal.
+  The remedy is NOT a further cfg change and NOT deleting the fast path.
+  F-BATCH-004 forbids the latter: the batched path is ~3x slower per token at
+  m == 1 (46 vs 138 tok/s per the source comment), so always-batching trades a
+  concurrency win for a c=1 regression. The honest fix is to close that per-token
+  gap so the batched path can be used unconditionally, which is engine work with
+  its own measurement, not a gating flag.
+- >-
+  ORIGINAL NOTE, KEPT FOR THE RECORD: the `m == 1` branch was called a
+  second-order concern. cuda_batch_scheduler.rs:234
+  holds `model.write()` across a whole generation and its own comment concedes
+  "the second request queues until the first completes". That is a real defect
+  and it is unreachable in a `cuda` build, because the scheduler never starts.
+  Fix the gating first, then re-measure before touching the branch: the earlier
+  attribution to this branch alone would have produced a change that looks
+  correct and moves nothing.
+- >-
+  BINDINGS REMAIN LIVE-PENDING. The gating defect is proven by reading the
+  source and by a discriminating `strings` probe of two builds; the THROUGHPUT
+  claim it implies is not yet measured, and this contract does not assert a
+  number it has not taken.
+- >-
+  Arms D and E (kv_utilization, itl_p95_ratio) are REPORTING until this lands.
+  The spec requires them promoted to blocking in the SAME PR as the fix, so a
+  batching implementation cannot be accepted on an unmeasured claim.

@@ -24,7 +24,6 @@ metadata:
   - 'crates/aprender-train-distill/src/pipeline.rs:324-378 — training loop where the hook belongs'
   - 'crates/apr-cli/src/commands/distill.rs::run_cuda_backend — where the default callback is wired'
 
-kind: KernelContract
 name: distill-pipeline-observability
 version: 1.0.0
 scope: aprender-train-distill Pipeline + apr-cli run_cuda_backend dispatch

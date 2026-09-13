@@ -1,3 +1,13 @@
+metadata:
+  kind: kaizen
+  version: "1.0.0"
+  created: "2026-03-04"
+  author: "PAIML Engineering"
+  description: "Batched GPU Norm Reduction — Single Sync Per Block"
+  references:
+    - "KAIZEN-055"
+    - "parent contract: C-WCLIP-001"
+
 contract: C-BNORM-001
 title: Batched GPU Norm Reduction — Single Sync Per Block
 kaizen: KAIZEN-055

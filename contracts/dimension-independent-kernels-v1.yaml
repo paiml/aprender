@@ -7,7 +7,6 @@ metadata:
     - "trueno#200, trueno#203: Blackwell JIT pre-warming fix."
   description: "Dimension-independent CUDA kernels"
 
-kind: KernelContract
 name: dimension-independent-kernels
 version: "1.0.0"
 scope: "crates/aprender-compute/src/backends/gpu/"

@@ -65,11 +65,18 @@ fn mean_pool_hidden_states(
 /// and every client of them failed on a server whose `/generate` was answering and
 /// whose `/health` said `model_loaded:true`. The quantized backend now supplies the
 /// same quantity via `forward_hidden_states`, so both backends can serve embeddings.
+///
+/// aprender#2609 closed the same gap for the THIRD resident backend: an
+/// `AppState` holding an `AprTransformer` (the f32 APR / SafeTensors CPU serve
+/// path) matched neither arm, so the embedding routes stayed dead there — again
+/// on a server reporting `model_loaded: true` and answering `/generate`.
 enum EmbedBackend {
     /// Dense f32 transformer (.apr / .safetensors).
     Dense(std::sync::Arc<crate::layers::Model>),
     /// Quantized GGUF weights — what `apr serve run model.gguf` loads.
     Quantized(std::sync::Arc<crate::gguf::OwnedQuantizedModel>),
+    /// f32 `AprTransformer` — the APR / SafeTensors CPU serve path.
+    Apr(std::sync::Arc<crate::apr_transformer::AprTransformer>),
 }
 
 impl EmbedBackend {
@@ -78,6 +85,7 @@ impl EmbedBackend {
         match self {
             Self::Dense(m) => m.config().hidden_dim,
             Self::Quantized(m) => m.config.hidden_dim,
+            Self::Apr(m) => m.config.hidden_dim,
         }
     }
 
@@ -89,6 +97,7 @@ impl EmbedBackend {
                 Ok(m.forward_hidden(&usize_ids)?.data().to_vec())
             },
             Self::Quantized(m) => m.forward_hidden_states(token_ids),
+            Self::Apr(m) => m.forward_hidden_states(token_ids),
         }
     }
 }
@@ -128,6 +137,17 @@ fn resolve_embed_backend(
             )
         })?;
         return Ok((EmbedBackend::Quantized(quantized.clone()), tokenizer));
+    }
+    if let Some(apr) = state.apr_transformer() {
+        let tokenizer = state.get_tokenizer(model_id).map_err(|e| {
+            (
+                super::model_resolution_status(&e),
+                Json(ErrorResponse {
+                    error: e.to_string(),
+                }),
+            )
+        })?;
+        return Ok((EmbedBackend::Apr(apr.clone()), tokenizer));
     }
     Err((
         StatusCode::SERVICE_UNAVAILABLE,
@@ -210,12 +230,26 @@ pub async fn realize_embed_handler(
     State(state): State<AppState>,
     Json(request): Json<EmbeddingRequest>,
 ) -> Result<Json<EmbeddingResponse>, (StatusCode, Json<ErrorResponse>)> {
-    let (embeddings, prompt_tokens) = embed_inputs(
-        &state,
-        request.model.as_deref(),
-        &request.input,
-        "/realize/embed",
-    )?;
+    embed_for_route(state, request, "/realize/embed")
+}
+
+/// The shared body of every OpenAI-shaped embedding route, told which route it is.
+///
+/// aprender#2609: `/v1/embeddings` delegated to [`realize_embed_handler`], so its
+/// unavailable-model body read `"No model available: /realize/embed needs a loaded
+/// model"` — naming a route the client never called. `/api/embeddings` already
+/// passed its own name; `/v1/embeddings` now does too.
+///
+/// # Errors
+///
+/// Propagates the status and JSON envelope from [`embed_inputs`].
+pub(super) fn embed_for_route(
+    state: AppState,
+    request: EmbeddingRequest,
+    route: &str,
+) -> Result<Json<EmbeddingResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let (embeddings, prompt_tokens) =
+        embed_inputs(&state, request.model.as_deref(), &request.input, route)?;
 
     let data = embeddings
         .into_iter()

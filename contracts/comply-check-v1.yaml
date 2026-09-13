@@ -7,7 +7,6 @@ metadata:
   references:
     - "Provable contract for comply-check-v1"
 
-kind: AlgorithmContract
 name: comply-check
 version: "1.0.0"
 scope: "crates/aprender-contracts/src/"

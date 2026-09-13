@@ -178,8 +178,11 @@ impl AprValidator {
             CheckStatus::Skip("Footer not implemented".to_string()),
         );
 
-        // Checks 5-25 are placeholders for now
-        for id in 5..=25 {
+        // Check 5: the declared data section fits inside the file (#2612).
+        self.check_data_within_file(data);
+
+        // Checks 6-25 are placeholders for now
+        for id in 6..=25 {
             self.add_check(
                 id,
                 "Pending",
@@ -187,6 +190,58 @@ impl AprValidator {
                 CheckStatus::Skip("Not implemented".to_string()),
             );
         }
+    }
+
+    /// Check 5: the data section the container declares fits inside the file
+    /// (issue #2612) — `data_offset + max(tensor.offset + tensor.size) <= file_length`.
+    ///
+    /// # Why this check did not exist
+    ///
+    /// The same truncation on a GGUF has been caught since GH-707 / S1-FIX:
+    /// `Truncated GGUF: file is 50000000 bytes but tensor data starts at
+    /// 1117314624`, exit 5. On a `.apr` it was not caught at all, and the
+    /// reason is structural: APR v2 writes header, metadata and tensor index
+    /// BEFORE the data section, so a file truncated to 4.5% of its length still
+    /// parses all three without complaint. Every check that ran was a check the
+    /// truncation could not reach, and checks 5-25 — the ones that would have
+    /// reached it — were `Skip("Not implemented")` stubs. `apr validate` graded
+    /// the file F and exited **0**.
+    ///
+    /// # Scope, stated honestly
+    ///
+    /// This implements check 5 only. Checks 6-25 remain declared stubs; a Skip
+    /// is not a pass, and `implemented_score()` already excludes them from the
+    /// denominator, so nothing here claims coverage it does not have.
+    ///
+    /// A buffer that is not an APR v2 container (GGUF, a short synthetic
+    /// header, an unparseable magic) is `Skip`ped rather than failed: the
+    /// invariant is undefined without a v2 header to read it from, and that
+    /// class is already fail-closed elsewhere (`FormatType::from_magic`, the
+    /// GGUF truncation check, and the reader's own parse errors). A tensor
+    /// index that cannot be parsed IS reported as a Fail, because on a
+    /// well-formed container the only thing that removes the index is damage.
+    fn check_data_within_file(&mut self, data: &[u8]) {
+        const NAME: &str = "Data section within file";
+        let status = match crate::format::v2::required_file_len(data) {
+            Ok(required) => {
+                let actual = u64::try_from(data.len()).unwrap_or(u64::MAX);
+                if required <= actual {
+                    CheckStatus::Pass
+                } else {
+                    CheckStatus::Fail(format!(
+                        "Truncated APR: file is {actual} bytes but the tensor index declares \
+                         data through byte {required} (file is {} bytes too short)",
+                        required - actual
+                    ))
+                }
+            }
+            Err(crate::format::v2::V2FormatError::InvalidTensorIndex(reason)) => CheckStatus::Fail(format!(
+                "Truncated or corrupt APR: tensor index unreadable ({reason})"
+            )),
+            // Not an APR v2 container — the invariant has no operands here.
+            Err(_) => CheckStatus::Skip("Not an APR v2 container".to_string()),
+        };
+        self.add_check(5, NAME, Category::Structure, status);
     }
 
     /// Check GGUF version (GH-178)

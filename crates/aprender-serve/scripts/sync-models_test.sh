@@ -13,7 +13,7 @@ test_script_exists() {
 
 # Test: Script has bash shebang
 test_has_shebang() {
-    head -1 "$SCRIPT_UNDER_TEST" | grep -q '^#!/bin/bash'
+    grep -q '^#!/bin/bash' <<< "$(head -1 "$SCRIPT_UNDER_TEST")"
 }
 
 # Test: Script uses strict mode
@@ -88,10 +88,10 @@ test_idempotent_symlink() {
 
 # Test: No bashrs lint errors
 test_no_lint_errors() {
-    ! bashrs lint "$SCRIPT_UNDER_TEST" 2>&1 | grep -q '^✗'
+    ! grep -q '^✗' <<< "$(bashrs lint "$SCRIPT_UNDER_TEST" 2>&1)"
 }
 
 # Test: No bashrs lint warnings (only warnings, not info)
 test_no_lint_warnings() {
-    ! bashrs lint "$SCRIPT_UNDER_TEST" 2>&1 | grep -qF '[warning]'
+    ! grep -qF '[warning]' <<< "$(bashrs lint "$SCRIPT_UNDER_TEST" 2>&1)"
 }

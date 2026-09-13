@@ -216,7 +216,7 @@ qa_gate:
   - gradient_norm_bounded
   - single_optimizer_step
   - gradient_zeroing
-  pass_criteria: All 5 falsification tests pass
+  pass_criteria: All 6 falsification tests pass
   falsification: Remove gradient division by accumulation_steps to break equivalence
 proof_obligations:
 - type: invariant

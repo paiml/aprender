@@ -7,7 +7,6 @@ metadata:
   references:
     - "Provable contract for context-generation-v1"
 
-kind: AlgorithmContract
 name: context-generation
 version: "1.0.0"
 scope: "crates/aprender-rag/src/"

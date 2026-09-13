@@ -12,7 +12,6 @@ metadata:
     Write→read, export→import, and save→load pipelines must preserve tensor
     data, metadata, and shapes exactly for lossless dtype paths.
 
-kind: AlgorithmContract
 name: encoder-roundtrip
 version: "1.0.0"
 scope: "crates/aprender-core/src/format/converter/ — APR, GGUF, SafeTensors converters"

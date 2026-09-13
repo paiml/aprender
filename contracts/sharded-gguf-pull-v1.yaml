@@ -21,7 +21,6 @@ metadata:
   - 'crates/apr-cli/src/commands/pull.rs — run_sharded_gguf (no index.json, no SafeTensors conversion)'
   - 'GH-213 (sharded SafeTensors via index.json) — the sibling path this complements'
 
-kind: KernelContract
 name: sharded-gguf-pull
 version: 1.0.0
 scope: apr-cli pull resolve_hf_model GGUF-shard detection + run_sharded_gguf download dispatch

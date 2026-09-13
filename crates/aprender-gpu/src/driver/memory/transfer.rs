@@ -31,16 +31,29 @@ use super::buffer::GpuBuffer;
 /// staging memory — the DMA to final destination may **not** have completed".
 /// That trailing DMA runs on the legacy default stream (handle 0).
 ///
-/// Every `CudaStream` this crate hands out is `CU_STREAM_NON_BLOCKING`, which
-/// is by definition *not* ordered against the legacy default stream. So a
-/// kernel launch or `*_async` copy issued on a `CudaStream` right after a
-/// "synchronous" upload could read the buffer's pre-upload contents — silently,
-/// with every CUDA call returning success. Measured on an RTX 4090 at 8 of 40
-/// runs of `test_gpu_buffer_async_device_to_host`, and 15 of 200 uploads with
-/// the readback instrumented.
+/// When this was written, every `CudaStream` this crate handed out was
+/// `CU_STREAM_NON_BLOCKING`, which is by definition *not* ordered against the
+/// legacy default stream. So a kernel launch or `*_async` copy issued on a
+/// `CudaStream` right after a "synchronous" upload could read the buffer's
+/// pre-upload contents — silently, with every CUDA call returning success.
+/// Measured on an RTX 4090 at 8 of 40 runs of
+/// `test_gpu_buffer_async_device_to_host`, and 15 of 200 uploads with the
+/// readback instrumented.
 ///
-/// Draining the legacy default stream is the narrow wait that closes it: it
-/// costs microseconds when idle and does **not** wait on non-blocking streams.
+/// Draining the legacy default stream is the narrow wait that closes it.
+///
+/// # PERF-053 (aprender#2767) changed what that wait costs
+///
+/// [`crate::driver::stream::stream_create_flags`] now defaults to
+/// `CU_STREAM_DEFAULT`, so this crate's streams ARE legacy-ordered. Two
+/// consequences, and neither is a licence to delete the drain:
+///
+/// - the "costs microseconds when idle" claim no longer holds. The drain used
+///   to skip non-blocking streams; it now waits for everything in flight, and
+///   that wait grows with batch size. It is a candidate for removal *under the
+///   default*, but removal is a correctness change and needs its own falsifier.
+/// - it is still LOAD-BEARING under `APR_STREAM_NONBLOCKING=1`, which restores
+///   the non-blocking flag this paragraph originally described.
 ///
 /// # Why not a crate-owned stream
 ///
@@ -78,12 +91,50 @@ fn memcpy_htod_blocking(
     let result = unsafe { (driver.cuMemcpyHtoD)(dst_ptr, src, size) };
     CudaDriver::check(result).map_err(|e| GpuError::Transfer(e.to_string()))?;
 
+    if ord9_drain_disabled() {
+        return Ok(());
+    }
     // Drain the legacy default stream (handle 0) so the staged DMA has landed
     // before any non-blocking stream can observe the destination buffer.
     // SAFETY: the null handle is the legacy default stream; always valid.
     let result = unsafe { (driver.cuStreamSynchronize)(std::ptr::null_mut()) };
     CudaDriver::check(result)
         .map_err(|e| GpuError::Transfer(format!("H2D upload did not land on the device: {e}")))
+}
+
+/// PERF-053 measurement knob: `APR_ORD9_DRAIN_SKIP=1` removes the legacy-stream drain above.
+///
+/// **This reintroduces GPU-ORD-9 and must never be set in production.** It exists for exactly
+/// one reason: since PERF-053 made this crate's streams legacy-ordered, that drain no longer
+/// costs "microseconds when idle" -- it waits for every kernel in flight, on every H2D upload.
+/// Whether that is where the measured cost of ordered streams lives is a question about this
+/// binary, and answering it across two builds would not be an answer. Read once and cached, so
+/// it cannot change under a running server.
+///
+/// ANSWERED, and the answer is no. agg_tok_s, median of SIX replicates, c=8, RTX 4090 sm_89,
+/// 1.5B Q4_K_M, arms interleaved in one binary:
+///
+/// ```text
+///   ordered (default)              1158.0    [1112.1 1208.2 1248.7 1192.1 1123.9 1008.7]
+///   ordered + this knob set        1181.7    [1177.2 1262.8 1186.2 1112.8 1190.6 1055.4]
+///   racy (APR_STREAM_NONBLOCKING)  1348.1    [1425.8 1164.0 1350.9 1345.3 1394.9 1267.7]
+/// ```
+///
+/// If the drain were the cost, the middle row would sit on the third. It sits on the first --
+/// 1.020x of ordered, still 0.877x of racy. So the drain stays, and this knob's only remaining
+/// job is to keep that refutation re-runnable. (Ranges overlap: one racy replicate fell to
+/// 1164.0. The refutation does not rest on separating ordered from racy, only on the drain arm
+/// landing with ordered rather than with racy, which all six replicates do.)
+///
+/// SEPARATE FINDING, unresolved: `test_sync_upload_visible_to_nonblocking_stream` -- the ONLY
+/// falsifier for GPU-ORD-9 -- passes 128/128 rounds even with this knob set AND
+/// `APR_STREAM_NONBLOCKING=1`, which is exactly the pre-fix configuration it was written to
+/// catch (measured 15 stale reads in 200 rounds at the time). It no longer discriminates on this
+/// driver, so nothing in the tree can currently certify a change to this drain. That is why the
+/// drain is NOT removed here despite costing measurable throughput at m=1.
+fn ord9_drain_disabled() -> bool {
+    static OFF: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *OFF.get_or_init(|| std::env::var("APR_ORD9_DRAIN_SKIP").as_deref() == Ok("1"))
 }
 
 // ============================================================================

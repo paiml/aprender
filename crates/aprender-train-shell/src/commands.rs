@@ -403,12 +403,48 @@ fn execute_distill(dry_run: bool, state: &SessionState) -> Result<String> {
             student.id, student.parameters as f64 / 1e9
         ))
     } else {
-        Ok("Training started... (simulated)".to_string())
+        // #2519 named this line directly: "distill returns `Training
+        // started... (simulated)`". It is a success string for work that never
+        // happens — this crate has no training loop, no optimizer and no
+        // dataset; it depends on `entrenar` only for its error type.
+        //
+        // Before the `fetch` fix this was reachable by fetching two fake
+        // models; afterwards it was still reachable through `--session`, which
+        // is how it survived. Refusing removes it from every door at once.
+        Err(EntrenarError::ConfigValue {
+            field: "distill".into(),
+            message: format!(
+                // Deliberately does NOT quote the old success string. The
+                // falsifier asserts on substrings, and a refusal that repeats
+                // the phrase it is refusing cannot be told apart from the
+                // defect by any mechanical check.
+                "cannot distill `{}` into `{}`: this shell has no training loop, \
+                 no optimizer and no dataset. It previously reported that \
+                 training had begun, and exited 0 without training anything",
+                teacher.map_or("<teacher>", |t| t.id.as_str()),
+                student.map_or("<student>", |s| s.id.as_str()),
+            ),
+            suggestion: "Run the real trainer: `apr distill` / `apr finetune`. \
+                         `distill --dry-run` here still prints the configuration. \
+                         Tracked in #2519."
+                .into(),
+        })
     }
 }
 
 fn execute_export(format: &str, path: &str, _state: &SessionState) -> Result<String> {
-    Ok(format!("Exported to {path} in {format} format"))
+    // Reported "Exported to {path} in {format} format" and wrote nothing. That is
+    // the same fabrication #2519 is about, and it falsified this crate's own
+    // `reported_work_was_done` equation, which is universally quantified over
+    // every command reachable from `execute`. There is no exporter in this crate
+    // to call -- `grep -rn "fn export" crates/aprender-train-shell/src/` is empty
+    // -- so the truthful answer is to refuse, not to narrow the equation until
+    // the lie fits inside it.
+    Err(EntrenarError::ConfigValue {
+        field: "export".into(),
+        message: format!("export is not implemented in this shell ({format} -> {path})"),
+        suggestion: "Use `apr export` for real format conversion.".into(),
+    })
 }
 
 fn execute_history(state: &SessionState) -> Result<String> {
@@ -948,11 +984,34 @@ mod tests {
     }
 
     #[test]
-    fn test_execute_export() {
+    fn test_execute_export_refuses_rather_than_fabricating() {
         let state = SessionState::new();
-        let result = execute_export("safetensors", "/tmp/model.st", &state)
-            .expect("operation should succeed");
-        assert!(result.contains("Exported"));
+        let result = execute_export("safetensors", "/tmp/model.st", &state);
+        // It must FAIL. Previously it returned Ok("Exported to ...") having
+        // written nothing, and this test asserted that string -- so the test
+        // locked the defect in, the same shape as the `wgpu_available = true`
+        // hole found in finetune_tests.rs.
+        assert!(
+            result.is_err(),
+            "export must not report success without exporting"
+        );
+        let msg = format!("{}", result.unwrap_err());
+        assert!(
+            !msg.contains("Exported to"),
+            "the error must not read like a success: {msg}"
+        );
+        assert!(msg.contains("not implemented"), "must say why: {msg}");
+    }
+
+    #[test]
+    fn test_execute_export_leaves_no_file_behind() {
+        // Non-vacuity control: prove the refusal is not merely a message change
+        // by confirming nothing is written where it claimed to write.
+        let state = SessionState::new();
+        let path = std::env::temp_dir().join("apr-2519-export-probe.st");
+        let _ = std::fs::remove_file(&path);
+        let _ = execute_export("safetensors", path.to_str().unwrap(), &state);
+        assert!(!path.exists(), "export refused but still created {path:?}");
     }
 
     #[test]

@@ -12,7 +12,6 @@ metadata:
     No buffer overflows, no uninitialized reads, all allocations validated
     against declared shape before use.
 
-kind: AlgorithmContract
 name: memory-safety
 version: "1.0.0"
 scope: "workspace-wide — all crates handling tensor data"

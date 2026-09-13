@@ -51,35 +51,43 @@ impl LlamaCppBackend {
     /// Example: `llama_perf_context_print: prompt eval time =      12.34 ms /    10 tokens`
     /// Returns: `Some((12.34, 10))`
     #[must_use]
-    pub fn parse_timing_line(output: &str, metric_name: &str) -> Option<(f64, usize)> {
-        for line in output.lines() {
-            // For "eval time", we need to exclude "prompt eval time"
-            let matches = if metric_name == "eval time" {
-                line.contains(metric_name) && !line.contains("prompt eval time")
-            } else {
-                line.contains(metric_name)
-            };
-
-            if matches && line.contains('=') {
-                // Extract the value after "=" and before "ms"
-                // Format: "metric_name =      12.34 ms /    10 tokens"
-                if let Some(eq_pos) = line.find('=') {
-                    let after_eq = &line[eq_pos + 1..];
-                    // Find ms position
-                    if let Some(ms_pos) = after_eq.find("ms") {
-                        let value_str = after_eq[..ms_pos].trim();
-                        let Ok(value) = value_str.parse::<f64>() else { continue };
-                        let Some(slash_pos) = after_eq.find('/') else { continue };
-                        let after_slash = &after_eq[slash_pos + 1..];
-                        let count_str = after_slash.split_whitespace().next().unwrap_or("0");
-                        if let Ok(count) = count_str.parse::<usize>() {
-                            return Some((value, count));
-                        }
-                    }
-                }
-            }
+    /// Does this line report the metric asked for?
+    ///
+    /// "eval time" needs the exclusion because llama.cpp also prints
+    /// "prompt eval time", and a plain substring match would take whichever
+    /// came first — silently reporting prompt-processing time as decode time.
+    fn line_reports(line: &str, metric_name: &str) -> bool {
+        if !line.contains('=') {
+            return false;
         }
-        None
+        if metric_name == "eval time" {
+            return line.contains(metric_name) && !line.contains("prompt eval time");
+        }
+        line.contains(metric_name)
+    }
+
+    /// Pull `(milliseconds, token_count)` out of one llama.cpp timing line.
+    ///
+    /// Format: `metric_name =      12.34 ms /    10 tokens`
+    fn parse_one_timing(line: &str) -> Option<(f64, usize)> {
+        let after_eq = &line[line.find('=')? + 1..];
+        let ms_pos = after_eq.find("ms")?;
+        let value: f64 = after_eq[..ms_pos].trim().parse().ok()?;
+        let after_slash = &after_eq[after_eq.find('/')? + 1..];
+        let count: usize = after_slash.split_whitespace().next()?.parse().ok()?;
+        Some((value, count))
+    }
+
+    /// PARITY-007: split from one 30-line nest (cognitive 38) into a predicate
+    /// and a parser. Untouched by this ticket's subject, but the pre-commit
+    /// complexity gate charges the whole file to whoever edits any of it, and
+    /// both escape hatches — `--no-verify` and `#[allow]` — are banned here.
+    /// Behaviour is unchanged; the tests below pin that.
+    pub fn parse_timing_line(output: &str, metric_name: &str) -> Option<(f64, usize)> {
+        output
+            .lines()
+            .filter(|line| Self::line_reports(line, metric_name))
+            .find_map(Self::parse_one_timing)
     }
 
     /// Extract generated text from llama-cli output (before timing lines)
@@ -133,11 +141,45 @@ impl LlamaCppBackend {
     }
 }
 
+/// PARITY-007 — a comparator's version is DETECTED or ABSENT, never asserted.
+///
+/// Three `BackendInfo::info()` implementations here carried a literal with the
+/// comment "Would be detected from binary" / "from API": `"b2345"`, `"0.4.0"`,
+/// `"0.1.0"`. A version string that looks measured and is not is F12
+/// (aprender#2679), and it is the field that makes a cross-release ratio
+/// meaningless: the denominator changes silently while the receipt claims a
+/// fixed comparator.
+///
+/// `"unknown"` is the honest value when the probe fails. A consuming gate can
+/// treat "unknown" as RED; it cannot detect a plausible literal at all.
+fn detect_version(program: &str, args: &[&str]) -> String {
+    std::process::Command::new(program)
+        .args(args)
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .and_then(|o| {
+            let text = String::from_utf8_lossy(&o.stdout).to_string();
+            let combined = if text.trim().is_empty() {
+                String::from_utf8_lossy(&o.stderr).to_string()
+            } else {
+                text
+            };
+            combined
+                .lines()
+                .next()
+                .map(|l| l.trim().to_string())
+                .filter(|l| !l.is_empty())
+        })
+        .unwrap_or_else(|| "unknown".to_string())
+}
+
 impl RuntimeBackend for LlamaCppBackend {
     fn info(&self) -> BackendInfo {
         BackendInfo {
             runtime_type: RuntimeType::LlamaCpp,
-            version: "b2345".to_string(), // Would be detected from binary
+            // Detected from the binary the config actually points at.
+            version: detect_version(&self.config.binary_path, &["--version"]),
             supports_streaming: false,    // CLI mode doesn't stream
             loaded_model: self.config.model_path.clone(),
         }
@@ -223,7 +265,8 @@ impl RuntimeBackend for VllmBackend {
     fn info(&self) -> BackendInfo {
         BackendInfo {
             runtime_type: RuntimeType::Vllm,
-            version: "0.4.0".to_string(), // Would be detected from API
+            // Detected from the ollama CLI; "unknown" when it is not present.
+            version: detect_version("ollama", &["--version"]),
             supports_streaming: true,
             loaded_model: self.config.model.clone(),
         }
@@ -333,7 +376,8 @@ impl RuntimeBackend for OllamaBackend {
     fn info(&self) -> BackendInfo {
         BackendInfo {
             runtime_type: RuntimeType::Ollama,
-            version: "0.1.0".to_string(), // Would be detected from API
+            // Detected from the vllm CLI; "unknown" when it is not present.
+            version: detect_version("vllm", &["--version"]),
             supports_streaming: true,
             loaded_model: Some(self.config.model.clone()),
         }
@@ -363,5 +407,60 @@ impl RuntimeBackend for OllamaBackend {
             total_time_ms: timing.total_time_ms,
             itl_ms: vec![], // ITL requires streaming, not available in blocking mode
         })
+    }
+}
+
+// ── PARITY-007: parse_timing_line behaviour is pinned across the refactor ───
+#[cfg(test)]
+mod parity_007_timing_parse_tests {
+    use super::LlamaCppBackend;
+
+    /// The real llama.cpp timing block. `eval time` must not be captured by
+    /// `prompt eval time`, which appears FIRST in the output — the exclusion
+    /// is the whole reason the original had a special case, and dropping it
+    /// would silently report prompt-processing time as decode time.
+    const SAMPLE: &str = "\
+llama_print_timings:        load time =    1234.56 ms
+llama_print_timings:      sample time =      12.34 ms /    64 runs
+llama_print_timings: prompt eval time =     456.78 ms /   128 tokens
+llama_print_timings:        eval time =    2345.67 ms /    63 tokens
+llama_print_timings:       total time =    3000.00 ms";
+
+    #[test]
+    fn eval_time_is_not_captured_by_prompt_eval_time() {
+        let got = LlamaCppBackend::parse_timing_line(SAMPLE, "eval time");
+        assert_eq!(
+            got,
+            Some((2345.67, 63)),
+            "must take the decode line, not the prompt line that precedes it"
+        );
+    }
+
+    #[test]
+    fn prompt_eval_time_is_still_reachable_by_its_own_name() {
+        assert_eq!(
+            LlamaCppBackend::parse_timing_line(SAMPLE, "prompt eval time"),
+            Some((456.78, 128))
+        );
+    }
+
+    #[test]
+    fn a_metric_with_no_slash_yields_none_rather_than_a_wrong_pair() {
+        // "load time = 1234.56 ms" has no "/ N tokens" — the original
+        // `continue`d past it, and so must the refactor.
+        assert_eq!(LlamaCppBackend::parse_timing_line(SAMPLE, "load time"), None);
+    }
+
+    #[test]
+    fn an_absent_metric_yields_none() {
+        assert_eq!(LlamaCppBackend::parse_timing_line(SAMPLE, "no such metric"), None);
+    }
+
+    #[test]
+    fn a_line_without_an_equals_is_not_a_timing_line() {
+        assert_eq!(
+            LlamaCppBackend::parse_timing_line("eval time is large\n", "eval time"),
+            None
+        );
     }
 }

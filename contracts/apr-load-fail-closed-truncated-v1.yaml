@@ -1,7 +1,7 @@
 contract: apr-load-fail-closed-truncated
 metadata:
   kind: pattern
-  version: "1.1.0"
+  version: "1.2.0"
   description: >
     realizar's GGUF loader must FAIL CLOSED on a truncated/corrupt model. The
     chokepoint OwnedQuantizedTensor::from_ref_with_dims silently substitutes an empty
@@ -26,12 +26,32 @@ metadata:
     Pillar-4 BEAT, not parity. The NaN/Inf guarantee already existed on the SafeTensors
     path (F-DATA-QUALITY-002, safetensors/validation.rs); PMAT-895 wires it into the
     quantized load path by scanning the f16 scale field(s) per block (O(num_blocks)).
+    #2569 (v1.2.0) extends the SAME fail-closed-on-truncation guarantee from the LOAD
+    path to the INSPECTION path. `apr tensors` computed each row's size_bytes from the
+    declared shape and never asked whether those bytes exist: on a 128-byte GGUF
+    declaring 8192 bytes of tensor data it printed the full table and exited 0 while
+    `apr validate` on the same file exited 5 with "(file is 1 bytes too short)". The
+    surface that said OK is the JSON the MCP tool and CI consume. format::tensors
+    ::check_tensor_table_fits now requires every tensor's full extent
+    (data_offset + offset + size) to lie inside the file, on the GGUF path and BOTH APR
+    v2 paths, before the --filter loop. It is strictly stronger than the check
+    RosettaStone::validate_gguf already had, which asks only whether the LAST tensor's
+    FIRST byte exists and so cannot see a file short by less than the final tensor's
+    length. #2570 rides on the same check: `apr tune` read its "Model parameters" from
+    the file's BYTE LENGTH times a constant chosen by extension (982,800,128 where
+    `apr inspect` read 630,167,424 from the same bytes; an empty file reported as a
+    model that "fits in 16.0 GB VRAM", exit 0), and now reads the real count through
+    format::tensors::list_tensors, inheriting the truncation refusal.
   references:
   - "crates/aprender-serve/src/gguf/quantized.rs (from_ref_with_dims, is_truncated)"
   - "crates/aprender-serve/src/gguf/embedding.rs (OwnedQuantizedModel::from_mapped + validate_quantized_tensors + quant_scale_first_nonfinite)"
   - "crates/aprender-serve/src/gguf/quantized_tests.rs (test_pmat750_truncated_tensor_detected)"
   - "crates/aprender-serve/src/gguf/tests/beat_fail_closed_naninf.rs (PMAT-895 gguf_naninf_quant_scale_rejected_at_load)"
   - "crates/aprender-serve/src/safetensors/validation.rs (F-DATA-QUALITY-002 NaN/Inf gate, mirrored)"
+  - "crates/aprender-core/src/format/tensors.rs (check_tensor_table_fits; APR v2 + mmap call sites)"
+  - "crates/aprender-core/src/format/safetensors.rs (list_tensors_gguf call site, --stats fail-closed)"
+  - "crates/aprender-core/src/format/tensors_tests_bounds_2569.rs (#2569 falsifiers)"
+  - "crates/apr-cli/src/commands/tune.rs (read_params_from_file, #2570)"
 version: 1
 status: enforced
 date: 2026-06-22
@@ -63,6 +83,33 @@ proof_obligations:
       F-DATA-QUALITY-002 NaN/Inf guarantee into the quantized load path; llama.cpp /
       Ollama load such a model by default, so apr fails closed where they do not.
 
+  - type: invariant
+    property: >
+      INSPECT-FAIL-CLOSED-TRUNCATED (#2569): format::tensors::list_tensors returns
+      Err(FormatError) naming the first tensor whose declared extent
+      (data_offset + tensor.offset + size_bytes) runs past the end of the file, for GGUF
+      and for both APR v2 paths (in-memory and mmap). The check runs over EVERY tensor in
+      the index before any --filter is applied, so a filter matching zero tensors cannot
+      turn a truncated file into a clean exit, and it uses checked arithmetic so a crafted
+      header cannot wrap u64 into a small end offset. A tensor whose last byte is the
+      file's last byte fits (end == file_len is accepted); an intact model of any size
+      lists unchanged, so the check raises no false positive.
+  - type: invariant
+    property: >
+      STATS-FAIL-CLOSED (#2569): when compute_stats is requested and a tensor's data
+      cannot be read, list_tensors returns Err naming the tensor and its dtype rather than
+      leaving mean/std/min/max as None. Rendering None prints an em-dash, which is
+      byte-for-byte what a run WITHOUT --stats prints, so "could not compute" and "you did
+      not ask" were indistinguishable on the only surface that reports them.
+  - type: invariant
+    property: >
+      TUNE-PARAMS-MEASURED (#2570): apr tune's model parameter count is the sum of the
+      declared tensor shapes read out of the model header, never a function of the file's
+      byte length. A header that cannot be parsed, or one describing zero parameters, is a
+      non-zero exit naming --model <SIZE> as the way to plan without a model file — an
+      unknown parameter count is not a small one. apr tune and apr inspect report the same
+      number for the same file.
+
 falsification_tests:
   - id: FALSIFY-LOAD-TRUNCATED-001
     name: test_pmat750_truncated_tensor_detected
@@ -76,3 +123,21 @@ falsification_tests:
     test_harness: "cargo test -p aprender-serve --lib gguf_naninf_quant_scale_rejected_at_load"
     expected_output: "test result: ok"
     if_fails: "a quantized GGUF with a non-finite f16 scale loads silently → apr dequantizes it to NaN/Inf and emits garbage at inference instead of failing closed at load (Pillar-4 beat regressed to parity with llama.cpp/Ollama)."
+  - id: FALSIFY-INSPECT-TRUNCATED-2569
+    name: tensors_tests_bounds_2569
+    prediction: "a GGUF with its data section removed, and one one byte short of its declared extent, both make list_tensors return Err containing 'Truncated GGUF' and the offending tensor name; a --filter matching zero tensors still errors; the intact file still lists 1 tensor of 8192 bytes; the same holds for APR v2 through the mmap path"
+    test_harness: "cargo test -p aprender-core --lib format::tensors::tests::tensors_tests_bounds_2569"
+    expected_output: "test result: ok"
+    if_fails: "apr tensors again prints a table asserting bytes the file does not contain, and exits 0 while apr validate on the same file exits 5 — with the affirmative answer on the JSON surface the MCP tool and CI read."
+  - id: FALSIFY-INSPECT-TRUNCATED-JSON-2569
+    name: tensors_json_refuses_a_truncated_gguf_2569
+    prediction: "apr tensors' run() returns Err for a truncated GGUF in BOTH --json and text mode, and still returns Ok (all three of --json, text, --stats) for the intact file"
+    test_harness: "cargo test -p apr-cli --lib commands::tensors::tests::tensors_"
+    expected_output: "test result: ok"
+    if_fails: "the machine-read surface certifies a truncated model, which is the form of the defect that reaches CI."
+  - id: FALSIFY-TUNE-PARAMS-2570
+    name: read_params_from_file_reads_the_shapes_not_the_file_size
+    prediction: "read_params_from_file returns 2048 for a 64x32 F32 GGUF — neither file_len*2 nor file_len/2 — and returns Err for an empty file, for a megabyte of zeros named .gguf, for a structurally valid GGUF declaring zero tensors, and for a truncated GGUF"
+    test_harness: "cargo test -p apr-cli --lib commands::tune::tests::read_params_from_file"
+    expected_output: "test result: ok"
+    if_fails: "apr tune again labels a number derived from the file's byte length 'Model parameters' and feeds it to the VRAM feasibility verdict, disagreeing with apr inspect on the same file and planning a fine-tune for an empty one."

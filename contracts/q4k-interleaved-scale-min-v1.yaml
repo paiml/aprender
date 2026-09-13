@@ -24,7 +24,6 @@ metadata:
   - 'aprender-serve quantize::simd::extract_scale_min -- the proven get_scale_min_k4 implementation'
   - 'contracts/q4k-q6k-superblock-v1.yaml -- Q4_K/Q6_K super-block byte layout'
 
-kind: KernelContract
 name: q4k-interleaved-scale-min
 version: 1.0.0
 scope: aprender-serve quantize::product InterleavedQ4K::dot (dot_scalar + dot_avx2) scale/min decode

@@ -130,7 +130,7 @@ pub fn calculate_coverage(row: usize, col: usize, rows: usize, cols: usize) -> f
     }
     let x_factor = col as f32 / (cols - 1) as f32;
     let y_factor = row as f32 / (rows - 1) as f32;
-    (x_factor + y_factor) / 2.0
+    f32::midpoint(x_factor, y_factor)
 }
 
 /// Create sample coverage data for demonstration

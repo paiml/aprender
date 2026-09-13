@@ -136,6 +136,33 @@ impl CudaExecutor {
         // Clear positions
         self.graph_dispatch_positions.clear();
 
+        // PERF-050 round 7: stage snapshot of the layer that actually runs.
+        //
+        // Six rounds instrumented transformer_layer_batched; the decode runs THIS. The graph
+        // writes each stage into a known workspace buffer, so after layer 0 the intermediates
+        // still hold layer 0's values and the first NaN among them names the stage that
+        // produced it. Buffers reused within a layer (hidden_buf1 serves the attention norm,
+        // the output projection and the FFN norm) show their LAST write, which is stated here
+        // so the reading is not over-interpreted.
+        if Self::layer_trace_enabled() && layer_idx == 0 {
+            let m = m as usize;
+            for (label, ptr, width) in [
+                ("g_layer_input", input.as_ptr(), hidden_dim),
+                ("g_hidden_buf1(last write)", hidden_buf1_ptr, hidden_dim),
+                ("g_q_buf", q_buf_ptr, q_dim),
+                ("g_k_buf", k_buf_ptr, kv_dim),
+                ("g_v_buf", v_buf_ptr, kv_dim),
+                ("g_attn_out", attn_out_ptr, q_dim),
+                ("g_input_staging(resid1)", input_staging_ptr, hidden_dim),
+                ("g_ffn_gate", ffn_gate_ptr, intermediate_dim),
+                ("g_ffn_up", ffn_up_ptr, intermediate_dim),
+                ("g_ffn_act", ffn_act_ptr, intermediate_dim),
+                ("g_hidden_buf2(output)", hidden_buf2_ptr, hidden_dim),
+            ] {
+                self.trace_buffer(label, ptr, m * width as usize);
+            }
+        }
+
         // Output is in hidden_buf2 (same as transformer_layer_batched)
         Ok(())
     }

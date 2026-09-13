@@ -10,3 +10,5 @@ use super::*;
 
 include!("gemm_fp16_tensorcore.rs");
 include!("incremental_attention_tests.rs");
+include!("cb008_decode_wiring_tests.rs");
+include!("cb009_kv_handoff_tests.rs");

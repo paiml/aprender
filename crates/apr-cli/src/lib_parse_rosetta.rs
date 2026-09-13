@@ -250,18 +250,20 @@
     fn test_extract_paths_action_commands() {
         let serve_cmd = Commands::Serve {
             command: ServeCommands::Run {
-                file: PathBuf::from("model.gguf"),
+                file: Some(PathBuf::from("model.gguf")),
                 port: 8080,
                 host: "127.0.0.1".to_string(),
                 no_cors: false,
                 no_metrics: false,
                 no_gpu: false,
                 gpu: false,
+            gpu_layers: None,
+            list_devices: false,
                 batch: false,
                 trace: false,
                 trace_level: "basic".to_string(),
                 profile: false,
-                backend: None,
+                backend: BackendArg::default(),
                 otlp_endpoint: None,
                 context_length: 4096,
                 no_fp8_cache: false,
@@ -320,7 +322,7 @@
             split_prompt: false,
             batch_jsonl: None,
             verbose: false,
-            backend: None,
+            backend: BackendArg::default(),
         };
         let paths = extract_model_paths(&cmd);
         assert!(

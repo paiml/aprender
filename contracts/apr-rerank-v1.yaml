@@ -40,7 +40,6 @@ metadata:
     - 'Cormack et al. (2009) RRF — https://plg.uwaterloo.ca/~gvcormac/cormacksigir09-rrf.pdf'
   depends_on: []
 
-kind: AprRerankContract
 name: apr-rerank
 version: "1.4.0"
 status: ACTIVE

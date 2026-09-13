@@ -1,0 +1,11 @@
+{
+  "_type": "https://in-toto.io/Statement/v1",
+  "subject": [
+    { "name": "sha1-named-git-object",
+      "digest": { "gitCommit": "745fa8588783413669f4ac6170d4645e39c15be4" } },
+    { "name": "sha256-named-git-object",
+      "digest": { "gitCommit": "c3b4bb2d6093897483348925aaa73af03b3e3f4bd4ca38cef26dcb4212a2682e" } }
+  ],
+  "predicateType": "https://paiml.dev/attestations/pr-review/v2",
+  "predicate": {}
+}

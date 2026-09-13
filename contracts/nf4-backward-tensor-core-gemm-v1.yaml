@@ -7,7 +7,6 @@ metadata:
     - "Dettmers et al. (2023). QLoRA: Efficient Finetuning of Quantized Language Models."
   description: "NF4 backward pass with Tensor Core GEMM"
 
-kind: KernelContract
 name: nf4-backward-tensor-core-gemm
 version: "1.0.0"
 scope: "crates/aprender-compute/src/backends/gpu/"

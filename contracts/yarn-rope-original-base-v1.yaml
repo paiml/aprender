@@ -33,7 +33,6 @@ metadata:
   - rope-extrapolation-v1
   - rope-kernel-v1
 
-kind: KernelContract
 name: yarn-rope-original-base
 version: 1.0.0
 scope: aprender-serve ScaledRoPE YaRN frequency derivation (compute_frequencies + forward)

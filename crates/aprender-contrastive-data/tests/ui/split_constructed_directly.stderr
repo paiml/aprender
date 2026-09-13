@@ -1,0 +1,13 @@
+error[E0624]: associated function `from_jsonl_bytes` is private
+  --> tests/ui/split_constructed_directly.rs:18:29
+   |
+18 |       let _ = Split::<Train>::from_jsonl_bytes(bytes, decl);
+   |                               ^^^^^^^^^^^^^^^^ private associated function
+   |
+  ::: src/split.rs
+   |
+   | /     pub(crate) fn from_jsonl_bytes(
+   | |         bytes: &[u8],
+   | |         decl: &SplitDeclaration,
+   | |     ) -> Result<Self, ContrastiveDataError> {
+   | |___________________________________________- private associated function defined here

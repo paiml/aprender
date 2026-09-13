@@ -80,9 +80,9 @@ pub enum ExtendedCommands {
         /// Enable inline Roofline profiling (PMAT-SHOWCASE-METHODOLOGY-001)
         #[arg(long)]
         profile: bool,
-        /// PMAT-488: Compute backend override (cuda, cpu, wgpu)
-        #[arg(long, value_name = "BACKEND", value_parser = BACKEND_VALUES)]
-        backend: Option<String>,
+        // PMAT-488 / #2583: shared `--backend` declaration (see `BackendArg`).
+        #[command(flatten)]
+        backend: BackendArg,
     },
     /// Benchmark throughput (spec H12: >= 10 tok/s)
     Bench {
@@ -324,6 +324,16 @@ pub enum ExtendedCommands {
         /// Assert parity (exit non-zero on divergence)
         #[arg(long)]
         assert: bool,
+        /// L0-1b: per-op table — every stage of every layer, CPU vs GPU, over every
+        /// position; names the first diverging op. Exit 0 with the table.
+        #[arg(long)]
+        per_op: bool,
+        /// Where --per-op writes the two APRT trees (default: a temp dir)
+        #[arg(long, value_name = "DIR")]
+        out: Option<PathBuf>,
+        /// Cosine threshold for --per-op (basis: evidence/parity/thresholds.yaml)
+        #[arg(long, default_value_t = 0.98)]
+        threshold: f32,
     },
     /// Model-to-PTX source mapping (Mieruka: make GPU kernel dispatch visible)
     #[command(name = "ptx-map")]
@@ -547,10 +557,10 @@ pub enum ExtendedCommands {
     ///   replay  the runner itself — recording, state machines, reporting
     ///           (record, playbook, coverage, report)
     ///
-    /// Only `tensor` is routed today (PMAT-481 visual regression); the rest
-    /// land as they are delegated to the probador library. Renaming now costs
-    /// one path — after those land it is a breaking change across the whole
-    /// testing surface.
+    /// Routed today: `tensor` (PMAT-481 visual regression) and `llm bench`
+    /// (GH-876 Milestone 2). The rest land as they are delegated to the
+    /// probador library. Renaming now costs one path — after those land it is
+    /// a breaking change across the whole testing surface.
     ///
     /// `apr probar` stays as a hidden alias so existing scripts keep working.
     #[command(alias = "probar")]
@@ -1589,10 +1599,22 @@ pub enum ModelfileSubcommand {
     },
 }
 
-/// GH-876: Subcommands for `apr probar` — consolidates the probador testing
-/// framework under `apr`. Milestone 1 ships only `tensor` (the migrated
-/// existing behavior). Subsequent milestones add the remaining 14 probador
-/// subcommands as separate PRs that delegate to the probador library.
+/// GH-876: Subcommands for `apr test` — consolidates the probador testing
+/// framework under `apr`. Milestone 1 shipped `tensor`; Milestone 2 adds
+/// `llm bench`, the benchmark lifecycle harness. Remaining probador
+/// subcommands follow as separate PRs that delegate to the same library.
+///
+/// MILESTONE 2 IS NOT A PORT. `crates/aprender-test-lib/src/llm/` already
+/// carries the entire llm module — 11 files, `pub mod llm` unconditional in
+/// lib.rs — so the code has shipped inside every `apr` binary since APR-MONO
+/// and nothing could reach it. That is a dark capability (F11), and the fix is
+/// a CLI surface over the library already present, not 11,000 lines of new
+/// code.
+///
+/// It matters because the tool was built for exactly this job: measuring
+/// aprender's inference throughput against a comparator. Without the surface,
+/// a benchmark gets hand-rolled instead — which is what happened on
+/// 2026-08-24, in a protocol whose own rule is "never dogfood by hand".
 #[derive(Subcommand, Debug)]
 pub enum TestSubcommand {
     /// Export tensor activations for visual regression testing (PMAT-481).
@@ -1624,6 +1646,325 @@ pub enum TestSubcommand {
               value_parser = commands::threshold_arg::parse_cosine_f32)]
         tolerance: f32,
     },
+
+    /// LLM inference testing: correctness, load testing, and reporting.
+    ///
+    /// Delegates to the in-tree `aprender-test-lib` llm module, which is where
+    /// this measurement logic has always lived. It was not previously reachable
+    /// from `apr`: apr-cli's only key on that crate was a DEV-dependency
+    /// WITHOUT its `llm` feature, and `commands/serve_loadtest.rs` — the one
+    /// file that used it — was absent from `commands/mod.rs`, so it never
+    /// compiled.
+    Llm {
+        #[command(subcommand)]
+        command: LlmSubcommand,
+    },
+}
+
+/// GH-876 Milestone 2 — `apr test llm <SUB>`.
+#[derive(Subcommand, Debug)]
+pub enum LlmSubcommand {
+    /// Run the full benchmark lifecycle: start, warm up, measure, compare,
+    /// tear down.
+    ///
+    /// Drives an OpenAI-compatible endpoint, so both a runtime under test and
+    /// a comparator are measured by the SAME client with the SAME prompts —
+    /// which is what makes the two numbers comparable at all.
+    Bench {
+        /// Endpoint to measure.
+        #[arg(short, long, default_value = "http://127.0.0.1:8080")]
+        url: String,
+        /// Model name sent in the request body. Most OpenAI-compatible
+        /// servers ignore it; `apr serve` and vLLM do not.
+        #[arg(short, long, default_value = "default")]
+        model: String,
+        /// Command that starts the runtime. Omit to measure something already
+        /// running.
+        #[arg(long)]
+        start: Option<String>,
+        /// Seconds to wait for the endpoint to become healthy.
+        #[arg(long, default_value = "120")]
+        health_timeout: u64,
+        /// Warm-up seconds, discarded from the measurement.
+        ///
+        /// NOT decoration. A first measurement of apr on GB10 with two warmups
+        /// produced a BIMODAL series whose median sat in the empty gap between
+        /// the two modes, inflating a 1.21x result to 2.91x.
+        #[arg(long, default_value = "10")]
+        warmup: u64,
+        /// Measurement seconds per run.
+        #[arg(short, long, default_value = "30")]
+        duration: u64,
+        /// Concurrent request streams.
+        #[arg(short, long, default_value = "1")]
+        concurrency: usize,
+        /// Number of measured runs; the report aggregates across them.
+        #[arg(long, default_value = "3")]
+        runs: usize,
+        /// Cooldown seconds between runs.
+        #[arg(long, default_value = "5")]
+        cooldown: u64,
+        /// Label recorded in the report, e.g. `apr-cuda` or `llamacpp-39173bcac`.
+        #[arg(long, default_value = "apr")]
+        runtime_name: String,
+        /// Prior report to compare against.
+        #[arg(long)]
+        baseline: Option<PathBuf>,
+        /// Fractional regression that fails the run, e.g. 0.10 for 10%.
+        #[arg(long)]
+        fail_on_regression: Option<f64>,
+        /// Write the JSON report here.
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+        /// Use streaming responses (measures TTFT and TPOT).
+        #[arg(long)]
+        stream: bool,
+        /// Prompt profile: micro (10 in / 1 out), short (32/32),
+        /// medium (128/128), long (512/256).
+        ///
+        /// The workload IS half the measurement. Two runtimes compared on
+        /// different profiles are not compared at all, so this is a declared
+        /// knob with a recorded value rather than a constant buried in a
+        /// helper.
+        #[arg(long, default_value = "medium")]
+        profile: String,
+        /// Prompt corpus, JSONL: one JSON object per line, `{"prompt": "..."}`,
+        /// with optional `max_tokens`, `temperature`, `seed`, `ignore_eos`.
+        /// Overrides `--profile`.
+        ///
+        /// No enclosing brackets and no commas between records; a YAML
+        /// `prompts:` file is refused.
+        ///
+        /// JSONL because that is what APR-PERF-GATE-001 v2.2 §4.3 names for
+        /// both W1 and W2, and what the committed corpora under
+        /// `crates/aprender-serve/benchmarks/qwen-coder/` are. Before PERF-039
+        /// this text, the loader and the spec each named a different format,
+        /// so an operator who followed the help produced a file the loader
+        /// refused.
+        #[arg(long)]
+        prompts: Option<PathBuf>,
+
+        // ------------------------------------------------------------------
+        // PERF-025 — the APR-PERF-GATE-001 v2.2 §4.4 conformant mode.
+        //
+        // PERF-024 shipped the conformant protocol and PERF-026 the receipt
+        // producer, and nothing called either: this subcommand still ran
+        // `LoadTest::run`, whose termination rule is "stop after --duration
+        // seconds" with no minimum sample count, no warmup-then-quiesce, no
+        // drain accounting and no tokenization block. A conformant protocol
+        // nothing can reach measures nothing.
+        //
+        // A MODE, NOT A SIBLING SUBCOMMAND: PERF-009 says one benchmarking
+        // entrypoint, and this drives the same LlmClient the legacy mode does.
+        //
+        // NOTE THE ABSENCE OF `--band-duration`. The 60 s wall-clock floor and
+        // the max(30, 8c) sample floor are the entire difference between a
+        // load test and a measurement, and a flag that shrinks them is the
+        // shortest path back to a gate that cannot fail. The only knob is
+        // --replicates, and going below the spec's N=3 is stated on stdout
+        // rather than silently accepted.
+        // ------------------------------------------------------------------
+        /// Run the §4.4-conformant band protocol and write receipts
+        /// `scripts/perf_gate.sh` can judge.
+        ///
+        /// Closed-loop at fixed concurrency, `2 x c` warmup requests, a 5 s
+        /// quiesce, then a window that closes only when BOTH `max(30, 8 x c)`
+        /// samples and 60 s of wall-clock have elapsed — whichever bound is
+        /// satisfied last. Ignores --warmup, --duration, --runs and --cooldown,
+        /// which are the legacy mode's knobs.
+        ///
+        /// The legacy mode's server-lifecycle and comparison flags are REFUSED
+        /// rather than ignored here. `apr serve --gpu` accepting a flag it
+        /// silently drops is one of this project's named adoption killers, and
+        /// a `--band --output report.json` that produced no report — or a
+        /// `--start` that never started anything and then failed a confusing
+        /// health check — would be the same defect in the tool that exists to
+        /// catch it. The band mode's report IS `--receipt`.
+        #[arg(
+            long,
+            requires_all = ["receipt", "stream", "commit"],
+            conflicts_with_all = ["start", "output", "baseline", "fail_on_regression"]
+        )]
+        band: bool,
+        /// Directory receiving `receipt.rN.json` and the gzipped JSONL samples.
+        #[arg(long)]
+        receipt: Option<PathBuf>,
+        /// Concurrency levels for --band. Arm A needs `c=1` to be present.
+        #[arg(long, default_value = "1,4,8,16")]
+        bands: String,
+        /// Full band replicates per cell (PP-LLAMA-001 v3.0 §4.3: n >= 5).
+        /// Each replicate writes its own independently judgeable receipt.
+        ///
+        /// FIVE, not v2.2's three. §4.3: "n = 3 sizes an effect and bounds no
+        /// variance; no sigma-dependent status changes at n < 5". Three
+        /// replicates give a one-sided 95% t multiplier of 2.920 on two
+        /// degrees of freedom -- wide enough that a real regression and a
+        /// quiet run are indistinguishable. A run below the floor still
+        /// produces a receipt; every band in it is NONCONFORMANT-VALID and
+        /// says so on the wire.
+        #[arg(long, default_value_t = commands::test_llm_band::default_replicates())]
+        replicates: usize,
+        /// Workload identifier recorded in the receipt.
+        #[arg(long, default_value = "W1", value_parser = ["W1", "W2"])]
+        workload: String,
+        /// Join key: which machine measured. Required by the receipt schema.
+        #[arg(long, required_if_eq("band", "true"), default_value = "")]
+        host: String,
+        /// Join key: which accelerator served the request.
+        #[arg(long, required_if_eq("band", "true"), default_value = "")]
+        accelerator: String,
+        /// Join key: which quantization the served model uses.
+        #[arg(long, required_if_eq("band", "true"), default_value = "")]
+        quantization: String,
+        /// The dispatch path the SERVER took — not the hardware present.
+        #[arg(long, default_value = "unknown",
+              value_parser = ["cpu", "cuda", "metal", "wgpu", "unknown"])]
+        compute_class: String,
+        /// A build feature of the SERVER, repeatable.
+        ///
+        /// Never defaulted from this client's own features: `bench_receipt.py`
+        /// uses it to refuse a compute_class the build cannot reach, and
+        /// pointing that check at the measuring binary instead of the measured
+        /// one would make it read green while checking nothing.
+        #[arg(long = "server-feature")]
+        server_features: Vec<String>,
+        /// How tokens were counted (§4.4.6). Absence of a valid value is fatal.
+        #[arg(long, default_value = "server_usage",
+              value_parser = ["server_usage", "client_tokenizer"])]
+        tokenization: String,
+        /// Tokenizer digest, required when --tokenization client_tokenizer.
+        #[arg(long)]
+        tokenizer_sha256: Option<String>,
+        /// Whether the token counts include special tokens (§4.4.6).
+        #[arg(long)]
+        counts_special_tokens: bool,
+        /// Whether the token counts include the echoed prompt (§4.4.6).
+        #[arg(long)]
+        counts_prompt_echo: bool,
+        /// Commit under measurement, for the release staleness arm.
+        ///
+        /// REQUIRED by `--band` (PP-21). It used to be optional and defaulted
+        /// to the literal `UNPINNED`, which renders a complete, signable
+        /// receipt that names no build -- and PP-21's staleness arm asserts
+        /// that `receipt.commit` contains the commit under test. Pass
+        /// `$(git rev-parse HEAD)`: a full 40-character lowercase object name,
+        /// because an abbreviated sha cannot be tested for ancestry (PP-18).
+        #[arg(long)]
+        commit: Option<String>,
+        /// Who owes the comparator measurement this producer refuses to invent.
+        ///
+        /// §4.7.1: without `--comparator-url` every cell is NOT_APPLICABLE or
+        /// UNMEASURED, never a ratio. A ratio needs a baseline band from the
+        /// SAME run (PP-3), joined on the PP-22 key and driven by this same
+        /// client binary (PP-25); one lane cannot produce one.
+        #[arg(long, default_value = "perf-gate")]
+        comparator_owner: String,
+
+        // ------------------------------------------------------------------
+        // PP-LLAMA-001 v3.0 §4.3 / §5.3 — the COMPARATOR LANE.
+        //
+        // Until v3.0 this producer measured one lane and declared every ratio
+        // UNMEASURED, which was the honest posture for a harness that had no
+        // second lane. §4.3 gives it one: `n >= 5` interleaved paired
+        // replicates, A,B,A,B,..., comparator and subject alternating INSIDE
+        // ONE INVOCATION. Interleaving is not a refinement -- thermal state,
+        // graph-capture warm state and free VRAM all drift across a sweep, and
+        // alternation is the only design that cancels the drift.
+        //
+        // The pin flags are not optional decoration. PP-20 marks every ratio
+        // COMPARATOR_STALE once the pin expires, and a pin that does not exist
+        // can never expire; `provenance.comparator` is also the only field
+        // that retains the lane's `GET /props` body, which §5.3 requires per
+        // band. So --comparator-url without them is refused, by the producer,
+        // with a message that names each missing flag.
+        // ------------------------------------------------------------------
+        /// Comparator endpoint. Measured by THIS binary, interleaved with the
+        /// subject lane band by band, and joined on a shared `run_id`.
+        #[arg(long)]
+        comparator_url: Option<String>,
+        /// Model name the comparator server expects in the request body.
+        /// Defaults to --model; `llama-server` serves whatever it was
+        /// launched with and ignores the field.
+        #[arg(long)]
+        comparator_model: Option<String>,
+        /// PP-20: the comparator build's upstream commit.
+        #[arg(long)]
+        comparator_commit: Option<String>,
+        /// PP-20: the `cmake` line the comparator was configured with.
+        #[arg(long)]
+        comparator_cmake: Option<String>,
+        /// PP-20: the comparator binary's sha256, 64 lowercase hex.
+        #[arg(long)]
+        comparator_sha256: Option<String>,
+        /// PP-20: the instant after which every ratio against this pin is
+        /// COMPARATOR_STALE, as `YYYY-MM-DDTHH:MM:SS.mmmZ`.
+        #[arg(long)]
+        comparator_pin_expiry: Option<String>,
+
+        // ------------------------------------------------------------------
+        // PP-22 / §5.3 — the comparator lane's CONFIGURATION, declared.
+        //
+        // These are not decoration and they are not redundant with `/props`.
+        // llama.cpp's `GET /props` reports neither `n_batch`, nor flash
+        // attention, nor the KV cache type, so `lane_config_from_props` left
+        // all three `None` on every real run -- and `JoinKey::refuse_cripple`,
+        // which asks whether `n_batch == Some(1)`, could therefore NEVER fire
+        // against a real llama-server. §5.3's refusal of the `-b 1` cripple
+        // that once manufactured a 2.39x overstatement
+        // (llama_pin.toml:129-165) was unreachable in practice.
+        //
+        // The launcher knows the argv. `/props` OVERRIDES a declaration
+        // wherever it does report a value, and a disagreement between the two
+        // is refused rather than resolved -- it usually means the flags
+        // describe a different server than the one being measured.
+        // ------------------------------------------------------------------
+        /// §5.3: `-b` the comparator was launched with. `1` is REFUSED before
+        /// a single request is issued: it switches llama.cpp's batching off.
+        #[arg(long)]
+        comparator_n_batch: Option<u32>,
+        /// §5.3: per-slot context the comparator was launched with (`-c` over
+        /// `-np`).
+        #[arg(long)]
+        comparator_n_ctx_slot: Option<u32>,
+        /// §5.3: `-fa` as launched — `on`, `off` or `auto`. `auto` records
+        /// NOTHING: a launcher that passed `-fa auto` does not know what the
+        /// server resolved it to, and a guessed join-key field silently joins
+        /// two different configurations.
+        #[arg(long)]
+        comparator_fa: Option<String>,
+        /// §5.3: `-ctk/-ctv` as launched, e.g. `f16`.
+        #[arg(long)]
+        comparator_kv_type: Option<String>,
+
+        /// PP-26: `witness.json` from
+        /// `scripts/perf041_batched_parity_probe.py`.
+        ///
+        /// Without it no band carries a batch-invariance witness, and §7.0's
+        /// L0 layer makes every band at c>1 INVALID-CORRECTNESS: it reports NO
+        /// throughput at all. That is the intent -- #2753 was a batched decode
+        /// emitting one token id forever at full speed, and every throughput
+        /// number it produced was arithmetically correct and meaningless.
+        #[arg(long)]
+        witness_json: Option<PathBuf>,
+
+        /// PP-18: the `apr serve` binary that served the bands, when it is not
+        /// this same `apr`. Hashed into `provenance.subject`.
+        #[arg(long)]
+        subject_binary: Option<PathBuf>,
+
+        /// PP-21: sign each receipt with this key id after writing it.
+        ///
+        /// Shells out to `scripts/perf_receipt_sign.sh`, the producing end of
+        /// §4.9.1, whose verifying end is `perf_gate.sh --phase release`. A
+        /// non-zero exit is fatal: an unsigned receipt reported as signed is
+        /// exactly the document `ArmC-sig` exists to catch.
+        #[arg(long)]
+        key_id: Option<String>,
+        /// PP-21: keyring for --key-id. Defaults to
+        /// `$APR_PERF_RECEIPT_KEYRING` inside the signing script.
+        #[arg(long)]
+        keyring: Option<PathBuf>,
+    },
 }
 
 /// Parse `apr cbtop --iterations`, rejecting 0.
@@ -1644,4 +1985,185 @@ fn parse_cbtop_iterations(s: &str) -> std::result::Result<usize, String> {
         );
     }
     Ok(n)
+}
+
+#[cfg(test)]
+mod perf039_prompts_help_tests {
+    use clap::Subcommand;
+
+    /// `--prompts` help must name the format the loader actually reads.
+    ///
+    /// PERF-039: this help promised "a JSON array" while
+    /// `jugar_probar::llm::load_prompts_from_file` parsed YAML and
+    /// `APR-PERF-GATE-001` v2.2 §4.3 named `.jsonl`. Three surfaces, no two
+    /// matching, and an operator who followed the help produced a file the
+    /// loader refused. A help string is a contract with the person typing the
+    /// command, so it is asserted here rather than reviewed.
+    #[test]
+    fn prompts_help_names_jsonl_and_not_json_array() {
+        let cmd = super::LlmSubcommand::augment_subcommands(clap::Command::new("llm"));
+        let bench = cmd
+            .get_subcommands()
+            .find(|c: &&clap::Command| c.get_name() == "bench")
+            .expect("`bench` subcommand exists");
+        let prompts = bench
+            .get_arguments()
+            .find(|a: &&clap::Arg| a.get_id() == "prompts")
+            .expect("`--prompts` argument exists");
+        let help: String = prompts
+            .get_long_help()
+            .or_else(|| prompts.get_help())
+            .map(ToString::to_string)
+            .expect("`--prompts` has help text");
+        assert!(
+            help.contains("JSONL"),
+            "help must name JSONL, the format the loader reads; got: {help}"
+        );
+        assert!(
+            !help.contains("JSON array"),
+            "help must not still promise a JSON array; got: {help}"
+        );
+    }
+}
+
+#[cfg(test)]
+mod pp_llama_band_surface_tests {
+    use clap::Subcommand;
+
+    // ---------------------------------------------------------------------
+    // PP-21 / PP-27 — `--band` may no longer be spelled without the two flags
+    // that make its receipt judgeable.
+    //
+    // Both committed evidence runs (`evidence/perf-gate-001-w1-{lambda,gx10}/
+    // invocation.txt`) contain zero `--stream`, and both receipts carry
+    // `commit: "UNPINNED"`. Neither was a mistake an operator could see: the
+    // producer printed a NOTE for the first and defaulted the second, and the
+    // resulting documents render, sign and read as evidence.
+    //
+    //  argv                                    | must  | why
+    //  ----------------------------------------|-------|------------------
+    //  --band --receipt R                      | ERR   | no --stream/--commit
+    //  --band --receipt R --stream             | ERR   | no --commit
+    //  --band --receipt R --commit C           | ERR   | no --stream
+    //  --band --stream --commit C   [BOUNDARY] | ERR   | no --receipt
+    //  all four                     [BOUNDARY] | OK    |
+    // ---------------------------------------------------------------------
+
+    const COMMIT: &str = "0123456789abcdef0123456789abcdef01234567";
+
+    fn parse(extra: &[&str]) -> Result<clap::ArgMatches, clap::Error> {
+        let mut argv = vec![
+            "llm",
+            "bench",
+            "--host",
+            "lambda",
+            "--accelerator",
+            "rtx-4090",
+            "--quantization",
+            "Q4_K_M",
+        ];
+        argv.extend_from_slice(extra);
+        super::LlmSubcommand::augment_subcommands(clap::Command::new("llm"))
+            .try_get_matches_from(argv)
+    }
+
+    #[test]
+    fn band_mode_refuses_argv_without_stream_or_commit() {
+        for missing in [
+            vec!["--band", "--receipt", "/tmp/r"],
+            vec!["--band", "--receipt", "/tmp/r", "--stream"],
+            vec!["--band", "--receipt", "/tmp/r", "--commit", COMMIT],
+            vec!["--band", "--stream", "--commit", COMMIT],
+        ] {
+            parse(&missing).err().unwrap_or_else(|| {
+                panic!("{missing:?} must be refused by clap; --band needs receipt+stream+commit")
+            });
+        }
+    }
+
+    #[test]
+    fn band_mode_accepts_the_conformant_argv() {
+        // BOUNDARY: without this row the assertions above prove only that the
+        // fixture is broken.
+        parse(&[
+            "--band",
+            "--receipt",
+            "/tmp/r",
+            "--stream",
+            "--commit",
+            COMMIT,
+        ])
+        .unwrap_or_else(|e| panic!("the conformant argv must parse: {e}"));
+    }
+
+    /// The comparator lane's flags exist on the surface and take a value.
+    ///
+    /// PP-15 is about accelerator flags, but the same reasoning applies to the
+    /// pin: `--comparator-url` alone would be a lane with no recorded identity,
+    /// and the producer refuses it (`comparator_identity`). This asserts the
+    /// flags are REACHABLE, which is the half a producer-side refusal cannot
+    /// prove -- `apr test llm` once advertised a subcommand that was
+    /// permanently unreachable (#2527).
+    #[test]
+    fn the_comparator_lane_flags_are_on_the_surface() {
+        let m = parse(&[
+            "--band",
+            "--receipt",
+            "/tmp/r",
+            "--stream",
+            "--commit",
+            COMMIT,
+            "--comparator-url",
+            "http://127.0.0.1:8081",
+            "--comparator-model",
+            "qwen",
+            "--comparator-commit",
+            "39173bcac0123456789abcdef0123456789abcde",
+            "--comparator-cmake",
+            "cmake -B build",
+            "--comparator-sha256",
+            "bb",
+            "--comparator-pin-expiry",
+            "2026-12-01T00:00:00.000Z",
+            "--comparator-n-batch",
+            "2048",
+            "--comparator-n-ctx-slot",
+            "1024",
+            "--comparator-fa",
+            "on",
+            "--comparator-kv-type",
+            "f16",
+            "--witness-json",
+            "/tmp/w.json",
+            "--subject-binary",
+            "/usr/bin/apr",
+            "--key-id",
+            "lambda-2026a",
+            "--keyring",
+            "/etc/apr/perf-receipt.key",
+        ])
+        .unwrap_or_else(|e| panic!("every comparator flag must parse: {e}"));
+        let bench = m.subcommand_matches("bench").expect("bench matched");
+        for flag in [
+            "comparator_url",
+            "comparator_model",
+            "comparator_commit",
+            "comparator_cmake",
+            "comparator_sha256",
+            "comparator_pin_expiry",
+            "comparator_n_batch",
+            "comparator_n_ctx_slot",
+            "comparator_fa",
+            "comparator_kv_type",
+            "witness_json",
+            "subject_binary",
+            "key_id",
+            "keyring",
+        ] {
+            assert!(
+                bench.contains_id(flag),
+                "{flag} must be a declared argument"
+            );
+        }
+    }
 }

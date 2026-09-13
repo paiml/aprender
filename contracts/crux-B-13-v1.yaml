@@ -97,7 +97,7 @@ falsification_tests:
   rule: Q4_0 block layout matches llama.cpp (18 bytes, fp16 scale, packed nibbles)
   prediction: "apr quantize --type q4_0 output has 18-byte blocks with fp16 scale"
   test: |
-    GOLD=/home/noah/src/aprender-worktrees/crux-spec/evidence/crux/llama_cpp/q4_0-goldens.json
+    GOLD=${APR_CRUX_GOLDENS:-evidence/crux}/llama_cpp/q4_0-goldens.json
     [ -f "$GOLD" ] || { echo "golden set absent"; exit 2; }
     TMP=$(mktemp -d)
     INPUT=$(python3 -c "import json,sys; print(json.load(open('$GOLD'))[0]['input'])")
@@ -123,7 +123,7 @@ falsification_tests:
   rule: byte-for-byte parity with llama-quantize Q4_0 on golden
   prediction: "sha256 per-tensor blocks match llama-quantize reference"
   test: |
-    GOLD=/home/noah/src/aprender-worktrees/crux-spec/evidence/crux/llama_cpp/q4_0-goldens.json
+    GOLD=${APR_CRUX_GOLDENS:-evidence/crux}/llama_cpp/q4_0-goldens.json
     [ -f "$GOLD" ] || { echo "golden set absent"; exit 2; }
     python3 - "$GOLD" <<'PY'
     import json, subprocess, tempfile, hashlib, os, sys, pathlib
@@ -140,7 +140,7 @@ falsification_tests:
   rule: dequantization error bounded by scale
   prediction: "max |W_fp32 - dequant(quant(W_fp32))| ≤ scale on every block"
   test: |
-    GOLD=/home/noah/src/aprender-worktrees/crux-spec/evidence/crux/llama_cpp/q4_0-goldens.json
+    GOLD=${APR_CRUX_GOLDENS:-evidence/crux}/llama_cpp/q4_0-goldens.json
     [ -f "$GOLD" ] || { echo "golden set absent"; exit 2; }
     INPUT=$(python3 -c "import json; print(json.load(open('$GOLD'))[0]['input'])")
     TMP=$(mktemp -d)
@@ -175,7 +175,7 @@ falsification_tests:
   rule: perplexity within 0.05 of llama.cpp reference on wiki.test.raw
   prediction: "apr perplexity - llama.cpp Q4_0 perplexity ≤ 0.05"
   test: |
-    GOLD=/home/noah/src/aprender-worktrees/crux-spec/evidence/crux/llama_cpp/wiki-text-test-goldens.json
+    GOLD=${APR_CRUX_GOLDENS:-evidence/crux}/llama_cpp/wiki-text-test-goldens.json
     [ -f "$GOLD" ] || { echo "golden set absent"; exit 2; }
     python3 - "$GOLD" <<'PY'
     import json, subprocess, tempfile, os, sys

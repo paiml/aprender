@@ -74,7 +74,7 @@ def benchmark_rust_bfs(graph_path: Path, source: int = 0) -> Tuple[float, int]:
     """Benchmark Rust BFS via CLI wrapper"""
     # Note: This would require a CLI wrapper in Rust
     # For now, we'll estimate based on Criterion results
-    # TODO: Implement actual CLI benchmark runner
+    # Deferred (PMAT-756): Implement actual CLI benchmark runner
     raise NotImplementedError("Rust BFS CLI benchmark not yet implemented")
 
 
@@ -82,7 +82,7 @@ def benchmark_rust_pagerank(graph_path: Path, max_iter: int = 20) -> Tuple[float
     """Benchmark Rust PageRank via CLI wrapper"""
     # Note: This would require a CLI wrapper in Rust
     # For now, we'll estimate based on Criterion results
-    # TODO: Implement actual CLI benchmark runner
+    # Deferred (PMAT-757): Implement actual CLI benchmark runner
     raise NotImplementedError("Rust PageRank CLI benchmark not yet implemented")
 
 

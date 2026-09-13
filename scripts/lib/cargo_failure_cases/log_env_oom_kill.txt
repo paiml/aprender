@@ -1,0 +1,4 @@
+error: could not compile `aho-corasick` (lib)
+
+Caused by:
+  process didn't exit successfully: `rustc --crate-name aho_corasick` (signal: 9, SIGKILL: kill)

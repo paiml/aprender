@@ -175,11 +175,9 @@ impl SuperblockBuilder {
 
         let effective_size = self.target_size.min(self.max_size);
         let mut superblocks = Vec::new();
-        let mut next_id = self.next_id;
 
-        for chunk in blocks.chunks(effective_size) {
+        for (next_id, chunk) in (self.next_id..).zip(blocks.chunks(effective_size)) {
             let id = SuperblockId::new(next_id);
-            next_id += 1;
             superblocks.push(Superblock::new(id, chunk.to_vec(), function));
         }
 

@@ -7,7 +7,6 @@ metadata:
     - "Dao et al. (2022). FlashAttention: Fast and Memory-Efficient Exact Attention."
   description: "Attention backward pass kernel"
 
-kind: KernelContract
 name: attention-backward
 version: "1.0.0"
 scope: "crates/aprender-train/src/"

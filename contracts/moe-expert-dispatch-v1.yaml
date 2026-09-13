@@ -7,7 +7,6 @@ metadata:
     - "Fedus et al. (2022). Switch Transformers: Scaling to Trillion Parameter Models."
   description: "MoE expert dispatch and weighted aggregation"
 
-kind: KernelContract
 name: moe-expert-dispatch
 version: "1.0.0"
 scope: "crates/aprender-serve/src/gpu/scheduler/moe_dispatch.rs"

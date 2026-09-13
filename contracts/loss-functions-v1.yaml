@@ -222,5 +222,5 @@ qa_gate:
   - huber_continuity
   - l1_symmetry
   - nll_lower_bound
-  pass_criteria: All 6 falsification tests pass
+  pass_criteria: All 8 falsification tests pass
   falsification: Remove log-sum-exp trick from BCE

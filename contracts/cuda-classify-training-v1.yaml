@@ -7,7 +7,6 @@ metadata:
   references:
     - "Provable contract for cuda-classify-training-v1"
 
-kind: KernelContract
 name: cuda-classify-training
 version: "1.0.0"
 scope: "crates/aprender-train/src/finetune/classify_pipeline/"

@@ -248,5 +248,5 @@ qa_gate:
   - lower_bound
   - positive_monotonicity
   - simd_equivalence
-  pass_criteria: All 6 falsification tests pass + Kani harnesses verify
+  pass_criteria: All 7 falsification tests pass + Kani harnesses verify
   falsification: Replace sigmoid with constant 0.5

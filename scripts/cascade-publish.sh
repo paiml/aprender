@@ -33,7 +33,7 @@ REPO_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 # Tier definitions per SPEC-HF-PUBLISH-001 § crates.io release cascade.
 declare -A TIERS
 TIERS[1]="apr-format aprender-contracts-macros aprender-quant aprender-gemm-codegen aprender-sparse aprender-solve aprender-rand aprender-fft aprender-image aprender-tensor aprender-cupti"
-TIERS[2]="aprender-contracts aprender-core aprender-profile-core aprender-graph"
+TIERS[2]="aprender-contracts aprender-core aprender-profile-core aprender-graph aprender-contrastive-data"
 TIERS[3]="aprender-profile"
 TIERS[4]="aprender-gpu"
 TIERS[5]="aprender-cuda-edge aprender-cgp"
@@ -138,10 +138,11 @@ version_live() {
   elif [ "$n" -eq 3 ]; then p="3/${crate:0:1}/${crate}"
   else p="${crate:0:2}/${crate:2:2}/${crate}"
   fi
-  curl -s --retry 3 --retry-delay 2 \
+  local idx
+  idx=$(curl -s --retry 3 --retry-delay 2 \
     -H "User-Agent: aprender-cascade-publish (release automation)" \
-    "https://index.crates.io/${p}" 2>/dev/null \
-    | grep -qF "\"vers\":\"${want}\""
+    "https://index.crates.io/${p}" 2>/dev/null) || idx=''
+  grep -qF "\"vers\":\"${want}\"" <<< "$idx"
 }
 
 # PUBLISH ORDER AS A PRECONDITION, NOT AS A COMMENT.
@@ -159,13 +160,86 @@ version_live() {
 # A crate with no `upstream =` line (the lib-only signpost facade, which has no
 # dependencies at all) is ready by construction — that independence is stated in
 # its manifest and is what makes it publishable at any point in the cascade.
+# WHICH FACADES MUST HAVE AN UPSTREAM (aprender#2628).
+#
+# The previous implementation read the requirement with a line-shaped `sed` and
+# treated "I could not parse one" as "there is none to order against" -- it
+# returned READY. MEASURED: `cargo` accepts the inline and the multi-line
+# dependency table as IDENTICAL (`cargo metadata` returns the same
+# `('aprender-contracts','upstream','^0.63.0')` for both), while the sed parses
+# only the inline spelling. So rewriting
+#
+#   upstream = { path = "...", version = "0.63.0", package = "aprender-contracts" }
+# as
+#   [dependencies.upstream]
+#   path = "..."
+#   version = "0.63.0"
+#   package = "aprender-contracts"
+#
+# -- a semantically null edit that `cargo add` itself can produce and that no
+# reviewer would flag -- silently DISARMED this gate, and the cascade would
+# upload a facade before its upstream: a crate nobody can compile, on an
+# append-only registry.
+#
+# Two changes close it, and the second matters more than the first:
+#   1. Resolve the requirement with `cargo metadata`, the authority on what a
+#      manifest MEANS, instead of a regex over one of its spellings.
+#   2. Assert POSITIVELY. Absence of evidence must not read as evidence of
+#      absence: a facade named here that resolves to no upstream is a FAILURE,
+#      not a pass. `provable-contracts-cli` is deliberately absent from the list
+#      -- it is the lib-only signpost facade with no [dependencies] at all, which
+#      check_facade_compat.sh row R3 enforces from the other direction.
+FACADE_EXPECTS_UPSTREAM="provable-contracts provable-contracts-macros"
+
+# Resolve a facade's upstream (name and required version) from cargo itself.
+# Echoes "<name> <version>" or nothing. The dependency is identified by its
+# RENAME (`upstream`), which is how the manifest refers to it, so this does not
+# depend on the dependency's spelling or position in the file.
+facade_upstream_of() {
+  local manifest=$1 pkg=$2
+  cargo metadata --format-version 1 --no-deps --manifest-path "$manifest" 2>/dev/null \
+    | PKG="$pkg" python3 -c '
+import json, os, sys
+try:
+    meta = json.load(sys.stdin)
+except Exception:
+    sys.exit(0)
+want = os.environ["PKG"]
+for p in meta.get("packages", []):
+    if p.get("name") != want:
+        continue
+    for d in p.get("dependencies", []):
+        if d.get("rename") == "upstream":
+            req = (d.get("req") or "").lstrip("^~=v ").strip()
+            if d.get("name") and req:
+                print(d["name"], req)
+            sys.exit(0)
+' 2>/dev/null
+}
+
 facade_upstream_ready() {
-  local crate=$1 manifest=${MANIFEST[$1]:-} up_name up_ver
+  local crate=$1 manifest=${MANIFEST[$1]:-} resolved up_name up_ver expected=0
   [ -n "$manifest" ] || return 0
-  up_name=$(sed -n 's/^upstream *=.*package *= *"\([^"]*\)".*/\1/p' "$manifest" 2>/dev/null | head -1)
-  up_ver=$(sed -n 's/^upstream *=.*version *= *"\([^"]*\)".*/\1/p' "$manifest" 2>/dev/null | head -1)
-  # No upstream requirement -> nothing to order against.
-  [ -n "$up_name" ] && [ -n "$up_ver" ] || return 0
+
+  case " $FACADE_EXPECTS_UPSTREAM " in *" $crate "*) expected=1 ;; esac
+
+  resolved=$(facade_upstream_of "$manifest" "$crate")
+  up_name=${resolved%% *}
+  up_ver=${resolved##* }
+
+  if [ -z "$resolved" ] || [ -z "$up_name" ] || [ -z "$up_ver" ]; then
+    if [ "$expected" -eq 1 ]; then
+      # The gate could not answer the question it exists to answer. Refuse.
+      echo "ORDER-FAIL ($crate is declared to require an upstream, but cargo"
+      echo "            resolved none from $manifest -- refusing to publish"
+      echo "            rather than assuming there is nothing to order against;"
+      echo "            see aprender#2628)"
+      return 1
+    fi
+    # Not expected to have one (the lib-only signpost facade): ready by design.
+    return 0
+  fi
+
   if version_live "$up_name" "$up_ver"; then
     return 0
   fi
@@ -197,14 +271,27 @@ publish_crate() {
     sel=(--manifest-path "${MANIFEST[$crate]}")
   fi
   local out
-  out=$(cargo publish "${sel[@]}" --allow-dirty --locked 2>&1 | tail -6)
-  if echo "$out" | grep -q "Published $crate"; then
+  # No dirty-tree override here: scripts/check_publish_preflight.sh proved the tree
+  # clean before the first upload (F-9, PMAT-745); a dirty tree stops the cascade there.
+  # cargo's OWN exit status, read from the command: `cmd | tail -6` handed back
+  # tail's status, so the verdict below came from six lines of text alone. Two
+  # independent review lanes on #2859 reached this line. A zero exit without the
+  # `Published` line is not counted as published either -- it is deferred and
+  # named, so a drain pass asks again.
+  local log rc
+  log=$(mktemp "${TMPDIR:-/tmp}/cascade-publish.XXXXXX") || { echo "FATAL-ENV (mktemp failed; nothing uploaded for $crate)"; return 1; }
+  cargo publish "${sel[@]}" --locked > "$log" 2>&1; rc=$?
+  out=$(tail -6 "$log"); rm -f "$log"
+  if [ "$rc" -eq 0 ] && grep -q "Published $crate" <<< "$out" ; then
     echo "✓ PUBLISHED"
     sleep 10  # let crates.io index settle before dependents try to fetch
     return 0
-  elif echo "$out" | grep -qE "already.*upload|already exists"; then
+  elif grep -qE "already.*upload|already exists" <<< "$out" ; then
     echo "(already on registry)"
     return 0
+  elif [ "$rc" -eq 0 ]; then
+    echo "DEFER (cargo publish exited 0 but printed no 'Published $crate' line — not counted as published)"
+    return 1
   # Surface the two FATAL classes that are NOT dep-ordering deferrals — a bare
   # "Caused by:" truncation hid both for ~2h in the v0.60.0 cascade:
   #   1. 403 authentication failed — a STALE $CARGO_REGISTRY_TOKEN env var
@@ -214,10 +301,10 @@ publish_crate() {
   #      [patch.crates-io] in .cargo/config.toml points at ../<repo> paths that
   #      don't exist in a worktree. Fix: remove .cargo/config.toml before publish
   #      (the consolidated monorepo resolves siblings via in-tree path deps).
-  elif echo "$out" | grep -qiE "403|authentication failed"; then
+  elif grep -qiE "403|authentication failed" <<< "$out" ; then
     echo "FATAL-AUTH (403 — unset stale \$CARGO_REGISTRY_TOKEN; use ~/.cargo/credentials.toml)"
     return 1
-  elif echo "$out" | grep -qiE "failed to load source|no such file or directory"; then
+  elif grep -qiE "failed to load source|no such file or directory" <<< "$out" ; then
     echo "FATAL-CONFIG (dev [patch.crates-io] in .cargo/config.toml — remove it before publish)"
     return 1
   else
@@ -230,12 +317,47 @@ publish_crate() {
   fi
 }
 
-# Backup .cargo/config.toml once (publish needs a clean one without [patch.crates-io])
+# THE GATE (F-9, PMAT-745). Every mode that uploads passes through
+# scripts/check_publish_preflight.sh first: clean tree, version from cargo
+# metadata, tag at HEAD, HEAD on origin/main, dogfood receipt GO for this commit
+# and version. --check and --order-check upload nothing and are not gated. The
+# drain re-runs this script per pass, so the gate is re-asked before every pass.
+case "$MODE" in
+  --check|--order-check) : ;;
+  *)
+    if ! bash "$REPO_ROOT/scripts/check_publish_preflight.sh"; then
+      echo "⛔ check_publish_preflight.sh refused; nothing was published." >&2
+      exit 1
+    fi
+    ;;
+esac
+
+# Backup .cargo/config.toml once (publish needs a clean one without [patch.crates-io]).
+# The backup lives OUTSIDE the tree. Beside the config it was an untracked file
+# inside the root crate's package directory -- `.cargo/config.toml` is ignored,
+# `.cargo/config.toml.cascade-backup` was not -- and with the dirty-tree override
+# gone (F-9) `cargo publish` of the root crate would have refused on the file this
+# script itself created, after the preflight had already passed R1. Found by the
+# cross-vendor review of #2859. Measured: with the backup beside the config,
+# `git status --porcelain --untracked-files=all` lists it; with mktemp, nothing.
+# A backup that cannot be created is a refusal, not an empty string: with
+# CASCADE_CONFIG_BACKUP="" the config would be overwritten and never restored
+# (second review of #2859, mktemp-data-loss).
+CASCADE_CONFIG_BACKUP=""
 if [ -f .cargo/config.toml ]; then
-  cp .cargo/config.toml .cargo/config.toml.cascade-backup
+  CASCADE_CONFIG_BACKUP=$(mktemp "${TMPDIR:-/tmp}/cascade-config-backup.XXXXXX") || CASCADE_CONFIG_BACKUP=""
+  if [ -z "$CASCADE_CONFIG_BACKUP" ] || [ ! -f "$CASCADE_CONFIG_BACKUP" ]; then
+    echo "⛔ could not create a backup of .cargo/config.toml (mktemp failed under ${TMPDIR:-/tmp}); nothing was published." >&2
+    exit 2
+  fi
+  # A failed copy leaves a partial backup that must not be restored later and
+  # must not be left behind: it is removed before the refusal.
+  cp .cargo/config.toml "$CASCADE_CONFIG_BACKUP" || { rm -f "$CASCADE_CONFIG_BACKUP"; echo "⛔ could not back up .cargo/config.toml; nothing was published." >&2; exit 2; }
+  # The restore trap is armed BEFORE the overwrite: between the two there was a
+  # window in which an interrupt lost the config (sixth review of #2859).
+  trap 'if [ -n "$CASCADE_CONFIG_BACKUP" ] && [ -f "$CASCADE_CONFIG_BACKUP" ]; then cp "$CASCADE_CONFIG_BACKUP" .cargo/config.toml && rm -f "$CASCADE_CONFIG_BACKUP"; fi' EXIT
   echo "# Clean config for cascade publishing" > .cargo/config.toml
 fi
-trap 'if [ -f .cargo/config.toml.cascade-backup ]; then cp .cargo/config.toml.cascade-backup .cargo/config.toml && rm -f .cargo/config.toml.cascade-backup; fi' EXIT
 
 # --order-check: run ONLY the publish-order precondition, against the live
 # registry, and publish nothing. Two reasons this mode exists rather than the

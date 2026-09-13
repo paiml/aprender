@@ -80,9 +80,9 @@ provable-contracts-macros = { workspace = true }
 # Core PAIML stack
 ndarray = "0.16"
 trueno = { workspace = true, features = ["parallel"] }
-trueno-gpu = { version = "0.63.0", path = "../aprender-gpu", package = "aprender-gpu", optional = true }  # CUDA compute (APR-MONO single-source-of-truth)
+trueno-gpu = { version = "0.67.0", path = "../aprender-gpu", package = "aprender-gpu", optional = true }  # CUDA compute (APR-MONO single-source-of-truth)
 realizar = { workspace = true, optional = true }
-aprender = { path = "../aprender-core", version = "0.63.0", package = "aprender-core" }  # ML interpret module + .apr format + tokenizers
+aprender = { path = "../aprender-core", version = "0.67.0", package = "aprender-core" }  # ML interpret module + .apr format + tokenizers
 trueno-viz = { workspace = true, features = ["terminal"] }
 batuta-common = { workspace = true, optional = true }  # WithDimensions trait for `viz` feature (APR-MONO §S #1978)
 presentar-terminal = { workspace = true, optional = true }
@@ -121,7 +121,7 @@ jsonschema = "0.28"  # JSON Schema validation for declarative config (AI-05)
 validator = { version = "0.20", features = ["derive"] }  # Declarative struct validation (AI-05)
 schemars = "0.8"  # JSON Schema generation from Rust structs (AI-05)
 fs4 = "0.13"  # Cross-platform file locking for VRAM ledger (GPU-SHARE-001)
-arrow = { version = "57", default-features = false, optional = true }  # Arrow array types for alimentar integration
+arrow = { version = "59", default-features = false, optional = true }  # Arrow array types for alimentar integration
 nvml-wrapper = { version = "0.10", optional = true }  # NVIDIA NVML bindings for GPU monitoring
 hostname = "0.4.2"
 ctrlc = "3.4"  # Signal handling for graceful shutdown (R-008)
@@ -143,12 +143,12 @@ proptest = "1.4"
 approx = "0.5"
 tempfile = "3.8"
 criterion = { workspace = true }
-arrow = { version = "57", default-features = false }  # For MNIST example array access
-parquet = { version = "57", default-features = false }  # For ALB-007 Parquet writing in tests
+arrow = { version = "59", default-features = false }  # For MNIST example array access
+parquet = { version = "59", default-features = false }  # For ALB-007 Parquet writing in tests
 insta = { version = "1.42", features = ["json", "yaml"] }  # Snapshot testing for PMAT QA
 dirs = "5.0"  # Cache directory detection for examples
-jugar-probar = { workspace = true }  # TUI snapshot testing (ENT-140)
-provable-contracts = { workspace = true }  # Contract trait enforcement (Section 23)
+jugar-probar = { path = "../aprender-test-lib", package = "aprender-test-lib" }  # TUI snapshot testing (ENT-140); PMAT-955: path-only dev-dep
+provable-contracts = { path = "../aprender-contracts", package = "aprender-contracts" }  # PMAT-955: path-only dev-dep (no version)
 
 [[bench]]
 name = "monitor_bench"

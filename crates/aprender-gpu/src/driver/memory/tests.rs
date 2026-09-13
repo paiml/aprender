@@ -613,10 +613,13 @@ mod cuda_tests {
     /// `copy_from_host` is documented synchronous, but `cuMemcpyHtoD` out of
     /// pageable host memory returns once the bytes reach CUDA's staging
     /// buffer, with the DMA to device memory still queued on the legacy
-    /// default stream. Every `CudaStream` this crate creates is
-    /// `CU_STREAM_NON_BLOCKING` and so is *not* ordered against that stream —
-    /// the readback below could observe the buffer before the upload landed,
-    /// with every CUDA call returning success.
+    /// default stream. When this was written every `CudaStream` this crate
+    /// created was `CU_STREAM_NON_BLOCKING` and so was *not* ordered against
+    /// that stream — the readback below could observe the buffer before the
+    /// upload landed, with every CUDA call returning success. Since PERF-053
+    /// (aprender#2767) the default is `CU_STREAM_DEFAULT`, which orders it; the
+    /// round-trip assertion below is unchanged and still guards the
+    /// `APR_STREAM_NONBLOCKING=1` path.
     ///
     /// Black-box: nothing here inspects the transfer implementation, it only
     /// asserts that what was written is what comes back. Each round uploads a

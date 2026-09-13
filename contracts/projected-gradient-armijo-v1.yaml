@@ -1,4 +1,3 @@
-kind: KernelContract
 metadata:
   version: 1.0.0
   created: '2026-06-20'
@@ -177,5 +176,5 @@ qa_gate:
   checks:
   - accepted_iterate_is_backtracked
   - monotone_non_increase
-  pass_criteria: All 5 falsification tests pass; test_pgd_armijo_monotone_non_increase_overshoot is RED on the bug, GREEN on the fix
+  pass_criteria: All 9 falsification tests pass; test_pgd_armijo_monotone_non_increase_overshoot is RED on the bug, GREEN on the fix
   falsification: Discard x_new_ls after backtracking (keep the rejected full-step point) — objective increases on overshoot

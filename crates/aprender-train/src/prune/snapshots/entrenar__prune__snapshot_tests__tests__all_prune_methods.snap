@@ -4,28 +4,28 @@ expression: method_info
 ---
 [
   {
-    "name": "magnitude",
     "display_name": "Magnitude",
+    "name": "magnitude",
     "requires_calibration": false
   },
   {
-    "name": "wanda",
     "display_name": "Wanda",
+    "name": "wanda",
     "requires_calibration": true
   },
   {
-    "name": "sparsegpt",
     "display_name": "SparseGPT",
+    "name": "sparsegpt",
     "requires_calibration": true
   },
   {
-    "name": "minitron_depth",
     "display_name": "Minitron (Depth)",
+    "name": "minitron_depth",
     "requires_calibration": true
   },
   {
-    "name": "minitron_width",
     "display_name": "Minitron (Width)",
+    "name": "minitron_width",
     "requires_calibration": true
   }
 ]

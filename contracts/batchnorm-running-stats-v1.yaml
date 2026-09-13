@@ -28,7 +28,6 @@ metadata:
   - 'crates/aprender-core/src/nn/normalization/mod.rs — BatchNorm1d::forward (fix site)'
   - 'crates/aprender-contracts/src/kernels/batchnorm.rs — reference EMA update'
 
-kind: KernelContract
 name: batchnorm-running-stats
 version: 1.0.0
 scope: crates/aprender-core/src/nn/normalization/ — BatchNorm1d running-statistics buffers

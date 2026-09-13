@@ -10,7 +10,6 @@ metadata:
     Correctness contract for HumanEval/MBPP pass@k reporting in `apr eval`
     (apr-cli commands::eval). Honest-by-design: pass@k under single-sample greedy decoding
     must equal pass@1, never an inflated value.
-kind: KernelContract
 name: eval-passk-single-sample
 version: "1.0.0"
 scope: "crates/apr-cli/src/commands/eval/code_eval.rs"

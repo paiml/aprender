@@ -341,37 +341,49 @@ fn f_fmt_empty_file_returns_error() {
 
 #[test]
 fn f_dod_unsafe_code_is_deny_by_default() {
-    let src_dir = project_root().join("src");
+    // #2522: this scanned `<project_root>/src`, which since APR-MONO is a
+    // two-file facade -- so the gate that guards `unsafe_code = "forbid"` has
+    // been examining 2 files out of 5,566 and reporting `ok`. It is now aimed at
+    // aprender-core, the crate this suite belongs to.
+    //
+    // DEFERRED, deliberately: workspace-wide scope finds 2,266 sites (mostly
+    // mmap, libc and AVX2 intrinsics in aprender-serve/-profile/-compute, each
+    // with its own documented `#![allow(unsafe_code)]`). Widening this gate is a
+    // separate judgement about which crates may opt out, not a wiring fix, and
+    // is not smuggled into this PR.
     let mut violations = Vec::new();
-
-    for path in collect_rs_files(&src_dir) {
-        // mmap.rs has a documented exception per bundle-mmap-spec.md
+    for path in collect_rs_files(&crate_dir("aprender-core").join("src")) {
+        // Documented exceptions: mmap.rs per bundle-mmap-spec.md, and files that
+        // carry an explicit `#![allow(unsafe_code)]` with a rationale.
         if path.to_string_lossy().contains("mmap.rs") {
             continue;
         }
-
         let content = std::fs::read_to_string(&path).unwrap_or_default();
-        for (line_no, line) in content.lines().enumerate() {
-            let trimmed = line.trim();
-            if trimmed.starts_with("//")
-                || trimmed.starts_with("///")
-                || trimmed.starts_with("#[")
-                || trimmed.starts_with("#![")
-            {
-                continue;
-            }
-            if trimmed.contains("unsafe ") || trimmed.contains("unsafe{") {
-                violations.push(format!("{}:{}: '{trimmed}'", path.display(), line_no + 1));
-            }
+        if content.contains("#![allow(unsafe_code)]") {
+            continue;
         }
+        collect_unsafe_lines(&path, &content, &mut violations);
     }
 
     assert!(
         violations.is_empty(),
-        "No unsafe code allowed outside mmap.rs (deny(unsafe_code)).\n\
-         Violations:\n{}",
+        "No unsafe code allowed in aprender-core outside documented exceptions \
+         (deny(unsafe_code)).\nViolations:\n{}",
         violations.join("\n")
     );
+}
+
+/// `unsafe` occurrences in code (not comments, not attributes).
+fn collect_unsafe_lines(path: &Path, content: &str, violations: &mut Vec<String>) {
+    for (line_no, line) in content.lines().enumerate() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("//") || trimmed.starts_with("#[") || trimmed.starts_with("#![") {
+            continue;
+        }
+        if trimmed.contains("unsafe ") || trimmed.contains("unsafe{") {
+            violations.push(format!("{}:{}: '{trimmed}'", path.display(), line_no + 1));
+        }
+    }
 }
 
 #[test]

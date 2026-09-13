@@ -1144,7 +1144,6 @@ metadata:
     - tensor-layout-v1
     - tensor-names-v1
 
-kind: KernelContract
 name: qwen3-moe-forward-gpu
 version: "1.7.2"
 status: ACTIVE_ALGORITHM_LEVEL_WITH_DOCUMENTED_DIVERGENCE   # 47/48 layers cos≥0.99; v1.7.2's L47 SwiGLU-f32 attribution REFUTED by #1818; true root cause = CPU/CUDA activation-qtype algorithm mismatch (CPU Q8K vs CUDA f32) per #1822 bisection — see v1.8.0 amendment_history
@@ -1684,7 +1683,7 @@ qa_gate:
   - throughput_at_least_150_tokens_per_second
   - vram_under_95_percent
   - bytewise_determinism
-  pass_criteria: All 7 falsification tests pass — FALSIFY-QW3-MOE-GPU-001 + PARITY-001/002 + INVARIANTS-001 + DETERMINISM-001 + THROUGHPUT-001 + MEMORY-001
+  pass_criteria: All 8 falsification tests pass — FALSIFY-QW3-MOE-GPU-001 + PARITY-001/002 + INVARIANTS-001 + DETERMINISM-001 + THROUGHPUT-001 + MEMORY-001 + PRELOAD-001
   falsification: Swap quantized expert dispatch with EAGER FP32 expansion (will OOM on 24 GB VRAM, fail FALSIFY-QW3-MOE-GPU-MEMORY-001)
 
 

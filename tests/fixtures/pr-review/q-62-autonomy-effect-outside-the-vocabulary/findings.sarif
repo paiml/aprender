@@ -1,0 +1,35 @@
+{
+  "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "cross_vendor_reservation",
+          "level": "warning",
+          "message": {
+            "text": "The stream-ordering change deserves a human read before it merges unattended."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "the cross-vendor reviewer is advisory under S7 and may refuse autonomy under S13.5",
+            "failure_scenario": "An unattended merge of a concurrency change nobody read.",
+            "precision_class": "advisory",
+            "autonomy_effect": "veto"
+          }
+        }
+      ]
+    }
+  ]
+}

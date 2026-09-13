@@ -235,5 +235,5 @@ qa_gate:
   - complete_graph_symmetry
   - star_graph_degree
   - harmonic_bounded
-  pass_criteria: All 8 falsification tests pass
+  pass_criteria: All 9 falsification tests pass
   falsification: Skip normalization in degree centrality

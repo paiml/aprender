@@ -278,8 +278,9 @@
                     assert!(!assert);
                     assert!((tolerance - 0.98).abs() < 0.01);
                 },
+                TestSubcommand::Llm { .. } => panic!("Expected the tensor subcommand"),
             },
-            _ => panic!("Expected Probar command"),
+            _ => panic!("Expected the test command"),
         }
     }
 
@@ -303,8 +304,9 @@
                     assert!(golden.is_none());
                     assert!(layer.is_none());
                 },
+                TestSubcommand::Llm { .. } => panic!("Expected the tensor subcommand"),
             },
-            _ => panic!("Expected Probar command"),
+            _ => panic!("Expected the test command"),
         }
     }
 

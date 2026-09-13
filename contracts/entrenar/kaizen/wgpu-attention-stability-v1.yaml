@@ -1,3 +1,11 @@
+metadata:
+  kind: kaizen
+  version: "1.0.0"
+  author: "PAIML Engineering"
+  description: "wgpu-attention-stability-v1 — kaizen KAIZEN-203 improvement record"
+  references:
+    - "KAIZEN-203"
+
 contract: wgpu-attention-stability-v1
 version: 1.0.0
 status: implemented

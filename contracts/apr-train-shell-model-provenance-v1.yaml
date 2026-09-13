@@ -1,0 +1,202 @@
+# contracts/apr-train-shell-model-provenance-v1.yaml
+#
+# Kind: KERNEL (metadata.kind omitted == kernel). Kernel is the only kind on
+# which the validator enforces PROVABILITY-001, so a misnamed or missing
+# falsification_tests block is a hard error here rather than a silent drop.
+metadata:
+  version: "1.0.0"
+  created: "2026-08-20"
+  author: PAIML Engineering
+  description: |
+    aprender-train-shell must not restate a model fact it did not measure,
+    through ANY door into its session.
+
+    #2519 closed the `fetch` door: `fetch <id>` used to return "✓ Fetched"
+    with a parameter count and layer count string-matched out of the model ID.
+    The falsifier written with that fix drives state exclusively through
+    `fetch`, so it enumerated one entrance and the room had two. `LoadedModel`
+    derives `Deserialize` and `main.rs` fed `SessionState::load` from a
+    user-supplied `--session` path, so a hand-written JSON file restored every
+    fabricated figure the fix had removed. Measured on origin/main 5c08e771f
+    AFTER the fetch fix: `--session <crafted> -c distill` exited 0 printing
+    "Training started... (simulated)", and `-c "distill --dry-run"` printed
+    "Teacher: does-not-exist/totally-fake-7b (7.0B) ... Ready to train".
+
+    This contract pins the invariant at the level the defect actually lives
+    at — provenance of the FACTS, not the identity of the entrance — plus the
+    independent rule that a command must not report work it did not perform.
+    The second rule survives a future real loader unchanged; the first has an
+    explicit two-stage structure so the "no loader exists" half can be retired
+    on its own the day a loader lands.
+  references:
+    - "paiml/aprender#2519 (three train-* binaries report confident results without doing the work)"
+    - "crates/aprender-train-shell/src/state.rs (SessionState::load, validate_model_provenance)"
+    - "crates/aprender-train-shell/src/commands.rs (execute_fetch, execute_distill)"
+    - "crates/aprender-train-shell/src/main.rs (--session handling)"
+  depends_on: []
+
+equations:
+  session_model_provenance:
+    formula: |
+      forall session S, forall model M in S.models:
+        accept(S) implies (exists_on_disk(M.path) and producible_by(shell, M))
+    domain: "SessionState values deserialized from any --session file"
+    codomain: "Result<SessionState, String>"
+    invariants:
+      - "A model this shell cannot have loaded is never admitted to a session"
+      - "S.models = {} implies accept(S) — the rule is about models, not about loading"
+    preconditions:
+      - "the session file parsed as JSON into a SessionState"
+    postconditions:
+      - "load(path).is_err() || load(path).unwrap().loaded_models().is_empty() || every path exists"
+
+  reported_work_was_done:
+    formula: |
+      forall command C: reports_success(C) implies performed(C)
+    domain: "commands executed by entrenar_shell::commands::execute"
+    codomain: "Result<String, EntrenarError>"
+    invariants:
+      - "distill has no training loop in this crate, so it never reports training as begun"
+      - "describing a configuration (--dry-run) is not reporting execution"
+    preconditions:
+      - "the command parsed"
+    postconditions:
+      - "!output.contains(\"Training started\") && !output.contains(\"simulated\")"
+
+proof_obligations:
+  - type: invariant
+    property: "A session may not claim a model that is not on disk"
+    formal: "accept(S) implies forall M in S.models: exists_on_disk(M.path)"
+    applies_to: all
+
+  - type: completeness
+    property: "While no production path can construct a LoadedModel, a session may carry none"
+    formal: "producers(LoadedModel) = {} implies accept(S) implies S.models = {}"
+    applies_to: all
+
+  - type: safety
+    property: "A session file that cannot be loaded aborts; it never degrades to a different session"
+    formal: "load(path).is_err() implies exit_code != 0"
+    applies_to: all
+
+  - type: invariant
+    property: "A command never reports work the crate cannot perform"
+    formal: "reports_success(distill) implies exists(training_loop)"
+    applies_to: all
+
+falsification_tests:
+  - id: FALSIFY-SHELL-PROV-001
+    rule: |
+      A --session file naming a model path that does not exist is rejected.
+    prediction: |
+      SessionState::load on a session whose models sit at /nonexistent returns
+      Err, and the error names the path and #2519. It does NOT return an
+      Ok session carrying a 7.0B 32-layer llama nobody has.
+    test: |
+      cargo test -p aprender-train-shell --test falsify_no_fabricated_fetch_2519 a_session_may_not_claim_a_model_that_is_not_on_disk
+    if_fails: |
+      SessionState::load is trusting untrusted JSON again — the provenance call
+      was dropped from load(), or validate_model_provenance's path rule was
+      weakened. Restore the check; do not weaken the test.
+
+  - id: FALSIFY-SHELL-PROV-002
+    rule: |
+      Discriminating case: an existing path is not sufficient provenance.
+    prediction: |
+      A session whose model paths point at 11 bytes of "not a model" is STILL
+      rejected, because nothing in this crate can load a model at all. A
+      path-existence rule alone is defeated by `touch`.
+    test: |
+      cargo test -p aprender-train-shell --test falsify_no_fabricated_fetch_2519 existing_paths_do_not_make_hand_written_model_facts_true
+    if_fails: |
+      Rule 2 (no loader exists, so no model is producible) was removed while
+      `fetch` still refuses. If a real loader HAS landed, retire this test in
+      the same commit that adds it — never before.
+
+  - id: FALSIFY-SHELL-PROV-003
+    rule: |
+      The binary surface — the form #2519 was reported in — exits non-zero and
+      prints nothing confident.
+    prediction: |
+      `aprender-train-shell --session <crafted> -c <cmd>` for cmd in
+      {distill, distill --dry-run, memory, inspect} exits non-zero and its
+      stdout contains none of "simulated", "Ready to train", "7.0B",
+      "16.0 GB", "32 layers".
+    test: |
+      cargo test -p aprender-train-shell --test falsify_no_fabricated_fetch_2519 the_session_flag_surface_exits_non_zero_and_prints_nothing_confident
+    if_fails: |
+      A library-level guard exists but the binary does not honour it — check
+      main.rs still fails closed on a rejected session rather than falling back
+      to SessionState::new().
+
+  - id: FALSIFY-SHELL-PROV-004
+    rule: |
+      An unreadable --session file fails closed.
+    prediction: |
+      `--session <not json> -c help` exits non-zero. It does not print
+      "Failed to load session" and then run against a silently different empty
+      session at exit 0.
+    test: |
+      cargo test -p aprender-train-shell --test falsify_no_fabricated_fetch_2519 an_unreadable_session_file_does_not_silently_become_an_empty_one
+    if_fails: |
+      main.rs reverted to the fail-open fallback. A rejected session handed
+      back as "success with no models" makes the provenance check invisible.
+
+  - id: FALSIFY-SHELL-PROV-005
+    rule: |
+      distill never reports training it did not run — independent of how the
+      session was populated.
+    prediction: |
+      With two models inserted through add_model (bypassing load entirely),
+      `distill` returns Err and the message contains neither "Training started"
+      nor "simulated". `distill --dry-run` still returns Ok with
+      "Ready to train", so the two are distinguishable.
+    test: |
+      cargo test -p aprender-train-shell --test falsify_no_fabricated_fetch_2519 distill_never_reports_training_it_did_not_run
+    if_fails: |
+      execute_distill's non-dry-run arm reports success again. This crate has
+      no optimizer and no dataset; the only correct non-dry-run outcome is a
+      refusal that points at `apr distill` / `apr finetune`.
+
+  - id: FALSIFY-SHELL-PROV-006
+    rule: |
+      NON-VACUITY CONTROL — the provenance rule is a ratchet, not a blanket
+      refusal.
+    prediction: |
+      A session the shell wrote itself loads back successfully with its
+      preferences intact (default_batch_size 64, default_seq_len 128), and a
+      state with no models passes validate_model_provenance. If this test ever
+      goes red the five tests above are proving nothing: they would be
+      observing a loader that rejects everything.
+    test: |
+      cargo test -p aprender-train-shell --test falsify_no_fabricated_fetch_2519 an_honest_session_still_loads_and_keeps_its_preferences
+    if_fails: |
+      The provenance check became unconditional. A gate that cannot pass is a
+      fail mode, not a pass — find what it is rejecting about an empty session.
+
+kani_harnesses:
+  - id: KANI-SHELL-PROV-001
+    obligation: "session_model_provenance"
+    property: "For any bounded set of models, accept(S) implies S.models is empty"
+    bound: 8
+    strategy: bounded_int
+
+  - id: KANI-SHELL-PROV-002
+    obligation: "reported_work_was_done"
+    property: "execute_distill(false, S) is Err for every reachable S"
+    bound: 8
+    strategy: exhaustive
+
+qa_gate:
+  id: F-SHELL-PROV-001
+  name: "aprender-train-shell model provenance contract"
+  description: "No door into the session may inject model facts the shell did not measure"
+  checks:
+    - session_model_provenance
+    - reported_work_was_done
+  pass_criteria: "All 6 falsification tests pass"
+  falsification: |
+    Any command prints an architecture, parameter count, layer count, hidden
+    dim or memory figure that traces back to a hand-written --session file or
+    to a model ID string rather than to bytes the shell read; or `distill`
+    reports that training began.

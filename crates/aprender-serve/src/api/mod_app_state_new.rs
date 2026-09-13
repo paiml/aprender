@@ -45,6 +45,7 @@ impl AppState {
             verbose: false,
             trace: false,
             model_source: None,
+            effective: EffectiveConfigState::new(),
         }
     }
 
@@ -105,6 +106,7 @@ impl AppState {
             verbose: false,
             trace: false,
             model_source: None,
+            effective: EffectiveConfigState::new(),
         })
     }
 
@@ -266,6 +268,7 @@ impl AppState {
             verbose: false,
             trace: false,
             model_source: None,
+            effective: EffectiveConfigState::new(),
         }
     }
 
@@ -339,6 +342,7 @@ impl AppState {
             verbose: false,
             trace: false,
             model_source: None,
+            effective: EffectiveConfigState::new(),
         })
     }
 
@@ -394,6 +398,7 @@ impl AppState {
             verbose: false,
             trace: false,
             model_source: None,
+            effective: EffectiveConfigState::new(),
         })
     }
 
@@ -454,6 +459,7 @@ impl AppState {
             verbose: false,
             trace: false,
             model_source: None,
+            effective: EffectiveConfigState::new(),
         })
     }
 
@@ -509,12 +515,14 @@ impl AppState {
             verbose: false,
             trace: false,
             model_source: None,
+            effective: EffectiveConfigState::new(),
         })
     }
 
     /// Create application state with a quantized model for fused Q4_K inference (IMP-100)
     ///
-    /// This is 1.37x faster than dequantized GpuModel due to reduced memory bandwidth.
+    /// Faster than the dequantized GpuModel because it reads less memory per token
+    /// (IMP-100; the measured factor has no receipt under evidence/, so it is not stated here).
     ///
     /// # Arguments
     ///
@@ -577,6 +585,7 @@ impl AppState {
             verbose: false,
             trace: false,
             model_source: None,
+            effective: EffectiveConfigState::new(),
         })
     }
 }

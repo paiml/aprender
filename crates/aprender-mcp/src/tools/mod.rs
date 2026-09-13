@@ -12,6 +12,7 @@
 pub mod args;
 pub mod bench;
 pub mod finetune;
+pub mod port_owner;
 pub mod qa;
 pub mod registry;
 pub mod run;

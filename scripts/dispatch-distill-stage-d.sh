@@ -114,12 +114,12 @@ ssh "${GX10_USER}@${GX10_HOST}" bash <<REMOTE_PREFLIGHT
     set -e
     cd '${GX10_REPO_PATH}'
 
-    FREE_GB=\$(df -BG /home/noah | awk 'NR==2 {gsub("G","",\$4); print \$4}')
-    echo "disk free on /home/noah: \${FREE_GB} GB (require >= ${DISK_FREE_REQUIRED_GB})"
+    FREE_GB=\$(df -BG "\$HOME" | awk 'NR==2 {gsub("G","",\$4); print \$4}')
+    echo "disk free on \$HOME: \${FREE_GB} GB (require >= ${DISK_FREE_REQUIRED_GB})"
     if [ "\${FREE_GB}" -lt "${DISK_FREE_REQUIRED_GB}" ]; then
         echo "ERROR: insufficient disk space" >&2
         echo "  cleanup candidates:" >&2
-        du -h --max-depth=1 /home/noah/runs 2>/dev/null | sort -hr | head -10 >&2
+        du -h --max-depth=1 "\$HOME/runs" 2>/dev/null | sort -hr | head -10 >&2
         exit 1
     fi
 
@@ -197,6 +197,10 @@ ssh "${GX10_USER}@${GX10_HOST}" bash <<REMOTE_DISPATCH
 REMOTE_DISPATCH
 
 mkdir -p "${EVIDENCE_DIR}"
+# DET002: reproducible under SOURCE_DATE_EPOCH (falls back to the real wall
+# clock when it's unset -- this is an audit timestamp of when the run was
+# actually dispatched, so it must stay real time by default).
+DISPATCHED_AT="$(date -u -d "@${SOURCE_DATE_EPOCH:-$(date +%s)}" +%Y-%m-%dT%H:%M:%SZ)"
 cat > "${EVIDENCE_DIR}/dispatch.json" <<JSON
 {
   "ticket": "SPEC-DISTILL-001 Phase 4 Stage D -- post-PMAT-701 cascade",
@@ -217,7 +221,7 @@ cat > "${EVIDENCE_DIR}/dispatch.json" <<JSON
   "dataset_dir": "${DATASET_DIR}",
   "remote_run_dir": "${RUN_DIR_REMOTE}",
   "remote_log": "${LOG_REMOTE}",
-  "dispatched_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  "dispatched_at": "${DISPATCHED_AT}"
 }
 JSON
 

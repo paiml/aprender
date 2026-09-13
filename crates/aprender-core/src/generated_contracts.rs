@@ -26820,4 +26820,232 @@ macro_rules! contract_work_lifecycle {
     }};
 }
 
-// Total: 657 preconditions, 20 postconditions, 0 invariants from 293 contracts
+// Auto-generated from contracts/setfit-encoder-conformance-v1.yaml — DO NOT EDIT
+// Contract: setfit-encoder-conformance-v1
+
+/// Postconditions for equation `additive_attention_mask`.
+/// Call before return: `contract_post_additive_attention_mask!(result_expr)`
+macro_rules! contract_post_additive_attention_mask {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+        debug_assert!(
+            _contract_result.len() > 0,
+            "Contract additive_attention_mask: postcondition violated — result.len() > 0"
+        );
+    }};
+}
+
+/// Postconditions for equation `apply_additive_mask`.
+/// Call before return: `contract_post_apply_additive_mask!(result_expr)`
+macro_rules! contract_post_apply_additive_mask {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+        debug_assert!(
+            _contract_result.len() > 0,
+            "Contract apply_additive_mask: postcondition violated — result.len() > 0"
+        );
+    }};
+}
+
+/// Postconditions for equation `cosine_similarity_rows`.
+/// Call before return: `contract_post_cosine_similarity_rows!(result_expr)`
+macro_rules! contract_post_cosine_similarity_rows {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+        debug_assert!(
+            _contract_result.len() > 0,
+            "Contract cosine_similarity_rows: postcondition violated — result.len() > 0"
+        );
+    }};
+}
+
+/// Postconditions for equation `embedding_gather`.
+/// Call before return: `contract_post_embedding_gather!(result_expr)`
+macro_rules! contract_post_embedding_gather {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+        debug_assert!(
+            _contract_result.len() > 0,
+            "Contract embedding_gather: postcondition violated — result.len() > 0"
+        );
+    }};
+}
+
+/// Postconditions for equation `gelu_exact`.
+/// Call before return: `contract_post_gelu_exact!(result_expr)`
+macro_rules! contract_post_gelu_exact {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+        debug_assert!(
+            _contract_result.len() > 0,
+            "Contract gelu_exact: postcondition violated — result.len() > 0"
+        );
+    }};
+}
+
+/// Postconditions for equation `l2_normalize_rows`.
+/// Call before return: `contract_post_l2_normalize_rows!(result_expr)`
+macro_rules! contract_post_l2_normalize_rows {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+        debug_assert!(
+            _contract_result.len() > 0,
+            "Contract l2_normalize_rows: postcondition violated — result.len() > 0"
+        );
+    }};
+}
+
+/// Postconditions for equation `masked_mean_pool`.
+/// Call before return: `contract_post_masked_mean_pool!(result_expr)`
+macro_rules! contract_post_masked_mean_pool {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+        debug_assert!(
+            _contract_result.len() > 0,
+            "Contract masked_mean_pool: postcondition violated — result.len() > 0"
+        );
+    }};
+}
+
+/// Postconditions for equation `pair_cosine_mse`.
+/// Call before return: `contract_post_pair_cosine_mse!(result_expr)`
+macro_rules! contract_post_pair_cosine_mse {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+        debug_assert!(
+            _contract_result.len() > 0,
+            "Contract pair_cosine_mse: postcondition violated — result.len() > 0"
+        );
+    }};
+}
+
+/// Postconditions for equation `setfit_encoder_forward`.
+/// Call before return: `contract_post_setfit_encoder_forward!(result_expr)`
+macro_rules! contract_post_setfit_encoder_forward {
+    ($result:expr) => {{
+        let _contract_result = &$result;
+        debug_assert!(
+            _contract_result.len() > 0,
+            "Contract setfit_encoder_forward: postcondition violated — result.len() > 0"
+        );
+    }};
+}
+
+/// Preconditions for equation `additive_attention_mask`.
+/// Domain-specific. Call: `contract_pre_additive_attention_mask!(slice_expr)`
+macro_rules! contract_pre_additive_attention_mask {
+    () => {{}};
+    ($input:expr) => {{
+        let _pv_mask = &$input;
+        debug_assert!(
+            _pv_mask.len() > 0,
+            "Contract additive_attention_mask: precondition violated — mask.len() > 0"
+        );
+    }};
+}
+
+/// Preconditions for equation `apply_additive_mask`.
+/// Domain-specific. Call: `contract_pre_apply_additive_mask!(slice_expr)`
+macro_rules! contract_pre_apply_additive_mask {
+    () => {{}};
+    ($input:expr) => {{
+        let _pv_scores = &$input;
+        debug_assert!(
+            _pv_scores.len() > 0,
+            "Contract apply_additive_mask: precondition violated — scores.len() > 0"
+        );
+    }};
+}
+
+/// Preconditions for equation `cosine_similarity_rows`.
+/// Domain-specific. Call: `contract_pre_cosine_similarity_rows!(slice_expr)`
+macro_rules! contract_pre_cosine_similarity_rows {
+    () => {{}};
+    ($input:expr) => {{
+        let _pv_a = &$input;
+        debug_assert!(
+            _pv_a.len() > 0,
+            "Contract cosine_similarity_rows: precondition violated — a.len() > 0"
+        );
+    }};
+}
+
+/// Preconditions for equation `embedding_gather`.
+/// Domain-specific. Call: `contract_pre_embedding_gather!(slice_expr)`
+macro_rules! contract_pre_embedding_gather {
+    () => {{}};
+    ($input:expr) => {{
+        let _pv_ids = &$input;
+        debug_assert!(
+            _pv_ids.len() > 0,
+            "Contract embedding_gather: precondition violated — ids.len() > 0"
+        );
+    }};
+}
+
+/// Preconditions for equation `gelu_exact`.
+/// Domain-specific. Call: `contract_pre_gelu_exact!(slice_expr)`
+macro_rules! contract_pre_gelu_exact {
+    () => {{}};
+    ($input:expr) => {{
+        let _pv_x = &$input;
+        debug_assert!(
+            _pv_x.len() > 0,
+            "Contract gelu_exact: precondition violated — x.len() > 0"
+        );
+    }};
+}
+
+/// Preconditions for equation `l2_normalize_rows`.
+/// Domain-specific. Call: `contract_pre_l2_normalize_rows!(slice_expr)`
+macro_rules! contract_pre_l2_normalize_rows {
+    () => {{}};
+    ($input:expr) => {{
+        let _pv_x = &$input;
+        debug_assert!(
+            _pv_x.len() > 0,
+            "Contract l2_normalize_rows: precondition violated — x.len() > 0"
+        );
+    }};
+}
+
+/// Preconditions for equation `masked_mean_pool`.
+/// Domain-specific. Call: `contract_pre_masked_mean_pool!(slice_expr)`
+macro_rules! contract_pre_masked_mean_pool {
+    () => {{}};
+    ($input:expr) => {{
+        let _pv_mask = &$input;
+        debug_assert!(
+            _pv_mask.len() > 0,
+            "Contract masked_mean_pool: precondition violated — mask.len() > 0"
+        );
+    }};
+}
+
+/// Preconditions for equation `pair_cosine_mse`.
+/// Domain-specific. Call: `contract_pre_pair_cosine_mse!(slice_expr)`
+macro_rules! contract_pre_pair_cosine_mse {
+    () => {{}};
+    ($input:expr) => {{
+        let _pv_labels = &$input;
+        debug_assert!(
+            _pv_labels.len() > 0,
+            "Contract pair_cosine_mse: precondition violated — labels.len() > 0"
+        );
+    }};
+}
+
+/// Preconditions for equation `setfit_encoder_forward`.
+/// Domain-specific. Call: `contract_pre_setfit_encoder_forward!(slice_expr)`
+macro_rules! contract_pre_setfit_encoder_forward {
+    () => {{}};
+    ($input:expr) => {{
+        let _pv_input_ids = &$input;
+        debug_assert!(
+            _pv_input_ids.len() > 0,
+            "Contract setfit_encoder_forward: precondition violated — input_ids.len() > 0"
+        );
+    }};
+}
+
+// Total: 657 preconditions, 20 postconditions, 0 invariants from 293 contracts + 9 equations from setfit-encoder-conformance-v1

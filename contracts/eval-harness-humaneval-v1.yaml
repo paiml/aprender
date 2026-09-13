@@ -76,19 +76,19 @@ protocol:
   dataset: openai_humaneval (164 problems, canonical v1)
   candidates:
     student_primary:
-      path: /home/noah/src/apr-leaderboard/checkpoints/qwen2.5-coder-7b-distilled-v2-q4k.apr
+      path: ${APR_LEADERBOARD_ROOT}/checkpoints/qwen2.5-coder-7b-distilled-v2-q4k.apr
       description: Distilled student, q4_k quantized, native APR format
       target_claim: 87.20% pass@1 (POC, unverified)
     student_gguf:
-      path: /home/noah/src/apr-leaderboard/checkpoints/qwen2.5-coder-7b-distilled-v2-gguf-q4k.apr
+      path: ${APR_LEADERBOARD_ROOT}/checkpoints/qwen2.5-coder-7b-distilled-v2-gguf-q4k.apr
       description: Distilled student, imported from GGUF export (secondary check for LAYOUT-001)
       target_claim: ~= student_primary (within 0.6% per quant/layout noise)
     student_merged:
-      path: /home/noah/src/apr-leaderboard/checkpoints/qwen2.5-coder-7b-distilled-merged-v2.apr
+      path: ${APR_LEADERBOARD_ROOT}/checkpoints/qwen2.5-coder-7b-distilled-merged-v2.apr
       description: Distilled student, merged pre-quantization (29G, likely FP16/FP32)
       target_claim: ">= student_primary (quantization is lossy; merged should be ceiling)"
     teacher_baseline:
-      path: /home/noah/src/apr-leaderboard/checkpoints/qwen2.5-coder-7b-instruct-q4k.apr
+      path: ${APR_LEADERBOARD_ROOT}/checkpoints/qwen2.5-coder-7b-instruct-q4k.apr
       description: Teacher reference (Qwen2.5-Coder-7B-Instruct, q4k)
       target_claim: ~= 85.98% pass@1 (verified 2026-03-28, humaneval_20260328_121327.json)
   sampling:
@@ -98,10 +98,10 @@ protocol:
     num_samples: 1
     stop_sequences: default (from chat template)
   execution: |
-    cd /home/noah/src/apr-leaderboard
+    cd ${APR_LEADERBOARD_ROOT:?}
     make eval-humaneval CHECKPOINT=<path> NUM_SAMPLES=1 TEMPERATURE=0.0
     # OR equivalent direct invocation via apr eval --benchmark humaneval
-  result_location: /home/noah/src/apr-leaderboard/results/humaneval_<TIMESTAMP>.json
+  result_location: ${APR_LEADERBOARD_ROOT}/results/humaneval_<TIMESTAMP>.json
   parse_command: |
     jq -r '.pass_at_1' /path/to/result.json
 
@@ -151,7 +151,7 @@ falsification_tests:
       Re-running the teacher on current apr eval MUST reproduce the
       2026-03-28 result within the noise band.
     command: |
-      cd /home/noah/src/apr-leaderboard
+      cd ${APR_LEADERBOARD_ROOT:?}
       make eval-humaneval CHECKPOINT=checkpoints/qwen2.5-coder-7b-instruct-q4k.apr
     expected: pass_at_1 ∈ [84.5, 87.0] (85.98 ± 1.5 to allow cross-run noise)
     fails_if: |
@@ -164,7 +164,7 @@ falsification_tests:
       Primary student must meet AC-SHIP1-005 (≥86.0%). This is the
       make-or-break test for MODEL-1.
     command: |
-      cd /home/noah/src/apr-leaderboard
+      cd ${APR_LEADERBOARD_ROOT:?}
       make eval-humaneval CHECKPOINT=checkpoints/qwen2.5-coder-7b-distilled-v2-q4k.apr
     expected: pass_at_1 >= 86.0
     fails_if: |
@@ -205,7 +205,7 @@ falsification_tests:
     command: |
       # Compare old teacher result vs new student result per-problem
       jq '.problems | map(select(.passed == 0)) | .[].task_id' \
-         /home/noah/src/apr-leaderboard/results/humaneval_20260328_121327.json
+         ${APR_LEADERBOARD_ROOT}/results/humaneval_20260328_121327.json
       # (then check student result for same task_ids)
     expected: |
       At least 2 of the teacher-failed problems pass on student.
@@ -312,8 +312,8 @@ references:
     - contracts/model-families/qwen2.yaml
     - contracts/chat-templates-v1.yaml
     - contracts/tensor-layout-v1.yaml
-  poc_origin: /home/noah/src/apr-leaderboard (apr-leaderboard POC repo)
-  prior_teacher_result: /home/noah/src/apr-leaderboard/results/humaneval_20260328_121327.json
+  poc_origin: ${APR_LEADERBOARD_ROOT} (apr-leaderboard POC repo)
+  prior_teacher_result: ${APR_LEADERBOARD_ROOT}/results/humaneval_20260328_121327.json
   dataset:
     name: OpenAI HumanEval
     paper: "Chen et al. 2021, Evaluating Large Language Models Trained on Code (arXiv:2107.03374)"
@@ -336,7 +336,7 @@ validation_result_v1_1:
     FALSIFY-HE-002:
       status: FAILED (aborted early — garbage output detected)
       command_run: |
-        cd /home/noah/src/apr-leaderboard
+        cd ${APR_LEADERBOARD_ROOT:?}
         APR=/mnt/nvme-raid0/targets/aprender/release/apr \
           make eval-humaneval CHECKPOINT=checkpoints/qwen2.5-coder-7b-distilled-v2-q4k.apr
       observation: |

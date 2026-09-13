@@ -101,7 +101,7 @@ impl<P: DecisionPath + Serialize, W: Write + Send + Sync> TraceCollector<P>
     }
 
     fn flush(&mut self) -> std::io::Result<()> {
-        let traces: Vec<_> = self.buffer.drain(..).collect();
+        let traces: Vec<_> = std::mem::take(&mut self.buffer);
         for trace in traces {
             self.write_trace(&trace)?;
         }

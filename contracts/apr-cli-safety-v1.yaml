@@ -85,7 +85,7 @@ qa_gate:
   checks:
   - validation
   - falsification
-  pass_criteria: All 3 falsification tests + 4 proof obligations pass
+  pass_criteria: All 5 falsification tests + 4 proof obligations pass
 verification_summary:
   total_obligations: 4
   l2_property_tested: 4

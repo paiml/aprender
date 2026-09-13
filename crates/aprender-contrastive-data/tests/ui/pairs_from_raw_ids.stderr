@@ -1,0 +1,15 @@
+error[E0308]: mismatched types
+  --> tests/ui/pairs_from_raw_ids.rs:16:30
+   |
+16 |     let _ = PairSampler::new(ids, &cfg);
+   |             ---------------- ^^^ expected `&Selection`, found `&Vec<String>`
+   |             |
+   |             arguments to this function are incorrect
+   |
+   = note: expected reference `&Selection`
+              found reference `&Vec<String>`
+note: associated function defined here
+  --> src/pairs.rs
+   |
+   |     pub fn new(sel: &'a Selection, cfg: &PairConfig) -> Result<Self, ContrastiveDataError> {
+   |            ^^^

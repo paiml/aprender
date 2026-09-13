@@ -30,7 +30,12 @@ impl CsrGraph {
     /// # Errors
     ///
     /// Returns error if file I/O fails or Arrow conversion fails
-    #[allow(clippy::unused_async)] // Async API for future I/O operations
+    // Inherent impl, not a trait impl, despite the lint's name: dropping the
+    // `async` and returning `std::future::ready(..)` would run the whole
+    // parquet write EAGERLY at call time instead of at await time, which is a
+    // behaviour change, not a cleanup. Same reason as the `unused_async` allow
+    // that has been here since this was written.
+    #[allow(unknown_lints, clippy::unused_async, clippy::unused_async_trait_impl)] // Async API for future I/O operations
     pub async fn write_parquet<P: AsRef<Path>>(&self, path: P) -> Result<()> {
         let base_path = path.as_ref();
 
@@ -48,7 +53,7 @@ impl CsrGraph {
     /// # Errors
     ///
     /// Returns error if files don't exist or Arrow conversion fails
-    #[allow(clippy::unused_async)] // Async API for future I/O operations
+    #[allow(unknown_lints, clippy::unused_async, clippy::unused_async_trait_impl)] // Async API for future I/O operations
     pub async fn read_parquet<P: AsRef<Path>>(path: P) -> Result<Self> {
         let base_path = path.as_ref();
 

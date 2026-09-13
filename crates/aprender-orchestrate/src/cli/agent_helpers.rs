@@ -12,7 +12,7 @@ pub(super) fn try_auto_pull(manifest: &batuta::agent::AgentManifest) -> anyhow::
         println!("  Quantization: {}, Timeout: 600s", quant);
         match manifest.model.auto_pull(600) {
             Ok(path) => {
-                println!("{} Model downloaded: {}", "✓".green(), path.display(),);
+                println!("{} Model downloaded: {}", "✓".green(), path.display());
             }
             Err(e) => {
                 anyhow::bail!("auto-pull failed: {e}");

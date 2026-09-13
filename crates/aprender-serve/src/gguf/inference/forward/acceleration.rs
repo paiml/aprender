@@ -143,7 +143,7 @@ impl OwnedQuantizedModel {
             GGUF_TYPE_F32 => {
                 let num_floats = weight.data.len() / 4;
                 let mut output = vec![0.0f32; num_floats];
-                for (i, chunk) in weight.data.chunks_exact(4).enumerate() {
+                for (i, chunk) in weight.data.as_chunks::<4>().0.iter().enumerate() {
                     output[i] = f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
                 }
                 Ok(output)
@@ -151,13 +151,17 @@ impl OwnedQuantizedModel {
             // F16 weights — widen each little-endian half to f32.
             GGUF_TYPE_F16 => Ok(weight
                 .data
-                .chunks_exact(2)
+                .as_chunks::<2>()
+                .0
+                .iter()
                 .map(|b| half::f16::from_le_bytes([b[0], b[1]]).to_f32())
                 .collect()),
             // BF16 weights — left-shift the 16 mantissa/exponent bits into f32.
             GGUF_TYPE_BF16 => Ok(weight
                 .data
-                .chunks_exact(2)
+                .as_chunks::<2>()
+                .0
+                .iter()
                 .map(|b| {
                     let bits = u16::from_le_bytes([b[0], b[1]]);
                     f32::from_bits((bits as u32) << 16)

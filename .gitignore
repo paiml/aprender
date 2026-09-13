@@ -57,6 +57,18 @@ crates/aprender-shell/qa_test_artifacts/
 # PMAT caches and generated data (recursive — covers root AND subcrates)
 # CB-510 lesson: non-recursive patterns miss crates/*/.pmat/ files
 **/.pmat/
+
+# predict_merge.sh records (BSE-14): a per-branch prediction of whether
+# merge(origin/main, HEAD) passes the tree-property guards. Machine-local
+# and branch-keyed -- never meant to be committed.
+/.predict/
+# Artefacts the dogfood protocol creates (skill rule: gitignore all three).
+# .pv was TRACKED until #2644's twice-run showed every dogfood run mutates
+# contracts.idx/lint-previous.json, flipping the NEXT run's git-clean gate:
+# the runner dirtied the tree it then measured (finding TWICE-1; also CI-5 —
+# a tracked index is stale by construction, pv regenerates it locally).
+**/.dogfood/
+**/.pv/
 **/.pmat-metrics/
 **/.pmat-qa/
 **/.pmat-work/
@@ -89,3 +101,28 @@ per-layer-trace/
 # - aprender-train/checkpoints -> machine-local /mnt/... (package-excluded)
 /crates/aprender-present/contracts
 /crates/aprender-train/checkpoints
+
+# Python bytecode from scripts/*.py (dogfood gate helpers import each other)
+__pycache__/
+*.pyc
+
+# Root-level scratch that was once committed by accident (removed in 0.65.0):
+# pmat probe outputs, a stray simulation binary and its source, an 8.9 MB
+# strings dump, ticket lists. Root-anchored (CB-510): `/` so src/models is
+# never caught by a bare pattern.
+/*.out
+/remaining*.txt
+/gh_strings.txt
+/sim4
+/sim4.rs
+/.lint-cache
+
+# `pmat work` scratch files for docs/roadmaps/roadmap.yaml — never commit
+# these; a tracked copy races the real file in every future diff
+# (BSE-09a, PMAT-1065, checked by scripts/check_roadmap_sorted.sh).
+docs/roadmaps/*.bak
+docs/roadmaps/*.lock
+
+# Generated on demand by crates/apr-cli/tests/pixel_regression.rs (28 MB; never commit it --
+# a committed copy makes publish_atomically() unreachable, which hid a real race, see #3051)
+/crates/apr-cli/playbooks/snapshots/test.apr

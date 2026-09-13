@@ -22,7 +22,6 @@ metadata:
   - 'crates/aprender-core/src/autograd/ops/activation.rs — Tensor::softmax / Tensor::transpose (differentiable)'
   - 'torch.nn.Softmax(dim): https://pytorch.org/docs/stable/generated/torch.nn.Softmax.html'
 
-kind: KernelContract
 name: nn-softmax-dim
 version: 1.0.0
 scope: aprender-core nn::Softmax module (Module::forward dim-awareness)

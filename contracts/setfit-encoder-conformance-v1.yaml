@@ -1,0 +1,864 @@
+contract: setfit-encoder-conformance
+metadata:
+  # 2.0.0, not 1.1.0: `pv diff` classifies this as MAJOR. Both changes are strictenings
+  # — the post-step tolerance tightens 16x and a new obligation appears — so an
+  # implementation that satisfied 1.0.0 is not guaranteed to satisfy this. The file keeps
+  # its -v1 name; `tensor-layout-v1.yaml` sits at 2.0.0 on the same convention.
+  version: 2.0.0
+  created: '2026-08-08'
+  author: PAIML Engineering
+  description: >
+    Phase 1 conformance gate for the differentiable MiniLM SetFit sentence encoder
+    (ENC-01..ENC-06). Declares every equation the phase binds against — the six
+    missing differentiable primitives, the exact-erf GELU, the broadcast mask
+    application, the SetFit pair objective, and the composed encoder forward — plus
+    the proof obligations that make "the encoder actually trains" falsifiable.
+
+    ENC-01 pinned-revision import with typed rejection of unsupported variants.
+    ENC-02 batched tokenization producing first-class token facts (ids, type ids,
+    attention mask, truncation facts) with parity against the pinned HF tokenizer.
+    ENC-03 a single batched Transformer -> masked mean pooling -> L2 normalization
+    forward path that is graph-connected end to end.
+    ENC-04 named parameters receive finite gradients and demonstrably move under a
+    controlled AdamW step.
+    ENC-05 train/eval mode switching changes no registered parameter value.
+    ENC-06 a tensor-valued cosine-similarity MSE pair loss (NOT an f32-returning
+    metric) whose backward reaches the encoder body.
+
+    This contract exists because the expensive failures in this repository have never
+    been missing math — they were silently DETACHED GRAPHS around existing math
+    (PMAT-913 embeddings, PMAT-914 attention, PMAT-922 dropout, PMAT-931 LoRA). Every
+    obligation below is written so a severed edge turns it RED.
+
+    It REFERENCES the contracts listed in depends_on and edits none of them; their
+    current consumers stay stable (D-23).
+
+    TOLERANCE POLICY (D-14): the numeric tolerance table below is FROZEN. It was
+    measured by scripts/setfit_fixtures/generate_fixtures.py from the pinned reference
+    fixtures and committed in its own commit BEFORE any Rust-vs-fixture comparison
+    existed, so no value here was ever chosen by looking at a Rust discrepancy. The
+    source of record is crates/aprender-core/tests/fixtures/setfit/tolerances_measured.json,
+    whose bytes are covered by manifest.sha256. Widening any value is a contract edit
+    that `pv diff` flags with a semver bump.
+
+    Each family's tolerance is `max(10 * measured_f32_f64_delta, floor)`, where
+
+        floor(W) = 8 * sqrt(W) * EPS_F32,   EPS_F32 = 1.1920928955078125e-07
+
+    and W is the family's characteristic reduction width. THE FLOOR IS MANDATORY, not
+    belt-and-braces: an f32/f64 round trip sums in the SAME order in both paths, so it
+    does not measure the Rust-vs-PyTorch reduction-ORDER differences that dominate real
+    parity error, and `10 * delta` alone can collapse to zero. That is not hypothetical
+    here — full_model_reference measured a delta of EXACTLY 0.0, so without a floor its
+    tolerance would have been 0.0 and the comparison silently disabled (T-1-07).
+
+    | family               |    W | measured delta | frozen tolerance |
+    |----------------------|------|----------------|------------------|
+    | tokenizer            |    - |            n/a | EXACT (none)     |
+    | activation           |    1 |   4.47239421e-07 |   4.47239421e-06 |
+    | forward_per_layer    |  256 |   7.05113256e-07 |   1.52587891e-05 |
+    | pooling_normalize    |   64 |   7.39103287e-08 |   7.62939453e-06 |
+    | loss_pair            |   64 |   1.51211275e-07 |   7.62939453e-06 |
+    | batch_invariance     |   64 |   5.21540642e-08 |   7.62939453e-06 |
+    | gradients            | 1024 |   3.63171590e-07 |   3.05175781e-05 |
+    | optimizer_step       | 1024 |   3.63171590e-07 |   3.05175781e-05 |
+    | full_model_reference | 1536 |   0.00000000e+00 |   3.73762473e-05 |
+
+    The tokenizer family admits NO tolerance: ids, type ids and masks are integers and
+    the comparison is exact integer equality.
+
+    ZERO-GRADIENT FLOOR (ENC-04): 6.1291398e-05, carried as the `tolerance` of
+    OBLIG-ENC-04-GRADIENT-AND-STEP-GATE because that is the threshold its (d)/(e)
+    clauses test against. It is one order of magnitude below the smallest genuinely
+    non-zero reference max|grad|, read off the observed distribution rather than
+    assumed. The measured exempt tensors sit at ~7e-11 — six orders of magnitude below
+    the floor, so the split is unambiguous.
+  references:
+  - 'Tunstall et al. (2022) Efficient Few-Shot Learning Without Prompts (SetFit)'
+  - 'Reimers & Gurevych (2019) Sentence-BERT: Sentence Embeddings using Siamese BERT-Networks'
+  - 'Devlin et al. (2019) BERT: Pre-training of Deep Bidirectional Transformers'
+  - 'Wang et al. (2020) MiniLM: Deep Self-Attention Distillation for Task-Agnostic Compression'
+  - 'Hendrycks & Gimpel (2016) Gaussian Error Linear Units (GELUs)'
+  - 'Vaswani et al. (2017) Attention Is All You Need'
+  - 'sentence-transformers/all-MiniLM-L6-v2 @ 1110a243fdf4706b3f48f1d95db1a4f5529b4d41'
+  - 'crates/aprender-core/src/autograd/ops/'
+  - 'crates/aprender-core/src/autograd/grad_fn.rs'
+  depends_on:
+  - encoder-forward-v1
+  - nn-training-gradient-path-v1
+  - pool-flatten-embedding-backward-gradflow-v1
+  - transformer-end-to-end-trainable-v1
+  - embedding-lookup-v1
+  - learned-position-embedding-v1
+  - lora-adapter-trains-base-frozen-v1
+  - codebert-tokenizer-validation-v1
+  - tensor-layout-v1
+
+equations:
+
+  # --------------------------------------------------------------------------
+  # 1. embedding_gather (plan 01-01)
+  # --------------------------------------------------------------------------
+  embedding_gather:
+    formula: out[b][s][h] = W[ids[b*S + s]][h] ; dW[ids[i]] += grad_out[i] (scatter-ADD)
+    domain: W in R^{V x H} row-major, ids in {0..V-1}^{B*S}, B >= 1, S >= 1, H >= 1
+    codomain: R^{B x S x H} row-major
+    invariants:
+    - 'Row-major layout (LAYOUT-001): out is indexed b*S*H + s*H + h; W is indexed id*H + h'
+    - Graph connectivity — when W requires grad the output requires grad and carries an
+      EmbeddingBackward edge back to W; the integer ids carry no gradient
+    - Backward SCATTER-ADDs, never overwrites — a token id appearing k times in the
+      batch accumulates k gradient rows into that weight row
+    - Fail-closed on out-of-vocabulary ids — an id at or above V is a typed error, never
+      a zero-filled row (the aprender-train zero-fill and the qwen2 N-09 warn-and-zero
+      escape are both rejected here)
+    - The element count B*S*H is computed with checked_mul and rejected on overflow
+      BEFORE any allocation
+    - A non-finite value anywhere in W is a typed error, so NaN cannot enter the graph
+      through the gather
+    preconditions:
+    - 'ids.len() > 0'
+    - 'ids.len() == batch * seq'
+    - vocab_size > 0
+    postconditions:
+    - 'result.len() > 0'
+
+  # --------------------------------------------------------------------------
+  # 2. additive_attention_mask (plan 01-01) — CONSTANT builder
+  # --------------------------------------------------------------------------
+  additive_attention_mask:
+    formula: M[b][0][0][s] = 0.0 if mask[b*S + s] == 1 else NEG_MASK, NEG_MASK = -1e9
+    domain: mask in {0,1}^{B*S}, B >= 1, S >= 1, at least one kept position per row
+    codomain: R^{B x 1 x 1 x S} row-major, requires_grad == false
+    invariants:
+    - 'Row-major layout (LAYOUT-001): shape is exactly [B,1,1,S] so it broadcasts over
+      [B,heads,T,S] attention scores'
+    - 'CARVE-OUT — this equation takes NO differentiable input, so it is a CONSTANT and
+      the general graph-connectivity invariant does NOT apply to it. The output has
+      requires_grad == false by construction and records no grad_fn. The masking
+      graph-connectivity guarantee lives on `apply_additive_mask`, not here.'
+    - 'NEG_MASK is a large FINITE negative constant (-1e9), never f32::MIN and never
+      f32::NEG_INFINITY. All-padding rows are rejected up front, so every softmax row
+      keeps at least one valid key and exp(-1e9 - max) underflows to exactly 0.0 in f32
+      without -inf/NaN arithmetic.'
+    - An all-padding row is a typed error — it would otherwise produce a 0/0 softmax
+    - A mask value other than 0 or 1 is a typed error; a 2 is never silently treated as
+      "keep"
+    preconditions:
+    - 'mask.len() > 0'
+    - 'mask.len() == batch * seq'
+    postconditions:
+    - 'result.len() > 0'
+
+  # --------------------------------------------------------------------------
+  # 3. apply_additive_mask (plan 01-09) — the graph-preserving APPLICATION
+  # --------------------------------------------------------------------------
+  apply_additive_mask:
+    formula: masked[b][h][t][s] = scores[b][h][t][s] + M[b][0][0][s] (full broadcast)
+    domain: scores in R^{B x heads x T x S}, M in R^{B x 1 x 1 x S}
+    codomain: R^{B x heads x T x S} row-major
+    invariants:
+    - 'Row-major layout (LAYOUT-001)'
+    - 'Graph connectivity — given a scores tensor with requires_grad, the masked output
+      MUST also carry requires_grad AND a recorded grad_fn edge back to the scores
+      tensor, at EVERY broadcast shape combination (B>1, heads>1, T != S).'
+    - 'The mask is broadcast over heads and query positions, never zipped. The
+      pre-existing add_mask in nn/transformer/positional_encoding.rs used a truncating
+      .zip(), which silently stops at the shorter iterator and records no graph edge —
+      that defect is what plan 01-09 repairs, and this invariant is its gate.'
+    - Every kept position is numerically unchanged; every padded key position is shifted
+      by exactly NEG_MASK
+    preconditions:
+    - 'scores.len() > 0'
+    postconditions:
+    - 'result.len() > 0'
+
+  # --------------------------------------------------------------------------
+  # 4. masked_mean_pool (plan 01-01)
+  # --------------------------------------------------------------------------
+  masked_mean_pool:
+    formula: out[b][h] = (sum over s of mask[b][s] * hidden[b][s][h]) / n_b, n_b = sum over s of mask[b][s]
+    domain: hidden in R^{B x S x H} row-major, mask in {0,1}^{B*S}, n_b >= 1 for every b
+    codomain: R^{B x H} row-major
+    invariants:
+    - 'Row-major layout (LAYOUT-001): hidden is indexed b*S*H + s*H + h'
+    - Graph connectivity — when hidden requires grad the output requires grad and carries
+      a MaskedMeanPoolBackward edge back to hidden
+    - 'Checked denominator (D-03): a row whose valid count is zero is a typed error
+      raised BEFORE the pool is computed, so no NaN or Inf output is reachable'
+    - Backward routes grad_out[b][h] / n_b to every VALID position (b,s,h) and exactly
+      0.0 to every padded position
+    - The denominator is PER ROW — a mixed-length batch produces different divisors per
+      row; a single uniform denominator is a defect this invariant catches
+    preconditions:
+    - 'mask.len() > 0'
+    - 'mask.len() == batch * seq'
+    postconditions:
+    - 'result.len() > 0'
+
+  # --------------------------------------------------------------------------
+  # 5. gelu_exact (plan 01-09, amendment A-03)
+  # --------------------------------------------------------------------------
+  gelu_exact:
+    formula: gelu_exact(x) = 0.5 * x * (1 + erf(x / sqrt(2)))
+    domain: x in R
+    codomain: R
+    invariants:
+    - 'The EXACT erf form is required. This is the function HuggingFace BERT evaluates
+      when hidden_act == "gelu". The tanh approximation
+      0.5*x*(1+tanh(sqrt(2/pi)*(x+0.044715*x^3))) is a DIFFERENT function and is NOT an
+      acceptable implementation of this equation — substituting it is a parity defect,
+      not a rounding difference. The pre-existing Tensor::gelu in
+      autograd/ops/activation.rs is the tanh form and must not be reused here.'
+    - Graph connectivity — the output carries a GeluExactBackward edge back to x
+    - 'Derivative: d/dx gelu_exact(x) = 0.5*(1 + erf(x/sqrt(2))) + x*exp(-x^2/2)/sqrt(2*pi)'
+    - Finite for every finite input; monotone increasing is NOT claimed (gelu has a
+      shallow negative minimum near x = -0.75)
+    preconditions:
+    - 'x.len() > 0'
+    postconditions:
+    - 'result.len() > 0'
+
+  # --------------------------------------------------------------------------
+  # 6. l2_normalize_rows (plan 01-03)
+  # --------------------------------------------------------------------------
+  l2_normalize_rows:
+    formula: out[b][h] = x[b][h] / max(||x[b]||_2, eps)
+    domain: x in R^{B x H} row-major, eps > 0
+    codomain: R^{B x H} row-major
+    invariants:
+    - 'Row-major layout (LAYOUT-001)'
+    - Graph connectivity — the output carries an L2NormalizeRowsBackward edge back to x
+    - The epsilon floor is EXPLICIT and applied to the norm, so a zero row yields a zero
+      row rather than NaN
+    - Each output row has unit L2 norm whenever the input row norm exceeds eps
+    preconditions:
+    - 'x.len() > 0'
+    - eps > 0.0
+    postconditions:
+    - 'result.len() > 0'
+
+  # --------------------------------------------------------------------------
+  # 7. cosine_similarity_rows (plan 01-03)
+  # --------------------------------------------------------------------------
+  # D12 RESOLUTION (2026-08-08, plan 01-08). The formula below previously read
+  # `out[b] = <a[b], c[b]> / max(||a[b]||_2 * ||c[b]||_2, eps)` — the PRODUCT
+  # clamped once. The implementation (plan 01-03, `autograd/ops/similarity.rs`)
+  # clamps each FACTOR independently, which is also what
+  # `torch.nn.functional.cosine_similarity` does and what 01-03's four-branch
+  # finite-difference gradchecks presuppose. The PROSE was wrong, not the code:
+  # this reword makes the contract describe the shipped derivative. Per D12's
+  # recorded fix direction, the implementation was NOT changed — changing it to
+  # match the old prose would destroy the per-input branch independence the FD
+  # tests prove.
+  cosine_similarity_rows:
+    formula: out[b] = <a[b], c[b]> / (max(||a[b]||_2, eps) * max(||c[b]||_2, eps))
+    domain: a, c in R^{B x H} row-major, eps > 0
+    codomain: R^{B}, each element in [-1, 1]
+    invariants:
+    - 'Row-major layout (LAYOUT-001)'
+    - Graph connectivity — the output carries a CosineSimilarityBackward edge back to
+      BOTH inputs; a one-sided edge silently freezes half the siamese encoder
+    - The epsilon floor is applied to EACH norm independently, so a zero row yields
+      0.0 rather than NaN. Per-factor and product clamping COINCIDE exactly wherever
+      both norms exceed eps — i.e. across the whole non-degenerate domain, which is
+      everything the encoder sees with real weights — and differ only when at least
+      one row is degenerate. Per-factor is the form that keeps a's clamp branch from
+      changing b's gradient, which is why the derivative is specified and tested that
+      way (01-03)
+    - Values stay within [-1, 1] up to floating-point rounding
+    preconditions:
+    - 'a.len() > 0'
+    - 'a.len() == b.len()'
+    - eps > 0.0
+    postconditions:
+    - 'result.len() > 0'
+
+  # --------------------------------------------------------------------------
+  # 8. mse_loss (plan 01-03) — tensor-valued, NOT the f32 metric
+  # --------------------------------------------------------------------------
+  #
+  # NOTE (macro collision, deliberate): `loss-functions-v1` also declares an
+  # equation named `mse_loss`. `pv codegen` derives macro names from the equation
+  # name, so both contracts emit `contract_pre_mse_loss!` / `contract_inv_mse_loss!`
+  # into generated_contracts.rs and the later definition shadows the earlier one.
+  # The preconditions/invariants below are chosen so the EMITTED macros are
+  # byte-identical to the loss-functions-v1 ones (primary variable `predicted`,
+  # single surviving assertion `predicted.len() > 0`, prose-only invariants that
+  # codegen skips). Shadowing is therefore a semantic no-op. Do not add ASCII
+  # comparison operators or `result.` to the invariants below without re-checking
+  # the generated output.
+  mse_loss:
+    formula: MSE = (1/n) * sum over i of (predicted[i] - target[i])^2
+    domain: predicted in R^n graph-connected, target in R^n detached, n >= 1
+    codomain: Tensor of shape [1], value in [0, inf)
+    invariants:
+    - MSE ≥ 0 for every input
+    - MSE = 0 iff predicted equals target elementwise
+    - 'Returns a graph-connected Tensor of shape [1], NOT an f32. The f32-returning
+      helpers in nn/loss.rs and nn/self_supervised.rs are ANTI-analogs — reusing them
+      recreates PF-001, where the loss decreases while the encoder never moves.'
+    - Graph connectivity — the output carries an MseBackward edge back to predicted; the
+      target is detached and receives no gradient
+    - 'Gradient: dMSE/dpredicted[i] = 2 * (predicted[i] - target[i]) / n'
+    preconditions:
+    - 'predicted.len() > 0'
+    - 'predicted.len() == target.len()'
+
+  # --------------------------------------------------------------------------
+  # 9. pair_cosine_mse (plan 01-07) — the SetFit objective, its own equation
+  # --------------------------------------------------------------------------
+  pair_cosine_mse:
+    formula: L = (1/B) * sum over b of (cosine_similarity_rows(u, v)[b] - labels[b])^2
+    domain: u, v in R^{B x H} sentence embeddings, labels in {0,1}^B, B >= 1
+    codomain: Tensor of shape [1], value in [0, 4]
+    invariants:
+    - 'This is a DISTINCT equation, NOT an alias of mse_loss. Its inputs are two [B,H]
+      embedding matrices plus binary pair labels, and its identity as the SetFit
+      CosineSimilarityLoss objective is what ENC-06 gates. Binding it to mse_loss would
+      lose the two-embedding-input obligation.'
+    - Graph connectivity — the loss carries edges back to BOTH embedding matrices, so a
+      backward pass reaches the shared encoder body through both siamese branches
+    - A label of 1 pulls the pair together and a label of 0 pushes it apart; the loss is
+      zero exactly when every pair cosine equals its label
+    - 'Batch reduction is MEAN over pairs, matching SetFit CosineSimilarityLoss'
+    preconditions:
+    - 'labels.len() > 0'
+    - 'labels.len() == batch'
+    postconditions:
+    - 'result.len() > 0'
+
+  # --------------------------------------------------------------------------
+  # 10. setfit_encoder_forward (plan 01-06)
+  # --------------------------------------------------------------------------
+  setfit_encoder_forward:
+    formula: >
+      e = l2_normalize_rows(masked_mean_pool(encoder_layers(embed(ids) + pos + type,
+      apply_additive_mask(scores, additive_attention_mask(mask))), mask), eps)
+    domain: ids in {0..V-1}^{B*S}, mask in {0,1}^{B*S}, pinned MiniLM-L6 architecture
+    codomain: R^{B x H} row-major unit-norm sentence embeddings
+    invariants:
+    - 'Row-major layout (LAYOUT-001) at every intermediate'
+    - 'Graph connectivity end to end — NO intermediate is materialized with
+      Tensor::new/Tensor::from_vec from a .data() read. Every step goes through an
+      autograd-aware op with a recorded grad_fn. This is the PMAT-913/914/922/931 sever
+      class and the reason this phase exists.'
+    - 'Padding invariance — encoding a sentence alone (batch 1, its own length) and
+      encoding it inside a mixed-length padded batch produce the same embedding within
+      the pinned tolerance. Batching must not change semantics (PF-014).'
+    - 'ONE forward loop — a private forward_layers returns (embeddings_out,
+      per_layer_outputs) and BOTH the production forward and the conformance-gated
+      per-layer forward delegate to it, so the per-layer parity gate can never compare
+      against a path production does not run.'
+    - 'The FFN activation is gelu_exact, never the tanh gelu'
+    preconditions:
+    - 'input_ids.len() > 0'
+    - 'input_ids.len() == batch * seq'
+    postconditions:
+    - 'result.len() > 0'
+
+proof_obligations:
+
+- type: equivalence
+  property: >
+    OBLIG-ENC-02-TOKENIZER-PARITY: for every sentence in the frozen fixture corpus, the
+    Rust batched tokenizer produces input ids, token type ids, attention mask, and
+    truncation facts IDENTICAL to the pinned HuggingFace tokenizer for
+    sentence-transformers/all-MiniLM-L6-v2 @ 1110a243fdf4706b3f48f1d95db1a4f5529b4d41.
+    Ids and masks are integers, so this comparison is EXACT — no tolerance applies. The
+    corpus must include CJK, accented, cased, and over-length inputs, because those are
+    where normalization and pre-tokenization diverge silently. Owned by plan 01-05.
+  formal: rust_batch.input_ids == fixture.input_ids && rust_batch.attention_mask == fixture.attention_mask
+  applies_to: all
+
+- type: equivalence
+  property: >
+    OBLIG-ENC-03-PER-LAYER-FORWARD-PARITY: the token-level output of EVERY transformer
+    layer matches the frozen torch reference for the same input batch, within the
+    tolerance table pinned by plan 01-04. Per-layer intermediates are required (D-15) so
+    a mismatch localizes to one layer instead of forcing a six-layer bisect with no
+    ground truth. Compared against real slice weights, never synthetic shapes — PF-011
+    identifies shape-only testing as how overclaimed compatibility ships. Owned by
+    plans 01-04 and 01-06.
+  formal: for all layers l, |rust_layer_out[l] - fixture_layer_out[l]| <= tol_layer
+  tolerance: 1.52587891e-05
+  applies_to: all
+
+- type: equivalence
+  property: >
+    OBLIG-ENC-03-POOLED-EMBEDDING-PARITY: the masked mean pooled vector AND the
+    L2-normalized sentence embedding each match the frozen torch reference for the same
+    batch, within the pinned tolerance. Both stages are compared, not just the final
+    embedding: normalization is a contraction, so a wrong pooling denominator can be
+    partially masked by it, and comparing only the normalized output lets a
+    uniform-denominator bug survive on a mixed-length batch. The reference pipeline is
+    sentence-transformers 5.7.0 semantics read from source — sum(x*mask) /
+    clamp(mask.sum(), min=1e-9), then F.normalize(p=2, dim=1) with eps 1e-12. Owned by
+    plans 01-04 and 01-06.
+  formal: '|rust_pooled - fixture.pooled| <= tol_pool && |rust_normalized - fixture.normalized| <= tol_pool'
+  tolerance: 7.62939453e-06
+  applies_to: all
+
+- type: equivalence
+  property: >
+    OBLIG-ENC-03-ACTIVATION-PARITY: gelu_exact matches the frozen reference activation
+    elementwise within the pinned tolerance across a sweep that includes the negative
+    minimum near x = -0.75 and the saturating tails. A tanh-approximation implementation
+    is REJECTED here. The separation is now MEASURED rather than estimated: over the
+    committed [-6, 6] grid the exact-erf and tanh forms differ by at most 4.734993e-04,
+    attained near x = -2.699 (plan text predicted "roughly 1e-3 near |x| ~ 2"; the
+    measurement is recorded instead). That gap is ~106x the frozen tolerance below and
+    ~3 orders of magnitude above f32 round-trip noise, so this obligation SEPARATES the
+    two functions instead of absorbing the difference into tolerance. Owned by plan
+    01-09.
+  formal: '|rust_gelu_exact(x) - 0.5*x*(1 + erf(x/sqrt(2)))| <= tol_activation'
+  tolerance: 4.47239421e-06
+  applies_to: all
+
+- type: invariant
+  property: >
+    OBLIG-ENC-03-PADDING-INVARIANCE: encoding a sentence as a batch of one and encoding
+    the same sentence inside a mixed-length padded batch yield the same sentence
+    embedding within the pinned tolerance. This is the falsifier for a uniform pooling
+    denominator, a truncating mask zip, and any mask that fails to broadcast over heads
+    or query positions (PF-014). Owned by plans 01-06 and 01-09.
+  formal: '|encode([s])[0] - encode([s, other, longer])[0]| <= tol_padding'
+  tolerance: 7.62939453e-06
+  applies_to: all
+
+- type: equivalence
+  property: >
+    OBLIG-ENC-04-NAMED-GRADIENT-PARITY: for every trainable tensor, the Rust gradient
+    matches the torch reference gradient for the same fixed batch and loss within the
+    pinned tolerance, keyed by HF dotted name (D-18, e.g.
+    encoder.layer.0.attention.self.query.weight) so no name translation sits at the
+    phase's highest-risk gate. Coverage is TOTAL — a name present in the reference and
+    absent from the Rust traversal is a failure, not a skip. Owned by plans 01-04 and
+    01-07.
+  formal: for all names n, |rust_grad[n] - fixture_grad[n]| <= tol_grad
+  tolerance: 3.05175781e-05
+  applies_to: all
+
+- type: invariant
+  property: >
+    OBLIG-ENC-04-GRADIENT-AND-STEP-GATE: after one backward pass and one controlled
+    AdamW step on a fixed deterministic batch, ALL of the following hold.
+
+    (a) FINITENESS, every tensor: for EVERY named trainable tensor a gradient exists and
+    every element is finite — no NaN, no Inf. This admits no exemptions.
+
+    (b) NON-ZERO AGGREGATE, every contracted component: for EVERY contracted component
+    (embeddings; per-layer attention; per-layer FFN; per-layer norm) the AGGREGATE
+    gradient L2 norm across that component's tensors is strictly greater than zero. A
+    severed graph anywhere in the body drives some component aggregate to exactly zero
+    and turns this RED.
+
+    (c) PER-TENSOR NON-ZERO, non-exempt tensors only: a strictly positive per-tensor
+    gradient norm is required for every tensor ABSENT from the exemption list.
+
+    (d) THE EXEMPTION LIST IS DATA, NOT PROSE: it is gradients.json.analytically_zero[],
+    emitted by the Python fixture generator (plan 01-04) as the set of tensors whose
+    torch reference gradient satisfies max|g| <= zero_grad_floor, each entry carrying a
+    justification string. Rust never decides its own exemptions.
+
+    (e) EXEMPTION IS TWO-SIDED: a tensor on the exemption list must ITSELF satisfy
+    max|g| <= zero_grad_floor. An unexpectedly LARGE gradient on an exempt tensor is a
+    gate FAILURE, not a pass — the list is a pinned prediction, not a mute button.
+
+    (f) POST-STEP DELTA mirrors (b)/(c): per-component aggregate parameter delta > 0;
+    per-tensor delta required for non-exempt tensors; for exempt tensors only the
+    post-step parity against optimizer_step.json is asserted.
+
+    The known exempt member is attention.self.key.bias — see rationale for the proof
+    that its gradient is analytically zero. The earlier "non-zero gradient on every
+    trainable tensor" phrasing is mathematically unsatisfiable against a CORRECT
+    implementation and would have failed the phase on correct code; it is replaced by
+    the finite-everywhere + non-zero-aggregate + two-sided-exemption semantics above.
+    Owned by plans 01-04 and 01-07.
+  formal: >
+    for all n: is_finite(grad[n]) AND for all components c: ||grad[c]||_2 > 0 AND
+    for all n not in analytically_zero: ||grad[n]||_2 > 0 AND
+    for all n in analytically_zero: max|grad[n]| <= zero_grad_floor
+  # This obligation's `tolerance` is the FROZEN zero_grad_floor from
+  # gradients.json, i.e. the threshold clauses (d) and (e) test against -- not a
+  # comparison epsilon. Post-step VALUE parity has its own obligation below.
+  tolerance: 6.1291398e-05
+  rationale: >
+    PROOF that attention.self.key.bias has an exactly-zero gradient in exact arithmetic.
+    The key bias adds the SAME constant vector b_k to every key: k_j = W_k x_j + b_k.
+    For a fixed query q_i the attention logit is l_ij = (q_i . k_j)/sqrt(d), so the b_k
+    contribution is (q_i . b_k)/sqrt(d) — a term IDENTICAL across all keys j. Softmax is
+    invariant under a constant shift of all logits in a row: softmax(l + c*1) =
+    softmax(l). Therefore the attention probabilities, and hence the loss, do not depend
+    on b_k at all, and dL/db_k = 0 exactly. This is a property of correct attention, not
+    a bug, which is precisely why the ENC-04 gate must exempt it by DATA rather than
+    demand a non-zero gradient everywhere.
+  applies_to: all
+
+- type: equivalence
+  property: >
+    OBLIG-ENC-06-LOSS-FORWARD-PARITY: the tensor-valued pair objective matches the frozen
+    torch reference within the pinned tolerance, at BOTH stages — the per-row cosine
+    similarity vector and the scalar MSE reduction against the labels. Comparing only the
+    final scalar would let compensating per-row sign or ordering errors average out into a
+    matching mean, which is precisely the failure a single-scalar gate cannot see. The
+    reference batch is the non-degenerate pair recorded in loss_pair.json (labels
+    {1.0, 0.0}), rebuilt on the Rust side by tokenizing the recorded texts. Owned by
+    plans 01-04 and 01-07.
+  formal: '|rust_cosine - fixture.cosine| <= tol_loss && |rust_mse - fixture.mse| <= tol_loss'
+  tolerance: 7.62939453e-06
+  applies_to: all
+
+- type: equivalence
+  property: >
+    OBLIG-ENC-04-POST-STEP-PARAMETER-PARITY: after ONE controlled AdamW step (lr 2e-5,
+    betas (0.9, 0.999), eps 1e-8, weight_decay 0.01) on the recorded batch, every named
+    parameter matches optimizer_step.json.post_step within the pinned tolerance, and the
+    loss decreases from the recorded loss_before to loss_after. The recorded losses
+    matter: asserting merely "loss went down" compares against an unpinned expectation
+    that a broken optimizer can still satisfy. NOTE the fixture describes an ALL-TRAINABLE
+    model (D-20, SetFit's full-body default) and therefore cannot validate a Rust model
+    configured with frozen groups; the frozen-byte-identity proof uses a separate clean
+    model. Owned by plans 01-04 and 01-07.
+
+    D55: this tolerance was 3.05175781e-05 in 1.0.0 — the GRADIENT family's number,
+    inherited because generate_fixtures.py never ran an f64 optimizer step. That value
+    was 1.5x the ENTIRE step-1 displacement (2.01e-05) it gates, so the obligation could
+    not fail. 1.1.0 measures the optimizer family's own f32/f64 delta and the generator
+    now refuses to emit a tolerance that does not sit 10x below the measured
+    displacement. This obligation constrains lr, the sign and scale of the update, and
+    bias correction; it does NOT constrain beta1/beta2 (structurally impossible at one
+    step — see OBLIG-ENC-04-MULTISTEP-TRAJECTORY-PARITY) or decoupled weight decay
+    (~3 f32 ulp at this lr/wd — owned by adamw-kernel-v1's falsify_aw_001).
+  formal: for all names n, |rust_param_after_step[n] - fixture.post_step[n]| <= tol_step
+  tolerance: 1.89172753e-06
+  applies_to: all
+
+- type: equivalence
+  property: >
+    OBLIG-ENC-04-MULTISTEP-TRAJECTORY-PARITY: replaying 20 consecutive AdamW steps with
+    the SAME hyperparameters on the SAME recorded batch reproduces the recorded loss
+    trajectory in optimizer_multistep.json within the pinned tolerance, where losses[i]
+    is the loss BEFORE step i and the final entry is the loss after the last step.
+
+    This is the ONLY obligation in the phase that constrains beta1/beta2. At step 1 bias
+    correction makes the update beta-independent — m_hat = (1-b1)g/(1-b1) = g and
+    v_hat = (1-b2)g^2/(1-b2) = g^2 — so a single-step fixture cannot constrain the betas
+    at any tolerance, however tight. The moments only carry history from step 2 onward.
+
+    A loss trajectory rather than a second post-step parameter dump: the discriminating
+    power of a max-abs parameter comparison is set by its noisiest single element, and a
+    (0.5, 0.5) betas mutation stays inside that noise at every step count measured. The
+    loss contracts every parameter into one number and the trajectory accumulates the
+    divergence coherently. Measured at generation: the betas mutation moves the
+    trajectory 4.05e-04, which is 53x this tolerance; the generator's assert_separation
+    fails the build if that margin ever drops below 10x. Owned by plan 01-09.
+  formal: for all i, |rust_loss_trajectory[i] - fixture.losses[i]| <= tol_multistep
+  tolerance: 7.62939453e-06
+  applies_to: all
+
+- type: equivalence
+  property: >
+    OBLIG-ENC-01-FULL-MODEL-REFERENCE-PARITY: the FULL pinned checkpoint (6 layers, hidden
+    384, the real 30522-token vocabulary) encodes the recorded sentences to normalized
+    [3, 384] embeddings matching full_model_reference.json within the pinned tolerance.
+    This is the only obligation that exercises the real architecture rather than the
+    committed slice, so it is what stops a slice-shaped bug — a hardcoded 64-wide hidden,
+    a 2-head assumption, a 64-position ceiling — from passing the entire phase. It runs in
+    the D-10 gated suite against a locally fetched artifact (never vendored in git), fed by
+    scripts/setfit_fixtures/fetch_full_weights.py, whose full_manifest.json records the
+    source safetensors digest AND the produced APR digest so a run can prove which bytes
+    it tested. Owned by plans 01-04 and 01-07.
+  formal: '|rust_full_model_embeddings - fixture.embeddings| <= tol_full_model'
+  tolerance: 3.73762473e-05
+  applies_to: all
+
+- type: invariant
+  property: >
+    OBLIG-ENC-05-MODE-SWITCH-PARAMETER-INVARIANCE: calling train() then eval() (and the
+    reverse) changes NO registered parameter value — compared by f32::to_bits, not by an
+    epsilon, because a mode switch has no numerical excuse for any drift at all. Only
+    dropout/mode flags may change. The traversal used for the comparison is the same
+    named traversal ENC-04 uses, so a parameter invisible to the traversal cannot hide a
+    mutation here. Owned by plan 01-08.
+  formal: for all n, params_after_mode_switch[n].to_bits() == params_before[n].to_bits()
+  applies_to: all
+
+- type: invariant
+  property: >
+    OBLIG-MASK-BROADCAST-GRAPH-PRESERVATION: applying an additive attention mask to a
+    score tensor that requires grad yields a tensor that ALSO requires grad and carries
+    a recorded grad_fn edge back to the scores, at every broadcast combination
+    (B > 1, heads > 1, T != S), AND the broadcast is numerically a full broadcast rather
+    than a truncating zip. Both halves are needed: the pre-existing add_mask satisfied
+    neither, and a fix that restored only the numerics would leave the graph severed.
+    Owned by plan 01-09.
+  formal: masked.requires_grad && masked.grad_fn.is_some() && masked.numel() == scores.numel()
+  applies_to: all
+
+- type: soundness
+  property: >
+    OBLIG-DETACH-REJECTION: the gradient gate is not theater. A test-only DETACHED
+    encoder variant — identical arithmetic, intermediates rebuilt with Tensor::new so
+    the graph is severed — must be REJECTED by the same gate that accepts the real
+    encoder, and that negative runs in every cargo test rather than behind a heavy
+    feature (D-24). Symmetrically, the fail-closed op gates are proven by hostile input:
+    an out-of-vocabulary id, an all-padding row, a zero dimension, a shape product that
+    overflows usize, a non-binary mask value, and a non-finite weight each produce a
+    TYPED error — never a zero-fill, never a panic, never a NaN that propagates. Owned
+    by plans 01-01 and 01-07.
+  formal: detached_encoder_variant_fails_gradient_gate && hostile_inputs_return_typed_errors
+  applies_to: all
+
+falsification_tests:
+
+- id: FALSIFY-SETFIT-ENC-001
+  rule: OBLIG-DETACH-REJECTION — out-of-vocabulary ids fail closed
+  prediction: >
+    embedding_gather with an id at or above vocab_size returns
+    Err(OpError::OutOfVocabulary) naming the id and its position — it does NOT emit a
+    zero row and does NOT panic
+  test: cargo test -p aprender-core --features setfit --lib embedding_gather
+  test_harness: cargo test -p aprender-core --features setfit --lib embedding_gather
+  expected_output: 'test result: ok'
+  if_fails: >
+    The gather copied the aprender-train zero-fill or the qwen2 N-09 warn-and-zero
+    escape. A zero row is indistinguishable from a legitimately zero embedding
+    downstream, so the corruption surfaces only as degraded accuracy. Validate ids
+    against vocab_size BEFORE any allocation and return a typed error.
+
+- id: FALSIFY-SETFIT-ENC-002
+  rule: embedding_gather backward scatter-adds and matches finite differences
+  prediction: >
+    The analytic weight gradient matches a per-element central finite difference, and a
+    token id repeated k times accumulates k gradient rows into that weight row
+  test: cargo test -p aprender-core --features setfit --lib embedding_gather
+  test_harness: cargo test -p aprender-core --features setfit --lib embedding_gather
+  expected_output: 'test result: ok'
+  if_fails: >
+    Either the forward severed the graph (no EmbeddingBackward recorded, so the weight
+    receives no gradient at all) or the backward overwrote instead of accumulating, which
+    silently drops gradient for every repeated token.
+
+- id: FALSIFY-SETFIT-ENC-003
+  rule: 'additive_attention_mask is a rejecting, correctly shaped CONSTANT'
+  prediction: >
+    additive_attention_mask returns a [B,1,1,S] tensor with 0.0 at kept and -1e9 at
+    padded positions and requires_grad == false; an all-padding row, a length mismatch,
+    and a mask value of 2 each return the matching typed OpError variant
+  test: cargo test -p aprender-core --features setfit --lib additive_attention_mask
+  test_harness: cargo test -p aprender-core --features setfit --lib additive_attention_mask
+  expected_output: 'test result: ok'
+  if_fails: >
+    A wrong rank breaks broadcasting over heads and query positions; a silently accepted
+    non-binary value turns a 2 into "keep"; an accepted all-padding row produces a 0/0
+    softmax. Reject all three before building the tensor.
+
+- id: FALSIFY-SETFIT-ENC-004
+  rule: masked_mean_pool has a checked per-row denominator and a graph-connected backward
+  prediction: >
+    masked_mean_pool matches a hand-computed 2x3x4 case, a mixed-length batch divides
+    each row by ITS OWN valid count, an all-padding row returns
+    Err(OpError::AllPaddingRow) before any pooling is computed, and the analytic
+    gradient matches per-element central finite differences with exactly 0.0 at padded
+    positions
+  test: cargo test -p aprender-core --features setfit --lib masked_mean_pool
+  test_harness: cargo test -p aprender-core --features setfit --lib masked_mean_pool
+  expected_output: 'test result: ok'
+  if_fails: >
+    A uniform denominator is the classic mixed-batch bug — it is invisible on a
+    uniform-length batch and wrong on every real one. An unchecked zero denominator
+    emits NaN that silently poisons every downstream parameter gradient.
+
+- id: FALSIFY-SETFIT-ENC-005
+  rule: 'new backward structs are registered by name'
+  prediction: >
+    MaskedMeanPoolBackward is present in test_all_backward_names, its name() ends with
+    "Backward", and all registered names remain unique
+  test: cargo test -p aprender-core --features setfit --lib test_all_backward_names
+  test_harness: cargo test -p aprender-core --features setfit --lib test_all_backward_names
+  expected_output: 'test result: ok'
+  if_fails: >
+    A backward struct that is not registered is a backward struct nobody notices going
+    missing. Add the new name to test_all_backward_names in
+    autograd/tests_matmul_backward.rs.
+
+- id: FALSIFY-SETFIT-ENC-006
+  rule: OBLIG-ENC-02-TOKENIZER-PARITY
+  prediction: >
+    Rust batched tokenization reproduces the pinned HuggingFace ids, type ids, attention
+    mask, and truncation facts EXACTLY on the fixture corpus, including CJK, accented,
+    cased, and over-length inputs
+  test: cargo test -p aprender-core --features setfit --lib tokenizer_parity
+  test_harness: cargo test -p aprender-core --features setfit --lib tokenizer_parity
+  expected_output: 'test result: ok'
+  if_fails: >
+    Normalization or pre-tokenization diverged from the pinned pipeline. Every downstream
+    parity number is then measuring a different sentence, so fix this before reading any
+    other comparison. Owned by plan 01-05.
+
+- id: FALSIFY-SETFIT-ENC-007
+  rule: OBLIG-ENC-03-PER-LAYER-FORWARD-PARITY and OBLIG-ENC-03-PADDING-INVARIANCE
+  prediction: >
+    Every transformer layer's token output matches the frozen torch reference within the
+    pinned tolerance on real slice weights, and a sentence encoded alone equals the same
+    sentence encoded inside a mixed-length padded batch
+  test: cargo test -p aprender-core --features setfit,conformance-fixtures --test setfit_conformance forward_parity
+  test_harness: cargo test -p aprender-core --features setfit,conformance-fixtures --test setfit_conformance forward_parity
+  expected_output: 'test result: ok'
+  if_fails: >
+    Localize with the per-layer intermediates: the FIRST mismatching layer names the
+    defect. A parity failure that appears only at batch > 1 is a masking or pooling
+    broadcast bug, not a weight-loading bug. Owned by plans 01-04 and 01-06.
+
+- id: FALSIFY-SETFIT-ENC-008
+  rule: OBLIG-ENC-04-GRADIENT-AND-STEP-GATE
+  prediction: >
+    After one backward and one controlled AdamW step every named gradient is finite,
+    every contracted component has a strictly positive aggregate gradient norm, every
+    non-exempt tensor has a strictly positive per-tensor norm, and every tensor listed in
+    gradients.json.analytically_zero satisfies max|g| <= zero_grad_floor (two-sided)
+  test: cargo test -p aprender-core --features setfit,conformance-fixtures --test setfit_conformance gradient_gate
+  test_harness: cargo test -p aprender-core --features setfit,conformance-fixtures --test setfit_conformance gradient_gate
+  expected_output: 'test result: ok'
+  if_fails: >
+    A zero component aggregate means the graph is severed upstream of that component —
+    look for a Tensor::new/from_vec on a computed value with no adjacent set_grad_fn. A
+    LARGE gradient on an exempt tensor means the pinned prediction is wrong: regenerate
+    the exemption list rather than widening the gate. Owned by plans 01-04 and 01-07.
+
+- id: FALSIFY-SETFIT-ENC-009
+  rule: OBLIG-DETACH-REJECTION — the in-band detached-encoder negative
+  prediction: >
+    The test-only detached encoder variant (identical arithmetic, intermediates rebuilt
+    with Tensor::new) is REJECTED by the same gradient gate that accepts the real
+    encoder, and this negative runs in every cargo test
+  test: cargo test -p aprender-core --features setfit,conformance-fixtures --test setfit_conformance detach_negative
+  test_harness: cargo test -p aprender-core --features setfit,conformance-fixtures --test setfit_conformance detach_negative
+  expected_output: 'test result: ok'
+  if_fails: >
+    If the detached variant PASSES the gate, the gate is theater and every green
+    gradient result in this phase is uninformative. Strengthen the gate until the
+    detached variant is RED, then re-run the real encoder. Owned by plan 01-07.
+
+- id: FALSIFY-SETFIT-ENC-010
+  rule: OBLIG-MASK-BROADCAST-GRAPH-PRESERVATION
+  prediction: >
+    Applying a [B,1,1,S] additive mask to [B,heads,T,S] scores that require grad yields a
+    tensor that requires grad, carries a grad_fn edge back to the scores, preserves
+    numel, and shifts exactly the padded key positions — at B>1, heads>1 and T != S
+  test: cargo test -p aprender-core --features setfit --lib additive_attention_mask_added_to_scores_keeps_the_score_graph_alive
+  test_harness: cargo test -p aprender-core --features setfit --lib additive_attention_mask_added_to_scores_keeps_the_score_graph_alive
+  expected_output: 'test result: ok'
+  if_fails: >
+    The truncating .zip() is back, or the broadcast was fixed numerically without routing
+    through an autograd-aware op. Both halves must hold; assert the grad_fn edge, not
+    just the values. Owned by plan 01-09.
+
+- id: FALSIFY-SETFIT-ENC-011
+  rule: OBLIG-ENC-03-ACTIVATION-PARITY — exact erf, not tanh
+  prediction: >
+    gelu_exact equals 0.5*x*(1+erf(x/sqrt(2))) within the pinned tolerance across the
+    negative minimum near x = -0.75 and the saturating tails, and its backward matches
+    central finite differences
+  test: cargo test -p aprender-core --features setfit --lib gelu_exact
+  test_harness: cargo test -p aprender-core --features setfit --lib gelu_exact
+  expected_output: 'test result: ok'
+  if_fails: >
+    The tanh approximation was substituted. It differs from the exact form by roughly
+    1e-3 near |x| ~ 2 — orders of magnitude above f32 round-trip noise — so this is a
+    parity defect, not a tolerance question. Owned by plan 01-09.
+
+- id: FALSIFY-SETFIT-ENC-012
+  rule: OBLIG-ENC-05-MODE-SWITCH-PARAMETER-INVARIANCE
+  prediction: >
+    train() then eval() (and the reverse) leaves every registered parameter bit-identical
+    under f32::to_bits; only mode flags change
+  test: cargo test -p aprender-core --features setfit,conformance-fixtures --lib encoder_mode_parameters_are_byte_identical_across_train_eval_train
+  test_harness: cargo test -p aprender-core --features setfit,conformance-fixtures --lib encoder_mode_parameters_are_byte_identical_across_train_eval_train
+  expected_output: 'test result: ok'
+  if_fails: >
+    A mode switch mutated weights — typically a rebuilt module or a dropout scale folded
+    into the parameters. Compare bits, not epsilons. Owned by plan 01-08.
+
+- id: FALSIFY-SETFIT-ENC-013
+  rule: OBLIG-ENC-04-NAMED-GRADIENT-PARITY
+  prediction: >
+    Every HF dotted parameter name present in the torch reference is present in the Rust
+    named traversal and its gradient matches within the pinned tolerance; an
+    absent name is a failure, not a skip
+  test: cargo test -p aprender-core --features setfit,conformance-fixtures --test setfit_conformance gradient_gate_named_gradients_match_the_frozen_reference
+  test_harness: cargo test -p aprender-core --features setfit,conformance-fixtures --test setfit_conformance gradient_gate_named_gradients_match_the_frozen_reference
+  expected_output: 'test result: ok'
+  if_fails: >
+    A missing name means the named traversal does not reach that submodule, so ENC-04
+    was measuring a subset of the model. Fix the traversal before adjusting any
+    tolerance. Owned by plans 01-04 and 01-08.
+
+- id: FALSIFY-SETFIT-ENC-014
+  rule: OBLIG-ENC-06 — the pair objective is tensor-valued and two-sided
+  prediction: >
+    pair_cosine_mse returns a Tensor of shape [1] whose backward delivers non-zero
+    gradient to BOTH embedding matrices, so both siamese branches reach the shared
+    encoder body
+  test: cargo test -p aprender-core --features setfit --lib pair_loss
+  test_harness: cargo test -p aprender-core --features setfit --lib pair_loss
+  expected_output: 'test result: ok'
+  if_fails: >
+    An f32-returning loss (the nn/loss.rs and nn/self_supervised.rs anti-analogs) severs
+    the graph entirely; a one-sided edge freezes half the encoder while the loss still
+    decreases. Assert gradient on both inputs. Owned by plan 01-07.
+
+kani_harnesses:
+- id: KANI-SETFIT-ENC-001
+  obligation: OBLIG-DETACH-REJECTION
+  property: >
+    embedding_gather never indexes outside the weight buffer — every id is validated
+    against vocab_size and the element count is computed with checked_mul before
+    allocation
+  bound: 4
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_embedding_gather_bounds
+- id: KANI-SETFIT-ENC-002
+  obligation: OBLIG-DETACH-REJECTION
+  property: >
+    masked_mean_pool never divides by zero — a row with zero valid positions returns a
+    typed error before the division is reached
+  bound: 4
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_masked_mean_pool_denominator
+- id: KANI-SETFIT-ENC-003
+  obligation: OBLIG-MASK-BROADCAST-GRAPH-PRESERVATION
+  property: >
+    additive_attention_mask emits exactly B*S entries drawn from {0.0, NEG_MASK} and
+    rejects every non-binary mask value
+  bound: 4
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_additive_attention_mask_values
+- id: KANI-SETFIT-ENC-004
+  obligation: OBLIG-ENC-03-ACTIVATION-PARITY
+  property: gelu_exact produces a finite output for every finite input
+  bound: 4
+  strategy: stub_float
+  solver: cadical
+  harness: verify_gelu_exact_finite
+
+qa_gate:
+  id: F-SEC-001
+  name: setfit-encoder-conformance-v1 Contract
+  description: >
+    Phase 1 gate — the SetFit MiniLM encoder is graph-connected, parity-verified against
+    frozen references, and demonstrably trainable
+  checks:
+  - validation
+  - falsification
+  pass_criteria: >
+    pv validate exits 0; every falsification test above is green; the in-band detached
+    encoder variant is RED under the same gradient gate
+  falsification: >
+    Revert any forward intermediate to a Tensor::new rebuild — the affected component's
+    aggregate gradient norm must drop to exactly zero and FALSIFY-SETFIT-ENC-008 must
+    turn RED.

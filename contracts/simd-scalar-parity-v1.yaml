@@ -7,7 +7,6 @@ metadata:
     - "Intel Intrinsics Guide; ARM NEON Programmer's Guide."
   description: "SIMD kernels match scalar reference"
 
-kind: KernelContract
 name: simd-scalar-parity
 version: "1.0.0"
 scope: "crates/aprender-compute/src/backends/"

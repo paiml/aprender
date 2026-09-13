@@ -1,0 +1,24 @@
+{
+  "host": "gx10",
+  "arch": "aarch64-unknown-linux-gnu",
+  "os": "Linux 6.17.0-1014-nvidia",
+  "accelerator": "NVIDIA GB10, sm_121, unified memory",
+  "version_tested": "0.63.0",
+  "date": "2026-08-22",
+  "install_rc": 0,
+  "install_wall_seconds": 99.8,
+  "crates_compiled": 515,
+  "binary_sha256": "5e7f60b41a16389c713c0682c03ae9b657ad657b4446856ad7e7ccabb8852ce7",
+  "surface": {
+    "cli_subcommands": 104,
+    "mcp_tools": 9,
+    "http_routes": "enumerated at runtime"
+  },
+  "findings": {
+    "p0_arch_specific": 0,
+    "p1": 4,
+    "p2": 1
+  },
+  "notable": "Q4_K GEMV has no aarch64 SIMD and its _parallel variant calls scalar (#2567). apr gpu reports GB10 unified memory honestly; --backend cuda fails closed rc=5. Default install links NO CUDA.",
+  "verdict": "CONDITIONAL GO"
+}

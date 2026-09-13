@@ -12,7 +12,6 @@ metadata:
     feature). The batched path must produce correct output — or cleanly route around itself — for
     grouped-query-attention (GQA) models, which are the entire modern-LLM class (Qwen2, Llama-3,
     Mistral, ...). It must NEVER crash with a CUDA GEMM size mismatch.
-kind: KernelContract
 name: serve-batched-gpu-gqa-dispatch
 version: "1.0.0"
 scope: "crates/aprender-serve/src/gguf/inference/cached/sync_owned_quantized_02.rs"

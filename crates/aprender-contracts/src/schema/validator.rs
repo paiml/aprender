@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 use crate::error::{Severity, Violation};
-use crate::schema::types::{Contract, ContractKind};
+use crate::schema::types::{Contract, ContractKind, CONTRACT_TOP_LEVEL_FIELDS};
 
 /// Validate a parsed contract for completeness and consistency.
 ///
@@ -16,6 +16,10 @@ pub fn validate_contract(contract: &Contract) -> Vec<Violation> {
     let mut violations = Vec::new();
 
     validate_metadata(contract, &mut violations);
+    // Runs BEFORE the kind split below on purpose: a top-level `kind:` is
+    // exactly the key that would otherwise decide which branch runs, and the
+    // whole point of SCHEMA-018 is that it silently decides nothing.
+    validate_top_level_keys(contract, &mut violations);
 
     // Kernel-only checks: these enforce the provability invariant and
     // require equations + proof obligations + tests + Kani harnesses.
@@ -42,7 +46,225 @@ pub fn validate_contract(contract: &Contract) -> Vec<Violation> {
         validate_beat_benchmark(contract, &mut violations);
     }
 
+    // Kaizen-only checks: an improvement record is exempt from
+    // PROVABILITY-001 (it is a measurement, not a theorem) but is held to its
+    // own falsifiability rules — see `schema::kaizen`, KAIZEN-001..006.
+    if contract.kind() == ContractKind::Kaizen {
+        crate::schema::kaizen::validate_kaizen(contract, &mut violations);
+    }
+
+    // CRUX competitive-research metadata (aprender#2555): kind-independent —
+    // the three fields are carried by 275 `crux-*` contracts of several kinds
+    // and by non-crux contracts that reuse the vocabulary.
+    validate_crux_intake(contract, &mut violations);
+
     violations
+}
+
+/// The closed set of competitors a CRUX story may be extracted from
+/// (`metadata.competitor`, rule CRUX-002).
+///
+/// # Why this is NOT `BEAT_INCUMBENTS`
+///
+/// Reusing [`BEAT_INCUMBENTS`] was considered and REJECTED — it names a
+/// different domain and would import a defect. `BEAT_INCUMBENTS` answers "whom
+/// does aprender claim to *beat* on a pinned benchmark" (the four-pillar
+/// mission); `metadata.competitor` answers "whose UX was this story *extracted
+/// from*". MEASURED on this branch: 275 contract FILES carry the field, in 292
+/// declarations (17 crux contracts carry a second `competitor` inside an
+/// equivalence obligation). `BEAT_INCUMBENTS.iter().any(|p| c.contains(p))`
+/// accepts only `pytorch` (37) and `ollama` (21) — 58 of 292. It cannot name:
+///
+/// - `huggingface` (88 contracts — the single largest source), nor `vllm` (32),
+/// - `llama_cpp` (37): the BEAT list spells it `llama.cpp`, and `"llama.cpp"`
+///   is not a substring of `"llama_cpp"`, so even the pillar it does name is
+///   missed under the underscore spelling the crux corpus uses,
+/// - `ecosystem` (30), `openclaw` (20), `hf-kernels-community` (15),
+///   `apr-qa-playbook` (9), `openclip` (2), `none` (1).
+///
+/// Extended 2026-09-12 (aprender#3146): category N adds `burn` (7 stories) and
+/// `linfa` (10), the two Rust-native ML frameworks. Neither is substring-matched
+/// by `BEAT_INCUMBENTS`, so neither could be named by reusing that list.
+///
+/// So this registry is the corpus vocabulary, exactly. Every member is
+/// exercised by at least one contract in `contracts/`; adding a competitor is a
+/// deliberate one-line edit here plus a test, which is the point — an open
+/// domain is what let `THIS-COMPETITOR-DOES-NOT-EXIST` validate.
+pub(crate) const CRUX_COMPETITORS: [&str; 14] = [
+    "apr-qa-playbook",
+    // Burn (tracel-ai/burn) — the Rust deep-learning framework, 0.21.0 / 15.9k
+    // stars / 312 reverse-dependencies at admission. Added 2026-09-12 with 7
+    // category-N stories extracted from its crate surface: burn-linalg (SVD),
+    // burn-tensor (const-generic rank), burn-autodiff (op coverage), ONNX
+    // import, burn-ir, burn-rl, burn-vision. NOT a BEAT pillar — aprender makes
+    // no claim to beat Burn on a pinned benchmark; this is a capability/UX
+    // source, which is exactly the distinction this registry exists to keep.
+    "burn",
+    "ecosystem",
+    "hf-kernels-community",
+    "huggingface",
+    // linfa (rust-ml/linfa) — the Rust classical-ML toolkit, 0.8.1 / 18
+    // algorithm sub-crates at admission. Added 2026-09-12 with 10 category-N
+    // stories: linfa-nn (spatial index), linfa-pls, linfa-lars, linfa-kernel,
+    // linfa-ftrl, linfa-ensemble (AdaBoost/bagging), OPTICS, Barnes-Hut t-SNE,
+    // random projection, PCA-on-SVD. `scikit-learn` is the BEAT pillar on this
+    // axis and is deliberately NOT here; linfa is the Rust-native UX source.
+    "linfa",
+    "llama_cpp",
+    "none",
+    "ollama",
+    "openclaw",
+    "openclip",
+    // Orange Sun Pulp Free Chat — a local-first desktop chat app (CRUX-C-37).
+    // Admitted because it competes on the SAME axis this project sells on
+    // (private, on-device, no subscription) while publishing no throughput
+    // number at all, which is itself a competitive datapoint.
+    "pulp-free-chat",
+    "pytorch",
+    "vllm",
+];
+
+/// Documented inclusive bounds of `metadata.demand_score`, from
+/// `contracts/crux-competitive-research-ux-v1.yaml`: "a demand_score (1..5) …
+/// demand_score maps directly to pmat priority".
+const DEMAND_SCORE_RANGE: std::ops::RangeInclusive<i64> = 1..=5;
+
+/// Validate the CRUX competitive-research domains (aprender#2555).
+///
+/// Two SURFACES carry these fields, and both are checked here:
+///
+/// 1. `metadata.{competitor,demand_score,intake_status}` on an individual
+///    `crux-*` contract.
+/// 2. The `stories:` rows of the MASTER REGISTRY,
+///    `contracts/crux-competitive-research-ux-v1.yaml`.
+///
+/// Surface 2 was added because the original rationale for this rule did not
+/// survive measurement. #2555 justified CRUX-001 as guarding "the ranking
+/// signal the whole competitive-research programme sorts by" — but MEASURED,
+/// nothing in the repo reads `metadata.demand_score`. The signal §12.1 of
+/// `docs/specifications/crux-competitive-research-ux-workflows.md` maps to
+/// `pmat work` priority is `stories[].demand_score` in the registry: 250 rows,
+/// entirely ungated. Checking only surface 1 left the stated justification
+/// unsupported by the code.
+///
+/// On a registry row the three fields are also REQUIRED, not optional. On
+/// surface 1 they cannot be: `Option` is right there, because 1500-odd non-crux
+/// contracts carry none of them (see the presence obligation in
+/// `contracts/crux-intake-metadata-domains-v1.yaml`). A registry row has no
+/// such excuse — it exists to be ranked.
+///
+/// `intake_status` / `status` values are absent from the checks below ON
+/// PURPOSE: both are the closed enum `IntakeStatus`, so an invented value is
+/// rejected during deserialization and never reaches a validator. That is the
+/// stronger guarantee — a lint can be read and ignored, a parse failure cannot.
+fn validate_crux_intake(contract: &Contract, violations: &mut Vec<Violation>) {
+    // CRUX-001: demand_score is the ranking signal the whole competitive-research
+    // programme sorts by. An unvalidated out-of-range value silently dominates
+    // every ranking it appears in.
+    if let Some(score) = contract.metadata.demand_score {
+        if !DEMAND_SCORE_RANGE.contains(&score) {
+            violations.push(Violation {
+                severity: Severity::Error,
+                rule: "CRUX-001".to_string(),
+                message: format!(
+                    "metadata.demand_score {score} is outside the documented range {}..={} \
+                     — it is the priority signal pmat work sorts by, so an out-of-range \
+                     value silently outranks every real story",
+                    DEMAND_SCORE_RANGE.start(),
+                    DEMAND_SCORE_RANGE.end(),
+                ),
+                location: Some("metadata.demand_score".to_string()),
+            });
+        }
+    }
+
+    // CRUX-002: competitor must name a source in the registry above.
+    //
+    // No `.trim()` here, deliberately. It used to trim before comparing, which
+    // made `competitor: "  ecosystem  "` validate clean while the STORED value
+    // kept its padding — the check laundered a value it did not fix, so every
+    // consumer reading `metadata.competitor` still saw the untrimmed string.
+    // Normalisation now happens once, at parse time
+    // (`deserialize_trimmed_opt_string` in `schema/types.rs`), so what is
+    // compared is exactly what is stored.
+    if let Some(competitor) = contract.metadata.competitor.as_deref() {
+        if !CRUX_COMPETITORS.contains(&competitor) {
+            violations.push(Violation {
+                severity: Severity::Error,
+                rule: "CRUX-002".to_string(),
+                message: format!(
+                    "metadata.competitor {competitor:?} is not a known competitive-research \
+                     source — must be one of: {}",
+                    CRUX_COMPETITORS.join(", ")
+                ),
+                location: Some("metadata.competitor".to_string()),
+            });
+        }
+    }
+
+    validate_crux_registry_stories(contract, violations);
+}
+
+/// Hold every MASTER-REGISTRY story row to the same two domains.
+///
+/// These are the rows that carry the ranking signal, so here the fields are
+/// required as well as bounded: a row with no `demand_score` cannot be sorted,
+/// and a row with no `competitor` cannot be attributed.
+fn validate_crux_registry_stories(contract: &Contract, violations: &mut Vec<Violation>) {
+    for story in &contract.stories {
+        let at = |field: &str| Some(format!("stories[{}].{field}", story.id));
+
+        match story.demand_score {
+            None => violations.push(Violation {
+                severity: Severity::Error,
+                rule: "CRUX-001".to_string(),
+                message: format!(
+                    "registry story {} has no demand_score — it is the priority signal \
+                     pmat work sorts by, and an absent one sorts arbitrarily",
+                    story.id
+                ),
+                location: at("demand_score"),
+            }),
+            Some(score) if !DEMAND_SCORE_RANGE.contains(&score) => violations.push(Violation {
+                severity: Severity::Error,
+                rule: "CRUX-001".to_string(),
+                message: format!(
+                    "registry story {} has demand_score {score}, outside the documented \
+                     range {}..={} — a single fabricated score reorders the whole queue",
+                    story.id,
+                    DEMAND_SCORE_RANGE.start(),
+                    DEMAND_SCORE_RANGE.end(),
+                ),
+                location: at("demand_score"),
+            }),
+            Some(_) => {}
+        }
+
+        match story.competitor.as_deref() {
+            None => violations.push(Violation {
+                severity: Severity::Error,
+                rule: "CRUX-002".to_string(),
+                message: format!(
+                    "registry story {} has no competitor — the row cannot be attributed \
+                     to the UX it was extracted from",
+                    story.id
+                ),
+                location: at("competitor"),
+            }),
+            Some(c) if !CRUX_COMPETITORS.contains(&c) => violations.push(Violation {
+                severity: Severity::Error,
+                rule: "CRUX-002".to_string(),
+                message: format!(
+                    "registry story {} names competitor {c:?}, which is not a known \
+                     competitive-research source — must be one of: {}",
+                    story.id,
+                    CRUX_COMPETITORS.join(", ")
+                ),
+                location: at("competitor"),
+            }),
+            Some(_) => {}
+        }
+    }
 }
 
 /// The four incumbents a BEAT may target (case-insensitive substring match, so
@@ -187,6 +409,108 @@ fn validate_provability_invariant(contract: &Contract, violations: &mut Vec<Viol
     }
 }
 
+/// The forms a YAML key could be a plural/case/separator variant of.
+///
+/// Case-folded with separators dropped, then the key itself plus its `-s` and
+/// `-es` singularizations. Comparing SETS rather than normalizing to one
+/// canonical string is what makes `qa_gates` ~ `qa_gate` and
+/// `kani_harness` ~ `kani_harnesses` both work: a single-pass normalizer has to
+/// choose between stripping `es` (right for `harnesses`, wrong for `gates`) and
+/// stripping `s` (vice versa), and gets one of the two wrong whichever it picks.
+fn key_forms(key: &str) -> Vec<String> {
+    let squashed: String = key
+        .chars()
+        .filter(char::is_ascii_alphanumeric)
+        .map(|c| c.to_ascii_lowercase())
+        .collect();
+    let mut forms = vec![squashed.clone()];
+    for suffix in ["es", "s"] {
+        if let Some(stem) = squashed.strip_suffix(suffix) {
+            if !stem.is_empty() {
+                forms.push(stem.to_string());
+            }
+        }
+    }
+    forms
+}
+
+/// The real block name an unknown top-level key is a near-miss of, if any.
+///
+/// Exact field names never reach here (the parser filters them out), so a hit
+/// is always a misspelling, a case/separator variant, or a singular/plural slip
+/// — never a legitimate downstream-owned block. The near-collisions this must
+/// NOT fire on are pinned by `legitimate_downstream_keys_are_not_flagged`:
+/// `invariants` is not `type_invariants`, `gates` is not `qa_gate`, `spec` is
+/// not `coq_spec`.
+fn near_miss_of(key: &str) -> Option<&'static str> {
+    let forms = key_forms(key);
+    CONTRACT_TOP_LEVEL_FIELDS
+        .iter()
+        .copied()
+        .find(|field| key_forms(field).iter().any(|f| forms.contains(f)))
+}
+
+/// SCHEMA-018 / SCHEMA-019: reject the two top-level shapes that are never
+/// legitimate.
+///
+/// `Contract` tolerates unknown top-level keys by design — see
+/// [`crate::schema::parse_contract_str`]. This check does not change that; it
+/// carves out the two cases where serde's silence is a defect:
+///
+/// * **SCHEMA-018** — a top-level `kind:`. 119 contracts carried one. It is
+///   dropped, so the contract silently falls back to `metadata.kind` (or to the
+///   `kernel` default), and in 72 of those files the top-level value said
+///   `KernelContract` while `metadata.registry: true` made the contract an
+///   exempt registry. The key does not just fail to help, it lies.
+/// * **SCHEMA-019** — a near-miss of a real block name. This is how
+///   `contracts/publish-workspace-v1.yaml` lost four FALSIFY-PUB-* entries:
+///   they sat under a key serde did not recognise, `pv status` printed
+///   "Falsification tests: 0", and nothing anywhere said why.
+fn validate_top_level_keys(contract: &Contract, violations: &mut Vec<Violation>) {
+    // SCHEMA-020: the document is not valid YAML to a strict reader even though
+    // the derived deserializer accepted it — today that means a duplicate
+    // mapping key, one of whose values is being thrown away silently.
+    if let Some(err) = contract.strict_yaml_error.as_ref() {
+        violations.push(Violation {
+            severity: Severity::Error,
+            rule: "SCHEMA-020".to_string(),
+            message: format!(
+                "the contract schema accepted this document but a strict YAML reader \
+                 rejects it ({err}) — `yq`, PyYAML and any `serde_yaml::Value` consumer \
+                 will drop content here. A duplicate mapping key is the usual cause: \
+                 merge the two blocks into one"
+            ),
+            location: None,
+        });
+    }
+
+    for key in &contract.unknown_top_level_keys {
+        if key == "kind" {
+            violations.push(Violation {
+                severity: Severity::Error,
+                rule: "SCHEMA-018".to_string(),
+                message: "top-level `kind:` is not part of the contract schema and is \
+                          silently dropped — the contract's kind comes from \
+                          `metadata.kind:` (or defaults to `kernel`). Move it under \
+                          `metadata:` if it names a real kind, or delete it"
+                    .to_string(),
+                location: Some("kind".to_string()),
+            });
+        } else if let Some(field) = near_miss_of(key) {
+            violations.push(Violation {
+                severity: Severity::Error,
+                rule: "SCHEMA-019".to_string(),
+                message: format!(
+                    "top-level `{key}:` is not a contract field and is silently dropped \
+                     — did you mean `{field}:`? Everything under `{key}:` is invisible \
+                     to every pv gate"
+                ),
+                location: Some(key.clone()),
+            });
+        }
+    }
+}
+
 fn validate_metadata(contract: &Contract, violations: &mut Vec<Violation>) {
     if contract.metadata.references.is_empty() {
         violations.push(Violation {
@@ -231,90 +555,128 @@ fn validate_equations(contract: &Contract, violations: &mut Vec<Violation>) {
     }
 }
 
+/// SCHEMA-005/006/014/015/016/017 over every proof obligation.
+///
+/// Split into three helpers rather than one loop body. As a single function it
+/// measured cognitive 30 against the repo's per-function ceiling of 25 (pmat
+/// analyze complexity), which blocked any commit that touched this file —
+/// including one that only added three lines elsewhere in it. The three
+/// helpers are the three things the loop actually checks: the obligation's own
+/// identity, whether its DbC fields belong on its type, and whether a
+/// subcontract's parent is declared. Order of pushed violations is unchanged.
 fn validate_proof_obligations(contract: &Contract, violations: &mut Vec<Violation>) {
-    use crate::schema::types::ObligationType;
-
-    let mut seen_ids = HashSet::new();
+    let mut seen_formal = HashSet::new();
     for (i, ob) in contract.proof_obligations.iter().enumerate() {
-        if ob.property.is_empty() {
-            violations.push(Violation {
-                severity: Severity::Error,
-                rule: "SCHEMA-005".to_string(),
-                message: format!("proof_obligations[{i}].property must not be empty"),
-                location: Some(format!("proof_obligations[{i}].property")),
-            });
-        }
-        if let Some(ref formal) = ob.formal {
-            if !seen_ids.insert(formal.clone()) {
-                violations.push(Violation {
-                    severity: Severity::Warning,
-                    rule: "SCHEMA-006".to_string(),
-                    message: format!("Duplicate formal predicate: {formal}"),
-                    location: Some(format!("proof_obligations[{i}].formal")),
-                });
-            }
-        }
+        validate_obligation_identity(i, ob, &mut seen_formal, violations);
+        validate_obligation_dbc_fields(i, ob, violations);
+        validate_obligation_parent_link(i, ob, contract, violations);
+    }
+}
 
-        // DbC field/type constraints
-        if ob.requires.is_some() && ob.obligation_type != ObligationType::Postcondition {
+/// SCHEMA-005/006: an obligation states a property, and no two obligations
+/// share a formal predicate.
+fn validate_obligation_identity(
+    index: usize,
+    ob: &crate::schema::types::ProofObligation,
+    seen_formal: &mut HashSet<String>,
+    violations: &mut Vec<Violation>,
+) {
+    if ob.property.is_empty() {
+        violations.push(Violation {
+            severity: Severity::Error,
+            rule: "SCHEMA-005".to_string(),
+            message: format!("proof_obligations[{index}].property must not be empty"),
+            location: Some(format!("proof_obligations[{index}].property")),
+        });
+    }
+    if let Some(ref formal) = ob.formal {
+        if !seen_formal.insert(formal.clone()) {
             violations.push(Violation {
-                severity: Severity::Error,
-                rule: "SCHEMA-014".to_string(),
-                message: format!(
-                    "proof_obligations[{i}].requires is only valid on \
-                     postcondition obligations (found on {})",
-                    ob.obligation_type
-                ),
-                location: Some(format!("proof_obligations[{i}].requires")),
+                severity: Severity::Warning,
+                rule: "SCHEMA-006".to_string(),
+                message: format!("Duplicate formal predicate: {formal}"),
+                location: Some(format!("proof_obligations[{index}].formal")),
             });
-        }
-
-        if ob.applies_to_phase.is_some()
-            && ob.obligation_type != ObligationType::LoopInvariant
-            && ob.obligation_type != ObligationType::LoopVariant
-        {
-            violations.push(Violation {
-                severity: Severity::Error,
-                rule: "SCHEMA-015".to_string(),
-                message: format!(
-                    "proof_obligations[{i}].applies_to_phase is only valid on \
-                     loop_invariant or loop_variant obligations (found on {})",
-                    ob.obligation_type
-                ),
-                location: Some(format!("proof_obligations[{i}].applies_to_phase")),
-            });
-        }
-
-        if ob.parent_contract.is_some() && ob.obligation_type != ObligationType::Subcontract {
-            violations.push(Violation {
-                severity: Severity::Error,
-                rule: "SCHEMA-016".to_string(),
-                message: format!(
-                    "proof_obligations[{i}].parent_contract is only valid on \
-                     subcontract obligations (found on {})",
-                    ob.obligation_type
-                ),
-                location: Some(format!("proof_obligations[{i}].parent_contract")),
-            });
-        }
-
-        // Subcontract parent_contract must be in depends_on
-        if let Some(ref parent) = ob.parent_contract {
-            if ob.obligation_type == ObligationType::Subcontract
-                && !contract.metadata.depends_on.contains(parent)
-            {
-                violations.push(Violation {
-                    severity: Severity::Error,
-                    rule: "SCHEMA-017".to_string(),
-                    message: format!(
-                        "proof_obligations[{i}].parent_contract \"{parent}\" \
-                         must be listed in metadata.depends_on"
-                    ),
-                    location: Some(format!("proof_obligations[{i}].parent_contract")),
-                });
-            }
         }
     }
+}
+
+/// SCHEMA-014/015/016: a DbC field only belongs on the obligation types that
+/// give it meaning. A `requires:` on an invariant, or an `applies_to_phase:`
+/// on a postcondition, is read by nothing.
+fn validate_obligation_dbc_fields(
+    index: usize,
+    ob: &crate::schema::types::ProofObligation,
+    violations: &mut Vec<Violation>,
+) {
+    use crate::schema::types::ObligationType;
+
+    let misplaced: [(bool, &str, &str, &str); 3] = [
+        (
+            ob.requires.is_some() && ob.obligation_type != ObligationType::Postcondition,
+            "SCHEMA-014",
+            "requires",
+            "postcondition",
+        ),
+        (
+            ob.applies_to_phase.is_some()
+                && ob.obligation_type != ObligationType::LoopInvariant
+                && ob.obligation_type != ObligationType::LoopVariant,
+            "SCHEMA-015",
+            "applies_to_phase",
+            "loop_invariant or loop_variant",
+        ),
+        (
+            ob.parent_contract.is_some() && ob.obligation_type != ObligationType::Subcontract,
+            "SCHEMA-016",
+            "parent_contract",
+            "subcontract",
+        ),
+    ];
+
+    for (is_misplaced, rule, field, valid_on) in misplaced {
+        if is_misplaced {
+            violations.push(Violation {
+                severity: Severity::Error,
+                rule: rule.to_string(),
+                message: format!(
+                    "proof_obligations[{index}].{field} is only valid on \
+                     {valid_on} obligations (found on {})",
+                    ob.obligation_type
+                ),
+                location: Some(format!("proof_obligations[{index}].{field}")),
+            });
+        }
+    }
+}
+
+/// SCHEMA-017: a subcontract's `parent_contract` must be declared in
+/// `metadata.depends_on`, so the composition graph can see the edge.
+fn validate_obligation_parent_link(
+    index: usize,
+    ob: &crate::schema::types::ProofObligation,
+    contract: &Contract,
+    violations: &mut Vec<Violation>,
+) {
+    use crate::schema::types::ObligationType;
+
+    let Some(parent) = ob.parent_contract.as_ref() else {
+        return;
+    };
+    if ob.obligation_type != ObligationType::Subcontract
+        || contract.metadata.depends_on.contains(parent)
+    {
+        return;
+    }
+    violations.push(Violation {
+        severity: Severity::Error,
+        rule: "SCHEMA-017".to_string(),
+        message: format!(
+            "proof_obligations[{index}].parent_contract \"{parent}\" \
+             must be listed in metadata.depends_on"
+        ),
+        location: Some(format!("proof_obligations[{index}].parent_contract")),
+    });
 }
 
 fn validate_falsification_tests(contract: &Contract, violations: &mut Vec<Violation>) {

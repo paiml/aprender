@@ -1,3 +1,5 @@
+use crate::cuda::gpu_profile::MaxBatchSizing;
+
 impl CudaExecutor {
     // ========================================================================
     // PAR-018: GPU-Resident KV Cache for Incremental Attention
@@ -32,7 +34,37 @@ impl CudaExecutor {
         head_dim: usize,
         max_len: usize,
     ) -> usize {
-        let (free, _total) = self.context.memory_info().unwrap_or((8 * 1024 * 1024 * 1024, 0));
+        self.compute_max_batch_sizing(num_layers, num_kv_heads, head_dim, max_len)
+            .resolved
+    }
+
+    /// Lower and upper clamp on the auto-sized batch ceiling.
+    ///
+    /// `1` because a server that admits nothing is not a server; `32` because
+    /// `init_batched_kv_cache_gpu` rejects a larger batch outright (PAR-129's
+    /// 4-warp kernel tops out there).
+    pub const MAX_BATCH_CLAMP: (usize, usize) = (1, 32);
+
+    /// PMAT-399 / §10: the `max_batch` decision AND every input it was made from.
+    ///
+    /// [`compute_max_batch_for_memory`](Self::compute_max_batch_for_memory)
+    /// returned only the clamped `usize`, so §12's kill criterion for the
+    /// effective-config row — "row 6's `max_batch` does not reconstruct" — was
+    /// met by construction: free VRAM, KV bytes per slot and the reserve were
+    /// computed, divided, and dropped. A reader could not tell a 32 that means
+    /// "plenty of room" from a 32 that means "the query failed and this is the
+    /// clamp ceiling".
+    pub fn compute_max_batch_sizing(
+        &self,
+        num_layers: usize,
+        num_kv_heads: usize,
+        head_dim: usize,
+        max_len: usize,
+    ) -> MaxBatchSizing {
+        // A failed driver query is REPORTED, not silently replaced: 8 GiB is a
+        // documented fallback and `vram_query_ok: false` says so on the wire.
+        let query = self.context.memory_info().ok();
+        let (free, total) = query.unwrap_or((8 * 1024 * 1024 * 1024, 0));
         // KV cache per slot: 2 (K+V) × num_kv_heads × max_len × head_dim × 4 bytes × num_layers
         let kv_per_slot = 2 * num_kv_heads * max_len * head_dim * 4 * num_layers;
 
@@ -46,17 +78,18 @@ impl CudaExecutor {
         // This prevents silent OOM when GPU is shared.
         let prefill_cache_estimate = if self.gpu_profile.fp8_prefill {
             // FP8: ~1 byte per weight element
-            num_layers * num_kv_heads * head_dim * 16 * 1 // rough estimate
+            num_layers * num_kv_heads * head_dim * 16 // rough estimate
         } else {
             0
         };
         // Use 3.5GB as conservative reserve (was 2GB)
         // This covers FP8(1.5GB) + workspace(32MB) + runtime(500MB) + headroom
         let reserve = (3_500_000_000_usize).max(prefill_cache_estimate + 512 * 1024 * 1024);
-        let available = free.saturating_sub(reserve);
 
-        let max_batch = if kv_per_slot > 0 { available / kv_per_slot } else { 32 };
-        let clamped = max_batch.clamp(1, 32);
+        let (clamp_min, clamp_max) = Self::MAX_BATCH_CLAMP;
+        let (computed, clamped) =
+            Self::max_batch_from_inputs(free, kv_per_slot, reserve, clamp_min, clamp_max);
+
         // GH-611: Suppressed — was noisy in non-verbose mode
         if clamped <= 1 && free < reserve {
             eprintln!(
@@ -66,7 +99,45 @@ impl CudaExecutor {
                 free as f64 / 1e9, reserve as f64 / 1e9,
             );
         }
-        clamped
+
+        MaxBatchSizing {
+            free_vram_bytes_at_sizing: free,
+            total_vram_bytes: total,
+            vram_query_ok: query.is_some(),
+            kv_per_slot_bytes: kv_per_slot,
+            reserve_bytes: reserve,
+            computed,
+            clamp_min,
+            clamp_max,
+            resolved: clamped,
+            source: crate::cuda::gpu_profile::MAX_BATCH_SOURCE_COMPUTED,
+        }
+    }
+
+    /// §10 registered prediction: the sizing ARITHMETIC, isolated and pure.
+    ///
+    /// Returns `(computed, clamped)` so a receipt can show both — a `resolved`
+    /// that equals the clamp ceiling means something very different from one
+    /// that equals the quotient.
+    ///
+    /// `kv_per_slot == 0` means the KV dimensions are not known yet; there is
+    /// no basis on which to shrink anything, so the ceiling is the clamp
+    /// maximum rather than a division by zero.
+    #[must_use]
+    pub fn max_batch_from_inputs(
+        free: usize,
+        kv_per_slot: usize,
+        reserve: usize,
+        clamp_min: usize,
+        clamp_max: usize,
+    ) -> (usize, usize) {
+        let available = free.saturating_sub(reserve);
+        let computed = if kv_per_slot > 0 {
+            available / kv_per_slot
+        } else {
+            clamp_max
+        };
+        (computed, computed.clamp(clamp_min, clamp_max))
     }
 
     /// Initialize per-layer KV cache on GPU for single-sequence inference.
@@ -108,6 +179,139 @@ impl CudaExecutor {
 
         Ok(())
     }
+
+    /// X1-KVALLOC (#2774): bytes `init_batched_kv_cache_gpu` allocates PER SLOT.
+    ///
+    /// Derived from the dimensions the allocation ITSELF uses --
+    /// `2 (K+V) x kv_num_kv_heads x kv_cache_max_len x kv_head_dim x 4 x num_layers` --
+    /// so a sizing decision can never disagree with the allocation it is sizing.
+    /// `kv_cache_max_len` is whatever `init_kv_cache_gpu` was given, i.e. the
+    /// CONFIGURED context, never a constant. That is the shape of #2762: a
+    /// batch/context number written as a literal is invisible until a
+    /// configuration diverges from it.
+    #[must_use]
+    pub fn batched_kv_bytes_per_slot(&self, num_layers: usize) -> usize {
+        2 * self.kv_num_kv_heads
+            * self.kv_cache_max_len
+            * self.kv_head_dim
+            * std::mem::size_of::<f32>()
+            * num_layers
+    }
+
+    /// PP-LLAMA-001 §5.2: batched KV slots currently allocated on the device.
+    #[must_use]
+    pub fn batched_kv_allocated_slots(&self) -> usize {
+        self.batched_kv_allocated_batch
+    }
+
+    /// PP-LLAMA-001 §5.2: bytes `init_kv_cache_gpu` allocated for the
+    /// SINGLE-sequence KV cache.
+    ///
+    /// Derived from the same expression the allocation uses
+    /// (`num_layers * 2 * num_kv_heads * max_len * head_dim * 4`), so the
+    /// report cannot disagree with the allocation it describes.
+    #[must_use]
+    pub fn kv_single_sequence_bytes(&self, num_layers: usize) -> usize {
+        num_layers
+            * 2
+            * self.kv_num_kv_heads
+            * self.kv_cache_max_len
+            * self.kv_head_dim
+            * std::mem::size_of::<f32>()
+    }
+
+    /// X1-KVALLOC (#2774): how many batched KV slots fit in a VRAM budget.
+    ///
+    /// Pure, so the sizing RULE is testable without a GPU and cannot drift from
+    /// the arithmetic that the driver will actually be asked to satisfy.
+    ///
+    /// * `budget_bytes` -- VRAM the caller may spend on batched KV.
+    /// * `reserve_bytes` -- what must survive the allocation: prefill workspace,
+    ///   cuBLAS workspace, captured graphs, per-request activations.
+    /// * `requested` -- the scheduler's ceiling (`max_kv_slots`), an OPTIMISM.
+    /// * `admitted` -- the batch already accepted. Those requests exist; the
+    ///   result is never below it, because silently allocating fewer slots than
+    ///   admitted sequences would corrupt the ones that got no slot. Sizing
+    ///   cannot reject work -- admission has to.
+    #[must_use]
+    pub fn batched_kv_slots_that_fit(
+        budget_bytes: usize,
+        reserve_bytes: usize,
+        bytes_per_slot: usize,
+        requested: usize,
+        admitted: usize,
+    ) -> usize {
+        let floor = admitted.max(1);
+        if bytes_per_slot == 0 {
+            // Dimensions not known yet -- no basis to shrink anything.
+            return requested.max(floor);
+        }
+        let spendable = budget_bytes.saturating_sub(reserve_bytes);
+        let fits = spendable / bytes_per_slot;
+        requested.min(fits).max(floor)
+    }
+
+    /// X1-KVALLOC (#2774): clamp a requested batched-KV allocation to what
+    /// actually fits in VRAM *now*, i.e. with the weights and the FP8/FP16
+    /// prefill cache already resident.
+    ///
+    /// WHY THIS EXISTS. `compute_max_batch_for_memory` runs before weight
+    /// upload, so on a 24 GB RTX 4090 it returned its clamp ceiling (32) for
+    /// the 7B model; `batched_setup_and_prefill` then preallocated 32 slots for
+    /// a batch of 4. Measured on lambda-4090, `qwen2.5-coder-7b-instruct-q4_k_m`,
+    /// `--context-length 4096`:
+    ///
+    /// ```text
+    /// Failed to init batched KV cache for M=32: CUDA_ERROR_OUT_OF_MEMORY
+    /// ```
+    ///
+    /// -- with m=3. The already-allocated slots are added back to the budget
+    /// because `init_batched_kv_cache_gpu` frees them before growing, so they
+    /// are spendable even though the driver currently counts them as used.
+    #[must_use]
+    pub fn fit_batched_kv_alloc(
+        &self,
+        num_layers: usize,
+        requested: usize,
+        admitted: usize,
+    ) -> usize {
+        let bytes_per_slot = self.batched_kv_bytes_per_slot(num_layers);
+        let Ok((free, _total)) = self.context.memory_info() else {
+            // Cannot measure -> cannot justify shrinking. Fail OPEN and let the
+            // allocation report the real driver error rather than inventing one.
+            return requested.max(admitted).max(1);
+        };
+        let reclaimable = self.batched_kv_allocated_batch * bytes_per_slot;
+        let fitted = Self::batched_kv_slots_that_fit(
+            free.saturating_add(reclaimable),
+            Self::BATCHED_KV_VRAM_RESERVE_BYTES,
+            bytes_per_slot,
+            requested,
+            admitted,
+        );
+        if fitted != requested {
+            eprintln!(
+                "[X1-KVALLOC] batched KV sized to {} slots (asked {}, admitted {}): \
+                 {} MB free + {} MB reclaimable, {} MB/slot at ctx={}",
+                fitted,
+                requested,
+                admitted,
+                free / (1024 * 1024),
+                reclaimable / (1024 * 1024),
+                bytes_per_slot / (1024 * 1024),
+                self.kv_cache_max_len,
+            );
+        }
+        fitted
+    }
+
+    /// VRAM that must survive a batched-KV allocation: prefill workspace,
+    /// cuBLAS workspace, captured decode graphs, per-request activations.
+    ///
+    /// A `policy` number, not a measurement. Measured peak on lambda-4090 with
+    /// the 7B at c=4 was 21.5 GB of 24.0 GB with 7 GB of that batched KV, so the
+    /// non-KV working set past model residency is well under this.
+    pub const BATCHED_KV_VRAM_RESERVE_BYTES: usize = 1_536 * 1024 * 1024;
 
     /// PAR-119: Initialize batched KV caches for true multi-sequence batching
     ///
@@ -232,14 +436,35 @@ impl CudaExecutor {
         self.memory_pool.record_allocation(total_bytes);
 
         eprintln!(
-            "[PAR-119] Initialized batched KV cache: {} layers × {} sequences, stride={}, total={}MB",
+            "[PAR-119] Initialized batched KV cache: {} layers × {} sequences, stride={} (ctx={}), total={}MB",
             num_layers,
             batch_size,
             stride,
+            max_len,
             total_bytes / (1024 * 1024)
         );
 
         Ok(())
+    }
+
+    /// PERF-050: set the dead-slot mask (PMAT-076) explicitly.
+    ///
+    /// Exists so a diagnostic can make its reading independent of where in a decode step it is
+    /// invoked. A stale mask sets seq_lens to 0 for a live slot, and the attention kernel's
+    /// online softmax then divides by a sum_exp that never accumulated, returning NaN.
+    pub fn set_batched_done_mask(&mut self, done: &[bool]) {
+        self.batched_done_mask.clear();
+        self.batched_done_mask.extend_from_slice(done);
+    }
+
+    /// PERF-050: read-only view of the per-slot batched KV lengths.
+    ///
+    /// FALSIFY-CB-009 is stated over this array ("batched_kv_lengths[i] == prefill_len for all
+    /// i in 0..M"), so a diagnostic that wants to check the obligation at runtime needs to see
+    /// it. Read-only on purpose: the field is owned by the scatter paths that maintain it.
+    #[must_use]
+    pub fn batched_kv_lengths(&self) -> &[usize] {
+        &self.batched_kv_lengths
     }
 
     /// PAR-119: Reset batched KV caches for new generation
@@ -433,7 +658,8 @@ impl CudaExecutor {
 
     /// PMAT-058: Free batched KV caches to reclaim VRAM after batch decode.
     ///
-    /// Five-Whys: c=1 decode regresses 140→124 tok/s after c=4 batch.
+    /// Five-Whys: c=1 decode regresses after a c=4 batch (magnitude UNMEASURED
+    /// on a correct batched path — see aprender#2753).
     /// Why? SGEMM prefill (no FP16 cache) instead of HGEMM.
     /// Why? FP16 weight cache was cleared before batch decode (GH-141).
     /// Why? Not rebuilt because batched KV caches (~460MB) still occupy VRAM.
@@ -457,6 +683,8 @@ impl CudaExecutor {
 
     /// Clear KV cache for a new generation (reset sequence position to 0)
     pub fn reset_kv_cache_gpu(&mut self) {
+        // #2697: a reset invalidates any residency claim.
+        self.workspace.resident_kv_prefix = None;
         for len in self.kv_cache_lengths.values_mut() {
             *len = 0;
         }
@@ -698,6 +926,49 @@ impl CudaExecutor {
         Ok(result)
     }
 
+    /// #2697: does the GPU already hold this prompt prefix?
+    ///
+    /// Decode appends at positions >= seq_len and never rewrites the prompt's
+    /// K/V, so if the last prefill was this exact prompt the device data is
+    /// still correct and only the per-layer lengths need resetting.
+    /// The flag alone is not trusted. Many paths write GPU KV, and a stale
+    /// claim here would serve one prompt's attention state to another — the
+    /// worst failure this change could introduce. So the flag must AGREE with
+    /// the per-layer lengths: every layer has to still record at least
+    /// `seq_len` entries, which is exactly what is false after any reset or
+    /// shorter sequence. Cheap, and it catches the stale-flag mode without
+    /// having to enumerate every writer.
+    #[must_use]
+    pub fn kv_prefix_is_resident(&self, prefix_hash: u64, seq_len: usize) -> bool {
+        if self.workspace.resident_kv_prefix != Some((prefix_hash, seq_len)) {
+            return false;
+        }
+        if self.kv_cache_lengths.is_empty() {
+            return false;
+        }
+        self.kv_cache_lengths.values().all(|&len| len >= seq_len)
+    }
+
+    /// Record which prompt prefix the GPU KV buffers now hold.
+    ///
+    /// Called after a prefill. Passing `None` invalidates, which every path
+    /// that writes KV outside a prefill must do — a stale claim here would
+    /// serve one prompt's attention state to another, so the default on any
+    /// unrecognised mutation is to forget.
+    pub fn mark_kv_prefix_resident(&mut self, prefix: Option<(u64, usize)>) {
+        self.workspace.resident_kv_prefix = prefix;
+    }
+
+    /// Reset every layer's KV length to `seq_len`, keeping the device data.
+    ///
+    /// The counterpart to `kv_prefix_is_resident`: the bytes are already right,
+    /// only the lengths carry the previous request's generated tokens.
+    pub fn truncate_kv_lengths(&mut self, seq_len: usize) {
+        for len in self.kv_cache_lengths.values_mut() {
+            *len = seq_len;
+        }
+    }
+
     /// realizr#199 (PMAT-450): Restore GPU KV cache from host snapshot.
     ///
     /// Copies per-layer (K, V) vectors into GPU buffers and sets cache lengths.
@@ -749,5 +1020,202 @@ impl CudaExecutor {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod kv_prefix_residency_tests {
+    //! #2697. The win here is skipping a 234 MB host round trip on a repeated
+    //! prompt. The risk is serving one prompt's attention state to another, so
+    //! these test the REFUSALS, not the fast path.
+
+    /// A residency claim is only honoured when the recorded lengths agree with
+    /// it. These mirror `kv_prefix_is_resident` without needing a CUDA context,
+    /// which no unit test on this box can construct.
+    fn resident(claim: Option<(u64, usize)>, lengths: &[usize], hash: u64, seq_len: usize) -> bool {
+        if claim != Some((hash, seq_len)) {
+            return false;
+        }
+        if lengths.is_empty() {
+            return false;
+        }
+        lengths.iter().all(|&len| len >= seq_len)
+    }
+
+    #[test]
+    fn a_matching_claim_with_long_enough_lengths_is_resident() {
+        assert!(resident(Some((7, 100)), &[100, 100, 100], 7, 100));
+        // Decode appended past the prompt; the prompt's entries are still there.
+        assert!(resident(Some((7, 100)), &[128, 128, 128], 7, 100));
+    }
+
+    #[test]
+    fn a_different_prompt_is_never_resident() {
+        assert!(!resident(Some((7, 100)), &[100, 100], 8, 100));
+    }
+
+    #[test]
+    fn the_same_prompt_at_a_different_length_is_never_resident() {
+        assert!(!resident(Some((7, 100)), &[100, 100], 7, 99));
+    }
+
+    #[test]
+    fn a_reset_defeats_the_claim_even_if_the_flag_survives() {
+        // The stale-flag mode: something cleared the cache without clearing the
+        // flag. Lengths are the ground truth and they disagree.
+        assert!(!resident(Some((7, 100)), &[0, 0, 0], 7, 100));
+        assert!(!resident(Some((7, 100)), &[], 7, 100));
+    }
+
+    #[test]
+    fn one_short_layer_defeats_the_claim() {
+        // A single layer that does not have the entries is enough to make the
+        // attention wrong, so `all` is the right quantifier, not `any`.
+        assert!(!resident(Some((7, 100)), &[100, 100, 99, 100], 7, 100));
+    }
+
+    #[test]
+    fn no_claim_means_not_resident() {
+        assert!(!resident(None, &[100, 100], 7, 100));
+    }
+}
+
+#[cfg(test)]
+mod pp_llama_max_batch_sizing_tests {
+    use super::CudaExecutor;
+    use crate::cuda::gpu_profile::{MAX_BATCH_SOURCE_COMPUTED, MAX_BATCH_SOURCE_ENV};
+
+    /// The 1.5B-class KV slot the §10 prediction was registered against:
+    /// 2 (K+V) × 2 kv_heads × 32768 ctx × 128 head_dim × 4 B × 28 layers.
+    const KV_PER_SLOT: usize = 469_762_048;
+    /// The GH-178 reserve: FP8 cache + cuBLAS workspace + runtime + headroom.
+    const RESERVE: usize = 3_500_000_000;
+
+    /// §10 registered prediction / §12 kill criterion: `max_batch` must
+    /// RECONSTRUCT from the inputs the endpoint reports.
+    ///
+    /// Free VRAM is in the megabyte convention `nvidia-smi` prints (10^6 B),
+    /// which is what an operator reads off the card before filing a receipt.
+    ///
+    ///   8 900 MB: (8.9e9 - 3.5e9) / 469 762 048 = 11.49 -> 11
+    ///   9 300 MB: (9.3e9 - 3.5e9) / 469 762 048 = 12.34 -> 12
+    ///
+    /// A one-slot error here is a receipt whose declared admission ceiling is
+    /// not the one the server enforced, which is PP-24's ladder derived from a
+    /// number nobody can check.
+    #[test]
+    fn max_batch_reconstructs_from_reported_inputs() {
+        let (clamp_min, clamp_max) = CudaExecutor::MAX_BATCH_CLAMP;
+        let (computed, resolved) = CudaExecutor::max_batch_from_inputs(
+            8_900_000_000,
+            KV_PER_SLOT,
+            RESERVE,
+            clamp_min,
+            clamp_max,
+        );
+        assert_eq!(computed, 11, "8 900 MB free must size 11 slots");
+        assert_eq!(resolved, 11, "11 is inside the clamp, so it survives it");
+
+        let (computed, resolved) = CudaExecutor::max_batch_from_inputs(
+            9_300_000_000,
+            KV_PER_SLOT,
+            RESERVE,
+            clamp_min,
+            clamp_max,
+        );
+        assert_eq!(computed, 12, "9 300 MB free must size 12 slots");
+        assert_eq!(resolved, 12);
+    }
+
+    /// The reserve is SUBTRACTED, not ignored: without it 8.9 GB would size 18.
+    #[test]
+    fn the_reserve_is_subtracted() {
+        let (clamp_min, clamp_max) = CudaExecutor::MAX_BATCH_CLAMP;
+        let (with_reserve, _) = CudaExecutor::max_batch_from_inputs(
+            8_900_000_000,
+            KV_PER_SLOT,
+            RESERVE,
+            clamp_min,
+            clamp_max,
+        );
+        let (without_reserve, _) =
+            CudaExecutor::max_batch_from_inputs(8_900_000_000, KV_PER_SLOT, 0, clamp_min, clamp_max);
+        assert_eq!(with_reserve, 11);
+        assert_eq!(without_reserve, 18);
+        assert!(with_reserve < without_reserve);
+    }
+
+    /// Both clamp ends bite, and a card too small for one slot still admits one
+    /// — sizing cannot reject work, admission has to.
+    #[test]
+    fn the_clamp_bites_at_both_ends() {
+        let (clamp_min, clamp_max) = CudaExecutor::MAX_BATCH_CLAMP;
+        let (computed, resolved) =
+            CudaExecutor::max_batch_from_inputs(1_000_000_000, KV_PER_SLOT, RESERVE, clamp_min, clamp_max);
+        assert_eq!(computed, 0, "the reserve exceeds free VRAM");
+        assert_eq!(resolved, clamp_min, "but one slot is always admitted");
+
+        let (computed, resolved) = CudaExecutor::max_batch_from_inputs(
+            1_000_000_000_000,
+            KV_PER_SLOT,
+            RESERVE,
+            clamp_min,
+            clamp_max,
+        );
+        assert!(computed > clamp_max, "a huge card sizes past the ceiling");
+        assert_eq!(resolved, clamp_max, "and is clamped to it");
+    }
+
+    /// Unknown KV dimensions are not a division by zero, and not a fabricated 0.
+    #[test]
+    fn unknown_kv_dimensions_fall_back_to_the_ceiling() {
+        let (clamp_min, clamp_max) = CudaExecutor::MAX_BATCH_CLAMP;
+        let (computed, resolved) =
+            CudaExecutor::max_batch_from_inputs(8_900_000_000, 0, RESERVE, clamp_min, clamp_max);
+        assert_eq!(computed, clamp_max);
+        assert_eq!(resolved, clamp_max);
+    }
+
+    /// §5.2: an operator-set ceiling and a loader-computed one must be
+    /// DISTINGUISHABLE after load. The `set_var` transport erased exactly this.
+    #[test]
+    fn env_source_is_recorded() {
+        assert_ne!(
+            MAX_BATCH_SOURCE_ENV, MAX_BATCH_SOURCE_COMPUTED,
+            "the two sources must be distinguishable on the wire"
+        );
+        assert_eq!(MAX_BATCH_SOURCE_ENV, "env");
+        assert_eq!(MAX_BATCH_SOURCE_COMPUTED, "computed");
+
+        // The env-sourced sizing keeps the MEASURED inputs and overrides only
+        // the resolution, so a reader can see that the operator's ceiling was
+        // not the one the card would have supported.
+        let (clamp_min, clamp_max) = CudaExecutor::MAX_BATCH_CLAMP;
+        let (computed, would_resolve) = CudaExecutor::max_batch_from_inputs(
+            8_900_000_000,
+            KV_PER_SLOT,
+            RESERVE,
+            clamp_min,
+            clamp_max,
+        );
+        let sizing = crate::cuda::gpu_profile::MaxBatchSizing {
+            free_vram_bytes_at_sizing: 8_900_000_000,
+            total_vram_bytes: 25_757_220_864,
+            vram_query_ok: true,
+            kv_per_slot_bytes: KV_PER_SLOT,
+            reserve_bytes: RESERVE,
+            computed,
+            clamp_min,
+            clamp_max,
+            resolved: 4,
+            source: MAX_BATCH_SOURCE_ENV,
+        };
+        assert_eq!(sizing.source, "env");
+        assert_ne!(
+            sizing.resolved, would_resolve,
+            "an operator ceiling of 4 over a card that would have sized 11 is \
+             exactly the case the erased `source` made invisible"
+        );
+        assert_eq!(sizing.computed, 11, "the measured inputs survive the override");
     }
 }

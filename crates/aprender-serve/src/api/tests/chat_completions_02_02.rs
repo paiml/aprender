@@ -18,13 +18,12 @@ async fn test_chat_completions_empty_content() {
 
     let response = app.oneshot(request).await.expect("test value should be present");
     // Empty content should trigger empty prompt handling
-    assert!(
-        response.status() == StatusCode::OK
-            || response.status() == StatusCode::NOT_FOUND
-            || response.status() == StatusCode::BAD_REQUEST
-            || response.status() == StatusCode::INTERNAL_SERVER_ERROR
-            || response.status() == StatusCode::NOT_FOUND
-    );
+    // aprender#2609: this was a disjunction over four or five statuses (several
+    // listing NOT_FOUND twice), so it excluded nothing and passed against the
+    // very behaviour #2609 reports. The shared test app is `demo_mock()` — a
+    // server with no model of any kind — so the one correct answer for a
+    // MOUNTED route is 503, and that is now what is asserted.
+    crate::api::test_helpers::assert_no_model_status(response.status());
 }
 
 // =============================================================================
@@ -49,12 +48,12 @@ async fn test_chat_completions_unicode_content() {
         .expect("test value should be present");
 
     let response = app.oneshot(request).await.expect("test value should be present");
-    assert!(
-        response.status() == StatusCode::OK
-            || response.status() == StatusCode::NOT_FOUND
-            || response.status() == StatusCode::INTERNAL_SERVER_ERROR
-            || response.status() == StatusCode::NOT_FOUND
-    );
+    // aprender#2609: this was a disjunction over four or five statuses (several
+    // listing NOT_FOUND twice), so it excluded nothing and passed against the
+    // very behaviour #2609 reports. The shared test app is `demo_mock()` — a
+    // server with no model of any kind — so the one correct answer for a
+    // MOUNTED route is 503, and that is now what is asserted.
+    crate::api::test_helpers::assert_no_model_status(response.status());
 }
 
 /// Test content with newlines
@@ -75,12 +74,12 @@ async fn test_chat_completions_multiline_content() {
         .expect("test value should be present");
 
     let response = app.oneshot(request).await.expect("test value should be present");
-    assert!(
-        response.status() == StatusCode::OK
-            || response.status() == StatusCode::NOT_FOUND
-            || response.status() == StatusCode::INTERNAL_SERVER_ERROR
-            || response.status() == StatusCode::NOT_FOUND
-    );
+    // aprender#2609: this was a disjunction over four or five statuses (several
+    // listing NOT_FOUND twice), so it excluded nothing and passed against the
+    // very behaviour #2609 reports. The shared test app is `demo_mock()` — a
+    // server with no model of any kind — so the one correct answer for a
+    // MOUNTED route is 503, and that is now what is asserted.
+    crate::api::test_helpers::assert_no_model_status(response.status());
 }
 
 // =============================================================================
@@ -111,22 +110,15 @@ async fn test_chat_completions_all_optional_params() {
         .expect("test value should be present");
 
     let response = app.oneshot(request).await.expect("test value should be present");
-    assert!(
-        response.status() == StatusCode::OK
-            || response.status() == StatusCode::NOT_FOUND
-            || response.status() == StatusCode::INTERNAL_SERVER_ERROR
-            || response.status() == StatusCode::NOT_FOUND
-    );
+    // aprender#2609: this was a disjunction over four or five statuses (several
+    // listing NOT_FOUND twice), so it excluded nothing and passed against the
+    // very behaviour #2609 reports. The shared test app is `demo_mock()` — a
+    // server with no model of any kind — so the one correct answer for a
+    // MOUNTED route is 503, and that is now what is asserted.
+    crate::api::test_helpers::assert_no_model_status(response.status());
 }
 
-/// A negative temperature is REFUSED, and refused before it can reach a model.
-///
-/// This assertion used to admit five outcomes ("might be rejected or clamped"),
-/// including `200 OK` and `500` — so it passed whatever the server did with an
-/// unservable temperature, which for a long time was `500` on the dense
-/// backends and a 200 carrying inverted-distribution text on the quantized ones
-/// (aprender#2375). The value is now rejected at deserialization
-/// (`types::deserialize_temperature_f32`), so the outcome is exactly one thing.
+/// Test with negative temperature (edge case)
 #[tokio::test]
 async fn test_chat_completions_negative_temperature() {
     let app = create_test_app_shared();
@@ -145,11 +137,19 @@ async fn test_chat_completions_negative_temperature() {
         .expect("test value should be present");
 
     let response = app.oneshot(request).await.expect("test value should be present");
+    // aprender#2375(4): the disjunction this replaced admitted 200, 404 and 500
+    // simultaneously and therefore could not fail whatever the route did (the
+    // 0.63.0 audit's root cause). Exactly one answer is correct here, and unlike
+    // its neighbours it is NOT 503: `temperature: -0.5` is invalid whatever the
+    // server has resident, so request validation rejects it with 422 before any
+    // model is resolved. Asserting 503 here would make the status depend on
+    // which check ran first.
     assert_eq!(
         response.status(),
         StatusCode::UNPROCESSABLE_ENTITY,
-        "a negative temperature must be refused by the extractor, before any backend runs"
+        "a negative temperature is a client error, decided before model residency"
     );
+
 }
 
 // =============================================================================
@@ -175,12 +175,12 @@ async fn test_chat_completions_trace_header() {
         .expect("test value should be present");
 
     let response = app.oneshot(request).await.expect("test value should be present");
-    assert!(
-        response.status() == StatusCode::OK
-            || response.status() == StatusCode::NOT_FOUND
-            || response.status() == StatusCode::INTERNAL_SERVER_ERROR
-            || response.status() == StatusCode::NOT_FOUND
-    );
+    // aprender#2609: this was a disjunction over four or five statuses (several
+    // listing NOT_FOUND twice), so it excluded nothing and passed against the
+    // very behaviour #2609 reports. The shared test app is `demo_mock()` — a
+    // server with no model of any kind — so the one correct answer for a
+    // MOUNTED route is 503, and that is now what is asserted.
+    crate::api::test_helpers::assert_no_model_status(response.status());
 }
 
 // =============================================================================
@@ -207,11 +207,12 @@ async fn test_stream_handler_empty_messages() {
 
     let response = app.oneshot(request).await.expect("test value should be present");
     // Empty messages should be rejected (or NOT_FOUND if no model)
-    assert!(
-        response.status() == StatusCode::BAD_REQUEST
-            || response.status() == StatusCode::UNPROCESSABLE_ENTITY
-            || response.status() == StatusCode::NOT_FOUND
-    );
+    // aprender#2609: this was a disjunction over four or five statuses (several
+    // listing NOT_FOUND twice), so it excluded nothing and passed against the
+    // very behaviour #2609 reports. The shared test app is `demo_mock()` — a
+    // server with no model of any kind — so the one correct answer for a
+    // MOUNTED route is 503, and that is now what is asserted.
+    crate::api::test_helpers::assert_no_model_status(response.status());
 }
 
 /// Stream handler: non-existent model should return 404
@@ -234,13 +235,12 @@ async fn test_stream_handler_model_not_found() {
 
     let response = app.oneshot(request).await.expect("test value should be present");
     // Non-existent model should return NOT_FOUND or fall back to default
-    assert!(
-        response.status() == StatusCode::NOT_FOUND
-            || response.status() == StatusCode::OK
-            || response.status() == StatusCode::NOT_FOUND
-            || response.status() == StatusCode::INTERNAL_SERVER_ERROR
-            || response.status() == StatusCode::NOT_FOUND
-    );
+    // aprender#2609: this was a disjunction over four or five statuses (several
+    // listing NOT_FOUND twice), so it excluded nothing and passed against the
+    // very behaviour #2609 reports. The shared test app is `demo_mock()` — a
+    // server with no model of any kind — so the one correct answer for a
+    // MOUNTED route is 503, and that is now what is asserted.
+    crate::api::test_helpers::assert_no_model_status(response.status());
 }
 
 /// Stream handler: whitespace-only message content
@@ -263,13 +263,12 @@ async fn test_stream_handler_whitespace_content() {
 
     let response = app.oneshot(request).await.expect("test value should be present");
     // Whitespace-only content might be rejected or processed
-    assert!(
-        response.status() == StatusCode::OK
-            || response.status() == StatusCode::NOT_FOUND
-            || response.status() == StatusCode::BAD_REQUEST
-            || response.status() == StatusCode::INTERNAL_SERVER_ERROR
-            || response.status() == StatusCode::NOT_FOUND
-    );
+    // aprender#2609: this was a disjunction over four or five statuses (several
+    // listing NOT_FOUND twice), so it excluded nothing and passed against the
+    // very behaviour #2609 reports. The shared test app is `demo_mock()` — a
+    // server with no model of any kind — so the one correct answer for a
+    // MOUNTED route is 503, and that is now what is asserted.
+    crate::api::test_helpers::assert_no_model_status(response.status());
 }
 
 /// Stream handler with top_p parameter
@@ -292,12 +291,12 @@ async fn test_stream_handler_with_top_p() {
         .expect("test value should be present");
 
     let response = app.oneshot(request).await.expect("test value should be present");
-    assert!(
-        response.status() == StatusCode::OK
-            || response.status() == StatusCode::NOT_FOUND
-            || response.status() == StatusCode::INTERNAL_SERVER_ERROR
-            || response.status() == StatusCode::NOT_FOUND
-    );
+    // aprender#2609: this was a disjunction over four or five statuses (several
+    // listing NOT_FOUND twice), so it excluded nothing and passed against the
+    // very behaviour #2609 reports. The shared test app is `demo_mock()` — a
+    // server with no model of any kind — so the one correct answer for a
+    // MOUNTED route is 503, and that is now what is asserted.
+    crate::api::test_helpers::assert_no_model_status(response.status());
 }
 
 /// Stream handler with extreme top_p values
@@ -321,13 +320,12 @@ async fn test_stream_handler_extreme_top_p() {
         .expect("test value should be present");
 
     let response = app.oneshot(request).await.expect("test value should be present");
-    assert!(
-        response.status() == StatusCode::OK
-            || response.status() == StatusCode::NOT_FOUND
-            || response.status() == StatusCode::BAD_REQUEST
-            || response.status() == StatusCode::INTERNAL_SERVER_ERROR
-            || response.status() == StatusCode::NOT_FOUND
-    );
+    // aprender#2609: this was a disjunction over four or five statuses (several
+    // listing NOT_FOUND twice), so it excluded nothing and passed against the
+    // very behaviour #2609 reports. The shared test app is `demo_mock()` — a
+    // server with no model of any kind — so the one correct answer for a
+    // MOUNTED route is 503, and that is now what is asserted.
+    crate::api::test_helpers::assert_no_model_status(response.status());
 }
 
 /// Stream handler with max_tokens=0
@@ -351,13 +349,12 @@ async fn test_stream_handler_zero_max_tokens() {
 
     let response = app.oneshot(request).await.expect("test value should be present");
     // Zero max_tokens might return empty or error
-    assert!(
-        response.status() == StatusCode::OK
-            || response.status() == StatusCode::NOT_FOUND
-            || response.status() == StatusCode::BAD_REQUEST
-            || response.status() == StatusCode::INTERNAL_SERVER_ERROR
-            || response.status() == StatusCode::NOT_FOUND
-    );
+    // aprender#2609: this was a disjunction over four or five statuses (several
+    // listing NOT_FOUND twice), so it excluded nothing and passed against the
+    // very behaviour #2609 reports. The shared test app is `demo_mock()` — a
+    // server with no model of any kind — so the one correct answer for a
+    // MOUNTED route is 503, and that is now what is asserted.
+    crate::api::test_helpers::assert_no_model_status(response.status());
 }
 
 // =============================================================================
@@ -387,15 +384,15 @@ async fn test_registry_malfunction_structured_error() {
     let status = response.status();
 
     // Graceful degradation: must return structured error, not panic
-    assert!(
-        status == StatusCode::NOT_FOUND
-            || status == StatusCode::OK  // Might fall back to default
-            || status == StatusCode::INTERNAL_SERVER_ERROR,
-        "Expected graceful degradation, got: {status}"
-    );
+    // aprender#2609: this was a disjunction over four or five statuses (several
+    // listing NOT_FOUND twice), so it excluded nothing and passed against the
+    // very behaviour #2609 reports. The shared test app is `demo_mock()` — a
+    // server with no model of any kind — so the one correct answer for a
+    // MOUNTED route is 503, and that is now what is asserted.
+    crate::api::test_helpers::assert_no_model_status(status);
 
-    // If error, verify response body is valid JSON with error field
-    if status != StatusCode::OK {
+    // ... and it degrades gracefully: a structured JSON error, never a panic.
+    {
         let body = axum::body::to_bytes(response.into_body(), 1024 * 1024)
             .await
             .expect("test value should be present");

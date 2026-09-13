@@ -1,7 +1,7 @@
 contract: apr-serve-openai-compat
 metadata:
   kind: pattern
-  version: "1.18.0"
+  version: "1.19.0"
   description: >
     OpenAI-compatible serve layer (/v1/chat/completions, /v1/completions,
     /v1/embeddings) fidelity invariants. Established by an adversarial audit
@@ -595,3 +595,9 @@ falsification_tests:
     test_harness: 'cargo test -p aprender-serve --lib -- stream_and_metrics_2375::unservable_temperature_is_refused_on_every_generating_route stream_and_metrics_2375::temperature_domain_is_total'
     expected_output: "test result: ok"
     if_fails: 'Fixing temperature 0 alone leaves the rest of the domain reaching apply_temperature, which answers 500 {"error":"Invalid shape: Temperature must be a positive finite number"} — the exact body the fix set out to eliminate — on the dense backends, and serves inverted-distribution output with a 200 on the quantized ones (mutation-verified: removing the guard from ChatCompletionRequest answered temperature -1 with 200 OK and generated text). A comparison-only guard (t < 0.0) additionally lets NaN through, because every comparison with NaN is false (aprender#2391).'
+  - id: FALSIFY-CHAT-NO-MODEL-503-NOT-404-2375
+    name: chat_routes_report_a_model_less_server_as_503_and_an_unknown_model_as_404
+    prediction: 'On a model-less AppState, POST /v1/chat/completions/stream answers 503 — the status model_resolution_status assigns to RegistryError, and the one /v1/predict and /v1/gpu/warmup already answer for the same condition — while the SAME route with a registry that does not hold the requested model name still answers 404. Both halves are asserted, so neither a blanket 404 nor a blanket 503 can pass. RED on 0.63.0 and on main at 4bbfeb07f, where registry_fallback mapped EVERY resolution failure to StatusCode::NOT_FOUND, so a mounted route reported itself as nonexistent whenever the server merely had nothing resident.'
+    test_harness: 'cargo test -p aprender-serve --lib -- chat_stream_route_2375::stream_route_with_no_model_is_503_not_404 chat_stream_route_2375::stream_route_with_an_unknown_model_name_is_still_404'
+    expected_output: "test result: ok"
+    if_fails: 'A client retry policy keyed on status treats "the server has not loaded a model yet" as permanent (404 = this route does not exist) and stops retrying, on the two most-used routes of the OpenAI surface. Mutation-verified in both directions: forcing NOT_FOUND reds the 503 half, forcing SERVICE_UNAVAILABLE reds the 404 half.'

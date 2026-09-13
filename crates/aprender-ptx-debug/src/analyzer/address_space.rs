@@ -5,7 +5,7 @@ use crate::parser::types::{Modifier, Opcode};
 use crate::parser::{Instruction, Operand, PtxModule, SourceLocation, Statement};
 use std::collections::HashSet;
 
-/// Bug: Generic addressing of shared memory
+/// Defect: Generic addressing of shared memory
 #[derive(Debug, Clone)]
 pub struct GenericSharedBug {
     /// Source location
@@ -44,40 +44,51 @@ impl AddressSpaceValidator {
 
             for stmt in &kernel.body {
                 if let Statement::Instruction(instr) = stmt {
-                    // Track cvta.shared destinations
-                    if instr.opcode == Opcode::Cvta && self.has_shared_modifier(instr) {
-                        if let Some(Operand::Register(dest)) = instr.operands.first() {
-                            self.shared_base_regs.insert(dest.clone());
-                        }
-                    }
-
-                    // Detect generic ld/st using tracked registers
-                    if (instr.opcode == Opcode::Ld || instr.opcode == Opcode::St)
-                        && !self.has_space_modifier(instr)
-                    {
-                        // Check if address operand uses a generic shared register
-                        let addr_operand = if instr.opcode == Opcode::Ld {
-                            instr.operands.get(1)
-                        } else {
-                            instr.operands.first()
-                        };
-
-                        if let Some(operand) = addr_operand {
-                            if self.uses_generic_shared_reg(operand) {
-                                bugs.push(GenericSharedBug {
-                                    location: instr.location.clone(),
-                                    instruction: instr.clone(),
-                                    severity: Severity::Critical,
-                                    fix: "Use ld.shared with 32-bit offset instead".into(),
-                                });
-                            }
-                        }
-                    }
+                    self.scan_generic_shared_instruction(instr, &mut bugs);
                 }
             }
         }
 
         bugs
+    }
+
+    /// Track a `cvta.shared` destination, then flag a generic ld/st that uses it.
+    fn scan_generic_shared_instruction(
+        &mut self,
+        instr: &Instruction,
+        bugs: &mut Vec<GenericSharedBug>,
+    ) {
+        // Track cvta.shared destinations
+        if instr.opcode == Opcode::Cvta && self.has_shared_modifier(instr) {
+            if let Some(Operand::Register(dest)) = instr.operands.first() {
+                self.shared_base_regs.insert(dest.clone());
+            }
+        }
+
+        // Detect generic ld/st using tracked registers
+        if (instr.opcode != Opcode::Ld && instr.opcode != Opcode::St)
+            || self.has_space_modifier(instr)
+        {
+            return;
+        }
+
+        // Check if address operand uses a generic shared register
+        let addr_operand = if instr.opcode == Opcode::Ld {
+            instr.operands.get(1)
+        } else {
+            instr.operands.first()
+        };
+
+        if let Some(operand) = addr_operand {
+            if self.uses_generic_shared_reg(operand) {
+                bugs.push(GenericSharedBug {
+                    location: instr.location.clone(),
+                    instruction: instr.clone(),
+                    severity: Severity::Critical,
+                    fix: "Use ld.shared with 32-bit offset instead".into(),
+                });
+            }
+        }
     }
 
     /// Detect shared memory using 64-bit addresses (F022)
@@ -121,30 +132,12 @@ impl AddressSpaceValidator {
                         }
                     }
                     Statement::Instruction(instr) => {
-                        // Check for backward branch (loop end)
-                        if instr.opcode == Opcode::Bra {
-                            for operand in &instr.operands {
-                                if let Operand::Label(target) = operand {
-                                    if loop_start_labels.contains(target) {
-                                        in_loop = false;
-                                    }
-                                }
-                            }
-                        }
-
-                        // Detect cvta.shared inside loop
-                        if in_loop
-                            && instr.opcode == Opcode::Cvta
-                            && self.has_shared_modifier(instr)
-                        {
-                            bugs.push(GenericSharedBug {
-                                location: instr.location.clone(),
-                                instruction: instr.clone(),
-                                severity: Severity::High,
-                                fix: "Move cvta.shared outside loop to reduce register pressure"
-                                    .into(),
-                            });
-                        }
+                        self.scan_loop_cvta_instruction(
+                            instr,
+                            &mut in_loop,
+                            &loop_start_labels,
+                            &mut bugs,
+                        );
                     }
                     _ => {}
                 }
@@ -152,6 +145,36 @@ impl AddressSpaceValidator {
         }
 
         bugs
+    }
+
+    /// Clear the loop flag on a backward branch, then flag `cvta.shared` seen inside a loop.
+    fn scan_loop_cvta_instruction(
+        &self,
+        instr: &Instruction,
+        in_loop: &mut bool,
+        loop_start_labels: &HashSet<String>,
+        bugs: &mut Vec<GenericSharedBug>,
+    ) {
+        // Check for backward branch (loop end)
+        if instr.opcode == Opcode::Bra {
+            for operand in &instr.operands {
+                if let Operand::Label(target) = operand {
+                    if loop_start_labels.contains(target) {
+                        *in_loop = false;
+                    }
+                }
+            }
+        }
+
+        // Detect cvta.shared inside loop
+        if *in_loop && instr.opcode == Opcode::Cvta && self.has_shared_modifier(instr) {
+            bugs.push(GenericSharedBug {
+                location: instr.location.clone(),
+                instruction: instr.clone(),
+                severity: Severity::High,
+                fix: "Move cvta.shared outside loop to reduce register pressure".into(),
+            });
+        }
     }
 
     fn has_shared_modifier(&self, instr: &Instruction) -> bool {

@@ -17,8 +17,15 @@ import time
 import numpy as np
 from typing import Dict, List
 import statistics
+import os
 import subprocess
 import sys
+
+# APR-MONO: this benchmark used to shell out to a standalone ~/src/trueno
+# checkout, which no longer exists -- trueno IS crates/aprender-compute in this
+# monorepo. Resolving from __file__ makes the benchmark run from any
+# clone instead of one developer's filesystem.
+CRATE_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 def benchmark_numpy_matmul(size: int, iterations: int = 100) -> Dict:
@@ -56,7 +63,7 @@ def run_trueno_benchmark(size: int) -> Dict:
             ["cargo", "bench", "--bench", "matrix_ops", "--", f"matmul_{size}x{size}"],
             capture_output=True,
             text=True,
-            cwd="/home/noah/src/trueno",
+            cwd=CRATE_ROOT,
             timeout=300,
         )
 

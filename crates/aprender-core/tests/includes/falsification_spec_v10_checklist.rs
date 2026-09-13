@@ -4,13 +4,9 @@
 #[test]
 fn f_checklist_001_score_ge_250() {
     // F-CHECKLIST-001: Structural check — qa.rs has scoring logic and threshold
-    let qa_path = project_root()
-        .join("crates")
-        .join("apr-cli")
-        .join("src")
-        .join("commands")
-        .join("qa.rs");
-    let content = std::fs::read_to_string(&qa_path).expect("qa.rs must exist");
+    // #2522: was anchored to apr-cli/src/commands/qa.rs. The scoring and gate
+    // logic moved to qa_report.rs / qa_*.rs siblings; the property is unchanged.
+    let content = crate_src_text("apr-cli");
     assert!(
         content.contains("score") || content.contains("Score"),
         "F-CHECKLIST-001: qa.rs must have scoring logic"
@@ -24,13 +20,9 @@ fn f_checklist_001_score_ge_250() {
 #[test]
 fn f_checklist_002_no_section_scores_zero() {
     // F-CHECKLIST-002: Structural check — qa.rs checks multiple sections (not just one)
-    let qa_path = project_root()
-        .join("crates")
-        .join("apr-cli")
-        .join("src")
-        .join("commands")
-        .join("qa.rs");
-    let content = std::fs::read_to_string(&qa_path).expect("qa.rs must exist");
+    // #2522: was anchored to apr-cli/src/commands/qa.rs. The scoring and gate
+    // logic moved to qa_report.rs / qa_*.rs siblings; the property is unchanged.
+    let content = crate_src_text("apr-cli");
     // Count distinct gate/check functions (each section has its own checks)
     let gate_count = content.matches("fn check_").count()
         + content.matches("fn gate_").count()
@@ -44,11 +36,8 @@ fn f_checklist_002_no_section_scores_zero() {
 #[test]
 fn f_checklist_003_contract_section_present_in_spec() {
     // F-CHECKLIST-003: Spec includes PMAT-237 contract gates
-    let spec_path = project_root()
-        .join("docs")
-        .join("specifications")
-        .join("qwen2.5-coder-showcase-demo.md");
-    let content = std::fs::read_to_string(&spec_path).expect("spec readable");
+    // #2522: the spec moved to docs/specifications/archive/.
+    let content = spec_text();
 
     assert!(
         content.contains("PMAT-237"),
@@ -63,11 +52,8 @@ fn f_checklist_003_contract_section_present_in_spec() {
 #[test]
 fn f_checklist_004_falsification_depth_ge_level_5() {
     // F-CHECKLIST-004: At least 5 tests use Level 5 (hang detection, fuzzing)
-    let spec_path = project_root()
-        .join("docs")
-        .join("specifications")
-        .join("qwen2.5-coder-showcase-demo.md");
-    let content = std::fs::read_to_string(&spec_path).expect("spec readable");
+    // #2522: the spec moved to docs/specifications/archive/.
+    let content = spec_text();
 
     // Count Level 5 indicators
     let level_5_indicators = ["hang detection", "fuzzing", "timeout", "Inject", "corrupt"];
@@ -110,23 +96,136 @@ fn check_file_for_satd(path: &std::path::Path, violations: &mut Vec<String>) {
     }
 }
 
-fn f_checklist_005_satd_is_zero() {
-    // F-CHECKLIST-005: SATD = 0 across codebase
-    let dirs = [project_root().join("src"), project_root().join("crates")];
-    let mut violations = Vec::new();
+/// Self-admitted technical debt in PRODUCTION source, as measured on 2026-08-22
+/// at `bb2bd5e73`. This is a RATCHET, not a target: the number may only fall.
+///
+/// #2522: the gate demanded 0 and found 86, so it failed on every run since
+/// APR-MONO and told nobody, because the whole suite was named in no workflow.
+/// Two things were wrong with it. Its universe was every `.rs` file including
+/// test trees (86 vs 54 in production code), which is not the scope the repo's
+/// own PMAT gate uses. And "must be 0" against a real 54 is not an assertion, it
+/// is a wish -- it can only ever be red, so it carries no information about
+/// whether the debt is growing. A baselined ratchet does: it goes red the moment
+/// someone ADDS a marker, which is the outcome worth excluding.
+///
+/// Lower it whenever debt is paid down. Never raise it.
+///
+/// BSE-03 phase B (PMAT-1068): this constant is now the FALLBACK, not the
+/// comparand. It is the one number in the SATD class that a pull request can
+/// rewrite, which is the whole defect the D2 normaliser removes
+/// (`docs/audits/threat-model-bse-03-ratchets.md`, class 2). When the job
+/// exports `SATD_BASELINE` — the count measured on the comparand checkout of
+/// `origin/main`, in the same job, by this same scanner — that measurement is
+/// the ceiling and this constant is not read at all.
+const SATD_PRODUCTION_BASELINE: usize = 37;
 
-    for dir in &dirs {
-        for path in collect_rs_files(dir) {
-            check_file_for_satd(&path, &mut violations);
-        }
+/// The environment variable carrying `measure(comparand)` for the SATD class.
+const SATD_BASELINE_ENV: &str = "SATD_BASELINE";
+
+/// The ceiling, and WHICH SOURCE it came from.
+///
+/// Two rules, and the second is the one worth stating:
+///
+/// * unset ⇒ the constant, tagged `"constant"`. That is the local-developer
+///   path, where there is no second checkout to measure.
+/// * set ⇒ the parsed value, tagged `"comparand"` — including `0`, which is a
+///   real measurement of a tree with no markers and must never read as "unset".
+/// * set but EMPTY or unparseable ⇒ `Err`. It does **not** fall back. An empty
+///   `SATD_BASELINE` means the job tried to measure the comparand and failed,
+///   and silently substituting a hand-written constant for a measurement that
+///   did not happen is the exact defect this suite exists to catch: a gate
+///   reporting a verdict it did not reach.
+fn satd_baseline_from(raw: Option<&str>) -> Result<(usize, &'static str), String> {
+    match raw {
+        None => Ok((SATD_PRODUCTION_BASELINE, "constant")),
+        Some(s) if s.trim().is_empty() => Err(format!(
+            "{SATD_BASELINE_ENV} is set but empty: the comparand measurement did not \
+             happen, and an unmeasured comparand is not a baseline. Unset it to fall \
+             back to the constant deliberately, or fix the measurement."
+        )),
+        Some(s) => s
+            .trim()
+            .parse::<usize>()
+            .map(|n| (n, "comparand"))
+            .map_err(|e| {
+                format!(
+                    "{SATD_BASELINE_ENV}={s:?} is not a marker count ({e}); it must be \
+                     the integer this same scanner measured on the comparand checkout."
+                )
+            }),
+    }
+}
+
+fn f_checklist_005_satd_is_zero() {
+    // F-CHECKLIST-005: SATD in production source may only shrink.
+    //
+    // POLARITY (BSE-03 phase B): a count ABOVE the ceiling fails; a count at or
+    // below it passes. There is NO lower bound any more. The old "a ratchet
+    // that never tightens is stuck" assertion was one — it failed a tree whose
+    // debt had FALLEN, and it is the registered mutation of
+    // `scripts/tests/ratchet_semantics_test.sh --class satd`. It was load
+    // bearing only while the ceiling was a hand-written constant that somebody
+    // had to remember to lower. A ceiling measured on the comparand tightens by
+    // itself on the next merge, so an improvement needs no edit anywhere, and
+    // reddening one is how a guard teaches people to stop paying debt down.
+    let raw = std::env::var(SATD_BASELINE_ENV).ok();
+    let (baseline, source) = match satd_baseline_from(raw.as_deref()) {
+        Ok(pair) => pair,
+        Err(why) => panic!("F-CHECKLIST-005: {why}"),
+    };
+    // Printed, not merely computed: which number was enforced, and from where.
+    println!("F-CHECKLIST-005: SATD ceiling {baseline} (source: {source})");
+
+    let mut violations = Vec::new();
+    for path in production_rs_files() {
+        check_file_for_satd(&path, &mut violations);
     }
 
     assert!(
-        violations.is_empty(),
-        "F-CHECKLIST-005: SATD must be 0. Found {}:\n{}",
+        violations.len() <= baseline,
+        "F-CHECKLIST-005: SATD ratchet BROKEN -- {} markers in production source, \
+         the ceiling is {baseline} (source: {source}). Remove the new marker, or pay \
+         down elsewhere; do not raise the ceiling.\n{}",
         violations.len(),
         violations.join("\n")
     );
+}
+
+#[test]
+fn f_checklist_005_satd_baseline_source_is_env_then_constant() {
+    // F-CHECKLIST-005, the parsing half. Both polarities of every rule in
+    // satd_baseline_from, because "reads the environment when set" is a claim
+    // about a fallback nobody sees fire.
+    assert_eq!(
+        satd_baseline_from(None).expect("unset is not an error"),
+        (SATD_PRODUCTION_BASELINE, "constant"),
+        "unset must fall back to the constant, and say so"
+    );
+    assert_eq!(
+        satd_baseline_from(Some("12")).expect("a count parses"),
+        (12, "comparand"),
+        "a set value must WIN over the constant, and be tagged as the comparand"
+    );
+    assert_eq!(
+        satd_baseline_from(Some(" 7\n")).expect("surrounding whitespace parses"),
+        (7, "comparand"),
+        "a value captured from a shell command substitution carries whitespace"
+    );
+    assert_eq!(
+        satd_baseline_from(Some("0")).expect("zero parses"),
+        (0, "comparand"),
+        "0 is a real measurement of a clean comparand and must not read as unset"
+    );
+    for bad in ["", "   ", "abc", "-1", "37.0", "1e2"] {
+        let err = satd_baseline_from(Some(bad)).expect_err(
+            "an unusable SATD_BASELINE must be an ERROR, never a silent fall back to \
+             the constant",
+        );
+        assert!(
+            err.contains(SATD_BASELINE_ENV),
+            "the failure must name the variable it could not use, got: {err}"
+        );
+    }
 }
 
 // =============================================================================
@@ -227,13 +326,8 @@ fn f_qa_002_hang_detection_catches_silent_hangs() {
 fn f_qa_003_garbage_detection_catches_layout_bugs() {
     // F-QA-003: verify_output exists and detects garbage patterns
     // Structural check: the function is implemented in qa.rs with garbage detection
-    let qa_path = project_root()
-        .join("crates")
-        .join("apr-cli")
-        .join("src")
-        .join("commands")
-        .join("qa.rs");
-    let content = std::fs::read_to_string(&qa_path).expect("qa.rs readable");
+    // #2522: `verify_output` moved to apr-cli/src/commands/output_verification.rs.
+    let content = crate_src_text("apr-cli");
 
     assert!(
         content.contains("fn verify_output"),
@@ -257,13 +351,8 @@ fn f_qa_003_garbage_detection_catches_layout_bugs() {
 #[test]
 fn f_qa_004_empty_output_detected() {
     // F-QA-004: verify_output detects empty output
-    let qa_path = project_root()
-        .join("crates")
-        .join("apr-cli")
-        .join("src")
-        .join("commands")
-        .join("qa.rs");
-    let content = std::fs::read_to_string(&qa_path).expect("qa.rs readable");
+    // #2522: `verify_output` moved to apr-cli/src/commands/output_verification.rs.
+    let content = crate_src_text("apr-cli");
 
     assert!(
         content.contains("fn verify_output"),
@@ -278,13 +367,8 @@ fn f_qa_004_empty_output_detected() {
 #[test]
 fn f_qa_005_apr_qa_returns_machine_readable_results() {
     // F-QA-005: apr qa supports --json machine-readable output
-    let qa_path = project_root()
-        .join("crates")
-        .join("apr-cli")
-        .join("src")
-        .join("commands")
-        .join("qa.rs");
-    let content = std::fs::read_to_string(&qa_path).expect("qa.rs readable");
+    // #2522: `verify_output` moved to apr-cli/src/commands/output_verification.rs.
+    let content = crate_src_text("apr-cli");
 
     assert!(
         content.contains("json") || content.contains("Json") || content.contains("JSON"),

@@ -42,7 +42,6 @@ metadata:
 #
 #   [7] Infra spec: unified-ci-pipeline.md — sovereign-ci.yml reusable
 #       workflow, containerized, 20/20 repos GREEN.
-kind: MigrationContract
 name: cgp-monorepo-consolidation
 version: "1.2.0"
 scope: "paiml/aprender monorepo (20 repos → 1, 68 active workspace crates)"

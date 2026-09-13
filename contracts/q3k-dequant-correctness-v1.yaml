@@ -11,7 +11,6 @@ metadata:
     (format::gguf::dequantize::dequantize_q3_k). Pillar-4-adjacent (model import correctness):
     a Q3_K GGUF tensor must dequantize to f32 values matching the GGML reference.
 
-kind: KernelContract
 name: q3k-dequant-correctness
 version: "1.0.0"
 scope: "crates/aprender-core/src/format/gguf/dequantize.rs"

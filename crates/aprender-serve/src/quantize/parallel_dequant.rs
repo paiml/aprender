@@ -201,7 +201,7 @@ unsafe fn dequantize_q4_k_avx2_parallel(data: &[u8]) -> Result<Vec<f32>> {
         .par_chunks(CHUNK_BYTES)
         .flat_map(|chunk| {
             let mut chunk_result = Vec::with_capacity(chunk.len() / SUPER_BLOCK_BYTES * QK_K);
-            for sb_data in chunk.chunks_exact(SUPER_BLOCK_BYTES) {
+            for sb_data in chunk.as_chunks::<SUPER_BLOCK_BYTES>().0 {
                 // SAFETY: AVX2 availability verified by caller
                 chunk_result.extend(unsafe { dequantize_q4_k_superblock_avx2(sb_data) });
             }

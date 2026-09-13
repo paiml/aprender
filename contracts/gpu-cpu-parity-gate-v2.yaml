@@ -207,7 +207,7 @@ qa_gate:
   - f2_rejects_orthogonal_garbage
   - threshold_hierarchy_maintained
   pass_criteria: >
-    All 5 falsifications pass + on real qwen2.5-coder models: the production fp32-Mwv
+    All 6 falsifications pass + on real qwen2.5-coder models: the production fp32-Mwv
     path is ACCEPTED (coherent), HW_DP4A_Q4K=1 is REJECTED (mid-position argmax
     mismatch), with no pos0 false-reject — verified on Blackwell (gx10) and 4090.
   falsification: per-position (>=1) argmax-match AND cosine >= τ_f2 over a multi-token probe

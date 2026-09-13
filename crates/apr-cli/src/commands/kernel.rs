@@ -192,15 +192,18 @@ fn profile_gpu_generation(
         test_tokens.len(),
     );
 
-    let hotspots = run_brick_profiler_pass(
+    let (hotspots, profile_wall_us, profile_tokens) = run_brick_profiler_pass(
         &mut cuda_model, &test_tokens, num_layers, hidden_dim, vocab_size,
     );
     let category_summary = Some(compute_category_summary(&hotspots));
 
-    // F-PROFILE-009: Compute kernel launch overhead
-    let total_decode_us = stats.avg_decode_ms * 1000.0;
+    // F-PROFILE-009 (PERF-015): both terms now come from the SAME pass — same
+    // token count, same ungraphed dispatch mode — so the subtraction is
+    // well-formed. It describes the UNGRAPHED path, not the graphed one
+    // production runs.
+    let _ = profile_tokens;
     let (launch_overhead_us, launch_overhead_pct) =
-        compute_kernel_launch_overhead(&hotspots, total_decode_us);
+        compute_kernel_launch_overhead(&hotspots, profile_wall_us);
 
     // Compute roofline with the real results
     let mut results = RealProfileResults {
@@ -332,10 +335,25 @@ fn compute_profile_stats(
     }
 }
 
+/// The brick pass's token count. Named because the defect PERF-015 fixes was
+/// exactly two token counts drifting apart in two functions.
+#[cfg(all(feature = "inference", feature = "cuda"))]
+const PROFILE_PASS_TOKENS: usize = 16;
+
 /// Run BrickProfiler pass for per-operation GPU timing breakdown.
 ///
 /// Disables CUDA graph to get individual kernel timing via stream sync.
 /// This adds overhead (~2x slower) but gives exact per-brick measurements.
+///
+/// PERF-015: returns `(hotspots, wall_us, tokens)` — the pass now times ITSELF.
+/// The caller used to subtract this pass's kernel sum from a wall time measured
+/// by a DIFFERENT pass, with a different token count (32 vs the 16 here) and a
+/// different dispatch mode (that pass is graphed; this one sets
+/// `SKIP_CUDA_GRAPH=1` because the profiler cannot instrument a captured
+/// graph). The difference of two incomparable quantities read as 90.3% and was
+/// cited as evidence that sampling sync dominated decode. Returning this pass's
+/// own wall time makes the subtraction well-formed: same run, same tokens, same
+/// mode — an overhead figure for the UNGRAPHED path, now labelled as such.
 #[cfg_attr(coverage_nightly, coverage(off))]
 #[cfg(all(feature = "inference", feature = "cuda"))]
 fn run_brick_profiler_pass(
@@ -344,7 +362,7 @@ fn run_brick_profiler_pass(
     num_layers: usize,
     hidden_dim: usize,
     vocab_size: usize,
-) -> Vec<Hotspot> {
+) -> (Vec<Hotspot>, f64, usize) {
     use realizar::gguf::QuantizedGenerateConfig;
 
     eprintln!(
@@ -359,16 +377,19 @@ fn run_brick_profiler_pass(
     cuda_model.reset_profiler();
 
     let profile_config = QuantizedGenerateConfig {
-        max_tokens: 16,
+        max_tokens: PROFILE_PASS_TOKENS,
         temperature: 0.0,
         top_k: 1,
         stop_tokens: vec![],
         trace: false,
         ..Default::default()
     };
+    let t0 = std::time::Instant::now();
     let _ = cuda_model.generate_gpu_resident(test_tokens, &profile_config);
+    let wall_us = t0.elapsed().as_secs_f64() * 1_000_000.0;
 
-    extract_gpu_hotspots(cuda_model, num_layers, hidden_dim, vocab_size)
+    let hotspots = extract_gpu_hotspots(cuda_model, num_layers, hidden_dim, vocab_size);
+    (hotspots, wall_us, PROFILE_PASS_TOKENS)
 }
 
 /// Estimate data bytes moved per kernel invocation based on operation name and model dims.

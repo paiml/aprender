@@ -28,7 +28,6 @@ metadata:
   - 'crates/apr-cli/src/commands/pull.rs — run_sharded_gguf wiring + parts cleanup'
   - 'contracts/sharded-gguf-pull-v1.yaml — the v0.37.0 pull-side this completes'
 
-kind: KernelContract
 name: sharded-gguf-merge
 version: 1.0.0
 scope: aprender-core merge_gguf_shards + GgufReader keep-all mode + apr-cli pull wiring

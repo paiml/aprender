@@ -12,6 +12,12 @@ if [ ! -d "$CRATE_DIR" ]; then
   exit 1
 fi
 
+# SEC010: reject path traversal before cd'ing into a caller-supplied directory.
+if [[ "$CRATE_DIR" == *..* ]]; then
+  echo "ERROR: CRATE_DIR must not contain '..': $CRATE_DIR" >&2
+  exit 1
+fi
+
 cd "$CRATE_DIR"
 CRATE_NAME=$(basename "$CRATE_DIR")
 

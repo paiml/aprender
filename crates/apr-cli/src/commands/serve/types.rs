@@ -12,6 +12,7 @@
 #![allow(clippy::redundant_closure_for_method_calls)]
 #![allow(clippy::inefficient_to_string)]
 
+use super::resolve_gpu_layers;
 use crate::error::{CliError, Result};
 use colored::Colorize;
 use std::path::{Path, PathBuf};
@@ -43,6 +44,14 @@ pub struct ServerConfig {
     pub no_gpu: bool,
     /// Force GPU acceleration (requires CUDA feature)
     pub gpu: bool,
+    /// PERF-021: how many layers the user ASKED to offload.
+    ///
+    /// `--gpu` is a boolean, and a boolean request has no observable
+    /// resolution: honoured and ignored look identical from outside. That is
+    /// finding N4 and the reason defect #2696 was invisible for three releases.
+    /// Neither comparator has a boolean — llama.cpp takes `-ngl` as an integer,
+    /// `auto` or `all` and then reports what it resolved.
+    pub gpu_layers: Option<GpuLayerRequest>,
     /// Enable batched GPU inference for 2X+ throughput
     pub batch: bool,
     /// Enable inference tracing (PMAT-SHOWCASE-METHODOLOGY-001)
@@ -82,6 +91,7 @@ impl Default for ServerConfig {
             metrics: true,
             no_gpu: false,
             gpu: false,
+            gpu_layers: None,
             batch: false,
             trace: false,
             trace_level: "basic".to_string(),
@@ -89,7 +99,7 @@ impl Default for ServerConfig {
             verbose: false,
             backend: None,
             otlp_endpoint: None,
-            context_length: 4096,
+            context_length: DEFAULT_CONTEXT_LENGTH,
             no_fp8_cache: false,
             ollama_compat: false,
             model_path: None,
@@ -97,7 +107,85 @@ impl Default for ServerConfig {
     }
 }
 
+/// KV-cache context length a server uses when `--context-length` is not given.
+///
+/// Named because PP-14 has to distinguish an argument the operator SET from one
+/// that defaulted, and a magic 4096 in two places cannot support that.
+pub(crate) const DEFAULT_CONTEXT_LENGTH: usize = 4096;
+
 impl ServerConfig {
+    /// PERF-021 / I-2: the accelerator decision reads the QUANTITY, never the
+    /// boolean.
+    ///
+    /// THE DEFECT THIS EXISTS TO KILL. Before this method, every site that
+    /// chose GPU over CPU read `config.gpu` — handlers.rs:776, handlers.rs:1084,
+    /// handler_gpu_completion.rs:407 and :412 — while `--gpu-layers` set only
+    /// `config.gpu_layers`. So on a `--features cuda` build:
+    ///
+    ///   apr serve run --gpu-layers all m.gguf
+    ///     -> gpu = false, gpu_layers = Some(All)
+    ///     -> ensure_accelerator_available sees wants_layers and PASSES
+    ///     -> `if config.gpu && !config.no_gpu` is FALSE
+    ///     -> run_cpu_server
+    ///
+    /// That is #2696 — "published apr silently ignores --gpu" — reproduced in
+    /// the new spelling, by the change that retired the old one. The quantity
+    /// flag was parsed, validated, stored, and then not consulted by any
+    /// decision, which is finding N4 with the flag type swapped.
+    ///
+    /// `--gpu-layers 0` is an explicit CPU request, so this is not "is_some".
+    /// PERF-021 / I-2: resolve the request against the model, and REPORT it.
+    ///
+    /// N4 is the whole reason the boolean was retired: "a boolean accelerator
+    /// flag has no observable resolution — `--gpu` can be ignored and nothing
+    /// in the output changes. `-ngl 999` cannot be ignored, because the loader
+    /// must state how many layers it placed." This is that statement.
+    ///
+    /// `fits` IS `total_layers`, and that is a limitation, not a measurement.
+    /// No free-VRAM query is reachable from any apr build: `query_cuda_memory`
+    /// sits behind aprender-compute's `cuda-monitor` feature, which apr-cli's
+    /// `cuda` feature does not enable, and `CudaContext::memory_info()` is only
+    /// reachable AFTER the model is constructed — i.e. after this decision. So
+    /// this cannot claim to have fitted anything, and does not.
+    ///
+    /// Consequently `auto` resolves to `all`, and a PARTIAL request is REFUSED
+    /// rather than rounded: `OwnedQuantizedModelCuda` takes no layer count and
+    /// uploads every layer, so accepting `--gpu-layers 12` would place 29 and
+    /// report 12. That is the fabrication this whole epic exists to remove,
+    /// and it is worse than a refusal because it would be a number in a log.
+    ///
+    /// # Errors
+    /// [`CliError::InvalidInput`] for a partial request this loader cannot honour.
+    pub(crate) fn resolve_layers(&self, total_layers: u32) -> Result<u32> {
+        let Some(request) = self.gpu_layers else {
+            return Ok(0);
+        };
+        if self.no_gpu {
+            return Ok(0);
+        }
+        if let GpuLayerRequest::Exact(n) = request {
+            if n > 0 && n < total_layers {
+                return Err(CliError::InvalidInput(format!(
+                    "--gpu-layers {n} asks for a PARTIAL offload of a {total_layers}-layer \
+                     model, and this build has no partial offload: the loader places every \
+                     layer or none. Accepting this would upload {total_layers} and report \
+                     {n}.\n\
+                     \n\
+                     Pass `--gpu-layers all` (or `0` for CPU). Partial offload needs a \
+                     free-VRAM query that no apr build currently reaches; tracked as \
+                     PERF-023."
+                )));
+            }
+        }
+        // `fits = total_layers`: see the note above. This is all-or-nothing.
+        resolve_gpu_layers(request, total_layers, total_layers)
+    }
+
+    pub(crate) fn wants_accelerator(&self) -> bool {
+        self.gpu_layers
+            .is_some_and(GpuLayerRequest::wants_accelerator)
+            && !self.no_gpu
+    }
     /// Translate the operator-facing hardening flags into realizar's
     /// [`RouterConfig`](realizar::api::RouterConfig).
     ///
@@ -485,3 +573,65 @@ fn find_embedded_tool_json(text: &str) -> Option<String> {
 }
 
 include!("types_uuid_simple_server.rs");
+
+/// PERF-021: a layer-offload request, which is a QUANTITY, not a flag.
+///
+/// The contract is that every value here has an observable resolution — the
+/// server reports `requested`, `resolved` and `total`, so "I asked for all and
+/// got 12 of 29" is expressible. `--gpu` could not express it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GpuLayerRequest {
+    /// `--gpu-layers 0` — CPU, explicitly. Distinct from not asking.
+    None,
+    /// `--gpu-layers N` — exactly N. An EXPLICIT instruction: auto-fit may not
+    /// reduce it (I-17). llama.cpp's auto-fit likewise only touches parameters
+    /// the user did not set.
+    Exact(u32),
+    /// `--gpu-layers all` — every layer, and fail if they do not fit.
+    All,
+    /// `--gpu-layers auto` — offload what fits. The ONLY value auto-fit may
+    /// modify, because it is the value that asked it to.
+    Auto,
+}
+
+impl std::fmt::Display for GpuLayerRequest {
+    /// The spelling a USER would type, so `requested=` quotes their own word
+    /// back rather than a Rust variant name.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::None => write!(f, "0"),
+            Self::Auto => write!(f, "auto"),
+            Self::All => write!(f, "all"),
+            Self::Exact(n) => write!(f, "{n}"),
+        }
+    }
+}
+
+impl GpuLayerRequest {
+    /// Parse the clap value. Rejects anything else rather than defaulting —
+    /// a mis-typed accelerator request must not silently become CPU.
+    pub fn parse(s: &str) -> std::result::Result<Self, String> {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "0" | "none" | "cpu" => Ok(Self::None),
+            "all" | "max" => Ok(Self::All),
+            "auto" => Ok(Self::Auto),
+            other => other.parse::<u32>().map(Self::Exact).map_err(|_| {
+                format!("--gpu-layers expects a number, `auto`, `all`, or `0`; got {other:?}")
+            }),
+        }
+    }
+
+    /// Whether this request asks for any accelerator at all.
+    #[must_use]
+    pub fn wants_accelerator(self) -> bool {
+        !matches!(self, Self::None)
+    }
+
+    /// I-17, EXPLICIT WINS: auto-fit may reduce only what it was asked to fit.
+    /// `Exact(n)` and `All` are user instructions and are never lowered behind
+    /// the user's back — that overriding is the v2.2 root cause of defect #1.
+    #[must_use]
+    pub fn may_autofit(self) -> bool {
+        matches!(self, Self::Auto)
+    }
+}

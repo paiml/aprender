@@ -15,7 +15,6 @@ metadata:
     split REDUCES impurity, identically to sklearn — not by the raw sample count
     reaching each split node.
 
-kind: KernelContract
 name: tree-feature-importances-mdi
 version: "1.0.0"
 scope: "crates/aprender-core/src/tree/regression_helpers.rs"

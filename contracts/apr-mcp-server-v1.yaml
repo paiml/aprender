@@ -51,7 +51,6 @@ metadata:
     - mcp-tool-schema-v1
     - apr-cli-commands-v1
 
-kind: AprMcpServerContract
 name: apr-mcp-server
 version: "1.0.0"
 status: ACTIVE

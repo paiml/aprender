@@ -20,6 +20,37 @@ impl AprTransformer {
         position: usize,
     ) -> Result<Vec<f32>> {
         let force_f32 = std::env::var("APR_FORCE_F32").is_ok();
+        let normed = self.forward_hidden_with_cache(token_id, cache, position)?;
+        // 4. LM head projection
+        self.project_lm_head(&normed, self.config.hidden_dim, force_f32)
+    }
+
+    /// The final-layer hidden state for `token_id`: everything
+    /// [`Self::forward_with_cache`] does *except* the `lm_head` projection.
+    ///
+    /// This is the tensor `lm_head` consumes — the same quantity
+    /// [`crate::layers::Model::forward_hidden`] returns for the dense backend and
+    /// [`crate::gguf::OwnedQuantizedModel::forward_hidden_states`] returns for the
+    /// quantized one — so all three produce comparable sentence embeddings after
+    /// pooling.
+    ///
+    /// aprender#2609: the embedding routes had backends for the dense and the
+    /// quantized model only. An `AprTransformer` server — `/health` reporting
+    /// `model_loaded: true`, `/generate` answering 200 — had no hidden-state
+    /// accessor at all, so `/v1/embeddings`, `/realize/embed` and
+    /// `/api/embeddings` all answered "No model available".
+    ///
+    /// # Errors
+    ///
+    /// Propagates any [`RealizarError`](crate::error::RealizarError) from the
+    /// projection or attention kernels.
+    pub fn forward_hidden_with_cache(
+        &self,
+        token_id: u32,
+        cache: &mut AprKVCache,
+        position: usize,
+    ) -> Result<Vec<f32>> {
+        let force_f32 = std::env::var("APR_FORCE_F32").is_ok();
         let trace_enabled = std::env::var("REALIZE_TRACE").is_ok();
 
         let hidden_dim = self.config.hidden_dim;
@@ -116,17 +147,16 @@ impl AprTransformer {
         }
 
         // 3. Final layer norm
-        let normed = self.layer_norm(
+        Ok(self.layer_norm(
             &hidden,
             &self.output_norm_weight,
             self.output_norm_bias.as_deref(),
             self.config.eps,
-        );
-
-        // 4. LM head projection
-        self.project_lm_head(&normed, hidden_dim, force_f32)
+        ))
     }
 }
+
+include!("hidden_states.rs");
 
 include!("mod_project_apr_transformer.rs");
 include!("cache_attention.rs");

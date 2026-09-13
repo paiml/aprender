@@ -111,6 +111,12 @@ impl Tensor {
     ///
     /// Uses the tanh approximation:
     /// GELU(x) ≈ 0.5 * x * (1 + tanh(sqrt(2/π) * (x + 0.044715 * x³)))
+    ///
+    /// This corresponds to HuggingFace `hidden_act` values `gelu_new` and
+    /// `gelu_pytorch_tanh`. For `hidden_act == "gelu"` — which is what the pinned
+    /// MiniLM config uses — you want the exact erf form, [`Tensor::gelu_exact`].
+    /// The two are DIFFERENT functions, diverging by up to 4.7e-4 near x = -2.7;
+    /// picking the wrong one is a parity defect, not a rounding difference.
     #[must_use]
     pub fn gelu(&self) -> Tensor {
         let sqrt_2_over_pi = (2.0_f32 / std::f32::consts::PI).sqrt();
@@ -136,6 +142,90 @@ impl Tensor {
             });
         }
 
+        result
+    }
+
+    /// Exact GELU: `0.5 * x * (1 + erf(x / sqrt(2)))`.
+    ///
+    /// This is what HuggingFace BERT computes when `hidden_act == "gelu"`, and it is
+    /// the activation on the ENC-03 FFN parity path.
+    ///
+    /// Contract: `setfit-encoder-conformance-v1`, equation `gelu_exact` (amendment A-03).
+    ///
+    /// # Which GELU do I want?
+    ///
+    /// | HF `hidden_act` | Use |
+    /// |---|---|
+    /// | `gelu` | [`Tensor::gelu_exact`] (this function) |
+    /// | `gelu_new`, `gelu_pytorch_tanh` | [`Tensor::gelu`] (tanh approximation) |
+    ///
+    /// [`Tensor::gelu`] is the tanh APPROXIMATION and is a genuinely DIFFERENT
+    /// function — the two differ by up to 4.7e-4 near x = -2.7, which is orders of
+    /// magnitude above f32 round-trip noise. Substituting one for the other is a parity
+    /// defect, not a rounding difference. The differential test in
+    /// `tests_gelu_exact_backward.rs` exists to stop exactly that substitution.
+    ///
+    /// # Numerics
+    ///
+    /// Evaluated as `0.5 * x * erfc(-x / sqrt(2))`, which is algebraically identical to
+    /// the contract formula because `1 + erf(t) == erfc(-t)`, but numerically far
+    /// better: in the negative tail `1 + erf(x/sqrt(2))` is the sum of two nearly equal
+    /// magnitudes and cancels catastrophically (at x = -2.67 it leaves ~0.0077 out of
+    /// ~1.0). Computing `erfc` directly keeps full relative accuracy there.
+    ///
+    /// Uses `erfc_precise` (Cody rational Chebyshev, ~1e-15) rather than the older
+    /// `batuta_common::math::erf` (Abramowitz & Stegun, 1.5e-7 absolute). A&S was
+    /// measured against an independent oracle and found to induce a 129-ulp systematic
+    /// bias in that same negative tail — a bias that would compound across six FFN
+    /// layers rather than average out.
+    #[provable_contracts_macros::contract("setfit-encoder-conformance-v1", equation = "gelu_exact")]
+    #[must_use]
+    pub fn gelu_exact(&self) -> Tensor {
+        contract_pre_gelu_exact!(self.data());
+
+        // 1 / sqrt(2*pi)
+        const INV_SQRT_2PI: f64 = 0.398_942_280_401_432_7;
+
+        let src = self.data();
+        let needs_grad = is_grad_enabled() && self.requires_grad_enabled();
+        let mut data = vec![0.0f32; src.len()];
+        // The local derivative d/dx [x*Phi(x)] = Phi(x) + x*phi(x) shares the erfc
+        // evaluation with the forward value and does not depend on grad_output, so it
+        // is computed here once rather than re-evaluating Cody's rational Chebyshev
+        // (plus two exp calls) per element in the backward pass.
+        let mut local_grad = if needs_grad {
+            Vec::with_capacity(src.len())
+        } else {
+            Vec::new()
+        };
+        for (out, &x) in data.iter_mut().zip(src.iter()) {
+            let xd = f64::from(x);
+            // 1 + erf(t) == erfc(-t); the erfc form avoids the negative-tail cancellation.
+            let erfc = batuta_common::math::erfc_precise(-xd / std::f64::consts::SQRT_2);
+            *out = (0.5 * xd * erfc) as f32;
+            if needs_grad {
+                let phi = (-xd * xd / 2.0).exp() * INV_SQRT_2PI;
+                // Plain (not mul_add) arithmetic: the backward previously evaluated
+                // `phi_cap + xd * phi` with two roundings. An FMA here would fuse them
+                // and perturb the stored derivative, so this stays bit-identical.
+                #[allow(clippy::suboptimal_flops, reason = "preserves bit-identical rounding")]
+                local_grad.push(0.5 * erfc + xd * phi);
+            }
+        }
+        let mut result = Tensor::from_vec(data, self.shape());
+
+        if needs_grad {
+            result.requires_grad_(true);
+            let grad_fn = Arc::new(crate::autograd::grad_fn::GeluExactBackward { local_grad });
+            result.set_grad_fn(grad_fn.clone());
+
+            with_graph(|graph| {
+                graph.register_tensor(self.clone());
+                graph.record(result.id(), grad_fn, vec![self.id()]);
+            });
+        }
+
+        contract_post_gelu_exact!(result.data());
         result
     }
 
@@ -364,3 +454,10 @@ impl Tensor {
 
 #[cfg(test)]
 mod tests;
+
+// Wired from activation.rs rather than ops/mod.rs on purpose: plans 01-01 (wave 1) and
+// 01-03 (wave 3) both edit ops/mod.rs, and this is a wave-2 plan — touching that shared
+// module file would create a merge conflict across waves.
+#[cfg(test)]
+#[path = "tests_gelu_exact_backward.rs"]
+mod tests_gelu_exact_backward;

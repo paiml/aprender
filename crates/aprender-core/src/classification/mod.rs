@@ -772,6 +772,8 @@ mod linear_svm;
 pub use linear_svm::*;
 mod svc_rbf;
 pub use svc_rbf::{Kernel, MultiClassSVC, SVCRbf};
+pub mod multinomial;
+pub use multinomial::*;
 mod sets;
 #[cfg(test)]
 mod svc_rbf_sklearn_fixture;
@@ -780,6 +782,9 @@ mod svc_rbf_sklearn_fixture;
 #[path = "tests_logreg_contract.rs"]
 mod tests_logreg_contract;
 
+#[cfg(test)]
+#[path = "tests_multinomial_contract.rs"]
+mod tests_multinomial_contract;
 // #2310: the SGD epoch shuffle must compile on 32-bit targets and must not
 // overflow on 64-bit. Falsifiers for `shuffle_partner` and both SGD fit modes.
 #[cfg(test)]

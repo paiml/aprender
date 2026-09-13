@@ -62,6 +62,12 @@ fn print_hotspot_table(results: &RealProfileResults, granular: bool) {
         rows.push(row);
     }
 
+    // PERF-016: the column was headed "Bottleneck", sitting beside four measured
+    // columns, and its content comes from `classify_operation_bottleneck` -- a
+    // lookup on the operation NAME. Five names are COMPUTE, everything else is
+    // MEMORY, on every model and every host. The reasoning is sound and is
+    // written at the function; the header was the only thing telling a reader
+    // what kind of value this is, and it said "measured".
     let headers: &[&str] = if granular {
         &[
             "#",
@@ -69,12 +75,12 @@ fn print_hotspot_table(results: &RealProfileResults, granular: bool) {
             "Time",
             "%",
             "Calls",
-            "Bottleneck",
+            "Bound (by name)",
             "Bar",
             "Detail",
         ]
     } else {
-        &["#", "Operation", "Time", "%", "Calls", "Bottleneck", "Bar"]
+        &["#", "Operation", "Time", "%", "Calls", "Bound (by name)", "Bar"]
     };
     println!("{}", output::table(headers, &rows));
     println!();
@@ -152,15 +158,25 @@ fn print_kernel_launch_overhead(results: &RealProfileResults) {
         "  Overhead: {:.0}µs ({:.1}% of decode time)",
         results.kernel_launch_overhead_us, results.kernel_launch_overhead_pct
     );
-    println!("  (= graphed-per-token decode − ungraphed-per-token kernel sum)");
-    println!("  Captures argmax sync, H2D/D2H copies, graph-replay dispatch,");
-    println!("  and any kernels not instrumented by the brick profiler.");
+    // PERF-015: both terms now come from the same profiler pass — same token
+    // count, same dispatch mode. The label says which path, because it is the
+    // UNGRAPHED one and that is not what production runs.
+    println!("  (= this pass's wall time − its own kernel sum, UNGRAPHED path)");
+    println!("  Includes sync, H2D/D2H copies, dispatch, and any kernel the");
+    println!("  brick profiler does not instrument. Which of those dominates is");
+    println!("  NOT determined here.");
+
+    // PERF-014: this printed "investigate sampling sync (gpu_argmax D2H)" above
+    // 40%. That was a HARDCODED STRING on a threshold — nothing in the tool
+    // inspects sampling, D2H, or dispatch. It was quoted back in an
+    // investigation as evidence for a root cause. A profiler may report a
+    // magnitude it measured; it may not name a cause it did not.
     let msg = if results.kernel_launch_overhead_pct > 40.0 {
-        "Large non-kernel overhead — investigate sampling sync (gpu_argmax D2H), graph replay dispatch".red()
+        "Non-kernel time dominates this pass — profile the host path to find out why".red()
     } else if results.kernel_launch_overhead_pct > 20.0 {
-        "Moderate non-kernel overhead — per-token sync or missed instrumentation".yellow()
+        "Non-kernel time is significant in this pass".yellow()
     } else {
-        "Small non-kernel overhead — kernels dominate decode time".green()
+        "Kernels dominate this pass".green()
     };
     println!("  {msg}");
     println!();
@@ -229,28 +245,45 @@ fn print_roofline_section(results: &RealProfileResults) {
         "  Hardware:       {} (peak {:.1} GFLOPS, {:.1} GB/s)",
         r.hardware_model, r.peak_compute, r.peak_bandwidth_gbps
     );
+    // PERF-016: the FLOP and byte counts are ANALYTIC -- closed forms over the
+    // declared dims, not anything the profiler counted. Only the denominator
+    // (wall time) is measured. "Achieved" reads as a measurement of both, so it
+    // now says which half it measured.
     println!(
-        "  Achieved:       {:.1} GFLOPS, {:.1} GB/s",
+        "  Achieved:       {:.1} GFLOPS, {:.1} GB/s  (analytic op counts / measured time)",
         r.achieved_gflops, r.achieved_bandwidth_gbps
     );
     println!("  Compute eff:    {:.1}% (per-kernel, excl launch overhead)", r.compute_efficiency_pct);
     println!("  Memory eff:     {:.1}% (per-kernel, excl launch overhead)", r.memory_efficiency_pct);
-    println!(
-        "  Arithmetic int: {:.2} (threshold={:.1})",
-        r.arithmetic_intensity, r.ai_threshold
-    );
-    println!(
-        "  {}",
-        if r.bottleneck == "MEMORY BOUND" {
-            output::badge_info(&r.bottleneck)
-        } else {
-            output::badge_warn(&r.bottleneck)
-        }
-    );
-    println!();
-    if r.bottleneck == "MEMORY BOUND" {
-        output::info("Decode is memory-bandwidth limited. Matmul operations transfer");
-        output::info("more bytes than FLOPs computed. Focus on memory access patterns.");
+    if r.bottleneck == ROOFLINE_AI_UNMEASURED {
+        // PERF-016. Printing "Arithmetic int: 4.00 (threshold=82.0)" beside a
+        // MEMORY BOUND badge presented a constant as this run's finding, and the
+        // paragraph under it named where to optimise on the strength of it.
+        // Neither survives: the number is stated as unmeasured and no verdict is
+        // issued. The hardware ridge point is real and stays.
+        println!(
+            "  Arithmetic int: UNMEASURED (hardware ridge point {:.1} FLOP/byte)",
+            r.ai_threshold
+        );
+        println!();
+        output::warn("No memory-vs-compute verdict is issued for this run. The FLOP");
+        output::warn("and byte models behind the arithmetic intensity differ by a");
+        output::warn("fixed factor, so their ratio is the same number for every");
+        output::warn("model on every host and can decide nothing. Measuring it needs");
+        output::warn("real per-kernel byte counts -- owner: PERF-016.");
+    } else {
+        println!(
+            "  Arithmetic int: {:.2} (threshold={:.1})",
+            r.arithmetic_intensity, r.ai_threshold
+        );
+        println!(
+            "  {}",
+            if r.bottleneck == "MEMORY BOUND" {
+                output::badge_info(&r.bottleneck)
+            } else {
+                output::badge_warn(&r.bottleneck)
+            }
+        );
     }
     println!();
 }
@@ -270,7 +303,9 @@ fn print_perf_grade_section(results: &RealProfileResults, show: bool) {
         grade.label().bold(),
         grade.description()
     );
-    println!("  Efficiency: {:.1}%", eff);
+    // PERF-016: the numerator of this percentage is an analytic op count, not a
+    // counted one. Saying so is the difference between a grade and a claim.
+    println!("  Efficiency: {:.1}% (analytic op counts / measured time)", eff);
     println!();
 }
 

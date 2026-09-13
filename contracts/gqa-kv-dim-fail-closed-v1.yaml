@@ -28,7 +28,6 @@ metadata:
   - 'apr-fail-closed-garbage-beat-v1.yaml (PMAT-744: sibling Pillar-4 fail-closed beat)'
   - 'llama.cpp llama_kv_cache shape validation (reference: incumbents validate cache shape)'
 
-kind: KernelContract
 name: gqa-kv-dim-fail-closed
 version: 1.0.0
 scope: aprender-serve GQA cached-attention KV-dimension consistency guard

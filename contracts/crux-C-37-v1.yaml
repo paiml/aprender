@@ -1,0 +1,196 @@
+# CRUX-C-37 — Cross-family answer recheck ("Double and Triple Check")
+metadata:
+  id: CRUX-C-37
+  version: "1.0.0"
+  created: "2026-08-25"
+  last_updated: "2026-08-25"
+  author: PAIML Engineering
+  status: missing
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "C — Serving & Chat UX"
+  competitor: pulp-free-chat
+  demand_score: 4
+  intake_status: missing
+  description: >
+    Orange Sun's Pulp Free Chat ships "Double and Triple Check": recheck an
+    answer using ADDITIONAL MODELS FROM DIFFERENT MODEL FAMILIES. `apr chat`
+    has no equivalent. The workflow matters more than it looks: a recheck by a
+    second model of the SAME family is correlated, so agreement is not
+    independent evidence. This contract therefore specifies the independence
+    requirement as the load-bearing property, not the re-asking.
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - 'https://www.orangesun.ai/pulp-free-chat#pulp-free-chat-features (fetched 2026-08-25)'
+  - 'Verbatim: "Recheck important answers using additional models from different model families"'
+  - 'feedback_verification_discipline — prove the MECHANISM engaged, never label a run by intent'
+  - 'project_assertions_exclude_guard — an assertion that excludes no outcome is not a check'
+
+  competitive_intelligence: >
+    Fetched 2026-08-25. Pulp Free Chat is a local-first desktop chat app for
+    macOS 13+ (Apple Silicon or Intel) and Windows 10/11 x86-64 with AVX2; both
+    minimums are 16GB RAM and 20GB disk. Verbatim positioning: "Private AI that
+    lives on your computer", "FREE - NO TOKEN FEES - NO SUBSCRIPTION",
+    "Works without internet after setup YES", "Prompts sent to cloud or Orange
+    Sun NO". Chat titles and message bodies are encrypted at rest in its local
+    database; AI search embeddings are generated locally and encrypted at rest.
+    Web access is OFF BY DEFAULT and enabled per chat. Voice input and output
+    are on-device. Chats organize into folders with per-folder instructions.
+
+    TWO OBSERVATIONS THAT ARE THEMSELVES THE FINDING.
+    (1) The page discloses NO inference engine, NO model names, NO GGUF or
+    SafeTensors support, and NO benchmark or tok/s number anywhere. It sells
+    hardware MINIMUMS instead of throughput. A competitor in this segment is
+    not winning on a speed claim, which is direct evidence against the
+    assumption that a published ratio is the adoption lever -- see
+    project_adoption_killers_2026_08_25, where our own published 2.93x came
+    from a harness that never ran the comparator.
+    (2) Its privacy claims are stated as falsifiable booleans a user can check
+    (no prompts leave the device; works offline after setup), which is the
+    shape our own claims should take.
+
+equations:
+  independent_recheck:
+    formula: |
+      recheck(answer, primary, verifiers) -> Verdict
+        where family(v) != family(primary) for every v in verifiers
+              and verdict = AGREE   iff all v agree with primary
+                            DISAGREE iff any v disagrees
+                            (never a silent merge, average, or vote-to-hide)
+    domain: >-
+      (answer: str, primary: ModelRef, verifiers: [ModelRef]) with
+      len(verifiers) in {1, 2} -- "double" is one verifier, "triple" is two
+    codomain: "Verdict{AGREE, DISAGREE} plus the per-verifier responses"
+    invariants:
+    - >-
+      INDEPENDENCE IS THE PROPERTY. A verifier drawn from the primary's own
+      family is REFUSED with a non-zero exit. Two checkpoints of one family
+      share pretraining data and failure modes, so their agreement is
+      correlated and is not evidence. A recheck that cannot fail differently
+      from the primary excludes no outcome, which is the defect class
+      project_assertions_exclude_guard names.
+    - >-
+      THE MECHANISM MUST BE PROVEN, NOT LABELLED. The verdict carries each
+      verifier's resolved model id and weight sha256. A recheck that reports a
+      family name it did not load is F12 -- a value with the shape of a
+      measurement that was never taken.
+    - >-
+      DISAGREEMENT IS SURFACED, NEVER RESOLVED. The command exits non-zero on
+      DISAGREE and prints both answers. Averaging, majority-voting, or silently
+      preferring the primary converts a caught error into a hidden one.
+    - >-
+      NO NETWORK. Every verifier resolves locally; a recheck that would require
+      a remote call fails closed rather than degrading to the cloud.
+    preconditions:
+    - "len(verifiers) >= 1"
+    - "every verifier resolves to a local model file"
+    postconditions:
+    - "exit_code == 0 iff verdict == AGREE"
+    - "verdict names every verifier's model id and weight sha256"
+
+falsification_tests:
+- id: FALSIFY-CRUX-C-37-001
+  rule: a same-family verifier is refused, because its agreement is not evidence
+  prediction: >-
+    `apr chat --recheck` with a verifier of the primary's family exits non-zero
+    and names the family collision. Two checkpoints of one family never satisfy
+    the independence requirement, however different their parameter counts.
+  test: 'LIVE-PENDING — cargo test -p apr-cli --lib recheck_refuses_same_family'
+  if_fails: >-
+    "verified by a second model" becomes a claim with no discriminating power:
+    the verifier shares the primary's failure modes, so it agrees exactly when
+    the primary is confidently wrong.
+  mutation: >-
+    replace the family-inequality check with `true`; the same-family case must
+    turn RED
+
+- id: FALSIFY-CRUX-C-37-002
+  rule: the verdict proves which models actually ran
+  prediction: >-
+    The verdict carries a resolved model id AND weight sha256 per verifier, and
+    the shas differ from the primary's. Asserting only a family LABEL passes
+    while loading the same file twice.
+  test: 'LIVE-PENDING — cargo test -p apr-cli --lib recheck_verdict_carries_resolved_provenance'
+  if_fails: >-
+    the recheck reports independence it never had -- the exact shape of the
+    repro harness that printed `device: GPU` while built without --features cuda
+  mutation: >-
+    emit the requested family string instead of the loaded model's sha; the
+    provenance case must turn RED
+
+- id: FALSIFY-CRUX-C-37-003
+  rule: disagreement exits non-zero and prints both answers
+  prediction: >-
+    When a verifier disagrees, exit code is non-zero and BOTH answers appear in
+    the output. No averaging, no majority vote, no silent preference.
+  test: 'LIVE-PENDING — cargo test -p apr-cli --lib recheck_disagreement_is_surfaced'
+  if_fails: >-
+    the feature hides the very disagreement it exists to find, which is worse
+    than not having it: the user now believes an unchecked answer was checked
+  mutation: >-
+    return Ok(()) on DISAGREE; the disagreement case must turn RED
+
+- id: FALSIFY-CRUX-C-37-004
+  rule: a recheck never reaches the network
+  prediction: >-
+    With every network syscall denied, a recheck over two local models still
+    completes; a recheck naming an unresolvable model fails closed rather than
+    fetching it.
+  test: 'LIVE-PENDING — cargo test -p apr-cli --lib recheck_is_offline_and_fails_closed'
+  if_fails: >-
+    a privacy-positioned local tool silently exfiltrates the prompt, losing the
+    single property this segment competes on (see competitive_intelligence)
+  mutation: >-
+    allow a remote resolve on miss; the offline case must turn RED
+
+proof_obligations:
+- type: invariant
+  property: >-
+    Independence is total over the verifier set: every accepted verifier has a
+    family distinct from the primary's (FALSIFY-001).
+  formal: "forall v in verifiers: accepted(v) => family(v) != family(primary)"
+- type: soundness
+  property: >-
+    A reported AGREE implies every verifier actually executed, evidenced by a
+    resolved sha distinct from the primary's (FALSIFY-002).
+  formal: "verdict = AGREE => forall v: ran(v) and sha(v) != sha(primary)"
+- type: invariant
+  property: >-
+    Exit status is a total function of the verdict, so a DISAGREE can never be
+    observed as success (FALSIFY-003).
+  formal: "exit_code = 0 <=> verdict = AGREE"
+
+kani_harnesses:
+# The independence predicate is a string-inequality over two declared family
+# attributes plus a set membership -- no floats, no loops. DECLARED AND NOT YET
+# WRITTEN, stated plainly because the #2644 audit found declared-but-unwritten
+# harnesses inflating the score.
+- id: KANI-CRUX-C-37-001
+  obligation: independence_is_total_over_the_verifier_set
+  property: >-
+    for all (primary_family, verifier_family) pairs, accept implies
+    verifier_family != primary_family
+  status: declared-not-written
+  cheaper_alternative: >-
+    an exhaustive table test over the declared family set, which is finite and
+    small; the same statement, today, without a solver
+
+qa_gate:
+  certeza:
+    min_score: 0.0
+    note: >-
+      No numeric quality gate is claimed. This contract governs a refusal and a
+      provenance assertion, not a measured quantity, and a fabricated score here
+      would be the class of defect APR-PERF-GATE-001 exists to remove.
+
+known_limitations:
+- >-
+  FAMILY IS A DECLARED ATTRIBUTE, NOT AN INFERRED ONE. `family(model)` reads
+  the model's declared architecture/lineage. Two vendors fine-tuning one base
+  under different names would be scored independent when they are not. Closing
+  that needs a lineage registry and is deliberately out of scope here; the
+  contract states it rather than implying the check is stronger than it is.
+- >-
+  NOT YET IMPLEMENTED. status is `missing`: this ticket specifies the contract
+  and its falsifiers. No `apr chat --recheck` surface exists on main today, so
+  all four falsification tests are RED-by-absence until it does.

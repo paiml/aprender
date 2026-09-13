@@ -1,0 +1,237 @@
+# THE PINNED llama.cpp COMPARATOR (PARITY-009, aprender#2676).
+#
+# An unpinned comparator makes every ratio meaningless ACROSS TIME: the
+# denominator changes silently between releases while the receipt claims a
+# fixed baseline. This file is the declaration; scripts/llama_bin.sh is the
+# resolver that refuses anything else.
+#
+# WHY A FILE AND NOT A CONSTANT IN THE SCRIPT. The comparator version is a
+# RELEASE-ENGINEERING decision with a date and a rationale, not an
+# implementation detail. Changing it must be a reviewable diff that a future
+# reader can bisect, and the receipt records what this file said at the time.
+#
+# BUMPING THIS IS A DELIBERATE ACT. Every ratio measured against the old pin
+# becomes incomparable with every ratio measured against the new one. Record
+# WHY in the commit, and expect the first release after a bump to have no
+# usable trend.
+#
+# THIS FILE DECLARES; IT DOES NOT ARGUE. It is a companion the gate reads
+# (PP-LLAMA-001 §0.1), so a comment here that disagrees with a decided rule
+# teaches the dissent as the rule. The argument for and against the §5.3
+# comparator decision lives in docs/specifications/PP-LLAMA-001-RATIONALE.md
+# §5.3; the withdrawn 2026-08-25 lambda band table lives in evidence/parity/LEDGER.md.
+
+[comparator]
+name = "llama.cpp"
+# The upstream build tag llama.cpp reports in its own --version output.
+# Recorded as the STRING the binary prints, not as a semver we invent.
+# PINNED 2026-08-24 from the binary actually installed on lambda:
+#   $ llama-cli --version
+#   version: 7746 (39173bcac)
+#   built with GNU 11.4.0 for Linux x86_64
+# CUDA-enabled (5 cuda/cublas libs linked), RTX 4090 sm_89 detected at init.
+#
+# Recorded as the STRING the binary prints, not a semver we invent. Bumping
+# this invalidates every ratio measured against 39173bcac — record why in the
+# commit, and expect the first release after a bump to have no usable trend.
+build_commit = "39173bcac"
+
+# A PIN WITH NO EXPIRY IS A PIN NOBODY EVER REVISITS (PP-20). The commit above
+# freezes the denominator, which is the point; left alone forever it also
+# freezes the comparison to a llama.cpp no user runs. On expiry every ratio
+# measured against this pin is `COMPARATOR_STALE` (§7.4) and may not be
+# `MEASURED` — the receipt still records the numbers, it just stops calling
+# them a parity result. Re-pinning is the remedy, and it starts a new series.
+#
+# scripts/llama_bin.sh compares pin_expiry against ${LLAMA_PIN_TODAY:-today}
+# and returns rc 4; scripts/check_llama_pin.sh proves both directions.
+pinned_on = "2026-08-24"
+pin_expiry = "2026-12-01"
+pin_expiry_decided_by = "spec-owner, PP-LLAMA-001 v3.0 §12 row 3"
+
+# Verbatim configure line, per host because the flags legitimately differ.
+# scripts/llama_bin.sh reads the resolved build's own CMakeCache.txt and
+# REFUSES a binary whose cache disagrees with the line for its host — a
+# declaration no execution path reads is a comment that looks enforceable.
+#
+# lambda: AMENDED 2026-09-02. This said `-DCMAKE_CUDA_ARCHITECTURES=89`, and
+# that is not the line that produced the binary every ratio to date was
+# measured against. Verified on the host:
+#   · build/CMakeCache.txt has NO CMAKE_CUDA_ARCHITECTURES entry, which a
+#     command-line -D would have created
+#   · `cuobjdump --list-elf build/bin/libggml-cuda.so.0.9.5` reports
+#     sm_86, sm_89 and sm_120a, 126 objects each
+#   · ggml/src/ggml-cuda/CMakeLists.txt:26 selects "native" only when
+#     CMake >= 3.24; this box has CMake 3.22.1, so the fixed non-native list
+#     (50/61/70/75/80-virtual, 86-real, 89-real, 120a-real) applied instead
+# So the correct declaration is the bare CUDA line with ggml's default arch
+# list. Amending the pin to what was RUN is the honest fix; rebuilding lambda
+# at `=89` before the §12 row 18 reference cell is the alternative, and it is
+# a separate decision because it re-bases every existing lambda number.
+#
+# gx10: CORRECTED 2026-09-02. This said `-DGGML_CUDA_ARCHITECTURES=121`, which
+# is not a variable anywhere in the pinned checkout — cmake would have accepted
+# it silently as an unused cache entry and built the default list, JITting from
+# PTX on Blackwell. That produces CORRECT OUTPUT SLOWLY and fires no correctness
+# gate. The variable is CMAKE_CUDA_ARCHITECTURES.
+build_flags_lambda = "cmake -B build -DGGML_CUDA=ON"
+build_flags_gx10   = "cmake -B build -DGGML_CUDA=ON -DCMAKE_CUDA_ARCHITECTURES=121"
+build_flags_intel  = "cmake -B build -DGGML_NATIVE=ON"
+build_flags_mini   = "cmake -B build -DGGML_METAL=ON"
+
+
+# ── THE FAIRNESS PROTOCOL (PARITY-010, aprender#2677) ──────────────────────
+#
+# A ratio is only a measurement if a SKEPTICAL OUTSIDER can reproduce both
+# invocations from this file alone. Every knob below is one this project has
+# actually been burned by, in one direction or the other:
+#
+#   · The "ollama decode 1.371x" claim was WITHDRAWN after re-measurement gave
+#     1.015-1.109x. Over-claiming and under-claiming are both reporting
+#     failures.
+#   · A golden gate once flipped between backends on a bare "Hello" prompt
+#     under greedy decode, because the argmax margin was a near-tie (#2359).
+#     Prompt and sampling are pinned for that reason, not for tidiness.
+#
+# EVERY KEY HERE MUST BE SET before a ratio may arm a threshold.
+# scripts/check_bench_protocol.sh refuses an incomplete declaration rather
+# than letting an unstated knob become a silent degree of freedom.
+
+[protocol]
+# Two forced token counts. The CLI-differential lane that consumed the SLOPE
+# between them is RETIRED (§5.3: llama-bench is never the comparator), so
+# nothing in this file reads n_high today; both are retained as the declared
+# inputs to the owed W4 token sweep (§12 row 17), and n_low is W1's n_predict.
+n_low  = 128
+n_high = 384
+
+# Sampling. Greedy with a fixed seed on both sides, so a decode difference is
+# a decode difference and not a sampling difference.
+temperature = 0.0
+top_p = 1.0
+seed = 42
+
+# One prompt, long enough that the argmax margin is not a coin flip.
+prompt_id = "essay-1000w-history-of-computing"
+
+# Quantization must MATCH. Comparing apr Q4_K_M against a comparator's Q5 or
+# F16 is the commonest way to produce an unfair number in either direction.
+quantization = "Q4_K_M"
+
+# `batch_size = "default"` means EXACTLY ONE THING: pass no `-b` at all and let
+# the comparator use its own. In the pinned build 39173bcac that is
+# `n_batch = 2048` (common/common.h:316), and the server prints
+# `llama_context: n_batch = 2048` about itself.
+#
+# A NUMERIC `batch_size <= 1` IS REFUSED (§5.3; llama_comparator_server_flags
+# returns 4 with no output). `-b 1` is not a tidy control, it switches
+# llama.cpp's batching off, and once moved the c=16 aggregate ratio 2.03x ->
+# 4.85x in apr's favour. The measurement and the argument are in
+# docs/specifications/PP-LLAMA-001-RATIONALE.md §5.3.
+batch_size = "default"
+
+# The apr lane's --context-length, and the comparator's -c in the REPORT-only
+# "default" mode. The DECIDED comparator derives its -c from the band; see
+# n_ctx_slot below.
+context_length = 4096
+
+# THE COMPARATOR IS RELAUNCHED ONCE PER BAND TO SERVE THE BAND (§5.3, decided
+# by spec-owner, v3.0). `comparator_parallel = "band"` means: pass `-np {c}`
+# and `-c {c} * {n_ctx_slot}`. Parity is a claim about serving the same offered
+# load, and a server that queues 12 of 16 requests is not serving the band.
+# The dissent this overrules — that configuring the comparator at all is how
+# `-b 1` manufactured a 2.39x overstatement — is recorded in
+# docs/specifications/PP-LLAMA-001-RATIONALE.md §5.3, together with why a
+# CRIPPLE (`-b 1`, refused above) is not the same act as serving the band.
+comparator_parallel = "band"
+
+# Per-slot context. W1 is 512 prompt + 128 generated, so 640 is the floor;
+# llama_comparator_server_flags REFUSES anything below it rather than letting a
+# band silently truncate. Verified at the pin 2026-09-02 on lambda:
+# `-np 16 -c 16384` yields total_slots 16 and n_ctx 1024 per slot
+# (evidence/parity/props-39173bcac-np16.json).
+n_ctx_slot = 1024
+
+# GPU layers offloaded. "all" on both sides or the comparison is CPU-vs-GPU
+# wearing a GPU label. llama.cpp spells "all" as -ngl 999; apr spells it
+# `--gpu-layers all` — a QUANTITY on both sides, never a boolean (PP-15).
+gpu_layers = "all"
+
+# EVERY 2026-MOBILE DEFAULT PINNED (§5.3). An undeclared default is not
+# neutral: it becomes whatever each build happens to choose, and the difference
+# lands in the ratio wearing the label of a performance result.
+#
+# flash_attention: the pinned build's own default is
+# LLAMA_FLASH_ATTN_TYPE_AUTO (common/common.h:358), and `apr serve run` exposes
+# no flash-attention switch at all — so "auto" is the only value that is true
+# of BOTH sides, and it is pinned as the string llama.cpp accepts for `-fa`.
+# It was declared `false`, which was silently untrue of the comparator on every
+# CUDA host and unexpressible on the apr side. The RESOLVED value is recorded
+# per band from GET /props, never inferred from this line (§4.4.9); PP-22's
+# join key carries `fa` as that resolved value.
+flash_attention = "auto"
+n_ubatch = 512
+cache_type_k = "f16"
+cache_type_v = "f16"
+cont_batching = true
+# Slot save/restore off: a comparator that can resume a slot from disk is
+# answering a different question than one that prefills. Declared false means
+# `--slot-save-path` is not passed; a true here has no pinned path and is
+# REFUSED by the producer rather than run with an invented one.
+slot_save = false
+
+# Threads for any CPU-side work.
+threads = 8
+
+# Trials. apr's distribution is wider, so it takes the larger median.
+apr_trials = 7
+comparator_trials = 5
+
+# ---------------------------------------------------------------------------
+# [protocol.http] — ONE client against two OpenAI-compatible servers: the same
+# prompts, the same request bodies, the same clock, the same tokenizer-agnostic
+# accounting on both sides. It cannot be unfair by construction in the way two
+# hand-written scripts can, and it measures what a user actually gets.
+#
+# It also reports the right quantity directly. `decode_tok_per_sec` is
+# 1000 / itl_p50_ms, an inter-token rate that excludes time-to-first-token, so
+# a model load cannot inflate or deflate it. Deriving that number by hand from
+# an end-to-end latency is how 2026-08-24 produced both an 11.8 tok/s figure
+# quoted against a decode reference and a 244 tok/s "differential".
+[protocol.http]
+http_profile = "medium"
+http_warmup_secs = 15
+http_duration_secs = 30
+http_runs = 3
+http_cooldown_secs = 10
+# BANDS, not a point. `{c}` ranges over these; the comparator is relaunched at
+# each one (comparator_parallel = "band"). The withdrawn 2026-08-25 lambda
+# table that used to sit here is in evidence/parity/LEDGER.md row 1, where a
+# superseded measurement belongs.
+http_concurrency_bands = [1, 4, 8, 16]
+
+# The band in which a runtime is allowed to sit, both metrics, every band.
+# Lower bound: below this a user is better served by llama.cpp, which is the
+# adoption question. Upper bound: a ratio above this is more likely a
+# measurement error than a win, and must be explained before it is believed.
+band_floor = 0.80
+band_ceiling = 1.50
+http_stream = true
+
+# THE THREE INVOCATIONS, VERBATIM. `{...}` are substituted from the keys above
+# and from the run-time set {model, model_name, port, n, c, c_ctx,
+# llama_bench, llama_server, runtime_name}; nothing else varies between runs.
+# scripts/check_bench_protocol.sh refuses a `{key}` that is neither.
+#
+# THESE ARE SUBSTITUTED, NOT RETYPED. Every knob below reads `{key}` from the
+# declaration above. They used to carry the literals `4096`, `8` and `-b 1`
+# alongside keys named context_length, threads and batch_size that nothing
+# read — three more chances for the file to contradict itself (#2737).
+#
+# The llama-bench CLI-differential lane (`apr_command`, `comparator_command`)
+# is RETIRED here: §5.3 and I-15 say llama-bench is never the comparator, and
+# `apr run` carries no `--gpu-layers`, so its `--gpu` could not be made a
+# quantity (PP-15) without a CLI change this decision does not need.
+apr_serve_command = "apr serve run {model} --gpu-layers all --port {port} --context-length {context_length}"
+comparator_serve_command = "{llama_server} -m {model} --port {port} -ngl 999 -c {c_ctx} -t {threads} -np {c} -fa {flash_attention} -ub {n_ubatch} -ctk {cache_type_k} -ctv {cache_type_v} -cb --no-warmup"
+harness_command = "apr test llm bench --url http://127.0.0.1:{port} --model {model_name} --profile {http_profile} --warmup {http_warmup_secs} --duration {http_duration_secs} --runs {http_runs} --cooldown {http_cooldown_secs} --concurrency {c} --stream --runtime-name {runtime_name}"

@@ -1,0 +1,5 @@
+error[E0599]: no method named `validation_witness` found for reference `&PreparedDataset<Compatibility>` in the current scope
+  --> tests/ui/compat_dataset_has_no_validation_witness.rs:14:21
+   |
+14 |     let _ = dataset.validation_witness();
+   |                     ^^^^^^^^^^^^^^^^^^ method not found in `&PreparedDataset<Compatibility>`

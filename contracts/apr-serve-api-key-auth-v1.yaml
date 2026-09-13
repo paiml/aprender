@@ -36,7 +36,6 @@ metadata:
   depends_on:
     - apr-serve-v1
 
-kind: AprServeApiKeyAuthContract
 name: apr-serve-api-key-auth
 version: "1.0.0"
 status: ACTIVE

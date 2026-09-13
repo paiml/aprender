@@ -77,14 +77,18 @@ fn decode_tensor_bytes(dtype: TensorDType, data: &[u8], element_count: usize) ->
     match dtype {
         TensorDType::F32 => {
             let floats: Vec<f32> = data
-                .chunks_exact(4)
+                .as_chunks::<4>()
+                .0
+                .iter()
                 .map(|chunk| f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
                 .collect();
             Some(floats)
         }
         TensorDType::F16 => {
             let floats: Vec<f32> = data
-                .chunks_exact(2)
+                .as_chunks::<2>()
+                .0
+                .iter()
                 .map(|chunk| apr_format::f16_to_f32(u16::from_le_bytes([chunk[0], chunk[1]])))
                 .collect();
             Some(floats)
@@ -103,7 +107,9 @@ fn decode_tensor_bytes(dtype: TensorDType, data: &[u8], element_count: usize) ->
         TensorDType::AprQ4 => Some(dequantize_q4(data, element_count)),
         TensorDType::BF16 => {
             let floats: Vec<f32> = data
-                .chunks_exact(2)
+                .as_chunks::<2>()
+                .0
+                .iter()
                 .map(|chunk| {
                     let bits = u16::from_le_bytes([chunk[0], chunk[1]]);
                     f32::from_bits(u32::from(bits) << 16)

@@ -30,7 +30,6 @@ metadata:
   - 'PEFT tuners/lora/layer.py get_delta_weight (ΔW = scaling·(B@A), lora_A:[r,in], lora_B:[out,r])'
   - 'Unsloth merge_and_unload (identical PEFT layout)'
 
-kind: KernelContract
 name: lora-merge-peft-layout
 version: 1.0.0
 scope: aprender-train-lora MergeEngine::merge (apr finetune merge CLI)

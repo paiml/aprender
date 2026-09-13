@@ -154,6 +154,11 @@ fn openai_routes() -> Vec<Route> {
         ),
         // TUI monitoring API (PARITY-107)
         ("GET", "/v1/metrics", get(server_metrics_handler)),
+        // PP-LLAMA-001 §12 row 6 / PP-2: what THIS process resolved — compute
+        // class from residency, build features, offload, scheduler, KV and the
+        // CUDA block. Unconditional: a harness must be able to ask a CPU server
+        // what it is, and get `compute_class: "cpu"` rather than a 404.
+        ("GET", "/v1/effective-config", get(effective_config_handler)),
         // PMAT-923: Ollama-native HTTP API (/api/* prefix) — makes `apr serve` a
         // drop-in Ollama HTTP replacement. Both delegate to the OpenAI chat
         // generation path. Discharges OBLIG-OLLAMA-API-CHAT-GENERATE-ROUTED.
@@ -394,6 +399,15 @@ fn sanitized_error_message(status: StatusCode) -> String {
 /// through untouched, so every handler-authored message survives verbatim. The
 /// original headers are preserved as well — notably `allow` on a 405, which a
 /// rebuilt response would have dropped.
+///
+/// aprender#2609: `application/x-ndjson` is passed through on the same grounds.
+/// It is JSON — one object per line — and the only thing that emits it here is
+/// the Ollama streaming path, whose terminal `done:true` object is the contract
+/// an Ollama client parses. Collapsing that into a single `{"error":…}` object
+/// would leave the client with no `done` field at all, which is exactly the
+/// malformed-stream outcome `chat_response_to_parts` exists to prevent. Without
+/// this, propagating the real status onto `/api/chat` and `/api/generate`
+/// (#2609) destroyed the frame it was meant to keep honest.
 async fn sanitize_json_rejection(
     request: axum::http::Request<axum::body::Body>,
     next: axum::middleware::Next,
@@ -405,12 +419,14 @@ async fn sanitize_json_rejection(
         return response;
     }
 
-    let already_json = response
+    let already_structured = response
         .headers()
         .get(axum::http::header::CONTENT_TYPE)
         .and_then(|v| v.to_str().ok())
-        .is_some_and(|ct| ct.starts_with("application/json"));
-    if already_json {
+        .is_some_and(|ct| {
+            ct.starts_with("application/json") || ct.starts_with("application/x-ndjson")
+        });
+    if already_structured {
         return response;
     }
 
@@ -511,17 +527,19 @@ mod client_visible_reason_tests {
     }
 }
 
-/// Process-wide server start instant.
+/// Seconds since this server started.
 ///
-/// Initialised lazily on the first `/health*` hit. `Instant` is
-/// monotonic in `std` — see `std::time::Instant` docs — which
-/// discharges FALSIFY-CRUX-C-34-003 (monotonic `uptime_sec`).
-fn server_uptime_sec() -> f64 {
-    static SERVER_START: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
-    SERVER_START
-        .get_or_init(std::time::Instant::now)
-        .elapsed()
-        .as_secs_f64()
+/// PP-30: read from the ONE process clock (`AppState::clock`), which also
+/// produces `started_utc` on `/v1/effective-config` and `created` on
+/// `/v1/models`. It used to be a private `OnceLock<Instant>` latched on the
+/// first `/health*` hit — monotonic, so FALSIFY-CRUX-C-34-003 held, but with no
+/// wall-clock counterpart a receipt could cite and disagreeing with the two
+/// OTHER "start" clocks in this crate about what "start" meant.
+///
+/// `Instant` is monotonic in `std`, which is what discharges
+/// FALSIFY-CRUX-C-34-003.
+fn server_uptime_sec(state: &AppState) -> f64 {
+    state.clock().uptime_sec()
 }
 
 /// Test-only hook: force the health handler to report `status = "loading"`.
@@ -564,7 +582,7 @@ fn build_health_response(state: &AppState) -> HealthResponse {
         version: crate::VERSION.to_string(),
         compute_mode: compute_mode.to_string(),
         model_loaded,
-        uptime_sec: server_uptime_sec(),
+        uptime_sec: server_uptime_sec(state),
     }
 }
 

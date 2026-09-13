@@ -59,6 +59,12 @@ mp4 = { workspace = true, optional = true }
 crossterm = { workspace = true, optional = true }
 regex = { workspace = true }
 sha2 = { workspace = true }
+# PERF-024 (APR-PERF-GATE-001 v2.2 §4.4.5): raw per-request samples are retained
+# as gzipped JSONL beside every receipt -- a summary-only receipt cannot be
+# resampled and is rejected. Not feature-gated: `src/perf/` must compile (and
+# its tests must RUN) under default features, because CI is
+# `cargo nextest run --profile ci --workspace --lib` with no --features.
+flate2 = "1"
 serde_yaml_ng = { workspace = true }
 
 # Tracing and UUID (available on all targets)
@@ -113,6 +119,20 @@ wasm-bindgen-futures = "0.4"
 js-sys = "0.3"
 
 [dev-dependencies]
+# Self dev-dependency: turns on `llm` for THIS crate's own test build.
+#
+# The 169 unit tests in `src/llm/` only compile under the `llm` feature, which is
+# deliberately not in `default` (it pulls reqwest/tokio/futures, and most
+# consumers take this crate with `default-features = false`). Before this line,
+# `cargo test -p aprender-test-lib` compiled 6304 tests and ZERO of them were
+# `llm::` -- yet CI's `cargo nextest run --workspace --lib` ran all 169, purely
+# because apr-cli happens to depend on this crate with `features = ["llm"]` and
+# workspace feature unification turned it on. That made the coverage EMERGENT:
+# deleting one unrelated dependency edge in apr-cli would have taken all 169
+# tests dark while every test command still exited 0 and reported success.
+#
+# A path-only dev-dependency is stripped at publish time, so this is packaging-safe.
+aprender-test-lib = { path = ".", features = ["llm"] }
 tokio = { workspace = true }
 async-trait = { workspace = true }
 proptest = { workspace = true }

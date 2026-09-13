@@ -1,0 +1,43 @@
+PRREV-007 backtest — guard transcripts, verbatim.
+guard sha256 dabbe9d16646d581...  fixture repo built by tests/fixtures/pr-review/make-fixture-repo.sh
+every probe SIGNED with the committed TEST-ONLY key, so none can pass on the signature branch.
+
+=== E1  ratio in the DIFF, silent receipt  ->  EXPECT reject  ===
+head 7e1105bc3172e1739ed92ee537cff3137711b111 adds book/src/tools/apr-cli.md:
+  "apr sustains 2.93× Ollama on 1.5B Q4_K decode."
+receipt: verdict PASS, consultations.crux.comparative_claims = []
+
+positive-control  schema-invalid  fired (B1: receipt fails schemas/in-toto-statement-v1.json: Schema validati)
+positive-control  self-review     fired (B2: reviewer_actor.id = author_actor.id = 'agent:positive-control'; )
+positive-control  findings-digest fired (B1: findings_ref.sha256 (0000000000000000000000000000000000000000000)
+positive-control  cost-missing    fired (B1: predicate.cost must carry numeric input_tokens, output_tokens an)
+ACCEPT  /tmp/claude-1000/-home-noah-src-aprender/2256679c-128a-431a-b273-4d5e2aa6fdcd/scratchpad/bt/exp-b4
+exit_code=0
+
+=== E1-control  SAME diff, SAME empty comparative_claims, ratio stated in a FINDING  ===
+
+positive-control  schema-invalid  fired (B1: receipt fails schemas/in-toto-statement-v1.json: Schema validati)
+positive-control  self-review     fired (B2: reviewer_actor.id = author_actor.id = 'agent:positive-control'; )
+positive-control  findings-digest fired (B1: findings_ref.sha256 (0000000000000000000000000000000000000000000)
+positive-control  cost-missing    fired (B1: predicate.cost must carry numeric input_tokens, output_tokens an)
+REJECT  /tmp/claude-1000/-home-noah-src-aprender/2256679c-128a-431a-b273-4d5e2aa6fdcd/scratchpad/bt/exp-b4-ctl  [B4]
+    finding comparative_claim states a comparative claim -- docs/performance.md states apr sustains 2.93x Ollama on 1.5B Q4_K deco -- but consultations.crux.comparative_claims is empty; a competitor ratio with no recorded comparator is unverified, per S3.C.1
+exit_code=1
+
+=== E2  cuda.status=consulted with queries: []  over a src/cuda/ diff  ===
+
+positive-control  schema-invalid  fired (B1: receipt fails schemas/in-toto-statement-v1.json: Schema validati)
+positive-control  self-review     fired (B2: reviewer_actor.id = author_actor.id = 'agent:positive-control'; )
+positive-control  findings-digest fired (B1: findings_ref.sha256 (0000000000000000000000000000000000000000000)
+positive-control  cost-missing    fired (B1: predicate.cost must carry numeric input_tokens, output_tokens an)
+ACCEPT  /tmp/claude-1000/-home-noah-src-aprender/2256679c-128a-431a-b273-4d5e2aa6fdcd/scratchpad/bt/exp-cuda-vac
+exit_code=0
+
+=== E3  pmat.status=not-triggered on a code PR (S3.A calls pmat unconditional)  ===
+
+positive-control  schema-invalid  fired (B1: receipt fails schemas/in-toto-statement-v1.json: Schema validati)
+positive-control  self-review     fired (B2: reviewer_actor.id = author_actor.id = 'agent:positive-control'; )
+positive-control  findings-digest fired (B1: findings_ref.sha256 (0000000000000000000000000000000000000000000)
+positive-control  cost-missing    fired (B1: predicate.cost must carry numeric input_tokens, output_tokens an)
+ACCEPT  /tmp/claude-1000/-home-noah-src-aprender/2256679c-128a-431a-b273-4d5e2aa6fdcd/scratchpad/bt/exp-pmat-skip
+exit_code=0

@@ -13,6 +13,10 @@ fn extract_extended_model_paths(command: &ExtendedCommands) -> Vec<PathBuf> {
             TestSubcommand::Tensor { file, .. } => {
                 vec![file.clone()]
             },
+            // `llm` measures an HTTP endpoint, not a local model file. Listed
+            // explicitly so a future subcommand that DOES name a file has to
+            // be handled here rather than absorbed by a wildcard.
+            TestSubcommand::Llm { .. } => vec![],
         },
         ExtendedCommands::CompareHf { file, .. }
         | ExtendedCommands::Chat { file, .. }

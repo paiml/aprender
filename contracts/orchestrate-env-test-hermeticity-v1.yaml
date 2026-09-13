@@ -11,7 +11,6 @@ metadata:
     - "paiml/aprender PR #1567 — original per-module env_lock pattern (agent::instructions::tests) the three-module duplication descended from"
   description: "Env-mutating tests in aprender-orchestrate acquire ONE crate-wide lock and restore prior env values, so they are deterministic under parallel test execution"
 
-kind: KernelContract
 name: orchestrate-env-test-hermeticity
 version: "1.0.0"
 scope: "crates/aprender-orchestrate/src/agent/{env_test_support.rs,auto_memory.rs,settings.rs,instructions.rs}::tests + crates/aprender-orchestrate/src/cli/agent_tests.rs::test_build_driver_remote_no_key_returns_mock"

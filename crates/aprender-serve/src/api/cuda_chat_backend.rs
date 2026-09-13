@@ -8,6 +8,14 @@ fn try_safetensors_cuda_backend(
     start: Instant,
     cancel: &CancelToken,
 ) -> Option<Response> {
+    // PERF-039: fail closed rather than silently dropping `ignore_eos`.
+    if let Some(r) = super::openai_handlers::reject_unsupported_ignore_eos(
+        state,
+        request,
+        "SafeTensors CUDA",
+    ) {
+        return Some(r);
+    }
     let model_lock = state.safetensors_cuda_model()?;
     let tokenizer = match require_tokenizer(state) {
         Ok(t) => t,
@@ -120,6 +128,12 @@ async fn try_cuda_backend(
 
     if request.stream {
         let (tx, rx) = tokio::sync::mpsc::channel::<Result<u32, String>>(16);
+        // §3: the engine's return path for the server-measured phase split.
+        // The handler returns the SSE response before generation finishes, so
+        // the measurement cannot be a return value; the terminal chunk awaits
+        // this oneshot after the token channel closes.
+        let (timing_tx, timing_rx) =
+            tokio::sync::oneshot::channel::<crate::api::PhaseTimings>();
 
         // PMAT-044: Use batch scheduler if available (continuous batching)
         if let Some(batch_tx) = state.cuda_batch_tx() {
@@ -129,8 +143,13 @@ async fn try_cuda_backend(
                 token_tx: tx,
                 non_streaming: false,
                 enqueue_time: std::time::Instant::now(),
+                timing_tx: Some(timing_tx),
             };
             if let Err(e) = batch_tx.try_send(batch_req) {
+                // §5.2: this 503 is the one admission REFUSAL this server has
+                // (the policy is otherwise `queue`), so it is counted where it
+                // is returned — `kv.admission_rejected` reads this counter.
+                state.record_admission_rejected();
                 return Some(fail_response(
                     state,
                     StatusCode::SERVICE_UNAVAILABLE,
@@ -146,12 +165,16 @@ async fn try_cuda_backend(
 
             tokio::task::spawn_blocking(move || {
                 let mut cuda_model = cuda_model_clone.write().expect("operation failed");
+                let generate_start = std::time::Instant::now();
                 let result = cuda_model.generate_gpu_resident_streaming(
                     &prompt_ids_clone,
                     &q_config_clone,
                     // Stops when the client goes away — see `streaming_token_sink`.
                     crate::api::openai_handlers::streaming_token_sink(tx.clone(), sink_metrics),
                 );
+                // Taken under the SAME write lock the request ran under, so the
+                // split belongs to this request and to no other.
+                let _ = timing_tx.send(phase_split(&mut cuda_model, generate_start));
                 if let Err(e) = result {
                     let _ = tx.blocking_send(Err(e.to_string()));
                 }
@@ -166,10 +189,13 @@ async fn try_cuda_backend(
             state.metrics.clone(),
             start,
             max_tokens,
+            prompt_tokens,
+            Some(timing_rx),
         ));
     }
 
     // Non-streaming CUDA — route through batch scheduler when available (realizr#211)
+    let (timing_tx, timing_rx) = tokio::sync::oneshot::channel::<crate::api::PhaseTimings>();
     let (token_ids, completion_tokens, response_text) = if let Some(batch_tx) = state.cuda_batch_tx() {
         // Use batch scheduler: submit request and collect all tokens
         // realizr#212: capacity 512 for bulk-send after non-streaming generation
@@ -180,8 +206,11 @@ async fn try_cuda_backend(
             token_tx: tx,
             non_streaming: true, // realizr#212: scheduler accumulates + bulk-sends
             enqueue_time: std::time::Instant::now(),
+            timing_tx: Some(timing_tx),
         };
         if let Err(e) = batch_tx.try_send(batch_req) {
+            // §5.2: counted at the refusal, as above.
+            state.record_admission_rejected();
             return Some(fail_response(
                 state,
                 StatusCode::SERVICE_UNAVAILABLE,
@@ -202,10 +231,12 @@ async fn try_cuda_backend(
     } else {
         // Fallback: direct RwLock path (serialized, no batch scheduler)
         let mut cuda_model = cuda_model_lock.write().expect("operation failed");
+        let generate_start = std::time::Instant::now();
         let generated = match cuda_model.generate_gpu_resident(&prompt_ids, &q_config) {
             Ok(g) => g,
             Err(e) => return Some(fail_response(state, StatusCode::INTERNAL_SERVER_ERROR, e)),
         };
+        let _ = timing_tx.send(phase_split(&mut cuda_model, generate_start));
         let tokens: Vec<u32> = generated.iter().skip(prompt_tokens).copied().collect();
         let n = tokens.len();
         let text = tokenizer.decode(&tokens).unwrap_or_else(|_| String::new());
@@ -214,6 +245,11 @@ async fn try_cuda_backend(
 
     let latency = start.elapsed();
     state.metrics.record_success(completion_tokens, latency);
+    // §3: absent unless the engine measured BOTH phases for THIS request.
+    let timings = timing_rx
+        .await
+        .ok()
+        .and_then(|phases| phases.to_timings(prompt_tokens, completion_tokens));
     Some(build_chat_response(
         request_id.to_string(),
         request.model.clone(),
@@ -226,7 +262,28 @@ async fn try_cuda_backend(
         latency,
         request.tools.as_deref(),
         request_tool_choice(request),
+        timings,
     ))
+}
+
+/// §3: pair the engine's prefill measurement with the decode remainder.
+///
+/// `take_phase_timings` clears as it reads, so a request that took a
+/// prefix-cache hit and never ran prefill gets `None` rather than the previous
+/// request's number. `decode_ms` is left `None` in that case too — one measured
+/// phase is not a phase split, and `PhaseTimings::to_timings` refuses to build
+/// a wire block from it.
+#[cfg(feature = "cuda")]
+fn phase_split(
+    cuda_model: &mut crate::gguf::OwnedQuantizedModelCuda,
+    generate_start: std::time::Instant,
+) -> crate::api::PhaseTimings {
+    let mut phases = cuda_model.take_phase_timings();
+    if let Some(prefill_ms) = phases.prefill_ms {
+        let total_ms = generate_start.elapsed().as_secs_f64() * 1000.0;
+        phases.decode_ms = Some((total_ms - prefill_ms).max(0.0));
+    }
+    phases
 }
 
 /// Quantized model (GGUF serve mode) backend with true streaming.
@@ -291,6 +348,10 @@ fn try_quantized_backend(
             state.metrics.clone(),
             start,
             max_tokens,
+            prompt_tokens,
+            // The CPU quantized decode loop does not separate prefill from
+            // decode, so §3 timings are absent rather than zero.
+            None,
         ));
     }
 
@@ -321,6 +382,115 @@ fn try_quantized_backend(
         latency,
         request.tools.as_deref(),
         request_tool_choice(request),
+        None,
+    ))
+}
+
+/// `AprTransformer` (f32 APR / SafeTensors CPU) backend for `/v1/chat/completions`
+/// and `/v1/chat/completions/stream`.
+///
+/// aprender#2609: the chat backend chain ran CUDA → cached → quantized →
+/// `registry_fallback`, and `registry_fallback` resolves the dense f32
+/// [`Model`](crate::layers::Model), which is `None` on an `AprTransformer` server.
+/// So both chat routes — one of them named in the server's own startup banner —
+/// were dead there while `/generate` and `/batch/generate` on the same process
+/// answered 200 with real text, because only those two had grown
+/// `try_apr_generate` / `try_apr_batch_generate`.
+///
+/// Streaming reuses [`pregenerated_sse_response`], exactly as `registry_fallback`
+/// does, so `stream: true` gets the same wire format as every other backend.
+///
+/// Returns `None` when no `AprTransformer` is resident, leaving the dense
+/// fallback unchanged.
+fn try_apr_transformer_backend(
+    state: &AppState,
+    request: &ChatCompletionRequest,
+    request_id: &str,
+    trace_level: Option<&str>,
+    start: Instant,
+    cancel: &CancelToken,
+) -> Option<Response> {
+    use crate::apr_transformer::GenerateConfig;
+
+    // PERF-039: fail closed rather than silently dropping `ignore_eos`.
+    if let Some(r) = super::openai_handlers::reject_unsupported_ignore_eos(
+        state,
+        request,
+        "APR transformer (f32)",
+    ) {
+        return Some(r);
+    }
+
+    let apr_transformer = state.apr_transformer()?;
+    let tokenizer = match require_tokenizer(state) {
+        Ok(t) => t,
+        Err(r) => return Some(r),
+    };
+    let arch_hint = state.model_architecture();
+    let prompt_ids =
+        match tokenize_chat_prompt(&tokenizer, &request.messages, arch_hint.as_deref(), state) {
+            Ok(ids) => ids,
+            Err(r) => return Some(r),
+        };
+    let prompt_tokens = prompt_ids.len();
+    let max_tokens = request.max_tokens.unwrap_or(256);
+
+    let gen_config = GenerateConfig {
+        max_tokens,
+        temperature: request.temperature.unwrap_or(0.7),
+        cancel: cancel.clone(),
+        ..Default::default()
+    };
+
+    let generated = match apr_transformer.generate_with_cache(&prompt_ids, &gen_config) {
+        Ok(g) => g,
+        Err(e) => {
+            return Some(fail_response(
+                state,
+                super::generation_error_status(&e),
+                format!("APR generation failed: {e}"),
+            ))
+        },
+    };
+
+    let token_ids: Vec<u32> = generated.iter().skip(prompt_tokens).copied().collect();
+    let completion_tokens = token_ids.len();
+
+    if request.stream {
+        state
+            .metrics
+            .record_success(completion_tokens, start.elapsed());
+        return Some(pregenerated_sse_response(
+            token_ids,
+            tokenizer,
+            request_id.to_string(),
+            request.model.clone(),
+            request.stop.as_deref(),
+            max_tokens,
+            prompt_tokens,
+        ));
+    }
+
+    let text = match tokenizer.decode(&token_ids) {
+        Ok(t) => clean_chat_output(&t),
+        Err(e) => return Some(fail_response(state, StatusCode::INTERNAL_SERVER_ERROR, e)),
+    };
+
+    let latency = start.elapsed();
+    state.metrics.record_success(completion_tokens, latency);
+    Some(build_chat_response(
+        request_id.to_string(),
+        request.model.clone(),
+        text,
+        prompt_tokens,
+        completion_tokens,
+        max_tokens,
+        request.stop.as_deref(),
+        trace_level,
+        latency,
+        request.tools.as_deref(),
+        request_tool_choice(request),
+        None,
     ))
 }
 
@@ -353,6 +523,14 @@ fn registry_fallback(
     start: Instant,
     cancel: &CancelToken,
 ) -> Response {
+    // PERF-039: fail closed rather than silently dropping `ignore_eos`.
+    if let Some(r) = super::openai_handlers::reject_unsupported_ignore_eos(
+        state,
+        request,
+        "dense registry",
+    ) {
+        return r;
+    }
     let model_id = if request.model == "default" || request.model.is_empty() {
         None
     } else {
@@ -361,7 +539,15 @@ fn registry_fallback(
 
     let (model, tokenizer) = match state.get_model(model_id) {
         Ok((m, t)) => (m, t),
-        Err(e) => return fail_response(state, StatusCode::NOT_FOUND, e),
+        // #2375(4): a hardcoded 404 told clients this mounted route did not
+        // exist whenever the server simply had no model resident. That is a
+        // server-side condition — 503, the status `/v1/predict` and
+        // `/v1/gpu/warmup` already answer for it. An unknown model NAME stays
+        // 404. `model_resolution_status` is the single rule (aprender#2376(5)).
+        // aprender#2609 reached the identical conclusion independently: the
+        // same `RegistryError("No model available")` answered 503 on
+        // /generate, /stream/generate and /batch/generate but 404 here.
+        Err(e) => return fail_response(state, super::model_resolution_status(&e), e),
     };
 
     let prompt_text = format_chat_messages(&request.messages, Some(&request.model));
@@ -398,6 +584,7 @@ fn registry_fallback(
             request.model.clone(),
             request.stop.as_deref(),
             request.max_tokens.unwrap_or(256),
+            prompt_tokens,
         );
     }
 
@@ -422,6 +609,7 @@ fn registry_fallback(
         duration,
         request.tools.as_deref(),
         request_tool_choice(request),
+        None,
     )
 }
 
@@ -429,20 +617,20 @@ fn registry_fallback(
 // Handlers
 // ============================================================================
 
-/// Process-wide model-load timestamp (Unix seconds).
+/// Model-load timestamp (Unix seconds).
 ///
 /// CRUX-C-33 §created_timestamp_domain: `created` must represent model load
 /// time — it MUST be stable across requests (not `SystemTime::now()` at each
-/// call). First access latches the current wall clock; subsequent accesses
-/// return the latched value. Discharges FALSIFY-CRUX-C-33-004.
-fn model_loaded_at_unix_secs() -> i64 {
-    static LOADED_AT: std::sync::OnceLock<i64> = std::sync::OnceLock::new();
-    *LOADED_AT.get_or_init(|| {
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs() as i64)
-            .unwrap_or(1)
-    })
+/// call). Discharges FALSIFY-CRUX-C-33-004.
+///
+/// PP-30: it now reads the ONE process clock, latched at the first `AppState`
+/// construction (i.e. when the model finished loading) rather than at the first
+/// CHAT REQUEST, which is what the old private `OnceLock<i64>` latched on while
+/// its own doc called itself "model load time". Same stability guarantee, and
+/// the same instant `/health`'s `uptime_sec` and `/v1/effective-config`'s
+/// `started_utc` report.
+fn model_loaded_at_unix_secs(state: &AppState) -> i64 {
+    state.clock().started_unix_secs()
 }
 
 /// OpenAI-compatible models listing handler
@@ -452,7 +640,7 @@ fn model_loaded_at_unix_secs() -> i64 {
 /// per-model `{id, object:"model", created>0, owned_by}`; `created` stable
 /// across requests (model-load time, not request time).
 pub async fn openai_models_handler(State(state): State<AppState>) -> Json<OpenAIModelsResponse> {
-    let created = model_loaded_at_unix_secs();
+    let created = model_loaded_at_unix_secs(&state);
     let models = if let Some(registry) = &state.registry {
         registry
             .list()
@@ -516,7 +704,12 @@ async fn try_apr_q4k_chat_backend(
     let prompt_tokens = prompt_ids.len();
     let (max_tokens, temperature, _eos_single) =
         chat_gen_params(request, &tokenizer, state.model_eos_token_id());
-    let eos_ids = state.model_eos_ids();
+    // PERF-039: ignore_eos empties the stop set for this backend too.
+    let eos_ids = if request.ignore_eos.unwrap_or(false) {
+        Vec::new()
+    } else {
+        state.model_eos_ids()
+    };
 
     let (response_tx, response_rx) = tokio::sync::oneshot::channel();
 
@@ -588,6 +781,7 @@ async fn try_apr_q4k_chat_backend(
         start.elapsed(),
         request.tools.as_deref(),
         request_tool_choice(request),
+        None,
     ))
 }
 
@@ -673,18 +867,61 @@ pub async fn openai_chat_completions_handler(
         return r;
     }
 
-    if let Some(r) = try_quantized_backend(
+    cpu_chat_backends(
         &state,
         &request,
         &request_id,
         trace_level.as_deref(),
         start,
         &cancel,
-    ) {
+    )
+}
+
+/// The CPU tail of the chat backend chain: quantized, then the f32
+/// `AprTransformer`, then the dense registry fallback.
+///
+/// Lifted out of [`openai_chat_completions_handler`] when aprender#2609 added the
+/// APR arm — the handler is a dispatch table and every backend added to it costs
+/// the same two branches, so the always-compiled tail lives here instead. The
+/// order mirrors what `/generate` walks (`try_quantized_generate`,
+/// `try_apr_generate`, `registry_generate`), which is the point: the two routes
+/// must be alive on exactly the same set of resident models.
+fn cpu_chat_backends(
+    state: &AppState,
+    request: &ChatCompletionRequest,
+    request_id: &str,
+    trace_level: Option<&str>,
+    start: Instant,
+    cancel: &CancelToken,
+) -> Response {
+    if let Some(r) =
+        try_quantized_backend(state, request, request_id, trace_level, start, cancel)
+    {
         return r;
     }
+    if let Some(r) =
+        try_apr_transformer_backend(state, request, request_id, trace_level, start, cancel)
+    {
+        return r;
+    }
+    registry_fallback(state, request, request_id, start, cancel)
+}
 
-    registry_fallback(&state, &request, &request_id, start, &cancel)
+/// PERF-039: `ignore_eos: true` empties the stop set, which every decode loop
+/// reads as "never stop on a token". `max_tokens` still bounds the loop.
+///
+/// Extracted rather than written inline so that merging PERF-039 does not move
+/// `try_qwen3_moe_backend`'s cognitive complexity (26 on main, already over the
+/// pre-commit hook's threshold of 25) even by one.
+fn stop_tokens_unless_ignore_eos(
+    request: &ChatCompletionRequest,
+    eos: impl IntoIterator<Item = u32>,
+) -> Vec<u32> {
+    if request.ignore_eos.unwrap_or(false) {
+        Vec::new()
+    } else {
+        eos.into_iter().collect()
+    }
 }
 
 /// aprender#1789 Option B: qwen3_moe MoE-aware dispatch for /v1/chat/completions.
@@ -788,7 +1025,7 @@ fn try_qwen3_moe_backend(
             .get_token_id("<|im_end|>")
             .or_else(|| tokenizer.get_token_id("<|endoftext|>"))
     });
-    let stop_tokens: Vec<u32> = eos_id.into_iter().collect();
+    let stop_tokens: Vec<u32> = stop_tokens_unless_ignore_eos(request, eos_id);
     let gen_config = QuantizedGenerateConfig {
         max_tokens,
         temperature: request.temperature.unwrap_or(defaults.temperature),
@@ -835,6 +1072,9 @@ fn try_qwen3_moe_backend(
             state.metrics.clone(),
             start,
             max_tokens,
+            prompt_token_count,
+            // The MoE generator reports no phase split; §3 timings are absent.
+            None,
         ));
     }
 
@@ -885,6 +1125,7 @@ fn try_qwen3_moe_backend(
         duration,
         request.tools.as_deref(),
         request_tool_choice(request),
+        None,
     ))
 }
 

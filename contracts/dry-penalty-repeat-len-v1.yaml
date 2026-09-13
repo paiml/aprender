@@ -11,7 +11,6 @@ metadata:
     must be computed from `repeat_len` — the length of the in-context repeated suffix EXCLUDING the
     candidate token being scored — exactly as llama.cpp does. apr beats Ollama/llama.cpp on parity
     only if its DRY penalty magnitude matches llama.cpp's `dry_base ^ (repeat_len - dry_allowed_length)`.
-kind: KernelContract
 name: dry-penalty-repeat-len
 version: "1.0.0"
 scope: "crates/aprender-serve/src/generate/dry_penalty.rs"

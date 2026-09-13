@@ -1,0 +1,6 @@
+PASS ArmC integrity
+SKIP  ArmC-sig signature+freshness is a RELEASE-phase rule (phase=merge)
+REPORT ArmB c=1 UNMEASURED (Arm A still gates this cell)
+REPORT ArmD instrumentation absent: kv.bytes_used/bytes_reserved, kv.admission_rejected, kv.preempted_swap
+SKIP  ArmE measured on W2 only (workload=W1)
+VERDICT PASS host=lambda phase=merge workload=W1

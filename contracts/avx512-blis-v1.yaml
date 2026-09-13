@@ -10,7 +10,6 @@ metadata:
     AVX-512 BLIS-style GEMM kernel contract. Tiled matrix multiplication
     using BLIS micro-kernel approach with AVX-512 registers.
 
-kind: KernelContract
 name: avx512-blis
 version: "1.0.0"
 scope: "crates/aprender-compute/src/backends/blis/"

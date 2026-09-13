@@ -7,7 +7,6 @@ metadata:
   references:
     - "Provable contract for codegen-dispatch-v1"
 
-kind: AlgorithmContract
 name: codegen-dispatch
 version: "1.0.0"
 scope: "crates/aprender-compute/src/"

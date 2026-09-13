@@ -19,7 +19,7 @@ quantization: q4_k
 artifact_url: https://huggingface.co/paiml/qwen2.5-coder-7b-apache-q4k-v1/resolve/main/qwen2.5-coder-7b-instruct-q4k.apr
 
 # SHA-256 computed 2026-04-17T15:56Z on local source artifact at
-# /home/noah/src/apr-leaderboard/checkpoints/qwen2.5-coder-7b-instruct-q4k.apr
+# ${APR_LEADERBOARD_ROOT}/checkpoints/qwen2.5-coder-7b-instruct-q4k.apr
 # After upload (EX-04), FALSIFY-PM-002 re-verifies that the CDN-served bytes
 # hash to the same value. Any mismatch is a HARD FAIL per RJ-PM-001.
 sha256: 0a854098d05b15921c173b7c8deb87c1cbecdffc66e918825c11a02775c73666

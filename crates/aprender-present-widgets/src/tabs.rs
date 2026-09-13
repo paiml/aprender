@@ -355,7 +355,7 @@ impl Tabs {
         if self.items.is_empty() {
             return self.min_tab_width;
         }
-        let total_spacing = self.spacing * (self.items.len() - 1).max(0) as f32;
+        let total_spacing = self.spacing * (self.items.len() - 1) as f32;
         let per_tab = (available_width - total_spacing) / self.items.len() as f32;
         per_tab.max(self.min_tab_width)
     }

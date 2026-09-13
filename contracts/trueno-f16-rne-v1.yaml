@@ -32,7 +32,6 @@ metadata:
   - 'crates/aprender-train/src/autograd/precision/conversions.rs — delegates to trueno::f32_to_f16'
   - 'half::f16::from_f32 — the IEEE-754 binary16 RNE reference oracle'
 
-kind: KernelContract
 name: trueno-f16-rne
 version: 1.0.0
 scope: trueno::f32_to_f16 IEEE round-to-nearest-even (== half::f16::from_f32)

@@ -387,7 +387,7 @@ qa_gate:
   - val_loss_below_from_scratch_invariant
   - checkpoint_written_invariant
   pass_criteria: |
-    All 5 ship_blocking=true falsifiers (FALSIFY-APR-PRETRAIN-INIT-
+    All 6 ship_blocking=true falsifiers (FALSIFY-APR-PRETRAIN-INIT-
     FINETUNE-001/003/004/005, plus 002 wall-budget treated as advisory)
     must PASS on the LIVE dispatch evidence.
   falsification: |

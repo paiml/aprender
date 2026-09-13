@@ -575,4 +575,4 @@ qa_gate:
   checks:
   - validation
   - falsification
-  pass_criteria: All 7 falsification tests pass (including FALSIFY-EX-001)
+  pass_criteria: All 10 falsification tests pass (including FALSIFY-EX-001)

@@ -69,19 +69,25 @@ fn dequant_by_dtype(tensor_data: &[u8], dims: &[usize], dtype: u8) -> Vec<f32> {
             dequantize_apr_q8_native(tensor_data, num_elements)
         },
         1 => tensor_data
-            .chunks_exact(2)
+            .as_chunks::<2>()
+            .0
+            .iter()
             .map(|c| f16_to_f32(u16::from_le_bytes([c[0], c[1]])))
             .collect(),
         // GH-369: BF16 (GGML type 30) — 2 bytes per element, upper 16 bits of F32
         30 => tensor_data
-            .chunks_exact(2)
+            .as_chunks::<2>()
+            .0
+            .iter()
             .map(|c| {
                 let bits = u16::from_le_bytes([c[0], c[1]]);
                 f32::from_bits((bits as u32) << 16)
             })
             .collect(),
         _ => tensor_data
-            .chunks_exact(4)
+            .as_chunks::<4>()
+            .0
+            .iter()
             .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
             .collect(),
     }

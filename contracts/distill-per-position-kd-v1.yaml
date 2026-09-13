@@ -28,7 +28,6 @@ metadata:
   - 'contracts/apr-distill-smoke-validation-v1.yaml — sibling distill contract'
   - 'kd_step.rs kd_loss / kd_logit_gradient — the per-triple primitives reused per (row, position)'
 
-kind: KernelContract
 name: distill-per-position-kd
 version: 1.0.0
 scope: aprender-train-distill kd_step_per_position + BatchSource/Provider per-position methods + Pipeline opt-in branch

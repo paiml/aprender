@@ -7,7 +7,6 @@ metadata:
     - "Hu et al. (2022). LoRA: Low-Rank Adaptation of Large Language Models."
   description: "LoRA target module selection"
 
-kind: AlgorithmContract
 name: lora-target-selection
 version: "1.0.0"
 scope: "crates/aprender-train/src/finetune/"

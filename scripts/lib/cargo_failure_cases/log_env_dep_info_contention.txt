@@ -1,0 +1,7 @@
+error: could not compile `syn` (lib)
+
+Caused by:
+  could not parse/generate dep info at: /work/target/debug/deps/syn-4f2c1b9e.d
+
+Caused by:
+  Resource deadlock avoided (os error 35)

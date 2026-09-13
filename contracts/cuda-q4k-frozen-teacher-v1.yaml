@@ -31,7 +31,6 @@ metadata:
   - 'realizar Q4K forward kernels (existing inference path, source for reuse)'
   - cuda-unified-memory-allocator-v1.yaml (Bug A — prereq for this contract to be testable on GB10)
 
-kind: KernelContract
 name: cuda-q4k-frozen-teacher
 version: 1.0.0
 scope: aprender-train cuda backend — CudaTrainerTeacher / CudaTransformerBlock upload path

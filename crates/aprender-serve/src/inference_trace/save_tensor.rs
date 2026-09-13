@@ -185,7 +185,7 @@ pub fn read_tensor_file<R: Read>(r: &mut R) -> Result<(TensorHeader, Vec<f32>), 
     r.read_exact(&mut body)?;
 
     let mut values = Vec::with_capacity(n);
-    for chunk in body.chunks_exact(4) {
+    for chunk in body.as_chunks::<4>().0 {
         let mut v = [0u8; 4];
         v.copy_from_slice(chunk);
         values.push(f32::from_le_bytes(v));

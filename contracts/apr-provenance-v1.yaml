@@ -346,7 +346,7 @@ gates:
       backup_retained: /mnt/nvme-raid0/models/ship-two-001/qwen2.5-coder-7b-instruct-q4k.pre-stamp.bak.apr
       evidence_file: evidence/ship-009-full-discharge/discharge-evidence-v1.json
       deferred_irreversible_actions:
-        - "Replace /home/noah/src/apr-leaderboard/checkpoints/qwen2.5-coder-7b-instruct-q4k.apr (git-tracked)"
+        - "Replace ${APR_LEADERBOARD_ROOT}/checkpoints/qwen2.5-coder-7b-instruct-q4k.apr (git-tracked)"
         - "Re-upload paiml/qwen2.5-coder-7b-apache-q4k-v1 to HuggingFace Hub"
         - "Bump publish-manifest sha256 + size_bytes in contracts/publish-manifests/paiml-qwen2.5-coder-7b-apache-q4k-v1-apr.yaml"
       irreversible_actions_rationale: >
