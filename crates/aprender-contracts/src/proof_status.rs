@@ -232,8 +232,8 @@ fn kernel_class_map() -> Vec<(&'static str, &'static str, &'static [&'static str
 /// now correctly reports L3 instead of a full L4. Contracts with legitimately
 /// N/A obligations (e.g. softmax-kernel-v1 = 5 proved + 4 N/A of 9) MUST declare
 /// that in `verification_summary` — the scan path grants no N/A credit.
-
-/// [`is_lean_proved`] with the grounding count passed IN.
+///
+/// The grounding count is passed IN rather than scanned here.
 ///
 /// The scan reads the Lean tree from paths relative to the process CWD, so inside a unit test it resolves
 /// nothing and every fixture is ungrounded by construction — a suite in which the andon could withdraw
@@ -427,7 +427,7 @@ fn insert_domain_theorems(names: &mut std::collections::HashSet<String>, domain:
     };
     for file in files.flatten() {
         let path = file.path();
-        if !path.extension().is_some_and(|e| e == "lean") {
+        if path.extension().is_none_or(|e| e != "lean") {
             continue;
         }
         let Ok(content) = std::fs::read_to_string(&path) else {
