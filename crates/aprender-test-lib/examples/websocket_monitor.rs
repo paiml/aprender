@@ -116,7 +116,7 @@ fn main() -> ProbarResult<()> {
         };
         match &msg.message_type {
             MessageType::Text => {
-                println!("   {} Message {}: Text \"{}\"", direction, i + 1, &msg.data);
+                println!("   {} Message {}: Text \"{}\"", direction, i + 1, msg.data);
             }
             _ => println!("   {} Message {}: {:?}", direction, i + 1, msg.message_type),
         }

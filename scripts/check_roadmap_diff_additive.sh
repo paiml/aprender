@@ -398,12 +398,12 @@ EOF
     # point a ref at an object it lacks, so the tip is fetched by name instead of update-ref'd.
     rm -rf "${Q:?}.clone"; git clone -q --depth=1 -b main "file://$Q" "$Q.clone" 2>/dev/null; git -C "$Q.clone" fetch -q --depth=1 origin '+queue-base:refs/remotes/origin/main' 2>/dev/null
     want6=$( git -C "$Q" rev-parse 'HEAD^1' )
-    got6=$( cd "$Q.clone" && GITHUB_EVENT_NAME=merge_group bash -c '. "$0" --lib-only; REPO_ROOT="$1"; resolve_base HEAD && printf "%s|%s" "$BASE_REF" "$BASE_HOW"' "$SELF" "$Q.clone" 2>/dev/null ) || true
+    got6=$( GITHUB_EVENT_NAME=merge_group bash -c 'cd "$2" || exit 2; . "$0" --lib-only; REPO_ROOT="$1"; resolve_base HEAD && printf "%s|%s" "$BASE_REF" "$BASE_HOW"' "$SELF" "$Q.clone" "$Q.clone" 2>/dev/null ) || true
     case "$got6" in "$want6|single parent (stacked merge_group entry"*) printf 'ok    row %-2s stacked merge_group entry at depth-1 -> deepened, base = the previous entry squash\n' "$row" ;;
         *) printf 'FAIL  row %-2s stacked merge_group entry: wanted %s|single parent (stacked merge_group entry..., got %s\n' "$row" "$want6" "$got6"; fails=1 ;; esac
     row=$((row + 1))
     rm -rf "${Q:?}.clone"; git clone -q --depth=1 -b main "file://$Q" "$Q.clone" 2>/dev/null; git -C "$Q.clone" fetch -q --depth=1 origin '+queue-base:refs/remotes/origin/main' 2>/dev/null
-    rc7=0; err7=$( cd "$Q.clone" && GITHUB_EVENT_NAME=merge_group ROADMAP_DIFF_NO_DEEPEN=1 bash -c '. "$0" --lib-only; REPO_ROOT="$1"; resolve_base HEAD' "$SELF" "$Q.clone" 2>&1 >/dev/null ) || rc7=$?
+    rc7=0; err7=$( GITHUB_EVENT_NAME=merge_group ROADMAP_DIFF_NO_DEEPEN=1 bash -c 'cd "$2" || exit 2; . "$0" --lib-only; REPO_ROOT="$1"; resolve_base HEAD' "$SELF" "$Q.clone" "$Q.clone" 2>&1 >/dev/null ) || rc7=$?
     case "$rc7:$err7" in
         0:*) printf 'FAIL  row %-2s stacked entry with deepening disabled: resolved a base (rc=0) — the mutation did not bite\n' "$row"; fails=1 ;;
         *"is not a merge commit nor a commit on the origin/main tip"*) printf 'ok    row %-2s stacked entry with deepening disabled (mutation): refused by name\n' "$row" ;;

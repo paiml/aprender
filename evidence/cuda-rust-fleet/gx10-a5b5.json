@@ -1,0 +1,50 @@
+{
+  "host": "gx10-a5b5",
+  "utc": "2026-09-09T14:38:49Z",
+  "gpu": "NVIDIA GB10",
+  "compute_cap": "12.1",
+  "driver": "590.48.01",
+  "toolkit_max": "13.3",
+  "script_sha256_16": "1dfdea9ec2926fef",
+  "mem_available_gib": 115,
+  "blocked_on": [],
+  "probes": [
+    {
+      "id": "driver_floor",
+      "status": "PASS",
+      "reason": "driver 590.48.01 >= R580",
+      "cmd": "nvidia-smi"
+    },
+    {
+      "id": "toolkit_floor",
+      "status": "PASS",
+      "reason": "toolkit 13.3 >= 13.1 for sm_121",
+      "cmd": "nvcc --version"
+    },
+    {
+      "id": "clang_resource_dir",
+      "status": "PASS",
+      "reason": "/usr/lib/llvm-21/bin/clang -> /usr/lib/llvm-21/lib/clang/21",
+      "cmd": "/usr/lib/llvm-21/bin/clang -print-resource-dir"
+    },
+    {
+      "id": "cudacore_probe",
+      "status": "PASS",
+      "reason": "compute_cap = sm_121",
+      "cmd": "cargo run --release (~/.cuda-rust-fleet/experiments/cuda-rust-probes/cudacore)"
+    },
+    {
+      "id": "cutile_probe",
+      "status": "PASS",
+      "reason": "cutile: sm_121 len=1024 mismatches=0",
+      "cmd": "cargo run --release (~/.cuda-rust-fleet/experiments/cuda-rust-probes/cutile)"
+    },
+    {
+      "id": "aprender_gpu_cuda",
+      "status": "PASS",
+      "reason": "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 2590 filtered out; finished in 0.46s (MemAvailable 115 GiB, cgroup=48G)",
+      "cmd": "cargo test -p aprender-gpu --features cuda --lib -- <filters>"
+    }
+  ],
+  "verdict": "PASS"
+}
