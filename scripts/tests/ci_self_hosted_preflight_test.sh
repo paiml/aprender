@@ -275,6 +275,54 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# 4. $HOME probe paths. ONE root-owned dotfile directory disables every cargo
+#    build on the box: gix reads $HOME/.config/git/ignore for the XDG excludes
+#    file, an UNREADABLE parent answers EACCES rather than ENOENT, and gix
+#    treats that as a hard error. Measured on mini 2026-09-13 — a `sudo htop`
+#    left /Users/<user>/.config as `drwx------ root staff`, and from then on
+#    cargo could not fingerprint ANY package whose build script lacks
+#    `rerun-if-changed`. `cargo check --workspace` went from impossible to
+#    1m01s over 79 packages with one chown.
+#
+#    Three rows, because two of the three polarities are what make it useful:
+#    unreadable must be RED, readable must be GREEN, and ABSENT must be GREEN —
+#    a check that flagged an absent ~/.config would fire on every clean box and
+#    be turned off within a day.
+# ---------------------------------------------------------------------------
+HOMEPROBE="$(mktemp -d)"
+
+mkdir -p "$HOMEPROBE/.config"
+chmod 000 "$HOMEPROBE/.config"
+out="$(HOME="$HOMEPROBE" bash "$SCRIPT" 2>&1)"; rc=$?
+n=$((n + 1))
+if [ "$rc" -eq 1 ] && printf '%s\n' "$out" | grep -q "DENIED $HOMEPROBE/.config"; then
+    say_ok "row $n  an UNREADABLE \$HOME/.config -> exit 1, naming the path"
+else
+    say_red "row $n  unreadable \$HOME/.config -> exit $rc and the output did not name it"
+    printf '%s\n' "$out" | sed 's|^|        |'
+fi
+
+chmod 700 "$HOMEPROBE/.config"
+HOME="$HOMEPROBE" bash "$SCRIPT" > /dev/null 2>&1; rc=$?
+n=$((n + 1))
+if [ "$rc" -eq 0 ]; then
+    say_ok "row $n  a READABLE \$HOME/.config -> exit 0"
+else
+    say_red "row $n  readable \$HOME/.config -> exit $rc, expected 0"
+fi
+
+rmdir "$HOMEPROBE/.config"
+HOME="$HOMEPROBE" bash "$SCRIPT" > /dev/null 2>&1; rc=$?
+n=$((n + 1))
+if [ "$rc" -eq 0 ]; then
+    say_ok "row $n  an ABSENT \$HOME/.config is NOT a finding -> exit 0"
+else
+    say_red "row $n  absent \$HOME/.config -> exit $rc; this would fire on every clean box"
+fi
+
+rm -rf "${HOMEPROBE:?}"
+
+# ---------------------------------------------------------------------------
 printf '\n%d row(s), %d red\n' "$n" "$red"
 if [ "$red" -ne 0 ]; then
     printf 'FALSIFIER RED\n'
