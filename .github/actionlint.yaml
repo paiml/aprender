@@ -11,3 +11,11 @@ self-hosted-runner:
     - gx10
     - cuda
     - blackwell
+    - yoga
+    - ephemeral
+    - docker
+    - build
+    - ARM64
+    - gb10
+    - ada
+    - perf-solo

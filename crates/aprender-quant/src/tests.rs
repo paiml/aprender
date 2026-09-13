@@ -584,7 +584,7 @@ const GGML_Q5K_EXPECTED: [f32; 256] = [
     0.009_908_199,
 ];
 
-/// FALSIFY-QDOT-009 (PMAT-1101): the `Q5_K` reader behind `apr import` decodes ggml's
+/// FALSIFY-QDOT-007 (PMAT-1101): the `Q5_K` reader behind `apr import` decodes ggml's
 /// `block_q5_K`. The oracle is gguf-py, llama.cpp's own reader, on a super-block llama.cpp
 /// quantized (the fixture realizar's `quantize::tests::q5k_ggml` also uses). The quantizer is
 /// pinned to this reader by `test_q5k_roundtrip`.
@@ -601,7 +601,7 @@ fn test_q5k_ggml_dequantize_matches_gguf_py_bit_exact() {
     }
 }
 
-/// FALSIFY-QDOT-009 (PMAT-1101), packer half: `quantize_q5_k` must pack ggml's layout, i.e.
+/// FALSIFY-QDOT-007 (PMAT-1101), packer half: `quantize_q5_k` must pack ggml's layout, i.e.
 /// round-trip through the gguf-py-pinned reader above. The ramp in `test_q5k_roundtrip` gives
 /// every sub-block the same 5-bit codes, so a packer that swaps sub-blocks survives it (a
 /// mutant did). Pseudo-random values give every sub-block its own codes.

@@ -77,8 +77,10 @@ pub fn dequantize_q5_k(data: &[u8]) -> Result<Vec<f32>> {
 
     let mut result = vec![0.0f32; data.len() / SUPER_BLOCK_BYTES * QK_K];
     for (sb, out) in data
-        .chunks_exact(SUPER_BLOCK_BYTES)
-        .zip(result.chunks_exact_mut(QK_K))
+        .as_chunks::<SUPER_BLOCK_BYTES>()
+        .0
+        .iter()
+        .zip(result.as_chunks_mut::<QK_K>().0.iter_mut())
     {
         for_each_q5k_value(sb, |i, v| out[i] = v);
     }
@@ -97,7 +99,7 @@ pub fn dequantize_q5_k(data: &[u8]) -> Result<Vec<f32>> {
 /// `dequantize_q5_k` and `fused_q5k_dot` both read blocks through this function. Before
 /// PMAT-1101 each carried its own copy of an invented layout (the two nibbles of one byte as
 /// neighbouring values, the fifth bit from `qh[4s + l/8]`), and because every test compared
-/// one copy against the other, nothing noticed that neither matched ggml. FALSIFY-QDOT-009
+/// one copy against the other, nothing noticed that neither matched ggml. FALSIFY-QDOT-007
 /// pins this function to values produced by gguf-py, llama.cpp's own reader.
 pub(crate) fn for_each_q5k_value(sb: &[u8], mut emit: impl FnMut(usize, f32)) {
     let d = read_f16(&sb[0..2]);
