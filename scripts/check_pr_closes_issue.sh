@@ -64,25 +64,41 @@ REF_RE='#[0-9]+'
 # PR_CLOSES_REF_KIND_CMD is the injection seam: it receives a number and prints
 # `pr` or `issue`. The self-test sets it to a table lookup, so the case rows
 # below run hermetically -- no network, no token, and both branches provable.
-ref_kind() { # ref_kind NUM -> pr | issue | unknown
+ref_kind() { # ref_kind NUM -> pr | closed | issue | unknown
     if [ -n "${PR_CLOSES_REF_KIND_CMD:-}" ]; then
         $PR_CLOSES_REF_KIND_CMD "$1" 2>/dev/null || printf 'unknown'
         return 0
     fi
     command -v gh > /dev/null 2>&1 || { printf 'unknown'; return 0; }
     gh api "repos/${PR_CLOSES_REPO:-paiml/aprender}/issues/$1" \
-        -q 'if .pull_request then "pr" else "issue" end' 2>/dev/null || printf 'unknown'
+        -q 'if .pull_request then "pr" elif .state == "closed" then "closed" else "issue" end' \
+        2>/dev/null || printf 'unknown'
 }
 
+# AN ISSUE THAT IS ALREADY CLOSED CANNOT BE LEFT OPEN FOREVER.
+#
+# That sentence is this guard's entire purpose, so demanding a `no-close:`
+# reason for a reference to a closed issue is the same false positive as
+# demanding one for a sibling PR. Measured in the same pass: of the references
+# still flagged after PR refs were dropped, #2706, #338 and #532 were all
+# already closed. The reason a body would have had to write is "it is closed",
+# which the API already knows.
+#
+# Someone else closing the issue still counts, and that is not a loophole: the
+# outcome R-2 wants is a closed issue, not a particular author closing it. What
+# it cannot do is pass on an OPEN issue -- that is the row below, and the
+# mutation that lets it through turns the table red.
+#
 # drop_pull_request_refs NUMS -> the same list without the numbers PROVEN to be
-# pull requests. Anything unproven stays, which is what makes this fail closed.
+# pull requests or already-closed issues. Anything unproven stays, which is what
+# makes this fail closed.
 drop_pull_request_refs() {
     _dpr_out=""
     for _dpr_n in $1; do
         [ -n "$_dpr_n" ] || continue
-        if [ "$(ref_kind "$_dpr_n")" = 'pr' ]; then
-            continue
-        fi
+        case "$(ref_kind "$_dpr_n")" in
+            pr|closed) continue ;;
+        esac
         _dpr_out="$_dpr_out$_dpr_n
 "
     done
@@ -145,6 +161,30 @@ EOF_NUMS
 self_test() {
     tmp="$(mktemp -d)" || return 2
     fails=0
+
+    # THE WHOLE TABLE IS HERMETIC, and it has to be now. Once this guard began
+    # resolving references, a row citing "#123" stopped being a fixture and
+    # became a live API call against a real issue in this repository -- and
+    # #123 and #1 really are closed here, so the two must-RED rows that shipped
+    # with the guard started PASSING for a reason unrelated to what they test.
+    # Every row is pinned to the stub instead: no network, no token,
+    # deterministic, and both branches of every decision provable.
+    #
+    #   9001  a pull request        9002  an OPEN issue
+    #   9004  a CLOSED issue        9003  unresolvable
+    #
+    # Every other number answers `issue`, which is what the legacy rows that
+    # use them were always written to mean.
+    cat > "${tmp}/kindstub.sh" <<'STUB'
+#!/usr/bin/env bash
+case "${1:-}" in
+  9001) printf 'pr' ;;
+  9004) printf 'closed' ;;
+  9003) exit 1 ;;
+  *)    printf 'issue' ;;
+esac
+STUB
+    chmod +x "${tmp}/kindstub.sh"
     # DERIVED, NEVER QUOTED. The success line used to print a literal "9
     # case(s)" -- true when written, and still 9 after four rows were added.
     # A count that cannot move is not a count, it is a sentence about the past.
@@ -165,7 +205,8 @@ self_test() {
         printf '%s' "$body" > "${tmp}/${name}.txt"
         got=0
         cases=$((cases + 1))
-        bash "$SELF_PATH" --body "${tmp}/${name}.txt" >/dev/null 2>&1 || got=$?
+        PR_CLOSES_REF_KIND_CMD="${tmp}/kindstub.sh" \
+            bash "$SELF_PATH" --body "${tmp}/${name}.txt" >/dev/null 2>&1 || got=$?
         if [ "$got" -ne "$want" ]; then
             printf 'FAIL case %s: expected exit %s, got %s\n' "$name" "$want" "$got" >&2
             fails=$((fails + 1))
@@ -181,19 +222,6 @@ self_test() {
     run_case "bare-mention" "$write_case_bare_mention" 1
 
     # --- a PR reference is not an un-closed issue ---------------------------
-    # These four rows run against a STUB classifier, so they are hermetic: no
-    # network, no token, and both branches are provable. 9001 is a pull
-    # request, 9002 an issue, and anything else is unresolvable.
-    cat > "${tmp}/kindstub.sh" <<'STUB'
-#!/usr/bin/env bash
-case "${1:-}" in
-  9001) printf 'pr' ;;
-  9002) printf 'issue' ;;
-  *)    exit 1 ;;
-esac
-STUB
-    chmod +x "${tmp}/kindstub.sh"
-
     run_kind_case() { # run_kind_case NAME BODY WANT [CMD]
         name="$1"; body="$2"; want="$3"; cmd="${4:-${tmp}/kindstub.sh}"
         printf '%s' "$body" > "${tmp}/${name}.txt"
@@ -218,6 +246,38 @@ STUB
     # FAILS CLOSED. An unresolvable number is judged as an issue, so a missing
     # token or a dead API can only make this guard stricter, never laxer.
     run_kind_case "unresolvable"   "see #9003"                    1
+    # An ALREADY-CLOSED issue owes no reason either -- the reason would be
+    # "it is closed", which the API already knows.
+    run_kind_case "closed-ref-only" "see #9004"                   0
+    # ...but an OPEN issue beside a closed one still decides. This is the row
+    # that stops "closed" from becoming a way through.
+    run_kind_case "closed-plus-open" "see #9004 and #9002"        1
+
+    # THE DEFAULT PATH, not the seam. Every row above pins the stub, which
+    # proves the DECISION and says nothing about the resolver. This one takes
+    # the stub away and shadows `gh` with one that exits 1 — the shape a runner
+    # with no token, a rate limit, or no network has. ref_kind must answer
+    # `unknown`, the ref must be judged as an ISSUE, and the body must still
+    # FAIL. Without this row, a resolver that answered `pr` or `closed` on its
+    # own error path would be invisible here, and that is the only way this
+    # change could make the guard laxer than it was.
+    #
+    # `gh` is shadowed rather than removed from PATH: it lives in /usr/bin
+    # beside the grep and sed this script needs, so an empty PATH tests nothing
+    # but exit 127.
+    mkdir -p "${tmp}/ghfail"
+    printf '#!/usr/bin/env bash\nexit 1\n' > "${tmp}/ghfail/gh"
+    chmod +x "${tmp}/ghfail/gh"
+    printf '%s' "see #1" > "${tmp}/no-gh.txt"
+    got=0
+    cases=$((cases + 1))
+    ( PATH="${tmp}/ghfail:$PATH"; export PATH
+      unset PR_CLOSES_REF_KIND_CMD
+      bash "$SELF_PATH" --body "${tmp}/no-gh.txt" ) >/dev/null 2>&1 || got=$?
+    if [ "$got" -ne 1 ]; then
+        printf 'FAIL case gh-error-fails-closed: expected exit 1, got %s\n' "$got" >&2
+        fails=$((fails + 1))
+    fi
 
     : > "${tmp}/empty.txt"
     got=0
