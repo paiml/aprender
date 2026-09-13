@@ -47,6 +47,24 @@ resolve_base() {
         if [ -n "$p1" ] && [ "$p1" = "$main_tip" ]; then
             BASE_REF="$p1"; BASE_HOW="single parent == origin/main tip (merge_group squash head, shallow checkout)"; return 0
         fi
+        # A STACKED merge-group entry (queue position >= 2). GitHub builds entry N as a
+        # squash on top of entry N-1's squash, so the head has ONE parent that is NOT the
+        # origin/main tip and, at fetch-depth 1, is not fetched either. Every rule above
+        # refuses it, so with max_entries_to_build=3 two of every three queue builds were
+        # RED on this resolver alone (2026-09-12: groups 34704287677 and 34704288441, each
+        # after passing 82,085 workspace tests on gx10). The base that names THIS entry's
+        # own diff is exactly that parent: deepen the shallow history by one commit and
+        # use it. Only a merge_group run may deepen — a push-shape depth-1 head stays
+        # refused (never the tree against itself) — and ROADMAP_DIFF_NO_DEEPEN=1 is the
+        # case table's mutation.
+        if [ -n "$p1" ] && [ "${GITHUB_EVENT_NAME:-}" = merge_group ] && [ "${ROADMAP_DIFF_NO_DEEPEN:-0}" != 1 ]; then
+            if ! git -C "$REPO_ROOT" cat-file -e "$p1^{commit}" 2>/dev/null; then
+                git -C "$REPO_ROOT" fetch -q --deepen=1 origin 2>/dev/null || git -C "$REPO_ROOT" fetch -q origin "$p1" 2>/dev/null || true
+            fi
+            if git -C "$REPO_ROOT" cat-file -e "$p1^{commit}" 2>/dev/null; then
+                BASE_REF="$p1"; BASE_HOW="single parent (stacked merge_group entry: the previous entry's squash, fetched by deepening the shallow checkout)"; return 0
+            fi
+        fi
         printf '%s: merge-base(origin/main, %s) is unresolvable (shallow checkout) and %s is not a merge commit nor a commit on the origin/main tip,\n' "$PROG" "$head" "$head" >&2
         printf '    so no base can be named. A pull_request job checks out refs/pull/N/merge, a merge_group job the queue head; run with an explicit <base> otherwise.\n' >&2
         return 1

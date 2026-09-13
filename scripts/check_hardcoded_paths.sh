@@ -215,7 +215,7 @@ if [ "${1:-}" = "--self-test" ]; then
             no-base) git -C "$R" update-ref -d refs/remotes/origin/main ;;
             push)    git -C "$R" update-ref refs/remotes/origin/main HEAD ;;   # HEAD IS the origin/main tip
             push-shallow)   # the tip with its parent NOT fetched: a depth-1 clone of the row branch
-                rm -rf "$R.shallow"; git clone -q --depth=1 -b row "file://$R" "$R.shallow" 2>/dev/null
+                rm -rf "${R:?}.shallow"; git clone -q --depth=1 -b row "file://$R" "$R.shallow" 2>/dev/null
                 git -C "$R.shallow" config core.hooksPath /dev/null; git -C "$R.shallow" update-ref refs/remotes/origin/main HEAD; root="$R.shallow" ;;
         esac
         out=$(HP_REPO_ROOT="$root" PMAT_BIN_OVERRIDE="${FAKE_BIN:-$FAKE}" PMAT_BIN_NO_FALLBACK=1 MIN_FILES_SCANNED=1 bash "${BASH_SOURCE[0]}" --full-if-capable 2>&1) || rc=$?

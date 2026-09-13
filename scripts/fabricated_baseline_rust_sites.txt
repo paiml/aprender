@@ -1,3 +1,4 @@
+# tool_version=none (measured by grep over shipped Rust sources; not a versioned analyser)
 # Fabricated comparator baselines in RUST, ledgered by PERF-008 (#2706 §5, §9).
 #
 # Each line is `path:line`: a competitor-named binding assigned a bare numeric

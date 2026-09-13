@@ -21,12 +21,20 @@ use aprender::text::bpe::Qwen2BpeTokenizer;
 
 /// W1: Inference loop is Zero-Alloc
 /// Falsification: Code uses per-token allocations in inference loop
+
+fn workspace_root() -> std::path::PathBuf {
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .canonicalize()
+        .expect("workspace root must resolve from crates/aprender-core")
+}
+
 #[test]
 fn w1_zero_alloc_inference() {
     // Verify that the inference path doesn't contain obvious per-call allocations
     // We check the source for common allocation patterns in the inner loop
     let qwen2_path = "src/models/qwen2/mod.rs";
-    if let Ok(content) = std::fs::read_to_string(qwen2_path) {
+    if let Ok(content) = std::fs::read_to_string(&qwen2_path) {
         // Find generate loop and check up to next function definition
         if let Some(gen_pos) = content.find("fn generate") {
             // Extract just the generate function (to next "fn " or end)
@@ -128,8 +136,12 @@ fn w11_simd_set_verified() {
 #[test]
 fn w2_kernel_autotuning() {
     // Verify auto-tuning mandate
-    let spec_path = "docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md";
-    let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
+    let spec_path = workspace_root()
+        .join("docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md");
+    let spec = std::fs::read_to_string(&spec_path).expect(&format!(
+        "Specification should exist, path: {:?}",
+        spec_path
+    ));
 
     assert!(
         spec.contains("tuning") || spec.contains("Auto-Tuning"),
@@ -142,8 +154,12 @@ fn w2_kernel_autotuning() {
 #[test]
 fn w3_optimal_kernel_selection() {
     // Verify selection logic description
-    let spec_path = "docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md";
-    let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
+    let spec_path = workspace_root()
+        .join("docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md");
+    let spec = std::fs::read_to_string(&spec_path).expect(&format!(
+        "Specification should exist, path: {:?}",
+        spec_path
+    ));
 
     assert!(
         spec.contains("optimal") || spec.contains("selection"),
@@ -156,8 +172,12 @@ fn w3_optimal_kernel_selection() {
 #[test]
 fn w4_tuning_cache() {
     // Verify caching mandate
-    let spec_path = "docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md";
-    let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
+    let spec_path = workspace_root()
+        .join("docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md");
+    let spec = std::fs::read_to_string(&spec_path).expect(&format!(
+        "Specification should exist, path: {:?}",
+        spec_path
+    ));
 
     assert!(
         spec.contains("cache") || spec.contains("tuning.json"),
@@ -170,8 +190,12 @@ fn w4_tuning_cache() {
 #[test]
 fn w5_arena_allocator() {
     // Verify arena allocator usage
-    let spec_path = "docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md";
-    let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
+    let spec_path = workspace_root()
+        .join("docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md");
+    let spec = std::fs::read_to_string(&spec_path).expect(&format!(
+        "Specification should exist, path: {:?}",
+        spec_path
+    ));
 
     assert!(
         spec.contains("Arena") || spec.contains("allocator"),
@@ -184,8 +208,12 @@ fn w5_arena_allocator() {
 #[test]
 fn w6_preallocation_worst_case() {
     // Verify pre-allocation strategy
-    let spec_path = "docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md";
-    let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
+    let spec_path = workspace_root()
+        .join("docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md");
+    let spec = std::fs::read_to_string(&spec_path).expect(&format!(
+        "Specification should exist, path: {:?}",
+        spec_path
+    ));
 
     assert!(
         spec.contains("Pre-allocation") || spec.contains("pre-allocated"),
@@ -198,8 +226,12 @@ fn w6_preallocation_worst_case() {
 #[test]
 fn w7_speculative_decoding() {
     // Verify speculative decoding mentions
-    let spec_path = "docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md";
-    let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
+    let spec_path = workspace_root()
+        .join("docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md");
+    let spec = std::fs::read_to_string(&spec_path).expect(&format!(
+        "Specification should exist, path: {:?}",
+        spec_path
+    ));
 
     // Speculative decoding might be a planned feature or advanced optimization
     // Check if mentioned
@@ -216,8 +248,12 @@ fn w7_speculative_decoding() {
 #[test]
 fn w8_pgo_build_profile() {
     // Verify PGO support
-    let spec_path = "docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md";
-    let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
+    let spec_path = workspace_root()
+        .join("docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md");
+    let spec = std::fs::read_to_string(&spec_path).expect(&format!(
+        "Specification should exist, path: {:?}",
+        spec_path
+    ));
 
     assert!(
         spec.contains("PGO") || spec.contains("Profile-Guided"),
@@ -230,8 +266,12 @@ fn w8_pgo_build_profile() {
 #[test]
 fn w12_huge_pages_support() {
     // Verify huge pages support
-    let spec_path = "docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md";
-    let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
+    let spec_path = workspace_root()
+        .join("docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md");
+    let spec = std::fs::read_to_string(&spec_path).expect(&format!(
+        "Specification should exist, path: {:?}",
+        spec_path
+    ));
 
     assert!(
         spec.contains("Huge pages") || spec.contains("madvise"),

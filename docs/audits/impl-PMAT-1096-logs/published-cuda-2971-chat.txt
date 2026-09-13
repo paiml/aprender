@@ -1,0 +1,36 @@
+
+=== Model Chat (GGUF Format) ===
+
+Using GGUF format with realizar inference engine
+
+  Model: ~/models/qwen2.5-1.5b-instruct-q4_k_m.gguf
+  Chat Template: ChatML
+  Temperature: 0.7
+  Top-P: 0.9
+  Max Tokens: 512
+
+Commands:
+  /quit     Exit the chat
+  /clear    Clear conversation history
+  /system   Set system prompt
+  /help     Show help
+
+════════════════════════════════════════════════════════════
+
+Loading model...
+Loaded GGUF format in 1.47s (1117.3 MB)
+Loaded tokenizer with 151936 tokens
+Detected ChatML chat template
+[GH-129] Early kernel preload: 44 modules compiled
+[PMAT-082] cuBLASLt FP8 JIT warmed (1536×16×1536)
+[PMAT-053] FP8 weight cache: 197 matrices cached (1472.1 MB) in 204.0ms
+[trueno#243] Manual graph construction: pos=0, has_graph=false, capture_failed=false, token_count=0
+[trueno#243] ✓ Manual graph: 619 kernels. first_args=Some(["0x7726095f7a00", "0x7726095f6200", "0x772603de6000"]), last_args=Some(["0x772527260000", "0x7725c0000000", "0x7725ff9fd000", "0x600", "0x25180"]), current_logits_buf=0x772527260000
+[GGUF CUDA: NVIDIA GeForce RTX 4090 (24035 MB VRAM) — pre-cached]
+You: [PREFILL-PATH] batched cc=89 (default)
+[trueno#243] Manual graph construction: pos=14, has_graph=false, capture_failed=false, token_count=2
+[trueno#243] ✓ Manual graph: 619 kernels. first_args=Some(["0x7726095f7a00", "0x7725433e0000", "0x772603de6000"]), last_args=Some(["0x772527260000", "0x7725c0000000", "0x7725ff9fd000", "0x600", "0x25180"]), current_logits_buf=0x772527260000
+[0.2s, ~35 tok/s]
+Assistant: 2 + 2 is 4.
+
+You: Goodbye!
