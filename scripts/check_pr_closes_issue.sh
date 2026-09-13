@@ -41,6 +41,54 @@ usage() {
 CLOSE_RE='(close|closes|closed|fix|fixes|fixed|resolve|resolves|resolved)[[:space:]]*:?[[:space:]]*([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)?#[0-9]+'
 REF_RE='#[0-9]+'
 
+# A REFERENCE TO A PULL REQUEST IS NOT AN UN-CLOSED ISSUE.
+#
+# Measured on this repo the hour this was wired (2026-09-13): 23 of 31 open PR
+# bodies failed, citing 62 distinct references between them -- and exactly 31 of
+# those 62 were PULL REQUESTS, not issues. 20 of the 23 failures cited nothing
+# but sibling PRs. A cross-reference to the PR that landed the thing you are
+# building on is not a promise to close anything, and there is no closing
+# keyword that would even mean something for one.
+#
+# That ratio is the argument. A gate whose findings are 20-to-3 spurious does
+# not get obeyed, it gets silenced: everyone learns to paste a `no-close:` line
+# on every PR, and the three bodies that really do leave an issue open --
+# #3134/#532, #3001/#2873, #2720/#338, the exact debt §6 R-2 exists to stop --
+# become indistinguishable from the twenty that never owed anything.
+#
+# RESOLUTION IS OPTIONAL AND FAILS CLOSED. No gh, no token, an API error, a
+# number that does not exist: the answer is "unknown" and the ref is judged as
+# an ISSUE, which is the behaviour before this change. The guard can only ever
+# become MORE permissive when it has evidence, never on the absence of it.
+#
+# PR_CLOSES_REF_KIND_CMD is the injection seam: it receives a number and prints
+# `pr` or `issue`. The self-test sets it to a table lookup, so the case rows
+# below run hermetically -- no network, no token, and both branches provable.
+ref_kind() { # ref_kind NUM -> pr | issue | unknown
+    if [ -n "${PR_CLOSES_REF_KIND_CMD:-}" ]; then
+        $PR_CLOSES_REF_KIND_CMD "$1" 2>/dev/null || printf 'unknown'
+        return 0
+    fi
+    command -v gh > /dev/null 2>&1 || { printf 'unknown'; return 0; }
+    gh api "repos/${PR_CLOSES_REPO:-paiml/aprender}/issues/$1" \
+        -q 'if .pull_request then "pr" else "issue" end' 2>/dev/null || printf 'unknown'
+}
+
+# drop_pull_request_refs NUMS -> the same list without the numbers PROVEN to be
+# pull requests. Anything unproven stays, which is what makes this fail closed.
+drop_pull_request_refs() {
+    _dpr_out=""
+    for _dpr_n in $1; do
+        [ -n "$_dpr_n" ] || continue
+        if [ "$(ref_kind "$_dpr_n")" = 'pr' ]; then
+            continue
+        fi
+        _dpr_out="$_dpr_out$_dpr_n
+"
+    done
+    printf '%s' "$_dpr_out"
+}
+
 # check_body_text BODY
 # Prints a one-line report to stdout. Returns 0 (pass), 1 (fail), or 2
 # (vacuous: empty body).
@@ -54,6 +102,7 @@ check_body_text() {
 
     closing_nums="$(printf '%s\n' "$body" | grep -oiE "$CLOSE_RE" | grep -oE '[0-9]+$' | LC_ALL=C sort -u || true)"
     all_nums="$(printf '%s\n' "$body" | grep -oE "$REF_RE" | tr -d '#' | LC_ALL=C sort -u || true)"
+    all_nums="$(drop_pull_request_refs "$all_nums")"
 
     if [ -z "$(printf '%s' "$all_nums" | tr -d '[:space:]')" ]; then
         printf 'PASS: body cites no issue.\n'
@@ -96,6 +145,10 @@ EOF_NUMS
 self_test() {
     tmp="$(mktemp -d)" || return 2
     fails=0
+    # DERIVED, NEVER QUOTED. The success line used to print a literal "9
+    # case(s)" -- true when written, and still 9 after four rows were added.
+    # A count that cannot move is not a count, it is a sentence about the past.
+    cases=0
 
     write_case_closes="Closes #123"
     write_case_refs_only="Refs #123"
@@ -111,6 +164,7 @@ self_test() {
         want="$3"
         printf '%s' "$body" > "${tmp}/${name}.txt"
         got=0
+        cases=$((cases + 1))
         bash "$SELF_PATH" --body "${tmp}/${name}.txt" >/dev/null 2>&1 || got=$?
         if [ "$got" -ne "$want" ]; then
             printf 'FAIL case %s: expected exit %s, got %s\n' "$name" "$want" "$got" >&2
@@ -126,8 +180,48 @@ self_test() {
     run_case "cross-repo" "$write_case_cross_repo" 0
     run_case "bare-mention" "$write_case_bare_mention" 1
 
+    # --- a PR reference is not an un-closed issue ---------------------------
+    # These four rows run against a STUB classifier, so they are hermetic: no
+    # network, no token, and both branches are provable. 9001 is a pull
+    # request, 9002 an issue, and anything else is unresolvable.
+    cat > "${tmp}/kindstub.sh" <<'STUB'
+#!/usr/bin/env bash
+case "${1:-}" in
+  9001) printf 'pr' ;;
+  9002) printf 'issue' ;;
+  *)    exit 1 ;;
+esac
+STUB
+    chmod +x "${tmp}/kindstub.sh"
+
+    run_kind_case() { # run_kind_case NAME BODY WANT [CMD]
+        name="$1"; body="$2"; want="$3"; cmd="${4:-${tmp}/kindstub.sh}"
+        printf '%s' "$body" > "${tmp}/${name}.txt"
+        got=0
+        cases=$((cases + 1))
+        PR_CLOSES_REF_KIND_CMD="$cmd" \
+            bash "$SELF_PATH" --body "${tmp}/${name}.txt" >/dev/null 2>&1 || got=$?
+        if [ "$got" -ne "$want" ]; then
+            printf 'FAIL case %s: expected exit %s, got %s\n' "$name" "$want" "$got" >&2
+            fails=$((fails + 1))
+        fi
+    }
+
+    # A body whose only reference is a sibling PR owes nothing. This is the row
+    # that matters: 20 of 23 real failures measured 2026-09-13 were exactly it.
+    run_kind_case "pr-ref-only"    "builds on #9001"              0
+    # An ISSUE reference still fails without a keyword or a reason -- the guard
+    # is not weakened, only made precise.
+    run_kind_case "issue-ref-only" "see #9002"                    1
+    # Mixed: the PR ref is dropped, the issue ref still decides.
+    run_kind_case "pr-plus-issue"  "builds on #9001, see #9002"   1
+    # FAILS CLOSED. An unresolvable number is judged as an issue, so a missing
+    # token or a dead API can only make this guard stricter, never laxer.
+    run_kind_case "unresolvable"   "see #9003"                    1
+
     : > "${tmp}/empty.txt"
     got=0
+    cases=$((cases + 1))
     bash "$SELF_PATH" --body "${tmp}/empty.txt" >/dev/null 2>&1 || got=$?
     if [ "$got" -ne 2 ]; then
         printf 'FAIL case empty-body: expected exit 2, got %s\n' "$got" >&2
@@ -135,6 +229,7 @@ self_test() {
     fi
 
     got=0
+    cases=$((cases + 1))
     bash "$SELF_PATH" --body "${tmp}/does-not-exist.txt" >/dev/null 2>&1 || got=$?
     if [ "$got" -ne 2 ]; then
         printf 'FAIL case missing-file: expected exit 2, got %s\n' "$got" >&2
@@ -147,7 +242,20 @@ self_test() {
         printf 'self-test FAILED: %s case(s).\n' "$fails" >&2
         return 1
     fi
-    printf 'self-test OK: 9 case(s).\n'
+    # VACUITY FLOOR, and only that. A table that ran NOTHING would otherwise
+    # print "self-test OK: 0 case(s)" and exit 0 -- the shape this repo keeps
+    # finding. 9 is what the table shipped with before this change.
+    #
+    # IT DOES NOT CATCH A DELETED ROW, and was measured not to: removing the
+    # bare-mention row leaves 12, which is above the floor, so the table still
+    # passes. Completeness is a ratchet (scripts/*_baseline.txt), not a floor,
+    # and pretending otherwise here would be the kind of gate that reads like a
+    # proof and is not one.
+    if [ "$cases" -lt 9 ]; then
+        printf 'self-test VACUOUS: %s case(s) ran, fewer than the 9 this table shipped with.\n' "$cases" >&2
+        return 1
+    fi
+    printf 'self-test OK: %s case(s).\n' "$cases"
     return 0
 }
 

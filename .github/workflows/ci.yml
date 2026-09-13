@@ -1163,6 +1163,30 @@ jobs:
       # HARNESS-BROKEN rather than as a dead mutant. Text-only, no build.
       - name: "Receipt-wiring guard: every rule it states, mutated (15/15 kill)"
         run: bash scripts/mutate_pr_review_wiring_guard.sh
+      # APR-RELEASE-001 §6 R-2, WIRED (#3200 shipped the guard; this is its
+      # caller). check_pr_closes_issue.sh is a check_*.sh, so guard_tree.sh
+      # auto-discovers it and runs it BARE -- and bare runs only its own
+      # self-test, "self-test OK: 9 case(s)", exit 0. Nine green rows about a
+      # regex, on every PR, judging NO PR body. The 0.67.0 reconcile found 48
+      # merged PRs since the previous tag of which only 9 closed anything; that
+      # is what this guard exists to stop, and until now it had never read one.
+      #
+      # THE BODY ARRIVES THROUGH `env:`, NEVER INTERPOLATED INTO THE SCRIPT.
+      # `${{ }}` is substituted textually BEFORE bash sees the line, so a body
+      # containing a backtick or $(...) would execute on the runner -- and this
+      # body is attacker-controlled by construction. `env:` passes it as data.
+      # scripts/check_workflow_env_defined.sh enforces the same rule.
+      #
+      # pull_request only: on merge_group there is no pull_request payload, and
+      # a body is fixed before a PR is ever enqueued.
+      - name: A PR body must close every issue it cites, or say why not (§6 R-2)
+        if: github.event_name == 'pull_request'
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$PR_BODY" > "$RUNNER_TEMP/pr-body.txt"
+          bash scripts/check_pr_closes_issue.sh --body "$RUNNER_TEMP/pr-body.txt"
       # aprender#2822: THE REPORT. Runs even when the job dies mid-cargo,
       # and takes its own final probe first -- without that, a failure at
       # step K leaves the last recorded boundary BEFORE K and the table
