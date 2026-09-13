@@ -1,0 +1,7 @@
+error: failed to get `serde` as a dependency of package `apr-cli v0.64.0`
+
+Caused by:
+  failed to fetch `https://github.com/rust-lang/crates.io-index`
+
+Caused by:
+  [7] Could not connect to server (Failed to connect to 127.0.0.1 port 5000 after 0 ms: Connection refused)

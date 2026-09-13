@@ -164,7 +164,7 @@ if grep -q 'pmat-hunt check' "$FAILLOG"; then
 else
   bad "a hunt with zero rows calls emit_fail" "a pmat-hunt failure" "$(cat "$FAILLOG")"
 fi
-if printf '%s\n' "$out" | grep -q -- '-- pmat bug-hunt manifest'; then
+if grep -q -- '-- pmat bug-hunt manifest' <<< "$out" ; then
   ok "the empty hunt did print a header (this is the inert shape being caught)"
 else
   bad "the empty hunt did print a header" "a header" "$out"

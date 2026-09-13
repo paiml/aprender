@@ -55,9 +55,7 @@ impl RdpAccountant {
 
     /// Reset the accountant
     pub fn reset(&mut self) {
-        for r in &mut self.rdp {
-            *r = 0.0;
-        }
+        self.rdp.fill(0.0);
         self.steps = 0;
     }
 }

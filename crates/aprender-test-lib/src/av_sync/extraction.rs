@@ -67,7 +67,9 @@ pub fn extract_audio(video_path: &Path, sample_rate: u32) -> Result<Vec<f32>, Pr
     }
 
     let samples: Vec<f32> = bytes
-        .chunks_exact(4)
+        .as_chunks::<4>()
+        .0
+        .iter()
         .map(|chunk| {
             let arr: [u8; 4] = [chunk[0], chunk[1], chunk[2], chunk[3]];
             f32::from_le_bytes(arr)

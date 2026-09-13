@@ -55,7 +55,7 @@ impl UsePoint {
     }
 }
 
-/// Bug: Store using value derived from ld.shared
+/// Defect: Store using value derived from ld.shared
 #[derive(Debug, Clone)]
 pub struct LoadedValueBug {
     /// Load location
@@ -70,7 +70,7 @@ pub struct LoadedValueBug {
     pub mitigation: String,
 }
 
-/// Bug: Address computed from ld.shared value causes store crash
+/// Defect: Address computed from ld.shared value causes store crash
 #[derive(Debug, Clone)]
 pub struct ComputedAddrFromLoadedBug {
     /// Load location
@@ -275,10 +275,38 @@ impl DataFlowAnalyzer {
     /// Pattern: ld.shared %r_val -> add %r_addr, base, %r_val -> st.XXX [%r_addr]
     /// Even storing a CONSTANT to an address computed from a loaded value crashes.
     pub fn detect_computed_addr_from_loaded(&self) -> Vec<ComputedAddrFromLoadedBug> {
-        let mut bugs = Vec::new();
-
         // Track which registers come from ld.shared
-        let mut shared_loaded_regs: HashSet<String> = HashSet::new();
+        let shared_loaded_regs = self.shared_loaded_registers();
+
+        // Track registers computed from shared-loaded registers (taint propagation)
+        let tainted_regs = self.propagate_taint(&shared_loaded_regs);
+
+        // Find stores where ADDRESS is computed from tainted register
+        let mut bugs = Vec::new();
+        for (reg, _source) in &self.value_sources {
+            if !tainted_regs.contains(reg) {
+                continue;
+            }
+            for use_point in self.def_use_chains.get(reg).unwrap_or(&vec![]) {
+                if use_point.is_store_address_operand() {
+                    let load_loc = self.find_original_load_location(reg, &shared_loaded_regs);
+                    bugs.push(ComputedAddrFromLoadedBug {
+                        load_location: load_loc.unwrap_or_default(),
+                        addr_computation_location: use_point.location.clone(),
+                        tainted_register: reg.clone(),
+                        severity: Severity::Critical,
+                        mitigation: "Use constant-only address computation, try membar.cta (partial), or use Kernel Fission (split kernel)".into(),
+                    });
+                }
+            }
+        }
+
+        bugs
+    }
+
+    /// Registers whose value is loaded directly from shared memory (`ld.shared`).
+    fn shared_loaded_registers(&self) -> HashSet<String> {
+        let mut regs: HashSet<String> = HashSet::new();
         for (reg, source) in &self.value_sources {
             if matches!(
                 source,
@@ -287,46 +315,28 @@ impl DataFlowAnalyzer {
                     ..
                 }
             ) {
-                shared_loaded_regs.insert(reg.clone());
+                regs.insert(reg.clone());
             }
         }
+        regs
+    }
 
-        // Track registers computed from shared-loaded registers (taint propagation)
-        let mut tainted_regs: HashSet<String> = shared_loaded_regs.clone();
+    /// Propagate taint from `seed` through `ValueSource::Computed` inputs to a fixpoint.
+    fn propagate_taint(&self, seed: &HashSet<String>) -> HashSet<String> {
+        let mut tainted: HashSet<String> = seed.clone();
         let mut changed = true;
         while changed {
             changed = false;
             for (reg, source) in &self.value_sources {
                 if let ValueSource::Computed { inputs } = source {
-                    if !tainted_regs.contains(reg)
-                        && inputs.iter().any(|i| tainted_regs.contains(i))
-                    {
-                        tainted_regs.insert(reg.clone());
+                    if !tainted.contains(reg) && inputs.iter().any(|i| tainted.contains(i)) {
+                        tainted.insert(reg.clone());
                         changed = true;
                     }
                 }
             }
         }
-
-        // Find stores where ADDRESS is computed from tainted register
-        for (reg, _source) in &self.value_sources {
-            if tainted_regs.contains(reg) {
-                for use_point in self.def_use_chains.get(reg).unwrap_or(&vec![]) {
-                    if use_point.is_store_address_operand() {
-                        let load_loc = self.find_original_load_location(reg, &shared_loaded_regs);
-                        bugs.push(ComputedAddrFromLoadedBug {
-                            load_location: load_loc.unwrap_or_default(),
-                            addr_computation_location: use_point.location.clone(),
-                            tainted_register: reg.clone(),
-                            severity: Severity::Critical,
-                            mitigation: "Use constant-only address computation, try membar.cta (partial), or use Kernel Fission (split kernel)".into(),
-                        });
-                    }
-                }
-            }
-        }
-
-        bugs
+        tainted
     }
 
     fn find_original_load_location(

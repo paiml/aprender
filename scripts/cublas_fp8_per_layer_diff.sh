@@ -21,7 +21,13 @@ set -uo pipefail
 
 MODEL="${MODEL:-/home/noah/models/qwen2.5-coder-7b-instruct-q4_k_m.gguf}"
 BIN="${BIN:-/mnt/nvme-raid0/targets/aprender/release/examples/cublas_fp8_7b_reproducer}"
-RUN_ID="${RUN_ID:-$(date +%s)-$$}"
+# DET002: this ID only needs to be unique per invocation (so back-to-back
+# diagnostic runs against the SAME commit land in distinct trace dirs rather
+# than overwriting each other) — it is never a build artifact. Read it from
+# bash's own EPOCHREALTIME builtin (no external `date` process) instead of
+# `date +%s`; microsecond resolution also makes same-second collisions
+# less likely than the previous one-second granularity.
+RUN_ID="${RUN_ID:-${EPOCHREALTIME/./}-$$}"
 OUTDIR="${OUTDIR:-./per-layer-trace/$RUN_ID}"
 mkdir -p "$OUTDIR"
 

@@ -1,0 +1,33 @@
+{
+  "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "duplication_hits",
+          "level": "warning",
+          "message": {
+            "text": "This fused path may already exist elsewhere in the tree."
+          },
+          "properties": {
+            "source": "pmat query \"fused gate up matvec\"",
+            "failure_scenario": "Two implementations diverge and one keeps the pre-LAYOUT-001 column-major order.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -845,7 +845,7 @@ impl WorkerQueue {
         let mut queue = self.local_queue.write().expect("lock poisoned");
         queue.push(task);
         // Sort by priority (higher first)
-        queue.sort_by(|a, b| b.priority.cmp(&a.priority));
+        queue.sort_by_key(|a| std::cmp::Reverse(a.priority));
     }
 
     /// Pop a task from the local queue (highest priority first)
@@ -1024,7 +1024,7 @@ impl WorkStealingScheduler {
         }
 
         // Sort by queue length (steal from busiest)
-        candidates.sort_by(|a, b| b.1.len().cmp(&a.1.len()));
+        candidates.sort_by_key(|a| std::cmp::Reverse(a.1.len()));
 
         // Try to steal from the busiest queue
         for (_, queue) in candidates {

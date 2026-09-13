@@ -1,0 +1,14 @@
+PASS ArmC integrity
+REPORT ArmC-sig receipt claims commit=745fa8588 host=lambda key_id=<absent> (commit-under-test=745fa8588)
+FAIL ArmC-sig UNSIGNED: receipt carries no `signature` object. A receipt is a file anyone can write; unsigned, it binds to no host and no commit. This is a FAILURE, not `signature not applicable`.
+REPORT ArmA c=4 scaling_efficiency=0.4795 (baseline UNMEASURED until 2026-09-25, owner=perf-gate)
+REPORT ArmA c=8 scaling_efficiency=0.4428 (baseline UNMEASURED until 2026-09-25, owner=perf-gate)
+REPORT ArmA c=16 scaling_efficiency=0.2814 (baseline UNMEASURED until 2026-09-25, owner=perf-gate)
+REPORT ArmB c=1 UNMEASURED (Arm A still gates this cell)
+REPORT ArmB c=4 UNMEASURED (Arm A still gates this cell)
+REPORT ArmB c=8 UNMEASURED (Arm A still gates this cell)
+REPORT ArmB c=16 UNMEASURED (Arm A still gates this cell)
+FAIL ArmD instrumentation absent: kv.bytes_used/bytes_reserved, kv.admission_rejected, kv.preempted_swap
+SKIP  ArmE measured on W2 only (workload=W1)
+PASS cells host=lambda all bands [1, 4, 8, 16] present
+VERDICT FAIL host=lambda phase=release workload=W1

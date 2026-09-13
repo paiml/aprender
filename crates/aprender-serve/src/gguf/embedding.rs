@@ -82,7 +82,9 @@ fn dequantize_embedding(
 ) -> Result<Vec<f32>> {
     match dtype {
         "F32" | "f32" => Ok(embed_data
-            .chunks_exact(4)
+            .as_chunks::<4>()
+            .0
+            .iter()
             .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
             .collect()),
         "BF16" | "bf16" => Ok(crate::inference::simd_bf16_to_f32(embed_data)),

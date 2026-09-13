@@ -1,0 +1,84 @@
+# CRUX-N-15 — General RL algorithms (PPO / DQN / A2C)
+# CRUX category N: Rust ML Framework Parity (linfa + burn).
+# Filed from the 2026-09-12 competitive sweep. Tracks GitHub #3166, epic #3146.
+# registry: false — this contract carries real falsification gates and claims no
+# exemption (operator ruling 2026-08-21, "no contract exemptions").
+
+metadata:
+  id: CRUX-N-15
+  version: "1.0.0"
+  created: "2026-09-12"
+  updated: "2026-09-12"
+  author: PAIML Engineering
+  registry: false
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "N — Rust ML Framework Parity"
+  competitor: burn
+  demand_score: 2  # 1..5, low priority in pmat work
+  intake_status: partial
+  github_issue: 3166
+  description: >
+    General reinforcement learning. burn ships burn-rl. aprender has RL only in its RLHF sense: crates/aprender-core/src/online/dpo.rs and online/rlvr.rs. Verified 2026-09-12 -- PPO, DQN, A2C, SAC and Q-learning are absent; the single apparent PPO hit is a comment at online/dpo.rs:7 that names PPO to say it is NOT doing PPO. Demand 2: general RL is not on the four-pillar mission and nothing else in this epic depends on it.
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - 'epic: https://github.com/paiml/aprender/issues/3146'
+  - 'story: https://github.com/paiml/aprender/issues/3166'
+  - 'competitor: https://github.com/tracel-ai/burn'
+
+equations:
+  agent_learns_above_random:
+    formula: |
+      return(PPO, episodes ≤ B) > τ   AND   return(random policy) < τ
+    domain: "CartPole-equivalent environment"
+    codomain: "episode return, both policies"
+    invariants:
+    - "both halves asserted -- a threshold only the agent is measured against proves nothing"
+    - "deterministic under a fixed seed"
+
+  ppo_clipping_engages:
+    formula: |
+      for ratio r ∉ [1−ε, 1+ε]:  L_surrogate = clipped_branch(r)
+    domain: "constructed ratio outside the trust region"
+    codomain: "which branch of the surrogate objective is taken"
+    invariants:
+    - "DQN's target network is asserted to LAG: differs between syncs, matches right after"
+
+falsification_tests:
+- id: FALSIFY-CRUX-N-15-001
+  rule: "PPO learns where a random policy does not"
+  prediction: "on CartPole-equivalent, PPO exceeds a return threshold within a bounded episode budget and a random policy is asserted below it"
+  test: >-
+    LIVE-PENDING - PPO learns where a random policy does not. No test surface exists today because the capability is unimplemented: General RL algorithms (PPO / DQN / A2C) (aprender#3166, CRUX-N-15). PROMOTE by authoring a test named learns_above_random_policy in module `rl/ppo/tests` of crate `aprender-core`; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED and unfalsifiable-by-absence, NOT satisfied.
+  if_fails: rule 'PPO learns where a random policy does not' is violated — the burn parity claim for CRUX-N-15 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation
+- id: FALSIFY-CRUX-N-15-002
+  rule: "the clipped surrogate branch is taken outside the trust region"
+  prediction: "a constructed ratio outside [1-eps, 1+eps] selects the clipped branch"
+  test: >-
+    LIVE-PENDING - the clipped surrogate branch is taken outside the trust region. No test surface exists today because the capability is unimplemented: General RL algorithms (PPO / DQN / A2C) (aprender#3166, CRUX-N-15). PROMOTE by authoring a test named clipping_engages in module `rl/ppo/tests` of crate `aprender-core`; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED and unfalsifiable-by-absence, NOT satisfied.
+  if_fails: rule 'the clipped surrogate branch is taken outside the trust region' is violated — the burn parity claim for CRUX-N-15 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation
+- id: FALSIFY-CRUX-N-15-003
+  rule: "the DQN target network lags the online network"
+  prediction: "target and online parameters differ between syncs and match immediately after a sync"
+  test: >-
+    LIVE-PENDING - the DQN target network lags the online network. No test surface exists today because the capability is unimplemented: General RL algorithms (PPO / DQN / A2C) (aprender#3166, CRUX-N-15). PROMOTE by authoring a test named target_network_lags in module `rl/dqn/tests` of crate `aprender-core`; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED and unfalsifiable-by-absence, NOT satisfied.
+  if_fails: rule 'the DQN target network lags the online network' is violated — the burn parity claim for CRUX-N-15 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation
+
+proof_obligations:
+- type: invariant
+  property: "PPO learns where a random policy does not"
+- type: invariant
+  property: "the clipped surrogate branch is taken outside the trust region"
+- type: invariant
+  property: "the DQN target network lags the online network"
+
+kani_harnesses:
+- id: KH-CRUX-N-15-001
+  obligation: agent_learns_above_random
+  property: agent_learns_above_random_holds_on_bounded_input
+  bound: 4
+- id: KH-CRUX-N-15-002
+  obligation: ppo_clipping_engages
+  property: ppo_clipping_engages_holds_on_bounded_input
+  bound: 4

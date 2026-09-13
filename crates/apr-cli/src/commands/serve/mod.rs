@@ -20,6 +20,11 @@ pub use types::*;
 // Test modules
 #[cfg(test)]
 mod tests;
+// PP-LLAMA-001 PP-14/PP-15/§9 #8: the offload report the served process
+// publishes. `inference`-gated because the report type comes from realizar.
+#[cfg(all(test, feature = "inference"))]
+#[path = "tests_offload_report_pp14.rs"]
+mod tests_offload_report_pp14;
 
 use std::path::Path;
 
@@ -54,6 +59,97 @@ pub(crate) fn list_devices() -> Result<()> {
         println!("    cargo install aprender --features wgpu    # portable GPU backend");
     }
     Ok(())
+}
+
+/// PP-LLAMA-001 §9 #8 / PP-2: the `cfg!` feature set of THIS binary.
+///
+/// `realizar` cannot see it — `cuda-batch` is an `apr-cli` feature and no
+/// mechanism carried it into the served process's HTTP surface, so
+/// `feature_set` in a receipt was whatever the operator typed at
+/// `--server-feature`. The list travels with the offload report and is
+/// reported as `build_features_cli`.
+#[cfg(feature = "inference")]
+#[must_use]
+pub(crate) fn cli_build_features() -> Vec<String> {
+    let mut features: Vec<&'static str> = Vec::new();
+    if cfg!(feature = "inference") {
+        features.push("inference");
+    }
+    if cfg!(feature = "cuda") {
+        features.push("cuda");
+    }
+    // §9 #8: `cuda-batch = ["cuda"]` is a compatibility alias now, but a receipt
+    // still has to state whether the binary was built with it — the §2.1
+    // INVALID-BUILD rule reads exactly this entry.
+    if cfg!(feature = "cuda-batch") {
+        features.push("cuda-batch");
+    }
+    if cfg!(feature = "wgpu") {
+        features.push("wgpu");
+    }
+    if cfg!(feature = "training") {
+        features.push("training");
+    }
+    features.into_iter().map(str::to_string).collect()
+}
+
+/// PP-14/PP-15: what this loader resolved for `--gpu-layers`, as a value the
+/// served process can report.
+///
+/// The three numbers were computed here and PRINTED ONLY, beside a `backend=`
+/// label that was a `cfg!` — a build-time string, not what loaded. Attaching
+/// this to the `AppState` is what turns the printed line into a fact a receipt
+/// can carry, and what lets `backend_loaded` be derived from residency instead.
+///
+/// `explicit_args` lists the arguments whose value DIFFERS from the default,
+/// i.e. the ones the operator must have set. An operator who typed the default
+/// (`--context-length 4096`) is indistinguishable from one who typed nothing,
+/// and is reported as not explicit — the conservative direction, since PP-14's
+/// invariant is violated by claiming auto-fit chose something the operator set.
+///
+/// `autofit_applied` is EMPTY on this loader, and that is a fact rather than an
+/// omission: `resolve_layers` has no free-VRAM query to fit against (`fits ==
+/// total_layers`), so `auto` resolves to all, a partial request is refused, and
+/// auto-fit never changes anything. When a fitting loader lands, this is where
+/// it records what it changed.
+#[cfg(feature = "inference")]
+#[must_use]
+pub(crate) fn offload_report(
+    config: &ServerConfig,
+    resolved_layers: u32,
+    total_layers: u32,
+) -> realizar::api::OffloadReport {
+    let mut explicit_args: Vec<String> = Vec::new();
+    if config.gpu_layers.is_some() {
+        explicit_args.push("gpu_layers".to_string());
+    }
+    if config.no_gpu {
+        explicit_args.push("no_gpu".to_string());
+    }
+    if config.context_length != types::DEFAULT_CONTEXT_LENGTH {
+        explicit_args.push("context_length".to_string());
+    }
+    if config.batch {
+        explicit_args.push("batch".to_string());
+    }
+    if config.no_fp8_cache {
+        explicit_args.push("no_fp8_cache".to_string());
+    }
+    if config.backend.is_some() {
+        explicit_args.push("backend".to_string());
+    }
+    realizar::api::OffloadReport {
+        gpu_layers_requested: config
+            .gpu_layers
+            .map_or_else(|| "none".to_string(), |r| r.to_string()),
+        gpu_layers_resolved: resolved_layers,
+        gpu_layers_total: total_layers,
+        offload_policy: "all_or_nothing",
+        autofit_applied: Vec::new(),
+        explicit_args,
+        build_features: cli_build_features(),
+        build_commit: Some(env!("APR_GIT_SHA").to_string()),
+    }
 }
 
 /// PERF-021 countermeasure 3: a request has a RESOLUTION, and it is reported.
@@ -335,6 +431,202 @@ mod accelerator_guard_tests {
     /// and it is the only thing here that fails when the wiring is removed —
     /// `serve::run` needs a model file and a bound port, so it cannot be driven
     /// from a unit test.
+    /// PERF-021 / I-2: NO DECISION SITE MAY READ THE BOOLEAN.
+    ///
+    /// The sibling gate above proves `--gpu` still REACHES the guard. This one
+    /// proves the quantity reaches the DECISION, which is the half that was
+    /// missing and the half #2696 actually turns on.
+    ///
+    /// Four sites chose GPU over CPU by reading `config.gpu`: handlers.rs:776,
+    /// handlers.rs:1084, handler_gpu_completion.rs:407 and :412. Meanwhile
+    /// `--gpu-layers` set only `config.gpu_layers`. On a `--features cuda`
+    /// build `--gpu-layers all` therefore passed the guard and served on CPU —
+    /// #2696 in the new spelling, shipped by the change that retired the old
+    /// one.
+    ///
+    /// Every unit test in this file survives that defect, because they all call
+    /// helpers directly. So does the branch's own
+    /// `gpu_layers_is_refused_on_a_build_with_no_accelerator`, which carries
+    /// `#[cfg(not(any(feature = "cuda", feature = "wgpu")))]` and therefore
+    /// COMPILES ONLY WHERE THE BUG CANNOT HAPPEN. This test has no cfg: it is a
+    /// source scan, so it runs on every build including the CUDA one.
+    #[test]
+    fn no_decision_site_reads_the_bare_accelerator_boolean() {
+        // (file, source) pairs for every module that chooses GPU vs CPU.
+        let sites: [(&str, &str); 2] = [
+            ("handlers.rs", include_str!("handlers.rs")),
+            (
+                "handler_gpu_completion.rs",
+                include_str!("handler_gpu_completion.rs"),
+            ),
+        ];
+        let mut offenders = Vec::new();
+        for (name, src) in sites {
+            for (i, line) in src.lines().enumerate() {
+                let t = line.trim_start();
+                if t.starts_with("//") || t.starts_with("///") {
+                    continue;
+                }
+                // The decision shapes that reintroduce the defect.
+                if line.contains("config.gpu &&")
+                    || line.contains("config.gpu ||")
+                    || line.contains("= config.gpu;")
+                    || line.contains("if config.gpu {")
+                {
+                    offenders.push(format!("{name}:{}: {}", i + 1, t));
+                }
+            }
+        }
+        assert!(
+            offenders.is_empty(),
+            "a GPU/CPU decision reads the boolean `config.gpu` instead of \
+             `config.wants_accelerator()`. `--gpu-layers all` then parses, \
+             validates, stores — and serves on CPU (#2696, new spelling). \
+             Offenders:\n  {}",
+            offenders.join("\n  ")
+        );
+    }
+
+    /// The positive half of I-2: the quantity alone must select the accelerator,
+    /// with the deprecated boolean unset. Build-independent by construction, so
+    /// unlike the cfg'd test below it runs on the CUDA build too.
+    #[test]
+    fn the_quantity_alone_selects_the_accelerator() {
+        let mut cfg = ServerConfig::default();
+        cfg.gpu = false; // the user did NOT type the deprecated boolean
+        cfg.gpu_layers = Some(GpuLayerRequest::All);
+        assert!(
+            cfg.wants_accelerator(),
+            "`--gpu-layers all` with no `--gpu` must select the accelerator; \
+             reading the boolean here is #2696"
+        );
+
+        cfg.gpu_layers = Some(GpuLayerRequest::None);
+        assert!(
+            !cfg.wants_accelerator(),
+            "`--gpu-layers 0` is an explicit CPU request and must NOT select it"
+        );
+
+        cfg.gpu_layers = Some(GpuLayerRequest::All);
+        cfg.no_gpu = true;
+        assert!(
+            !cfg.wants_accelerator(),
+            "`--no-gpu` must still win over a quantity"
+        );
+    }
+
+    /// PERF-021: the resolver must be CALLED, not merely defined.
+    ///
+    /// Every one of the 7 calls to `resolve_gpu_layers` lived inside
+    /// `#[cfg(test)]` while its own doc comment said "a request has a
+    /// RESOLUTION, and it is reported". It reported nothing. Its sibling
+    /// `ensure_accelerator_available` landed WIRED because it had a source-grep
+    /// gate; this one landed dead because it had none. That difference is the
+    /// entire explanation, so the gate comes with the call.
+    /// #2762 source gate. The behaviour test for `resolve_serve_max_seq_len`
+    /// lives beside the function; this one proves the function is REACHED from
+    /// the serve path, and that the path reads the variable `--context-length`
+    /// actually writes.
+    ///
+    /// It has no cfg on purpose. The defect is that a CUDA-only code path read
+    /// a name nothing sets, so a test compiled only under `--features cuda`
+    /// would be the same blind spot one level up.
+    #[test]
+    fn the_gguf_cuda_serve_path_reads_the_context_length_flag() {
+        // SHIPPING CODE ONLY, and it took two tries to get that right.
+        //
+        // v1 scanned the whole file, so the doc comment on
+        // `resolve_serve_max_seq_len` -- which names the variable -- satisfied it.
+        // v2 stripped comments, and the ASSERTION MESSAGE inside that file's own
+        // `#[cfg(test)]` module still named it: the mutation that passes `None`
+        // for the context argument was applied and this gate STAYED GREEN.
+        // A source gate its own text satisfies is theater, in both spellings.
+        //
+        // So: cut at the first `#[cfg(test)]`, drop comments, and look for the
+        // ARGUMENT rather than the name -- assembled at runtime so this line
+        // cannot be its own evidence.
+        let whole = include_str!("handler_gpu_completion.rs");
+        let shipping = whole.split("#[cfg(test)]").next().unwrap_or(whole);
+        let src: String = shipping
+            .lines()
+            .filter(|l| !l.trim_start().starts_with("//"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let reads_the_flag = format!(
+            "std::env::var({:?}).ok().as_deref()",
+            "REALIZR_CONTEXT".to_string() + "_LENGTH"
+        );
+        assert!(
+            src.contains(&reads_the_flag),
+            "the GGUF+CUDA serve path does not pass REALIZR_CONTEXT_LENGTH to the \
+             context resolver, and that variable is the only thing \
+             `--context-length` writes (serve/mod.rs). Before #2762 it sized the \
+             KV cache from REALIZR_MAX_SEQ_LEN -- a name READ in one place and \
+             WRITTEN in none -- so every server got 2048 and the batched KV \
+             stride was a constant the operator could not move"
+        );
+        assert!(
+            src.contains("resolve_serve_max_seq_len("),
+            "the context-length resolver is not called from the serve path"
+        );
+    }
+
+    /// `REALIZR_MAX_SEQ_LEN` is a GH-129 escape hatch. If a later change makes
+    /// something in the tree SET it, the precedence in
+    /// `resolve_serve_max_seq_len` stops being an operator override and becomes
+    /// a second, hidden default that outranks `--context-length` again.
+    #[test]
+    fn the_seq_len_escape_hatch_is_still_read_only() {
+        let src = include_str!("mod.rs");
+        assert!(
+            !src.contains("set_var(\"REALIZR_MAX_SEQ_LEN\""),
+            "REALIZR_MAX_SEQ_LEN is now written by the CLI; it takes precedence \
+             over --context-length, so writing it re-creates #2762"
+        );
+    }
+
+    #[test]
+    fn the_resolver_is_actually_called_from_a_decision_path() {
+        let src = include_str!("handler_gpu_completion.rs");
+        assert!(
+            src.contains("config.resolve_layers(total_layers)?"),
+            "no decision path calls the resolver — `--gpu-layers` is parsed, \
+             validated, stored and never resolved, so nothing reports how many \
+             layers were placed (N4, and the reason #2696 was invisible)"
+        );
+        assert!(
+            src.contains("gpu-layers: requested="),
+            "the resolution is computed but not REPORTED. I-2 requires \
+             resolved-vs-requested to be observable; a resolution nobody can \
+             see is the boolean defect with more arithmetic"
+        );
+    }
+
+    /// A PARTIAL request must be refused, not rounded.
+    ///
+    /// `OwnedQuantizedModelCuda` takes no layer count and uploads every layer,
+    /// so accepting `--gpu-layers 12` on a 29-layer model would place 29 and
+    /// print 12 — a fabricated number in a log, which is worse than a refusal
+    /// and is precisely what this epic exists to remove.
+    #[test]
+    fn a_partial_offload_is_refused_because_the_loader_cannot_do_it() {
+        let mut cfg = ServerConfig::default();
+        cfg.gpu_layers = Some(GpuLayerRequest::Exact(12));
+        let e = cfg.resolve_layers(29).expect_err("partial must be refused");
+        let m = e.to_string();
+        assert!(m.contains("PARTIAL"), "must name the limitation: {m}");
+        assert!(m.contains("PERF-023"), "must cite the tracking item: {m}");
+
+        // The two honourable requests still work, or the refusal is a wall.
+        cfg.gpu_layers = Some(GpuLayerRequest::All);
+        assert_eq!(cfg.resolve_layers(29).expect("all"), 29);
+        cfg.gpu_layers = Some(GpuLayerRequest::None);
+        assert_eq!(cfg.resolve_layers(29).expect("none"), 0);
+        // `Exact(total)` is `all` by another spelling and must be accepted.
+        cfg.gpu_layers = Some(GpuLayerRequest::Exact(29));
+        assert_eq!(cfg.resolve_layers(29).expect("exact==total"), 29);
+    }
+
     #[test]
     fn the_guard_is_actually_wired_into_run() {
         let src = include_str!("mod.rs");

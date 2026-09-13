@@ -22,7 +22,15 @@ checked=$((checked + 1))
 
 # Write used and defined macros to temp files for comparison
 tmpdir=$(mktemp -d)
-trap 'rm -rf "$tmpdir"' EXIT
+cleanup_tmpdir() {
+    # Gated immediately before rm -rf: the path must be non-empty and not
+    # the filesystem root, so a broken `mktemp -d` can never turn this into
+    # `rm -rf /`.
+    if [ -n "$tmpdir" ] && [ "$tmpdir" != "/" ]; then
+        rm -rf -- "$tmpdir"
+    fi
+}
+trap cleanup_tmpdir EXIT
 
 # Find all contract macro INVOCATIONS in source (contract_pre_foo! or contract_post_bar!)
 grep -roh 'contract_pre_[a-z_]*!\|contract_post_[a-z_]*!' src/ --include='*.rs' 2>/dev/null \

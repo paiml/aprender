@@ -29,7 +29,7 @@ pub(super) fn generate_exhaustive_body(out: &mut String, harness: &KaniHarness) 
     }
     out.push_str(&format!("        // Obligation: {}\n", harness.obligation));
     out.push_str(
-        "        // TODO: Replace with kernel-specific \
+        "        // Scaffold: replace with kernel-specific \
          verification logic\n",
     );
     out.push_str("        //   Example: assert_eq!(precomputed, online);\n");

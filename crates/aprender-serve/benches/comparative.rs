@@ -233,6 +233,7 @@ fn create_test_gguf_transformer(
         bos_token_id: None,
         eos_token_id: None,
         explicit_head_dim: None,
+        query_pre_attn_scalar: None,
     };
 
     let layers: Vec<GGUFTransformerLayer> = (0..num_layers)
@@ -335,6 +336,7 @@ fn create_test_apr_transformer(
         q4k_layers: None,
         lm_head_weight_q6k: None,
         lm_head_weight_q4k: None,
+        lm_head_tied: false,
     }
 }
 

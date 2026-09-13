@@ -1,0 +1,165 @@
+metadata:
+  version: 1.0.0
+  created: '2026-09-02'
+  author: PAIML Engineering
+  description: "Spec conformance — the property that the governing specification describes the tree it governs. A rule table that names checks nobody runs is worth negative EV: it is counted as coverage in every audit, it licenses the claim it was supposed to test, and it cannot be distinguished from a table describing real enforcement by reading either one. This contract owns the class of defects where a registry's universe can empty itself without saying so."
+  kind: pattern
+  references:
+    - "scripts/spec_conformance.sh — the join"
+    - "scripts/lib/spec_conformance.py — the parser"
+    - "docs/specifications/PP-LLAMA-001-MASTER.md — §6 invariants, Appendix C ledger, §12 obligation DAG"
+    - ".github/workflows/ci.yml — wired per-PR in guard-runner-labels (gate depends on it)"
+    - "scripts/check_mutation_registry.sh — the RETIRED predecessor, deleted in the same commit"
+
+five_whys:
+  symptom: "scripts/lib/mutation_registry.py located the rule table by glob over docs/specifications/APR-PERF-GATE-001-v*.md. Archiving that document moved it under docs/archive/, and the guard did not break loudly: it read ZERO rows, reported ZERO violations, and exited on a vacuity message that reads like a path problem. Every rule the table claimed to enforce became unchecked in one file move."
+  why_1: "The guard's universe was derived from a glob over a directory the spec was allowed to leave."
+  why_2: "Nothing asserted that the glob resolved to exactly one file; zero matches and one match took different branches only by accident of the vacuity floor."
+  why_3: "The table's status column was trusted as a statement about the tree. A row saying PROVEN was evidence that somebody had typed PROVEN."
+  why_4: "The selftest names in the table were prose. There was no surface on which a name could be looked up, so the join was never a join — it was a spelling."
+  why_5: "Enforcement was audited by counting rows rather than by resolving each row's names against a case table something runs."
+  root_cause: "A specification's claims about enforcement were checked by reading, and reading is the activity a missing file defeats. The remedy is mechanical: exactly one spec file, every ARMED row's case names resolved against the surface it declares, and a vacuity floor that fails when the parser stops matching."
+
+equations:
+  every_armed_row_names_cases_that_exist:
+    formula: "for every §6 row R with status ARMED: names(R) != {} and forall (surface, name) in names(R): name in cases(surface)"
+    domain: "the §6 table of the single docs/specifications/PP-LLAMA-001-MASTER*.md match; surfaces are `pg` (scripts/perf_gate.sh --list-selftests), `sh:<script>` (that script's case table) and `rs:<crate>` (a #[test] fn under crates/<crate>/src)"
+    codomain: "one CASE record per name with found|missing; exit 1 if any ARMED row names a missing case"
+    invariants:
+      - "An ARMED row names at least two cases: a must-fire and a must-not-fire"
+      - "A row whose status is not ARMED is not joined — OPEN means the producer is owed in §12, and reddening on it would push every honest 'not yet' into a false ARMED"
+      - "A short name is satisfied by a longer FOUND name in the same row that extends it with the `__` convention, and by nothing else"
+      - "A surface the tree cannot enumerate is a violation, never a skip"
+
+  one_spec_and_never_vacuous:
+    formula: "|glob(docs/specifications/PP-LLAMA-001-MASTER*.md)| == 1 and rows_parsed >= MIN_ROWS"
+    domain: "the repository root"
+    codomain: "exit code of scripts/spec_conformance.sh"
+    invariants:
+      - "Zero matches is the archived-predecessor defect and is RED, not a skip"
+      - "More than one match means two documents disagree and neither is the master"
+      - "MIN_ROWS is overridable by environment only so the case table can scan a one-row fixture"
+
+  a_cell_once_run_is_spent:
+    formula: "for every pair of Appendix C rows with conformance RECORDED: (host, workload, model quant, commit, interleaved) differ"
+    domain: "the row table of evidence/parity/LEDGER.md"
+    codomain: "exit 1 on a duplicate spend key"
+    invariants:
+      - "PP-9: re-running a cell until it comes out green is the defect the ledger exists to refuse"
+      - "The commit is part of the key, so a later commit legitimately starts a new row"
+      - "A ledger with no RECORDED row is reported as unexercised rather than counted as clean"
+      - "L2: a ledger row typed after the first table breaks (a blank or prose line splits it), with the same column count as the header and a row-id-shaped first cell, is a violation — the parser's universe is every row on the page between the header and the Superseded-rows section, not merely the first contiguous block table_rows() accumulates"
+
+  expiries_derive_from_the_dag:
+    formula: "for every §12 row R: expires(R) = R.date if root(R) else max{expires(B) : B in transitive blockers of R}"
+    domain: "the §12 obligation table"
+    codomain: "evidence/parity/derived_expiries.json, and exit 1 on a cycle or a mis-dated row"
+    invariants:
+      - "A cycle has no latest blocker, so every row in it waits for itself — refused"
+      - "A root row carries the one date a person must write; a root without one never expires"
+      - "A row with at least one live blocker may not type a date: a typed expiry can fall before the work it waits on"
+      - "A row all of whose blockers have LANDED is unblocked and must carry a date again"
+      - "THE MARKER IS THE EXPIRY (I-26, PMAT-974, S0-2): a §12 root cell's expiry is its `Expires **YYYY-MM-DD**` marker and never the first date in the cell (a witness date earlier in the prose does not become the expiry); rows past their derived expiry are RED in spec_conformance.sh (the §4 andon) — `SPEC_CONFORMANCE_TODAY` pins the clock for the case table (rows expiry_marker_wins, expired_row_is_red)"
+
+proof_obligations:
+  - type: invariant
+    property: "Every ARMED rule's two selftest cases exist by name"
+    formal: "scripts/spec_conformance.sh exits 0"
+    applies_to: every_armed_row_names_cases_that_exist
+  - type: invariant
+    property: "The join demonstrably turns RED when a named case is absent"
+    formal: "the conformance_missing row of the case table is RED against a surface missing one name"
+    applies_to: every_armed_row_names_cases_that_exist
+  - type: invariant
+    property: "The guard is not vacuous"
+    formal: "a spec whose §6 table parses to zero rows exits non-zero"
+    applies_to: one_spec_and_never_vacuous
+  - type: invariant
+    property: "A spent cell cannot be spent twice"
+    formal: "two RECORDED ledger rows sharing a spend key exit non-zero"
+    applies_to: a_cell_once_run_is_spent
+  - type: invariant
+    property: "The expiry derivation refuses cycles and mis-dated rows"
+    formal: "the dag_* rows of the case table are RED for a cycle, an undated root and a dated blocked row"
+    applies_to: expiries_derive_from_the_dag
+  - type: invariant
+    property: "The guard is enforced per-PR, not merely present"
+    formal: "ci.yml invokes it in a job that `gate` depends on"
+    applies_to: every_armed_row_names_cases_that_exist
+
+falsification_tests:
+  - id: FALSIFY-PP-LLAMA-001-CONFORMANCE-001
+    rule: "The guard exists and is executable"
+    prediction: "scripts/spec_conformance.sh is a regular file with the execute bit set"
+    test: "test -x scripts/spec_conformance.sh"
+    if_fails: "The join was deleted or unmarked — every §6 status is a claim again"
+
+  - id: FALSIFY-PP-LLAMA-001-CONFORMANCE-002
+    rule: "The parser exists beside it"
+    prediction: "scripts/lib/spec_conformance.py is present"
+    test: "test -f scripts/lib/spec_conformance.py"
+    if_fails: "The shell wrapper reports a missing scanner and exits 2 rather than passing on an empty scan"
+
+  - id: FALSIFY-PP-LLAMA-001-CONFORMANCE-003
+    rule: "The guard demonstrably turns RED (mutation-verified, not merely green)"
+    prediction: "The ten-row case table passes: a deleted case name is RED, an empty §6 is RED, a duplicate spend key is RED, and a cyclic, undated or mis-dated §12 row is RED"
+    test: "bash scripts/spec_conformance.sh --selftest"
+    if_fails: "The join has itself become vacuous — it would accept a §6 table naming cases that do not exist"
+
+  - id: FALSIFY-PP-LLAMA-001-CONFORMANCE-004
+    rule: "The guard is wired into the per-PR gate, not merely present in the tree"
+    prediction: "ci.yml invokes spec_conformance.sh in guard-runner-labels, which `gate` lists in its needs"
+    test: "grep -q 'bash scripts/spec_conformance.sh' .github/workflows/ci.yml"
+    if_fails: "A reference is not an execution — the join would sit unexecuted while being counted as enforcement (the #2327 defect class)"
+
+  - id: FALSIFY-PP-LLAMA-001-CONFORMANCE-005
+    rule: "The retired predecessor is gone, not merely superseded"
+    prediction: "scripts/check_mutation_registry.sh and scripts/lib/mutation_registry.py are absent"
+    test: "test ! -e scripts/check_mutation_registry.sh && test ! -e scripts/lib/mutation_registry.py"
+    if_fails: "Two registries describe the same mutations, and the archived-glob guard is still counted as coverage while reading nothing"
+
+  - id: FALSIFY-PP-LLAMA-001-CONFORMANCE-006
+    rule: "The guard fails closed when it finds nothing to check"
+    prediction: "With MIN_ROWS above the number of §6 rows, the guard exits non-zero"
+    test: "! MIN_ROWS=9999 bash scripts/spec_conformance.sh >/dev/null 2>&1"
+    if_fails: "The guard would report OK on an empty table — a blind checker is indistinguishable from a conformant spec"
+
+  - id: FALSIFY-PP-LLAMA-001-CONFORMANCE-007
+    rule: "The master describes the tree it governs, on the tree as it stands"
+    prediction: "The join is green: every ARMED §6 row's cases exist, no ledger cell is spent twice, and every §12 expiry derives from its blockers"
+    test: "bash scripts/spec_conformance.sh"
+    if_fails: "Read the rows it prints. On 2026-09-02 the §6 and Appendix C halves were green (33 ARMED rows, 76 named cases, 0 missing) and the §12 half was RED on two rows: 19 and 21 each carry a literal date while still blocked by a live row (19 by row 1, 21 by row 2), which §12's own preamble forbids. The fix is in the master, not here: drop the date so the expiry derives, or record an amendment moving it and say who moved it."
+
+  - id: FALSIFY-PP-LLAMA-001-CONFORMANCE-008
+    rule: "The list surface the join reads is real"
+    prediction: "scripts/perf_gate.sh --list-selftests prints at least 25 case names"
+    test: "test \"$(bash scripts/perf_gate.sh --list-selftests | wc -l)\" -ge 25"
+    if_fails: "The pg surface collapsed, so every pg-surfaced §6 row would join against an empty set and the guard would be RED for the wrong reason"
+
+  - id: FALSIFY-PP-LLAMA-001-CONFORMANCE-009
+    rule: "L2: a ledger row outside the first table is refused, not silently dropped from PP-9's universe; the universe is every pipe line after the first table that claims a spend (a cell starting with RECORDED or CONFORMANT, backticks stripped), whatever its id, width, leading pipe, the header it sits under or the heading it sits below"
+    prediction: "ledger_row_outside_table (a blank line splits the table), ledger_row_no_leading_pipe, ledger_row_backticked_id, ledger_row_bold_id, ledger_second_table_same_header and ledger_row_extra_pipe_outside are L2, ledger_respend_outside_table and ledger_fragment_after_dummy_line are L1,L2, ledger_rows_contiguous, ledger_side_table_ok, ledger_side_table_split_ok and ledger_side_table_same_width_ok are CLEAN, ledger_first_table_not_ledger is L0,L2 (a table above the ledger shadows it, and the ledger's own rows are then outside the first table), ledger_row_under_foreign_header and ledger_row_after_superseded_heading are L1,L2, ledger_row_three_columns_off_outside, ledger_row_conformant_outside, ledger_row_nonnumeric_id_outside, ledger_row_backticked_tier_outside and ledger_reserved_word_in_side_table are L2, ledger_row_without_tier_outside_ok is CLEAN, ledger_row_underscored_tier, ledger_respend_conformant, ledger_respend_emphasised_key and ledger_respend_zero_width_key are L1 in the case table; removing the L2 emit turns sixteen of them BROKE"
+    test: 'out=$(bash scripts/spec_conformance.sh --selftest); for c in "ledger_row_outside_table  *L2" "ledger_row_no_leading_pipe  *L2" "ledger_row_backticked_id  *L2" "ledger_row_bold_id  *L2" "ledger_second_table_same_header  *L2" "ledger_row_extra_pipe_outside  *L2" "ledger_respend_outside_table  *L1,L2" "ledger_fragment_after_dummy_line  *L1,L2" "ledger_rows_contiguous  *CLEAN" "ledger_side_table_ok  *CLEAN" "ledger_side_table_split_ok  *CLEAN" "ledger_side_table_same_width_ok  *CLEAN" "ledger_row_after_superseded_heading  *L1,L2" "ledger_first_table_not_ledger  *L0,L2" "ledger_row_under_foreign_header  *L1,L2" "ledger_row_three_columns_off_outside  *L2" "ledger_row_conformant_outside  *L2" "ledger_row_without_tier_outside_ok  *CLEAN" "ledger_row_nonnumeric_id_outside  *L2" "ledger_row_backticked_tier_outside  *L2" "ledger_reserved_word_in_side_table  *L2" "ledger_row_underscored_tier  *L1" "ledger_respend_conformant  *L1" "ledger_respend_emphasised_key  *L1" "ledger_respend_zero_width_key  *L1"; do [ "$(echo "$out" | grep -c "ok    $c")" -eq 1 ] || exit 1; done'
+    if_fails: "table_rows() reads only the FIRST pipe table of the ledger and stops at the first blank or prose line; a row typed after that break, in any shape, is invisible to a_cell_once_run_is_spent, so a re-spend of a RECORDED key passes -- PP-9 is enforced on the fixture and not on the surface where the decision is made"
+
+  - id: FALSIFY-PP-LLAMA-001-CONFORMANCE-010
+    rule: "L3: a first-table ledger row whose cell count differs from the header is refused; L1 dedupes every row that claims a tier through one normaliser; and no mutant of the L0/L1/L2/L3 conditions survives its committed set"
+    prediction: "ledger_row_extra_pipe and ledger_row_trailing_pipes are L3 in the case table; scripts/mutate_spec_conformance.sh proves the unmutated table green first, then reports attempted=15 killed=15 unviable=0 survivors= none; a mutant that crashes the scanner is unviable, never a kill"
+    test: 'out=$(bash scripts/spec_conformance.sh --selftest); [ "$(echo "$out" | grep -c "ok    ledger_row_extra_pipe  *L3")" -eq 1 ] && [ "$(echo "$out" | grep -c "ok    ledger_row_trailing_pipes  *L3")" -eq 1 ] && bash scripts/mutate_spec_conformance.sh'
+    if_fails: "a surviving mutant is a condition the scanner states and no fixture tests -- that shape is not a condition of PP-9's universe, that a different table is skipped whole, that the superseded region is out of scope, or that a malformed row is refused rather than mis-keyed -- and the rule it guards has no producer"
+
+  - id: FALSIFY-PP-LLAMA-001-CONFORMANCE-011
+    rule: "A §12 expiry is the Expires marker, never the first date in the cell; a non-discharged row past its derived expiry is RED (I-26, S0-2)"
+    prediction: "spec_conformance.sh --selftest keeps expiry_marker_wins green (a cell with a prose date 2026-09-02 and a later marker 2026-09-19 derives 2026-09-19) and expired_row_is_red green (with SPEC_CONFORMANCE_TODAY past the marker the scan exits non-zero naming the row); reverting the parser to first-date turns expiry_marker_wins RED with `expected 2026-09-19 got [2026-09-02]`; evidence/parity/derived_expiries.json row 1 reads 2026-09-19 and rows 13/15/18/19 derive from it"
+    test: "bash scripts/spec_conformance.sh --selftest"
+    if_fails: "Five master rows sat past a mis-parsed expiry at HEAD with nothing RED anywhere (S0-2): the andon the spec promises does not fire, and C1's blockers inherit whichever date the scanner happened to see first"
+
+qa_gate:
+  id: F-PP-LLAMA-001-CONFORMANCE-001
+  name: "Spec conformance — every ARMED rule names cases that exist, no cell is spent twice, every expiry derives"
+  description: "Joins the master's §6 table to the case tables of perf_gate.sh, the sibling guards and the Rust crate; joins Appendix C's ledger to PP-9's spend rule; and derives §12's expiries from its blocked_by DAG. Empirical rather than syntactic: a name is looked up on the surface the row declares, so no reasoning about whether a check 'exists' is required."
+  checks:
+    - "every_armed_row_names_cases_that_exist"
+    - "one_spec_and_never_vacuous"
+    - "a_cell_once_run_is_spent"
+    - "expiries_derive_from_the_dag"

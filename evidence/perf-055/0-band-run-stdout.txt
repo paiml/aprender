@@ -1,0 +1,14 @@
+protocol APR-PERF-GATE-001 v2.2 §4.4 (closed-loop, conformant)
+endpoint http://127.0.0.1:8137
+workload W1
+prompts  profile micro (1 prompt(s))
+bands    [1] x 1 replicate(s); warmup 2c, quiesce 5s, window closes when BOTH max(30, 8c) samples AND 60s wall-clock are met
+!        --replicates 1 is below §4.4.2's N=3; the cell is under-replicated and its bootstrap CI is correspondingly weak
+NOTE     --stream is off: §4.4.3 ttft_ms, itl_ms and decode_tok_s are UNDEFINED without per-token arrival times and are omitted from the receipt
+  c=1 replicate 1/1
+    agg 0.20 tok/s  decode 0.00 tok/s  requested 30  completed 30  timeouts 0  drain 0.0 ms  peak_in_flight 1
+samples  samples.c1.r1.jsonl.gz (30 rows, 677 bytes)
+receipt  /tmp/claude-1000/-home-noah-src-aprender/2256679c-128a-431a-b273-4d5e2aa6fdcd/scratchpad/receipts-final/receipt.r1.json (3338 bytes)
+
+next
+  scripts/perf_gate.sh --host lambda --phase merge --workload W1 --receipt /tmp/claude-1000/-home-noah-src-aprender/2256679c-128a-431a-b273-4d5e2aa6fdcd/scratchpad/receipts-final/receipt.r1.json

@@ -729,7 +729,7 @@ fn run_build(args: &probador::BuildArgs) -> CliResult<()> {
             args.profiling,
         )
         .await
-        .map_err(|e| probador::CliError::test_execution(e))
+        .map_err(probador::CliError::test_execution)
     })
 }
 
@@ -774,7 +774,7 @@ fn run_brick_generation(args: &probador::BuildArgs) -> CliResult<()> {
     println!("Generating artifacts...");
 
     let result = generate_from_bricks(Some(&worker), Some(&events), None, &config)
-        .map_err(|e| probador::CliError::test_execution(e))?;
+        .map_err(probador::CliError::test_execution)?;
 
     println!("\nGenerated files:");
     for file in &result.files_written {
@@ -824,7 +824,7 @@ fn run_watch(args: &probador::WatchArgs) -> CliResult<()> {
     rt.block_on(async {
         run_wasm_pack_build(&path, &target, release, None, false)
             .await
-            .map_err(|e| probador::CliError::test_execution(e))
+            .map_err(probador::CliError::test_execution)
     })?;
 
     // Start server if requested

@@ -1,0 +1,7 @@
+{
+  "_type": "https://in-toto.io/Statement/v1",
+  "subject": [ { "name": "git+https://github.com/paiml/aprender",
+                 "uri": "git+https://github.com/paiml/aprender" } ],
+  "predicateType": "https://paiml.dev/attestations/pr-review/v2",
+  "predicate": {}
+}

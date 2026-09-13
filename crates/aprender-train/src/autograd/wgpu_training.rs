@@ -376,7 +376,7 @@ impl WgpuTrainer {
         //
         // For correctness, let's transpose B on GPU first. We can add a transpose
         // shader later for optimization. For now, download-transpose-upload.
-        // TODO: WGSL transpose shader for zero-copy backward.
+        // Deferred (PMAT-767): WGSL transpose shader for zero-copy backward.
 
         // grad_a = grad_c @ B^T
         // Naive approach: transpose B, then GEMM

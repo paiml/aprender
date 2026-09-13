@@ -502,28 +502,26 @@ impl AstMutator {
                     }
                 }
             }
-            PythonNode::FuncDef { name, args, body } => {
-                if body.len() > 1 {
-                    for i in 0..body.len() {
-                        let mut new_body = body.clone();
-                        new_body.remove(i);
+            PythonNode::FuncDef { name, args, body } if body.len() > 1 => {
+                for i in 0..body.len() {
+                    let mut new_body = body.clone();
+                    new_body.remove(i);
 
-                        let mutated = PythonNode::FuncDef {
-                            name: name.clone(),
-                            args: args.clone(),
-                            body: new_body,
-                        };
+                    let mutated = PythonNode::FuncDef {
+                        name: name.clone(),
+                        args: args.clone(),
+                        body: new_body,
+                    };
 
-                        let mut del_path = path.clone();
-                        del_path.push(i);
+                    let mut del_path = path.clone();
+                    del_path.push(i);
 
-                        mutations.push(AstMutation {
-                            operator: MutationOperator::Sdl,
-                            path: del_path,
-                            description: format!("Delete function body statement {}", i + 1),
-                            mutated_ast: mutated,
-                        });
-                    }
+                    mutations.push(AstMutation {
+                        operator: MutationOperator::Sdl,
+                        path: del_path,
+                        description: format!("Delete function body statement {}", i + 1),
+                        mutated_ast: mutated,
+                    });
                 }
             }
             _ => {}

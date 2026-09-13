@@ -212,7 +212,7 @@ fn run_directory(
 
     if let Some(threshold) = min_score {
         if mean < threshold {
-            return Err(format!("Mean score {mean:.2} below threshold {threshold:.2}",).into());
+            return Err(format!("Mean score {mean:.2} below threshold {threshold:.2}").into());
         }
     }
 

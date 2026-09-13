@@ -241,16 +241,22 @@ fn apr_decode_dense_float(
 
     let values: Vec<f32> = match dtype {
         "F32" => raw
-            .chunks_exact(4)
+            .as_chunks::<4>()
+            .0
+            .iter()
             .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
             .collect(),
         "F16" => raw
-            .chunks_exact(2)
+            .as_chunks::<2>()
+            .0
+            .iter()
             .map(|c| half::f16::from_le_bytes([c[0], c[1]]).to_f32())
             .collect(),
         // BF16 is the upper 16 bits of the F32 bit pattern.
         _ => raw
-            .chunks_exact(2)
+            .as_chunks::<2>()
+            .0
+            .iter()
             .map(|c| half::bf16::from_le_bytes([c[0], c[1]]).to_f32())
             .collect(),
     };

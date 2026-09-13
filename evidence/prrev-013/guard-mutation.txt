@@ -1,0 +1,74 @@
+PRREV-013 — guard_mutation_score on the merged tree, MEASURED
+
+Spec: PR-REVIEW-SKILL-002 v2 §6.4 and §8. §8 fixes this metric at 100% with
+"ratchet rule: zero — no ratchet, it is a one". It is the one place §7's narrowness
+does not apply, because the guard is what every other verdict rests on.
+
+WHY THIS FILE EXISTS SEPARATELY FROM THE COMMIT THAT NEEDED IT
+--------------------------------------------------------------
+The sweep takes ~52 minutes. Commit 03d795423 was pushed while it was still in
+flight and said so, in both its message and the PR comment:
+
+    "PENDING RE-VERIFICATION AT COMMIT TIME, stated rather than assumed ...
+     NEITHER the guard NOR tests/pr-review.bats is touched by this commit, so the
+     expected result is the unchanged 185/185 — but §8 allows no ratchet on
+     guard_mutation_score, and an expected number is not a measured one. If it
+     comes back below 100% it BLOCKS and this commit is wrong."
+
+It came back at 100%. That prediction is now discharged BY A MEASUREMENT rather
+than by the argument that produced it, which is the whole point of writing the
+prediction down first. Recording the pending state and then the result is not
+bookkeeping: a commit that had asserted 185/185 before the sweep returned would
+have been indistinguishable from this one, and would have been a claim marked
+`measured` that nothing measured.
+
+THE RUN
+-------
+  host        lambda-vector (48 cores)
+  tree        feat/prrev-012-final @ 03d795423 (the merged tree, working copy)
+  command     bash scripts/mutate-guard.sh          # default --jobs 12
+  started     2026-08-31 10:01:35 +0200
+  finished    2026-08-31 10:53   (~52 min wall, ~3100s)
+  workdir     /tmp/prrev-mutate.px36fz
+
+  baseline arm (the unmutated guard, in a mutant tree):
+      baseline GREEN: 121 tests, 0 failures
+
+  == guard_mutation_score ==
+  attempted 185   killed 185   survived 0   invalid 0
+  guard_mutation_score = 100% (185/185)
+
+Independent tally over the committed report, rather than trusting the summary line
+the same script printed:
+
+  $ awk -F'\t' 'NR>1{n[$4]++} END{for(k in n) printf "%s=%s\n", k, n[k]}' \
+      evidence/prrev-013/guard-mutation-report.tsv
+  KILLED=185
+
+One verdict class, 185 rows, no SURVIVED and no INVALID. The full per-mutant table
+is beside this file.
+
+WHAT THE NUMBER DOES AND DOES NOT COVER
+---------------------------------------
+The set is DERIVED, not listed — one `drop` and one `flip` per `reject B<n>` site,
+rescanned from scripts/check_pr_review_receipt.sh on every run, plus named single-line
+edits to the control machinery that must each match exactly one line or the sweep
+refuses to run. So 185 is a property of the guard as it stands, and it moves when the
+guard does. That is why scripts/check_pr_review_counts.sh derives it rather than
+reading it: four files stated "119/119" over a set that had grown to 185, and each of
+those four was true when written.
+
+It covers scripts/check_pr_review_receipt.sh. It does NOT cover the two scripts
+PRREV-013 adds — check_pr_review_arm4.sh and check_pr_review_counts.sh — which carry
+their own `--self-test` case tables, both polarities, wired ahead of the checks they
+guard in ci.yml's `pr-review-receipt` job.
+
+A SECOND MEASUREMENT THIS RUN PRODUCED, AND IT IS NOT COSMETIC
+--------------------------------------------------------------
+~52 minutes against the job's `timeout-minutes: 60`, on an IDLE box, before Arms 0,
+1, 2 and 4 have run at all. The comment this ticket corrected said "timeout-minutes
+on this job is 60 against that 19 minutes; a slower runner has headroom" — 19 minutes
+was 1125s over the 119-mutant set. Two independent runs now put the 185-mutant set at
+3091s and ~3100s. Eight minutes is not headroom; it is a job that times out the first
+time the runner is busy, and a cancelled job is indistinguishable from a real failure.
+Raised to 120 in 03d795423.

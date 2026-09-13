@@ -9,6 +9,20 @@ use thiserror::Error;
 /// Result type alias for CLI operations
 pub type Result<T> = std::result::Result<T, CliError>;
 
+/// REG-15 model admission (#2971, PMAT-1065), re-exported here (rather than
+/// from `lib.rs`) so `tests/reg15_admission.rs` can reach it without
+/// depending on `crate::commands::parity_admission` directly. `commands` is
+/// a private module, but privacy in Rust is scoped to "the declaring module
+/// and its descendants" — since `mod commands;` is declared at the crate
+/// root, EVERY module in this crate (including this one) already has
+/// visibility into it; only an explicit `pub use` from a `pub` module (this
+/// one) makes it reachable from outside the crate.
+pub mod parity_admission {
+    pub use crate::commands::parity_admission::{
+        admit, is_parity_gate_error, override_line, parse_gate_error, Admission, ParityVerdict,
+    };
+}
+
 /// CLI error types
 #[derive(Error, Debug)]
 pub enum CliError {
@@ -77,6 +91,20 @@ pub enum CliError {
     /// "succeeded". An unimplemented option must fail, not report success.
     #[error("Not implemented: {0}")]
     NotImplemented(String),
+
+    /// A forced GPU backend was refused because the load-time parity gate
+    /// failed (REG-15, PMAT-1065, issue #2971).
+    ///
+    /// Distinct from [`CliError::FeatureDisabled`], which refuses a request a
+    /// build *cannot* honour at all (no accelerator compiled in). This is a
+    /// build that CAN honour the request but whose GPU forward pass computed
+    /// a different function than the CPU one on this model — #2971's second
+    /// half was that this case fell back to the CPU silently instead of
+    /// refusing. A forced backend (`--gpu` / `--backend cuda`) must never be
+    /// silently downgraded; see `crate::commands::parity_admission`.
+    #[error("Parity gate failed: {0}")]
+    #[allow(dead_code)]
+    ParityFailed(String),
 }
 
 impl CliError {
@@ -110,6 +138,11 @@ impl CliError {
             // FAIL, not print something and exit 0. Distinct code so a caller
             // can tell "this build cannot do that" from "your input was wrong".
             Self::NotImplemented(_) => 12,
+            // REG-15 (#2971, PMAT-1065): a forced GPU backend refused because
+            // the load-time parity gate failed. Distinct from FeatureDisabled
+            // (9): that build has no accelerator at all; this build has one,
+            // but this model computes a different function on it.
+            Self::ParityFailed(_) => 13,
         }
     }
 }
@@ -145,6 +178,70 @@ pub fn refuse_overwrite(path: &std::path::Path, force: bool) -> std::result::Res
     Ok(())
 }
 
+/// GH-668: reject common system/temp directories. Only resolve dirs that are
+/// plausible HuggingFace model checkpoints (not `/`, `/tmp`, `/home`, etc.).
+fn is_root_level_dir(path: &std::path::Path) -> bool {
+    path.components().count() <= 2
+}
+
+/// PMAT-314: the sharded SafeTensors index takes priority over individual
+/// shard files, which only contain a subset of tensors and would fail the
+/// architecture gate. Falls back to the common single-file names in priority
+/// order.
+fn find_named_candidate(dir: &std::path::Path) -> Option<std::path::PathBuf> {
+    let index = dir.join("model.safetensors.index.json");
+    if index.is_file() {
+        return Some(index);
+    }
+    const CANDIDATES: [&str; 5] = [
+        "model.safetensors",
+        "model-00001-of-00001.safetensors",
+        "model-00001-of-00002.safetensors",
+        "model-00001-of-00003.safetensors",
+        "model-00001-of-00004.safetensors",
+    ];
+    CANDIDATES
+        .iter()
+        .map(|candidate| dir.join(candidate))
+        .find(|p| p.is_file())
+}
+
+/// GH-668: skip temp files (`rosetta_temp.apr`, etc.) to avoid inspecting
+/// stale artifacts left behind by a previous conversion.
+fn is_rosetta_temp_file(path: &std::path::Path) -> bool {
+    path.file_name()
+        .is_some_and(|n| n.to_string_lossy().starts_with("rosetta_temp"))
+}
+
+/// First non-temp file in `dir` with extension `ext`, if any.
+fn find_first_file_with_ext(dir: &std::path::Path, ext: &str) -> Option<std::path::PathBuf> {
+    let entries = std::fs::read_dir(dir).ok()?;
+    entries.flatten().map(|entry| entry.path()).find(|p| {
+        !is_rosetta_temp_file(p) && p.extension().is_some_and(|e| e == ext) && p.is_file()
+    })
+}
+
+/// The directory branch of [`resolve_model_path`]: locate the model file a
+/// HuggingFace-style checkpoint directory holds.
+fn resolve_model_dir(path: &std::path::Path) -> std::result::Result<std::path::PathBuf, CliError> {
+    if is_root_level_dir(path) {
+        return Err(CliError::NotAFile(path.to_path_buf()));
+    }
+    if let Some(p) = find_named_candidate(path) {
+        return Ok(p);
+    }
+    if let Some(p) = find_first_file_with_ext(path, "gguf") {
+        return Ok(p);
+    }
+    if let Some(p) = find_first_file_with_ext(path, "apr") {
+        return Ok(p);
+    }
+    Err(CliError::ValidationFailed(format!(
+        "Directory {} does not contain a model file (expected model.safetensors, *.gguf, or *.apr)",
+        path.display()
+    )))
+}
+
 /// Resolve a model path: if given a directory, look for common model files inside.
 ///
 /// HuggingFace models are stored as directories containing `model.safetensors`,
@@ -160,66 +257,7 @@ pub fn resolve_model_path(
         return Ok(path.to_path_buf());
     }
     if path.is_dir() {
-        // GH-668: Reject common system/temp directories. Only resolve dirs that
-        // are plausible HuggingFace model checkpoints (not /, /tmp, /home, etc.).
-        if let Some(parent) = path.parent() {
-            let depth = path.components().count();
-            // Directories at filesystem root level (depth <= 2) are never model dirs
-            if depth <= 2 {
-                return Err(CliError::NotAFile(path.to_path_buf()));
-            }
-            let _ = parent; // suppress unused warning
-        }
-
-        // PMAT-314: Check sharded SafeTensors index FIRST — individual shard files
-        // only contain a subset of tensors and will fail the architecture gate.
-        let index = path.join("model.safetensors.index.json");
-        if index.is_file() {
-            return Ok(index);
-        }
-        // Try common model file names in priority order
-        let candidates = [
-            "model.safetensors",
-            "model-00001-of-00001.safetensors",
-            "model-00001-of-00002.safetensors",
-            "model-00001-of-00003.safetensors",
-            "model-00001-of-00004.safetensors",
-        ];
-        for candidate in &candidates {
-            let p = path.join(candidate);
-            if p.is_file() {
-                return Ok(p);
-            }
-        }
-        // Try first .gguf file
-        if let Ok(entries) = std::fs::read_dir(path) {
-            for entry in entries.flatten() {
-                let p = entry.path();
-                // GH-668: Skip temp files (rosetta_temp.apr, etc.) to avoid inspecting stale artifacts
-                let is_temp = p
-                    .file_name()
-                    .is_some_and(|n| n.to_string_lossy().starts_with("rosetta_temp"));
-                if !is_temp && p.extension().is_some_and(|ext| ext == "gguf") && p.is_file() {
-                    return Ok(p);
-                }
-            }
-        }
-        // Try first .apr file
-        if let Ok(entries) = std::fs::read_dir(path) {
-            for entry in entries.flatten() {
-                let p = entry.path();
-                let is_temp = p
-                    .file_name()
-                    .is_some_and(|n| n.to_string_lossy().starts_with("rosetta_temp"));
-                if !is_temp && p.extension().is_some_and(|ext| ext == "apr") && p.is_file() {
-                    return Ok(p);
-                }
-            }
-        }
-        Err(CliError::ValidationFailed(format!(
-            "Directory {} does not contain a model file (expected model.safetensors, *.gguf, or *.apr)",
-            path.display()
-        )))
+        resolve_model_dir(path)
     } else {
         Err(CliError::NotAFile(path.to_path_buf()))
     }
@@ -306,6 +344,19 @@ mod tests {
     fn test_http_not_found_exit_code() {
         let err = CliError::HttpNotFound("test".to_string());
         assert_eq!(err.exit_code(), ExitCode::from(11));
+    }
+
+    /// REG-15 (#2971, PMAT-1065): a forced backend refused for a parity-gate
+    /// failure gets its own exit code, distinct from `FeatureDisabled` (9).
+    #[test]
+    fn test_parity_failed_exit_code() {
+        let err = CliError::ParityFailed("cosine=0.90 < 0.98".to_string());
+        assert_eq!(err.exit_code(), ExitCode::from(13));
+        assert_eq!(err.exit_code_value(), 13);
+        assert_ne!(
+            err.exit_code_value(),
+            CliError::FeatureDisabled("x".to_string()).exit_code_value()
+        );
     }
 
     // ==================== Display Tests ====================

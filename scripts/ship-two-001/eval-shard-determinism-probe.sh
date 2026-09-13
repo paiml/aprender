@@ -38,6 +38,12 @@
 
 set -euo pipefail
 
+# Reproducibility escape hatch (bashrs DET002): SOURCE_DATE_EPOCH, when a
+# caller sets it, pins the clock this probe stamps its evidence filenames
+# with. Unset -- the normal case for a live probe run -- this falls through
+# to the real wall clock, so evidence filenames are unchanged from before.
+_stamp_compact() { date -u -d "@${SOURCE_DATE_EPOCH:-$(printf '%(%s)T' -1)}" +%Y%m%d_%H%M%S; }
+
 HOSTS=""
 MODEL=""
 PROBE_RANGE="0-15"
@@ -69,7 +75,7 @@ DRY_RUN="${DRY_RUN:-0}"
 if [[ -z "${HUMANEVAL_JSONL:-}" ]]; then
     for cand in \
         data/benchmarks/humaneval.jsonl \
-        /home/noah/src/apr-leaderboard/data/benchmarks/humaneval.jsonl \
+        "${APR_LEADERBOARD_ROOT:-$HOME/src/apr-leaderboard}/data/benchmarks/humaneval.jsonl" \
         evidence/ship-two-001/humaneval/problems.jsonl ; do
         if [[ -f "$cand" ]]; then HUMANEVAL_JSONL="$cand"; break; fi
     done
@@ -98,7 +104,7 @@ trap 'rm -rf "$TMPDIR"' EXIT
 
 EVIDENCE_DIR="evidence/ship-two-001/shard-003-determinism"
 mkdir -p "$EVIDENCE_DIR"
-STAMP="$(date -u +%Y%m%d_%H%M%S)"
+STAMP="$(_stamp_compact)"
 PROBE_LOG="$EVIDENCE_DIR/probe_${STAMP}.log"
 PROBE_JSON="$EVIDENCE_DIR/probe_${STAMP}.json"
 

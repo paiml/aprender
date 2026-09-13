@@ -1,0 +1,5 @@
+    Updating git repository `https://github.com/paiml/aprender`
+error: failed to load source for dependency `aprender`
+
+Caused by:
+  failed to resolve address for github.com: Temporary failure in name resolution; class=Net (12)

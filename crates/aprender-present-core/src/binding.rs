@@ -779,8 +779,10 @@ impl BindingManager {
         let mut widget_updates = Vec::new();
         let mut state_updates = Vec::new();
 
-        // Drain into separate Vec to avoid borrow issues
-        let updates: Vec<PendingUpdate> = self.pending_updates.drain(..).collect();
+        // Take, rather than drain-and-collect, to avoid borrow issues: same
+        // effect (self.pending_updates left empty), one fewer allocation.
+        // clippy::drain_collect (new in 1.98).
+        let updates: Vec<PendingUpdate> = std::mem::take(&mut self.pending_updates);
 
         for update in updates {
             match update.source {

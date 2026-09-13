@@ -53,12 +53,12 @@ Three documents describe overlapping release work; each owns exactly one scope:
 ## Why this rewrite exists
 
 The v2.0 skill has 19 gates and they work — where they look. The surface audit
-(830 features across 28 binaries) measured where they look:
+(832 features across 28 binaries) measured where they look:
 
 | | Features | Covered by a gate | Coverage |
 |---|---:|---:|---:|
-| **Total** | 830 | 142 | **17.1%** |
-| `apr` | 367 | 142 | 38.7% |
+| **Total** | 832 | 142 | **17.1%** |
+| `apr` | 369 | 142 | 38.5% |
 | **The other 27 binaries** | **463** | **0** | **0.0%** |
 
 And coverage by quality band:
@@ -319,10 +319,13 @@ For every command with a `--task`-style selector, assert the set of documented
 values equals the set of reachable dispatch arms.
 
 Live defect: `apr eval --task` dispatches 10 named arms plus a default perplexity
-path (`dispatch_analysis.rs:1383-1419`), but `--help` documents exactly two
-(`extended_commands.rs:138`). Eight paths — `humaneval`, `mbpp`, `code`,
+path (`dispatch_analysis.rs:1389-1425`), but `--help` documents exactly two
+(`extended_commands.rs:138`). Nine paths — `humaneval`, `mbpp`, `code`,
 `contamination`, `compare`, `verify`, `correlation`, `human`, `plan` — are
-reachable and undocumented.
+reachable and undocumented. The line range was `1383-1419` when it was
+measured at `4bbfeb07f` and the arms have moved twice since; the count read
+"Eight" against a list of nine, and both were re-derived from the arms
+themselves rather than carried forward (PERF-046).
 
 Undocumented-but-reachable is RED. Documented-but-unreachable is RED. This is the
 phantom-subcommand protocol (v2.0 P9) generalized to flag domains.
@@ -387,10 +390,10 @@ Baselines below are **measured**, not chosen — computed from
 
 | Floor | Measured baseline | Threshold | Verdict rule |
 |---|---:|---:|---|
-| Overall coverage | **142/830 = 17.1%** | `>= 142` covered rows | **may never decrease** |
-| `apr` coverage | 142/367 = 38.7% | `>= 142` | may never decrease |
+| Overall coverage | **142/830 = 17.1%** (142/832 today) | `>= 142` covered rows | **may never decrease** |
+| `apr` coverage | 142/367 = 38.7% (142/369 today) | `>= 142` | may never decrease |
 | Per-binary coverage | **27 of 28 binaries at 0%** | covered may never fall | ratchet only — superseded at `--release` by the per-cluster arm below |
-| **Per-cluster coverage** | **9 of 14 clusters at 0 earned gates**, under 142 of 830 features gated | ≥ 1 **earned** gate per `cluster_label` | **RED at `--release`**; ratchet always |
+| **Per-cluster coverage** | **9 of 14 clusters at 0 earned gates**, under 142 of 830 features gated (142 of 832 today) | ≥ 1 **earned** gate per `cluster_label` | **RED at `--release`**; ratchet always |
 | **Cluster membership** | 0 declared reassignments | a feature may not change `cluster_label` undeclared | RED — a silent move retires an obligation |
 | Quality ≤ 4, uncovered | **44** | `0` | RED — a known-broken feature with no gate |
 | `verified_hardware` UNKNOWN | **427** | `<= 427` | may never increase |
@@ -442,7 +445,7 @@ and a half-migrated comparand is a hard failure, not an upgrade.
    cluster share a failure mode, so a gate on one member is evidence about the
    cluster. The goal is *n* gates per cluster allocated by expected defect yield,
    with *n* scaling **sub-linearly** in cluster size. Nine clusters at zero is
-   nine clusters with **no evidence at all** — that is the gap, not the 688
+   nine clusters with **no evidence at all** — that is the gap, not the 690
    uncovered rows.
 2. **Sibling sweep.** A defect in cluster X makes X's remaining members a
    mandatory sweep list in the same ticket. See Phase 3.
@@ -1250,6 +1253,9 @@ token-for-token. FAIL on garbage (the PMAT-888 regression). SKIP if no GGUF mode
 | T3.3 | version-unpublished | depends on G0.2 |
 | T3.4 | security, second source | cargo-deny's GREEN is only as wide as RustSec |
 | T3.5 | **Clean-room publishability** | **the hard gate — every crate builds from crates.io alone, no sibling-path tricks. Runs on `intel`. Name it first in any release plan.** |
+| T3.6 | Every example runs | **G3.EX** below — `scripts/dogfood_examples.sh` |
+| T3.7 | apr-cookbook updated for the version | **G3.CB** below |
+| T3.8 | Release notes exist for the version | **G3.RN** below |
 T3.1's body is carried **verbatim** from v2.0 Gate 17.
 
 ### Gate 17: 7B Inference Smoke (F-7B-INFERENCE-001)
@@ -1280,6 +1286,90 @@ fi
 PASS when `apr qa` Golden Output gate passes on the 7B Q4_K model. FAIL on
 the regression that #1864 captured. SKIP when the 7B model isn't available
 or the gate didn't run.
+## G3.EX — Every example runs (dogfood_examples.sh)
+
+Operator instruction, 2026-09-11 (#3121): running the examples is part of every
+tagged release. CI compiles them (`--examples`) and has never executed one.
+
+```bash
+bash scripts/dogfood_examples.sh                 # release run, 120 s per example
+bash scripts/dogfood_examples.sh --selftest      # the case table, before trusting a run
+```
+
+Universe: every `kind == ["example"]` target from `cargo metadata --no-deps`, with
+its owning package and `required-features` — never a directory listing. Evidence:
+`evidence/dogfood/<version>/examples.tsv`, one
+`pkg<TAB>example<TAB>class<TAB>rc<TAB>secs<TAB>cite` row per target plus a
+`# summary pass=… fail=… timeout=… needs-args=… needs-hardware=… needs-data=…` trailer.
+
+| class | meaning |
+|---|---|
+| `pass` | rc 0 |
+| `fail` | rc ≠ 0 and none of the rows below — a defect, named by the ticket |
+| `timeout` | killed by `timeout --signal=KILL` (rc 124/137); a defect |
+| `needs-args` | rc ≠ 0 and stderr opens a clap usage line, cited — not runnable bare, not broken |
+| `needs-hardware` | stderr names a missing CUDA/wgpu device, cited — a SKIP, never a pass |
+| `needs-data` | rc ≠ 0 and stderr names a file/model/tokenizer the repository does not ship, cited — a SKIP, never a pass; re-run with the data present before a release verdict |
+
+Exit contract: **1** if any row is `fail` or `timeout`, **2** if the enumeration is
+empty (vacuity: a run with nothing to run is not a pass), 0 otherwise. No row is
+written without a class.
+
+`needs-hardware` rows must cite the line that classified them, and they are
+**re-run on the CUDA host (`gx10`/`lambda`) before the release verdict** — a green
+TSV from a driver-less box says nothing about the CUDA examples, and a skip that
+is never re-run is how a broken GPU example ships. The `--selftest` case table is
+hermetic (`tests/fixtures/dogfood_examples/`, no network, no dependencies) and
+carries the mutation row that proves the timeout wrapper is what classifies a
+hang.
+
+## G3.CB — apr-cookbook updated for the version
+
+The cookbook is the documented surface of the release. A release whose cookbook
+still describes the previous version ships a doc defect, so this is a **NO-GO**,
+not a warning:
+
+```bash
+V=$(cargo metadata --no-deps --format-version 1 \
+    | jq -r '[.packages[] | select(.name == "aprender") | .version] | first')
+PREV=$(git tag --sort=-creatordate | head -1)
+SINCE=$(git log -1 --format=%aI "$PREV")
+gh api "repos/paiml/apr-cookbook/commits?sha=main&since=${SINCE}" \
+    --jq '.[].commit.message' | grep -F "$V" \
+  || echo "G3.CB NO-GO: no apr-cookbook commit since $PREV ($SINCE) mentions $V"
+```
+
+Measured 2026-09-11: `paiml/apr-cookbook@main` was last pushed 2026-08-28 and has
+**zero** commits since the `v0.66.0` tag (2026-09-10), so 0.66.0 shipped with no
+cookbook update. This gate is RED on the released version today — which is why it
+is a row and not a note.
+
+PASS when at least one commit on `paiml/apr-cookbook@main` since the previous
+tag's date names the version being released. `--jq` on `gh api` keeps the check
+out of a shell JSON parser. An empty commit list and a network failure are
+different outcomes: an `gh api` error is `SKIP: env` and must be re-run, never a
+PASS (a gate that goes green on "we could not tell" is this repo's signature
+defect).
+
+## G3.RN — Release notes
+
+```bash
+V=$(cargo metadata --no-deps --format-version 1 \
+    | jq -r '[.packages[] | select(.name == "aprender") | .version] | first')
+awk -v v="## [$V]" 'index($0, v) == 1 { inb = 1; next }
+     inb && /^## / { exit }
+     inb && NF { body++ }
+     END { exit !(body > 0) }' CHANGELOG.md \
+  || echo "G3.RN NO-GO: CHANGELOG.md has no ## [$V] section with a non-empty body"
+```
+
+PASS when `CHANGELOG.md` carries a `## [<version>]` section whose body has at
+least one non-blank line. The same section is what `gh release create` must
+publish — `--notes-file` pointing at the extracted section, never
+`--generate-notes` and never a hand-typed summary, so the published notes and
+the changelog cannot diverge. A release created without `--notes-file` fails
+this gate retroactively.
+
 ## Pre-Gate Note: Exit-Code Capture Methodology (lesson from 2026-05-22 dogfood)
 
 When a falsifier needs to assert "command X exits Y", **never** chain through
@@ -1457,12 +1547,12 @@ this table**, which is a dated sample.
 
 | cluster | n | gates | share of all gate effort | cluster coverage |
 |---|---:|---:|---:|---:|
-| `apr-lint-diag` | 66 | 55 | 38.7% | 83.3% |
+| `apr-lint-diag` | 68 | 55 | 38.7% | 80.9% |
 | `http-apr-serve` | 44 | 39 | 27.5% | 88.6% |
 | `apr-core-commands` | 109 | 38 | 26.8% | 34.9% |
 | *(11 others)* | 611 | 10 | 7.0% | 1.6% |
 
-**93.0% of gate effort sits over 26.4% of the surface. 142 gates / 830 features.**
+**93.0% of gate effort sits over 26.6% of the surface. 142 gates / 832 features.**
 
 Nobody chose that allocation; it accreted. Clustering is what makes it visible.
 Adding a 56th gate to `apr-lint-diag` buys less than the FIRST gate in
@@ -1473,7 +1563,7 @@ The nine clusters at zero, largest first: `http-orchestrate-banco` (95),
 `test-harness` (49), `rag-eval` (44), `qa-cgp` (37), `simulation` (18),
 `orchestrate-pacha-secrets` (17).
 
-**Report both numbers or neither (T2).** "5 of 14 clusters gated (35.7%)" without "142 of 830 features gated (17.1%)" beside it is a proxy masquerading as coverage, and the gate refuses to emit it — *on this line too*.
+**Report both numbers or neither (T2).** "5 of 14 clusters gated (35.7%)" without "143 of 836 features gated (17.1%)" beside it is a proxy masquerading as coverage, and the gate refuses to emit it — *on this line too*.
 
 The rule is about the NUMBER, not about a phrasing, and it is enforced on every
 surface that can emit one: the gate's own report, the receipt, the output of

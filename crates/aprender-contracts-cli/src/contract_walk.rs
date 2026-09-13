@@ -81,17 +81,17 @@ mod tests {
 
     #[test]
     fn collect_skips_binding_yaml() {
-        let tmp = tempfile::tempdir().unwrap();
+        let tmp = tempfile::tempdir().expect("temp dir is creatable");
         std::fs::write(
             tmp.path().join("binding.yaml"),
             "crates: []\nbindings: []\n",
         )
-        .unwrap();
+        .expect("fixture file is writable");
         std::fs::write(
             tmp.path().join("real-contract-v1.yaml"),
             "metadata:\n  version: \"1.0.0\"\n  description: \"t\"\n  references: [\"x\"]\nequations:\n  eq1:\n    formula: \"f(x)=x\"\nproof_obligations: []\nfalsification_tests: []\nkani_harnesses: []\n",
         )
-        .unwrap();
+        .expect("fixture file is writable");
 
         let mut out = Vec::new();
         collect_contracts(tmp.path(), &mut out);
@@ -102,12 +102,12 @@ mod tests {
 
     #[test]
     fn collect_recurses_into_subdirs() {
-        let tmp = tempfile::tempdir().unwrap();
+        let tmp = tempfile::tempdir().expect("temp dir is creatable");
         let sub = tmp.path().join("sub");
-        std::fs::create_dir_all(&sub).unwrap();
+        std::fs::create_dir_all(&sub).expect("fixture subdirectory is creatable");
         let minimal = "metadata:\n  version: \"1.0.0\"\n  description: \"t\"\n  references: [\"x\"]\nequations:\n  eq1:\n    formula: \"f(x)=x\"\nproof_obligations: []\nfalsification_tests: []\nkani_harnesses: []\n";
-        std::fs::write(tmp.path().join("top-v1.yaml"), minimal).unwrap();
-        std::fs::write(sub.join("nested-v1.yaml"), minimal).unwrap();
+        std::fs::write(tmp.path().join("top-v1.yaml"), minimal).expect("fixture file is writable");
+        std::fs::write(sub.join("nested-v1.yaml"), minimal).expect("fixture file is writable");
 
         let mut out = Vec::new();
         collect_contracts(tmp.path(), &mut out);

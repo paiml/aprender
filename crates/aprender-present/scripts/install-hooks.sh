@@ -10,6 +10,12 @@
 set -e
 
 REPO_ROOT=$(git rev-parse --show-toplevel)
+# SEC010: validate the git-derived path before it is used to build the `cat >`
+# destinations below -- reject anything empty or containing a `..` traversal
+# segment rather than trusting `git rev-parse` output blindly.
+case "$REPO_ROOT" in
+    *..*|"") echo "error: unsafe REPO_ROOT from git rev-parse: '$REPO_ROOT'" >&2; exit 1 ;;
+esac
 HOOKS_DIR="$REPO_ROOT/.git/hooks"
 
 echo "╔══════════════════════════════════════════════════════════════════════════════╗"
@@ -70,7 +76,7 @@ for f in $PTOP_IMPL; do
 done
 
 # Run interface tests for ptop changes
-if echo "$STAGED" | grep -q 'crates/presentar-terminal/src/ptop/'; then
+if grep -q 'crates/presentar-terminal/src/ptop/' <<< "$STAGED" ; then
     echo "Running interface tests for ptop changes..."
     if ! cargo test -p presentar-terminal --features ptop --test cpu_exploded_async --quiet 2>/dev/null; then
         echo ""

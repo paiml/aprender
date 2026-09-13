@@ -1,0 +1,23 @@
+PR-REVIEW-SKILL-002 v2 §6.2, executed offline. PRREV-002.
+host: Linux 6.8.0-90-generic   date: 2026-08-30T15:46:13Z
+validator: check-jsonschema, version 0.38.0
+isolation: unshare -r -n  (user + network namespace, NO interfaces)
+cache:     XDG_CACHE_HOME -> a fresh empty dir, so no previously
+           downloaded schema can stand in for the vendored one
+
+--- control: is the network reachable inside that namespace? ---
+$ unshare -r -n getent hosts docs.oasis-open.org
+exit_code=2      # non-zero: no resolution, no route
+
+--- §6.2 command 1: in-toto Statement v1 ---
+$ check-jsonschema --schemafile schemas/in-toto-statement-v1.json evidence/pr-review/0000/745fa8588783413669f4ac6170d4645e39c15be4/receipt.intoto.jsonl
+ok -- validation done
+exit_code=0
+
+--- §6.2 command 2: SARIF 2.1.0 ---
+$ check-jsonschema --schemafile schemas/sarif-2.1.0.json evidence/pr-review/0000/745fa8588783413669f4ac6170d4645e39c15be4/findings.sarif
+ok -- validation done
+exit_code=0
+
+--- schema cache after both runs (empty => nothing was fetched) ---
+files: 0

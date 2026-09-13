@@ -160,9 +160,7 @@ impl CliConfig {
     #[allow(clippy::redundant_closure_for_method_calls)] // Cannot use NonZero::get directly due to MSRV 1.75 (stable in 1.79)
     pub fn effective_jobs(&self) -> usize {
         if self.parallel_jobs == 0 {
-            std::thread::available_parallelism()
-                .map(|n| n.get())
-                .unwrap_or(1)
+            std::thread::available_parallelism().map_or(1, |n| n.get())
         } else {
             self.parallel_jobs
         }

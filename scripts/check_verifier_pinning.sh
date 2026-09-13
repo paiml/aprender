@@ -755,7 +755,18 @@ verifier_pin_pv
 run_to "$L" "$PV" lint contracts
 EOF
     got=$(pin_audit "$td/bypass.sh" 2>&1)
-    if printf '%s' "$got" | grep -q 'ROW FAIL pmat' && printf '%s' "$got" | grep -q 'ROW FAIL bypass'; then
+    # HERE-STRING, never `printf ... | grep -q`. `grep -q` exits at the FIRST
+    # match and closes the pipe; the producer's write then races that close and
+    # can die on EPIPE. Under CI's `bash -e -o pipefail` the pipeline reports the
+    # producer's 141/1, so A MATCH IS READ AS A NON-MATCH and this row prints
+    # FAIL while $got visibly contains the string it just failed to find. That
+    # is what took guard-runner-labels red on #2776 — a PR that was never broken.
+    # Measured on this repo's own 243-byte payload at load 13.7: pipe form
+    # 1/3000 false FAIL, here-string 0/3000. It is a RACE, not a size threshold:
+    # 100 KB / 1 MB / 5 MB payloads were 0/200 each. Two sibling rows below
+    # (`bypass-export`, `bypass-semi`) were already converted; these two were
+    # missed. $got is already a captured variable, so no subprocess is needed.
+    if grep -q 'ROW FAIL pmat' <<< "$got" && grep -q 'ROW FAIL bypass' <<< "$got"; then
         printf 'ok    CALL-SITE     `PMAT_BIN=pmat` instead of the pin call is REJECTED\n'
     else
         printf 'FAIL  CALL-SITE     a runner that assigns PMAT_BIN itself was accepted:\n%s\n' "$got"; fails=1
@@ -769,7 +780,9 @@ verifier_pin_pv
 run_to "$L" "$PV" lint contracts
 EOF
     got=$(pin_audit "$td/late.sh" 2>&1)
-    if printf '%s' "$got" | grep -q 'ROW FAIL pmat'; then
+    # Here-string, not `printf | grep -q` — see the EPIPE note above. THIS is
+    # the exact line that emitted `printf: write error: Broken pipe` on #2776.
+    if grep -q 'ROW FAIL pmat' <<< "$got"; then
         printf 'ok    CALL-SITE     a pin called AFTER its first use is REJECTED\n'
     else
         printf 'FAIL  CALL-SITE     a pin called after its first use was accepted:\n%s\n' "$got"; fails=1

@@ -30,7 +30,10 @@ impl ValidationStage {
     }
 
     /// Trace syscalls from both binaries and compare them for semantic equivalence
-    pub async fn trace_and_compare(
+    // Not `async`: every call in this body is blocking (`Self::trace_binary`
+    // shells out and waits). The `async` bought nothing and could not suspend.
+    // clippy::unused_async_trait_impl (new in 1.98).
+    pub fn trace_and_compare(
         &self,
         original_binary: &std::path::Path,
         transpiled_binary: &std::path::Path,
@@ -113,7 +116,7 @@ impl PipelineStage for ValidationStage {
             let transpiled_binary = ctx.output_path.join("target/release/transpiled");
 
             if original_binary.exists() && transpiled_binary.exists() {
-                match self.trace_and_compare(&original_binary, &transpiled_binary).await {
+                match self.trace_and_compare(&original_binary, &transpiled_binary) {
                     Ok(equivalent) => {
                         ctx.validation_results.push(ValidationResult {
                             stage: self.name().to_string(),

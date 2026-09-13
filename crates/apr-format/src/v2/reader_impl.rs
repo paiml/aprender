@@ -310,9 +310,17 @@ impl AprV2Reader {
         }
 
         let data = self.get_tensor_data(name)?;
+        // `as_chunks::<4>()` rather than `chunks_exact(4)`: same semantics
+        // (the ragged tail is the discarded `.1`), but it yields `&[u8; 4]`,
+        // so `from_le_bytes` takes the array directly instead of a
+        // reassembled one. clippy::chunks_exact_to_as_chunks (new in 1.98)
+        // flags the old form; caught by the Toolchain Ceiling lane, which is
+        // exactly the drift it exists to catch.
         let floats: Vec<f32> = data
-            .chunks_exact(4)
-            .map(|chunk| f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|chunk| f32::from_le_bytes(*chunk))
             .collect();
 
         Some(floats)
@@ -440,9 +448,17 @@ impl<'a> AprV2ReaderRef<'a> {
         }
 
         let data = self.get_tensor_data(name)?;
+        // `as_chunks::<4>()` rather than `chunks_exact(4)`: same semantics
+        // (the ragged tail is the discarded `.1`), but it yields `&[u8; 4]`,
+        // so `from_le_bytes` takes the array directly instead of a
+        // reassembled one. clippy::chunks_exact_to_as_chunks (new in 1.98)
+        // flags the old form; caught by the Toolchain Ceiling lane, which is
+        // exactly the drift it exists to catch.
         let floats: Vec<f32> = data
-            .chunks_exact(4)
-            .map(|chunk| f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|chunk| f32::from_le_bytes(*chunk))
             .collect();
 
         Some(floats)

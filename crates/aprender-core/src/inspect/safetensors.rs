@@ -242,14 +242,18 @@ impl HfSafetensors {
         match dtype {
             Dtype::F32 => {
                 let floats: Vec<f32> = bytes
-                    .chunks_exact(4)
+                    .as_chunks::<4>()
+                    .0
+                    .iter()
                     .map(|chunk| f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
                     .collect();
                 Ok(floats)
             }
             Dtype::F16 => {
                 let floats: Vec<f32> = bytes
-                    .chunks_exact(2)
+                    .as_chunks::<2>()
+                    .0
+                    .iter()
                     .map(|chunk| {
                         let bits = u16::from_le_bytes([chunk[0], chunk[1]]);
                         half::f16::from_bits(bits).to_f32()
@@ -259,7 +263,9 @@ impl HfSafetensors {
             }
             Dtype::BF16 => {
                 let floats: Vec<f32> = bytes
-                    .chunks_exact(2)
+                    .as_chunks::<2>()
+                    .0
+                    .iter()
                     .map(|chunk| {
                         let bits = u16::from_le_bytes([chunk[0], chunk[1]]);
                         half::bf16::from_bits(bits).to_f32()

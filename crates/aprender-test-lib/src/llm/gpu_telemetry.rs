@@ -66,6 +66,13 @@ impl GpuTelemetryCollector {
     }
 
     /// Start collecting GPU telemetry in the background.
+    // `GpuTelemetryCollector` is an inherent impl, not a trait impl, and this is
+    // a public `async fn` that callers `.await`; dropping the `async` would be a
+    // breaking API change to satisfy a lint whose own suggestion does not apply
+    // here (it proposes wrapping one branch of the `if` in
+    // `std::future::ready`, which does not compile). clippy::
+    // unused_async_trait_impl, new in 1.98.
+    #[allow(unknown_lints, clippy::unused_async_trait_impl)]
     pub async fn start(&mut self) -> Result<(), String> {
         let interval = self.poll_interval_s;
         let nvsmi_args = format!(

@@ -154,11 +154,32 @@ if [ "${1:-}" = "--update" ]; then
   exit 0
 fi
 
+# THE RATCHET IS A PROPERTY OF THE DIFF, NOT OF THE TREE.
+#
+# Everything above compares the scan against the baseline AS IT STANDS IN THE
+# WORKING TREE, and that is not a ratchet. NEW (a finding with no entry) and
+# STALE (an entry with no finding) are the only two properties a working tree
+# can answer, and a commit that appends one line AND lands the matching
+# violation satisfies both at once: not new, because it is baselined; not
+# stale, because the finding is real.
+#
+# Measured, not argued: appending one entry cloned from this file's own last
+# real entry returned rc=0 from this guard, under its own words:
+#     "The list may only SHRINK."
+# Twelve guards in scripts/ failed the same probe.
+#
+# So growth is now compared against merge-base(HEAD, origin/main), falling
+# back to the origin/main TIP because CI checks out shallow — a ref this
+# branch cannot rewrite, and never the branch against itself.
+# shellcheck source=scripts/lib_baseline_ratchet.sh
+. "${REPO_ROOT}/scripts/lib_baseline_ratchet.sh" || exit 1
+baseline_ratchet_check "${REPO_ROOT}" scripts/lockfile_registry_siblings_baseline.txt set || exit 1
+
 if [ ! -f "$BASELINE_FILE" ]; then
   printf 'FAIL: %s missing. Run --update once to establish it.\n' "$BASELINE_FILE"
   exit 1
 fi
-baseline_count="$(grep -c . "$BASELINE_FILE" || true)"
+baseline_count="$(grep -vcE '^[[:space:]]*(#|$)' "$BASELINE_FILE" || true)"
 
 printf '%s collision(s), baseline %s\n' "$count" "$baseline_count"
 
@@ -166,7 +187,7 @@ if [ "$count" -gt "$baseline_count" ]; then
   printf '\nFAIL: registry copies of workspace-local crates grew %s -> %s.\n' "$baseline_count" "$count"
   printf 'A crates.io package now shares a name with a workspace crate. Cargo will\n'
   printf 'happily compile both, and their types are mutually incompatible.\n\n'
-  comm -13 <(sort "$BASELINE_FILE") <(printf '%s\n' "$FOUND" | grep . | sort) | sed 's|^|  NEW: |'
+  comm -13 <(grep -vE '^[[:space:]]*(#|$)' "$BASELINE_FILE" | sort) <(printf '%s\n' "$FOUND" | grep . | sort) | sed 's|^|  NEW: |'
   printf '\nFind the transitive source with:  cargo tree -i <name>@<version>\n'
   exit 1
 fi

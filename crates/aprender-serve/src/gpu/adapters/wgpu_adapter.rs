@@ -312,12 +312,16 @@ pub fn dequant_tensor_public(tensor: &crate::gguf::OwnedQuantizedTensor) -> Resu
         GGUF_TYPE_Q5_K => dequantize_q5_k(&tensor.data),
         GGUF_TYPE_F32 => Ok(tensor
             .data
-            .chunks_exact(4)
+            .as_chunks::<4>()
+            .0
+            .iter()
             .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
             .collect()),
         GGUF_TYPE_F16 => Ok(tensor
             .data
-            .chunks_exact(2)
+            .as_chunks::<2>()
+            .0
+            .iter()
             .map(|c| {
                 let bits = u16::from_le_bytes([c[0], c[1]]);
                 half::f16::from_bits(bits).to_f32()

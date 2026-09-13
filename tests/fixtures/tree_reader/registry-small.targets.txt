@@ -1,0 +1,1 @@
+targets=crateA:--lib crateB:--lib:deep::leaf crateB:--lib:inc crateC:--test:it crateC:--test:other crateD:--bins crateE:--lib

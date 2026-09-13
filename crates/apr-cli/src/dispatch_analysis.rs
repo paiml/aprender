@@ -123,50 +123,11 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
         // The existing flat-args behavior moved under `apr probar tensor <FILE>`.
         ExtendedCommands::Test { command } => match command {
             // GH-876 Milestone 2 — `apr test llm bench`.
-            TestSubcommand::Llm { command } => match command {
-                LlmSubcommand::Bench {
-                    url,
-                    model,
-                    start,
-                    health_timeout,
-                    warmup,
-                    duration,
-                    concurrency,
-                    runs,
-                    cooldown,
-                    runtime_name,
-                    baseline,
-                    fail_on_regression,
-                    output,
-                    stream,
-                    profile,
-                    prompts,
-                } => tokio::runtime::Runtime::new()
-                    .map_err(|e| {
-                        crate::error::CliError::InferenceFailed(format!("tokio runtime: {e}"))
-                    })
-                    .and_then(|rt| {
-                        rt.block_on(commands::test_llm::run_bench(
-                        commands::test_llm::BenchArgs {
-                            url,
-                            model,
-                            start: start.as_deref(),
-                            health_timeout: *health_timeout,
-                            warmup: *warmup,
-                            duration: *duration,
-                            concurrency: *concurrency,
-                            runs: *runs,
-                            cooldown: *cooldown,
-                            runtime_name,
-                            baseline: baseline.as_deref(),
-                            fail_on_regression: *fail_on_regression,
-                            output: output.as_deref(),
-                            stream: *stream,
-                            profile,
-                            prompts: prompts.as_deref(),
-                        }))
-                    }),
-            },
+            // PERF-025: the arm moved into commands::test_llm::dispatch. This
+            // router was at cognitive 24 against a threshold of 25; the band
+            // branch tipped it, and the destructure belongs next to the
+            // functions it feeds anyway.
+            TestSubcommand::Llm { command } => commands::test_llm::dispatch(command),
             TestSubcommand::Tensor {
                 file,
                 output,
@@ -1536,9 +1497,17 @@ fn dispatch_profiling_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             file,
             prompt,
             assert,
+            per_op,
+            out,
+            threshold,
             // GH-636: pass cli.json to parity — was dropping the flag
-        } => crate::error::resolve_model_path(file)
-            .and_then(|r| commands::parity::run(&r, prompt, *assert, cli.verbose, cli.json)),
+        } => crate::error::resolve_model_path(file).and_then(|r| {
+            if *per_op {
+                commands::parity_per_op::run(&r, prompt, out.as_deref(), *threshold, cli.json)
+            } else {
+                commands::parity::run(&r, prompt, *assert, cli.verbose, cli.json)
+            }
+        }),
 
         ExtendedCommands::PtxMap {
             file,
@@ -1686,6 +1655,15 @@ fn dispatch_extended_command(cli: &Cli) -> Result<(), CliError> {
             if let Some(ref b) = backend {
                 eprintln!("Backend override: {b}");
             }
+            // PERF-021: the third surface. `apr chat` accepted --gpu, verified
+            // nothing, and ran on CPU — the same defect as `apr run`, and
+            // unlike `apr run` it does not even carry the bespoke
+            // `--backend cuda` check. Three surfaces, one refusal, so a fix
+            // here cannot land on two of them again.
+            crate::accel::ensure_available(
+                *gpu && !*no_gpu,
+                &crate::accel::asked_flag(*gpu, backend.as_deref()),
+            )?;
             // GH-326: --gpu overrides --no-gpu when both specified
             let effective_no_gpu = if *gpu { false } else { *no_gpu };
             chat::run(

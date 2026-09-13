@@ -247,21 +247,6 @@ impl CudaExecutor {
         vocab_size: u32,
         epsilon: f32,
     ) -> Result<Option<Result<(), GpuError>>, GpuError> {
-        // realizr#201: Graph replay enabled by default for sm_89+ (Ada/Hopper).
-        // Uses manual graph construction (trueno#243), bypasses stream capture bug.
-        // Verified correct: A/B test ALL 13 buffers diff=0 (realizr#198).
-        // +26% decode throughput (333 vs 264 tok/s on RTX 4090).
-        // Opt-out: SKIP_CUDA_GRAPH=1. Legacy opt-in: CUDA_GRAPH_ENABLE=1.
-        static GRAPH_ENV: std::sync::OnceLock<Option<bool>> = std::sync::OnceLock::new();
-        let env_override = *GRAPH_ENV.get_or_init(|| {
-            if std::env::var("CUDA_GRAPH_ENABLE").as_deref() == Ok("1") {
-                return Some(true);
-            }
-            if std::env::var("SKIP_CUDA_GRAPH").as_deref() == Ok("1") {
-                return Some(false);
-            }
-            None // Use CC-based default
-        });
         // PMAT-810 (Blackwell CUDA-graph decode corruption): on Blackwell
         // (cc>=120, e.g. GB10 sm_121) the trueno#243 MANUAL graph construction
         // + replay (cuGraphAddKernelNode) produces a CORRUPT decode forward —
@@ -279,8 +264,7 @@ impl CudaExecutor {
         // graphed path unchanged. CUDA_GRAPH_ENABLE=1 still force-opts-in for A/B
         // testing the deeper manual-graph root-cause fix on Blackwell.
         // Contract: contracts/apr-cpu-vs-gpu-output-parity-v1.yaml (FALSIFY-CPU-GPU-009).
-        let cc_default = Self::graph_cc_default(self.gpu_profile.cc);
-        let graph_enabled = env_override.unwrap_or(cc_default);
+        let graph_enabled = self.decode_graph_enabled();
         if !graph_enabled {
             return Ok(Some(self.forward_all_layers_gpu_to_logits(
                 input, logits, position, num_layers, hidden_dim,
@@ -409,11 +393,87 @@ impl CudaExecutor {
     pub(crate) fn graph_cc_default(cc: u32) -> bool {
         cc >= 89
     }
+
+    /// The env half of the decode-graph decision, cached for the process.
+    ///
+    /// `CUDA_GRAPH_ENABLE=1` forces the graphed path on, `SKIP_CUDA_GRAPH=1`
+    /// forces it off, and neither leaves the compute-capability default in
+    /// charge. Both are read ONCE: a decision that changed when someone
+    /// exported a variable mid-run would make the endpoint's report true only
+    /// of the moment it was taken.
+    fn graph_env_override() -> Option<bool> {
+        static GRAPH_ENV: std::sync::OnceLock<Option<bool>> = std::sync::OnceLock::new();
+        *GRAPH_ENV.get_or_init(|| {
+            if std::env::var("CUDA_GRAPH_ENABLE").as_deref() == Ok("1") {
+                return Some(true);
+            }
+            if std::env::var("SKIP_CUDA_GRAPH").as_deref() == Ok("1") {
+                return Some(false);
+            }
+            None // Use CC-based default
+        })
+    }
+
+    /// PP-LLAMA-001 §5.2: will the GRAPHED decode path be taken on this device?
+    ///
+    /// The two halves — the env override and the cc default — used to be
+    /// resolved inline inside `graphed_fast_path`, so nothing outside the
+    /// dispatch could state the answer and `/v1/effective-config` reported no
+    /// graph-enablement field at all. That matters because the two paths differ
+    /// by roughly 5.6 ms of kernel-launch overhead per token (realizr#201
+    /// measured +26 %, 264 -> 333 tok/s on an RTX 4090), which is most of what
+    /// a decode-rate ratio is made of: a receipt that cannot say which path ran
+    /// cannot be compared with one that ran the other.
+    ///
+    /// The dispatch now calls THIS, so the report cannot drift from it.
+    #[must_use]
+    pub(crate) fn decode_graph_enabled(&self) -> bool {
+        Self::resolve_decode_graph(Self::graph_env_override(), self.gpu_profile.cc)
+    }
+
+    /// The decode-graph decision as a pure function of its two inputs.
+    ///
+    /// Split out so the gating is a table test rather than an environment: an
+    /// env override WINS over the compute-capability default in both
+    /// directions, and only its absence lets `cc` decide.
+    #[must_use]
+    pub(crate) fn resolve_decode_graph(env_override: Option<bool>, cc: u32) -> bool {
+        env_override.unwrap_or_else(|| Self::graph_cc_default(cc))
+    }
 }
 
 #[cfg(test)]
 mod pmat810_blackwell_graph_default_tests {
     use super::CudaExecutor;
+
+    /// PP-LLAMA-001 §5.2: the decision `/v1/effective-config` reports as
+    /// `graphs.cuda_graph_enable` is the one `graphed_fast_path` branches on.
+    ///
+    /// The env var is a FORCE-ON, not the switch: reading `CUDA_GRAPH_ENABLE`
+    /// on its own reports `false` on an unset sm_89 box while the graphed path
+    /// is exactly what runs there — the inversion this table rules out.
+    #[test]
+    fn resolve_decode_graph_lets_the_env_override_win_both_ways() {
+        // No override: the compute capability decides.
+        assert!(
+            CudaExecutor::resolve_decode_graph(None, 89),
+            "sm_89 defaults to the graphed decode path"
+        );
+        assert!(CudaExecutor::resolve_decode_graph(None, 121), "sm_121 too");
+        assert!(
+            !CudaExecutor::resolve_decode_graph(None, 86),
+            "cc 86 is below the sm_89 graph default and keeps eager"
+        );
+        // SKIP_CUDA_GRAPH=1 turns it off where the default says on...
+        assert!(!CudaExecutor::resolve_decode_graph(Some(false), 89));
+        // ...and CUDA_GRAPH_ENABLE=1 turns it on where the default says off.
+        assert!(CudaExecutor::resolve_decode_graph(Some(true), 86));
+        assert_ne!(
+            CudaExecutor::resolve_decode_graph(Some(true), 86),
+            CudaExecutor::resolve_decode_graph(None, 86),
+            "an override that changes nothing is not an override"
+        );
+    }
 
     /// PMAT-886a: Blackwell (cc>=120, e.g. GB10 sm_121=121) now defaults the
     /// graphed-decode path ON. The root-cause fix (record the MWV Q4K GEMV into
@@ -436,11 +496,11 @@ mod pmat810_blackwell_graph_default_tests {
     fn graph_default_on_for_discrete_dp4a() {
         assert!(CudaExecutor::graph_cc_default(89), "RTX 4090 sm_89");
         assert!(CudaExecutor::graph_cc_default(90), "H100 sm_90");
-        assert!(CudaExecutor::graph_cc_default(119), "just below Blackwell");
+        assert!(CudaExecutor::graph_cc_default(119), "any cc >= 89 (numeric)");
     }
 
-    /// Non-DP4A GPUs (cc<89) keep eager (pre-existing behavior; graph path needs
-    /// DP4A-era kernels).
+    /// cc < 89 keeps eager (pre-existing policy; the graph path is validated on
+    /// the sm_89+ kernels). DP4A itself is sm_61+; this line is not a DP4A test.
     #[test]
     fn graph_default_off_below_dp4a() {
         assert!(!CudaExecutor::graph_cc_default(80 - 5), "sm_75-ish boundary low");

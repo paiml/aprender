@@ -45,12 +45,13 @@ pub fn hash_bytes(bytes: &[u8]) -> u64 {
     let mut hash: u64 = 0;
 
     // Process 8 bytes at a time
-    let chunks = bytes.chunks_exact(8);
-    let remainder = chunks.remainder();
+    // `as_chunks::<8>()` yields `&[u8; 8]` directly, so the fallible
+    // `try_into().expect(...)` below is gone: the 8-byte width is now a type,
+    // not a runtime claim. clippy::chunks_exact_to_as_chunks (new in 1.98).
+    let (chunks, remainder) = bytes.as_chunks::<8>();
 
     for chunk in chunks {
-        let word =
-            u64::from_le_bytes(chunk.try_into().expect("chunks_exact(8) guarantees 8 bytes"));
+        let word = u64::from_le_bytes(*chunk);
         hash = hash.rotate_left(5).bitxor(word).wrapping_mul(K);
     }
 

@@ -196,7 +196,7 @@ impl FixtureManager {
             .iter()
             .map(|(id, e)| (*id, e.priority))
             .collect();
-        ordered.sort_by(|a, b| b.1.cmp(&a.1));
+        ordered.sort_by_key(|a| std::cmp::Reverse(a.1));
 
         self.setup_order.clear();
 

@@ -230,7 +230,9 @@ impl LifecycleManager {
 
     /// Dispatch all pending events.
     pub fn flush(&mut self) {
-        let events: Vec<LifecycleEvent> = self.pending_events.drain(..).collect();
+        // See binding.rs::flush — `mem::take` is the allocation-free spelling
+        // of `drain(..).collect()`. clippy::drain_collect (new in 1.98).
+        let events: Vec<LifecycleEvent> = std::mem::take(&mut self.pending_events);
 
         for event in events {
             let widget_hooks = self

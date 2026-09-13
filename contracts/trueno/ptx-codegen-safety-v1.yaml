@@ -2,15 +2,14 @@ metadata:
   version: 1.0.0
   created: '2026-04-06'
   author: PAIML Engineering
-  registry: true
   description: >
     PTX codegen safety contract — verifies that PTX assembly emitted by
     the kernel generator is well-formed, targets the correct SM version,
     stays within register limits, and uses no undefined instructions.
   references:
-  - 'NVIDIA PTX ISA 8.4 — .target directive, register usage'
-  - 'trueno/src/backends/gpu/ — kernel PTX generation'
-  - 'realizar/src/cuda/kernel_generator.rs — emit_ptx_for_target()'
+  - 'NVIDIA PTX ISA — .target directive, register usage'
+  - 'crates/aprender-gpu/src/ptx/ — kernel PTX generation'
+  - 'crates/aprender-serve/src/cuda/ — emit_ptx_for_target()'
   - 'paiml/aprender#613 — Jetson PTX CUDA_ERROR_INVALID_VALUE'
   depends_on:
   - ptx-target-parity-v1
@@ -21,7 +20,7 @@ equations:
       forall ptx in emit_ptx_for_target(sm):
         ptx.contains(".target sm_{sm}")
         AND ptx.contains(".address_size 64")
-    domain: SM target version (70, 75, 80, 86, 87, 89, 90)
+    domain: SM target version (70, 75, 80, 86, 87, 89, 90, 100, 120, 121)
     codomain: PTX string with correct .target directive
     invariants:
     - Every emitted PTX contains exactly one .target directive
@@ -41,13 +40,21 @@ equations:
     domain: Compiled PTX kernel
     codomain: Register and shared memory usage
     invariants:
-    - "sm_70: max 255 regs/thread, 96KB shared"
-    - "sm_80+: max 255 regs/thread, 163KB shared"
+    - "Limits are QUERIED from the device (cuDeviceGetAttribute), never tabulated per SM:
+       a per-arch table goes stale every GPU generation and this one did, at sm_90."
+    - "block_size <= CU_FUNC_ATTRIBUTE_MAX_THREADS_PER_BLOCK of the COMPILED kernel"
+    - "static_shared + dynamic_shared <= CU_DEVICE_ATTRIBUTE_MAX_SHARED_MEMORY_PER_BLOCK"
+    - "num_regs * block_size <= CU_DEVICE_ATTRIBUTE_MAX_REGISTERS_PER_BLOCK"
     - "Exceeding limits causes CUDA_ERROR_INVALID_VALUE (GH-613)"
     preconditions:
     - kernel compiled for target SM
     postconditions:
     - cuOccupancyMaxActiveBlocksPerMultiprocessor > 0
+    enforced_by:
+    - crates/aprender-gpu/src/launch_budget.rs::validate_launch (pure policy, runs
+      in the required check)
+    - crates/aprender-gpu/src/driver/budget_query.rs::enforce_register_budget (device
+      query + the postcondition above)
     lean_theorem: Theorems.RegisterBudget
 
   instruction_validity:
@@ -115,9 +122,25 @@ falsification_tests:
   if_fails: Hardcoded sm_70 path bypasses dynamic target
 - id: FALSIFY-PTX-003
   rule: Register budget
-  prediction: GEMM kernel uses <= 128 registers (leaves room for occupancy)
+  prediction: >
+    A launch whose block size exceeds the compiled kernel's own
+    CU_FUNC_ATTRIBUTE_MAX_THREADS_PER_BLOCK is REFUSED, and a legal launch reports
+    cuOccupancyMaxActiveBlocksPerMultiprocessor > 0.
   test: |
-    Parse ptxas output for register count, assert <= 128.
+    cargo test -p aprender-gpu --lib launch_budget
+    cargo test -p aprender-gpu --features cuda --lib launch_budget
+  red_witness: |
+    Each budget has its OWN mutation; one mutation does not falsify the others.
+    Deleting the block-size comparison in launch_budget.rs::validate_launch turns RED:
+      launch_budget::tests::rejects_block_above_kernel_max
+      launch_budget::tests::kernel_max_is_reported_before_device_max
+      launch_budget::tests::violations_name_both_sides_of_the_comparison
+      driver::cuda_tests::launch_budget_hw::budget_goes_red_on_an_oversized_block
+    The hardware test only witnesses this because it asserts the SPECIFIC violation
+    ("kernel's max_threads_per_block"). Asserting merely is_err() would have let the
+    mutation survive: the launch falls through to the device-wide check and still
+    errors. That was measured, not assumed — the first version of this test DID
+    survive the mutation.
   if_fails: Register spilling causes performance cliff or INVALID_VALUE
 
 kani_harnesses:

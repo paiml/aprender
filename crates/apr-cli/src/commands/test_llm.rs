@@ -26,9 +26,9 @@ use crate::error::{CliError, Result};
 use apr_test::llm::{
     benchmark::{Benchmark, BenchmarkConfig, BenchmarkReport},
     client::ChatRequest,
-    load_profile, load_prompts_from_file,
+    load_profile, load_prompt_corpus,
     loadtest::LoadTestResult,
-    PromptProfile,
+    Corpus, PromptProfile,
 };
 use std::path::Path;
 use std::time::Duration;
@@ -199,21 +199,36 @@ pub async fn run_bench(args: BenchArgs<'_>) -> Result<()> {
 /// A file overrides the profile; an unknown profile name is rejected rather
 /// than quietly falling back to a default, since a silent substitution changes
 /// the workload the report then claims to have run.
-fn resolve_prompts(profile: &str, file: Option<&Path>) -> Result<Vec<ChatRequest>> {
+pub(crate) fn resolve_prompts(profile: &str, file: Option<&Path>) -> Result<Vec<ChatRequest>> {
+    resolve_corpus(profile, file).map(|c| c.requests)
+}
+
+/// As [`resolve_prompts`], but keeping the §4.3.1 prompt-length band the
+/// corpus declared in its own `_meta` header.
+///
+/// The band is DROPPED by `resolve_prompts` and kept here because only the
+/// §4.4-conformant band mode can check it: the invariant is over token counts
+/// the *server* reports, so it cannot be evaluated until requests have run.
+/// A built-in `--profile` declares no band — those prompt sets are not W1 and
+/// synthesising a 512 ± 8 claim for them would be inventing the threshold.
+pub(crate) fn resolve_corpus(profile: &str, file: Option<&Path>) -> Result<Corpus> {
     if let Some(p) = file {
-        return load_prompts_from_file(p)
-            .map_err(|e| CliError::InvalidFormat(format!("prompt file {}: {e}", p.display())));
+        return load_prompt_corpus(p)
+            .map_err(|e| CliError::InvalidFormat(format!("prompt corpus {e}")));
     }
     let parsed = PromptProfile::from_name(profile).ok_or_else(|| {
         CliError::InvalidInput(format!(
             "unknown prompt profile {profile:?}; expected micro, short, medium or long"
         ))
     })?;
-    Ok(load_profile(parsed))
+    Ok(Corpus {
+        requests: load_profile(parsed),
+        band: None,
+    })
 }
 
 /// One line naming the workload, so the report is self-describing.
-fn describe_workload(profile: &str, file: Option<&Path>, count: usize) -> String {
+pub(crate) fn describe_workload(profile: &str, file: Option<&Path>, count: usize) -> String {
     match file {
         Some(p) => format!("{} prompt(s) from {}", count, p.display()),
         None => format!("profile {profile} ({count} prompt(s))"),
@@ -323,11 +338,12 @@ mod tests {
     #[test]
     fn a_prompt_file_overrides_the_profile() {
         let dir = tempfile::tempdir().expect("tempdir");
-        let path = dir.path().join("prompts.yaml");
+        let path = dir.path().join("prompts.jsonl");
         // Two prompts, so the count cannot coincide with a one-prompt profile.
+        // JSONL (PERF-039): one JSON object per line, no enclosing array.
         std::fs::write(
             &path,
-            "prompts:\n  - role: user\n    content: \"hi\"\n    max_tokens: 4\n  - role: user\n    content: \"there\"\n    max_tokens: 4\n",
+            "{\"prompt\":\"hi\",\"max_tokens\":4}\n{\"prompt\":\"there\",\"max_tokens\":4}\n",
         )
         .expect("write");
         let from_file = resolve_prompts("long", Some(&path)).expect("file should load");
@@ -343,10 +359,24 @@ mod tests {
     #[test]
     fn a_malformed_prompt_file_fails_rather_than_falling_back() {
         let dir = tempfile::tempdir().expect("tempdir");
-        let path = dir.path().join("bad.yaml");
-        std::fs::write(&path, "prompts: []\n").expect("write");
+
         // An empty workload would otherwise benchmark nothing and report a rate.
-        resolve_prompts("medium", Some(&path)).expect_err("an empty prompt set must fail");
+        let empty = dir.path().join("empty.jsonl");
+        std::fs::write(&empty, "").expect("write");
+        resolve_prompts("medium", Some(&empty)).expect_err("an empty prompt set must fail");
+
+        // PERF-039: the YAML `prompts:` corpus this loader used to accept must
+        // now be REFUSED here too, not silently resolved back to the profile.
+        // A silent fallback would run the `medium` workload while the report
+        // said it ran the file.
+        let yaml = dir.path().join("legacy.yaml");
+        std::fs::write(&yaml, "prompts:\n  - role: user\n    content: \"hi\"\n").expect("write");
+        let err = resolve_prompts("medium", Some(&yaml))
+            .expect_err("a YAML corpus must fail, not fall back to the profile");
+        assert!(
+            format!("{err}").contains("JSONL"),
+            "the failure must name the expected format; got: {err}"
+        );
     }
 
     #[test]
@@ -364,4 +394,161 @@ mod tests {
         let p = Path::new("/tmp/x.json");
         assert!(describe_workload("medium", Some(p), 7).contains("x.json"));
     }
+}
+
+// ===========================================================================
+// PERF-025 — routing `apr test llm <SUB>`.
+//
+// The arm lives HERE rather than inline in `dispatch_analysis.rs`'s match.
+// That router was already at cognitive 24 against a threshold of 25, so adding
+// the band branch inline tipped it over; moving the whole arm out puts the
+// routing next to the two functions it routes to and leaves the router simpler
+// than it was.
+// ===========================================================================
+use crate::LlmSubcommand;
+
+/// Route `apr test llm <SUB>` (GH-876 Milestone 2; PERF-025 band mode).
+///
+/// # Errors
+/// Propagates whichever mode ran.
+pub fn dispatch(command: &LlmSubcommand) -> Result<()> {
+    let rt = tokio::runtime::Runtime::new()
+        .map_err(|e| CliError::InferenceFailed(format!("tokio runtime: {e}")))?;
+    match command {
+        LlmSubcommand::Bench { band, .. } if *band => rt.block_on(dispatch_band(command)),
+        LlmSubcommand::Bench { .. } => rt.block_on(dispatch_legacy(command)),
+    }
+}
+
+/// TWO MODES, ONE ENTRYPOINT — the §4.4-conformant one.
+///
+/// `--band` selects PERF-024's `run_band`, which until PERF-025 was called by
+/// nothing outside its own tests.
+async fn dispatch_band(command: &LlmSubcommand) -> Result<()> {
+    let LlmSubcommand::Bench {
+        url,
+        model,
+        stream,
+        profile,
+        prompts,
+        receipt,
+        bands,
+        replicates,
+        workload,
+        host,
+        accelerator,
+        quantization,
+        compute_class,
+        server_features,
+        tokenization,
+        tokenizer_sha256,
+        counts_special_tokens,
+        counts_prompt_echo,
+        commit,
+        comparator_owner,
+        comparator_url,
+        comparator_model,
+        comparator_commit,
+        comparator_cmake,
+        comparator_sha256,
+        comparator_pin_expiry,
+        comparator_n_batch,
+        comparator_n_ctx_slot,
+        comparator_fa,
+        comparator_kv_type,
+        witness_json,
+        subject_binary,
+        key_id,
+        keyring,
+        ..
+    } = command;
+    // Unreachable: clap's `requires = "receipt"` enforces it. Stated rather
+    // than unwrapped, because a receipt-less band run would measure for
+    // minutes and then discard the measurement.
+    let receipt = receipt
+        .as_deref()
+        .ok_or_else(|| CliError::InvalidInput("--band requires --receipt <DIR>".to_string()))?;
+    super::test_llm_band::run_bands(super::test_llm_band::BandArgs {
+        url,
+        model,
+        bands,
+        replicates: *replicates,
+        receipt,
+        workload,
+        host,
+        accelerator,
+        quantization,
+        compute_class,
+        server_features,
+        tokenization,
+        tokenizer_sha256: tokenizer_sha256.as_deref(),
+        counts_special_tokens: *counts_special_tokens,
+        counts_prompt_echo: *counts_prompt_echo,
+        commit: commit.as_deref(),
+        stream: *stream,
+        profile,
+        prompts: prompts.as_deref(),
+        comparator_owner,
+        comparator_url: comparator_url.as_deref(),
+        comparator_model: comparator_model.as_deref(),
+        comparator_commit: comparator_commit.as_deref(),
+        comparator_cmake: comparator_cmake.as_deref(),
+        comparator_sha256: comparator_sha256.as_deref(),
+        comparator_pin_expiry: comparator_pin_expiry.as_deref(),
+        comparator_n_batch: *comparator_n_batch,
+        comparator_n_ctx_slot: *comparator_n_ctx_slot,
+        comparator_fa: comparator_fa.as_deref(),
+        comparator_kv_type: comparator_kv_type.as_deref(),
+        key_id: key_id.as_deref(),
+        keyring: keyring.as_deref(),
+        witness_json: witness_json.as_deref(),
+        subject_binary: subject_binary.as_deref(),
+    })
+    .await
+}
+
+/// The pre-existing `LoadTest::run` lifecycle, unchanged.
+///
+/// Its termination rule is not touched: a great deal of tooling reads
+/// `LoadTestResult`, and changing when the run stops underneath those readers
+/// would silently change every number they have ever recorded.
+async fn dispatch_legacy(command: &LlmSubcommand) -> Result<()> {
+    let LlmSubcommand::Bench {
+        url,
+        model,
+        start,
+        health_timeout,
+        warmup,
+        duration,
+        concurrency,
+        runs,
+        cooldown,
+        runtime_name,
+        baseline,
+        fail_on_regression,
+        output,
+        stream,
+        profile,
+        prompts,
+        ..
+    } = command;
+    run_bench(BenchArgs {
+        url,
+        model,
+        start: start.as_deref(),
+        health_timeout: *health_timeout,
+        warmup: *warmup,
+        duration: *duration,
+        concurrency: *concurrency,
+        runs: *runs,
+        cooldown: *cooldown,
+        runtime_name,
+        baseline: baseline.as_deref(),
+        fail_on_regression: *fail_on_regression,
+        output: output.as_deref(),
+        stream: *stream,
+        profile,
+        prompts: prompts.as_deref(),
+    })
+    .await
 }

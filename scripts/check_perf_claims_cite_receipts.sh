@@ -5,6 +5,7 @@
 #
 #   bash scripts/check_perf_claims_cite_receipts.sh            # gate
 #   bash scripts/check_perf_claims_cite_receipts.sh --selftest # case table
+#   bash scripts/check_perf_claims_cite_receipts.sh --explain   # rule + debt map
 #   bash scripts/check_perf_claims_cite_receipts.sh --update   # re-baseline
 #
 # THE RULE IT ENFORCES (§3.2, verbatim):
@@ -24,6 +25,30 @@
 #
 #   throughput literal, comparator ratio, [X] figure  -> check_no_claim_literals.sh
 #   speed comparison with no named comparator         -> HERE
+#
+# THEY WERE ALSO DISJOINT BY *SURFACE*, WHICH NOBODY DECIDED. The split above is
+# a split of RULES, and it is deliberate. The split of SURFACES was an
+# accident: the sibling guard sweeps .rs AND .md; this one swept .md only. So
+# the rule "a speed comparison must cite its receipt" simply did not exist for
+# a Rust doc comment -- a `cargo doc` page, which is a user-facing surface by
+# the sibling guard's own reasoning and by this repo's, since that is exactly
+# why the sibling reads `///` and `//!` lines at all.
+#
+# MEASURED, 2026-08-31: 97 uncited speed comparisons live in `///` / `//!`
+# comments on shipped code. `~50x faster than scalar`, `~41x faster than SIMD
+# for fp32 GEMMs on sm_89`, `25-250x speedups vs CPU baselines`, and -- the one
+# that says the seam matters -- `9.6x faster than \`PyTorch\` (statistically
+# validated)` in crates/aprender-serve/src/serve.rs:31, which is a COMPETITOR
+# claim that BOTH guards miss: this one because .rs was out of its universe,
+# the sibling because a backtick in front of the competitor name is not a gap
+# word and defeats its RATIO_RE. A defect that lives in the seam between two
+# guards is invisible to each of them separately, and neither is wrong on its
+# own terms. That is the generalisable lesson: state the SURFACE a rule covers
+# as deliberately as the RULE, or the gap between two correct guards ships.
+#
+# ONLY DOC COMMENTS ARE READ, not every line of Rust. A speed claim in ordinary
+# code is a comment to the next maintainer; a doc comment is published. The
+# same distinction the sibling guard draws with its `dochits` sweep.
 #
 # WHAT "CITES A RECEIPT" MEANS, MECHANICALLY. Within the claim's line or the
 # three lines either side of it, a token matching `evidence/<path>` appears,
@@ -68,6 +93,23 @@ cd "$(dirname "$0")/.." || exit 2
 
 BASELINE="scripts/perf_claim_citation_baseline.txt"
 
+# ARGUMENT VALIDATION, BEFORE ANY WORK. Every mode below is selected by an
+# equality test against "${1:-}", so before this case existed a typo fell
+# through every one of them and ran the DEFAULT GATE. `--self-test` (the
+# spelling check_gate5_stage.sh uses), `--selftests`, `--updated` — each of
+# those silently ran the ratchet and exited 0, and a caller who believed they
+# had run the case table would have been told PASSED by a mode that never
+# executed a single case. A guard that answers a question it was not asked is
+# the same defect class as a guard that cannot fail.
+case "${1:-}" in
+    ''|--selftest|--update|--explain) : ;;
+    *)
+        printf 'unknown arg: %s\n' "$1" >&2
+        printf 'usage: check_perf_claims_cite_receipts.sh [--selftest|--explain|--update]\n' >&2
+        exit 2
+        ;;
+esac
+
 # ---------------------------------------------------------------- patterns --
 # A SPEED COMPARISON: a ratio bound to a word that means "in less time".
 #
@@ -97,30 +139,19 @@ CLAIM_RE="($RATIO_THEN_WORD)|($WORD_THEN_RATIO)"
 # than either.
 TARGET_RE='([Tt]arget|[Tt]hreshold|[Gg]oal|[Ee]xpect|[Rr]equire|spec |SPEC|PASS:|FAIL:|>=|<=|[><] *[0-9])'
 
-# The citation token, and the window it may appear in.
+# THE CITATION TOKEN, THE WINDOW, AND THE RESOLVER NOW LIVE IN ONE FILE.
 #
-# WINDOW = the claim's line, plus three lines either side. Three is not a round
-# number chosen for looking careful: it is the shortest window that covers the
-# three shapes citations actually take in this repo's markdown — in-row for a
-# table, in the following sentence for prose, and on the line under a fenced
-# block. Both edges are pinned by the case table (rows 9 and 10), so widening it
-# later requires re-running the table rather than re-reading this comment.
-RECEIPT_RE='evidence/[A-Za-z0-9._+-]+(/[A-Za-z0-9._+-]+)*'
-WINDOW=3
-
-# Resolve every receipt token in a block of text; print each as
-# "<path> <exists|missing>". Trailing markdown punctuation is stripped, so a
-# citation inside `[...](../evidence/x/y.json)` or backticks resolves.
-resolve_citations() {
-    local root="$1"
-    local text="$2"
-    local tok p
-    printf '%s\n' "$text" | grep -oE "$RECEIPT_RE" 2>/dev/null | while IFS= read -r tok; do
-        p="${tok#"${tok%%evidence/*}"}"
-        p=$(printf '%s' "$p" | sed 's/[])`",.;:]*$//')
-        if [ -e "$root/$p" ]; then printf '%s exists\n' "$p"; else printf '%s missing\n' "$p"; fi
-    done
-}
+# `RECEIPT_RE`, `WINDOW` and `resolve_citations()` were defined here. They are
+# now defined ONCE in scripts/lib/perf_claim_cite.sh, because PP-12's rule --
+# "a number in README.md/book/docs/ is legal iff it cites an evidence/ receipt
+# path" -- is a CONJUNCTION over BOTH guards, and check_no_claim_literals.sh
+# now needs the identical definition to run its citation EXEMPTION. Two copies
+# of a matching rule drift, and the drift is invisible precisely because each
+# guard keeps passing against its own copy. Behaviour here is unchanged; the
+# case table below re-proves the window and the existence check either way.
+PERF_CLAIM_CITE_LIB_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=scripts/lib/perf_claim_cite.sh
+. "${PERF_CLAIM_CITE_LIB_ROOT}/scripts/lib/perf_claim_cite.sh" || exit 2
 
 # scan_file <root> <relpath> -> one record per claim:
 #     <relpath>:<line>:<uncited|dangling>:<text>
@@ -142,6 +173,10 @@ scan_file() {
     [ -f "$f" ] || return 0
     local total; total=$(wc -l < "$f")
     local n text lo hi block cites
+    # THE SURFACE. For .rs only `///` and `//!` lines are candidates -- see the
+    # header. For markdown every line is the published surface.
+    local surface=prose
+    case "$rel" in *.rs) surface=doc ;; esac
     while IFS= read -r n; do
         [ -n "$n" ] || continue
         text=$(sed -n "${n}p" "$f")
@@ -155,14 +190,17 @@ scan_file() {
         if [ "$hi" -gt "$total" ]; then hi="$total"; fi
         block=$(sed -n "${lo},${hi}p" "$f")
         cites=$(resolve_citations "$root" "$block")
-        if printf '%s\n' "$cites" | grep -q ' exists$'; then
+        if grep -q ' exists$' <<< "$cites" ; then
             continue                                   # cited, and it resolves
-        elif printf '%s\n' "$cites" | grep -q ' missing$'; then
+        elif grep -q ' missing$' <<< "$cites" ; then
             printf '%s:%s:dangling:%s\n' "$rel" "$n" "$text"
         else
             printf '%s:%s:uncited:%s\n' "$rel" "$n" "$text"
         fi
     done < <(grep -nE "$CLAIM_RE" "$f" 2>/dev/null \
+             | { if [ "$surface" = doc ]; then
+                     grep -E '^[0-9]+:[[:space:]]*(///|//!)'
+                 else cat; fi; } \
              | grep -vE "$TARGET_RE" \
              | cut -d: -f1)
 }
@@ -233,6 +271,46 @@ if [ "${1:-}" = "--selftest" ]; then
     if [ "$n" -eq 0 ]; then printf '  ok    %-9s %s\n' none 'prose with no claim is silent'
     else printf '  FAIL  want none      got %s record(s) %s\n' "$n" 'prose with no claim'; f=$((f + 1)); fi
 
+    # THE .rs SURFACE. Rows 13-19. Every one of them is invisible to rows 1-12,
+    # because scan_file decides the surface from the EXTENSION -- so a table
+    # that only ever fed it .md could not have noticed that .rs was missing
+    # from the universe at all. That is the shape of the defect this half
+    # closes; asserting it is the only thing that keeps it closed.
+    mkdir -p "$TD/crates/x/src"
+    printf '/// Uses AVX2 for ~4x faster dequantisation than the scalar path.\n' \
+        > "$TD/crates/x/src/a.rs"
+    row 'doc comment /// speed claim'         uncited crates/x/src/a.rs
+    printf '//! Provides 10-100x speedup over the CPU ndarray implementation.\n' \
+        > "$TD/crates/x/src/b.rs"
+    row 'module doc //! speed claim'          uncited crates/x/src/b.rs
+    # THE SEAM ITSELF, verbatim in shape from crates/aprender-serve/src/serve.rs:31.
+    # The sibling guard misses it because a backtick before the competitor name
+    # is not a gap word; this guard used to miss it because .rs was not in the
+    # universe. Neither guard was wrong on its own terms, and the claim shipped.
+    printf '//! - 9.6x faster than `PyTorch` (statistically validated)\n' \
+        > "$TD/crates/x/src/seam.rs"
+    row 'competitor claim in a doc comment'   uncited crates/x/src/seam.rs
+    # MUST NOT FLAG. An ORDINARY comment is a note to the next maintainer, not
+    # a published page, and this guard has no business in it -- that is what
+    # "doc comments only" means, and without this row the restriction is
+    # decorative.
+    printf '// this loop is ~4x faster than the naive version\n' \
+        > "$TD/crates/x/src/c.rs"
+    row 'ordinary // comment is not published' none  crates/x/src/c.rs
+    printf 'let msg = "4x faster";\n' > "$TD/crates/x/src/d.rs"
+    row 'a string literal in code, not a doc' none   crates/x/src/d.rs
+    # THE CITATION PATH WORKS ON .rs TOO -- the window and the existence check,
+    # not just the regex.
+    { printf '/// Uses AVX2 for ~4x faster dequantisation than the scalar path.\n'
+      printf '///\n/// Receipt: evidence/real/receipt.json\n'; } > "$TD/crates/x/src/e.rs"
+    row 'cited inside the doc comment'        none    crates/x/src/e.rs
+    printf '/// ~4x faster -- see evidence/real/gone.json\n' > "$TD/crates/x/src/f.rs"
+    row 'dangling citation in a doc comment'  dangling crates/x/src/f.rs
+
+    if [ "$t" -lt 19 ]; then
+        printf '  FAIL  case table has %s row(s); at least 19 are required\n' "$t"
+        f=$((f + 1))
+    fi
     printf '  %s case(s), %s failure(s)\n' "$t" "$f"
     [ "$f" -eq 0 ] || { printf 'SELFTEST FAILED\n'; exit 1; }
     printf 'SELFTEST PASSED\n'
@@ -246,24 +324,49 @@ fi
 # globs (`a/**/b` requires at least one intervening segment, which once hid 1045
 # tracked files from the sibling), minus docs/specifications/ for the reason in
 # the header.
-mapfile -t SRC < <(
+#
+# .rs JOINS THE UNIVERSE (see the header). Its exclusions are the sibling
+# guard's, verbatim -- tests, benches, examples and fixtures state TARGETS and
+# are out of scope by design -- and they are applied to the .rs half ONLY. A
+# blanket `tests?|benches|examples` filter over the whole list silently drops
+# book/src/examples/*.md and 40 already-baselined markdown locations with it;
+# that was measured, not guessed, on the first draft of this change.
+mapfile -t MD < <(
     { git ls-files 'README.md' 'book/**/*.md' 'book/*.md' \
                    'docs/**/*.md' 'docs/*.md' 2>/dev/null
       find README.md book docs -type f -name '*.md' 2>/dev/null
     } | LC_ALL=C sort -u \
     | grep -vE '^docs/specifications/')
+mapfile -t RS < <(
+    { git ls-files 'crates/*/src/**/*.rs' 'crates/*/src/*.rs' \
+                   'src/**/*.rs' 'src/*.rs' 2>/dev/null
+      find crates/*/src src -type f -name '*.rs' 2>/dev/null
+    } | LC_ALL=C sort -u \
+    | grep -vE '(^|/)(tests?|benches|examples)/' \
+    | grep -vE '_tests?\.rs$|_test\.rs$|proptests?[_.]|/fixtures?/')
+SRC=("${MD[@]}" "${RS[@]}")
 
 printf -- '--- performance claims cite their receipts (PERF-010) ---------------\n'
 
 # VACUITY. A universe that collapsed sweeps clean and reads as a pass — the
 # exact failure this epic keeps finding. 511 files at the time of writing; a
 # floor of 100 catches a broken glob without breaking on a doc reorganisation.
-if [ "${#SRC[@]}" -lt 100 ]; then
-    printf 'FAIL  universe collapsed to %s file(s), expected 100+. The scan is\n' "${#SRC[@]}"
-    printf '      broken, not the docs. Fix the globs rather than this number.\n'
+# BOTH HALVES ARE FLOORED SEPARATELY. A single total would let the .rs half
+# collapse to zero and stay green on the strength of the markdown count -- the
+# `universe: N` line would even go UP relative to the old guard while the new
+# surface checked nothing, which is the most convincing kind of false progress.
+if [ "${#MD[@]}" -lt 100 ]; then
+    printf 'FAIL  markdown universe collapsed to %s file(s), expected 100+. The scan\n' "${#MD[@]}"
+    printf '      is broken, not the docs. Fix the globs rather than this number.\n'
     exit 1
 fi
-printf 'universe: %s user-facing markdown file(s)\n' "${#SRC[@]}"
+if [ "${#RS[@]}" -lt 1000 ]; then
+    printf 'FAIL  Rust universe collapsed to %s file(s), expected 1000+. The scan is\n' "${#RS[@]}"
+    printf '      broken, not the source. Fix the globs rather than this number.\n'
+    exit 1
+fi
+printf 'universe: %s markdown + %s Rust file(s) (doc comments only)\n' \
+    "${#MD[@]}" "${#RS[@]}"
 
 records=""
 for rel in "${SRC[@]}"; do
@@ -272,6 +375,46 @@ for rel in "${SRC[@]}"; do
 done
 records=$(printf '%s' "$records" | grep -v '^$' || true)
 
+# ----------------------------------------------------------------- explain --
+# The gate answers "may this land?". --explain answers "what do I do about it?",
+# which is a different question and the one an engineer paying the ratchet down
+# actually has. It prints the rule, the mechanical definition of a citation, and
+# the debt ranked BY FILE — because the work is per-file (open it, find the run
+# that produced the number, cite it) and a flat 146-line list sorted by path
+# hides that 30 files carry it and a handful carry most.
+#
+# It reuses the same scan as the gate rather than describing it. A help text
+# that paraphrases the implementation drifts from it, and the drift is invisible
+# precisely because nothing executes the prose.
+if [ "${1:-}" = "--explain" ]; then
+    printf '\nTHE RULE (APR-PERF-GATE-001 v2.2 section 3.2)\n'
+    printf '  A number in README.md, book/ or docs/ is legal iff it cites an\n'
+    printf '  evidence/ receipt path. This guard enforces it for the class that is\n'
+    printf '  allowed to exist at all: a speed comparison naming no competitor.\n'
+    printf '  A comparator ratio is illegal regardless of citation and is deleted\n'
+    printf '  by check_no_claim_literals.sh instead -- the two are disjoint, so a\n'
+    printf '  line never carries two contradictory remedies.\n'
+    printf '\nWHAT COUNTS AS A CITATION\n'
+    printf '  A token matching evidence/<path>, within %s lines either side of the\n' "$WINDOW"
+    printf '  claim, WHICH RESOLVES TO A FILE THAT EXISTS. A dangling citation is\n'
+    printf '  worse than none -- it buys trust with a file nobody can open -- so it\n'
+    printf '  fails even at a baselined location.\n'
+    printf '\nTHE THREE WAYS TO CLEAR A LINE\n'
+    printf '  1. cite it   add the evidence/ path of the run that produced it\n'
+    printf '  2. delete it if no run produced it, it is not a measurement\n'
+    printf '  3. re-word   if it is a TARGET, say so; a bar needs no receipt\n'
+    printf '\nDEBT BY FILE (uncited speed comparisons, worst first)\n'
+    if [ -n "$records" ]; then
+        printf '%s\n' "$records" | awk -F: '$3=="uncited"{print $1}' \
+            | LC_ALL=C sort | uniq -c | LC_ALL=C sort -rn \
+            | awk '{printf "  %5d  %s\n", $1, $2}'
+    else
+        printf '  none\n'
+    fi
+    printf '\n  %s total\n\n' "$(printf '%s\n' "$records" | grep -c . || true)"
+    exit 0
+fi
+
 if [ "${1:-}" = "--update" ]; then
     {
         printf '# Speed comparisons in README.md, book/ and docs/ that cite no\n'
@@ -279,9 +422,18 @@ if [ "${1:-}" = "--update" ]; then
         printf '# written. Recorded, not blessed.\n#\n'
         printf '# THE RATCHET: this file may only SHRINK. Remove a line by deleting\n'
         printf '# the claim, or by citing the evidence/ receipt that produced it\n'
-        printf '# within three lines of it. Adding a line requires editing this\n'
-        printf '# header and arguing for it.\n#\n'
-        printf '# A DANGLING citation is never baselined — see the guard header.\n'
+        printf '# within three lines of it. A line may only LEAVE this file: it is\n'
+        printf '# compared against origin/main by check_perf_claims_cite_receipts.sh\n'
+        printf '# and by check_baseline_ratchets.sh, so an append is REFUSED, not\n'
+        printf '# merely discouraged.\n#\n'
+        printf '# A DANGLING citation is never baselined — see the guard header.\n#\n'
+        printf '# 2026-08-31: 97 ENTRIES ARE APERTURE REVEALS, NOT NEW DEBT. The universe\n'
+        printf '# was markdown-only, so the rule never reached a Rust doc comment — a\n'
+        printf '# cargo doc page, which is a user-facing surface by every other guard in\n'
+        printf '# scripts/. Extending it made 97 claims VISIBLE that were already in the\n'
+        printf '# tree and byte-identical at origin/main. They are admitted only by the\n'
+        printf '# set-aperture path, which names every one of them and refuses any line\n'
+        printf '# this branch wrote. Recorded, not blessed.\n'
         printf '%s\n' "$records" | grep -v '^$' \
             | awk -F: '$3=="uncited"{print $1":"$2}' | LC_ALL=C sort -u
     } > "$BASELINE"
@@ -320,12 +472,42 @@ stale=0
 while IFS= read -r loc; do
     [ -n "$loc" ] || continue
     case "$loc" in '#'*) continue ;; esac
-    printf '%s\n' "$records" | grep -q "^${loc}:" || stale=$((stale + 1))
+    grep -q "^${loc}:" <<< "$records" || stale=$((stale + 1))
 done < "$BASELINE"
 if [ "$stale" -gt 0 ]; then
     printf 'REPORT %s stale baseline location/s no longer carry a claim — prune\n' "$stale"
     printf '       with --update, or the ratchet re-admits a claim there later.\n'
 fi
+
+# THE RATCHET IS A PROPERTY OF THE DIFF, NOT OF THE TREE.
+#
+# Everything above compares the scan against the baseline AS IT STANDS IN THE
+# WORKING TREE, and that is not a ratchet. NEW (a finding with no entry) and
+# STALE (an entry with no finding) are the only two properties a working tree
+# can answer, and a commit that appends one line AND lands the matching
+# violation satisfies both at once: not new, because it is baselined; not
+# stale, because the finding is real.
+#
+# Measured, not argued: appending one entry cloned from this file's own last
+# real entry returned rc=0 from this guard, under its own words:
+#     "THE RATCHET: this file may only SHRINK."
+# Twelve guards in scripts/ failed the same probe.
+#
+# So growth is now compared against merge-base(HEAD, origin/main), falling
+# back to the origin/main TIP because CI checks out shallow — a ref this
+# branch cannot rewrite, and never the branch against itself.
+RATCHET_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=scripts/lib_baseline_ratchet.sh
+. "${RATCHET_ROOT}/scripts/lib_baseline_ratchet.sh" || exit 1
+# `set-aperture`, not `set`. Extending the universe to .rs doc comments makes
+# 97 claims VISIBLE that were already in the tree; from the working tree alone
+# an aperture reveal and a fresh violation are the same diff, which is exactly
+# the case lib_baseline_ratchet.sh's `set-aperture` was built for. Each
+# admitted entry must be byte-identical at the comparand (or moved with its
+# text intact), the diff must change THIS guard, and every one is printed by
+# name. Growth is loud, bounded and refused on any line this branch wrote.
+baseline_ratchet_check "$RATCHET_ROOT" scripts/perf_claim_citation_baseline.txt \
+    set-aperture scripts/check_perf_claims_cite_receipts.sh || rc=1
 
 printf '\n'
 if [ "$rc" -eq 0 ]; then

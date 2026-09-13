@@ -164,11 +164,16 @@ proptest! {
     fn test_zscore_produces_zero_mean(
         a in prop::collection::vec(-100.0f32..100.0, 2..100)
     ) {
-        // Ensure vector is not constant
-        let std_a: f32 = a.iter().map(|x| x * x).sum::<f32>() / a.len() as f32
-                       - (a.iter().sum::<f32>() / a.len() as f32).powi(2);
+        // Ensure vector is not constant. Two-pass, because E[x^2] - E[x]^2
+        // catastrophically cancels: on the input that broke this test in CI
+        // (a = [75.395966, 75.466225]) it returns 0.001953125 against a true
+        // variance of 0.001234085 -- 58% high. A skip criterion that wrong is
+        // unreliable in both directions.
+        let n = a.len() as f32;
+        let mean_a: f32 = a.iter().sum::<f32>() / n;
+        let var_a: f32 = a.iter().map(|x| (x - mean_a) * (x - mean_a)).sum::<f32>() / n;
 
-        if std_a < 1e-6 {
+        if var_a < 1e-6 {
             return Ok(());  // Skip constant vectors
         }
 
@@ -176,12 +181,51 @@ proptest! {
         let z = va.zscore().unwrap();
         let mean = z.mean().unwrap();
 
+        // The achievable precision here is NOT absolute. z_i = (x_i - mu) / sigma
+        // carries a rounding residue of about eps*|x_i|, so |mean(z)| is bounded
+        // by eps * max|a| / sigma -- which grows without limit as the data
+        // approaches constant. The old fixed 1e-4 asserted a precision f32
+        // cannot deliver: for the CI input, sigma = 0.0351 and max|a| = 75.47,
+        // giving a bound of 2.56e-4, so the test was ~2.6x too tight and failed
+        // at 1.086e-4 after 114 successes. The floor keeps the assertion
+        // meaningful for well-conditioned inputs.
+        let sigma = var_a.sqrt();
+        let max_abs = a.iter().fold(0.0f32, |m, x| m.max(x.abs()));
+        let tol = (10.0 * f32::EPSILON * max_abs / sigma).max(1e-4);
+
         prop_assert!(
-            mean.abs() < 1e-4,
-            "zscore mean = {}, expected ~ 0",
-            mean
+            mean.abs() < tol,
+            "zscore mean = {}, tolerance = {} (sigma = {}, max|a| = {})",
+            mean, tol, sigma, max_abs
         );
     }
+}
+
+/// Regression, aprender CI 2026-08-28: this exact pair broke
+/// `test_zscore_produces_zero_mean` after 114 successes. Two large,
+/// nearly-equal values make sigma tiny relative to |a|, so the rounding
+/// residue in mean(zscore(a)) is ~eps*max|a|/sigma = 2.56e-4 -- larger than
+/// the fixed 1e-4 the test used to assert. Deterministic, so it cannot
+/// depend on proptest drawing the seed again.
+#[test]
+fn zscore_zero_mean_tolerates_ill_conditioned_input() {
+    let a = [75.395966_f32, 75.466225_f32];
+    let n = a.len() as f32;
+    let mean_a: f32 = a.iter().sum::<f32>() / n;
+    let var_a: f32 = a.iter().map(|x| (x - mean_a) * (x - mean_a)).sum::<f32>() / n;
+    let sigma = var_a.sqrt();
+    let max_abs = a.iter().fold(0.0f32, |m, x| m.max(x.abs()));
+    let tol = (10.0 * f32::EPSILON * max_abs / sigma).max(1e-4);
+
+    let mean = Vector::from_slice(&a).zscore().unwrap().mean().unwrap();
+
+    // The point of the regression: the residue really does exceed the old
+    // fixed bound, so this input would still fail the pre-fix assertion.
+    assert!(
+        tol > 1e-4,
+        "input must be ill-conditioned enough to need a scaled tolerance, tol = {tol}"
+    );
+    assert!(mean.abs() < tol, "zscore mean = {mean}, tolerance = {tol}");
 }
 
 proptest! {

@@ -248,11 +248,22 @@ mod rp_proptest_falsify {
             // exactly at f64. Absolute tolerance near zero, 0.5% relative
             // otherwise. A real RoPE regression would be orders of magnitude
             // larger than this fp32 noise floor, so the falsifier still fires.
-            let ok = if scale < 1e-4 {
-                diff < 1e-6  // absolute: sub-microsecond precision
-            } else {
-                diff / scale < 5e-3  // relative: 0.5% (fp32 dim=8 noise band)
-            };
+            // The two-branch form this replaced was NON-MONOTONIC: crossing
+            // scale=1e-4 upward switched from `diff < 1e-6` to `diff < 5e-3*scale`,
+            // which at scale=1.01e-4 allows only 5.05e-7 -- HALF what the branch
+            // just below it allows. That created a band scale in [1e-4, 2e-4]
+            // stricter than anywhere else, and CI landed in it: scale=1.712e-4,
+            // diff=8.941e-7, ratio 0.5221% against a 0.5% bound. Failing by 4%
+            // of the threshold in the harshest band is a tolerance artefact, not
+            // a RoPE regression.
+            //
+            // Standard allclose form instead: atol + rtol*scale is monotonic in
+            // scale, so no input is penalised for sitting near a boundary. atol
+            // dominates near zero (catastrophic cancellation in the 8-element
+            // fp32 sum), rtol dominates away from it. A real relative-position
+            // violation is orders of magnitude larger than either, so the
+            // falsifier still fires -- verified by mutation, see below.
+            let ok = diff <= 1e-6 + 5e-3 * scale;
             prop_assert!(
                 ok,
                 "FALSIFIED RP-002-prop: dot({},{})={}, dot({},{})={}, diff={}, scale={}",

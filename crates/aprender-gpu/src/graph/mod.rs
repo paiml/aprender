@@ -72,7 +72,7 @@ pub struct TensorNode {
 }
 
 /// Operation-specific parameters.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct OpParams {
     /// Weight pointer (for MulMat: quantized weights on device)
     pub weight_ptr: u64,
@@ -82,7 +82,29 @@ pub struct OpParams {
     pub scalar: f32,
     /// Integer parameter (position for RoPE, etc.)
     pub int_param: u32,
+    /// PERF-050 (aprender#2753): GGML quantization type code of `weight_ptr`.
+    ///
+    /// Without this the graph carried only a pointer, and the dispatcher had no way to know
+    /// what it pointed at -- so it assumed Q4_K for every MulMat. In a q4_k_m model that is
+    /// right for 170 tensors and wrong for 29: attn_v, ffn_down and the LM head are Q6_K, and
+    /// dequantizing Q6_K with the Q4_K kernel produced garbage of magnitude ~5e8 with NaNs.
+    ///
+    /// The numeric GGML code is used rather than a Rust enum because this crate must not depend
+    /// on the serving crate's `WeightQuantType`. 12 = Q4_K, which is also the `Default`, so
+    /// nodes that do not set it behave exactly as before.
+    pub weight_qtype: u32,
+    /// PERF-050 (aprender#2769): bias vector applied after a MulMat, 0 when there is none.
+    ///
+    /// The graph had no bias node and no way to express one, so the QKV bias Qwen2.5 models
+    /// carry was silently dropped on this path while the M=1 path applied it. Defaults to 0,
+    /// which means "no bias" and reproduces the previous behaviour exactly.
+    pub bias_ptr: u64,
+    /// Length of `bias_ptr` in elements; 0 means no bias.
+    pub bias_len: usize,
 }
+
+/// GGML type code for Q4_K, the historical hardcoded assumption and this field's default.
+pub const GGML_TYPE_Q4_K: u32 = 12;
 
 /// Compute graph: topologically sorted list of tensor operations.
 ///
@@ -200,5 +222,21 @@ mod tests {
         assert_eq!(g.n_ops(), 2);
         assert_eq!(g.nodes[q].op, TensorOp::MulMat);
         assert_eq!(g.nodes[q].inputs, vec![normed]);
+    }
+}
+
+impl Default for OpParams {
+    fn default() -> Self {
+        Self {
+            weight_ptr: 0,
+            gamma_ptr: 0,
+            scalar: 0.0,
+            int_param: 0,
+            // PERF-050: Q4_K, matching the assumption this field replaces, so an unset node is
+            // bit-identical to the old behaviour.
+            weight_qtype: GGML_TYPE_Q4_K,
+            bias_ptr: 0,
+            bias_len: 0,
+        }
     }
 }

@@ -184,6 +184,21 @@ or drop `--backend`."
                         .to_string(),
                 )));
             }
+            // PERF-021: `apr run` is the surface #2696 was MEASURED through —
+            // 15.7 tok/s decode, 0.099x llama.cpp — and it was the surface with
+            // no guard. The jidoka refusal landed only on `apr serve`, one
+            // command over from where the defect was recorded.
+            //
+            // Placed ABOVE `effective_no_gpu` and above the `batch_jsonl` early
+            // return below: that return bypasses `dispatch_run` entirely, so a
+            // check any lower is skipped by `apr run --gpu --batch-jsonl f.jsonl`.
+            if let Err(e) = crate::accel::ensure_available(
+                *gpu && !*no_gpu,
+                &crate::accel::asked_flag(*gpu, backend.as_deref()),
+            ) {
+                return Some(Err(e));
+            }
+
             // GH-326: --gpu overrides --no-gpu when both specified
             let effective_no_gpu = if *gpu {
                 false

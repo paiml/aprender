@@ -150,10 +150,28 @@ fn mut04_return_value_mutation_detection() {
 // MUT-05 to MUT-07: Infrastructure Verification
 // ============================================================================
 
+/// The WORKSPACE root: cargo test and nextest run a test binary with cwd = the package
+/// dir (crates/aprender-core), so a cwd-relative `.github/...` path never resolves.
+/// Walk up from CARGO_MANIFEST_DIR to the manifest that declares `[workspace]` (#3126).
+fn mut_workspace_root() -> std::path::PathBuf {
+    let mut dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    loop {
+        let manifest = dir.join("Cargo.toml");
+        if manifest.exists()
+            && std::fs::read_to_string(&manifest)
+                .map(|t| t.contains("[workspace]"))
+                .unwrap_or(false)
+        {
+            return dir;
+        }
+        assert!(dir.pop(), "MUT: no [workspace] manifest above CARGO_MANIFEST_DIR");
+    }
+}
+
 /// MUT-05: CI mutation testing workflow exists
 #[test]
 fn mut05_ci_mutation_workflow_exists() {
-    let ci_path = Path::new(".github/workflows/ci.yml");
+    let ci_path = &mut_workspace_root().join(".github/workflows/ci.yml");
     assert!(
         ci_path.exists(),
         "MUT-05 FALSIFIED: No CI configuration found"
@@ -180,7 +198,7 @@ fn mut05_ci_mutation_workflow_exists() {
 /// MUT-06: Mutation results are captured as artifacts
 #[test]
 fn mut06_mutation_artifacts_captured() {
-    let ci_path = Path::new(".github/workflows/ci.yml");
+    let ci_path = &mut_workspace_root().join(".github/workflows/ci.yml");
     let ci_content = std::fs::read_to_string(ci_path).expect("read ci.yml");
 
     let has_upload = ci_content.contains("upload-artifact");
@@ -196,7 +214,7 @@ fn mut06_mutation_artifacts_captured() {
 /// MUT-07: Mutation timeout configured appropriately
 #[test]
 fn mut07_mutation_timeout_configured() {
-    let ci_path = Path::new(".github/workflows/ci.yml");
+    let ci_path = &mut_workspace_root().join(".github/workflows/ci.yml");
     let ci_content = std::fs::read_to_string(ci_path).expect("read ci.yml");
 
     let has_timeout = ci_content.contains("--timeout");

@@ -59,7 +59,7 @@ check_tree() {
     if [ -z "$build_line" ]; then
         printf 'FAIL: no `cargo build -p aprender-test-cli` invocation found in %s\n' "$sweep"
         fails=$((fails + 1))
-    elif ! printf '%s' "$build_line" | grep -qE -- '--features[= ]+[^ ]*llm'; then
+    elif ! grep -qE -- '--features[= ]+[^ ]*llm' <<< "$build_line" ; then
         printf 'FAIL: the probe binary is built WITHOUT --features llm.\n'
         printf '      clap still advertises `llm`, so the probe will parse and then\n'
         printf '      return "LLM features not enabled" -- reported as a server failure.\n'

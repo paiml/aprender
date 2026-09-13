@@ -458,7 +458,7 @@ Clippy's lint set is **not monotonic**: the #2370 tree is clean on 1.93/1.96/1.9
 - **security.yml**: cargo-audit, cargo-deny (license/banned crates), cargo-outdated (weekly)
 - **dependabot.yml**: weekly Rust deps, monthly GH Actions
 - **book.yml**: EXTREME TDD book to GitHub Pages
-- **release.yml**: automated releases on version tags
+- **binary-release.yml**: `pv` binaries on `release: published` (the release itself is cut by hand: `scripts/bump-version.sh`, tag, `gh release create`; see docs/specifications/PP-LLAMA-001-MASTER.md §7.2)
 
 ## Modules
 

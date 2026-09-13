@@ -757,16 +757,19 @@ impl Brick for ComputeBrick {
                         ));
                     }
                 }
-                TileOp::StoreShared { dst } => {
-                    if !tensor_names.contains(&dst.as_str()) {
-                        failed.push((
-                            BrickAssertion::Custom {
-                                name: "tensor_exists".into(),
-                                validator_id: 4,
-                            },
-                            format!("StoreShared references unknown tensor: {}", dst),
-                        ));
-                    }
+                // Guard rather than a nested `if`: a false guard falls through
+                // to `_ => {}`, which is what the empty `if` body did.
+                // clippy::collapsible_match (fires here and not on the
+                // identically-shaped LoadShared arm above, which is not the
+                // last named arm).
+                TileOp::StoreShared { dst } if !tensor_names.contains(&dst.as_str()) => {
+                    failed.push((
+                        BrickAssertion::Custom {
+                            name: "tensor_exists".into(),
+                            validator_id: 4,
+                        },
+                        format!("StoreShared references unknown tensor: {}", dst),
+                    ));
                 }
                 _ => {}
             }

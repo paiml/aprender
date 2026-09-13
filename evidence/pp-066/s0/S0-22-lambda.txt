@@ -1,0 +1,5 @@
+$ nvidia-smi -L   # lambda
+GPU 0: NVIDIA GeForce RTX 4090 (UUID: GPU-156e31c4-a790-6298-f52f-af229b4a2869)
+$ nvidia-smi --query-gpu=name,driver_version,memory.total --format=csv
+name, driver_version, memory.total [MiB]
+NVIDIA GeForce RTX 4090, 570.207, 24564 MiB

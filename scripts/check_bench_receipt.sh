@@ -53,8 +53,8 @@ done
 
 # VACUITY: a table that matched nothing would sweep clean. The floor is the
 # committed case count; it may grow and may never shrink silently.
-if [ "$n" -lt 14 ]; then
-    printf 'FAIL  case table has %s case(s); at least 14 are required. A shrinking\n' "$n"
+if [ "$n" -lt 18 ]; then
+    printf 'FAIL  case table has %s case(s); at least 18 are required. A shrinking\n' "$n"
     printf '      table silently narrows what "the validator discriminates" means.\n'
     rc=1
 elif [ "$bad" -eq 0 ]; then

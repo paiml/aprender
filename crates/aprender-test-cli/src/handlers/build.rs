@@ -33,14 +33,12 @@ pub fn scan_files_recursive(dir: &Path, extension: &str, files: &mut Vec<PathBuf
 /// Check if an HTML file references WASM
 #[must_use]
 pub fn html_references_wasm(html_path: &Path) -> bool {
-    std::fs::read_to_string(html_path)
-        .map(|content| {
-            content.contains(".wasm")
-                || content.contains("WebAssembly")
-                || content.contains("wasm-bindgen")
-                || content.contains("wasm_bindgen")
-        })
-        .unwrap_or(false)
+    std::fs::read_to_string(html_path).is_ok_and(|content| {
+        content.contains(".wasm")
+            || content.contains("WebAssembly")
+            || content.contains("wasm-bindgen")
+            || content.contains("wasm_bindgen")
+    })
 }
 
 /// Find which HTML files reference WASM

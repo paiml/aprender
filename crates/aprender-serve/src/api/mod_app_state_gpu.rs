@@ -64,6 +64,7 @@ impl AppState {
             verbose: false,
             trace: false,
             model_source: None,
+            effective: EffectiveConfigState::new(),
         })
     }
 
@@ -119,6 +120,7 @@ impl AppState {
             verbose: false,
             trace: false,
             model_source: None,
+            effective: EffectiveConfigState::new(),
         })
     }
 
@@ -182,6 +184,7 @@ impl AppState {
             verbose: false,
             trace: false,
             model_source: None,
+            effective: EffectiveConfigState::new(),
         })
     }
 
@@ -248,6 +251,7 @@ impl AppState {
             verbose: false,
             trace: false,
             model_source: None,
+            effective: EffectiveConfigState::new(),
         })
     }
 
@@ -303,6 +307,7 @@ impl AppState {
             verbose: false,
             trace: false,
             model_source: None,
+            effective: EffectiveConfigState::new(),
         })
     }
 
@@ -363,6 +368,7 @@ impl AppState {
             verbose: false,
             trace: false,
             model_source: None,
+            effective: EffectiveConfigState::new(),
         })
     }
 
@@ -585,6 +591,7 @@ impl AppState {
             verbose: false,
             trace: false,
             model_source: None,
+            effective: EffectiveConfigState::new(),
         })
     }
 
@@ -632,6 +639,7 @@ impl AppState {
             verbose: false,
             trace: false,
             model_source: None,
+            effective: EffectiveConfigState::new(),
         })
     }
 

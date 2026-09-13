@@ -1,0 +1,13 @@
+running 1 test
+test store::tests::reports_a_full_disk_without_panicking ... FAILED
+
+failures:
+
+---- store::tests::reports_a_full_disk_without_panicking stdout ----
+
+thread 'store::tests::reports_a_full_disk_without_panicking' panicked at crates/aprender-db/src/store.rs:210:9:
+assertion `left == right` failed
+  left: "disk is full"
+ right: "No space left on device"
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out

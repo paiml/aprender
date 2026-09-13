@@ -332,7 +332,7 @@ fn simd_bf16_to_f32_avx2(input: &[u8], count: usize) -> Vec<f32> {
 #[cfg(not(all(target_arch = "x86_64", target_feature = "avx2")))]
 fn bf16_to_f32_fast(input: &[u8], count: usize) -> Vec<f32> {
     let mut output = Vec::with_capacity(count);
-    for chunk in input.chunks_exact(2) {
+    for chunk in input.as_chunks::<2>().0 {
         let bits = u16::from_le_bytes([chunk[0], chunk[1]]) as u32;
         output.push(f32::from_bits(bits << 16));
     }
@@ -365,7 +365,9 @@ fn bf16_to_f32_fast(input: &[u8], count: usize) -> Vec<f32> {
 #[must_use]
 pub fn simd_f16_to_f32(input: &[u8]) -> Vec<f32> {
     input
-        .chunks_exact(2)
+        .as_chunks::<2>()
+        .0
+        .iter()
         .map(|chunk| {
             let bits = u16::from_le_bytes([chunk[0], chunk[1]]);
             half::f16::from_bits(bits).to_f32()

@@ -33,6 +33,14 @@
 pub mod attention;
 pub mod backend_selection;
 pub mod cache_topology;
+// pack_a_block_generic and pack_b_block_nr16 are called only from the x86_64 AVX-512 GEMMs,
+// so they are dead on ARM. Their cfg belongs on the functions, but compute.rs carries
+// 11 pre-existing complexity violations and the pre-commit gate refuses any edit to it
+// until it is decomposed (PMAT-1102). `expect` turns this into an error once they go.
+#[cfg_attr(
+    not(target_arch = "x86_64"),
+    expect(dead_code, reason = "x86_64-only BLIS packers; see PMAT-1102")
+)]
 pub mod compute;
 pub mod elementwise;
 pub mod gemv;

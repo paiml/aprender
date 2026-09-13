@@ -1472,6 +1472,8 @@ fn parse_dataset_line(
         temperature: Some(0.0),
         max_tokens: Some(max_tokens),
         stream: Some(false),
+        seed: None,
+        ignore_eos: None,
     };
     Ok((prompt, estimated_tokens, max_tokens))
 }

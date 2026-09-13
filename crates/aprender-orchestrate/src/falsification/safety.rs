@@ -707,8 +707,7 @@ fn scan_validation_patterns(project_path: &Path) -> (bool, Vec<&'static str>) {
 fn has_validator_crate(project_path: &Path) -> bool {
     let cargo_toml = project_path.join("Cargo.toml");
     std::fs::read_to_string(cargo_toml)
-        .ok()
-        .is_some_and(|c| c.contains("validator") || c.contains("garde"))
+        .is_ok_and(|c| c.contains("validator") || c.contains("garde"))
 }
 
 /// SF-09: Input Validation

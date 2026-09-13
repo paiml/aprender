@@ -348,6 +348,12 @@ impl OwnedQuantizedModelCuda {
     where
         F: FnMut(u32) -> bool,
     {
+        // PP-LLAMA-001 §3 / PP-2: phase timings belong to THIS request. A
+        // prefix-cache hit skips `run_prefill`, so without this reset the hit
+        // would inherit the previous request's `prefill_ms` and the server-
+        // reported `timings.prompt_ms` that feeds the c=1 `prefill_ratio`
+        // would be fabricated. None, never a stale number.
+        self.last_phase_timings = crate::api::PhaseTimings::default();
         if prompt.is_empty() {
             return Ok(Vec::new());
         }

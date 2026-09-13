@@ -1,13 +1,20 @@
+# tool_version=none (measured by grep over shipped surfaces; not a versioned analyser)
 # Claim literals that PREDATE check_no_claim_literals.sh (#2696, 2026-08-25).
 #
 # Each line is a claim about measured reality sitting on a surface a user
 # reads — a doc comment on shipped code, or printed output. None of them was
 # produced by a measurement. They are recorded, not blessed.
 #
-# THE RATCHET: this file may only SHRINK. Adding a line requires editing this
-# header and arguing for it, which is the point — a baseline that may grow
-# quietly is a permission slip. Remove a line by deleting the claim or by
-# deriving it from a receipt under evidence/.
+# THE RATCHET: this file may only SHRINK, and that is now the MECHANISM rather
+# than this sentence. For one commit the sentence read "adding a line requires
+# editing this header and arguing for it" while nothing compared the file to
+# anything: appending `book/src/tools/apr-cli.md:1786` and writing the matching
+# claim on that line printed "known (baselined, must shrink): 138 / new: 0 /
+# PASS" — grown from 137, laundering the claim it had just admitted.
+#
+# It is now compared against origin/main by check_no_claim_literals.sh and by
+# check_baseline_ratchets.sh. A line may only LEAVE this file: delete the claim,
+# or derive it from a receipt under evidence/.
 #
 # Already removed: the two printed banners in serve/server.rs, one of which
 # advertised "800+ tok/s (2.8x Ollama)" on a code path that HANGS on four
@@ -26,28 +33,179 @@
 # §9's whole premise is that a claim a USER READS is the defect. The count rises
 # because the guard now looks where the claims are, not because new claims were
 # written. Shrink-only from here.
+#
+# APERTURE REVEAL 2026-08-29 (PERF-049, #2758). +18, and this is the FIRST
+# GROWTH this file has taken under a ratchet. RATIO_RE matched ASCII `x`
+# adjacent to a competitor name, so it could not read the two spellings that
+# are actually published: U+00D7 (`2.93× Ollama`, the book's own figure, and
+# the literal §5's registered mutation names -- which therefore left the guard
+# GREEN) and any form with an intervening word (`36.9x over FasterTransformer`,
+# the spelling §0.1 of APR-PERF-GATE-001 uses).
+#
+# Not one line below was WRITTEN by that PR. All 18 are byte-identical at
+# 31732f5db and were sitting in the tree unread; the ratchet admitted them
+# under `set-aperture`, which proves exactly that and names each one in its
+# verdict row. All 18 were inspected: every one is a numeric ratio against a
+# named competitor -- four in shipped rustdoc, one in a book command comment
+# advertising `2.9x faster than Ollama`, two in a spec quoting the fabrication
+# in order to ban it, eleven in dated QA archives. None is ordinary prose that
+# happens to contain a number; the case table carries `3x3 matrix`, `2x2 grid`,
+# `1024x1024`, `v1.8x` and a markdown table row as must-NOT-match controls.
+# Recorded, not blessed. Shrink-only from here.
+#
+#
+# MERGE RECORD 2026-08-29 (PERF-010 / #2742, merging #2763). Both branches
+# widened this guard independently and both recorded what the widening
+# revealed, so the two lists were reconciled against the MERGED tree rather
+# than concatenated. Net -8. Every line below is a live finding: the list is
+# exactly the sweep's output on this tree, which is the only reading under
+# which "known, must shrink" means anything.
+#
+# TEN ENTRIES WERE PAID DOWN OR RENUMBERED, none blessed:
+#
+#   6 DELETED. book/src/tools/apr-cli.md:81 and its Performance table at
+#     :89-93 -- a shipped chapter advertising `2.9x faster than Ollama` and a
+#     batched-throughput table this branch's own measurements disproved. #2763
+#     recorded them; PERF-050 removed them. Deletion beats recording.
+#   2 DELETED. dp4a_gemm.rs:10 and prefill.rs:537, rustdoc notes stating a
+#     llama.cpp ratio with no receipt, reaching users through `cargo doc`. The
+#     ratio was the only part removed -- the analysis around it stayed, because
+#     a withdrawal that reprints the figure leaves the figure on the page.
+#     prefill.rs:1043 and transformer/init.rs:7 are NOT of this class and stay
+#     recorded.
+#   2 MOVED, NOT ADDED. docs/benchmarking-gate-spec.md:235 -> :263 and
+#     :308 -> :336. Both are the spec quoting the fabricated `2.93× Ollama` in
+#     order to BAN it, both were already recorded by #2763, and neither line's
+#     TEXT changed: PERF-019 inserted §3.3.1 at line 162 and everything below
+#     slid 28 lines. The ratchet admits them as MOVES -- byte-identical text in
+#     the same file at the comparand, at the same occurrence count -- and names
+#     both in its verdict row. See (a2) in scripts/lib_baseline_ratchet.sh.
+#
+#
+# 2026-08-31, #2787: 68 ENTRIES WERE ADDED AS APERTURE REVEALS, NOT AS NEW DEBT.
+# TPUT_RE required two digits IMMEDIATELY left of the unit, so every rate
+# written `X.Y tok/s` -- the commonest spelling, `132.3 tok/s` included -- was
+# unreadable to this guard. Widening it to "at least two significant digits"
+# made 68 lines VISIBLE that were already in the tree and byte-identical at
+# origin/main. Each one is named in the guard's own verdict, admitted only by
+# the `set-aperture` path, and only because the same diff changes the guard.
+# Recorded, not blessed -- and ~16 of them are prose ABOUT a rate (a five-whys
+# archive quoting the number it is diagnosing, a doc comment describing a gate
+# that passed at 4.1 tok/s). Those clear by REWORDING, not by deleting a
+# measurement; the other ~52 clear by citing the evidence/ receipt or going.
+# APERTURE REVEAL, D9 / PRREV-021 (2026-09-01): +12 entries, and this file GREW.
+# The twelve are root-level markdown -- README.md, CHANGELOG.md, CLAUDE.md -- which
+# entered the universe in the same commit that put them into B4's scope in
+# scripts/check_pr_review_receipt.sh. Not one of them is new text: every line is
+# byte-identical at the comparand, which is exactly what `set-aperture` verifies and
+# what the working tree alone cannot answer. da069a25f published `2.93x Ollama` to
+# README.md and nothing here could read it.
+#
+# README.md:233-235 IS THE ONE THAT IS DEBT RATHER THAN RECORD. It is a published
+# throughput table -- `225+ tok/s | RTX 4090` -- on the first page a user reads, and
+# the ratchet now requires it to shrink. CHANGELOG entries are a dated historical
+# record and CLAUDE.md:218/222 are a WRONG/CORRECT code illustration; they are
+# recorded, not blessed, in this file's own words.
+#
+# APERTURE REVEAL 2026-09-02 (PP-LLAMA-001 §12 row 10 / PP-12, #2845-successor).
+# THIS FILE GREW BY 256 ADMITTED APERTURE REVEALS (223 -> 454 entries: 25 removed,
+# 256 added; the AUTHORITATIVE count is the ratchet's own verdict row, which names
+# every admitted coordinate), AND FOUR APERTURES MOVED AT ONCE. Recording the
+# reveals is the only way any of them could move: from the working tree alone an
+# aperture reveal and a fresh violation are the same diff, which is what
+# `set-aperture` in scripts/lib_baseline_ratchet.sh exists to tell apart. Every
+# line below is byte-identical at the comparand, or moved with its text intact at
+# no greater occurrence count, and the ratchet NAMES each one in its verdict row.
+#
+#   1. THE UNIVERSE. `^docs/specifications/` was excluded wholesale. The argument
+#      was that a spec is where a measured number belongs with its provenance and
+#      that a spec must be able to QUOTE a banned figure in order to ban it -- both
+#      right, and both now served by the citation exemption instead. What the
+#      exclusion actually hid 217 unreadable ratio and throughput matches (measured
+#      by running the FINISHED guard with and without the exclusion line: 237 -> 454),
+#      including `apr-mcp-server-spec.md:24` (`1.43× Ollama decode perf`) and `:276`
+#      (`~196 tok/s on reference hardware`), two figures for which NO receipt exists
+#      anywhere under evidence/ and which decided what the product ships. Those two
+#      are DELETED by this commit rather than recorded. `docs/specifications/archive/`
+#      is excluded by name, for the reason docs/archive/ is.
+#
+#   2. THE TARGET MASK. It was a bare substring test over the whole line, so
+#      `[Rr]equire` matched the word `required` in any grammatical role: 140 of 467
+#      raw matches under docs/specifications/ were masked by an ordinary English
+#      sentence that happened to contain require / expect / spec. It is now
+#      POSITIONAL -- a label bound to a figure within 20 bytes, in either direction,
+#      or a comparison operator, or a PASS:/FAIL: prefix. Measured before landing over
+#      the pre-existing universe: +2 findings and -0 -- it is strictly a widening, and
+#      only two lines in the whole tree were hiding behind a bare `spec ` or a `target`
+#      more than 20 bytes from its figure (bench/ship_007.rs:39,
+#      docs/qa/five-whys-16x-cpu-gap-2026-01-09.md:223). A first, ONE-DIRECTIONAL draft
+#      of the rule scored +32 instead, because 21 of those were bars written the other
+#      way round (`2x Ollama target`); that is why the rule is a proximity rule in both
+#      directions rather than an ordering rule.
+#
+#   3. THE TABLE DETECTOR. RATIO_RE needs the competitor name within five gap words
+#      and a `|` is deliberately not a gap word, so a comparison TABLE -- competitor
+#      in the header, ratio three columns away -- was unreadable by construction.
+#      The four withdrawn band ratios PP-LLAMA-001 §2.1 says "appear nowhere else"
+#      were published in two documents while this guard reported PASS. +17 over the
+#      pre-existing universe (220 -> 237), fifteen of them docs/BEATS.md rows whose
+#      receipt today is a contract YAML rather than an evidence/ path.
+#
+#   4. THE CITATION EXEMPTION. PP-12 reads "a number in README.md/book/docs/ is
+#      legal IFF it cites an evidence/ receipt path". Until now this guard
+#      implemented only the "delete" half, unconditionally, so PP-12's own
+#      must-not-fire fixture was RED and no spelling of a receipted figure was
+#      legal. 5 lines are now dropped as RECEIPTED rather than baselined; a
+#      DANGLING citation still fails.
+#
+# PAID DOWN IN THE SAME COMMIT, not merely re-recorded:
+#   README.md:233-235       the published `40+ / 225+ / 17 tok/s` Performance table.
+#                           The 7B/RTX 4090 row asserted a rate the tree's own paired
+#                           measurement contradicts. Deleted, not restated.
+#   docs/benchmarking-gate-spec.md:23,24,25,26,263,336
+#                           the document is archived to docs/archive/perf-2026-09-02/
+#                           (PP-LLAMA-001 §13), which is out of the universe for the
+#                           reason every archive is.
+#   docs/specifications/apr-mcp-server-spec.md:24,:276,:278
+#                           three uncited comparator/throughput figures, rewritten.
+#
+# The seven `crates/aprender-serve/**` coordinates that changed number are MOVES,
+# admitted under (a2): unrelated edits above them in the same pull request slid the
+# text down, and the coordinate is not the claim -- the text is.
+#
+# Recorded, not blessed. Shrink-only from here.
+#
+CLAUDE.md:218
+CLAUDE.md:222
+CLAUDE.md:685
+ROADMAP.md:55
 book/src/advanced-testing/popperian-falsification.md:44
-book/src/tools/apr-cli.md:89
-book/src/tools/apr-cli.md:90
-book/src/tools/apr-cli.md:91
-book/src/tools/apr-cli.md:92
-book/src/tools/apr-cli.md:93
+book/src/tools/apr-cli.md:996
 crates/apr-cli/src/commands/bench_safetensors.rs:123
 crates/apr-cli/src/commands/bench_safetensors.rs:124
 crates/apr-cli/src/commands/benchmark.rs:438
+crates/apr-cli/src/commands/gguf_generate_result.rs:371
+crates/apr-cli/src/commands/gguf_generate_result.rs:372
 crates/apr-cli/src/commands/qa.rs:147
+crates/apr-cli/src/commands/run_tests_layer_trace.rs:55
+crates/apr-cli/src/commands/run_tests_layer_trace.rs:56
 crates/apr-cli/src/commands/serve/handler_gpu_completion.rs:362
 crates/apr-cli/src/commands/serve/handler_gpu_completion.rs:363
-crates/apr-cli/src/commands/serve/handlers.rs:1160
 crates/apr-cli/src/commands/serve/handlers_include_01.rs:4
+crates/apr-cli/src/commands/serve/mod.rs:209
+crates/apr-cli/src/commands/speedup.rs:11
+crates/apr-cli/src/commands/test_llm.rs:14
 crates/apr-cli/src/commands/test_llm.rs:15
 crates/apr-cli/src/commands/test_llm.rs:18
 crates/aprender-compute/src/backends/q4k/mod.rs:23
 crates/aprender-compute/src/brick/attention.rs:18
 crates/aprender-compute/src/brick/attention.rs:37
+crates/aprender-core/src/bench/ship_007.rs:39
 crates/aprender-core/src/format/gguf/api.rs:281
 crates/aprender-core/src/showcase/profiling.rs:165
+crates/aprender-gpu/src/kernels/attention/flash/mod.rs:18
 crates/aprender-gpu/src/kernels/attention/flash/mod.rs:19
+crates/aprender-gpu/src/kernels/attention/flash/mod.rs:90
 crates/aprender-gpu/src/kernels/attention/flash/mod.rs:91
 crates/aprender-gpu/src/kernels/attention/paged/flash_decoding/mod.rs:37
 crates/aprender-gpu/src/kernels/attention/paged/flash_decoding/mod.rs:38
@@ -59,31 +217,34 @@ crates/aprender-gpu/src/kernels/quantize/q4k/coalesced/batched_hw_dp4a.rs:16
 crates/aprender-gpu/src/kernels/quantize/q4k/coalesced/multi_warp_vectorized.rs:17
 crates/aprender-gpu/src/kernels/quantize/q4k/coalesced/wide_kernel.rs:19
 crates/aprender-gpu/src/kernels/quantize/q4k/coalesced/wide_kernel.rs:7
-crates/aprender-serve/src/api/mod.rs:172
-crates/aprender-serve/src/api/mod_app_state_gpu.rs:190
-crates/aprender-serve/src/api/mod_app_state_gpu.rs:312
-crates/aprender-serve/src/api/mod_app_state_gpu.rs:450
+crates/aprender-qa-runner/src/executor_serve_battery.rs:38
+crates/aprender-serve/src/api/mod_app_state_gpu.rs:193
+crates/aprender-serve/src/api/mod_app_state_gpu.rs:317
+crates/aprender-serve/src/api/mod_app_state_gpu.rs:456
+crates/aprender-serve/src/bench/gemm_performance.rs:259
 crates/aprender-serve/src/cuda/executor/cached.rs:6
-crates/aprender-serve/src/cuda/executor/kv_cache_gpu_init.rs:436
-crates/aprender-serve/src/cuda/executor/layers/batched_forward.rs:11
-crates/aprender-serve/src/cuda/executor/layers/batched_forward.rs:12
+crates/aprender-serve/src/cuda/executor/layers/batched_forward.rs:492
 crates/aprender-serve/src/cuda/executor/layers/batched_layer_par111.rs:10
 crates/aprender-serve/src/cuda/executor/layers/batched_layer_par111.rs:11
 crates/aprender-serve/src/cuda/executor/layers/cublas_prefill/mod.rs:31
 crates/aprender-serve/src/cuda/executor/layers/par-062.rs:257
+crates/aprender-serve/src/cuda/executor/layers/prefill.rs:1058
 crates/aprender-serve/src/cuda/executor/layers/reduces.rs:277
 crates/aprender-serve/src/cuda/executor/layers/transformer_layer_batched.rs:32
 crates/aprender-serve/src/cuda/executor/layers/transformer_layer_batched.rs:33
 crates/aprender-serve/src/cuda/executor/q6k_gemv_indexed.rs:274
-crates/aprender-serve/src/cuda/gpu_profile.rs:295
-crates/aprender-serve/src/cuda/gpu_profile.rs:321
-crates/aprender-serve/src/cuda/gpu_profile.rs:375
+crates/aprender-serve/src/cuda/executor/tiled_gemv.rs:339
+crates/aprender-serve/src/cuda/gpu_profile.rs:330
+crates/aprender-serve/src/cuda/gpu_profile.rs:356
+crates/aprender-serve/src/cuda/gpu_profile.rs:410
 crates/aprender-serve/src/cuda/kernel_type.rs:236
+crates/aprender-serve/src/cuda/kernels.rs:9
 crates/aprender-serve/src/gguf/cuda/clone_layer_weights.rs:294
 crates/aprender-serve/src/gguf/cuda/cuda.rs:363
 crates/aprender-serve/src/gguf/cuda/cuda_layer_weights.rs:294
 crates/aprender-serve/src/gguf/cuda/forward_qwen3_moe_cuda.rs:65
 crates/aprender-serve/src/gguf/cuda/generate_2.rs:158
+crates/aprender-serve/src/gguf/cuda/generate_batched_streaming.rs:191
 crates/aprender-serve/src/gguf/cuda/speculative.rs:244
 crates/aprender-serve/src/gguf/cuda/speculative.rs:246
 crates/aprender-serve/src/gguf/inference/cached/sync_owned_quantized_02.rs:25
@@ -91,24 +252,54 @@ crates/aprender-serve/src/gguf/inference/cached/sync_owned_quantized_02.rs:26
 crates/aprender-serve/src/gguf/inference/forward/forward_qwen3_moe_gpu.rs:24
 crates/aprender-serve/src/infer/inference_result.rs:1192
 crates/aprender-serve/src/infer/qwen3_moe_generate.rs:21
-crates/aprender-serve/src/lib.rs:401
+crates/aprender-serve/src/inference/thread.rs:10
+crates/aprender-serve/src/inference/thread.rs:11
+crates/aprender-serve/src/inference/thread.rs:12
+crates/aprender-serve/src/inference/thread.rs:13
+crates/aprender-serve/src/inference/thread.rs:14
 crates/aprender-serve/src/safetensors_cuda.rs:4
 crates/aprender-serve/src/tui.rs:108
 crates/aprender-test-lib/src/llm/training_scorecard.rs:217
 crates/aprender-train/src/models/llama_370m.rs:1458
+crates/aprender-train/src/models/llama_370m.rs:1462
 crates/aprender-train/src/models/llama_370m.rs:1463
+crates/aprender-train/src/models/llama_370m.rs:1464
+crates/aprender-train/src/models/llama_370m.rs:1465
+crates/aprender-train/src/transformer/init.rs:7
+docs/BEATS.md:113
+docs/BEATS.md:124
 docs/BEATS.md:133
 docs/BEATS.md:134
+docs/BEATS.md:165
+docs/BEATS.md:255
+docs/BEATS.md:256
+docs/BEATS.md:257
+docs/BEATS.md:258
+docs/BEATS.md:271
+docs/BEATS.md:325
+docs/BEATS.md:44
+docs/BEATS.md:46
+docs/BEATS.md:47
+docs/BEATS.md:48
+docs/BEATS.md:49
+docs/BEATS.md:50
+docs/BEATS.md:51
 docs/BEATS.md:65
 docs/BEATS.md:66
+docs/BEATS.md:68
+docs/audits/dogfood-0.63.0-hansei.md:20
 docs/audits/dogfood-0.63.0-ledger.md:65
-docs/benchmarking-gate-spec.md:24
-docs/benchmarking-gate-spec.md:308
 docs/model-cards/albor-370m-v1.md:74
+docs/model-cards/albor-370m-v1.md:81
+docs/perf-024-measurement-protocol.md:125
 docs/qa-cargo-run-example-conversion-minimize.md:128
 docs/qa/benchmark-matrix-2026-01-09.md:115
 docs/qa/benchmark-matrix-2026-01-09.md:12
+docs/qa/benchmark-matrix-2026-01-09.md:13
 docs/qa/benchmark-matrix-2026-01-09.md:133
+docs/qa/benchmark-matrix-2026-01-09.md:14
+docs/qa/benchmark-matrix-2026-01-09.md:182
+docs/qa/benchmark-matrix-2026-01-09.md:183
 docs/qa/benchmark-matrix-2026-01-09.md:186
 docs/qa/benchmark-matrix-2026-01-09.md:22
 docs/qa/benchmark-matrix-2026-01-09.md:23
@@ -118,6 +309,8 @@ docs/qa/benchmark-matrix-2026-01-09.md:243
 docs/qa/benchmark-matrix-2026-01-09.md:244
 docs/qa/benchmark-matrix-2026-01-09.md:25
 docs/qa/benchmark-matrix-2026-01-09.md:269
+docs/qa/benchmark-matrix-2026-01-09.md:270
+docs/qa/benchmark-matrix-2026-01-09.md:271
 docs/qa/benchmark-matrix-2026-01-09.md:31
 docs/qa/benchmark-matrix-2026-01-09.md:32
 docs/qa/benchmark-matrix-2026-01-09.md:33
@@ -126,18 +319,36 @@ docs/qa/benchmark-matrix-2026-01-09.md:40
 docs/qa/benchmark-matrix-2026-01-09.md:41
 docs/qa/benchmark-matrix-2026-01-09.md:42
 docs/qa/benchmark-matrix-2026-01-09.md:43
+docs/qa/benchmark-matrix-2026-01-09.md:71
+docs/qa/benchmark-matrix-2026-01-09.md:85
+docs/qa/five-whys-16x-cpu-gap-2026-01-09.md:14
+docs/qa/five-whys-16x-cpu-gap-2026-01-09.md:16
 docs/qa/five-whys-16x-cpu-gap-2026-01-09.md:173
+docs/qa/five-whys-16x-cpu-gap-2026-01-09.md:223
+docs/qa/five-whys-16x-cpu-gap-2026-01-09.md:269
+docs/qa/five-whys-16x-cpu-gap-2026-01-09.md:28
+docs/qa/five-whys-16x-cpu-gap-2026-01-09.md:32
+docs/qa/five-whys-16x-cpu-gap-2026-01-09.md:5
+docs/qa/five-whys-16x-cpu-gap-2026-01-09.md:8
+docs/qa/five-whys-16x-cpu-gap-2026-01-09.md:9
 docs/qa/five-whys-gpu-performance-gap-2026-01-08.md:123
 docs/qa/five-whys-gpu-performance-gap-2026-01-08.md:14
 docs/qa/five-whys-gpu-performance-gap-2026-01-08.md:155
 docs/qa/five-whys-gpu-performance-gap-2026-01-08.md:156
 docs/qa/five-whys-gpu-performance-gap-2026-01-08.md:157
 docs/qa/five-whys-gpu-performance-gap-2026-01-08.md:159
+docs/qa/five-whys-gpu-performance-gap-2026-01-08.md:169
+docs/qa/five-whys-gpu-performance-gap-2026-01-08.md:183
 docs/qa/five-whys-gpu-performance-gap-2026-01-08.md:218
 docs/qa/five-whys-gpu-performance-gap-2026-01-08.md:24
+docs/qa/five-whys-gpu-performance-gap-2026-01-08.md:249
+docs/qa/five-whys-gpu-performance-gap-2026-01-08.md:250
+docs/qa/five-whys-gpu-performance-gap-2026-01-08.md:251
+docs/qa/five-whys-gpu-performance-gap-2026-01-08.md:252
 docs/qa/five-whys-gpu-performance-gap-2026-01-08.md:255
 docs/qa/five-whys-gpu-performance-gap-2026-01-08.md:256
 docs/qa/five-whys-gpu-performance-gap-2026-01-08.md:257
+docs/qa/five-whys-gpu-performance-gap-2026-01-08.md:258
 docs/qa/five-whys-gpu-performance-gap-2026-01-08.md:284
 docs/qa/five-whys-gpu-performance-gap-2026-01-08.md:285
 docs/qa/five-whys-gpu-performance-gap-2026-01-08.md:286
@@ -147,19 +358,266 @@ docs/qa/five-whys-gpu-performance-gap-2026-01-08.md:309
 docs/qa/five-whys-gpu-performance-gap-2026-01-08.md:310
 docs/qa/five-whys-gpu-performance-gap-2026-01-08.md:311
 docs/qa/five-whys-gpu-performance-gap-2026-01-08.md:312
+docs/qa/five-whys-gpu-performance-gap-2026-01-08.md:317
 docs/qa/five-whys-gpu-performance-gap-2026-01-08.md:323
+docs/qa/five-whys-gpu-performance-gap-2026-01-08.md:375
 docs/qa/five-whys-gpu-performance-gap-2026-01-08.md:391
 docs/qa/five-whys-gpu-performance-gap-2026-01-08.md:398
+docs/qa/five-whys-gpu-performance-gap-2026-01-08.md:399
 docs/qa/five-whys-gpu-performance-gap-2026-01-08.md:4
+docs/qa/five-whys-gpu-performance-gap-2026-01-08.md:400
+docs/qa/five-whys-gpu-performance-gap-2026-01-08.md:403
 docs/qa/five-whys-gpu-performance-gap-2026-01-08.md:496
+docs/qa/five-whys-gpu-performance-gap-2026-01-08.md:497
+docs/qa/five-whys-gpu-performance-gap-2026-01-08.md:514
 docs/qa/five-whys-gpu-performance-gap-2026-01-08.md:587
+docs/qa/five-whys-gpu-performance-gap-2026-01-08.md:589
 docs/qa/five-whys-gpu-performance-gap-2026-01-08.md:681
 docs/qa/five-whys-gpu-performance-gap-2026-01-08.md:686
+docs/qa/phase2-gpu-benchmark-verification-2026-01-08.md:115
+docs/qa/phase2-gpu-benchmark-verification-2026-01-08.md:116
+docs/qa/phase2-gpu-benchmark-verification-2026-01-08.md:130
+docs/qa/phase2-gpu-benchmark-verification-2026-01-08.md:23
+docs/qa/phase2-gpu-benchmark-verification-2026-01-08.md:24
 docs/qa/phase2-gpu-benchmark-verification-2026-01-08.md:33
+docs/qa/phase2-gpu-benchmark-verification-2026-01-08.md:41
+docs/qa/phase2-gpu-benchmark-verification-2026-01-08.md:42
 docs/qa/phase2-gpu-benchmark-verification-2026-01-08.md:87
+docs/qa/phase2-gpu-qa-verification-2026-01-08.md:12
+docs/qa/phase2-gpu-qa-verification-2026-01-08.md:279
 docs/qa/phase2-gpu-qa-verification-2026-01-08.md:280
 docs/qa/phase2-gpu-qa-verification-2026-01-08.md:281
 docs/qa/popperian_falsification_checklist.md:17
+docs/qa/test-matrix-results-2026-01-08.md:100
+docs/qa/test-matrix-results-2026-01-08.md:138
 docs/qa/test-matrix-results-2026-01-08.md:39
 docs/qa/test-matrix-results-2026-01-08.md:42
 docs/qa/test-matrix-results-2026-01-08.md:60
+docs/qa/test-matrix-results-2026-01-08.md:72
+docs/qa/test-matrix-results-2026-01-08.md:73
+docs/qa/test-matrix-results-2026-01-08.md:79
+docs/qa/test-matrix-results-2026-01-08.md:80
+docs/qa/test-matrix-results-2026-01-08.md:86
+docs/qa/test-matrix-results-2026-01-08.md:87
+docs/qa/test-matrix-results-2026-01-08.md:93
+docs/qa/test-matrix-results-2026-01-08.md:94
+docs/specifications/PR-REVIEW-SKILL-002-v2.md:1132
+docs/specifications/PR-REVIEW-SKILL-002-v2.md:1167
+docs/specifications/PR-REVIEW-SKILL-002-v2.md:1171
+docs/specifications/PR-REVIEW-SKILL-002-v2.md:1175
+docs/specifications/PR-REVIEW-SKILL-002-v2.md:1207
+docs/specifications/PR-REVIEW-SKILL-002-v2.md:1300
+docs/specifications/PR-REVIEW-SKILL-002-v2.md:23
+docs/specifications/PR-REVIEW-SKILL-002-v2.md:345
+docs/specifications/PR-REVIEW-SKILL-002-v2.md:356
+docs/specifications/PR-REVIEW-SKILL-002-v2.md:360
+docs/specifications/PR-REVIEW-SKILL-002-v2.md:60
+docs/specifications/PR-REVIEW-SKILL-002-v2.md:63
+docs/specifications/apr-book-spec.md:1141
+docs/specifications/apr-book-spec.md:611
+docs/specifications/apr-book-spec.md:612
+docs/specifications/aprender-compute/cgp-compute-gpu-profile.md:1465
+docs/specifications/aprender-compute/cgp-compute-gpu-profile.md:2574
+docs/specifications/aprender-compute/cgp-compute-gpu-profile.md:2575
+docs/specifications/aprender-compute/cgp-compute-gpu-profile.md:2717
+docs/specifications/aprender-compute/cgp-compute-gpu-profile.md:2859
+docs/specifications/aprender-compute/cgp-compute-gpu-profile.md:2860
+docs/specifications/aprender-compute/cgp-compute-gpu-profile.md:2930
+docs/specifications/aprender-compute/cgp-compute-gpu-profile.md:3328
+docs/specifications/aprender-compute/cgp-compute-gpu-profile.md:3463
+docs/specifications/aprender-compute/cgp-compute-gpu-profile.md:3465
+docs/specifications/aprender-compute/cgp-compute-gpu-profile.md:3466
+docs/specifications/aprender-compute/cgp-compute-gpu-profile.md:3467
+docs/specifications/aprender-compute/cgp-compute-gpu-profile.md:3469
+docs/specifications/aprender-compute/cgp-compute-gpu-profile.md:3548
+docs/specifications/aprender-compute/cgp-compute-gpu-profile.md:3549
+docs/specifications/aprender-compute/cgp-compute-gpu-profile.md:3550
+docs/specifications/aprender-compute/cgp-compute-gpu-profile.md:3557
+docs/specifications/aprender-compute/cgp-compute-gpu-profile.md:3558
+docs/specifications/aprender-compute/cgp-compute-gpu-profile.md:3585
+docs/specifications/aprender-compute/cgp-compute-gpu-profile.md:3601
+docs/specifications/aprender-compute/cgp-compute-gpu-profile.md:3603
+docs/specifications/aprender-compute/cgp-compute-gpu-profile.md:3605
+docs/specifications/aprender-compute/cgp-compute-gpu-profile.md:3642
+docs/specifications/aprender-compute/cgp-compute-gpu-profile.md:3643
+docs/specifications/aprender-compute/cgp-compute-gpu-profile.md:48
+docs/specifications/aprender-compute/cgp-compute-gpu-profile.md:49
+docs/specifications/aprender-compute/compute-block-tui-cbtop.md:1246
+docs/specifications/aprender-compute/compute-block-tui-cbtop.md:1278
+docs/specifications/aprender-compute/compute-block-tui-cbtop.md:1389
+docs/specifications/aprender-compute/compute-block-tui-cbtop.md:1475
+docs/specifications/aprender-compute/compute-block-tui-cbtop.md:1476
+docs/specifications/aprender-compute/compute-block-tui-cbtop.md:269
+docs/specifications/aprender-compute/compute-block-tui-cbtop.md:282
+docs/specifications/aprender-compute/compute-block-tui-cbtop.md:4836
+docs/specifications/aprender-compute/compute-block-tui-cbtop.md:5401
+docs/specifications/aprender-compute/compute-block-tui-cbtop.md:5447
+docs/specifications/aprender-compute/compute-block-tui-cbtop.md:5451
+docs/specifications/aprender-compute/compute-block-tui-cbtop.md:5467
+docs/specifications/aprender-compute/compute-block-tui-cbtop.md:5507
+docs/specifications/aprender-compute/compute-block-tui-cbtop.md:5511
+docs/specifications/aprender-compute/compute-block-tui-cbtop.md:5526
+docs/specifications/aprender-compute/compute-block-tui-cbtop.md:655
+docs/specifications/aprender-compute/compute-block-tui-cbtop.md:656
+docs/specifications/aprender-compute/ml-tuner-bricks.md:1818
+docs/specifications/aprender-compute/ml-tuner-bricks.md:1945
+docs/specifications/aprender-compute/ml-tuner-bricks.md:1961
+docs/specifications/aprender-compute/ml-tuner-bricks.md:2013
+docs/specifications/aprender-compute/ml-tuner-bricks.md:2023
+docs/specifications/aprender-compute/ml-tuner-bricks.md:2024
+docs/specifications/aprender-compute/ml-tuner-bricks.md:656
+docs/specifications/aprender-compute/ml-tuner-bricks.md:657
+docs/specifications/aprender-compute/pytorch-numpy-replacement-spec.md:1199
+docs/specifications/aprender-compute/pytorch-numpy-replacement-spec.md:1200
+docs/specifications/aprender-compute/pytorch-numpy-replacement-spec.md:1201
+docs/specifications/aprender-compute/pytorch-numpy-replacement-spec.md:1202
+docs/specifications/aprender-compute/sub/wgpu.md:24
+docs/specifications/aprender-compute/ublk-batched-gpu-compression.md:46
+docs/specifications/aprender-compute/ublk-batched-gpu-compression.md:87
+docs/specifications/aprender-gpu/complete-cuda-runtime-specification.md:1501
+docs/specifications/aprender-gpu/m-gpu-moe-3-scope.md:16
+docs/specifications/aprender-gpu/m-gpu-moe-3-scope.md:171
+docs/specifications/aprender-gpu/m-gpu-moe-3-scope.md:206
+docs/specifications/aprender-monorepo-consolidation.md:467
+docs/specifications/aprender-monorepo-consolidation.md:468
+docs/specifications/aprender-orchestrate/batuta-spec.md:109
+docs/specifications/aprender-orchestrate/batuta-spec.md:113
+docs/specifications/aprender-orchestrate/batuta-spec.md:408
+docs/specifications/aprender-orchestrate/batuta-spec.md:409
+docs/specifications/aprender-orchestrate/batuta-spec.md:424
+docs/specifications/aprender-orchestrate/batuta-spec.md:428
+docs/specifications/aprender-orchestrate/components/apr-code.md:968
+docs/specifications/aprender-profile/llm-inference-profiling-spec.md:362
+docs/specifications/aprender-profile/llm-inference-profiling-spec.md:365
+docs/specifications/aprender-profile/llm-inference-profiling-spec.md:373
+docs/specifications/aprender-profile/llm-inference-profiling-spec.md:48
+docs/specifications/aprender-profile/llm-inference-profiling-spec.md:49
+docs/specifications/aprender-profile/llm-inference-profiling-spec.md:50
+docs/specifications/aprender-profile/llm-inference-profiling-spec.md:51
+docs/specifications/aprender-serve/benchmark-model-runners-spec.md:31
+docs/specifications/aprender-serve/benchmark-model-runners-spec.md:39
+docs/specifications/aprender-serve/benchmark-model-runners-spec.md:56
+docs/specifications/aprender-serve/benchmark-model-runners-spec.md:59
+docs/specifications/aprender-serve/benchmark-model-runners-spec.md:617
+docs/specifications/aprender-serve/benchmark-model-runners-spec.md:875
+docs/specifications/aprender-serve/benchmarking-with-common-models-common-serving-spec.md:969
+docs/specifications/aprender-serve/benchmarking-with-common-models-common-serving-spec.md:971
+docs/specifications/aprender-serve/benchmarking-with-common-models-common-serving-spec.md:972
+docs/specifications/aprender-serve/decoder-throughput-specification-llama-mistral-phi-qwen.md:30
+docs/specifications/aprender-serve/decoder-throughput-specification-llama-mistral-phi-qwen.md:34
+docs/specifications/aprender-serve/decoder-throughput-specification-llama-mistral-phi-qwen.md:65
+docs/specifications/aprender-serve/enhanced-model-serving-apr-gguf-safetensor-full.md:1453
+docs/specifications/aprender-serve/enhanced-model-serving-apr-gguf-safetensor-full.md:1454
+docs/specifications/aprender-serve/enhanced-model-serving-apr-gguf-safetensor-full.md:1455
+docs/specifications/aprender-serve/enhanced-model-serving-apr-gguf-safetensor-full.md:1456
+docs/specifications/aprender-serve/enhanced-model-serving-apr-gguf-safetensor-full.md:1457
+docs/specifications/aprender-serve/llama-cpp-style-performance-spec.md:322
+docs/specifications/aprender-serve/llama-cpp-style-performance-spec.md:332
+docs/specifications/aprender-serve/llama-cpp-style-performance-spec.md:334
+docs/specifications/aprender-serve/performance-parity-ollama-llamacpp-gpu-inference-llms.md:15
+docs/specifications/aprender-serve/qwen-performance-improve.md:183
+docs/specifications/aprender-serve/qwen-performance-improve.md:340
+docs/specifications/aprender-serve/qwen-performance-improve.md:341
+docs/specifications/aprender-serve/qwen-performance-improve.md:86
+docs/specifications/aprender-serve/qwen-performance-improve.md:93
+docs/specifications/aprender-serve/qwen-showcase-throughput-improve.md:130
+docs/specifications/aprender-serve/qwen-showcase-throughput-improve.md:77
+docs/specifications/aprender-serve/qwen-showcase-throughput-improve.md:86
+docs/specifications/aprender-serve/serve-deploy-apr.md:875
+docs/specifications/aprender-serve/serve-deploy-apr.md:876
+docs/specifications/aprender-serve/simd-optimization-spec.md:123
+docs/specifications/aprender-serve/simd-optimization-spec.md:124
+docs/specifications/aprender-serve/simd-optimization-spec.md:125
+docs/specifications/aprender-serve/simd-optimization-spec.md:130
+docs/specifications/aprender-serve/simd-optimization-spec.md:131
+docs/specifications/aprender-serve/simd-optimization-spec.md:132
+docs/specifications/aprender-serve/simd-optimization-spec.md:18
+docs/specifications/aprender-serve/simd-optimization-spec.md:185
+docs/specifications/aprender-serve/simd-optimization-spec.md:19
+docs/specifications/aprender-serve/simd-optimization-spec.md:20
+docs/specifications/aprender-serve/simd-optimization-spec.md:23
+docs/specifications/aprender-serve/simd-optimization-spec.md:24
+docs/specifications/aprender-serve/simd-optimization-spec.md:25
+docs/specifications/aprender-serve/simd-optimization-spec.md:271
+docs/specifications/aprender-serve/simd-optimization-spec.md:29
+docs/specifications/aprender-serve/simd-optimization-spec.md:312
+docs/specifications/aprender-serve/simd-optimization-spec.md:313
+docs/specifications/aprender-serve/simd-optimization-spec.md:32
+docs/specifications/aprender-serve/simd-optimization-spec.md:422
+docs/specifications/aprender-serve/simd-optimization-spec.md:427
+docs/specifications/aprender-serve/simd-optimization-spec.md:429
+docs/specifications/aprender-serve/simd-optimization-spec.md:435
+docs/specifications/aprender-serve/simd-optimization-spec.md:436
+docs/specifications/aprender-serve/simd-optimization-spec.md:437
+docs/specifications/aprender-serve/simd-optimization-spec.md:69
+docs/specifications/aprender-train/albor-370m-roadmap.md:55
+docs/specifications/aprender-train/albor-370m-roadmap.md:70
+docs/specifications/aprender-train/causal-attention-mask-spec.md:145
+docs/specifications/aprender-train/causal-attention-mask-spec.md:36
+docs/specifications/aprender-train/entrenar-spec.md:869
+docs/specifications/aprender-train/entrenar-spec.md:870
+docs/specifications/aprender-train/fine-tune-rust-test-gen.md:1026
+docs/specifications/aprender-train/fine-tune-rust-test-gen.md:1285
+docs/specifications/aprender-train/fine-tune-rust-test-gen.md:1296
+docs/specifications/aprender-train/fine-tune-rust-test-gen.md:1300
+docs/specifications/aprender-train/fine-tune-rust-test-gen.md:387
+docs/specifications/aprender-train/model-1-qlora-retry-plan.md:76
+docs/specifications/aprender-train/ship-model-1-spec.md:2090
+docs/specifications/aprender-train/ship-model-1-spec.md:2098
+docs/specifications/aprender-train/ship-model-1-spec.md:2117
+docs/specifications/aprender-train/ship-model-1-spec.md:2321
+docs/specifications/aprender-train/ship-model-1-spec.md:2353
+docs/specifications/aprender-train/ship-model-1-spec.md:2542
+docs/specifications/aprender-train/ship-model-1-spec.md:2550
+docs/specifications/aprender-train/ship-model-1-spec.md:2571
+docs/specifications/aprender-train/ship-model-1-spec.md:2587
+docs/specifications/aprender-train/ship-model-1-spec.md:2639
+docs/specifications/aprender-train/ship-model-1-spec.md:2704
+docs/specifications/aprender-train/ship-model-1-spec.md:2737
+docs/specifications/aprender-train/ship-model-1-spec.md:28
+docs/specifications/aprender-train/ship-model-1-spec.md:801
+docs/specifications/aprender-train/ship-model-2-spec.md:1434
+docs/specifications/aprender-train/ship-model-2-spec.md:1698
+docs/specifications/aprender-train/ship-model-2-spec.md:1993
+docs/specifications/aprender-train/ship-model-2-spec.md:1997
+docs/specifications/aprender-train/ship-model-2-spec.md:2078
+docs/specifications/aprender-train/ship-model-2-spec.md:2115
+docs/specifications/aprender-train/ship-model-2-spec.md:2325
+docs/specifications/aprender-train/ship-model-2-spec.md:2326
+docs/specifications/aprender-train/ship-model-2-spec.md:30
+docs/specifications/aprender-train/ship-shared-methodology.md:1302
+docs/specifications/aprender-train/ship-shared-methodology.md:1431
+docs/specifications/aprender-train/ship-shared-methodology.md:1458
+docs/specifications/aprender-train/ship-shared-methodology.md:21
+docs/specifications/aprender-train/ship-shared-methodology.md:25
+docs/specifications/aprender-train/ship-shared-methodology.md:28
+docs/specifications/aprender-train/ship-shared-methodology.md:35
+docs/specifications/aprender-train/ship-shared-methodology.md:385
+docs/specifications/aprender-train/ship-shared-methodology.md:408
+docs/specifications/aprender-train/ship-shared-methodology.md:579
+docs/specifications/aprender-train/ship-shared-methodology.md:580
+docs/specifications/aprender-train/ship-shared-methodology.md:666
+docs/specifications/aprender-train/ship-shared-methodology.md:676
+docs/specifications/aprender-train/ship-two-models-spec.md:49
+docs/specifications/aprender-train/weight-initialization-spec.md:5
+docs/specifications/beat-campaign-10day-schedule-2026-06-12.md:161
+docs/specifications/beat-campaign-10day-schedule-2026-06-12.md:163
+docs/specifications/campaign-ev-reprioritization-2026-06-12.md:34
+docs/specifications/campaign-ev-reprioritization-2026-06-12.md:36
+docs/specifications/campaign-ev-reprioritization-2026-06-12.md:37
+docs/specifications/components/compute-backends.md:168
+docs/specifications/components/compute-backends.md:233
+docs/specifications/components/compute-backends.md:285
+docs/specifications/components/stack-architecture.md:184
+docs/specifications/components/stack-architecture.md:188
+docs/specifications/components/tracing.md:302
+docs/specifications/fable-architectural-review.md:156
+docs/specifications/fable-architectural-review.md:292
+docs/specifications/fable-architectural-review.md:31
+docs/specifications/fable-architectural-review.md:54
+docs/specifications/fable-architectural-review.md:96
+docs/specifications/m32d-moe-kv-cache-scope.md:15
+docs/specifications/m32d-moe-kv-cache-scope.md:199
+docs/specifications/m32d-moe-kv-cache-scope.md:3
+docs/specifications/pr-skill-spec.md:103
+docs/specifications/pr-skill-spec.md:197

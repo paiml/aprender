@@ -1,0 +1,38 @@
+{
+  "_type": "https://in-toto.io/Statement/v1",
+  "subject": [
+    { "name": "git+https://github.com/paiml/aprender",
+      "digest": { "sha1": "745fa8588783413669f4ac6170d4645e39c15be4" } }
+  ],
+  "predicateType": "https://paiml.dev/attestations/pr-review/v2",
+  "predicate": {
+    "skill_version": "2.0.0",
+    "attestation_level": "L1-self",
+    "pr": 2783,
+    "base_sha": "745fa8588783413669f4ac6170d4645e39c15be4",
+    "head_sha": "745fa8588783413669f4ac6170d4645e39c15be4",
+    "author_actor":   { "kind": "agent", "id": "author-session-a" },
+    "reviewer_actor": { "kind": "agent", "id": "reviewer-session-b" },
+    "affected_crates": ["aprender-gpu", "aprender-serve"],
+    "verdict": "FINDINGS",
+    "consultations": {
+      "pmat": { "status": "consulted",
+                "index_commit": "c6a6dfce3000000000000000000000000000abcd",
+                "index_is_ancestor": true,
+                "complexity_delta": [], "tdg_delta": [],
+                "satd_introduced": [], "duplication_hits": [] },
+      "cuda": { "status": "consulted", "trigger_reason": "path matches *cuda*",
+                "queries": [ { "q": "stream-ordered allocation semantics",
+                               "excerpt_sha256": "c3b4bb2d6093897483348925aaa73af03b3e3f4bd4ca38cef26dcb4212a2682e",
+                               "result": "found" } ] },
+      "crux": { "status": "not-triggered", "surfaces": [], "contracts": ["CRUX-A-08"],
+                "gap_effect": "none", "crux_coverage": "covered",
+                "comparative_claims": [] },
+      "mutation": { "status": "consulted", "scope": "guard",
+                    "attempted": 37, "killed": 37, "survivors": [] }
+    },
+    "findings_ref": { "path": "findings.sarif",
+                      "sha256": "c3b4bb2d6093897483348925aaa73af03b3e3f4bd4ca38cef26dcb4212a2682e" },
+    "cost": { "input_tokens": 0, "output_tokens": 0, "wall_seconds": 0 }
+  }
+}

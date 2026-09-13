@@ -18,7 +18,7 @@ MSRV="$(grep -m1 '^rust-version' Cargo.toml | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)
 [ -n "$MSRV" ] || { echo "check_msrv: could not read rust-version from Cargo.toml" >&2; exit 2; }
 echo "Declared MSRV (Cargo.toml rust-version): $MSRV"
 
-if ! rustup toolchain list 2>/dev/null | grep -q "^${MSRV}"; then
+if ! grep -q "^${MSRV}" <<< "$(rustup toolchain list 2>/dev/null)" ; then
   echo "Installing rust ${MSRV} toolchain ..."
   rustup toolchain install "${MSRV}" --profile minimal --no-self-update
 fi
