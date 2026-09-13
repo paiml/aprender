@@ -36,6 +36,18 @@ SKILL_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # 2026-09-03: the full run is NO-GO on every commit before its own cascade, by
 # construction, which made a GO precondition on publishing unsatisfiable.
 DOGFOOD_PHASE="${DOGFOOD_PHASE:-full}"
+# version_already_published_verdict <phase> <crate> <version>: prints "PASS msg" or "FAIL msg".
+# The post-publish phase runs AFTER the cascade: the version being on crates.io is the state that
+# phase exists to verify, not a defect. On the 0.67.0 train (2026-09-13) this row was RED on every
+# post-publish run by construction, so the post-publish verdict could never read GO. Case table:
+# scripts/tests/dogfood_version_row_test.sh (must-RED: pre-publish + already; must-GREEN: post-publish + already).
+version_already_published_verdict() {
+  if [ "$1" = post-publish ]; then
+    printf 'PASS %s %s is on crates.io, which the post-publish phase expects\n' "$2" "$3"
+  else
+    printf 'FAIL %s %s is ALREADY on crates.io: bump the version\n' "$2" "$3"
+  fi
+}
 REPO_DIR=""
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -449,7 +461,8 @@ DRY=$(env -u CARGO_REGISTRY_TOKEN cargo publish --dry-run --allow-dirty 2>&1); D
 # published" (#2644, DF-2; the same construct inverted a verdict the other way
 # in the pinning guard, VP-06).
 if grep -qiE "already (exists|uploaded)" <<< "$DRY"; then
-  mark version-unpublished FAIL "$CRATE $VERSION is ALREADY on crates.io — bump the version"
+  vrow=$(version_already_published_verdict "$DOGFOOD_PHASE" "$CRATE" "$VERSION")
+  mark version-unpublished "${vrow%% *}" "${vrow#* }"
 elif [ "$DRC" -ne 0 ]; then
   # No already-exists marker AND the dry-run itself died: the registry was
   # never consulted, so "not yet published" is an assertion with no source
