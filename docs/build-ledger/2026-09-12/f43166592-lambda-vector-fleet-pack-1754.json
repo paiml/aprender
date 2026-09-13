@@ -1,0 +1,27 @@
+{
+ "spec": "APR-RELEASE-001 \u00a75 P0\u00b7Pack",
+ "at": "2026-09-12T17:54:51Z",
+ "sha": "f43166592",
+ "intel_busy": 15,
+ "intel_online": 16,
+ "gx10_busy": 4,
+ "gx10_online": 6,
+ "yoga_busy": 3,
+ "yoga_online": 5,
+ "aprender_runs_live": 7,
+ "aprender_runs_queued": 17,
+ "intel_pressure": true,
+ "idle_gpu_runners": {
+  "gx10": [
+   "gx10-blackwell",
+   "gx10-eph"
+  ],
+  "yoga": [
+   "yoga-eph",
+   "yoga-gpu"
+  ]
+ },
+ "verdict": "P0-UNDERUTILIZED",
+ "action_taken": "8 held PRs armed (drain-held pass 17:07Z), 6 BEHIND branches updated (17:19Z), 4 GPU-lane nightlies dispatched on the release commit, fix PR #3188 opened and armed",
+ "source": "gh api --paginate orgs/paiml/actions/runners; gh run list --status in_progress/queued"
+}
