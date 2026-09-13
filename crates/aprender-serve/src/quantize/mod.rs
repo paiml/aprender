@@ -93,6 +93,8 @@ pub use dequant::{
 };
 
 // Re-export fused K-quant operations (PMAT-802)
+pub mod direct_f32;
+pub use direct_f32::fused_q4k_parallel_matvec_f32_into;
 pub use fused_k::{fused_q4k_dot, fused_q4k_dot_simd, fused_q4k_q8k_dot, fused_q4k_q8k_dot_simd};
 pub use fused_q5k_q6k::{
     fused_q4k_q8_dot, fused_q5k_dot, fused_q5k_dot_simd, fused_q6k_dot, fused_q6k_dot_simd,
@@ -176,7 +178,9 @@ static F16_TO_F32_LUT: std::sync::LazyLock<Box<[f32; 65536]>> = std::sync::LazyL
 /// Fast f16 to f32 conversion using pre-computed LUT
 ///
 /// Takes raw u16 bits (little-endian) and returns f32 value.
-/// ~3x faster than half::f16::from_bits().to_f32() for hot paths.
+/// A direct table lookup, in place of the bit manipulation in
+/// half::f16::from_bits().to_f32(). No receipt measures the difference on this
+/// tree, so no speed factor is claimed for it.
 #[inline]
 pub(crate) fn f16_to_f32_lut(bits: u16) -> f32 {
     F16_TO_F32_LUT[bits as usize]
@@ -289,8 +293,9 @@ pub fn dequantize_q8_blocks(blocks: &[Q8_0Block]) -> Vec<f32> {
 /// PMAT-PERF-002: Pre-interleaved Q4_K weights for SIMD-friendly access
 ///
 /// Weights reordered at load time to eliminate gather operations during inference.
-/// This provides 2-4x speedup for Q4_K GEMV operations by enabling contiguous
-/// SIMD loads instead of scattered nibble extraction.
+/// This enables contiguous SIMD loads for Q4_K GEMV instead of scattered nibble
+/// extraction. The size of that win is unmeasured here; the op counts under
+/// `# Performance` below are structural, not benchmarked.
 ///
 /// # Layout
 ///
@@ -315,7 +320,8 @@ pub fn dequantize_q8_blocks(blocks: &[Q8_0Block]) -> Vec<f32> {
 ///
 /// # References
 ///
-/// - Intel AVX-512 Guide: Contiguous loads 5x faster than VPGATHERDD
+/// - Intel AVX-512 Guide: contiguous loads vs VPGATHERDD (vendor guidance, not
+///   a measurement of this code)
 /// - llama.cpp: Pre-interleaved layout in ggml-quants.c
 /// - CUTLASS: Tile-based weight layout for tensor cores
 #[derive(Debug, Clone)]
@@ -337,3 +343,100 @@ include!("product.rs");
 include!("q4_0.rs");
 include!("fused_q4_0_q8_0.rs");
 include!("fused_q8_0_q8_0.rs");
+
+// ─────────────────────────────────────────────────────────────────────────────
+// L0-1b (#2971, PMAT-1070): crushed Q8_K blocks.
+//
+// Q8_K quantises activations with ONE scale per 256 elements (`max/127`). On a
+// massive-activation token (Qwen2.5-1.5B, position 0: dim 408 = −146.7 while
+// its 255 block-mates are ≤ 7.3) the scale is set by the one element and the
+// others collapse onto a handful of int8 levels — the layer-26 gate/up outputs
+// came out 13 % low on CPU while the GPU was within 0.5 % of the float64 truth
+// (docs/audits/l0-1b-arms.md). The remedy is per matmul: when the activation
+// vector carries a crushed block, the Q4_K drivers run the f32-activation dot
+// (`fused_q4k_dot_simd`, the `DIRECT_FP32_GEMV` path) for that call.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// A 256-block is crushed when `max|x| / second-largest|x| >= CRUSHED_BLOCK_RATIO`.
+///
+/// basis: docs/audits/l0-1b-arms.md §Fallback criterion — on the 1.5B over 77
+/// ordinary positions × 28 layers the normed residual-stream inputs never
+/// exceed 6.0 (p99.9 4.7); the first token's crushed blocks are ≥ 20.
+/// `max|x|/rms` cannot serve: it saturates at 16 (= √256) on ordinary blocks.
+pub const CRUSHED_BLOCK_RATIO: f32 = 8.0;
+
+/// True when any 256-element block of `activations` is crushed (see
+/// [`CRUSHED_BLOCK_RATIO`]). A one-hot block is crushed; an all-zero block is not.
+#[must_use]
+pub fn has_crushed_block(activations: &[f32]) -> bool {
+    activations.chunks(256).any(block_is_crushed)
+}
+
+fn block_is_crushed(block: &[f32]) -> bool {
+    let (mut max, mut second) = (0.0f32, 0.0f32);
+    for &v in block {
+        let a = v.abs();
+        if a > max {
+            second = max;
+            max = a;
+        } else if a > second {
+            second = a;
+        }
+    }
+    if max == 0.0 {
+        return false;
+    }
+    second == 0.0 || max / second >= CRUSHED_BLOCK_RATIO
+}
+
+/// Diagnostic: with `APR_CRUSHED_TRACE=1` every fallback prints one line
+/// (`[crushed-block] in_dim=… out_dim=…`), so the fallback RATE on a prompt is
+/// `grep -c` over stderr — the number the receipt's speed basis cites. Read once.
+pub fn note_crushed_fallback(in_dim: usize, out_dim: usize) {
+    static TRACE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    if *TRACE.get_or_init(|| std::env::var("APR_CRUSHED_TRACE").as_deref() == Ok("1")) {
+        eprintln!("[crushed-block] in_dim={in_dim} out_dim={out_dim}");
+    }
+}
+
+#[cfg(test)]
+mod crushed_block_tests {
+    use super::*;
+
+    fn block_with(max: f32, second: f32, fill: f32) -> Vec<f32> {
+        let mut b = vec![fill; 256];
+        b[408 % 256] = -max;
+        b[17] = second;
+        b
+    }
+
+    #[test]
+    fn the_layer_26_block_is_crushed() {
+        // pos 0, layer 26, ffn_norm block 1: max 146.68, second 7.28 → ratio 20.1
+        assert!(has_crushed_block(&block_with(146.68, 7.28, 0.5)));
+    }
+
+    #[test]
+    fn an_ordinary_block_is_not() {
+        // the worst ordinary block measured: ratio 6.0
+        assert!(!has_crushed_block(&block_with(6.0, 1.0, 0.3)));
+    }
+
+    #[test]
+    fn a_one_hot_block_is_crushed_and_an_all_zero_block_is_not() {
+        let mut one_hot = vec![0.0f32; 256];
+        one_hot[5] = 3.0;
+        assert!(has_crushed_block(&one_hot));
+        assert!(!has_crushed_block(&vec![0.0f32; 256]));
+    }
+
+    #[test]
+    fn only_the_crushed_block_counts_and_the_tail_is_a_block_too() {
+        let mut x = block_with(6.0, 1.0, 0.3); // ordinary
+        x.extend(block_with(9.0, 1.0, 0.3)); // ratio 9 → crushed
+        assert!(has_crushed_block(&x));
+        let mut tail = vec![0.3f32; 256];
+        tail.extend([0.0f32; 10]); // a 10-element tail block, all zero
+        assert!(!has_crushed_block(&tail));
+    }
+}

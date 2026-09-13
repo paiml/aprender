@@ -186,6 +186,31 @@ pub fn fused_gate_up_q4k_into(
     use super::parallel_k::fused_q4k_q8k_ffn_up_gate_into;
     use super::types::QK_K;
 
+    // L0-1b (#2971): a crushed block → both projections on f32 activations.
+    if super::has_crushed_block(activations) {
+        let (g, u) = rayon::join(
+            || {
+                super::fused_q4k_parallel_matvec_into(
+                    gate_weight_data,
+                    activations,
+                    in_dim,
+                    out_dim,
+                    gate_output,
+                )
+            },
+            || {
+                super::fused_q4k_parallel_matvec_into(
+                    up_weight_data,
+                    activations,
+                    in_dim,
+                    out_dim,
+                    up_output,
+                )
+            },
+        );
+        g?;
+        return u;
+    }
     // Phase 1: Quantize activations to Q8_K (shared by gate + up)
     let super_blocks_per_row = in_dim.div_ceil(QK_K);
     let padded_in_dim = super_blocks_per_row * QK_K;

@@ -150,8 +150,13 @@ pub mod monitor;
 #[cfg(feature = "cuda")]
 pub mod ptx;
 
-/// Error types for trueno-gpu operations
 pub mod error;
+/// Error types for trueno-gpu operations
+/// Launch budget validation — the executable form of
+/// `contracts/trueno/ptx-codegen-safety-v1.yaml` `register_budget`.
+/// Deliberately NOT under `driver` (which is `#[cfg(feature = "cuda")]` in its
+/// entirety): the policy is pure, so its case table runs in the required check.
+pub mod launch_budget;
 
 /// E2E visual testing framework for GPU kernels
 pub mod testing;
