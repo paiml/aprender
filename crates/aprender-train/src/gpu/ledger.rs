@@ -73,9 +73,34 @@ impl Reservation {
         Utc::now() > self.lease_expires
     }
 
-    /// Whether the holding process is still alive (Linux /proc check).
+    /// Whether the holding process is still alive.
+    ///
+    /// Linux reads `/proc/<pid>/stat`. There is no `/proc` on darwin, so the
+    /// unconditional version of this answered **false for every reservation**,
+    /// `should_prune()` answered true for every reservation, and
+    /// `total_reserved()` was permanently 0 -- 21 gpu::guard tests measured it
+    /// on mini-m4 (job 103769…, `left: 0` against `right: 5000`).
+    ///
+    /// THE DIRECTION OF THE DEFAULT IS THE WHOLE POINT. "Cannot determine, so
+    /// assume DEAD" releases live reservations, and two trainers then both
+    /// believe the VRAM is free -- an OOM. "Cannot determine, so assume ALIVE"
+    /// holds a dead process's reservation until its lease expires, which costs
+    /// a wait and is bounded by `lease_hours`. A resource guard fails towards
+    /// the conservative answer.
+    ///
+    /// `sysinfo` is already a workspace dependency and would answer this
+    /// portably and exactly; it is not used here because it refreshes a process
+    /// table per call and this runs once per reservation per ledger read.
+    #[cfg(target_os = "linux")]
     pub fn is_alive(&self) -> bool {
         Path::new(&format!("/proc/{}/stat", self.pid)).exists()
+    }
+
+    /// Non-Linux: no `/proc`, so liveness is unknown. See the Linux arm above
+    /// for why unknown resolves to ALIVE and not to dead.
+    #[cfg(not(target_os = "linux"))]
+    pub fn is_alive(&self) -> bool {
+        true
     }
 
     /// Whether this reservation should be pruned.
@@ -552,6 +577,56 @@ pub fn gpu_status_display(ledger: &VramLedger) -> Result<String, GpuError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A reservation held by a pid, for the liveness rows below.
+    fn reservation_held_by(pid: u32) -> Reservation {
+        Reservation {
+            id: 1,
+            pid,
+            budget_mb: 1000,
+            actual_mb: None,
+            task: "liveness-row".into(),
+            gpu_uuid: "GPU-liveness".into(),
+            started: Utc::now(),
+            lease_expires: Utc::now() + chrono::Duration::hours(1),
+        }
+    }
+
+    /// Linux CAN tell, so assert BOTH answers -- an `is_alive` that always said
+    /// true would pass a one-sided row and reintroduce nothing, but one that
+    /// always said false is exactly the defect darwin hit.
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn liveness_reads_proc_and_distinguishes_a_live_pid_from_a_dead_one() {
+        assert!(
+            reservation_held_by(std::process::id()).is_alive(),
+            "linux: our own pid must read as alive through /proc"
+        );
+        // 0x7FFF_FFFF is above any pid_max Linux will hand out.
+        assert!(
+            !reservation_held_by(0x7FFF_FFFF).is_alive(),
+            "linux: an impossible pid must read as dead, or the check is vacuous"
+        );
+    }
+
+    /// Not Linux: there is no /proc, liveness is unknown, and unknown must
+    /// resolve to ALIVE. Asserting the IMPOSSIBLE pid is the load-bearing half:
+    /// the old code answered false here and pruned every live reservation.
+    #[test]
+    #[cfg(not(target_os = "linux"))]
+    fn liveness_without_proc_assumes_alive_rather_than_releasing_the_reservation() {
+        assert!(reservation_held_by(std::process::id()).is_alive());
+        assert!(
+            reservation_held_by(0x7FFF_FFFF).is_alive(),
+            "no /proc here: liveness is unknown, and unknown must not read as dead \
+             -- that silently releases a live reservation and two trainers then \
+             both believe the VRAM is free"
+        );
+        assert!(
+            !reservation_held_by(0x7FFF_FFFF).should_prune(),
+            "an unexpired lease held by an unknown-liveness pid must not be pruned"
+        );
+    }
     use std::sync::atomic::{AtomicU32, Ordering};
     use std::time::Duration;
 
