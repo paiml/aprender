@@ -3,6 +3,10 @@
 //! This module defines the `Executor` trait and provides implementations
 //! for different backends (CPU, GPU, Remote).
 
+// `cpu` is the only executor module that was NOT feature-gated, and it is the
+// one that needs tokio (`tokio::process::Command`, `AsyncReadExt`, `timeout`).
+// Its five siblings below are all gated; this makes it consistent. #3176.
+#[cfg(feature = "tokio")]
 pub mod cpu;
 
 #[cfg(feature = "gpu")]
