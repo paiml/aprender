@@ -371,7 +371,7 @@ capacity: milestone <M> open <n> | closure/day <x|[U]> | capacity <n> | verdict 
 matrix:  pairs <n> | red <n> | known-red <n> | stale-known-red <n> | examples started <n>/<n>
 debt:    files touched <n> | violations paid <n> | worst before <n>
 quorum:  rounds <n> | width <n> | verdicts <a/b/c> | overridden <yes|no> | lattice <ok|prose>
-ontology: types <n>/16 | extractors <n>/14 | anchored <n>/<total> | shaped <n> | bindable-unanchored <n|[U]> | row merged <ONT-x|none: reason> | upstream sha <12hex|DRIFT>
+ontology: types <n>/16 | extractors <n>/14 | anchored <n>/<total> | shaped <n> | bindable-unanchored <n|[U]> | deltas <n>/<sweep PRs> | row merged <ONT-x|none: reason> | upstream sha <12hex|DRIFT>
 reconcile: R1 fixed-open <n> | R2 no-close <n> | R3 dead-branches <n> | R4 dirty>1train <n> | R5 closure/arrival <x> | receipt <path|MISSING>
 stops:   <none|list>
 next:    train eligible at <timestamp>
@@ -401,6 +401,15 @@ next:    train eligible at <timestamp>
   is over-promised at the one priority level the operator controls, and only the operator can cut it.
 - Any step would need an invented threshold, a second concurrent aprender PR in CI,
   `--allow-dirty`, or SSH into a host → stop.
+
+- The upstream ontology spec is not reachable at a committed sha (today: untracked in `infra`,
+  sha256 `512a16d5e09c…`) → stop: no lane on another host can read the premise, and every ontology
+  verdict is unverifiable by construction. Fixed in `infra` (ONT-P), not here (§11).
+- A sweep PR (§11.1) merged with no `ont-delta:` line → P0: a finding went into a prose sink and
+  nothing mechanical can read it back.
+- An `ont.*` counter in `contracts/lint-baseline.json` moved outside `make ont-ratchet` → RED
+  (ONT R-6).
+- A gate special-cases `entity.type` beyond `proof` applicability → RED (ONT R-17, ONT F-25).
 
 ## §9 Budget and the one risk to measure first
 
@@ -457,7 +466,8 @@ deleted module and its public types cannot be recovered from a reviewer's memory
 Upstream: `ONT-001 v4.3` (`infra/docs/specifications/paiml-ontology.md`, sha256 `512a16d5e09c…`).
 Its §6 assigns **aprender** every row but three. This section is how those rows get worked
 continuously instead of in one heroic push, and what the train owes the ontology every time it
-sweeps a surface.
+sweeps a surface. Upstream ids are written `ONT R-n` / `ONT F-n` / `ONT §n` here; a bare `§n` is
+this spec, and `R-1`–`R-5` without the prefix are the T-5 predicates (§6.3).
 
 ### §11.0 Measured baseline — `main` @ `fa6e35f23`, 2026-09-14
 
@@ -465,13 +475,14 @@ sweeps a surface.
 |---|---|---|
 | contracts may carry `entity:` / `shape:` / `evidence:` | **0 / 0 / 0** of 1818 | `grep -rlE '^entity:' contracts --include='*.yaml' \| wc -l` |
 | `pv census` — one cardinality, `by_entity_type`, `by_anchoring` (ONT-1) | absent | `pv --help` |
-| `pv extract` → `contracts.nt`, the only triple producer (R-18) | absent | `pv --help` |
-| `crates/aprender-contracts/src/ontology/` (decision 4) | directory does not exist | `ls` |
-| 16 entity types named (§0.0); 14 extractors named, 7 in v1alpha1 scope (§3.7) | **0** | — |
-| aprender implements every ONT row (§6) | **1 of 17** merged — ONT-2a, #3224 | `git log --grep='ONT-' origin/main` |
-| an aprender ticket per row | 1 of 17 (#3222, closed, no milestone) | `gh issue list --search 'ONT in:title' --state all` |
+| `pv extract` → `contracts.nt`, the only triple producer (ONT R-18) | absent | `pv --help` |
+| `crates/aprender-contracts/src/ontology/` (ONT decision 4) | directory does not exist | `ls` |
+| 16 entity types named (ONT §0.0); 14 extractors named, 7 in v1alpha1 scope (ONT §3.7) | **0** | — |
+| `contracts/lint-baseline.json` with `armed_gates` (ONT §3.9) · `make ont-ratchet` (ONT R-6) | neither exists | `git ls-files contracts/lint-baseline.json` · `grep -n '^ont-ratchet' Makefile` |
+| aprender implements every ONT row (ONT §6) | **1 of 17** merged — ONT-2a, #3224 | `git log --grep='ONT-' origin/main` |
+| an aprender ticket per row | 1 of 17 (#3222, closed, no milestone) → epic #3269 | `gh issue list --search 'ONT in:title' --state all` |
 | `pv kaizen` **is** the kaizen loop | code-only: bindings, call sites, E0/E1/E2 assertions | `crates/aprender-contracts-cli/src/commands/kaizen.rs` |
-| the upstream spec itself | **untracked in `infra`** — no commit, no history, unfetchable from any other host | `git -C ../infra ls-files --error-unmatch docs/specifications/paiml-ontology.md` |
+| the upstream spec itself | **untracked in `infra`** — not gitignored; 23 of its 25 siblings are tracked | `git -C ../infra ls-files --error-unmatch docs/specifications/paiml-ontology.md` |
 
 Two of these are the whole point of this section. **`pv kaizen` is blind to every surface that is
 not Rust**: the train sweeps features, examples, README, `CLAUDE.md`, workflows, model files and
@@ -483,11 +494,15 @@ upstream spec is untracked**, so a quorum lane on gx10, yoga or mini cannot read
 
 A **surface** is anything the train already sweeps: the `(crate, feature)` matrix (§4.1), the
 examples (§4.2), the `apr` command registry, `contracts/`, the published docs, `.github/workflows/`,
-model files, and the three triage surfaces (§6.2).
+model files, and the three triage surfaces (§6.2). A **sweep PR** is one that writes a finding into
+a prose sink — operationally, one touching any of `.github/workflows/night.yml`,
+`docs/specifications/**`, `contracts/apr-cli-commands-v1.yaml`, `README.md`, `CLAUDE.md`, or a
+known-red list anywhere.
 
 A **delta** is one of exactly four things, any one of which closes the sweep:
 
-1. an **entity type + extractor** registered in Σ, with its `pc_extract` planted defect (§3.7, R-3);
+1. an **entity type + extractor** registered in Σ, with its `pc_extract` planted defect
+   (ONT §3.7, ONT R-3);
 2. a **shape** whose violation *is* the defect class just found, with the found instance as its RED
    fixture;
 3. a **verdict reason** added to the ONT-6 `Unknown{…}` set when the sweep could not decide — never
@@ -501,12 +516,15 @@ finished**: it produced a fact only a human re-reading can use. The live example
 list that must be re-derived by hand before every undraft. That is the shape of debt §11 exists to
 stop creating.
 
-Closing without a delta is allowed and must be named: `ont-delta: none <reason>` in the PR body.
-Unnamed is P0.
+Every sweep PR body carries one line, in the form `scripts/check_pr_closes_issue.sh` already
+enforces for `Closes #N`: `ont-delta: <type|shape|reason|resolves> <id>` or
+`ont-delta: none <reason>`. Absent is a PR-body lint failure, not a review comment. (#3268, the PR
+that adds this section, is a spec paragraph and carries `ont-delta: none`.)
 
 ### §11.2 The ratchet — four counters up, one down, `make ont-ratchet` only
 
-In `contracts/lint-baseline.json` beside `armed_gates` (§3.9):
+In `contracts/lint-baseline.json` beside `armed_gates` (ONT §3.9) — the file and the `make` target
+land with ONT-1/ONT-6; neither exists today:
 
 | Counter | Direction | Today |
 |---|---|---|
@@ -514,10 +532,10 @@ In `contracts/lint-baseline.json` beside `armed_gates` (§3.9):
 | `ont.extractors_implemented` | ↑ | 0 |
 | `ont.contracts_anchored` (`entity:` present) | ↑ | 0 |
 | `ont.contracts_shaped` (`shape:` present) | ↑ | 0 |
-| `ont.unanchored_but_bindable` (R-5: kernel-kind with a binding, or naming a file) | ↓ | `[U]` |
+| `ont.unanchored_but_bindable` (ONT R-5: kernel-kind with a binding, or naming a file) | ↓ | `[U]` |
 
-Moves only through `make ont-ratchet` (R-6). A PR that lowers an ↑ counter or raises the ↓ one is
-RED. No bulk rewrite: ≤5 corpus files per PR except a named ratchet touch (R-5, F-8).
+Moves only through `make ont-ratchet` (ONT R-6). A PR that lowers an ↑ counter or raises the ↓ one
+is RED. No bulk rewrite: ≤5 corpus files per PR except a named ratchet touch (ONT R-5, ONT F-8).
 
 ### §11.3 Cadence — one row per train, computed everywhere, armed per repo
 
@@ -526,10 +544,14 @@ RED. No bulk rewrite: ≤5 corpus files per PR except a named ratchet touch (R-5
   silently reported as 0.
 - **One ONT row per train.** 16 rows outstanding; trains run every 2–3 days ⇒ ≈40 days to ONT-10
   `[A]`. That is a derived horizon, not a promise — the rows spill by §6.3 like any other work.
-- **New gates arrive unarmed** (R-8, §3.9). An ONT gate lands computing everywhere; arming is a
-  later, separate PR whose body shows the counter it moved.
-- **T-5 reads the `ontology:` line but does not gate on it** until `ont.extractors_implemented ≥ 1`.
-  A gate over an empty extractor set is the R-2 vacuity class — `Unknown`, never `Pass`.
+- **An ONT row PR obeys ONT §0.2**: never pushed while a release-titled run is in progress. It is
+  §3's one-aprender-PR-in-CI rule seen from the other repo.
+- **New gates arrive unarmed** (ONT R-8, ONT §3.9). An ONT gate lands computing everywhere; arming
+  is a later, separate PR whose body shows the counter it moved.
+- **T-5 carries the `ontology:` line but does not gate on it** until
+  `ont.extractors_implemented ≥ 1`. A gate over an empty extractor set is the ONT R-2 vacuity class
+  — `Unknown`, never `Pass`. The ratchet check (§11.2) is separate and arms from its first commit:
+  it is about the JSON file, not the extractors.
 
 ### §11.4 Why this makes the quorum more effective — the premise stops being prose
 
@@ -539,13 +561,14 @@ round was void. An ontology is the mechanical form of that rule.
 
 - **Premises cite ids.** A brief names `contract:<id>`, `symbol:<crate>::<path>`, or a
   `(crate, feature)` pair — something every lane resolves identically — not a sentence every lane
-  re-measures differently.
+  re-measures differently. #3179's round-1 premise named a launched kernel entry point that does
+  not exist in the tree; as `resolves: symbol` it returns `Unknown{…}` at extraction, before any
+  lane votes, and an `Unknown` premise cannot reduce to `Pass`.
 - **Verdicts are ONT-6 lattice elements**: `Pass · Unknown{<reason>} · Fail`, reason from the closed
-  set (§3.4). A lane answering outside the lattice has answered `Unknown{Prose}`: it does not arm,
-  and it does not count toward a majority.
+  set (ONT §3.4). A lane answering outside the lattice has answered `Unknown{Prose}`: it does not
+  arm, and it does not count toward a majority.
 - **Reduce is `meet = min`, not a vote count.** One `Fail` is `Fail`; `Pass` ∧ `Unknown` is
-  `Unknown`. A 2/3 majority over lattice-invalid verdicts is not a majority — which is precisely
-  what #3179 round 1 was.
+  `Unknown`. A 2/3 majority with one lattice-invalid verdict reduces to `Unknown`, not to a majority.
 - **The plant is a lattice element too.** `pc_shape` / `pc_extract` are the mechanical form of §10's
   planted trap: a round whose planted defect was not caught is `Unknown{PositiveControlFailed}` and
   the round is void, by rule rather than by the orchestrator noticing.
@@ -553,29 +576,21 @@ round was void. An ontology is the mechanical form of that rule.
 
 ### §11.5 Report lines
 
-Added to §7:
+Two lines change in §7, and only there: `ontology:` is added, and `quorum:` gains
+`| lattice <ok|prose>`.
 
-```
-ontology: types <n>/16 | extractors <n>/14 | anchored <n>/<total> | shaped <n> | bindable-unanchored <n|[U]> | row merged <ONT-x|none: reason> | upstream sha <12hex|DRIFT>
-```
+### §11.6 Stop conditions
 
-and `quorum:` gains a final field `| lattice <ok|prose>`.
-
-### §11.6 Stop conditions — added to §8
-
-- **The upstream spec is not reachable at a committed sha** (today: untracked in `infra`, sha256
-  `512a16d5e09c…`) → stop. No lane on another host can read the premise; every ontology verdict is
-  unverifiable by construction. Fixed in `infra` (ONT-P), not here.
-- A train closed a surface sweep with no ontology delta and no `ont-delta: none <reason>` → P0.
-- An `ont.*` counter moved outside `make ont-ratchet` → RED (R-6).
-- A gate special-cases `entity.type` beyond `proof` applicability → RED (R-17, F-25).
+Four added to §8, and only there: an unreachable upstream sha; a merged sweep PR with no
+`ont-delta:`; an `ont.*` counter moved outside `make ont-ratchet`; a gate special-casing
+`entity.type` beyond `proof`.
 
 ### §11.7 Falsifiers
 
 | # | Rule | Assertion | Mutation |
 |---|---|---|---|
-| FR-1 | §11.1 | every train's `ontology:` line names the row merged, or `none: <reason>` | omit the reason → report lint RED |
-| FR-2 | §11.2 | the five counters are recomputed from the tree at T-5 and compared to `lint-baseline.json` | hand-raise `contracts_anchored` → RED |
+| FR-1 | §11.1 | every sweep PR body carries `ont-delta:` — a `scripts/check_pr_closes_issue.sh`-class predicate, run where that one runs in `ci.yml` | delete the line from a sweep PR → RED |
+| FR-2 | §11.2 | the five counters are recomputed from the tree and compared to `lint-baseline.json`; a hand-moved counter is RED regardless of arming | hand-raise `contracts_anchored` → RED |
 | FR-3 | §11.3 | an ONT gate's landing PR arms nothing | arm it in the landing PR → RED |
 | FR-4 | §11.4 | a quorum receipt whose verdict is not an ONT-6 element never reduces to `Pass` | record "looks fine" as a verdict → reduce RED |
 | FR-5 | §11.0 | the sha256 pinned above matches the upstream file at read time | edit upstream → `upstream sha DRIFT` |
