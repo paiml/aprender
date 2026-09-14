@@ -29,7 +29,28 @@ concurrency:
 
 jobs:
   ci:
-    uses: paiml/.github/.github/workflows/sovereign-ci.yml@main
+    # 70e51ec04, not 4453399ee: THE PIN WAS TWO COMMITS BEHIND THE ONE THAT
+    # MAKES gx10 WORK. 70e51ec04 is titled "sovereign-ci: pin a two-architecture
+    # image index (amd64 + arm64)"; the pin held here was 4453399ee, 2026-09-05,
+    # whose every job runs
+    #     image: localhost:5000/sovereign-ci:stable@sha256:66016caa...
+    # an AMD64-ONLY index. Every containerised job routed to gx10 therefore died
+    # before it started:
+    #     no matching manifest for linux/arm64/v8 in the manifest list entries
+    # surfaced in the job log only as `Docker pull failed with exit code 1`,
+    # which names neither the architecture nor the tag.
+    #
+    # gx10 carries four clean-room runners and this workflow's default
+    # `runs_on` is ["self-hosted","clean-room"] — arch-neutral, so the router
+    # sends work there by design (#3100 / PMAT-3138). Measured on gx10 today:
+    #     pull @sha256:66016caa...  -> no matching manifest for linux/arm64/v8
+    #     pull @sha256:70f2cdc9...  -> Status: Image is up to date
+    #
+    # The delta is exactly two commits and one file (+20/-11), both additive:
+    # 23916c00d adds an OPTIONAL `runs_on` input whose default is the label set
+    # this repo already gets, and 70e51ec04 swaps the digest on every job. No
+    # input this repo passes changes meaning.
+    uses: paiml/.github/.github/workflows/sovereign-ci.yml@70e51ec045d95983e9a3d02342d13283bf5f9dc1
     with:
       repo: ${{ github.event.repository.name }}
       # Phase 3 pilot (heavy workload) — build-performance.md §7 Phase 3.
@@ -1073,12 +1094,86 @@ jobs:
         # aprender#2822 boundary probe (2 stat, 1 readdir, 1 df, 1 pgrep).
         # Instrumentation, never a gate: the script always exits 0.
         run: bash scripts/ci_target_watch.sh probe "before-cargo-deny-install"
+      - name: Tests must not gate on paths outside the workspace
+        run: bash scripts/check_test_fixture_paths.sh
+      - name: Fixture-path guard case table
+        run: bash scripts/check_test_fixture_paths.sh --self-test
+      # PMAT-976 (C0-2, #2891, epic #2873): the sovereign-ci.yml reusable
+      # workflow ci.yml calls must be pinned to a commit sha, never a branch.
+      # Text-only, no build.
+      - name: sovereign-ci.yml pin guard case table
+        run: bash scripts/check_ci_reusable_workflow_pinned.sh --self-test
+      - name: ci.yml must pin sovereign-ci.yml by commit sha, not @main
+        run: bash scripts/check_ci_reusable_workflow_pinned.sh
       - name: "target-watch: after-last-cargo-step"
         # aprender#2822 boundary probe (2 stat, 1 readdir, 1 df, 1 pgrep).
         # Instrumentation, never a gate: the script always exits 0.
         run: bash scripts/ci_target_watch.sh probe "after-last-cargo-step"
+      # #2532: the guard above has a universe of crates/**/tests?/**/*.rs, which
+      # structurally excludes 100% of the 324 machine-specific paths pmat found
+      # in SHIPPED code -- 46 of them inside contracts/ itself. Seventeen crux
+      # falsification tests opened with a GOLD= path under a worktree that no
+      # longer exists on ANY machine, then `[ -f "$GOLD" ] || exit 2`, so they
+      # skipped everywhere while `pv validate` and `pv lint contracts/` both
+      # reported PASS. The two guards' universes are complementary, not nested.
+      # contracts/ is now at ZERO and has no baseline to raise. Text-only, no build.
+      #
+      # The whole-tree ratchet lives in `--full`. It shells out to
+      # `pmat analyze hardcoded-paths` (pmat#1017, the detector of record), and
+      # the clean-room pool still measures pmat 3.31.0 (re-checked 2026-08-28),
+      # which has no such subcommand -- so a bare `--full` here would red every
+      # PR, and `|| true` would make it a gate that cannot fail.
+      #
+      # It used to be left unwired with a comment saying to promote it "once the
+      # fleet carries pmat >= 3.32.0". That is what this step is fixing: a
+      # comment is not a trigger, nothing re-evaluated the condition, and 20
+      # shipped machine-specific paths landed through the gap (299 vs baseline
+      # 278 on 62d23d8d1). --full-if-capable re-evaluates it on every run: it
+      # runs the ratchet and propagates its status where pmat can produce a
+      # verdict, and where it cannot it prints the version and the actual
+      # refusal text rather than assuming. The gate arms itself on the day the
+      # fleet upgrades, with no edit to this file.
+      - name: No contract may name a machine-specific path
+        run: bash scripts/check_hardcoded_paths.sh
+      - name: Machine-specific-path guard case table
+        run: bash scripts/check_hardcoded_paths.sh --self-test
       - name: Whole-tree machine-specific-path ratchet (pinned analyser via scripts/pmat_bin.sh, PMAT-1059)
         run: bash scripts/check_hardcoded_paths.sh --full-if-capable
+      # PRREV-006. PR-REVIEW-SKILL-002 v2 §9 row 6 states how the receipt guard
+      # may be wired, and both halves are scars rather than style:
+      #
+      #   job-level `if:`, NOT a workflow-level `paths:` filter — a path-filtered
+      #   required check never reports and blocks branch protection forever.
+      #
+      # A `paths:` filter here would mean the workflow does not run at all on a
+      # PR that misses it, so a check the ruleset requires never produces a check
+      # run: the PR sits PENDING and nothing merges. This file carries BOTH
+      # required checks (`ci / gate` and `workspace-test`), so that is a deadlock,
+      # not a hypothetical. A job-level `if:` is the opposite shape — the workflow
+      # runs, the job reports `skipped`, and `gate` reads the result (`mutants` is
+      # the in-repo precedent).
+      #
+      # Until this step, that rule lived in a COMMENT further down this file, on
+      # `vendored-schemas`, and a comment is not a trigger — the exact shape that
+      # left check_hardcoded_paths.sh unwired for months, two steps above. So the rule
+      # is CHECKED: the receipt guard must be invoked by a non-comment line, by
+      # exactly one job, that job must carry an `if:` at job indentation (4
+      # spaces, not a step's 8), and that `if:` must evaluate TRUE on
+      # pull_request and FALSE on push / merge_group / workflow_dispatch. Both
+      # polarities, because "it has an `if:`" is satisfied by `if: always()`.
+      # Text-only, no build. Self-test first (Verification Discipline #7).
+      - name: "Receipt-wiring guard case table (both polarities of the if:)"
+        run: bash scripts/check_pr_review_wiring.sh --self-test
+      - name: The PR-review receipt guard is wired job-level, not path-filtered
+        run: bash scripts/check_pr_review_wiring.sh
+      # PRQ-013 (PP-066 C0-5, #2982): the job that judges a PR's OWN receipt must be
+      # defined by the base — a workflow on pull_request_target + merge_group, never
+      # pull_request — and `gate` must not wait on a head-defined receipt job. Case
+      # table first (17 rows, both polarities), then the tree.
+      - name: "Receipt-gate base-owned case table (17 rows, both polarities)"
+        run: bash scripts/check_receipt_gate_base_owned.sh --self-test
+      - name: The PR's own receipt is judged from the base, not the head (PRQ-013)
+        run: bash scripts/check_receipt_gate_base_owned.sh
       # The case table above is evidence only for the branches it can turn RED,
       # and on its first pass it could not turn three of them. Dropping either
       # zero-count check left the guard still rejecting on the NEIGHBOURING
@@ -1734,6 +1829,37 @@ jobs:
           set -euo pipefail
           dr() { # dr <dir mounted as /workspace> <cmd...>
             local ws=$1; shift
+            # A bind-mount source that does not exist is created BY THE DOCKER
+            # DAEMON, as root -- and then this container, which runs as
+            # $(id -u), cannot write into its own target dir:
+            #
+            #   error: failed to create directory `/workspace/target/debug`
+            #   Caused by: Permission denied (os error 13)
+            #
+            # The dirs DO exist when the job starts; heal_path makes them in
+            # "Create this job's own target dir and CARGO_HOME". They can stop
+            # existing DURING the job: gx10's ci-reaper enters a critical-mode
+            # purge under disk pressure and rm -rf's per-run target dirs whose
+            # run it believes is finished. Measured 2026-09-13 -- it deleted
+            # run-34771396463's dir at 17:43:08 saying "no running job", and
+            # that run was still `queued` 35 minutes later (paiml/aprender#3219).
+            # That is a reaper defect and it is being fixed there; this makes the
+            # consumer survive it, because heal_path runs ONCE and every dr()
+            # after a purge is the one that loses.
+            # Recreate a purged dir BEFORE the mount (so the daemon never gets
+            # the chance), and repair one the daemon already made on an earlier
+            # call -- same chown-through-the-image that heal_path uses, fired
+            # only when the dir is actually unwritable, so the common path pays
+            # nothing.
+            mkdir -p "$GUARD_TARGET_DIR" "$GUARD_CARGO_HOME" 2>/dev/null || true
+            local d
+            for d in "$GUARD_TARGET_DIR" "$GUARD_CARGO_HOME"; do
+              if [ -d "$d" ] && [ ! -w "$d" ]; then
+                docker run --rm -v "$(dirname "$d"):/p" "$IMAGE" \
+                  chown "$(id -u):$(id -g)" "/p/$(basename "$d")"
+              fi
+              [ -d "$d" ] && [ -w "$d" ] || { echo "FAIL: $d is missing or not writable and could not be repaired"; return 1; }
+            done
             docker run --rm \
               --user "$(id -u):$(id -g)" \
               -v "${ws}:/workspace" \
