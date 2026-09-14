@@ -17783,3 +17783,22 @@ roadmap:
   labels:
   - kind:code
   notes: null
+- id: PMAT-3237
+  github_issue: null
+  item_type: task
+  title: 'Coverage Nightly red every night on a same-process ratio that is load-immune but not instrumentation-immune'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-09-14T20:45:00Z
+  updated: 2026-09-14T20:45:00Z
+  spec: docs/specifications/APR-RELEASE-001-train-and-build-kaizen.md
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'llvm-cov overhead scales with instrumented branches EXECUTED, which differs
+    between the compress and decompress paths; the ratio had already been widened once
+    to 0.25 for this and failed anyway'
