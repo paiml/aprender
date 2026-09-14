@@ -66,6 +66,7 @@ impl TuiMonitor {
     /// - Ctrl+C / 'q' handling with clean cursor restore
     /// - Smart diffing (only redraws changed cells)
     /// - 60fps rendering with frame budgets
+    #[cfg(feature = "tui")]
     pub fn run(&mut self) -> io::Result<()> {
         // Wait for state file to appear
         eprintln!("Waiting for training state file at {}...", self.state.path().display());
@@ -95,6 +96,17 @@ impl TuiMonitor {
 
         eprintln!("\nDetached from training session. Training continues in background.");
         Ok(())
+    }
+
+    /// Without `tui` there is no presentar-terminal to render through, so the
+    /// monitor says which build it needs instead of failing to link. The
+    /// metric-store side of this module (`TrainingStateWriter`) is unaffected
+    /// and stays available unconditionally, as the feature table intends.
+    #[cfg(not(feature = "tui"))]
+    pub fn run(&mut self) -> io::Result<()> {
+        Err(io::Error::other(
+            "the TUI monitor needs the presentar-terminal backend; rebuild with --features tui",
+        ))
     }
 }
 

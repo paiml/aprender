@@ -30,6 +30,9 @@
 
 pub mod app;
 pub mod color;
+// PMAT-507: the presentar-terminal dashboard renders through the optional
+// `presentar-terminal` dep, which only the `tui` feature links.
+#[cfg(feature = "tui")]
 pub mod dashboard;
 pub mod headless;
 pub mod panel;
@@ -38,6 +41,7 @@ pub mod state;
 
 pub use app::{TrainingStateWriter, TuiMonitor, TuiMonitorConfig};
 pub use color::{colored_bar, colored_value, ColorMode, Rgb, Styled, TrainingPalette};
+#[cfg(feature = "tui")]
 pub use dashboard::TrainingDashboard;
 pub use headless::{
     HeadlessGpu, HeadlessMonitor, HeadlessOutput, HeadlessSample, HeadlessWriter, OutputFormat,
