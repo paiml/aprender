@@ -314,8 +314,12 @@ pub enum Commands {
 }
 
 /// Eval sub-subcommands
+///
+/// `Clone`/`Debug` like the parent [`Commands`] — it is a field of the `Eval`
+/// variant, so the parent's derives require them. Without them `--features
+/// eval` did not compile.
 #[cfg(feature = "eval")]
-#[derive(Subcommand)]
+#[derive(Subcommand, Clone, Debug)]
 enum EvalAction {
     /// Sample chunks from index for ground truth generation (no API needed)
     Sample {

@@ -54,7 +54,11 @@ static DEVICE_INIT_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 /// The mask is applied at BOTH the `wgpu::Instance` construction site (so the
 /// GLES backend is never even registered on the instance) and every
 /// `enumerate_adapters` call site.
-#[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+// `new_async` is the wasm-capable constructor and is gated `any(gpu,
+// gpu-wasm)` like the module itself, so its helpers must be too: under
+// `gpu-wasm` alone this was declared and never compiled. The body is
+// target-agnostic (PRIMARY already includes BROWSER_WEBGPU).
+#[cfg(any(feature = "gpu", feature = "gpu-wasm"))]
 pub(crate) const fn gpu_backends() -> wgpu::Backends {
     // PRIMARY = VULKAN | METAL | DX12 | BROWSER_WEBGPU (never GL/GLES).
     wgpu::Backends::PRIMARY
@@ -71,7 +75,11 @@ pub(crate) const fn gpu_backends() -> wgpu::Backends {
 /// instance for the whole process means the broken ICD is enumerated exactly
 /// once, eliminating the concurrent-init race entirely. `wgpu::Instance` is
 /// `Clone`/`Send`/`Sync`, so every adapter/device request can cheaply reuse it.
-#[cfg(all(feature = "gpu", not(target_arch = "wasm32")))]
+// `new_async` is the wasm-capable constructor and is gated `any(gpu,
+// gpu-wasm)` like the module itself, so its helpers must be too: under
+// `gpu-wasm` alone this was declared and never compiled. The body is
+// target-agnostic (PRIMARY already includes BROWSER_WEBGPU).
+#[cfg(any(feature = "gpu", feature = "gpu-wasm"))]
 pub(crate) fn shared_instance() -> wgpu::Instance {
     use std::sync::OnceLock;
     static INSTANCE: OnceLock<wgpu::Instance> = OnceLock::new();

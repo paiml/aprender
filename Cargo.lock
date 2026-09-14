@@ -1104,6 +1104,7 @@ name = "aprender-profile-core"
 version = "0.67.0"
 dependencies = [
  "hex",
+ "opentelemetry",
  "serde",
  "serde_json",
  "static_assertions",
