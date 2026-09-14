@@ -35,3 +35,8 @@
 {"repo":"aprender","ticket":"PMAT-978","phase":"P_2","mode":"direct","est":3,"actual":4,"basis":"est=first-run[U]; actual=orchestrator bash calls (mutation, contract, receipt)"}
 {"repo":"aprender","ticket":"PMAT-974","phase":"P_1","mode":"subagent:sonnet","est":3,"actual":40,"basis":"est=first-run[U]; actual=worker maxTurns (40) + one resume; both commits landed"}
 {"repo":"aprender","ticket":"PMAT-974","phase":"P_2","mode":"direct","est":3,"actual":3,"basis":"est=first-run[U]; actual=orchestrator bash calls (mutation, contract, receipt)"}
+{"repo":"aprender","ticket":"PMAT-973","phase":"P_1","mode":"subagent:sonnet","est":3,"actual":40,"basis":"est=first-run[U]; actual=worker maxTurns (40) + one resume (40); fix complete but uncommitted"}
+{"repo":"aprender","ticket":"PMAT-973","phase":"P_2","mode":"direct","est":3,"actual":4,"basis":"est=first-run[U]; actual=orchestrator bash calls (commit, mutation, contract, receipt)"}
+{"repo":"aprender","ticket":"PMAT-972","phase":"P_1b","mode":"subagent:sonnet","est":3,"actual":40,"basis":"est=first-run[U]; actual=worker maxTurns (40) + one resume; decomposition committed"}
+{"repo":"aprender","ticket":"PMAT-972","phase":"P_1","mode":"subagent:sonnet","est":3,"actual":40,"basis":"est=first-run[U]; actual=worker maxTurns (40) + one resume (40); guard + case table left green but uncommitted"}
+{"repo":"aprender","ticket":"PMAT-972","phase":"P_2","mode":"direct","est":3,"actual":6,"basis":"est=first-run[U]; actual=orchestrator bash calls (mutation, docstring, wiring, contract, receipt)"}

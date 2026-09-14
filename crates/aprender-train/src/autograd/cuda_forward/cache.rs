@@ -20,6 +20,11 @@ use trueno_gpu::kernels::{
 
 use crate::autograd::cuda_tensor::{CudaTensorError, Result};
 
+// The cache keys. Deliberately NOT behind the `cuda` gate — see the module'"'"'s own
+// header and YOGA-NIGHTLY-001 R-2: the property test that guards this file must
+// run on a machine with no GPU.
+use super::keys;
+
 /// Cached compiled CUDA modules for forward kernels
 #[cfg(feature = "cuda")]
 pub(super) static FORWARD_KERNEL_CACHE: OnceLock<Mutex<ForwardKernelCache>> = OnceLock::new();
@@ -37,6 +42,18 @@ pub(super) static FORWARD_KERNEL_CACHE: OnceLock<Mutex<ForwardKernelCache>> = On
 pub(super) struct ForwardKernelCache {
     ctx: std::sync::Arc<CudaContext>,
     modules: HashMap<String, CudaModule>,
+    /// JIT compiles observed since the last reset (PMAT-272, YOGA-NIGHTLY-001 R-3).
+    ///
+    /// A cache MISS after pre_warm_for_model is the Blackwell cascade's root
+    /// cause made countable: the `warm!` macro hardcoded one key, so eleven-plus
+    /// "pre-warmed" kernels silently JIT-compiled at runtime. On sm_121 that
+    /// corrupts the stream and fails hard; on sm_89 it SUCCEEDS, which is why an
+    /// sm_89 pass/fail lane was green through all seven defects.
+    ///
+    /// Counting it turns that silent success into an assertion any architecture
+    /// can make locally — no second machine, no cross-arch transcript diff, and
+    /// no confound from differing CUDA toolkits.
+    jit_compiles: usize,
     /// Device SM target string (e.g. "sm_89" for RTX 4090)
     sm_target: String,
     /// cuBLAS handle (ALB-075): forward=tensor cores, backward=SIMD (ALB-076/trueno#170)
@@ -65,7 +82,7 @@ impl ForwardKernelCache {
         };
 
         eprintln!("[CUDA] Kernel cache initialized for target: {sm_target}");
-        Self { ctx, modules: HashMap::new(), sm_target, cublas }
+        Self { ctx, modules: HashMap::new(), sm_target, cublas, jit_compiles: 0 }
     }
 
     /// Get a reference to the cuBLAS handle, if available.
@@ -88,6 +105,25 @@ impl ForwardKernelCache {
     /// Consumers MUST use this to emit PTX via `kernel.emit_ptx_for_target(cache.sm_target())`.
     pub(super) fn sm_target(&self) -> &str {
         &self.sm_target
+    }
+
+    /// JIT compiles seen since construction or the last reset (R-3).
+    pub(super) fn jit_compiles(&self) -> usize {
+        self.jit_compiles
+    }
+
+    /// Zero the JIT counter. Call this AFTER pre_warm_for_model.
+    ///
+    /// THE RESET IS THE WHOLE ASSERTION. Pre-warm legitimately compiles every
+    /// kernel it warms, so the counter is expected to be large at that point —
+    /// asserting zero there would be asserting pre-warm did nothing. The claim
+    /// worth making is the NEXT one: after pre-warm, a representative pass must
+    /// compile NOTHING. Any miss then means a kernel the pass needs was not
+    /// warmed, or was warmed under a key the pass does not use — which is
+    /// exactly the cascade's root cause and its Lesson-3 sequel (pre-warm and
+    /// runtime building keys with separate format! calls that drifted apart).
+    pub(super) fn reset_jit_counter(&mut self) {
+        self.jit_compiles = 0;
     }
 
     /// Look up a previously compiled module by key (KAIZEN-058).
@@ -127,6 +163,8 @@ impl ForwardKernelCache {
                 // JIT event with its kernel name so missing pre-warm entries
                 // are identifiable in O(1) instead of O(N) iterations.
                 eprintln!("[FWD-CACHE] Compiling '{name}' (ptx_len={})", ptx.len());
+                // R-3: a miss is the countable form of the cascade root cause.
+                self.jit_compiles += 1;
                 // trueno#200: Use from_ptx_direct on Blackwell
                 let (major, _) = self.ctx.compute_capability().map_err(|e| {
                     CudaTensorError::KernelError(format!("compute_capability: {e:?}"))
@@ -178,6 +216,11 @@ impl ForwardKernelCache {
         let si = s * i; // seq_len * intermediate_size
 
         let mut count = 0u32;
+        // Every key this function actually warms, so the pure model of it in
+        // `keys::prewarm_keys` can be CHECKED against reality rather than
+        // trusted. Two lists with nothing tying them together is the root cause
+        // this whole module exists to retire.
+        let mut warmed: Vec<String> = Vec::new();
         let target = self.sm_target.clone();
 
         // Helper: generate PTX and compile.
@@ -201,6 +244,7 @@ impl ForwardKernelCache {
                 let key = $key;
                 let ptx = $kernel.emit_ptx_for_target(&target);
                 self.get_or_compile(&key, &ptx)?;
+                warmed.push(key);
                 count += 1;
             }};
         }
@@ -221,15 +265,17 @@ impl ForwardKernelCache {
         // the pre-warm default to 1e-6 (Qwen2 standard) AND additionally
         // pre-warm 1e-5 (Llama/Mistral standard) for cross-family coverage.
         // The cost of pre-warming both is ~30 KB of cache headroom.
-        let qwen2_eps_bits = 1.0e-6_f32.to_bits(); // 0x358637bd
-        let llama_eps_bits = 1.0e-5_f32.to_bits(); // 0x3727c5ac
+        // The epsilons themselves now come from `keys`, so the pre-warm and the
+        // runtime cannot disagree about which two the corpus uses (PMAT-698n).
+        let qwen2_eps_bits = keys::QWEN2_RMS_EPS.to_bits(); // 0x358637bd
+        let llama_eps_bits = keys::LLAMA_RMS_EPS.to_bits(); // 0x3727c5ac
         warm!(
-            format!("batched_rmsnorm_fwd_{h}_eps{qwen2_eps_bits:08x}"),
+            keys::batched_rmsnorm_fwd(h, keys::QWEN2_RMS_EPS),
             BatchedVectorizedRmsNormKernel::new(h, 1)
         );
         if qwen2_eps_bits != llama_eps_bits {
             warm!(
-                format!("batched_rmsnorm_fwd_{h}_eps{llama_eps_bits:08x}"),
+                keys::batched_rmsnorm_fwd(h, keys::LLAMA_RMS_EPS),
                 BatchedVectorizedRmsNormKernel::new(h, 1)
             );
         }
@@ -241,10 +287,9 @@ impl ForwardKernelCache {
         // both Qwen2 (1e-6) and Llama (1e-5) eps like batched_rmsnorm_fwd.
         {
             use trueno_gpu::kernels::BatchedFusedResidualRmsNormKernel;
-            for eps in [1.0e-6_f32, 1.0e-5_f32] {
-                let eps_bits = eps.to_bits();
+            for eps in [keys::QWEN2_RMS_EPS, keys::LLAMA_RMS_EPS] {
                 warm!(
-                    format!("batched_fused_residual_rmsnorm_{h}_eps{eps_bits:08x}"),
+                    keys::batched_fused_residual_rmsnorm(h, eps),
                     BatchedFusedResidualRmsNormKernel::new(h, 1).with_epsilon(eps)
                 );
             }
@@ -268,18 +313,18 @@ impl ForwardKernelCache {
         let has_cublas = self.cublas.is_some();
         if !has_cublas {
             // 2. GEMM: Q/O projections (S, H, H)
-            warm!(format!("gemm_forward_{s}_{h}_{h}"), GemmKernel::naive(s, h, h));
+            warm!(keys::gemm_forward(s, h, h), GemmKernel::naive(s, h, h));
 
             // 3. GEMM: K/V projections (S, H, kv_hidden)
             if kv_h != h {
-                warm!(format!("gemm_forward_{s}_{h}_{kv_h}"), GemmKernel::naive(s, kv_h, h));
+                warm!(keys::gemm_forward(s, h, kv_h), GemmKernel::naive(s, kv_h, h));
             }
 
             // 4. GEMM: gate/up projections (S, H, I)
-            warm!(format!("gemm_forward_{s}_{h}_{i}"), GemmKernel::naive(s, i, h));
+            warm!(keys::gemm_forward(s, h, i), GemmKernel::naive(s, i, h));
 
             // 5. GEMM: down projection (S, I, H)
-            warm!(format!("gemm_forward_{s}_{i}_{h}"), GemmKernel::naive(s, h, i));
+            warm!(keys::gemm_forward(s, i, h), GemmKernel::naive(s, h, i));
         } else {
             eprintln!("[CUDA] Skipping PTX pre-warm for 4 GEMM kernels (cuBLAS active — PMAT-700)");
         }
@@ -293,8 +338,7 @@ impl ForwardKernelCache {
         // Compiling events post-pre-warm for rope_fwd at seq=256 — avoidable
         // JIT-cache pressure that PMAT-700-B closed for GEMMs.
         use trueno_gpu::kernels::BatchedRopeNeoxKernel;
-        let qwen_theta = 1_000_000.0_f32;
-        let qwen_theta_bits = qwen_theta.to_bits();
+        let qwen_theta = keys::QWEN_ROPE_THETA;
         let phase4_rope_seq: u32 = std::env::var("APR_DISTILL_SMOKE_SEQ_LEN")
             .ok()
             .and_then(|v| v.parse().ok())
@@ -302,63 +346,147 @@ impl ForwardKernelCache {
         let nkv = _nkv;
         for rope_seq in [1_u32, phase4_rope_seq] {
             warm!(
-                format!("batched_rope_neox_fwd_{nh}_{hd}_{rope_seq}_th{qwen_theta_bits:08x}"),
+                keys::batched_rope_neox_fwd(nh, hd, rope_seq, qwen_theta),
                 BatchedRopeNeoxKernel::new(nh, hd, rope_seq, qwen_theta)
             );
             if nkv != nh {
                 warm!(
-                    format!("batched_rope_neox_fwd_{nkv}_{hd}_{rope_seq}_th{qwen_theta_bits:08x}"),
+                    keys::batched_rope_neox_fwd(nkv, hd, rope_seq, qwen_theta),
                     BatchedRopeNeoxKernel::new(nkv, hd, rope_seq, qwen_theta)
                 );
             }
         }
 
         // 6. Fused SwiGLU
-        warm!("fused_swiglu_forward".to_string(), FusedSwigluKernel::new(si));
+        warm!(keys::fixed::FUSED_SWIGLU_FORWARD.to_string(), FusedSwigluKernel::new(si));
 
         // 7. Residual add (seq * hidden)
-        warm!("residual_add_forward".to_string(), ResidualAddKernel::new(sh));
+        warm!(keys::fixed::RESIDUAL_ADD_FORWARD.to_string(), ResidualAddKernel::new(sh));
 
         // 8. Interleaved-to-batched (dimension-independent: one module handles all dims)
-        warm!("interleaved_to_batched".to_string(), InterleavedToBatchedKernel::new(s, nh, hd));
+        warm!(
+            keys::fixed::INTERLEAVED_TO_BATCHED.to_string(),
+            InterleavedToBatchedKernel::new(s, nh, hd)
+        );
 
         // 9. Batched transpose (dimension-independent: one module handles all dims)
-        warm!("batched_transpose".to_string(), BatchedTransposeKernel::new(nh, s, hd));
+        warm!(keys::fixed::BATCHED_TRANSPOSE.to_string(), BatchedTransposeKernel::new(nh, s, hd));
 
         // 10. Batched 4D GEMM: Q@K^T (1, NH, S, S, HD)
-        warm!(
-            format!("batched_4d_gemm_1_{nh}_{s}_{s}_{hd}"),
-            Batched4DGemmKernel::new(1, nh, s, s, hd)
-        );
+        warm!(keys::batched_4d_gemm(1, nh, s, s, hd), Batched4DGemmKernel::new(1, nh, s, s, hd));
 
         // 11. Scale: attention scores (NH * S * S)
         let score_n = nh * s * s;
-        warm!("scale_forward".to_string(), ScaleKernel::new(score_n));
+        warm!(keys::fixed::SCALE_FORWARD.to_string(), ScaleKernel::new(score_n));
 
         // 12. Batched softmax (dimension-independent: one module handles all dims)
         let softmax_rows = nh * s;
-        warm!("batched_softmax_forward".to_string(), BatchedSoftmaxKernel::new(softmax_rows, s));
+        warm!(
+            keys::fixed::BATCHED_SOFTMAX_FORWARD.to_string(),
+            BatchedSoftmaxKernel::new(softmax_rows, s)
+        );
 
         // 13. Batched 4D GEMM: attn@V (1, NH, S, HD, S)
-        warm!(
-            format!("batched_4d_gemm_1_{nh}_{s}_{hd}_{s}"),
-            Batched4DGemmKernel::new(1, nh, s, hd, s)
-        );
+        warm!(keys::batched_4d_gemm(1, nh, s, hd, s), Batched4DGemmKernel::new(1, nh, s, hd, s));
 
         // 13b. Batched 4D GEMM: attention backward grad_V^T (1, NH, HD, S, S)
-        warm!(
-            format!("batched_4d_gemm_1_{nh}_{hd}_{s}_{s}"),
-            Batched4DGemmKernel::new(1, nh, hd, s, s)
-        );
+        warm!(keys::batched_4d_gemm(1, nh, hd, s, s), Batched4DGemmKernel::new(1, nh, hd, s, s));
 
         // 14. Batched-to-interleaved (dimension-independent: one module handles all dims)
-        warm!("batched_to_interleaved".to_string(), BatchedToInterleavedKernel::new(s, nh, hd));
+        warm!(
+            keys::fixed::BATCHED_TO_INTERLEAVED.to_string(),
+            BatchedToInterleavedKernel::new(s, nh, hd)
+        );
 
         // 15. Element-wise multiply (used in FFN backward for SwiGLU gate * up)
-        warm!("elementwise_mul_forward".to_string(), ElementwiseMulKernel::new(si));
+        warm!(keys::fixed::ELEMENTWISE_MUL_FORWARD.to_string(), ElementwiseMulKernel::new(si));
 
         // 16. SiLU forward activation (standalone, used in LoRA FFN path)
-        warm!("silu_forward".to_string(), SiluKernel::new(si));
+        warm!(keys::fixed::SILU_FORWARD.to_string(), SiluKernel::new(si));
+
+        // 17-22. NF4, split into its own method — see warm_nf4_projections.
+        count += self.warm_nf4_projections(s, h, i, q_dim, kv_h, &target, &mut warmed)?;
+        count += self.warm_nf4_backward(s, h, i, q_dim, kv_h, &target, &mut warmed)?;
+
+        // ── THE TIE (YOGA-NIGHTLY-001 R-2) ─────────────────────────────────
+        //
+        // `keys::prewarm_keys` is a pure model of everything above, and the
+        // CPU-only property test asserts that model covers every key the runtime
+        // asks for. A model nobody checks against reality is the SECOND list
+        // this refactor exists to abolish — so check it, here, on the box, with
+        // the keys this function actually warmed.
+        //
+        // Direction matters and both are fatal:
+        //   in the model, not warmed  -> the property test is passing on keys
+        //                                that were never compiled.
+        //   warmed, not in the model  -> a kernel the test has never seen, i.e.
+        //                                exactly the blind spot that let five
+        //                                pre-warm defects ship.
+        //
+        // It costs a BTreeSet of ~40 short strings once per cache init, next to
+        // ~40 PTX JIT compiles.
+        let spec = keys::PreWarmSpec {
+            shape: keys::ModelKeyShape {
+                hidden: h,
+                intermediate: i,
+                num_heads: nh,
+                num_kv_heads: _nkv,
+                head_dim: hd,
+                max_seq_len: s,
+            },
+            has_cublas,
+            rope_seq_lens: vec![1, phase4_rope_seq],
+        };
+        let modelled = keys::prewarm_keys(&spec);
+        let actual: std::collections::BTreeSet<String> = warmed.into_iter().collect();
+        if modelled != actual {
+            let only_modelled: Vec<&String> = modelled.difference(&actual).collect();
+            let only_actual: Vec<&String> = actual.difference(&modelled).collect();
+            return Err(CudaTensorError::KernelError(format!(
+                "pre-warm key model drift: {} key(s) modelled but not warmed {:?}; \
+                 {} key(s) warmed but not modelled {:?}. \
+                 keys::prewarm_keys no longer describes pre_warm_for_model, so the \
+                 CPU property test guarding this file is measuring the wrong set \
+                 (YOGA-NIGHTLY-001 R-2).",
+                only_modelled.len(),
+                only_modelled,
+                only_actual.len(),
+                only_actual
+            )));
+        }
+
+        eprintln!("[CUDA] Pre-warmed {count} forward kernels (JIT compiled before block upload)");
+        Ok(())
+    }
+
+    /// The NF4 quantised projections, forward and transposed-backward.
+    ///
+    /// Split out of `pre_warm_for_model` for the reason the complexity gate
+    /// gives: six nested `is_multiple_of(64)` block-size tests and GQA
+    /// asymmetries in one function put it at cognitive 38 against a threshold of
+    /// 25 — and it was already at 35 before this branch touched it. The split
+    /// mirrors `keys::nf4_keys`, which models exactly this set, so the two are
+    /// now the same shape as well as the same content.
+    fn warm_nf4_projections(
+        &mut self,
+        s: u32,
+        h: u32,
+        i: u32,
+        q_dim: u32,
+        kv_h: u32,
+        target: &str,
+        warmed: &mut Vec<String>,
+    ) -> Result<u32> {
+        let mut count = 0u32;
+        macro_rules! warm {
+            ($key:expr, $kernel:expr) => {{
+                let key = $key;
+                let ptx = $kernel.emit_ptx_for_target(target);
+                self.get_or_compile(&key, &ptx)?;
+                warmed.push(key);
+                count += 1;
+            }};
+        }
 
         // 17-20. NF4 quantized GEMM variants (trueno#108: QLoRA support)
         // Same 4 GEMM shapes but with Nf4GemmKernel instead of GemmKernel.
@@ -372,66 +500,81 @@ impl ForwardKernelCache {
             // Attention projections use q_dim (= num_heads * head_dim) which may
             // differ from hidden_size (e.g. Qwen3-4B: h=2560, q_dim=4096).
             // Q proj: input[S,h] @ W_q[h, q_dim] — key {h}_{q_dim}
-            warm!(format!("nf4_gemm_forward_{h}_{q_dim}"), Nf4GemmKernel::new(s, q_dim, h));
+            warm!(keys::nf4_gemm_forward(h, q_dim), Nf4GemmKernel::new(s, q_dim, h));
             // O proj: input[S,q_dim] @ W_o[q_dim, h] — key {q_dim}_{h}
             if q_dim != h {
-                warm!(format!("nf4_gemm_forward_{q_dim}_{h}"), Nf4GemmKernel::new(s, h, q_dim));
+                warm!(keys::nf4_gemm_forward(q_dim, h), Nf4GemmKernel::new(s, h, q_dim));
             }
             if kv_h != h && kv_h != q_dim && kv_h.is_multiple_of(64) {
-                warm!(format!("nf4_gemm_forward_{h}_{kv_h}"), Nf4GemmKernel::new(s, kv_h, h));
+                warm!(keys::nf4_gemm_forward(h, kv_h), Nf4GemmKernel::new(s, kv_h, h));
             }
             if i.is_multiple_of(64) {
-                warm!(format!("nf4_gemm_forward_{h}_{i}"), Nf4GemmKernel::new(s, i, h));
-                warm!(format!("nf4_gemm_forward_{i}_{h}"), Nf4GemmKernel::new(s, h, i));
+                warm!(keys::nf4_gemm_forward(h, i), Nf4GemmKernel::new(s, i, h));
+                warm!(keys::nf4_gemm_forward(i, h), Nf4GemmKernel::new(s, h, i));
             }
         }
 
         // PMAT-475: Fused NF4 Gate+Up GEMM for FFN (shared input load).
         if h.is_multiple_of(64) && i.is_multiple_of(64) {
             use trueno_gpu::kernels::FusedNf4GateUpGemmKernel;
-            warm!(format!("fused_nf4_gate_up_{h}_{i}"), FusedNf4GateUpGemmKernel::new(s, i, h));
+            warm!(keys::fused_nf4_gate_up(h, i), FusedNf4GateUpGemmKernel::new(s, i, h));
         }
         // PMAT-478: Fused K+V GEMM for GQA attention (reuses Gate+Up kernel).
         if h.is_multiple_of(64) && kv_h.is_multiple_of(64) && kv_h != i {
             use trueno_gpu::kernels::FusedNf4GateUpGemmKernel;
-            warm!(
-                format!("fused_nf4_gate_up_{h}_{kv_h}"),
-                FusedNf4GateUpGemmKernel::new(s, kv_h, h)
-            );
+            warm!(keys::fused_nf4_gate_up(h, kv_h), FusedNf4GateUpGemmKernel::new(s, kv_h, h));
+        }
+
+        Ok(count)
+    }
+
+    /// The NF4 transposed GEMMs — gradient propagation back through the frozen
+    /// quantised weights (ENT-153). A second method rather than a second half:
+    /// the forward and backward halves have the same four branches each, and
+    /// together they are cognitive 27 against a threshold of 25.
+    fn warm_nf4_backward(
+        &mut self,
+        s: u32,
+        h: u32,
+        i: u32,
+        q_dim: u32,
+        kv_h: u32,
+        target: &str,
+        warmed: &mut Vec<String>,
+    ) -> Result<u32> {
+        let mut count = 0u32;
+        macro_rules! warm {
+            ($key:expr, $kernel:expr) => {{
+                let key = $key;
+                let ptx = $kernel.emit_ptx_for_target(target);
+                self.get_or_compile(&key, &ptx)?;
+                warmed.push(key);
+                count += 1;
+            }};
         }
 
         // 19-22. NF4 transposed GEMM for QLoRA backward (ENT-153).
         // C[M×K] = A[M×N] @ B[K×N]^T — gradient propagation through frozen NF4 layers.
         if h.is_multiple_of(64) {
             // Q proj backward: grad[S,q_dim] @ W_q[h, q_dim]^T → [S,h]
-            warm!(
-                format!("nf4_gemm_transpose_{q_dim}_{h}"),
-                Nf4GemmTransposeKernel::new(s, q_dim, h)
-            );
+            warm!(keys::nf4_gemm_transpose(q_dim, h), Nf4GemmTransposeKernel::new(s, q_dim, h));
             // O proj backward: grad[S,h] @ W_o[q_dim, h]^T → [S,q_dim]
             if q_dim != h {
-                warm!(
-                    format!("nf4_gemm_transpose_{h}_{q_dim}"),
-                    Nf4GemmTransposeKernel::new(s, h, q_dim)
-                );
+                warm!(keys::nf4_gemm_transpose(h, q_dim), Nf4GemmTransposeKernel::new(s, h, q_dim));
             }
             if kv_h != h && kv_h != q_dim && kv_h.is_multiple_of(64) {
                 // K/V proj backward: grad[S,kv_h] @ W_k[h, kv_h]^T → [S,h]
-                warm!(
-                    format!("nf4_gemm_transpose_{kv_h}_{h}"),
-                    Nf4GemmTransposeKernel::new(s, kv_h, h)
-                );
+                warm!(keys::nf4_gemm_transpose(kv_h, h), Nf4GemmTransposeKernel::new(s, kv_h, h));
             }
             if i.is_multiple_of(64) {
                 // Gate/Up backward: grad[S,I] @ W_gate[h,I]^T → [S,h]
-                warm!(format!("nf4_gemm_transpose_{i}_{h}"), Nf4GemmTransposeKernel::new(s, i, h));
+                warm!(keys::nf4_gemm_transpose(i, h), Nf4GemmTransposeKernel::new(s, i, h));
                 // Down backward: grad[S,h] @ W_down[I,h]^T → [S,I]
-                warm!(format!("nf4_gemm_transpose_{h}_{i}"), Nf4GemmTransposeKernel::new(s, h, i));
+                warm!(keys::nf4_gemm_transpose(h, i), Nf4GemmTransposeKernel::new(s, h, i));
             }
         }
 
-        eprintln!("[CUDA] Pre-warmed {count} forward kernels (JIT compiled before block upload)");
-        Ok(())
+        Ok(count)
     }
 
     /// Pre-warm LoRA backward GEMM kernels for QLoRA training (ENT-153).
@@ -534,6 +677,47 @@ pub fn set_forward_cublas_stream(stream: &CudaStream) -> Result<()> {
     cache.set_cublas_stream(stream)
 }
 
+/// JIT compiles the forward cache has done since the last reset (R-3).
+///
+/// See `reset_forward_jit_counter` for why this is asserted AFTER a reset and
+/// not against zero directly.
+#[cfg(feature = "cuda")]
+pub fn forward_jit_compiles() -> Result<usize> {
+    let cache = FORWARD_KERNEL_CACHE.get().ok_or(CudaTensorError::DeviceNotInitialized)?;
+    let cache = cache.lock().map_err(|_err| {
+        CudaTensorError::KernelError("Failed to acquire kernel cache lock".to_string())
+    })?;
+    Ok(cache.jit_compiles())
+}
+
+/// Zero the forward cache's JIT counter — call AFTER pre-warm, before the pass
+/// under test (PMAT-272, YOGA-NIGHTLY-001 R-3).
+///
+/// THE INVARIANT THIS ENABLES: after pre-warm, a representative pass must
+/// compile NOTHING. A miss then means a kernel the pass needs was never warmed,
+/// or was warmed under a key the pass does not use.
+///
+/// That is the Blackwell cascade's root cause made assertable. The `warm!` macro
+/// hardcoded `"silu_forward"` as the key for every kernel, so eleven-plus
+/// "pre-warmed" kernels JIT-compiled at runtime under one colliding entry. On
+/// sm_121 that corrupts the stream and fails hard. On sm_89 it SUCCEEDS — which
+/// is precisely why an sm_89 pass/fail lane stayed green through all seven
+/// defects, and why yoga needs an assertion rather than a verdict.
+///
+/// Deliberately NOT a cross-architecture transcript diff: legitimate arch
+/// differences change cache keys (cuBLAS on sm_121 vs PTX GEMM on sm_89 IS
+/// cascade defect #1804), and yoga vs gx10 also differs in CUDA toolkit. This
+/// invariant is local, needs one machine, and has no such confound.
+#[cfg(feature = "cuda")]
+pub fn reset_forward_jit_counter() -> Result<()> {
+    let cache = FORWARD_KERNEL_CACHE.get().ok_or(CudaTensorError::DeviceNotInitialized)?;
+    let mut cache = cache.lock().map_err(|_err| {
+        CudaTensorError::KernelError("Failed to acquire kernel cache lock".to_string())
+    })?;
+    cache.reset_jit_counter();
+    Ok(())
+}
+
 /// Pre-warm forward kernels (C-PREWARM-001: JIT before block upload).
 #[cfg(feature = "cuda")]
 pub fn pre_warm_forward_kernels(
@@ -634,4 +818,139 @@ pub fn pre_warm_lora_backward_kernels(
         CudaTensorError::KernelError("Failed to acquire kernel cache lock".to_string())
     })?;
     cache.pre_warm_lora_backward(hidden_size, q_dim, kv_hidden_size, max_seq_len, lora_rank)
+}
+
+#[cfg(all(test, feature = "cuda"))]
+mod prewarm_coverage_falsifier {
+    use super::*;
+    use crate::autograd::cuda_tensor::CudaDevice;
+    use trueno_gpu::driver::GpuBuffer;
+
+    /// PMAT-272 / YOGA-NIGHTLY-001 R-3: after pre-warm, a representative pass
+    /// must JIT-compile NOTHING.
+    ///
+    /// # What this falsifies
+    ///
+    /// The Blackwell cascade (2026-05-19, 8 PRs / 7 defects / 1 root cause): the
+    /// `warm!` macro hardcoded `"silu_forward"` as the cache key for EVERY
+    /// kernel, so eleven-plus "pre-warmed" kernels silently JIT-compiled at
+    /// runtime, all colliding on one HashMap entry. Five single-kernel fixes
+    /// could not see it; `[FWD-CACHE] Compiling '{name}'` logging surfaced it in
+    /// one pass.
+    ///
+    /// # Why this test and not a cross-architecture diff
+    ///
+    /// The post-mortem's own recommendation #3 was differential testing between
+    /// sm_89 and sm_121. That design has three problems this one does not:
+    /// legitimate architecture differences change cache keys (cuBLAS on sm_121
+    /// versus PTX GEMM on sm_89 IS cascade defect #1804), the two hosts also
+    /// differ in CUDA toolkit (12.4 on yoga, 13.0 on gx10), and a transcript
+    /// nobody is obliged to read rots. This invariant is LOCAL: one machine, no
+    /// confound, and a verdict that fails.
+    ///
+    /// # Why it matters most on sm_89
+    ///
+    /// Post-mortem Lesson 4: the pre-warm bugs existed on sm_89 too, but
+    /// JIT-on-demand SUCCEEDED there — sm_121's stricter behaviour is what
+    /// turned them into hard failures. So an sm_89 lane whose only output is
+    /// pass/fail was GREEN through all seven defects. This assertion is what
+    /// gives that lane the power to go red.
+    ///
+    /// # Oracle
+    ///
+    /// `forward_jit_compiles() == 0` after `reset_forward_jit_counter()`, across
+    /// a forward pass over the pre-warmed config. Non-zero names the kernels:
+    /// each one is printed by the `[FWD-CACHE]`/`[BWD-CACHE]` logging as it
+    /// compiles, so a failure is directly actionable rather than a bare count.
+    #[test]
+    fn falsify_cuda_prewarm_covers_runtime_no_jit_001() {
+        // Qwen2.5-Coder-1.5B dims — the config the cascade was found on, and
+        // small enough for yoga's 8 GB (YOGA-NIGHTLY-001 §6).
+        let (hidden, inter, heads, kv_heads, head_dim, max_seq) =
+            (1536usize, 8960usize, 12usize, 2usize, 128usize, 512usize);
+        let batch = 4usize;
+
+        // No GPU here: the lane that matters runs this on yoga and gx10. A CPU
+        // box must not report a pass it did not measure — and must not fail
+        // either, since cuda-nightly selects this test by name and a bare
+        // `cargo test` on intel would otherwise go red for having no device.
+        let device = match CudaDevice::default_device() {
+            Ok(d) => d,
+            Err(e) => {
+                eprintln!(
+                    "SKIP falsify_cuda_prewarm_covers_runtime_no_jit_001: no CUDA device ({e})"
+                );
+                return;
+            }
+        };
+        let ctx = device.context().clone();
+        let stream = device.stream();
+        if let Err(e) = init_forward_kernel_cache(ctx.clone()) {
+            eprintln!("SKIP falsify_cuda_prewarm_covers_runtime_no_jit_001: cache init ({e})");
+            return;
+        }
+
+        pre_warm_forward_kernels(hidden, inter, heads, kv_heads, head_dim, max_seq)
+            .expect("pre-warm must succeed before the invariant means anything");
+
+        // THE RESET IS THE ASSERTION'S BOUNDARY. Pre-warm legitimately compiles
+        // everything it warms; asserting zero before this point would assert
+        // that pre-warm did nothing.
+        reset_forward_jit_counter().expect("reset");
+
+        let before = forward_jit_compiles().expect("counter readable");
+        assert_eq!(before, 0, "counter must be zero immediately after reset");
+
+        // A REAL FORWARD PASS, NOT A SECOND PRE-WARM.
+        //
+        // The first version of this test re-ran pre_warm_forward_kernels here
+        // and asserted zero. That was TAUTOLOGICAL and it was caught by the
+        // mutation in YOGA-NIGHTLY-001 §9.7 before it shipped: with the `warm!`
+        // key hardcoded, the second pre-warm writes the same colliding key,
+        // finds it cached, and reports zero misses. It compared pre-warm
+        // against pre-warm — the same key construction on both sides — so it
+        // could not see a defect that lives in the DIFFERENCE between pre-warm
+        // keys and runtime keys.
+        //
+        // That is post-mortem Lesson 5 in miniature ("smoke contracts test the
+        // smoke, not the pipeline"): a contract that cannot fail under any
+        // execution is a contract bug. The invariant is only meaningful against
+        // a pass that builds its keys the way production does.
+        let residual: Vec<f32> =
+            (0..batch * hidden).map(|i| ((i as f32) * 0.017).sin() * 0.02).collect();
+        let input: Vec<f32> =
+            (0..batch * hidden).map(|i| ((i as f32) * 0.011).cos() * 0.02).collect();
+        let gamma: Vec<f32> = vec![1.0f32; hidden];
+
+        let residual_gpu = GpuBuffer::from_host(&ctx, &residual).expect("residual");
+        let input_gpu = GpuBuffer::from_host(&ctx, &input).expect("input");
+        let gamma_gpu = GpuBuffer::from_host(&ctx, &gamma).expect("gamma");
+        let mut residual_out = GpuBuffer::<f32>::new(&ctx, residual.len()).expect("residual_out");
+        let mut output = GpuBuffer::<f32>::new(&ctx, residual.len()).expect("output");
+
+        crate::autograd::cuda_forward::normalization::fused_residual_rmsnorm_forward(
+            &residual_gpu,
+            &input_gpu,
+            &mut residual_out,
+            &mut output,
+            &gamma_gpu,
+            batch as u32,
+            hidden as u32,
+            1e-6,
+            stream,
+        )
+        .expect("forward pass");
+        stream.synchronize().expect("sync");
+
+        let after = forward_jit_compiles().expect("counter readable");
+        assert_eq!(
+            after, 0,
+            "after pre-warm, a real forward pass JIT-compiled {after} kernel(s). \
+             Every one was printed by [FWD-CACHE]/[BWD-CACHE] above with its name. \
+             A kernel compiled here was either never pre-warmed, or pre-warmed under \
+             a key this pass does not construct — the Blackwell cascade's root cause \
+             and its Lesson-3 sequel. See docs/specifications/aprender-gpu/\
+             blackwell-cascade-postmortem.md."
+        );
+    }
 }

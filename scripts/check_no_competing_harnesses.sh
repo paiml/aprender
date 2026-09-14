@@ -43,6 +43,14 @@ is_allowed() {
     */ship-discharges/ship-008-discharge.sh) return 0 ;;  # likewise: SHIP-008
                                          # discharge receipt, one run, its
                                          # duration recorded as provenance only.
+    */lib/parity_block_selftest.sh) return 0 ;;  # a CASE-TABLE FIXTURE BUILDER
+                                         # (I-24, #2735), not a harness: it writes
+                                         # synthetic receipts (zero, empty and
+                                         # control comparator bands) under mktemp
+                                         # so parity_block.py's refusals can be
+                                         # asserted. It runs no model, times
+                                         # nothing, and every number it emits is
+                                         # a deliberately invented fixture value.
     */check_no_competing_harnesses.sh) return 0 ;;  # this detector: its own
                                                      # selftest fixtures contain the
                                                      # trigger strings, so without

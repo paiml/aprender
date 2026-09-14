@@ -44,7 +44,22 @@ permissions:
 
 jobs:
   present:
-    runs-on: [self-hosted, X64, Linux, clean-room]
+    # ARCH-NEUTRAL: intel, yoga OR gx10, the same move ci.yml's gate,
+    # guard-tree, pr-review-shadow and pr-review-sign already made (#3100 /
+    # PMAT-3138). The X64 pin here was not load-bearing and cost real capacity.
+    #
+    # MEASURED 2026-09-13T13:47Z: 19 active runs, 21 of 26 runners busy, and
+    # ELEVEN queued pr-review-quorum runs — all of them this job, all waiting
+    # on [self-hosted, X64, Linux, clean-room], the same pool workspace-test
+    # and guard-cargo need, some queued 23 minutes. gx10's four ARM64
+    # clean-room runners could not take a single one and sat at ~19% occupancy.
+    #
+    # NOTHING IN THIS JOB IS x86. scripts/install_pr_review_tools.sh reads
+    # `uname -m` and accepts x86_64 AND aarch64 (it pulls the matching minisign
+    # from the same pinned tarball, and dies loudly on anything else), and
+    # scripts/check_pr_review_arm4.sh contains no arch reference at all. The
+    # pin was inherited, not derived.
+    runs-on: [self-hosted, Linux, clean-room]
     timeout-minutes: 20
     if: github.event_name == 'pull_request_target' || github.event_name == 'merge_group'
     env:

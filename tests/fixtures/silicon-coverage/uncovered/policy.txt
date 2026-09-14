@@ -1,0 +1,5 @@
+# FIXTURE (R-5 §9.2) — THE ONE THE CHANGE EXISTS FOR. A required axis, an ONLINE
+# runner whose labels are a strict superset of the selector, and a non-empty job
+# ledger in which nothing carried it. Runner-existence semantics score this
+# `ok`; run semantics must score it UNCOVERED, exit 1.
+x86_64-cuda-sm89    required        self-hosted,gpu,yoga,cuda,ada    job:ada-yoga*
