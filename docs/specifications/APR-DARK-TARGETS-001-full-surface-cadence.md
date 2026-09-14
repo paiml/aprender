@@ -1,6 +1,6 @@
 # APR-DARK-TARGETS-001 — the full test surface: what it costs, what it catches, when it runs
 
-**Status:** proposed · **Opened:** 2026-09-14 · **Refs:** #3239, #3242, #3248, #3249, #3245
+**Status:** proposed · **Opened:** 2026-09-14 · **Refs:** #3239, #3242, #3248, #3250, #3245
 **Supersedes nothing.** BSE-17 (the quick tier) is correct and this specification does not change it.
 
 ---
@@ -125,7 +125,7 @@ born red.
 2. **Phase B — hard fail.** When the baseline reaches 0, delete it and the `--update` path.
 
 **Phase B is reachable now, which is why the ratchet is scaffolding rather than a resting place.**
-With #3248, #3249 and #3238 landed the count is **1**: `aprender-cgp::falsify
+With #3248, #3250 and #3238 landed the count is **1**: `aprender-cgp::falsify
 falsify_cgp_061_doctor_speed_real`, another runner-capability assertion (§5). The exit condition
 is that one target, not an open-ended backlog.
 
