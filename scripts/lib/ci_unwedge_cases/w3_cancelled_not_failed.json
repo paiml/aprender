@@ -1,0 +1,25 @@
+{
+ "total_count": 4,
+ "jobs": [
+  {
+   "name": "ci / test",
+   "status": "completed",
+   "conclusion": "cancelled"
+  },
+  {
+   "name": "ci / lint",
+   "status": "completed",
+   "conclusion": "cancelled"
+  },
+  {
+   "name": "mutants",
+   "status": "completed",
+   "conclusion": "cancelled"
+  },
+  {
+   "name": "ci / gate",
+   "status": "queued",
+   "conclusion": null
+  }
+ ]
+}
