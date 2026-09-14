@@ -95,7 +95,24 @@ JQ_MODEL="$JQ_PERCENTILE"'
   ) as $slowest_jobs
 | ($jobs | map(select(.job == "ci / gate") | .total_s)) as $ci_gate_totals
 | (if ($ci_gate_totals | length) > 0 then ($ci_gate_totals | percentile(95)) else null end) as $ci_gate_p95_s
-| (if $ci_gate_p95_s == null then null else (((3 * 72 * 3600) / $ci_gate_p95_s) | floor) end) as $prs_per_train
+| (
+    # Required checks on `main`, from branch protection:
+    #   gh api repos/paiml/aprender/rules/branches/main -> ["gate", "workspace-test"]
+    # recorded in the ledger under the job names the workflows give them.
+    ["ci / gate", "workspace-test"]
+    | map(
+        . as $rn
+        | ($jobs | map(select(.job == $rn) | .total_s)) as $t
+        | if ($t | length) > 0
+          then { job: $rn, n: ($t | length), p95_total_s: ($t | percentile(95)) }
+          else empty end
+      )
+    | sort_by(-.p95_total_s, .job)
+  ) as $required_measured
+| (($required_measured | .[0]) // null) as $binding
+| (if $binding == null then null else $binding.job end) as $binding_job
+| (if $binding == null then null else $binding.p95_total_s end) as $binding_p95_s
+| (if $binding == null then null else (((3 * 72 * 3600) / $binding_p95_s) | floor) end) as $prs_per_train
 | (
     ["intel", "yoga", "gx10"]
     | map(
@@ -114,6 +131,9 @@ JQ_MODEL="$JQ_PERCENTILE"'
     host_table: $host_table,
     slowest_jobs: $slowest_jobs,
     ci_gate_p95_s: $ci_gate_p95_s,
+    required_measured: $required_measured,
+    binding_job: $binding_job,
+    binding_p95_s: $binding_p95_s,
     prs_per_train: $prs_per_train,
     queue_p95_intel: $q_intel,
     queue_p95_yoga: $q_yoga,
@@ -244,12 +264,33 @@ render_text() {
             printf '  %-20s %6s %12s\n' "$job" "$n" "$(disp "$p95t")"
         done
 
+    local binding_job binding_p95_s
+    binding_job=$(printf '%s' "$model_json" | jq -r '.binding_job')
+    binding_p95_s=$(printf '%s' "$model_json" | jq -r '.binding_p95_s')
+
     printf '\n'
-    if [ "$ci_gate_p95_s" = "null" ]; then
-        printf '%s1 max PRs/train: [U] (no ci / gate records)\n' "$(printf '\xc2\xa7')"
+    printf 'required checks on main, p95 total_s (the SLOWEST one binds):\n'
+    printf '%s' "$model_json" | jq -r \
+        '.required_measured[] | [.job, (.n|tostring), (.p95_total_s|tostring)] | @tsv' |
+        while IFS=$'\t' read -r job n p95t; do
+            printf '  %-20s %6s %12s\n' "$job" "$n" "$(disp "$p95t")"
+        done
+
+    printf '\n'
+    if [ "$binding_job" = "null" ]; then
+        printf '%s1 max PRs/train: [U] (no record of any required check)\n' "$(printf '\xc2\xa7')"
     else
-        printf '%s1 max PRs/train ~= 3 x 72h / p95(ci / gate total_s) = 3 x 259200 / %s = %s\n' \
-            "$(printf '\xc2\xa7')" "$ci_gate_p95_s" "$prs_per_train"
+        printf '%s1 max PRs/train ~= 3 x 72h / p95(binding required check) = 3 x 259200 / %s = %s\n' \
+            "$(printf '\xc2\xa7')" "$binding_p95_s" "$prs_per_train"
+        printf '         binding check: %s (p95 %s s)\n' "$binding_job" "$binding_p95_s"
+        if [ "$ci_gate_p95_s" != "null" ] && [ "$binding_job" != "ci / gate" ]; then
+            printf '         NOTE: %s1 keys this on `ci / gate` (p95 %s s), which is NOT the slowest\n' \
+                "$(printf '\xc2\xa7')" "$ci_gate_p95_s"
+            printf '         required check. A PR merges when the slowest one is green, so the\n'
+            printf '         %s1 equation as written overstates throughput by %sx.\n' \
+                "$(printf '\xc2\xa7')" \
+                "$(awk -v b="$binding_p95_s" -v c="$ci_gate_p95_s" 'BEGIN { printf "%.1f", b / c }')"
+        fi
     fi
 
     local p95_min

@@ -90,6 +90,31 @@ chk "prints the §1 max PRs/train number" "yes" \
 chk "emits the §7 gate: line" "yes" \
     "$(grep -qE '^gate: ' "$TMP/n20.out" && echo yes || echo no)"
 
+# --- 4b. the bound must come from the SLOWEST required check, not from `ci / gate` -----
+# Required checks on main are `gate` AND `workspace-test` (branch protection). A PR merges
+# when the SLOWEST of them is green, so a throughput bound keyed on `ci / gate` alone
+# overstates it — measured 5.4x on the committed ledger (p95 1205 s vs 6451 s).
+mk_two() { # mk_two <dir>: 20 fast `ci / gate` + 20 slow `workspace-test`
+    mkdir -p "$1"
+    _i=0
+    while [ "$_i" -lt 20 ]; do
+        printf '{"sha":"a%03d","host":"intel-w1","host_class":"intel","job":"ci / gate","queue_wait_s":1,"exec_s":100,"total_s":100,"exit":0}\n' \
+            "$_i" > "$1/fast-$_i.json"
+        printf '{"sha":"b%03d","host":"intel-w1","host_class":"intel","job":"workspace-test","queue_wait_s":1,"exec_s":1000,"total_s":1000,"exit":0}\n' \
+            "$_i" > "$1/slow-$_i.json"
+        _i=$((_i + 1))
+    done
+}
+mk_two "$TMP/two"
+set +e
+"$RPT" --ledger "$TMP/two" >"$TMP/two.out" 2>&1
+set -e
+# 3 x 72h / 1000 s = 777 (workspace-test); keyed on ci / gate it would be 7776.
+chk "bound uses the slowest required check" "777" \
+    "$(sed -n 's|.*max PRs/train \([0-9][0-9]*\).*|\1|p' "$TMP/two.out" | head -1)"
+chk "names which check binds" "yes" \
+    "$(grep -qiE 'binding|slowest required' "$TMP/two.out" && echo yes || echo no)"
+
 # --- 5. a parse error is a reject, never a silent skip ---------------------------------
 mk_records "$TMP/bad" 20
 printf 'not json at all\n' > "$TMP/bad/broken.json"
