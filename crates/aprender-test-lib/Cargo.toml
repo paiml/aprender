@@ -13,6 +13,31 @@ categories = ["development-tools::testing", "wasm"]
 default = ["tui", "media", "watch"]
 # Enable real browser control (requires chromium)
 browser = ["chromiumoxide", "tokio", "futures", "async-trait"]
+# A RUNNER CAPABILITY, NOT A LIBRARY FEATURE — and the two must not share a name.
+#
+# `browser` means "this consumer wants to drive Chrome". It says nothing about
+# whether the box executing the build HAS one. tests/falsify_chromium_driver_is_real.rs
+# hard-fails without a browser on purpose (#2473: a skipped browser test is how
+# ProbarDriver shipped with MockDriver as its only implementation), so arming it
+# is a statement about the RUNNER.
+#
+# Gating it on `browser` let a sibling arm it. crates/aprender-orchestrate's
+# dev-dependency is `jugar-probar = { ..., features = ["browser"] }`, and the
+# BSE-17 quick tier builds the selected crates' `--lib --tests` in ONE graph: a
+# PR touching both crates unified `browser` on, compiled this crate's own
+# browser-gated target, and ran it on a browser-less clean-room runner.
+# Measured on #3205, run 34803859272 on gx10-pool1 — 3 failed, 30281 passed:
+#
+#   could not launch a real browser: Browser not found. Install Chromium or set CHROMIUM_PATH
+#
+# ci_test_tier.sh's header states "the quick tier runs default features"; a
+# dev-dependency's feature on a SIBLING defeats that, because feature
+# unification is a property of the build graph, not of the package. A separate
+# name is what a sibling cannot reach by wanting chromiumoxide.
+#
+# No skip is introduced: where `browser-falsify` IS on, the target still fails
+# hard without a browser. It just stops being armed by accident.
+browser-falsify = ["browser"]
 # Enable WASM runtime for logic testing (Phase 1)
 runtime = ["wasmtime", "async-trait"]
 # Enable derive macros for type-safe selectors (Phase 4)
