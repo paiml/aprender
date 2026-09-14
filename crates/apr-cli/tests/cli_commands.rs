@@ -35,6 +35,7 @@ use std::process::Command;
 fn registered_commands() -> Vec<&'static str> {
     vec![
         "run",
+        "devices",
         "serve",
         "chat",
         "inspect",
@@ -158,48 +159,50 @@ fn apr_binary() -> Command {
     cmd
 }
 
+/// The `Commands:` block of a `--help` text: every line after the header up to
+/// the next `Options:`/`Arguments:` header.
+fn help_block(stdout: &str) -> impl Iterator<Item = &str> {
+    stdout
+        .lines()
+        .skip_while(|l| !l.starts_with("Commands:"))
+        .skip(1)
+        .take_while(|l| !l.starts_with("Options:") && !l.starts_with("Arguments:"))
+}
+
+/// The command name of a row, or None for anything that is not a row.
+///
+/// Command rows have exactly 2-space indent (`  cmd  description...`).
+/// Wrapped description continuation lines have a much wider indent
+/// (column-aligned to the description start, typically 20+ spaces), so the
+/// first word of a wrap continuation is never taken for a name (CRUX-B-19).
+fn row_name(line: &str) -> Option<&str> {
+    let rest = line.strip_prefix("  ")?;
+    if rest.starts_with(' ') {
+        return None;
+    }
+    rest.split_whitespace().next()
+}
+
+/// Valid command names: lowercase, may contain hyphens, no parens/uppercase.
+fn looks_like_command(name: &str) -> bool {
+    name.chars().next().is_some_and(|c| c.is_ascii_lowercase())
+        && !name.contains('(')
+        && !name.contains(')')
+}
+
 fn get_help_commands() -> Vec<String> {
     let output = apr_binary()
         .arg("--help")
         .output()
         .expect("failed to run apr --help");
-
     let stdout = String::from_utf8_lossy(&output.stdout);
     let mut commands = Vec::new();
-    let mut in_commands = false;
-
-    for line in stdout.lines() {
-        if line.starts_with("Commands:") {
-            in_commands = true;
-            continue;
+    for line in help_block(&stdout) {
+        if line.is_empty() && commands.len() > 5 {
+            break;
         }
-        if in_commands {
-            if line.starts_with("Options:") || line.is_empty() && commands.len() > 5 {
-                break;
-            }
-            // Command rows have exactly 2-space indent (`  cmd  description...`).
-            // Wrapped description continuation lines have a much wider indent
-            // (column-aligned to the description start, typically 20+ spaces).
-            // Filter on exact 2-space indent to avoid picking up the first
-            // word of a wrap continuation as a "command name" (CRUX-B-19).
-            let leading_spaces = line.chars().take_while(|c| *c == ' ').count();
-            if leading_spaces != 2 {
-                continue;
-            }
-            let trimmed = line.trim();
-            if let Some(cmd_name) = trimmed.split_whitespace().next() {
-                // Valid command names: lowercase, may contain hyphens, no parens/uppercase
-                if !cmd_name.is_empty()
-                    && cmd_name
-                        .chars()
-                        .next()
-                        .map_or(false, |c| c.is_ascii_lowercase())
-                    && !cmd_name.contains('(')
-                    && !cmd_name.contains(')')
-                {
-                    commands.push(cmd_name.to_string());
-                }
-            }
+        if let Some(name) = row_name(line).filter(|n| looks_like_command(n)) {
+            commands.push(name.to_string());
         }
     }
     commands
@@ -626,30 +629,11 @@ fn help_subcommands(path: &[&str]) -> Vec<String> {
     cmd.args(path).arg("--help");
     let out = cmd.output().expect("apr --help");
     let stdout = String::from_utf8_lossy(&out.stdout);
-
-    let mut subs = Vec::new();
-    let mut in_commands = false;
-    for line in stdout.lines() {
-        if line.starts_with("Commands:") {
-            in_commands = true;
-            continue;
-        }
-        if in_commands {
-            if line.starts_with("Options:") || line.starts_with("Arguments:") {
-                break;
-            }
-            if let Some(rest) = line.strip_prefix("  ") {
-                if !rest.starts_with(' ') {
-                    if let Some(name) = rest.split_whitespace().next() {
-                        if name != "help" {
-                            subs.push(name.to_string());
-                        }
-                    }
-                }
-            }
-        }
-    }
-    subs
+    help_block(&stdout)
+        .filter_map(row_name)
+        .filter(|name| *name != "help")
+        .map(str::to_string)
+        .collect()
 }
 
 /// `(parent, [children])` for every parent the CONTRACT declares as having a
