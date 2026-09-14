@@ -299,8 +299,12 @@ scan() {
             printf 'ENV: %s merge-group run(s) read as dead and NONE read as live.\n' "$dead" >&2
             printf '     The branch -> ref derivation is broken, not the fleet. Nothing cancelled.\n' >&2
             rm -f "$tmp/dead"
+            # A wall-clock stamp on an operational log line is the point of the
+            # line -- it says WHEN the sweep ran. bashrs disable-line is the
+            # suppression bashrs itself names for this, and the idiom this repo
+            # already uses (check_llama_pin.sh:248, ci_target_watch.sh:158).
             printf '%s UNWEDGE looked=%s freed=%s deadref_refused=%s dry_run=%s\n' \
-                "$(date -u +%FT%TZ)" "$looked" "$freed" "$dead" "$dry"
+                "$(date -u +%FT%TZ)" "$looked" "$freed" "$dead" "$dry"  # bashrs disable-line=DET002
             return 2 ;;
         ACT)
             while IFS='|' read -r run br; do
@@ -319,7 +323,7 @@ scan() {
                 fi
             done < "$tmp/dead" ;;
     esac
-    printf '%s UNWEDGE looked=%s freed=%s dry_run=%s\n' "$(date -u +%FT%TZ)" "$looked" "$freed" "$dry"
+    printf '%s UNWEDGE looked=%s freed=%s dry_run=%s\n' "$(date -u +%FT%TZ)" "$looked" "$freed" "$dry"  # bashrs disable-line=DET002
     return 0
 }
 
