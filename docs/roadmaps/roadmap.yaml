@@ -17738,3 +17738,23 @@ roadmap:
   labels:
   - kind:code
   notes: null
+
+- id: PMAT-3234
+  github_issue: null
+  item_type: task
+  title: 'guards-nightly has been RED on a matcher that cannot see a YAML-quoted step name'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-09-14T19:45:00Z
+  updated: 2026-09-14T19:45:00Z
+  spec: docs/specifications/APR-RELEASE-001-train-and-build-kaizen.md
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'a step name containing a colon-space must be quoted in YAML; the inline
+    grep -F matched only the bare spelling, so the lane named a step that runs every
+    night as one the workflow does not run'
