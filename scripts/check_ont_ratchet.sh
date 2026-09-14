@@ -80,14 +80,30 @@ count_extractors() {
     { grep -rlE 'impl[[:space:]]+Extractor' "$d" 2>/dev/null || true; } | wc -l | tr -d ' '
 }
 
-# ONT R-5: kernel-kind with a binding, or naming a file, and NOT anchored.
-# This is the ↓ counter: the backlog that anchoring is supposed to drain.
+# ONT R-5, verbatim: "Only contracts that *should* be anchored (kernel-kind with
+# a binding, and any contract naming a file) count against the
+# `unanchored_but_bindable` ratchet."
+#
+# Read it as TWO disjuncts, and the first is a CONJUNCTION:
+#   (kernel-kind AND a binding)  OR  (names a file)
+#
+# The first draft here spelled it `kernel OR binding OR file`, which admits a
+# kernel-kind contract with no binding. Both spellings return 297 on today's
+# corpus because that set is EMPTY right now — so the number agreed while the
+# RULE did not, and it would have diverged silently the first time such a
+# contract was written. An unanchored contract is not a defect (R-5: `entity:`
+# is optional by design, and many contracts are laws, patterns or policies with
+# nothing to anchor); only the bindable ones are the backlog this ↓ counter
+# drains.
 count_unanchored_bindable() {
-    local n=0 f
+    local n=0 f is_kernel has_binding names_file
     while IFS= read -r f; do
         grep -qE '^entity:' "$f" 2>/dev/null && continue
-        if grep -qE '^kind:[[:space:]]*Kernel' "$f" 2>/dev/null \
-        || grep -qE '^[[:space:]]*(file|path|source_file|binding):' "$f" 2>/dev/null; then
+        is_kernel=0; has_binding=0; names_file=0
+        grep -qE '^kind:[[:space:]]*Kernel' "$f" 2>/dev/null && is_kernel=1
+        grep -qE '^[[:space:]]*binding:' "$f" 2>/dev/null && has_binding=1
+        grep -qE '^[[:space:]]*(file|path|source_file):' "$f" 2>/dev/null && names_file=1
+        if { [ "$is_kernel" -eq 1 ] && [ "$has_binding" -eq 1 ]; } || [ "$names_file" -eq 1 ]; then
             n=$((n+1))
         fi
     done < <(find "$REPO_ROOT/contracts" -name '*.yaml' -type f 2>/dev/null)
