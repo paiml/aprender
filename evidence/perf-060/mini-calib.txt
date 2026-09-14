@@ -1,0 +1,16 @@
+load_at_start: 10:05  up 2 days, 20:04, 0 users, load averages: 3.43 8.46 6.06
+--- r0 nonstream (captures usage.prompt_tokens) ---
+{"prompt_index": 1, "prompt_chars": 2507, "total_s": 270.911, "usage": {"prompt_tokens": 513, "completion_tokens": 128, "total_tokens": 641}, "text_head": "It appears that the code you've provided is a mix of various programming concepts and syntax elements from different languages, possibly a combination of Rust, JavaScript, and possibly some other lang"}
+--- r2 stream ---
+{"prompt_index": 2, "prompt_chars": 2531, "total_s": 271.016, "usage": null, "text_head": "It appears that the provided code snippet is a mix of various programming languages and syntax elements, making it difficult to understand its intended functionality. However, I can attempt to break down", "content_chunks": 128, "ttft_s": 216.239, "itl_p50_ms": 431.077, "decode_tok_s": 2.318, "tail_s": 0.0}
+load: 10:14  up 2 days, 20:13, 0 users, load averages: 16.54 15.10 10.95
+--- r3 stream ---
+{"prompt_index": 3, "prompt_chars": 2522, "total_s": 271.11, "usage": null, "text_head": "It appears that the code you've provided is a mix of various programming concepts and syntax elements from different languages, possibly a combination of Rust, JavaScript, and possibly some other languages", "content_chunks": 128, "ttft_s": 216.318, "itl_p50_ms": 430.678, "decode_tok_s": 2.318, "tail_s": 0.0}
+load: 10:19  up 2 days, 20:17, 0 users, load averages: 16.39 15.81 12.40
+--- r4 stream ---
+{"prompt_index": 4, "prompt_chars": 2534, "total_s": 271.051, "usage": null, "text_head": "It appears that the code you've provided is a mix of various programming concepts and syntax elements from different languages, possibly a combination of Rust, C++, and possibly some other languages. The", "content_chunks": 128, "ttft_s": 216.275, "itl_p50_ms": 430.75, "decode_tok_s": 2.319, "tail_s": 0.0}
+load: 10:23  up 2 days, 20:22, 0 users, load averages: 16.38 16.12 13.47
+DONE
+--- verification of the committed (refactored) probe.py, fresh server, W1 record 1 ---
+load: 10:28  up 2 days, 20:27, 0 users, load averages: 1.51 7.11 10.05
+{"prompt_index": 2, "prompt_chars": 2531, "total_s": 271.74, "usage": null, "text_head": "It appears that the provided code snippet is a mix of various programming languages and syntax elements, making it difficult to understand its intended functionality. However, I can attempt to break d", "content_chunks": 128, "ttft_s": 216.819, "itl_p50_ms": 432.03, "decode_tok_s": 2.312, "tail_s": 0.0}
