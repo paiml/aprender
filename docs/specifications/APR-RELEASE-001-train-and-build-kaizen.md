@@ -243,7 +243,7 @@ This is a real cost and it is not optional, so it is scheduled rather than absor
 *Done:* no train spends more turns on debt paydown than on the change that required it, measured
 over a trailing 5 trains `[U]`.
 
-## §6 Triage pass — once per train, no judgement calls — and the T-5 reconcile, a HARD gate
+## §6 Triage — continuous (§6.1), three surfaces (§6.2), capacity-bounded (§6.3) — and the T-5 reconcile, a HARD gate
 
 **Measured 2026-09-13 (0.67.0 train):** 308 open issues, 424 opened vs 124 closed in 30 d, 95 open
 issues already cited by a commit on `main`, 48 merged PRs of which 9 carried a closing reference,
@@ -252,6 +252,73 @@ decided. Filing was the work product and closing was nobody's; the milestone pas
 attributes, not decisions. **Operator ruling: reconciliation is part of every train (kaizen), not
 a separate chore.** A train that ships code and leaves its own tickets, branches and dead PRs
 behind is not done.
+
+### §6.1 Cadence — every wakeup, not once per train
+
+"Once per train" is what let 20 of 34 open PRs carry no milestone at all on 2026-09-14, every one
+of them opened in the preceding two days. A train is 48–72 h; a PR opened an hour after the pass is
+invisible for the rest of it. Triage runs on the **P0 · Pack** wakeup, beside the fleet sample —
+same cadence, same receipt, and it is equally P0 (operator: "ticket, pull requests, branches that
+are not triaged are P0").
+
+The per-wakeup pass is mechanical and bounded: anything opened since the last sample gets a
+milestone and a label; `BEHIND` PRs get `gh pr update-branch`; `DIRTY` PRs get their conflicting
+files named in a comment. Nothing here is a judgement call. The once-per-train pass keeps only
+what needs the whole window: the §6.3 capacity check and the T-5 reconcile.
+
+### §6.2 Three surfaces — issues, PRs, and BRANCHES
+
+Branches were the unwatched one. Measured 2026-09-14: **107 remote branches, 35 with an open PR,
+72 without**. Of those 72 — 32 younger than 7 d, **27 in a 7–14 d band that no rule looks at**, 13
+already R-3-eligible. R-3 archives a branch with no PR and a tip older than 14 d, so work that
+stalls on day 8 is invisible for six more days and then deleted without ever having been seen.
+
+| Surface | Per-wakeup test | Fix |
+|---|---|---|
+| Issue | opened since last sample → milestone + label | assign; `untriaged_issues = 0` |
+| PR | open → milestone; `BEHIND` → update-branch; `DIRTY` → conflicting files named | `untriaged_prs = 0` |
+| Branch | no open PR and tip older than **7 d** | open a PR (draft is fine) or archive it now — do not wait for R-3 to delete it at 14 d |
+
+A branch with no PR is not work in progress; it is work nobody can see. Seven days is the point at
+which it must become visible or become history.
+
+### §6.3 Prioritisation — capacity, not preference
+
+§4 says scope is assigned after the fact: "0.67 contains whatever merged before the 0.67 cut, by
+definition." That is right for what a train *contains* and wrong as a plan for what it *promises*.
+With no capacity rule, a milestone is a dumping ground with a date on it.
+
+**Measured 2026-09-14**, closure = **6.1 issues/day** over the trailing 7 days:
+
+| Milestone | Open | Due in | Needs | Verdict |
+|---|---:|---:|---:|---|
+| 0.68.0 | 280 | 1 d | ~46 d | **over by 45 d** |
+| 0.69.0 | 53 | 4 d | ~9 d | over by 5 d |
+| 0.70.0 | 15 | 7 d | ~2 d | fits |
+
+A date that is 45 days of arithmetic away from its content is not a commitment; it is a label, and
+every number computed from it is fiction.
+
+**The rule, and it is arithmetic so it stays inside §6's no-judgement-calls design:**
+
+```
+capacity(M) = days_remaining(M) × closure_rate_p50(trailing 7 d)
+```
+
+- `open(M) > capacity(M)` → the milestone is **OVERCOMMITTED**. Report it on the `triage:` line
+  every wakeup. It is not an error; it is a number that must be visible.
+- At T-0 of each train, an overcommitted next-milestone **spills**, lowest priority first, until
+  `open(M) ≤ capacity(M)`. Spill order is by label — `P0` never spills, then `P1`, then unlabelled,
+  then by age, oldest kept. The operator sets priority by labelling; **the arithmetic sets the cut
+  line**, so no train needs a judgement call about scope.
+- A `P0` set that alone exceeds capacity is a **stop** (§8): the release is over-promised at the
+  priority level the operator controls, and only the operator can resolve that.
+- `closure_rate` is MEASURED, never assumed. First train with fewer than 7 days of data reports
+  `[U]` and spills nothing.
+
+**Arrival is the other half.** Closure of 6.1/day against a ledger that grew net +149 in ten days
+means the cut line moves further out every train no matter how it is drawn. §6's arrival/closure
+ratio (R-5) is the control on that; capacity only decides what a date is allowed to claim.
 
 ### T-5 reconcile predicates — every one must read 0 in the receipt
 
@@ -299,6 +366,8 @@ build:   row <P0..P3|none> | PR <url|none> | records added <n>
 gate:    p95 ci/gate <min|[U]> | max PRs/train <n|[U]> | queue p95 intel <s> yoga <s> gx10 <s>
 pack:    intel <busy>/<online> | gx10 <busy>/<online> | yoga <busy>/<online> | intel-pressure <yes|no> | verdict <OK|P0-UNDERUTILIZED>
 triage:  arrival <n> | closure <n> | open PRs <n> (age p95 <d>) | untriaged issues <n> prs <n>
+branches: total <n> | no-PR <n> | no-PR >7d <n> | archived this pass <n>
+capacity: milestone <M> open <n> | closure/day <x|[U]> | capacity <n> | verdict <FITS|OVERCOMMITTED by <n>d> | spilled <n>
 matrix:  pairs <n> | red <n> | known-red <n> | stale-known-red <n> | examples started <n>/<n>
 debt:    files touched <n> | violations paid <n> | worst before <n>
 quorum:  rounds <n> | width <n> | verdicts <a/b/c> | overridden <yes|no>
@@ -327,6 +396,8 @@ next:    train eligible at <timestamp>
   is asserting something that is no longer true (§4.1).
 - A design fork appears that §6 cannot decide without judgement → §10, not a coin flip and not a
   question to the operator.
+- The `P0`-labelled set of the next milestone alone exceeds its capacity (§6.3) → stop: the release
+  is over-promised at the one priority level the operator controls, and only the operator can cut it.
 - Any step would need an invented threshold, a second concurrent aprender PR in CI,
   `--allow-dirty`, or SSH into a host → stop.
 
