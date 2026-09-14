@@ -143,9 +143,20 @@ verifier_pin_pmat() {
 # VPIN-3): they land in a kept tempfile whose tail is printed to stderr, so
 # rc=1 arrives saying WHICH stage failed instead of arriving mute.
 #
+# rc=3 EXISTS BECAUSE rc=1 WAS ANSWERING TWO DIFFERENT QUESTIONS (#3212).
+# "the pin is broken" and "this host could not build anything right now" are not
+# the same finding and do not have the same response, but both arrived as rc=1,
+# so the caller printed "a release cannot be decided by a verifier that did not
+# build" over a runner fault. The discrimination is not invented here: the log
+# is handed to cargo_classify.sh, the repo's committed ENV/CODE table, whose row
+# C8 is this exact dep-info signature. A caller that does not know rc=3 treats
+# it like any other non-zero, so this is additive.
+#
 # Returns: 0 = pinned, exported, and behavior-verified (`--version` answered)
 #          1 = pin present but FAILED to resolve (diagnostics on stderr)
 #          2 = this repo ships no pin (report, never fall back to PATH)
+#          3 = the build died for ENVIRONMENT reasons — the pin was NOT measured
+#              on this host. Still non-zero: an unresolved pin decides nothing.
 verifier_pin_pv() {
     PV=""
     export PV
@@ -170,10 +181,39 @@ verifier_pin_pv() {
     fi
     PV=""
     export PV
+    verifier_pin_class=$(verifier_pin_classify "$verifier_pin_root" "$verifier_pin_pv_log")
+    if [ "$verifier_pin_class" = 'ENV' ]; then
+        {
+            echo "verifier_pin_pv: the pv build did not run to a verdict on this host."
+            echo "  This is a RUNNER fault, not a pinning defect: cargo_classify.sh"
+            echo "  read the build log and returned ENV. Triage the host, re-run."
+            echo "  pv_bin.sh diagnostics (kept at $verifier_pin_pv_log):"
+            tail -15 "$verifier_pin_pv_log" 2>/dev/null | sed 's/^/    /'
+        } >&2
+        return 3
+    fi
     {
         echo "verifier_pin_pv: the pin failed to resolve a working pv."
         echo "  pv_bin.sh diagnostics (kept at $verifier_pin_pv_log):"
         tail -15 "$verifier_pin_pv_log" 2>/dev/null | sed 's/^/    /'
     } >&2
     return 1
+}
+
+# Lazily load the repo's ENV/CODE table and ask it about LOGFILE. Prints ENV,
+# CODE, or nothing at all when the table cannot be loaded — and "nothing" is the
+# safe answer: every caller compares against the literal ENV, so an absent
+# classifier degrades to the pre-#3212 verdict rather than to a new failure mode
+# in the pin itself. cargo_classify.sh is option-neutral, so sourcing it cannot
+# mutate the caller's shell (the rule this file's own header states).
+verifier_pin_classify() {
+    verifier_pin_cl_root="${1:-.}"
+    verifier_pin_cl_log="${2:-}"
+    [ -n "$verifier_pin_cl_log" ] && [ -s "$verifier_pin_cl_log" ] || return 0
+    if ! command -v classify_cargo_failure > /dev/null 2>&1; then
+        [ -r "$verifier_pin_cl_root/scripts/cargo_classify.sh" ] || return 0
+        . "$verifier_pin_cl_root/scripts/cargo_classify.sh" > /dev/null 2>&1 || return 0
+        command -v classify_cargo_failure > /dev/null 2>&1 || return 0
+    fi
+    classify_cargo_failure "$verifier_pin_cl_log"
 }
