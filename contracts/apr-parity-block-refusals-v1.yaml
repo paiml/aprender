@@ -1,0 +1,99 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# apr-parity-block-refusals-v1 — a parity block that cannot be computed is a
+# NAMED refusal on either side, never a traceback (PP-066 DAG row I-24;
+# issue #2887; defect #2735; ticket PMAT-972; owner perf-gate)
+#
+# WHAT IT GOVERNS
+#   scripts/lib/parity_block.py: every place a comparator median is a divisor
+#   goes through `_comparator_median(values, label)`, which refuses — through
+#   the script's existing refusal path, exit 1 — when the comparator band has
+#   no samples or a non-positive median. The subject-side refusal (`contains a
+#   non-positive rate`) is untouched. scripts/check_parity_block_refusals.sh
+#   --selftest is the case table (four fixtures, both polarities).
+#
+# PROOF LADDER, STATED HONESTLY (PP-066 §5 contract discipline, F-26)
+#   * L1 — the resolver exists: scripts/check_parity_block_refusals.sh, wired in
+#          ci.yml job guard-runner-labels.
+#   * L2 — falsification MEASURED 2026-09-06 on lambda: 4/4 rows; the registered
+#          mutation (the bare `statistics.median(subject) / statistics.median(comparator)`
+#          restored at the ratio site) turns row 2 RED with the ZeroDivisionError
+#          traceback of #2735.
+#   * L3/L4 — NOT APPLICABLE and deliberately not declared: a guard in a Python
+#          script, not a kernel. No self-exemption flag, no hand-typed proof
+#          summary.
+# ─────────────────────────────────────────────────────────────────────────────
+name: apr-parity-block-refusals
+version: "1.0.0"
+scope: >
+  The refusal behaviour of scripts/lib/parity_block.py when a band's
+  comparator side cannot yield a positive median. Out of scope: the parity
+  thresholds themselves (pp-llama-001-perf-gate-v1) and the receipt layout.
+status: active
+
+metadata:
+  kind: pattern     # a refusal invariant over a script's inputs, not a math
+                    # kernel. Set EXPLICITLY so `pv validate`'s `kernel`
+                    # default never silently applies.
+  version: "1.0.0"
+  created: '2026-09-06'
+  last_modified: '2026-09-06'
+  author: PAIML Engineering
+  references:
+    - 'scripts/lib/parity_block.py — _comparator_median(values, label), the one guarded divisor helper; the executor lane assembly decomposed to fit the complexity gate (pure code motion)'
+    - 'scripts/check_parity_block_refusals.sh — the case table: control (rc 0), zero comparator (rc 1, `band 8 comparator: non-positive rate is not a measurement`), zero subject (rc 1, the existing subject wording), empty comparator (rc 1, `band 8 comparator: no samples is not a measurement`); every row also asserts no `Traceback`'
+    - '.github/workflows/ci.yml — job guard-runner-labels runs the case table'
+    - 'PP-066 DAG row I-24 (docs/specifications/pp-066-dag.yaml); issues #2887, #2735, #2876'
+  description: >
+    A zero-token SUBJECT band already refused cleanly; a zero-token COMPARATOR
+    band reached `median(subject) / median(comparator)` and died with a Python
+    traceback — a crash where a verdict belongs. Every median-as-divisor site
+    now goes through one guard that names the band and the side and exits 1
+    through the script's own refusal path.
+
+equations:
+  a_bad_comparator_is_a_named_refusal:
+    formula: |
+      comparator samples = ∅          ⇒  refuse "band <c> comparator: no samples is not a measurement", exit 1
+      median(comparator samples) ≤ 0  ⇒  refuse "band <c> comparator: non-positive rate is not a measurement", exit 1
+      otherwise                       ⇒  ratio = median(subject) / median(comparator)
+      never: an uncaught ZeroDivisionError / StatisticsError
+    domain: 'every band of every lane the block assembles'
+    codomain: 'a block, or a refusal line with exit 1'
+    invariants:
+    - 'THE SUBJECT REFUSAL IS UNTOUCHED (row 3): `contains a non-positive rate` still fires for a zero subject band.'
+    - 'NO TRACEBACK ON ANY FIXTURE (rows 1–4 all assert the absence of `Traceback`).'
+    preconditions: []
+    postconditions:
+    - 'the control fixture still yields a block (row 1, rc 0)'
+
+proof_obligations:
+  - id: PBR-OB-001
+    statement: "A comparator band with no samples or a non-positive median is refused by name with exit 1; the subject refusal is unchanged; no fixture produces a traceback."
+    discharged_by: falsification_tests[0]
+
+falsification_tests:
+
+  - id: PBR-F-001
+    rule: named refusal, both sides, never a traceback
+    prediction: >-
+      `bash scripts/check_parity_block_refusals.sh --selftest` prints the PASS
+      line with all four fixtures verdicting as named results (control rc 0;
+      zero comparator, zero subject, empty comparator rc 1 with their texts).
+    test: 'bash scripts/check_parity_block_refusals.sh --selftest'
+    if_fails: >-
+      a parity receipt run dies mid-way with a traceback instead of a verdict,
+      and the gate reads the absence of a block as an infrastructure failure
+    mutation: >-
+      replace `comparator_median = _comparator_median(...)` + the division with the
+      bare `statistics.median(subject_values) / statistics.median(comparator_values)`;
+      row 2 must turn RED with `ZeroDivisionError` in its output.
+
+non_goals:
+  - "What a band's parity threshold is, or how many replicates a band needs (pp-llama-001-perf-gate-v1)."
+  - "The receipt layout parity_host_receipt.sh writes (bench_receipt contracts)."
+
+binding_registry:
+  guard: scripts/check_parity_block_refusals.sh
+  script: scripts/lib/parity_block.py
+  ci_job: guard-runner-labels
+  issue: "https://github.com/paiml/aprender/issues/2887"
