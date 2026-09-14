@@ -1,0 +1,25 @@
+{
+ "total_count": 4,
+ "jobs": [
+  {
+   "name": "ci / test",
+   "status": "completed",
+   "conclusion": "cancelled"
+  },
+  {
+   "name": "workspace-test",
+   "status": "completed",
+   "conclusion": "cancelled"
+  },
+  {
+   "name": "ci / gate",
+   "status": "queued",
+   "conclusion": null
+  },
+  {
+   "name": "gate",
+   "status": "queued",
+   "conclusion": null
+  }
+ ]
+}
