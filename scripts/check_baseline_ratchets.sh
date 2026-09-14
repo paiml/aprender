@@ -487,11 +487,13 @@ n_ratchet=0
 n_none=0
 n_probed=0
 n_noheader=0
-# Baselines that do not yet name an instrument. MAY ONLY FALL. At the time this
-# check was wired: hardcoded_path_shipped_baseline.txt (the very file whose
-# 277-vs-317 drift is quoted in lib_baseline_ratchet.sh) and
-# shell_lint_baseline.txt (aprender#3214 stamps it).
-NOHEADER_CEILING=2
+# Baselines that do not yet name an instrument. MAY ONLY FALL. Wired at 2;
+# aprender#3214 then landed the `# tool_version=bashrs 7.0.1` header on
+# shell_lint_baseline.txt, so it is 1. The remaining one is
+# hardcoded_path_shipped_baseline.txt -- the very file whose 277-vs-317 drift
+# across pmat 3.31.0 -> 3.37.0 is quoted in lib_baseline_ratchet.sh as the
+# reason this header exists at all.
+NOHEADER_CEILING=1
 
 while IFS= read -r f; do
     [ -n "$f" ] || continue
