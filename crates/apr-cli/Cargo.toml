@@ -97,7 +97,12 @@ cuda = ["inference", "realizar/cuda", "entrenar/cuda", "aprender-train-distill?/
 # the binary was built with it (§2.1 INVALID-BUILD reads that entry).
 cuda-batch = ["cuda"]
 # PMAT-335: WGPU backend for AMD/Intel/Apple GPU inference via Vulkan/Metal/WebGPU
-wgpu = ["inference"]
+# PMAT-335: the `wgpu` code in commands/finetune.rs uses
+# `entrenar::finetune::wgpu_pipeline::WgpuInstructPipeline` and
+# `entrenar::autograd::wgpu_training`, both gated on aprender-train's `gpu`
+# feature. `wgpu = ["inference"]` enabled neither entrenar nor that gate, so
+# `--features wgpu` (and therefore `--all-features`) did not compile.
+wgpu = ["inference", "training", "entrenar/gpu"]
 visualization = ["renacer", "trueno-viz"]
 zram = ["trueno-zram-core"]
 training = ["dep:entrenar", "dep:entrenar-lora", "dep:aprender-train-distill", "dep:aprender-train-common", "aprender-train-distill?/shard-batch-source"]

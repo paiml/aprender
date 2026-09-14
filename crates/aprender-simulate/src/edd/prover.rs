@@ -126,7 +126,21 @@ pub trait Z3Provable {
 // Z3-backed implementations (only available with z3-proofs feature)
 // =============================================================================
 
+// CB-081 removed the `z3` dependency to cut Cargo.lock bloat and left this
+// module gated behind a `z3-proofs` feature that pulls nothing, so enabling it
+// produced a cascade of unresolved-import errors. Unlike axum and jsonschema,
+// z3 is NOT already in Cargo.lock and needs the libz3 system library, so
+// re-adding it is a real cost and a real decision. Until that decision is
+// made, the feature refuses by name instead.
 #[cfg(feature = "z3-proofs")]
+compile_error!(
+    "feature `z3-proofs` needs the `z3` crate, which CB-081 removed from \
+     aprender-simulate/Cargo.toml. Re-add `z3 = { version = \"0.12\", optional = true }` \
+     and change the feature to `z3-proofs = [\"dep:z3\"]` (libz3 must be installed \
+     on the build host) to use it."
+);
+
+#[cfg(feature = "__z3-linked")]
 pub mod z3_impl {
     use super::{ProofError, ProofResult};
     use std::time::Instant;
@@ -485,7 +499,7 @@ mod tests {
         assert_eq!(cloned.theorem, result.theorem);
     }
 
-    #[cfg(feature = "z3-proofs")]
+    #[cfg(feature = "__z3-linked")]
     mod z3_tests {
         use super::super::z3_impl::*;
 

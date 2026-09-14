@@ -21,7 +21,10 @@ tokio-runtime = ["dep:tokio"]
 s3 = ["dep:aws-sdk-s3", "dep:aws-config", "tokio-runtime"]
 http = ["dep:reqwest"]
 hf-hub = ["http", "dep:base64", "dep:hex", "dep:sha2"]
-cli = ["dep:clap", "dep:crossterm"]
+# `local` and `shuffle` are not optional extras for the CLI: cli/registry.rs
+# imports `backend::LocalBackend` (gated on `local`) and cli/mod.rs dispatches
+# `cmd_mix` (gated on `shuffle`). Without them `--features cli` did not compile.
+cli = ["dep:clap", "dep:crossterm", "local", "shuffle"]
 repl = ["cli", "dep:reedline", "dep:nu-ansi-term"]
 wasm = ["dep:wasm-bindgen", "dep:wasm-bindgen-futures", "dep:js-sys", "dep:getrandom"]
 format-encryption = ["dep:aes-gcm", "dep:argon2", "dep:x25519-dalek", "dep:hkdf", "dep:sha2", "dep:rand_core", "dep:getrandom"]
