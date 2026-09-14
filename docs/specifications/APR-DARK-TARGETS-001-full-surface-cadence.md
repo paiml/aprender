@@ -223,7 +223,7 @@ Claims here are checkable, and each should be re-run rather than re-read:
 | 654 binaries never link in CI | `Starting N tests across M binaries` in any merge-queue `workspace-test` log vs the sweep's |
 | the quick tier covers change-proximate targets | touch one file in crate X; the tier prints `crates=… X …` and builds X's `--tests` |
 | the defects are global-invariant only | read the five: none is reachable from a diff to the crate that owns it |
-| Phase B is reachable | after #3248/#3249/#3238, re-run the sweep; expect exactly one failing id |
+| Phase B is reachable | after #3248/#3250/#3238, re-run the sweep; expect exactly one failing id |
 | the `--tests` delta is cheap | `scratchpad/testdelta.sh`: 76 s for `--lib`, +145 s for `--tests`, 808 binaries |
 | the merge-queue cost is ≈ +35% | re-derive §1.2's ratio from any two same-day runs and redo the arithmetic |
 
