@@ -231,10 +231,30 @@ build_jobs() {
     : > "$_bj_out"
     _bj_cut=$(date -u -d "-${LOOKBACK_DAYS} days" +%s 2>/dev/null || printf '0')
     _bj_runs="$(mktemp)" || return 1
+    # Per-event recency, because a MIXED count cannot tell "this event returned
+    # nothing recent" from "the other event carried it". Measured 2026-09-14:
+    # the same call gave 100 schedule runs all inside 30d on one host and a page
+    # with ZERO inside 30d on the runner, 47 minutes apart, same tree. The axes
+    # are carried by scheduled nightlies, so a schedule page with nothing recent
+    # is an unread window, not an unrun axis.
+    recent_schedule=0; recent_dispatch=0
     for _bj_ev in schedule workflow_dispatch; do
+        _bj_ev_f="$(mktemp)" || return 1
         gh api "repos/$REPO/actions/runs?event=${_bj_ev}&per_page=100" \
             --jq '.workflow_runs[] | [(.id|tostring), .created_at, .name] | @tsv' \
-            2>/dev/null >> "$_bj_runs" || true
+            2>/dev/null > "$_bj_ev_f" || true
+        _bj_ev_recent=0
+        while IFS="$TAB" read -r _ _bj_c _; do
+            [ -n "$_bj_c" ] || continue
+            _bj_t=$(iso_epoch "$_bj_c") || continue
+            [ "$_bj_t" -ge "$_bj_cut" ] && _bj_ev_recent=$((_bj_ev_recent + 1))
+        done < "$_bj_ev_f"
+        case "$_bj_ev" in
+            schedule)          recent_schedule=$_bj_ev_recent ;;
+            workflow_dispatch) recent_dispatch=$_bj_ev_recent ;;
+        esac
+        cat "$_bj_ev_f" >> "$_bj_runs"
+        rm -f "$_bj_ev_f"
     done
     # Newest first, so RUN_CAP truncates the OLD tail rather than a random one.
     sort -u "$_bj_runs" | sort -t"$TAB" -k2,2r > "${_bj_runs}.s" && mv "${_bj_runs}.s" "$_bj_runs"
@@ -336,6 +356,23 @@ if [ "${n_jobs:-0}" -eq 0 ]; then
     printf 'indistinguishable from a guard that read nothing at all. Zero over zero is\n'
     printf 'this fleet-s signature defect; refusing rather than reporting an absence\n'
     printf 'this guard never actually looked for.\n'
+    exit 2
+fi
+
+# Probe 2c: the SAME refusal, one denominator further in. A non-empty ledger is
+# not per-axis evidence: on 2026-09-14 the runner's listing held 59 concluded
+# jobs -- enough to clear Probe 2b -- while containing ZERO scheduled runs inside
+# the window, so both REQUIRED axes read UNCOVERED and `gate` went red on a
+# nightly that had in fact run 7 h earlier. Every required axis here is carried
+# by a scheduled workflow; a schedule page with nothing inside the lookback is a
+# window this guard failed to read, and an unread window is Unknown, never Fail.
+if [ "$MODE" = "live" ] && [ "${recent_schedule:-0}" -eq 0 ]; then
+    printf 'NO-GO: the run listing returned NO scheduled run inside the %sd lookback\n' "$LOOKBACK_DAYS"
+    printf '(schedule=%s dispatch=%s recent). Every REQUIRED axis is carried by a\n' \
+        "${recent_schedule:-0}" "${recent_dispatch:-0}"
+    printf 'scheduled workflow, so each would read UNCOVERED off a window this guard\n'
+    printf 'never read. That is the Probe-2b defect one denominator in: an absence of\n'
+    printf 'evidence reported as evidence of absence. Unknown is the honest verdict.\n'
     exit 2
 fi
 

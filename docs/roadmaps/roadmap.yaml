@@ -17725,3 +17725,37 @@ roadmap:
   labels:
   - kind:code
   notes: null
+- id: PMAT-3228
+  github_issue: null
+  item_type: task
+  title: 'ALWAYS LATEST: move the aprender pin to bashrs 7.4.1 + pmat 3.40.0 once the fleet is converged'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-14T15:11:46Z
+  updated: 2026-09-14T15:11:46Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+- id: PMAT-3229
+  github_issue: null
+  item_type: task
+  title: 'RUSTSEC-2026-0285: rustls 0.23.40 accepts TLS 1.3 handshake messages across encryption-level boundaries'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-14T16:24:32Z
+  updated: 2026-09-14T16:24:32Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
