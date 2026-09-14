@@ -1817,6 +1817,7 @@ dependencies = [
  "criterion 0.6.0",
  "js-sys",
  "libc",
+ "libm",
  "png 0.17.16",
  "proptest",
  "serde",
