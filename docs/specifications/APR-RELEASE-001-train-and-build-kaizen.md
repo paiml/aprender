@@ -413,8 +413,8 @@ next:    train eligible at <timestamp>
   is over-promised at the one priority level the operator controls, and only the operator can cut it.
 - Any step would need an invented threshold, `--allow-dirty`, or a host CONFIG change made over SSH
   instead of through forjar (§3.5 — SSH for measurement and for unclogging is expected) → stop.
-- The upstream ontology spec is not reachable at a committed sha (today: untracked in `infra`,
-  sha256 `512a16d5e09c…`) → stop: no lane on another host can read the premise, and every ontology
+- The upstream ontology spec, at the version this spec cites, is not reachable at a committed sha
+  (2026-09-14: infra `main` has v3.1; v4.3, sha256 `512a16d5e09c…`, is an untracked draft) → stop: no lane on another host can read the premise, and every ontology
   verdict is unverifiable by construction. Fixed in `infra` (ONT-P), not here (§11).
 - A sweep PR (§11.1) merged with no `ont-delta:` line → P0: a finding went into a prose sink and
   nothing mechanical can read it back.
@@ -500,13 +500,14 @@ preflight (§3.7).
 | aprender implements every ONT row (ONT §6) | **1 of 17** merged — ONT-2a, #3224 | `git log --grep='ONT-' origin/main` |
 | an aprender ticket per row | 1 of 17 (#3222, closed, no milestone) → epic #3269 | `gh issue list --search 'ONT in:title' --state all` |
 | `pv kaizen` **is** the kaizen loop | code-only: bindings, call sites, E0/E1/E2 assertions | `crates/aprender-contracts-cli/src/commands/kaizen.rs` |
-| the upstream spec itself | **untracked in `infra`** — not gitignored; 23 of its 25 siblings are tracked | `git -C ../infra ls-files --error-unmatch docs/specifications/paiml-ontology.md` |
+| the upstream spec itself | infra `main` tracks **v3.1** (414 lines, `f1269d0`); **v4.3** — the version this section is measured against, sha256 `512a16d5e09c…` — is an untracked draft on one box | `git -C ../infra show origin/main:docs/specifications/paiml-ontology.md \| head -1` vs `head -1` of the local file |
 
 Two of these are the whole point of this section. **`pv kaizen` is blind to every surface that is
 not Rust**: the train sweeps features, examples, README, `CLAUDE.md`, workflows, model files and
 CSVs, and the loop that is supposed to improve on each sweep cannot see any of them. And **the
-upstream spec is untracked**, so a quorum lane on gx10, yoga or mini cannot read the premise at all
-— every ontology verdict it returns is unverifiable by construction.
+upstream version this section cites is untracked** — `main` has v3.1, the v4.3 draft lives on one
+box — so a quorum lane on gx10, yoga or mini cannot read the premise at all, and every ontology
+verdict it returns is unverifiable by construction.
 
 ### §11.1 The rule — a sweep closes with an ontology delta, not a paragraph
 
