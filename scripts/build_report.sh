@@ -30,7 +30,7 @@ LEDGER_DEFAULT="$ROOT/docs/build-ledger"
 JOB_FLOOR=20
 
 usage() {
-    printf 'Usage: %s [--ledger DIR] [--format text|json] [--self-test]\n' "$PROG"
+    printf 'Usage: %s [--ledger DIR] [--format text|json] [--self-test [--percentile-probe]]\n' "$PROG"
 }
 
 # jq filter: percentile(k) — nearest-rank over the input array. See header.
@@ -48,7 +48,7 @@ def percentile(k):
   | ($sorted | length) as $n
   | if $n == 0 then null
     else
-      (((k / 100.0) * $n) | ceil) as $raw
+      ((((k * $n) + 99) / 100) | floor) as $raw
       | (if $raw < 1 then 1 elif $raw > $n then $n else $raw end) as $idx
       | ($sorted | .[$idx - 1])
     end;
@@ -98,8 +98,11 @@ JQ_MODEL="$JQ_PERCENTILE"'
 | (
     # Required checks on `main`, from branch protection:
     #   gh api repos/paiml/aprender/rules/branches/main -> ["gate", "workspace-test"]
-    # recorded in the ledger under the job names the workflows give them.
-    ["ci / gate", "workspace-test"]
+    # The gate is recorded under TWO job names and they are the same required check:
+    # branch protection names `ci / gate`, ruleset 13878864 names a bare `gate`
+    # (scripts/pr_review_quorum_arm.sh accepts both spellings for exactly this
+    # reason). Both are listed so the table is complete; the slowest one binds.
+    ["ci / gate", "gate", "workspace-test"]
     | map(
         . as $rn
         | ($jobs | map(select(.job == $rn) | .total_s)) as $t
@@ -172,16 +175,35 @@ build_ndjson() {
         return 0
     fi
 
-    if printf '%s\0' "${files[@]}" | xargs -0 jq -c '.' >"$out" 2>"$err"; then
-        printf '0'
-        return 0
+    # A ledger record is a JSON OBJECT. Anything else under the tree is a reject,
+    # not a crash and not a silent drop: `has()` over a non-object aborts jq with
+    # exit 5, and an empty or whitespace-only file parses to nothing and leaves no
+    # trace at all. Both read as a pass. (Found 3/3 by the PMAT-3225 review quorum.)
+    if printf '%s\0' "${files[@]}" \
+        | xargs -0 jq -c 'if type == "object" then . else error("not a JSON object") end' \
+            >"$out" 2>"$err"
+    then
+        # Every file must have produced exactly one record; fewer means a file
+        # parsed to nothing (empty/whitespace). Attribute it in the slow path.
+        if [ "$(wc -l <"$out")" -eq "$nfiles" ]; then
+            printf '0'
+            return 0
+        fi
     fi
 
     : >"$out"
+    : >"$err"
     local reject_count=0
-    local f
+    local f before
     for f in "${files[@]}"; do
-        if ! jq -c '.' "$f" >>"$out" 2>>"$err"; then
+        before=$(wc -l <"$out")
+        if ! jq -c 'if type == "object" then . else error("not a JSON object") end' \
+                "$f" >>"$out" 2>>"$err"
+        then
+            reject_count=$((reject_count + 1))
+        elif [ "$(wc -l <"$out")" -eq "$before" ]; then
+            # parsed cleanly to no value at all: empty or whitespace only
+            printf 'empty or whitespace-only: %s\n' "$f" >>"$err"
             reject_count=$((reject_count + 1))
         fi
     done
@@ -321,17 +343,22 @@ pct_case() {
     return 1
 }
 
-# fixture_case <label> <nrecords> <inject_malformed> <want_rc>
-fixture_case() {
-    local label=$1 n=$2 inject_malformed=$3 want_rc=$4
-    local dir got_rc
-    dir=$(mktemp -d)
-    local i=0
+# write_fixture_records <dir> <n> — n well-formed job records, used by both cases.
+write_fixture_records() {
+    local dir=$1 n=$2 i=0
     while [ "$i" -lt "$n" ]; do
         printf '{"spec":"APR-RELEASE-001","sha":"selftest%03d","host":"intel-w1","host_class":"intel","job":"ci / gate","queue_wait_s":%d,"exec_s":%d,"total_s":%d,"exit":0}\n' \
             "$i" "$i" "$((i * 2))" "$((i * 3 + 1))" >"$dir/rec-$i.json"
         i=$((i + 1))
     done
+}
+
+# fixture_case <label> <nrecords> <inject_malformed> <want_rc>
+fixture_case() {
+    local label=$1 n=$2 inject_malformed=$3 want_rc=$4
+    local dir got_rc
+    dir=$(mktemp -d)
+    write_fixture_records "$dir" "$n"
     if [ "$inject_malformed" = "yes" ]; then
         printf 'not json at all\n' >"$dir/broken.json"
     fi
@@ -352,6 +379,31 @@ fixture_case() {
     return 1
 }
 
+# shape_case <name> <file-content> <want_rc> — a file that is valid-ish JSON but
+# not an object, or that parses to no value at all, must land on the SAME contract
+# as unparseable text: exit 1 with `reject:`. jq aborts with exit 5 on has() over a
+# non-object, and drops an empty file without a trace; both read as a pass.
+shape_case() {
+    local name=$1 content=$2 want=$3
+    local dir rc
+    dir=$(mktemp -d)
+    write_fixture_records "$dir" 20
+    printf '%s' "$content" >"$dir/odd.json"
+    set +e
+    "$SELF" --ledger "$dir" >/dev/null 2>/dev/null
+    rc=$?
+    set -e
+    if [ -n "$dir" ] && [ -d "$dir" ]; then
+        rm -rf "$dir"
+    fi
+    if [ "$rc" = "$want" ]; then
+        printf '  ok   %-40s want=%-6s got=%s\n' "$name" "$want" "$rc"
+        return 0
+    fi
+    printf '  FAIL %-40s want=%-6s got=%s\n' "$name" "$want" "$rc"
+    return 1
+}
+
 run_self_test() {
     local fail=0
     printf '== %s --self-test ==\n' "$PROG"
@@ -364,12 +416,35 @@ run_self_test() {
     pct_case "percentile(100) over 1..100" "$vec100" 100 100 || fail=1
     pct_case "percentile(50) over [7] (n=1)" "[7]" 50 7 || fail=1
     pct_case "percentile(95) over [7] (n=1)" "[7]" 95 7 || fail=1
+    # Float ceil made these wrong: (7/100.0)*100 is 7.000000000000001, so p7 of
+    # 1..100 answered 8. k=50/95/100 all land on exact binary fractions and never
+    # reach it — the case table was too coarse, not wrong (PMAT-3225 quorum, 1/3).
+    pct_case "percentile(7) over 1..100 (float-ceil trap)" "$vec100" 7 7 || fail=1
+    pct_case "percentile(29) over 1..100 (float-ceil trap)" "$vec100" 29 29 || fail=1
+    pct_case "percentile(1) over 1..100" "$vec100" 1 1 || fail=1
+    pct_case "percentile(50) over 1..3 (rounds up)" "[1,2,3]" 50 2 || fail=1
+
+    if [ "${PERCENTILE_PROBE:-0}" -eq 1 ]; then
+        printf -- '-- percentile probe over 1..100 --\n'
+        local k
+        for k in 1 7 25 29 50 75 95 99 100; do
+            printf 'p%s=%s\n' "$k" \
+                "$(printf '%s' "$vec100" | jq -r "$JQ_PERCENTILE"' percentile('"$k"')')"
+        done
+    fi
 
     printf -- '-- exit-code contract (fixtures under mktemp -d) --\n'
     fixture_case "0 records -> decline (exit 2)" 0 no 2 || fail=1
     fixture_case "19 records -> decline (exit 2)" 19 no 2 || fail=1
     fixture_case "20 records -> reported (exit 0)" 20 no 0 || fail=1
     fixture_case "1 malformed file -> reject (exit 1)" 20 yes 1 || fail=1
+    shape_case "JSON array []"        '[]'   1 || fail=1
+    shape_case "JSON number"          '123'  1 || fail=1
+    shape_case "JSON string"          '"s"'  1 || fail=1
+    shape_case "JSON true"            'true' 1 || fail=1
+    shape_case "JSON null"            'null' 1 || fail=1
+    shape_case "empty file"           ''     1 || fail=1
+    shape_case "whitespace-only file" '   '  1 || fail=1
 
     if [ "$fail" -eq 0 ]; then
         printf '%s --self-test: PASS\n' "$PROG"
@@ -397,6 +472,10 @@ main() {
                 [ $# -ge 2 ] || { printf '%s: --format requires text|json\n' "$PROG" >&2; usage >&2; exit 2; }
                 format=$2
                 shift 2
+                ;;
+            --percentile-probe)
+                PERCENTILE_PROBE=1
+                shift
                 ;;
             --self-test)
                 self_test=1

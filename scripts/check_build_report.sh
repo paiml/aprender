@@ -125,6 +125,37 @@ chk "one malformed record exits 1" "1" "$rc_bad"
 chk "malformed record says reject:" "yes" \
     "$(grep -qE '^reject:' "$TMP/bad.err" && echo yes || echo no)"
 
+# --- 5b. quorum findings (3/3 lanes, grounding=measured): a JSON value that is not an
+#         object, and an empty/whitespace file, must hit the SAME contract as bad text.
+#         jq crashes with exit 5 on has() over a non-object; empty files emit nothing and
+#         were silently ignored. Both looked like a pass.
+for _shape in '[]' '123' '"str"' 'true' 'null' '' '   '; do
+    _dir="$TMP/shape-$(printf '%s' "$_shape" | tr -c 'a-z0-9' '_' | cut -c1-8)"
+    mk_records "$_dir" 20
+    printf '%s' "$_shape" > "$_dir/odd.json"
+    set +e
+    "$RPT" --ledger "$_dir" >/dev/null 2>"$_dir.err"; _rc=$?
+    set -e
+    chk "non-object/empty [$_shape] exits 1" "1" "$_rc"
+    chk "non-object/empty [$_shape] says reject:" "yes" \
+        "$(grep -qE '^reject:' "$_dir.err" && echo yes || echo no)"
+done
+
+# --- 5c. percentile precision: ceil(k/100*n) in floating point. k=7,n=100 must be 7,
+#         not 8 (ceil(7.000000000000001)). The k=50/95/100 table does not reach this.
+set +e
+"$RPT" --self-test --percentile-probe 2>"$TMP/pp.err" >"$TMP/pp.out"; _rcpp=$?
+set -e
+chk "--percentile-probe exits 0" "0" "$_rcpp"
+chk "p7 of 1..100 is 7, not 8" "7" \
+    "$(sed -n 's/^p7=\([0-9][0-9]*\)$/\1/p' "$TMP/pp.out" | head -1)"
+
+# --- 5d. both spellings of the gate required check are one check
+#         (scripts/pr_review_quorum_arm.sh: branch protection names `ci / gate`,
+#          ruleset 13878864 names a bare `gate`; both spellings are accepted there)
+chk "required set covers the bare `gate` spelling" "yes" \
+    "$(grep -qE '"gate"' "$RPT" && echo yes || echo no)"
+
 # --- 6. the script's own case table runs ----------------------------------------------
 set +e
 "$RPT" --self-test >"$TMP/st.out" 2>&1; rc_st=$?

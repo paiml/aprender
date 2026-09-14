@@ -1,0 +1,52 @@
+name: Build Report
+
+# APR-RELEASE-001 §5 P0·Instrument — the READ half.
+#
+# The write half (scripts/collect_build_ledger.sh, PR #3207) appends one record
+# per gate job to docs/build-ledger/. 1092 of them were committed before anything
+# in this repo read one: p95 `ci / gate`, queue p95 per host and §1's
+# max-PRs-per-train were all marked [U] in the spec while the data sat in git.
+# That is the sccache class — recorded thousands of times, never compared.
+#
+# So this job exists to give scripts/build_report.sh a caller that is not a
+# Makefile. `make lint-scripts` already runs its guard, but Makefile-only means
+# `make tier3`, which CI does not run — the exact gap check_guards_are_wired.sh
+# was written for, and the one it caught this script in (unwired guards 3 -> 4).
+#
+# Scheduled rather than per-PR: the ledger changes when the nightly collector
+# appends, not when a commit lands, and the report reads committed JSON — no
+# toolchain, no cargo, ~0.3 s over 1092 records. Blocking the merge queue on it
+# would buy nothing.
+#
+# Fail-closed on purpose: the script exits 2 with `decline:` below the §8 floor
+# of 20 job records and 1 with `reject:` on a record that is not a JSON object,
+# so a ledger that stops being written, or starts being written wrong, turns
+# this red the next morning instead of quietly reporting zeros.
+
+on:
+  schedule:
+    - cron: '30 5 * * *' # 05:30 UTC — after the nightly collector has appended
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-report
+  cancel-in-progress: true
+
+jobs:
+  build-report:
+    runs-on: [self-hosted, X64, Linux, clean-room]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: The report's own case table (percentiles, exit-code contract)
+        run: bash scripts/build_report.sh --self-test
+
+      - name: p50/p95 per host, the binding required check, §1 PRs-per-train
+        run: bash scripts/build_report.sh
+
+      - name: The contract of the report (guard)
+        run: bash scripts/check_build_report.sh
