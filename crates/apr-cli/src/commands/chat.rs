@@ -502,7 +502,11 @@ fn clean_chat_response(raw: &str) -> String {
 }
 
 /// Detect format from magic bytes (more reliable than extension)
-#[cfg(feature = "inference")]
+///
+/// Not gated: this reads four magic bytes and returns the ungated
+/// `ModelFormat`. It carried `#[cfg(feature = "inference")]` while its caller
+/// `format_from_leading_bytes` did not, so `--no-default-features` could not
+/// compile the module at all.
 fn detect_format_from_bytes(data: &[u8]) -> ModelFormat {
     if data.len() < 8 {
         return ModelFormat::Demo;

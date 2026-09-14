@@ -91,6 +91,7 @@ fn compute_aprt_stage_stats(
 
 // serde_json::json!() macro uses infallible unwrap internally
 #[allow(clippy::disallowed_methods)]
+#[cfg(feature = "realizar")]
 fn run_aprt_stage_diff(
     path1: &Path,
     path2: &Path,

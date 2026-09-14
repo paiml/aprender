@@ -245,7 +245,16 @@ pub(crate) fn run(
         // and run an element-wise diff per `apr-cli-trace-save-tensor-v1`
         // `apr_diff_values_compat` invariant.
         if is_aprt_stage_file(path1) && is_aprt_stage_file(path2) {
+            // The APRT body is read by realizar's save_tensor reader; without
+            // it there is nothing to fall back to, so say which build is needed
+            // rather than mis-diffing the pair as models.
+            #[cfg(feature = "realizar")]
             return run_aprt_stage_diff(path1, path2, limit, json_output);
+            #[cfg(not(feature = "realizar"))]
+            return Err(CliError::InvalidFormat(
+                "APRT stage files need the save-tensor reader; rebuild with --features inference"
+                    .to_string(),
+            ));
         }
         // Run tensor value comparison
         run_tensor_value_diff(path1, path2, filter, limit, transpose_aware, json_output)

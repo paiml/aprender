@@ -411,6 +411,7 @@ use crate::LlmSubcommand;
 ///
 /// # Errors
 /// Propagates whichever mode ran.
+#[cfg(feature = "tokio")]
 pub fn dispatch(command: &LlmSubcommand) -> Result<()> {
     let rt = tokio::runtime::Runtime::new()
         .map_err(|e| CliError::InferenceFailed(format!("tokio runtime: {e}")))?;
@@ -418,6 +419,15 @@ pub fn dispatch(command: &LlmSubcommand) -> Result<()> {
         LlmSubcommand::Bench { band, .. } if *band => rt.block_on(dispatch_band(command)),
         LlmSubcommand::Bench { .. } => rt.block_on(dispatch_legacy(command)),
     }
+}
+
+/// Both modes are async and need a runtime to drive. Without `tokio` there is
+/// none, so the command refuses by name instead of failing to link.
+#[cfg(not(feature = "tokio"))]
+pub fn dispatch(_command: &LlmSubcommand) -> Result<()> {
+    Err(CliError::InferenceFailed(
+        "`apr test llm` needs an async runtime; rebuild with --features inference".to_string(),
+    ))
 }
 
 /// TWO MODES, ONE ENTRYPOINT — the §4.4-conformant one.
