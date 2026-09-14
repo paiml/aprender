@@ -1,0 +1,35 @@
+{
+ "total_count": 6,
+ "jobs": [
+  {
+   "name": "ci / test",
+   "status": "completed",
+   "conclusion": "cancelled"
+  },
+  {
+   "name": "ci / lint",
+   "status": "completed",
+   "conclusion": "cancelled"
+  },
+  {
+   "name": "ci / coverage",
+   "status": "completed",
+   "conclusion": "cancelled"
+  },
+  {
+   "name": "ci / provenance",
+   "status": "completed",
+   "conclusion": "cancelled"
+  },
+  {
+   "name": "workspace-test",
+   "status": "completed",
+   "conclusion": "failure"
+  },
+  {
+   "name": "ci / gate",
+   "status": "queued",
+   "conclusion": null
+  }
+ ]
+}
