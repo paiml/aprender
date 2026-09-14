@@ -82,7 +82,15 @@ jobs:
       # BOOK-CLOSEOUT-001 § Phase 1: shell-script quality (per CLAUDE.md, use bashrs not shellcheck)
       - name: bashrs lint book check scripts (FALSIFY-BOOK-SHELL-QUALITY-001)
         run: |
-          cargo install bashrs --locked --quiet --root "$RUNNER_TEMP/cargo-tools"
+          # NEVER install. ci.yml:"pmat/bashrs must match the pinned fleet versions
+          # (never install)" has been the policy since BSE-10a/PMAT-1066; this job
+          # kept compiling bashrs from source anyway, which is BOTH a cold build per
+          # run (it died twice on 2026-09-13 losing a dep-info file under /tmp) and a
+          # version skew: the fleet pin is 7.0.1 and `cargo install` resolved 7.4.0,
+          # so the book's shell gate and the release's shell gate lint with different
+          # linters. check_bashrs_gate.sh's own header calls that disagreement "the
+          # defect this fixes".
+          bash scripts/check_tool_versions.sh
           # Lint only check scripts; gen-*-stubs.sh contain markdown heredocs with em-dashes
           # that bashrs flags as SC1100, but those are intentional in the generated book output.
           bashrs lint scripts/check_book_*.sh 2>&1 | tee /tmp/bashrs.log
@@ -116,10 +124,11 @@ jobs:
       # parity + example gates into one contract surface)
       - name: pmat comply gate (FALSIFY-BOOK-COMPLY-001)
         run: |
-          # Install pmat if not present (most CI runners have it cached)
-          if ! command -v pmat >/dev/null 2>&1; then
-            cargo install pmat --locked --quiet --root "$RUNNER_TEMP/cargo-tools" || true
-          fi
+          # Was: `cargo install pmat … || true`. The trailing `|| true` is the
+          # fail-open shape check_tool_versions.sh was written to delete — a failed
+          # install carried on with whatever was already on PATH, so a bad network day
+          # silently downgraded the gate without failing the job that depends on it.
+          bash scripts/check_tool_versions.sh
           # Validate the book-completeness contract via pv.
           #
           # This line used to call a bare `pv` and exited 127 (command not found)
