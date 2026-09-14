@@ -349,7 +349,20 @@ mime_guess = "2"
 
 # Browser / WASM runtime (heavy optional deps for test framework)
 chromiumoxide = { version = "0.8", default-features = false, features = ["tokio-runtime"] }
-wasmtime = "43"
+# 47.0.4 is a PATCHED line for RUSTSEC-2026-0269 (CVSS 8.8 filesystem sandbox
+# escape) and for the ten wasmtime/cranelift advisories that used to be exempted
+# in .cargo/audit.toml. The old deferral note there called 43 -> 47 "a four-major
+# jump" and assumed API breakage; there is none -- runtime.rs needed ZERO source
+# changes and its 73 tests pass unmodified.
+#
+# MSRV: wasmtime >=46 requires Rust 1.94.0, and rust-toolchain.toml pins 1.93.0.
+# That is fine for CI and for every shipped artifact, because `wasmtime` is
+# optional behind aprender-test-lib's `runtime` feature and NOTHING in the
+# workspace, .github/workflows/, scripts/, or the Makefile enables it -- cargo
+# never builds it, so the MSRV check never fires. It does mean
+# `--features runtime` needs Rust 1.94+ until the toolchain pin moves. Tracked
+# in #2806; cargo fails with an explicit MSRV message, not silently.
+wasmtime = "47.0.4"
 bollard = "0.17"
 
 # Old crate name aliases (workspace = true refs in migrated sub-crates)
