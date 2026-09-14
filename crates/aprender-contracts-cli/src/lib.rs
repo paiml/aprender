@@ -111,6 +111,7 @@ pub fn dispatch(command: Commands) -> Result<(), Box<dyn std::error::Error>> {
             contract, binding, ..
         } => commands::audit::run(&contract, binding.as_deref()),
         Commands::Diff { old, new } => commands::diff::run(&old, &new),
+        Commands::Census { contract_dir, json } => commands::census::run(&contract_dir, json),
         Commands::Coverage {
             contract_dir,
             binding,
