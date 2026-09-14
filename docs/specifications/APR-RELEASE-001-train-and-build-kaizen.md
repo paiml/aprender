@@ -16,10 +16,10 @@ Implement docs/specifications/APR-RELEASE-001-train-and-build-kaizen.md autonomo
 
 | # | If | Do |
 |---|---|---|
-| **0** | `yoga` or `gx10` is under-utilised (§1 packing rule) while intel has queue pressure | **P0, minutes not a session:** arm every green PR, route what can leave intel, reap disk (§5 P0·Pack, P0·Reap); record the `pack:` line; then continue to the first matching row below |
+| **0** | `yoga`, `gx10` or `mini` is under-utilised (§1 packing rule) while intel has queue pressure — and, every wakeup regardless, anything arrived since the last sample is untriaged (§6.1) | **P0, minutes not a session:** arm every green PR, route what can leave intel, reap disk (§5 P0·Pack, P0·Reap); triage what arrived (§6.1); record the `pack:` and `triage:` lines; then continue to the first matching row below |
 | 1 | ≥ 48 h since the last tag on `main` **and** no SKIPPED record for the current HEAD | run the train (§4) |
 | 2 | else a §5 row whose *Done* test fails at HEAD | do the first such row, one PR |
-| 3 | else the last train (shipped or skipped) has no triage record | do the triage pass (§6) |
+| 3 | else the last train (shipped or skipped) has no once-per-train triage record | do the once-per-train pass: §6.3 capacity check and the T-5 reconcile receipt |
 | 4 | else | emit the §7 report, exit 0 |
 
 Nothing in this spec asks a question. Running it ten times a day is safe.
@@ -28,22 +28,28 @@ Nothing in this spec asks a question. Running it ten times a day is safe.
 
 Ship a tag every 48–72 h (`0.67 → 0.68 → …`) **on a clock, not on scope**, and keep
 shrinking the wall-clock from *PR opened* to *tag published* so the clock stays cheap.
-The objective is elapsed time and green trains. **Packing rule (operator, 2026-09-12, verbatim):** "these two boxes: yoga and gx10 should be always 80% full of PRs from aprender if ANY queue pressure on intel … not acceptable to have slow releases when boxes are idel". Utilisation is not the goal for its own sake; an idle GPU box next to an intel queue is lost release time and is a **P0 defect**, not a state to tolerate. Measure it every wakeup:
+The objective is elapsed time and green trains. **Packing rule (operator, 2026-09-12, verbatim):** "these two boxes: yoga and gx10 should be always 80% full of PRs from aprender if ANY queue pressure on intel … not acceptable to have slow releases when boxes are idel". Utilisation is not the goal for its own sake; an idle GPU box next to an intel queue is lost release time and is a **P0 defect**, not a state to tolerate. `mini` (Apple M4) was declared a full-time aprender build host on 2026-09-13 (#3205) and is under the same rule; its ceiling is the macOS-capable job classes, not capacity. Measure it every wakeup, **from the ledger, never from a runner-list snapshot**:
 
 ```
-gh api --paginate orgs/paiml/actions/runners --jq '.runners[] | "\(.name) \(.status) \(.busy)"'   # busy/online per host prefix
-intel pressure  = any aprender job queued, or a workspace-test running, on intel
-under-utilised  = intel pressure AND (busy/online < 0.8 on yoga OR on gx10)
+record          = docs/build-ledger/<date>/<sha>-<host>-fleet-pack-*.json   # written by §5 P0·Pack
+intel pressure  = aprender_runs_queued > 0, or a workspace-test running, on intel
+under-utilised  = intel pressure AND (busy/online < 0.8 on yoga, on gx10, OR on mini)
 ```
+
+Two measurement traps, both already paid for: a `busy` snapshot from the runners API cannot see
+ephemeral runners, and an hourly **average** hides saturation — `occ_1h` read 9.5 % on 2026-09-14
+while 15 of 16 intel workers were busy at load 162. The `pack:` line carries the instantaneous
+`busy/online` at sample time; an average is a trend, not a verdict.
 
 Coupling, one line:
 
 ```
-max PRs per train  ≈  72 h  /  p95 `ci / gate` wall-clock      (upper bound)
+max PRs per train  ≈  3 × 72 h  /  p95 `ci / gate` wall-clock      (upper bound; 3 = merge-queue parallelism, §3.4)
 ```
 
-One PR in CI at a time means gate latency *is* release throughput. Compute this on every
-train. p95 is `[U]` until §5 P0 lands.
+The merge queue builds 3 entries in parallel (§3.4); gate latency still bounds release throughput.
+Compute this on every train. p95 is `[U]` until §5 P0 lands — `make build-report` does not exist on
+`main` as of 2026-09-14.
 
 ## §2 Ground truth — verify at HEAD before writing anything
 
@@ -52,7 +58,7 @@ train. p95 is `[U]` until §5 P0 lands.
 | `intel` — clean-room runner, 8 concurrent, memory-bound, 3.6 TB NVMe | `infra/machines/intel/forjar.yaml` | `[V]` snapshot |
 | `yoga` — CI runner, RTX 4060 8 GB, 32 GB RAM, 10G NIC needs `bolt.service` | `infra/machines/yoga/forjar.yaml` | `[V]` snapshot |
 | `gx10` — aarch64 GB10, sm_121, 120 GB unified; **not** a documented general runner | `infra/machines/gx10/forjar.yaml` | `[V]` snapshot |
-| `main` protected; required check literally named `ci / gate` | org ruleset | `[V]` |
+| `main` protected; required checks are exactly `gate` and `workspace-test` — `present` is NOT required, it is the review-receipt backlog | `gh api repos/paiml/aprender/rules/branches/main` | `[V]` 2026-09-14 |
 | Last tag = `git describe --tags --abbrev=0` on `main`; next minor = that + 1 | git | `[V]` live |
 | p95 `ci / gate`, tag→publish, cascade wall time (automated) | — | `[U]` unmeasured |
 | `workspace-test` is pinned `runs-on: [self-hosted, X64, Linux, clean-room]` (#3104) — the long pole never lands on gx10; #3139 lifts the pin (795 s on gx10-pool3, 34693750990) | `.github/workflows/ci.yml` | `[V]` 2026-09-12 |
@@ -74,7 +80,8 @@ Live `forjar.yaml` beats this table. Record the diff in the receipt and continue
    (roadmap-additive guard, a red required check) and fix or trim it rather than park it. Under
    intel pressure, arm every green PR and prefer the ones whose jobs can land on `yoga`/`gx10`.
    Splitting *one* gate across hosts (§5 P2) is the other half of the same rule. "Parallel"
-   inside a session still means ≤ 3 read-only subagents, never two sessions merging.
+   inside a session means ONE Claude subagent at a time and fan-out through agy (§10) — never two
+   sessions merging.
    *(Amended 2026-09-12 by operator ruling; the previous text said "one aprender PR in CI at a
    time" and this session dequeued four PRs on it — #3175's group was running its workspace-test
    on yoga at the time.)*
@@ -168,9 +175,10 @@ busy/online per host (§1), decide `intel pressure`, and act in minutes — arm 
 withdrawn CI, trim non-additive roadmap diffs, route arch-neutral work off intel, dispatch the
 nightlies that produce T-1 evidence on the idle GPU boxes. Record the sample as a ledger record
 `docs/build-ledger/<date>/<sha>-fleet-pack.json` `{at, intel_busy, intel_online, gx10_busy,
-gx10_online, yoga_busy, yoga_online, intel_pressure, verdict}`.
+gx10_online, yoga_busy, yoga_online, mini_busy, mini_online, intel_pressure, aprender_runs_queued,
+aprender_runs_live, idle_gpu_runners, verdict}` (5 records on `main` as of 2026-09-14, none yet with the `mini` fields).
 *Done:* over the trailing 10 trains, in every sample with `intel_pressure=true`, median busy/online
-≥ 0.8 on both `yoga` and `gx10`; the §7 `pack:` line is never `P0-UNDERUTILIZED` two wakeups in a row.
+≥ 0.8 on `yoga`, `gx10` and `mini`; the §7 `pack:` line is never `P0-UNDERUTILIZED` two wakeups in a row.
 The structural lever is `workspace-test` leaving its `X64` pin (#3139: 82,085 tests in 795 s on gx10
 against 1,000–6,000 s on intel); until it lands, `pack` is bounded by the short jobs.
 
@@ -335,6 +343,7 @@ and is committed to the ledger; the autopilot writes `DONE` only after `check_re
 every predicate 0. Falsifier: seed one fixed-but-open issue (a closed test issue reopened) — the check
 must go RED.
 
+### §6.4 Lifecycle — stale, the closure ratchet, and what is recorded
 
 Queues stabilise when closure ≥ arrival; age falls when WIP is capped. That is the whole
 mechanism.
@@ -361,10 +370,10 @@ mechanism.
 
 ```
 APR-RELEASE-001 | did=<TRAIN|BUILD|TRIAGE|NOOP> | train=v0.<N>.0 | verdict=<SHIPPED|SKIPPED|MERGED|NOOP>
-train:   step reached <T-0..T-4> | skip reason <none|…> | cascade wall min <n|[U]> | attended min 0
+train:   step reached <T-0..T-5> | skip reason <none|…> | cascade wall min <n|[U]> | attended min 0
 build:   row <P0..P3|none> | PR <url|none> | records added <n>
 gate:    p95 ci/gate <min|[U]> | max PRs/train <n|[U]> | queue p95 intel <s> yoga <s> gx10 <s>
-pack:    intel <busy>/<online> | gx10 <busy>/<online> | yoga <busy>/<online> | intel-pressure <yes|no> | verdict <OK|P0-UNDERUTILIZED>
+pack:    intel <busy>/<online> | gx10 <busy>/<online> | yoga <busy>/<online> | mini <busy>/<online> | intel-pressure <yes|no> | verdict <OK|P0-UNDERUTILIZED>
 triage:  arrival <n> | closure <n> | open PRs <n> (age p95 <d>) | untriaged issues <n> prs <n>
 branches: total <n> | no-PR <n> | no-PR >7d <n> | archived this pass <n>
 capacity: milestone <M> open <n> | closure/day <x|[U]> | capacity <n> | verdict <FITS|OVERCOMMITTED by <n>d> | spilled <n>
@@ -385,7 +394,7 @@ next:    train eligible at <timestamp>
 - Measured max PRs/train < 10 `[A]` → stop cutting trains; finish P1/P2 first.
 - `yoga` or `gx10` has no runner unit in live `forjar.yaml` and the infra PR is unmerged → stop at P2.
 - Fewer than 20 ledger records → stop at P0.
-- `yoga` or `gx10` under-utilised (§1) while intel has queue pressure, two wakeups in a row → P0:
+- `yoga`, `gx10` or `mini` under-utilised (§1) while intel has queue pressure, two wakeups in a row → P0:
   stop the current build row, pack first (arm, route, reap), report the `pack:` line.
 - A runner box at or below `REAPER_CRITICAL_GB` free, or any job dead on ENOSPC → P0: reclaim
   over SSH now, then land the forjar change that makes it automatic, before anything else.
@@ -399,9 +408,8 @@ next:    train eligible at <timestamp>
   question to the operator.
 - The `P0`-labelled set of the next milestone alone exceeds its capacity (§6.3) → stop: the release
   is over-promised at the one priority level the operator controls, and only the operator can cut it.
-- Any step would need an invented threshold, a second concurrent aprender PR in CI,
-  `--allow-dirty`, or SSH into a host → stop.
-
+- Any step would need an invented threshold, `--allow-dirty`, or a host CONFIG change made over SSH
+  instead of through forjar (§3.5 — SSH for measurement and for unclogging is expected) → stop.
 - The upstream ontology spec is not reachable at a committed sha (today: untracked in `infra`,
   sha256 `512a16d5e09c…`) → stop: no lane on another host can read the premise, and every ontology
   verdict is unverifiable by construction. Fixed in `infra` (ONT-P), not here (§11).
@@ -416,9 +424,12 @@ next:    train eligible at <timestamp>
 K̂ = 14 sessions (10 trains to `0.76` + P0, P1, infra, P2) · K = 18 · andon at 16 sessions
 or 2 consecutive skips `[A]`.
 
-The 82-crate cascade is automated (ruling 2026-09-13) and its wall time is unmeasured.
-Record cascade wall minutes at T-4 on the `0.67` train. Above ~20 min `[A]` it delays the
-post-publish receipts and the cascade — not the build — becomes the next kaizen target.
+The 82-crate cascade is automated (ruling 2026-09-13). **Measured on the `0.67` train**
+(`docs/build-ledger/2026-09-13/e45eaab47-lambda-vector-train.json`): `t4_wall_minutes: 70`,
+`attended_minutes: 0`. That is 3.5× the ~20 min `[A]` line this paragraph drew before any
+measurement existed, so by its own rule the cascade — not the build — is the next kaizen target.
+Where the 70 minutes go is `[U]`: record per-crate wall on the `0.68` train before naming a fix.
+The ratchet takes §5 P3's shape (≤ 0.70 × baseline, `[A]`) once three trains have measured it.
 
 ## §10 Decision procedure — for the forks §6 refuses to make
 
@@ -467,7 +478,8 @@ Upstream: `ONT-001 v4.3` (`infra/docs/specifications/paiml-ontology.md`, sha256 
 Its §6 assigns **aprender** every row but three. This section is how those rows get worked
 continuously instead of in one heroic push, and what the train owes the ontology every time it
 sweeps a surface. Upstream ids are written `ONT R-n` / `ONT F-n` / `ONT §n` here; a bare `§n` is
-this spec, and `R-1`–`R-5` without the prefix are the T-5 predicates (§6.3).
+this spec; a bare `R-1`–`R-5` is a T-5 predicate (§6.3) and an unhyphenated `R1–R6` is the publish
+preflight (§3.7).
 
 ### §11.0 Measured baseline — `main` @ `fa6e35f23`, 2026-09-14
 
@@ -544,8 +556,8 @@ is RED. No bulk rewrite: ≤5 corpus files per PR except a named ratchet touch (
   silently reported as 0.
 - **One ONT row per train.** 16 rows outstanding; trains run every 2–3 days ⇒ ≈40 days to ONT-10
   `[A]`. That is a derived horizon, not a promise — the rows spill by §6.3 like any other work.
-- **An ONT row PR obeys ONT §0.2**: never pushed while a release-titled run is in progress. It is
-  §3's one-aprender-PR-in-CI rule seen from the other repo.
+- **An ONT row PR obeys ONT §0.2**: never pushed while a release-titled run is in progress, so a
+  moving branch never races T-0..T-3 of a train.
 - **New gates arrive unarmed** (ONT R-8, ONT §3.9). An ONT gate lands computing everywhere; arming
   is a later, separate PR whose body shows the counter it moved.
 - **T-5 carries the `ontology:` line but does not gate on it** until
