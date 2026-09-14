@@ -35,10 +35,23 @@
 # while fourteen real jobs were coming; acting on that cancels healthy runs. A run
 # is wedged when:
 #
-#   (a) at least one job reached failure or cancelled, AND
+#   (a) at least one job was CANCELLED -- the fingerprint of a supersede, AND
 #   (b) at least one job is still pending, AND
 #   (c) EVERY pending job is an aggregator -- one that only reads needs.*.result
 #       and can never start once something it needs stopped.
+#
+# (a) IS CANCELLED, NOT "FAILED OR CANCELLED". The first draft of this file said
+# "failure or cancelled" and, run live in dry-run against this repo at 04:49Z,
+# proposed force-cancelling run 34805623711 -- #3060's merge group at QUEUE
+# POSITION 1. That run had `guard-tree` FAILED, everything else finished, and
+# `ci / gate` queued waiting for a runner on a saturated fleet. It was perfectly
+# alive: its gate would get a runner and report the failure. Cancelling it would
+# have destroyed the head of the queue's verdict.
+#
+# A failure is an ANSWER; the gate still runs and reports it. A CANCELLATION is
+# what a supersede leaves behind, and it is the only state in which the gate is
+# scheduled into a run that can never assign it a runner. H6 is that run's real
+# job list, committed, so the distinction cannot be lost again.
 #
 # (c) is precise, not a count. "<= 1 pending job" both MISSES a group wedged on
 # two aggregators (`ci / gate` AND `gate`) and FIRES on a run genuinely down to
@@ -100,7 +113,7 @@ unwedge_verdict() {
         printf 'ENV unreadable jobs payload: %s\n' "${f:-<none>}"
         return 2
     fi
-    stopped=$(jq '[.jobs[]? | select(.conclusion == "failure" or .conclusion == "cancelled")] | length' "$f" 2>/dev/null) || stopped=""
+    stopped=$(jq '[.jobs[]? | select(.conclusion == "cancelled")] | length' "$f" 2>/dev/null) || stopped=""
     pending=$(jq '[.jobs[]? | select(.status == "queued" or .status == "in_progress")] | length' "$f" 2>/dev/null) || pending=""
     if [ -z "$stopped" ] || [ -z "$pending" ]; then
         printf 'ENV jobs payload is not valid JSON: %s\n' "$f"
@@ -111,7 +124,7 @@ unwedge_verdict() {
                    | select(.name | test($re) | not)] | length' "$f" 2>/dev/null) || nonagg=1
 
     if [ "$stopped" -eq 0 ]; then
-        printf 'HEALTHY nothing stopped: %s pending, no failed or cancelled job\n' "$pending"; return 0
+        printf 'HEALTHY nothing cancelled: %s pending; a failure is an answer, the gate still reports it\n' "$pending"; return 0
     fi
     if [ "$pending" -eq 0 ]; then
         printf 'HEALTHY every job is terminal\n'; return 0
@@ -119,7 +132,7 @@ unwedge_verdict() {
     if [ "$nonagg" -gt 0 ]; then
         printf 'HEALTHY %s pending job(s), %s of them real work that can still finish\n' "$pending" "$nonagg"; return 0
     fi
-    printf 'WEDGED %s stopped, %s pending, all aggregators\n' "$stopped" "$pending"
+    printf 'WEDGED %s cancelled, %s pending, all aggregators\n' "$stopped" "$pending"
     return 0
 }
 
@@ -175,11 +188,18 @@ self_test() {
     # aggregator pattern to match everything turns exactly this row red, which is
     # what makes W1 evidence rather than decoration.
     _row HEALTHY 'H1 one failure, one pending REAL job -- not wedged'             h1_last_real_job.json
-    _row HEALTHY 'H2 aggregator queued but nothing stopped: an ordinary run'      h2_no_failure.json
+    _row HEALTHY 'H2 aggregator queued but nothing cancelled: an ordinary run'   h2_no_failure.json
     _row HEALTHY 'H3 every job terminal'                                          h3_all_terminal.json
     # H4: the mistake this predicate exists to refuse. jobs == 0 is a slow start.
     _row HEALTHY 'H4 zero jobs is a slow start, never a verdict on its own'       h4_zero_jobs.json
     _row HEALTHY 'H5 an aggregator AND a real job pending'                        h5_agg_plus_real.json
+    # H6 IS THE ROW THIS PREDICATE WAS WRONG ABOUT. The real job list of run
+    # 34805623711 -- #3060 at QUEUE POSITION 1 -- taken live at 04:49Z: one
+    # FAILED job, everything else finished, `ci / gate` queued for a runner. The
+    # "failure or cancelled" draft answered WEDGED and would have force-cancelled
+    # the head of the queue. A failure is an answer; only a cancellation parks
+    # the gate in a run that can never assign it one.
+    _row HEALTHY 'H6 a FAILED job is an answer, not a supersede (#3060 at pos 1)'  h6_failed_not_cancelled.json
 
     # An unreadable payload is ENV, never a licence to cancel.
     rows=$(( rows + 1 ))
