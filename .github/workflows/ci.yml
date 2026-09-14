@@ -1201,7 +1201,15 @@ jobs:
       # pull_request only: on merge_group there is no pull_request payload, and
       # a body is fixed before a PR is ever enqueued.
       - name: A PR body must close every issue it cites, or say why not (§6 R-2)
-        if: github.event_name == 'pull_request'
+        # `!cancelled()` and NOT a bare event check. Actions steps are fail-fast:
+        # measured on run 34875945193, step 8 went red and 48 of this job's 59
+        # steps were SKIPPED -- including this one and its §11.1 neighbour. This
+        # guard exists because the 0.67.0 reconcile found 48 merged PRs of which
+        # only 9 closed anything; masked by an unrelated guard, it is dark exactly
+        # as it was before it had a caller. It reads a PR body and nothing else,
+        # so no guard result can be its precondition. (#3282 classifies the other
+        # 46, which is a judgment call per step rather than one blanket edit.)
+        if: "!cancelled() && github.event_name == 'pull_request'"
         env:
           PR_BODY: ${{ github.event.pull_request.body }}
         run: |
@@ -1225,7 +1233,15 @@ jobs:
       # scripts/cb200_baseline.txt and no prose sink at all -- a hand-typed sink
       # list would have passed it.
       - name: A sweep PR closes with an ontology delta, not a paragraph (§11.1)
-        if: github.event_name == 'pull_request'
+        # `!cancelled()` and NOT a bare event check. Actions steps are fail-fast:
+        # measured on run 34875945193, step 8 went red and 48 of this job's 59
+        # steps were SKIPPED -- including this one and its §11.1 neighbour. This
+        # guard exists because the 0.67.0 reconcile found 48 merged PRs of which
+        # only 9 closed anything; masked by an unrelated guard, it is dark exactly
+        # as it was before it had a caller. It reads a PR body and nothing else,
+        # so no guard result can be its precondition. (#3282 classifies the other
+        # 46, which is a judgment call per step rather than one blanket edit.)
+        if: "!cancelled() && github.event_name == 'pull_request'"
         env:
           PR_BODY: ${{ github.event.pull_request.body }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
