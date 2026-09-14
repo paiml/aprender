@@ -195,7 +195,14 @@ for wf in "$WF_DIR"/*.yml "$WF_DIR"/*.yaml; do
             *'$'*) dynamic=$((dynamic + 1)); continue ;;
         esac
         refs=$((refs + 1))
-        if printf '%s\n' "$MEMBERS" | grep -qxF -- "$tok"; then continue; fi
+        # Here-string, never `printf | grep -q`. grep -q exits on its FIRST match,
+        # printf takes SIGPIPE (141), and this file's `set -uo pipefail` (line 46)
+        # then reports the pipeline FALSE THOUGH IT MATCHED -- so a token that IS a
+        # workspace member would be printed as a VIOLATION. Size-dependent, which
+        # is the worst kind: ~78 members fit the 64 KiB pipe buffer today and it
+        # stays quiet until the workspace grows. #3228, and the ratchet in
+        # check_no_pipe_into_grep_q.sh is what caught it here (84 vs ceiling 83).
+        if grep -qxF -- "$tok" <<<"$MEMBERS"; then continue; fi
         bad=$((bad + 1))
         printf '  VIOLATION %s:%s  `-p %s` names no workspace member\n' \
             "${f#"$REPO_ROOT"/}" "$ln" "$tok"
