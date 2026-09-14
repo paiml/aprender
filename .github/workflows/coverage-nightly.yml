@@ -234,10 +234,13 @@ jobs:
       # CARGO_INSTALL_ROOT (set in the first step) sends this install to the job-private root too,
       # so this step cannot clobber another job's pmat either — the exposure is
       # symmetric and #2353 only happened to be observed from the victim side.
-      - name: Ensure pmat installed
+      - name: pmat must match the fleet pin (never install)
         run: |
+          # Was: `command -v pmat || cargo install pmat … || true` — two fail-opens on
+          # one line. The fleet pin (infra machines/*/forjar.yaml) is the only
+          # installer this repo may rely on; assert it and fail CLOSED.
           export PATH="$COV_TOOLS/bin:$HOME/.cargo/bin:$HOME/.local/bin:$PATH"
-          command -v pmat >/dev/null 2>&1 || cargo install pmat --locked --root "$COV_TOOLS" || true
+          bash scripts/check_tool_versions.sh
 
       # Dogfooded gap analysis — pmat query, NOT raw llvm-cov output (CLAUDE.md).
       # Same default ./target as the make step so pmat finds the coverage profiles.

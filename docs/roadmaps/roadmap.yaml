@@ -17708,3 +17708,20 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-3222
+  github_issue: 3222
+  item_type: task
+  title: 'ONT-2a: andon — L4/L5 print self-declared until grounded'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-13T13:59:08Z
+  updated: 2026-09-13T13:59:08Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
