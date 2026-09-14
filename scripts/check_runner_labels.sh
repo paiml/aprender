@@ -16,7 +16,9 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-DISCRIM='clean-room|cuda|gpu|rtx4090|ada|blackwell|gb10|apple-silicon|m4'
+# perf-solo (PERF-013, infra#338): one box, intel-clean-room-16, deliberately WITHOUT clean-room so
+# general pool work cannot queue in front of a speed measurement. A one-box label discriminates.
+DISCRIM='clean-room|cuda|gpu|rtx4090|ada|blackwell|gb10|apple-silicon|m4|perf-solo'
 fail=0
 
 while IFS=: read -r file line sel; do

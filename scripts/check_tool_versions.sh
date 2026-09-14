@@ -96,7 +96,37 @@ check_one() { # check_one TOOL TOMLFILE
 # complexity ratchet refused every merge as an instrument mismatch; this makes
 # the pin bump and the header move together or fail here.
 check_headers() { # check_headers TOMLFILE
-    local f=$1 bad=0 n=0 b tool ver pinned
+    local f=$1 bad=0 n=0 total=0 b tool ver pinned
+    # VACUITY FLOOR (#3217). `n` below counts only baselines naming a PINNED
+    # tool, and nothing required that count to hold. Delete the header from
+    # shell_lint_baseline.txt — which is exactly what
+    # `check_shell_lint_ratchet.sh --update` did — and this row goes from
+    #     3 baseline header(s) name a pinned tool; all agree with tools.toml
+    # to
+    #     2 baseline header(s) name a pinned tool; all agree with tools.toml
+    # and still PASSES. A third of the universe vanished and the audit reported
+    # agreement over what was left.
+    #
+    # The floor is not a magic number, because a magic number rots the moment a
+    # baseline is added or retired. Every baseline must DECLARE its instrument,
+    # in one of the two spellings this repo uses:
+    #     # tool_version=<tool> <version>   lib_baseline_ratchet.sh, 16 files
+    #     pmat_version: <version>           the richer count/version/basis
+    #                                       schema of hardcoded_path_shipped
+    # A count whose analyser nobody recorded is not a baseline — it is a number.
+    # Adding one now goes RED on the commit that adds it.
+    for b in scripts/*baseline*.txt; do
+        [ -f "$b" ] || continue
+        total=$((total + 1))
+        grep -qE '^#[[:space:]]*tool_version=|^[[:space:]]*pmat_version:' "$b" && continue
+        printf 'FAIL  header   %s declares no instrument — a count with no\n' "$b"
+        printf '               analyser version behind it is not a baseline\n'
+        bad=1
+    done
+    if [ "$total" -eq 0 ]; then
+        printf 'FAIL  header   no baseline files found — this audit swept nothing\n'
+        return 1
+    fi
     for b in scripts/*baseline*.txt; do
         [ -f "$b" ] || continue
         read -r tool ver < <(sed -n 's/^#[[:space:]]*tool_version=\([a-z]*\) \([0-9][0-9.]*\).*/\1 \2/p' "$b" | head -1)
@@ -109,7 +139,8 @@ check_headers() { # check_headers TOMLFILE
             bad=1
         fi
     done
-    printf '%s baseline header(s) name a pinned tool; %s\n' "$n" "$([ "$bad" -eq 0 ] && echo 'all agree with tools.toml' || echo 'MISMATCH')"
+    printf '%s of %s baseline(s) name a pinned tool; %s\n' "$n" "$total" \
+        "$([ "$bad" -eq 0 ] && echo 'all declare an instrument and agree with tools.toml' || echo 'MISMATCH')"
     return "$bad"
 }
 # audit_workflow FILE -- REDs a workflow that still installs pmat/bashrs, or
@@ -120,7 +151,14 @@ audit_workflow() { # audit_workflow FILE
         printf 'ENV: %s does not exist -- cannot judge an absent workflow\n' "$f"
         return 2
     fi
-    hits=$(grep -cE 'cargo install (pmat|bashrs)' "$f")
+    # COMMENTS ARE NOT CODE. A line whose first non-space character is `#` is a
+    # shell comment inside `run: |` (or a YAML comment outside it) and installs
+    # nothing. Counting it means a step that EXPLAINS why it no longer installs
+    # trips the guard that wanted it to stop — measured 2026-09-13, when the
+    # comment `# Was: \`cargo install pmat … || true\`` kept book.yml RED after the
+    # install itself was gone. The wrong remedy is to reword the comment; a
+    # detector that cannot tell prose from code teaches people to hide the prose.
+    hits=$(grep -vE '^[[:space:]]*#' "$f" | grep -cE 'cargo install (pmat|bashrs)')
     if [ "$hits" -gt 0 ]; then
         printf 'FAIL  %s: %s line(s) still `cargo install` pmat/bashrs -- assert the fleet pin, do not install\n' "$f" "$hits"
         bad=1
@@ -133,6 +171,33 @@ audit_workflow() { # audit_workflow FILE
         printf 'PASS  %s: no cargo install of pmat/bashrs, check_tool_versions.sh is fail-closed\n' "$f"
     fi
     return "$bad"
+}
+
+# audit_all_workflows -- every .github/workflows/*.yml, not one named by hand.
+#
+# `--audit-workflow FILE` shipped with this guard and was invoked by NOTHING:
+# `grep -rn audit-workflow .github/ scripts/` found only this script's own usage
+# strings. A detector that no caller runs is the same nothing as no detector, and
+# it is why book.yml kept `cargo install bashrs` for the whole life of the policy
+# it violates. The universe is a glob, so a workflow added tomorrow is audited the
+# day it lands and nobody has to remember to add it.
+audit_all_workflows() {
+    _wfdir="$REPO_ROOT/.github/workflows"
+    [ -d "$_wfdir" ] || { printf 'FAIL: %s does not exist; the workflow audit checked nothing.\n' "$_wfdir"; return 1; }
+    _seen=0
+    _bad=0
+    for _wf in "$_wfdir"/*.yml "$_wfdir"/*.yaml; do
+        [ -f "$_wf" ] || continue
+        _seen=$((_seen + 1))
+        audit_workflow "$_wf" || _bad=$((_bad + 1))
+    done
+    # Vacuity: a sweep that audited no file is not a clean sweep.
+    if [ "$_seen" -eq 0 ]; then
+        printf 'FAIL: no workflow files under %s; the audit is vacuous.\n' "$_wfdir"
+        return 1
+    fi
+    printf '%s workflow(s) audited, %s still installing pmat/bashrs\n' "$_seen" "$_bad"
+    [ "$_bad" -eq 0 ]
 }
 
 # ---------------------------------------------------------------------------
@@ -200,6 +265,42 @@ TOML
     printf '# tool_version=pmat 1.2.2\n1\n' > "$TD/tree/scripts/a_baseline.txt"
     n=$((n + 1)); if ( cd "$TD/tree" && check_headers "$TD/tools.toml" > /dev/null 2>&1 ); then printf 'FAIL  row %-2s  a header behind the pin should be RED\n' "$n"; fails=1; else printf 'ok    row %-2s rc=1  a baseline header behind the pin -> RED\n' "$n"; fi
 
+    # --- the vacuity floor (#3217) ------------------------------------------
+    # These three rows are the ones that were missing. Without them the audit
+    # above passed on a SHRINKING universe: deleting a header took it from
+    # "3 baseline header(s) ... all agree" to "2 ... all agree", green both
+    # times. Each row here removes something and requires RED.
+    printf '# tool_version=pmat 1.2.3\n1\n' > "$TD/tree/scripts/a_baseline.txt"
+    printf '1\n' > "$TD/tree/scripts/c_baseline.txt"
+    n=$((n + 1)); if ( cd "$TD/tree" && check_headers "$TD/tools.toml" > /dev/null 2>&1 ); then printf 'FAIL  row %-2s  a baseline declaring NO instrument must be RED\n' "$n"; fails=1; else printf 'ok    row %-2s rc=1  a baseline with no instrument header -> RED\n' "$n"; fi
+    # The floor must accept BOTH spellings, or it would force a false edit on
+    # hardcoded_path_shipped_baseline.txt, whose count/pmat_version/basis schema
+    # records the instrument more strictly than the one-line header does.
+    printf 'count: 1\npmat_version: INVALID\nbasis: UNMEASURED\n' > "$TD/tree/scripts/c_baseline.txt"
+    n=$((n + 1)); if ( cd "$TD/tree" && check_headers "$TD/tools.toml" > /dev/null 2>&1 ); then printf 'ok    row %-2s rc=0  the `pmat_version:` schema also declares an instrument\n' "$n"; else printf 'FAIL  row %-2s  the count/version/basis schema must be accepted\n' "$n"; fails=1; fi
+    rm -f "$TD/tree/scripts/c_baseline.txt"
+    # Sweeping nothing is the oldest way for an audit to be green.
+    mkdir -p "$TD/empty/scripts"
+    n=$((n + 1)); if ( cd "$TD/empty" && check_headers "$TD/tools.toml" > /dev/null 2>&1 ); then printf 'FAIL  row %-2s  an audit that found NO baselines must not pass\n' "$n"; fails=1; else printf 'ok    row %-2s rc=1  no baseline files at all -> RED (vacuity)\n' "$n"; fi
+
+    # --- audit_workflow: prose vs code, both polarities ------------------------
+    # The regex shipped without a case table and immediately produced a false
+    # positive on a comment. Every row here is a shape that was, or could be,
+    # mistaken for the other.
+    mkdir -p "$TD/wf"
+    printf 'jobs:\n  a:\n    steps:\n      - run: |\n          cargo install bashrs --locked\n' > "$TD/wf/installs.yml"
+    n=$((n + 1)); if audit_workflow "$TD/wf/installs.yml" > /dev/null 2>&1; then printf 'FAIL  row %-2s  a real `cargo install bashrs` must be RED\n' "$n"; fails=1; else printf 'ok    row %-2s rc=1  a real cargo install bashrs -> RED\n' "$n"; fi
+    printf 'jobs:\n  a:\n    steps:\n      - run: |\n          # Was: `cargo install pmat --locked || true`, now the pin\n          bash scripts/check_tool_versions.sh\n' > "$TD/wf/comment.yml"
+    n=$((n + 1)); if audit_workflow "$TD/wf/comment.yml" > /dev/null 2>&1; then printf 'ok    row %-2s rc=0  a COMMENT naming cargo install pmat -> GREEN\n' "$n"; else printf 'FAIL  row %-2s  a comment installs nothing and must be GREEN\n' "$n"; fails=1; fi
+    printf 'jobs:\n  a:\n    steps:\n      - run: |\n          cargo install --path crates/apr-cli --locked\n' > "$TD/wf/pathinstall.yml"
+    n=$((n + 1)); if audit_workflow "$TD/wf/pathinstall.yml" > /dev/null 2>&1; then printf 'ok    row %-2s rc=0  `cargo install --path` (our own binary) -> GREEN\n' "$n"; else printf 'FAIL  row %-2s  a --path install is not a pinned-tool install\n' "$n"; fails=1; fi
+    printf 'jobs:\n  a:\n    steps:\n      - run: |\n          cargo install cargo-llvm-cov --locked\n' > "$TD/wf/other.yml"
+    n=$((n + 1)); if audit_workflow "$TD/wf/other.yml" > /dev/null 2>&1; then printf 'ok    row %-2s rc=0  installing a DIFFERENT tool -> GREEN\n' "$n"; else printf 'FAIL  row %-2s  only pmat/bashrs are pinned here\n' "$n"; fails=1; fi
+    printf 'jobs:\n  a:\n    steps:\n      - run: bash scripts/check_tool_versions.sh || true\n' > "$TD/wf/failopen.yml"
+    n=$((n + 1)); if audit_workflow "$TD/wf/failopen.yml" > /dev/null 2>&1; then printf 'FAIL  row %-2s  a `|| true` on the guard must be RED\n' "$n"; fails=1; else printf 'ok    row %-2s rc=1  fail-open invocation of the guard -> RED\n' "$n"; fi
+    # Vacuity of the sweep itself: an empty workflows dir is not a clean sweep.
+    n=$((n + 1)); if ( REPO_ROOT="$TD/emptyrepo"; mkdir -p "$REPO_ROOT/.github/workflows"; audit_all_workflows > /dev/null 2>&1 ); then printf 'FAIL  row %-2s  a sweep over zero workflows must be RED\n' "$n"; fails=1; else printf 'ok    row %-2s rc=1  zero workflows audited -> RED (vacuity)\n' "$n"; fi
+
     [ "$fails" -eq 0 ] || { printf '\nSELF-TEST FAILED\n'; exit 1; }
     printf '\nSELF-TEST PASSED (%s/%s rows)\n' "$n" "$n"
     exit 0
@@ -219,6 +320,7 @@ if [ -n "${1:-}" ]; then
     exit 2
 fi
 
+
 # ---------------------------------------------------------------------------
 printf '=== pinned tool versions must match what is on PATH (check_tool_versions.sh) ===\n'
 
@@ -235,6 +337,8 @@ for tool in $TOOLS; do
 done
 n=$((n + 1))
 check_headers "$TOOLS_TOML" || fails=$((fails + 1))
+n=$((n + 1))
+audit_all_workflows || fails=$((fails + 1))
 
 printf '%s/%s checks, %s failed\n' "$((n - fails))" "$n" "$fails"
 [ "$fails" -eq 0 ]
