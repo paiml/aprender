@@ -16982,7 +16982,7 @@ roadmap:
   updated: 2026-09-10T11:55:16.365550162+00:00
   spec: null
   acceptance_criteria:
-  - 'PVL-001 EV-1 (spec: infra docs/specifications/PVL-001-pv-lean-gate.md). RED: integration test spawning $PV lint on a nonexistent path and on an empty dir, asserting exit!=0; same for proof-status on an empty dir. Change: 0 contracts -> exit 2 with ''error: 0 contracts under <path>''; applies to lint, proof-status, coverage, graph. Mutation: revert the guard -> test RED. done_when: cd ~/src/aprender && . scripts/pv_bin.sh && "$PV" lint /nonexistent-pvl-path; test $? -ne 0'
+  - 'PVL-001 EV-1 (spec: infra docs/specifications/PVL-001-pv-lean-gate.md). RED: integration test spawning $PV lint on a nonexistent path and on an empty dir, asserting exit!=0; same for proof-status on an empty dir. Change: 0 contracts -> exit 2 with ''decline: 0 contracts under <path>''; applies to lint, proof-status, coverage, graph, and also to lean-status, verify-pipeline and validate — every subcommand that walks a corpus, because a guard that covers four of seven leaves three ways to be told PASS over nothing. Mutation: revert the guard -> test RED. done_when: cd ~/src/aprender && . scripts/pv_bin.sh && "$PV" lint /nonexistent-pvl-path; test $? -ne 0'
   phases: []
   subtasks: []
   estimated_effort: null
