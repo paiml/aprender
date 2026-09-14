@@ -50,6 +50,12 @@
 //! - Fruchterman, T. M. J., & Reingold, E. M. (1991). Force-directed graph layout.
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![warn(missing_docs)]
+// APEX-001 EV-2a rule 5. The ban list lives in `crates/aprender-viz/.clippy.toml`, NOT the
+// repository root: clippy reads exactly one config, the nearest, so a root entry is read for
+// crates that have no config of their own and is ignored here (measured). This deny is what
+// turns that list from advice into a build failure — without it the lints are warnings and
+// `cargo clippy` exits 0, which is also measured.
+#![deny(clippy::disallowed_methods)]
 // Allow unwrap() in tests only - banned in production code (Cloudflare incident 2025-11-18)
 #![cfg_attr(test, allow(clippy::unwrap_used))]
 // Allow common patterns in graphics/visualization code
@@ -72,8 +78,77 @@ pub mod color;
 pub mod framebuffer;
 /// Geometric primitives (points, lines, rectangles).
 pub mod geometry;
+/// Content manifest: per-file digests reduced to one root hash (APEX-001 EV-2a rule 4).
+pub mod manifest;
 /// Scale functions for data-to-visual mappings.
 pub mod scale;
+/// Text as glyph outlines, from caller-pinned font bytes (APEX-001 EV-2a rule 1).
+#[cfg(feature = "text-path")]
+pub mod text;
+
+/// The coordinate grid emitted geometry is snapped to, in user units.
+///
+/// APEX-001 EV-2a rule 5. Deterministic transcendentals stop the *inputs* to layout from
+/// differing between hosts; this stops a difference that survives anyway from reaching the
+/// bytes. One thousandth of a user unit is far below a device pixel at any plausible scale, so
+/// snapping is invisible in the image and decisive in the file.
+pub const COORD_GRID: f64 = 1e-3;
+
+/// Snap one coordinate to [`COORD_GRID`].
+///
+/// Ties round half away from zero, and `-0.0` is normalised to `0.0` so the two zeros cannot
+/// print differently.
+#[must_use]
+pub fn quantise(v: f64) -> f64 {
+    if !v.is_finite() {
+        return v;
+    }
+    let snapped = (v / COORD_GRID).round() * COORD_GRID;
+    if snapped == 0.0 {
+        0.0
+    } else {
+        snapped
+    }
+}
+
+/// Quantise every number in an SVG path `d` string.
+///
+/// Operates on the serialised form because that is the last point before the bytes are fixed:
+/// whatever produced the path, what reaches the file is on the grid.
+#[must_use]
+pub fn quantise_path_data(d: &str) -> String {
+    let mut out = String::with_capacity(d.len());
+    let mut num = String::new();
+    for c in d.chars() {
+        if c.is_ascii_digit() || c == '.' || c == '-' || c == 'e' || c == 'E' || c == '+' {
+            num.push(c);
+        } else {
+            flush_number(&mut num, &mut out);
+            out.push(c);
+        }
+    }
+    flush_number(&mut num, &mut out);
+    out
+}
+
+/// Parse one accumulated number, quantise it, and append its shortest form.
+fn flush_number(num: &mut String, out: &mut String) {
+    if num.is_empty() {
+        return;
+    }
+    match num.parse::<f64>() {
+        Ok(v) => {
+            let q = quantise(v);
+            if (q - q.round()).abs() < f64::EPSILON {
+                out.push_str(&format!("{}", q.round() as i64));
+            } else {
+                out.push_str(format!("{q:.3}").trim_end_matches('0').trim_end_matches('.'));
+            }
+        }
+        Err(_) => out.push_str(num),
+    }
+    num.clear();
+}
 // ============================================================================
 // Visualization Modules
 // ============================================================================

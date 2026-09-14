@@ -50,6 +50,22 @@ pub enum Error {
     /// Rendering error.
     #[error("Rendering error: {0}")]
     Rendering(String),
+
+    /// A manifest did not match the root it was verified against.
+    ///
+    /// Verification refuses; it never repairs. See [`crate::manifest::Manifest::verify`].
+    #[error(
+        "lock root mismatch: expected {expected}, computed {actual} over {entries} entries \
+         — refusing to proceed (verification does not repair)"
+    )]
+    ManifestMismatch {
+        /// The root recorded when the tree was locked.
+        expected: String,
+        /// The root computed from the manifest as it stands now.
+        actual: String,
+        /// How many entries were hashed to produce `actual`.
+        entries: usize,
+    },
 }
 
 #[cfg(test)]
