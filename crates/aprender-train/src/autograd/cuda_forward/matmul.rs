@@ -15,6 +15,9 @@ use crate::autograd::cuda_tensor::{CudaTensorError, Result};
 
 #[cfg(feature = "cuda")]
 use super::cache::FORWARD_KERNEL_CACHE;
+// Cache keys come from ONE place (YOGA-NIGHTLY-001 R-2). A `format!` here is
+// the defect that produced the Blackwell cascade five separate times.
+use super::keys;
 
 /// Bind a cuBLAS handle to the caller's stream before dispatching a GEMM.
 ///
@@ -52,7 +55,7 @@ pub fn fused_swiglu_forward(
         CudaTensorError::KernelError("Failed to acquire kernel cache lock".to_string())
     })?;
 
-    let key = "fused_swiglu_forward".to_string(); // PTX is n-independent (trueno#184)
+    let key = keys::fixed::FUSED_SWIGLU_FORWARD.to_string(); // PTX is n-independent (trueno#184)
     let module = match cache.get_cached(&key) {
         Some(m) => m,
         None => {
@@ -112,7 +115,7 @@ pub fn gemm_forward(
     }
 
     // PTX fallback
-    let key = format!("gemm_forward_{m}_{k}_{n}");
+    let key = keys::gemm_forward(m as u32, k as u32, n as u32);
     let module = match cache.get_cached(&key) {
         Some(m) => m,
         None => {
@@ -393,7 +396,7 @@ pub fn batched_4d_gemm_forward(
     let kernel = Batched4DGemmKernel::new(batch, heads, m, n, k);
     let tile_size = kernel.config.tile_size;
 
-    let key = format!("batched_4d_gemm_{batch}_{heads}_{m}_{n}_{k}");
+    let key = keys::batched_4d_gemm(batch as u32, heads as u32, m as u32, n as u32, k as u32);
     let module = match cache.get_cached(&key) {
         Some(m) => m,
         None => {
@@ -474,7 +477,7 @@ pub fn gemm_nf4_forward(
     // runtime params, only tile_size is baked in). Including M causes cache misses
     // when actual seq_len differs from max_seq_len used during pre-warming,
     // triggering on-demand JIT that fails on Blackwell (trueno#184).
-    let key = format!("nf4_gemm_forward_{k}_{n}");
+    let key = keys::nf4_gemm_forward(k as u32, n as u32);
     let module = match cache.get_cached(&key) {
         Some(m) => m,
         None => {
@@ -615,7 +618,7 @@ pub fn gemm_nf4_gate_up_forward(
 
     let kernel = FusedNf4GateUpGemmKernel::new(m, n, k);
     let tile = kernel.tile_size;
-    let key = format!("fused_nf4_gate_up_{k}_{n}");
+    let key = keys::fused_nf4_gate_up(k as u32, n as u32);
     let module = match cache.get_cached(&key) {
         Some(m) => m,
         None => {
@@ -1017,7 +1020,7 @@ pub fn gemm_nf4_backward_a(
     let tile_size = kernel.tile_size;
 
     // Cache key excludes M (seq_len) — PTX is shape-independent (trueno#184).
-    let key = format!("nf4_gemm_transpose_{n}_{k}");
+    let key = keys::nf4_gemm_transpose(n as u32, k as u32);
     let module = match cache.get_cached(&key) {
         Some(m) => m,
         None => {
