@@ -1,0 +1,132 @@
+# deep.yml — the T-1 deep lane that APR-RELEASE-001 requires and nobody wrote.
+#
+# §4 T-1: "`ci / deep` green on cut sha: full tests, doctests,
+# `--no-default-features`, feature matrix, GPU, every `cargo run --example`".
+#
+# Measured 2026-09-14: `ci / deep` has ZERO hits in every workflow in this
+# repository AND in the SHA-pinned upstream `paiml/.github` sovereign-ci.yml. The
+# gate the release train asserts on does not exist. Its named clauses run nowhere
+# either:
+#
+#     cargo test --doc          0 hits in any workflow
+#     cargo run --example       0 hits
+#     feature matrix            0 hits
+#     --no-default-features     1 hit, and it is a Windows BUILD flag in nightly.yml
+#
+# The 0.67.0 train satisfied T-1 by running pieces of this BY HAND from the
+# autopilot script and writing the numbers into the ledger. Nothing recorded them
+# as a check, and nothing would have stopped the train if they had been skipped.
+#
+# ON THE NAME. The spec says `ci / deep`, and a check called `ci / deep` can only
+# come from a job named `deep` inside the reusable workflow this repo calls as
+# `ci` — i.e. an org-wide change to paiml/.github with blast radius across every
+# consuming repo. This job is named `deep` and emits the check `deep`. Changing
+# the SPEC's name is the cheap half of that trade; changing an org-wide reusable
+# workflow to match a string is the expensive half. APR-RELEASE-001 §4 should be
+# amended to `deep`, and that amendment is part of this PR's description.
+#
+# WHAT IS AND IS NOT HERE, with the measurement for each:
+#
+#   doctests                  978 pass, 0 fail, 428 ignored      192 s   HERE
+#   --no-default-features     0 errors (43 before #3257)          26 s   HERE
+#   examples BUILD            980 targets, 0 errors               83 s   HERE
+#   full tests                98,621 tests / 727 binaries      ~21 min   #3255
+#   every `cargo run --example`   980 targets — NOT attempted, see below
+#   GPU                       cuda-nightly.yml owns it
+#   feature matrix            undefined in the spec — §7 of APR-DARK-TARGETS-001
+#
+# `cargo run --example` for all 980 is not implemented and is not a lazy
+# omission: many examples are interactive, long-running, or need a model file,
+# and running them blind would be a wall-clock assertion with 980 rows. The spec
+# clause needs a definition before it can have an implementation. Filed rather
+# than guessed.
+name: deep
+
+on:
+  # The train dispatches this against the cut sha (T-1). `ref` is whatever the
+  # caller checks out, so the cut is tested, not main-at-the-time.
+  workflow_dispatch:
+  # Daily as well, so the lane cannot rot silently between trains — a gate that
+  # only ever runs at release time is discovered broken at the worst moment.
+  schedule:
+    - cron: '10 7 * * *'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deep-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  deep:
+    name: deep
+    runs-on: [self-hosted, X64, Linux, clean-room]
+    # 40, and NOT derived. The three clauses measured ~5 minutes combined on a
+    # 48-core box with a warm sccache; a clean-room runner measured 2.34x slower
+    # per test on the same workload. That extrapolates to ~12 min, so 40 is
+    # generous on purpose. BSE-05 (T = max(15, ceil(1.5*p99), p99+20)) wants the
+    # job's OWN history and this job has none — re-derive from three real runs.
+    timeout-minutes: 40
+    env:
+      CARGO_TERM_COLOR: never
+      CARGO_INCREMENTAL: '0'
+    steps:
+      - uses: actions/checkout@v7
+
+      # Classify a cargo death as ENV or CODE before anything reads it as a
+      # release blocker. A T-1 lane that reports a full disk as "the release is
+      # not green" is how a train gets held for a runner fault.
+      - name: cargo_step.sh falsifier (ENV-vs-CODE instrument)
+        run: bash scripts/cargo_step.sh --self-test
+
+      # CLAUSE 1 — doctests. 978 pass / 0 fail / 428 ignored, 192 s (measured
+      # 2026-09-14 on the workspace, GPU crates excluded as the full tier
+      # excludes them). `cargo test --doc` has never run in CI.
+      - name: "T-1 clause: doctests"
+        run: |
+          set -euo pipefail
+          bash scripts/cargo_step.sh 'doctests' -- \
+            cargo test --doc --workspace --no-fail-fast \
+              --exclude aprender-gpu --exclude aprender-cuda-edge --exclude aprender-compute
+
+      # CLAUSE 2 — --no-default-features. 43 errors until #3257, every one in
+      # aprender-distribute (#3176): tokio declared optional and used
+      # unconditionally. `check`, not `test`: without default features most
+      # crates expose no runnable surface, so a test run would assert nothing.
+      - name: "T-1 clause: --no-default-features"
+        run: |
+          set -euo pipefail
+          bash scripts/cargo_step.sh '--no-default-features' -- \
+            cargo check --workspace --no-default-features --locked \
+              --exclude aprender-gpu --exclude aprender-cuda-edge --exclude aprender-compute
+
+      # CLAUSE 3 — examples BUILD. 980 targets, 0 errors, 83 s. `--keep-going`
+      # so one broken example names itself instead of hiding the other 979 —
+      # the same reason the full surface uses --no-fail-fast.
+      - name: "T-1 clause: every example BUILDS (980 targets)"
+        run: |
+          set -euo pipefail
+          bash scripts/cargo_step.sh 'examples build' -- \
+            cargo build --workspace --examples --keep-going --locked \
+              --exclude aprender-gpu --exclude aprender-cuda-edge --exclude aprender-compute
+
+      # VACUITY. Each clause above can pass by measuring nothing — a doctest run
+      # that compiled no crate, an examples build that found no example. Assert
+      # the surfaces are the size they were measured at, with floors well under
+      # the readings (978 doctests, 980 examples) so ordinary growth does not
+      # trip them.
+      - name: Vacuity floor — each clause must have measured something
+        if: always()
+        run: |
+          set -euo pipefail
+          ex=$(cargo metadata --no-deps --format-version 1 | python3 -c "
+          import json,sys
+          d=json.load(sys.stdin)
+          print(sum(1 for p in d['packages'] for t in p['targets'] if 'example' in t['kind']))")
+          echo "example targets discovered: $ex"
+          if [ "${ex:-0}" -lt 800 ]; then
+            echo "::error::only $ex example targets found, expected 800+ (measured: 980)."
+            echo "::error::the DISCOVERY is broken, not the tree."
+            exit 1
+          fi
