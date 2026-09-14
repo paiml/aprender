@@ -111,7 +111,7 @@ Live `forjar.yaml` beats this table. Record the diff in the receipt and continue
 | Step | Action | Skip if |
 |---|---|---|
 | **T-0 Cut** | cut sha = `main` HEAD; bump minor; `CHANGELOG` from merged PR titles since last tag | tag `v0.N.0` exists |
-| **T-1 Deep** | `ci / deep` green on cut sha: full tests, doctests, `--no-default-features`, feature matrix (§4.1), GPU, every `cargo run --example` (§4.2) | green run recorded for this sha |
+| **T-1 Deep** | `deep` green on cut sha (**the check is `deep`, not `ci / deep`** — §4.3): full tests, doctests, `--no-default-features`, feature matrix (§4.1), GPU, every `cargo run --example` (§4.2) | green run recorded for this sha |
 | **T-2 Dogfood** | `apr-dogfood` skill go/no-go receipt; `apr-cookbook` current; release notes generated | receipt exists for this sha |
 | **T-3 Promote** | tag; clean-room on the tag; GitHub release with T-2 receipt attached | release `v0.N.0` exists |
 | **T-4 Publish** | **automated** — the autopilot runs `cascade-drain.sh` after T-3's preflight; record cascade wall minutes; attended minutes are 0 by construction | all crates at `0.N.0` on crates.io |
@@ -170,6 +170,42 @@ Asserting a duration here would be a wall-clock assertion in a required check, w
 Both clauses carry a **vacuity floor** (measured 980 examples / 430 pairs; floors 800 / 400): a
 discovery that finds almost nothing reports zero failures, which reads exactly like a pass.
 
+### §4.3 The check is `deep`, and it cannot be proven before it is merged
+
+This spec said `ci / deep` in five places. No such check can exist here, and the T-1
+already-done test was reading for a string that would never appear.
+
+GitHub names a check after the job that emits it. A job inside a reusable workflow is
+prefixed with the name of the job that CALLS it — `ci.yml` calls `paiml/.github`'s
+`sovereign-ci.yml` as a job named `ci`, which is why this repo reports `ci / lint`,
+`ci / test`, `ci / gate`. A job in a workflow file of its own carries no prefix, which is
+why `workspace-test`, `guard-tree`, `guard-cargo` and `gate` appear bare.
+
+So `ci / deep` would require adding a `deep` job to the ORG-WIDE reusable workflow, with
+blast radius across every repo that consumes it. The deep lane lives in its own
+`.github/workflows/deep.yml` with a job named `deep`, and emits **`deep`**. Amending this
+spec is the cheap half of that trade; amending an org-wide workflow to match a string this
+document happened to write is the expensive half.
+
+**The sequencing hazard, measured 2026-09-14.** `deep.yml` fires only on `workflow_dispatch`
+and a cron — deliberately, since a deep lane must not run per-PR. But:
+
+```
+$ gh workflow run deep.yml --ref PMAT-1098-ci-deep-lane
+HTTP 404: workflow deep.yml not found on the default branch
+```
+
+`workflow_dispatch` is honoured only for workflows already on the default branch. A lane that
+has no `pull_request` trigger and is not yet on `main` therefore **cannot be exercised at all
+before it merges** — its first execution would be the cut it gates. §4's rule for a red step is
+SKIPPED, so a lane born red costs the train silently rather than failing loudly.
+
+T-1 is therefore not satisfied by `deep` EXISTING. The train's already-done test is a green
+`deep` run **recorded against a sha on `main`**, and the first such run must be a deliberate
+`gh workflow run deep.yml --ref main` after the lane lands and before a cut is attempted. A
+gate whose first run is the thing it certifies is the defect class this document exists to
+remove; it must not be reintroduced by the gate that closes it.
+
 ## §5 Build rows — in order, one PR each, only when no train is due
 
 **P0 · Pack** *(operator 2026-09-12; precedes everything while it fails)*. Every wakeup: sample
@@ -197,13 +233,13 @@ total_s peak_rss_mb free_disk_gb exit`. Add `make build-report`: p50/p95 `total_
 `queue_wait_s` per host, 10 slowest test targets, and the §1 PRs-per-train number.
 *Done:* ≥ 20 records; `make build-report` runs on a clean checkout.
 
-**P1 · Two lanes.** `ci / gate` (every PR) = compile + **fast set**. `ci / deep` (tags +
+**P1 · Two lanes.** `ci / gate` (every PR) = compile + **fast set**. `deep` (tags +
 nightly) = everything else. Fast set is derived from the ledger, not opinion: rank tests by
 failures-caught-per-second, keep the shortest prefix that caught every failure the full
 suite caught; record the cut and the escape count. Runner: `cargo nextest` for the fast set
 only if measured faster than `cargo test` on the same sha three times; record the delta
 either way.
-*Done:* one sha runs both lanes; a tag cannot publish with `ci / deep` red; escape count
+*Done:* one sha runs both lanes; a tag cannot publish with `deep` red; escape count
 over the next 10 merges is in the ledger.
 
 **P2 · Shard across hosts.** Infra PR first (`paiml/infra`): runner labels for `yoga` and
@@ -392,7 +428,7 @@ next:    train eligible at <timestamp>
 ## §8 Stop conditions — stop and report, do not work around
 
 - Two consecutive SKIPPED trains, or ≥ 72 h with no runnable train → andon.
-- `ci / deep` red on a tag → no publish.
+- `deep` red on a tag → no publish.
 - Cascade dry-run non-zero → stop before any real publish.
 - Measured max PRs/train < 10 `[A]` → stop cutting trains; finish P1/P2 first.
 - `yoga` or `gx10` has no runner unit in live `forjar.yaml` and the infra PR is unmerged → stop at P2.
@@ -405,7 +441,7 @@ next:    train eligible at <timestamp>
   queue has pressure → P0: that is a routing or job-class defect, not spare capacity. (`mini`
   measured at 0.0 % all of 2026-09-14 while declared full-time in #3205 — its ceiling is the
   macOS-capable job classes, not capacity.)
-- A `ci / deep` known-red list names a pair that now PASSES → stop: the list is stale and the lane
+- A `deep` known-red list names a pair that now PASSES → stop: the list is stale and the lane
   is asserting something that is no longer true (§4.1).
 - A design fork appears that §6 cannot decide without judgement → §10, not a coin flip and not a
   question to the operator.
