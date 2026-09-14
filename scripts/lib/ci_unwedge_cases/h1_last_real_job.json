@@ -1,0 +1,20 @@
+{
+ "total_count": 3,
+ "jobs": [
+  {
+   "name": "ci / test",
+   "status": "completed",
+   "conclusion": "failure"
+  },
+  {
+   "name": "guard-tree",
+   "status": "completed",
+   "conclusion": "success"
+  },
+  {
+   "name": "workspace-test",
+   "status": "in_progress",
+   "conclusion": null
+  }
+ ]
+}
