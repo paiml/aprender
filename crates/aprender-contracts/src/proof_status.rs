@@ -70,6 +70,10 @@ pub struct ContractProofStatus {
     pub kani_harnesses: u32,
     /// Number of obligations proved in Lean 4
     pub lean_proved: u32,
+    /// Obligations grounded by a sorry-free in-tree Lean theorem the equation names (ONT-2a)
+    pub lean_grounded: u32,
+    /// The contract claims a Lean proof its tree does not ground: printed `self-declared`, excluded from L4
+    pub l4_self_declared: bool,
     /// Number of bindings with `implemented` status
     pub bindings_implemented: u32,
     /// Total number of equation bindings
@@ -106,6 +110,8 @@ pub struct ProofStatusReport {
     pub contracts: Vec<ContractProofStatus>,
     /// Kernel equivalence class summaries
     pub kernel_classes: Vec<KernelClassSummary>,
+    /// ONT-2a andon: a self-declared L4 is excluded from the L4 total in this build
+    pub l4_self_declared_excluded: bool,
     /// Aggregate totals across all contracts
     pub totals: ProofStatusTotals,
 }
@@ -123,6 +129,10 @@ pub struct ProofStatusTotals {
     pub kani_harnesses: u32,
     /// Sum of Lean-proved obligations across all contracts
     pub lean_proved: u32,
+    /// Sum of GROUNDED Lean-proved obligations across all contracts (ONT-2a)
+    pub lean_grounded: u32,
+    /// Contracts whose L4 claim is self-declared, and therefore excluded from L4 (ONT-2a)
+    pub l4_self_declared: u32,
     /// Sum of implemented bindings across all contracts
     pub bindings_implemented: u32,
     /// Sum of total bindings across all contracts
@@ -222,19 +232,57 @@ fn kernel_class_map() -> Vec<(&'static str, &'static str, &'static [&'static str
 /// now correctly reports L3 instead of a full L4. Contracts with legitimately
 /// N/A obligations (e.g. softmax-kernel-v1 = 5 proved + 4 N/A of 9) MUST declare
 /// that in `verification_summary` — the scan path grants no N/A credit.
-fn is_lean_proved(contract: &Contract) -> bool {
+///
+/// The grounding count is passed IN rather than scanned here.
+///
+/// The scan reads the Lean tree from paths relative to the process CWD, so inside a unit test it resolves
+/// nothing and every fixture is ungrounded by construction — a suite in which the andon could withdraw
+/// ALL credit for ever and no test would notice. Taking the count as a parameter is what keeps both sides
+/// covered: `grounded == 0` is the andon, `grounded + not_applicable >= total` is the credit it still
+/// grants. Production callers use the wrapper and get the scan.
+#[must_use]
+pub fn is_lean_proved_with_grounding(contract: &Contract, grounded: u32) -> bool {
     let total = contract.proof_obligations.len() as u32;
     if total == 0 {
         return false;
     }
-    // A present verification_summary that makes a positive Lean claim is
-    // authoritative (a stale/zero summary falls through to the scan). Otherwise
-    // count resolvable in-tree Lean theorems; the scan grants no N/A credit.
-    let (proved, not_applicable) = match contract.verification_summary.as_ref() {
-        Some(vs) if vs.l4_lean_proved > 0 => (vs.l4_lean_proved, vs.l4_not_applicable),
-        _ => (count_lean_theorems_for_contract(contract), 0),
+    // ONT-001 ONT-2a (andon): a `verification_summary` is the contract talking about ITSELF, and until a
+    // discharge summary exists to check it against (PVL EV-8b) the only grounding in this tree is a
+    // sorry-free Lean theorem an equation names and `lean_theorem_names()` resolves. L4 is therefore
+    // granted on the GROUNDED count alone; a claim with nothing under it is reported `self-declared` by
+    // `is_l4_self_declared`, excluded from the L4 total, and never counted quietly. The `not_applicable`
+    // credit still comes from the summary: it is a claim about APPLICABILITY, not about a proof, and it
+    // is ONT-8's evidence block that will give it its own provenance.
+    let not_applicable = contract
+        .verification_summary
+        .as_ref()
+        .map_or(0, |vs| vs.l4_not_applicable);
+    grounded > 0 && grounded + not_applicable >= total
+}
+
+/// Returns `true` when the contract CLAIMS a Lean proof its own tree does not ground.
+///
+/// The claim is the summary's `l4_lean_proved` plus its `l4_not_applicable` covering every obligation —
+/// exactly the test that granted L4 before ONT-2a. The grounding is [`count_lean_theorems_for_contract`].
+/// A contract that would have been L4 by its own summary and is not L4 by grounding is SELF-DECLARED: the
+/// report prints the word beside it, the L4 total excludes it, and ONT-3b is where the credit is earned.
+#[must_use]
+pub fn is_l4_self_declared(contract: &Contract) -> bool {
+    is_l4_self_declared_with_grounding(contract, count_lean_theorems_for_contract(contract))
+}
+
+/// [`is_l4_self_declared`] with the grounding count passed in, for the same reason.
+#[must_use]
+pub fn is_l4_self_declared_with_grounding(contract: &Contract, grounded: u32) -> bool {
+    let total = contract.proof_obligations.len() as u32;
+    if total == 0 {
+        return false;
+    }
+    let Some(vs) = contract.verification_summary.as_ref() else {
+        return false;
     };
-    proved > 0 && proved + not_applicable >= total
+    let claim_covers = vs.l4_lean_proved > 0 && vs.l4_lean_proved + vs.l4_not_applicable >= total;
+    claim_covers && !is_lean_proved_with_grounding(contract, grounded)
 }
 
 /// Returns `true` when all bindings are implemented.
@@ -254,12 +302,27 @@ fn is_fully_bound(binding_status: Option<(u32, u32)>) -> bool {
 /// - **L1**: contract exists with equations
 #[allow(clippy::cast_possible_truncation)]
 pub fn compute_proof_level(contract: &Contract, binding_status: Option<(u32, u32)>) -> ProofLevel {
+    compute_proof_level_with_grounding(
+        contract,
+        binding_status,
+        count_lean_theorems_for_contract(contract),
+    )
+}
+
+/// [`compute_proof_level`] with the grounding count passed in (ONT-2a).
+#[allow(clippy::cast_possible_truncation)]
+#[must_use]
+pub fn compute_proof_level_with_grounding(
+    contract: &Contract,
+    binding_status: Option<(u32, u32)>,
+    grounded: u32,
+) -> ProofLevel {
     let total_obligations = contract.proof_obligations.len() as u32;
     let ft_count = contract.falsification_tests.len() as u32;
     let kani_count = contract.kani_harnesses.len() as u32;
 
     // Check L4/L5: Lean proved
-    if is_lean_proved(contract) {
+    if is_lean_proved_with_grounding(contract, grounded) {
         return if is_fully_bound(binding_status) {
             ProofLevel::L5
         } else {
@@ -294,102 +357,128 @@ pub(crate) const LEAN_THEOREM_BASES: &[&str] = &[
     "../provable-contracts/lean",
 ];
 
+/// Register the three naming forms a single label contributes: namespaced, bare, and lowercased.
+fn insert_name_forms(names: &mut std::collections::HashSet<String>, label: &str) {
+    names.insert(format!("Theorems.{label}"));
+    names.insert(label.to_string());
+    names.insert(label.to_lowercase());
+}
+
+/// `relu_nonneg` → `ReluNonneg`.
+fn camel_case(snake: &str) -> String {
+    snake
+        .split('_')
+        .map(|s| {
+            let mut c = s.chars();
+            match c.next() {
+                None => String::new(),
+                Some(f) => f.to_uppercase().chain(c).collect(),
+            }
+        })
+        .collect()
+}
+
+/// `ReluNonneg` → `Relu`: the leading word of a CamelCase name.
+fn first_camel_word(camel: &str) -> String {
+    camel
+        .chars()
+        .enumerate()
+        .take_while(|(i, c)| *i == 0 || !c.is_uppercase())
+        .map(|(_, c)| c)
+        .collect()
+}
+
+/// Register every `theorem <name>` a file declares, in the forms a contract may cite it by.
+fn insert_theorem_names_from_content(names: &mut std::collections::HashSet<String>, content: &str) {
+    for line in content.lines() {
+        let Some(pos) = line.find("theorem ") else {
+            continue;
+        };
+        let tname: String = line[pos + 8..]
+            .chars()
+            .take_while(|c| c.is_alphanumeric() || *c == '_')
+            .collect();
+        if tname.is_empty() {
+            continue;
+        }
+        let camel = camel_case(&tname);
+        names.insert(format!("Theorems.{camel}"));
+        names.insert(camel.clone());
+        let first_word = first_camel_word(&camel);
+        if first_word.len() >= 3 {
+            names.insert(format!("Theorems.{first_word}"));
+            names.insert(first_word);
+        }
+    }
+}
+
+/// Register the names contributed by one domain directory's sorry-free `.lean` files.
+///
+/// A file containing `sorry` contributes NOTHING: an admitted proof grounds no claim, which is the whole
+/// reason this scan is the grounding ONT-2a trusts over a contract's own summary.
+fn insert_domain_theorems(names: &mut std::collections::HashSet<String>, domain: &std::path::Path) {
+    let domain_name = domain
+        .file_name()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .to_string();
+    let Ok(files) = std::fs::read_dir(domain) else {
+        return;
+    };
+    for file in files.flatten() {
+        let path = file.path();
+        if path.extension().is_none_or(|e| e != "lean") {
+            continue;
+        }
+        let Ok(content) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        if content.contains("sorry") {
+            continue;
+        }
+        let stem = path
+            .file_stem()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string();
+        insert_name_forms(names, &domain_name);
+        insert_name_forms(names, &stem);
+        insert_theorem_names_from_content(names, &content);
+    }
+}
+
+/// Every theorem name one base directory contributes; empty when the base is absent.
+fn scan_theorem_base(base: &str) -> std::collections::HashSet<String> {
+    let mut names = std::collections::HashSet::new();
+    let search_dir = std::path::Path::new(base).join("ProvableContracts/Theorems");
+    if !search_dir.exists() {
+        return names;
+    }
+    let Ok(domains) = std::fs::read_dir(&search_dir) else {
+        return names;
+    };
+    for domain_entry in domains.flatten() {
+        let path = domain_entry.path();
+        if path.is_dir() {
+            insert_domain_theorems(&mut names, &path);
+        }
+    }
+    names
+}
+
 /// Build a set of all sorry-free Lean theorem names from the Theorems/ directory.
 /// Scans once, caches the result in a thread-local for repeated calls.
 fn lean_theorem_names() -> &'static std::collections::HashSet<String> {
     use std::sync::OnceLock;
     static CACHE: OnceLock<std::collections::HashSet<String>> = OnceLock::new();
     CACHE.get_or_init(|| {
-        let mut names = std::collections::HashSet::new();
         for base in LEAN_THEOREM_BASES {
-            let search_dir = std::path::Path::new(base).join("ProvableContracts/Theorems");
-            if !search_dir.exists() {
-                continue;
-            }
-            // Walk all domain dirs and collect theorem names
-            if let Ok(domains) = std::fs::read_dir(&search_dir) {
-                for domain_entry in domains.flatten() {
-                    if !domain_entry.path().is_dir() {
-                        continue;
-                    }
-                    let domain_name = domain_entry.file_name().to_string_lossy().to_string();
-                    if let Ok(files) = std::fs::read_dir(domain_entry.path()) {
-                        for file in files.flatten() {
-                            let path = file.path();
-                            if path.extension().is_some_and(|e| e == "lean") {
-                                if let Ok(content) = std::fs::read_to_string(&path) {
-                                    if !content.contains("sorry") {
-                                        let stem = path
-                                            .file_stem()
-                                            .unwrap_or_default()
-                                            .to_string_lossy()
-                                            .to_string();
-                                        // Register domain, stem, and namespace forms
-                                        names.insert(format!("Theorems.{domain_name}"));
-                                        names.insert(domain_name.clone());
-                                        names.insert(domain_name.to_lowercase());
-                                        names.insert(format!("Theorems.{stem}"));
-                                        names.insert(stem.clone());
-                                        names.insert(stem.to_lowercase());
-                                        // Extract theorem names from content
-                                        // e.g., "theorem relu_nonneg" → "Relu"
-                                        for line in content.lines() {
-                                            if let Some(pos) = line.find("theorem ") {
-                                                let rest = &line[pos + 8..];
-                                                let tname: String = rest
-                                                    .chars()
-                                                    .take_while(|c| {
-                                                        c.is_alphanumeric() || *c == '_'
-                                                    })
-                                                    .collect();
-                                                if !tname.is_empty() {
-                                                    // CamelCase the theorem name for matching
-                                                    let camel: String = tname
-                                                        .split('_')
-                                                        .map(|s| {
-                                                            let mut c = s.chars();
-                                                            match c.next() {
-                                                                None => String::new(),
-                                                                Some(f) => f
-                                                                    .to_uppercase()
-                                                                    .chain(c)
-                                                                    .collect(),
-                                                            }
-                                                        })
-                                                        .collect();
-                                                    names.insert(format!("Theorems.{camel}"));
-                                                    names.insert(camel.clone());
-                                                    // Also register first CamelCase word
-                                                    // e.g., "ReluNonneg" → "Relu"
-                                                    let first_word: String = camel
-                                                        .chars()
-                                                        .enumerate()
-                                                        .take_while(|(i, c)| {
-                                                            *i == 0 || !c.is_uppercase()
-                                                        })
-                                                        .map(|(_, c)| c)
-                                                        .collect();
-                                                    if first_word.len() >= 3 {
-                                                        names.insert(format!(
-                                                            "Theorems.{first_word}"
-                                                        ));
-                                                        names.insert(first_word);
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+            let names = scan_theorem_base(base);
             if !names.is_empty() {
-                break;
+                return names;
             }
         }
-        names
+        std::collections::HashSet::new()
     })
 }
 
@@ -431,6 +520,8 @@ pub fn proof_status_report(
         falsification_tests: 0,
         kani_harnesses: 0,
         lean_proved: 0,
+        lean_grounded: 0,
+        l4_self_declared: 0,
         bindings_implemented: 0,
         bindings_total: 0,
     };
@@ -441,16 +532,19 @@ pub fn proof_status_report(
         let obligations = contract.proof_obligations.len() as u32;
         let ft_count = contract.falsification_tests.len() as u32;
         let kani_count = contract.kani_harnesses.len() as u32;
-        // First try YAML self-reported count, then scan actual Lean files
+        // The CLAIM (what the contract says about itself) and the GROUNDING (what the tree shows) are two
+        // numbers since ONT-2a; before it, the first stood in for the second whenever it was non-zero.
         let lean_proved = contract
             .verification_summary
             .as_ref()
             .map_or(0, |vs| vs.l4_lean_proved);
+        let lean_grounded = count_lean_theorems_for_contract(contract);
         let lean_proved = if lean_proved == 0 {
-            count_lean_theorems_for_contract(contract)
+            lean_grounded
         } else {
             lean_proved
         };
+        let l4_self_declared = is_l4_self_declared_with_grounding(contract, lean_grounded);
 
         // Count bindings for this contract
         let (b_impl, b_total) = if let Some(reg) = binding {
@@ -465,12 +559,15 @@ pub fn proof_status_report(
             None
         };
 
-        let proof_level = compute_proof_level(contract, binding_status);
+        let proof_level =
+            compute_proof_level_with_grounding(contract, binding_status, lean_grounded);
 
         totals.obligations += obligations;
         totals.falsification_tests += ft_count;
         totals.kani_harnesses += kani_count;
         totals.lean_proved += lean_proved;
+        totals.lean_grounded += lean_grounded;
+        totals.l4_self_declared += u32::from(l4_self_declared);
         totals.bindings_implemented += b_impl;
         totals.bindings_total += b_total;
 
@@ -481,6 +578,8 @@ pub fn proof_status_report(
             falsification_tests: ft_count,
             kani_harnesses: kani_count,
             lean_proved,
+            lean_grounded,
+            l4_self_declared,
             bindings_implemented: b_impl,
             bindings_total: b_total,
         });
@@ -497,6 +596,7 @@ pub fn proof_status_report(
 
     ProofStatusReport {
         schema_version: "1.0.0".to_string(),
+        l4_self_declared_excluded: true,
         timestamp,
         contracts: statuses,
         kernel_classes,
@@ -514,14 +614,23 @@ pub fn format_text(report: &ProofStatusReport) -> String {
     ));
 
     out.push_str(&format!(
-        "  {:<35} {:>5} {:>6} {:>5} {:>4} {:>4} {:>9}\n",
-        "Contract", "Level", "Obligs", "Tests", "Kani", "Lean", "Bindings"
+        "  {:<35} {:>5} {:>6} {:>5} {:>4} {:>4} {:>9} {:>13}\n",
+        "Contract", "Level", "Obligs", "Tests", "Kani", "Lean", "Bindings", "L4 evidence"
     ));
-    out.push_str(&format!("  {}\n", "─".repeat(72)));
+    out.push_str(&format!("  {}\n", "─".repeat(86)));
 
     for c in &report.contracts {
+        // ONT-2a: the andon is a COLUMN, not a footnote. A claim the tree does not ground says so on its
+        // own line, beside the level it no longer reaches.
+        let l4_evidence = if c.l4_self_declared {
+            "self-declared"
+        } else if c.lean_grounded > 0 {
+            "grounded"
+        } else {
+            "-"
+        };
         out.push_str(&format!(
-            "  {:<35} {:>5} {:>6} {:>5} {:>4} {:>4} {:>4}/{:<4}\n",
+            "  {:<35} {:>5} {:>6} {:>5} {:>4} {:>4} {:>4}/{:<4} {:>13}\n",
             truncate(&c.stem, 35),
             c.proof_level,
             c.obligations,
@@ -530,6 +639,7 @@ pub fn format_text(report: &ProofStatusReport) -> String {
             c.lean_proved,
             c.bindings_implemented,
             c.bindings_total,
+            l4_evidence,
         ));
     }
 
@@ -549,13 +659,17 @@ pub fn format_text(report: &ProofStatusReport) -> String {
     }
 
     out.push_str(&format!(
-        "\nTotals: {} obligations, {} tests, {} kani, {} lean proved, {}/{} bound\n",
+        "\nTotals: {} obligations, {} tests, {} kani, {} lean claimed ({} grounded), {}/{} bound\n\
+         L4 evidence: {} contract(s) self-declared and excluded from L4 (ONT-2a andon); grounded means a \
+         sorry-free in-tree Lean theorem the equation names\n",
         report.totals.obligations,
         report.totals.falsification_tests,
         report.totals.kani_harnesses,
         report.totals.lean_proved,
+        report.totals.lean_grounded,
         report.totals.bindings_implemented,
         report.totals.bindings_total,
+        report.totals.l4_self_declared,
     ));
 
     out
