@@ -1,0 +1,54 @@
+# tools.toml — pinned CI tool versions (BSE-10a, PMAT-1066).
+#
+# These are ASSERTED by scripts/check_tool_versions.sh, never installed by
+# CI. The fleet installer is infra's forjar pin, applied to every clean-room
+# runner (paiml/infra, machines/intel/forjar.yaml):
+#
+#   stack-tool-pmat    (line 784)  version: "3.39.0"   # infra ef0ec4c, 2026-09-06
+#   stack-tool-bashrs  (line 811)  version: "7.0.4"
+#
+# THIS FILE WAS THE STALE MIRROR, not the fleet (measured 2026-09-13). It said
+# bashrs 7.0.1 while all five machines/*/forjar.yaml declared 7.0.4 — and the
+# fleet itself agreed with neither: intel 7.0.1, gx10 and mini 7.0.4, yoga no
+# bashrs at all, with pmat spread over 3.20.0 / 3.31.0 / 3.39.0. The assertion
+# below could not see any of that, because it only ever ran on the runner that
+# took the job and guard-cargo lands on intel nearly every time. All four hosts
+# are converged now, and .github/workflows/fleet-tools.yml asserts this file on
+# each of them nightly so the next drift is visible on the box it happens to.
+#
+# THE PIN STAYS AT 7.0.1 HERE, DELIBERATELY, and that is the ordering lesson.
+# This file was moved to 7.0.4 and a guard-cargo job on yoga-build2 answered
+# `FAIL bashrs pinned 7.0.4 found 7.0.1` twenty minutes later. Four login shells
+# reporting 7.0.4 is not the same statement as "every environment a job executes
+# in is at 7.0.4", and an assertion that runs ahead of the fleet turns PRs red
+# for a claim the fleet has not earned yet. Measure first, assert second:
+# fleet-toolset.yml now runs check_tool_versions.sh on every box daily, so the
+# bump to 7.0.4 lands when that is green everywhere and not before.
+#
+# 7.0.1 -> 7.0.4 is not a behaviour change either way, measured rather than
+# assumed: both versions built and run over all 195 scripts in scripts/ return
+# the same 6 error lines, identical after stripping positions. Which is why
+# shell_lint_baseline.txt is still re-stamped to that measured 6 below — it had
+# been carrying 8, taken by an instrument the header named and nothing compared
+# against, and 6 is what the PINNED 7.0.1 measures on this tree today.
+#
+# ci.yml used to run, per job:
+#   command -v pmat > /dev/null 2>&1 || cargo install pmat --locked --quiet || true
+#   cargo install bashrs --locked --quiet || true
+# unpinned, PATH-first, and fail-open (the trailing `|| true` swallowed a
+# failed install and carried on with whatever pmat/bashrs happened to already
+# be on PATH). aprender also forbids self-hosted jobs from installing into the
+# shared ~/.cargo/bin (scripts/check_cargo_install_private_root.sh,
+# aprender#2353) — the fleet pin is the only thing allowed to put a binary
+# there. This file is the aprender-side half of that contract: it names the
+# version the fleet is supposed to have, so check_tool_versions.sh can fail
+# closed the moment the two drift apart, instead of silently running whatever
+# crates.io served at install time.
+#
+# Bump this file in the SAME commit as the infra forjar.yaml version bump.
+
+[pmat]
+version = "3.39.0"
+
+[bashrs]
+version = "7.0.1"

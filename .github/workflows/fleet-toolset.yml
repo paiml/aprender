@@ -1,0 +1,181 @@
+# fleet-toolset.yml — what does each self-hosted box actually have on it?
+# Row 67-C2 (PMAT-1098, issue #3083).
+#
+# WHY THIS EXISTS
+# ---------------
+# Run 34448908554 built a 21 MB CUDA asset on gx10 and failed at the upload with
+# `gh: command not found`. The answer to "does gx10 have gh?" existed only in
+# somebody's head, and it was wrong. This workflow asks every box the same
+# question every day and leaves the answer as a FILE.
+#
+# WHAT THIS PRODUCES, AND WHAT IT DELIBERATELY DOES NOT
+# -----------------------------------------------------
+# ARTIFACT + JOB SUMMARY. Not a pull request. A PR-per-day against evidence/
+# would be ~365 PRs a year of machine-written noise through a protected branch
+# and a merge queue that runs at ~1 PR/hour — the cost of the record would
+# exceed the value of the record. So each box uploads `toolset-<label>` and the
+# roll-up job renders one table into the run summary; landing a snapshot under
+# `evidence/fleet/` is a deliberate human act, documented in
+# evidence/fleet/README.md.
+#
+# A MISSING TOOL IS THE FINDING, so no step here is `continue-on-error`. A red
+# box in this workflow is the whole point: it says, before a release lane needs
+# it, that the box cannot do the job. The upload runs `if: always()` because the
+# record of a RED box is the record most worth keeping.
+#
+# ON THE RUNNER LABELS BEING BEHIND `fromJSON(matrix.labels)`
+# -----------------------------------------------------------
+# The label sets are literal in the matrix below, but they are not on the
+# `runs-on:` line, and `scripts/check_runner_labels.sh` and
+# `scripts/check_perf_concurrency_groups.sh` both scan `runs-on:`. This is the
+# same shape binary-release.yml's build-apr-cuda and smoke-cuda already have; it
+# is not widened here and it is not closed here. Closing it means literal
+# selectors, which makes the two GPU jobs perf-sensitive and requires a
+# `perf-<host>` group for a host `scripts/perf-matrix.yaml` declares — and
+# `yoga` is not a declared host. That file is another row's ground.
+# `scripts/tests/ci_self_hosted_preflight_test.sh` reads the `strategy:` block
+# as well as `runs-on:` for exactly this reason, so the wiring of the preflight
+# in these jobs IS checked.
+
+name: Fleet Toolset
+
+on:
+  schedule:
+    # 04:47 UTC — an off-minute, and clear of cuda-nightly (01:30) and
+    # silicon-nightly (03:30) so the probe never queues behind a 90-minute
+    # measurement it would otherwise appear to have slowed down.
+    - cron: "47 4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fleet-toolset
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    name: toolset on ${{ matrix.name }}
+    runs-on: ${{ fromJSON(matrix.labels) }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # The self-hosted label sets that exist in the org today. NEVER a
+          # hosted ubuntu-*/macos-*/windows-* label: this workflow is about the
+          # boxes we own, and a GitHub-hosted image answers a question nobody
+          # asked.
+          - name: clean-room
+            cuda: false
+            labels: '["self-hosted", "Linux", "X64", "clean-room"]'
+          - name: gx10
+            cuda: true
+            labels: '["self-hosted", "Linux", "ARM64", "cuda", "gx10", "ephemeral", "docker"]'
+          - name: yoga
+            cuda: true
+            labels: '["self-hosted", "Linux", "X64", "cuda", "yoga", "ephemeral", "docker"]'
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Preflight — this box has the tools this job assumes
+        env:
+          PREFLIGHT_OUT: ${{ runner.temp }}/preflight.json
+        run: |
+          if [ "${{ matrix.cuda }}" = "true" ]; then
+            bash scripts/ci_self_hosted_preflight.sh --cuda
+          else
+            bash scripts/ci_self_hosted_preflight.sh
+          fi
+
+      # `if: always()` — a box that FAILED the preflight is the box whose record
+      # matters most, and a step that only uploads on success would drop exactly
+      # the days worth recording.
+      - name: Upload this box's toolset record
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: toolset-${{ matrix.name }}
+          path: ${{ runner.temp }}/preflight.json
+          retention-days: 90
+          if-no-files-found: error
+
+  rollup:
+    name: Fleet toolset summary
+    needs: probe
+    if: always()
+    runs-on: [self-hosted, Linux, X64, clean-room]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Preflight — this box has the tools this job assumes
+        run: bash scripts/ci_self_hosted_preflight.sh
+
+      - name: Download every box's record
+        uses: actions/download-artifact@v4
+        with:
+          pattern: toolset-*
+          path: fleet
+
+      # python3 rather than jq: the roll-up must be able to say "this box has no
+      # jq" without needing jq to say it.
+      #
+      # QUOTED heredoc. An unquoted one is substituted by the shell first, and a
+      # backtick or a $ in prose then EXECUTES — that has cost this repo a run
+      # already. GitHub also substitutes `${{ }}` textually before bash sees the
+      # block, comments included, so no expression appears inside this one.
+      - name: Render the fleet table
+        run: |
+          python3 - fleet >> "$GITHUB_STEP_SUMMARY" <<'PY'
+          import json, os, sys
+
+          root = sys.argv[1]
+          rows = []
+          for dirpath, _dirs, files in os.walk(root):
+              for fn in files:
+                  if fn != "preflight.json":
+                      continue
+                  p = os.path.join(dirpath, fn)
+                  label = os.path.basename(dirpath)
+                  try:
+                      d = json.load(open(p))
+                  except Exception as e:                      # noqa: BLE001
+                      rows.append((label, "UNPARSEABLE", "-", "-", "-", str(e)[:60]))
+                      continue
+                  miss = d.get("missing") or []
+                  rows.append((
+                      label,
+                      "MISSING: " + " ".join(miss) if miss else "ok",
+                      d.get("runner") or "-",
+                      d.get("arch") or "-",
+                      str(d.get("cuda_devices", "-")),
+                      (d.get("glibc") or "-")[:48],
+                  ))
+
+          print("### Fleet toolset")
+          print("")
+          if not rows:
+              # Zero rows is a BROKEN PROBE, not a clean fleet. Saying so is the
+              # difference between a record and a green square.
+              print("**No preflight.json was downloaded — the probe produced nothing.**")
+              print("")
+              print("This is a finding about this workflow, not about the fleet.")
+              sys.exit(1)
+          print("| artifact | verdict | runner | arch | cuda devices | glibc |")
+          print("|---|---|---|---|---|---|")
+          for r in sorted(rows):
+              print("| " + " | ".join(r) + " |")
+          print("")
+          print("Records are artifacts, not a pull request — see `evidence/fleet/README.md`.")
+          PY
+
+      - name: Upload the merged fleet record
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: fleet-toolset
+          path: fleet
+          retention-days: 90
+          if-no-files-found: error

@@ -207,6 +207,10 @@ mod tests {
             AttentionType::from_str_contract("mqa").expect("parse"),
             AttentionType::Mqa
         );
+        assert_eq!(
+            AttentionType::from_str_contract("hybrid_gated_deltanet").expect("parse"),
+            AttentionType::HybridGatedDeltaNet
+        );
         assert!(AttentionType::from_str_contract("unknown").is_err());
     }
 

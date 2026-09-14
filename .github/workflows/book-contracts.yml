@@ -1,3 +1,5 @@
+# #3073 (operator rule 2026-09-10: no GitHub-hosted runners): every job runs on the
+# clean-room pool; X64 because the mdBook/tool installs below fetch x86_64 builds.
 name: Book Contract Enforcement
 
 on:
@@ -43,13 +45,19 @@ jobs:
   # Job 1: All chapter examples compile
   chapter-examples-compile:
     name: Chapter Examples Compile
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, clean-room]
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: "."
+          # cache-bin false: these run on the shared clean-room runners, where all 16
+          # listeners share ONE $CARGO_HOME. rust-cache's POST step PRUNES ~/.cargo/bin,
+          # so one job here deletes the fleet toolchain out from under the other fifteen
+          # (infra#208, #320, #381 -- it has happened three times in a day). infra's
+          # shared-cargo-home-guard BLOCKs on this exact step.
+          cache-bin: "false"
       - name: Build all 27 chapter examples
         run: |
           for ch in ch01_hello_apr ch02_tensors ch03_apr_format ch04_supervised \
@@ -67,7 +75,7 @@ jobs:
   # Job 2: All chapter examples run with exit 0
   chapter-examples-run:
     name: Chapter Examples Run
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, clean-room]
     needs: chapter-examples-compile
     steps:
       - uses: actions/checkout@v7
@@ -75,6 +83,12 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: "."
+          # cache-bin false: these run on the shared clean-room runners, where all 16
+          # listeners share ONE $CARGO_HOME. rust-cache's POST step PRUNES ~/.cargo/bin,
+          # so one job here deletes the fleet toolchain out from under the other fifteen
+          # (infra#208, #320, #381 -- it has happened three times in a day). infra's
+          # shared-cargo-home-guard BLOCKs on this exact step.
+          cache-bin: "false"
       - name: Run all 27 chapter examples
         run: |
           PASS=0; FAIL=0
@@ -100,20 +114,26 @@ jobs:
   # Job 3: Integration tests
   book-integration-tests:
     name: Book Integration Tests
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, clean-room]
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: "."
+          # cache-bin false: these run on the shared clean-room runners, where all 16
+          # listeners share ONE $CARGO_HOME. rust-cache's POST step PRUNES ~/.cargo/bin,
+          # so one job here deletes the fleet toolchain out from under the other fifteen
+          # (infra#208, #320, #381 -- it has happened three times in a day). infra's
+          # shared-cargo-home-guard BLOCKs on this exact step.
+          cache-bin: "false"
       - name: Run book_contracts tests
         run: cargo test -p aprender-core --test book_contracts
 
   # Job 4: Contract enforcement (no files without contracts)
   contract-enforcement:
     name: Contract Enforcement
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, clean-room]
     steps:
       - uses: actions/checkout@v7
       - name: Every chapter has a contract
@@ -173,7 +193,7 @@ jobs:
   # Job 5: Namespace discipline
   namespace-discipline:
     name: Namespace Discipline
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, clean-room]
     steps:
       - uses: actions/checkout@v7
       - name: No legacy imports in chapter examples
@@ -214,7 +234,7 @@ jobs:
   # Job 6: SUMMARY.md integrity
   summary-integrity:
     name: SUMMARY.md Integrity
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, clean-room]
     steps:
       - uses: actions/checkout@v7
       - name: No dead links in SUMMARY.md

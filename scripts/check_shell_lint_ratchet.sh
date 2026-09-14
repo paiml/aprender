@@ -49,10 +49,9 @@ BASELINE="${REPO_ROOT}/scripts/shell_lint_baseline.txt"
 cd "$REPO_ROOT" || exit 1
 
 if ! command -v bashrs >/dev/null 2>&1; then
-    printf 'SKIP: bashrs is not installed; install it with `cargo install bashrs --locked`.\n' >&2
-    printf 'This is a hard failure in CI, where the workflow installs it first.\n' >&2
-    [ "${CI:-}" = "true" ] && exit 1
-    exit 0
+    printf 'ENV: bashrs is not on PATH; the fleet pin installs it (tools.toml; CI never installs tools).\n' >&2
+    printf 'Without the linter this guard cannot decide, so it refuses to pass (exit 2, never 0).\n' >&2
+    exit 2
 fi
 
 scanned=$(find scripts -maxdepth 1 -name '*.sh' | wc -l | tr -d ' ')
@@ -102,8 +101,31 @@ printf '=== bashrs must see every script in scripts/ (check_shell_lint_ratchet.s
 printf '%s script(s) scanned, %s error line(s)\n' "$scanned" "$errors"
 
 if [ "${1:-}" = "--update" ]; then
-    printf '%s\n' "$errors" > "$BASELINE"
-    printf 'baseline set to %s\n' "$errors"
+    # THE HEADER IS NOT DECORATION (#3217). A ratchet compares a count to a
+    # count, and two counts are comparable only if one instrument produced
+    # both. bashrs error counts move hard between releases — main measured 13
+    # and 53 on one tree across two of them — so a baseline without the version
+    # that measured it is a number, not a baseline.
+    #
+    # This line used to be `printf '%s\n' "$errors" > "$BASELINE"`, which
+    # DELETED the `# tool_version=` header the file had always carried. Running
+    # the command this script's own usage line documents therefore disarmed a
+    # third of check_tool_versions.sh's header audit, silently, because that
+    # audit had no vacuity floor. It has one now; this writes the header back.
+    #
+    # The LIVE version is stamped, never the pinned one. Re-baselining on a box
+    # whose bashrs has drifted from tools.toml then lands a header that
+    # disagrees with the pin and check_tool_versions.sh says so — which is the
+    # finding, not a nuisance. Stamping the pin instead would launder a number
+    # measured by the wrong instrument into one that looks correctly measured.
+    bashrs_ver=$(bashrs --version 2>/dev/null | awk 'NR==1{print $2}')
+    if [ -z "$bashrs_ver" ]; then
+        printf 'FAIL: bashrs --version did not name a version; refusing to record a\n'
+        printf '      count whose instrument cannot be stamped.\n' >&2
+        exit 1
+    fi
+    printf '# tool_version=bashrs %s\n%s\n' "$bashrs_ver" "$errors" > "$BASELINE"
+    printf 'baseline set to %s (measured by bashrs %s)\n' "$errors" "$bashrs_ver"
     exit 0
 fi
 
@@ -132,7 +154,7 @@ if [ ! -f "$BASELINE" ]; then
     printf 'FAIL: %s missing. Run --update once to establish it.\n' "$BASELINE"
     exit 1
 fi
-baseline=$(tr -d '[:space:]' < "$BASELINE")
+baseline=$(grep -vE '^[[:space:]]*(#|$)' "$BASELINE" | tr -d '[:space:]')
 
 printf 'baseline %s\n' "$baseline"
 

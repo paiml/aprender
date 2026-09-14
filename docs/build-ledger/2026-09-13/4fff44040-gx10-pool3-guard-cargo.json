@@ -1,0 +1,27 @@
+{
+  "spec": "APR-RELEASE-001",
+  "section": "3.6",
+  "sha": "4fff4404031fedfe5a9cfb1c5eaf0e9e4d0e95c3",
+  "host": "gx10-pool3",
+  "host_class": "gx10",
+  "job": "guard-cargo",
+  "workflow": "CI",
+  "event": "pull_request",
+  "run_id": "34742670296",
+  "job_id": "103684918030",
+  "queue_wait_s": 47,
+  "exec_s": 484,
+  "total_s": 531,
+  "peak_rss_mb": null,
+  "free_disk_gb": null,
+  "exit": 0,
+  "conclusion": "success",
+  "created_at": "2026-09-13T06:24:34Z",
+  "started_at": "2026-09-13T06:25:21Z",
+  "completed_at": "2026-09-13T06:33:25Z",
+  "unmeasured": [
+    "peak_rss_mb [U] — not exposed by the Actions REST API",
+    "free_disk_gb [U] — not exposed by the Actions REST API"
+  ],
+  "source": "gh api repos/paiml/aprender/actions/runs/<run>/jobs"
+}
