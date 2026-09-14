@@ -102,7 +102,7 @@ Live `forjar.yaml` beats this table. Record the diff in the receipt and continue
 | Step | Action | Skip if |
 |---|---|---|
 | **T-0 Cut** | cut sha = `main` HEAD; bump minor; `CHANGELOG` from merged PR titles since last tag | tag `v0.N.0` exists |
-| **T-1 Deep** | `ci / deep` green on cut sha: full tests, doctests, `--no-default-features`, feature matrix, GPU, every `cargo run --example` | green run recorded for this sha |
+| **T-1 Deep** | `ci / deep` green on cut sha: full tests, doctests, `--no-default-features`, feature matrix (§4.1), GPU, every `cargo run --example` (§4.2) | green run recorded for this sha |
 | **T-2 Dogfood** | `apr-dogfood` skill go/no-go receipt; `apr-cookbook` current; release notes generated | receipt exists for this sha |
 | **T-3 Promote** | tag; clean-room on the tag; GitHub release with T-2 receipt attached | release `v0.N.0` exists |
 | **T-4 Publish** | **automated** — the autopilot runs `cascade-drain.sh` after T-3's preflight; record cascade wall minutes; attended minutes are 0 by construction | all crates at `0.N.0` on crates.io |
@@ -110,6 +110,56 @@ Live `forjar.yaml` beats this table. Record the diff in the receipt and continue
 
 Any step RED → SKIPPED, no partial promotion. Scope is assigned to trains after the fact:
 0.67 contains whatever merged before the 0.67 cut, by definition.
+
+### §4.1 Feature matrix — what T-1 means by it
+
+One `cargo check -p <crate> --no-default-features --features <one feature>` per **(crate, feature)
+pair**, not a powerset: a powerset is 2^n per crate (aprender-orchestrate alone declares 78 features)
+and infeasible. The universe comes from `cargo metadata`, never a written list.
+
+This clause was in T-1 from the start and was never built. Its first run, 2026-09-14 (#3262),
+measured **100 of 430 pairs RED — every one unreachable from any crate's default set**. That is the
+whole reason it can go dark: `cargo check --workspace` stays green over all of it, because feature
+unification hands each crate whatever its siblings enabled.
+
+Five shapes account for all 100; check them in this order:
+
+1. **Definition gated, caller not.** Often the gate is over-broad — **un-gate it, do not spread it**.
+2. **Declared in `Cargo.toml`, never applied in code.** `grep -rn 'feature = "X"' --include='*.rs'`
+   returning nothing is the test.
+3. **The implicit dep-feature used where the composite was meant.** An optional dep `foo` creates
+   feature `foo`, which links foo and nothing else.
+4. **A feature that supplies nothing its code needs** — usually a dependency removed for lock bloat
+   with the gated code left behind. **Measure `Cargo.lock` before re-adding**: a version already
+   locked by a sibling costs zero new packages.
+5. **Struct drift** — an upstream type grows a field and the one initializer in the tree is never
+   updated. Nothing else in the train watches for this; the matrix is what catches it.
+
+**Known-red list.** A pair that cannot be made green in the same train is listed with a date and an
+issue reference, and is reported, not fatal — a lane born red is a lane taught to be ignored. A
+listed pair that **PASSES is fatal**: the list may only shrink, and it shrinks by deleting a line.
+Re-derive the list against the tree immediately before the lane is undrafted; a dated list is
+evidence of when it was true, not that it still is.
+
+**A feature that cannot be built at all** — its dependency is deliberately absent, or circular —
+emits ONE `compile_error!` naming the dependency and the exact edit that would enable it, with the
+real gate moved to a private `__x-linked` feature so the refusal is the only diagnostic. Precedent
+in tree: `aprender-simulate/z3-proofs`, `aprender-core/showcase-profile`, `aprender-zram-core/cuda`.
+
+Fixing one cause exposes the next — the nextest-fail-fast class. Re-sweep after every fix; a
+single-cause sweep is not a measurement.
+
+### §4.2 Examples — run, not just build
+
+T-1 says *every* `cargo run --example`. Building them is a different clause and much cheaper (83 s
+for 980 targets vs ~2 h to run them). Measured 2026-09-14 on a random five with `-- --help` and a
+60 s cap: **three ran past it**. They are not CLIs, they are compute demos that ignore argv, so
+**timeout is a PASS**. The assertion T-1 actually owes is *every example starts and does not crash*.
+Asserting a duration here would be a wall-clock assertion in a required check, which
+`check_no_timing_in_required.sh` exists to forbid.
+
+Both clauses carry a **vacuity floor** (measured 980 examples / 430 pairs; floors 800 / 400): a
+discovery that finds almost nothing reports zero failures, which reads exactly like a pass.
 
 ## §5 Build rows — in order, one PR each, only when no train is due
 
@@ -166,6 +216,33 @@ zero ENOSPC in 10 trains.
 job, low priority, report-only: target = measured baseline + 2 points per ratchet toward
 95 %. Re-evaluate each train; ratchet downward only, ≤ 10 % per step.
 
+### §5.1 The debt tax — paid on every row, scheduled by none
+
+*(measured 2026-09-14; the largest single time sink of that day)* The pre-commit
+gate refuses ANY commit touching a file that carries a function over cyclomatic 30 / cognitive 25,
+and `--no-verify` is banned. So a one-line fix in a debt-carrying file costs the decomposition of
+every offender in that file. Measured on one day's work: **11 pre-existing violations** paid down to
+land small fixes — worst cases cognitive 91 (`execute_llm_score`), 73 (`help_producer_truth::resolve`),
+61 (`execute_llm_load`). None were in code that day's changes wrote.
+
+This is a real cost and it is not optional, so it is scheduled rather than absorbed silently:
+
+- The decomposition lands in the SAME commit as the fix that triggered it, and the commit message
+  names each offender with its before-number. A stack green only at the tip hides which change
+  broke what.
+- Extraction, not rewriting. Prefer moving a whole block to a named function over clever
+  restructuring; a behaviour-preserving refactor is the only kind admissible here.
+- When a match arm is extracted, re-match behind a `let … else` that refuses by name. Never panic,
+  never `unwrap()`.
+- Repeated identical blocks are the cheapest win — one helper taking the two things that differ
+  collapsed nine sites in one file.
+- **Record per train:** `debt: files_touched <n> | violations_paid <n> | worst_before <n>`. After 10
+  trains, if `violations_paid` is not falling, the gate's thresholds or the tree's debt is the build
+  row, not the fixes.
+
+*Done:* no train spends more turns on debt paydown than on the change that required it, measured
+over a trailing 5 trains `[U]`.
+
 ## §6 Triage pass — once per train, no judgement calls — and the T-5 reconcile, a HARD gate
 
 **Measured 2026-09-13 (0.67.0 train):** 308 open issues, 424 opened vs 124 closed in 30 d, 95 open
@@ -197,6 +274,16 @@ mechanism.
 
 - Every issue opened since the last train: labelled and sized. **`untriaged = 0`** at the end
   of every pass — hard target today, needs no baseline.
+- **Counted per surface, never as one number.** Measured 2026-09-14: issues were 319/320 triaged
+  while PRs were 20 of 34 with no milestone at all. A single `untriaged` figure reported the clean
+  surface and hid the breached one. The pass ends only when `untriaged_issues = 0` AND
+  `untriaged_prs = 0`.
+- **Triage is not disposal.** Over the trailing 10 days the issue ledger grew net **+149** while
+  being ~100 % triaged, and **312 of 320 open issues were opened by the agent itself**. Classifying
+  a finding does not close it. If `arrival > closure` for 3 consecutive trains, filing new findings
+  as issues stops being free: the next train's build row is closure, not features.
+- **Mechanical PR states are the pass's job, not a reviewer's**: `BEHIND` → `gh pr update-branch`
+  (measured: 14 → 4 in one pass), `DIRTY` → named on the PR with the conflicting files.
 - PR lifecycle, deterministic: no activity for 2 trains → label `stale` + comment; `stale`
   and no activity for 1 more train → closed. (~9 days, no discretion.)
 - Record per train: `arrival closure open_prs age_p95 untriaged`.
@@ -211,7 +298,10 @@ train:   step reached <T-0..T-4> | skip reason <none|…> | cascade wall min <n|
 build:   row <P0..P3|none> | PR <url|none> | records added <n>
 gate:    p95 ci/gate <min|[U]> | max PRs/train <n|[U]> | queue p95 intel <s> yoga <s> gx10 <s>
 pack:    intel <busy>/<online> | gx10 <busy>/<online> | yoga <busy>/<online> | intel-pressure <yes|no> | verdict <OK|P0-UNDERUTILIZED>
-triage:  arrival <n> | closure <n> | open PRs <n> (age p95 <d>) | untriaged <n>
+triage:  arrival <n> | closure <n> | open PRs <n> (age p95 <d>) | untriaged issues <n> prs <n>
+matrix:  pairs <n> | red <n> | known-red <n> | stale-known-red <n> | examples started <n>/<n>
+debt:    files touched <n> | violations paid <n> | worst before <n>
+quorum:  rounds <n> | width <n> | verdicts <a/b/c> | overridden <yes|no>
 reconcile: R1 fixed-open <n> | R2 no-close <n> | R3 dead-branches <n> | R4 dirty>1train <n> | R5 closure/arrival <x> | receipt <path|MISSING>
 stops:   <none|list>
 next:    train eligible at <timestamp>
@@ -229,6 +319,14 @@ next:    train eligible at <timestamp>
   stop the current build row, pack first (arm, route, reap), report the `pack:` line.
 - A runner box at or below `REAPER_CRITICAL_GB` free, or any job dead on ENOSPC → P0: reclaim
   over SSH now, then land the forjar change that makes it automatic, before anything else.
+- A host DECLARED a full-time build host sits at 0 % occupancy for a whole session while any
+  queue has pressure → P0: that is a routing or job-class defect, not spare capacity. (`mini`
+  measured at 0.0 % all of 2026-09-14 while declared full-time in #3205 — its ceiling is the
+  macOS-capable job classes, not capacity.)
+- A `ci / deep` known-red list names a pair that now PASSES → stop: the list is stale and the lane
+  is asserting something that is no longer true (§4.1).
+- A design fork appears that §6 cannot decide without judgement → §10, not a coin flip and not a
+  question to the operator.
 - Any step would need an invented threshold, a second concurrent aprender PR in CI,
   `--allow-dirty`, or SSH into a host → stop.
 
@@ -240,3 +338,44 @@ or 2 consecutive skips `[A]`.
 The 82-crate cascade is automated (ruling 2026-09-13) and its wall time is unmeasured.
 Record cascade wall minutes at T-4 on the `0.67` train. Above ~20 min `[A]` it delays the
 post-publish receipts and the cascade — not the build — becomes the next kaizen target.
+
+## §10 Decision procedure — for the forks §6 refuses to make
+
+§6 is deliberately "no judgement calls". Design forks still occur — four ways to fix one broken
+feature declaration, restore-vs-delete a dead GPU path — and they are not triage. They go here.
+
+**Fan out through agy, not through more Claude subagents.** Lanes cost agy credits; orchestrator
+turns are the scarce budget. `lane-group.sh run --out-dir D --width 3 --scratch -- agy-lane.sh
+--mode plan --repo-root <toplevel> --prompt …`. Width 3 is the default; 10 is the cap.
+
+**The brief carries the measurements, not the question.** Name the files, the line numbers, the
+acceptance command, and every option including the ones you dislike. A lane that has to go and
+measure the premise will measure it differently from the next lane, and the vote becomes noise.
+
+**Plant the trap.** Include one question whose obvious answer is wrong — a rename that looks
+mechanical but is not. A quorum that misses it has told you how much its other answers are worth.
+(2026-09-14: `Lz4WarpShuffleKernel` → `Lz4WarpCompressKernel` reads as a rename and is a
+literal-only encoder swapped for a real match-finder. All three lanes caught it.)
+
+**A verdict is a claim until re-run.** The orchestrator re-executes the acceptance command itself
+and records both columns. A lane reporting "all 9 selections green, 84 tests pass" is evidence of
+what the lane believes.
+
+**A premise error voids the vote, and the fix is another round — not the orchestrator's judgement.**
+Measured on #3179: round 1 voted 2/3 to make a dead path compile. Three facts were then verified by
+reading the tree (a stub decompress kernel, a launched entry point that does not exist, a host-memory
+API that never existed here). Round 2 with those facts overturned round 1 unanimously. **Re-run the
+quorum with the corrected premise; do not silently substitute your own conclusion.**
+
+**Overriding the majority is allowed exactly once and must be recorded.** Only on a fact no lane in
+that round had, stated in the commit and the PR, with the losing option's own argument quoted. On
+#3179 round 2 split 2/1 to delete; the minority option shipped because the crate's default build is
+green and the module in question is live public API — both deleting lanes had argued from "a dark,
+unused feature". When the fact is not decisive, the majority wins and your discomfort is not
+evidence.
+
+**Prefer the reversible option when the vote is close.** A `compile_error!` can be deleted later; a
+deleted module and its public types cannot be recovered from a reviewer's memory.
+
+**Record per train:** `quorum: rounds <n> | width <n> | verdicts <a/b/c> | overridden <yes|no>`.
+
