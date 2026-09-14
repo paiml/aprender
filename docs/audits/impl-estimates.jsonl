@@ -40,3 +40,4 @@
 {"repo":"aprender","ticket":"PMAT-972","phase":"P_1b","mode":"subagent:sonnet","est":3,"actual":40,"basis":"est=first-run[U]; actual=worker maxTurns (40) + one resume; decomposition committed"}
 {"repo":"aprender","ticket":"PMAT-972","phase":"P_1","mode":"subagent:sonnet","est":3,"actual":40,"basis":"est=first-run[U]; actual=worker maxTurns (40) + one resume (40); guard + case table left green but uncommitted"}
 {"repo":"aprender","ticket":"PMAT-972","phase":"P_2","mode":"direct","est":3,"actual":6,"basis":"est=first-run[U]; actual=orchestrator bash calls (mutation, docstring, wiring, contract, receipt)"}
+{"repo":"aprender","ticket":"PMAT-3225","phase":"all","mode":"subagent+quorum","est":0,"actual":26,"unit":"turn","basis":"first-run[U]"}
