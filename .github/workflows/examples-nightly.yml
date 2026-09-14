@@ -47,7 +47,7 @@ jobs:
 
       - name: Publish the examples ledger
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: examples-ledger
           path: evidence/dogfood/*/examples.tsv
