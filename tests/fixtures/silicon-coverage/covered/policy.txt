@@ -1,0 +1,4 @@
+# FIXTURE (R-5, docs/specifications/yoga-nightly-job.md §9.2) — the POSITIVE
+# control. A required axis whose selector a job in the ledger actually carried,
+# inside the window. Correct verdict: ok, exit 0.
+x86_64-cuda-sm89    required        self-hosted,gpu,yoga,cuda,ada    job:ada-yoga*
