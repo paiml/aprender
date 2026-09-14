@@ -6,7 +6,33 @@
 
 use presentar_yaml::Manifest;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+
+/// Resolve an example relative to THIS CRATE, not to the process CWD.
+///
+/// Every path in this file was `../../examples/<kind>/<file>.yaml`, which is two
+/// levels up from `crates/aprender-present-yaml/` — i.e. the repository root —
+/// and nothing has lived there since APR-MONO. The examples are in the SIBLING
+/// crate, `crates/aprender-present/examples/`. All 29 rows in this file read
+/// like this and all 29 failed:
+///
+///   ALD-002 should be valid: "Failed to read ../../examples/ald/data_table_virtualized.yaml:
+///   No such file or directory (os error 2)"
+///
+/// Nobody noticed because the target is dark: `workspace-test` is `--workspace
+/// --lib` plus an explicit `--test` list that has never named this crate. A full
+/// `--lib --tests` sweep of the workspace (98,621 tests, 19 min) found 37
+/// failures in 5 binaries, and 35 of them were this one path.
+///
+/// `CARGO_MANIFEST_DIR` is the fix rather than a corrected `../`: it is resolved
+/// at COMPILE time against the crate being built, so it cannot be broken by the
+/// working directory a runner happens to choose, and it survives the crate being
+/// moved again.
+fn example(rel: &str) -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../aprender-present/examples")
+        .join(rel)
+}
 
 /// Validate a manifest meets minimum quality requirements.
 fn validate_manifest(manifest: &Manifest) -> Vec<String> {
@@ -69,7 +95,7 @@ fn load_and_validate(path: &Path) -> Result<Manifest, String> {
 
 #[test]
 fn test_apr_001_model_card_basic() {
-    let path = Path::new("../../examples/apr/model_card_basic.yaml");
+    let path = &example("apr/model_card_basic.yaml");
     let manifest = load_and_validate(path).expect("APR-001 should be valid");
 
     assert_eq!(manifest.name, "model-card-basic");
@@ -87,7 +113,7 @@ fn test_apr_001_model_card_basic() {
 
 #[test]
 fn test_apr_002_model_comparison() {
-    let path = Path::new("../../examples/apr/model_comparison.yaml");
+    let path = &example("apr/model_comparison.yaml");
     let manifest = load_and_validate(path).expect("APR-002 should be valid");
 
     assert_eq!(manifest.name, "model-comparison");
@@ -108,7 +134,7 @@ fn test_apr_002_model_comparison() {
 
 #[test]
 fn test_apr_003_model_metrics_chart() {
-    let path = Path::new("../../examples/apr/model_metrics_chart.yaml");
+    let path = &example("apr/model_metrics_chart.yaml");
     let manifest = load_and_validate(path).expect("APR-003 should be valid");
 
     assert_eq!(manifest.name, "model-metrics-chart");
@@ -125,7 +151,7 @@ fn test_apr_003_model_metrics_chart() {
 
 #[test]
 fn test_apr_005_model_inference_demo() {
-    let path = Path::new("../../examples/apr/model_inference_demo.yaml");
+    let path = &example("apr/model_inference_demo.yaml");
     let manifest = load_and_validate(path).expect("APR-005 should be valid");
 
     assert_eq!(manifest.name, "model-inference");
@@ -148,7 +174,7 @@ fn test_apr_005_model_inference_demo() {
 
 #[test]
 fn test_apr_007_model_gradient_flow() {
-    let path = Path::new("../../examples/apr/model_gradient_flow.yaml");
+    let path = &example("apr/model_gradient_flow.yaml");
     let manifest = load_and_validate(path).expect("APR-007 should be valid");
 
     assert_eq!(manifest.name, "gradient-flow");
@@ -165,7 +191,7 @@ fn test_apr_007_model_gradient_flow() {
 
 #[test]
 fn test_apr_010_model_export_preview() {
-    let path = Path::new("../../examples/apr/model_export_preview.yaml");
+    let path = &example("apr/model_export_preview.yaml");
     let manifest = load_and_validate(path).expect("APR-010 should be valid");
 
     assert_eq!(manifest.name, "model-export-preview");
@@ -190,7 +216,7 @@ fn test_apr_010_model_export_preview() {
 
 #[test]
 fn test_ald_001_data_card_basic() {
-    let path = Path::new("../../examples/ald/data_card_basic.yaml");
+    let path = &example("ald/data_card_basic.yaml");
     let manifest = load_and_validate(path).expect("ALD-001 should be valid");
 
     assert_eq!(manifest.name, "data-card-basic");
@@ -210,7 +236,7 @@ fn test_ald_001_data_card_basic() {
 
 #[test]
 fn test_ald_002_data_table_virtualized() {
-    let path = Path::new("../../examples/ald/data_table_virtualized.yaml");
+    let path = &example("ald/data_table_virtualized.yaml");
     let manifest = load_and_validate(path).expect("ALD-002 should be valid");
 
     assert_eq!(manifest.name, "data-table-virtualized");
@@ -227,7 +253,7 @@ fn test_ald_002_data_table_virtualized() {
 
 #[test]
 fn test_ald_003_data_distribution_chart() {
-    let path = Path::new("../../examples/ald/data_distribution.yaml");
+    let path = &example("ald/data_distribution.yaml");
     let manifest = load_and_validate(path).expect("ALD-003 should be valid");
 
     assert_eq!(manifest.name, "data-distribution");
@@ -244,7 +270,7 @@ fn test_ald_003_data_distribution_chart() {
 
 #[test]
 fn test_ald_004_data_scatter_plot() {
-    let path = Path::new("../../examples/ald/data_scatter.yaml");
+    let path = &example("ald/data_scatter.yaml");
     let manifest = load_and_validate(path).expect("ALD-004 should be valid");
 
     assert_eq!(manifest.name, "data-scatter");
@@ -265,7 +291,7 @@ fn test_ald_004_data_scatter_plot() {
 
 #[test]
 fn test_ald_006_data_time_series() {
-    let path = Path::new("../../examples/ald/data_timeseries.yaml");
+    let path = &example("ald/data_timeseries.yaml");
     let manifest = load_and_validate(path).expect("ALD-006 should be valid");
 
     assert_eq!(manifest.name, "data-timeseries");
@@ -282,7 +308,7 @@ fn test_ald_006_data_time_series() {
 
 #[test]
 fn test_ald_008_data_class_balance() {
-    let path = Path::new("../../examples/ald/class_balance.yaml");
+    let path = &example("ald/class_balance.yaml");
     let manifest = load_and_validate(path).expect("ALD-008 should be valid");
 
     assert_eq!(manifest.name, "class-balance");
@@ -303,7 +329,7 @@ fn test_ald_008_data_class_balance() {
 
 #[test]
 fn test_cht_001_line_chart_basic() {
-    let path = Path::new("../../examples/charts/line_chart_basic.yaml");
+    let path = &example("charts/line_chart_basic.yaml");
     let manifest = load_and_validate(path).expect("CHT-001 should be valid");
 
     assert_eq!(manifest.name, "line-chart-basic");
@@ -320,7 +346,7 @@ fn test_cht_001_line_chart_basic() {
 
 #[test]
 fn test_cht_002_bar_chart_grouped() {
-    let path = Path::new("../../examples/charts/bar_chart_grouped.yaml");
+    let path = &example("charts/bar_chart_grouped.yaml");
     let manifest = load_and_validate(path).expect("CHT-002 should be valid");
 
     assert_eq!(manifest.name, "bar-chart-grouped");
@@ -337,7 +363,7 @@ fn test_cht_002_bar_chart_grouped() {
 
 #[test]
 fn test_cht_003_pie_chart_basic() {
-    let path = Path::new("../../examples/charts/pie_chart_basic.yaml");
+    let path = &example("charts/pie_chart_basic.yaml");
     let manifest = load_and_validate(path).expect("CHT-003 should be valid");
 
     assert_eq!(manifest.name, "pie-chart-basic");
@@ -358,7 +384,7 @@ fn test_cht_003_pie_chart_basic() {
 
 #[test]
 fn test_dsh_001_training_dashboard() {
-    let path = Path::new("../../examples/dashboards/training_dashboard.yaml");
+    let path = &example("dashboards/training_dashboard.yaml");
     let manifest = load_and_validate(path).expect("DSH-001 should be valid");
 
     assert_eq!(manifest.name, "training-dashboard");
@@ -381,7 +407,7 @@ fn test_dsh_001_training_dashboard() {
 
 #[test]
 fn test_dsh_002_dataset_explorer() {
-    let path = Path::new("../../examples/dashboards/dataset_explorer.yaml");
+    let path = &example("dashboards/dataset_explorer.yaml");
     let manifest = load_and_validate(path).expect("DSH-002 should be valid");
 
     assert_eq!(manifest.name, "dataset-explorer");
@@ -400,7 +426,7 @@ fn test_dsh_002_dataset_explorer() {
 
 #[test]
 fn test_dsh_003_model_comparison_dashboard() {
-    let path = Path::new("../../examples/dashboards/model_comparison_dashboard.yaml");
+    let path = &example("dashboards/model_comparison_dashboard.yaml");
     let manifest = load_and_validate(path).expect("DSH-003 should be valid");
 
     assert_eq!(manifest.name, "model-comparison-dashboard");
@@ -421,7 +447,7 @@ fn test_dsh_003_model_comparison_dashboard() {
 
 #[test]
 fn test_dsh_005_experiment_tracker() {
-    let path = Path::new("../../examples/dashboards/experiment_tracker.yaml");
+    let path = &example("dashboards/experiment_tracker.yaml");
     let manifest = load_and_validate(path).expect("DSH-005 should be valid");
 
     assert_eq!(manifest.name, "experiment-tracker");
@@ -444,7 +470,7 @@ fn test_dsh_005_experiment_tracker() {
 
 #[test]
 fn test_dsh_008_confusion_matrix() {
-    let path = Path::new("../../examples/dashboards/confusion_matrix.yaml");
+    let path = &example("dashboards/confusion_matrix.yaml");
     let manifest = load_and_validate(path).expect("DSH-008 should be valid");
 
     assert_eq!(manifest.name, "confusion-matrix");
@@ -468,7 +494,7 @@ fn test_dsh_008_confusion_matrix() {
 
 #[test]
 fn test_edg_001_empty_dataset() {
-    let path = Path::new("../../examples/edge_cases/empty_dataset.yaml");
+    let path = &example("edge_cases/empty_dataset.yaml");
     let manifest = load_and_validate(path).expect("EDG-001 should be valid");
 
     assert_eq!(manifest.name, "empty-dataset");
@@ -485,7 +511,7 @@ fn test_edg_001_empty_dataset() {
 
 #[test]
 fn test_edg_002_large_dataset() {
-    let path = Path::new("../../examples/edge_cases/large_dataset.yaml");
+    let path = &example("edge_cases/large_dataset.yaml");
     let manifest = load_and_validate(path).expect("EDG-002 should be valid");
 
     assert_eq!(manifest.name, "large-dataset");
@@ -506,7 +532,7 @@ fn test_edg_002_large_dataset() {
 
 #[test]
 fn test_all_apr_examples_exist() {
-    let apr_dir = Path::new("../../examples/apr");
+    let apr_dir = &example("apr");
     assert!(apr_dir.exists(), "examples/apr directory must exist");
 
     let required = [
@@ -526,7 +552,7 @@ fn test_all_apr_examples_exist() {
 
 #[test]
 fn test_all_ald_examples_exist() {
-    let ald_dir = Path::new("../../examples/ald");
+    let ald_dir = &example("ald");
     assert!(ald_dir.exists(), "examples/ald directory must exist");
 
     let required = [
@@ -546,7 +572,7 @@ fn test_all_ald_examples_exist() {
 
 #[test]
 fn test_all_chart_examples_exist() {
-    let charts_dir = Path::new("../../examples/charts");
+    let charts_dir = &example("charts");
     assert!(charts_dir.exists(), "examples/charts directory must exist");
 
     let required = [
@@ -563,7 +589,7 @@ fn test_all_chart_examples_exist() {
 
 #[test]
 fn test_all_dashboard_examples_exist() {
-    let dashboards_dir = Path::new("../../examples/dashboards");
+    let dashboards_dir = &example("dashboards");
     assert!(
         dashboards_dir.exists(),
         "examples/dashboards directory must exist"
@@ -585,7 +611,7 @@ fn test_all_dashboard_examples_exist() {
 
 #[test]
 fn test_all_edge_case_examples_exist() {
-    let edge_dir = Path::new("../../examples/edge_cases");
+    let edge_dir = &example("edge_cases");
     assert!(
         edge_dir.exists(),
         "examples/edge_cases directory must exist"
