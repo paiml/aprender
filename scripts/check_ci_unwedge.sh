@@ -44,6 +44,28 @@
 # two aggregators (`ci / gate` AND `gate`) and FIRES on a run genuinely down to
 # its last real job. Both are rows in the table below.
 #
+# THE SECOND DEFECT: A MERGE GROUP WHOSE REF IS GONE (measured 2026-09-14)
+# ------------------------------------------------------------------------
+# Every merge changes the base of every group behind it, so GitHub deletes those
+# queue refs and creates new ones. The CI runs on the OLD refs are not cancelled.
+# They keep building, and they draw runners to compute a verdict on a ref that no
+# longer exists -- nothing can ever read it.
+#
+# Measured at 04:43Z with a 9-deep queue: five non-completed merge_group CI runs,
+# and TWO of them (`pr-3006-0c740b04`, `pr-3056-e2ef10`) had 404 refs while
+# holding gx10-pool3, intel-clean-room-8 and intel-clean-room-14, with more jobs
+# queued behind them. Forty per cent of the merge-group load, computing nothing.
+#
+# This is ORTHOGONAL to the wedge above and not redundant with it: run
+# 34805561949 still had `workspace-test` pending, so the wedge predicate
+# correctly answered HEALTHY. It was dead for an entirely different reason.
+#
+# VACUITY IS THE WHOLE RISK HERE. If the branch -> ref derivation breaks, EVERY
+# run reads 404 and the janitor cancels the entire queue. So the decision is
+# gated on corroboration: at least one merge_group candidate must resolve LIVE
+# before any DEAD verdict is acted on. Zero live and one or more dead means the
+# LOOKUP is broken, not the fleet -- refuse, and say so.
+#
 # Usage
 #   bash scripts/check_ci_unwedge.sh --self-test        the committed case table
 #   bash scripts/check_ci_unwedge.sh --scan [--dry-run] [--limit N] [--repo O/R]
@@ -101,6 +123,28 @@ unwedge_verdict() {
     return 0
 }
 
+# queue_ref_path BRANCH -> the `git/ref/heads/...` path to query, or empty when
+# BRANCH is not a merge-queue ref. Pure: string in, string out, so the table can
+# pin it without a network call.
+queue_ref_path() {
+    local br="${1:-}"
+    case "$br" in
+        gh-readonly-queue/*) ;;
+        *) return 1 ;;
+    esac
+    # The API wants the ref path with its slashes percent-encoded.
+    printf 'heads/%s\n' "${br//\//%2F}"
+}
+
+# deadref_decision N_LIVE N_DEAD -> ACT | REFUSE | NOTHING
+# The corroboration gate. See VACUITY IS THE WHOLE RISK HERE, above.
+deadref_decision() {
+    local live="${1:-0}" dead="${2:-0}"
+    if [ "$dead" -eq 0 ]; then printf 'NOTHING\n'; return 0; fi
+    if [ "$live" -eq 0 ]; then printf 'REFUSE\n'; return 0; fi
+    printf 'ACT\n'
+}
+
 self_test() {
     local fails=0 rows=0 n want got
     if [ ! -d "$CASES_DIR" ]; then
@@ -143,6 +187,35 @@ self_test() {
     if [ $? -eq 2 ]; then printf 'ok    ENV  E1 a missing payload is ENV (exit 2), never WEDGED\n'
     else printf 'FAIL  E1 a missing payload did not answer ENV\n'; fails=1; fi
 
+    _eq() { # _eq LABEL WANT GOT
+        rows=$(( rows + 1 ))
+        if [ "$3" = "$2" ]; then printf 'ok    %s\n' "$1"
+        else printf 'FAIL  %s: got "%s", wanted "%s"\n' "$1" "$3" "$2"; fails=1; fi
+    }
+
+    printf '%s\n' '-- dead queue ref rows --'
+    # D1/D2: the derivation, both polarities. A merge-queue branch yields a ref
+    # path; an ordinary branch yields none, so a PR run is never even a candidate.
+    _eq 'D1 a merge-queue branch yields a percent-encoded ref path' \
+        'heads/gh-readonly-queue%2Fmain%2Fpr-3006-0c740b04' \
+        "$( queue_ref_path 'gh-readonly-queue/main/pr-3006-0c740b04' )"
+    rows=$(( rows + 1 ))
+    if queue_ref_path 'PMAT-1098-some-branch' > /dev/null 2>&1; then
+        printf 'FAIL  D2 an ordinary branch was treated as a queue ref\n'; fails=1
+    else
+        printf 'ok    D2 an ordinary branch is not a queue ref (never a candidate)\n'
+    fi
+
+    # D3 IS THE ROW THAT MATTERS. If the derivation breaks, every run reads 404.
+    # Zero corroborating LIVE refs means the LOOKUP is broken, not the fleet.
+    _eq 'D3 zero live + some dead -> REFUSE (the lookup is broken, not the fleet)' \
+        'REFUSE' "$( deadref_decision 0 2 )"
+    _eq 'D4 at least one live corroborates the lookup -> ACT' \
+        'ACT'    "$( deadref_decision 1 1 )"
+    _eq 'D5 nothing dead -> NOTHING, whatever the live count'  \
+        'NOTHING' "$( deadref_decision 0 0 )"
+    _eq 'D6 all live -> NOTHING'  'NOTHING' "$( deadref_decision 3 0 )"
+
     printf '\n%s row(s), %s\n' "$rows" "$( [ "$fails" -eq 0 ] && echo '0 red / FALSIFIER GREEN' || echo 'RED' )"
     return "$fails"
 }
@@ -182,6 +255,50 @@ scan() {
             *)    : ;;
         esac
     done < "$tmp/candidates"
+
+    # ---- PASS 2: merge groups whose queue ref no longer exists --------------
+    # Every merge rebases the groups behind it, so GitHub deletes those refs and
+    # makes new ones -- and leaves the old runs building. Collect first, decide
+    # second: acting per-row would let a broken derivation cancel the whole queue
+    # before anything noticed (deadref_decision, rows D3/D4).
+    local live=0 dead=0 refp
+    : > "$tmp/dead"
+    while IFS='|' read -r run br; do
+        [ -n "$run" ] || continue
+        refp="$( queue_ref_path "$br" )" || continue
+        if gh api "repos/$repo/git/ref/$refp" --jq '.object.sha' > /dev/null 2>&1; then
+            live=$(( live + 1 ))
+        else
+            dead=$(( dead + 1 )); printf '%s|%s\n' "$run" "$br" >> "$tmp/dead"
+        fi
+    done < "$tmp/candidates"
+
+    case "$( deadref_decision "$live" "$dead" )" in
+        NOTHING) : ;;
+        REFUSE)
+            printf 'ENV: %s merge-group run(s) read as dead and NONE read as live.\n' "$dead" >&2
+            printf '     The branch -> ref derivation is broken, not the fleet. Nothing cancelled.\n' >&2
+            rm -f "$tmp/dead"
+            printf '%s UNWEDGE looked=%s freed=%s deadref_refused=%s dry_run=%s\n' \
+                "$(date -u +%FT%TZ)" "$looked" "$freed" "$dead" "$dry"
+            return 2 ;;
+        ACT)
+            while IFS='|' read -r run br; do
+                [ -n "$run" ] || continue
+                if [ "$dry" = 1 ]; then
+                    printf 'WOULD-FREE %s %s -- DEAD-REF (queue ref is gone; nothing can read this verdict)\n' "$run" "${br##*/}"
+                else
+                    # force-cancel, not `gh run cancel`: cancelling leaves the
+                    # aggregator parked and the run `queued`, which is the very
+                    # wedge above. Measured on 34805561949 and 34804495711.
+                    if gh api -X POST "repos/$repo/actions/runs/$run/force-cancel" > /dev/null 2>&1; then
+                        printf 'FREED %s %s -- DEAD-REF\n' "$run" "${br##*/}"; freed=$(( freed + 1 ))
+                    else
+                        printf 'FAILED-TO-FREE %s %s (dead ref)\n' "$run" "${br##*/}"
+                    fi
+                fi
+            done < "$tmp/dead" ;;
+    esac
     printf '%s UNWEDGE looked=%s freed=%s dry_run=%s\n' "$(date -u +%FT%TZ)" "$looked" "$freed" "$dry"
     return 0
 }

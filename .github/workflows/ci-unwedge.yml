@@ -16,6 +16,13 @@
 # The real fix is upstream and is NOT `if: always()` (that is already there and
 # is nearer the cause). `if: ${{ !cancelled() }}` is the untested candidate.
 # Delete this workflow when that lands and the pin is bumped.
+#
+# It also frees a SECOND class the same sweep can see: a merge_group run whose
+# `gh-readonly-queue/...` ref has been deleted. Every merge rebases the groups
+# behind it, GitHub makes new refs, and the old runs keep building against a ref
+# nothing can read. Measured 2026-09-14 04:43Z with a 9-deep queue: two of five
+# in-flight merge-group runs were in this state, holding gx10-pool3,
+# intel-clean-room-8 and intel-clean-room-14.
 name: CI unwedge
 
 on:
@@ -51,10 +58,12 @@ jobs:
       - uses: actions/checkout@v7
 
       # The instrument proves itself before it is allowed to cancel anything.
-      # Nine rows over committed fixtures, no network: three wedged shapes, five
-      # healthy ones (including `jobs == 0`, which is a slow start and NEVER a
-      # verdict on its own), and one ENV row. Each of the predicate's three
-      # guards is mutation-proved load-bearing -- see the script header.
+      # Fifteen rows over committed fixtures, no network: three wedged shapes,
+      # five healthy ones (including `jobs == 0`, which is a slow start and NEVER
+      # a verdict on its own), one ENV row, and six for the dead-ref pass --
+      # among them D3, which REFUSES to act when no ref corroborates the lookup,
+      # so a broken derivation cancels nothing instead of cancelling the queue.
+      # Every guard is mutation-proved load-bearing; see the script header.
       - name: Predicate falsifier (must pass before anything is cancelled)
         run: bash scripts/check_ci_unwedge.sh --self-test
 
