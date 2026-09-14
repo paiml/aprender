@@ -169,7 +169,12 @@ SCCACHE_BAD
     cap() { local name=$1 r=0; shift; "$@" > "$td/$name.out" 2>&1 || r=$?; printf '%s' "$r" > "$td/$name.rc"; }
     replay() { printf 'cat "%s/%s.out"; exit "$(cat "%s/%s.rc")"' "$td" "$1" "$td" "$1"; }
     row() { local want=$1 label=$2 pat=$3; shift 3; n=$((n + 1)); rc=0; out=$("$@" 2>&1) || rc=$?
-        if [ "$rc" = "$want" ] && printf '%s\n' "$out" | grep -qE -- "$pat"; then
+        # HERE-STRING, not a pipe into a quiet grep. Under `pipefail` grep -q exits
+        # the instant it matches, printf takes SIGPIPE and returns 141, and the
+        # PIPELINE is 141 -- so a row that MATCHED reports FAILED. In a row() helper
+        # that false-REDs the whole case table (check_no_pipe_into_grep_q.sh; it
+        # measured this file at 84 sites against a ceiling of 83).
+        if [ "$rc" = "$want" ] && grep -qE -- "$pat" <<< "$out"; then
             printf 'ok    case %-2s rc=%s  %s\n' "$n" "$rc" "$label"
         else
             printf 'FAIL  case %-2s rc=%s (wanted %s, must match /%s/)  %s\n' "$n" "$rc" "$want" "$pat" "$label"
