@@ -691,3 +691,186 @@ fn falsify_pub_007_gate5_leaf_and_hub_differ() {
          rather than left as folklore."
     );
 }
+
+// ---------------------------------------------------------------------------
+// FALSIFY-INSTALL-001 (#2571): the root manifest is ALSO the published package.
+// ---------------------------------------------------------------------------
+// Every `[profile.<p>.package.<spec>]` block in the workspace-root manifest is
+// shipped to crates.io and re-validated by `cargo install aprender`. That resolve
+// excludes dev-dependencies, so a spec naming a dev-only crate matches nothing and
+// cargo greets the user with
+//     warning: profile package spec `<spec>` in profile `<p>` did not match any packages
+// #2571 shipped two of those in 0.63.0. This gate keeps the count from growing.
+
+/// Package specs that are knowingly absent from the install graph, with the reason
+/// each one cannot simply be deleted. An entry here is a debt, not a blessing:
+/// delete the entry the moment the spec is removable or the package becomes
+/// reachable, and this gate fails if you leave a stale one behind.
+const PROFILE_SPEC_ALLOWLIST: &[(&str, &str)] = &[
+    // proptest 1.11.0's uniform float sampler carries an over-strict debug_assert
+    // (num/float_samplers.rs). Removing this block is RED, not cosmetic: measured at
+    // `PROPTEST_CASES=1000000 cargo test -p aprender-train --lib config::validate::proptests`,
+    // rc=101 with "assertion failed: self.low - result < self.intervals.step" without
+    // it, rc=0 with it. Downgrading is no escape (float_samplers.rs is byte-identical
+    // 1.8.0..=1.11.0 apart from the f16 feature). The cost-free fix is structural —
+    // split the facade out of the workspace root — and is tracked in #2571.
+    ("dev", "proptest"),
+];
+
+/// Parse `[profile.<profile>.package.<spec>]` headers out of the root manifest.
+/// `"*"` is skipped: cargo never validates the wildcard, so it cannot warn.
+fn root_profile_package_specs() -> Vec<(String, String)> {
+    let manifest = std::fs::read_to_string(workspace_root().join("Cargo.toml"))
+        .expect("workspace-root Cargo.toml must be readable");
+
+    let mut specs = Vec::new();
+    for line in manifest.lines() {
+        let line = line.trim();
+        let Some(inner) = line
+            .strip_prefix("[profile.")
+            .and_then(|rest| rest.strip_suffix(']'))
+        else {
+            continue;
+        };
+        let Some((profile, spec)) = inner.split_once(".package.") else {
+            continue;
+        };
+        let spec = spec.trim_matches('"');
+        if spec == "*" || profile.contains('.') {
+            continue;
+        }
+        specs.push((profile.to_string(), spec.to_string()));
+    }
+    specs
+}
+
+/// Every package reachable from the published root package over NON-dev edges —
+/// i.e. the package set `cargo install aprender` actually resolves.
+fn install_graph_package_names() -> HashSet<String> {
+    use std::collections::HashMap;
+
+    let root = workspace_root();
+    let output = Command::new("cargo")
+        .args(["metadata", "--format-version", "1"])
+        .current_dir(&root)
+        .output()
+        .expect("cargo metadata failed");
+    let metadata: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("failed to parse cargo metadata");
+
+    let root_manifest = root.join("Cargo.toml");
+    let mut name_of: HashMap<String, String> = HashMap::new();
+    let mut root_id: Option<String> = None;
+    for pkg in metadata["packages"].as_array().expect("no packages") {
+        let id = pkg["id"].as_str().unwrap_or_default().to_string();
+        let name = pkg["name"].as_str().unwrap_or_default().to_string();
+        if pkg["manifest_path"].as_str().map(Path::new) == Some(root_manifest.as_path()) {
+            root_id = Some(id.clone());
+        }
+        name_of.insert(id, name);
+    }
+    let root_id = root_id.expect("the workspace-root Cargo.toml must be a package in the metadata");
+
+    let mut non_dev_deps: HashMap<String, Vec<String>> = HashMap::new();
+    for node in metadata["resolve"]["nodes"]
+        .as_array()
+        .expect("cargo metadata carried no resolve graph")
+    {
+        let id = node["id"].as_str().unwrap_or_default().to_string();
+        let mut edges = Vec::new();
+        for dep in node["deps"].as_array().into_iter().flatten() {
+            let kinds = dep["dep_kinds"].as_array();
+            // An absent/empty dep_kinds means a plain (normal) dependency.
+            let reached_without_dev = kinds.is_none_or(|k| {
+                k.is_empty() || k.iter().any(|entry| entry["kind"].as_str() != Some("dev"))
+            });
+            if reached_without_dev {
+                if let Some(pkg) = dep["pkg"].as_str() {
+                    edges.push(pkg.to_string());
+                }
+            }
+        }
+        non_dev_deps.insert(id, edges);
+    }
+
+    let mut seen: HashSet<String> = HashSet::new();
+    let mut queue = vec![root_id];
+    while let Some(id) = queue.pop() {
+        for next in non_dev_deps.get(&id).into_iter().flatten() {
+            if seen.insert(next.clone()) {
+                queue.push(next.clone());
+            }
+        }
+    }
+
+    seen.iter()
+        .filter_map(|id| name_of.get(id).cloned())
+        .collect()
+}
+
+/// FALSIFY-INSTALL-001: no profile package spec in the root manifest may name a
+/// package that `cargo install aprender` does not resolve. Each such spec costs the
+/// user one `did not match any packages` warning on every install (#2571).
+#[test]
+fn falsify_install_001_no_dead_profile_package_specs() {
+    let reachable = install_graph_package_names();
+
+    // Non-vacuity control. If the walk ever follows dev edges, every spec would
+    // "match" and this gate would pass unconditionally — which is exactly the state
+    // that let #2571 ship. proptest is the canary: it is a dev-dependency of many
+    // members, so it is present in `cargo metadata` but absent from an install.
+    assert!(
+        reachable.len() > 10,
+        "FALSIFY-INSTALL-001 is vacuous: the install graph resolved to {} package(s). \
+         The non-dev walk from the root package is broken.",
+        reachable.len()
+    );
+    assert!(
+        !reachable.contains("proptest"),
+        "FALSIFY-INSTALL-001 is vacuous: proptest is reachable over non-dev edges, so the walk is \
+         following dev-dependencies and would bless any spec. Either the walk regressed or \
+         proptest genuinely became a runtime dependency — in the latter case drop it from \
+         PROFILE_SPEC_ALLOWLIST instead."
+    );
+
+    let specs = root_profile_package_specs();
+    let mut dead = Vec::new();
+    let mut used_allowlist = Vec::new();
+
+    for (profile, spec) in &specs {
+        if reachable.contains(spec) {
+            continue;
+        }
+        let entry = (profile.as_str(), spec.as_str());
+        if PROFILE_SPEC_ALLOWLIST.contains(&entry) {
+            used_allowlist.push(entry);
+            continue;
+        }
+        dead.push(format!("[profile.{profile}.package.{spec}]"));
+    }
+
+    assert!(
+        dead.is_empty(),
+        "FALSIFY-INSTALL-001 (#2571): {dead:?} name package(s) absent from the `cargo install \
+         aprender` resolve. Each one makes cargo print `warning: profile package spec ... did not \
+         match any packages` to every user on every install. Delete the block if it is dead (a \
+         dependency of a dependency builds under `dev`, never `test`), or — if it is load-bearing \
+         — add it to PROFILE_SPEC_ALLOWLIST with the measurement that proves removing it is RED."
+    );
+
+    // A stale allowlist is its own defect: it hides that the debt is already paid.
+    for (profile, spec) in PROFILE_SPEC_ALLOWLIST {
+        assert!(
+            specs.iter().any(|(p, s)| p == profile && s == spec),
+            "FALSIFY-INSTALL-001 (#2571): PROFILE_SPEC_ALLOWLIST still excuses \
+             [profile.{profile}.package.{spec}], but the root manifest no longer declares it. \
+             Delete the allowlist entry."
+        );
+        assert!(
+            used_allowlist.contains(&(profile, spec)),
+            "FALSIFY-INSTALL-001 (#2571): [profile.{profile}.package.{spec}] is allowlisted as \
+             unreachable, but it now resolves in the install graph and warns about nothing. \
+             Delete the allowlist entry."
+        );
+    }
+}
