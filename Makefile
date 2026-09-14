@@ -37,7 +37,7 @@ SHELL := /bin/bash
 # Multi-line recipes execute in same shell
 .ONESHELL:
 
-.PHONY: all build test test-smoke test-fast test-quick test-full test-heavy lint lint-current fmt clean doc book book-build book-serve book-test tier1 tier2 tier3 tier4 coverage coverage-fast profile hooks-install hooks-verify lint-scripts bashrs-score bashrs-lint-makefile chaos-test chaos-test-full chaos-test-lite fuzz bench dev pre-push ci gate check run-ci run-bench audit deps-validate deny pmat-score pmat-gates quality-report semantic-search examples mutants mutants-fast property-test install-alsa test-alsa test-audio-full contract-validate contract-test contract-audit contract-regen contract-check dev-setup check-siblings check-wasm32 contrastive-data-boundary contrastive-data-boundary-cases
+.PHONY: all build test test-smoke test-fast test-quick test-full test-heavy lint lint-current fmt clean doc book book-build book-serve book-test tier1 tier2 tier3 tier4 coverage coverage-fast profile hooks-install hooks-verify lint-scripts bashrs-score bashrs-lint-makefile chaos-test chaos-test-full chaos-test-lite fuzz bench dev pre-push ci gate check run-ci run-bench audit deps-validate deny pmat-score pmat-gates quality-report semantic-search examples mutants mutants-fast property-test install-alsa test-alsa test-audio-full contract-validate contract-test contract-audit contract-regen contract-check dev-setup check-siblings check-wasm32 contrastive-data-boundary contrastive-data-boundary-cases build-report
 
 # Default target
 all: tier2
@@ -810,6 +810,13 @@ hooks-verify: ## Verify PMAT hooks are working
 	@pmat hooks verify
 	@pmat hooks run
 
+# PMAT-3225 (APR-RELEASE-001 §5 P0·Instrument): p50/p95 total_s and
+# queue_wait_s per host, the 10 slowest jobs, and the §1 PRs-per-train number,
+# read from the committed docs/build-ledger/ records. Declines (exit 2) rather
+# than reporting under the §8 vacuity floor of 20 job records.
+build-report: ## p50/p95 build-ledger stats + §1 PRs/train (APR-RELEASE-001 §5)
+	@bash scripts/build_report.sh
+
 # Lint shell scripts (bashrs quality gates)
 lint-scripts: ## Lint shell scripts with bashrs (determinism + idempotency + safety)
 	@echo "🔍 Linting shell scripts with bashrs..."
@@ -823,6 +830,7 @@ lint-scripts: ## Lint shell scripts with bashrs (determinism + idempotency + saf
 		echo "❌ bashrs not installed. Install with: cargo install bashrs"; \
 		exit 1; \
 	fi
+	@bash scripts/check_build_report.sh
 
 bashrs-score: ## Score shell script quality with bashrs
 	@echo "📊 Scoring shell scripts..."
