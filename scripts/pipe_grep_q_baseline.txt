@@ -1,4 +1,4 @@
 # tool_version=none (measured by grep over tracked+working-tree shell sources; not a versioned analyser)
 # `producer | grep -q` sites under pipefail. This number may only FALL.
 # Re-stamp with: bash scripts/check_no_pipe_into_grep_q.sh --update
-83
+81
