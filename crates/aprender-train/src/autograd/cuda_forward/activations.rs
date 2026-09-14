@@ -14,6 +14,9 @@ use crate::autograd::cuda_tensor::{CudaTensorError, Result};
 
 #[cfg(feature = "cuda")]
 use super::cache::FORWARD_KERNEL_CACHE;
+// Cache keys come from ONE place (YOGA-NIGHTLY-001 R-2). A `format!` here is
+// the defect that produced the Blackwell cascade five separate times.
+use super::keys;
 
 /// ReLU activation forward pass on GPU
 ///
@@ -175,7 +178,7 @@ pub fn silu_forward(
         CudaTensorError::KernelError("Failed to acquire kernel cache lock".to_string())
     })?;
 
-    let key = "silu_forward".to_string(); // PTX is n-independent (trueno#184)
+    let key = keys::fixed::SILU_FORWARD.to_string(); // PTX is n-independent (trueno#184)
     let module = match cache.get_cached(&key) {
         Some(m) => m,
         None => {
@@ -237,7 +240,7 @@ pub fn batched_softmax_forward(
     let kernel_name = kernel.name();
 
     // Contract: dimension-independent-kernels-v1.yaml (FALSIFY-DIM-004)
-    let key = "batched_softmax_forward";
+    let key = keys::fixed::BATCHED_SOFTMAX_FORWARD;
     let module = match cache.get_cached(key) {
         Some(m) => m,
         None => {
