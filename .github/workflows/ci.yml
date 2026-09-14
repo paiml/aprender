@@ -1830,6 +1830,37 @@ jobs:
           set -euo pipefail
           dr() { # dr <dir mounted as /workspace> <cmd...>
             local ws=$1; shift
+            # A bind-mount source that does not exist is created BY THE DOCKER
+            # DAEMON, as root -- and then this container, which runs as
+            # $(id -u), cannot write into its own target dir:
+            #
+            #   error: failed to create directory `/workspace/target/debug`
+            #   Caused by: Permission denied (os error 13)
+            #
+            # The dirs DO exist when the job starts; heal_path makes them in
+            # "Create this job's own target dir and CARGO_HOME". They can stop
+            # existing DURING the job: gx10's ci-reaper enters a critical-mode
+            # purge under disk pressure and rm -rf's per-run target dirs whose
+            # run it believes is finished. Measured 2026-09-13 -- it deleted
+            # run-34771396463's dir at 17:43:08 saying "no running job", and
+            # that run was still `queued` 35 minutes later (paiml/aprender#3219).
+            # That is a reaper defect and it is being fixed there; this makes the
+            # consumer survive it, because heal_path runs ONCE and every dr()
+            # after a purge is the one that loses.
+            # Recreate a purged dir BEFORE the mount (so the daemon never gets
+            # the chance), and repair one the daemon already made on an earlier
+            # call -- same chown-through-the-image that heal_path uses, fired
+            # only when the dir is actually unwritable, so the common path pays
+            # nothing.
+            mkdir -p "$GUARD_TARGET_DIR" "$GUARD_CARGO_HOME" 2>/dev/null || true
+            local d
+            for d in "$GUARD_TARGET_DIR" "$GUARD_CARGO_HOME"; do
+              if [ -d "$d" ] && [ ! -w "$d" ]; then
+                docker run --rm -v "$(dirname "$d"):/p" "$IMAGE" \
+                  chown "$(id -u):$(id -g)" "/p/$(basename "$d")"
+              fi
+              [ -d "$d" ] && [ -w "$d" ] || { echo "FAIL: $d is missing or not writable and could not be repaired"; return 1; }
+            done
             docker run --rm \
               --user "$(id -u):$(id -g)" \
               -v "${ws}:/workspace" \
