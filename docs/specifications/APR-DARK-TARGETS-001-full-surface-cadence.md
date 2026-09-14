@@ -100,8 +100,8 @@ coverage.
 | surface | verdict | why |
 |---|---|---|
 | **Nightly** | **yes — primary** | ~21 min end-to-end on a 48-core box; no PR or merge latency. |
-| **Pre-release (T-1)** | **yes — hard gate** | APR-RELEASE-001 T-1 asserts "green on the cut". With 654 binaries never linked, "green" is a materially weaker claim than it reads. The release is precisely where the whole surface is owed. |
-| **Merge queue (full tier)** | **no — but it is close** | ≈ +14 min (+35%) on a 37-min critical path, ×3 parallel groups, against defects that move on a scale of *months*. Queue latency is a measured throughput problem here: main went 8.5 h with no merge on 2026-09-13, and ~2 h on 2026-09-14. 24-hour detection latency is the right trade for this defect class. **Revisit if** queue depth is routinely below `max_entries_to_build` — then the 14 min is spare capacity and the answer flips. |
+| **Pre-release (T-1)** | **yes — but the gate must first EXIST** | APR-RELEASE-001 T-1 asserts "green on the cut" via `ci / deep`. Measured: **`ci / deep` has 0 hits in every workflow, including the SHA-pinned upstream `sovereign-ci.yml`.** So do not "add the full surface to T-1" — **build `ci / deep`**, emitting that exact check name, triggered on the cut, and make the full surface one of its parts. Its other named parts run nowhere either: `cargo test --doc` 0 hits, `cargo run --example` 0 hits, feature matrix 0 hits, `--no-default-features` 1 hit and it is a Windows *build* flag in `nightly.yml`. |
+| **Merge queue (full tier)** | **no — but it is close** | ≈ +14 min (+35%) on a 37-min critical path, ×3 parallel groups, against defects that move on a scale of *months*. Queue latency is a measured throughput problem here: main went 8.5 h with no merge on 2026-09-13, and ~2 h on 2026-09-14. 24-hour detection latency is the right trade for this defect class. **Revisit if** the ARRIVAL RATE falls below what the queue drains — `max_entries_to_build` is a cap, not a measure of slack, and a queue can sit at depth 3 while idle capacity exists. Key it on arrivals/hour vs merges/hour. |
 | **Every PR** | **no** | This is what BSE-17 exists to avoid, and §2 shows the quick tier is not the gap. |
 | **PRs touching the SELECTOR** | **yes** | `scripts/ci_test_tier.sh`, `scripts/gate_touched_crates.sh`, `scripts/tree_reader_tests.txt`, and ci.yml's explicit `--test` chain. A change to the selector is exactly when the dark set moves. A `paths:` trigger; fires a few times a month. |
 
@@ -111,25 +111,59 @@ ceasing to be true.
 
 ---
 
-## 4. It must not become `present`
+## 4. NO ratchet. Land the fixes, then hard-fail from day one.
 
-A job that is red for months is a job everyone learns to ignore
-(`feedback_present_check_is_a_review_backlog_not_a_broken_gate`). At 37 failures it would be
-born red.
+*(Revised 2026-09-14 after a 4-lane agy quorum returned `do-not-implement-as-written` on all four
+lanes. The draft proposed a shrink-only ratchet; three lanes independently refused it, and they
+were right.)*
 
-**Therefore: start ratcheted, finish hard-failing.**
+The draft's reasoning was: a job born red at 37 failures becomes `present` — ignored within a week
+(`feedback_present_check_is_a_review_backlog_not_a_broken_gate`) — so start ratcheted and tighten.
 
-1. **Phase A — shrink-only ratchet.** Baseline = the measured failing set, keyed by test id.
-   A *new* failing id fails the job; a removed one is re-recorded with `--update`. Same shape as
-   `unwired_guards_baseline.txt` and `pipe_grep_q_baseline.txt`.
-2. **Phase B — hard fail.** When the baseline reaches 0, delete it and the `--update` path.
+**The defect in that plan is mechanical, not stylistic: a scheduled workflow cannot update its own
+baseline.** `--update` writes a file and needs a commit. Every other ratchet in this repository
+(`unwired_guards_baseline.txt`, `pipe_grep_q_baseline.txt`, `shell_lint_baseline.txt`) is updated
+by a human inside a PR, because it runs *in* a PR. A nightly cron has no PR and no author. Its
+baseline would therefore only ever be edited by someone who noticed the job was red — which is
+precisely the population the ratchet exists to stop relying on.
 
-**Phase B is reachable now, which is why the ratchet is scaffolding rather than a resting place.**
-With #3248, #3250 and #3238 landed the count is **1**: `aprender-cgp::falsify
-falsify_cgp_061_doctor_speed_real`, another runner-capability assertion (§5). The exit condition
-is that one target, not an open-ended backlog.
+So a ratchet here is not scaffolding. It is a backlog with no writer.
+
+**The order instead:**
+
+1. **Land the three fixes.** #3250 (34 rows), #3248 (1), #3238 (1). Each carries its own fix and,
+   where applicable, its own CI wiring — the wiring never lands ahead of the fix.
+2. **Gate `aprender-cgp::falsify falsify_cgp_061_doctor_speed_real`** behind a capability feature,
+   per §5. It is the last of the 37 and it is the same class as the other three fixed today.
+3. **Ship the job hard-failing.** No baseline file, no `--update` path, nothing to maintain.
+
+The exit condition was already one test when the draft was written. There is no interval during
+which a ratchet would have carried real information.
+
+**If step 2 stalls**, the job ships with that ONE test excluded by name in the workflow, with the
+issue number in the comment — a single named exclusion a reader can audit in one line, not a
+37-row file nobody reads. That is the fallback, and it is bounded.
 
 ---
+
+## 4bis. Budget the disk before scheduling anything
+
+*(Added 2026-09-14. All four quorum lanes raised this and the draft did not mention it once.)*
+
+The full-surface build produces a **39 GB target directory** (measured: 808 binaries,
+`scratchpad/testdelta.sh`). That is not a footnote here — it is the same resource that took gx10
+to **0 bytes free** on 2026-09-14 and dequeued a PR from merge-queue position 1 (#3247).
+
+Non-negotiable for this job:
+
+- **Not on gx10.** It is the smallest of the three Linux hosts (916 GB vs intel 3.6 TB, yoga
+  935 GB) and the one that hit the wall. `runs-on` must exclude it or pin away from it.
+- **A per-run target dir that is reclaimed in the same job**, not left for the reaper. The reaper's
+  critical mode already cannot reclaim under `keep=3 per repo` (#3247), so a nightly that leaks
+  39 GB compounds a known-unfixed defect.
+- **A preflight free-space assertion** that fails the job with `ENV:` rather than letting cargo die
+  half-way — the failure mode measured twice today is a step reporting a bare exit 101 that reads
+  as 650 new defects.
 
 ## 5. Precondition: capability gating must be fixed first
 
@@ -196,7 +230,7 @@ progress check that was reading a stale PID. It is 145 s. The number was already
 when the claim was written; the claim should have waited. Recorded here because the same
 temptation will recur every time a build "looks" expensive.
 
-### 7.2 The 329 skipped tests
+### 7.2 The 329 skipped tests — and they must be resolved BEFORE the job hard-fails
 `nextest` reported 329 skipped in the full sweep vs 131 in the queue's subset. The delta is
 unexamined; some are `#[ignore]`, which this repository bans — e.g.
 `test_timeout_handling_example` carries `#[ignore] // Timeout handling currently hangs - needs
@@ -229,8 +263,30 @@ Claims here are checkable, and each should be re-run rather than re-read:
 
 ---
 
+## 8bis. The fast-pool pin is NOT part of this spec
+
+A separate proposal — pin the `merge_group` `workspace-test` to the fast gx10/yoga pool, because
+14 of 21 clean-room runners are 2.5× slower and two thirds of merges draw one — was reviewed
+alongside this document. **All four quorum lanes rejected it as written**, and the objection is
+sharper than "risky":
+
+GitHub `runs-on` is a **hard label filter with no fallback**. A pin is therefore
+**non-work-conserving**: pinned to a busy fast pool, the job waits while intel sits idle. That
+converts a scheduling preference into head-of-line blocking, and it has a computable break-even —
+
+> **net loss whenever fast-pool queue wait exceeds the runtime delta (~18–22 min).**
+
+Which is exactly the condition that holds when the queue is deep, i.e. when the latency mattered.
+
+It belongs in an infra scheduling specification with that break-even as its gate, not here. The
+asymmetry it is reacting to is real and measured (#3251); the actuator is wrong.
+
+---
+
 ## 9. What this does not propose
 
 - Changing BSE-17 or the quick tier. §2 is the argument that it is not the gap.
 - Adding anything to the merge queue's critical path.
-- A permanent ratchet. §4 gives the exit condition and names the one target that blocks it.
+- **A ratchet of any kind.** §4 — a scheduled job cannot commit its own baseline update, so a
+  ratchet here is a backlog with no writer. Land the fixes first and ship hard-failing.
+- Pinning anything to a runner pool. §8bis.
