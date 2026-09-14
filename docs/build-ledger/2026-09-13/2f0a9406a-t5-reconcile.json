@@ -1,0 +1,106 @@
+{
+ "spec": "APR-RELEASE-001",
+ "section": "6",
+ "job": "T-5 reconcile",
+ "tag": "v0.67.0",
+ "prev_tag": "v0.66.0",
+ "measured_at": "2026-09-13T11:51:37.546085Z",
+ "instrument": "scripts/check_reconcile.sh v0.67.0 --prev-tag v0.66.0 --json  (PR #3200, unmerged at measurement time)",
+ "verdict": "RED - R2, R3 and R4 nonzero; all three are findings about the PREDICATES, see findings[]",
+ "sha": "2f0a9406a013b06a479ae1159aededd4ec506c00",
+ "window": [
+  "v0.66.0",
+  "v0.67.0"
+ ],
+ "R1": {
+  "count": 0,
+  "list": []
+ },
+ "R2": {
+  "count": 35,
+  "list": [
+   "2659",
+   "3007",
+   "3009",
+   "3046",
+   "3048",
+   "3050",
+   "3063",
+   "3066",
+   "3068",
+   "3069",
+   "3071",
+   "3072",
+   "3074",
+   "3085",
+   "3086",
+   "3089",
+   "3097",
+   "3127",
+   "3136",
+   "3139",
+   "3145",
+   "3160",
+   "3162",
+   "3163",
+   "3164",
+   "3169",
+   "3175",
+   "3187",
+   "3188",
+   "3191",
+   "3192",
+   "3194",
+   "3197",
+   "3198",
+   "3199"
+  ]
+ },
+ "R3": {
+  "count": 1,
+  "list": [
+   "feat/y1-7bgarbage"
+  ]
+ },
+ "R4": {
+  "count": 1,
+  "list": [
+   "3041"
+  ]
+ },
+ "R5": {
+  "arrival": 63,
+  "closure": 27,
+  "ratio": 0.4286
+ },
+ "findings": [
+  {
+   "id": "T5-F1",
+   "predicate": "R2",
+   "claim": "R2 cannot be zero over a window that predates its own guard, so T-5 as written hard-fails every train forever.",
+   "evidence": "check_pr_closes_issue.sh is not on main; it is in PR #3200, still in the merge queue at measurement time. Every one of the 35 PRs in v0.66.0..v0.67.0 merged before any such check existed.",
+   "detail": "The 35 cite 39 still-open issues, and inspection shows most citations are CORRECT behaviour: #3160 and #3175 FILED their follow-ups (#3147-#3159, #3170-#3174) and cite them without closing, which is what a backlog-opening PR should do. R2's remedy for that shape is the `no-close: <reason>` line, which those bodies could not carry because the guard did not exist.",
+   "recommendation": "R2 needs an EPOCH: count only PRs merged after the guard was armed on main. Without one the predicate measures history and can never reach zero."
+  },
+  {
+   "id": "T5-F2",
+   "predicate": "R3",
+   "claim": "R3's predicate cannot distinguish a DEAD branch from a STRANDED one, and acting on it literally destroys measurement evidence.",
+   "evidence": "Both branches R3 named carry unique unmerged work. feat/y2-calibrate holds evidence/perf-060/ (791 insertions) \u2014 the only measurement of mini's throughput that exists (prefill 2.371-2.372, decode 2.318 tok/s) \u2014 measured 2026-08-30 against 34248e8fe. feat/y1-7bgarbage holds a contract, an example and a script.",
+   "action": "feat/y2-calibrate landed as PR #3211 rather than deleted; R3 fell 2 -> 1. feat/y1-7bgarbage is NOT archived: it touches contracts/continuous-batching-v1.yaml and needs a review, not a publish.",
+   "recommendation": "R3 should report `no open PR AND no unique commits vs main` as dead, and `no open PR AND unique commits` as stranded \u2014 different verdicts, different remedies."
+  },
+  {
+   "id": "T5-F3",
+   "predicate": "R4",
+   "claim": "R4 is volatile against main, not a property of the PR: it read 0, then 1, within ten minutes.",
+   "evidence": "R4=0 at 11:44Z after this session resolved every dirty stale PR; R4=1 at 11:50Z naming #3041, because #3164, #3162 and #3201 merged as one queue group in between.",
+   "detail": "#3041 (agent/R-0b, 96 files) conflicts on 18 files and its L0-1 subset belongs to #3004, which is armed but unmerged. Re-merging before #3004 lands would have to be redone.",
+   "recommendation": "Measure R4 at a fixed sha, or accept that a squash-merge makes every stacked branch dirty and re-run after the queue drains."
+  }
+ ],
+ "unmeasured": [
+  "attended_minutes [U] \u2014 this train's T-4 was automated; no attended window was timed"
+ ],
+ "source": "scripts/check_reconcile.sh (PR #3200) + gh pr/issue list + git ls-remote"
+}
