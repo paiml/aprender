@@ -22,7 +22,9 @@ Implement docs/specifications/APR-RELEASE-001-train-and-build-kaizen.md autonomo
 | 3 | else the last train (shipped or skipped) has no once-per-train triage record | do the once-per-train pass: §6.3 capacity check and the T-5 reconcile receipt |
 | 4 | else | emit the §7 report, exit 0 |
 
-Nothing in this spec asks a question. Running it ten times a day is safe.
+Nothing in this spec asks a question. Running it ten times a day is safe. Why the loop never
+terminates and the four things it moves — repo, released binaries, CRUX competitors, fleet — on the
+`pv` ontology substrate: §12.
 
 ## §1 Goal
 
@@ -380,6 +382,7 @@ capacity: milestone <M> open <n> | closure/day <x|[U]> | capacity <n> | verdict 
 matrix:  pairs <n> | red <n> | known-red <n> | stale-known-red <n> | examples started <n>/<n>
 debt:    files touched <n> | violations paid <n> | worst before <n>
 quorum:  rounds <n> | width <n> | verdicts <a/b/c> | overridden <yes|no> | lattice <ok|prose>
+beats:   won <n> | parity <n> | loss <n> | measured-on <published|dev> | crux ✅ <n> 🔨 <n> ❌ <n|[U]> | drift <n>
 ontology: types <n>/16 | extractors <n>/14 | anchored <n>/<total> | shaped <n> | bindable-unanchored <n|[U]> | deltas <n>/<sweep PRs> | row merged <ONT-x|none: reason> | upstream sha <12hex|DRIFT>
 reconcile: R1 fixed-open <n> | R2 no-close <n> | R3 dead-branches <n> | R4 dirty>1train <n> | R5 closure/arrival <x> | receipt <path|MISSING>
 stops:   <none|list>
@@ -418,6 +421,9 @@ next:    train eligible at <timestamp>
 - An `ont.*` counter in `contracts/lint-baseline.json` moved outside `make ont-ratchet` → RED
   (ONT R-6).
 - A gate special-cases `entity.type` beyond `proof` applicability → RED (ONT R-17, ONT F-25).
+- A beat contract RED on the published binary, or a `beats:` line saying `measured-on published`
+  from a dev build → stop the claim: the scoreboard says LOSS or `[U]`, the beat is the next build
+  row, and nothing is published ahead of its measurement (`docs/BEATS.md` withdrawal precedent).
 
 ## §9 Budget and the one risk to measure first
 
@@ -606,3 +612,122 @@ Four added to §8, and only there: an unreachable upstream sha; a merged sweep P
 | FR-3 | §11.3 | an ONT gate's landing PR arms nothing | arm it in the landing PR → RED |
 | FR-4 | §11.4 | a quorum receipt whose verdict is not an ONT-6 element never reduces to `Pass` | record "looks fine" as a verdict → reduce RED |
 | FR-5 | §11.0 | the sha256 pinned above matches the upstream file at read time | edit upstream → `upstream sha DRIFT` |
+
+## §12 The chain of reasoning — why this loop never terminates, and the four things it moves
+
+This section explains the spec instead of adding to it. Read it as an argument: each step says
+what the loop does, why, which section is the mechanism, and what would falsify the step. Numbers
+are dated or marked `[U]`/`[C]`/`[A]`, as everywhere else.
+
+### §12.1 Why it runs forever
+
+1. **The selector is total.** §0 is "first match wins" and row 4 always matches: emit the §7
+   report, exit 0. There is no state in which a session has nothing legal to do, so there is no
+   state in which the loop ends. Idle is a report, not a stop. *Falsified by:* a session that
+   exits without a §7 block.
+2. **A stop stops the session, never the loop.** Every §8 line names the mechanism whose absence
+   caused it — a forjar unit, a ratchet target, a tracked spec, a comply rule. The next session's
+   first match is the row that lands that mechanism, so the same stop cannot recur. That is the
+   difference between kaizen and a retry loop. *Falsified by:* one §8 line stopping two consecutive
+   sessions with no PR between them.
+3. **Every counter is a ratchet.** The known-red list only shrinks (§4.1); `armed_gates` never
+   shrinks (ONT §3.9); `ont.*` moves only through `make ont-ratchet` (§11.2); the stale label
+   tightens only after closure ≥ arrival held five trains (§6.4); P3 tightens ≤ 0.70× and only
+   downward (§5). Session N cannot undo session N−1, so the direction of a thousand sessions is
+   the direction of one. *Falsified by:* any counter moving the wrong way outside its named target.
+4. **No number is a guess, and a guess that becomes measurable is replaced.** §3.3: every threshold
+   cites its command or is `[U]` and does not gate. The worked example is §9 — "~20 min `[A]`" was
+   drawn before a cascade had ever been timed; the 0.67 train measured 70, and §9 now says so and
+   names the cascade as the next target. That is the loop reading its own ledger and moving.
+   *Falsified by:* a threshold that gates while marked `[U]` or `[A]`.
+5. **The ledger is the memory, and it is append-only.** §3.6: one file per run, never a shared
+   file. A session starts by reading it (§2, "verify at HEAD before writing anything") and ends by
+   writing to it (§7). Nothing the loop learns depends on a session remembering it. *Falsified
+   by:* a rule in this spec whose measurement cannot be derived from `docs/build-ledger/`.
+6. **The clock cuts the train, not the scope.** §1: a tag every 48–72 h; §4: scope is whatever
+   merged before the cut. There is no "not ready" — a cut that cannot go green is SKIPPED against
+   that HEAD and the next train is 48 h away, so the loop cannot stall waiting for a feature.
+   *Falsified by:* two consecutive SKIPPED trains — §8's andon, the one place the loop escalates
+   instead of continuing.
+
+### §12.2 What it moves — four axes on one substrate
+
+Every wakeup is: pack + triage in minutes (§0 row 0) → the train if one is due (row 1) → else one
+build row (row 2) → else the once-per-train pass (row 3) → else the report (row 4). Each axis
+below has its measured position, its mechanism, its ratchet and its §7 line. The ledger carries
+all of them, and the ratchets read the ledger.
+
+**A. The repo.** Position, 2026-09-14: 100 of 430 feature pairs RED and never built (§4.1); 727
+integration binaries against 73 the CI ever runs (the dark-targets triage) `[C]`; 11 complexity
+violations paid in one day (§5.1); issues +149 net in 10 d at 6.1 closures/day (§6); 0 of 1818
+contracts anchored (§11.0). Mechanism: every sweep surfaces one class of dark defect, fixes it in
+the same PR, and pays the debt tax on the file it touched. Ratchets: known-red shrinks,
+`violations_paid` falls, closure ≥ arrival, `ont.*` up. Lines: `matrix:` `debt:` `triage:`
+`branches:` `ontology:`.
+
+**B. The released binaries.** Position: v0.67.0 shipped 2026-09-13 by the automated train,
+`attended_minutes: 0`, cascade 70 min; CUDA `apr` assets for arm64 and x86_64 are required on every
+tag (operator, 2026-09-10). Mechanism: T-0..T-5 (§4) on the clock. The binary improves at exactly
+the rate the repo does, because scope is what merged. The improvement that reaches a user is
+measured on what the user installs — `cargo install aprender`, then the dogfood on *that* binary
+(`apr-dogfood` G13 with `DOGFOOD_ALLOW_UNPINNED=1`, its deliberate crates.io mode) — in flight as
+#3202, the post-publish phase. Until it lands, a train's binary claims are claims about the dev
+build. Ratchet: §5 P3, tag→publish ≤ 0.70× baseline. Line: `train:`.
+
+**C. The competitors.** Before this section the spec had no competitor line: the train shipped
+binaries and nothing in it said where they stand. Two instruments exist and both are ratchets.
+
+- **CRUX** (`docs/specifications/crux-competitive-research-ux-workflows.md`): 275 user stories
+  across 9 monitored competitors — Ollama, llama.cpp, PyTorch, Hugging Face, vLLM, OpenCLAW,
+  ecosystem interop, HF kernels-community, the APR-QA playbook. Coverage at v2.2 intake `[C]`:
+  ✅ 39 · 🔨 80 · ❌ 156 (56.7 % missing); registry drift is open as #3172 (0.69.0).
+  **Approaching** is ❌ → 🔨 → ✅ one story at a time, demand tier 5 first. Those are tickets, so
+  §6.3's capacity arithmetic already schedules them and no judgement call is needed. CRUX's
+  declared falsifier `FALSIFY-CRUX-010` is not found under `crates/` or `scripts/` on `main`
+  (2026-09-14): the coverage count is `[U]` until it is, and landing it is the first CRUX row.
+- **BEATS** (`docs/BEATS.md`, 16 `contracts/beat-*.yaml`): Pillar 4 has Ollama GPU decode at
+  **parity** — 1.015–1.109× on sm_89, the 1.371× headline withdrawn, `beat_threshold: 0.9000` a
+  no-collapse floor and not a win; llama.cpp c=1 decode a narrow loss (1.55× faster); fail-closed
+  correctness WON 10/10. **Surpassing** is a beat contract per competitor verb whose threshold is a
+  floor first and moves above 1.0 only on three agreeing medians, measured on the published binary
+  on the host class the user gets. A CPU-only published binary made the llama.cpp ratio
+  uncomputable (APR-PARITY-001) — which is why axis B's post-publish dogfood precedes any ratio.
+
+Rules already in force and kept: never blanket-concede speed; never claim ahead of the
+measurement; a withdrawn claim stays withdrawn until re-measured; a beat RED on the published
+binary is the next build row and the scoreboard says LOSS. Line: `beats:`.
+
+**D. The fleet.** Position: intel is 16 workers on one 32-core box shared across repos; gx10 is
+GB10 sm_121 aarch64; yoga is RTX 4060 sm_89; mini is Apple M4 on the macOS job classes, declared
+full-time in #3205 and measured at 0.0 % all of 2026-09-14. Mechanism: §1's packing rule (≥ 80 %
+of yoga, gx10 and mini under any intel pressure — a P0), §5 P0·Pack every wakeup, P2 routing by
+capability then idleness (x86 CUDA → yoga; sm_121 → gx10; clean-room → intel; macOS classes →
+mini), the merge queue 3-parallel (§3.4). "As quickly as possible" is one equation,
+`max PRs/train ≈ 3 × 72 h / p95 gate`: gate latency *is* release throughput, so an idle box beside a
+queue is lost release time, never spare capacity. Ratchet: P3, p95 ≤ 0.70× baseline. Line: `pack:`.
+
+**E. `pv` and the ontology — the substrate under A–D.** §11: `pv kaizen` is the loop's own
+improvement instrument and today sees only Rust. Every surface in A–D becomes an entity type with
+an extractor and a shape, so a sweep's finding is a `Fail` the next sweep computes instead of a
+paragraph a human re-reads, and a quorum's premise is an id every lane resolves the same way.
+Sixteen rows, one per train, every gate landing unarmed. This is what lets the loop's *judgement*
+improve and not only its counters: each round's premise is checkable by the next.
+
+### §12.3 How the axes compose
+
+A improves B by construction — scope is what merged. B is claimable only through C's instruments,
+on the published artifact. C's ❌ stories are A's tickets, scheduled by §6.3's arithmetic. D sets
+the rate of all three, `3 × 72 h / p95`. E makes each finding of A–D machine-readable, so the next
+session — or the next quorum lane — starts from a fact and not a memory. Remove any one and the
+loop still runs (§12.1); it learns slower. That is why none of them is a stop condition and all of
+them are report lines.
+
+### §12.4 Falsifiers
+
+| # | Step | Assertion | Mutation |
+|---|---|---|---|
+| FX-1 | §12.1.1 | every session ends with a §7 block, `NOOP` included | end one without → receipt lint RED |
+| FX-2 | §12.1.2 | no §8 line stops two consecutive sessions with no PR between them | repeat a stop → andon |
+| FX-3 | §12.1.3 | every counter on a §7 line has a named ratchet target and moves one way | move one backward by hand → RED |
+| FX-4 | §12.2.C | `beats:` says `measured-on published` only when the dogfood ran on a `cargo install aprender` binary (G13: no embedded SHA, `DOGFOOD_ALLOW_UNPINNED=1`) | report `published` from a dev build → RED |
+| FX-5 | §12.2.C | a beat's status in `docs/BEATS.md` matches its contract | change the status without the contract → `readme_contract` RED |
