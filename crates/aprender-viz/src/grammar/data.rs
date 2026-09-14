@@ -101,9 +101,31 @@ impl DataFrame {
         self.columns.insert(name.to_string(), values);
     }
 
-    /// Get a column as f32 values.
+    /// Get a column as f32 values, **one entry per row**.
+    ///
+    /// A cell that is not a number yields `None` in place, and a column shorter than
+    /// [`nrow`](Self::nrow) is padded with `None`. The result therefore always has length
+    /// `self.nrow()` and can be indexed by row number alongside any other column.
+    ///
+    /// This used to be `Option<Vec<f32>>` built with `filter_map`, which silently *dropped*
+    /// non-numeric and missing cells. The length then disagreed with `nrow()` and, worse, every
+    /// index after a dropped cell referred to a different row than the same index in a sibling
+    /// column — so `x[i]` and `y[i]` could come from different records, and faceting by row index
+    /// was not expressible at all. It returned a plausible wrong answer with no error; the
+    /// alignment is now a type-level fact.
     #[must_use]
-    pub fn get_f32(&self, name: &str) -> Option<Vec<f32>> {
+    pub fn get_f32(&self, name: &str) -> Option<Vec<Option<f32>>> {
+        self.columns
+            .get(name)
+            .map(|col| (0..self.n_rows).map(|i| col.get(i).and_then(DataValue::as_f32)).collect())
+    }
+
+    /// Get a column as f32 values, dropping every cell that is not a number.
+    ///
+    /// The result is **not** row-aligned — use it only where a bare list of the numbers present is
+    /// what is wanted (computing a range, say), never to pair with another column by index.
+    #[must_use]
+    pub fn get_f32_present(&self, name: &str) -> Option<Vec<f32>> {
         self.columns.get(name).map(|col| col.iter().filter_map(DataValue::as_f32).collect())
     }
 
@@ -155,7 +177,7 @@ mod tests {
     fn test_dataframe_get_f32() {
         let df = DataFrame::from_xy(&[1.0, 2.0], &[3.0, 4.0]);
         let x = df.get_f32("x").expect("operation should succeed");
-        assert_eq!(x, vec![1.0, 2.0]);
+        assert_eq!(x, vec![Some(1.0), Some(2.0)]);
     }
 
     #[test]
@@ -173,7 +195,7 @@ mod tests {
         assert_eq!(df.nrow(), 4);
         assert!(df.has_column("data"));
         let data = df.get_f32("data").expect("operation should succeed");
-        assert_eq!(data, vec![1.0, 2.0, 3.0, 4.0]);
+        assert_eq!(data, vec![Some(1.0), Some(2.0), Some(3.0), Some(4.0)]);
     }
 
     #[test]
