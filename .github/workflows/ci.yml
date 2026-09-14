@@ -1208,6 +1208,35 @@ jobs:
           set -euo pipefail
           printf '%s' "$PR_BODY" > "$RUNNER_TEMP/pr-body.txt"
           bash scripts/check_pr_closes_issue.sh --body "$RUNNER_TEMP/pr-body.txt"
+      # APR-RELEASE-001 §11.1, WIRED. The section shipped as prose in #3268 and
+      # nothing read it: `grep -rl ont-delta scripts/ .github/ Makefile` returned
+      # NOTHING, while §11.1's own text says "Absent is a PR-body lint failure,
+      # not a review comment". A rule whose enforcement is "not a review comment"
+      # and whose only mechanism IS a review comment is this repo's anti-theater
+      # class, one level up from the guard it sits beside.
+      #
+      # Same body-handling rule as the step above: the body arrives through
+      # `env:` as DATA and is never interpolated into the script. It is
+      # attacker-controlled by construction.
+      #
+      # The changed-file list is the other input, and it is what makes the guard
+      # non-trivial: half the sweep surface ("a known-red list anywhere") is
+      # DERIVED from the tree, not typed. Measured on #3277, which touches
+      # scripts/cb200_baseline.txt and no prose sink at all -- a hand-typed sink
+      # list would have passed it.
+      - name: A sweep PR closes with an ontology delta, not a paragraph (§11.1)
+        if: github.event_name == 'pull_request'
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$PR_BODY" > "$RUNNER_TEMP/ont-body.txt"
+          gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files" --paginate \
+            --jq '.[].filename' > "$RUNNER_TEMP/ont-files.txt"
+          bash scripts/check_pr_ont_delta.sh \
+            --body "$RUNNER_TEMP/ont-body.txt" --changed "$RUNNER_TEMP/ont-files.txt"
       # aprender#2822: THE REPORT. Runs even when the job dies mid-cargo,
       # and takes its own final probe first -- without that, a failure at
       # step K leaves the last recorded boundary BEFORE K and the table
