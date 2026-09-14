@@ -1,0 +1,25 @@
+{
+ "packages": [
+  {
+   "name": "testlib",
+   "dependencies": [],
+   "features": {
+    "browser": []
+   }
+  },
+  {
+   "name": "optdep",
+   "dependencies": [
+    {
+     "name": "testlib",
+     "kind": null,
+     "features": [
+      "browser"
+     ],
+     "rename": "probar"
+    }
+   ],
+   "features": {}
+  }
+ ]
+}
