@@ -29,7 +29,28 @@ concurrency:
 
 jobs:
   ci:
-    uses: paiml/.github/.github/workflows/sovereign-ci.yml@4453399ee3794714800ff8db316ea7e1d3705a00
+    # 70e51ec04, not 4453399ee: THE PIN WAS TWO COMMITS BEHIND THE ONE THAT
+    # MAKES gx10 WORK. 70e51ec04 is titled "sovereign-ci: pin a two-architecture
+    # image index (amd64 + arm64)"; the pin held here was 4453399ee, 2026-09-05,
+    # whose every job runs
+    #     image: localhost:5000/sovereign-ci:stable@sha256:66016caa...
+    # an AMD64-ONLY index. Every containerised job routed to gx10 therefore died
+    # before it started:
+    #     no matching manifest for linux/arm64/v8 in the manifest list entries
+    # surfaced in the job log only as `Docker pull failed with exit code 1`,
+    # which names neither the architecture nor the tag.
+    #
+    # gx10 carries four clean-room runners and this workflow's default
+    # `runs_on` is ["self-hosted","clean-room"] — arch-neutral, so the router
+    # sends work there by design (#3100 / PMAT-3138). Measured on gx10 today:
+    #     pull @sha256:66016caa...  -> no matching manifest for linux/arm64/v8
+    #     pull @sha256:70f2cdc9...  -> Status: Image is up to date
+    #
+    # The delta is exactly two commits and one file (+20/-11), both additive:
+    # 23916c00d adds an OPTIONAL `runs_on` input whose default is the label set
+    # this repo already gets, and 70e51ec04 swaps the digest on every job. No
+    # input this repo passes changes meaning.
+    uses: paiml/.github/.github/workflows/sovereign-ci.yml@70e51ec045d95983e9a3d02342d13283bf5f9dc1
     with:
       repo: ${{ github.event.repository.name }}
       # Phase 3 pilot (heavy workload) — build-performance.md §7 Phase 3.
@@ -1808,6 +1829,37 @@ jobs:
           set -euo pipefail
           dr() { # dr <dir mounted as /workspace> <cmd...>
             local ws=$1; shift
+            # A bind-mount source that does not exist is created BY THE DOCKER
+            # DAEMON, as root -- and then this container, which runs as
+            # $(id -u), cannot write into its own target dir:
+            #
+            #   error: failed to create directory `/workspace/target/debug`
+            #   Caused by: Permission denied (os error 13)
+            #
+            # The dirs DO exist when the job starts; heal_path makes them in
+            # "Create this job's own target dir and CARGO_HOME". They can stop
+            # existing DURING the job: gx10's ci-reaper enters a critical-mode
+            # purge under disk pressure and rm -rf's per-run target dirs whose
+            # run it believes is finished. Measured 2026-09-13 -- it deleted
+            # run-34771396463's dir at 17:43:08 saying "no running job", and
+            # that run was still `queued` 35 minutes later (paiml/aprender#3219).
+            # That is a reaper defect and it is being fixed there; this makes the
+            # consumer survive it, because heal_path runs ONCE and every dr()
+            # after a purge is the one that loses.
+            # Recreate a purged dir BEFORE the mount (so the daemon never gets
+            # the chance), and repair one the daemon already made on an earlier
+            # call -- same chown-through-the-image that heal_path uses, fired
+            # only when the dir is actually unwritable, so the common path pays
+            # nothing.
+            mkdir -p "$GUARD_TARGET_DIR" "$GUARD_CARGO_HOME" 2>/dev/null || true
+            local d
+            for d in "$GUARD_TARGET_DIR" "$GUARD_CARGO_HOME"; do
+              if [ -d "$d" ] && [ ! -w "$d" ]; then
+                docker run --rm -v "$(dirname "$d"):/p" "$IMAGE" \
+                  chown "$(id -u):$(id -g)" "/p/$(basename "$d")"
+              fi
+              [ -d "$d" ] && [ -w "$d" ] || { echo "FAIL: $d is missing or not writable and could not be repaired"; return 1; }
+            done
             docker run --rm \
               --user "$(id -u):$(id -g)" \
               -v "${ws}:/workspace" \
