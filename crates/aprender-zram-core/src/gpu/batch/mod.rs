@@ -5,6 +5,35 @@
 //!
 //! For 4KB pages with ~2:1 ratio, batch 1000+ pages to amortize PCIe overhead.
 
+// #3179 — the GPU batch path cannot run, and has not compiled since APR-MONO.
+// Three gaps, each verified by reading the tree rather than inferred:
+//
+//   1. `trueno_gpu::driver::PinnedBuffer` and `GpuBuffer::copy_{from,to}_pinned_async`
+//      do not exist and never did in this monorepo (`git log -S PinnedBuffer --
+//      crates/aprender-gpu/` is empty). Only synchronous pageable copies exist.
+//   2. This file launches the entry point `lz4_compress_warp_shuffle` with 32
+//      threads and no shared memory. No kernel of that name exists; the one that
+//      does, `lz4_compress_warp`, wants 128 threads and shared memory.
+//   3. `Lz4WarpDecompressKernel::build_ptx` is a STUB whose whole body is
+//      `ctx.label("L_exit")`. There is no GPU LZ4 decompressor in this workspace.
+//
+// So this is not one API away from working: it is wired to a kernel ABI removed
+// at consolidation, and its decompressor does not exist. Making it merely
+// COMPILE would hand back a feature that is green in the matrix and dead at
+// runtime — the theater this repo refuses. The refusal names all three gaps and
+// the private `__cuda-linked` feature carries the real gate, so nothing here is
+// deleted and the diagnostic is one line instead of a cascade.
+#[cfg(all(feature = "cuda", not(feature = "__cuda-linked")))]
+compile_error!(
+    "aprender-zram-core's `cuda` feature cannot build: the GPU batch path needs \
+     (1) trueno_gpu::driver::PinnedBuffer + GpuBuffer::copy_{from,to}_pinned_async, \
+     which do not exist; (2) a kernel named `lz4_compress_warp_shuffle`, which does \
+     not exist (aprender-gpu ships `lz4_compress_warp`, 128 threads + shared memory); \
+     and (3) a real LZ4 decompress kernel — Lz4WarpDecompressKernel::build_ptx is a \
+     stub that exits immediately. See #3179. The non-cuda build of this crate is \
+     unaffected."
+);
+
 use crate::error::{Error, Result};
 use crate::page::CompressedPage;
 use crate::{Algorithm, PAGE_SIZE};
@@ -43,7 +72,7 @@ impl Default for GpuBatchConfig {
 #[allow(dead_code)] // Fields used when CUDA kernels are fully implemented
 pub struct GpuBatchCompressor {
     config: GpuBatchConfig,
-    #[cfg(feature = "cuda")]
+    #[cfg(feature = "__cuda-linked")]
     context: Option<GpuContext>,
     /// Cached SIMD compressor for parallel CPU path (Arc for thread-safety)
     simd_compressor: std::sync::Arc<Box<dyn crate::PageCompressor>>,
@@ -64,7 +93,7 @@ impl std::fmt::Debug for GpuBatchCompressor {
     }
 }
 
-#[cfg(feature = "cuda")]
+#[cfg(feature = "__cuda-linked")]
 struct GpuContext {
     /// CUDA context handle (trueno-gpu driver).
     context: trueno_gpu::driver::CudaContext,
@@ -92,7 +121,7 @@ struct GpuContext {
     max_batch_size: usize,
 }
 
-#[cfg(feature = "cuda")]
+#[cfg(feature = "__cuda-linked")]
 #[allow(clippy::missing_fields_in_debug)]
 impl std::fmt::Debug for GpuContext {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -208,7 +237,7 @@ impl GpuBatchCompressor {
                 .build()?,
         );
 
-        #[cfg(feature = "cuda")]
+        #[cfg(feature = "__cuda-linked")]
         {
             // Initialize CUDA context with pre-allocated buffers for batch_size
             let context = Self::init_cuda(config.device_index, config.batch_size)?;
@@ -223,7 +252,7 @@ impl GpuBatchCompressor {
             })
         }
 
-        #[cfg(not(feature = "cuda"))]
+        #[cfg(not(feature = "__cuda-linked"))]
         {
             Ok(Self {
                 config,
@@ -236,7 +265,7 @@ impl GpuBatchCompressor {
         }
     }
 
-    #[cfg(feature = "cuda")]
+    #[cfg(feature = "__cuda-linked")]
     fn init_cuda(device_index: u32, batch_size: usize) -> Result<GpuContext> {
         use trueno_gpu::driver::{CudaContext, CudaModule, CudaStream, GpuBuffer, PinnedBuffer};
         use trueno_gpu::kernels::lz4::{Lz4DecompressKernel, Lz4WarpShuffleKernel};
@@ -416,12 +445,12 @@ impl GpuBatchCompressor {
             });
         }
 
-        #[cfg(feature = "cuda")]
+        #[cfg(feature = "__cuda-linked")]
         {
             self.compress_batch_cuda(pages)
         }
 
-        #[cfg(not(feature = "cuda"))]
+        #[cfg(not(feature = "__cuda-linked"))]
         {
             Err(Error::GpuNotAvailable(
                 "CUDA feature not enabled".to_string(),
@@ -429,7 +458,7 @@ impl GpuBatchCompressor {
         }
     }
 
-    #[cfg(feature = "cuda")]
+    #[cfg(feature = "__cuda-linked")]
     fn compress_batch_cuda(&mut self, pages: &[[u8; PAGE_SIZE]]) -> Result<BatchResult> {
         use std::time::Instant;
 
@@ -472,7 +501,7 @@ impl GpuBatchCompressor {
         })
     }
 
-    #[cfg(feature = "cuda")]
+    #[cfg(feature = "__cuda-linked")]
     fn transfer_to_device(
         &self,
         pages: &[[u8; PAGE_SIZE]],
@@ -498,7 +527,7 @@ impl GpuBatchCompressor {
         Ok(device_buffer)
     }
 
-    #[cfg(feature = "cuda")]
+    #[cfg(feature = "__cuda-linked")]
     fn execute_compression_kernel(&self, pages: &[[u8; PAGE_SIZE]]) -> Result<Vec<Vec<u8>>> {
         use std::ffi::c_void;
         use std::time::Instant;
@@ -718,7 +747,7 @@ impl GpuBatchCompressor {
     }
 
     /// CPU fallback for compression when GPU is not available
-    #[cfg(feature = "cuda")]
+    #[cfg(feature = "__cuda-linked")]
     fn execute_compression_kernel_cpu(&self, pages: &[[u8; PAGE_SIZE]]) -> Result<Vec<Vec<u8>>> {
         use rayon::prelude::*;
         use trueno_gpu::kernels::lz4::lz4_compress_block;
@@ -737,7 +766,7 @@ impl GpuBatchCompressor {
         results
     }
 
-    #[cfg(feature = "cuda")]
+    #[cfg(feature = "__cuda-linked")]
     fn transfer_from_device(&self, data: Vec<Vec<u8>>) -> Result<Vec<CompressedPage>> {
         // In the current hybrid approach, data is already on host.
         // When nvCOMP is integrated, this will do D2H transfer.
@@ -786,7 +815,7 @@ impl GpuBatchCompressor {
     /// The kernel achieves 32 GB/s internally.
     ///
     /// G.119 COMPLIANT: Eliminates 350ms allocation overhead by reusing buffers.
-    #[cfg(feature = "cuda")]
+    #[cfg(feature = "__cuda-linked")]
     pub fn decompress_batch_gpu(
         &mut self,
         compressed: &[Vec<u8>],
@@ -1036,7 +1065,7 @@ impl GpuBatchCompressor {
 ///
 /// Zero pages are extremely common in memory (>30% typically) and compress
 /// to just a few bytes with LZ4's RLE-style encoding.
-#[cfg(feature = "cuda")]
+#[cfg(feature = "__cuda-linked")]
 #[allow(dead_code)]
 fn encode_lz4_zero_page() -> Vec<u8> {
     use trueno_gpu::kernels::lz4::lz4_compress_block;
