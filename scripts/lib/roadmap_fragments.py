@@ -37,6 +37,7 @@ Exit: 0 ok - 1 a violation (or a failing selftest row) - 2 usage/vacuity.
 
 import argparse
 import os
+import re
 import sys
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -88,18 +89,108 @@ def insertion_index(base_entries, eid):
 
 
 def aggregate(base_text, fragments):
-    """base + fragments, each at its sorted slot. Duplicate id is exit 1."""
+    """base + fragments, each at its sorted slot.
+
+    IDEMPOTENT BY CONSTRUCTION, and that is not a nicety: `make
+    roadmap-aggregate` runs post-merge on main, so an aggregator that is not a
+    pure function of (base, fragments) makes main churn a commit on every
+    merge. The first cut took the LIVE roadmap.yaml as the base and raised
+    `duplicate id` the moment its own output was fed back -- it failed on run
+    one, against a tree that already carried the fragment it was inserting.
+
+    So a fragment SUPERSEDES any base entry with the same id rather than
+    colliding with it: drop, then insert at the sorted slot. aggregate(X) and
+    aggregate(aggregate(X)) are then the same bytes, proved by the selftest.
+
+    A duplicate WITHIN the fragment set is still an error -- two files cannot
+    claim one id, and the filesystem guarantees they do not."""
     preamble, entries = split_entries(base_text)
-    seen = {eid for eid, _ in entries}
-    for eid, block in fragments:
+    seen = set()
+    for eid, _ in fragments:
         if eid in seen:
-            raise ValueError(
-                "duplicate id: %s is in the base AND in entries/%s.yaml -- a "
-                "fragment adds an entry, it never redefines one" % (eid, eid)
-            )
+            raise ValueError("duplicate id among fragments: %s" % eid)
         seen.add(eid)
+    entries = [(e, b) for e, b in entries if e not in seen]
+    for eid, block in fragments:
         entries.insert(insertion_index(entries, eid), (eid, block))
     return preamble + "".join(block for _, block in entries)
+
+
+# ------------------------------------------------------------------- split
+
+ANCHOR_DEF_RE = re.compile(r"&(id\d+)\s+")
+ANCHOR_USE_RE = re.compile(r"\*(id\d+)\b")
+
+
+def collect_anchors(text):
+    """-> {name: literal}. A roadmap anchor is a scalar on its own key line,
+    so the literal is the rest of that line after the anchor name."""
+    out = {}
+    for line in text.splitlines():
+        m = ANCHOR_DEF_RE.search(line)
+        if m:
+            out[m.group(1)] = line[m.end():].rstrip()
+    return out
+
+
+def self_contain(block, anchors):
+    """A fragment must parse ALONE. roadmap.yaml defines `created: &id001 ...`
+    on one entry and aliases it from 17 others (roadmap_diff.py's own docstring
+    names this as real data its block parser cannot resolve), so a fragment
+    carrying `*id001` would be unparseable YAML. Inline the literal and drop
+    the anchor; the VALUE is unchanged, which split() then proves per entry."""
+    block = ANCHOR_DEF_RE.sub("", block)
+    return ANCHOR_USE_RE.sub(lambda m: anchors.get(m.group(1), m.group(0)), block)
+
+
+def split(text, entries_dir=ENTRIES, write=False):
+    """roadmap.yaml -> one fragment per ticket. Returns [(id, block)].
+
+    Every fragment is proved to parse alone AND to carry the same mapping the
+    monolith did, before anything is written."""
+    import yaml
+    preamble, entries = split_entries(text)
+    anchors = collect_anchors(text)
+    whole = yaml.safe_load(text)
+    items = whole["roadmap"]
+    if len(items) != len(entries):
+        raise ValueError("byte split (%d) disagrees with the parse (%d)"
+                         % (len(entries), len(items)))
+    frags = [(eid, _proved_fragment(eid, block, want, anchors))
+             for (eid, block), want in zip(entries, items)]
+    _refuse_duplicates([e for e, _ in frags])
+    if write:
+        _write_fragments(frags, preamble, entries_dir)
+    return frags
+
+
+def _proved_fragment(eid, block, want, anchors):
+    """The fragment for one entry, refused unless it parses ALONE and carries
+    exactly the mapping the monolith carried."""
+    import yaml
+    frag = self_contain(block, anchors)
+    got = yaml.safe_load(frag)
+    if not (isinstance(got, list) and len(got) == 1 and got[0] == want):
+        raise ValueError("fragment for %s does not carry the same mapping" % eid)
+    return frag
+
+
+def _refuse_duplicates(ids):
+    if len(set(ids)) == len(ids):
+        return
+    dupes = sorted({i for i in ids if ids.count(i) > 1})
+    raise ValueError("duplicate id(s) in the monolith: %s" % ", ".join(dupes))
+
+
+def _write_fragments(frags, preamble, entries_dir):
+    os.makedirs(entries_dir, exist_ok=True)
+    for eid, frag in frags:
+        with open(fragment_path(eid, entries_dir), "w", encoding="utf-8") as fh:
+            fh.write(frag)
+    with open(os.path.join(entries_dir, "..", "_preamble.yaml"), "w",
+              encoding="utf-8") as fh:
+        fh.write(preamble)
+
 
 
 # ---------------------------------------------------------------- self-test
@@ -145,12 +236,33 @@ def selftest():
     row("numeral compared NUMERICALLY (PMAT-90 before PMAT-100)",
         _ids(out)[0] == "PMAT-90", str(_ids(out)))
 
-    # 6. a fragment never redefines a base entry
+    # 6. a fragment SUPERSEDES a base entry of the same id, in place
+    out = aggregate(BASE, [("PMAT-100", "- id: PMAT-100\n  title: superseded\n")])
+    row("fragment supersedes a base entry of the same id",
+        _ids(out) == ["PMAT-100", "PMAT-300", "LEGACY-THING"] and "superseded" in out,
+        str(_ids(out)))
+
+    # 6b. two fragments CANNOT claim one id (the filesystem already prevents it)
     try:
-        aggregate(BASE, [("PMAT-100", "- id: PMAT-100\n  title: clash\n")])
-        row("duplicate id refused", False, "no error raised")
+        aggregate(BASE, [("PMAT-9", "- id: PMAT-9\n  t: a\n"),
+                         ("PMAT-9", "- id: PMAT-9\n  t: b\n")])
+        row("duplicate id AMONG fragments refused", False, "no error raised")
     except ValueError as e:
-        row("duplicate id refused", "duplicate id" in str(e), str(e)[:40])
+        row("duplicate id AMONG fragments refused",
+            "duplicate id among fragments" in str(e), str(e)[:44])
+
+    # 6c. IDEMPOTENCE. `make roadmap-aggregate` runs post-merge on main, so an
+    #     aggregator that is not a pure function churns a commit every merge.
+    frag = [("PMAT-200", "- id: PMAT-200\n  title: b\n")]
+    once = aggregate(BASE, frag)
+    twice = aggregate(once, frag)
+    row("IDEMPOTENT: aggregate(aggregate(x)) == aggregate(x)", once == twice,
+        "" if once == twice else "second pass changed %d bytes" % abs(len(twice) - len(once)))
+
+    # 6d. DETERMINISM: fragment order on disk must not change the output.
+    two = [("PMAT-150", "- id: PMAT-150\n  t: x\n"), ("PMAT-250", "- id: PMAT-250\n  t: y\n")]
+    row("DETERMINISTIC: fragment input order does not change the bytes",
+        aggregate(BASE, two) == aggregate(BASE, list(reversed(two))))
 
     # 7. several fragments at once stay mutually sorted
     out = aggregate(BASE, [
@@ -178,11 +290,50 @@ def selftest():
     return 1 if bad else 0
 
 
-def main(argv=None):
+def _check(base, out, frags):
+    """roadmap.yaml is what the aggregator produces, and re-aggregating is a
+    no-op. The second half is not decoration: `make roadmap-aggregate` runs
+    post-merge on main, so a non-idempotent generator churns a commit on every
+    merge. Proved here on real data, not only in the selftest."""
+    if aggregate(out, frags) != out:
+        sys.stderr.write("FAIL aggregate is not idempotent on this input\n")
+        return 1
+    if out != base:
+        sys.stderr.write(
+            "FAIL docs/roadmaps/roadmap.yaml is not what the aggregator produces "
+            "from docs/roadmaps/entries/ -- run `make roadmap-aggregate`\n")
+        return 1
+    sys.stderr.write("ok  roadmap.yaml == aggregate(%d fragment(s)), idempotent\n"
+                     % len(frags))
+    return 0
+
+
+def _emit(a, base, out, frags):
+    """The three terminal arms of `aggregate`: verify, write, or print."""
+    if a.check:
+        return _check(base, out, frags)
+    if a.write:
+        with open(ROADMAP, "w", encoding="utf-8") as fh:
+            fh.write(out)
+        sys.stderr.write("aggregate: %d base + %d fragment(s) -> %s\n"
+                         % (len(split_entries(base)[1]), len(frags), ROADMAP))
+        return 0
+    sys.stdout.write(out)
+    return 0
+
+
+def _parser():
     ap = argparse.ArgumentParser(prog="roadmap_fragments.py")
     ap.add_argument("cmd", nargs="?", choices=["aggregate"])
     ap.add_argument("--write", action="store_true")
+    ap.add_argument("--check", action="store_true",
+                    help="fail if roadmap.yaml is not what the aggregator produces")
     ap.add_argument("--selftest", action="store_true")
+    return ap
+
+
+def main(argv=None):
+    ap = _parser()
     a = ap.parse_args(argv)
     if a.selftest:
         return selftest()
@@ -197,14 +348,7 @@ def main(argv=None):
     except ValueError as e:
         sys.stderr.write("FAIL %s\n" % e)
         return 1
-    if a.write:
-        with open(ROADMAP, "w", encoding="utf-8") as fh:
-            fh.write(out)
-        sys.stderr.write("aggregate: %d base + %d fragment(s) -> %s\n"
-                         % (len(split_entries(base)[1]), len(frags), ROADMAP))
-    else:
-        sys.stdout.write(out)
-    return 0
+    return _emit(a, base, out, frags)
 
 
 if __name__ == "__main__":
