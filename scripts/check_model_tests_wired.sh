@@ -88,7 +88,9 @@ unwired_in() {
     while IFS= read -r target; do
         [ -n "$target" ] || continue
         wired=0
-        for f in "$root"/.github/workflows/*.yml "$root"/.github/workflows/*.yaml; do
+        # PMAT-3313: ci/explicit-test-commands.txt is executed line by line by
+        # workspace-test's "Integration tests" step, so a line there wires too.
+        for f in "$root"/.github/workflows/*.yml "$root"/.github/workflows/*.yaml "$root"/ci/explicit-test-commands.txt; do
             [ -f "$f" ] || continue
             while IFS= read -r line; do
                 if line_wires_target "$line" "$target"; then
@@ -179,6 +181,23 @@ TABLE
         printf 'FAIL: wired fixture tree still reported <%s>\n' "$got"
         fails=$((fails + 1))
     fi
+    # PMAT-3313: wiring that lives ONLY in ci/explicit-test-commands.txt counts,
+    # and deleting that one line makes the target unwired again.
+    printf 'jobs:\n  x:\n    steps:\n      - run: cargo test --lib\n' > "$fixture/.github/workflows/ci.yml"
+    mkdir -p "$fixture/ci"
+    printf '# list\ncargo test -p fixture-crate --features %s --test dark_target\n' \
+        "$FEATURE" > "$fixture/ci/explicit-test-commands.txt"
+    got=$(unwired_in "$fixture")
+    if [ -n "$got" ]; then
+        printf 'FAIL: tree wired only via ci/explicit-test-commands.txt still reported <%s>\n' "$got"
+        fails=$((fails + 1))
+    fi
+    printf '# list\n' > "$fixture/ci/explicit-test-commands.txt"
+    got=$(unwired_in "$fixture")
+    if [ "$got" != "dark_target" ]; then
+        printf 'FAIL: line deleted from ci/explicit-test-commands.txt: expected <dark_target>, got <%s>\n' "$got"
+        fails=$((fails + 1))
+    fi
     # A tree with NO gated targets must not silently pass as "all wired": the
     # caller below refuses an empty universe.
     rm -f "$fixture/crates/fixture-crate/tests/dark_target.rs"
@@ -192,7 +211,7 @@ TABLE
         printf '\n%s case(s) failed\n' "$fails"
         return 1
     fi
-    printf 'OK: check_model_tests_wired case table passed (10 matcher + 4 folding + 3 enumerator cases)\n'
+    printf 'OK: check_model_tests_wired case table passed (10 matcher + 4 folding + 5 enumerator cases)\n'
     return 0
 }
 

@@ -60,9 +60,13 @@ if [ "${1:-}" = "--list" ]; then
 fi
 
 # The workflows whose jobs are REQUIRED status checks on main.
+# ci/explicit-test-commands.txt is not a workflow, but ci.yml's REQUIRED
+# workspace-test job executes every line of it (PMAT-3313). A release-time guard
+# appended there runs in a required check exactly as if ci.yml named it.
 REQUIRED_WORKFLOWS="
 .github/workflows/ci.yml
 .github/workflows/pr-gate.yml
+ci/explicit-test-commands.txt
 "
 
 rc=0
