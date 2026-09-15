@@ -1,0 +1,1826 @@
+schema: pr-triage-0.66/v1
+epic: 2873
+ticket:
+  gh_issue: 2986
+  pmat_id: none (pmat#1193)
+  note: 'the driver is the sole minter; no pmat id for this pass. `pmat work add` 3.37.0 was run once, minted PMAT-1055 (collides with #2981) and rewrote 2,532 lines
+    of roadmap.yaml — reverted, filed as paiml/paiml-mcp-agent-toolkit#1193 (links #2874, pmat#1169)'
+generated: '2026-09-05'
+origin_main: cdc0acb99
+main_moved_during_pass: 132ccda56 -> cdc0acb99 (#2985 merged at STEP 0; released the workflow-file HOLD)
+universe: 'gh pr list --state open (29 at STEP 0; #2981 and #2985 are driver PRs, recorded as DRIVER, not dispositioned)'
+doctrine: 'producer is never the gate: ci / gate + workspace-test (branch protection + rulesets) decide; this ledger records. One disposition and one rebase attempt
+  per PR; a conflict is aborted and labelled, never resolved by hand except a lockfile regeneration or an append-only union, each named in the entry.'
+labels_created:
+- pp-066/merge
+- pp-066/carry-0.67
+- pp-066/superseded
+- pp-066/hold
+- pp-066/conflict
+- pp-066/split
+terminal:
+  state: awaiting-drain
+  rule: updated once when the six armed merges have drained (landed, or fallen out of the queue on conflict — no rerun, no re-push tonight)
+  armed:
+  - 2807
+  - 2848
+  - 2802
+  - 2871
+  - 2575
+  - 2858
+counts:
+  MERGE-0.66: 2
+  PRIOR-ART-CLOSE: 12
+  HOLD: 2
+  SPLIT: 1
+  MERGE-NOW: 5
+  STOP: 1
+  CARRY-0.67: 3
+  CLOSE: 1
+  DRIVER: 2
+stop_list:
+- pr: 2659
+  reason: author app/dependabot (not noahgift); workflow-touching; needs @dependabot rebase + operator decision
+- pr: 2720
+  reason: 'held on D-3 decision (DEC-D-3 #2934); no branch edits'
+- pr: 2793
+  reason: 'workflow-touching (silicon-nightly.yml): arming needs the operator'
+- pr: 2794
+  reason: author guyernest
+end_state:
+  open_prs_below_2981_by_noahgift:
+    recorded: 11 (expected 7 after drain)
+    actual: 11
+    expected_after_drain: 7
+    pending_merges:
+    - 2807
+    - 2848
+    - 2802
+    - 2871
+    - 2575
+    - 2858
+    expected_open_after_drain:
+    - 2720
+    - 2793
+    - 2800
+    - 2801
+    - 2838
+    - split/2738-perf034-sampler-alloc
+    - split/2738-make-test-targets
+    list: 2575,2720,2793,2800,2801,2802,2807,2838,2848,2858,2871
+    pass: null
+    command: gh pr list --state open --limit 100 --json number,author --jq '[.[]|select(.number<2981 and .author.login=="noahgift")|.number]'
+  open_prs_below_2981_all_authors:
+    list: 2871(noahgift),2858(noahgift),2848(noahgift),2838(noahgift),2807(noahgift),2802(noahgift),2801(noahgift),2800(noahgift),2794(guyernest),2793(noahgift),2720(noahgift),2659(app/dependabot),2575(noahgift)
+    note: '#2659 (dependabot) and #2794 (guyernest) are outside the write surface; Noah replies'
+  prior_art_branches:
+    expected: 17
+    actual: 17
+    pass: true
+    command: 'git ls-remote --heads origin ''prior-art/*'' | wc -l   # == git branch -r | grep -c prior-art/ after fetch'
+  semantic_merges:
+    expected: 0
+    actual: 0
+    pass: true
+    mechanical_ops_named:
+    - '#2807 Cargo.lock regenerated (cargo update -p wasmtime --precise 47.0.4)'
+    - '#2773 .gitignore both-appended union (replay then aborted; PR closed prior-art)'
+    - '#2858 impl-estimates.jsonl append-only union; branch rebuilt as one docs-only commit on main'
+prs:
+- number: 2575
+  pmat_id: none (pmat#1193)
+  title: 'fix(install): delete the dead proptest test-profile spec, and document why the rest cannot go today'
+  author: noahgift
+  draft_at_step0: false
+  age_days: 14
+  behind_main: 63
+  ahead: 1
+  mergeable_step0: MERGEABLE/BEHIND
+  gate_step0:
+    summary:
+      fail: 2
+      skipping: 2
+      pass: 8
+    red:
+    - gate
+    - workspace-test
+    note: stale base; recorded, not judged
+  linked_issues:
+  - 2566
+  - 2571
+  issue_rows:
+    '2571':
+    - R-2
+  rows_intersected: {}
+  files: 2
+  workflow_files: []
+  rebase_attempt:
+    result: CLEAN
+    old_head: 1084a3c7f
+    detail: 4cdf300db
+  disposition: MERGE-0.66:R-2
+  row: R-2
+  row_expiry: '2026-09-26'
+  queue_pos: 20
+  basis: 'linked issue #2571 is in R-2''s issues list (pp-066-dag.yaml); no first-wave file intersection'
+  action: rebased clean -> armed on the ORIGINAL head per operator (no push tonight; refs/triage/2575 holds the clean rebase locally); the merge queue builds the
+    merge group
+  post_push:
+    head: null
+    gate: queue decides
+    workspace_test: queue decides
+    root_cause_class: null
+    armed: true
+  evidence:
+  - gh pr view 2575 --json number,title,author,isDraft,createdAt,mergeable,mergeStateStatus,baseRefName,headRefName,files,body,statusCheckRollup
+  - gh pr checks 2575
+  - 'git rev-list --count origin/fix/2571-dead-profile-package-spec..origin/main   # origin/main=cdc0acb99'
+  - 'git merge-tree $(git merge-base origin/main origin/fix/2571-dead-profile-package-spec) origin/main origin/fix/2571-dead-profile-package-spec   # git 2.34 three-way
+    scan'
+  - 'git worktree add --detach <wt> origin/main && git checkout --detach origin/fix/2571-dead-profile-package-spec && git rebase origin/main   # CLEAN'
+  - 'gh pr merge 2575 --auto --squash   # armed on head 1084a3c7f; refs/triage/2575 not pushed (operator: no push tonight)'
+  - gh pr merge 2575 --auto --squash
+- number: 2635
+  pmat_id: none (pmat#1193)
+  title: 'fix(release): three more places read the facade pin with a line regex, and one of them WRITES'
+  author: noahgift
+  draft_at_step0: false
+  age_days: 13
+  behind_main: 58
+  ahead: 2
+  mergeable_step0: CONFLICTING/DIRTY
+  gate_step0:
+    summary:
+      pass: 10
+      skipping: 1
+    red: []
+    note: stale base; recorded, not judged
+  linked_issues:
+  - 2628
+  - 2629
+  issue_rows: {}
+  rows_intersected:
+    G-6:
+    - .github/workflows/ci.yml
+    C0-1:
+    - .github/workflows/ci.yml
+    G-4:
+    - .github/workflows/ci.yml
+    P-0.6:
+    - .github/workflows/ci.yml
+    G-1:
+    - .github/workflows/ci.yml
+    C0-5:
+    - .github/workflows/ci.yml
+  files: 9
+  workflow_files:
+  - .github/workflows/ci.yml
+  rebase_attempt:
+    result: CONFLICT
+    old_head: 7bc5918e9
+    detail: scripts/check_cascade_covers_all_crates.sh
+  disposition: PRIOR-ART-CLOSE:#2992
+  row: C0-1
+  row_expiry: '2026-09-19'
+  queue_pos: 14
+  basis: edits .github/workflows/ci.yml, a P1 file of C0-1/G-4 (09-19) and G-6/P-0.6/G-1 (09-26)
+  action: rebase attempt -> CONFLICT -> STOP
+  disposition_step1: MERGE-0.66:C0-1
+  step2b:
+    prior_art: prior-art/2635@7bc5918e9
+    intent: '#2992'
+    closed: true
+    semantic_merges: 0
+    evidence:
+    - git push origin 7bc5918e9:refs/heads/prior-art/2635
+    - 'gh pr comment 2635 --body "prior-art: prior-art/2635@7bc5918e9 · intent → #2992 · salvage: … · conflicts: …"'
+    - 'gh issue comment 2992 --body "prior-art: …"'
+    - gh pr close 2635
+  evidence:
+  - gh pr view 2635 --json number,title,author,isDraft,createdAt,mergeable,mergeStateStatus,baseRefName,headRefName,files,body,statusCheckRollup
+  - gh pr checks 2635
+  - 'git rev-list --count origin/fix/2628-bump-version-enumeration..origin/main   # origin/main=cdc0acb99'
+  - 'git merge-tree $(git merge-base origin/main origin/fix/2628-bump-version-enumeration) origin/main origin/fix/2628-bump-version-enumeration   # git 2.34 three-way
+    scan'
+  - 'git worktree add --detach <wt> origin/main && git checkout --detach origin/fix/2628-bump-version-enumeration && git rebase origin/main   # CONFLICT'
+- number: 2638
+  pmat_id: none (pmat#1193)
+  title: 'fix(compute,cli): a self-deadlock on main, a feature that could not be installed, and a GPU lane that could not go green'
+  author: noahgift
+  draft_at_step0: false
+  age_days: 13
+  behind_main: 57
+  ahead: 1
+  mergeable_step0: CONFLICTING/DIRTY
+  gate_step0:
+    summary:
+      fail: 2
+      skipping: 2
+      pass: 8
+    red:
+    - gate
+    - workspace-test
+    note: stale base; recorded, not judged
+  linked_issues:
+  - 2247
+  - 2376
+  - 2630
+  issue_rows: {}
+  rows_intersected:
+    T-2:
+    - crates/apr-cli/src/commands/finetune.rs
+    R-0:
+    - crates/aprender-compute/src/backends/gpu/device/mod.rs
+  files: 10
+  workflow_files:
+  - .github/workflows/gpu-vulkan.yml
+  rebase_attempt:
+    result: CONFLICT
+    old_head: 1073105ca
+    detail: crates/apr-cli/src/commands/serve/handlers.rs crates/aprender-compute/src/backends/gpu/device/mod.rs README.md
+  disposition: PRIOR-ART-CLOSE:R-0
+  row: R-0
+  row_expiry: '2026-09-19'
+  queue_pos: 12
+  basis: 'intersects R-0''s crates/aprender-compute/src/backends/gpu/device/mod.rs and T-2''s finetune.rs; overlaps #2825 (same PMAT-778 fix)'
+  action: rebase attempt -> CONFLICT -> STOP
+  disposition_step1: MERGE-0.66:R-0
+  step2b:
+    prior_art: prior-art/2638@1073105ca
+    intent: 'R-0 #2904'
+    closed: true
+    semantic_merges: 0
+    evidence:
+    - git push origin 1073105ca:refs/heads/prior-art/2638
+    - 'gh pr comment 2638 --body "prior-art: prior-art/2638@1073105ca · intent → R-0 #2904 · salvage: … · conflicts: …"'
+    - 'gh issue comment 2904 --body "prior-art: …"'
+    - gh pr close 2638
+  evidence:
+  - gh pr view 2638 --json number,title,author,isDraft,createdAt,mergeable,mergeStateStatus,baseRefName,headRefName,files,body,statusCheckRollup
+  - gh pr checks 2638
+  - 'git rev-list --count origin/feat/wgpu-feature-surface..origin/main   # origin/main=cdc0acb99'
+  - 'git merge-tree $(git merge-base origin/main origin/feat/wgpu-feature-surface) origin/main origin/feat/wgpu-feature-surface   # git 2.34 three-way scan'
+  - 'git worktree add --detach <wt> origin/main && git checkout --detach origin/feat/wgpu-feature-surface && git rebase origin/main   # CONFLICT'
+- number: 2659
+  pmat_id: none (pmat#1193)
+  title: 'ci: bump actions/checkout from 4 to 7'
+  author: app/dependabot
+  draft_at_step0: false
+  age_days: 12
+  behind_main: 14
+  ahead: 1
+  mergeable_step0: UNKNOWN/UNKNOWN
+  gate_step0:
+    summary:
+      fail: 3
+      pass: 11
+      skipping: 2
+    red:
+    - gate
+    - workspace-test
+    - pr-review-receipt
+    note: stale base; recorded, not judged
+  linked_issues:
+  - 2314
+  - 2327
+  - 2328
+  - 2355
+  - 2356
+  - 2357
+  - 2414
+  - 2439
+  - 2446
+  - 2454
+  - 2458
+  - 2459
+  - 2460
+  - 2461
+  - 2462
+  - 2463
+  - 2464
+  - 2467
+  - 2474
+  - 2476
+  - 2478
+  - 2479
+  - 2488
+  - 2499
+  - 2500
+  - 2518
+  - 2521
+  - 2527
+  - 2530
+  - 2531
+  issue_rows:
+    '2464':
+    - B-M2
+    '2500':
+    - G-5
+  rows_intersected: {}
+  files: 2
+  workflow_files:
+  - .github/workflows/nightly-bench.yml
+  - .github/workflows/toolchain-ceiling.yml
+  rebase_attempt:
+    result: not
+    old_head: attempted
+    detail: null
+  disposition: HOLD:#2985
+  row: null
+  row_expiry: null
+  queue_pos: null
+  basis: 'workflow files (nightly-bench.yml, toolchain-ceiling.yml) held behind #2985; #2985 merged as cdc0acb99 during the pass'
+  action: labelled pp-066/hold, commented; no branch edit
+  stop: author app/dependabot (not noahgift); workflow-touching; needs @dependabot rebase + operator decision
+  evidence:
+  - gh pr view 2659 --json number,title,author,isDraft,createdAt,mergeable,mergeStateStatus,baseRefName,headRefName,files,body,statusCheckRollup
+  - gh pr checks 2659
+  - 'git rev-list --count origin/dependabot/github_actions/actions/checkout-7..origin/main   # origin/main=cdc0acb99'
+  - 'git merge-tree $(git merge-base origin/main origin/dependabot/github_actions/actions/checkout-7) origin/main origin/dependabot/github_actions/actions/checkout-7   #
+    git 2.34 three-way scan'
+  - 'git worktree add --detach <wt> origin/main && git checkout --detach origin/dependabot/github_actions/actions/checkout-7 && git rebase origin/main   # not'
+- number: 2666
+  pmat_id: none (pmat#1193)
+  title: 'Fix BENCH-004: add determinism controls to benchmark matrix harness'
+  author: noahgift
+  draft_at_step0: false
+  age_days: 12
+  behind_main: 101
+  ahead: 1
+  mergeable_step0: CONFLICTING/DIRTY
+  gate_step0:
+    summary:
+      pass: 11
+      skipping: 1
+    red: []
+    note: stale base; recorded, not judged
+  linked_issues:
+  - 2665
+  issue_rows: {}
+  rows_intersected: {}
+  files: 1
+  workflow_files: []
+  rebase_attempt:
+    result: CONFLICT
+    old_head: d6c6c6f8f
+    detail: scripts/benchmark-matrix.sh
+  disposition: PRIOR-ART-CLOSE:#2988
+  row: null
+  row_expiry: null
+  queue_pos: 7
+  basis: 'independent (issue #2665 in no row; no first-wave file intersection); gate was green on the stale base'
+  action: rebase attempt -> CONFLICT -> STOP
+  disposition_step1: MERGE-NOW
+  step2b:
+    prior_art: prior-art/2666@d6c6c6f8f
+    intent: '#2988'
+    closed: true
+    semantic_merges: 0
+    evidence:
+    - git push origin d6c6c6f8f:refs/heads/prior-art/2666
+    - 'gh pr comment 2666 --body "prior-art: prior-art/2666@d6c6c6f8f · intent → #2988 · salvage: … · conflicts: …"'
+    - 'gh issue comment 2988 --body "prior-art: …"'
+    - gh pr close 2666
+  evidence:
+  - gh pr view 2666 --json number,title,author,isDraft,createdAt,mergeable,mergeStateStatus,baseRefName,headRefName,files,body,statusCheckRollup
+  - gh pr checks 2666
+  - 'git rev-list --count origin/fix/benchmark-matrix-determinism..origin/main   # origin/main=cdc0acb99'
+  - 'git merge-tree $(git merge-base origin/main origin/fix/benchmark-matrix-determinism) origin/main origin/fix/benchmark-matrix-determinism   # git 2.34 three-way
+    scan'
+  - 'git worktree add --detach <wt> origin/main && git checkout --detach origin/fix/benchmark-matrix-determinism && git rebase origin/main   # CONFLICT'
+- number: 2711
+  pmat_id: none (pmat#1193)
+  title: 'fix(gate): the claim-literal ratchet could be edited in place — plus PERF-006 andon and the harness write-before-validate'
+  author: noahgift
+  draft_at_step0: false
+  age_days: 8
+  behind_main: 37
+  ahead: 5
+  mergeable_step0: CONFLICTING/DIRTY
+  gate_step0:
+    summary:
+      pass: 10
+      skipping: 1
+    red: []
+    note: stale base; recorded, not judged
+  linked_issues:
+  - 2706
+  - 2710
+  issue_rows: {}
+  rows_intersected:
+    SPEC-1.6:
+    - scripts/check_no_claim_literals.sh
+    P-0.6:
+    - scripts/check_baseline_ratchets.sh
+    R-0:
+    - crates/apr-cli/src/commands/serve/mod.rs
+    G-8:
+    - scripts/check_baseline_ratchets.sh
+  files: 25
+  workflow_files: []
+  rebase_attempt:
+    result: CONFLICT
+    old_head: ce6e7f104
+    detail: crates/apr-cli/src/commands/serve/handler_gpu_completion.rs crates/aprender-serve/src/api/router.rs
+  disposition: PRIOR-ART-CLOSE:#2989
+  row: SPEC-1.6
+  row_expiry: '2026-09-12'
+  queue_pos: 5
+  basis: intersects SPEC-1.6's scripts/check_no_claim_literals.sh (09-12), R-0's serve/mod.rs, P-0.6/G-8's check_baseline_ratchets.sh
+  action: rebase attempt -> CONFLICT -> STOP
+  disposition_step1: MERGE-0.66:SPEC-1.6
+  step2b:
+    prior_art: prior-art/2711@ce6e7f104
+    intent: '#2989'
+    closed: true
+    semantic_merges: 0
+    evidence:
+    - git push origin ce6e7f104:refs/heads/prior-art/2711
+    - 'gh pr comment 2711 --body "prior-art: prior-art/2711@ce6e7f104 · intent → #2989 · salvage: … · conflicts: …"'
+    - 'gh issue comment 2989 --body "prior-art: …"'
+    - gh pr close 2711
+  evidence:
+  - gh pr view 2711 --json number,title,author,isDraft,createdAt,mergeable,mergeStateStatus,baseRefName,headRefName,files,body,statusCheckRollup
+  - gh pr checks 2711
+  - 'git rev-list --count origin/feat/receipt-rule-b2..origin/main   # origin/main=cdc0acb99'
+  - 'git merge-tree $(git merge-base origin/main origin/feat/receipt-rule-b2) origin/main origin/feat/receipt-rule-b2   # git 2.34 three-way scan'
+  - 'git worktree add --detach <wt> origin/main && git checkout --detach origin/feat/receipt-rule-b2 && git rebase origin/main   # CONFLICT'
+- number: 2720
+  pmat_id: none (pmat#1193)
+  title: 'perf(beat): run the speed lane on perf-solo and make it name its own runner (Refs PERF-031)'
+  author: noahgift
+  draft_at_step0: false
+  age_days: 8
+  behind_main: 44
+  ahead: 1
+  mergeable_step0: CONFLICTING/DIRTY
+  gate_step0:
+    summary:
+      fail: 2
+      skipping: 2
+      pass: 8
+    red:
+    - gate
+    - workspace-test
+    note: stale base; recorded, not judged
+  linked_issues:
+  - 338
+  issue_rows: {}
+  rows_intersected: {}
+  files: 1
+  workflow_files:
+  - .github/workflows/beat-speed-nightly.yml
+  rebase_attempt:
+    result: CONFLICT
+    old_head: 5256ab32d
+    detail: .github/workflows/beat-speed-nightly.yml
+  disposition: HOLD:DEC-D-3
+  row: null
+  row_expiry: null
+  queue_pos: 8
+  basis: independent (PERF-031/#338 in no row); single workflow file
+  action: 'labelled pp-066/hold, commented "held on D-3 decision"; operator: leave untouched. Triage recommendation (not applied): carry to 0.67 under #2873 dated
+    to DEC-D-3 expiry 2026-09-12 — the perf-solo move is downstream of D-3 (CI home for non-CUDA lanes on intel), conflicts with main''s clean-room runner, and split-per-repo
+    is an infra#338 fleet change'
+  stop: 'held on D-3 decision (DEC-D-3 #2934); no branch edits'
+  disposition_step1: MERGE-NOW
+  step2b:
+    evidence:
+    - gh pr edit 2720 --add-label pp-066/hold --remove-label pp-066/merge --remove-label pp-066/conflict
+    - gh pr comment 2720 …
+  evidence:
+  - gh pr view 2720 --json number,title,author,isDraft,createdAt,mergeable,mergeStateStatus,baseRefName,headRefName,files,body,statusCheckRollup
+  - gh pr checks 2720
+  - 'git rev-list --count origin/perf/perf-solo-lane-receipt..origin/main   # origin/main=cdc0acb99'
+  - 'git merge-tree $(git merge-base origin/main origin/perf/perf-solo-lane-receipt) origin/main origin/perf/perf-solo-lane-receipt   # git 2.34 three-way scan'
+  - 'git worktree add --detach <wt> origin/main && git checkout --detach origin/perf/perf-solo-lane-receipt && git rebase origin/main   # CONFLICT'
+- number: 2738
+  pmat_id: none (pmat#1193)
+  title: 'batch: five sub-tickets — a pin that accepted prefixes, a sampler sorting 152k logits per token, and 4,545 lines that never compiled'
+  author: noahgift
+  draft_at_step0: false
+  age_days: 8
+  behind_main: 42
+  ahead: 14
+  mergeable_step0: CONFLICTING/DIRTY
+  gate_step0:
+    summary:
+      fail: 2
+      pass: 8
+      skipping: 1
+    red:
+    - gate
+    - guard-runner-labels
+    note: stale base; recorded, not judged
+  linked_issues:
+  - 2706
+  issue_rows: {}
+  rows_intersected:
+    G-6:
+    - .github/workflows/ci.yml
+    C0-1:
+    - .github/workflows/ci.yml
+    - Cargo.lock
+    G-4:
+    - .github/workflows/ci.yml
+    P-0.6:
+    - .github/workflows/ci.yml
+    G-1:
+    - .github/workflows/ci.yml
+    C0-5:
+    - .github/workflows/ci.yml
+  files: 100
+  workflow_files:
+  - .github/workflows/ci.yml
+  - .github/workflows/cuda-nightly.yml
+  rebase_attempt:
+    result: CONFLICT
+    old_head: c22aed80d
+    detail: crates/aprender-zram-core/src/gpu/mod.rs scripts/hardcoded_path_shipped_baseline.txt scripts/llama_bin.sh scripts/llama_pin.toml
+  disposition: SPLIT:closed
+  row: null
+  row_expiry: null
+  queue_pos: 21
+  basis: batch of five sub-tickets with a RED leg (gate, guard-runner-labels) on the stale base -> SPLIT class; intersects ci.yml (C0-1/G-4) and Cargo.lock (C0-1)
+  action: 'rebase attempt (--rebase-merges) -> CONFLICT; sub-branch scan: feat/m2-alloc CLEAN, fix/make-targets-always-green CLEAN, feat/m3-cuda-ci CONFLICT (zram-core
+    gpu/mod.rs modify/delete), feat/m5-serve-paths CONFLICT (hardcoded_path_shipped_baseline.txt), PERF-033 cherry-pick 4a356c3b5 CONFLICT (llama_bin.sh llama_pin.toml)'
+  disposition_step1: SPLIT
+  step2b:
+    prior_art:
+    - prior-art/2738@c22aed80d
+    - 'prior-art/2738-m1-pin@4a356c3b5 → #2994'
+    - 'prior-art/2738-m3-cuda-ci@b60b03c9c → #2995'
+    - 'prior-art/2738-m5-serve-paths@7d6436eac → #2996'
+    split_branches:
+    - split/2738-perf034-sampler-alloc@89735b881 (feat/m2-alloc rebased clean)
+    - split/2738-make-test-targets@b5b4ff506 (fix/make-targets-always-green rebased clean)
+    drafts_open_after:
+    - '2807'
+    - '2848'
+    - '2802'
+    - '2871'
+    - '2575'
+    closed: true
+    evidence:
+    - git rebase origin/main (per sub-branch, detached)
+    - git push origin refs/triage/split-feat_m2-alloc:refs/heads/split/2738-perf034-sampler-alloc
+    - git push origin refs/triage/split-fix_make-targets-always-green:refs/heads/split/2738-make-test-targets
+    - git push origin <sha>:refs/heads/prior-art/2738{,-m1-pin,-m3-cuda-ci,-m5-serve-paths}
+    - gh pr close 2738
+  evidence:
+  - gh pr view 2738 --json number,title,author,isDraft,createdAt,mergeable,mergeStateStatus,baseRefName,headRefName,files,body,statusCheckRollup
+  - gh pr checks 2738
+  - 'git rev-list --count origin/feat/p1-batch2..origin/main   # origin/main=cdc0acb99'
+  - 'git merge-tree $(git merge-base origin/main origin/feat/p1-batch2) origin/main origin/feat/p1-batch2   # git 2.34 three-way scan'
+  - 'git worktree add --detach <wt> origin/main && git checkout --detach origin/feat/p1-batch2 && git rebase --rebase-merges origin/main   # CONFLICT'
+- number: 2741
+  pmat_id: none (pmat#1193)
+  title: 'batch: five sub-tickets — a zero-brick report scored green, a swallowed refusal published as PASS, and a REPORT channel nobody could see'
+  author: noahgift
+  draft_at_step0: false
+  age_days: 8
+  behind_main: 42
+  ahead: 13
+  mergeable_step0: CONFLICTING/DIRTY
+  gate_step0:
+    summary:
+      pass: 11
+      skipping: 2
+    red: []
+    note: stale base; recorded, not judged
+  linked_issues:
+  - 2706
+  - 2719
+  - 2730
+  - 2731
+  - 2732
+  - 2735
+  - 2736
+  issue_rows:
+    '2730':
+    - G-9
+    '2732':
+    - P-0.3
+    '2735':
+    - I-24
+  rows_intersected:
+    I-24:
+    - scripts/lib/parity_block.py
+  files: 29
+  workflow_files: []
+  rebase_attempt:
+    result: CONFLICT
+    old_head: 06acb9fb5
+    detail: crates/apr-cli/src/commands/cbtop_get_cpu_memory.rs
+  disposition: PRIOR-ART-CLOSE:I-24
+  row: I-24
+  row_expiry: '2026-09-19'
+  queue_pos: 18
+  basis: 'linked issues #2735->I-24, #2730->G-9, #2732->P-0.3; intersects I-24''s scripts/lib/parity_block.py; gate GREEN on stale base so not split'
+  action: rebase attempt (--rebase-merges) -> CONFLICT -> STOP
+  disposition_step1: MERGE-0.66:I-24
+  step2b:
+    prior_art: prior-art/2741@06acb9fb5
+    intent: 'I-24 #2887'
+    closed: true
+    semantic_merges: 0
+    evidence:
+    - git push origin 06acb9fb5:refs/heads/prior-art/2741
+    - 'gh pr comment 2741 --body "prior-art: prior-art/2741@06acb9fb5 · intent → I-24 #2887 · salvage: … · conflicts: …"'
+    - 'gh issue comment 2887 --body "prior-art: …"'
+    - gh pr close 2741
+  evidence:
+  - gh pr view 2741 --json number,title,author,isDraft,createdAt,mergeable,mergeStateStatus,baseRefName,headRefName,files,body,statusCheckRollup
+  - gh pr checks 2741
+  - 'git rev-list --count origin/feat/r3-batch3..origin/main   # origin/main=cdc0acb99'
+  - 'git merge-tree $(git merge-base origin/main origin/feat/r3-batch3) origin/main origin/feat/r3-batch3   # git 2.34 three-way scan'
+  - 'git worktree add --detach <wt> origin/main && git checkout --detach origin/feat/r3-batch3 && git rebase --rebase-merges origin/main   # CONFLICT'
+- number: 2773
+  pmat_id: none (pmat#1193)
+  title: 'batch: two gates that suppressed the work instead of the defect, and the guard the batch found unwired'
+  author: noahgift
+  draft_at_step0: false
+  age_days: 7
+  behind_main: 38
+  ahead: 11
+  mergeable_step0: CONFLICTING/DIRTY
+  gate_step0:
+    summary:
+      pass: 11
+      skipping: 1
+    red: []
+    note: stale base; recorded, not judged
+  linked_issues:
+  - 2706
+  - 2753
+  - 2757
+  - 2766
+  - 2771
+  issue_rows:
+    '2757':
+    - G-8
+    '2766':
+    - S-2
+  rows_intersected:
+    G-6:
+    - .github/workflows/ci.yml
+    C0-1:
+    - .github/workflows/ci.yml
+    I-24:
+    - scripts/lib/parity_block.py
+    G-4:
+    - .github/workflows/ci.yml
+    P-0.6:
+    - .github/workflows/ci.yml
+    - scripts/check_baseline_ratchets.sh
+    G-1:
+    - .github/workflows/ci.yml
+    G-8:
+    - scripts/check_baseline_ratchets.sh
+    C0-5:
+    - .github/workflows/ci.yml
+  files: 38
+  workflow_files:
+  - .github/workflows/ci.yml
+  rebase_attempt:
+    result: CONFLICT
+    old_head: e9314a707
+    detail: scripts/check_bench_protocol.sh scripts/check_comparator_flags.sh scripts/lib/parity_block.py scripts/llama_bin.sh scripts/llama_pin.toml scripts/parity_host_receipt.sh
+  disposition: PRIOR-ART-CLOSE:G-8
+  row: I-24
+  row_expiry: '2026-09-19'
+  queue_pos: 19
+  basis: 'linked issues #2757->G-8, #2766->S-2; intersects I-24''s parity_block.py, C0-1/G-4''s ci.yml, P-0.6/G-8''s check_baseline_ratchets.sh; gate GREEN on stale
+    base so not split'
+  action: 'rebase attempt (--rebase-merges): .gitignore both-appended -> union; second stop CONFLICT -> STOP'
+  disposition_step1: MERGE-0.66:I-24
+  step2b:
+    prior_art: prior-art/2773@e9314a707
+    intent: 'G-8 #2898'
+    closed: true
+    semantic_merges: 0
+    evidence:
+    - git push origin e9314a707:refs/heads/prior-art/2773
+    - 'gh pr comment 2773 --body "prior-art: prior-art/2773@e9314a707 · intent → G-8 #2898 · salvage: … · conflicts: …"'
+    - 'gh issue comment 2898 --body "prior-art: …"'
+    - gh pr close 2773
+  evidence:
+  - gh pr view 2773 --json number,title,author,isDraft,createdAt,mergeable,mergeStateStatus,baseRefName,headRefName,files,body,statusCheckRollup
+  - gh pr checks 2773
+  - 'git rev-list --count origin/feat/w5-gates..origin/main   # origin/main=cdc0acb99'
+  - 'git merge-tree $(git merge-base origin/main origin/feat/w5-gates) origin/main origin/feat/w5-gates   # git 2.34 three-way scan'
+  - 'git worktree add --detach <wt> origin/main && git checkout --detach origin/feat/w5-gates && git rebase --rebase-merges origin/main   # CONFLICT'
+- number: 2793
+  pmat_id: none (pmat#1193)
+  title: 'fix(ci): Silicon Nightly tested a package that has never existed (Refs paiml/infra#361)'
+  author: noahgift
+  draft_at_step0: false
+  age_days: 6
+  behind_main: 15
+  ahead: 2
+  mergeable_step0: MERGEABLE/UNSTABLE
+  gate_step0:
+    summary:
+      pass: 14
+      fail: 1
+      skipping: 1
+    red:
+    - pr-review-receipt
+    note: stale base; recorded, not judged
+  linked_issues:
+  - 361
+  - 2772
+  issue_rows: {}
+  rows_intersected: {}
+  files: 2
+  workflow_files:
+  - .github/workflows/silicon-nightly.yml
+  rebase_attempt:
+    result: CLEAN
+    old_head: 633d7a623
+    detail: 812467c72
+  disposition: MERGE-NOW
+  row: null
+  row_expiry: null
+  queue_pos: 6
+  basis: 'independent (paiml/infra#361, #2772 in no row); only pr-review-receipt was red (advisory, now base-owned)'
+  action: rebased clean (refs/triage/2793 local); NOT pushed, NOT armed tonight (workflow file silicon-nightly.yml; operator arms)
+  stop: 'workflow-touching (silicon-nightly.yml): arming needs the operator'
+  evidence:
+  - gh pr view 2793 --json number,title,author,isDraft,createdAt,mergeable,mergeStateStatus,baseRefName,headRefName,files,body,statusCheckRollup
+  - gh pr checks 2793
+  - 'git rev-list --count origin/fix/silicon-nightly-nonexistent-package..origin/main   # origin/main=cdc0acb99'
+  - 'git merge-tree $(git merge-base origin/main origin/fix/silicon-nightly-nonexistent-package) origin/main origin/fix/silicon-nightly-nonexistent-package   # git
+    2.34 three-way scan'
+  - 'git worktree add --detach <wt> origin/main && git checkout --detach origin/fix/silicon-nightly-nonexistent-package && git rebase origin/main   # CLEAN'
+- number: 2794
+  pmat_id: none (pmat#1193)
+  title: 'feat(mcp): a thin single-model MCP server for SetFit'
+  author: guyernest
+  draft_at_step0: false
+  age_days: 6
+  behind_main: 30
+  ahead: 3
+  mergeable_step0: UNKNOWN/UNKNOWN
+  gate_step0:
+    summary: {}
+    red: []
+    note: stale base; recorded, not judged
+  linked_issues:
+  - 2618
+  issue_rows: {}
+  rows_intersected:
+    C0-1:
+    - Cargo.lock
+  files: 14
+  workflow_files: []
+  rebase_attempt:
+    result: not
+    old_head: attempted
+    detail: null
+  disposition: STOP:author
+  row: null
+  row_expiry: null
+  queue_pos: null
+  basis: author guyernest — review and comment only; no disposition, no label, no branch edit
+  action: 'review comment posted (7 findings; 2 blocking once rebased: aprender-core version pin 0.64.0 vs workspace 0.65.2; no CI has ever run on the branch)'
+  stop: author guyernest
+  evidence:
+  - gh pr view 2794 --json number,title,author,isDraft,createdAt,mergeable,mergeStateStatus,baseRefName,headRefName,files,body,statusCheckRollup
+  - gh pr checks 2794
+  - 'git rev-list --count pr/2794..origin/main   # origin/main=cdc0acb99'
+  - 'git merge-tree $(git merge-base origin/main pr/2794) origin/main pr/2794   # git 2.34 three-way scan'
+  - 'git worktree add --detach <wt> origin/main && git checkout --detach pr/2794 && git rebase origin/main   # not'
+- number: 2800
+  pmat_id: none (pmat#1193)
+  title: 'evidence(perf-061): the GB10 shortfall on #2786 is a real deficit, not warm-up'
+  author: noahgift
+  draft_at_step0: false
+  age_days: 5
+  behind_main: 28
+  ahead: 2
+  mergeable_step0: MERGEABLE/BEHIND
+  gate_step0:
+    summary:
+      fail: 2
+      skipping: 2
+      pass: 7
+    red:
+    - gate
+    - workspace-test
+    note: stale base; recorded, not judged
+  linked_issues:
+  - 2706
+  - 2786
+  issue_rows:
+    '2786':
+    - W-G
+  rows_intersected: {}
+  files: 13
+  workflow_files: []
+  rebase_attempt:
+    result: not
+    old_head: attempted
+    detail: null
+  disposition: CARRY-0.67:W-G
+  row: W-G
+  row_expiry: '2026-12-31'
+  queue_pos: null
+  basis: 'linked issue #2786 is in carried row W-G (issue #2942)'
+  action: converted to draft, labelled pp-066/carry-0.67, commented with the row id
+  evidence:
+  - gh pr view 2800 --json number,title,author,isDraft,createdAt,mergeable,mergeStateStatus,baseRefName,headRefName,files,body,statusCheckRollup
+  - gh pr checks 2800
+  - 'git rev-list --count origin/feat/y3-gb10..origin/main   # origin/main=cdc0acb99'
+  - 'git merge-tree $(git merge-base origin/main origin/feat/y3-gb10) origin/main origin/feat/y3-gb10   # git 2.34 three-way scan'
+  - 'git worktree add --detach <wt> origin/main && git checkout --detach origin/feat/y3-gb10 && git rebase origin/main   # not'
+- number: 2801
+  pmat_id: none (pmat#1193)
+  title: 'perf(serve): batched CPU prefill — apr prefilled at decode rate (#2787)'
+  author: noahgift
+  draft_at_step0: false
+  age_days: 5
+  behind_main: 31
+  ahead: 3
+  mergeable_step0: MERGEABLE/BEHIND
+  gate_step0:
+    summary:
+      fail: 6
+      pass: 4
+      skipping: 1
+    red:
+    - ci / gate
+    - ci / security
+    - gate
+    - guard-runner-labels
+    - mutants
+    - workspace-test
+    note: stale base; recorded, not judged
+  linked_issues:
+  - 2706
+  - 2787
+  issue_rows:
+    '2787':
+    - W-G
+  rows_intersected: {}
+  files: 16
+  workflow_files: []
+  rebase_attempt:
+    result: not
+    old_head: attempted
+    detail: null
+  disposition: CARRY-0.67:W-G
+  row: W-G
+  row_expiry: '2026-12-31'
+  queue_pos: null
+  basis: 'linked issue #2787 is in carried row W-G (issue #2942)'
+  action: converted to draft, labelled pp-066/carry-0.67, commented with the row id
+  evidence:
+  - gh pr view 2801 --json number,title,author,isDraft,createdAt,mergeable,mergeStateStatus,baseRefName,headRefName,files,body,statusCheckRollup
+  - gh pr checks 2801
+  - 'git rev-list --count origin/feat/y4-cpuprefill..origin/main   # origin/main=cdc0acb99'
+  - 'git merge-tree $(git merge-base origin/main origin/feat/y4-cpuprefill) origin/main origin/feat/y4-cpuprefill   # git 2.34 three-way scan'
+  - 'git worktree add --detach <wt> origin/main && git checkout --detach origin/feat/y4-cpuprefill && git rebase origin/main   # not'
+- number: 2802
+  pmat_id: none (pmat#1193)
+  title: 'measure(perf): PERF-062 band ladder at HEAD — ordered streams remove the corruption (#2789)'
+  author: noahgift
+  draft_at_step0: false
+  age_days: 5
+  behind_main: 28
+  ahead: 3
+  mergeable_step0: MERGEABLE/BEHIND
+  gate_step0:
+    summary:
+      fail: 2
+      skipping: 2
+      pass: 7
+    red:
+    - gate
+    - workspace-test
+    note: stale base; recorded, not judged
+  linked_issues:
+  - 2706
+  - 2776
+  - 2783
+  - 2789
+  issue_rows: {}
+  rows_intersected: {}
+  files: 4
+  workflow_files: []
+  rebase_attempt:
+    result: CLEAN
+    old_head: 4e46b7fe2
+    detail: 2968ed03f
+  disposition: MERGE-NOW
+  row: null
+  row_expiry: null
+  queue_pos: 3
+  basis: 'evidence-only (4 files under evidence/perf-062/); issues #2789/#2776/#2783 in no row; docs-class'
+  action: rebased clean -> armed on the ORIGINAL head per operator (no push tonight; refs/triage/2802 holds the clean rebase locally); the merge queue builds the
+    merge group (docs)
+  post_push:
+    head: null
+    gate: queue decides
+    workspace_test: queue decides
+    root_cause_class: null
+    armed: true
+  evidence:
+  - gh pr view 2802 --json number,title,author,isDraft,createdAt,mergeable,mergeStateStatus,baseRefName,headRefName,files,body,statusCheckRollup
+  - gh pr checks 2802
+  - 'git rev-list --count origin/feat/y5-ladder..origin/main   # origin/main=cdc0acb99'
+  - 'git merge-tree $(git merge-base origin/main origin/feat/y5-ladder) origin/main origin/feat/y5-ladder   # git 2.34 three-way scan'
+  - 'git worktree add --detach <wt> origin/main && git checkout --detach origin/feat/y5-ladder && git rebase origin/main   # CLEAN'
+  - 'gh pr merge 2802 --auto --squash   # armed on head 4e46b7fe2; refs/triage/2802 not pushed (operator: no push tonight)'
+  - gh pr merge 2802 --auto --squash
+- number: 2803
+  pmat_id: none (pmat#1193)
+  title: 'fix(perf-gate): two provenance fields recorded intent, not outcome (#2790, #2780)'
+  author: noahgift
+  draft_at_step0: false
+  age_days: 5
+  behind_main: 28
+  ahead: 4
+  mergeable_step0: CONFLICTING/DIRTY
+  gate_step0:
+    summary:
+      fail: 2
+      skipping: 2
+      pass: 7
+    red:
+    - gate
+    - workspace-test
+    note: stale base; recorded, not judged
+  linked_issues:
+  - 2706
+  - 2780
+  - 2790
+  issue_rows:
+    '2790':
+    - R-0
+  rows_intersected:
+    G-6:
+    - .github/workflows/ci.yml
+    C0-1:
+    - .github/workflows/ci.yml
+    G-4:
+    - .github/workflows/ci.yml
+    P-0.6:
+    - .github/workflows/ci.yml
+    G-1:
+    - .github/workflows/ci.yml
+    R-0:
+    - crates/apr-cli/src/dispatch.rs
+    C0-5:
+    - .github/workflows/ci.yml
+  files: 65
+  workflow_files:
+  - .github/workflows/ci.yml
+  rebase_attempt:
+    result: CONFLICT
+    old_head: 53bc2bf32
+    detail: crates/apr-cli/src/commands/test_llm_band.rs scripts/parity_host_receipt.sh
+  disposition: PRIOR-ART-CLOSE:R-0
+  row: R-0
+  row_expiry: '2026-09-19'
+  queue_pos: 10
+  basis: 'linked issue #2790 is in R-0''s issues list; intersects R-0''s crates/apr-cli/src/dispatch.rs and ci.yml (C0-1/G-4)'
+  action: rebase attempt -> CONFLICT -> STOP
+  disposition_step1: MERGE-0.66:R-0
+  step2b:
+    prior_art: prior-art/2803@53bc2bf32
+    intent: 'R-0 #2904'
+    closed: true
+    semantic_merges: 0
+    evidence:
+    - git push origin 53bc2bf32:refs/heads/prior-art/2803
+    - 'gh pr comment 2803 --body "prior-art: prior-art/2803@53bc2bf32 · intent → R-0 #2904 · salvage: … · conflicts: …"'
+    - 'gh issue comment 2904 --body "prior-art: …"'
+    - gh pr close 2803
+  evidence:
+  - gh pr view 2803 --json number,title,author,isDraft,createdAt,mergeable,mergeStateStatus,baseRefName,headRefName,files,body,statusCheckRollup
+  - gh pr checks 2803
+  - 'git rev-list --count origin/feat/y6-provenance..origin/main   # origin/main=cdc0acb99'
+  - 'git merge-tree $(git merge-base origin/main origin/feat/y6-provenance) origin/main origin/feat/y6-provenance   # git 2.34 three-way scan'
+  - 'git worktree add --detach <wt> origin/main && git checkout --detach origin/feat/y6-provenance && git rebase origin/main   # CONFLICT'
+- number: 2807
+  pmat_id: none (pmat#1193)
+  title: 'fix(security): wasmtime 43 -> 47.0.4 -- the real fix for RUSTSEC-2026-0269, and it needed ZERO source changes'
+  author: noahgift
+  draft_at_step0: false
+  age_days: 5
+  behind_main: 28
+  ahead: 1
+  mergeable_step0: CONFLICTING/DIRTY
+  gate_step0:
+    summary:
+      fail: 3
+      skipping: 2
+      pass: 6
+    red:
+    - gate
+    - guard-runner-labels
+    - workspace-test
+    note: stale base; recorded, not judged
+  linked_issues:
+  - 2805
+  - 2806
+  issue_rows:
+    '2806':
+    - C0-1
+    - B-S1
+  rows_intersected:
+    C0-1:
+    - Cargo.lock
+    - deny.toml
+  files: 5
+  workflow_files: []
+  rebase_attempt:
+    result: CLEAN(lockfile-regen)
+    old_head: 5cf61b4b4
+    detail: 7104c4e45
+  disposition: MERGE-NOW
+  row: null
+  row_expiry: null
+  queue_pos: 1
+  basis: 'security advisory RUSTSEC-2026-0269 (wasmtime 43->47.0.4); linked issue #2806 is in C0-1''s issues list — C0-1''s cargo-deny job is red until it lands;
+    MERGE-NOW per brief'
+  action: 'rebase: Cargo.lock conflict resolved mechanically (main''s lock + `cargo update -p wasmtime --precise 47.0.4`, 43 lock lines; `cargo metadata --locked`
+    rc=0; `cargo deny check advisories` rc=0) -> pushed 7104c4e45'
+  post_push:
+    head: 7104c4e45
+    gate: pending
+    workspace_test: pending
+    root_cause_class: null
+    armed: true
+  evidence:
+  - gh pr view 2807 --json number,title,author,isDraft,createdAt,mergeable,mergeStateStatus,baseRefName,headRefName,files,body,statusCheckRollup
+  - gh pr checks 2807
+  - 'git rev-list --count origin/fix/wasmtime-47-rustsec-2026-0269..origin/main   # origin/main=cdc0acb99'
+  - 'git merge-tree $(git merge-base origin/main origin/fix/wasmtime-47-rustsec-2026-0269) origin/main origin/fix/wasmtime-47-rustsec-2026-0269   # git 2.34 three-way
+    scan'
+  - 'git worktree add --detach <wt> origin/main && git checkout --detach origin/fix/wasmtime-47-rustsec-2026-0269 && git rebase origin/main   # CLEAN(lockfile-regen)'
+  - 'git push --force-with-lease=refs/heads/fix/wasmtime-47-rustsec-2026-0269:5cf61b4b4 origin refs/triage/2807:refs/heads/fix/wasmtime-47-rustsec-2026-0269   # ->
+    7104c4e45'
+  - gh pr merge 2807 --auto --squash
+- number: 2811
+  pmat_id: none (pmat#1193)
+  title: 'fix(ci): workspace-test cleared its worst passing run by 12 seconds, and 180 is above the merge queue''s ceiling'
+  author: noahgift
+  draft_at_step0: false
+  age_days: 5
+  behind_main: 28
+  ahead: 2
+  mergeable_step0: CONFLICTING/DIRTY
+  gate_step0:
+    summary:
+      fail: 3
+      skipping: 2
+      pass: 6
+    red:
+    - gate
+    - guard-runner-labels
+    - workspace-test
+    note: stale base; recorded, not judged
+  linked_issues:
+  - 2706
+  - 2773
+  - 2776
+  issue_rows: {}
+  rows_intersected:
+    G-6:
+    - .github/workflows/ci.yml
+    C0-1:
+    - .github/workflows/ci.yml
+    G-4:
+    - .github/workflows/ci.yml
+    P-0.6:
+    - .github/workflows/ci.yml
+    G-1:
+    - .github/workflows/ci.yml
+    C0-5:
+    - .github/workflows/ci.yml
+  files: 1
+  workflow_files:
+  - .github/workflows/ci.yml
+  rebase_attempt:
+    result: CONFLICT
+    old_head: 99ce623c1
+    detail: .github/workflows/ci.yml
+  disposition: CLOSE:464c168e6
+  row: C0-1
+  row_expiry: '2026-09-19'
+  queue_pos: 15
+  basis: edits ci.yml only (C0-1/G-4 P1 file)
+  action: rebase attempt -> CONFLICT -> STOP
+  disposition_step1: MERGE-0.66:C0-1
+  step2b:
+    prior_art: prior-art/2811@99ce623c1
+    superseded_by: '464c168e6 (#2851, 2026-09-02) set workspace-test timeout-minutes 150 (job) / 110 (step) and cites #2811'
+    closed: true
+    evidence:
+    - 'git log origin/main -S''timeout-minutes: 150'' -- .github/workflows/ci.yml'
+    - git push origin 99ce623c1:refs/heads/prior-art/2811
+    - gh pr comment 2811 …
+    - gh pr close 2811
+  evidence:
+  - gh pr view 2811 --json number,title,author,isDraft,createdAt,mergeable,mergeStateStatus,baseRefName,headRefName,files,body,statusCheckRollup
+  - gh pr checks 2811
+  - 'git rev-list --count origin/fix/workspace-test-timeout-headroom..origin/main   # origin/main=cdc0acb99'
+  - 'git merge-tree $(git merge-base origin/main origin/fix/workspace-test-timeout-headroom) origin/main origin/fix/workspace-test-timeout-headroom   # git 2.34 three-way
+    scan'
+  - 'git worktree add --detach <wt> origin/main && git checkout --detach origin/fix/workspace-test-timeout-headroom && git rebase origin/main   # CONFLICT'
+- number: 2820
+  pmat_id: none (pmat#1193)
+  title: 'PERF-057: implement §4.4.6''s FATAL tokenization-mismatch rule, and make it see the case it exists for'
+  author: noahgift
+  draft_at_step0: false
+  age_days: 5
+  behind_main: 21
+  ahead: 2
+  mergeable_step0: CONFLICTING/DIRTY
+  gate_step0:
+    summary:
+      fail: 3
+      pass: 8
+      skipping: 2
+    red:
+    - gate
+    - workspace-test
+    - pr-review-receipt
+    note: stale base; recorded, not judged
+  linked_issues:
+  - 2706
+  issue_rows: {}
+  rows_intersected:
+    C0-4:
+    - scripts/perf_gate.sh
+  files: 3
+  workflow_files: []
+  rebase_attempt:
+    result: CONFLICT
+    old_head: f86c53b3c
+    detail: scripts/perf_gate.sh
+  disposition: PRIOR-ART-CLOSE:#2990
+  row: C0-4
+  row_expiry: '2026-09-19'
+  queue_pos: 13
+  basis: intersects C0-4's P1 file scripts/perf_gate.sh; main's perf_gate.sh has 0 FATAL tokenization-mismatch occurrences (not superseded)
+  action: rebase attempt -> CONFLICT -> STOP
+  disposition_step1: MERGE-0.66:C0-4
+  step2b:
+    prior_art: prior-art/2820@f86c53b3c
+    intent: '#2990'
+    closed: true
+    semantic_merges: 0
+    evidence:
+    - git push origin f86c53b3c:refs/heads/prior-art/2820
+    - 'gh pr comment 2820 --body "prior-art: prior-art/2820@f86c53b3c · intent → #2990 · salvage: … · conflicts: …"'
+    - 'gh issue comment 2990 --body "prior-art: …"'
+    - gh pr close 2820
+  evidence:
+  - gh pr view 2820 --json number,title,author,isDraft,createdAt,mergeable,mergeStateStatus,baseRefName,headRefName,files,body,statusCheckRollup
+  - gh pr checks 2820
+  - 'git rev-list --count origin/perf/tokenization-mismatch-fatal..origin/main   # origin/main=cdc0acb99'
+  - 'git merge-tree $(git merge-base origin/main origin/perf/tokenization-mismatch-fatal) origin/main origin/perf/tokenization-mismatch-fatal   # git 2.34 three-way
+    scan'
+  - 'git worktree add --detach <wt> origin/main && git checkout --detach origin/perf/tokenization-mismatch-fatal && git rebase origin/main   # CONFLICT'
+- number: 2821
+  pmat_id: none (pmat#1193)
+  title: 'feat(perf-gate): make §4.4.6 client_tokenizer real — the digest is computed, not typed'
+  author: noahgift
+  draft_at_step0: false
+  age_days: 5
+  behind_main: 28
+  ahead: 1
+  mergeable_step0: CONFLICTING/DIRTY
+  gate_step0:
+    summary:
+      fail: 2
+      pass: 9
+      skipping: 2
+    red:
+    - gate
+    - guard-runner-labels
+    note: stale base; recorded, not judged
+  linked_issues:
+  - 2820
+  issue_rows: {}
+  rows_intersected:
+    G-6:
+    - .github/workflows/ci.yml
+    C0-1:
+    - .github/workflows/ci.yml
+    - Cargo.lock
+    G-4:
+    - .github/workflows/ci.yml
+    P-0.6:
+    - .github/workflows/ci.yml
+    G-1:
+    - .github/workflows/ci.yml
+    C0-5:
+    - .github/workflows/ci.yml
+  files: 19
+  workflow_files:
+  - .github/workflows/ci.yml
+  rebase_attempt:
+    result: CONFLICT
+    old_head: f5e81a5e5
+    detail: crates/apr-cli/src/commands/test_llm_band.rs crates/aprender-serve/benchmarks/qwen-coder/prompts-w1.jsonl crates/aprender-test-lib/src/llm/band.rs crates/aprender-test-lib/src/perf_gate/receipt.rs
+      scripts/llama_pin.toml
+  disposition: PRIOR-ART-CLOSE:#2991
+  row: C0-1
+  row_expiry: '2026-09-19'
+  queue_pos: 16
+  basis: 'builds on #2820; intersects ci.yml (C0-1/G-4) and Cargo.lock (C0-1)'
+  action: rebase attempt -> CONFLICT -> STOP
+  disposition_step1: MERGE-0.66:C0-1
+  step2b:
+    prior_art: prior-art/2821@f5e81a5e5
+    intent: '#2991'
+    closed: true
+    semantic_merges: 0
+    evidence:
+    - git push origin f5e81a5e5:refs/heads/prior-art/2821
+    - 'gh pr comment 2821 --body "prior-art: prior-art/2821@f5e81a5e5 · intent → #2991 · salvage: … · conflicts: …"'
+    - 'gh issue comment 2991 --body "prior-art: …"'
+    - gh pr close 2821
+  evidence:
+  - gh pr view 2821 --json number,title,author,isDraft,createdAt,mergeable,mergeStateStatus,baseRefName,headRefName,files,body,statusCheckRollup
+  - gh pr checks 2821
+  - 'git rev-list --count origin/feat/client-tokenizer-counter..origin/main   # origin/main=cdc0acb99'
+  - 'git merge-tree $(git merge-base origin/main origin/feat/client-tokenizer-counter) origin/main origin/feat/client-tokenizer-counter   # git 2.34 three-way scan'
+  - 'git worktree add --detach <wt> origin/main && git checkout --detach origin/feat/client-tokenizer-counter && git rebase origin/main   # CONFLICT'
+- number: 2825
+  pmat_id: none (pmat#1193)
+  title: 'fix(wgpu,serve): the accelerated build never compiled, and the run that could not use it said it did'
+  author: noahgift
+  draft_at_step0: false
+  age_days: 5
+  behind_main: 21
+  ahead: 3
+  mergeable_step0: CONFLICTING/DIRTY
+  gate_step0:
+    summary:
+      fail: 4
+      pass: 7
+      skipping: 2
+    red:
+    - gate
+    - guard-runner-labels
+    - workspace-test
+    - pr-review-receipt
+    note: stale base; recorded, not judged
+  linked_issues:
+  - 2063
+  - 2696
+  - 2808
+  issue_rows:
+    '2696':
+    - R-2
+    '2808':
+    - G-5
+  rows_intersected:
+    T-2:
+    - crates/apr-cli/src/commands/finetune.rs
+    R-0:
+    - crates/apr-cli/src/commands/serve/mod.rs
+    - crates/aprender-compute/src/backends/gpu/device/mod.rs
+  files: 9
+  workflow_files: []
+  rebase_attempt:
+    result: CONFLICT
+    old_head: 9b107b892
+    detail: crates/apr-cli/src/commands/serve/handler_gpu_completion.rs crates/apr-cli/src/commands/serve/mod.rs crates/aprender-compute/src/backends/gpu/device/mod.rs
+      scripts/parity_host_receipt.sh
+  disposition: PRIOR-ART-CLOSE:R-0
+  row: R-0
+  row_expiry: '2026-09-19'
+  queue_pos: 11
+  basis: 'intersects R-0''s serve/mod.rs and device/mod.rs (seed confirmed) and T-2''s finetune.rs; issues #2696->R-2, #2808->G-5'
+  action: rebase attempt -> CONFLICT -> STOP
+  disposition_step1: MERGE-0.66:R-0
+  step2b:
+    prior_art: prior-art/2825@9b107b892
+    intent: 'R-0 #2904'
+    closed: true
+    semantic_merges: 0
+    evidence:
+    - git push origin 9b107b892:refs/heads/prior-art/2825
+    - 'gh pr comment 2825 --body "prior-art: prior-art/2825@9b107b892 · intent → R-0 #2904 · salvage: … · conflicts: …"'
+    - 'gh issue comment 2904 --body "prior-art: …"'
+    - gh pr close 2825
+  evidence:
+  - gh pr view 2825 --json number,title,author,isDraft,createdAt,mergeable,mergeStateStatus,baseRefName,headRefName,files,body,statusCheckRollup
+  - gh pr checks 2825
+  - 'git rev-list --count origin/fix/wgpu-feature-graph-and-honest-compute-class..origin/main   # origin/main=cdc0acb99'
+  - 'git merge-tree $(git merge-base origin/main origin/fix/wgpu-feature-graph-and-honest-compute-class) origin/main origin/fix/wgpu-feature-graph-and-honest-compute-class   #
+    git 2.34 three-way scan'
+  - 'git worktree add --detach <wt> origin/main && git checkout --detach origin/fix/wgpu-feature-graph-and-honest-compute-class && git rebase origin/main   # CONFLICT'
+- number: 2836
+  pmat_id: none (pmat#1193)
+  title: 'feat(prrev): climb §13.11 to rung 1 — the quorum runs on every PR, and the verdict lands on the PR'
+  author: noahgift
+  draft_at_step0: false
+  age_days: 4
+  behind_main: 18
+  ahead: 3
+  mergeable_step0: CONFLICTING/DIRTY
+  gate_step0:
+    summary:
+      pass: 12
+      fail: 1
+      skipping: 1
+    red:
+    - pr-review-receipt
+    note: stale base; recorded, not judged
+  linked_issues:
+  - 2795
+  - 2825
+  - 2831
+  - 2833
+  issue_rows: {}
+  rows_intersected:
+    G-6:
+    - .github/workflows/ci.yml
+    C0-1:
+    - .github/workflows/ci.yml
+    G-4:
+    - .github/workflows/ci.yml
+    P-0.6:
+    - .github/workflows/ci.yml
+    G-1:
+    - .github/workflows/ci.yml
+    C0-5:
+    - .github/workflows/ci.yml
+    - scripts/check_pr_review_counts.sh
+  files: 5
+  workflow_files:
+  - .github/workflows/ci.yml
+  rebase_attempt:
+    result: CONFLICT
+    old_head: 46924ca3c
+    detail: .github/workflows/ci.yml scripts/check_pr_review_counts.sh
+  disposition: PRIOR-ART-CLOSE:#2997
+  row: null
+  row_expiry: null
+  queue_pos: 22
+  basis: 'seed: superseded by #2985? NO — cdc0acb99 does not cover the shadow-lane scripts or the spec text (`git log -S pr_review_shadow_record` finds only #2837),
+    so not CLOSE; HOLD released when #2985 merged'
+  action: rebase attempt -> CONFLICT -> STOP
+  disposition_step1: HOLD:#2985
+  step2b:
+    prior_art: prior-art/2836@46924ca3c
+    intent: '#2997 (under #2982)'
+    closed: true
+    semantic_merges: 0
+    evidence:
+    - git push origin 46924ca3c:refs/heads/prior-art/2836
+    - 'gh pr comment 2836 --body "prior-art: prior-art/2836@46924ca3c · intent → #2997 (under #2982) · salvage: … · conflicts: …"'
+    - 'gh issue comment 2982 --body "prior-art: …"'
+    - gh pr close 2836
+  evidence:
+  - gh pr view 2836 --json number,title,author,isDraft,createdAt,mergeable,mergeStateStatus,baseRefName,headRefName,files,body,statusCheckRollup
+  - gh pr checks 2836
+  - 'git rev-list --count origin/feat/prrev-rung1-shadow-lane..origin/main   # origin/main=cdc0acb99'
+  - 'git merge-tree $(git merge-base origin/main origin/feat/prrev-rung1-shadow-lane) origin/main origin/feat/prrev-rung1-shadow-lane   # git 2.34 three-way scan'
+  - 'git worktree add --detach <wt> origin/main && git checkout --detach origin/feat/prrev-rung1-shadow-lane && git rebase origin/main   # CONFLICT'
+- number: 2838
+  pmat_id: none (pmat#1193)
+  title: 'fix(beat): the ollama decode floor was calibrated on sm_89 and is now asserted on sm_121 (#2835)'
+  author: noahgift
+  draft_at_step0: false
+  age_days: 4
+  behind_main: 15
+  ahead: 3
+  mergeable_step0: MERGEABLE/BEHIND
+  gate_step0:
+    summary:
+      fail: 6
+      pass: 8
+      skipping: 2
+    red:
+    - ci / gate
+    - ci / lint
+    - gate
+    - guard-runner-labels
+    - workspace-test
+    - pr-review-receipt
+    note: stale base; recorded, not judged
+  linked_issues:
+  - 2740
+  - 2786
+  - 2800
+  - 2835
+  issue_rows:
+    '2786':
+    - W-G
+    '2835':
+    - W-G
+  rows_intersected:
+    G-6:
+    - .github/workflows/ci.yml
+    C0-1:
+    - .github/workflows/ci.yml
+    G-4:
+    - .github/workflows/ci.yml
+    P-0.6:
+    - .github/workflows/ci.yml
+    G-1:
+    - .github/workflows/ci.yml
+    C0-5:
+    - .github/workflows/ci.yml
+  files: 3
+  workflow_files:
+  - .github/workflows/ci.yml
+  rebase_attempt:
+    result: not
+    old_head: attempted
+    detail: null
+  disposition: CARRY-0.67:W-G
+  row: W-G
+  row_expiry: '2026-12-31'
+  queue_pos: null
+  basis: 'linked issues #2835 and #2786 are in carried row W-G (issue #2942)'
+  action: converted to draft, labelled pp-066/carry-0.67, commented with the row id
+  evidence:
+  - gh pr view 2838 --json number,title,author,isDraft,createdAt,mergeable,mergeStateStatus,baseRefName,headRefName,files,body,statusCheckRollup
+  - gh pr checks 2838
+  - 'git rev-list --count origin/fix/2835-beat-silicon-calibration..origin/main   # origin/main=cdc0acb99'
+  - 'git merge-tree $(git merge-base origin/main origin/fix/2835-beat-silicon-calibration) origin/main origin/fix/2835-beat-silicon-calibration   # git 2.34 three-way
+    scan'
+  - 'git worktree add --detach <wt> origin/main && git checkout --detach origin/fix/2835-beat-silicon-calibration && git rebase origin/main   # not'
+- number: 2847
+  pmat_id: none (pmat#1193)
+  title: 'perf(prrev): cache the positive controls by the guard''s own bytes — the sweep fits its budget again'
+  author: noahgift
+  draft_at_step0: false
+  age_days: 3
+  behind_main: 15
+  ahead: 3
+  mergeable_step0: MERGEABLE/BEHIND
+  gate_step0:
+    summary:
+      fail: 8
+      pass: 6
+      skipping: 2
+    red:
+    - ci / gate
+    - ci / lint
+    - gate
+    - guard-runner-labels
+    - pr-review-present
+    - pr-review-sign
+    - pr-review-receipt
+    - workspace-test
+    note: stale base; recorded, not judged
+  linked_issues: []
+  issue_rows: {}
+  rows_intersected:
+    G-6:
+    - .github/workflows/ci.yml
+    C0-1:
+    - .github/workflows/ci.yml
+    G-4:
+    - .github/workflows/ci.yml
+    P-0.6:
+    - .github/workflows/ci.yml
+    G-1:
+    - .github/workflows/ci.yml
+    C0-5:
+    - .github/workflows/ci.yml
+  files: 4
+  workflow_files:
+  - .github/workflows/ci.yml
+  rebase_attempt:
+    result: CONFLICT
+    old_head: 07a1a4a71
+    detail: .github/workflows/ci.yml tests/pr-review.bats
+  disposition: PRIOR-ART-CLOSE:#2993
+  row: C0-1
+  row_expiry: '2026-09-19'
+  queue_pos: 17
+  basis: 'no linked issues; edits ci.yml (C0-1/G-4 P1 file); the pr-review sweep it caches was restructured by #2985'
+  action: rebase attempt -> CONFLICT -> STOP
+  disposition_step1: MERGE-0.66:C0-1
+  step2b:
+    prior_art: prior-art/2847@07a1a4a71
+    intent: '#2993'
+    closed: true
+    semantic_merges: 0
+    evidence:
+    - git push origin 07a1a4a71:refs/heads/prior-art/2847
+    - 'gh pr comment 2847 --body "prior-art: prior-art/2847@07a1a4a71 · intent → #2993 · salvage: … · conflicts: …"'
+    - 'gh issue comment 2993 --body "prior-art: …"'
+    - gh pr close 2847
+  evidence:
+  - gh pr view 2847 --json number,title,author,isDraft,createdAt,mergeable,mergeStateStatus,baseRefName,headRefName,files,body,statusCheckRollup
+  - gh pr checks 2847
+  - 'git rev-list --count origin/fix/prrev-control-cache..origin/main   # origin/main=cdc0acb99'
+  - 'git merge-tree $(git merge-base origin/main origin/fix/prrev-control-cache) origin/main origin/fix/prrev-control-cache   # git 2.34 three-way scan'
+  - 'git worktree add --detach <wt> origin/main && git checkout --detach origin/fix/prrev-control-cache && git rebase origin/main   # CONFLICT'
+- number: 2848
+  pmat_id: none (pmat#1193)
+  title: 'fix(cgp): a binary on PATH is not a device on the bus — Coverage Nightly was red on an environment fact'
+  author: noahgift
+  draft_at_step0: false
+  age_days: 3
+  behind_main: 15
+  ahead: 2
+  mergeable_step0: MERGEABLE/BEHIND
+  gate_step0:
+    summary:
+      fail: 5
+      pass: 9
+      skipping: 2
+    red:
+    - gate
+    - guard-runner-labels
+    - pr-review-present
+    - pr-review-receipt
+    - workspace-test
+    note: stale base; recorded, not judged
+  linked_issues: []
+  issue_rows: {}
+  rows_intersected: {}
+  files: 1
+  workflow_files: []
+  rebase_attempt:
+    result: CLEAN
+    old_head: 2be0665ba
+    detail: c4b3859d2
+  disposition: MERGE-NOW
+  row: null
+  row_expiry: null
+  queue_pos: 2
+  basis: independent (no linked issue; one file crates/aprender-cgp/src/profilers/system.rs; no first-wave intersection)
+  action: rebased clean -> armed on the ORIGINAL head per operator (no push tonight; refs/triage/2848 holds the clean rebase locally); the merge queue builds the
+    merge group
+  post_push:
+    head: null
+    gate: queue decides
+    workspace_test: queue decides
+    root_cause_class: null
+    armed: true
+  evidence:
+  - gh pr view 2848 --json number,title,author,isDraft,createdAt,mergeable,mergeStateStatus,baseRefName,headRefName,files,body,statusCheckRollup
+  - gh pr checks 2848
+  - 'git rev-list --count origin/fix/cgp-gpu-tests-probe-the-device..origin/main   # origin/main=cdc0acb99'
+  - 'git merge-tree $(git merge-base origin/main origin/fix/cgp-gpu-tests-probe-the-device) origin/main origin/fix/cgp-gpu-tests-probe-the-device   # git 2.34 three-way
+    scan'
+  - 'git worktree add --detach <wt> origin/main && git checkout --detach origin/fix/cgp-gpu-tests-probe-the-device && git rebase origin/main   # CLEAN'
+  - 'gh pr merge 2848 --auto --squash   # armed on head 2be0665ba; refs/triage/2848 not pushed (operator: no push tonight)'
+  - gh pr merge 2848 --auto --squash
+- number: 2858
+  pmat_id: none (pmat#1193)
+  title: 'docs(audits): impl receipt for PMAT-742 — PARTIAL(andon) at K=150, runbook to the 0.65.0 cut'
+  author: noahgift
+  draft_at_step0: true
+  age_days: 2
+  behind_main: 12
+  ahead: 6
+  mergeable_step0: CONFLICTING/DIRTY
+  gate_step0:
+    summary:
+      fail: 6
+      pass: 8
+      skipping: 2
+    red:
+    - ci / gate
+    - ci / security
+    - gate
+    - pr-review-present
+    - workspace-test
+    - pr-review-receipt
+    note: stale base; recorded, not judged
+  linked_issues:
+  - 2809
+  - 2851
+  - 2854
+  - 2857
+  - 2859
+  issue_rows:
+    '2809':
+    - I-1
+  rows_intersected: {}
+  files: 3
+  workflow_files: []
+  rebase_attempt:
+    result: REBUILT(docs-only)
+    old_head: b6f1dcbf7
+    detail: 91f58b0d9
+  disposition: MERGE-NOW
+  row: null
+  row_expiry: null
+  queue_pos: 7
+  basis: 'docs record (draft receipt for PMAT-742); seed offered CLOSE against #2871''s SHA but #2871 is unmerged and impl-PMAT-742-receipt.md is absent from main;
+    issue #2809 -> I-1 (LANDED per S0)'
+  action: 'STEP 2b: roadmap.yaml restored from origin/main on the branch (b6f1dcbf7); the rebase then stopped on the original commits'' roadmap hunk, so the branch
+    was REBUILT as one docs-only commit on main (receipt.md verbatim + the PR''s two impl-estimates lines appended after main''s; no merge) -> undraft -> arm with
+    the docs batch'
+  disposition_step1: MERGE-NOW
+  step2b:
+    mechanical_ops:
+    - git checkout origin/main -- docs/roadmaps/roadmap.yaml (commit b6f1dcbf7)
+    - append-only union of docs/audits/impl-estimates.jsonl (PR lines after main's; every line re-parsed as JSON)
+    semantic_merges: 0
+    evidence:
+    - git checkout origin/main -- docs/roadmaps/roadmap.yaml && git commit
+    - git checkout --detach origin/main && git checkout b6f1dcbf7 -- docs/audits/impl-PMAT-742-receipt.md && cat <PR-added lines> >> docs/audits/impl-estimates.jsonl
+      && git commit
+    - git push --force-with-lease=refs/heads/chore/impl-PMAT-742-receipt:<old> origin HEAD:refs/heads/chore/impl-PMAT-742-receipt
+    - 'gh pr view 2858 --json files   # roadmap.yaml absent'
+    - gh pr ready 2858
+  post_push:
+    head: 91f58b0d9
+    gate: pending
+    workspace_test: pending
+    root_cause_class: null
+    armed: true
+  evidence:
+  - gh pr view 2858 --json number,title,author,isDraft,createdAt,mergeable,mergeStateStatus,baseRefName,headRefName,files,body,statusCheckRollup
+  - gh pr checks 2858
+  - 'git rev-list --count origin/chore/impl-PMAT-742-receipt..origin/main   # origin/main=cdc0acb99'
+  - 'git merge-tree $(git merge-base origin/main origin/chore/impl-PMAT-742-receipt) origin/main origin/chore/impl-PMAT-742-receipt   # git 2.34 three-way scan'
+  - 'git worktree add --detach <wt> origin/main && git checkout --detach origin/chore/impl-PMAT-742-receipt && git rebase origin/main   # REBUILT(docs-only)'
+  - 'git push --force-with-lease=refs/heads/chore/impl-PMAT-742-receipt:4bd891dba origin refs/triage/2858:refs/heads/chore/impl-PMAT-742-receipt   # -> 91f58b0d9'
+  - gh pr merge 2858 --auto --squash
+- number: 2871
+  pmat_id: none (pmat#1193)
+  title: 'corrections(0.65.2 receipts): release-phase PASS relabelled pre-publish-checkout (PMAT-967), hand-annotated validity labelled and harness must self-mark
+    (PMAT-966), baseline scope D1-only'
+  author: noahgift
+  draft_at_step0: false
+  age_days: 0
+  behind_main: 3
+  ahead: 3
+  mergeable_step0: MERGEABLE/UNSTABLE
+  gate_step0:
+    summary:
+      pass: 15
+      fail: 1
+      skipping: 1
+    red:
+    - pr-review-receipt
+    note: stale base; recorded, not judged
+  linked_issues:
+  - 2868
+  issue_rows: {}
+  rows_intersected: {}
+  files: 12
+  workflow_files: []
+  rebase_attempt:
+    result: CLEAN
+    old_head: 95bb1fe17
+    detail: 4e70e0c75
+  disposition: MERGE-0.66:SPEC-1.6
+  row: SPEC-1.6
+  row_expiry: '2026-09-12'
+  queue_pos: 4
+  basis: 'seed: 0.65.2 receipt corrections (PMAT-966/967) are the spec''s own ledger inputs -> SPEC-1.6; docs-class; touches roadmap.yaml without conflict'
+  action: rebased clean -> armed on the ORIGINAL head per operator (no push tonight; refs/triage/2871 holds the clean rebase locally); the merge queue builds the
+    merge group (docs)
+  post_push:
+    head: null
+    gate: queue decides
+    workspace_test: queue decides
+    root_cause_class: null
+    armed: true
+  evidence:
+  - gh pr view 2871 --json number,title,author,isDraft,createdAt,mergeable,mergeStateStatus,baseRefName,headRefName,files,body,statusCheckRollup
+  - gh pr checks 2871
+  - 'git rev-list --count origin/chore/impl-PMAT-929-corrections..origin/main   # origin/main=cdc0acb99'
+  - 'git merge-tree $(git merge-base origin/main origin/chore/impl-PMAT-929-corrections) origin/main origin/chore/impl-PMAT-929-corrections   # git 2.34 three-way
+    scan'
+  - 'git worktree add --detach <wt> origin/main && git checkout --detach origin/chore/impl-PMAT-929-corrections && git rebase origin/main   # CLEAN'
+  - 'gh pr merge 2871 --auto --squash   # armed on head 95bb1fe17; refs/triage/2871 not pushed (operator: no push tonight)'
+  - gh pr merge 2871 --auto --squash
+- number: 2981
+  pmat_id: none (pmat#1193)
+  title: 'docs(PP-066): obligation DAG (87 rows, filed #2882-#2980), first-wave plan, quorum record; roadmap +87 (epic #2873)'
+  author: noahgift
+  draft_at_step0: false
+  age_days: 0
+  behind_main: 1
+  ahead: 7
+  mergeable_step0: MERGEABLE/BEHIND
+  gate_step0:
+    summary:
+      fail: 3
+      pass: 12
+      skipping: 1
+    red:
+    - gate
+    - pr-review-present
+    - pr-review-receipt
+    note: stale base; recorded, not judged
+  linked_issues:
+  - 2556
+  - 2870
+  - 2872
+  - 2873
+  - 2874
+  - 2875
+  - 2876
+  - 2879
+  - 2882
+  - 2960
+  - 2970
+  - 2980
+  issue_rows:
+    '2874':
+    - G-6
+    '2876':
+    - I-24
+    - I-25
+    - C0-4
+    - G-9
+    '2879':
+    - G-8
+    '2882':
+    - I-1
+    '2980':
+    - bar-gating
+  rows_intersected:
+    G-4:
+    - docs/specifications/pp-066-dag.yaml
+  files: 4
+  workflow_files: []
+  rebase_attempt:
+    result: not
+    old_head: attempted
+    detail: null
+  disposition: DRIVER
+  row: null
+  row_expiry: null
+  queue_pos: null
+  basis: 'PR number >= #2981: driver instance''s PR, outside the triage write surface; recorded only'
+  action: none
+  evidence:
+  - gh pr view 2981 --json number,title,author,isDraft,createdAt,mergeable,mergeStateStatus,baseRefName,headRefName,files,body,statusCheckRollup
+  - gh pr checks 2981
+  - 'git rev-list --count origin/agent/pp-066-plan..origin/main   # origin/main=cdc0acb99'
+  - 'git merge-tree $(git merge-base origin/main origin/agent/pp-066-plan) origin/main origin/agent/pp-066-plan   # git 2.34 three-way scan'
+  - 'git worktree add --detach <wt> origin/main && git checkout --detach origin/agent/pp-066-plan && git rebase origin/main   # not'
+- number: 2985
+  pmat_id: none (pmat#1193)
+  title: 'ci: the PR''s own receipt is judged from the base — pr-review-quorum.yml on pull_request_target + merge_group; gate stops waiting on a head-defined receipt
+    job (PRQ-013, C0-5, #2982)'
+  author: noahgift
+  draft_at_step0: false
+  age_days: 0
+  behind_main: 1
+  ahead: 7
+  mergeable_step0: MERGEABLE/UNSTABLE
+  gate_step0:
+    summary:
+      pass: 13
+      pending: 1
+      skipping: 1
+    red: []
+    note: stale base; recorded, not judged
+  linked_issues:
+  - 2873
+  - 2981
+  - 2982
+  issue_rows:
+    '2982':
+    - C0-5
+    - C0-5
+  rows_intersected:
+    G-6:
+    - .github/workflows/ci.yml
+    C0-1:
+    - .github/workflows/ci.yml
+    - contracts/apr-required-checks-v1.yaml
+    G-4:
+    - .github/workflows/ci.yml
+    P-0.6:
+    - .github/workflows/ci.yml
+    G-1:
+    - .github/workflows/ci.yml
+    C0-5:
+    - .github/workflows/ci.yml
+    - .github/workflows/pr-review-quorum.yml
+    - contracts/apr-required-checks-v1.yaml
+    - scripts/check_pr_review_counts.sh
+  files: 9
+  workflow_files:
+  - .github/workflows/ci.yml
+  - .github/workflows/pr-review-quorum.yml
+  rebase_attempt:
+    result: not
+    old_head: attempted
+    detail: null
+  disposition: DRIVER
+  row: null
+  row_expiry: null
+  queue_pos: null
+  basis: 'PR number >= #2981: driver instance''s PR; merged as cdc0acb99 during STEP 0, which released the workflow-file HOLD'
+  action: none
+  evidence:
+  - gh pr view 2985 --json number,title,author,isDraft,createdAt,mergeable,mergeStateStatus,baseRefName,headRefName,files,body,statusCheckRollup
+  - gh pr checks 2985
+  - 'git rev-list --count origin/agent/C0-5..origin/main   # origin/main=cdc0acb99'
+  - 'git merge-tree $(git merge-base origin/main origin/agent/C0-5) origin/main origin/agent/C0-5   # git 2.34 three-way scan'
+  - 'git worktree add --detach <wt> origin/main && git checkout --detach origin/agent/C0-5 && git rebase origin/main   # not'
