@@ -13,20 +13,16 @@ use provable_contracts::graph::dependency_graph;
 use provable_contracts::schema::Contract;
 use serde_json::Value;
 
-use crate::contract_walk::collect_contracts;
+use crate::contract_walk::collect_corpus;
 use crate::json_obj::obj;
 
 /// Run the verify-pipeline command.
-pub fn run(contract_dir: &Path, format: &str) {
+pub fn run(contract_dir: &Path, format: &str) -> Result<(), Box<dyn std::error::Error>> {
     // 1. Load all contracts
-    let mut contracts = Vec::new();
-    collect_contracts(contract_dir, &mut contracts);
+    // PVL-1 (PMAT-1099): an empty corpus is refused (exit 2) — it used to print
+    // "No contracts found" and return at exit 0, a pass over nothing.
+    let mut contracts = collect_corpus(contract_dir)?;
     contracts.sort_by(|a, b| a.0.cmp(&b.0));
-
-    if contracts.is_empty() {
-        eprintln!("No contracts found in {}", contract_dir.display());
-        return;
-    }
 
     // 2. Build dependency graph + topological sort
     let refs: Vec<(String, &Contract)> = contracts.iter().map(|(s, c)| (s.clone(), c)).collect();
@@ -58,6 +54,8 @@ pub fn run(contract_dir: &Path, format: &str) {
     if !edges_broken.is_empty() {
         std::process::exit(1);
     }
+
+    Ok(())
 }
 
 /// Resolve one composition edge against the upstream contract it names.
@@ -278,8 +276,9 @@ mod tests {
         if !dir.exists() {
             return; // skip in CI without contracts
         }
-        // Should not panic
-        run(&dir, "text");
+        // PVL-1 (PMAT-1099): `run` is fallible now — an ignored Result is a test
+        // that cannot fail. The real corpus verifies (measured 2026-09-11, rc 0).
+        run(&dir, "text").expect("the real corpus under contracts/ verifies");
     }
 
     #[test]
@@ -288,12 +287,20 @@ mod tests {
         if !dir.exists() {
             return;
         }
-        run(&dir, "json");
+        run(&dir, "json").expect("the real corpus under contracts/ verifies as json");
     }
 
     #[test]
     fn verify_pipeline_empty_dir() {
         let tmp = tempfile::tempdir().expect("temp dir is creatable");
-        run(tmp.path(), "text");
+        // PVL-1 (PMAT-1099): an empty directory is REFUSED (exit-2 class), never
+        // reported. Before this assertion the test called `run` and ignored the
+        // Result, so it passed over a vacuous PASS and over the refusal alike.
+        let err = run(tmp.path(), "text").expect_err("an empty dir is refused, never reported");
+        assert!(
+            err.downcast_ref::<crate::contract_walk::ZeroContracts>()
+                .is_some(),
+            "not the empty-corpus refusal: {err}"
+        );
     }
 }
