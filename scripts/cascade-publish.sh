@@ -317,14 +317,201 @@ publish_crate() {
   fi
 }
 
+# ==========================================================================
+# THE CLEAN-ROOM GATE (PMAT-3318). The cascade refuses to start unless
+# `clean-room.yml` is green on EXACTLY the tag's commit. Fail-closed, no flag,
+# no environment bypass.
+#
+# WHY: clean-room was the first gate named in the release doctrine and was
+# enforced nowhere -- none of the publish/cascade scripts referenced it. It ran
+# red 8/8 from 2026-09-08 to 2026-09-15 and v0.66.0 and v0.67.0 both shipped
+# over it.
+#
+# WHAT A RUN ACTUALLY TESTED. The workflow lives in paiml/infra, and the job
+# does `git clone --depth 1 git@github.com:paiml/aprender.git`: it tests
+# aprender's main HEAD AT CLONE TIME. A run's `headSha` is an INFRA commit, so
+# comparing it to an aprender tag would compare two repositories. MEASURED
+# (infra run 34915682258, job 104212693804): the only record of the aprender
+# commit is one line printed by infra's Makefile `_copy-source`,
+#
+#     2026-09-15T01:06:22.6420228Z     commit:  030d9b14
+#
+# (`git rev-parse --short HEAD` of the clone). The result CSV has no sha column
+# and no per-repo artifact is uploaded. So the gate reads that line from the
+# job log, and it reads it STRICTLY: exactly one such line, 7-40 hex chars,
+# which must resolve in THIS repository to exactly the tag commit
+# (`git rev-parse --verify <abbrev>^{commit}` refuses an ambiguous prefix).
+# Zero lines, two different lines, or a changed format all REFUSE -- if infra
+# rewords the line, the release stops; it never silently passes. The durable
+# fix is in infra: record the full tested sha as a structured artifact.
+#
+# Everything the gate cannot prove is a refusal: no run, a run still queued or
+# in progress, cancelled or failed, a different sha, gh unauthenticated or
+# erroring, any output it cannot parse. The repository, workflow and job name
+# are literals, not parameters: an override would be a bypass.
+# ==========================================================================
+
+# stdin: `gh run list --json databaseId,status,conclusion,createdAt`.
+# $1: the tag commit's committer time (epoch). A run CREATED before the commit
+# existed cannot have cloned it. Prints one TSV row per run:
+#   <id> <status> <conclusion|none> <createdAt> <after|before>
+# Exits 3 on anything that is not that shape.
+clean_room_parse_runs() {
+  python3 -c '
+import json, sys
+from datetime import datetime, timezone
+try:
+    since = int(sys.argv[1])
+    runs = json.load(sys.stdin)
+    if not isinstance(runs, list):
+        raise ValueError("run list is not a JSON array")
+    rows = []
+    for r in runs:
+        rid = r["databaseId"]
+        if isinstance(rid, bool) or not isinstance(rid, int):
+            raise ValueError("databaseId is not an integer")
+        created = datetime.strptime(r["createdAt"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+        side = "after" if created.timestamp() >= since else "before"
+        rows.append("%d\t%s\t%s\t%s\t%s" % (rid, str(r["status"]), r.get("conclusion") or "none", r["createdAt"], side))
+except Exception as e:
+    print("clean-room: unparseable run list: %s" % e, file=sys.stderr)
+    sys.exit(3)
+for row in rows:
+    print(row)
+' "$1"
+}
+
+# stdin: `gh run view <id> --json jobs`. $1: the exact job name.
+# Prints "<job id> <status> <conclusion|none>" for that job, or NONE.
+# Exits 3 on malformed input or on more than one job of that name.
+clean_room_parse_job() {
+  python3 -c '
+import json, sys
+try:
+    jobs = json.load(sys.stdin)["jobs"]
+    if not isinstance(jobs, list):
+        raise ValueError("jobs is not a JSON array")
+    hits = [j for j in jobs if j.get("name") == sys.argv[1]]
+    if len(hits) > 1:
+        raise ValueError("%d jobs named %r" % (len(hits), sys.argv[1]))
+    row = None
+    if hits:
+        jid = hits[0]["databaseId"]
+        if isinstance(jid, bool) or not isinstance(jid, int):
+            raise ValueError("job databaseId is not an integer")
+        row = "%d\t%s\t%s" % (jid, str(hits[0]["status"]), hits[0].get("conclusion") or "none")
+except Exception as e:
+    print("clean-room: unparseable jobs: %s" % e, file=sys.stderr)
+    sys.exit(3)
+print(row if row else "NONE")
+' "$1"
+}
+
+# stdin: a clean-room job log. Prints the DISTINCT aprender commits the log
+# says it copied into the container -- the `_copy-source` line, optionally
+# preceded by the Actions timestamp. Nothing else in the log is trusted.
+clean_room_tested_abbrevs() {
+  tr -d '\r' \
+    | { grep -E '^([0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+Z )?    commit:  [0-9a-f]{7,40}$' || true; } \
+    | sed -E 's/^.*    commit:  //' \
+    | sort -u
+}
+
+# clean_room_gate ROOT TAG -- 0 only when a completed `clean-room (aprender)`
+# job, whose log records exactly one tested commit resolving to TAG's commit,
+# concluded `success`. Every other outcome prints a REFUSE line and returns 1.
+clean_room_gate() {
+  local root=$1 tag=$2
+  local repo="paiml/infra" workflow="clean-room.yml" job_name="clean-room (aprender)"
+  local want epoch runs_json runs examined=0 seen=""
+  local rid rstatus rconcl rcreated side jobs_json job jid jstatus jconcl log abbrevs n resolved
+
+  want=$(git -C "$root" rev-parse --verify --quiet "refs/tags/${tag}^{commit}" 2>/dev/null) || want=""
+  if [ -z "$want" ]; then
+    echo "CLEAN-ROOM REFUSE: tag $tag does not resolve to a commit in $root -- cannot prove clean-room ran on it"
+    return 1
+  fi
+  epoch=$(git -C "$root" log -1 --format=%ct "$want" 2>/dev/null) || epoch=""
+  case "$epoch" in
+    ''|*[!0-9]*) echo "CLEAN-ROOM REFUSE: looked for $want (tag $tag); could not read its commit time"; return 1 ;;
+  esac
+  if ! gh auth status >/dev/null 2>&1; then
+    echo "CLEAN-ROOM REFUSE: looked for $want (tag $tag); gh is unauthenticated or erroring -- cannot prove clean-room ran on it"
+    return 1
+  fi
+  if ! runs_json=$(gh run list --repo "$repo" --workflow "$workflow" --limit 30 \
+        --json databaseId,status,conclusion,createdAt 2>/dev/null); then
+    echo "CLEAN-ROOM REFUSE: looked for $want (tag $tag); gh run list --repo $repo --workflow $workflow failed"
+    return 1
+  fi
+  if ! runs=$(clean_room_parse_runs "$epoch" <<< "$runs_json" 2>/dev/null); then
+    echo "CLEAN-ROOM REFUSE: looked for $want (tag $tag); the $workflow run list could not be parsed"
+    return 1
+  fi
+
+  while IFS=$'\t' read -r rid rstatus rconcl rcreated side; do
+    [ -n "$rid" ] || continue
+    [ "$side" = "after" ] || continue
+    examined=$((examined + 1))
+    if ! jobs_json=$(gh run view "$rid" --repo "$repo" --json jobs 2>/dev/null); then
+      echo "CLEAN-ROOM REFUSE: looked for $want (tag $tag); gh run view $rid failed"
+      return 1
+    fi
+    if ! job=$(clean_room_parse_job "$job_name" <<< "$jobs_json" 2>/dev/null); then
+      echo "CLEAN-ROOM REFUSE: looked for $want (tag $tag); the jobs of run $rid could not be parsed"
+      return 1
+    fi
+    if [ "$job" = "NONE" ]; then
+      seen="$seen"$'\n'"  - run $rid ($rstatus/$rconcl, $rcreated): no '$job_name' job"
+      continue
+    fi
+    IFS=$'\t' read -r jid jstatus jconcl <<< "$job"
+    if [ "$jstatus" != "completed" ]; then
+      seen="$seen"$'\n'"  - run $rid job $jid: $jstatus -- tested sha unknown, conclusion=$jconcl"
+      continue
+    fi
+    if ! log=$(gh api "repos/$repo/actions/jobs/$jid/logs" 2>/dev/null); then
+      echo "CLEAN-ROOM REFUSE: looked for $want (tag $tag); could not read the log of run $rid job $jid"
+      return 1
+    fi
+    abbrevs=$(clean_room_tested_abbrevs <<< "$log")
+    n=$(grep -c . <<< "$abbrevs" || true)
+    if [ "${n:-0}" -ne 1 ]; then
+      seen="$seen"$'\n'"  - run $rid job $jid: ${n:-0} tested-commit record(s) in the log (need exactly 1), conclusion=$jconcl"
+      continue
+    fi
+    resolved=$(git -C "$root" rev-parse --verify --quiet "${abbrevs}^{commit}" 2>/dev/null) || resolved=""
+    if [ "$resolved" != "$want" ]; then
+      seen="$seen"$'\n'"  - run $rid job $jid: tested $abbrevs${resolved:+ ($resolved)}, conclusion=$jconcl"
+      continue
+    fi
+    if [ "$jconcl" = "success" ]; then
+      echo "CLEAN-ROOM PROCEED: run $rid job $jid '$job_name' tested $abbrevs = $want (tag $tag), conclusion=success"
+      return 0
+    fi
+    seen="$seen"$'\n'"  - run $rid job $jid: tested $abbrevs = the tag commit, conclusion=$jconcl"
+  done <<< "$runs"
+
+  echo "CLEAN-ROOM REFUSE: looked for $want (tag $tag); no green '$job_name' run tested it ($examined $workflow run(s) created after that commit examined)${seen:- -- found none}"
+  return 1
+}
+
 # THE GATE (F-9, PMAT-745). Every mode that uploads passes through
 # scripts/check_publish_preflight.sh first: clean tree, version from cargo
 # metadata, tag at HEAD, HEAD on origin/main, dogfood receipt GO for this commit
 # and version. --check and --order-check upload nothing and are not gated. The
 # drain re-runs this script per pass, so the gate is re-asked before every pass.
+#
+# The clean-room gate runs FIRST, before the preflight and before any upload.
+# There is no mode, flag or variable that skips it for a publishing run;
+# --check REPORTS its verdict (it uploads nothing, so there is nothing to bypass).
 case "$MODE" in
   --check|--order-check) : ;;
   *)
+    if ! clean_room_gate "$REPO_ROOT" "v$TARGET_VERSION"; then
+      echo "⛔ clean-room gate refused (clean-room.yml is not green on exactly the v$TARGET_VERSION commit); nothing was published." >&2
+      exit 1
+    fi
     if ! bash "$REPO_ROOT/scripts/check_publish_preflight.sh"; then
       echo "⛔ check_publish_preflight.sh refused; nothing was published." >&2
       exit 1
@@ -392,6 +579,9 @@ if [ "$MODE" = "--order-check" ]; then
 fi
 
 if [ "$MODE" = "--check" ]; then
+  echo ""
+  echo "=== CLEAN-ROOM GATE (verdict reported; a publishing run refuses unless PROCEED) ==="
+  clean_room_gate "$REPO_ROOT" "v$TARGET_VERSION" | sed 's/^/  /'
   echo ""
   echo "=== STATUS REPORT (not publishing) ==="
   any_behind=0
