@@ -96,3 +96,86 @@ deleted, and nothing in this pass deletes a branch — this is classification an
 
 The DELETE set is 24 branches and is safe to execute now except `agent/G-10{c,-full}`, which
 should wait for **#3021** to land so the supersession is a fact rather than a forecast.
+
+## Second bucket: 37 branches whose PR was CLOSED, never merged
+
+Added 2026-09-15. **The universe above is built from the wrong side.** It asks *"which
+branches never had a PR?"*, so a branch whose PR was opened and then **closed unmerged** is
+excluded by construction — it *has* had a PR. That is precisely a branch carrying unlanded
+work with no path forward, which is the question that matters.
+
+Derived the same way, with the same instrument:
+
+```
+gh pr list --state all  --limit 500 --json headRefName -q '.[].headRefName' | sort -u  > ever
+gh pr list --state open --limit 200 --json headRefName -q '.[].headRefName' | sort      > open
+git ls-remote --heads origin | sed 's|.*refs/heads/||' | sort                           > all
+comm -12 ever all | comm -13 open -     # had a PR, none open, branch still on origin
+```
+
+117 remote branches = 41 with an open PR + 38 that never had one + 37 here + `main`.
+**Zero** branches are "merged with the branch left behind", so deletion-on-merge is working;
+every one of these 37 is an abandoned PR. That is consistent with 29 of 146 PRs over the
+last 10 days (**20% of production**) being closed unmerged.
+
+| disposition | n |
+|---|---|
+| **DELETE** — 0 path residue or 0 commits ahead | 31 |
+| **REVIEW** — carries paths absent from `main` | 6 |
+
+31 + 6 = **37**, the universe.
+
+
+### DELETE — content landed by another route
+
+| branch | closed PR | age (d) | reason |
+|---|---|---|---|
+| `agent/R-0-amend` | #3003 | 8 | 0-residue |
+| `feat/prrev-rung1-shadow-lane` | #2836 | 13 | 0-residue |
+| `fix/prrev-control-cache` | #2847 | 12 | 0-residue |
+| `fix/workspace-test-timeout-headroom` | #2811 | 14 | 0-residue |
+| `PMAT-1096-cuda-asset-target-mountpoint` | #3098 | 3 | 0-ahead |
+| `PMAT-1097-06x-release-schedule` | #3087 | 3 | 0-residue |
+| `PMAT-1098-3126-mut-paths` | #3128 | 3 | 0-residue |
+| `PMAT-1098-67-A1-four-apr-assets` | #3092 | 3 | 0-residue |
+| `PMAT-1098-67-C1-D1-gpu-pr-jobs` | #3095 | 3 | 0-residue |
+| `PMAT-1098-67-C2-self-hosted-preflight` | #3088 | 3 | 0-residue |
+| `PMAT-1098-67-E3-guards-under-budget` | #3094 | 3 | 0-residue |
+| `PMAT-1098-build-pool-any-of-three` | #3101 | 4 | 0-residue |
+| `PMAT-1098-coverage-nightly-on-yoga` | #3123 | 3 | 0-residue |
+| `PMAT-1098-gx10-arch-neutral-routing` | #3104 | 3 | 0-residue |
+| `PMAT-1098-pp066-shallow-fetch` | #3108 | 4 | 0-residue |
+| `PMAT-1098-qwen35-honest-refusal` | #3099 | 4 | 0-residue |
+| `PMAT-1098-rustc-wrapper-hotfix` | #3107 | 4 | 0-residue |
+| `PMAT-1098-spec-checklist-paths` | #3131 | 3 | 0-residue |
+| `PMAT-1098-spec-conformance-locale` | #3109 | 3 | 0-residue |
+| `PMAT-1100-triage-release-trains` | #3102 | 3 | 0-residue |
+| `PMAT-1101-q5k-ggml-layout` | #3110 | 3 | 0-residue |
+| `PMAT-1102-aarch64-lint` | #3112 | 3 | 0-residue |
+| `PMAT-1104-cuda-q5k-gemv` | #3113 | 3 | 0-residue |
+| `PMAT-1106-gpu-tests-skip` | #3116 | 3 | 0-residue |
+| `PMAT-3121-examples-dogfood` | #3122 | 3 | 0-residue |
+| `PMAT-3124-triage-labels` | #3125 | 3 | 0-residue |
+| `PMAT-3228-always-latest-pin` | #3274 | 0 | 0-residue |
+| `PMAT-3229-rustsec-2026-0285` | #3276 | 0 | 0-residue |
+| `PMAT-952-wgpu-init-deadlock` | #2862 | 10 | 0-residue |
+| `PMAT-953-stdio-write-error-clean-exit` | #2863 | 10 | 0-residue |
+| `PMAT-955-sibling-devdeps-path-only` | #2864 | 10 | 0-residue |
+
+### REVIEW — paths absent from `main`
+
+| branch | closed PR | age (d) | residue |
+|---|---|---|---|
+| `bse/receipt-adhoc` | #3052 | 2 | 1/4 |
+| `feat/client-tokenizer-counter` | #2821 | 14 | 4/19 |
+| `feat/y6-provenance` | #2803 | 14 | 13/65 |
+| `fix/wgpu-feature-graph-and-honest-compute-clas` | #2825 | 13 | 2/9 |
+| `perf/tokenization-mismatch-fatal` | #2820 | 13 | 1/3 |
+| `spec/performance-parity-llamacpp` | #2845 | 12 | 2/14 |
+
+The same caveat applies as above: residue **bounds** the question, it does not answer it. A
+closed PR is a decision someone made, so a REVIEW row here needs the close reason read before
+anything is resurrected — a branch may be absent from `main` *because it was rejected*.
+
+Nothing here deletes a branch either. Classification and linking only.
+
