@@ -1,8 +1,8 @@
-# tool_version=pmat 3.39.0
 # complexity_baseline.txt - functions over the pre-commit hook thresholds
 # (cyclomatic > 30 or cognitive > 25), as "<path>::<function> <cyclomatic> <cognitive>".
 # SHRINK-ONLY. Regenerate with: bash scripts/check_complexity_ratchet.sh --update
 # Owner: scripts/check_complexity_ratchet.sh (PMAT-746).
+# tool_version=pmat 3.40.0
 crates/apr-cli/examples/gpu_chat_inference.rs::run_chat_completion 11 33
 crates/apr-cli/src/commands/attn_parity_lint.rs::run 13 26
 crates/apr-cli/src/commands/attn_viz_classifier.rs::classify_causal_mask 8 29
@@ -57,8 +57,6 @@ crates/apr-cli/src/dispatch.rs::dispatch_diagnostic_commands 10 30
 crates/apr-cli/src/dispatch.rs::dispatch_runtime_commands 15 41
 crates/apr-cli/src/federation/gateway.rs::execute_with_retries 9 26
 crates/apr-cli/src/help_producer_truth.rs::resolve 19 73
-crates/apr-cli/tests/cli_commands.rs::get_help_commands 13 47
-crates/apr-cli/tests/cli_commands.rs::help_subcommands 10 36
 crates/apr-format/src/v2/writer.rs::add_q4_tensor 12 27
 crates/aprender-cbtop/src/adversarial/validators.rs::validate_floats 9 26
 crates/aprender-cbtop/src/app/metrics.rs::read_cpu_usage 10 41
@@ -71,7 +69,6 @@ crates/aprender-cgp/src/analysis/bench.rs::run_perf_overlay 10 34
 crates/aprender-cgp/src/analysis/explain.rs::find_ptx_file 8 26
 crates/aprender-cgp/src/profilers/simd.rs::find_bench_binary 10 27
 crates/aprender-cgp/src/profilers/simd.rs::parse_perf_stat_csv 10 27
-crates/aprender-cgp/tests/falsify.rs::falsify_cgp_090_trueno_gemm_at_peak 9 37
 crates/aprender-common/src/display.rs::truncate_path 9 31
 crates/aprender-compute/src/activations.rs::test_f32_to_f16_matches_half_across_grid_rne 9 30
 crates/aprender-compute/src/backends/gpu/device/eigen.rs::symmetric_eigen_async 14 48
@@ -86,7 +83,6 @@ crates/aprender-compute/src/blis/compute.rs::gemm_small_8x8 17 47
 crates/aprender-compute/src/blis/compute.rs::gemm_small_avx512_16x8 12 27
 crates/aprender-compute/src/blis/compute.rs::gemm_small_nopack_8x8 12 27
 crates/aprender-compute/src/blis/compute.rs::gemm_small_strided_avx2 13 43
-crates/aprender-compute/src/blis/parallel.rs::gemm_blis_parallel_shared_b 21 75
 crates/aprender-compute/src/blis/transpose.rs::transpose_avx2_impl 11 32
 crates/aprender-compute/src/brick/exec_graph/traversal/analysis.rs::detect_ping_pong 12 38
 crates/aprender-compute/src/brick/quant_ops/nf4.rs::quantize_nf4 16 32
@@ -121,7 +117,6 @@ crates/aprender-contracts/src/kernels/f16_convert.rs::f32_to_f16_single 13 29
 crates/aprender-contracts/src/lint/gates_extended.rs::collect_test_fns 9 32
 crates/aprender-contracts/src/lint/gates_extended.rs::run_verify_gate 31 110
 crates/aprender-contracts/src/mirai_gen.rs::generate_mirai_annotations 13 27
-crates/aprender-contracts/src/proof_status.rs::lean_theorem_names 19 132
 crates/aprender-contracts/src/reverse_coverage.rs::scan_file 19 54
 crates/aprender-contracts/src/scaffold/mod.rs::domain_to_params 19 43
 crates/aprender-contrastive-data/src/split.rs::validate_ingest_ladder 12 30
@@ -487,8 +482,6 @@ crates/aprender-serve/src/gguf/inference/forward/debug.rs::forward_single_with_c
 crates/aprender-serve/src/gguf/inference/forward/debug.rs::single_cache_ffn_block 17 50
 crates/aprender-serve/src/gguf/inference/forward/encoder_decoder.rs::encode 23 55
 crates/aprender-serve/src/gguf/inference/forward/encoder_decoder_decode.rs::decode 40 57
-crates/aprender-serve/src/gguf/inference/forward/ffn_block.rs::forward_single_with_cache 26 55
-crates/aprender-serve/src/gguf/inference/forward/ffn_block.rs::single_cache_ffn_block 21 69
 crates/aprender-serve/src/gguf/inference/forward/forward_cached.rs::cached_attention_block 32 34
 crates/aprender-serve/src/gguf/inference/forward/forward_cached.rs::forward_cached 21 37
 crates/aprender-serve/src/gguf/inference/forward/forward_decode_lean.rs::forward_decode_lean 25 60
@@ -598,7 +591,6 @@ crates/aprender-train/examples/gpu_ledger.rs::main 13 28
 crates/aprender-train/examples/ssc_eval.rs::main 35 75
 crates/aprender-train/examples/wgpu_canary.rs::run 23 44
 crates/aprender-train/examples/wgpu_eval.rs::run 17 40
-crates/aprender-train/src/autograd/cuda_forward/cache.rs::pre_warm_for_model 24 35
 crates/aprender-train/src/cli/commands/merge.rs::run_lora_adapter_merge 11 28
 crates/aprender-train/src/config/train/loader/mod.rs::build_train_config 20 26
 crates/aprender-train/src/config/train/loader/mod.rs::train_loop_cuda 24 89
@@ -673,7 +665,6 @@ crates/aprender-viz/src/plots/loss_curve.rs::render_best_markers 11 43
 crates/aprender-zram-core/src/lz4/compress.rs::compress_fast 16 42
 crates/aprender-zram-core/src/lz4/compress.rs::compress_fast_with_table 14 39
 crates/aprender-zram-core/src/lz4/decompress.rs::decompress_fast 31 129
-crates/aprender-zram-core/src/lz4/neon.rs::decompress_neon_impl 32 130
 crates/aprender-zram-core/src/zstd/avx2.rs::decode_huffman_avx2_small_table 13 26
 crates/aprender-zram-core/src/zstd/decompress.rs::decompress_block 11 31
 crates/aprender-zram/bins/trueno-ublk/src/daemon/tests/perf_tests.rs::generate_test_pages 9 32

@@ -278,18 +278,18 @@ run_complexity() {
   cx_commit "$C1" 'merge: an unrelated edit under both thresholds' || die "C1: commit failed"
   out=$(cx_run "$C1" check_complexity_ratchet.sh); rc=$?
   if [ "$rc" -eq 0 ] \
-     && printf '%s' "$out" | grep -qE '^  measured    base .*over cyclomatic>30' \
-     && printf '%s' "$out" | grep -qE '^  measured    merge .*over cyclomatic>30' \
-     && printf '%s' "$out" | grep -q '^PASS (D2)'; then
+     && grep -qE '^  measured    base .*over cyclomatic>30' <<<"$out" \
+     && grep -qE '^  measured    merge .*over cyclomatic>30' <<<"$out" \
+     && grep -q '^PASS (D2)' <<<"$out"; then
     ok "C1  base and merge measure the same offenders: GREEN, both measurements printed"
   else
     bad "C1  no change: rc=$rc, wanted 0, both 'measured' lines and a 'PASS (D2)' line"$'\n'"$(printf '%s' "$out" | sed 's/^/        /')"
   fi
   # and the two SHAs are printed BEFORE the verdict, which is what makes the
   # verdict auditable at all
-  if printf '%s' "$out" | grep -qE '^  comparand   (MERGEBASE|TIP) ' \
-     && printf '%s' "$out" | grep -qE '^  merge       HEAD ' \
-     && printf '%s' "$out" | grep -q 'polarity    the verdict is about the DIFF of two measurements'; then
+  if grep -qE '^  comparand   (MERGEBASE|TIP) ' <<<"$out" \
+     && grep -qE '^  merge       HEAD ' <<<"$out" \
+     && grep -q 'polarity    the verdict is about the DIFF of two measurements' <<<"$out"; then
     ok "C1  the D2 header names the comparand mode, both revisions and the polarity"
   else
     bad "C1  D2 header missing: wanted a 'comparand', a 'merge' and a 'polarity' line"$'\n'"$(printf '%s' "$out" | sed 's/^/        /')"
@@ -302,8 +302,8 @@ run_complexity() {
   cx_commit "$C2" 'merge: land a function over both thresholds' || die "C2: commit failed"
   out=$(cx_run "$C2" check_complexity_ratchet.sh); rc=$?
   if [ "$rc" -eq 1 ] \
-     && printf '%s' "$out" | grep -q 'RED    NEW      src/lib.rs::newbie' \
-     && printf '%s' "$out" | grep -q 'complexity regressed against'; then
+     && grep -q 'RED    NEW      src/lib.rs::newbie' <<<"$out" \
+     && grep -q 'complexity regressed against' <<<"$out"; then
     ok "C2  a function over a threshold and absent from the comparand: RED, named NEW"
   else
     bad "C2  regression: rc=$rc, wanted 1 and a 'RED    NEW      src/lib.rs::newbie' finding"$'\n'"$(printf '%s' "$out" | sed 's/^/        /')"
@@ -318,7 +318,7 @@ run_complexity() {
   cx_commit "$C3" 'merge: fix branchy, leave the baseline file untouched' || die "C3: commit failed"
   out=$(cx_run "$C3" check_complexity_ratchet.sh); rc=$?
   if [ "$rc" -eq 0 ] \
-     && printf '%s' "$out" | grep -q 'NOTE   RESOLVED src/lib.rs::branchy' \
+     && grep -q 'NOTE   RESOLVED src/lib.rs::branchy' <<<"$out" \
      && grep -q '^src/lib.rs::branchy 35 34$' "$C3/scripts/complexity_baseline.txt"; then
     ok "C3  a recorded function fixed, its row still in the baseline file: GREEN, named RESOLVED"
   else
@@ -328,9 +328,9 @@ run_complexity() {
   # --- C4: the comparand cannot be resolved -------------------------------
   out=$(cx_run "$C3" check_complexity_ratchet.sh BASELINE_RATCHET_BASE_REF=refs/heads/no-such-xyzzy); rc=$?
   if [ "$rc" -eq 1 ] \
-     && printf '%s' "$out" | grep -q 'FAIL PREFLIGHT' \
-     && printf '%s' "$out" | grep -q 'refs/heads/no-such-xyzzy' \
-     && ! printf '%s' "$out" | grep -qE '^  measured    base '; then
+     && grep -q 'FAIL PREFLIGHT' <<<"$out" \
+     && grep -q 'refs/heads/no-such-xyzzy' <<<"$out" \
+     && ! grep -qE '^  measured    base ' <<<"$out"; then
     ok "C4  unresolvable comparand: RED at preflight, ref named, and NO measurement happened"
   else
     bad "C4  unresolvable comparand: rc=$rc, wanted 1, a PREFLIGHT failure naming the ref, and no measurement line"$'\n'"$(printf '%s' "$out" | sed 's/^/        /')"
@@ -343,9 +343,9 @@ run_complexity() {
   cx_commit "$C5" 'merge: the same tree, measured by a different pmat' || die "C5: commit failed"
   out=$(cx_run "$C5" check_complexity_ratchet.sh); rc=$?
   if [ "$rc" -eq 1 ] \
-     && printf '%s' "$out" | grep -q 'DIFFERENT pmat versions' \
-     && printf '%s' "$out" | grep -q 'pmat 0.0.0-shim' \
-     && printf '%s' "$out" | grep -q 'pmat 9.9.9-shim'; then
+     && grep -q 'DIFFERENT pmat versions' <<<"$out" \
+     && grep -q 'pmat 0.0.0-shim' <<<"$out" \
+     && grep -q 'pmat 9.9.9-shim' <<<"$out"; then
     ok "C5  the comparand and the merge measured by different pmats: RED, BOTH versions printed"
   else
     bad "C5  instrument mismatch: rc=$rc, wanted 1 and both 'pmat 0.0.0-shim' and 'pmat 9.9.9-shim'"$'\n'"$(printf '%s' "$out" | sed 's/^/        /')"
@@ -357,9 +357,9 @@ run_complexity() {
   cx_commit "$C6" 'merge: no change' >/dev/null 2>&1 || git_fx "$C6" commit -q --allow-empty -m 'merge: no change' >/dev/null 2>&1 || die "C6: commit failed"
   out=$(cx_run "$C6" check_complexity_ratchet.sh); rc=$?
   if [ "$rc" -eq 1 ] \
-     && printf '%s' "$out" | grep -q 'the recorded tool_version does not match' \
-     && printf '%s' "$out" | grep -q 'pmat 1.2.3-recorded' \
-     && printf '%s' "$out" | grep -q 'pmat 0.0.0-shim'; then
+     && grep -q 'the recorded tool_version does not match' <<<"$out" \
+     && grep -q 'pmat 1.2.3-recorded' <<<"$out" \
+     && grep -q 'pmat 0.0.0-shim' <<<"$out"; then
     ok "C6  the recorded tool_version header disagrees with the pmat that ran: RED, BOTH versions printed"
   else
     bad "C6  recorded instrument: rc=$rc, wanted 1 and both 'pmat 1.2.3-recorded' and 'pmat 0.0.0-shim'"$'\n'"$(printf '%s' "$out" | sed 's/^/        /')"
@@ -379,7 +379,7 @@ run_complexity() {
     bad "C7  the mutation could not be derived: no '# RATCHET-MUTATION-POINT' verdict line in scripts/check_complexity_ratchet.sh"
   fi
   out=$(cx_run "$C3" "$MUT"); rc=$?
-  if [ "$rc" -ne 0 ] && printf '%s' "$out" | grep -q 'STALE'; then
+  if [ "$rc" -ne 0 ] && grep -q 'STALE' <<<"$out"; then
     ok "C7  mutation caught: a lower bound read from the baseline FILE turns C3 (a fixed function) RED — so C3's GREEN is load-bearing"
   else
     bad "C7  mutation NOT demonstrated: the mutant still exits $rc on the improvement fixture, so C3 does not discriminate 'measured comparand' from 'file on disk'"$'\n'"$(printf '%s' "$out" | sed 's/^/        /')"
@@ -418,7 +418,7 @@ run_satd() {
 
   # S1 — the parsing/fallback unit test.
   out=$(satd_run "$bin" f_checklist_005_satd_baseline_source_is_env_then_constant); rc=$?
-  if [ "$rc" -eq 0 ] && printf '%s' "$out" | grep -q '^test result: ok. 1 passed'; then
+  if [ "$rc" -eq 0 ] && grep -q '^test result: ok. 1 passed' <<<"$out"; then
     ok "S1  satd_baseline_from: the parsing/fallback unit test runs and passes"
   else
     bad "S1  parsing test: rc=$rc, wanted 0 and exactly 1 passed"$'\n'"$(printf '%s' "$out" | sed 's/^/        /')"
@@ -438,7 +438,7 @@ run_satd() {
 
   # S2 — unset falls back to the constant, and SAYS SO.
   out=$(satd_run "$bin" f_dod_001_satd_count_is_zero); rc=$?
-  if [ "$rc" -eq 0 ] && printf '%s' "$out" | grep -q 'SATD ceiling .* (source: constant)'; then
+  if [ "$rc" -eq 0 ] && grep -q 'SATD ceiling .* (source: constant)' <<<"$out"; then
     ok "S2  SATD_BASELINE unset: GREEN, and the run names the constant as the source"
   else
     bad "S2  unset: rc=$rc, wanted 0 and a 'SATD ceiling N (source: constant)' line"$'\n'"$(printf '%s' "$out" | sed 's/^/        /')"
@@ -447,8 +447,8 @@ run_satd() {
   # S3b — a regression: the comparand carried one marker fewer than this tree.
   out=$(satd_run "$bin" f_dod_001_satd_count_is_zero "SATD_BASELINE=$((n - 1))"); rc=$?
   if [ "$rc" -ne 0 ] \
-     && printf '%s' "$out" | grep -q "the ceiling is $((n - 1)) (source: comparand)" \
-     && printf '%s' "$out" | grep -q "$n markers in production source"; then
+     && grep -q "the ceiling is $((n - 1)) (source: comparand)" <<<"$out" \
+     && grep -q "$n markers in production source" <<<"$out"; then
     ok "S3  ceiling $((n - 1)) against $n measured: RED, both numbers printed, source named as the comparand"
   else
     bad "S3  regression: rc=$rc, wanted a failure naming both $n and $((n - 1))"$'\n'"$(printf '%s' "$out" | sed 's/^/        /')"
@@ -466,7 +466,7 @@ run_satd() {
   # tree. The pre-BSE-03 code asserted `violations.len() + 8 >= baseline`, and
   # n + 8 >= n + 20 is false, so this row was RED before this ticket.
   out=$(satd_run "$bin" f_dod_001_satd_count_is_zero "SATD_BASELINE=$((n + 20))"); rc=$?
-  if [ "$rc" -eq 0 ] && printf '%s' "$out" | grep -q "SATD ceiling $((n + 20)) (source: comparand)"; then
+  if [ "$rc" -eq 0 ] && grep -q "SATD ceiling $((n + 20)) (source: comparand)" <<<"$out"; then
     ok "S5  ceiling $((n + 20)) against $n measured: GREEN — an improvement is not a failure, and there is no lower bound"
   else
     bad "S5  improvement: rc=$rc, wanted 0 with the comparand ceiling named — a lower bound has been reintroduced"$'\n'"$(printf '%s' "$out" | sed 's/^/        /')"
@@ -474,7 +474,7 @@ run_satd() {
 
   # S6 — set but EMPTY: the measurement did not happen.
   out=$(satd_run "$bin" f_dod_001_satd_count_is_zero SATD_BASELINE=); rc=$?
-  if [ "$rc" -ne 0 ] && printf '%s' "$out" | grep -q 'set but empty'; then
+  if [ "$rc" -ne 0 ] && grep -q 'set but empty' <<<"$out"; then
     ok "S6  SATD_BASELINE set but empty: RED — a failed comparand measurement never falls back to the constant"
   else
     bad "S6  empty: rc=$rc, wanted a failure saying the comparand measurement did not happen"$'\n'"$(printf '%s' "$out" | sed 's/^/        /')"
@@ -482,7 +482,7 @@ run_satd() {
 
   # S7 — unparseable.
   out=$(satd_run "$bin" f_dod_001_satd_count_is_zero SATD_BASELINE=not-a-number); rc=$?
-  if [ "$rc" -ne 0 ] && printf '%s' "$out" | grep -q 'SATD_BASELINE'; then
+  if [ "$rc" -ne 0 ] && grep -q 'SATD_BASELINE' <<<"$out"; then
     ok "S7  an unparseable SATD_BASELINE: RED, and the failure names the variable"
   else
     bad "S7  unparseable: rc=$rc, wanted a failure naming SATD_BASELINE"$'\n'"$(printf '%s' "$out" | sed 's/^/        /')"
@@ -512,13 +512,13 @@ run_satd() {
   cp "$WORK/checklist.orig" "$inc"; trap 'rm -rf "${WORK:?}"' EXIT
   [ -n "$mbin" ] && [ -x "$mbin" ] || die "S8: cargo could not build the mutant: $(tail -3 "$mlog" | tr '\n' ' ')"
   out=$(satd_run "$mbin" f_dod_001_satd_count_is_zero); rc=$?
-  if [ "$rc" -eq 0 ] && printf '%s' "$out" | grep -q 'SATD ceiling 999999 (source: constant)'; then
+  if [ "$rc" -eq 0 ] && grep -q 'SATD ceiling 999999 (source: constant)' <<<"$out"; then
     ok "S8a mutant (constant rewritten to 999999), SATD_BASELINE unset: GREEN — the rewritable path a PR had before"
   else
     bad "S8a mutant unset: rc=$rc, wanted 0 naming the rewritten constant"$'\n'"$(printf '%s' "$out" | sed 's/^/        /')"
   fi
   out=$(satd_run "$mbin" f_dod_001_satd_count_is_zero "SATD_BASELINE=$((n - 1))"); rc=$?
-  if [ "$rc" -ne 0 ] && printf '%s' "$out" | grep -q "the ceiling is $((n - 1)) (source: comparand)"; then
+  if [ "$rc" -ne 0 ] && grep -q "the ceiling is $((n - 1)) (source: comparand)" <<<"$out"; then
     ok "S8b the same mutant with the comparand exported: RED at $((n - 1)) against $n — the rewritten constant is unread"
   else
     bad "S8b mutant + comparand: rc=$rc, wanted RED judged by the comparand, not by 999999"$'\n'"$(printf '%s' "$out" | sed 's/^/        /')"
@@ -538,13 +538,13 @@ esac
 F1="$WORK/f1"
 fixture "$F1" 2 "$(readme_with_block 2)" || die "row 1 fixture could not be built"
 out="$(run_guard "$F1" check_readme_claims.sh)"; rc=$?
-if [ "$rc" -eq 0 ] && printf '%s' "$out" | grep -q '^PASS FALSIFY-README-002 contract_count: 2 '; then
+if [ "$rc" -eq 0 ] && grep -q '^PASS FALSIFY-README-002 contract_count: 2 ' <<<"$out"; then
   ok "row 1  block states the truth (2 of 2): GREEN, PASS line names the derived count"
 else
   bad "row 1  block states the truth: rc=$rc, wanted 0 and a 'PASS FALSIFY-README-002 contract_count: 2' line"$'\n'"$(printf '%s' "$out" | sed 's/^/        /')"
 fi
 # the D2 header must name BOTH revs and BOTH measurements, before any verdict
-if printf '%s' "$out" | grep -q '^  comparand ' && printf '%s' "$out" | grep -qE '^  contracts +base=2 +merge=2'; then
+if grep -q '^  comparand ' <<<"$out" && grep -qE '^  contracts +base=2 +merge=2' <<<"$out"; then
   ok "row 1  D2 header prints the comparand SHA and both measurements"
 else
   bad "row 1  D2 header missing: wanted a 'comparand' line and 'contracts base=2 merge=2'"$'\n'"$(printf '%s' "$out" | sed 's/^/        /')"
@@ -556,8 +556,8 @@ F2="$WORK/f2"
 fixture "$F2" 2 "$(readme_with_block 9)" || die "row 2 fixture could not be built"
 out2="$(run_guard "$F2" check_readme_claims.sh)"; rc=$?
 if [ "$rc" -eq 1 ] \
-   && printf '%s' "$out2" | grep -q 'FAIL FALSIFY-README-002 contract_count: the CONTRACT_COUNT block states 9' \
-   && printf '%s' "$out2" | grep -q 'merge tree carries 2'; then
+   && grep -q 'FAIL FALSIFY-README-002 contract_count: the CONTRACT_COUNT block states 9' <<<"$out2" \
+   && grep -q 'merge tree carries 2' <<<"$out2"; then
   ok "row 2  block hand-edited to 9 over 2 files: RED, both numbers printed"
 else
   bad "row 2  hand-edited block: rc=$rc, wanted 1 and a FAIL line carrying BOTH 9 and 2"$'\n'"$(printf '%s' "$out2" | sed 's/^/        /')"
@@ -568,7 +568,7 @@ fi
 F3="$WORK/f3"
 fixture "$F3" 2 "$(readme_with_literal 9)" || die "row 3 fixture could not be built"
 out3="$(run_guard "$F3" check_readme_claims.sh)"; rc=$?
-if [ "$rc" -eq 1 ] && printf '%s' "$out3" | grep -q 'README claims 9' && printf '%s' "$out3" | grep -q 'has 2'; then
+if [ "$rc" -eq 1 ] && grep -q 'README claims 9' <<<"$out3" && grep -q 'has 2' <<<"$out3"; then
   ok "row 3  authored literal 9 over 2 files: RED, both numbers printed"
 else
   bad "row 3  authored literal: rc=$rc, wanted 1 and both numbers"$'\n'"$(printf '%s' "$out3" | sed 's/^/        /')"
@@ -582,8 +582,8 @@ F4="$WORK/f4"
 fixture "$F4" 2 "$(readme_derived)" || die "row 4 fixture could not be built"
 out4="$(run_guard "$F4" check_readme_claims.sh)"; rc=$?
 if [ "$rc" -eq 0 ] \
-   && printf '%s' "$out4" | grep -q 'PASS FALSIFY-README-002 contract_count: DERIVED' \
-   && printf '%s' "$out4" | grep -qF "${START}2${END}"; then
+   && grep -q 'PASS FALSIFY-README-002 contract_count: DERIVED' <<<"$out4" \
+   && grep -qF "${START}2${END}" <<<"$out4"; then
   ok "row 4  no block and no literal: GREEN, and the bytes readme_sync would write are printed"
 else
   bad "row 4  derived claim: rc=$rc, wanted 0, a 'DERIVED' PASS line and the regenerated block bytes"$'\n'"$(printf '%s' "$out4" | sed 's/^/        /')"
@@ -617,9 +617,9 @@ fi
 # measurement line is ABSENT from the output.
 out6="$(run_guard "$F1" check_readme_claims.sh BASELINE_RATCHET_BASE_REF=refs/heads/no-such-xyzzy)"; rc=$?
 if [ "$rc" -eq 1 ] \
-   && printf '%s' "$out6" | grep -q 'FAIL FALSIFY-README-002 contract_count: PREFLIGHT' \
-   && printf '%s' "$out6" | grep -q 'refs/heads/no-such-xyzzy' \
-   && ! printf '%s' "$out6" | grep -qE '^  contracts +base='; then
+   && grep -q 'FAIL FALSIFY-README-002 contract_count: PREFLIGHT' <<<"$out6" \
+   && grep -q 'refs/heads/no-such-xyzzy' <<<"$out6" \
+   && ! grep -qE '^  contracts +base=' <<<"$out6"; then
   ok "row 6  unresolvable comparand: RED at preflight, named ref, and NO measurement line"
 else
   bad "row 6  unresolvable comparand: rc=$rc, wanted 1, a PREFLIGHT FAIL naming the ref, and no measurement line"$'\n'"$(printf '%s' "$out6" | sed 's/^/        /')"
@@ -637,8 +637,8 @@ git_fx "$F7" add -A -f contracts README.md >/dev/null 2>&1 || die "row 7: git ad
 git_fx "$F7" commit -q -m "drop one contract" >/dev/null 2>&1 || die "row 7: git commit failed"
 out7="$(run_guard "$F7" check_readme_claims.sh)"; rc=$?
 if [ "$rc" -eq 0 ] \
-   && printf '%s' "$out7" | grep -qE '^  contracts +base=3 +merge=2 +delta=-1' \
-   && printf '%s' "$out7" | grep -q 'TRUTH, not DIRECTION'; then
+   && grep -qE '^  contracts +base=3 +merge=2 +delta=-1' <<<"$out7" \
+   && grep -q 'TRUTH, not DIRECTION' <<<"$out7"; then
   ok "row 7  count fell 3 -> 2 and the README states 2: GREEN, delta=-1 printed, polarity stated"
 else
   bad "row 7  improvement: rc=$rc, wanted 0, 'contracts base=3 merge=2 delta=-1' and the truth-not-direction line"$'\n'"$(printf '%s' "$out7" | sed 's/^/        /')"

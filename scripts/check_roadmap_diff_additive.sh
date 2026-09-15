@@ -382,6 +382,16 @@ EOF
         *"never the tree against itself"*) printf 'ok    row %-2s push shape, parent not fetched (depth-1): refused by name, never HEAD itself\n' "$row" ;;
         *) printf 'FAIL  row %-2s push shape, parent not fetched: refused for the wrong reason (rc=%s): %s\n' "$row" "$rc5" "$err5"; fails=1 ;;
     esac
+    # Push shape, HEAD BEHIND the tip: a later merge landed before this run checked out, so
+    # merge-base(origin/main, HEAD) is HEAD itself (run 34747052599, main red 2026-09-13). The base
+    # is still HEAD's first parent; without this row the resolver named HEAD and the run was refused.
+    row=$((row + 1))
+    rm -rf "${R:?}.behind"; git clone -q "file://$R" "$R.behind" 2>/dev/null
+    ( cd "$R.behind" && git checkout -q main && prev=$(git rev-parse HEAD) && cp "$TD/base_dup.yaml" later.yaml && git add later.yaml && git -c user.name=t -c user.email=t@t commit -qm later-merge && git update-ref refs/remotes/origin/main HEAD && git checkout -q --detach "$prev" ) 2>/dev/null
+    got6=$( cd "$R.behind" && bash -c '. "$0" --lib-only; REPO_ROOT="$1"; resolve_base HEAD && printf "%s|%s" "$BASE_REF" "$BASE_HOW"' "$SELF" "$R.behind" 2>/dev/null ) || true
+    want6=$( cd "$R.behind" && git rev-parse 'HEAD^1' )
+    case "$got6" in "$want6|first parent of HEAD (HEAD is on origin/main, behind the tip"*) printf 'ok    row %-2s push shape, HEAD behind the tip (a later merge landed first) -> its first parent, never HEAD itself\n' "$row" ;;
+        *) printf 'FAIL  row %-2s push shape, HEAD behind the tip: wanted %s|first parent of HEAD (HEAD is on origin/main, behind the tip..., got %s\n' "$row" "$want6" "$got6"; fails=1 ;; esac
     # Rows 19-20: a STACKED merge-group entry at depth 1 — the head's single parent
     # is the previous entry's squash, not the origin/main tip. Under merge_group it
     # deepens and names that parent; with deepening disabled (the mutation) it is

@@ -96,6 +96,8 @@ pub mod hash;
 pub mod inference;
 pub mod matrix;
 pub mod monitor;
+/// Backend discovery: probe → enumerate → print (PP-066 R-0a).
+pub mod registry;
 pub mod simulation;
 pub mod tiling;
 pub mod tuner;
