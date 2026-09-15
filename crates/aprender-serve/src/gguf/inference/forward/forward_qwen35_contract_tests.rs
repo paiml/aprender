@@ -254,6 +254,20 @@ fn deltas_over_sequence(m: &Qwen35Model<'_>, inputs: &[Vec<f32>]) -> Result<Vec<
     Ok(deltas)
 }
 
+/// Qwen3.5's layer schedule (every 4th layer is full attention) over two periods, each layer
+/// seeded `seed + l`.
+fn hybrid_layers(dims: Dims, seed: u64) -> Vec<Qwen35OwnedLayer> {
+    (0..8u64)
+        .map(|l| {
+            if (l + 1) % 4 == 0 {
+                Qwen35OwnedLayer::Attention(attention_layer(dims, seed + l))
+            } else {
+                Qwen35OwnedLayer::DeltaNet(deltanet_layer(dims, seed + l))
+            }
+        })
+        .collect()
+}
+
 fn inputs(dims: Dims, seed: u64) -> Vec<Vec<f32>> {
     let mut r = Rng::new(seed);
     (0..SEQ_LEN).map(|_| r.vec(dims.hidden)).collect()
@@ -480,16 +494,7 @@ fn qhf_inv_003_ffn_sublayer_preserves_d_model() -> Result<()> {
 fn qhf_inv_004_each_layer_runs_exactly_one_mixer() -> Result<()> {
     for dims in DIMS {
         let base = base_model(dims);
-        let layers: Vec<Qwen35OwnedLayer> = (0..8u64)
-            .map(|l| {
-                if (l + 1) % 4 == 0 {
-                    Qwen35OwnedLayer::Attention(attention_layer(dims, 400 + l))
-                } else {
-                    Qwen35OwnedLayer::DeltaNet(deltanet_layer(dims, 400 + l))
-                }
-            })
-            .collect();
-        let m = model(&base, dims, layers);
+        let m = model(&base, dims, hybrid_layers(dims, 400));
         let mut state = m.new_state(4);
         for (pos, token) in [1u32, 3].into_iter().enumerate() {
             let logits = m.forward_single_qwen35(token, &mut state, pos)?;
@@ -667,6 +672,190 @@ fn qhf_con_007_residual_identity() -> Result<()> {
                 let m = model(&base, dims, vec![Qwen35OwnedLayer::DeltaNet(layer)]);
                 let got = deltas_over_sequence(&m, h)?;
                 assert_close(&got[0], want, &format!("QHF-CON-007 {what}"));
+            }
+        }
+    }
+    Ok(())
+}
+
+// === contracts/qwen35-e2e-verification-v1.yaml (QE2E) ======================================
+//
+// Three of the seven obligations are unit-testable against this code and are discharged
+// below: QE2E-ORD-003, QE2E-INV-006, QE2E-CON-007. QE2E-INV-001 (a 9B checkpoint's
+// parameter count), QE2E-BND-002 (an O() bound with no constant), QE2E-MON-004 (a
+// throughput claim) and QE2E-BND-005 (a coverage meta-claim) are not; see #3091.
+
+/// Tokens that visit the first and the last embedding row.
+fn token_sequence(dims: Dims, seq_len: usize) -> Vec<u32> {
+    (0..seq_len)
+        .map(|p| u32::try_from((p * 3 + 1) % dims.vocab).unwrap_or(0))
+        .collect()
+}
+
+// --- QE2E-ORD-003: quantization memory ordering -------------------------------------------
+
+/// QE2E-ORD-003 `M(Q4K) < M(Q6K) < M(F16) < M(F32)` (FALSIFY-QE2E-003, "Quantization byte
+/// formula wrong"). The four byte counts are MEASURED, not read from block constants: the
+/// same seeded tensor is encoded by the real encoders (`quantize_q4_k`, `quantize_q6_k`,
+/// `f32_to_f16`, `f32::to_le_bytes`), the ordering is asserted on what they wrote, and then
+/// each encoding is written into a GGUF and the loader's `get_tensor_ref` must reserve
+/// exactly that many bytes, so the ordering holds for the bytes the serving path maps.
+///
+/// Domain: whole 256-element super-blocks, the unit ggml's K-quant encoders are defined on.
+/// The contract's formal states no domain; below one super-block the padded K-quant blocks
+/// are LARGER than F16 (see #3091), so the formal is false for tiny tensors as written.
+#[test]
+fn qe2e_ord_003_quantization_memory_ordering() -> Result<()> {
+    use crate::gguf::test_factory::GGUFBuilder;
+    use crate::gguf::{GGUFModel, QuantizedGGUFTransformer};
+
+    for (i, dims) in [vec![256u64], vec![1024], vec![256, 512]]
+        .into_iter()
+        .enumerate()
+    {
+        let n: usize = dims
+            .iter()
+            .map(|&d| usize::try_from(d).unwrap_or(0))
+            .product();
+        let data = Rng::new(31 + i as u64).vec(n);
+        let q4k = trueno_quant::quantize_q4_k(&data);
+        let q6k = trueno_quant::quantize_q6_k(&data);
+        let f16: Vec<u8> = data
+            .iter()
+            .flat_map(|v| trueno_quant::f32_to_f16(*v).to_le_bytes())
+            .collect();
+        let f32_bytes: Vec<u8> = data.iter().flat_map(|v| v.to_le_bytes()).collect();
+
+        let measured = [
+            ("Q4K", q4k.len()),
+            ("Q6K", q6k.len()),
+            ("F16", f16.len()),
+            ("F32", f32_bytes.len()),
+        ];
+        for pair in measured.windows(2) {
+            assert!(
+                pair[0].1 < pair[1].1,
+                "QE2E-ORD-003 dims {dims:?}: M({}) = {} bytes is not < M({}) = {} bytes",
+                pair[0].0,
+                pair[0].1,
+                pair[1].0,
+                pair[1].1
+            );
+        }
+
+        let file = GGUFBuilder::new()
+            .add_q4_k_tensor("q4k", &dims, &q4k)
+            .add_q6_k_tensor("q6k", &dims, &q6k)
+            .add_f16_tensor("f16", &dims, &f16)
+            .add_f32_tensor("f32", &dims, &data)
+            .build();
+        let gguf = GGUFModel::from_bytes(&file)?;
+        for (name, (label, written)) in ["q4k", "q6k", "f16", "f32"].into_iter().zip(measured) {
+            let reserved = QuantizedGGUFTransformer::get_tensor_ref(&gguf, &file, name)?.byte_size;
+            assert_eq!(
+                reserved, written,
+                "QE2E-ORD-003 dims {dims:?}: the loader maps {reserved} bytes for the {label} \
+                 tensor, the encoder wrote {written}"
+            );
+        }
+    }
+    Ok(())
+}
+
+// --- QE2E-INV-006: every block preserves shape ---------------------------------------------
+
+/// QE2E-INV-006 `∀l: shape(block_l(x)) = shape(x)` (FALSIFY-QE2E-006). The residual stream
+/// of a real token is carried through the eight-layer hybrid stack ONE BLOCK AT A TIME: at
+/// every layer `l` the block's output must be `d_model` wide, finite, and must have written
+/// every one of the `d_model` coordinates (a block whose output is narrower than `x` leaves
+/// a coordinate's delta at exactly zero). The hidden buffer is a slice, so its LENGTH cannot
+/// change; the width a block actually writes is the observable shape.
+///
+/// So that the `x` fed to each block is the model's real `h_l` and not a test artefact, the
+/// block-by-block chain must reproduce `forward_single_qwen35`'s logits bit for bit (same
+/// code, same inputs; no tolerance is involved).
+#[test]
+fn qe2e_inv_006_every_block_preserves_d_model() -> Result<()> {
+    for dims in DIMS {
+        let base = base_model(dims);
+        let m = model(&base, dims, hybrid_layers(dims, 800));
+        let tokens = token_sequence(dims, SEQ_LEN);
+        let mut by_block = m.new_state(SEQ_LEN);
+        let mut whole = m.new_state(SEQ_LEN);
+        for (pos, &token) in tokens.iter().enumerate() {
+            let t = token as usize;
+            let mut h = base.token_embedding[t * dims.hidden..(t + 1) * dims.hidden].to_vec();
+            for l in 0..m.layers.len() {
+                let out = run_block(&m, l, &h, &mut by_block, pos)?;
+                assert_eq!(out.len(), dims.hidden, "QE2E-INV-006 block {l} width");
+                for (i, (o, x)) in out.iter().zip(&h).enumerate() {
+                    assert!(
+                        o.is_finite() && o != x,
+                        "QE2E-INV-006 block {l} (position {pos}) did not write coordinate {i} \
+                         of d_model={}: x = {x}, block(x) = {o}",
+                        dims.hidden
+                    );
+                }
+                h = out;
+            }
+            by_block.kv_cache.advance();
+
+            let mut normed = vec![0.0; dims.hidden];
+            crate::gguf::ops::rms_norm_into(
+                &h,
+                &base.output_norm_weight,
+                base.config.eps,
+                &mut normed,
+            );
+            let mut chained = vec![0.0; dims.vocab];
+            base.fused_matmul_into(&normed, &base.lm_head_weight, &mut chained)?;
+            let logits = m.forward_single_qwen35(token, &mut whole, pos)?;
+            assert_eq!(
+                chained, logits,
+                "QE2E-INV-006 position {pos}: the block-by-block chain is not the model"
+            );
+        }
+    }
+    Ok(())
+}
+
+// --- QE2E-CON-007: tokens in, [seq_len, V] logits out --------------------------------------
+
+/// QE2E-CON-007 `shape(model(tokens)) = [seq_len, V]`, `tolerance: 0.0` (FALSIFY-QE2E-007).
+/// A token sequence is run through the full hybrid stack (`forward_single_qwen35` per
+/// position, as `run_qwen35_generate` prefills) from a state sized for exactly `seq_len`
+/// positions. The result must be `seq_len` rows of exactly `V` logits, each one finite and
+/// written (a logit buffer wider than `V` leaves coordinates at exactly zero; a narrower one
+/// fails the width). Sequence lengths 1, 3 and 6 over two vocabularies, every token id in
+/// range including `V - 1`.
+#[test]
+fn qe2e_con_007_tokens_in_logits_out_shape() -> Result<()> {
+    for dims in DIMS {
+        let base = base_model(dims);
+        let m = model(&base, dims, hybrid_layers(dims, 900));
+        for seq_len in [1usize, 3, 6] {
+            let tokens = token_sequence(dims, seq_len);
+            let mut state = m.new_state(seq_len);
+            let logits = tokens
+                .iter()
+                .enumerate()
+                .map(|(pos, &t)| m.forward_single_qwen35(t, &mut state, pos))
+                .collect::<Result<Vec<Vec<f32>>>>()?;
+            assert_eq!(logits.len(), seq_len, "QE2E-CON-007 rows for {tokens:?}");
+            for (pos, row) in logits.iter().enumerate() {
+                assert_eq!(
+                    row.len(),
+                    dims.vocab,
+                    "QE2E-CON-007 position {pos}: logits width, V = {}",
+                    dims.vocab
+                );
+                for (v, x) in row.iter().enumerate() {
+                    assert!(
+                        x.is_finite() && *x != 0.0,
+                        "QE2E-CON-007 position {pos}: logit {v} is {x} (never written or not \
+                         finite); row {row:?}"
+                    );
+                }
             }
         }
     }
