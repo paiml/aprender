@@ -1,1 +1,25 @@
-docs/roadmaps/roadmap.yaml merge=roadmap
+# .gitattributes — merge behaviour for APPEND-ONLY ledgers, and nothing else.
+#
+# docs/audits/impl-estimates.jsonl is written by appending one row per
+# (ticket, phase). Two branches that both append produce a textual conflict on
+# the last line, and a squash-merge from the queue therefore makes EVERY branch
+# carrying the file DIRTY the moment anything merges.
+#
+# Measured 2026-09-14: it happened to #3001 at ~07:05Z and #3093 at ~08:35Z, 90
+# minutes apart, and both resolutions were identical — take the union, main's
+# rows first. A resolution that is always the same is a merge driver nobody
+# wrote.
+#
+# `union` is git's built-in driver: both sides' added lines, no markers. Proved
+# in a throwaway repo before being written here — without this file the same
+# two-sided append leaves 1 conflict marker; with it, 0.
+#
+# SCOPED DELIBERATELY, AND THE SCOPE IS THE POINT.
+# `*.jsonl` would be wrong. Most .jsonl in this repo are GOLDENS and DATASETS —
+# crates/aprender-contrastive-data/tests/goldens/*, datasets/*,
+# evidence/pr-review/*/receipt.intoto.jsonl. A union merge there silently
+# DUPLICATES rows and breaks the byte-identity those files exist to assert. Only
+# an append-only ledger may be union-merged, and docs/audits/ is where they live.
+#
+# scripts/check_append_only_ledgers.sh holds that distinction as a case table.
+docs/audits/*.jsonl merge=union
