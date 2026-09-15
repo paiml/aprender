@@ -31,6 +31,14 @@ PROG="${0##*/}"
 REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 DRIVER_SCRIPT="$REPO_ROOT/scripts/lib/roadmap_merge.py"
 DRIVER_CONFIG_KEY="merge.roadmap.driver"
+# A .gitattributes merge-driver declaration is RETROACTIVELY INERT. Git reads
+# attributes from the side being merged INTO, so a branch cut before the rule
+# landed never sees it: #3256 declared `docs/audits/*.jsonl merge=union` on
+# 768e740b1, and every older PR still conflicted on that append-only ledger by
+# hand -- measured on #3005 and #3271. core.attributesFile is the lowest-priority
+# source, so this binds ONLY where the branch has no rule of its own, and it is
+# passed per invocation: nothing in the shared .git is written.
+ATTRS_OVERRIDE=""
 
 APPLY=0
 NO_PUSH=0
@@ -105,6 +113,19 @@ select_dirty() {
 # --------------------------------------------------------------------------
 ST_N=0
 ST_RED=0
+
+write_attrs_override() {
+    ATTRS_OVERRIDE=$(mktemp "${TMPDIR:-/tmp}/ci_resolve_attrs.XXXXXX")
+    printf 'docs/audits/*.jsonl merge=union\n' > "$ATTRS_OVERRIDE"
+}
+
+git_merge_ctx() { # git_merge_ctx WORKTREE ARGS... -- git with both drivers bound
+    local wt="$1"; shift
+    git -C "$wt" \
+        -c "$DRIVER_CONFIG_KEY=python3 $DRIVER_SCRIPT %O %A %B" \
+        -c "core.attributesFile=$ATTRS_OVERRIDE" \
+        "$@"
+}
 
 st_row() { # st_row RC LABEL [detail...]
     local line
@@ -372,11 +393,54 @@ SHIM
         rm -f -- "$GH_SHIM_MARKER"
     fi
 
+    # row 9: the retroactive-inertness fixture. A branch whose .gitattributes
+    # predates `docs/audits/*.jsonl merge=union` must conflict WITHOUT the
+    # override and merge cleanly WITH it. Both polarities, or the row proves
+    # nothing: an override that is never needed is indistinguishable from one
+    # that does not work.
+    local ur rc_no rc_yes detail=""
+    ur=$(mktemp -d "${TMPDIR:-/tmp}/ci_resolve_union.XXXXXX")
+    (
+        cd "$ur" || exit 1
+        git init -q -b main . && git config user.email t@t && git config user.name t
+        mkdir -p docs/audits
+        # the branch point carries NO rule for *.jsonl -- that is the defect
+        printf 'docs/roadmaps/roadmap.yaml merge=roadmap\n' > .gitattributes
+        printf '{"id":0}\n' > docs/audits/e.jsonl
+        git add -A && git commit -q -m base
+        git checkout -q -b older
+        printf '{"id":1}\n' >> docs/audits/e.jsonl && git commit -q -am older
+        git checkout -q main
+        printf '{"id":2}\n' >> docs/audits/e.jsonl && git commit -q -am mainside
+        git checkout -q older
+    ) >/dev/null 2>&1 || true
+    rc_no=0
+    git -C "$ur" merge --no-commit --no-ff main >/dev/null 2>&1 || rc_no=$?
+    git -C "$ur" merge --abort >/dev/null 2>&1 || true
+    rc_yes=0
+    git -C "$ur" -c "core.attributesFile=$ATTRS_OVERRIDE" \
+        merge --no-commit --no-ff main >/dev/null 2>&1 || rc_yes=$?
+    if [ "$rc_no" -eq 0 ]; then
+        detail='no-override merge did NOT conflict (the fixture proves nothing)'
+    elif [ "$rc_yes" -ne 0 ]; then
+        detail='override did not resolve the append-only ledger'
+    elif [ "$(grep -c '"id"' "$ur/docs/audits/e.jsonl")" -ne 3 ]; then
+        detail="union lost a row: $(grep -c '"id"' "$ur/docs/audits/e.jsonl") of 3"
+    fi
+    rm -rf "${ur:?}"
+    if [ -z "$detail" ]; then
+        st_row 0 'union binds on a branch older than the declaration (both polarities)'
+    else
+        st_row 1 'union binds on a branch older than the declaration (both polarities)' "$detail"
+    fi
+
     printf '%s/%s rows, %s failed\n' "$((ST_N - ST_RED))" "$ST_N" "$ST_RED"
     [ "$ST_RED" -eq 0 ]
 }
 
 if [ "$SELFTEST" -eq 1 ]; then
+    write_attrs_override
+    trap 'rm -f -- "${ATTRS_OVERRIDE:-/nonexistent}"' EXIT
     selftest
     exit $?
 fi
@@ -396,7 +460,7 @@ resolve_one() { # resolve_one NUMBER HEADREF
     head_sha=$(git -C "$td_wt" rev-parse HEAD)
 
     if [ "$APPLY" -eq 1 ]; then
-        if git -C "$td_wt" -c "$DRIVER_CONFIG_KEY=python3 $DRIVER_SCRIPT %O %A %B" \
+        if git_merge_ctx "$td_wt" \
                 merge --no-edit -m "merge origin/main (roadmap 3-way by id)" \
                 origin/main >/dev/null 2>&1; then
             merge_sha=$(git -C "$td_wt" rev-parse HEAD)
@@ -419,7 +483,7 @@ resolve_one() { # resolve_one NUMBER HEADREF
             git -C "$td_wt" merge --abort >/dev/null 2>&1 || true
         fi
     else
-        if ! git -C "$td_wt" -c "$DRIVER_CONFIG_KEY=python3 $DRIVER_SCRIPT %O %A %B" \
+        if ! git_merge_ctx "$td_wt" \
                 merge --no-commit --no-ff origin/main >/dev/null 2>&1; then
             dirty_files=$(git -C "$td_wt" diff --name-only --diff-filter=U | wc -l | tr -d ' ')
             git -C "$td_wt" merge --abort >/dev/null 2>&1 || true
@@ -429,6 +493,9 @@ resolve_one() { # resolve_one NUMBER HEADREF
 
     git worktree remove -f "${td_wt:?}"
 }
+
+write_attrs_override
+trap 'rm -f -- "${ATTRS_OVERRIDE:-/nonexistent}"' EXIT
 
 while IFS=$'\t' read -r pr_number head_ref; do
     [ -n "$pr_number" ] || continue
