@@ -76,6 +76,15 @@ pub enum Commands {
         /// Path to the new contract YAML file
         new: PathBuf,
     },
+    /// Census the contract corpus: one cardinality, by_anchoring, by_entity_type (ONT-001 ONT-1)
+    Census {
+        /// Directory containing contract YAML files
+        #[arg(default_value = "contracts")]
+        contract_dir: PathBuf,
+        /// Emit JSON for the ONT ratchet rather than a table
+        #[arg(long)]
+        json: bool,
+    },
     /// Show cross-contract obligation coverage report
     Coverage {
         /// Directory containing contract YAML files

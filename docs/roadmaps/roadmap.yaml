@@ -17822,6 +17822,25 @@ roadmap:
   - kind:code
   notes: 'unanchored_but_bindable moves from [U] to 297; contracts_anchored may not
     rise while pv census is absent, because pv validate accepts entity: by ignoring it'
+- id: PMAT-3233
+  github_issue: null
+  item_type: task
+  title: 'ONT-1: pv census — one cardinality over the corpus, by_anchoring and by_entity_type'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-09-14T20:10:00Z
+  updated: 2026-09-14T20:10:00Z
+  spec: docs/specifications/APR-RELEASE-001-train-and-build-kaizen.md
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'the consumer PMAT-3232 proved missing; reads RAW yaml because Contract is not
+    deny_unknown_fields and serde drops entity:. ONT-001 v4.3 says every figure in its §1
+    is quote-frozen until ONT-1 emits one census'
 - id: PMAT-3300
   github_issue: 3300
   item_type: task
