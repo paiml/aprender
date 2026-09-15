@@ -1,0 +1,47 @@
+# feature_gated_test_leak_baseline.txt -- owned by scripts/check_feature_gated_test_leak.sh
+#
+# Edges where one workspace crate can enable a feature that GATES ANOTHER crate's
+# integration test target. Shrink-only: a new edge fails the guard; a removed one
+# is re-recorded with --update.
+#
+# tool_version=none (cargo metadata + jq; the reading depends on the manifests in
+# the tree, not on a versioned instrument's judgement)
+#
+# Measured 2026-09-14 on 73adf6fa1. ONE of these has demonstrably fired:
+# aprender-orchestrate [dev] -> aprender-test-lib/browser ran three browser
+# falsifiers on a browser-less clean-room runner (#3205, run 34803859272).
+# The rest are unexamined. Being on this list is not a claim that an edge is
+# harmful -- only that the cargo feature is not holding the gate if it matters.
+apr-cli	normal	aprender-core	format-compression	features=[] on the dependency
+apr-cli	normal	aprender-orchestrate	agents	features=[] on the dependency
+apr-cli	normal	aprender-orchestrate	agents-inference	features=[] on the dependency
+apr-cli	normal	aprender-orchestrate	agents-mcp	features=[] on the dependency
+apr-cli	normal	aprender-orchestrate	rag	features=[] on the dependency
+apr-cli	normal	aprender-serve	cuda	feature cuda -> realizar/cuda
+apr-cli	normal	aprender-test-lib	llm	features=[] on the dependency
+aprender-bench-compute	normal	aprender-core	format-quantize	features=[] on the dependency
+aprender-cbtop	normal	aprender-gpu	cuda	feature cuda -> trueno-gpu/cuda
+aprender-cgp	normal	aprender-gpu	cuda	features=[] on the dependency
+aprender-compute	normal	aprender-gpu	cuda	feature cuda-monitor -> trueno-gpu/cuda
+aprender-compute	normal	aprender-gpu	cuda	feature cuda -> trueno-gpu/cuda
+aprender-cuda-edge	normal	aprender-gpu	cuda	feature cuda -> trueno-gpu/cuda
+aprender-distribute	dev	aprender-test-lib	tui	features=[] on the dependency
+aprender-explain	normal	aprender-gpu	cuda	features=[] on the dependency
+aprender	normal	apr-cli	inference	feature inference -> apr-cli/inference
+aprender	normal	apr-cli	training	feature training -> apr-cli/training
+aprender-orchestrate	dev	aprender-test-lib	browser	features=[] on the dependency
+aprender-orchestrate	normal	aprender-rag	sqlite	features=[] on the dependency
+aprender-orchestrate	normal	aprender-serve	cuda	feature inference-cuda -> realizar/cuda
+aprender-orchestrate	normal	aprender-test-lib	browser	features=[] on the dependency
+aprender-qa-runner	normal	aprender-test-lib	llm-types	features=[] on the dependency
+aprender-rag-cli	normal	aprender-rag	nemotron	feature nemotron -> aprender-rag/nemotron
+aprender-serve	dev	aprender-test-lib	gpu	features=[] on the dependency
+aprender-serve	dev	aprender-test-lib	tui	features=[] on the dependency
+aprender-serve	normal	aprender-gpu	cuda	features=[] on the dependency
+aprender-shell	normal	aprender-core	format-compression	features=[] on the dependency
+aprender-shell	normal	aprender-core	format-encryption	features=[] on the dependency
+aprender-shell	normal	aprender-core	format-homomorphic	features=[] on the dependency
+aprender-test-cli	normal	aprender-test-lib	browser	feature browser -> jugar-probar/browser
+aprender-train	normal	aprender-gpu	cuda	feature cuda -> trueno-gpu/cuda
+aprender-train	normal	aprender-serve	cuda	feature cuda -> realizar/cuda
+aprender-zram-core	normal	aprender-gpu	cuda	features=[] on the dependency
