@@ -59,7 +59,7 @@ row() { # row WANT_RC LABEL MUST_MATCH -- CMD...
     shift 3
     n=$((n + 1))
     out=$("$@" 2>&1); rc=$?
-    if [ "$rc" = "$want" ] && printf '%s\n' "$out" | grep -qE -- "$pat"; then
+    if [ "$rc" = "$want" ] && grep -qE -- "$pat" <<< "$out"; then
         printf 'ok    row %-2s rc=%s  %s\n' "$n" "$rc" "$label"
     else
         printf 'FAIL  row %-2s rc=%s (wanted %s, must match /%s/)  %s\n' "$n" "$rc" "$want" "$pat" "$label"
@@ -149,7 +149,8 @@ b_out=$(PATH="$TD/mock-mismatch:$PATH" baseline_require_tool_version "$TD/versio
 b_rc=$?
 b_lines=$(printf '%s\n' "$b_out" | wc -l | tr -d ' ')
 n=$((n + 1))
-if [ "$b_rc" = 4 ] && [ "$b_lines" = 1 ] && printf '%s' "$b_out" | grep -qE 'recorded under pmat 0\.0\.1.*runner has pmat 0\.0\.2'; then
+if [ "$b_rc" = 4 ] && [ "$b_lines" = 1 ] \
+   && grep -qE 'recorded under pmat 0\.0\.1.*runner has pmat 0\.0\.2' <<< "$b_out"; then
     printf 'ok    row %-2s rc=4  mismatch (recorded 0.0.1, runner 0.0.2): exactly one line\n' "$n"
 else
     printf 'FAIL  row %-2s rc=%s lines=%s  mismatch did not exit 4 with exactly one line\n' "$n" "$b_rc" "$b_lines"

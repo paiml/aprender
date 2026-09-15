@@ -1,0 +1,85 @@
+{
+ "total_count": 16,
+ "jobs": [
+  {
+   "name": "guard-tree",
+   "status": "completed",
+   "conclusion": "failure"
+  },
+  {
+   "name": "ci / provenance",
+   "status": "completed",
+   "conclusion": "success"
+  },
+  {
+   "name": "workspace-test",
+   "status": "completed",
+   "conclusion": "success"
+  },
+  {
+   "name": "guard-cargo",
+   "status": "completed",
+   "conclusion": "success"
+  },
+  {
+   "name": "vendored-schemas",
+   "status": "completed",
+   "conclusion": "success"
+  },
+  {
+   "name": "ci / lint",
+   "status": "completed",
+   "conclusion": "success"
+  },
+  {
+   "name": "ci / coverage",
+   "status": "completed",
+   "conclusion": "success"
+  },
+  {
+   "name": "ci / test",
+   "status": "completed",
+   "conclusion": "success"
+  },
+  {
+   "name": "ci / security",
+   "status": "completed",
+   "conclusion": "success"
+  },
+  {
+   "name": "ci / bench",
+   "status": "completed",
+   "conclusion": "skipped"
+  },
+  {
+   "name": "gpu-quick",
+   "status": "completed",
+   "conclusion": "skipped"
+  },
+  {
+   "name": "pr-review-sign",
+   "status": "completed",
+   "conclusion": "skipped"
+  },
+  {
+   "name": "pr-review-shadow",
+   "status": "completed",
+   "conclusion": "skipped"
+  },
+  {
+   "name": "gpu-touched",
+   "status": "completed",
+   "conclusion": "skipped"
+  },
+  {
+   "name": "cuda-unit",
+   "status": "completed",
+   "conclusion": "skipped"
+  },
+  {
+   "name": "ci / gate",
+   "status": "queued",
+   "conclusion": null
+  }
+ ]
+}

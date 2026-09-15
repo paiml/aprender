@@ -330,6 +330,26 @@ for i in json.load(sys.stdin):
 self_test() {
     fails=0
 
+    # PIN THE REFERENCE CLASSIFIER, or this table stops being a table.
+    #
+    # R2 below delegates to check_pr_closes_issue.sh, which now resolves each
+    # cited "#N" and drops the ones that are pull requests or already-closed
+    # issues (a PR you build on promises nothing; an issue already closed cannot
+    # be left open forever). That made this file's fixtures LIVE: `Refs #5` is a
+    # real, closed issue in this repository, so R2-positive expected [10] and
+    # got [] — the fixture number had quietly become an API call.
+    #
+    # Pinned to a stub instead: every number in these fixtures is an OPEN issue,
+    # which is what they were always written to mean. No network, no token,
+    # deterministic. It is exported because r2_missing_closing_ref runs the
+    # close script as a child process.
+    _rc_stub="$(mktemp -d)/kindstub.sh" || return 2
+    mkdir -p "$(dirname "$_rc_stub")"
+    printf '#!/usr/bin/env bash\nprintf issue\n' > "$_rc_stub"
+    chmod +x "$_rc_stub"
+    PR_CLOSES_REF_KIND_CMD="$_rc_stub"
+    export PR_CLOSES_REF_KIND_CMD
+
     # R1: an open issue #42 fixed by a commit -> R1 = [42]. Twin: same commit,
     # but #42 is not in the open-issues file -> R1 = [].
     fixdir="$(mktemp -d)" || return 2
