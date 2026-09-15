@@ -9,6 +9,14 @@
 //   * raw float32 logits are written, not uint16-compressed log-softmax.
 //
 // Extra flags (stripped before common parsing):
+//   --kv-type f16|f32        (PMAT-3091 kvconfig) sets common_params.cache_type_k AND cache_type_v, which
+//                            common_context_params_to_llama copies to llama_context_params.type_k/type_v
+//                            (common.cpp:1751-1752 at d1d3c3396). Absent = common's default (F16) or -ctk/-ctv.
+//   --flash-attn on|off|auto (PMAT-3091 kvconfig) sets common_params.flash_attn_type ->
+//                            llama_context_params.flash_attn_type (common.cpp:1742), enum llama_flash_attn_type
+//                            (llama.h:190-193: AUTO=-1, DISABLED=0, ENABLED=1). Stripped here, so common's own
+//                            -fa/--flash-attn never sees this spelling. Absent = common's default (AUTO).
+//   Neither flag touches params when absent, so a no-flag run is the pre-kvconfig producer.
 //   --raw-out PATH   (required)
 //   --per-token      decode ONE token per llama_decode call (batch of 1, logits=1), in order,
 //                    on the same context/KV, instead of one batched decode of the whole prompt.
@@ -136,6 +144,8 @@ int main(int argc, char ** argv) {
     std::string dump_dir;
     std::string dump_positions;
     std::string dump_regex = "model\\.input_embed|inp_embd|l_out-[0-9]+|result_norm|result_output";
+    std::string kv_type;
+    std::string flash_attn;
     std::vector<char *> args;
     for (int i = 0; i < argc; ++i) {
         if (std::strcmp(argv[i], "--per-token") == 0) {
@@ -148,6 +158,15 @@ int main(int argc, char ** argv) {
                 return 2;
             }
             raw_out = argv[++i];
+            continue;
+        }
+        if (std::strcmp(argv[i], "--kv-type") == 0 || std::strcmp(argv[i], "--flash-attn") == 0) {
+            if (i + 1 >= argc) {
+                fprintf(stderr, "apr_raw_logits: %s needs a value\n", argv[i]);
+                return 2;
+            }
+            std::string & dst = argv[i][2] == 'k' ? kv_type : flash_attn;
+            dst = argv[++i];
             continue;
         }
         if (std::strcmp(argv[i], "--dump-tensors") == 0 || std::strcmp(argv[i], "--dump-positions") == 0 ||
@@ -188,6 +207,36 @@ int main(int argc, char ** argv) {
     common_init();
     if (!common_params_parse((int) args.size(), args.data(), params, LLAMA_EXAMPLE_PERPLEXITY)) {
         return 2;
+    }
+    if (!kv_type.empty()) {
+        ggml_type t;
+        if (kv_type == "f16") {
+            t = GGML_TYPE_F16;
+        } else if (kv_type == "f32") {
+            t = GGML_TYPE_F32;
+        } else {
+            fprintf(stderr, "apr_raw_logits: --kv-type must be f16 or f32, got '%s'\n", kv_type.c_str());
+            return 2;
+        }
+        params.cache_type_k = t;
+        params.cache_type_v = t;
+    }
+    if (!flash_attn.empty()) {
+        if (flash_attn == "on") {
+            params.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_ENABLED;
+        } else if (flash_attn == "off") {
+            params.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_DISABLED;
+        } else if (flash_attn == "auto") {
+            params.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_AUTO;
+        } else {
+            fprintf(stderr, "apr_raw_logits: --flash-attn must be on, off or auto, got '%s'\n", flash_attn.c_str());
+            return 2;
+        }
+    }
+    if (!kv_type.empty() || !flash_attn.empty()) {
+        printf("apr_raw_logits: kvconfig cache_type_k=%s cache_type_v=%s flash_attn_type=%s\n",
+               ggml_type_name(params.cache_type_k), ggml_type_name(params.cache_type_v),
+               llama_flash_attn_type_name(params.flash_attn_type));
     }
     // llama-perplexity: n_parallel = max(1, n_batch / n_ctx). This tool supports n_seq = 1 only.
     const int32_t n_ctx = params.n_ctx;
