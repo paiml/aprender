@@ -257,7 +257,12 @@ fn deltas_over_sequence(m: &Qwen35Model<'_>, inputs: &[Vec<f32>]) -> Result<Vec<
 /// Qwen3.5's layer schedule (every 4th layer is full attention) over two periods, each layer
 /// seeded `seed + l`.
 fn hybrid_layers(dims: Dims, seed: u64) -> Vec<Qwen35OwnedLayer> {
-    (0..8u64)
+    hybrid_schedule(dims, seed, 8)
+}
+
+/// Qwen3.5's layer schedule over `n` layers: every 4th is full attention, each seeded `seed + l`.
+fn hybrid_schedule(dims: Dims, seed: u64, n: u64) -> Vec<Qwen35OwnedLayer> {
+    (0..n)
         .map(|l| {
             if (l + 1) % 4 == 0 {
                 Qwen35OwnedLayer::Attention(attention_layer(dims, seed + l))
@@ -856,6 +861,148 @@ fn qe2e_con_007_tokens_in_logits_out_shape() -> Result<()> {
                          finite); row {row:?}"
                     );
                 }
+            }
+        }
+    }
+    Ok(())
+}
+
+// --- QHF-BND-005: activation stability -------------------------------------------------------
+
+/// FALSIFY-QHF-005 "No NaN/Inf after 48 layers": the depth the prediction names.
+const BND_005_LAYERS: u64 = 48;
+/// One more position than the conv window holds, so every tap of the causal conv state and
+/// the `DeltaNet` recurrent state is overwritten at least once, and the KV cache grows.
+const BND_005_POSITIONS: usize = CONV_KERNEL + 1;
+
+/// One adversarial-but-finite input sequence: `positions` hidden vectors of width `hidden`.
+type SeqGen = fn(usize, usize) -> Vec<Vec<f32>>;
+
+fn signed(rng: &mut Rng, magnitude: f32) -> f32 {
+    if rng.next_f32() < 0.0 {
+        -magnitude
+    } else {
+        magnitude
+    }
+}
+
+fn seq_constant(value: f32) -> impl Fn(usize, usize) -> Vec<Vec<f32>> {
+    move |hidden, positions| vec![vec![value; hidden]; positions]
+}
+
+fn seq_signed(magnitude: f32, seed: u64) -> impl Fn(usize, usize) -> Vec<Vec<f32>> {
+    move |hidden, positions| {
+        let mut r = Rng::new(seed);
+        (0..positions)
+            .map(|_| (0..hidden).map(|_| signed(&mut r, magnitude)).collect())
+            .collect()
+    }
+}
+
+/// Every coordinate of one vector cycles through huge, underflowing, zero and O(1) values of
+/// both signs, so the RMS is dominated by a few coordinates and the rest are ~0 after the norm.
+fn seq_mixed(hidden: usize, positions: usize) -> Vec<Vec<f32>> {
+    let mut r = Rng::new(5);
+    (0..positions)
+        .map(|p| {
+            (0..hidden)
+                .map(|i| match (i + p) % 6 {
+                    0 => 1.0e4,
+                    1 => -1.0e-30,
+                    2 => 0.0,
+                    3 => -1.0e4,
+                    4 => 1.0e-30,
+                    _ => r.next_f32(),
+                })
+                .collect()
+        })
+        .collect()
+}
+
+/// Magnitude switches between positions: the recurrent and conv states built from a huge
+/// token are then read by a zero token and an underflowing one.
+fn seq_switching(hidden: usize, positions: usize) -> Vec<Vec<f32>> {
+    let mut r = Rng::new(9);
+    (0..positions)
+        .map(|p| match p % 4 {
+            0 => (0..hidden).map(|_| signed(&mut r, 1.0e4)).collect(),
+            1 => vec![0.0; hidden],
+            2 => (0..hidden).map(|_| signed(&mut r, 1.0e-30)).collect(),
+            _ => vec![-1.0e4; hidden],
+        })
+        .collect()
+}
+
+fn assert_all_finite(h: &[f32], case: &str, hidden: usize, layer: usize, kind: &str, pos: usize) {
+    for (i, v) in h.iter().enumerate() {
+        assert!(
+            v.is_finite(),
+            "QHF-BND-005 violated: input `{case}` (d_model={hidden}), after layer {layer} \
+             ({kind}), position {pos}, coordinate {i} = {v}"
+        );
+    }
+}
+
+/// QHF-BND-005 `∀l ∈ [0, L], ∀i: is_finite(h_l[i])` (FALSIFY-QHF-005). Drives the real
+/// `forward_deltanet` / `forward_attention` blocks through a 48-layer Qwen3.5 schedule
+/// (36 Gated `DeltaNet` + 12 attention), token by token over `BND_005_POSITIONS` positions
+/// sharing one state, exactly as `forward_single_qwen35` chains them, and checks EVERY
+/// coordinate of `h_0` and of `h_l` after each layer.
+///
+/// Inputs are adversarial but finite. The all-zero vector is a fixed point of the whole
+/// stack (no biases), so every RMSNorm, per-head L2 norm and gated RMSNorm of all 48 layers
+/// sees `sum(x^2) = 0` and only its `eps` stands between `0 * (1/sqrt(0))` and NaN. The
+/// `1e-30` input squares to `0` in f32 (underflow), reaching the same `eps` with nonzero
+/// values (`x * inf = inf`). `±1e30` squares to `+inf`, so `inv_rms = 0`.
+#[test]
+fn qhf_bnd_005_hidden_states_stay_finite() -> Result<()> {
+    let cases: [(&str, &dyn Fn(usize, usize) -> Vec<Vec<f32>>); 9] = [
+        ("all +1e4", &seq_constant(1.0e4)),
+        ("all -1e4", &seq_constant(-1.0e4)),
+        ("mixed sign ±1e4", &seq_signed(1.0e4, 3)),
+        (
+            "mixed sign ±1e-30 (squares underflow)",
+            &seq_signed(1.0e-30, 4),
+        ),
+        ("all-zero", &seq_constant(0.0)),
+        (
+            "mixed magnitude and sign within a vector",
+            &(seq_mixed as SeqGen),
+        ),
+        (
+            "magnitude switching across positions",
+            &(seq_switching as SeqGen),
+        ),
+        (
+            "mixed sign ±1e30 (squares overflow)",
+            &seq_signed(1.0e30, 6),
+        ),
+        ("seeded O(1) control", &seq_signed(0.25, 7)),
+    ];
+    for dims in DIMS {
+        let base = base_model(dims);
+        let m = model(
+            &base,
+            dims,
+            hybrid_schedule(dims, dims.hidden as u64 * 1000, BND_005_LAYERS),
+        );
+        assert_eq!(m.layers.len(), BND_005_LAYERS as usize, "stack depth");
+        for (case, gen) in cases {
+            let seq = gen(dims.hidden, BND_005_POSITIONS);
+            let mut state = m.new_state(BND_005_POSITIONS + 1);
+            for (pos, h0) in seq.iter().enumerate() {
+                assert_all_finite(h0, case, dims.hidden, 0, "input h_0", pos);
+                let mut h = h0.clone();
+                for il in 0..m.layers.len() {
+                    h = run_block(&m, il, &h, &mut state, pos)?;
+                    assert_eq!(h.len(), dims.hidden, "{case}: width after layer {}", il + 1);
+                    let kind = match &m.layers[il] {
+                        Qwen35OwnedLayer::DeltaNet(_) => "Gated DeltaNet",
+                        Qwen35OwnedLayer::Attention(_) => "attention",
+                    };
+                    assert_all_finite(&h, case, dims.hidden, il + 1, kind, pos);
+                }
+                state.kv_cache.advance();
             }
         }
     }
