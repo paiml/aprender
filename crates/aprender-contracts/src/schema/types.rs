@@ -554,6 +554,22 @@ pub struct ProofObligation {
     pub tolerance: Option<f64>,
     #[serde(default)]
     pub applies_to: Option<AppliesTo>,
+    /// Why this obligation is NOT a property of code (PMAT-3091) -- e.g. a
+    /// checkpoint fact, an `O()` with no constant, a throughput claim.
+    ///
+    /// Only meaningful with `applies_to: not_applicable`, where it is REQUIRED
+    /// (SCHEMA-021). Present on any other obligation it is decoration -- a
+    /// justification nothing declares -- and is an error (SCHEMA-023).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub na_reason: Option<String>,
+    /// Where the claim IS verified, since a unit test cannot (PMAT-3091): a
+    /// bench, a `pv`/CI check, or an evidence command.
+    ///
+    /// Same decoration rule as `na_reason`: required with
+    /// `applies_to: not_applicable` (SCHEMA-022), an error without it
+    /// (SCHEMA-023).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub na_owner: Option<String>,
     /// Phase 7: Lean 4 theorem proving metadata.
     #[serde(default)]
     pub lean: Option<LeanProof>,
@@ -656,9 +672,24 @@ pub enum AppliesTo {
     Scalar,
     Simd,
     Converter,
+    /// Not a property of code, so not applicable to unit tests (PMAT-3091).
+    /// Requires `na_reason` and `na_owner` on the obligation. `N/A` is accepted
+    /// as an alias; it is matched as a named variant BEFORE the `#[serde(other)]`
+    /// catch-all, so it can never parse as an algorithm target named "N/A".
+    /// Always serialized as `not_applicable`.
+    #[serde(rename = "not_applicable", alias = "N/A")]
+    NotApplicable,
     /// Algorithm-specific target (e.g., "degree", "bce", "huber").
     #[serde(other)]
     Other,
+}
+
+impl ProofObligation {
+    /// `true` when the obligation is declared `applies_to: not_applicable`.
+    #[must_use]
+    pub fn is_not_applicable(&self) -> bool {
+        self.applies_to == Some(AppliesTo::NotApplicable)
+    }
 }
 
 /// Kernel phase decomposition.

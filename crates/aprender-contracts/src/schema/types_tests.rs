@@ -255,3 +255,62 @@ fn proof_obligation_id_survives_a_typed_round_trip() {
         "a None id must be omitted, not written as null: {text}"
     );
 }
+
+// ── PMAT-3091: not-applicable-to-unit-tests obligations ───────────────────
+
+fn na_obligation_from(yaml: &str) -> ProofObligation {
+    serde_yaml::from_str(yaml).expect("obligation fixture must parse")
+}
+
+#[test]
+fn applies_to_not_applicable_deserializes_to_not_applicable_not_other() {
+    let ob = na_obligation_from("property: p\napplies_to: not_applicable\n");
+    assert_eq!(ob.applies_to, Some(AppliesTo::NotApplicable));
+    assert_ne!(ob.applies_to, Some(AppliesTo::Other));
+}
+
+#[test]
+fn applies_to_na_alias_maps_ahead_of_the_catch_all() {
+    let ob = na_obligation_from("property: p\napplies_to: N/A\n");
+    assert_eq!(ob.applies_to, Some(AppliesTo::NotApplicable));
+}
+
+#[test]
+fn applies_to_unknown_target_still_parses_as_other() {
+    let ob = na_obligation_from("property: p\napplies_to: huber\n");
+    assert_eq!(ob.applies_to, Some(AppliesTo::Other));
+}
+
+#[test]
+fn na_fields_are_typed_and_read() {
+    let ob = na_obligation_from(
+        "property: p\napplies_to: not_applicable\nna_reason: a checkpoint fact\nna_owner: pv check\n",
+    );
+    assert_eq!(ob.na_reason.as_deref(), Some("a checkpoint fact"));
+    assert_eq!(ob.na_owner.as_deref(), Some("pv check"));
+    assert!(ob.is_not_applicable());
+}
+
+#[test]
+fn na_roundtrip_keeps_not_applicable_and_both_fields() {
+    let ob = na_obligation_from(
+        "property: p\napplies_to: N/A\nna_reason: an O() with no constant\nna_owner: bench qwen35\n",
+    );
+    let yaml = serde_yaml::to_string(&ob).expect("serialize");
+    assert!(yaml.contains("applies_to: not_applicable"), "{yaml}");
+    let back = na_obligation_from(&yaml);
+    assert_eq!(back.applies_to, Some(AppliesTo::NotApplicable));
+    assert_eq!(back.na_reason.as_deref(), Some("an O() with no constant"));
+    assert_eq!(back.na_owner.as_deref(), Some("bench qwen35"));
+}
+
+#[test]
+fn na_fields_absent_are_not_serialized() {
+    let ob = na_obligation_from("property: p\napplies_to: all\n");
+    let yaml = serde_yaml::to_string(&ob).expect("serialize");
+    assert!(
+        !yaml.contains("na_reason") && !yaml.contains("na_owner"),
+        "{yaml}"
+    );
+    assert!(!ob.is_not_applicable());
+}
