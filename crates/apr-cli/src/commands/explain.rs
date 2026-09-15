@@ -6,6 +6,25 @@ use std::path::{Path, PathBuf};
 /// The positional argument is auto-detected: if it looks like a file path
 /// (exists on disk or has a model file extension), it's treated as `--file`.
 /// Otherwise it's treated as an error code or family name.
+/// Companion-file lookup for `apr explain`.
+///
+/// realizar's `safetensors::find_sibling_file` handles hash-prefixed and
+/// symlinked model paths (CB-510 / publish-safety), so it is used whenever
+/// `inference` links realizar. `apr explain` reports metadata and does not
+/// infer, so it must still build without that feature: the fallback is the
+/// literal sibling in the parent directory, returned only when it exists so
+/// callers see the same `Option` contract either way.
+#[cfg(feature = "inference")]
+fn find_sibling(path: &Path, name: &str) -> Option<PathBuf> {
+    realizar::safetensors::find_sibling_file(path, name)
+}
+
+#[cfg(not(feature = "inference"))]
+fn find_sibling(path: &Path, name: &str) -> Option<PathBuf> {
+    let candidate = path.parent()?.join(name);
+    candidate.exists().then_some(candidate)
+}
+
 #[allow(clippy::unnecessary_wraps, clippy::fn_params_excessive_bools)]
 #[provable_contracts_macros::contract(
     "apr-cli-operations-v1",
@@ -228,7 +247,7 @@ fn resolve_family_from_model_file(
     // Companion lookup: find_sibling_file handles hash-prefixed / symlinked
     // model paths robustly (CB-510 / publish-safety) and only returns Some
     // when the file exists — subsuming the prior with_file_name + .exists().
-    if let Some(config_path) = realizar::safetensors::find_sibling_file(&real_path, "config.json") {
+    if let Some(config_path) = find_sibling(&real_path, "config.json") {
         resolve_from_config_json(&config_path)
     } else {
         emit_kernel_error(
@@ -341,7 +360,7 @@ fn resolve_config_mapping(
             // hash-prefixed / symlinked model paths); fall back to the literal
             // sibling dir so extract_config_mapping reports not-found as before
             // (parent().join avoids with_file_name per publish-safety).
-            realizar::safetensors::find_sibling_file(p, "config.json").unwrap_or_else(|| {
+            find_sibling(p, "config.json").unwrap_or_else(|| {
                 p.parent().map_or_else(
                     || std::path::PathBuf::from("config.json"),
                     |d| d.join("config.json"),
@@ -467,48 +486,64 @@ fn explain_error_code(code: &str, json: bool) {
 /// PMAT-266: Explain tensor — look up in actual model file via RosettaStone
 // serde_json::json!() macro uses infallible unwrap internally
 #[allow(clippy::disallowed_methods)]
+/// The tensors in `path` whose name matches `tensor_name`, as JSON objects.
+///
+/// `None` when there is no readable model at `path`; an empty vector when the
+/// model has no matching tensor. The caller distinguishes the two.
+fn matching_tensors_json(tensor_name: &str, path: &Path) -> Option<Vec<serde_json::Value>> {
+    if !path.exists() {
+        return None;
+    }
+    let report = aprender::format::rosetta::RosettaStone::new()
+        .inspect(path)
+        .ok()?;
+    Some(
+        report
+            .tensors
+            .iter()
+            .filter(|t| t.name == tensor_name || t.name.contains(tensor_name))
+            .map(|t| {
+                serde_json::json!({
+                    "name": t.name,
+                    "shape": t.shape,
+                    "dtype": format!("{:?}", t.dtype),
+                })
+            })
+            .collect(),
+    )
+}
+
+/// GH-510: the `--json` half of [`explain_tensor`].
+fn explain_tensor_json(tensor_name: &str, file: Option<&Path>) {
+    let role = TENSOR_ROLES
+        .iter()
+        .find(|(patterns, _)| patterns.iter().any(|p| tensor_name.contains(p)))
+        .map(|(_, desc)| *desc);
+
+    let mut output = serde_json::json!({
+        "tensor": tensor_name,
+        "role": role.unwrap_or("unknown"),
+    });
+
+    if let Some((path, matching)) =
+        file.and_then(|p| Some((p, matching_tensors_json(tensor_name, p)?)))
+    {
+        if !matching.is_empty() {
+            output["matches"] = serde_json::json!(matching);
+        }
+        output["file"] = serde_json::json!(path.display().to_string());
+    }
+
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&output).unwrap_or_default()
+    );
+}
+
 fn explain_tensor(tensor_name: &str, file: Option<&Path>, json: bool) {
     // GH-510: Respect --json flag for tensor explanations
     if json {
-        let role = TENSOR_ROLES
-            .iter()
-            .find(|(patterns, _)| patterns.iter().any(|p| tensor_name.contains(p)))
-            .map(|(_, desc)| *desc);
-
-        let mut output = serde_json::json!({
-            "tensor": tensor_name,
-            "role": role.unwrap_or("unknown"),
-        });
-
-        // If a file is provided, try to look up the actual tensor
-        if let Some(path) = file {
-            if path.exists() {
-                let rosetta = aprender::format::rosetta::RosettaStone::new();
-                if let Ok(report) = rosetta.inspect(path) {
-                    let matching: Vec<_> = report
-                        .tensors
-                        .iter()
-                        .filter(|t| t.name == tensor_name || t.name.contains(tensor_name))
-                        .map(|t| {
-                            serde_json::json!({
-                                "name": t.name,
-                                "shape": t.shape,
-                                "dtype": format!("{:?}", t.dtype),
-                            })
-                        })
-                        .collect();
-                    if !matching.is_empty() {
-                        output["matches"] = serde_json::json!(matching);
-                    }
-                    output["file"] = serde_json::json!(path.display().to_string());
-                }
-            }
-        }
-
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&output).unwrap_or_default()
-        );
+        explain_tensor_json(tensor_name, file);
         return;
     }
 

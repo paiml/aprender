@@ -431,19 +431,9 @@ pub fn cmd_code(
     // Falls back to embedded RealizarDriver if `apr` binary not found.
     // PMAT-CODE-SPAWN-PARITY-001: driver stored as Arc so TaskTool can
     // share it with the AgentPool for sub-agent execution.
-    let driver: Arc<dyn LlmDriver> = if let Some(model_path) = manifest.model.resolve_model_path() {
-        match crate::agent::driver::apr_serve::AprServeDriver::launch(
-            model_path,
-            manifest.model.context_window,
-        ) {
-            Ok(d) => Arc::new(d),
-            Err(e) => {
-                eprintln!("⚠ apr serve unavailable ({e}), using embedded inference");
-                Arc::from(build_fallback_driver(&manifest)?)
-            }
-        }
-    } else {
-        Arc::from(build_fallback_driver(&manifest)?)
+    let driver: Arc<dyn LlmDriver> = match try_apr_serve_driver(&manifest) {
+        Some(d) => Arc::from(d),
+        None => Arc::from(build_fallback_driver(&manifest)?),
     };
 
     // PMAT-CODE-MCP-JSON-LOADER-001: merge `<project>/.mcp.json` (Claude-Code-
@@ -636,6 +626,34 @@ fn apply_settings_to_manifest(
         }
     }
     Ok(())
+}
+
+/// PMAT-160: launch `apr serve` as the driver when local inference is compiled in.
+///
+/// `driver::apr_serve` is gated on `inference`, not `native`: it parses
+/// realizar's tool-call syntax and uses `libc::prctl` for parent-death
+/// signalling, neither of which `agents` alone links. Without that feature
+/// there is no server to launch, so the caller falls through to
+/// [`build_fallback_driver`] exactly as it does when `apr` is not installed.
+#[cfg(feature = "inference")]
+fn try_apr_serve_driver(manifest: &AgentManifest) -> Option<Box<dyn LlmDriver>> {
+    let model_path = manifest.model.resolve_model_path()?;
+    match crate::agent::driver::apr_serve::AprServeDriver::launch(
+        model_path,
+        manifest.model.context_window,
+    ) {
+        Ok(d) => Some(Box::new(d)),
+        Err(e) => {
+            eprintln!("⚠ apr serve unavailable ({e}), using embedded inference");
+            None
+        }
+    }
+}
+
+/// Without `inference` there is no `AprServeDriver` — see the gated twin above.
+#[cfg(not(feature = "inference"))]
+fn try_apr_serve_driver(_manifest: &AgentManifest) -> Option<Box<dyn LlmDriver>> {
+    None
 }
 
 /// Build fallback driver (embedded RealizarDriver) when AprServeDriver unavailable.

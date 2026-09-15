@@ -45,92 +45,130 @@ fn quoted_apr_invocations(site: &str, help: &str) -> Vec<Quoted> {
     found
 }
 
-/// Resolve a quoted invocation against the real clap tree.
+/// The parser state while walking one quoted invocation's tokens.
 ///
-/// Returns `Err(reason)` naming the first token the parser would reject.
-fn resolve(root: &clap::Command, quoted: &str) -> Result<(), String> {
-    let mut cmd = root;
-    let mut tokens = quoted.split_whitespace();
-    let _apr = tokens.next(); // "apr"
-    let mut path = String::from("apr");
-    let mut positionals_used = 0usize;
+/// `resolve` used to carry all of this as locals inside a single loop whose
+/// three token kinds were three inline blocks; each kind is now a method, and
+/// `resolve` is just the dispatch between them.
+struct Walk<'a> {
+    /// The root command, re-consulted for `global = true` args.
+    root: &'a clap::Command,
+    /// The command the walk has descended to.
+    cmd: &'a clap::Command,
+    /// Dotted path to `cmd`, used in error messages.
+    path: String,
+    /// Bare words consumed as positional VALUES so far.
+    positionals_used: usize,
+    /// Set when the previous token was a flag that takes a value, so the next
+    /// bare word is that value and not a subcommand or positional.
+    awaiting_value: bool,
+}
 
-    // Set when the previous token was a long flag that takes a value, so the
-    // next bare word is that value and not a subcommand or positional.
-    let mut awaiting_value = false;
+impl<'a> Walk<'a> {
+    fn new(root: &'a clap::Command) -> Self {
+        Self {
+            root,
+            cmd: root,
+            path: String::from("apr"),
+            positionals_used: 0,
+            awaiting_value: false,
+        }
+    }
 
-    for tok in tokens {
-        if let Some(flag) = tok.strip_prefix("--") {
-            awaiting_value = false;
-            let name = flag.split('=').next().unwrap_or(flag);
-            if name.is_empty() {
-                continue; // bare `--`
-            }
-            let matches_long = |a: &clap::Arg| {
-                a.get_long() == Some(name)
-                    || a.get_all_aliases()
-                        .is_some_and(|al| al.iter().any(|x| *x == name))
-            };
-            // clap propagates `global = true` args from the root to every
-            // subcommand, so `--json` is legal on any of them.
-            let Some(arg) = cmd
-                .get_arguments()
-                .find(|a| matches_long(a))
-                .or_else(|| root.get_arguments().find(|a| a.is_global_set() && matches_long(a)))
-            else {
-                return Err(format!("`{path}` has no flag `--{name}`"));
-            };
-            awaiting_value = !flag.contains('=')
-                && arg
-                    .get_num_args()
-                    .is_none_or(|r| r.takes_values())
-                && arg.get_action().takes_values();
-            continue;
+    /// `--name` or `--name=value`. Errors naming the command that has no such flag.
+    fn long_flag(&mut self, flag: &str) -> Result<(), String> {
+        let (cmd, root) = (self.cmd, self.root);
+        self.awaiting_value = false;
+        let name = flag.split('=').next().unwrap_or(flag);
+        if name.is_empty() {
+            return Ok(()); // bare `--`
         }
-        if let Some(short) = tok.strip_prefix('-') {
-            // Short flags are not name-checked (help text uses them rarely),
-            // but a short flag that takes a value consumes the next word.
-            let c = short.chars().next();
-            awaiting_value = c.is_some_and(|c| {
-                cmd.get_arguments()
-                    .chain(root.get_arguments().filter(|a| a.is_global_set()))
-                    .any(|a| a.get_short() == Some(c) && a.get_action().takes_values())
-            }) && short.len() == 1;
-            continue;
+        let matches_long = |a: &clap::Arg| {
+            a.get_long() == Some(name)
+                || a.get_all_aliases()
+                    .is_some_and(|al| al.iter().any(|x| *x == name))
+        };
+        // clap propagates `global = true` args from the root to every
+        // subcommand, so `--json` is legal on any of them.
+        let Some(arg) = cmd
+            .get_arguments()
+            .find(|a| matches_long(a))
+            .or_else(|| root.get_arguments().find(|a| a.is_global_set() && matches_long(a)))
+        else {
+            return Err(format!("`{}` has no flag `--{name}`", self.path));
+        };
+        self.awaiting_value = !flag.contains('=')
+            && arg.get_num_args().is_none_or(|r| r.takes_values())
+            && arg.get_action().takes_values();
+        Ok(())
+    }
+
+    /// `-x`. Short flags are not name-checked (help text uses them rarely),
+    /// but a short flag that takes a value consumes the next word.
+    fn short_flag(&mut self, short: &str) {
+        let (cmd, root) = (self.cmd, self.root);
+        let c = short.chars().next();
+        self.awaiting_value = c.is_some_and(|c| {
+            cmd.get_arguments()
+                .chain(root.get_arguments().filter(|a| a.is_global_set()))
+                .any(|a| a.get_short() == Some(c) && a.get_action().takes_values())
+        }) && short.len() == 1;
+    }
+
+    /// A bare word: the previous flag's value, a subcommand, or a positional.
+    fn bare_word(&mut self, tok: &str) -> Result<(), String> {
+        if self.awaiting_value {
+            self.awaiting_value = false;
+            return Ok(()); // this bare word is the previous flag's value
         }
-        if tok.starts_with('<') || tok.starts_with('"') {
-            awaiting_value = false;
-            continue; // placeholders are not checked
-        }
-        if awaiting_value {
-            awaiting_value = false;
-            continue; // this bare word is the previous flag's value
-        }
+        let cmd = self.cmd;
         // A bare word is a subcommand while the command still has subcommands
         // and has not started consuming positionals; otherwise it is a
         // positional VALUE — and there are only so many of those.
-        let sub = if positionals_used == 0 {
+        let sub = if self.positionals_used == 0 {
             cmd.get_subcommands()
                 .find(|s| s.get_name() == tok || s.get_all_aliases().any(|a| a == tok))
         } else {
             None
         };
         if let Some(sub) = sub {
-            cmd = sub;
-            path = format!("{path} {tok}");
-            continue;
+            self.cmd = sub;
+            self.path = format!("{} {tok}", self.path);
+            return Ok(());
         }
-        if positionals_used < positional_capacity(cmd) {
-            positionals_used += 1;
-            continue;
+        if self.positionals_used < positional_capacity(cmd) {
+            self.positionals_used += 1;
+            return Ok(());
         }
         if cmd.get_subcommands().next().is_some() {
-            return Err(format!("`{path}` has no subcommand `{tok}`"));
+            return Err(format!("`{}` has no subcommand `{tok}`", self.path));
         }
-        return Err(format!(
-            "`{path}` takes {} positional(s); `{tok}` is one too many",
+        Err(format!(
+            "`{}` takes {} positional(s); `{tok}` is one too many",
+            self.path,
             positional_capacity(cmd)
-        ));
+        ))
+    }
+}
+
+/// Resolve a quoted invocation against the real clap tree.
+///
+/// Returns `Err(reason)` naming the first token the parser would reject.
+fn resolve(root: &clap::Command, quoted: &str) -> Result<(), String> {
+    let mut walk = Walk::new(root);
+    let mut tokens = quoted.split_whitespace();
+    let _apr = tokens.next(); // "apr"
+
+    for tok in tokens {
+        if let Some(flag) = tok.strip_prefix("--") {
+            walk.long_flag(flag)?;
+        } else if let Some(short) = tok.strip_prefix('-') {
+            walk.short_flag(short);
+        } else if tok.starts_with('<') || tok.starts_with('"') {
+            walk.awaiting_value = false; // placeholders are not checked
+        } else {
+            walk.bare_word(tok)?;
+        }
     }
     Ok(())
 }

@@ -69,9 +69,12 @@ pub mod model_pull {
 // `tests/falsify_auth_*.rs` can construct gates and middleware without
 // reaching into the private `commands` tree.
 pub mod serve_auth {
+    // `apply` and `layer` are axum middleware and carry the same `inference`
+    // gate as their definitions in `commands::serve::auth`; `AuthGate` is the
+    // plain configuration struct and is always available.
+    pub use crate::commands::serve::auth::AuthGate;
     #[cfg(feature = "inference")]
-    pub use crate::commands::serve::auth::layer;
-    pub use crate::commands::serve::auth::{apply, AuthGate};
+    pub use crate::commands::serve::auth::{apply, layer};
 }
 
 // PMAT-923: e2e seam so `tests/ollama_api_serve_compat.rs` can build the REAL
