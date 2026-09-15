@@ -74,7 +74,7 @@ These were searched at `31448f6c3`:
 - Visibility blocks a public-API layer walk: `Qwen35Model.layers` is `pub(crate)`, `Qwen35OwnedLayer` is `pub(crate)`, `forward_deltanet` and `forward_attention` are private, and `OwnedQuantizedModel::fused_matmul_into` is `pub(crate)`.
 
 **Reachable through the public API:** the embedding table (`Qwen35Model::create_base_model` → `token_embedding()`, which is exactly the slice `forward_single_qwen35` copies into `hidden`) and the logits.
-`layerwise/qwen35_embd_dump.rs` dumps the former. Its embedding rows' sha256 are in the intel transcript of this ticket: pos0 `0f2822b1…5800`, pos1 `b9fec06c…9538`, pos2 `22ba0638…b931`, pos3 `58800e60…7c`, orig pos4 `91c6f7d1…bd1ca`, orig pos28 `42840b96…47ff1`.
+`layerwise/qwen35_embd_dump.rs` dumps the former. Its embedding rows' sha256 are in `layerwise/apr_embd_manifest.sha256.tsv` (dumps on intel `~/parity-ref/layerwise-3091/apr/embd-p{4,0}/`).
 
 ```bash
 # lambda: build (examples copied uncommitted into the #3114 detached tree)
@@ -152,8 +152,8 @@ The measured logits cosines reproduce `VARIATION.md` B exactly (0.961309, 0.9734
 - **[U] First layer where apr diverges; largest relative-L2 step at p4 pos 1; whether orig pos 4/28 step at the same layer.**
   Needs an apr per-layer hidden dump, which requires editing `crates/` (out of scope here). Minimal patch:
   - Change `crates/aprender-serve/src/gguf/inference/forward/forward_qwen35.rs`, fn `forward_single_qwen35` (lines 700–763 at `31448f6c3`).
-  - After each `forward_deltanet` / `forward_attention` call in the layer loop (lines 723–746), call an optional observer with `(il, &hidden)`.
-  - Call it once more with `out_normed` after `rms_norm_into` (line 747).
+  - After each `forward_deltanet` / `forward_attention` call in the layer loop (lines 722–746), call an optional observer with `(il, &hidden)`.
+  - Call it once more with `out_normed` after `rms_norm_into` (line 749).
   - This is best exposed as a new `pub fn forward_single_qwen35_observed(&self, token_id, cache, position, obs: &mut dyn FnMut(&str, usize, &[f32]))`, with `forward_single_qwen35` delegating with a no-op, so there is no behaviour change and it is zero-cost when unused.
   - Then a copy of `qwen35_embd_dump.rs` writes `pos<P>/l_out-<il>.f32`, and `compare_layerwise.py` fills the U rows unchanged, because file naming already matches the llama dump.
 - **[U] Sub-layer localisation inside the stepping layer.** llama already exposes `attn_norm-N`, `attn_residual-N`, `attn_post_norm-N`, `ffn_out-N`, `linear_attn_out-N` and `attn_output-N`.
@@ -172,7 +172,7 @@ The measured logits cosines reproduce `VARIATION.md` B exactly (0.961309, 0.9734
 | `layerwise/llama_tensor_names.tsv` | every callback node name, with op/type/ne |
 | `layerwise/llama_manifest_p{4,0}.sha256.tsv` | dumped tensors: name, layer, pos, shape, bytes, file, sha256 |
 | `layerwise/layer_types.tsv` | layer → full attention / gated-DeltaNet, with GGUF tensor evidence |
-| `layerwise/qwen35_embd_dump.rs` | apr embedding-row harness (public API only) |
+| `layerwise/qwen35_embd_dump.rs`, `apr_embd_manifest.sha256.tsv` | apr embedding-row harness (public API only) and its output hashes |
 | `layerwise/compare_layerwise.py`, `curves_{p4,orig}.tsv`, `curves_*.selfcheck.txt` | per-(tensor, pos) comparison |
 | `layerwise/derive_final_norm.py`, `final_norm_lstsq.tsv` | lstsq-derived `result_norm` / `l_out-23` direction, with control |
 | `layerwise/run_layerwise.transcript` | intel transcript for the llama runs |
