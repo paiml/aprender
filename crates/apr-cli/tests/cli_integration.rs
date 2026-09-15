@@ -275,8 +275,8 @@ fn test_qa_016_validate_quality_score() {
     // `crates/apr-cli/src/commands/validate.rs::summary_line`: the report declares 26
     // checks of which a handful run, so `✓ VALID 3/100 points` put a green badge next to
     // what reads as 3%, against a denominator nothing was measured on. The producer was
-    // fixed; this test was not, and it had never run in CI (`cli_integration` is not on
-    // ci.yml's `--test` line), so it sat RED on main until BSE-17's quick tier selected
+    // fixed; this test was not, and it had never run in CI (`cli_integration` has no
+    // fragment in ci/explicit-test-commands.d/), so it sat RED on main until BSE-17's quick tier selected
     // it (#3051, the "integration targets never run" class of #2341).
     //
     // The rewrite is a GUARD for that fix rather than a relic of it: the retired wording

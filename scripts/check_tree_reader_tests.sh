@@ -216,6 +216,17 @@ full_tier_excludes() { # full_tier_excludes <root> -> one crate per line
         | head -1 | grep -oE -- '--exclude [a-z0-9-]+' | awk '{print $2}'
 }
 
+# names_test ROOT NAME -- rc 0 when a lane names `--test NAME`: any file under
+# .github/workflows/, OR a fragment under ci/explicit-test-commands.d/, which
+# workspace-test's "Integration tests" step executes one file per command
+# (PMAT-3313: that list used to be one ci.yml line). Reading only the workflows
+# after the move would call all 39 of its commands unwired. grep -q exits 0 on a
+# match even if the directory is absent.
+names_test() {
+    grep -rqF --include='*.cmd' -- "--test $2" "$1"/ci/explicit-test-commands.d/ 2>/dev/null \
+        || grep -rqF -- "--test $2" "$1"/.github/workflows/ 2>/dev/null
+}
+
 wired_targets() { # wired_targets <root> -- the derived set, wired half only
     local root=$1 ex c kind name
     # `|| true`: the excludes grep legitimately finds nothing (a tree with no
@@ -233,7 +244,7 @@ wired_targets() { # wired_targets <root> -- the derived set, wired half only
             grep -qxF -- "$c" <<< "$ex" && continue
             if [ -n "$name" ]; then printf '%s\t%s\t%s\n' "$c" "$kind" "$name"
             else printf '%s\t%s\n' "$c" "$kind"; fi
-        elif grep -rqF -- "--test $name" "$root"/.github/workflows/ 2>/dev/null; then
+        elif names_test "$root" "$name"; then
             printf '%s\t--test\t%s\n' "$c" "$name"
         fi
     done
@@ -243,7 +254,7 @@ unwired_targets() { # unwired_targets <root> -- reads the tree, no lane runs it
     local root=$1 c kind name
     derive "$root" | while IFS=$'\t' read -r c kind name; do
         [ "$kind" = "--test" ] || continue
-        grep -rqF -- "--test $name" "$root"/.github/workflows/ 2>/dev/null || printf '%s\t--test\t%s\n' "$c" "$name"
+        names_test "$root" "$name" || printf '%s\t--test\t%s\n' "$c" "$name"
     done
 }
 
@@ -347,6 +358,19 @@ self_test() {
         printf 'ok    row %-2s        WIRED/UNWIRED split: a lane names alpha reads_readme (quick tier), gamma manifest_dir is run by nothing (ledger), beta --lib lint is covered by --workspace --lib\n' "$n"
     else
         printf 'FAIL  row %-2s        split wrong. wired=[%s] unwired=[%s]\n' "$n" "$(printf '%s' "$w" | tr '\n' ';')" "$(printf '%s' "$u" | tr '\n' ';')"; red=1
+    fi
+    # PMAT-3313: the explicit integration list is a directory of one-command
+    # fragments, not a workflow line. A target named ONLY there is wired; the same
+    # tree without that fragment is not.
+    mkdir -p "$td/ci/explicit-test-commands.d"
+    printf 'cargo test -p gamma --test manifest_dir\n' > "$td/ci/explicit-test-commands.d/010-gamma-manifest-dir.cmd"
+    n=$((n + 1))
+    w=$(bash "$T" --print "$td" 2>/dev/null); u=$(bash "$T" --print-unwired "$td" 2>/dev/null)
+    rm -rf "${td:?}/ci"
+    if grep -q '^gamma	--test	manifest_dir$' <<< "$w" && ! grep -q '^gamma' <<< "$u"; then
+        printf 'ok    row %-2s        a target named only in a ci/explicit-test-commands.d/ fragment is WIRED (PMAT-3313)\n' "$n"
+    else
+        printf 'FAIL  row %-2s        ci/explicit-test-commands.d/ not read as wiring. wired=[%s] unwired=[%s]\n' "$n" "$(printf '%s' "$w" | tr '\n' ';')" "$(printf '%s' "$u" | tr '\n' ';')"; red=1
     fi
     update "$td" "$td/registry.txt" > /dev/null 2>&1
     row 0 "registry equals derived -> PASS" '^PASS' bash "$T" --check "$td" "$td/registry.txt"
