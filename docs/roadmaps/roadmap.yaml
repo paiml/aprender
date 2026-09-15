@@ -17749,6 +17749,23 @@ roadmap:
   labels:
   - kind:code
   notes: null
+- id: PMAT-3226
+  github_issue: null
+  item_type: task
+  title: 'check_roadmap_completion_is_cited: lane scratch under .claude/worktrees is scanned as if it were the tree'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-14T14:10:24Z
+  updated: 2026-09-14T14:10:24Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
 - id: PMAT-3228
   github_issue: null
   item_type: task
@@ -17775,23 +17792,6 @@ roadmap:
   assigned_to: null
   created: 2026-09-14T16:24:32Z
   updated: 2026-09-14T16:24:32Z
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels:
-  - kind:code
-  notes: null
-- id: PMAT-3226
-  github_issue: null
-  item_type: task
-  title: 'check_roadmap_completion_is_cited: lane scratch under .claude/worktrees is scanned as if it were the tree'
-  status: planned
-  priority: medium
-  assigned_to: null
-  created: 2026-09-14T14:10:24Z
-  updated: 2026-09-14T14:10:24Z
   spec: null
   acceptance_criteria: []
   phases: []
