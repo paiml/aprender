@@ -1,0 +1,143 @@
+# full-surface.yml — run the test surface nothing else runs (APR-DARK-TARGETS-001, #3239).
+#
+# `--tests` appears exactly ONCE in every other workflow in this repository:
+# ci.yml's BSE-17 quick tier, scoped to the crates a PR touched. `make coverage`,
+# the only other whole-workspace run, is `--lib`. nightly.yml runs no tests at
+# all. So 654 test binaries have never been LINKED in CI, let alone run — and a
+# binary that never links cannot fail, flake, or appear in a report.
+#
+#   merge-queue full tier   82,217 tests /  73 binaries   (measured, job 103868350604)
+#   this job                98,621 tests / 727 binaries   (measured, 1141 s run)
+#
+# WHY IT HARD-FAILS ON DAY ONE, WITH NO BASELINE
+# ----------------------------------------------
+# The first draft proposed a shrink-only ratchet. A 4-lane agy quorum refused it
+# and the objection is mechanical, not stylistic: `--update` writes a file and
+# needs a COMMIT, and a scheduled workflow has no PR and no author. Every other
+# ratchet here (unwired_guards, pipe_grep_q, shell_lint) is updated by a human
+# inside a PR *because it runs in one*. A cron's baseline would only ever be
+# edited by someone who already noticed the job was red — the exact population a
+# ratchet exists to stop relying on. A ratchet here is a backlog with no writer.
+#
+# The 37 failures that sweep found are fixed instead, in five PRs, before this
+# job is scheduled: #3250 (34 rows), #3248, #3238, #3253 (the last one, a
+# wall-clock assertion). There was never an interval in which a ratchet carried
+# information.
+#
+# WHY IT IS NOT ON gx10
+# ---------------------
+# The build produces a 39 GB target directory (808 binaries, measured). gx10 is
+# the smallest of the three Linux hosts — 916 GB against intel's 3.6 TB and
+# yoga's 935 GB — and it hit ZERO BYTES FREE on 2026-09-14, dequeuing a PR from
+# merge-queue position 1 (#3247). `X64` is the exclusion: measured over 25 runs,
+# no job requesting X64 has ever landed on gx10 (it is ARM64). No new label.
+name: Full test surface
+
+on:
+  # 06:30 UTC: after every other nightly (the last is beat-speed at 05:45) so
+  # this never competes with them for the same pool.
+  schedule:
+    - cron: '30 6 * * *'
+  workflow_dispatch:
+  # THE SELECTOR-TOUCH TRIGGER. A change to how the tier chooses what to run is
+  # exactly when the dark set moves, and it is the cheapest possible guard
+  # against this workflow silently ceasing to be true. Fires a few times a month.
+  pull_request:
+    paths:
+      - 'scripts/ci_test_tier.sh'
+      - 'scripts/gate_touched_crates.sh'
+      - 'scripts/tree_reader_tests.txt'
+      - '.github/workflows/ci.yml'
+      - '.github/workflows/full-surface.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: full-surface
+  cancel-in-progress: false
+
+jobs:
+  full-surface:
+    name: full surface
+    # X64 excludes gx10 (see the header). clean-room is the pool every CI job uses.
+    runs-on: [self-hosted, X64, Linux, clean-room]
+    # 90, deliberately generous, and it is NOT derived yet. BSE-05 says
+    # T = max(15, ceil(1.5*p99), p99+20) over the job's OWN history, and this job
+    # has none. The only measurement in hand is 21 min on a 48-core box with a
+    # warm sccache; a clean-room runner measured 2.34x slower per test on the
+    # same workload, which extrapolates to ~51 min — an extrapolation, not a
+    # reading. Re-derive from three real runs and tighten. Do not copy the 21.
+    timeout-minutes: 90
+    env:
+      CARGO_TERM_COLOR: never
+      CARGO_INCREMENTAL: '0'
+      TARGET_DIR: ${{ github.workspace }}/target-full-surface
+    steps:
+      - uses: actions/checkout@v7
+
+      # The instrument before the measurement: cargo_step.sh classifies a cargo
+      # death as ENV or CODE, and a sweep of 727 binaries is exactly where an
+      # unclassified failure reads as 650 new defects.
+      - name: cargo_step.sh falsifier (ENV-vs-CODE instrument)
+        run: bash scripts/cargo_step.sh --self-test
+
+      # FAIL BEFORE THE BUILD, NOT HALFWAY THROUGH IT. A 39 GB target dir on a
+      # box with less headroom than that is how #3247 happened: cargo dies
+      # mid-link and the step reports a bare exit 101.
+      - name: Preflight — disk headroom for a 39 GB target dir
+        run: |
+          set -euo pipefail
+          avail_gb=$(df -BG --output=avail / | tail -1 | tr -dc '0-9')
+          echo "free on /: ${avail_gb} GB"
+          if [ "${avail_gb:-0}" -lt 120 ]; then
+            echo "::error title=ENV::${avail_gb} GB free, need 120 for a 39 GB target dir plus headroom"
+            echo "::error title=ENV::this is a runner fault, not a test failure — see aprender#3247"
+            exit 1
+          fi
+
+      # --no-fail-fast: plain `cargo test` stops at the first failing BINARY.
+      # Seven rounds went into four tests before that was understood. Over 727
+      # binaries the difference is between one report and twenty runs.
+      #
+      # The three GPU crates are excluded exactly as ci.yml's full tier excludes
+      # them, and for the same reason: under --workspace, feature unification
+      # pulls the CUDA driver in. Their targets are owed a CUDA-runner sweep of
+      # their own (cuda-nightly.yml is the natural home).
+      - name: "cargo nextest run --workspace --lib --tests (98,621 tests / 727 binaries)"
+        env:
+          CARGO_TARGET_DIR: ${{ env.TARGET_DIR }}
+        run: |
+          set -euo pipefail
+          bash scripts/cargo_step.sh 'full surface' -- \
+            cargo nextest run --profile ci --workspace --lib --tests --no-fail-fast \
+              --exclude aprender-gpu --exclude aprender-cuda-edge --exclude aprender-compute
+
+      # VACUITY. A selection that silently built almost nothing reports zero
+      # failures, which reads exactly like a pass — the failure mode this whole
+      # workflow exists to end. 600 is a floor under the measured 727, not a
+      # target; if it trips, the SELECTION is broken, not the tree.
+      - name: Vacuity floor — the sweep must have built the surface
+        if: always()
+        env:
+          CARGO_TARGET_DIR: ${{ env.TARGET_DIR }}
+        run: |
+          set -euo pipefail
+          n=$(find "$CARGO_TARGET_DIR/debug/deps" -maxdepth 1 -type f -executable 2>/dev/null | wc -l)
+          echo "test binaries built: $n"
+          if [ "${n:-0}" -lt 600 ]; then
+            echo "::error::only $n binaries built, expected 600+ (measured: 727)."
+            echo "::error::the SELECTION is broken, not the tree. Fix the sweep, not this number."
+            exit 1
+          fi
+
+      # RECLAIM IN-JOB. The host reaper's critical mode already cannot reclaim
+      # under `keep=3 per repo` (#3247), so a nightly that leaks 39 GB compounds
+      # a known-unfixed defect. `always()` so a failed run cleans up too.
+      - name: Reclaim the 39 GB target dir
+        if: always()
+        run: |
+          set -uo pipefail
+          du -sh "${TARGET_DIR}" 2>/dev/null || true
+          rm -rf "${TARGET_DIR:?}"
+          df -h / | tail -1
