@@ -172,7 +172,7 @@ impl HybridScheduler {
     /// # Errors
     ///
     /// Returns error if decompression fails.
-    #[cfg(feature = "cuda")]
+    #[cfg(feature = "__cuda-linked")]
     pub fn decompress_batch_gpu(
         &mut self,
         compressed: &[Vec<u8>],
@@ -273,7 +273,7 @@ impl HybridScheduler {
     /// # Errors
     ///
     /// Returns error if decompression fails.
-    #[cfg(feature = "cuda")]
+    #[cfg(feature = "__cuda-linked")]
     pub fn decompress_parallel(
         &mut self,
         compressed: &[Vec<u8>],
@@ -338,7 +338,7 @@ impl HybridScheduler {
     /// # Errors
     ///
     /// Returns error if decompression fails or buffer is too small.
-    #[cfg(feature = "cuda")]
+    #[cfg(feature = "__cuda-linked")]
     pub fn decompress_parallel_into(
         &mut self,
         compressed: &[Vec<u8>],
@@ -500,7 +500,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "cuda")]
+    #[cfg(feature = "__cuda-linked")]
     #[ignore] // SIGSEGV during large batch allocation - needs investigation
     fn test_hybrid_scheduler_creation() {
         let config = HybridConfig::default();
@@ -513,7 +513,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "cuda")]
+    #[cfg(feature = "__cuda-linked")]
     #[ignore] // Depends on test_hybrid_scheduler_creation
     fn test_hybrid_scheduler_compress() {
         if !crate::gpu::gpu_available() {
@@ -540,7 +540,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "cuda")]
+    #[cfg(feature = "__cuda-linked")]
     #[ignore] // Depends on test_hybrid_scheduler_creation
     fn test_hybrid_scheduler_decompress_gpu() {
         if !crate::gpu::gpu_available() {
@@ -585,7 +585,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "cuda")]
+    #[cfg(feature = "__cuda-linked")]
     fn test_hybrid_scheduler_g119_estimate() {
         let stats = HybridStats {
             pages_decompressed_gpu: 1_000_000, // 1M pages = 4GB

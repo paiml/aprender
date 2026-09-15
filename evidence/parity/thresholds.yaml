@@ -14,4 +14,51 @@ default:
   # populations with 0.0185 of margin under the LOWER known-good floor and 0.0294 above the HIGHER
   # known-bad ceiling. Records: evidence/parity/l0-1/{lambda,gx10}/ (RECORD.md carries the command).
   basis: 'measured n=5 on two known-good pairs (7B@lambda 0.998607, 7B@gx10 0.998465; stdev 0) against two known-bad pairs (1.5B@lambda 0.950827, 1.5B@gx10 0.950611); 0.98 separates them with 0.0185 margin under the lower good floor'
-models: {}                  # per-model overrides land here with n and the command that measured them
+# ── per-model overrides ──────────────────────────────────────────────────────
+# Overrides land here WITH n AND the command that measured them. `default` above
+# does not apply to a model listed here: scripts/check_model_parity.sh judge()
+# takes models[<name>] when it exists and never falls back, so an entry with no
+# `min_cosine` is FAIL-CLOSED (rc 2, "a threshold without a basis is not a
+# threshold") rather than silently inheriting 0.98.
+models:
+
+  # ── the CPU leg, PMAT-3303 / #3303 (child of the 0.68 Qwen3.5 epic #3038) ──
+  # UNMEASURED BY CONSTRUCTION, and `min_cosine` is DELIBERATELY ABSENT.
+  #
+  # THE GPU 0.98 IS NOT AVAILABLE TO THIS ROW. Its basis (above) is a
+  # GPU-vs-CPU cosine population on two DENSE qwen2.5-coder models, both
+  # backends of ONE implementation. This row is a different comparison on
+  # every axis that matters: CPU-vs-CPU, apr against llama.cpp — two
+  # independent implementations — on a HYBRID SSM/Gated-Delta-Net model.
+  # Nothing measured on the first population bounds the second, so reusing the
+  # number would be a threshold with a borrowed basis, which is the defect
+  # #2971 closed.
+  qwen3.5-0.8b:
+    compute_class: cpu
+    host: intel                      # scripts/perf-matrix.yaml:138-143 — the only cpu-class host with a runner
+    comparator: 'llama.cpp [X], CPU build, pin 39173bcac (scripts/llama_pin.toml)'
+    record: evidence/parity/l0-1/intel/RECORD.md
+    # min_cosine: ABSENT ON PURPOSE. Writing any number here without the four
+    # pairs below would be a fabricated basis. judge() exits 2 while it is absent.
+    basis: >-
+      [U] — NOTHING IS MEASURED ON qwen35. Both sides of this comparison refuse the
+      model today, measured 2026-09-15 and reproduced in
+      evidence/parity/l0-1/intel/RECORD.md: llama.cpp at the pin 39173bcac exits 1 with
+      "unknown model architecture: 'qwen35'" (the pin knows qwen3next, and `grep -rn qwen35
+      src/` in the pinned checkout returns 0 hits), and apr exits 8 with "Architecture
+      'qwen35' uses SSM/Gated Delta Net layers ... NEITHER the CPU nor the GPU backend
+      implements" (#3090 GPU / #3091 CPU). WHAT WOULD REPLACE THIS [U]: the same standard
+      the default above met — two known-good and two known-bad pairs, n=5 each, on intel,
+      min cosine over >= 64 positions, with the separating margin stated; i.e. `apr
+      <producer> ./Qwen3.5-0.8B-Q4_K_M.gguf --prompt "$PROMPT" --json` (lane A, the subject)
+      against `llama-perplexity -m ./Qwen3.5-0.8B-Q4_K_M.gguf -ngl 0 --save-all-logits`
+      (lane B, the [X] comparator), judged by `scripts/check_model_parity.sh --judge`.
+      FOUR THINGS ARE OWED FIRST, none of them a number: (1) llama-perplexity is not built
+      on intel (source and flags are at the pin; `cmake --build build --target
+      llama-perplexity`); (2) a comparator pin that can load qwen35 — bumping 39173bcac
+      invalidates every ratio measured against it, so this is a decision with a named cost,
+      not a bump; (3) the apr-CPU logits producer, which exists on no branch but #3114 and
+      may not be taken from the PR under test (#3303 ruling); (4) a deliberately-broken
+      qwen35 GGUF for the known-bad half — #3303's open question, still with no decider.
+    n: null                          # no run
+    measured_by: null                # no command has been run against this row
