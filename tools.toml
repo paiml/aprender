@@ -4,33 +4,38 @@
 # CI. The fleet installer is infra's forjar pin, applied to every clean-room
 # runner (paiml/infra, machines/intel/forjar.yaml):
 #
-#   stack-tool-pmat    (line 784)  version: "3.39.0"   # infra ef0ec4c, 2026-09-06
-#   stack-tool-bashrs  (line 811)  version: "7.0.4"
+#   stack-tool-pmat    (line 779)  version: "3.40.1"   # infra ba369f9, 2026-09-14 (#591)
+#   stack-tool-bashrs                version: "7.4.1"
 #
-# THIS FILE WAS THE STALE MIRROR, not the fleet (measured 2026-09-13). It said
-# bashrs 7.0.1 while all five machines/*/forjar.yaml declared 7.0.4 — and the
-# fleet itself agreed with neither: intel 7.0.1, gx10 and mini 7.0.4, yoga no
-# bashrs at all, with pmat spread over 3.20.0 / 3.31.0 / 3.39.0. The assertion
-# below could not see any of that, because it only ever ran on the runner that
-# took the job and guard-cargo lands on intel nearly every time. All four hosts
-# are converged now, and .github/workflows/fleet-tools.yml asserts this file on
-# each of them nightly so the next drift is visible on the box it happens to.
+# ALWAYS LATEST (operator rule, 2026-09-14): "we always go latest crates.io on
+# our stack." This file names that version and check_tool_versions.sh asserts it.
 #
-# THE PIN STAYS AT 7.0.1 HERE, DELIBERATELY, and that is the ordering lesson.
-# This file was moved to 7.0.4 and a guard-cargo job on yoga-build2 answered
-# `FAIL bashrs pinned 7.0.4 found 7.0.1` twenty minutes later. Four login shells
-# reporting 7.0.4 is not the same statement as "every environment a job executes
-# in is at 7.0.4", and an assertion that runs ahead of the fleet turns PRs red
-# for a claim the fleet has not earned yet. Measure first, assert second:
-# fleet-toolset.yml now runs check_tool_versions.sh on every box daily, so the
-# bump to 7.0.4 lands when that is green everywhere and not before.
+# THE ORDER IS CONVERGE -> PROVE -> ASSERT, AND IT IS NOT NEGOTIABLE. This file
+# was once moved to 7.0.4 ahead of the fleet and a guard-cargo job on yoga-build2
+# answered `FAIL bashrs pinned 7.0.4 found 7.0.1` twenty minutes later. Four login
+# shells reporting a version is not the same statement as "every environment a job
+# executes in is at that version". Move the boxes first, prove it on each of them,
+# and only then move the line below.
 #
-# 7.0.1 -> 7.0.4 is not a behaviour change either way, measured rather than
-# assumed: both versions built and run over all 195 scripts in scripts/ return
-# the same 6 error lines, identical after stripping positions. Which is why
-# shell_lint_baseline.txt is still re-stamped to that measured 6 below — it had
-# been carrying 8, taken by an instrument the header named and nothing compared
-# against, and 6 is what the PINNED 7.0.1 measures on this tree today.
+# Both directions red-line the repo, which is why neither is a shortcut. On
+# 2026-09-14 the drift ran the other way: another repo on the shared box ran an
+# unpinned `cargo install bashrs`, the binary went 7.0.1 -> 7.3.0, and `main` was
+# red for three hours on `FAIL bashrs pinned 7.0.1 found 7.3.0`. The fix was to
+# restore the asserted version, not to bump this file to match whatever the box
+# happened to have -- a pin that chases the box asserts nothing.
+#
+# The fleet declaration lives in paiml/infra machines/*/forjar.yaml and is
+# asserted against crates.io daily by infra's scripts/check_stack_tools_latest.sh
+# (PMAT-589, infra#588), which exists because the pins there were hand-copied
+# "latest" values with dates beside them -- 8 of 16 had gone stale, forjar itself
+# among them. Bump this file in the SAME change that converges the fleet.
+#
+# CHANGING THE INSTRUMENT RE-RECORDS THE BASELINES. Three carry a
+# `# tool_version=` header and are measured by these tools, so they move together
+# with the versions below or the ratchets refuse:
+#   scripts/shell_lint_baseline.txt   bashrs
+#   scripts/complexity_baseline.txt   pmat
+#   scripts/cb200_baseline.txt        pmat (mirrors .pmat-gates.toml [tdg] baseline)
 #
 # ci.yml used to run, per job:
 #   command -v pmat > /dev/null 2>&1 || cargo install pmat --locked --quiet || true
@@ -48,7 +53,7 @@
 # Bump this file in the SAME commit as the infra forjar.yaml version bump.
 
 [pmat]
-version = "3.39.0"
+version = "3.40.1"
 
 [bashrs]
-version = "7.0.1"
+version = "7.4.1"

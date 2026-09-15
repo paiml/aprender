@@ -34,7 +34,15 @@ SELF="scripts/check_no_pipe_into_grep_q.sh"
 # The hazard: a pipe whose right-hand side is `grep -q`. `-qF`, `-qE`, `-qi`
 # and every other cluster containing q exits early too, so the cluster is
 # [A-Za-z]*q[A-Za-z]*. ERE throughout.
-HAZARD='\|[[:space:]]*grep[[:space:]]+(-[A-Za-z]*q[A-Za-z]*|--quiet|--silent)([[:space:]]|$)'
+# `[^|]\|` — a pipe is a SINGLE bar. `||` is a logical OR and the command after
+# it is NOT fed by a pipe, so `cmd || grep -q PAT file` has no producer to kill
+# and no SIGPIPE to misread. The shipped regex matched the SECOND bar of `||`
+# and flagged 2 safe sites in this tree (dogfood.sh:1477 greps a FILE,
+# qwen-story.sh:281 greps a HERE-STRING) plus every new one written since. The
+# case table below now has a row for it in both directions, because a regex
+# without a discriminating row is how all five previous versions of this pattern
+# shipped wrong.
+HAZARD='(^|[^|])\|[[:space:]]*grep[[:space:]]+(-[A-Za-z]*q[A-Za-z]*|--quiet|--silent)([[:space:]]|$)'
 
 # Does this file's own text turn pipefail on? Any spelling that names it.
 PIPEFAIL='^[[:space:]]*set[[:space:]]+-[a-zA-Z]*o?[[:space:]]*[^#]*pipefail'
@@ -121,6 +129,24 @@ self_test() {
   printf '# set -o pipefail is what we do NOT do here\n' > "$t/e"
   if enables_pipefail "$t/e"; then bad 'P5  a COMMENT about pipefail must not arm the file'; else ok 'P5  a comment does not arm the file'; fi
   [ -n "$t" ] && [ -d "$t" ] && rm -rf "$t"
+
+  echo "=== logical OR is not a pipe (the bar that is not a producer) ==="
+  if grep -qE "$HAZARD" <<<'  [ -f x ] || grep -q PAT file'; then
+    bad 'O1  `|| grep -q file` flagged -- the second bar of a logical OR is not a pipe'
+  else ok 'O1  `|| grep -q file` is not a hazard'; fi
+  CHECKS=$((CHECKS+1))
+  if grep -qE "$HAZARD" <<<'  [ "$rc" -eq 1 ] || grep -qE PAT <<< "$out"'; then
+    bad 'O2  `|| grep -qE <<<` flagged -- a here-string has no producer to kill'
+  else ok 'O2  `|| grep -qE <<<` is not a hazard'; fi
+  CHECKS=$((CHECKS+1))
+  if grep -qE "$HAZARD" <<<'  producer | grep -q PAT'; then
+    ok 'O3  a REAL single-bar pipe is still flagged -- O1/O2 did not disarm the guard'
+  else bad 'O3  the real pipe stopped being flagged; the || fix went too far'; fi
+  CHECKS=$((CHECKS+1))
+  if grep -qE "$HAZARD" <<<'  a || b | grep -q PAT'; then
+    ok 'O4  a real pipe LATER on a line containing || is still flagged'
+  else bad 'O4  `||` earlier on the line masked a real pipe'; fi
+  CHECKS=$((CHECKS+1))
 
   echo "=== the mutation: drop the q requirement and H9/H10/H11 must go RED ==="
   local mutant='\|[[:space:]]*grep[[:space:]]+-' m=0

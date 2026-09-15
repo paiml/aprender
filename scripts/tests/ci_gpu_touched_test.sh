@@ -31,7 +31,7 @@ row() { # row <want-rc> <label> <grep -E pattern> <cmd...>
     shift 3
     n=$((n + 1))
     out=$("$@" 2>&1) || rc=$?
-    if [ "$rc" = "$want" ] && printf '%s\n' "$out" | grep -qE -- "$pat"; then
+    if [ "$rc" = "$want" ] && grep -qE -- "$pat" <<< "$out"; then
         printf 'ok    row %-2s rc=%s  %s\n' "$n" "$rc" "$label"
     else
         printf 'FAIL  row %-2s rc=%s (wanted %s, must match /%s/)  %s\n' \

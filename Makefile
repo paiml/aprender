@@ -1333,3 +1333,13 @@ check-siblings: ## Verify sibling repos exist and versions are compatible
 		echo "Or build standalone (uses crates.io versions):"; \
 		echo "  Remove [patch.crates-io] from .cargo/config.toml"; \
 	fi
+
+# APR-RELEASE-001 §11.2 (ONT R-6): the five ontology counters move ONLY through
+# this target. `--check` is what guard_tree.sh runs on every PR; `--write` is the
+# deliberate restamp, and it is the only way a counter is allowed to change.
+.PHONY: ont-ratchet ont-ratchet-check
+ont-ratchet:
+	@bash scripts/check_ont_ratchet.sh --write
+
+ont-ratchet-check:
+	@bash scripts/check_ont_ratchet.sh --check
