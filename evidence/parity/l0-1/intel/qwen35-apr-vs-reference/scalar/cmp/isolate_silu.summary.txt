@@ -1,0 +1,2 @@
+# scalar_isolate: jobs=36 rc=0 
+# totals over 110592 elements: ggml_silu(llama_in)==llama 110592; apr_silu(llama_in)==llama 96648; apr_silu(apr_in)==apr 110592; ggml_silu(apr_in)==apr 96566
