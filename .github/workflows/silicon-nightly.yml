@@ -22,7 +22,16 @@ name: Silicon Nightly
 
 on:
   schedule:
-    - cron: '30 3 * * *'
+    # SHIFTED so it actually runs at night (#3292). GitHub dispatches
+    # schedule events 3h51m-6h49m late on this account (28 runs, 10
+    # workflows, 3 nights, zero on time), so a 03:30 cron fired mid-
+    # morning and the nightly tier occupied 06:49-14:14 UTC — the
+    # working day, competing with PR traffic for the same runners.
+    # Cron is set ~5h EARLY so the delayed dispatch lands near 03:30 UTC.
+    # This is CALIBRATION AGAINST A MOVING TARGET: the delay varies by
+    # ~3h and is growing. The durable fix is a fleet-side timer calling
+    # `gh workflow run` (#3292); until then, re-measure before trusting.
+    - cron: '30 22 * * *'   # 22:30 UTC -> lands ~03:30 UTC
   workflow_dispatch:
     inputs:
       axis:
