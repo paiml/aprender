@@ -15,6 +15,9 @@ use crate::autograd::cuda_tensor::{CudaTensorError, Result};
 
 #[cfg(feature = "cuda")]
 use super::cache::FORWARD_KERNEL_CACHE;
+// Cache keys come from ONE place (YOGA-NIGHTLY-001 R-2). A `format!` here is
+// the defect that produced the Blackwell cascade five separate times.
+use super::keys;
 
 /// Residual addition forward pass on GPU
 ///
@@ -38,7 +41,7 @@ pub fn residual_add_forward(
         CudaTensorError::KernelError("Failed to acquire kernel cache lock".to_string())
     })?;
 
-    let key = "residual_add_forward".to_string(); // PTX is n-independent (trueno#184)
+    let key = keys::fixed::RESIDUAL_ADD_FORWARD.to_string(); // PTX is n-independent (trueno#184)
     let module = match cache.get_cached(&key) {
         Some(m) => m,
         None => {
@@ -150,7 +153,7 @@ pub fn elementwise_mul_forward(
         CudaTensorError::KernelError("Failed to acquire kernel cache lock".to_string())
     })?;
 
-    let key = "elementwise_mul_forward".to_string(); // PTX is n-independent (trueno#184)
+    let key = keys::fixed::ELEMENTWISE_MUL_FORWARD.to_string(); // PTX is n-independent (trueno#184)
     let module = match cache.get_cached(&key) {
         Some(m) => m,
         None => {
@@ -206,7 +209,7 @@ pub fn scale_forward(
         CudaTensorError::KernelError("Failed to acquire kernel cache lock".to_string())
     })?;
 
-    let key = "scale_forward".to_string(); // PTX is n-independent (trueno#184)
+    let key = keys::fixed::SCALE_FORWARD.to_string(); // PTX is n-independent (trueno#184)
     let module = match cache.get_cached(&key) {
         Some(m) => m,
         None => {
@@ -267,7 +270,7 @@ pub fn interleaved_to_batched_forward(
     let total = seq_len * n_heads * head_dim;
     // Contract: dimension-independent-kernels-v1.yaml (FALSIFY-DIM-004)
     // Use generic cache key — PTX is dimension-independent, one module handles all dims.
-    let key = "interleaved_to_batched";
+    let key = keys::fixed::INTERLEAVED_TO_BATCHED;
     let module = match cache.get_cached(key) {
         Some(m) => m,
         None => {
@@ -333,7 +336,7 @@ pub fn batched_transpose_forward(
 
     let total_per_batch = rows * cols;
     // Contract: dimension-independent-kernels-v1.yaml (FALSIFY-DIM-004)
-    let key = "batched_transpose";
+    let key = keys::fixed::BATCHED_TRANSPOSE;
     let module = match cache.get_cached(key) {
         Some(m) => m,
         None => {
@@ -400,7 +403,7 @@ pub fn batched_to_interleaved_forward(
 
     let total = seq_len * n_heads * head_dim;
     // Contract: dimension-independent-kernels-v1.yaml (FALSIFY-DIM-004)
-    let key = "batched_to_interleaved";
+    let key = keys::fixed::BATCHED_TO_INTERLEAVED;
     let module = match cache.get_cached(key) {
         Some(m) => m,
         None => {
