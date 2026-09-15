@@ -53,6 +53,6 @@ aarch64-cuda-sm121  required        self-hosted,gpu,gx10,cuda,blackwell     job:
 # x86_64-cuda-sm89 is the one in motion: yoga-gpu is REGISTERED and online, so
 # this axis reads `ready` rather than `deferred`. It promotes to `required` when
 # the `ada-yoga` leg has actually run — not before (N-1).
-x86_64-cuda-sm89    pending:361     self-hosted,gpu,yoga,cuda,ada           job:ada-yoga*
+x86_64-cuda-sm89    required        self-hosted,gpu,yoga,cuda,ada           job:ada-yoga*
 aarch64-cuda-sm87   pending:361     self-hosted,gpu,jetson,cuda,orin        job:aarch64-cuda-sm87
 aarch64-macos       pending:361     self-hosted,mini,macos,arm64            job:aarch64-macos
