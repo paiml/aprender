@@ -1,0 +1,29 @@
+iter=it3-deltarule obs_code=b84e694eb69f3b9a10e45a2fa35aa9c8f2cca99a dirty_tracked=1 host=noah-Lambda-Vector start_utc=2026-09-15T23:15:56Z load=6.60 10.56 7.93
+d4ffc1a2cb729f820fc1efcf1efc8d4187b99ba75dba595e43a97e359753ea1b  /mnt/nvme-raid0/targets/obs-3091/release/examples/qwen35_layer_obs
+run off-orig switch=- rc=0 mask=EmulationMask { q4_k: false, q5_k: false, q6_k: false, q8_0: false, scalar: false } emulated_matmuls[Q4_K,Q5_K,Q6_K,Q8_0]=[0, 0, 0, 0] sha256=f6f792649014dcef
+invariance_off orig sha_equal=true
+run off-p4 switch=- rc=0 mask=EmulationMask { q4_k: false, q5_k: false, q6_k: false, q8_0: false, scalar: false } emulated_matmuls[Q4_K,Q5_K,Q6_K,Q8_0]=[0, 0, 0, 0] sha256=92f1b54d504a53f7
+invariance_off p4 sha_equal=true
+run on1-orig switch=1 rc=0 mask=EmulationMask { q4_k: true, q5_k: true, q6_k: true, q8_0: true, scalar: false } emulated_matmuls[Q4_K,Q5_K,Q6_K,Q8_0]=[7644, 2808, 1326, 2808] sha256=485341aec7720826
+eq1_unchanged orig cmp_rc=0 (0 = byte-identical to the committed =1 subject)
+run on1-p4 switch=1 rc=0 mask=EmulationMask { q4_k: true, q5_k: true, q6_k: true, q8_0: true, scalar: false } emulated_matmuls[Q4_K,Q5_K,Q6_K,Q8_0]=[8036, 2952, 1394, 2952] sha256=6ccada2b823ef651
+eq1_unchanged p4 cmp_rc=0 (0 = byte-identical to the committed =1 subject)
+run scalar-dump-p4 switch=scalar rc=0 mask=EmulationMask { q4_k: true, q5_k: true, q6_k: true, q8_0: true, scalar: true } emulated_matmuls[Q4_K,Q5_K,Q6_K,Q8_0]=[8036, 2952, 1394, 2952] sha256=1f2957af5fdaadc8
+run scalar-dump-orig switch=scalar rc=0 mask=EmulationMask { q4_k: true, q5_k: true, q6_k: true, q8_0: true, scalar: true } emulated_matmuls[Q4_K,Q5_K,Q6_K,Q8_0]=[7644, 2808, 1326, 2808] sha256=bb6cded278a3f007
+walk p4 rc=0
+# p4: matched=1500 missing_in_apr=0 max_rel_l2=1.007480e-01 at pos2 result_output; first_not_bit_equal=pos0 idx17 ffn_out-0 bit_equal=410/1024 rel_l2=9.339e-08
+compare_raw_logits p4 rc=0
+walk orig rc=0
+# orig: matched=750 missing_in_apr=0 max_rel_l2=9.707865e-02 at pos28 linear_attn_out-8; first_not_bit_equal=pos4 idx17 ffn_out-0 bit_equal=275/1024 rel_l2=1.181e-07
+compare_raw_logits orig rc=0
+argmax orig positions=78 mismatches=1 min_cos=0.997909
+argmax p4 positions=82 mismatches=3 min_cos=0.988491
+747343caa2c0fae0164d9839083e0e65b78673de80a1f001d204621647e1c263  /mnt/nvme-raid0/agent-wt/layer-3091/evidence/parity/l0-1/intel/qwen35-apr-vs-reference/scalar/iter/it3-deltarule/logits-orig-scalar-vs-SC.json
+5994acc0de52f00be8450a8f1d2ad00a1dea2376605ac0065bac13c74be099f1  /mnt/nvme-raid0/agent-wt/layer-3091/evidence/parity/l0-1/intel/qwen35-apr-vs-reference/scalar/iter/it3-deltarule/logits-orig-scalar-vs-SC.tsv
+9acceb3872912e2b4fa7e590a5bb9d37e4e02151668fab436538861a7786644f  /mnt/nvme-raid0/agent-wt/layer-3091/evidence/parity/l0-1/intel/qwen35-apr-vs-reference/scalar/iter/it3-deltarule/logits-p4-scalar-vs-SC.json
+874a45aa43f7f49e3e5ec1deb1882c32718fe1368f7c907d3b0813159f999947  /mnt/nvme-raid0/agent-wt/layer-3091/evidence/parity/l0-1/intel/qwen35-apr-vs-reference/scalar/iter/it3-deltarule/logits-p4-scalar-vs-SC.tsv
+003b6d46efae575c945558e388735be18d0044834f6511068dfabee79a7883c4  /mnt/nvme-raid0/agent-wt/layer-3091/evidence/parity/l0-1/intel/qwen35-apr-vs-reference/scalar/iter/it3-deltarule/walk_orig.summary.txt
+de2f41067dc322f3a87038f41608e4000386f729d2415e667559a5bb578205b7  /mnt/nvme-raid0/agent-wt/layer-3091/evidence/parity/l0-1/intel/qwen35-apr-vs-reference/scalar/iter/it3-deltarule/walk_orig.tsv
+e897833929a77544784f95dafd77de9d0d772bd1f1b1af9679ffc2e0e8d4fa9f  /mnt/nvme-raid0/agent-wt/layer-3091/evidence/parity/l0-1/intel/qwen35-apr-vs-reference/scalar/iter/it3-deltarule/walk_p4.summary.txt
+d4737fa28e6711ac321f7bf92d434f57ad1cba1515661a127365e03dd3892567  /mnt/nvme-raid0/agent-wt/layer-3091/evidence/parity/l0-1/intel/qwen35-apr-vs-reference/scalar/iter/it3-deltarule/walk_p4.tsv
+end_utc=2026-09-15T23:16:45Z
