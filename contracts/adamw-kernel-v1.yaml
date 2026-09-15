@@ -52,43 +52,54 @@ equations:
     - params.len() > 0
     lean_theorem: Theorems.Weight_Update
 proof_obligations:
-- type: precondition
+- id: AW-PRE-001
+  type: precondition
   property: Hyperparameters valid, inputs finite
   formal: 'lr > 0 ∧ β1 ∈ (0,1) ∧ β2 ∈ (0,1) ∧ ε > 0 ∧ λ ≥ 0 ∧ t ≥ 1 ∧ ∀i: isFinite(g_i)'
-- type: postcondition
+- id: AW-POST-002
+  type: postcondition
   property: Updated weights finite, moments non-negative
   formal: '∀i: isFinite(θ_i) ∧ v_t_i ≥ 0'
   requires: AW-PRE-001
-- type: frame
+- id: AW-FRM-003
+  type: frame
   property: Only theta, m, v are modified; gradients and hyperparams unchanged
   formal: modifies(θ, m, v) ∧ preserves(g, lr, β1, β2, ε, λ)
-- type: loop_invariant
+- id: AW-LINV-004
+  type: loop_invariant
   property: Second moment remains non-negative across all training steps
   formal: '∀ step t, ∀i: v_t_i ≥ 0'
   applies_to_phase: moment_update
-- type: loop_variant
+- id: AW-LVAR-005
+  type: loop_variant
   property: Training step counter advances
   formal: V = max_steps - t, V ≥ 0, V strictly decreasing
-- type: old_state
+- id: AW-OLD-006
+  type: old_state
   property: Moments are exponential moving averages of old values
   formal: m_t = β1 · old(m_{t-1}) + (1-β1) · g_t
-- type: invariant
+- id: AW-INV-007
+  type: invariant
   property: Decoupled weight decay
   formal: Weight decay term is lambda * theta, not lambda * theta in gradient
   applies_to: all
-- type: bound
+- id: AW-BND-008
+  type: bound
   property: Second moment non-negative
   formal: v_t >= 0 for all t and all dimensions
   applies_to: all
-- type: bound
+- id: AW-BND-009
+  type: bound
   property: Bias-corrected moments finite
   formal: m_hat_t and v_hat_t are finite when g_t is finite
   applies_to: all
-- type: invariant
+- id: AW-INV-010
+  type: invariant
   property: Bias correction factor
   formal: 1 / (1 - beta^t) > 1 for t >= 1 and beta in (0, 1)
   applies_to: all
-- type: equivalence
+- id: AW-EQ-011
+  type: equivalence
   property: SIMD matches scalar within ULP
   tolerance: 8.0
   applies_to: simd

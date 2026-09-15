@@ -118,15 +118,18 @@ falsification_tests:
     if_fails: batch=1 still OOMs — gradient checkpointing + 8-bit opt required
 
 proof_obligations:
-  - type: equivalence
+  - id: GAC-EQ-001
+    type: equivalence
     property: Accumulated gradients match single-batch gradients
     formal: "|sum(grad_micro[i]) / N - grad_batch| < eps element-wise"
     applies_to: all
-  - type: invariant
+  - id: GAC-INV-002
+    type: invariant
     property: Optimizer step only after accumulation_steps micro-batches
     formal: "optimizer.step() called iff step % accumulation_steps == 0"
     applies_to: all
-  - type: bound
+  - id: GAC-BND-003
+    type: bound
     property: VRAM proportional to physical batch
     formal: "peak_vram(bs=1, accum=N) < peak_vram(bs=N) * 0.6"
     applies_to: all

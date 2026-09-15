@@ -111,21 +111,24 @@ kernel_structure:
     description: Verify session persistence roundtrip, cleanup KV-cache on exit
 
 proof_obligations:
-- type: state_machine
+- id: ACSDD39-SM-001
+  type: state_machine
   property: Chat session follows valid transitions
   formal: "Init->WaitInput->Generating->WaitInput->...->Exit, Ctrl-C returns to WaitInput"
   applies_to: session_state_machine
   lean:
     theorem: Theorems.SessionStateMachine
     status: sorry
-- type: idempotency
+- id: ACSDD39-IDEM-002
+  type: idempotency
   property: Template application is idempotent
   formal: structure(apply(apply(p))) == structure(apply(p))
   applies_to: chat_template_application
   lean:
     theorem: Theorems.ChatTemplateApplication
     status: sorry
-- type: bound
+- id: ACSDD39-BND-003
+  type: bound
   property: KV-cache bounded by max context
   formal: cache.len() <= max_context_length after every operation
   tolerance: 1e-6
@@ -133,7 +136,8 @@ proof_obligations:
   lean:
     theorem: Theorems.KvCacheManagement
     status: sorry
-- type: roundtrip
+- id: ACSDD39-RT-004
+  type: roundtrip
   property: Session save/load roundtrip
   formal: load(save(session)).history == session.history
   tolerance: 0.0
@@ -141,7 +145,8 @@ proof_obligations:
   lean:
     theorem: Theorems.SessionPersistence
     status: sorry
-- type: invariant
+- id: ACSDD39-INV-005
+  type: invariant
   property: History is append-only
   formal: history[0..n] unchanged after appending turn n+1
   applies_to: session_state_machine

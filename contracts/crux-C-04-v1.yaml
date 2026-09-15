@@ -203,13 +203,17 @@ falsification_tests:
     full_discharge_blocked_on: "live /api/chat handler emitting application/x-ndjson stream with a real terminal done=true frame"
 
 proof_obligations:
-- type: invariant
+- id: CC04D32-INV-001
+  type: invariant
   property: "/api/chat non-streaming response has all 10 Ollama-required top-level keys"
-- type: invariant
+- id: CC04D32-INV-002
+  type: invariant
   property: "response.message.role == 'assistant' and response.done == true"
-- type: invariant
+- id: CC04D32-INV-003
+  type: invariant
   property: "eval_count >= 1 and eval_duration > 0 for non-empty replies"
-- type: invariant
+- id: CC04D32-INV-004
+  type: invariant
   property: "Streaming response has exactly one terminal done=true frame (last frame)"
 
 verification_summary:

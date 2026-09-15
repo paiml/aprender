@@ -50,23 +50,28 @@ equations:
     - batch_size > 0
     lean_theorem: Theorems.Throughput_Bound
 proof_obligations:
-- type: bound
+- id: RM71BC-BND-001
+  type: bound
   property: Ceilings positive
   formal: bw_ceiling > 0 ∧ compute_ceiling > 0 for valid inputs
   applies_to: all
-- type: invariant
+- id: RM71BC-INV-002
+  type: invariant
   property: Memory-bound classification
   formal: bw_ceiling < compute_ceiling ⟹ system is memory-bound
   applies_to: all
-- type: bound
+- id: RM71BC-BND-003
+  type: bound
   property: Throughput bounded
   formal: throughput <= min(bw_ceiling, compute_ceiling)
   applies_to: all
-- type: monotonicity
+- id: RM71BC-MON-004
+  type: monotonicity
   property: Model bytes monotonic
   formal: more params (same quant) → more bytes → lower bw ceiling
   applies_to: all
-- type: equivalence
+- id: RM71BC-EQ-005
+  type: equivalence
   property: SIMD roofline equivalence
   tolerance: 0.0
   applies_to: simd

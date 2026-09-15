@@ -100,62 +100,74 @@ equations:
       - "NON-VACUITY: the_real_crux_registry_rows_are_all_in_domain asserts >= 250 rows parsed. If the stories[] field ever stopped deserializing, every registry check would iterate an empty vec and pass — the same failure mode as the field this contract exists to fix"
 
 proof_obligations:
-  - type: invariant
+  - id: CIMD-INV-001
+    type: invariant
     property: "The #2555 reproducer is rejected"
     formal: "`pv validate` on a contract carrying competitor: THIS-COMPETITOR-DOES-NOT-EXIST, demand_score: 99999, intake_status: banana exits non-zero"
     applies_to: intake_status_is_closed_at_parse_time
 
-  - type: invariant
+  - id: CIMD-INV-002
+    type: invariant
     property: "An invented intake_status fails to PARSE, not merely to lint"
     formal: "parse_contract_str(y) is Err for intake_status ∈ {banana, implemented, done, SUPPORTED, ''} and the error names the field"
     applies_to: intake_status_is_closed_at_parse_time
 
-  - type: invariant
+  - id: CIMD-INV-003
+    type: invariant
     property: "All four vocabulary words parse and round-trip"
     formal: "for w in {missing, partial, supported, unclear}: parse(w).intake_status = Some(v) and v.to_string() = w"
     applies_to: intake_status_is_closed_at_parse_time
 
-  - type: invariant
+  - id: CIMD-INV-004
+    type: invariant
     property: "The whole corpus satisfies the enum"
     formal: "`pv lint contracts/` reports 0 errors over the whole corpus (1730 contracts on this branch, 1727 on 4bbfeb07f; the count is a dated sample, the 0-errors is the claim)"
     applies_to: intake_status_is_closed_at_parse_time
 
-  - type: invariant
+  - id: CIMD-INV-005
+    type: invariant
     property: "An out-of-range demand_score is an Error-severity CRUX-001 quoting the value"
     formal: "for n in {99999, 0, -1, 6, 10^12}: CRUX-001 ∈ errors(validate) and message contains n"
     applies_to: demand_score_stays_inside_its_documented_range
 
-  - type: invariant
+  - id: CIMD-INV-006
+    type: invariant
     property: "Both range bounds are inclusive"
     formal: "for n in 1..=5: no CRUX-001 violation"
     applies_to: demand_score_stays_inside_its_documented_range
 
-  - type: invariant
+  - id: CIMD-INV-007
+    type: invariant
     property: "An unregistered competitor is an Error-severity CRUX-002"
     formal: "for s in {THIS-COMPETITOR-DOES-NOT-EXIST, HuggingFace, llama.cpp, openai, ''}: CRUX-002 ∈ errors(validate)"
     applies_to: competitor_names_a_registered_research_source
 
-  - type: invariant
+  - id: CIMD-INV-008
+    type: invariant
     property: "Every registered competitor validates — the registry cannot silently shrink"
     formal: "for s in CRUX_COMPETITORS: errors(validate) contains no CRUX-* rule"
     applies_to: competitor_names_a_registered_research_source
 
-  - type: invariant
+  - id: CIMD-INV-009
+    type: invariant
     property: "BEAT_INCUMBENTS is demonstrably the WRONG set for this field"
     formal: "beat_accepts(huggingface) = beat_accepts(vllm) = beat_accepts(llama_cpp) = false, while beat_accepts(llama.cpp) = true"
     applies_to: competitor_names_a_registered_research_source
 
-  - type: invariant
+  - id: CIMD-INV-010
+    type: invariant
     property: "The rules are WIRED — removing the call from validate_contract turns the suite RED"
     formal: "deleting `validate_crux_intake(contract, &mut violations)` fails 3 tests"
     applies_to: competitor_names_a_registered_research_source
 
-  - type: invariant
+  - id: CIMD-INV-011
+    type: invariant
     property: "Contracts without the three fields are unaffected"
     formal: "a contract carrying none of the three parses with all three fields None and yields no CRUX-* violation"
     applies_to: intake_status_is_closed_at_parse_time
 
-  - type: bound
+  - id: CIMD-BND-012
+    type: bound
     property: "KNOWN GAP, STATED: on metadata.*, OMISSION and explicit null dodge the gate entirely"
     formal: >
       deleting the three metadata: lines gives rc=0, and `competitor: null` likewise.
@@ -170,32 +182,38 @@ proof_obligations:
       known limit rather than an unnoticed hole.
     applies_to: competitor_names_a_registered_research_source
 
-  - type: invariant
+  - id: CIMD-INV-013
+    type: invariant
     property: "PRESENCE IS required where it CAN be — on master-registry story rows"
     formal: "a stories[] row omitting demand_score raises CRUX-001; one omitting competitor raises CRUX-002; both quote the row id"
     applies_to: master_registry_story_rows_carry_a_complete_ranking_key
 
-  - type: invariant
+  - id: CIMD-INV-014
+    type: invariant
     property: "Registry rows are held to the same two domains as metadata"
     formal: "for n in {99999, 0, -1, 6, 10^12}: CRUX-001 at stories[ID].demand_score; for s ∉ CRUX_COMPETITORS: CRUX-002 at stories[ID].competitor; for n in 1..=5: no violation"
     applies_to: master_registry_story_rows_carry_a_complete_ranking_key
 
-  - type: invariant
+  - id: CIMD-INV-015
+    type: invariant
     property: "An invented registry status fails to PARSE"
     formal: "for w in {implemented, banana, SUPPORTED, done, in-progress}: parse_contract_str is Err and the message names status and w"
     applies_to: master_registry_story_rows_carry_a_complete_ranking_key
 
-  - type: invariant
+  - id: CIMD-INV-016
+    type: invariant
     property: "The REAL registry is in-domain, and the check is non-vacuous"
     formal: "parse(crux-competitive-research-ux-v1.yaml).stories.len() >= 250, every row has all three fields, and validate yields no CRUX-* error"
     applies_to: master_registry_story_rows_carry_a_complete_ranking_key
 
-  - type: invariant
+  - id: CIMD-INV-017
+    type: invariant
     property: "competitor is normalised at PARSE, so the stored value equals the checked value"
     formal: "parse(competitor: '  ecosystem  ').metadata.competitor = Some(\"ecosystem\"), and a blank stays Some(\"\") and raises CRUX-002"
     applies_to: competitor_names_a_registered_research_source
 
-  - type: invariant
+  - id: CIMD-INV-018
+    type: invariant
     property: "The registry rules are WIRED — removing the call turns the suite RED"
     formal: "deleting `validate_crux_registry_stories(contract, violations)` fails 3 tests; reverting the parse-time trim fails 2"
     applies_to: master_registry_story_rows_carry_a_complete_ranking_key

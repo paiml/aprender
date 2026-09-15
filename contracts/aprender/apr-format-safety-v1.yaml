@@ -219,14 +219,16 @@ kernel_structure:
     description: Verify truncation detection, shape preservation, read-only invariants
 
 proof_obligations:
-- type: invariant
+- id: AFSD164-INV-001
+  type: invariant
   property: Magic byte detection never panics
   formal: "for all bytes: detect_format(bytes) does not panic"
   applies_to: magic_byte_validation
   lean:
     theorem: Theorems.MagicByteValidation
     status: sorry
-- type: bound
+- id: AFSD164-BND-002
+  type: bound
   property: Header allocation is bounded
   formal: "alloc_size(header) <= file_size + OVERHEAD_CAP"
   tolerance: 1e-6
@@ -234,49 +236,56 @@ proof_obligations:
   lean:
     theorem: Theorems.HeaderIntegrity
     status: sorry
-- type: postcondition
+- id: AFSD164-POST-003
+  type: postcondition
   property: Provenance blocks when enforced and missing
   formal: "enforce && !has_hash => Err(MissingProvenance)"
   applies_to: provenance_enforcement
   lean:
     theorem: Theorems.ProvenanceEnforcement
     status: sorry
-- type: invariant
+- id: AFSD164-INV-004
+  type: invariant
   property: Dtype coercion preserves shape
   formal: coerce(tensor, dtype).shape == tensor.shape
   applies_to: dtype_coercion_safety
   lean:
     theorem: Theorems.DtypeCoercionSafety
     status: sorry
-- type: postcondition
+- id: AFSD164-POST-005
+  type: postcondition
   property: Truncation detected
   formal: "actual_size != expected_size => Err"
   applies_to: truncation_detection
   lean:
     theorem: Theorems.TruncationDetection
     status: sorry
-- type: invariant
+- id: AFSD164-INV-006
+  type: invariant
   property: Strict validation is read-only
   formal: hash(model_before) == hash(model_after) for strict_validate(model)
   applies_to: strict_import_validation
   lean:
     theorem: Theorems.StrictImportValidation
     status: sorry
-- type: invariant
+- id: AFSD164-INV-007
+  type: invariant
   property: INVALID validation exits non-zero
   formal: 'validate(m) == INVALID => exit_code != 0'
   applies_to: validate_exit_code_consistency
   lean:
     theorem: Theorems.ValidateExitCodeConsistency
     status: sorry
-- type: invariant
+- id: AFSD164-INV-008
+  type: invariant
   property: Unencrypted files report encrypted=false
   formal: '!has_encryption_layer(f) => flags(f).encrypted == false'
   applies_to: flag_integrity
   lean:
     theorem: Theorems.FlagIntegrity
     status: sorry
-- type: postcondition
+- id: AFSD164-POST-009
+  type: postcondition
   property: All GGUF metadata keys exposed
   formal: 'inspect(m).keys.len() >= m.metadata.keys.len()'
   applies_to: metadata_completeness

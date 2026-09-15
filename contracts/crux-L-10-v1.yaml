@@ -103,15 +103,20 @@ falsification_tests:
   if_fails: "Enumeration lies — user cannot verify which primitives are actually fused"
 
 proof_obligations:
-- type: invariant
+- id: CL1-INV-001
+  type: invariant
   property: "RMSNorm parity max_abs_diff <= 1e-5 (f32)"
-- type: invariant
+- id: CL1-INV-002
+  type: invariant
   property: "RoPE parity max_abs_diff <= 1e-5 (f32)"
-- type: invariant
+- id: CL1-INV-003
+  type: invariant
   property: "SwiGLU parity max_abs_diff <= 1e-5 (f32)"
-- type: invariant
+- id: CL1-INV-004
+  type: invariant
   property: "liger_kernels enumeration is truthful (no aspirational entries)"
-- type: equivalence
+- id: CL1-EQ-005
+  type: equivalence
   property: "apr --primitives liger  ≅  linkedin/Liger-Kernel (RMSNorm+RoPE+SwiGLU fused)"
 
 verification_summary:

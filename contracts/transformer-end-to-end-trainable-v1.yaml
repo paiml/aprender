@@ -41,7 +41,8 @@ status: enforced
 date: 2026-06-24
 
 proof_obligations:
-  - type: invariant
+  - id: TETET-INV-001
+    type: invariant
     property: >
       OBLIG-TRANSFORMER-END-TO-END-TRAINABLE: after N=200 Adam steps on a fixed
       deterministic (input -> next-token) memorize task, a tiny transformer built
@@ -55,7 +56,8 @@ proof_obligations:
       received a finite non-zero gradient on at least one step. A severed edge
       anywhere on the composed live path freezes the upstream parameter (||Δp||=0,
       no gradient), which guard (b) catches independently of the loss.
-  - type: equivalence
+  - id: TETET-EQ-002
+    type: equivalence
     property: >
       E2E-FALSIFIER-NON-TAUTOLOGICAL: the test is a real end-to-end guard, not an
       is_some assertion. Everything is LCG-seeded so the loss trajectory and
@@ -67,7 +69,8 @@ proof_obligations:
       though the loss still drops via the FFN+lm_head — proving guard (b) is an
       independent severed-graph detector that per-layer gradchecks miss in
       composition. The correct autograd-aware Tensor::gelu path is GREEN.
-  - type: invariant
+  - id: TETET-INV-003
+    type: invariant
     property: >
       OBLIG-FUNCTIONAL-GELU-BACKWARD-GRAD (PMAT-922 decoder twin): in
       TransformerDecoderLayer::forward_with_memory with dropout disabled, the FFN
@@ -77,7 +80,8 @@ proof_obligations:
       and norm3.gamma (both UPSTREAM of the FFN gelu) while linear2.weight
       (downstream) also receives gradient. A severed gelu gives linear2 a gradient
       but leaves linear1/norm3 frozen.
-  - type: invariant
+  - id: TETET-INV-004
+    type: invariant
     property: >
       OBLIG-FUNCTIONAL-DROPOUT-BACKWARD-GRAD (PMAT-922): in TRAINING mode with
       p>0, both the Dropout layer's forward and nn::functional::dropout MUST route

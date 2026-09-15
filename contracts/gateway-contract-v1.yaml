@@ -35,20 +35,24 @@ equations:
       - "All G0 sub-gates (FORMAT, TENSOR, INTEGRITY, LAYOUT, VALIDATE, PULL) enforce via Jidoka early-return before scenario execution"
 
 proof_obligations:
-  - type: invariant
+  - id: GC-INV-001
+    type: invariant
     property: "Gateway zeroing"
     formal: "forall g in G: not pass(g) implies MQS(model) = 0"
     applies_to: all
-  - type: invariant
+  - id: GC-INV-002
+    type: invariant
     property: "Two-phase execution"
     formal: "G0 sub-gates complete before scenario execution begins"
     applies_to: all
-  - type: invariant
+  - id: GC-INV-003
+    type: invariant
     property: "G4 garbage threshold"
     formal: "G4 fails when garbage_count > floor(evidence_count / 4) (integer division)"
     tolerance: 0.25
     applies_to: all
-  - type: completeness
+  - id: GC-CMP-004
+    type: completeness
     property: "Five gateway types in scorer"
     formal: "check_gateways returns Vec<GatewayResult> with len = 5"
     applies_to: all

@@ -49,7 +49,8 @@ equations:
     - x.len() > 0
     lean_theorem: Theorems.Silu
 proof_obligations:
-- type: invariant
+- id: SG-INV-001
+  type: invariant
   property: Zero preservation
   formal: SwiGLU(0, W, V, 0, 0) = 0
   applies_to: all
@@ -66,7 +67,8 @@ proof_obligations:
       so each component is SiLU(0)·0 = 0·0 = 0. Reuses silu_zero. The stronger
       gate-zero lemma swiglu_gate_zero proves the output component is 0 for ANY
       value pre-activation when the gate pre-activation is 0.
-- type: equivalence
+- id: SG-EQ-002
+  type: equivalence
   property: Gating identity
   formal: SwiGLU(g, v) = SiLU(g) * v
   applies_to: all
@@ -80,7 +82,8 @@ proof_obligations:
       The SwiGLU output component factors definitionally as SiLU(gate)*value —
       the contract's "decomposable as gate * value where gate = SiLU(xW+b)"
       invariant. Proved by rfl over the swigluElem definition.
-- type: bound
+- id: SG-BND-003
+  type: bound
   property: Sigmoid range
   formal: 0 < sigmoid(z) AND sigmoid(z) < 1 for all z
   applies_to: all
@@ -97,7 +100,8 @@ proof_obligations:
       σ(z)=1/(1+exp(-z)) ∈ (0,1): exp(-z)>0 makes the denominator exceed 1
       (so σ<1) while keeping it positive (so σ>0). This is the gate
       activation's amplitude bound underlying SiLU finiteness.
-- type: bound
+- id: SG-BND-004
+  type: bound
   property: Gate output bounded below
   formal: SiLU(z) > -1/e for all z   (e = exp 1, -1/e approx -0.3679)
   applies_to: all
@@ -119,7 +123,8 @@ proof_obligations:
       fully-verified -1/e bound (same sign and order of magnitude), which
       already discharges the substantive claim — the SiLU gate can never
       diverge to -inf. The looser-but-provable constant is stated honestly.
-- type: monotonicity
+- id: SG-MON-005
+  type: monotonicity
   property: SiLU monotone on nonnegative domain
   formal: 0 <= a AND a < b implies SiLU(a) < SiLU(b)
   applies_to: all
@@ -136,12 +141,14 @@ proof_obligations:
       (reciprocal of the shrinking denominator 1+exp(-z)) and x is nonneg, so
       a·σ(a) <= a·σ(b) < b·σ(b). Matches FALSIFY-SG-006 (increasing the gate
       input increases the gate output when the gate is positive).
-- type: equivalence
+- id: SG-EQ-006
+  type: equivalence
   property: Fused matches unfused
   formal: '|fused_swiglu(x) - (silu(xW+b) * (xV+c))| < eps'
   tolerance: 1.0e-06
   applies_to: all
-- type: equivalence
+- id: SG-EQ-007
+  type: equivalence
   property: SIMD matches scalar within ULP
   tolerance: 8.0
   applies_to: simd

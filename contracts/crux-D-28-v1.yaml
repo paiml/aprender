@@ -74,11 +74,14 @@ falsification_tests:
 
   if_fails: rule 'weights sum check enforced' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: equivalence
+- id: CD25D31-EQ-001
+  type: equivalence
   property: "apr merge-adapters linear matches PEFT `add_weighted_adapter(combination_type='linear')` within 1e-6"
-- type: invariant
+- id: CD25D31-INV-002
+  type: invariant
   property: "N=1, weight=1.0 is byte-identical to the original adapter"
-- type: invariant
+- id: CD25D31-INV-003
+  type: invariant
   property: "ties/dare with prune_ratio=0 ≡ linear combination"
 
 verification_summary:

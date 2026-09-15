@@ -117,42 +117,50 @@ equations:
     lean_theorem: Theorems.Coverage_Collection
 
 proof_obligations:
-- type: determinism
+- id: PT-DET-001
+  type: determinism
   property: Assertion evaluation is deterministic
   formal: forall x y. equals(x, y) called twice with same inputs produces same AssertionResult.passed
   applies_to: assertion_evaluation
 
-- type: idempotency
+- id: PT-IDEM-002
+  type: idempotency
   property: Soft assertion verify is idempotent on state
   formal: verify(soft) called multiple times without new assertions returns same result
   applies_to: soft_assertion_collection
 
-- type: termination
+- id: PT-TERM-003
+  type: termination
   property: Retry assertion always terminates
   formal: forall config. config.timeout > 0 => verify(retry) terminates within timeout + poll_interval
   applies_to: retry_assertion
 
-- type: soundness
+- id: PT-SND-004
+  type: soundness
   property: State machine validation is sound
   formal: validate(pb).is_valid => no orphan states and deterministic transitions in pb
   applies_to: playbook_state_machine
 
-- type: completeness
+- id: PT-CMP-005
+  type: completeness
   property: All reachable states discovered by BFS
   formal: forall s in states(pb). reachable(initial, s) => s in reachability.reachable_states
   applies_to: playbook_state_machine
 
-- type: invariant
+- id: PT-INV-006
+  type: invariant
   property: Coverage percentage bounded
   formal: 0.0 <= coverage_pct <= 100.0 for all CoverageReport instances
   applies_to: coverage_collection
 
-- type: monotonicity
+- id: PT-MON-007
+  type: monotonicity
   property: Failure count in SoftAssertions never decreases
   formal: forall t1 < t2. soft.failures.len() at t1 <= soft.failures.len() at t2
   applies_to: soft_assertion_collection
 
-- type: equivalence
+- id: PT-EQ-008
+  type: equivalence
   property: Assertion symmetry
   formal: Assertion::equals(a, b).passed == Assertion::equals(b, a).passed for all a, b
   applies_to: assertion_evaluation

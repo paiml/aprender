@@ -62,27 +62,33 @@ equations:
     - input.iter().all(|v| v.is_finite())
     lean_theorem: Theorems.Mqs_Pass_Rate
 proof_obligations:
-- type: bound
+- id: MS1889-BND-001
+  type: bound
   property: MQS raw bounded
   formal: 0 <= mqs(e).raw <= 1050 for all valid ModelEvidence e
   applies_to: all
-- type: bound
+- id: MS1889-BND-002
+  type: bound
   property: MQS normalized bounded
   formal: 0 <= mqs(e).normalized <= 100 for all valid ModelEvidence e
   applies_to: all
-- type: invariant
+- id: MS1889-INV-003
+  type: invariant
   property: Deterministic scoring
   formal: mqs(e1) == mqs(e2) when e1 == e2
   applies_to: all
-- type: invariant
+- id: MS1889-INV-004
+  type: invariant
   property: Dimension sum
   formal: raw = QUAL + PERF + STAB + COMP + EDGE + REGR
   applies_to: all
-- type: monotonicity
+- id: MS1889-MON-005
+  type: monotonicity
   property: Grade monotonic
   formal: normalized(a) > normalized(b) => grade(a) >= grade(b)
   applies_to: all
-- type: postcondition
+- id: MS1889-POST-006
+  type: postcondition
   property: Pass rate bounded
   formal: 0.0 <= mqs_pass_rate(results) <= 1.0
   applies_to: all

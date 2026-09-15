@@ -113,11 +113,14 @@ falsification_tests:
   if_fails: "different seeds yield identical loss — the --seed flag is not actually consumed"
 
 proof_obligations:
-- type: invariant
+- id: CG0B485-INV-001
+  type: invariant
   property: "repro manifest carries all fields required for bit-exact replay (seed, git_commit, training_args, dataset.sha256, env_allowlist)"
-- type: invariant
+- id: CG0B485-INV-002
+  type: invariant
   property: "same seed yields identical first-epoch loss within 1e-6"
-- type: equivalence
+- id: CG0B485-EQ-003
+  type: equivalence
   property: "apr --seed / --repro-manifest matches transformers.set_seed + TrainingArguments.to_json_string on equivalent training runs"
   competitor: huggingface
   reference: "https://huggingface.co/docs/transformers/main/en/main_classes/trainer (TrainingArguments.to_json_string, transformers.set_seed)"

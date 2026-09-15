@@ -140,15 +140,20 @@ falsification_tests:
   if_fails: "PyTorch accumulation reference not yet captured"
 
 proof_obligations:
-- type: invariant
+- id: CD00899-INV-001
+  type: invariant
   property: "effective_batch_size == per_device_batch × grad_accum_steps"
-- type: invariant
+- id: CD00899-INV-002
+  type: invariant
   property: "optimizer.step() called once every K micro-batches (not every one)"
-- type: invariant
+- id: CD00899-INV-003
+  type: invariant
   property: "Loss parity ≤1% between (B·K, K=1) and (B, K) configurations with same seed"
-- type: invariant
+- id: CD00899-INV-004
+  type: invariant
   property: "Peak activation memory per micro-step is ~per_device_batch (not effective_batch)"
-- type: equivalence
+- id: CD00899-EQ-005
+  type: equivalence
   property: "apr finetune --grad-accum-steps K  ≅  PyTorch {for _ in range(K): loss.backward(); }; optimizer.step()"
 
 verification_summary:

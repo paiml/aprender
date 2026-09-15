@@ -1031,21 +1031,24 @@ falsification_tests:
     and the residual can be closed rather than stated.
 
 proof_obligations:
-- type: invariant
+- id: PRS-INV-001
+  type: invariant
   property: >-
     An autonomous merge is armed only when the quorum spans at least two distinct
     vendors, holds both roles, excludes the author and is unanimous; a failure of any
     conjunct REFUSES and never BLOCKS (F-PRREV-012, F-PRREV-015).
   formal: 'ARM(pr) => |vendors(quorum)| >= 2 and {primary, cross_vendor} subset roles(quorum) and forall m: m.actor != author and m.verdict = PASS and m.refusal = null; not ARM(pr) => blocking_classes(pr) unchanged'
 
-- type: invariant
+- id: PRS-INV-002
+  type: invariant
   property: >-
     No receipt that is not PASS, that carries a blocking-class finding, an unmarked
     claim, a vacuous consultation, a surviving mutant or an unsearched surface arms a
     merge (F-PRREV-013).
   formal: 'ARM(pr) => verdict = PASS and blocking_findings = 0 and unmarked_claims = 0 and vacuous_consultations = 0 and survivors = [] and forall s in SURFACE: cov(s) != none'
 
-- type: invariant
+- id: PRS-INV-003
+  type: invariant
   property: >-
     Every refusal path of scripts/pr_review_quorum_arm.sh is exercised by at least one
     committed fixture, and the derived mutation set kills 100% of its drop and flip
@@ -1054,42 +1057,48 @@ proof_obligations:
   formal: 'forall q in refusal_sites(arm): exists row in q_table: refuses(row) = q; quorum_arm_mutation_score = 1'
 
 
-- type: invariant
+- id: PRS-INV-004
+  type: invariant
   property: >-
     Every claim in the receipt carries exactly one of the three grounding marks, and a
     `cited` mark carries a non-empty excerpt whose sha256 matches the recorded digest
     (F-PRREV-001, F-PRREV-002).
   formal: 'forall c in claims: mark(c) in {cited, measured, asserted} and (mark(c) = cited => c.excerpt != "" and c.excerpt_sha256 = sha256(c.excerpt))'
 
-- type: invariant
+- id: PRS-INV-005
+  type: invariant
   property: >-
     A PR is blocked if and only if it satisfies one of the six machine-decidable
     classes B1..B6 of spec S7's table; the guard discriminates, proven by the three
     GREEN rows of S6.3 (F-PRREV-003, F-PRREV-007).
   formal: 'BLOCK(pr) <=> B1(pr) or B2(pr) or B3(pr) or B4(pr) or B5(pr) or B6(pr)'
 
-- type: soundness
+- id: PRS-SND-006
+  type: soundness
   property: >-
     A class blocks only while its measured precision on the rolling sample is at least
     0.90, and a class that falls below is demoted by editing this contract rather than
     by disabling the gate (F-PRREV-004).
   formal: 'blocks(Bi) => precision(Bi) >= 0.90; precision(Bi) < 0.90 => advisory(Bi) and gate_enabled'
 
-- type: invariant
+- id: PRS-INV-007
+  type: invariant
   property: >-
     No numeric threshold exists for actionable_rate, effective_fp_rate,
     audit_divergence or cost_per_actionable until thirty samples of that metric have
     been recorded (F-PRREV-005).
   formal: 'forall m in INSTRUMENT_FIRST: samples(m) < 30 => threshold(m) = UNSET'
 
-- type: invariant
+- id: PRS-INV-008
+  type: invariant
   property: >-
     guard_mutation_score = 1.00, receipt_presence = 1.00, unmarked_claims = 0 and
     vacuous_consultations = 0, none of the four carrying a ratchet (F-PRREV-006,
     F-PRREV-008).
   formal: 'guard_mutation_score = 1 and receipt_presence = 1 and unmarked_claims = 0 and vacuous_consultations = 0 and forall m in JIDOKA: ratchet(m) = NONE'
 
-- type: invariant
+- id: PRS-INV-009
+  type: invariant
   property: >-
     A consulted pmat block records a coverage method for every surface, NAMES all three
     horizon regions whether or not each was reached, and records the refs its horizon

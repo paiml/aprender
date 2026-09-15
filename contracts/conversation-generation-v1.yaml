@@ -46,24 +46,29 @@ equations:
     - vocab_size > 0
     lean_theorem: Theorems.Chatml_Format
 proof_obligations:
-- type: invariant
+- id: CG2C65-INV-001
+  type: invariant
   property: ChatML structure
   formal: conversation.turns.len() == 3 AND turns[0].role == 'system' AND turns[1].role
     == 'user' AND turns[2].role == 'assistant'
   applies_to: all
-- type: invariant
+- id: CG2C65-INV-002
+  type: invariant
   property: Type D minimum
   formal: type_d_count / total >= 0.30
   applies_to: batch
-- type: invariant
+- id: CG2C65-INV-003
+  type: invariant
   property: No empty responses
   formal: 'for all conv: all turns have non-empty content'
   applies_to: all
-- type: invariant
+- id: CG2C65-INV-004
+  type: invariant
   property: System prompt honesty
   formal: SYSTEM_PROMPT contains 'not a replacement' AND 'pattern matching'
   applies_to: all
-- type: invariant
+- id: CG2C65-INV-005
+  type: invariant
   property: Deterministic generation
   formal: generate(entries, seed) == generate(entries, seed) for same inputs
   applies_to: all

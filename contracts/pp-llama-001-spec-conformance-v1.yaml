@@ -62,27 +62,33 @@ equations:
       - "THE MARKER IS THE EXPIRY (I-26, PMAT-974, S0-2): a §12 root cell's expiry is its `Expires **YYYY-MM-DD**` marker and never the first date in the cell (a witness date earlier in the prose does not become the expiry); rows past their derived expiry are RED in spec_conformance.sh (the §4 andon) — `SPEC_CONFORMANCE_TODAY` pins the clock for the case table (rows expiry_marker_wins, expired_row_is_red)"
 
 proof_obligations:
-  - type: invariant
+  - id: PL0SC-INV-001
+    type: invariant
     property: "Every ARMED rule's two selftest cases exist by name"
     formal: "scripts/spec_conformance.sh exits 0"
     applies_to: every_armed_row_names_cases_that_exist
-  - type: invariant
+  - id: PL0SC-INV-002
+    type: invariant
     property: "The join demonstrably turns RED when a named case is absent"
     formal: "the conformance_missing row of the case table is RED against a surface missing one name"
     applies_to: every_armed_row_names_cases_that_exist
-  - type: invariant
+  - id: PL0SC-INV-003
+    type: invariant
     property: "The guard is not vacuous"
     formal: "a spec whose §6 table parses to zero rows exits non-zero"
     applies_to: one_spec_and_never_vacuous
-  - type: invariant
+  - id: PL0SC-INV-004
+    type: invariant
     property: "A spent cell cannot be spent twice"
     formal: "two RECORDED ledger rows sharing a spend key exit non-zero"
     applies_to: a_cell_once_run_is_spent
-  - type: invariant
+  - id: PL0SC-INV-005
+    type: invariant
     property: "The expiry derivation refuses cycles and mis-dated rows"
     formal: "the dag_* rows of the case table are RED for a cycle, an undated root and a dated blocked row"
     applies_to: expiries_derive_from_the_dag
-  - type: invariant
+  - id: PL0SC-INV-006
+    type: invariant
     property: "The guard is enforced per-PR, not merely present"
     formal: "ci.yml invokes it in a job that `gate` depends on"
     applies_to: every_armed_row_names_cases_that_exist

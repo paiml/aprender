@@ -263,24 +263,29 @@ qa_gate:
   pass_criteria: All 6 falsification tests pass
   falsification: Set val_split=0.0 to break validation computation
 proof_obligations:
-- type: invariant
+- id: TL257B-INV-001
+  type: invariant
   property: EMA_{t} < EMA_{t-5} for healthy training (5-epoch window)
   formal: EMA_{t} < EMA_{t-5} for healthy training (5-epoch window)
   tolerance: 1e-6
   applies_to: all
-- type: invariant
+- id: TL257B-INV-002
+  type: invariant
   property: lr_0 = 0 (or lr_base / warmup_steps)
   formal: lr_0 = 0 (or lr_base / warmup_steps)
   applies_to: all
-- type: invariant
+- id: TL257B-INV-003
+  type: invariant
   property: lr_{warmup} = lr_base (peak)
   formal: lr_{warmup} = lr_base (peak)
   applies_to: all
-- type: invariant
+- id: TL257B-INV-004
+  type: invariant
   property: N_train + N_val == N
   formal: N_train + N_val == N
   applies_to: all
-- type: invariant
+- id: TL257B-INV-005
+  type: invariant
   property: N_val >= 1
   formal: N_val >= 1
   applies_to: all

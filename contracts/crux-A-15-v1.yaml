@@ -178,15 +178,20 @@ falsification_tests:
   if_fails: "apr offline output diverged from huggingface-cli golden bytes"
 
 proof_obligations:
-- type: equivalence
+- id: CA1BB7D-EQ-001
+  type: equivalence
   property: "apr pull file:// / --local-only matches huggingface_hub(local_files_only=True) on evidence/crux/huggingface/offline-goldens.json"
-- type: invariant
+- id: CA1BB7D-INV-002
+  type: invariant
   property: "file:// and HF_HUB_OFFLINE=1 invocations make zero outbound TCP connections (strace-verified)"
-- type: invariant
+- id: CA1BB7D-INV-003
+  type: invariant
   property: "Offline cache miss exits non-zero with a message identifying the missing file"
-- type: invariant
+- id: CA1BB7D-INV-004
+  type: invariant
   property: "Local-path copy preserves sha256 of every file"
-- type: invariant
+- id: CA1BB7D-INV-005
+  type: invariant
   property: "Selected(file://PATH, I, X) == Selected(fs-tree(PATH), I, X) with identical glob semantics as CRUX-A-04"
 
 verification_summary:

@@ -67,7 +67,8 @@ equations:
     lean_theorem: Theorems.Q4K_Interleaved_Dot_Parity
 
 proof_obligations:
-- type: invariant
+- id: QISM-INV-001
+  type: invariant
   property: InterleavedQ4K decode equals dequantize_q4_k for all 8 sub-blocks
   formal: |
     For every valid Q4_K super-block (any d, dmin, 12 scale bytes, 128 qs
@@ -75,19 +76,22 @@ proof_obligations:
     sum_i dequantize_q4_k(block)[i] * act[i] within floating-point accumulation
     tolerance. In particular the (scale, min) pair applied to sub-blocks 1..7
     matches get_scale_min_k4, not the prior bespoke idx/2 decoder.
-- type: invariant
+- id: QISM-INV-002
+  type: invariant
   property: scale/min decode is ggml get_scale_min_k4 exactly
   formal: |
     For the adversarial scales [0xAD,0x72,0xC3,0x1E,0xB5,0x49,0xE6,0x3C,0x96,
     0x6B,0x2D,0xD4], extract_scale_min returns the ggml get_scale_min_k4 values
     (45,53),(50,9),(3,38),(30,60),(38,41),(27,22),(61,50),(4,13) for idx 0..8.
     The prior extract_scale_min_from_slice disagreed on 7 of these 8.
-- type: invariant
+- id: QISM-INV-003
+  type: invariant
   property: zero super-block scale yields zero dot without panic
   formal: |
     For a super-block with d == 0, InterleavedQ4K::dot returns exactly 0.0 for
     any activations; the decode never panics or reads out of bounds.
-- type: classification
+- id: QISM-CLS-004
+  type: classification
   property: InterleavedQ4K::dot length guard rejects mismatched activations
   formal: |
     For activations whose length != num_super_blocks*256, InterleavedQ4K::dot

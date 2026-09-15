@@ -150,17 +150,22 @@ falsification_tests:
   if_fails: "greedy decode diverges between apr-Q4_K_M and llama-quantize Q4_K_M"
 
 proof_obligations:
-- type: equivalence
+- id: CB13886-EQ-001
+  type: equivalence
   property: "apr quantize --method q*_k_* per-tensor histogram matches llama-quantize"
   competitor_function: "llama-quantize (llama_model_quantize_internal)"
   reference: "https://github.com/ggerganov/llama.cpp/blob/master/src/llama-quant.cpp"
-- type: invariant
+- id: CB13886-INV-002
+  type: invariant
   property: "general.file_type equals canonical LLAMA_FTYPE for each variant (Q4_K_M=15, Q5_K_M=17, Q6_K=18)"
-- type: invariant
+- id: CB13886-INV-003
+  type: invariant
   property: "Q4_K_M: attn_v + ffn_down are Q6_K; rest Q4_K"
-- type: invariant
+- id: CB13886-INV-004
+  type: invariant
   property: "File size order: Q4_K_M < Q5_K_M < Q6_K"
-- type: invariant
+- id: CB13886-INV-005
+  type: invariant
   property: "Greedy parity at temp=0 between apr-Q4_K_M and llama-quantize Q4_K_M"
 
 verification_summary:

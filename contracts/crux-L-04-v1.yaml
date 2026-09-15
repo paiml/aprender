@@ -90,13 +90,17 @@ falsification_tests:
   if_fails: "Unpinned rmsnorm source — audit blocked"
 
 proof_obligations:
-- type: invariant
+- id: CL00790-INV-001
+  type: invariant
   property: "f32 parity max_abs_diff <= 1e-5"
-- type: invariant
+- id: CL00790-INV-002
+  type: invariant
   property: "bf16/fp16 parity within published tolerances"
-- type: invariant
+- id: CL00790-INV-003
+  type: invariant
   property: "Unsupported dtype errors, no silent cast"
-- type: equivalence
+- id: CL00790-EQ-004
+  type: equivalence
   property: "apr rmsnorm kernel  ≅  HF kernels-community rmsnorm"
 
 verification_summary:

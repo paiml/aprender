@@ -119,20 +119,24 @@ kernel_structure:
     description: Map errors to JSON-RPC codes, verify response envelope
 
 proof_obligations:
-- type: invariant
+- id: MTS9757-INV-001
+  type: invariant
   property: Schema matches handler parameters
   formal: '∀ tool, params: validate(params, tool.inputSchema).is_ok() → handler(tool, params) ≠ Err(InvalidParams)'
   applies_to: tool_schema_fidelity
-- type: invariant
+- id: MTS9757-INV-002
+  type: invariant
   property: Session state machine is acyclic
   formal: '∀ transitions: state_sequence is monotonically increasing (S0 ≤ S1 ≤ S2 ≤ S3)'
   applies_to: session_state_machine
-- type: invariant
+- id: MTS9757-INV-003
+  type: invariant
   property: Error codes are valid JSON-RPC
   formal: '∀ err: json_rpc_code(err) ∈ {-32700, -32601, -32602, -32603} ∪ [-32099..-32000]'
   tolerance: 1e-6
   applies_to: error_mapping
-- type: invariant
+- id: MTS9757-INV-004
+  type: invariant
   property: Idempotent tools are deterministic
   formal: '∀ tool where tool.idempotent: handler(tool, p) = handler(tool, p)'
   applies_to: idempotency_classification

@@ -119,35 +119,40 @@ kernel_structure:
     description: Evaluate ensure clauses, falsification protocol, rescue if needed
 
 proof_obligations:
-- type: state_machine
+- id: WD53E5-SM-001
+  type: state_machine
   property: Only forward lifecycle transitions
   formal: 'Planned->InProgress->Completed, no backward'
   applies_to: lifecycle_state_machine
   lean:
     theorem: Theorems.LifecycleStateMachine
     status: sorry
-- type: invariant
+- id: WD53E5-INV-002
+  type: invariant
   property: Require clauses block InProgress transition
   formal: 'any_require_fails => state remains Planned'
   applies_to: require_clause_evaluation
   lean:
     theorem: Theorems.RequireClauseEvaluation
     status: sorry
-- type: invariant
+- id: WD53E5-INV-003
+  type: invariant
   property: Ensure clauses block Completed transition
   formal: 'any_ensure_fails => state remains InProgress'
   applies_to: ensure_clause_evaluation
   lean:
     theorem: Theorems.EnsureClauseEvaluation
     status: sorry
-- type: invariant
+- id: WD53E5-INV-004
+  type: invariant
   property: Falsification is non-destructive
   formal: 'state_before(falsify(item)) == state_after(falsify(item))'
   applies_to: falsification_protocol
   lean:
     theorem: Theorems.FalsificationProtocol
     status: sorry
-- type: bound
+- id: WD53E5-BND-005
+  type: bound
   property: Rescue attempts bounded
   formal: 'rescue_count <= max_attempts'
   applies_to: rescue_escalation

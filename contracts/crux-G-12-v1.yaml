@@ -127,11 +127,14 @@ falsification_tests:
   if_fails: "second upload of identical content took ≥50% of first upload time — Xet CAS dedup not engaged"
 
 proof_obligations:
-- type: invariant
+- id: CG159E1-INV-001
+  type: invariant
   property: "apr --verify compares remote lfs.oid to local sha256 AFTER upload (never trusts HTTP 200 alone)"
-- type: invariant
+- id: CG159E1-INV-002
+  type: invariant
   property: "apr exits non-zero when remote and local sha256 diverge"
-- type: equivalence
+- id: CG159E1-EQ-003
+  type: equivalence
   property: "apr publish --lfs --verify matches huggingface_hub upload + validate_lfs_files semantics on Xet CAS"
   competitor: huggingface
   reference: "https://huggingface.co/docs/hub/xet (Xet CAS); https://huggingface.co/docs/huggingface_hub/main/en/package_reference/hf_api (upload_file with lfs, tree lfs.oid field)"

@@ -89,11 +89,14 @@ falsification_tests:
 
   if_fails: rule 'popularity follows freq^0.75 at n=100000' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: equivalence
+- id: CH1F257-EQ-001
+  type: equivalence
   property: "apr dataset neg-sample matches word2vec popularity sampler (freq^0.75) + BPR pairwise shape"
-- type: invariant
+- id: CH1F257-INV-002
+  type: invariant
   property: "disjoint positives/negatives per user"
-- type: invariant
+- id: CH1F257-INV-003
+  type: invariant
   property: "exact total negative count"
 
 verification_summary:

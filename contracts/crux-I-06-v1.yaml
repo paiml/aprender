@@ -194,13 +194,17 @@ falsification_tests:
 
   if_fails: rule 'parity with LangChain ReAct grammar parser' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: invariant
+- id: CI0F196-INV-001
+  type: invariant
   property: "Loop halts on first 'Final Answer:' before executing next Action"
-- type: invariant
+- id: CI0F196-INV-002
+  type: invariant
   property: "Exactly one stop condition fires per run with a structured reason JSON"
-- type: invariant
+- id: CI0F196-INV-003
+  type: invariant
   property: "At temperature=0 with fixed seed, trace is byte-identical across runs"
-- type: equivalence
+- id: CI0F196-EQ-004
+  type: equivalence
   property: "ReAct grammar parser output matches langchain.agents.output_parsers.ReActOutputParser on shared golden traces"
 
 verification_summary:

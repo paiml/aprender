@@ -59,18 +59,21 @@ equations:
     lean_theorem: Theorems.StratifiedKFold_Coverage
 
 proof_obligations:
-- type: bound
+- id: SKB-BND-001
+  type: bound
   property: Fold sizes differ by at most 1
   formal: |
     For all i, j in [0, n_splits): abs(len(test_fold_i) - len(test_fold_j)) <= 1.
   applies_to: all
-- type: invariant
+- id: SKB-INV-002
+  type: invariant
   property: Test folds partition the sample set exactly once
   formal: |
     For all k in [0, n): exactly one i has k in test_fold_i, and
     sum_i len(test_fold_i) = n.
   applies_to: all
-- type: invariant
+- id: SKB-INV-003
+  type: invariant
   property: Class iteration is deterministic (stable sorted-label order)
   formal: |
     The remainder-distribution order over classes is the ascending order of the

@@ -188,32 +188,38 @@ equations:
     lean_theorem: 'Theorems.Scorecard_output'
 
 proof_obligations:
-  - type: invariant
+  - id: TSS-INV-001
+    type: invariant
     property: Efficiency score bounded
     formal: '0.0 <= efficiency <= 1.0'
     applies_to: all scorecard computations
 
-  - type: monotonicity
+  - id: TSS-MON-002
+    type: monotonicity
     property: Grade monotonically non-decreasing with efficiency
     formal: 'efficiency_a > efficiency_b => grade(a) >= grade(b)'
     applies_to: grade mapping
 
-  - type: invariant
+  - id: TSS-INV-003
+    type: invariant
     property: Bottleneck classification is mutually exclusive
     formal: 'exactly one of {transfer, launch, compute, memory_bw} per measurement'
     applies_to: all classifications
 
-  - type: bound
+  - id: TSS-BND-004
+    type: bound
     property: Regression detection catches 10% throughput drop
     formal: 'if throughput_delta < -0.10 then regressed("throughput") == true'
     applies_to: regression comparison
 
-  - type: invariant
+  - id: TSS-INV-005
+    type: invariant
     property: Scorecard JSON parseable and complete
     formal: 'serde_json::from_str(scorecard).is_ok() AND all required fields present'
     applies_to: all scorecard outputs
 
-  - type: invariant
+  - id: TSS-INV-006
+    type: invariant
     property: Forward/backward ratio flags NaN layers
     formal: 'layers with NaN backward are excluded from ratio average and flagged'
     applies_to: ratio computation

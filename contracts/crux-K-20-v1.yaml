@@ -80,11 +80,14 @@ falsification_tests:
 
   if_fails: rule 'logit parity vs native fp16' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: equivalence
+- id: CK2-EQ-001
+  type: equivalence
   property: "apr export --format trtllm emits TensorRT-LLM runner-compatible engine dir"
-- type: invariant
+- id: CK2-INV-002
+  type: invariant
   property: "engine count == tp_size"
-- type: invariant
+- id: CK2-INV-003
+  type: invariant
   property: "logit cosine ≥ 0.995 vs native fp16"
 
 verification_summary:

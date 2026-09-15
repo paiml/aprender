@@ -97,11 +97,14 @@ falsification_tests:
   if_fails: "apr exits zero on a mismatch that PyTorch rejects (parity broken)"
 
 proof_obligations:
-- type: invariant
+- id: CF1DEE2-INV-001
+  type: invariant
   property: "apr validate exits non-zero on any tensor shape mismatch"
-- type: invariant
+- id: CF1DEE2-INV-002
+  type: invariant
   property: "apr diagnostic prints both expected and actual shape tuples and the tensor name"
-- type: equivalence
+- id: CF1DEE2-EQ-003
+  type: equivalence
   property: "apr validate rejects shape mismatches that PyTorch's runtime matmul assert rejects on equivalent inputs"
   competitor: pytorch
   reference: "https://pytorch.org/docs/stable/generated/torch.matmul.html (runtime shape assertion)"

@@ -44,25 +44,29 @@ equations:
     float_tolerance: 1.0e-3
 
 proof_obligations:
-- type: postcondition
+- id: NSD-POST-001
+  type: postcondition
   property: column-sum equals one for dim 0
   formal: |
     For a 2D tensor x with shape [R, C], Softmax::new(0).forward(x) satisfies
     ∀ c: |Σ_r output[r][c] - 1.0| < 1e-5.
   applies_to: all
-- type: classification
+- id: NSD-CLS-002
+  type: classification
   property: dim is honored (not silently last-axis)
   formal: |
     For x = [[1,2],[3,4]], Softmax::new(0).forward(x)[0][0] ≈ 0.1192
     (column softmax) and NOT 0.2689 (the dim-ignored row-softmax value).
   applies_to: all
-- type: invariant
+- id: NSD-INV-003
+  type: invariant
   property: last-dim path unchanged
   formal: |
     Softmax::new(-1).forward(x) and Softmax::new(ndim-1).forward(x) equal the
     canonical last-dim softmax: each row sums to 1.0 (row[0] ≈ [0.2689, 0.7311]).
   applies_to: all
-- type: frame
+- id: NSD-FRM-004
+  type: frame
   property: forward remains differentiable
   formal: |
     With grad enabled and x.requires_grad(), sum(Softmax::new(0).forward(x))

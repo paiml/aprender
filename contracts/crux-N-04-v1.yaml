@@ -62,11 +62,14 @@ falsification_tests:
   if_fails: rule 'the migrated path is unchanged and zero-cost' is violated — the burn parity claim for CRUX-N-04 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation
 
 proof_obligations:
-- type: invariant
+- id: CN0E0BE-INV-001
+  type: invariant
   property: "rank mismatch fails to COMPILE"
-- type: invariant
+- id: CN0E0BE-INV-002
+  type: invariant
   property: "the type is not merely rejecting everything"
-- type: invariant
+- id: CN0E0BE-INV-003
+  type: invariant
   property: "the migrated path is unchanged and zero-cost"
 
 kani_harnesses:

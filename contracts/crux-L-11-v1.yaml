@@ -92,13 +92,17 @@ falsification_tests:
   if_fails: "Unpinned megablocks source"
 
 proof_obligations:
-- type: invariant
+- id: CL10595-INV-001
+  type: invariant
   property: "Sparse-MoE parity max_abs_diff <= 1e-3 bf16 vs naive dense"
-- type: invariant
+- id: CL10595-INV-002
+  type: invariant
   property: "Routing deterministic given gate_logits + topk"
-- type: invariant
+- id: CL10595-INV-003
+  type: invariant
   property: "topk ∈ {1,2,4} enforced"
-- type: equivalence
+- id: CL10595-EQ-004
+  type: equivalence
   property: "apr megablocks kernel  ≅  HF kernels-community megablocks (MoE sparse matmul)"
 
 verification_summary:

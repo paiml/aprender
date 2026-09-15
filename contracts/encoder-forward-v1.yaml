@@ -34,20 +34,24 @@ equations:
     - vocab_size > 0
     lean_theorem: Theorems.Cls_Pooling
 proof_obligations:
-- type: invariant
+- id: EF-INV-001
+  type: invariant
   property: Shape preservation
   formal: output.shape == input.shape for each encoder layer
   applies_to: all
-- type: bound
+- id: EF-BND-002
+  type: bound
   property: No NaN/Inf
   formal: is_finite(output[i][j]) for all i, j
   applies_to: all
-- type: equivalence
+- id: EF-EQ-003
+  type: equivalence
   property: Reference parity
   formal: '|entrenar_output - reference_output| < tolerance'
   tolerance: 0.0001
   applies_to: all
-- type: invariant
+- id: EF-INV-004
+  type: invariant
   property: CLS pooling correctness
   formal: cls_embedding == encoder_output[0]
   applies_to: all

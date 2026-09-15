@@ -30,19 +30,23 @@ equations:
     - input.iter().all(|v| v.is_finite())
     lean_theorem: Theorems.Uniform_Entropy
 proof_obligations:
-- type: bound
+- id: SE6F9D-BND-001
+  type: bound
   property: Range bound
   formal: 0 <= H(X) <= log2(256) = 8.0 for byte data
   applies_to: all
-- type: invariant
+- id: SE6F9D-INV-002
+  type: invariant
   property: Constant input zero entropy
   formal: H([c, c, ..., c]) = 0.0 for any constant byte c
   applies_to: all
-- type: monotonicity
+- id: SE6F9D-MON-003
+  type: monotonicity
   property: Uniform entropy monotonic
   formal: k1 < k2 => H_uniform(k1) < H_uniform(k2)
   applies_to: all
-- type: equivalence
+- id: SE6F9D-EQ-004
+  type: equivalence
   property: SIMD entropy equivalence
   tolerance: 0.0
   applies_to: simd

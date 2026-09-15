@@ -76,9 +76,11 @@ falsification_tests:
   if_fails: CRUX-J-20 drift invariant — MCP schema/description drift MUST be compile-time enforced
 
 proof_obligations:
-- type: invariant
+- id: CJ2-INV-001
+  type: invariant
   property: "emitted envelopes validate"
-- type: invariant
+- id: CJ2-INV-002
+  type: invariant
   property: "schema/description drift is compile-time caught"
 
 verification_summary:

@@ -66,31 +66,36 @@ equations:
     - input.iter().all(|v| v.is_finite())
 
 proof_obligations:
-- type: invariant
+- id: AAC-INV-001
+  type: invariant
   property: AR coefficients estimated on mean-centered data
   formal: |
     For every working series y with mean mu, estimate_ar_parameters computes
     phi_lag = sum (y_i - mu)(y_{i-1-lag} - mu) / sum (y_{i-1-lag} - mu)^2.
     Adding any constant c to every y_i leaves every phi_lag unchanged
     (mean-translation invariance), so a nonzero series mean cannot bias phi toward 1.0.
-- type: bound
+- id: AAC-BND-002
+  type: bound
   property: stationary AR(1) coefficient stays away from 1.0
   formal: |
     For a stationary AR(1) series with true phi = 0.5 and mean ~50 (range ~5),
     the estimated AR(1) coefficient satisfies |phi - 0.37| < 0.05 and phi < 0.9.
     (Demeaned OLS phi_hat = 0.370; statsmodels ARIMA(1,0,0) ar.L1 = 0.364.)
-- type: invariant
+- id: AAC-INV-003
+  type: invariant
   property: forecast constant reflects mean-centering
   formal: |
     The stored intercept equals mu*(1 - sum_k phi_k) so that the forecast loop
     intercept + sum_k phi_k * y_{n+1-k} = mu + sum_k phi_k (y_{n+1-k} - mu).
-- type: bound
+- id: AAC-BND-004
+  type: bound
   property: one-step forecast sits near the series level
   formal: |
     For a stationary series with mean mu and range R = max(y) - min(y),
     the ARIMA(p,0,q) one-step forecast satisfies |y_hat_{n+1} - mu| < 0.5 * R.
     (Pre-fix the forecast was ~2x the level, violating this bound.)
-- type: invariant
+- id: AAC-INV-005
+  type: invariant
   property: d >= 1 differencing/integration path unchanged
   formal: |
     For d >= 1 the working series is the d-th difference (mu ~= 0), so

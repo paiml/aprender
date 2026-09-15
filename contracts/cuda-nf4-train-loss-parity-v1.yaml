@@ -151,19 +151,23 @@ equations:
     - 'model config architecture is Decoder'
 
 proof_obligations:
-- type: invariant
+- id: CNTLP-INV-001
+  type: invariant
   property: GPU training loss matches the NF4-matched CPU oracle within 0.5 nats
   formal: '|CE_gpu(x) - CE_cpu_nf4(x)| < 0.5'
   applies_to: gpu_cpu_loss_parity
-- type: invariant
+- id: CNTLP-INV-002
+  type: invariant
   property: GPU logits match the NF4-matched CPU oracle within relL2 0.10
   formal: 'relL2(logits_gpu, logits_cpu_nf4) < 0.10'
   applies_to: gpu_cpu_logits_parity
-- type: invariant
+- id: CNTLP-INV-003
+  type: invariant
   property: fused GPU causal CE equals CPU CE on identical logits
   formal: '|CE_fused(logits) - CE_cpu(logits)| < 0.05'
   applies_to: gpu_cpu_loss_parity
-- type: invariant
+- id: CNTLP-INV-004
+  type: invariant
   property: decoder CPU attention is causal
   formal: '∀ i, j > i: softmax_row_i[j] = 0'
   applies_to: decoder_attention_causality

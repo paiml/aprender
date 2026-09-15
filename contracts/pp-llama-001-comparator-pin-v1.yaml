@@ -66,27 +66,33 @@ equations:
       - "The accel lane is taken iff the loader reports `gpu-layers: … resolved=N …` with N > 0, never iff `--gpu` appears in --help"
 
 proof_obligations:
-  - type: invariant
+  - id: PL0CP-INV-001
+    type: invariant
     property: "The producer refuses rather than emitting a partial flag list"
     formal: "For every malformed declaration, llama_comparator_server_flags returns non-zero AND prints nothing"
     applies_to: comparator_flags_from_declaration
-  - type: invariant
+  - id: PL0CP-INV-002
+    type: invariant
     property: "batch_size <= 1 is unreachable as a comparator configuration"
     formal: "batch_size numeric and <= 1 => rc 4 and empty stdout; no guard row asserts it emits -b"
     applies_to: comparator_flags_from_declaration
-  - type: invariant
+  - id: PL0CP-INV-003
+    type: invariant
     property: "The per-slot context is never below the workload"
     formal: "n_ctx_slot < 640 => rc 3; and at run time props.default_generation_settings.n_ctx < 640 refuses the band"
     applies_to: comparator_flags_from_declaration
-  - type: invariant
+  - id: PL0CP-INV-004
+    type: invariant
     property: "A stale pin has a producer"
     formal: "pin_expiry < today => llama_bin_resolve returns 4 and parity_host_receipt.sh exits 4"
     applies_to: pin_verdict
-  - type: invariant
+  - id: PL0CP-INV-005
+    type: invariant
     property: "The declared cmake line is corroborated by the build tree"
     formal: "CMakeCache.txt(GGML_CUDA, CMAKE_CUDA_ARCHITECTURES) == build_flags_<host>(-DGGML_CUDA, -DCMAKE_CUDA_ARCHITECTURES), or rc 1"
     applies_to: pin_verdict
-  - type: invariant
+  - id: PL0CP-INV-006
+    type: invariant
     property: "No boolean accelerator flag survives anywhere the harness reaches"
     formal: "boolean_accel_tokens over the declaration, the executor and every serve-run line is empty"
     applies_to: no_boolean_accelerator_flag

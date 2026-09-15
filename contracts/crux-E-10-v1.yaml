@@ -69,11 +69,14 @@ falsification_tests:
 
   if_fails: rule 'threshold failure emits non-zero exit' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: equivalence
+- id: CE1-EQ-001
+  type: equivalence
   property: "apr eval-hallu SelfCheckGPT variant matches HF `evaluate` + sentence-transformers reference within 1e-3"
-- type: invariant
+- id: CE1-INV-002
+  type: invariant
   property: "identity gen==ref → hallu_score = 0"
-- type: invariant
+- id: CE1-INV-003
+  type: invariant
   property: "psi(X, X) = 0"
 
 verification_summary:

@@ -170,15 +170,20 @@ falsification_tests:
   if_fails: "apr tool_calls response shape diverges from vllm reference"
 
 proof_obligations:
-- type: equivalence
+- id: CI0C9EE-EQ-001
+  type: equivalence
   property: "apr serve tool_calls response shape matches OpenAI spec and vllm reference"
-- type: invariant
+- id: CI0C9EE-INV-002
+  type: invariant
   property: "tool_call arguments validate against declared JSON-Schema (Draft 2020-12)"
-- type: invariant
+- id: CI0C9EE-INV-003
+  type: invariant
   property: "all 'required' fields present in tool_calls.arguments"
-- type: invariant
+- id: CI0C9EE-INV-004
+  type: invariant
   property: "finish_reason == 'tool_calls' IFF tool_calls array non-empty"
-- type: invariant
+- id: CI0C9EE-INV-005
+  type: invariant
   property: "tools passed but not invoked => finish_reason == 'stop'"
 
 verification_summary:

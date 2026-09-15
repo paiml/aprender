@@ -105,15 +105,20 @@ falsification_tests:
   if_fails: "Unpinned FA3 source — supply-chain audit impossible"
 
 proof_obligations:
-- type: invariant
+- id: CL08A80-INV-001
+  type: invariant
   property: "Arch-gated at load; sm_80 → ARCH_MISMATCH, never silent FA2 fallback"
-- type: invariant
+- id: CL08A80-INV-002
+  type: invariant
   property: "Numerical parity max_abs_diff <= 5e-3 vs naive"
-- type: invariant
+- id: CL08A80-INV-003
+  type: invariant
   property: "Perf >= 1.4× FA2 on sm_90+ (falsifiable bench)"
-- type: invariant
+- id: CL08A80-INV-004
+  type: invariant
   property: "Kernel source pinned (pkg@sha) on success"
-- type: equivalence
+- id: CL08A80-EQ-005
+  type: equivalence
   property: "apr --attn flash3  ≅  HF attn_implementation='flash_attention_3' on Hopper+"
 
 verification_summary:

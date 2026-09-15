@@ -19,7 +19,8 @@ equations:
     - "numeric fields are within documented bounds"
     lean_theorem: Theorems.Configuration
 proof_obligations:
-- type: invariant
+- id: C4E68-INV-001
+  type: invariant
   property: configuration correctness
 falsification_tests:
 - id: FALSIFY-GEN-001

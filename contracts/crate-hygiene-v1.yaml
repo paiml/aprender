@@ -109,11 +109,14 @@ falsification_tests:
   if_fails: "diamond dependency — different crates pull different versions"
 
 proof_obligations:
-- type: invariant
+- id: CH-INV-001
+  type: invariant
   property: "all crates use workspace version inheritance"
-- type: invariant
+- id: CH-INV-002
+  type: invariant
   property: "no banned non-sovereign dependencies"
-- type: bound
+- id: CH-BND-003
+  type: bound
   property: "direct dependency count within budget per tier"
 
 kani_harnesses:

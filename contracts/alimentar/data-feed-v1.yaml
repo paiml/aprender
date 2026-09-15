@@ -30,11 +30,13 @@ equations:
     - params contains all required keys
     lean_theorem: Theorems.Config_Validity
 proof_obligations:
-- type: invariant
+- id: DF-INV-001
+  type: invariant
   property: Serialization roundtrip
   formal: '∀ v: from_bytes(to_bytes(v)) = v'
   applies_to: serialize_roundtrip
-- type: invariant
+- id: DF-INV-002
+  type: invariant
   property: Config construction validity
   formal: '∀ params: new(params).is_ok() → config.validate().is_ok()'
   applies_to: config_validity

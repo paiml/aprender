@@ -72,9 +72,11 @@ falsification_tests:
   if_fails: "TUI command broken after migration"
 
 proof_obligations:
-- type: invariant
+- id: RM-INV-001
+  type: invariant
   property: "zero ratatui in entire workspace"
-- type: invariant
+- id: RM-INV-002
+  type: invariant
   property: "TUI functionality preserved via presentar-terminal"
 
 kani_harnesses:

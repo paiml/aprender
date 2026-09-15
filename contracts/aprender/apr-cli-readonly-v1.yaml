@@ -101,15 +101,18 @@ kernel_structure:
     description: Verify no side effects, map errors to exit codes
 
 proof_obligations:
-- type: invariant
+- id: ACR5450-INV-001
+  type: invariant
   property: ReadOnly commands have no side effects
   formal: '∀ cmd ∈ ReadOnlySet: fs_snapshot_before == fs_snapshot_after'
   applies_to: no_side_effects
-- type: invariant
+- id: ACR5450-INV-002
+  type: invariant
   property: Idempotent output on repeated invocation
   formal: '∀ cmd, args: output(cmd(args)) = output(cmd(args))'
   applies_to: idempotent_output
-- type: invariant
+- id: ACR5450-INV-003
+  type: invariant
   property: Error produces non-zero exit code
   formal: '∀ cmd, e: Err(e) → exit_code != 0'
   applies_to: exit_code_on_error

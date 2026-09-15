@@ -43,15 +43,18 @@ equations:
     - block is well-formed AST node
     lean_theorem: Theorems.Block_Scoping
 proof_obligations:
-- type: invariant
+- id: PS6565-INV-001
+  type: invariant
   property: Parse determinism
   formal: '∀ s: parse(s) = parse(s)'
   applies_to: parse_correctness
-- type: invariant
+- id: PS6565-INV-002
+  type: invariant
   property: Argument order preservation
   formal: '∀ call(f, args): transpile_call(f, args).arg_order = args.order'
   applies_to: transpile_roundtrip
-- type: invariant
+- id: PS6565-INV-003
+  type: invariant
   property: Block return value
   formal: '∀ block: transpile_block(block).last_expr = block.last_expr'
   applies_to: block_scoping

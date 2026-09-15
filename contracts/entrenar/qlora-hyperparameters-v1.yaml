@@ -100,32 +100,39 @@ equations:
     - params.len() > 0
     lean_theorem: Theorems.Epoch_Count_Imbalanced
 proof_obligations:
-- type: bound
+- id: QH-BND-001
+  type: bound
   property: Learning rate within research bounds
   formal: lr in [5e-5, 5e-4] AND lr = f(model_size) per Dettmers 2023
   applies_to: all
-- type: invariant
+- id: QH-INV-002
+  type: invariant
   property: Effective batch size is 16
   formal: batch_size * accumulation_steps == 16
   applies_to: all
-- type: invariant
+- id: QH-INV-003
+  type: invariant
   property: LoRA alpha/rank ratio is 2
   formal: lora_alpha == 2.0 * lora_rank
   tolerance: 0.001
   applies_to: all
-- type: bound
+- id: QH-BND-004
+  type: bound
   property: Sequence length covers p99 of data
   formal: max_seq_len >= percentile(token_lengths, 99) AND max_seq_len <= 2 * percentile(token_lengths, 99)
   applies_to: all
-- type: bound
+- id: QH-BND-005
+  type: bound
   property: Warmup fraction in safe range
   formal: warmup_fraction in [0.03, 0.10]
   applies_to: all
-- type: invariant
+- id: QH-INV-006
+  type: invariant
   property: Gradient clipping enabled
   formal: gradient_clip_norm == Some(1.0)
   applies_to: all
-- type: bound
+- id: QH-BND-007
+  type: bound
   property: Sufficient epochs for minority class
   formal: epochs >= 2 when imbalance_ratio > 5
   applies_to: all

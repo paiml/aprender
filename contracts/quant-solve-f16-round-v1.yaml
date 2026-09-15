@@ -94,24 +94,29 @@ equations:
     note: "The convert falsifier MUST include a non-zero discarded mantissa tie (low 13 bits == 0x1000, kept LSB odd) where RNE and truncation disagree, plus subnormal ties and NaN payloads."
 
 proof_obligations:
-- type: equivalence
+- id: QSFR-EQ-001
+  type: equivalence
   property: "solve f32_to_f16 equals the half::f16 round-to-nearest-even oracle (OBLIG-SOLVE-F32-F16-RNE)"
   formal: "∀ finite x: trueno_solve::f32_to_f16(x) == half::f16::from_f32(x).to_bits()"
   applies_to: all
-- type: equivalence
+- id: QSFR-EQ-002
+  type: equivalence
   property: "quant f32_to_f16 equals the half::f16 round-to-nearest-even oracle (OBLIG-QUANT-F32-F16-RNE)"
   formal: "∀ finite x: aprender_quant::f32_to_f16(x) == half::f16::from_f32(x).to_bits()"
   applies_to: all
-- type: equivalence
+- id: QSFR-EQ-003
+  type: equivalence
   property: "convert_report f32_to_f16 (apr convert --quantize fp16 + SafeTensors FP16 export) equals the half::f16 RNE oracle (OBLIG-CONVERT-FP16-F32-F16-RNE)"
   formal: "∀ finite x: aprender::format::converter::f32_to_f16(x) == half::f16::from_f32(x).to_bits()"
   applies_to: all
-- type: bound
+- id: QSFR-BND-004
+  type: bound
   property: "Round-to-nearest-even error is at most half an F16 ulp"
   formal: "|half::f16::from_bits(f16(x)).to_f32() - x| ≤ 0.5 ulp_f16(x) for finite, in-range x (truncation can reach a full ulp)"
   tolerance: 0.0
   applies_to: finite
-- type: invariant
+- id: QSFR-INV-005
+  type: invariant
   property: "Rounding carry overflows to +Inf at the f16 overflow boundary"
   formal: "65520.0 ⇒ f16(65520.0) == 0x7C00"
   applies_to: finite

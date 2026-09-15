@@ -57,15 +57,18 @@ equations:
       - "Uses `git rev-parse --git-dir` (worktree-local) for HEAD and `git rev-parse --git-common-dir` for refs/heads/"
 
 proof_obligations:
-  - type: invariant
+  - id: AVT-INV-001
+    type: invariant
     property: "No '(unknown)' sentinel in version output"
     formal: "apr --version output ∌ '(unknown)'"
     applies_to: non_sentinel_version
-  - type: invariant
+  - id: AVT-INV-002
+    type: invariant
     property: "Fallback includes package version"
     formal: "git_hash = none ⟹ APR_GIT_SHA contains CARGO_PKG_VERSION"
     applies_to: fallback_hierarchy
-  - type: invariant
+  - id: AVT-INV-003
+    type: invariant
     property: "Embedded SHA matches HEAD in any git layout"
     formal: "apr --version SHA = git rev-parse --short HEAD (post-build)"
     applies_to: worktree_head_freshness

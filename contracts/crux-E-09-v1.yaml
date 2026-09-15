@@ -120,13 +120,17 @@ falsification_tests:
   if_fails: "apr diff per-tensor cosine diverges from llama-quantize-stats by >1e-4"
 
 proof_obligations:
-- type: invariant
+- id: CE08C77-INV-001
+  type: invariant
   property: "self-comparison yields cosine == 1.0 (±1e-6) for every tensor"
-- type: invariant
+- id: CE08C77-INV-002
+  type: invariant
   property: "per_tensor output sorted ascending by cosine and worst_tensor consistent"
-- type: invariant
+- id: CE08C77-INV-003
+  type: invariant
   property: "every tensor in base model appears in diff output (no silent drops)"
-- type: equivalence
+- id: CE08C77-EQ-004
+  type: equivalence
   property: "apr diff --per-tensor --metric cosine matches llama.cpp's llama-quantize-stats per-tensor cosine within 1e-4 on matching tensor names"
 
 # References:

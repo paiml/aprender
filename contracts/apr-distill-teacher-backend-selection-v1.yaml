@@ -106,25 +106,29 @@ equations:
     lean_theorem: Theorems.Bug_B_Demotion
 
 proof_obligations:
-- type: classification
+- id: ADTBS-CLS-001
+  type: classification
   property: env_override matrix is total and unambiguous
   formal: |
     For every (env_override, device_class, teacher_uses_q4k) tuple in the cartesian product
     of their domains: backend_dispatch returns exactly one of {CudaTrainer, Realizar}.
     No undefined behavior; no precedence ambiguity.
-- type: invariant
+- id: ADTBS-INV-002
+  type: invariant
   property: cuBLAS path GPU utilization > 50% on unified-memory devices
   formal: |
     For every (teacher >= 1B Q4K, device = unified-memory):
     nvidia-smi --query-gpu=utilization.gpu sampled mid-training-step reports >= 50%.
     (Excludes JIT warmup and initial weight upload; samples taken during step 1+.)
-- type: equivalence
+- id: ADTBS-EQ-003
+  type: equivalence
   property: backend-selected teacher logits agree within numerical noise
   formal: |
     For every (input_ids, teacher.apr):
     | CudaTrainer.logits_for_batch(input_ids) - Realizar.logits_for_batch(input_ids) | <= 1e-2
     (element-wise; quantization-induced noise floor for Q4K-vs-F32-dequant difference).
-- type: bound
+- id: ADTBS-BND-004
+  type: bound
   property: CudaTrainer training step latency <= 1 second on GB10 (7B teacher)
   formal: |
     For every step k of `apr distill --backend cuda` with 7B Q4K teacher + 0.5B student

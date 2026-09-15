@@ -298,24 +298,29 @@ equations:
       adjacent stages straddles the M-GPU-MOE-1.4 NaN root.
 
 proof_obligations:
-- type: invariant
+- id: TMGSS-INV-001
+  type: invariant
   property: '`SaveTensorStage` enum gains AT LEAST 2 new variants (MoeRouter, MoeFfnOut) without removing or renaming any existing variant'
   formal: 'variants_after ⊇ variants_before ∪ {MoeRouter, MoeFfnOut} AND variants_before ⊆ variants_after'
   applies_to: crates/aprender-serve/src/inference_trace/save_tensor_stage.rs::SaveTensorStage
-- type: invariant
+- id: TMGSS-INV-002
+  type: invariant
   property: 'Existing 20 capture-point semantics preserved byte-identically pre/post-implementation'
   formal: 'forall stage in CURRENT_STAGES: bytes_after_pr(stage) == bytes_before_pr(stage) on canonical 7B teacher, layer 0, BOS token'
   tolerance: 0.0
   applies_to: crates/aprender-serve/src/apr_transformer/inference.rs::forward_traced_with_plan
-- type: invariant
+- id: TMGSS-INV-003
+  type: invariant
   property: 'Comma-parser accepts the 2 new stage names with case-insensitive fallback'
   formal: 'parse_stage_list("moe_router,moe_ffn_out") = Ok([MoeRouter, MoeFfnOut])'
   applies_to: crates/aprender-serve/src/inference_trace/save_tensor_stage.rs::parse_stage_list
-- type: ordering
+- id: TMGSS-ORD-004
+  type: ordering
   property: 'Capture order inside the MoE FFN block: FfnNorm → MoeRouter → (optional per-expert stages) → MoeFfnOut → PostFfnResidual'
   formal: 'moe_block_order = [FfnNorm, MoeRouter, MoeFfnOut, PostFfnResidual]'
   applies_to: crates/aprender-serve/src/gguf/cuda/forward_qwen3_moe_cuda.rs
-- type: invariant
+- id: TMGSS-INV-005
+  type: invariant
   property: 'APRT byte-format header serializes the new stage IDs without colliding with reserved IDs of existing stages'
   formal: 'forall new_stage_id in {moe_router, moe_ffn_out, ...}: new_stage_id ∉ existing_stage_ids'
   applies_to: crates/aprender-serve/src/inference_trace/save_tensor_stage.rs::aprt_serialize

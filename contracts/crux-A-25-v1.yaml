@@ -160,11 +160,14 @@ falsification_tests:
     discharge_status: PARTIAL_ALGORITHM_LEVEL
     full_discharge_blocked_on: end-to-end `apr gc --dry-run` harness asserting disk usage unchanged
 proof_obligations:
-- type: equivalence
+- id: CA22824-EQ-001
+  type: equivalence
   property: "apr rm + apr gc together match `ollama rm` refcount semantics"
-- type: invariant
+- id: CA22824-INV-002
+  type: invariant
   property: "gc is refcount-safe — no live blob is ever unlinked"
-- type: invariant
+- id: CA22824-INV-003
+  type: invariant
   property: "gc --dry-run never mutates; plan exactly equals subsequent real run"
 
 verification_summary:

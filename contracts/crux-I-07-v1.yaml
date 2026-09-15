@@ -82,11 +82,14 @@ falsification_tests:
 
   if_fails: rule 'invalid input rejected by schema, not by tool body' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: equivalence
+- id: CI06B95-EQ-001
+  type: equivalence
   property: "apr agent tool envelope matches Anthropic Agent SDK tool_use/tool_result block shape"
-- type: invariant
+- id: CI06B95-INV-002
+  type: invariant
   property: "input_schema always passes Draft 2020-12 meta-schema"
-- type: invariant
+- id: CI06B95-INV-003
+  type: invariant
   property: "schema validation fails closed (invalid input never reaches tool body)"
 
 verification_summary:

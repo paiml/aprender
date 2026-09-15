@@ -202,13 +202,17 @@ falsification_tests:
     full_discharge_blocked_on: real calibration.jsonl + wikitext-eval-512 corpus
 
 proof_obligations:
-- type: invariant
+- id: CB0D118-INV-001
+  type: invariant
   property: "Calibrated Q4_K PPL <= naïve Q4_K PPL * 0.995 on held-out 512-token eval"
-- type: invariant
+- id: CB0D118-INV-002
+  type: invariant
   property: "apr quantize --imatrix flag is on CLI surface and documented in --help"
-- type: invariant
+- id: CB0D118-INV-003
+  type: invariant
   property: "Imatrix provenance (sha256) persisted in output metadata for auditability"
-- type: invariant
+- id: CB0D118-INV-004
+  type: invariant
   property: "Calibration and eval sets disjoint (leakage check enforced by contract)"
 
 verification_summary:

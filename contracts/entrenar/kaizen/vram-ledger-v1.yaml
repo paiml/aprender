@@ -76,32 +76,38 @@ equations:
       - "Deterministic — same inputs produce same ID"
 
 proof_obligations:
-  - type: invariant
+  - id: VL-INV-001
+    type: invariant
     property: "Capacity invariant holds under flock"
     formal: "For all states S reachable via try_reserve(): sum(S.active.budget_mb) <= S.total_mb × S.reserve_factor"
     applies_to: all
 
-  - type: invariant
+  - id: VL-INV-002
+    type: invariant
     property: "Atomic write crash safety"
     formal: "If process crashes during write_ledger(), the on-disk file is either the old state or the new state, never partial"
     applies_to: all
 
-  - type: bound
+  - id: VL-BND-003
+    type: bound
     property: "Lease expiry prevents permanent starvation"
     formal: "For any reservation r: if pid_dead(r.pid), then r is pruned within max(lease_duration, next_access_time)"
     applies_to: all
 
-  - type: invariant
+  - id: VL-INV-004
+    type: invariant
     property: "Dead PID cleanup correctness"
     formal: "prune_dead() removes exactly those reservations where !alive(pid) || expired(r)"
     applies_to: all
 
-  - type: invariant
+  - id: VL-INV-005
+    type: invariant
     property: "GPU UUID stability"
     formal: "GPU UUID does not change across reboots or driver reloads (nvidia-smi -L)"
     applies_to: all
 
-  - type: bound
+  - id: VL-BND-006
+    type: bound
     property: "Flock acquisition bounded"
     formal: "flock(LOCK_EX) returns within O(1) contention time for N<=10 concurrent processes"
     applies_to: all

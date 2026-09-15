@@ -66,9 +66,11 @@ falsification_tests:
   if_fails: CRUX-J-05 bind invariant — non-loopback bind must require explicit flag
 
 proof_obligations:
-- type: invariant
+- id: CJ0057E-INV-001
+  type: invariant
   property: "default bind is loopback"
-- type: invariant
+- id: CJ0057E-INV-002
+  type: invariant
   property: "non-loopback requires explicit flag"
 
 verification_summary:

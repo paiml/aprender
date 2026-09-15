@@ -178,15 +178,20 @@ falsification_tests:
     full_discharge_blocked_on: "BLOCKER-FIXTURE-ABSENT - real GGUF fixture (tinyllama-q4_k_m.gguf) not in-tree; fixture-creation ticket required for FULL discharge of the JSON-shape assertion against live inference"
 
 proof_obligations:
-- type: invariant
+- id: CE08FD8-INV-001
+  type: invariant
   property: "p99 >= p95 >= p50 (monotonicity in percentile rank)"
-- type: invariant
+- id: CE08FD8-INV-002
+  type: invariant
   property: "Every reported percentile > 0 for wall-clock latency samples"
-- type: invariant
+- id: CE08FD8-INV-003
+  type: invariant
   property: "Ill-formed inputs (empty/NaN/negative/out-of-range) produce distinct Outcome variants (no silent pass)"
-- type: invariant
+- id: CE08FD8-INV-004
+  type: invariant
   property: "compute_percentile(xs, 100) == max(xs) (nearest-rank convention)"
-- type: invariant
+- id: CE08FD8-INV-005
+  type: invariant
   property: "--percentiles CLI flag reaches the classifier layer with the declared default 50,95,99"
 
 verification_summary:

@@ -49,11 +49,14 @@ equations:
     postconditions:
     - Output is a regular Rust function (not extern C)
 proof_obligations:
-- type: invariant
+- id: CKS-INV-001
+  type: invariant
   property: Kernel name preservation in FFI declaration
-- type: invariant
+- id: CKS-INV-002
+  type: invariant
   property: CUDA qualifier preservation through borrow/array/optimize transforms
-- type: postcondition
+- id: CKS-POST-003
+  type: postcondition
   property: Host functions transpile without FFI wrapper
 falsification_tests:
 - id: FALSIFY-CUDA-001

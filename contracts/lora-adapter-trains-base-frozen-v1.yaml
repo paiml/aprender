@@ -36,7 +36,8 @@ status: enforced
 date: 2026-06-25
 
 proof_obligations:
-  - type: invariant
+  - id: LATBF-INV-001
+    type: invariant
     property: >
       OBLIG-LORA-ADAPTER-TRAINS-BASE-FROZEN: after N gradient-descent steps on a
       fixed deterministic regression target, a tiny LoRALayer (frozen base + rank-r
@@ -49,7 +50,8 @@ proof_obligations:
       requires_grad=false. A severed edge in LoRALayer::forward freezes the adapter
       (||Δ||=0, no gradient — guard b RED) independently of the loss; a backward
       path that leaked into the base would move it (guard c RED).
-  - type: equivalence
+  - id: LATBF-EQ-002
+    type: equivalence
     property: >
       LORA-FALSIFIER-NON-TAUTOLOGICAL: the test is a real end-to-end LoRA-training
       guard, not an is_some / requires_grad flag assertion. Everything is LCG-seeded

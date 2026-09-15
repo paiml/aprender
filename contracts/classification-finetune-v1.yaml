@@ -60,23 +60,28 @@ equations:
     - x.len() > 0
     lean_theorem: Theorems.Softmax_Sum
 proof_obligations:
-- type: invariant
+- id: FT-INV-001
+  type: invariant
   property: Logit shape matches num_classes
   formal: ValidatedClassLogits::new(data, n) => data.len() == n
   applies_to: all
-- type: invariant
+- id: FT-INV-002
+  type: invariant
   property: Label index in bounds
   formal: ValidatedSafetyLabel::new(idx, n) => idx < n
   applies_to: all
-- type: invariant
+- id: FT-INV-003
+  type: invariant
   property: Classifier weight shape
   formal: ValidatedClassifierWeight::new(data, h, n) => data.len() == h*n
   applies_to: all
-- type: bound
+- id: FT-BND-004
+  type: bound
   property: Softmax sum to one
   formal: '|sum(softmax(logits)) - 1.0| < 1e-5'
   applies_to: all
-- type: invariant
+- id: FT-INV-005
+  type: invariant
   property: NaN/Inf rejection
   formal: new() rejects data containing NaN or Inf
   applies_to: all

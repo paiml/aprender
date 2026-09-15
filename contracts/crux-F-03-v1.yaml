@@ -117,15 +117,20 @@ falsification_tests:
   if_fails: "element count drifted across GGUF → APR import (tensor dropped or mis-shaped)"
 
 proof_obligations:
-- type: invariant
+- id: CF08A90-INV-001
+  type: invariant
   property: "2D GGUF tensors have their shape axes reversed at import per tensor-layout-v1.yaml"
-- type: invariant
+- id: CF08A90-INV-002
+  type: invariant
   property: "1D tensors (norms, biases) preserve shape identically across GGUF → APR"
-- type: invariant
+- id: CF08A90-INV-003
+  type: invariant
   property: "total element count is preserved across the import boundary"
-- type: invariant
+- id: CF08A90-INV-004
+  type: invariant
   property: "malformed GGUF fails with an explicit LayoutError, never silent garbage"
-- type: equivalence
+- id: CF08A90-EQ-005
+  type: equivalence
   property: "post-import APR shape equals reversed gguf-py GGUFReader shape for every 2D tensor"
   competitor: llama_cpp
   reference: "contracts/tensor-layout-v1.yaml (SOURCE OF TRUTH); https://github.com/ggerganov/llama.cpp/blob/master/gguf-py/gguf/gguf_reader.py"

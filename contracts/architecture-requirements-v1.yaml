@@ -369,32 +369,39 @@ equations:
     - constraints.len() > 0
     lean_theorem: Theorems.Constraint_Matrix_Exhaustiveness
 proof_obligations:
-- type: invariant
+- id: ARCH-INV-001
+  type: invariant
   property: Base roles always required
   formal: '∀ arch: base_roles ⊆ required_roles(arch)'
   applies_to: all
-- type: invariant
+- id: ARCH-INV-002
+  type: invariant
   property: Constraint matrix exhaustive
   formal: '∀ (qk, bias) ∈ {true,false}^2: ∃! cell matching (qk, bias)'
   applies_to: all
-- type: invariant
+- id: ARCH-INV-003
+  type: invariant
   property: Role count correctness
   formal: '|base| = 9 ∧ |base ∪ qk| = 11 ∧ |base ∪ bias| = 12 ∧ |base ∪ qk ∪ bias|
     = 14'
   applies_to: all
-- type: completeness
+- id: ARCH-CMP-004
+  type: completeness
   property: Weight completeness implies correct forward pass
   formal: complete(model, arch) = true => forward(model) produces non-garbage output
   applies_to: all
-- type: soundness
+- id: ARCH-SND-005
+  type: soundness
   property: Incomplete weights detected before forward pass
   formal: '∃ role ∈ required(arch): role.len = 0 => error raised before any computation'
   applies_to: all
-- type: equivalence
+- id: ARCH-EQ-006
+  type: equivalence
   property: YAML matches Rust implementation
   formal: '∀ arch: yaml.required(arch) = rust.required_roles(ArchConstraints::from_architecture(arch))'
   applies_to: all
-- type: monotonicity
+- id: ARCH-MON-007
+  type: monotonicity
   property: Adding features only adds roles
   formal: required(arch_with_feature) ⊇ required(arch_without_feature)
   applies_to: all

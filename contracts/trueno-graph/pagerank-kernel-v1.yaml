@@ -32,19 +32,23 @@ equations:
     - source ∈ V
     lean_theorem: Theorems.BFS_Shortest_Path
 proof_obligations:
-- type: invariant
+- id: PK-INV-001
+  type: invariant
   property: PageRank is a probability distribution
   formal: '∀ G, d, eps: |sum(pagerank(G, d, eps).values()) - 1.0| < eps'
   applies_to: pagerank
-- type: invariant
+- id: PK-INV-002
+  type: invariant
   property: PageRank values are non-negative
   formal: '∀ v ∈ V: pagerank(G, d, eps)[v] >= 0.0'
   applies_to: pagerank
-- type: invariant
+- id: PK-INV-003
+  type: invariant
   property: BFS source distance is zero
   formal: '∀ G, s: bfs(G, s)[s] = 0'
   applies_to: bfs
-- type: invariant
+- id: PK-INV-004
+  type: invariant
   property: BFS triangle inequality
   formal: '∀ edge (u, v): bfs(G, s)[v] <= bfs(G, s)[u] + 1'
   applies_to: bfs

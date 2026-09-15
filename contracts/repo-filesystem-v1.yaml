@@ -91,7 +91,8 @@ falsification_tests:
   if_fails: "source code at root that should be in crates/aprender-core/"
 
 proof_obligations:
-- type: invariant
+- id: RFD04B-INV-001
+  type: invariant
   property: "repo root has zero cruft files"
 
 kani_harnesses:

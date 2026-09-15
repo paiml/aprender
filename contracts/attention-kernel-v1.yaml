@@ -36,7 +36,8 @@ equations:
       - "output is finite"
       - "output rows are convex combinations of V rows"
 proof_obligations:
-- type: invariant
+- id: ATT-INV-001
+  type: invariant
   property: Attention weights normalize
   formal: Σ_j softmax(QK^T/√d_k)_{ij} = 1 for all i
   tolerance: 1.0e-05
@@ -50,7 +51,8 @@ proof_obligations:
     mathlib_imports:
     - Mathlib.Algebra.BigOperators.Group.Finset
     notes: Attention row weights are softmax of the scaled scores; reuses softmax partition-of-unity
-- type: bound
+- id: ATT-BND-002
+  type: bound
   property: Attention weights in (0,1)
   formal: 0 < attn_{ij} < 1 for all i,j
   applies_to: all
@@ -63,7 +65,8 @@ proof_obligations:
     mathlib_imports:
     - Mathlib.Analysis.SpecialFunctions.ExpDeriv
     notes: With ≥2 keys, each softmax weight lies strictly in (0,1); reuses softmax_bounded
-- type: bound
+- id: ATT-BND-003
+  type: bound
   property: Output bounded by V
   formal: min(V) ≤ output_{ij} ≤ max(V)
   applies_to: all
@@ -77,7 +80,8 @@ proof_obligations:
     mathlib_imports:
     - Mathlib.Algebra.Order.BigOperators.Group.Finset
     notes: Output row is a convex combination of V rows (nonneg weights summing to 1) → sandwiched between any lower/upper bound of V
-- type: equivalence
+- id: ATT-EQ-004
+  type: equivalence
   property: SIMD matches scalar
   tolerance: 8.0
   applies_to: simd
@@ -85,7 +89,8 @@ proof_obligations:
   l4_reason: Runtime floating-point ULP-equivalence between SIMD and scalar accumulation
     orders. Depends on IEEE-754 rounding and reduction order, not an algebraic
     identity over ℝ — no Lean statement exists. Enforced empirically by FALSIFY-ATT-004.
-- type: invariant
+- id: ATT-INV-005
+  type: invariant
   property: Scaling factor
   formal: Uses 1/√d_k scaling (not 1/d_k)
   applies_to: all

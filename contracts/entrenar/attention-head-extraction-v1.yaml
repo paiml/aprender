@@ -125,12 +125,14 @@ equations:
     - result numerically identical to flat_map+to_vec baseline
     lean_theorem: Theorems.ExtractHeads
 proof_obligations:
-- type: equivalence
+- id: AHE-EQ-001
+  type: equivalence
   property: Numerical equivalence with baseline
   formal: extract_optimized(qkv) == extract_baseline(qkv) (bit-identical)
   tolerance: 0.0
   applies_to: all
-- type: invariant
+- id: AHE-INV-002
+  type: invariant
   property: Zero intermediate allocations in hot loop
   formal: heap_allocs(extract_optimized) < num_heads * 3 + 10
   applies_to: all

@@ -88,23 +88,27 @@ equations:
     lean_theorem: Theorems.Cli_Dispatch_Passes_Student_Vocab
 
 proof_obligations:
-- type: invariant
+- id: ADTVA-INV-001
+  type: invariant
   property: vocab_size() reports the effective (post-truncation) vocab
   formal: |
     For every RealizarQ4KTeacher t constructed with target_vocab = Some(N) where N <= native_t:
     t.vocab_size() == N AND every Vec<f32> returned from t.logits_for_batch has length N.
-- type: invariant
+- id: ADTVA-INV-002
+  type: invariant
   property: kd_step.rs assert_eq! always passes for vocab-aligned teacher+student
   formal: |
     For every (teacher = RealizarQ4KTeacher with target N, student emitting N logits):
     kd_step.rs:103-107 assert_eq!(student_logits.len(), teacher_logits.len()) holds.
-- type: bound
+- id: ADTVA-BND-003
+  type: bound
   property: truncation never increases memory or compute beyond native
   formal: |
     For every native_t and N <= native_t:
     truncated logit vector has length N <= native_t (memory bound).
     Truncation is O(N) per logit vector (compute bound).
-- type: classification
+- id: ADTVA-CLS-004
+  type: classification
   property: vocab-mismatch path is detectable from metadata alone
   formal: |
     For every (teacher.apr, student.apr) pair: comparing their metadata.vocab_size

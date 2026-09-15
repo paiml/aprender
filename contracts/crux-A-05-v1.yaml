@@ -202,15 +202,20 @@ falsification_tests:
       progress" error, and exiting non-zero are NOT discharged — they
       require integration into `commands::pull`.
 proof_obligations:
-- type: invariant
+- id: CA03E12-INV-001
+  type: invariant
   property: "HTTP Range: bytes=<offset>- header is emitted on --resume when a partial file exists"
-- type: invariant
+- id: CA03E12-INV-002
+  type: invariant
   property: "Final sha256 matches the manifest sha256 regardless of resume vs fresh path"
-- type: invariant
+- id: CA03E12-INV-003
+  type: invariant
   property: "Complete shards emit zero network bytes when --resume finds them intact"
-- type: invariant
+- id: CA03E12-INV-004
+  type: invariant
   property: "ETag mismatch discards the partial and restarts from byte 0 with a stderr warning"
-- type: invariant
+- id: CA03E12-INV-005
+  type: invariant
   property: "Advisory file lock at <target>.lock prevents concurrent writers (second invocation exits non-zero)"
 
 verification_summary:

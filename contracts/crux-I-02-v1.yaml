@@ -100,11 +100,14 @@ falsification_tests:
   if_fails: "remote tools/call response content array not forwarded verbatim"
 
 proof_obligations:
-- type: invariant
+- id: CI02E6C-INV-001
+  type: invariant
   property: "MCP initialize handshake completes with supported protocolVersion"
-- type: invariant
+- id: CI02E6C-INV-002
+  type: invariant
   property: "Remote tools registered under mcp/<server>/<name> namespace (no name collision with local apr tools)"
-- type: equivalence
+- id: CI02E6C-EQ-003
+  type: equivalence
   property: "apr MCP client matches @modelcontextprotocol/sdk ClientSession reference behavior against server-everything test server"
   reference: "https://modelcontextprotocol.io/specification/2025-06-18/basic/lifecycle"
 
