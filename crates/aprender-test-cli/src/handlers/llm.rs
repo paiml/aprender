@@ -205,6 +205,209 @@ pub async fn execute_llm_test(args: &LlmTestArgs) -> CliResult<()> {
     }
 }
 
+/// Feature 3 — the tail/jitter/drift section of the load summary.
+fn print_tail_analysis(result: &jugar_probar::llm::LoadTestResult) {
+    // Feature 3: Tail analysis
+    if let Some(ref tail) = result.tail_analysis {
+        println!("\n--- Tail Latency Analysis ---");
+        println!(
+            "ITL P99.9:    {:.1} ms  (tail ratio: {:.1}x)",
+            tail.itl_p999_ms, tail.tail_ratio_itl
+        );
+        println!(
+            "TTFT P99.9:   {:.1} ms  (tail ratio: {:.1}x)",
+            tail.ttft_p999_ms, tail.tail_ratio_ttft
+        );
+        println!(
+            "Lat P99.9:    {:.1} ms  (tail ratio: {:.1}x)",
+            tail.latency_p999_ms, tail.tail_ratio_latency
+        );
+        if tail.jitter.spike_count > 0 {
+            println!(
+                "Spikes:       {} (threshold: {:.1}ms)",
+                tail.jitter.spike_count, tail.jitter.spike_threshold_ms
+            );
+        }
+        if tail.jitter.itl_cv > 0.0 {
+            println!("ITL CV:       {:.2}", tail.jitter.itl_cv);
+        }
+        if tail.drift.degradation_detected {
+            eprintln!(
+                "Warning: Latency drift detected (ITL slope: {:.2} ms/min)",
+                tail.drift.itl_slope_ms_per_min
+            );
+        }
+    }
+}
+
+/// Feature 5 — the quality-validation section of the load summary.
+fn print_quality_validation(result: &jugar_probar::llm::LoadTestResult) {
+    // Feature 5: Quality validation
+    if let Some(ref quality) = result.quality {
+        println!(
+            "\n--- Quality Validation ({}) ---",
+            quality.validation_level
+        );
+        println!(
+            "Validated:    {} ({} pass, {} fail, {:.1}% pass rate)",
+            quality.total_validated,
+            quality.passed,
+            quality.failed,
+            quality.pass_rate * 100.0
+        );
+        for failure in quality.failures.iter().take(10) {
+            eprintln!(
+                "  FAIL request #{}: {}",
+                failure.request_idx, failure.reason
+            );
+        }
+        if quality.failures.len() > 10 {
+            eprintln!("  ... and {} more failures", quality.failures.len() - 10);
+        }
+    }
+}
+
+/// Print the `apr test llm load` summary, and with `--output` write the JSON report.
+///
+/// Extracted verbatim from [`execute_llm_load`]: ~140 lines of conditional
+/// reporting were most of that function's cognitive complexity, and none of it
+/// decides anything — it reads `result` and prints.
+fn print_load_summary(
+    result: &jugar_probar::llm::LoadTestResult,
+    args: &LlmLoadArgs,
+) -> CliResult<()> {
+    // Print summary
+    println!("\n--- Load Test Results ---");
+    println!("Runtime:      {}", result.runtime_name);
+    println!(
+        "Requests:     {} ({} ok, {} failed)",
+        result.total_requests, result.successful, result.failed
+    );
+    println!("Throughput:   {:.1} req/s", result.throughput_rps);
+    println!("Latency P50:  {:.1} ms", result.latency_p50_ms);
+    println!("Latency P95:  {:.1} ms", result.latency_p95_ms);
+    println!("Latency P99:  {:.1} ms", result.latency_p99_ms);
+    println!("TTFT P50:     {:.1} ms", result.ttft_p50_ms);
+    println!("Tokens/sec:   {:.1}", result.tokens_per_sec);
+    println!("Avg tok/req:  {:.1}", result.avg_tok_per_req);
+    if result.prefill_tok_per_sec > 0.0 {
+        println!("Prefill tok/s:{:.1}", result.prefill_tok_per_sec);
+    }
+    if result.decode_tok_per_sec > 0.0 {
+        println!("Decode tok/s: {:.1}", result.decode_tok_per_sec);
+        println!("ITL P50:      {:.1} ms", result.itl_p50_ms);
+        if let (Some(us_per_layer), Some(n)) = (result.decode_us_per_layer, result.num_layers) {
+            println!("µs/layer:     {us_per_layer:.1} ({n} layers)");
+        }
+    }
+    if result.tpot_p50_ms > 0.0 {
+        println!("TPOT P50:     {:.1} ms", result.tpot_p50_ms);
+    }
+    if result.error_rate > 0.0 {
+        println!("Error rate:   {:.1}%", result.error_rate * 100.0);
+    }
+    if let Some(dist) = &result.output_tokens_dist {
+        println!(
+            "Output tok:   [{:.0}, {:.0}, {:.0}, {:.0}] (min/p50/p90/max)",
+            dist[0], dist[1], dist[2], dist[3]
+        );
+    }
+
+    print_tail_analysis(result);
+
+    print_quality_validation(result);
+
+    // Feature 2: GPU telemetry
+    if let Some(ref gpu) = result.gpu_telemetry {
+        println!("\n--- GPU Telemetry ({} samples) ---", gpu.samples);
+        println!(
+            "GPU util:     {:.0}% avg ({:.0}% max)",
+            gpu.gpu_utilization_pct.mean, gpu.gpu_utilization_pct.max
+        );
+        println!(
+            "Memory:       {:.0} / {:.0} MB",
+            gpu.memory_used_mb.mean, gpu.memory_total_mb
+        );
+        println!(
+            "Power:        {:.1}W avg ({:.1}W max)",
+            gpu.power_draw_w.mean, gpu.power_draw_w.max
+        );
+        println!(
+            "Temperature:  {:.0}°C avg ({:.0}°C max)",
+            gpu.temperature_c.mean, gpu.temperature_c.max
+        );
+        println!(
+            "Clock:        {:.0} MHz avg ({:.0} MHz min)",
+            gpu.clock_gpu_mhz.mean, gpu.clock_gpu_mhz.min
+        );
+        if gpu.throttle_events > 0 {
+            eprintln!("Warning: {} throttle events detected", gpu.throttle_events);
+        }
+        if gpu.energy_per_token_mj > 0.0 {
+            println!(
+                "Energy:       {:.2} mJ/token, {:.2} Wh total",
+                gpu.energy_per_token_mj, gpu.energy_total_wh
+            );
+        }
+    }
+
+    // Warnings
+    if result.truncated_pct > 10.0 {
+        eprintln!("Warning: {:.0}% of responses truncated by max_tokens — increase max_tokens or use longer prompts", result.truncated_pct);
+    }
+    if result.sse_batch_ratio > 0.0 && result.sse_batch_ratio < 0.8 {
+        eprintln!("Warning: SSE batch ratio {:.2} — server batches {:.0} tokens/chunk, per-token variance unreliable",
+            result.sse_batch_ratio, 1.0 / result.sse_batch_ratio);
+    }
+
+    if let Some(ref output_path) = args.output {
+        let json = jugar_probar::llm::report::to_json(&result);
+        std::fs::write(output_path, json).map_err(|e| CliError::Generic(e.to_string()))?;
+        println!("\nResults written to {}", output_path.display());
+    }
+
+    Ok(())
+}
+
+/// GH-37 health gate: refuse to send load at an endpoint that is not answering.
+///
+/// Its four outcomes — pass, non-200, unreachable, timeout — were a nested
+/// `match` inside an `else` inside [`execute_llm_load`]; each names the endpoint
+/// and the bypass flag exactly as before.
+async fn health_gate(client: &jugar_probar::llm::LlmClient, args: &LlmLoadArgs) -> CliResult<()> {
+    // Health gate: verify endpoint is reachable before sending load (GH-37)
+    if args.skip_health_check {
+        eprintln!("Warning: health check skipped (--skip-health-check)");
+    } else {
+        let health_timeout = Duration::from_secs(5);
+        match tokio::time::timeout(health_timeout, client.health_check()).await {
+            Ok(Ok(true)) => println!("Health check passed"),
+            Ok(Ok(false)) => {
+                return Err(CliError::Generic(format!(
+                    "Health check failed: endpoint {} returned non-200 response. \
+                         Use --skip-health-check to bypass.",
+                    args.url
+                )));
+            }
+            Ok(Err(e)) => {
+                return Err(CliError::Generic(format!(
+                    "Health check failed: endpoint {} is unreachable: {e}. \
+                         Use --skip-health-check to bypass.",
+                    args.url
+                )));
+            }
+            Err(_) => {
+                return Err(CliError::Generic(format!(
+                        "Health check timed out after {health_timeout:?}: endpoint {} did not respond. \
+                         Use --skip-health-check to bypass.",
+                        args.url
+                    )));
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Execute `probador llm load`.
 pub async fn execute_llm_load(args: &LlmLoadArgs) -> CliResult<()> {
     let duration = parse_duration(&args.duration)?;
@@ -249,36 +452,7 @@ pub async fn execute_llm_load(args: &LlmLoadArgs) -> CliResult<()> {
         println!("Validation:   {}", args.validate);
     }
 
-    // Health gate: verify endpoint is reachable before sending load (GH-37)
-    if args.skip_health_check {
-        eprintln!("Warning: health check skipped (--skip-health-check)");
-    } else {
-        let health_timeout = Duration::from_secs(5);
-        match tokio::time::timeout(health_timeout, client.health_check()).await {
-            Ok(Ok(true)) => println!("Health check passed"),
-            Ok(Ok(false)) => {
-                return Err(CliError::Generic(format!(
-                    "Health check failed: endpoint {} returned non-200 response. \
-                     Use --skip-health-check to bypass.",
-                    args.url
-                )));
-            }
-            Ok(Err(e)) => {
-                return Err(CliError::Generic(format!(
-                    "Health check failed: endpoint {} is unreachable: {e}. \
-                     Use --skip-health-check to bypass.",
-                    args.url
-                )));
-            }
-            Err(_) => {
-                return Err(CliError::Generic(format!(
-                    "Health check timed out after {health_timeout:?}: endpoint {} did not respond. \
-                     Use --skip-health-check to bypass.",
-                    args.url
-                )));
-            }
-        }
-    }
+    health_gate(&client, args).await?;
 
     let config = jugar_probar::llm::LoadTestConfig {
         concurrency: args.concurrency,
@@ -344,147 +518,7 @@ pub async fn execute_llm_load(args: &LlmLoadArgs) -> CliResult<()> {
     // Dataset stats: attach if we loaded from dataset
     result.dataset_stats = dataset_stats;
 
-    // Print summary
-    println!("\n--- Load Test Results ---");
-    println!("Runtime:      {}", result.runtime_name);
-    println!(
-        "Requests:     {} ({} ok, {} failed)",
-        result.total_requests, result.successful, result.failed
-    );
-    println!("Throughput:   {:.1} req/s", result.throughput_rps);
-    println!("Latency P50:  {:.1} ms", result.latency_p50_ms);
-    println!("Latency P95:  {:.1} ms", result.latency_p95_ms);
-    println!("Latency P99:  {:.1} ms", result.latency_p99_ms);
-    println!("TTFT P50:     {:.1} ms", result.ttft_p50_ms);
-    println!("Tokens/sec:   {:.1}", result.tokens_per_sec);
-    println!("Avg tok/req:  {:.1}", result.avg_tok_per_req);
-    if result.prefill_tok_per_sec > 0.0 {
-        println!("Prefill tok/s:{:.1}", result.prefill_tok_per_sec);
-    }
-    if result.decode_tok_per_sec > 0.0 {
-        println!("Decode tok/s: {:.1}", result.decode_tok_per_sec);
-        println!("ITL P50:      {:.1} ms", result.itl_p50_ms);
-        if let (Some(us_per_layer), Some(n)) = (result.decode_us_per_layer, result.num_layers) {
-            println!("µs/layer:     {us_per_layer:.1} ({n} layers)");
-        }
-    }
-    if result.tpot_p50_ms > 0.0 {
-        println!("TPOT P50:     {:.1} ms", result.tpot_p50_ms);
-    }
-    if result.error_rate > 0.0 {
-        println!("Error rate:   {:.1}%", result.error_rate * 100.0);
-    }
-    if let Some(dist) = &result.output_tokens_dist {
-        println!(
-            "Output tok:   [{:.0}, {:.0}, {:.0}, {:.0}] (min/p50/p90/max)",
-            dist[0], dist[1], dist[2], dist[3]
-        );
-    }
-
-    // Feature 3: Tail analysis
-    if let Some(ref tail) = result.tail_analysis {
-        println!("\n--- Tail Latency Analysis ---");
-        println!(
-            "ITL P99.9:    {:.1} ms  (tail ratio: {:.1}x)",
-            tail.itl_p999_ms, tail.tail_ratio_itl
-        );
-        println!(
-            "TTFT P99.9:   {:.1} ms  (tail ratio: {:.1}x)",
-            tail.ttft_p999_ms, tail.tail_ratio_ttft
-        );
-        println!(
-            "Lat P99.9:    {:.1} ms  (tail ratio: {:.1}x)",
-            tail.latency_p999_ms, tail.tail_ratio_latency
-        );
-        if tail.jitter.spike_count > 0 {
-            println!(
-                "Spikes:       {} (threshold: {:.1}ms)",
-                tail.jitter.spike_count, tail.jitter.spike_threshold_ms
-            );
-        }
-        if tail.jitter.itl_cv > 0.0 {
-            println!("ITL CV:       {:.2}", tail.jitter.itl_cv);
-        }
-        if tail.drift.degradation_detected {
-            eprintln!(
-                "Warning: Latency drift detected (ITL slope: {:.2} ms/min)",
-                tail.drift.itl_slope_ms_per_min
-            );
-        }
-    }
-
-    // Feature 5: Quality validation
-    if let Some(ref quality) = result.quality {
-        println!(
-            "\n--- Quality Validation ({}) ---",
-            quality.validation_level
-        );
-        println!(
-            "Validated:    {} ({} pass, {} fail, {:.1}% pass rate)",
-            quality.total_validated,
-            quality.passed,
-            quality.failed,
-            quality.pass_rate * 100.0
-        );
-        for failure in quality.failures.iter().take(10) {
-            eprintln!(
-                "  FAIL request #{}: {}",
-                failure.request_idx, failure.reason
-            );
-        }
-        if quality.failures.len() > 10 {
-            eprintln!("  ... and {} more failures", quality.failures.len() - 10);
-        }
-    }
-
-    // Feature 2: GPU telemetry
-    if let Some(ref gpu) = result.gpu_telemetry {
-        println!("\n--- GPU Telemetry ({} samples) ---", gpu.samples);
-        println!(
-            "GPU util:     {:.0}% avg ({:.0}% max)",
-            gpu.gpu_utilization_pct.mean, gpu.gpu_utilization_pct.max
-        );
-        println!(
-            "Memory:       {:.0} / {:.0} MB",
-            gpu.memory_used_mb.mean, gpu.memory_total_mb
-        );
-        println!(
-            "Power:        {:.1}W avg ({:.1}W max)",
-            gpu.power_draw_w.mean, gpu.power_draw_w.max
-        );
-        println!(
-            "Temperature:  {:.0}°C avg ({:.0}°C max)",
-            gpu.temperature_c.mean, gpu.temperature_c.max
-        );
-        println!(
-            "Clock:        {:.0} MHz avg ({:.0} MHz min)",
-            gpu.clock_gpu_mhz.mean, gpu.clock_gpu_mhz.min
-        );
-        if gpu.throttle_events > 0 {
-            eprintln!("Warning: {} throttle events detected", gpu.throttle_events);
-        }
-        if gpu.energy_per_token_mj > 0.0 {
-            println!(
-                "Energy:       {:.2} mJ/token, {:.2} Wh total",
-                gpu.energy_per_token_mj, gpu.energy_total_wh
-            );
-        }
-    }
-
-    // Warnings
-    if result.truncated_pct > 10.0 {
-        eprintln!("Warning: {:.0}% of responses truncated by max_tokens — increase max_tokens or use longer prompts", result.truncated_pct);
-    }
-    if result.sse_batch_ratio > 0.0 && result.sse_batch_ratio < 0.8 {
-        eprintln!("Warning: SSE batch ratio {:.2} — server batches {:.0} tokens/chunk, per-token variance unreliable",
-            result.sse_batch_ratio, 1.0 / result.sse_batch_ratio);
-    }
-
-    if let Some(ref output_path) = args.output {
-        let json = jugar_probar::llm::report::to_json(&result);
-        std::fs::write(output_path, json).map_err(|e| CliError::Generic(e.to_string()))?;
-        println!("\nResults written to {}", output_path.display());
-    }
+    print_load_summary(&result, args)?;
 
     // Feature 5: fail on quality threshold
     if let (Some(threshold), Some(ref quality)) = (args.fail_on_quality, &result.quality) {
@@ -524,6 +558,253 @@ pub fn execute_llm_report(args: &LlmReportArgs) -> CliResult<()> {
     Ok(())
 }
 
+/// Render one scorecard in the requested output format.
+///
+/// Every `--by-*` section of [`execute_llm_score`] repeated the same three-arm
+/// `match args.format` verbatim; only the two formatter functions differ, so
+/// they are passed in. Collapsing them is what brings that function back under
+/// the complexity gate.
+fn render_card<T: serde::Serialize>(
+    format: &str,
+    card: &T,
+    markdown: impl Fn(&T) -> String,
+    table: impl Fn(&T) -> String,
+) -> Result<String, CliError> {
+    Ok(match format {
+        "json" => {
+            serde_json::to_string_pretty(card).map_err(|e| CliError::Generic(e.to_string()))?
+        }
+        "markdown" => markdown(card),
+        _ => table(card),
+    })
+}
+
+/// Load-test results paired with the file each was read from.
+type ScoredResults = Vec<(jugar_probar::llm::LoadTestResult, String)>;
+
+/// Load-test results grouped by the concurrency level they ran at.
+type ByConcurrency = std::collections::HashMap<usize, ScoredResults>;
+
+/// Filter results by `--platform` and group the survivors by concurrency level.
+fn group_by_concurrency(all_results: ScoredResults, platform: Option<&str>) -> ByConcurrency {
+    let mut by_concurrency: ByConcurrency = std::collections::HashMap::new();
+    for (result, filename) in all_results
+        .into_iter()
+        .filter(|(r, _)| platform.is_none_or(|p| r.runtime_name.contains(p)))
+    {
+        by_concurrency
+            .entry(result.concurrency)
+            .or_default()
+            .push((result, filename));
+    }
+    by_concurrency
+}
+
+/// Flatten every grouped result into one list, for whole-run scorecards.
+fn flatten_by_concurrency(by_concurrency: &ByConcurrency) -> ScoredResults {
+    by_concurrency
+        .values()
+        .flat_map(|v| v.iter())
+        .cloned()
+        .collect()
+}
+
+/// Yield the results of each requested concurrency level that has any.
+///
+/// Replaces the `for c in &levels { if let Some(results) = map.get(c) { .. } }`
+/// preamble that every per-level `--by-*` section repeated.
+fn levels_with_results<'a>(
+    by_concurrency: &'a ByConcurrency,
+    levels: &'a [usize],
+) -> impl Iterator<Item = &'a ScoredResults> {
+    levels.iter().filter_map(move |c| by_concurrency.get(c))
+}
+
+/// Render a scorecard into `out`, unless it scored no rows.
+fn push_card<T: serde::Serialize>(
+    out: &mut Vec<String>,
+    format: &str,
+    card: &T,
+    has_rows: bool,
+    markdown: impl Fn(&T) -> String,
+    table: impl Fn(&T) -> String,
+) -> CliResult<()> {
+    if has_rows {
+        out.push(render_card(format, card, markdown, table)?);
+    }
+    Ok(())
+}
+
+/// Score every requested concurrency level, rendering one scorecard each.
+///
+/// Returns the lowest composite score seen, or `f64::MAX` if nothing scored —
+/// the value the `--fail-on-grade` gate is checked against.
+fn score_concurrency_levels(
+    format: &str,
+    by_concurrency: &ByConcurrency,
+    levels: &[usize],
+    contract: &jugar_probar::llm::ScoringContract,
+    out: &mut Vec<String>,
+) -> CliResult<f64> {
+    let c1_results = by_concurrency.get(&1);
+    let mut min_grade_score = f64::MAX;
+
+    for results in levels_with_results(by_concurrency, levels) {
+        let scorecard = jugar_probar::llm::compute_scorecard(
+            results,
+            c1_results.map(std::vec::Vec::as_slice),
+            contract,
+        );
+
+        for rt in &scorecard.runtimes {
+            if rt.composite < min_grade_score {
+                min_grade_score = rt.composite;
+            }
+        }
+
+        out.push(render_card(
+            format,
+            &scorecard,
+            jugar_probar::llm::format_markdown,
+            jugar_probar::llm::format_table,
+        )?);
+    }
+
+    Ok(min_grade_score)
+}
+
+/// Render every optional `--by-*` scorecard section.
+///
+/// The sections are emitted in the fixed order the command has always used;
+/// each is skipped unless its flag is set and it scored at least one row.
+fn score_optional_sections(
+    args: &LlmScoreArgs,
+    by_concurrency: &ByConcurrency,
+    levels: &[usize],
+    contract: &jugar_probar::llm::ScoringContract,
+    out: &mut Vec<String>,
+) -> CliResult<()> {
+    let fmt = args.format.as_str();
+
+    // Per-layer scoring (--by-layer)
+    if args.by_layer {
+        let all_flat = flatten_by_concurrency(by_concurrency);
+        let card = jugar_probar::llm::compute_layer_scorecard(&all_flat, &contract.grades);
+        push_card(
+            out,
+            fmt,
+            &card,
+            !card.runtimes.is_empty(),
+            jugar_probar::llm::format_layer_markdown,
+            jugar_probar::llm::format_layer_table,
+        )?;
+    }
+
+    // Per-profile scoring (--by-profile)
+    if args.by_profile {
+        for results in levels_with_results(by_concurrency, levels) {
+            let card = jugar_probar::llm::compute_profile_scorecard(results, contract);
+            push_card(
+                out,
+                fmt,
+                &card,
+                !card.entries.is_empty(),
+                jugar_probar::llm::format_profile_markdown,
+                jugar_probar::llm::format_profile_table,
+            )?;
+        }
+    }
+
+    // Correctness scoring (--by-correctness)
+    if args.by_correctness {
+        let all_flat = flatten_by_concurrency(by_concurrency);
+        let card = jugar_probar::llm::compute_correctness_scorecard(&all_flat, &contract.grades);
+        push_card(
+            out,
+            fmt,
+            &card,
+            !card.runtimes.is_empty(),
+            jugar_probar::llm::format_correctness_markdown,
+            jugar_probar::llm::format_correctness_table,
+        )?;
+    }
+
+    // Output length profile scoring (--by-output-length)
+    if args.by_output_length {
+        for results in levels_with_results(by_concurrency, levels) {
+            let card = jugar_probar::llm::compute_output_length_scorecard(results, contract);
+            push_card(
+                out,
+                fmt,
+                &card,
+                !card.entries.is_empty(),
+                jugar_probar::llm::format_output_length_markdown,
+                jugar_probar::llm::format_output_length_table,
+            )?;
+        }
+    }
+
+    // Memory footprint scoring (--by-memory)
+    if args.by_memory {
+        let all_flat = flatten_by_concurrency(by_concurrency);
+        let card = jugar_probar::llm::compute_memory_scorecard(&all_flat, &contract.grades);
+        push_card(
+            out,
+            fmt,
+            &card,
+            !card.runtimes.is_empty(),
+            jugar_probar::llm::format_memory_markdown,
+            jugar_probar::llm::format_memory_table,
+        )?;
+    }
+
+    // Cold start scoring (--by-cold-start)
+    if args.by_cold_start {
+        let all_flat = flatten_by_concurrency(by_concurrency);
+        let card = jugar_probar::llm::compute_cold_start_scorecard(&all_flat, &contract.grades);
+        push_card(
+            out,
+            fmt,
+            &card,
+            !card.runtimes.is_empty(),
+            jugar_probar::llm::format_cold_start_markdown,
+            jugar_probar::llm::format_cold_start_table,
+        )?;
+    }
+
+    // Power efficiency scoring (--by-power)
+    if args.by_power {
+        let all_flat = flatten_by_concurrency(by_concurrency);
+        let card =
+            jugar_probar::llm::compute_power_efficiency_scorecard(&all_flat, &contract.grades);
+        push_card(
+            out,
+            fmt,
+            &card,
+            !card.runtimes.is_empty(),
+            jugar_probar::llm::format_power_markdown,
+            jugar_probar::llm::format_power_table,
+        )?;
+    }
+
+    // Concurrency scaling scoring (--by-scaling)
+    if args.by_scaling {
+        let all_flat = flatten_by_concurrency(by_concurrency);
+        let card =
+            jugar_probar::llm::compute_concurrency_scaling_scorecard(&all_flat, &contract.grades);
+        push_card(
+            out,
+            fmt,
+            &card,
+            !card.runtimes.is_empty(),
+            jugar_probar::llm::format_scaling_markdown,
+            jugar_probar::llm::format_scaling_table,
+        )?;
+    }
+
+    Ok(())
+}
+
 /// Execute `probador llm score`.
 pub fn execute_llm_score(args: &LlmScoreArgs) -> CliResult<()> {
     let all_results = load_all_results_from_dir(&args.results)?;
@@ -533,27 +814,8 @@ pub fn execute_llm_score(args: &LlmScoreArgs) -> CliResult<()> {
         return Ok(());
     }
 
-    // Filter by platform if specified
-    let filtered: Vec<_> = all_results
-        .into_iter()
-        .filter(|(r, _)| {
-            args.platform
-                .as_ref()
-                .is_none_or(|p| r.runtime_name.contains(p.as_str()))
-        })
-        .collect();
-
-    // Group by concurrency
-    let mut by_concurrency: std::collections::HashMap<
-        usize,
-        Vec<(jugar_probar::llm::LoadTestResult, String)>,
-    > = std::collections::HashMap::new();
-    for (result, filename) in filtered {
-        by_concurrency
-            .entry(result.concurrency)
-            .or_default()
-            .push((result, filename));
-    }
+    // Filter by platform if specified, then group by concurrency
+    let by_concurrency = group_by_concurrency(all_results, args.platform.as_deref());
 
     // If concurrency filter specified, only score that level
     let concurrency_levels: Vec<usize> = if let Some(c) = args.concurrency {
@@ -565,241 +827,22 @@ pub fn execute_llm_score(args: &LlmScoreArgs) -> CliResult<()> {
     };
 
     let contract = jugar_probar::llm::ScoringContract::default();
-    let c1_results = by_concurrency.get(&1);
     let mut all_output = Vec::new();
-    let mut min_grade_score = f64::MAX;
 
-    for c in &concurrency_levels {
-        if let Some(results) = by_concurrency.get(c) {
-            let scorecard = jugar_probar::llm::compute_scorecard(
-                results,
-                c1_results.map(std::vec::Vec::as_slice),
-                &contract,
-            );
-
-            for rt in &scorecard.runtimes {
-                if rt.composite < min_grade_score {
-                    min_grade_score = rt.composite;
-                }
-            }
-
-            match args.format.as_str() {
-                "json" => {
-                    let json = serde_json::to_string_pretty(&scorecard)
-                        .map_err(|e| CliError::Generic(e.to_string()))?;
-                    all_output.push(json);
-                }
-                "markdown" => {
-                    all_output.push(jugar_probar::llm::format_markdown(&scorecard));
-                }
-                _ => {
-                    all_output.push(jugar_probar::llm::format_table(&scorecard));
-                }
-            }
-        }
-    }
-
-    // Per-layer scoring (--by-layer)
-    if args.by_layer {
-        let all_flat: Vec<_> = by_concurrency
-            .values()
-            .flat_map(|v| v.iter())
-            .cloned()
-            .collect();
-        let layer_card = jugar_probar::llm::compute_layer_scorecard(&all_flat, &contract.grades);
-        if !layer_card.runtimes.is_empty() {
-            match args.format.as_str() {
-                "json" => {
-                    let json = serde_json::to_string_pretty(&layer_card)
-                        .map_err(|e| CliError::Generic(e.to_string()))?;
-                    all_output.push(json);
-                }
-                "markdown" => {
-                    all_output.push(jugar_probar::llm::format_layer_markdown(&layer_card));
-                }
-                _ => {
-                    all_output.push(jugar_probar::llm::format_layer_table(&layer_card));
-                }
-            }
-        }
-    }
-
-    // Per-profile scoring (--by-profile)
-    if args.by_profile {
-        for c in &concurrency_levels {
-            if let Some(results) = by_concurrency.get(c) {
-                let profile_card = jugar_probar::llm::compute_profile_scorecard(results, &contract);
-                if !profile_card.entries.is_empty() {
-                    match args.format.as_str() {
-                        "json" => {
-                            let json = serde_json::to_string_pretty(&profile_card)
-                                .map_err(|e| CliError::Generic(e.to_string()))?;
-                            all_output.push(json);
-                        }
-                        "markdown" => {
-                            all_output
-                                .push(jugar_probar::llm::format_profile_markdown(&profile_card));
-                        }
-                        _ => {
-                            all_output.push(jugar_probar::llm::format_profile_table(&profile_card));
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    // Correctness scoring (--by-correctness)
-    if args.by_correctness {
-        let all_flat: Vec<_> = by_concurrency
-            .values()
-            .flat_map(|v| v.iter())
-            .cloned()
-            .collect();
-        let card = jugar_probar::llm::compute_correctness_scorecard(&all_flat, &contract.grades);
-        if !card.runtimes.is_empty() {
-            match args.format.as_str() {
-                "json" => {
-                    let json = serde_json::to_string_pretty(&card)
-                        .map_err(|e| CliError::Generic(e.to_string()))?;
-                    all_output.push(json);
-                }
-                "markdown" => {
-                    all_output.push(jugar_probar::llm::format_correctness_markdown(&card));
-                }
-                _ => {
-                    all_output.push(jugar_probar::llm::format_correctness_table(&card));
-                }
-            }
-        }
-    }
-
-    // Output length profile scoring (--by-output-length)
-    if args.by_output_length {
-        for c in &concurrency_levels {
-            if let Some(results) = by_concurrency.get(c) {
-                let card = jugar_probar::llm::compute_output_length_scorecard(results, &contract);
-                if !card.entries.is_empty() {
-                    match args.format.as_str() {
-                        "json" => {
-                            let json = serde_json::to_string_pretty(&card)
-                                .map_err(|e| CliError::Generic(e.to_string()))?;
-                            all_output.push(json);
-                        }
-                        "markdown" => {
-                            all_output
-                                .push(jugar_probar::llm::format_output_length_markdown(&card));
-                        }
-                        _ => {
-                            all_output.push(jugar_probar::llm::format_output_length_table(&card));
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    // Memory footprint scoring (--by-memory)
-    if args.by_memory {
-        let all_flat: Vec<_> = by_concurrency
-            .values()
-            .flat_map(|v| v.iter())
-            .cloned()
-            .collect();
-        let card = jugar_probar::llm::compute_memory_scorecard(&all_flat, &contract.grades);
-        if !card.runtimes.is_empty() {
-            match args.format.as_str() {
-                "json" => {
-                    let json = serde_json::to_string_pretty(&card)
-                        .map_err(|e| CliError::Generic(e.to_string()))?;
-                    all_output.push(json);
-                }
-                "markdown" => {
-                    all_output.push(jugar_probar::llm::format_memory_markdown(&card));
-                }
-                _ => {
-                    all_output.push(jugar_probar::llm::format_memory_table(&card));
-                }
-            }
-        }
-    }
-
-    // Cold start scoring (--by-cold-start)
-    if args.by_cold_start {
-        let all_flat: Vec<_> = by_concurrency
-            .values()
-            .flat_map(|v| v.iter())
-            .cloned()
-            .collect();
-        let card = jugar_probar::llm::compute_cold_start_scorecard(&all_flat, &contract.grades);
-        if !card.runtimes.is_empty() {
-            match args.format.as_str() {
-                "json" => {
-                    let json = serde_json::to_string_pretty(&card)
-                        .map_err(|e| CliError::Generic(e.to_string()))?;
-                    all_output.push(json);
-                }
-                "markdown" => {
-                    all_output.push(jugar_probar::llm::format_cold_start_markdown(&card));
-                }
-                _ => {
-                    all_output.push(jugar_probar::llm::format_cold_start_table(&card));
-                }
-            }
-        }
-    }
-
-    // Power efficiency scoring (--by-power)
-    if args.by_power {
-        let all_flat: Vec<_> = by_concurrency
-            .values()
-            .flat_map(|v| v.iter())
-            .cloned()
-            .collect();
-        let card =
-            jugar_probar::llm::compute_power_efficiency_scorecard(&all_flat, &contract.grades);
-        if !card.runtimes.is_empty() {
-            match args.format.as_str() {
-                "json" => {
-                    let json = serde_json::to_string_pretty(&card)
-                        .map_err(|e| CliError::Generic(e.to_string()))?;
-                    all_output.push(json);
-                }
-                "markdown" => {
-                    all_output.push(jugar_probar::llm::format_power_markdown(&card));
-                }
-                _ => {
-                    all_output.push(jugar_probar::llm::format_power_table(&card));
-                }
-            }
-        }
-    }
-
-    // Concurrency scaling scoring (--by-scaling)
-    if args.by_scaling {
-        let all_flat: Vec<_> = by_concurrency
-            .values()
-            .flat_map(|v| v.iter())
-            .cloned()
-            .collect();
-        let card =
-            jugar_probar::llm::compute_concurrency_scaling_scorecard(&all_flat, &contract.grades);
-        if !card.runtimes.is_empty() {
-            match args.format.as_str() {
-                "json" => {
-                    let json = serde_json::to_string_pretty(&card)
-                        .map_err(|e| CliError::Generic(e.to_string()))?;
-                    all_output.push(json);
-                }
-                "markdown" => {
-                    all_output.push(jugar_probar::llm::format_scaling_markdown(&card));
-                }
-                _ => {
-                    all_output.push(jugar_probar::llm::format_scaling_table(&card));
-                }
-            }
-        }
-    }
+    let min_grade_score = score_concurrency_levels(
+        args.format.as_str(),
+        &by_concurrency,
+        &concurrency_levels,
+        &contract,
+        &mut all_output,
+    )?;
+    score_optional_sections(
+        args,
+        &by_concurrency,
+        &concurrency_levels,
+        &contract,
+        &mut all_output,
+    )?;
 
     let output_text = all_output.join("\n\n");
 
@@ -1217,6 +1260,61 @@ fn parse_duration(s: &str) -> CliResult<Duration> {
 // Feature 1: Concurrency Sweep
 // =============================================================================
 
+/// GH-33: the concurrency levels on the throughput Pareto frontier.
+///
+/// A level joins only if it beats every earlier level's throughput AND is
+/// neither saturated nor zero-quality — a level that decodes nothing is not a
+/// faster configuration, it is a broken one.
+fn pareto_frontier(levels: &[jugar_probar::llm::SweepLevel]) -> Vec<usize> {
+    let mut frontier = Vec::new();
+    let mut max_throughput = 0.0f64;
+    for level in levels {
+        let zero_quality = level.decode_tok_s == 0.0;
+        if level.throughput_rps > max_throughput && !level.saturated && !zero_quality {
+            max_throughput = level.throughput_rps;
+            frontier.push(level.concurrency);
+        }
+    }
+    frontier
+}
+
+/// Is this concurrency level saturated relative to the sweep's first level?
+///
+/// Returns the verdict and, when saturated, the reason naming both latencies and
+/// the multiplier — the same string the inline form built. No baseline yet (the
+/// first level) is never saturated.
+fn detect_saturation(
+    baseline_p99: Option<f64>,
+    p99: f64,
+    threshold: f64,
+) -> (bool, Option<String>) {
+    let Some(base_p99) = baseline_p99 else {
+        return (false, None);
+    };
+    if base_p99 > 0.0 && p99 > threshold * base_p99 {
+        (
+            true,
+            Some(format!(
+                "latency_p99 {p99:.0}ms > {threshold:.1}x baseline {base_p99:.0}ms"
+            )),
+        )
+    } else {
+        (false, None)
+    }
+}
+
+/// The suffix printed after a sweep level's numbers. Saturation wins over
+/// zero-quality, as it did inline.
+fn level_status(saturated: bool, zero_quality: bool) -> &'static str {
+    if saturated {
+        " [SATURATED]"
+    } else if zero_quality {
+        " [ZERO QUALITY]"
+    } else {
+        ""
+    }
+}
+
 /// Execute `probador llm sweep`.
 pub async fn execute_llm_sweep(args: &LlmSweepArgs) -> CliResult<()> {
     let duration = parse_duration(&args.duration)?;
@@ -1294,22 +1392,8 @@ pub async fn execute_llm_sweep(args: &LlmSweepArgs) -> CliResult<()> {
             baseline_p99 = Some(p99);
         }
 
-        // Saturation detection
-        let (saturated, saturation_reason) = if let Some(base_p99) = baseline_p99 {
-            if base_p99 > 0.0 && p99 > args.saturation_threshold * base_p99 {
-                (
-                    true,
-                    Some(format!(
-                        "latency_p99 {:.0}ms > {:.1}x baseline {:.0}ms",
-                        p99, args.saturation_threshold, base_p99
-                    )),
-                )
-            } else {
-                (false, None)
-            }
-        } else {
-            (false, None)
-        };
+        let (saturated, saturation_reason) =
+            detect_saturation(baseline_p99, p99, args.saturation_threshold);
 
         // GH-33: quality-aware optimal selection — disqualify zero-decode levels
         let zero_quality = decode == 0.0;
@@ -1318,13 +1402,7 @@ pub async fn execute_llm_sweep(args: &LlmSweepArgs) -> CliResult<()> {
             optimal_concurrency = c;
         }
 
-        let status = if saturated {
-            " [SATURATED]"
-        } else if zero_quality {
-            " [ZERO QUALITY]"
-        } else {
-            ""
-        };
+        let status = level_status(saturated, zero_quality);
         println!(
             "  Throughput: {throughput:.1} req/s, P99: {p99:.1}ms, Decode: {decode:.1} tok/s{status}",
         );
@@ -1346,19 +1424,7 @@ pub async fn execute_llm_sweep(args: &LlmSweepArgs) -> CliResult<()> {
         }
     }
 
-    // GH-33: Pareto frontier excludes zero-quality and saturated levels
-    let pareto_frontier: Vec<usize> = {
-        let mut frontier = Vec::new();
-        let mut max_throughput = 0.0f64;
-        for level in &sweep_levels {
-            let zero_quality = level.decode_tok_s == 0.0;
-            if level.throughput_rps > max_throughput && !level.saturated && !zero_quality {
-                max_throughput = level.throughput_rps;
-                frontier.push(level.concurrency);
-            }
-        }
-        frontier
-    };
+    let pareto_frontier = pareto_frontier(&sweep_levels);
 
     let sweep_result = jugar_probar::llm::SweepResult {
         levels: sweep_levels,
@@ -1474,6 +1540,11 @@ fn parse_dataset_line(
         stream: Some(false),
         seed: None,
         ignore_eos: None,
+        // `stream` is false here, and ChatRequest documents that
+        // `stream_options` MUST be absent on a non-streaming request — OpenAI
+        // rejects it outright. `None` is the only correct value; the field was
+        // simply never added because nothing builds this crate with `llm`.
+        stream_options: None,
     };
     Ok((prompt, estimated_tokens, max_tokens))
 }
@@ -1618,6 +1689,55 @@ fn generate_synthetic_prompt(target_tokens: usize) -> String {
 // =============================================================================
 
 /// Execute `probador llm experiment` subcommands.
+/// `apr test llm experiment status` — print one experiment's budget, audit and runs.
+///
+/// Extracted from [`execute_llm_experiment`]: this arm alone carried the
+/// budget/description/cost/audit/runs reporting that put that match over the
+/// cognitive threshold.
+fn experiment_status(status_args: &crate::ExperimentStatusArgs) -> CliResult<()> {
+    use jugar_probar::llm::experiment::Experiment;
+
+    let exp = Experiment::load(&status_args.file)
+        .map_err(|e| CliError::Generic(format!("Failed to load experiment: {e}")))?;
+
+    println!("Experiment: {}", exp.name);
+    if let Some(ref desc) = exp.description {
+        println!("  Description: {desc}");
+    }
+    println!("  Created: {}", exp.created);
+    println!("  Runs: {}", exp.runs.len());
+    println!("  Total GPU-hours: {:.2}", exp.total_gpu_hours());
+    if let Some(cost) = exp.total_cost() {
+        println!("  Estimated cost: ${cost:.2}");
+    }
+
+    if let Some(ref audit) = exp.data_audit {
+        println!(
+            "  Data audit: {}",
+            if audit.passed { "PASS" } else { "FAIL" }
+        );
+        for issue in &audit.issues {
+            println!("    - {issue}");
+        }
+    }
+
+    for run in &exp.runs {
+        println!(
+            "  Run '{}': {:?} ({:.2} GPU-hours)",
+            run.id, run.status, run.total_gpu_hours
+        );
+        if let Some(ref reason) = run.stop_reason {
+            println!("    Stop reason: {reason}");
+        }
+        if let Some(snap) = run.snapshots.last() {
+            for (k, v) in &snap.metrics {
+                println!("    {k}: {v:.4}");
+            }
+        }
+    }
+    Ok(())
+}
+
 pub fn execute_llm_experiment(args: &ExperimentArgs) -> CliResult<()> {
     use crate::ExperimentSubcommand;
     use jugar_probar::llm::experiment::{BudgetConfig, Experiment};
@@ -1653,47 +1773,7 @@ pub fn execute_llm_experiment(args: &ExperimentArgs) -> CliResult<()> {
             }
             Ok(())
         }
-        ExperimentSubcommand::Status(status_args) => {
-            let exp = Experiment::load(&status_args.file)
-                .map_err(|e| CliError::Generic(format!("Failed to load experiment: {e}")))?;
-
-            println!("Experiment: {}", exp.name);
-            if let Some(ref desc) = exp.description {
-                println!("  Description: {desc}");
-            }
-            println!("  Created: {}", exp.created);
-            println!("  Runs: {}", exp.runs.len());
-            println!("  Total GPU-hours: {:.2}", exp.total_gpu_hours());
-            if let Some(cost) = exp.total_cost() {
-                println!("  Estimated cost: ${cost:.2}");
-            }
-
-            if let Some(ref audit) = exp.data_audit {
-                println!(
-                    "  Data audit: {}",
-                    if audit.passed { "PASS" } else { "FAIL" }
-                );
-                for issue in &audit.issues {
-                    println!("    - {issue}");
-                }
-            }
-
-            for run in &exp.runs {
-                println!(
-                    "  Run '{}': {:?} ({:.2} GPU-hours)",
-                    run.id, run.status, run.total_gpu_hours
-                );
-                if let Some(ref reason) = run.stop_reason {
-                    println!("    Stop reason: {reason}");
-                }
-                if let Some(snap) = run.snapshots.last() {
-                    for (k, v) in &snap.metrics {
-                        println!("    {k}: {v:.4}");
-                    }
-                }
-            }
-            Ok(())
-        }
+        ExperimentSubcommand::Status(status_args) => experiment_status(status_args),
         ExperimentSubcommand::Compare(cmp_args) => {
             let exp = Experiment::load(&cmp_args.file)
                 .map_err(|e| CliError::Generic(format!("Failed to load experiment: {e}")))?;
