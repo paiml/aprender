@@ -62,14 +62,45 @@
 #      runner-listing + job-ledger pair with no network at all. That is what
 #      scripts/test_silicon_coverage_run_probe.sh drives, in both polarities and
 #      under a mutation that removes the run probe.
+#   4. --self-test ALSO runs this script END TO END against a PATH-shimmed `gh`
+#      serving canned API pages (PMAT-3337). Every unmodelled call exits 97 and
+#      is logged, so a row can never pass on a call the table did not model.
 #
 # AUTH: the runner's ambient org-scoped gh auth. GPU runners are REPO-scoped and
 # invisible in the org listing, so BOTH lists are read and merged — that
 # invisibility is exactly why yoga-gpu's absence went unnoticed for months.
+#
+# EVIDENCE IS READ PER AXIS-CARRYING WORKFLOW (PMAT-3337, paiml/aprender#3337).
+#
+# Until 2026-09-16 the ledger came from the repo-wide `actions/runs?event=…`
+# listings of EVERY workflow, sorted newest-first and truncated at a global
+# RUN_CAP of 60. Measured in CI on 2026-09-15, same script, same policy:
+#
+#     16:27Z #3320  200 listed (within 30d: 25 scanned, 175 older, 0 over the cap)  -> NO-GO
+#     19:23Z #3114  200 listed (within 30d: 60 scanned, 75 older, 65 over the cap)  -> UNCOVERED sm89
+#     19:31Z local  same listing shape                                              -> GO
+#
+# The cap made coverage a function of how many OTHER workflows had run since
+# the carrying one, and an event page with nothing recent failed every PR's
+# guard-tree on a view of the API. Both are the Probe-2b shape: an absence this
+# guard never looked for, scored as evidence of absence.
+#
+# So each axis's workflow(s) are DERIVED from the tree — the policy names a job,
+# `.github/workflows/*.yml` says which file declares a job with that id or
+# `name:` — and each is asked for exactly its own runs inside the lookback
+# (`actions/workflows/<file>/runs?event=<e>&created=>=<date>`), paginated under
+# a bounded page cap. Deriving is fail-safe in the same direction as the 4th
+# column: rename the job and no workflow is read, so the axis goes red.
+#
+# A page cap that is reached before the listing is exhausted is NOT a negative.
+# An axis not found in a truncated read scores TRUNCATED (unknown, exit 2) with
+# the counts it did read — never UNCOVERED, STALE or MISSING.
 set -uo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
 POLICY="${SILICON_POLICY:-$REPO_ROOT/.github/silicon-coverage.txt}"
+WORKFLOWS_DIR="${SILICON_WORKFLOWS_DIR:-$REPO_ROOT/.github/workflows}"
 ORG="${ORG:-paiml}"
 REPO="${GITHUB_REPOSITORY:-paiml/aprender}"
 SUMMARY="${GITHUB_STEP_SUMMARY:-/dev/null}"
@@ -85,14 +116,15 @@ SUMMARY="${GITHUB_STEP_SUMMARY:-/dev/null}"
 # samples it does not have yet. The floor is what makes a BRAND NEW axis
 # judgeable at all, and D-2 (operator, 2026-09-09: "yoga should test nightly")
 # makes 3 days the right one for every axis here.
-#
-# Unlike lane-liveness this reads no `cron:`: an axis is not a workflow. Several
-# workflows may carry one selector and one workflow may carry several axes, so
-# there is no single declaration to read — only the runs.
 STALE_DAYS="${SILICON_STALE_DAYS:-3}"
 LOOKBACK_DAYS="${SILICON_LOOKBACK_DAYS:-30}"
-RUN_CAP="${SILICON_RUN_CAP:-60}"
+# Pagination of ONE workflow's ONE event listing. There is deliberately no
+# repo-wide run cap: a cap shared across workflows is what let other lanes push
+# an axis's carrying run out of the read (PMAT-3337).
+PAGE_SIZE="${SILICON_PAGE_SIZE:-100}"
+PAGE_CAP="${SILICON_PAGE_CAP:-10}"
 TAB="$(printf '\t')"
+api_calls=0
 
 # labels_contain <runner-label-csv> <required-label-csv>
 # 0 when every required label is present in the runner's set. Case-insensitive:
@@ -155,6 +187,10 @@ iso_epoch() {
     date -u -d "$1" +%s 2>/dev/null  # bashrs disable-line=DET002
 }
 
+# epoch_day <epoch> -> YYYY-MM-DD (UTC) of that instant. Deterministic: $1.
+epoch_day() {
+    date -u -d "@$1" +%Y-%m-%d 2>/dev/null  # bashrs disable-line=DET002
+}
 # ── THE RUN PROBE ───────────────────────────────────────────────────────────
 # axis_evidence <jobs-tsv> <selector> <job-name glob>
 #
@@ -209,71 +245,411 @@ axis_evidence() {
 }
 # MUTATION-SEAM-END axis_evidence
 
-# build_jobs <out-tsv>
-# The concluded-job ledger for this repo, over the lookback window:
+# ── WHICH WORKFLOW CARRIES AN AXIS ──────────────────────────────────────────
+# workflow_jobs <workflows dir> -> "<file>\t<job id>\t<job name>" per job.
+#
+# NOT A YAML PARSER, same posture as check_silicon_cuda.sh: a job is a 2-space
+# key under the top-level `jobs:`, and its name is the 4-space `name:` under it
+# (step names sit deeper, under `- name:`). The API reports a job by `name:`
+# when one is set and by its id otherwise, so both are emitted and either may
+# match the policy's glob. A templated name is matched by its id only.
+workflow_jobs() {
+    for _wj_f in "$1"/*.yml "$1"/*.yaml; do
+        [ -f "$_wj_f" ] || continue
+        awk -v f="${_wj_f##*/}" -v q="'" '
+            function emit() { printf "%s\t%s\t%s\n", f, id, name; id = "" }
+            /^jobs:[[:space:]]*(#.*)?$/ { injobs = 1; next }
+            /^[^[:space:]#]/ { if (id != "") emit(); injobs = 0; next }
+            injobs && /^  [A-Za-z0-9_-]+:[[:space:]]*(#.*)?$/ {
+                if (id != "") emit()
+                id = $1; sub(/:$/, "", id); name = ""; next
+            }
+            injobs && id != "" && name == "" && /^    name:/ {
+                n = $0
+                sub(/^    name:[[:space:]]*/, "", n)
+                sub(/[[:space:]]+#.*$/, "", n)
+                gsub("^[\"" q "]|[\"" q "]$", "", n)
+                name = n; next
+            }
+            END { if (id != "") emit() }
+        ' "$_wj_f"
+    done
+}
+
+# axis_workflows <workflows dir> <job glob> -> workflow file names, one per line.
+axis_workflows() {
+    _aw_glob="$2"
+    workflow_jobs "$1" | while IFS="$TAB" read -r _aw_f _aw_id _aw_name; do
+        [ -n "$_aw_f" ] || continue
+        # shellcheck disable=SC2254
+        case "$_aw_id" in $_aw_glob) printf '%s\n' "$_aw_f"; continue ;; esac
+        [ -n "$_aw_name" ] || continue
+        case "$_aw_name" in *'${{'*) continue ;; esac
+        # shellcheck disable=SC2254
+        case "$_aw_name" in $_aw_glob) printf '%s\n' "$_aw_f" ;; esac
+    done | sort -u
+}
+
+# build_jobs <out-tsv> <listings-tsv> <workflow file>...
+# The concluded-job ledger for the AXIS-CARRYING workflows, over the lookback:
 #
 #     <completed_at>\t<conclusion>\t<runs-on csv>\t<job>\t<workflow>\t<run id>
 #
-# ASK THE API FOR THE EVENT, NEVER FILTER A MIXED PAGE. `runs?per_page=100` is
-# the newest 100 runs of ALL events; on a repo this busy that is a few hours of
-# pull_request traffic and can hold zero scheduled runs. paiml/infra's dead-man's
-# switch reported a weekly lane DEAD — with its never-succeeded sentinel — off
-# exactly that page, for a lane whose last two scheduled runs both succeeded. It
-# reported an absence it had never looked for.
+# and, per workflow x event, what the listing held:
+#
+#     <workflow file>\t<event>\t<runs read>\t<total_count>\t<ok|truncated|unread>
+#
+# ASK THE API FOR WHAT YOU MEAN, NEVER FILTER A MIXED PAGE. `runs?per_page=100`
+# is the newest 100 runs of ALL events; on a repo this busy that is a few hours
+# of pull_request traffic. paiml/infra's dead-man's switch reported a weekly
+# lane DEAD off exactly that page. The repo-wide `runs?event=schedule` page this
+# replaced was the same defect one filter in: its composition depended on every
+# other workflow (PMAT-3337). So the listing names the WORKFLOW, the EVENT and
+# the WINDOW, and nothing on the page needs discarding except the sub-day part
+# of `created>=<date>`.
 #
 # `success` and `failure` both count as EXERCISED: a red nightly ran the silicon
 # and is reported red by its own lane. `cancelled`, `skipped` and a null
 # conclusion do not — nothing executed, which is the state this guard exists to
 # make visible. A queued job on a purged runner registration is `null` for ever,
 # and that is the ~14-day failure this whole lane is built around.
+#
+# A LISTING THAT ERRORS IS NOT AN EMPTY LISTING: rc 1, and the caller refuses.
 build_jobs() {
-    _bj_out="$1"
-    : > "$_bj_out"
-    _bj_cut=$(date -u -d "-${LOOKBACK_DAYS} days" +%s 2>/dev/null || printf '0')
+    _bj_out="$1"; _bj_lst="$2"; shift 2
+    : > "$_bj_out"; : > "$_bj_lst"
+    _bj_cut=$(( now - LOOKBACK_DAYS * 86400 ))
+    _bj_since="$(epoch_day "$_bj_cut")" || return 1
     _bj_runs="$(mktemp)" || return 1
-    # Per-event recency, because a MIXED count cannot tell "this event returned
-    # nothing recent" from "the other event carried it". Measured 2026-09-14:
-    # the same call gave 100 schedule runs all inside 30d on one host and a page
-    # with ZERO inside 30d on the runner, 47 minutes apart, same tree. The axes
-    # are carried by scheduled nightlies, so a schedule page with nothing recent
-    # is an unread window, not an unrun axis.
-    recent_schedule=0; recent_dispatch=0
-    for _bj_ev in schedule workflow_dispatch; do
-        _bj_ev_f="$(mktemp)" || return 1
-        gh api "repos/$REPO/actions/runs?event=${_bj_ev}&per_page=100" \
-            --jq '.workflow_runs[] | [(.id|tostring), .created_at, .name] | @tsv' \
-            2>/dev/null > "$_bj_ev_f" || true
-        _bj_ev_recent=0
-        while IFS="$TAB" read -r _ _bj_c _; do
-            [ -n "$_bj_c" ] || continue
-            _bj_t=$(iso_epoch "$_bj_c") || continue
-            [ "$_bj_t" -ge "$_bj_cut" ] && _bj_ev_recent=$((_bj_ev_recent + 1))
-        done < "$_bj_ev_f"
-        case "$_bj_ev" in
-            schedule)          recent_schedule=$_bj_ev_recent ;;
-            workflow_dispatch) recent_dispatch=$_bj_ev_recent ;;
-        esac
-        cat "$_bj_ev_f" >> "$_bj_runs"
-        rm -f "$_bj_ev_f"
+    for _bj_wf in "$@"; do
+        for _bj_ev in schedule workflow_dispatch; do
+            _bj_page=1; _bj_read=0; _bj_total=0; _bj_state=ok
+            while :; do
+                if [ "$_bj_page" -gt "$PAGE_CAP" ]; then
+                    [ "$_bj_read" -lt "$_bj_total" ] && _bj_state=truncated
+                    break
+                fi
+                _bj_pf="$(mktemp)" || return 1
+                api_calls=$((api_calls + 1))
+                if ! gh api "repos/$REPO/actions/workflows/${_bj_wf}/runs?event=${_bj_ev}&created=%3E%3D${_bj_since}&per_page=${PAGE_SIZE}&page=${_bj_page}" \
+                    --jq '"#total\t\(.total_count)", (.workflow_runs[] | [(.id|tostring), .created_at, .name] | @tsv)' \
+                    > "$_bj_pf" 2>/dev/null; then
+                    printf 'listing FAILED: %s %s page %s\n' "$_bj_wf" "$_bj_ev" "$_bj_page"
+                    rm -f "$_bj_pf" "$_bj_runs"
+                    return 1
+                fi
+                _bj_total="$(awk -F'\t' '$1 == "#total" { print $2; exit }' "$_bj_pf")"
+                case "$_bj_total" in ''|*[!0-9]*)
+                    printf 'listing UNREADABLE: %s %s page %s has no total_count\n' "$_bj_wf" "$_bj_ev" "$_bj_page"
+                    rm -f "$_bj_pf" "$_bj_runs"
+                    return 1 ;;
+                esac
+                _bj_n="$(awk -F'\t' '$1 != "#total" && NF >= 2' "$_bj_pf" | tee -a "$_bj_runs" | grep -c . || true)"
+                rm -f "$_bj_pf"
+                _bj_read=$((_bj_read + ${_bj_n:-0}))
+                if [ "${_bj_n:-0}" -lt "$PAGE_SIZE" ] || [ "$_bj_read" -ge "$_bj_total" ]; then break; fi
+                _bj_page=$((_bj_page + 1))
+            done
+            printf '%s\t%s\t%s\t%s\t%s\n' "$_bj_wf" "$_bj_ev" "$_bj_read" "$_bj_total" "$_bj_state" >> "$_bj_lst"
+        done
     done
-    # Newest first, so RUN_CAP truncates the OLD tail rather than a random one.
-    sort -u "$_bj_runs" | sort -t"$TAB" -k2,2r > "${_bj_runs}.s" && mv "${_bj_runs}.s" "$_bj_runs"
-    runs_seen=0; runs_scanned=0; runs_capped=0; runs_old=0
+    # One newest-first list across the axis workflows, deduplicated by run id.
+    sort -t"$TAB" -u -k1,1 "$_bj_runs" | sort -t"$TAB" -k2,2r > "${_bj_runs}.s" && mv "${_bj_runs}.s" "$_bj_runs"
+    runs_seen=0; runs_scanned=0; runs_old=0
     while IFS="$TAB" read -r _bj_id _bj_created _bj_name; do
         [ -n "$_bj_id" ] || continue
         runs_seen=$((runs_seen + 1))
         _bj_ts=$(iso_epoch "$_bj_created") || continue
         if [ "$_bj_ts" -lt "$_bj_cut" ]; then runs_old=$((runs_old + 1)); continue; fi
-        if [ "$runs_scanned" -ge "$RUN_CAP" ]; then runs_capped=$((runs_capped + 1)); continue; fi
         runs_scanned=$((runs_scanned + 1))
-        gh api "repos/$REPO/actions/runs/${_bj_id}/jobs?per_page=100" \
+        _bj_jf="$(mktemp)" || return 1
+        api_calls=$((api_calls + 1))
+        if gh api "repos/$REPO/actions/runs/${_bj_id}/jobs?per_page=100" \
             --jq '.jobs[] | select(.conclusion=="success" or .conclusion=="failure")
                           | [.completed_at, .conclusion, ([.labels[]] | join(",")), .name] | @tsv' \
-            2>/dev/null \
-            | awk -v wf="$_bj_name" -v rid="$_bj_id" -F'\t' 'NF >= 4 { print $0 "\t" wf "\t" rid }' \
-            >> "$_bj_out"
+            > "$_bj_jf" 2>/dev/null; then
+            awk -v wf="$_bj_name" -v rid="$_bj_id" -F'\t' 'NF >= 4 { print $0 "\t" wf "\t" rid }' \
+                "$_bj_jf" >> "$_bj_out"
+        else
+            # An unread run is a hole in the window, not a run without the job.
+            printf '%s\tjobs\t%s\t0\tunread\n' "$_bj_name" "$_bj_id" >> "$_bj_lst"
+        fi
+        rm -f "$_bj_jf"
     done < "$_bj_runs"
     rm -f "$_bj_runs"
+    return 0
+}
+
+# window_holes <listings-tsv> <workflow file>... -> one line naming every read of
+# these workflows that did not reach the lookback edge, or nothing.
+window_holes() {
+    _wh_lst="$1"; shift
+    for _wh_wf in "$@"; do
+        awk -F'\t' -v wf="$_wh_wf" -v cap="$PAGE_CAP" -v sz="$PAGE_SIZE" '
+            $1 == wf && $5 == "truncated" { printf "%s %s: read %s of %s in-window runs (page cap %sx%s); ", $1, $2, $3, $4, cap, sz }
+        ' "$_wh_lst"
+    done
+    # Unread job pages are keyed by the workflow's display name; the listing
+    # does not map file -> name, so any unread page is a hole for every axis.
+    awk -F'\t' '$5 == "unread" { n++ } END { if (n) printf "%s run(s) whose jobs could not be read; ", n }' "$_wh_lst"
+}
+
+# ── SELF-TEST ROWS: the whole script against a PATH-shimmed gh ──────────────
+# Hermetic: no network. The shim applies the script's own --jq to canned API
+# JSON, so the pages are API-shaped and the filters are exercised. Fixture
+# instants are offsets from ST_NOW, a FIXED epoch injected into the subject as
+# SILICON_NOW, so no row changes its verdict with the calendar.
+# SILICON_SELFTEST_SUBJECT runs the same rows against another copy of this
+# guard (e.g. origin/main's); SILICON_SELFTEST_NOW re-anchors the fixture for a
+# subject that reads the wall clock instead of SILICON_NOW.
+ST=""
+ST_NOW="${SILICON_SELFTEST_NOW:-1788998400}"   # 2026-09-10T00:00:00Z
+ST_REPO="shim/repo"
+
+st_write_shim() {
+    mkdir -p "$ST/bin" || return 1
+    cat > "$ST/bin/gh" <<'SHIM'
+#!/usr/bin/env bash
+# gh shim for check_silicon_coverage.sh --self-test. Unmodelled = exit 97, loud.
+set -u
+d="${SHIM_DIR:?SHIM_DIR unset}"
+printf '%s\n' "$*" >> "$d/calls.log"
+unmodelled() {
+    printf 'gh-shim: UNMODELLED %s\n' "$*" >> "$d/unmodelled.log"
+    printf 'gh-shim: UNMODELLED %s\n' "$*" >&2
+    exit 97
+}
+[ "${1:-}" = api ] || unmodelled "$@"
+shift
+path=""; expr="."
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --paginate) ;;
+        --jq) [ $# -ge 2 ] || unmodelled "--jq without an expression"; expr="$2"; shift ;;
+        -*) unmodelled "flag $1" ;;
+        *) [ -z "$path" ] || unmodelled "second path $1"; path="$1" ;;
+    esac
+    shift
+done
+f="$(awk -F'\t' -v p="$path" '$1 == p { print $2; exit }' "$d/routes.tsv")"
+[ -n "$f" ] || unmodelled "route $path"
+if [ "$f" = "@ERROR" ]; then
+    printf 'gh: Server Error (HTTP 502)\n' >&2
+    exit 1
+fi
+jq -r "$expr" "$d/$f"
+SHIM
+    chmod +x "$ST/bin/gh"
+}
+
+st_iso() { date -u -d "@$1" +%Y-%m-%dT%H:%M:%SZ; }  # bashrs disable-line=DET002
+st_route() { printf '%s\t%s\n' "$1" "$2" >> "$ST/u/routes.tsv"; }
+
+st_reset() {
+    rm -rf "${ST:?}/u"
+    mkdir -p "$ST/u/pages" "$ST/u/workflows" || return 1
+    : > "$ST/u/routes.tsv"; : > "$ST/u/runs.tsv"; : > "$ST/u/calls.log"
+    ST_PAGE_SIZE=100; ST_PAGE_CAP=10; ST_RUN_CAP=60; ST_ERROR=0
+    printf '%s\n' \
+        '# self-test policy' \
+        'cpu-axis   required  self-hosted,shimcpu  job:cpu-leg' \
+        'gpu-axis   required  self-hosted,shimgpu  job:gpu-leg*' > "$ST/u/policy.txt"
+    printf '%s\n' 'name: Sil' 'on:' '  schedule:' "    - cron: '0 0 * * *'" 'jobs:' \
+        '  cpu-leg:' '    runs-on: [self-hosted, shimcpu]' '    steps:' \
+        '      - name: gpu-leg a step name is not a job name' '        run: true' \
+        > "$ST/u/workflows/sil.yml"
+    printf '%s\n' 'name: Gpu' 'on:' '  workflow_dispatch:' 'jobs:' '  gpu:' \
+        '    name: gpu-leg (x86, shim)' '    runs-on: [self-hosted, shimgpu]' \
+        '    steps:' '      - run: true' > "$ST/u/workflows/gpu.yml"
+    printf '%s\n' 'name: Noise' 'on:' '  pull_request:' 'jobs:' '  lint:' \
+        '    runs-on: [self-hosted, shimcpu]' '    steps:' '      - run: true' \
+        > "$ST/u/workflows/noise.yml"
+    printf '%s' '{"runners":[{"name":"shim-runner-cpu","status":"online","labels":[{"name":"self-hosted"},{"name":"shimcpu"}]},{"name":"shim-runner-gpu","status":"online","labels":[{"name":"self-hosted"},{"name":"shimgpu"}]},{"name":"shim-offline","status":"offline","labels":[{"name":"x"}]}]}' \
+        > "$ST/u/pages/org-runners.json"
+    printf '%s' '{"runners":[]}' > "$ST/u/pages/repo-runners.json"
+    st_route "orgs/shimorg/actions/runners?per_page=100" pages/org-runners.json
+    st_route "repos/$ST_REPO/actions/runners?per_page=100" pages/repo-runners.json
+}
+
+# st_run <id> <workflow file> <event> <hours before ST_NOW> <on the repo-wide
+#        event page: 1|0> <job "name|conclusion|labels csv">...
+st_run() {
+    _sr_id="$1"; _sr_wf="$2"; _sr_ev="$3"; _sr_h="$4"; _sr_g="$5"; shift 5
+    _sr_epoch=$(( ST_NOW - _sr_h * 3600 ))
+    case "$_sr_wf" in sil.yml) _sr_name="Sil" ;; gpu.yml) _sr_name="Gpu" ;; *) _sr_name="Noise" ;; esac
+    printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$_sr_id" "$_sr_wf" "$_sr_ev" "$_sr_name" "$_sr_epoch" "$_sr_g" \
+        >> "$ST/u/runs.tsv"
+    _sr_done="$(st_iso $(( _sr_epoch + 1800 )))"
+    {
+        printf '{"jobs":['
+        _sr_sep=""
+        for _sr_j in "$@"; do
+            _sr_jn="${_sr_j%%|*}"; _sr_r="${_sr_j#*|}"
+            _sr_c="${_sr_r%%|*}"; _sr_l="${_sr_r#*|}"
+            [ "$_sr_c" = null ] || _sr_c="\"$_sr_c\""
+            _sr_lj="$(printf '%s' "$_sr_l" | sed 's/[^,][^,]*/"&"/g')"
+            printf '%s{"name":"%s","conclusion":%s,"completed_at":"%s","labels":[%s]}' \
+                "$_sr_sep" "$_sr_jn" "$_sr_c" "$_sr_done" "$_sr_lj"
+            _sr_sep=","
+        done
+        printf ']}\n'
+    } > "$ST/u/pages/jobs-$_sr_id.json"
+    st_route "repos/$ST_REPO/actions/runs/$_sr_id/jobs?per_page=100" "pages/jobs-$_sr_id.json"
+}
+
+# st_page <runs subset tsv> <total> <out json>
+st_page() {
+    {
+        printf '{"total_count":%s,"workflow_runs":[' "$2"
+        _sp_sep=""
+        while IFS="$TAB" read -r _sp_id _sp_wf _sp_ev _sp_name _sp_epoch _; do
+            [ -n "$_sp_id" ] || continue
+            printf '%s{"id":%s,"created_at":"%s","name":"%s","event":"%s"}' \
+                "$_sp_sep" "$_sp_id" "$(st_iso "$_sp_epoch")" "$_sp_name" "$_sp_ev"
+            _sp_sep=","
+        done < "$1"
+        printf ']}\n'
+    } > "$3"
+}
+
+# st_finish: serve every listing either guard generation asks for.
+st_finish() {
+    _sf_since="$(epoch_day $(( ST_NOW - 30 * 86400 )))"
+    _sf_since_e="$(date -u -d "$_sf_since" +%s)"  # bashrs disable-line=DET002
+    for _sf_ev in schedule workflow_dispatch; do
+        _sf_key="repos/$ST_REPO/actions/runs?event=${_sf_ev}&per_page=100"
+        if [ "$ST_ERROR" = 1 ]; then st_route "$_sf_key" @ERROR; continue; fi
+        awk -F'\t' -v ev="$_sf_ev" '$3 == ev && $6 == 1' "$ST/u/runs.tsv" \
+            | sort -t"$TAB" -k5,5nr > "$ST/u/l.tsv"
+        st_page "$ST/u/l.tsv" "$(grep -c . "$ST/u/l.tsv")" "$ST/u/pages/global-$_sf_ev.json"
+        st_route "$_sf_key" "pages/global-$_sf_ev.json"
+    done
+    for _sf_wf in sil.yml gpu.yml noise.yml; do
+        for _sf_ev in schedule workflow_dispatch; do
+            awk -F'\t' -v wf="$_sf_wf" -v ev="$_sf_ev" -v s="$_sf_since_e" \
+                '$2 == wf && $3 == ev && $5 >= s' "$ST/u/runs.tsv" \
+                | sort -t"$TAB" -k5,5nr > "$ST/u/l.tsv"
+            _sf_total="$(grep -c . "$ST/u/l.tsv")"
+            _sf_p=1
+            while :; do
+                _sf_key="repos/$ST_REPO/actions/workflows/${_sf_wf}/runs?event=${_sf_ev}&created=%3E%3D${_sf_since}&per_page=${ST_PAGE_SIZE}&page=${_sf_p}"
+                if [ "$ST_ERROR" = 1 ]; then
+                    st_route "$_sf_key" @ERROR
+                else
+                    _sf_from=$(( (_sf_p - 1) * ST_PAGE_SIZE + 1 )); _sf_to=$(( _sf_p * ST_PAGE_SIZE ))
+                    sed -n "${_sf_from},${_sf_to}p" "$ST/u/l.tsv" > "$ST/u/p.tsv"
+                    st_page "$ST/u/p.tsv" "$_sf_total" "$ST/u/pages/wf-$_sf_wf-$_sf_ev-$_sf_p.json"
+                    st_route "$_sf_key" "pages/wf-$_sf_wf-$_sf_ev-$_sf_p.json"
+                fi
+                [ $(( _sf_p * ST_PAGE_SIZE )) -ge "$_sf_total" ] && break
+                _sf_p=$((_sf_p + 1))
+            done
+        done
+    done
+}
+
+# st_check <row> <want rc> <want output line, ERE>
+st_check() {
+    _sc_row="$1"; _sc_rc="$2"; _sc_re="$3"
+    _sc_out="$ST/$_sc_row.out"
+    env PATH="$ST/bin:$PATH" SHIM_DIR="$ST/u" ORG=shimorg GITHUB_REPOSITORY="$ST_REPO" \
+        GITHUB_STEP_SUMMARY=/dev/null SILICON_POLICY="$ST/u/policy.txt" \
+        SILICON_WORKFLOWS_DIR="$ST/u/workflows" SILICON_NOW="$ST_NOW" \
+        SILICON_LOOKBACK_DAYS=30 SILICON_STALE_DAYS=3 \
+        SILICON_PAGE_SIZE="$ST_PAGE_SIZE" SILICON_PAGE_CAP="$ST_PAGE_CAP" \
+        SILICON_RUN_CAP="$ST_RUN_CAP" \
+        bash "$ST_SUBJECT" > "$_sc_out" 2>&1
+    _sc_got=$?
+    _sc_why=""
+    [ "$_sc_got" = "$_sc_rc" ] || _sc_why="rc=$_sc_got want $_sc_rc; "
+    grep -Eq -- "$_sc_re" "$_sc_out" || _sc_why="${_sc_why}no line /$_sc_re/; "
+    [ -s "$ST/u/calls.log" ] || _sc_why="${_sc_why}the gh shim was never called; "
+    if [ -s "$ST/u/unmodelled.log" ]; then _sc_why="${_sc_why}UNMODELLED gh call(s); "; fi
+    if [ -n "$_sc_why" ]; then
+        printf '  FAIL %-14s %s\n' "$_sc_row" "$_sc_why"
+        sed 's/^/       | /' "$_sc_out"
+        [ -s "$ST/u/unmodelled.log" ] && sed 's/^/       ! /' "$ST/u/unmodelled.log"
+        return 1
+    fi
+    printf '  ok   %-14s rc=%s  %s\n' "$_sc_row" "$_sc_got" \
+        "$(grep -Em1 -- "$_sc_re" "$_sc_out" | sed 's/^  *//')"
+    return 0
+}
+
+CPU_JOB="cpu-leg|success|self-hosted,shimcpu"
+GPU_JOB="gpu-leg (x86, shim)|success|self-hosted,shimgpu"
+NOISE_JOB="lint|success|self-hosted,shimcpu"
+
+selftest_rows() {
+    command -v jq >/dev/null 2>&1 || {
+        printf 'INSTRUMENT BROKEN — the gh shim needs jq to apply the guard-s --jq filters.\n'
+        return 2
+    }
+    ST_SUBJECT="${SILICON_SELFTEST_SUBJECT:-$SELF}"
+    ST="$(mktemp -d)" || return 2
+    st_write_shim || { rm -rf "${ST:?}"; return 2; }
+    printf 'gh-shim rows: subject %s, fixture now %s\n' "$ST_SUBJECT" "$(st_iso "$ST_NOW")"
+    _rows=0; _rows_bad=0
+
+    # shim: the canned fleet is what the guard saw (2 online, 1 offline ignored).
+    st_reset; st_run 9001 sil.yml schedule 12 1 "$CPU_JOB"
+    st_run 9101 gpu.yml schedule 20 1 "$GPU_JOB"; st_finish
+    _rows=$((_rows + 1))
+    st_check shim 0 '^online runners visible \(org \+ this repo\): 2$' || _rows_bad=$((_rows_bad + 1))
+
+    # derive: gpu-axis is carried by gpu.yml through its `name:`, not its id,
+    # and a STEP named gpu-leg in sil.yml does not make sil.yml a carrier.
+    _rows=$((_rows + 1))
+    st_check derive 0 '^  gpu-axis +gpu\.yml$' || _rows_bad=$((_rows_bad + 1))
+
+    # (a) more in-window runs than a global cap, carrying run beyond it.
+    st_reset; ST_RUN_CAP=3
+    for _h in 2 4 6 8; do st_run "900$_h" sil.yml schedule "$_h" 1 "$CPU_JOB"; done
+    st_run 9201 noise.yml schedule 1 1 "$NOISE_JOB"; st_run 9203 noise.yml schedule 3 1 "$NOISE_JOB"
+    st_run 9101 gpu.yml schedule 36 1 "$GPU_JOB"; st_finish
+    _rows=$((_rows + 1))
+    st_check a-beyond-cap 0 '^  ok +gpu-axis ' || _rows_bad=$((_rows_bad + 1))
+
+    # (b) repo-wide schedule page holds nothing recent; the workflow listing does.
+    st_reset
+    st_run 9001 sil.yml schedule 12 0 "$CPU_JOB"; st_run 9101 gpu.yml schedule 20 0 "$GPU_JOB"
+    st_run 9301 sil.yml schedule 960 1 "$CPU_JOB"
+    st_run 9401 noise.yml workflow_dispatch 5 1 "$NOISE_JOB"; st_finish
+    _rows=$((_rows + 1))
+    st_check b-empty-event 0 '^  ok +gpu-axis ' || _rows_bad=$((_rows_bad + 1))
+
+    # (c) the axis workflow truly has no in-window run: a true negative.
+    st_reset
+    st_run 9001 sil.yml schedule 12 1 "$CPU_JOB"; st_run 9201 noise.yml schedule 2 1 "$NOISE_JOB"
+    st_run 9102 gpu.yml schedule 960 1 "$GPU_JOB"; st_finish
+    _rows=$((_rows + 1))
+    st_check c-true-negative 1 '^  UNCOVERED +gpu-axis .*shim-runner-gpu CAN serve' \
+        || _rows_bad=$((_rows_bad + 1))
+
+    # (d) page cap reached before the lookback edge; not found in what was read.
+    st_reset; ST_PAGE_SIZE=2; ST_PAGE_CAP=1
+    st_run 9001 sil.yml schedule 12 1 "$CPU_JOB"
+    for _h in 6 30 54; do
+        st_run "91$_h" gpu.yml schedule "$_h" 1 "gpu-leg (x86, shim)|cancelled|self-hosted,shimgpu"
+    done
+    st_finish
+    _rows=$((_rows + 1))
+    st_check d-truncated 2 '^  TRUNCATED +gpu-axis .*read 2 of 3' || _rows_bad=$((_rows_bad + 1))
+
+    # (e) the API errors: refuse, exactly as before.
+    st_reset; ST_ERROR=1
+    st_run 9001 sil.yml schedule 12 1 "$CPU_JOB"; st_run 9101 gpu.yml schedule 20 1 "$GPU_JOB"
+    st_finish
+    _rows=$((_rows + 1))
+    st_check e-api-error 2 '^NO-GO' || _rows_bad=$((_rows_bad + 1))
+
+    rm -rf "${ST:?}"
+    if [ "$_rows_bad" -gt 0 ]; then
+        printf 'INSTRUMENT BROKEN — %s of %s gh-shim row(s) did not classify as specified.\n' \
+            "$_rows_bad" "$_rows"
+        return 2
+    fi
+    printf 'self-test: %s gh-shim rows, every verdict as specified, no unmodelled call\n' "$_rows"
     return 0
 }
 
@@ -282,7 +658,8 @@ FIXTURE=""
 case "${1:-}" in
     --self-test)
         printf -- '-- instrument self-test --\n'
-        selftest; exit $? ;;
+        selftest || exit $?
+        selftest_rows; exit $? ;;
     --fixture)
         FIXTURE="${2:-}"
         [ -d "$FIXTURE" ] || { printf 'usage: %s --fixture <dir>\n' "$0"; exit 2; }
@@ -294,7 +671,7 @@ esac
 
 printf '== silicon coverage ==\n'
 
-RUNNERS=""; JOBS=""
+RUNNERS=""; JOBS=""; LISTINGS=""; AXIS_WF=""
 if [ "$MODE" = "fixture" ]; then
     POLICY="$FIXTURE/policy.txt"
     RUNNERS="$FIXTURE/runners.tsv"
@@ -310,12 +687,21 @@ printf 'policy: %s\n\n' "$POLICY"
 printf -- '-- instrument self-test --\n'
 selftest || exit 2
 
+# The ONLY wall-clock read in this guard; everything else is an API timestamp.
+# Freshness is a distance from now, so this read is the measurement, not an
+# impurity to design away. SILICON_NOW pins it for the self-test's rows.
+now="${SILICON_NOW:-}"
+if [ -z "$now" ]; then
+    now=$(date -u +%s)  # bashrs disable-line=DET002
+fi
+
 # ── the runners: org-scoped AND repo-scoped ─────────────────────────────────
 if [ "$MODE" = "live" ]; then
-    RUNNERS="$(mktemp)"; JOBS="$(mktemp)"
-    trap 'rm -f "$RUNNERS" "$JOBS"' EXIT
+    RUNNERS="$(mktemp)"; JOBS="$(mktemp)"; LISTINGS="$(mktemp)"; AXIS_WF="$(mktemp)"
+    trap 'rm -f "$RUNNERS" "$JOBS" "$LISTINGS" "$AXIS_WF"' EXIT
     : > "$RUNNERS"
     for src in "orgs/$ORG/actions/runners" "repos/$REPO/actions/runners"; do
+        api_calls=$((api_calls + 1))
         gh api --paginate "$src?per_page=100" \
             --jq '.runners[] | select(.status=="online") | (.name) + "\t" + ([.labels[].name] | join(","))' \
             2>/dev/null >> "$RUNNERS" || true
@@ -334,23 +720,58 @@ if [ "${n_runners:-0}" -eq 0 ]; then
     exit 2
 fi
 
-# ── the runs: what actually EXECUTED ────────────────────────────────────────
-runs_seen=0; runs_scanned=0; runs_capped=0; runs_old=0
+# ── which workflows carry the axes (derived from the tree) ──────────────────
 if [ "$MODE" = "live" ]; then
-    build_jobs "$JOBS" || { printf 'NO-GO: could not build the job ledger.\n'; exit 2; }
+    printf -- '\n-- axis workflows (derived from %s) --\n' "$WORKFLOWS_DIR"
+    : > "$AXIS_WF"
+    while IFS= read -r line; do
+        line="${line%%#*}"
+        set -- $line
+        [ $# -ge 3 ] || continue
+        _pw_glob='*'
+        case "${4:-}" in job:*) _pw_glob="${4#job:}" ;; '') ;; *) continue ;; esac
+        _pw_wfs="$(axis_workflows "$WORKFLOWS_DIR" "$_pw_glob")"
+        if [ -z "$_pw_wfs" ]; then
+            printf '  %-20s (no workflow declares a job matching %s)\n' "$1" "$_pw_glob"
+            continue
+        fi
+        printf '  %-20s %s\n' "$1" "$(printf '%s' "$_pw_wfs" | tr '\n' ' ' | sed 's/ $//')"
+        printf '%s\n' "$_pw_wfs" | while IFS= read -r _pw_wf; do
+            printf '%s\t%s\n' "$1" "$_pw_wf"
+        done >> "$AXIS_WF"
+    done < "$POLICY"
+fi
+
+# ── the runs: what actually EXECUTED ────────────────────────────────────────
+runs_seen=0; runs_scanned=0; runs_old=0
+if [ "$MODE" = "live" ]; then
+    # Word-splitting on purpose: workflow file names carry no whitespace.
+    # shellcheck disable=SC2046
+    build_jobs "$JOBS" "$LISTINGS" $(cut -f2 "$AXIS_WF" | sort -u) \
+        || { printf 'NO-GO: could not build the job ledger — a listing errored, and an\n'
+             printf 'unread listing is not an empty one.\n'; exit 2; }
 fi
 n_jobs="$(grep -cve '^[[:space:]]*$' "$JOBS" || true)"
 
 printf -- '\n-- runs --\n'
 if [ "$MODE" = "live" ]; then
-    printf 'scheduled+dispatched runs listed: %s (within %sd: %s scanned, %s older, %s over the %s cap)\n' \
-        "$runs_seen" "$LOOKBACK_DAYS" "$runs_scanned" "$runs_old" "$runs_capped" "$RUN_CAP"
+    while IFS="$TAB" read -r _l_wf _l_ev _l_read _l_total _l_state; do
+        [ -n "$_l_wf" ] || continue
+        printf 'listing %-24s %-18s %s of %s in-window run(s) read  %s\n' \
+            "$_l_wf" "$_l_ev" "$_l_read" "$_l_total" "$_l_state"
+    done < "$LISTINGS"
+    printf 'axis-workflow runs listed: %s (within %sd: %s scanned, %s older); page cap %sx%s\n' \
+        "$runs_seen" "$LOOKBACK_DAYS" "$runs_scanned" "$runs_old" "$PAGE_CAP" "$PAGE_SIZE"
 fi
 printf 'concluded jobs in the ledger: %s\n' "${n_jobs:-0}"
 # Probe 2b: the positive control on the job ledger. THE DENOMINATOR AGAIN.
 # "no axis has run" and "the ledger is empty because nothing was read" are the
 # same output, and one of them is a fleet-wide outage while the other is a
 # broken guard. Refusing is the only honest answer.
+#
+# (Probe 2c, "the repo-wide schedule page held nothing recent", is gone with the
+# page it guarded: evidence is now one listing per axis workflow, and a listing
+# that errors refuses inside build_jobs — PMAT-3337.)
 if [ "${n_jobs:-0}" -eq 0 ]; then
     printf 'NO-GO: the job ledger is EMPTY. Every axis would read UNCOVERED, which is\n'
     printf 'indistinguishable from a guard that read nothing at all. Zero over zero is\n'
@@ -359,31 +780,10 @@ if [ "${n_jobs:-0}" -eq 0 ]; then
     exit 2
 fi
 
-# Probe 2c: the SAME refusal, one denominator further in. A non-empty ledger is
-# not per-axis evidence: on 2026-09-14 the runner's listing held 59 concluded
-# jobs -- enough to clear Probe 2b -- while containing ZERO scheduled runs inside
-# the window, so both REQUIRED axes read UNCOVERED and `gate` went red on a
-# nightly that had in fact run 7 h earlier. Every required axis here is carried
-# by a scheduled workflow; a schedule page with nothing inside the lookback is a
-# window this guard failed to read, and an unread window is Unknown, never Fail.
-if [ "$MODE" = "live" ] && [ "${recent_schedule:-0}" -eq 0 ]; then
-    printf 'NO-GO: the run listing returned NO scheduled run inside the %sd lookback\n' "$LOOKBACK_DAYS"
-    printf '(schedule=%s dispatch=%s recent). Every REQUIRED axis is carried by a\n' \
-        "${recent_schedule:-0}" "${recent_dispatch:-0}"
-    printf 'scheduled workflow, so each would read UNCOVERED off a window this guard\n'
-    printf 'never read. That is the Probe-2b defect one denominator in: an absence of\n'
-    printf 'evidence reported as evidence of absence. Unknown is the honest verdict.\n'
-    exit 2
-fi
-
 # ── the axes ────────────────────────────────────────────────────────────────
 printf -- '\n-- axes --\n'
-# The ONLY wall-clock read in this guard; everything else is an API timestamp.
-# Freshness is a distance from now, so this read is the measurement, not an
-# impurity to design away (the same call is disable-lined in ci_target_watch.sh).
-now=$(date -u +%s)  # bashrs disable-line=DET002
 axes=0; required=0; covered=0; uncovered=0; stale=0; missing=0
-deferred=0; promotable=0; ready=0
+deferred=0; promotable=0; ready=0; unknown=0
 fail=0
 while IFS= read -r line; do
     line="${line%%#*}"
@@ -437,6 +837,15 @@ while IFS= read -r line; do
         [ "$age" -ge 0 ] && [ "$age" -le "$window" ] && fresh=1
     fi
 
+    # (c) Was the window READ to its edge? A non-fresh axis whose workflow
+    # listing stopped at the page cap is unknown, not absent.
+    holes=""
+    if [ "$MODE" = "live" ] && [ "$fresh" -eq 0 ]; then
+        # shellcheck disable=SC2046
+        holes="$(window_holes "$LISTINGS" $(awk -F'\t' -v a="$axis" '$1 == a { print $2 }' "$AXIS_WF"))"
+        holes="${holes%; }"
+    fi
+
     case "$status" in
         required)
             required=$((required + 1))
@@ -444,6 +853,10 @@ while IFS= read -r line; do
                 covered=$((covered + 1))
                 printf '  ok        %-20s %s %s %sd ago — %s / %s%s\n' \
                     "$axis" "$newest_concl" "$newest_iso" "$age" "$newest_wf" "$newest_job" "$jobnote"
+            elif [ -n "$holes" ]; then
+                unknown=$((unknown + 1))
+                printf '  TRUNCATED %-20s REQUIRED: unknown — no fresh job named %s in what was read: %s\n' \
+                    "$axis" "$jobglob" "$holes"
             elif [ "${n_runs:-0}" -gt 0 ]; then
                 stale=$((stale + 1)); fail=1
                 printf '  STALE     %-20s REQUIRED: last carried %sd ago (window %sd) — %s / %s\n' \
@@ -464,6 +877,10 @@ while IFS= read -r line; do
                 promotable=$((promotable + 1)); fail=1
                 printf '  PROMOTE   %-20s marked %s, but a job CARRIED it %sd ago — %s / %s\n' \
                     "$axis" "$status" "$age" "$newest_wf" "$newest_job"
+            elif [ -n "$holes" ]; then
+                unknown=$((unknown + 1))
+                printf '  TRUNCATED %-20s %s: unknown — a PROMOTE could hide in the unread part: %s\n' \
+                    "$axis" "$status" "$holes"
             elif [ -n "$server" ]; then
                 ready=$((ready + 1))
                 printf '  ready     %-20s %s — %s can serve it; nothing has run on it yet\n' \
@@ -480,11 +897,14 @@ while IFS= read -r line; do
 done < "$POLICY"
 
 printf -- '\n-- denominators --\n'
-printf 'axes declared: %s  (required %s: covered %s, STALE %s, UNCOVERED %s, MISSING %s;' \
-    "$axes" "$required" "$covered" "$stale" "$uncovered" "$missing"
+printf 'axes declared: %s  (required %s: covered %s, STALE %s, UNCOVERED %s, MISSING %s, TRUNCATED %s;' \
+    "$axes" "$required" "$covered" "$stale" "$uncovered" "$missing" "$unknown"
 printf ' deferred %s: PROMOTABLE %s, ready %s)\n' "$deferred" "$promotable" "$ready"
 printf 'evidence: %s online runner(s), %s concluded job(s), floor %sd\n' \
     "$n_runners" "$n_jobs" "$STALE_DAYS"
+if [ "$MODE" = "live" ]; then
+    printf 'api calls: %s\n' "$api_calls"
+fi
 
 # THE DENOMINATOR. A policy that parsed nothing must not read as clean.
 if [ "$axes" -eq 0 ]; then
@@ -505,6 +925,9 @@ fi
     if [ "$ready" -gt 0 ]; then
         printf -- '- %s deferred axis/axes have a runner but no run yet\n' "$ready"
     fi
+    if [ "$unknown" -gt 0 ]; then
+        printf -- '- **%s axis/axes UNKNOWN: the page cap was reached before the lookback edge**\n' "$unknown"
+    fi
     printf -- '- runners inspected: %s; concluded jobs inspected: %s\n' "$n_runners" "$n_jobs"
 } >> "$SUMMARY"
 
@@ -519,6 +942,12 @@ if [ "$fail" -ne 0 ]; then
     printf 'PROMOTE   — a deferred axis is running: the blocker is gone and the only\n'
     printf '            thing left is the line in .github/silicon-coverage.txt.\n'
     exit 1
+fi
+if [ "$unknown" -gt 0 ]; then
+    printf '\nNO-GO: %s axis/axes could not be judged. Each workflow listing that carries\n' "$unknown"
+    printf 'them stopped at the page cap before the %sd lookback edge, and the job was\n' "$LOOKBACK_DAYS"
+    printf 'not in the part that was read. An unread window is Unknown, never UNCOVERED.\n'
+    exit 2
 fi
 printf '\nOK: every required axis has RUN inside its cadence window, and no deferred\n'
 printf 'axis is running behind its own ledger line.\n'
