@@ -3,16 +3,22 @@
 
 Usage:
   compare_layerwise.py LABEL LLAMA_DUMP_DIR LLAMA_PER_TOKEN_BIN APR_EMBD_DIR APR_LOGITS_BIN \
-                       POSITIONS LAYER_TYPES_TSV MODEL_GGUF GGUF_PY_DIR
+                       POSITIONS LAYER_TYPES_TSV MODEL_GGUF GGUF_PY_DIR [APR_OBS_DIR]
 
 Per row: cosine, max |apr - llama|, relative L2 ||apr - llama|| / ||llama||.
-apr side reachable through realizar's public API: the token-embedding row (APR_EMBD_DIR/pos<P>/embd.f32)
-and the logits row (APRRAWLG file). l_out-<il> and result_norm are NOT reachable without editing
-crates/, so those rows carry status U with only llama's norm.
+Without APR_OBS_DIR (the first layerwise pass): the apr side is the token-embedding row
+(APR_EMBD_DIR/pos<P>/embd.f32) and the logits row (APRRAWLG file); l_out-<il> and result_norm carry
+status U with only llama's norm.
+With APR_OBS_DIR (the layer-observer pass): the tensor list is every name in LLAMA_DUMP_DIR/manifest.tsv
+at that position, in dump order, and the apr side is APR_OBS_DIR/pos<P>/<name>.f32 as written by
+qwen35_layer_obs (forward_single_qwen35_observed). A name apr did not write is status U.
+The DeltaNet state tensors (state_predelta, new_state) are also scored with apr's [h][j][i] memory order
+transposed to [h][i][j]; both are reported, in the note.
 Extra columns on the embd row: the same row dequantized by gguf-py (a third Q6_K implementation).
 Self-check: the llama callback's result_output at pos P must equal row P of LLAMA_PER_TOKEN_BIN.
 No threshold anywhere. Output TSV on stdout.
 """
+import os
 import struct
 import sys
 
@@ -20,6 +26,7 @@ import numpy as np
 
 HDR = ["label", "pos", "token_id", "tensor", "layer", "layer_type", "llama_l2", "apr_l2",
        "cos", "max_abs_diff", "rel_l2", "status", "note"]
+STATE_NAMES = ("state_predelta", "new_state")
 
 
 def read_f32(path):
@@ -38,8 +45,10 @@ def read_rawlogits(path):
 def metrics(ref, sub):
     d = sub - ref
     nr = float(np.linalg.norm(ref))
-    cos = float(np.dot(ref, sub) / (nr * float(np.linalg.norm(sub))))
-    return cos, float(np.max(np.abs(d))), float(np.linalg.norm(d)) / nr
+    ns = float(np.linalg.norm(sub))
+    cos = float(np.dot(ref, sub) / (nr * ns)) if nr > 0 and ns > 0 else float("nan")
+    rel = float(np.linalg.norm(d)) / nr if nr > 0 else float("nan")
+    return cos, float(np.max(np.abs(d))), rel
 
 
 def fmt(x):
@@ -68,37 +77,69 @@ def layer_types(path):
         return {int(p[0]): p[1] for p in (ln.rstrip("\n").split("\t") for ln in f)}
 
 
-def tensor_list(n_layer):
-    return ["model.input_embed"] + ["l_out-%d" % i for i in range(n_layer)] + ["result_norm", "result_output"]
+def layer_of(tname):
+    head, _, tail = tname.rpartition("-")
+    return int(tail) if head and tail.isdigit() else -1
 
 
-def apr_vector(tname, pos, apr_embd_dir, apr_rows):
-    if tname == "model.input_embed":
-        return read_f32("%s/pos%d/embd.f32" % (apr_embd_dir, pos))
+def tensor_list(n_layer, ldir, pos, obs_dir):
+    if obs_dir is None:
+        return ["model.input_embed"] + ["l_out-%d" % i for i in range(n_layer)] + ["result_norm", "result_output"]
+    names = []
+    with open(os.path.join(ldir, "manifest.tsv")) as f:
+        next(f)
+        for ln in f:
+            p = ln.rstrip("\n").split("\t")
+            if int(p[2]) == pos:
+                names.append(p[0])
+    return names
+
+
+def apr_vector(tname, pos, apr_embd_dir, apr_rows, obs_dir):
     if tname == "result_output":
         return apr_rows[pos].astype(np.float64)
+    if obs_dir is not None:
+        path = "%s/pos%d/%s.f32" % (obs_dir, pos, tname)
+        return read_f32(path) if os.path.exists(path) else None
+    if tname == "model.input_embed":
+        return read_f32("%s/pos%d/embd.f32" % (apr_embd_dir, pos))
     return None
 
 
+def embd_note(gg, ids, pos, ref, sub):
+    qname, rows = gg
+    g = rows[int(ids[pos])]
+    gc, gm, gr = metrics(ref, g)
+    ac, am, ar = metrics(g, sub)
+    return "token_embd=%s; ggufpy-vs-llama cos=%.9f max_abs=%.3e rel_l2=%.3e; apr-vs-ggufpy cos=%.9f max_abs=%.3e rel_l2=%.3e" % (
+        qname, gc, gm, gr, ac, am, ar)
+
+
+def state_note(ref, sub):
+    n = int(round((ref.size / 16) ** 0.5))
+    if n * n * 16 != ref.size or sub.size != ref.size:
+        return "state size %d not 16*n*n" % ref.size
+    t = sub.reshape(16, n, n).transpose(0, 2, 1).reshape(-1)
+    c, m, r = metrics(ref, t)
+    return "apr [h][j][i] transposed to [h][i][j]: cos=%.6f max_abs=%.6e rel_l2=%.6f" % (c, m, r)
+
+
 def row_for(ctx, pos, tname):
-    label, ldir, lt, apr_embd_dir, apr_rows, ids, gg = ctx
+    label, ldir, lt, apr_embd_dir, apr_rows, ids, gg, obs_dir = ctx
     ref = read_f32("%s/pos%d/%s.f32" % (ldir, pos, tname))
-    layer = int(tname.rsplit("-", 1)[1]) if tname.startswith("l_out-") else -1
-    ltype = lt.get(layer, "-")
-    sub = apr_vector(tname, pos, apr_embd_dir, apr_rows)
-    base = [label, pos, int(ids[pos]), tname, layer, ltype, float(np.linalg.norm(ref))]
-    if sub is None:
-        emit(base + ["U", "U", "U", "U", "U", "apr hidden state not reachable via public API"])
+    layer = layer_of(tname)
+    base = [label, pos, int(ids[pos]), tname, layer, lt.get(layer, "-"), float(np.linalg.norm(ref))]
+    sub = apr_vector(tname, pos, apr_embd_dir, apr_rows, obs_dir)
+    if sub is None or sub.size != ref.size:
+        why = "apr hidden state not reachable via public API" if sub is None else "size apr %d vs llama %d" % (sub.size, ref.size)
+        emit(base + ["U", "U", "U", "U", "U", why])
         return
     cos, mx, rel = metrics(ref, sub)
     note = ""
     if tname == "model.input_embed":
-        qname, rows = gg
-        g = rows[int(ids[pos])]
-        gc, gm, gr = metrics(ref, g)
-        ac, am, ar = metrics(g, sub)
-        note = "token_embd=%s; ggufpy-vs-llama cos=%.9f max_abs=%.3e rel_l2=%.3e; apr-vs-ggufpy cos=%.9f max_abs=%.3e rel_l2=%.3e" % (
-            qname, gc, gm, gr, ac, am, ar)
+        note = embd_note(gg, ids, pos, ref, sub)
+    elif tname.rpartition("-")[0] in STATE_NAMES:
+        note = state_note(ref, sub)
     emit(base + [float(np.linalg.norm(sub)), cos, mx, rel, "measured", note])
 
 
@@ -109,21 +150,35 @@ def self_check(ldir, pos, ref_rows):
     return same
 
 
-def main():
-    label, ldir, lbin, apr_embd_dir, apr_bin, positions, lt_path, model, gguf_py = sys.argv[1:10]
-    pos_list = [int(p) for p in positions.split(",")]
+def load_logits(lbin, apr_bin):
     lids, lrows = read_rawlogits(lbin)
     aids, arows = read_rawlogits(apr_bin)
     if not np.array_equal(lids, aids):
         print("token ids differ between llama and apr files", file=sys.stderr)
+        return None
+    return lids, lrows, arows
+
+
+def main():
+    label, ldir, lbin, apr_embd_dir, apr_bin, positions, lt_path, model, gguf_py = sys.argv[1:10]
+    obs_dir = sys.argv[10] if len(sys.argv) > 10 else None
+    pos_list = [int(p) for p in positions.split(",")]
+    loaded = load_logits(lbin, apr_bin)
+    if loaded is None:
         return 2
+    lids, lrows, arows = loaded
     lt = layer_types(lt_path)
     gg = gguf_embd_rows(model, gguf_py, sorted({int(lids[p]) for p in pos_list}))
-    ctx = (label, ldir, lt, apr_embd_dir, arows, lids, gg)
+    ctx = (label, ldir, lt, apr_embd_dir, arows, lids, gg, obs_dir)
+    return emit_all(ctx, pos_list, lrows)
+
+
+def emit_all(ctx, pos_list, lrows):
+    ldir, lt, obs_dir = ctx[1], ctx[2], ctx[7]
     emit(HDR)
     ok = all([self_check(ldir, p, lrows) for p in pos_list])
     for p in pos_list:
-        for tname in tensor_list(len(lt)):
+        for tname in tensor_list(len(lt), ldir, p, obs_dir):
             row_for(ctx, p, tname)
     return 0 if ok else 3
 
