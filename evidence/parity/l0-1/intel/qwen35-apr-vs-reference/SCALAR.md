@@ -121,3 +121,55 @@ differences. The parity row stays [U].
 - [U] A llama build with SSE2 silu disabled (e.g. `-DCMAKE_C_FLAGS=-mno-sse2` is not an x86-64 ABI option; untested). Command to try: none settled.
 - [U] Sub-layer dumps for p1-p3 (logits only here): `run_scalar_ref.sh` section 2 with p1-p3 positions.
 - [U] Parity row (no threshold set).
+
+## Iterations (lane B slot 3, 2026-09-15 23:05-23:20 UTC; scripts `scalar/run_iteration.sh`, outputs `scalar/iter/<label>/`)
+
+Each iteration ports ONE departing op into the `=scalar` path, re-checks the switch-OFF invariance and `=1`, then re-walks
+every dumped point (`scalar/walk_points.py`) to find the next first departure. Code: obs-3091 `b4c736668` (port + fixtures),
+`b84e694eb` (silu wiring), `100bd3482` (norms + delta rule), `7a451e3a1` (swiglu). No threshold is judged anywhere.
+
+| # | op ported | bit-exact fixtures | first departure after | class | max rel L2 after (p4 / orig) | argmax mismatches after (orig / p4) |
+|---|---|---|---|---|---|---|
+| 0 | (baseline, `543da1188`) | 10 (quantized dots) | p4 pos0 `conv_output_silu-0` | float-approx | 0.1727 / 0.0988 | 2 of 78 / 3 of 82 |
+| 1 | `ggml_vec_silu_f32` SSE2 (`ggml_v_expf`+`ggml_v_silu` lanes, libm tail) at `conv_output_silu` and `build_norm_gated` | 84 of 84 (RED 53/84 with libm stubs) | p4 pos0 `q_conv_predelta-0` (648/2048) | float-order | 0.1495 / 0.0925 | 2 of 78 / 2 of 82 |
+| 2 | `build_gdn_l2_norm` + gated RMSNorm in ggml order (rms_norm double sum, `mean=(float)(sum/n)`, then `*1/sqrtf(n)`) | (same 84; norms proven in-engine) | p4 pos0 `attn_output-0` (545/2048) | float-order | 0.1354 / 0.0975 | 4 of 78 / 2 of 82 |
+| 3 | delta rule dots through `ggml_vec_dot_f32`'s double accumulator | (same 84) | p4 pos0 `ffn_out-0` (410/1024) | float-order | 0.1007 / 0.0971 | 1 of 78 / 3 of 82 |
+| 4 | `ggml_vec_swiglu_f32` SSE2 at both FFN sites | 84 of 84 | p4 pos0 `attn_norm-2` (28/1024) | float-order | 0.1036 / 0.0965 | 3 of 78 / 1 of 82 |
+
+Invariance held at EVERY iteration: `off-orig` = `f6f79264…c0252`, `off-p4` = `92f1b54d…d3ee9` (sha_equal=true ×4 runs), and each
+`=1` subject was byte-identical to the committed `on-{orig,p4}` (cmp rc=0 ×4). `scalar/emulation/ggml_sse2_fixtures.c` calls the
+SCALAR libggml-cpu's exported `ggml_vec_silu_f32`/`ggml_vec_swiglu_f32`/`ggml_vec_soft_max_f32` over widths 1, 3, 4, 5, 255, 256,
+6144 × 5 input kinds (±0, subnormals, ±inf, NaN, ±FLT_MAX, the 126/192 branch edges, masked -inf, |x| up to 200): 84 rows, all
+bit-exact, and 51 of the 84 differ when the SAME source is linked against the NATIVE build (so the fixtures discriminate).
+
+### Classification of every departure met
+- `conv_output_silu` — **float-approx**: ggml's SSE2 `ggml_v_expf` polynomial vs libm `expf` (same formula `x/(1+exp(-x))`).
+- `q_conv_predelta`/`k_conv_predelta` — **float-order**: llama `ggml_scale(ggml_rms_norm(x, eps/n), 1/sqrtf(n))` (`models.h:14`),
+  a DOUBLE sum of `x*x`, `mean=(float)(sum/n)`, `1/sqrtf(mean+eps/n)`, then `*1/sqrtf(n)` (`ops.cpp:3957-3981`, `4737`);
+  apr `x/sqrt(sum_f32 + eps)` (`forward_qwen35.rs` `l2_norm_per_head`). Algebraically identical.
+- `attn_output` (delta rule) — **float-order**: both `S^T k` and `S^T q` go through `ggml_vec_dot_f32`, whose scalar branch
+  accumulates `(ggml_float)(x[i]*y[i])` in a double and narrows once (`vec.cpp:128-136`, called at `ops.cpp:11018,11031`);
+  apr accumulated in f32. Every other step of the kernel (`ops.cpp:10895-11045`) is the same op in the same order as apr's.
+- `ffn_out` — **float-approx**: the same SSE2 silu inside `ggml_vec_swiglu_f32` (`vec.cpp:427-430`).
+- `attn_norm-2` (open) — the remaining RMSNorm: apr `crate::gguf::ops::rms_norm_into` sums in f32, ggml in double. Same class as #2.
+
+**No ALGORITHMIC departure was found.** Every op reached was the same mathematics in a different float arithmetic, and each
+port moved the first departure strictly later in the callback order (`conv_output_silu-0` → `q_conv_predelta-0` → `attn_output-0`
+→ `ffn_out-0` → `attn_norm-2`, i.e. past ALL of layer 0 and layer 1 at p4 pos 0).
+
+### Stop condition: (c) budget exhausted
+Not (a): apr(scalar) still does not equal llama-scalar-C to 1e-6 at all 2250 points (max rel L2 0.1036 at p4 pos1
+`linear_attn_out-22`), because the Q8_K activation quantization keeps amplifying the residual ulps (up to 1224× in one matmul,
+measured in `cmp/isolate_matmul.tsv`). Not (b): no algorithmic departure was found in the ops reached.
+
+### Remaining [U] (each with its command)
+- [U] The RMSNorm sum order (`attn_norm`, `attn_post_norm`, `norm`): port `rms_scale_ggml` into the forward's norm calls and re-run
+  `bash scalar/run_iteration.sh it5-rmsnorm`. (`crate::gguf::ops::rms_norm_into` is outside this ticket's scope_paths.)
+- [U] Ops still measured only with inputs that already differ: softplus/sigmoid, full-attention q/k norm + RoPE + f32 softmax.
+  The softmax port exists and is fixture-proven (`vec_soft_max_f32_sse2`, ggml scale-then-mask-then-`ggml_vec_soft_max_f32`,
+  `ops.cpp:5644-5680`) but is NOT yet wired: wire it at `forward_qwen35.rs` `crate::gguf::ops::softmax(&mut scores)` and re-run
+  `bash scalar/run_iteration.sh it6-softmax`.
+- [U] Whether the residual can reach ~1e-6 at all while Q8_K activation quantization sits between the layers: measure with
+  `python3 scalar/isolate_matmul.py <scalar_isolate>` after the remaining ports.
+- [U] Sub-layer dumps for p1-p3 (logits only): `run_scalar_ref.sh` section 2 with p1-p3 positions.
+- [U] Parity row (no threshold set).
