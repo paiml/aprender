@@ -1,0 +1,56 @@
+{
+ "model": "/home/noah/models/Qwen3.5-0.8B-Q4_K_M.gguf",
+ "gguf_py": "/home/noah/src/llama.cpp-d1d3c3396/gguf-py",
+ "prompts": [
+  {
+   "k": 0,
+   "kind": "original NL prose (78 ids, #3091)",
+   "A": "/home/noah/parity-ref/qwen35-0.8b-q4km-d1d3c3396-per-token/A-per-token-vs-batched.json",
+   "B": "/home/noah/parity-ref/qwen35-0.8b-q4km-d1d3c3396-per-token/B-per-token-vs-apr.json",
+   "C": "/home/noah/parity-ref/qwen35-0.8b-q4km-d1d3c3396-per-token/C-batched-vs-apr.json",
+   "pt": "/home/noah/parity-ref/qwen35-0.8b-q4km-d1d3c3396-per-token/per-token-run1.bin",
+   "bat": "/home/noah/parity-ref/qwen35-0.8b-q4km-d1d3c3396/qwen35-0.8b-q4km-d1d3c3396.rawlogits.bin",
+   "apr": "/home/noah/parity-ref/apr-3091-subject/apr-intel-run1.bin"
+  },
+  {
+   "k": 1,
+   "kind": "English prose",
+   "A": "/home/noah/parity-ref/variation-3091/p1-A-per-token-vs-batched.json",
+   "B": "/home/noah/parity-ref/variation-3091/p1-B-per-token-vs-apr.json",
+   "C": "/home/noah/parity-ref/variation-3091/p1-C-batched-vs-apr.json",
+   "pt": "/home/noah/parity-ref/variation-3091/p1-per-token.bin",
+   "bat": "/home/noah/parity-ref/variation-3091/p1-batched.bin",
+   "apr": "/home/noah/parity-ref/variation-3091/p1-apr.bin"
+  },
+  {
+   "k": 2,
+   "kind": "Rust code",
+   "A": "/home/noah/parity-ref/variation-3091/p2-A-per-token-vs-batched.json",
+   "B": "/home/noah/parity-ref/variation-3091/p2-B-per-token-vs-apr.json",
+   "C": "/home/noah/parity-ref/variation-3091/p2-C-batched-vs-apr.json",
+   "pt": "/home/noah/parity-ref/variation-3091/p2-per-token.bin",
+   "bat": "/home/noah/parity-ref/variation-3091/p2-batched.bin",
+   "apr": "/home/noah/parity-ref/variation-3091/p2-apr.bin"
+  },
+  {
+   "k": 3,
+   "kind": "numeric/list-heavy",
+   "A": "/home/noah/parity-ref/variation-3091/p3-A-per-token-vs-batched.json",
+   "B": "/home/noah/parity-ref/variation-3091/p3-B-per-token-vs-apr.json",
+   "C": "/home/noah/parity-ref/variation-3091/p3-C-batched-vs-apr.json",
+   "pt": "/home/noah/parity-ref/variation-3091/p3-per-token.bin",
+   "bat": "/home/noah/parity-ref/variation-3091/p3-batched.bin",
+   "apr": "/home/noah/parity-ref/variation-3091/p3-apr.bin"
+  },
+  {
+   "k": 4,
+   "kind": "chat-template user turn (markup as plain text)",
+   "A": "/home/noah/parity-ref/variation-3091/p4-A-per-token-vs-batched.json",
+   "B": "/home/noah/parity-ref/variation-3091/p4-B-per-token-vs-apr.json",
+   "C": "/home/noah/parity-ref/variation-3091/p4-C-batched-vs-apr.json",
+   "pt": "/home/noah/parity-ref/variation-3091/p4-per-token.bin",
+   "bat": "/home/noah/parity-ref/variation-3091/p4-batched.bin",
+   "apr": "/home/noah/parity-ref/variation-3091/p4-apr.bin"
+  }
+ ]
+}
