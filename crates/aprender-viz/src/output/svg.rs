@@ -255,6 +255,42 @@ impl SvgEncoder {
         self
     }
 
+    /// Add text as **glyph outlines**, from font bytes the caller pins.
+    ///
+    /// APEX-001 EV-2a rule 2. The result is a `<path>`: the emitted SVG carries no `<text>`
+    /// element and no `font-family` attribute for this string, so the shapes are in the file
+    /// rather than being a request that the viewer go and find a font. Two readers of the same
+    /// file then see the same image, and the bytes do not depend on what is installed anywhere.
+    ///
+    /// `font_bytes` is the font. There is no lookup, no fallback and no system font path — see
+    /// [`crate::text`] for why that is the whole point rather than an inconvenience.
+    ///
+    /// Coordinates are quantised to [`crate::COORD_GRID`] so an ulp of difference between two
+    /// hosts cannot reach the bytes.
+    #[cfg(feature = "text-path")]
+    #[must_use]
+    pub fn text_as_path(
+        mut self,
+        x: f64,
+        y: f64,
+        text: &str,
+        font_bytes: &[u8],
+        size_px: f64,
+        fill: Rgba,
+    ) -> Self {
+        let d = crate::text::to_path_data_at(text, font_bytes, size_px, x, y);
+        if d.is_empty() {
+            return self;
+        }
+        self.elements.push(SvgElement::Path {
+            d,
+            fill: Some(fill),
+            stroke: None,
+            stroke_width: 0.0,
+        });
+        self
+    }
+
     /// Add text with anchor.
     #[must_use]
     pub fn text_anchored(

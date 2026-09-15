@@ -2761,6 +2761,119 @@ jobs:
           fi
           printf 'gguf::cuda:: %s test(s) selected and passed\n' "$n"
 
+  # APEX-001 EV-2a: the same figure, rendered on two architectures, must be the same bytes.
+  #
+  # WHY A MATRIX AND NOT ONE JOB. A host always agrees with itself, so no single-runner test can
+  # see the defect this exists to catch: `f32::ln` dispatches to whatever libm the host linked,
+  # and glibc on x86-64 and on aarch64 are not required to agree to the last ulp. The fixture
+  # drives 400 log-scale evaluations into rendered pixel positions precisely so that a one-ulp
+  # difference has somewhere to land.
+  #
+  # `clean-room` is required on both legs: an ephemeral container, so the render cannot pick up a
+  # font, a locale or a cached artefact from a previous job and quietly agree for the wrong reason.
+  determinism:
+    name: determinism (${{ matrix.arch }})
+    strategy:
+      fail-fast: false   # if one arch fails we still want the other's receipt to compare against
+      matrix:
+        arch: [X64, ARM64]
+    runs-on: [self-hosted, Linux, clean-room, "${{ matrix.arch }}"]
+    # 45: NO history — this job is new, so the BSE-05 formula has nothing to fit. basis=[U].
+    # The cold build pulls resvg + skrifa, which no other job in this workflow builds; 45 is the
+    # BSE-05 floor plus headroom, to be refitted from this job's own p99 once it has seven runs.
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      # The row's rule 5 is enforced by a clippy `disallowed-methods` list, and such a list is a
+      # SILENT no-op when a path is misspelled: measured, `std::f32::ln`, `<f32>::ln` and
+      # `core::f32::ln` all fail to ban while `f32::ln` bans. So the ban is proved by planting a
+      # violation and requiring the build to fail, never by reading the config.
+      - name: The libm ban must be able to fail
+        run: bash scripts/ci/libm-ban-live.sh
+
+      - name: Render the fixture and write this host's receipt
+        run: cargo test -p aprender-viz --features text-path,raster --test render_determinism
+
+      - name: Upload this host's receipt
+        uses: actions/upload-artifact@v7
+        with:
+          name: determinism-${{ matrix.arch }}
+          path: target/aprender-viz/determinism-*.json
+          if-no-files-found: error   # a missing receipt is a failure, not an empty comparison
+
+  # Compare the two hosts and write the receipt APEX-001 EV-2a's accept command reads.
+  #
+  # Separate from the matrix because only a job that can see BOTH receipts may set
+  # `svg_identical`. A matrix leg sees one host and records what it measured; deciding identity
+  # from one side would be asserting the thing under test.
+  determinism-compare:
+    name: determinism (compare)
+    needs: [determinism]
+    runs-on: [self-hosted, Linux, clean-room]
+    timeout-minutes: 15   # downloads two small files and runs jq. basis=[U], floor of BSE-05.
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: determinism-*
+          path: receipts
+          merge-multiple: true
+
+      - name: Both hosts must have reported
+        run: |
+          set -euo pipefail
+          n=$(find receipts -name 'determinism-*.json' | wc -l)
+          echo "receipts found: $n"
+          find receipts -name 'determinism-*.json' -print -exec cat {} \;
+          # The denominator, stated: two legs must each have produced exactly one receipt. A
+          # comparison over one file would "agree" trivially.
+          [ "$n" -eq 2 ] || { echo "expected 2 host receipts, found $n"; exit 1; }
+
+      - name: Compare the hosts and write the receipt
+        run: |
+          set -euo pipefail
+          mkdir -p target/aprender-viz
+          jq -s '
+            {
+              row: "EV-2a",
+              hosts: [.[] | {arch: .host_arch, os: .os, png_sha256: .png_sha256, manifest_root: .manifest_root, png_bytes: .png_bytes}],
+              coord_grid: (.[0].coord_grid),
+              libm: (.[0].libm),
+              svg_identical: (([.[].manifest_root] | unique | length) == 1),
+              png_identical: (([.[].png_sha256]   | unique | length) == 1)
+            }
+          ' receipts/determinism-*.json > target/aprender-viz/determinism-receipt.json
+          cat target/aprender-viz/determinism-receipt.json
+
+          # The two architectures must agree. This is the row's required assertion.
+          jq -e '.svg_identical == true' target/aprender-viz/determinism-receipt.json >/dev/null || {
+            echo "::error::the two architectures rendered different bytes — APEX-001 EV-2a rule 5"
+            exit 1
+          }
+          jq -e '(.hosts | length) == 2' target/aprender-viz/determinism-receipt.json >/dev/null
+
+          # PNG cross-architecture identity is [U] and its verdict DECIDES EV-15's shape: if PNG
+          # differs, EV-15 keys the PNG manifest by target triple and SVG becomes the sole
+          # cross-architecture artefact. Recorded, deliberately NOT asserted.
+          if jq -e '.png_identical == true' target/aprender-viz/determinism-receipt.json >/dev/null; then
+            echo "::notice::PNG is byte-identical across architectures — EV-15 may use one manifest"
+          else
+            echo "::notice::PNG DIFFERS across architectures — EV-15 must key its PNG manifest by target triple"
+          fi
+
+      - name: Upload the determinism receipt
+        uses: actions/upload-artifact@v7
+        with:
+          name: determinism-receipt
+          path: target/aprender-viz/determinism-receipt.json
+          if-no-files-found: error
+
   gate:
     runs-on: [self-hosted, Linux, clean-room]   # arch-neutral: intel, yoga or gx10 (#3100)
     # 22: BSE-05 formula T = max(15, ceil(1.5*p99), p99+20) over this job's own
@@ -2769,7 +2882,7 @@ jobs:
     # `needs.*.result`; the 20-minute term is the headroom BSE-05 adds so a
     # slow runner is never the thing that fails a required check.
     timeout-minutes: 22
-    needs: [ci, workspace-test, mutants, guard-tree, guard-cargo]
+    needs: [ci, workspace-test, mutants, guard-tree, guard-cargo, determinism-compare]
     if: always()
     steps:
       - name: Check required jobs
@@ -2791,6 +2904,12 @@ jobs:
           fi
           if [ "${{ needs.workspace-test.result }}" != "success" ]; then
             echo "workspace-test failed: ${{ needs.workspace-test.result }}"
+            exit 1
+          fi
+          # APEX-001 EV-2a: the two-architecture determinism comparison. A required check that
+          # `gate` does not read is not a required check, so it is read here like guard-tree.
+          if [ "${{ needs.determinism-compare.result }}" != "success" ]; then
+            echo "determinism-compare failed: ${{ needs.determinism-compare.result }}"
             exit 1
           fi
           # Diff-scoped mutation gate (PMAT gap #1): blocking on PRs.
