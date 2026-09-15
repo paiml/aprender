@@ -1,3 +1,7 @@
+# tool_version=none (derived by scripts/check_pathonly_devdeps_unused_in_src.sh
+#   from the manifests + src/ of every workspace member; no external analyser,
+#   so there is no version to pin. Regenerate by running that guard and reading
+#   the pairs it reports — never hand-add a row to silence it.)
 # Pairs of (manifest, dev-dep alias) where src/ references a dependency that
 # `cargo publish` strips. SHRINK-ONLY: adding a row fails review, and a row
 # whose violation is gone must be deleted in the same commit. Drain: #3306.
