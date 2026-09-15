@@ -17817,3 +17817,20 @@ roadmap:
   labels:
   - kind:code
   notes: null
+- id: PMAT-3300
+  github_issue: 3300
+  item_type: task
+  title: 'tools.toml pmat 3.40.1: the fleet converged 2026-09-14 and every intel-hosted PR is red'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-15T07:58:08Z
+  updated: 2026-09-15T07:58:08Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
