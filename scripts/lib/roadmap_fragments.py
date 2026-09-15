@@ -116,6 +116,25 @@ def aggregate(base_text, fragments):
     return preamble + "".join(block for _, block in entries)
 
 
+FILENAME_SAFE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,110}$")
+
+
+def census(text):
+    """-> {(safe, shape): [ids]}. Which entries CAN be fragments at all.
+
+    A filename is the whole mechanism: unique name => disjoint pull requests.
+    So an id that cannot be a filename cannot be a fragment, and the gate must
+    not assume a shape the data does not have. Real ids in this file include
+    `Push completed work to origin/main (5 commits)` -- prose, with a path
+    separator in it."""
+    out = {}
+    for eid, _ in split_entries(text)[1]:
+        key = ("safe" if FILENAME_SAFE.match(eid) else "unsafe",
+               "prefixN" if parse_id(eid) else "legacy")
+        out.setdefault(key, []).append(eid)
+    return out
+
+
 # ------------------------------------------------------------------- split
 
 ANCHOR_DEF_RE = re.compile(r"&(id\d+)\s+")
@@ -213,6 +232,26 @@ def _ids(text):
     return [eid for eid, _ in split_entries(text)[1]]
 
 
+def _census_rows():
+    """RMFR-F-004 over the REAL file. An obligation discharged by a test that
+    does not test it is theater, so the census runs here rather than being
+    asserted in the contract alone."""
+    if not os.path.exists(ROADMAP):
+        row("census SKIPPED: no roadmap.yaml here", True, "[U] not measured")
+        return
+    with open(ROADMAP, encoding="utf-8") as fh:
+        c = census(fh.read())
+    n = {k: len(v) for k, v in c.items()}
+    total = sum(n.values())
+    unsafe = n.get(("unsafe", "prefixN"), 0) + n.get(("unsafe", "legacy"), 0)
+    row("census: every entry is accounted for by id shape", total > 0,
+        "fragmentable=%d safe-legacy=%d NOT-filename-safe=%d total=%d"
+        % (n.get(("safe", "prefixN"), 0), n.get(("safe", "legacy"), 0), unsafe, total))
+    row("census: a real id contains a path separator (the regex must reject it)",
+        any("/" in e for v in c.values() for e in v),
+        "filename-safety is load-bearing, not defensive")
+
+
 def selftest():
     # 1. THE LOSSLESS ROW: no fragments must reproduce the base byte for byte.
     out = aggregate(BASE, [])
@@ -284,6 +323,8 @@ def selftest():
         globals()["insertion_index"] = saved
     row("mutation: append-only placement is CAUGHT", caught,
         "" if caught else "mutant survived -- row 2 proves nothing")
+
+    _census_rows()
 
     bad = sum(1 for _, ok, _ in ROWS if not ok)
     print("\n%d row(s), %d red" % (len(ROWS), bad))

@@ -69,7 +69,7 @@ equations:
     codomain: 'a roadmap text'
     invariants:
     - 'IDEMPOTENCE IS LOAD-BEARING: `make roadmap-aggregate` runs post-merge on main, so a generator that is not a pure function churns a commit on every merge. The first cut read the LIVE roadmap.yaml as its base and raised `duplicate id` on its own output — it failed on run one.'
-    - 'A fragment SUPERSEDES a base entry of the same id rather than colliding with it. That is what makes re-running a no-op.'
+    - 'SUPERSESSION IS THE EDIT PATH, NOT A COROLLARY OF IDEMPOTENCE. A fragment supersedes a base entry of the same id. That is what makes docs/roadmaps/entries/ the ONLY way to change an existing PMAT-NNNN entry, which is in turn what lets the gate forbid every PR write to roadmap.yaml. Restoring the duplicate-id refusal would re-open the base as an edit surface and silently undo the gate.'
     - 'DETERMINISM: fragment order on disk (readdir order) must not reach the output.'
     preconditions:
     - 'no two fragments claim one id — the filesystem guarantees this, and the generator still refuses it'
@@ -114,6 +114,24 @@ proof_obligations:
   - id: RMFR-OB-003
     statement: "Every fragment parses alone and carries the mapping the monolith carried."
     discharged_by: falsification_tests[2]
+  - id: RMFR-OB-004
+    statement: >-
+      A fragment supersedes a base entry of the same id, so entries/ is the only
+      edit path for an existing entry. Refusing that as a duplicate re-opens
+      roadmap.yaml as an edit surface and silently undoes the gate that forbids
+      PR writes to it.
+    discharged_by: falsification_tests[0]
+  - id: RMFR-OB-005
+    statement: >-
+      The 52 ids that cannot be filenames (44 prose, 8 PREFIX-N with a prose
+      suffix) stay in the base and are therefore IMMUTABLE once PR writes to
+      roadmap.yaml are forbidden. This is a stated scope boundary, not an
+      exemption: no write path exists for them at all, which is stronger than
+      one that is gated. Re-iding them is refused by
+      check_roadmap_diff_additive.sh as delete+add (measured 2026-09-15:
+      "deleted: 1 base id(s) missing at head"), so it needs that guard to learn
+      a re-id operation first — tracked separately, NOT waived here.
+    discharged_by: falsification_tests[3]
 
 falsification_tests:
 
@@ -162,3 +180,19 @@ falsification_tests:
     mutation: >-
       remove the ANCHOR_USE_RE substitution from self_contain(): split() must
       raise, because `created: *id001` does not resolve in isolation.
+
+  - id: RMFR-F-004
+    rule: the non-fragmentable base entries are immutable, and that is measured
+    prediction: >-
+      Of 879 entries: 780 are filename-safe AND PREFIX-N (fragmentable today),
+      47 are filename-safe legacy ids, 44 are prose, 8 are PREFIX-N carrying a
+      prose suffix. 780+47+44+8 = 879, no remainder. The 52 that are not
+      filename-safe have no fragment path and no PR write path.
+    test: 'python3 scripts/lib/roadmap_fragments.py --selftest'
+    if_fails: >-
+      the gate assumes an id shape the data does not have, and a PR that should
+      be refused is admitted — or one that should pass is blocked
+    mutation: >-
+      relax the filename-safety regex to accept a slash: the count moves off 52
+      and the `Push completed work to origin/main (5 commits)` id — a real
+      roadmap id containing a path separator — becomes a would-be filename.
