@@ -17838,3 +17838,21 @@ roadmap:
   notes: 'adds needs-feature beside needs-args/needs-hardware/needs-data; like
     needs-hardware it is a SKIP that must be re-run with the feature before a release
     verdict, never read as the example working'
+- id: PMAT-3236
+  github_issue: null
+  item_type: task
+  title: 'Silicon Nightly reported a vanished dep-info file as a SIMD failure — route its cargo through the ENV/CODE classifier'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-09-14T20:25:00Z
+  updated: 2026-09-14T20:25:00Z
+  spec: docs/specifications/APR-RELEASE-001-train-and-build-kaizen.md
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'cargo_step.sh (#3241) classifies dep-info ENOENT as ENV and was wired to
+    book.yml only; 5 of 75 cargo invocation lines across all workflows were covered'
