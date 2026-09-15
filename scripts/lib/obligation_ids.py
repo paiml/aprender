@@ -134,8 +134,14 @@ def _id_prefix(value):
 
 
 def _collect_claims(cands, root):
-    """prefix -> {relpath} over the WHOLE corpus, untouched files included."""
-    claims = collections.defaultdict(set)
+    """(fixed, movable) prefix -> {relpath}, over the WHOLE corpus.
+
+    `fixed` are prefixes claimed by ids that ALREADY EXIST: those cannot be
+    renamed, so such a file owns its prefix outright. `movable` are prefixes
+    this generator would mint and can still relocate.
+    """
+    fixed = collections.defaultdict(set)
+    movable = collections.defaultdict(set)
     for f in sorted(root.rglob("*.yaml")):
         got = load(f)
         if got is None:
@@ -145,10 +151,10 @@ def _collect_claims(cands, root):
         for o in obs:
             pre = _id_prefix(o.get("id"))
             if pre:
-                claims[pre].add(rel)
+                fixed[pre].add(rel)
         if rel in cands:
-            claims[cands[rel][3] or initials(f.stem)].add(rel)
-    return claims
+            movable[cands[rel][3] or initials(f.stem)].add(rel)
+    return fixed, movable
 
 
 def assign_prefixes(cands, root):
@@ -160,12 +166,21 @@ def assign_prefixes(cands, root):
     genuine cross-file collision. A first cut counted only computed prefixes and
     produced exactly that -- AL-BND-001 in two files.
 
-    The owner is the lexicographically first claimant, so ownership does not
-    move when an unrelated contract is added. Everyone else takes
-    sha256(own relative path)[:4] -- keyed to the file's OWN path, never to the
-    set of colliders, which is what keeps an existing id stable.
+    A file whose ids ALREADY EXIST wins its prefix outright, whatever the sort
+    order: those ids cannot be renamed, so ownership is not theirs to lose. A
+    second cut used a plain lexicographic min and handed ZZ to `zebra-zoo`
+    over `zeta-zulu`, which already had ZZ-INV-001 -- caught by the selftest,
+    not by the corpus, where the orderings happened not to bite.
+
+    Among movable claimants the owner is the lexicographically first, so
+    ownership does not move when an unrelated contract is added. Everyone else
+    takes sha256(own relative path)[:4] -- keyed to the file's OWN path, never
+    to the set of colliders, which is what keeps an existing id stable.
     """
-    owner = {pre: min(files) for pre, files in _collect_claims(cands, root).items()}
+    fixed, movable = _collect_claims(cands, root)
+    owner = {}
+    for pre in set(fixed) | set(movable):
+        owner[pre] = min(fixed[pre]) if fixed.get(pre) else min(movable[pre])
     final = {}
     for rel, (path, _, _, cited) in cands.items():
         base = cited or initials(path.stem)
@@ -354,6 +369,52 @@ def _selftest_cases():
     return rc
 
 
+def _selftest_collisions():
+    """Two files that compute the SAME base prefix must not both get it.
+
+    This is the second bug the corpus caught and review did not: collision
+    detection counted only COMPUTED prefixes, so it could not see that a file
+    this generator never touches already owned one, and it minted AL-BND-001 in
+    two files. Both halves are asserted here -- a collision between two
+    candidates, and a collision with an already-named file that is skipped.
+    """
+    import tempfile
+    rc = 0
+    d = pathlib.Path(tempfile.mkdtemp())
+    # two candidates whose initials BOTH reduce to "AB" -- they must collide,
+    # or this row proves nothing (an earlier fixture used a-b / a-b-other-thing,
+    # which give AB and ABOT: no collision, and all three rows passed with the
+    # bug restored).
+    (d / "alpha-beta-v1.yaml").write_text(
+        "proof_obligations:\n- type: invariant\n  property: one\n")
+    (d / "apple-banana-v1.yaml").write_text(
+        "proof_obligations:\n- type: invariant\n  property: two\n")
+    # a file that is fully named and therefore SKIPPED, but still owns "ZZ"
+    (d / "zeta-zulu-v1.yaml").write_text(
+        "proof_obligations:\n- id: ZZ-INV-001\n  type: invariant\n  property: owned\n")
+    # a candidate whose initials are ALSO ZZ -- it must not take the owned prefix
+    (d / "zebra-zoo-v1.yaml").write_text(
+        "proof_obligations:\n- type: invariant\n  property: three\n")
+
+    cands = collect(d)
+    pre = assign_prefixes(cands, d)
+    got = {pathlib.Path(k).name: v for k, v in pre.items()}
+
+    ab = [v for k, v in got.items() if k in ("alpha-beta-v1.yaml", "apple-banana-v1.yaml")]
+    rc |= _report(len(set(ab)) == len(ab), "collision/two candidates get distinct prefixes",
+                  f"got {ab}")
+    zz = got.get("zebra-zoo-v1.yaml", "")
+    rc |= _report(zz != "ZZ", "collision/a skipped file still owns its prefix",
+                  f"candidate took {zz!r}, which the named file owns")
+
+    # and the whole point: no id is ever minted twice
+    ids = []
+    for rel, (_, _, obs, _) in cands.items():
+        ids += [i for _, i in plan_file(obs, pre[rel])]
+    rc |= _report(len(ids) == len(set(ids)), "collision/no id is minted twice", f"got {ids}")
+    return rc
+
+
 def _selftest_rewrites():
     rc = 0
     for name, src, plan, want in REWRITES:
@@ -363,7 +424,7 @@ def _selftest_rewrites():
 
 
 def selftest():
-    rc = _selftest_cases() | _selftest_rewrites()
+    rc = _selftest_cases() | _selftest_collisions() | _selftest_rewrites()
     print("selftest: " + ("PASS" if rc == 0 else "FAIL"))
     return rc
 
