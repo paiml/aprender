@@ -1,0 +1,11 @@
+sse2_ops.tsv derivation (lambda, llama.cpp d1d3c3396 clean tree at ~/src/llama.cpp-d1d3c3396):
+  grep -rn "__SSE2__\|__SSE__\b" ggml/src/ggml-cpu/ ggml/src/*.{c,h,cpp}  (arm/powerpc/loong/riscv/s390/wasm arch dirs dropped)
+    -> ggml-cpu-impl.h:344 (#include <immintrin.h> only), vec.cpp:390,427,479,552, vec.h:1264, llamafile/sgemm.cpp:87,251,334
+  grep -rn "__x86_64__\|_M_X64\|__i386__" ggml/src/ggml-cpu/*.{c,cpp,h} ggml/src/*.{c,h}
+    -> arch-fallback.h:84 (generic-name aliases), ggml-cpu.c:462,524 (_mm_pause)
+  GGML_SIMD is not defined (simd-mappings.h needs __SSE3__ or wider; gcc -dM -E on x86-64 baseline: SSE3 0), so no other vec.h op is SIMD.
+  callers: grep -rn "ggml_vec_silu_f32\|ggml_vec_swiglu_f32\|ggml_vec_soft_max_f32\|ggml_vec_cvar_f32\|ggml_v_expf\b\|ggml_v_silu\b" ggml/src/ggml-cpu/
+    -> ops.cpp:2611 silu, 3224 swiglu, 3866 cvar (norm), 5675 soft_max, 9082/9537 soft_max (FA), 11810 soft_max (loss back)
+  graph use: src/models/qwen35.cpp:249 ggml_silu(gate) in build_norm_gated, :394 ggml_silu(conv), :474-479 build_ffn SILU PAR (swiglu),
+    FA off -> soft_max_ext; cross-checked against layerwise/llama_tensor_names.tsv (ops present: RMS_NORM, no NORM).
+  exported from the scalar libggml-cpu.so (intel nm -D): ggml_vec_silu_f32, ggml_vec_swiglu_f32, ggml_vec_soft_max_f32, ggml_vec_cvar_f32 (T).
