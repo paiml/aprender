@@ -125,6 +125,7 @@ PAGE_SIZE="${SILICON_PAGE_SIZE:-100}"
 PAGE_CAP="${SILICON_PAGE_CAP:-10}"
 TAB="$(printf '\t')"
 api_calls=0
+probe_calls=0
 
 # labels_contain <runner-label-csv> <required-label-csv>
 # 0 when every required label is present in the runner's set. Case-insensitive:
@@ -350,7 +351,29 @@ build_jobs() {
                 if [ "${_bj_n:-0}" -lt "$PAGE_SIZE" ] || [ "$_bj_read" -ge "$_bj_total" ]; then break; fi
                 _bj_page=$((_bj_page + 1))
             done
-            printf '%s\t%s\t%s\t%s\t%s\n' "$_bj_wf" "$_bj_ev" "$_bj_read" "$_bj_total" "$_bj_state" >> "$_bj_lst"
+            # CROSS-CHECK AN EMPTY LISTING (PMAT-3337 §8). The recorded failure
+            # mode is the API handing back a bad EMPTY page, and an empty page is
+            # exactly what would score UNCOVERED. So ask once more WITHOUT the
+            # created filter: if the newest run of this workflow and event is
+            # inside the lookback, the two listings contradict each other and
+            # neither is evidence. Older than the window, or none: a true negative.
+            _bj_ptotal="-"; _bj_pnewest="-"
+            if [ "$_bj_total" -eq 0 ] && [ "$_bj_state" = ok ]; then
+                api_calls=$((api_calls + 1)); probe_calls=$((probe_calls + 1))
+                if ! _bj_probe="$(gh api "repos/$REPO/actions/workflows/${_bj_wf}/runs?event=${_bj_ev}&per_page=1" \
+                    --jq '"\(.total_count)\t\(.workflow_runs[0].created_at // "")"' 2>/dev/null)"; then
+                    printf 'listing FAILED: %s %s unfiltered cross-check\n' "$_bj_wf" "$_bj_ev"
+                    rm -f "$_bj_runs"
+                    return 1
+                fi
+                _bj_ptotal="${_bj_probe%%"$TAB"*}"; _bj_pnewest="${_bj_probe#*"$TAB"}"
+                if [ -n "$_bj_pnewest" ] && _bj_pe=$(iso_epoch "$_bj_pnewest") && [ "$_bj_pe" -ge "$_bj_cut" ]; then
+                    _bj_state=inconsistent
+                fi
+                [ -n "$_bj_pnewest" ] || _bj_pnewest="none"
+            fi
+            printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$_bj_wf" "$_bj_ev" "$_bj_read" "$_bj_total" "$_bj_state" \
+                "$_bj_ptotal" "$_bj_pnewest" >> "$_bj_lst"
         done
     done
     # One newest-first list across the axis workflows, deduplicated by run id.
@@ -382,6 +405,17 @@ build_jobs() {
 
 # window_holes <listings-tsv> <workflow file>... -> one line naming every read of
 # these workflows that did not reach the lookback edge, or nothing.
+# window_contradictions <listings-tsv> <workflow file>... -> one line naming every
+# EMPTY filtered listing whose unfiltered newest run is inside the lookback.
+window_contradictions() {
+    _wc_lst="$1"; shift
+    for _wc_wf in "$@"; do
+        awk -F'\t' -v wf="$_wc_wf" -v lb="$LOOKBACK_DAYS" '
+            $1 == wf && $5 == "inconsistent" { printf "%s %s: created>=lookback listed %s of %s, but the unfiltered listing (total %s) has its newest run at %s, inside the %sd lookback; ", $1, $2, $3, $4, $6, $7, lb }
+        ' "$_wc_lst"
+    done
+}
+
 window_holes() {
     _wh_lst="$1"; shift
     for _wh_wf in "$@"; do
@@ -449,7 +483,7 @@ st_reset() {
     rm -rf "${ST:?}/u"
     mkdir -p "$ST/u/pages" "$ST/u/workflows" || return 1
     : > "$ST/u/routes.tsv"; : > "$ST/u/runs.tsv"; : > "$ST/u/calls.log"
-    ST_PAGE_SIZE=100; ST_PAGE_CAP=10; ST_RUN_CAP=60; ST_ERROR=0
+    ST_PAGE_SIZE=100; ST_PAGE_CAP=10; ST_RUN_CAP=60; ST_ERROR=0; ST_HIDE_FILTERED=""
     printf '%s\n' \
         '# self-test policy' \
         'cpu-axis   required  self-hosted,shimcpu  job:cpu-leg' \
@@ -529,6 +563,16 @@ st_finish() {
             awk -F'\t' -v wf="$_sf_wf" -v ev="$_sf_ev" -v s="$_sf_since_e" \
                 '$2 == wf && $3 == ev && $5 >= s' "$ST/u/runs.tsv" \
                 | sort -t"$TAB" -k5,5nr > "$ST/u/l.tsv"
+            # The unfiltered newest run: what the empty-listing cross-check reads.
+            awk -F'\t' -v wf="$_sf_wf" -v ev="$_sf_ev" '$2 == wf && $3 == ev' "$ST/u/runs.tsv" \
+                | sort -t"$TAB" -k5,5nr > "$ST/u/all.tsv"
+            head -n 1 "$ST/u/all.tsv" > "$ST/u/p.tsv"
+            st_page "$ST/u/p.tsv" "$(grep -c . "$ST/u/all.tsv")" "$ST/u/pages/wfall-$_sf_wf-$_sf_ev.json"
+            _sf_pkey="repos/$ST_REPO/actions/workflows/${_sf_wf}/runs?event=${_sf_ev}&per_page=1"
+            if [ "$ST_ERROR" = 1 ]; then st_route "$_sf_pkey" @ERROR
+            else st_route "$_sf_pkey" "pages/wfall-$_sf_wf-$_sf_ev.json"; fi
+            # A bad EMPTY page: the created-filtered listing of this workflow lies.
+            [ "$_sf_wf" = "$ST_HIDE_FILTERED" ] && : > "$ST/u/l.tsv"
             _sf_total="$(grep -c . "$ST/u/l.tsv")"
             _sf_p=1
             while :; do
@@ -635,6 +679,15 @@ selftest_rows() {
     st_finish
     _rows=$((_rows + 1))
     st_check d-truncated 2 '^  TRUNCATED +gpu-axis .*read 2 of 3' || _rows_bad=$((_rows_bad + 1))
+
+    # (f) the filtered listing comes back EMPTY while the unfiltered newest run
+    # is inside the window: contradictory listings are NO-GO, never UNCOVERED.
+    st_reset; ST_HIDE_FILTERED=gpu.yml
+    st_run 9001 sil.yml schedule 12 1 "$CPU_JOB"; st_run 9101 gpu.yml schedule 20 1 "$GPU_JOB"
+    st_finish
+    _rows=$((_rows + 1))
+    st_check f-inconsistent 2 '^  NO-GO +gpu-axis +REQUIRED: inconsistent listing .*listed 0 of 0.*total 1' \
+        || _rows_bad=$((_rows_bad + 1))
 
     # (e) the API errors: refuse, exactly as before.
     st_reset; ST_ERROR=1
@@ -755,7 +808,7 @@ n_jobs="$(grep -cve '^[[:space:]]*$' "$JOBS" || true)"
 
 printf -- '\n-- runs --\n'
 if [ "$MODE" = "live" ]; then
-    while IFS="$TAB" read -r _l_wf _l_ev _l_read _l_total _l_state; do
+    while IFS="$TAB" read -r _l_wf _l_ev _l_read _l_total _l_state _; do
         [ -n "$_l_wf" ] || continue
         printf 'listing %-24s %-18s %s of %s in-window run(s) read  %s\n' \
             "$_l_wf" "$_l_ev" "$_l_read" "$_l_total" "$_l_state"
@@ -783,7 +836,7 @@ fi
 # ── the axes ────────────────────────────────────────────────────────────────
 printf -- '\n-- axes --\n'
 axes=0; required=0; covered=0; uncovered=0; stale=0; missing=0
-deferred=0; promotable=0; ready=0; unknown=0
+deferred=0; promotable=0; ready=0; unknown=0; inconsistent=0
 fail=0
 while IFS= read -r line; do
     line="${line%%#*}"
@@ -839,11 +892,14 @@ while IFS= read -r line; do
 
     # (c) Was the window READ to its edge? A non-fresh axis whose workflow
     # listing stopped at the page cap is unknown, not absent.
-    holes=""
+    holes=""; contradiction=""
     if [ "$MODE" = "live" ] && [ "$fresh" -eq 0 ]; then
         # shellcheck disable=SC2046
         holes="$(window_holes "$LISTINGS" $(awk -F'\t' -v a="$axis" '$1 == a { print $2 }' "$AXIS_WF"))"
         holes="${holes%; }"
+        # shellcheck disable=SC2046
+        contradiction="$(window_contradictions "$LISTINGS" $(awk -F'\t' -v a="$axis" '$1 == a { print $2 }' "$AXIS_WF"))"
+        contradiction="${contradiction%; }"
     fi
 
     case "$status" in
@@ -853,6 +909,9 @@ while IFS= read -r line; do
                 covered=$((covered + 1))
                 printf '  ok        %-20s %s %s %sd ago — %s / %s%s\n' \
                     "$axis" "$newest_concl" "$newest_iso" "$age" "$newest_wf" "$newest_job" "$jobnote"
+            elif [ -n "$contradiction" ]; then
+                unknown=$((unknown + 1)); inconsistent=$((inconsistent + 1))
+                printf '  NO-GO     %-20s REQUIRED: inconsistent listing — %s\n' "$axis" "$contradiction"
             elif [ -n "$holes" ]; then
                 unknown=$((unknown + 1))
                 printf '  TRUNCATED %-20s REQUIRED: unknown — no fresh job named %s in what was read: %s\n' \
@@ -877,6 +936,9 @@ while IFS= read -r line; do
                 promotable=$((promotable + 1)); fail=1
                 printf '  PROMOTE   %-20s marked %s, but a job CARRIED it %sd ago — %s / %s\n' \
                     "$axis" "$status" "$age" "$newest_wf" "$newest_job"
+            elif [ -n "$contradiction" ]; then
+                unknown=$((unknown + 1)); inconsistent=$((inconsistent + 1))
+                printf '  NO-GO     %-20s %s: inconsistent listing — %s\n' "$axis" "$status" "$contradiction"
             elif [ -n "$holes" ]; then
                 unknown=$((unknown + 1))
                 printf '  TRUNCATED %-20s %s: unknown — a PROMOTE could hide in the unread part: %s\n' \
@@ -903,7 +965,7 @@ printf ' deferred %s: PROMOTABLE %s, ready %s)\n' "$deferred" "$promotable" "$re
 printf 'evidence: %s online runner(s), %s concluded job(s), floor %sd\n' \
     "$n_runners" "$n_jobs" "$STALE_DAYS"
 if [ "$MODE" = "live" ]; then
-    printf 'api calls: %s\n' "$api_calls"
+    printf 'api calls: %s (empty-listing cross-checks: %s)\n' "$api_calls" "$probe_calls"
 fi
 
 # THE DENOMINATOR. A policy that parsed nothing must not read as clean.
@@ -944,9 +1006,10 @@ if [ "$fail" -ne 0 ]; then
     exit 1
 fi
 if [ "$unknown" -gt 0 ]; then
-    printf '\nNO-GO: %s axis/axes could not be judged. Each workflow listing that carries\n' "$unknown"
-    printf 'them stopped at the page cap before the %sd lookback edge, and the job was\n' "$LOOKBACK_DAYS"
-    printf 'not in the part that was read. An unread window is Unknown, never UNCOVERED.\n'
+    printf '\nNO-GO: %s axis/axes could not be judged (%s from an inconsistent listing).\n' "$unknown" "$inconsistent"
+    printf 'Either a workflow listing stopped at the page cap before the %sd lookback\n' "$LOOKBACK_DAYS"
+    printf 'edge without the job, or an empty created>=lookback listing was contradicted\n'
+    printf 'by the unfiltered one. An unread window is Unknown, never UNCOVERED.\n'
     exit 2
 fi
 printf '\nOK: every required axis has RUN inside its cadence window, and no deferred\n'
