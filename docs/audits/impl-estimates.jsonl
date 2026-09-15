@@ -40,6 +40,8 @@
 {"repo":"aprender","ticket":"PMAT-972","phase":"P_1b","mode":"subagent:sonnet","est":3,"actual":40,"basis":"est=first-run[U]; actual=worker maxTurns (40) + one resume; decomposition committed"}
 {"repo":"aprender","ticket":"PMAT-972","phase":"P_1","mode":"subagent:sonnet","est":3,"actual":40,"basis":"est=first-run[U]; actual=worker maxTurns (40) + one resume (40); guard + case table left green but uncommitted"}
 {"repo":"aprender","ticket":"PMAT-972","phase":"P_2","mode":"direct","est":3,"actual":6,"basis":"est=first-run[U]; actual=orchestrator bash calls (mutation, docstring, wiring, contract, receipt)"}
+{"repo":"aprender","ticket":"PMAT-1009","phase":"P_1","mode":"subagent:sonnet","est":3,"actual":40,"basis":"est=first-run[U]; actual=worker maxTurns (40) + one resume"}
+{"repo":"aprender","ticket":"PMAT-1009","phase":"P_2","mode":"direct","est":3,"actual":4,"basis":"est=first-run[U]; actual=orchestrator bash calls (verification, contract, receipt)"}
 {"repo":"aprender","ticket":"PMAT-1099","phase":"all","mode":"direct+agy-plan+agy-quorum","unit":"tool_call","est":120,"actual":110,"basis":"PVL-001 §5 [A] operator estimate; actual [C] transcript count ±2","pr_runs":1,"mg_runs":0}
 {"repo":"aprender","ticket":"PMAT-1099","phase":"run2","mode":"direct+agy-quorum×2(direct-launch)","unit":"tool_call","est":120,"actual":36,"basis":"PVL-001 §5 [A] operator estimate; actual [C] count at receipt time (+≈5 for CI watch/merge)","pr_runs":1,"mg_runs":0}
 {"repo":"aprender","ticket":"PMAT-1099","phase":"session-3-quorum-fix","mode":"direct+agy-quorum:3","est":120,"actual":30,"basis":"[A] PVL-001 §5"}
