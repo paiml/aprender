@@ -127,3 +127,122 @@ earlier, then went rc=0 with all three files auto-merged.
   commit (`CARGO_BUILD_JOBS=2`, doctests `--test-threads=4`). Until #3307 lands
   and the gate runs green once, that question is open.
 - `pack:` stays `[U]` — §5 P0·Instrument has not written ledger records.
+
+---
+
+## Interval — 13:45Z
+
+```
+scope: Lane B PR-1 and PR-2 both open · 355 dark tests wired · 19 obligations named
+queue: BEHIND 0 · DIRTY 1 (#3041, split by ruling) · everything else on CI
+pins:  unchanged
+```
+
+### Lane B, both ordered items
+
+**PR-1 — #3312, `contract_tests` wired into the gate.** The premise checked out
+and then some. `crates/aprender-core/tests/contracts/` holds **68 modules, 355
+`#[test]` functions, 66 `proptest!` blocks**, and `ci.yml:570` — the one line
+naming explicit `--test` targets — lists 38 of them and not this one. CI runs
+`--lib` across the workspace, which never reaches an integration target under
+`tests/`.
+
+The reason it could stay dark for so long is that **the hand entry point was
+broken too**:
+
+```
+$ cargo test --test contract_tests --no-run
+error: no test target named `contract_tests` in default-run packages
+help: available test in `aprender-core` package: contract_tests
+```
+
+`make contract-test` ran exactly that, with no `-p`. Nobody could run the suite
+by hand either, so nobody noticed it was not running in CI.
+
+The suite is healthy — `300 passed; 0 failed; 55 ignored` — so wiring it does
+not red-line main. RED evidence through the exact command ci.yml now carries:
+mutating softmax's sum-to-one contract to sum-to-two gives
+`299 passed; 1 failed`, `exit=101`.
+
+**The 55 ignored stay ignored, and that is the correct call.** Each carries a
+reason and an EMPTY body — placeholders for obligations whose code does not
+exist ("Gated Delta Net not implemented"). Deleting the attribute would make all
+55 pass *vacuously*, which is strictly worse than skipping and is the same
+enforcement-theater class the PR closes. Reported as
+`300 evaluated, 0 failed, 55 blocked-on-unimplemented`.
+
+**PR-2 — #3316, the 19 obligations get names.** 14 of 19 were anonymous, and
+four kani harnesses pointed at ids that do not exist (`QHF-INV-001`,
+`QHF-INV-002`, `QE2E-INV-001`, `QE2E-ORD-001`). `pv validate` said
+`0 error(s), 0 warning(s)` for all three contracts; `pv proof-status` counted
+`9 kani` against `7 obligations` without noticing two of the nine attach to
+nothing.
+
+The 21 that *did* resolve were worse than they looked — they matched the
+obligation's `property` **prose**. A proof bound to a sentence unbinds itself
+the moment anyone rewords the sentence. All 25 now cite an id.
+
+One judgement call is stated rather than buried: `KANI-QHF-001` asserts "Shape
+preservation through hybrid block", the conjunction of three per-sublayer
+invariants that no single obligation states. Pointed at `QHF-INV-001` —
+understating what it verifies, overstating nothing. **Decision request:** if a
+block-level obligation was intended, it needs writing.
+
+### The class is repo-wide, and that reframes #3091
+
+Scanning all 876 contracts carrying obligations or harnesses:
+
+| | count | share |
+|---|---|---|
+| ≥1 **anonymous** obligation | **824** | 94% |
+| ≥1 **dangling** kani reference | **287** | 33% |
+| dangling references in total | **586** | — |
+
+"0/17 bound" was never a Qwen problem. It is the visible corner of a repo-wide
+one, and `pv validate` reports `0 error(s)` for every instance. Filed as #3314
+with the guard, the `pv` fix, and the ratchet; #3315/#3316 is the 0.68 slice
+only, per the ruling that 0.68 does not widen its scope.
+
+### The merge path, continued
+
+Three PRs could not be updated, all conflicting on the **same single line**:
+`ci.yml:570`, a ~4000-character string holding all 38 `--test` targets. Every PR
+adding a target must edit that one line, so two such PRs always collide — the
+serial fraction #3297 removed from `roadmap.yaml`, still present here. It
+compounds: a new test file is dark until added to that line, so the file every
+new target must touch is also the one most likely to conflict.
+
+Every collision was append-vs-append, resolved as the union with main's order
+authoritative. A conflict whose resolution is always the same is a merge driver
+nobody wrote. Filed as #3313 with the fix: make it a sequence, one target per
+line.
+
+### Backlog
+
+| | start of run | now |
+|---|---|---|
+| DIRTY (cannot update) | 7 | **1** — #3041 only, split by ruling |
+| BEHIND | 18 | **0** |
+| open non-draft | 34 | 34 |
+
+### Shipped this interval
+
+| Item | State |
+|---|---|
+| #3312 — 355 contract tests wired + broken Makefile target (closes #3311) | open, armed |
+| #3316 — 19 obligations named, 25 harnesses cite ids (closes #3315) | open, armed |
+| #3311, #3313, #3314, #3315 | filed with measurements |
+| #3134, #3245, #3248 | ci.yml union, pushed out of CONFLICTING |
+| 9 further PRs | updated onto main |
+
+### Still open
+
+- **#3041** — deliberately untouched. Split, not resolved.
+- **#3314** — 824 anonymous / 586 dangling. Needs a scope ruling: baseline all
+  287 contracts now, or drain by area.
+- **`crates/aprender-contracts-staging/contracts/`** — holds stale copies of two
+  0.68 contracts; its `gated-delta-net-v1` already differs from `contracts/` by
+  88 lines at `origin/main`. Not a mirror anyone maintains, and a hazard if
+  someone "reconciles" the wrong direction. Deletion candidate, not actioned.
+- **A1 (#3189)** — still unreproduced, and cannot be settled until #3307 lands
+  and clean-room runs green once.
