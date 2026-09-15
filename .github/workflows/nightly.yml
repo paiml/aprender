@@ -160,3 +160,75 @@ jobs:
             > This is a prerelease. For stable releases, see the latest tagged version.
           files: |
             artifacts/*
+
+  # ── APR-RELEASE-001 §3.6 build ledger ────────────────────
+  #
+  # THE INSTRUMENT SHIPPED WITHOUT ITS CALLER. scripts/collect_build_ledger.sh
+  # says so in its own header: for the whole 0.67.0 train the only thing writing
+  # the ledger was a script in an agent scratchpad. 1260 records existed and
+  # nothing in the tree could produce record 1262. check_guards_are_wired.sh
+  # caught it — "NEW: collect_build_ledger.sh", named by no workflow — which is
+  # the third facility found this week that shipped self-tested and uncalled.
+  #
+  # NIGHTLY, NOT PER-RUN. A collector that commits on every CI run pushes to the
+  # branch it was triggered by and triggers itself; the Actions REST API keeps
+  # job timing for 90 days, so once a day loses nothing.
+  #
+  # NO FORCE-PUSH, EVER, so the branch carries the date. One PR per night, only
+  # ever ADDING files under docs/build-ledger/ (records are keyed sha-host-job,
+  # so re-reading a run rewrites the same bytes). A night that collected nothing
+  # opens no PR — an empty PR is the churn this would otherwise be accused of.
+  build-ledger:
+    name: collect the build ledger (§3.6)
+    runs-on: [self-hosted, Linux, X64, clean-room]
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Collect
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bash scripts/collect_build_ledger.sh --out docs/build-ledger --limit 200
+
+      - name: Open the night's ledger PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # `git status --porcelain` over the ledger path ONLY. Anything the
+          # collector wrote elsewhere is not this job's to commit, and a blanket
+          # `git add -A` in a job holding contents:write is how a nightly starts
+          # committing whatever else happened to be in the tree.
+          if [ -z "$(git status --porcelain -- docs/build-ledger)" ]; then
+            echo "no new ledger records tonight — nothing to open a PR for."
+            exit 0
+          fi
+          day=$(date -u +%F)
+          branch="bot/build-ledger-$day"
+          git config user.name  "aprender-build-ledger"
+          git config user.email "noreply@anthropic.com"
+          git switch -c "$branch"
+          git add docs/build-ledger
+          n=$(git diff --cached --name-only | wc -l | tr -d ' ')
+          git commit -m "chore(ledger): $n build-ledger record(s) for $day (APR-RELEASE-001 §3.6)" \
+                     -m "Collected by scripts/collect_build_ledger.sh from the Actions API." \
+                     -m "Pmat-Ticket: PMAT-1098"
+          git push origin "$branch"
+          gh pr create --base main --head "$branch" \
+            --title "chore(ledger): $n build-ledger record(s) for $day" \
+            --body "$(printf '%s\n' \
+              "$n record(s) collected by \`scripts/collect_build_ledger.sh\` from the Actions REST API." \
+              "" \
+              "APR-RELEASE-001 §3.6: append-only, one file per run, \`docs/build-ledger/<date>/<sha>-<host>-<job>.json\`." \
+              "The ledger is the project memory; §5 P0 refuses to set a build target below 20 records." \
+              "" \
+              "no-close: a nightly collection run closes no issue." \
+              "" \
+              "🤖 Generated with [Claude Code](https://claude.com/claude-code)")"
+          gh pr merge "$branch" --squash --auto || true
