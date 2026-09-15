@@ -246,3 +246,68 @@ line.
   someone "reconciles" the wrong direction. Deletion candidate, not actioned.
 - **A1 (#3189)** — still unreproduced, and cannot be settled until #3307 lands
   and clean-room runs green once.
+
+---
+
+## Interval — 14:45Z
+
+```
+scope: GDN 0/5 discharged — 5 obligations, 5 tests, ALL 5 #[ignore]d, empty bodies
+       #3303 CPU parity ref filed 12:14Z, not started · #3114 still draft
+       andon 2h06m elapsed at last report, 69h53m to §8 at 2026-09-18T12:19:39Z
+queue: BEHIND 0 · DIRTY 1 (#3041, split by ruling) · 7 PRs open and armed
+pins:  unchanged
+```
+
+`pv proof-status` reports `gated-delta-net-v1` at **L4 — "5 tests, 7 kani, 4 lean
+proved"** — for a contract whose every executable test is an empty `#[ignore]`d
+stub asserting nothing. pmat#1369's denominator problem surfacing as a *level*,
+not just a count. Nothing is discharged; the number says otherwise.
+
+### gx10 — reclaimed, root-caused, ticketed
+
+73 GB freed (`df avail` **8 GB → 84 GB**, now 167 GB). Free space was at 8 GB
+when the reclaim began, having fallen from 65 GB while I measured it, so jobs
+were hitting ENOSPC live.
+
+None of the three suspected causes held: the timer is active and hourly, the
+service runs `User=root`, and the path is right (same inode, `66306:34610110`).
+The sweep had **never run** — 428 consecutive `SKIPPED` in seven days, every one
+logged `ok:`. `sweep_shared_registry_src()` returns early whenever any job is
+live, which is correct for the genuinely shared registry it was written for
+(infra#509) and absolute on a CI host when pointed at a *per-PR* tree that is
+attributable. paiml/infra#612, now four parts: split by tree shape, budget cap,
+**N consecutive skips exits non-zero**, and a per-run ledger record so this
+appears in `build-report` instead of at 8 GB free.
+
+### Contract obligations — named (#3320)
+
+3,612 anonymous obligations across 823 contracts, by a committed, idempotent
+generator (`scripts/lib/obligation_ids.py`). The 52 already-named files are
+skipped whole — measured 0 modified. Ownership resolved across the whole corpus
+so the id space is global from day one: **0 ids claimed by more than one file.**
+
+Two bugs, both caught by assertions rather than review, both the same shape — a
+rule that silently did nothing:
+
+- 83 of 823 contracts **indent** their list items. The first cut matched only
+  column 0, reported those files as named, and changed nothing; `--check` found
+  410 obligations still anonymous.
+- collision detection counted only *computed* prefixes, so it could not see that
+  an untouched file already owned one, and minted `AL-BND-001` in two files.
+
+The ruling's order is inverted deliberately: `validate_contracts` walks every
+contract and is wired at `ci.yml:570`, so arming `pv` first red-lines main on
+3,612 rows. Naming lands first; `pv` strictness is the next PR and is this one's
+RED evidence.
+
+### Two guards caught my own work
+
+- **#3307** — the new baseline was unclassified and declared no instrument.
+  `check_baseline_ratchets.sh` and `check_tool_versions.sh` both refused it.
+  Fixed: `# tool_version=none` with its derivation, and registered as kind `set`.
+- **Five PRs** — `check_pr_closes_issue.sh` refuses a `Refs #N` with no
+  `no-close:` reason. That is the guard working exactly as intended; every body
+  now carries one, verified by running the guard against each.
+
+Neither was visible to me before CI said so, which is the argument for both.
