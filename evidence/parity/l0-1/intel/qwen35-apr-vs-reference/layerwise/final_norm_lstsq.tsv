@@ -1,0 +1,25 @@
+label	pos	row	cos	max_abs_diff	rel_l2	fit_rel_residual
+p4	0	CONTROL llama_lstsq_result_norm vs llama_dump_result_norm	0.999889	0.149021	0.014919	0.000000
+p4	0	SUBJECT apr_lstsq_result_norm vs llama_dump_result_norm	0.989044	2.476412	0.147827	0.000000
+p4	0	CONTROL llama_lstsq_l_out-23_direction vs llama_dump_l_out-23 (cos only)	0.999889	U	U	0.000000
+p4	0	SUBJECT apr_lstsq_l_out-23_direction vs llama_dump_l_out-23 (cos only)	0.994118	U	U	0.000000
+p4	1	CONTROL llama_lstsq_result_norm vs llama_dump_result_norm	0.999975	0.067365	0.007120	0.000000
+p4	1	SUBJECT apr_lstsq_result_norm vs llama_dump_result_norm	0.944845	4.913567	0.331704	0.000000
+p4	1	CONTROL llama_lstsq_l_out-23_direction vs llama_dump_l_out-23 (cos only)	0.999966	U	U	0.000000
+p4	1	SUBJECT apr_lstsq_l_out-23_direction vs llama_dump_l_out-23 (cos only)	0.944144	U	U	0.000000
+p4	2	CONTROL llama_lstsq_result_norm vs llama_dump_result_norm	0.999963	0.081320	0.008566	0.000000
+p4	2	SUBJECT apr_lstsq_result_norm vs llama_dump_result_norm	0.970524	7.340414	0.243297	0.000000
+p4	2	CONTROL llama_lstsq_l_out-23_direction vs llama_dump_l_out-23 (cos only)	0.999888	U	U	0.000000
+p4	2	SUBJECT apr_lstsq_l_out-23_direction vs llama_dump_l_out-23 (cos only)	0.968895	U	U	0.000000
+p4	3	CONTROL llama_lstsq_result_norm vs llama_dump_result_norm	0.999932	0.131876	0.011698	0.000000
+p4	3	SUBJECT apr_lstsq_result_norm vs llama_dump_result_norm	0.986881	2.712342	0.165674	0.000000
+p4	3	CONTROL llama_lstsq_l_out-23_direction vs llama_dump_l_out-23 (cos only)	0.999814	U	U	0.000000
+p4	3	SUBJECT apr_lstsq_l_out-23_direction vs llama_dump_l_out-23 (cos only)	0.986700	U	U	0.000000
+orig	4	CONTROL llama_lstsq_result_norm vs llama_dump_result_norm	0.999924	0.113636	0.012312	0.000000
+orig	4	SUBJECT apr_lstsq_result_norm vs llama_dump_result_norm	0.996068	1.271459	0.088610	0.000000
+orig	4	CONTROL llama_lstsq_l_out-23_direction vs llama_dump_l_out-23 (cos only)	0.999910	U	U	0.000000
+orig	4	SUBJECT apr_lstsq_l_out-23_direction vs llama_dump_l_out-23 (cos only)	0.996656	U	U	0.000000
+orig	28	CONTROL llama_lstsq_result_norm vs llama_dump_result_norm	0.999910	0.116407	0.013454	0.000000
+orig	28	SUBJECT apr_lstsq_result_norm vs llama_dump_result_norm	0.997429	1.149902	0.071702	0.000000
+orig	28	CONTROL llama_lstsq_l_out-23_direction vs llama_dump_l_out-23 (cos only)	0.999887	U	U	0.000000
+orig	28	SUBJECT apr_lstsq_l_out-23_direction vs llama_dump_l_out-23 (cos only)	0.997789	U	U	0.000000

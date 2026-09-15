@@ -1,0 +1,25 @@
+layer	type	evidence
+0	linear_gated_deltanet	blk.0.ssm_a present, attn_q.weight absent
+1	linear_gated_deltanet	blk.1.ssm_a present, attn_q.weight absent
+2	linear_gated_deltanet	blk.2.ssm_a present, attn_q.weight absent
+3	full_attention	blk.3.attn_q.weight present, ssm_a absent
+4	linear_gated_deltanet	blk.4.ssm_a present, attn_q.weight absent
+5	linear_gated_deltanet	blk.5.ssm_a present, attn_q.weight absent
+6	linear_gated_deltanet	blk.6.ssm_a present, attn_q.weight absent
+7	full_attention	blk.7.attn_q.weight present, ssm_a absent
+8	linear_gated_deltanet	blk.8.ssm_a present, attn_q.weight absent
+9	linear_gated_deltanet	blk.9.ssm_a present, attn_q.weight absent
+10	linear_gated_deltanet	blk.10.ssm_a present, attn_q.weight absent
+11	full_attention	blk.11.attn_q.weight present, ssm_a absent
+12	linear_gated_deltanet	blk.12.ssm_a present, attn_q.weight absent
+13	linear_gated_deltanet	blk.13.ssm_a present, attn_q.weight absent
+14	linear_gated_deltanet	blk.14.ssm_a present, attn_q.weight absent
+15	full_attention	blk.15.attn_q.weight present, ssm_a absent
+16	linear_gated_deltanet	blk.16.ssm_a present, attn_q.weight absent
+17	linear_gated_deltanet	blk.17.ssm_a present, attn_q.weight absent
+18	linear_gated_deltanet	blk.18.ssm_a present, attn_q.weight absent
+19	full_attention	blk.19.attn_q.weight present, ssm_a absent
+20	linear_gated_deltanet	blk.20.ssm_a present, attn_q.weight absent
+21	linear_gated_deltanet	blk.21.ssm_a present, attn_q.weight absent
+22	linear_gated_deltanet	blk.22.ssm_a present, attn_q.weight absent
+23	full_attention	blk.23.attn_q.weight present, ssm_a absent
