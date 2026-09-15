@@ -51,7 +51,11 @@ row() { # row WANT_RC LABEL MUST_MATCH BIN FILE
     local want=$1 label=$2 pat=$3 bin=$4 f=$5 rc=0 out
     n=$((n + 1))
     out=$(bash "$bin" "$f" 2>&1); rc=$?
-    if [ "$rc" = "$want" ] && printf '%s' "$out" | grep -qE -- "$pat"; then
+    # HERE-STRING, not a pipe into a quiet grep: under pipefail the quiet grep
+    # exits on first match, printf takes SIGPIPE and returns 141, and the pipeline
+    # is 141 -- so a row that MATCHED reports FAILED. In a row() helper that
+    # false-REDs the whole table (check_no_pipe_into_grep_q.sh).
+    if [ "$rc" = "$want" ] && grep -qE -- "$pat" <<< "$out"; then
         printf 'ok    row %-2s rc=%s  %s\n' "$n" "$rc" "$label"
     else
         printf 'FAIL  row %-2s rc=%s (wanted %s, must match /%s/)  %s\n' "$n" "$rc" "$want" "$pat" "$label"
@@ -162,7 +166,7 @@ row 2 "git itself failing is ENV (exit 2), never a pass" \
 n=$((n + 1))
 self_out=$(bash "$GUARD" --self-test 2>&1)
 self_rc=$?
-if [ "$self_rc" = 0 ] && printf '%s' "$self_out" | grep -qE '^[0-9]+/[0-9]+ checks, 0 failed$'; then
+if [ "$self_rc" = 0 ] && grep -qE '^[0-9]+/[0-9]+ checks, 0 failed$' <<< "$self_out"; then
     printf 'ok    row %-2s rc=0  scripts/check_roadmap_sorted.sh --self-test is itself green\n' "$n"
 else
     printf 'FAIL  row %-2s rc=%s  scripts/check_roadmap_sorted.sh --self-test\n' "$n" "$self_rc"

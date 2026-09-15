@@ -94,8 +94,13 @@ exclude = [
 ]
 
 [tdg]
-# CB-200 ratchet: functions below min_grade on 2026-09-03 (pmat comply); the count may only fall.
-baseline = 609
+# CB-200 ratchet: functions below min_grade (pmat comply); the count may only fall.
+# 602 re-measured 2026-09-15 under pmat 3.40.1 (602 under 3.40.0, 2026-09-14; 609 under
+# 3.39.0, 2026-09-03). 3.40.0 -> 3.40.1 read the same tree the same: the instrument moved,
+# the count did not. Between those readings #3004 added one B- definition
+# (registry/wgpu_probe.rs entry, 603) and merged, because no required job runs
+# `pmat comply`; it was split into four graded tables in the pin-bump PR, back to 602.
+baseline = 602
 # CB-200: 21 functions below A are in non-release crates (test-lib, test-cli, train/cuda)
 # These are complex GPU/inference functions where high cyclomatic complexity is inherent
 min_grade = "B"
