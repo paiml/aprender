@@ -1268,6 +1268,37 @@ pub(super) struct PythonExecResult {
 
 /// Execute Python and return diagnostics. Drains stderr to avoid pipe-buffer
 /// deadlock (RC2 candidate from §69).
+/// Create the throwaway `.py` the child interpreter will run.
+///
+/// THE NAME USED TO BE pid + NANOS, AND THAT IS NOT UNIQUE WITHIN ONE PROCESS.
+/// Ten tests in this module call the caller, and every eval run calls it once
+/// per test program. Under threads the pid is CONSTANT, so uniqueness rested
+/// entirely on `SystemTime::now()` resolving differently for each caller —
+/// which it is not required to, and on darwin does not.
+///
+/// Measured 2026-09-13, the first time this suite ran on mini (darwin/arm64,
+/// `--test-threads=4`): 7237 passed, 1 failed.
+/// `assertion_failure_reports_nonzero_and_traceback` wrote `assert 1 == 2` and
+/// got exit 0, while `python3 -c "assert 1 == 2"` exits 1 on that box — so the
+/// program that ran was not the one written. Two callers landed on one path and
+/// one executed the other's file.
+///
+/// That is not a test problem: `apr eval` runs USER programs through here, and
+/// a collision silently returns another program's result — a wrong answer
+/// rather than an error.
+///
+/// `tempfile::Builder` creates with `O_EXCL` and a random suffix, so uniqueness
+/// comes from the kernel rather than from a clock this code cannot control.
+fn new_eval_program_file(program: &str) -> std::result::Result<tempfile::NamedTempFile, String> {
+    let f = tempfile::Builder::new()
+        .prefix("apr_eval_")
+        .suffix(".py")
+        .tempfile()
+        .map_err(|e| format!("tmp create: {e}"))?;
+    std::fs::write(f.path(), program).map_err(|e| format!("tmp write: {e}"))?;
+    Ok(f)
+}
+
 pub(super) fn execute_python_test_with_diagnostics(
     program: &str,
     timeout_secs: u64,
@@ -1276,23 +1307,19 @@ pub(super) fn execute_python_test_with_diagnostics(
     use std::process::Command;
     use std::time::{Duration, Instant};
 
-    let tmp = std::env::temp_dir().join(format!(
-        "apr_eval_{}_{}.py",
-        std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_nanos())
-            .unwrap_or(0)
-    ));
-    if let Err(e) = std::fs::write(&tmp, program) {
-        return PythonExecResult {
-            success: false,
-            exit_code: None,
-            stderr_capture: String::new(),
-            timed_out: false,
-            spawn_error: Some(format!("tmp write: {e}")),
-        };
-    }
+    let tmp_file = match new_eval_program_file(program) {
+        Ok(f) => f,
+        Err(e) => {
+            return PythonExecResult {
+                success: false,
+                exit_code: None,
+                stderr_capture: String::new(),
+                timed_out: false,
+                spawn_error: Some(e),
+            };
+        }
+    };
+    let tmp = tmp_file.path().to_path_buf();
 
     let spawn_result = Command::new("python3")
         .arg(&tmp)

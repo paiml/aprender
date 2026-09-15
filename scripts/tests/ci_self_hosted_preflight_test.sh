@@ -72,7 +72,7 @@ fi
 # ---------------------------------------------------------------------------
 st_out="$("$BASH_BIN" "$SCRIPT" --self-test 2>&1)"
 st_rc=$?
-if [ "$st_rc" -eq 0 ] && printf '%s\n' "$st_out" | grep -q 'SELF-TEST PASSED'; then
+if [ "$st_rc" -eq 0 ] && grep -q 'SELF-TEST PASSED' <<<"$st_out"; then
     say_ok "row 1  --self-test is green"
 else
     say_red "row 1  --self-test rc=$st_rc, expected 0 with SELF-TEST PASSED"
@@ -117,7 +117,7 @@ fi
 rm -f "$PBIN/jq"
 out="$(env -u PREFLIGHT_OUT -u RUNNER_TEMP PATH="$PBIN" "$BASH_BIN" "$SCRIPT" 2>&1)"
 rc=$?
-if [ "$rc" -eq 1 ] && printf '%s\n' "$out" | grep -q 'MISSING jq'; then
+if [ "$rc" -eq 1 ] && grep -q 'MISSING jq' <<<"$out"; then
     say_ok "row 4  hiding jq from PATH -> exit 1 naming MISSING jq"
 else
     say_red "row 4  hiding jq -> exit $rc (expected 1) and output did not name MISSING jq"
@@ -273,6 +273,54 @@ if [ "$m_rc" -eq 1 ]; then
 else
     say_red "row 10 the wiring check returned $m_rc on a workflow with the step deleted — it is vacuous"
 fi
+
+# ---------------------------------------------------------------------------
+# 4. $HOME probe paths. ONE root-owned dotfile directory disables every cargo
+#    build on the box: gix reads $HOME/.config/git/ignore for the XDG excludes
+#    file, an UNREADABLE parent answers EACCES rather than ENOENT, and gix
+#    treats that as a hard error. Measured on mini 2026-09-13 — a `sudo htop`
+#    left /Users/<user>/.config as `drwx------ root staff`, and from then on
+#    cargo could not fingerprint ANY package whose build script lacks
+#    `rerun-if-changed`. `cargo check --workspace` went from impossible to
+#    1m01s over 79 packages with one chown.
+#
+#    Three rows, because two of the three polarities are what make it useful:
+#    unreadable must be RED, readable must be GREEN, and ABSENT must be GREEN —
+#    a check that flagged an absent ~/.config would fire on every clean box and
+#    be turned off within a day.
+# ---------------------------------------------------------------------------
+HOMEPROBE="$(mktemp -d)"
+
+mkdir -p "$HOMEPROBE/.config"
+chmod 000 "$HOMEPROBE/.config"
+out="$(HOME="$HOMEPROBE" bash "$SCRIPT" 2>&1)"; rc=$?
+n=$((n + 1))
+if [ "$rc" -eq 1 ] && grep -q "DENIED $HOMEPROBE/.config" <<<"$out"; then
+    say_ok "row $n  an UNREADABLE \$HOME/.config -> exit 1, naming the path"
+else
+    say_red "row $n  unreadable \$HOME/.config -> exit $rc and the output did not name it"
+    printf '%s\n' "$out" | sed 's|^|        |'
+fi
+
+chmod 700 "$HOMEPROBE/.config"
+HOME="$HOMEPROBE" bash "$SCRIPT" > /dev/null 2>&1; rc=$?
+n=$((n + 1))
+if [ "$rc" -eq 0 ]; then
+    say_ok "row $n  a READABLE \$HOME/.config -> exit 0"
+else
+    say_red "row $n  readable \$HOME/.config -> exit $rc, expected 0"
+fi
+
+rmdir "$HOMEPROBE/.config"
+HOME="$HOMEPROBE" bash "$SCRIPT" > /dev/null 2>&1; rc=$?
+n=$((n + 1))
+if [ "$rc" -eq 0 ]; then
+    say_ok "row $n  an ABSENT \$HOME/.config is NOT a finding -> exit 0"
+else
+    say_red "row $n  absent \$HOME/.config -> exit $rc; this would fire on every clean box"
+fi
+
+rm -rf "${HOMEPROBE:?}"
 
 # ---------------------------------------------------------------------------
 printf '\n%d row(s), %d red\n' "$n" "$red"

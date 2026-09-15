@@ -19,3 +19,10 @@ self-hosted-runner:
     - gb10
     - ada
     - perf-solo
+    # mini (Apple M4, #3204): the fleet's only macOS/arm64 runner. `mini` is the
+    # one-box opt-in label (infra machines/gx10/forjar.yaml: an opt-in label names
+    # ONE BOX, never a capability); apple-silicon/m4 describe it.
+    - macOS
+    - apple-silicon
+    - m4
+    - mini

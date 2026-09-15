@@ -568,13 +568,30 @@ impl Debug for BrickPipeline {
     }
 }
 
-/// Generate a simple UUID v4 (non-cryptographic)
+/// A process-unique run id, as `<nanos>-<pid>-<seq>`. NOT a UUID and not v4 --
+/// no randomness at all; the name is kept because call sites use it.
+///
+/// THE SEQUENCE NUMBER IS LOAD BEARING. This was `nanos + pid` with no
+/// separator, and the pid is constant within a process, so uniqueness rested
+/// entirely on the clock advancing between two calls. It does not have to:
+/// `SystemTime::now()` is microsecond-resolution on darwin, and 100 calls in a
+/// loop collided badly enough that `test_uuid_v4_generates_unique_ids` measured
+/// fewer than 90 distinct ids on mini-m4 (job 103767…). Linux's nanosecond
+/// clock is the only reason this ever looked unique -- deleting the counter
+/// does NOT redden that test on Linux, which is why the field is separated and
+/// asserted directly below.
+///
+/// A monotonic counter makes it unique WITHIN the process by construction, at
+/// any clock resolution; nanos and pid keep it unique ACROSS processes.
 fn uuid_v4() -> String {
+    use std::sync::atomic::{AtomicU64, Ordering};
     use std::time::{SystemTime, UNIX_EPOCH};
+    static SEQ: AtomicU64 = AtomicU64::new(0);
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default();
-    format!("{:x}{:x}", now.as_nanos(), std::process::id())
+    let seq = SEQ.fetch_add(1, Ordering::Relaxed);
+    format!("{:x}-{:x}-{seq:x}", now.as_nanos(), std::process::id())
 }
 
 #[cfg(test)]
@@ -1961,8 +1978,37 @@ mod tests {
             let meta = PipelineMetadata::new();
             ids.insert(meta.run_id);
         }
-        // Should have generated 100 unique IDs (or very close due to timing)
-        assert!(ids.len() >= 90);
+        // 100, not ">= 90". The slack existed to absorb clock collisions, and
+        // absorbing them is how this went unnoticed until a microsecond clock
+        // pushed the rate past it. With the counter the guarantee is
+        // unconditional, so assert it.
+        assert_eq!(
+            ids.len(),
+            100,
+            "run ids must be unique within a process at any clock resolution"
+        );
+    }
+
+    /// The counter is the part that does not depend on the clock, so assert it
+    /// DIRECTLY. Deleting `SEQ` leaves `test_uuid_v4_generates_unique_ids`
+    /// green on Linux -- measured -- because nanosecond timestamps carry the
+    /// uniqueness there on their own. This row goes red on every platform.
+    #[test]
+    fn run_ids_carry_a_monotonic_counter_that_does_not_depend_on_the_clock() {
+        let ids: Vec<String> = (0..5).map(|_| uuid_v4()).collect();
+        let seqs: Vec<u64> = ids
+            .iter()
+            .map(|id| {
+                let tail = id.rsplit('-').next().expect("id has a trailing field");
+                u64::from_str_radix(tail, 16).expect("the trailing field is the hex counter")
+            })
+            .collect();
+        for pair in seqs.windows(2) {
+            assert!(
+                pair[1] == pair[0] + 1,
+                "the counter must advance by one per call, got {seqs:?}"
+            );
+        }
     }
 
     #[test]

@@ -15,8 +15,21 @@ impl<T> CacheEntry<T> {
         Self { value, expires_at: Instant::now() + ttl }
     }
 
+    /// `>=`, not `>`. `expires_at` is the first instant at which the entry is
+    /// STALE, so an entry that reaches it is expired -- and with a zero TTL
+    /// `expires_at == created_at`, which makes "expired on arrival" the whole
+    /// meaning of `Duration::ZERO`.
+    ///
+    /// `>` only looked right because Linux's clock always ticks between the
+    /// constructor and the next `Instant::now()`. On darwin/arm64 it need not:
+    /// mach_absolute_time advances in ~41.7 ns steps, the two reads land in one
+    /// tick, and `test_crates_001_cache_entry_zero_ttl` measured a zero-TTL
+    /// entry reporting itself FRESH (mini-m4, job 103760…). The sibling
+    /// `is_expired` on the on-disk entry below has always used `>=`; these two
+    /// spellings of one predicate disagreeing is the defect, and `>=` is the
+    /// half that is right.
     pub fn is_expired(&self) -> bool {
-        Instant::now() > self.expires_at
+        Instant::now() >= self.expires_at
     }
 }
 
