@@ -17783,3 +17783,21 @@ roadmap:
   labels:
   - kind:code
   notes: null
+- id: PMAT-3232
+  github_issue: null
+  item_type: task
+  title: 'APR-RELEASE-001 §11.2: the five ontology counters, measured, with an anchor-without-a-consumer refusal'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-09-14T18:05:00Z
+  updated: 2026-09-14T18:05:00Z
+  spec: docs/specifications/APR-RELEASE-001-train-and-build-kaizen.md
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'unanchored_but_bindable moves from [U] to 297; contracts_anchored may not
+    rise while pv census is absent, because pv validate accepts entity: by ignoring it'
