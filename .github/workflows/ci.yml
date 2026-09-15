@@ -567,7 +567,7 @@ jobs:
             -e CARGO_INCREMENTAL=0 \
             -e CARGO_BUILD_JOBS=8 \
             "$IMAGE" \
-            bash -c 'cargo test -p aprender-core --features setfit --lib setfit && cargo test -p aprender-core --features setfit,conformance-fixtures --test setfit_conformance && cargo test -p aprender-core --test monorepo_invariants && cargo test -p aprender-core --test readme_contract && cargo test -p apr-cli --test cli_commands && cargo test -p apr-cli --test reg15_admission && cargo test -p aprender-train-inspect --test falsify_no_fabricated_metadata_2519 && cargo test -p aprender-train-bench --test falsify_no_fabricated_benchmarks_2519 && cargo test -p aprender-train-shell --test falsify_no_fabricated_fetch_2519 && cargo test -p aprender-core --test beat_sklearn_iris && cargo test -p aprender-core --test beat_sklearn_nmi && cargo test -p aprender-core --test beat_sklearn_metrics_parity && cargo test -p aprender-core --test beat_sklearn_gaussiannb_accuracy && cargo test -p aprender-core --test beat_sklearn_svc_accuracy && cargo test -p aprender-core --test beat_sklearn_pipeline_encoder && cargo test -p aprender-serve --test beat_fail_closed_garbage && cargo test -p aprender-compute --lib beat_nf4_bitsandbytes_equivalence && cargo test -p aprender-core --test beat_pytorch_autograd_grad && cargo test -p aprender-train-lora --lib beat_lora_merge_forward_equivalence && cargo test -p apr-cli --release --test beat_pytorch_deploy_footprint && cargo test -p aprender-serve --test beat_fail_closed_structural && cargo test -p aprender-serve --test ollama_http_compat && cargo test -p apr-cli --test ollama_ndjson_streaming && cargo test -p apr-cli --test falsification_chat_http_cli && cargo test -p aprender-contracts --test apr_serve_api_key_auth_contract && cargo test -p apr-cli --test falsify_auth_001 --test falsify_auth_002 --test falsify_auth_003 --no-fail-fast && cargo test -p apr-cli --test beat_apr_data_alimentar_reach && cargo test -p apr-cli --test beat_apr_sibling_cli_reach && cargo test -p aprender-contracts-cli --test pv_surface_gate && cargo test -p aprender-contracts-cli --test cli_integration && cargo test -p aprender-contracts-cli --test ground_truth && cargo test -p aprender-contracts-cli --test version_identity && cargo test -p apr-cli --test pixel_regression && cargo build --examples --workspace --keep-going && cargo check --workspace --benches --locked'
+            bash -c 'cargo test -p aprender-core --features setfit --lib setfit && cargo test -p aprender-core --features setfit,conformance-fixtures --test setfit_conformance && cargo test -p aprender-core --test monorepo_invariants && cargo test -p aprender-core --test readme_contract && cargo test -p apr-cli --test cli_commands && cargo test -p apr-cli --test reg15_admission && cargo test -p aprender-train-inspect --test falsify_no_fabricated_metadata_2519 && cargo test -p aprender-train-bench --test falsify_no_fabricated_benchmarks_2519 && cargo test -p aprender-train-shell --test falsify_no_fabricated_fetch_2519 && cargo test -p aprender-core --test beat_sklearn_iris && cargo test -p aprender-core --test beat_sklearn_nmi && cargo test -p aprender-core --test beat_sklearn_metrics_parity && cargo test -p aprender-core --test beat_sklearn_gaussiannb_accuracy && cargo test -p aprender-core --test beat_sklearn_svc_accuracy && cargo test -p aprender-core --test beat_sklearn_pipeline_encoder && cargo test -p aprender-serve --test beat_fail_closed_garbage && cargo test -p aprender-compute --lib beat_nf4_bitsandbytes_equivalence && cargo test -p aprender-core --test beat_pytorch_autograd_grad && cargo test -p aprender-train-lora --lib beat_lora_merge_forward_equivalence && cargo test -p apr-cli --release --test beat_pytorch_deploy_footprint && cargo test -p aprender-serve --test beat_fail_closed_structural && cargo test -p aprender-serve --test ollama_http_compat && cargo test -p apr-cli --test ollama_ndjson_streaming && cargo test -p apr-cli --test falsification_chat_http_cli && cargo test -p aprender-contracts --test apr_serve_api_key_auth_contract && cargo test -p apr-cli --test falsify_auth_001 --test falsify_auth_002 --test falsify_auth_003 --no-fail-fast && cargo test -p apr-cli --test beat_apr_data_alimentar_reach && cargo test -p apr-cli --test beat_apr_sibling_cli_reach && cargo test -p aprender-contracts-cli --test pv_surface_gate && cargo test -p aprender-contracts-cli --test pvl_zero_contracts && cargo test -p aprender-contracts-cli --test cli_integration && cargo test -p aprender-contracts-cli --test ground_truth && cargo test -p aprender-contracts-cli --test version_identity && cargo test -p apr-cli --test pixel_regression && cargo build --examples --workspace --keep-going && cargo check --workspace --benches --locked && cargo test -p apr-cli --test registry_failure_catalogue && cargo test -p aprender-compute --test registry_case_table'
       # BSE-17 quick tier, part 1: the selected crates' unit and integration
       # targets (default features) under the same image and mounts as the full
       # tier. Empty selection (a scripts/docs PR) skips this step; part 2 still runs.
@@ -1201,13 +1201,58 @@ jobs:
       # pull_request only: on merge_group there is no pull_request payload, and
       # a body is fixed before a PR is ever enqueued.
       - name: A PR body must close every issue it cites, or say why not (§6 R-2)
-        if: github.event_name == 'pull_request'
+        # `!cancelled()` and NOT a bare event check. Actions steps are fail-fast:
+        # measured on run 34875945193, step 8 went red and 48 of this job's 59
+        # steps were SKIPPED -- including this one and its §11.1 neighbour. This
+        # guard exists because the 0.67.0 reconcile found 48 merged PRs of which
+        # only 9 closed anything; masked by an unrelated guard, it is dark exactly
+        # as it was before it had a caller. It reads a PR body and nothing else,
+        # so no guard result can be its precondition. (#3282 classifies the other
+        # 46, which is a judgment call per step rather than one blanket edit.)
+        if: "!cancelled() && github.event_name == 'pull_request'"
         env:
           PR_BODY: ${{ github.event.pull_request.body }}
         run: |
           set -euo pipefail
           printf '%s' "$PR_BODY" > "$RUNNER_TEMP/pr-body.txt"
           bash scripts/check_pr_closes_issue.sh --body "$RUNNER_TEMP/pr-body.txt"
+      # APR-RELEASE-001 §11.1, WIRED. The section shipped as prose in #3268 and
+      # nothing read it: `grep -rl ont-delta scripts/ .github/ Makefile` returned
+      # NOTHING, while §11.1's own text says "Absent is a PR-body lint failure,
+      # not a review comment". A rule whose enforcement is "not a review comment"
+      # and whose only mechanism IS a review comment is this repo's anti-theater
+      # class, one level up from the guard it sits beside.
+      #
+      # Same body-handling rule as the step above: the body arrives through
+      # `env:` as DATA and is never interpolated into the script. It is
+      # attacker-controlled by construction.
+      #
+      # The changed-file list is the other input, and it is what makes the guard
+      # non-trivial: half the sweep surface ("a known-red list anywhere") is
+      # DERIVED from the tree, not typed. Measured on #3277, which touches
+      # scripts/cb200_baseline.txt and no prose sink at all -- a hand-typed sink
+      # list would have passed it.
+      - name: A sweep PR closes with an ontology delta, not a paragraph (§11.1)
+        # `!cancelled()` and NOT a bare event check. Actions steps are fail-fast:
+        # measured on run 34875945193, step 8 went red and 48 of this job's 59
+        # steps were SKIPPED -- including this one and its §11.1 neighbour. This
+        # guard exists because the 0.67.0 reconcile found 48 merged PRs of which
+        # only 9 closed anything; masked by an unrelated guard, it is dark exactly
+        # as it was before it had a caller. It reads a PR body and nothing else,
+        # so no guard result can be its precondition. (#3282 classifies the other
+        # 46, which is a judgment call per step rather than one blanket edit.)
+        if: "!cancelled() && github.event_name == 'pull_request'"
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$PR_BODY" > "$RUNNER_TEMP/ont-body.txt"
+          gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files" --paginate \
+            --jq '.[].filename' > "$RUNNER_TEMP/ont-files.txt"
+          bash scripts/check_pr_ont_delta.sh \
+            --body "$RUNNER_TEMP/ont-body.txt" --changed "$RUNNER_TEMP/ont-files.txt"
       # aprender#2822: THE REPORT. Runs even when the job dies mid-cargo,
       # and takes its own final probe first -- without that, a failure at
       # step K leaves the last recorded boundary BEFORE K and the table
@@ -1504,6 +1549,25 @@ jobs:
         run: bash scripts/check_tree_reader_tests.sh
       - name: bashrs must see every script in scripts/ (shrink-only)
         run: bash scripts/check_shell_lint_ratchet.sh
+      # SILICON LEDGER GUARDS (YOGA-NIGHTLY-001 R-5/R-6/R-8). All three are
+      # offline and take seconds, and they live HERE rather than only in
+      # silicon-nightly for the reason silicon-nightly itself demonstrates: that
+      # lane had not been green since it merged on 2026-08-29, so a guard whose
+      # only home is a red nightly is a guard nobody reads. Two of these were RED
+      # on the tree as committed when they were written, which is the strongest
+      # available proof that they discriminate.
+      - name: "Coverage is a RUN, not a runner: 6 fixtures + the probe-deletion mutation (R-5)"
+        run: |
+          bash scripts/check_silicon_coverage.sh --self-test
+          bash scripts/test_silicon_coverage_run_probe.sh
+      - name: "A cuda-named silicon axis must invoke CUDA (R-6)"
+        run: |
+          bash scripts/check_silicon_cuda.sh --self-test
+          bash scripts/check_silicon_cuda.sh
+      - name: "Every cargo -p in a workflow names a real crate (R-8)"
+        run: |
+          bash scripts/check_workflow_cargo_packages.sh --self-test
+          bash scripts/check_workflow_cargo_packages.sh
       # THE RELEASE'S bashrs GATE, ON THE PR (#3196). dogfood.sh's `bashrs` row
       # stopped the 0.67.0 train three times in one day (17:33Z, 20:58Z, 22:48Z)
       # on SEC/DET/IDEM findings that #3115/#3127, #3187 and #3068 had merged and

@@ -1,0 +1,3 @@
+@FRESH@	success	self-hosted,X64,Linux,clean-room	beat-speed	BEAT Speed (nightly)	34338579663
+@FRESH@	success	self-hosted,gpu,gx10,cuda,blackwell	falsifiers	CUDA Nightly	34330000001
+@STALE@	success	self-hosted,gpu,yoga,cuda,ada	ada-yoga (x86_64, sm_89)	CUDA Nightly	34320000003
