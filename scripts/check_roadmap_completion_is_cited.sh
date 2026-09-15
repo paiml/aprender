@@ -224,7 +224,24 @@ def tokens(*texts):
 # where a work contract lives. The second arm is not redundant: the first,
 # alone, gave a free pass to any pmat-schema file under docs/roadmaps/ that was
 # not called roadmap*.yaml, which the case table caught as two red rows.
+# `.claude/worktrees/` is agy's throwaway lane workspace: a full checkout,
+# roadmap.yaml and all, created per lane and left behind when one dies. It is in
+# `.git/info/exclude`, so nothing under it can ever reach the tree CI gates --
+# but this guard's universe deliberately includes UNTRACKED files (that is the
+# hole it was written to close), so it walked straight into them and counted a
+# second copy of every entry. Measured on a clean branch after one review
+# quorum: 1107 phantom "NEW unprovable claims" pointing at innocent rows.
+# check_complexity_ratchet.sh:149 already prunes `*/.claude/worktrees/*`.
+# Checked here rather than only in the walk so the `git ls-files` half of the
+# universe is covered by the same rule.
+SCRATCH_PREFIX = ".claude/worktrees/"
+
+def is_scratch(rel):
+    return rel.replace(os.sep, "/").startswith(SCRATCH_PREFIX)
+
 def is_candidate(rel):
+    if is_scratch(rel):
+        return False
     d, fn = os.path.split(rel)
     if not fn.lower().endswith(".yaml"):
         return False
@@ -234,7 +251,13 @@ def is_candidate(rel):
 
 cand = set()
 for dirpath, dirnames, filenames in os.walk(root):
-    dirnames[:] = [d for d in dirnames if d not in (".git", "target", "node_modules")]
+    reldir = os.path.relpath(dirpath, root).replace(os.sep, "/")
+    dirnames[:] = [
+        d for d in dirnames
+        if d not in (".git", "target", "node_modules")
+        # do not descend into lane scratch: 66 worktrees were registered here
+        and (reldir + "/" + d).lstrip("./") != SCRATCH_PREFIX.rstrip("/")
+    ]
     for fn in filenames:
         rel = os.path.relpath(os.path.join(dirpath, fn), root)
         if is_candidate(rel):
@@ -579,6 +602,23 @@ YAML
     row 'planned subtask is not gated'         absent   "$(short "$(verdict_of 'sub:R-SUBTASK-PARENT/S-PLANNED')")"
     row 'completed PHASE is gated'             uncited  "$(short "$(verdict_of 'phase:R-PHASE-PARENT/Phase one')")"
     row 'duplicate id gets a positional key'   uncited  "$(short "$(verdict_of 'R-DUP [#2]')")"
+
+    # LANE SCRATCH. `.claude/worktrees/` is agy's throwaway lane workspace and is
+    # in `.git/info/exclude`, so nothing under it can ever reach the tree CI sees.
+    # It holds a full checkout, roadmap.yaml included. Walking into it counted a
+    # second copy of every entry: measured 1107 phantom "NEW unprovable claims" on
+    # a clean branch, a false RED that sends the reader to 1107 innocent rows.
+    # check_complexity_ratchet.sh already prunes `*/.claude/worktrees/*`; this
+    # guard never got the same fix.
+    mk .claude/worktrees/lane-deadbeef/docs/roadmaps/roadmap.yaml <<'YAML'
+roadmap:
+- id: R-LANE-SCRATCH
+  status: completed
+  notes: null
+YAML
+    scan_roadmaps "$TD" >"$TD/scan3.out" 2>"$TD/scan3.err" || true
+    n_lane=$(grep -c 'lane-deadbeef' "$TD/scan3.out" "$TD/scan3.err" 2>/dev/null | awk -F: '{t+=$2} END {print t+0}')
+    row 'lane scratch contributes no records'  0 "$n_lane"
 
     n_out=$(grep -c '^SCOPE out  crates/other/roadmap.yaml' "$TD/scan.err" || true)
     row 'foreign schema is reported out of scope, not skipped' 1 "$n_out"

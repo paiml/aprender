@@ -203,27 +203,27 @@ kani_harnesses:
   solver: cadical
   harness: verify_state_shape_preserved
 - id: KANI-GATED_-003
-  obligation: Decay in unit interval
+  obligation: GDN-BND-001
   property: Decay in unit interval
   bound: 8
   strategy: exhaustive
 - id: KANI-GATED_-004
-  obligation: State shape preserved
+  obligation: GDN-INV-002
   property: State shape preserved
   bound: 8
   strategy: exhaustive
 - id: KANI-GATED_-005
-  obligation: Causal conv1d
+  obligation: GDN-INV-003
   property: Causal conv1d
   bound: 8
   strategy: exhaustive
 - id: KANI-GATED_-006
-  obligation: L2 norm preserves direction
+  obligation: GDN-INV-004
   property: L2 norm preserves direction
   bound: 8
   strategy: exhaustive
 - id: KANI-GATED_-007
-  obligation: SIMD matches scalar within ULP
+  obligation: GDN-EQ-005
   property: SIMD matches scalar within ULP
   bound: 8
   strategy: exhaustive

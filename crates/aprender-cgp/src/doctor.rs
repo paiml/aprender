@@ -400,6 +400,11 @@ mod tests {
         let _ = detect_gpu();
         let _ = check_binary("nonexistent", &[], parse_generic_version);
         let elapsed = start.elapsed();
+        // DURATION ONLY UNDER `timing-gate` (#3239). A shared, saturated runner
+        // cannot measure elapsed time; see this crate's Cargo.toml.
+        #[cfg(feature = "timing-gate")]
         assert!(elapsed.as_secs() < 2, "doctor checks took {:?}", elapsed);
+        #[cfg(not(feature = "timing-gate"))]
+        let _ = elapsed;
     }
 }

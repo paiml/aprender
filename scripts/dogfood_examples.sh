@@ -38,6 +38,10 @@
 #                   a driver-less host must not be readable as "the CUDA example
 #                   works". These rows are re-run on the CUDA host before the
 #                   release verdict (G3.EX).
+#   needs-feature   (Added 2026-09-14): 6 rows on run 34826552378 were classified
+#                   `fail` whose output says the example is not built with the
+#                   feature it needs. Not runnable in THIS configuration, not
+#                   broken. Re-run WITH the feature before a release verdict.
 #   needs-data      (Added 2026-09-12): 173 rows on the 0.67 train head (981
 #                   example targets) were classified `fail` whose stderr says
 #                   the example needs a FILE the repository does not ship.
@@ -76,6 +80,15 @@ SELFTEST=0
 NEEDS_ARGS_RE='^(Usage|error: the following required arguments)'
 NEEDS_HW_RE='(CUDA_ERROR_[A-Z_]+|no CUDA-capable device|CUDA driver version is insufficient|cuInit|libcuda\.so|libnvidia-ml|[Nn]o (suitable )?(graphics )?adapter|RequestAdapterError|NoAdapter|wgpu.*(device|adapter) (not|un)|Metal device (not|un))'
 NEEDS_DATA_RE='No such file or directory|[Mm]odel not found|not found at |Failed to open |[Nn]o tokenizer|Download with:|does not exist|hf://'
+# needs-feature (Added 2026-09-14): 6 rows on run 34826552378 were classified
+# `fail` whose output says the example is not built with the feature it needs --
+# either the example's own guard ("This example requires the 'compression'
+# feature.") or cargo refusing the target outright ("requires the features:
+# cuda"). Not runnable in THIS configuration; not broken. Like needs-hardware,
+# these must be re-run WITH the feature before a release verdict -- a skip here
+# must never be readable as "the compression example works".
+NEEDS_FEATURE_RE="requires the '[^']+' feature|requires the features?:"
+
 
 # ---------------------------------------------------------------------------
 # helpers
@@ -191,6 +204,11 @@ classify() {
     line=$(grep -m1 -E "${NEEDS_DATA_RE}" "${log}" 2> /dev/null) || line=''
     if [ -n "${line}" ]; then
         printf 'needs-data\t%s\n' "$(oneline "${line}")"
+        return 0
+    fi
+    line=$(grep -m1 -E "${NEEDS_FEATURE_RE}" "${log}" 2> /dev/null) || line=''
+    if [ -n "${line}" ]; then
+        printf 'needs-feature\t%s\n' "$(oneline "${line}")"
         return 0
     fi
     line=$(grep -m1 -E '[^[:space:]]' "${log}" 2> /dev/null) || line=''
@@ -399,6 +417,33 @@ selftest() {
     st_expect 'class: needs_arg -> needs-args' "${out}" "${p}" needs_arg needs-args
     st_expect 'class: nohw -> needs-hardware' "${out}" "${p}" nohw needs-hardware
     st_expect 'class: nodata -> needs-data' "${out}" "${p}" nodata needs-data
+    st_expect 'class: nofeature -> needs-feature' "${out}" "${p}" nofeature needs-feature
+
+    # NEEDS_FEATURE_RE, both polarities. A skip class is the dangerous kind of
+    # addition -- it can only ever turn a `fail` into a non-failure -- so the
+    # regex ships the strings it must NOT match alongside the ones it must.
+    # "feature is required for this operation" is the near-miss that decides it.
+    local _m _s
+    for _s in "This example requires the '"'"'compression'"'"' feature." \
+              "Error: This example requires the '"'"'tensor'"'"' feature." \
+              "target \`gpu_info\` in package requires the features: cuda"; do
+        if grep -qE "${NEEDS_FEATURE_RE}" <<< "${_s}"; then
+            st_row PASS "re: matches -- $(oneline "${_s}")"
+        else
+            st_row FAIL "re: SHOULD match -- $(oneline "${_s}")"
+        fi
+    done
+    for _s in "thread '"'"'main'"'"' panicked at src/main.rs:11:39" \
+              "error[E0432]: unresolved import \`trueno_gpu::driver::PinnedBuffer\`" \
+              "Error: Os { code: 6, kind: Uncategorized }" \
+              "assertion failed: left == right" \
+              "feature is required for this operation"; do
+        if grep -qE "${NEEDS_FEATURE_RE}" <<< "${_s}"; then
+            st_row FAIL "re: MUST NOT match -- $(oneline "${_s}")"
+        else
+            st_row PASS "re: does not match -- $(oneline "${_s}")"
+        fi
+    done
 
     # rc of the failing example is recorded, not flattened to 1.
     if awk -F'\t' '$2 == "bad" && $4 == 3 { f = 1 } END { exit !f }' "${out}"; then
@@ -409,11 +454,11 @@ selftest() {
     fi
 
     # Every citing class cites a LINE, not an empty cell.
-    if awk -F'\t' '$3 == "needs-args" || $3 == "needs-hardware" || $3 == "needs-data" { if ($6 == "") bad = 1 } END { exit bad }' \
+    if awk -F'\t' '$3 == "needs-args" || $3 == "needs-hardware" || $3 == "needs-data" || $3 == "needs-feature" { if ($6 == "") bad = 1 } END { exit bad }' \
             "${out}"; then
-        st_row PASS 'cite: the three skip classes cite a line'
+        st_row PASS 'cite: the four skip classes cite a line'
     else
-        st_row FAIL 'cite: the three skip classes cite a line'
+        st_row FAIL 'cite: the four skip classes cite a line'
     fi
 
     # Trailer counts.
@@ -431,11 +476,11 @@ selftest() {
     fi
 
     # No unclassified row.
-    if awk -F'\t' '/^#/ { next } { if ($3 !~ /^(pass|fail|timeout|needs-args|needs-hardware|needs-data)$/) bad = 1 } END { exit bad }' \
+    if awk -F'\t' '/^#/ { next } { if ($3 !~ /^(pass|fail|timeout|needs-args|needs-hardware|needs-data|needs-feature)$/) bad = 1 } END { exit bad }' \
             "${out}"; then
-        st_row PASS 'rows: every row carries one of the six classes'
+        st_row PASS 'rows: every row carries one of the seven classes'
     else
-        st_row FAIL 'rows: every row carries one of the six classes'
+        st_row FAIL 'rows: every row carries one of the seven classes'
     fi
 
     st_mutation_row "${td}" "${ws}" "${p}"
