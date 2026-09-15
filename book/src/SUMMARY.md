@@ -297,6 +297,7 @@
 - [apr ddp-metrics-lint](./cli/ddp-metrics-lint.md)
 - [apr debug](./cli/debug.md)
 - [apr decrypt](./cli/decrypt.md)
+- [apr devices](./cli/devices.md)
 - [apr diagnose](./cli/diagnose.md)
 - [apr diff](./cli/diff.md)
 - [apr distill](./cli/distill.md)
