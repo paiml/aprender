@@ -199,3 +199,59 @@ fn beat_evaluate_matches_pilot_iris_contract() {
     assert_eq!(b.evaluate(0.9400), Some(BeatOutcome::Won));
     assert_eq!(b.evaluate(0.9000), Some(BeatOutcome::Regressed));
 }
+
+/// #3314: `id:` must survive deserialization, and its absence must be `None`.
+///
+/// Until this field existed, `ProofObligation` had no `id` and there is no
+/// `deny_unknown_fields`, so `id:` was written to disk and **silently dropped
+/// on parse**. 3,612 generated ids were decoration: no consumer could read one.
+/// This test is the durable form of that check -- deleting the field, or
+/// renaming it in serde, turns it red rather than quietly reverting the corpus
+/// to unciteable.
+#[test]
+fn proof_obligation_id_survives_deserialization() {
+    let yaml = "
+- id: GDN-BND-001
+  type: bound
+  property: Decay in unit interval
+- type: invariant
+  property: an obligation with no id
+";
+    let obs: Vec<ProofObligation> =
+        serde_yaml::from_str(yaml).expect("two obligations, one with an id");
+    assert_eq!(obs.len(), 2);
+    assert_eq!(
+        obs[0].id.as_deref(),
+        Some("GDN-BND-001"),
+        "id: was dropped on parse — every generated obligation id is decoration again"
+    );
+    assert_eq!(
+        obs[1].id, None,
+        "an obligation with no id must read as None"
+    );
+}
+
+/// The id must also survive a round trip, because `pv unlock` writes contracts
+/// back. It does so through `serde_yaml::Value` today, so unknown keys survive
+/// regardless — but if anyone ever "improves" that into a typed round trip,
+/// `skip_serializing_if` plus this test are what stop it silently stripping
+/// 3,750 ids file by file.
+#[test]
+fn proof_obligation_id_survives_a_typed_round_trip() {
+    let ob = ProofObligation {
+        id: Some("QHF-INV-004".to_string()),
+        property: "Block outputs from exactly one attention type".to_string(),
+        ..Default::default()
+    };
+    let round: ProofObligation =
+        serde_yaml::from_str(&serde_yaml::to_string(&ob).expect("serialize")).expect("deserialize");
+    assert_eq!(round.id.as_deref(), Some("QHF-INV-004"));
+
+    // and an obligation without one must not gain an empty `id:` key
+    let bare = ProofObligation::default();
+    let text = serde_yaml::to_string(&bare).expect("serialize");
+    assert!(
+        !text.contains("id:"),
+        "a None id must be omitted, not written as null: {text}"
+    );
+}
