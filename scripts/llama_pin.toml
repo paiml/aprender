@@ -47,7 +47,7 @@ name = "llama.cpp"
 # so both shapes resolve. The build NUMBER is not an identity: the same commit
 # printed `build 2744` on intel and `build 10987` on lambda (it is derived from
 # the checkout's own history depth), and neither is a successor of 7746. Only
-# the commit is pinned. The old llama-cli's `-no-cnv` is gone (`-st,
+# llama-cli does not accept -no-cnv (registered only for llama-completion; the old pin's llama-cli rejected it too, in a loop) -- see evidence/parity/pin-bump-d1d3c3396/LOAD.md
 # --single-turn` replaces it), and it prints no loader lines without `-v`.
 #
 # Every ratio measured against 39173bcac (evidence/parity/LEDGER.md rows 0a, 5,
