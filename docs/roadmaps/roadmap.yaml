@@ -17822,6 +17822,22 @@ roadmap:
   - kind:code
   notes: 'unanchored_but_bindable moves from [U] to 297; contracts_anchored may not
     rise while pv census is absent, because pv validate accepts entity: by ignoring it'
+- id: PMAT-3296
+  github_issue: 3296
+  item_type: task
+  title: 'roadmap fragments: one file per ticket, roadmap.yaml generated on main'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-09-15 06:00:00+00:00
+  updated: 2026-09-15 06:00:00+00:00
+  spec: null
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
 - id: PMAT-3300
   github_issue: 3300
   item_type: task
