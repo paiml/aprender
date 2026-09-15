@@ -18,6 +18,14 @@ use aprender::models::Qwen2Model;
 
 /// Q1: Qwen/Qwen2.5-Coder-0.5B-Instruct imports
 /// Falsification: Qwen2Config cannot handle Coder variant
+
+fn workspace_root() -> std::path::PathBuf {
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .canonicalize()
+        .expect("workspace root must resolve from crates/aprender-core")
+}
+
 #[test]
 fn q1_qwen25_coder_imports() {
     // Verify Qwen2.5-Coder config is available via dedicated method
@@ -80,8 +88,12 @@ fn q3_context_window_8k() {
 #[test]
 fn q4_system_prompt_affects_style() {
     // This is a behavioral test - verify architecture supports it
-    let spec_path = "docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md";
-    let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
+    let spec_path = workspace_root()
+        .join("docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md");
+    let spec = std::fs::read_to_string(&spec_path).expect(&format!(
+        "Specification should exist, path: {:?}",
+        spec_path
+    ));
 
     assert!(
         spec.contains("Instruct") || spec.contains("chat"),
@@ -120,8 +132,12 @@ fn q6_code_blocks_extracted() {
 #[test]
 fn q7_generation_speed() {
     // Check performance targets
-    let spec_path = "docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md";
-    let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
+    let spec_path = workspace_root()
+        .join("docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md");
+    let spec = std::fs::read_to_string(&spec_path).expect(&format!(
+        "Specification should exist, path: {:?}",
+        spec_path
+    ));
 
     assert!(
         spec.contains("tok/s"),
@@ -134,8 +150,12 @@ fn q7_generation_speed() {
 #[test]
 fn q8_memory_usage() {
     // Check memory constraints
-    let spec_path = "docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md";
-    let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
+    let spec_path = workspace_root()
+        .join("docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md");
+    let spec = std::fs::read_to_string(&spec_path).expect(&format!(
+        "Specification should exist, path: {:?}",
+        spec_path
+    ));
 
     assert!(
         spec.contains("512MB") || spec.contains("Memory"),

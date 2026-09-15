@@ -542,6 +542,85 @@ pv_bin_report_wrong_tree() {
     } >&2
 }
 
+# ENV-vs-CODE for the verifier's OWN build (#3212).
+#
+# `cargo build` of pv died on intel-clean-room-2 with
+#     error: could not parse/generate dep info at: .../target/debug/deps/regex-<hash>.d
+#     Caused by: No such file or directory (os error 2)
+# and this resolver answered "cargo build of aprender-contracts-cli failed",
+# which check_verifier_pinning.sh renders as
+#     FAIL pv-pin ... a release cannot be decided by a verifier that did not build.
+# That names a CODE cause for a runner fault. The proof it was the runner is in
+# the same job's own log: the NEXT pv row, 39 s later, built the same pv from
+# the same tree and passed.
+#
+# The repo already knew the signature. cargo_classify.sh ships row C8 -- "dep
+# info, and the host had 933G free -> ENV", fixture
+# lib/cargo_failure_cases/log_env_dep_info_contention.txt -- written precisely
+# so a dep-info death is not read as ENOSPC or as a code defect. The classifier
+# existed, was self-tested, and the pin never asked it. That is the defect here:
+# not a missing rule, an unasked one.
+#
+# ENV STILL RETURNS NON-ZERO. Nothing here is fail-open, and that is the point
+# of putting the branch in the resolver rather than in the caller's verdict: a
+# pin that did not resolve cannot decide a release whatever killed it. The only
+# thing that changes is which cause is named, and so whether the response is
+# "triage the runner and re-run" or "hunt a pinning defect that is not there".
+#
+# NO RETRY, deliberately. The evidence says one retry would have turned this job
+# green -- which is the reason against it. A retry converts a measurable runner
+# fault into a slower green, and fleet contention that never reaches a CI
+# verdict is contention nobody schedules against.
+pv_bin_build() {
+    pv_bin_build_root="${1:-$PWD}"
+    pv_bin_build_log=$(mktemp) || pv_bin_build_log=''
+    pv_bin_build_rc=0
+    if [ -n "$pv_bin_build_log" ]; then
+        ( cd "$pv_bin_build_root" && cargo build -q -p aprender-contracts-cli --bin pv ) \
+            > "$pv_bin_build_log" 2>&1 || pv_bin_build_rc=$?
+        cat "$pv_bin_build_log" >&2
+    else
+        ( cd "$pv_bin_build_root" && cargo build -q -p aprender-contracts-cli --bin pv ) >&2 \
+            || pv_bin_build_rc=$?
+    fi
+
+    if [ "$pv_bin_build_rc" -eq 0 ]; then
+        pv_bin_rm_log
+        return 0
+    fi
+
+    if [ -n "$pv_bin_build_log" ] && [ -s "$pv_bin_build_log" ] &&
+       [ "$(pv_bin_classify_build "$pv_bin_build_log")" = 'ENV' ]; then
+        report_cargo_env_failure "$pv_bin_build_log" \
+            'whether this tree builds the pv that would be pinned' >&2
+        pv_bin_rm_log
+        return 1
+    fi
+
+    pv_bin_rm_log
+    pv_bin_die "cargo build of aprender-contracts-cli failed"
+}
+
+pv_bin_rm_log() {
+    [ -n "${pv_bin_build_log:-}" ] || return 0
+    rm -f "$pv_bin_build_log"
+}
+
+# The classifier is loaded LAZILY, on the failure path only. pv_bin.sh is
+# sourced by scripts that have no business acquiring a dependency they never
+# reach, and an absent classifier must degrade to the OLD verdict -- printing
+# nothing, so the caller's `= ENV` test is false -- never to an error about the
+# classifier itself. cargo_classify.sh is option-neutral, so sourcing it here
+# cannot mutate the caller's shell.
+pv_bin_classify_build() {
+    if ! command -v classify_cargo_failure > /dev/null 2>&1; then
+        [ -r "${pv_bin_build_root:-.}/scripts/cargo_classify.sh" ] || return 0
+        . "${pv_bin_build_root}/scripts/cargo_classify.sh" > /dev/null 2>&1 || return 0
+        command -v classify_cargo_failure > /dev/null 2>&1 || return 0
+    fi
+    classify_cargo_failure "$1"
+}
+
 # Build from HEAD, then hand back an artifact that is provably THIS tree's.
 pv_bin_resolve() {
     # Explicit override is the ONLY escape hatch — needed for A/B work such as
@@ -552,8 +631,7 @@ pv_bin_resolve() {
         return 0
     fi
     pv_bin_res_root=$(pv_bin_root) || pv_bin_res_root="$PWD"
-    ( cd "$pv_bin_res_root" && cargo build -q -p aprender-contracts-cli --bin pv ) >&2 \
-        || { pv_bin_die "cargo build of aprender-contracts-cli failed"; return 1; }
+    pv_bin_build "$pv_bin_res_root" || return 1
 
     pv_bin_load_meta || true
     if [ -z "${PV_BIN_TARGET_DIR:-}" ]; then

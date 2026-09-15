@@ -1,0 +1,260 @@
+{
+  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/main/sarif-2.1/schema/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat",
+          "informationUri": "https://github.com/paiml/pmat",
+          "version": "3.x",
+          "rules": []
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "commandLine": "pmat query / pmat analyze complexity,tdg,satd / scripts/pr_review_duplication_scan.sh",
+          "toolExecutionNotifications": [
+            {
+              "level": "warning",
+              "message": {
+                "text": "The pmat MCP transport was ConnectionRefused for the whole session; the pmat CLI transport answered and is what produced every pmat measurement in this receipt. Recorded per SKILL.md S3.0(b) so that a live fallback does not erase a dead transport."
+              },
+              "properties": {
+                "grounding": "measured",
+                "command": [
+                  "pmat",
+                  "query",
+                  "x",
+                  "--limit",
+                  "1"
+                ],
+                "exit_code": 0
+              }
+            }
+          ]
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "PRREV-DOGFOOD-01",
+          "level": "warning",
+          "message": {
+            "text": "The arming condition for .github/pr-review.pub has no owning ticket, so ci.yml's `pr-review-receipt` Arm 4 can never arm. SKILL.md:755 assigns publishing the public key and provisioning PR_REVIEW_SIGNING_KEY to PRREV-006; .github/workflows/ci.yml:1593 and :1611 assign the same file to PRREV-005 (\"It arrives with PRREV-005\"); tests/fixtures/pr-review/keys/README.md:12 hedges to \"PRREV-005/006\". PRREV-005 (the skill) and PRREV-006 (the ci.yml wiring) have both landed on this branch and neither shipped the key. Measured on HEAD: `test -f .github/pr-review.pub` is false, and PR_REVIEW_SIGNING_KEY appears in zero workflow files (only in prose). Arm 4 therefore prints \"NOT ARMED\" and exits 0 on every run."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": ".github/workflows/ci.yml"
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "source": "grep -rn 'pr-review.pub' over SKILL.md, ci.yml, keys/README.md; test -f .github/pr-review.pub; grep -rn PR_REVIEW_SIGNING_KEY --include=*.yml",
+            "failure_scenario": "Every PR merges with no receipt while the `pr-review-receipt` job reports success, so S8's receipt_presence=100% jidoka metric -- one of the four the spec says have no ratchet because they are ones -- can never stop the line. The step's comment says it \"is not waiting on an edit\", which is true and misleading: it is waiting on a deliverable that neither of the two tickets that have landed claims.",
+            "precision_class": "advisory",
+            "command": [
+              "test",
+              "-f",
+              ".github/pr-review.pub"
+            ],
+            "exit_code": 1
+          }
+        },
+        {
+          "ruleId": "PRREV-DOGFOOD-02",
+          "level": "warning",
+          "message": {
+            "text": "contracts/pr-review-skill-v2.yaml declares five equations; contracts/binding.yaml registers four. `duplication_coverage_is_recorded_per_surface` has no binding entry. It was added to the contract by PRREV-009 (8d836d53a); binding.yaml was last written by PRREV-004 (5928ec2a7), which `git merge-base --is-ancestor` confirms is an ancestor of it, and the 18 commits after it did not register the new equation. No PR-time gate detects this: `pv validate contracts/pr-review-skill-v2.yaml` exits 0, and `pv verify-bindings` only checks the reverse direction (binding -> source symbol; it exits 1 today on two unrelated pre-existing ghosts, compute_mse and forward_pass, both outside this diff). scripts/dogfood.sh carries the binding check but ci.yml does not run dogfood.sh."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "contracts/binding.yaml"
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "source": "python3 yaml diff of contracts/pr-review-skill-v2.yaml equations vs contracts/binding.yaml entries; pv validate (rc=0); pv verify-bindings (rc=1, unrelated ghosts)",
+            "failure_scenario": "binding.yaml under-reports pr-review-skill-v2.yaml's coverage by one of five equations, so enforcement checks that skip absent entries never assert duplication_coverage_is_recorded_per_surface -- and that equation is PRREV-009's own F4 fix, the one the guard leans on hardest. This is the under-reporting mirror that this PR's own binding.yaml comment names as the #2644 defect one tier over.",
+            "precision_class": "advisory",
+            "command": [
+              "pv",
+              "validate",
+              "contracts/pr-review-skill-v2.yaml"
+            ],
+            "exit_code": 0
+          }
+        },
+        {
+          "ruleId": "PRREV-DOGFOOD-03",
+          "level": "warning",
+          "message": {
+            "text": "Five counts that this PR states as measured are falsified by the commit that ships them, all recomputed on HEAD f5fe14797: (a) SKILL.md:322 says the S3.B path trigger fires on \"five\" paths on this very branch -- the guard's own --match-path predicate says 8; the three extra are row-18-cuda-consulted-no-queries/{findings.sarif,receipt.intoto.jsonl,receipt.intoto.jsonl.minisig}, added by PRREV-008 (432c65bc0); counted at 432c65bc0^ it is 5, at 432c65bc0 and at HEAD it is 8. (b) SKILL.md:25, SKILL.md:406, ci.yml:1581 and binding.yaml:669 all state the guard mutation set as 119/119; scripts/mutate-guard.sh on HEAD derives 185 mutants -- and the PR's own title already reads \"merged-tree mutation 185/185\", so the number was re-measured and the title updated while the three in-tree files stating it were not. (c) ci.yml:1570 says tests/pr-review.bats \"is 65 tests\"; `grep -c '^@test '` says 121, and the sweep's own baseline line agrees. (d) ci.yml:1493 and :1573 call it \"the 22-row fixture table\"; there are 26 tests/fixtures/pr-review/row-* directories. (e) SKILL.md:757, under the heading \"State of this skill on the commit that adds it\", says \"Not yet done: the backtest (PRREV-007)\" -- while the same commit f5fe14797 lands evidence/pr-review/backtest/results-v3.md, whose own heading is \"The number: 3 of 3\"."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": ".claude/skills/pr-review/SKILL.md"
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "source": "guard --match-path over the 195 changed paths; scripts/mutate-guard.sh on HEAD; grep -c '^@test ' tests/pr-review.bats; ls -d tests/fixtures/pr-review/row-*; git log -1 --format=%s and the results-v3.md heading",
+            "failure_scenario": "A reader who trusts SKILL.md's \"119/119\" or ci.yml's \"65 tests\" as the baseline against which to detect drift is comparing against a stale number, so a real fall in the guard's mutation score reads as growth rather than as the B3 merge block it is; and S12, the section whose stated purpose is to put the skill's state \"where a reader cannot miss it\", is the section carrying the stale operational claim.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "PRREV-DOGFOOD-04",
+          "level": "warning",
+          "message": {
+            "text": "S3.A's four required arrays cannot express coverage for three of the four, and on this PR all three are empty for lack of an analyzer rather than for lack of a defect. Measured: the diff has 0 .rs files of 195; `pmat analyze complexity --format json` (rc=0, 6s) reports 1,479 files and its intersection with the 195 changed files is 0; `pmat analyze tdg --format json` (rc=0, 37s) puts all 8 changed shell scripts in ungraded_files with the reason \"Bash source: this build has no TDG analyzer for .sh, so the file is not part of the score\", and its language_distribution has no shell entry at all (Rust, Python, JavaScript, TypeScript, C, Cpp, Ruchy, Lean, Yaml, Markdown); `pmat analyze satd` reports 37 violations over 29 files repo-wide -- read untruncated with --top-files 0, because the default report lists only 10 of 37 and intersecting against that truncated list yields a false zero -- and 0 of them are in the diff. PRREV-009's F4 gave duplication_hits a per-surface `duplication_coverage` map and the guard enforces all eight of its keys (line 728); complexity_delta, tdg_delta and satd_introduced, the sibling arrays of the same consultation, have no such field, and the guard requires only their presence (line 567)."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/check_pr_review_receipt.sh"
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "source": "pmat analyze complexity/tdg/satd --format json --path . in the review worktree, intersected against git diff --name-only BASE HEAD",
+            "failure_scenario": "On any shell-, YAML- or Markdown-heavy PR -- which is what this epic's own guards, gates and fixtures are made of -- the three arrays render identically to a PR that was measured and found clean, so a PASS becomes a statement about pmat's language coverage rather than about the diff, which is precisely the searched-and-found-nothing versus could-not-search conflation S3.0 exists to make impossible.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "PRREV-DOGFOOD-05",
+          "level": "note",
+          "message": {
+            "text": "S8 lists cost_per_actionable among the four instrument-first parameters and the skill's S4.2 says \"cost needs all three numeric fields -- record-only is not unenforced\", but neither the skill nor the guard gives a reviewer any mechanism to measure its own token usage: `input_tokens` appears once in SKILL.md and twice in the guard, in all three cases only as a field name to be populated. This receipt therefore records wall_seconds as measured and input_tokens/output_tokens as 0 with an explicit `tokens_measured: false` beside them, rather than presenting an unmeasured zero as a measurement."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": ".claude/skills/pr-review/SKILL.md"
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "source": "grep -c input_tokens .claude/skills/pr-review/SKILL.md scripts/check_pr_review_receipt.sh",
+            "failure_scenario": "Every receipt carries cost.input_tokens = 0, so the 30-sample baseline S8 says must be measured before cost_per_actionable is ratcheted is built entirely from zeros, and the quarterly ratchet the spec schedules for it would be applied to a number nothing produced -- the invented-threshold failure S8's own text says this repo has repeated most.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "PRREV-DOGFOOD-06",
+          "level": "note",
+          "message": {
+            "text": "The spec and the skill disagree about how to encode a refused pmat MCP transport when the pmat CLI answers, and this run met both readings at once. Spec S3.0 makes \"pmat MCP being ConnectionRefused\" its named day-one example of row 3, \"could not consult\" -> DEGRADED. SKILL.md S3.0(b) says that when the CLI answers the consultation is honestly `consulted`, with `transport` and `transport_unavailable` recorded. The guard arbitrates neither: it has no rule mentioning `transport` at all, and its only related rule (line 458) rejects `unreachable` under `PASS`. This receipt resolves the divergence toward the spec, which SKILL.md itself declares authoritative -- status `consulted` with both transport fields recorded, and verdict DEGRADED -- and records the divergence here rather than silently picking the reading that yields the cleaner verdict."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "docs/specifications/PR-REVIEW-SKILL-002-v2.md"
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "asserted",
+            "source": "PR-REVIEW-SKILL-002-v2 S3.0 row 3 and its trailing note; .claude/skills/pr-review/SKILL.md S3.0(b); grep 'transport' scripts/check_pr_review_receipt.sh (no matches)",
+            "failure_scenario": "Two honest reviewers reading the same refused transport emit different verdicts -- consulted/FINDINGS against unreachable/DEGRADED -- so S5's audit_divergence metric measures an ambiguity in the spec rather than disagreement between reviewers, and the first 30 audited receipts calibrate the sampling threshold against that noise.",
+            "precision_class": "advisory",
+            "rationale": "Reviewer judgement about which of two normative texts governs; recorded as asserted and therefore advisory, never blocking (S1)."
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "nvidia-cuda-docs",
+          "informationUri": "https://docs.nvidia.com/cuda/",
+          "rules": []
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": []
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "crux",
+          "informationUri": "https://github.com/paiml/aprender",
+          "rules": []
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "PRREV-DOGFOOD-07",
+          "level": "warning",
+          "message": {
+            "text": "crux_coverage is `none` for every surface this PR adds, and S3.C makes that a finding rather than a blank. The diff introduces a developer-facing CLI -- scripts/check_pr_review_receipt.sh with eight --match-* predicate flags plus a <receipt-dir> positional, scripts/check_pr_review_wiring.sh, scripts/check_vendored_schemas.sh and scripts/pr_review_duplication_scan.sh -- plus a Claude Code skill and two new ci.yml jobs. Matching on `category` + surface as S3.C requires (not semantic search over all 277), the 276 contracts/crux-*.yaml carrying a category all sit in the apr product taxonomy A-M (Model Intake, Serving & Chat UX, Inference, Training, Tensor Ops, Inspection, Observability, Format Conversion, Deployment, Data, OpenCLAW, HF kernels, APR-QA). None covers repository guard tooling, so no contract binds these flags."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/check_pr_review_receipt.sh"
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "source": "guard --match-crux-surface over 18,776 added lines (12 hits, all inside the guard's own CRUX_SURFACE_RE definition and its crux-surface-cases.tsv rows); grep of the category: key across contracts/crux-*.yaml",
+            "failure_scenario": "A later rename or removal of a --match-* flag breaks tests/pr-review.bats and the ci.yml arms that invoke it with no contract failing first, so the surface's only description is the callers that happen to use it -- and the S3.C consultation on every future PR that touches these scripts will keep reporting crux_coverage: none, which after a few repeats reads as background noise rather than as the finding S3.C intends.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "cargo-mutants",
+          "informationUri": "https://mutants.rs",
+          "rules": []
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "commandLine": "bash scripts/mutate-guard.sh",
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": []
+    }
+  ]
+}

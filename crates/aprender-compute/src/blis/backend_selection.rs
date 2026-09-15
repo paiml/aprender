@@ -120,11 +120,16 @@ impl BackendCostModel {
                     return ComputeBackend::Cpu;
                 }
             }
+            // aarch64 always has NEON, so it always earns the CPU path. Written as a
+            // `return`, it left the Scalar tail unreachable there (gx10 lint, PMAT-1102).
             #[cfg(target_arch = "aarch64")]
             {
-                return ComputeBackend::Cpu;
+                ComputeBackend::Cpu
             }
-            ComputeBackend::Scalar
+            #[cfg(not(target_arch = "aarch64"))]
+            {
+                ComputeBackend::Scalar
+            }
         }
     }
 

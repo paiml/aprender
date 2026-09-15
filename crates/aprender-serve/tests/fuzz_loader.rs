@@ -97,16 +97,16 @@ fn test_fuzz_loader_version_v1() {
 }
 
 #[test]
-fn test_fuzz_loader_version_v2() {
-    // Version 2 not supported
+fn test_fuzz_loader_version_unsupported() {
+    // Stale test (the contract moved, the code is right): V2 is now supported. Test with V99.
     let mut data = vec![0u8; 24];
     data[0..4].copy_from_slice(&GGUF_MAGIC.to_le_bytes());
-    data[4..8].copy_from_slice(&2u32.to_le_bytes());
+    data[4..8].copy_from_slice(&99u32.to_le_bytes());
     data[8..16].copy_from_slice(&0u64.to_le_bytes());
     data[16..24].copy_from_slice(&0u64.to_le_bytes());
 
     let result = GGUFModel::from_bytes(&data);
-    assert!(result.is_err(), "Version 2 should fail");
+    assert!(result.is_err(), "Version 99 should fail");
 }
 
 // =============================================================================

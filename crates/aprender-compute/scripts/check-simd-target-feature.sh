@@ -107,7 +107,7 @@ check_file() {
                 fi
 
                 # Check if function body contains SIMD intrinsics
-                if echo "$fn_body" | grep -qE "$pattern"; then
+                if grep -qE "$pattern" <<< "$fn_body" ; then
                     # Function uses SIMD intrinsics
                     if [[ "$has_target_feature" == false ]]; then
                         # Missing #[target_feature] attribute!

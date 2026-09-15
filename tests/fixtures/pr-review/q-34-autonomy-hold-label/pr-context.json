@@ -1,0 +1,1 @@
+{"number":2783,"base_ref":"main","head_sha":"195f2fb055f105797004c084a7627c89937e3c68","labels":["ready-to-merge","autonomy-hold"],"reviews":[{"state":"APPROVED","dismissed":false}],"checks":{"ci / gate":"success","workspace-test":"success"},"auto_merge_armed":false}

@@ -85,10 +85,10 @@ bad() { printf 'FAIL: %s\n' "$*" >&2; fail=1; }
 # code as prose; both have shipped here. Strip full-line comments first.
 pv_bin_code() { grep -v '^[[:space:]]*#' "$PV_BIN_SH"; }
 
-if ! pv_bin_code | grep -qF -- "$EXTRACTOR"; then
+if ! grep -qF -- "$EXTRACTOR" <<< "$(pv_bin_code)" ; then
     bad "EXTRACTOR_MISMATCH: this table tests '$EXTRACTOR' but $PV_BIN_SH does not run it"
 fi
-if pv_bin_code | grep -qF -- "awk '$PRE_2559_EXTRACTOR'"; then
+if grep -qF -- "awk '$PRE_2559_EXTRACTOR'" <<< "$(pv_bin_code)" ; then
     bad "$PV_BIN_SH still runs the pre-#2559 last-field extractor"
 fi
 

@@ -1,0 +1,34 @@
+{
+  "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "crux"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "comparative_claim",
+          "level": "error",
+          "message": {
+            "text": "docs/performance.md states apr sustains 2.93x Ollama on 1.5B Q4_K decode."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "source": "docs/performance.md line 41",
+            "failure_scenario": "A reader reproduces the published ratio and gets parity, because the harness never executed the comparator.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    }
+  ]
+}

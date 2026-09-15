@@ -75,12 +75,12 @@ is_exempt() {
 RE_INSTALL='(^|[;&|]|&&|\|\||run:)[[:space:]]*(sudo[[:space:]]+)?cargo[[:space:]]+install([[:space:]]|$)'
 
 is_install() {
-    printf '%s\n' "$1" | grep -qE "$RE_INSTALL"
+    grep -qE "$RE_INSTALL" <<< "$1"
 }
 
 # An explicit `--root <dir>` / `--root=<dir>` on the install itself.
 has_explicit_root() {
-    printf '%s\n' "$1" | grep -qE -- '--root([[:space:]]|=)'
+    grep -qE -- '--root([[:space:]]|=)' <<< "$1"
 }
 
 # A CARGO_INSTALL_ROOT / CARGO_HOME declaration (YAML `KEY: value`, `export
@@ -89,8 +89,8 @@ has_explicit_root() {
 # already does) and `CARGO_INSTALL_ROOT: /tmp/apr-cov-tools-...` both qualify;
 # `CARGO_INSTALL_ROOT="$HOME/.cargo"` does not.
 declares_private_root() {
-    printf '%s\n' "$1" | grep -qE '(CARGO_INSTALL_ROOT|CARGO_HOME)[[:space:]]*[:=]' || return 1
-    if printf '%s\n' "$1" | grep -qE '(\$HOME|\$\{HOME\}|~)/\.cargo'; then
+    grep -qE '(CARGO_INSTALL_ROOT|CARGO_HOME)[[:space:]]*[:=]' <<< "$1" || return 1
+    if grep -qE '(\$HOME|\$\{HOME\}|~)/\.cargo' <<< "$1" ; then
         return 1
     fi
     return 0
@@ -100,11 +100,11 @@ declares_private_root() {
 # continuations further down (ci.yml's mutants job is exactly that shape). The
 # caller clears the chain on the first line that does not end in a backslash.
 opens_docker_chain() {
-    printf '%s\n' "$1" | grep -qE '(^|[[:space:]])docker[[:space:]]+run([[:space:]]|$)'
+    grep -qE '(^|[[:space:]])docker[[:space:]]+run([[:space:]]|$)' <<< "$1"
 }
 
 continues_line() {
-    printf '%s\n' "$1" | grep -qE '\\[[:space:]]*$'
+    grep -qE '\\[[:space:]]*$' <<< "$1"
 }
 
 # First component of an `export PATH=...` assignment, or empty if the line is
@@ -165,6 +165,12 @@ self_test() {
     probe declares_private_root 0 '      CARGO_HOME: /tmp/cargo-home-security-intel-clean-room-14'
     probe declares_private_root 0 '      CARGO_INSTALL_ROOT: /tmp/apr-cov-tools-123-1'
     probe declares_private_root 0 '          export CARGO_INSTALL_ROOT=/tmp/tools'
+    # The shape this repo now uses. $RUNNER_TEMP is under the runner's own
+    # _work tree and is wiped per JOB, so it is private without the
+    # half-persistence of a /tmp root (paiml/infra shared-$HOME guard,
+    # rule cargo-install-boot-volatile).
+    probe declares_private_root 0 '      CARGO_INSTALL_ROOT: ${{ runner.temp }}/apr-cov-tools'
+    probe declares_private_root 0 '          export CARGO_INSTALL_ROOT="$RUNNER_TEMP/tools"'
     probe declares_private_root 1 '          export CARGO_INSTALL_ROOT="$HOME/.cargo"'
     probe declares_private_root 1 '      CARGO_HOME: ~/.cargo'
     probe declares_private_root 1 '          # CARGO_INSTALL_ROOT would help here'
@@ -225,7 +231,7 @@ check_job() {
     # Pass 1: job-wide facts (runs-on, private-root declarations anywhere in the
     # job - job env, step env, or an inline export).
     while IFS= read -r line; do
-        if printf '%s\n' "$line" | grep -q 'runs-on:' && printf '%s\n' "$line" | grep -q 'self-hosted'; then
+        if grep -q 'runs-on:' <<< "$line" && grep -q 'self-hosted' <<< "$line"; then
             selfhosted=1
         fi
         trimmed="$(printf '%s' "$line" | sed 's/^[[:space:]]*//')"
@@ -297,9 +303,9 @@ main() {
         printf '\n%s shared-~/.cargo/bin exposure(s) on self-hosted jobs.\n' "$violations" >&2
         printf 'mac-server runs 16 runners under one $HOME, so `cargo install` there\n' >&2
         printf 'replaces a binary that another running job is about to exec (aprender#2353:\n' >&2
-        printf 'cargo-llvm-cov, ENOENT, empty coverage figure). Give the job a per-run root:\n' >&2
+        printf 'cargo-llvm-cov, ENOENT, empty coverage figure). Give the job a private root:\n' >&2
         printf '  env:\n' >&2
-        printf '    CARGO_INSTALL_ROOT: /tmp/<tool>-${{ github.run_id }}-${{ github.run_attempt }}\n' >&2
+        printf '    CARGO_INSTALL_ROOT: ${{ runner.temp }}/<tool>\n' >&2
         printf '  ... and put "$CARGO_INSTALL_ROOT/bin" FIRST on PATH.\n' >&2
         exit 1
     fi

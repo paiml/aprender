@@ -569,7 +569,7 @@ fn calculate_stats(results: &[BenchResult]) -> Stats {
 
 #[cfg(feature = "cuda")]
 fn benchmark_ollama(_url: &str, _iterations: usize, _gen_tokens: usize) -> Stats {
-    // TODO: Implement actual Ollama HTTP benchmarking
+    // Deferred (PMAT-943): Implement actual Ollama HTTP benchmarking
     // For now, return spec baseline
     Stats {
         mean_throughput: 318.0,

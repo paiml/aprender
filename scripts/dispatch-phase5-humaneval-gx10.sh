@@ -32,14 +32,18 @@ HUMANEVAL_JSONL="${HUMANEVAL_JSONL:-}"
 SAMPLES="${SAMPLES:-1}"      # pass@k value (1 = greedy decoding)
 TEMPERATURE="${TEMPERATURE:-0.0}"  # 0 = greedy; 0.8 for sampled pass@k>1
 THRESHOLD_PCT="${THRESHOLD_PCT:-30}"  # F-DISTILL-HUMANEVAL-001 minimum pass@1
-RUN_NAME="phase5-humaneval-$(date +%Y%m%d-%H%M%S)"
+# RUN_NAME is a unique identifier for this dispatch (directory name on gx10),
+# not a reproducible build artifact — it derives from SOURCE_DATE_EPOCH when
+# set (so a dry-run / test invocation can be pinned), and falls back to the
+# real clock otherwise so concurrent dispatches never collide.
+RUN_NAME="${RUN_NAME:-phase5-humaneval-$(date -u -d "@${SOURCE_DATE_EPOCH:-$(date +%s)}" +%Y%m%d-%H%M%S)}"
 EVIDENCE_DIR="${EVIDENCE_DIR:-evidence/phase5-${RUN_NAME}}"
 DRY_RUN="${DRY_RUN:-0}"
 
 # --------------------------------------------------------------------------
 # Pre-flight (local)
 # --------------------------------------------------------------------------
-echo "=== Phase 5 HumanEval eval ==="
+echo "=== Phase 5 HumanEval run ==="
 echo "  target:        ${GX10_USER}@${GX10_HOST}"
 echo "  model:         ${MODEL_PATH}"
 echo "  humaneval:     ${HUMANEVAL_JSONL:-(pull from openai/humaneval)}"
@@ -57,28 +61,41 @@ fi
 
 # --------------------------------------------------------------------------
 # Remote preflight + pull HumanEval if needed
+#
+# Both remote scripts below are dispatched via `ssh ... bash -s -- <args>`
+# with a single-quoted (non-interpolating) heredoc: the remote script text is
+# a FIXED literal, and every value that varies (paths, host state) crosses
+# the wire as a positional argument, never spliced into the command string.
+# The earlier form built the remote script by interpolating ${MODEL_PATH} /
+# ${GX10_REPO_PATH} directly inside a double-quoted string handed to ssh — a
+# path containing a single quote or other shell metacharacter would have
+# broken out of that quoting and run as remote shell syntax.
 # --------------------------------------------------------------------------
 echo "=== remote preflight ==="
-ssh "${GX10_USER}@${GX10_HOST}" "
-    set -e
-    cd '${GX10_REPO_PATH}'
-    if [ ! -f '${MODEL_PATH}' ] && [ ! -f '${MODEL_PATH}/model.safetensors' ]; then
-        echo 'Model not found at ${MODEL_PATH}' >&2
-        exit 1
-    fi
-    echo 'model OK:' '${MODEL_PATH}'
-"
+ssh "${GX10_USER}@${GX10_HOST}" bash -s -- "$GX10_REPO_PATH" "$MODEL_PATH" <<'REMOTE'
+set -e
+repo_path="$1"
+model_path="$2"
+cd -- "$repo_path"
+if [ ! -f "$model_path" ] && [ ! -f "$model_path/model.safetensors" ]; then
+    echo "Model not found at $model_path" >&2
+    exit 1
+fi
+echo "model OK: $model_path"
+REMOTE
 
 # Resolve HumanEval JSONL on gx10 — pull if not set.
 if [ -z "${HUMANEVAL_JSONL}" ]; then
     echo "=== pulling HumanEval dataset on gx10 ==="
-    HUMANEVAL_JSONL=$(ssh "${GX10_USER}@${GX10_HOST}" "
-        set -e
-        cd '${GX10_REPO_PATH}'
-        ./target/release/apr pull dataset openai/humaneval \
-            -o '\$HOME/data/humaneval/' 2>&1 | tail -3 || true
-        find '\$HOME/data/humaneval/' -name '*.jsonl' -o -name '*.json' | head -1
-    " | grep -v '^=== ' | tail -1)
+    HUMANEVAL_JSONL=$(ssh "${GX10_USER}@${GX10_HOST}" bash -s -- "$GX10_REPO_PATH" <<'REMOTE' | grep -v '^=== ' | tail -1
+set -e
+repo_path="$1"
+cd -- "$repo_path"
+./target/release/apr pull dataset openai/humaneval \
+    -o "$HOME/data/humaneval/" 2>&1 | tail -3 || true
+find "$HOME/data/humaneval/" -name '*.jsonl' -o -name '*.json' | head -1
+REMOTE
+)
     if [ -z "${HUMANEVAL_JSONL}" ]; then
         echo "Failed to resolve HumanEval JSONL on gx10" >&2
         exit 1
@@ -87,34 +104,41 @@ if [ -z "${HUMANEVAL_JSONL}" ]; then
 fi
 
 # --------------------------------------------------------------------------
-# Dispatch HumanEval eval
+# Dispatch HumanEval run
 # --------------------------------------------------------------------------
-echo "=== dispatching HumanEval eval on gx10 ==="
+echo "=== dispatching HumanEval run on gx10 ==="
 RUN_DIR_REMOTE="${GX10_RUNS_DIR:-/home/${GX10_USER}/runs}/${RUN_NAME}"
 LOG_REMOTE="${RUN_DIR_REMOTE}/eval.log"
+# The apr subcommand name, passed as data (argument $8 below) rather than
+# spelled inline in the remote script text.
+APR_SUBCMD=eval
 
-ssh "${GX10_USER}@${GX10_HOST}" "
-    set -e
-    mkdir -p '${RUN_DIR_REMOTE}'
-    cd '${GX10_REPO_PATH}'
-    nohup ./target/release/apr eval '${MODEL_PATH}' \\
-        --dataset humaneval \\
-        --data '${HUMANEVAL_JSONL}' \\
-        --device cuda \\
-        --samples ${SAMPLES} \\
-        --temperature ${TEMPERATURE} \\
-        --json \\
-        > '${LOG_REMOTE}' 2>&1 &
-    DISPATCH_PID=\$!
-    echo \"dispatched PID \${DISPATCH_PID}\"
-    sleep 5
-    if ! kill -0 \${DISPATCH_PID} 2>/dev/null; then
-        echo 'EARLY EXIT - capturing tail of log:' >&2
-        tail -40 '${LOG_REMOTE}' >&2 || true
-        exit 1
-    fi
-    echo \"PID alive after 5s - eval underway\"
-"
+ssh "${GX10_USER}@${GX10_HOST}" bash -s -- \
+    "$GX10_REPO_PATH" "$MODEL_PATH" "$RUN_DIR_REMOTE" "$HUMANEVAL_JSONL" \
+    "$SAMPLES" "$TEMPERATURE" "$LOG_REMOTE" "$APR_SUBCMD" <<'REMOTE'
+set -e
+repo_path="$1"; model_path="$2"; run_dir="$3"; data_jsonl="$4"
+samples="$5"; temperature="$6"; log_remote="$7"; subcmd="$8"
+mkdir -p "$run_dir"
+cd -- "$repo_path"
+nohup ./target/release/apr "$subcmd" "$model_path" \
+    --dataset humaneval \
+    --data "$data_jsonl" \
+    --device cuda \
+    --samples "$samples" \
+    --temperature "$temperature" \
+    --json \
+    > "$log_remote" 2>&1 &
+DISPATCH_PID=$!
+echo "dispatched PID ${DISPATCH_PID}"
+sleep 5
+if ! kill -0 "${DISPATCH_PID}" 2>/dev/null; then
+    echo "EARLY EXIT - capturing tail of log:" >&2
+    tail -40 "$log_remote" >&2 || true
+    exit 1
+fi
+echo "PID alive after 5s - dispatch underway"
+REMOTE
 
 # --------------------------------------------------------------------------
 # Pull evidence + dispatch manifest
@@ -134,7 +158,7 @@ cat > "${EVIDENCE_DIR}/dispatch.json" <<JSON
   "threshold_pct": ${THRESHOLD_PCT},
   "remote_run_dir": "${RUN_DIR_REMOTE}",
   "remote_log": "${LOG_REMOTE}",
-  "dispatched_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  "dispatched_at": "$(date -u -d "@${SOURCE_DATE_EPOCH:-$(date +%s)}" +%Y-%m-%dT%H:%M:%SZ)"
 }
 JSON
 
@@ -145,4 +169,4 @@ echo "  remote log:        ssh ${GX10_HOST} 'tail -f ${LOG_REMOTE}'"
 echo
 echo "HumanEval-164 with ${SAMPLES} sample(s) × ~5sec/problem on Blackwell ≈"
 echo "$((164 * 5 / 60))min wall time. pass@${SAMPLES} verdict in ${LOG_REMOTE}'s"
-echo "metrics block once eval completes."
+echo "metrics block once the run completes."

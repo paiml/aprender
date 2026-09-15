@@ -17,7 +17,37 @@ fn test_find_apr_binary() {
 
 /// Write an executable `/bin/sh` script at `path` that prints `marker`.
 #[cfg(unix)]
+/// Every marker binary is written under one lock. `fork(2)` gives the child
+/// every open descriptor of the whole test process, so a sibling still inside
+/// `write_marker_bin` hands a forked child a write-open descriptor on its own
+/// marker. Measured in a clean-room `cargo test --workspace --lib`
+/// (CARGO_BUILD_JOBS=2): 1 failure in 39,833 tests, this test, ETXTBSY.
+static MARKER_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// THE LOCK WAS NOT ENOUGH, AND COULD NOT BE.
+///
+/// It serialises `write_marker_bin` against `spawn_marker`, which only covers
+/// forks made by THESE two functions. ETXTBSY is refused by `exec` when *any*
+/// process anywhere holds the file open for writing — and every other test in
+/// this binary that spawns a child forks too, inheriting the write descriptor
+/// for the window between `fork` and its own `exec`. Nothing this module locks
+/// can close that.
+///
+/// Measured: coverage-nightly has been red on this single test every night
+/// (#3185), 5971 passed / 1 failed, `Os { code: 26, kind: ExecutableFileBusy }`.
+/// It is near-certain under `cargo llvm-cov` — instrumented runs spawn far more
+/// children — and rare enough elsewhere to look like a flake.
+///
+/// So do not exec the file that was just written. `/bin/sh <script>` runs the
+/// script's CONTENT without `exec`ing that inode, which is what the assertion
+/// actually cares about: that the resolved path is the SELF marker and not the
+/// PATH one. A retry loop would have hidden a race instead of removing it.
+fn spawn_marker(path: &std::path::Path) -> std::process::Output {
+    std::process::Command::new("/bin/sh").arg(path).output().expect("spawn resolved backend")
+}
+
 fn write_marker_bin(path: &std::path::Path, marker: &str) {
+    let _g = MARKER_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     use std::io::Write;
     let mut f = std::fs::File::create(path).expect("create marker bin");
     writeln!(f, "#!/bin/sh").expect("shebang");
@@ -60,7 +90,7 @@ fn falsify_2384_self_wins_over_path_lookup() {
         resolved.display()
     );
 
-    let out = std::process::Command::new(&resolved).output().expect("spawn resolved backend");
+    let out = spawn_marker(&resolved);
     assert_eq!(
         String::from_utf8_lossy(&out.stdout).trim(),
         "SELF-0.63.0",

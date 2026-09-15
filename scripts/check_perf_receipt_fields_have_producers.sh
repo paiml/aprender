@@ -27,6 +27,18 @@
 #   3. PRODUCED/DERIVED name a producer that still exists   (no rotting claim)
 #   4. UNMEASURED names an owning ticket and a spec section (no orphan gap)
 #   5. every receiver in the reader scripts is accounted    (no silent miss)
+#   6. a SERVER-REPORTED field declares `source: server`     (PP-13)
+#
+# Rule 6 closes the PP-13 hole. A receipt states facts about three different
+# things -- what the SERVER answered, what the CLIENT observed, and what this
+# repository DERIVED -- and it used to spell all three identically. The measured
+# instance: `provenance.feature_set` is copied straight from the harness's own
+# `--server-feature` flag, so both 745fa8588 receipts claim `["cuda"]` whatever
+# the server actually loaded, and any rule keyed on it is theater. The ledger
+# now carries `source:` per field, the ledger's own
+# `server_reported_prefixes:`/`server_reported_fields:` name the subtrees a
+# server must answer for, and this rule refuses any of them labelled `client` or
+# `derived`.
 #
 # Rule 5 is the one that keeps the other four honest. The extractor INCLUDES a
 # receiver by default and fails on one it does not recognise, so a new read
@@ -230,6 +242,50 @@ for name in sorted(set(fields) & universe):
         errors.append("%s has class=%r, which is not one of PRODUCED, DERIVED, "
                       "POLICY, UNMEASURED" % (name, klass))
 
+# ---- RULE 6: a server-reported field says so -------------------------------
+SOURCES = ("server", "client", "derived")
+prefixes = ledger.get("server_reported_prefixes") or []
+server_fields = set(ledger.get("server_reported_fields") or [])
+
+
+def is_server_reported(name):
+    if name in server_fields:
+        return True
+    return any(name == p or name.startswith(p + ".") for p in prefixes)
+
+
+server_seen = 0
+for name in sorted(set(fields) & universe):
+    spec = fields[name] or {}
+    source = spec.get("source")
+    if source is not None and source not in SOURCES:
+        errors.append(
+            "%s declares source=%r, which is not one of %s. `source` says WHO "
+            "asserted the value -- the server, the client, or a formula in this "
+            "repository -- and an unrecognised token asserts nothing."
+            % (name, source, list(SOURCES)))
+    if not is_server_reported(name):
+        continue
+    server_seen += 1
+    if source != "server":
+        errors.append(
+            "%s is a SERVER-REPORTED field (it matches server_reported_prefixes "
+            "or server_reported_fields) and declares source=%r. PP-13: a server "
+            "fact may not be inferred from a harness flag. provenance.feature_set "
+            "is exactly this defect already shipped -- it is copied from the "
+            "harness's own --server-feature argument, so every receipt agrees "
+            "with the flag rather than with the server." % (name, source))
+
+if prefixes or server_fields:
+    # VACUITY, rule 6's own: a server-reported list that matches nothing in the
+    # universe makes the rule unfalsifiable, which is the shape this guard
+    # exists to refuse one level down.
+    if server_seen < 3:
+        errors.append(
+            "rule 6 matched only %d server-reported field(s) in the universe. The "
+            "lists name subtrees that are not read, so the rule checks nothing."
+            % server_seen)
+
 # VACUITY. A sweep over an empty universe is clean and means nothing; the gate
 # reads well over a dozen receipt fields and always will.
 if len(universe) < 12:
@@ -279,9 +335,19 @@ self_test() {
     # -- including the pass-expected ones, which is how this omission announced
     # itself rather than quietly weakening the table.
     cp "$ROOT/scripts/lib/receipt_sig.py" "$td/$1/scripts/lib/"
-    mkdir -p "$td/$1/crates/aprender-test-lib/src/llm" "$td/$1/crates/apr-cli/src/commands"
+    # P3, the converter. It is now the named producer of the band-level prefill
+    # pair, so a fixture without it fails the producer-existence check on every
+    # row -- the same way omitting P4 announced itself rather than quietly
+    # weakening the table.
+    cp "$ROOT/scripts/lib/perf_receipt.py" "$td/$1/scripts/lib/"
+    mkdir -p "$td/$1/crates/aprender-test-lib/src/llm" \
+             "$td/$1/crates/aprender-test-lib/src/perf_gate" \
+             "$td/$1/crates/apr-cli/src/commands"
     cp "$ROOT/crates/aprender-test-lib/src/llm/loadtest.rs" "$td/$1/crates/aprender-test-lib/src/llm/"
     cp "$ROOT/crates/aprender-test-lib/src/llm/benchmark.rs" "$td/$1/crates/aprender-test-lib/src/llm/"
+    # The window/drain producer, named by bands[].window_ms and bands[].drain_ms.
+    cp "$ROOT/crates/aprender-test-lib/src/perf_gate/window.rs" \
+       "$td/$1/crates/aprender-test-lib/src/perf_gate/"
   }
 
   _expect() { # name, expected(pass|fail)
@@ -395,6 +461,42 @@ MUT
 arm_j_sig() { python3 -c 'sig={}; print(sig.get("alg"))'; }
 MUT
   _expect mapped_receiver_still_checked fail
+
+  # MUTATION 8 (rule 6, PP-13) -- a SERVER-reported field relabelled as
+  # something the client saw. This is the defect that already shipped in
+  # `provenance.feature_set`, applied to a field the ledger declares
+  # server-reported, and it is the cheap wrong repair for a producer that cannot
+  # reach the server: relabel the source rather than build the route.
+  _fixture inferred_field
+  python3 - "$td/inferred_field/scripts/perf-receipt-fields.yaml" <<'MUT'
+import sys
+p = sys.argv[1]
+s = open(p, encoding="utf-8").read()
+old = "  provenance.server_config.compute_class:\n    class: UNMEASURED\n    source: server"
+new = "  provenance.server_config.compute_class:\n    class: UNMEASURED\n    source: client"
+assert old in s, "the rule-6 mutation no longer matches the ledger"
+open(p, "w", encoding="utf-8").write(s.replace(old, new))
+MUT
+  _expect inferred_field fail
+
+  # DISCRIMINATION -- the shipped ledger labels every server-reported field
+  # `server`, so rule 6 is green on the tree it guards. Without this row the
+  # mutation above could be firing on any edit to that file at all.
+  _fixture reported_field
+  _expect reported_field pass
+
+  # MUTATION 9 -- `source` itself becomes a free-text field.
+  _fixture unknown_source_token
+  python3 - "$td/unknown_source_token/scripts/perf-receipt-fields.yaml" <<'MUT'
+import sys
+p = sys.argv[1]
+s = open(p, encoding="utf-8").read()
+old = "  bands[].stream_mode:\n    class: UNMEASURED\n    source: server"
+new = "  bands[].stream_mode:\n    class: UNMEASURED\n    source: probably-the-server"
+assert old in s, "the source-vocabulary mutation no longer matches the ledger"
+open(p, "w", encoding="utf-8").write(s.replace(old, new))
+MUT
+  _expect unknown_source_token fail
 
   printf '  %d passed, %d broken\n' "$pass" "$fail"
   [ "$fail" = 0 ]

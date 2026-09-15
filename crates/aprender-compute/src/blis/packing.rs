@@ -416,6 +416,7 @@ pub(super) fn pack_b_block_512(
 // 32×6 Packing (Phase 4, Appendix D)
 // ============================================================================
 
+#[cfg(target_arch = "x86_64")]
 use super::{MR_512V2, NR_512V2};
 
 /// Compute required packed A buffer size for 32×6 microkernel.

@@ -31,7 +31,6 @@ ignore = [
     # 0.7->0.8 is a large API migration), tonic 0.12 `channel` -> tower 0.4.13, and the
     # published trueno-ublk/pacha/renacer stack (block-device/registry features). Each
     # needs an upstream major bump; no safe drop-in exists yet.
-    # wasmtime 43 + cranelift — test-only dep, not production. Upgrade to >=43.0.2 when available.
     # quick-xml 0.37.5 quadratic parse of duplicate-attribute start tags (DoS, not
     # RCE). Advisory: affected ONLY via `NsReader`; aprender-orchestrate's sole use
     # (oracle/arxiv.rs) is `quick_xml::Reader`, never `NsReader`, so we do not hit

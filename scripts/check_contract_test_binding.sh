@@ -235,7 +235,7 @@ self_test() {
 
     # MUST flag: one per binding field.
     for want in MUTANT_absent_alpha MUTANT_absent_bravo MUTANT_absent_charlie; do
-        if printf '%s\n' "$msg" | grep -qF "$want"; then
+        if grep -qF "$want" <<< "$msg" ; then
             printf '  ok    must-flag   %s\n' "$want"
         else
             printf '  FAIL  must-flag   %s (not reported)\n' "$want"
@@ -245,7 +245,7 @@ self_test() {
 
     # MUST NOT flag: the shell harness and the fn that really exists.
     for unwanted in module_mentioned real_test_exists; do
-        if printf '%s\n' "$msg" | grep -qF "$unwanted"; then
+        if grep -qF "$unwanted" <<< "$msg" ; then
             printf '  FAIL  must-not-flag %s (false positive)\n' "$unwanted"
             rc=1
         else
@@ -255,7 +255,7 @@ self_test() {
 
     # The field name must appear in the finding, so an operator knows the line.
     for field in '].test)' '].test_harness)' '].name)'; do
-        if printf '%s\n' "$msg" | grep -qF "$field"; then
+        if grep -qF "$field" <<< "$msg" ; then
             printf '  ok    names field  %s\n' "$field"
         else
             printf '  FAIL  names field  %s (missing from message)\n' "$field"

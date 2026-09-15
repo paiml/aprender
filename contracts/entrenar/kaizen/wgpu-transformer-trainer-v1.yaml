@@ -1,3 +1,11 @@
+metadata:
+  kind: kaizen
+  version: "5.0.0"
+  author: "PAIML Engineering"
+  description: "wgpu-transformer-trainer-v1 — kaizen KAIZEN-203 improvement record"
+  references:
+    - "KAIZEN-203"
+
 contract: wgpu-transformer-trainer-v1
 version: 5.0.0
 status: implemented

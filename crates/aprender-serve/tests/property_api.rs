@@ -459,6 +459,7 @@ fn test_chat_completion_response() {
         brick_trace: None,
         step_trace: None,
         layer_trace: None,
+        timings: None,
     };
 
     let json = serde_json::to_string(&resp).unwrap();

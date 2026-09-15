@@ -1,4 +1,4 @@
+# tool_version=none (measured by guard_tree.sh dispatch listing; not a versioned analyser)
 check_book_examples_executable.sh
 check_mcp_never_path_resolves_apr.sh
 check_multiplatform_dogfood.sh
-check_parity_receipt.sh

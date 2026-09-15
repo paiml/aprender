@@ -1,0 +1,49 @@
+$ grep -nE 'features|runs-on|target:' .github/workflows/nightly.yml .github/workflows/binary-release.yml
+.github/workflows/nightly.yml:24:    runs-on: ubuntu-latest
+.github/workflows/nightly.yml:53:          - target: x86_64-unknown-linux-gnu
+.github/workflows/nightly.yml:55:          - target: aarch64-unknown-linux-gnu
+.github/workflows/nightly.yml:57:          - target: x86_64-apple-darwin
+.github/workflows/nightly.yml:59:          - target: aarch64-apple-darwin
+.github/workflows/nightly.yml:61:          - target: x86_64-pc-windows-msvc
+.github/workflows/nightly.yml:63:    runs-on: ${{ matrix.runner }}
+.github/workflows/nightly.yml:82:        run: cargo build --release -p apr-cli --target ${{ matrix.target }} --no-default-features --features inference
+.github/workflows/nightly.yml:135:    runs-on: ubuntu-latest
+.github/workflows/binary-release.yml:49:    runs-on: ubuntu-latest
+.github/workflows/binary-release.yml:54:          - target: x86_64-unknown-linux-musl
+.github/workflows/binary-release.yml:56:          - target: x86_64-unknown-linux-gnu
+.github/workflows/binary-release.yml:58:          - target: aarch64-unknown-linux-musl
+.github/workflows/binary-release.yml:60:          - target: aarch64-unknown-linux-gnu
+.github/workflows/binary-release.yml:131:            docker run --rm -v "$PWD/target:/target:Z" \
+.github/workflows/binary-release.yml:168:    runs-on: ubuntu-latest
+$ gh release view nightly --json assets --jq '.assets[].name'
+2026-09-04T08:42:42Z
+apr-aarch64-apple-darwin.tar.gz
+apr-aarch64-apple-darwin.tar.gz.sha256
+apr-aarch64-unknown-linux-gnu.tar.gz
+apr-aarch64-unknown-linux-gnu.tar.gz.sha256
+apr-x86_64-apple-darwin.tar.gz
+apr-x86_64-apple-darwin.tar.gz.sha256
+apr-x86_64-pc-windows-msvc.zip
+apr-x86_64-pc-windows-msvc.zip.sha256
+apr-x86_64-unknown-linux-gnu.tar.gz
+apr-x86_64-unknown-linux-gnu.tar.gz.sha256
+$ gh release view v0.65.2 --json assets --jq '.assets[].name'
+pv-v0.65.2-aarch64-unknown-linux-gnu.tar.gz
+pv-v0.65.2-aarch64-unknown-linux-gnu.tar.gz.sha256
+pv-v0.65.2-aarch64-unknown-linux-musl.tar.gz
+pv-v0.65.2-aarch64-unknown-linux-musl.tar.gz.sha256
+pv-v0.65.2-x86_64-unknown-linux-gnu.tar.gz
+pv-v0.65.2-x86_64-unknown-linux-gnu.tar.gz.sha256
+pv-v0.65.2-x86_64-unknown-linux-musl.tar.gz
+pv-v0.65.2-x86_64-unknown-linux-musl.tar.gz.sha256
+$ grep -nE 'runner:|cuda|prerelease|tag_name' .github/workflows/nightly.yml
+9:# Published as GitHub prerelease under the "nightly" tag.
+54:            runner: ubuntu-latest
+56:            runner: ubuntu-24.04-arm    # native ARM64, GA + free for public repos
+58:            runner: macos-latest
+60:            runner: macos-latest
+62:            runner: windows-latest
+132:  # ── Create/update nightly prerelease ─────────────────────
+155:          tag_name: nightly
+157:          prerelease: true
+165:            > This is a prerelease. For stable releases, see the latest tagged version.

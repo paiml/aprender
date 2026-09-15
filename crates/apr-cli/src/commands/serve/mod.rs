@@ -20,6 +20,11 @@ pub use types::*;
 // Test modules
 #[cfg(test)]
 mod tests;
+// PP-LLAMA-001 PP-14/PP-15/§9 #8: the offload report the served process
+// publishes. `inference`-gated because the report type comes from realizar.
+#[cfg(all(test, feature = "inference"))]
+#[path = "tests_offload_report_pp14.rs"]
+mod tests_offload_report_pp14;
 
 use std::path::Path;
 
@@ -54,6 +59,97 @@ pub(crate) fn list_devices() -> Result<()> {
         println!("    cargo install aprender --features wgpu    # portable GPU backend");
     }
     Ok(())
+}
+
+/// PP-LLAMA-001 §9 #8 / PP-2: the `cfg!` feature set of THIS binary.
+///
+/// `realizar` cannot see it — `cuda-batch` is an `apr-cli` feature and no
+/// mechanism carried it into the served process's HTTP surface, so
+/// `feature_set` in a receipt was whatever the operator typed at
+/// `--server-feature`. The list travels with the offload report and is
+/// reported as `build_features_cli`.
+#[cfg(feature = "inference")]
+#[must_use]
+pub(crate) fn cli_build_features() -> Vec<String> {
+    let mut features: Vec<&'static str> = Vec::new();
+    if cfg!(feature = "inference") {
+        features.push("inference");
+    }
+    if cfg!(feature = "cuda") {
+        features.push("cuda");
+    }
+    // §9 #8: `cuda-batch = ["cuda"]` is a compatibility alias now, but a receipt
+    // still has to state whether the binary was built with it — the §2.1
+    // INVALID-BUILD rule reads exactly this entry.
+    if cfg!(feature = "cuda-batch") {
+        features.push("cuda-batch");
+    }
+    if cfg!(feature = "wgpu") {
+        features.push("wgpu");
+    }
+    if cfg!(feature = "training") {
+        features.push("training");
+    }
+    features.into_iter().map(str::to_string).collect()
+}
+
+/// PP-14/PP-15: what this loader resolved for `--gpu-layers`, as a value the
+/// served process can report.
+///
+/// The three numbers were computed here and PRINTED ONLY, beside a `backend=`
+/// label that was a `cfg!` — a build-time string, not what loaded. Attaching
+/// this to the `AppState` is what turns the printed line into a fact a receipt
+/// can carry, and what lets `backend_loaded` be derived from residency instead.
+///
+/// `explicit_args` lists the arguments whose value DIFFERS from the default,
+/// i.e. the ones the operator must have set. An operator who typed the default
+/// (`--context-length 4096`) is indistinguishable from one who typed nothing,
+/// and is reported as not explicit — the conservative direction, since PP-14's
+/// invariant is violated by claiming auto-fit chose something the operator set.
+///
+/// `autofit_applied` is EMPTY on this loader, and that is a fact rather than an
+/// omission: `resolve_layers` has no free-VRAM query to fit against (`fits ==
+/// total_layers`), so `auto` resolves to all, a partial request is refused, and
+/// auto-fit never changes anything. When a fitting loader lands, this is where
+/// it records what it changed.
+#[cfg(feature = "inference")]
+#[must_use]
+pub(crate) fn offload_report(
+    config: &ServerConfig,
+    resolved_layers: u32,
+    total_layers: u32,
+) -> realizar::api::OffloadReport {
+    let mut explicit_args: Vec<String> = Vec::new();
+    if config.gpu_layers.is_some() {
+        explicit_args.push("gpu_layers".to_string());
+    }
+    if config.no_gpu {
+        explicit_args.push("no_gpu".to_string());
+    }
+    if config.context_length != types::DEFAULT_CONTEXT_LENGTH {
+        explicit_args.push("context_length".to_string());
+    }
+    if config.batch {
+        explicit_args.push("batch".to_string());
+    }
+    if config.no_fp8_cache {
+        explicit_args.push("no_fp8_cache".to_string());
+    }
+    if config.backend.is_some() {
+        explicit_args.push("backend".to_string());
+    }
+    realizar::api::OffloadReport {
+        gpu_layers_requested: config
+            .gpu_layers
+            .map_or_else(|| "none".to_string(), |r| r.to_string()),
+        gpu_layers_resolved: resolved_layers,
+        gpu_layers_total: total_layers,
+        offload_policy: "all_or_nothing",
+        autofit_applied: Vec::new(),
+        explicit_args,
+        build_features: cli_build_features(),
+        build_commit: Some(env!("APR_GIT_SHA").to_string()),
+    }
 }
 
 /// PERF-021 countermeasure 3: a request has a RESOLUTION, and it is reported.

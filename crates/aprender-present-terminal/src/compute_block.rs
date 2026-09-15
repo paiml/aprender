@@ -80,7 +80,7 @@ impl SimdInstructionSet {
         #[cfg(target_arch = "aarch64")]
         {
             // NEON is always available on aarch64
-            return Self::Neon;
+            Self::Neon
         }
 
         #[cfg(target_arch = "wasm32")]
@@ -90,7 +90,10 @@ impl SimdInstructionSet {
             return Self::WasmSimd128;
         }
 
-        Self::Scalar
+        #[cfg(not(target_arch = "aarch64"))]
+        {
+            Self::Scalar
+        }
     }
 
     /// Get the instruction set name as a static string

@@ -1,0 +1,84 @@
+# CRUX-N-17 — Vision ops: NMS, GPU connected components, tensor integration
+# CRUX category N: Rust ML Framework Parity (linfa + burn).
+# Filed from the 2026-09-12 competitive sweep. Tracks GitHub #3168, epic #3146.
+# registry: false — this contract carries real falsification gates and claims no
+# exemption (operator ruling 2026-08-21, "no contract exemptions").
+
+metadata:
+  id: CRUX-N-17
+  version: "1.0.0"
+  created: "2026-09-12"
+  updated: "2026-09-12"
+  author: PAIML Engineering
+  registry: false
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "N — Rust ML Framework Parity"
+  competitor: burn
+  demand_score: 2  # 1..5, low priority in pmat work
+  intake_status: partial
+  github_issue: 3168
+  description: >
+    Tensor-integrated vision operations. burn-vision ships NMS, GPU-accelerated connected components (Spaghetti/Spaghetti4C plus a cube backend with prefix sum), VGG19 gram-matrix perceptual loss and 2D transforms, all operating on burn tensors. aprender-image has real coverage burn does not emphasise (canny, morphology, histogram equalization, gradient magnitude) but is CPU-only, has no NMS, and operates on its own buf.rs type rather than on aprender-tensor -- so vision ops cannot join an autodiff graph or a GPU pipeline. Demand 2: vision is not one of the four pillars.
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - 'epic: https://github.com/paiml/aprender/issues/3146'
+  - 'story: https://github.com/paiml/aprender/issues/3168'
+  - 'competitor: https://github.com/tracel-ai/burn'
+
+equations:
+  nms_matches_the_torchvision_oracle:
+    formula: |
+      nms(boxes, scores, iou_thr)  ≡  torchvision.ops.nms(...)   as KEPT-INDEX SETS
+    domain: "pinned box/score fixtures"
+    codomain: "kept index set"
+    invariants:
+    - "degenerate cases asserted: identical boxes, zero boxes, all-below-threshold, IoU exactly at the boundary"
+
+  gpu_path_labels_identically:
+    formula: |
+      connected_components_gpu(I)  ≡  connected_components_cpu(I)   as LABELINGS
+    domain: "pinned binary images"
+    codomain: "label image (up to label permutation)"
+    invariants:
+    - "a faster path that labels differently is a defect, not an optimization"
+    - "GPU ops fail loudly when the backend is unavailable rather than silently using CPU while reporting a GPU device"
+
+falsification_tests:
+- id: FALSIFY-CRUX-N-17-001
+  rule: "NMS matches torchvision exactly"
+  prediction: "kept-index sets are identical to a pinned torchvision.ops.nms fixture, including the IoU-at-boundary case"
+  test: >-
+    LIVE-PENDING - NMS matches torchvision exactly. No test surface exists today because the capability is unimplemented: Vision ops: NMS, GPU connected components, tensor integration (aprender#3168, CRUX-N-17). PROMOTE by authoring a test named oracle_parity_torchvision in module `nms/tests` of crate `aprender-image`; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED and unfalsifiable-by-absence, NOT satisfied.
+  if_fails: rule 'NMS matches torchvision exactly' is violated — the burn parity claim for CRUX-N-17 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation
+- id: FALSIFY-CRUX-N-17-002
+  rule: "the GPU connected-components path labels identically to CPU"
+  prediction: "GPU and CPU produce the same labeling up to permutation on pinned fixtures"
+  test: >-
+    LIVE-PENDING - the GPU connected-components path labels identically to CPU. No test surface exists today because the capability is unimplemented: Vision ops: NMS, GPU connected components, tensor integration (aprender#3168, CRUX-N-17). PROMOTE by authoring a test named gpu_matches_cpu in module `connected_components/tests` of crate `aprender-image`; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED and unfalsifiable-by-absence, NOT satisfied.
+  if_fails: rule 'the GPU connected-components path labels identically to CPU' is violated — the burn parity claim for CRUX-N-17 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation
+- id: FALSIFY-CRUX-N-17-003
+  rule: "tensor migration is output-preserving"
+  prediction: "ops migrated onto aprender-tensor produce byte-identical output to the buf.rs path"
+  test: >-
+    LIVE-PENDING - tensor migration is output-preserving. No test surface exists today because the capability is unimplemented: Vision ops: NMS, GPU connected components, tensor integration (aprender#3168, CRUX-N-17). PROMOTE by authoring a test named byte_identical_after_migration in module `tensor_integration/tests` of crate `aprender-image`; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED and unfalsifiable-by-absence, NOT satisfied.
+  if_fails: rule 'tensor migration is output-preserving' is violated — the burn parity claim for CRUX-N-17 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation
+
+proof_obligations:
+- type: invariant
+  property: "NMS matches torchvision exactly"
+- type: invariant
+  property: "the GPU connected-components path labels identically to CPU"
+- type: invariant
+  property: "tensor migration is output-preserving"
+
+kani_harnesses:
+- id: KH-CRUX-N-17-001
+  obligation: nms_matches_the_torchvision_oracle
+  property: nms_matches_the_torchvision_oracle_holds_on_bounded_input
+  bound: 4
+- id: KH-CRUX-N-17-002
+  obligation: gpu_path_labels_identically
+  property: gpu_path_labels_identically_holds_on_bounded_input
+  bound: 4

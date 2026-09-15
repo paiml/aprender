@@ -9,7 +9,19 @@ WHAT §4.3.1 DETERMINES, and is encoded here:
 
   target_prompt_tokens = 512 (tolerance +/-8)   max_tokens = 128
   temperature = 0.0 (greedy)                    seed = 0
-  context = 4096                                model = qwen2.5-coder-7b Q4_K_M
+  ignore_eos = true                             context = 4096
+  model = qwen2.5-coder-7b Q4_K_M
+
+PP-LLAMA-001 v3.0 PP-28 ADDS ignore_eos TO THE PIN. W1's sampler row in section
+5.1 reads `temperature 0`, `seed` recorded, `ignore_eos true`, `n_predict 128`,
+and PP-28 requires all four on the wire on both lanes. Without ignore_eos the
+tokens generated per request are whatever the model decides to stop after, so
+the work per band is not pinned: an Arm A ratchet floor committed over it drifts
+with the model's stopping behaviour rather than with the server's throughput --
+a floor that moves for a reason the gate is not measuring. It is emitted per
+record AND in the `_meta` header, because a header that declares nothing
+constrains nothing: the loader's `_meta`-contract check compares the two, so
+only a declared pin can be enforced.
 
 WHAT §4.3.1 DOES NOT DETERMINE, and is chosen here (each choice is recorded in
 the `_meta` header record of the corpus itself, not only in this docstring):
@@ -62,6 +74,11 @@ TOLERANCE_TOKENS = 8
 MAX_TOKENS = 128
 CONTEXT = 4096
 SEED = 0
+# PP-LLAMA-001 v3.0 section 5.1 / PP-28: EOS is suppressed so every retained
+# sample runs to exactly `max_tokens` and `completion_tokens == n_predict` is
+# checkable. Not an OpenAI standard field; vLLM, SGLang and llama.cpp's server
+# all accept it, and a server that does not IGNORES it rather than rejecting it.
+IGNORE_EOS = True
 
 # Chosen (see docstring 1): 256 >= 8*16 sampled + 2*16 warmup, with headroom.
 DEFAULT_COUNT = 256
@@ -99,6 +116,7 @@ def build(count, body_words):
         words = [rng.choice(WORD_POOL) for _ in range(body_words)]
         rows.append({
             "id": i,
+            "ignore_eos": IGNORE_EOS,
             "max_tokens": MAX_TOKENS,
             "prompt": f"// w1-{i:04d}\n" + " ".join(words),
             "seed": SEED,
@@ -112,7 +130,7 @@ def meta(count, body_words):
     """The `_meta` header record -- provenance, in the file, not beside it."""
     return {"_meta": {
         "corpus": "W1",
-        "spec": "APR-PERF-GATE-001 v2.2 4.3.1",
+        "spec": "PP-LLAMA-001 v3.0 5.1 (was APR-PERF-GATE-001 v2.2 4.3.1)",
         "generator": "scripts/gen_prompts_w1.py",
         "regenerate": (
             f"python3 scripts/gen_prompts_w1.py --count {count} "
@@ -145,6 +163,15 @@ def meta(count, body_words):
         "max_tokens": MAX_TOKENS,
         "temperature": 0.0,
         "seed": SEED,
+        "ignore_eos": IGNORE_EOS,
+        "sampler_pin_rationale": (
+            "PP-LLAMA-001 v3.0 PP-28. temperature/seed/ignore_eos/max_tokens "
+            "are the four the spec requires on the wire on BOTH lanes. "
+            "ignore_eos pins the work per request; without it the tokens "
+            "generated are whatever the model stops after and a throughput "
+            "floor committed over that moves for a reason the gate is not "
+            "measuring."
+        ),
         "context": CONTEXT,
         "prompts_distinct": True,
         "distinctness_rationale": (

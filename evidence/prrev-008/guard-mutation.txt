@@ -1,0 +1,75 @@
+PRREV-008 — the guard's own mutation set, re-run in the WIDENED scope.
+
+S6.4 requires 100% kill and S8 records guard_mutation_score as "1.00, no ratchet — it is
+a one". Extending a guard's SCOPE requires re-mutating in the new scope: the old proof
+does not transfer, and this repository has shipped that mistake before (#2360, where a
+guard extended to the Makefile was still blind to the commonest Makefile form).
+
+The site list is DERIVED by scanning the guard on every run, never written down, so the
+rules PRREV-008 adds were mutated without anyone remembering to add them. The catalogue
+grew from 119 mutants to 164:
+
+  +26  derived  THIRTEEN new `reject B<n>` sites, one `drop` and one `flip` each (47
+                sites before, 60 after): pmat's unconditional trigger, crux's and
+                mutation's recomputed triggers, the four consultations' emptiness
+                checks, and B4's diff scan
+  +19  named    twenty-one added and two removed (25 before, 44 after) — the new
+                predicates and patterns, both polarities each:
+                  comparative-competitor-list-{never,everything}
+                  comparative-gap-bound-unbounded      ({0,5} -> {0,99})
+                  comparative-left-boundary-dropped    (v1.8x becomes a ratio)
+                  comparative-mult-sign-ascii-only     (U+00D7 stops matching)
+                  target-suppressor-{never,everything}
+                  crux-surface-regex-{never,everything}
+                  mutation-trigger-regex-{never,everything}
+                  rs-published-regex-{never,everything}
+                  rs-line-test-not-applied             (the // comment starts firing)
+                  docs-prose-back-in-b4-scope          (the 40%-precision surface returns)
+                  book-removed-from-b4-scope           (the scar's own surface leaves)
+                  five --match-* predicates whose exit status stops propagating
+                The two removed are the entries anchored on the OLD COMPARATIVE_RE,
+                which no longer exists. Removed rather than left stale: an entry matching
+                nothing mutates nothing and scores a kill it never earned, and
+                catalogue() refuses to run at all when one does ("matches 0 lines, not 1")
+                — which is how the stale pair was found rather than shipped.
+
+Two of those deserve naming, because they are the only mechanical statement of the two
+judgements in this change: `docs-prose-back-in-b4-scope` puts the surface measured at 40%
+precision back into B4 and the case table must go RED; `book-removed-from-b4-scope` takes
+the surface the 2.93x Ollama claim was published on OUT and fixture row 16 must go GREEN.
+A decision with no mutant behind it is a comment.
+
+RESULT
+
+  $ scripts/mutate-guard.sh --jobs 16
+
+  baseline GREEN: 90 tests, 0 failures
+  == 164 mutants, 16 at a time ==
+  attempted 164   killed 164   survived 0   invalid 0
+  guard_mutation_score = 100% (164/164)
+
+The baseline is proven GREEN in a mutant tree BEFORE any mutant runs, so a kill is a kill
+of the mutant and not of the harness; every mutation asserts that the file actually
+changed, so `invalid 0` means all 164 edits landed; and the exit status is read from bats
+itself, never from the tail of a pipeline.
+
+AND THE SWEPT FILES ARE THE COMMITTED FILES. The score is worthless if the artifact moved
+after it was measured, and this run is the fifth: four earlier sweeps were DISCARDED
+because an edit landed while they were in flight (one of them reported
+`SITE NOT PRESENT AT LINE 752`, which is the catalogue refusing to score a file it no
+longer describes). Hashes taken before the sweep and re-checked after:
+
+  scripts/check_pr_review_receipt.sh: OK
+  tests/pr-review.bats: OK
+  tests/fixtures/pr-review/comparative-claim-cases.tsv: OK
+
+ONE SURVIVOR WAS FOUND AND FIXED RATHER THAN EXPLAINED. An early draft carried an
+explicit `docs/*) return 1` exclusion in match_shipped_surface. The sweep reported
+`docs-prose-back-in-b4-scope SURVIVED` — because docs/ is not on the INCLUSION list
+either, so the exclusion was a dead branch no receipt could reach. The dead branch was
+deleted and the mutant retargeted at the inclusion line, where it kills. A survivor is a
+rule the guard states and nothing tests; a dead branch is a rule it states and nothing
+CAN test, which is worse, and only the sweep could tell them apart.
+
+The full per-mutant table is written to $PRREV_MUTATION_REPORT (id, op, line, verdict,
+exit code, failing-test count, and the NAME of the test that killed it).

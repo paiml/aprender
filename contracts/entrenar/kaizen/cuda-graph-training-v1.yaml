@@ -1,3 +1,13 @@
+metadata:
+  kind: kaizen
+  version: "1.0.0"
+  created: "2026-04-03"
+  author: "PAIML Engineering"
+  description: "CUDA Graph Capture for NF4 Training Forward Pass (Tier 3 Parity)"
+  references:
+    - "KAIZEN-070"
+    - "parent contract: apr-training-parity-v1"
+
 contract: cuda-graph-training-v1
 title: CUDA Graph Capture for NF4 Training Forward Pass (Tier 3 Parity)
 kaizen: KAIZEN-070

@@ -1,0 +1,4 @@
+{"event":"orch_model_change","ticket":"PMAT-1098","phase":"4","from":"opus","to":"fable-5-1"}
+{"event":"orch_model_change","ticket":"PMAT-1098","phase":"4","from":"claude-fable-5-1","to":"claude-opus-5"}
+{"event":"orch_model_change","ticket":"PMAT-1098","phase":"4","from":"claude-opus-5","to":"claude-fable-5-1"}
+{"event":"orch_model_change","ticket":"PMAT-1098","phase":"1","from":"fable-5-1","to":"opus-5"}

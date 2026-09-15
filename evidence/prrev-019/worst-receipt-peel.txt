@@ -1,0 +1,20 @@
+# PRREV-019 -- the worst forged receipt, peeled one defect at a time.
+#
+# The receipt: a CITED finding declaring an unsound use-after-free classed
+# 'Blocking'; an explicit cross-vendor autonomy_effect 'REFUSE'; survivors:
+# "12 survived, shipping anyway"; a quorum of the AUTHOR listed twice, the two rows
+# distinguished only by a trailing space in the actor id and in the vendor; and
+# main_sha_at_review set to a commit AHEAD of main, so the S13.3.b region is empty
+# and delta_sweep.status can be 'not-run'. On f7eb5ab57 it PERMITted and armed.
+#
+# WHY THIS FILE EXISTS. Five refusals on one receipt could be ONE clause firing and
+# four dead ones behind it. Removing the defects one at a time forces a different
+# clause to be the one that fires each time, and PERMIT returns only when all five
+# are genuinely repaired -- which is the discrimination the count alone cannot give.
+
+0-as-forged                exit=1  REFUSE pr=2783 [Q6] findings.sarif carries 1 finding(s) classed blocking under a PASS verdict; a surviving blocking-clas
+1-blocking-removed         exit=1  REFUSE pr=2783 [Q7] 1 advisory finding(s) carry autonomy_effect: refuse; the cross-vendor reviewer may not block the PR 
+2-veto-removed             exit=1  REFUSE pr=2783 [Q5] quorum member field(s) are not well-formed identities: primary.actor.id = "agent:claude-opus-5/sessi
+3-quorum-repaired          exit=1  REFUSE pr=2783 [Q2] the mutation record cannot be read as a mutation record: survivors is a string, not an array; a surv
+4-survivors-repaired       exit=1  REFUSE pr=2783 [Q4] autonomy.main_sha_at_review 783abf35ef16016813d355fd575d6d7877a3257b is not an ancestor of origin/ma
+5-anchor-repaired          exit=0  PERMIT pr=2783 receipt=/mnt/nvme-raid0/prrev-adv/tmp/peel-5-anchor-repaired every clause of the S13.2 predicate holds; t

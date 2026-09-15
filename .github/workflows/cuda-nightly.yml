@@ -66,12 +66,22 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: cuda-nightly
-  cancel-in-progress: false
+# The concurrency group moved DOWN to the job (PP-19 / §5.4). A workflow-level
+# `cuda-nightly` group serialises this lane against itself and against nothing
+# else, and gx10 has a second CI consumer: silicon-nightly's aarch64-cuda-sm121
+# job, 03:30 UTC, 90-minute timeout, which had no group at all. GitHub
+# concurrency groups are REPO-WIDE, so naming the same `perf-gx10` group in both
+# workflows is what actually serialises the two — and that is only expressible
+# at job level. Enforced by scripts/check_perf_concurrency_groups.sh.
 
 jobs:
   falsifiers:
+    # PP-19: one group per HOST, never per workflow and never per ref, and
+    # cancel-in-progress false so a queued run cannot kill a measurement
+    # mid-window.
+    concurrency:
+      group: perf-gx10
+      cancel-in-progress: false
     # Run on schedule/manual-dispatch as before; on a PR run ONLY when the
     # triggering label is exactly `cuda-check` (explicit opt-in targeting).
     if: >-
@@ -84,14 +94,26 @@ jobs:
           - name: blackwell-gb10
             arch: ARM64
             select: blackwell
-    # LITERAL, not an expression. infra#352 requires a selector to name `gpu`,
-    # and a guard can only check labels it can see — labels hidden behind a
-    # matrix expression are invisible to it.
-    runs-on: [self-hosted, gpu, Linux, ARM64, cuda, blackwell]
+    # LITERAL, not an expression: a guard can only check labels it can see, and labels
+    # hidden behind a matrix expression are invisible to it.
+    #
+    # NAMES THE BOX. infra#352 asked a GPU selector to name `gpu`; infra#494/#495
+    # superseded that when yoga arrived and registered `gpu,yoga,cuda,ada` beside gx10's
+    # `gpu,gx10,cuda,blackwell,gb10` -- `gpu` stopped naming one machine, so a selector
+    # built on it resolves to aarch64 GB10 or x86_64 Ada at compile time. The opt-in
+    # label must name ONE BOX, and gx10 declares exactly one:
+    #   machines/gx10/forjar.yaml  params.runner_opt_in_labels: "gx10"
+    # `blackwell` is a capability, not that label -- it is unambiguous only for as long
+    # as gx10 is the fleet's only Blackwell box, which is the assumption `gpu` was
+    # making right up until it broke.
+    runs-on: [self-hosted, gpu, Linux, ARM64, cuda, blackwell, gx10]
     timeout-minutes: 90
     env:
       APR_PARITY_MODEL: ${{ vars.APR_PARITY_MODEL || '/home/noah/models/qwen2.5-coder-1.5b-instruct-q4k.apr' }}
       CARGO_TERM_COLOR: always
+      # JOB level, not step level: the yield branch of `decide` writes a
+      # NOT_RUN marker here before any step-scoped env exists.
+      PERF041_OUT: ${{ github.workspace }}/perf041-witness
     steps:
       - name: Decide whether to run (silicon filter + yield-to-training)
         id: decide
@@ -127,12 +149,53 @@ jobs:
           fi
           if [ "${used:-0}" -gt 2000 ] || [ "${procs:-0}" -gt 0 ]; then
             echo "::notice::${{ matrix.name }}: GPU busy (${used:-?} MiB, ${procs:-?} procs) — yielding to training, skipping falsifiers tonight"
+            # A YIELDED NIGHT MUST BE VISIBLE. Every later step is skipped and
+            # the job goes GREEN, so without this line "the witness did not run"
+            # and "the witness passed" look identical from outside. The marker
+            # is what scripts/check_perf041_marker.sh reads at release, and
+            # NOT_RUN is not PASS.
+            mkdir -p "$PERF041_OUT"
+            printf '{"host":"%s","status":"NOT_RUN","reason":"yield to training (%s MiB, %s procs)","started_utc":"%s","commit":"%s","exit":null,"max_m":null,"cc":null,"sha256":null}\n' \
+              "${{ matrix.name }}" "${used:-?}" "${procs:-?}" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${{ github.sha }}" \
+              > "$PERF041_OUT/marker.json"
             echo "proceed=false" >> "$GITHUB_OUTPUT"; exit 0
           fi
           echo "proceed=true" >> "$GITHUB_OUTPUT"
 
       - uses: actions/checkout@v7
         if: steps.decide.outputs.proceed == 'true'
+
+      # The first thing gx10 does once it has a tree. NOT before `decide` and
+      # NOT before the checkout, for the reason the comment below spells out:
+      # on a yield night there is no working tree, so a step that `bash`es a
+      # repo path exits 127 and turns a deliberately-yielded night RED. It
+      # carries the same `if:` as the checkout it follows.
+      #
+      # gx10 is the box where run 34448908554 died on `gh: command not found`
+      # after a 21 MB CUDA build. Everything below this line assumes cargo,
+      # rustup and a visible device; this is where that assumption is checked.
+      - name: Preflight — this box has the tools this job assumes
+        if: steps.decide.outputs.proceed == 'true'
+        run: bash scripts/ci_self_hosted_preflight.sh --cuda
+
+      # PP-26's release-phase marker gate (scripts/check_perf041_marker.sh, a
+      # dogfood gate) may not be named in a REQUIRED workflow
+      # (check_no_timing_in_required.sh), yet every guard must be able to fail
+      # somewhere a workflow runs (check_guards_are_wired.sh). Its case table
+      # is GPU-free and runs here nightly.
+      #
+      # IT CARRIES THE SAME `if:` AS THE CHECKOUT ABOVE IT, AND THAT IS NOT
+      # OPTIONAL. `actions/checkout` is gated on `decide`, so on a yield night
+      # (`proceed=false`) there is NO WORKING TREE on the runner — the step
+      # would `bash` a path that does not exist, exit 127, and turn a
+      # deliberately-yielded night RED. A gate that fails because it was not
+      # given its own source is the "job did not start reads as FAILURE" shape:
+      # the verdict says the guard broke when nothing was ever run. So the
+      # guard runs on every night the lane runs, and on a yielded night the
+      # NOT_RUN marker `decide` already wrote is the record.
+      - name: PP-26 marker gate can still go RED (case table, no GPU)
+        if: steps.decide.outputs.proceed == 'true'
+        run: bash scripts/check_perf041_marker.sh --selftest
 
       - name: Preflight — CUDA device + parity model present
         if: steps.decide.outputs.proceed == 'true'
@@ -162,10 +225,353 @@ jobs:
             falsify_cuda_eval_adapter_sync_001 \
             falsify_cuda_eval_gpu_forward_001
 
+      # THE ASSERTION THE BLACKWELL CASCADE ASKED FOR, ON BLACKWELL
+      # (YOGA-NIGHTLY-001 R-3: "on EVERY GPU runner — gx10 included").
+      #
+      # The cascade's root cause was `warm!` hardcoding one cache key, so
+      # pre-warm covered a key the runtime never asked for and every kernel
+      # JIT-compiled on demand. On sm_89 that SUCCEEDED — slowly — which is why
+      # the old sm_89 lane was green through all seven defects. On sm_121 it
+      # failed hard. The pass/fail suites above therefore cannot see the defect
+      # on the one architecture where it is silent, and can only see its
+      # CONSEQUENCE here. `cache_misses == 0` sees the cause on both.
+      #
+      # It is cheap: this job has already built `aprender-train --features cuda
+      # --release` in the step above, so this is one more test binary invocation
+      # against a warm target dir.
+      - name: Pre-warm covers runtime — zero JIT compiles on the pass (sm_121)
+        if: steps.decide.outputs.proceed == 'true'
+        run: |
+          nice -n 19 cargo test -p aprender-train --features cuda --lib --release -- \
+            --nocapture --include-ignored --exact \
+            autograd::cuda_forward::cache::prewarm_coverage_falsifier::falsify_cuda_prewarm_covers_runtime_no_jit_001
+
       - name: CUDA loss-window falsifier suite
         if: steps.decide.outputs.proceed == 'true'
         run: |
           nice -n 19 cargo test -p aprender-train --features cuda --lib --release cuda_loss_window
+
+      # PERF-053 / aprender#2767: repeated IDENTICAL greedy batches must return the SAME
+      # continuation. Before the CU_STREAM_DEFAULT default this returned 11 distinct
+      # continuations out of 40, most of them garbage, because this crate's host transfers
+      # (cuMemcpyHtoD/DtoH) are legacy-stream and do not order against a non-blocking stream.
+      #
+      # The test self-skips when it finds no usable GPU model, so the model is resolved and
+      # checked HERE. A skip would be a green that proves nothing, which is the exact failure
+      # mode this whole nightly exists to remove.
+      - name: PERF-053 - batched decode determinism falsifier (aprender#2767)
+        if: steps.decide.outputs.proceed == 'true'
+        env:
+          # Keep m >= 4 off the cuBLAS decode route, whose divergence at m >= 4 is a separate
+          # named defect (contracts/continuous-batching-v1.yaml, CB-006 round 9).
+          CUBLAS_GEMM_THRESHOLD: "32"
+        run: |
+          set -euo pipefail
+          gguf="${{ vars.APR_STREAM_FALSIFY_MODEL || '/home/noah/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf' }}"
+          if [ -f "$gguf" ]; then
+            model="$gguf"
+          elif [ -f "$APR_PARITY_MODEL" ]; then
+            model="$APR_PARITY_MODEL"
+          else
+            # ENV, not a code verdict -- but still exit 1. A probe that cannot run must not
+            # be silent.
+            echo "::error::PERF-053 UNMEASURABLE on ${{ matrix.name }} (provisioning, not a code defect): neither $gguf nor $APR_PARITY_MODEL is present"
+            exit 1
+          fi
+          echo "PERF-053 model: $model"
+          # Flag-level first: no GPU needed, but the module only exists under `cuda`, and
+          # ci.yml EXCLUDES aprender-gpu from the workspace --lib run. Without this line the
+          # three perf053_* unit tests never execute anywhere.
+          nice -n 19 cargo test -p aprender-gpu --features cuda --lib --release perf053
+          APR_FALSIFY_MODEL="$model" nice -n 19 cargo test -p aprender-serve --features cuda \
+            --release --test falsify_stream_ordering_2767 -- --nocapture
+
+      # FALSIFY-CB-008 / aprender#2753: no frozen slots. The contract has forbidden this since
+      # v1.0 and its `test:` field named a BATCHED_DECODE_TRACE log -- a variable that did not
+      # exist -- so nothing ever read it while every batched slot emitted one token id to the
+      # max_tokens cap. This step is that field made executable.
+      #
+      # NOT covered by the PERF-053 step above: that one asserts repeated identical batches
+      # AGREE, and under the racy flag the m=8 arm agrees on varied garbage, which is not
+      # frozen. The two are complementary and both are cheap (~4s each).
+      #
+      # No CUBLAS_GEMM_THRESHOLD override here, deliberately: this test runs m=3 AND m=8 so it
+      # crosses that threshold and covers both decode GEMM routes. CB-006's divergence at
+      # m >= 4 is a separate defect and is not a freeze, so it cannot confound this verdict.
+      - name: FALSIFY-CB-008 - no frozen slots in batched decode (aprender#2753)
+        if: steps.decide.outputs.proceed == 'true'
+        run: |
+          set -euo pipefail
+          gguf="${{ vars.APR_STREAM_FALSIFY_MODEL || '/home/noah/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf' }}"
+          if [ -f "$gguf" ]; then
+            model="$gguf"
+          elif [ -f "$APR_PARITY_MODEL" ]; then
+            model="$APR_PARITY_MODEL"
+          else
+            echo "::error::CB-008 UNMEASURABLE on ${{ matrix.name }} (provisioning, not a code defect): neither $gguf nor $APR_PARITY_MODEL is present"
+            exit 1
+          fi
+          echo "CB-008 model: $model"
+          # The checker's OWN discrimination controls, which need no GPU. ci.yml's workspace
+          # --lib line already runs them on every PR; running them here too means a red GPU
+          # verdict can be attributed to the decode rather than to the checker.
+          nice -n 19 cargo test -p aprender-serve --lib --release cb008_checker_controls
+          APR_FALSIFY_MODEL="$model" nice -n 19 cargo test -p aprender-serve --features cuda \
+            --release --test falsify_cb008_no_frozen_slots_2753 -- --nocapture
+      # PP-26 / L0 CORRECTNESS: the batch-invariance witness (FALSIFY-CB-006,
+      # #2753, §9 #1a on Blackwell). PP-LLAMA-001 §7.0 puts correctness at layer
+      # L0 and says perf041 runs "nightly + release, missing marker = RED"; the
+      # probe existed and was wired to nothing.
+      #
+      # IT SITS BEFORE THE PILLAR-4 BEAT, AND CARRIES `!cancelled()`. Every other
+      # step here is `if: steps.decide.outputs.proceed == 'true'` with no
+      # `!cancelled()`, so the first red step aborts every later one — and the
+      # Pillar-4 beat has been red since 2026-08-30. A step appended after it
+      # would never execute; a step before it still needs `!cancelled()` so a red
+      # earlier falsifier cannot hide a red correctness witness. A comparator
+      # throughput ratio must never mask an L0 result (P-4: correct before fast).
+      #
+      # ENV IS RECORDED, NOT INHERITED. Deliberately NO CUBLAS_GEMM_THRESHOLD and
+      # NO FP8_DECODE: contracts/continuous-batching-v1.yaml records that pair
+      # making the m=1 REFERENCE garbage, after which perf041 exits 2 and the
+      # cause is misattributed to batching. CUDA_BATCH_WINDOW_MS is set because
+      # the scheduler's default window is 0 ms, so on a quiet box batches form
+      # only by chance — the probe writes every value into witness.json `env`.
+      - name: PP-26 - batch-invariance witness (perf041)
+        if: ${{ !cancelled() && steps.decide.outputs.proceed == 'true' }}
+        env:
+          PERF041_MODEL: qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
+          CUDA_BATCH_WINDOW_MS: "200"
+        run: |
+          set -uo pipefail
+          # -e OFF, DELIBERATELY. GitHub runs `run:` blocks as `bash -e {0}`
+          # when no `shell:` key is given, and under -e the line
+          #   bash scripts/perf041_...sh > "$log" 2>&1; rc=$?
+          # ABORTS the step the moment the probe exits 1 or 2 — so the
+          # classification below would never run and the step would fail with no
+          # ::error:: at all, which is precisely the silence being removed here.
+          # Every command that must not fail silently is guarded explicitly.
+          set +e
+          mkdir -p "$PERF041_OUT"
+          # Built from the commit under test, like the neighbouring steps: a
+          # witness taken with a stale binary is a statement about other code.
+          nice -n 19 cargo build --release --features cuda --bin apr || {
+            echo "::error::PP-26 UNMEASURABLE (env/harness): the --features cuda build failed, so no witness could be taken"
+            exit 1
+          }
+          log="$PERF041_OUT/probe.log"
+          # Status read from the command, never through a pipe: `cmd | tee` hands
+          # back tee's status and has shipped two unreachable failure paths here.
+          bash scripts/perf041_batched_parity_probe.sh > "$log" 2>&1; rc=$?
+          cat "$log"
+          fail=0
+          # The marker is asserted INDEPENDENTLY of the exit code. A probe that
+          # exits 0 having printed nothing has witnessed nothing, and silence is
+          # the failure mode this lane exists to remove.
+          if grep -q '^PP-26-WITNESS: ' "$log"; then
+            echo "PP-26 markers: $(grep -c '^PP-26-WITNESS: ' "$log") band(s)"
+          else
+            echo "::error::PP-26 produced no '^PP-26-WITNESS: ' marker line — the witness said nothing about any band, which is INVALID-CORRECTNESS, not a pass"
+            fail=1
+          fi
+          # ENV-DEATH AND CODE-DEFECT ARE DIFFERENT REDS. Both exit 1 — an absent
+          # witness is INVALID-CORRECTNESS under PP-26 — but a guard that names a
+          # code cause for a box it could not evaluate has fired three times in
+          # this repo in one day, so the two are never merged into one message.
+          case "$rc" in
+            0) echo "PP-26 PASS: every band agreed with the m=1 reference to the declared point" ;;
+            1) echo "::error::PP-26 CODE DEFECT (#2753 / §9 #1a): a batched slot diverged from the m=1 reference before the declared point on identical greedy input"
+               fail=1 ;;
+            *) echo "::error::PP-26 UNMEASURABLE (env/harness): the probe could not decide (exit $rc) — no c>1 batch formed, the reference was not reproducible, or the model/server was absent. Not a code verdict, and not a pass."
+               fail=1 ;;
+          esac
+          exit "$fail"
+
+      # BSE-11 (docs/specifications/build-system-enhancement.md wave 3,
+      # `paiml/infra`, PMAT-1067): byte-compare tonight's witness line(s)
+      # against the last successful run's, instead of leaving the release
+      # checklist to re-diagnose this job's GitHub status colour. The PP-26
+      # witness has printed the SAME `^PP-26-WITNESS: ` line(s) — a standing
+      # INVALID-CORRECTNESS band, not a regression — every night since
+      # 2026-08-30 (docs/reports/work-history-delay-optimization-report.md);
+      # a colour is red either way, so a real regression and a known-stable
+      # failure are indistinguishable without opening the log. `witness_diff.sh`
+      # answers exactly "did the bytes change?" and nothing else, so the
+      # checklist can read the single word `CHANGED` and skip the rest on a
+      # night that says `UNCHANGED`.
+      #
+      # `proceed == 'true'` (not just `!cancelled()`) is required: on a yield
+      # night `decide` writes only marker.json, never probe.log, so this step
+      # would read a file that does not exist. Mirrors the witness step's own
+      # condition immediately above.
+      #
+      # SAME ARTIFACT NAME the next step uploads (`pp26-witness-${{ matrix.name
+      # }}`) is downloaded here for the PREVIOUS run — this job already
+      # produces it nightly, so no new artifact is introduced. `gh run list`/
+      # `gh run download` read-only calls need no token beyond the runner's own
+      # ambient gh auth (the same pattern qwen-story-daily.yml's manifest step
+      # already uses); no `permissions:` change.
+      # D1 revision (BSE-11, Pmat-Ticket: PMAT-1067): this step used to be
+      # fail-OPEN. `set -uo pipefail` has no `-e`, `gh run download ... ||
+      # true` swallowed a genuine download failure, and `verdict=$(...)`'s
+      # output was never checked against the two words witness_diff.sh can
+      # print - a missing/unreadable script (exit 127) or witness_diff.sh's
+      # own exit 2 landed silently in `$verdict`, the step echoed an empty
+      # (or garbage) word, and the job went green. Fixed two ways:
+      #   1. `gh run download` failure is now handled explicitly instead of
+      #      `|| true` - genuinely missing baseline artifact -> NO-BASELINE
+      #      (a third, documented verdict word the checklist treats like
+      #      CHANGED - i.e. "look at it"); any other download failure fails
+      #      the step.
+      #   2. the verdict word is asserted with a `case` after the command
+      #      substitution (chosen over bare `set -e`, because `set -e` alone
+      #      would still let witness_diff.sh's own STDOUT - empty or
+      #      malformed on some other unanticipated exit path - pass through
+      #      unexamined; the `case` inspects the actual word, not just the
+      #      exit code of the substitution).
+      # D1 follow-up (BSE-11, Pmat-Ticket: PMAT-1067): the D1 fix above still
+      # conflated two different failures behind `run_id="$(gh run list ...)"`
+      # + `[ -z "$run_id" ]`. Under `set -uo pipefail` (no `-e`), a `gh`
+      # invocation that fails outright - bad/expired auth, an API 5xx, a rate
+      # limit - ALSO leaves `run_id` empty, so it read exactly like "no prior
+      # successful run", the legitimate NO-BASELINE case. A broken `gh` must
+      # not silently masquerade as "nothing to compare against"; only an
+      # `rc=0` empty result is NO-BASELINE. `gh run list`'s exit status is now
+      # captured directly (`if ! run_id=$(...); then ... exit 1; fi`) before
+      # the emptiness check ever runs, mirroring the same distinction already
+      # made below for `gh run download` (download failure -> exit 1;
+      # "no artifact" -> NO-BASELINE).
+      #
+      # Two further D1-follow-up fixes, same ticket:
+      #   - The "checklist" this step's `NO-BASELINE`/`CHANGED`/`UNCHANGED`
+      #     word feeds (O12, docs/reports/work-history-delay-optimization-report.md)
+      #     is a human release-day process outside this repo, not an in-repo
+      #     document this workflow can update - so the three-word semantics
+      #     are now stated directly in the job's own step summary line below,
+      #     which is what a release-day reader actually opens.
+      #   - When a downloaded baseline's `probe.log` HAS the file but its
+      #     witness line is absent (an empty `$expected`/`$observed`), the
+      #     step already failed closed via `witness_diff.sh`'s own exit 2 -
+      #     but the resulting "unexpected verdict: ''" message did not say
+      #     WHICH of the two files was empty. Checked explicitly below so
+      #     the failure names the file before `witness_diff.sh` ever runs.
+      - name: PP-26 - witness byte-compare against the previous run (BSE-11)
+        if: ${{ !cancelled() && steps.decide.outputs.proceed == 'true' }}
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -uo pipefail
+          observed="$PERF041_OUT/witness-line.observed.txt"
+          expected="$PERF041_OUT/witness-line.expected.txt"
+          # $log is a previous step's local variable, not inherited across
+          # `run:` blocks (each is its own shell) - recompute the same path
+          # the witness step above wrote it to ($PERF041_OUT/probe.log).
+          log="$PERF041_OUT/probe.log"
+          grep '^PP-26-WITNESS: ' "$log" > "$observed" || : > "$observed"
+
+          verdict=""
+          rm -rf /tmp/pp26-prev-witness && mkdir -p /tmp/pp26-prev-witness
+          # 67-F1 (PMAT-1098): the self-hosted CUDA boxes carry no `gh` (#3083 / 67-C2), so
+          # this step failed every night on gx10 as "gh run list failed (auth/API error)" —
+          # `gh: command not found` wearing an auth error's label. Read-only REST with the
+          # job token + python3 instead, the same shape binary-release.yml uses (#3074).
+          # The three outcomes stay distinct: a REST/auth error is exit 1 (never a silent
+          # NO-BASELINE); "no such artifact on the last green run" is NO-BASELINE; a
+          # download or unzip failure is exit 1 with the error on stderr.
+          api="https://api.github.com/repos/${GITHUB_REPOSITORY}"
+          hdr_auth="Authorization: Bearer ${GITHUB_TOKEN}"
+          hdr_acc="Accept: application/vnd.github+json"
+          if ! run_id="$(curl -sSf -H "$hdr_auth" -H "$hdr_acc" \
+                 "$api/actions/workflows/cuda-nightly.yml/runs?status=success&per_page=1" \
+                 | python3 -c 'import json,sys; r=json.load(sys.stdin)["workflow_runs"]; print(r[0]["id"] if r else "")')"; then
+            echo "::error::PP-26 witness: listing the last successful cuda-nightly run failed (REST/auth error) - not a NO-BASELINE condition"
+            exit 1
+          fi
+          if [ -z "$run_id" ]; then
+            verdict="NO-BASELINE"
+          else
+            if ! art_url="$(curl -sSf -H "$hdr_auth" -H "$hdr_acc" \
+                   "$api/actions/runs/$run_id/artifacts?per_page=100" \
+                   | python3 -c 'import json,sys; want=sys.argv[1]; a=[x for x in json.load(sys.stdin)["artifacts"] if x["name"]==want and not x["expired"]]; print(a[0]["archive_download_url"] if a else "")' \
+                       "pp26-witness-${{ matrix.name }}")"; then
+              echo "::error::PP-26 witness: listing artifacts of run $run_id failed (REST/auth error) - not a NO-BASELINE condition"
+              exit 1
+            fi
+            if [ -z "$art_url" ]; then
+              verdict="NO-BASELINE"
+            else
+              dl_err="$(mktemp)"
+              if curl -sSfL -H "$hdr_auth" -o /tmp/pp26-prev-witness/witness.zip "$art_url" 2>"$dl_err" \
+                 && python3 -c 'import sys,zipfile; zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])' \
+                      /tmp/pp26-prev-witness/witness.zip /tmp/pp26-prev-witness 2>>"$dl_err"; then
+                :
+              else
+                echo "::error::PP-26 witness: artifact download/unzip failed for run $run_id (pp26-witness-${{ matrix.name }})"
+                cat "$dl_err" >&2
+                rm -f "$dl_err"
+                exit 1
+              fi
+              rm -f "$dl_err"
+            fi
+          fi
+          if [ "$verdict" != "NO-BASELINE" ]; then
+            if [ -f /tmp/pp26-prev-witness/probe.log ]; then
+              grep '^PP-26-WITNESS: ' /tmp/pp26-prev-witness/probe.log > "$expected" || : > "$expected"
+            else
+              # Download succeeded but this run's artifact had no probe.log
+              # (e.g. a yielded night) - still nothing to compare against.
+              verdict="NO-BASELINE"
+            fi
+          fi
+
+          if [ "$verdict" != "NO-BASELINE" ]; then
+            # Fail closed and name which file is empty before handing off to
+            # witness_diff.sh, whose own "unexpected verdict: ''" message
+            # (below) does not say which side was the problem.
+            if [ ! -s "$expected" ]; then
+              echo "::error::PP-26 witness: expected witness line is empty (previous run's probe.log had no '^PP-26-WITNESS: ' line)"
+              exit 1
+            fi
+            if [ ! -s "$observed" ]; then
+              echo "::error::PP-26 witness: observed witness line is empty (this run's probe.log had no '^PP-26-WITNESS: ' line)"
+              exit 1
+            fi
+            verdict="$(bash scripts/witness_diff.sh "$expected" "$observed")"
+          fi
+
+          # Fail loudly instead of fail-open: an unexpected word here means
+          # witness_diff.sh errored (missing/unreadable script, empty
+          # witness, usage error) and must not read as a quiet no-op.
+          case "$verdict" in
+            UNCHANGED|CHANGED|NO-BASELINE) ;;
+            *)
+              echo "::error::PP-26 witness byte-compare produced an unexpected verdict: '$verdict'"
+              exit 1
+              ;;
+          esac
+
+          echo "PP-26 witness byte-compare: $verdict"
+          echo "PP-26 witness byte-compare: **$verdict**" >> "$GITHUB_STEP_SUMMARY"
+          # The release-day reader of this summary is a human process outside
+          # this repo (O12, docs/reports/work-history-delay-optimization-report.md)
+          # with no in-repo checklist document to carry this instead - so the
+          # three words are defined right here, where that reader looks.
+          echo "> UNCHANGED = same witness bytes as the last successful run (no action). CHANGED = witness bytes differ (investigate). NO-BASELINE = nothing to compare against yet (treat like CHANGED - look at it)." >> "$GITHUB_STEP_SUMMARY"
+
+      # `!cancelled()` with NO proceed condition, on purpose: when `decide`
+      # yields to training it writes a NOT_RUN marker, and a yielded night is
+      # only visible if that marker leaves the runner.
+      - name: PP-26 - upload the witness
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: pp26-witness-${{ matrix.name }}
+          path: |
+            ${{ github.workspace }}/perf041-witness/witness.json
+            ${{ github.workspace }}/perf041-witness/marker.json
+            ${{ github.workspace }}/perf041-witness/probe.log
+          if-no-files-found: warn
+          retention-days: 30
 
       # Pillar-4 marquee: apr decode throughput against a resident ollama.
       #
@@ -213,7 +619,7 @@ jobs:
             echo "::error::APR_GGUF not found on gx10: $APR_GGUF"
             exit 1
           fi
-          "$HOME/.local/bin/ollama" list | grep -q "$OLLAMA_MODEL" || {
+          grep -q "$OLLAMA_MODEL" <<< "$("$HOME/.local/bin/ollama" list)" || {
             echo "::error::ollama model not pulled: $OLLAMA_MODEL"
             exit 1
           }
@@ -224,3 +630,128 @@ jobs:
           # check_beats_gated.sh rule 1b now makes a build failure.
           nice -n 19 cargo test -p aprender-serve --release \
             --test beat_ollama_decode_throughput_speed -- --ignored --nocapture
+
+  # ── ada-yoga: the sm_89 leg, restored ─────────────────────────────────────
+  #
+  # RESTORING A DELETION, NOT INVENTING A LANE. #2740 removed the x86_64 leg
+  # because it ran on lambda-labs, which must never be a CI host (infra#359).
+  # That was correct and it left a named hole: `.github/silicon-coverage.txt`
+  # carries `x86_64-cuda-sm89  pending:361`, and infra has now stood up `yoga`
+  # (RTX 4060 Laptop, AD107M, sm_89, 8188 MiB, CUDA 12.4) as a sanctioned
+  # org-scoped runner in the `gpu-x86` group. Spec: paiml/infra
+  # docs/specifications/yoga-nightly-job.md (YOGA-NIGHTLY-001 R-4).
+  #
+  # WHY A SEPARATE JOB AND NOT A MATRIX ARM. `runs-on` above is LITERAL on
+  # purpose — infra#352's guard can only check labels it can see, and labels
+  # behind a matrix expression are invisible to it. A second architecture
+  # therefore needs a second job, not a second matrix row.
+  #
+  # WHY IT IS NOT A COPY OF `falsifiers`. yoga is 8 GB and a mobile Max-Q part;
+  # gx10 owns the QLoRA training work and yoga must not inherit it. What sm_89
+  # is FOR here is narrower and specific:
+  #
+  #   Post-mortem Lesson 4 — the pre-warm bugs existed on sm_89 too, but
+  #   JIT-on-demand SUCCEEDED there; sm_121's stricter behaviour is what turned
+  #   them into hard failures. So an sm_89 lane whose only output is pass/fail
+  #   was GREEN through all seven defects of the Blackwell cascade.
+  #
+  # The assertion that gives this lane the power to go red is therefore
+  # `cache_misses == 0` after pre-warm (falsify_cuda_prewarm_covers_runtime_no_jit_001),
+  # not a re-run of gx10's suite. It is mutation-proven in both directions on
+  # real sm_89 hardware: correct tree passes, `warm!` hardcoded-key reintroduced
+  # fails naming the kernel.
+  #
+  # NO PERFORMANCE ASSERTION HERE, deliberately. SILICON_FLOORS is keyed by
+  # compute capability and yoga answers `8.9` — the same key as the 24 GB /
+  # ~450 W desktop 4090 the floor was derived from, from an 8 GB / 100 W laptop.
+  # The UNCALIBRATED-SILICON refusal cannot fire because the key matches while
+  # the device does not (YOGA-NIGHTLY-001 §7, N-4).
+  #
+  # NO yield-to-training predicate either: gx10 has a competing QLoRA workload
+  # and yoga does not. Its declared roles are [gpu-compute, test-runner] and it
+  # is the only GPU box in the fleet with nothing else on it.
+  ada-yoga:
+    name: ada-yoga (x86_64, sm_89)
+    if: >-
+      ${{ vars.CUDA_RUNNER_READY == 'true' &&
+      (github.event_name != 'pull_request' || github.event.label.name == 'cuda-check') }}
+    # PP-19 HOST ISOLATION. scripts/check_perf_concurrency_groups.sh found this
+    # job ungrouped the hour it was written: a GPU job with no job-level group
+    # serialises against nothing, and yoga now has two consumers in this repo
+    # plus infra's own smoke lane. Job level, not workflow level, so a second
+    # workflow can join the same group. `perf-yoga` is only a valid group
+    # because yoga is declared in scripts/perf-matrix.yaml — as an NA host, with
+    # no performance cell (YOGA-NIGHTLY-001 §7, N-4).
+    concurrency:
+      group: perf-yoga
+      cancel-in-progress: false
+    # LITERAL, for the same reason the job above is: a guard must be able to see
+    # these labels. Matches yoga and only yoga — gx10 is ARM64.
+    # `yoga` IS IN THIS LIST ON PURPOSE. .github/silicon-coverage.txt declares the
+    # x86_64-cuda-sm89 axis as `self-hosted,gpu,yoga,cuda,ada`, and R-5 scores an
+    # axis covered only when a job asked for a label set CONTAINING the
+    # selector. Without `yoga` here the leg would run every night and the ledger
+    # would still read UNCOVERED — a job and a policy describing the same machine
+    # in two vocabularies, which is how the fleet lost sight of this runner in
+    # the first place.
+    runs-on: [self-hosted, gpu, yoga, Linux, X64, cuda, ada]
+    timeout-minutes: 30
+    env:
+      CARGO_TERM_COLOR: always
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Put the runner's Rust toolchain on PATH
+        run: echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+
+      # ASK THE BOX, NEVER THE LABEL. A label says what we intended; nvidia-smi
+      # says what is there. This gate has already been wrong once about which
+      # host it was running on (aprender#2835 — an sm_89 floor asserted on GB10,
+      # red four nights), so it asserts compute capability rather than trusting
+      # the selector that routed the job here.
+      - name: Preflight — this must be sm_89, and it must not be gx10
+        run: |
+          set -euo pipefail
+          nvidia-smi -L || { echo "::error::no CUDA device visible"; exit 1; }
+          nvidia-smi --query-gpu=name,compute_cap,memory.total,driver_version \
+            --format=csv,noheader
+          cc=$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader | head -1 | tr -d ' ')
+          if [ "$cc" != "8.9" ]; then
+            echo "::error::expected compute_cap 8.9 (Ada/sm_89), got '$cc'."
+            echo "::error::This job is the sm_89 axis. Running it elsewhere would"
+            echo "::error::report sm_89 coverage that was never measured."
+            exit 1
+          fi
+          test "$(uname -m)" = "x86_64" || { echo "::error::not x86_64"; exit 1; }
+
+      # THE ASSERTION THIS LANE EXISTS FOR (YOGA-NIGHTLY-001 R-3).
+      #
+      # --include-ignored is deliberate: the falsifier skips loudly with no CUDA
+      # device so a CPU box cannot report a pass it did not measure, and it is
+      # selected here BY NAME so a rename cannot silently drop it.
+      - name: Pre-warm covers runtime — zero JIT compiles on the pass (sm_89)
+        run: |
+          set -euo pipefail
+          nice -n 19 cargo test -p aprender-train --features cuda --lib --release -- \
+            --nocapture --include-ignored --exact \
+            autograd::cuda_forward::cache::prewarm_coverage_falsifier::falsify_cuda_prewarm_covers_runtime_no_jit_001
+
+      # VRAM CEILING, not throughput (YOGA-NIGHTLY-001 §6). 8188 MiB is the
+      # fleet's tightest x86 CUDA budget, and the cascade's two INDEPENDENT bugs
+      # were memory bugs (#1804 PTX GEMM pre-warm wasting VRAM, #1808 a 60 GB
+      # workspace per block). Both are latent on GB10's unified memory and on a
+      # 24 GB 4090; at 8 GB they are immediate. This records the peak so the
+      # headroom is a number rather than an assumption.
+      - name: VRAM headroom on the tightest x86 CUDA budget in the fleet
+        if: always()
+        run: |
+          set -euo pipefail
+          used=$(nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits | head -1)
+          total=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits | head -1)
+          printf 'VRAM after the pass: %s MiB used of %s MiB\n' "$used" "$total"
+          {
+            printf '### ada-yoga (x86_64, sm_89)\n\n'
+            printf -- '- compute_cap 8.9, %s MiB total, %s MiB used after the pass\n' "$total" "$used"
+            printf -- '- asserted: zero JIT compiles after pre-warm\n'
+            printf -- '- NOT asserted: throughput (SILICON_FLOORS is keyed on 8.9, see YOGA-NIGHTLY-001 §7)\n'
+          } >> "$GITHUB_STEP_SUMMARY"

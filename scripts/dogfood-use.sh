@@ -91,7 +91,7 @@ APR_MODEL="$MODELS_DIR/qwen2.5-coder-1.5b-instruct-q4k.apr"
 if [ -f "$APR_MODEL" ]; then
     OUT=$(timeout 300 "$BIN" run "$APR_MODEL" --prompt "What is the capital of France?" \
             --max-tokens 24 2>/dev/null); EC=$?
-    if [ "$EC" -eq 0 ] && printf '%s' "$OUT" | grep -qi "paris"; then
+    if [ "$EC" -eq 0 ] && grep -qi "paris" <<< "$OUT" ; then
         ok "run APR -> answered 'Paris'"
     else
         bad "run APR: exit=$EC, no 'Paris' in output: $(printf '%s' "$OUT" | tail -2 | tr '\n' ' ')"
@@ -100,7 +100,7 @@ if [ -f "$APR_MODEL" ]; then
     # qa is the product's own falsifiable gate suite — the strongest single
     # assertion available that the binary works end to end on a real model.
     OUT=$(timeout 600 "$BIN" qa "$APR_MODEL" 2>&1); EC=$?
-    if printf '%s' "$OUT" | grep -q "ALL GATES PASSED"; then
+    if grep -q "ALL GATES PASSED" <<< "$OUT" ; then
         ok "qa APR -> ALL GATES PASSED"
     else
         bad "qa APR: exit=$EC, no 'ALL GATES PASSED' — $(printf '%s' "$OUT" | grep -E '✗|FAIL' | head -2 | tr '\n' ' ')"
