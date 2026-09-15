@@ -26,6 +26,7 @@ apr-cli	--test	cli_commands
 apr-cli	--test	pixel_regression
 apr-cli	--test	registry_failure_catalogue
 apr-format	--lib	falsifiers
+apr-format	--test	golden_fixtures
 aprender-cgp	--lib	analysis::contracts
 aprender-compute-xtask	--bins
 aprender-contracts	--lib	binding
