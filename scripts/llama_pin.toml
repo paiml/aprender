@@ -25,16 +25,35 @@
 name = "llama.cpp"
 # The upstream build tag llama.cpp reports in its own --version output.
 # Recorded as the STRING the binary prints, not as a semver we invent.
-# PINNED 2026-08-24 from the binary actually installed on lambda:
-#   $ llama-cli --version
-#   version: 7746 (39173bcac)
-#   built with GNU 11.4.0 for Linux x86_64
-# CUDA-enabled (5 cuda/cublas libs linked), RTX 4090 sm_89 detected at init.
 #
-# Recorded as the STRING the binary prints, not a semver we invent. Bumping
-# this invalidates every ratio measured against 39173bcac — record why in the
-# commit, and expect the first release after a bump to have no usable trend.
-build_commit = "39173bcac"
+# RE-PINNED 2026-09-15 (PMAT-3329, #3329). The previous pin, 39173bcac
+# (2026-01-15, build 7746, pinned 2026-08-24), predates upstream's Qwen3.5
+# support (fc0fe4004, 2026-02-10, "models : support qwen3.5 series") — so the
+# 0.68 Qwen3.5 scope had no comparator at all, not a reference gap. The target
+# is the newest upstream commit at which BOTH hold: `grep -c qwen35
+# src/llama-arch.cpp` > 0 (2 at this commit, 0 at 39173bcac) and a CPU build
+# on intel loads Qwen3.5-0.8B-Q4_K_M.gguf and emits a token
+# (`llama_model_loader: - kv 0: general.architecture str = qwen35`, next token
+# 90700 'Thinking', rc 0). The first candidate, origin/master's head, passed;
+# no commit was rejected.
+#
+# NOTE the --version FORMAT CHANGED upstream between the two pins:
+#   $ llama-cli --version                      (39173bcac, 2026-08-24, lambda)
+#   version: 7746 (39173bcac)
+#   $ llama-cli --version                      (d1d3c3396, 2026-09-15, lambda)
+#   version: 0.4.1-dev (build 10987, commit d1d3c3396)
+#   built with GNU 11.4.0 for Linux x86_64
+# scripts/llama_bin.sh matches the COMMIT as a substring of the `version:` line,
+# so both shapes resolve. The build NUMBER is not an identity: the same commit
+# printed `build 2744` on intel and `build 10987` on lambda (it is derived from
+# the checkout's own history depth), and neither is a successor of 7746. Only
+# the commit is pinned. The old llama-cli's `-no-cnv` is gone (`-st,
+# --single-turn` replaces it), and it prints no loader lines without `-v`.
+#
+# Every ratio measured against 39173bcac (evidence/parity/LEDGER.md rows 0a, 5,
+# 7-11) is incomparable with a ratio measured against this pin; the side-by-side
+# re-measurement of the row-0a comparator lane at both pins is LEDGER.md row 12.
+build_commit = "d1d3c3396"
 
 # A PIN WITH NO EXPIRY IS A PIN NOBODY EVER REVISITS (PP-20). The commit above
 # freezes the denominator, which is the point; left alone forever it also
@@ -45,7 +64,7 @@ build_commit = "39173bcac"
 #
 # scripts/llama_bin.sh compares pin_expiry against ${LLAMA_PIN_TODAY:-today}
 # and returns rc 4; scripts/check_llama_pin.sh proves both directions.
-pinned_on = "2026-08-24"
+pinned_on = "2026-09-15"
 pin_expiry = "2026-12-01"
 pin_expiry_decided_by = "spec-owner, PP-LLAMA-001 v3.0 §12 row 3"
 
