@@ -47,6 +47,29 @@ print(f"PASS {model}: {len(cos)} positions, min cosine {mn[1]:.4f} at position {
 PY
 }
 
+# resolve_model_file <models-dir> <manifest-name> -> prints the path, rc:
+#   0  exact-case match          (the ordinary path)
+#   3  case-INSENSITIVE match     the host HOLDS the model and the exact glob missed it
+#   1  no file at all             genuinely absent on this host
+#
+# The manifest name is a LOGICAL name derived from shipped docs (`qwen3.5-0.8b`);
+# the file is whatever the vendor shipped (`Qwen3.5-0.8B-Q4_K_M.gguf`), which is
+# not under our control. A case-sensitive glob reported UNMEASURED on a host that
+# held the model (#3325) -- a false ABSENT, indistinguishable from "never ran",
+# which is the third-state class this check exists to avoid. It survived because
+# the same glob MATCHES under zsh, so it resolved by hand and failed only in the
+# bash-run workflow. rc=3 is NOT tolerated silently: the caller measures the file
+# and still fails, because a registry that disagrees with its artifact is the
+# defect, and tolerating it is what let this sit.
+resolve_model_file() {
+    local dir="$1" name="$2" hit
+    hit=$(ls "$dir"/"$name"*.gguf 2>/dev/null | head -1 || true)
+    if [ -n "$hit" ]; then printf '%s' "$hit"; return 0; fi
+    hit=$(find "$dir" -maxdepth 1 -iname "$name*.gguf" 2>/dev/null | sort | head -1 || true)
+    if [ -n "$hit" ]; then printf '%s' "$hit"; return 3; fi
+    return 1
+}
+
 if [ "${1:-}" = "--self-test" ]; then
     TD=$(mktemp -d "${TMPDIR:-/tmp}/parity.XXXXXX"); trap 'rm -rf "${TD:?}"' EXIT
     L="$ROOT/evidence/parity/l0-1/lambda"; G="$ROOT/evidence/parity/l0-1/gx10"
@@ -75,6 +98,16 @@ PY
     printf '{}' > "$TD/empty.json"; row 1 "an output with no metrics is RED, not a pass" judge "$TD/empty.json" x
     printf 'schema: apr-parity-thresholds/v1\nmin_positions: 64\ndefault: {min_cosine: 0.98}\nmodels: {}\n' > "$TD/thr-nobasis.yaml"
     row 2 "a threshold without a basis is refused (exit 2), never defaulted (I4)" env PARITY_THRESHOLDS="$TD/thr-nobasis.yaml" bash "$0" --judge "$L/qwen2.5-coder-7b-instruct-q4_k_m.json" --model qwen2.5-coder-7b-instruct
+    # #3325: the presence probe has THREE states and the middle one used to be
+    # silent. A row written in the registry's own casing cannot see the defect,
+    # so the fixture is deliberately mixed-case.
+    MD="$TD/models"; mkdir -p "$MD"
+    : > "$MD/qwen2-0.5b-instruct-q4_k_m.gguf"          # exact case
+    : > "$MD/Qwen3.5-0.8B-Q4_K_M.gguf"                 # vendor casing, registry says qwen3.5-0.8b
+    row 0 "exact-case model resolves (rc 0, the ordinary path)"                 resolve_model_file "$MD" qwen2-0.5b-instruct
+    row 3 "MIXED-CASE model resolves and is flagged rc=3, never silent UNMEASURED (#3325)" resolve_model_file "$MD" qwen3.5-0.8b
+    row 1 "a model genuinely absent on this host is rc=1 (UNMEASURED is correct there)"    resolve_model_file "$MD" no-such-model
+
     printf '%s/%s rows\n' "$((n - red))" "$n"; [ "$red" = 0 ] || exit 1; exit 0
 fi
 
@@ -91,7 +124,14 @@ printf '=== C14 model parity on %s (%s; thresholds %s; models %s) ===\n' "$(host
 # names are iterated LONGEST FIRST so an alias (qwen2.5-coder-1.5b) that prefix-globs to the file a
 # more specific name (…-1.5b-instruct) already measured is recorded as that measurement, not run twice
 while IFS= read -r name; do
-    f=$(ls "$MODELS_DIR"/"$name"*.gguf 2>/dev/null | head -1 || true)
+    f=$(resolve_model_file "$MODELS_DIR" "$name") || rmrc=$?
+    rmrc=${rmrc:-0}
+    if [ "$rmrc" = 3 ]; then
+        printf 'NAME-MISMATCH %s: the manifest name does not match %s on disk — measuring it, but the registry and the artifact must agree (#3325)\n' \
+            "$name" "$(basename "$f")"
+        rc=1
+    fi
+    unset rmrc
     if [ -z "$f" ]; then
         # UNMEASURED is a per-host REPORT, never a per-host RED: no single host holds every model the
         # README names; the fleet-level rule (every README-cited model measured on >= 1 GPU host) is

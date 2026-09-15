@@ -1,0 +1,17 @@
+# tool_version=none (derived by scripts/check_pathonly_devdeps_unused_in_src.sh
+#   from the manifests + src/ of every workspace member; no external analyser,
+#   so there is no version to pin. Regenerate by running that guard and reading
+#   the pairs it reports — never hand-add a row to silence it.)
+# Pairs of (manifest, dev-dep alias) where src/ references a dependency that
+# `cargo publish` strips. SHRINK-ONLY: adding a row fails review, and a row
+# whose violation is gone must be deleted in the same commit. Drain: #3306.
+#
+# aprender-core|entrenar and aprender-core|renacer are genuine publish CYCLES
+# (aprender-train and aprender-serve both depend on aprender-core), so those two
+# cannot be fixed by versioning -- the code has to leave src/. The other three
+# are plain omissions and version cleanly.
+crates/aprender-core/Cargo.toml|entrenar
+crates/aprender-core/Cargo.toml|renacer
+crates/aprender-gpu/Cargo.toml|simular
+crates/aprender-orchestrate/Cargo.toml|jugar-probar
+crates/aprender-test-showcase/Cargo.toml|jugar-probar
