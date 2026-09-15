@@ -311,3 +311,98 @@ RED evidence.
   now carries one, verified by running the guard against each.
 
 Neither was visible to me before CI said so, which is the argument for both.
+
+---
+
+## Interval — 16:05Z
+
+```
+scope: GDN 5/5 discharged, mutation-verified (#3322) · 305/0/50
+       #3303 BLOCKED — llama.cpp at pin 39173bcac has 0 lines of `qwen35` in src/ (16 of
+       `qwen3next`); apr refuses rc=8 on both backends. Neither side can produce a logit.
+       Needs a decider on B3 (bump / second pin / re-convert) and B5 (known-bad model).
+       andon ~66h to §8 at 2026-09-18T12:19:39Z
+queue: BEHIND 0 · DIRTY 1 (#3041, by ruling) · 11 PRs open and armed · 0 merged since 11:09Z
+pins:  unchanged
+```
+
+### P0·Instrument — two rules recorded, per ruling
+
+**Sampling window ≥ p95 `ci / gate` duration.** A 3-minute window read a
+healthy fleet as stalled: 0 completions inside it, because no aprender CI run
+finishes in 3 minutes. Measured properly — 17 runs in 30 min, 29 in 60 — the
+same fleet was draining at ~29/hr with 17 intel workers at load 62. Any
+throughput sample shorter than one run's p95 measures nothing but its own
+window.
+
+**"main moved → every PR stale → burst" is the cost of BEHIND=0 without group
+batching.** Main advanced at 12:49Z; every open PR went stale; bringing 18 of
+them back to BEHIND=0 plus 9 new PRs produced ~50 queued runs and 4.5 h with
+nothing merging — not a stall, the price of the discipline paid all at once.
+Group size 8 in the ruleset after PR3 is what removes that burst: one batch
+absorbs the update instead of eighteen runs paying for it separately.
+
+### Ruling 1 — the ids are now a fact, not a text edit (#3327)
+
+`ProofObligation` had no `id` field and no `deny_unknown_fields`. Every id
+#3320 wrote was dropped on parse — decoration, by this repo's own definition.
+`pub id: Option<String>` plus `pv validate --check-ids`, run with one binary
+against both trees:
+
+| | `main` (un-named) | #3320 (named) |
+|---|---|---|
+| obligations | 3764 | 3764 |
+| **with id** | **161** | **3750** |
+| referenced | 34 | 117 |
+
+**Reconciled, not rounded.** The generator says 3,773; pv says 3,750. The 23
+are five files under `contracts/entrenar/kaizen/`, which pv's walker excludes
+by directory name at any depth. Replicating that walk gives `3764 / 3750`
+exactly. Round-trip hazard checked and cleared: `pv unlock` writes through
+`serde_yaml::Value`, so unknown keys survive — and the PR body says so, so
+nobody "improves" it into a typed round trip. Two tests lock the field in,
+mutation-verified (rename the serde key → red).
+
+### #3320 — the census gate caught a real consequence of my naming
+
+`real_corpus_census_names_every_baselined_stem` went 48 → 55. Eight pairs
+`contracts/X.yaml` ↔ `contracts/aprender/X.yaml` were byte-identical at main —
+one logical contract in two places — and the generator treated each copy as a
+separate claimant, giving the second a path-keyed suffix. Identical pairs became
+divergent pairs, differing only in ids. The gate counted them exactly as it
+should. Byte-identical candidates are now one claimant; 48 == 48 again. What
+"globally unique" means after this, stated precisely: an id names one *distinct*
+contract — 38 ids appear in two files, and in every case the files are
+byte-identical.
+
+### Ruling 3 — #3326
+
+The C14 presence glob is case-insensitive **and** a mismatch fails loudly: a
+case-insensitive hit returns rc=3, the caller prints `NAME-MISMATCH` and sets
+rc=1, because a registry disagreeing with its artifact is a defect and measuring
+it silently is how it sat. The resolution was extracted into a function so the
+case table could reach it at all; the fixture is deliberately mixed-case, since
+a row in the registry's own casing cannot see the defect. 12/12 rows,
+mutation-verified.
+
+### Two things that were not this run's fault, and one that was
+
+- **#3328** — `aprender-gpu`'s test binary **SIGSEGVs** on gx10 on identical
+  Rust: `gpu-quick` passed on #3307 at 14:19Z and crashed at 15:13Z with only
+  shell scripts changed between. Not charged to the PR; ticketed with the
+  schedule that would name the dying test.
+- `guard-tree` on #3312/#3316 was the frozen-payload class from the previous
+  interval; the post-reopen run on #3316 is green.
+- **#3307 lacked an `ont-delta:` line** — it was the first PR I opened, before
+  the guard taught me the rule on #3297. Added, reopened for a fresh payload.
+
+### Open
+
+| | |
+|---|---|
+| #3307 | reopened; gpu-quick and guard-tree re-running on the corrected body |
+| #3327 | armed; its `--check-ids` numbers are the evidence #3320 was waiting for |
+| #3318 | held behind #3307, arms immediately after |
+| `ci.yml:570` → file | held behind #3312 |
+| pv strictness | held behind #3320 + #3327 |
+| #3303 B3 / B5 | **need a decider** — the comparator baseline does not exist at the pin |
