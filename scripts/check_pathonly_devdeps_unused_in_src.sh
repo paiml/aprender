@@ -135,11 +135,26 @@ selftest() {
   mk ok_substring 'sib = { path = "../sib" }'                        'use sibling::thing;'
 
   out="$(scan "$tmp" || true)"
+
+  # Piping a producer into a quiet grep is banned here
+  # (check_no_pipe_into_grep_q.sh): grep exits on its first match and the
+  # producer dies of SIGPIPE, which under `pipefail` is 141 -- a false RED, or a
+  # silent PASS depending on which side the shell reads. The detector is textual,
+  # so even naming the pattern in a comment counts as a site: this comment
+  # deliberately does not spell it. A case glob against the newline-delimited blob needs no
+  # pipe and no subshell, and stays line-anchored via the leading newline.
+  row_present() { # row_present <row>  -> 0 if the scan reported that fixture
+    case $'\n'"$out" in
+      *$'\n'"$1/Cargo.toml|"*) return 0 ;;
+      *) return 1 ;;
+    esac
+  }
+
   for row in hit_use hit_qualified hit_underscore hit_extern; do
-    printf '%s\n' "$out" | grep -q "^$row/Cargo.toml|" || { printf 'FAIL: missed %s\n' "$row"; rc=1; }
+    row_present "$row" || { printf 'FAIL: missed %s\n' "$row"; rc=1; }
   done
   for row in ok_versioned ok_workspace ok_git ok_registry ok_unused ok_comment ok_substring; do
-    if printf '%s\n' "$out" | grep -q "^$row/Cargo.toml|"; then printf 'FAIL: false positive on %s\n' "$row"; rc=1; fi
+    if row_present "$row"; then printf 'FAIL: false positive on %s\n' "$row"; rc=1; fi
   done
   cleanup
   FIXTURES=""
