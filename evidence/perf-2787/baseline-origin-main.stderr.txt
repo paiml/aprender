@@ -1,0 +1,6 @@
+model: /home/noah/models/qwen2.5-coder-7b-instruct-q4_k_m.gguf
+loaded in 7.527162792s
+config: layers=28 hidden=3584 inter=18944 heads=28 kv_heads=4 vocab=152064
+prompt: 513 tokens
+first 24 generated ids: [15678, 5562, 1393, 279, 19415, 29436, 82, 264, 10296, 9179, 6337, 916, 10272, 1506, 14324, 13, 576, 3974, 13876, 38835, 34208, 916, 279, 15678]
+text: " lazy dog while the compiler optimizes a tight inner loop over quantized weights. The quick brown fox jumps over the lazy dog while the compiler optimizes a tight inner loop over quantized weights. The quick brown fox jumps over the lazy dog while the compiler optimizes a tight inner loop over quantized weights. The quick brown fox jumps over the lazy dog while the compiler optimizes a tight inner loop over quantized weights. The quick brown fox jumps over the lazy dog while the compiler optimizes a tight inner loop over quantized weights. The quick brown fox jumps over the lazy dog while the compiler optimizes a tight inner loop over quant"
