@@ -91,13 +91,17 @@ falsification_tests:
   if_fails: "commands not classified in contract"
 
 proof_obligations:
-- type: invariant
+- id: ACCS-INV-001
+  type: invariant
   property: "every apr command classified as read-only, mutating, or long-running"
-- type: invariant
+- id: ACCS-INV-002
+  type: invariant
   property: "read-only commands never create/modify/delete files"
-- type: invariant
+- id: ACCS-INV-003
+  type: invariant
   property: "mutating commands require explicit output path"
-- type: invariant
+- id: ACCS-INV-004
+  type: invariant
   property: "long-running commands handle SIGINT/SIGTERM gracefully"
 
 verification_summary:

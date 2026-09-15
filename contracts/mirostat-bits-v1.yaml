@@ -55,7 +55,8 @@ equations:
     lean_theorem: Theorems.Mirostat_Mu_Update_Bits
 
 proof_obligations:
-- type: invariant
+- id: MB-INV-001
+  type: invariant
   property: surprise is computed in bits (log2), not nats (ln)
   formal: |
     PO-MIROSTAT-001. For logits [0.0, -1.3863] (softmax ~= [0.80, 0.20]) and
@@ -64,7 +65,8 @@ proof_obligations:
     candidate is token-0; sample_mirostat returns 0 for any rng in [0,1).
     Under the nats bug, -ln(0.20) ~= 1.61 < mu=2.0, token-1 is kept and an
     rng near 1.0 selects it (returns 1).
-- type: invariant
+- id: MB-INV-002
+  type: invariant
   property: observed surprise drives mu in bits
   formal: |
     PO-MIROSTAT-002. With the bits computation, the selected token-0

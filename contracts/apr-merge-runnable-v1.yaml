@@ -156,23 +156,28 @@ equations:
     - 'adapter parseable by rosetta (APR or safetensors)'
 
 proof_obligations:
-- type: invariant
+- id: AMR-INV-001
+  type: invariant
   property: merged metadata has at most one spelling per dimension key
   formal: '∀dim: |spellings(merged_metadata, dim)| ≤ 1'
   applies_to: merge_metadata_single_spelling
-- type: invariant
+- id: AMR-INV-002
+  type: invariant
   property: merged output passes realizar C-01/C-03 config extraction
   formal: 'GGUFConfig::from_apr(merged, vocab) = Ok'
   applies_to: merge_output_c01_c03_complete
-- type: invariant
+- id: AMR-INV-003
+  type: invariant
   property: merged output carries a loadable embedded tokenizer
   formal: 'load_embedded_bpe_tokenizer(merged) ≠ None ∨ load_embedded_sentencepiece_tokenizer(merged) ≠ None'
   applies_to: merge_output_tokenizer_loadable
-- type: invariant
+- id: AMR-INV-004
+  type: invariant
   property: gate failure deletes the output and errors the merge
   formal: 'gate_fail ⇒ ¬exists(out) ∧ run_merge = Err'
   applies_to: merge_gate_fail_closed
-- type: invariant
+- id: AMR-INV-005
+  type: invariant
   property: adapters with LoRA pairs either merge or error — never a silent no-op
   formal: 'lora_pairs(adapter) > 0 ⇒ merged_count > 0 ∨ run_merge = Err'
   applies_to: merge_adapter_actually_merges

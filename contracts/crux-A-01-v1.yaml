@@ -130,15 +130,20 @@ falsification_tests:
 
   if_fails: rule 'resolution is deterministic across invocations' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: invariant
+- id: CA0-INV-001
+  type: invariant
   property: "configs/aliases.yaml ships with every release and contains canonical short names"
-- type: invariant
+- id: CA0-INV-002
+  type: invariant
   property: "apr pull SHORT --dry-run prints fully-qualified URL to stdout and performs zero network I/O"
-- type: invariant
+- id: CA0-INV-003
+  type: invariant
   property: "Unknown short name exits non-zero with a 'did you mean' suggestion (Levenshtein ≤ 2)"
-- type: invariant
+- id: CA0-INV-004
+  type: invariant
   property: "apr registry aliases --json enumerates all shipped aliases as {name: url}"
-- type: invariant
+- id: CA0-INV-005
+  type: invariant
   property: "Resolution is deterministic: same short name → same canonical URL across invocations"
 
 verification_summary:

@@ -45,19 +45,23 @@ equations:
     - timeout > 0
     lean_theorem: Theorems.Oracle_Verdict
 proof_obligations:
-- type: invariant
+- id: VE-INV-001
+  type: invariant
   property: Generator output count matches request
   formal: '∀ n > 0: |generate(grammar, strategy, n)| = n'
   applies_to: generator_coverage
-- type: invariant
+- id: VE-INV-002
+  type: invariant
   property: Mutations always change the program
   formal: '∀ program, op: mutate(program, op) ≠ program when applicable'
   applies_to: mutation_soundness
-- type: invariant
+- id: VE-INV-003
+  type: invariant
   property: Oracle determinism
   formal: '∀ src, exp: oracle(src, exp) = oracle(src, exp)'
   applies_to: oracle_verdict
-- type: completeness
+- id: VE-CMP-004
+  type: completeness
   property: Mutation operator coverage
   formal: '∀ op ∈ {AOR, ROR, LOR, BSR, UOI, SDL}: op is implemented and tested'
   applies_to: mutation_soundness

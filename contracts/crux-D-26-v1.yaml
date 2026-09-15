@@ -73,11 +73,14 @@ falsification_tests:
 
   if_fails: rule 'curve is monotone in lr' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: equivalence
+- id: CD2CD95-EQ-001
+  type: equivalence
   property: "apr lr-find matches fastai `Learner.lr_find()` / Lightning `Tuner.lr_find()` output schema"
-- type: invariant
+- id: CD2CD95-INV-002
+  type: invariant
   property: "deterministic under fixed seed (byte-identical JSON)"
-- type: invariant
+- id: CD2CD95-INV-003
+  type: invariant
   property: "suggested_lr lies within [lr_min, lr_max]"
 
 verification_summary:

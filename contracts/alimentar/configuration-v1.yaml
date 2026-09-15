@@ -18,11 +18,13 @@ equations:
     - params contains all required fields
     lean_theorem: Theorems.Config_Valid
 proof_obligations:
-- type: invariant
+- id: C-INV-001
+  type: invariant
   property: Constructor produces valid config
   formal: '∀ params: Config::new(params).is_ok() → Config::new(params).unwrap().is_valid()'
   applies_to: config
-- type: invariant
+- id: C-INV-002
+  type: invariant
   property: Default config is valid
   formal: Config::default().is_valid() = true
   applies_to: config

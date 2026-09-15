@@ -73,9 +73,11 @@ falsification_tests:
   if_fails: CRUX-J-15 monotonic invariant — upgrade must never silently downgrade
 
 proof_obligations:
-- type: invariant
+- id: CJ1C13B-INV-001
+  type: invariant
   property: "upgrade path is documented"
-- type: invariant
+- id: CJ1C13B-INV-002
+  type: invariant
   property: "no silent downgrade"
 
 verification_summary:

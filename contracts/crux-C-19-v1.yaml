@@ -121,15 +121,20 @@ falsification_tests:
   if_fails: "apr run is missing one of the three canonical Ollama sampling flags"
 
 proof_obligations:
-- type: invariant
+- id: CC11153-INV-001
+  type: invariant
   property: "T=0.0 with fixed seed produces byte-identical output across runs"
-- type: invariant
+- id: CC11153-INV-002
+  type: invariant
   property: "--top-k 1 ≡ greedy decoding (argmax) for any T"
-- type: invariant
+- id: CC11153-INV-003
+  type: invariant
   property: "H(p(T)) is monotone non-decreasing in T (higher temp → more entropy)"
-- type: invariant
+- id: CC11153-INV-004
+  type: invariant
   property: "Smaller top-p truncates the distribution more aggressively than larger top-p"
-- type: equivalence
+- id: CC11153-EQ-005
+  type: equivalence
   property: "apr run --temperature/--top-p/--top-k  ≅  Ollama Modelfile PARAMETER {temperature, top_p, top_k}"
 
 verification_summary:

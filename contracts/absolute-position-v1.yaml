@@ -29,31 +29,38 @@ equations:
     - PE(pos+k) is a linear rotation of PE(pos) by angle k*omega(i) (angle addition)
     lean_theorem: Theorems.AbsolutePosition.Core
 proof_obligations:
-- type: invariant
+- id: AP-INV-001
+  type: invariant
   property: Shape preservation
   formal: output.shape = token_embed.shape = (seq_len, d)
   applies_to: all
-- type: invariant
+- id: AP-INV-002
+  type: invariant
   property: Additive identity
   formal: pos_embed[t] = 0 implies output[t] = token_embed[t]
   applies_to: all
-- type: bound
+- id: AP-BND-003
+  type: bound
   property: Max position bound
   formal: t < max_position for all positions in the input
   applies_to: all
-- type: bound
+- id: AP-BND-004
+  type: bound
   property: Finite output
   formal: is_finite(token_embed[t]) and is_finite(pos_embed[t]) implies is_finite(output[t])
   applies_to: all
-- type: bound
+- id: AP-BND-005
+  type: bound
   property: Sinusoidal component bound
   formal: -1 <= PE(pos, j) <= 1 for all pos, j (Real.sin/cos range)
   applies_to: sinusoidal_position
-- type: invariant
+- id: AP-INV-006
+  type: invariant
   property: Zero-position value
   formal: PE(0, 2i) = 0 and PE(0, 2i+1) = 1
   applies_to: sinusoidal_position
-- type: linearity
+- id: AP-LIN-007
+  type: linearity
   property: Relative-position rotation
   formal: PE(pos+k) = R(k*omega(i)) . PE(pos) — linear rotation via angle addition (sin_add/cos_add)
   applies_to: sinusoidal_position

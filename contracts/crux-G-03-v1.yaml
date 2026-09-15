@@ -105,11 +105,14 @@ falsification_tests:
   if_fails: "model-card output is non-deterministic (timestamps or random data leaking into body)"
 
 proof_obligations:
-- type: invariant
+- id: CG08D73-INV-001
+  type: invariant
   property: "apr-generated README.md begins with YAML front-matter and contains required H2 sections"
-- type: invariant
+- id: CG08D73-INV-002
+  type: invariant
   property: "apr-generated README.md is loadable by huggingface_hub.ModelCard.load without error"
-- type: equivalence
+- id: CG08D73-EQ-003
+  type: equivalence
   property: "apr model-card produces a README.md with the same required front-matter keys as huggingface_hub.ModelCard.from_template on equivalent ModelCardData"
   competitor: huggingface
   reference: "https://huggingface.co/docs/huggingface_hub/main/en/package_reference/cards (ModelCard.from_template, ModelCard.load)"

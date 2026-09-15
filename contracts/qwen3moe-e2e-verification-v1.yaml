@@ -102,31 +102,38 @@ equations:
     - indices.len() > 0
     lean_theorem: Theorems.Contract_Composition
 proof_obligations:
-- type: invariant
+- id: QM3E-INV-001
+  type: invariant
   property: Total parameter count matches architecture
   formal: P(Qwen3-235B) in [234B, 236B]
   applies_to: all
-- type: invariant
+- id: QM3E-INV-002
+  type: invariant
   property: Active parameter count matches designation
   formal: A(Qwen3-A22B) in [22B, 23B]
   applies_to: all
-- type: bound
+- id: QM3E-BND-003
+  type: bound
   property: FLOPs bounded by 2A
   formal: F <= 2 * A + O(seq_len * d * L)
   applies_to: all
-- type: ordering
+- id: QM3E-ORD-004
+  type: ordering
   property: Quantization memory ordering
   formal: M(Q4K) < M(Q6K) < M(F16) < M(F32)
   applies_to: all
-- type: monotonicity
+- id: QM3E-MON-005
+  type: monotonicity
   property: Throughput increases with bandwidth
   formal: bw1 < bw2 -> tok_s(bw1) <= tok_s(bw2)
   applies_to: all
-- type: invariant
+- id: QM3E-INV-006
+  type: invariant
   property: Compositional proof structure
   formal: 'for all l: shape(block_l(x)) = shape(x)'
   applies_to: all
-- type: conservation
+- id: QM3E-CON-007
+  type: conservation
   property: 'End-to-end shape: tokens in -> logits out'
   formal: shape(model(tokens)) = [seq_len, V]
   tolerance: 0.0

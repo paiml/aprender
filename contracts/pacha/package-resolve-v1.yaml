@@ -42,15 +42,18 @@ equations:
     - registry database is initialized
     lean_theorem: Theorems.Registry_List
 proof_obligations:
-- type: invariant
+- id: PR83FF-INV-001
+  type: invariant
   property: Pull idempotency
   formal: '∀ n, v: pull(n, v).path = pull(n, v).path'
   applies_to: pull_resolve
-- type: invariant
+- id: PR83FF-INV-002
+  type: invariant
   property: Run ID uniqueness
   formal: '∀ r1, r2: start_run() → r1.id ≠ r2.id'
   applies_to: run_tracking
-- type: invariant
+- id: PR83FF-INV-003
+  type: invariant
   property: Listing completeness
   formal: '∀ e ∈ registry: e ∈ list(e.type)'
   applies_to: registry_list

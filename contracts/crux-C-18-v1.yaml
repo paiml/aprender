@@ -127,13 +127,17 @@ falsification_tests:
   if_fails: "apr serve does not honor Ollama options.stop parameter"
 
 proof_obligations:
-- type: equivalence
+- id: CC1BAD6-EQ-001
+  type: equivalence
   property: "apr serve /v1/chat/completions stop param matches OpenAI chat.completion stop semantics on the golden prompt"
-- type: equivalence
+- id: CC1BAD6-EQ-002
+  type: equivalence
   property: "apr serve /api/generate options.stop matches Ollama ollama serve behavior"
-- type: invariant
+- id: CC1BAD6-INV-003
+  type: invariant
   property: "No stop string appears as substring of returned content"
-- type: invariant
+- id: CC1BAD6-INV-004
+  type: invariant
   property: "finish_reason == 'stop' when any stop string matched"
 
 verification_summary:

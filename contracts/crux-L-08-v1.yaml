@@ -94,13 +94,17 @@ falsification_tests:
   if_fails: "Unpinned bnb source"
 
 proof_obligations:
-- type: invariant
+- id: CL00802-INV-001
+  type: invariant
   property: "NF4 parity max_abs_diff <= 2e-2"
-- type: invariant
+- id: CL00802-INV-002
+  type: invariant
   property: "int8 parity max_abs_diff <= 5e-3"
-- type: invariant
+- id: CL00802-INV-003
+  type: invariant
   property: "blocksize=64 enforced for NF4"
-- type: equivalence
+- id: CL00802-EQ-004
+  type: equivalence
   property: "apr bnb kernel  ≅  HF kernels-community bitsandbytes"
 
 verification_summary:

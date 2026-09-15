@@ -64,22 +64,26 @@ equations:
       - "!output.contains(\"Training started\") && !output.contains(\"simulated\")"
 
 proof_obligations:
-  - type: invariant
+  - id: ATSMP-INV-001
+    type: invariant
     property: "A session may not claim a model that is not on disk"
     formal: "accept(S) implies forall M in S.models: exists_on_disk(M.path)"
     applies_to: all
 
-  - type: completeness
+  - id: ATSMP-CMP-002
+    type: completeness
     property: "While no production path can construct a LoadedModel, a session may carry none"
     formal: "producers(LoadedModel) = {} implies accept(S) implies S.models = {}"
     applies_to: all
 
-  - type: safety
+  - id: ATSMP-SAFE-003
+    type: safety
     property: "A session file that cannot be loaded aborts; it never degrades to a different session"
     formal: "load(path).is_err() implies exit_code != 0"
     applies_to: all
 
-  - type: invariant
+  - id: ATSMP-INV-004
+    type: invariant
     property: "A command never reports work the crate cannot perform"
     formal: "reports_success(distill) implies exists(training_loop)"
     applies_to: all

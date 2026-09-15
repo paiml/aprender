@@ -54,7 +54,8 @@ equations:
     - x.len() > 0
     lean_theorem: Theorems.Relu
 proof_obligations:
-- type: invariant
+- id: ACT-INV-001
+  type: invariant
   property: GELU at zero
   formal: GELU(0) = 0
   applies_to: all
@@ -68,12 +69,14 @@ proof_obligations:
     - Mathlib.Analysis.SpecialFunctions.Pow.Real
     notes: 'GELU(x) = 0.5·x·(1 + tanh …); at x=0 the leading 0.5·x factor is zero, so
       the product is zero regardless of the tanh argument. Closed by ring.'
-- type: bound
+- id: ACT-BND-002
+  type: bound
   property: GELU approximation error
   formal: '|GELU_approx(x) - GELU_exact(x)| < ε for |x| < 10'
   tolerance: 0.0001
   applies_to: all
-- type: invariant
+- id: ACT-INV-003
+  type: invariant
   property: SiLU at zero
   formal: SiLU(0) = 0
   applies_to: all
@@ -84,7 +87,8 @@ proof_obligations:
     depends_on: []
     mathlib_imports: []
     notes: SiLU(x) = x·σ(x); SiLU(0) = 0·σ(0) = 0 by ring.
-- type: monotonicity
+- id: ACT-MON-004
+  type: monotonicity
   property: ReLU monotonic
   formal: x ≥ y ⟹ ReLU(x) ≥ ReLU(y)
   applies_to: all
@@ -96,7 +100,8 @@ proof_obligations:
     - max_le_max
     mathlib_imports: []
     notes: 'relu(x) = max 0 x; x ≤ y ⟹ max 0 x ≤ max 0 y via max_le_max (le_refl 0) h.'
-- type: invariant
+- id: ACT-INV-005
+  type: invariant
   property: ReLU non-negative
   formal: ReLU(x) ≥ 0 for all x
   applies_to: all
@@ -108,7 +113,8 @@ proof_obligations:
     - le_max_left
     mathlib_imports: []
     notes: 'relu(x) = max 0 x ≥ 0 by le_max_left 0 x.'
-- type: invariant
+- id: ACT-INV-006
+  type: invariant
   property: ReLU idempotent
   formal: ReLU(ReLU(x)) = ReLU(x)
   applies_to: all
@@ -122,7 +128,8 @@ proof_obligations:
     mathlib_imports: []
     notes: 'relu output is non-negative (relu_nonneg) and relu is the identity on
       non-negative inputs (relu_of_nonneg), so relu(relu x) = relu x.'
-- type: invariant
+- id: ACT-INV-007
+  type: invariant
   property: Leaky-ReLU identity on non-negative inputs
   formal: x ≥ 0 ⟹ LeakyReLU(α, x) = x
   applies_to: all
@@ -134,7 +141,8 @@ proof_obligations:
     mathlib_imports: []
     notes: 'leaky_relu(α,x) = if x ≥ 0 then x else α·x; the non-negative branch is the
       identity, closed by if_pos. Matches Rust nn::functional::leaky_relu (x>0 ⟹ x).'
-- type: invariant
+- id: ACT-INV-008
+  type: invariant
   property: Leaky-ReLU negative-slope branch
   formal: x < 0 ⟹ LeakyReLU(α, x) = α · x
   applies_to: all
@@ -146,7 +154,8 @@ proof_obligations:
     mathlib_imports: []
     notes: 'leaky_relu(α,x) = if x ≥ 0 then x else α·x; for x < 0 the else-branch gives
       α·x, closed by if_neg (not_le.mpr hx).'
-- type: bound
+- id: ACT-BND-009
+  type: bound
   property: GELU non-negative on non-negative inputs
   formal: x ≥ 0 ⟹ GELU(x) ≥ 0
   applies_to: all
@@ -160,7 +169,8 @@ proof_obligations:
     - Mathlib.Analysis.SpecialFunctions.Trigonometric.Basic
     notes: 'GELU(x) = 0.5·x·(1 + tanh a); for x ≥ 0 the factor 0.5·x ≥ 0 and 1 + tanh a
       > 0 since tanh a > -1 (Real.neg_one_lt_tanh), so the product is ≥ 0.'
-- type: bound
+- id: ACT-BND-010
+  type: bound
   property: GELU bounded by identity on non-negative inputs
   formal: x ≥ 0 ⟹ GELU(x) ≤ x
   applies_to: all
@@ -174,7 +184,8 @@ proof_obligations:
     - Mathlib.Analysis.SpecialFunctions.Trigonometric.Basic
     notes: 'GELU(x) = 0.5·x·(1 + tanh a); since tanh a < 1 (Real.tanh_lt_one) the factor
       1 + tanh a ≤ 2, and 0.5·x·2 = x for x ≥ 0, so GELU(x) ≤ x.'
-- type: equivalence
+- id: ACT-EQ-011
+  type: equivalence
   property: SIMD matches scalar
   tolerance: 4.0
   applies_to: simd

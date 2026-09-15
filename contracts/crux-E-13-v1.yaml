@@ -72,11 +72,14 @@ falsification_tests:
 
   if_fails: rule 'determinism under temp=0 fixed seed' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: equivalence
+- id: CE10B07-EQ-001
+  type: equivalence
   property: "apr eval-ruler matches upstream RULER suite (arXiv:2404.06654) task definitions + scoring"
-- type: invariant
+- id: CE10B07-INV-002
+  type: invariant
   property: "random baseline NIAH acc ≤ 0.01"
-- type: invariant
+- id: CE10B07-INV-003
+  type: invariant
   property: "deterministic under fixed seed + temp=0"
 
 verification_summary:

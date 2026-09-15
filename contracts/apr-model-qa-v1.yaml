@@ -227,14 +227,16 @@ kernel_structure:
     description: Aggregate results, compute scores, generate reports
 
 proof_obligations:
-- type: invariant
+- id: AMQ-INV-001
+  type: invariant
   property: Check is read-only
   formal: hash(file_before) == hash(file_after) for check(file)
   applies_to: model_integrity_check
   lean:
     theorem: Theorems.ModelIntegrityCheck
     status: sorry
-- type: postcondition
+- id: AMQ-POST-002
+  type: postcondition
   property: QA gate composition score
   formal: report.score == passed_count / enabled_count
   tolerance: 1e-6
@@ -242,35 +244,40 @@ proof_obligations:
   lean:
     theorem: Theorems.QaGateComposition
     status: sorry
-- type: determinism
+- id: AMQ-DET-003
+  type: determinism
   property: Check is deterministic
   formal: check(path) == check(path) for all valid paths
   applies_to: model_integrity_check
   lean:
     theorem: Theorems.ModelIntegrityCheckDeterminism
     status: sorry
-- type: invariant
+- id: AMQ-INV-004
+  type: invariant
   property: Canary detects regression
   formal: baseline_after == baseline_before for canary(model, baseline)
   applies_to: canary_regression_detection
   lean:
     theorem: Theorems.CanaryRegressionDetection
     status: sorry
-- type: postcondition
+- id: AMQ-POST-005
+  type: postcondition
   property: Lint findings deduplicated
   formal: no two findings have same (rule, location) pair
   applies_to: lint_model_conventions
   lean:
     theorem: Theorems.LintModelConventions
     status: sorry
-- type: completeness
+- id: AMQ-CMP-006
+  type: completeness
   property: Probar tests all properties
   formal: report.tested == properties.len()
   applies_to: probar_property_tests
   lean:
     theorem: Theorems.ProbarPropertyTests
     status: sorry
-- type: postcondition
+- id: AMQ-POST-007
+  type: postcondition
   property: Golden Output ship-blocker promotes skipped to failed
   formal: |
     forall g in gates: g.name == "golden_output" && g.skipped (before)
@@ -280,7 +287,8 @@ proof_obligations:
   lean:
     theorem: Theorems.GoldenOutputShipBlocker
     status: sorry
-- type: invariant
+- id: AMQ-INV-008
+  type: invariant
   property: Golden Output ship-blocker is scope-limited
   formal: |
     forall g in gates: g.name != "golden_output"
@@ -289,14 +297,16 @@ proof_obligations:
   lean:
     theorem: Theorems.GoldenOutputShipBlockerScope
     status: sorry
-- type: idempotency
+- id: AMQ-IDEM-009
+  type: idempotency
   property: Golden Output ship-blocker is idempotent
   formal: promote(promote(gates, c), c) == promote(gates, c)
   applies_to: golden_output_ship_blocker
   lean:
     theorem: Theorems.GoldenOutputShipBlockerIdempotent
     status: sorry
-- type: invariant
+- id: AMQ-INV-010
+  type: invariant
   property: >
     PMAT-748: the performance_regression gate uses per-metric thresholds — same-run
     RATIO metrics (ollama_parity, gpu_speedup) keep the tight base threshold (they
@@ -312,7 +322,8 @@ proof_obligations:
   lean:
     theorem: Theorems.PerfRegressionGateNoiseRobust
     status: sorry
-- type: invariant
+- id: AMQ-INV-011
+  type: invariant
   property: >
     PMAT-743: format-parity discovery ignores apr's own conversion artifacts
     (`*.converted*.safetensors`) — they are circular references, never independent

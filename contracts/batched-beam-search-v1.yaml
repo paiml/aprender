@@ -65,25 +65,30 @@ equations:
     - input.len() > 0
     lean_theorem: Theorems.Termination
 proof_obligations:
-- type: equivalence
+- id: BBS-EQ-001
+  type: equivalence
   property: Batched projection matches sequential projection
   formal: '|batched_output[b] - sequential_output[b]| < ε element-wise for all b'
   tolerance: 1.0e-05
   applies_to: all
-- type: equivalence
+- id: BBS-EQ-002
+  type: equivalence
   property: Beam selection consistency
   formal: top_K(batched_scores) = top_K(sequential_scores) as sets of (parent, token) pairs
   tolerance: 0
   applies_to: all
-- type: invariant
+- id: BBS-INV-003
+  type: invariant
   property: Dimension correctness
   formal: shape(Y) = [N_beams, d_out] for each linear projection
   applies_to: all
-- type: monotonicity
+- id: BBS-MON-004
+  type: monotonicity
   property: Score ordering
   formal: selected_scores[i] ≥ selected_scores[i+1] for i ∈ {0..K-2}
   applies_to: all
-- type: termination
+- id: BBS-TERM-005
+  type: termination
   property: Beam search termination
   formal: '∀ inputs: beam_search halts within max_len steps'
   applies_to: all

@@ -75,9 +75,11 @@ falsification_tests:
   if_fails: CRUX-J-03 hooks invariant — apr hooks must express per-event allowlist semantics
 
 proof_obligations:
-- type: invariant
+- id: CJ09F3F-INV-001
+  type: invariant
   property: "deny-by-default on empty allowFrom"
-- type: invariant
+- id: CJ09F3F-INV-002
+  type: invariant
   property: "rejection produces audit trail"
 
 verification_summary:

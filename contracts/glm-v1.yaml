@@ -55,19 +55,23 @@ equations:
     - input.iter().all(|v| v.is_finite())
     lean_theorem: Theorems.Irls_Fit
 proof_obligations:
-- type: invariant
+- id: GLM-INV-001
+  type: invariant
   property: Link function invertible
   formal: g(g^{-1}(eta)) = eta for all eta in domain
   applies_to: all
-- type: bound
+- id: GLM-BND-002
+  type: bound
   property: Predicted mean in valid range
   formal: 'Poisson: mu > 0, Gamma: mu > 0, Binomial: 0 < p < 1'
   applies_to: all
-- type: invariant
+- id: GLM-INV-003
+  type: invariant
   property: IRLS convergence
   formal: D^{(k+1)} <= D^{(k)} (deviance non-increasing)
   applies_to: all
-- type: invariant
+- id: GLM-INV-004
+  type: invariant
   property: Predictions finite
   formal: 'forall i: |y_hat_i| < infinity for bounded input'
   applies_to: all

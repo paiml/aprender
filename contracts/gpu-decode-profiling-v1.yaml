@@ -123,59 +123,73 @@ equations:
     - vocab_size > 0
     lean_theorem: Theorems.Report_Metadata
 proof_obligations:
-- type: invariant
+- id: GDP-INV-001
+  type: invariant
   property: Wall coverage threshold
   formal: sum(brick_total_ns for all bricks) / wall_clock_ns >= 0.85
   applies_to: all
-- type: invariant
+- id: GDP-INV-002
+  type: invariant
   property: Coverage upper bound
   formal: sum(brick_total_ns) <= wall_clock_ns
   applies_to: all
-- type: invariant
+- id: GDP-INV-003
+  type: invariant
   property: Graph disable for profiling
   formal: profiling_enabled => !has_decode_graph
   applies_to: all
-- type: invariant
+- id: GDP-INV-004
+  type: invariant
   property: LmHead call count
   formal: lm_head.count == decoded_tokens
   applies_to: all
-- type: invariant
+- id: GDP-INV-005
+  type: invariant
   property: Layer brick call count
   formal: attention.count == decoded_tokens * num_layers
   applies_to: all
-- type: monotonicity
+- id: GDP-MON-006
+  type: monotonicity
   property: Brick ordering respects complexity
   formal: per_call_avg(LmHead) > per_call_avg(GateProjection) > per_call_avg(RmsNorm)
   applies_to: all
-- type: invariant
+- id: GDP-INV-007
+  type: invariant
   property: Immediate sync detectable
   formal: sync_mode == Immediate => LmHead.avg_us > 10 * RmsNorm.avg_us
   applies_to: all
-- type: bound
+- id: GDP-BND-008
+  type: bound
   property: Deferred sync ceiling
   formal: sync_mode == Deferred => max(brick.avg_us for all bricks) < 200
   applies_to: all
-- type: invariant
+- id: GDP-INV-009
+  type: invariant
   property: Report fidelity — actual_us matches profiler
   formal: abs(JSON.actual_us(b) - profiler.avg_us(b)) / profiler.avg_us(b) < 0.01
   applies_to: all
-- type: invariant
+- id: GDP-INV-010
+  type: invariant
   property: Report fidelity — score computed not hardcoded
   formal: JSON.score(b) == compute_brick_score(JSON.actual_us(b), JSON.budget_us(b))
   applies_to: all
-- type: invariant
+- id: GDP-INV-011
+  type: invariant
   property: Report completeness — no truncation
   formal: len(JSON.brick_scores) == len(profiler.all_brick_stats())
   applies_to: all
-- type: invariant
+- id: GDP-INV-012
+  type: invariant
   property: Report completeness — falsification accounting
   formal: JSON.falsification.total_points == len(JSON.brick_scores)
   applies_to: all
-- type: invariant
+- id: GDP-INV-013
+  type: invariant
   property: Report denominator — decoded tokens from LmHead
   formal: decoded_tokens == LmHead.count AND decoded_tokens != profiler.total_tokens
   applies_to: all
-- type: invariant
+- id: GDP-INV-014
+  type: invariant
   property: Report metadata — no hardcoded nonzero constants
   formal: rust_project_score == 0 AND tdg_score == 0 AND cuda_tdg_score == 0 (unless pmat computed)
   applies_to: all

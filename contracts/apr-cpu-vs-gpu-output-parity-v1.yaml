@@ -567,27 +567,37 @@ falsification_tests:
 
 
 proof_obligations:
-- type: invariant
+- id: ACVGOP-INV-001
+  type: invariant
   property: "the CUDA first-token parity gate accepts a near-tie argmax flip on a peaked real-context probe and rejects only real divergence (no false-positive CPU fallback on a correct GPU path) — PMAT-742"
-- type: invariant
+- id: ACVGOP-INV-002
+  type: invariant
   property: "apr run greedy first-token argmax is identical between GPU and --no-gpu paths"
-- type: invariant
+- id: ACVGOP-INV-003
+  type: invariant
   property: "apr run with .apr file MUST run parity gate (currently only .gguf path has one)"
-- type: completeness
+- id: ACVGOP-CMP-004
+  type: completeness
   property: "all 11 falsifiers (greedy argmax, cosine, CUDA gate enforced, no-gpu honored, wgpu gate enforced, multi-step wgpu, no-false-positive, PMAT-806 Blackwell outlier, PMAT-810 Blackwell graph+prefill default, PMAT-885 Blackwell decode-throughput floor, PMAT-886a Blackwell graph-replay GEMV-recording) cover the parity surface"
-- type: liveness
+- id: ACVGOP-LIVE-005
+  type: liveness
   property: "if GPU parity gate fails on ANY backend (CUDA or wgpu), user gets either an explicit error OR a CPU fallback — never silent gibberish"
-- type: invariant
+- id: ACVGOP-INV-006
+  type: invariant
   property: "wgpu parity gate covers MULTIPLE autoregressive steps (default N=3), not just step 0 — single-step gate cannot detect KV-cache-accumulated drift"
-- type: invariant
+- id: ACVGOP-INV-007
+  type: invariant
   property: "on Blackwell (cc≥120) the Q4_K load-time CPU/GPU parity-gate cosine stays ≥0.99 on massive-activation models (fp32-MWV-Q4K default avoids the INT8 activation-quant outlier mis-estimate) — PMAT-806"
 
-- type: invariant
+- id: ACVGOP-INV-008
+  type: invariant
   property: "on Blackwell (cc>=120) default apr run greedy GPU generation matches --no-gpu token-for-token AND runs on GPU - the manual CUDA-graph decode (graphed_capture) and batched prefill (run_prefill) both corrupt the Blackwell forward and default to eager / serial respectively (PMAT-810)"
 
-- type: invariant
+- id: ACVGOP-INV-009
+  type: invariant
   property: "every Q4_K GEMV variant the decode forward can take records itself into the trueno#243 manual graph, so on Blackwell (cc>=120) the graph REPLAY is byte-equivalent to eager (GRAPH_AB_TEST per-buffer diff=0) and default apr run uses the fast graphed decode while matching --no-gpu token-for-token; graph_cc_default(cc)==(cc>=89) re-includes Blackwell (PMAT-886a, supersedes the PMAT-810 graph carve-out)"
-- type: invariant
+- id: ACVGOP-INV-010
+  type: invariant
   property: "on Blackwell (cc>=120) default apr run --gpu decode throughput for a 1.5B Q4_K_M model is >= 100 tok/s (on-GPU resident path, no silent CPU/wgpu fallback); ~10 tok/s falsifies it as an F2 false-fallback / stale binary (PMAT-885)"
 
 verification_summary:

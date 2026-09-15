@@ -29,16 +29,19 @@ equations:
     - data.len() > 0
     lean_theorem: Theorems.Format_Parity
 proof_obligations:
-- type: equivalence
+- id: SCD-EQ-001
+  type: equivalence
   property: SafeTensors CPU matches GGUF CPU throughput
   formal: tok/s(SafeTensors CPU) ≥ 0.9 × tok/s(GGUF CPU)
   tolerance: 0.1
   applies_to: all
-- type: invariant
+- id: SCD-INV-002
+  type: invariant
   property: Quantized dispatch after conversion
   formal: All weight tensors have type Q4_K after SafeTensors→Q4K conversion
   applies_to: all
-- type: equivalence
+- id: SCD-EQ-003
+  type: equivalence
   property: Output parity across formats
   formal: argmax(logits_safetensors) == argmax(logits_gguf) for same prompts
   tolerance: 0.0001

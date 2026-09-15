@@ -76,11 +76,14 @@ falsification_tests:
 
   if_fails: rule 'deterministic task sequence under fixed seed' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: equivalence
+- id: CD3-EQ-001
+  type: equivalence
   property: "apr train --datasets matches HF `interleave_datasets(probabilities=[...])` sampling distribution"
-- type: invariant
+- id: CD3-INV-002
+  type: invariant
   property: "N=1 multitask is byte-equal to single-task"
-- type: invariant
+- id: CD3-INV-003
+  type: invariant
   property: "task sequence deterministic under fixed seed"
 
 verification_summary:

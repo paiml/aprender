@@ -132,15 +132,20 @@ falsification_tests:
   if_fails: "Tampered .so loads anyway — supply-chain vector wide open"
 
 proof_obligations:
-- type: invariant
+- id: CL0-INV-001
+  type: invariant
   property: "Content-addressed cache dedup (parity with A-21)"
-- type: invariant
+- id: CL0-INV-002
+  type: invariant
   property: "sha256 verified before dlopen"
-- type: invariant
+- id: CL0-INV-003
+  type: invariant
   property: "ABI + arch mismatch are hard errors at load, never at dispatch"
-- type: invariant
+- id: CL0-INV-004
+  type: invariant
   property: "Exit codes align with status"
-- type: equivalence
+- id: CL0-EQ-005
+  type: equivalence
   property: "apr kernel load ≅ HF kernels-community install+import (minus Python runtime)"
 
 verification_summary:

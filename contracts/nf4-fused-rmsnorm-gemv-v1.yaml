@@ -59,20 +59,24 @@ equations:
     - y element-wise matches separate_rmsnorm_gemv within tolerance
 
 proof_obligations:
-- type: equivalence
+- id: NFRG-EQ-001
+  type: equivalence
   property: Fused matches separate RMSNorm + NF4 GEMV
   formal: '|fused_rmsnorm_nf4_gemv(x, gamma, W) - separate_rmsnorm_gemv(x, gamma, W)| < ε'
   tolerance: 1.0e-4
   applies_to: all
-- type: invariant
+- id: NFRG-INV-002
+  type: invariant
   property: No global memory write for intermediate normed output
   formal: global_memory_writes(fused) < global_memory_writes(separate)
   applies_to: fused_rmsnorm_nf4_gemv
-- type: invariant
+- id: NFRG-INV-003
+  type: invariant
   property: NF4 dequant numerically identical to standalone kernel
   formal: nf4_dequant_fused(block) == nf4_dequant_standalone(block) for all blocks
   applies_to: all
-- type: bound
+- id: NFRG-BND-004
+  type: bound
   property: Memory bandwidth reduction
   formal: bw_saved >= hidden_size * 4 * 2 bytes per call (read + write of normed)
   applies_to: fused_rmsnorm_nf4_gemv

@@ -73,9 +73,11 @@ falsification_tests:
   if_fails: CRUX-J-07 memory invariant — memory keys must be per-sender-scoped
 
 proof_obligations:
-- type: invariant
+- id: CJ09B3C-INV-001
+  type: invariant
   property: "sessions are disjoint across senders"
-- type: invariant
+- id: CJ09B3C-INV-002
+  type: invariant
   property: "memory keys carry sender scope"
 
 verification_summary:

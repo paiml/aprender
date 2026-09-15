@@ -190,15 +190,20 @@ falsification_tests:
   if_fails: "apr serve --ollama-compat does not default to :11434 — ollama-python must be reconfigured to reach it"
 
 proof_obligations:
-- type: invariant
+- id: CK0E231-INV-001
+  type: invariant
   property: "ollama-python upstream pytest suite pass_rate >= 0.95 against apr serve --ollama-compat"
-- type: invariant
+- id: CK0E231-INV-002
+  type: invariant
   property: "GET /api/tags returns models[] with {name, size, digest, modified_at} on every entry"
-- type: invariant
+- id: CK0E231-INV-003
+  type: invariant
   property: "every streaming chunk is valid JSON, terminator has done=true"
-- type: invariant
+- id: CK0E231-INV-004
+  type: invariant
   property: "chat, generate, embeddings, list, show, pull each have >= 1 passing SDK test"
-- type: invariant
+- id: CK0E231-INV-005
+  type: invariant
   property: "apr serve --ollama-compat defaults to port 11434"
 
 verification_summary:

@@ -69,11 +69,14 @@ falsification_tests:
   if_fails: rule 'both learners compose inside Pipeline' is violated — the linfa parity claim for CRUX-N-08 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation
 
 proof_obligations:
-- type: invariant
+- id: CN0DC22-INV-001
+  type: invariant
   property: "FTRL yields exactly-zero weights under L1"
-- type: monotonicity
+- id: CN0DC22-MON-002
+  type: monotonicity
   property: "running loss decreases on a separable stream"
-- type: invariant
+- id: CN0DC22-INV-003
+  type: invariant
   property: "both learners compose inside Pipeline"
 
 kani_harnesses:

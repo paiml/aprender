@@ -42,15 +42,18 @@ equations:
     - rate > 0.0 && rate <= 1.0
     lean_theorem: Theorems.Adaptive_Sampling
 proof_obligations:
-- type: invariant
+- id: GT-INV-001
+  type: invariant
   property: Trace ID format validity
   formal: '∀ ctx: otel_trace_id(ctx) matches /^[0-9a-f]{32}$/'
   applies_to: trace_capture
-- type: invariant
+- id: GT-INV-002
+  type: invariant
   property: Comparison reflexivity
   formal: '∀ t: compare_traces(t, t).pass = true'
   applies_to: trace_validate
-- type: invariant
+- id: GT-INV-003
+  type: invariant
   property: Trace-all mode completeness
   formal: 'set_trace_all(true) → ∀ op: should_sample_trace(op) = true'
   applies_to: adaptive_sampling

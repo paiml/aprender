@@ -46,23 +46,28 @@ equations:
     - input.len() > 0
     lean_theorem: Theorems.Qk_Norm_Score_Bound
 proof_obligations:
-- type: monotonicity
+- id: BD-MON-001
+  type: monotonicity
   property: GPU threshold monotonic
   formal: n1 >= threshold AND n2 > n1 => n2 >= threshold
   applies_to: all
-- type: invariant
+- id: BD-INV-002
+  type: invariant
   property: Garbage oracle detects repetition
   formal: repetition_ratio > 0.3 => is_garbage
   applies_to: all
-- type: bound
+- id: BD-BND-003
+  type: bound
   property: QK norm score bound
   formal: '|score| <= sqrt(d_k) after L2 normalization'
   applies_to: all
-- type: equivalence
+- id: BD-EQ-004
+  type: equivalence
   property: BPE roundtrip
   formal: decode(encode(text)) == text for representable strings
   applies_to: all
-- type: equivalence
+- id: BD-EQ-005
+  type: equivalence
   property: SIMD dispatch equivalence
   tolerance: 0.0
   applies_to: simd

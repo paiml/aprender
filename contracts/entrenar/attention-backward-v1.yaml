@@ -111,27 +111,32 @@ equations:
     lean_theorem: 'Theorems.Attention_backward_grad_qk'
 
 proof_obligations:
-  - type: equivalence
+  - id: AB-EQ-001
+    type: equivalence
     property: Gradient correctness vs finite-difference
     formal: '|analytical_grad - fd_grad| / |fd_grad| < 1e-3 for Q, K, V'
     applies_to: all backward computations
 
-  - type: invariant
+  - id: AB-INV-002
+    type: invariant
     property: No NaN in backward output
     formal: 'is_finite(grad_Q) AND is_finite(grad_K) AND is_finite(grad_V) when inputs finite'
     applies_to: all backward steps
 
-  - type: bound
+  - id: AB-BND-003
+    type: bound
     property: Loss convergence improvement
     formal: 'loss_with_attn_bwd[100] < loss_without_attn_bwd[100] (proper backward converges better)'
     applies_to: 100-step training comparison
 
-  - type: invariant
+  - id: AB-INV-004
+    type: invariant
     property: NaN backward skip elimination
     formal: 'nan_backward_skips == 0 with proper attention backward'
     applies_to: 20-step canary run
 
-  - type: equivalence
+  - id: AB-EQ-005
+    type: equivalence
     property: GQA gradient accumulation correctness
     formal: 'grad_kv_head[g] = sum_{h in group(g)} grad_qh[h] for GQA grouping'
     applies_to: models with num_kv_heads < num_heads

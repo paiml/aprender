@@ -104,19 +104,23 @@ equations:
     - dispatch never returns None; always falls back to scalar
     lean_theorem: Theorems.BackendDispatchComplete
 proof_obligations:
-- type: equivalence
+- id: CPDCC3-EQ-001
+  type: equivalence
   property: SIMD output matches scalar within ULP tolerance
   formal: 'forall x: |f_scalar(x) - f_simd(x)| <= ULP_TOLERANCE * epsilon_format'
   applies_to: simd_scalar_parity
-- type: equivalence
+- id: CPDCC3-EQ-002
+  type: equivalence
   property: GPU output matches CPU within GPU tolerance
   formal: 'forall x: |f_cpu(x) - f_gpu(x)| <= GPU_TOLERANCE * epsilon_format'
   applies_to: gpu_cpu_parity
-- type: completeness
+- id: CPDCC3-CMP-003
+  type: completeness
   property: Every operation dispatches on every available backend
   formal: 'forall op, backend: available(backend) -> exists dispatch(op, backend)'
   applies_to: backend_dispatch_complete
-- type: soundness
+- id: CPDCC3-SND-004
+  type: soundness
   property: Scalar fallback always exists
   formal: 'forall op: dispatch(op, Scalar) is defined'
   applies_to: backend_dispatch_complete

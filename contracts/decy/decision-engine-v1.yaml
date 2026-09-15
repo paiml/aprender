@@ -42,15 +42,18 @@ equations:
     - include paths are relative or absolute valid paths
     lean_theorem: Theorems.Include_Resolution
 proof_obligations:
-- type: invariant
+- id: DE-INV-001
+  type: invariant
   property: Transpile determinism
   formal: '∀ source: transpile(source) = transpile(source)'
   applies_to: transpile_dispatch
-- type: invariant
+- id: DE-INV-002
+  type: invariant
   property: Type width preservation
   formal: '∀ t: sizeof(from_ast_type(t)) = sizeof(t) for primitive types'
   applies_to: type_preservation
-- type: soundness
+- id: DE-SND-003
+  type: soundness
   property: Include cycle detection
   formal: '∀ G(includes): cycle(G) → Err(CircularInclude)'
   applies_to: include_resolution

@@ -129,15 +129,20 @@ falsification_tests:
   if_fails: "LoRA adapter diverges from peft reference — A/B init or scaling bug"
 
 proof_obligations:
-- type: invariant
+- id: CD0B351-INV-001
+  type: invariant
   property: "adapter file size ≤ 2% of base model for r=16 on {q_proj,v_proj}"
-- type: invariant
+- id: CD0B351-INV-002
+  type: invariant
   property: "base model sha256 identical pre/post train (frozen weights)"
-- type: invariant
+- id: CD0B351-INV-003
+  type: invariant
   property: "W_eff = W + (α/r) · B @ A; B zero-initialized so step-0 is inference-equivalent to base"
-- type: invariant
+- id: CD0B351-INV-004
+  type: invariant
   property: "merged model passes apr qa --require-golden-output"
-- type: equivalence
+- id: CD0B351-EQ-005
+  type: equivalence
   property: "apr finetune --method lora ≡ peft.LoraConfig + get_peft_model within 1e-3 relative"
 
 # References:

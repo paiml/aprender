@@ -113,15 +113,20 @@ falsification_tests:
   if_fails: "TTFT <= 0 (measurement clock bug)"
 
 proof_obligations:
-- type: invariant
+- id: CE1C043-INV-001
+  type: invariant
   property: "JSON output contains ttft_p50_ms, ttft_p95_ms, ttft_p99_ms"
-- type: invariant
+- id: CE1C043-INV-002
+  type: invariant
   property: "p50 <= p95 <= p99 (percentile ordering)"
-- type: invariant
+- id: CE1C043-INV-003
+  type: invariant
   property: "TTFT scales ~linearly with prompt_len in prefill-bound regime"
-- type: invariant
+- id: CE1C043-INV-004
+  type: invariant
   property: "TTFT <= decode_latency × prompt_len × 1.5"
-- type: invariant
+- id: CE1C043-INV-005
+  type: invariant
   property: "TTFT > 0 for all measurements"
 
 verification_summary:

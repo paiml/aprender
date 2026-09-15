@@ -105,13 +105,17 @@ falsification_tests:
   if_fails: "at least one task scores below random − 2σ (suggests harness bug)"
 
 proof_obligations:
-- type: invariant
+- id: CE1E1FA-INV-001
+  type: invariant
   property: "per-task JSON contains correct num_tasks per benchmark (57/23/1)"
-- type: invariant
+- id: CE1E1FA-INV-002
+  type: invariant
   property: "overall_acc = sample-weighted mean of per_task.acc"
-- type: equivalence
+- id: CE1E1FA-EQ-003
+  type: equivalence
   property: "apr eval accuracy matches lm-evaluation-harness within ±0.5pp on a golden checkpoint"
-- type: invariant
+- id: CE1E1FA-INV-004
+  type: invariant
   property: "prompt hashes match upstream harness golden for documented n-shot"
 
 verification_summary:

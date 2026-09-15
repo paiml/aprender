@@ -133,13 +133,17 @@ falsification_tests:
   if_fails: "apr ingest loads full parquet file into RAM (no row-group streaming)"
 
 proof_obligations:
-- type: invariant
+- id: CH01287-INV-001
+  type: invariant
   property: "apr ingest preserves parquet row count and column schema"
-- type: invariant
+- id: CH01287-INV-002
+  type: invariant
   property: "parquet nulls are preserved, not silently coerced"
-- type: invariant
+- id: CH01287-INV-003
+  type: invariant
   property: "peak RSS during ingest scales with row-group size, not file size (streaming)"
-- type: equivalence
+- id: CH01287-EQ-004
+  type: equivalence
   property: "apr ingest --format parquet matches datasets.load_dataset('parquet', data_files=...) on row count, column names, and null semantics"
   competitor: huggingface
   reference: "https://huggingface.co/docs/datasets/main/en/package_reference/loading_methods#datasets.load_dataset (parquet loader); https://arrow.apache.org/docs/python/parquet.html"

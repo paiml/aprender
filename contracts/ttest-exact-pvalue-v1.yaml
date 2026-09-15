@@ -58,12 +58,14 @@ equations:
     note: "Regression guard — deleting the df>30 branch must not perturb the df<=30 branch."
 
 proof_obligations:
-  - type: equivalence
+  - id: TEP-EQ-001
+    type: equivalence
     property: "PO-TTEST-001 exact t-tail matches scipy for all df"
     formal: "|t_distribution_pvalue(t, df) - 2*scipy.stats.t.sf(|t|, df)| < 1e-3 for all df > 0; df>30 routes through I_x(df/2,1/2), not the normal CDF"
     tolerance: 0.001
     applies_to: all
-  - type: invariant
+  - id: TEP-INV-002
+    type: invariant
     property: "PO-TTEST-002 small-df path unchanged by the fix"
     formal: "t_distribution_pvalue(2.0, 5) = 0.101939 (df<=30 incomplete-beta path stable across deletion of the df>30 branch)"
     tolerance: 0.001

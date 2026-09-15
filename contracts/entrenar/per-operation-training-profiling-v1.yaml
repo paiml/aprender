@@ -212,23 +212,28 @@ falsification_tests:
     if_fails: Classification heuristics need tuning — adjust thresholds
 
 proof_obligations:
-  - type: invariant
+  - id: POTP-INV-001
+    type: invariant
     property: Per-op coverage threshold
     formal: sum(op_times) / layer_fwd_time >= 0.85
     applies_to: all layers
-  - type: invariant
+  - id: POTP-INV-002
+    type: invariant
     property: GEMM dominance in forward
     formal: gemm_time / layer_fwd >= 0.50
     applies_to: representative layer (14)
-  - type: monotonicity
+  - id: POTP-MON-003
+    type: monotonicity
     property: Backward >= 1.5x forward per layer
     formal: layer_bwd >= layer_fwd * 1.5
     applies_to: all layers
-  - type: invariant
+  - id: POTP-INV-004
+    type: invariant
     property: JSON completeness
     formal: len(per_layer) == num_model_layers AND all(has_ops(layer))
     applies_to: all profiled runs
-  - type: equivalence
+  - id: POTP-EQ-005
+    type: equivalence
     property: Fused vs unfused loss parity
     formal: '|fused_loss - unfused_loss| < 1e-5'
     applies_to: fusion toggling tests

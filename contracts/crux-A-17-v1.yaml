@@ -130,11 +130,14 @@ falsification_tests:
     discharge_status: PARTIAL_ALGORITHM_LEVEL
     full_discharge_blocked_on: live Rekor transparency-log inclusion-verify harness
 proof_obligations:
-- type: equivalence
+- id: CA11BAD-EQ-001
+  type: equivalence
   property: "apr publish sign produces cosign-compatible sig + cert + bundle"
-- type: invariant
+- id: CA11BAD-INV-002
+  type: invariant
   property: "tamper detection (verify fails closed on any mutation)"
-- type: invariant
+- id: CA11BAD-INV-003
+  type: invariant
   property: "rekor transparency log inclusion"
 
 verification_summary:

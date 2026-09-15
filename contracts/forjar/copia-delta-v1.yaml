@@ -54,19 +54,23 @@ equations:
     - f is readable
     lean_theorem: Theorems.Identity_Sync
 proof_obligations:
-- type: equivalence
+- id: CD1439-EQ-001
+  type: equivalence
   property: Delta correctness
   formal: 'apply(old, delta(old, new)) = new'
   applies_to: all
-- type: conservation
+- id: CD1439-CON-002
+  type: conservation
   property: Block reuse
   formal: unchanged blocks → 0 transfer
   applies_to: all
-- type: bound
+- id: CD1439-BND-003
+  type: bound
   property: Transfer minimality
   formal: no redundant blocks in delta
   applies_to: all
-- type: idempotency
+- id: CD1439-IDEM-004
+  type: idempotency
   property: Identity sync
   formal: 'delta(f, f) = empty'
   applies_to: all

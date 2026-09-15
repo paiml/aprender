@@ -91,19 +91,23 @@ equations:
       - "`pv lint --diff <ref>` with nothing changed does not parse the corpus: it probes for contract files and exits 0 in milliseconds"
 
 proof_obligations:
-  - type: invariant
+  - id: P1-INV-001
+    type: invariant
     property: "An empty corpus is refused with exit 2 and a named path by every reporting subcommand"
     formal: "PVL-1-EMPTY-REFUSED"
     applies_to: all
-  - type: invariant
+  - id: P1-INV-002
+    type: invariant
     property: "A one-contract corpus, directory or single file, is reported at exit 0 with a visible count of 1"
     formal: "PVL-1-ONE-REPORTED"
     applies_to: all
-  - type: invariant
+  - id: P1-INV-003
+    type: invariant
     property: "A --kind filter that empties the corpus is refused and the filter is named"
     formal: "PVL-1-FILTER-REFUSED"
     applies_to: all
-  - type: invariant
+  - id: P1-INV-004
+    type: invariant
     property: "A contract file that fails to parse is measured and failed (exit 1, the file named) by every walking subcommand — never 0 contracts, never skipped"
     formal: "PVL-1-BROKEN-MEASURED"
     applies_to: all

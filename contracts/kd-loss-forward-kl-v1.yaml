@@ -47,26 +47,32 @@ equations:
     - temperature > 0.0
     - student_logits.len() == teacher_logits.len()
 proof_obligations:
-- type: precondition
+- id: KD-PRE-001
+  type: precondition
   property: Temperature positive, matching finite logit vectors of equal nonzero length
   formal: 'T > 0 ∧ |s| = |t| ∧ |s| > 0 ∧ ∀i: isFinite(s_i) ∧ isFinite(t_i)'
-- type: postcondition
+- id: KD-POST-002
+  type: postcondition
   property: Soft-target KL term is non-negative and uses the teacher distribution as the outer measure
   formal: 'KL_soft ≥ 0 ∧ KL_soft = Σ_i p_t_i·(ln p_t_i − ln p_s_i)'
   requires: KD-PRE-001
-- type: bound
+- id: KD-BND-003
+  type: bound
   property: Forward KL is a non-negative divergence (Gibbs inequality)
   formal: 'Σ_i p_t_i·(ln p_t_i − ln p_s_i) ≥ 0'
   applies_to: all
-- type: invariant
+- id: KD-INV-004
+  type: invariant
   property: Zero soft-target loss exactly when student equals teacher
   formal: 'p_s = p_t ⟹ KL_soft = 0'
   applies_to: all
-- type: invariant
+- id: KD-INV-005
+  type: invariant
   property: Loss / gradient consistency — the logged loss is the antiderivative of the training gradient
   formal: '∂/∂s_j [ T²·KL(p_t ‖ p_s) ] = T·(p_s_j − p_t_j) = kd_logit_gradient KD term'
   applies_to: all
-- type: frame
+- id: KD-FRM-006
+  type: frame
   property: kd_loss reads logits/label/T/alpha and returns a scalar; it mutates no inputs
   formal: modifies(∅) ∧ preserves(s, t, label, T, alpha)
 enforcement:

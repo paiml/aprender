@@ -55,17 +55,20 @@ equations:
     lean_theorem: Theorems.No_Index_Download
 
 proof_obligations:
-- type: invariant
+- id: SGP-INV-001
+  type: invariant
   property: complete shard set detected and ordered
   formal: |
     For any input order of a complete N-part set (N>=2), detect_gguf_shards
     returns Some with the N filenames sorted by part number 1..=N.
-- type: invariant
+- id: SGP-INV-002
+  type: invariant
   property: non-sharded and incomplete inputs rejected
   formal: |
     For a single GGUF, unrelated multi-quant GGUFs, or an incomplete set,
     detect_gguf_shards returns None.
-- type: classification
+- id: SGP-CLS-003
+  type: classification
   property: GGUF shards take the no-index download path
   formal: |
     resolve_hf_model returns ResolvedModel::Sharded for a detected GGUF set,

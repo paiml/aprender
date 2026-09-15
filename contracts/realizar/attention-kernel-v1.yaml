@@ -46,15 +46,18 @@ equations:
     - epsilon > 0.0
     lean_theorem: Theorems.RMSNorm
 proof_obligations:
-- type: invariant
+- id: AK-INV-001
+  type: invariant
   property: Attention weight normalization
   formal: '∀ Q, K: sum(softmax(Q K^T / √d_k), axis=1) = 1'
   applies_to: scaled_dot_product
-- type: invariant
+- id: AK-INV-002
+  type: invariant
   property: RoPE norm preservation
   formal: '∀ x, pos: ||RoPE(x, pos)|| ≈ ||x|| (within float epsilon)'
   applies_to: rope_rotation
-- type: invariant
+- id: AK-INV-003
+  type: invariant
   property: RMSNorm output scale
   formal: '∀ x: RMS(RMSNorm(x) / γ) ≈ 1.0'
   applies_to: rmsnorm

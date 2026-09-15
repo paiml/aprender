@@ -118,13 +118,17 @@ falsification_tests:
   if_fails: "invalid zero-stage value silently accepted"
 
 proof_obligations:
-- type: equivalence
+- id: CD3766D-EQ-001
+  type: equivalence
   property: "ZeRO-1 per-step loss matches DDP within ±1e-4 (fp32) or ±1e-3 (bf16) at same seed"
-- type: invariant
+- id: CD3766D-INV-002
+  type: invariant
   property: "post-step weights byte-identical across all DP ranks (allgather complete)"
-- type: bound
+- id: CD3766D-BND-003
+  type: bound
   property: "per-rank optimizer VRAM reduced ~DP_size× vs DDP baseline"
-- type: invariant
+- id: CD3766D-INV-004
+  type: invariant
   property: "--json output reports .distributed.{dp_size, zero_stage, peak_optimizer_vram_bytes}"
 
 verification_summary:

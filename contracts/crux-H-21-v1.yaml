@@ -92,11 +92,14 @@ falsification_tests:
 
   if_fails: rule 'deterministic under fixed seed' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: equivalence
+- id: CH237EA-EQ-001
+  type: equivalence
   property: "apr dataset dedup matches datasketch.MinHashLSH threshold semantics (±1% collision rate)"
-- type: invariant
+- id: CH237EA-INV-002
+  type: invariant
   property: "identical rows always collide (J=1)"
-- type: invariant
+- id: CH237EA-INV-003
+  type: invariant
   property: "determinism under fixed --seed + fixed --num-perm"
 
 verification_summary:

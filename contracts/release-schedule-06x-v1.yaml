@@ -67,27 +67,33 @@ equations:
       - "A blocked row carries no date of its own — its expiry is its latest blocker's train"
 
 proof_obligations:
-  - type: invariant
+  - id: RS0-INV-001
+    type: invariant
     property: "Every tag from v0.67.0 on carries the four apr assets with sha256"
     formal: "verify-apr-assets exit 0 on the release run; scripts/check_release_assets.sh vX.Y.0 exit 0"
     applies_to: four_apr_assets_per_tag
-  - type: invariant
+  - id: RS0-INV-002
+    type: invariant
     property: "A pull_request run of ci.yml fits in 20 minutes"
     formal: "scripts/check_pr_budget.sh exit 0 over the window"
     applies_to: pr_budget_twenty_minutes
-  - type: invariant
+  - id: RS0-INV-003
+    type: invariant
     property: "The FULL tier is absent from pull_request and merge_group runs"
     formal: "scripts/ci_test_tier.sh --self-test rows `merge_group different tree -> quick` and `push -> quick` PASS"
     applies_to: pr_budget_twenty_minutes
-  - type: invariant
+  - id: RS0-INV-004
+    type: invariant
     property: "The schedule describes the tree it governs"
     formal: "cargo test -p aprender-core --test readme_contract test_documented_paths_exist exit 0 with the schedule in DOCS_WITH_PATHS"
     applies_to: spec_describes_the_tree
-  - type: invariant
+  - id: RS0-INV-005
+    type: invariant
     property: "The obligation DAG is acyclic and never waits on a later train"
     formal: "FALSIFY-REL-06X-006 exit 0"
     applies_to: obligation_dag_is_acyclic_and_forward
-  - type: invariant
+  - id: RS0-INV-006
+    type: invariant
     property: "Each train left inside its window or the amendment log says why"
     formal: "the closing comment of each release epic carries planned/actual/delta"
     applies_to: train_leaves_in_window

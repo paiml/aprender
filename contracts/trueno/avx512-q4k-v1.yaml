@@ -73,7 +73,8 @@ equations:
     lean_theorem: Theorems.Q4kThroughput
 
 proof_obligations:
-- type: equivalence
+- id: AQ27D4-EQ-001
+  type: equivalence
   property: AVX-512 Q4K matches AVX2
   formal: '|avx512 - avx2| < f32::EPSILON'
   tolerance: 1.0e-5
@@ -81,7 +82,8 @@ proof_obligations:
   lean:
     theorem: Theorems.Q4kDequant
     status: sorry
-- type: bound
+- id: AQ27D4-BND-002
+  type: bound
   property: AVX-512 throughput > 1.3x AVX2
   formal: 'avx512_gflops > avx2_gflops * 1.3'
   applies_to: throughput

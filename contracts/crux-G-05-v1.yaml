@@ -109,11 +109,14 @@ falsification_tests:
   if_fails: "apr manifest sha256 diverges from raw-bytes sha256 (parity with HF blob verification broken)"
 
 proof_obligations:
-- type: invariant
+- id: CG0BD11-INV-001
+  type: invariant
   property: "manifest contains one entry per input file (no omissions)"
-- type: invariant
+- id: CG0BD11-INV-002
+  type: invariant
   property: "manifest.sha256 equals sha256 of raw file bytes (64 lowercase hex)"
-- type: equivalence
+- id: CG0BD11-EQ-003
+  type: equivalence
   property: "apr manifest sha256 matches the value huggingface_hub exposes for the same file (lfs.oid for LFS, sha256 of bytes otherwise)"
   competitor: huggingface
   reference: "https://huggingface.co/docs/huggingface_hub/main/en/guides/cli (hf hash-file); https://huggingface.co/docs/hub/api (tree endpoint lfs.oid / blob_id)"

@@ -52,23 +52,28 @@ equations:
     preconditions:
     - 'x_min(C) - x_max(A) guarded by < 1e-10 threshold'
 proof_obligations:
-- type: invariant
+- id: IPF-INV-001
+  type: invariant
   property: Piecewise-constant on pooled blocks
   formal: 'for all x in [x_min(B), x_max(B)], predict(x) == v_b'
   applies_to: all
-- type: invariant
+- id: IPF-INV-002
+  type: invariant
   property: Both block endpoints kept as knots
   formal: 'x_max(B) > x_min(B) implies (x_min(B), v_b) and (x_max(B), v_b) are both knots'
   applies_to: all
-- type: ordering
+- id: IPF-ORD-003
+  type: ordering
   property: Inter-block interpolation only
   formal: 'predict(x) interpolates only for x in (x_max(A), x_min(C)) between adjacent blocks A, C'
   applies_to: all
-- type: monotonicity
+- id: IPF-MON-004
+  type: monotonicity
   property: Monotone non-decreasing fit
   formal: 'p1 <= p2 implies predict(p1) <= predict(p2)'
   applies_to: all
-- type: bound
+- id: IPF-BND-005
+  type: bound
   property: Calibrated value in unit interval
   formal: '0 <= predict(x) <= 1'
   applies_to: all

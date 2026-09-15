@@ -59,15 +59,18 @@ equations:
     - '!result.is_nan()'
     - result >= 0.0 && result <= 1.0
 proof_obligations:
-- type: invariant
+- id: MSEP-INV-001
+  type: invariant
   property: log_loss clamps with finfo eps
   formal: 'log_loss([0,1],[0.0,1.0]) == -ln(1 - finfo_eps) == 2.220446049250313e-16, finite'
   applies_to: log_loss
-- type: invariant
+- id: MSEP-INV-002
+  type: invariant
   property: MAPE floors denominator with finfo eps
   formal: 'MAPE([0.0],[0.5]) == 0.5 / finfo_eps == 2251799813685248.0, finite (no div-by-zero)'
   applies_to: mean_absolute_percentage_error
-- type: invariant
+- id: MSEP-INV-003
+  type: invariant
   property: average_precision no-positive equals zero
   formal: 'sum(y_true) == 0 implies average_precision_score(y_true, y_score) == 0.0 (not NaN)'
   applies_to: average_precision_score

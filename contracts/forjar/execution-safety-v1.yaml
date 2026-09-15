@@ -32,11 +32,13 @@ equations:
     - max_retries > 0
     lean_theorem: Theorems.Jidoka_Stop
 proof_obligations:
-- type: invariant
+- id: ES-INV-001
+  type: invariant
   property: Atomic write leaves no temp file
   formal: '∀ save_lock(d, l) = Ok(()): ¬exists(d/l.machine/state.lock.yaml.tmp)'
   applies_to: all
-- type: invariant
+- id: ES-INV-002
+  type: invariant
   property: Jidoka dispatches correctly
   formal: record_failure(StopOnFirst, ...) = true ∧ record_failure(Continue, ...)
     = false

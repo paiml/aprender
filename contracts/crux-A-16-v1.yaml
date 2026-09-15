@@ -181,13 +181,17 @@ falsification_tests:
   if_fails: "apr recipe output diverges from ollama Modelfile output on goldens"
 
 proof_obligations:
-- type: invariant
+- id: CA10137-INV-001
+  type: invariant
   property: "Recipe strict-schema validator rejects unknown keys and wrong types"
-- type: invariant
+- id: CA10137-INV-002
+  type: invariant
   property: "Derived tag injects recipe.system as messages[0] when no CLI override"
-- type: invariant
+- id: CA10137-INV-003
+  type: invariant
   property: "CLI --system takes precedence over recipe.system"
-- type: equivalence
+- id: CA10137-EQ-004
+  type: equivalence
   property: "apr-derived tokens ≡ ollama-derived tokens on first 64 tokens at T=0"
 
 verification_summary:

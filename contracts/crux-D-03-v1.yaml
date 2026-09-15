@@ -115,13 +115,17 @@ falsification_tests:
   if_fails: "--quant nf4 flag ignored; base weights not NF4"
 
 proof_obligations:
-- type: invariant
+- id: CD0D66A-INV-001
+  type: invariant
   property: "Peak GPU memory ≤ 0.3 × full-precision baseline at same batch size (QLoRA paper §3)"
-- type: invariant
+- id: CD0D66A-INV-002
+  type: invariant
   property: "Only LoRA adapter parameters (A, B) receive gradients; base NF4 weights frozen"
-- type: invariant
+- id: CD0D66A-INV-003
+  type: invariant
   property: "val_loss trajectory monotonically non-increasing within ±5% per-epoch noise"
-- type: invariant
+- id: CD0D66A-INV-004
+  type: invariant
   property: "Merged adapter checkpoint passes apr qa --require-golden-output"
 
 verification_summary:

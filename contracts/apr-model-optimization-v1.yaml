@@ -154,7 +154,8 @@ kernel_structure:
     description: Verify sparsity targets, architecture preservation, KL convergence, LoRA shapes, checkpoint determinism
 
 proof_obligations:
-- type: bound
+- id: AMO-BND-001
+  type: bound
   property: Pruned model achieves target sparsity within tolerance
   formal: "|actual_sparsity - target_sparsity| <= tolerance"
   tolerance: 0.01
@@ -162,14 +163,16 @@ proof_obligations:
   lean:
     theorem: Theorems.PruneSparsityTarget
     status: sorry
-- type: invariant
+- id: AMO-INV-002
+  type: invariant
   property: Pruned model preserves original architecture
   formal: result.num_layers == model.num_layers && result.hidden_dim == model.hidden_dim && shapes_equal(result, model)
   applies_to: prune_architecture_preservation
   lean:
     theorem: Theorems.PruneArchitecturePreservation
     status: sorry
-- type: monotonicity
+- id: AMO-MON-003
+  type: monotonicity
   property: Student KL divergence from teacher decreases during distillation
   formal: KL(student_T, teacher_T) decreases monotonically (EMA-smoothed)
   tolerance: 1e-4
@@ -177,14 +180,16 @@ proof_obligations:
   lean:
     theorem: Theorems.DistillKnowledgeTransfer
     status: sorry
-- type: invariant
+- id: AMO-INV-004
+  type: invariant
   property: LoRA adapters have correct rank and base weights are frozen
   formal: adapter.B.shape == (d, r) && adapter.A.shape == (r, k) && base_weights unchanged
   applies_to: finetune_lora_rank_correctness
   lean:
     theorem: Theorems.FinetuneLora_RankCorrectness
     status: sorry
-- type: determinism
+- id: AMO-DET-005
+  type: determinism
   property: Same seed and data produce bit-identical fine-tuning checkpoints
   formal: sha256(finetune(m, d, s)) == sha256(finetune(m, d, s))
   applies_to: finetune_checkpoint_determinism

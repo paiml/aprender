@@ -762,31 +762,40 @@ falsification_tests:
     the A/B against the pre-fix module, which reported `clusters gated 3/3 (100.0%)` and exited 0 on the same input.  [t2-pairing allow (quoting the pre-fix verdict verbatim is the evidence)]
 
 proof_obligations:
-- type: bound
+- id: ADC-BND-001
+  type: bound
   property: "Gate coverage never falls below the committed 142/830 baseline (F-DOGCOV-001)"
   formal: "covered(HEAD) >= 142 and total(HEAD) >= 830"
-- type: completeness
+- id: ADC-CMP-002
+  type: completeness
   property: "The committed ledger and the runtime enumeration describe the same surface (F-DOGCOV-002)"
   formal: "runtime_features == ledger_features"
-- type: invariant
+- id: ADC-INV-003
+  type: invariant
   property: "No feature with quality <= 4 lacks a gate beyond the 44 baseline (F-DOGCOV-003)"
   formal: "|{r : quality(r) <= 4 and not gated(r)}| <= 44"
-- type: bound
+- id: ADC-BND-004
+  type: bound
   property: "verified_hardware UNKNOWN never exceeds the 427 baseline, and is never inferred from a name (F-DOGCOV-004)"
   formal: "|{r : hw(r) == UNKNOWN}| <= 427 and forall r : hw(r) != UNKNOWN -> ran_on(r, hw(r))"
-- type: invariant
+- id: ADC-INV-005
+  type: invariant
   property: "Every ledger row has 10 columns, a non-empty evidence_path and a non-empty cluster_label; id<->label is a bijection (F-DOGCOV-005)"
   formal: "forall r : |cols(r)| == 10 and evidence(r) != \"\" and label(r) != \"\" and bijective(id, label)"
-- type: bound
+- id: ADC-BND-006
+  type: bound
   property: "No cluster_label loses a gate and the zero-gate cluster count never rises (F-DOGCOV-013)"
   formal: "forall c in clusters(BASE) : gates(c, HEAD) >= gates(c, BASE) and |{c : gates(c,HEAD)==0}| <= |{c : gates(c,BASE)==0}|"
-- type: invariant
+- id: ADC-INV-007
+  type: invariant
   property: "Cluster coverage is never emitted without the feature fraction beside it (F-DOGCOV-014)"
   formal: "forall lines L : states_cluster_fraction(L) -> states_feature_fraction(L)"
-- type: invariant
+- id: ADC-INV-008
+  type: invariant
   property: "No declaration keys on `cluster_id` without a stated pragma (F-DOGCOV-015)"
   formal: "forall d : keys_on(d, `cluster_id`) -> carries_pragma(d)"
-- type: invariant
+- id: ADC-INV-009
+  type: invariant
   property: "No feature changes cluster undeclared, and a zero closes only on an EARNED gate (F-DOGCOV-016)"
   formal: "forall k in BASE n HEAD : label(k,HEAD) == label(k,BASE) or declared(k) ; and zero(c) closes only if earned(c) > 0"
 

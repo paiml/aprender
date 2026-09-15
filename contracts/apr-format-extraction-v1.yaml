@@ -104,30 +104,36 @@ equations:
     preconditions:
     - 'data.len() > 0'
 proof_obligations:
-- type: equivalence
+- id: AFE-EQ-001
+  type: equivalence
   property: Byte-identity of the extracted F32 save path against the golden oracle
   formal: save_leaf(F32_model, pinned) == golden_v1.apr bytes (f16 writes excepted — IEEE-RNE bug-fix)
   tolerance: 0.0
   applies_to: all
-- type: invariant
+- id: AFE-INV-002
+  type: invariant
   property: Dependency sovereignty (no ML/GPU/tokenizer crate in the leaf graph)
   formal: deps(apr-format) ∩ {trueno,wgpu,cuda*,candle,tch} = empty
   applies_to: all
-- type: equivalence
+- id: AFE-EQ-003
+  type: equivalence
   property: CRC32 dedup is byte-identical to both legacy implementations
   formal: crc32_leaf == crc32_core == crc32_v2
   tolerance: 0.0
   applies_to: all
-- type: equivalence
+- id: AFE-EQ-004
+  type: equivalence
   property: Metadata round-trip fidelity
   formal: load(save(meta)) == meta
   tolerance: 0.0
   applies_to: all
-- type: postcondition
+- id: AFE-POST-005
+  type: postcondition
   property: No API break via the core re-export + From-wrap seam
   formal: aprender_core::format re-exports resolve and From<AprFormatError> is total
   applies_to: all
-- type: invariant
+- id: AFE-INV-006
+  type: invariant
   property: Poka-yoke quality gate preserved
   formal: save(Some(0)) is Err and save(Some(85)) is Ok
   applies_to: all

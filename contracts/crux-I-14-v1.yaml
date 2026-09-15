@@ -85,11 +85,14 @@ falsification_tests:
 
   if_fails: rule 'list arguments match get validation' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: equivalence
+- id: CI1EE21-EQ-001
+  type: equivalence
   property: "apr mcp prompts verbs match MCP spec JSON-RPC 2.0 shape"
-- type: invariant
+- id: CI1EE21-INV-002
+  type: invariant
   property: "missing required arg → JSON-RPC -32602 (fail closed)"
-- type: invariant
+- id: CI1EE21-INV-003
+  type: invariant
   property: "deterministic rendering under fixed arguments"
 
 verification_summary:
