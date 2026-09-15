@@ -24,6 +24,7 @@ apr-cli	--lib	commands::tokenize
 apr-cli	--test	beat_apr_sibling_cli_reach
 apr-cli	--test	cli_commands
 apr-cli	--test	pixel_regression
+apr-cli	--test	registry_failure_catalogue
 apr-format	--lib	falsifiers
 apr-format	--test	golden_fixtures
 aprender-cgp	--lib	analysis::contracts
@@ -123,3 +124,4 @@ aprender-test-lib	--lib	perf_gate::witness
 aprender-train	--lib	hf_pipeline::export::pipeline
 aprender-train	--lib	models::llama_370m
 aprender-train	--lib	research::archive::tests
+aprender-contracts-cli	--test	pvl_zero_contracts

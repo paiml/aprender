@@ -1,0 +1,11 @@
+name: fixture-cuda-named-no-cuda
+on: [workflow_dispatch]
+jobs:
+  x86_64-cpu:
+    runs-on: [self-hosted, clean-room]
+    steps:
+      - run: cargo test -p aprender-compute --lib
+  aarch64-cuda-sm121:
+    runs-on: [self-hosted, gpu, gx10]
+    steps:
+      - run: cargo test -p aprender-compute --release --lib
