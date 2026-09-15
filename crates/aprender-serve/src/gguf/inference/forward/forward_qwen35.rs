@@ -1131,3 +1131,9 @@ mod qwen35_math_tests {
         assert_eq!(&x[4..], &[5.0, 6.0, 7.0, 8.0]);
     }
 }
+
+/// Proof-obligation bodies for `contracts/qwen35-hybrid-forward-v1.yaml` (QHF-INV-001..004,
+/// QHF-INV-006, QHF-CON-007).
+#[cfg(test)]
+#[path = "forward_qwen35_contract_tests.rs"]
+mod qhf_contract_tests;
