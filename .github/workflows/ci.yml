@@ -523,20 +523,25 @@ jobs:
         # `apr_serve_api_key_auth_contract` that is supposed to promote
         # apr-serve-api-key-auth-v1 from DRAFT to ACTIVE. All 17 tests pass; they
         # simply never ran. This is also the list that hides such targets: adding
-        # a `tests/*.rs` file does nothing until a command naming it is a line of
-        # ci/explicit-test-commands.txt.
+        # a `tests/*.rs` file does nothing until a fragment under
+        # ci/explicit-test-commands.d/ names it.
         #
-        # PMAT-3313 (operator ruling 4): the commands used to be ONE physical line
-        # here, `bash -c '<39 commands joined by &&>'`, so any two PRs adding a
-        # target conflicted (three of three conflicts in one backlog drain). They
-        # are now one full command per line in ci/explicit-test-commands.txt, run
-        # in order by scripts/ci_run_explicit_test_commands.sh: blank and comment
-        # lines skipped, the FIRST non-zero command fails the step with its status,
-        # and a missing or zero-command file fails it (never a vacuous pass). The
-        # list is parsed on the host first so a broken file fails before a
-        # container starts. scripts/check_explicit_test_commands.sh refuses a
-        # `&&`-chained cargo line in any workflow; wiring readers that used to
-        # scan only .github/workflows/ also read the file (see its header).
+        # PMAT-3313 (operator ruling 4, §8 decision): the commands used to be ONE
+        # physical line here, `bash -c '<39 commands joined by &&>'`, so any two
+        # PRs adding a target conflicted (three of three conflicts in one backlog
+        # drain). A single one-per-line file only moved that lock (two end-of-file
+        # appends conflict, measured), so they are FRAGMENTS, the shape of
+        # docs/roadmaps/entries/: ci/explicit-test-commands.d/NNN-<slug>.cmd, one
+        # command per file, gapped ordinals (010, 020, ...) fixing the order. A new
+        # command takes a free ordinal; two PRs adding different files never touch
+        # the same path. scripts/ci_run_explicit_test_commands.sh reads them in
+        # LC_ALL=C sort order, refuses a missing/empty directory, a fragment
+        # without exactly one command, a shared ordinal, a duplicate command or a
+        # misnamed entry, and stops at the FIRST non-zero command with its status.
+        # The directory is parsed on the host first so a broken tree fails before
+        # a container starts. scripts/check_explicit_test_commands.sh refuses a
+        # `&&`-chained cargo line in any workflow; wiring readers that used to scan
+        # only .github/workflows/ also read the fragments.
         #
         # perf/ci-nextest (rank 3 — integration collapse): INTENTIONALLY SKIPPED.
         # The investigation ranked collapsing these 8 `cargo test -p X --test Y`
@@ -566,7 +571,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          bash scripts/ci_run_explicit_test_commands.sh --list ci/explicit-test-commands.txt
+          bash scripts/ci_run_explicit_test_commands.sh --list ci/explicit-test-commands.d
           docker run --rm \
           -e CI -e GITHUB_ACTIONS -e GITHUB_REF -e GITHUB_SHA -e GITHUB_REPOSITORY -e GITHUB_RUN_ID -e GITHUB_EVENT_NAME -e GITHUB_WORKFLOW \
             -v "${GITHUB_WORKSPACE}:/workspace" \
@@ -581,7 +586,7 @@ jobs:
             -e CARGO_INCREMENTAL=0 \
             -e CARGO_BUILD_JOBS=8 \
             "$IMAGE" \
-            bash scripts/ci_run_explicit_test_commands.sh --run ci/explicit-test-commands.txt
+            bash scripts/ci_run_explicit_test_commands.sh --run ci/explicit-test-commands.d
       # BSE-17 quick tier, part 1: the selected crates' unit and integration
       # targets (default features) under the same image and mounts as the full
       # tier. Empty selection (a scripts/docs PR) skips this step; part 2 still runs.
@@ -1917,7 +1922,7 @@ jobs:
       # It reads text only.
       - name: "Explicit test command list: runner + guard case table (PMAT-3313)"
         run: bash scripts/check_explicit_test_commands.sh --self-test
-      - name: "Explicit test commands stay a file: wired, non-empty, no && mega-line (PMAT-3313)"
+      - name: "Explicit test commands stay fragments: wired, one command per file, no && mega-line (PMAT-3313)"
         run: bash scripts/check_explicit_test_commands.sh
       # BSE-03 phase C (PMAT-1068): the SATD ceiling is MEASURED on the comparand
       # by the SAME scanner, in this job, and exported as SATD_BASELINE; the

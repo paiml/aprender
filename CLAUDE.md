@@ -420,9 +420,10 @@ make coverage                           # Coverage report (disables mold linker,
 For the workspace-wide number, reproduce CI's `workspace-test` nextest command (see
 Build Commands) and read its `Summary` line — 80,604 tests on 2026-08-12. Only a
 subset of integration targets is wired into CI: `.github/workflows/ci.yml` runs `--lib`
-across the workspace, plus ONE explicit line listing the individual `--test` targets
-(beats, `cli_commands`, `monorepo_invariants`, `readme_contract`, …). A new
-`tests/*.rs` file is dark until it is added to that line.
+across the workspace, plus the explicit commands in `ci/explicit-test-commands.d/` —
+one `NNN-<slug>.cmd` file per command, run in sorted order (beats, `cli_commands`,
+`monorepo_invariants`, `readme_contract`, …). A new `tests/*.rs` file is dark until
+a fragment names it; take a free ordinal between two others, never renumber.
 
 Mutation testing: `cargo mutants --no-times --timeout 300 --in-place -- --all-features` (or via CI).
 

@@ -200,7 +200,7 @@ KEYWORDS='0 error|0 fail|0 warn|0 issue|0 violation|0 problem'
 # level *.sh is expanded rather than named, so a new one arrives in scope
 # instead of arriving invisible. `target` is pruned: a build directory is not a
 # gate, and a vendored copy of someone else's script is not this repo's defect.
-# `ci` (PMAT-3313): ci/explicit-test-commands.txt holds the commands the
+# `ci` (PMAT-3313): ci/explicit-test-commands.d/*.cmd hold the commands the
 # workspace-test "Integration tests" step executes; they used to be a ci.yml line.
 SEARCH_PATHS=(.github/workflows contracts scripts Makefile crates evidence ci)
 shopt -s nullglob

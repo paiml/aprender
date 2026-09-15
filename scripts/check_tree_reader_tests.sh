@@ -217,12 +217,14 @@ full_tier_excludes() { # full_tier_excludes <root> -> one crate per line
 }
 
 # names_test ROOT NAME -- rc 0 when a lane names `--test NAME`: any file under
-# .github/workflows/, OR ci/explicit-test-commands.txt, which workspace-test's
-# "Integration tests" step executes line by line (PMAT-3313: that list used to be
-# one ci.yml line). Reading only the workflows after the move would call all 39 of
-# its commands unwired. grep -q exits 0 on a match even if the file is absent.
+# .github/workflows/, OR a fragment under ci/explicit-test-commands.d/, which
+# workspace-test's "Integration tests" step executes one file per command
+# (PMAT-3313: that list used to be one ci.yml line). Reading only the workflows
+# after the move would call all 39 of its commands unwired. grep -q exits 0 on a
+# match even if the directory is absent.
 names_test() {
-    grep -rqF -- "--test $2" "$1"/.github/workflows/ "$1"/ci/explicit-test-commands.txt 2>/dev/null
+    grep -rqF --include='*.cmd' -- "--test $2" "$1"/ci/explicit-test-commands.d/ 2>/dev/null \
+        || grep -rqF -- "--test $2" "$1"/.github/workflows/ 2>/dev/null
 }
 
 wired_targets() { # wired_targets <root> -- the derived set, wired half only
@@ -357,17 +359,18 @@ self_test() {
     else
         printf 'FAIL  row %-2s        split wrong. wired=[%s] unwired=[%s]\n' "$n" "$(printf '%s' "$w" | tr '\n' ';')" "$(printf '%s' "$u" | tr '\n' ';')"; red=1
     fi
-    # PMAT-3313: the explicit integration list is a FILE, not a workflow line. A
-    # target named ONLY there is wired; the same tree without that file is not.
-    mkdir -p "$td/ci"
-    printf '# explicit list\ncargo test -p gamma --test manifest_dir\n' > "$td/ci/explicit-test-commands.txt"
+    # PMAT-3313: the explicit integration list is a directory of one-command
+    # fragments, not a workflow line. A target named ONLY there is wired; the same
+    # tree without that fragment is not.
+    mkdir -p "$td/ci/explicit-test-commands.d"
+    printf 'cargo test -p gamma --test manifest_dir\n' > "$td/ci/explicit-test-commands.d/010-gamma-manifest-dir.cmd"
     n=$((n + 1))
     w=$(bash "$T" --print "$td" 2>/dev/null); u=$(bash "$T" --print-unwired "$td" 2>/dev/null)
     rm -rf "${td:?}/ci"
     if grep -q '^gamma	--test	manifest_dir$' <<< "$w" && ! grep -q '^gamma' <<< "$u"; then
-        printf 'ok    row %-2s        a target named only in ci/explicit-test-commands.txt is WIRED (PMAT-3313)\n' "$n"
+        printf 'ok    row %-2s        a target named only in a ci/explicit-test-commands.d/ fragment is WIRED (PMAT-3313)\n' "$n"
     else
-        printf 'FAIL  row %-2s        ci/explicit-test-commands.txt not read as wiring. wired=[%s] unwired=[%s]\n' "$n" "$(printf '%s' "$w" | tr '\n' ';')" "$(printf '%s' "$u" | tr '\n' ';')"; red=1
+        printf 'FAIL  row %-2s        ci/explicit-test-commands.d/ not read as wiring. wired=[%s] unwired=[%s]\n' "$n" "$(printf '%s' "$w" | tr '\n' ';')" "$(printf '%s' "$u" | tr '\n' ';')"; red=1
     fi
     update "$td" "$td/registry.txt" > /dev/null 2>&1
     row 0 "registry equals derived -> PASS" '^PASS' bash "$T" --check "$td" "$td/registry.txt"

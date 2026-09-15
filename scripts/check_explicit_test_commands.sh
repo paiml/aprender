@@ -1,52 +1,56 @@
 #!/usr/bin/env bash
-# check_explicit_test_commands.sh -- the explicit integration-test list stays a FILE (PMAT-3313).
+# check_explicit_test_commands.sh -- the explicit integration-test list stays FRAGMENTS (PMAT-3313).
 #
 # WHY. workspace-test's "Integration tests" step was one physical ci.yml line:
 # `bash -c '<39 commands joined by &&>'`, ~4000 characters. Every PR adding a test
-# target edited that same line, so any two of them conflicted -- three of three
-# conflicts in one backlog drain. Operator ruling 4 made it a file:
-# ci/explicit-test-commands.txt, one full command per line, run in order by
-# scripts/ci_run_explicit_test_commands.sh. Appends on different lines merge clean.
+# target edited that same line, so any two of them conflicted. A single
+# one-command-per-line file only MOVED the lock (two end-of-file appends still
+# conflict -- measured), so the commands are fragments, the docs/roadmaps/entries/
+# shape: ci/explicit-test-commands.d/NNN-<slug>.cmd, one command per file, run in
+# `LC_ALL=C sort` order by scripts/ci_run_explicit_test_commands.sh.
 #
-# WHAT THIS ASSERTS (default mode, over ROOT, default `.`):
-#   1. the file parses (via the runner's own --list, one parser) to >= 1 command;
-#   2. some workflow EXECUTES the runner on that file (a `#` comment is a mention,
-#      not wiring) -- otherwise every command in it is dark;
-#   3. NO workflow line chains two cargo commands with `&&` -- the mega-line may
-#      not come back. A new command is a new line in the file.
+# WHAT THIS REFUSES (default mode, over ROOT, default `.`):
+#   1. a missing or empty directory (vacuity);
+#   2. a fragment that does not hold exactly one non-comment command line;
+#   3. the same command in two fragments;
+#   4. two fragments sharing an ordinal prefix (ambiguous order);
+#   5. an entry not named ^[0-9]{3}-[a-z0-9-]+\.cmd$;
+#      (1-5 are the runner's own --list parser: the CI step refuses the same trees)
+#   6. no workflow EXECUTING the runner on the directory (a `#` comment is a
+#      mention, not wiring) -- every fragment would be dark;
+#   7. any workflow line chaining two cargo commands with `&&` -- the mega-line.
 #
-# --equivalence OLD_CI_YML [FILE]: the representation change added, dropped and
+# --equivalence OLD_CI_YML [DIR]: the representation change added, dropped and
 #   reordered nothing. Extracts the ONE `&&`-chained cargo line from OLD_CI_YML,
-#   splits it, trims, and compares the ordered list to FILE's parsed commands.
-#   rc 0 equal, 1 differ, 2 OLD_CI_YML has no (or several) such lines.
+#   splits and trims it, and compares it to DIR's commands in sort order.
+#   rc 0 equal, 1 differ, 2 OLD_CI_YML has no (or several) such lines / DIR refused.
 #
 # Usage:
 #   bash scripts/check_explicit_test_commands.sh [--check ROOT]
-#   bash scripts/check_explicit_test_commands.sh --equivalence OLD_CI_YML [FILE]
+#   bash scripts/check_explicit_test_commands.sh --equivalence OLD_CI_YML [DIR]
 #   bash scripts/check_explicit_test_commands.sh --self-test   # case table (also the runner's)
 set -euo pipefail
 
-FILE_REL="ci/explicit-test-commands.txt"
+DIR_REL="ci/explicit-test-commands.d"
 RUNNER_REL="scripts/ci_run_explicit_test_commands.sh"
 HERE=$(cd "$(dirname "$0")" && pwd)
 
 # is_megaline LINE -- rc 0 when LINE (comment-stripped) chains two cargo commands with &&.
-# A bare `cargo` word followed by whitespace, later `&&`, then another such word.
 is_megaline() {
     local code="${1%%#*}"
     grep -qE '(^|[^A-Za-z0-9_-])cargo[[:space:]].*&&[[:space:]]*cargo[[:space:]]' <<< "$code"
 }
 
-# is_wiring LINE -- rc 0 when LINE (comment-stripped) invokes the runner in --run mode on the file.
+# is_wiring LINE -- rc 0 when LINE (comment-stripped) runs the runner in --run mode on the directory.
 is_wiring() {
     local code="${1%%#*}"
     case "$code" in
-        *"ci_run_explicit_test_commands.sh --run ci/explicit-test-commands.txt"*) return 0 ;;
+        *"ci_run_explicit_test_commands.sh --run ci/explicit-test-commands.d"*) return 0 ;;
         *) return 1 ;;
     esac
 }
 
-workflow_files() { # workflow_files ROOT -> one path per line (nullglob-safe)
+workflow_files() { # workflow_files ROOT -> one path per line
     local f
     for f in "$1"/.github/workflows/*.yml "$1"/.github/workflows/*.yaml; do
         [ -f "$f" ] && printf '%s\n' "$f"
@@ -58,11 +62,11 @@ check() {
     local root=$1 rc=0 n wf line lineno wired=0 megas=0 out
     local runner="$root/$RUNNER_REL"
     [ -f "$runner" ] || runner="$HERE/ci_run_explicit_test_commands.sh"
-    if out=$(bash "$runner" --list "$root/$FILE_REL" 2>&1); then
+    if out=$(bash "$runner" --list "$root/$DIR_REL" 2>&1); then
         n=$(grep -c . <<< "$out")
-        printf 'ok    %s parses to %s command(s)\n' "$FILE_REL" "$n"
+        printf 'ok    %s: %s fragment(s), one command each, no shared ordinal, no duplicate command\n' "$DIR_REL" "$n"
     else
-        printf 'FAIL  %s does not parse to a non-empty command list:\n%s\n' "$FILE_REL" "$(sed 's/^/        /' <<< "$out")"
+        printf 'FAIL  %s refused:\n%s\n' "$DIR_REL" "$(sed 's/^/        /' <<< "$out")"
         rc=1
     fi
     while IFS= read -r wf; do
@@ -73,16 +77,16 @@ check() {
             if is_megaline "$line"; then
                 megas=$((megas + 1))
                 printf 'FAIL  %s:%s chains cargo commands with && on one line:\n        %.160s...\n' "${wf#"$root"/}" "$lineno" "$(sed 's/^[[:space:]]*//' <<< "$line")"
-                printf '      Put each command on its own line in %s instead (PMAT-3313).\n' "$FILE_REL"
+                printf '      Put each command in its own %s/NNN-<slug>.cmd instead (PMAT-3313).\n' "$DIR_REL"
             fi
         done < "$wf"
     done < <(workflow_files "$root")
     if [ "$megas" -gt 0 ]; then rc=1; else printf 'ok    no workflow line chains cargo commands with &&\n'; fi
     if [ "$wired" -eq 0 ]; then
-        printf 'FAIL  no workflow runs `%s --run %s` (outside a comment): every command in it is dark\n' "$RUNNER_REL" "$FILE_REL"
+        printf 'FAIL  no workflow runs `%s --run %s` (outside a comment): every fragment is dark\n' "$RUNNER_REL" "$DIR_REL"
         rc=1
     else
-        printf 'ok    %s workflow invocation(s) run the file\n' "$wired"
+        printf 'ok    %s workflow invocation(s) run the directory\n' "$wired"
     fi
     [ "$rc" -eq 0 ] && printf 'PASS  check_explicit_test_commands\n'
     return "$rc"
@@ -103,15 +107,15 @@ old_commands() {
 }
 
 equivalence() {
-    local old=$1 file=$2 a b na nb
+    local old=$1 dir=$2 a b na nb
     a=$(old_commands "$old") || return 2
-    b=$(bash "$HERE/ci_run_explicit_test_commands.sh" --list "$file") || return 2
+    b=$(bash "$HERE/ci_run_explicit_test_commands.sh" --list "$dir") || return 2
     na=$(grep -c . <<< "$a"); nb=$(grep -c . <<< "$b")
     if [ "$a" = "$b" ]; then
-        printf 'PASS  equivalent: %s command(s) in the old line == %s command(s) in %s, same order, byte for byte\n' "$na" "$nb" "$file"
+        printf 'PASS  equivalent: %s command(s) in the old line == %s fragment command(s) in %s (LC_ALL=C sort order), byte for byte\n' "$na" "$nb" "$dir"
         return 0
     fi
-    printf 'FAIL  NOT equivalent: old line %s command(s), %s %s command(s) (<: old only, >: file only):\n' "$na" "$file" "$nb"
+    printf 'FAIL  NOT equivalent: old line %s command(s), %s %s command(s) (<: old only, >: fragments only):\n' "$na" "$dir" "$nb"
     diff <(printf '%s\n' "$a") <(printf '%s\n' "$b") | sed 's/^/        /' || true
     return 1
 }
@@ -130,8 +134,7 @@ self_test() {
             sed 's/^/        /' <<< "$out"; red=1
         fi
     }
-    fact() { # fact LABEL -- CMD... (rc 0 == holds)
-        local label=$1; shift; n=$((n + 1))
+    fact() { local label=$1; shift; n=$((n + 1))
         if "$@"; then printf 'ok    row %-2s        %s\n' "$n" "$label"
         else printf 'FAIL  row %-2s        %s\n' "$n" "$label"; red=1; fi
     }
@@ -139,34 +142,58 @@ self_test() {
         if "$@"; then printf 'FAIL  row %-2s        %s\n' "$n" "$label"; red=1
         else printf 'ok    row %-2s        %s\n' "$n" "$label"; fi
     }
+    frags() { # frags DIR NAME=BODY... (BODY is printf %b)
+        local d=$1 kv; shift; rm -rf "${d:?}"; mkdir -p "$d"
+        for kv in "$@"; do printf '%b' "${kv#*=}" > "$d/${kv%%=*}"; done
+    }
 
     # ── the runner: parsing ──────────────────────────────────────────────
-    printf '# header\n\n   # indented comment\n  true  \n\necho b\n' > "$td/p.txt"
-    row 0 "--list skips blank and # lines and trims" '^true$' bash "$R" --list "$td/p.txt"
-    fact "  ...and yields exactly [true, echo b]" test "$(bash "$R" --list "$td/p.txt" | tr '\n' '|')" = "true|echo b|"
-    printf 'true\necho last' > "$td/nonl.txt"
-    fact "a last line without a trailing newline is still a command" test "$(bash "$R" --list "$td/nonl.txt" | grep -c .)" = 2
-    # ── the runner: vacuity ──────────────────────────────────────────────
-    row 2 "VACUITY: missing file -> rc 2, never a pass" 'no such file' bash "$R" --run "$td/absent.txt"
-    : > "$td/empty.txt"
-    row 2 "VACUITY: empty file -> rc 2" 'ZERO commands' bash "$R" --run "$td/empty.txt"
-    printf '# only\n\n  # comments\n' > "$td/comments.txt"
-    row 2 "VACUITY: comments-only file -> rc 2" 'ZERO commands' bash "$R" --run "$td/comments.txt"
+    frags "$td/p" '020-b.cmd=  echo b  \n' '010-a.cmd=# why\n\n   true\n' '100-c.cmd=echo c'
+    row 0 "--list reads fragments in LC_ALL=C sort order, skips # and blank lines, trims" '^true$' bash "$R" --list "$td/p"
+    fact "  ...and yields exactly [true, echo b, echo c] (010 < 020 < 100; no trailing newline still counts)" test "$(bash "$R" --list "$td/p" | tr '\n' '|')" = "true|echo b|echo c|"
+    # ── refusals: vacuity ────────────────────────────────────────────────
+    row 2 "REFUSE missing directory (vacuity)" 'no such directory' bash "$R" --run "$td/absent"
+    frags "$td/empty"
+    row 2 "REFUSE empty directory (vacuity)" 'EMPTY' bash "$R" --run "$td/empty"
+    # ── refusals: one command per fragment ───────────────────────────────
+    frags "$td/zero" '010-a.cmd=true\n' '020-b.cmd=# only a comment\n\n'
+    row 2 "REFUSE a fragment with ZERO command lines" '020-b.cmd holds 0 command' bash "$R" --list "$td/zero"
+    frags "$td/two" '010-a.cmd=true\necho second\n'
+    row 2 "REFUSE a fragment with TWO command lines" 'holds 2 command' bash "$R" --list "$td/two"
+    # ── refusals: duplicates and ordinals ────────────────────────────────
+    frags "$td/dup" '010-a.cmd=echo same\n' '020-b.cmd=  echo same\n'
+    row 2 "REFUSE the same command in two fragments (after trimming)" 'same command is in 010-a.cmd and 020-b.cmd' bash "$R" --list "$td/dup"
+    frags "$td/ord" '010-a.cmd=echo a\n' '010-b.cmd=echo b\n'
+    row 2 "REFUSE two fragments sharing an ordinal" 'ordinal 010 is shared' bash "$R" --list "$td/ord"
+    # ── refusals: filename shape (must-match / must-not-match, rule 7) ───
+    local bad
+    for bad in '10-a.cmd' '0100-a.cmd' '010-A.cmd' '010-a_b.cmd' '010-.cmd' '010-a.txt' '010a.cmd' 'README.md' '.gitkeep' '010-a.cmd.orig'; do
+        frags "$td/name" '020-ok.cmd=true\n' "$bad=echo x\n"
+        row 2 "REFUSE filename <$bad>" 'not a regular file named' bash "$R" --list "$td/name"
+    done
+    frags "$td/name" '000-a.cmd=true\n' '999-z-9.cmd=echo z\n' '050-apr-cli-falsify-auth-001-002-003.cmd=echo m\n'
+    row 0 "ACCEPT filenames 000-a / 050-apr-cli-falsify-auth-001-002-003 / 999-z-9" '^echo z$' bash "$R" --list "$td/name"
+    mkdir -p "$td/name/010-sub.cmd"
+    row 2 "REFUSE a directory named like a fragment" 'not a regular file' bash "$R" --list "$td/name"
+    notfact "  ...and a refused tree prints NO commands on stdout" test -n "$(bash "$R" --list "$td/name" 2>/dev/null)"
     # ── the runner: execution ────────────────────────────────────────────
-    printf 'touch %s/a\nexit 7\ntouch %s/c\n' "$td" "$td" > "$td/ff.txt"
-    row 7 "FAIL-FAST: the first non-zero command's status is the step's status" 'exit 7' bash "$R" --run "$td/ff.txt"
+    frags "$td/ff" "010-a.cmd=touch $td/a\n" '020-b.cmd=exit 7\n' "030-c.cmd=touch $td/c\n"
+    row 7 "FAIL-FAST: the first non-zero command's status is the step's status" 'exit 7' bash "$R" --run "$td/ff"
     fact "  ...the command before it ran" test -e "$td/a"
     notfact "  ...the command after it did NOT run" test -e "$td/c"
-    printf 'cat > %s/swallowed\ntouch %s/after\n' "$td" "$td" > "$td/stdin.txt"
-    row 0 "a command reading stdin gets /dev/null" '^PASS  2/2' bash "$R" --run "$td/stdin.txt"
-    fact "  ...and did not swallow the next line (it ran)" test -e "$td/after"
-    fact "  ...and read nothing" test ! -s "$td/swallowed"
-    printf 'echo one\necho two\n' > "$td/ok.txt"
-    row 0 "a group header per command, numbered" '::group::\[2/2\] echo two' bash "$R" --run "$td/ok.txt"
+    frags "$td/in" "010-a.cmd=cat > $td/swallowed\n" "020-b.cmd=touch $td/after\n"
+    row 0 "a command reading stdin gets /dev/null" '^PASS  2/2' bash "$R" --run "$td/in"
+    fact "  ...and the next command still ran" test -e "$td/after"
+    fact "  ...and it read nothing" test ! -s "$td/swallowed"
+    frags "$td/ok" '010-a.cmd=echo one\n' '020-b.cmd=echo two\n'
+    row 0 "a group header per command, numbered" '::group::\[2/2\] echo two' bash "$R" --run "$td/ok"
+    frags "$td/bad-run" "010-a.cmd=touch $td/ran\n" '010-b.cmd=echo b\n'
+    row 2 "a REFUSED tree runs nothing (--run)" 'ordinal 010' bash "$R" --run "$td/bad-run"
+    notfact "  ...not even its first valid fragment" test -e "$td/ran"
     row 2 "no mode -> usage, rc 2" 'usage' bash "$R"
 
     # ── megaline matcher: must-match / must-not-match (rule 7) ───────────
-    local l
+    local want l
     while IFS='|' read -r want l; do
         [ -n "$want" ] || continue
         if [ "$want" = M ]; then fact "megaline MATCH:     $l" is_megaline "$l"
@@ -181,43 +208,52 @@ N|  # bash -c 'cargo test -p a && cargo test -p b'
 N|  run: echo x # cargo test -p a && cargo test -p b
 N|  which cargo-mutants || (echo installing && cargo install cargo-mutants)
 N|  cargo test -p a && echo done
-N|  bash scripts/ci_run_explicit_test_commands.sh --run ci/explicit-test-commands.txt
+N|  bash scripts/ci_run_explicit_test_commands.sh --run ci/explicit-test-commands.d
 TABLE
-    fact "wiring MATCH: the runner on the file" is_wiring "            bash scripts/ci_run_explicit_test_commands.sh --run ci/explicit-test-commands.txt"
-    notfact "wiring NO-MATCH: commented out" is_wiring "  # bash scripts/ci_run_explicit_test_commands.sh --run ci/explicit-test-commands.txt"
-    notfact "wiring NO-MATCH: --list is parsing, not running" is_wiring "  bash scripts/ci_run_explicit_test_commands.sh --list ci/explicit-test-commands.txt"
+    fact "wiring MATCH: the runner on the directory" is_wiring "            bash scripts/ci_run_explicit_test_commands.sh --run ci/explicit-test-commands.d"
+    notfact "wiring NO-MATCH: commented out" is_wiring "  # bash scripts/ci_run_explicit_test_commands.sh --run ci/explicit-test-commands.d"
+    notfact "wiring NO-MATCH: --list is parsing, not running" is_wiring "  bash scripts/ci_run_explicit_test_commands.sh --list ci/explicit-test-commands.d"
 
     # ── check mode over fixture trees ────────────────────────────────────
-    mk() { # mk DIR WORKFLOW_BODY FILE_BODY
-        mkdir -p "$1/.github/workflows" "$1/ci" "$1/scripts"
-        cp "$R" "$1/scripts/"
-        printf '%b' "$2" > "$1/.github/workflows/ci.yml"; printf '%b' "$3" > "$1/$FILE_REL"
+    mk() { # mk ROOT WORKFLOW_BODY NAME=BODY...
+        local r=$1 wf=$2; shift 2
+        mkdir -p "$r/.github/workflows" "$r/scripts"; cp "$R" "$r/scripts/"
+        printf '%b' "$wf" > "$r/.github/workflows/ci.yml"
+        frags "$r/$DIR_REL" "$@"
     }
-    local wire='jobs:\n  t:\n    steps:\n      - run: |\n          bash scripts/ci_run_explicit_test_commands.sh --run ci/explicit-test-commands.txt\n'
-    mk "$td/good" "$wire" 'cargo test -p a --test x\ncargo test -p b --test y\n'
-    row 0 "check: wired, non-empty, no megaline -> PASS" '^PASS' bash "$T" --check "$td/good"
-    mk "$td/mega" "$wire      - run: bash -c 'cargo test -p a --test x && cargo test -p b --test y'\n" 'cargo test -p a --test x\n'
+    local wire='jobs:\n  t:\n    steps:\n      - run: |\n          bash scripts/ci_run_explicit_test_commands.sh --run ci/explicit-test-commands.d\n'
+    mk "$td/good" "$wire" '010-a-x.cmd=cargo test -p a --test x\n' '020-b-y.cmd=cargo test -p b --test y\n'
+    row 0 "check: wired, valid fragments, no megaline -> PASS" '^PASS' bash "$T" --check "$td/good"
+    mk "$td/mega" "$wire      - run: bash -c 'cargo test -p a --test x && cargo test -p b --test y'\n" '010-a-x.cmd=cargo test -p a --test x\n'
     row 1 "check: a megaline reintroduced in a workflow -> RED" 'chains cargo commands' bash "$T" --check "$td/mega"
-    mk "$td/dark" 'jobs:\n  t:\n    steps:\n      # bash scripts/ci_run_explicit_test_commands.sh --run ci/explicit-test-commands.txt\n      - run: true\n' 'cargo test -p a --test x\n'
-    row 1 "check: runner only in a comment -> RED (dark)" 'every command in it is dark' bash "$T" --check "$td/dark"
-    mk "$td/vac" "$wire" '# nothing\n'
-    row 1 "check: file with zero commands -> RED (vacuity)" 'non-empty command list' bash "$T" --check "$td/vac"
-    rm -f "$td/vac/$FILE_REL"
-    row 1 "check: file missing -> RED" 'no such file' bash "$T" --check "$td/vac"
+    mk "$td/dark" 'jobs:\n  t:\n    steps:\n      # bash scripts/ci_run_explicit_test_commands.sh --run ci/explicit-test-commands.d\n      - run: true\n' '010-a-x.cmd=cargo test -p a --test x\n'
+    row 1 "check: runner only in a comment -> RED (dark)" 'every fragment is dark' bash "$T" --check "$td/dark"
+    mk "$td/vac" "$wire"
+    row 1 "check: empty directory -> RED (vacuity)" 'EMPTY' bash "$T" --check "$td/vac"
+    rm -rf "${td:?}/vac/$DIR_REL"
+    row 1 "check: directory missing -> RED" 'no such directory' bash "$T" --check "$td/vac"
+    mk "$td/same" "$wire" '030-a-x.cmd=cargo test -p a --test x\n' '030-b-y.cmd=cargo test -p b --test y\n'
+    row 1 "check: two fragments share an ordinal -> RED" 'ordinal 030 is shared' bash "$T" --check "$td/same"
+    mk "$td/dupc" "$wire" '010-a-x.cmd=cargo test -p a --test x\n' '020-a-x-again.cmd=cargo test -p a --test x\n'
+    row 1 "check: the same command in two fragments -> RED" 'same command' bash "$T" --check "$td/dupc"
+    mk "$td/multi" "$wire" '010-a-x.cmd=cargo test -p a --test x\ncargo test -p b --test y\n'
+    row 1 "check: a fragment with two commands -> RED" 'holds 2 command' bash "$T" --check "$td/multi"
+    mk "$td/badname" "$wire" '010-a-x.cmd=cargo test -p a --test x\n' '020_b.cmd=cargo test -p b --test y\n'
+    row 1 "check: a badly named fragment -> RED" 'not a regular file named' bash "$T" --check "$td/badname"
 
     # ── equivalence ──────────────────────────────────────────────────────
     printf "jobs:\n  t:\n    steps:\n      - run: |\n          docker run img \\\\\n            bash -c 'cargo test -p a --lib f && cargo test -p b --test y --test z --no-fail-fast && cargo build --examples'\n" > "$td/old.yml"
-    printf '# hdr\ncargo test -p a --lib f\ncargo test -p b --test y --test z --no-fail-fast\ncargo build --examples\n' > "$td/eq.txt"
-    row 0 "equivalence: same commands, same order -> PASS" 'equivalent: 3 command' bash "$T" --equivalence "$td/old.yml" "$td/eq.txt"
-    printf 'cargo test -p a --lib f\ncargo build --examples\n' > "$td/drop.txt"
-    row 1 "equivalence: a DROPPED command -> RED" 'NOT equivalent' bash "$T" --equivalence "$td/old.yml" "$td/drop.txt"
-    printf 'cargo test -p b --test y --test z --no-fail-fast\ncargo test -p a --lib f\ncargo build --examples\n' > "$td/reorder.txt"
-    row 1 "equivalence: REORDERED -> RED" 'NOT equivalent' bash "$T" --equivalence "$td/old.yml" "$td/reorder.txt"
-    printf 'cargo test -p a --lib f\ncargo test -p b --test y --test z --no-fail-fast\ncargo build --examples\ncargo test -p c\n' > "$td/add.txt"
-    row 1 "equivalence: an ADDED command -> RED" 'NOT equivalent' bash "$T" --equivalence "$td/old.yml" "$td/add.txt"
-    printf 'cargo test -p a --lib f\ncargo test -p b  --test y --test z --no-fail-fast\ncargo build --examples\n' > "$td/ws.txt"
-    row 1 "equivalence: an inner-whitespace edit -> RED (byte for byte)" 'NOT equivalent' bash "$T" --equivalence "$td/old.yml" "$td/ws.txt"
-    row 2 "equivalence: an old workflow with NO megaline -> ENV, never a pass" 'exactly 1' bash "$T" --equivalence "$td/good/.github/workflows/ci.yml" "$td/eq.txt"
+    frags "$td/eq" '010-a-lib-f.cmd=cargo test -p a --lib f\n' '020-b-y-z.cmd=cargo test -p b --test y --test z --no-fail-fast\n' '030-build-examples.cmd=cargo build --examples\n'
+    row 0 "equivalence: same commands, same order -> PASS" 'equivalent: 3 command' bash "$T" --equivalence "$td/old.yml" "$td/eq"
+    rm -f "$td/eq/020-b-y-z.cmd"
+    row 1 "equivalence: a DROPPED fragment -> RED" 'NOT equivalent' bash "$T" --equivalence "$td/old.yml" "$td/eq"
+    frags "$td/eq" '030-a-lib-f.cmd=cargo test -p a --lib f\n' '020-b-y-z.cmd=cargo test -p b --test y --test z --no-fail-fast\n' '040-build-examples.cmd=cargo build --examples\n'
+    row 1 "equivalence: REORDERED by ordinal -> RED" 'NOT equivalent' bash "$T" --equivalence "$td/old.yml" "$td/eq"
+    frags "$td/eq" '010-a-lib-f.cmd=cargo test -p a --lib f\n' '020-b-y-z.cmd=cargo test -p b --test y --test z --no-fail-fast\n' '030-build-examples.cmd=cargo build --examples\n' '040-c.cmd=cargo test -p c\n'
+    row 1 "equivalence: an ADDED fragment -> RED" 'NOT equivalent' bash "$T" --equivalence "$td/old.yml" "$td/eq"
+    frags "$td/eq" '010-a-lib-f.cmd=cargo test -p a --lib f\n' '020-b-y-z.cmd=cargo test -p b  --test y --test z --no-fail-fast\n' '030-build-examples.cmd=cargo build --examples\n'
+    row 1 "equivalence: an inner-whitespace edit -> RED (byte for byte)" 'NOT equivalent' bash "$T" --equivalence "$td/old.yml" "$td/eq"
+    row 2 "equivalence: an old workflow with NO megaline -> ENV, never a pass" 'exactly 1' bash "$T" --equivalence "$td/good/.github/workflows/ci.yml" "$td/good/$DIR_REL"
 
     if [ "$red" -ne 0 ]; then printf 'FAIL  check_explicit_test_commands self-test: %s rows, at least one RED\n' "$n"; return 1; fi
     printf 'PASS  check_explicit_test_commands self-test: %s rows\n' "$n"
@@ -226,10 +262,10 @@ TABLE
 case "${1:-}" in
     --self-test) self_test ;;
     --equivalence)
-        [ -n "${2:-}" ] || { printf 'usage: %s --equivalence OLD_CI_YML [FILE]\n' "$0" >&2; exit 2; }
-        equivalence "$2" "${3:-$FILE_REL}" ;;
+        [ -n "${2:-}" ] || { printf 'usage: %s --equivalence OLD_CI_YML [DIR]\n' "$0" >&2; exit 2; }
+        equivalence "$2" "${3:-$DIR_REL}" ;;
     --check) check "${2:-.}" ;;
     "") check . ;;
-    -h|--help) printf 'usage: %s [--check ROOT] | --equivalence OLD_CI_YML [FILE] | --self-test\n' "$0" ;;
-    *) printf 'usage: %s [--check ROOT] | --equivalence OLD_CI_YML [FILE] | --self-test\n' "$0" >&2; exit 2 ;;
+    -h|--help) printf 'usage: %s [--check ROOT] | --equivalence OLD_CI_YML [DIR] | --self-test\n' "$0" ;;
+    *) printf 'usage: %s [--check ROOT] | --equivalence OLD_CI_YML [DIR] | --self-test\n' "$0" >&2; exit 2 ;;
 esac

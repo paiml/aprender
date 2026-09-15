@@ -37,12 +37,13 @@ WORKFLOWS=".github/workflows"
 # Every `--test <name>` named anywhere in any workflow. A beat wired into a
 # NIGHTLY lane counts as executed  -  this gate asserts "runs somewhere", not
 # "blocks a PR". Blocking-ness is a separate policy question per beat.
-# PMAT-3313: plus ci/explicit-test-commands.txt. workspace-test's "Integration
-# tests" step runs that file line by line; it used to be one ci.yml line, and a
-# scan of the workflows alone would call every beat on it UNGATED.
+# PMAT-3313: plus every fragment in ci/explicit-test-commands.d/. workspace-test's
+# "Integration tests" step runs them one file per command; they used to be one
+# ci.yml line, and a scan of the workflows alone would call every beat on it UNGATED.
 WIRING=("$WORKFLOWS"/*.yml)
-EXPLICIT="ci/explicit-test-commands.txt"
-[ -f "$EXPLICIT" ] && WIRING+=("$EXPLICIT")
+for frag in ci/explicit-test-commands.d/*.cmd; do
+    [ -f "$frag" ] && WIRING+=("$frag")
+done
 REFERENCED=$(grep -ohE '\-\-test[[:space:]]+[A-Za-z0-9_]+' "${WIRING[@]}" 2>/dev/null \
              | sed -E 's/--test[[:space:]]+//' | sort -u)
 
@@ -74,8 +75,8 @@ while IFS= read -r f; do
         echo "    No workflow runs it. It is an integration test TARGET, so"
         echo "    \`cargo test --lib\` does NOT reach it  -  it executes only if a"
         echo "    workflow names it explicitly."
-        echo "    Fix: add a line \`cargo test -p <crate> --test $name\` to"
-        echo "    ci/explicit-test-commands.txt (per-PR blocking), or to a"
+        echo "    Fix: add a fragment ci/explicit-test-commands.d/NNN-<slug>.cmd holding"
+        echo "    \`cargo test -p <crate> --test $name\` (per-PR blocking), or to a"
         echo "    nightly lane if it needs a GPU/model/daemon."
         fail=1
     fi
