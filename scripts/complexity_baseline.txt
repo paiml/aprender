@@ -2,7 +2,7 @@
 # (cyclomatic > 30 or cognitive > 25), as "<path>::<function> <cyclomatic> <cognitive>".
 # SHRINK-ONLY. Regenerate with: bash scripts/check_complexity_ratchet.sh --update
 # Owner: scripts/check_complexity_ratchet.sh (PMAT-746).
-# tool_version=pmat 3.40.0
+# tool_version=pmat 3.40.1
 crates/apr-cli/examples/gpu_chat_inference.rs::run_chat_completion 11 33
 crates/apr-cli/src/commands/attn_parity_lint.rs::run 13 26
 crates/apr-cli/src/commands/attn_viz_classifier.rs::classify_causal_mask 8 29
@@ -57,8 +57,6 @@ crates/apr-cli/src/dispatch.rs::dispatch_diagnostic_commands 10 30
 crates/apr-cli/src/dispatch.rs::dispatch_runtime_commands 15 41
 crates/apr-cli/src/federation/gateway.rs::execute_with_retries 9 26
 crates/apr-cli/src/help_producer_truth.rs::resolve 19 73
-crates/apr-cli/tests/cli_commands.rs::get_help_commands 13 47
-crates/apr-cli/tests/cli_commands.rs::help_subcommands 10 36
 crates/apr-format/src/v2/writer.rs::add_q4_tensor 12 27
 crates/aprender-cbtop/src/adversarial/validators.rs::validate_floats 9 26
 crates/aprender-cbtop/src/app/metrics.rs::read_cpu_usage 10 41

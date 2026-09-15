@@ -5,6 +5,8 @@ use provable_contracts::lint::rules::RuleSeverity;
 use provable_contracts::lint::trend;
 use provable_contracts::lint::{run_lint, GateDetail, LintConfig, LintReport};
 
+use crate::contract_walk::ZeroContracts;
+
 #[path = "lint_render.rs"]
 mod lint_render;
 
@@ -41,6 +43,7 @@ pub fn run(
     watch: bool,
     strict_test_binding: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    refuse_missing_corpus(contract_dir)?;
     if watch {
         return run_watch(
             contract_dir,
@@ -94,6 +97,10 @@ pub fn run(
 
     let report = run_lint(&config);
 
+    // PVL-1 (PMAT-1099): an EMPTY corpus is refused (exit 2) before any report is
+    // printed — never `Result: PASS` over 0 contracts.
+    refuse_empty_corpus(&report, contract_dir)?;
+
     if cache_stats {
         print_cache_stats(&report);
     }
@@ -133,6 +140,34 @@ pub fn run(
         )
         .into())
     }
+}
+
+/// PVL-1 (PMAT-1099): the corpus is EMPTY when the gate NAMED `validate` counted
+/// nothing. Only that gate carries the count (parsed + parse errors):
+/// `duplicate-stems` reuses the `Validate` detail shape with zeros as a
+/// placeholder, so a shape-only match refused every VALID corpus — measured:
+/// one valid contract was refused while an invalid fixture, whose later gates
+/// are skipped, was counted. A corpus whose files all fail to parse is NOT
+/// empty (errors > 0): it was measured, and fails at exit 1.
+fn refuse_empty_corpus(report: &LintReport, contract_dir: &Path) -> Result<(), ZeroContracts> {
+    let empty = report.gates.iter().any(|g| {
+        g.name == "validate"
+            && matches!(
+                g.detail,
+                GateDetail::Validate {
+                    contracts: 0,
+                    errors: 0,
+                    ..
+                }
+            )
+    });
+    if empty {
+        return Err(ZeroContracts {
+            path: contract_dir.to_path_buf(),
+            filter: None,
+        });
+    }
+    Ok(())
 }
 
 struct CoverageResult {
@@ -190,12 +225,39 @@ fn show_trend_history(contract_dir: &Path) {
 
 /// Returns `Some(Ok(()))` to short-circuit when no contracts changed,
 /// or `None` to continue with full lint.
+/// PVL-1 (PMAT-1099): refuse an empty corpus BEFORE anything touches the tree —
+/// the `.pv` cache directory, the diff probe, the watcher. The third review
+/// quorum on #3093 measured `pv lint /nonexistent` leaking `cannot create /.pv:
+/// Permission denied` AHEAD of the refusal: two stderr lines for one decline,
+/// three under `--diff`. `has_contract_files` does not parse; the post-report
+/// guard in `run` stays for a corpus that parses to nothing.
+fn refuse_missing_corpus(contract_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    if crate::contract_walk::has_contract_files(contract_dir) {
+        return Ok(());
+    }
+    Err(crate::contract_walk::ZeroContracts {
+        path: contract_dir.to_path_buf(),
+        filter: None,
+    }
+    .into())
+}
+
 fn run_diff_check(
     contract_dir: &Path,
     base: &str,
 ) -> Option<Result<(), Box<dyn std::error::Error>>> {
     match provable_contracts::lint::diff::changed_contracts(contract_dir, base) {
         Ok(changed) if changed.is_empty() => {
+            // PVL-1 (PMAT-1099): "nothing changed" over 0 contracts is the vacuous
+            // pass again — refuse a corpus with no contract file (exit 2) before
+            // saying so; the probe does not parse (nothing changed = fast path).
+            if !crate::contract_walk::has_contract_files(contract_dir) {
+                return Some(Err(crate::contract_walk::ZeroContracts {
+                    path: contract_dir.to_path_buf(),
+                    filter: None,
+                }
+                .into()));
+            }
             println!("No contracts changed since {base}. Nothing to lint.");
             Some(Ok(()))
         }
@@ -308,6 +370,10 @@ fn run_watch(
         );
 
         let report = run_lint(&config);
+
+        // PVL-1 (PMAT-1099): watch mode is the same gate on a timer — an empty
+        // corpus is refused (exit 2) at the first tick, never reported over.
+        refuse_empty_corpus(&report, contract_dir)?;
 
         if cache_stats {
             print_cache_stats(&report);
