@@ -1,0 +1,84 @@
+# ci-unwedge.yml -- free CI runs wedged on a parked aggregator (#3229).
+#
+# CONTAINMENT, NOT THE FIX. A push cancels the in-flight run; the aggregator in
+# the SHA-pinned reusable workflow carries `if: always()`
+# (paiml/.github@main sovereign-ci.yml:1474), so it is SCHEDULED rather than
+# skipped, enters `queued`, and -- the run being cancelled -- is never assigned a
+# runner. `timeout-minutes: 5` cannot save it: a job timeout starts when the job
+# STARTS. While it sits there the RUN is queued, it holds the branch's
+# concurrency group, and the next run is created with ZERO jobs.
+#
+# Cost, measured: main merged nothing for 8.5 hours on 2026-09-13 with three
+# groups wedged this way, and it recurred on #3205 at 04:28Z. It is silent --
+# the branch shows a run "in progress" and the required checks are simply never
+# created, so the PR sits BLOCKED with no red anywhere to look at.
+#
+# The real fix is upstream and is NOT `if: always()` (that is already there and
+# is nearer the cause). `if: ${{ !cancelled() }}` is the untested candidate.
+# Delete this workflow when that lands and the pin is bumped.
+#
+# It also frees a SECOND class the same sweep can see: a merge_group run whose
+# `gh-readonly-queue/...` ref has been deleted. Every merge rebases the groups
+# behind it, GitHub makes new refs, and the old runs keep building against a ref
+# nothing can read. Measured 2026-09-14 04:43Z with a 9-deep queue: two of five
+# in-flight merge-group runs were in this state, holding gx10-pool3,
+# intel-clean-room-8 and intel-clean-room-14.
+name: CI unwedge
+
+on:
+  schedule:
+    # Every 10 minutes. The blast radius of a late sweep is a stalled branch for
+    # up to the interval; of a frequent one, a handful of API calls. One list
+    # call carries status+conclusion, so the per-run jobs call is paid only for
+    # candidates -- typically 3-6 runs, well inside the 5,000/h budget.
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Report what would be freed and change nothing'
+        type: boolean
+        default: false
+
+permissions:
+  # force-cancel is an actions:write operation. Nothing here reads or writes
+  # repository contents.
+  actions: write
+  contents: read
+
+concurrency:
+  group: ci-unwedge
+  cancel-in-progress: false
+
+jobs:
+  unwedge:
+    name: unwedge
+    runs-on: [self-hosted, X64, Linux, clean-room]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      # The instrument proves itself before it is allowed to cancel anything.
+      # Fifteen rows over committed fixtures, no network: three wedged shapes,
+      # five healthy ones (including `jobs == 0`, which is a slow start and NEVER
+      # a verdict on its own), one ENV row, and six for the dead-ref pass --
+      # among them D3, which REFUSES to act when no ref corroborates the lookup,
+      # so a broken derivation cancels nothing instead of cancelling the queue.
+      # Every guard is mutation-proved load-bearing; see the script header.
+      - name: Predicate falsifier (must pass before anything is cancelled)
+        run: bash scripts/check_ci_unwedge.sh --self-test
+
+      - name: Scan and free
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        # The default GH shell is `bash -e {0}` with NO pipefail, so set it here.
+        # Two explicit branches rather than an interpolated flag: an empty
+        # `$DRY` that word-splits to nothing is the shape that silently ran the
+        # destructive arm somewhere else in this repo.
+        run: |
+          set -euo pipefail
+          if [ "${DRY_RUN:-false}" = "true" ]; then
+            bash scripts/check_ci_unwedge.sh --scan --repo "$GITHUB_REPOSITORY" --limit 20 --dry-run
+          else
+            bash scripts/check_ci_unwedge.sh --scan --repo "$GITHUB_REPOSITORY" --limit 20
+          fi

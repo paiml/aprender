@@ -22,10 +22,23 @@ use aprender::text::bpe::Qwen2BpeTokenizer;
 
 /// Z1: TinyLlama-1.1B imports to APR
 /// Falsification: `apr import` fails or produces invalid APR file
+
+/// Tests run with the CRATE dir as cwd (crates/aprender-core), so every repo-relative
+/// path resolves from the workspace root — the `monorepo_invariants.rs` pattern. Before
+/// this, z10 could not pass on any box and every `if let Ok(..) = read_to_string(..)`
+/// row below was vacuous; the target was dark until the quick tier ran it (#3127).
+fn workspace_root() -> std::path::PathBuf {
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .canonicalize()
+        .expect("workspace root must resolve from crates/aprender-core")
+}
+
 #[test]
 fn z1_tinyllama_imports_to_apr() {
-    let spec_path = "docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md";
-    let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
+    let spec_path = workspace_root()
+        .join("docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md");
+    let spec = std::fs::read_to_string(&spec_path).expect("Specification should exist");
 
     // Verify TinyLlama import documented as fixed
     assert!(
@@ -40,8 +53,8 @@ fn z1_tinyllama_imports_to_apr() {
     );
 
     // Check import command exists
-    let import_cmd = "crates/apr-cli/src/commands/import.rs";
-    if let Ok(content) = std::fs::read_to_string(import_cmd) {
+    let import_cmd = workspace_root().join("crates/apr-cli/src/commands/import.rs");
+    if let Ok(content) = std::fs::read_to_string(&import_cmd) {
         assert!(
             content.contains("safetensors") || content.contains("import"),
             "Z1: Import command must handle safetensors"
@@ -53,8 +66,9 @@ fn z1_tinyllama_imports_to_apr() {
 /// Falsification: `apr import` fails or produces invalid APR file
 #[test]
 fn z2_qwencoder_imports_to_apr() {
-    let spec_path = "docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md";
-    let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
+    let spec_path = workspace_root()
+        .join("docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md");
+    let spec = std::fs::read_to_string(&spec_path).expect("Specification should exist");
 
     // Verify Qwen2.5-Coder import documented
     assert!(
@@ -83,8 +97,9 @@ fn z2_qwencoder_imports_to_apr() {
 /// Falsification: `apr serve tinyllama.apr` fails to handle concurrent requests
 #[test]
 fn z3_tinyllama_serving_http() {
-    let spec_path = "docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md";
-    let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
+    let spec_path = workspace_root()
+        .join("docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md");
+    let spec = std::fs::read_to_string(&spec_path).expect("Specification should exist");
 
     // Verify serving documented
     assert!(
@@ -99,9 +114,9 @@ fn z3_tinyllama_serving_http() {
     );
 
     // Check serve command exists
-    let serve_cmd = "crates/apr-cli/src/commands/serve.rs";
-    if std::fs::metadata(serve_cmd).is_ok() {
-        let content = std::fs::read_to_string(serve_cmd).expect("serve.rs exists");
+    let serve_cmd = workspace_root().join("crates/apr-cli/src/commands/serve.rs");
+    if std::fs::metadata(&serve_cmd).is_ok() {
+        let content = std::fs::read_to_string(&serve_cmd).expect("serve.rs exists");
         assert!(
             content.contains("async") || content.contains("tokio") || content.contains("axum"),
             "Z3: Serve command must use async runtime"
@@ -113,8 +128,9 @@ fn z3_tinyllama_serving_http() {
 /// Falsification: `apr serve qwencoder.apr` fails code completion request
 #[test]
 fn z4_qwencoder_serving_http() {
-    let spec_path = "docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md";
-    let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
+    let spec_path = workspace_root()
+        .join("docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md");
+    let spec = std::fs::read_to_string(&spec_path).expect("Specification should exist");
 
     // Verify code completion use case documented
     assert!(
@@ -135,8 +151,9 @@ fn z4_qwencoder_serving_http() {
 /// Falsification: Decode < 60 tok/s (Av. Desktop)
 #[test]
 fn z5_tinyllama_cpu_performance() {
-    let spec_path = "docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md";
-    let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
+    let spec_path = workspace_root()
+        .join("docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md");
+    let spec = std::fs::read_to_string(&spec_path).expect("Specification should exist");
 
     // Verify TinyLlama performance target documented
     assert!(
@@ -162,8 +179,9 @@ fn z5_tinyllama_cpu_performance() {
 /// Falsification: Decode < 70 tok/s (Av. Desktop)
 #[test]
 fn z6_qwencoder_cpu_performance() {
-    let spec_path = "docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md";
-    let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
+    let spec_path = workspace_root()
+        .join("docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md");
+    let spec = std::fs::read_to_string(&spec_path).expect("Specification should exist");
 
     // Verify Qwen performance documented
     assert!(
@@ -182,8 +200,9 @@ fn z6_qwencoder_cpu_performance() {
 /// Falsification: TTFT > 50ms (local)
 #[test]
 fn z7_server_latency_ttft() {
-    let spec_path = "docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md";
-    let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
+    let spec_path = workspace_root()
+        .join("docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md");
+    let spec = std::fs::read_to_string(&spec_path).expect("Specification should exist");
 
     // Verify TTFT (Time To First Token) latency requirement documented
     assert!(
@@ -202,8 +221,9 @@ fn z7_server_latency_ttft() {
 /// Falsification: Generated code fails basic syntax check
 #[test]
 fn z8_qwencoder_accuracy() {
-    let spec_path = "docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md";
-    let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
+    let spec_path = workspace_root()
+        .join("docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md");
+    let spec = std::fs::read_to_string(&spec_path).expect("Specification should exist");
 
     // Verify code generation quality documented
     assert!(
@@ -222,8 +242,9 @@ fn z8_qwencoder_accuracy() {
 /// Falsification: Server crashes under 50 concurrent connections
 #[test]
 fn z9_high_load_stability() {
-    let spec_path = "docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md";
-    let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
+    let spec_path = workspace_root()
+        .join("docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md");
+    let spec = std::fs::read_to_string(&spec_path).expect("Specification should exist");
 
     // Verify concurrency/stability documented
     assert!(
@@ -232,8 +253,8 @@ fn z9_high_load_stability() {
     );
 
     // Check if serve command has concurrency handling
-    let serve_cmd = "crates/apr-cli/src/commands/serve.rs";
-    if let Ok(content) = std::fs::read_to_string(serve_cmd) {
+    let serve_cmd = workspace_root().join("crates/apr-cli/src/commands/serve.rs");
+    if let Ok(content) = std::fs::read_to_string(&serve_cmd) {
         // Should use async or have connection handling
         assert!(
             content.contains("async") || content.contains("spawn") || content.contains("tokio"),
@@ -246,8 +267,9 @@ fn z9_high_load_stability() {
 /// Falsification: Serving tokens/sec within 5% of `apr bench`
 #[test]
 fn z10_zero_overhead_serving() {
-    let spec_path = "docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md";
-    let spec = std::fs::read_to_string(spec_path).expect("Specification should exist");
+    let spec_path = workspace_root()
+        .join("docs/specifications/archive/apr-whisper-and-cookbook-support-eoy-2025.md");
+    let spec = std::fs::read_to_string(&spec_path).expect("Specification should exist");
 
     // Verify overhead expectations documented
     assert!(

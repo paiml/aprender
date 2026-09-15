@@ -42,6 +42,7 @@ fn test_chat_completion_response_multiple_choices() {
         brick_trace: None,
         step_trace: None,
         layer_trace: None,
+    timings: None,
     };
 
     let json = serde_json::to_string(&response).expect("serialize");

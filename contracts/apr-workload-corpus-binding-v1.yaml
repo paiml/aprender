@@ -1,0 +1,104 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# apr-workload-corpus-binding-v1 — a receipt's `workload` label is bound to the
+# prompt set that was actually sent, never a free-text tag (PP-066 DAG row
+# I-25; issue #2888; defect #2756; ticket PMAT-973; owner perf-gate)
+#
+# WHAT IT GOVERNS
+#   crates/apr-cli/src/commands/test_llm_band.rs: `bind_workload(label, prompts_file)
+#   -> WorkloadBinding { label, corpus_sha256, prompt_count }` (accepted only when
+#   the file's first-line `_meta.corpus` equals the label; the sha256 of the file
+#   bytes is recorded), `receipt_accepts_workload` (a corpus label without a
+#   corpus_sha256 is not accepted), the band receipt's `corpus_sha256` field,
+#   and the refusal of `--workload <corpus label>` when no prompts file backs it
+#   (`--profile short` = one prompt sent N times).
+#
+# PROOF LADDER, STATED HONESTLY (PP-066 §5 contract discipline, F-26)
+#   * L1 — the resolver exists: the workload_corpus_binding test module of
+#          commands::test_llm_band (`cargo test -p apr-cli --lib` is CI's
+#          workspace-test).
+#   * L2 — falsification MEASURED 2026-09-06 on lambda: 4/4 rows against the real
+#          crates/aprender-serve/benchmarks/qwen-coder/prompts-w1.jsonl (256 prompts);
+#          the registered mutation (the `_meta.corpus` check removed) turns the W2
+#          and no-header rows RED.
+#   * L3/L4 — NOT APPLICABLE and deliberately not declared: a file digest and a
+#          label comparison, not a kernel. No self-exemption flag, no hand-typed
+#          proof summary.
+# ─────────────────────────────────────────────────────────────────────────────
+name: apr-workload-corpus-binding
+version: "1.0.0"
+scope: >
+  The `workload` and `corpus_sha256` fields of a band receipt and the CLI
+  refusal that protects them. Out of scope: what the W1/W2 corpora contain
+  (their own `_meta`), and the parity arithmetic over the receipt.
+status: active
+
+metadata:
+  kind: pattern     # a provenance binding over a receipt field, not a math
+                    # kernel. Set EXPLICITLY so `pv validate`'s `kernel`
+                    # default never silently applies.
+  version: "1.0.0"
+  created: '2026-09-06'
+  last_modified: '2026-09-06'
+  author: PAIML Engineering
+  references:
+    - 'crates/apr-cli/src/commands/test_llm_band.rs — WorkloadBinding, bind_workload(), parse_meta_corpus(), receipt_accepts_workload(), attach_corpus_sha256(), the refusal before the first request'
+    - 'crates/apr-cli/src/commands/test_llm_band_workload_binding_tests.rs — the_real_w1_corpus_binds_to_the_w1_label, a_corpus_labelled_w2_refuses_the_w1_label, a_prompt_set_with_no_meta_header_is_not_a_labelled_corpus, a_receipt_refuses_a_corpus_label_with_no_corpus_sha256'
+    - 'crates/aprender-serve/benchmarks/qwen-coder/prompts-w1.jsonl — `_meta.corpus: W1`, 256 distinct prompts, `_meta.distinctness_rationale`'
+    - 'PP-066 DAG row I-25 (docs/specifications/pp-066-dag.yaml); issues #2888, #2756, #2876'
+  description: >
+    A run of `apr test llm band --workload W1 --profile short` sends one prompt
+    thirty times and used to record `workload: W1`; the W1 corpus's own
+    `_meta.distinctness_rationale` says identical prompts let prefix caching,
+    not the scheduler, drive the number. The label is now bound to the bytes
+    sent: accepted only when the loaded prompts file declares that corpus, and
+    the receipt carries the file's sha256; a corpus label with no corpus behind
+    it is refused before the first request.
+
+equations:
+  a_corpus_label_is_earned_by_its_corpus:
+    formula: |
+      bind_workload(L, file) = Ok{corpus_sha256 = sha256(bytes(file)), prompt_count}   iff  file._meta.corpus = L
+      bind_workload(L, file) = Err(ValidationFailed)                                     iff  file._meta.corpus ≠ L  ∨  file has no _meta header
+      receipt.workload = L  ⇒  receipt.corpus_sha256 ≠ ∅        (receipt_accepts_workload)
+      --workload L with no prompts file  ⇒  refused before the first request, one line naming L
+    domain: 'L ∈ Workload (every variant is a corpus label); any prompts file'
+    codomain: 'WorkloadBinding, or a refusal'
+    invariants:
+    - 'THE DIGEST IS OF THE BYTES SENT, computed from the file the run loads — a receipt can be checked against the corpus in the tree.'
+    - 'NO FREE-TEXT ACCEPTANCE (the registered mutation): a file labelled W2, or with no header, cannot be recorded as W1.'
+    preconditions: []
+    postconditions:
+    - 'the real W1 corpus binds with prompt_count 256 and a 64-hex sha256'
+
+proof_obligations:
+  - id: WCB-OB-001
+    statement: "A workload label is accepted only with the sha256 of a prompts file whose _meta.corpus equals the label; a corpus label without its corpus is refused, never recorded."
+    discharged_by: falsification_tests[0]
+
+falsification_tests:
+
+  - id: WCB-F-001
+    rule: the label is bound to the corpus
+    prediction: >-
+      the_real_w1_corpus_binds_to_the_w1_label, a_corpus_labelled_w2_refuses_the_w1_label,
+      a_prompt_set_with_no_meta_header_is_not_a_labelled_corpus and
+      a_receipt_refuses_a_corpus_label_with_no_corpus_sha256 PASS (4/4); one
+      `cargo test` run exercises every row.
+    test: 'cargo test -p apr-cli --lib workload_corpus_binding'
+    if_fails: >-
+      an Arm A scaling number taken over one repeated prompt is filed as W1 and
+      measures the prefix cache; the receipt gives a reader no way to tell
+    mutation: >-
+      remove the `_meta.corpus` comparison in bind_workload (accept any file);
+      a_corpus_labelled_w2_refuses_the_w1_label and
+      a_prompt_set_with_no_meta_header_is_not_a_labelled_corpus must turn RED.
+
+non_goals:
+  - "Distinctness of the prompts themselves (the corpus asserts it in its own _meta; a future row may verify it)."
+  - "Binding for runs that are deliberately not a corpus (they must not carry a corpus label; a non-corpus label is a separate design question)."
+
+binding_registry:
+  function: crates/apr-cli/src/commands/test_llm_band.rs::bind_workload
+  test: crates/apr-cli/src/commands/test_llm_band_workload_binding_tests.rs
+  corpus: crates/aprender-serve/benchmarks/qwen-coder/prompts-w1.jsonl
+  issue: "https://github.com/paiml/aprender/issues/2888"

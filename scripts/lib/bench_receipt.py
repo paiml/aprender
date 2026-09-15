@@ -25,8 +25,73 @@ Usage:  bench_receipt.py <receipt.json> [...]
 Exit:   0 all valid - 1 a receipt is invalid - 2 usage/read error
 """
 import json
+import os
 import statistics
 import sys
+
+# ---------------------------------------------------------------------------
+# THE ONE PLACE A NUMBER LIVES (PP-33). This module used to carry
+# `RATIO_TOLERANCE = 0.01` and to default a lane's floor/ceiling to 0.80/1.50 --
+# a fourth independent encoding of thresholds the matrix could not reach, so a
+# matrix edit changed the gate and left the producers on the old numbers.
+#
+# `_matrix()` is the SHARED reader: scripts/lib/parity_block.py and
+# scripts/lib/perf_receipt.py import it from here rather than each opening the
+# file, so there is one path resolution, one PERF_GATE_MATRIX override and one
+# cache. yaml is imported lazily so a caller that only wants the pure schema
+# rules still runs on a stdlib-only interpreter.
+_MATRIX_CACHE = {}
+
+
+def matrix_path():
+    """The matrix this process reads. PERF_GATE_MATRIX overrides it for exactly
+    the reason perf_gate.sh has the same seam: several rules have FAIL branches
+    no well-formed committed matrix can reach."""
+    return os.environ.get("PERF_GATE_MATRIX") or os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "perf-matrix.yaml")
+
+
+def _matrix():
+    import yaml
+    path = matrix_path()
+    if path not in _MATRIX_CACHE:
+        with open(path, encoding="utf-8") as handle:
+            _MATRIX_CACHE[path] = yaml.safe_load(handle) or {}
+    return _MATRIX_CACHE[path]
+
+
+def matrix_number(*path):
+    """A number from the matrix, by path. Raises rather than defaulting: a
+    threshold that silently falls back to a literal is the defect this helper
+    exists to remove."""
+    node = _matrix()
+    for key in path:
+        if not isinstance(node, dict) or key not in node:
+            raise KeyError("scripts/perf-matrix.yaml has no %s -- every number a "
+                           "gate compares against lives there with a threshold_class "
+                           "and an author (PP-33)" % (".".join(path),))
+        node = node[key]
+    return node
+
+
+def ratio_tolerance():
+    """derivation.ratio_tolerance.value -- how far a STATED ratio may sit from
+    the one its own samples produce before it is a fabricated measurement."""
+    return matrix_number("derivation", "ratio_tolerance", "value")
+
+
+def declared_bands():
+    """ladder.declared -- the requested concurrency ladder, in one place."""
+    return list(matrix_number("ladder", "declared"))
+
+
+def lane_bounds():
+    """(floor, ceiling) for a parity LANE. The floor is Arm L3's own
+    non-inferiority bound, 1 - delta.agg_ratio, so the producer and the gate
+    cannot disagree; the ceiling is the sanity bound above which a ratio is
+    likelier a measurement error than a win."""
+    delta = matrix_number("arms", "L3", "delta", "agg_ratio")
+    return 1 - delta, matrix_number("derivation", "sanity_ceiling", "value")
 
 COMPUTE_CLASSES = ("cpu", "cuda", "metal", "wgpu", "unknown")
 # THE JOIN KEY. Adopted from llama.cpp's compare-llama-bench.py, which will not
@@ -185,6 +250,59 @@ def _check_cross_class(receipt, errors):
                      "goes EXISTENCE-ONLY and the threshold never arms.")
 
 
+BARE_RATIO_KEYS = ("agg_ratio", "decode_ratio", "prefill_ratio")
+
+
+def _check_v3_ratios(receipt, errors):
+    """PP-3 / PP-17: A RATIO IS REPRESENTABLE ONLY INSIDE ITS OWN BAND.
+
+    A bare `agg_ratio: 0.9` on a band says nothing about WHICH comparator run it
+    was taken against, at which concurrency, under which protocol. Two numbers
+    from two different afternoons divide perfectly well, and the quotient looks
+    exactly like a measurement. At schema_version >= 3 the scalar form is
+    REFUSED outright; a v2 receipt keeps the old reading because the paired form
+    did not exist when it was written, and the gate reports it as historical.
+
+    A `ratios` object is legal only where it can be joined: inside a band that
+    states its own concurrency, beside a `baseline` from the SAME invocation.
+    """
+    schema_version = receipt.get("schema_version")
+    v3 = (isinstance(schema_version, int) and not isinstance(schema_version, bool)
+          and schema_version >= 3)
+    if isinstance(receipt.get("ratios"), dict):
+        _err(errors, "ratios: a `ratios` object must sit inside a band with a "
+                     "`concurrency`. A top-level one names no band, so the claim it "
+                     "carries is unattributable -- which is how a c=1 ratio comes to "
+                     "be quoted as the headline for a sixteen-user deployment")
+    run_id = receipt.get("run_id")
+    for index, band in enumerate(receipt.get("bands") or []):
+        if not isinstance(band, dict):
+            continue
+        label = "bands[%d]" % index
+        bare = [k for k in BARE_RATIO_KEYS if band.get(k) is not None]
+        if v3 and bare:
+            _err(errors, "%s carries bare scalar ratio field(s) %s. At "
+                         "schema_version=%d a ratio lives in `ratios` beside the "
+                         "`baseline` it was computed against; a bare scalar records "
+                         "the quotient and discards everything that made it valid"
+                         % (label, bare, schema_version))
+        if not isinstance(band.get("ratios"), dict):
+            continue
+        if band.get("concurrency") is None:
+            _err(errors, "%s carries `ratios` and states no `concurrency` -- a ratio "
+                         "with no band is a claim with no subject" % label)
+        if not isinstance(band.get("baseline"), dict):
+            _err(errors, "%s carries `ratios` and no `baseline`. The comparator band "
+                         "the ratio was taken against is what makes it a measurement "
+                         "rather than a quotient of two afternoons" % label)
+            continue
+        if band["baseline"].get("run_id") != run_id:
+            _err(errors, "%s baseline.run_id=%r is not this receipt's run_id=%r -- the "
+                         "two lanes were not interleaved inside one invocation, so the "
+                         "pair is cross-run (PP-3/PP-9)"
+                         % (label, band["baseline"].get("run_id"), run_id))
+
+
 def validate(receipt):
     """Return a list of human-readable errors; empty means valid."""
     # `_expect` is the case-table annotation, not receipt content.
@@ -201,6 +319,7 @@ def validate(receipt):
     _check_samples(receipt, errors)
     _check_discards(receipt, errors)
     _check_cross_class(receipt, errors)
+    _check_v3_ratios(receipt, errors)
     return errors
 
 
@@ -287,7 +406,6 @@ def _mode_bench_median(path):
 PARITY_LANE_REQUIRED = ("lane", "subject", "comparator", "ratio_decode", "verdict")
 PARITY_SIDE_REQUIRED = ("provenance", "decode_tok_per_sec")
 INSTALL_SOURCES = ("crates.io", "local-build", "release-artifact")
-RATIO_TOLERANCE = 0.01
 
 
 def _median_of(side, key, label, errors):
@@ -397,7 +515,7 @@ def _check_stated_ratio(lane, derived, label, errors):
     if isinstance(stated, bool) or not isinstance(stated, (int, float)):
         _err(errors, "%s.ratio_decode: must be a number" % label)
         return
-    if abs(derived - stated) > RATIO_TOLERANCE * max(derived, 1e-9):
+    if abs(derived - stated) > ratio_tolerance() * max(derived, 1e-9):
         _err(errors, "%s.ratio_decode=%r does not follow from the samples "
                      "(derived %.4f) -- a stated ratio that its own samples do "
                      "not produce is a fabricated measurement"
@@ -448,8 +566,22 @@ def _check_parity_lane(lane, index, errors):
     if not lane.get("bands"):
         _check_verdict(lane, derived, cross, label, errors)
     if not cross:
-        _check_bands(lane, lane.get("floor", 0.80), lane.get("ceiling", 1.50),
-                     lane.get("declared_bands") or [], errors)
+        # NO DEFAULTS. `lane.get("floor", 0.80)` was a fourth encoding of a
+        # threshold, invisible to every matrix edit and to every guard: a lane
+        # that simply omitted its floor was scored against a literal typed here.
+        # A lane with no declared bound is REFUSED.
+        floor, ceiling = lane.get("floor"), lane.get("ceiling")
+        if not _is_number(floor) or not _is_number(ceiling):
+            _err(errors, "%s: floor=%r ceiling=%r -- a same-class lane must DECLARE "
+                         "both, read from scripts/perf-matrix.yaml. Defaulting them "
+                         "here scored a lane against a literal no matrix edit could "
+                         "reach (PP-33)" % (label, floor, ceiling))
+        else:
+            _check_bands(lane, floor, ceiling, lane.get("declared_bands") or [], errors)
+
+
+def _is_number(value):
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
 
 
 # ===========================================================================
@@ -491,12 +623,37 @@ def _band_metric(band, metric, floor, ceiling, label, failed, errors):
         return None
     stated = band.get("ratio_" + metric)
     if isinstance(stated, (int, float)) and not isinstance(stated, bool):
-        if abs(ratio - stated) > RATIO_TOLERANCE * max(ratio, 1e-9):
+        if abs(ratio - stated) > ratio_tolerance() * max(ratio, 1e-9):
             _err(errors, "%s.ratio_%s=%r does not follow from its samples "
                          "(derived %.4f)" % (label, metric, stated, ratio))
     if ratio < floor or ratio > ceiling:
         failed.append("%s %.4fx" % (metric, ratio))
     return ratio
+
+
+def _check_client_concurrency(band, label, errors):
+    """PP-8 -- BOTH SIDES WERE DRIVEN AT THE SAME CONCURRENCY.
+
+    A "c=4 ratio" whose comparator lane ran at c=1 is a different experiment
+    wearing one label, and nothing else in a parity block records it: the band
+    states its concurrency once, at the top, and both sides inherit it by
+    assumption. The 2026-08-25 corpus is exactly this shape in the other
+    direction -- unequal WINDOWS on the two sides of the same band -- and no
+    reader could see it.
+    """
+    want = band.get("concurrency")
+    for name in ("subject", "comparator"):
+        side = band.get(name) or {}
+        got = side.get("client_concurrency")
+        if got is None:
+            _err(errors, "%s.%s.client_concurrency: missing -- the band states one "
+                         "concurrency and both sides inherit it by assumption; each "
+                         "side must record the concurrency its own client drove"
+                         % (label, name))
+        elif got != want:
+            _err(errors, "%s.%s.client_concurrency=%r but the band is c=%r -- the two "
+                         "sides were driven at different concurrencies, so their "
+                         "quotient is not a ratio at either one" % (label, name, got, want))
 
 
 def _check_one_band(band, index, floor, ceiling, errors):
@@ -508,6 +665,7 @@ def _check_one_band(band, index, floor, ceiling, errors):
     if not isinstance(band.get("concurrency"), int) or band["concurrency"] < 1:
         _err(errors, "%s.concurrency: must be a positive integer" % label)
         return None
+    _check_client_concurrency(band, label, errors)
 
     failed = []
     for metric in BAND_METRICS:

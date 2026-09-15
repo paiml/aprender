@@ -135,7 +135,7 @@ fn create_benchmark_transformer() -> GGUFTransformer {
 }
 
 /// Benchmark realizar native CPU inference with CV-based stopping
-/// FIXME: GGUFTransformer no longer has forward() - use OwnedQuantizedModel
+/// Deferred (PMAT-758): GGUFTransformer no longer has forward() - use OwnedQuantizedModel
 #[allow(dead_code)]
 fn benchmark_realizar_native_cv() -> Vec<f64> {
     let _transformer = create_benchmark_transformer();

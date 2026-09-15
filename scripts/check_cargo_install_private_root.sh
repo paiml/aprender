@@ -75,12 +75,12 @@ is_exempt() {
 RE_INSTALL='(^|[;&|]|&&|\|\||run:)[[:space:]]*(sudo[[:space:]]+)?cargo[[:space:]]+install([[:space:]]|$)'
 
 is_install() {
-    printf '%s\n' "$1" | grep -qE "$RE_INSTALL"
+    grep -qE "$RE_INSTALL" <<< "$1"
 }
 
 # An explicit `--root <dir>` / `--root=<dir>` on the install itself.
 has_explicit_root() {
-    printf '%s\n' "$1" | grep -qE -- '--root([[:space:]]|=)'
+    grep -qE -- '--root([[:space:]]|=)' <<< "$1"
 }
 
 # A CARGO_INSTALL_ROOT / CARGO_HOME declaration (YAML `KEY: value`, `export
@@ -89,8 +89,8 @@ has_explicit_root() {
 # already does) and `CARGO_INSTALL_ROOT: /tmp/apr-cov-tools-...` both qualify;
 # `CARGO_INSTALL_ROOT="$HOME/.cargo"` does not.
 declares_private_root() {
-    printf '%s\n' "$1" | grep -qE '(CARGO_INSTALL_ROOT|CARGO_HOME)[[:space:]]*[:=]' || return 1
-    if printf '%s\n' "$1" | grep -qE '(\$HOME|\$\{HOME\}|~)/\.cargo'; then
+    grep -qE '(CARGO_INSTALL_ROOT|CARGO_HOME)[[:space:]]*[:=]' <<< "$1" || return 1
+    if grep -qE '(\$HOME|\$\{HOME\}|~)/\.cargo' <<< "$1" ; then
         return 1
     fi
     return 0
@@ -100,11 +100,11 @@ declares_private_root() {
 # continuations further down (ci.yml's mutants job is exactly that shape). The
 # caller clears the chain on the first line that does not end in a backslash.
 opens_docker_chain() {
-    printf '%s\n' "$1" | grep -qE '(^|[[:space:]])docker[[:space:]]+run([[:space:]]|$)'
+    grep -qE '(^|[[:space:]])docker[[:space:]]+run([[:space:]]|$)' <<< "$1"
 }
 
 continues_line() {
-    printf '%s\n' "$1" | grep -qE '\\[[:space:]]*$'
+    grep -qE '\\[[:space:]]*$' <<< "$1"
 }
 
 # First component of an `export PATH=...` assignment, or empty if the line is
@@ -231,7 +231,7 @@ check_job() {
     # Pass 1: job-wide facts (runs-on, private-root declarations anywhere in the
     # job - job env, step env, or an inline export).
     while IFS= read -r line; do
-        if printf '%s\n' "$line" | grep -q 'runs-on:' && printf '%s\n' "$line" | grep -q 'self-hosted'; then
+        if grep -q 'runs-on:' <<< "$line" && grep -q 'self-hosted' <<< "$line"; then
             selfhosted=1
         fi
         trimmed="$(printf '%s' "$line" | sed 's/^[[:space:]]*//')"

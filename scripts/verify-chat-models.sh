@@ -146,8 +146,8 @@ verify_model() {
 
     # Check for success indicators
     if [[ ${exit_code} -eq 0 ]] && \
-       echo "${output}" | grep -qiE "(loaded|format|model)" && \
-       echo "${output}" | grep -qiE "(goodbye|quit|exit|4)"; then
+       grep -qiE "(loaded|format|model)" <<< "${output}" && \
+       grep -qiE "(goodbye|quit|exit|4)" <<< "${output}" ; then
         log_success "${model_key}: chat completed successfully"
         echo "pass"
         return 0
@@ -179,8 +179,16 @@ verify_chat_template_tests() {
 # ============================================================================
 
 generate_results_json() {
+    # DET002: this JSON is a build artifact written to disk (and later read
+    # back into README.md), so its timestamp is derived from
+    # SOURCE_DATE_EPOCH (falling back to the last commit time, then
+    # wall-clock only if neither is available) instead of a bare `date`
+    # call.
+    local report_ts
+    report_ts=$(date -u -d "@${SOURCE_DATE_EPOCH:-$(git -C "${PROJECT_ROOT}" log -1 --format=%ct 2>/dev/null || date +%s)}" +%Y-%m-%dT%H:%M:%SZ)
+
     local results_json="{"
-    results_json+='"timestamp": "'"$(date -Iseconds)"'",'
+    results_json+='"timestamp": "'"${report_ts}"'",'
     results_json+='"models": {'
 
     local first=true

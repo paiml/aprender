@@ -1,3 +1,11 @@
+metadata:
+  kind: kaizen
+  version: "1.0.0"
+  author: "PAIML Engineering"
+  description: "batched-matmul-zero-copy-v1 — kaizen KAIZEN-039 improvement record"
+  references:
+    - "KAIZEN-039"
+
 contract: batched-matmul-zero-copy-v1
 version: 1.0.0
 status: implemented

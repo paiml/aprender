@@ -1,0 +1,65 @@
+$ git grep -c 'package = "aprender-' -- '*/Cargo.toml' Cargo.toml
+Cargo.toml:34
+crates/apr-cli/Cargo.toml:3
+crates/aprender-bench-compute/Cargo.toml:1
+crates/aprender-bench-tokenizer/Cargo.toml:1
+crates/aprender-cbtop/Cargo.toml:2
+crates/aprender-cgp/Cargo.toml:1
+crates/aprender-compute/Cargo.toml:7
+crates/aprender-contracts/Cargo.toml:1
+crates/aprender-core/Cargo.toml:4
+crates/aprender-cuda-edge/Cargo.toml:1
+crates/aprender-data/Cargo.toml:1
+crates/aprender-db/wasm-pkg/Cargo.toml:1
+crates/aprender-distribute/Cargo.toml:1
+crates/aprender-explain/Cargo.toml:1
+crates/aprender-gpu/Cargo.toml:2
+crates/aprender-graph/Cargo.toml:1
+crates/aprender-orchestrate/Cargo.toml:3
+crates/aprender-present-lib/Cargo.toml:2
+crates/aprender-profile/Cargo.toml:2
+crates/aprender-qa-runner/Cargo.toml:1
+crates/aprender-rag/Cargo.toml:1
+crates/aprender-registry/Cargo.toml:1
+crates/aprender-serve/Cargo.toml:5
+crates/aprender-shell/Cargo.toml:1
+crates/aprender-simulate/Cargo.toml:3
+crates/aprender-test-cli/Cargo.toml:1
+crates/aprender-test-showcase/Cargo.toml:1
+crates/aprender-test/Cargo.toml:3
+crates/aprender-train-bench/Cargo.toml:1
+crates/aprender-train-canary/Cargo.toml:1
+crates/aprender-train-distill/Cargo.toml:1
+crates/aprender-train-inspect/Cargo.toml:1
+crates/aprender-train-lora/Cargo.toml:1
+crates/aprender-train-shell/Cargo.toml:1
+crates/aprender-train/Cargo.toml:4
+crates/aprender-verify-ml/Cargo.toml:2
+crates/aprender-viz-ttop/Cargo.toml:1
+crates/aprender-viz/Cargo.toml:3
+crates/aprender-zram/bins/trueno-ublk/Cargo.toml:2
+crates/facades/provable-contracts-macros/Cargo.toml:1
+crates/facades/provable-contracts/Cargo.toml:1
+$ git grep -nE '"(trueno|realizar|entrenar|batuta|pacha|alimentar)(/|")' -- '*/Cargo.toml' | wc -l ; head
+30
+crates/apr-cli/Cargo.toml:88:inference = ["realizar", "trueno", "tokio", "axum", "futures-util"]
+crates/apr-cli/Cargo.toml:89:cuda = ["inference", "realizar/cuda", "entrenar/cuda", "aprender-train-distill?/cuda"]
+crates/aprender-compute/Cargo.toml:156:name = "trueno"
+crates/aprender-core/Cargo.toml:243:datasets = ["alimentar"]  # Enable data loading from alimentar
+crates/aprender-core/Cargo.toml:265:gpu = ["trueno/gpu"]  # Enable GPU acceleration via trueno wgpu backend
+crates/aprender-core/Cargo.toml:267:cuda = ["trueno/cuda-monitor"]  # Enable CUDA monitoring via trueno-gpu (NVIDIA GPUs)
+crates/aprender-data/Cargo.toml:115:name = "alimentar"
+crates/aprender-data/Cargo.toml:123:name = "alimentar"
+crates/aprender-distribute/Cargo.toml:22:tensor = ["trueno"]                  # v2.0: SIMD tensor operations
+crates/aprender-graph/Cargo.toml:64:# simd = ["trueno"]
+crates/aprender-orchestrate/Cargo.toml:30:name = "batuta"
+crates/aprender-orchestrate/Cargo.toml:211:    "pacha",
+$ grep -nE "^(trueno|realizar|entrenar) *=" Cargo.toml  # workspace.dependencies aliases
+258:realizar = { path = "crates/aprender-serve", version = "0.65.2", package = "aprender-serve" }
+259:alimentar = { path = "crates/aprender-data", version = "0.65.2", package = "aprender-data" }
+260:pacha = { path = "crates/aprender-registry", version = "0.65.2", package = "aprender-registry" }
+287:entrenar = { path = "crates/aprender-train", version = "0.65.2", package = "aprender-train" }
+358:trueno = { path = "crates/aprender-compute", version = "0.65.2", package = "aprender-compute" }
+373:batuta = { path = "crates/aprender-orchestrate", version = "0.65.2", package = "aprender-orchestrate" }
+$ git grep -c "use trueno::" -- "crates/*.rs" | wc -l (files)
+210

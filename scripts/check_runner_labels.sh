@@ -16,13 +16,15 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-DISCRIM='clean-room|cuda|gpu|rtx4090|ada|blackwell|gb10|apple-silicon|m4'
+# perf-solo (PERF-013, infra#338): one box, intel-clean-room-16, deliberately WITHOUT clean-room so
+# general pool work cannot queue in front of a speed measurement. A one-box label discriminates.
+DISCRIM='clean-room|cuda|gpu|rtx4090|ada|blackwell|gb10|apple-silicon|m4|perf-solo'
 fail=0
 
 while IFS=: read -r file line sel; do
   # Only inline self-hosted selectors.
-  printf '%s' "$sel" | grep -q 'self-hosted' || continue
-  if ! printf '%s' "$sel" | grep -qE "$DISCRIM"; then
+  grep -q 'self-hosted' <<< "$sel" || continue
+  if ! grep -qE "$DISCRIM" <<< "$sel" ; then
     echo "::error file=${file},line=${line}::self-hosted job lacks a discriminating runner label (need clean-room or a GPU/macOS label): ${sel# }"
     fail=1
   fi

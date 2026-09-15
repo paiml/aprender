@@ -1,0 +1,114 @@
+{
+  "ticket": "PRREV-002",
+  "spec": "PR-REVIEW-SKILL-002 v2 \u00a76.2",
+  "date_utc": "2026-08-30T15:47:25Z",
+  "base_sha": "745fa8588783413669f4ac6170d4645e39c15be4",
+  "host": "Linux 6.8.0-90-generic",
+  "validator": {
+    "tool": "check-jsonschema",
+    "version": "0.38.0",
+    "installed_by": "uv tool install 'check-jsonschema==0.38.0'",
+    "was_preinstalled": false
+  },
+  "measured": {
+    "spec_6_2_intoto_exit_code": 0,
+    "spec_6_2_sarif_exit_code": 0,
+    "network_control_getent_exit_code_inside_netns": 2,
+    "schema_cache_files_after_both_runs": 0,
+    "check_vendored_schemas_exit_code": 0,
+    "guard_mutation_exit_code": 0,
+    "mutants_as_required": 9,
+    "mutants_survived": 0,
+    "mutations_that_never_engaged": 0,
+    "fixture_rows_intoto_accept": 7,
+    "fixture_rows_intoto_reject": 13,
+    "fixture_rows_sarif_accept": 3,
+    "fixture_rows_sarif_reject": 6,
+    "bashrs_error_lines_new_scripts_alone": 0,
+    "bashrs_error_lines_new_scripts_in_combined_run": 0,
+    "shell_lint_ratchet_exit_code": 0,
+    "shell_lint_ratchet_errors": 163,
+    "shell_lint_ratchet_baseline": 876
+  },
+  "offline_proof": {
+    "mechanism": "unshare -r -n (unprivileged user + network namespace with no interfaces) plus XDG_CACHE_HOME pointed at an empty directory",
+    "why_not_just_asserted": "A gate that merely did not appear to make a request is not a gate that cannot make one. The namespace has no route; the control command confirms name resolution fails inside it.",
+    "static_companion": "every $ref in both vendored schemas is a local JSON Pointer; mutant M4 introduces a remote $ref and turns the whole offline table RED"
+  },
+  "findings_for_downstream": [
+    {
+      "id": "PRREV-002-F1",
+      "for": "PRREV-003/PRREV-005",
+      "claim": "check-jsonschema parses a .jsonl instance as plain JSON, not as JSON Lines.",
+      "grounding": "measured",
+      "evidence": "one pretty-printed object exit 0; one compact object exit 0; two concatenated records exit 1 with 'JSONDecodeError: Extra data: line 2 column 1 (char 243)'",
+      "consequence": "receipt.intoto.jsonl must hold exactly ONE JSON document or \u00a76.2 fails as a parse error, which reads like a corrupt file rather than a wrong shape."
+    },
+    {
+      "id": "PRREV-002-F2",
+      "for": "PRREV-003/PRREV-005",
+      "claim": "The spec is internally inconsistent about the receipt container.",
+      "grounding": "cited",
+      "source": "PR-REVIEW-SKILL-002 v2 \u00a74 vs \u00a74.3 vs \u00a76.2",
+      "evidence": "\u00a74 calls receipt.intoto.jsonl 'DSSE-wrapped in-toto Statement v1'; \u00a76.2 validates that same path against the Statement schema; \u00a74.3 signs it with a DETACHED minisign signature. A DSSE envelope {payloadType,payload,signatures[]} does not validate as a Statement, and a detached signature needs no envelope.",
+      "resolution_taken": "This ticket implements \u00a76.2 as written: the file is a bare Statement. If DSSE is intended, a third schema is required and \u00a76.2 must validate the decoded payload."
+    },
+    {
+      "id": "PRREV-002-F3",
+      "for": "the record",
+      "claim": "The in-toto Attestation Framework publishes NO JSON Schema for the Statement layer.",
+      "grounding": "measured",
+      "evidence": "GET spec/v1/statement.json -> 404; a recursive tree listing of in-toto/attestation@2dcd055e9f72e746687c306e35f4e59720ff45be contains exactly two .json paths, package.json and package-lock.json.",
+      "consequence": "schemas/in-toto-statement-v1.json is recorded as authored-in-repo, not vendored. Calling it vendored would be fabricated provenance."
+    },
+    {
+      "id": "PRREV-002-F4",
+      "for": "the record",
+      "claim": "check-jsonschema's built-in schema catalog contains neither SARIF nor in-toto.",
+      "grounding": "measured",
+      "evidence": "--builtin-schema rejects an unknown value and enumerates all 27 accepted names; none is sarif or in-toto.",
+      "consequence": "vendoring is required, not merely preferred."
+    },
+    {
+      "id": "PRREV-002-F5",
+      "for": "method",
+      "claim": "A mutant reported SURVIVED because its mutation never applied.",
+      "grounding": "measured",
+      "evidence": "M4's first form used jq '.$defs...', a jq syntax error. jq exited non-zero, the tree was unmodified, the guard correctly returned 0, and the harness scored a survivor. Corrected to jq '.[\"$defs\"]...' the mutant is killed.",
+      "consequence": "scripts/mutate_vendored_schemas_guard.sh now PROVES each mutation engaged before reading the guard's verdict; a mutation that never applied is counted separately from a survivor."
+    }
+  ],
+  "not_verified": [
+    "Behaviour when `unshare -r -n` is unavailable (a CI container without unprivileged user namespaces). The guard exits 2 with an ENV classification by construction, but that path was not exercised on a host that actually lacks it. The vendored-schemas job is non-required precisely so this cannot block a merge.",
+    "The vendored-schemas job has never executed on a runner. Its uv-install step and the availability of unprivileged user namespaces inside the clean-room image are both unproven; that is why it is not in gate.needs.",
+    "Nothing yet produces a receipt to validate. PRREV-003 (guard + 14 fixtures) and PRREV-005 (the reviewer) close that."
+  ],
+  "ci_wiring": {
+    "decision": "a new NON-REQUIRED job `vendored-schemas` in .github/workflows/ci.yml",
+    "why_not_optional": "scripts/check_guards_are_wired.sh refuses a new scripts/check_*.sh that no workflow names, and its exemption baseline is shrink-only against origin/main. Leaving it unwired turns that guard RED (measured: 'unwired guards grew 4 -> 5'). Renaming the script to dodge the check_*.sh glob would be routing around the guard.",
+    "why_not_required": "gate.needs is [ci, workspace-test, mutants, guard-runner-labels] and vendored-schemas is deliberately absent from it. Nothing produces a receipt yet (PRREV-005), and check-jsonschema is a Python tool no other job in this repo installs; a brand-new REQUIRED check whose first dependency is an uninstalled interpreter is how a merge queue gets evicted.",
+    "handoff": "PRREV-006 promotes this job into gate.needs alongside check_pr_review_receipt.sh, with a job-level if: and never a workflow-level paths: filter.",
+    "verified": {
+      "ci_yml_parses_as_yaml": true,
+      "vendored_schemas_in_gate_needs": false,
+      "check_guards_are_wired_exit_code": 0,
+      "other_workflow_guards_run_green": [
+        "check_apr_bin_pinned",
+        "check_beats_gated",
+        "check_cargo_install_private_root",
+        "check_comparator_one_client",
+        "check_hardcoded_paths",
+        "check_no_timing_in_required",
+        "check_pass_grep_anchored",
+        "check_runner_labels",
+        "check_sourced_libs_option_neutral",
+        "check_workflow_env_defined",
+        "check_workflow_path_filters",
+        "check_mutation_registry",
+        "check_no_fabricated_baselines",
+        "check_assertions_exclude",
+        "check_no_claim_literals"
+      ]
+    }
+  }
+}

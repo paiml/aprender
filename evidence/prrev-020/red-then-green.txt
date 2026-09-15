@@ -1,0 +1,63 @@
+PRREV-020 - every new rule mutated to RED, then reverted to GREEN.
+Measured 2026-09-01 on the branch tree, `bats tests/pr-review.bats --filter ...`.
+
+M1  the availability rule DROPPED  (`[ -z "$ag_out" ] || true || reject B1 ...`)
+    not ok  row 36 agy exited 0 and produced nothing, recorded consulted     RED  B1
+    ok      row 37 the SAME rc-0 run, recorded unreachable + DEGRADED      GREEN
+    not ok  probe an rc-0 consultation missing output_check entirely         RED  B1
+    not ok  probe output_check present but schema_valid false               RED  B1
+    not ok  probe output_check booleans written as strings                  RED  B1
+    -> KILLED by four rows. Row 37 correctly stays GREEN: it is the discrimination arm
+       and does not depend on the rule firing.
+
+M2  the availability rule FLIPPED  (`[ -z "$ag_out" ] && reject B1 ...`)
+    not ok  row 33 the SAME agy finding, marked advisory                  GREEN
+    not ok  row 36 agy exited 0 and produced nothing, recorded consulted     RED  B1
+    -> KILLED. Row 33 is a `consulted` receipt that SATISFIES the rule, so an inverted
+       branch rejects it; that is the polarity a drop-only mutation cannot reach.
+
+M3  the argv cap claimed to be ARG_MAX  (`local lim=2000000`)
+    not ok  S3.E a single argv element is capped at MAX_ARG_STRLEN, not at ARG_MAX
+            expected an argument of 1999999 bytes to be accepted, got rc=126
+    -> KILLED. The row is not satisfiable by any value up to ARG_MAX; it pins the
+       measured boundary.
+
+M4  the disposable tree removed from the documented recipe
+    (SKILL.md: `git archive "$HEAD_SHA" | tar -x -C "$REVIEW"` -> `cp -r . "$REVIEW"`)
+    not ok  S3.E the documented invocation carries the disposable tree and the file prompt
+            S3.E step 3 no longer extracts the head into a disposable directory
+    -> KILLED. This is the dangerous edit - keeping --dangerously-skip-permissions while
+       dropping the copy that makes it safe - and it is the one the row exists for.
+
+REVERT -> all six rows GREEN:
+    ok  row 33   ok  row 36   ok  row 37
+    ok  probe output_check absent   ok  probe schema_valid false   ok  probe stringy
+    ok  S3.E a single argv element is capped at MAX_ARG_STRLEN, not at ARG_MAX
+    ok  S3.E the documented invocation carries the disposable tree and the file prompt
+
+HARNESS DEFECT FOUND AND FIXED IN THE SAME PASS. The doc-shape row reads
+$REPO_ROOT/.claude/skills/pr-review/SKILL.md, and scripts/mutate-guard.sh's build_tree
+copied only schemas, fixtures, the bats file, the guard and the scanner. The file was
+absent from every mutant tree, so the row would have failed the BASELINE and aborted the
+whole sweep rather than reporting a survivor - failure mode 2 named at the top of that
+file. build_tree now copies SKILL.md, and the baseline in a mutant tree reads
+"baseline GREEN: 156 tests, 0 failures".
+
+M5  the transcript redirect left relative
+    (SKILL.md: `OUT=$(cd "$OUT" && pwd)` -> `OUT="$OUT"`)
+    not ok  S3.E the documented invocation carries the disposable tree and the file prompt
+            the agy transcript would land in the disposable tree and be deleted with it
+    -> KILLED. This defect was in the FIRST DRAFT OF THIS TICKET'S OWN RECIPE and was
+       caught by reading it back rather than by any check: S4.1 defines $OUT relative
+       ("evidence/pr-review/$PR/$HEAD_SHA"), the recipe cds into the disposable tree
+       before redirecting into $OUT, and step 4 then `rm -rf`s that tree. The only record
+       of the consultation would be deleted, silently, at rc 0 - the same class the
+       ticket exists to close, reproduced inside its own fix.
+
+TWO SENTENCES IN THE SAME FILES CONTRADICTED THE NEW RULING AND WERE FIXED WITH IT.
+S11's summary-line prose in both SKILL.md and the spec said the printed model id tells a
+reader "whether the arm was cross-vendor" - which is precisely the property S3.E.2a now
+records as unverifiable. Leaving them would have been D1's shape (the prose refuting the
+cell it describes) inside the ticket that closes it. Both now say the id is what was
+REQUESTED. S11's threat table row for "a cross-vendor arm that is silently not
+cross-vendor" is likewise marked PARTIAL rather than left reading as covered.

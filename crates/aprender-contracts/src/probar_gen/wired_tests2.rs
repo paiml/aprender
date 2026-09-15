@@ -209,7 +209,7 @@ bindings:
         let binding = parse_binding_str(binding_yaml).unwrap();
         let code = generate_wired_probar_tests(&contract, "test.yaml", &binding);
         assert!(code.contains("Bound:"));
-        assert!(code.contains("TODO: wire up struct"));
+        assert!(code.contains("Deferred (PMAT-753): wire up struct"));
     }
 
     /// Verify monotonicity code generation for a tensor method binding

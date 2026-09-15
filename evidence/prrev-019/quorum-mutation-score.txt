@@ -1,0 +1,5 @@
+== quorum_arm_mutation_score ==
+attempted 134   killed 134   survived 0   invalid 0
+report: /mnt/nvme-raid0/prrev-adv/tmp/prrev-quorum-mutation-report.tsv
+quorum_arm_mutation_score = 100% (134/134)
+RC=0

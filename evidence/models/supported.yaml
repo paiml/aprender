@@ -1,0 +1,176 @@
+# evidence/models/supported.yaml — DERIVED by scripts/derive_model_manifest.sh; do not edit by hand (L0-1, #2971).
+# A model is in the manifest iff a shipped document names it; every entry cites where.
+schema: apr-supported-models/v1
+models:
+- name: qwen2-0.5b
+  family: qwen2
+  size: 0.5b
+  cited_by_count: 8
+  cited_by:
+  - book/src/examples/chat-template.md:234
+  - book/src/examples/gpu-fallback-dogfood.md:15
+  - book/src/examples/qwen-inference.md:36
+  - book/src/examples/qwen-inference.md:46
+  - book/src/examples/qwen-inference.md:49
+  - book/src/examples/qwen-inference.md:49
+  - book/src/examples/qwen-inference.md:52
+  - book/src/examples/qwen-inference.md:55
+- name: qwen2-0.5b-instruct
+  family: qwen2
+  size: 0.5b
+  cited_by_count: 2
+  cited_by:
+  - book/src/examples/chat-template.md:108
+  - book/src/examples/qwen-inference.md:46
+- name: qwen2-7b
+  family: qwen2
+  size: 7b
+  cited_by_count: 1
+  cited_by:
+  - book/src/examples/qwen3.5-hybrid-attention.md:50
+- name: qwen2.5-0.5b
+  family: qwen2.5
+  size: 0.5b
+  cited_by_count: 1
+  cited_by:
+  - book/src/examples/qwen-inference.md:97
+- name: qwen2.5-0.5b-instruct
+  family: qwen2.5
+  size: 0.5b
+  cited_by_count: 3
+  cited_by:
+  - book/src/tools/mcp-server.md:131
+  - book/src/tools/mcp-server.md:214
+  - book/src/tools/mcp-server.md:342
+- name: qwen2.5-coder-0.5b
+  family: qwen2.5
+  size: 0.5b
+  cited_by_count: 8
+  cited_by:
+  - book/src/cli/finetune.md:17
+  - book/src/cli/finetune.md:19
+  - book/src/cli/tune.md:17
+  - book/src/cli/tune.md:19
+  - book/src/examples/showcase-benchmark.md:54
+  - book/src/ml-fundamentals/fine-tuning.md:33
+  - book/src/tools/apr-cli.md:1631
+  - book/src/tools/apr-cli.md:1640
+- name: qwen2.5-coder-0.5b-instruct
+  family: qwen2.5
+  size: 0.5b
+  cited_by_count: 6
+  cited_by:
+  - README.md:104
+  - book/src/cli/pull.md:17
+  - book/src/cli/pull.md:19
+  - book/src/examples/apr-cli-commands.md:219
+  - book/src/tools/apr-cli.md:818
+  - book/src/tools/apr-cli.md:846
+- name: qwen2.5-coder-1.5b
+  family: qwen2.5
+  size: 1.5b
+  cited_by_count: 39
+  cited_by:
+  - README.md:27
+  - README.md:28
+  - docs/BEATS.md:131
+  - docs/BEATS.md:138
+  - book/src/cli/chat.md:17
+  - book/src/cli/chat.md:19
+  - book/src/cli/run.md:17
+  - book/src/cli/run.md:19
+  - book/src/cli/serve.md:17
+  - book/src/cli/serve.md:19
+  - book/src/cli/tokenize.md:17
+  - book/src/cli/tokenize.md:19
+  # … and 27 more
+- name: qwen2.5-coder-1.5b-instruct
+  family: qwen2.5
+  size: 1.5b
+  cited_by_count: 95
+  cited_by:
+  - README.md:111
+  - README.md:112
+  - README.md:113
+  - README.md:119
+  - README.md:120
+  - README.md:121
+  - README.md:127
+  - README.md:128
+  - README.md:135
+  - README.md:136
+  - README.md:143
+  - docs/BEATS.md:185
+  # … and 83 more
+- name: qwen2.5-coder-32b
+  family: qwen2.5
+  size: 32b
+  cited_by_count: 1
+  cited_by:
+  - book/src/examples/showcase-benchmark.md:57
+- name: qwen2.5-coder-7b
+  family: qwen2.5
+  size: 7b
+  cited_by_count: 1
+  cited_by:
+  - book/src/examples/showcase-benchmark.md:56
+- name: qwen2.5-coder-7b-instruct
+  family: qwen2.5
+  size: 7b
+  cited_by_count: 3
+  cited_by:
+  - README.md:153
+  - README.md:155
+  - book/src/lib/text.md:48
+- name: qwen3-30b
+  family: qwen3
+  size: 30b
+  cited_by_count: 1
+  cited_by:
+  - docs/BEATS.md:201
+- name: qwen3-4b
+  family: qwen3
+  size: 4b
+  cited_by_count: 2
+  cited_by:
+  - book/src/tools/apr-cli.md:1668
+  - book/src/tools/apr-cli.md:1678
+- name: qwen3-coder-30b
+  family: qwen3
+  size: 30b
+  cited_by_count: 2
+  cited_by:
+  - README.md:161
+  - README.md:162
+- name: qwen3.5-0.8b
+  family: qwen3.5
+  size: 0.8b
+  cited_by_count: 6
+  cited_by:
+  - book/src/cli/embed-viz.md:46
+  - book/src/cli/embed-viz.md:69
+  - book/src/cli/embed-viz.md:71
+  - book/src/cli/embed-viz.md:78
+  - book/src/cli/embed-viz.md:80
+  - book/src/cli/embed-viz.md:81
+- name: qwen3.5-9b
+  family: qwen3.5
+  size: 9b
+  cited_by_count: 6
+  cited_by:
+  - book/src/examples/qwen-inference.md:93
+  - book/src/examples/qwen3.5-hybrid-attention.md:50
+  - book/src/examples/qwen3.5-hybrid-attention.md:161
+  - book/src/examples/qwen3.5-hybrid-attention.md:186
+  - book/src/ml-fundamentals/fine-tuning.md:72
+  - book/src/ml-fundamentals/fine-tuning.md:84
+- name: qwen3.5-9b-instruct
+  family: qwen3.5
+  size: 9b
+  cited_by_count: 5
+  cited_by:
+  - book/src/examples/qwen-inference.md:68
+  - book/src/examples/qwen-inference.md:78
+  - book/src/examples/qwen3.5-hybrid-attention.md:7
+  - book/src/examples/qwen3.5-hybrid-attention.md:130
+  - book/src/ml-fundamentals/fine-tuning.md:34

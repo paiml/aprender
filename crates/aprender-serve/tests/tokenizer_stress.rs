@@ -227,20 +227,65 @@ fn test_byte_to_bpe_char_ascii_punctuation() {
     assert_eq!(byte_to_bpe_char(b'#'), "#");
 }
 
+// PMAT-855 (#2139): `byte_to_bpe_char` is the GPT-2/Qwen `bytes_to_unicode` glyph, never the
+// SentencePiece `<0xNN>` byte-fallback form (those strings do not exist in a GPT-2 vocab, so the
+// old mapping dropped every non-ASCII byte before the model saw it). The 68 non-printable bytes
+// (0x00..=0x20, 0x7F..=0xA0, 0xAD) map in order onto U+0100.., every other byte to itself.
 #[test]
 fn test_byte_to_bpe_char_non_printable() {
-    // Non-printable ASCII should be formatted as hex
-    assert_eq!(byte_to_bpe_char(0x00), "<0x00>");
-    assert_eq!(byte_to_bpe_char(0x01), "<0x01>");
-    assert_eq!(byte_to_bpe_char(0x7F), "<0x7F>"); // DEL
+    assert_eq!(byte_to_bpe_char(0x00), "\u{100}"); // Ā
+    assert_eq!(byte_to_bpe_char(0x01), "\u{101}"); // ā
+    assert_eq!(byte_to_bpe_char(0x20), "\u{120}"); // Ġ — the space glyph the vocab keys on
+    assert_eq!(byte_to_bpe_char(0x7F), "\u{121}"); // ġ (DEL is the first of the second run)
+    assert_ne!(
+        byte_to_bpe_char(0x00),
+        "<0x00>",
+        "the pre-PMAT-855 form must not come back"
+    );
 }
 
 #[test]
 fn test_byte_to_bpe_char_high_bytes() {
-    // High bytes (>127) should be formatted as hex
-    assert_eq!(byte_to_bpe_char(0x80), "<0x80>");
-    assert_eq!(byte_to_bpe_char(0xFF), "<0xFF>");
-    assert_eq!(byte_to_bpe_char(0xC0), "<0xC0>");
+    assert_eq!(byte_to_bpe_char(0x80), "\u{122}"); // Ģ
+    assert_eq!(byte_to_bpe_char(0xAD), "\u{143}"); // Ń (soft hyphen is the lone third run)
+    assert_eq!(byte_to_bpe_char(0xC0), "\u{c0}"); // À maps to itself
+    assert_eq!(byte_to_bpe_char(0xFF), "\u{ff}"); // ÿ maps to itself
+    assert_ne!(
+        byte_to_bpe_char(0x80),
+        "<0x80>",
+        "the pre-PMAT-855 form must not come back"
+    );
+}
+
+#[test]
+fn test_byte_to_bpe_char_is_a_bijection_over_all_256_bytes() {
+    let glyphs: Vec<String> = (0u8..=255).map(byte_to_bpe_char).collect();
+    let distinct: std::collections::HashSet<&String> = glyphs.iter().collect();
+    assert_eq!(
+        distinct.len(),
+        256,
+        "every byte must map to a distinct glyph"
+    );
+    assert!(
+        glyphs.iter().all(|g| g.chars().count() == 1),
+        "every glyph is exactly one char"
+    );
+    let printable = |b: u8| (0x21..=0x7E).contains(&b) || (0xA1..=0xAC).contains(&b) || b >= 0xAE;
+    for b in 0u8..=255 {
+        let c = glyphs[b as usize].chars().next().expect("one char");
+        if printable(b) {
+            assert_eq!(
+                c as u32,
+                u32::from(b),
+                "printable byte {b:#04x} maps to itself"
+            );
+        } else {
+            assert!(
+                c as u32 >= 0x100,
+                "non-printable byte {b:#04x} maps above U+00FF, got {c:?}"
+            );
+        }
+    }
 }
 
 #[test]

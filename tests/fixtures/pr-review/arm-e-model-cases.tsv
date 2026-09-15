@@ -1,0 +1,47 @@
+# S3.E "not a second vendor" — must-match / must-not-match case table.
+#
+# Driven by tests/pr-review.bats against
+#   scripts/check_pr_review_receipt.sh --match-arm-e-same-family <model-id>
+#
+# MATCH means "this model id is the PRIMARY reviewer's own family, so S3.E is void".
+# NO-MATCH means "this is a genuinely different vendor and family".
+#
+# THE UNIVERSE IS NOT INVENTED. Every id `agy models` printed on 2026-08-31 is here -
+# the UNION of two runs hours apart, because the catalogue MOVED between them: the three
+# gemini-3.5-flash-* ids were in the first and gone from the second. They stay in the
+# table. An id that has left the vendor's catalogue is still an id a stale script can
+# pass, and dropping it would shrink this table every time the vendor prunes theirs.
+# Beside them are the spellings a harness might use for the same models without the
+# vendor prefix. Building a case table from the PATTERN rather than
+# from the corpus is F5, and F5 was found the hard way: sixteen real subjects, three
+# must-match misses, on a table whose subjects had been written from the regex's own
+# vocabulary. So the corpus here is a command's output, pasted.
+#
+# The asymmetry that sets the width: a false positive costs a reviewer one edit to the
+# model id. A false negative silently voids the arm's whole justification — the receipt
+# still reads `antigravity` everywhere a reader looks — and nothing in the artifact says
+# so. This is the one rule here whose failure is invisible, so it errs wide.
+#
+# expect	subject	why
+MATCH	claude-sonnet-4-6	agy models lists it: the primary reviewer's own family
+MATCH	claude-opus-4-6-thinking	agy models lists it too; this is the default hazard
+MATCH	claude-3-5-haiku	a family member agy does not list today and might tomorrow
+MATCH	anthropic/claude-opus-4-6	vendor-prefixed spelling
+MATCH	opus-4-6	the model without the vendor prefix, which a harness may expose
+MATCH	sonnet-4-6-thinking	same, for sonnet
+MATCH	Claude-Opus-4-6	case must not matter; the check is -i
+MATCH	us.anthropic.claude-opus-4-6-v1:0	a bedrock-style id, still the same family
+NO-MATCH	gemini-3.1-pro-high	agy models: a genuinely different vendor and family
+NO-MATCH	gemini-3.1-pro-low	agy models
+NO-MATCH	gemini-3.7-flash-high	agy models
+NO-MATCH	gemini-3.7-flash-medium	agy models
+NO-MATCH	gemini-3.7-flash-low	agy models
+NO-MATCH	gemini-3.6-flash-high	agy models
+NO-MATCH	gemini-3.6-flash-medium	agy models
+NO-MATCH	gemini-3.6-flash-low	agy models
+NO-MATCH	gemini-3.5-flash-high	agy models
+NO-MATCH	gemini-3.5-flash-medium	agy models
+NO-MATCH	gemini-3.5-flash-low	agy models
+NO-MATCH	gpt-oss-120b-medium	agy models: a third vendor, also acceptable for S3.E
+NO-MATCH	google/gemini-3.1-pro	vendor-prefixed, still a second vendor
+NO-MATCH	llama-3.3-70b	not in agy's list; pinned so the rule stays about FAMILY, not about agy

@@ -1,0 +1,32 @@
+F6 -- precision of the WIDENED scope, measured on the same protocol PRREV-008 used to
+measure docs/ OUT of it. Guard: this branch. Repository: origin/main, read with
+`git show origin/main:<path>` and `git log origin/main`, never the working checkout.
+
+1. THE UNIVERSE, counted rather than quoted
+   book/src/**/*.md on origin/main ........................ 441
+   book/src/examples/*.md on origin/main .................. 153   (34.7%)
+   of those 153, appearing in book/src/SUMMARY.md ......... 153   (so every one is a
+                                                                  rendered mdBook chapter)
+   other excluded-name subtrees under book/ (tests|benches|fixtures) ... none
+   => the 34.7% is entirely the one `*/examples/*` exclusion.
+
+2. FALSE POSITIVES over the merged book, today
+   every line of all 153 current book/src/examples/ pages, through match_comparative
+   with match_target live as the suppressor:
+       files = 153   lines = 35,388   B4 fires = 0
+
+3. FALSE POSITIVES over merged history
+   every ADDED book/** line in the last 300 commits of origin/main, through the full
+   published_claim composition (surface -> comparative -> target):
+       added book/** lines = 855   B4 fires = 0
+
+4. TRUE POSITIVES
+   2, both at da069a25f, both the published claim itself. See f6-counterfactual-v3.txt.
+
+STATED AS WHAT IT IS. Zero false positives in a 300-commit window and zero across the
+whole current subtree is evidence the widening adds NO NOISE. It is not evidence of
+precision in the usual sense, because there are also no true positives inside that window:
+this repository has not published a competitor ratio to the book in 300 commits. The only
+measured true positives are the two at da069a25f, which is outside the window and is the
+commit the specification is written about. That is the same caveat PRREV-008 recorded for
+the scope it kept, and it is repeated here rather than quietly upgraded.

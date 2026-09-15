@@ -226,6 +226,10 @@ pub mod cache;
 /// Models declare required operations via `ArchConstraints`; GPU backends
 /// declare supported operations. Mismatch = refuse at load time.
 pub mod capability;
+/// FALSIFY-CB-008 (aprender#2753): "No frozen slots — all M slots produce distinct
+/// tokens per decode step (not constant)", as a checker whose discrimination controls
+/// run in the ordinary workspace `--lib` line rather than only on a nightly GPU lane.
+pub mod cb008_frozen_slots;
 /// Chat template engine for model-specific message formatting
 ///
 /// Supports ChatML (Qwen2, Yi), LLaMA2 (TinyLlama, Vicuna),
@@ -398,7 +402,8 @@ pub mod safetensors;
 /// SafeTensors CUDA inference (PMAT-116)
 ///
 /// Direct GPU loading for HuggingFace SafeTensors models.
-/// Achieves GGUF GPU parity (200+ tok/s).
+/// Targets GGUF GPU parity; the measured decode rate lives in the perf-gate
+/// receipts under `evidence/`, not in this comment.
 #[cfg(feature = "cuda")]
 pub mod safetensors_cuda;
 /// SafeTensors inference support (PAR-301)

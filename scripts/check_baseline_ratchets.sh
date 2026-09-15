@@ -57,6 +57,11 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 #           a swap, which is an append wearing the old total.
 #   count — the file holds one integer, which may only fall.
 #   keyed — lines are <path><TAB><count>; no key may rise, no key may appear.
+#   keyed2 — lines are <key> <int> <int>; NEITHER number may rise, no key may
+#           appear. The complexity ratchet records a pair per function
+#           (cyclomatic AND cognitive) and its rule is "over EITHER", so a
+#           baseline ratcheting one of them would cover half the predicate
+#           while looking complete.
 #   none  — not a ratchet by its own stated contract; the reason is the value.
 #   set-aperture
 #         — `set`, plus the ONE admission a widened guard needs (PERF-049): an
@@ -75,22 +80,42 @@ classify() { # classify <basename> -> "<kind>[<TAB>reason]", rc 1 if unclassifie
         claim_literal_baseline.txt)              printf 'set-aperture\tscripts/check_no_claim_literals.sh\n' ;;
         contract_duplicate_stem_baseline.txt)    printf 'set\n' ;;
         contract_test_binding_baseline.txt)      printf 'keyed\n' ;;
+        complexity_baseline.txt)                 printf 'keyed2\n' ;;
         fabricated_baseline_rust_sites.txt)      printf 'set\n' ;;
         hand_rolled_parsers_baseline.txt)        printf 'set\n' ;;
         hardcoded_path_shipped_baseline.txt)     printf 'count\n' ;;
         lockfile_registry_siblings_baseline.txt) printf 'set\n' ;;
-        perf_claim_citation_baseline.txt)        printf 'set\n' ;;
+        perf_claim_citation_baseline.txt)        printf 'set-aperture\tscripts/check_perf_claims_cite_receipts.sh\n' ;;
+        pipe_grep_q_baseline.txt)                printf 'count\n' ;;   # `producer | grep -q` sites under pipefail (scripts/check_no_pipe_into_grep_q.sh)
         roadmap_uncited_completion_baseline.txt) printf 'set\n' ;;
         shell_lint_baseline.txt)                 printf 'count\n' ;;
+        cb200_baseline.txt)                      printf 'count\n' ;;   # mirrors .pmat-gates.toml [tdg] baseline (PMAT-937)
         test_fixture_path_baseline.txt)          printf 'count\n' ;;
         tracked_ignored_baseline.txt)            printf 'count\n' ;;
         unwired_guards_baseline.txt)             printf 'set\n' ;;
+        # NOT a ratchet either, and for the same reason one level along: this
+        # registry is DERIVED from the test sources on every run
+        # (scripts/check_tree_reader_tests.sh) and must equal that derivation
+        # EXACTLY — a stale line FAILS as drift, a missing one FAILS as drift,
+        # and the set grows whenever someone writes a test that reads the tree.
+        # Freezing it against main would forbid adding such a test; the guard
+        # that owns it already fails in both directions (BSE-17, PMAT-1077).
+        # The UNWIRED half: tree-reader targets no workflow runs. Same kind of
+        # file, same reason it is not a ratchet — it is an exact match against
+        # the sources, and drift FAILS in both directions in its own guard.
+        tree_reader_unwired_baseline.txt)
+            printf 'none\tderived ledger of tree-reader targets no lane runs (exact-match against the sources, scripts/check_tree_reader_tests.sh)\n' ;;
+        tree_reader_tests.txt)
+            printf 'none	derived registry, exact-match against the sources (drift FAILS both ways, scripts/check_tree_reader_tests.sh)
+' ;;
         # NOT a ratchet, and deliberately so. This file MODELS INTENT: its own
         # header says the declared set must match the OBSERVED set EXACTLY, an
         # entry whose duplicate no longer exists FAILS as stale, and adding a
         # line is a reviewed claim that two packages must ship one bin name.
         # Freezing it against main would forbid renaming a crate. Growth here
         # is a decision, not a leak — the distinction this guard exists to keep.
+        guards_nightly_manifest.txt)
+            printf 'none\tledger of steps moved to guards-nightly.yml; exact-match against that workflow, a name that is not a step FAILS there\n' ;;
         duplicate_bin_names_allowlist.txt)
             printf 'none\tintent model, exact-match against the observed set (stale entries FAIL)\n' ;;
         *) return 1 ;;
@@ -183,6 +208,25 @@ if [ "${1:-}" = "--self-test" ] || [ "${1:-}" = "--selftest" ]; then
     _br_cmp_keyed "$TD/kv_base" "$TD/kv_lower";  say_row 'keyed one key lowered'         0 $?
     _br_cmp_keyed "$TD/kv_base" "$TD/kv_drop";   say_row 'keyed one key dropped'         0 $?
     _br_cmp_keyed "$TD/kv_base" "$TD/kv_swap";   say_row 'keyed raise + deeper fall'     1 $?
+
+    # -- keyed2: the same rule over a PAIR, and the rows that matter are the
+    #    ones a single-number comparator would pass: the second integer rising
+    #    on its own, and the second rising while the first falls.
+    printf 'a 30 20\nb 10 10\n'        > "$TD/k2_base"
+    printf '# hdr\na 30 20\nb 10 10\n' > "$TD/k2_same"
+    printf 'a 31 20\nb 10 10\n'        > "$TD/k2_raise1"
+    printf 'a 30 21\nb 10 10\n'        > "$TD/k2_raise2"
+    printf 'a 29 21\nb 10 10\n'        > "$TD/k2_trade"
+    printf 'a 29 19\nb 10 10\n'        > "$TD/k2_lower"
+    printf 'a 30 20\nb 10 10\nc 1 1\n' > "$TD/k2_newkey"
+    printf 'a 30 20\n'                  > "$TD/k2_drop"
+    _br_cmp_keyed2 "$TD/k2_base" "$TD/k2_same";   say_row 'keyed2 unchanged (header added)'   0 $?
+    _br_cmp_keyed2 "$TD/k2_base" "$TD/k2_raise1"; say_row 'keyed2 first integer raised'       1 $?
+    _br_cmp_keyed2 "$TD/k2_base" "$TD/k2_raise2"; say_row 'keyed2 second integer raised'      1 $?
+    _br_cmp_keyed2 "$TD/k2_base" "$TD/k2_trade";  say_row 'keyed2 second up while first down' 1 $?
+    _br_cmp_keyed2 "$TD/k2_base" "$TD/k2_lower";  say_row 'keyed2 both integers lowered'      0 $?
+    _br_cmp_keyed2 "$TD/k2_base" "$TD/k2_newkey"; say_row 'keyed2 new key appears'            1 $?
+    _br_cmp_keyed2 "$TD/k2_base" "$TD/k2_drop";   say_row 'keyed2 one key dropped'            0 $?
 
     # -- THE COMPARAND RESOLVER, against a scratch repository. The branch that
     #    must NEVER be taken is "fall back to comparing this branch against
@@ -428,7 +472,7 @@ if [ "${1:-}" = "--self-test" ] || [ "${1:-}" = "--selftest" ]; then
         printf '\nSELF-TEST FAILED\n'
         exit 1
     fi
-    printf 'PASS  case table only: %s rows (set, count, keyed, comparand resolver,\n' "$rows"
+    printf 'PASS  case table only: %s rows (set, count, keyed, keyed2, comparand resolver,\n' "$rows"
     printf '      end-to-end, classification totality). NO baseline in this tree was\n'
     printf '      compared — run with no arguments for that.\n'
     exit 0
@@ -441,13 +485,22 @@ rc=0
 n_total=0
 n_ratchet=0
 n_none=0
+n_probed=0
+n_noheader=0
+# Baselines that do not yet name an instrument. MAY ONLY FALL. Wired at 2;
+# aprender#3214 then landed the `# tool_version=bashrs 7.0.1` header on
+# shell_lint_baseline.txt, so it is 1. The remaining one is
+# hardcoded_path_shipped_baseline.txt -- the very file whose 277-vs-317 drift
+# across pmat 3.31.0 -> 3.37.0 is quoted in lib_baseline_ratchet.sh as the
+# reason this header exists at all.
+NOHEADER_CEILING=1
 
 while IFS= read -r f; do
     [ -n "$f" ] || continue
     n_total=$((n_total + 1))
     if ! entry=$(classify "$f"); then
         printf 'FAIL  %s is not classified.\n' "scripts/$f"
-        printf '      Every baseline is either shrink-only (set / count / keyed) or is\n'
+        printf '      Every baseline is either shrink-only (set / count / keyed / keyed2) or is\n'
         printf '      NOT a ratchet and says why. An unclassified file is neither, and\n'
         printf '      "no rule" is how a baseline arrives that nothing ever compares.\n'
         printf '      Add it to classify() in %s.\n' "$(basename "$0")"
@@ -461,6 +514,28 @@ while IFS= read -r f; do
         continue
     fi
     n_ratchet=$((n_ratchet + 1))
+    # THE INSTRUMENT, BEFORE THE COMPARISON. lib_baseline_ratchet.sh has shipped
+    # baseline_require_tool_version since BSE-10a and NOTHING has ever called it
+    # (aprender#3217) -- a facility with a self-test and no caller. It is in
+    # scope here already, because this file sources that library.
+    #
+    # It matters because a ratchet compares (tree, instrument) and a count that
+    # moved because the ANALYSER moved is not a regression. PMAT-1059 measured
+    # 277 vs 317 on an UNCHANGED tree when the fleet went 3.31.0 -> 3.37.0.
+    # Comparing two instruments' verdicts is the defect; refuse before comparing.
+    tv_out=$(baseline_require_tool_version "scripts/$f" 2>&1); tv_rc=$?
+    case "$tv_rc" in
+        0)  if ! grep -qE '^#[[:space:]]*tool_version=none' "$REPO_ROOT/scripts/$f" 2>/dev/null; then
+                n_probed=$((n_probed + 1))
+            fi ;;
+        1)  n_noheader=$((n_noheader + 1))
+            printf 'REPORT   %-44s names no instrument yet (# tool_version=)\n' "scripts/$f" ;;
+        *)  printf 'FAIL  %s\n' "$tv_out"
+            printf '      Re-measure and restamp this baseline under the instrument the\n'
+            printf '      FLEET runs, or converge the box. Two analysers, two verdicts.\n'
+            rc=1
+            continue ;;
+    esac
     baseline_ratchet_check "$REPO_ROOT" "scripts/$f" "$kind" "${entry#*$'\t'}" || rc=1
 done <<< "$(universe)"
 
@@ -474,6 +549,24 @@ fi
 
 printf '\n%s baseline file(s): %s ratcheted, %s exempt with a stated reason\n' \
     "$n_total" "$n_ratchet" "$n_none"
+printf '%s ratchet baseline(s) name a versioned instrument and it was PROBED; %s name none yet (ceiling %s)\n' \
+    "$n_probed" "$n_noheader" "$NOHEADER_CEILING"
+# VACUITY FLOOR. If nothing named a real analyser, baseline_require_tool_version
+# ran over `none` rows only and this check measured no instrument at all -- which
+# is the state aprender#3217 describes, just one level up.
+if [ "$n_probed" -lt 1 ]; then
+    printf 'FAIL (vacuity): no ratchet baseline named a versioned instrument, so no\n'
+    printf '      analyser version was compared. A tool_version check that probes\n'
+    printf '      nothing is the shape this wiring exists to remove.\n'
+    rc=1
+fi
+if [ "$n_noheader" -gt "$NOHEADER_CEILING" ]; then
+    printf 'FAIL  %s ratchet baseline(s) name no instrument, ceiling %s. A new baseline\n' \
+        "$n_noheader" "$NOHEADER_CEILING"
+    printf '      must carry "# tool_version=<tool> <version>" (or "none" with the\n'
+    printf '      reason). Do not raise the ceiling.\n'
+    rc=1
+fi
 if [ "$rc" -ne 0 ]; then
     printf 'FAIL  see rows above (#2706 PERF-028).\n'
 else

@@ -1,0 +1,66 @@
+PRREV-008 — the guard AT HEAD (1e09ca749), run against the seven fixtures PRREV-008 adds.
+
+Spec S9 step 7 is the acceptance test for the design: "If the skill would not have
+caught [the three named cases], the design is wrong and changes before it is enabled."
+It caught one of three. These are the RED-turning mutations for the four fixes, run in
+the widened scope rather than inherited from the earlier proof — extending a guard's
+SCOPE requires re-mutating in the new scope, because the old proof does not transfer.
+
+  guard:   git show 1e09ca749:scripts/check_pr_review_receipt.sh
+  repo:    tests/fixtures/pr-review/make-fixture-repo.sh (heads G1, S1, P1 added here)
+  key:     tests/fixtures/pr-review/keys/pr-review-test.pub
+
+  fixture                                        at HEAD   with fix   defect
+  ---------------------------------------------- --------  ---------  -----------------
+  row-16-comparative-claim-only-in-the-diff       ACCEPT    REJECT B4  F1  B4 never read the diff
+  row-17-comparative-claim-recorded               ACCEPT    ACCEPT     F1  discrimination: the honest path stays open
+  row-18-cuda-consulted-no-queries                ACCEPT    REJECT B1  F2  cuda emptiness unchecked
+  row-19-pmat-not-triggered-on-a-code-diff        ACCEPT    REJECT B1  F3  S3.A is unconditional
+  row-20-mutation-not-triggered-on-a-code-diff    ACCEPT    REJECT B1  F2  mutation trigger not recomputed
+  row-21-crux-not-triggered-on-a-claim-diff       ACCEPT    REJECT B1  F2  crux trigger not recomputed
+  row-22-printed-ratio-not-the-quoted-one         ACCEPT    REJECT B4  F1  scope: the printed line fires, the quoted one does not
+
+SIX RED-turning mutations and ONE that must stay green. Row 17 is the half that says the
+fix discriminates: identical diff, identical published ratio, and the only difference is
+that the comparator is recorded. Without it, "block every PR that names a competitor"
+would read as a pass. Row 22 discriminates inside a single file: the merely-quoted ratio
+sits two lines ABOVE the published one, and the guard rejects on the first match, so a
+reason naming the format! line is the proof that the comment was skipped.
+
+Transcript, verbatim:
+
+$ HEAD-guard row-16-comparative-claim-only-in-the-diff
+  ACCEPT  row-16-comparative-claim-only-in-the-diff
+$ HEAD-guard row-17-comparative-claim-recorded
+  ACCEPT  row-17-comparative-claim-recorded
+$ HEAD-guard row-18-cuda-consulted-no-queries
+  ACCEPT  row-18-cuda-consulted-no-queries
+$ HEAD-guard row-19-pmat-not-triggered-on-a-code-diff
+  ACCEPT  row-19-pmat-not-triggered-on-a-code-diff
+$ HEAD-guard row-20-mutation-not-triggered-on-a-code-diff
+  ACCEPT  row-20-mutation-not-triggered-on-a-code-diff
+$ HEAD-guard row-21-crux-not-triggered-on-a-claim-diff
+  ACCEPT  row-21-crux-not-triggered-on-a-claim-diff
+$ HEAD-guard row-22-printed-ratio-not-the-quoted-one
+  ACCEPT  row-22-printed-ratio-not-the-quoted-one
+
+$ fixed-guard row-16-comparative-claim-only-in-the-diff
+  REJECT  row-16-comparative-claim-only-in-the-diff  [B4]
+      the diff publishes a comparative claim on a user-facing surface -- book/src/tools/apr-cli.md: apr sustains 2.9
+$ fixed-guard row-17-comparative-claim-recorded
+  ACCEPT  row-17-comparative-claim-recorded
+$ fixed-guard row-18-cuda-consulted-no-queries
+  REJECT  row-18-cuda-consulted-no-queries  [B1]
+      cuda.status is consulted with queries: []; a consultation that asked nothing is DEGRADED, not clean, exactly a
+$ fixed-guard row-19-pmat-not-triggered-on-a-code-diff
+  REJECT  row-19-pmat-not-triggered-on-a-code-diff  [B1]
+      consultations.pmat is not-triggered, but S3.A makes pmat unconditional on every PR; an unmeasured CB-200 is Sk
+$ fixed-guard row-20-mutation-not-triggered-on-a-code-diff
+  REJECT  row-20-mutation-not-triggered-on-a-code-diff  [B1]
+      consultations.mutation is not-triggered but S3.D triggers on this diff (crates/aprender-core/src/fused.rs); on
+$ fixed-guard row-21-crux-not-triggered-on-a-claim-diff
+  REJECT  row-21-crux-not-triggered-on-a-claim-diff  [B1]
+      consultations.crux is not-triggered but its S3.C trigger fires on this diff (comparative claim in book/src/too
+$ fixed-guard row-22-printed-ratio-not-the-quoted-one
+  REJECT  row-22-printed-ratio-not-the-quoted-one  [B4]
+      the diff publishes a comparative claim on a user-facing surface -- crates/aprender-core/src/banner.rs:     for

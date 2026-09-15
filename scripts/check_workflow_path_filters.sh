@@ -103,7 +103,7 @@ check_workflow() {
     [ -z "$line" ] && continue
     case "$line" in "${name}|"*) ;; *) continue ;; esac
     req="${line#*|}"
-    if ! printf '%s\n' "$push" | grep -Fxq "$req" || ! printf '%s\n' "$pr" | grep -Fxq "$req"; then
+    if ! grep -Fxq "$req" <<< "$push" || ! grep -Fxq "$req" <<< "$pr"; then
       printf '\nFAIL %s: runs code from `%s` but does not watch it in BOTH filters.\n' "$name" "$req"
       printf '     A regression in that source breaks this gate without triggering it.\n'
       fail=1

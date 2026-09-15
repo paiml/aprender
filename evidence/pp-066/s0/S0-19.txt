@@ -1,0 +1,50 @@
+$ grep -rn 'minisign\|ssh-keygen -Y\|signify' scripts/ .github/workflows/ | wc -l; head
+43
+.github/workflows/ci.yml:1640:  # uninstalled interpreter, plus minisign. The spec agrees — §9 step 7 makes
+.github/workflows/ci.yml:1755:      # The guard REFUSES to run without minisign, check-jsonschema, bats and jq:
+.github/workflows/ci.yml:1957:      # (base64 of the minisign secret-key FILE; §4.3's `minisign -S -s` takes a
+.github/workflows/ci.yml:1959:      # this repository and never will be. Rotation is `minisign -G -W`, replace
+.github/workflows/ci.yml:2266:  # This job is Arm 4 and nothing else: text, minisign, and one `git merge-base`. It is
+scripts/check_pr_review_receipt.sh:44:#   PR_REVIEW_PUBKEY   minisign public key (default: .github/pr-review.pub)
+scripts/check_pr_review_receipt.sh:336:for t in git jq sha256sum check-jsonschema minisign; do
+scripts/check_pr_review_receipt.sh:478:  if ! sout=$(minisign -V -m "$rcpt" -p "$PUBKEY" 2>&1); then
+scripts/install_pr_review_tools.sh:81:    *) die_env "no pinned minisign build for machine '$ARCH' (x86_64 and aarch64 only)." ;;
+scripts/install_pr_review_tools.sh:88:# --- minisign --------------------------------------------------------------
+scripts/install_pr_review_tools.sh:89:if [ ! -x "$BINDIR/minisign" ]; then
+scripts/install_pr_review_tools.sh:90:    url="https://github.com/jedisct1/minisign/releases/download/${MINISIGN_VERSION}/minisign-${MINISIGN_VERSION}
+scripts/install_pr_review_tools.sh:91:    curl -sfL --retry 3 --max-time 120 -o "$WORK/minisign.tar.gz" "$url" \
+scripts/install_pr_review_tools.sh:94:    got=$(sha256sum "$WORK/minisign.tar.gz")
+$ ls .github/*.pub
+.github/pr-review.pub
+$ grep -n "PP-21" scripts/*.sh | head
+scripts/perf_gate.sh:124:# block -- two rules that apply FROM the first conformant receipt (PP-21,
+scripts/perf_gate.sh:883:  # THE STALENESS ARM (PP-21) AND THE ANCESTRY ARM (PP-18).
+scripts/perf_gate.sh:912:    echo "REPORT ArmC-sig historical receipt (schema_version<3) cited for an UNMEASURED cell: no conformant receipt
+scripts/perf_gate.sh:1645:  # ---- §4.9.1 / PP-21 / PP-18: signature, staleness, ancestry --------------
+scripts/perf_receipt_sign.sh:107:  # names wherever it is verified (PP-18/PP-21).
+$ grep -n "minisign\|ssh-keygen\|\.pub" scripts/perf_receipt_sign.sh | head
+$ sed -n 1,60p scripts/perf_receipt_sign.sh | grep -nE "sign|key|hmac|sha|ed25519|ssh"
+2:# perf_receipt_sign.sh — the HOST half of APR-PERF-GATE-001 v2.2 section 4.9.1.
+4:#   scripts/perf_receipt_sign.sh --receipt R.json --key-id ID [--keyring K] [--out S.json]
+5:#   scripts/perf_receipt_sign.sh --selftest
+11:#   Per `APR-QUALITY-001` v1.8 section 0.7 J3: hosts push signed receipts
+12:#   (forjar cron), and the blocking job runs anywhere and verifies signature +
+34:# a design:
+36:#   1. Key material. One 256-bit key per host, `key_id` = `<host>-<serial>`
+38:#      one-line keyring at `/etc/apr/perf-receipt.key` mode 0400 owned by the
+40:#      a new serial, never an edit in place: `load_keyring` refuses a duplicate
+41:#      `key_id` precisely so a rotated key cannot keep validating silently.
+43:#      runs the section 4.4 harness, then this script, then pushes the signed
+49:#      `intel-clean-room-{1..16}`, and shares the clean-room concurrency group
+54:# The half that IS implemented and proven here is signing and verification.
+59:# It will not sign a receipt for a host its key is not scoped to, it will not
+60:# invent a `commit`, and it will not mint a key when the keyring is missing.
+61:# Each of those would produce a document indistinguishable from a real one,
+$ grep -nE "openssl|ssh-keygen|minisign|sha256sum|hmac" scripts/perf_receipt_sign.sh
+37:#      (`gx10-2026a`). Generate with `openssl rand -hex 32`. The host gets a
+93:  # come from `openssl rand -hex 32` and live only on the hosts.
+$ grep -nE "hmac|sha256|digest|keyring" scripts/perf_receipt_sign.sh | head -8
+73:  local receipt="$1" key_id="$2" keyring="$3" out="$4"
+200:  local receipt="" key_id="" keyring="$DEFAULT_KEYRING" out=""
+206:      --keyring) keyring="$2"; shift 2 ;;
+$ pmat query --literal 'PP-21' --path scripts

@@ -1,0 +1,32 @@
+{
+  "spec": "APR-RELEASE-001 §5 P0·Pack",
+  "at": "2026-09-12T17:00:45Z",
+  "sha": "81da9bc63",
+  "intel_busy": 9,
+  "intel_online": 16,
+  "gx10_busy": 0,
+  "gx10_online": 6,
+  "yoga_busy": 3,
+  "yoga_online": 5,
+  "aprender_runs_live": 9,
+  "aprender_runs_queued": 0,
+  "intel_pressure": true,
+  "intel_pressure_evidence": "merge-group workspace-test for #3145 on intel-clean-room-8 and for #3068 on intel-clean-room-12",
+  "idle_gpu_runners": {
+    "gx10": [
+      "gx10-blackwell",
+      "gx10-build",
+      "gx10-eph",
+      "gx10-pool1",
+      "gx10-pool2",
+      "gx10-pool3"
+    ],
+    "yoga": [
+      "yoga-eph",
+      "yoga-gpu"
+    ]
+  },
+  "verdict": "P0-UNDERUTILIZED",
+  "cause": "no queued job can land on gx10: workspace-test pinned X64 (#3139 blocked by #3186, fix #3187 in PR CI); the short pool jobs of group #3068 had already finished on gx10-pool1..3/gx10-build",
+  "source": "gh api --paginate orgs/paiml/actions/runners; gh run list --status queued/in_progress; gh api .../runs/<id>/jobs"
+}

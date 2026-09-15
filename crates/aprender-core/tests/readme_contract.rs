@@ -127,15 +127,31 @@ fn test_readme_crate_count_matches_workspace() {
         "FALSIFY-README-005: parsed {crate_count} packages from cargo metadata — parser is wrong"
     );
 
-    let expected_row = format!("| Workspace crates | **{crate_count}** workspace crates |");
+    // G-11 (PMAT-1062): the README's counts are a RATCHET, not an equality. A row PR
+    // that adds a crate may leave the README LAGGING (claimed < measured); it may never
+    // OVERSTATE. The orchestrator docs commit regenerates the counts after each merge
+    // and verifies them exactly with `scripts/check_readme_claims.sh --exact`.
+    let claimed = number_before(&readme, "** workspace crates |")
+        .expect("FALSIFY-README-005: README claims-table row `| Workspace crates | **N** workspace crates |` is missing");
     assert!(
-        readme.contains(&expected_row),
-        "FALSIFY-README-005: README claims-table row does not match cargo.\n\
-         expected: {expected_row}\n\
-         `cargo metadata --no-deps` reports {crate_count} workspace packages. Note that\n\
-         `ls crates/` is NOT the same number — some crates/ entries are `exclude`d in the\n\
-         root Cargo.toml and one has no Cargo.toml at all. A directory is not a crate."
+        claimed <= crate_count,
+        "FALSIFY-README-005: README claims {claimed} workspace crates but `cargo metadata --no-deps`\n\
+         reports {crate_count} — the README may lag, never overstate. Note that `ls crates/` is NOT\n\
+         the same number — some crates/ entries are `exclude`d in the root Cargo.toml and one has\n\
+         no Cargo.toml at all. A directory is not a crate."
     );
+}
+
+/// The number immediately before `suffix` in `text` (digits only; markdown bold `**`
+/// between the digits and the suffix is part of the suffix the caller passes).
+fn number_before(text: &str, suffix: &str) -> Option<usize> {
+    let idx = text.find(suffix)?;
+    let digits: String = text[..idx]
+        .chars()
+        .rev()
+        .take_while(char::is_ascii_digit)
+        .collect();
+    digits.chars().rev().collect::<String>().parse().ok()
 }
 
 /// FALSIFY-README-007: Contract count in README matches `find contracts/ -name '*.yaml'`.
@@ -168,11 +184,21 @@ fn test_readme_contract_count_matches_workspace() {
     }
 
     let contract_count = count_yaml(&contracts_dir);
-    let count_str = format!("**{contract_count}** provable contracts");
+    // G-11 (PMAT-1062): lag allowed, overstatement RED (see FALSIFY-README-005 above).
+    // BSE-03 phase A (PMAT-1068): the number is DERIVED and sits inside the
+    // generated CONTRACT_COUNT block, so the claim reads
+    // `**<!-- CONTRACT_COUNT_START -->N<!-- CONTRACT_COUNT_END -->** provable contracts`.
+    // Strip the markers before parsing; the universe below is the generator's
+    // (`find contracts/ -name '*.yaml'`), unchanged.
+    let readme = readme
+        .replace("<!-- CONTRACT_COUNT_START -->", "")
+        .replace("<!-- CONTRACT_COUNT_END -->", "");
+    let claimed = number_before(&readme, "** provable contracts")
+        .expect("FALSIFY-README-007: README lacks a `**M** provable contracts` claim");
     assert!(
-        readme.contains(&count_str),
-        "FALSIFY-README-007: README lacks `**{contract_count}** provable contracts` \
-         matching `find contracts/ -name '*.yaml'` — update the README claims table row"
+        claimed <= contract_count,
+        "FALSIFY-README-007: README claims {claimed} provable contracts but `find contracts/ -name '*.yaml'` \
+         counts {contract_count} — the README may lag, never overstate; the orchestrator docs commit regenerates it"
     );
 }
 
@@ -436,7 +462,7 @@ fn test_beats_md_publishes_every_contract_measurement() {
 // ---------------------------------------------------------------------------
 
 /// FALSIFY-DOCS-CLAUDE-001: every repo-relative source path cited in CLAUDE.md
-/// (and docs/BEATS.md) resolves on disk.
+/// (and docs/BEATS.md, and docs/specifications/06x-release-schedule.md) resolves on disk.
 ///
 /// CLAUDE.md advertised six pre-monorepo paths for months —
 /// `realizar/src/inference_trace.rs`, `realizar/src/quantize/fused_gate_up.rs`,
@@ -450,7 +476,14 @@ fn test_beats_md_publishes_every_contract_measurement() {
 /// metacharacters, and ends in a source extension. A path that legitimately is
 /// not in the tree (e.g. the gitignored `.cargo/config.toml`) is marked
 /// `[gitignored]` on the same line — information the reader wants anyway.
-const DOCS_WITH_PATHS: [&str; 2] = ["CLAUDE.md", "docs/BEATS.md"];
+const DOCS_WITH_PATHS: [&str; 3] = [
+    "CLAUDE.md",
+    "docs/BEATS.md",
+    // PMAT-1097: the 06x release schedule cites the workflows, scripts and
+    // contracts its rows act on; an owed (not yet existing) artifact is written
+    // WITHOUT backticks there, so a backticked path is a claim this gate checks.
+    "docs/specifications/06x-release-schedule.md",
+];
 
 /// Does this backticked token look like a repo-relative source path we can check?
 fn looks_like_repo_path(token: &str) -> bool {

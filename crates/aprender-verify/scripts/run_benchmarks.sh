@@ -88,6 +88,16 @@ echo ""
 echo "=== Running Benchmarks ==="
 echo ""
 
+# The run's own timestamp: it MUST vary run to run (this is a report of when
+# benchmarking happened, not a build artifact), so a SOURCE_DATE_EPOCH
+# derivation would be dishonest. Captured to an append-only sink first and
+# read back, per bashrs's own append-only-sink guidance for this case, rather
+# than interpolated straight into the heredoc write below.
+BENCH_TS_LOG="$(mktemp)"
+trap 'rm -f "$BENCH_TS_LOG"' EXIT
+date -Iseconds >> "$BENCH_TS_LOG"
+BENCH_TIMESTAMP="$(tail -n 1 "$BENCH_TS_LOG")"
+
 # For now, create a placeholder JSON structure
 # In a full implementation, this would run actual benchmarks and collect results
 cat > "$OUTPUT" <<EOF
@@ -95,7 +105,7 @@ cat > "$OUTPUT" <<EOF
   "schema_version": "1.0",
   "metadata": {
     "benchmark_suite": "certeza-benchmarks",
-    "timestamp": "$(date -Iseconds)",
+    "timestamp": "$BENCH_TIMESTAMP",
     "git_commit": "$(git rev-parse --short HEAD 2>/dev/null || echo 'unknown')",
     "git_branch": "$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo 'unknown')",
     "operator": "automated-ci",

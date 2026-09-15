@@ -86,7 +86,7 @@ test_gentle_chaos() {
     output=$(renacer --chaos gentle -c -- "$BINARY" suggest "git " --model "$MODEL" 2>&1)
 
     # Check for anomalies
-    if echo "$output" | grep -q "ANOMALY"; then
+    if grep -q "ANOMALY" <<< "$output" ; then
         log_error "Gentle chaos: Anomalies detected!"
         echo "$output"
         return 1
@@ -104,7 +104,7 @@ test_memory_pressure() {
     output=$(renacer --chaos-memory-limit 64M -c -- "$BINARY" suggest "cargo " --model "$MODEL" 2>&1)
 
     # Check process completed without OOM
-    if echo "$output" | grep -q "killed\|OOM\|Cannot allocate"; then
+    if grep -q "killed\|OOM\|Cannot allocate" <<< "$output" ; then
         log_error "Memory pressure: Process killed due to memory limit!"
         echo "$output"
         return 1
@@ -170,7 +170,7 @@ generate_report() {
     cat > "$RESULTS_DIR/report.md" << EOF
 # Chaos Test Report
 
-Generated: $(date -Iseconds)
+Generated: $(date -d "@${SOURCE_DATE_EPOCH:-$(date +%s)}" -Iseconds)
 Binary: $BINARY
 Model: $MODEL
 

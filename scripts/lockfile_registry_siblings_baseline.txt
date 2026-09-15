@@ -1,7 +1,2 @@
-aprender
+# tool_version=none (measured by cargo metadata + grep over Cargo.lock; not a versioned analyser)
 batuta-common
-provable-contracts-macros
-realizar
-renacer-core
-trueno
-trueno-quant

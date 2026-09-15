@@ -144,6 +144,12 @@ pub struct Usage {
 }
 
 /// A single Server-Sent Event chunk for streaming responses.
+///
+/// PP-27: an OpenAI-compatible stream ends with a chunk carrying `usage`, and
+/// declares on its FIRST chunk how it was produced. Both are `Option` because
+/// they belong to one chunk each — `stream_mode` to the first, `usage` to the
+/// last — and `skip_serializing_if` keeps them off the content chunks in
+/// between rather than repeating a null on every frame.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BancoChatChunk {
     pub id: String,
@@ -151,6 +157,20 @@ pub struct BancoChatChunk {
     pub created: u64,
     pub model: String,
     pub choices: Vec<ChatChunkChoice>,
+    /// PP-27 — how this stream was produced (`"live"` or `"replayed"`),
+    /// declared on the FIRST chunk. Banco declares `"replayed"`: it generates
+    /// the whole completion before writing the first frame, so a client's
+    /// inter-token gaps here measure the SSE writer and not the model.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stream_mode: Option<String>,
+    /// PP-27 — token counts, on the TERMINAL chunk.
+    ///
+    /// Mandatory for any client that measures this stream: a chunk count is
+    /// not a token count (a frame carries whatever the server chose to flush),
+    /// so a stream ending at `[DONE]` with no `usage` is refused outright by
+    /// `jugar_probar`'s `LlmClient` rather than counted from frames.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub usage: Option<Usage>,
 }
 
 /// A single choice within a streaming chunk.

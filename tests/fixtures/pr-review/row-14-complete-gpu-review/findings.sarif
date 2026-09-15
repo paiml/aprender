@@ -1,0 +1,106 @@
+{
+  "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "complexity_delta",
+          "level": "warning",
+          "message": {
+            "text": "fixture_kernel launch wrapper rose from 6 to 14 cyclomatic."
+          },
+          "properties": {
+            "grounding": "measured",
+            "source": "pmat analyze complexity --format json",
+            "failure_scenario": "The launch wrapper grows a branch nothing covers, and the untested arm is the one that skips the stream sync.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "nvidia-cuda-docs"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "device_behaviour_claim",
+          "level": "error",
+          "message": {
+            "text": "The PR asserts kernels on separate streams are implicitly ordered; the documentation says the opposite."
+          },
+          "properties": {
+            "grounding": "cited",
+            "source": "nvidia-cuda-docs: CUDA C++ Programming Guide, Streams",
+            "excerpt": "Operations in different, non-default streams may execute concurrently; there is no implicit synchronization between them.",
+            "excerpt_sha256": "1cf90fcae10a3ce5b53a2acde06d457dd53a840fbf6943e26de778d3a4b2775e",
+            "failure_scenario": "The second kernel reads the output of the first kernel before it is written, producing a race that only appears under load.",
+            "precision_class": "blocking"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "crux"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "comparative_claim",
+          "level": "note",
+          "message": {
+            "text": "Benchmark output records 1.21x llama.cpp on aarch64 Q4_K; the comparator command, version and artifact hash are recorded."
+          },
+          "properties": {
+            "grounding": "measured",
+            "source": "evidence/bench/2026-08-30-gb10/comparator.log",
+            "failure_scenario": "An unreproducible ratio reaches the book and a reader measures parity instead.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "cargo-mutants"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": []
+    }
+  ]
+}

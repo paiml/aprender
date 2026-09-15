@@ -1,0 +1,61 @@
+{
+  "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": { "driver": { "name": "pmat", "informationUri": "https://github.com/paiml/pmat" } },
+      "invocations": [ { "executionSuccessful": true, "toolExecutionNotifications": [] } ],
+      "results": [
+        {
+          "ruleId": "duplication_hits",
+          "level": "warning",
+          "message": { "text": "generic_fused_gate_up_matvec_into already implements this fused gate+up path." },
+          "locations": [
+            { "physicalLocation": {
+                "artifactLocation": { "uri": "crates/aprender-serve/src/quantize/fused_gate_up.rs" },
+                "region": { "startLine": 118 } } }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "source": "pmat query \"fused gate up matvec\" --limit 5",
+            "failure_scenario": "Merging re-implements an existing fused kernel; the two diverge and one silently keeps the pre-LAYOUT-001 column-major order.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": { "driver": { "name": "nvidia-cuda-docs" } },
+      "invocations": [
+        { "executionSuccessful": false,
+          "toolExecutionNotifications": [
+            { "level": "error",
+              "message": { "text": "MCP server nvidia-cuda-docs: ConnectionRefused. Consultation could not be performed; verdict DEGRADED." } }
+          ] }
+      ],
+      "results": []
+    },
+    {
+      "tool": { "driver": { "name": "crux" } },
+      "invocations": [ { "executionSuccessful": true, "toolExecutionNotifications": [] } ],
+      "results": [
+        {
+          "ruleId": "unverified_comparative_claim",
+          "level": "error",
+          "message": { "text": "PR body claims \"2.93x Ollama\" with no comparator command, version, env hash, or artifact hash." },
+          "properties": {
+            "grounding": "asserted",
+            "source": "PR body line 14",
+            "failure_scenario": "The published book repeats a ratio produced by a harness that never executed the comparator; a reader reproduces it and gets parity.",
+            "precision_class": "blocking"
+          }
+        }
+      ]
+    },
+    {
+      "tool": { "driver": { "name": "cargo-mutants" } },
+      "invocations": [ { "executionSuccessful": true, "toolExecutionNotifications": [] } ],
+      "results": []
+    }
+  ]
+}

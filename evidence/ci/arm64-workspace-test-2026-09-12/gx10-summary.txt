@@ -1,0 +1,59 @@
+start=20260912T082818Z head=a6148ab72 host=gx10-a5b5
+touched=134
+tier_rc=0
+tier=quick
+check_workspace=1
+reason=pull_request: selection of 32 crate(s) exceeds cap (3) -> full workspace check -- rule (i): the touched crate(s) run their tests and ONE cargo check --workspace --all-targets covers every reverse dependent at compile level; plus 102 tree-reader target(s) from scripts/tree_reader_tests.txt
+targets_n=102
+clauses=101
+nextest_rc=0 nextest_secs=402
+     Summary [ 245.864s] 10325 tests run: 10325 passed (1 slow), 54949 skipped
+check_rc=101 check_secs=97
+      3 warning: unused variable: `backend`
+      3 warning: unused import: `aprender::prelude`
+      2 error: the feature named `fma` is not valid for this target
+      2 error: the feature named `avx2` is not valid for this target
+      1 warning: unused variable: `v`
+      1 warning: unused variable: `nr_block`
+      1 warning: unused variable: `mr_block`
+      1 warning: unused variable: `marker_with_page`
+      1 warning: unused variable: `expected`
+      1 warning: unused variable: `d_model`
+      1 warning: unused return value of `embeddings::BertEmbeddings::forward` that must be used
+      1 warning: unused import: `super::super::*`
+      1 warning: unused import: `std::path::Path`
+      1 warning: unused import: `std::arch::is_x86_feature_detected`
+      1 warning: unused imports: `QuantType` and `quantize`
+      1 warning: unused imports: `OperationType`, `select_backend_for_operation`, and `select_best_available_backend`
+      1 warning: unused import: `crate::nn::Module`
+      1 warning: unused import: `crate::format::quantize::BLOCK_SIZE`
+      1 warning: unused import: `crate::blis::*`
+      1 warning: unused import: `Backend`
+end=20260912T083700Z total_secs=499
+DONE
+step1_crates=9
+step1_rc=100 step1_secs=638
+  TRY 1 FAIL [   0.142s] (───────────) aprender-compute blis::tests::validate_and_parallel::test_gemm_parallel_shared_b_256
+  TRY 2 FAIL [   0.143s] (───────────) aprender-compute blis::tests::validate_and_parallel::test_gemm_parallel_shared_b_256
+  TRY 3 FAIL [   0.143s] ( 8696/59362) aprender-compute blis::tests::validate_and_parallel::test_gemm_parallel_shared_b_256
+  TRY 1 FAIL [   0.029s] (───────────) aprender-compute::falsification_tests section_a::test_a013_neon_speedup
+  TRY 2 FAIL [   0.027s] (───────────) aprender-compute::falsification_tests section_a::test_a013_neon_speedup
+  TRY 3 FAIL [   0.019s] (11614/59362) aprender-compute::falsification_tests section_a::test_a013_neon_speedup
+  TRY 1 FAIL [   0.003s] (───────────) aprender-compute::fma_correctness_f017 f022_fma_dot_product_accuracy
+  TRY 2 FAIL [   0.004s] (───────────) aprender-compute::fma_correctness_f017 f022_fma_dot_product_accuracy
+  TRY 3 FAIL [   0.003s] (11687/59362) aprender-compute::fma_correctness_f017 f022_fma_dot_product_accuracy
+     Summary [ 532.040s] 59362 tests run: 59359 passed (5 slow), 3 failed, 251 skipped
+  TRY 3 FAIL [   0.143s] ( 8696/59362) aprender-compute blis::tests::validate_and_parallel::test_gemm_parallel_shared_b_256
+  TRY 3 FAIL [   0.019s] (11614/59362) aprender-compute::falsification_tests section_a::test_a013_neon_speedup
+  TRY 3 FAIL [   0.003s] (11687/59362) aprender-compute::fma_correctness_f017 f022_fma_dot_product_accuracy
+DONE2
+check2_rc=0 check2_secs=84 (bench_simd_dot gated)
+example_run_rc=0: bench_simd_dot: x86_64-only kernels (AVX2/FMA/AVX-VNNI); nothing to run on this target
+DONE3
+full_rc=0 full_secs=833
+      1      Summary [ 781.465s] 82085 tests run: 82085 passed (5 slow), 130 skipped
+gpu_rc=0 gpu_secs=25
+      1      Summary [   0.701s] 664 tests run: 664 passed, 0 skipped
+compute_rc=0 compute_secs=36
+      1 test result: ok. 3326 passed; 0 failed; 4 ignored; 0 measured; 0 filtered out; finished in 1.51s
+DONE5
