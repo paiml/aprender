@@ -159,43 +159,43 @@ kernel_structure:
     description: Verify roundtrip fidelity, atomic write, tokenizer embedding
 
 proof_obligations:
-- id: MFC6424-RT-001
+- id: MFC-RT-001
   type: roundtrip
   property: Format conversion preserves tensor count
   formal: tensor_count(convert(m, A, B)) == tensor_count(m)
   applies_to: format_conversion_roundtrip
-- id: MFC6424-BND-002
+- id: MFC-BND-002
   type: bound
   property: Quantization error bounded
   formal: max_error(quant(tensor, dtype)) <= dtype_tolerance(dtype)
   tolerance: 1e-6
   applies_to: quantization_bounds
-- id: MFC6424-INV-003
+- id: MFC-INV-003
   type: invariant
   property: Merge architecture compatibility
   formal: forall m1 m2 in models, tensor_names(m1) == tensor_names(m2)
   applies_to: merge_weight_algebra
-- id: MFC6424-PRE-004
+- id: MFC-PRE-004
   type: precondition
   property: Format detection from content not extension
   formal: detect_format(bytes) independent of file_path.extension()
   applies_to: import_integrity
-- id: MFC6424-RT-005
+- id: MFC-RT-005
   type: roundtrip
   property: Export-import roundtrip fidelity
   formal: import(path_after_export(m)) ≈ m within dtype precision
   applies_to: export_fidelity
-- id: MFC6424-INV-006
+- id: MFC-INV-006
   type: invariant
   property: Atomic write — no partial files
   formal: file at path is either complete and valid OR does not exist
   applies_to: export_fidelity
-- id: MFC6424-POST-007
+- id: MFC-POST-007
   type: postcondition
   property: APR files embed tokenizer at write time
   formal: for all APR creation paths, output.metadata contains tokenizer data
   applies_to: apr_tokenizer_embedding
-- id: MFC6424-INV-008
+- id: MFC-INV-008
   type: invariant
   property: Streaming Q4K quantization preserves tensor set and produces finite values (GH-434)
   formal: |

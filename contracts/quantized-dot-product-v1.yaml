@@ -340,7 +340,7 @@ proof_obligations:
 # format-specific ULP tolerance. There is no universal algebraic identity to prove
 # — it is a "matches-reference bit/ULP" runtime property (like GPU-matches-CPU),
 # discharged empirically by FALSIFY-QDOT-001 + KANI-QDOT-001, not by Lean.
-- id: QDPE787-POST-001
+- id: QDP-POST-001
   type: postcondition
   property: SIMD-scalar numerical equivalence
   formal: for all formats F and data D, |simd_F(D) - scalar_F(D)| <= ULP_TOLERANCE_F * f32::EPSILON
@@ -358,7 +358,7 @@ proof_obligations:
 # empirical claim about typical byte reinterpretation with a 100x threshold. It is
 # NOT universally true (adversarial data could collide), so there is no theorem to
 # prove — discharged empirically by FALSIFY-QDOT-002 + KANI-QDOT-002.
-- id: QDPE787-INV-002
+- id: QDP-INV-002
   type: invariant
   property: Format isolation — cross-format dispatch produces garbage
   formal: for all F1 != F2, |kernel_F2(data_F1) - correct| > 100 * |correct|
@@ -374,7 +374,7 @@ proof_obligations:
 # CLASS (a) ANALYTIC-PROVABLE: precomputing per-sub-block activation sums vs.
 # computing them inline is an exact integer sum-partition identity (order/timing
 # independent). Proved in Lean.
-- id: QDPE787-POST-003
+- id: QDP-POST-003
   type: postcondition
   property: Bsum precomputation equivalence
   formal: precompute_bsums(act) == inline_bsums(act) (exact integer equality)
@@ -398,7 +398,7 @@ proof_obligations:
 # CLASS (a) ANALYTIC-PROVABLE: the central correctness bound of a quantized dot
 # product — dequantized-weight dot product deviates from the exact dot product by
 # at most (scale/2)*||y||_1. Triangle inequality + per-element round-trip bound.
-- id: QDPE787-BND-004
+- id: QDP-BND-004
   type: bound
   property: Quantized dot-product error bound
   formal: '|<dequant(quant(x)), y> - <x, y>| <= (scale/2) * sum_i |y_i|'

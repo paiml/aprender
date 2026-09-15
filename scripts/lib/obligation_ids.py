@@ -157,6 +157,29 @@ def _collect_claims(cands, root):
     return fixed, movable
 
 
+def _canonical(cands):
+    """relpath -> the lexicographically first candidate with IDENTICAL bytes.
+
+    56 stems exist twice under contracts/ (`contracts/X.yaml` and
+    `contracts/aprender/X.yaml`), and 8 of those pairs were byte-identical. They
+    are ONE logical contract in two places; the duplication is a pre-existing
+    defect that `check_duplicate_stems` already tracks against a baseline. A
+    first cut treated each copy as a separate claimant, handed the second one a
+    path-keyed suffix, and turned 8 identical pairs into 8 DIVERGENT ones --
+    `real_corpus_census_names_every_baselined_stem` went 48 -> 55. Identical
+    copies get identical ids, so the generator never widens that drift.
+    """
+    by_bytes = {}
+    for rel, (path, _, _, _) in cands.items():
+        by_bytes.setdefault(path.read_bytes(), []).append(rel)
+    canon = {}
+    for rels in by_bytes.values():
+        first = min(rels)
+        for r in rels:
+            canon[r] = first
+    return canon
+
+
 def assign_prefixes(cands, root):
     """Base prefix per file, with a path-keyed suffix when another file owns it.
 
@@ -172,20 +195,27 @@ def assign_prefixes(cands, root):
     over `zeta-zulu`, which already had ZZ-INV-001 -- caught by the selftest,
     not by the corpus, where the orderings happened not to bite.
 
+    Byte-identical candidates are ONE claimant (see `_canonical`): every copy
+    takes the decision made for its canonical path, so identical files end up
+    with identical ids rather than one bare and one suffixed.
+
     Among movable claimants the owner is the lexicographically first, so
     ownership does not move when an unrelated contract is added. Everyone else
     takes sha256(own relative path)[:4] -- keyed to the file's OWN path, never
     to the set of colliders, which is what keeps an existing id stable.
     """
     fixed, movable = _collect_claims(cands, root)
+    canon = _canonical(cands)
     owner = {}
     for pre in set(fixed) | set(movable):
-        owner[pre] = min(fixed[pre]) if fixed.get(pre) else min(movable[pre])
+        pool = fixed[pre] if fixed.get(pre) else movable[pre]
+        owner[pre] = min(canon.get(r, r) for r in pool)
     final = {}
     for rel, (path, _, _, cited) in cands.items():
         base = cited or initials(path.stem)
-        final[rel] = base if owner.get(base) == rel else \
-            f"{base}{hashlib.sha256(rel.encode()).hexdigest()[:4].upper()}"
+        me = canon.get(rel, rel)
+        final[rel] = base if owner.get(base) == me else \
+            f"{base}{hashlib.sha256(me.encode()).hexdigest()[:4].upper()}"
     return final
 
 
@@ -407,7 +437,19 @@ def _selftest_collisions():
     rc |= _report(zz != "ZZ", "collision/a skipped file still owns its prefix",
                   f"candidate took {zz!r}, which the named file owns")
 
-    # and the whole point: no id is ever minted twice
+    # byte-identical copies of one contract in two dirs must get IDENTICAL ids
+    (d / "sub").mkdir()
+    same = "proof_obligations:\n- type: invariant\n  property: twin\n"
+    (d / "twin-v1.yaml").write_text(same)
+    (d / "sub" / "twin-v1.yaml").write_text(same)
+    cands2 = collect(d)
+    pre2 = assign_prefixes(cands2, d)
+    twins = {pathlib.Path(k).as_posix(): v for k, v in pre2.items() if k.endswith("twin-v1.yaml")}
+    rc |= _report(len(set(twins.values())) == 1,
+                  "collision/byte-identical duplicate-stem copies share one prefix",
+                  f"got {twins}")
+
+    # and the whole point: no id is ever minted twice (over the FIRST fixture set)
     ids = []
     for rel, (_, _, obs, _) in cands.items():
         ids += [i for _, i in plan_file(obs, pre[rel])]

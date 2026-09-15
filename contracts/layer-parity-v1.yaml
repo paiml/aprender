@@ -224,18 +224,18 @@ kernel_structure:
     description: Report first divergence point with values, apply cosine parity gate
 
 proof_obligations:
-- id: LP0B51-INV-001
+- id: LP-INV-001
   type: invariant
   property: GPU/CPU output dimension equality
   formal: for all steps s, cpu_output[s].len() == gpu_output[s].len()
   applies_to: all
-- id: LP0B51-POST-002
+- id: LP-POST-002
   type: postcondition
   property: Cosine parity gate bounded
   formal: -1.0 <= cosine_similarity(cpu, gpu) <= 1.0
   tolerance: 1e-6
   applies_to: all
-- id: LP0B51-POST-003
+- id: LP-POST-003
   type: postcondition
   property: Divergence detection — first failure reported
   formal: if any step fails tolerance, parity_check returns Fail with divergence_point == first failing step index
