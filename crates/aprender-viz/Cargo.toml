@@ -19,6 +19,10 @@ trueno = { version = "0.67.0", path = "../aprender-compute", package = "aprender
 # Shared Batuta stack utilities (display traits, formatting)
 batuta-common = { workspace = true }
 
+# Tick placement transcendentals: pure-Rust libm so log10/pow do not depend on the
+# platform libm (APEX-001 F-51, EV-2a rule 5).
+libm = "0.2"
+
 # PNG encoding (pure Rust, no libpng)
 png = "0.17"
 
