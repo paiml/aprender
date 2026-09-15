@@ -1,0 +1,13 @@
+{
+  "_spec": "APR-RELEASE-001 §11.2 — moves only through `make ont-ratchet` (ONT R-6)",
+  "armed_gates": [],
+  "ont": {
+    "consumer_present": false,
+    "contracts_total": 1837,
+    "entity_types_registered": 0,
+    "extractors_implemented": 0,
+    "contracts_anchored": 0,
+    "contracts_shaped": 0,
+    "unanchored_but_bindable": 297
+  }
+}
