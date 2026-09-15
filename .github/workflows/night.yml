@@ -1,0 +1,206 @@
+# night.yml — the two APR-RELEASE-001 T-1 clauses that are too slow for a lane
+# anyone waits on. Operator ruling 2026-09-14: "wouldn't they be best done
+# pre-release and/or night?" — yes, and here they are.
+#
+# #3260 (`deep.yml`) carries the three cheap T-1 clauses: doctests (192 s),
+# --no-default-features (26 s), examples BUILD (83 s). These two are hours, so
+# they run here instead, and pre-release by dispatch.
+#
+#   examples RUN     980 targets   ~2 h at 10 s each
+#   feature matrix   430 (crate, feature) pairs over 45 crates   ~1-2 h
+#                    (467 declared; the three GPU crates are skipped)
+#
+# TIMEOUT IS A PASS FOR THE EXAMPLES CLAUSE, and that is the whole design.
+# Measured on a random sample of five with `-- --help`, 60 s each:
+#
+#     HANG     aprender-core::grid_search_tuning
+#     HANG     aprender-serve::imp_700_realworld_verification
+#     exit101  aprender-serve::debug_q4k_gemv
+#     ok       aprender-simulate::reproducibility
+#     HANG     aprender-serve::bench_barrier_overhead
+#
+# Three of five ran past 60 s. They are not CLIs — they are compute DEMOS that
+# ignore argv and do the work, so `--help` does not make them exit and "hang" is
+# the wrong word: they are RUNNING. Treating a timeout as failure would report a
+# working example as broken, 980 times.
+#
+# So this asserts what is actually owed: EVERY EXAMPLE STARTS AND DOES NOT CRASH.
+# That catches the #2519 class (an example that panics immediately) without
+# asserting a duration — which check_no_timing_in_required.sh exists to forbid.
+#
+# The feature matrix is `--each-feature`, not a powerset: a powerset is 2^n per
+# crate (aprender-orchestrate alone has 78 features) and infeasible. It needs NO
+# new tool — `cargo metadata` carries the feature list, so cargo-hack, which is
+# not installed on this fleet, is not required.
+name: night
+
+on:
+  schedule:
+    # 22:40 UTC — clear of every other nightly (the earliest is cuda at 01:30)
+    # so a multi-hour job cannot collide with them for the pool.
+    - cron: '40 22 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: night
+  cancel-in-progress: false
+
+jobs:
+  examples-run:
+    name: every example starts
+    runs-on: [self-hosted, X64, Linux, clean-room]
+    # 180, deliberately generous and NOT derived: ~980 x min(runtime, 10 s) is
+    # ~2 h if most examples outrun the timeout, and this job has no history.
+    # BSE-05 wants the job's OWN p99; re-derive from three real runs.
+    timeout-minutes: 180
+    env:
+      CARGO_TERM_COLOR: never
+      CARGO_INCREMENTAL: '0'
+      START_TIMEOUT: '10'
+    steps:
+      - uses: actions/checkout@v7
+      - name: cargo_step.sh falsifier (ENV-vs-CODE instrument)
+        run: bash scripts/cargo_step.sh --self-test
+
+      # Build once. 980 targets, 83 s measured — so the run loop below pays
+      # process spawn, not compilation.
+      - name: Build every example first (980 targets)
+        run: |
+          set -euo pipefail
+          bash scripts/cargo_step.sh 'examples build' -- \
+            cargo build --workspace --examples --keep-going --locked \
+              --exclude aprender-gpu --exclude aprender-cuda-edge --exclude aprender-compute
+
+      - name: "Every example STARTS and does not crash (timeout = PASS)"
+        run: |
+          set -uo pipefail
+          cargo metadata --no-deps --format-version 1 > /tmp/meta.json
+          python3 -c "
+          import json
+          d = json.load(open('/tmp/meta.json'))
+          for p in d['packages']:
+              for t in p['targets']:
+                  if 'example' in t['kind']:
+                      print(p['name'], t['name'])
+          " > /tmp/examples.txt
+          total=$(wc -l < /tmp/examples.txt); echo "examples: $total"
+          crashed=0; started=0; running=0
+          while read -r pkg ex; do
+            timeout "$START_TIMEOUT" cargo run -q -p "$pkg" --example "$ex" -- --help \
+              </dev/null > /tmp/ex.out 2>&1
+            rc=$?
+            if [ "$rc" -eq 0 ]; then
+              started=$((started + 1))
+            elif [ "$rc" -eq 124 ]; then
+              # STILL RUNNING at the deadline. That is a PASS: it started and did
+              # not crash. Asserting how LONG it runs would be a wall-clock
+              # assertion, and this workspace's examples are demos that do work.
+              running=$((running + 1))
+            else
+              echo "::error title=example crashes::$pkg::$ex exited $rc within ${START_TIMEOUT}s"
+              tail -5 /tmp/ex.out | sed 's/^/    | /'
+              crashed=$((crashed + 1))
+            fi
+          done < /tmp/examples.txt
+          echo "total=$total exited_ok=$started still_running=$running CRASHED=$crashed"
+          # Vacuity: a discovery that found almost nothing reports zero crashes,
+          # which reads exactly like a pass. 800 is a floor under the measured 980.
+          if [ "$total" -lt 800 ]; then
+            echo "::error::only $total examples discovered, expected 800+ (measured 980) — the DISCOVERY is broken"
+            exit 1
+          fi
+          [ "$crashed" -eq 0 ]
+
+  feature-matrix:
+    name: each feature builds
+    runs-on: [self-hosted, X64, Linux, clean-room]
+    timeout-minutes: 180
+    env:
+      CARGO_TERM_COLOR: never
+      CARGO_INCREMENTAL: '0'
+    steps:
+      - uses: actions/checkout@v7
+      - name: cargo_step.sh falsifier (ENV-vs-CODE instrument)
+        run: bash scripts/cargo_step.sh --self-test
+
+      - name: "Each feature builds alone (430 crate/feature pairs, 45 crates)"
+        run: |
+          set -uo pipefail
+          cargo metadata --no-deps --format-version 1 > /tmp/meta.json
+          python3 -c "
+          import json
+          d = json.load(open('/tmp/meta.json'))
+          skip = {'aprender-gpu', 'aprender-cuda-edge', 'aprender-compute'}
+          for p in d['packages']:
+              if p['name'] in skip:
+                  continue
+              for f in sorted(k for k in p.get('features', {}) if k != 'default'):
+                  print(p['name'], f)
+          " > /tmp/features.txt
+          total=$(wc -l < /tmp/features.txt); echo "crate/feature pairs: $total"
+
+          # KNOWN RED, 2026-09-14. Measured by the first full sweep (#3262):
+          # 100 of 430 pairs did not build, every one of them unreachable from
+          # any default set. #3263 fixed 67; these 9 are owned elsewhere and are
+          # reported, not fatal, so this lane can be GREEN on its first run
+          # instead of being born red and taught to be ignored.
+          #
+          # A listed pair that PASSES is FATAL: that is the anti-rot mechanism.
+          # The list may only shrink, and it shrinks by deleting a line.
+          # #3257 owns the seven aprender-distribute rows: executor/cpu.rs also
+          # uses num_cpus, which only the `cpu` feature pulls, so its tokio gate
+          # leaves these red. #3179 owns the two cuda rows:
+          # trueno_gpu::driver::PinnedBuffer and the async pinned-copy API do
+          # not exist post-APR-MONO.
+          printf '%s\n' \
+            'aprender-distribute checkpoint' \
+            'aprender-distribute microvm' \
+            'aprender-distribute remote' \
+            'aprender-distribute remote-tls' \
+            'aprender-distribute serverless' \
+            'aprender-distribute tokio' \
+            'aprender-distribute tui' \
+            'aprender-zram-core cuda' \
+            'aprender-zram cuda' \
+            > /tmp/known_red.txt
+          known() { awk -v p="$1" -v f="$2" '$1==p && $2==f {found=1} END {exit !found}' /tmp/known_red.txt; }
+
+          bad=0; stale=0; known_red=0
+          while read -r pkg feat; do
+            cargo check -q -p "$pkg" --no-default-features --features "$feat" --locked \
+              > /tmp/f.out 2>&1
+            rc=$?
+            if [ "$rc" -ne 0 ]; then
+              # Classify: a cargo death on a saturated runner is ENV, not a
+              # broken feature declaration. Same reason every other lane routes
+              # through cargo_classify.sh.
+              . scripts/cargo_classify.sh
+              if [ "$(classify_cargo_failure /tmp/f.out)" = ENV ]; then
+                echo "::error title=ENV::$pkg --features $feat: the HOST failed, not the feature"
+                report_cargo_env_failure /tmp/f.out "$pkg --features $feat"
+                exit 1
+              fi
+              if known "$pkg" "$feat"; then
+                echo "::notice title=known red::$pkg --features $feat (see /tmp/known_red.txt)"
+                known_red=$((known_red + 1))
+              else
+                echo "::error title=feature does not build alone::$pkg --features $feat"
+                grep -E '^error' /tmp/f.out | head -3 | sed 's/^/    | /'
+                bad=$((bad + 1))
+              fi
+            elif known "$pkg" "$feat"; then
+              # Fixed, and the list still names it. Delete the line.
+              echo "::error title=known-red list is stale::$pkg --features $feat BUILDS — remove it from the known-red list"
+              stale=$((stale + 1))
+            fi
+          done < /tmp/features.txt
+          echo "pairs=$total broken=$bad known_red=$known_red stale_known_red=$stale"
+          # Vacuity floor, same reasoning as above. 400 is under the measured 430.
+          if [ "$total" -lt 400 ]; then
+            echo "::error::only $total pairs discovered, expected 400+ (measured 430) — the DISCOVERY is broken"
+            exit 1
+          fi
+          [ "$bad" -eq 0 ] && [ "$stale" -eq 0 ]
