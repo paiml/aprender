@@ -17819,3 +17819,22 @@ roadmap:
   notes: 'a step name containing a colon-space must be quoted in YAML; the inline
     grep -F matched only the bare spelling, so the lane named a step that runs every
     night as one the workflow does not run'
+- id: PMAT-3235
+  github_issue: null
+  item_type: task
+  title: 'examples-nightly: 6 of 22 red rows are an example built without its feature, not a broken example'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-09-14T20:05:00Z
+  updated: 2026-09-14T20:05:00Z
+  spec: docs/specifications/APR-RELEASE-001-train-and-build-kaizen.md
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'adds needs-feature beside needs-args/needs-hardware/needs-data; like
+    needs-hardware it is a SKIP that must be re-run with the feature before a release
+    verdict, never read as the example working'
