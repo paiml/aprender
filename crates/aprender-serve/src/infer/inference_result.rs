@@ -1210,7 +1210,7 @@ mod cuda_silent_fallback_tests {
     /// The rejection used `Err(_)` and returned a bare `false`. Its caller
     /// (gguf_gpu_generate.rs:303) can only convert that into `Err(Box::new(model))`
     /// for CPU fallback, so the reason had nowhere to go. Observed on an RTX 4090:
-    /// CUDA initialises, the run silently ends on CPU at ~20 tok/s instead of ~400,
+    /// CUDA initialises, the run silently ends on CPU far below the GPU decode rate,
     /// and nothing says why even under --verbose.
     ///
     /// That matters beyond ergonomics: throughput measured after a silent fallback
