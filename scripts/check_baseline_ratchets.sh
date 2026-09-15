@@ -89,6 +89,7 @@ classify() { # classify <basename> -> "<kind>[<TAB>reason]", rc 1 if unclassifie
         pipe_grep_q_baseline.txt)                printf 'count\n' ;;   # `producer | grep -q` sites under pipefail (scripts/check_no_pipe_into_grep_q.sh)
         roadmap_uncited_completion_baseline.txt) printf 'set\n' ;;
         shell_lint_baseline.txt)                 printf 'count\n' ;;
+        pmat_unpinned_baseline.txt)              printf 'count\n' ;;   # G-10b (PMAT-1063): unpinned analyser references, measured by check_pmat_pinned.sh
         cb200_baseline.txt)                      printf 'count\n' ;;   # mirrors .pmat-gates.toml [tdg] baseline (PMAT-937)
         test_fixture_path_baseline.txt)          printf 'count\n' ;;
         tracked_ignored_baseline.txt)            printf 'count\n' ;;
