@@ -62,7 +62,23 @@
 #                                                         #    + regenerates
 #     git add docs/roadmaps/entries/<ID>.yaml docs/roadmaps/roadmap.yaml
 #
+# PUSH SHAPE IS NOT JUDGED (§8 decision, 2026-09-16). resolve_base names
+# HEAD^1 as the base when HEAD is on the origin/main first-parent line, because
+# for most guards a commit judged against ITSELF is the vacuous pass to avoid.
+# For a DIFFERENTIAL guard that is the wrong base: HEAD^1..HEAD is the PREVIOUS
+# merge's diff, not this change. A guard added today would then grade commits
+# that landed before it existed -- measured here: 2 of the last 8 first-parent
+# commits of origin/main (#3348, 334646674) are fragment-less, so a bare run on
+# main would have red-lined guard_tree from the moment this merged. It is not
+# re-litigating history. In push shape the guard reports a named SKIP, prints
+# the shape and the base it WOULD have used and what it therefore did not
+# check, and exits 0. The change is graded on its pull_request / merge_group
+# run, where the base is a real merge-base. PR shape is unchanged.
+#
 #   bash scripts/check_roadmap_fragment_required.sh [<base-ref> [<head-ref>]]
+#   bash scripts/check_roadmap_fragment_required.sh '' <head-ref>   # resolve the
+#       base for an arbitrary head (how the retro and the case table reach the
+#       push-shape arm at a commit that is not the checkout's HEAD)
 #   bash scripts/check_roadmap_fragment_required.sh --self-test
 #
 # Exit: 0 clean · 1 a violation · 2 this box cannot judge (never a silent pass).
@@ -84,6 +100,7 @@ ENTRIES_DIR="docs/roadmaps/entries"
 usage() {
     printf 'usage: %s [<base-ref> [<head-ref>]]  or  %s --self-test\n' "$PROG" "$PROG" >&2
     printf '  a roadmap.yaml change must arrive with its docs/roadmaps/entries/<ID>.yaml fragment\n' >&2
+    printf "  an empty <base-ref> ('') resolves the base for <head-ref>; push shape SKIPs, never grades\n" >&2
     exit 2
 }
 
@@ -422,6 +439,51 @@ PY
         red=$((red + 1))
     fi
 
+    # ---- the push-shape pair (§8). These exercise the real DISPATCH --
+    # resolve_base plus the skip -- not judge(), so the fixture carries its own
+    # copy of the guard and the libraries it sources: $REPO_ROOT is then the
+    # fixture, and origin/main is whatever the row points it at. Same commit,
+    # same fragment-less content, two verdicts: the guard refuses the change
+    # when it can SEE the change, and declines to judge when it cannot.
+    dispatch_row() {
+        local label=$1 want=$2 pat=$3 target=$4 d out rc f
+        n=$((n + 1))
+        d="$td/r$n"
+        if ! mkrepo "$d" >/dev/null 2>&1 || ! b_monolith_only "$d" >/dev/null 2>&1; then
+            printf 'FAIL  row %-2s %s: fixture could not be built\n' "$n" "$label"
+            red=$((red + 1))
+            return
+        fi
+        mkdir -p "$d/scripts/lib"
+        if ! cp "$REPO_ROOT/scripts/$PROG" "$d/scripts/$PROG"; then
+            printf 'FAIL  row %-2s %s: the guard could not be copied into the fixture\n' "$n" "$label"
+            red=$((red + 1))
+            return
+        fi
+        for f in resolve_base.sh roadmap_fragments.py roadmap_diff.py roadmap_merge.py; do
+            if ! cp "$REPO_ROOT/scripts/lib/$f" "$d/scripts/lib/$f"; then
+                printf 'FAIL  row %-2s %s: scripts/lib/%s could not be copied into the fixture\n' "$n" "$label" "$f"
+                red=$((red + 1))
+                return
+            fi
+        done
+        git -C "$d" update-ref refs/remotes/origin/main "$(git -C "$d" rev-parse "$target")"
+        out=$(bash "$d/scripts/$PROG" 2>&1)
+        rc=$?
+        if [ "$rc" != "$want" ] || ! printf '%s' "$out" | grep -qF -- "$pat"; then
+            printf 'FAIL  row %-2s rc=%s (wanted %s, must contain: %s)  %s\n' "$n" "$rc" "$want" "$pat" "$label"
+            printf '%s\n' "$out" | sed 's/^/        /'
+            red=$((red + 1))
+            return
+        fi
+        printf 'ok    row %-2s rc=%s  %s\n' "$n" "$rc" "$label"
+    }
+
+    dispatch_row 'PUSH shape (origin/main IS this commit), last merge fragment-less -> SKIP, exit 0 (the row that would have red-lined main)' \
+        0 'SKIP  push-shape' HEAD
+    dispatch_row 'PR shape (origin/main is its parent), SAME fragment-less content -> REFUSE, exit 1' \
+        1 'FAIL  ADDED    PMAT-200' HEAD~1
+
     printf '%s/%s rows, %s failed\n' "$((n - red))" "$n" "$red"
     [ "$red" = 0 ]
 }
@@ -445,6 +507,23 @@ if [ -n "${1:-}" ]; then
 else
     if ! resolve_base "$HEAD_REF"; then exit 2; fi
 fi
+
+# PUSH SHAPE: decline to judge, out loud. `resolve_base` says so in BASE_HOW --
+# the one place that decision is made, so this cannot drift from it.
+case "$BASE_HOW" in
+    *"push shape"*)
+        printf 'SKIP  push-shape: %s (%s) is on the origin/main first-parent line, so the only nameable base is %s.\n' \
+            "$HEAD_REF" "$(git -C "$REPO_ROOT" rev-parse --short "$HEAD_REF^{commit}")" "$BASE_REF"
+        printf '      base would have been: %s\n' "$BASE_HOW"
+        printf '      Grading it would judge the PREVIOUS merge, not this change: a differential guard added today would\n'
+        printf '      refuse commits that landed before it existed (2 of the last 8 first-parent commits of origin/main are\n'
+        printf '      fragment-less) and red-line main from the moment it merges.\n'
+        printf '      NOT CHECKED HERE: the %s <-> %s/ pairing, and the aggregate, over %s..%s. Both are\n' \
+            "$ROADMAP_FILE" "$ENTRIES_DIR" "$BASE_REF" "$HEAD_REF"
+        printf '      graded on the pull_request / merge_group run of that change, where the base is a real merge-base.\n'
+        exit 0
+        ;;
+esac
 
 if [ "$(git -C "$REPO_ROOT" rev-parse "$BASE_REF^{commit}")" = "$(git -C "$REPO_ROOT" rev-parse "$HEAD_REF^{commit}")" ]; then
     printf 'PASS  base and head are the same commit: there is no diff to judge here\n'
