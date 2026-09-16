@@ -291,4 +291,61 @@ mod tests {
     fn a_missing_directory_is_an_error_not_a_zero_census() {
         assert!(census_of(Path::new("/nonexistent/contracts")).is_err());
     }
+
+    // ---- ONT-001 §5 ONT-1 (RED) ------------------------------------------------
+    // The row: "fixture 3 valid + 1 malformed → exit 1 `reject: 1 parse error under
+    // <path>`; empty dir → exit 2 `decline: 0 contracts under <path>`". Today this
+    // census walks with its own read_dir loop, returns a bare string error for an
+    // empty directory (exit 1, `error:`), and COUNTS a file it could not parse —
+    // a census of 4 over 3 readable contracts, which is the shape R-2 exists to
+    // refuse. Both assertions fail until the census is built on contract_walk,
+    // the one walker `pv lint` and `pv validate` already share.
+
+    fn write_valid(dir: &std::path::Path, name: &str) {
+        std::fs::write(
+            dir.join(name),
+            "metadata:\n  version: 1.0.0\n  description: ONT-1 fixture\n",
+        )
+        .expect("fixture contract is writable");
+    }
+
+    /// R-2 on the instrument: nothing measured is a DECLINE, exit 2, and the line
+    /// says so in PVL-001 §0's vocabulary. `error:` at exit 1 claims a measurement.
+    #[test]
+    fn an_empty_corpus_declines_at_exit_2() {
+        let tmp = tempfile::tempdir().expect("temp dir is creatable");
+        let err = census_of(tmp.path()).expect_err("an empty corpus is refused");
+        assert_eq!(
+            crate::contract_walk::exit_code_for(err.as_ref()),
+            crate::contract_walk::ZERO_CONTRACTS_EXIT,
+            "an empty corpus must decline (exit 2), not fail: {err}"
+        );
+        assert_eq!(
+            err.to_string(),
+            format!("0 contracts under {}", tmp.path().display())
+        );
+    }
+
+    /// A file the census cannot parse is a REJECT, never a counted contract: the
+    /// alternative is a cardinality that includes what was never read.
+    #[test]
+    fn a_parse_error_rejects_at_exit_1_and_is_never_counted() {
+        let tmp = tempfile::tempdir().expect("temp dir is creatable");
+        for name in ["a.yaml", "b.yaml", "c.yaml"] {
+            write_valid(tmp.path(), name);
+        }
+        std::fs::write(tmp.path().join("garbage.yaml"), "{{{ not yaml at all: [\n")
+            .expect("fixture file is writable");
+        let err = census_of(tmp.path())
+            .expect_err("a corpus with an unparseable file is rejected, never censused");
+        assert_eq!(
+            crate::contract_walk::exit_code_for(err.as_ref()),
+            1,
+            "a parse error is a reject at exit 1: {err}"
+        );
+        assert_eq!(
+            err.to_string().lines().next().unwrap_or_default(),
+            format!("1 parse error under {}", tmp.path().display())
+        );
+    }
 }
