@@ -17,6 +17,7 @@ apr-cli	--lib	commands::ptx_map
 apr-cli	--lib	commands::publish
 apr-cli	--lib	commands::pull
 apr-cli	--lib	commands::qualify
+apr-cli	--lib	commands::run
 apr-cli	--lib	commands::serve
 apr-cli	--lib	commands::serve_plan
 apr-cli	--lib	commands::test_llm_band
