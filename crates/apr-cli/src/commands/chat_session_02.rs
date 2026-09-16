@@ -137,6 +137,7 @@ impl ChatSession {
                 cached_safetensors_cuda,
                 #[cfg(feature = "cuda")]
                 cuda_init_failed,
+                had_generate_error: false,
             };
             contract_post_session_persistence!(&());
             Ok(session)
