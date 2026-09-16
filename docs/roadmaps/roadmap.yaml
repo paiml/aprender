@@ -17979,3 +17979,19 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-3346
+  github_issue: 3346
+  item_type: task
+  title: ModelConstraints carries the gated-DeltaNet shape keys
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-16T07:21:39Z
+  updated: 2026-09-16T07:21:39Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

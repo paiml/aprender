@@ -56,6 +56,143 @@ fn qwen35_constraints() -> ModelConstraints {
 }
 
 // ---------------------------------------------------------------------------
+// Ground truth: a REAL Qwen3.5 file (#3346)
+// ---------------------------------------------------------------------------
+//
+// Every number below was read out of `~/models/Qwen3.5-0.8B-Q4_K_M.gguf`
+// (sha256 `bd258782e35f7f458f8aced1adc053e6e92e89bc735ba3be89d38a06121dc517`,
+// GGUF v3, 320 tensors) by parsing the file header directly on 2026-09-16 —
+// not from a model card, a memory, or the family descriptor. The descriptor
+// `contracts/model-families/qwen3_5.yaml` declares only the 9b and 27b
+// variants, and no Qwen3.5-9B file is on this box, so the 0.8B file is the
+// only Qwen3.5 whose true tensor inventory can be MEASURED here. It is the
+// oracle for the shape arithmetic: if the config-derived count and this
+// inventory disagree, the arithmetic is wrong.
+//
+// Shapes are GGUF `ne` order (`[in, out]` for a 2-D weight); only the element
+// COUNT matters for a parameter total, so the order is reproduced verbatim
+// rather than transposed.
+
+/// One Gated DeltaNet layer of `Qwen3.5-0.8B-Q4_K_M.gguf` (measured: `blk.0`,
+/// identical for the 18 layers whose index is not `interval-1 mod interval`).
+const QWEN35_0_8B_GDN_LAYER: &[(&str, &[usize])] = &[
+    ("attn_gate.weight", &[1024, 2048]),
+    ("attn_norm.weight", &[1024]),
+    ("attn_qkv.weight", &[1024, 6144]),
+    ("ffn_down.weight", &[3584, 1024]),
+    ("ffn_gate.weight", &[1024, 3584]),
+    ("ffn_up.weight", &[1024, 3584]),
+    ("post_attention_norm.weight", &[1024]),
+    ("ssm_a", &[16]),
+    ("ssm_alpha.weight", &[1024, 16]),
+    ("ssm_beta.weight", &[1024, 16]),
+    ("ssm_conv1d.weight", &[4, 6144]),
+    ("ssm_dt.bias", &[16]),
+    ("ssm_norm.weight", &[128]),
+    ("ssm_out.weight", &[2048, 1024]),
+];
+
+/// One full-attention layer of the same file (measured: `blk.3`, identical for
+/// the 6 layers at indices 3, 7, 11, 15, 19, 23 — `full_attention_interval` 4).
+///
+/// Two shapes here are NOT what dense/GQA accounting predicts, and both are
+/// facts of the file: `attn_q` is `[1024, 4096]` = `2 * num_heads * head_dim`
+/// (Qwen3.5 gates the attention output, so the q projection emits the gate
+/// alongside the query — `attn_output` is `[2048, 1024]`, confirming
+/// `num_heads * head_dim` = 2048), and `attn_q_norm`/`attn_k_norm` are present
+/// at `head_dim`.
+const QWEN35_0_8B_ATTENTION_LAYER: &[(&str, &[usize])] = &[
+    ("attn_k.weight", &[1024, 512]),
+    ("attn_k_norm.weight", &[256]),
+    ("attn_norm.weight", &[1024]),
+    ("attn_output.weight", &[2048, 1024]),
+    ("attn_q.weight", &[1024, 4096]),
+    ("attn_q_norm.weight", &[256]),
+    ("attn_v.weight", &[1024, 512]),
+    ("ffn_down.weight", &[3584, 1024]),
+    ("ffn_gate.weight", &[1024, 3584]),
+    ("ffn_up.weight", &[1024, 3584]),
+    ("post_attention_norm.weight", &[1024]),
+];
+
+/// The file's non-layer tensors. There is no `output.weight`: the 0.8B TIES
+/// its unembedding to the embedding, unlike the 9b descriptor.
+const QWEN35_0_8B_GLOBAL: &[(&str, &[usize])] = &[
+    ("output_norm.weight", &[1024]),
+    ("token_embd.weight", &[1024, 248_320]),
+];
+
+/// Number of GDN and full-attention layers in the measured file (24 blocks,
+/// `qwen35.full_attention_interval` = 4).
+const QWEN35_0_8B_GDN_LAYERS: u64 = 18;
+const QWEN35_0_8B_ATTENTION_LAYERS: u64 = 6;
+
+/// Total elements of a measured tensor list.
+fn tensor_elements(tensors: &[(&str, &[usize])]) -> u64 {
+    tensors
+        .iter()
+        .map(|(_, dims)| u64::try_from(dims.iter().product::<usize>()).unwrap_or(u64::MAX))
+        .sum()
+}
+
+/// `Qwen3.5-0.8B` as the GGUF's own metadata keys describe it: `block_count`
+/// 24, `embedding_length` 1024, `feed_forward_length` 3584,
+/// `attention.head_count` 8, `attention.head_count_kv` 2, `attention.key_length`
+/// 256, `rope.freq_base` 1e7, `attention.layer_norm_rms_epsilon` 1e-6, and a
+/// 248320-token vocabulary (`token_embd.weight` is `[1024, 248320]`).
+fn qwen35_0_8b_size() -> ModelSizeConfig {
+    ModelSizeConfig {
+        parameters: "0.8B".to_string(),
+        hidden_dim: 1024,
+        num_layers: 24,
+        num_heads: 8,
+        num_kv_heads: 2,
+        intermediate_dim: 3584,
+        vocab_size: 248_320,
+        max_position_embeddings: 262_144,
+        head_dim: 256,
+        rope_theta: 10_000_000.0,
+        norm_eps: 1e-6,
+    }
+}
+
+/// The measured file total: `752,393,024` parameters.
+const QWEN35_0_8B_MEASURED_TOTAL: u64 = 752_393_024;
+
+#[test]
+fn qwen35_0_8b_measured_inventory_sums_to_the_file_total() {
+    // Tensor COUNT: 14 per GDN layer, 11 per attention layer, 2 global = 320,
+    // which is what the GGUF header declares (`n_tensors`).
+    let counted = QWEN35_0_8B_GDN_LAYER.len() * 18 + QWEN35_0_8B_ATTENTION_LAYER.len() * 6 + 2;
+    assert_eq!(counted, 320, "GGUF header declares 320 tensors");
+
+    assert_eq!(tensor_elements(QWEN35_0_8B_GDN_LAYER), 21_555_360);
+    assert_eq!(tensor_elements(QWEN35_0_8B_ATTENTION_LAYER), 18_352_640);
+    assert_eq!(tensor_elements(QWEN35_0_8B_GLOBAL), 254_280_704);
+
+    let total = tensor_elements(QWEN35_0_8B_GLOBAL)
+        + QWEN35_0_8B_GDN_LAYERS * tensor_elements(QWEN35_0_8B_GDN_LAYER)
+        + QWEN35_0_8B_ATTENTION_LAYERS * tensor_elements(QWEN35_0_8B_ATTENTION_LAYER);
+    assert_eq!(total, QWEN35_0_8B_MEASURED_TOTAL);
+}
+
+/// The defect of #3346, as a number rather than a claim: dense/GQA accounting
+/// applied to a hybrid family under-counts a REAL file by 107,992,896
+/// parameters — 14.4% of the model. Three quarters of the layers are Gated
+/// DeltaNet, and none of their conv/gate/state tensors have a term here.
+#[test]
+fn dense_accounting_cannot_reproduce_the_measured_qwen35_0_8b_file() {
+    let size = qwen35_0_8b_size();
+    let mut constraints = qwen35_constraints();
+    constraints.tied_embeddings = true; // measured: the file has no output.weight
+    let layers = uniform_layers(&size, &constraints);
+    let p = model_parameter_count(&size, &constraints, &layers);
+
+    assert_eq!(p.total, 644_400_128);
+    assert_eq!(QWEN35_0_8B_MEASURED_TOTAL - p.total, 107_992_896);
+}
+
+// ---------------------------------------------------------------------------
 // model_parameter_count
 // ---------------------------------------------------------------------------
 
