@@ -73,6 +73,24 @@ fn parse_constraints(yaml: &YamlValue) -> Result<ModelConstraints> {
         )?,
         mlp_type: MlpType::from_str_contract(yaml.get_str("mlp_type").unwrap_or("gelu_mlp"))?,
         qk_norm: yaml.get_bool("qk_norm").unwrap_or(false),
+        deltanet: parse_deltanet_shape(yaml),
+    })
+}
+
+/// #3346: the Gated DeltaNet shape keys of a `constraints:` block.
+///
+/// `inner_size` and `state_size` are what make the block a DeltaNet mixer, so
+/// both are required; a descriptor declaring neither (every family but
+/// `qwen3_5`) yields `None` and the dense accounting it had before.
+fn parse_deltanet_shape(yaml: &YamlValue) -> Option<DeltaNetShape> {
+    let inner_size = yaml.get_usize("inner_size")?;
+    let state_size = yaml.get_usize("state_size")?;
+    Some(DeltaNetShape {
+        inner_size,
+        state_size,
+        conv_kernel: yaml.get_usize("conv_kernel").unwrap_or(0),
+        group_count: yaml.get_usize("group_count").unwrap_or(0),
+        full_attention_interval: yaml.get_usize("full_attention_interval").unwrap_or(0),
     })
 }
 
