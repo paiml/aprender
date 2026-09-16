@@ -754,6 +754,56 @@ bindings:
     and the asserted-and-blocking clause -- and control 1's arming line was folded into a
     shared one for the same reason. autonomous_merge_reverts is 0/0 and is recorded as
     UNDEFINED, not clean.
+- contract: qwen35-e2e-verification-v1.yaml
+  equation: model_parameter_count
+  module_path: aprender::format::model_arithmetic
+  function: model_parameter_count
+  signature: 'fn model_parameter_count(size: &ModelSizeConfig, constraints: &ModelConstraints, layers:
+    &[LayerParams]) -> ParameterBreakdown'
+  status: implemented
+  notes: "P = V*d + L*(d_attn + d_ffn + d_norm) + d_final + V*d. Per-layer terms come in as data\
+    \ (&[LayerParams]) so a hybrid family can mix layer kinds. QE2E-INV-001 (P(9B) in [9.0B, 9.2B])\
+    \ is NOT discharged: dense/GQA accounting gives 8.21B and the Gated DeltaNet d_attn needs\
+    \ inner_size/state_size/conv_kernel/group_count, which ModelConstraints does not carry (#3347)."
+- contract: qwen35-e2e-verification-v1.yaml
+  equation: flops_per_token
+  module_path: aprender::format::model_arithmetic
+  function: flops_per_token
+  signature: 'fn flops_per_token(parameter_count: u64, seq_len: u64, hidden_dim: u64, attn_layers:
+    u64) -> FlopsPerToken'
+  status: implemented
+  notes: F = 2*P plus the O(S*d*L) attention term QE2E-BND-002 allows. attn_layers counts only
+    softmax-attention layers; a Gated DeltaNet layer passes 0 because its O(d^2) per-token cost
+    is already inside 2*P.
+- contract: qwen35-e2e-verification-v1.yaml
+  equation: memory_breakdown
+  module_path: aprender::format::model_arithmetic
+  function: memory_breakdown
+  signature: 'fn memory_breakdown(size: &ModelSizeConfig, parameter_count: u64, plan: &InferencePlan)
+    -> MemoryBreakdown'
+  status: implemented
+  notes: M = M_weights + M_kv + M_activations, in bytes. Quantized terms use the K-quant
+    super-block sizes in format::layout_contract::block_sizes, so QE2E-ORD-003's ordering holds
+    at whole 256-element super-blocks and is false below one, as that obligation's note records.
+- contract: qwen35-e2e-verification-v1.yaml
+  equation: throughput_model
+  module_path: aprender::format::model_arithmetic
+  function: throughput_model
+  signature: 'fn throughput_model(bandwidth_bytes_per_s: f64, compute_flops_per_s: f64, bytes_per_token:
+    f64, flops_per_token: f64) -> Throughput'
+  status: implemented
+  notes: 'tok/s = min(bandwidth / bytes_per_token, compute / flops_per_token), and reports which
+    side of the roofline bound it. Monotone in bandwidth (QE2E-MON-004); a zero denominator gives
+    0.0 rather than an infinity or a NaN.'
+- contract: qwen35-e2e-verification-v1.yaml
+  equation: contract_composition
+  module_path: aprender::format::model_arithmetic
+  function: contract_composition
+  signature: 'fn contract_composition(size: &ModelSizeConfig, seq_len: usize) -> Vec<CompositionStage>'
+  status: implemented
+  notes: 'compose(embedding, L x block, final_norm, unembed) as a shape pipeline: [S] -> [S,d] ->
+    [S,d] (xL) -> [S,d] -> [S,V]. composition_is_well_formed() checks it chains; every block stage
+    satisfies QE2E-INV-006 and the last stage is QE2E-CON-007''s [seq_len, V].'
 critical_path:
 - softmax
 - rmsnorm

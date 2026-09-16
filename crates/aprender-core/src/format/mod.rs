@@ -185,6 +185,12 @@ pub mod validated_classification;
 // docs/specifications/compiler-enforced-model-types-model-oracle.md
 pub mod model_family;
 
+// Model-shape arithmetic for qwen35-e2e-verification-v1 (#3347)
+// Implements the contract's model_parameter_count / flops_per_token /
+// memory_breakdown / throughput_model / contract_composition equations,
+// bound to their equations in contracts/binding.yaml.
+pub mod model_arithmetic;
+
 // Model Family YAML Contract Loader (PMAT-242)
 // Runtime YAML parser for model family contracts (no external deps).
 // Fallback path; build.rs codegen (PMAT-250) is preferred.
