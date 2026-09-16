@@ -17914,6 +17914,22 @@ roadmap:
   notes: 'llvm-cov overhead scales with instrumented branches EXECUTED, which differs
     between the compress and decompress paths; the ratio had already been widened once
     to 0.25 for this and failed anyway'
+- id: PMAT-3294
+  github_issue: 3294
+  item_type: task
+  title: a roadmap edit without its fragment is refused
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-16T08:42:17Z
+  updated: 2026-09-16T08:42:17Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-3296
   github_issue: 3296
   item_type: task
