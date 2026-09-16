@@ -33,7 +33,7 @@
 
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 // Import GGUF types from realizar
 use realizar::gguf::{GGUFModel, GGUFTransformer, MappedGGUFModel};
@@ -49,9 +49,36 @@ const MAX_GENERATE_TOKENS: usize = 10;
 #[derive(Debug, Clone)]
 struct GGUFModelConfig {
     name: &'static str,
-    path: &'static str,
+    path: String,
     parameters_approx: u64,
     quantization: &'static str,
+}
+
+/// Directory holding the benchmark GGUF models.
+///
+/// PORTABILITY (#2532). These paths used to be one developer's home directory
+/// baked into the binary, so `get_available_models()` returned an empty vec on
+/// every other machine and every benchmark below silently measured nothing.
+/// Resolution order, first hit wins:
+///   1. `$APR_GGUF_BENCH_MODELS` — this benchmark's own override;
+///   2. `$APR_MODELS`            — the repo-wide model directory;
+///   3. `$HOME/src/single-shot-eval/models/raw` — where they sit on the box
+///      this benchmark was authored on, so that host keeps working unchanged.
+fn models_root() -> PathBuf {
+    for var in ["APR_GGUF_BENCH_MODELS", "APR_MODELS"] {
+        if let Ok(dir) = std::env::var(var) {
+            if !dir.is_empty() {
+                return PathBuf::from(dir);
+            }
+        }
+    }
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+    PathBuf::from(home).join("src/single-shot-eval/models/raw")
+}
+
+/// Absolute path of one benchmark model file under [`models_root`].
+fn model_path(file: &str) -> String {
+    models_root().join(file).to_string_lossy().into_owned()
 }
 
 /// Get available test model configurations
@@ -60,19 +87,19 @@ fn get_available_models() -> Vec<GGUFModelConfig> {
     let all_models = vec![
         GGUFModelConfig {
             name: "phi2_q4km",
-            path: "/home/noah/src/single-shot-eval/models/raw/phi-2-q4_k_m.gguf",
+            path: model_path("phi-2-q4_k_m.gguf"),
             parameters_approx: 2_700_000_000,
             quantization: "Q4_K_M",
         },
         GGUFModelConfig {
             name: "deepseek_1.3b_q4km",
-            path: "/home/noah/src/single-shot-eval/models/raw/deepseek-coder-1.3b-instruct-q4_k_m.gguf",
+            path: model_path("deepseek-coder-1.3b-instruct-q4_k_m.gguf"),
             parameters_approx: 1_300_000_000,
             quantization: "Q4_K_M",
         },
         GGUFModelConfig {
             name: "qwen2.5_1.5b_q4km",
-            path: "/home/noah/src/single-shot-eval/models/raw/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf",
+            path: model_path("qwen2.5-coder-1.5b-instruct-q4_k_m.gguf"),
             parameters_approx: 1_500_000_000,
             quantization: "Q4_K_M",
         },
@@ -81,7 +108,7 @@ fn get_available_models() -> Vec<GGUFModelConfig> {
     // Filter to only available models
     all_models
         .into_iter()
-        .filter(|m| Path::new(m.path).exists())
+        .filter(|m| Path::new(&m.path).exists())
         .collect()
 }
 
@@ -94,7 +121,7 @@ fn benchmark_gguf_model_load(c: &mut Criterion) {
     group.sample_size(20); // Fewer samples for large file I/O
 
     for config in get_available_models() {
-        let file_size = fs::metadata(config.path).map(|m| m.len()).unwrap_or(0);
+        let file_size = fs::metadata(&config.path).map(|m| m.len()).unwrap_or(0);
 
         if file_size == 0 {
             continue;
@@ -106,7 +133,7 @@ fn benchmark_gguf_model_load(c: &mut Criterion) {
             &config,
             |b, cfg| {
                 b.iter(|| {
-                    let mapped = MappedGGUFModel::from_path(black_box(cfg.path))
+                    let mapped = MappedGGUFModel::from_path(black_box(cfg.path.as_str()))
                         .expect("Failed to mmap model");
                     black_box(mapped)
                 });
@@ -126,7 +153,7 @@ fn benchmark_gguf_header_parse(c: &mut Criterion) {
 
     for config in get_available_models() {
         // Load file data once
-        let Ok(file_data) = fs::read(config.path) else {
+        let Ok(file_data) = fs::read(&config.path) else {
             continue;
         };
 
@@ -156,7 +183,7 @@ fn benchmark_gguf_transformer_load(c: &mut Criterion) {
 
     for config in get_available_models() {
         // Load file data once
-        let Ok(file_data) = fs::read(config.path) else {
+        let Ok(file_data) = fs::read(&config.path) else {
             continue;
         };
 
@@ -189,7 +216,7 @@ fn benchmark_gguf_memory(c: &mut Criterion) {
     group.sample_size(10);
 
     for config in get_available_models() {
-        let file_size = fs::metadata(config.path).map(|m| m.len()).unwrap_or(0);
+        let file_size = fs::metadata(&config.path).map(|m| m.len()).unwrap_or(0);
 
         if file_size == 0 {
             continue;
@@ -220,11 +247,10 @@ fn test_gguf_benchmark_models_exist() {
     // At least one model should be available for benchmarks to be meaningful
     if models.is_empty() {
         eprintln!("Warning: No GGUF models found for benchmarking");
-        eprintln!("Expected models at:");
-        eprintln!("  /home/noah/src/single-shot-eval/models/raw/phi-2-q4_k_m.gguf");
-        eprintln!(
-            "  /home/noah/src/single-shot-eval/models/raw/deepseek-coder-1.3b-instruct-q4_k_m.gguf"
-        );
+        eprintln!("Expected models under {}:", models_root().display());
+        eprintln!("  phi-2-q4_k_m.gguf");
+        eprintln!("  deepseek-coder-1.3b-instruct-q4_k_m.gguf");
+        eprintln!("Override with $APR_GGUF_BENCH_MODELS or $APR_MODELS.");
     }
 }
 
@@ -236,7 +262,7 @@ fn test_gguf_model_loads_correctly() {
     }
 
     let config = &models[0];
-    let file_data = fs::read(config.path).expect("Failed to read model file");
+    let file_data = fs::read(&config.path).expect("Failed to read model file");
     let model = GGUFModel::from_bytes(&file_data).expect("Failed to parse GGUF");
 
     assert!(model.header.tensor_count > 0, "Model should have tensors");
@@ -251,7 +277,7 @@ fn test_gguf_transformer_loads_weights() {
     }
 
     let config = &models[0];
-    let file_data = fs::read(config.path).expect("Failed to read model file");
+    let file_data = fs::read(&config.path).expect("Failed to read model file");
     let model = GGUFModel::from_bytes(&file_data).expect("Failed to parse GGUF");
     let transformer =
         GGUFTransformer::from_gguf(&model, &file_data).expect("Failed to load transformer");
