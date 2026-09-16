@@ -43,7 +43,9 @@
 //! does not settle, so it is left unbound and `QE2E-BND-005` stays false.
 
 use crate::format::layout_contract::block_sizes;
-use crate::format::model_family::{MlpType, ModelConstraints, ModelSizeConfig};
+use crate::format::model_family::{
+    AttentionType, DeltaNetShape, MlpType, ModelConstraints, ModelSizeConfig,
+};
 
 // ============================================================================
 // Equation: model_parameter_count
@@ -96,13 +98,16 @@ pub struct ParameterBreakdown {
 /// `d_attn`, `d_ffn`, `d_norm` for one ordinary (softmax-attention) decoder
 /// layer of a family described by `size` + `constraints`.
 ///
-/// - `d_attn` = `d*(n_h*d_k) + 2*d*(n_kv*d_k) + (n_h*d_k)*d` (Q, K, V, O),
-///   plus the four bias vectors when `constraints.has_bias`.
+/// - `d_attn` = `d*q_out + 2*d*(n_kv*d_k) + (n_h*d_k)*d` (Q, K, V, O), plus the
+///   four bias vectors when `constraints.has_bias`, plus `2*d_k` of q/k norm
+///   weights when `constraints.qk_norm`. `q_out` is `n_h*d_k`, or twice that
+///   for a gated-attention family (see the comment on the `q_out` binding).
 /// - `d_ffn` = `3*d*d_ff` for a gated MLP (SwiGLU/GeGLU), else `2*d*d_ff`.
 /// - `d_norm` = `2*d` (input norm + post-attention norm).
 ///
-/// This is the dense/GQA accounting. It is NOT the Gated DeltaNet accounting:
-/// see [`model_parameter_count`] for what that needs.
+/// This is the softmax-attention layer. It is NOT the Gated DeltaNet
+/// accounting: that is [`gated_deltanet_layer_params`], and
+/// [`hybrid_layers`] interleaves the two.
 #[must_use]
 pub fn attention_layer_params(
     size: &ModelSizeConfig,
@@ -113,8 +118,20 @@ pub fn attention_layer_params(
     let q_dim = (size.num_heads as u64).saturating_mul(d_k);
     let kv_dim = (size.num_kv_heads as u64).saturating_mul(d_k);
 
+    // A gated-attention family emits the output gate from the q projection, so
+    // that matrix is 2*n_h*d_k wide rather than n_h*d_k. MEASURED in
+    // Qwen3.5-0.8B-Q4_K_M.gguf: attn_q is [1024, 4096] while attn_output is
+    // [2048, 1024], so o_proj still sees n_h*d_k = 2048 and only q is doubled.
+    let q_out = if matches!(
+        constraints.attention_type,
+        AttentionType::HybridGatedDeltaNet
+    ) {
+        q_dim.saturating_mul(2)
+    } else {
+        q_dim
+    };
     let projections = d
-        .saturating_mul(q_dim)
+        .saturating_mul(q_out)
         .saturating_add(d.saturating_mul(kv_dim).saturating_mul(2))
         .saturating_add(q_dim.saturating_mul(d));
     let biases = if constraints.has_bias {
@@ -124,19 +141,113 @@ pub fn attention_layer_params(
     } else {
         0
     };
+    // Per-head q/k RMSNorm weights (attn_q_norm/attn_k_norm, one d_k vector each).
+    let qk_norms = if constraints.qk_norm {
+        d_k.saturating_mul(2)
+    } else {
+        0
+    };
 
-    let d_ff = size.intermediate_dim as u64;
+    LayerParams {
+        d_attn: projections.saturating_add(biases).saturating_add(qk_norms),
+        d_ffn: ffn_params(size, constraints),
+        d_norm: d.saturating_mul(2),
+    }
+}
+
+/// `d_ffn` for one layer: `3*d*d_ff` for a gated MLP (SwiGLU/GeGLU — gate, up
+/// and down), else `2*d*d_ff`. Both layer kinds of a hybrid model share it.
+fn ffn_params(size: &ModelSizeConfig, constraints: &ModelConstraints) -> u64 {
     let matrices = if matches!(constraints.mlp_type, MlpType::SwiGlu | MlpType::GatedMlp) {
         3
     } else {
         2
     };
+    (size.hidden_dim as u64)
+        .saturating_mul(size.intermediate_dim as u64)
+        .saturating_mul(matrices)
+}
+
+/// `d_attn`, `d_ffn`, `d_norm` for one **Gated DeltaNet** layer — the `d_attn`
+/// the dense formula cannot express, because none of its dimensions are
+/// `n_h * d_k`.
+///
+/// Every term is one tensor of `Qwen3.5-0.8B-Q4_K_M.gguf`, named here as the
+/// file names it (`i` = `inner_size`, `s` = `state_size`, `k` = `conv_kernel`,
+/// `h` = `group_count`):
+///
+/// | Tensor | Shape | Parameters |
+/// |--------|-------|------------|
+/// | `attn_qkv.weight` | `[d, 3*i]` | `3*d*i` |
+/// | `attn_gate.weight` | `[d, i]` | `d*i` |
+/// | `ssm_conv1d.weight` | `[k, 3*i]` | `3*k*i` |
+/// | `ssm_alpha.weight`, `ssm_beta.weight` | `[d, h]` each | `2*d*h` |
+/// | `ssm_a`, `ssm_dt.bias` | `[h]` each | `2*h` |
+/// | `ssm_norm.weight` | `[s]` | `s` |
+/// | `ssm_out.weight` | `[i, d]` | `i*d` |
+///
+/// `d_norm` is `2*d` (`attn_norm` + `post_attention_norm`) and `d_ffn` is the
+/// same SwiGLU block as an attention layer — a DeltaNet layer differs only in
+/// how it mixes tokens.
+#[must_use]
+pub fn gated_deltanet_layer_params(
+    size: &ModelSizeConfig,
+    constraints: &ModelConstraints,
+    shape: &DeltaNetShape,
+) -> LayerParams {
+    let d = size.hidden_dim as u64;
+    let inner = shape.inner_size as u64;
+    let heads = shape.group_count as u64;
+    let qkv = d.saturating_mul(inner).saturating_mul(3);
+    let gate = d.saturating_mul(inner);
+    let conv = (shape.conv_kernel as u64)
+        .saturating_mul(inner)
+        .saturating_mul(3);
+    let alpha_beta = d.saturating_mul(heads).saturating_mul(2);
+    let per_head = heads.saturating_mul(2);
+    let out = inner.saturating_mul(d);
+
+    let d_attn = qkv
+        .saturating_add(gate)
+        .saturating_add(conv)
+        .saturating_add(alpha_beta)
+        .saturating_add(per_head)
+        .saturating_add(shape.state_size as u64)
+        .saturating_add(out);
 
     LayerParams {
-        d_attn: projections.saturating_add(biases),
-        d_ffn: d.saturating_mul(d_ff).saturating_mul(matrices),
+        d_attn,
+        d_ffn: ffn_params(size, constraints),
         d_norm: d.saturating_mul(2),
     }
+}
+
+/// The per-layer input for a HYBRID model: Gated DeltaNet layers with a
+/// softmax-attention layer every `full_attention_interval`-th position, the
+/// last of each group.
+///
+/// Falls back to [`uniform_layers`] for any family that declares no DeltaNet
+/// shape (every family but `qwen3_5`) or declares no schedule, so the answer
+/// for a dense family is byte-for-byte what it was before #3346.
+#[must_use]
+pub fn hybrid_layers(size: &ModelSizeConfig, constraints: &ModelConstraints) -> Vec<LayerParams> {
+    let Some(shape) = constraints.deltanet else {
+        return uniform_layers(size, constraints);
+    };
+    if shape.full_attention_interval == 0 {
+        return uniform_layers(size, constraints);
+    }
+    let attention = attention_layer_params(size, constraints);
+    let deltanet = gated_deltanet_layer_params(size, constraints, &shape);
+    (0..size.num_layers)
+        .map(|i| {
+            if (i + 1) % shape.full_attention_interval == 0 {
+                attention
+            } else {
+                deltanet
+            }
+        })
+        .collect()
 }
 
 /// `L` copies of [`attention_layer_params`] — the per-layer input for a
@@ -166,14 +277,19 @@ pub fn uniform_layers(size: &ModelSizeConfig, constraints: &ModelConstraints) ->
 ///
 /// # What this does NOT discharge
 ///
-/// `QE2E-INV-001` wants `P(Qwen3.5-9B) ∈ [9.0B, 9.2B]`. Feeding this function
-/// [`uniform_layers`] for the 9B variant yields ≈8.21B, because Qwen3.5 is
-/// `hybrid_gated_deltanet`: three of every four layers are Gated DeltaNet, whose
-/// `d_attn` covers conv, gate and state projections sized by `inner_size`,
-/// `state_size`, `conv_kernel` and `group_count`. Those four keys exist in
-/// `contracts/model-families/qwen3_5.yaml` but NOT in [`ModelConstraints`], so
-/// the GDN `d_attn` cannot be derived from the config type as it stands. The
-/// equation is implemented; the 9B invariant is not verified.
+/// `QE2E-INV-001` wants `P(Qwen3.5-9B) ∈ [9.0B, 9.2B]`, and it is still NOT
+/// discharged — but for a different reason than before #3346.
+///
+/// The arithmetic is now verified against a real file: fed the configuration of
+/// `Qwen3.5-0.8B-Q4_K_M.gguf`, [`hybrid_layers`] + this function reproduce that
+/// file's 320-tensor inventory EXACTLY (752,393,024 parameters). The Gated
+/// DeltaNet shape reaches it through [`ModelConstraints::deltanet`].
+///
+/// Applying the same, now-falsified, arithmetic to the 9b variant of
+/// `contracts/model-families/qwen3_5.yaml` gives **8,344,907,136** — 0.655B
+/// below the range. The remaining gap is in the DESCRIPTOR, not here, and is
+/// not something this function may paper over: see
+/// `model_arithmetic_tests.rs::qwen35_9b_hybrid_layers_still_fall_short_of_the_invariant_range`.
 #[must_use]
 pub fn model_parameter_count(
     size: &ModelSizeConfig,

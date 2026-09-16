@@ -870,6 +870,56 @@ mod contract_falsification {
     }
 
     // ========================================================================
+    // FALSIFY-MF-QWEN35-010: the Gated DeltaNet shape keys survive the loader
+    //
+    // Prediction: loading contracts/model-families/qwen3_5.yaml yields
+    //             constraints.deltanet = Some(inner 2048, state 128, conv 4,
+    //             group 8, interval 4) — the values the descriptor declares —
+    //             and EVERY other family yields None.
+    // If fails: the keys are declared in YAML and dropped on the way into
+    //           ModelConstraints, which is the #3346 defect. That drop made the
+    //           arithmetic under-count a real Qwen3.5 file by 14.4%, because a
+    //           DeltaNet layer's parameters live entirely in these dimensions.
+    // ========================================================================
+    #[test]
+    fn falsify_mf_qwen35_010_deltanet_shape_reaches_constraints() {
+        let families = load_all_families();
+        let qwen35 = families
+            .iter()
+            .find(|(name, _)| name == "qwen3_5")
+            .expect("FALSIFIED: qwen3_5 family not found");
+
+        let shape = qwen35
+            .1
+            .constraints
+            .deltanet
+            .expect("FALSIFIED QWEN35-010: qwen3_5 declares inner_size/state_size, got None");
+
+        assert_eq!(
+            shape,
+            DeltaNetShape {
+                inner_size: 2048,
+                state_size: 128,
+                conv_kernel: 4,
+                group_count: 8,
+                full_attention_interval: 4,
+            },
+            "FALSIFIED QWEN35-010: loader did not reproduce the declared shape"
+        );
+
+        // No other family declares a DeltaNet mixer, so none may acquire one:
+        // a false Some() here would change that family's parameter accounting.
+        for (name, config) in &families {
+            if name != "qwen3_5" {
+                assert!(
+                    config.constraints.deltanet.is_none(),
+                    "FALSIFIED QWEN35-010: {name} acquired a DeltaNet shape it never declared"
+                );
+            }
+        }
+    }
+
+    // ========================================================================
     // FALSIFY-MF-QWEN35-007: Qwen3.5 architecture class registered
     //
     // Prediction: The qwen3_5 family maps to Qwen3_5ForCausalLM architecture.

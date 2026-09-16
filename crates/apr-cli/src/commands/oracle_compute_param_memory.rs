@@ -275,6 +275,7 @@
                 positional_encoding: PositionalEncoding::Absolute,
                 mlp_type: MlpType::GeluMlp,
                 qk_norm: false,
+                deltanet: None,
             },
             tensor_template: TensorTemplate {
                 embedding: "wte.weight".to_string(),
