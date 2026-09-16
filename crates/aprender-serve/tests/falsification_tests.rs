@@ -34,14 +34,34 @@ fn falsify_h1_simd_dot_speedup() {
             size, scalar_time, simd_time, speedup
         );
 
-        // FALSIFICATION CRITERION: SIMD must be faster
-        assert!(
-            simd_time <= scalar_time || speedup > 0.9, // Allow 10% measurement noise
-            "H1 FALSIFIED: SIMD slower than scalar at size={}: {:?} vs {:?}",
-            size,
-            simd_time,
-            scalar_time
-        );
+        // FALSIFICATION CRITERION: SIMD must be faster — ENFORCED IN RELEASE BUILDS ONLY.
+        //
+        // WALL-CLOCK ASSERTION, gated by build profile. This is a required check
+        // (aprender#3114, run 35089783289, job 104773107023: "Quick tier: lib +
+        // integration tests ... (BSE-17)") and CI's quick-tier invocation is
+        // `cargo nextest run --profile ci --lib --tests <pkgs>` — no `--release` —
+        // so on main this compares two UNOPTIMIZED (debug) implementations. The
+        // same job recorded speedup=0.40x at size=512 and speedup=6.41x at
+        // size=128 in ONE run: that spread is debug codegen + shared-runner
+        // contention, not a SIMD regression (see "no wall-clock assertion in a
+        // required check", memory feedback_no_wallclock_in_required_checks.md).
+        // The file's own header always assumed `--release`; debug builds now
+        // print the measurement and skip enforcement, release builds still
+        // enforce the >0.9x floor. Do not "restore" an unconditional assert here.
+        if !cfg!(debug_assertions) {
+            assert!(
+                simd_time <= scalar_time || speedup > 0.9, // Allow 10% measurement noise
+                "H1 FALSIFIED: SIMD slower than scalar at size={}: {:?} vs {:?}",
+                size,
+                simd_time,
+                scalar_time
+            );
+        } else {
+            println!(
+                "H1 size={}: debug build — measurement printed, not enforced (release-only gate)",
+                size
+            );
+        }
     }
 }
 
