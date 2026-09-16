@@ -159,7 +159,9 @@ The measured logits cosines reproduce `VARIATION.md` B exactly (0.961309, 0.9734
 - `forward_single_qwen35` delegates to it with a no-op closure.
 - The sublayers became `forward_deltanet_observed` / `forward_attention_observed`. The old names remain as `#[cfg(test)]` no-op wrappers for the contract tests.
 - The observer only reads. The one rewritten statement, `dt = softplus(..) * a`, became two statements with the same two IEEE operations, so that `a_softplus` can be observed.
-- Global points pass `QWEN35_OBS_NO_LAYER`. Layer points emit, in graph order, `QWEN35_OBS_DELTANET_POINTS` (18 names) or `QWEN35_OBS_ATTENTION_POINTS` (8 names).
+- Global points pass `QWEN35_OBS_NO_LAYER`. Layer points emit, in graph order, `QWEN35_OBS_DELTANET_POINTS` (18 names) or `QWEN35_OBS_ATTENTION_POINTS` (10 names since PMAT-3091 iteration 6, which added `Qcur_normed` /
+  `Kcur_normed` — the per-head q/k RMSNorm outputs, which llama computes but leaves UNNAMED as `node_30` /
+  `node_33` in `layerwise/llama_tensor_names.tsv`, so they have no llama counterpart to compare against).
 
 **Mapping, read from source at d1d3c3396 (not from memory): `layerwise/observer_mapping.tsv`** (29 rows: llama name, llama file:line, apr fn, apr file:line at `0543266ee`).
 - Mixer output before the residual add: `linear_attn_out-N` (`qwen35.cpp:462`) for DeltaNet, `attn_output-N` (`qwen35.cpp:330`) for attention.
