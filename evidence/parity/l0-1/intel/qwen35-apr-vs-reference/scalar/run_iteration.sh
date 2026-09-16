@@ -7,7 +7,7 @@ set -uo pipefail
 IT="${1:?iteration label}"
 BIN="${BIN:-/mnt/nvme-raid0/targets/obs-3091/release/examples/qwen35_layer_obs}"
 EV=/mnt/nvme-raid0/agent-wt/layer-3091/evidence/parity/l0-1/intel/qwen35-apr-vs-reference
-MODEL="$HOME/models/Qwen3.5-0.8B-Q4_K_M.gguf"; W=/tmp/scalar3091; R="$W/ref"; RUN="$W/iter/$IT"; O="$EV/scalar/iter/$IT"; ENVV=APR_EMULATE_GGML_VECDOT
+MODEL="$HOME/models/Qwen3.5-0.8B-Q4_K_M.gguf"; W=/tmp/scalar3091; R="$W/ref"; RUN="${RUNROOT:-$W/iter}/$IT"; O="$EV/scalar/iter/$IT"; ENVV=APR_EMULATE_GGML_VECDOT
 declare -A IDS=([orig]="$EV/prompt_token_ids.txt" [p4]="$EV/variation/prompt-4.ids")
 declare -A SUBJECT=([orig]=f6f792649014dcef6eec1afaf96852a293cc95c6cfceb1c88d62e16ee36c0252 [p4]=92f1b54d504a53f758a56911c4779ce1900207bd89c78d58597e558ebc6d3ee9)
 mkdir -p "$RUN" "$O"
