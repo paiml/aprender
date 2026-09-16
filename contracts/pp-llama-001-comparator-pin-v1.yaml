@@ -12,6 +12,7 @@ metadata:
     - "scripts/llama_bin.sh — the only producer of the comparator's flags and of the pin verdict"
     - "evidence/parity/props-39173bcac-template.json — GET /props at the old template argv"
     - "evidence/parity/props-39173bcac-np16.json — GET /props at the decided band argv"
+    - "evidence/parity/props-d1d3c3396-template.json, props-d1d3c3396-np16.json — the same two reads at the re-pin (PMAT-3329, 2026-09-15)"
     - "paiml/aprender#2676 (PARITY-009, the pin), #2677 (PARITY-010, the protocol), #2737 (`-b 1`)"
   tags:
     - parity
@@ -138,12 +139,12 @@ falsification_tests:
     rule: "The comparator template serves the band"
     prediction: "comparator_serve_command passes -np {c} and derives -c from the band"
     test: "grep -q 'comparator_serve_command.*-np {c}' scripts/llama_pin.toml && grep -q 'comparator_serve_command.*-c {c_ctx}' scripts/llama_pin.toml"
-    if_fails: "At the pin the auto slot count is the CONSTANT 4 (tools/server/server.cpp:86-89), measured here as total_slots=4 at the old template argv (evidence/parity/props-39173bcac-template.json). At c=16 a comparator at defaults queues 12 of the 16 offered requests while the receipt calls the result parity; under -np 16 -c 16384 the same build reports total_slots=16, n_ctx=1024 per slot and kv_unified=false (evidence/parity/props-39173bcac-np16.json)."
+    if_fails: "At both pins the auto slot count is the CONSTANT 4 (39173bcac tools/server/server.cpp:86-89; d1d3c3396 tools/server/server.cpp:152-155), measured as total_slots=4 at the old template argv (evidence/parity/props-39173bcac-template.json, evidence/parity/props-d1d3c3396-template.json). At c=16 a comparator at defaults queues 12 of the 16 offered requests while the receipt calls the result parity; under -np 16 -c 16384 the same build reports total_slots=16, n_ctx=1024 per slot and kv_unified=false (evidence/parity/props-39173bcac-np16.json)."
 
   - id: FALSIFY-PPL-PIN-009
     rule: "Both /props reads are committed with their argv"
-    prediction: "evidence/parity/props-39173bcac-{template,np16}.json each carry argv, started_utc, host, build and the verbatim props body"
-    test: "for f in template np16; do jq -e '.argv and .started_utc and .host and .build and .props.total_slots' evidence/parity/props-39173bcac-$f.json > /dev/null || exit 1; done"
+    prediction: "evidence/parity/props-{39173bcac,d1d3c3396}-{template,np16}.json each carry argv, started_utc, host, build and the verbatim props body"
+    test: "for b in 39173bcac d1d3c3396; do for f in template np16; do jq -e '.argv and .started_utc and .host and .build and .props.total_slots' evidence/parity/props-$b-$f.json > /dev/null || exit 1; done; done"
     if_fails: "The withdrawn 2026-08-25 run's own comparator argv is unrecoverable from this tree (not in any evidence file, commit message or doc), so the '4 slots by design' premise cannot be settled from it. These two reads settle it at the pin instead, and a props body without the argv beside it would repeat the same omission."
 
   - id: FALSIFY-PPL-PIN-010
