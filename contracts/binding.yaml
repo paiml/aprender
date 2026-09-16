@@ -764,7 +764,7 @@ bindings:
   notes: "P = V*d + L*(d_attn + d_ffn + d_norm) + d_final + V*d. Per-layer terms come in as data\
     \ (&[LayerParams]) so a hybrid family can mix layer kinds. QE2E-INV-001 (P(9B) in [9.0B, 9.2B])\
     \ is NOT discharged: dense/GQA accounting gives 8.21B and the Gated DeltaNet d_attn needs\
-    \ inner_size/state_size/conv_kernel/group_count, which ModelConstraints does not carry (#3347)."
+    \ inner_size/state_size/conv_kernel/group_count, which the 9b descriptor disagrees with itself (inner_size 2048 at hidden_dim 4096, and group_count 8 fails group_count*state_size == inner_size), so P(9B) computes to 8.345B; settling it needs a real Qwen3.5-9B GGUF (#3346)
 - contract: qwen35-e2e-verification-v1.yaml
   equation: flops_per_token
   module_path: aprender::format::model_arithmetic
