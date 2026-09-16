@@ -86,7 +86,7 @@ equations:
 
 proof_obligations:
   - id: REG-OB-004
-    statement: "apr-cli turns a backend request into a Selection or a refusal by reading the registry, never cfg!; a forced accelerator that is not Ready refuses (exit 9 not-compiled, 14 not-Ready) and never resolves to cpu, and only the default may fall to cpu; the static guard keeps cfg!(feature=cuda|wgpu) backend reads at zero outside registry.rs."
+    statement: "apr-cli turns a backend request into a Selection or a refusal by reading the registry, never cfg!; a forced accelerator that is not Ready refuses (exit 9 not-compiled, 14 not-Ready) and never resolves to cpu, and only the default may fall to cpu; the static guard keeps cfg!(feature=cuda|wgpu) backend reads at zero outside registry.rs; the served process reports the startup Selection as effective-config `resolved` (REG-12), and a forced accelerator whose RUNTIME attempt fell to cpu is refused before any output."
     discharged_by: falsification_tests[2]
   - id: REG-OB-001
     statement: "cpu is always Ready and every kind of the fixed list is an entry; a non-Ready entry carries a non-empty reason and every entry a source (spec invariants i and iii)."
@@ -141,12 +141,33 @@ falsification_tests:
       every_backend_value_is_resolvable_on_every_fixture_and_forced_gpu_is_never_cpu: 5/5 PASS; and
       scripts/check_backend_registry.sh --static finds zero cfg!(feature = "cuda"|"wgpu") backend reads
       in crates/apr-cli/src outside registry.rs, over the call sites that now read the registry
-      (accel, dispatch, dispatch_analysis, bench, finetune, lib, serve).
-    test: 'cargo test -p apr-cli --test backend_refusal_case_table && bash scripts/check_backend_registry.sh --static'
+      (accel, dispatch, dispatch_analysis, bench, finetune, lib, serve); and GET /v1/effective-config
+      carries `resolved` {kind, device_index, device_uid, device_name, reason, discovered_at_unix,
+      basis, matches_loaded} — the startup Selection (REG-12) beside the residency-measured
+      compute_class, matches_loaded null on a model-less server
+      (effective_config_reports_the_startup_backend_resolution), and what the serve gate publishes
+      is read back field for field through realizar's own accessor
+      (the_startup_resolution_serve_publishes_is_the_one_effective_config_reports); and after a
+      generation, a forced accelerator whose runtime attempt fell to CPU is refused before any output
+      (BackendUnavailable, 14) while a default selection that fell to CPU prints a corrective
+      `selected: cpu (fallback …)` line — registry::after_generation, unit-tested, and CALLED by both
+      generating surfaces before the first output branch
+      (every_generating_surface_reconciles_what_ran_with_what_was_announced,
+      the_run_reconciliation_happens_before_the_first_output_branch).
+    test: 'cargo test -p apr-cli --test backend_refusal_case_table && bash scripts/check_backend_registry.sh --static && cargo test -p aprender-serve --lib effective_config_route_pp2 && cargo test -p apr-cli --lib registry:: serve::effective_config_publish_tests runtime_fallback_refusal_wiring'
     if_fails: >-
       a build that compiled no accelerator, or a host with none Ready, runs a forced --gpu on cpu
       and reports success (aprender#2696) — the claim-1 defect
     mutation: >-
+      drop the after_generation call from run_entry.rs print_run_output (the forced Err arm falls
+      through to cpu output, which is the 2026-09-07 defect) ->
+      every_generating_surface_reconciles_what_ran_with_what_was_announced RED naming `apr run`;
+      move that call below the --stream branch ->
+      the_run_reconciliation_happens_before_the_first_output_branch RED;
+      publish a constant `kind: "cpu"` instead of the resolved kind in serve::publish_backend_resolution ->
+      the_startup_resolution_serve_publishes_is_the_one_effective_config_reports RED;
+      make resolved_report() return None ->
+      effective_config_reports_the_startup_backend_resolution RED;
       make the not-ready branch of resolve_in return cpu_resolved instead of an Err ->
       a_forced_accelerator_with_none_ready_refuses_and_never_downgrades and
       every_backend_value_is_resolvable_on_every_fixture_and_forced_gpu_is_never_cpu RED (observed);
@@ -157,7 +178,7 @@ falsification_tests:
 non_goals:
   - "Side-effect-free discovery is a PROCESS property (no files, no cache, no persistent allocation); reading free memory needs a driver context, so the CUDA factory creates and drops one CUDA context per device (cuCtxCreate + drop) during discovery — recorded here rather than hidden (review quorum 2026-09-06, lane 3)."
   - "device_uid is vendor + normalised adapter name from BOTH APIs; if two APIs name one card differently the twins carry different uids and the reserve refusal does not propagate between them (lane 2). Every fixture and the four hosts name the card identically through cuda and wgpu; a host that does not is a dogfood finding, not a silent pass — distinct_devices() would count two."
-  - "Resolution's remaining half — effective-config.backend == the resolved Selection (REG-12) — is NOT claimed here; R-0b (#3002) adds it to this file with the code that discharges it. The resolution rule and the zero-cfg! static guard over the call sites ARE discharged here (REG-OB-004)."
+  - "Resolution's remaining half — effective-config `resolved` == the Selection the launcher resolved (REG-12) — IS claimed here as of S3c (#3041), with the code and the read-back test that discharge it. What stays out: the PRE-generation refusal. apr-cli reconciles AFTER generation, so a forced accelerator that fell to cpu at runtime has already spent the cpu run when it is refused (realizar decides that fallback inside run_gguf_generate); refusing before the tokens are spent is #3042."
   - "The non-hermetic fixtures FX-2/4/5/6/8/9 (real drivers, real cards, root): host-dogfood rows recorded as receipts on the named hosts, never CI claims (design quorum 2026-09-06)."
   - "Elementwise / structured device kernels' capabilities (caps is a name list; cuBLAS-as-capability lands with R-0b's effective-config)."
 

@@ -262,7 +262,9 @@ fn accelerator_request(config: &ServerConfig) -> Option<(crate::registry::Reques
 /// R-0b (#3002): the request resolves against the backend registry. A forced
 /// backend never downgrades: not compiled ⇒ `FeatureDisabled` (9), compiled but
 /// not Ready on this host ⇒ `BackendUnavailable` (14).
-fn ensure_accelerator_available(config: &ServerConfig) -> Result<()> {
+fn ensure_accelerator_available(
+    config: &ServerConfig,
+) -> Result<Option<crate::registry::Resolved>> {
     match accelerator_request(config) {
         // R-0b "selected: always": the registry's default is announced with its
         // reason even when nothing asked for an accelerator.
@@ -283,10 +285,9 @@ fn ensure_accelerator_available(config: &ServerConfig) -> Result<()> {
                 backend: config.backend.as_deref(),
                 layers_want_accelerator: false,
             };
-            let _ = crate::registry::announce(&req, asked);
-            Ok(())
+            Ok(crate::registry::announce(&req, asked).ok())
         }
-        Some((req, asked)) => crate::registry::announce(&req, &asked).map(|_| ()),
+        Some((req, asked)) => crate::registry::announce(&req, &asked).map(Some),
     }
 }
 
@@ -296,11 +297,43 @@ fn ensure_accelerator_available(config: &ServerConfig) -> Result<()> {
 pub(crate) fn ensure_accelerator_available_in(
     config: &ServerConfig,
     reg: &trueno::registry::BackendRegistry,
-) -> Result<()> {
+) -> Result<Option<crate::registry::Resolved>> {
     match accelerator_request(config) {
-        None => Ok(()),
-        Some((req, asked)) => crate::registry::resolve_in(&req, &asked, reg).map(|_| ()),
+        None => Ok(None),
+        Some((req, asked)) => crate::registry::resolve_in(&req, &asked, reg).map(Some),
     }
+}
+
+/// R-0b (#3002, REG-12): publish the Selection this process resolved at startup so
+/// `GET /v1/effective-config` can report it as `resolved`, beside the
+/// residency-MEASURED `compute_class`. Returns whether THIS call is the one that
+/// recorded it — the store takes the first write, and a served process resolves once.
+///
+/// Separated from [`run`] and named on purpose: a value that is published and never
+/// read back is indistinguishable from one that was never published, so this is the
+/// seam the read-back test holds (`effective_config_publish_tests`).
+#[cfg(feature = "inference")]
+pub(crate) fn publish_backend_resolution(resolved: Option<&crate::registry::Resolved>) -> bool {
+    let Some(r) = resolved else { return false };
+    realizar::api::effective_config::set_backend_resolution(
+        realizar::api::effective_config::BackendResolution {
+            kind: r.kind.to_string(),
+            device_index: r.device_index,
+            device_uid: r.device_uid.clone(),
+            device_name: r.device_name.clone(),
+            reason: r.reason.clone(),
+            discovered_at_unix: r.discovered_at_unix,
+            basis: "apr-cli backend registry at startup (R-0b, #3002)".to_string(),
+            matches_loaded: None,
+        },
+    )
+}
+
+/// Without `inference` there is no server to report to, so there is nothing to
+/// publish — and `run` still has exactly one spelling of the call.
+#[cfg(not(feature = "inference"))]
+pub(crate) fn publish_backend_resolution(_resolved: Option<&crate::registry::Resolved>) -> bool {
+    false
 }
 
 /// Serve command entry point (blocking)
@@ -322,7 +355,9 @@ pub(crate) fn run(model_path: &Path, config: &ServerConfig) -> Result<()> {
     contract_pre_server_lifecycle!();
 
     // `--gpu` must not be accepted by a build that has no GPU to dispatch to.
-    ensure_accelerator_available(config)?;
+    let resolved = ensure_accelerator_available(config)?;
+    // R-0b / REG-12: the startup resolution reaches GET /v1/effective-config.
+    publish_backend_resolution(resolved.as_ref());
 
     // PMAT-297: Configure rayon thread pool to physical core count.
     // Default (all threads incl. HT) causes 44% regression from contention.
@@ -890,5 +925,68 @@ mod gpu_layers_contract_tests {
         cfg.gpu_layers = Some(GpuLayerRequest::None);
         ensure_accelerator_available_in(&cfg, &reg)
             .expect("--gpu-layers 0 asks for no accelerator");
+    }
+}
+
+/// R-0b / S3c (#3041, REG-12): what `apr serve` PUBLISHES at startup is what the
+/// `/v1/effective-config` route READS. The route's own assertion lives in
+/// aprender-serve (`effective_config_reports_the_startup_backend_resolution`); this
+/// is the other half — that the serve gate hands realizar the Selection the registry
+/// returned, field for field, and not a constant.
+#[cfg(all(test, feature = "inference"))]
+mod effective_config_publish_tests {
+    use super::*;
+
+    /// Nothing else in this test binary publishes a resolution, so the store is
+    /// empty when this test runs and the first write is ours.
+    #[test]
+    fn the_startup_resolution_serve_publishes_is_the_one_effective_config_reports() {
+        assert!(
+            !publish_backend_resolution(None),
+            "a gate that resolved nothing must publish nothing, not a cpu placeholder"
+        );
+        let resolved = crate::registry::Resolved {
+            kind: "cuda",
+            device_index: Some(3),
+            device_uid: Some("nvidia:geforce-rtx-4090".to_string()),
+            device_name: "NVIDIA GeForce RTX 4090".to_string(),
+            reason: "--backend cuda: cuda device 3 is Ready".to_string(),
+            discovered_at_unix: 1_757_000_000,
+        };
+        assert!(
+            publish_backend_resolution(Some(&resolved)),
+            "the first publish of the process must be recorded"
+        );
+
+        // READ BACK through realizar's own accessor — the one the route calls.
+        let back = realizar::api::effective_config::backend_resolution()
+            .expect("what serve published must be visible to the route that reports it");
+        assert_eq!(
+            back.kind, "cuda",
+            "the reported kind must be the RESOLVED kind, not a constant: {back:?}"
+        );
+        assert_eq!(back.device_index, Some(3), "{back:?}");
+        assert_eq!(
+            back.device_uid.as_deref(),
+            Some("nvidia:geforce-rtx-4090"),
+            "REG-9 identity must survive the hand-off: {back:?}"
+        );
+        assert_eq!(back.device_name, "NVIDIA GeForce RTX 4090", "{back:?}");
+        assert_eq!(
+            back.reason, "--backend cuda: cuda device 3 is Ready",
+            "REG-8: the registry's reason, not a re-worded one: {back:?}"
+        );
+        assert_eq!(
+            back.discovered_at_unix, 1_757_000_000,
+            "REG-12: discovery time is reported, not the read time: {back:?}"
+        );
+        assert!(
+            back.matches_loaded.is_none(),
+            "nothing is resident at startup, so the comparison is null, never true: {back:?}"
+        );
+        assert!(
+            back.basis.contains("apr-cli"),
+            "the launcher must name itself as the basis: {back:?}"
+        );
     }
 }
