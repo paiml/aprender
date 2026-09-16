@@ -685,10 +685,13 @@ fn qhf_con_007_residual_identity() -> Result<()> {
 
 // === contracts/qwen35-e2e-verification-v1.yaml (QE2E) ======================================
 //
-// Three of the seven obligations are unit-testable against this code and are discharged
-// below: QE2E-ORD-003, QE2E-INV-006, QE2E-CON-007. QE2E-INV-001 (a 9B checkpoint's
-// parameter count), QE2E-BND-002 (an O() bound with no constant), QE2E-MON-004 (a
-// throughput claim) and QE2E-BND-005 (a coverage meta-claim) are not; see #3091.
+// Six of the seven obligations are discharged against this code: QE2E-ORD-003,
+// QE2E-INV-006 and QE2E-CON-007 below, and QE2E-INV-001's parameter sum, QE2E-BND-002 and
+// QE2E-MON-004 at the end of this file -- none of the three needs a device, because each is
+// arithmetic over the model's own tensor inventory or over this contract's own equation.
+// QE2E-BND-005 (coverage(qwen35_contracts) = 1.0) is NOT proved: it is false today, and
+// asserting it would mean lowering it until it passed. QE2E-INV-001's 9B range is not
+// asserted either -- see the note on that obligation in the contract (#3091).
 
 /// Tokens that visit the first and the last embedding row.
 fn token_sequence(dims: Dims, seq_len: usize) -> Vec<u32> {
@@ -1007,4 +1010,291 @@ fn qhf_bnd_005_hidden_states_stay_finite() -> Result<()> {
         }
     }
     Ok(())
+}
+
+// === QE2E-INV-001 / QE2E-BND-002 / QE2E-MON-004: size, cost, throughput ====================
+//
+// These three obligations are about the model's SIZE and COST rather than its outputs, so
+// they are discharged against an inventory of the real `Qwen35Model` structures instead of a
+// forward pass. Nothing here reads a device: `tok_s` is DEFINED by this contract's own
+// `throughput_model` equation, and every constant is derived from the tensors the synthetic
+// models actually carry.
+
+/// Elements a weight tensor carries, from its BYTES (F32 here), not from its declared shape:
+/// a `predicted_parameters` term that disagrees with the tensor the fixture built is then a
+/// falsification rather than two copies of the same typo.
+fn tensor_elements(t: &OwnedQuantizedTensor) -> u64 {
+    u64::try_from(t.data.len() / 4).unwrap_or(0)
+}
+
+fn as_u64(n: usize) -> u64 {
+    u64::try_from(n).unwrap_or(0)
+}
+
+/// Parameters of one full-attention layer, measured tensor by tensor.
+fn attention_layer_elements(a: &Qwen35OwnedAttentionLayer) -> u64 {
+    as_u64(a.attn_norm.len())
+        + tensor_elements(&a.attn_q)
+        + tensor_elements(&a.attn_k)
+        + tensor_elements(&a.attn_v)
+        + as_u64(a.attn_q_norm.len())
+        + as_u64(a.attn_k_norm.len())
+        + tensor_elements(&a.attn_output)
+        + as_u64(a.post_attention_norm.len())
+        + tensor_elements(&a.ffn_gate)
+        + tensor_elements(&a.ffn_up)
+        + tensor_elements(&a.ffn_down)
+}
+
+/// Parameters of one Gated `DeltaNet` layer, measured tensor by tensor.
+fn deltanet_layer_elements(d: &Qwen35OwnedDeltaNetLayer) -> u64 {
+    as_u64(d.attn_norm.len())
+        + tensor_elements(&d.attn_qkv)
+        + tensor_elements(&d.attn_gate)
+        + tensor_elements(&d.ssm_alpha)
+        + tensor_elements(&d.ssm_beta)
+        + as_u64(d.ssm_a.len())
+        + as_u64(d.ssm_dt_bias.len())
+        + as_u64(d.ssm_conv1d_weight.len())
+        + as_u64(d.ssm_norm_weight.len())
+        + tensor_elements(&d.ssm_out)
+        + as_u64(d.post_attention_norm.len())
+        + tensor_elements(&d.ffn_gate)
+        + tensor_elements(&d.ffn_up)
+        + tensor_elements(&d.ffn_down)
+}
+
+/// `P`, MEASURED: every parameter the model carries, counted from the tensors themselves.
+fn measured_parameters(base: &OwnedQuantizedModel, layers: &[Qwen35OwnedLayer]) -> u64 {
+    let mut n = as_u64(base.token_embedding.len())
+        + as_u64(base.output_norm_weight.len())
+        + tensor_elements(&base.lm_head_weight);
+    for layer in layers {
+        n += match layer {
+            Qwen35OwnedLayer::Attention(a) => attention_layer_elements(a),
+            Qwen35OwnedLayer::DeltaNet(d) => deltanet_layer_elements(d),
+        };
+    }
+    n
+}
+
+/// `P`, PREDICTED from the architecture config alone — the contract's
+/// `P = V*d + L*(d_attn + d_ffn + d_norm) + d_final + V*d` instantiated on `Dims`, with
+/// `d_attn` split by layer type because Qwen3.5 is hybrid. `V*d` appears twice: the
+/// embedding and the untied lm_head (`constraints.tied_embeddings = false`).
+fn predicted_parameters(dims: Dims, layers: &[Qwen35OwnedLayer]) -> u64 {
+    let (h, hd, inter) = (
+        as_u64(dims.hidden),
+        as_u64(dims.attn_head_dim),
+        as_u64(dims.intermediate),
+    );
+    let v = as_u64(dims.vocab);
+    let (nh, nkv) = (as_u64(dims.num_heads), as_u64(dims.num_kv_heads));
+    let (gdn_w, conv_d) = (as_u64(dims.gdn_width()), as_u64(dims.conv_dim()));
+    let (gdn_h, gdn_hd) = (as_u64(dims.gdn_heads), as_u64(dims.gdn_head_dim));
+    // Every layer, whatever its mixer, carries two RMSNorms and the SwiGLU FFN.
+    let d_norm = 2 * h;
+    let d_ffn = 3 * h * inter;
+    // Gated full attention: q is DOUBLE width (the gate is packed into it, as the loader reads it).
+    let d_attn = h * nh * hd * 2 + 2 * (h * nkv * hd) + nh * hd * h + 2 * hd;
+    let d_gdn = h * conv_d
+        + h * gdn_w
+        + 2 * (h * gdn_h)
+        + 2 * gdn_h
+        + as_u64(CONV_KERNEL) * conv_d
+        + gdn_hd
+        + gdn_w * h;
+    let per_layer: u64 = layers
+        .iter()
+        .map(|l| match l {
+            Qwen35OwnedLayer::Attention(_) => d_attn + d_ffn + d_norm,
+            Qwen35OwnedLayer::DeltaNet(_) => d_gdn + d_ffn + d_norm,
+        })
+        .sum();
+    v * h + per_layer + h + v * h
+}
+
+/// QE2E-INV-001's parameter SUM (FALSIFY-QE2E-001, "sum all parameter shapes"), over the
+/// real `Qwen35Model` structures and both layer types: the count derived from the
+/// architecture config must equal the count measured tensor by tensor from the model itself.
+///
+/// This discharges the `model_parameter_count` EQUATION, not the obligation's 9B
+/// instantiation `P(Qwen3.5-9B) ∈ [9.0B, 9.2B]`: see the note on QE2E-INV-001 in the
+/// contract — this same formula on the in-tree 9B constants
+/// (`contracts/model-families/qwen3_5.yaml`) gives 8.209B, outside the stated range, and no
+/// in-tree descriptor states the Gated `DeltaNet` tensor shapes that the missing parameters
+/// would have to come from (#3091).
+#[test]
+fn qe2e_inv_001_parameter_sum_matches_tensor_inventory() -> Result<()> {
+    for dims in DIMS {
+        let base = base_model(dims);
+        for layers in [hybrid_layers(dims, 1000), hybrid_schedule(dims, 1100, 4)] {
+            let measured = measured_parameters(&base, &layers);
+            let predicted = predicted_parameters(dims, &layers);
+            assert!(
+                measured > 0,
+                "QE2E-INV-001: an empty inventory would pass any sum"
+            );
+            assert_eq!(
+                predicted,
+                measured,
+                "QE2E-INV-001 ({} layers, d_model={}): the parameter count derived from the \
+                 architecture config is {predicted}, the model carries {measured}",
+                layers.len(),
+                dims.hidden
+            );
+        }
+    }
+    Ok(())
+}
+
+/// Weight FLOPs per decoded token: two per multiply-add of every projection the forward pass
+/// runs. Norms and the embedding lookup are excluded — they are parameters, not matmuls.
+fn weight_flops_per_token(base: &OwnedQuantizedModel, layers: &[Qwen35OwnedLayer]) -> u64 {
+    let mut mac = tensor_elements(&base.lm_head_weight);
+    for layer in layers {
+        mac += match layer {
+            Qwen35OwnedLayer::Attention(a) => {
+                tensor_elements(&a.attn_q)
+                    + tensor_elements(&a.attn_k)
+                    + tensor_elements(&a.attn_v)
+                    + tensor_elements(&a.attn_output)
+                    + tensor_elements(&a.ffn_gate)
+                    + tensor_elements(&a.ffn_up)
+                    + tensor_elements(&a.ffn_down)
+            },
+            Qwen35OwnedLayer::DeltaNet(d) => {
+                tensor_elements(&d.attn_qkv)
+                    + tensor_elements(&d.attn_gate)
+                    + tensor_elements(&d.ssm_alpha)
+                    + tensor_elements(&d.ssm_beta)
+                    + tensor_elements(&d.ssm_out)
+            },
+        };
+    }
+    2 * mac
+}
+
+/// Full-attention layers, the only ones whose cost grows with the KV cache: a Gated
+/// `DeltaNet` layer carries a fixed-size recurrent state.
+fn full_attention_layers(layers: &[Qwen35OwnedLayer]) -> u64 {
+    as_u64(
+        layers
+            .iter()
+            .filter(|l| matches!(l, Qwen35OwnedLayer::Attention(_)))
+            .count(),
+    )
+}
+
+/// Attention FLOPs at cache depth `s`, counted TERM BY TERM rather than from a constant: in
+/// every full-attention layer `QK^T` costs one multiply-add (2 FLOPs) per cached key element
+/// and `A·V` one per cached value element, i.e. `2*d_kv*s` each. A Gated `DeltaNet` layer
+/// contributes nothing here -- its recurrent state is fixed-size, which is why `L_attn` and
+/// not `L` carries the growth.
+fn attention_flops_at_depth(dims: Dims, layers: &[Qwen35OwnedLayer], s: u64) -> u64 {
+    let d_kv = as_u64(dims.num_kv_heads * dims.attn_head_dim);
+    let mut f = 0;
+    for layer in layers {
+        if matches!(layer, Qwen35OwnedLayer::Attention(_)) {
+            f += 2 * d_kv * s; // QK^T over the cached keys
+            f += 2 * d_kv * s; // A·V over the cached values
+        }
+    }
+    f
+}
+
+/// FLOPs to decode one token at cache depth `s`.
+fn flops_per_token(
+    dims: Dims,
+    base: &OwnedQuantizedModel,
+    layers: &[Qwen35OwnedLayer],
+    s: u64,
+) -> u64 {
+    weight_flops_per_token(base, layers) + attention_flops_at_depth(dims, layers, s)
+}
+
+/// QE2E-BND-002 `F(s) <= 2*P + 4*L_attn*d_kv*s` (FALSIFY-QE2E-002), the TIGHTENED form of
+/// the contract's original `F <= 2*P + O(seq_len * d * L)` — an O() with no constant, which
+/// no input can falsify. Both sides are measured from the same real model structures.
+///
+/// Three claims, so that neither half of the bound can be dropped:
+///   1. at cache depth 0 the weight term alone is within `2*P` (every matmul weight is a
+///      parameter, and `P` also holds the embedding and the norms);
+///   2. the bound holds at every depth up to the context the state allocates;
+///   3. the constant is EXACT, not merely sufficient: `F(s+1) - F(s) = 4*L_attn*d_kv`, so
+///      lowering `4` or counting the `DeltaNet` layers into `L_attn` falsifies it.
+#[test]
+fn qe2e_bnd_002_flops_bounded_by_2p_plus_attention_term() -> Result<()> {
+    for dims in DIMS {
+        let base = base_model(dims);
+        let layers = hybrid_layers(dims, 1200);
+        let p = measured_parameters(&base, &layers);
+        // The bound's constant, written INDEPENDENTLY of the FLOP counter: 4 * L_attn * d_kv.
+        // Reading it back from the counter instead would make the slope assertion circular --
+        // shrinking the counter would shrink the bound with it and nothing could fail (#3091).
+        let d_kv = as_u64(dims.num_kv_heads * dims.attn_head_dim);
+        let slope = 4 * full_attention_layers(&layers) * d_kv;
+        assert!(
+            slope > 0 && full_attention_layers(&layers) > 0,
+            "QE2E-BND-002: a schedule with no full-attention layer cannot exercise the bound"
+        );
+
+        let f0 = flops_per_token(dims, &base, &layers, 0);
+        assert!(
+            f0 <= 2 * p,
+            "QE2E-BND-002 (d_model={}): weight FLOPs {f0} exceed 2P = {} at cache depth 0",
+            dims.hidden,
+            2 * p
+        );
+
+        for s in 0..=8u64 {
+            let f = flops_per_token(dims, &base, &layers, s);
+            let bound = 2 * p + slope * s;
+            assert!(
+                f <= bound,
+                "QE2E-BND-002 (d_model={}, s={s}): F = {f} exceeds 2P + 4*L_attn*d_kv*s = {bound}",
+                dims.hidden
+            );
+            let next = flops_per_token(dims, &base, &layers, s + 1);
+            assert_eq!(
+                next - f,
+                slope,
+                "QE2E-BND-002 (d_model={}, s={s}): the attention term grows by {} per cached \
+                 position, the bound's constant claims {slope} — the bound is not tight",
+                dims.hidden,
+                next - f
+            );
+        }
+    }
+    Ok(())
+}
+
+/// `tok/s = min(bandwidth / bytes_per_token, compute / flops_per_token)` — this contract's
+/// own `throughput_model` equation, and the ONLY definition of `tok_s` QE2E-MON-004 is
+/// written against. No device is involved.
+fn tok_s(bandwidth: f64, bytes_per_token: f64, compute: f64, flops_per_token: f64) -> f64 {
+    (bandwidth / bytes_per_token).min(compute / flops_per_token)
+}
+
+proptest::proptest! {
+    /// QE2E-MON-004 `bw1 < bw2 → tok_s(bw1) <= tok_s(bw2)` (FALSIFY-QE2E-004, "proptest with
+    /// random hardware specs"). The specs are random; the formula is the contract's.
+    #[test]
+    fn qe2e_mon_004_throughput_is_monotone_in_bandwidth(
+        bw1 in 1.0e6f64..1.0e13,
+        factor in 1.0f64..1.0e4,
+        bytes_per_token in 1.0e3f64..1.0e11,
+        flops_per_token in 1.0e3f64..1.0e13,
+        compute in 1.0e9f64..1.0e16,
+    ) {
+        let bw2 = bw1 * factor;
+        proptest::prop_assert!(bw1 <= bw2, "generator produced bw2 < bw1");
+        let t1 = tok_s(bw1, bytes_per_token, compute, flops_per_token);
+        let t2 = tok_s(bw2, bytes_per_token, compute, flops_per_token);
+        proptest::prop_assert!(
+            t1 <= t2,
+            "QE2E-MON-004 falsified: bandwidth {bw1} -> {bw2} (bytes/token {bytes_per_token}, \
+             flops/token {flops_per_token}, compute {compute}) took tok/s from {t1} to {t2}"
+        );
+    }
 }
