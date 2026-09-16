@@ -514,6 +514,40 @@ pub struct Equation {
     pub guarantees: Option<ShapeContract>,
 }
 
+/// One or more cited targets (#3347).
+///
+/// The corpus writes an obligation-to-test citation three ways and all three
+/// are authored by hand, so the type accepts all three rather than making one
+/// of them a parse error: a scalar (`FALSIFY-PM-004`), a comma-separated
+/// scalar (`apr-serve-cancellation-v1` names four in one field), and a YAML
+/// sequence (`publish-manifest-v1`, the only one today -- and the one that
+/// proved `Option<String>` was the wrong type by failing the WHOLE corpus
+/// with `invalid type: sequence, expected a string`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum Citation {
+    /// A single field, possibly holding a comma-separated list.
+    One(String),
+    /// A YAML sequence of targets.
+    Many(Vec<String>),
+}
+
+impl Citation {
+    /// The cited targets, trimmed, with empties dropped. A comma splits a
+    /// scalar because contracts write lists both ways.
+    pub fn targets(&self) -> impl Iterator<Item = &str> {
+        let slice: &[String] = match self {
+            Self::One(s) => std::slice::from_ref(s),
+            Self::Many(v) => v.as_slice(),
+        };
+        slice
+            .iter()
+            .flat_map(|s| s.split(','))
+            .map(str::trim)
+            .filter(|t| !t.is_empty())
+    }
+}
+
 /// A proof obligation derived from an equation.
 ///
 /// 26 obligation types: 19 property types plus 7 Design by Contract
@@ -554,6 +588,17 @@ pub struct ProofObligation {
     pub tolerance: Option<f64>,
     #[serde(default)]
     pub applies_to: Option<AppliesTo>,
+    /// The falsification test(s) that discharge this obligation (#3347) --
+    /// the same link as `FalsificationTest::obligation`, written from the
+    /// obligation's side. 89 obligations in `contracts/` carry it and it is
+    /// the most-used spelling of the link; it too was dropped on parse.
+    ///
+    /// Two resolvable shapes, both measured: `falsification_tests[N]` (62,
+    /// resolves only when `N` is in range) and a test `id` (13). The
+    /// remaining 14 are comma-separated id lists, prose, or a KANI harness id
+    /// -- a kani id is NOT an L2 link and deliberately does not resolve.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub discharged_by: Option<Citation>,
     /// Why this obligation is NOT a property of code (PMAT-3091) -- e.g. a
     /// checkpoint fact, an `O()` with no constant, a throughput claim.
     ///
@@ -766,6 +811,24 @@ pub struct FalsificationTest {
     /// Defaulted because several legacy diagnostic contracts omit it.
     #[serde(default, alias = "fails_if")]
     pub if_fails: String,
+    /// The obligation this test discharges — the only machine-readable claim
+    /// that THIS test proves THAT obligation (#3347).
+    ///
+    /// Until this field existed the key was written to disk and silently
+    /// dropped on parse (the same shape as `id` in #3314 and `test_harness`
+    /// in #2465: no `deny_unknown_fields`, so serde discarded it), which is
+    /// why `obligation_matrix` had nothing to read and fell back to comparing
+    /// an INDEX against `falsification_tests.len()`.
+    ///
+    /// Measured over `contracts/` (1,842 files, 4,691 falsification tests):
+    /// 26 entries spell it `obligation:` and 38 spell it `binds_to:`. No entry
+    /// carries BOTH — checked, and it matters, because serde collapses an
+    /// alias pair present on one mapping into a `duplicate field` parse error.
+    ///
+    /// Resolved against the obligation's `id`, then its exact `property` text.
+    /// A comma-separated list cites several obligations.
+    #[serde(default, alias = "binds_to", skip_serializing_if = "Option::is_none")]
+    pub obligation: Option<Citation>,
 }
 
 /// A Kani bounded model checking harness definition.

@@ -1,5 +1,5 @@
 use crate::obligation_matrix::{
-    format_obligation_table, obligation_matrix, property_words_match, truncate,
+    format_obligation_table, obligation_matrix, property_words_match, truncate, L2Status,
 };
 use crate::proof_status::*;
 use crate::schema::{parse_contract_str, Contract};
@@ -426,31 +426,234 @@ fn obligation_matrix_empty() {
     assert!(matrices.is_empty());
 }
 
+/// #3347: this test used to be named `obligation_matrix_index_based_l2` and
+/// asserted the defect -- 3 obligations and 3 tests, none of them linked to
+/// anything, scored L2 across the board because `idx < 3`.
+///
+/// The contract says nothing about which test covers which obligation, so the
+/// honest verdict is Unknown and the level stays L1.
 #[test]
-fn obligation_matrix_index_based_l2() {
-    // 3 obligations, 3 tests, 0 kani => all L2 by index
+fn obligation_matrix_unlinked_tests_are_unknown_not_l2() {
     let c = minimal_contract(3, 3, 0);
     let matrices = obligation_matrix(&[("test-v1".to_string(), &c)]);
     assert_eq!(matrices.len(), 1);
     assert_eq!(matrices[0].obligations.len(), 3);
     for ob in &matrices[0].obligations {
-        assert!(ob.l2_tested);
+        assert_eq!(ob.l2, L2Status::Unknown);
+        assert!(!ob.l2.is_tested());
         assert!(!ob.l3_kani);
         assert!(!ob.l4_lean);
-        assert_eq!(ob.max_level, ProofLevel::L2);
+        assert_eq!(ob.max_level, ProofLevel::L1);
     }
 }
 
+/// Zero falsification tests is a READING, not an unread window: no test
+/// exists, so no test covers this obligation. Untested, not Unknown.
 #[test]
-fn obligation_matrix_no_tests_is_l1() {
-    // 2 obligations, 0 tests, 0 kani => L1
+fn obligation_matrix_no_tests_is_untested_and_l1() {
     let c = minimal_contract(2, 0, 0);
     let matrices = obligation_matrix(&[("test-v1".to_string(), &c)]);
     assert_eq!(matrices[0].obligations.len(), 2);
     for ob in &matrices[0].obligations {
-        assert!(!ob.l2_tested);
+        assert_eq!(ob.l2, L2Status::Untested);
         assert_eq!(ob.max_level, ProofLevel::L1);
     }
+}
+
+/// `proof_obligations[].discharged_by` -- the link written from the
+/// obligation's side, and the most-used spelling in `contracts/` (89).
+#[test]
+fn discharged_by_links_an_obligation_to_its_test() {
+    let yaml = r#"
+metadata:
+  version: "1.0.0"
+  description: "discharged_by, both resolvable shapes"
+  references: ["Paper"]
+equations:
+  f:
+    formula: "f(x) = x"
+proof_obligations:
+  - type: invariant
+    property: "By index"
+    discharged_by: falsification_tests[0]
+  - type: invariant
+    property: "By test id"
+    discharged_by: FT-002
+  - type: invariant
+    property: "Out of range"
+    discharged_by: falsification_tests[9]
+  - type: invariant
+    property: "Names a kani harness, not a test"
+    discharged_by: KANI-X-001
+falsification_tests:
+  - id: FT-001
+    rule: "r"
+    prediction: "p"
+    if_fails: "f"
+  - id: FT-002
+    rule: "r"
+    prediction: "p"
+    if_fails: "f"
+kani_harnesses: []
+"#;
+    let c = parse_contract_str(yaml).unwrap();
+    let obs = &obligation_matrix(&[("db-v1".to_string(), &c)])[0].obligations;
+    assert_eq!(obs[0].l2, L2Status::Tested, "falsification_tests[0] exists");
+    assert_eq!(obs[1].l2, L2Status::Tested, "FT-002 exists");
+    assert_eq!(
+        obs[2].l2,
+        L2Status::Untested,
+        "falsification_tests[9] is out of range over 2 tests -- a dangling \
+         citation is not a proof"
+    );
+    assert_eq!(
+        obs[3].l2,
+        L2Status::Untested,
+        "a kani harness id is the L3 column, never an L2 link"
+    );
+}
+
+/// `binds_to:` is the second spelling of `falsification_tests[].obligation`
+/// (38 entries vs 26). It is a serde alias, which is safe ONLY because no
+/// entry in `contracts/` carries both keys -- serde would make that a
+/// `duplicate field` parse error rather than a silent pick.
+#[test]
+fn binds_to_is_the_same_link_as_obligation() {
+    let yaml = r#"
+metadata:
+  version: "1.0.0"
+  description: "binds_to alias"
+  references: ["Paper"]
+equations:
+  f:
+    formula: "f(x) = x"
+proof_obligations:
+  - id: OB-1
+    type: invariant
+    property: "Bound by alias"
+  - id: OB-2
+    type: invariant
+    property: "Bound by nothing"
+falsification_tests:
+  - id: FT-001
+    binds_to: OB-1
+    rule: "r"
+    prediction: "p"
+    if_fails: "f"
+kani_harnesses: []
+"#;
+    let c = parse_contract_str(yaml).unwrap();
+    let cited: Vec<&str> = c.falsification_tests[0]
+        .obligation
+        .as_ref()
+        .expect("binds_to must land on the obligation field, not be dropped")
+        .targets()
+        .collect();
+    assert_eq!(cited, vec!["OB-1"]);
+    let obs = &obligation_matrix(&[("alias-v1".to_string(), &c)])[0].obligations;
+    assert_eq!(obs[0].l2, L2Status::Tested);
+    assert_eq!(obs[1].l2, L2Status::Untested);
+}
+
+/// A contract whose every link DANGLES was not read -- reporting its
+/// obligations as Untested would be inventing a finding out of a parse
+/// failure. `apr-code-harness-ir-v1` is the real instance: 8 tests cite
+/// `OBLIG-IR-N` and that contract's obligations carry no `id` at all.
+#[test]
+fn links_that_all_dangle_are_unknown_not_untested() {
+    let yaml = r#"
+metadata:
+  version: "1.0.0"
+  description: "every citation dangles"
+  references: ["Paper"]
+equations:
+  f:
+    formula: "f(x) = x"
+proof_obligations:
+  - type: invariant
+    property: "Alpha"
+  - type: invariant
+    property: "Beta"
+falsification_tests:
+  - id: FT-001
+    obligation: OBLIG-NOBODY-1
+    rule: "r"
+    prediction: "p"
+    if_fails: "f"
+kani_harnesses: []
+"#;
+    let c = parse_contract_str(yaml).unwrap();
+    let obs = &obligation_matrix(&[("dangle-v1".to_string(), &c)])[0].obligations;
+    for ob in obs {
+        assert_eq!(ob.l2, L2Status::Unknown);
+    }
+}
+
+/// One test may discharge several obligations in one comma-separated field.
+#[test]
+fn a_comma_separated_citation_names_several_obligations() {
+    let yaml = r#"
+metadata:
+  version: "1.0.0"
+  description: "comma list"
+  references: ["Paper"]
+equations:
+  f:
+    formula: "f(x) = x"
+proof_obligations:
+  - id: OB-1
+    type: invariant
+    property: "One"
+  - id: OB-2
+    type: invariant
+    property: "Two"
+  - id: OB-3
+    type: invariant
+    property: "Three"
+falsification_tests:
+  - id: FT-001
+    obligation: "OB-1, OB-3"
+    rule: "r"
+    prediction: "p"
+    if_fails: "f"
+kani_harnesses: []
+"#;
+    let c = parse_contract_str(yaml).unwrap();
+    let obs = &obligation_matrix(&[("comma-v1".to_string(), &c)])[0].obligations;
+    assert_eq!(obs[0].l2, L2Status::Tested);
+    assert_eq!(obs[1].l2, L2Status::Untested);
+    assert_eq!(obs[2].l2, L2Status::Tested);
+}
+
+/// A citation may also name the obligation by its exact `property` text --
+/// `apr-mcp-stdio-drain-v1` binds all six of its tests that way.
+#[test]
+fn a_citation_may_name_the_property_text() {
+    let yaml = r#"
+metadata:
+  version: "1.0.0"
+  description: "property-text citation"
+  references: ["Paper"]
+equations:
+  f:
+    formula: "f(x) = x"
+proof_obligations:
+  - type: invariant
+    property: "drain-on-every-exit"
+  - type: invariant
+    property: "no-false-error"
+falsification_tests:
+  - id: FT-001
+    obligation: drain-on-every-exit
+    rule: "r"
+    prediction: "p"
+    if_fails: "f"
+kani_harnesses: []
+"#;
+    let c = parse_contract_str(yaml).unwrap();
+    let obs = &obligation_matrix(&[("prop-v1".to_string(), &c)])[0].obligations;
+    assert_eq!(obs[0].l2, L2Status::Tested);
+    assert_eq!(obs[1].l2, L2Status::Untested);
 }
 
 #[test]
@@ -492,19 +695,21 @@ kani_harnesses:
     let matrices = obligation_matrix(&[("test-v1".to_string(), &c)]);
     assert_eq!(matrices[0].obligations.len(), 2);
 
-    // First obligation: L2 (index), L3 (kani property match "sums"), L4 (lean proved)
+    // First obligation: L3 (kani property match "sums"), L4 (lean proved). Its
+    // L2 is Unknown -- the two tests name no obligation (#3347) -- which does
+    // not disturb a level earned higher up the ladder.
     let ob0 = &matrices[0].obligations[0];
-    assert!(ob0.l2_tested);
+    assert_eq!(ob0.l2, L2Status::Unknown);
     assert!(ob0.l3_kani);
     assert!(ob0.l4_lean);
     assert_eq!(ob0.max_level, ProofLevel::L4);
 
-    // Second obligation "Range is strictly positive": L2 (index), no kani match, no lean
+    // Second obligation "Range is strictly positive": nothing at all.
     let ob1 = &matrices[0].obligations[1];
-    assert!(ob1.l2_tested);
+    assert_eq!(ob1.l2, L2Status::Unknown);
     assert!(!ob1.l3_kani);
     assert!(!ob1.l4_lean);
-    assert_eq!(ob1.max_level, ProofLevel::L2);
+    assert_eq!(ob1.max_level, ProofLevel::L1);
 }
 
 #[test]
@@ -534,7 +739,78 @@ kani_harnesses: []
     let matrices = obligation_matrix(&[("test-v1".to_string(), &c)]);
     let ob = &matrices[0].obligations[0];
     assert!(!ob.l4_lean);
-    assert_eq!(ob.max_level, ProofLevel::L2);
+    // The lone test names no obligation, so L2 is Unknown and the level is L1.
+    assert_eq!(ob.l2, L2Status::Unknown);
+    assert_eq!(ob.max_level, ProofLevel::L1);
+}
+
+/// RED FIRST (#3347). The L2 column ticked on `idx < falsification_tests.len()`
+/// — a COUNT, not a link — so every obligation of a contract with enough tests
+/// showed ✓ whoever those tests were about.
+///
+/// This fixture makes the two disagree: TWO obligations, TWO tests, and BOTH
+/// tests cite `OB-A`. Nothing anywhere claims `OB-B` is tested. Under the index
+/// rule `OB-B` is index 1 < 2 tests, so it ticked.
+///
+/// The assertion goes through `format_obligation_table` deliberately: the
+/// rendered L2 cell is the surface the operator reads, and it is the surface
+/// that was lying. It is also API-stable, so this row is the SAME test before
+/// and after the fix — it fails on the old code and passes on the new.
+#[test]
+fn l2_does_not_tick_for_an_obligation_no_test_cites() {
+    let yaml = r#"
+metadata:
+  version: "1.0.0"
+  description: "Two obligations, two tests, both tests cite OB-A"
+  references: ["Paper"]
+equations:
+  f:
+    formula: "f(x) = x"
+proof_obligations:
+  - id: OB-A
+    type: invariant
+    property: "Alpha holds"
+  - id: OB-B
+    type: invariant
+    property: "Beta holds"
+falsification_tests:
+  - id: FT-001
+    obligation: OB-A
+    rule: "alpha one"
+    prediction: "p"
+    if_fails: "f"
+  - id: FT-002
+    obligation: OB-A
+    rule: "alpha two"
+    prediction: "p"
+    if_fails: "f"
+kani_harnesses: []
+"#;
+    let c = parse_contract_str(yaml).unwrap();
+    let matrices = obligation_matrix(&[("cross-cited-v1".to_string(), &c)]);
+    let text = format_obligation_table(&matrices);
+
+    let row_a = table_row(&text, "Alpha holds");
+    let row_b = table_row(&text, "Beta holds");
+
+    // Discrimination: the contract DOES bind OB-A, so a fix that simply stopped
+    // ticking everything would fail here.
+    assert!(
+        row_a.contains('\u{2713}'),
+        "OB-A is cited by two tests and must stay ticked\nrow: {row_a}"
+    );
+    assert!(
+        !row_b.contains('\u{2713}'),
+        "OB-B is cited by NO test — the L2 column ticked it from a count, not a link\nrow: {row_b}"
+    );
+}
+
+/// Pull one obligation's rendered row out of the table by its property text.
+fn table_row<'a>(table: &'a str, property: &str) -> &'a str {
+    table
+        .lines()
+        .find(|l| l.contains(property))
+        .unwrap_or_else(|| panic!("no table row for property `{property}`:\n{table}"))
 }
 
 #[test]
@@ -571,14 +847,55 @@ fn format_obligation_table_header() {
     assert!(text.contains("Status"));
 }
 
+/// All three L2 cells are reachable from the renderer, and they are distinct
+/// glyphs. A fix that collapsed Unknown onto either tick or cross would fail
+/// here rather than pass quietly.
 #[test]
-fn format_obligation_table_check_marks() {
-    let c = minimal_contract(1, 1, 0);
-    let matrices = obligation_matrix(&[("test-v1".to_string(), &c)]);
-    let text = format_obligation_table(&matrices);
-    // L2 should be checked, L3/L4 should be crossed
-    assert!(text.contains('\u{2713}')); // check mark
-    assert!(text.contains('\u{2717}')); // cross mark
+fn format_obligation_table_renders_all_three_l2_cells() {
+    // 1 obligation, 1 test, no link => `?`; L3/L4 crossed.
+    let unknown = minimal_contract(1, 1, 0);
+    let text = format_obligation_table(&obligation_matrix(&[("u-v1".to_string(), &unknown)]));
+    assert!(text.contains('?'), "unlinked L2 renders as `?`:\n{text}");
+    assert!(
+        text.contains('\u{2717}'),
+        "L3/L4 render as crosses:\n{text}"
+    );
+
+    // 0 tests => a cross in the L2 column, not a `?`.
+    let untested = minimal_contract(1, 0, 0);
+    let text = format_obligation_table(&obligation_matrix(&[("x-v1".to_string(), &untested)]));
+    assert!(
+        !text.contains('?'),
+        "0 tests is a reading, not Unknown:\n{text}"
+    );
+
+    // A linked obligation still ticks.
+    let yaml = r#"
+metadata:
+  version: "1.0.0"
+  description: "linked"
+  references: ["Paper"]
+equations:
+  f:
+    formula: "f(x) = x"
+proof_obligations:
+  - id: OB-1
+    type: invariant
+    property: "Linked prop"
+falsification_tests:
+  - id: FT-001
+    obligation: OB-1
+    rule: "r"
+    prediction: "p"
+    if_fails: "f"
+kani_harnesses: []
+"#;
+    let linked = parse_contract_str(yaml).unwrap();
+    let text = format_obligation_table(&obligation_matrix(&[("l-v1".to_string(), &linked)]));
+    assert!(
+        text.contains('\u{2713}'),
+        "a linked obligation ticks:\n{text}"
+    );
 }
 
 #[test]
