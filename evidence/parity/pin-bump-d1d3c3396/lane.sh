@@ -2,7 +2,7 @@
 # lane.sh <label> <llama-server> <runs>  — row-0a comparator lane, template argv, c=1, 7B, lambda
 set -uo pipefail
 label="$1"; server="$2"; runs="$3"
-out="/tmp/claude-1000/-home-noah-src-aprender/b59147ae-201e-4299-9354-6a53738c822b/scratchpad/lanes"
+out="${LANE_OUT:?set LANE_OUT to the directory that collects this lane's artifacts}"
 model="$HOME/models/qwen2.5-coder-7b-instruct-q4_k_m.gguf"
 port="${LANE_PORT:-8091}"
 apr="$HOME/.cargo/bin/apr"
