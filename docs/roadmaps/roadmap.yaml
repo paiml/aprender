@@ -18094,3 +18094,19 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-3367
+  github_issue: 3367
+  item_type: task
+  title: apr chat exits 0 after a generate failure (#3367)
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-16T14:53:17Z
+  updated: 2026-09-16T14:53:17Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
