@@ -99,6 +99,9 @@ check_ci_unwedge.sh -- free CI runs wedged on a parked aggregator (#3229).
   --dry-run             with --scan: report, change nothing
   --limit N             with --scan: how many recent runs to consider (default 15)
   --repo OWNER/NAME     with --scan: the repository (default paiml/aprender)
+  --runners FILE        with --scan: an orgs/<org>/actions/runners payload; without
+                        it the capacity probe is attempted and, if it fails, the
+                        stalled-run rule REFUSES (it never cancels blind)
   --verdict FILE        classify one `actions/runs/<id>/jobs` payload
   --help
 USAGE
@@ -156,6 +159,114 @@ deadref_decision() {
     if [ "$dead" -eq 0 ]; then printf 'NOTHING\n'; return 0; fi
     if [ "$live" -eq 0 ]; then printf 'REFUSE\n'; return 0; fi
     printf 'ACT\n'
+}
+
+# ---- #3292: a run may not hold a concurrency group while capacity sits idle ----
+# THE CONTRACT. No run holds its concurrency group for longer than one sweeper
+# period while capacity to serve its pending jobs sits IDLE.
+#
+# THE TRIGGER IS NOT `queued`, AND IT IS NOT A JOB COUNT. Both halves are
+# measured in #3358. Run 35078448806 sat `queued` on #3354 for two hours with
+# SIXTEEN of its eighteen jobs already run -- jobs trickling onto congested pools
+# from 09:27 to 11:00. That is a QUEUE. The hand-cancel that read `queued` as a
+# verdict killed the two jobs still going and produced a `gate` that failed in
+# four seconds; the red was manufactured by the cancel. Meanwhile the two runs
+# stacked BEHIND it read jobs == 0 -- they were the victims, and cancelling a
+# victim frees nothing because it is not the run holding the group.
+#
+# So the rule fires only on evidence of a WEDGE: no dispatch progress AND idle
+# capacity that could have served it. Capacity is a required input; where it
+# cannot be measured the rule REFUSES (see pool_idle).
+STALL_AGE_MIN=30       # how long a run may hold its group before it is a candidate
+STALL_WINDOW_MIN=30    # a job started inside this window is dispatch PROGRESS
+
+# pool_idle RUNNERS_JSON LABELS_CSV -> how many runners could take the work right
+# now: ONLINE, not busy, and carrying EVERY requested label.
+#
+# EMPTY OUTPUT MEANS UNKNOWN, AND UNKNOWN IS NOT ZERO. Zero is a measurement ("the
+# pool is full"); empty is the absence of one, and the two lead to opposite
+# actions -- so they are different values, never both `0`.
+#
+# The label test is containment, not equality: `gx10-blackwell` was idle
+# throughout the incident and could not have taken one clean-room job, because it
+# does not carry `clean-room`. An idle box that cannot serve the labels is not
+# capacity (row P2).
+pool_idle() {
+    local f="${1:-}" want="${2:-}" n
+    if [ -z "$f" ] || [ ! -r "$f" ] || [ -z "$want" ]; then printf '\n'; return 2; fi
+    n=$(jq -r --arg want "$want" '
+            ($want | split(",") | map(select(length > 0))) as $need
+            | [ .runners[]?
+                | select(.status == "online" and .busy == false)
+                | select( ($need - [ .labels[]?.name ]) | length == 0 ) ]
+            | length' "$f" 2>/dev/null) || n=""
+    case "$n" in ''|*[!0-9]*) printf '\n'; return 2 ;; esac
+    printf '%s\n' "$n"
+}
+
+# dispatch_state JOBS_JSON NOW_ISO WINDOW_MIN -> PROGRESSING | STALLED
+#
+# PROGRESSING is the safe answer and every uncertain case returns it. A run with
+# NOTHING pending is progressing (it is finishing), and a run with ZERO jobs is
+# progressing (H4: zero jobs is a slow start, or it is a victim queued behind the
+# real holder -- never a verdict on its own).
+dispatch_state() {
+    local f="${1:-}" now="${2:-}" win="${3:-30}" now_s pending recent
+    if [ -z "$f" ] || [ ! -r "$f" ]; then printf 'PROGRESSING\n'; return 2; fi
+    now_s=$(date -u -d "$now" +%s 2>/dev/null) || now_s=""  # bashrs disable-line=DET002
+    case "$now_s" in ''|*[!0-9]*) printf 'PROGRESSING\n'; return 2 ;; esac
+    pending=$(jq '[.jobs[]? | select(.status == "queued" or .status == "in_progress")] | length' "$f" 2>/dev/null) || pending=""
+    case "$pending" in ''|*[!0-9]*) printf 'PROGRESSING\n'; return 2 ;; esac
+    if [ "$pending" -eq 0 ]; then printf 'PROGRESSING\n'; return 0; fi
+    recent=$(jq -r --argjson now "$now_s" --argjson win "$win" '
+            [ .jobs[]? | select(.started_at != null)
+              | (.started_at | fromdateiso8601)
+              | select(($now - .) <= ($win * 60)) ] | length' "$f" 2>/dev/null) || recent=""
+    case "$recent" in ''|*[!0-9]*) printf 'PROGRESSING\n'; return 2 ;; esac
+    if [ "$recent" -gt 0 ]; then printf 'PROGRESSING\n'; else printf 'STALLED\n'; fi
+}
+
+# pending_labels JOBS_JSON -> the union of the labels the still-pending jobs ask
+# for. That union, not the run, is the pool whose idleness decides the verdict.
+pending_labels() {
+    local f="${1:-}"
+    if [ -z "$f" ] || [ ! -r "$f" ]; then printf '\n'; return 2; fi
+    jq -r '[ .jobs[]? | select(.status == "queued" or .status == "in_progress") | .labels[]? ]
+           | unique | join(",")' "$f" 2>/dev/null || printf '\n'
+}
+
+# stall_candidate_branch BRANCH -> 0 when this rule may judge the branch.
+# A merge-queue run is NEVER a candidate: cancelling a queue build throws away the
+# verdict the queue is waiting on. Dead queue refs are the dead-ref pass's job,
+# and that pass has its own corroboration gate.
+stall_candidate_branch() {
+    case "${1:-}" in
+        gh-readonly-queue/*) return 1 ;;
+        '') return 1 ;;
+        *) return 0 ;;
+    esac
+}
+
+# stall_verdict AGE_MIN IDLE DISPATCH -> CANCEL | UNTOUCHED | REFUSE, plus why.
+# Pure: three scalars in, a verdict out, so the case table pins every polarity
+# without a network call.
+stall_verdict() {
+    local age="${1:-}" idle="${2:-}" disp="${3:-}"
+    case "$age" in ''|*[!0-9]*) printf 'REFUSE the run age is unknown\n'; return 0 ;; esac
+    case "$idle" in ''|*[!0-9]*)
+        printf 'REFUSE idle capacity is unknown -- evidence of a wedge is required, and absence of evidence is not it\n'
+        return 0 ;;
+    esac
+    if [ "$disp" != "STALLED" ]; then
+        printf 'UNTOUCHED jobs are still being dispatched (%s)\n' "$disp"; return 0
+    fi
+    if [ "$age" -lt "$STALL_AGE_MIN" ]; then
+        printf 'UNTOUCHED %s min held, under the %s min floor\n' "$age" "$STALL_AGE_MIN"; return 0
+    fi
+    if [ "$idle" -eq 0 ]; then
+        printf 'UNTOUCHED %s min held but 0 idle runners serve those labels -- a queue, not a wedge\n' "$age"; return 0
+    fi
+    printf 'CANCEL %s min held, no dispatch, %s idle runner(s) could have served it\n' "$age" "$idle"
 }
 
 self_test() {
@@ -295,6 +406,47 @@ self_test() {
     return "$fails"
 }
 
+# stall_pass REPO RUN BRANCH CREATED_ISO RUN_STATUS JOBS RUNNERS NOW DRY
+# -> 0 when it force-cancelled, 1 otherwise. Reads the jobs payload the wedge pass
+# already fetched, so the whole rule costs ONE extra API call per sweep (the
+# runner list). Everything it decides on is printed, including the refusals --
+# a rule that cancels silently is how a hand-cancel got blamed on the code.
+stall_pass() {
+    local repo="$1" run="$2" br="$3" created="$4" rstatus="$5" jobs="$6" runners="$7" now="$8" dry="$9"
+    local age labels idle disp verdict created_s now_s
+    stall_candidate_branch "$br" || return 1
+    case "$rstatus" in queued|pending) ;; *) return 1 ;; esac
+    created_s=$(date -u -d "$created" +%s 2>/dev/null) || created_s=""  # bashrs disable-line=DET002
+    now_s=$(date -u -d "$now" +%s 2>/dev/null) || now_s=""  # bashrs disable-line=DET002
+    case "$created_s$now_s" in ''|*[!0-9]*) age="" ;; *) age=$(( (now_s - created_s) / 60 )) ;; esac
+    labels="$( pending_labels "$jobs" )"
+    if [ -z "$labels" ]; then
+        # No pending job asks for anything: there is no pool to call idle, and a
+        # run with zero jobs is a victim, never the holder.
+        return 1
+    fi
+    idle="$( pool_idle "$runners" "$labels" )"
+    disp="$( dispatch_state "$jobs" "$now" "$STALL_WINDOW_MIN" )"
+    verdict="$( stall_verdict "$age" "$idle" "$disp" )"
+    case "$verdict" in
+        CANCEL*)
+            if [ "$dry" = 1 ]; then
+                printf 'WOULD-FREE %s %s -- STALLED %s [%s]\n' "$run" "$br" "${verdict#CANCEL }" "$labels"
+                return 1
+            fi
+            if gh api -X POST "repos/$repo/actions/runs/$run/force-cancel" > /dev/null 2>&1; then
+                printf 'FREED %s %s -- STALLED %s [%s]\n' "$run" "$br" "${verdict#CANCEL }" "$labels"
+                return 0
+            fi
+            printf 'FAILED-TO-FREE %s %s (stalled)\n' "$run" "$br"
+            return 1 ;;
+        REFUSE*)
+            printf 'refuse %s %s -- %s\n' "$run" "$br" "${verdict#REFUSE }"
+            return 1 ;;
+        *)  return 1 ;;
+    esac
+}
+
 scan() {
     local repo="$1" limit="$2" dry="$3" tmp run st freed=0 looked=0 verdict
     command -v gh > /dev/null 2>&1 || { printf 'ENV: gh is not on PATH\n' >&2; return 2; }
@@ -305,11 +457,28 @@ scan() {
     # ONE list call carries status+conclusion, so the per-run jobs call is paid
     # only for candidates (feedback_gh_api_budget_and_guard_tree_runtime).
     gh run list --repo "$repo" --limit "$limit" \
-        --json databaseId,status,conclusion,workflowName,headBranch \
-        -q '.[] | select(.workflowName=="CI") | select(.status != "completed") | "\(.databaseId)|\(.headBranch)"' \
+        --json databaseId,status,conclusion,workflowName,headBranch,createdAt \
+        -q '.[] | select(.workflowName=="CI") | select(.status != "completed") | "\(.databaseId)|\(.headBranch)|\(.createdAt)|\(.status)"' \
         > "$tmp/candidates" 2>/dev/null || { printf 'ENV: gh run list failed\n' >&2; return 2; }
 
-    while IFS='|' read -r run br; do
+    # ---- capacity, fetched ONCE (#3292) ------------------------------------
+    # GET /orgs/{org}/actions/runners needs organization self-hosted-runner
+    # administration, which is NOT among a workflow token's `permissions:` keys,
+    # so ci-unwedge.yml's GITHUB_TOKEN cannot read it. The source is therefore
+    # injectable, and the absent case REFUSES rather than guessing: a rule that
+    # cancels without capacity evidence is the `queued`-alone rule this one exists
+    # to replace. Pagination is deliberately not chased -- an undercount can only
+    # LOWER the idle count, which can only cancel less.
+    if [ -n "${RUNNERS_FILE:-}" ] && [ -r "${RUNNERS_FILE:-}" ]; then
+        cp "$RUNNERS_FILE" "$tmp/runners.json"
+    else
+        gh api "orgs/${repo%%/*}/actions/runners?per_page=100" > "$tmp/runners.json" 2>/dev/null \
+            || : > "$tmp/runners.json"
+    fi
+    local now stalled=0
+    now="$(date -u +%FT%TZ)"  # bashrs disable-line=DET002
+
+    while IFS='|' read -r run br created rstatus; do
         [ -n "$run" ] || continue
         looked=$(( looked + 1 ))
         gh api "repos/$repo/actions/runs/$run/jobs" --paginate > "$tmp/jobs.json" 2>/dev/null \
@@ -327,7 +496,10 @@ scan() {
                     fi
                 fi ;;
             ENV*) printf 'skip  %s -- %s\n' "$run" "$verdict" ;;
-            *)    : ;;
+            *)    if stall_pass "$repo" "$run" "$br" "$created" "$rstatus" \
+                                "$tmp/jobs.json" "$tmp/runners.json" "$now" "$dry"; then
+                      stalled=$(( stalled + 1 ))
+                  fi ;;
         esac
     done < "$tmp/candidates"
 
@@ -338,7 +510,7 @@ scan() {
     # before anything noticed (deadref_decision, rows D3/D4).
     local live=0 dead=0 refp
     : > "$tmp/dead"
-    while IFS='|' read -r run br; do
+    while IFS='|' read -r run br created rstatus; do
         [ -n "$run" ] || continue
         refp="$( queue_ref_path "$br" )" || continue
         if gh api "repos/$repo/git/ref/$refp" --jq '.object.sha' > /dev/null 2>&1; then
@@ -362,7 +534,7 @@ scan() {
                 "$(date -u +%FT%TZ)" "$looked" "$freed" "$dead" "$dry"  # bashrs disable-line=DET002
             return 2 ;;
         ACT)
-            while IFS='|' read -r run br; do
+            while IFS='|' read -r run br created rstatus; do
                 [ -n "$run" ] || continue
                 if [ "$dry" = 1 ]; then
                     printf 'WOULD-FREE %s %s -- DEAD-REF (queue ref is gone; nothing can read this verdict)\n' "$run" "${br##*/}"
@@ -378,11 +550,11 @@ scan() {
                 fi
             done < "$tmp/dead" ;;
     esac
-    printf '%s UNWEDGE looked=%s freed=%s dry_run=%s\n' "$(date -u +%FT%TZ)" "$looked" "$freed" "$dry"  # bashrs disable-line=DET002
+    printf '%s UNWEDGE looked=%s freed=%s stalled_freed=%s dry_run=%s\n' "$(date -u +%FT%TZ)" "$looked" "$freed" "$stalled" "$dry"  # bashrs disable-line=DET002
     return 0
 }
 
-MODE=""; DRY=0; LIMIT=15; REPO="$REPO_DEFAULT"
+MODE=""; DRY=0; LIMIT=15; REPO="$REPO_DEFAULT"; RUNNERS_FILE="${UNWEDGE_RUNNERS_JSON:-}"
 while [ $# -gt 0 ]; do
     case "$1" in
         --self-test|--selftest) MODE=self; shift ;;
@@ -391,6 +563,7 @@ while [ $# -gt 0 ]; do
         --dry-run)              DRY=1; shift ;;
         --limit)                LIMIT="${2:-15}"; shift 2 ;;
         --repo)                 REPO="${2:-$REPO_DEFAULT}"; shift 2 ;;
+        --runners)              RUNNERS_FILE="${2:-}"; shift 2 ;;
         --help|-h)              usage; exit 0 ;;
         *) printf 'check_ci_unwedge.sh: unknown argument %s\n' "$1" >&2; usage >&2; exit 2 ;;
     esac
