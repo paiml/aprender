@@ -359,6 +359,19 @@ fn print_run_output(
     // --stream takes precedence — emit JSONL stream. This implies json-style
     // structured output regardless of --format. (--stream --json is the same
     // as --stream alone.)
+    // R-0b (#3002): reconcile what was ANNOUNCED with what RAN before any output.
+    // realizar falls to CPU when the accelerator's runtime attempt fails and
+    // said so only under --verbose (measured 2026-09-07); a forced accelerator
+    // that fell to CPU is refused here (exit 14, no output), a default one is
+    // corrected out loud so the last `selected:` line is what ran.
+    if let Some(line) = crate::registry::after_generation(
+        crate::registry::forced_accelerator(),
+        crate::registry::announced_kind(),
+        result.used_gpu,
+    )? {
+        eprintln!("{line}");
+    }
+
     if stream && !benchmark {
         return print_stream_output(result, source, max_tokens);
     }
@@ -566,6 +579,80 @@ fn print_benchmark_results(
             tok_per_sec,
             tokens_generated,
             result.duration_secs * 1000.0
+        );
+    }
+}
+
+/// R-0b / S3c (#3041): the runtime-fallback refusal is only worth having if the
+/// surfaces that GENERATE call it. `registry::after_generation` and
+/// `ChatSession::cuda_fallback_or_refuse` decide correctly where they live; what a
+/// unit test of either cannot see is a call site that quietly stopped asking — and
+/// that is the exact shape of the defect the review lane measured on 2026-09-07
+/// (`apr run --gpu` announced `selected: wgpu`, the wgpu path failed on a Q6_K
+/// tensor, the run finished on CPU and exited 0 with no notice).
+#[cfg(test)]
+mod runtime_fallback_refusal_wiring {
+    /// Each surface names the spelling it must carry, and every needle is built by
+    /// `concat!` from pieces so that the needle itself never occurs literally in the
+    /// scanned source. Without that, this file contains its own needle and the scan
+    /// would pass with the call site deleted — a self-satisfying oracle.
+    #[test]
+    fn every_generating_surface_reconciles_what_ran_with_what_was_announced() {
+        const RUN_SRC: &str = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/src/commands/run_entry.rs"
+        ));
+        const CHAT_SRC: &str = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/src/commands/chat_generate_session_02.rs"
+        ));
+        let surfaces: [(&str, &str, String); 2] = [
+            (
+                "apr run (commands/run_entry.rs, print_run_output)",
+                RUN_SRC,
+                format!("crate::registry::{}", "after_generation("),
+            ),
+            (
+                "apr chat (commands/chat_generate_session_02.rs, the CUDA-init Err arm)",
+                CHAT_SRC,
+                format!("Self::{}", "cuda_fallback_or_refuse(&format!"),
+            ),
+        ];
+        let missing: Vec<&str> = surfaces
+            .iter()
+            .filter(|(_, src, needle)| !src.contains(needle.as_str()))
+            .map(|(name, _, _)| *name)
+            .collect();
+        assert!(
+            missing.is_empty(),
+            "these surfaces generate and then report success without ever asking what \
+             actually ran, so a forced accelerator that fell to CPU at runtime is \
+             reported as a successful GPU run (measured 2026-09-07, exit 0): {missing:?}"
+        );
+    }
+
+    /// The refusal must happen BEFORE any output mode is chosen: a refusal printed
+    /// after the tokens is not a refusal, it is a footnote. Asserted positionally,
+    /// so moving the call below the `--stream`/`--json` branches is also RED.
+    #[test]
+    fn the_run_reconciliation_happens_before_the_first_output_branch() {
+        const RUN_SRC: &str = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/src/commands/run_entry.rs"
+        ));
+        let call = format!("crate::registry::{}", "after_generation(");
+        let first_output = format!("return {}(result, source, max_tokens)", "print_stream_output");
+        let at_call = RUN_SRC.find(call.as_str()).expect(
+            "apr run must reconcile what ran with what was announced (see the sibling test)",
+        );
+        let at_output = RUN_SRC
+            .find(first_output.as_str())
+            .expect("print_run_output must still have its stream branch");
+        assert!(
+            at_call < at_output,
+            "the reconciliation is at byte {at_call}, the first output branch at \
+             {at_output}: a refusal that arrives after the output has already been \
+             emitted cannot suppress it"
         );
     }
 }

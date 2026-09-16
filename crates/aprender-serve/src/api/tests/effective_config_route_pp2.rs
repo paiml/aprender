@@ -45,7 +45,7 @@ async fn get_json(state: AppState, uri: &str) -> (StatusCode, serde_json::Value)
 
 /// The key set every build must serve. Written out rather than derived, so a
 /// field that silently disappears is a test failure and not a shrinking loop.
-const REQUIRED_TOP_LEVEL_KEYS: [&str; 13] = [
+const REQUIRED_TOP_LEVEL_KEYS: [&str; 14] = [
     "schema_version",
     // REG-15 / L0-1a (#2971): the load-time parity record {status, cosine, positions,
     // threshold, basis} — present on every build (`not-run` without the cuda feature).
@@ -61,6 +61,9 @@ const REQUIRED_TOP_LEVEL_KEYS: [&str; 13] = [
     "cuda",
     "kv",
     "lock_contended",
+    // R-0b (#3002): the startup backend resolution (`null` until the launcher
+    // records one) — the key is always present.
+    "resolved",
 ];
 
 // ---------------------------------------------------------------------------
@@ -102,6 +105,34 @@ async fn effective_config_answers_on_a_model_less_server() {
         "no backend is loaded:\n{body}"
     );
     assert_eq!(body["model"]["loaded"].as_bool(), Some(false));
+}
+
+/// R-0b (#3002, REG-12): the backend the launcher resolved at startup is
+/// reported beside the residency-measured class; on a model-less server there
+/// is nothing to compare, so `matches_loaded` is null, not `true`.
+#[tokio::test]
+async fn effective_config_reports_the_startup_backend_resolution() {
+    use crate::api::effective_config::{set_backend_resolution, BackendResolution};
+    let _ = set_backend_resolution(BackendResolution {
+        kind: "cpu".to_string(),
+        device_index: None,
+        device_uid: None,
+        device_name: "host cpu".to_string(),
+        reason: "test: --no-gpu: cpu requested".to_string(),
+        discovered_at_unix: 1,
+        basis: "test".to_string(),
+        matches_loaded: None,
+    });
+    let state = AppState::demo_mock().expect("model-less AppState");
+    let (status, body) = get_json(state, "/v1/effective-config").await;
+    assert_eq!(status, StatusCode::OK, "got {status} with {body}");
+    let r = &body["resolved"];
+    assert_eq!(r["kind"].as_str(), Some("cpu"), "{body}");
+    assert_eq!(r["discovered_at_unix"].as_u64(), Some(1), "REG-12: {body}");
+    assert!(
+        r["matches_loaded"].is_null(),
+        "nothing resident ⇒ nothing to compare, and that is null, not true:\n{body}"
+    );
 }
 
 /// The route is DERIVED from the same table `create_router` mounts, so it is

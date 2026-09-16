@@ -178,7 +178,7 @@ fn cli_build_features_agree_with_cfg() {
     );
     assert_eq!(
         features.contains(&"cuda".to_string()),
-        cfg!(feature = "cuda")
+        crate::registry::compiled("cuda")
     );
     assert_eq!(
         features.contains(&"cuda-batch".to_string()),
@@ -187,7 +187,7 @@ fn cli_build_features_agree_with_cfg() {
     );
     assert_eq!(
         features.contains(&"wgpu".to_string()),
-        cfg!(feature = "wgpu")
+        crate::registry::compiled("wgpu")
     );
     assert_eq!(
         features.contains(&"training".to_string()),
