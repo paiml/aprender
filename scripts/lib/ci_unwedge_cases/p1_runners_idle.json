@@ -1,0 +1,103 @@
+{
+ "total_count": 5,
+ "runners": [
+  {
+   "name": "intel-clean-room-3",
+   "status": "online",
+   "busy": true,
+   "labels": [
+    {
+     "name": "self-hosted"
+    },
+    {
+     "name": "Linux"
+    },
+    {
+     "name": "X64"
+    },
+    {
+     "name": "clean-room"
+    }
+   ]
+  },
+  {
+   "name": "intel-clean-room-10",
+   "status": "online",
+   "busy": false,
+   "labels": [
+    {
+     "name": "self-hosted"
+    },
+    {
+     "name": "Linux"
+    },
+    {
+     "name": "X64"
+    },
+    {
+     "name": "clean-room"
+    }
+   ]
+  },
+  {
+   "name": "intel-clean-room-11",
+   "status": "online",
+   "busy": false,
+   "labels": [
+    {
+     "name": "self-hosted"
+    },
+    {
+     "name": "Linux"
+    },
+    {
+     "name": "X64"
+    },
+    {
+     "name": "clean-room"
+    }
+   ]
+  },
+  {
+   "name": "gx10-blackwell",
+   "status": "online",
+   "busy": false,
+   "labels": [
+    {
+     "name": "self-hosted"
+    },
+    {
+     "name": "Linux"
+    },
+    {
+     "name": "ARM64"
+    },
+    {
+     "name": "gpu"
+    },
+    {
+     "name": "gx10"
+    },
+    {
+     "name": "cuda"
+    }
+   ]
+  },
+  {
+   "name": "yoga-build",
+   "status": "online",
+   "busy": true,
+   "labels": [
+    {
+     "name": "self-hosted"
+    },
+    {
+     "name": "Linux"
+    },
+    {
+     "name": "clean-room"
+    }
+   ]
+  }
+ ]
+}

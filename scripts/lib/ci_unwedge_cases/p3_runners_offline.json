@@ -1,0 +1,43 @@
+{
+ "total_count": 2,
+ "runners": [
+  {
+   "name": "intel-clean-room-3",
+   "status": "online",
+   "busy": true,
+   "labels": [
+    {
+     "name": "self-hosted"
+    },
+    {
+     "name": "Linux"
+    },
+    {
+     "name": "X64"
+    },
+    {
+     "name": "clean-room"
+    }
+   ]
+  },
+  {
+   "name": "intel-clean-room-10",
+   "status": "offline",
+   "busy": false,
+   "labels": [
+    {
+     "name": "self-hosted"
+    },
+    {
+     "name": "Linux"
+    },
+    {
+     "name": "X64"
+    },
+    {
+     "name": "clean-room"
+    }
+   ]
+  }
+ ]
+}

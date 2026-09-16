@@ -236,6 +236,61 @@ self_test() {
         'NOTHING' "$( deadref_decision 0 0 )"
     _eq 'D6 all live -> NOTHING'  'NOTHING' "$( deadref_decision 3 0 )"
 
+    printf '%s\n' '-- stalled-run rows (#3292: a run may not hold a group while capacity sits idle) --'
+    # THE CONTRACT: no run holds a concurrency group for longer than one sweeper
+    # period while capacity to serve it sits IDLE. The trigger is evidence of a
+    # WEDGE -- no dispatch progress AND idle capacity -- never run-level `queued`
+    # alone, and never a job count. On #3354 (measured, #3358) the holder had 16 of
+    # 18 jobs running; cancelling it on `queued` manufactured a red `gate` out of
+    # its own cancel.
+    _eq 'S1 queued > 30 min, pool has idle capacity, no dispatch -> CANCEL' \
+        'CANCEL' "$( stall_verdict 45 2 STALLED | head -1 | cut -d' ' -f1 )"
+    _eq 'S2 queued < 30 min (idle capacity, no dispatch) -> UNTOUCHED, it is young' \
+        'UNTOUCHED' "$( stall_verdict 12 2 STALLED | head -1 | cut -d' ' -f1 )"
+    # S3 IS THE REAL INCIDENT. 09:16-11:00Z: intel 15/16 busy, gx10 and yoga loaded.
+    # Two hours queued and the rule must still do NOTHING -- it targets a wedge, not
+    # a queue. A rule that fires here destroys the verdict of a run that is working.
+    _eq 'S3 queued > 30 min but the pool is FULLY BUSY -> UNTOUCHED (a queue, not a wedge)' \
+        'UNTOUCHED' "$( stall_verdict 120 0 STALLED | head -1 | cut -d' ' -f1 )"
+    _eq 'S4 queued > 30 min, idle capacity, but jobs are PROGRESSING -> UNTOUCHED' \
+        'UNTOUCHED' "$( stall_verdict 45 2 PROGRESSING | head -1 | cut -d' ' -f1 )"
+    # Capacity is a REQUIRED input. The workflow token cannot read
+    # orgs/<org>/actions/runners, so the unreadable case is the COMMON one and it
+    # must refuse, not guess.
+    _eq 'S5 capacity unknown -> REFUSE (never cancel without the evidence)' \
+        'REFUSE' "$( stall_verdict 45 '' STALLED | head -1 | cut -d' ' -f1 )"
+
+    # The two inputs, each from a committed payload.
+    _eq 'P1 idle capacity counts only ONLINE, not-busy runners that carry the labels' \
+        '2' "$( pool_idle "$CASES_DIR/p1_runners_idle.json" 'self-hosted,Linux,clean-room' )"
+    # P2: gx10-blackwell is idle and cannot serve clean-room. An idle box that does
+    # not carry the labels is not capacity for this job.
+    _eq 'P2 the measured incident: every clean-room runner busy -> 0 idle' \
+        '0' "$( pool_idle "$CASES_DIR/p2_runners_saturated.json" 'self-hosted,Linux,clean-room' )"
+    _eq 'P3 an OFFLINE listener is not idle capacity' \
+        '0' "$( pool_idle "$CASES_DIR/p3_runners_offline.json" 'self-hosted,Linux,clean-room' )"
+    _eq 'D-STALL pending work and nothing started in the window -> STALLED' \
+        'STALLED' "$( dispatch_state "$CASES_DIR/s1_jobs_stalled.json" '2026-09-16T11:00:00Z' 30 )"
+    _eq 'D-PROG one job started 4 min ago -> PROGRESSING (trickling, not wedged)' \
+        'PROGRESSING' "$( dispatch_state "$CASES_DIR/s2_jobs_progressing.json" '2026-09-16T11:00:00Z' 30 )"
+    # A run with no jobs is the VICTIM of a wedge, never its holder (H4 again).
+    _eq 'D-ZERO zero jobs is never STALLED -- it is a slow start or a victim' \
+        'PROGRESSING' "$( dispatch_state "$CASES_DIR/h4_zero_jobs.json" '2026-09-16T11:00:00Z' 30 )"
+    _eq 'L1 the label set a run waits on is the union of its PENDING jobs' \
+        'Linux,clean-room,self-hosted' "$( pending_labels "$CASES_DIR/s1_jobs_stalled.json" )"
+    rows=$(( rows + 1 ))
+    if stall_candidate_branch 'gh-readonly-queue/main/pr-3354-0c740b04'; then
+        printf 'FAIL  S6 a merge-queue run was accepted as a stall candidate\n'; fails=1
+    else
+        printf 'ok    S6 a merge-queue run is NEVER a stall candidate (its build is the verdict)\n'
+    fi
+    rows=$(( rows + 1 ))
+    if stall_candidate_branch 'PMAT-3292-ci-wedge-cannot-recur'; then
+        printf 'ok    S7 an ordinary PR branch is a candidate\n'
+    else
+        printf 'FAIL  S7 an ordinary PR branch was refused as a candidate\n'; fails=1
+    fi
+
     printf '\n%s row(s), %s\n' "$rows" "$( [ "$fails" -eq 0 ] && echo '0 red / FALSIFIER GREEN' || echo 'RED' )"
     return "$fails"
 }
