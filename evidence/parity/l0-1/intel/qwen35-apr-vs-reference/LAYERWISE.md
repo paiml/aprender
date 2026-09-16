@@ -92,11 +92,11 @@ timeout 600 ./qwen35_embd_dump MODEL prompt_token_ids.txt 4,28 embd-p0 < /dev/nu
 
 ## 3. Comparison
 
-`layerwise/compare_layerwise.py` (sha256 `837aa8f8961776f0d612393ce4b93cff52cea003a85db6b7f9641004c502c33a`) gives, per (tensor, pos), cosine, max |apr−llama| and relative L2 ‖apr−llama‖/‖llama‖.
+`layerwise/compare_layerwise.py` (sha256 `837aa8f8961776f0d612393ce4b93cff52cea003a85db6b7f9641004c502c33a` when §3 was run; the **committed** file is the later, extended version `54ccaca6…7adb3` — see §7, whose output without the 10th arg is unchanged) gives, per (tensor, pos), cosine, max |apr−llama| and relative L2 ‖apr−llama‖/‖llama‖.
 `l_out-N` and `result_norm` rows carry `U` for apr, plus llama's own L2 norm.
 Full per-position curves:
 - `layerwise/curves_p4.tsv` (`5c75e221…a029`)
-- `layerwise/curves_orig.tsv` (`74bc5277…c33a`)
+- `layerwise/curves_orig.tsv` (`74bc5277…b4b39f`)
 
 ```bash
 python3 compare_layerwise.py p4 dump-p4 p4-per-token.bin apr/embd-p4 p4-apr.bin 0,1,2,3 layer_types.tsv MODEL GGUF_PY     # rc 0

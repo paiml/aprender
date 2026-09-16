@@ -45,7 +45,7 @@
 
 | weight (count) | CPU `vec_dot_type` (`ggml-cpu.c`) | path taken on intel (AVX2/AVX-512, `GGML_NATIVE=ON`, `REPACK=ON`, `LLAMAFILE=ON`) |
 |---|---|---|
-| Q4_K (98 tensors: attn_gate, attn_q/k/output, 2 attn_v, ffn_gate/up, 12 ffn_down) | Q8_K (`:314`) | **REPACK** `q4_K_8x8` (`repack.cpp:4605-4609`, needs `avx2` and `ne[1] % 8 == 0`): `ggml_quantize_mat_q8_K_4x8` + `gemv_q4_K_8x8_q8_K`. The probe log names all 98 tensors `repack tensor … with q4_K_8x8` and shows `CPU_REPACK model buffer size = 160.88 MiB` (`llama_repack_probe.excerpt.log`) |
+| Q4_K (98 tensors: attn_gate, attn_q/k/output, 2 attn_v, ffn_gate/up, 12 ffn_down) | Q8_K (`:314`) | **REPACK** `q4_K_8x8` (`repack.cpp:4605-4609`, needs `avx2` and `ne[1] % 8 == 0`): `ggml_quantize_mat_q8_K_4x8` + `gemv_q4_K_8x8_q8_K`. The probe log names all 98 tensors `repack tensor … with q4_K_8x8` and shows `CPU_REPACK model buffer size = 160.88 MiB` (`llama_repack_probe.excerpt.transcript`) |
 | Q5_K (18 attn_qkv, 18 ssm_out) | Q8_K (`:324`) | `ggml_compute_forward_mul_mat` (`:1323-1352`): `from_float` = `quantize_row_q8_K`, which on x86 is `quantize_row_q8_K_ref` (`arch/x86/quants.c:505`). Then `ggml_vec_dot_q5_K_q8_K` AVX2 (`arch/x86/quants.c:2216`). Q5_K has no x86 repack (`repack.cpp:4649`: NEON only) |
 | Q6_K (12 ffn_down, 4 attn_v, token_embd as lm_head) | Q8_K (`:330`) | same, `ggml_vec_dot_q6_K_q8_K` AVX2 (`:2426`). No x86 repack (`repack.cpp:4660`). `token_embd` is also refused by `CPU_REPACK` (probe log) |
 | Q8_0 (18 ssm_alpha, 18 ssm_beta) | Q8_0 (`:275`) | `llamafile_sgemm` returns false for `n < 2` (`sgemm.cpp:3819`, per-token n = 1). The Q8_0 x86 repack is NEON-only (`repack.cpp:4704`). So `quantize_row_q8_0` AVX2 (`arch/x86/quants.c:302`) + `ggml_vec_dot_q8_0_q8_0` AVX2 (`:1308`) |
@@ -109,7 +109,7 @@ Unit tests (`cargo test -p aprender-serve --lib ggml_vecdot_emul`, 7 tests):
 - `vec_dot_k_quants_are_bit_exact_vs_ggml_c_generic`: Q4_K, Q5_K and Q6_K `f32` bits equal on 10/10, including NaN-free extreme and zero rows.
 - `q8_0_quantize_and_dot_are_bit_exact_vs_ggml_c`: block bytes and dot bits equal on 10/10. That includes cases 5/6, where ggml's dot is NaN `0xffc00000` because the fp16 scale overflows.
 - Row-vs-matvec consistency, bad-shape refusal, and switch parsing.
-- **TDD:** RED first. The stubs compiled, and 5 of 7 failed, all except the generator and bad-shape tests (`unit_red.log`). GREEN: 7/7 (`unit_green.log`).
+- **TDD:** RED first. The stubs compiled, and 5 of 7 failed, all except the generator and bad-shape tests (`unit_red.transcript`). GREEN: 7/7 (`unit_green.transcript`).
 
 ## 3. The switch
 
@@ -420,9 +420,15 @@ This is below the OFF pre-`ssm_out` level (`final_output-0` OFF 0.002259–0.004
 |---|---|
 | `ggml_emul_fixtures.c`, `build_and_run.sh`, `build_and_run.transcript` | C harness linked against ggml's `.so`; fixture outputs; FMA objdump counts |
 | `fixtures.tsv`, `fixtures.rs.txt`, `fixtures.bin` | 10 fixture cases: FNV hashes, generic and SIMD dot bits, Q8_0 ref/cpu equality, repack quantizer equality; the Rust table; raw rows and blocks |
-| `llama_repack_probe.excerpt.log` | probe log lines: 98 `repack tensor … q4_K_8x8`, buffer sizes, `K (f16)`/`V (f16)`, Flash Attention |
+| `llama_repack_probe.excerpt.transcript` | probe log lines: 98 `repack tensor … q4_K_8x8`, buffer sizes, `K (f16)`/`V (f16)`, Flash Attention |
 | `qwen35_layer_obs.rs` | the uncommitted example as built (prints the switch and counters) |
-| `run_emulation.sh`, `run_emulation.transcript`, `runs/*.log`, `runs/logits.sha256.txt`, `runs/*.manifest.sha256.tsv` | apr runs: invariance, ON, per-qtype, repeats; dump manifests |
+| `run_emulation.sh`, `run_emulation.transcript`, `runs/*.transcript`, `runs/logits.sha256.txt`, `runs/*.manifest.sha256.tsv` | apr runs: invariance, ON, per-qtype, repeats; dump manifests |
 | `compare_emulation.sh`, `compare_emulation.transcript`, `logits_gap.py`, `tables.py`, `kv_f16_check.py` | comparisons |
 | `cmp/logits-<prompt>-<variant>.{tsv,json}`, `cmp/gap-<prompt>.tsv`, `cmp/sublayer_{p4,orig}_{off,on}.tsv` (+ selfcheck), `cmp/layer_steps_{off,on}.tsv`, `cmp/kernel_isolation_{off,on}.tsv`, `cmp/kv_f16_check.tsv`, `cmp/tables.md` | every number above |
-| `unit_red.log`, `unit_green.log`, `qwen35_lib.log` | TDD RED/GREEN, qwen35 lib tests |
+| `unit_red.transcript`, `unit_green.transcript`, `qwen35_lib.transcript` | TDD RED/GREEN, qwen35 lib tests |
+
+**Run logs are committed as `.transcript`.** `.gitignore:38` is `*.log`, so no `.log` file in this
+evidence tree is tracked and every `*.log` citation above was unreachable from the repo. The cited
+logs are therefore committed as byte-identical `.transcript` copies beside them (`cmp` rc 0):
+`llama_repack_probe.excerpt`, `unit_red`, `unit_green`, `qwen35_lib` and all 36 `runs/*`. Same
+convention as SCALAR.md and KVCONFIG.md.

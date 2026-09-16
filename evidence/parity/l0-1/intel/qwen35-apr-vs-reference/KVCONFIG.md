@@ -59,7 +59,7 @@ When neither flag is given, the params are left untouched.
 
 The `-v` probe `A-v-orig` is also equal. The producer's logged token ids equal the committed `.ids` in every run.
 
-**Engaged: llama's own context-creation log**, from `-v` runs (`engaged/*.excerpt.log`, each with its full-log sha256):
+**Engaged: llama's own context-creation log**, from `-v` runs (`engaged/*.excerpt.transcript`, each with its full-log sha256):
 
 | config | `llama_context: flash_attn` | `llama_kv_cache: size = …` |
 |---|---|---|
@@ -182,7 +182,7 @@ No parity claim is made. The Qwen3.5 parity row stays [U].
 - **[U] Whether the unported AVX2 dot accumulation / `gemv_q4_K_8x8` repack path explains those departures.** EMULATION.md measured ≤1.8e-5 relative on the Q4_K dot. Two ways to measure:
   - build a d1d3c3396 reference with `-DGGML_NATIVE=OFF -DGGML_CPU_REPACK=OFF` (plus `-DGGML_AVX2=OFF -DGGML_AVX=OFF`) and rerun `kvconfig/run_kvconfig.sh` config C against it; or
   - port `gemv_q4_K_8x8_q8_K` and the AVX2 float order behind `APR_EMULATE_GGML_VECDOT`.
-- **Measured (orig): A's `flash_attn = auto` resolves to enabled.** `A-v-orig.log:991` and `:2101` read `resolve_fused_ops: Flash Attention enabled`. **[U] for p1–p4:** their default runs had no `-v`. Byte identity A == B on all 5 prompts (B forces FA on) is consistent with enabled, but it is not a log line. Measure by rerunning `run_kvconfig.sh` §0c with `-v` for p1–p4.
+- **Measured (orig): A's `flash_attn = auto` resolves to enabled.** `A-v-orig.log:991` and `:2101` read `resolve_fused_ops: Flash Attention enabled`. That file is the intel scratch log `intel:~/parity-ref/kvconfig-3091/runs/A-v-orig.log`, sha256 `f0b61df5…d521af` — **not** a repo path; the committed `engaged/A-v-orig.excerpt.transcript` records that sha in its header and keeps lines 920/2030 (`flash_attn = auto`), not 991/2101. **[U] for p1–p4:** their default runs had no `-v`. Byte identity A == B on all 5 prompts (B forces FA on) is consistent with enabled, but it is not a log line. Measure by rerunning `run_kvconfig.sh` §0c with `-v` for p1–p4.
 - **[U] C at positions not dumped.** Sub-layer data covers only p4 pos 0–3 and orig pos 4/28. Measure with `--dump-positions` on more positions in `run_kvconfig.sh` §2.
 - **[U] B/C and ON at n>1 on prompts other than orig.** Only C orig is n=2 (plus EMULATION.md's ON n=2 on orig/p4). Rerun `run_kvconfig.sh`.
 - **[U] Qwen3.5 parity row.** No threshold is set, so it stays fail-closed.
@@ -196,7 +196,12 @@ bash ~/parity-ref/kvconfig-3091/run_kvconfig.sh > run_kvconfig.transcript   # bu
 bash ~/parity-ref/kvconfig-3091/producer/build.sh                            # rebuild after copying raw_logits_compare.cpp (see note), rc 0, same a71dde33
 # lambda: runs/ rsynced to /tmp/kv3091/ref/
 bash kvconfig/compare_kvconfig.sh > compare_kvconfig.transcript              # ON intel-vs-lambda cmp, logits A/B/C x OFF/ON, sub-layer vs C, tables.py
-bash scripts/check_llama_pin.sh --self-test                                  # gate, rc 0 (kvconfig/gate.log)
+bash scripts/check_llama_pin.sh --self-test                                  # gate, rc 0 (kvconfig/gate.transcript)
 ```
 
 **Build note.** In the first run the build step printed `build rc=1`: `raw_logits_compare.cpp` had not been copied, so the SECOND compile in `build.sh` failed. `apr_raw_logits` had already been linked (mtime 22:08:47Z, and the new code's `kvconfig` log line is present in the B/C runs). After copying the file, the rebuild exited rc 0 and produced the same `apr_raw_logits` sha256 `a71dde33…2611` (`intel/rebuild.transcript`).
+
+**Run logs are committed as `.transcript`.** `.gitignore:38` is `*.log`: the cited `engaged/*.excerpt.log`
+and `gate.log` are committed as byte-identical `.transcript` copies (`cmp` rc 0) and are cited under those
+names above. The one `.log` name left in this document, `A-v-orig.log`, is deliberately an intel scratch
+path and is labelled as one.

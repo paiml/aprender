@@ -1,0 +1,7 @@
+# C-p2.log sha256 df529c1844c3b6e84c07976d1754785901d3bae649c7addf07c96aef99de9235
+920:0.01.147.281 I llama_context: flash_attn            = disabled
+955:0.01.147.550 I llama_kv_cache: size =    6.00 MiB (   256 cells,   6 layers,  1/1 seqs), K (f32):    3.00 MiB, V (f32):    3.00 MiB
+2028:0.02.867.661 I llama_context: flash_attn            = disabled
+2063:0.02.868.302 I llama_kv_cache: size =    6.00 MiB (   256 cells,   6 layers,  1/1 seqs), K (f32):    3.00 MiB, V (f32):    3.00 MiB
+2118:apr_raw_logits: kvconfig cache_type_k=f32 cache_type_v=f32 flash_attn_type=disabled
+2119:apr_raw_logits: n_pos=117 n_vocab=248320 add_bos=0 mode=per-token out=/home/noah/parity-ref/kvconfig-3091/runs/C-p2.bin

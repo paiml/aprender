@@ -250,8 +250,9 @@ The `ulpamp` job perturbs by `f32::from_bits(x.to_bits() + 1)`, i.e. exactly one
 tracked — every `*.log` citation was unreachable from the repo. The cited run logs are therefore committed as
 byte-identical `.transcript` copies beside them (`scalar/{build,unit_red,unit_green,gate1-4,gate_*}.transcript`).
 Two citations remain deliberate scratch paths, NOT repo paths: the interrupted run's `off-p4.log` under
-`/mnt/nvme-raid0/parity-tmp/…` and kvconfig's `A-v-orig.log`. The sibling evidence docs of this directory
-(EMULATION.md, KVCONFIG.md) still carry the same unreachable `.log` citations from their own passes.
+`/mnt/nvme-raid0/parity-tmp/…` and kvconfig's `A-v-orig.log` (an intel scratch file, labelled as one there).
+The sibling evidence docs of this directory (EMULATION.md, KVCONFIG.md) were given the same treatment in the
+PMAT-3303 landing pass: their `.log` citations now name byte-identical `.transcript` copies (`cmp` rc 0).
 
 ### Remaining [U] (each with its command)
 - ~~[U] RMSNorm sum order~~ — CLOSED by iteration 5.

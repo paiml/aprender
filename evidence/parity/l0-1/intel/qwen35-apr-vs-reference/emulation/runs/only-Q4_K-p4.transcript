@@ -1,0 +1,2 @@
+qwen35_layer_obs: ggml_vecdot_emul mask=EmulationMask { q4_k: true, q5_k: false, q6_k: false, q8_0: false } emulated_matmuls[Q4_K,Q5_K,Q6_K,Q8_0]=[8036, 0, 0, 0]
+qwen35_layer_obs: n_pos=82 n_vocab=248320 out=/tmp/emul3091/runs/only-Q4_K-p4.bin
