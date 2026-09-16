@@ -577,3 +577,17 @@ scheduling chance, and it costs ~3× (gx10 10.6 min vs intel 34.5 for step 1).
 
 - PR2 → PR3 → #3114 undraft → #3091. Ruleset 17836320 still build 3 / merge 1 at 18:47Z.
 - #3364 (this log) and #3363 held unarmed; #3341 contract PR to open after the series.
+
+## Interval — 21:10Z (2026-09-16)
+
+### What moved
+
+- **PR2 #3355 merged 20:57Z** (main `f326f5c43`). PR3 #3356 rebased `--onto main 8341d6d16` (8 copied PR1/PR2 commits dropped, 18 own kept) and pushed; arms via `arm_pr_automerge.sh` when guard-tree is green.
+- **intel hard-reset twice** (boots 18:45Z and 19:30Z; previous boot's journal ends mid-activity at 19:28:51Z, no shutdown sequence). The 19:30 reset killed 16 jobs across 6 runs at 19:38Z — PR2's group, #3396, #3364, main's post-merge run — while yoga jobs finished. Live readings afterwards: 67 °C, 16 G / 283 G used, load 62/32 (intended), 0 MCE, PL1 150 W. Cause unknown from here; not the reaper (timer fired 20:04Z). Re-ran the three PR/push runs; main green again (attempt 2). Groups rebuilt themselves.
+- **#3366 (Alfredo, installer) merged 20:16Z** with the signed pr-review receipt for `d1d510bba` in tree.
+- **#3396** was UNMERGEABLE in the queue after the squash churn; `dequeuePullRequest` (own PR, no run cancelled), aggregate rebuilt from main's copy, re-armed 20:31Z on `f7d3990f2`; queue position 1 at 21:09Z.
+- **Merged this interval**: #3403 (rule 3 + arming helper) 19:28Z.
+
+### Still open
+
+- PR3 → #3114 undraft → #3091. #3405 (#3341 contract), #3404 (mini probe), #3364 (this log), #3363 open. Ruleset 17836320 still build 3 / merge 1 at 20:10Z.
