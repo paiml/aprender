@@ -36,7 +36,7 @@ trap 'rm -rf "${WORK:?}"' EXIT
 
 FNS="$WORK/fns.sh"
 : > "$FNS"
-for fn in clean_room_parse_runs clean_room_parse_job clean_room_tested_abbrevs clean_room_gate; do
+for fn in clean_room_parse_runs clean_room_parse_job clean_room_tested_abbrevs clean_room_tested_shas clean_room_gate; do
   sed -n "/^${fn}() {/,/^}/p" "$CASCADE" >> "$FNS"
   grep -q "^${fn}() {" "$FNS" || { echo "FAIL: could not extract '$fn' from $CASCADE"; exit 1; }
 done
@@ -105,6 +105,36 @@ log_commit() {
   } > "$S/log-$1.txt"
 }
 
+# ── infra#621/#622 fixtures: the STRUCTURED tested-sha ──
+# A post-#622 clean-room job runs `Assert the commit under test` right after the
+# clone. That step prints `    tested-sha: <40hex>` into the JOB LOG (the same
+# value it writes to the step summary and to the results.csv `tested_sha`
+# column), and it appears BEFORE the Makefile's `    commit:  <abbrev>` line,
+# which is byte-unchanged. The job object carries the step, so the gate can see
+# whether the assertion actually succeeded.
+#
+# jobs_steps RUN JOB JSTATUS JCONCL ASSERT_STATUS ASSERT_CONCL
+jobs_steps() {
+  printf '{"jobs":[{"databaseId":1,"name":"matrix-setup","status":"completed","conclusion":"success","steps":[{"name":"Set up job","status":"completed","conclusion":"success"}]},{"databaseId":%s,"name":"clean-room (aprender)","status":"%s","conclusion":"%s","steps":[{"name":"Clone aprender from GitHub","status":"completed","conclusion":"success"},{"name":"Assert the commit under test","status":"%s","conclusion":"%s"},{"name":"Run clean-room gates","status":"completed","conclusion":"success"}]}]}\n' \
+    "$2" "$3" "$4" "$5" "$6" > "$S/jobs-$1.json"
+}
+# log_tested JOB STRUCTURED_SHA LEGACY_ABBREV  (either may be empty = absent)
+log_tested() {
+  {
+    printf '2026-09-02T00:00:01.0000000Z Cloning into %s...\n' "'/tmp/clean-room-src/aprender'"
+    printf '2026-09-02T00:00:02.0000000Z ==> Asserting the commit this clean-room job will test\n'
+    printf '2026-09-02T00:00:02.1000000Z     repo:       aprender\n'
+    if [ -n "$2" ]; then
+      printf '2026-09-02T00:00:02.2000000Z     tested-sha: %s\r\n' "$2"
+    fi
+    printf '2026-09-02T00:03:00.0000000Z ==> Copying aprender source from /tmp/clean-room-src/aprender\n'
+    printf '2026-09-02T00:03:00.1000000Z     version: 1.2.3\n'
+    if [ -n "$3" ]; then
+      printf '2026-09-02T00:03:00.2000000Z     commit:  %s\r\n' "$3"
+    fi
+  } > "$S/log-$1.txt"
+}
+
 rc=0
 pass() { printf 'ok    %s\n' "$1"; }
 fail() { printf 'FAIL  %s\n' "$1"; rc=1; }
@@ -159,6 +189,23 @@ s_full_sha()       { runs "$(run_obj 9001 completed success)"; jobs 9001 501 com
 s_no_aprender_job(){ runs "$(run_obj 9001 completed success)"
                      printf '{"jobs":[{"databaseId":7,"name":"clean-room (forjar)","status":"completed","conclusion":"success"}]}\n' > "$S/jobs-9001.json"; }
 
+UP_A=$(printf '%s' "$SHA_A" | tr 'a-f' 'A-F')
+st_green() { runs "$(run_obj 9001 completed success)"; jobs_steps 9001 501 completed success completed success; }
+s_struct_tag()          { st_green; log_tested 501 "$SHA_A" ""; }
+s_struct_other()        { st_green; log_tested 501 "$SHA_B" ""; }
+s_struct_and_log_agree(){ st_green; log_tested 501 "$SHA_A" "$AB_A"; }
+s_struct_and_log_differ(){ st_green; log_tested 501 "$SHA_A" "$AB_B"; }
+s_struct_truncated()    { st_green; log_tested 501 "${SHA_A:0:12}" ""; }
+s_struct_uppercase()    { st_green; log_tested 501 "$UP_A" ""; }
+s_struct_two()          { s_struct_tag
+                          printf '2026-09-02T00:00:03.0000000Z     tested-sha: %s\n' "$SHA_B" >> "$S/log-501.txt"; }
+s_struct_assert_failed(){ runs "$(run_obj 9001 completed success)"; jobs_steps 9001 501 completed success completed failure
+                          log_tested 501 "$SHA_A" ""; }
+s_struct_assert_absent(){ runs "$(run_obj 9001 completed success)"; jobs 9001 501 completed success
+                          log_tested 501 "$SHA_A" ""; }
+s_legacy_only()         { runs "$(run_obj 9001 completed success)"; jobs 9001 501 completed success
+                          log_tested 501 "" "$AB_A"; }
+
 row green_on_tag_sha_proceeds            0 "CLEAN-ROOM PROCEED: run 9001 job 501"  s_green_tag
 row green_on_different_sha_refuses       1 "tested $AB_B"                          s_green_other
 row failed_on_tag_sha_refuses            1 "conclusion=failure"                    s_failed_tag
@@ -180,6 +227,20 @@ row only_other_repo_jobs_refuses         1 "no 'clean-room (aprender)' job"     
 row unknown_tag_refuses                  1 "does not resolve to a commit"          s_green_tag v9.9.9
 row older_green_behind_newer_red_proceeds 0 "CLEAN-ROOM PROCEED: run 9001"         s_newer_red
 row full_40_char_sha_line_proceeds       0 "tested $SHA_A = $SHA_A"                s_full_sha
+
+# ── the STRUCTURED tested-sha (PMAT-3318, infra#621/#622) ──
+# The structured record wins when it is there; the log line still carries a
+# release when it is not; and every way the two can fail to agree is a refusal.
+row structured_sha_on_tag_proceeds        0 "tested-sha source: structured"            s_struct_tag
+row structured_and_log_agree_proceeds     0 "tested-sha source: structured"            s_struct_and_log_agree
+row structured_absent_log_line_proceeds   0 "tested-sha source: log-line"              s_legacy_only
+row structured_sha_on_other_commit_refuses 1 "tested $SHA_B"                           s_struct_other
+row structured_and_log_disagree_refuses   1 "structured tested-sha says $SHA_A, the log line says $AB_B" s_struct_and_log_differ
+row structured_sha_truncated_refuses      1 "is not a full 40-char lowercase sha"      s_struct_truncated
+row structured_sha_uppercase_refuses      1 "is not a full 40-char lowercase sha"      s_struct_uppercase
+row two_structured_shas_refuses           1 "2 structured tested-sha record(s)"        s_struct_two
+row structured_sha_assert_failed_refuses  1 "step is completed/failure"                s_struct_assert_failed
+row structured_sha_assert_absent_refuses  1 "step is absent"                           s_struct_assert_absent
 
 # No bypass: the variables anyone would reach for change nothing.
 s_bypass() { s_no_runs; }

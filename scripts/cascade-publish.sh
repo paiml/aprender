@@ -342,8 +342,35 @@ publish_crate() {
 # which must resolve in THIS repository to exactly the tag commit
 # (`git rev-parse --verify <abbrev>^{commit}` refuses an ambiguous prefix).
 # Zero lines, two different lines, or a changed format all REFUSE -- if infra
-# rewords the line, the release stops; it never silently passes. The durable
-# fix is in infra: record the full tested sha as a structured artifact.
+# rewords the line, the release stops; it never silently passes.
+#
+# THE STRUCTURED RECORD (infra#621/#622, PMAT-3318) is that durable fix, and it
+# is PREFERRED over the log line wherever it exists. infra's clean-room job now
+# runs `Assert the commit under test` immediately after the clone: it refuses to
+# build anything that is not the dispatched ref, and it records the tested
+# commit as a full 40-char sha in three places -- the results.csv `tested_sha`
+# column, the step summary, and the line
+#
+#     2026-09-16T00:52:43.0000000Z     tested-sha: <40 hex>
+#
+# in the JOB LOG. The gate reads the log copy, and only that copy, because it is
+# the one that is BOTH per-run and reachable: results.csv holds one row per
+# repo (the latest run, not this run) and the step summary text is not exposed
+# by any REST endpoint. Reading it costs no new API surface -- it is the same
+# `actions/jobs/<id>/logs` response the abbreviation is parsed from.
+#
+# PRECEDENCE, and what each path still has to prove:
+#   structured present -> it must be a full 40-char LOWERCASE sha (an
+#     abbreviation in that field is a refusal: being unabbreviated is the whole
+#     point of the column), the `Assert the commit under test` step must itself
+#     have concluded success (a recorded sha whose assertion did not pass is
+#     not evidence), and if the old log line is there too the two must agree --
+#     a disagreement REFUSES and prints both.
+#   structured absent -> the strict log-line parse above, unchanged.
+#   neither -> REFUSE, exactly as before.
+# No path is looser than the one it replaces: all of them still require exactly
+# one `clean-room (aprender)` job, conclusion `success`, and a tested commit
+# EQUAL to the tag commit.
 #
 # Everything the gate cannot prove is a refusal: no run, a run still queued or
 # in progress, cancelled or failed, a different sha, gh unauthenticated or
@@ -381,9 +408,13 @@ for row in rows:
 ' "$1"
 }
 
-# stdin: `gh run view <id> --json jobs`. $1: the exact job name.
-# Prints "<job id> <status> <conclusion|none>" for that job, or NONE.
-# Exits 3 on malformed input or on more than one job of that name.
+# stdin: `gh run view <id> --json jobs`. $1: the exact job name, $2: the exact
+# name of the step that asserts the tested commit.
+# Prints "<job id> <status> <conclusion|none> <assert state>" for that job, or
+# NONE. The assert state is "<status>/<conclusion>", or `absent` when the job
+# has no such step (every run before infra#622), or `ambiguous` when it has
+# more than one -- both of which the gate refuses to read a structured sha
+# through. Exits 3 on malformed input or on more than one job of that name.
 clean_room_parse_job() {
   python3 -c '
 import json, sys
@@ -399,12 +430,25 @@ try:
         jid = hits[0]["databaseId"]
         if isinstance(jid, bool) or not isinstance(jid, int):
             raise ValueError("job databaseId is not an integer")
-        row = "%d\t%s\t%s" % (jid, str(hits[0]["status"]), hits[0].get("conclusion") or "none")
+        steps = hits[0].get("steps")
+        if steps is None:
+            state = "absent"
+        elif not isinstance(steps, list):
+            raise ValueError("steps is not a JSON array")
+        else:
+            hit = [st for st in steps if st.get("name") == sys.argv[2]]
+            if len(hit) > 1:
+                state = "ambiguous"
+            elif not hit:
+                state = "absent"
+            else:
+                state = "%s/%s" % (str(hit[0].get("status")), hit[0].get("conclusion") or "none")
+        row = "%d\t%s\t%s\t%s" % (jid, str(hits[0]["status"]), hits[0].get("conclusion") or "none", state)
 except Exception as e:
     print("clean-room: unparseable jobs: %s" % e, file=sys.stderr)
     sys.exit(3)
 print(row if row else "NONE")
-' "$1"
+' "$1" "$2"
 }
 
 # stdin: a clean-room job log. Prints the DISTINCT aprender commits the log
@@ -417,14 +461,30 @@ clean_room_tested_abbrevs() {
     | sort -u
 }
 
+# stdin: a clean-room job log. Prints the DISTINCT values infra's
+# `Assert the commit under test` step recorded as the tested commit -- the
+# structured `tested-sha:` field (infra#621/#622), whatever it says. The value
+# is captured LOOSELY and validated by the caller ON PURPOSE: a truncated or
+# uppercased field has to reach the gate as a malformed record it can refuse by
+# name, not vanish and read as "this run predates the structured record".
+clean_room_tested_shas() {
+  tr -d '\r' \
+    | { grep -E '^([0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+Z )?[[:space:]]*tested-sha: .+$' || true; } \
+    | sed -E 's/^.*tested-sha: //' \
+    | sed -E 's/[[:space:]]+$//' \
+    | sort -u
+}
+
 # clean_room_gate ROOT TAG -- 0 only when a completed `clean-room (aprender)`
 # job, whose log records exactly one tested commit resolving to TAG's commit,
 # concluded `success`. Every other outcome prints a REFUSE line and returns 1.
 clean_room_gate() {
   local root=$1 tag=$2
   local repo="paiml/infra" workflow="clean-room.yml" job_name="clean-room (aprender)"
+  local assert_step="Assert the commit under test"
   local want epoch runs_json runs examined=0 seen=""
-  local rid rstatus rconcl rcreated side jobs_json job jid jstatus jconcl log abbrevs n resolved
+  local rid rstatus rconcl rcreated side jobs_json job jid jstatus jconcl jassert
+  local log abbrevs n shas ns malformed agrees tested tdisp tsource resolved
 
   want=$(git -C "$root" rev-parse --verify --quiet "refs/tags/${tag}^{commit}" 2>/dev/null) || want=""
   if [ -z "$want" ]; then
@@ -457,7 +517,7 @@ clean_room_gate() {
       echo "CLEAN-ROOM REFUSE: looked for $want (tag $tag); gh run view $rid failed"
       return 1
     fi
-    if ! job=$(clean_room_parse_job "$job_name" <<< "$jobs_json" 2>/dev/null); then
+    if ! job=$(clean_room_parse_job "$job_name" "$assert_step" <<< "$jobs_json" 2>/dev/null); then
       echo "CLEAN-ROOM REFUSE: looked for $want (tag $tag); the jobs of run $rid could not be parsed"
       return 1
     fi
@@ -465,7 +525,7 @@ clean_room_gate() {
       seen="$seen"$'\n'"  - run $rid ($rstatus/$rconcl, $rcreated): no '$job_name' job"
       continue
     fi
-    IFS=$'\t' read -r jid jstatus jconcl <<< "$job"
+    IFS=$'\t' read -r jid jstatus jconcl jassert <<< "$job"
     if [ "$jstatus" != "completed" ]; then
       seen="$seen"$'\n'"  - run $rid job $jid: $jstatus -- tested sha unknown, conclusion=$jconcl"
       continue
@@ -474,22 +534,61 @@ clean_room_gate() {
       echo "CLEAN-ROOM REFUSE: looked for $want (tag $tag); could not read the log of run $rid job $jid"
       return 1
     fi
+    shas=$(clean_room_tested_shas <<< "$log")
+    ns=$(grep -c . <<< "$shas" || true); ns=${ns:-0}
     abbrevs=$(clean_room_tested_abbrevs <<< "$log")
-    n=$(grep -c . <<< "$abbrevs" || true)
-    if [ "${n:-0}" -ne 1 ]; then
-      seen="$seen"$'\n'"  - run $rid job $jid: ${n:-0} tested-commit record(s) in the log (need exactly 1), conclusion=$jconcl"
+    n=$(grep -c . <<< "$abbrevs" || true); n=${n:-0}
+    tested=""; tdisp=""; tsource=""; resolved=""
+
+    if [ "$ns" -gt 1 ]; then
+      seen="$seen"$'\n'"  - run $rid job $jid: $ns structured tested-sha record(s) in the log (need exactly 1), conclusion=$jconcl"
       continue
     fi
-    resolved=$(git -C "$root" rev-parse --verify --quiet "${abbrevs}^{commit}" 2>/dev/null) || resolved=""
+    if [ "$ns" -eq 1 ]; then
+      # The structured record wins -- after it proves it is what it claims.
+      malformed=0
+      case "${#shas}" in 40) : ;; *) malformed=1 ;; esac
+      case "$shas" in *[!0-9a-f]*) malformed=1 ;; esac
+      if [ "$malformed" -ne 0 ]; then
+        seen="$seen"$'\n'"  - run $rid job $jid: structured tested-sha '$shas' is not a full 40-char lowercase sha, conclusion=$jconcl"
+        continue
+      fi
+      if [ "$jassert" != "completed/success" ]; then
+        seen="$seen"$'\n'"  - run $rid job $jid: structured tested-sha $shas but the '$assert_step' step is $jassert (need completed/success), conclusion=$jconcl"
+        continue
+      fi
+      if [ "$n" -gt 1 ]; then
+        seen="$seen"$'\n'"  - run $rid job $jid: $n tested-commit record(s) in the log beside structured tested-sha $shas, conclusion=$jconcl"
+        continue
+      fi
+      # The abbreviation is `git rev-parse --short HEAD` of the SAME clone, so
+      # agreement is exactly "the log line is a prefix of the structured sha".
+      # A quoted glob, not a substring expansion: the latter is SC2299.
+      agrees=0
+      case "$shas" in "$abbrevs"*) agrees=1 ;; esac
+      if [ "$n" -eq 1 ] && [ "$agrees" -ne 1 ]; then
+        seen="$seen"$'\n'"  - run $rid job $jid: the two records disagree -- structured tested-sha says $shas, the log line says $abbrevs, conclusion=$jconcl"
+        continue
+      fi
+      tested=$shas; tdisp=$shas; resolved=$shas; tsource="structured"
+    else
+      if [ "$n" -ne 1 ]; then
+        seen="$seen"$'\n'"  - run $rid job $jid: $n tested-commit record(s) in the log (need exactly 1), conclusion=$jconcl"
+        continue
+      fi
+      resolved=$(git -C "$root" rev-parse --verify --quiet "${abbrevs}^{commit}" 2>/dev/null) || resolved=""
+      tested=$abbrevs; tdisp="$abbrevs${resolved:+ ($resolved)}"; tsource="log-line"
+    fi
+
     if [ "$resolved" != "$want" ]; then
-      seen="$seen"$'\n'"  - run $rid job $jid: tested $abbrevs${resolved:+ ($resolved)}, conclusion=$jconcl"
+      seen="$seen"$'\n'"  - run $rid job $jid: tested $tdisp, conclusion=$jconcl [$tsource]"
       continue
     fi
     if [ "$jconcl" = "success" ]; then
-      echo "CLEAN-ROOM PROCEED: run $rid job $jid '$job_name' tested $abbrevs = $want (tag $tag), conclusion=success"
+      echo "CLEAN-ROOM PROCEED: run $rid job $jid '$job_name' tested $tested = $want (tag $tag), conclusion=success [tested-sha source: $tsource]"
       return 0
     fi
-    seen="$seen"$'\n'"  - run $rid job $jid: tested $abbrevs = the tag commit, conclusion=$jconcl"
+    seen="$seen"$'\n'"  - run $rid job $jid: tested $tested = the tag commit, conclusion=$jconcl [$tsource]"
   done <<< "$runs"
 
   echo "CLEAN-ROOM REFUSE: looked for $want (tag $tag); no green '$job_name' run tested it ($examined $workflow run(s) created after that commit examined)${seen:- -- found none}"
