@@ -558,3 +558,22 @@ scheduling chance, and it costs ~3× (gx10 10.6 min vs intel 34.5 for step 1).
 
 - Series: #3354 position 6 (groups for positions 1–3 rebuilt 13:54Z, queued for runners); #3355/#3356 held; #3114 undraft after PR3 + #3360.
 - #3361 (unwedge rule 1) green, unarmed; rule 2 pending. #3363/#3364 green, held so they do not queue ahead of PR2.
+
+## Interval — 19:15Z (2026-09-16)
+
+### What moved
+
+- **Critical path**: PR1 #3354 merged 16:59Z; #3360, #3278, #3320, #3361, #3281, #3238 merged between 15:56Z and 17:55Z (eight merges, main `2fb79ff0b`). PR2 #3355 rebased onto main at 18:49Z (two copied PR1 patches dropped by the rebase) and **ARMED 19:03Z** through `arm_pr_automerge.sh` once guard-tree was green on `e8e1157b5`. PR3 #3356 waits DIRTY for PR2's merge.
+- **STOPPED 15:23Z–15:29Z (§8)**: a PMAT-544 fragment was inserted above the shebang of `~/.claude/hooks/subagent-lock.sh`; `/bin/sh -c` ran it under dash, `set -o pipefail` exited 2, and the harness read DENY for Bash/Edit/Write/Agent/SendMessage/Workflow in all ten sessions. Operator repaired by hand. Ruling: `~/.claude/hooks` is shared state — never edited in place; versioned + forjar install with a `/bin/sh -c` self-test. Recorded in memory.
+- **Repo corruption after the usage-limit stop**: 12 empty loose objects in the shared `.git` plus an `ORIG_HEAD` naming a lost commit; every fetch failed. Removed, fsck clean, fetch restored.
+- **Self-inflicted, caught by the fragment guard**: after the squash churn ejected every open PR DIRTY, I resolved `roadmap.yaml` by running the aggregator over the CONFLICTED file, which keeps the `<<<<<<<` marker; pushed one on #3396, staged one on #3366. The guard reported it as a phantom `CHANGED PMAT-3347`. Fixed by regenerating from `origin/main`'s copy; lesson appended to the squash-merge memory.
+- **#3366 (Alfredo, 0.68)**: branch-owned reds fixed (8 pipe-into-`grep -q`, bare `apr` in the help heredoc), fragment added, advertised URL moved to the raw GitHub path (paiml.com/apr/install.sh is 404), pr-review v2 receipt for `d1d510bba` signed + guard-ACCEPTed (17 advisory findings), merged from main (not rebased, so the reviewed sha stays in history), re-armed 19:09Z.
+- **Unwedge**: #3361 (rules 1+2, oracle collector fixed off `pgrep -f`) merged 17:33Z; #3403 (rule 3 orphan-group cancel + arming precondition helper) armed 19:07Z and is queue position 1.
+- **#3341**: NEVER WORKED on `apr run` at v0.66/v0.67 → 0.69.0; load-time contract on `PMAT-3341-load-time-contract` (verified, PR pending); #3367/#3368/#3369 filed; #3396 (chat exit code) armed 19:11Z.
+- **MINI**: probe workflow PR #3404 (never dispatched); infra#645 (runner prerequisites via forjar); aprender#3402 (0.69 macos-arm64 leg + install.sh Darwin). mini-m4: `self-hosted,macOS,ARM64,apple-silicon,m4,mini`, 16 GiB, 0 of 12 PR jobs eligible today (all carry `Linux`).
+- Spec §4 T-2/T-3 rows amended in place for the installer.
+
+### Still open
+
+- PR2 → PR3 → #3114 undraft → #3091. Ruleset 17836320 still build 3 / merge 1 at 18:47Z.
+- #3364 (this log) and #3363 held unarmed; #3341 contract PR to open after the series.
