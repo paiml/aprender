@@ -300,7 +300,7 @@ self_test() {
         "$builder" "$d" || { printf 'FAIL  row %-2s %s: builder failed\n' "$n" "$label"; red=$((red + 1)); return; }
         out=$(judge "$d" HEAD~1 HEAD 2>&1)
         rc=$?
-        if [ "$rc" != "$want" ] || ! printf '%s' "$out" | grep -qF -- "$pat"; then
+        if [ "$rc" != "$want" ] || ! grep -qF -- "$pat" <<<"$out"; then
             printf 'FAIL  row %-2s rc=%s (wanted %s, must contain: %s)  %s\n' "$n" "$rc" "$want" "$pat" "$label"
             printf '%s\n' "$out" | sed 's/^/        /'
             red=$((red + 1))
@@ -431,7 +431,7 @@ PY
     mkrepo "$td/r$n" >/dev/null 2>&1
     out=$(judge "$td/r$n" deadbeefdeadbeefdeadbeefdeadbeefdeadbeef HEAD 2>&1)
     rc=$?
-    if [ "$rc" = 2 ] && printf '%s' "$out" | grep -qF 'refusing to judge'; then
+    if [ "$rc" = 2 ] && grep -qF 'refusing to judge' <<<"$out"; then
         printf 'ok    row %-2s rc=2  an unresolvable base ref is ENV, never a pass\n' "$n"
     else
         printf 'FAIL  row %-2s rc=%s (wanted 2)  an unresolvable base ref is ENV, never a pass\n' "$n" "$rc"
@@ -470,7 +470,7 @@ PY
         git -C "$d" update-ref refs/remotes/origin/main "$(git -C "$d" rev-parse "$target")"
         out=$(bash "$d/scripts/$PROG" 2>&1)
         rc=$?
-        if [ "$rc" != "$want" ] || ! printf '%s' "$out" | grep -qF -- "$pat"; then
+        if [ "$rc" != "$want" ] || ! grep -qF -- "$pat" <<<"$out"; then
             printf 'FAIL  row %-2s rc=%s (wanted %s, must contain: %s)  %s\n' "$n" "$rc" "$want" "$pat" "$label"
             printf '%s\n' "$out" | sed 's/^/        /'
             red=$((red + 1))
