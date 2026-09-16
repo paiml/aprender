@@ -17753,6 +17753,22 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-3205
+  github_issue: 3205
+  item_type: task
+  title: mini-m4 PR job-set probe workflow (MINI doctrine, APR-RELEASE-001)
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-16T16:16:04Z
+  updated: 2026-09-16T16:16:04Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-3222
   github_issue: 3222
   item_type: task
