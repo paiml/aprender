@@ -512,14 +512,14 @@ self_test() {
 
     # (c) THE COLLECTOR READS THE ORACLE. A fake fleet-bin.sh printing the oracle's
     # own line yields its count; no oracle on PATH yields EMPTY (unknown), never 0.
-    local od; od="$(mktemp -d)"
+    local od; od="$(mktemp -d)" || return 2
     printf '%s\n' '#!/bin/sh' 'echo "fleet-bin: effective PATH: 16 live listener(s) over 17 runner dir(s) -- converged=16 stale=0 unknown=0 foreign=0 idle_dirs=1"' > "$od/fake-fleet-bin.sh"
     chmod +x "$od/fake-fleet-bin.sh"
     _eq 'C-ORACLE-a collector reads live listeners from fleet-bin.sh verify-effective-paths' \
         '16' "$( FLEET_BIN="$od/fake-fleet-bin.sh" emit_capacity_row intel self-hosted,Linux,clean-room | jq -r '.listeners' )"
     _eq 'C-ORACLE-b no oracle on the host -> EMPTY row (unknown), never a zero' \
         '' "$( FLEET_BIN="$od/absent-fleet-bin.sh" emit_capacity_row intel self-hosted,Linux,clean-room )"
-    case "$od" in /tmp/*|"${TMPDIR:-/nonexistent}"/*) rm -rf "$od" ;; esac
+    rm -rf "${od:?}"
 
     # The two inputs, each from a committed payload.
     _eq 'C1 idle = listeners - workers, summed over hosts carrying the labels' \
