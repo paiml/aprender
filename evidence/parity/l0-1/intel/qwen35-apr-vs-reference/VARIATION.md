@@ -101,8 +101,8 @@ Inside the drivers:
 Helper sha256:
 - `run_variation.sh` `5320425cd4020201b9dfa9f12b77efe3a1869ddbb0cdc9def72efad3869c48a9`
 - `run_fix_p2p4.sh` `9e03afe4c95766ff42acce3dcb33e2557b57efbf814e3d0a3339e740cb70c761`
-- `classify_flips.py` `44f3acf933b0cef5cacd455b764896a6ea9553cf50fb9b524b1ef8d3c4f57ce7` (committed version). The first run used `49c589e6…c4a9`. It was split into helpers for the pre-commit complexity gate, re-run on intel as `classify_flips_v2.py` (rc 0, empty stderr), and `cmp flips.json flips.v2.json` returned rc 0, so the committed script reproduces the analysed output byte for byte
-- `classify_spec.json` `6db75f196f2ca9d57c42b7a3fd389e402aabf0c983e00b1891a4a44a1ed75890`
+- `classify_flips.py` `a5a9fd1208bf1c3ad4278b015a33bf0d6ae7f76d1eab87cebdd9ae83bc68c5db` (committed version). The first run used `49c589e6…c4a9`. It was split into helpers for the pre-commit complexity gate, re-run on intel as `classify_flips_v2.py` (rc 0, empty stderr), and `cmp flips.json flips.v2.json` returned rc 0, so the committed script reproduces the analysed output byte for byte. PMAT-3303 then made the spec portable (`${HOME}`-rooted, no machine-specific root) and taught the helper to expand it (`rp()` = `expandvars` + `expanduser`; without it a `${HOME}` path is opened literally and reproduction dies), and re-ran this same line on intel: rc 0, empty stderr, `cmp flips.json out/flips.json` rc 0 with sha `cd308866…f923a5` unchanged before and after. The two digests above are the post-PMAT-3303 files and certify the SAME output
+- `classify_spec.json` `e30300101a98add0c0da7bc9b7ebe1551ba39f9d7084b921b3c5022b51418669` (`${HOME}`-rooted since PMAT-3303; it is an authored input spec, so it was made portable rather than left naming one machine)
 - `context_top5.py` `5841ba054ba847e1629745543da343ce43165e835f69b21e423fd81aab18969b`
 
 ## Outputs (sha256, intel `~/parity-ref/variation-3091/`; the .bin files are not committed)

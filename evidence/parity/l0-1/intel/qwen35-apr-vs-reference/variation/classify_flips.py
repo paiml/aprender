@@ -11,10 +11,13 @@ B (ref=per-token llama, sub=apr), C (ref=batched llama, sub=apr), plus the three
 Gap context is the PER-TOKEN llama top1-top2 gap (the mode that matches apr's one-token forward).
 No threshold on anything except the brief's named >=1.0 defect-candidate label. Numbers only.
 
+Spec paths are portable: ${VAR} and ~ are expanded (rp()), so no machine-specific root is stored.
+
 Usage: classify_flips.py <spec.json> <out.json>
   spec = {"model":..,"gguf_py":..,"prompts":[{"k":0,"kind":"...","A":..,"B":..,"C":..,"pt":..,"bat":..,"apr":..}]}
 """
 import json
+import os
 import sys
 
 import numpy as np
@@ -22,8 +25,13 @@ import numpy as np
 CANDIDATE_GAP = 1.0
 
 
+def rp(path):
+    """Expand ${VAR} and ~ so a spec can name portable roots instead of one machine's home."""
+    return os.path.expanduser(os.path.expandvars(path))
+
+
 def load_bin(path):
-    buf = open(path, "rb").read()
+    buf = open(rp(path), "rb").read()
     assert buf[:8] == b"APRRAWLG", path
     _, n_pos, n_vocab = (int(v) for v in np.frombuffer(buf, "<i4", 3, 8))
     ids = np.frombuffer(buf, "<i4", n_pos, 20)
@@ -44,9 +52,9 @@ def own_gap(row):
 
 def load_vocab(model, gguf_py):
     try:
-        sys.path.insert(0, gguf_py)
+        sys.path.insert(0, rp(gguf_py))
         from gguf import GGUFReader  # noqa: PLC0415
-        f = GGUFReader(model).fields["tokenizer.ggml.tokens"]
+        f = GGUFReader(rp(model)).fields["tokenizer.ggml.tokens"]
         return [bytes(f.parts[i]).decode("utf-8", "replace") for i in f.data]
     except Exception as e:  # token strings are context only
         print(f"vocab unavailable: {e}", file=sys.stderr)
@@ -96,7 +104,7 @@ def decorate_mode_specific(rec):
 
 
 def classify_prompt(p, vocab):
-    jA, jB, jC = (json.load(open(p[x])) for x in "ABC")
+    jA, jB, jC = (json.load(open(rp(p[x]))) for x in "ABC")
     _, pt = load_bin(p["pt"])
     _, bat = load_bin(p["bat"])
     ids, apr = load_bin(p["apr"])
