@@ -122,11 +122,13 @@ proof_obligations:
   property: SIMD matches scalar within ULP
   tolerance: 8.0
   applies_to: simd
-  l4_not_applicable: true
-  na_reason: >-
-    Empirical floating-point ULP equivalence between the AVX2 exp approximation and
-    the scalar path is a runtime/hardware property (IEEE-754 rounding), not an
-    analytic real-number identity. Enforced by FALSIFY-SI-004 / KANI-SILU_K-007.
+  lean:
+    theorem: 'n/a: runtime SIMD-vs-scalar f32 ULP equivalence'
+    status: not-applicable
+    notes: >-
+      Empirical floating-point ULP equivalence between the AVX2 exp approximation and
+      the scalar path is a runtime/hardware property (IEEE-754 rounding), not an
+      analytic real-number identity. Enforced by FALSIFY-SI-004 / KANI-SILU_K-007.
 verification_summary:
   total_obligations: 7
   l2_property_tested: 6

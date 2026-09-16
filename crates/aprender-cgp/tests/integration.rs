@@ -33,11 +33,15 @@ fn test_doctor_completes() {
     assert!(stdout.contains("cgp System Check"), "Missing header");
     assert!(stdout.contains("CPU"), "Missing CPU detection");
     // Doctor should complete in <2s (FALSIFY-CGP-061), allow 30s for compilation
+    // DURATION ONLY UNDER `timing-gate` (#3239) — see this crate's Cargo.toml.
+    #[cfg(feature = "timing-gate")]
     assert!(
         elapsed.as_secs() < 30,
         "cgp doctor took too long: {:?}",
         elapsed
     );
+    #[cfg(not(feature = "timing-gate"))]
+    let _ = elapsed;
 }
 
 /// cgp roofline --target cuda must show RTX 4090 data.

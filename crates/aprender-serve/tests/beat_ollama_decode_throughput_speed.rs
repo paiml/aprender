@@ -41,7 +41,8 @@
 //! inheriting 0.90 did.
 //!
 //! The unit tests below now DO run in CI: this target was added to `ci.yml`'s beat
-//! chain. The header's own admission that they did not was still true today.
+//! chain (since PMAT-3313, its fragment in `ci/explicit-test-commands.d/`). The
+//! header's own admission that they did not was still true today.
 //!
 //! TWO CLAIMS THAT USED TO SIT HERE WERE FALSE, and both are recorded rather than
 //! quietly deleted:
