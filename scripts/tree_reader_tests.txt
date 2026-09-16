@@ -21,6 +21,7 @@ apr-cli	--lib	commands::serve
 apr-cli	--lib	commands::serve_plan
 apr-cli	--lib	commands::test_llm_band
 apr-cli	--lib	commands::tokenize
+apr-cli	--test	backend_refusal_case_table
 apr-cli	--test	beat_apr_sibling_cli_reach
 apr-cli	--test	cli_commands
 apr-cli	--test	pixel_regression
@@ -54,6 +55,7 @@ aprender-contracts-cli	--lib	contract_walk
 aprender-contracts-cli	--test	cli_integration
 aprender-contracts-cli	--test	ground_truth
 aprender-contracts-cli	--test	pv_surface_gate
+aprender-contracts-cli	--test	pvl_zero_contracts
 aprender-core	--lib	format::metadata_bounds_contract_falsify
 aprender-core	--lib	format::model_family_loader
 aprender-core	--lib	format::ship_001
@@ -123,4 +125,3 @@ aprender-test-lib	--lib	perf_gate::witness
 aprender-train	--lib	hf_pipeline::export::pipeline
 aprender-train	--lib	models::llama_370m
 aprender-train	--lib	research::archive::tests
-aprender-contracts-cli	--test	pvl_zero_contracts
