@@ -125,7 +125,7 @@ self_test() {
 
   check() {
     rows=$((rows + 1))
-    if printf '%s' "$out" | grep -qF "$1"; then
+    if grep -qF "$1" <<<"$out"; then
       printf 'ok    %s\n' "$2"
     else
       printf 'FAIL  %s (expected to find: %s)\n' "$2" "$1"
@@ -134,7 +134,7 @@ self_test() {
   }
   refute() {
     rows=$((rows + 1))
-    if printf '%s' "$out" | grep -qF "$1"; then
+    if grep -qF "$1" <<<"$out"; then
       printf 'FAIL  %s (must NOT contain: %s)\n' "$2" "$1"
       rc=1
     else
