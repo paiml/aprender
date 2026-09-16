@@ -111,13 +111,17 @@ falsification_tests:
   if_fails: "tokens_per_sec is zero or negative"
 
 proof_obligations:
-- type: invariant
+- id: AFM-INV-001
+  type: invariant
   property: "JSON schema has all required fields"
-- type: invariant
+- id: AFM-INV-002
+  type: invariant
   property: "wall_time_sec = total_time_ms / 1000"
-- type: invariant
+- id: AFM-INV-003
+  type: invariant
   property: "epoch_metrics length == total_epochs"
-- type: invariant
+- id: AFM-INV-004
+  type: invariant
   property: "throughput positive for completed training"
 
 verification_summary:

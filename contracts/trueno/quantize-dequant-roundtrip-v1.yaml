@@ -104,7 +104,8 @@ kernel_structure:
     description: Check MSE, cosine similarity, bijectivity
 
 proof_obligations:
-- type: bound
+- id: QDR-BND-001
+  type: bound
   property: Q4_0 roundtrip MSE bounded
   formal: 'MSE(x, dequant(quant(x))) < (max(|x|)/7.5/8)^2'
   tolerance: 0.01
@@ -112,7 +113,8 @@ proof_obligations:
   lean:
     theorem: Theorems.Q4_0Roundtrip
     status: sorry
-- type: bound
+- id: QDR-BND-002
+  type: bound
   property: Q4K cosine similarity > 0.99
   formal: 'cos(x, dequant_q4k(quant_q4k(x))) > 0.99'
   tolerance: 0.01
@@ -120,7 +122,8 @@ proof_obligations:
   lean:
     theorem: Theorems.Q4kRoundtrip
     status: sorry
-- type: bound
+- id: QDR-BND-003
+  type: bound
   property: Q6K cosine similarity > 0.999
   formal: 'cos(x, dequant_q6k(quant_q6k(x))) > 0.999'
   tolerance: 0.001
@@ -128,7 +131,8 @@ proof_obligations:
   lean:
     theorem: Theorems.Q6kRoundtrip
     status: sorry
-- type: invariant
+- id: QDR-INV-004
+  type: invariant
   property: NF4 codebook is bijective
   formal: 'forall i: quantize_nf4(NF4_LUT[i]) == i'
   applies_to: nf4_codebook_bijectivity

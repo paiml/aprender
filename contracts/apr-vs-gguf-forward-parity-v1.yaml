@@ -309,17 +309,23 @@ falsification_tests:
     Bisect via `git log --oneline -- crates/aprender-serve/src/apr_transformer/inference.rs crates/aprender-serve/tests/ffn_gguf_apr_layer_3_swigl_diff.rs`.
 
 proof_obligations:
-- type: invariant
+- id: AVGFP-INV-001
+  type: invariant
   property: "APR forward path produces per-element bit-equivalent output to GGUF for Q4K weights"
-- type: invariant
+- id: AVGFP-INV-002
+  type: invariant
   property: "per-layer parity holds for ALL layers (no carve-outs)"
-- type: soundness
+- id: AVGFP-SND-003
+  type: soundness
   property: "no route-around fix at silu_g*u multiply that masks the gate-matmul precision issue"
-- type: completeness
+- id: AVGFP-CMP-004
+  type: completeness
   property: "drift-prevention test FAILS today, PASSES post-PR-E (binding criterion semantics)"
-- type: invariant
+- id: AVGFP-INV-005
+  type: invariant
   property: "trace reporters compute stats over the same tensor sample (count parity, §37)"
-- type: soundness
+- id: AVGFP-SND-006
+  type: soundness
   property: "ratio gates are credible only after sample-size parity is restored"
 
 kani_harnesses:

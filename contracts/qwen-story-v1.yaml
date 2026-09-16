@@ -66,15 +66,18 @@ equations:
       - "Beat 8 (Scale): inspect, tensors — Inspection on MoE (different code path)"
 
 proof_obligations:
-  - type: invariant
+  - id: QSA60C-INV-001
+    type: invariant
     property: "Story script exits 0 on healthy host"
     formal: "qwen-story.sh exits 0 when all required models are present and apr is healthy"
     applies_to: story_passes
-  - type: invariant
+  - id: QSA60C-INV-002
+    type: invariant
     property: "Each beat captures exit codes correctly"
     formal: "Every beat uses OUT=$(cmd); EC=$? (never pipe-then-$?)"
     applies_to: story_passes
-  - type: invariant
+  - id: QSA60C-INV-003
+    type: invariant
     property: "pmat audit runs against the right modules"
     formal: "Each beat's pmat_hunt call references the apr command-handler files it just exercised"
     applies_to: pmat_audit_per_beat

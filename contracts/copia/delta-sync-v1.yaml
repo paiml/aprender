@@ -47,19 +47,23 @@ equations:
     - all Copy ops reference valid basis ranges
     lean_theorem: Theorems.Patch_Apply
 proof_obligations:
-- type: invariant
+- id: DS-INV-001
+  type: invariant
   property: Rolling checksum components bounded by MOD
   formal: '∀ window: checksum.a < 65521 ∧ checksum.b < 65521'
   applies_to: rolling_checksum
-- type: invariant
+- id: DS-INV-002
+  type: invariant
   property: Delta roundtrip correctness
   formal: '∀ basis, source: patch(basis, delta(basis, source)) = source'
   applies_to: delta_computation
-- type: invariant
+- id: DS-INV-003
+  type: invariant
   property: Patch output size equals declared source_size
   formal: '∀ basis, delta: |patch(basis, delta)| = delta.source_size'
   applies_to: patch_apply
-- type: conservation
+- id: DS-CON-004
+  type: conservation
   property: Byte accounting conservation
   formal: '∀ delta: delta.stats.bytes_matched + delta.stats.bytes_literal = delta.source_size'
   applies_to: delta_computation

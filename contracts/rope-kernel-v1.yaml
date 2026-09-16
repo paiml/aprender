@@ -28,10 +28,12 @@ equations:
       - "norm(output) == norm(x)"
       - "output is finite"
 proof_obligations:
-- type: precondition
+- id: RP-PRE-001
+  type: precondition
   property: Input dimension is even, position non-negative
   formal: 'd mod 2 = 0 ∧ d > 0 ∧ m ≥ 0 ∧ ∀i: isFinite(x_i)'
-- type: postcondition
+- id: RP-POST-002
+  type: postcondition
   property: Output has same dimension as input, all elements finite
   formal: 'len(out) = len(x) ∧ ∀i: isFinite(out_i)'
   requires: ROPE-PRE-001
@@ -43,10 +45,12 @@ proof_obligations:
       map, so len(out)=len(x)); real-valued outputs are always finite, so the
       analytic content is discharged. The f32/IEEE isFinite(out_i) check is a
       runtime concern.'
-- type: frame
+- id: RP-FRM-003
+  type: frame
   property: Input vector and position unchanged
   formal: modifies(output) ∧ preserves(x, m, θ)
-- type: invariant
+- id: RP-INV-004
+  type: invariant
   property: Norm preservation
   formal: '|‖RoPE(x, m)‖ - ‖x‖| < ε'
   tolerance: 1.0e-05
@@ -59,7 +63,8 @@ proof_obligations:
     - Real.sin_sq_add_cos_sq
     notes: 'Whole-vector norm preservation ‖RoPE(x,m)‖ = ‖x‖ (equivalently on the
       squared norm), reduced pairwise to rope_norm_sq, which uses sin²+cos²=1.'
-- type: invariant
+- id: RP-INV-005
+  type: invariant
   property: Relative position encoding
   formal: ⟨RoPE(q, m), RoPE(k, n)⟩ = f(q, k, m-n)
   applies_to: all
@@ -72,11 +77,13 @@ proof_obligations:
     - Real.sin_sub
     notes: '⟨R(a)q, R(b)k⟩ = ⟨q, R(b−a)k⟩, so with a=mθ, b=nθ the inner product
       depends only on n−m. Pure polynomial identity after cos_sub/sin_sub.'
-- type: equivalence
+- id: RP-EQ-006
+  type: equivalence
   property: SIMD matches scalar
   tolerance: 4.0
   applies_to: simd
-- type: bound
+- id: RP-BND-007
+  type: bound
   property: Output bounded by input norm
   formal: ‖RoPE(x, m)‖ ≤ ‖x‖ + ε
   applies_to: all

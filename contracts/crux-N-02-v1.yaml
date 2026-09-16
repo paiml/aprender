@@ -73,11 +73,14 @@ falsification_tests:
   if_fails: rule 'the BEATS.md loss row is re-measured, not deleted' is violated — the linfa parity claim for CRUX-N-02 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation
 
 proof_obligations:
-- type: invariant
+- id: CN0085C-INV-001
+  type: invariant
   property: "the covariance path is gone"
-- type: invariant
+- id: CN0085C-INV-002
+  type: invariant
   property: "ill-conditioned input separates the two paths"
-- type: invariant
+- id: CN0085C-INV-003
+  type: invariant
   property: "the BEATS.md loss row is re-measured, not deleted"
 
 kani_harnesses:

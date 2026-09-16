@@ -200,51 +200,63 @@ equations:
         Fail otherwise
 
 proof_obligations:
-  - type: invariant
+  - id: CSG-INV-001
+    type: invariant
     property: GATE-SHIP-001 aggregate-AND shape
     formal: 'for all masks m != 0x3FF : verdict_001 yields Fail'
     applies_to: GATE-SHIP-001
-  - type: invariant
+  - id: CSG-INV-002
+    type: invariant
     property: GATE-SHIP-002 aggregate-AND shape
     formal: 'for all masks m != 0xFFF : verdict_002 yields Fail'
     applies_to: GATE-SHIP-002
-  - type: invariant
+  - id: CSG-INV-003
+    type: invariant
     property: GATE-SHIP-003 byte-identity + non-empty
     formal: 'verdict_003(pre, post) = Pass <=> pre == post AND pre != [] AND post != []'
     applies_to: GATE-SHIP-003
-  - type: invariant
+  - id: CSG-INV-004
+    type: invariant
     property: GATE-SHIP-004 determinism strictly stricter than SHIP-023 drift
     formal: 'verdict_004(a, b) = Pass => (a - b).abs() = 0 (SHIP-023 tol allows 1.2 pp)'
     applies_to: GATE-SHIP-004
-  - type: invariant
+  - id: CSG-INV-005
+    type: invariant
     property: GATE-SHIP-005 case-sensitive byte equality
     formal: 'verdict_005(x, y) = Pass => x.to_lowercase() == y.to_lowercase() BUT NOT converse'
     applies_to: GATE-SHIP-005
-  - type: monotonicity
+  - id: CSG-MON-006
+    type: monotonicity
     property: GATE-SHIP-006 delta within tolerance
     formal: 'verdict_006(a, b, t) = Pass AND t1 >= t => verdict_006(a, b, t1) = Pass'
     applies_to: GATE-SHIP-006
-  - type: invariant
+  - id: CSG-INV-007
+    type: invariant
     property: GATE-SHIP-007 zero-tolerance unwrap count
     formal: 'verdict_007(n) = Pass <=> n == 0'
     applies_to: GATE-SHIP-007
-  - type: invariant
+  - id: CSG-INV-008
+    type: invariant
     property: GATE-SHIP-008 100% contract density on new code
     formal: 'verdict_008(c, t, 1.0) = Pass => c == t AND t > 0'
     applies_to: GATE-SHIP-008
-  - type: invariant
+  - id: CSG-INV-009
+    type: invariant
     property: GATE-SHIP-009 CI aggregate-AND shape
     formal: 'for all masks m != 0b111 : verdict_009(m) yields Fail'
     applies_to: GATE-SHIP-009
-  - type: invariant
+  - id: CSG-INV-010
+    type: invariant
     property: GATE-SHIP-010 zero-tolerance advisory count
     formal: 'verdict_010(n) = Pass <=> n == 0'
     applies_to: GATE-SHIP-010
-  - type: monotonicity
+  - id: CSG-MON-011
+    type: monotonicity
     property: GATE-SHIP-011 inclusive-floor TDG threshold
     formal: 'verdict_011(m, t) = Pass AND m1 >= m AND m1 in [0.0, 100.0] => verdict_011(m1, t) = Pass'
     applies_to: GATE-SHIP-011
-  - type: monotonicity
+  - id: CSG-MON-012
+    type: monotonicity
     property: GATE-SHIP-012 inclusive-floor line coverage threshold
     formal: 'verdict_012(m, t) = Pass AND m1 >= m AND m1 in [0.0, 100.0] => verdict_012(m1, t) = Pass'
     applies_to: GATE-SHIP-012

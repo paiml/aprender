@@ -48,12 +48,14 @@ equations:
     lean_theorem: Theorems.BF16_Dequant_Formula
 
 proof_obligations:
-- type: invariant
+- id: BDFB7E-INV-001
+  type: invariant
   property: dequant length and value
   formal: |
     For BF16 bytes built from f32 vals via half::bf16::from_f32, simd_bf16_to_f32
     returns those f32s within bf16 rounding tolerance; length == bytes/2.
-- type: classification
+- id: BDFB7E-CLS-002
+  type: classification
   property: BF16 dispatches, not rejected
   formal: |
     A GGUFModel with a GGUF_TYPE_BF16 tensor: get_tensor_f32 returns Ok with the

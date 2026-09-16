@@ -106,27 +106,33 @@ equations:
       shapes:
         logits: { dims: [batch, seq, config.vocab_size] }
 proof_obligations:
-- type: invariant
+- id: TSF-INV-001
+  type: invariant
   property: QKV shape compatibility
   formal: Q_dim = n_h * d_k, K_dim = n_kv * d_k, V_dim = n_kv * d_k
   applies_to: all
-- type: invariant
+- id: TSF-INV-002
+  type: invariant
   property: GQA grouping exact
   formal: n_h % n_kv == 0
   applies_to: all
-- type: invariant
+- id: TSF-INV-003
+  type: invariant
   property: Residual shape preservation
   formal: shape(x + sublayer(x)) == shape(x)
   applies_to: all
-- type: invariant
+- id: TSF-INV-004
+  type: invariant
   property: SwiGLU intermediate shape
   formal: 'gate/up: [h]→[d_ff], down: [d_ff]→[h]'
   applies_to: all
-- type: invariant
+- id: TSF-INV-005
+  type: invariant
   property: LM head output shape
   formal: output_dim == vocab_size
   applies_to: all
-- type: equivalence
+- id: TSF-EQ-006
+  type: equivalence
   property: SIMD shape equivalence
   tolerance: 0.0
   applies_to: simd

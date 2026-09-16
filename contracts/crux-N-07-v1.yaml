@@ -69,11 +69,14 @@ falsification_tests:
   if_fails: rule 'bagging works over three different base estimators' is violated — the linfa parity claim for CRUX-N-07 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation
 
 proof_obligations:
-- type: invariant
+- id: CN0F56D-INV-001
+  type: invariant
   property: "AdaBoost beats its own weak learner"
-- type: invariant
+- id: CN0F56D-INV-002
+  type: invariant
   property: "sample weights are updated between rounds"
-- type: invariant
+- id: CN0F56D-INV-003
+  type: invariant
   property: "bagging works over three different base estimators"
 
 kani_harnesses:

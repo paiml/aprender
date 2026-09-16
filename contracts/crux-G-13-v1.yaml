@@ -150,15 +150,20 @@ falsification_tests:
   if_fails: "apr publish missing files that HfApi.upload_folder would include"
 
 proof_obligations:
-- type: equivalence
+- id: CG1AB1D-EQ-001
+  type: equivalence
   property: "apr publish --include-tokenizer --include-config matches HfApi.upload_folder bundle manifest"
-- type: invariant
+- id: CG1AB1D-INV-002
+  type: invariant
   property: "HF /tree/main contains config.json + tokenizer.json + tokenizer_config.json"
-- type: invariant
+- id: CG1AB1D-INV-003
+  type: invariant
   property: "AutoTokenizer.from_pretrained(uploaded_repo) returns non-null tokenizer"
-- type: invariant
+- id: CG1AB1D-INV-004
+  type: invariant
   property: "tokenizer.json has canonical Tokenizers fields (model.type, added_tokens)"
-- type: invariant
+- id: CG1AB1D-INV-005
+  type: invariant
   property: "encode(T) byte-identical between local apr and remote AutoTokenizer"
 
 verification_summary:

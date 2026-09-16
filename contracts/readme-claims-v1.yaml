@@ -62,19 +62,23 @@ equations:
     - "README.md contains a link whose href or path segment ends in `apr-cookbook`"
     preconditions: []
 proof_obligations:
-- type: invariant
+- id: RC2139-INV-001
+  type: invariant
   property: README crate count matches filesystem
   formal: "readme_crate_count == |crates/|"
   applies_to: metadata
-- type: invariant
+- id: RC2139-INV-002
+  type: invariant
   property: README contract count matches filesystem
   formal: "readme_contract_count == |contracts/**/*.yaml|"
   applies_to: metadata
-- type: invariant
+- id: RC2139-INV-003
+  type: invariant
   property: README CLI command count matches apr --help
   formal: "readme_cli_command_count == lines_starting_with_lowercase(apr --help)"
   applies_to: metadata
-- type: invariant
+- id: RC2139-INV-004
+  type: invariant
   property: README links to apr-cookbook
   formal: "'apr-cookbook' ∈ links(README.md)"
   applies_to: metadata

@@ -163,13 +163,17 @@ falsification_tests:
     full_discharge_blocked_on: real AWQ 4-bit packer + fp16 source pair on disk
 
 proof_obligations:
-- type: invariant
+- id: CB0CA38-INV-001
+  type: invariant
   property: "AWQ pass@1 >= 80% of fp16 pass@1 on HumanEval/0..9"
-- type: invariant
+- id: CB0CA38-INV-002
+  type: invariant
   property: "apr quantize --method awq --bits --group-size flags present on CLI"
-- type: invariant
+- id: CB0CA38-INV-003
+  type: invariant
   property: "AWQ 4-bit artifact <= 0.30x fp16 source bytes"
-- type: invariant
+- id: CB0CA38-INV-004
+  type: invariant
   property: "AWQ calibration uses activation statistics (not weight-only RTN)"
 
 verification_summary:

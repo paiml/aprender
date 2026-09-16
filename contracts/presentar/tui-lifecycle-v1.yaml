@@ -113,19 +113,23 @@ equations:
     - Terminal was in cooked mode before app start
     lean_theorem: Theorems.Terminal_Restore
 proof_obligations:
-- type: invariant
+- id: TLC8E4-INV-001
+  type: invariant
   property: Lifecycle state machine is acyclic (except Mounted ↔ Rendering loop)
   formal: 'Unmounted is absorbing: ∀ e: transition(Unmounted, e) = Err'
   applies_to: widget_lifecycle
-- type: invariant
+- id: TLC8E4-INV-002
+  type: invariant
   property: Render stays within frame budget
   formal: '∀ frame: duration(render(frame)) < 16.67ms'
   applies_to: render_cycle_correctness
-- type: invariant
+- id: TLC8E4-INV-003
+  type: invariant
   property: Event dispatch is non-blocking
   formal: '∀ event: duration(dispatch(event)) < 1ms'
   applies_to: event_dispatch
-- type: invariant
+- id: TLC8E4-INV-004
+  type: invariant
   property: Terminal always restored
   formal: '∀ path ∈ {exit, panic, signal}: terminal_restored(path)'
   applies_to: terminal_restore

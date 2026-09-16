@@ -156,14 +156,16 @@ falsification_tests:
     Assert output directory does not exist after plan.
   if_fails: Finetune plan eagerly creates directories before validation (GH-661)
 proof_obligations:
-- type: invariant
+- id: AF-INV-001
+  type: invariant
   property: Rank bounds safety
   formal: '∀ rank: 1 <= rank <= hidden_dim / 8'
   applies_to: rank_bounds_safety
   lean:
     theorem: Theorems.RankBoundsSafety
     status: sorry
-- type: invariant
+- id: AF-INV-002
+  type: invariant
   property: VRAM feasibility
   formal: '∀ config: qlora_vram(config) < lora_vram(config)'
   tolerance: 0.20
@@ -171,32 +173,37 @@ proof_obligations:
   lean:
     theorem: Theorems.VramFeasibility
     status: sorry
-- type: invariant
+- id: AF-INV-003
+  type: invariant
   property: Alpha-rank ratio constant under default config
   formal: 'alpha / rank == 2.0 for default alpha'
   applies_to: alpha_rank_ratio
   lean:
     theorem: Theorems.AlphaRankRatio
     status: sorry
-- type: postcondition
+- id: AF-POST-004
+  type: postcondition
   property: Merge preserves base tensor shape
   formal: 'merge(base, a, b, alpha, rank).shape == base.shape'
   applies_to: merge_tensor_shape
   lean:
     theorem: Theorems.MergeTensorShape
     status: sorry
-- type: postcondition
+- id: AF-POST-005
+  type: postcondition
   property: Checkpoint roundtrip preserves rank and alpha
   formal: 'roundtrip(config).rank == config.rank'
   applies_to: checkpoint_metadata_roundtrip
   lean:
     theorem: Theorems.CheckpointRoundtrip
     status: sorry
-- type: postcondition
+- id: AF-POST-006
+  type: postcondition
   property: Identity merge when alpha is zero
   formal: 'merge(base, a, b, 0.0, rank) == base'
   applies_to: merge_tensor_shape
-- type: invariant
+- id: AF-INV-007
+  type: invariant
   property: Finetune plan is pure (no side effects)
   formal: 'finetune plan does not create files or allocate GPU'
   applies_to: rank_bounds_safety

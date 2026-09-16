@@ -149,13 +149,17 @@ falsification_tests:
 
   if_fails: rule 'parity with vLLM parallel_tool_calls response shape' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: invariant
+- id: CI0D83C-INV-001
+  type: invariant
   property: "Response tool_calls ids are pairwise distinct"
-- type: invariant
+- id: CI0D83C-INV-002
+  type: invariant
   property: "finish_reason == 'tool_calls' iff any tool_calls are returned"
-- type: invariant
+- id: CI0D83C-INV-003
+  type: invariant
   property: "At temperature=0, assistant reply is invariant under permutation of tool-result submission order"
-- type: equivalence
+- id: CI0D83C-EQ-004
+  type: equivalence
   property: "Response schema matches vLLM OpenAI-compatible parallel_tool_calls shape (required field set superset)"
 
 verification_summary:

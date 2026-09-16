@@ -98,13 +98,17 @@ falsification_tests:
   if_fails: "Unpinned activation source"
 
 proof_obligations:
-- type: invariant
+- id: CL17534-INV-001
+  type: invariant
   property: "silu / gelu-exact / gelu-tanh / swiglu parity within dtype-specific tolerances"
-- type: invariant
+- id: CL17534-INV-002
+  type: invariant
   property: "gelu variant must be explicit (no default guessing)"
-- type: invariant
+- id: CL17534-INV-003
+  type: invariant
   property: "gelu-exact != gelu-tanh (variants are truly distinct)"
-- type: equivalence
+- id: CL17534-EQ-004
+  type: equivalence
   property: "apr activation kernels  ≅  HF kernels-community activation"
 
 verification_summary:

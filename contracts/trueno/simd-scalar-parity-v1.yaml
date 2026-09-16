@@ -126,7 +126,8 @@ kernel_structure:
     description: Compare results element-wise within tolerance
 
 proof_obligations:
-- type: equivalence
+- id: SSP-EQ-001
+  type: equivalence
   property: Softmax parity across all backends
   formal: '|softmax_B(x) - softmax_scalar(x)| < n * eps'
   tolerance: 1.0e-5
@@ -134,7 +135,8 @@ proof_obligations:
   lean:
     theorem: Theorems.SoftmaxParity
     status: sorry
-- type: equivalence
+- id: SSP-EQ-002
+  type: equivalence
   property: Dot product parity
   formal: '|dot_B(a,b) - dot_scalar(a,b)| < n * eps * max(|a_i*b_i|)'
   tolerance: 8.0
@@ -142,7 +144,8 @@ proof_obligations:
   lean:
     theorem: Theorems.DotProductParity
     status: sorry
-- type: equivalence
+- id: SSP-EQ-003
+  type: equivalence
   property: RMSNorm parity
   formal: '|rmsnorm_B - rmsnorm_scalar| < 1e-4'
   tolerance: 1.0e-4
@@ -150,14 +153,16 @@ proof_obligations:
   lean:
     theorem: Theorems.RmsnormParity
     status: sorry
-- type: equivalence
+- id: SSP-EQ-004
+  type: equivalence
   property: Elementwise exact for add/sub/mul
   formal: 'add_B(a,b) == add_scalar(a,b) (bitwise)'
   applies_to: elementwise_parity
   lean:
     theorem: Theorems.ElementwiseParity
     status: sorry
-- type: equivalence
+- id: SSP-EQ-005
+  type: equivalence
   property: Activation parity
   formal: '|act_B(x) - act_scalar(x)| < 1e-5'
   tolerance: 1.0e-5

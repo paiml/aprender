@@ -31,7 +31,8 @@ equations:
     - "output is non-empty when data has at least one field"
     lean_theorem: Theorems.Render
 proof_obligations:
-- type: invariant
+- id: DF7099-INV-001
+  type: invariant
   property: display-format correctness
 falsification_tests:
 - id: FALSIFY-GEN-001

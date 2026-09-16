@@ -129,11 +129,14 @@ falsification_tests:
     - falsify_crux_a_21_002_permission_declaring_ok_on_eacces_fails
     - falsify_crux_a_21_002_permission_unknown_kind_fails
 proof_obligations:
-- type: equivalence
+- id: CA24DC1-EQ-001
+  type: equivalence
   property: "APR_MODELS honored exactly like OLLAMA_MODELS on systemd deploys"
-- type: invariant
+- id: CA24DC1-INV-002
+  type: invariant
   property: "two unix users pulling identical repo share exactly one blob"
-- type: invariant
+- id: CA24DC1-INV-003
+  type: invariant
   property: "unprivileged pull fails with exit 13, never silently writes to $HOME"
 
 verification_summary:

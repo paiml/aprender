@@ -183,13 +183,17 @@ falsification_tests:
   if_fails: "apr auto-quant selection diverges from ollama on captured goldens"
 
 proof_obligations:
-- type: invariant
+- id: CA1-INV-001
+  type: invariant
   property: "footprint(model,quant,ctx) ≤ free_vram * safety_factor for selected quant"
-- type: invariant
+- id: CA1-INV-002
+  type: invariant
   property: "Selected quant is arg-max of quality_rank over fitting candidates"
-- type: invariant
+- id: CA1-INV-003
+  type: invariant
   property: "kv_cache_bytes = 2*n_layers*n_kv_heads*head_dim*ctx*dtype_size"
-- type: equivalence
+- id: CA1-EQ-004
+  type: equivalence
   property: "apr --auto-quant decision ≡ ollama offload decision (±1 layer) on goldens"
 
 verification_summary:

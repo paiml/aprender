@@ -229,7 +229,8 @@ equations:
     lean_theorem: Theorems.BaselineIntegrity
 
 proof_obligations:
-- type: invariant
+- id: PWL-INV-001
+  type: invariant
   property: Contract immutability — baseline fields are write-once
   formal: >
     forall c : Contract, t t' : Time, t < t'.
@@ -239,7 +240,8 @@ proof_obligations:
     c.file_manifest(t) = c.file_manifest(t')
   applies_to: all
 
-- type: invariant
+- id: PWL-INV-002
+  type: invariant
   property: Monotonic ledger — append-only with non-decreasing timestamps
   formal: >
     forall L : Ledger, i j : Nat, i < j.
@@ -248,7 +250,8 @@ proof_obligations:
     forall k < len(L_old). L_new[k] = L_old[k]
   applies_to: all
 
-- type: postcondition
+- id: PWL-POST-003
+  type: postcondition
   property: Falsification completeness — every postcondition has a falsification test
   formal: >
     forall p : Postcondition in profile.ensure ++ profile.invariant.
@@ -256,7 +259,8 @@ proof_obligations:
   applies_to: all
   requires: profile has at least one ensure or invariant clause
 
-- type: termination
+- id: PWL-TERM-004
+  type: termination
   property: Rescue bound — at most max_retries retries before escalation
   formal: >
     forall w : WorkItem.
@@ -264,7 +268,8 @@ proof_obligations:
     w.rescue_attempts = w.max_retries -> strategy(w) in {Escalate, Abandon}
   applies_to: all
 
-- type: postcondition
+- id: PWL-POST-005
+  type: postcondition
   property: Subcontracting soundness — child cannot weaken parent postconditions
   formal: >
     forall parent child : Profile, parent <= child in hierarchy.
@@ -272,14 +277,16 @@ proof_obligations:
     forall claim in claims(parent). claim in claims(child)
   applies_to: all
 
-- type: invariant
+- id: PWL-INV-006
+  type: invariant
   property: Profile determinism — same state yields same profile
   formal: >
     forall s : ProjectState, t1 t2 : Time.
     state(t1) = state(t2) -> detect(state(t1)) = detect(state(t2))
   applies_to: all
 
-- type: precondition
+- id: PWL-PRE-007
+  type: precondition
   property: Baseline integrity — commit SHA matches git HEAD at creation
   formal: >
     forall c : Contract.

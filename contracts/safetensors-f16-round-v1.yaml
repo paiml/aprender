@@ -66,20 +66,24 @@ equations:
     note: "Forward invariant on the RNE encoder: a future flush/refactor must not collapse NaN to Inf. This is NOT a discharged regression — the prior truncation code already preserved NaN (its Inf/NaN branch ORed 0x0200 for non-zero mantissa) — so this pins NaN-preservation against future change rather than fixing a past bug."
 
 proof_obligations:
-- type: equivalence
+- id: SFR-EQ-001
+  type: equivalence
   property: "F16 encoding equals the half::f16 round-to-nearest-even oracle (OBLIG-SAFETENSORS-F16-EXPORT-RNE)"
   formal: "∀ finite x: f32_slice_to_f16_bytes([x])[0..2] == half::f16::from_f32(x).to_le_bytes()"
   applies_to: all
-- type: invariant
+- id: SFR-INV-002
+  type: invariant
   property: "Subnormal magnitudes are not flushed to zero"
   formal: "2^-24 ≤ |x| < 2^-14 ⇒ (f16(x) & 0x7FFF) != 0"
   applies_to: finite
-- type: bound
+- id: SFR-BND-003
+  type: bound
   property: "Round-to-nearest-even error is at most half an F16 ulp"
   formal: "|half::f16::from_bits(f16(x)).to_f32() - x| ≤ 0.5 ulp_f16(x) for finite, in-range x (truncation can reach a full ulp)"
   tolerance: 0.0
   applies_to: finite
-- type: invariant
+- id: SFR-INV-004
+  type: invariant
   property: "NaN preservation (no NaN -> Inf collapse)"
   formal: "x.is_nan() ⇒ half::f16::from_bits(f16(x)).is_nan()"
   applies_to: nan

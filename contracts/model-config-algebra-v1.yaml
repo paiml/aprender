@@ -76,27 +76,33 @@ equations:
     - hidden_size > 0
     lean_theorem: Theorems.Cross_Constraint
 proof_obligations:
-- type: invariant
+- id: MCA-INV-001
+  type: invariant
   property: Divisibility constraints
   formal: h % n_h == 0 ∧ n_h % n_kv == 0 ∧ d_k % 2 == 0
   applies_to: all
-- type: bound
+- id: MCA-BND-002
+  type: bound
   property: Dimension bounds
   formal: d_k >= h/n_h, d_k <= 2*(h/n_h)
   applies_to: all
-- type: ordering
+- id: MCA-ORD-003
+  type: ordering
   property: Parameter ordering
   formal: d_ff > h, n_kv <= n_h, max_pos > 0
   applies_to: all
-- type: invariant
+- id: MCA-INV-004
+  type: invariant
   property: Non-degeneracy
   formal: h>0, L>0, n_h>0, V>0, n_kv>0, d_k>0
   applies_to: all
-- type: invariant
+- id: MCA-INV-005
+  type: invariant
   property: Cross-parameter constraints
   formal: rope_theta > 0 ∧ finite ∧ rms_norm_eps ∈ (0, 0.1)
   applies_to: all
-- type: equivalence
+- id: MCA-EQ-006
+  type: equivalence
   property: SIMD config equivalence
   tolerance: 0.0
   applies_to: simd

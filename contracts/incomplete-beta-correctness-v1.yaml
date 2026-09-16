@@ -53,11 +53,13 @@ equations:
     note: "Raw-space gamma(z) overflows f32 at z ≳ 36 (Γ(36) ≈ 1e40); df ≥ 72 ⟹ a = df/2 ≥ 36 ⟹ incomplete_gamma / beta_function returned Inf/Inf = NaN. Fix: ln_gamma in log space, single bounded exp at the end."
 
 proof_obligations:
-  - type: invariant
+  - id: IBC-INV-001
+    type: invariant
     property: "OBLIG-CHISQUARE-PVALUE-FINITE: chi-square survival p-value is finite for all degrees of freedom"
     formal: "∀ df > 0, χ² ≥ 0: chi_square_pvalue(χ², df) ∈ [0,1] ∧ is_finite (in particular finite for df ≥ 72 where raw-space gamma(df/2) overflowed f32)"
     applies_to: C-IBETA-004
-  - type: invariant
+  - id: IBC-INV-002
+    type: invariant
     property: "OBLIG-HYPOTHESIS-PVALUE-FINITE: t- and F-distribution p-values are finite for all degrees of freedom"
     formal: "∀ df ≥ 1: t_distribution_pvalue(t, df) ∈ [0,1] ∧ is_finite; ∀ df1,df2 ≥ 1: f_distribution_pvalue(f, df1, df2) ∈ [0,1] ∧ is_finite (finite for df ≥ 72 where the incomplete_beta gamma prefactor overflowed f32)"
     applies_to: C-IBETA-004

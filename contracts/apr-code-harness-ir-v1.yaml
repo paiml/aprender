@@ -86,19 +86,23 @@ equations:
 
 # ── Proof obligations ──
 proof_obligations:
-- type: equivalence
+- id: ACHI-EQ-001
+  type: equivalence
   property: Anthropic wire round-trip is exact (loses no canonical content)
   formal: '∀ m. from_anthropic(to_anthropic(m)) = m'
   applies_to: anthropic_roundtrip_exact
-- type: equivalence
+- id: ACHI-EQ-002
+  type: equivalence
   property: Gemini wire round-trip is exact on gemini-native messages
   formal: '∀ m. is_gemini_native(m) ⇒ from_gemini(to_gemini(m)) = m'
   applies_to: gemini_roundtrip_exact_on_native
-- type: equivalence
+- id: ACHI-EQ-003
+  type: equivalence
   property: Cross-harness semantic equivalence — the model sees identical content on either wire (prompt parity keystone)
   formal: '∀ m. semantic(from_anthropic(to_anthropic(m))) = semantic(from_gemini(to_gemini(m)))'
   applies_to: cross_harness_semantic_equivalence
-- type: equivalence
+- id: ACHI-EQ-004
+  type: equivalence
   property: Tool schema is lossless and identical across both wire formats
   formal: '∀ t. tool_from_anthropic(tool_to_anthropic(t)) = t ∧ tool_from_gemini(tool_to_gemini(t)) = t ∧ tool_to_anthropic(t).input_schema = tool_to_gemini(t).parameters'
   applies_to: tool_schema_lossless

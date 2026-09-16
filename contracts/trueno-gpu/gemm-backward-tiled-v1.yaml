@@ -194,43 +194,53 @@ qa_gate:
   - barrier_safety
   - entrenar_dispatch
 proof_obligations:
-- type: invariant
+- id: GBT-INV-001
+  type: invariant
   property: Tiled GEMM AI scales linearly with tile size
   formal: Tiled GEMM AI scales linearly with tile size
   applies_to: all
-- type: invariant
+- id: GBT-INV-002
+  type: invariant
   property: Naive GEMM AI = 2*K / (K + N) * 1/sizeof(f32) ~ 0.5 for large N
   formal: Naive GEMM AI = 2*K / (K + N) * 1/sizeof(f32) ~ 0.5 for large N
   applies_to: all
-- type: invariant
+- id: GBT-INV-003
+  type: invariant
   property: 'RTX 4090 (sm_89): 100KB shared memory per SM'
   formal: 'RTX 4090 (sm_89): 100KB shared memory per SM'
   applies_to: all
-- type: invariant
+- id: GBT-INV-004
+  type: invariant
   property: 'TILE=32: 8KB << 100KB, allows 12 concurrent blocks per SM'
   formal: 'TILE=32: 8KB << 100KB, allows 12 concurrent blocks per SM'
   applies_to: all
-- type: invariant
+- id: GBT-INV-005
+  type: invariant
   property: 'B^T access: B is stored row-major [K,N], transposed read is B[j,i] for column i'
   formal: 'B^T access: B is stored row-major [K,N], transposed read is B[j,i] for column i'
   applies_to: all
-- type: invariant
+- id: GBT-INV-006
+  type: invariant
   property: 'Tiled: load B_tile as transposed tile from global memory'
   formal: 'Tiled: load B_tile as transposed tile from global memory'
   applies_to: all
-- type: invariant
+- id: GBT-INV-007
+  type: invariant
   property: 'A^T access: A stored row-major [M,K], transposed read is A[i,j] for row j'
   formal: 'A^T access: A stored row-major [M,K], transposed read is A[i,j] for row j'
   applies_to: all
-- type: invariant
+- id: GBT-INV-008
+  type: invariant
   property: 'Tiled: load A_tile as transposed tile from global memory'
   formal: 'Tiled: load A_tile as transposed tile from global memory'
   applies_to: all
-- type: invariant
+- id: GBT-INV-009
+  type: invariant
   property: 'Without unrolling: 1 / (1 + 3) = 0.25 (75% overhead)'
   formal: 'Without unrolling: 1 / (1 + 3) = 0.25 (75% overhead)'
   applies_to: all
-- type: invariant
+- id: GBT-INV-010
+  type: invariant
   property: 'With 4x unroll: 4 / (4 + 3) = 0.57 (43% overhead)'
   formal: 'With 4x unroll: 4 / (4 + 3) = 0.57 (43% overhead)'
   applies_to: all

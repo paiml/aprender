@@ -52,15 +52,18 @@ equations:
     - sorted results are identical
     lean_theorem: Theorems.ParallelDeterminism
 proof_obligations:
-- type: conservation
+- id: CS-CON-001
+  type: conservation
   property: Channel message conservation
   formal: sent_count = received_count + pending_count
   applies_to: all
-- type: frame
+- id: CS-FRM-002
+  type: frame
   property: Cancellation releases all resources
   formal: modifies(task.state), preserves(all resources released)
   applies_to: all
-- type: determinism
+- id: CS-DET-003
+  type: determinism
   property: Parallel equals sequential
   formal: sort(parallel_result) = sort(sequential_result)
   applies_to: all

@@ -45,15 +45,18 @@ equations:
     - parent rect has positive area
     lean_theorem: Theorems.Layout_Area_Conservation
 proof_obligations:
-- type: invariant
+- id: RPC986-INV-001
+  type: invariant
   property: No out-of-bounds writes
   formal: '∀ draw op: modified pixels ⊆ {(x,y) : 0 <= x < w, 0 <= y < h}'
   applies_to: draw_bounds
-- type: invariant
+- id: RPC986-INV-002
+  type: invariant
   property: Line endpoints drawn
   formal: '∀ (x1,y1,x2,y2): pixel(x1,y1) ∧ pixel(x2,y2) after draw_line'
   applies_to: line_connectivity
-- type: invariant
+- id: RPC986-INV-003
+  type: invariant
   property: Area conservation
   formal: '∀ layout: |Σ area(children) - area(parent)| < epsilon'
   applies_to: layout_area_conservation

@@ -196,13 +196,17 @@ falsification_tests:
     case, so operators would drop the negative captures entirely.
 
 proof_obligations:
-- type: invariant
+- id: ALFP-INV-001
+  type: invariant
   property: "gate verdict = shipped clap parser verdict for every argv"
-- type: invariant
+- id: ALFP-INV-002
+  type: invariant
   property: "no lint gate contains an argv parser of its own"
-- type: invariant
+- id: ALFP-INV-003
+  type: invariant
   property: "an expected_outcome outside {accepted, ok, rejected} exits 4, never 5"
-- type: invariant
+- id: ALFP-INV-004
+  type: invariant
   property: "the accepted-flag list shown on failure is read from Cli::command()"
 
 qa_gate:

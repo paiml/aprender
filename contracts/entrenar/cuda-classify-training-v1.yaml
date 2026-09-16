@@ -211,16 +211,19 @@ equations:
     - device_id >= 0
     lean_theorem: Theorems.Device_Dispatch
 proof_obligations:
-- type: equivalence
+- id: CCT-EQ-001
+  type: equivalence
   property: GPU/CPU forward parity
   formal: '||H_gpu - H_cpu||_inf < 1e-3'
   tolerance: 1e-3
   applies_to: gpu_forward
-- type: invariant
+- id: CCT-INV-002
+  type: invariant
   property: Weight round-trip fidelity
   formal: download(upload(W)) == W for all f32 tensors
   applies_to: weight_roundtrip
-- type: completeness
+- id: CCT-CMP-003
+  type: completeness
   property: Device dispatch covers all cases
   formal: auto_detect returns Cuda or Cpu deterministically
   applies_to: device_dispatch

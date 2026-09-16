@@ -116,15 +116,18 @@ equations:
     - 'caller passes config.rms_norm_eps (cuda_block.rs NF4 post-attn site)'
 
 proof_obligations:
-- type: invariant
+- id: CFRR-INV-001
+  type: invariant
   property: fused residual RMSNorm forward terminates with distinct residual_out
   formal: 'terminates(fused_residual_rmsnorm_forward) ∧ ¬self_deadlock(FORWARD_KERNEL_CACHE)'
   applies_to: fused_rmsnorm_liveness
-- type: invariant
+- id: CFRR-INV-002
+  type: invariant
   property: all batch rows match CPU reference
   formal: '∀m<M: |output[m] - cpu_rmsnorm(residual[m]+input[m], gamma, eps)|_∞ < 1e-4'
   applies_to: fused_rmsnorm_batched_row_parity
-- type: invariant
+- id: CFRR-INV-003
+  type: invariant
   property: kernel epsilon equals caller-provided epsilon
   formal: 'BatchedFusedResidualRmsNormKernel.epsilon == eps_arg'
   applies_to: fused_rmsnorm_eps_threading

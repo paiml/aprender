@@ -44,15 +44,18 @@ equations:
     - '!parts.iter().any(|p| p.is_empty())'
     lean_theorem: Theorems.Composite_Hash
 proof_obligations:
-- type: invariant
+- id: BS-INV-001
+  type: invariant
   property: 'All hashes have blake3: prefix'
   formal: '∀ input: output.starts_with(''blake3:'')'
   applies_to: all
-- type: invariant
+- id: BS-INV-002
+  type: invariant
   property: Deterministic hashing
   formal: '∀ s: hash_string(s) = hash_string(s)'
   applies_to: all
-- type: ordering
+- id: BS-ORD-003
+  type: ordering
   property: Composite hash is order-sensitive
   formal: '∃ a, b: composite_hash([a, b]) ≠ composite_hash([b, a])'
   applies_to: all

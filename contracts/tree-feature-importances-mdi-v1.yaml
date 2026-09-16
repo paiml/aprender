@@ -78,22 +78,27 @@ equations:
       imp = [20.0, 10.0] -> feature 0 ranked higher (WRONG).
 
 proof_obligations:
-- type: precondition
+- id: TFIM-PRE-001
+  type: precondition
   property: "Split nodes carry the sample count and impurity of the samples reaching them"
   formal: "isNode(N) ⟹ N.n_node_samples = n_L + n_R ∧ isFinite(N.impurity) ∧ N.impurity >= 0"
-- type: postcondition
+- id: TFIM-POST-002
+  type: postcondition
   property: "Each split's contribution is its weighted impurity decrease"
   formal: "Δimp[f] = n_N*impurity(N) - n_L*impurity(L) - n_R*impurity(R)"
   requires: MDI-PRE-001
-- type: bound
+- id: TFIM-BND-003
+  type: bound
   property: "A split's impurity decrease is non-negative under a greedy impurity criterion"
   formal: "n_N*impurity(N) - n_L*impurity(L) - n_R*impurity(R) >= 0"
   applies_to: all
-- type: invariant
+- id: TFIM-INV-004
+  type: invariant
   property: "Leaf nodes add nothing to any feature's importance"
   formal: "isLeaf(N) ⟹ ∀f: Δimp[f] = 0"
   applies_to: all
-- type: equivalence
+- id: TFIM-EQ-005
+  type: equivalence
   property: "Variance-decrease ranking outranks the high-count low-decrease feature"
   formal: "imp[1] > imp[0] for the PMAT-851 reference regression tree"
   tolerance: 0.1

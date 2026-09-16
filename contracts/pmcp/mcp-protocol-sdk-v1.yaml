@@ -227,7 +227,8 @@ equations:
     lean_theorem: Theorems.BatchRequestOrdering
 
 proof_obligations:
-- type: state_machine
+- id: MPS-SM-001
+  type: state_machine
   property: Session lifecycle enforces initialization
   formal: >-
     for-all req in ClientRequest: !stateless_mode && !initialized =>
@@ -236,7 +237,8 @@ proof_obligations:
   lean:
     theorem: Theorems.SessionLifecycle
     status: sorry
-- type: completeness
+- id: MPS-CMP-002
+  type: completeness
   property: Tool dispatch covers all registered tools
   formal: >-
     for-all name in tool_infos.keys(): tools.contains_key(name) &&
@@ -245,7 +247,8 @@ proof_obligations:
   lean:
     theorem: Theorems.ToolDispatchIntegrity
     status: sorry
-- type: determinism
+- id: MPS-DET-003
+  type: determinism
   property: Protocol version negotiation is deterministic
   formal: >-
     negotiate_protocol_version(v) always returns the same result for the same v
@@ -253,7 +256,8 @@ proof_obligations:
   lean:
     theorem: Theorems.ProtocolVersionNegotiation
     status: sorry
-- type: invariant
+- id: MPS-INV-004
+  type: invariant
   property: Closed transport rejects operations
   formal: >-
     after close(): send() returns Err(ConnectionClosed) &&
@@ -262,7 +266,8 @@ proof_obligations:
   lean:
     theorem: Theorems.TransportAbstraction
     status: sorry
-- type: conservation
+- id: MPS-CON-005
+  type: conservation
   property: Error information preserved across mapping
   formal: >-
     for-all e in Error: JSONRPCError.message.contains(e.to_string())
@@ -270,7 +275,8 @@ proof_obligations:
   lean:
     theorem: Theorems.ErrorCodeMapping
     status: sorry
-- type: ordering
+- id: MPS-ORD-006
+  type: ordering
   property: Batch response ordering matches request ordering
   formal: >-
     for-all i in 0..n: batch_responses[i].id == batch_requests[i].id
@@ -278,7 +284,8 @@ proof_obligations:
   lean:
     theorem: Theorems.BatchRequestOrdering
     status: sorry
-- type: bound
+- id: MPS-BND-007
+  type: bound
   property: Payload limits enforced before handler dispatch
   formal: >-
     len(tool_args) > max_tool_args_bytes => handler never invoked

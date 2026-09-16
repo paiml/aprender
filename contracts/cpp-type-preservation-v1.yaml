@@ -66,13 +66,17 @@ equations:
     - Derived struct has base field of base class type
     - Deref impl exists with correct Target type
 proof_obligations:
-- type: invariant
+- id: CTP-INV-001
+  type: invariant
   property: Field count preservation (class fields = struct fields)
-- type: postcondition
+- id: CTP-POST-002
+  type: postcondition
   property: Output compiles with rustc
-- type: invariant
+- id: CTP-INV-003
+  type: invariant
   property: Constructor parameter mapping (name match or positional fallback)
-- type: equivalence
+- id: CTP-EQ-004
+  type: equivalence
   property: Method bodies preserve semantic intent (implicit this -> self)
 falsification_tests:
 - id: FALSIFY-CPP-001

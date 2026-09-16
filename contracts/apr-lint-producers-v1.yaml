@@ -393,18 +393,24 @@ falsification_tests:
     discharge_status: FULL_ROUND_TRIP
 
 proof_obligations:
-- type: invariant
+- id: ALP-INV-001
+  type: invariant
   property: "each *-lint help invocation resolves against the shipped clap tree"
-- type: invariant
+- id: ALP-INV-002
+  type: invariant
   property: "each producer's own output is accepted by its lint (round trip)"
-- type: invariant
+- id: ALP-INV-003
+  type: invariant
   property: "a corrupted producer body is rejected by that lint (non-vacuity)"
-- type: invariant
+- id: ALP-INV-004
+  type: invariant
   property: "a configuration or codec the producer cannot run exits non-zero and
     reports no measurement"
-- type: invariant
+- id: ALP-INV-005
+  type: invariant
   property: "a producer's reported metric is the one it measured, not a constant"
-- type: invariant
+- id: ALP-INV-006
+  type: invariant
   property: "the vocabulary axis of an embedding table is chosen per FORMAT"
 
 verification_summary:

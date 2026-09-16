@@ -170,13 +170,17 @@ falsification_tests:
   if_fails: "HF API returns at most 1000 entries per /tree?recursive=1 response; without pagination, datasets like bigcode/the-stack-v2 are silently truncated and `--include data/Python/*.parquet` matches 0 files (issue #1410 defect B)"
 
 proof_obligations:
-- type: invariant
+- id: ACPD-INV-001
+  type: invariant
   property: "apr pull dataset is the canonical HF dataset entry point post-APR-MONO"
-- type: invariant
+- id: ACPD-INV-002
+  type: invariant
   property: "asset-type discriminator preserves model-path backward compatibility"
-- type: soundness
+- id: ACPD-SND-003
+  type: soundness
   property: "license allowlist enforced at row level prevents downstream license-violation artifacts"
-- type: termination
+- id: ACPD-TERM-004
+  type: termination
   property: "no-match glob fails fast, no silent empty download"
 
 kani_harnesses:

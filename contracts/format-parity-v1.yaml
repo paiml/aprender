@@ -51,24 +51,29 @@ equations:
     - names.len() > 0
     lean_theorem: Theorems.Name_Bijection
 proof_obligations:
-- type: invariant
+- id: FP-INV-001
+  type: invariant
   property: Transpose involution
   formal: swap(swap([a, b])) == [a, b]
   applies_to: all
-- type: invariant
+- id: FP-INV-002
+  type: invariant
   property: Element count preserved
   formal: product(gguf_shape) == product(apr_shape) for all tensors
   applies_to: all
-- type: invariant
+- id: FP-INV-003
+  type: invariant
   property: 1D no transpose
   formal: len(shape) == 1 ⟹ apr_shape == gguf_shape
   applies_to: all
-- type: equivalence
+- id: FP-EQ-004
+  type: equivalence
   property: Roundtrip equivalence
   formal: '|convert(convert(tensor, GGUF→APR), APR→GGUF) - tensor| < ε'
   tolerance: 0.0
   applies_to: converter
-- type: equivalence
+- id: FP-EQ-005
+  type: equivalence
   property: SIMD format equivalence
   tolerance: 0.0
   applies_to: simd

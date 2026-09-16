@@ -54,19 +54,23 @@ equations:
     - input.iter().all(|v| v.is_finite())
     lean_theorem: Theorems.Posterior_Predictive
 proof_obligations:
-- type: invariant
+- id: BAYES-INV-001
+  type: invariant
   property: Posterior parameters positive
   formal: alpha' > 0 and beta' > 0 after any conjugate update
   applies_to: all
-- type: invariant
+- id: BAYES-INV-002
+  type: invariant
   property: Predictions finite
   formal: 'forall i: |y_hat_i| < infinity when ||X_i|| < infinity'
   applies_to: all
-- type: invariant
+- id: BAYES-INV-003
+  type: invariant
   property: Prediction deterministic
   formal: predict(X) = predict(X) for same posterior
   applies_to: all
-- type: invariant
+- id: BAYES-INV-004
+  type: invariant
   property: Conjugacy preserved
   formal: posterior family = prior family for conjugate models
   applies_to: all

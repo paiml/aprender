@@ -118,13 +118,17 @@ falsification_tests:
   if_fails: "apr eval is non-deterministic at fixed seed"
 
 proof_obligations:
-- type: invariant
+- id: CE0C48F-INV-001
+  type: invariant
   property: "win_rate_a + win_rate_b + tie_rate == 1.0 within 1e-9"
-- type: invariant
+- id: CE0C48F-INV-002
+  type: invariant
   property: "per-task accuracies match lm-evaluation-harness within ±0.5%"
-- type: invariant
+- id: CE0C48F-INV-003
+  type: invariant
   property: "deterministic at fixed --seed (identical JSON modulo timestamps)"
-- type: equivalence
+- id: CE0C48F-EQ-004
+  type: equivalence
   property: "apr eval A B --tasks T matches EleutherAI lm-evaluation-harness lm_eval --model_args pretrained=A / pretrained=B on same tasks and seed"
 
 # References:

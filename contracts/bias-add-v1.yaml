@@ -20,19 +20,23 @@ equations:
     - input.iter().all(|v| v.is_finite())
     lean_theorem: Theorems.Bias_Add
 proof_obligations:
-- type: invariant
+- id: BA1C93-INV-001
+  type: invariant
   property: Shape preservation
   formal: shape(bias_add(x, bias)) = shape(x) = (B, D)
   applies_to: all
-- type: invariant
+- id: BA1C93-INV-002
+  type: invariant
   property: Zero-bias identity
   formal: bias_add(x, 0) = x for all x
   applies_to: all
-- type: invariant
+- id: BA1C93-INV-003
+  type: invariant
   property: Additivity
   formal: bias_add(bias_add(x, b1), b2) = bias_add(x, b1 + b2)
   applies_to: all
-- type: equivalence
+- id: BA1C93-EQ-004
+  type: equivalence
   property: SIMD matches scalar
   tolerance: 0.0
   formal: '|bias_add_avx2(x, b) - bias_add_scalar(x, b)| = 0 (exact for addition)'

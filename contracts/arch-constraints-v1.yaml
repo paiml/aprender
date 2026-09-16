@@ -401,11 +401,13 @@ qa_gate:
   - validation
   - falsification
 proof_obligations:
-- type: invariant
+- id: ACD33B-INV-001
+  type: invariant
   property: Every GGUF general.architecture value maps to exactly one constraint set
   formal: Every GGUF general.architecture value maps to exactly one constraint set
   applies_to: all
-- type: invariant
+- id: ACD33B-INV-002
+  type: invariant
   property: Enum fields are exhaustive over the defined enum variants
   formal: Enum fields are exhaustive over the defined enum variants
   applies_to: all

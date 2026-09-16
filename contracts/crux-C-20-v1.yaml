@@ -119,13 +119,17 @@ falsification_tests:
   if_fails: "apr serve accepted repeat_penalty <= 0 without error"
 
 proof_obligations:
-- type: equivalence
+- id: CC2-EQ-001
+  type: equivalence
   property: "apr run --repeat-penalty matches llama.cpp llama-cli --repeat-penalty logit transform on golden prompt"
-- type: equivalence
+- id: CC2-EQ-002
+  type: equivalence
   property: "apr serve /api/generate options.repeat_penalty matches Ollama server behavior"
-- type: invariant
+- id: CC2-INV-003
+  type: invariant
   property: "repeat_penalty=1.0 is a bit-exact no-op"
-- type: invariant
+- id: CC2-INV-004
+  type: invariant
   property: "Higher repeat_penalty monotonically reduces repetition on adversarial prompt"
 
 verification_summary:

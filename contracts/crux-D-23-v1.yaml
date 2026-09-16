@@ -139,15 +139,20 @@ falsification_tests:
   if_fails: "checkpointing fails to unlock OOM-bound batch size"
 
 proof_obligations:
-- type: equivalence
+- id: CD2204F-EQ-001
+  type: equivalence
   property: "apr finetune --gradient-checkpointing matches torch.utils.checkpoint.checkpoint at ±0.5% final loss"
-- type: invariant
+- id: CD2204F-INV-002
+  type: invariant
   property: "peak_activation_memory_ckpt / peak_activation_memory_no_ckpt <= 0.5"
-- type: invariant
+- id: CD2204F-INV-003
+  type: invariant
   property: "wall_time_ckpt / wall_time_no_ckpt <= 1.35"
-- type: invariant
+- id: CD2204F-INV-004
+  type: invariant
   property: "|loss_ckpt - loss_no_ckpt| / loss_no_ckpt <= 0.005 for fixed seed"
-- type: invariant
+- id: CD2204F-INV-005
+  type: invariant
   property: "Gradient values identical modulo fp32 rounding (recomputation is deterministic)"
 
 verification_summary:

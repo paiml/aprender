@@ -60,24 +60,29 @@ equations:
     - k.len() == v.len()
     lean_theorem: Theorems.Copy_On_Write
 proof_obligations:
-- type: invariant
+- id: PA-INV-001
+  type: invariant
   property: No two active sequences share a mutable block
   formal: If ref_count[b] > 1 then block b is read-only; writes trigger CoW
   applies_to: all
-- type: bound
+- id: PA-BND-002
+  type: bound
   property: Physical block index within bounds
   formal: block_table[seq][i] < total_blocks for all active seq and valid i
   applies_to: all
-- type: equivalence
+- id: PA-EQ-003
+  type: equivalence
   property: Paged attention output equals standard attention output
   formal: '|PagedAttn(Q, KV_paged, block_table) - StdAttn(Q, KV_contiguous)| < epsilon'
   tolerance: 1.0e-05
   applies_to: all
-- type: invariant
+- id: PA-INV-004
+  type: invariant
   property: Block pool conservation
   formal: free_blocks + sum(allocated_per_seq) = total_blocks at all times
   applies_to: all
-- type: invariant
+- id: PA-INV-005
+  type: invariant
   property: Reference count consistency
   formal: 'ref_count[b] == |{seq : b in block_table[seq]}| for all blocks b'
   applies_to: all

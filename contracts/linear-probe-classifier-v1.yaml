@@ -23,20 +23,24 @@ equations:
     - num_classes > 0
     lean_theorem: Theorems.Linear_Probe
 proof_obligations:
-- type: invariant
+- id: LPC-INV-001
+  type: invariant
   property: Encoder frozen
   formal: encoder_params_before == encoder_params_after for each training step
   applies_to: all
-- type: invariant
+- id: LPC-INV-002
+  type: invariant
   property: Probability simplex
   formal: '|sum(probs) - 1.0| < eps AND probs_i > 0 for all i'
   tolerance: 1.0e-06
   applies_to: all
-- type: invariant
+- id: LPC-INV-003
+  type: invariant
   property: Embedding determinism
   formal: embed(x) == embed(x) for same x and weights (bit-identical)
   applies_to: all
-- type: bound
+- id: LPC-BND-004
+  type: bound
   property: Trainable parameter count
   formal: trainable_params == K * d_model + K (only head weights)
   applies_to: all

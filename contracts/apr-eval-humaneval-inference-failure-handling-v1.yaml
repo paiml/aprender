@@ -93,26 +93,30 @@ equations:
     lean_theorem: Theorems.Per_Problem_Pass_Counter_Invariant
 
 proof_obligations:
-- type: invariant
+- id: AEHIFH-INV-001
+  type: invariant
   property: structural fallback never marks problems as passed
   formal: |
     For every (problems, num_samples, k_values) where run_humaneval_inference
     returns Err for all samples: the resulting pass counters are all zero
     AND the function returns Err to its caller.
-- type: equivalence
+- id: AEHIFH-EQ-002
+  type: equivalence
   property: HumanEval inference-failure handling matches MBPP
   formal: |
     Both run_humaneval (humaneval) and run_mbpp (MBPP) return
     Err(CliError::InferenceFailed) when the multi-sample loop fails entirely.
     The pre-fix HumanEval silent-fallback was the asymmetry; this contract
     enforces parity.
-- type: invariant
+- id: AEHIFH-INV-003
+  type: invariant
   property: JSON output contains inference_error on failure
   formal: |
     For every JSON-output path with all_samples_failed:
     result.extra contains the key "inference_error" with the first error string.
     Downstream parsers can rely on this key's presence as the failure indicator.
-- type: bound
+- id: AEHIFH-BND-004
+  type: bound
   property: exit_code matches pass@k feasibility
   formal: |
     Let p = max(pass_at_k_for_all_k). If p == 0.0 AND inference_attempted:

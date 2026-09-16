@@ -49,7 +49,8 @@ equations:
 # decode i = vocab[i]?. Proofs in
 # crates/aprender-contracts-staging/lean/ProvableContracts/Theorems/Tokenizer.lean
 proof_obligations:
-  - type: invariant
+  - id: T2901-INV-001
+    type: invariant
     property: "Encode→decode roundtrip on the vocabulary (map inverse)"
     formal: "∀ t ∈ vocab: decode(encode(t)) = some t"
     applies_to: all
@@ -64,7 +65,8 @@ proof_obligations:
         - Mathlib.Data.List.Nodup
       notes: "Decoding the id of an in-vocab token recovers the token; the map-inverse core of the tokenizer."
 
-  - type: bound
+  - id: T2901-BND-002
+    type: bound
     property: "Vocab-id bound: every emitted id is a valid index"
     formal: "∀ t ∈ vocab: encode(t) < vocab.length"
     applies_to: all
@@ -78,7 +80,8 @@ proof_obligations:
         - Mathlib.Data.List.Basic
       notes: "Every id produced by encode for an in-vocab token lies in [0, vocab_size)."
 
-  - type: invariant
+  - id: T2901-INV-003
+    type: invariant
     property: "Encode is injective on the vocabulary (ids are single-valued)"
     formal: "∀ t₁ t₂ ∈ vocab: encode(t₁) = encode(t₂) ⟹ t₁ = t₂"
     applies_to: all
@@ -92,7 +95,8 @@ proof_obligations:
         - Mathlib.Data.List.Basic
       notes: "Distinct in-vocab tokens get distinct ids — what makes decode a genuine inverse."
 
-  - type: invariant
+  - id: T2901-INV-004
+    type: invariant
     property: "BPE merge-order determinism: lowest-rank applicable merge is unique"
     formal: "∀ s : Finset ℕ, r₁ r₂ ∈ s minimal ⟹ r₁ = r₂"
     applies_to: all
@@ -107,7 +111,8 @@ proof_obligations:
       notes: "One BPE step is deterministic: the minimum-rank applicable merge is uniquely determined (no dependence on iteration order/tie-break)."
 
   # ── Runtime / empirical obligations (no algebraic core) ──────────
-  - type: precondition
+  - id: T2901-PRE-005
+    type: precondition
     property: "Vocabulary loading from tokenizer.json / GGUF metadata / SentencePiece .model"
     formal: "load(path) yields a well-formed vocab"
     applies_to: all
@@ -116,7 +121,8 @@ proof_obligations:
       status: not-applicable
       notes: "File IO + JSON/GGUF/protobuf parsing of a real on-disk artifact — no algebraic identity to discharge; verified by loader unit tests (FALSIFY-TOK-001/003)."
 
-  - type: equivalence
+  - id: T2901-EQ-006
+    type: equivalence
     property: "UTF-8 byte-boundary handling and whitespace normalization on real byte streams"
     formal: "decode(encode(text)) ≈ text modulo whitespace normalization"
     applies_to: all
@@ -125,7 +131,8 @@ proof_obligations:
       status: not-applicable
       notes: "The '≈ modulo whitespace' relation is a runtime property of arbitrary UTF-8 byte streams / normalizer state, not a closed-form identity; the exact-inverse core is proved by Tokenizer.decode_encode, the byte-edge behaviour is empirical."
 
-  - type: postcondition
+  - id: T2901-POST-007
+    type: postcondition
     property: "Special-token (BOS/EOS/PAD) detection from config / added_tokens"
     formal: "bos_id ∈ vocab ∧ eos_id ∈ vocab when defined in config"
     applies_to: all
@@ -134,7 +141,8 @@ proof_obligations:
       status: not-applicable
       notes: "Depends on the contents of a runtime JSON config (special_tokens_map / added_tokens); a data-driven parse, not an analytic statement."
 
-  - type: postcondition
+  - id: T2901-POST-008
+    type: postcondition
     property: "Reported vocab_size matches token count (GGUF padding tolerated)"
     formal: "tokenizer.vocab_size() == tokenizer.vocab().len()"
     applies_to: all

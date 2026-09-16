@@ -265,22 +265,26 @@ equations:
 # ─── PROOF OBLIGATIONS ───────────────────────────────────────
 
 proof_obligations:
-- type: precondition
+- id: APVS-PRE-001
+  type: precondition
   property: When --val-shard is provided, the path MUST resolve to a directory containing at least one .bin shard with at least one batch worth of tokens
   formal: 'val_shard ≠ ⊥ ⟹ ∃ shard ∈ val_shard. |shard| ≥ batch_size × (seq_length + 1)'
   applies_to: all
 
-- type: invariant
+- id: APVS-INV-002
+  type: invariant
   property: The val iterator does not wrap around
   formal: 'val_iter.wrap_around = false'
   applies_to: all
 
-- type: safety
+- id: APVS-SAFE-003
+  type: safety
   property: Empty val-shard hard-fails with the falsifier ID, no silent fallback
   formal: '|val_iter.batches| = 0 ⟹ ABORT exit 1 ∧ stderr ∋ "FALSIFY-PRETRAIN-VAL-SHARD-003"'
   applies_to: all
 
-- type: invariant
+- id: APVS-INV-004
+  type: invariant
   property: Omitting --val-shard preserves the legacy "first N of --dataset" behaviour
   formal: 'val_shard = ⊥ ⟹ held_out = legacy_first_n(iter, N)'
   applies_to: all

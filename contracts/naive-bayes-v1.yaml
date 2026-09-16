@@ -43,27 +43,33 @@ equations:
     - input.iter().all(|v| v.is_finite())
     lean_theorem: Theorems.Log_Posterior
 proof_obligations:
-- type: invariant
+- id: NB-INV-001
+  type: invariant
   property: Prior sums to 1
   formal: Σ_k P(C_k) = 1 after fit
   applies_to: all
-- type: bound
+- id: NB-BND-002
+  type: bound
   property: Prior bounded
   formal: P(C_k) ∈ (0, 1) for all observed classes
   applies_to: all
-- type: invariant
+- id: NB-INV-003
+  type: invariant
   property: Posterior probability valid
   formal: Normalized posteriors sum to 1 and each ∈ [0, 1]
   applies_to: all
-- type: invariant
+- id: NB-INV-004
+  type: invariant
   property: Prediction deterministic
   formal: predict(x) = predict(x) for all x
   applies_to: all
-- type: invariant
+- id: NB-INV-005
+  type: invariant
   property: Fit-predict class range
   formal: predict(x) ∈ training_classes for all x
   applies_to: all
-- type: invariant
+- id: NB-INV-006
+  type: invariant
   property: F-GAUSSIANNB-EPSILON-003 — variance smoothing scaled by max feature variance (sklearn parity)
   formal: 'epsilon = var_smoothing · max_j Var(X[:,j]); σ²_jk_smoothed = σ²_jk + epsilon for all j,k'
   applies_to: all

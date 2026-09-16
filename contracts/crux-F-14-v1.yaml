@@ -132,11 +132,14 @@ falsification_tests:
     discharge_status: PARTIAL_ALGORITHM_LEVEL
     full_discharge_blocked_on: "live `apr train` exiting 124 only on watchdog timeout"
 proof_obligations:
-- type: equivalence
+- id: CF1A062-EQ-001
+  type: equivalence
   property: "apr hang detector dump format compatible with PyTorch flight-recorder + NCCL trace ring"
-- type: invariant
+- id: CF1A062-INV-002
+  type: invariant
   property: "timeout emits exactly world_size stack files + exit=124"
-- type: invariant
+- id: CF1A062-INV-003
+  type: invariant
   property: "healthy run leaves trace_dir empty (zero false positives)"
 
 verification_summary:

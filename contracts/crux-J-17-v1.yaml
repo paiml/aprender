@@ -73,9 +73,11 @@ falsification_tests:
   if_fails: CRUX-J-17 observability invariant — rate-limit reject must be observable
 
 proof_obligations:
-- type: invariant
+- id: CJ166DA-INV-001
+  type: invariant
   property: "per-sender buckets are independent"
-- type: invariant
+- id: CJ166DA-INV-002
+  type: invariant
   property: "rate-limit reject is observable"
 
 verification_summary:

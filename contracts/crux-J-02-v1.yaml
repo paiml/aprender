@@ -70,9 +70,11 @@ falsification_tests:
   if_fails: CRUX-J-02 location invariant — config MUST live under $HOME
 
 proof_obligations:
-- type: invariant
+- id: CJ03D51-INV-001
+  type: invariant
   property: "write∘read is identity"
-- type: invariant
+- id: CJ03D51-INV-002
+  type: invariant
   property: "config path is under $HOME"
 
 verification_summary:

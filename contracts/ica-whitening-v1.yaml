@@ -32,15 +32,18 @@ equations:
     - n_components <= x_centered.n_cols()
     lean_theorem: Theorems.IcaWhitening
 proof_obligations:
-- type: invariant
+- id: IW-INV-001
+  type: invariant
   property: Whitened covariance is identity on the diagonal (unit variance)
   formal: forall d, |Cov(whiten_data(center_data(X)))[d][d] - 1| < tol
   applies_to: whitening
-- type: invariant
+- id: IW-INV-002
+  type: invariant
   property: Whitened covariance is zero off-diagonal (decorrelated)
   formal: forall d != e, |Cov(whiten_data(center_data(X)))[d][e]| < tol
   applies_to: whitening
-- type: equivalence
+- id: IW-EQ-003
+  type: equivalence
   property: Whitening matrix reads eigenvector j as stored ROW j
   formal: W[i][j] == eigenvectors.get(j, i) / sqrt(eigenvalues[j])
   applies_to: whitening

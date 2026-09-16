@@ -83,11 +83,14 @@ falsification_tests:
 
   if_fails: rule 'model loaded once (not per-request)' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: equivalence
+- id: CK08863-EQ-001
+  type: equivalence
   property: "apr ui predict JSON shape matches gradio.ChatInterface /api/predict contract"
-- type: invariant
+- id: CK08863-INV-002
+  type: invariant
   property: "determinism at temperature=0"
-- type: invariant
+- id: CK08863-INV-003
+  type: invariant
   property: "single model load per process"
 
 verification_summary:

@@ -83,11 +83,14 @@ falsification_tests:
 
   if_fails: rule 'cache key is deterministic (same inputs → same key)' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: equivalence
+- id: CD211CE-EQ-001
+  type: equivalence
   property: "apr prepare-dataset cache semantics match HF `datasets` Arrow cache"
-- type: invariant
+- id: CD211CE-INV-002
+  type: invariant
   property: "cache_key is deterministic hash of (dataset_fp, tokenizer_hash, max_seq_len, pack_mode)"
-- type: invariant
+- id: CD211CE-INV-003
+  type: invariant
   property: "changing any cache-key input invalidates the entry"
 
 verification_summary:

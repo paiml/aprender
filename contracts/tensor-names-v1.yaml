@@ -1017,19 +1017,23 @@ qa_gate:
   - validation
   - falsification
 proof_obligations:
-- type: invariant
+- id: TN-INV-001
+  type: invariant
   property: Architecture-specific names tried before fallbacks
   formal: Architecture-specific names tried before fallbacks
   applies_to: all
-- type: invariant
+- id: TN-INV-002
+  type: invariant
   property: Bare name (without 'model.' prefix) tried as last resort
   formal: Bare name (without 'model.' prefix) tried as last resort
   applies_to: all
-- type: invariant
+- id: TN-INV-003
+  type: invariant
   property: Unknown architecture defaults to llama (safest default)
   formal: Unknown architecture defaults to llama (safest default)
   applies_to: all
-- type: invariant
+- id: TN-INV-004
+  type: invariant
   property: Case-sensitive matching on HF class names
   formal: Case-sensitive matching on HF class names
   applies_to: all

@@ -29,15 +29,18 @@ equations:
     - bytes.len() > 0
     lean_theorem: Theorems.Deserialize
 proof_obligations:
-- type: invariant
+- id: S-INV-001
+  type: invariant
   property: Serialization roundtrip identity
   formal: '∀ v: T: from_bytes(to_bytes(v)) = v'
   applies_to: all
-- type: invariant
+- id: S-INV-002
+  type: invariant
   property: Deterministic serialization
   formal: '∀ v: to_bytes(v) = to_bytes(v)'
   applies_to: serialize
-- type: soundness
+- id: S-SND-003
+  type: soundness
   property: Invalid bytes never panic
   formal: '∀ bytes: from_bytes(bytes) ∈ {Ok(_), Err(_)}'
   applies_to: deserialize

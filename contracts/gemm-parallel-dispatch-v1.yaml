@@ -20,13 +20,15 @@ status: enforced
 date: 2026-06-13
 
 proof_obligations:
-  - type: invariant
+  - id: GPD-INV-001
+    type: invariant
     property: >
       THIN-SERIAL: gemm_should_run_serial returns true for thin NN-scale GEMMs
       (8M <= FLOP < 64M with n < 192) and for tiny GEMMs (FLOP < 8M); it returns
       false for square sub-64M (n >= 192) and for large GEMMs (>= 64M FLOP), which
       keep parallelizing.
-  - type: equivalence
+  - id: GPD-EQ-002
+    type: equivalence
     property: >
       PARALLEL-EQUIV: gemm_blis_parallel produces results equal to the serial
       gemm_reference within 1e-3 for all dims, regardless of whether the dispatch

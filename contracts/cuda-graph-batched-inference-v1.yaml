@@ -104,28 +104,34 @@ equations:
     lean_theorem: Theorems.Efficiency_Target
 
 proof_obligations:
-- type: equivalence
+- id: CGBI-EQ-001
+  type: equivalence
   property: Graph output matches eager output
   formal: '|output_graph(M_padded) - output_eager(M_actual)| < 1e-5 for active slots'
   tolerance: 1.0e-5
   applies_to: all
-- type: invariant
+- id: CGBI-INV-002
+  type: invariant
   property: Padding slots isolated
   formal: 'seq_lens[i] = 0 for padding slots i in [M_actual, M_padded)'
   applies_to: all
-- type: bound
+- id: CGBI-BND-003
+  type: bound
   property: Memory overhead bounded
   formal: total_graph_memory <= 2 GB for bucket_set = {1,2,4,8,16,32}
   applies_to: all
-- type: bound
+- id: CGBI-BND-004
+  type: bound
   property: Throughput improvement at c=4
   formal: post_graph_throughput(4) / pre_graph_throughput(4) >= 1.20
   applies_to: all
-- type: bound
+- id: CGBI-BND-005
+  type: bound
   property: No regression at c=1
   formal: post_graph_throughput(1) / pre_graph_throughput(1) >= 0.98
   applies_to: all
-- type: bound
+- id: CGBI-BND-006
+  type: bound
   property: Resource efficiency target
   formal: realizr_tok_per_s_per_gb(4) / vllm_tok_per_s_per_gb(4) >= 1.50
   applies_to: all

@@ -121,13 +121,17 @@ falsification_tests:
   if_fails: "pass_at_1 not consistent with per_problem pass rate"
 
 proof_obligations:
-- type: invariant
+- id: CE20B6D-INV-001
+  type: invariant
   property: "sandbox has network off, FS read-only, CPU+memory+time caps, non-root uid"
-- type: invariant
+- id: CE20B6D-INV-002
+  type: invariant
   property: "HumanEval num_problems == 164; pass_at_1 consistent with per_problem"
-- type: equivalence
+- id: CE20B6D-EQ-003
+  type: equivalence
   property: "apr HumanEval pass@1 matches bigcode-evaluation-harness within ±1pp on identical model + image"
-- type: invariant
+- id: CE20B6D-INV-004
+  type: invariant
   property: "timeout kills container within timeout_sec + grace (5s)"
 
 verification_summary:

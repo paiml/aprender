@@ -145,17 +145,23 @@ falsification_tests:
   if_fails: "passed=null leaks through — Gate-7 has a tri-state verdict (violates binary pass/fail)"
 
 proof_obligations:
-- type: invariant
+- id: CM0E904-INV-001
+  type: invariant
   property: "Canary set is exactly HumanEval/0..4 (frozen)"
-- type: invariant
+- id: CM0E904-INV-002
+  type: invariant
   property: "Threshold is determined by size class, not by model identity"
-- type: invariant
+- id: CM0E904-INV-003
+  type: invariant
   property: "pass_at_1 >= threshold(size_class) ⇔ PASS"
-- type: invariant
+- id: CM0E904-INV-004
+  type: invariant
   property: "per_problem length equals canary_set length; no passed=null entries"
-- type: invariant
+- id: CM0E904-INV-005
+  type: invariant
   property: "Determinism at (temp=0, top_k=1); re-runs match byte-for-byte in verdicts"
-- type: equivalence
+- id: CM0E904-EQ-006
+  type: equivalence
   property: "apr qa --gate pass-at-1-canary  ≅  apr-model-qa-playbook Gate-7 (5-problem HumanEval pass@1 floor)"
 
 verification_summary:

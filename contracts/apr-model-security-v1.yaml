@@ -131,7 +131,8 @@ kernel_structure:
     description: Verify roundtrip integrity, authentication tags, manifest completeness
 
 proof_obligations:
-- type: roundtrip
+- id: AMS-RT-001
+  type: roundtrip
   property: Encryption roundtrip is byte-exact
   formal: "decrypt(encrypt(model, key), key) == model for all model, key"
   tolerance: 0
@@ -139,21 +140,24 @@ proof_obligations:
   lean:
     theorem: Theorems.EncryptionRoundtrip
     status: sorry
-- type: invariant
+- id: AMS-INV-002
+  type: invariant
   property: Tampered ciphertext fails authentication
   formal: "for all i in 0..ct.len(): decrypt(tamper(ct, i), key) => Err(AuthenticationError)"
   applies_to: authentication_integrity
   lean:
     theorem: Theorems.AuthenticationIntegrity
     status: sorry
-- type: postcondition
+- id: AMS-POST-003
+  type: postcondition
   property: Published manifest detects tensor modification
   formal: "modify(tensor_j) => verify(manifest, model') == Err(IntegrityViolation)"
   applies_to: publish_manifest_integrity
   lean:
     theorem: Theorems.PublishManifestIntegrity
     status: sorry
-- type: determinism
+- id: AMS-DET-004
+  type: determinism
   property: Key derivation is deterministic and salt-sensitive
   formal: "derive(pw, s, p) == derive(pw, s, p) && derive(pw, s1, p) != derive(pw, s2, p)"
   applies_to: key_derivation_correctness

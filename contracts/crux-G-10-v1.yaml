@@ -67,11 +67,14 @@ falsification_tests:
 
   if_fails: rule 'permission check happens before any file upload' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: equivalence
+- id: CG1-EQ-001
+  type: equivalence
   property: "apr org-scope check matches HF whoami-v2 + create_repo 403 semantics"
-- type: invariant
+- id: CG1-INV-002
+  type: invariant
   property: "permission mismatch fails before first data-plane byte"
-- type: invariant
+- id: CG1-INV-003
+  type: invariant
   property: "error names the specific missing role"
 
 verification_summary:

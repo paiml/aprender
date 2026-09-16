@@ -41,15 +41,18 @@ equations:
     - stage types are compatible
     lean_theorem: Theorems.Pipeline_Composition
 proof_obligations:
-- type: invariant
+- id: TSD118-INV-001
+  type: invariant
   property: Transpile determinism
   formal: '∀ src: transpile(src) = transpile(src)'
   applies_to: transpile_determinism
-- type: invariant
+- id: TSD118-INV-002
+  type: invariant
   property: Function preservation
   formal: '∀ AST: |functions(transpile_to_program(AST))| >= |functions(AST)|'
   applies_to: ast_to_program
-- type: invariant
+- id: TSD118-INV-003
+  type: invariant
   property: Pipeline error propagation
   formal: '∀ stages, k: err(stage_k) → err(pipeline(stages))'
   applies_to: pipeline_composition

@@ -158,14 +158,16 @@ kernel_structure:
     description: Verify truncation detection, shape preservation, read-only invariants
 
 proof_obligations:
-- type: invariant
+- id: AFS-INV-001
+  type: invariant
   property: Magic byte detection never panics
   formal: "for all bytes: detect_format(bytes) does not panic"
   applies_to: magic_byte_validation
   lean:
     theorem: Theorems.MagicByteValidation
     status: sorry
-- type: bound
+- id: AFS-BND-002
+  type: bound
   property: Header allocation is bounded
   formal: "alloc_size(header) <= file_size + OVERHEAD_CAP"
   tolerance: 1e-6
@@ -173,35 +175,40 @@ proof_obligations:
   lean:
     theorem: Theorems.HeaderIntegrity
     status: sorry
-- type: postcondition
+- id: AFS-POST-003
+  type: postcondition
   property: Provenance blocks when enforced and missing
   formal: "enforce && !has_hash => Err(MissingProvenance)"
   applies_to: provenance_enforcement
   lean:
     theorem: Theorems.ProvenanceEnforcement
     status: sorry
-- type: invariant
+- id: AFS-INV-004
+  type: invariant
   property: Dtype coercion preserves shape
   formal: coerce(tensor, dtype).shape == tensor.shape
   applies_to: dtype_coercion_safety
   lean:
     theorem: Theorems.DtypeCoercionSafety
     status: sorry
-- type: postcondition
+- id: AFS-POST-005
+  type: postcondition
   property: Truncation detected
   formal: "actual_size != expected_size => Err"
   applies_to: truncation_detection
   lean:
     theorem: Theorems.TruncationDetection
     status: sorry
-- type: invariant
+- id: AFS-INV-006
+  type: invariant
   property: Strict import rejects NaN tensors
   formal: hash(model_before) == hash(model_after) for strict_validate(model)
   applies_to: strict_import_validation
   lean:
     theorem: Theorems.StrictImportValidation
     status: sorry
-- type: invariant
+- id: AFS-INV-007
+  type: invariant
   property: APR header offsets never panic-slice (PMAT-822)
   formal: >
     for all data, header: tensor_index_offset > data.len() => AprV2Reader::from_bytes

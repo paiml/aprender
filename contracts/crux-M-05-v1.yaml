@@ -138,15 +138,20 @@ falsification_tests:
   if_fails: "Fixture is not checked in — ship verdicts are not reproducible"
 
 proof_obligations:
-- type: invariant
+- id: CM0DB52-INV-001
+  type: invariant
   property: "decode(encode(x)) == NFC(x) for every fixture x"
-- type: invariant
+- id: CM0DB52-INV-002
+  type: invariant
   property: "encode(x) bit-identical to HF tokenizers crate for every fixture x"
-- type: invariant
+- id: CM0DB52-INV-003
+  type: invariant
   property: "Failures surface both kinds (roundtrip + upstream), never just one"
-- type: invariant
+- id: CM0DB52-INV-004
+  type: invariant
   property: "Fixture is version-controlled (reproducibility)"
-- type: equivalence
+- id: CM0DB52-EQ-005
+  type: equivalence
   property: "apr qa --gate tokenizer-roundtrip  ≅  apr-model-qa-playbook Gate-5 (tokenizer parity)"
 
 verification_summary:
