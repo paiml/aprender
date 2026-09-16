@@ -21,13 +21,13 @@ that exact scalar arithmetic, the two engines agree to ~1e-6 at every layer and 
   2026-09-15 22:33-22:47 UTC (intel clock).
 
 ## Commands (all scripts in `scalar/`, transcripts beside them)
-1. `bash scalar/build_scalar.sh` (intel) → `build_scalar.transcript`, `build.log`, `cmake_cache_flags.txt`.
+1. `bash scalar/build_scalar.sh` (intel) → `build_scalar.transcript`, `build.transcript`, `cmake_cache_flags.txt`.
 2. `bash scalar/build_and_run_scalar_fixtures.sh` (intel): the UNCHANGED `emulation/ggml_emul_fixtures.c` re-linked against the scalar libs
    → `fixtures_scalar.{rs.txt,tsv}`, objdump counts, compile flags.
 3. `bash scalar/run_scalar_ref.sh` (intel): config C (`--kv-type f32 --flash-attn off`) per-token, orig ×2, p4, sub-layer dumps
    (p4 pos 0-3, orig pos 4/28, the KVCONFIG regex), p1-p3 → `run_scalar_ref.transcript`, `runs.sha256.txt`, `SC-sub-*.manifest.sha256.tsv`.
 4. `gcc system_info.c` against each libllama (intel) → `system_info.txt`.
-5. `cargo test -p aprender-serve --lib ggml_vecdot_emul` RED → `unit_red.log`, GREEN → `unit_green.log`.
+5. `cargo test -p aprender-serve --lib ggml_vecdot_emul` RED → `unit_red.transcript`, GREEN → `unit_green.transcript`.
 6. `bash scalar/run_apr_scalar.sh` (lambda): switch-OFF invariance, `APR_EMULATE_GGML_VECDOT=scalar` subjects orig/p4/p1-p3 (+orig n=2),
    dumps, then the committed comparators (`compare_raw_logits.py`, `layerwise/compare_layerwise.py`, `layerwise/layer_steps.py`) → `cmp/`.
 7. `python3 scalar/walk_points.py` (full-precision walk of every dumped point, callback order) → `cmp/walk_{p4,orig}.tsv`;
@@ -54,9 +54,9 @@ that exact scalar arithmetic, the two engines agree to ~1e-6 at every layer and 
 `APR_EMULATE_GGML_VECDOT=scalar` = every ported qtype with the scalar build's arithmetic: the generic dots without `mul_add`, the reference
 `quantize_row_q8_0_ref` (roundf, `id = 1/d`, scalar `ggml_compute_fp32_to_fp16` ported bit for bit), and the plain Q4_K dot (no repack).
 `=1` keeps its functions and dispatch, unchanged.
-- RED (`unit_red.log`): with the scalar entry points stubbed to the native arithmetic, 3 of 11 tests fail. The q8_0 dot for case 0 is 0xc11dca90
+- RED (`unit_red.transcript`): with the scalar entry points stubbed to the native arithmetic, 3 of 11 tests fail. The q8_0 dot for case 0 is 0xc11dca90
   vs scalar C 0xc11dca91, the q4_K dot for case 1 is 0x426a3b0e vs 0x426a3b08, and the `scalar` switch value is refused.
-- GREEN (`unit_green.log`, `gate1.log`): 11/11. Scalar fixtures, 10 cases: Q8_K quantize, Q4_K/Q5_K/Q6_K dots, Q8_0 ref quantize + dot all bit-exact.
+- GREEN (`unit_green.transcript`, `gate1.transcript`): 11/11. Scalar fixtures, 10 cases: Q8_K quantize, Q4_K/Q5_K/Q6_K dots, Q8_0 ref quantize + dot all bit-exact.
   The scalar fixtures share every input/weight/Q8_K hash with the native ones and differ in 12 dot bit patterns plus the case-7 Q8_0 blocks.
 - In-engine bit-exactness (`cmp/isolate_matmul.tsv`): for all 18 DeltaNet layers × 6 dumped positions, apr's scalar kernel on **llama's own dumped input**
   reproduces llama's output: attn_norm→z (Q4_K attn_gate) and final_output→linear_attn_out (Q5_K ssm_out), **331776/331776 elements bit-equal**.
@@ -237,7 +237,7 @@ so they have no llama counterpart and are apr-side diagnostic points. They never
 (2 points x 6 full-attention layers x 4 positions; apr's p4 manifest has 1548 rows against the walk's 1500).
 22 passed after the fix. The measured numbers are unchanged by it — `it6-final` reproduces `it6-recommit` exactly.
 
-Gate on `b59433f7d` (logs `scalar/gate_*.log`): `cargo test -p aprender-serve --lib ggml_vecdot_emul` 12 passed
+Gate on `b59433f7d` (logs `scalar/gate_*.transcript`): `cargo test -p aprender-serve --lib ggml_vecdot_emul` 12 passed
 rc=0 · `cargo test -p aprender-serve --lib qwen35` 22 passed rc=0 · `cargo fmt --all -- --check` rc=0 ·
 `bash scripts/check_llama_pin.sh --self-test` rc=0 (PASS, the pin discriminates).
 
@@ -245,6 +245,13 @@ The amplification floor was reproduced independently: `scalar_isolate` rebuilt f
 (sha256 `83c16a83…9371c`), `python3 scalar/ulp_amplification.py` re-run, and `diff` against
 `cmp/ulp_amplification.tsv` rc=0 — the same 18 rows, the same two amplifying elements (9.450x / 12.412x).
 The `ulpamp` job perturbs by `f32::from_bits(x.to_bits() + 1)`, i.e. exactly one ulp, read from the committed source.
+
+**Run logs are committed as `.transcript`.** `.gitignore:38` is `*.log`, so NO `.log` file in this evidence tree is
+tracked — every `*.log` citation was unreachable from the repo. The cited run logs are therefore committed as
+byte-identical `.transcript` copies beside them (`scalar/{build,unit_red,unit_green,gate1-4,gate_*}.transcript`).
+Two citations remain deliberate scratch paths, NOT repo paths: the interrupted run's `off-p4.log` under
+`/mnt/nvme-raid0/parity-tmp/…` and kvconfig's `A-v-orig.log`. The sibling evidence docs of this directory
+(EMULATION.md, KVCONFIG.md) still carry the same unreachable `.log` citations from their own passes.
 
 ### Remaining [U] (each with its command)
 - ~~[U] RMSNorm sum order~~ — CLOSED by iteration 5.
