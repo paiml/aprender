@@ -81,7 +81,11 @@ pub enum Commands {
         /// Directory containing contract YAML files
         #[arg(default_value = "contracts")]
         contract_dir: PathBuf,
-        /// Emit JSON for the ONT ratchet rather than a table
+        /// Output format. ONT-001 §5 ONT-1's probe runs `--format json`.
+        #[arg(long, value_enum, default_value_t = CensusFormat::Table)]
+        format: CensusFormat,
+        /// Deprecated alias for `--format json`, kept because
+        /// scripts/check_ont_ratchet.sh derives its consumer probe from this surface.
         #[arg(long)]
         json: bool,
     },
@@ -431,4 +435,13 @@ pub enum Commands {
         #[arg(long)]
         dry_run: bool,
     },
+}
+
+/// `pv census` output format (ONT-001 ONT-1).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+pub enum CensusFormat {
+    /// Human-readable table.
+    Table,
+    /// The bytes `contracts/census.json` carries.
+    Json,
 }

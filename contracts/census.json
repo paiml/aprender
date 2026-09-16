@@ -1,0 +1,48 @@
+{
+  "schema": "ont.paiml.dev/census/v1alpha1",
+  "git_sha": null,
+  "n_files": 1790,
+  "n_parsed": 1790,
+  "n_parse_errors": 0,
+  "parse_errors": [],
+  "quarantined_n": 0,
+  "by_kind": {
+    "beat-benchmark": 24,
+    "corpus-assembly": 1,
+    "kernel": 361,
+    "model-family": 28,
+    "model-family-variant": 1,
+    "pattern": 78,
+    "pretraining-corpus": 2,
+    "registry": 519,
+    "schema": 766,
+    "tokenizer": 1,
+    "training-loop": 8,
+    "training-precondition-gate": 1
+  },
+  "by_entity_type": {},
+  "by_anchoring": {
+    "unanchored": 1790,
+    "class": 0,
+    "instance": 0
+  },
+  "id_set_sha256": "939190d6e270e49b13e300351dbb5bd555628936ba1456935e3ca0c62e498633",
+  "declared_external": [
+    {
+      "name": "provable-contracts",
+      "repo": "paiml/provable-contracts",
+      "ref": "main",
+      "head": "626868c240",
+      "n_files": 397,
+      "mark": "[V 2026-09-16]",
+      "counted_by": "gh api repos/paiml/provable-contracts/git/trees/main?recursive=1 --jq '[.tree[] | select(.type==\"blob\") | .path | select(startswith(\"contracts/\") and endswith(\".yaml\"))] | length'",
+      "note": "Archived repository, read-only. 82 .lean files [V 2026-09-16]. ONT-001 §1 quotes \"313 contracts, 82 .lean\" [C]: the 313 is PVL EV-13c's ORPHAN subset (contracts with no same-id contract in any fleet repo), not the corpus size, which is the 397 measured here. The fold is PVL EV-13c's; ONT only reports the declaration."
+    }
+  ],
+  "timing": {
+    "census_cpu_ms_p50": null,
+    "lint_cpu_ms_p50": null,
+    "host_class": null,
+    "n_runs": 5
+  }
+}

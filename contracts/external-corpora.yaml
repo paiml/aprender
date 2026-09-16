@@ -1,0 +1,27 @@
+# contracts/external-corpora.yaml — ONT-001 (ONT-1)
+#
+# Corpora that are NOT under contracts/ and are therefore NOT in `pv census`'s
+# cardinality, declared so the number the census publishes cannot be confused
+# with "every provable contract that exists". Each entry names the command that
+# counted it, so the figure can be re-measured rather than believed (R-10).
+#
+# `pv census` copies these entries into census.json's `declared_external[]`
+# verbatim. It never runs `counted_by` — a census must be reproducible offline,
+# and a network read inside it would make two runs disagree.
+schema: ont.paiml.dev/external-corpora/v1alpha1
+corpora:
+  - name: provable-contracts
+    repo: paiml/provable-contracts
+    ref: main
+    head: 626868c240
+    n_files: 397
+    mark: '[V 2026-09-16]'
+    counted_by: >-
+      gh api repos/paiml/provable-contracts/git/trees/main?recursive=1 --jq
+      '[.tree[] | select(.type=="blob") | .path | select(startswith("contracts/") and endswith(".yaml"))] | length'
+    note: >-
+      Archived repository, read-only. 82 .lean files [V 2026-09-16]. ONT-001 §1
+      quotes "313 contracts, 82 .lean" [C]: the 313 is PVL EV-13c's ORPHAN
+      subset (contracts with no same-id contract in any fleet repo), not the
+      corpus size, which is the 397 measured here. The fold is PVL EV-13c's;
+      ONT only reports the declaration.

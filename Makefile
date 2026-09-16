@@ -579,6 +579,15 @@ coverage-check: coverage
 contracts:
 	@echo "== provable contracts: pv lint contracts/ =="
 	@. scripts/pv_bin.sh && "$$PV" lint contracts/ 2>&1 | tail -5
+	@echo "== census: tracked contracts/census.json == a fresh one (ONT-001 ONT-1, F-1) =="
+	@git ls-files --error-unmatch contracts/census.json >/dev/null || { echo "FAIL: contracts/census.json is not tracked, so diffing it proves nothing"; exit 1; }
+	@. scripts/pv_bin.sh && "$$PV" census contracts --format json > contracts/census.json
+	@git diff --exit-code contracts/census.json || { echo "FAIL: the tracked census differs from a fresh one — commit the regenerated contracts/census.json"; exit 1; }
+	@echo "== README states the censused count =="
+	@bash scripts/readme_sync.sh --check
+	@echo "== provenance marks, interim (ONT-001 R-10) =="
+	@bash scripts/lint-provenance.sh --self-test
+	@bash scripts/lint-provenance.sh contracts/external-corpora.yaml
 	@echo "== contract engine tests =="
 	@cargo test -p aprender-contracts --lib 2>&1 | grep -E "test result" | tail -1
 
