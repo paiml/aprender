@@ -17914,6 +17914,27 @@ roadmap:
   notes: 'llvm-cov overhead scales with instrumented branches EXECUTED, which differs
     between the compress and decompress paths; the ratio had already been widened once
     to 0.25 for this and failed anyway'
+- id: PMAT-3273
+  github_issue: null
+  item_type: task
+  title: 'APEX-2a: deterministic render primitive — SVG and PNG byte-identical across clean-room X64 and ARM64 hosts: libm-only transcendentals (clippy disallowed-methods, proved live by scripts/ci/libm-ban-live.sh), every emitted coordinate on COORD_GRID=1e-3 via format_coord, text-to-path, sha256 manifest, ci.yml determinism matrix + determinism-compare.sh deciding svg_identical from SVG bytes with a self-test and a manifest_root mutant (apex APEX-001 row EV-2a, bound in paiml/apex#71; depends on EV-2b #3259)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-16T14:10:22Z
+  updated: 2026-09-16T14:10:22Z
+  spec: null
+  acceptance_criteria:
+  - Id allocated from the PR number (paiml/aprender#3273), GitHub's central sequence, so it cannot collide. NEW crates/aprender-viz/src/{manifest.rs,text.rs}, tests/render_determinism.rs, scripts/ci/{libm-ban-live.sh,determinism-compare.sh}, .clippy.toml; EDITS .github/workflows/ci.yml (determinism X64+ARM64 matrix, determinism-compare, both in gate.needs), Cargo.toml (features text-path/raster), src/lib.rs (deny + quantise + format_coord), src/output/{svg.rs,png_encoder.rs}, src/error.rs, src/scale.rs, src/plots/{histogram,boxplot,force_graph}.rs, examples/{roc_pr_curves,loss_training}.rs, scripts/tree_reader_tests.txt, Cargo.lock. Publishing aprender-viz stays operator-only.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - apex
+  - APEX-001
+  - EV-2a
+  notes: null
 - id: PMAT-3294
   github_issue: 3294
   item_type: task
