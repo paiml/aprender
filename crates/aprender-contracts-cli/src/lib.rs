@@ -88,7 +88,10 @@ pub fn dispatch(command: Commands) -> Result<(), Box<dyn std::error::Error>> {
             format,
             binding,
         } => commands::explain::run(&contract, binding.as_deref(), &format),
-        Commands::Validate { contract } => commands::validate::run(&contract),
+        Commands::Validate {
+            contract,
+            check_ids,
+        } => commands::validate::run(&contract, check_ids),
         Commands::CheckParity { contract } => commands::check_parity::run(&contract),
         Commands::Scaffold {
             contract,

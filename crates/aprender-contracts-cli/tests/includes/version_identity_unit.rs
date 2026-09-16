@@ -1,12 +1,12 @@
 //! Unit half of the #2559 falsifier — see `tests/version_identity.rs` for the
 //! integration half that spawns the real binary.
 //!
-//! WHY BOTH. CI's `workspace-test` job runs `--lib` across the workspace plus ONE
-//! explicit line naming individual `--test` targets (`.github/workflows/ci.yml`).
-//! A new `tests/*.rs` file is DARK until it is added to that line, and only one
-//! PR at a time can edit it without conflicting. These unit tests live in the
-//! library, so they run under `--lib` unconditionally and the guarantee does not
-//! depend on winning that race.
+//! WHY BOTH. CI's `workspace-test` job runs `--lib` across the workspace plus an
+//! explicit list of individual `--test` commands, one fragment file per command
+//! under `ci/explicit-test-commands.d/` (PMAT-3313; it was one ci.yml line when
+//! this was written). A new `tests/*.rs` file is DARK until a fragment names it.
+//! These unit tests live in the library, so they run under `--lib`
+//! unconditionally and the guarantee does not depend on that wiring.
 //!
 //! clap renders `--version` from `Command::render_long_version()` and `-V` from
 //! `render_version()`, so asserting on those is asserting on the same strings the

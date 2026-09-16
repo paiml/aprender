@@ -1162,7 +1162,7 @@ contract-validate: ## Validate all kernel contracts (schema + staleness)
 
 contract-test: ## Run contract-driven property tests
 	@echo "Running contract property tests..."
-	@PROPTEST_CASES=100 cargo test --test contract_tests
+	@PROPTEST_CASES=100 cargo test -p aprender-core --test contract_tests
 	@echo "Contract tests passed"
 
 contract-audit: ## Audit binding coverage (equations -> implementations)

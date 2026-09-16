@@ -13,7 +13,8 @@
 //! 1. **pv's CLI tests were DARK.** `crates/aprender-contracts-cli/tests/` held
 //!    651 lines of binary-spawning tests, and CI ran **none** of them:
 //!    `workspace-test` is `cargo nextest run --workspace --lib` (library targets
-//!    only), and the explicit integration list in `ci.yml` names 23 targets,
+//!    only), and the explicit integration list (then a `ci.yml` line, now
+//!    `ci/explicit-test-commands.d/`, PMAT-3313) named 23 targets,
 //!    not one of them from `aprender-contracts-cli`. A test that never executes
 //!    is 0% coverage however many lines it has. This PR wires pv's integration
 //!    targets into that list.
