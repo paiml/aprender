@@ -1,0 +1,84 @@
+{
+  "ticket": "PMAT-3233",
+  "base": "origin/main",
+  "base_resolved": "origin/main",
+  "base_note": "no origin/origin/main exists; judged against the local ref",
+  "head": "161039d217bcb186ca0d206dffb499bff062bec3",
+  "diff_sha256": "544da6b623d36c163ea92a2bd1d2e5c08439901b169aafac341515e303ff5fa8",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 97405,
+  "author": {
+    "model": "Opus 5 (1M context)",
+    "family": "claude",
+    "source": "measured"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff cleanly implements all requirements of PMAT-3233. The `pv census` command provides a unified cardinality over the contract corpus, broken down by anchoring and entity type. `census.json` is properly tracked, regenerated, and validated by `make contracts`. The README is updated to consume this census rather than a broad `find`, which was the source of count discrepancy. `lint-provenance.sh` accurately implements R-10, validating provenance marks, with a solid self-test and anti-vacuity checks. The receipt precisely documents the changes, explains why `surface_audit.csv` does not have a new row, and justifies the exit statuses and output semantics perfectly. No gates are weakened and all claims are fully backed.",
+      "findings": [],
+      "raw_bytes": 2707,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Diff PMAT-3233 successfully implements all clauses of ticket ONT-1 (`pv census`) without weakening any gates, contradicting ticket requirements, or introducing incidental modifications.\n\nKey Verifications:\n1. `pv census` subcommand (`commands/census.rs`, `cli.rs`, `lib.rs`, `contract_walk.rs`):\n   - Computes one unified cardinality over the corpus broken down `by_kind`, `by_entity_type`, and `by_anchoring` (`unanchored`, `class`, `instance`).\n   - `--format json` (and backwards-compatible `--json`) emits output adhering to schema `ont.paiml.dev/census/v1alpha1`, reporting `n_files: 1791`, `n_parsed: 1791`, `n_parse_errors: 0`, deterministic `id_set_sha256`, `quarantined_n: 0`, and `timing.n_runs: 5` (`cpu_ms_p50` values null per operator ruling).\n   - Adheres to PVL exit vocabulary: empty directory declines at exit 2 (`decline: 0 contracts under <path>`); parse error rejects at exit 1 (`reject: N parse error(s) under <path>`).\n   - All 21 unit tests in `commands::census::tests` pass. All 9 CLI test suites (233 tests total) pass.\n\n2. Corpus Definition and Tracking (`contracts/census.json`, `contracts/external-corpora.yaml`, `gates.rs`, `parser.rs`):\n   - `contracts/census.json` is tracked in git. A fresh run of `pv census contracts --format json` produces byte-for-byte identical output (diff -u exits 0).\n   - `contracts/external-corpora.yaml` declares external corpora with R-10 provenance mark `[V 2026-09-16]`.\n   - `parser.rs` and `gates.rs` exclude `external-corpora.yaml` and `quarantine/`, establishing a single consistent contract file definition across `pv lint`, `pv validate`, and `pv census`.\n\n3. Gate Reinforcement (`Makefile`, `scripts/lint-provenance.sh`):\n   - `make contracts` asserts tracked status with `git ls-files --error-unmatch`, regenerates `contracts/census.json`, asserts `git diff --exit-code`, runs `readme_sync.sh --check`, and executes `lint-provenance.sh --self-test` plus `lint-provenance.sh contracts/external-corpora.yaml`. Measured: `make contracts` exits 0.\n   - `scripts/lint-provenance.sh` checks Markdown list/table rows and YAML key-values for R-10 provenance marks, includes anti-vacuity assertions (`SCANNED >= 1`), handles exempt keys, and passes `--self-test`. Exits 2 on usage error without arguments.\n\n4. README Sync and Ratchet Testing (`scripts/readme_sync.sh`, `scripts/check_readme_claims.sh`, `scripts/tests/ratchet_semantics_test.sh`, `README.md`):\n   - `README.md` updated from 1842 to 1791.\n   - `readme_sync.sh` and `check_readme_claims.sh` read `.n_files` from `contracts/census.json` and refuse missing, non-numeric, or zero counts.\n   - `check_readme_claims.sh --self-test` passes (7/7). Live guard reports `base=1791 merge=1791 delta=+0`.\n   - `ratchet_semantics_test.sh --class readme` passes all 12 checks (12/12).\n\n5. Code Quality & Integrity:\n   - `cargo fmt --all --check` is clean.\n   - `cargo clippy -p aprender-contracts -p aprender-contracts-cli -- -D warnings` reports 0 errors.\n   - All 23 files in the diff are accounted for and match the receipt clauses.\n\nNo refuting findings were found. Verdict is PASS.",
+      "findings": [],
+      "raw_bytes": 8340,
+      "err_bytes": 79,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.8-flash-high",
+      "model_measured": "gemini-3.8-flash-high",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Diff PMAT-3233 successfully implements all requirements of ONT-1 (`pv census`).\n\nKey verified items:\n1. `pv census` subcommand (`commands/census.rs`, `cli.rs`, `lib.rs`, `contract_walk.rs`):\n   - Computes a single cardinality over the contract corpus, broken down by kind, entity type, and anchoring level (unanchored, class, instance).\n   - Supports `--format json` (and `--json` alias) emitting schema `ont.paiml.dev/census/v1alpha1`, reporting `n_files`, `n_parsed`, `n_parse_errors`, `quarantined_n`, `id_set_sha256`, `declared_external`, and `timing`.\n   - Adheres to PVL exit vocabulary: empty directory yields exit code 2 (`decline: 0 contracts under <path>`); parse error yields exit code 1 (`reject: N parse error(s) under <path>`).\n\n2. Corpus definition and tracking (`contracts/census.json`, `contracts/external-corpora.yaml`, `gates.rs`, `parser.rs`):\n   - `contracts/census.json` is tracked with cardinality 1791.\n   - `contracts/external-corpora.yaml` declares external corpora with R-10 provenance mark `[V 2026-09-16]`.\n   - `parser.rs` and `gates.rs` exclude `external-corpora.yaml` and `quarantine/`, aligning the definition of contract files across `pv lint`, `pv validate`, and `pv census`.\n\n3. Gate reinforcement (`Makefile`, `scripts/lint-provenance.sh`):\n   - `make contracts` asserts `contracts/census.json` is tracked, regenerates it, checks for drift via `git diff --exit-code`, verifies `readme_sync.sh --check`, and runs `lint-provenance.sh --self-test` plus `lint-provenance.sh contracts/external-corpora.yaml`.\n   - `scripts/lint-provenance.sh` checks Markdown rows and YAML key-values for R-10 provenance marks, includes anti-vacuity assertions (`SCANNED >= 1`), and passes self-test.\n\n4. README sync & ratchet testing (`scripts/readme_sync.sh`, `scripts/check_readme_claims.sh`, `scripts/tests/ratchet_semantics_test.sh`, `README.md`):\n   - `README.md` count updated to 1791.\n   - `readme_sync.sh` and `check_readme_claims.sh` read `.n_files` from `contracts/census.json` and fail on missing/empty/invalid/zero counts.\n   - `ratchet_semantics_test.sh` uses `fixture_census` to provide realistic fixture censuses.\n\nNo weakened gates, unbacked receipt claims, or contradictory test assertions found. Verdict is PASS.",
+      "findings": [],
+      "raw_bytes": 5890,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.7-flash-high",
+      "model_measured": "gemini-3.7-flash-high",
+      "model_source": "measured",
+      "family": "gemini"
+    }
+  ],
+  "dissent": [],
+  "dedup": [],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [],
+  "auto_merge": {
+    "checked": true,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "auto-merge not armed"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=Opus 5 (1M context)/claude"
+  }
+}

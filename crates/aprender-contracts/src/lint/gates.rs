@@ -77,7 +77,10 @@ pub fn collect_yaml_files(dir: &Path, out: &mut Vec<std::path::PathBuf>) {
             // validating them here would fail on missing `metadata.` root.
             if matches!(
                 dirname,
-                "kaizen" | "legacy" | "pipelines" | "publish-manifests"
+                // `quarantine/` holds contracts ONT-001 ONT-1 pulled OUT of the
+                // corpus precisely because they do not parse; walking them would
+                // make every gate reject on the files quarantine exists to hold.
+                "kaizen" | "legacy" | "pipelines" | "publish-manifests" | "quarantine"
             ) {
                 continue;
             }
