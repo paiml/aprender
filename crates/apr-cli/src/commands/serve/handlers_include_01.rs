@@ -70,6 +70,9 @@ fn start_apr_server_gpu(
 
     preload_gpu_weights(&mut cuda_model);
     println!("{}", "CUDA fused Q4K model ready".green());
+    // R-0b / REG-15: the gate record, next to the `selected:` line.
+    let pr = &cuda_model.parity;
+    eprintln!("{}", crate::registry::parity_line(pr.status, pr.cosine, pr.positions, pr.threshold, pr.basis));
 
     // GH-88: Use BPE tokenizer with merge rules when available (SafeTensors/HF imports).
     let state = if let Some(merge_rules) = merges {
@@ -220,6 +223,9 @@ fn start_safetensors_server_gpu(
 
     preload_gpu_weights(&mut cuda_model);
     println!("{}", "CUDA fused Q4K model ready".green());
+    // R-0b / REG-15: the gate record, next to the `selected:` line.
+    let pr = &cuda_model.parity;
+    eprintln!("{}", crate::registry::parity_line(pr.status, pr.cosine, pr.positions, pr.threshold, pr.basis));
 
     let _ = std::fs::remove_file(&tmp_apr);
 
