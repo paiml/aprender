@@ -17770,6 +17770,23 @@ roadmap:
   labels:
   - kind:code
   notes: null
+- id: PMAT-3226
+  github_issue: null
+  item_type: task
+  title: 'check_roadmap_completion_is_cited: lane scratch under .claude/worktrees is scanned as if it were the tree'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-14T14:10:24Z
+  updated: 2026-09-14T14:10:24Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
 - id: PMAT-3228
   github_issue: null
   item_type: task
@@ -17840,6 +17857,113 @@ roadmap:
   - kind:code
   notes: 'unanchored_but_bindable moves from [U] to 297; contracts_anchored may not
     rise while pv census is absent, because pv validate accepts entity: by ignoring it'
+- id: PMAT-3234
+  github_issue: null
+  item_type: task
+  title: 'guards-nightly has been RED on a matcher that cannot see a YAML-quoted step name'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-09-14T19:45:00Z
+  updated: 2026-09-14T19:45:00Z
+  spec: docs/specifications/APR-RELEASE-001-train-and-build-kaizen.md
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'a step name containing a colon-space must be quoted in YAML; the inline
+    grep -F matched only the bare spelling, so the lane named a step that runs every
+    night as one the workflow does not run'
+- id: PMAT-3235
+  github_issue: null
+  item_type: task
+  title: 'examples-nightly: 6 of 22 red rows are an example built without its feature, not a broken example'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-09-14T20:05:00Z
+  updated: 2026-09-14T20:05:00Z
+  spec: docs/specifications/APR-RELEASE-001-train-and-build-kaizen.md
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'adds needs-feature beside needs-args/needs-hardware/needs-data; like
+    needs-hardware it is a SKIP that must be re-run with the feature before a release
+    verdict, never read as the example working'
+- id: PMAT-3236
+  github_issue: null
+  item_type: task
+  title: 'Silicon Nightly reported a vanished dep-info file as a SIMD failure — route its cargo through the ENV/CODE classifier'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-09-14T20:25:00Z
+  updated: 2026-09-14T20:25:00Z
+  spec: docs/specifications/APR-RELEASE-001-train-and-build-kaizen.md
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'cargo_step.sh (#3241) classifies dep-info ENOENT as ENV and was wired to
+    book.yml only; 5 of 75 cargo invocation lines across all workflows were covered'
+- id: PMAT-3237
+  github_issue: null
+  item_type: task
+  title: 'Coverage Nightly red every night on a same-process ratio that is load-immune but not instrumentation-immune'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-09-14T20:45:00Z
+  updated: 2026-09-14T20:45:00Z
+  spec: docs/specifications/APR-RELEASE-001-train-and-build-kaizen.md
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'llvm-cov overhead scales with instrumented branches EXECUTED, which differs
+    between the compress and decompress paths; the ratio had already been widened once
+    to 0.25 for this and failed anyway'
+- id: PMAT-3294
+  github_issue: 3294
+  item_type: task
+  title: a roadmap edit without its fragment is refused
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-16T08:42:17Z
+  updated: 2026-09-16T08:42:17Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-3296
+  github_issue: 3296
+  item_type: task
+  title: 'roadmap fragments: one file per ticket, roadmap.yaml generated on main'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-09-15 06:00:00+00:00
+  updated: 2026-09-15 06:00:00+00:00
+  spec: null
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
 - id: PMAT-3300
   github_issue: 3300
   item_type: task
@@ -17856,4 +17980,52 @@ roadmap:
   estimated_effort: null
   labels:
   - kind:code
+  notes: null
+- id: PMAT-3318
+  github_issue: 3318
+  item_type: task
+  title: the cascade gate reads the structured tested-sha
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-16T09:36:36Z
+  updated: 2026-09-16T09:36:36Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-3337
+  github_issue: 3337
+  item_type: task
+  title: check_silicon_coverage reads the evidence per axis workflow
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-15T22:18:29Z
+  updated: 2026-09-15T22:18:29Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-3347
+  github_issue: 3347
+  item_type: task
+  title: bind the six qwen35-e2e equations to implementations
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-16T06:52:28Z
+  updated: 2026-09-16T06:52:28Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
   notes: null

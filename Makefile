@@ -562,6 +562,13 @@ readme-sync-check: ## Fail if README.md is not what the generator produces
 # merge-tree measurement READS A FILE ON DISK must turn the hand-edited rows
 # GREEN, which is what makes their RED load-bearing rather than incidental.
 # `--class complexity` and `--class satd` are stubs and exit 3, never 0.
+.PHONY: roadmap-aggregate roadmap-aggregate-check
+roadmap-aggregate: ## Regenerate docs/roadmaps/roadmap.yaml from docs/roadmaps/entries/ (#3296)
+	@python3 scripts/lib/roadmap_fragments.py aggregate --write
+
+roadmap-aggregate-check: ## Fail if roadmap.yaml is not what the aggregator produces, or if it is not idempotent
+	@python3 scripts/lib/roadmap_fragments.py aggregate --check
+
 .PHONY: ratchet-semantics-test
 ratchet-semantics-test: ## BSE-03: D2 ratchet polarity rows (--class readme)
 	@bash scripts/tests/ratchet_semantics_test.sh --class readme
@@ -1162,7 +1169,7 @@ contract-validate: ## Validate all kernel contracts (schema + staleness)
 
 contract-test: ## Run contract-driven property tests
 	@echo "Running contract property tests..."
-	@PROPTEST_CASES=100 cargo test --test contract_tests
+	@PROPTEST_CASES=100 cargo test -p aprender-core --test contract_tests
 	@echo "Contract tests passed"
 
 contract-audit: ## Audit binding coverage (equations -> implementations)

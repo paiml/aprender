@@ -111,29 +111,37 @@ proof_obligations:
     property: "Vocabulary loading from tokenizer.json / GGUF metadata / SentencePiece .model"
     formal: "load(path) yields a well-formed vocab"
     applies_to: all
-    l4_not_applicable: true
-    na_reason: "File IO + JSON/GGUF/protobuf parsing of a real on-disk artifact — no algebraic identity to discharge; verified by loader unit tests (FALSIFY-TOK-001/003)."
+    lean:
+      theorem: 'n/a: vocabulary loading from an on-disk artifact'
+      status: not-applicable
+      notes: "File IO + JSON/GGUF/protobuf parsing of a real on-disk artifact — no algebraic identity to discharge; verified by loader unit tests (FALSIFY-TOK-001/003)."
 
   - type: equivalence
     property: "UTF-8 byte-boundary handling and whitespace normalization on real byte streams"
     formal: "decode(encode(text)) ≈ text modulo whitespace normalization"
     applies_to: all
-    l4_not_applicable: true
-    na_reason: "The '≈ modulo whitespace' relation is a runtime property of arbitrary UTF-8 byte streams / normalizer state, not a closed-form identity; the exact-inverse core is proved by Tokenizer.decode_encode, the byte-edge behaviour is empirical."
+    lean:
+      theorem: 'n/a: UTF-8 byte-boundary and whitespace normalization on real byte streams'
+      status: not-applicable
+      notes: "The '≈ modulo whitespace' relation is a runtime property of arbitrary UTF-8 byte streams / normalizer state, not a closed-form identity; the exact-inverse core is proved by Tokenizer.decode_encode, the byte-edge behaviour is empirical."
 
   - type: postcondition
     property: "Special-token (BOS/EOS/PAD) detection from config / added_tokens"
     formal: "bos_id ∈ vocab ∧ eos_id ∈ vocab when defined in config"
     applies_to: all
-    l4_not_applicable: true
-    na_reason: "Depends on the contents of a runtime JSON config (special_tokens_map / added_tokens); a data-driven parse, not an analytic statement."
+    lean:
+      theorem: 'n/a: special-token detection from a runtime config'
+      status: not-applicable
+      notes: "Depends on the contents of a runtime JSON config (special_tokens_map / added_tokens); a data-driven parse, not an analytic statement."
 
   - type: postcondition
     property: "Reported vocab_size matches token count (GGUF padding tolerated)"
     formal: "tokenizer.vocab_size() == tokenizer.vocab().len()"
     applies_to: all
-    l4_not_applicable: true
-    na_reason: "GGUF may report a padded vocab_size differing from the token count; reconciling a reported file field against the actual count is an empirical cross-file check, not an algebraic identity."
+    lean:
+      theorem: 'n/a: reported vocab_size vs token count cross-file check'
+      status: not-applicable
+      notes: "GGUF may report a padded vocab_size differing from the token count; reconciling a reported file field against the actual count is an empirical cross-file check, not an algebraic identity."
 
 verification_summary:
   total_obligations: 8
