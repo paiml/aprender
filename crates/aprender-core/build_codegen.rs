@@ -204,6 +204,7 @@ fn generate_family_registration(f: &FamilyData) -> String {
          \x20               positional_encoding: PositionalEncoding::from_str_contract(\"{}\").unwrap_or(PositionalEncoding::Rope),\n\
          \x20               mlp_type: MlpType::from_str_contract(\"{}\").unwrap_or(MlpType::SwiGlu),\n\
          \x20               qk_norm: {},\n\
+         \x20               deltanet: {},\n\
          \x20           }},\n\
          \x20           tensor_template: TensorTemplate {{\n\
          \x20               embedding: \"{}\".to_string(),\n\
@@ -243,6 +244,7 @@ fn generate_family_registration(f: &FamilyData) -> String {
         f.constraints.position,
         f.constraints.mlp,
         f.constraints.qk_norm,
+        deltanet_expr(f),
         f.embedding_tensor,
         f.lm_head_tensor
             .as_ref()
@@ -489,4 +491,17 @@ fn generate_algebraic_proofs(f: &FamilyData) -> String {
 
     out.push('\n');
     out
+}
+
+/// #3346: render a family's Gated DeltaNet shape as a Rust expression, so the
+/// compiled-in registry carries the same keys the runtime YAML parser does.
+/// A family that declares none renders `None` and keeps dense accounting.
+fn deltanet_expr(f: &FamilyData) -> String {
+    match &f.constraints.deltanet {
+        None => "None".to_string(),
+        Some(d) => format!(
+            "Some(DeltaNetShape {{ inner_size: {}, state_size: {}, conv_kernel: {}, group_count: {}, full_attention_interval: {} }})",
+            d.inner_size, d.state_size, d.conv_kernel, d.group_count, d.full_attention_interval
+        ),
+    }
 }
