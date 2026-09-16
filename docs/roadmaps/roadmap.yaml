@@ -18046,6 +18046,22 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-3341
+  github_issue: 3341
+  item_type: task
+  title: MoE load-time expert-qtype contract — refuse at load, not at first token (#3341)
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-16T19:22:19Z
+  updated: 2026-09-16T19:22:19Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-3347
   github_issue: 3347
   item_type: task
