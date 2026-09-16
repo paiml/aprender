@@ -16,7 +16,8 @@
 #     feature. A default `cargo test` does not merely skip these gates, it never
 #     builds them — so no green run anywhere is evidence about them.
 #   * CI's workspace line is `--lib`, which cannot reach an integration target.
-#   * The one explicit integration line in ci.yml lists targets by name, and
+#   * The explicit integration list (ci/explicit-test-commands.d/, one fragment
+#     file per command, PMAT-3313; formerly one ci.yml line) names targets, and
 #     these were not on it.
 #
 # `check_guards_are_wired.sh` is the sibling meta-guard for `scripts/check_*.sh`.
@@ -88,7 +89,9 @@ unwired_in() {
     while IFS= read -r target; do
         [ -n "$target" ] || continue
         wired=0
-        for f in "$root"/.github/workflows/*.yml "$root"/.github/workflows/*.yaml; do
+        # PMAT-3313: every ci/explicit-test-commands.d/*.cmd fragment is executed by
+        # workspace-test's "Integration tests" step, so a fragment wires too.
+        for f in "$root"/.github/workflows/*.yml "$root"/.github/workflows/*.yaml "$root"/ci/explicit-test-commands.d/*.cmd; do
             [ -f "$f" ] || continue
             while IFS= read -r line; do
                 if line_wires_target "$line" "$target"; then
@@ -179,6 +182,23 @@ TABLE
         printf 'FAIL: wired fixture tree still reported <%s>\n' "$got"
         fails=$((fails + 1))
     fi
+    # PMAT-3313: wiring that lives ONLY in a ci/explicit-test-commands.d/ fragment
+    # counts, and deleting that one fragment makes the target unwired again.
+    printf 'jobs:\n  x:\n    steps:\n      - run: cargo test --lib\n' > "$fixture/.github/workflows/ci.yml"
+    mkdir -p "$fixture/ci/explicit-test-commands.d"
+    printf 'cargo test -p fixture-crate --features %s --test dark_target\n' \
+        "$FEATURE" > "$fixture/ci/explicit-test-commands.d/010-fixture-crate-dark-target.cmd"
+    got=$(unwired_in "$fixture")
+    if [ -n "$got" ]; then
+        printf 'FAIL: tree wired only via a ci/explicit-test-commands.d/ fragment still reported <%s>\n' "$got"
+        fails=$((fails + 1))
+    fi
+    rm -f "$fixture/ci/explicit-test-commands.d/010-fixture-crate-dark-target.cmd"
+    got=$(unwired_in "$fixture")
+    if [ "$got" != "dark_target" ]; then
+        printf 'FAIL: fragment deleted from ci/explicit-test-commands.d/: expected <dark_target>, got <%s>\n' "$got"
+        fails=$((fails + 1))
+    fi
     # A tree with NO gated targets must not silently pass as "all wired": the
     # caller below refuses an empty universe.
     rm -f "$fixture/crates/fixture-crate/tests/dark_target.rs"
@@ -192,7 +212,7 @@ TABLE
         printf '\n%s case(s) failed\n' "$fails"
         return 1
     fi
-    printf 'OK: check_model_tests_wired case table passed (10 matcher + 4 folding + 3 enumerator cases)\n'
+    printf 'OK: check_model_tests_wired case table passed (10 matcher + 4 folding + 5 enumerator cases)\n'
     return 0
 }
 

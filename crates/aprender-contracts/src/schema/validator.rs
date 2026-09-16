@@ -570,6 +570,64 @@ fn validate_proof_obligations(contract: &Contract, violations: &mut Vec<Violatio
         validate_obligation_identity(i, ob, &mut seen_formal, violations);
         validate_obligation_dbc_fields(i, ob, violations);
         validate_obligation_parent_link(i, ob, contract, violations);
+        validate_obligation_not_applicable(i, ob, violations);
+    }
+}
+
+/// SCHEMA-021/022/023 (PMAT-3091): an obligation declared
+/// `applies_to: not_applicable` must say why it is not a code property
+/// (`na_reason`, SCHEMA-021) and where the claim IS verified (`na_owner`,
+/// SCHEMA-022). A `na_reason`/`na_owner` on an obligation that does NOT declare
+/// `not_applicable` justifies nothing and is decoration (SCHEMA-023).
+fn validate_obligation_not_applicable(
+    index: usize,
+    ob: &crate::schema::types::ProofObligation,
+    violations: &mut Vec<Violation>,
+) {
+    let blank = |v: &Option<String>| v.as_deref().is_none_or(|s| s.trim().is_empty());
+    let mut push = |rule: &str, field: &str, message: String| {
+        violations.push(Violation {
+            severity: Severity::Error,
+            rule: rule.to_string(),
+            message,
+            location: Some(format!("proof_obligations[{index}].{field}")),
+        });
+    };
+    if ob.is_not_applicable() {
+        if blank(&ob.na_reason) {
+            push(
+                "SCHEMA-021",
+                "na_reason",
+                format!(
+                    "proof_obligations[{index}] is applies_to: not_applicable \
+                     but na_reason is missing or empty — say why it is not a code property"
+                ),
+            );
+        }
+        if blank(&ob.na_owner) {
+            push(
+                "SCHEMA-022",
+                "na_owner",
+                format!(
+                    "proof_obligations[{index}] is applies_to: not_applicable \
+                     but na_owner is missing or empty — name the bench, check or \
+                     evidence command that verifies it"
+                ),
+            );
+        }
+        return;
+    }
+    for (field, value) in [("na_reason", &ob.na_reason), ("na_owner", &ob.na_owner)] {
+        if value.is_some() {
+            push(
+                "SCHEMA-023",
+                field,
+                format!(
+                    "proof_obligations[{index}].{field} is only valid with \
+                     applies_to: not_applicable — a dangling justification is decoration"
+                ),
+            );
+        }
     }
 }
 

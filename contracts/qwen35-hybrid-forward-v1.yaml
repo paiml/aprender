@@ -61,7 +61,7 @@ equations:
     - num_layers > 0
     lean_theorem: Theorems.Hybrid_Block
   activation_magnitude:
-    formula: '||h_l||_inf <= M * ||h_0||_inf for some bound M'
+    formula: '∀l, ∀i: is_finite(h_l[i])  (no NaN, no ±Inf in any hidden-state coordinate)'
     domain: Hidden state magnitude through L layers
     invariants:
     - Magnitude bounded (no explosion)
@@ -83,31 +83,45 @@ equations:
     - grad_output.iter().all(|v| v.is_finite())
     lean_theorem: Theorems.Gradient_Flow
 proof_obligations:
-- type: invariant
+- id: QHF-INV-001
+  type: invariant
   property: Attention sublayer shape preservation
   formal: '∀x: shape(attention_sublayer(x)) = shape(x)'
   applies_to: all
-- type: invariant
+- id: QHF-INV-002
+  type: invariant
   property: GDN sublayer shape preservation
   formal: '∀x: shape(gdn_sublayer(x)) = shape(x)'
   applies_to: all
-- type: invariant
+- id: QHF-INV-003
+  type: invariant
   property: FFN sublayer shape preservation
   formal: '∀x: shape(ffn_sublayer(x)) = shape(x)'
   applies_to: all
-- type: invariant
+- id: QHF-INV-004
+  type: invariant
   property: Block outputs from exactly one attention type
   formal: '∀l: is_attention(l) XOR is_gdn(l)'
   applies_to: all
-- type: bound
+- id: QHF-BND-005
+  type: bound
   property: Activation magnitude bounded
-  formal: '∀l: ||h_l||_inf <= M for finite M'
+  formal: '∀l ∈ [0, L], ∀i: is_finite(h_l[i])  (no NaN, no +Inf, no -Inf)'
   applies_to: all
-- type: invariant
+  note: >-
+    The previous formal ('∀l: ||h_l||_inf <= M for finite M') was vacuous:
+    "some finite M" only asserts finiteness. It is restated as explicit
+    per-coordinate finiteness, which is what FALSIFY-QHF-005 ("No NaN/Inf
+    after 48 layers") tests. A quantitative growth bound is deferred until
+    the growth ratio ||h_l||_inf / ||h_0||_inf is measured on the reference
+    model; no bound is stated here.
+- id: QHF-INV-006
+  type: invariant
   property: RMSNorm precedes each sublayer
   formal: 'pre-norm architecture: norm before attention/GDN and before FFN'
   applies_to: all
-- type: conservation
+- id: QHF-CON-007
+  type: conservation
   property: Residual identity component
   formal: h_{l+1} - h_l = sublayer(norm(h_l))
   tolerance: 1.0e-06
@@ -157,43 +171,43 @@ kani_harnesses:
   solver: cadical
   harness: verify_hybrid_block_shapes
 - id: KANI-QHF-002
-  obligation: QHF-INV-002
+  obligation: QHF-INV-004
   property: Layer type exclusivity
   bound: 48
   strategy: exhaustive
   harness: verify_layer_type_partition
 - id: KANI-QWEN35-003
-  obligation: Attention sublayer shape preservation
+  obligation: QHF-INV-001
   property: Attention sublayer shape preservation
   bound: 8
   strategy: exhaustive
 - id: KANI-QWEN35-004
-  obligation: GDN sublayer shape preservation
+  obligation: QHF-INV-002
   property: GDN sublayer shape preservation
   bound: 8
   strategy: exhaustive
 - id: KANI-QWEN35-005
-  obligation: FFN sublayer shape preservation
+  obligation: QHF-INV-003
   property: FFN sublayer shape preservation
   bound: 8
   strategy: exhaustive
 - id: KANI-QWEN35-006
-  obligation: Block outputs from exactly one attention type
+  obligation: QHF-INV-004
   property: Block outputs from exactly one attention type
   bound: 8
   strategy: exhaustive
 - id: KANI-QWEN35-007
-  obligation: Activation magnitude bounded
+  obligation: QHF-BND-005
   property: Activation magnitude bounded
   bound: 8
   strategy: stub_float
 - id: KANI-QWEN35-008
-  obligation: RMSNorm precedes each sublayer
+  obligation: QHF-INV-006
   property: RMSNorm precedes each sublayer
   bound: 8
   strategy: exhaustive
 - id: KANI-QWEN35-009
-  obligation: Residual identity component
+  obligation: QHF-CON-007
   property: Residual identity component
   bound: 8
   strategy: exhaustive
