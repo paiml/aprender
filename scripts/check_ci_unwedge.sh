@@ -79,6 +79,24 @@
 # before any DEAD verdict is acted on. Zero live and one or more dead means the
 # LOOKUP is broken, not the fleet -- refuse, and say so.
 #
+# THE THIRD DEFECT: A SUPERSEDED HEAD (APR-RELEASE-001, revised 2026-09-16,
+# "P0 Unwedge", rule 1)
+# ---------------------------------------------------------------------------
+# A push creates a new run at the new head and leaves the OLD run building at
+# a commit that no longer merges. Any `pull_request` run whose `head_sha` !=
+# the PR's CURRENT head is cancelled -- this is the rule that would have freed
+# `ci-3354`. NEVER `merge_group`, under any condition: the merge queue owns
+# those runs and cancelling one ejects a PR mid-build.
+#
+# This rule is independent of the stalled-run rule above: a stale head_sha is
+# cancellable whether the run has 0 jobs or 18, and whether every pool is idle
+# or saturated. It needs neither a job-count gate nor the capacity input --
+# the head mismatch IS the evidence, read straight off the run and the PR, not
+# inferred from age or a bare `queued`. That inference is exactly what went
+# wrong hand-cancelling run 35078448806 (`queued`, 16 of 18 jobs already done):
+# the cancel manufactured the `gate` failure it then reported. See
+# superseded_verdict, below, for the predicate this rule is not allowed to be.
+#
 # Usage
 #   bash scripts/check_ci_unwedge.sh --self-test        the committed case table
 #   bash scripts/check_ci_unwedge.sh --scan [--dry-run] [--limit N] [--repo O/R]
@@ -162,6 +180,44 @@ deadref_decision() {
     if [ "$dead" -eq 0 ]; then printf 'NOTHING\n'; return 0; fi
     if [ "$live" -eq 0 ]; then printf 'REFUSE\n'; return 0; fi
     printf 'ACT\n'
+}
+
+# ---- #3292 RULE 1: a superseded head is cancelled outright -------------------
+# APR-RELEASE-001 (revised 2026-09-16), "P0 Unwedge", rule 1: any `pull_request`
+# run whose `head_sha` != the PR's CURRENT head is cancelled. This is the rule
+# that would have freed `ci-3354` -- a push creates a NEW run at the new head
+# and leaves the OLD run building at a commit nobody can merge; nothing about
+# that old run's job count or the fleet's capacity makes its verdict useful.
+#
+# NEVER `merge_group`, UNDER ANY CONDITION. The merge queue owns those runs;
+# cancelling one ejects a PR mid-build. This is a hard exclusion on event type,
+# checked FIRST, before head_sha is even compared.
+#
+# THE COMPARISON IS THE EVIDENCE. A stale head_sha is read straight off the run
+# and the PR, not inferred from age or `queued` (see rule 2's own history,
+# directly below: the hand-cancel of run 35078448806 read `queued` alone with
+# 16 of 18 jobs already done, and its cancel MANUFACTURED the `gate` failure it
+# then reported). A head mismatch is positive evidence a newer run already
+# exists; nothing here needs a guess.
+#
+# JOBS_FILE and CAPACITY_FILE are accepted and IGNORED -- on purpose. This rule
+# is independent of rule 2's job-count and capacity gate: a superseded run is
+# cancellable whether it has 0 jobs or 18, and whether every pool is idle or
+# saturated. Passing rule 2's own fixtures here and getting the identical
+# verdict (self-test rows R1D/R1E) is that independence, proved, not asserted.
+superseded_verdict() {
+    local event="${1:-}" run_head="${2:-}" pr_head="${3:-}"
+    case "$event" in
+        merge_group)
+            printf 'LEAVE a merge_group run is never cancelled by this rule\n'; return 0 ;;
+    esac
+    if [ -z "$run_head" ] || [ -z "$pr_head" ]; then
+        printf 'REFUSE head sha is unknown -- never cancel on a guess\n'; return 0
+    fi
+    if [ "$run_head" != "$pr_head" ]; then
+        printf 'CANCEL run head %s != PR head %s -- superseded\n' "$run_head" "$pr_head"; return 0
+    fi
+    printf 'LEAVE run head matches the PR head\n'
 }
 
 # ---- #3292: a run may not hold a concurrency group while capacity sits idle ----
@@ -385,6 +441,38 @@ self_test() {
         'NOTHING' "$( deadref_decision 0 0 )"
     _eq 'D6 all live -> NOTHING'  'NOTHING' "$( deadref_decision 3 0 )"
 
+    printf '%s\n' '-- superseded-head rows (#3292 rule 1: cancel a pull_request run whose head is stale) --'
+    # (a) THE RULE ITSELF: a pull_request run's head_sha no longer matches the
+    # PR's current head -- a newer run already exists at 'bbb222', so this run's
+    # verdict is for a commit nobody can merge.
+    _eq 'R1a pull_request, run head != PR head -> CANCEL' \
+        'CANCEL' "$( superseded_verdict pull_request 'aaa111' 'bbb222' | head -1 | cut -d' ' -f1 )"
+    # (b) THE DISCRIMINATION ROW. Same event, heads agree -> nothing superseded it.
+    _eq 'R1b pull_request, run head == PR head -> LEAVE' \
+        'LEAVE' "$( superseded_verdict pull_request 'aaa111' 'aaa111' | head -1 | cut -d' ' -f1 )"
+    # (c) THE HARD EXCLUSION. Same stale-head shape as (a), but merge_group: the
+    # merge queue owns this run and cancelling it ejects a PR mid-build. Never,
+    # under any condition -- checked before the head comparison even runs.
+    _eq 'R1c merge_group with a stale head -> LEAVE (never cancels a merge_group run)' \
+        'LEAVE' "$( superseded_verdict merge_group 'aaa111' 'bbb222' | head -1 | cut -d' ' -f1 )"
+    # (d) JOB COUNT IS IRRELEVANT. h1_last_real_job.json is rule 2's own "almost
+    # done" fixture -- completed+in_progress jobs, the exact shape a job-count
+    # gate would call healthy. Fed here as the (accepted, ignored) JOBS_FILE
+    # argument, it changes nothing: the verdict is identical to row (a).
+    _eq 'R1d stale head with a mostly-complete job list (rule 2 fixture) -> still CANCEL' \
+        'CANCEL' "$( superseded_verdict pull_request 'aaa111' 'bbb222' \
+                     "$CASES_DIR/h1_last_real_job.json" | head -1 | cut -d' ' -f1 )"
+    # (e) CAPACITY IS IRRELEVANT. c2_capacity_saturated.json is rule 2's own
+    # "every clean-room host saturated, 0 idle" fixture -- the exact reading
+    # that makes rule 2 answer UNTOUCHED (row S3). Fed here as the (accepted,
+    # ignored) CAPACITY_FILE argument, it changes nothing: still CANCEL.
+    _eq 'R1e stale head while every pool is saturated (rule 2 fixture) -> still CANCEL' \
+        'CANCEL' "$( superseded_verdict pull_request 'aaa111' 'bbb222' \
+                     "$CASES_DIR/h1_last_real_job.json" "$CASES_DIR/c2_capacity_saturated.json" \
+                     | head -1 | cut -d' ' -f1 )"
+    _eq 'R1f head sha unknown -> REFUSE, never cancel on a guess' \
+        'REFUSE' "$( superseded_verdict pull_request '' 'bbb222' | head -1 | cut -d' ' -f1 )"
+
     printf '%s\n' '-- stalled-run rows (#3292: a run may not hold a group while capacity sits idle) --'
     # THE CONTRACT: no run holds a concurrency group for longer than one sweeper
     # period while capacity to serve it sits IDLE. The trigger is evidence of a
@@ -493,6 +581,36 @@ stall_pass() {
     esac
 }
 
+# superseded_pass REPO RUN BRANCH EVENT RUN_HEAD DRY -> 0 when force-cancelled,
+# 1 otherwise. #3292 rule 1, wired for `scan`. `merge_group` is excluded here
+# too, before any network call: the hard exclusion in superseded_verdict is the
+# proof, this is the budget optimisation that follows from it -- there is no
+# PR to look up for a merge-queue ref anyway.
+superseded_pass() {
+    local repo="$1" run="$2" br="$3" event="$4" run_head="$5" dry="$6"
+    local pr_head verdict
+    case "$event" in merge_group) return 1 ;; esac
+    pr_head=$(gh pr view "$br" --repo "$repo" --json headRefOid -q '.headRefOid' 2>/dev/null) || pr_head=""
+    verdict="$( superseded_verdict "$event" "$run_head" "$pr_head" )"
+    case "$verdict" in
+        CANCEL*)
+            if [ "$dry" = 1 ]; then
+                printf 'WOULD-FREE %s %s -- %s\n' "$run" "$br" "$verdict"
+                return 1
+            fi
+            if gh api -X POST "repos/$repo/actions/runs/$run/force-cancel" > /dev/null 2>&1; then
+                printf 'FREED %s %s -- %s\n' "$run" "$br" "$verdict"
+                return 0
+            fi
+            printf 'FAILED-TO-FREE %s %s (superseded)\n' "$run" "$br"
+            return 1 ;;
+        REFUSE*)
+            printf 'refuse %s %s -- %s\n' "$run" "$br" "${verdict#REFUSE }"
+            return 1 ;;
+        *)  return 1 ;;
+    esac
+}
+
 scan() {
     local repo="$1" limit="$2" dry="$3" tmp run st freed=0 looked=0 verdict
     command -v gh > /dev/null 2>&1 || { printf 'ENV: gh is not on PATH\n' >&2; return 2; }
@@ -503,8 +621,8 @@ scan() {
     # ONE list call carries status+conclusion, so the per-run jobs call is paid
     # only for candidates (feedback_gh_api_budget_and_guard_tree_runtime).
     gh run list --repo "$repo" --limit "$limit" \
-        --json databaseId,status,conclusion,workflowName,headBranch,createdAt \
-        -q '.[] | select(.workflowName=="CI") | select(.status != "completed") | "\(.databaseId)|\(.headBranch)|\(.createdAt)|\(.status)"' \
+        --json databaseId,status,conclusion,workflowName,headBranch,createdAt,event,headSha \
+        -q '.[] | select(.workflowName=="CI") | select(.status != "completed") | "\(.databaseId)|\(.headBranch)|\(.createdAt)|\(.status)|\(.event)|\(.headSha)"' \
         > "$tmp/candidates" 2>/dev/null || { printf 'ENV: gh run list failed\n' >&2; return 2; }
 
     # ---- capacity, supplied ONCE by the caller (#3292) ----------------------
@@ -520,12 +638,17 @@ scan() {
         : > "$tmp/capacity.json"
         printf 'refuse STALL-RULE capacity unknown -- no --capacity/UNWEDGE_CAPACITY_JSON reading; nothing is cancelled on age alone\n'
     fi
-    local now stalled=0
+    local now stalled=0 superseded=0
     now="$(date -u +%FT%TZ)"  # bashrs disable-line=DET002
 
-    while IFS='|' read -r run br created rstatus; do
+    while IFS='|' read -r run br created rstatus revent rhead; do
         [ -n "$run" ] || continue
         looked=$(( looked + 1 ))
+        # RULE 1 first, and independent of everything below: a superseded head
+        # is cancelled on its own evidence, whatever the jobs/capacity would say.
+        if superseded_pass "$repo" "$run" "$br" "$revent" "$rhead" "$dry"; then
+            superseded=$(( superseded + 1 )); freed=$(( freed + 1 )); continue
+        fi
         gh api "repos/$repo/actions/runs/$run/jobs" --paginate > "$tmp/jobs.json" 2>/dev/null \
             || { printf 'skip  %s (jobs unreadable)\n' "$run"; continue; }
         verdict="$( unwedge_verdict "$tmp/jobs.json" )"
@@ -555,7 +678,7 @@ scan() {
     # before anything noticed (deadref_decision, rows D3/D4).
     local live=0 dead=0 refp
     : > "$tmp/dead"
-    while IFS='|' read -r run br created rstatus; do
+    while IFS='|' read -r run br created rstatus revent rhead; do
         [ -n "$run" ] || continue
         refp="$( queue_ref_path "$br" )" || continue
         if gh api "repos/$repo/git/ref/$refp" --jq '.object.sha' > /dev/null 2>&1; then
@@ -595,7 +718,8 @@ scan() {
                 fi
             done < "$tmp/dead" ;;
     esac
-    printf '%s UNWEDGE looked=%s freed=%s stalled_freed=%s dry_run=%s\n' "$(date -u +%FT%TZ)" "$looked" "$freed" "$stalled" "$dry"  # bashrs disable-line=DET002
+    printf '%s UNWEDGE looked=%s freed=%s superseded_freed=%s stalled_freed=%s dry_run=%s\n' \
+        "$(date -u +%FT%TZ)" "$looked" "$freed" "$superseded" "$stalled" "$dry"  # bashrs disable-line=DET002
     return 0
 }
 
