@@ -1,0 +1,84 @@
+{
+  "ticket": "PMAT-3233",
+  "base": "origin/main",
+  "base_resolved": "origin/main",
+  "base_note": "no origin/origin/main exists; judged against the local ref",
+  "head": "7bf24be88848a1db0d9fbff8a0de749623d0624b",
+  "diff_sha256": "8d827fcf88e1fbbff6a72eeab4912baaa88e508102b7bad5e5991e9e3073d3f2",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 43551,
+  "author": {
+    "model": "Fable 5.1",
+    "family": "claude",
+    "source": "measured"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff implements exactly what PMAT-3233 requires: the extended-Wilkinson tick placement algorithm. The correct properties (6 properties) and exactly 36 CRAN goldens are included, along with the W_DEFAULT-swap mutation test. The weights follow the reference implementations. All new and modified files precisely match the acceptance criteria, with no extraneous changes.",
+      "findings": [],
+      "raw_bytes": 1993,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "PMAT-3233 is fully and accurately implemented by this diff. The diff introduces the extended-Wilkinson tick placement algorithm in `aprender-viz::breaks` with functions `extended` and `extended_loose`, constants `Q_DEFAULT` and `W_DEFAULT` (following normative reference implementation weights [0.25, 0.2, 0.5, 0.05]), pure-Rust `libm` transcendentals, 36 CRAN golden tests, 6 mathematical properties, the W_DEFAULT-swap mutation test, and complete ticket tracking. All 44 tests pass and no gates were weakened or extraneous changes introduced.",
+      "findings": [],
+      "raw_bytes": 2351,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.8-flash-high",
+      "model_measured": "gemini-3.8-flash-high",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff implements the extended-Wilkinson tick placement algorithm in `aprender-viz` as specified in PMAT-3233. It exports `breaks::{extended, extended_loose, Q_DEFAULT, W_DEFAULT}` with objective weights following the reference implementations (`[0.25, 0.2, 0.5, 0.05]`), adds the `libm` transcendental dependency for deterministic pure-Rust float operations, and introduces the 36 CRAN reference goldens, 6 mathematical properties, and the W_DEFAULT-swap mutation test in `tests/breaks_golden.rs`. No extraneous changes or weakened gates were found.",
+      "findings": [],
+      "raw_bytes": 2381,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.7-flash-high",
+      "model_measured": "gemini-3.7-flash-high",
+      "model_source": "measured",
+      "family": "gemini"
+    }
+  ],
+  "dissent": [],
+  "dedup": [],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [],
+  "auto_merge": {
+    "checked": false,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "no --pr given: nothing to disarm"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=Fable 5.1/claude"
+  }
+}
