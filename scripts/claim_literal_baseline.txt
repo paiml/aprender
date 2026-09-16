@@ -177,7 +177,6 @@
 #
 CLAUDE.md:218
 CLAUDE.md:222
-CLAUDE.md:685
 ROADMAP.md:55
 book/src/advanced-testing/popperian-falsification.md:44
 book/src/tools/apr-cli.md:996

@@ -12,6 +12,19 @@ fn contracts_dir() -> PathBuf {
 fn dispatch_validate() {
     let result = dispatch(Commands::Validate {
         contract: test_contract(),
+        check_ids: false,
+    });
+    assert!(result.is_ok());
+}
+
+/// `--check-ids` dispatches and reports rather than validates. The report is
+/// the one-time evidence that a consumer reads `id:` (#3314); this row proves
+/// the flag reaches the command at all.
+#[test]
+fn dispatch_validate_check_ids() {
+    let result = dispatch(Commands::Validate {
+        contract: test_contract(),
+        check_ids: true,
     });
     assert!(result.is_ok());
 }
