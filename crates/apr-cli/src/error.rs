@@ -105,6 +105,12 @@ pub enum CliError {
     #[error("Parity gate failed: {0}")]
     #[allow(dead_code)]
     ParityFailed(String),
+    /// R-0b (#3002): a forced backend (`--gpu`, `--backend <kind>`) that this
+    /// build compiled but this host does not have Ready — the registry's reason
+    /// is the message. Distinct from `FeatureDisabled` (not compiled) so the
+    /// operator learns which of the two it is; never a silent cpu run.
+    #[error("Backend unavailable: {0}")]
+    BackendUnavailable(String),
 }
 
 impl CliError {
@@ -143,6 +149,8 @@ impl CliError {
             // (9): that build has no accelerator at all; this build has one,
             // but this model computes a different function on it.
             Self::ParityFailed(_) => 13,
+            // R-0b: compiled but not Ready on this host (registry reason in the message).
+            Self::BackendUnavailable(_) => 14,
         }
     }
 }

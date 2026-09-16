@@ -255,3 +255,99 @@ fn proof_obligation_id_survives_a_typed_round_trip() {
         "a None id must be omitted, not written as null: {text}"
     );
 }
+
+// ── PMAT-3091: not-applicable-to-unit-tests obligations ───────────────────
+
+fn na_obligation_from(yaml: &str) -> ProofObligation {
+    serde_yaml::from_str(yaml).expect("obligation fixture must parse")
+}
+
+#[test]
+fn applies_to_not_applicable_deserializes_to_not_applicable_not_other() {
+    let ob = na_obligation_from("property: p\napplies_to: not_applicable\n");
+    assert_eq!(ob.applies_to, Some(AppliesTo::NotApplicable));
+    assert_ne!(ob.applies_to, Some(AppliesTo::Other));
+}
+
+#[test]
+fn applies_to_na_alias_maps_ahead_of_the_catch_all() {
+    let ob = na_obligation_from("property: p\napplies_to: N/A\n");
+    assert_eq!(ob.applies_to, Some(AppliesTo::NotApplicable));
+}
+
+#[test]
+fn applies_to_unknown_target_still_parses_as_other() {
+    let ob = na_obligation_from("property: p\napplies_to: huber\n");
+    assert_eq!(ob.applies_to, Some(AppliesTo::Other));
+}
+
+#[test]
+fn na_fields_are_typed_and_read() {
+    let ob = na_obligation_from(
+        "property: p\napplies_to: not_applicable\nna_reason: a checkpoint fact\nna_owner: pv check\n",
+    );
+    assert_eq!(ob.na_reason.as_deref(), Some("a checkpoint fact"));
+    assert_eq!(ob.na_owner.as_deref(), Some("pv check"));
+    assert!(ob.is_not_applicable());
+}
+
+#[test]
+fn na_roundtrip_keeps_not_applicable_and_both_fields() {
+    let ob = na_obligation_from(
+        "property: p\napplies_to: N/A\nna_reason: an O() with no constant\nna_owner: bench qwen35\n",
+    );
+    let yaml = serde_yaml::to_string(&ob).expect("serialize");
+    assert!(yaml.contains("applies_to: not_applicable"), "{yaml}");
+    let back = na_obligation_from(&yaml);
+    assert_eq!(back.applies_to, Some(AppliesTo::NotApplicable));
+    assert_eq!(back.na_reason.as_deref(), Some("an O() with no constant"));
+    assert_eq!(back.na_owner.as_deref(), Some("bench qwen35"));
+}
+
+#[test]
+fn na_fields_absent_are_not_serialized() {
+    let ob = na_obligation_from("property: p\napplies_to: all\n");
+    let yaml = serde_yaml::to_string(&ob).expect("serialize");
+    assert!(
+        !yaml.contains("na_reason") && !yaml.contains("na_owner"),
+        "{yaml}"
+    );
+    assert!(!ob.is_not_applicable());
+}
+
+/// PMAT-3091 migration: the Lean-N/A justification that silu-kernel-v1 and
+/// tokenizer-v1 wrote as an untyped `na_reason:` (dropped by serde) now lives
+/// in the typed `lean: { status: not-applicable, notes: ... }` form. This
+/// test is the consumer that proves the text is READ, verbatim, and that the
+/// unit-test N/A fields stay free for their own meaning.
+#[test]
+fn na_lean_migration_reason_text_is_read_from_typed_lean_notes() {
+    let cases: [(&str, usize, &str); 5] = [
+        ("silu-kernel-v1.yaml", 6, "Empirical floating-point ULP equivalence between the AVX2 exp approximation and the scalar path is a runtime/hardware property (IEEE-754 rounding), not an analytic real-number identity. Enforced by FALSIFY-SI-004 / KANI-SILU_K-007."),
+        ("tokenizer-v1.yaml", 4, "File IO + JSON/GGUF/protobuf parsing of a real on-disk artifact — no algebraic identity to discharge; verified by loader unit tests (FALSIFY-TOK-001/003)."),
+        ("tokenizer-v1.yaml", 5, "The '≈ modulo whitespace' relation is a runtime property of arbitrary UTF-8 byte streams / normalizer state, not a closed-form identity; the exact-inverse core is proved by Tokenizer.decode_encode, the byte-edge behaviour is empirical."),
+        ("tokenizer-v1.yaml", 6, "Depends on the contents of a runtime JSON config (special_tokens_map / added_tokens); a data-driven parse, not an analytic statement."),
+        ("tokenizer-v1.yaml", 7, "GGUF may report a padded vocab_size differing from the token count; reconciling a reported file field against the actual count is an empirical cross-file check, not an algebraic identity."),
+    ];
+    for (stem, index, reason) in cases {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../contracts")
+            .join(stem);
+        let contract = crate::schema::parse_contract(&path).expect("contract must parse");
+        let ob = &contract.proof_obligations[index];
+        let lean = ob
+            .lean
+            .as_ref()
+            .expect("migrated obligation carries a typed lean block");
+        assert_eq!(lean.status, LeanStatus::NotApplicable, "{stem}[{index}]");
+        assert_eq!(lean.notes.as_deref(), Some(reason), "{stem}[{index}]");
+        assert!(
+            ob.na_reason.is_none() && ob.na_owner.is_none(),
+            "{stem}[{index}]"
+        );
+        assert!(
+            !ob.is_not_applicable(),
+            "Lean-N/A is not unit-test N/A: {stem}[{index}]"
+        );
+    }
+}

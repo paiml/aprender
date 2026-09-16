@@ -15,8 +15,11 @@ use super::*;
 fn falsify_bpe_load_from_files_matches_load_from_json_encode() {
     let vocab_path = "/tmp/qwen-0.5b-tokenizer-extracted/vocab.json";
     let merges_path = "/tmp/qwen-0.5b-tokenizer-extracted/merges.txt";
-    // PORTABILITY (#2532): resolved from $HOME, not one developer's home, so the
-    // existence check below can succeed on any host that has the file.
+    // The invoking user's home, exactly as the sibling S1/S2 tokenizer tests
+    // resolve it (crates/aprender-core/src/models/qwen2/tests.rs,
+    // models/qwen2/falsification.rs). A literal /home/<author>/ here made this
+    // bisection unrunnable on every machine but one, while still printing the
+    // same "skipping" line (#2532).
     let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
     let json_path = format!("{home}/.cache/qwen2/tokenizer.json");
     if !std::path::Path::new(vocab_path).exists()
@@ -98,7 +101,6 @@ fn falsify_bpe_load_from_files_matches_load_from_json_encode() {
 /// See evidence/section-60-5g-2-redispatch-2026-05-09/README.md.
 #[test]
 fn falsify_bpe_qwen_encode_python_does_not_unk_99pct() {
-    // PORTABILITY (#2532): see falsify_bpe_load_from_files_matches_load_from_json_encode.
     let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
     let path = format!("{home}/.cache/qwen2/tokenizer.json");
     if !std::path::Path::new(&path).exists() {

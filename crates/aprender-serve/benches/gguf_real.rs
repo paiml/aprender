@@ -26,6 +26,10 @@
 //!
 //! # Run specific benchmark
 //! cargo bench --bench gguf_real -- gguf_model_load
+//!
+//! # Models are looked up under $APR_MODELS, then $HOME/models, then
+//! # $HOME/src/single-shot-eval/models/raw (see `model_roots`)
+//! APR_MODELS=/srv/models cargo bench --bench gguf_real
 //! ```
 
 #![allow(clippy::cast_precision_loss)]
@@ -54,31 +58,44 @@ struct GGUFModelConfig {
     quantization: &'static str,
 }
 
-/// Directory holding the benchmark GGUF models.
+/// Roots searched for the benchmark corpus, in order, and the reason this is
+/// not a literal path: a benchmark that names ONE machine's absolute path
+/// benchmarks nothing on any other machine, while still reporting "no models
+/// found" as if that were a property of the host (#2532,
+/// `scripts/check_hardcoded_paths.sh`).
 ///
-/// PORTABILITY (#2532). These paths used to be one developer's home directory
-/// baked into the binary, so `get_available_models()` returned an empty vec on
-/// every other machine and every benchmark below silently measured nothing.
-/// Resolution order, first hit wins:
-///   1. `$APR_GGUF_BENCH_MODELS` — this benchmark's own override;
-///   2. `$APR_MODELS`            — the repo-wide model directory;
-///   3. `$HOME/src/single-shot-eval/models/raw` — where they sit on the box
-///      this benchmark was authored on, so that host keeps working unchanged.
-fn models_root() -> PathBuf {
-    for var in ["APR_GGUF_BENCH_MODELS", "APR_MODELS"] {
-        if let Ok(dir) = std::env::var(var) {
-            if !dir.is_empty() {
-                return PathBuf::from(dir);
-            }
+/// 1. `$APR_MODELS` — the repo-wide shared-cache root
+///    (`crates/apr-cli/src/commands/shared_cache.rs`), same variable
+///    `scripts/perf041_batched_parity_probe.sh` resolves against;
+/// 2. `$HOME/models` — the conventional default of that variable;
+/// 3. `$HOME/src/single-shot-eval/models/raw` — the corpus these three
+///    benchmark models were originally captured in, now relative to the
+///    INVOKING user's home rather than one author's.
+fn model_roots() -> Vec<PathBuf> {
+    let mut roots = Vec::new();
+    if let Ok(dir) = std::env::var("APR_MODELS") {
+        if !dir.is_empty() {
+            roots.push(PathBuf::from(dir));
         }
     }
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
-    PathBuf::from(home).join("src/single-shot-eval/models/raw")
+    if let Ok(home) = std::env::var("HOME") {
+        roots.push(PathBuf::from(&home).join("models"));
+        roots.push(PathBuf::from(&home).join("src/single-shot-eval/models/raw"));
+    }
+    roots
 }
 
-/// Absolute path of one benchmark model file under [`models_root`].
-fn model_path(file: &str) -> String {
-    models_root().join(file).to_string_lossy().into_owned()
+/// First existing copy of `file` across `model_roots()`. When no root holds it
+/// the bare name is returned, which then fails the `exists()` filter below --
+/// the same "skip, don't fail" behaviour this bench has always had.
+fn resolve_model(file: &str) -> String {
+    model_roots()
+        .into_iter()
+        .map(|root| root.join(file))
+        .find(|p| p.exists())
+        .unwrap_or_else(|| PathBuf::from(file))
+        .to_string_lossy()
+        .into_owned()
 }
 
 /// Get available test model configurations
@@ -87,19 +104,19 @@ fn get_available_models() -> Vec<GGUFModelConfig> {
     let all_models = vec![
         GGUFModelConfig {
             name: "phi2_q4km",
-            path: model_path("phi-2-q4_k_m.gguf"),
+            path: resolve_model("phi-2-q4_k_m.gguf"),
             parameters_approx: 2_700_000_000,
             quantization: "Q4_K_M",
         },
         GGUFModelConfig {
             name: "deepseek_1.3b_q4km",
-            path: model_path("deepseek-coder-1.3b-instruct-q4_k_m.gguf"),
+            path: resolve_model("deepseek-coder-1.3b-instruct-q4_k_m.gguf"),
             parameters_approx: 1_300_000_000,
             quantization: "Q4_K_M",
         },
         GGUFModelConfig {
             name: "qwen2.5_1.5b_q4km",
-            path: model_path("qwen2.5-coder-1.5b-instruct-q4_k_m.gguf"),
+            path: resolve_model("qwen2.5-coder-1.5b-instruct-q4_k_m.gguf"),
             parameters_approx: 1_500_000_000,
             quantization: "Q4_K_M",
         },
@@ -247,10 +264,11 @@ fn test_gguf_benchmark_models_exist() {
     // At least one model should be available for benchmarks to be meaningful
     if models.is_empty() {
         eprintln!("Warning: No GGUF models found for benchmarking");
-        eprintln!("Expected models under {}:", models_root().display());
-        eprintln!("  phi-2-q4_k_m.gguf");
-        eprintln!("  deepseek-coder-1.3b-instruct-q4_k_m.gguf");
-        eprintln!("Override with $APR_GGUF_BENCH_MODELS or $APR_MODELS.");
+        eprintln!("Expected phi-2-q4_k_m.gguf / deepseek-coder-1.3b-instruct-q4_k_m.gguf");
+        eprintln!("under one of these roots (set $APR_MODELS to point elsewhere):");
+        for root in model_roots() {
+            eprintln!("  {}", root.display());
+        }
     }
 }
 
