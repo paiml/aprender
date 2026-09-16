@@ -1,0 +1,189 @@
+host=noah-Lambda-Vector start_utc=2026-09-15T22:12:43Z load=0.55 1.27 7.28
+f05cd87aef3bbe8396606f91334c974ddcb4f59d68186c35611405f74bbdd4ce  /mnt/nvme-raid0/agent-wt/layer-3091/evidence/parity/l0-1/intel/qwen35-apr-vs-reference/compare_raw_logits.py
+d17958680159126ee105cc2812e186213a3fe166336c8eb6ae720d50257fc1af  /mnt/nvme-raid0/agent-wt/layer-3091/evidence/parity/l0-1/intel/qwen35-apr-vs-reference/emulation/logits_gap.py
+54ccaca6fbf6db33f29f113b6689a8a7eae9466297191a15afe37e7755b7adb3  /mnt/nvme-raid0/agent-wt/layer-3091/evidence/parity/l0-1/intel/qwen35-apr-vs-reference/layerwise/compare_layerwise.py
+d9a25a0d6560a2da67a6e98bbc07eaaa57f846e1c5907cf9de325fe814f9f1fe  /mnt/nvme-raid0/agent-wt/layer-3091/evidence/parity/l0-1/intel/qwen35-apr-vs-reference/layerwise/layer_steps.py
+bd258782e35f7f458f8aced1adc053e6e92e89bc735ba3be89d38a06121dc517  /home/noah/models/Qwen3.5-0.8B-Q4_K_M.gguf
+2401c11005e08bfac946a1de57af84338cc64a0d8e9a95d0941a6023b81bebc4  /tmp/emul3091/ref/orig-per-token.bin
+67dcc9e73382f240a2278cb66863499d882c8eb526ee25737792998da965f10a  /tmp/emul3091/ref/p1-per-token.bin
+a0f87b14ba9f2dd7630dd60268ef323f977e5f88cb9e060cabbfafe4aae8b760  /tmp/emul3091/ref/p2-per-token.bin
+df47beffcc18cf27caed695669ad749642ec3a859c3e3c1652068bfa2ac66ea5  /tmp/emul3091/ref/p3-per-token.bin
+0eca077ceae11c0ef182e09d74a9b019a91503a56e491644a437765b297e6f1e  /tmp/emul3091/ref/p4-per-token.bin
+2401c11005e08bfac946a1de57af84338cc64a0d8e9a95d0941a6023b81bebc4  /tmp/kv3091/ref/A-orig.bin
+67dcc9e73382f240a2278cb66863499d882c8eb526ee25737792998da965f10a  /tmp/kv3091/ref/A-p1.bin
+a0f87b14ba9f2dd7630dd60268ef323f977e5f88cb9e060cabbfafe4aae8b760  /tmp/kv3091/ref/A-p2.bin
+df47beffcc18cf27caed695669ad749642ec3a859c3e3c1652068bfa2ac66ea5  /tmp/kv3091/ref/A-p3.bin
+0eca077ceae11c0ef182e09d74a9b019a91503a56e491644a437765b297e6f1e  /tmp/kv3091/ref/A-p4.bin
+485341aec772082632157f85f918f026d1157a8748575c54053aa11f036a9a53  /tmp/kv3091/ref/apr-on-orig-intel.bin
+6ccada2b823ef651a0fdad39138263bf567b684996afc0f295e3f8f0e8041f54  /tmp/kv3091/ref/apr-on-p4-intel.bin
+2401c11005e08bfac946a1de57af84338cc64a0d8e9a95d0941a6023b81bebc4  /tmp/kv3091/ref/A-v-orig.bin
+2401c11005e08bfac946a1de57af84338cc64a0d8e9a95d0941a6023b81bebc4  /tmp/kv3091/ref/B-orig.bin
+67dcc9e73382f240a2278cb66863499d882c8eb526ee25737792998da965f10a  /tmp/kv3091/ref/B-p1.bin
+a0f87b14ba9f2dd7630dd60268ef323f977e5f88cb9e060cabbfafe4aae8b760  /tmp/kv3091/ref/B-p2.bin
+df47beffcc18cf27caed695669ad749642ec3a859c3e3c1652068bfa2ac66ea5  /tmp/kv3091/ref/B-p3.bin
+0eca077ceae11c0ef182e09d74a9b019a91503a56e491644a437765b297e6f1e  /tmp/kv3091/ref/B-p4.bin
+77d587bcd35d50add76ea91f00c19d2e169a4dd2ec48dde0d93cc856cc3ad30d  /tmp/kv3091/ref/C2-orig.bin
+77d587bcd35d50add76ea91f00c19d2e169a4dd2ec48dde0d93cc856cc3ad30d  /tmp/kv3091/ref/C-orig.bin
+2ed4d8641baf219a19842a90c7776981f3a54bca332f2e0efa4696310cc04d7e  /tmp/kv3091/ref/C-p1.bin
+e0f6a5844909a8f19946bcbbc1bba339cd3051be7177a07035193213af7c190b  /tmp/kv3091/ref/C-p2.bin
+d2c8be740e59d59b3707fc813a9fee5ec5e703c0d6cd06023be485f6b804b506  /tmp/kv3091/ref/C-p3.bin
+0ef9cdd24c76599dc384e5b041aec8c31443b6ca4f39dda594c3944e9af31ef2  /tmp/kv3091/ref/C-p4.bin
+77d587bcd35d50add76ea91f00c19d2e169a4dd2ec48dde0d93cc856cc3ad30d  /tmp/kv3091/ref/C-sub-orig.bin
+0ef9cdd24c76599dc384e5b041aec8c31443b6ca4f39dda594c3944e9af31ef2  /tmp/kv3091/ref/C-sub-p4.bin
+f6f792649014dcef6eec1afaf96852a293cc95c6cfceb1c88d62e16ee36c0252  /tmp/emul3091/runs/off-orig.bin
+b9815d9be8b14b255db54d22821ff63a306d7dd8ae94d7bdfe4c93328376b7f8  /tmp/emul3091/runs/off-p1.bin
+d5ffa2b73bc304b93c8461b103e66092c3f8a1d0850d596d3ee9b5006179a7fa  /tmp/emul3091/runs/off-p2.bin
+b2a984d0bacc24c1e5963f16256194c172fa99dd90481f6b364fc22a206e3e91  /tmp/emul3091/runs/off-p3.bin
+92f1b54d504a53f758a56911c4779ce1900207bd89c78d58597e558ebc6d3ee9  /tmp/emul3091/runs/off-p4.bin
+485341aec772082632157f85f918f026d1157a8748575c54053aa11f036a9a53  /tmp/emul3091/runs/on-orig.bin
+1fded7286ad08432580df6a8bc0e40a1594603be2852906b74beee5256a70872  /tmp/emul3091/runs/on-p1.bin
+c5bd1bd2fd1506639414c95411ddfac71e43d63ef3ceefbb04ab178f824cf102  /tmp/emul3091/runs/on-p2.bin
+6d0587a9f0d3643108ae5bc6f02895ff54b7d7524d10ebe55589f762a12caec7  /tmp/emul3091/runs/on-p3.bin
+6ccada2b823ef651a0fdad39138263bf567b684996afc0f295e3f8f0e8041f54  /tmp/emul3091/runs/on-p4.bin
+6ccada2b823ef651a0fdad39138263bf567b684996afc0f295e3f8f0e8041f54  /tmp/emul3091/runs/on-dump-p4.bin
+485341aec772082632157f85f918f026d1157a8748575c54053aa11f036a9a53  /tmp/emul3091/runs/on-dump-orig.bin
+--- ON intel vs ON lambda
+apr-on-orig intel vs lambda cmp rc=0
+apr-on-p4 intel vs lambda cmp rc=0
+--- logits
+compare_raw_logits orig off vs A rc=0
+compare_raw_logits orig on vs A rc=0
+logits_gap orig vs A rc=0
+compare_raw_logits orig off vs B rc=0
+compare_raw_logits orig on vs B rc=0
+logits_gap orig vs B rc=0
+compare_raw_logits orig off vs C rc=0
+compare_raw_logits orig on vs C rc=0
+logits_gap orig vs C rc=0
+compare_raw_logits p1 off vs A rc=0
+compare_raw_logits p1 on vs A rc=0
+logits_gap p1 vs A rc=0
+compare_raw_logits p1 off vs B rc=0
+compare_raw_logits p1 on vs B rc=0
+logits_gap p1 vs B rc=0
+compare_raw_logits p1 off vs C rc=0
+compare_raw_logits p1 on vs C rc=0
+logits_gap p1 vs C rc=0
+compare_raw_logits p2 off vs A rc=0
+compare_raw_logits p2 on vs A rc=0
+logits_gap p2 vs A rc=0
+compare_raw_logits p2 off vs B rc=0
+compare_raw_logits p2 on vs B rc=0
+logits_gap p2 vs B rc=0
+compare_raw_logits p2 off vs C rc=0
+compare_raw_logits p2 on vs C rc=0
+logits_gap p2 vs C rc=0
+compare_raw_logits p3 off vs A rc=0
+compare_raw_logits p3 on vs A rc=0
+logits_gap p3 vs A rc=0
+compare_raw_logits p3 off vs B rc=0
+compare_raw_logits p3 on vs B rc=0
+logits_gap p3 vs B rc=0
+compare_raw_logits p3 off vs C rc=0
+compare_raw_logits p3 on vs C rc=0
+logits_gap p3 vs C rc=0
+compare_raw_logits p4 off vs A rc=0
+compare_raw_logits p4 on vs A rc=0
+logits_gap p4 vs A rc=0
+compare_raw_logits p4 off vs B rc=0
+compare_raw_logits p4 on vs B rc=0
+logits_gap p4 vs B rc=0
+compare_raw_logits p4 off vs C rc=0
+compare_raw_logits p4 on vs C rc=0
+logits_gap p4 vs C rc=0
+--- sub-layer curves vs config C dumps
+compare_layerwise p4 off vs C rc=0
+compare_layerwise orig off vs C rc=0
+layer_steps off vs C rc=0
+compare_layerwise p4 on vs C rc=0
+compare_layerwise orig on vs C rc=0
+layer_steps on vs C rc=0
+tables rc=0
+250b28cd2c6cf89bbba18a8a613c75ba1f18dffbb76e5e6d21e34ddbaa2f23a3  /tmp/kv3091/cmp/gap-orig-vs-A.tsv
+250b28cd2c6cf89bbba18a8a613c75ba1f18dffbb76e5e6d21e34ddbaa2f23a3  /tmp/kv3091/cmp/gap-orig-vs-B.tsv
+0dea08dae6e8d97a5032d362186b94dc3302c9c7b4cb33af702c70e5af2dd469  /tmp/kv3091/cmp/gap-orig-vs-C.tsv
+67d95fe30c16963cea63c7c5ba2fd2149622a6538596e2cbf31d23f484d44e35  /tmp/kv3091/cmp/gap-p1-vs-A.tsv
+67d95fe30c16963cea63c7c5ba2fd2149622a6538596e2cbf31d23f484d44e35  /tmp/kv3091/cmp/gap-p1-vs-B.tsv
+135d0e7ccffc7bfb6f90612f562bae01662639fe9d4bf7dc0ab58793b7785699  /tmp/kv3091/cmp/gap-p1-vs-C.tsv
+d4dc3f299f090867dfb806b5f5187208aa686acebbd4178e09b4b952dfbfc924  /tmp/kv3091/cmp/gap-p2-vs-A.tsv
+d4dc3f299f090867dfb806b5f5187208aa686acebbd4178e09b4b952dfbfc924  /tmp/kv3091/cmp/gap-p2-vs-B.tsv
+d5b29bf42fbf1d208d2f2a84e9a1065efabe5618e7cea3702f92993a8eeb6ec6  /tmp/kv3091/cmp/gap-p2-vs-C.tsv
+8d55b8a9adfafd50bed60dce1e04107d6a71aa85378e2b1927a6f58f7a792ea0  /tmp/kv3091/cmp/gap-p3-vs-A.tsv
+8d55b8a9adfafd50bed60dce1e04107d6a71aa85378e2b1927a6f58f7a792ea0  /tmp/kv3091/cmp/gap-p3-vs-B.tsv
+d950851d47723c86664934e0743c6027b0a390ef8d4c989c9cc71aace68e8615  /tmp/kv3091/cmp/gap-p3-vs-C.tsv
+f81d8aee4b9baa61c6a8d22be89eda8a08b7288719f4fcd28f09c8874c418d34  /tmp/kv3091/cmp/gap-p4-vs-A.tsv
+f81d8aee4b9baa61c6a8d22be89eda8a08b7288719f4fcd28f09c8874c418d34  /tmp/kv3091/cmp/gap-p4-vs-B.tsv
+2b6e388f2f0ae0118d4b8aa8691a8153131193c8ca20be4dbf062db5a89159b4  /tmp/kv3091/cmp/gap-p4-vs-C.tsv
+5aa5f0783e227c0b3e84431b6d79b752571d23c909557ad3fa21c93cab1a6bd4  /tmp/kv3091/cmp/layer_steps_off_vs_C.tsv
+9140e4940b790461f824120ff1fb3801ae7b6759ecebdd23ebc4696c1dc1afab  /tmp/kv3091/cmp/layer_steps_on_vs_C.tsv
+1a4ffccdb64804305055f41f7e1cf1777c273e103e325afe2c0cd4e7d5ccd9d6  /tmp/kv3091/cmp/logits-orig-off-vs-A.json
+fea8ed26faaee7655dbb8fd1eb341a58996d881355b23b5e1ca2186890cea865  /tmp/kv3091/cmp/logits-orig-off-vs-A.tsv
+1a4ffccdb64804305055f41f7e1cf1777c273e103e325afe2c0cd4e7d5ccd9d6  /tmp/kv3091/cmp/logits-orig-off-vs-B.json
+fea8ed26faaee7655dbb8fd1eb341a58996d881355b23b5e1ca2186890cea865  /tmp/kv3091/cmp/logits-orig-off-vs-B.tsv
+487b2cbf84f150bda2a36c6ee86ffb21342d42a400124ed02cbc2febb5a7e137  /tmp/kv3091/cmp/logits-orig-off-vs-C.json
+442e1a8c3119a9424e9f66ecff1f31e0fe71d21642756d59aeddd1973043b314  /tmp/kv3091/cmp/logits-orig-off-vs-C.tsv
+a415cc1bb5bab5c39d13c5a515e9dde8a723ce609fb8c11d60dd0c07643cf4c3  /tmp/kv3091/cmp/logits-orig-on-vs-A.json
+77f042102290e2f0f73fa6693efcfd70c0ccc9d5e5dd95e0d15318b4d335b221  /tmp/kv3091/cmp/logits-orig-on-vs-A.tsv
+a415cc1bb5bab5c39d13c5a515e9dde8a723ce609fb8c11d60dd0c07643cf4c3  /tmp/kv3091/cmp/logits-orig-on-vs-B.json
+77f042102290e2f0f73fa6693efcfd70c0ccc9d5e5dd95e0d15318b4d335b221  /tmp/kv3091/cmp/logits-orig-on-vs-B.tsv
+cb8a190057e1487ec42eab7651aa9c0b5e40477e8483b737d14012248c49ac1c  /tmp/kv3091/cmp/logits-orig-on-vs-C.json
+692ccc5a32c3b82bfa6597d61144acd5c7cc520b33f147d4734498a04d9a101c  /tmp/kv3091/cmp/logits-orig-on-vs-C.tsv
+6a90dd0953c9fee95d67e5d217d0c63b3290f5b3feaea5764695ec9839d78c97  /tmp/kv3091/cmp/logits-p1-off-vs-A.json
+b90a9aae043f46fbfd4531137d45c88b05a0cf377b43ad3aa4a6d8caf1ef6e80  /tmp/kv3091/cmp/logits-p1-off-vs-A.tsv
+6a90dd0953c9fee95d67e5d217d0c63b3290f5b3feaea5764695ec9839d78c97  /tmp/kv3091/cmp/logits-p1-off-vs-B.json
+b90a9aae043f46fbfd4531137d45c88b05a0cf377b43ad3aa4a6d8caf1ef6e80  /tmp/kv3091/cmp/logits-p1-off-vs-B.tsv
+d76b43cadac4d7ab8d68a0d3c3118cddac2f42c3e97fb599e7f54d26e41849bd  /tmp/kv3091/cmp/logits-p1-off-vs-C.json
+4ddf59bb5ff276cbab065bca3c23529a34ad40185d96d4ba9cff7ea52e78760e  /tmp/kv3091/cmp/logits-p1-off-vs-C.tsv
+dc86108a8205fbf6d31ee7b11e1f147137e93678cb2f1c8f86f2b076222af844  /tmp/kv3091/cmp/logits-p1-on-vs-A.json
+3b330e35b13fa576a8ed747506ddaa5c0b202cd7078e24da66bae739bf971664  /tmp/kv3091/cmp/logits-p1-on-vs-A.tsv
+dc86108a8205fbf6d31ee7b11e1f147137e93678cb2f1c8f86f2b076222af844  /tmp/kv3091/cmp/logits-p1-on-vs-B.json
+3b330e35b13fa576a8ed747506ddaa5c0b202cd7078e24da66bae739bf971664  /tmp/kv3091/cmp/logits-p1-on-vs-B.tsv
+5c695eae04ce21effcd24cb0587f33e464696496676c564880a890f769ebec08  /tmp/kv3091/cmp/logits-p1-on-vs-C.json
+d63113a812d042f6260e482dfae4c70f63b6bec179984bf19c6928b122dba8ef  /tmp/kv3091/cmp/logits-p1-on-vs-C.tsv
+1be4e8d658ff48a674a3ea71eab0b278f54b489f927db4355d38bf39cec3b79d  /tmp/kv3091/cmp/logits-p2-off-vs-A.json
+480151a09354f910d347955ae1af2ee85ef3f847e6dc46f22b779836416015fb  /tmp/kv3091/cmp/logits-p2-off-vs-A.tsv
+1be4e8d658ff48a674a3ea71eab0b278f54b489f927db4355d38bf39cec3b79d  /tmp/kv3091/cmp/logits-p2-off-vs-B.json
+480151a09354f910d347955ae1af2ee85ef3f847e6dc46f22b779836416015fb  /tmp/kv3091/cmp/logits-p2-off-vs-B.tsv
+07c1836f284ef37dc104f5e4484f063dc6d887dfb624b002e05a02afee925137  /tmp/kv3091/cmp/logits-p2-off-vs-C.json
+b0ba437dd6b7dd186167803fac97cd7392a672d8e1c084c27b560a1e0e539a89  /tmp/kv3091/cmp/logits-p2-off-vs-C.tsv
+47f952c9c1c2b0a7c8c8ff50af5d4a0ba415e14c6842b0187266ea05023047ad  /tmp/kv3091/cmp/logits-p2-on-vs-A.json
+09b284c2d4e0f3913963dd2946e679b2a11205dac1247f7ae9a9207063609e8c  /tmp/kv3091/cmp/logits-p2-on-vs-A.tsv
+47f952c9c1c2b0a7c8c8ff50af5d4a0ba415e14c6842b0187266ea05023047ad  /tmp/kv3091/cmp/logits-p2-on-vs-B.json
+09b284c2d4e0f3913963dd2946e679b2a11205dac1247f7ae9a9207063609e8c  /tmp/kv3091/cmp/logits-p2-on-vs-B.tsv
+12c2620b79136494d83e44d2e238c3700cfdf1d0f5d18d524f240d841e2978de  /tmp/kv3091/cmp/logits-p2-on-vs-C.json
+c543e31fb381bfdce6c1a00e377f83614891662a66fae76e434caddb7d53395b  /tmp/kv3091/cmp/logits-p2-on-vs-C.tsv
+b715a1956592648ed69fc9c896bb18cf85fc12a253ab132795bfb534468a0436  /tmp/kv3091/cmp/logits-p3-off-vs-A.json
+edda37823685fcba758a6a23b0ffcdf2336c28de8670ba77e015d5862aa27821  /tmp/kv3091/cmp/logits-p3-off-vs-A.tsv
+b715a1956592648ed69fc9c896bb18cf85fc12a253ab132795bfb534468a0436  /tmp/kv3091/cmp/logits-p3-off-vs-B.json
+edda37823685fcba758a6a23b0ffcdf2336c28de8670ba77e015d5862aa27821  /tmp/kv3091/cmp/logits-p3-off-vs-B.tsv
+9a0d4c2a7a5a4f8e10672a677684ebfc4af219631731690851ff8115fc5f9fff  /tmp/kv3091/cmp/logits-p3-off-vs-C.json
+9f1776f0d59f42f89d1d196ff23f306259739d53567fae78029d09562c803478  /tmp/kv3091/cmp/logits-p3-off-vs-C.tsv
+6b8eea2c59146945dfba09fdc24fd2a6081f42b95f9a4a8cbbf8c4cfd594b6d0  /tmp/kv3091/cmp/logits-p3-on-vs-A.json
+cb69fe69ed5ee1a50ed1c53f09dbb1d37fde94f6a40a715160f79ec418fa2e07  /tmp/kv3091/cmp/logits-p3-on-vs-A.tsv
+6b8eea2c59146945dfba09fdc24fd2a6081f42b95f9a4a8cbbf8c4cfd594b6d0  /tmp/kv3091/cmp/logits-p3-on-vs-B.json
+cb69fe69ed5ee1a50ed1c53f09dbb1d37fde94f6a40a715160f79ec418fa2e07  /tmp/kv3091/cmp/logits-p3-on-vs-B.tsv
+b3dfdc23034d386282aa18903aaea4459d62964a2ce66eabe06d82e3a7c62d8f  /tmp/kv3091/cmp/logits-p3-on-vs-C.json
+40d26f282e1621593c96ccc55cbd85dfc942d25dbf307a31441adbb3c4334837  /tmp/kv3091/cmp/logits-p3-on-vs-C.tsv
+0323e2f583a7c5294d416a8ed00213ec6155665cfbefc91d29c252d3871cf1b2  /tmp/kv3091/cmp/logits-p4-off-vs-A.json
+414514f60f2f85103b5304e5ecf8a91a7693d98d64770c6d01462477b5e50488  /tmp/kv3091/cmp/logits-p4-off-vs-A.tsv
+0323e2f583a7c5294d416a8ed00213ec6155665cfbefc91d29c252d3871cf1b2  /tmp/kv3091/cmp/logits-p4-off-vs-B.json
+414514f60f2f85103b5304e5ecf8a91a7693d98d64770c6d01462477b5e50488  /tmp/kv3091/cmp/logits-p4-off-vs-B.tsv
+c7975b6586bc33d66b525ad3697e66cac1e12fcf9d96296283e7823ad9d63d5a  /tmp/kv3091/cmp/logits-p4-off-vs-C.json
+a970f68e9957baa36f2701a8c863d97b21a722a73de904ebaffcb610ec033ab4  /tmp/kv3091/cmp/logits-p4-off-vs-C.tsv
+bc18d4b42851ea3dc27eee39e0396763c6090d3d08515cc07fcd6d1276a8c027  /tmp/kv3091/cmp/logits-p4-on-vs-A.json
+c925bfd3150b2087b2de321dd4c4679a0b0fdafd71ad9cfb3cd76477f37309fe  /tmp/kv3091/cmp/logits-p4-on-vs-A.tsv
+bc18d4b42851ea3dc27eee39e0396763c6090d3d08515cc07fcd6d1276a8c027  /tmp/kv3091/cmp/logits-p4-on-vs-B.json
+c925bfd3150b2087b2de321dd4c4679a0b0fdafd71ad9cfb3cd76477f37309fe  /tmp/kv3091/cmp/logits-p4-on-vs-B.tsv
+8b4377cd274295b953871cf0fb2fe8d63b1b93c0427243d59911dfc6e1ea16df  /tmp/kv3091/cmp/logits-p4-on-vs-C.json
+0bd9e2acaeb8171a1501ce8f0cc806bbd61e2f622c767a82b9621eac1fc54828  /tmp/kv3091/cmp/logits-p4-on-vs-C.tsv
+1185ef7cfed8835ee32fa99544cc057a002373d2ced31c4797881fafe2afa301  /tmp/kv3091/cmp/sublayer_orig_off_vs_C.selfcheck.txt
+1e7e0acfda4f91b29061afa565bf5ecc2fa4574e5dffcbf4a34912ee0a44f32b  /tmp/kv3091/cmp/sublayer_orig_off_vs_C.tsv
+1185ef7cfed8835ee32fa99544cc057a002373d2ced31c4797881fafe2afa301  /tmp/kv3091/cmp/sublayer_orig_on_vs_C.selfcheck.txt
+232bb1507a04199013ed6b89350f7a12e89c881a033730a8e25addc8ac85043a  /tmp/kv3091/cmp/sublayer_orig_on_vs_C.tsv
+34d0c59e5014e088a4c8a7ff9e97974f6492fa6b099a056a74ffb843a15812d8  /tmp/kv3091/cmp/sublayer_p4_off_vs_C.selfcheck.txt
+274ae37f38c43a47a18781eaceb5ba37be5ef062f98ad2ebda61f7c9a2a51f65  /tmp/kv3091/cmp/sublayer_p4_off_vs_C.tsv
+34d0c59e5014e088a4c8a7ff9e97974f6492fa6b099a056a74ffb843a15812d8  /tmp/kv3091/cmp/sublayer_p4_on_vs_C.selfcheck.txt
+f9594209fc274ff518f0430440f089e6e9150953da94909ac372f1b52e660b1e  /tmp/kv3091/cmp/sublayer_p4_on_vs_C.tsv
+4ff077d8b614575d12e968a31ea6b01d0e8b6e00d69ec4fe80886a3815b07c18  /tmp/kv3091/cmp/tables.json
+b8856b98d1a5413251550ef5aeef0d3cff193c0cd5d26be81538e47a91222e3e  /tmp/kv3091/cmp/tables.md
+end_utc=2026-09-15T22:13:53Z load=9.74 4.05 7.82

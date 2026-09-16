@@ -1,0 +1,2 @@
+# scalar_isolate: jobs=432 rc=0 
+# totals: K(llama_in)==llama_out 331776/331776 elements; K(apr_in)==apr_out 331776/331776

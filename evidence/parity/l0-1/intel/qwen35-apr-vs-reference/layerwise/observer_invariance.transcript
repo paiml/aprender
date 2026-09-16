@@ -1,0 +1,16 @@
+host=noah-Lambda-Vector nproc=48 start_utc=2026-09-15T20:32:44Z load=8.64 6.65 8.27
+obs_code=0543266eeaaaf05a86b94ee5474456a69d22be1b (examples/qwen35_layer_obs.rs uncommitted copy of layerwise/qwen35_layer_obs.rs)
+035531c18c5cb89489caf0ef87e91b09de3f34c7f975e0f50ce2d590e3251186  /tmp/obs3091/bins/qwen35_layer_obs
+bd258782e35f7f458f8aced1adc053e6e92e89bc735ba3be89d38a06121dc517  /home/noah/models/Qwen3.5-0.8B-Q4_K_M.gguf
+62e908350982297259947997d026c399c39558e8129890b6e9e64d17ace55e72  /tmp/layer3091/apr/prompt_token_ids.txt
+42a64dc1c78e3b4ae0ad7ece7dcebf4ee80550931866e53762944c118ae68b9e  /tmp/layer3091/apr/prompt-4.ids
+run noop-orig start_utc=20:32:46Z load=8.64 6.65 8.27
+qwen35_layer_obs: n_pos=78 n_vocab=248320 out=/tmp/obs3091/apr/noop-orig.bin
+run noop-orig rc=0 end_utc=20:32:51Z
+f6f792649014dcef6eec1afaf96852a293cc95c6cfceb1c88d62e16ee36c0252  /tmp/obs3091/apr/noop-orig.bin
+run noop-p4 start_utc=20:32:51Z load=10.83 7.14 8.42
+qwen35_layer_obs: n_pos=82 n_vocab=248320 out=/tmp/obs3091/apr/noop-p4.bin
+run noop-p4 rc=0 end_utc=20:32:56Z
+92f1b54d504a53f758a56911c4779ce1900207bd89c78d58597e558ebc6d3ee9  /tmp/obs3091/apr/noop-p4.bin
+noop-orig vs apr-intel-run1.bin (f6f79264...) cmp rc=0
+noop-p4 vs p4-apr.bin (92f1b54d...) cmp rc=0

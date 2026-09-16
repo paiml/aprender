@@ -1,0 +1,15 @@
+tree llama.cpp=d1d3c3396 host=mac-server start_utc=2026-09-15T21:35:35Z load=36.06 44.59 40.73
+gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0
+bf56215b6b82e976628d99f2bccfea12113a6f5d956229ac6d2820b932be80ad  ggml_emul_fixtures.c
+6d8708c456c06bc4cc572678755b3ac68f987c808acf23a12dadb78fc1c08c13  /home/noah/src/llama.cpp-d1d3c3396/build/bin/libggml-cpu.so.0.24.0
+bddf9ff4e7923392c3a3be44f89d9d38c8009938e7c3403529c8913ef3841463  /home/noah/src/llama.cpp-d1d3c3396/build/bin/libggml-base.so.0.24.0
+fixtures rc=0
+d10f6ca1faf1dd987d9f620ac934fa337c5348801bb37d22e32067f8f0479e78  fixtures.tsv
+54d88cd6626989f671719bee21d57d9284d5a858737ac129c1317a4102bb73ff  fixtures.rs.txt
+c36cea69a71c72fd13241a4d14e08bfc4910a907bf4d26ccbfc2e6d5351345ec  fixtures.bin
+fma_insns ggml_vec_dot_q4_K_q8_K_generic 2
+fma_insns ggml_vec_dot_q5_K_q8_K_generic 2
+fma_insns ggml_vec_dot_q6_K_q8_K_generic 1
+fma_insns ggml_vec_dot_q8_0_q8_0_generic 1
+fma_insns quantize_row_q8_K_ref 0
+end_utc=2026-09-15T21:35:36Z load=36.06 44.59 40.73

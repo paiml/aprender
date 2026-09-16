@@ -1,0 +1,30 @@
+llama_name	llama_src_d1d3c3396	apr_fn	apr_src
+model.input_embed	src/models/qwen35.cpp:147	Qwen35Model::forward_single_qwen35_observed	crates/aprender-serve/src/gguf/inference/forward/forward_qwen35.rs:771
+result_norm	src/models/qwen35.cpp:215	Qwen35Model::forward_single_qwen35_observed	crates/aprender-serve/src/gguf/inference/forward/forward_qwen35.rs:819
+result_output	src/models/qwen35.cpp:221	Qwen35Model::forward_single_qwen35_observed	crates/aprender-serve/src/gguf/inference/forward/forward_qwen35.rs:824
+attn_norm-N	src/models/qwen35.cpp:161	Qwen35Model::forward_deltanet_observed	crates/aprender-serve/src/gguf/inference/forward/forward_qwen35.rs:876
+conv_output_silu-N	src/models/qwen35.cpp:395	Qwen35Model::forward_deltanet_observed	crates/aprender-serve/src/gguf/inference/forward/forward_qwen35.rs:894
+q_conv_predelta-N	src/models/qwen35.cpp:444	Qwen35Model::forward_deltanet_observed	crates/aprender-serve/src/gguf/inference/forward/forward_qwen35.rs:907
+k_conv_predelta-N	src/models/qwen35.cpp:445	Qwen35Model::forward_deltanet_observed	crates/aprender-serve/src/gguf/inference/forward/forward_qwen35.rs:908
+v_conv_predelta-N	src/models/qwen35.cpp:446	Qwen35Model::forward_deltanet_observed	crates/aprender-serve/src/gguf/inference/forward/forward_qwen35.rs:909
+a_softplus-N	src/models/qwen35.cpp:371	Qwen35Model::forward_deltanet_observed	crates/aprender-serve/src/gguf/inference/forward/forward_qwen35.rs:923
+gate-N	src/models/qwen35.cpp:374	Qwen35Model::forward_deltanet_observed	crates/aprender-serve/src/gguf/inference/forward/forward_qwen35.rs:924
+beta_sigmoid-N	src/models/qwen35.cpp:363	Qwen35Model::forward_deltanet_observed	crates/aprender-serve/src/gguf/inference/forward/forward_qwen35.rs:933
+z-N	src/models/qwen35.cpp:238	Qwen35Model::forward_deltanet_observed	crates/aprender-serve/src/gguf/inference/forward/forward_qwen35.rs:938
+state_predelta-N	src/models/qwen35.cpp:389	Qwen35Model::forward_deltanet_observed	crates/aprender-serve/src/gguf/inference/forward/forward_qwen35.rs:940
+attn_output-N	src/models/delta-net-base.cpp:552 (build_recurrent_attn: delta-rule output, 128x16, before the gated norm)	Qwen35Model::forward_deltanet_observed	crates/aprender-serve/src/gguf/inference/forward/forward_qwen35.rs:953
+new_state-N	src/models/delta-net-base.cpp:553	Qwen35Model::forward_deltanet_observed	crates/aprender-serve/src/gguf/inference/forward/forward_qwen35.rs:954
+final_output-N	src/models/qwen35.cpp:458	Qwen35Model::forward_deltanet_observed	crates/aprender-serve/src/gguf/inference/forward/forward_qwen35.rs:967
+linear_attn_out-N	src/models/qwen35.cpp:462	Qwen35Model::forward_deltanet_observed	crates/aprender-serve/src/gguf/inference/forward/forward_qwen35.rs:972
+attn_residual-N	src/models/qwen35.cpp:181	Qwen35Model::forward_deltanet_observed	crates/aprender-serve/src/gguf/inference/forward/forward_qwen35.rs:977
+attn_post_norm-N	src/models/qwen35.cpp:188	Qwen35Model::forward_deltanet_observed	crates/aprender-serve/src/gguf/inference/forward/forward_qwen35.rs:985
+ffn_out-N	src/models/qwen35.cpp:192 (first named at :480 in build_layer_ffn; same tensor)	Qwen35Model::forward_deltanet_observed	crates/aprender-serve/src/gguf/inference/forward/forward_qwen35.rs:1001
+l_out-N	src/models/qwen35.cpp:199 (post_ffn :196 is the same ADD node renamed by build_cvec; post_ffn-N is never a callback name)	Qwen35Model::forward_deltanet_observed	crates/aprender-serve/src/gguf/inference/forward/forward_qwen35.rs:1005
+attn_norm-N	src/models/qwen35.cpp:161	Qwen35Model::forward_attention_observed	crates/aprender-serve/src/gguf/inference/forward/forward_qwen35.rs:1046
+attn_pregate-N	src/models/qwen35.cpp:321	Qwen35Model::forward_attention_observed	crates/aprender-serve/src/gguf/inference/forward/forward_qwen35.rs:1138
+attn_gated-N	src/models/qwen35.cpp:327	Qwen35Model::forward_attention_observed	crates/aprender-serve/src/gguf/inference/forward/forward_qwen35.rs:1140
+attn_output-N	src/models/qwen35.cpp:330 (mixer output before the residual add)	Qwen35Model::forward_attention_observed	crates/aprender-serve/src/gguf/inference/forward/forward_qwen35.rs:1144
+attn_residual-N	src/models/qwen35.cpp:181	Qwen35Model::forward_attention_observed	crates/aprender-serve/src/gguf/inference/forward/forward_qwen35.rs:1148
+attn_post_norm-N	src/models/qwen35.cpp:188	Qwen35Model::forward_attention_observed	crates/aprender-serve/src/gguf/inference/forward/forward_qwen35.rs:1156
+ffn_out-N	src/models/qwen35.cpp:192 (first named at :480 in build_layer_ffn; same tensor)	Qwen35Model::forward_attention_observed	crates/aprender-serve/src/gguf/inference/forward/forward_qwen35.rs:1171
+l_out-N	src/models/qwen35.cpp:199 (post_ffn :196 is the same ADD node renamed by build_cvec; post_ffn-N is never a callback name)	Qwen35Model::forward_attention_observed	crates/aprender-serve/src/gguf/inference/forward/forward_qwen35.rs:1175

@@ -1,0 +1,11 @@
+compare start_utc=2026-09-15T20:34:27Z host=noah-Lambda-Vector load=5.70 6.83 8.22
+ce2363551b1972751db298f3d3fe64e3e1746f39f3f9d3edfdc07b36f59bef75  compare_layerwise.py
+9c0f862092819e0e57e4fdfa0fbec5742a2dd27b16ccea8989b326ec968b32a8  layer_steps.py
+a61b12ba9bbc063851ed03a5f72c2b0657e5cb75d321ff30085790527fa02f24  layer_types.tsv
+compare p4 rc=0
+compare orig rc=0
+steps rc=0
+83d18166fe12c7a10d2255b5bb5e5f28cb978fd5e587fb96e3c1b0829588e7c4  sublayer_p4.tsv
+2aad1c99665cca68a00aa78ed5142ad61004666411d63837accab9d3c064145b  sublayer_orig.tsv
+bd0d52f389a4105bec135fd6fe191446a9be89eef5bac28a7d656546290d259a  layer_steps.tsv
+compare end_utc=2026-09-15T20:34:44Z load=4.43 6.47 8.07

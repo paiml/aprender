@@ -1,0 +1,41 @@
+tree llama.cpp=d1d3c3396 host=mac-server nproc=32 start_utc=2026-09-15T20:06:19Z
+bd258782e35f7f458f8aced1adc053e6e92e89bc735ba3be89d38a06121dc517  /home/noah/models/Qwen3.5-0.8B-Q4_K_M.gguf
+5c5df52d75b514723f706b93aede9939f58e1df178d2b631ad0ad0038994dd06  /home/noah/src/llama.cpp-d1d3c3396/apr-raw-logits/apr_raw_logits
+e6796dc1e57917920a2021896d74a35ae3f63bd12cb8dc1f63f2e2b178ba0eaa  /tmp/ref3303/prompt.txt
+7873eb8de372472c24dfb713b6720fd551b60fd1821f26a50850a807751c8f23  /tmp/layer3091/prompt-4.txt
+2401c11005e08bfac946a1de57af84338cc64a0d8e9a95d0941a6023b81bebc4  /home/noah/parity-ref/qwen35-0.8b-q4km-d1d3c3396-per-token/per-token-run1.bin
+0eca077ceae11c0ef182e09d74a9b019a91503a56e491644a437765b297e6f1e  /home/noah/parity-ref/variation-3091/p4-per-token.bin
+run regress-p4 start_utc=20:06:25Z load=72.40 78.19 61.19
+run regress-p4 rc=0 end_utc=20:06:31Z load=71.57 77.92 61.19
+apr_raw_logits: n_pos=82 n_vocab=248320 add_bos=0 mode=per-token out=/home/noah/parity-ref/layerwise-3091/regress-p4.bin
+apr_raw_logits: token_ids=27,91,316,4747,91,29,8678,198,2523,513,264,61446,17313,852,10926,303,13983,6163,15294,91,316,6018,91,29,198,27,91,316,4747,91,29,846,198,4888,19666,67,1336,25844,47965,1040,29977,42572,73639,321,682,264,19177,14058,383,1844,13,2091,424,44531,11,321,1092,1220,353,2222,883,1204,353,5227,424,411,1936,72840,91,316,6018,91,29,198,27,91,316,4747,91,29,74455,198
+0eca077ceae11c0ef182e09d74a9b019a91503a56e491644a437765b297e6f1e  /home/noah/parity-ref/layerwise-3091/regress-p4.bin
+regress-p4 vs variation p4-per-token cmp rc=0
+run regress-p0 start_utc=20:06:31Z load=71.57 77.92 61.19
+run regress-p0 rc=0 end_utc=20:06:37Z load=70.32 77.56 61.16
+apr_raw_logits: n_pos=78 n_vocab=248320 add_bos=0 mode=per-token out=/home/noah/parity-ref/layerwise-3091/regress-p0.bin
+apr_raw_logits: token_ids=760,3841,13477,37550,33075,888,279,15217,5388,1345,279,12433,21250,34227,36165,23497,883,31108,4649,5638,11,4098,23122,11,15167,47410,11,9966,1452,6326,61369,11,321,279,26984,314,638,37309,290,42903,3808,2943,94408,17882,26,1396,13901,557,47193,11,1396,1898,557,21197,11,321,279,1830,9202,440,264,50802,314,50614,39663,22188,7123,421,995,310,1440,1518,279,4722,1362,381,35883,13
+2401c11005e08bfac946a1de57af84338cc64a0d8e9a95d0941a6023b81bebc4  /home/noah/parity-ref/layerwise-3091/regress-p0.bin
+regress-p0 vs per-token-run1 cmp rc=0
+run dump-p4 start_utc=20:06:37Z load=69.25 77.22 61.14
+run dump-p4 rc=0 end_utc=20:06:43Z load=68.99 77.03 61.17
+apr_raw_logits: dump dir=/home/noah/parity-ref/layerwise-3091/dump-p4 names=1314 written=108 errors=0
+apr_raw_logits: n_pos=82 n_vocab=248320 add_bos=0 mode=per-token out=/home/noah/parity-ref/layerwise-3091/dump-p4.bin
+apr_raw_logits: token_ids=27,91,316,4747,91,29,8678,198,2523,513,264,61446,17313,852,10926,303,13983,6163,15294,91,316,6018,91,29,198,27,91,316,4747,91,29,846,198,4888,19666,67,1336,25844,47965,1040,29977,42572,73639,321,682,264,19177,14058,383,1844,13,2091,424,44531,11,321,1092,1220,353,2222,883,1204,353,5227,424,411,1936,72840,91,316,6018,91,29,198,27,91,316,4747,91,29,74455,198
+0eca077ceae11c0ef182e09d74a9b019a91503a56e491644a437765b297e6f1e  /home/noah/parity-ref/layerwise-3091/dump-p4.bin
+dump-p4 logits vs variation p4-per-token cmp rc=0
+run dump-p0 start_utc=20:06:43Z load=68.99 77.03 61.17
+run dump-p0 rc=0 end_utc=20:06:49Z load=69.47 77.00 61.24
+apr_raw_logits: dump dir=/home/noah/parity-ref/layerwise-3091/dump-p0 names=1314 written=54 errors=0
+apr_raw_logits: n_pos=78 n_vocab=248320 add_bos=0 mode=per-token out=/home/noah/parity-ref/layerwise-3091/dump-p0.bin
+apr_raw_logits: token_ids=760,3841,13477,37550,33075,888,279,15217,5388,1345,279,12433,21250,34227,36165,23497,883,31108,4649,5638,11,4098,23122,11,15167,47410,11,9966,1452,6326,61369,11,321,279,26984,314,638,37309,290,42903,3808,2943,94408,17882,26,1396,13901,557,47193,11,1396,1898,557,21197,11,321,279,1830,9202,440,264,50802,314,50614,39663,22188,7123,421,995,310,1440,1518,279,4722,1362,381,35883,13
+2401c11005e08bfac946a1de57af84338cc64a0d8e9a95d0941a6023b81bebc4  /home/noah/parity-ref/layerwise-3091/dump-p0.bin
+dump-p0 logits vs per-token-run1 cmp rc=0
+dump-p4 manifest rows=108 names=1314
+2ac9b2be774a4d360f69dcf1ac92f0aaf1dd7c7bbcc1dc6574c29917f52f20d5  /home/noah/parity-ref/layerwise-3091/dump-p4/tensor_names.tsv
+f84bce6bab4bf0201a28f262da455451d0dc22b5e13612507c42e724e1b2e37f  /home/noah/parity-ref/layerwise-3091/dump-p4/manifest.sha256.tsv
+dump-p0 manifest rows=54 names=1314
+2ac9b2be774a4d360f69dcf1ac92f0aaf1dd7c7bbcc1dc6574c29917f52f20d5  /home/noah/parity-ref/layerwise-3091/dump-p0/tensor_names.tsv
+14867c469bdd909fa660193d993be90498ff06ef764abf5307339ec504d6e62b  /home/noah/parity-ref/layerwise-3091/dump-p0/manifest.sha256.tsv
+tensor_names p4 vs p0 cmp rc=0
+end_utc=2026-09-15T20:06:50Z load=69.47 77.00 61.24

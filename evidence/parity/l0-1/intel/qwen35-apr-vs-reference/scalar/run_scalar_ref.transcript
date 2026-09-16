@@ -1,0 +1,110 @@
+tree llama.cpp=d1d3c3396 host=mac-server nproc=32 start_utc=2026-09-15T22:37:50Z load=43.29 51.91 59.86 free= 355G
+bd258782e35f7f458f8aced1adc053e6e92e89bc735ba3be89d38a06121dc517  /home/noah/models/Qwen3.5-0.8B-Q4_K_M.gguf
+f7443c64566394fc18e8af23c02de03d315def7b14d87350a7e2f8e00d03dc45  /home/noah/parity-ref/scalar-3091/bin/apr_raw_logits
+5038776ebd1f1f75870a3290c3405c1f80ef464ebc2026dd0413ed2652e9c741  /home/noah/parity-ref/scalar-3091/producer/apr_raw_logits.cpp
+7873eb8de372472c24dfb713b6720fd551b60fd1821f26a50850a807751c8f23  /tmp/layer3091/prompt-4.txt
+9a7cc3f840df7d56e0ac4bf3141f097e24e717a085486a54c1fc28cbc40204ee  /tmp/flipvar3091/prompt-1.txt
+c2a4c3daf5b69e7cce50ab7246fb1f805826090462c346bd58941363aee5ac98  /tmp/flipvar3091/prompt-3.txt
+134e1832e1b3cf189fa70a6d678a47234e77ce718588ab9ec9f5cc3b9f321787  /tmp/flipvar3091/prompt-2.txt
+e6796dc1e57917920a2021896d74a35ae3f63bd12cb8dc1f63f2e2b178ba0eaa  /tmp/ref3303/prompt.txt
+42a64dc1c78e3b4ae0ad7ece7dcebf4ee80550931866e53762944c118ae68b9e  /tmp/kv3091/ids/prompt-4.ids
+a4df9cdea5769e5e0ab81ba20e3a6bc890767b4cd668ae001b5c3b4034f380be  /tmp/kv3091/ids/prompt-1.ids
+1b7d56c1ff086b7332d9ece65683797417f8237a34a99705c9ce396b04fd8ca2  /tmp/kv3091/ids/prompt-3.ids
+77001b22094106e48dc38b37e49a816e0af36d03dceba93f1feb1373bce297d6  /tmp/kv3091/ids/prompt-2.ids
+62e908350982297259947997d026c399c39558e8129890b6e9e64d17ace55e72  /tmp/kv3091/ids/prompt_token_ids.txt
+	libllama-common.so.0 => /home/noah/parity-ref/llama-scalar-d1d3c3396/bin/libllama-common.so.0 (0x00007a6904400000)
+	libllama.so.0 => /home/noah/parity-ref/llama-scalar-d1d3c3396/bin/libllama.so.0 (0x00007a6904000000)
+	libggml-base.so.0 => /home/noah/parity-ref/llama-scalar-d1d3c3396/bin/libggml-base.so.0 (0x00007a6903f31000)
+	libggml.so.0 => /home/noah/parity-ref/llama-scalar-d1d3c3396/bin/libggml.so.0 (0x00007a69048c5000)
+	libggml-cpu.so.0 => /home/noah/parity-ref/llama-scalar-d1d3c3396/bin/libggml-cpu.so.0 (0x00007a6903a5d000)
+--- 1. scalar C, orig n=2, p4
+run SC-orig start_utc=22:37:54Z load=44.87 52.10 59.88
+run SC-orig rc=0 end_utc=22:38:09Z
+  ids == prompt_token_ids.txt
+  repack_lines=0 llamafile_lines=0
+  log| 0.01.094.180 I load_tensors:          CPU model buffer size =     0.00 MiB
+  log| 0.01.103.269 I llama_context: flash_attn            = disabled
+  log| 0.01.103.549 I llama_kv_cache: size =    6.00 MiB (   256 cells,   6 layers,  1/1 seqs), K (f32):    3.00 MiB, V (f32):    3.00 MiB
+  log| 0.02.456.439 I llama_context: flash_attn            = disabled
+  log| 0.02.457.125 I llama_kv_cache: size =    6.00 MiB (   256 cells,   6 layers,  1/1 seqs), K (f32):    3.00 MiB, V (f32):    3.00 MiB
+  log| apr_raw_logits: kvconfig cache_type_k=f32 cache_type_v=f32 flash_attn_type=disabled
+  e22120ae1e04a84c43af809f3185972e153483def2124e495a017c602159fdb5  /home/noah/parity-ref/scalar-3091/runs/SC-orig.bin
+run SC2-orig start_utc=22:38:09Z load=57.25 54.58 60.57
+run SC2-orig rc=0 end_utc=22:38:22Z
+  ids == prompt_token_ids.txt
+  repack_lines=0 llamafile_lines=0
+  log| 0.01.148.289 I load_tensors:          CPU model buffer size =     0.00 MiB
+  log| 0.01.156.330 I llama_context: flash_attn            = disabled
+  log| 0.01.156.588 I llama_kv_cache: size =    6.00 MiB (   256 cells,   6 layers,  1/1 seqs), K (f32):    3.00 MiB, V (f32):    3.00 MiB
+  log| 0.02.413.486 I llama_context: flash_attn            = disabled
+  log| 0.02.414.184 I llama_kv_cache: size =    6.00 MiB (   256 cells,   6 layers,  1/1 seqs), K (f32):    3.00 MiB, V (f32):    3.00 MiB
+  log| apr_raw_logits: kvconfig cache_type_k=f32 cache_type_v=f32 flash_attn_type=disabled
+  e22120ae1e04a84c43af809f3185972e153483def2124e495a017c602159fdb5  /home/noah/parity-ref/scalar-3091/runs/SC2-orig.bin
+SC2-orig vs SC-orig cmp rc=0
+run SC-p4 start_utc=22:38:23Z load=62.65 55.82 60.91
+run SC-p4 rc=0 end_utc=22:38:37Z
+  ids == prompt-4.ids
+  repack_lines=0 llamafile_lines=0
+  log| 0.01.112.600 I load_tensors:          CPU model buffer size =     0.00 MiB
+  log| 0.01.121.335 I llama_context: flash_attn            = disabled
+  log| 0.01.121.600 I llama_kv_cache: size =    6.00 MiB (   256 cells,   6 layers,  1/1 seqs), K (f32):    3.00 MiB, V (f32):    3.00 MiB
+  log| 0.02.522.869 I llama_context: flash_attn            = disabled
+  log| 0.02.523.528 I llama_kv_cache: size =    6.00 MiB (   256 cells,   6 layers,  1/1 seqs), K (f32):    3.00 MiB, V (f32):    3.00 MiB
+  log| apr_raw_logits: kvconfig cache_type_k=f32 cache_type_v=f32 flash_attn_type=disabled
+  b40d6649039e72be21f589e1e774cbc0a6584b14d19cc4875d414b18e8f75944  /home/noah/parity-ref/scalar-3091/runs/SC-p4.bin
+SC-orig vs native-build C-orig cmp rc=1 (1 = the scalar build changed the arithmetic)
+SC-p4 vs native-build C-p4 cmp rc=1 (1 = the scalar build changed the arithmetic)
+--- 2. scalar C sub-layer dumps
+run SC-sub-p4 start_utc=22:38:38Z load=80.03 60.06 62.22
+run SC-sub-p4 rc=0 end_utc=22:38:52Z
+  ids == prompt-4.ids
+  repack_lines=0 llamafile_lines=0
+  log| apr_raw_logits: kvconfig cache_type_k=f32 cache_type_v=f32 flash_attn_type=disabled
+  b40d6649039e72be21f589e1e774cbc0a6584b14d19cc4875d414b18e8f75944  /home/noah/parity-ref/scalar-3091/runs/SC-sub-p4.bin
+SC-sub-p4 logits vs SC-p4 cmp rc=0
+SC-sub-p4 manifest rows=1500
+84575ec02acb6b012fab3afb6ec22b90e78021f080ec164679fb701c943f69f7  /home/noah/parity-ref/scalar-3091/runs/SC-sub-p4/manifest.sha256.tsv
+run SC-sub-orig start_utc=22:38:59Z load=68.06 58.68 61.70
+run SC-sub-orig rc=0 end_utc=22:39:12Z
+  ids == prompt_token_ids.txt
+  repack_lines=0 llamafile_lines=0
+  log| apr_raw_logits: kvconfig cache_type_k=f32 cache_type_v=f32 flash_attn_type=disabled
+  e22120ae1e04a84c43af809f3185972e153483def2124e495a017c602159fdb5  /home/noah/parity-ref/scalar-3091/runs/SC-sub-orig.bin
+SC-sub-orig logits vs SC-orig cmp rc=0
+SC-sub-orig manifest rows=750
+79e132f4bfdba1abca270c3799ae81ffe563c0ec09c648bdd9a1c4f6fb67a0ac  /home/noah/parity-ref/scalar-3091/runs/SC-sub-orig/manifest.sha256.tsv
+--- 3. p1-p3 (budget-permitting)
+run SC-p1 start_utc=22:39:16Z load=66.49 58.82 61.70
+run SC-p1 rc=0 end_utc=22:39:31Z
+  ids == prompt-1.ids
+  repack_lines=0 llamafile_lines=0
+  log| 0.01.118.110 I load_tensors:          CPU model buffer size =     0.00 MiB
+  log| 0.01.126.486 I llama_context: flash_attn            = disabled
+  log| 0.01.126.765 I llama_kv_cache: size =    6.00 MiB (   256 cells,   6 layers,  1/1 seqs), K (f32):    3.00 MiB, V (f32):    3.00 MiB
+  log| 0.02.481.637 I llama_context: flash_attn            = disabled
+  log| 0.02.482.241 I llama_kv_cache: size =    6.00 MiB (   256 cells,   6 layers,  1/1 seqs), K (f32):    3.00 MiB, V (f32):    3.00 MiB
+  log| apr_raw_logits: kvconfig cache_type_k=f32 cache_type_v=f32 flash_attn_type=disabled
+  c5e5d181a9883c8516fdf5b3b88dcc4c019b8416da94b3923b7aa07652d8e715  /home/noah/parity-ref/scalar-3091/runs/SC-p1.bin
+run SC-p2 start_utc=22:39:31Z load=63.64 58.59 61.58
+run SC-p2 rc=0 end_utc=22:39:50Z
+  ids == prompt-2.ids
+  repack_lines=0 llamafile_lines=0
+  log| 0.01.115.653 I load_tensors:          CPU model buffer size =     0.00 MiB
+  log| 0.01.124.722 I llama_context: flash_attn            = disabled
+  log| 0.01.124.977 I llama_kv_cache: size =    6.00 MiB (   256 cells,   6 layers,  1/1 seqs), K (f32):    3.00 MiB, V (f32):    3.00 MiB
+  log| 0.02.461.492 I llama_context: flash_attn            = disabled
+  log| 0.02.462.091 I llama_kv_cache: size =    6.00 MiB (   256 cells,   6 layers,  1/1 seqs), K (f32):    3.00 MiB, V (f32):    3.00 MiB
+  log| apr_raw_logits: kvconfig cache_type_k=f32 cache_type_v=f32 flash_attn_type=disabled
+  6088eeb44732f48a6d356107ee4623f3d6395b91cb874a044f4caa40751e00cb  /home/noah/parity-ref/scalar-3091/runs/SC-p2.bin
+run SC-p3 start_utc=22:39:51Z load=57.28 57.47 61.14
+run SC-p3 rc=0 end_utc=22:40:06Z
+  ids == prompt-3.ids
+  repack_lines=0 llamafile_lines=0
+  log| 0.00.897.623 I load_tensors:          CPU model buffer size =     0.00 MiB
+  log| 0.00.904.468 I llama_context: flash_attn            = disabled
+  log| 0.00.904.717 I llama_kv_cache: size =    6.00 MiB (   256 cells,   6 layers,  1/1 seqs), K (f32):    3.00 MiB, V (f32):    3.00 MiB
+  log| 0.02.019.674 I llama_context: flash_attn            = disabled
+  log| 0.02.020.241 I llama_kv_cache: size =    6.00 MiB (   256 cells,   6 layers,  1/1 seqs), K (f32):    3.00 MiB, V (f32):    3.00 MiB
+  log| apr_raw_logits: kvconfig cache_type_k=f32 cache_type_v=f32 flash_attn_type=disabled
+  c413c03b95afad52b04b79894f48bc95787009e91e78c681438c425ad580568b  /home/noah/parity-ref/scalar-3091/runs/SC-p3.bin
+end_utc=2026-09-15T22:40:07Z load=51.13 56.10 60.64

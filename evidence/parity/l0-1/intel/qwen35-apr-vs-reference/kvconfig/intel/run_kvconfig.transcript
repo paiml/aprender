@@ -1,0 +1,208 @@
+tree llama.cpp=d1d3c3396 host=mac-server nproc=32 start_utc=2026-09-15T22:08:29Z load=65.94 57.06 57.20 free= 386G
+old producer sha256 5c5df52d75b514723f706b93aede9939f58e1df178d2b631ad0ad0038994dd06
+bd258782e35f7f458f8aced1adc053e6e92e89bc735ba3be89d38a06121dc517  /home/noah/models/Qwen3.5-0.8B-Q4_K_M.gguf
+5038776ebd1f1f75870a3290c3405c1f80ef464ebc2026dd0413ed2652e9c741  /home/noah/parity-ref/kvconfig-3091/producer/apr_raw_logits.cpp
+d8ede381e9a5dd694c9a60483c9d710e56e51ea93ae26fb865178ea99dc6ecbc  /home/noah/parity-ref/kvconfig-3091/producer/build.sh
+e56bacdb0ba9fc9a5c32213671dccf130a64fb3bf2fae6f45b68bb6577c167e3  /tmp/kv3091/qwen35_layer_obs
+7873eb8de372472c24dfb713b6720fd551b60fd1821f26a50850a807751c8f23  /tmp/layer3091/prompt-4.txt
+9a7cc3f840df7d56e0ac4bf3141f097e24e717a085486a54c1fc28cbc40204ee  /tmp/flipvar3091/prompt-1.txt
+c2a4c3daf5b69e7cce50ab7246fb1f805826090462c346bd58941363aee5ac98  /tmp/flipvar3091/prompt-3.txt
+134e1832e1b3cf189fa70a6d678a47234e77ce718588ab9ec9f5cc3b9f321787  /tmp/flipvar3091/prompt-2.txt
+e6796dc1e57917920a2021896d74a35ae3f63bd12cb8dc1f63f2e2b178ba0eaa  /tmp/ref3303/prompt.txt
+42a64dc1c78e3b4ae0ad7ece7dcebf4ee80550931866e53762944c118ae68b9e  /tmp/kv3091/ids/prompt-4.ids
+a4df9cdea5769e5e0ab81ba20e3a6bc890767b4cd668ae001b5c3b4034f380be  /tmp/kv3091/ids/prompt-1.ids
+1b7d56c1ff086b7332d9ece65683797417f8237a34a99705c9ce396b04fd8ca2  /tmp/kv3091/ids/prompt-3.ids
+77001b22094106e48dc38b37e49a816e0af36d03dceba93f1feb1373bce297d6  /tmp/kv3091/ids/prompt-2.ids
+62e908350982297259947997d026c399c39558e8129890b6e9e64d17ace55e72  /tmp/kv3091/ids/prompt_token_ids.txt
+0eca077ceae11c0ef182e09d74a9b019a91503a56e491644a437765b297e6f1e  /home/noah/parity-ref/variation-3091/p4-per-token.bin
+67dcc9e73382f240a2278cb66863499d882c8eb526ee25737792998da965f10a  /home/noah/parity-ref/variation-3091/p1-per-token.bin
+df47beffcc18cf27caed695669ad749642ec3a859c3e3c1652068bfa2ac66ea5  /home/noah/parity-ref/variation-3091/p3-per-token.bin
+a0f87b14ba9f2dd7630dd60268ef323f977e5f88cb9e060cabbfafe4aae8b760  /home/noah/parity-ref/variation-3091/p2-per-token.bin
+2401c11005e08bfac946a1de57af84338cc64a0d8e9a95d0941a6023b81bebc4  /home/noah/parity-ref/qwen35-0.8b-q4km-d1d3c3396-per-token/per-token-run1.bin
+--- 0. build
+build rc=1
+cc1plus: fatal error: /home/noah/parity-ref/kvconfig-3091/producer/raw_logits_compare.cpp: No such file or directory
+compilation terminated.
+--- 0b. config A: no-flag regression (rebuilt producer) vs committed per-token refs
+run A-orig start_utc=22:08:47Z load=65.16 57.32 57.28
+run A-orig rc=0 end_utc=22:08:52Z
+  ids == prompt_token_ids.txt
+  2401c11005e08bfac946a1de57af84338cc64a0d8e9a95d0941a6023b81bebc4  /home/noah/parity-ref/kvconfig-3091/runs/A-orig.bin
+A-orig (no-flag rebuilt) vs committed per-token-run1.bin cmp rc=0
+run A-p1 start_utc=22:08:53Z load=64.59 57.33 57.29
+run A-p1 rc=0 end_utc=22:08:58Z
+  ids == prompt-1.ids
+  67dcc9e73382f240a2278cb66863499d882c8eb526ee25737792998da965f10a  /home/noah/parity-ref/kvconfig-3091/runs/A-p1.bin
+A-p1 (no-flag rebuilt) vs committed p1-per-token.bin cmp rc=0
+run A-p2 start_utc=22:08:59Z load=62.71 57.17 57.24
+run A-p2 rc=0 end_utc=22:09:06Z
+  ids == prompt-2.ids
+  a0f87b14ba9f2dd7630dd60268ef323f977e5f88cb9e060cabbfafe4aae8b760  /home/noah/parity-ref/kvconfig-3091/runs/A-p2.bin
+A-p2 (no-flag rebuilt) vs committed p2-per-token.bin cmp rc=0
+run A-p3 start_utc=22:09:07Z load=65.21 57.78 57.43
+run A-p3 rc=0 end_utc=22:09:13Z
+  ids == prompt-3.ids
+  df47beffcc18cf27caed695669ad749642ec3a859c3e3c1652068bfa2ac66ea5  /home/noah/parity-ref/kvconfig-3091/runs/A-p3.bin
+A-p3 (no-flag rebuilt) vs committed p3-per-token.bin cmp rc=0
+run A-p4 start_utc=22:09:14Z load=67.84 58.45 57.65
+run A-p4 rc=0 end_utc=22:09:19Z
+  ids == prompt-4.ids
+  0eca077ceae11c0ef182e09d74a9b019a91503a56e491644a437765b297e6f1e  /home/noah/parity-ref/kvconfig-3091/runs/A-p4.bin
+A-p4 (no-flag rebuilt) vs committed p4-per-token.bin cmp rc=0
+--- 0c. no-flag -v probe (orig): what llama logs for the default config
+run A-v-orig start_utc=22:09:20Z load=69.40 59.08 57.87
+run A-v-orig rc=0 end_utc=22:09:25Z
+  ids == prompt_token_ids.txt
+  log| 0.01.143.325 I llama_context: flash_attn            = auto
+  log| 0.01.144.060 I llama_kv_cache: size =    3.00 MiB (   256 cells,   6 layers,  1/1 seqs), K (f16):    1.50 MiB, V (f16):    1.50 MiB
+  log| 0.02.835.244 I llama_context: flash_attn            = auto
+  log| 0.02.835.690 I llama_kv_cache: size =    3.00 MiB (   256 cells,   6 layers,  1/1 seqs), K (f16):    1.50 MiB, V (f16):    1.50 MiB
+  2401c11005e08bfac946a1de57af84338cc64a0d8e9a95d0941a6023b81bebc4  /home/noah/parity-ref/kvconfig-3091/runs/A-v-orig.bin
+A-v-orig vs committed cmp rc=0
+--- 1. configs B (f32, FA on) and C (f32, FA off)
+run B-orig start_utc=22:09:26Z load=70.17 59.41 57.98
+run B-orig rc=0 end_utc=22:09:31Z
+  ids == prompt_token_ids.txt
+  log| 0.01.135.258 I llama_context: flash_attn            = enabled
+  log| 0.01.135.508 I llama_kv_cache: size =    6.00 MiB (   256 cells,   6 layers,  1/1 seqs), K (f32):    3.00 MiB, V (f32):    3.00 MiB
+  log| 0.02.847.292 I llama_context: flash_attn            = enabled
+  log| 0.02.848.492 I llama_kv_cache: size =    6.00 MiB (   256 cells,   6 layers,  1/1 seqs), K (f32):    3.00 MiB, V (f32):    3.00 MiB
+  log| apr_raw_logits: kvconfig cache_type_k=f32 cache_type_v=f32 flash_attn_type=enabled
+  2401c11005e08bfac946a1de57af84338cc64a0d8e9a95d0941a6023b81bebc4  /home/noah/parity-ref/kvconfig-3091/runs/B-orig.bin
+run B-p1 start_utc=22:09:32Z load=72.88 60.15 58.23
+run B-p1 rc=0 end_utc=22:09:38Z
+  ids == prompt-1.ids
+  log| 0.01.138.549 I llama_context: flash_attn            = enabled
+  log| 0.01.139.001 I llama_kv_cache: size =    6.00 MiB (   256 cells,   6 layers,  1/1 seqs), K (f32):    3.00 MiB, V (f32):    3.00 MiB
+  log| 0.02.851.174 I llama_context: flash_attn            = enabled
+  log| 0.02.851.855 I llama_kv_cache: size =    6.00 MiB (   256 cells,   6 layers,  1/1 seqs), K (f32):    3.00 MiB, V (f32):    3.00 MiB
+  log| apr_raw_logits: kvconfig cache_type_k=f32 cache_type_v=f32 flash_attn_type=enabled
+  67dcc9e73382f240a2278cb66863499d882c8eb526ee25737792998da965f10a  /home/noah/parity-ref/kvconfig-3091/runs/B-p1.bin
+run B-p2 start_utc=22:09:38Z load=74.57 60.71 58.42
+run B-p2 rc=0 end_utc=22:09:45Z
+  ids == prompt-2.ids
+  log| 0.01.144.769 I llama_context: flash_attn            = enabled
+  log| 0.01.145.031 I llama_kv_cache: size =    6.00 MiB (   256 cells,   6 layers,  1/1 seqs), K (f32):    3.00 MiB, V (f32):    3.00 MiB
+  log| 0.02.880.763 I llama_context: flash_attn            = enabled
+  log| 0.02.881.377 I llama_kv_cache: size =    6.00 MiB (   256 cells,   6 layers,  1/1 seqs), K (f32):    3.00 MiB, V (f32):    3.00 MiB
+  log| apr_raw_logits: kvconfig cache_type_k=f32 cache_type_v=f32 flash_attn_type=enabled
+  a0f87b14ba9f2dd7630dd60268ef323f977e5f88cb9e060cabbfafe4aae8b760  /home/noah/parity-ref/kvconfig-3091/runs/B-p2.bin
+run B-p3 start_utc=22:09:46Z load=78.85 62.10 58.90
+run B-p3 rc=0 end_utc=22:09:53Z
+  ids == prompt-3.ids
+  log| 0.01.124.892 I llama_context: flash_attn            = enabled
+  log| 0.01.125.180 I llama_kv_cache: size =    6.00 MiB (   256 cells,   6 layers,  1/1 seqs), K (f32):    3.00 MiB, V (f32):    3.00 MiB
+  log| 0.02.839.437 I llama_context: flash_attn            = enabled
+  log| 0.02.840.042 I llama_kv_cache: size =    6.00 MiB (   256 cells,   6 layers,  1/1 seqs), K (f32):    3.00 MiB, V (f32):    3.00 MiB
+  log| apr_raw_logits: kvconfig cache_type_k=f32 cache_type_v=f32 flash_attn_type=enabled
+  df47beffcc18cf27caed695669ad749642ec3a859c3e3c1652068bfa2ac66ea5  /home/noah/parity-ref/kvconfig-3091/runs/B-p3.bin
+run B-p4 start_utc=22:09:54Z load=80.87 62.80 59.14
+run B-p4 rc=0 end_utc=22:09:59Z
+  ids == prompt-4.ids
+  log| 0.01.122.125 I llama_context: flash_attn            = enabled
+  log| 0.01.122.393 I llama_kv_cache: size =    6.00 MiB (   256 cells,   6 layers,  1/1 seqs), K (f32):    3.00 MiB, V (f32):    3.00 MiB
+  log| 0.02.819.424 I llama_context: flash_attn            = enabled
+  log| 0.02.820.041 I llama_kv_cache: size =    6.00 MiB (   256 cells,   6 layers,  1/1 seqs), K (f32):    3.00 MiB, V (f32):    3.00 MiB
+  log| apr_raw_logits: kvconfig cache_type_k=f32 cache_type_v=f32 flash_attn_type=enabled
+  0eca077ceae11c0ef182e09d74a9b019a91503a56e491644a437765b297e6f1e  /home/noah/parity-ref/kvconfig-3091/runs/B-p4.bin
+run C-orig start_utc=22:10:00Z load=81.57 63.54 59.42
+run C-orig rc=0 end_utc=22:10:05Z
+  ids == prompt_token_ids.txt
+  log| 0.01.153.878 I llama_context: flash_attn            = disabled
+  log| 0.01.154.148 I llama_kv_cache: size =    6.00 MiB (   256 cells,   6 layers,  1/1 seqs), K (f32):    3.00 MiB, V (f32):    3.00 MiB
+  log| 0.02.850.156 I llama_context: flash_attn            = disabled
+  log| 0.02.850.796 I llama_kv_cache: size =    6.00 MiB (   256 cells,   6 layers,  1/1 seqs), K (f32):    3.00 MiB, V (f32):    3.00 MiB
+  log| apr_raw_logits: kvconfig cache_type_k=f32 cache_type_v=f32 flash_attn_type=disabled
+  77d587bcd35d50add76ea91f00c19d2e169a4dd2ec48dde0d93cc856cc3ad30d  /home/noah/parity-ref/kvconfig-3091/runs/C-orig.bin
+run C-p1 start_utc=22:10:06Z load=81.69 63.87 59.55
+run C-p1 rc=0 end_utc=22:10:12Z
+  ids == prompt-1.ids
+  log| 0.01.157.623 I llama_context: flash_attn            = disabled
+  log| 0.01.157.923 I llama_kv_cache: size =    6.00 MiB (   256 cells,   6 layers,  1/1 seqs), K (f32):    3.00 MiB, V (f32):    3.00 MiB
+  log| 0.02.885.509 I llama_context: flash_attn            = disabled
+  log| 0.02.886.196 I llama_kv_cache: size =    6.00 MiB (   256 cells,   6 layers,  1/1 seqs), K (f32):    3.00 MiB, V (f32):    3.00 MiB
+  log| apr_raw_logits: kvconfig cache_type_k=f32 cache_type_v=f32 flash_attn_type=disabled
+  2ed4d8641baf219a19842a90c7776981f3a54bca332f2e0efa4696310cc04d7e  /home/noah/parity-ref/kvconfig-3091/runs/C-p1.bin
+run C-p2 start_utc=22:10:13Z load=81.71 64.17 59.67
+run C-p2 rc=0 end_utc=22:10:19Z
+  ids == prompt-2.ids
+  log| 0.01.147.281 I llama_context: flash_attn            = disabled
+  log| 0.01.147.550 I llama_kv_cache: size =    6.00 MiB (   256 cells,   6 layers,  1/1 seqs), K (f32):    3.00 MiB, V (f32):    3.00 MiB
+  log| 0.02.867.661 I llama_context: flash_attn            = disabled
+  log| 0.02.868.302 I llama_kv_cache: size =    6.00 MiB (   256 cells,   6 layers,  1/1 seqs), K (f32):    3.00 MiB, V (f32):    3.00 MiB
+  log| apr_raw_logits: kvconfig cache_type_k=f32 cache_type_v=f32 flash_attn_type=disabled
+  e0f6a5844909a8f19946bcbbc1bba339cd3051be7177a07035193213af7c190b  /home/noah/parity-ref/kvconfig-3091/runs/C-p2.bin
+run C-p3 start_utc=22:10:20Z load=80.18 64.41 59.80
+run C-p3 rc=0 end_utc=22:10:27Z
+  ids == prompt-3.ids
+  log| 0.01.155.590 I llama_context: flash_attn            = disabled
+  log| 0.01.155.856 I llama_kv_cache: size =    6.00 MiB (   256 cells,   6 layers,  1/1 seqs), K (f32):    3.00 MiB, V (f32):    3.00 MiB
+  log| 0.02.891.242 I llama_context: flash_attn            = disabled
+  log| 0.02.891.866 I llama_kv_cache: size =    6.00 MiB (   256 cells,   6 layers,  1/1 seqs), K (f32):    3.00 MiB, V (f32):    3.00 MiB
+  log| apr_raw_logits: kvconfig cache_type_k=f32 cache_type_v=f32 flash_attn_type=disabled
+  d2c8be740e59d59b3707fc813a9fee5ec5e703c0d6cd06023be485f6b804b506  /home/noah/parity-ref/kvconfig-3091/runs/C-p3.bin
+run C-p4 start_utc=22:10:28Z load=80.64 64.77 59.94
+run C-p4 rc=0 end_utc=22:10:33Z
+  ids == prompt-4.ids
+  log| 0.01.155.262 I llama_context: flash_attn            = disabled
+  log| 0.01.155.526 I llama_kv_cache: size =    6.00 MiB (   256 cells,   6 layers,  1/1 seqs), K (f32):    3.00 MiB, V (f32):    3.00 MiB
+  log| 0.02.842.974 I llama_context: flash_attn            = disabled
+  log| 0.02.843.644 I llama_kv_cache: size =    6.00 MiB (   256 cells,   6 layers,  1/1 seqs), K (f32):    3.00 MiB, V (f32):    3.00 MiB
+  log| apr_raw_logits: kvconfig cache_type_k=f32 cache_type_v=f32 flash_attn_type=disabled
+  0ef9cdd24c76599dc384e5b041aec8c31443b6ca4f39dda594c3944e9af31ef2  /home/noah/parity-ref/kvconfig-3091/runs/C-p4.bin
+run C2-orig start_utc=22:10:34Z load=79.63 64.82 59.98
+run C2-orig rc=0 end_utc=22:10:39Z
+  ids == prompt_token_ids.txt
+  log| 0.01.161.637 I llama_context: flash_attn            = disabled
+  log| 0.01.161.908 I llama_kv_cache: size =    6.00 MiB (   256 cells,   6 layers,  1/1 seqs), K (f32):    3.00 MiB, V (f32):    3.00 MiB
+  log| 0.02.906.810 I llama_context: flash_attn            = disabled
+  log| 0.02.907.481 I llama_kv_cache: size =    6.00 MiB (   256 cells,   6 layers,  1/1 seqs), K (f32):    3.00 MiB, V (f32):    3.00 MiB
+  log| apr_raw_logits: kvconfig cache_type_k=f32 cache_type_v=f32 flash_attn_type=disabled
+  77d587bcd35d50add76ea91f00c19d2e169a4dd2ec48dde0d93cc856cc3ad30d  /home/noah/parity-ref/kvconfig-3091/runs/C2-orig.bin
+C2-orig vs C-orig cmp rc=0
+B-orig vs A cmp rc=0
+C-orig vs A cmp rc=1
+C-orig vs B cmp rc=1
+B-p1 vs A cmp rc=0
+C-p1 vs A cmp rc=1
+C-p1 vs B cmp rc=1
+B-p2 vs A cmp rc=0
+C-p2 vs A cmp rc=1
+C-p2 vs B cmp rc=1
+B-p3 vs A cmp rc=0
+C-p3 vs A cmp rc=1
+C-p3 vs B cmp rc=1
+B-p4 vs A cmp rc=0
+C-p4 vs A cmp rc=1
+C-p4 vs B cmp rc=1
+--- 2. config C sub-layer dumps (free= 382G)
+run C-sub-p4 start_utc=22:10:40Z load=79.25 65.24 60.17
+run C-sub-p4 rc=0 end_utc=22:10:46Z
+  ids == prompt-4.ids
+  log| apr_raw_logits: kvconfig cache_type_k=f32 cache_type_v=f32 flash_attn_type=disabled
+  log| apr_raw_logits: dump dir=/home/noah/parity-ref/kvconfig-3091/runs/C-sub-p4 names=1350 written=1500 errors=0
+  0ef9cdd24c76599dc384e5b041aec8c31443b6ca4f39dda594c3944e9af31ef2  /home/noah/parity-ref/kvconfig-3091/runs/C-sub-p4.bin
+C-sub-p4 logits vs C-p4 cmp rc=0
+run C-sub-orig start_utc=22:10:47Z load=81.72 65.98 60.44
+run C-sub-orig rc=0 end_utc=22:10:52Z
+  ids == prompt_token_ids.txt
+  log| apr_raw_logits: kvconfig cache_type_k=f32 cache_type_v=f32 flash_attn_type=disabled
+  log| apr_raw_logits: dump dir=/home/noah/parity-ref/kvconfig-3091/runs/C-sub-orig names=1350 written=750 errors=0
+  77d587bcd35d50add76ea91f00c19d2e169a4dd2ec48dde0d93cc856cc3ad30d  /home/noah/parity-ref/kvconfig-3091/runs/C-sub-orig.bin
+C-sub-orig logits vs C-orig cmp rc=0
+C-sub-p4 manifest rows=1500
+4c20cf34311f8f74e61ef7dd8629f0742206629aca00cccef1b18ae4bc53ed46  /home/noah/parity-ref/kvconfig-3091/runs/C-sub-p4/manifest.sha256.tsv
+C-sub-orig manifest rows=750
+c973e2d468dacbd3c2d7c3a1a7c32b63c782b253be0ec8b82841ae1478ef9909  /home/noah/parity-ref/kvconfig-3091/runs/C-sub-orig/manifest.sha256.tsv
+--- 3. apr ON on intel (lambda-built binary), RAYON_NUM_THREADS=8
+apr on-orig start_utc=22:11:03Z load=80.26 66.43 60.67
+apr on-orig rc=0 end_utc=22:11:41Z
+  qwen35_layer_obs: ggml_vecdot_emul mask=EmulationMask { q4_k: true, q5_k: true, q6_k: true, q8_0: true } emulated_matmuls[Q4_K,Q5_K,Q6_K,Q8_0]=[7644, 2808, 1326, 2808]
+  qwen35_layer_obs: n_pos=78 n_vocab=248320 out=/home/noah/parity-ref/kvconfig-3091/runs/apr-on-orig-intel.bin
+  485341aec772082632157f85f918f026d1157a8748575c54053aa11f036a9a53  /home/noah/parity-ref/kvconfig-3091/runs/apr-on-orig-intel.bin
+apr on-p4 start_utc=22:11:42Z load=85.76 69.46 61.93
+apr on-p4 rc=0 end_utc=22:12:22Z
+  qwen35_layer_obs: ggml_vecdot_emul mask=EmulationMask { q4_k: true, q5_k: true, q6_k: true, q8_0: true } emulated_matmuls[Q4_K,Q5_K,Q6_K,Q8_0]=[8036, 2952, 1394, 2952]
+  qwen35_layer_obs: n_pos=82 n_vocab=248320 out=/home/noah/parity-ref/kvconfig-3091/runs/apr-on-p4-intel.bin
+  6ccada2b823ef651a0fdad39138263bf567b684996afc0f295e3f8f0e8041f54  /home/noah/parity-ref/kvconfig-3091/runs/apr-on-p4-intel.bin
+end_utc=2026-09-15T22:12:22Z load=83.46 70.92 62.74
