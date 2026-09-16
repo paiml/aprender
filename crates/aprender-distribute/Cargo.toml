@@ -14,7 +14,7 @@ documentation = "https://docs.rs/repartir"
 
 [features]
 default = ["cpu"]
-cpu = ["tokio", "num_cpus"]
+cpu = ["tokio"]
 gpu = ["wgpu", "pollster"]
 remote = ["tokio", "bincode", "tracing-subscriber"]
 remote-tls = ["remote", "rustls", "tokio-rustls", "rustls-pemfile"]
@@ -34,7 +34,6 @@ name = "repartir"
 tokio = { version = "1.35", features = ["rt-multi-thread", "sync", "time", "process", "io-util", "macros", "net"], optional = true }
 
 # CPU backend
-num_cpus = { version = "1.16", optional = true }
 
 # GPU backend (pure Rust via gfx-rs)
 # wgpu provides cross-platform GPU compute (Vulkan/Metal/DX12/WebGPU)

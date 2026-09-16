@@ -66,6 +66,18 @@ pub enum Error {
         /// How many entries were hashed to produce `actual`.
         entries: usize,
     },
+
+    /// A column was named that the frame does not have (e.g. a faceting variable).
+    #[error("Unknown column: {0}")]
+    UnknownColumn(String),
+
+    /// A coordinate system was requested whose transform is not implemented.
+    ///
+    /// Returned rather than silently passing coordinates through unchanged: a `Coord` that does
+    /// nothing is indistinguishable from one that works, which is the defect
+    /// [`crate::grammar::apply`] exists to remove.
+    #[error("Unsupported coordinate system: {0}")]
+    UnsupportedCoord(&'static str),
 }
 
 #[cfg(test)]
