@@ -89,11 +89,14 @@ falsification_tests:
 
   if_fails: rule 'determinism at temp=0 on MLX' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: equivalence
+- id: CK201F4-EQ-001
+  type: equivalence
   property: "apr --backend mlx matches mlx_lm generate interface and yields ≥0.999 cosine vs native"
-- type: invariant
+- id: CK201F4-INV-002
+  type: invariant
   property: "feature flag gated to Darwin arm64"
-- type: invariant
+- id: CK201F4-INV-003
+  type: invariant
   property: "determinism at temp=0"
 
 verification_summary:

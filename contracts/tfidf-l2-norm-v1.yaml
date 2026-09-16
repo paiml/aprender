@@ -65,26 +65,30 @@ equations:
       idf_i = ln( (N + 1) / (df_i + 1) ) + 1     (N = #docs, df_i = #docs containing term i)
 
 proof_obligations:
-  - type: equivalence
+  - id: TLN-EQ-001
+    type: equivalence
     property: "Default TfidfVectorizer output equals scikit-learn TfidfVectorizer (norm='l2') row-for-row"
     formal: |
       For docs = ["a b","a c"] with a whitespace tokenizer, the default
       (norm=L2) fit_transform row for "a b" equals
       [0.5797387, 0.8148025, 0.0] (±1e-5) at vocab indices (a,b,c),
       matching sklearn TfidfVectorizer(token_pattern=r'\b\w+\b').fit_transform.
-  - type: invariant
+  - id: TLN-INV-002
+    type: invariant
     property: "Every non-zero document row has unit L2 norm under the default norm=L2"
     formal: |
       ∀ row r with at least one non-zero entry:
       sqrt( Σ_c transform(docs)[r][c]² ) = 1  (±1e-6).
       All-zero rows (no in-vocabulary terms) are left untouched (scale skipped).
-  - type: equivalence
+  - id: TLN-EQ-003
+    type: equivalence
     property: "Norm::None reproduces the pre-fix raw tf*idf values (sklearn norm=None)"
     formal: |
       with_norm(Norm::None).fit_transform(["a b","a c"]) row "a b" =
       [1.0, 1.4054651, 0.0] (±1e-6); its L2 norm = 1.724915 — the divisor the
       default L2 path applies.
-  - type: invariant
+  - id: TLN-INV-004
+    type: invariant
     property: "Norm::L1 yields rows whose absolute values sum to 1 (sklearn norm='l1')"
     formal: |
       ∀ non-zero row r under Norm::L1: Σ_c |transform(docs)[r][c]| = 1 (±1e-6).

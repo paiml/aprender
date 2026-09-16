@@ -31,24 +31,29 @@ equations:
     - input.len() > 0
     lean_theorem: Theorems.F16.roundtrip_identity
 proof_obligations:
-- type: equivalence
+- id: F16-EQ-001
+  type: equivalence
   property: Bias trick correctness
   formal: f16_to_f32 via bit manipulation == f16_to_f32 via arithmetic conversion
   tolerance: 0.0
   applies_to: all
-- type: invariant
+- id: F16-INV-002
+  type: invariant
   property: Roundtrip identity
   formal: f32_to_f16(f16_to_f32(h)) == h for normal f16
   applies_to: all
-- type: invariant
+- id: F16-INV-003
+  type: invariant
   property: Sign preservation
   formal: sign(f16_to_f32(h)) == sign(h)
   applies_to: all
-- type: equivalence
+- id: F16-EQ-004
+  type: equivalence
   property: SIMD conversion equivalence
   tolerance: 0.0
   applies_to: simd
-- type: equivalence
+- id: F16-EQ-005
+  type: equivalence
   property: F32-to-F16 round-to-nearest-even (PMAT-905)
   formal: f32_to_f16_single(v) == half::f16::from_f32(v).to_bits() for all v in f32
   tolerance: 0.0

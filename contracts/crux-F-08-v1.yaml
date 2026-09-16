@@ -103,11 +103,14 @@ falsification_tests:
   if_fails: "loss curve has gaps — epoch_metrics length != total_epochs"
 
 proof_obligations:
-- type: invariant
+- id: CF0467B-INV-001
+  type: invariant
   property: "apr finetune emits one loss value per epoch, with no silent gaps"
-- type: invariant
+- id: CF0467B-INV-002
+  type: invariant
   property: "JSON epoch_metrics train_loss matches TFEvents loss/train scalar within 1e-6"
-- type: equivalence
+- id: CF0467B-EQ-003
+  type: equivalence
   property: "apr finetune --tensorboard-logdir matches PyTorch's torch.utils.tensorboard.SummaryWriter.add_scalar('loss/train',...) on the same training data"
   competitor: pytorch
   reference: "https://pytorch.org/docs/stable/tensorboard.html (torch.utils.tensorboard.SummaryWriter.add_scalar)"

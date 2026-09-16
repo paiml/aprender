@@ -32,23 +32,28 @@ equations:
     - indices.len() > 0
     lean_theorem: Theorems.Alibi
 proof_obligations:
-- type: bound
+- id: ALD087-BND-001
+  type: bound
   property: Negative bias
   formal: -m_h * |i - j| <= 0 for all i, j, h
   applies_to: all
-- type: bound
+- id: ALD087-BND-002
+  type: bound
   property: Slope positivity
   formal: m_h = 2^(-8h/H) > 0 for all h in {0, ..., H-1}
   applies_to: all
-- type: invariant
+- id: ALD087-INV-003
+  type: invariant
   property: Causal consistency
   formal: j > i implies scores[i,j] = -inf in causal mode
   applies_to: all
-- type: monotonicity
+- id: ALD087-MON-004
+  type: monotonicity
   property: Head-monotonic slopes
   formal: h1 < h2 implies m_{h1} > m_{h2}
   applies_to: all
-- type: equivalence
+- id: ALD087-EQ-005
+  type: equivalence
   property: SIMD matches scalar within ULP
   tolerance: 8.0
   applies_to: simd

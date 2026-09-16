@@ -44,23 +44,28 @@ equations:
     - b.len() > 0
     lean_theorem: Theorems.Reconstruction
 proof_obligations:
-- type: invariant
+- id: PCA-INV-001
+  type: invariant
   property: Dimensionality reduction
   formal: PCA(X, k).shape = (n, k)
   applies_to: all
-- type: bound
+- id: PCA-BND-002
+  type: bound
   property: Explained variance bounded
   formal: Each explained_ratio ∈ [0, 1]
   applies_to: all
-- type: invariant
+- id: PCA-INV-003
+  type: invariant
   property: Explained variance sums to 1
   formal: Σ explained_ratio = 1 (for all d components)
   applies_to: all
-- type: invariant
+- id: PCA-INV-004
+  type: invariant
   property: Perfect reconstruction at full rank
   formal: k = d ⟹ ||X - reconstruct(PCA(X, d))|| < ε
   applies_to: all
-- type: invariant
+- id: PCA-INV-005
+  type: invariant
   property: OBLIG-PCA-F64-ACCUM mean and covariance accumulate in f64
   formal: 'PCA.fit accumulates the per-feature mean and the covariance cross-products in
     float64 (numpy/sklearn semantics) so that on large-magnitude data (|x| ~ 1e6 with

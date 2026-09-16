@@ -64,7 +64,8 @@ falsification_tests:
     if_fails: "ndarray imports remain in source code"
 
 proof_obligations:
-  - type: postcondition
+  - id: ST-POST-001
+    type: postcondition
     property: No ndarray in sovereign tensor ops
     formal: "zero ndarray references"
 

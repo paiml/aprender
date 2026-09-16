@@ -205,16 +205,19 @@ kernel_structure:
     description: Verify roundtrip correctness, vocab size, byte coverage
 
 proof_obligations:
-- type: postcondition
+- id: TLD257-POST-001
+  type: postcondition
   property: Roundtrip encode-decode correctness
   formal: for all valid UTF-8 text t, decode(encode(t)) == t
   tolerance: 1e-6
   applies_to: all
-- type: invariant
+- id: TLD257-INV-002
+  type: invariant
   property: Token IDs bounded by vocab_size
   formal: for all ids in encode(text), id < vocab_size
   applies_to: all
-- type: invariant
+- id: TLD257-INV-003
+  type: invariant
   property: Byte encoder covers all 256 byte values
   formal: byte_encoder.len() == 256 and for all b in 0..=255, byte_encoder.contains_key(b)
   applies_to: all

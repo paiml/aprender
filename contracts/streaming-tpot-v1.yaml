@@ -26,15 +26,18 @@ equations:
     - input.iter().all(|v| v.is_finite())
     lean_theorem: Theorems.Tpot_Definition
 proof_obligations:
-- type: invariant
+- id: ST9A0B-INV-001
+  type: invariant
   property: TPOT computed from streaming data
   formal: TPOT > 0 when server supports streaming and n_tokens > 1
   applies_to: all
-- type: bound
+- id: ST9A0B-BND-002
+  type: bound
   property: TTFT separable from TPOT
   formal: TTFT / latency < 0.95 when streaming (proves streaming is active)
   applies_to: all
-- type: equivalence
+- id: ST9A0B-EQ-003
+  type: equivalence
   property: Streaming output matches non-streaming
   formal: concat(streaming_tokens) == non_streaming_response.content
   applies_to: all

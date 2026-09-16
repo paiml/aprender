@@ -132,15 +132,20 @@ falsification_tests:
   if_fails: "paiml/apr-serve:latest compressed size exceeds 500 MiB budget"
 
 proof_obligations:
-- type: invariant
+- id: CK17EA4-INV-001
+  type: invariant
   property: "Image paiml/apr-serve:latest is publicly pullable from Docker Hub"
-- type: invariant
+- id: CK17EA4-INV-002
+  type: invariant
   property: "Container becomes healthy on /health within 30s of start"
-- type: invariant
+- id: CK17EA4-INV-003
+  type: invariant
   property: "Required OCI labels (source, version, licenses, title) present"
-- type: invariant
+- id: CK17EA4-INV-004
+  type: invariant
   property: "Compressed image size <= 500 MiB for CPU build"
-- type: equivalence
+- id: CK17EA4-EQ-005
+  type: equivalence
   property: "paiml/apr-serve:latest provides the same `docker run -d -p` → healthy-serving-container UX as ollama/ollama:latest"
   reference: "https://hub.docker.com/r/ollama/ollama"
 

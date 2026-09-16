@@ -46,23 +46,28 @@ equations:
     - input.iter().all(|v| v.is_finite())
     lean_theorem: Theorems.Lda_Decision_Function
 proof_obligations:
-- type: invariant
+- id: DA-INV-001
+  type: invariant
   property: QDA predict-parity with scikit-learn
   formal: F-QDA-PARITY-001 — QDA.predict equals sklearn QuadraticDiscriminantAnalysis(reg_param=0) labels exactly and predict_proba within 1e-4 on the pinned fixture
   applies_to: all
-- type: invariant
+- id: DA-INV-002
+  type: invariant
   property: QDA per-class covariance positive-definite (Cholesky exists)
   formal: F-QDA-FIT-PSD-002 — every fitted class covariance admits a Cholesky factor (PSD), so log-likelihood and predict_proba are finite
   applies_to: all
-- type: invariant
+- id: DA-INV-003
+  type: invariant
   property: LDA predict-parity with scikit-learn
   formal: F-LDA-PARITY-004 — LDA(lsqr).predict equals sklearn LinearDiscriminantAnalysis(solver=lsqr) labels exactly and coef_/intercept_/predict_proba match the pinned fixture
   applies_to: all
-- type: invariant
+- id: DA-INV-004
+  type: invariant
   property: Prediction deterministic
   formal: predict(x) = predict(x) for all x (both LDA and QDA)
   applies_to: all
-- type: invariant
+- id: DA-INV-005
+  type: invariant
   property: Posterior probability valid
   formal: predict_proba rows sum to 1 and each entry ∈ [0, 1]
   applies_to: all

@@ -130,15 +130,20 @@ falsification_tests:
   if_fails: "apr pipeline diverges from HF peft + convert_hf_to_gguf.py reference"
 
 proof_obligations:
-- type: equivalence
+- id: CD186B5-EQ-001
+  type: equivalence
   property: "apr merge + export gguf matches peft.merge_and_unload + convert_hf_to_gguf.py at temp=0 argmax"
-- type: invariant
+- id: CD186B5-INV-002
+  type: invariant
   property: "adapter.apr size / base.apr size <= 0.02"
-- type: invariant
+- id: CD186B5-INV-003
+  type: invariant
   property: "W_merged = W_base + (alpha/r) * B @ A (Frobenius-norm verified)"
-- type: invariant
+- id: CD186B5-INV-004
+  type: invariant
   property: "GGUF export is self-loadable by llama-cli and produces identical argmax at temp=0 top-k=1"
-- type: invariant
+- id: CD186B5-INV-005
+  type: invariant
   property: "apr merge preserves base tensor shapes (rank-r update)"
 
 verification_summary:

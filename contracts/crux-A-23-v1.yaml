@@ -121,11 +121,14 @@ falsification_tests:
     discharge_status: PARTIAL_ALGORITHM_LEVEL
     full_discharge_blocked_on: end-to-end `apr search` CLI harness against a real HF API + local cache
 proof_obligations:
-- type: equivalence
+- id: CA2475D-EQ-001
+  type: equivalence
   property: "apr search matches `huggingface_hub.list_models(search=...)` for Hub half"
-- type: invariant
+- id: CA2475D-INV-002
+  type: invariant
   property: "merge dedups by repo; cached rows win (tagged BOTH)"
-- type: invariant
+- id: CA2475D-INV-003
+  type: invariant
   property: "--offline returns local results only; never raises NetworkError"
 
 verification_summary:

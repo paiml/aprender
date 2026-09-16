@@ -17,20 +17,24 @@ equations:
     - capacity > 0
     lean_theorem: Theorems.Autoregressive_Generation
 proof_obligations:
-- type: equivalence
+- id: GCC-EQ-001
+  type: equivalence
   property: KV cache output matches no-cache output
   formal: generate_with_cache(prompt, config) ≡ generate(prompt, config) for all prompts
   tolerance: 1.0e-05
   applies_to: all
-- type: invariant
+- id: GCC-INV-002
+  type: invariant
   property: KV cache reduces work from O(n²) to O(n)
   formal: forward_single_with_cache processes exactly 1 token per call
   applies_to: all
-- type: bound
+- id: GCC-BND-003
+  type: bound
   property: GGUF CPU throughput matches APR CPU
   formal: tok/s(GGUF CPU) ≥ 0.8 × tok/s(APR CPU)
   applies_to: all
-- type: invariant
+- id: GCC-INV-004
+  type: invariant
   property: No regression in generation quality
   formal: argmax(logits_cached) == argmax(logits_uncached) for greedy decoding
   applies_to: all

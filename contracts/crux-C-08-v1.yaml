@@ -157,15 +157,20 @@ falsification_tests:
   if_fails: "Prefix cache hit changes generated content (correctness violated)"
 
 proof_obligations:
-- type: invariant
+- id: CC0609B-INV-001
+  type: invariant
   property: "Warm-prefix TTFT <= 0.3 × cold-prefix TTFT"
-- type: invariant
+- id: CC0609B-INV-002
+  type: invariant
   property: "apr_prefix_cache_{hits,misses}_total counters exposed on /metrics"
-- type: invariant
+- id: CC0609B-INV-003
+  type: invariant
   property: "Hit rate > 0.8 under 10-request shared-prefix load"
-- type: invariant
+- id: CC0609B-INV-004
+  type: invariant
   property: "Caching is block-aligned (no partial-block sharing)"
-- type: invariant
+- id: CC0609B-INV-005
+  type: invariant
   property: "Output correctness identical between cold and warm cache (deterministic sampling)"
 
 verification_summary:

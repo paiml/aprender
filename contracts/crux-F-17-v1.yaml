@@ -135,11 +135,14 @@ falsification_tests:
     discharge_status: PARTIAL_ALGORITHM_LEVEL
     full_discharge_blocked_on: "live `apr attn-viz` emitter writing the per-head heatmap HTML"
 proof_obligations:
-- type: equivalence
+- id: CF16608-EQ-001
+  type: equivalence
   property: "apr attn-viz attention values match HF `output_attentions=True` to 1e-5 on same model+prompt"
-- type: invariant
+- id: CF16608-INV-002
+  type: invariant
   property: "row softmax normalization preserved"
-- type: invariant
+- id: CF16608-INV-003
+  type: invariant
   property: "causal mask honored (future positions ≈ 0)"
 
 verification_summary:

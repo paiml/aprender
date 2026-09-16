@@ -77,35 +77,43 @@ equations:
     - n > 0
     lean_theorem: Theorems.Harmonic
 proof_obligations:
-- type: bound
+- id: GCE10E-BND-001
+  type: bound
   property: Degree centrality bounded
   formal: C_D(v) ∈ [0, 1] for all v
   applies_to: degree
-- type: bound
+- id: GCE10E-BND-002
+  type: bound
   property: Betweenness non-negative
   formal: C_B(v) ≥ 0 for all v
   applies_to: betweenness
-- type: bound
+- id: GCE10E-BND-003
+  type: bound
   property: Closeness positive for connected
   formal: C_C(v) > 0 for all v in connected graph
   applies_to: closeness
-- type: invariant
+- id: GCE10E-INV-004
+  type: invariant
   property: Eigenvector non-negativity
   formal: x_v ≥ 0 for all v (Perron-Frobenius)
   applies_to: eigenvector
-- type: bound
+- id: GCE10E-BND-005
+  type: bound
   property: Katz strictly positive
   formal: x_v > 0 for all v when β > 0
   applies_to: katz
-- type: bound
+- id: GCE10E-BND-006
+  type: bound
   property: Harmonic centrality bounded
   formal: C_H(v) ∈ [0, 1] for all v
   applies_to: harmonic
-- type: invariant
+- id: GCE10E-INV-007
+  type: invariant
   property: Star graph maximum
   formal: degree centrality of center of star K_{1,n-1} = 1
   applies_to: degree
-- type: invariant
+- id: GCE10E-INV-008
+  type: invariant
   property: Complete graph symmetry
   formal: All centralities equal for complete graph K_n
   applies_to: all

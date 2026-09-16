@@ -58,28 +58,34 @@ equations:
     - input.len() > 0
     lean_theorem: Theorems.Output_Equivalence
 proof_obligations:
-- type: equivalence
+- id: SD6D4A-EQ-001
+  type: equivalence
   property: Output distribution matches standard autoregressive
   formal: P_spec(x_1..x_n) = P_auto(x_1..x_n) for all sequences and all draft models
   tolerance: 0
   applies_to: all
-- type: bound
+- id: SD6D4A-BND-002
+  type: bound
   property: Acceptance rate lower bound
   formal: P(accept) >= 0 for all token probabilities q, p > 0
   applies_to: all
-- type: bound
+- id: SD6D4A-BND-003
+  type: bound
   property: Acceptance rate upper bound
   formal: P(accept) <= 1 for all token probabilities q, p > 0
   applies_to: all
-- type: invariant
+- id: SD6D4A-INV-004
+  type: invariant
   property: Adjusted distribution validity
   formal: sum(max(0, q(x) - p(x))) > 0 when rejection occurs, and normalize(max(0, q-p)) sums to 1
   applies_to: all
-- type: monotonicity
+- id: SD6D4A-MON-005
+  type: monotonicity
   property: Acceptance rate increases with draft quality
   formal: E[accepted_tokens] increases as KL(p || q) decreases
   applies_to: all
-- type: invariant
+- id: SD6D4A-INV-006
+  type: invariant
   property: GPU KV-cache rolled back (not reset) before verification (PMAT-752)
   formal: before the verification phase, the GPU KV-cache length is rolled back to the pre-draft snapshot length (preserving prefill + previously-accepted K/V), NOT zeroed; otherwise verification attention sees an empty history and verification logits q(x) diverge from the true autoregressive distribution, breaking the P_spec = P_auto equivalence above
   applies_to: gpu_self_speculative

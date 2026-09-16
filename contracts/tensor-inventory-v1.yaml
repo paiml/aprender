@@ -61,27 +61,33 @@ equations:
     - input.len() > 0
     lean_theorem: Theorems.Quantization_Bytes
 proof_obligations:
-- type: invariant
+- id: TI1CC6-INV-001
+  type: invariant
   property: Tensor count formula
   formal: total = base + L * per_layer for valid configs
   applies_to: all
-- type: invariant
+- id: TI1CC6-INV-002
+  type: invariant
   property: Architecture delta linear
   formal: delta(A,B) = L * (per_layer_B - per_layer_A)
   applies_to: all
-- type: invariant
+- id: TI1CC6-INV-003
+  type: invariant
   property: Parameter decomposition exact
   formal: sum of component params = total_params
   applies_to: all
-- type: invariant
+- id: TI1CC6-INV-004
+  type: invariant
   property: Tied embedding count
   formal: tied => count(untied) - count(tied) = 1
   applies_to: all
-- type: monotonicity
+- id: TI1CC6-MON-005
+  type: monotonicity
   property: Quantization byte ordering
   formal: Q4K < Q6K < Q8 < F16 < F32 bytes for same params
   applies_to: all
-- type: equivalence
+- id: TI1CC6-EQ-006
+  type: equivalence
   property: SIMD inventory equivalence
   tolerance: 0.0
   applies_to: simd

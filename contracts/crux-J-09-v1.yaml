@@ -73,9 +73,11 @@ falsification_tests:
   if_fails: CRUX-J-09 delegation invariant — browser automation must be delegated, not inlined
 
 proof_obligations:
-- type: invariant
+- id: CJ01D0E-INV-001
+  type: invariant
   property: "browser automation routes through MCP"
-- type: invariant
+- id: CJ01D0E-INV-002
+  type: invariant
   property: "no in-tree browser engine"
 
 verification_summary:

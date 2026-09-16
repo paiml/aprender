@@ -70,39 +70,48 @@ equations:
     - head_dim > 0
     lean_theorem: Theorems.Head_Dim_Consistency
 proof_obligations:
-- type: invariant
+- id: QW3-INV-001
+  type: invariant
   property: Q projection shape
   formal: n_h * d_k = 4096 for Qwen3-8B
   applies_to: all
-- type: invariant
+- id: QW3-INV-002
+  type: invariant
   property: KV projection shape
   formal: n_kv * d_k = 1024 for Qwen3-8B
   applies_to: all
-- type: invariant
+- id: QW3-INV-003
+  type: invariant
   property: GQA divisibility
   formal: n_h mod n_kv = 32 mod 8 = 0
   applies_to: all
-- type: invariant
+- id: QW3-INV-004
+  type: invariant
   property: SwiGLU expansion ratio
   formal: 12288 / 4096 = 3.0
   applies_to: all
-- type: invariant
+- id: QW3-INV-005
+  type: invariant
   property: O projection transpose
   formal: shape(o_proj) == reverse(shape(q_proj))
   applies_to: all
-- type: invariant
+- id: QW3-INV-006
+  type: invariant
   property: RoPE frequency vector length
   formal: len(freqs) == d_k / 2 = 64
   applies_to: all
-- type: monotonicity
+- id: QW3-MON-007
+  type: monotonicity
   property: RoPE frequency decreasing
   formal: freq_i > freq_{i+1} for all i
   applies_to: all
-- type: invariant
+- id: QW3-INV-008
+  type: invariant
   property: Head dimension consistency
   formal: 4096 / 32 = 128 and matches explicit head_dim
   applies_to: all
-- type: equivalence
+- id: QW3-EQ-009
+  type: equivalence
   property: SIMD shape equivalence
   tolerance: 0.0
   applies_to: simd

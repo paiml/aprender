@@ -71,31 +71,38 @@ equations:
     - indices.len() > 0
     lean_theorem: Theorems.Embedding.temp_identity
 proof_obligations:
-- type: invariant
+- id: EMB-INV-001
+  type: invariant
   property: Embedding lookup shape
   formal: '∀t ∈ [0,V): shape(embed(t)) = [d_model]'
   applies_to: all
-- type: invariant
+- id: EMB-INV-002
+  type: invariant
   property: Unembedding output shape
   formal: shape(h @ W_u^T) = [seq_len, V]
   applies_to: all
-- type: invariant
+- id: EMB-INV-003
+  type: invariant
   property: Tied weight identity
   formal: W_u ≡ W_e (pointer equality or value equality)
   applies_to: all
-- type: bound
+- id: EMB-BND-004
+  type: bound
   property: Token ID bounds
   formal: '∀t in batch: 0 <= t < V'
   applies_to: all
-- type: invariant
+- id: EMB-INV-005
+  type: invariant
   property: Embedding non-degeneracy
   formal: '∀t ∈ [0,V): ||embed(t)||_2 > 0'
   applies_to: all
-- type: invariant
+- id: EMB-INV-006
+  type: invariant
   property: Temperature identity
   formal: logits / 1.0 = logits
   applies_to: all
-- type: monotonicity
+- id: EMB-MON-007
+  type: monotonicity
   property: Temperature scaling effect
   formal: T1 < T2 → entropy(softmax(logits/T1)) < entropy(softmax(logits/T2))
   applies_to: all

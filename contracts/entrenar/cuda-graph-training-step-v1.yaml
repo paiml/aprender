@@ -109,27 +109,32 @@ equations:
       - Numerical parity maintained at each tier (loss divergence < 0.01)
 
 proof_obligations:
-  - type: bound
+  - id: CGTS-BND-001
+    type: bound
     property: Launch overhead reduction
     formal: 'graphed_launch_overhead / ungraphed_launch_overhead < 0.10'
     applies_to: training step with 840+ kernels
 
-  - type: equivalence
+  - id: CGTS-EQ-002
+    type: equivalence
     property: Numerical parity
     formal: '|graphed_loss[t] - ungraphed_loss[t]| < 0.01 for t in [0, 100]'
     applies_to: 100-step training comparison
 
-  - type: bound
+  - id: CGTS-BND-003
+    type: bound
     property: Throughput improvement
     formal: 'graphed_tok_s / ungraphed_tok_s >= 3.0'
     applies_to: 20-step canary comparison
 
-  - type: invariant
+  - id: CGTS-INV-004
+    type: invariant
     property: No host-device sync inside graph
     formal: 'zero cudaStreamSynchronize calls in captured kernel stream'
     applies_to: graph capture region
 
-  - type: invariant
+  - id: CGTS-INV-005
+    type: invariant
     property: Memory stability across replays
     formal: 'peak_vram[replay_n] == peak_vram[replay_1] for all n'
     applies_to: 100-step graph replay

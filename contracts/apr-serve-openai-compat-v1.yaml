@@ -35,13 +35,15 @@ status: enforced
 date: 2026-06-14
 
 proof_obligations:
-  - type: invariant
+  - id: ASOC-INV-001
+    type: invariant
     property: >
       SSE-FRAMING (PMAT-753, DISCHARGED): the streaming chat handler passes a bare JSON
       chunk (or the literal "[DONE]") to Event::default().data(); it never manually
       prepends "data: " or appends a newline (axum's Sse adds the field framing). So each
       streamed event's data is parseable JSON, never the literal "data: {...}".
-  - type: invariant
+  - id: ASOC-INV-002
+    type: invariant
     property: >
       STOP-APPLIED (DISCHARGED for NON-STREAMING — PMAT-754/755/756, REPAIRED #2465(2)):
       every NON-STREAMING completion AND chat backend applies the request's stop sequences
@@ -76,7 +78,8 @@ proof_obligations:
       at the first-LISTED stop via an inline loop, not the earliest-POSITION one; it now uses
       the shared truncate_at_stop() helper like every other completion backend. So EVERY
       completion backend (cached/quantized/gpu/apr_q4k/cuda_gguf) is earliest-position-correct.
-  - type: invariant
+  - id: ASOC-INV-003
+    type: invariant
     property: >
       STREAM-UTF8 (PRE-GENERATED paths DISCHARGED — PMAT-758/759): streamed SSE deltas must be
       valid UTF-8 — never a U+FFFD replacement char from decoding a single token that is one
@@ -86,7 +89,8 @@ proof_obligations:
       completes (the HF TextStreamer technique). STILL OPEN: true_streaming_sse_response uses
       the per-token decode_token() and needs an incremental cross-token byte buffer (the
       live-channel path can't precompute the full token list).
-  - type: invariant
+  - id: ASOC-INV-004
+    type: invariant
     property: >
       PARAMS-PLUMBED (PARTIAL — audit items 7-10): request params are honored or explicitly
       rejected, never silently dropped. top_k DISCHARGED for /v1/chat/completions (PMAT-760):
@@ -109,7 +113,8 @@ proof_obligations:
       its request struct is a separate sampler-layer change; and /v1/completions has no top_k
       field at all (CompletionRequest would need it added — non-standard for completions,
       deferred).
-  - type: invariant
+  - id: ASOC-INV-005
+    type: invariant
     property: >
       CHAT-HANDLER-THREADS-PARAMS (DISCHARGED — PMAT-821, F-CHAT-HANDLER-THREADS-PARAMS-001):
       the dense /v1/chat/completions config builder threads EVERY request sampling parameter
@@ -121,7 +126,8 @@ proof_obligations:
       field equals QuantizedGenerateConfig::default for that field (the no-regression
       invariant). This is the HANDLER→CONFIG layer; it composes with the sampler-layer fixes
       (#2081 top_p, #2099 repeat_penalty) that APPLY the params during sampling.
-  - type: invariant
+  - id: ASOC-INV-006
+    type: invariant
     property: >
       TOOL-CALLING (PMAT-801, DISCHARGED for NON-STREAMING): a /v1/chat/completions
       request MAY carry OpenAI `tools` (a list of {type:"function", function:{name,
@@ -142,7 +148,8 @@ proof_obligations:
       via generate_tool_grammar; optional/null assistant `content` for tool-call history
       on the REQUEST side (request `content` stays REQUIRED to preserve the 422-on-missing
       contract); `tool_choice:"required"` is mapped but not yet enforced to FORCE a call.
-  - type: invariant
+  - id: ASOC-INV-007
+    type: invariant
     property: >
       STREAM-TEMPERATURE-ZERO (DISCHARGED — PMAT-790): the STREAMING /v1/chat/completions
       handler must honor `temperature == 0` as a deterministic (greedy) request, exactly like
@@ -155,7 +162,8 @@ proof_obligations:
       which maps temperature 0 to SamplingStrategy::Greedy with a no-op temperature of 1.0
       (and ignores top_p when greedy); positive temperatures are unchanged (greedy default, or
       top-p when set).
-  - type: invariant
+  - id: ASOC-INV-008
+    type: invariant
     property: >
       EMBEDDINGS-MODEL-BACKED (PMAT-803, DISCHARGED): /v1/embeddings (and the native
       /realize/embed) returns REAL model-backed embeddings, NOT a silent positional
@@ -169,7 +177,8 @@ proof_obligations:
       (embedding[token_id % 384] += 1/(1+pos)) provably could not satisfy (disjoint IDs
       land in disjoint buckets → cosine 0.0 for both pairs, so it cannot rank them). The
       endpoint must never silently return a non-model-backed vector.
-  - type: invariant
+  - id: ASOC-INV-009
+    type: invariant
     property: >
       EMBEDDINGS-BATCH-INPUT (PMAT-802 × PMAT-803, DISCHARGED): /v1/embeddings accepts
       `input` as a single JSON string OR a JSON array of strings (OpenAI contract,
@@ -183,7 +192,8 @@ proof_obligations:
       batch of N inputs returns N REAL model-backed embeddings (each per-input vector
       equals the single-input embedding for that text), composing EMBEDDINGS-MODEL-BACKED
       with batch input.
-  - type: invariant
+  - id: ASOC-INV-010
+    type: invariant
     property: >
       OLLAMA-API-ROUTED-ON-APR-SERVE (PMAT-923, DISCHARGED, non-streaming only):
       `apr serve <model>` does NOT mount realizar's create_router — it builds its
@@ -211,7 +221,8 @@ proof_obligations:
       handlers (aprender-serve/src/api/ollama_handlers.rs) and their wiring into
       create_router_with_config remain for any caller that DOES mount realizar's
       router (e.g. `realizar serve`), but are NOT the path `apr serve` exercises.
-  - type: invariant
+  - id: ASOC-INV-011
+    type: invariant
     property: >
       OLLAMA-NDJSON-STREAMING (PMAT-928, DISCHARGED): an Ollama `/api/chat` or
       `/api/generate` request with `stream != false` (Ollama's WIRE DEFAULT is
@@ -238,7 +249,8 @@ proof_obligations:
       OLLAMA-API-ROUTED-ON-APR-SERVE non-streaming shape (no-regression). On a
       backend error the stream still terminates with a well-formed `done:true`
       object, never a bare error object lacking `done`.
-  - type: invariant
+  - id: ASOC-INV-012
+    type: invariant
     property: >
       OLLAMA-CREATED-AT-IS-RFC3339: every Ollama-wire timestamp apr emits —
       `created_at` on the coalesced `/api/chat` and `/api/generate` bodies, on
@@ -261,7 +273,8 @@ proof_obligations:
       the realizar-side handlers any caller mounting create_router gets
       (crates/aprender-serve/src/api/ollama_handlers.rs::created_at_now).
 
-  - type: invariant
+  - id: ASOC-INV-013
+    type: invariant
     property: >
       OLLAMA-COMPAT-ON-THE-REALIZAR-ROUTER (dogfood 0.63.0, #2396): the Ollama
       surface obligations above are stated for the apr-cli APR-CPU router.
@@ -281,7 +294,8 @@ proof_obligations:
       fragments are produced from the finished generation — the WIRE PROTOCOL
       is correct and clients no longer freeze, but time-to-first-object is
       unchanged. /api/tags, /api/show and /api/version are routed.
-  - type: invariant
+  - id: ASOC-INV-014
+    type: invariant
     property: >
       MODEL-METADATA-MEASURED-OR-ABSENT (dogfood 0.63.0, #2402): every field
       the metadata endpoints (/realize/model, /api/tags, /api/show) report is
@@ -301,7 +315,8 @@ proof_obligations:
       architecture from the loader. The context the server was CONFIGURED with
       (`--context-length`) and the model's own advertised maximum are reported
       as two SEPARATE fields; conflating them is what produced the 4096.
-  - type: invariant
+  - id: ASOC-INV-015
+    type: invariant
     property: >
       ERROR-MESSAGES-NAME-A-REAL-REMEDY (dogfood 0.63.0, #2402): an error body
       that tells the caller how to fix the problem must name a remedy that
@@ -313,7 +328,8 @@ proof_obligations:
       expose registry mode, names the embedder API that does
       (AppState::with_registry), and gives the working alternative (restart
       with `apr serve run <MODEL>`).
-  - type: invariant
+  - id: ASOC-INV-016
+    type: invariant
     property: >
       COMPLETIONS-STREAM-FLAG-HONOURED (dogfood 0.63.0, #2375 findings 3 and 5,
       DISCHARGED): POST /v1/completions with "stream":true responds
@@ -329,7 +345,8 @@ proof_obligations:
       CompletionResponse — so no backend return path can forget it.
       NO-REGRESSION: an absent or false `stream` still returns one
       application/json object carrying `usage`.
-  - type: invariant
+  - id: ASOC-INV-017
+    type: invariant
     property: >
       STREAM-FINISH-REASON-MEASURED (dogfood 0.63.0, #2375 finding 6,
       DISCHARGED): the terminal chunk of a STREAMED chat completion reports the
@@ -344,7 +361,8 @@ proof_obligations:
       (pregenerated_sse_response, true_streaming_sse_response) take max_tokens,
       so a terminal chunk cannot be built without the budget it was generated
       under.
-  - type: invariant
+  - id: ASOC-INV-018
+    type: invariant
     property: >
       N-PARAM-HONOURED-OR-REFUSED (dogfood 0.63.0, #2375 finding 9, DISCHARGED):
       this server returns exactly one choice per request, so a request asking for
@@ -356,7 +374,8 @@ proof_obligations:
       client-visible (CLIENT_VISIBLE_MARKER) and the GH-649 422 sanitizer
       forwards marked text while still hiding raw serde internals.
       NO-REGRESSION: `n:1` and an absent `n` are served normally.
-  - type: invariant
+  - id: ASOC-INV-019
+    type: invariant
     property: >
       PREDICT-ERROR-STATES-WHAT-IS-LOADED (dogfood 0.63.0, #2375 finding 8,
       DISCHARGED): /v1/predict's 503 must not contradict /health and must not

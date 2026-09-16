@@ -47,7 +47,8 @@ falsification_tests:
   if_fails: "README doesn't link to monorepo"
 
 proof_obligations:
-- type: invariant
+- id: CR-INV-001
+  type: invariant
   property: "all 70 crates have README.md"
 
 kani_harnesses:

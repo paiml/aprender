@@ -42,15 +42,18 @@ equations:
     - checks list is well-formed
     lean_theorem: Theorems.Gate_Composition
 proof_obligations:
-- type: invariant
+- id: QV-INV-001
+  type: invariant
   property: Size validation determinism
   formal: '∀ a: validate_size(a) = validate_size(a) for unchanged a'
   applies_to: validate_size
-- type: invariant
+- id: QV-INV-002
+  type: invariant
   property: Index corruption detection
   formal: '∀ corrupt_path: validate_index(corrupt_path).is_err()'
   applies_to: validate_index
-- type: invariant
+- id: QV-INV-003
+  type: invariant
   property: Gate conjunction
   formal: '∀ checks: gate(checks).pass ↔ ∀ c ∈ checks: c.pass'
   applies_to: gate_composition

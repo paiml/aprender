@@ -30,7 +30,8 @@ status: enforced
 date: 2026-06-16
 
 proof_obligations:
-  - type: invariant
+  - id: ARSP-INV-001
+    type: invariant
     property: >
       CLI-RUN-FORWARDS-ALL-SAMPLING: realizar::InferenceConfig exposes a field +
       builder for every sampling parameter (temperature, top_k, top_p, seed,
@@ -39,7 +40,8 @@ proof_obligations:
       config built from non-default sampling values yields a generation config
       carrying those exact values, not the greedy defaults. (top_p None maps to the
       disabled threshold 1.0, matching QuantizedGenerateConfig::default().top_p.)
-  - type: invariant
+  - id: ARSP-INV-002
+    type: invariant
     property: >
       DEFAULT-RUN-STAYS-GREEDY: applying a DEFAULT InferenceConfig (a user who
       passes no sampling flags) to QuantizedGenerateConfig::default() leaves every

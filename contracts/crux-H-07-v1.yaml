@@ -109,11 +109,14 @@ falsification_tests:
   if_fails: "shuffle not deterministic on (seed, epoch), or set-epoch semantics not honored"
 
 proof_obligations:
-- type: invariant
+- id: CH095C2-INV-001
+  type: invariant
   property: "one epoch is a partition of the dataset (every sample exactly once)"
-- type: invariant
+- id: CH095C2-INV-002
+  type: invariant
   property: "bucketed batches respect pad_to_multiple and bucket_tolerance"
-- type: equivalence
+- id: CH095C2-EQ-003
+  type: equivalence
   property: "apr --shuffle --seed --start-epoch matches PyTorch DistributedSampler(seed, shuffle=True) + set_epoch() determinism"
   competitor: pytorch
   reference: "https://pytorch.org/docs/stable/data.html#torch.utils.data.distributed.DistributedSampler (set_epoch, shuffle, seed)"

@@ -135,11 +135,14 @@ falsification_tests:
   if_fails: "ChatML rendering drops or duplicates <|im_start|>/<|im_end|> markers"
 
 proof_obligations:
-- type: invariant
+- id: CH09A8C-INV-001
+  type: invariant
   property: "Template applied per-turn with role markers preserved"
-- type: invariant
+- id: CH09A8C-INV-002
+  type: invariant
   property: "ChatML rendering has matched <|im_start|>/<|im_end|> pairs per turn"
-- type: equivalence
+- id: CH09A8C-EQ-003
+  type: equivalence
   property: "Token output byte-identical to transformers.AutoTokenizer.apply_chat_template(tokenize=True) across chatml/llama3/mistral/qwen templates"
   reference: "https://huggingface.co/docs/transformers/main/en/chat_templating"
 

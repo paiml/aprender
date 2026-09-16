@@ -127,13 +127,17 @@ falsification_tests:
   if_fails: "tokenizer vocab length diverges from gguf-py"
 
 proof_obligations:
-- type: invariant
+- id: CF2-INV-001
+  type: invariant
   property: "apr inspect --json contains all general.*, tokenizer.*, and <arch>.* keys"
-- type: invariant
+- id: CF2-INV-002
+  type: invariant
   property: "scalar metadata values round-trip byte-identically to gguf-py"
-- type: invariant
+- id: CF2-INV-003
+  type: invariant
   property: "array metadata values preserve length and element order"
-- type: equivalence
+- id: CF2-EQ-004
+  type: equivalence
   property: "apr inspect metadata is a superset of gguf-py GGUFReader.fields on the golden GGUF fixture"
   competitor: llama_cpp
   reference: "https://github.com/ggerganov/llama.cpp/tree/master/gguf-py (gguf.gguf_reader.GGUFReader)"

@@ -302,13 +302,17 @@ falsification_tests:
       real pipeline or fall through to the stub.
 
 proof_obligations:
-- type: invariant
+- id: ACDT-INV-001
+  type: invariant
   property: "real training (not tensor clone) — at least one student tensor differs by >Q4K tolerance after train"
-- type: invariant
+- id: ACDT-INV-002
+  type: invariant
   property: "KL loss is differentiable w.r.t. student parameters"
-- type: monotonicity
+- id: ACDT-MON-003
+  type: monotonicity
   property: "kl_loss decreases monotonically over epochs (modulo batch noise)"
-- type: idempotency
+- id: ACDT-IDEM-004
+  type: idempotency
   property: "precompute → cache is byte-deterministic across re-runs"
 
 kani_harnesses:

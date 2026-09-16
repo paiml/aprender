@@ -138,11 +138,14 @@ falsification_tests:
     discharge_status: PARTIAL_ALGORITHM_LEVEL
     full_discharge_blocked_on: "live `apr train` emitting actionable doc-link suggestions"
 proof_obligations:
-- type: equivalence
+- id: CF1CE78-EQ-001
+  type: equivalence
   property: "apr NCCL diagnosis surface matches TORCH_NCCL_ASYNC_ERROR_HANDLING behavior"
-- type: invariant
+- id: CF1CE78-INV-002
+  type: invariant
   property: "stderr JSON is parseable (not free text)"
-- type: invariant
+- id: CF1CE78-INV-003
+  type: invariant
   property: "exit code encodes NCCL err class (≥ 128)"
 
 verification_summary:

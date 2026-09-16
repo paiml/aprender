@@ -68,11 +68,14 @@ falsification_tests:
   if_fails: rule 'rewired consumers are unchanged' is violated — the linfa parity claim for CRUX-N-03 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation
 
 proof_obligations:
-- type: invariant
+- id: CN0C968-INV-001
+  type: invariant
   property: "index returns the identical neighbour set as brute force"
-- type: invariant
+- id: CN0C968-INV-002
+  type: invariant
   property: "query cost grows sub-linearly"
-- type: invariant
+- id: CN0C968-INV-003
+  type: invariant
   property: "rewired consumers are unchanged"
 
 kani_harnesses:

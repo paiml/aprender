@@ -58,23 +58,28 @@ equations:
     - predicted.len() > 0
     lean_theorem: Theorems.Implicit_Reward
 proof_obligations:
-- type: bound
+- id: DL-BND-001
+  type: bound
   property: Log-ratio is finite
   formal: '|r(x, y)| < inf when pi_theta(y_t | ...) > 0 and pi_ref(y_t | ...) > 0 for all tokens t'
   applies_to: all
-- type: monotonicity
+- id: DL-MON-002
+  type: monotonicity
   property: Loss decreases as preferred response probability increases
   formal: dL_DPO/d(log_ratio_w) < 0 — increasing preferred log-ratio decreases loss
   applies_to: all
-- type: invariant
+- id: DL-INV-003
+  type: invariant
   property: Gradient is zero when pi_theta == pi_ref
   formal: nabla_theta L_DPO = 0 when pi_theta = pi_ref (stationary at reference)
   applies_to: all
-- type: bound
+- id: DL-BND-004
+  type: bound
   property: DPO loss is non-negative
   formal: L_DPO >= 0 for all valid inputs (since -log(sigmoid(z)) >= 0 for all z)
   applies_to: all
-- type: equivalence
+- id: DL-EQ-005
+  type: equivalence
   property: DPO loss at reference policy equals log(2)
   formal: L_DPO(pi_ref; pi_ref) = -log(sigma(0)) = log(2) ≈ 0.6931
   tolerance: 1.0e-06

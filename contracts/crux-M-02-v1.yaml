@@ -128,15 +128,20 @@ falsification_tests:
   if_fails: "Gate silently accepts a missing tensor — Gate-2 has no completeness check"
 
 proof_obligations:
-- type: invariant
+- id: CM07A02-INV-001
+  type: invariant
   property: "Stats parity holds for every tensor within its documented tolerance"
-- type: invariant
+- id: CM07A02-INV-002
+  type: invariant
   property: "Quant qtol is the dequant error bound, not the f32 tolerance"
-- type: invariant
+- id: CM07A02-INV-003
+  type: invariant
   property: "Missing tensor is FAIL with reason='missing' (never silent)"
-- type: invariant
+- id: CM07A02-INV-004
+  type: invariant
   property: "Exit code aligns with status; determinism for (src, apr) pair"
-- type: equivalence
+- id: CM07A02-EQ-005
+  type: equivalence
   property: "apr qa --gate tensor-stats  ≅  apr-model-qa-playbook Gate-2 (per-tensor (min,max,mean,std) parity)"
 
 verification_summary:

@@ -89,27 +89,32 @@ equations:
     note: "Refutes any over-broad rewrite that breaks the normal weighted vote."
 
 proof_obligations:
-  - type: equivalence
+  - id: KTSL-EQ-001
+    type: equivalence
     property: "PO-KNN-TIE-001 mode tie returns the smallest tied label, matching sklearn"
     formal: "for any neighbor set whose argmax-vote labels form a set S with |S| > 1, majority_vote / weighted_vote returns min(S) = argmax(bincount) = scipy.stats.mode lowest mode"
     tolerance: 0.0
     applies_to: all
-  - type: invariant
+  - id: KTSL-INV-002
+    type: invariant
     property: "PO-KNN-TIE-002 tie prediction is deterministic and order-independent"
     formal: "majority_vote(p) == majority_vote(reverse(p)) for every permutation p of a tied neighbor set; result is constant across processes (no HashMap RandomState)"
     tolerance: 0.0
     applies_to: "tied neighbor sets"
-  - type: invariant
+  - id: KTSL-INV-003
+    type: invariant
     property: "PO-KNN-TIE-003 strict-winner predictions unchanged"
     formal: "for a neighbor set with a unique argmax-vote label c*, majority_vote / weighted_vote returns c* (BTreeMap migration preserves all non-tie predictions)"
     tolerance: 0.0
     applies_to: "neighbor sets with a unique mode"
-  - type: equivalence
+  - id: KTSL-EQ-004
+    type: equivalence
     property: "OBLIG-KNN-WEIGHTED-ZERO-DISTANCE: a zero-distance neighbor gets infinite weight, matching sklearn"
     formal: "for the weighted (weights=distance) path, if any neighbor has distance 0 then weighted_vote / predict_proba use ONLY the zero-distance neighbors (each equal weight); else weight = 1/distance. predict([0,0]) = 1 and predict_proba([0,0]) = [0,1] for X=[[0,0],[1,0],[0,1],[1,1]], y=[1,0,0,0], k=3"
     tolerance: 0.000001
     applies_to: "weighted KNN with an exact-duplicate query"
-  - type: invariant
+  - id: KTSL-INV-005
+    type: invariant
     property: "OBLIG-KNN-WEIGHTED-ZERO-DISTANCE regression guard: the normal weighted path is unchanged"
     formal: "for a weighted query with NO exact match (all distances > 0), weighted_vote returns the same prediction as plain 1/distance weighting; predict([0.1,0.1]) = 1"
     tolerance: 0.0

@@ -249,23 +249,28 @@ equations:
     lean_theorem: Theorems.GPU_Utilization_Gate
 
 proof_obligations:
-  - type: invariant
+  - id: ATP-INV-001
+    type: invariant
     property: Parity ratio improves with each fix tier
     formal: "P0_tok_s > current_tok_s AND P1_tok_s > P0_tok_s"
     applies_to: all
-  - type: invariant
+  - id: ATP-INV-002
+    type: invariant
     property: GPU utilization > 0 is prerequisite for parity
     formal: "gpu_util_pct > 50 => tok_s > 500"
     applies_to: all
-  - type: bound
+  - id: ATP-BND-003
+    type: bound
     property: Hypothesis tested before effort invested
     formal: "for all h in hypotheses: h.status != UNTESTED before implementing h.fix"
     applies_to: all
-  - type: invariant
+  - id: ATP-INV-004
+    type: invariant
     property: Every forward op produces non-zero output
     formal: "for all op in [RMSNorm, GEMM, Attention, SwiGLU, Residual]: output[:4].any(!=0)"
     applies_to: forward_pass
-  - type: invariant
+  - id: ATP-INV-005
+    type: invariant
     property: cuBLAS GEMM inputs and output are non-zero
     formal: "A[:4].any(!=0) AND B[:4].any(!=0) => C[:4].any(!=0)"
     applies_to: gemm_forward

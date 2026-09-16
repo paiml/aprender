@@ -121,19 +121,23 @@ kernel_structure:
     description: Verify output file exists, map errors to exit codes
 
 proof_obligations:
-- type: invariant
+- id: ACM-INV-001
+  type: invariant
   property: No silent exit 0 on error
   formal: '∀ cmd, e: result(cmd) = Err(e) → exit_code(cmd) != 0'
   applies_to: exit_code_on_error
-- type: invariant
+- id: ACM-INV-002
+  type: invariant
   property: No partial output files on interruption
   formal: '∀ cmd, interrupt: ¬exists(output_path) ∨ is_complete(output_path)'
   applies_to: atomic_write_safety
-- type: invariant
+- id: ACM-INV-003
+  type: invariant
   property: Output path parent exists before write
   formal: '∀ cmd: parent_dir(cmd.output_path).exists()'
   applies_to: output_path_validation
-- type: invariant
+- id: ACM-INV-004
+  type: invariant
   property: rm never follows symlinks
   formal: '∀ p where is_symlink(p): rm(p) deletes p, not readlink(p)'
   applies_to: rm_confirmation_gate

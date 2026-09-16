@@ -41,19 +41,23 @@ equations:
     - input.iter().all(|v| v.is_finite())
     lean_theorem: Theorems.L1_Tiling
 proof_obligations:
-- type: bound
+- id: CWS-BND-001
+  type: bound
   property: Dispatch overhead under budget
   formal: work_stealing_overhead < 0.01 × matmul_compute_time
   applies_to: all
-- type: invariant
+- id: CWS-INV-002
+  type: invariant
   property: No false sharing
   formal: All atomic counters aligned to 64-byte cache lines
   applies_to: all
-- type: bound
+- id: CWS-BND-003
+  type: bound
   property: L1 tile fits
   formal: tile_footprint_bytes ≤ 32768 (32KB L1d)
   applies_to: all
-- type: equivalence
+- id: CWS-EQ-004
+  type: equivalence
   property: Work-stealing output matches Rayon output
   formal: matvec_worksteal(W, x) ≡ matvec_rayon(W, x)
   tolerance: 1.0e-06

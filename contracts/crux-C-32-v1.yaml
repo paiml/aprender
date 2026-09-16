@@ -128,13 +128,17 @@ falsification_tests:
   if_fails: "Chunked prefill does not interleave — short requests are starved by long prefill"
 
 proof_obligations:
-- type: equivalence
+- id: CC33F73-EQ-001
+  type: equivalence
   property: "apr serve --enable-chunked-prefill matches vLLM vllm serve --enable-chunked-prefill on golden long prompt (bit-identical output at temperature=0)"
-- type: invariant
+- id: CC33F73-INV-002
+  type: invariant
   property: "Chunked and non-chunked output identical at temperature=0"
-- type: invariant
+- id: CC33F73-INV-003
+  type: invariant
   property: "Prompts exceeding max_num_batched_tokens succeed under chunked prefill"
-- type: invariant
+- id: CC33F73-INV-004
+  type: invariant
   property: "Concurrent short requests have bounded TTFT under long prefill load"
 
 verification_summary:

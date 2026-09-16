@@ -114,15 +114,18 @@ equations:
     - 'cublas_per_call_stream_binding holds'
 
 proof_obligations:
-- type: invariant
+- id: CNFSO-INV-001
+  type: invariant
   property: every cuBLAS GEMM launch is preceded by binding to the caller stream
   formal: '∀ site: cublasSetStream(handle, caller_stream) ≺ gemm_launch(site)'
   applies_to: cublas_per_call_stream_binding
-- type: invariant
+- id: CNFSO-INV-002
+  type: invariant
   property: cuBLAS consumer observes fully-written producer output
   formal: '∀ buf: gemm_read(buf) happens-after producer_write(buf) (single-stream order)'
   applies_to: forward_single_stream_ordering
-- type: invariant
+- id: CNFSO-INV-003
+  type: invariant
   property: QLoRA forward loss finite on first step
   formal: 'is_finite(fused_causal_cross_entropy_cuda(forward_logits_gpu_resident(x))) at step 0'
   applies_to: forward_single_stream_ordering

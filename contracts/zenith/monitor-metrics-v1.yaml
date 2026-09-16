@@ -42,15 +42,18 @@ equations:
     - store directory is writable
     lean_theorem: Theorems.History_Persistence
 proof_obligations:
-- type: invariant
+- id: MM3C1B-INV-001
+  type: invariant
   property: CPU utilization bounded [0, 1]
   formal: '∀ t: 0.0 <= cpu_util(t) <= 1.0'
   applies_to: cpu_utilization
-- type: invariant
+- id: MM3C1B-INV-002
+  type: invariant
   property: Memory usage bounded [0, 1]
   formal: '∀ state: 0.0 <= mem_usage(state) <= 1.0'
   applies_to: memory_usage
-- type: invariant
+- id: MM3C1B-INV-003
+  type: invariant
   property: History persistence roundtrip
   formal: '∀ metrics: load(save(metrics)) ⊇ metrics'
   applies_to: history_persistence

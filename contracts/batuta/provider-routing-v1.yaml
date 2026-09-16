@@ -75,35 +75,43 @@ equations:
     - Content text identical after round-trip
     lean_theorem: Theorems.Format_Translation
 proof_obligations:
-- type: invariant
+- id: PR-INV-001
+  type: invariant
   property: Sovereign tier blocks remote egress
   formal: tier == Sovereign => provider ∈ {realizar}
   applies_to: all
-- type: monotonicity
+- id: PR-MON-002
+  type: monotonicity
   property: Priority ordering respected in failover
   formal: priority(selected) <= priority(any_available)
   applies_to: all
-- type: bound
+- id: PR-BND-003
+  type: bound
   property: Cost never exceeds budget
   formal: cumulative_cost <= session_budget
   applies_to: all
-- type: bound
+- id: PR-BND-004
+  type: bound
   property: Backoff delay bounded by cap
   formal: delay <= cap for all attempts
   applies_to: all
-- type: roundtrip
+- id: PR-RT-005
+  type: roundtrip
   property: Format translation preserves semantics
   formal: content(round_trip(msg)) == content(msg)
   applies_to: all
-- type: termination
+- id: PR-TERM-006
+  type: termination
   property: Failover terminates
   formal: route() terminates in O(|providers|) steps
   applies_to: all
-- type: frame
+- id: PR-FRM-007
+  type: frame
   property: Request immutability
   formal: routing does not mutate the original CompletionRequest
   applies_to: all
-- type: postcondition
+- id: PR-POST-008
+  type: postcondition
   property: SSE stream completeness
   formal: streaming produces MessageStop event with usage data
   applies_to: all

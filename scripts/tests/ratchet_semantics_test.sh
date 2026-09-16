@@ -143,10 +143,24 @@ mkdir -p "$WORK/empty-template" || die "cannot create the empty git template dir
 # global hooks/templates cannot reach into the fixture.
 git_fx() { GIT_TERMINAL_PROMPT=0 git -C "$1" -c commit.gpgsign=false -c user.email=t@example.com -c user.name=t "${@:2}"; }
 
+# The fixture carries the artifact the guard READS. Since ONT-001 ONT-1,
+# measured_contract_count is contracts/census.json's `.n_files` — the set
+# `pv lint` walks — so a fixture without a census measures nothing and every row
+# would go red for a reason that is not the property under test. The number is
+# COUNTED from the fixture's own tree, never pinned here: a fixture that states
+# a count its tree does not carry is the defect this suite exists to catch.
+fixture_census() { # fixture_census <dir>
+  local dir="$1" n=0
+  n=$(find "$dir/contracts" -name '*.yaml' | grep -c .) || n=0
+  printf '{\n  "schema": "ont.paiml.dev/census/v1alpha1",\n  "n_files": %s,\n  "n_parsed": %s,\n  "n_parse_errors": 0\n}\n' \
+    "$n" "$n" > "$dir/contracts/census.json"
+}
+
 fixture() { # fixture <dir> <n contracts> <readme body>
   local dir="$1" n="$2" body="$3" i
   mkdir -p "$dir/contracts" "$dir/scripts" || return 1
   for i in $(seq 1 "$n"); do printf 'id: c%s\n' "$i" > "$dir/contracts/c$i.yaml" || return 1; done
+  fixture_census "$dir" || return 1
   printf '%s\n' "$body" > "$dir/README.md" || return 1
   # The guard and the generator are copied IN, so REPO_ROOT resolves to the
   # fixture (they derive it from their own location) and the mutant copy below
@@ -633,6 +647,7 @@ F7="$WORK/f7"
 fixture "$F7" 3 "$(readme_with_block 3)" || die "row 7 fixture could not be built"
 rm -f "$F7/contracts/c3.yaml" || die "row 7: cannot remove a contract"
 readme_with_block 2 > "$F7/README.md" || die "row 7: cannot rewrite the README"
+fixture_census "$F7" || die "row 7: cannot regenerate the census"
 git_fx "$F7" add -A -f contracts README.md >/dev/null 2>&1 || die "row 7: git add failed"
 git_fx "$F7" commit -q -m "drop one contract" >/dev/null 2>&1 || die "row 7: git commit failed"
 out7="$(run_guard "$F7" check_readme_claims.sh)"; rc=$?

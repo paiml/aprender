@@ -66,7 +66,8 @@ equations:
     - 'an envelope re-signed by an attacker over the same model is ACCEPTED by verify_model and REJECTED by verify_model_with_key — a green `apr pacha verify` is consistency, not provenance, and this is the documented boundary rather than a defect'
 
 proof_obligations:
-  - type: invariant
+  - id: PCS-INV-001
+    type: invariant
     property: >
       CRYPTO-NO-SUBSTITUTE: no build configuration of aprender-registry may
       return Ok from encrypt_model / encrypt_model_with_config using anything
@@ -76,7 +77,8 @@ proof_obligations:
       naming the missing feature. Silently downgrading to a non-authenticated
       cipher is forbidden, because the CLI's success message is identical in
       both cases and the operator cannot tell them apart.
-  - type: invariant
+  - id: PCS-INV-002
+    type: invariant
     property: >
       CRYPTO-KEYSTREAM-OPAQUE: ciphertext must carry no algebraic structure
       derived from the byte index. The deleted fallback built
@@ -85,7 +87,8 @@ proof_obligations:
       64-byte block; encrypting all-zero plaintext publishes the keystream
       verbatim, so those probes are a direct discriminator. Under ChaCha20 all
       16 probes match with probability 32^-8 * 64^-8.
-  - type: invariant
+  - id: PCS-INV-003
+    type: invariant
     property: >
       CRYPTO-SALT-IS-ENTROPY: EncryptedHeader::new must draw salt and nonce from
       a CSPRNG, never from a clock. The deleted fallback used
@@ -93,7 +96,8 @@ proof_obligations:
       salt[i+16] ^ 7(i+16) for every i regardless of the time, and 256
       back-to-back headers could collide. Real entropy satisfies that 16-fold
       relation with probability 2^-128.
-  - type: invariant
+  - id: PCS-INV-004
+    type: invariant
     property: >
       CRYPTO-REJECTS-TAMPERING: decryption must reject EVERY single-bit flip at
       EVERY byte offset of the ciphertext (header included), EVERY truncation
@@ -101,7 +105,8 @@ proof_obligations:
       including for empty plaintext, whose tag must be no more forgeable than
       any other. One passing tamper offset is an anecdote; the obligation is
       over the whole sweep.
-  - type: invariant
+  - id: PCS-INV-005
+    type: invariant
     property: >
       CRYPTO-FORMAT-VERSION-DISCRIMINATES: two incompatible on-disk bodies may
       never share one version byte under the PACHAENC magic. Version 1 is the
@@ -112,7 +117,8 @@ proof_obligations:
       "invalid password or corrupted data", a wrong answer for a file that has
       neither problem and whose contents were never confidentiality-protected.
       A reader must be able to classify an archive from its own first nine bytes.
-  - type: invariant
+  - id: PCS-INV-006
+    type: invariant
     property: >
       SIGN-REJECTS-FORGERY: verification must reject all 512 single-bit
       forgeries of a 64-byte Ed25519 signature, all-zero and all-ones
@@ -120,7 +126,8 @@ proof_obligations:
       presented against a different message (including one bit off, truncated,
       extended, and empty). A verifier that returns Ok(()) unconditionally
       passes every positive test, so only the negatives measure anything.
-  - type: invariant
+  - id: PCS-INV-007
+    type: invariant
     property: >
       SIGN-PROVENANCE-NEEDS-A-KEY: verify_model establishes only that a
       ModelSignature envelope is internally consistent, NOT who produced it — an

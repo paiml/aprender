@@ -114,6 +114,14 @@ pub fn dispatch(command: Commands) -> Result<(), Box<dyn std::error::Error>> {
             contract, binding, ..
         } => commands::audit::run(&contract, binding.as_deref()),
         Commands::Diff { old, new } => commands::diff::run(&old, &new),
+        Commands::Census {
+            contract_dir,
+            format,
+            json,
+        } => {
+            let as_json = json || matches!(format, cli::CensusFormat::Json);
+            commands::census::run(&contract_dir, as_json)
+        }
         Commands::Coverage {
             contract_dir,
             binding,
@@ -366,15 +374,11 @@ pub fn run() {
 
     if let Err(e) = dispatch(cli.command) {
         // PVL-1 (PMAT-1099): a refused EMPTY corpus is a DECLINE — exit 2 and the
-        // `decline:` prefix (nothing was measured; the word names the verdict class
-        // the way the exit code does — PVL-001 §0 vocabulary). Every other error
-        // keeps `error:` and exit 1 (measured, failed).
+        // `decline:` (exit 2, nothing was measured), `reject:` (exit 1, measured and
+        // failed) or `error:` — PVL-001 §0's vocabulary, one definition in
+        // contract_walk::verdict_for so the word and the exit code cannot drift.
         let code = contract_walk::exit_code_for(e.as_ref());
-        let verdict = if code == contract_walk::ZERO_CONTRACTS_EXIT {
-            "decline"
-        } else {
-            "error"
-        };
+        let verdict = contract_walk::verdict_for(e.as_ref());
         eprintln!("{verdict}: {e}");
         std::process::exit(code);
     }

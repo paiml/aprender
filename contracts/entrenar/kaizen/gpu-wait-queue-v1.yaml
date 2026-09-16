@@ -67,32 +67,38 @@ equations:
       - "Machine-parseable when --json flag set"
 
 proof_obligations:
-  - type: bound
+  - id: GWQ-BND-001
+    type: bound
     property: "Timeout guarantee"
     formal: "wait_for_vram() returns within timeout + max_interval (worst case: sleep starts just before timeout)"
     applies_to: all
 
-  - type: invariant
+  - id: GWQ-INV-002
+    type: invariant
     property: "Progress under lease expiry"
     formal: "If total free VRAM >= budget_mb after all expired leases pruned, wait_for_vram() succeeds"
     applies_to: all
 
-  - type: bound
+  - id: GWQ-BND-003
+    type: bound
     property: "Poll interval bounded"
     formal: "Sleep duration per iteration ∈ [base_interval, max_interval]"
     applies_to: all
 
-  - type: invariant
+  - id: GWQ-INV-004
+    type: invariant
     property: "Dead PID cleanup on each poll"
     formal: "Each poll iteration calls ledger.prune_dead() before checking capacity"
     applies_to: all
 
-  - type: invariant
+  - id: GWQ-INV-005
+    type: invariant
     property: "No busy-wait"
     formal: "CPU usage during wait < 1% (sleeping between polls)"
     applies_to: all
 
-  - type: invariant
+  - id: GWQ-INV-006
+    type: invariant
     property: "Graceful interrupt"
     formal: "SIGINT during wait_for_vram() propagates — no zombie wait loops"
     applies_to: all

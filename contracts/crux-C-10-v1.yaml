@@ -171,13 +171,17 @@ falsification_tests:
     full_discharge_blocked_on: "apr run --grammar-file surface that actually rejects malformed GBNF with a 'grammar'-tagged diagnostic"
 
 proof_obligations:
-- type: equivalence
+- id: CC1-EQ-001
+  type: equivalence
   property: "apr run --grammar-file matches llama.cpp llama-cli --grammar-file json.gbnf on the golden prompt (both emit parseable JSON)"
-- type: invariant
+- id: CC1-INV-002
+  type: invariant
   property: "Generated text parses under supplied GBNF grammar (root accept state reached or max_tokens)"
-- type: invariant
+- id: CC1-INV-003
+  type: invariant
   property: "Illegal-at-state-s tokens have logit == -INFINITY"
-- type: invariant
+- id: CC1-INV-004
+  type: invariant
   property: "Malformed grammar produces non-zero exit with 'grammar' diagnostic in stderr"
 
 verification_summary:

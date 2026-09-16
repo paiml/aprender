@@ -145,15 +145,20 @@ falsification_tests:
   if_fails: "apr coerced __metadata__ values away from strings (safetensors spec violation)"
 
 proof_obligations:
-- type: invariant
+- id: CK0DC48-INV-001
+  type: invariant
   property: "apr inspect surfaces __metadata__ verbatim"
-- type: invariant
+- id: CK0DC48-INV-002
+  type: invariant
   property: "__metadata__ is dict<string,string> (values remain strings per safetensors spec)"
-- type: invariant
+- id: CK0DC48-INV-003
+  type: invariant
   property: "__metadata__ survives safetensors → apr → safetensors round-trip byte-identically"
-- type: invariant
+- id: CK0DC48-INV-004
+  type: invariant
   property: "per-tensor dtype and shape survive round-trip"
-- type: equivalence
+- id: CK0DC48-EQ-005
+  type: equivalence
   property: "apr inspect __metadata__ is byte-identical to safetensors.safe_open().metadata() on the same file"
   competitor: huggingface
   reference: "https://github.com/huggingface/safetensors (file format spec); https://huggingface.co/docs/safetensors/metadata_parsing"

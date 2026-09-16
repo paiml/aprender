@@ -73,23 +73,28 @@ equations:
     - result.len() <= N
     lean_theorem: Theorems.ResultCardinality
 proof_obligations:
-- type: completeness
+- id: CI-CMP-001
+  type: completeness
   property: Exit code covers all outcomes
   formal: for-all (cmd, result) exit_code(cmd, result) in {0, 1, 2, 3}
   applies_to: all
-- type: determinism
+- id: CI-DET-002
+  type: determinism
   property: Same input produces same exit code
   formal: exit_code(cmd, r1) = exit_code(cmd, r2) when r1 = r2
   applies_to: all
-- type: roundtrip
+- id: CI-RT-003
+  type: roundtrip
   property: JSON output is parseable
   formal: for-all output where format=Json parse(render(output)) = output
   applies_to: all
-- type: bound
+- id: CI-BND-004
+  type: bound
   property: Result cardinality bounded
   formal: for-all output, N abs(top_files(output, N)) <= N
   applies_to: all
-- type: postcondition
+- id: CI-POST-005
+  type: postcondition
   property: Timeout honored
   formal: wall_clock <= timeout + 1s
   applies_to: all

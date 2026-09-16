@@ -75,9 +75,11 @@ falsification_tests:
   if_fails: CRUX-J-14 persistence invariant — consent must persist across runs
 
 proof_obligations:
-- type: invariant
+- id: CJ15ECE-INV-001
+  type: invariant
   property: "destructive ops deny-by-default"
-- type: invariant
+- id: CJ15ECE-INV-002
+  type: invariant
   property: "consent persists across runs"
 
 verification_summary:

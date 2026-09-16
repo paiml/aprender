@@ -124,19 +124,23 @@ equations:
     lean_theorem: Theorems.No_Model_UX
 
 proof_obligations:
-- type: invariant
+- id: AMD701F-INV-001
+  type: invariant
   property: mtime beats format preference
   formal: 'newer_gguf.mtime > older_apr.mtime → discover_model() returns newer_gguf'
   applies_to: sort_priority
-- type: invariant
+- id: AMD701F-INV-002
+  type: invariant
   property: Invalid APR does not shadow valid GGUF
   formal: 'invalid_apr ∧ valid_gguf → discover_model() returns valid_gguf'
   applies_to: jidoka_validation
-- type: invariant
+- id: AMD701F-INV-003
+  type: invariant
   property: Architecture cached at construction
   formal: 'AppState::with_quantized_model_and_vocab(m, v).model_architecture().is_some()'
   applies_to: architecture_extraction
-- type: postcondition
+- id: AMD701F-POST-004
+  type: postcondition
   property: No model produces exit code 5
   formal: 'discover_model() == None → exit(5)'
   applies_to: no_model_ux

@@ -113,15 +113,20 @@ falsification_tests:
   if_fails: "Sweep concurrent values reordered or missing"
 
 proof_obligations:
-- type: invariant
+- id: CE153A4-INV-001
+  type: invariant
   property: "sweep array length == number of requested concurrency values"
-- type: invariant
+- id: CE153A4-INV-002
+  type: invariant
   property: "Every entry contains {concurrent, throughput_tok_s, avg_latency_ms}"
-- type: invariant
+- id: CE153A4-INV-003
+  type: invariant
   property: "Throughput non-decreasing up to saturation (within 5% noise)"
-- type: invariant
+- id: CE153A4-INV-004
+  type: invariant
   property: "Saturation plateau detectable within swept range"
-- type: invariant
+- id: CE153A4-INV-005
+  type: invariant
   property: "concurrent values in sweep match request order"
 
 verification_summary:

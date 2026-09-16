@@ -1,0 +1,27 @@
+{
+ "measured_at": "2026-09-16T11:00:00Z",
+ "hosts": [
+  {
+   "host": "intel",
+   "labels": [
+    "self-hosted",
+    "Linux",
+    "X64",
+    "clean-room"
+   ],
+   "listeners": 4,
+   "workers": 6
+  },
+  {
+   "host": "yoga",
+   "labels": [
+    "self-hosted",
+    "Linux",
+    "X64",
+    "clean-room"
+   ],
+   "listeners": 0,
+   "workers": 0
+  }
+ ]
+}

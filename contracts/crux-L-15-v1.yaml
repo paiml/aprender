@@ -117,15 +117,20 @@ falsification_tests:
   if_fails: "Arch pin is wildcarded — sm_80 user downloads sm_100 kernel, crash at dispatch"
 
 proof_obligations:
-- type: invariant
+- id: CL193F3-INV-001
+  type: invariant
   property: "Every runtime-loaded kernel has a matching kernels.lock entry"
-- type: invariant
+- id: CL193F3-INV-002
+  type: invariant
   property: "kernels.lock is version-controlled (reproducibility)"
-- type: invariant
+- id: CL193F3-INV-003
+  type: invariant
   property: "SBOM export is SPDX 2.3 (standard-compliant)"
-- type: invariant
+- id: CL193F3-INV-004
+  type: invariant
   property: "cuda field is specific (sm_XX), never wildcard"
-- type: equivalence
+- id: CL193F3-EQ-005
+  type: equivalence
   property: "apr kernel audit  ≅  Cargo.lock / npm shrinkwrap discipline for HF kernels"
 
 verification_summary:

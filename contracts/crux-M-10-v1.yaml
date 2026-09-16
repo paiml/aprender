@@ -136,15 +136,20 @@ falsification_tests:
   if_fails: "Network error soft-passes — discipline evaporates when CI network is flaky"
 
 proof_obligations:
-- type: invariant
+- id: CM1-INV-001
+  type: invariant
   property: "Every upstream-origin patch carries a valid, reachable upstream_issue_ref"
-- type: invariant
+- id: CM1-INV-002
+  type: invariant
   property: "upstream-map.toml is version-controlled (auditable classifier)"
-- type: invariant
+- id: CM1-INV-003
+  type: invariant
   property: "Network error is exit >= 2, never silent pass"
-- type: invariant
+- id: CM1-INV-004
+  type: invariant
   property: "Exit code aligns with status"
-- type: equivalence
+- id: CM1-EQ-005
+  type: equivalence
   property: "apr qa --gate upstream-fix  ≅  apr-model-qa-playbook Gate-10 (upstream-fix discipline)"
 
 verification_summary:

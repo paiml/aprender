@@ -717,11 +717,13 @@ kernel_structure:
     description: Verify output shape, density, and format-specific invariants
 
 proof_obligations:
-- type: invariant
+- id: TL7266-INV-001
+  type: invariant
   property: Validated tensor rejects NaN and Inf
   formal: for all v in ValidatedTensor, not contains_nan(v.data) and not contains_inf(v.data)
   applies_to: all
-- type: invariant
+- id: TL7266-INV-002
+  type: invariant
   property: Transpose shape correctness
   formal: for all 2D tensors, apr_shape[0] == gguf_shape[1] and apr_shape[1] == gguf_shape[0]
   applies_to: all
@@ -749,12 +751,14 @@ proof_obligations:
       (·/ncols, ·%ncols) ⇒ injective/surjective), the transpose reindex
       out[r*cols+c]=in[c*rows+r] is an element-preserving bijection, and strides
       are contiguous (row=ncols, col=1).
-- type: postcondition
+- id: TL7266-POST-003
+  type: postcondition
   property: Density enforcement
   formal: for ValidatedEmbedding, zero_pct(data) < 50%; for ValidatedWeight, zero_pct(data) < 80%
   tolerance: 1e-6
   applies_to: all
-- type: invariant
+- id: TL7266-INV-004
+  type: invariant
   property: Quant dispatch exhaustiveness — no catch-all
   formal: WeightQuantType match has zero wildcard arms across all dispatch sites
   applies_to: all

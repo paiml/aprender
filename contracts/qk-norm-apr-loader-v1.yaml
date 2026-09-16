@@ -42,15 +42,18 @@ invariants:
 
     '
 proof_obligations:
-- type: invariant
+- id: QNAL-INV-001
+  type: invariant
   property: Non-regression for non-QK-norm models
   formal: Qwen2, LLaMA, GPT-2 output unchanged (weights = None, no norm applied)
   applies_to: all
-- type: invariant
+- id: QNAL-INV-002
+  type: invariant
   property: Weight shape matches head_dim
   formal: len(q_norm_weight) == hidden_dim / num_heads
   applies_to: all
-- type: equivalence
+- id: QNAL-EQ-003
+  type: equivalence
   property: APR loader matches SafeTensors loader
   formal: APR path loads same QK norm weights as safetensors_infer_convert.rs path
   tolerance: 0.0

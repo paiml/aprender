@@ -204,16 +204,19 @@ kernel_structure:
     description: Verify benchmark data completeness for BLOCKED entries
 
 proof_obligations:
-- type: invariant
+- id: KF-INV-001
+  type: invariant
   property: Registry completeness — no orphaned kernels
   formal: for all K in fused_kernels, exists E in fusion_decisions where E.kernels.fused == K
   tolerance: 1e-6
   applies_to: all
-- type: postcondition
+- id: KF-POST-002
+  type: postcondition
   property: ACTIVE entry call site validity
   formal: for all E where E.status == ACTIVE, file_exists(E.call_site) and dispatches(E.kernels.fused)
   applies_to: all
-- type: precondition
+- id: KF-PRE-003
+  type: precondition
   property: BLOCKED entries have complete benchmarks
   formal: for all E where E.status == BLOCKED, E.benchmark.unfused_tok_s != null and E.benchmark.fused_tok_s != null
   applies_to: all

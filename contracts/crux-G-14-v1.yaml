@@ -83,11 +83,14 @@ falsification_tests:
 
   if_fails: rule 'more-restrictive derivative rejected' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: equivalence
+- id: CG1A01D-EQ-001
+  type: equivalence
   property: "apr validate-license matches HF hub card-validator SPDX + other-license rules"
-- type: invariant
+- id: CG1A01D-INV-002
+  type: invariant
   property: "known SPDX license always accepted"
-- type: invariant
+- id: CG1A01D-INV-003
+  type: invariant
   property: "derivative cannot be more permissive than parent"
 
 verification_summary:

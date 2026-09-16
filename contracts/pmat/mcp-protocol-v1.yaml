@@ -77,35 +77,40 @@ equations:
     - idempotent(tool) => f(x) = f(x) for all x
     lean_theorem: Theorems.ToolIdempotency
 proof_obligations:
-- type: completeness
+- id: MP-CMP-001
+  type: completeness
   property: Schema covers all handler params
   formal: for-all tool schema(tool) is-superset-of handler_params(tool)
   applies_to: all
   lean:
     theorem: Theorems.ToolSchemaFidelity
     status: sorry
-- type: state_machine
+- id: MP-SM-002
+  type: state_machine
   property: Session lifecycle valid transitions
   formal: No tools/call before initialize
   applies_to: all
   lean:
     theorem: Theorems.SessionLifecycle
     status: sorry
-- type: conservation
+- id: MP-CON-003
+  type: conservation
   property: Error info preserved across mapping
   formal: len(mcp_error.message) >= len(pmat_error.to_string())
   applies_to: all
   lean:
     theorem: Theorems.ErrorMappingLossless
     status: sorry
-- type: idempotency
+- id: MP-IDEM-004
+  type: idempotency
   property: Read-only tools are pure
   formal: f(x) = f(x) for all read-only tools
   applies_to: all
   lean:
     theorem: Theorems.ToolIdempotency
     status: sorry
-- type: soundness
+- id: MP-SND-005
+  type: soundness
   property: No phantom tools in discovery
   formal: for-all tool in tools/list handler(tool) exists
   applies_to: all

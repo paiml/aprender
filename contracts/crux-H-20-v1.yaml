@@ -76,11 +76,14 @@ falsification_tests:
 
   if_fails: rule 'deterministic under fixed salt' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: equivalence
+- id: CH2-EQ-001
+  type: equivalence
   property: "apr dataset redact matches Microsoft Presidio analyzer + anonymizer semantics"
-- type: invariant
+- id: CH2-INV-002
+  type: invariant
   property: "no PII pattern survives (fail-closed redaction)"
-- type: invariant
+- id: CH2-INV-003
+  type: invariant
   property: "determinism under fixed salt"
 
 verification_summary:

@@ -45,15 +45,18 @@ equations:
       - "All other tensors are treated as weights for the purpose of quantization detection"
 
 proof_obligations:
-  - type: invariant
+  - id: AIQ-INV-001
+    type: invariant
     property: "quantization reflects dominant weight dtype, not first-in-BTreeMap"
     formal: "quantization(M) = argmax_{d} Σ {params(t) : is_weight(t), t.dtype=d}"
     applies_to: dominant_weight_dtype
-  - type: invariant
+  - id: AIQ-INV-002
+    type: invariant
     property: "biases and norms excluded from quantization calculation"
     formal: "∀ t with is_bias(t) ∨ is_norm(t): t.dtype does not solely determine quantization(M)"
     applies_to: weight_tensor_predicate
-  - type: postcondition
+  - id: AIQ-POST-003
+    type: postcondition
     property: "for Q4_K_M Qwen2.5-Coder, quantization ∈ {Q4_K, Q6_K}"
     formal: "quantization(qwen2.5-coder-1.5b-instruct-q4_k_m.gguf) ∈ {Q4_K, Q6_K}"
     applies_to: dominant_weight_dtype

@@ -42,23 +42,28 @@ equations:
     - n > 0
     lean_theorem: Theorems.Silhouette_Coefficient
 proof_obligations:
-- type: bound
+- id: MC356E-BND-001
+  type: bound
   property: Silhouette score bounded
   formal: s̄ ∈ [-1, 1] for all valid clusterings
   applies_to: all
-- type: bound
+- id: MC356E-BND-002
+  type: bound
   property: Inertia non-negative
   formal: J ≥ 0 for all data and assignments
   applies_to: all
-- type: invariant
+- id: MC356E-INV-003
+  type: invariant
   property: Silhouette degenerate case
   formal: s̄ = 0 when K < 2
   applies_to: all
-- type: invariant
+- id: MC356E-INV-004
+  type: invariant
   property: Inertia zero at centroids
   formal: J = 0 when xᵢ = μ_{cᵢ} for all i
   applies_to: all
-- type: bound
+- id: MC356E-BND-005
+  type: bound
   property: Per-point silhouette bounded
   formal: s(i) ∈ [-1, 1] for each point
   applies_to: all

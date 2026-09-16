@@ -67,11 +67,14 @@ falsification_tests:
 
   if_fails: rule 'tokenizer vocab/merges preserved byte-for-byte' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: equivalence
+- id: CB1327D-EQ-001
+  type: equivalence
   property: "apr dequant + apr quantize round-trip metadata matches llama-quantize semantics"
-- type: invariant
+- id: CB1327D-INV-002
+  type: invariant
   property: "general.* preserved except quantization_version/file_type which reflect new qtype"
-- type: invariant
+- id: CB1327D-INV-003
+  type: invariant
   property: "tokenizer.* preserved byte-identical under all round-trips"
 
 verification_summary:

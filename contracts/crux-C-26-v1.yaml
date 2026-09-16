@@ -113,13 +113,17 @@ falsification_tests:
   if_fails: "apr accepted non-positive rope_freq_scale"
 
 proof_obligations:
-- type: equivalence
+- id: CC20826-EQ-001
+  type: equivalence
   property: "apr run --rope-freq-scale matches llama.cpp llama-cli --rope-freq-scale on golden in-context prompt (both S=1 produce identical greedy output)"
-- type: equivalence
+- id: CC20826-EQ-002
+  type: equivalence
   property: "apr extended-context RoPE scaling recovers needle at 2x train context (matches llama.cpp behavior)"
-- type: invariant
+- id: CC20826-INV-003
+  type: invariant
   property: "rope_freq_scale=1.0 is a no-op (bit-exact equality vs unset)"
-- type: invariant
+- id: CC20826-INV-004
+  type: invariant
   property: "rope_freq_scale <= 0 rejected with non-zero exit"
 
 verification_summary:

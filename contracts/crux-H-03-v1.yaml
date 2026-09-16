@@ -147,15 +147,20 @@ falsification_tests:
   if_fails: "Packing underfills sequences — bin-packing strategy suboptimal"
 
 proof_obligations:
-- type: invariant
+- id: CH054B6-INV-001
+  type: invariant
   property: "Packed epoch time <= 0.6 * unpacked epoch time (>=40% speedup) on short-example data"
-- type: invariant
+- id: CH054B6-INV-002
+  type: invariant
   property: "Attention mask zero across example boundaries (no cross-contamination)"
-- type: invariant
+- id: CH054B6-INV-003
+  type: invariant
   property: "Loss parity: |loss_packed - loss_unpacked| / loss_unpacked <= 0.01 at equal num_tokens"
-- type: invariant
+- id: CH054B6-INV-004
+  type: invariant
   property: "Token conservation: total_tokens(packed) == total_tokens(unpacked)"
-- type: invariant
+- id: CH054B6-INV-005
+  type: invariant
   property: "packing_ratio > 0.80 (sequences fill >=80% of max_seq_length) on mean_len<<max_seq data"
 
 verification_summary:

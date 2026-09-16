@@ -67,27 +67,33 @@ equations:
       - "this is the assertion the pre-existing pv suite never made"
 
 proof_obligations:
-  - type: invariant
+  - id: PCSE108-INV-001
+    type: invariant
     property: "Every validator rule is reachable through the CLI at its declared severity"
     formal: "PV-SURFACE-RULE-REACH"
     applies_to: all
-  - type: invariant
+  - id: PCSE108-INV-002
+    type: invariant
     property: "A clean contract emits no rule id and exits 0"
     formal: "PV-SURFACE-BASELINE-SILENT"
     applies_to: all
-  - type: invariant
+  - id: PCSE108-INV-003
+    type: invariant
     property: "The decision table stays exhaustive over the validator's rule set"
     formal: "PV-SURFACE-TABLE-EXHAUSTIVE"
     applies_to: all
-  - type: invariant
+  - id: PCSE108-INV-004
+    type: invariant
     property: "Every subcommand advertised by --help is reachable"
     formal: "PV-SURFACE-ADVERTISED-REACHABLE"
     applies_to: all
-  - type: invariant
+  - id: PCSE108-INV-005
+    type: invariant
     property: "Contract-taking subcommands reject input they cannot process"
     formal: "PV-SURFACE-REJECTS-GARBAGE"
     applies_to: all
-  - type: invariant
+  - id: PCSE108-INV-006
+    type: invariant
     property: "pv --version reports the version of the crate it was built from"
     formal: "PV-SURFACE-VERSION-PINNED"
     applies_to: all

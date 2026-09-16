@@ -29,7 +29,8 @@ status: enforced
 date: 2026-06-24
 
 proof_obligations:
-  - type: invariant
+  - id: ABG-INV-001
+    type: invariant
     property: >
       OBLIG-ATTENTION-BACKWARD-GRAD-FLOW: after loss.backward() on a graph
       containing a MultiHeadAttention self-attention forward with grad-tracked
@@ -42,7 +43,8 @@ proof_obligations:
       weights; TransposeLastTwoBackward (its own inverse) for K^T; and the
       head split/concat reshapes (mutually-inverse permutations). Without the
       recorded edges the graph is severed and the projection weights are frozen.
-  - type: equivalence
+  - id: ABG-EQ-002
+    type: equivalence
     property: >
       GRADCHECK-NON-TAUTOLOGICAL: the falsifier is a finite-difference gradcheck,
       not an is_some assertion on a hardcoded value. The input/weight magnitudes

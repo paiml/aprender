@@ -66,31 +66,38 @@ equations:
     - k.len() == v.len()
     lean_theorem: Theorems.Multi_Layer_Receptive_Field
 proof_obligations:
-- type: invariant
+- id: SWA-INV-001
+  type: invariant
   property: Diagonal always attended
   formal: '∀i: mask(i,i) = 1'
   applies_to: all
-- type: invariant
+- id: SWA-INV-002
+  type: invariant
   property: Causal constraint
   formal: '∀i,j: j > i → mask(i,j) = 0'
   applies_to: all
-- type: bound
+- id: SWA-BND-003
+  type: bound
   property: Attention count bounded by window
   formal: '∀i: sum_j(mask(i,j)) <= W'
   applies_to: all
-- type: monotonicity
+- id: SWA-MON-004
+  type: monotonicity
   property: Effective context non-decreasing
   formal: i < j → ctx(i) <= ctx(j)
   applies_to: all
-- type: invariant
+- id: SWA-INV-005
+  type: invariant
   property: Sparsity zero for dense case
   formal: W >= seq_len → sparsity = 0
   applies_to: all
-- type: monotonicity
+- id: SWA-MON-006
+  type: monotonicity
   property: Receptive field grows with layers
   formal: L1 < L2 → receptive(L1) < receptive(L2)
   applies_to: all
-- type: conservation
+- id: SWA-CON-007
+  type: conservation
   property: Attention weight normalization within window
   formal: '∀i: |sum_j(attn(i,j)) - 1.0| < ε where mask(i,j) = 1'
   tolerance: 1.0e-06

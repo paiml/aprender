@@ -237,13 +237,17 @@ falsification_tests:
     full_discharge_blocked_on: "clap wiring on `apr serve --embeddings-enabled` in crates/apr-cli/src/commands/serve.rs"
 
 proof_obligations:
-- type: invariant
+- id: CC16A10-INV-001
+  type: invariant
   property: "len(response.data) == len(request.input) for array inputs"
-- type: invariant
+- id: CC16A10-INV-002
+  type: invariant
   property: "Every embedding vector length equals model.hidden_size"
-- type: invariant
+- id: CC16A10-INV-003
+  type: invariant
   property: "cosine(embed(s), embed(s)) >= 1 - 1e-6 (determinism)"
-- type: invariant
+- id: CC16A10-INV-004
+  type: invariant
   property: "usage.total_tokens == usage.prompt_tokens on embedding responses"
 
 verification_summary:
