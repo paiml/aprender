@@ -406,3 +406,138 @@ mutation-verified.
 | `ci.yml:570` → file | held behind #3312 |
 | pv strictness | held behind #3320 + #3327 |
 | #3303 B3 / B5 | **need a decider** — the comparator baseline does not exist at the pin |
+
+## Interval — 13:20Z (2026-09-16)
+
+### The queue was blocked for 2 h 14 m by one PR, and every PR page said green
+
+`main` produced **zero merges from 10:48:34Z to 13:02Z** with 8 entries queued.
+Every `merge_group` build ejected on the same two required contexts —
+`workspace-test` (step "Integration tests") and `gate` (fan-in, log reads
+`workspace-test failed: failure`).
+
+Root cause: **#3320** edits `contracts/setfit-encoder-conformance-v1.yaml`
+(`+28 -14`) without regenerating the tolerances pinned to its hash.
+
+```
+contract @ #3320 head 67359fead : fdfaeb5ce8fbd53d93e946169d5dca9dde352eeed06aced038ee20338b46f14d
+CONTRACT_SHA256 in tolerances_generated.rs : 16a6591788a6c693ad3d08845a20267e31d4a86ee663310a943c841d9e7b2b93
+```
+
+Fixed on its branch (`67359fead..8f58592a9`): regenerated, agree-test passes,
+and the diff is **four lines — the sha256 comment and the constant only**. No
+tolerance VALUE changed, so no conformance bound was loosened to unblock a queue.
+
+### Why nobody could see it from the PR
+
+The "Integration tests" step is gated `if: steps.tier.outputs.tier == 'full'`.
+PRs run the quick tier; `merge_group` runs `full`. So this target is **dark on
+PRs and armed only inside the queue** — #3320 read `workspace-test: SUCCESS` on
+its own page and ejected three times (07:46:53, 09:05:20, 12:25:10, all
+`github-merge-queue[bot]`), taking unrelated PRs batched behind it each time.
+A merge_group branch is main *plus the entries ahead of it*, which is why
+`pr-3302-0cd4d940…` died too. Filed as #3362. The durable half is the
+asymmetry, not this contract: either the target runs on PRs touching
+`contracts/**`, or the quick-tier filter treats a contract edit as relevant.
+
+### Two wrong diagnoses I published and withdrew
+
+- **"main is RED"** — refuted by measurement: the contract hashes identically at
+  `origin/main` and in the constant, and the exact CI fragment command passes
+  locally at `4b00761a3`. Regenerating on main would have baked a false constant.
+- **"#3320 does not touch the contract"** — wrong because `gh pr view --json
+  files` **caps at 100 entries** and #3320 changes **824** files.
+  `gh api .../pulls/3320/files --paginate` found it immediately. Same class as
+  a `head -14` that hid `REAPER_RUN_BUDGET_SEC` on yoga and a `head -1` that
+  read the wrong cascade script. A truncated list reads exactly like a complete
+  one; prove the universe before reporting ABSENT.
+
+### The 0.68 series is NOT a stack — plain rebase, never `--onto`
+
+Patch-id comparison: PR1 #3354 has 2 patches, PR2 #3355 has 8, **2 shared by
+patch-id**, both from base `d83592af8`. PR2 carries *copies* of PR1's commits,
+it does not contain PR1, so `rebase --onto <PR1-tip>` would be wrong. All three
+rebased with a plain `git rebase origin/main`:
+
+| PR | was | now | note |
+|---|---|---|---|
+| #3354 | `815e511df` | unchanged | fully green, queue position 7 |
+| #3355 | `bf796cc5c` | `47f9ddc91` | `guard-tree` PMAT-3318 violation was pure staleness; rebase alone fixed it |
+| #3356 | `839b56137` | `56d54336c` | 511 files / 185,679 insertions preserved |
+
+PR3's local worktree held a *diverged* branch — 31 ahead, 33 behind, only 26
+patches shared. Its 5 "local-only" commits were **already-merged main commits**;
+the remote's 6 were real content. Force-pushing local would have destroyed six
+commits. Remote was authoritative; git then dropped three of those six itself as
+"patch contents already upstream", and two more were superseded drafts (main's
+`LOAD.md` **corrects** `b97af81a3`: `-no-cnv` was never accepted, "it did not at
+the old pin either").
+
+**PR2 and PR3 are deliberately NOT armed** — they hold copies of PR1's patches,
+so letting either merge first would leave PR1 empty.
+
+### Rulings closed
+
+- **`REAPER_RUN_BUDGET_SEC`** — was declared in all three units on infra main
+  (gx10:98, yoga:62, intel:93) but **absent from every loaded unit**: the
+  on-disk file had changed without a `daemon-reload`, so the reaper was taking
+  420 from the script default — exactly what the ruling forbade. `daemon-reload`
+  on gx10, yoga and intel; all three now report `REAPER_RUN_BUDGET_SEC=420`
+  in the loaded environment (count 0 → 1 on each).
+- **T-3/T-4 chain** — verified complete, no work needed. infra#621 landed the
+  `ref` input (`clean-room.yml` `workflow_dispatch.inputs.ref`, "Commit sha
+  (full 40 chars) or tag"), `assert-tested-ref.sh` runs at `:282` (self-test)
+  and `:291` (the assert), `tested_sha` is stamped at `:339`; and
+  `cascade-publish.sh:321` refuses to start unless clean-room is green on
+  exactly the tag's commit, fail-closed, "neither → REFUSE".
+- **ms 0.68** — 2 issues (#3091, #3208) + 4 PRs = 6, matching the revised §6.
+
+### `pack:` — the 0.8 rule is a false positive unless the cap is right
+
+Raw busy/online reads yoga 3/5 and gx10 4/6, which trips §1's 0.8 rule and would
+raise a §8 stop two wakeups running. `yoga-gpu` and `gx10-blackwell` are
+GPU-reserved **host** runners that cannot take `X64,clean-room` work; excluding
+them gives yoga 3/4 and gx10 4/5, and both boxes were demonstrably serving
+aprender (`guard-tree=yoga-build2`, `guard-cargo=gx10-build`,
+`vendored-schemas=intel-clean-room-2`). Occupancy cap = only runners that CAN
+take the job class. Ledger record in #3363.
+
+Also corrected: `workspace-test` is **not** X64-pinned. Main reads
+`runs-on: [self-hosted, Linux, clean-room]` (PMAT-3138/#3138) and gx10-pool1/2
+served it successfully at 11:38/11:43. The three groups landing on intel is
+scheduling chance, and it costs ~3× (gx10 10.6 min vs intel 34.5 for step 1).
+
+### Shipped this interval
+
+| | |
+|---|---|
+| #3320 | **fixed by me** — regenerated tolerances, pushed; this is what unblocked the queue |
+| #3360 | H1 SIMD speedup assertion no longer fails a debug-build required check; release still enforces; mutation proof RED |
+| #3361 | P0·Unwedge — superseded-head + aged-with-idle-capacity, capacity host-side, `cancel-in-progress` narrowed to `pull_request` |
+| #3363 | pack ledger record + the cap correction above |
+| #3362 | the merge_group-only visibility asymmetry |
+| #3359 | wall-clock assertions in a required check |
+
+### Still open
+
+| | |
+|---|---|
+| #3354 | green, queue position 7; PR2 arms only after it merges |
+| #3355 / #3356 | rebased, CI running, **intentionally unarmed** |
+| #3114 | needs the series + #3360 before it can leave draft |
+| #3320 | `workspace-test` pending; **I will re-arm it** — I asked its author to hold |
+| #3361 | its own CI run has been `pending` with **0 jobs** for 11 min — the exact mechanism it fixes. Not hand-cancelled. |
+
+### Not claimed
+
+- `gpu-quick` on #3361 exits 101 with **no** `test result:` line and no `FAILED`
+  — the binary aborted rather than reporting. It is SUCCESS on #3360 and #3302,
+  so it is not broad. This looks like the same fault as **#3328**
+  (`aprender-gpu`'s test binary SIGSEGVs on identical Rust), already recorded in
+  this log. Not charged to #3361, not asserted as the same bug without the
+  dying test's name.
+- Three runs have sat `queued` with **0 jobs since 2026-09-13** (ages 4571,
+  4575, 4583 min); every other pending run carries 13–18 jobs. All three are
+  superseded (`8633da345` vs #3200's `7b452797f`; `d3571663f` vs #3202's
+  `9b4b0595e`; a `push` run whose head is an ancestor of main). Left alone —
+  operator ruling is no hand-cancels; they are rule-1's first real targets.
