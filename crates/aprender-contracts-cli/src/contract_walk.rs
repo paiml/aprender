@@ -79,10 +79,12 @@ impl fmt::Display for ParseErrors {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "{} of {} contract files under {} failed to parse",
+            "{} parse error{} under {}\n  {} of {} contract files measured did not parse",
+            self.errors.len(),
+            if self.errors.len() == 1 { "" } else { "s" },
+            self.path.display(),
             self.errors.len(),
             self.files,
-            self.path.display()
         )?;
         for (file, err) in &self.errors {
             write!(f, "\n  {}: {err}", file.display())?;
@@ -158,6 +160,21 @@ pub fn exit_code_for(err: &(dyn std::error::Error + 'static)) -> i32 {
         ZERO_CONTRACTS_EXIT
     } else {
         1
+    }
+}
+
+/// The verdict class `pv` prints before an error, in PVL-001 §0's vocabulary:
+/// `decline` (exit 2, nothing measured), `reject` (exit 1, measured and failed),
+/// `error` (anything else). One definition, so the word and the exit code cannot
+/// drift apart — ONT-001 §5 ONT-1 asserts both halves of the line.
+#[must_use]
+pub fn verdict_for(err: &(dyn std::error::Error + 'static)) -> &'static str {
+    if err.downcast_ref::<ZeroContracts>().is_some() {
+        "decline"
+    } else if err.downcast_ref::<ParseErrors>().is_some() {
+        "reject"
+    } else {
+        "error"
     }
 }
 

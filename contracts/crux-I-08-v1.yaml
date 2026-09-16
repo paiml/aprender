@@ -126,13 +126,17 @@ falsification_tests:
   if_fails: "stream finish_reason is not 'tool_calls' on terminal chunk"
 
 proof_obligations:
-- type: invariant
+- id: CI08F3C-INV-001
+  type: invariant
   property: "Every delta.tool_calls element contains required index field"
-- type: invariant
+- id: CI08F3C-INV-002
+  type: invariant
   property: "Reassembled function.arguments across deltas parses as valid JSON"
-- type: invariant
+- id: CI08F3C-INV-003
+  type: invariant
   property: "Terminal chunk finish_reason == 'tool_calls' when stream ends via tool call"
-- type: equivalence
+- id: CI08F3C-EQ-004
+  type: equivalence
   property: "apr serve /v1/chat/completions streaming tool_calls matches vLLM OpenAI-compatible delta schema on golden prompt 'sum 2 and 3' with add() tool"
   reference: "https://docs.vllm.ai/en/latest/features/tool_calling.html"
 

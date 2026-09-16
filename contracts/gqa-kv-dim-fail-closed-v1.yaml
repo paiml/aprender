@@ -52,7 +52,8 @@ equations:
     lean_theorem: Theorems.Gqa_Kv_Dim_Consistency
 
 proof_obligations:
-- type: invariant
+- id: GKDFC-INV-001
+  type: invariant
   property: reject-on-violation — inconsistent KV dims are rejected (fail-closed)
   formal: |
     For every (q, k_cache, v_cache, current_k, current_v) that violates any
@@ -61,7 +62,8 @@ proof_obligations:
     than kv_dim, or q shorter than q_dim), validate_gqa_kv_dims returns
     Err(RealizarError::InvalidConfiguration) and adaptive_attention_with_cache
     propagates that error rather than indexing the wrong memory or panicking.
-- type: invariant
+- id: GKDFC-INV-002
+  type: invariant
   property: no-false-positive-on-valid — valid GQA/MHA models pass unchanged
   formal: |
     For every (q, k_cache, v_cache, current_k, current_v) that satisfies every

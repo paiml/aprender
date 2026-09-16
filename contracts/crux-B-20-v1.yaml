@@ -82,11 +82,14 @@ falsification_tests:
 
   if_fails: rule 'matches llama-quantize-stats within numerical tolerance' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: equivalence
+- id: CB2-EQ-001
+  type: equivalence
   property: "apr diff --quant-roundtrip matches `llama-quantize-stats -v` per-tensor RMSE ± 1e-5"
-- type: invariant
+- id: CB2-INV-002
+  type: invariant
   property: "output rows sorted by rmse DESC; schema stable across versions"
-- type: invariant
+- id: CB2-INV-003
+  type: invariant
   property: "threshold-gate default 0.95; exit ≠ 0 on any tensor below"
 
 verification_summary:

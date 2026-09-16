@@ -65,27 +65,33 @@ equations:
     - roots ⊆ store.paths
     lean_theorem: Theorems.GC_Safety
 proof_obligations:
-- type: determinism
+- id: SCC179-DET-001
+  type: determinism
   property: Derivation deterministic
   formal: 'd₁ = d₂ → derive(d₁) = derive(d₂)'
   applies_to: all
-- type: completeness
+- id: SCC179-CMP-002
+  type: completeness
   property: Closure is transitive
   formal: 'ref ∈ closure(x) ∧ ref'' ∈ closure(ref) → ref'' ∈ closure(x)'
   applies_to: all
-- type: monotonicity
+- id: SCC179-MON-003
+  type: monotonicity
   property: Purity propagates upward
   formal: 'purity(d) ≥ max(purity(input_i))'
   applies_to: all
-- type: roundtrip
+- id: SCC179-RT-004
+  type: roundtrip
   property: FAR identity
   formal: unpack(pack(dir)) = dir
   applies_to: all
-- type: conservation
+- id: SCC179-CON-005
+  type: conservation
   property: GC preserves live paths
   formal: '∀ live path: path ∈ gc(store)'
   applies_to: all
-- type: precondition
+- id: SCC179-PRE-006
+  type: precondition
   property: Store path hash valid
   formal: StorePath.hash = BLAKE3(canonical_serialize(derivation))
   applies_to: all

@@ -9,9 +9,9 @@ use crate::render::{draw_circle, draw_line_aa, draw_rect, draw_rect_outline, i32
 use crate::scale::{LinearScale, Scale};
 
 use super::aes::Aes;
-use super::coord::Coord;
+use super::coord::{apply, apply_limits, Coord};
 use super::data::DataFrame;
-use super::facet::Facet;
+use super::facet::{panels, Facet, Panel};
 use super::geom::{Geom, GeomType, PointShape};
 use super::theme::Theme;
 
@@ -202,6 +202,7 @@ impl GGPlot {
             aes: self.aes,
             layers: self.layers,
             coord: self.coord,
+            facet: self.facet,
             theme: self.theme,
             width: self.width,
             height: self.height,
@@ -217,6 +218,7 @@ pub struct BuiltGGPlot {
     aes: Aes,
     layers: Vec<Layer>,
     coord: Coord,
+    facet: Facet,
     theme: Theme,
     width: u32,
     height: u32,
@@ -224,70 +226,101 @@ pub struct BuiltGGPlot {
     title: Option<String>,
 }
 
+/// Where each panel sits in the figure.
+///
+/// Panels share one scale domain (ggplot2's `scales = "fixed"`), so marks stay comparable between
+/// panels; only the pixel rectangle differs.
+struct PanelGrid {
+    cell_w: u32,
+    cell_h: u32,
+    margin: u32,
+}
+
+impl PanelGrid {
+    fn new(panels: &[Panel], width: u32, height: u32, margin: u32) -> Self {
+        let ncol = panels.iter().map(|p| p.col + 1).max().unwrap_or(1);
+        let nrow = panels.iter().map(|p| p.row + 1).max().unwrap_or(1);
+        Self {
+            cell_w: width / u32::try_from(ncol).unwrap_or(1).max(1),
+            cell_h: height / u32::try_from(nrow).unwrap_or(1).max(1),
+            margin,
+        }
+    }
+
+    /// The drawable rectangle of one panel: `(x, y, w, h)`.
+    fn rect(&self, p: &Panel) -> (u32, u32, u32, u32) {
+        let cx = u32::try_from(p.col).unwrap_or(0) * self.cell_w;
+        let cy = u32::try_from(p.row).unwrap_or(0) * self.cell_h;
+        (
+            cx + self.margin,
+            cy + self.margin,
+            self.cell_w.saturating_sub(2 * self.margin),
+            self.cell_h.saturating_sub(2 * self.margin),
+        )
+    }
+}
+
 impl BuiltGGPlot {
-    /// Render to framebuffer.
+    /// Render to framebuffer, one sub-plot per facet panel.
     ///
     /// # Errors
     ///
-    /// Returns an error if rendering fails.
+    /// Propagates [`Error::UnknownColumn`] if the facet names a column the data lacks, and
+    /// [`Error::UnsupportedCoord`] for a `Polar` or `Fixed` coordinate system.
     pub fn to_framebuffer(&self) -> Result<Framebuffer> {
         let mut fb = Framebuffer::new(self.width, self.height)?;
 
         // Fill background
         fb.clear(self.theme.background);
 
-        let margin = self.theme.margin;
-        let plot_x = margin;
-        let plot_y = margin;
-        let plot_w = self.width.saturating_sub(2 * margin);
-        let plot_h = self.height.saturating_sub(2 * margin);
+        let ps = panels(&self.facet, &self.data)?;
+        let grid = PanelGrid::new(&ps, self.width, self.height, self.theme.margin);
+        for p in &ps {
+            self.render_panel(&mut fb, p, &grid)?;
+        }
 
-        // Draw panel background
-        draw_rect(
-            &mut fb,
-            i32_px(plot_x),
-            i32_px(plot_y),
-            plot_w,
-            plot_h,
-            self.theme.panel_background,
-        );
+        Ok(fb)
+    }
 
-        // Compute data ranges for scales
-        let (x_min, x_max, y_min, y_max) = self.compute_data_ranges();
+    /// Draw one panel: background, scales, grid, layers, axes, border.
+    fn render_panel(&self, fb: &mut Framebuffer, p: &Panel, grid: &PanelGrid) -> Result<()> {
+        let (plot_x, plot_y, plot_w, plot_h) = grid.rect(p);
 
-        // Apply coordinate limits if set
-        let (x_min, x_max, y_min, y_max) = match &self.coord {
-            Coord::Cartesian { xlim, ylim, .. } => {
-                let (xmin, xmax) = xlim.unwrap_or((x_min, x_max));
-                let (ymin, ymax) = ylim.unwrap_or((y_min, y_max));
-                (xmin, xmax, ymin, ymax)
-            }
-            _ => (x_min, x_max, y_min, y_max),
-        };
+        draw_rect(fb, i32_px(plot_x), i32_px(plot_y), plot_w, plot_h, self.theme.panel_background);
 
-        // Create scales
-        let x_scale = LinearScale::new((x_min, x_max), (plot_x as f32, (plot_x + plot_w) as f32))?;
-        let y_scale = LinearScale::new((y_min, y_max), ((plot_y + plot_h) as f32, plot_y as f32))?; // Inverted for screen coords
+        // Panels share one domain, so marks stay comparable between them.
+        let (dx_min, dx_max, dy_min, dy_max) = self.compute_data_ranges();
+        let ((x_min, x_max), (y_min, y_max)) = apply_limits(
+            &self.coord,
+            (f64::from(dx_min), f64::from(dx_max)),
+            (f64::from(dy_min), f64::from(dy_max)),
+        )?;
 
-        // Draw grid
+        // The scale pipeline below is still f32; the coordinate surface above is f64 (APEX-2c).
+        let x_scale = LinearScale::new(
+            (x_min as f32, x_max as f32),
+            (plot_x as f32, (plot_x + plot_w) as f32),
+        )?;
+        let y_scale = LinearScale::new(
+            (y_min as f32, y_max as f32),
+            ((plot_y + plot_h) as f32, plot_y as f32), // Inverted for screen coords
+        )?;
+
         if self.theme.show_grid {
-            self.draw_grid(&mut fb, &x_scale, &y_scale, plot_x, plot_y, plot_w, plot_h);
+            self.draw_grid(fb, &x_scale, &y_scale, plot_x, plot_y, plot_w, plot_h);
         }
 
-        // Draw each layer
         for layer in &self.layers {
-            self.render_layer(&mut fb, layer, &x_scale, &y_scale);
+            self.render_layer(fb, layer, p, &x_scale, &y_scale)?;
         }
 
-        // Draw axes
         if self.theme.show_axis {
-            self.draw_axes(&mut fb, plot_x, plot_y, plot_w, plot_h);
+            self.draw_axes(fb, plot_x, plot_y, plot_w, plot_h);
         }
 
-        // Draw panel border
         if self.theme.show_panel_border {
             draw_rect_outline(
-                &mut fb,
+                fb,
                 i32_px(plot_x),
                 i32_px(plot_y),
                 plot_w,
@@ -297,60 +330,82 @@ impl BuiltGGPlot {
             );
         }
 
-        Ok(fb)
+        Ok(())
+    }
+
+    /// The rows of `data` that belong to panel `p`.
+    ///
+    /// A layer carrying its own frame is faceted by the same variables as the plot, so it is
+    /// partitioned in its own right and matched to the panel by level — a layer is not replicated
+    /// whole into every panel.
+    fn panel_rows(&self, data: &DataFrame, p: &Panel) -> Result<Vec<usize>> {
+        if std::ptr::eq(data, &self.data) {
+            return Ok(p.rows.clone());
+        }
+        let own = panels(&self.facet, data)?;
+        Ok(own.into_iter().find(|q| q.levels == p.levels).map_or_else(Vec::new, |q| q.rows))
+    }
+
+    /// The panel's points, in coordinate space.
+    ///
+    /// Reads both columns row-aligned, keeps only rows where *both* are numeric, and pushes each
+    /// surviving pair through [`apply`] — so the coordinate transform happens before any geom sees
+    /// a point, and `x[i]`/`y[i]` are guaranteed to come from the same record.
+    fn panel_points(
+        &self,
+        data: &DataFrame,
+        aes: &Aes,
+        rows: &[usize],
+    ) -> Result<(Vec<f32>, Vec<f32>)> {
+        let xs = data.get_f32(aes.x.as_deref().unwrap_or("x")).unwrap_or_default();
+        let ys = data.get_f32(aes.y.as_deref().unwrap_or("y")).unwrap_or_default();
+
+        let mut xo = Vec::with_capacity(rows.len());
+        let mut yo = Vec::with_capacity(rows.len());
+        for &i in rows {
+            let (Some(Some(x)), Some(Some(y))) = (xs.get(i).copied(), ys.get(i).copied()) else {
+                continue;
+            };
+            let (tx, ty) = apply(&self.coord, f64::from(x), f64::from(y))?;
+            xo.push(tx as f32);
+            yo.push(ty as f32);
+        }
+        Ok((xo, yo))
+    }
+
+    /// Widen `acc` to cover the finite values of one column.
+    ///
+    /// A column that is unmapped or absent leaves the accumulator untouched, which is how a layer
+    /// that sets only `x` contributes nothing to the `y` range. Alignment is irrelevant here — only
+    /// the extremes matter — so this reads the compacting accessor deliberately.
+    fn extend_range(acc: (f32, f32), data: &DataFrame, col: Option<&String>) -> (f32, f32) {
+        let Some(col) = col else { return acc };
+        let Some(values) = data.get_f32_present(col) else { return acc };
+        values.iter().filter(|v| v.is_finite()).fold(acc, |(lo, hi), &v| (lo.min(v), hi.max(v)))
+    }
+
+    /// Give an empty or single-point span a width, then pad it by 5%.
+    fn padded(min: f32, max: f32) -> (f32, f32) {
+        let (min, max) = if min >= max { (min - 1.0, max + 1.0) } else { (min, max) };
+        let pad = (max - min) * 0.05;
+        (min - pad, max + pad)
     }
 
     /// Compute data ranges across all layers.
     fn compute_data_ranges(&self) -> (f32, f32, f32, f32) {
-        let mut x_min = f32::MAX;
-        let mut x_max = f32::MIN;
-        let mut y_min = f32::MAX;
-        let mut y_max = f32::MIN;
+        let mut x = (f32::MAX, f32::MIN);
+        let mut y = (f32::MAX, f32::MIN);
 
         for layer in &self.layers {
             let data = layer.data.as_ref().unwrap_or(&self.data);
             let layer_aes = self.aes.merge(&layer.aes);
-
-            // Get x column
-            if let Some(x_col) = &layer_aes.x {
-                if let Some(x_data) = data.get_f32(x_col) {
-                    for &v in &x_data {
-                        if v.is_finite() {
-                            x_min = x_min.min(v);
-                            x_max = x_max.max(v);
-                        }
-                    }
-                }
-            }
-
-            // Get y column
-            if let Some(y_col) = &layer_aes.y {
-                if let Some(y_data) = data.get_f32(y_col) {
-                    for &v in &y_data {
-                        if v.is_finite() {
-                            y_min = y_min.min(v);
-                            y_max = y_max.max(v);
-                        }
-                    }
-                }
-            }
+            x = Self::extend_range(x, data, layer_aes.x.as_ref());
+            y = Self::extend_range(y, data, layer_aes.y.as_ref());
         }
 
-        // Handle empty data or single point
-        if x_min >= x_max {
-            x_min -= 1.0;
-            x_max += 1.0;
-        }
-        if y_min >= y_max {
-            y_min -= 1.0;
-            y_max += 1.0;
-        }
-
-        // Add small padding
-        let x_pad = (x_max - x_min) * 0.05;
-        let y_pad = (y_max - y_min) * 0.05;
-
-        (x_min - x_pad, x_max + x_pad, y_min - y_pad, y_max + y_pad)
+        let (x_min, x_max) = Self::padded(x.0, x.1);
+        let (y_min, y_max) = Self::padded(y.0, y.1);
+        (x_min, x_max, y_min, y_max)
     }
 
     /// Draw grid lines.
@@ -416,22 +471,19 @@ impl BuiltGGPlot {
         &self,
         fb: &mut Framebuffer,
         layer: &Layer,
+        panel: &Panel,
         x_scale: &LinearScale,
         y_scale: &LinearScale,
-    ) {
+    ) -> Result<()> {
         let data = layer.data.as_ref().unwrap_or(&self.data);
         let aes = self.aes.merge(&layer.aes);
 
-        // Get data
-        let x_col = aes.x.as_deref().unwrap_or("x");
-        let y_col = aes.y.as_deref().unwrap_or("y");
-
-        let x_data = data.get_f32(x_col).unwrap_or_default();
-        let y_data = data.get_f32(y_col).unwrap_or_default();
+        let rows = self.panel_rows(data, panel)?;
+        let (x_data, y_data) = self.panel_points(data, &aes, &rows)?;
 
         let n = x_data.len().min(y_data.len());
         if n == 0 {
-            return;
+            return Ok(());
         }
 
         // Get style from aesthetics
@@ -462,6 +514,8 @@ impl BuiltGGPlot {
             }
             _ => {} // Other geoms not fully implemented yet
         }
+
+        Ok(())
     }
 
     /// Render point geometry.
@@ -725,9 +779,31 @@ mod tests {
     }
 
     #[test]
-    fn test_ggplot_facet() {
+    fn test_ggplot_facet_unknown_column_refuses() {
+        // This is the ORIGINAL test_ggplot_facet, which faceted by "category" on a frame built
+        // from `data_xy` — a frame whose only columns are "x" and "y". It asserted `width > 0`
+        // and passed, because the facet was dropped on the floor by `build()`. Now the missing
+        // column is an error, and that is the whole point of the row.
         let plot = GGPlot::new()
             .data_xy(&[1.0, 2.0], &[3.0, 4.0])
+            .geom(Geom::point())
+            .facet(Facet::wrap("category", 2))
+            .build()
+            .expect("operation should succeed");
+
+        assert!(matches!(plot.to_framebuffer(), Err(Error::UnknownColumn(_))));
+    }
+
+    #[test]
+    fn test_ggplot_facet_renders_one_panel_per_level() {
+        let mut df = DataFrame::new();
+        df.add_column_f32("x", &[1.0, 2.0, 3.0, 4.0]);
+        df.add_column_f32("y", &[1.0, 2.0, 3.0, 4.0]);
+        df.add_column_str("category", &["b", "a", "b", "c"]);
+
+        let plot = GGPlot::new()
+            .data(df)
+            .aes(Aes::new().x("x").y("y"))
             .geom(Geom::point())
             .facet(Facet::wrap("category", 2))
             .build()
@@ -915,7 +991,9 @@ mod tests {
 
     #[test]
     fn test_ggplot_coord_polar() {
-        // Non-cartesian coord doesn't apply limits
+        // A polar coord has no transform yet, so rendering REFUSES. It used to fall through a
+        // catch-all arm and render Cartesian output, which is indistinguishable from a polar plot
+        // that works.
         let plot = GGPlot::new()
             .data_xy(&[1.0, 2.0], &[3.0, 4.0])
             .geom(Geom::point())
@@ -923,8 +1001,7 @@ mod tests {
             .build()
             .expect("operation should succeed");
 
-        let fb = plot.to_framebuffer().expect("operation should succeed");
-        assert!(fb.width() > 0);
+        assert!(matches!(plot.to_framebuffer(), Err(Error::UnsupportedCoord(_))));
     }
 
     #[test]

@@ -20,7 +20,8 @@ equations:
     - b.len() > 0
     lean_theorem: Theorems.Conv1D
 proof_obligations:
-- type: invariant
+- id: CV-INV-001
+  type: invariant
   property: Output shape correctness
   formal: L_out = floor((L + 2*pad - K) / stride) + 1
   applies_to: all
@@ -36,7 +37,8 @@ proof_obligations:
     notes: The concrete List-valued valid convolution produces exactly
       x.length - w.length + 1 outputs, which equals the contract's L_out formula
       at pad=0, stride=1 (List.length_map / List.length_range).
-- type: linearity
+- id: CV-LIN-002
+  type: linearity
   property: Convolution linearity
   formal: '|conv(a*x + b*z) - (a*conv(x) + b*conv(z))| < eps'
   tolerance: 1.0e-05
@@ -52,7 +54,8 @@ proof_obligations:
     - Mathlib.Algebra.BigOperators.Ring.Finset
     notes: Exact (eps=0) real identity conv w (a·x+b·z) = a·conv w x + b·conv w z,
       strictly stronger than the FP-tolerance form. Corollaries conv_add, conv_smul.
-- type: equivalence
+- id: CV-EQ-003
+  type: equivalence
   property: Direct conv matches im2col+GEMM
   formal: '|conv_direct(x) - conv_im2col(x)| < eps'
   tolerance: 1.0e-06
@@ -63,7 +66,8 @@ proof_obligations:
     equivalence verified empirically at 1e-6 FP tolerance (FALSIFY-CV-003),
     not an abstract analytic identity. The abstract linearity that GEMM realises
     IS proved (conv_linear).
-- type: bound
+- id: CV-BND-004
+  type: bound
   property: Output bounded by input and kernel
   formal: '|y[n]| <= C_in * K * max(|w|) * max(|x|) + |bias|'
   applies_to: all
@@ -80,7 +84,8 @@ proof_obligations:
     notes: Single-channel (C_in=1), zero-bias case |conv w x n| <= w.length·Wmax·Xmax
       given |w[k]|<=Wmax, |x[m]|<=Xmax. Multi-channel adds C_in factor; bias adds
       |bias| by triangle inequality.
-- type: equivalence
+- id: CV-EQ-005
+  type: equivalence
   property: SIMD matches scalar within ULP
   tolerance: 8.0
   applies_to: simd

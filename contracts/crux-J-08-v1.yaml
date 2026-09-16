@@ -76,9 +76,11 @@ falsification_tests:
   if_fails: CRUX-J-08 three-way invariant — ambiguous commands must escalate, not default-deny or default-allow
 
 proof_obligations:
-- type: invariant
+- id: CJ0DF8C-INV-001
+  type: invariant
   property: "no shell.exec without prior SSC classification"
-- type: invariant
+- id: CJ0DF8C-INV-002
+  type: invariant
   property: "ambiguous verdict escalates to user confirmation"
 
 verification_summary:

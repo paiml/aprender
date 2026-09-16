@@ -1,0 +1,16 @@
+- id: PMAT-3359
+  github_issue: 3359
+  item_type: task
+  title: H1 SIMD dot speedup assertion is a wall-clock check in a required gate
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-16T12:10:03Z
+  updated: 2026-09-16T12:10:03Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

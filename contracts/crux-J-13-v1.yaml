@@ -71,9 +71,11 @@ falsification_tests:
   if_fails: CRUX-J-13 offline invariant — local provider must operate without network
 
 proof_obligations:
-- type: invariant
+- id: CJ1E77D-INV-001
+  type: invariant
   property: "provider is runtime-switchable"
-- type: invariant
+- id: CJ1E77D-INV-002
+  type: invariant
   property: "local provider requires no outbound network"
 
 verification_summary:

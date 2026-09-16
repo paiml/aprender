@@ -23,14 +23,16 @@ status: enforced
 date: 2026-06-14
 
 proof_obligations:
-  - type: invariant
+  - id: AGCAD-INV-001
+    type: invariant
     property: >
       GQA-DISPATCH: adaptive_attention_with_cache routes models with
       num_kv_heads < num_heads to the kv_dim-strided attention_with_cache_gqa kernel,
       so the KV cache ([seq, kv_dim]) and current_k/current_v ([kv_dim]) are never
       sliced past kv_dim. The q_dim-strided MHA path is used only when
       num_kv_heads == num_heads.
-  - type: equivalence
+  - id: AGCAD-EQ-002
+    type: equivalence
     property: >
       GQA-EQUIV: for a GQA model at any cache length (including past the >=64 GPU
       threshold), adaptive_attention_with_cache output equals

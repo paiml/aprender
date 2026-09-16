@@ -127,15 +127,20 @@ falsification_tests:
   if_fails: "apr diverges from HF Trainer canonical final_loss by >5%"
 
 proof_obligations:
-- type: invariant
+- id: CD0-INV-001
+  type: invariant
   property: "≥99% of trainable parameters changed post-train vs base checkpoint"
-- type: invariant
+- id: CD0-INV-002
+  type: invariant
   property: "val_loss non-increasing across epoch boundaries (±2% tolerance)"
-- type: invariant
+- id: CD0-INV-003
+  type: invariant
   property: "checkpoint written at every epoch boundary and resumable"
-- type: invariant
+- id: CD0-INV-004
+  type: invariant
   property: "final_loss within ±5% of transformers.Trainer reference on same seed/data"
-- type: equivalence
+- id: CD0-EQ-005
+  type: equivalence
   property: "apr finetune --method full ≡ Trainer(model, args, train_dataset).train()"
 
 # References:

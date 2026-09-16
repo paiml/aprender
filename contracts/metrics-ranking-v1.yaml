@@ -50,19 +50,23 @@ equations:
     - input.len() > 0
     lean_theorem: Theorems.Ndcg_At_K
 proof_obligations:
-- type: bound
+- id: RANK-BND-001
+  type: bound
   property: All metrics in [0, 1]
   formal: hit@k in {0,1}, RR in [0,1], MRR in [0,1], NDCG@k in [0,1]
   applies_to: all
-- type: invariant
+- id: RANK-INV-002
+  type: invariant
   property: NDCG perfect ranking
   formal: NDCG@k = 1.0 when items are sorted by decreasing relevance
   applies_to: all
-- type: invariant
+- id: RANK-INV-003
+  type: invariant
   property: hit@k binary
   formal: hit@k in {0, 1} for all k and all ranked lists
   applies_to: all
-- type: invariant
+- id: RANK-INV-004
+  type: invariant
   property: MRR bounded
   formal: 0 <= MRR <= 1 for any set of queries
   applies_to: all

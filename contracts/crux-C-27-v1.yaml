@@ -132,15 +132,19 @@ falsification_tests:
   if_fails: "apr run RSS > 1.5× llama-cli RSS — suggests missing mmap"
 
 proof_obligations:
-- type: equivalence
+- id: CC25598-EQ-001
+  type: equivalence
   property: "apr run uses mmap on GGUF model files, matching llama.cpp default behavior"
   competitor_function: "llama_mmap (llama.cpp) / use_mmap=true"
   reference: "https://github.com/ggerganov/llama.cpp"
-- type: invariant
+- id: CC25598-INV-002
+  type: invariant
   property: "mmap syscall issued against model fd; read() bytes bounded by header/index"
-- type: invariant
+- id: CC25598-INV-003
+  type: invariant
   property: "Post-load RSS strictly less than on-disk model size"
-- type: invariant
+- id: CC25598-INV-004
+  type: invariant
   property: "7B Q4_K_M startup time < 1s on NVMe"
 
 verification_summary:

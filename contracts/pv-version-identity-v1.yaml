@@ -59,35 +59,43 @@ equations:
       - "MUTATION-VERIFIED IN THE LIBRARY SCOPE SEPARATELY. The integration proof does not transfer: reverting the fix was re-run against `--lib` and turned 3 of 5 unit assertions RED"
 
 proof_obligations:
-  - type: invariant
+  - id: PVI-INV-001
+    type: invariant
     property: "`pv --version` is not the bare `<name> <semver>` form that every other `pv` also prints"
     formal: "cargo test -p aprender-contracts-cli --lib version_identity_unit exits 0"
     applies_to: version_output_identifies_this_tool_and_not_another
-  - type: invariant
+  - id: PVI-INV-002
+    type: invariant
     property: "The version output names the tool, the project, the shipping crate, and disclaims the pipe viewer"
     formal: "The version_identity integration target exits 0"
     applies_to: version_output_identifies_this_tool_and_not_another
-  - type: invariant
+  - id: PVI-INV-003
+    type: invariant
     property: "The identity assertions demonstrably turn RED"
     formal: "Replacing `version = SHORT_VERSION, long_version = LONG_VERSION` with a bare `version` fails 5 of 8 integration and 3 of 5 unit assertions"
     applies_to: version_output_identifies_this_tool_and_not_another
-  - type: invariant
+  - id: PVI-INV-004
+    type: invariant
     property: "The semver stays the second whitespace field of the first line"
     formal: "scripts/pv_bin.sh resolves and asserts freshness with exit 0"
     applies_to: identity_text_does_not_displace_the_semver_the_release_gate_reads
-  - type: invariant
+  - id: PVI-INV-005
+    type: invariant
     property: "The extractor tested by the case table is the one scripts/pv_bin.sh actually runs"
     formal: "scripts/check_pv_version_parse.sh compares against pv_bin.sh with full-line comments stripped, and fails on a mismatch"
     applies_to: identity_text_does_not_displace_the_semver_the_release_gate_reads
-  - type: invariant
+  - id: PVI-INV-006
+    type: invariant
     property: "The parse case table demonstrably turns RED"
     formal: "scripts/check_pv_version_parse.sh --self-test fails the table on the pre-#2559 last-field extractor"
     applies_to: identity_text_does_not_displace_the_semver_the_release_gate_reads
-  - type: invariant
+  - id: PVI-INV-007
+    type: invariant
     property: "The integration target is named on ci.yml's explicit --test line, not merely present in the tree"
     formal: "grep -q 'aprender-contracts-cli --test version_identity' .github/workflows/ci.yml"
     applies_to: the_assertions_run_where_ci_can_see_them
-  - type: invariant
+  - id: PVI-INV-008
+    type: invariant
     property: "The assertions also live in the library, so `--lib` reaches them without depending on the ci.yml line"
     formal: "crates/aprender-contracts-cli/src/lib.rs declares mod version_identity_unit under #[cfg(test)]"
     applies_to: the_assertions_run_where_ci_can_see_them

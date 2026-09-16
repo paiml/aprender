@@ -126,13 +126,17 @@ falsification_tests:
   if_fails: "Aborting a request blocks concurrent live requests"
 
 proof_obligations:
-- type: equivalence
+- id: CC38590-EQ-001
+  type: equivalence
   property: "apr serve client-disconnect semantics match vLLM AsyncLLMEngine.abort() (free KV, stop decode within one step)"
-- type: invariant
+- id: CC38590-INV-002
+  type: invariant
   property: "Client disconnect aborts generation within <= 1 decode step"
-- type: invariant
+- id: CC38590-INV-003
+  type: invariant
   property: "No KV cache leak across abort cycles (RSS bounded)"
-- type: invariant
+- id: CC38590-INV-004
+  type: invariant
   property: "Concurrent requests unaffected by aborts"
 
 verification_summary:

@@ -118,23 +118,28 @@ equations:
     - 'output_dir contains at least one shard whose token count >= seq+1 (i.e., ≥ 5 u32)'
 
 proof_obligations:
-- type: invariant
+- id: ATRM-INV-001
+  type: invariant
   property: Manifest shard count matches filesystem
   formal: 'manifest.shard_count == |{p ∈ output_dir : matches "shard-*.bin"}|'
   applies_to: shard_count_invariant
-- type: invariant
+- id: ATRM-INV-002
+  type: invariant
   property: Manifest total_tokens equals sum of shard sizes divided by 4
   formal: 'manifest.total_tokens == Σ_i (file_size(shard_i) / 4)'
   applies_to: total_tokens_invariant
-- type: invariant
+- id: ATRM-INV-003
+  type: invariant
   property: Manifest schema is the canonical pretokenize-bin-v1 string
   formal: 'manifest.schema == "pretokenize-bin-v1"'
   applies_to: schema_invariant
-- type: invariant
+- id: ATRM-INV-004
+  type: invariant
   property: Repaired manifests carry repair flag + RFC3339 timestamp
   formal: 'manifest.repair == true ∧ valid_rfc3339(manifest.repaired_at)'
   applies_to: repair_provenance_invariant
-- type: invariant
+- id: ATRM-INV-005
+  type: invariant
   property: ShardBatchIter consumes the directory after repair
   formal: 'ShardBatchIter::new(output_dir, ...).is_ok()'
   applies_to: shardbatchiter_consumability_invariant

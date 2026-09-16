@@ -69,11 +69,13 @@ equations:
     - 'C-CPU-LORA-FORWARD-BIAS-PARITY holds (CPU reference is the true model)'
 
 proof_obligations:
-- type: invariant
+- id: FEGF-INV-001
+  type: invariant
   property: evaluate takes the GPU forward when CUDA blocks exist
   formal: 'cuda_blocks.is_some() ⇒ CE_gpu_eval != CE_forced_cpu_eval (distinct arithmetic)'
   applies_to: eval_uses_training_forward
-- type: invariant
+- id: FEGF-INV-002
+  type: invariant
   property: GPU eval measures the same model as the CPU reference
   formal: '|CE_gpu_eval - CE_forced_cpu_eval| <= 0.5 (NF4 quantization band)'
   applies_to: eval_uses_training_forward

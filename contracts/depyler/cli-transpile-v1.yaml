@@ -86,27 +86,33 @@ equations:
     - '!config.is_empty()'
     lean_theorem: Theorems.Transpilation_Determinism
 proof_obligations:
-- type: postcondition
+- id: CT-POST-001
+  type: postcondition
   property: Exit 0 implies valid Rust output
   formal: 'exit_code(args, fs) == 0 => syn::parse_file(output).is_ok()'
   applies_to: all
-- type: postcondition
+- id: CT-POST-002
+  type: postcondition
   property: Exit 2 implies input rejection before transpilation
   formal: 'exit_code(args, fs) == 2 => no codegen phase executed'
   applies_to: all
-- type: invariant
+- id: CT-INV-003
+  type: invariant
   property: Exit code totality
   formal: 'forall args, fs: exit_code(args, fs) in {0, 1, 2}'
   applies_to: all
-- type: invariant
+- id: CT-INV-004
+  type: invariant
   property: Deterministic output
   formal: 'forall src, cfg: transpile(src, cfg) == transpile(src, cfg)'
   applies_to: all
-- type: invariant
+- id: CT-INV-005
+  type: invariant
   property: No partial output on failure
   formal: 'exit_code != 0 => output file is not created or is empty'
   applies_to: all
-- type: ordering
+- id: CT-ORD-006
+  type: ordering
   property: Validation before transpilation
   formal: input_validation(path) must complete before codegen(ast) begins
   applies_to: all

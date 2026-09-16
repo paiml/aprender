@@ -22,21 +22,25 @@ equations:
     - k.len() == v.len()
     lean_theorem: Theorems.Bidirectional_Attention
 proof_obligations:
-- type: equivalence
+- id: BA09E4-EQ-001
+  type: equivalence
   property: Causal parity on single-token input
   formal: '|BiAttn(q, k, v) - CausalAttn(q, k, v)| < eps for n=1'
   tolerance: 1.0e-06
   applies_to: all
-- type: invariant
+- id: BA09E4-INV-002
+  type: invariant
   property: Full attention density
   formal: attn_weights[i][j] > 0 for all i, j in 0..n
   applies_to: all
-- type: invariant
+- id: BA09E4-INV-003
+  type: invariant
   property: Weight normalization
   formal: sum_j(attn_weights[i][j]) = 1 for all i
   tolerance: 1.0e-05
   applies_to: all
-- type: invariant
+- id: BA09E4-INV-004
+  type: invariant
   property: No causal mask applied
   formal: attn_weights[i][j] > 0 for j > i (upper triangle non-zero)
   applies_to: all

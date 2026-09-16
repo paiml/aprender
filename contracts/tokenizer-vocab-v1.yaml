@@ -225,11 +225,13 @@ invariants:
 # =============================================================================
 
 proof_obligations:
-- type: equivalence
+- id: TV-EQ-001
+  type: equivalence
   property: Cross-contract consistency
   formal: vocab_size matches special-tokens-registry
   applies_to: all
-- type: bound
+- id: TV-BND-002
+  type: bound
   property: Token IDs within vocab
   formal: all non-zero token IDs < vocab_size
   applies_to: all

@@ -31,19 +31,23 @@ equations:
     - x.len() > 0
     lean_theorem: Theorems.Dropout_Eval
 proof_obligations:
-- type: invariant
+- id: DO-INV-001
+  type: invariant
   property: Eval mode is identity
   formal: dropout_eval(x) = x for all x
   applies_to: all
-- type: bound
+- id: DO-BND-002
+  type: bound
   property: Train mode is unbiased
   formal: E[dropout_train(x, p)] = x for all x, p in [0, 1)
   applies_to: all
-- type: invariant
+- id: DO-INV-003
+  type: invariant
   property: Output shape preserved
   formal: shape(dropout(x)) = shape(x) for both train and eval modes
   applies_to: all
-- type: bound
+- id: DO-BND-004
+  type: bound
   property: Drop probability in valid range
   formal: p in [0, 1) — p = 1 would cause division by zero
   applies_to: all

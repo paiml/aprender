@@ -62,27 +62,33 @@ equations:
     - vocab_size > 0
     lean_theorem: Theorems.Decode
 proof_obligations:
-- type: roundtrip
+- id: BTB5D7-RT-001
+  type: roundtrip
   property: Decode of encode recovers original text
   formal: decode(encode(text)) == text for all valid UTF-8 strings
   applies_to: all
-- type: invariant
+- id: BTB5D7-INV-002
+  type: invariant
   property: Deterministic encoding
   formal: encode(text) always produces the same token_ids for the same text and vocabulary
   applies_to: all
-- type: bound
+- id: BTB5D7-BND-003
+  type: bound
   property: Token IDs within vocabulary range
   formal: 0 <= encode(text)[i] < vocab_size for all i
   applies_to: all
-- type: bound
+- id: BTB5D7-BND-004
+  type: bound
   property: Non-empty input produces non-empty output
   formal: len(text) > 0 implies len(encode(text)) >= 1
   applies_to: all
-- type: monotonicity
+- id: BTB5D7-MON-005
+  type: monotonicity
   property: Encoding length bounded by input bytes
   formal: len(encode(text)) <= len(bytes(text)) — at most one token per byte
   applies_to: all
-- type: invariant
+- id: BTB5D7-INV-006
+  type: invariant
   property: add_prefix_space applies per non-special segment (PMAT-751)
   formal: with add_prefix_space=true, EVERY non-special segment (including one following a special token) is prefixed with a space unless it already starts with one (HuggingFace ByteLevel semantics); hence encode("a<SPECIAL>b") == encode("a<SPECIAL> b")
   applies_to: gpt2_byte_level

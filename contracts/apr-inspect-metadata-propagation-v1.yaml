@@ -43,15 +43,18 @@ equations:
       - "Standard GGUF keys are architecture-scoped (e.g., qwen2.embedding_length, llama.attention.head_count) — inspect must use these"
 
 proof_obligations:
-  - type: invariant
+  - id: AIMP-INV-001
+    type: invariant
     property: "metadata count agrees with file header kv_count"
     formal: "|InspectionReport(M).metadata| = apr_hex(M).kv_count"
     applies_to: metadata_completeness
-  - type: invariant
+  - id: AIMP-INV-002
+    type: invariant
     property: "all metadata keys are authentic on-disk keys"
     formal: "∀ k ∈ inspect(M).metadata: GgufReader.metadata[k] is defined"
     applies_to: metadata_key_authenticity
-  - type: postcondition
+  - id: AIMP-POST-003
+    type: postcondition
     property: "Qwen2.5-Coder 1.5B shows >=20 keys (not 4)"
     formal: "|inspect(qwen2.5-coder-1.5b-instruct-q4_k_m.gguf).metadata| >= 20"
     applies_to: metadata_completeness

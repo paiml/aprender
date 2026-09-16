@@ -74,9 +74,11 @@ falsification_tests:
   if_fails: CRUX-J-04 MCP invariant — event dispatch must be opt-in, not broadcast-default
 
 proof_obligations:
-- type: invariant
+- id: CJ05B81-INV-001
+  type: invariant
   property: "group-chat silence without mention"
-- type: invariant
+- id: CJ05B81-INV-002
+  type: invariant
   property: "DM responds without mention"
 
 verification_summary:

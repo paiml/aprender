@@ -42,15 +42,18 @@ equations:
     preconditions: []
     lean_theorem: Theorems.List_Completeness
 proof_obligations:
-- type: invariant
+- id: RI-INV-001
+  type: invariant
   property: Pull idempotency
   formal: '∀ a: hash(pull(a)) = hash(pull(a))'
   applies_to: pull_idempotency
-- type: invariant
+- id: RI-INV-002
+  type: invariant
   property: Run ID monotonicity
   formal: '∀ r1, r2: created_at(r1) < created_at(r2) → id(r1) < id(r2)'
   applies_to: run_lifecycle
-- type: invariant
+- id: RI-INV-003
+  type: invariant
   property: List no duplicates
   formal: '∀ X: |set(list_X())| = |list_X()|'
   applies_to: list_completeness

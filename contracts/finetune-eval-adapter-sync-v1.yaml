@@ -79,11 +79,13 @@ equations:
     - 'cuda_blocks initialized (quantize_nf4 = true) OR CPU/WGPU path (no-op sync)'
 
 proof_obligations:
-- type: invariant
+- id: FEAS-INV-001
+  type: invariant
   property: evaluate synchronizes GPU adapters into lora_layers before the forward
   formal: 'download(cuda_blocks) ≺ forward_with_lora(x, lora_layers) in evaluate()'
   applies_to: eval_reflects_trained_adapters
-- type: invariant
+- id: FEAS-INV-002
+  type: invariant
   property: per-epoch val_loss responds to changes in the trained adapters
   formal: 'g1 != g2 ⇒ evaluate|g1.val_loss != evaluate|g2.val_loss (generically)'
   applies_to: eval_reflects_trained_adapters

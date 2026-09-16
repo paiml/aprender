@@ -262,17 +262,23 @@ falsification_tests:
   if_fails: "headless mode broken during TUI migration"
 
 proof_obligations:
-- type: invariant
+- id: TRU-INV-001
+  type: invariant
   property: "all TUI uses presentar-terminal exclusively"
-- type: invariant
+- id: TRU-INV-002
+  type: invariant
   property: "consistent 3-zone layout across all commands"
-- type: invariant
+- id: TRU-INV-003
+  type: invariant
   property: "vim + arrow key navigation works everywhere"
-- type: invariant
+- id: TRU-INV-004
+  type: invariant
   property: "responsive: 2-col at 80+ width, 1-col below"
-- type: invariant
+- id: TRU-INV-005
+  type: invariant
   property: "WCAG AA contrast for all text"
-- type: invariant
+- id: TRU-INV-006
+  type: invariant
   property: "60 FPS frame budget with smart diffing"
 
 verification_summary:

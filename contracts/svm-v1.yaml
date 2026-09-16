@@ -52,19 +52,23 @@ equations:
     - input.iter().all(|v| v.is_finite())
     lean_theorem: Theorems.Margin
 proof_obligations:
-- type: bound
+- id: SVM-BND-001
+  type: bound
   property: Hinge loss non-negative
   formal: L ≥ 0 for all inputs
   applies_to: all
-- type: invariant
+- id: SVM-INV-002
+  type: invariant
   property: Binary prediction
   formal: predict(x) ∈ {0, 1} for all x
   applies_to: all
-- type: invariant
+- id: SVM-INV-003
+  type: invariant
   property: Prediction deterministic
   formal: predict(x) = predict(x) for all x
   applies_to: all
-- type: invariant
+- id: SVM-INV-004
+  type: invariant
   property: Separable data perfect accuracy
   formal: Linearly separable data ⟹ accuracy = 1.0 (given sufficient iterations)
   applies_to: all

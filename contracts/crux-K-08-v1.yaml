@@ -193,13 +193,17 @@ falsification_tests:
     full_discharge_blocked_on: "live aprender-serve OTLP exporter wiring W3C traceparent into emitted spans"
 
 proof_obligations:
-- type: invariant
+- id: CK0FA08-INV-001
+  type: invariant
   property: "apr inference emits OTLP span named 'apr.inference' when OTEL endpoint configured"
-- type: invariant
+- id: CK0FA08-INV-002
+  type: invariant
   property: "Spans carry gen_ai.* semantic-convention attributes plus apr.tokens.prompt/output"
-- type: invariant
+- id: CK0FA08-INV-003
+  type: invariant
   property: "W3C traceparent header is honored (trace_id propagated into exported spans)"
-- type: equivalence
+- id: CK0FA08-EQ-004
+  type: equivalence
   property: "apr serve OpenTelemetry instrumentation matches GenAI semantic conventions and OTLP export protocol as implemented by opentelemetry-instrumentation reference libraries"
   reference: "https://opentelemetry.io/docs/specs/semconv/gen-ai/"
 

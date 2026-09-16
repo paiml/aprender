@@ -79,11 +79,14 @@ falsification_tests:
 
   if_fails: rule 'determinism under fixed seed' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: equivalence
+- id: CE24E6A-EQ-001
+  type: equivalence
   property: "apr eval-vlm matches OpenCLIP zero_shot + LAION CLIP_benchmark metric definitions"
-- type: invariant
+- id: CE24E6A-INV-002
+  type: invariant
   property: "top5 ≥ top1; R@1 ≤ R@5 ≤ R@10"
-- type: invariant
+- id: CE24E6A-INV-003
+  type: invariant
   property: "determinism under fixed seed"
 
 verification_summary:

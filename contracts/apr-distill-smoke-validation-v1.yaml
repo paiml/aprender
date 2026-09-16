@@ -77,25 +77,29 @@ equations:
     lean_theorem: Theorems.No_Side_Effects
 
 proof_obligations:
-- type: invariant
+- id: ADSV-INV-001
+  type: invariant
   property: APR_DISTILL_MAX_STEPS unset -> existing behavior preserved
   formal: |
     For every (teacher, student, config) with APR_DISTILL_MAX_STEPS not in env:
     pipeline.train()'s step counter, loss trajectory, and exit point are byte-equivalent
     to the pre-PMAT-706 implementation. The new code path is purely additive.
-- type: invariant
+- id: ADSV-INV-002
+  type: invariant
   property: early-break terminates within one step of the condition
   formal: |
     Let M = APR_DISTILL_MAX_STEPS. For every step k: if k >= M after the
     step increment, the inner loop breaks before reaching step k+1.
     Total steps run is exactly M (not M+1, not M-1).
-- type: invariant
+- id: ADSV-INV-003
+  type: invariant
   property: smoke summary fires iff early-break triggered
   formal: |
     For every pipeline.train() invocation: the "[SMOKE]" log lines appear
     if and only if the loop exited via the APR_DISTILL_MAX_STEPS path (not
     via normal epoch exhaustion or CallbackAction::Stop).
-- type: classification
+- id: ADSV-CLS-004
+  type: classification
   property: smoke mode produces no output.apr
   formal: |
     For every smoke-mode invocation that completes >= 1 step:

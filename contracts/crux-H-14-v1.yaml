@@ -73,11 +73,14 @@ falsification_tests:
 
   if_fails: rule 'deterministic source sequence under fixed seed' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: equivalence
+- id: CH15915-EQ-001
+  type: equivalence
   property: "apr dataset mix matches HF `interleave_datasets` probabilities + stopping semantics"
-- type: invariant
+- id: CH15915-INV-002
+  type: invariant
   property: "observed source freq converges to probabilities (LLN)"
-- type: invariant
+- id: CH15915-INV-003
+  type: invariant
   property: "deterministic under fixed seed"
 
 verification_summary:

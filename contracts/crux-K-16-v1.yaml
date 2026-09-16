@@ -89,11 +89,14 @@ falsification_tests:
 
   if_fails: rule 'output shape matches config' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: equivalence
+- id: CK138C9-EQ-001
+  type: equivalence
   property: "apr serve emit-triton produces tritonserver-loadable model-repository"
-- type: invariant
+- id: CK138C9-INV-002
+  type: invariant
   property: "config.pbtxt parses + model loads to READY"
-- type: invariant
+- id: CK138C9-INV-003
+  type: invariant
   property: "output tensor shape matches config"
 
 verification_summary:

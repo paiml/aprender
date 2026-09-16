@@ -147,15 +147,20 @@ falsification_tests:
   if_fails: "Greedy selection did not pick the max-logprob token in top_logprobs"
 
 proof_obligations:
-- type: equivalence
+- id: CC2BB15-EQ-001
+  type: equivalence
   property: "apr serve /v1/chat/completions logprobs schema matches OpenAI chat-completion logprobs on golden prompt (canonical top_logprobs=5)"
-- type: equivalence
+- id: CC2BB15-EQ-002
+  type: equivalence
   property: "apr logprobs semantics match vLLM SamplingParams(logprobs=N) on golden prompt"
-- type: invariant
+- id: CC2BB15-INV-003
+  type: invariant
   property: "len(logprobs.content) == completion_tokens"
-- type: invariant
+- id: CC2BB15-INV-004
+  type: invariant
   property: "All logprob values are <= 0.0"
-- type: invariant
+- id: CC2BB15-INV-005
+  type: invariant
   property: "Greedy selection picks argmax of top_logprobs"
 
 verification_summary:

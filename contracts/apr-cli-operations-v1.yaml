@@ -157,49 +157,56 @@ kernel_structure:
     description: Verify postconditions, release resources, return result
 
 proof_obligations:
-- type: invariant
+- id: ACO-INV-001
+  type: invariant
   property: ReadOnly commands have no side effects
   formal: forall cmd in ReadOnly, fs_state_before == fs_state_after
   applies_to: side_effect_classification
   lean:
     theorem: Theorems.SideEffectClassification
     status: sorry
-- type: invariant
+- id: ACO-INV-002
+  type: invariant
   property: No resource leaks after command exit
   formal: forall cmd, gpu_mem_after <= gpu_mem_before AND tmp_files_after <= tmp_files_before
   applies_to: resource_cleanup
   lean:
     theorem: Theorems.ResourceCleanup
     status: sorry
-- type: determinism
+- id: ACO-DET-003
+  type: determinism
   property: Greedy decoding is deterministic
   formal: temperature=0 -> run(m,p,s) == run(m,p,s)
   applies_to: inference_determinism
   lean:
     theorem: Theorems.InferenceDeterminism
     status: sorry
-- type: monotonicity
+- id: ACO-MON-004
+  type: monotonicity
   property: Progress percentage monotonically increasing
   formal: forall t1 < t2, progress(t1).pct <= progress(t2).pct
   applies_to: progress_reporting
   lean:
     theorem: Theorems.ProgressReporting
     status: sorry
-- type: invariant
+- id: ACO-INV-005
+  type: invariant
   property: Concurrent inference results independent
   formal: result_i independent of request ordering
   applies_to: concurrent_model_access
   lean:
     theorem: Theorems.ConcurrentModelAccess
     status: sorry
-- type: roundtrip
+- id: ACO-RT-006
+  type: roundtrip
   property: Tokenizer encode/decode roundtrip
   formal: decode(encode(text)) == text for valid UTF-8
   applies_to: tokenizer_consistency
   lean:
     theorem: Theorems.TokenizerConsistency
     status: sorry
-- type: bound
+- id: ACO-BND-007
+  type: bound
   property: Token count bounded by input length
   formal: encode(text).len() <= text.len() * MAX_EXPANSION_RATIO
   tolerance: 1e-6

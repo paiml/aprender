@@ -217,13 +217,17 @@ falsification_tests:
     full_discharge_blocked_on: "live /v1/chat/completions handler returning a response when tools[] is absent"
 
 proof_obligations:
-- type: invariant
+- id: CC1E1D8-INV-001
+  type: invariant
   property: "tool_calls[].function.name is drawn from the declared tools[].function.name set"
-- type: invariant
+- id: CC1E1D8-INV-002
+  type: invariant
   property: "tool_calls[].function.arguments parses as JSON and validates against declared parameter schema"
-- type: invariant
+- id: CC1E1D8-INV-003
+  type: invariant
   property: "finish_reason == 'tool_calls' whenever tool_calls[] is non-empty"
-- type: invariant
+- id: CC1E1D8-INV-004
+  type: invariant
   property: "When tools absent, tool_calls is absent/empty and finish_reason ∈ {stop, length}"
 
 verification_summary:

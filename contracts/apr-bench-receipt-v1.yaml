@@ -111,17 +111,21 @@ falsification_tests:
     floor rather than sweep a smaller table clean'
 
 proof_obligations:
-- type: invariant
+- id: ABR-INV-001
+  type: invariant
   property: 'compute_class is present, in vocabulary, and reachable by the recorded
     feature_set (F-BENCH-001)'
   formal: 'forall r: r.provenance.compute_class in CLASSES and (class in {cuda,wgpu} => class in r.provenance.feature_set)'
-- type: invariant
+- id: ABR-INV-002
+  type: invariant
   property: 'No receipt carries both a cross-class comparability and a threshold (F-BENCH-002)'
   formal: 'forall r: r.comparability = cross-class-existence-only => threshold notin r'
-- type: soundness
+- id: ABR-SND-003
+  type: soundness
   property: 'Raw samples are present, non-empty, non-constant, and consistent with n (F-BENCH-003)'
   formal: 'forall r: |r.samples_ms| >= 1 and (|r.samples_ms| > 1 => |set| > 1) and r.n = |r.samples_ms|'
-- type: invariant
+- id: ABR-INV-004
+  type: invariant
   property: 'The validator is proven to discriminate before any verdict it emits is
     believed, and its case table cannot shrink silently (F-BENCH-004)'
   formal: '|cases| >= 14 and forall c in cases: verdict(c) = declared(c)'

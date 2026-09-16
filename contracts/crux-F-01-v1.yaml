@@ -110,15 +110,20 @@ falsification_tests:
   if_fails: "stats violate min <= mean <= max or negative std"
 
 proof_obligations:
-- type: invariant
+- id: CF0-INV-001
+  type: invariant
   property: "per-tensor JSON schema has name/shape/dtype/num_elements/min/max/mean/std"
-- type: invariant
+- id: CF0-INV-002
+  type: invariant
   property: "num_elements == prod(shape) for every tensor"
-- type: invariant
+- id: CF0-INV-003
+  type: invariant
   property: "dtype string is from canonical set {F32,F16,BF16,Q4K,Q5K,Q6K,Q8K,Q8_0,I32,I8}"
-- type: invariant
+- id: CF0-INV-004
+  type: invariant
   property: "min <= mean <= max and std >= 0 for every tensor"
-- type: equivalence
+- id: CF0-EQ-005
+  type: equivalence
   property: "sum(apr.num_elements) == gguf-py GGUFReader total element count (byte-identical on golden GGUF fixture)"
   competitor: llama_cpp
   reference: "https://github.com/ggerganov/llama.cpp/tree/master/gguf-py (GGUFReader.tensors[].n_elements)"

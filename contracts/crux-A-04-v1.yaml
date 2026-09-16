@@ -163,13 +163,17 @@ falsification_tests:
   if_fails: "apr pull file selection diverges from huggingface-cli"
 
 proof_obligations:
-- type: invariant
+- id: CA04374-INV-001
+  type: invariant
   property: "Selected(R, I, X) = (R ∩ I) \\ X with I=∅ ⇒ R"
-- type: invariant
+- id: CA04374-INV-002
+  type: invariant
   property: "Second identical pull is cache hit (no network I/O)"
-- type: equivalence
+- id: CA04374-EQ-003
+  type: equivalence
   property: "apr pull globs ≡ huggingface-cli download globs on evidence goldens"
-- type: invariant
+- id: CA04374-INV-004
+  type: invariant
   property: "Glob syntax matches huggingface_hub fnmatch semantics"
 
 verification_summary:

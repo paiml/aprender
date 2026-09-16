@@ -1,0 +1,14 @@
+use std::collections::HashMap;
+
+/// Count how often each word appears, ignoring case.
+pub fn word_counts(text: &str) -> HashMap<String, usize> {
+    let mut counts = HashMap::new();
+    for word in text.split_whitespace() {
+        let key = word.trim_matches(|c: char| !c.is_alphanumeric()).to_lowercase();
+        if key.is_empty() {
+            continue;
+        }
+        *counts.entry(key).or_insert(0) += 1;
+    }
+    counts
+}

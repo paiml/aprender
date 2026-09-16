@@ -146,7 +146,8 @@ kernel_structure:
       JSON validity (headless) or terminal restoration (TUI).
 
 proof_obligations:
-- type: postcondition
+- id: AGD-POST-001
+  type: postcondition
   property: PTX assembly is syntactically valid for target architecture
   formal: "forall arch in supported_archs, ptx_emit(model, arch).is_ok() implies ptxas_parse(ptx).is_ok()"
   tolerance: 1e-6
@@ -154,21 +155,24 @@ proof_obligations:
   lean:
     theorem: Theorems.PtxCodeGeneration
     status: sorry
-- type: invariant
+- id: AGD-INV-002
+  type: invariant
   property: Every model layer maps to at least one GPU kernel
   formal: "forall layer in model.layers, kernel_map[layer].len() >= 1"
   applies_to: ptx_kernel_mapping
   lean:
     theorem: Theorems.PtxKernelMapping
     status: sorry
-- type: postcondition
+- id: AGD-POST-003
+  type: postcondition
   property: JSON headless mode emits valid NDJSON
   formal: "forall tick in 0..n, serde_json::from_str(output_lines[tick]).is_ok()"
   applies_to: cbtop_monitoring
   lean:
     theorem: Theorems.CbtopMonitoring
     status: sorry
-- type: bound
+- id: AGD-BND-004
+  type: bound
   property: GPU memory measurement within 5% of actual
   formal: "|reported.gpu_mem - actual.gpu_mem| / actual.gpu_mem <= 0.05"
   tolerance: 0.05

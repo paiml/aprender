@@ -41,23 +41,28 @@ equations:
     - input.iter().all(|v| v.is_finite())
     lean_theorem: Theorems.Objective
 proof_obligations:
-- type: invariant
+- id: KM-INV-001
+  type: invariant
   property: Nearest centroid assignment
   formal: '||x_i - mu_{c_i}|| <= ||x_i - mu_j|| for all j'
   applies_to: all
-- type: monotonicity
+- id: KM-MON-002
+  type: monotonicity
   property: Objective non-increasing
   formal: J_{t+1} <= J_t after each assignment+update step
   applies_to: all
-- type: bound
+- id: KM-BND-003
+  type: bound
   property: Objective non-negative
   formal: J >= 0
   applies_to: all
-- type: invariant
+- id: KM-INV-004
+  type: invariant
   property: Valid cluster indices
   formal: c_i in {0, ..., K-1} for all i
   applies_to: all
-- type: equivalence
+- id: KM-EQ-005
+  type: equivalence
   property: SIMD matches scalar within ULP
   tolerance: 8.0
   applies_to: simd

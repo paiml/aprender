@@ -116,15 +116,18 @@ equations:
     - 'bias_upload_invariant holds'
 
 proof_obligations:
-- type: invariant
+- id: APCFP-INV-001
+  type: invariant
   property: CPU/CUDA forward parity on populated Qwen
   formal: 'cosine_similarity(cpu_logits, cuda_logits) > 0.95 OR argmax matches'
   applies_to: cpu_cuda_logit_distribution_parity
-- type: invariant
+- id: APCFP-INV-002
+  type: invariant
   property: CUDA biases upload when use_bias=true
   formal: 'cuda_block.b_q.is_some() WHEN config.use_bias'
   applies_to: bias_upload_invariant
-- type: invariant
+- id: APCFP-INV-003
+  type: invariant
   property: forward pass applies biases after gemm
   formal: 'q_with_bias = gemm + bias_broadcast WHEN b_q.is_some()'
   applies_to: forward_applies_biases_invariant

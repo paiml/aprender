@@ -129,13 +129,17 @@ falsification_tests:
   if_fails: "PEFT LoRA attachment failed — converted output is not PEFT-ready"
 
 proof_obligations:
-- type: invariant
+- id: CB07F7E-INV-001
+  type: invariant
   property: "Output directory schema matches HF transformers expectations"
-- type: invariant
+- id: CB07F7E-INV-002
+  type: invariant
   property: "Dequantization error ≤ 1e-2 (∞-norm) vs reference f32"
-- type: invariant
+- id: CB07F7E-INV-003
+  type: invariant
   property: "Tokenizer round-trips on golden strings (encode∘decode ≡ id)"
-- type: equivalence
+- id: CB07F7E-EQ-004
+  type: equivalence
   property: "Converted model loads under transformers + peft identically to reference safetensors"
 
 verification_summary:

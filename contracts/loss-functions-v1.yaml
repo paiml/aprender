@@ -85,37 +85,45 @@ equations:
     - predicted.len() > 0
     lean_theorem: Theorems.Mse_Loss
 proof_obligations:
-- type: bound
+- id: LF-BND-001
+  type: bound
   property: All losses non-negative
   formal: L(y, ŷ) ≥ 0 for all loss functions
   applies_to: all
-- type: equivalence
+- id: LF-EQ-002
+  type: equivalence
   property: Zero loss at perfect prediction
   formal: L(y, y) = 0 for all y
   applies_to: all
-- type: invariant
+- id: LF-INV-003
+  type: invariant
   property: BCE monotonicity
   formal: BCE increases as predictions diverge from targets
   applies_to: bce
-- type: invariant
+- id: LF-INV-004
+  type: invariant
   property: Huber smoothness
   formal: Huber loss is C¹ at transition point |a| = δ
   applies_to: huber
-- type: invariant
+- id: LF-INV-005
+  type: invariant
   property: L1 symmetry
   formal: L1(y, ŷ) = L1(ŷ, y)
   applies_to: l1_loss
-- type: equivalence
+- id: LF-EQ-006
+  type: equivalence
   property: F-L1LOSS-BACKWARD-GRAD-001 L1 backward propagates gradient
   formal: 'after loss.backward(): get_grad(pred.id()) = Some, and equals sign(pred-target)/n
     for mean reduction (sign(pred-target) for sum); sign(0)=0. abs() must register an
     AbsBackward grad_fn so the autograd graph is not severed (PMAT-896).'
   applies_to: l1_loss
-- type: bound
+- id: LF-BND-007
+  type: bound
   property: NLL lower bound
   formal: NLL ≥ 0
   applies_to: nll
-- type: equivalence
+- id: LF-EQ-008
+  type: equivalence
   property: OBLIG-BCE-POSWEIGHT-PYTORCH-PARITY BCEWithLogits pos_weight weights only the positive term
   formal: 'BCEWithLogitsLoss::with_pos_weight(w).forward(logits, y) matches torch.nn.functional.binary_cross_entropy_with_logits(logits, y, pos_weight=w)
     within 1e-5. PyTorch applies pos_weight ONLY to the positive (log σ(x)) term: log_weight = 1 + (w-1)·y;

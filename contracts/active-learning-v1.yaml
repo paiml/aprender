@@ -56,23 +56,28 @@ equations:
     - input.iter().all(|v| v.is_finite())
     lean_theorem: Theorems.Qbc_Score
 proof_obligations:
-- type: bound
+- id: AL-BND-001
+  type: bound
   property: Uncertainty score in [0, 1]
   formal: 'forall p valid prob vec: 0 <= u(p) <= 1'
   applies_to: all
-- type: bound
+- id: AL-BND-002
+  type: bound
   property: Margin score in [0, 1]
   formal: 'forall p valid prob vec with |p| >= 2: 0 <= m(p) <= 1'
   applies_to: all
-- type: bound
+- id: AL-BND-003
+  type: bound
   property: Entropy is non-negative
   formal: 'forall p valid prob vec: H(p) >= 0'
   applies_to: all
-- type: bound
+- id: AL-BND-004
+  type: bound
   property: Vote entropy is non-negative
   formal: 'forall committee predictions: H_vote >= 0'
   applies_to: all
-- type: invariant
+- id: AL-INV-005
+  type: invariant
   property: Higher uncertainty selects more ambiguous samples
   formal: u(uniform(k)) >= u(one_hot(k)) for all k >= 2
   applies_to: all

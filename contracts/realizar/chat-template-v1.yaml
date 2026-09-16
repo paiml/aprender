@@ -128,19 +128,23 @@ equations:
     - Output is deterministic and reproducible
 
 proof_obligations:
-- type: invariant
+- id: CT7C0E-INV-001
+  type: invariant
   property: Qwen3 never gets ChatML template
   formal: '!name.contains("qwen3") || detect_format_from_name(name) == Qwen3NoThink'
   applies_to: architecture_aware_selection
-- type: invariant
+- id: CT7C0E-INV-002
+  type: invariant
   property: AppState always caches GGUF architecture
   formal: 'with_quantized_model_and_vocab(m, v).cached_architecture.is_some()'
   applies_to: appstate_architecture_cache
-- type: invariant
+- id: CT7C0E-INV-003
+  type: invariant
   property: strip_thinking_blocks removes all tags
   formal: '!strip_thinking_blocks(s).contains("<think>") && !strip_thinking_blocks(s).contains("</think>")'
   applies_to: thinking_block_suppression
-- type: invariant
+- id: CT7C0E-INV-004
+  type: invariant
   property: format_conversation is pure
   formal: '∀ T, M: T.format_conversation(M) == T.format_conversation(M)'
   applies_to: format_conversation_determinism

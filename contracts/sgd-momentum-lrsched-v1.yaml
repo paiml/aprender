@@ -67,7 +67,8 @@ equations:
     lean_theorem: Theorems.Sgd_Parameter_Update_Fresh_Lr
 
 proof_obligations:
-- type: equivalence
+- id: SML-EQ-001
+  type: equivalence
   property: SGD momentum matches PyTorch under an LR schedule
   formal: |
     For one parameter with grad g=1.0, momentum mu=0.9, theta0=0.0: stepping at
@@ -75,7 +76,8 @@ proof_obligations:
     PyTorch closed form b=mu*b+g, theta-=lr*b), NOT the lr-baked -0.200.
   tolerance: 1.0e-06
   applies_to: all
-- type: equivalence
+- id: SML-EQ-002
+  type: equivalence
   property: Scalar and SIMD paths agree under an LR schedule
   formal: |
     The scalar fallback (length < 16) and SIMD (length >= 16) paths produce the
@@ -83,7 +85,8 @@ proof_obligations:
     lr-scheduled witness above.
   tolerance: 1.0e-06
   applies_to: all
-- type: invariant
+- id: SML-INV-003
+  type: invariant
   property: Constant-lr behavior is preserved (no regression)
   formal: |
     With lr fixed (never changed), two steps of (g=1.0, mu=0.9, theta0=0.0) give

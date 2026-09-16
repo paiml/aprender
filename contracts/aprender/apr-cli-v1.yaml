@@ -295,42 +295,48 @@ kernel_structure:
     description: Verify postconditions, cleanup resources, return exit code
 
 proof_obligations:
-- type: determinism
+- id: AC617A-DET-001
+  type: determinism
   property: Command parsing is deterministic
   formal: forall argv, parse(argv) == parse(argv)
   applies_to: command_parse_determinism
   lean:
     theorem: Theorems.CommandParseDeterminism
     status: sorry
-- type: completeness
+- id: AC617A-CMP-002
+  type: completeness
   property: Contract gate exempts all diagnostic commands
   formal: forall cmd in DiagnosticCommands, extract_model_paths(cmd) == []
   applies_to: contract_gate_enforcement
   lean:
     theorem: Theorems.ContractGateEnforcement
     status: sorry
-- type: invariant
+- id: AC617A-INV-003
+  type: invariant
   property: Skip-contract flag bypasses validation
   formal: cli.skip_contract == true -> no validate_model_contract() call
   applies_to: contract_gate_enforcement
   lean:
     theorem: Theorems.ContractGateEnforcementSkip
     status: sorry
-- type: invariant
+- id: AC617A-INV-004
+  type: invariant
   property: Training plan has no side effects
   formal: fs_state_before(train_plan(args)) == fs_state_after(train_plan(args))
   applies_to: training_plan_apply_semantics
   lean:
     theorem: Theorems.TrainingPlanApplySemantics
     status: sorry
-- type: postcondition
+- id: AC617A-POST-005
+  type: postcondition
   property: Training apply writes only to output directory
   formal: forall file in modified_files(train_apply(plan)), file.starts_with(plan.output_dir)
   applies_to: training_plan_apply_semantics
   lean:
     theorem: Theorems.TrainingApplyOutputDir
     status: sorry
-- type: postcondition
+- id: AC617A-POST-006
+  type: postcondition
   property: Tokenizer vocabulary size matches requested size
   formal: len(vocab) == vocab_size after tokenize_apply()
   tolerance: 1e-6
@@ -338,21 +344,24 @@ proof_obligations:
   lean:
     theorem: Theorems.TokenizerTrainingCorrectness
     status: sorry
-- type: invariant
+- id: AC617A-INV-007
+  type: invariant
   property: Stdin tempfile cleaned up via RAII
   formal: forall invocation, tmp_files_after <= tmp_files_before
   applies_to: pipe_stdin_support
   lean:
     theorem: Theorems.PipeStdinSupport
     status: sorry
-- type: invariant
+- id: AC617A-INV-008
+  type: invariant
   property: Directory resolution is deterministic
   formal: forall dir, resolve_model_path(dir) == resolve_model_path(dir)
   applies_to: model_path_resolution
   lean:
     theorem: Theorems.ModelPathResolution
     status: sorry
-- type: postcondition
+- id: AC617A-POST-009
+  type: postcondition
   property: Shard index.json takes priority in directory resolution
   formal: >
     dir.contains("model.safetensors.index.json") ->
@@ -361,21 +370,24 @@ proof_obligations:
   lean:
     theorem: Theorems.ModelPathResolutionShardPriority
     status: sorry
-- type: invariant
+- id: AC617A-INV-010
+  type: invariant
   property: Error results never exit 0
   formal: 'forall e: CliError, exit_code(Err(e)) != 0'
   applies_to: exit_code_semantics
   lean:
     theorem: Theorems.ExitCodeSemantics
     status: sorry
-- type: invariant
+- id: AC617A-INV-011
+  type: invariant
   property: Piped output contains no ANSI escapes
   formal: '!isatty(stdout) => output.contains("\x1b[") == false'
   applies_to: tty_detection
   lean:
     theorem: Theorems.TtyDetection
     status: sorry
-- type: invariant
+- id: AC617A-INV-012
+  type: invariant
   property: SIGPIPE does not cause panic
   formal: 'write_to_closed_pipe() => exit(0 | 141), not panic'
   applies_to: sigpipe_handling

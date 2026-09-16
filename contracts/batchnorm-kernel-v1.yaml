@@ -41,7 +41,8 @@ equations:
     - input.len() > 0
     lean_theorem: Theorems.Batchnorm_Eval
 proof_obligations:
-- type: invariant
+- id: BN-INV-001
+  type: invariant
   property: Training output standardized
   formal: '|mean(BN(x)[:, c]) - beta_c| < eps per channel c when gamma=1'
   tolerance: 1.0e-05
@@ -57,7 +58,8 @@ proof_obligations:
     - Mathlib.Algebra.BigOperators.Group.Finset.Basic
     notes: Σₙ(xₙ-μ_B)=0, so mean(BN(x))=β exactly (any γ); with γ=1 the tolerance
       band holds for every tol>0.
-- type: bound
+- id: BN-BND-002
+  type: bound
   property: Denominator strictly positive
   formal: sqrt(sigma_B^2 + eps) > 0 when eps > 0
   applies_to: all
@@ -72,7 +74,8 @@ proof_obligations:
     - Mathlib.Data.Real.Sqrt
     notes: Batch variance ≥ 0 (sum of squares), so var + ε > 0, and √ of a positive
       is positive.
-- type: invariant
+- id: BN-INV-003
+  type: invariant
   property: Running variance non-negative
   formal: sigma_run >= 0 after any number of updates
   applies_to: all
@@ -86,7 +89,8 @@ proof_obligations:
     - Mathlib.Data.Real.Basic
     notes: Each EMA update (1-m)·prev+m·batch is a convex combination of non-negatives
       (m∈[0,1]); induction over the update list preserves σ_run ≥ 0.
-- type: equivalence
+- id: BN-EQ-004
+  type: equivalence
   property: Eval mode uses running stats
   formal: BN_eval(x) uses mu_run/sigma_run, not batch statistics
   applies_to: all
@@ -102,7 +106,8 @@ proof_obligations:
     notes: With variance pinned to the batch value (shared denom), μ_run≠μ_B and γ≠0
       force BN_eval(x)≠BN_train(x) at every index — refutes a mode flag that ignores
       running stats (FALSIFY-BN-004).
-- type: equivalence
+- id: BN-EQ-005
+  type: equivalence
   property: SIMD matches scalar within ULP
   tolerance: 8.0
   applies_to: simd

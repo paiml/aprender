@@ -90,29 +90,35 @@ equations:
     - '!source.is_empty()'
     lean_theorem: Theorems.Lint_Shell
 proof_obligations:
-- type: soundness
+- id: SC-SND-001
+  type: soundness
   property: Zero false negatives on known injection patterns
   formal: 'For all p in KNOWN_INJECTION_PATTERNS: |classify_injection(p)| >= 1'
   applies_to: all
-- type: soundness
+- id: SC-SND-002
+  type: soundness
   property: Zero false negatives on known secret patterns
   formal: 'For all p in KNOWN_SECRET_PATTERNS: |classify_secrets(p)| >= 1'
   applies_to: all
-- type: soundness
+- id: SC-SND-003
+  type: soundness
   property: Zero false negatives on known filesystem abuse
   formal: 'For all p in KNOWN_FS_ABUSE_PATTERNS: |classify_filesystem(p)| >= 1'
   applies_to: all
-- type: invariant
+- id: SC-INV-004
+  type: invariant
   property: Safe patterns produce no security diagnostic
   formal: 'For all p in KNOWN_SAFE_PATTERNS: classify_*(p) produces no Error-severity
     diagnostic'
   applies_to: all
-- type: invariant
+- id: SC-INV-005
+  type: invariant
   property: Diagnostic severity ordering
   formal: command injection (SEC001, SEC003) >= Error; unquoted vars (SEC002) >= Warning;
     info rules >= Info
   applies_to: all
-- type: invariant
+- id: SC-INV-006
+  type: invariant
   property: Rule ID uniqueness
   formal: Each diagnostic rule_id maps to exactly one check function; no rule ID collisions
   applies_to: all

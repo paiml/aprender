@@ -182,15 +182,20 @@ falsification_tests:
   if_fails: "APR_ATTN=flash2 silently succeeds (or fails without diagnostic) on pre-Ampere hardware"
 
 proof_obligations:
-- type: invariant
+- id: CC36B28-INV-001
+  type: invariant
   property: "FlashAttention-2 peak VRAM <= 0.5 × naive at L=8k"
-- type: invariant
+- id: CC36B28-INV-002
+  type: invariant
   property: "FlashAttention-2 per-token latency <= 0.85 × naive at L>=2k"
-- type: invariant
+- id: CC36B28-INV-003
+  type: invariant
   property: "cos(logits_flash, logits_naive) >= 0.9999 on deterministic sampling"
-- type: invariant
+- id: CC36B28-INV-004
+  type: invariant
   property: "APR_ATTN ∈ {flash2, auto, naive} honored; auto selects flash2 on SM>=80"
-- type: invariant
+- id: CC36B28-INV-005
+  type: invariant
   property: "APR_ATTN=flash2 fails loudly on pre-Ampere hardware"
 
 verification_summary:

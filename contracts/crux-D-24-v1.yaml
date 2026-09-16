@@ -74,11 +74,14 @@ falsification_tests:
 
   if_fails: rule 'loss curve unchanged (numerical parity with autograd)' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: equivalence
+- id: CD25320-EQ-001
+  type: equivalence
   property: "apr --activation-ckpt matches `torch.utils.checkpoint.checkpoint_sequential` recompute semantics"
-- type: invariant
+- id: CD25320-INV-002
+  type: invariant
   property: "empty policy ≡ no ckpt (byte-equal gradients)"
-- type: invariant
+- id: CD25320-INV-003
+  type: invariant
   property: "ckpt loss matches no-ckpt loss within 1e-5 per step"
 
 verification_summary:

@@ -155,11 +155,14 @@ falsification_tests:
     full_discharge_blocked_on: "wiring `APR_CUDA_SM_OVERRIDE` + `apr quantize --format fp8-e4m3` exit-code path through clap"
 
 proof_obligations:
-- type: equivalence
+- id: CB1DEF5-EQ-001
+  type: equivalence
   property: "apr quantize --fp8 matches `vllm serve --quantization fp8` numerical envelope (≤1% Frobenius)"
-- type: invariant
+- id: CB1DEF5-INV-002
+  type: invariant
   property: "FP8 quantize on sm<90 fails fast with actionable capability msg"
-- type: invariant
+- id: CB1DEF5-INV-003
+  type: invariant
   property: "per-tensor scale stored in metadata; dequant is exact inverse modulo FP8 ULP"
 
 verification_summary:

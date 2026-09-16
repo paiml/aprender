@@ -64,11 +64,14 @@ falsification_tests:
 
   if_fails: rule 'tag round-trips via pull' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: equivalence
+- id: CG00284-EQ-001
+  type: equivalence
   property: "apr publish --tag matches HF hub `create_tag(...)` git-ref semantics"
-- type: invariant
+- id: CG00284-INV-002
+  type: invariant
   property: "non-semver tags rejected without --force"
-- type: invariant
+- id: CG00284-INV-003
+  type: invariant
   property: "tag uniquely resolves to commit (round-trip)"
 
 verification_summary:

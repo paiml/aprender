@@ -196,13 +196,17 @@ falsification_tests:
     full_discharge_blocked_on: "live `apr profile --kv-timeline` emitting consistent aggregates"
 
 proof_obligations:
-- type: invariant
+- id: CF00C87-INV-001
+  type: invariant
   property: "timeline schema includes used/free blocks, used_pct, preemptions per step"
-- type: invariant
+- id: CF00C87-INV-002
+  type: invariant
   property: "block conservation: used + free == total at every step"
-- type: equivalence
+- id: CF00C87-EQ-003
+  type: equivalence
   property: "apr KV-timeline matches vllm gpu_cache_usage_perc metric within ±1% on identical workload"
-- type: invariant
+- id: CF00C87-INV-004
+  type: invariant
   property: "preemption only fires when used_pct >= preempt_threshold (default 0.95)"
 
 verification_summary:

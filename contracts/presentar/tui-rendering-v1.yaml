@@ -142,31 +142,38 @@ equations:
     lean_theorem: Theorems.Resize_Safety
 
 proof_obligations:
-- type: invariant
+- id: TR-INV-001
+  type: invariant
   property: CellBuffer bounds safety
   formal: No panic on any (x, y) input
   applies_to: all
-- type: equivalence
+- id: TR-EQ-002
+  type: equivalence
   property: Diff render equals full render
   formal: visual(diff) == visual(full) for all buffer pairs
   applies_to: all
-- type: invariant
+- id: TR-INV-003
+  type: invariant
   property: Dirty tracking consistency
   formal: dirty_count == 0 after render_diff
   applies_to: all
-- type: equivalence
+- id: TR-EQ-004
+  type: equivalence
   property: Unicode width matches UAX #11
   formal: display_width(c) == uax11_width(c) for all Unicode codepoints
   applies_to: all
-- type: invariant
+- id: TR-INV-005
+  type: invariant
   property: Color mode preserves contrast
   formal: contrast_ratio >= 4.5 in all color modes
   applies_to: all
-- type: bound
+- id: TR-BND-006
+  type: bound
   property: Zero allocations in render path
   formal: heap_alloc_count == 0 during render_diff and render_full
   applies_to: all
-- type: postcondition
+- id: TR-POST-007
+  type: postcondition
   property: Resize creates valid buffer
   formal: buffer.len() == new_width * new_height after resize
   applies_to: all

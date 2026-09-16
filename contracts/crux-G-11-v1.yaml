@@ -132,13 +132,17 @@ falsification_tests:
 
   if_fails: rule 'pushed model is pullable by ollama client' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: invariant
+- id: CG1C81E-INV-001
+  type: invariant
   property: "Emitted manifest conforms to OCI distribution spec v2 (schemaVersion=2, typed config+layers)"
-- type: invariant
+- id: CG1C81E-INV-002
+  type: invariant
   property: "Second publish of identical content uploads 0 bytes and exits 0"
-- type: invariant
+- id: CG1C81E-INV-003
+  type: invariant
   property: "Per-blob sha256 digest is verified at commit (PUT ?digest=sha256:...) and mismatch aborts with non-zero exit"
-- type: equivalence
+- id: CG1C81E-EQ-004
+  type: equivalence
   property: "Ollama client can `ollama pull` the manifest apr published (bytes-for-bytes interoperable)"
 
 verification_summary:

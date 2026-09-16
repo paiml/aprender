@@ -134,15 +134,18 @@ falsification_tests:
     - "tokenize_parquet::tests::collect_parquet_files_directory_filters_and_sorts (parquet collector ignores .json siblings)"
 
 proof_obligations:
-  - type: bound
+  - id: ACTECP-BND-001
+    type: bound
     property: "Producer accepts both .parquet and .jsonl extensions"
     formal: "∀ ext ∈ {'parquet', 'jsonl'}, collect_corpus_files(any_file_with_ext) → Ok(_)"
     applies_to: all
-  - type: equivalence
+  - id: ACTECP-EQ-002
+    type: equivalence
     property: "JSONL-input behavior unchanged from pre-extension baseline"
     formal: "encode_corpus(jsonl_corpus) ≡ pre_change_encode_corpus(jsonl_corpus)"
     applies_to: all
-  - type: equivalence
+  - id: ACTECP-EQ-003
+    type: equivalence
     property: "Round-trip through parquet is lossless at the text level"
     formal: "for_each_row(parquet_with_content_field) ≡ tokenizer.encode(content_value)"
     applies_to: all

@@ -42,15 +42,18 @@ equations:
     - b.len() > 0
     lean_theorem: Theorems.Mixing
 proof_obligations:
-- type: invariant
+- id: ICA-INV-001
+  type: invariant
   property: Output shape
   formal: ICA(X, k).shape = (n, k)
   applies_to: all
-- type: invariant
+- id: ICA-INV-002
+  type: invariant
   property: Deterministic output
   formal: transform(X) = transform(X) for fixed model
   applies_to: all
-- type: invariant
+- id: ICA-INV-003
+  type: invariant
   property: Component count
   formal: Number of output components = n_components
   applies_to: all

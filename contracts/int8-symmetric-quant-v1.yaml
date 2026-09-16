@@ -46,24 +46,29 @@ equations:
     - b.len() > 0
     lean_theorem: Theorems.Dequant_Dot
 proof_obligations:
-- type: equivalence
+- id: ISQ-EQ-001
+  type: equivalence
   property: INT8 matvec approximates fp16 matvec
   formal: '|int8_matvec(W, x) - fp16_matvec(W, x)| < tolerance element-wise'
   tolerance: 0.05
   applies_to: all
-- type: invariant
+- id: ISQ-INV-002
+  type: invariant
   property: 'Compression ratio: 1 byte per weight'
   formal: storage(W_q) = R * C bytes (vs 2 * R * C bytes for fp16)
   applies_to: all
-- type: invariant
+- id: ISQ-INV-003
+  type: invariant
   property: Scale positivity for non-zero rows
   formal: W[r,:] != 0 implies scale[r] > 0
   applies_to: all
-- type: invariant
+- id: ISQ-INV-004
+  type: invariant
   property: Quantized range
   formal: -127 <= W_q[r,i] <= 127 for all r,i
   applies_to: all
-- type: invariant
+- id: ISQ-INV-005
+  type: invariant
   property: Zero-row invariant
   formal: W[r,:] = 0 implies scale[r] = 0 and output[r] = bias[r]
   applies_to: all

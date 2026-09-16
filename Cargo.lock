@@ -501,8 +501,10 @@ version = "0.67.0"
 dependencies = [
  "aprender-contracts",
  "clap",
+ "serde",
  "serde_json",
  "serde_yaml",
+ "sha2 0.10.9",
  "tempfile",
 ]
 
@@ -715,7 +717,6 @@ dependencies = [
  "criterion 0.5.1",
  "crossterm 0.28.1",
  "futures",
- "num_cpus",
  "parquet",
  "pepita",
  "pollster",

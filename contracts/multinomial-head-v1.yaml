@@ -168,36 +168,44 @@ equations:
     - x.iter().all(|v| v.is_finite())
     lean_theorem: Theorems.Logit_Finiteness
 proof_obligations:
-- type: invariant
+- id: MH2592-INV-001
+  type: invariant
   property: Objective is the MEAN NLL plus an unpenalized-intercept L2 term
   formal: J(0, 0) = ln(K) exactly, and dJ/d(b) of the penalty term is identically 0
   applies_to: all
-- type: equivalence
+- id: MH2592-EQ-002
+  type: equivalence
   property: scikit-learn regularization relation
   formal: lambda = 1/(2*C*n) with n the row count; sklearn's optimum is a stationary point of J at that lambda and not at 1/(C*n)
   tolerance: 0.0001
   applies_to: all
-- type: invariant
+- id: MH2592-INV-003
+  type: invariant
   property: Analytic gradient agrees with central differences
   formal: for all j, |g[j] - (J(x + h e_j) - J(x - h e_j))/(2h)| / max(1, |g[j]|) < 1e-6 at h = 1e-6
   applies_to: all
-- type: invariant
+- id: MH2592-INV-004
+  type: invariant
   property: Penalty excluded from the intercept block
   formal: g[K*d + k] is independent of lambda for every k
   applies_to: all
-- type: invariant
+- id: MH2592-INV-005
+  type: invariant
   property: Intercept gauge is preserved
   formal: sum_k dJ/db[k] = 0 at every point, hence mean(b_fitted) is within 1e-9 of 0 from a zero initialization
   applies_to: all
-- type: bound
+- id: MH2592-BND-006
+  type: bound
   property: Probabilities are a distribution
   formal: every predicted row is finite and |sum_k p_k - 1| < 1e-6
   applies_to: all
-- type: invariant
+- id: MH2592-INV-007
+  type: invariant
   property: Convergence mapping is total
   formal: every ConvergenceStatus variant maps to exactly one Result outcome, and non-convergence is never Ok
   applies_to: all
-- type: invariant
+- id: MH2592-INV-008
+  type: invariant
   property: Fit is deterministic
   formal: two fits over identical inputs produce bitwise-identical stored f32 coefficients
   applies_to: all

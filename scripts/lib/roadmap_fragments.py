@@ -212,6 +212,101 @@ def _write_fragments(frags, preamble, entries_dir):
 
 
 
+# ------------------------------------------------------------------- changed
+
+def entry_map(text):
+    """-> (preamble, {id: block bytes}). Duplicate ids CONCATENATE rather than
+    overwrite: uniqueness is check_roadmap_ids_unique.sh's rule, and a reader
+    that silently dropped one side of a duplicate would compare the wrong
+    bytes."""
+    pre, entries = split_entries(text)
+    out = {}
+    for eid, block in entries:
+        out[eid] = out.get(eid, "") + block
+    return pre, out
+
+
+def changed_entries(base_text, head_text):
+    """-> (preamble_changed, [(verdict, id)]) over BYTE-EXACT entry blocks.
+
+    A re-serialisation that changes no field reads as CHANGED here, and that is
+    deliberate: check_roadmap_diff_additive.sh already refuses that shape
+    ("bytes differ, no field actually changed"), so the fragment gate must not
+    be the one place it reads as "nothing happened"."""
+    bpre, b = entry_map(base_text)
+    hpre, h = entry_map(head_text)
+    verdicts = [("ADDED", e) if e not in b else ("CHANGED", e)
+                for e in h if e not in b or h[e] != b[e]]
+    verdicts += [("REMOVED", e) for e in b if e not in h]
+    verdicts.sort(key=lambda v: (v[1], v[0]))
+    return bpre != hpre, verdicts
+
+
+# --------------------------------------------------------------------- adopt
+
+def _refuse_borrowed_anchor(eid, block, text):
+    """An entry that DEFINES an anchor other entries alias cannot be adopted on
+    its own: self_contain() strips the definition, and every `*idNNN` left in
+    the base would then be unresolvable YAML. Refuse rather than write a
+    roadmap.yaml that does not parse."""
+    defined = set(ANCHOR_DEF_RE.findall(block))
+    if not defined:
+        return
+    rest = text.replace(block, "", 1)
+    borrowed = sorted(d for d in defined if ("*" + d) in rest)
+    if borrowed:
+        raise ValueError(
+            "%s defines anchor(s) %s that other entries alias; adopting it alone "
+            "would leave them unresolvable. Split the whole file instead."
+            % (eid, ", ".join(borrowed)))
+
+
+def adopt(ids, roadmap_path=ROADMAP, entries_dir=ENTRIES):
+    """Move entries out of the aggregate's BASE and into docs/roadmaps/entries/.
+
+    This exists because `pmat work add` writes the monolith and knows nothing
+    about fragments (MEASURED 2026-09-16 on a clean worktree: one 16-line entry
+    appended to docs/roadmaps/roadmap.yaml and nothing else -- appended to the
+    TAIL, which check_roadmap_sorted.sh also refuses). Rather than block the
+    ticket path, the gate names a two-step:
+
+        pmat work add "..." --github-issue N
+        python3 scripts/lib/roadmap_fragments.py adopt <ID>
+
+    The second step writes the fragment and regenerates the aggregate, which
+    also moves the entry to its sorted slot. Every fragment is proved to parse
+    ALONE and to carry the mapping the monolith carried before anything is
+    written -- the same proof split() applies."""
+    import yaml
+    with open(roadmap_path, encoding="utf-8") as fh:
+        text = fh.read()
+    _preamble, entries = split_entries(text)
+    anchors = collect_anchors(text)
+    items = yaml.safe_load(text)["roadmap"]
+    if len(items) != len(entries):
+        raise ValueError("byte split (%d) disagrees with the parse (%d)"
+                         % (len(entries), len(items)))
+    at = {}
+    for i, (eid, _) in enumerate(entries):
+        at.setdefault(eid, []).append(i)
+    os.makedirs(entries_dir, exist_ok=True)
+    written = []
+    for eid in ids:
+        where = at.get(eid, [])
+        if not where:
+            raise ValueError("%s is not a top-level entry of %s" % (eid, roadmap_path))
+        if len(where) > 1:
+            raise ValueError("%s appears %d times in %s -- fix the duplicate first "
+                             "(check_roadmap_ids_unique.sh)" % (eid, len(where), roadmap_path))
+        block = entries[where[0]][1]
+        _refuse_borrowed_anchor(eid, block, text)
+        frag = _proved_fragment(eid, block, items[where[0]], anchors)
+        with open(fragment_path(eid, entries_dir), "w", encoding="utf-8") as fh:
+            fh.write(frag)
+        written.append(eid)
+    return written
+
+
 # ---------------------------------------------------------------- self-test
 
 BASE = (
@@ -349,26 +444,106 @@ def _check(base, out, frags):
     return 0
 
 
-def _emit(a, base, out, frags):
+def _emit(a, base, out, frags, roadmap):
     """The three terminal arms of `aggregate`: verify, write, or print."""
     if a.check:
         return _check(base, out, frags)
     if a.write:
-        with open(ROADMAP, "w", encoding="utf-8") as fh:
+        with open(roadmap, "w", encoding="utf-8") as fh:
             fh.write(out)
         sys.stderr.write("aggregate: %d base + %d fragment(s) -> %s\n"
-                         % (len(split_entries(base)[1]), len(frags), ROADMAP))
+                         % (len(split_entries(base)[1]), len(frags), roadmap))
         return 0
     sys.stdout.write(out)
     return 0
 
 
+def _paths(a):
+    """(roadmap, entries). --roadmap moves BOTH by default: a caller judging a
+    tree that is not this checkout (check_roadmap_fragment_required.sh extracts
+    base and head into a scratch dir) must never silently read this repo's live
+    docs/roadmaps/entries/ as the other tree's fragments."""
+    roadmap = a.roadmap or ROADMAP
+    if a.entries:
+        return roadmap, a.entries
+    if a.roadmap:
+        return roadmap, os.path.join(os.path.dirname(os.path.abspath(roadmap)), "entries")
+    return roadmap, ENTRIES
+
+
+def _read(path, what):
+    try:
+        with open(path, encoding="utf-8") as fh:
+            return fh.read()
+    except OSError as e:
+        sys.stderr.write("FAIL %s is unreadable (%s) -- this box cannot judge\n" % (what, e))
+        return None
+
+
+def _cmd_aggregate(a, roadmap, entries_dir):
+    base = _read(roadmap, roadmap)
+    if base is None:
+        return 2
+    frags = read_fragments(entries_dir)
+    try:
+        out = aggregate(base, frags)
+    except ValueError as e:
+        sys.stderr.write("FAIL %s\n" % e)
+        return 1
+    return _emit(a, base, out, frags, roadmap)
+
+
+def _cmd_changed(a):
+    """`changed --base A --head B` -> one `VERDICT<TAB>ID` line per entry whose
+    BYTES differ, plus `PREAMBLE` if the header did. The consumer decides
+    policy; this only reports. rc 2 (never 0) if either side is unreadable."""
+    if not a.base or not a.head:
+        sys.stderr.write("changed: --base and --head are both required\n")
+        return 2
+    base = _read(a.base, a.base)
+    head = _read(a.head, a.head)
+    if base is None or head is None:
+        return 2
+    pre_changed, verdicts = changed_entries(base, head)
+    if pre_changed:
+        sys.stdout.write("PREAMBLE\t(the header outside every entry)\n")
+    for verdict, eid in verdicts:
+        sys.stdout.write("%s\t%s\n" % (verdict, eid))
+    return 0
+
+
+def _cmd_adopt(a, roadmap, entries_dir):
+    if not a.ids:
+        sys.stderr.write("adopt: name at least one entry id\n")
+        return 2
+    try:
+        written = adopt(a.ids, roadmap, entries_dir)
+        base = _read(roadmap, roadmap)
+        if base is None:
+            return 2
+        frags = read_fragments(entries_dir)
+        out = aggregate(base, frags)
+    except (ValueError, KeyError) as e:
+        sys.stderr.write("FAIL %s\n" % e)
+        return 1
+    with open(roadmap, "w", encoding="utf-8") as fh:
+        fh.write(out)
+    sys.stderr.write("adopt: %s -> %s/ ; %s regenerated from %d fragment(s)\n"
+                     % (", ".join(written), entries_dir, roadmap, len(frags)))
+    return 0
+
+
 def _parser():
     ap = argparse.ArgumentParser(prog="roadmap_fragments.py")
-    ap.add_argument("cmd", nargs="?", choices=["aggregate"])
+    ap.add_argument("cmd", nargs="?", choices=["aggregate", "changed", "adopt"])
+    ap.add_argument("ids", nargs="*", help="adopt: the entry id(s) to move into entries/")
     ap.add_argument("--write", action="store_true")
     ap.add_argument("--check", action="store_true",
                     help="fail if roadmap.yaml is not what the aggregator produces")
+    ap.add_argument("--roadmap", help="judge this roadmap.yaml instead of the repo's")
+    ap.add_argument("--entries", help="read fragments from here instead of docs/roadmaps/entries/")
+    ap.add_argument("--base", help="changed: the roadmap.yaml to compare FROM")
+    ap.add_argument("--head", help="changed: the roadmap.yaml to compare TO")
     ap.add_argument("--selftest", action="store_true")
     return ap
 
@@ -378,18 +553,15 @@ def main(argv=None):
     a = ap.parse_args(argv)
     if a.selftest:
         return selftest()
+    roadmap, entries_dir = _paths(a)
+    if a.cmd == "changed":
+        return _cmd_changed(a)
+    if a.cmd == "adopt":
+        return _cmd_adopt(a, roadmap, entries_dir)
     if a.cmd != "aggregate":
         ap.print_usage(sys.stderr)
         return 2
-    with open(ROADMAP, encoding="utf-8") as fh:
-        base = fh.read()
-    frags = read_fragments()
-    try:
-        out = aggregate(base, frags)
-    except ValueError as e:
-        sys.stderr.write("FAIL %s\n" % e)
-        return 1
-    return _emit(a, base, out, frags)
+    return _cmd_aggregate(a, roadmap, entries_dir)
 
 
 if __name__ == "__main__":

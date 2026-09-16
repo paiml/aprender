@@ -33,19 +33,23 @@ equations:
       - "No handler accepts a truncated signature (dropping flags)"
 
 proof_obligations:
-  - type: invariant
+  - id: AIF-INV-001
+    type: invariant
     property: "Flag materiality on APR v2"
     formal: "output(inspect APR) ≠ output(inspect APR --vocab) ≠ output(inspect APR --weights)"
     applies_to: flag_materiality
-  - type: invariant
+  - id: AIF-INV-002
+    type: invariant
     property: "Flag materiality on GGUF"
     formal: "output(inspect GGUF) ≠ output(inspect GGUF --vocab) ≠ output(inspect GGUF --weights)"
     applies_to: flag_materiality
-  - type: invariant
+  - id: AIF-INV-003
+    type: invariant
     property: "Flag materiality on SafeTensors"
     formal: "output(inspect ST) ≠ output(inspect ST --vocab) ≠ output(inspect ST --weights)"
     applies_to: flag_materiality
-  - type: precondition
+  - id: AIF-PRE-004
+    type: precondition
     property: "Dispatcher passes flags"
     formal: "run(path, v, f, w, j) → handler(path, v, f, w, j)"
     applies_to: dispatcher_completeness

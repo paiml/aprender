@@ -131,14 +131,16 @@ kernel_structure:
     description: Aggregate results, compute scores, generate reports
 
 proof_obligations:
-- type: invariant
+- id: AMQBBCD-INV-001
+  type: invariant
   property: Check is read-only
   formal: hash(file_before) == hash(file_after) for check(file)
   applies_to: model_integrity_check
   lean:
     theorem: Theorems.ModelIntegrityCheck
     status: sorry
-- type: postcondition
+- id: AMQBBCD-POST-002
+  type: postcondition
   property: QA gate composition is correct
   formal: report.score == passed_count / enabled_count
   tolerance: 1e-6
@@ -146,28 +148,32 @@ proof_obligations:
   lean:
     theorem: Theorems.QaGateComposition
     status: sorry
-- type: determinism
+- id: AMQBBCD-DET-003
+  type: determinism
   property: Check is deterministic
   formal: check(path) == check(path) for all valid paths
   applies_to: model_integrity_check
   lean:
     theorem: Theorems.ModelIntegrityCheckDeterminism
     status: sorry
-- type: invariant
+- id: AMQBBCD-INV-004
+  type: invariant
   property: Canary baseline is immutable
   formal: baseline_after == baseline_before for canary(model, baseline)
   applies_to: canary_regression_detection
   lean:
     theorem: Theorems.CanaryRegressionDetection
     status: sorry
-- type: postcondition
+- id: AMQBBCD-POST-005
+  type: postcondition
   property: Lint findings are deduplicated
   formal: no two findings have same (rule, location) pair
   applies_to: lint_model_conventions
   lean:
     theorem: Theorems.LintModelConventions
     status: sorry
-- type: completeness
+- id: AMQBBCD-CMP-006
+  type: completeness
   property: Probar tests all requested properties
   formal: report.tested == properties.len()
   applies_to: probar_property_tests

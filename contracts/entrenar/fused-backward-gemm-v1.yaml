@@ -125,15 +125,18 @@ falsification_tests:
     if_fails: Theoretical savings don't match measured — check allocation patterns
 
 proof_obligations:
-  - type: equivalence
+  - id: FBG-EQ-001
+    type: equivalence
     property: Gradient parity
     formal: '|fused_grad - unfused_grad|_inf < 1e-5'
     applies_to: all fused backward GEMMs
-  - type: bound
+  - id: FBG-BND-002
+    type: bound
     property: DRAM reduction
     formal: unfused_dram - fused_dram >= 300 MB/step
     applies_to: full backward pass
-  - type: invariant
+  - id: FBG-INV-003
+    type: invariant
     property: Loss convergence parity
     formal: '|fused_loss[t] - unfused_loss[t]| < 0.01 for all t in [0, 100]'
     applies_to: 100-step training

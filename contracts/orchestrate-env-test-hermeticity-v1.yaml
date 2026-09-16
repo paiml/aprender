@@ -123,17 +123,20 @@ falsification_tests:
     if_fails: "A process-global env mutation in the crate is unguarded; grep set_var|remove_var under crates/aprender-orchestrate/src and route every hit through the shared lock + ScopedEnv"
 
 proof_obligations:
-  - type: determinism
+  - id: OETH-DET-001
+    type: determinism
     property: "Env-mutating tests are deterministic under parallel execution (one shared lock serializes all global-env access)"
     formal: "for all thread counts N>=1 and repeated runs: run(env_tests, N) == PASS"
     applies_to: single_shared_lock
 
-  - type: idempotency
+  - id: OETH-IDEM-002
+    type: idempotency
     property: "Each env-mutating test leaves the process env table unchanged (save prior, mutate, restore prior on drop)"
     formal: "env_table_after_test == env_table_before_test"
     applies_to: save_then_restore
 
-  - type: independence
+  - id: OETH-IND-003
+    type: independence
     property: "No two env-mutating tests observe each other's transient env mutation (mutual exclusion on the global env table)"
     formal: "held(guard_A) AND held(guard_B) => A == B (the same single ENV_LOCK)"
     applies_to: single_shared_lock

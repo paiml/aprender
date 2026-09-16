@@ -98,13 +98,17 @@ falsification_tests:
   if_fails: "apr run is not drop-in equivalent to ollama run on canonical invocation"
 
 proof_obligations:
-- type: invariant
+- id: CC0-INV-001
+  type: invariant
   property: "exit code 0 on success, non-empty stdout, streaming ≥2 flushes"
-- type: invariant
+- id: CC0-INV-002
+  type: invariant
   property: "decoded text on stdout only; stderr reserved for telemetry"
-- type: equivalence
+- id: CC0-EQ-003
+  type: equivalence
   property: "apr run <model> --prompt P  ≅  ollama run <model> 'P'  (both exit 0, both stream, both emit non-empty stdout)"
-- type: invariant
+- id: CC0-INV-004
+  type: invariant
   property: "generation honors --max-tokens upper bound"
 
 verification_summary:

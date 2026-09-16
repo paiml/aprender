@@ -41,20 +41,24 @@ equations:
     - score < 60.0 => result == F
     lean_theorem: Theorems.Grade_From_Score
 proof_obligations:
-- type: bound
+- id: SC80ED-BND-001
+  type: bound
   property: Composite bounded
   formal: 0.0 <= geometric_mean(dims) <= 100.0
   applies_to: all
-- type: invariant
+- id: SC80ED-INV-002
+  type: invariant
   property: AM-GM inequality
   formal: geometric_mean(dims) <= arithmetic_mean(dims)
   applies_to: all
-- type: equivalence
+- id: SC80ED-EQ-003
+  type: equivalence
   property: Uniform dimensions
   formal: all d_i = v => geometric_mean = v
   tolerance: 0.0001
   applies_to: all
-- type: postcondition
+- id: SC80ED-POST-004
+  type: postcondition
   property: Zero propagation
   formal: any d_i = 0 => geometric_mean = 0
   applies_to: all

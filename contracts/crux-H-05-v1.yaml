@@ -126,15 +126,20 @@ falsification_tests:
   if_fails: "reference (transformers datasets) itself not seed-deterministic — recheck env"
 
 proof_obligations:
-- type: invariant
+- id: CH02D2E-INV-001
+  type: invariant
   property: "Fixed --seed produces byte-identical splits across runs"
-- type: invariant
+- id: CH02D2E-INV-002
+  type: invariant
   property: "Union of splits equals full dataset (totality)"
-- type: invariant
+- id: CH02D2E-INV-003
+  type: invariant
   property: "Splits are pairwise disjoint (no leakage)"
-- type: invariant
+- id: CH02D2E-INV-004
+  type: invariant
   property: "Split sizes within ±1% of requested ratios"
-- type: equivalence
+- id: CH02D2E-EQ-005
+  type: equivalence
   property: "Seed-determinism semantics match huggingface datasets.Dataset.train_test_split"
   reference: "https://huggingface.co/docs/datasets/loading#splits"
 

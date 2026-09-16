@@ -78,11 +78,14 @@ falsification_tests:
 
   if_fails: rule 'loss components within TRL envelope on matched batch' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: equivalence
+- id: CD1B0AB-EQ-001
+  type: equivalence
   property: "apr train-ppo matches TRL PPOTrainer loss components within 1% on identical (policy, ref, RM, batch)"
-- type: invariant
+- id: CD1B0AB-INV-002
+  type: invariant
   property: "KL(policy || ref) bounded throughout training (< 20 nats)"
-- type: invariant
+- id: CD1B0AB-INV-003
+  type: invariant
   property: "mean reward increases monotonically after warmup (cheap smoke proof)"
 
 verification_summary:

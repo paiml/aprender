@@ -75,20 +75,23 @@ equations:
     lean_theorem: Theorems.Forward_Equivalence
 
 proof_obligations:
-- type: invariant
+- id: LMPL-INV-001
+  type: invariant
   property: merge uses PEFT layout A:[rank,d_in], B:[d_out,rank]
   formal: |
     For the repro (d_in=3, d_out=2, rank=2, alpha=2 -> scale=1, W=zeros),
     A = [[1,0,0],[0,2,0]] ([rank,d_in]), B = identity ([d_out,rank]):
     MergeEngine::new().merge(&W, &A, &B, 2.0, 2) == [1,0,0, 0,2,0] (= B@A).
     The pre-fix transposed code yields the WRONG [1,0,2, 0,0,0] (max abs error 2.0).
-- type: invariant
+- id: LMPL-INV-002
+  type: invariant
   property: merge agrees with QLoRALayer::merge_to_f32
   formal: |
     For every (rank, d_in, d_out) and any A:[rank,d_in], B:[d_out,rank], W:[d_out,d_in]:
     MergeEngine::merge(W, A, B, alpha, rank) with scale=alpha/rank produces the same
     flat result as QLoRALayer::merge_to_f32 over the same dequantized W and factors.
-- type: classification
+- id: LMPL-CLS-003
+  type: classification
   property: merged weight is forward-equivalent to unmerged LoRA factors
   formal: |
     For every input x: x @ W_merged^T equals x @ W^T + scale*(x @ A^T @ B^T)

@@ -121,13 +121,17 @@ falsification_tests:
   if_fails: "apr bench decode_tok_per_sec diverges from llama-bench canonical by >10%"
 
 proof_obligations:
-- type: invariant
+- id: CE14874-INV-001
+  type: invariant
   property: "prefill_ms and decode_ms separately reported; decode_tok_per_sec > 0"
-- type: invariant
+- id: CE14874-INV-002
+  type: invariant
   property: "n_predict >= 128 for fair head-to-head comparison"
-- type: invariant
+- id: CE14874-INV-003
+  type: invariant
   property: "speedup_vs_llamacpp = decode_tok_per_sec / llamacpp_decode_tok_per_sec (exact)"
-- type: equivalence
+- id: CE14874-EQ-004
+  type: equivalence
   property: "apr bench --n-predict 128 matches llama.cpp's llama-bench -m MODEL -n 128 decode tok/s on same model and hardware within ±10%"
 
 # References:

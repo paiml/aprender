@@ -80,11 +80,14 @@ falsification_tests:
 
   if_fails: rule 'drop_last default prevents ragged batches' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: equivalence
+- id: CH14D7E-EQ-001
+  type: equivalence
   property: "apr dataset clip-sample targets == arange(B) (OpenCLIP ClipLoss assumption)"
-- type: invariant
+- id: CH14D7E-INV-002
+  type: invariant
   property: "img/txt keys aligned per batch (no misalignment ⇒ no wrong-pair positives)"
-- type: invariant
+- id: CH14D7E-INV-003
+  type: invariant
   property: "no duplicate keys in a batch"
 
 verification_summary:

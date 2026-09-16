@@ -46,11 +46,13 @@ equations:
     - "Layer 0 drift is the seed; later layers compound it (this contract does not yet measure the compound rate — Stages C-E)"
 
 proof_obligations:
-  - type: invariant
+  - id: CF7PLP-INV-001
+    type: invariant
     property: "CPU per-layer dump is uncapped across all layers"
     formal: "for all idx in 0..num_layers, [CPU-L{idx}] appears in stderr"
     applies_to: per_layer_streams_emitted
-  - type: invariant
+  - id: CF7PLP-INV-002
+    type: invariant
     property: "Layer 0 CPU-vs-GPU quantitative drift is small but non-zero"
     formal: "exists i, abs(CPU_Q[i] - GPU_Q[i]) > 0 AND abs(CPU_Q[i] - GPU_Q[i]) < 5e-3 at Layer 0"
     applies_to: layer0_quantitative_drift_signature

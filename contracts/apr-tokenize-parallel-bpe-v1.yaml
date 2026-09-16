@@ -288,21 +288,29 @@ falsification_tests:
   if_fails: "--estimate-only wiring broken — operator can't run pre-flight at all"
 
 proof_obligations:
-- type: invariant
+- id: ATPB-INV-001
+  type: invariant
   property: "parallel encoding preserves bit-exact tokenization vs serial"
-- type: invariant
+- id: ATPB-INV-002
+  type: invariant
   property: "merged shard byte-stream concat-equals serial output"
-- type: termination
+- id: ATPB-TERM-003
+  type: termination
   property: "no parallel worker hangs; merge step terminates in O(num_shards)"
-- type: completeness
+- id: ATPB-CMP-004
+  type: completeness
   property: "every input row appears in exactly one merged shard"
-- type: invariant
+- id: ATPB-INV-005
+  type: invariant
   property: "v1.2.0 progress emitter obeys OR-cadence (doc OR time bound)"
-- type: invariant
+- id: ATPB-INV-006
+  type: invariant
   property: "v1.2.0 --quiet suppresses emission at the predicate layer"
-- type: invariant
+- id: ATPB-INV-007
+  type: invariant
   property: "v1.3.0 --estimate-only writes no shards or manifest"
-- type: invariant
+- id: ATPB-INV-008
+  type: invariant
   property: "v1.3.0 estimated_wall scales inversely with num_workers"
 
 verification_summary:

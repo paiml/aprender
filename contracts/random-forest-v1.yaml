@@ -55,19 +55,23 @@ equations:
     - input.iter().all(|v| v.is_finite())
     lean_theorem: Theorems.Ensemble_Size
 proof_obligations:
-- type: invariant
+- id: RF-INV-001
+  type: invariant
   property: Predictions in label range
   formal: predict(x) in {labels seen in training} for all x
   applies_to: all
-- type: invariant
+- id: RF-INV-002
+  type: invariant
   property: Deterministic with same seed
   formal: predict(X, seed=s) = predict(X, seed=s) for all X
   applies_to: all
-- type: invariant
+- id: RF-INV-003
+  type: invariant
   property: Ensemble size respected
   formal: '|forest.trees| = n_estimators'
   applies_to: all
-- type: invariant
+- id: RF-INV-004
+  type: invariant
   property: Prediction length matches input
   formal: '|predict(X)| = |X| (number of rows)'
   applies_to: all

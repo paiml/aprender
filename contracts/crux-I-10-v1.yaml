@@ -124,11 +124,14 @@ falsification_tests:
   if_fails: "tool-role message not preserved in order during chat template rendering"
 
 proof_obligations:
-- type: invariant
+- id: CI1-INV-001
+  type: invariant
   property: "role=='tool' messages require non-empty tool_call_id referencing prior assistant tool_calls[*].id"
-- type: invariant
+- id: CI1-INV-002
+  type: invariant
   property: "Chat history message order preserved in rendered prompt"
-- type: equivalence
+- id: CI1-EQ-003
+  type: equivalence
   property: "apr serve multi-turn tool-result injection matches OpenAI Chat Completions API canonical tool flow on golden (user/assistant/tool/user) conversation"
   reference: "https://platform.openai.com/docs/guides/function-calling"
 

@@ -52,23 +52,28 @@ equations:
       - "The latch never resets to Normal, so an in-process second command cannot un-quiet a quiet run"
 
 proof_obligations:
-  - type: invariant
+  - id: AGVW-INV-001
+    type: invariant
     property: "quiet empties stdout on a command that never receives the flag"
     formal: "stdout(apr gbnf-lint --observation-file f --quiet) = ∅"
     applies_to: quiet_materiality
-  - type: invariant
+  - id: AGVW-INV-002
+    type: invariant
     property: "quiet preserves errors and exit codes on stderr"
     formal: "stderr(cmd --quiet) = stderr(cmd) ∧ exit(cmd --quiet) = exit(cmd)"
     applies_to: quiet_materiality
-  - type: invariant
+  - id: AGVW-INV-003
+    type: invariant
     property: "json survives quiet"
     formal: "stdout_suppressed(Quiet, json=true) = false"
     applies_to: quiet_materiality
-  - type: invariant
+  - id: AGVW-INV-004
+    type: invariant
     property: "verbose is not a byte-for-byte no-op"
     formal: "stdout(cmd --verbose) ≠ stdout(cmd)"
     applies_to: verbose_materiality
-  - type: invariant
+  - id: AGVW-INV-005
+    type: invariant
     property: "quiet dominates verbose"
     formal: "resolve(true, true) = Quiet"
     applies_to: precedence
