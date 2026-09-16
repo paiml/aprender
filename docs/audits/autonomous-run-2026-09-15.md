@@ -604,3 +604,17 @@ scheduling chance, and it costs ~3× (gx10 10.6 min vs intel 34.5 for step 1).
 ### Still open
 
 - #3114 in queue; #3404, #3405 in/entering queue; #3364 (this log), #3363 held. Ruleset 17836320 still build 3 / merge 1 at 22:10Z.
+
+## Interval — 23:10Z (2026-09-16) — T-0 cut
+
+### What moved
+
+- **#3114 merged 22:58Z** (main `e822e5adb`); #3091 and #3303 closed. The §1.6 critical path is complete 37 h before the andon.
+- **Freeze (§4.1)**: #3208 (Q8_K activations + f16 KV parity) → 0.69.0 with `slipped_from: 0.68.0`; milestone 5 reads 0 open / 87 closed.
+- **T-0 (§4)**: `rel-068-autopilot/prepare_bump.sh` — worktree at `e822e5adb`, `bump-version.sh 0.68.0` + `--check` green across every workspace incl. facades, CHANGELOG `[0.68.0]` from the 89 PRs merged since `v0.67.0` (Added 11 / Fixed 32 / Changed 46), summary paragraph: Qwen 3.5 on the CPU first, the one-line installer second. **Bump PR #3406**, armed through `arm_pr_automerge.sh` once guard-tree is green (loop in `ship.log`).
+- **Autopilot launched** (`autopilot.sh 3406 wait close`, pid in `rel-068-autopilot/`): steps `wait deep dogfood tag cleanroom assets preflight cascade install hosts close`. Derived from the 0.67 driver with today's rulings folded in: T-1 as a local deep run (no `ci / deep` workflow exists on main; `--no-default-features` records the standing #3176 class inside aprender-distribute and is RED for anything outside it), T-3 dispatches `paiml/infra clean-room.yml -f repos=aprender -f ref=v0.68.0` (infra#621 ref input, verified present) and records the run id, T-2 gains `install.sh --version v0.68.0` receipts on intel (x86_64) and gx10 (aarch64) from the tag's raw URL, T-4 automated to close (operator 2026-09-13), ledger record written at close for a docs PR.
+- Also merged: #3404 (mini probe workflow) 22:57Z. #3405 (#3341 contract) in queue.
+
+### Still open
+
+- #3406 → autopilot. #3405 in queue. #3364 (this log) and #3363 to arm after the release commit is fixed. mini down; gx10 network repaired 21:47Z (forjar item open in memory).
