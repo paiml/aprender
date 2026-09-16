@@ -96,7 +96,7 @@ timeout 600 ./qwen35_embd_dump MODEL prompt_token_ids.txt 4,28 embd-p0 < /dev/nu
 `l_out-N` and `result_norm` rows carry `U` for apr, plus llama's own L2 norm.
 Full per-position curves:
 - `layerwise/curves_p4.tsv` (`5c75e221…a029`)
-- `layerwise/curves_orig.tsv` (`74bc5277…b4b39f`)
+- `layerwise/curves_orig.tsv` (`74bc5277…f4b39f`)
 
 ```bash
 python3 compare_layerwise.py p4 dump-p4 p4-per-token.bin apr/embd-p4 p4-apr.bin 0,1,2,3 layer_types.tsv MODEL GGUF_PY     # rc 0
