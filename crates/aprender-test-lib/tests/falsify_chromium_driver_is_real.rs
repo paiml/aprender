@@ -11,7 +11,7 @@
 //! renderer can produce — a computed sum, a laid-out bounding box, PNG bytes
 //! whose header and dimensions come from the compositor.
 //!
-//! These require Chrome/Chromium on PATH. They are NOT on ci.yml's beat list,
+//! These require Chrome/Chromium on PATH. They have NO fragment in ci/explicit-test-commands.d/,
 //! because the clean-room image is not known to ship a browser; they belong on a
 //! Chrome-equipped runner the way the GPU falsifiers belong on a CUDA one.
 //! Running them without a browser FAILS — deliberately. There is no skip.

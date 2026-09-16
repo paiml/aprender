@@ -264,6 +264,8 @@ trueno-db = { path = "crates/aprender-db", version = "0.67.0", package = "aprend
 trueno-viz = { path = "crates/aprender-viz", version = "0.67.0", package = "aprender-viz" }
 trueno-rag = { path = "crates/aprender-rag", version = "0.67.0", package = "aprender-rag" }
 trueno-cuda-edge = { path = "crates/aprender-cuda-edge", version = "0.67.0", package = "aprender-cuda-edge" }
+trueno-sparse = { path = "crates/aprender-sparse", version = "0.67.0", package = "aprender-sparse" }
+trueno-solve = { path = "crates/aprender-solve", version = "0.67.0", package = "aprender-solve" }
 renacer-core = { path = "crates/aprender-profile-core", version = "0.67.0", package = "aprender-profile-core" }
 repartir = { path = "crates/aprender-distribute", version = "0.67.0", package = "aprender-distribute" }
 simular = { path = "crates/aprender-simulate", version = "0.67.0", package = "aprender-simulate" }

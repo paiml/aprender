@@ -41,6 +41,30 @@ trueno-gpu = { path = "../aprender-gpu", version = "0.67.0", features = ["cuda"]
 [features]
 default = []
 cuda = ["dep:trueno-gpu"]
+# A DURATION ASSERTION IS NOT A CORRECTNESS ASSERTION (#3239, and this repo has
+# paid for it eleven times — see scripts/check_no_timing_in_required.sh, whose
+# registry exists because "policy is what failed the other eleven times").
+#
+# tests/falsify.rs carries two: FALSIFY-CGP-061 (`cgp doctor` < 2 s) and
+# FALSIFY-CGP-060 (`cgp profile compare` < 30 s). Both are real product limits
+# and neither can be asserted on a shared CI box. Measured 2026-09-14 during a
+# full --lib --tests sweep of the workspace:
+#
+#     FALSIFY-CGP-061 FAILED: doctor took 2665ms      (limit 2500, over by 6.6%)
+#
+# The box was running 98,621 tests in parallel. That number measures the LOAD,
+# not `cgp doctor`. Raising the limit is the "clever ratio rewrite" that once
+# blocked all nine open PRs; the fix is to stop asserting duration where
+# duration cannot be measured.
+#
+# check_no_timing_in_required.sh keeps exactly this rule for shell guards, with
+# a declared registry so "adding a timing gate without deciding its placement is
+# impossible". This feature is that registry for Rust targets: nothing enables
+# it, so a timing row cannot reach a required check by accident.
+#
+# Arm it where duration IS measurable -- a dedicated, unloaded runner (perf-solo),
+# at release time. Not in CI's default set, and not in the nightly full surface.
+timing-gate = []
 
 [dev-dependencies]
 proptest = "1.9"

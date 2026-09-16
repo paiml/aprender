@@ -61,7 +61,7 @@ equations:
     - num_layers > 0
     lean_theorem: Theorems.Hybrid_Block
   activation_magnitude:
-    formula: '||h_l||_inf <= M * ||h_0||_inf for some bound M'
+    formula: '∀l, ∀i: is_finite(h_l[i])  (no NaN, no ±Inf in any hidden-state coordinate)'
     domain: Hidden state magnitude through L layers
     invariants:
     - Magnitude bounded (no explosion)
@@ -106,8 +106,15 @@ proof_obligations:
 - id: QHF-BND-005
   type: bound
   property: Activation magnitude bounded
-  formal: '∀l: ||h_l||_inf <= M for finite M'
+  formal: '∀l ∈ [0, L], ∀i: is_finite(h_l[i])  (no NaN, no +Inf, no -Inf)'
   applies_to: all
+  note: >-
+    The previous formal ('∀l: ||h_l||_inf <= M for finite M') was vacuous:
+    "some finite M" only asserts finiteness. It is restated as explicit
+    per-coordinate finiteness, which is what FALSIFY-QHF-005 ("No NaN/Inf
+    after 48 layers") tests. A quantitative growth bound is deferred until
+    the growth ratio ||h_l||_inf / ||h_0||_inf is measured on the reference
+    model; no bound is stated here.
 - id: QHF-INV-006
   type: invariant
   property: RMSNorm precedes each sublayer

@@ -101,6 +101,8 @@ jobs:
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: cargo_step.sh falsifier (ENV-vs-CODE instrument)
+        run: bash scripts/cargo_step.sh --self-test
       - name: Put the runner's Rust toolchain on PATH
         run: echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
       # THE ARCH-SENSITIVE SUBSET, not the whole suite. Five legs of a full
@@ -109,7 +111,8 @@ jobs:
       - name: SIMD and numeric paths (x86_64, widest vectors)
         run: |
           set -euo pipefail
-          nice -n 19 cargo test -p aprender-compute --release --lib
+          bash scripts/cargo_step.sh 'x86_64 SIMD: aprender-compute' -- \
+              nice -n 19 cargo test -p aprender-compute --release --lib
           # `aprender-primitives` does not exist and never has. It was invented by
           # this file (#2772) and killed BOTH legs with `package ID specification
           # ... did not match any packages`, exit 101, every night since
@@ -118,7 +121,8 @@ jobs:
           # (10 files with target_arch/target_feature, after aprender-compute's
           # 110). scripts/check_workflow_cargo_packages.sh makes the class
           # unrepeatable. YOGA-NIGHTLY-001 R-8.
-          nice -n 19 cargo test -p aprender-core --release --lib
+          bash scripts/cargo_step.sh 'x86_64 SIMD: aprender-core' -- \
+              nice -n 19 cargo test -p aprender-core --release --lib
 
   aarch64-cuda-sm121:
     if: ${{ github.event_name != 'workflow_dispatch' || inputs.axis == 'all' || inputs.axis == 'aarch64-cuda-sm121' }}
@@ -138,6 +142,8 @@ jobs:
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: cargo_step.sh falsifier (ENV-vs-CODE instrument)
+        run: bash scripts/cargo_step.sh --self-test
       - name: Put the runner's Rust toolchain on PATH
         run: echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
       # ASK THE BOX, NEVER THE LABEL. A label says what we intended; nvidia-smi
@@ -163,7 +169,8 @@ jobs:
       - name: NEON and numeric paths (aarch64)
         run: |
           set -euo pipefail
-          nice -n 19 cargo test -p aprender-compute --release --lib
+          bash scripts/cargo_step.sh 'aarch64 SIMD: aprender-compute' -- \
+              nice -n 19 cargo test -p aprender-compute --release --lib
           # `aprender-primitives` does not exist and never has. It was invented by
           # this file (#2772) and killed BOTH legs with `package ID specification
           # ... did not match any packages`, exit 101, every night since
@@ -172,7 +179,8 @@ jobs:
           # (10 files with target_arch/target_feature, after aprender-compute's
           # 110). scripts/check_workflow_cargo_packages.sh makes the class
           # unrepeatable. YOGA-NIGHTLY-001 R-8.
-          nice -n 19 cargo test -p aprender-core --release --lib
+          bash scripts/cargo_step.sh 'aarch64 SIMD: aprender-core' -- \
+              nice -n 19 cargo test -p aprender-core --release --lib
 
       # AN AXIS NAMED `cuda` MUST INVOKE CUDA (YOGA-NIGHTLY-001 R-6).
       #
