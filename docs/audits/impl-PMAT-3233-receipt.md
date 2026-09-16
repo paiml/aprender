@@ -9,7 +9,7 @@ PVL-001 v3 §0/§2/§3/§5. PR: paiml/aprender#3281. branch: `PMAT-3233-pv-censu
 (`infra:docs/audits/ONT-001/receipts/2026-09-15T1645Z-ONT-1-escalate.md`): six of the row's
 clauses were red, one of them contradicting census.rs's own doc comment. The operator ruled
 **"Extend #3281"** rather than split the row, so this PR now carries the whole ONT-1 clause set.
-**All 21 changed files appear below**, each against the clause that requires it; nothing here is incidental. Round 3 lane 1 refuted an earlier version of this table that named only 15 of them, and refuted its "1841" as well: main carries 1842.
+**All 23 changed files appear below**, each against the clause that requires it; nothing here is incidental. Round 3 lane 1 refuted an earlier version of this table that named only 15 of them, and refuted its "1841" as well: main carries 1842.
 
 | file | ONT-1 clause that requires it |
 |---|---|
@@ -29,6 +29,8 @@ clauses were red, one of them contradicting census.rs's own doc comment. The ope
 | `crates/aprender-contracts-cli/src/commands/mod.rs` | `pub mod census;` — the registration without which the subcommand does not exist |
 | `docs/roadmaps/roadmap.yaml` | PMAT-3233's own row; `pmat work status` reads the ticket back through it, and the quorum brief reads it from there |
 | `docs/audits/impl-PMAT-3233-receipt.md` | this receipt |
+| `docs/roadmaps/entries/PMAT-3233.yaml` | main 's #3352 made roadmap.yaml a GENERATED aggregate mid-review; an edited entry is refused without its fragment, and the fragment SUPERSEDES the base entry, so it carries the corrected title and spec |
+| `docs/audits/quorum-PMAT-3233.json` | the quorum artifact `pmat-merge` requires (`agreed=true` bound to the judged diff) |
 
 `lint-provenance.sh` was reported "out of scope" by quorum round 2 lane 1. That lane receives only
 Title/Status/Priority, and this file did not exist for it to read — the finding is a briefing gap,
@@ -79,3 +81,30 @@ They are therefore **not repaired here, deliberately**: re-recording under 3.40.
 committed baseline disagree with the instrument CI runs, converting a local-only red into a
 repo-wide one. The fix belongs to the commit that moves the toolchain pin, per the guards' own
 message ("Re-measure and restamp this baseline under the instrument the FLEET runs").
+
+## Round 7: the R-10 linter was vacuous on the only file it ships against
+
+Two independent lanes refuted `scripts/lint-provenance.sh`, and re-measuring here confirmed it:
+
+    lines the old filter fed the loop, on contracts/external-corpora.yaml:  1
+    of those, lines containing a digit:                                     0
+    => numeric claims examined: 0, exit 0
+    appending `unmarked_total: 4242` to the file:                    still exit 0
+
+The filter was `rg -N '^\s*(-|\|)\s*\S'` — Markdown list and table rows. Its one production
+target is YAML, whose claims are key-values, so it read nothing and passed. That is
+"0 violations over 0 files", the defect shape this repo names as its signature, inside the
+guard written to satisfy R-10. The `--self-test` did not catch it because both fixtures were
+`.md`: a fixture per FORM, where the rule is a fixture per FORM VARIANT.
+
+Fixed: Markdown rows AND YAML key-values are scanned; identifier/command keys (`schema`,
+`ref`, `repo`, `name`, `mark`, `counted_by`, `item_type`, `id`) are exempt so a schema URI is
+not mistaken for a measurement; **the count examined is printed**, so a silent zero cannot
+recur; and the self-test carries a yaml red/green pair, an exempt-key case, and an assertion
+that the count examined is non-zero.
+
+Proven to discriminate, not asserted: restoring the markdown-only filter makes the self-test
+go RED (`rc=1`) on three assertions, including `the YAML fixture examined 0 claims`.
+`contracts/external-corpora.yaml`'s two real claims (`head:`, `n_files:`) now carry inline
+marks; `pv census` re-derived `contracts/census.json` byte-identically, so the marks are
+comments and change no published figure.

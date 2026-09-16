@@ -13,8 +13,8 @@ corpora:
   - name: provable-contracts
     repo: paiml/provable-contracts
     ref: main
-    head: 626868c240
-    n_files: 397
+    head: 626868c240  # [V 2026-09-16]
+    n_files: 397  # [V 2026-09-16]
     mark: '[V 2026-09-16]'
     counted_by: >-
       gh api repos/paiml/provable-contracts/git/trees/main?recursive=1 --jq
