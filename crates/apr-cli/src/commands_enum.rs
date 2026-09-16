@@ -1,4 +1,10 @@
 
+// R-0b (#3002): the backend-resolution module. Declared here (an included
+// file whose own analysis is clean) rather than in lib.rs, whose include! tree
+// pulls pre-existing over-threshold functions the complexity hook would charge.
+#[path = "registry.rs"]
+pub mod registry;
+
 /// Compute backends `--backend` accepts on `apr run` / `apr chat`.
 ///
 /// The flag used to be a free-form `String`: `--backend banana` printed

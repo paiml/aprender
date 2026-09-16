@@ -25,7 +25,8 @@ use crate::error::{CliError, Result};
 /// True when this build carries a GPU backend that could honour a request.
 #[must_use]
 pub(crate) fn build_has_accelerator() -> bool {
-    cfg!(any(feature = "cuda", feature = "wgpu"))
+    // R-0b (#3002): the registry says what this build compiled; never `cfg!`.
+    crate::registry::build_has_accelerator()
 }
 
 /// Refuse an accelerator request this build cannot honour.
@@ -41,23 +42,61 @@ pub(crate) fn build_has_accelerator() -> bool {
 ///
 /// # Errors
 /// [`CliError::FeatureDisabled`] when `wants_accelerator` and the build has none.
+/// R-0b "selected: always": resolve the request exactly as `apr run` / `apr
+/// chat` honour it — GH-326 `--gpu` overrides `--no-gpu`, and `--gpu` also
+/// overrides `--backend cpu` (that is what `effective_no_gpu` does downstream,
+/// so the line must say the same) — announce the selection, and refuse a forced
+/// accelerator this host cannot honour. Nothing can refuse a cpu request.
+pub(crate) fn ensure_available_for(gpu: bool, no_gpu: bool, backend: Option<&str>) -> Result<()> {
+    let backend = if gpu {
+        backend.filter(|b| *b != "cpu")
+    } else {
+        backend
+    };
+    let no_gpu = no_gpu && !gpu;
+    let wants = gpu || matches!(backend, Some("cuda" | "wgpu" | "gpu"));
+    let asked = if wants {
+        asked_flag(gpu, backend)
+    } else if no_gpu {
+        "--no-gpu".to_string()
+    } else if backend == Some("cpu") {
+        "--backend cpu".to_string()
+    } else {
+        "default".to_string()
+    };
+    let req = crate::registry::Request {
+        gpu,
+        no_gpu,
+        backend,
+        layers_want_accelerator: false,
+    };
+    crate::registry::announce(&req, &asked).map(|_| ())
+}
+
 pub(crate) fn ensure_available(wants_accelerator: bool, asked: &str) -> Result<()> {
-    if !wants_accelerator || build_has_accelerator() {
+    if !wants_accelerator {
         return Ok(());
     }
-    Err(CliError::FeatureDisabled(format!(
-        "{asked} was requested, but this build has no GPU backend compiled in, \n\
-         so it would have run on CPU without telling you. On a 7B Q4_K_M \n\
-         model that is roughly a tenth of the decode rate and several seconds of \n\
-         extra latency to the first token (aprender#2696).\n\
-         \n\
-         Install a build that has one:\n\
-         \n\
-        \x20    cargo install aprender --features cuda    # NVIDIA\n\
-        \x20    cargo install aprender --features wgpu    # portable GPU backend\n\
-         \n\
-         Or pass --no-gpu to run on CPU deliberately."
-    )))
+    // R-0b: resolve the request the user typed against the registry. A forced
+    // kind that is not Ready refuses (FeatureDisabled when not compiled,
+    // BackendUnavailable when compiled but absent here); it never downgrades.
+    let req = request_from_asked(asked);
+    crate::registry::announce(&req, asked).map(|_| ())
+}
+
+/// The request behind the flag text a caller quotes back (`--gpu`,
+/// `--gpu-layers`, `--backend <kind>`).
+pub(crate) fn request_from_asked(asked: &str) -> crate::registry::Request<'_> {
+    match asked.strip_prefix("--backend ") {
+        Some(kind) => crate::registry::Request {
+            backend: Some(kind.trim()),
+            ..Default::default()
+        },
+        None => crate::registry::Request {
+            gpu: true,
+            ..Default::default()
+        },
+    }
 }
 
 /// Which flag the user actually typed, for quoting back.
@@ -112,23 +151,31 @@ mod tests {
     /// this module passes with the call sites deleted.
     #[test]
     fn every_accelerator_surface_calls_the_refusal() {
-        let surfaces: [(&str, &str); 3] = [
-            ("apr run (dispatch.rs)", include_str!("dispatch.rs")),
+        // S3b (#3041): run and chat call the REGISTRY-resolving entry point BY
+        // NAME. The old needle `accel::ensure_available` is deliberately not
+        // accepted: it is a substring of `ensure_available_for`, so a scan for
+        // it passed identically before and after this slice and witnessed
+        // nothing. serve keeps its own named wrapper.
+        let surfaces: [(&str, &str, &str); 3] = [
+            (
+                "apr run (dispatch.rs)",
+                include_str!("dispatch.rs"),
+                "accel::ensure_available_for(",
+            ),
             (
                 "apr chat (dispatch_analysis.rs)",
                 include_str!("dispatch_analysis.rs"),
+                "accel::ensure_available_for(",
             ),
             (
                 "apr serve (commands/serve/mod.rs)",
                 include_str!("commands/serve/mod.rs"),
+                "ensure_accelerator_available(config)?",
             ),
         ];
         let mut missing = Vec::new();
-        for (name, src) in surfaces {
-            // serve keeps its own named wrapper; run and chat call accel directly.
-            let guarded = src.contains("accel::ensure_available")
-                || src.contains("ensure_accelerator_available(config)?");
-            if !guarded {
+        for (name, src, needle) in surfaces {
+            if !src.contains(needle) {
                 missing.push(name);
             }
         }
@@ -138,6 +185,67 @@ mod tests {
              backend exists, so `--gpu` is silently ignored there (#2696 was \
              measured through `apr run`, which was one of them): {missing:?}"
         );
+    }
+
+    /// R-0b/S3b: NOTHING that asks for CPU may be refused, in any spelling.
+    /// `ensure_available_for` is now the one preflight `apr run` and `apr chat`
+    /// share, so a regression here is a refusal on a plain `apr run model.gguf`.
+    #[test]
+    fn a_cpu_or_default_request_is_never_refused_in_any_spelling() {
+        for (gpu, no_gpu, backend) in [
+            (false, false, None),
+            (false, true, None),
+            (false, false, Some("cpu")),
+            (false, true, Some("cpu")),
+        ] {
+            assert!(
+                ensure_available_for(gpu, no_gpu, backend).is_ok(),
+                "a cpu/default request must never be refused: \
+                 gpu={gpu} no_gpu={no_gpu} backend={backend:?}"
+            );
+        }
+    }
+
+    /// GH-326 (`--gpu` beats `--no-gpu`) and its twin (`--gpu` beats `--backend
+    /// cpu`), asserted at the resolution boundary rather than at the four call
+    /// sites that used to each re-derive it.
+    ///
+    /// Both outcomes are asserted so the test says something on EVERY host: a
+    /// build/host with an accelerator resolves, one without refuses. The one
+    /// thing it may never do is quietly become a cpu run — that is #2696.
+    #[test]
+    fn a_forced_gpu_request_is_honoured_or_refused_never_quietly_made_cpu() {
+        for backend in [None, Some("cpu"), Some("gpu")] {
+            match ensure_available_for(true, true, backend) {
+                Ok(()) => assert!(
+                    build_has_accelerator(),
+                    "--gpu resolved on a build the registry says has no accelerator"
+                ),
+                Err(e) => {
+                    let m = e.to_string();
+                    assert!(
+                        m.contains("--gpu"),
+                        "the refusal quotes the flag typed: {m}"
+                    );
+                    assert!(
+                        m.contains("--no-gpu"),
+                        "and offers the deliberate CPU path: {m}"
+                    );
+                }
+            }
+        }
+    }
+
+    /// `ensure_available` keeps taking the flag TEXT a caller quotes back, so
+    /// the text has to map onto the same request the registry resolves.
+    #[test]
+    fn the_flag_text_maps_back_onto_the_request_it_came_from() {
+        assert!(request_from_asked("--gpu").gpu);
+        assert_eq!(request_from_asked("--gpu").backend, None);
+        assert!(request_from_asked("--gpu-layers all").gpu);
+        assert_eq!(request_from_asked("--backend cuda").backend, Some("cuda"));
+        assert!(!request_from_asked("--backend cuda").gpu);
+        assert_eq!(request_from_asked("--backend wgpu ").backend, Some("wgpu"));
     }
 
     #[test]
