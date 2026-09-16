@@ -541,3 +541,20 @@ scheduling chance, and it costs ~3× (gx10 10.6 min vs intel 34.5 for step 1).
   superseded (`8633da345` vs #3200's `7b452797f`; `d3571663f` vs #3202's
   `9b4b0595e`; a `push` run whose head is an ancestor of main). Left alone —
   operator ruling is no hand-cancels; they are rule-1's first real targets.
+
+## Interval — 14:05Z (2026-09-16)
+
+### What moved
+
+- **#3278 unwedged.** Sat at merge-queue position 1 with a `roadmap.yaml` entry and no `entries/PMAT-3231.yaml`; guaranteed to eject every batch behind it. GitHub refuses pushes to a queued PR's branch ("protected branch hook declined"), so the fix waited for the queue's own ejection at 13:52Z, then `roadmap_fragments.py adopt PMAT-3231` + `make roadmap-aggregate`, guard PASS on committed refs, pushed `eb883a2f2`, re-armed; re-entered at position 8. Finding: `roadmap_trim.py` run after `adopt` re-introduced DRIFT against the aggregator — on fragment branches the aggregator is the last writer.
+- **#3341 ruled and measured.** First bisect used `apr chat`; step 2 showed CPU `apr chat` never enters the MoE path for any qwen3_moe GGUF (Q4_K_M fails byte-identically, rc=0). Corrected on the issue; re-measured with `apr run`: Q4_0 → `UnsupportedOperation('moe_expert_matvec', qtype 2)` at v0.66.0 and v0.67.0, Q4_K_M control generates. Verdict NEVER WORKED → 0.69.0. Mechanism: `matvec_for_qtype` has Q4_K/Q6_K arms only; step 3 (load-time contract) dispatched in slot 3 on `PMAT-3341-load-time-contract`. Side defects filed: #3367 (apr chat architecture-blind + rc=0), #3368 (placeholder qtype=0 message misdirects).
+- **#3320 re-armed** after its workspace-test went green on `8f58592a9`.
+
+### Claims (other sessions)
+
+- **apex-ca** (APEX-001, `~/src/apex`): **#3259** (APEX-2b) and **#3273** (APEX-2a). Will push #3259 only after #3270 leaves the queue, #3273 only after #3259 merges; will not touch #3270's branch while queued.
+
+### Still open
+
+- Series: #3354 position 6 (groups for positions 1–3 rebuilt 13:54Z, queued for runners); #3355/#3356 held; #3114 undraft after PR3 + #3360.
+- #3361 (unwedge rule 1) green, unarmed; rule 2 pending. #3363/#3364 green, held so they do not queue ahead of PR2.
