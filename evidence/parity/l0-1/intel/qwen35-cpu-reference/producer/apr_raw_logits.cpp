@@ -8,7 +8,11 @@
 //   * batch.logits = 1 for every position (perplexity sets it only for pos >= n_ctx/2);
 //   * raw float32 logits are written, not uint16-compressed log-softmax.
 //
-// Extra flag (stripped before common parsing): --raw-out PATH   (required)
+// Extra flags (stripped before common parsing):
+//   --raw-out PATH   (required)
+//   --per-token      decode ONE token per llama_decode call (batch of 1, logits=1), in order,
+//                    on the same context/KV, instead of one batched decode of the whole prompt.
+//                    Same output format. Isolates the batched-vs-per-token kernel confound.
 //
 // Output (little-endian, no timestamps, so identical logits => identical bytes):
 //   char[8]  "APRRAWLG"
@@ -34,8 +38,13 @@ int main(int argc, char ** argv) {
     std::setlocale(LC_NUMERIC, "C");
 
     std::string raw_out;
+    bool per_token = false;
     std::vector<char *> args;
     for (int i = 0; i < argc; ++i) {
+        if (std::strcmp(argv[i], "--per-token") == 0) {
+            per_token = true;
+            continue;
+        }
         if (std::strcmp(argv[i], "--raw-out") == 0) {
             if (i + 1 >= argc) {
                 fprintf(stderr, "apr_raw_logits: --raw-out needs a PATH\n");
@@ -91,25 +100,42 @@ int main(int argc, char ** argv) {
         return 4;
     }
 
-    llama_batch batch = llama_batch_init(n_pos, 0, 1);
     // llama-perplexity overwrites token 0 with BOS when the vocab adds one; mirror it.
     const bool add_bos = llama_vocab_get_add_bos(vocab);
-    for (int32_t k = 0; k < n_pos; ++k) {
-        batch.token[k]     = (add_bos && k == 0) ? llama_vocab_bos(vocab) : tokens[k];
-        batch.pos[k]       = k;
-        batch.n_seq_id[k]  = 1;
-        batch.seq_id[k][0] = 0;
-        batch.logits[k]    = 1;
+    std::vector<llama_token> ids(tokens.begin(), tokens.end());
+    if (add_bos) {
+        ids[0] = llama_vocab_bos(vocab);
     }
-    batch.n_tokens = n_pos;
+    std::vector<float> logits((size_t) n_pos * (size_t) n_vocab);
 
     llama_memory_clear(llama_get_memory(ctx), true);
-    if (llama_decode(ctx, batch) != 0) {
-        fprintf(stderr, "apr_raw_logits: llama_decode failed\n");
-        llama_batch_free(batch);
-        return 5;
+    const int32_t n_batch_tokens = per_token ? 1 : n_pos;
+    llama_batch batch = llama_batch_init(n_batch_tokens, 0, 1);
+    for (int32_t start = 0; start < n_pos; start += n_batch_tokens) {
+        for (int32_t j = 0; j < n_batch_tokens; ++j) {
+            batch.token[j]     = ids[start + j];
+            batch.pos[j]       = start + j;
+            batch.n_seq_id[j]  = 1;
+            batch.seq_id[j][0] = 0;
+            batch.logits[j]    = 1;
+        }
+        batch.n_tokens = n_batch_tokens;
+        if (llama_decode(ctx, batch) != 0) {
+            fprintf(stderr, "apr_raw_logits: llama_decode failed at position %d\n", start);
+            llama_batch_free(batch);
+            return 5;
+        }
+        llama_synchronize(ctx);
+        for (int32_t j = 0; j < n_batch_tokens; ++j) {
+            const float * row = llama_get_logits_ith(ctx, j);
+            if (row == nullptr) {
+                fprintf(stderr, "apr_raw_logits: no logits for position %d\n", start + j);
+                llama_batch_free(batch);
+                return 7;
+            }
+            std::memcpy(logits.data() + (size_t) (start + j) * (size_t) n_vocab, row, (size_t) n_vocab * sizeof(float));
+        }
     }
-    llama_synchronize(ctx);
 
     const std::string tmp = raw_out + ".partial";
     std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
@@ -124,18 +150,10 @@ int main(int argc, char ** argv) {
     out.write((const char *) &n_pos, sizeof(n_pos));
     out.write((const char *) &n_vocab, sizeof(n_vocab));
     for (int32_t k = 0; k < n_pos; ++k) {
-        const int32_t id = batch.token[k];
+        const int32_t id = ids[k];
         out.write((const char *) &id, sizeof(id));
     }
-    for (int32_t k = 0; k < n_pos; ++k) {
-        const float * row = llama_get_logits_ith(ctx, k);
-        if (row == nullptr) {
-            fprintf(stderr, "apr_raw_logits: no logits for position %d\n", k);
-            llama_batch_free(batch);
-            return 7;
-        }
-        out.write((const char *) row, (std::streamsize) n_vocab * sizeof(float));
-    }
+    out.write((const char *) logits.data(), (std::streamsize) logits.size() * sizeof(float));
     out.close();
     if (!out || std::rename(tmp.c_str(), raw_out.c_str()) != 0) {
         fprintf(stderr, "apr_raw_logits: write/rename to %s failed\n", raw_out.c_str());
@@ -143,10 +161,11 @@ int main(int argc, char ** argv) {
         return 6;
     }
 
-    printf("apr_raw_logits: n_pos=%d n_vocab=%d add_bos=%d out=%s\n", n_pos, n_vocab, add_bos ? 1 : 0, raw_out.c_str());
+    printf("apr_raw_logits: n_pos=%d n_vocab=%d add_bos=%d mode=%s out=%s\n", n_pos, n_vocab, add_bos ? 1 : 0,
+           per_token ? "per-token" : "batched", raw_out.c_str());
     printf("apr_raw_logits: token_ids=");
     for (int32_t k = 0; k < n_pos; ++k) {
-        printf("%s%d", k ? "," : "", (int) batch.token[k]);
+        printf("%s%d", k ? "," : "", (int) ids[k]);
     }
     printf("\n");
 

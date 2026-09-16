@@ -1,0 +1,109 @@
+fix start_utc=2026-09-15T19:42:20Z load=34.66 43.07 44.84
+bce3a4b6ba153a0f65436c7f284ae6eb01ac455a3d86634950765965d30c0617  /home/noah/src/llama.cpp-d1d3c3396/build/bin/llama-tokenize
+ad4397d5efcc8aa64a7b4e15303b32e5b51de3180c2da80cbf247cdfe7253d8e  /home/noah/parity-ref/variation-3091/qwen35_raw_logits
+f05cd87aef3bbe8396606f91334c974ddcb4f59d68186c35611405f74bbdd4ce  /home/noah/parity-ref/apr-3091-subject/compare_raw_logits.py
+d554acb75069eca3c3bebcce98a325b48795d04160fce392b96fc2d6fc38a3eb  /tmp/flipvar3091/prompt-2.tok-input.txt
+tokenize p2 rc=0
+n 117
+77001b22094106e48dc38b37e49a816e0af36d03dceba93f1feb1373bce297d6  /tmp/flipvar3091/prompt-2.ids
+p2 batched producer ids == prompt-2.ids
+p2 per-token producer ids == prompt-2.ids
+bca101cf714051d8933b076cc4d4aad2d7c9724e6c66fd88689ed5fe6112d498  /tmp/flipvar3091/prompt-4.tok-input.txt
+tokenize p4 rc=0
+n 82
+42a64dc1c78e3b4ae0ad7ece7dcebf4ee80550931866e53762944c118ae68b9e  /tmp/flipvar3091/prompt-4.ids
+p4 batched producer ids == prompt-4.ids
+p4 per-token producer ids == prompt-4.ids
+p1 batched producer ids == prompt-1.ids
+p1 per-token producer ids == prompt-1.ids
+p3 batched producer ids == prompt-3.ids
+p3 per-token producer ids == prompt-3.ids
+apr p2-apr start_utc=19:42:23Z load=36.29 43.27 44.90
+apr p2-apr rc=0 end_utc=19:42:48Z load=45.12 44.87 45.39 max_threads_sampled=33  Percent of CPU this job got: 627%; Elapsed (wall clock) time (h:mm:ss or m:ss): 0:24.88;
+d5ffa2b73bc304b93c8461b103e66092c3f8a1d0850d596d3ee9b5006179a7fa  /home/noah/parity-ref/variation-3091/p2-apr.bin
+p2-B-per-token-vs-apr cmp rc=1 (0 = byte-identical)
+p2-B-per-token-vs-apr compare rc=0
+summary	n_positions	117
+summary	n_vocab	248320
+summary	min_cosine	0.99537
+summary	min_cosine_pos	44
+summary	mean_cosine	0.998371
+summary	median_cosine	0.998489
+summary	positions_below_0_98	[]
+summary	n_below_0_98	0
+summary	argmax_mismatches	[8, 57]
+summary	n_argmax_mismatches	2
+summary	max_abs_diff	1.923379
+summary	max_abs_diff_pos	0
+p2-C-batched-vs-apr cmp rc=1 (0 = byte-identical)
+p2-C-batched-vs-apr compare rc=0
+summary	n_positions	117
+summary	n_vocab	248320
+summary	min_cosine	0.994944
+summary	min_cosine_pos	91
+summary	mean_cosine	0.998316
+summary	median_cosine	0.998447
+summary	positions_below_0_98	[]
+summary	n_below_0_98	0
+summary	argmax_mismatches	[12, 57, 71]
+summary	n_argmax_mismatches	3
+summary	max_abs_diff	2.110003
+summary	max_abs_diff_pos	0
+apr p4-apr start_utc=19:43:09Z load=48.13 45.52 45.59
+apr p4-apr rc=0 end_utc=19:43:25Z load=49.37 45.90 45.71 max_threads_sampled=33  Percent of CPU this job got: 639%; Elapsed (wall clock) time (h:mm:ss or m:ss): 0:16.53;
+92f1b54d504a53f758a56911c4779ce1900207bd89c78d58597e558ebc6d3ee9  /home/noah/parity-ref/variation-3091/p4-apr.bin
+p4-B-per-token-vs-apr cmp rc=1 (0 = byte-identical)
+p4-B-per-token-vs-apr compare rc=0
+summary	n_positions	82
+summary	n_vocab	248320
+summary	min_cosine	0.961309
+summary	min_cosine_pos	1
+summary	mean_cosine	0.994771
+summary	median_cosine	0.998415
+summary	positions_below_0_98	[1, 2, 4, 19]
+summary	n_below_0_98	4
+summary	argmax_mismatches	[2, 4, 6, 20, 32, 52]
+summary	n_argmax_mismatches	6
+summary	max_abs_diff	4.114042
+summary	max_abs_diff_pos	1
+p4-C-batched-vs-apr cmp rc=1 (0 = byte-identical)
+p4-C-batched-vs-apr compare rc=0
+summary	n_positions	82
+summary	n_vocab	248320
+summary	min_cosine	0.953493
+summary	min_cosine_pos	1
+summary	mean_cosine	0.995161
+summary	median_cosine	0.998328
+summary	positions_below_0_98	[1, 2]
+summary	n_below_0_98	2
+summary	argmax_mismatches	[2, 4, 6, 20, 24, 52]
+summary	n_argmax_mismatches	6
+summary	max_abs_diff	4.510909
+summary	max_abs_diff_pos	1
+c2a596d146cc264c14b1f73ec2ef39fa8cc158df85deca4c8c1ced214e51b4dc  /home/noah/parity-ref/variation-3091/p1-A-per-token-vs-batched.tsv
+b90a9aae043f46fbfd4531137d45c88b05a0cf377b43ad3aa4a6d8caf1ef6e80  /home/noah/parity-ref/variation-3091/p1-B-per-token-vs-apr.tsv
+b9a52c5c4a51cd7f46906c5cf616a303dfae0ff09a20bd58a31c2697bdec1df7  /home/noah/parity-ref/variation-3091/p1-C-batched-vs-apr.tsv
+e588009166d8fa7d04a1b0f61b42d2fae53ef7c06f90901be7c1d6f91d9f250e  /home/noah/parity-ref/variation-3091/p2-A-per-token-vs-batched.tsv
+480151a09354f910d347955ae1af2ee85ef3f847e6dc46f22b779836416015fb  /home/noah/parity-ref/variation-3091/p2-B-per-token-vs-apr.tsv
+b4e44d81723d6f9723f517f37ec1202a5e2447d5722c6811cb36790f1fda05f7  /home/noah/parity-ref/variation-3091/p2-C-batched-vs-apr.tsv
+af1761bdbb1968b3627bf44e367501dfed5b10213cf165ceb1d7439a4a142a6d  /home/noah/parity-ref/variation-3091/p3-A-per-token-vs-batched.tsv
+edda37823685fcba758a6a23b0ffcdf2336c28de8670ba77e015d5862aa27821  /home/noah/parity-ref/variation-3091/p3-B-per-token-vs-apr.tsv
+ce7f005ed416860e12428d228d4b4f20b87fa9738e8dd7912b5d9826949293ef  /home/noah/parity-ref/variation-3091/p3-C-batched-vs-apr.tsv
+47663a51c0e5125ac900c9d0956633cd15968871f8753da5294e1dc1023a84ca  /home/noah/parity-ref/variation-3091/p4-A-per-token-vs-batched.tsv
+414514f60f2f85103b5304e5ecf8a91a7693d98d64770c6d01462477b5e50488  /home/noah/parity-ref/variation-3091/p4-B-per-token-vs-apr.tsv
+9b77cdbec98f1c9702af0b38547477b4b7ee4cf308aead684809dde68fcc6307  /home/noah/parity-ref/variation-3091/p4-C-batched-vs-apr.tsv
+f6ab721f2dde7347a831c82edd1473f8f83787f5ab7c4ccd7298a6879e704c43  /home/noah/parity-ref/variation-3091/p1-A-per-token-vs-batched.json
+7349a67d3c2cef3698fba7cf5afcf9659fed05759165712fbf94b982806ecb4b  /home/noah/parity-ref/variation-3091/p1-B-per-token-vs-apr.json
+8c1f76025fc0691f99772f55c6a9c3f818040a58fb15bf992f1082c137fbc8e8  /home/noah/parity-ref/variation-3091/p1-C-batched-vs-apr.json
+2020cfbe6787ff08cbcd7c3bb1836b91850b1e31a0c906417d1083ee3b44d132  /home/noah/parity-ref/variation-3091/p2-A-per-token-vs-batched.json
+1f60d20f289384f358c62d973f9fe6f64c24bf8a2a78af06f7ede80897d4fb04  /home/noah/parity-ref/variation-3091/p2-B-per-token-vs-apr.json
+6ac4e2df86b447a5e32ad7bf3e59e1d6e801c7c209bdc62e00dc8b84eee35703  /home/noah/parity-ref/variation-3091/p2-C-batched-vs-apr.json
+ef3065c6e379d352c50e8eeeb68b5468432998f754fa135a360aca688bf00009  /home/noah/parity-ref/variation-3091/p3-A-per-token-vs-batched.json
+89d3f9e00642bc0e1620602c8c99fb7cebd4a8a55a96c1032f5bcf594caa8e6e  /home/noah/parity-ref/variation-3091/p3-B-per-token-vs-apr.json
+cec359ce600a0bdec2e58359345d75a4fdb67dfb9008bd58afe37d2b3702ab38  /home/noah/parity-ref/variation-3091/p3-C-batched-vs-apr.json
+69330535c9e27a0b251580d995b15c86b0619a0f017924db384055db21fee6e8  /home/noah/parity-ref/variation-3091/p4-A-per-token-vs-batched.json
+ffbc39f6375191eba13e494998a57cce56a461f76d4e4e63437ab90f127f0d45  /home/noah/parity-ref/variation-3091/p4-B-per-token-vs-apr.json
+e9a9a850cbead40b563a69fe403e06ae185f40e91ae192082368c46d362624ec  /home/noah/parity-ref/variation-3091/p4-C-batched-vs-apr.json
+classify rc=0
+cd308866200f283d4e359282af99683fee8d2a6e8fe247bf28a69aace0f923a5  /home/noah/parity-ref/variation-3091/flips.json
+fix done end_utc=2026-09-15T19:44:02Z load=41.75 44.43 45.23
