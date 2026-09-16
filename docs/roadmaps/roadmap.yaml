@@ -17982,3 +17982,19 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-3347
+  github_issue: 3347
+  item_type: task
+  title: bind the six qwen35-e2e equations to implementations
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-16T06:52:28Z
+  updated: 2026-09-16T06:52:28Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
