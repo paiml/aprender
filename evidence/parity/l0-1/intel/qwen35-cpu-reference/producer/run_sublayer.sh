@@ -38,7 +38,7 @@ cmp "$OUT/sub-regress-p4.bin" "$REF_P4"; echo "sub-regress-p4 vs variation p4-pe
 run sub-regress-p0 "$P0" 78
 cmp "$OUT/sub-regress-p0.bin" "$REF_P0"; echo "sub-regress-p0 vs per-token-run1 cmp rc=$?"
 
-rm -rf "$OUT/sub-p4" "$OUT/sub-p0"
+rm -rf "${OUT:?}/sub-p4" "${OUT:?}/sub-p0"
 run sub-p4 "$P4" 82 --dump-tensors "$OUT/sub-p4" --dump-positions 0,1,2,3 --dump-regex "$RE"
 cmp "$OUT/sub-p4.bin" "$REF_P4"; echo "sub-p4 logits vs variation p4-per-token cmp rc=$?"
 run sub-p0 "$P0" 78 --dump-tensors "$OUT/sub-p0" --dump-positions 4,28 --dump-regex "$RE"

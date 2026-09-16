@@ -52,7 +52,7 @@ run "C2-orig" orig -v --kv-type f32 --flash-attn off; cmp "$K/runs/C2-orig.bin" 
 for p in "${PROMPTS[@]}"; do cmp -s "$K/runs/B-$p.bin" "${REFA[$p]}"; echo "B-$p vs A cmp rc=$?"; cmp -s "$K/runs/C-$p.bin" "${REFA[$p]}"; echo "C-$p vs A cmp rc=$?"; cmp -s "$K/runs/C-$p.bin" "$K/runs/B-$p.bin"; echo "C-$p vs B cmp rc=$?"; done
 
 echo "--- 2. config C sub-layer dumps (free=$(df -h --output=avail "$HOME" | tail -1))"
-rm -rf "$K/runs/C-sub-p4" "$K/runs/C-sub-orig"
+rm -rf "${K:?}/runs/C-sub-p4" "${K:?}/runs/C-sub-orig"
 run C-sub-p4 p4 --kv-type f32 --flash-attn off --dump-tensors "$K/runs/C-sub-p4" --dump-positions 0,1,2,3 --dump-regex "$RE"
 cmp "$K/runs/C-sub-p4.bin" "$K/runs/C-p4.bin"; echo "C-sub-p4 logits vs C-p4 cmp rc=$?"
 run C-sub-orig orig --kv-type f32 --flash-attn off --dump-tensors "$K/runs/C-sub-orig" --dump-positions 4,28 --dump-regex "$RE"

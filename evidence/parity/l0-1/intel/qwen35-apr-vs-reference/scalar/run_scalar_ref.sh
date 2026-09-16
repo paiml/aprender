@@ -38,7 +38,7 @@ run SC2-orig orig -v; cmp "$S/runs/SC2-orig.bin" "$S/runs/SC-orig.bin"; echo "SC
 run SC-p4 p4 -v
 for p in orig p4; do cmp -s "$S/runs/SC-$p.bin" "$KV/C-$p.bin"; echo "SC-$p vs native-build C-$p cmp rc=$? (1 = the scalar build changed the arithmetic)"; done
 echo "--- 2. scalar C sub-layer dumps"
-rm -rf "$S/runs/SC-sub-p4" "$S/runs/SC-sub-orig"
+rm -rf "${S:?}/runs/SC-sub-p4" "${S:?}/runs/SC-sub-orig"
 run SC-sub-p4 p4 --dump-tensors "$S/runs/SC-sub-p4" --dump-positions 0,1,2,3 --dump-regex "$RE"
 cmp "$S/runs/SC-sub-p4.bin" "$S/runs/SC-p4.bin"; echo "SC-sub-p4 logits vs SC-p4 cmp rc=$?"; manifest SC-sub-p4
 run SC-sub-orig orig --dump-tensors "$S/runs/SC-sub-orig" --dump-positions 4,28 --dump-regex "$RE"

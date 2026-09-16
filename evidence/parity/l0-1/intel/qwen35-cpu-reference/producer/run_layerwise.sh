@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# PMAT-3091 layerwise: llama.cpp d1d3c3396 per-layer dumps via the scheduler eval callback.
+# PMAT-3091 layerwise: llama.cpp d1d3c3396 per-layer dumps via the scheduler evaluation callback.
 # 1. regression: --per-token without dumps must reproduce the committed per-token logits bytes
 #    (p4 0eca077c..., original 2401c110...) after the producer rebuild;
 # 2. dump runs: prompt-4 pos 0-3, original prompt pos 4 and 28; their logits must ALSO equal the
@@ -36,7 +36,7 @@ cmp "$OUT/regress-p4.bin" "$REF_P4"; echo "regress-p4 vs variation p4-per-token 
 run regress-p0 "$P0" 78
 cmp "$OUT/regress-p0.bin" "$REF_P0"; echo "regress-p0 vs per-token-run1 cmp rc=$?"
 
-rm -rf "$OUT/dump-p4" "$OUT/dump-p0"
+rm -rf "${OUT:?}/dump-p4" "${OUT:?}/dump-p0"
 run dump-p4 "$P4" 82 --dump-tensors "$OUT/dump-p4" --dump-positions 0,1,2,3
 cmp "$OUT/dump-p4.bin" "$REF_P4"; echo "dump-p4 logits vs variation p4-per-token cmp rc=$?"
 run dump-p0 "$P0" 78 --dump-tensors "$OUT/dump-p0" --dump-positions 4,28

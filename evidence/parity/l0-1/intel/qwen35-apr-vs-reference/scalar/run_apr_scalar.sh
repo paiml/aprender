@@ -26,7 +26,7 @@ echo "--- 2. scalar subjects"
 for p in orig p4 p1 p2 p3; do run "scalar-$p" scalar noop "${IDS[$p]}"; done
 run scalar2-orig scalar noop "${IDS[orig]}"; cmp "$W/runs/scalar2-orig.bin" "$W/runs/scalar-orig.bin"; echo "scalar2-orig vs scalar-orig cmp rc=$?"
 for p in orig p4; do cmp -s "$W/runs/scalar-$p.bin" /tmp/emul3091/runs/on-$p.bin; echo "scalar-$p vs =1 on-$p cmp rc=$? (1 = scalar differs from native emulation)"; done
-rm -rf "$W/runs/scalar-dump-p4" "$W/runs/scalar-dump-orig"
+rm -rf "${W:?}/runs/scalar-dump-p4" "${W:?}/runs/scalar-dump-orig"
 run scalar-dump-p4 scalar dump "${IDS[p4]}" 0,1,2,3 "$W/runs/scalar-dump-p4"
 run scalar-dump-orig scalar dump "${IDS[orig]}" 4,28 "$W/runs/scalar-dump-orig"
 cmp "$W/runs/scalar-dump-p4.bin" "$W/runs/scalar-p4.bin"; echo "scalar-dump-p4 logits vs scalar-p4 cmp rc=$?"

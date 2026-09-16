@@ -21,7 +21,7 @@ run() { # label switch mode ids extra...
 }
 for p in orig p4; do run "off-$p" - noop "${IDS[$p]}"; got=$(sha256sum "$RUN/off-$p.bin" | cut -d' ' -f1); echo "invariance_off $p sha_equal=$([ "$got" = "${SUBJECT[$p]}" ] && echo true || echo false)"; done
 for p in orig p4; do run "on1-$p" 1 noop "${IDS[$p]}"; cmp -s "$RUN/on1-$p.bin" /tmp/emul3091/runs/on-$p.bin; echo "eq1_unchanged $p cmp_rc=$? (0 = byte-identical to the committed =1 subject)"; done
-rm -rf "$RUN/scalar-dump-p4" "$RUN/scalar-dump-orig"
+rm -rf "${RUN:?}/scalar-dump-p4" "${RUN:?}/scalar-dump-orig"
 run scalar-dump-p4 scalar dump "${IDS[p4]}" 0,1,2,3 "$RUN/scalar-dump-p4"
 run scalar-dump-orig scalar dump "${IDS[orig]}" 4,28 "$RUN/scalar-dump-orig"
 for p in p4 orig; do

@@ -44,7 +44,7 @@ for p in "${PROMPTS[@]}"; do
   if [ "$got" = "${SUBJECT[$p]}" ]; then echo "invariance $p sha_equal=true"; else echo "invariance $p sha_equal=false got=$got want=${SUBJECT[$p]}"; [ "$p" = orig ] || [ "$p" = p4 ] && gate=1; fi
 done
 if [ "$gate" != 0 ]; then echo "STOP: switch-OFF invariance failed"; exit 3; fi
-rm -rf "$W/runs/off-dump-p4" "$W/runs/off-dump-orig" "$W/runs/on-dump-p4" "$W/runs/on-dump-orig"
+rm -rf "${W:?}/runs/off-dump-p4" "${W:?}/runs/off-dump-orig" "${W:?}/runs/on-dump-p4" "${W:?}/runs/on-dump-orig"
 run off-dump-p4 - dump "${IDS[p4]}" 0,1,2,3 "$W/runs/off-dump-p4"
 run off-dump-orig - dump "${IDS[orig]}" 4,28 "$W/runs/off-dump-orig"
 cmp "$W/runs/off-dump-p4.bin" "$W/runs/off-p4.bin"; echo "off-dump-p4 logits vs off-p4 cmp rc=$?"
