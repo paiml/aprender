@@ -3,9 +3,9 @@
 # the nightly prerelease) and installs it onto PATH. No Rust toolchain needed.
 #
 # Usage:
-#   curl -LsSf https://paiml.com/apr/install.sh | sh
-#   curl -LsSf https://paiml.com/apr/install.sh | sh -s -- --version v0.67.0
-#   curl -LsSf https://paiml.com/apr/install.sh | sh -s -- --nightly
+#   curl -LsSf https://raw.githubusercontent.com/paiml/aprender/main/scripts/install.sh | sh
+#   curl -LsSf https://raw.githubusercontent.com/paiml/aprender/main/scripts/install.sh | sh -s -- --version v0.67.0
+#   curl -LsSf https://raw.githubusercontent.com/paiml/aprender/main/scripts/install.sh | sh -s -- --nightly
 #
 # Env vars (flags below take precedence over these):
 #   INSTALL_DIR   Where to place the binary (default: $HOME/.local/bin)
