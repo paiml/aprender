@@ -355,6 +355,56 @@ fn truncate_helper() {
     assert_eq!(truncate("hello world", 5), "hello");
 }
 
+/// #3338: `pv proof-status contracts/ --table` PANICKED on the real corpus.
+///
+/// `truncate` sliced by BYTE index, and the width is `min(max byte len, 40)`.
+/// Eight contracts hold an obligation property whose byte 40 lands inside a
+/// multi-byte char; the first one walked is
+/// `contracts/apr-inspect-quantization-v1.yaml`:
+///
+/// ```text
+/// byte index 40 is not a char boundary; it is inside '∈' (bytes 39..42)
+/// of `for Q4_K_M Qwen2.5-Coder, quantization ∈ {Q4_K, Q6_K}`
+/// ```
+///
+/// The fixture IS that property, so the cut is inside the same char.
+#[test]
+fn truncate_cuts_on_a_char_boundary_not_a_byte() {
+    let s = "for Q4_K_M Qwen2.5-Coder, quantization ∈ {Q4_K, Q6_K}";
+    assert!(
+        !s.is_char_boundary(40),
+        "fixture must cut INSIDE a multi-byte char, else it proves nothing"
+    );
+    let t = truncate(s, 40);
+    assert!(s.starts_with(t), "truncation must be a prefix");
+    assert!(t.len() <= 40, "truncation must not exceed the budget");
+    assert_eq!(t, "for Q4_K_M Qwen2.5-Coder, quantization ");
+}
+
+/// The panic reached the operator through `format_obligation_table`, so the
+/// table path gets its own row rather than only the helper.
+#[test]
+fn format_obligation_table_survives_a_multibyte_property() {
+    let yaml = r#"
+metadata:
+  version: "1.0.0"
+  description: "Multi-byte property at the cut"
+  references: ["Paper"]
+equations:
+  f:
+    formula: "f(x) = x"
+proof_obligations:
+  - type: invariant
+    property: "for Q4_K_M Qwen2.5-Coder, quantization ∈ {Q4_K, Q6_K}"
+falsification_tests: []
+kani_harnesses: []
+"#;
+    let c = parse_contract_str(yaml).unwrap();
+    let matrices = obligation_matrix(&[("multibyte-v1".to_string(), &c)]);
+    let text = format_obligation_table(&matrices);
+    assert!(text.contains("Contract: multibyte-v1"));
+}
+
 #[test]
 fn schema_version_present() {
     let report = proof_status_report(&[], None, false);

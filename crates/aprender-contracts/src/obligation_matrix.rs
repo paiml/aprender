@@ -159,16 +159,28 @@ pub fn format_obligation_table(matrices: &[ContractObligationMatrix]) -> String 
     out
 }
 
+/// Truncate `s` to at most `max` BYTES, cutting on a char boundary.
+///
+/// #3338: this sliced `&s[..max]` and `pv proof-status contracts/ --table`
+/// panicked on the real corpus — `byte index 40 is not a char boundary; it is
+/// inside '∈'`. The column width is a byte count (`property.len()`), so the
+/// cut lands mid-char for any property holding a multi-byte char near it;
+/// eight contracts in `contracts/` do. The budget stays a byte budget (the
+/// table is laid out in bytes) and the cut walks back to the nearest boundary.
+pub fn truncate(s: &str, max: usize) -> &str {
+    if s.len() <= max {
+        return s;
+    }
+    let mut end = max;
+    while end > 0 && !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    &s[..end]
+}
+
 /// Check whether two property descriptions share significant words.
 ///
 /// Splits both strings into words (>= 3 chars, excluding stop words) and
-pub fn truncate(s: &str, max: usize) -> &str {
-    if s.len() <= max {
-        s
-    } else {
-        &s[..max]
-    }
-}
 
 /// returns true if at least one non-trivial word overlaps.
 pub fn property_words_match(a: &str, b: &str) -> bool {
