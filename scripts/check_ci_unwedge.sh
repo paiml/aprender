@@ -97,6 +97,15 @@
 # the cancel manufactured the `gate` failure it then reported. See
 # superseded_verdict, below, for the predicate this rule is not allowed to be.
 #
+# THE FOURTH DEFECT: AN ORPHANED MERGE GROUP (#3292 rule 3, measured 2026-09-16)
+# -----------------------------------------------------------------------------
+# A merge_group run whose queue group is no longer an entry of the LIVE merge
+# queue. Run 35099392561 built the discarded `pr-3266-2261757f...` for eighty-eight
+# minutes after the queue rebuilt that entry on a new base. Near neighbour of the
+# dead-ref pass, different surface and different failure mode -- see the block at
+# orphan_verdict for why the two are not redundant, and why the key is (PR number,
+# base oid) rather than either half.
+#
 # Usage
 #   bash scripts/check_ci_unwedge.sh --self-test        the committed case table
 #   bash scripts/check_ci_unwedge.sh --scan [--dry-run] [--limit N] [--repo O/R]
@@ -376,6 +385,135 @@ stall_verdict() {
     printf 'CANCEL %s min held, no dispatch, %s idle runner(s) could have served it\n' "$age" "$idle"
 }
 
+# ---- #3292 RULE 3: a merge_group run whose queue group is GONE ----------------
+# THE DEFECT, measured 2026-09-16. Run 35099392561 was the CI build of
+# `gh-readonly-queue/main/pr-3266-2261757f...`. Something ahead of #3266 merged, so
+# the queue threw that entry away and rebuilt #3266 on the new base as
+# `pr-3266-f5d02deb...`. GitHub does NOT cancel the run on the discarded ref. It
+# kept building, and then held `gate` QUEUED for fifty minutes -- drawing runners
+# and holding a concurrency group to compute a verdict on a group that no longer
+# exists. Nothing can ever read that verdict.
+#
+# THIS IS NOT THE DEAD-REF PASS. That pass asks whether the git REF still exists
+# (`git/ref/heads/gh-readonly-queue%2F...`) and needs a corroboration gate because a
+# broken derivation reads every run as 404. This rule asks a different question of a
+# different surface -- is this GROUP still an entry of the live merge queue -- and
+# the two disagree in both directions: the ref of a discarded group can linger, and a
+# live group's ref can 404 for a moment while it is being rebuilt.
+#
+# THE MATCH IS (PR NUMBER, BASE OID), AND THAT IS MEASURED, NOT ASSUMED. A merge
+# queue ref is `gh-readonly-queue/<base-branch>/pr-<N>-<40 hex>`, and the 40 hex IS
+# the entry's `baseCommit.oid`. Both sides, read live at 2026-09-16:
+#
+#   run   35104974680  gh-readonly-queue/main/pr-3266-f5d02debcce43710c64bde4bfdbe4da8d423bd19
+#   entry position 2   pullRequest.number 3266  baseCommit.oid f5d02debcce43710c64bde4bfdbe4da8d423bd19
+#
+# so the ref names exactly ONE entry, and that pair is the identity used here.
+# Neither half alone is:
+#   - the PR NUMBER alone cannot be it. The zombie and its replacement carry the
+#     SAME number and differ only in the base. That IS the shape of the defect
+#     (row O5), so a number-only match answers LEAVE on the one run this rule exists
+#     to cancel.
+#   - the BASE OID alone cannot be it either. Consecutive entries chain -- #3266's
+#     base oid f5d02deb IS #3270's head oid -- so a base-only match would read one
+#     group as licence to judge its neighbour.
+# The fixture is the live queue itself (o1_mq_entries_live.json), captured with the
+# exact `gh api graphql` query in MQ_QUERY, so the field names in the predicate and
+# the field names GitHub returns cannot drift apart silently.
+#
+# ABSENCE OF EVIDENCE IS NOT ABSENCE OF THE GROUP. An unreadable payload, a payload
+# that is not the expected shape, and an EMPTY entries list all REFUSE. Empty is the
+# dangerous one: read as "the queue is empty" it licenses cancelling every
+# merge_group run in flight, which is the whole queue. It is exactly the vacuity the
+# dead-ref pass's corroboration gate exists for, in a form where no corroboration is
+# possible -- so the answer is UNKNOWN, and unknown never cancels (rows O3/O3b/O3c).
+MQ_QUERY='query($owner:String!,$name:String!){repository(owner:$owner,name:$name){mergeQueue{entries(first:50){nodes{position state headCommit{oid} baseCommit{oid} pullRequest{number}}}}}}'
+
+# parse_queue_branch BRANCH -> "PR|BASE_OID", rc 1 when BRANCH is not a merge-queue
+# ref. Pure: a string in, a string out, so the table pins the derivation itself and
+# a malformed ref can never be silently read as "PR 0 on base ''".
+parse_queue_branch() {
+    local br="${1:-}" leaf pr base
+    case "$br" in gh-readonly-queue/*/pr-*-*) ;; *) return 1 ;; esac
+    leaf="${br##*/}"          # pr-3266-f5d02deb...
+    leaf="${leaf#pr-}"        # 3266-f5d02deb...
+    pr="${leaf%%-*}"
+    base="${leaf#*-}"
+    case "$pr" in ''|*[!0-9]*) return 1 ;; esac
+    case "$base" in ''|*[!0-9a-f]*) return 1 ;; esac
+    [ "${#base}" -eq 40 ] || return 1
+    printf '%s|%s\n' "$pr" "$base"
+}
+
+# orphan_verdict EVENT RUN_HEAD_BRANCH ENTRIES_FILE -> CANCEL | LEAVE | REFUSE, and
+# why. Pure: an event, a branch and a committed payload in; a verdict out.
+orphan_verdict() {
+    local event="${1:-}" br="${2:-}" ef="${3:-}"
+    local parsed pr base nodes n_pr n_match n_unbuilt pos
+    # Non-merge_group is not this rule's business at all: rule 1 owns pull_request
+    # runs and answers on the head sha, which is stronger evidence than this one has.
+    case "$event" in
+        merge_group) ;;
+        *) printf 'LEAVE event %s is not merge_group -- rule 1 owns pull_request runs\n' "${event:-<none>}"
+           return 0 ;;
+    esac
+    if ! parsed="$( parse_queue_branch "$br" )"; then
+        printf 'REFUSE %s is not a merge-queue ref -- the group cannot be named, so it cannot be called absent\n' "${br:-<none>}"
+        return 0
+    fi
+    pr="${parsed%%|*}"; base="${parsed#*|}"
+    if [ -z "$ef" ] || [ ! -r "$ef" ]; then
+        printf 'REFUSE the merge-queue entries are unreadable -- absence of evidence is not absence of the group\n'
+        return 0
+    fi
+    nodes=$(jq '[.data.repository.mergeQueue.entries.nodes[]?] | length' "$ef" 2>/dev/null) || nodes=""
+    case "$nodes" in ''|*[!0-9]*)
+        printf 'REFUSE the entries payload is not the shape MQ_QUERY returns -- never cancel on a guess\n'
+        return 0 ;;
+    esac
+    if [ "$nodes" -eq 0 ]; then
+        printf 'REFUSE the entries list is EMPTY -- an unread queue is unknown, not an empty one\n'
+        return 0
+    fi
+    n_pr=$(jq --argjson pr "$pr" \
+        '[.data.repository.mergeQueue.entries.nodes[]? | select(.pullRequest.number == $pr)] | length' \
+        "$ef" 2>/dev/null) || n_pr=""
+    n_match=$(jq --argjson pr "$pr" --arg base "$base" \
+        '[.data.repository.mergeQueue.entries.nodes[]? | select(.pullRequest.number == $pr)
+          | select((.baseCommit.oid // "") == $base)] | length' "$ef" 2>/dev/null) || n_match=""
+    n_unbuilt=$(jq --argjson pr "$pr" \
+        '[.data.repository.mergeQueue.entries.nodes[]? | select(.pullRequest.number == $pr)
+          | select(.baseCommit == null)] | length' "$ef" 2>/dev/null) || n_unbuilt=""
+    case "$n_pr$n_match$n_unbuilt" in ''|*[!0-9]*)
+        printf 'REFUSE the entries payload could not be queried -- never cancel on a guess\n'
+        return 0 ;;
+    esac
+    if [ "$n_match" -gt 0 ]; then
+        pos=$(jq -r --argjson pr "$pr" --arg base "$base" \
+            '[.data.repository.mergeQueue.entries.nodes[]? | select(.pullRequest.number == $pr)
+              | select((.baseCommit.oid // "") == $base) | .position] | first' "$ef" 2>/dev/null) || pos='?'
+        printf 'LEAVE pr-%s on base %s is queue entry at position %s -- a LIVE group is never cancelled\n' \
+            "$pr" "${base:0:8}" "$pos"
+        return 0
+    fi
+    if [ "$n_pr" -eq 0 ]; then
+        printf 'CANCEL pr-%s is not in the merge queue at all -- nothing can read this build\n' "$pr"
+        return 0
+    fi
+    # The PR is queued, but the queue has not materialised a base for it yet
+    # (state QUEUED, baseCommit null). Whether THIS ref is that entry's build is
+    # unresolvable from the payload, and the states race: an entry flips to
+    # AWAITING_CHECKS on its own base moments after the run is created. So LEAVE.
+    # The cost is a zombie missed for one sweep -- the next sweep reads a base and
+    # answers. The cost of the other choice is cancelling a live head-of-queue build.
+    if [ "$n_unbuilt" -gt 0 ]; then
+        printf 'LEAVE pr-%s is in the queue with no base materialised yet -- unresolvable, never cancel on a guess\n' "$pr"
+        return 0
+    fi
+    printf 'CANCEL pr-%s was rebuilt on a new base -- this run builds %s, which the queue discarded\n' \
+        "$pr" "${base:0:8}"
+}
+
 self_test() {
     local fails=0 rows=0 n want got
     if [ ! -d "$CASES_DIR" ]; then
@@ -560,6 +698,80 @@ self_test() {
         printf 'FAIL  S7 an ordinary PR branch was refused as a candidate\n'; fails=1
     fi
 
+    printf '%s\n' '-- orphaned merge_group rows (#3292 rule 3: the queue group is GONE) --'
+    # THE FIXTURE IS THE LIVE QUEUE. o1_mq_entries_live.json is the verbatim answer to
+    # MQ_QUERY at 2026-09-16, nine entries deep: three AWAITING_CHECKS with a
+    # materialised baseCommit, six QUEUED with baseCommit null. Capturing the real
+    # payload rather than hand-writing one is what makes the field names in the
+    # predicate checkable against GitHub's own answer.
+    local mq="$CASES_DIR/o1_mq_entries_live.json"
+    local base_3270='eb262f8eb799ef9b7de26a770a584330a27025b4'   # entry 1's baseCommit.oid
+    local base_3266='f5d02debcce43710c64bde4bfdbe4da8d423bd19'   # entry 2's baseCommit.oid
+    local base_zombie='2261757fd8a49756ae126230bdc954c940ecd051' # the DISCARDED base, below
+
+    # (a) THE DERIVATION, both polarities. A ref that cannot be parsed is never
+    # silently read as "PR 0 on base ''" -- it has no group to call absent.
+    _eq 'O0a a queue ref parses to (pr, base oid)' \
+        "3266|$base_3266" "$( parse_queue_branch "gh-readonly-queue/main/pr-3266-$base_3266" )"
+    rows=$(( rows + 1 ))
+    if parse_queue_branch 'PMAT-3292-ci-wedge-cannot-recur' > /dev/null 2>&1; then
+        printf 'FAIL  O0b an ordinary branch parsed as a queue ref\n'; fails=1
+    else
+        printf 'ok    O0b an ordinary branch is not a queue ref\n'
+    fi
+    rows=$(( rows + 1 ))
+    if parse_queue_branch 'gh-readonly-queue/main/pr-3266-f5d02deb' > /dev/null 2>&1; then
+        printf 'FAIL  O0c a truncated base oid parsed as a queue ref\n'; fails=1
+    else
+        printf 'ok    O0c a truncated base oid is refused (the oid is 40 hex or it is not one)\n'
+    fi
+
+    _eq 'O1 merge_group whose (pr, base) IS an entry -> LEAVE (a live group, never cancelled)' \
+        'LEAVE' "$( orphan_verdict merge_group "gh-readonly-queue/main/pr-3270-$base_3270" "$mq" \
+                    | head -1 | cut -d' ' -f1 )"
+    # O2 IS ALSO THE DISCRIMINATION ROW FOR THE BASE HALF OF THE KEY. The base oid
+    # here is a LIVE one (#3266's), so a rule matching on base alone answers LEAVE.
+    # The PR is not in the queue at all, so the pair answers CANCEL.
+    _eq 'O2 merge_group for a PR that is not in the queue at all -> CANCEL' \
+        'CANCEL' "$( orphan_verdict merge_group "gh-readonly-queue/main/pr-9999-$base_3266" "$mq" \
+                     | head -1 | cut -d' ' -f1 )"
+    _eq 'O3 the entries file is unreadable -> REFUSE (absence of evidence is not absence)' \
+        'REFUSE' "$( orphan_verdict merge_group "gh-readonly-queue/main/pr-3266-$base_zombie" \
+                     "$CASES_DIR/does-not-exist.json" | head -1 | cut -d' ' -f1 )"
+    # O3b IS THE VACUITY ROW. An empty list read as "the queue is empty" licenses
+    # cancelling EVERY merge_group run in flight -- the entire queue, in one sweep.
+    _eq 'O3b an EMPTY entries list -> REFUSE (an unread queue is unknown, not empty)' \
+        'REFUSE' "$( orphan_verdict merge_group "gh-readonly-queue/main/pr-3266-$base_zombie" \
+                     "$CASES_DIR/o2_mq_entries_empty.json" | head -1 | cut -d' ' -f1 )"
+    # O3c: valid JSON of the WRONG shape (a jobs payload). The query returns null and
+    # the count is 0 -- which must not be read as "no entries".
+    _eq 'O3c JSON that is not the MQ_QUERY shape -> REFUSE, not "no entries"' \
+        'REFUSE' "$( orphan_verdict merge_group "gh-readonly-queue/main/pr-3266-$base_zombie" \
+                     "$CASES_DIR/h4_zero_jobs.json" | head -1 | cut -d' ' -f1 )"
+    _eq 'O4 a pull_request run -> LEAVE (rule 1 owns those, on stronger evidence)' \
+        'LEAVE' "$( orphan_verdict pull_request 'PMAT-3292-ci-wedge-cannot-recur' "$mq" \
+                    | head -1 | cut -d' ' -f1 )"
+    # O5 IS THE MEASURED ZOMBIE, both halves, against ONE payload. Run 35099392561
+    # built gh-readonly-queue/main/pr-3266-2261757fd8a4... from 13:02:23Z to 14:30:59Z
+    # -- eighty-eight minutes -- while the queue had already discarded that entry and
+    # rebuilt #3266 on base f5d02deb (entry 2 of this very fixture). Same PR number in
+    # both rows: only the base tells the zombie from the live build, which is why the
+    # key is the pair.
+    _eq 'O5a the measured zombie: pr-3266 on the DISCARDED base 2261757f -> CANCEL' \
+        'CANCEL' "$( orphan_verdict merge_group "gh-readonly-queue/main/pr-3266-$base_zombie" "$mq" \
+                     | head -1 | cut -d' ' -f1 )"
+    _eq 'O5b its replacement: pr-3266 on the LIVE base f5d02deb -> LEAVE' \
+        'LEAVE' "$( orphan_verdict merge_group "gh-readonly-queue/main/pr-3266-$base_3266" "$mq" \
+                    | head -1 | cut -d' ' -f1 )"
+    # O6: entry 4 is #3238, state QUEUED, baseCommit null -- the queue has not
+    # materialised a base for it. Whether this ref is that entry's build cannot be
+    # resolved, and QUEUED -> AWAITING_CHECKS races the run's own creation. LEAVE.
+    _eq 'O6 the PR is queued with no base materialised yet -> LEAVE (unresolvable)' \
+        'LEAVE' "$( orphan_verdict merge_group "gh-readonly-queue/main/pr-3238-$base_zombie" "$mq" \
+                    | head -1 | cut -d' ' -f1 )"
+    _eq 'O7 a merge_group run on a branch that is not a queue ref -> REFUSE' \
+        'REFUSE' "$( orphan_verdict merge_group 'main' "$mq" | head -1 | cut -d' ' -f1 )"
+
     printf '\n%s row(s), %s\n' "$rows" "$( [ "$fails" -eq 0 ] && echo '0 red / FALSIFIER GREEN' || echo 'RED' )"
     return "$fails"
 }
@@ -635,6 +847,41 @@ superseded_pass() {
     esac
 }
 
+# orphan_pass REPO RUN BRANCH EVENT ENTRIES_FILE DRY -> 0 when force-cancelled, 1
+# otherwise. #3292 rule 3, wired for `scan`. The entries payload is fetched ONCE per
+# scan by the caller and passed in as a FILE: one graphql call for the whole sweep,
+# and the same input the case table feeds the predicate (one evaluator, two
+# producers -- the live query and a committed fixture).
+#
+# Non-merge_group returns 1 before anything else, so this pass costs nothing on the
+# pull_request runs rule 1 already judged.
+orphan_pass() {
+    local repo="$1" run="$2" br="$3" event="$4" entries="$5" dry="$6"
+    local verdict
+    case "$event" in merge_group) ;; *) return 1 ;; esac
+    verdict="$( orphan_verdict "$event" "$br" "$entries" )"
+    case "$verdict" in
+        CANCEL*)
+            if [ "$dry" = 1 ]; then
+                printf 'WOULD-FREE %s %s -- ORPHAN %s\n' "$run" "${br##*/}" "${verdict#CANCEL }"
+                return 1
+            fi
+            # force-cancel, for the same reason the dead-ref pass uses it: a plain
+            # `gh run cancel` leaves the aggregator parked and the run `queued`,
+            # which is the wedge at the top of this file.
+            if gh api -X POST "repos/$repo/actions/runs/$run/force-cancel" > /dev/null 2>&1; then
+                printf 'FREED %s %s -- ORPHAN %s\n' "$run" "${br##*/}" "${verdict#CANCEL }"
+                return 0
+            fi
+            printf 'FAILED-TO-FREE %s %s (orphaned group)\n' "$run" "${br##*/}"
+            return 1 ;;
+        REFUSE*)
+            printf 'refuse %s %s -- %s\n' "$run" "${br##*/}" "${verdict#REFUSE }"
+            return 1 ;;
+        *)  return 1 ;;
+    esac
+}
+
 scan() {
     local repo="$1" limit="$2" dry="$3" tmp run st freed=0 looked=0 verdict
     command -v gh > /dev/null 2>&1 || { printf 'ENV: gh is not on PATH\n' >&2; return 2; }
@@ -662,7 +909,16 @@ scan() {
         : > "$tmp/capacity.json"
         printf 'refuse STALL-RULE capacity unknown -- no --capacity/UNWEDGE_CAPACITY_JSON reading; nothing is cancelled on age alone\n'
     fi
-    local now stalled=0 superseded=0
+    # ---- the live merge queue, fetched ONCE per scan (#3292 rule 3) ---------
+    # One graphql call for the whole sweep, not one per run. A FAILED fetch leaves
+    # the file absent, and orphan_verdict REFUSES on an unreadable payload -- it
+    # never reads "could not ask" as "the group is gone" (rows O3/O3b).
+    if ! gh api graphql -F owner="${repo%%/*}" -F name="${repo##*/}" \
+            -f query="$MQ_QUERY" > "$tmp/mqentries.json" 2>/dev/null; then
+        rm -f "$tmp/mqentries.json"
+        printf 'refuse ORPHAN-RULE the merge queue could not be read -- no merge_group run is cancelled this sweep\n'
+    fi
+    local now stalled=0 superseded=0 orphaned=0
     now="$(date -u +%FT%TZ)"  # bashrs disable-line=DET002
 
     while IFS='|' read -r run br created rstatus revent rhead; do
@@ -672,6 +928,14 @@ scan() {
         # is cancelled on its own evidence, whatever the jobs/capacity would say.
         if superseded_pass "$repo" "$run" "$br" "$revent" "$rhead" "$dry"; then
             superseded=$(( superseded + 1 )); freed=$(( freed + 1 )); continue
+        fi
+        # RULE 3, also before the jobs call: a merge_group run whose queue group is
+        # no longer an entry is a zombie whatever its job list says. Rule 1 declined
+        # it (merge_group is that rule's hard exclusion) -- this is the ONLY rule
+        # allowed to cancel a merge-queue build, and only on a group GitHub itself
+        # no longer lists.
+        if orphan_pass "$repo" "$run" "$br" "$revent" "$tmp/mqentries.json" "$dry"; then
+            orphaned=$(( orphaned + 1 )); freed=$(( freed + 1 )); continue
         fi
         gh api "repos/$repo/actions/runs/$run/jobs" --paginate > "$tmp/jobs.json" 2>/dev/null \
             || { printf 'skip  %s (jobs unreadable)\n' "$run"; continue; }
@@ -742,8 +1006,8 @@ scan() {
                 fi
             done < "$tmp/dead" ;;
     esac
-    printf '%s UNWEDGE looked=%s freed=%s superseded_freed=%s stalled_freed=%s dry_run=%s\n' \
-        "$(date -u +%FT%TZ)" "$looked" "$freed" "$superseded" "$stalled" "$dry"  # bashrs disable-line=DET002
+    printf '%s UNWEDGE looked=%s freed=%s superseded_freed=%s orphan_freed=%s stalled_freed=%s dry_run=%s\n' \
+        "$(date -u +%FT%TZ)" "$looked" "$freed" "$superseded" "$orphaned" "$stalled" "$dry"  # bashrs disable-line=DET002
     return 0
 }
 
