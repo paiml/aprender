@@ -1,0 +1,75 @@
+# CRUX-O-10 — Predictor-level permutation feature importance with p-values and confidence intervals
+# CRUX category O: AutoML Parity (AutoGluon 1.6.3).
+# Filed from the 2026-09-16 competitive sweep of ../autogluon. Tracks GitHub #3380, epic #3370.
+# registry: false — this contract carries real falsification gates and claims no
+# exemption (operator ruling 2026-08-21, "no contract exemptions").
+
+metadata:
+  id: CRUX-O-10
+  version: "1.0.0"
+  created: "2026-09-16"
+  updated: "2026-09-16"
+  author: PAIML Engineering
+  registry: false
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "O — AutoML Parity"
+  competitor: autogluon
+  demand_score: 4  # 1..5, high priority in pmat work
+  intake_status: partial
+  github_issue: 3380
+  description: >
+    Predictor-level permutation feature importance with p-values and confidence intervals. Competitor verb: predictor.feature_importance(test_data, num_shuffle_sets=10). Gap measured in aprender at eb262f8eb: PermutationImportance exists in crates/aprender-core/src/interpret/ for a single estimator. Missing: the predictor-level call on raw (pre-pipeline) columns, num_shuffle_sets repeats, stddev / p-value / p99 columns, and subsampling. AutoGluon 1.6 also cut this call's memory 25x (#5645).
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - 'epic: https://github.com/paiml/aprender/issues/3370'
+  - 'story: https://github.com/paiml/aprender/issues/3380'
+  - 'competitor: https://github.com/autogluon/autogluon (1.6.3)'
+  - 'evidence: evidence/crux/autogluon/api-surface.md'
+
+equations:
+  importance_is_reported_per_raw_input_column:
+    formula: |
+      on a fixture whose datetime column expands to 4 features, the importance table has one row for the datetime column, not four
+    domain: "the fixture and inputs named in the prediction"
+    codomain: "PASS iff the prediction holds; the mutation named in the prediction (where one is named) turns it RED"
+    invariants:
+    - "importance is reported per raw input column"
+  a_pure_noise_column_has_importance_statistically_indistingui:
+    formula: |
+      with num_shuffle_sets=10 the noise column's p-value > 0.05 AND the signal column's p-value < 0.01 on the same run
+    domain: "the fixture and inputs named in the prediction"
+    codomain: "PASS iff the prediction holds; the mutation named in the prediction (where one is named) turns it RED"
+    invariants:
+    - "a pure-noise column has importance statistically indistinguishable from zero"
+
+falsification_tests:
+- id: FALSIFY-CRUX-O-10-001
+  rule: "importance is reported per raw input column"
+  prediction: "on a fixture whose datetime column expands to 4 features, the importance table has one row for the datetime column, not four"
+  test: >-
+    LIVE-PENDING - importance is reported per raw input column. No test surface exists today because the capability is partial: Predictor-level permutation feature importance with p-values and confidence intervals (aprender#3380, CRUX-O-10). PROMOTE by authoring a test named importance_on_raw_columns in module `automl/importance/tests` of crate `aprender-core`; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED and unfalsifiable-by-absence, NOT satisfied.
+  if_fails: "rule 'importance is reported per raw input column' is violated — the autogluon parity claim for CRUX-O-10 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation"
+- id: FALSIFY-CRUX-O-10-002
+  rule: "a pure-noise column has importance statistically indistinguishable from zero"
+  prediction: "with num_shuffle_sets=10 the noise column's p-value > 0.05 AND the signal column's p-value < 0.01 on the same run"
+  test: >-
+    LIVE-PENDING - a pure-noise column has importance statistically indistinguishable from zero. No test surface exists today because the capability is partial: Predictor-level permutation feature importance with p-values and confidence intervals (aprender#3380, CRUX-O-10). PROMOTE by authoring a test named noise_column_pvalue in module `automl/importance/tests` of crate `aprender-core`; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED and unfalsifiable-by-absence, NOT satisfied.
+  if_fails: "rule 'a pure-noise column has importance statistically indistinguishable from zero' is violated — the autogluon parity claim for CRUX-O-10 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation"
+
+proof_obligations:
+- type: invariant
+  property: "importance is reported per raw input column"
+- type: invariant
+  property: "a pure-noise column has importance statistically indistinguishable from zero"
+
+kani_harnesses:
+- id: KH-CRUX-O-10-001
+  obligation: importance_is_reported_per_raw_input_column
+  property: importance_is_reported_per_raw_input_column_holds_on_bounded_input
+  bound: 4
+- id: KH-CRUX-O-10-002
+  obligation: a_pure_noise_column_has_importance_statistically_indistingui
+  property: a_pure_noise_column_has_importance_statistically_indistingui_holds_on_bounded_input
+  bound: 4

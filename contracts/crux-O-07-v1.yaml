@@ -1,0 +1,75 @@
+# CRUX-O-07 — Multi-layer stack ensembling with a leakage guard (num_stack_levels, auto_stack, dynamic_stacking)
+# CRUX category O: AutoML Parity (AutoGluon 1.6.3).
+# Filed from the 2026-09-16 competitive sweep of ../autogluon. Tracks GitHub #3377, epic #3370.
+# registry: false — this contract carries real falsification gates and claims no
+# exemption (operator ruling 2026-08-21, "no contract exemptions").
+
+metadata:
+  id: CRUX-O-07
+  version: "1.0.0"
+  created: "2026-09-16"
+  updated: "2026-09-16"
+  author: PAIML Engineering
+  registry: false
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "O — AutoML Parity"
+  competitor: autogluon
+  demand_score: 4  # 1..5, high priority in pmat work
+  intake_status: missing
+  github_issue: 3377
+  description: >
+    Multi-layer stack ensembling with a leakage guard (num_stack_levels, auto_stack, dynamic_stacking). Competitor verb: fit(..., num_stack_levels=1, dynamic_stacking="auto"). Gap measured in aprender at eb262f8eb: No stacking. crates/aprender-core/src/stack/ is a deployment-health module (StackHealth, InferenceConfig), not a model stacker. ensemble/ holds MixtureOfExperts gating only.
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - 'epic: https://github.com/paiml/aprender/issues/3370'
+  - 'story: https://github.com/paiml/aprender/issues/3377'
+  - 'competitor: https://github.com/autogluon/autogluon (1.6.3)'
+  - 'evidence: evidence/crux/autogluon/api-surface.md'
+
+equations:
+  level_2_features_are_oof__never_in_sample:
+    formula: |
+      a mutation that feeds in-sample level-1 predictions to level 2 is detected by the leak test: the L2 holdout score on a pure-noise label rises above chance (asserted RED) while the OOF path stays at chance
+    domain: "the fixture and inputs named in the prediction"
+    codomain: "PASS iff the prediction holds; the mutation named in the prediction (where one is named) turns it RED"
+    invariants:
+    - "level-2 features are OOF, never in-sample"
+  dynamic_stacking_falls_back_when_stacking_hurts:
+    formula: |
+      on a fixture where L2 holdout score < L1 holdout score, the final model is the L1 ensemble and the decision is recorded in the fit summary
+    domain: "the fixture and inputs named in the prediction"
+    codomain: "PASS iff the prediction holds; the mutation named in the prediction (where one is named) turns it RED"
+    invariants:
+    - "dynamic stacking falls back when stacking hurts"
+
+falsification_tests:
+- id: FALSIFY-CRUX-O-07-001
+  rule: "level-2 features are OOF, never in-sample"
+  prediction: "a mutation that feeds in-sample level-1 predictions to level 2 is detected by the leak test: the L2 holdout score on a pure-noise label rises above chance (asserted RED) while the OOF path stays at chance"
+  test: >-
+    LIVE-PENDING - level-2 features are OOF, never in-sample. No test surface exists today because the capability is unimplemented: Multi-layer stack ensembling with a leakage guard (num_stack_levels, auto_stack, dynamic_stacking) (aprender#3377, CRUX-O-07). PROMOTE by authoring a test named stack_uses_oof_not_insample in module `automl/stacking/tests` of crate `aprender-core`; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED and unfalsifiable-by-absence, NOT satisfied.
+  if_fails: "rule 'level-2 features are OOF, never in-sample' is violated — the autogluon parity claim for CRUX-O-07 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation"
+- id: FALSIFY-CRUX-O-07-002
+  rule: "dynamic stacking falls back when stacking hurts"
+  prediction: "on a fixture where L2 holdout score < L1 holdout score, the final model is the L1 ensemble and the decision is recorded in the fit summary"
+  test: >-
+    LIVE-PENDING - dynamic stacking falls back when stacking hurts. No test surface exists today because the capability is unimplemented: Multi-layer stack ensembling with a leakage guard (num_stack_levels, auto_stack, dynamic_stacking) (aprender#3377, CRUX-O-07). PROMOTE by authoring a test named dynamic_stacking_fallback_recorded in module `automl/stacking/tests` of crate `aprender-core`; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED and unfalsifiable-by-absence, NOT satisfied.
+  if_fails: "rule 'dynamic stacking falls back when stacking hurts' is violated — the autogluon parity claim for CRUX-O-07 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation"
+
+proof_obligations:
+- type: invariant
+  property: "level-2 features are OOF, never in-sample"
+- type: invariant
+  property: "dynamic stacking falls back when stacking hurts"
+
+kani_harnesses:
+- id: KH-CRUX-O-07-001
+  obligation: level_2_features_are_oof__never_in_sample
+  property: level_2_features_are_oof__never_in_sample_holds_on_bounded_input
+  bound: 4
+- id: KH-CRUX-O-07-002
+  obligation: dynamic_stacking_falls_back_when_stacking_hurts
+  property: dynamic_stacking_falls_back_when_stacking_hurts_holds_on_bounded_input
+  bound: 4
