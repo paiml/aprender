@@ -90,7 +90,7 @@ if [ "$RC" -eq 0 ]; then
 fi
 
 # A path clippy cannot resolve at all is loud — and is still a dead ban. Fail on it directly.
-if printf '%s\n' "$OUT" | grep -q "does not refer to a reachable function"; then
+if grep -q "does not refer to a reachable function" <<<"$OUT"; then
   printf 'libm-ban-live: FAIL — a banned path does not resolve, so it bans nothing:\n' >&2
   printf '%s\n' "$OUT" | grep "does not refer to a reachable function" >&2
   exit 1
@@ -103,7 +103,7 @@ fi
 # "`std::f32::ln` does not refer to a reachable function" warning CONTAINS the substring
 # `f32::ln`, so a misspelled, completely dead ban satisfied the test that existed to catch it.
 # Measured while writing this script.
-hit() { printf '%s\n' "$OUT" | grep -q "disallowed method \`$1\`"; }
+hit() { grep -q "disallowed method \`$1\`" <<<"$OUT"; }
 
 MISSING=""
 for t in f32 f64; do
@@ -114,7 +114,7 @@ done
 
 HITS=$(printf '%s\n' "$OUT" | grep -c "disallowed method" || true)
 
-if ! printf '%s\n' "$OUT" | grep -q "error: use of a disallowed method"; then
+if ! grep -q "error: use of a disallowed method" <<<"$OUT"; then
   printf 'libm-ban-live: FAIL — the bans fired as WARNINGS, not errors.\n' >&2
   printf '  `#![deny(clippy::disallowed_methods)]` is missing from %s, so clippy\n' "$LIB" >&2
   printf '  reports every violation and still exits 0. The list reads correctly and\n' >&2

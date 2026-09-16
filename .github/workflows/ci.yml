@@ -2809,10 +2809,24 @@ jobs:
     # The cold build pulls resvg + skrifa, which no other job in this workflow builds; 45 is the
     # BSE-05 floor plus headroom, to be refitted from this job's own p99 once it has seven runs.
     timeout-minutes: 45
+    env:
+      # A target dir that belongs to THIS job and nothing else. The first run of this job used the
+      # runner's persistent `_work/aprender/aprender/target`, and X64 died with `could not
+      # parse/generate dep info at .../deps/hashbrown-….d: No such file or directory` — the
+      # aprender#2822 race that every other cargo job here already avoids with a per-run dir.
+      # `runner.temp` is emptied per job on every runner, so it needs no /mnt mount on gx10.
+      CARGO_TARGET_DIR: ${{ runner.temp }}/determinism-target
     steps:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
+
+      # The receipt is written into the workspace's `target/aprender-viz/`, which persists on a
+      # self-hosted runner. A receipt left there by an earlier run must never be uploaded as this
+      # run's, so the directory starts empty and `if-no-files-found: error` below means this run
+      # wrote it.
+      - name: No receipt from an earlier run may survive into this one
+        run: rm -rf target/aprender-viz
 
       # The row's rule 5 is enforced by a clippy `disallowed-methods` list, and such a list is a
       # SILENT no-op when a path is misspelled: measured, `std::f32::ln`, `<f32>::ln` and
@@ -2852,47 +2866,18 @@ jobs:
           path: receipts
           merge-multiple: true
 
-      - name: Both hosts must have reported
-        run: |
-          set -euo pipefail
-          n=$(find receipts -name 'determinism-*.json' | wc -l)
-          echo "receipts found: $n"
-          find receipts -name 'determinism-*.json' -print -exec cat {} \;
-          # The denominator, stated: two legs must each have produced exactly one receipt. A
-          # comparison over one file would "agree" trivially.
-          [ "$n" -eq 2 ] || { echo "expected 2 host receipts, found $n"; exit 1; }
+      # The decision lives in a script so the same code is exercised by planted receipts first:
+      # identical, PNG-only difference (must PASS: PNG is recorded, not asserted), SVG-only
+      # difference (must FAIL), one host, one architecture, and the old receipt shape that had no
+      # SVG digest at all. A mutant deciding svg_identical from manifest_root must fail the table.
+      - name: The compare must be able to fail
+        run: bash scripts/ci/determinism-compare.sh --self-test
 
       - name: Compare the hosts and write the receipt
         run: |
           set -euo pipefail
           mkdir -p target/aprender-viz
-          jq -s '
-            {
-              row: "EV-2a",
-              hosts: [.[] | {arch: .host_arch, os: .os, png_sha256: .png_sha256, manifest_root: .manifest_root, png_bytes: .png_bytes}],
-              coord_grid: (.[0].coord_grid),
-              libm: (.[0].libm),
-              svg_identical: (([.[].manifest_root] | unique | length) == 1),
-              png_identical: (([.[].png_sha256]   | unique | length) == 1)
-            }
-          ' receipts/determinism-*.json > target/aprender-viz/determinism-receipt.json
-          cat target/aprender-viz/determinism-receipt.json
-
-          # The two architectures must agree. This is the row's required assertion.
-          jq -e '.svg_identical == true' target/aprender-viz/determinism-receipt.json >/dev/null || {
-            echo "::error::the two architectures rendered different bytes — APEX-001 EV-2a rule 5"
-            exit 1
-          }
-          jq -e '(.hosts | length) == 2' target/aprender-viz/determinism-receipt.json >/dev/null
-
-          # PNG cross-architecture identity is [U] and its verdict DECIDES EV-15's shape: if PNG
-          # differs, EV-15 keys the PNG manifest by target triple and SVG becomes the sole
-          # cross-architecture artefact. Recorded, deliberately NOT asserted.
-          if jq -e '.png_identical == true' target/aprender-viz/determinism-receipt.json >/dev/null; then
-            echo "::notice::PNG is byte-identical across architectures — EV-15 may use one manifest"
-          else
-            echo "::notice::PNG DIFFERS across architectures — EV-15 must key its PNG manifest by target triple"
-          fi
+          bash scripts/ci/determinism-compare.sh receipts target/aprender-viz/determinism-receipt.json
 
       - name: Upload the determinism receipt
         uses: actions/upload-artifact@v7

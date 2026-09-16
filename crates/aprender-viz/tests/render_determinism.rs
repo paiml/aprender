@@ -7,8 +7,15 @@
 //!   It is cheap and it runs everywhere.
 //! - **Two architectures** — the same figure rendered on X64 and on ARM64 gives identical SVG.
 //!   This catches the platform libm, and no single-host test can see it, because a host always
-//!   agrees with itself. That half lives in CI (`.github/workflows/determinism.yml`); what is
-//!   here is the per-host half plus the receipt the two-host job compares.
+//!   agrees with itself. That half lives in CI (the `determinism` matrix and `determinism
+//!   (compare)` jobs of `.github/workflows/ci.yml`, deciding through
+//!   `scripts/ci/determinism-compare.sh`); what is here is the per-host half plus the receipt
+//!   the two-host job compares.
+//!
+//! The receipt carries the SVG and the PNG as **separate digests**, because the row asserts one
+//! and only records the other. `svg_identical` is decided from `svg_sha256` alone: an earlier
+//! revision decided it from a manifest root over `fixture.png` only, so the field named SVG and
+//! measured PNG, and no SVG byte was ever compared.
 //!
 //! The fixture puts a **log scale** on the axis on purpose: `LogScale::scale` is the only place
 //! in this crate where a transcendental reaches a rendered coordinate, so a figure without one
@@ -19,7 +26,7 @@ use std::path::PathBuf;
 use trueno_viz::color::Rgba;
 use trueno_viz::framebuffer::Framebuffer;
 use trueno_viz::manifest::{digest_bytes, Manifest};
-use trueno_viz::output::PngEncoder;
+use trueno_viz::output::{PngEncoder, SvgEncoder};
 use trueno_viz::scale::{LogScale, Scale};
 
 /// The fixture: positions produced through a log scale, drawn into a framebuffer.
@@ -30,16 +37,8 @@ fn render_fixture() -> Framebuffer {
     let mut fb = Framebuffer::new(320, 200).expect("framebuffer");
     fb.clear(Rgba::WHITE);
 
-    let sx = LogScale::new((1.0_f32, 10_000.0), (8.0, 312.0)).expect("x scale");
-    let sy = LogScale::new((1.0_f32, 1_000.0), (192.0, 8.0)).expect("y scale");
-
     // 200 marks, each positioned by two log-scale evaluations.
-    for i in 0..200 {
-        let t = f64::from(i) / 199.0;
-        let xv = 1.0 + t * 9_999.0;
-        let yv = 1.0 + (1.0 - t) * 999.0;
-        let px = sx.scale(xv as f32);
-        let py = sy.scale(yv as f32);
+    for (px, py) in log_positions() {
         let (xi, yi) = (px as i32, py as i32);
         for dy in -1..=1 {
             for dx in -1..=1 {
@@ -51,6 +50,37 @@ fn render_fixture() -> Framebuffer {
         }
     }
     fb
+}
+
+/// The x and y positions of the fixture's marks, each produced by a log-scale evaluation.
+fn log_positions() -> Vec<(f32, f32)> {
+    let sx = LogScale::new((1.0_f32, 10_000.0), (8.0, 312.0)).expect("x scale");
+    let sy = LogScale::new((1.0_f32, 1_000.0), (192.0, 8.0)).expect("y scale");
+    (0..200)
+        .map(|i| {
+            let t = f64::from(i) / 199.0;
+            let xv = 1.0 + t * 9_999.0;
+            let yv = 1.0 + (1.0 - t) * 999.0;
+            (sx.scale(xv as f32), sy.scale(yv as f32))
+        })
+        .collect()
+}
+
+/// The same figure as SVG: the artefact EV-2a asserts is identical across architectures.
+///
+/// Every coordinate in it came out of a log scale, and the writer snaps every emitted number to
+/// the coordinate grid, so this string is where rule 5 either holds or does not.
+fn render_fixture_svg() -> String {
+    let pts = log_positions();
+    let mut svg = SvgEncoder::new(320, 200).background(Some(Rgba::WHITE)).polyline(
+        &pts,
+        Rgba::new(31, 119, 180, 255),
+        1.0,
+    );
+    for &(x, y) in &pts {
+        svg = svg.circle(x, y, 1.5, Rgba::new(31, 119, 180, 255));
+    }
+    svg.render()
 }
 
 fn out_dir() -> PathBuf {
@@ -87,6 +117,51 @@ fn the_same_figure_renders_to_identical_png_bytes_twice() {
         bb.len()
     );
     assert!(!ba.is_empty(), "the fixture rendered to an empty file");
+}
+
+/// Rendering the same figure into two different directories gives byte-identical SVG.
+///
+/// RED (a) for the artefact the row asserts across architectures. Same reasoning as the PNG
+/// test above: two directories, so a path or a temp name leaking into the file cannot hide.
+#[test]
+fn the_same_figure_renders_to_identical_svg_bytes_twice() {
+    let dir = out_dir();
+    let a = dir.join("run-a");
+    let b = dir.join("run-b");
+    fs::create_dir_all(&a).expect("run-a");
+    fs::create_dir_all(&b).expect("run-b");
+
+    let (pa, pb) = (a.join("fixture.svg"), b.join("fixture.svg"));
+    fs::write(&pa, render_fixture_svg()).expect("write a");
+    fs::write(&pb, render_fixture_svg()).expect("write b");
+
+    let (ba, bb) = (fs::read(&pa).expect("read a"), fs::read(&pb).expect("read b"));
+    assert_eq!(digest_bytes(&ba), digest_bytes(&bb), "two SVG renders of one figure differ");
+    assert!(
+        ba.len() > 1_000,
+        "the SVG fixture is too small to exercise anything: {} bytes",
+        ba.len()
+    );
+}
+
+/// Every number in the SVG is on the coordinate grid, and there is something to check.
+///
+/// The fixture's coordinates come out of `LogScale` as arbitrary `f32`s, so without the writer's
+/// quantisation most of them print with six or more decimals. The count is asserted too: a
+/// check over zero numbers would pass on a writer that emits nothing.
+#[test]
+fn every_number_in_the_svg_is_on_the_grid() {
+    let svg = render_fixture_svg();
+    let mut checked = 0usize;
+    for tok in svg.split(|ch: char| !(ch.is_ascii_digit() || ch == '.' || ch == '-')) {
+        if tok.is_empty() || tok == "-" || tok == "." {
+            continue;
+        }
+        let decimals = tok.split_once('.').map_or(0, |(_, frac)| frac.len());
+        assert!(decimals <= 3, "`{tok}` is off the 1e-3 grid");
+        checked += 1;
+    }
+    assert!(checked >= 800, "only {checked} numbers were checked — the fixture lost its marks");
 }
 
 /// The PNG carries no timestamp and no text chunk.
@@ -169,11 +244,13 @@ fn the_manifest_root_is_stable_across_runs() {
     let first = {
         let mut m = Manifest::new();
         m.insert("fixture.png", &PngEncoder::to_bytes(&render_fixture()).expect("encode"));
+        m.insert("fixture.svg", render_fixture_svg().as_bytes());
         m.root()
     };
     let second = {
         let mut m = Manifest::new();
         m.insert("fixture.png", &PngEncoder::to_bytes(&render_fixture()).expect("encode"));
+        m.insert("fixture.svg", render_fixture_svg().as_bytes());
         m.root()
     };
     assert_eq!(first, second);
@@ -183,19 +260,21 @@ fn the_manifest_root_is_stable_across_runs() {
 
 /// Write this host's half of the determinism receipt.
 ///
-/// Not an assertion — a measurement. `.github/workflows/determinism.yml` runs this test on an
+/// Not an assertion — a measurement. The `determinism` job in `.github/workflows/ci.yml` runs this test on an
 /// X64 and an ARM64 clean-room runner, collects both files, and merges them into
 /// `determinism-receipt.json` with `hosts` of length 2 and `svg_identical` decided by comparing
-/// the two digests. A single host cannot set `svg_identical`, and this deliberately does not
+/// the two `svg_sha256` digests — never the manifest root, which also covers the PNG. A single host cannot set `svg_identical`, and this deliberately does not
 /// pretend to: it records what it saw and lets the job that can see both decide.
 #[test]
 fn zz_write_this_hosts_determinism_receipt() {
     let dir = out_dir();
     let fb = render_fixture();
     let png = PngEncoder::to_bytes(&fb).expect("encode");
+    let svg = render_fixture_svg();
 
     let mut m = Manifest::new();
     m.insert("fixture.png", &png);
+    m.insert("fixture.svg", svg.as_bytes());
 
     let arch = std::env::consts::ARCH;
     let receipt = format!(
@@ -203,15 +282,19 @@ fn zz_write_this_hosts_determinism_receipt() {
             "{{\n",
             "  \"host_arch\": \"{arch}\",\n",
             "  \"os\": \"{os}\",\n",
+            "  \"svg_sha256\": \"{svg}\",\n",
+            "  \"svg_bytes\": {svg_len},\n",
             "  \"png_sha256\": \"{png}\",\n",
-            "  \"manifest_root\": \"{root}\",\n",
             "  \"png_bytes\": {len},\n",
+            "  \"manifest_root\": \"{root}\",\n",
             "  \"coord_grid\": {grid},\n",
             "  \"libm\": \"pure-rust\"\n",
             "}}\n"
         ),
         arch = arch,
         os = std::env::consts::OS,
+        svg = digest_bytes(svg.as_bytes()),
+        svg_len = svg.len(),
         png = digest_bytes(&png),
         root = m.root(),
         len = png.len(),
