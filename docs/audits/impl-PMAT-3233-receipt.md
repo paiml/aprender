@@ -9,7 +9,7 @@ PVL-001 v3 §0/§2/§3/§5. PR: paiml/aprender#3281. branch: `PMAT-3233-pv-censu
 (`infra:docs/audits/ONT-001/receipts/2026-09-15T1645Z-ONT-1-escalate.md`): six of the row's
 clauses were red, one of them contradicting census.rs's own doc comment. The operator ruled
 **"Extend #3281"** rather than split the row, so this PR now carries the whole ONT-1 clause set.
-**Every file below is named by a clause of the row**; nothing here is incidental.
+**All 21 changed files appear below**, each against the clause that requires it; nothing here is incidental. Round 3 lane 1 refuted an earlier version of this table that named only 15 of them, and refuted its "1841" as well: main carries 1842.
 
 | file | ONT-1 clause that requires it |
 |---|---|
@@ -22,8 +22,13 @@ clauses were red, one of them contradicting census.rs's own doc comment. The ope
 | **`scripts/lint-provenance.sh`** | **R-10: every mark carries provenance.** Interim mark linter; `--self-test` is wired into `make contracts` |
 | `scripts/readme_sync.sh`, `scripts/check_readme_claims.sh` | "README's count reads the census, not `find`" |
 | `scripts/tests/ratchet_semantics_test.sh` | the fixtures need a census or the readme class cannot be judged |
-| `README.md`, `Makefile` | the count (1841 → **1791**) and the regenerate+diff target |
+| `README.md`, `Makefile` | the count (1842 → **1791**) and the regenerate+diff target |
 | `docs/audits/surface_audit.csv` | 76 `pv <sub>` citations recomputed against the merged `cli.rs` |
+| `contracts/apr-cli-commands-v1.yaml` | the CLI SURFACE contract: `census` must be a declared subcommand, or the probe `pv census` cites a surface the repo never declared |
+| `crates/aprender-contracts-cli/Cargo.toml`, `Cargo.lock` | `serde` renders the JSON the probe parses; `sha2` computes `id_set_sha256`. The lock is their two-line consequence |
+| `crates/aprender-contracts-cli/src/commands/mod.rs` | `pub mod census;` — the registration without which the subcommand does not exist |
+| `docs/roadmaps/roadmap.yaml` | PMAT-3233's own row; `pmat work status` reads the ticket back through it, and the quorum brief reads it from there |
+| `docs/audits/impl-PMAT-3233-receipt.md` | this receipt |
 
 `lint-provenance.sh` was reported "out of scope" by quorum round 2 lane 1. That lane receives only
 Title/Status/Priority, and this file did not exist for it to read — the finding is a briefing gap,
