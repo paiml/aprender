@@ -281,7 +281,7 @@ install() {
 
 show_help() {
     cat <<EOF
-apr installer
+Installer for the apr CLI
 
 Usage: install.sh [OPTIONS]
 

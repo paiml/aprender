@@ -136,7 +136,7 @@ t_grep() {
     rc=0
     OUT=$(INSTALL_DIR="$work" sh "$SCRIPT" "$@" 2>&1) || rc=$?
     n=$((n + 1))
-    if [ "$rc" = "$want" ] && printf '%s' "$OUT" | grep -qE "$pattern"; then
+    if [ "$rc" = "$want" ] && grep -qE "$pattern" <<<"$OUT"; then
         printf 'ok    row %-2s rc=%s  %s\n' "$n" "$rc" "$label"
     else
         printf 'FAIL  row %-2s rc=%s (wanted %s), pattern=%s  %s\n' "$n" "$rc" "$want" "$pattern" "$label"
@@ -163,7 +163,7 @@ n=$((n + 1))
 work=$(mktemp -d)
 rc=0
 OUT=$(INSTALL_DIR="$work" APR_VARIANT=bogus sh "$SCRIPT" 2>&1) || rc=$?
-if [ "$rc" = 1 ] && printf '%s' "$OUT" | grep -qE "variant must be 'cpu' or 'cuda'"; then
+if [ "$rc" = 1 ] && grep -qE "variant must be 'cpu' or 'cuda'" <<<"$OUT"; then
     printf 'ok    row %-2s rc=%s  bad APR_VARIANT=bogus env var is rejected\n' "$n" "$rc"
 else
     printf 'FAIL  row %-2s rc=%s (wanted 1)  bad APR_VARIANT=bogus env var is rejected\n' "$n" "$rc"
@@ -187,7 +187,7 @@ else
     work=$(mktemp -d)
     rc=0
     OUT=$(INSTALL_DIR="$work" sh "$SCRIPT" --cpu 2>&1) || rc=$?
-    if [ "$rc" = 0 ] && [ -x "$work/apr" ] && "$work/apr" --version 2>&1 | grep -qE '^apr [0-9]'; then
+    if [ "$rc" = 0 ] && [ -x "$work/apr" ] && ver=$("$work/apr" --version 2>&1) && grep -qE '^apr [0-9]' <<<"$ver"; then
         printf 'ok    row %-2s rc=0  real stable install (--cpu) produces a working apr binary\n' "$n"
     else
         printf 'FAIL  row %-2s rc=%s  real stable install (--cpu) did not produce a working binary\n' "$n" "$rc"
@@ -203,7 +203,7 @@ else
     work=$(mktemp -d)
     rc=0
     OUT=$(INSTALL_DIR="$work" sh "$SCRIPT" --nightly 2>&1) || rc=$?
-    if [ "$rc" = 0 ] && [ -x "$work/apr" ] && "$work/apr" --version 2>&1 | grep -qE '^apr [0-9]'; then
+    if [ "$rc" = 0 ] && [ -x "$work/apr" ] && ver=$("$work/apr" --version 2>&1) && grep -qE '^apr [0-9]' <<<"$ver"; then
         printf 'ok    row %-2s rc=0  real nightly install produces a working apr binary\n' "$n"
     else
         printf 'FAIL  row %-2s rc=%s  real nightly install did not produce a working binary\n' "$n" "$rc"
@@ -218,7 +218,7 @@ else
     work=$(mktemp -d)
     rc=0
     OUT=$(INSTALL_DIR="$work" PATH="$work:$PATH" sh "$SCRIPT" --cpu 2>&1) || rc=$?
-    if [ "$rc" = 0 ] && printf '%s' "$OUT" | grep -qE 'on PATH resolves to this install'; then
+    if [ "$rc" = 0 ] && grep -qE 'on PATH resolves to this install' <<<"$OUT"; then
         printf 'ok    row %-2s rc=0  PATH-correct install reports resolving to itself\n' "$n"
     else
         printf 'FAIL  row %-2s rc=%s  PATH-correct install did not confirm resolution\n' "$n" "$rc"
@@ -238,7 +238,7 @@ else
     chmod +x "$shadow/apr"
     rc=0
     OUT=$(INSTALL_DIR="$work" PATH="$shadow:$work:$PATH" sh "$SCRIPT" --cpu 2>&1) || rc=$?
-    if [ "$rc" = 0 ] && printf '%s' "$OUT" | grep -qE 'will shadow this install'; then
+    if [ "$rc" = 0 ] && grep -qE 'will shadow this install' <<<"$OUT"; then
         printf 'ok    row %-2s rc=0  a stale apr elsewhere on PATH is called out by name\n' "$n"
     else
         printf 'FAIL  row %-2s rc=%s  shadowing apr on PATH went unreported\n' "$n" "$rc"
@@ -254,7 +254,7 @@ else
     n=$((n + 1))
     work=$(mktemp -d)
     raw=$(script -qec "INSTALL_DIR='$work' sh $SCRIPT --cpu" /dev/null 2>&1)
-    if printf '%s' "$raw" | grep -qE $'\x1b' && ! printf '%s' "$raw" | grep -qE '\\033\['; then
+    if grep -qE $'\x1b' <<<"$raw" && ! grep -qE '\\033\[' <<<"$raw"; then
         printf 'ok    row %-2s       color escapes render as real ESC bytes under a tty, not literal \\033[...\n' "$n"
     else
         printf 'FAIL  row %-2s       color escapes did not render (literal backslash text leaked through)\n' "$n"
@@ -266,7 +266,7 @@ else
     n=$((n + 1))
     work=$(mktemp -d)
     raw=$(script -qec "INSTALL_DIR='$work' NO_COLOR=1 sh $SCRIPT --cpu" /dev/null 2>&1)
-    if ! printf '%s' "$raw" | grep -qE $'\x1b' && ! printf '%s' "$raw" | grep -qE '\\033\['; then
+    if ! grep -qE $'\x1b' <<<"$raw" && ! grep -qE '\\033\[' <<<"$raw"; then
         printf 'ok    row %-2s       NO_COLOR=1 suppresses escapes entirely\n' "$n"
     else
         printf 'FAIL  row %-2s       NO_COLOR=1 leaked escape codes or literal backslash text\n' "$n"
