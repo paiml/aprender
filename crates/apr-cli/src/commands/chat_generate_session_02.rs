@@ -5,7 +5,13 @@ impl ChatSession {
 
             let formatted_prompt = match self.build_formatted_prompt(user_input, config) {
                 Ok(prompt) => prompt,
-                Err(e) => return e,
+                // #3367: a template failure produced no model output either. The turn is
+                // printed exactly as before (`[Template error: ...]`, already formatted by
+                // `build_formatted_prompt`); only the session's verdict changes.
+                Err(e) => {
+                    self.had_generate_error = true;
+                    return e;
+                }
             };
 
             // For GGUF, use embedded tokenizer directly (correct special token IDs)
@@ -34,7 +40,7 @@ impl ChatSession {
                     let raw_response = self.decode_tokens(new_tokens);
                     clean_chat_response(&raw_response)
                 }
-                Err(e) => format!("[Error: {}]", e),
+                Err(e) => render_assistant_turn(Err(e), &mut self.had_generate_error),
             }
         }
 
@@ -91,7 +97,7 @@ impl ChatSession {
                     );
                     clean_chat_response(&response)
                 }
-                Err(e) => format!("[Error: {}]", e),
+                Err(e) => render_assistant_turn(Err(e), &mut self.had_generate_error),
             }
         }
 
