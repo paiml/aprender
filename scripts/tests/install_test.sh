@@ -248,28 +248,46 @@ else
     rm -rf "${work:?}" "${shadow:?}"
 
     # Color escapes actually render (the real bug this file exists partly to
-    # catch — see header). `script` fakes a tty so the color branch engages;
-    # assert a real ESC byte (0x1b) is present, not the four literal
+    # catch — see header). FORCE_COLOR=1 engages the color branch WITHOUT
+    # depending on a real pty: an earlier version of this row used `script`
+    # to fake a tty, which passed locally but failed on the actual
+    # self-hosted CI runner (#3366) — pty allocation is not guaranteed there.
+    # Assert a real ESC byte (0x1b) is present, not the four literal
     # characters '\', '0', '3', '3'.
     n=$((n + 1))
     work=$(mktemp -d)
-    raw=$(script -qec "INSTALL_DIR='$work' sh $SCRIPT --cpu" /dev/null 2>&1)
+    raw=$(INSTALL_DIR="$work" FORCE_COLOR=1 sh "$SCRIPT" --cpu 2>&1)
     if grep -qE $'\x1b' <<<"$raw" && ! grep -qE '\\033\[' <<<"$raw"; then
-        printf 'ok    row %-2s       color escapes render as real ESC bytes under a tty, not literal \\033[...\n' "$n"
+        printf 'ok    row %-2s       FORCE_COLOR=1 renders real ESC bytes, not literal \\033[...\n' "$n"
     else
         printf 'FAIL  row %-2s       color escapes did not render (literal backslash text leaked through)\n' "$n"
         red=1
     fi
     rm -rf "${work:?}"
 
-    # NO_COLOR is honoured: no escape bytes AND no literal backslash text.
+    # NO_COLOR is honoured: no escape bytes AND no literal backslash text —
+    # and it must win even when FORCE_COLOR also asks for color, per
+    # https://no-color.org's "always wins" convention.
     n=$((n + 1))
     work=$(mktemp -d)
-    raw=$(script -qec "INSTALL_DIR='$work' NO_COLOR=1 sh $SCRIPT --cpu" /dev/null 2>&1)
+    raw=$(INSTALL_DIR="$work" FORCE_COLOR=1 NO_COLOR=1 sh "$SCRIPT" --cpu 2>&1)
     if ! grep -qE $'\x1b' <<<"$raw" && ! grep -qE '\\033\[' <<<"$raw"; then
-        printf 'ok    row %-2s       NO_COLOR=1 suppresses escapes entirely\n' "$n"
+        printf 'ok    row %-2s       NO_COLOR=1 wins over FORCE_COLOR=1\n' "$n"
     else
-        printf 'FAIL  row %-2s       NO_COLOR=1 leaked escape codes or literal backslash text\n' "$n"
+        printf 'FAIL  row %-2s       NO_COLOR=1 did not override FORCE_COLOR=1\n' "$n"
+        red=1
+    fi
+    rm -rf "${work:?}"
+
+    # The true default (no flags, no tty — exactly how CI and a piped
+    # `curl | sh` both run it): no escapes, no literal backslash text either.
+    n=$((n + 1))
+    work=$(mktemp -d)
+    raw=$(INSTALL_DIR="$work" sh "$SCRIPT" --cpu 2>&1)
+    if ! grep -qE $'\x1b' <<<"$raw" && ! grep -qE '\\033\[' <<<"$raw"; then
+        printf 'ok    row %-2s       default (no tty, no flags) stays plain\n' "$n"
+    else
+        printf 'FAIL  row %-2s       default (no tty, no flags) leaked escape codes or literal backslash text\n' "$n"
         red=1
     fi
     rm -rf "${work:?}"

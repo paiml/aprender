@@ -31,8 +31,18 @@ NIGHTLY=0
 
 # ── Presentation ──────────────────────────────────────────────────────────
 # Colors and box-drawing degrade cleanly: NO_COLOR, a non-tty stdout, or a
-# `TERM=dumb` all fall back to plain ASCII with no escape codes.
-if [ -t 1 ] && [ -z "${NO_COLOR:-}" ] && [ "${TERM:-dumb}" != "dumb" ]; then
+# `TERM=dumb` all fall back to plain ASCII with no escape codes. NO_COLOR
+# always wins if set (https://no-color.org). Otherwise FORCE_COLOR/
+# CLICOLOR_FORCE (cargo/chalk/supports-color convention) forces color on even
+# without a real tty — piping through a pager, or a CI runner that never
+# allocates one at all (this is also how install_test.sh gets deterministic
+# color-rendering coverage, rather than depending on `script`'s pty
+# allocation, which is not guaranteed on every self-hosted runner).
+force_color=0
+if [ -n "${FORCE_COLOR:-}" ] && [ "${FORCE_COLOR}" != "0" ]; then force_color=1; fi
+if [ -n "${CLICOLOR_FORCE:-}" ] && [ "${CLICOLOR_FORCE}" != "0" ]; then force_color=1; fi
+
+if [ -z "${NO_COLOR:-}" ] && { [ "$force_color" -eq 1 ] || { [ -t 1 ] && [ "${TERM:-dumb}" != "dumb" ]; }; }; then
     BOLD='\033[1m'
     DIM='\033[2m'
     RED='\033[0;31m'
