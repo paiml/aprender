@@ -591,3 +591,16 @@ scheduling chance, and it costs ~3× (gx10 10.6 min vs intel 34.5 for step 1).
 ### Still open
 
 - PR3 → #3114 undraft → #3091. #3405 (#3341 contract), #3404 (mini probe), #3364 (this log), #3363 open. Ruleset 17836320 still build 3 / merge 1 at 20:10Z.
+
+## Interval — 22:30Z (2026-09-16)
+
+### What moved
+
+- **Series complete.** PR3 #3356 merged 22:23Z (main `0ac2aab8c`); PR1 16:59Z, PR2 20:57Z. **#3114 undrafted 22:15Z** on a fully green head (`71b913fdf`: merge from main, one evidence path made portable for `check_hardcoded_paths.sh`) and armed through `arm_pr_automerge.sh`; queue position 2 behind #3404 at 22:19Z. #3091 closes on its merge.
+- **Site event, measured**: gx10 rebooted 19:29:51Z and intel 19:30:25Z — thirty seconds apart, so not per-box. gx10 came back with its declared NM profile (`fb7c4cce…`, autoconnect=yes) INACTIVE on `enP7s7`: a stray 10.42.0.15/24, no default route, no DNS. Its four ephemeral runner units (`github-runner-{ephemeral,build,pool1,pool3}`) crash-looped 797× on `curl: (6) Could not resolve host: api.github.com`; gx10 offered 1 listener (gx10-blackwell) instead of 6 and #3405's `gpu-quick` sat queued 2.5 h. `sudo -n nmcli con up <profile>` (§3.5 unclogging, restores declared state) → default route + DNS in 4 s; units and containers recovered on their own; gpu-quick ran green on gx10-eph 21:47Z. The forjar-side fix (autoconnect that does not autoconnect after a boot) is infra's. **mini is DOWN** (no route to host from the LAN; gx10 on the same LAN answers). yoga never rebooted (up since 09-12).
+- **Unwedge rule 2 exercised for real**: the scan with a live capacity reading correctly declined the queued run (17/18 jobs complete, one GPU job waiting on a real pool outage) — a queue, not a wedge.
+- #3405 (#3341 contract): guard-tree failed twice on `pp066_v16_defects.sh --v15-red` (passes locally, unchanged vs main — runner-environment), then on a stale aggregate (REMOVED PMAT-3365 = generated before two later merges) and PR-body `no-close:` lines; all fixed, rebased to main+2, armed 22:19Z. #3404 (mini probe): grep -q ratchet + PR-body no-close fixed, armed 22:10Z.
+
+### Still open
+
+- #3114 in queue; #3404, #3405 in/entering queue; #3364 (this log), #3363 held. Ruleset 17836320 still build 3 / merge 1 at 22:10Z.
