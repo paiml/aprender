@@ -1,0 +1,21 @@
+- id: PMAT-3401
+  github_issue: 3401
+  item_type: task
+  title: 'Admit AutoGluon 1.6.3 to CRUX as category O: 24 DRAFT contracts crux-O-01..24 with LIVE-PENDING gates (no implementation, no CLI, no tests), CRUX_COMPETITORS 14->15 + intake tests, 24 master-registry rows (intake 267->291), spec v2.3 §3/§5/§6, evidence/crux/autogluon/, 25 roadmap fragments, README count regen — child of #3370'
+  status: in_progress
+  priority: critical
+  assigned_to: null
+  created: 2026-09-16T16:30:00Z
+  updated: 2026-09-16T16:30:00Z
+  spec: docs/specifications/crux-competitive-research-ux-workflows.md
+  acceptance_criteria:
+  - 'PR #3395 merges carrying exactly: 24 draft contracts with LIVE-PENDING gates and no implementation; CRUX_COMPETITORS 14->15 with the mutation proof; 24 registry rows and coverage_intake 267->291; spec v2.3; evidence/crux/autogluon/; 25 roadmap fragments; README CONTRACT_COUNT regenerated. Absent on purpose: library code, CLI wiring, test bodies.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - P0
+  - enhancement
+  - crux
+  - pareto-autogluon
+  notes: null
