@@ -1,0 +1,75 @@
+# CRUX-O-12 — refit_full: retrain the selected models on train+validation after model selection
+# CRUX category O: AutoML Parity (AutoGluon 1.6.3).
+# Filed from the 2026-09-16 competitive sweep of ../autogluon. Tracks GitHub #3382, epic #3370.
+# registry: false — this contract carries real falsification gates and claims no
+# exemption (operator ruling 2026-08-21, "no contract exemptions").
+
+metadata:
+  id: CRUX-O-12
+  version: "1.0.0"
+  created: "2026-09-16"
+  updated: "2026-09-16"
+  author: PAIML Engineering
+  registry: false
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "O — AutoML Parity"
+  competitor: autogluon
+  demand_score: 3  # 1..5, medium priority in pmat work
+  intake_status: missing
+  github_issue: 3382
+  description: >
+    refit_full: retrain the selected models on train+validation after model selection. Competitor verb: fit(..., refit_full=True, set_best_to_refit_full=True); predictor.refit_full(). Gap measured in aprender at eb262f8eb: No refit-on-full-data step. cross_validate and grid_search return scores; the model returned is the one fitted on a fold, not on all rows.
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - 'epic: https://github.com/paiml/aprender/issues/3370'
+  - 'story: https://github.com/paiml/aprender/issues/3382'
+  - 'competitor: https://github.com/autogluon/autogluon (1.6.3)'
+  - 'evidence: evidence/crux/autogluon/api-surface.md'
+
+equations:
+  the_refit_model_saw_every_row:
+    formula: |
+      the refit estimator's training-row count equals n_train + n_val, asserted through the fitted row count it reports
+    domain: "the fixture and inputs named in the prediction"
+    codomain: "PASS iff the prediction holds; the mutation named in the prediction (where one is named) turns it RED"
+    invariants:
+    - "the refit model saw every row"
+  refit_keeps_the_selected_hyperparameters_and_drops_the_bag_c:
+    formula: |
+      the artifact after refit has one child per selected model and its hyperparameters are byte-equal to the pre-refit winner's
+    domain: "the fixture and inputs named in the prediction"
+    codomain: "PASS iff the prediction holds; the mutation named in the prediction (where one is named) turns it RED"
+    invariants:
+    - "refit keeps the selected hyperparameters and drops the bag children"
+
+falsification_tests:
+- id: FALSIFY-CRUX-O-12-001
+  rule: "the refit model saw every row"
+  prediction: "the refit estimator's training-row count equals n_train + n_val, asserted through the fitted row count it reports"
+  test: >-
+    LIVE-PENDING - the refit model saw every row. No test surface exists today because the capability is unimplemented: refit_full: retrain the selected models on train+validation after model selection (aprender#3382, CRUX-O-12). PROMOTE by authoring a test named refit_sees_all_rows in module `automl/refit/tests` of crate `aprender-core`; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED and unfalsifiable-by-absence, NOT satisfied.
+  if_fails: "rule 'the refit model saw every row' is violated — the autogluon parity claim for CRUX-O-12 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation"
+- id: FALSIFY-CRUX-O-12-002
+  rule: "refit keeps the selected hyperparameters and drops the bag children"
+  prediction: "the artifact after refit has one child per selected model and its hyperparameters are byte-equal to the pre-refit winner's"
+  test: >-
+    LIVE-PENDING - refit keeps the selected hyperparameters and drops the bag children. No test surface exists today because the capability is unimplemented: refit_full: retrain the selected models on train+validation after model selection (aprender#3382, CRUX-O-12). PROMOTE by authoring a test named refit_keeps_params_drops_children in module `automl/refit/tests` of crate `aprender-core`; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED and unfalsifiable-by-absence, NOT satisfied.
+  if_fails: "rule 'refit keeps the selected hyperparameters and drops the bag children' is violated — the autogluon parity claim for CRUX-O-12 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation"
+
+proof_obligations:
+- type: invariant
+  property: "the refit model saw every row"
+- type: invariant
+  property: "refit keeps the selected hyperparameters and drops the bag children"
+
+kani_harnesses:
+- id: KH-CRUX-O-12-001
+  obligation: the_refit_model_saw_every_row
+  property: the_refit_model_saw_every_row_holds_on_bounded_input
+  bound: 4
+- id: KH-CRUX-O-12-002
+  obligation: refit_keeps_the_selected_hyperparameters_and_drops_the_bag_c
+  property: refit_keeps_the_selected_hyperparameters_and_drops_the_bag_c_holds_on_bounded_input
+  bound: 4

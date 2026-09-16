@@ -1,0 +1,75 @@
+# CRUX-O-20 — Probabilistic forecasts: quantile_levels and the forecasting metric family (WQL, MQL, MASE, SMAPE, RMSSE, WAPE)
+# CRUX category O: AutoML Parity (AutoGluon 1.6.3).
+# Filed from the 2026-09-16 competitive sweep of ../autogluon. Tracks GitHub #3390, epic #3370.
+# registry: false — this contract carries real falsification gates and claims no
+# exemption (operator ruling 2026-08-21, "no contract exemptions").
+
+metadata:
+  id: CRUX-O-20
+  version: "1.0.0"
+  created: "2026-09-16"
+  updated: "2026-09-16"
+  author: PAIML Engineering
+  registry: false
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "O — AutoML Parity"
+  competitor: autogluon
+  demand_score: 5  # 1..5, critical priority in pmat work
+  intake_status: missing
+  github_issue: 3390
+  description: >
+    Probabilistic forecasts: quantile_levels and the forecasting metric family (WQL, MQL, MASE, SMAPE, RMSSE, WAPE). Competitor verb: TimeSeriesPredictor(eval_metric="WQL", quantile_levels=[0.1,0.5,0.9]). Gap measured in aprender at eb262f8eb: ARIMA.forecast returns a point path; metrics/probabilistic.rs holds classification-probability metrics, and metrics/regression.rs has no seasonal-scaled (MASE/RMSSE) or quantile (WQL/MQL) losses.
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml — §5 + §12'
+  - 'epic: https://github.com/paiml/aprender/issues/3370'
+  - 'story: https://github.com/paiml/aprender/issues/3390'
+  - 'competitor: https://github.com/autogluon/autogluon (1.6.3)'
+  - 'evidence: evidence/crux/autogluon/api-surface.md'
+
+equations:
+  quantile_forecasts_are_monotone_in_the_quantile_level:
+    formula: |
+      for every (item, step) q0.1 <= q0.5 <= q0.9, asserted over the whole fixture; a mutation that shuffles the quantile columns turns this RED
+    domain: "the fixture and inputs named in the prediction"
+    codomain: "PASS iff the prediction holds; the mutation named in the prediction (where one is named) turns it RED"
+    invariants:
+    - "quantile forecasts are monotone in the quantile level"
+  each_metric_matches_the_autogluon_reference_value_on_a_pinne:
+    formula: |
+      WQL, MASE, SMAPE, RMSSE, WAPE and MQL computed on a committed (y_true, y_pred, quantiles) fixture equal the reference values produced by autogluon.timeseries.metrics within 1e-9
+    domain: "the fixture and inputs named in the prediction"
+    codomain: "PASS iff the prediction holds; the mutation named in the prediction (where one is named) turns it RED"
+    invariants:
+    - "each metric matches the AutoGluon reference value on a pinned fixture"
+
+falsification_tests:
+- id: FALSIFY-CRUX-O-20-001
+  rule: "quantile forecasts are monotone in the quantile level"
+  prediction: "for every (item, step) q0.1 <= q0.5 <= q0.9, asserted over the whole fixture; a mutation that shuffles the quantile columns turns this RED"
+  test: >-
+    LIVE-PENDING - quantile forecasts are monotone in the quantile level. No test surface exists today because the capability is unimplemented: Probabilistic forecasts: quantile_levels and the forecasting metric family (WQL, MQL, MASE, SMAPE, RMSSE, WAPE) (aprender#3390, CRUX-O-20). PROMOTE by authoring a test named quantiles_monotone in module `forecast/metrics/tests` of crate `aprender-core`; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED and unfalsifiable-by-absence, NOT satisfied.
+  if_fails: "rule 'quantile forecasts are monotone in the quantile level' is violated — the autogluon parity claim for CRUX-O-20 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation"
+- id: FALSIFY-CRUX-O-20-002
+  rule: "each metric matches the AutoGluon reference value on a pinned fixture"
+  prediction: "WQL, MASE, SMAPE, RMSSE, WAPE and MQL computed on a committed (y_true, y_pred, quantiles) fixture equal the reference values produced by autogluon.timeseries.metrics within 1e-9"
+  test: >-
+    LIVE-PENDING - each metric matches the AutoGluon reference value on a pinned fixture. No test surface exists today because the capability is unimplemented: Probabilistic forecasts: quantile_levels and the forecasting metric family (WQL, MQL, MASE, SMAPE, RMSSE, WAPE) (aprender#3390, CRUX-O-20). PROMOTE by authoring a test named metrics_match_autogluon_reference in module `forecast/metrics/tests` of crate `aprender-core`; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED and unfalsifiable-by-absence, NOT satisfied.
+  if_fails: "rule 'each metric matches the AutoGluon reference value on a pinned fixture' is violated — the autogluon parity claim for CRUX-O-20 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation"
+
+proof_obligations:
+- type: invariant
+  property: "quantile forecasts are monotone in the quantile level"
+- type: invariant
+  property: "each metric matches the AutoGluon reference value on a pinned fixture"
+
+kani_harnesses:
+- id: KH-CRUX-O-20-001
+  obligation: quantile_forecasts_are_monotone_in_the_quantile_level
+  property: quantile_forecasts_are_monotone_in_the_quantile_level_holds_on_bounded_input
+  bound: 4
+- id: KH-CRUX-O-20-002
+  obligation: each_metric_matches_the_autogluon_reference_value_on_a_pinne
+  property: each_metric_matches_the_autogluon_reference_value_on_a_pinne_holds_on_bounded_input
+  bound: 4

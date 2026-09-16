@@ -18011,3 +18011,529 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-3370
+  github_issue: 3370
+  item_type: task
+  title: 'EPIC: CRUX category O — AutoML parity vs AutoGluon 1.6.3 — 9 P0, 9 P1, 6 P2 (24 stories)'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-09-16T12:00:00Z
+  updated: 2026-09-16T12:00:00Z
+  spec: docs/specifications/crux-competitive-research-ux-workflows.md
+  acceptance_criteria:
+  - 'All 24 children (#3371-#3394) closed or explicitly re-cut; apr automl fit/predict on iris and apr forecast fit on a 5-item panel run end to end; each child lands with a contract and mutation-RED evidence.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - P0
+  - epic
+  - enhancement
+  - crux
+  - pareto-autogluon
+  notes: null
+- id: PMAT-3371
+  github_issue: 3371
+  item_type: task
+  title: 'P0: One-call tabular AutoML: fit(label) -> predict on a CSV — CRUX-O-01'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-09-16T12:00:00Z
+  updated: 2026-09-16T12:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'CRUX-O-01, competitor autogluon, demand 5. No predictor-level AutoML entry point exists. crates/aprender-core/src/automl/ is a hyperparameter TUNER (AutoTuner, TPE, GridSearch, RandomSearch, DESearch, TimeBudget) that tunes ONE estimator the caller already chose; nothing takes a labelled table and returns a fitted model. `apr train` is causal-LM pre-training only (crates/apr-cli/src/commands/train.rs:1-5) and `apr finetune --task classify` is text classification. FALSIFIABLE (contracts/crux-O-01-v1.yaml): fit on a labelled CSV returns a predictor whose predictions score above the majority-class baseline — on the iris fixture (crates/aprender-core/src/datasets/iris.csv) accuracy >= 0.90 AND the majority-class baseline is asserted at 0.333 in the same test; the same call works for a regression label without a problem_type argument — a numeric label column yields a regressor whose R^2 on a held-out split exceeds 0.5 AND the mean-predictor baseline is asserted at ~0.0; apr automl fit is reachable from the CLI — `apr automl fit --label class train.csv --out model.apr` exits 0 and writes a loadable artifact; a missing --label exits 2 with a message naming the flag. Epic #3370.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - P0
+  - enhancement
+  - crux
+  - pareto-autogluon
+  notes: null
+- id: PMAT-3372
+  github_issue: 3372
+  item_type: task
+  title: 'P0: Problem-type inference: binary / multiclass / regression / quantile from the label column — CRUX-O-02'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-09-16T12:00:00Z
+  updated: 2026-09-16T12:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'CRUX-O-02, competitor autogluon, demand 5. No function infers a task from a label column. Estimators are chosen by type name (LogisticRegression vs LinearRegression); DataFrame in crates/aprender-core/src/data/mod.rs carries ColumnStats but no label-kind classifier. FALSIFIABLE (contracts/crux-O-02-v1.yaml): two unique label values infer binary, 3..=N small-cardinality infer multiclass, many-unique numeric infers regression — a table of (label column, expected kind) fixtures including the ambiguous cases {0,1} as int, {0.0,1.0} as float, and 30 unique floats over 1000 rows all classify as documented; the override wins and a contradictory override is rejected — problem_type=regression on a string label column is an Err naming the column, not a silent cast. Epic #3370.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - P0
+  - enhancement
+  - crux
+  - pareto-autogluon
+  notes: null
+- id: PMAT-3373
+  github_issue: 3373
+  item_type: task
+  title: 'P0: Quality presets (medium / good / high / best / extreme) that name a model portfolio and a time budget — CRUX-O-03'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-09-16T12:00:00Z
+  updated: 2026-09-16T12:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'CRUX-O-03, competitor autogluon, demand 5. No preset vocabulary. AutoTuner takes a SearchSpace the caller hand-builds (crates/aprender-core/src/automl/params.rs); there is no named bundle of {models, bagging, stacking, time_limit}. FALSIFIABLE (contracts/crux-O-03-v1.yaml): every preset name resolves to a portfolio and unknown names are rejected with the valid list — the five quality presets each yield a non-empty ordered model list; `presets="bestest"` is an Err whose message contains all five valid names; presets are ordered: a higher preset never fits FEWER model families than the one below it — for medium < good < high < best the family count is monotone non-decreasing, asserted pairwise. Epic #3370.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - P0
+  - enhancement
+  - crux
+  - pareto-autogluon
+  notes: null
+- id: PMAT-3374
+  github_issue: 3374
+  item_type: task
+  title: 'P0: Leaderboard: per-model validation/test score, fit time, predict time and stack level — CRUX-O-04'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-09-16T12:00:00Z
+  updated: 2026-09-16T12:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'CRUX-O-04, competitor autogluon, demand 5. No leaderboard type. GridSearchCVResult in model_selection/ ranks parameter settings of one estimator; TuneResult in automl/tuner.rs is a single best trial. Nothing tabulates several fitted models with timings. FALSIFIABLE (contracts/crux-O-04-v1.yaml): the leaderboard is sorted by validation score descending and its columns are fixed — columns == [model, score_val, score_test?, pred_time_val, fit_time, stack_level, fit_order] and score_val is non-increasing row to row; timings are measured, not defaulted — every fit_time and pred_time_val is > 0 after a real fit; a leaderboard built with no fit has zero rows, not zero timings; apr automl leaderboard prints the same table from a saved artifact — `apr automl leaderboard model.apr --json` emits the rows byte-equal to the in-process leaderboard. Epic #3370.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - P0
+  - enhancement
+  - crux
+  - pareto-autogluon
+  notes: null
+- id: PMAT-3375
+  github_issue: 3375
+  item_type: task
+  title: 'P0: Automatic feature-type inference and the AutoML feature pipeline (numeric, categorical, datetime, text n-gram, drop-unique, drop-duplicate) — CRUX-O-05'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-09-16T12:00:00Z
+  updated: 2026-09-16T12:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'CRUX-O-05, competitor autogluon, demand 5. Encoders exist (LabelEncoder, OneHotEncoder, OrdinalEncoder, StandardScaler, PolynomialFeatures in crates/aprender-core/src/preprocessing/) but every one is applied by hand to a column the caller already typed. There is no pass that reads a raw DataFrame, infers each column''s kind, and emits a fitted transform. Datetime expansion and text n-gram features do not exist. TfidfVectorizer exists in text/ but is not wired to a tabular pipeline. FALSIFIABLE (contracts/crux-O-05-v1.yaml): column kinds are inferred from raw values — a fixture CSV with int, float, low-cardinality string, high-cardinality string, ISO datetime and free-text columns is typed as {numeric, numeric, categorical, text, datetime, text} exactly; constant and duplicate columns are dropped and the drop is reported — a column with one unique value and an exact duplicate of another column are both absent from the transformed output AND named in the fit report; the fitted pipeline is deterministic under transform — transform(train) then transform(train) are byte-identical and transform(test) never sees a category unseen at fit as anything but the reserved unknown code. Epic #3370.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - P0
+  - enhancement
+  - crux
+  - pareto-autogluon
+  notes: null
+- id: PMAT-3376
+  github_issue: 3376
+  item_type: task
+  title: 'P1: K-fold bagging with out-of-fold predictions (num_bag_folds, predict_oof) — CRUX-O-06'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-09-16T12:00:00Z
+  updated: 2026-09-16T12:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'CRUX-O-06, competitor autogluon, demand 4. KFold and StratifiedKFold exist (model_selection/) and cross_validate scores them, but no wrapper trains one child per fold, keeps all children, averages them at predict time and exposes the out-of-fold matrix. RandomForest bags trees internally and is not reusable for other estimators. FALSIFIABLE (contracts/crux-O-06-v1.yaml): OOF predictions cover every training row exactly once — for n rows and k folds the OOF matrix has n rows, no NaN, and each row was predicted by the one child that did not see it (asserted through a fold-id trace); bagged prediction is the mean of the children — predict_proba of the bag equals the elementwise mean of the k children''s predict_proba within 1e-12. Epic #3370.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - P1
+  - enhancement
+  - crux
+  - pareto-autogluon
+  notes: null
+- id: PMAT-3377
+  github_issue: 3377
+  item_type: task
+  title: 'P1: Multi-layer stack ensembling with a leakage guard (num_stack_levels, auto_stack, dynamic_stacking) — CRUX-O-07'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-09-16T12:00:00Z
+  updated: 2026-09-16T12:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'CRUX-O-07, competitor autogluon, demand 4. No stacking. crates/aprender-core/src/stack/ is a deployment-health module (StackHealth, InferenceConfig), not a model stacker. ensemble/ holds MixtureOfExperts gating only. FALSIFIABLE (contracts/crux-O-07-v1.yaml): level-2 features are OOF, never in-sample — a mutation that feeds in-sample level-1 predictions to level 2 is detected by the leak test: the L2 holdout score on a pure-noise label rises above chance (asserted RED) while the OOF path stays at chance; dynamic stacking falls back when stacking hurts — on a fixture where L2 holdout score < L1 holdout score, the final model is the L1 ensemble and the decision is recorded in the fit summary. Epic #3370.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - P1
+  - enhancement
+  - crux
+  - pareto-autogluon
+  notes: null
+- id: PMAT-3378
+  github_issue: 3378
+  item_type: task
+  title: 'P0: Greedy weighted-ensemble selection over fitted models (Caruana ensemble selection) — CRUX-O-08'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-09-16T12:00:00Z
+  updated: 2026-09-16T12:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'CRUX-O-08, competitor autogluon, demand 5. No ensemble-selection algorithm. MixtureOfExperts learns a gating network (ensemble/moe.rs); nothing performs the forward greedy selection with replacement over base-model validation predictions that yields non-negative weights summing to 1. FALSIFIABLE (contracts/crux-O-08-v1.yaml): weights are a probability vector and the ensemble never scores below its best member — sum(w)=1, all w>=0, and validation metric(ensemble) >= max over members within 1e-9, on 3 fixtures; selection is greedy with replacement and reproducible — with ensemble_size=25 the weight of a member equals its selection count / 25; two runs on the same inputs produce identical weights. Epic #3370.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - P0
+  - enhancement
+  - crux
+  - pareto-autogluon
+  notes: null
+- id: PMAT-3379
+  github_issue: 3379
+  item_type: task
+  title: 'P0: Time-budgeted portfolio fit: time_limit split across models, each model early-stopped on its share — CRUX-O-09'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-09-16T12:00:00Z
+  updated: 2026-09-16T12:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'CRUX-O-09, competitor autogluon, demand 5. TimeBudget and EarlyStopping exist in automl/tuner.rs but budget ONE tuner. There is no allocation of a global limit across an ordered portfolio, no per-model time share, and no ''skip the rest'' when the budget is exhausted. FALSIFIABLE (contracts/crux-O-09-v1.yaml): the wall-clock of fit never exceeds time_limit by more than the tolerance — with time_limit=5s on a portfolio that would take >60s unconstrained, elapsed <= 5s + 1s AND at least one model was skipped with reason=budget in the summary; the budget is redistributed when a model finishes early — a model that uses 10% of its share returns the remainder to the pool; the next model''s share is asserted larger than the naive equal split. Epic #3370.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - P0
+  - enhancement
+  - crux
+  - pareto-autogluon
+  notes: null
+- id: PMAT-3380
+  github_issue: 3380
+  item_type: task
+  title: 'P1: Predictor-level permutation feature importance with p-values and confidence intervals — CRUX-O-10'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-09-16T12:00:00Z
+  updated: 2026-09-16T12:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'CRUX-O-10, competitor autogluon, demand 4. PermutationImportance exists in crates/aprender-core/src/interpret/ for a single estimator. Missing: the predictor-level call on raw (pre-pipeline) columns, num_shuffle_sets repeats, stddev / p-value / p99 columns, and subsampling. AutoGluon 1.6 also cut this call''s memory 25x (#5645). FALSIFIABLE (contracts/crux-O-10-v1.yaml): importance is reported per raw input column — on a fixture whose datetime column expands to 4 features, the importance table has one row for the datetime column, not four; a pure-noise column has importance statistically indistinguishable from zero — with num_shuffle_sets=10 the noise column''s p-value > 0.05 AND the signal column''s p-value < 0.01 on the same run. Epic #3370.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - P1
+  - enhancement
+  - crux
+  - pareto-autogluon
+  notes: null
+- id: PMAT-3381
+  github_issue: 3381
+  item_type: task
+  title: 'P1: Decision-threshold calibration for binary metrics (calibrate_decision_threshold) — CRUX-O-11'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-09-16T12:00:00Z
+  updated: 2026-09-16T12:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'CRUX-O-11, competitor autogluon, demand 4. Probability calibration exists (PlattScaling, IsotonicRegression, TemperatureScaling in calibration.rs) but nothing searches the decision threshold that maximises f1 / balanced_accuracy / mcc on validation data and stores it on the predictor (`decision_threshold`, `set_decision_threshold`). FALSIFIABLE (contracts/crux-O-11-v1.yaml): the calibrated threshold beats 0.5 on the calibration metric and the gain is asserted, not the search — on an imbalanced fixture (5% positives) f1 at the calibrated threshold > f1 at 0.5 by >= 0.05 absolute; the threshold is persisted with the model — save then load reproduces predict() bit-identically including the threshold; a mutation that resets the threshold to 0.5 on load turns this RED. Epic #3370.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - P1
+  - enhancement
+  - crux
+  - pareto-autogluon
+  notes: null
+- id: PMAT-3382
+  github_issue: 3382
+  item_type: task
+  title: 'P2: refit_full: retrain the selected models on train+validation after model selection — CRUX-O-12'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-16T12:00:00Z
+  updated: 2026-09-16T12:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'CRUX-O-12, competitor autogluon, demand 3. No refit-on-full-data step. cross_validate and grid_search return scores; the model returned is the one fitted on a fold, not on all rows. FALSIFIABLE (contracts/crux-O-12-v1.yaml): the refit model saw every row — the refit estimator''s training-row count equals n_train + n_val, asserted through the fitted row count it reports; refit keeps the selected hyperparameters and drops the bag children — the artifact after refit has one child per selected model and its hyperparameters are byte-equal to the pre-refit winner''s. Epic #3370.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - P2
+  - enhancement
+  - crux
+  - pareto-autogluon
+  notes: null
+- id: PMAT-3383
+  github_issue: 3383
+  item_type: task
+  title: 'P2: Model distillation: compress the ensemble into one fast student — CRUX-O-13'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-16T12:00:00Z
+  updated: 2026-09-16T12:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'CRUX-O-13, competitor autogluon, demand 3. Distillation exists only for LLMs in the training crate (knowledge distillation of transformers); nothing trains a single tabular student on the teacher ensemble''s soft labels with data augmentation. FALSIFIABLE (contracts/crux-O-13-v1.yaml): the student is faster and within tolerance of the teacher — student pred_time < 0.25 x teacher pred_time AND student validation score >= teacher score - 0.02 on a fixture; augmentation produces rows the training set does not contain — with augment_method=spunge the student''s training set has > n_train rows and the added rows are not row-equal to any original. Epic #3370.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - P2
+  - enhancement
+  - crux
+  - pareto-autogluon
+  notes: null
+- id: PMAT-3384
+  github_issue: 3384
+  item_type: task
+  title: 'P1: Deployment artifact: clone_for_deployment / keep_only_best / save_space / persist into one loadable file — CRUX-O-14'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-09-16T12:00:00Z
+  updated: 2026-09-16T12:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'CRUX-O-14, competitor autogluon, demand 4. Single estimators serialize to .apr (bundle/, serialization/). No artifact holds a fitted feature pipeline (O-05) plus several models plus ensemble weights plus a decision threshold and loads them as one predictor. Nothing prunes non-selected models from disk. FALSIFIABLE (contracts/crux-O-14-v1.yaml): a deployment clone is smaller and predicts identically — clone_for_deployment artifact bytes < 0.5 x full artifact bytes AND predict() on the clone is bit-identical to predict() on the original for the test fixture; the artifact is self-describing and refuses a schema drift — load() on an artifact whose feature schema disagrees with the input columns is an Err naming the first mismatched column, not a wrong prediction. Epic #3370.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - P1
+  - enhancement
+  - crux
+  - pareto-autogluon
+  notes: null
+- id: PMAT-3385
+  github_issue: 3385
+  item_type: task
+  title: 'P2: Inference-latency constraint during model selection (infer_limit, infer_limit_batch_size) — CRUX-O-15'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-16T12:00:00Z
+  updated: 2026-09-16T12:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'CRUX-O-15, competitor autogluon, demand 3. No model or ensemble is ever excluded for being slow at predict time; leaderboard timings (O-04) do not exist to compare against. FALSIFIABLE (contracts/crux-O-15-v1.yaml): the selected ensemble respects the per-row latency limit — with infer_limit=L the measured pred_time per row of the final model <= L AND at least one faster-but-worse model was preferred over a slower-but-better one (asserted on a fixture built to force the trade). Epic #3370.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - P2
+  - enhancement
+  - crux
+  - pareto-autogluon
+  notes: null
+- id: PMAT-3386
+  github_issue: 3386
+  item_type: task
+  title: 'P2: Fit diagnostics: fit_summary, model_failures and learning curves — CRUX-O-16'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-16T12:00:00Z
+  updated: 2026-09-16T12:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'CRUX-O-16, competitor autogluon, demand 3. ProgressCallback in automl/tuner.rs streams trial results; there is no post-fit summary object listing models trained, models failed with their error, per-model hyperparameters and per-iteration validation curves. FALSIFIABLE (contracts/crux-O-16-v1.yaml): a model that raises during fit is recorded, not swallowed and not fatal — a portfolio containing a deliberately failing model finishes; model_failures() has exactly one row naming the model and the error string; the leaderboard omits it; learning curves have one point per boosting/epoch iteration — for a GBM with n_estimators=50 and learning_curves=true the curve has 50 validation points, monotone non-increasing after early-stopping''s best iteration is asserted absent. Epic #3370.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - P2
+  - enhancement
+  - crux
+  - pareto-autogluon
+  notes: null
+- id: PMAT-3387
+  github_issue: 3387
+  item_type: task
+  title: 'P1: Tabular foundation model: in-context prediction with a pretrained transformer (TabPFN / TabICL / Mitra class) — CRUX-O-17'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-09-16T12:00:00Z
+  updated: 2026-09-16T12:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'CRUX-O-17, competitor autogluon, demand 4. No tabular in-context learner. nn/ and the inference crates run causal LMs; nothing consumes (X_train, y_train, X_test) as one context and predicts without gradient steps. AutoGluon 1.4-1.6 added TabPFNv2/2.5/2.6/3, TabICL/v2, Mitra, TabDPT, Nori and made them the extreme preset. FALSIFIABLE (contracts/crux-O-17-v1.yaml): zero-gradient prediction matches a pinned reference within tolerance — loading a pinned small checkpoint via apr pull and predicting a 100-row fixture matches the committed reference probabilities within 1e-4; the context limit is enforced, not silently truncated — a context of rows > the model''s documented max is an Err naming the limit; a mutation that truncates instead turns this RED. Epic #3370.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - P1
+  - enhancement
+  - crux
+  - pareto-autogluon
+  notes: null
+- id: PMAT-3388
+  github_issue: 3388
+  item_type: task
+  title: 'P2: Memory-aware fit: per-model memory estimate and a memory_limit that skips models that would not fit — CRUX-O-18'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-16T12:00:00Z
+  updated: 2026-09-16T12:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'CRUX-O-18, competitor autogluon, demand 3. No estimator reports an expected peak memory before fitting and nothing checks a limit. AutoGluon 1.6 spent 4 PRs on this (#5757, #5768, #5791, GPU budgeting for parallel folds). FALSIFIABLE (contracts/crux-O-18-v1.yaml): a model whose estimate exceeds the limit is skipped with reason=memory — with memory_limit=64MiB on a fixture where the estimate for the largest model is > 64MiB, that model is absent from the leaderboard and present in the skip list with its estimate; the estimate is not a constant — the estimate for a 10x larger fixture is asserted larger than for the base fixture; a mutation returning a constant turns this RED. Epic #3370.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - P2
+  - enhancement
+  - crux
+  - pareto-autogluon
+  notes: null
+- id: PMAT-3389
+  github_issue: 3389
+  item_type: task
+  title: 'P0: Multi-series forecasting predictor: (item_id, timestamp) panel data, prediction_length, freq — CRUX-O-19'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-09-16T12:00:00Z
+  updated: 2026-09-16T12:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'CRUX-O-19, competitor autogluon, demand 5. crates/aprender-core/src/time_series/mod.rs is one struct, ARIMA, on one f32 series (fit/forecast/order). There is no panel container keyed by item and timestamp, no frequency, no horizon-first API and no per-item forecast. FALSIFIABLE (contracts/crux-O-19-v1.yaml): a panel of N items forecasts N x prediction_length rows — on a fixture of 5 items with 200 hourly points each and prediction_length=24 the output has exactly 120 rows, each (item_id, timestamp) unique, timestamps continuing each item''s last stamp at freq=h; irregular timestamps are rejected or regularised, never silently misaligned — an item with a missing hour is an Err naming the item and gap unless fill=forward is passed, in which case the filled row is flagged. Epic #3370.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - P0
+  - enhancement
+  - crux
+  - pareto-autogluon
+  notes: null
+- id: PMAT-3390
+  github_issue: 3390
+  item_type: task
+  title: 'P0: Probabilistic forecasts: quantile_levels and the forecasting metric family (WQL, MQL, MASE, SMAPE, RMSSE, WAPE) — CRUX-O-20'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-09-16T12:00:00Z
+  updated: 2026-09-16T12:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'CRUX-O-20, competitor autogluon, demand 5. ARIMA.forecast returns a point path; metrics/probabilistic.rs holds classification-probability metrics, and metrics/regression.rs has no seasonal-scaled (MASE/RMSSE) or quantile (WQL/MQL) losses. FALSIFIABLE (contracts/crux-O-20-v1.yaml): quantile forecasts are monotone in the quantile level — for every (item, step) q0.1 <= q0.5 <= q0.9, asserted over the whole fixture; a mutation that shuffles the quantile columns turns this RED; each metric matches the AutoGluon reference value on a pinned fixture — WQL, MASE, SMAPE, RMSSE, WAPE and MQL computed on a committed (y_true, y_pred, quantiles) fixture equal the reference values produced by autogluon.timeseries.metrics within 1e-9. Epic #3370.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - P0
+  - enhancement
+  - crux
+  - pareto-autogluon
+  notes: null
+- id: PMAT-3391
+  github_issue: 3391
+  item_type: task
+  title: 'P1: Rolling-window backtesting: num_val_windows, refit_every_n_windows, backtest_predictions — CRUX-O-21'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-09-16T12:00:00Z
+  updated: 2026-09-16T12:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'CRUX-O-21, competitor autogluon, demand 4. No time-aware validation. KFold shuffles rows; nothing cuts the last k horizons of each item as expanding-window validation sets, and there is no API that returns the validation forecasts for inspection. FALSIFIABLE (contracts/crux-O-21-v1.yaml): validation windows never contain a timestamp later than the training cut for that window — for num_val_windows=3 and val_step_size=h, each window''s max training timestamp < min validation timestamp per item, asserted for every item and window; backtest_predictions rows align with backtest_targets — the two frames have identical (window, item_id, timestamp) index sets and no NaN targets. Epic #3370.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - P1
+  - enhancement
+  - crux
+  - pareto-autogluon
+  notes: null
+- id: PMAT-3392
+  github_issue: 3392
+  item_type: task
+  title: 'P2: Known covariates, past covariates and static features in forecasting — CRUX-O-22'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-16T12:00:00Z
+  updated: 2026-09-16T12:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'CRUX-O-22, competitor autogluon, demand 3. ARIMA is univariate. No container carries per-item static features or time-varying covariates, and no model consumes them. FALSIFIABLE (contracts/crux-O-22-v1.yaml): a known covariate that fully determines the target is used — on a fixture where y = 10*holiday + noise, a model given known_covariates has MASE < 0.5 x the same model without them; future covariates missing for the horizon is an error — predict() without known_covariates for all prediction_length steps is an Err naming the first missing timestamp. Epic #3370.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - P2
+  - enhancement
+  - crux
+  - pareto-autogluon
+  notes: null
+- id: PMAT-3393
+  github_issue: 3393
+  item_type: task
+  title: 'P1: Local statistical baselines: SeasonalNaive, ETS, Theta, AutoARIMA, Croston — CRUX-O-23'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-09-16T12:00:00Z
+  updated: 2026-09-16T12:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'CRUX-O-23, competitor autogluon, demand 4. ARIMA exists (fixed order; no auto-order search). SeasonalNaive, ETS, Theta and the intermittent-demand family (Croston, ADIDA, IMAPA) are absent. AutoGluon runs these as its ''local'' tier (timeseries/models/local/) and they anchor every leaderboard. FALSIFIABLE (contracts/crux-O-23-v1.yaml): SeasonalNaive is exactly the lag-m copy — forecast[t] == y[t - m] for the whole horizon on a fixture with m=24, byte-equal; AutoARIMA selects the planted order — on a fixture generated from ARIMA(2,1,1) the selected (p,d,q) equals (2,1,1) in >= 9 of 10 seeds; ETS and Theta match the statsforecast reference — point forecasts on the AirPassengers fixture equal the statsforecast reference within 1e-6. Epic #3370.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - P1
+  - enhancement
+  - crux
+  - pareto-autogluon
+  notes: null
+- id: PMAT-3394
+  github_issue: 3394
+  item_type: task
+  title: 'P1: Zero-shot pretrained forecaster (Chronos-2 / Toto-2 class) loaded by apr pull, with optional fine-tuning — CRUX-O-24'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-09-16T12:00:00Z
+  updated: 2026-09-16T12:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'CRUX-O-24, competitor autogluon, demand 4. apr pull fetches LLM checkpoints (Category A) and the inference crates run decoder transformers, but no forecasting head exists: nothing tokenises a numeric series into the model''s input, samples a horizon, and maps it back to quantiles. FALSIFIABLE (contracts/crux-O-24-v1.yaml): zero-shot output matches a pinned reference — a pinned small checkpoint pulled by `apr pull` forecasts the committed fixture within 1e-3 of the reference quantiles; fine-tuning changes the weights and improves the in-domain metric — after fine_tune on the fixture the WQL improves by >= 5% relative AND at least one weight tensor differs from the pulled checkpoint. Epic #3370.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - P1
+  - enhancement
+  - crux
+  - pareto-autogluon
+  notes: null
