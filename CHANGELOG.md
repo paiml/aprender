@@ -27,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- fix(moe): the loader knew the expert qtype and said nothing until the first token — load-time contract (#3341) (#3405)
 - fix(install): delete the dead proptest test-profile spec, and document why the rest cannot go today (#2575)
 - fix(security): wasmtime 43 -> 47.0.4 -- the real fix for RUSTSEC-2026-0269, and it needed ZERO source changes (#2807)
 - fix(beat): the ollama decode floor was calibrated on sm_89 and is now asserted on sm_121 (#2835) (#2838)
