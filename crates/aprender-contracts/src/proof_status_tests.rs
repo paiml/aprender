@@ -704,3 +704,63 @@ fn ont2a_a_contract_that_claims_nothing_is_not_flagged() {
     assert_eq!(report.totals.l4_self_declared, 0);
     assert!(report.l4_self_declared_excluded);
 }
+
+// ── PMAT-3091: N/A obligations are counted apart and never raise a level ────
+
+/// `n_ob` ordinary obligations plus `n_na` declared `applies_to: not_applicable`.
+fn contract_with_na_obligations(n_ob: usize, n_na: usize, n_ft: usize, n_kani: usize) -> Contract {
+    let mut c = minimal_contract(n_ob, n_ft, n_kani);
+    for i in 0..n_na {
+        let ob: crate::schema::ProofObligation = serde_yaml::from_str(&format!(
+            "property: \"na {i}\"\napplies_to: not_applicable\nna_reason: r\nna_owner: o\n"
+        ))
+        .expect("N/A obligation fixture must parse");
+        c.proof_obligations.push(ob);
+    }
+    c
+}
+
+#[test]
+fn na_obligations_are_counted_separately_as_k_na() {
+    let c = contract_with_na_obligations(3, 2, 5, 0);
+    let report = proof_status_report(&[("na-v1".to_string(), &c)], None, false);
+    assert_eq!(report.contracts[0].obligations, 5);
+    assert_eq!(report.contracts[0].not_applicable, 2);
+    assert_eq!(report.totals.not_applicable, 2);
+    let text = format_text(&report);
+    assert!(text.contains("2 N/A"), "{text}");
+}
+
+#[test]
+fn na_count_is_zero_without_declarations() {
+    let c = minimal_contract(3, 3, 0);
+    let report = proof_status_report(&[("plain-v1".to_string(), &c)], None, false);
+    assert_eq!(report.contracts[0].not_applicable, 0);
+    assert_eq!(report.totals.not_applicable, 0);
+}
+
+/// 3 tests cover the 3 ordinary obligations; the 4th is N/A. Were N/A dropped
+/// from the denominator, 3 >= 3 would promote the contract to L2 on the
+/// strength of a declaration. It stays where an undeclared 4th would leave it.
+#[test]
+fn na_obligation_does_not_raise_the_level() {
+    let with_na = contract_with_na_obligations(3, 1, 3, 0);
+    let undeclared = minimal_contract(4, 3, 0);
+    assert_eq!(compute_proof_level(&with_na, None), ProofLevel::L1);
+    assert_eq!(
+        compute_proof_level(&with_na, None),
+        compute_proof_level(&undeclared, None)
+    );
+    let kani = contract_with_na_obligations(3, 1, 3, 3);
+    assert_eq!(compute_proof_level(&kani, None), ProofLevel::L1);
+}
+
+/// An all-N/A contract has nothing proved, so no L4 credit from the grounding
+/// path: the schema N/A is not `verification_summary.l4_not_applicable`.
+#[test]
+fn na_obligations_grant_no_lean_credit() {
+    let c = contract_with_na_obligations(0, 3, 3, 3);
+    assert!(!is_lean_proved_with_grounding(&c, 0));
+    let one = contract_with_na_obligations(1, 3, 4, 4);
+    assert!(!is_lean_proved_with_grounding(&one, 1));
+}

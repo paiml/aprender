@@ -64,6 +64,11 @@ pub struct ContractProofStatus {
     pub proof_level: ProofLevel,
     /// Number of proof obligations in the contract
     pub obligations: u32,
+    /// Obligations declared `applies_to: not_applicable` (PMAT-3091). Counted
+    /// APART: never passed, discharged or proved, and never removed from
+    /// `obligations` for the level computation, so they cannot raise a level.
+    #[serde(default)]
+    pub not_applicable: u32,
     /// Number of falsification tests defined
     pub falsification_tests: u32,
     /// Number of Kani bounded-model-checking harnesses
@@ -123,6 +128,10 @@ pub struct ProofStatusTotals {
     pub contracts: u32,
     /// Sum of proof obligations across all contracts
     pub obligations: u32,
+    /// Sum of `applies_to: not_applicable` obligations (PMAT-3091), a subset of
+    /// `obligations` and never a subset of anything proved.
+    #[serde(default)]
+    pub not_applicable: u32,
     /// Sum of falsification tests across all contracts
     pub falsification_tests: u32,
     /// Sum of Kani harnesses across all contracts
@@ -283,6 +292,26 @@ pub fn is_l4_self_declared_with_grounding(contract: &Contract, grounded: u32) ->
     };
     let claim_covers = vs.l4_lean_proved > 0 && vs.l4_lean_proved + vs.l4_not_applicable >= total;
     claim_covers && !is_lean_proved_with_grounding(contract, grounded)
+}
+
+/// Obligations declared `applies_to: not_applicable` (PMAT-3091).
+///
+/// This is a count for the report only. The level computation deliberately
+/// does NOT subtract it from the obligation total: tests, kani harnesses and
+/// Lean theorems are counted per contract, not linked per obligation, so there
+/// is no numerator to remove an N/A obligation from, and removing it from the
+/// denominator alone would let a declaration lower the bar for L2/L3/L4. An
+/// N/A obligation therefore leaves the level exactly where an undeclared one
+/// would. It is also not `verification_summary.l4_not_applicable`: it grants
+/// no Lean credit.
+#[must_use]
+#[allow(clippy::cast_possible_truncation)]
+pub fn count_not_applicable(contract: &Contract) -> u32 {
+    contract
+        .proof_obligations
+        .iter()
+        .filter(|ob| ob.is_not_applicable())
+        .count() as u32
 }
 
 /// Returns `true` when all bindings are implemented.
@@ -517,6 +546,7 @@ pub fn proof_status_report(
     let mut totals = ProofStatusTotals {
         contracts: contracts.len() as u32,
         obligations: 0,
+        not_applicable: 0,
         falsification_tests: 0,
         kani_harnesses: 0,
         lean_proved: 0,
@@ -530,6 +560,7 @@ pub fn proof_status_report(
         let contract_file = format!("{stem}.yaml");
 
         let obligations = contract.proof_obligations.len() as u32;
+        let not_applicable = count_not_applicable(contract);
         let ft_count = contract.falsification_tests.len() as u32;
         let kani_count = contract.kani_harnesses.len() as u32;
         // The CLAIM (what the contract says about itself) and the GROUNDING (what the tree shows) are two
@@ -563,6 +594,7 @@ pub fn proof_status_report(
             compute_proof_level_with_grounding(contract, binding_status, lean_grounded);
 
         totals.obligations += obligations;
+        totals.not_applicable += not_applicable;
         totals.falsification_tests += ft_count;
         totals.kani_harnesses += kani_count;
         totals.lean_proved += lean_proved;
@@ -575,6 +607,7 @@ pub fn proof_status_report(
             stem: stem.clone(),
             proof_level,
             obligations,
+            not_applicable,
             falsification_tests: ft_count,
             kani_harnesses: kani_count,
             lean_proved,
@@ -659,10 +692,11 @@ pub fn format_text(report: &ProofStatusReport) -> String {
     }
 
     out.push_str(&format!(
-        "\nTotals: {} obligations, {} tests, {} kani, {} lean claimed ({} grounded), {}/{} bound\n\
+        "\nTotals: {} obligations ({} N/A, never counted as proved), {} tests, {} kani, {} lean claimed ({} grounded), {}/{} bound\n\
          L4 evidence: {} contract(s) self-declared and excluded from L4 (ONT-2a andon); grounded means a \
          sorry-free in-tree Lean theorem the equation names\n",
         report.totals.obligations,
+        report.totals.not_applicable,
         report.totals.falsification_tests,
         report.totals.kani_harnesses,
         report.totals.lean_proved,
