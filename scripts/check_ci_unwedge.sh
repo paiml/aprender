@@ -244,9 +244,9 @@ STALL_WINDOW_MIN=30    # a job started inside this window is dispatch PROGRESS
 #
 # CAPACITY IS A HOST-SIDE READING, NOT A GITHUB ANSWER. `GET
 # /orgs/{org}/actions/runners` is not available to this work; idle capacity on this
-# fleet is measured from /proc on the hosts themselves --
-# `pgrep -fc "[R]unner.Listener"` online, `pgrep -fc "[R]unner.Worker"` busy, the
-# same reading `make -C machines/intel verify-fleet-bin` reports. The payload is
+# fleet is measured on the hosts themselves by the ONE sanctioned oracle,
+# `fleet-bin.sh verify-effective-paths` (live listeners, by /proc comm), plus
+# `pgrep -c -x Runner.Worker` for busy -- the reading `verify-fleet-bin` reports. The payload is
 # therefore an INPUT (`--capacity FILE` / UNWEDGE_CAPACITY_JSON), one row per host:
 #
 #   {"hosts":[{"host":"intel","labels":["self-hosted","Linux","X64","clean-room"],
@@ -292,9 +292,22 @@ capacity_row() {
 # emit_capacity_row HOST LABELS_CSV -> this host's row, read from /proc.
 # The bracket in the pattern keeps pgrep from matching its own command line.
 emit_capacity_row() {
-    local h="${1:-}" labels="${2:-}" listeners workers
-    listeners=$(pgrep -fc "[R]unner.Listener" 2>/dev/null) || listeners=0
-    workers=$(pgrep -fc "[R]unner.Worker" 2>/dev/null) || workers=0
+    # THE ORACLE, NOT A REIMPLEMENTATION OF IT (APR-RELEASE-001 §5: "fleet-bin.sh
+    # is the only runner oracle. Do not reimplement it"). Live listeners come from
+    # `fleet-bin.sh verify-effective-paths`, which discovers by /proc comm ==
+    # Runner.Listener; the `pgrep -fc "[R]unner.Listener"` this used to run matches
+    # COMMAND LINES and counted 17 on a box with 16 listeners -- the 17th was the
+    # ssh command that carried the pgrep (fleet-bin.sh, "DISCOVERY IS BY comm, NOT
+    # pgrep"). Busy is `pgrep -c -x Runner.Worker`: -x is an exact comm match.
+    # No oracle => EMPTY output, rc 2 -- unknown, never 0 (zero is "the pool is
+    # full" and would license a cancel).
+    local h="${1:-}" labels="${2:-}" oracle="${FLEET_BIN:-fleet-bin.sh}" listeners workers
+    command -v "$oracle" > /dev/null 2>&1 || { printf '\n'; return 2; }
+    listeners=$( "$oracle" verify-effective-paths 2>/dev/null \
+                 | sed -n 's/.*effective PATH: \([0-9][0-9]*\) live listener(s).*/\1/p' | head -1 )
+    case "$listeners" in ''|*[!0-9]*) printf '\n'; return 2 ;; esac
+    workers=$(pgrep -c -x Runner.Worker 2>/dev/null) || workers="${workers:-0}"
+    case "$workers" in ''|*[!0-9]*) workers=0 ;; esac
     capacity_row "$h" "$labels" "$listeners" "$workers"
 }
 
@@ -496,6 +509,17 @@ self_test() {
     # must refuse, not guess.
     _eq 'S5 capacity unknown -> REFUSE (never cancel without the evidence)' \
         'REFUSE' "$( stall_verdict 45 '' STALLED | head -1 | cut -d' ' -f1 )"
+
+    # (c) THE COLLECTOR READS THE ORACLE. A fake fleet-bin.sh printing the oracle's
+    # own line yields its count; no oracle on PATH yields EMPTY (unknown), never 0.
+    local od; od="$(mktemp -d)"
+    printf '%s\n' '#!/bin/sh' 'echo "fleet-bin: effective PATH: 16 live listener(s) over 17 runner dir(s) -- converged=16 stale=0 unknown=0 foreign=0 idle_dirs=1"' > "$od/fake-fleet-bin.sh"
+    chmod +x "$od/fake-fleet-bin.sh"
+    _eq 'C-ORACLE-a collector reads live listeners from fleet-bin.sh verify-effective-paths' \
+        '16' "$( FLEET_BIN="$od/fake-fleet-bin.sh" emit_capacity_row intel self-hosted,Linux,clean-room | jq -r '.listeners' )"
+    _eq 'C-ORACLE-b no oracle on the host -> EMPTY row (unknown), never a zero' \
+        '' "$( FLEET_BIN="$od/absent-fleet-bin.sh" emit_capacity_row intel self-hosted,Linux,clean-room )"
+    case "$od" in /tmp/*|"${TMPDIR:-/nonexistent}"/*) rm -rf "$od" ;; esac
 
     # The two inputs, each from a committed payload.
     _eq 'C1 idle = listeners - workers, summed over hosts carrying the labels' \
