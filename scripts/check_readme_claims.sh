@@ -9,7 +9,7 @@
 #
 # Claims:
 #   crate_count        → `cargo metadata --no-deps` members == README "N workspace crates"
- wc -l` == README "M provable contracts"$| wc -l` == README "M provable contracts"
+#   contract_count     → contracts/census.json `.n_files` — the set `pv lint` walks (ONT-001 ONT-1) == README "M provable contracts"
 #   cli_command_count  → `apr --help` subcmd count == README "K CLI commands"
 #   cookbook_link      → README.md mentions `apr-cookbook`
 

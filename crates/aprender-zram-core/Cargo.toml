@@ -44,6 +44,11 @@ std = []
 nightly = []
 # Enable CUDA GPU acceleration
 cuda = ["dep:cudarc", "dep:rayon", "dep:aprender-gpu"]
+# Private. Carries the REAL gate on the GPU batch path in src/gpu/batch/mod.rs,
+# so `--features cuda` reports the one named refusal in that file instead of a
+# cascade of unresolved imports. Set it only once the three gaps that refusal
+# names are closed. See #3179.
+__cuda-linked = []
 
 [lints.rust]
 unsafe_code = "allow"

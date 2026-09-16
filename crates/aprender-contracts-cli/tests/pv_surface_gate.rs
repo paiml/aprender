@@ -13,7 +13,8 @@
 //! 1. **pv's CLI tests were DARK.** `crates/aprender-contracts-cli/tests/` held
 //!    651 lines of binary-spawning tests, and CI ran **none** of them:
 //!    `workspace-test` is `cargo nextest run --workspace --lib` (library targets
-//!    only), and the explicit integration list in `ci.yml` names 23 targets,
+//!    only), and the explicit integration list (then a `ci.yml` line, now
+//!    `ci/explicit-test-commands.d/`, PMAT-3313) named 23 targets,
 //!    not one of them from `aprender-contracts-cli`. A test that never executes
 //!    is 0% coverage however many lines it has. This PR wires pv's integration
 //!    targets into that list.
@@ -40,7 +41,7 @@
 //! So the behavioural depth of this tranche is **1 of 38**. That is the number
 //! to quote; 17/38 is shallow-but-real, and 38/38 is nearly free.
 //!
-//!   COVERED: `pv validate` field/rule decision table (all 30 diagnostic rules
+//!   COVERED: `pv validate` field/rule decision table (all 33 diagnostic rules
 //!            declared in validator.rs — MEASURED on this branch, which folds in
 //!            #2555's CRUX-001/002 and #2554's SCHEMA-018/019/020; it was 25
 //!            before those and never 18 — both directions), real invocation of
@@ -416,6 +417,55 @@ const CASES: &[Case] = &[
                 .to_string();
         },
     },
+    // SCHEMA-021/022/023 (PMAT-3091) — the not-applicable family. An obligation
+    // that is not a property of code is declared `applies_to: not_applicable`
+    // and must say WHY (`na_reason`) and WHERE the claim is actually verified
+    // (`na_owner`); either field without the declaration justifies nothing.
+    //
+    // All three are reachable with one swap of `obligations` and nothing else,
+    // so all three get a real Case rather than `ALSO_ABSENT_FROM_BASELINE` —
+    // that list is for rules a single swap CANNOT attribute (SCHEMA-006 needs a
+    // second obligation, which also trips PROVABILITY-001). MEASURED: the
+    // fixture keeps exactly one obligation against one falsification test, and
+    // `provability_violations` counts an N/A obligation like any other, so the
+    // provability ratio is untouched by these rows.
+    Case {
+        // Declared N/A, owner given, REASON missing. Discriminating against a
+        // `pv` that collapsed the family to one id: such a binary would print
+        // whatever single id it has and fail this row or the SCHEMA-022 one.
+        rule: "SCHEMA-021",
+        sev: Sev::Error,
+        build: |f| {
+            f.obligations = "  - type: invariant\n    property: \"P\"\n    \
+                 formal: \"F-OK\"\n    applies_to: not_applicable\n    \
+                 na_owner: \"apr bench decode\"\n"
+                .to_string();
+        },
+    },
+    Case {
+        // Declared N/A, reason given, OWNER missing — the half that keeps an
+        // N/A from being a silent exemption: something must still check it.
+        rule: "SCHEMA-022",
+        sev: Sev::Error,
+        build: |f| {
+            f.obligations = "  - type: invariant\n    property: \"P\"\n    \
+                 formal: \"F-OK\"\n    applies_to: not_applicable\n    \
+                 na_reason: \"a checkpoint fact, not a property of code\"\n"
+                .to_string();
+        },
+    },
+    Case {
+        // The DANGLING justification: `na_reason` on an obligation that still
+        // declares `applies_to: all`. This is the opposite direction from the
+        // two rows above — the fixture's obligation is otherwise untouched and
+        // one key is appended, so a `pv` that only ever reported MISSING N/A
+        // fields (and never a decorative one) fails here and nowhere else.
+        rule: "SCHEMA-023",
+        sev: Sev::Error,
+        build: |f| {
+            f.obligations = format!("{OBLIGATION_OK}    na_reason: \"why\"\n");
+        },
+    },
     Case {
         rule: "PROVABILITY-001",
         sev: Sev::Error,
@@ -566,7 +616,7 @@ fn all_rule_ids() -> BTreeSet<&'static str> {
 /// NEGATIVE DIRECTION: a contract with nothing wrong must produce NO rule id
 /// and exit 0.
 ///
-/// Without this, a `pv` that printed all 30 rules unconditionally would satisfy
+/// Without this, a `pv` that printed all 33 rules unconditionally would satisfy
 /// every trip case below. This is the half that makes the table discriminating.
 #[test]
 fn validate_baseline_is_silent_and_exits_zero() {

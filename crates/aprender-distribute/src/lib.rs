@@ -81,7 +81,19 @@ mod generated_contracts;
 pub mod checkpoint;
 pub mod error;
 pub mod executor;
+// TOKIO, NOT `cpu`. #3176 proposed `#[cfg(feature = "cpu")]` and the intent is
+// right — gate the modules, do NOT make tokio a hard dependency — but `cpu` is
+// only one of SIX features that pull tokio in: `cpu`, `remote`, `checkpoint`,
+// `tui`, `serverless`, `microvm`. Gating on `cpu` would leave
+// `--no-default-features --features remote` with tokio present and the modules
+// that need it compiled out, which trades one broken configuration for another.
+//
+// Cargo creates an implicit `tokio` feature for the optional dependency, and it
+// is true exactly when some feature brought tokio in. That is the predicate the
+// code actually depends on.
+#[cfg(feature = "tokio")]
 pub mod messaging;
+#[cfg(feature = "tokio")]
 pub mod scheduler;
 #[cfg(feature = "serverless")]
 pub mod serverless;
@@ -90,16 +102,33 @@ pub mod task;
 pub mod tensor;
 // tui module removed — was ratatui-only
 
+// Only the Pool API uses these, and the Pool API is tokio-gated below.
+#[cfg(feature = "tokio")]
 use error::{RepartirError, Result};
+// `Pool` is the crate's high-level API and it is async to its core --
+// tokio::sync::RwLock, tokio::task::JoinSet, tokio::time::sleep, and a
+// CpuExecutor that spawns processes through tokio. There is no meaningful
+// tokio-free Pool to preserve, so the whole API surface is gated with the
+// runtime it requires rather than half-gated into something that compiles and
+// cannot run. #3176.
+#[cfg(feature = "tokio")]
 use executor::cpu::CpuExecutor;
+#[cfg(feature = "tokio")]
 use executor::Executor;
+#[cfg(feature = "tokio")]
 use scheduler::Scheduler;
+#[cfg(feature = "tokio")]
 use std::sync::Arc;
+#[cfg(feature = "tokio")]
 use task::{ExecutionResult, Task};
+#[cfg(feature = "tokio")]
 use tokio::sync::RwLock;
+#[cfg(feature = "tokio")]
 use tokio::task::JoinSet;
+#[cfg(feature = "tokio")]
 use tracing::{debug, info};
 
+#[cfg(feature = "tokio")]
 /// High-level API for distributed task execution.
 ///
 /// The `Pool` manages executors, schedules tasks, and coordinates results.
@@ -131,6 +160,7 @@ pub struct Pool {
     workers: Arc<RwLock<JoinSet<()>>>,
 }
 
+#[cfg(feature = "tokio")]
 impl Pool {
     /// Creates a new pool builder.
     #[must_use]
@@ -182,6 +212,7 @@ impl Pool {
     }
 }
 
+#[cfg(feature = "tokio")]
 /// Builder for `Pool`.
 #[derive(Default)]
 pub struct PoolBuilder {
@@ -189,6 +220,7 @@ pub struct PoolBuilder {
     max_queue_size: Option<usize>,
 }
 
+#[cfg(feature = "tokio")]
 impl PoolBuilder {
     /// Sets the number of CPU workers.
     #[must_use]

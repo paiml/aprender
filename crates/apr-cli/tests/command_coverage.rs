@@ -198,7 +198,7 @@ fn test_coverage_validate_quality_rich() {
     // `points` or `Score` — the first two are the wording #2394 finding 12 removed as
     // dishonest, and the third never matched because the line reads `SCORE:` in caps.
     // So all three arms were false and the test had simply never run: `command_coverage`
-    // is not on ci.yml's `--test` line either.
+    // has no fragment in ci/explicit-test-commands.d/ either.
     //
     // Same rewrite as its sibling: assert the contract the code owes — a score measured
     // against the checks that RAN — and require the retired wording to be ABSENT, so a

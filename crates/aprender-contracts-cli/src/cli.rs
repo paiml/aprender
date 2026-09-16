@@ -14,7 +14,15 @@ pub enum Commands {
         binding: Option<PathBuf>,
     },
     /// Validate a YAML kernel contract
-    Validate { contract: PathBuf },
+    Validate {
+        contract: PathBuf,
+        /// Report obligation-id denominators instead of validating:
+        /// `N obligations, M with id, K referenced`. Counts come through the
+        /// same deserialization every other pv command uses, which is what
+        /// makes them evidence that a consumer reads the key (#3314).
+        #[arg(long)]
+        check_ids: bool,
+    },
     /// Execute cross_check_command per row of a parity-matrix contract (SEMANTIC gate)
     #[command(name = "check-parity")]
     CheckParity { contract: PathBuf },

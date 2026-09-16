@@ -9,11 +9,12 @@
 //! trust — see the withdrawn 1.371x Ollama beat in docs/BEATS.md.
 //!
 //! WHY ALL THREE DOCS SHARE ONE TEST TARGET. `.github/workflows/ci.yml` runs
-//! `--lib` across the workspace, and gates integration targets by *explicit name*
-//! on one physical line. A brand-new `tests/*.rs` file would therefore never run
-//! (547 of 573 integration targets in this repo are dark for exactly this
-//! reason), and only one PR at a time may edit that line without a merge-queue
-//! conflict. `readme_contract` is already on it, so the doc gates live here.
+//! `--lib` across the workspace, and gates integration targets by *explicit name*:
+//! one fragment file per command under `ci/explicit-test-commands.d/` (PMAT-3313;
+//! it was one physical ci.yml line when this was written). A brand-new
+//! `tests/*.rs` file therefore never runs until a fragment names it (547 of 573
+//! integration targets in this repo were dark for exactly this reason).
+//! `readme_contract` already has one, so the doc gates live here.
 
 use std::path::Path;
 

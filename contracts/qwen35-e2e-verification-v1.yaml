@@ -20,8 +20,10 @@ metadata:
   - kv-cache-sizing-v1
 equations:
   model_parameter_count:
-    formula: P = V*d + L*(d_attn + d_ffn + d_norm) + d_final
-    domain: V=vocab, d=hidden, L=layers, d_attn/d_ffn/d_norm=per-layer params
+    formula: P = V*d + L*(d_attn + d_ffn + d_norm) + d_final + V*d
+    domain: V=vocab, d=hidden, L=layers, d_attn/d_ffn/d_norm=per-layer params;
+      the trailing V*d is the untied lm_head (contracts/model-families/qwen3_5.yaml
+      constraints.tied_embeddings = false)
     invariants:
     - Total ≈ 9.05B for Qwen3.5-9B
     - Embedding dominates for large V
@@ -99,8 +101,15 @@ proof_obligations:
 - id: QE2E-ORD-003
   type: ordering
   property: Quantization memory ordering
-  formal: M(Q4K) < M(Q6K) < M(F16) < M(F32)
+  formal: n % 256 == 0 → M(Q4K, n) < M(Q6K, n) < M(F16, n) < M(F32, n)
   applies_to: all
+  note: >-
+    Precondition n % 256 == 0 (n = element count, a whole number of K-quant
+    super-blocks). K-quant encoders pad to whole 256-element super-blocks, so
+    the unconditional ordering is false for small tensors: one Q6K block is
+    210 bytes vs 2n bytes of F16, failing for n <= 105; one Q4K block is 144
+    bytes, failing M(Q4K) < M(F16) for n <= 72. At whole super-blocks the
+    per-element sizes are 0.5625 < 0.8203 < 2 < 4 bytes.
 - id: QE2E-MON-004
   type: monotonicity
   property: Throughput increases with bandwidth
