@@ -99,9 +99,12 @@ check_ci_unwedge.sh -- free CI runs wedged on a parked aggregator (#3229).
   --dry-run             with --scan: report, change nothing
   --limit N             with --scan: how many recent runs to consider (default 15)
   --repo OWNER/NAME     with --scan: the repository (default paiml/aprender)
-  --runners FILE        with --scan: an orgs/<org>/actions/runners payload; without
-                        it the capacity probe is attempted and, if it fails, the
-                        stalled-run rule REFUSES (it never cancels blind)
+  --capacity FILE       with --scan: a HOST-SIDE capacity reading (one row per
+                        host: labels, listeners, workers). Without it the
+                        stalled-run rule REFUSES -- it never cancels blind, and it
+                        never asks GitHub for the runner list
+  --emit-capacity-row HOST LABELS_CSV
+                        print this host's row from /proc, for the caller to collect
   --verdict FILE        classify one `actions/runs/<id>/jobs` payload
   --help
 USAGE
@@ -180,28 +183,63 @@ deadref_decision() {
 STALL_AGE_MIN=30       # how long a run may hold its group before it is a candidate
 STALL_WINDOW_MIN=30    # a job started inside this window is dispatch PROGRESS
 
-# pool_idle RUNNERS_JSON LABELS_CSV -> how many runners could take the work right
-# now: ONLINE, not busy, and carrying EVERY requested label.
+# pool_idle CAPACITY_JSON LABELS_CSV -> how many listeners could take the work
+# right now, summed over the hosts whose listeners carry EVERY requested label.
+#
+# CAPACITY IS A HOST-SIDE READING, NOT A GITHUB ANSWER. `GET
+# /orgs/{org}/actions/runners` is not available to this work; idle capacity on this
+# fleet is measured from /proc on the hosts themselves --
+# `pgrep -fc "[R]unner.Listener"` online, `pgrep -fc "[R]unner.Worker"` busy, the
+# same reading `make -C machines/intel verify-fleet-bin` reports. The payload is
+# therefore an INPUT (`--capacity FILE` / UNWEDGE_CAPACITY_JSON), one row per host:
+#
+#   {"hosts":[{"host":"intel","labels":["self-hosted","Linux","X64","clean-room"],
+#              "listeners":16,"workers":15}, ...]}
 #
 # EMPTY OUTPUT MEANS UNKNOWN, AND UNKNOWN IS NOT ZERO. Zero is a measurement ("the
 # pool is full"); empty is the absence of one, and the two lead to opposite
 # actions -- so they are different values, never both `0`.
 #
-# The label test is containment, not equality: `gx10-blackwell` was idle
-# throughout the incident and could not have taken one clean-room job, because it
-# does not carry `clean-room`. An idle box that cannot serve the labels is not
-# capacity (row P2).
+# The label test is containment, not equality: gx10's GPU listeners were free
+# throughout the incident and could not have taken one clean-room job, because they
+# do not carry `clean-room`. An idle box that cannot serve the labels is not
+# capacity (row C2). A host reading more workers than listeners contributes 0, never
+# a negative that would cancel out another host's real capacity (row C3).
 pool_idle() {
     local f="${1:-}" want="${2:-}" n
     if [ -z "$f" ] || [ ! -r "$f" ] || [ -z "$want" ]; then printf '\n'; return 2; fi
     n=$(jq -r --arg want "$want" '
             ($want | split(",") | map(select(length > 0))) as $need
-            | [ .runners[]?
-                | select(.status == "online" and .busy == false)
-                | select( ($need - [ .labels[]?.name ]) | length == 0 ) ]
-            | length' "$f" 2>/dev/null) || n=""
+            | [ .hosts[]?
+                | select( ($need - (.labels // [])) | length == 0 )
+                | (((.listeners // 0) - (.workers // 0)) | if . > 0 then . else 0 end) ]
+            | add // 0' "$f" 2>/dev/null) || n=""
     case "$n" in ''|*[!0-9]*) printf '\n'; return 2 ;; esac
     printf '%s\n' "$n"
+}
+
+# capacity_row HOST LABELS_CSV LISTENERS WORKERS -> one row of the payload above.
+# The acquisition is the CALLER's business -- this only fixes the shape, so the
+# host-side one-liner and the predicate cannot drift:
+#
+#   listeners=$(pgrep -fc "[R]unner.Listener"); workers=$(pgrep -fc "[R]unner.Worker")
+#   bash check_ci_unwedge.sh --emit-capacity-row "$(hostname -s)" 'self-hosted,Linux,clean-room'
+capacity_row() {
+    local h="${1:-}" labels="${2:-}" listeners="${3:-}" workers="${4:-}"
+    case "$listeners$workers" in ''|*[!0-9]*) printf '\n'; return 2 ;; esac
+    jq -n -c --arg host "$h" --arg labels "$labels" \
+            --argjson listeners "$listeners" --argjson workers "$workers" \
+        '{host: $host, labels: ($labels | split(",") | map(select(length > 0))),
+          listeners: $listeners, workers: $workers}'
+}
+
+# emit_capacity_row HOST LABELS_CSV -> this host's row, read from /proc.
+# The bracket in the pattern keeps pgrep from matching its own command line.
+emit_capacity_row() {
+    local h="${1:-}" labels="${2:-}" listeners workers
+    listeners=$(pgrep -fc "[R]unner.Listener" 2>/dev/null) || listeners=0
+    workers=$(pgrep -fc "[R]unner.Worker" 2>/dev/null) || workers=0
+    capacity_row "$h" "$labels" "$listeners" "$workers"
 }
 
 # dispatch_state JOBS_JSON NOW_ISO WINDOW_MIN -> PROGRESSING | STALLED
@@ -372,14 +410,22 @@ self_test() {
         'REFUSE' "$( stall_verdict 45 '' STALLED | head -1 | cut -d' ' -f1 )"
 
     # The two inputs, each from a committed payload.
-    _eq 'P1 idle capacity counts only ONLINE, not-busy runners that carry the labels' \
-        '2' "$( pool_idle "$CASES_DIR/p1_runners_idle.json" 'self-hosted,Linux,clean-room' )"
-    # P2: gx10-blackwell is idle and cannot serve clean-room. An idle box that does
-    # not carry the labels is not capacity for this job.
-    _eq 'P2 the measured incident: every clean-room runner busy -> 0 idle' \
-        '0' "$( pool_idle "$CASES_DIR/p2_runners_saturated.json" 'self-hosted,Linux,clean-room' )"
-    _eq 'P3 an OFFLINE listener is not idle capacity' \
-        '0' "$( pool_idle "$CASES_DIR/p3_runners_offline.json" 'self-hosted,Linux,clean-room' )"
+    _eq 'C1 idle = listeners - workers, summed over hosts carrying the labels' \
+        '3' "$( pool_idle "$CASES_DIR/c1_capacity_idle.json" 'self-hosted,Linux,clean-room' )"
+    # C2: gx10 has two free listeners and they carry `gpu`, not `clean-room`. An
+    # idle box that cannot serve the labels is not capacity for this job.
+    _eq 'C2 the measured incident: every clean-room host saturated -> 0 idle' \
+        '0' "$( pool_idle "$CASES_DIR/c2_capacity_saturated.json" 'self-hosted,Linux,clean-room' )"
+    _eq 'C3 workers > listeners contributes 0, never a negative' \
+        '0' "$( pool_idle "$CASES_DIR/c3_capacity_worker_skew.json" 'self-hosted,Linux,clean-room' )"
+    # C4 IS THE ROW THE WHOLE RULE RESTS ON. No reading means UNKNOWN, and unknown
+    # must not read as `0` -- `0` is a measurement that says "a queue", while
+    # unknown must reach stall_verdict's REFUSE (row S5).
+    _eq 'C4 an absent capacity reading is UNKNOWN (empty), never 0' \
+        '' "$( pool_idle "$CASES_DIR/does-not-exist.json" 'self-hosted,clean-room' )"
+    _eq 'C5 the host-side row shape the caller must produce' \
+        '{"host":"intel","labels":["self-hosted","Linux","clean-room"],"listeners":16,"workers":15}' \
+        "$( capacity_row 'intel' 'self-hosted,Linux,clean-room' 16 15 )"
     _eq 'D-STALL pending work and nothing started in the window -> STALLED' \
         'STALLED' "$( dispatch_state "$CASES_DIR/s1_jobs_stalled.json" '2026-09-16T11:00:00Z' 30 )"
     _eq 'D-PROG one job started 4 min ago -> PROGRESSING (trickling, not wedged)' \
@@ -406,13 +452,13 @@ self_test() {
     return "$fails"
 }
 
-# stall_pass REPO RUN BRANCH CREATED_ISO RUN_STATUS JOBS RUNNERS NOW DRY
+# stall_pass REPO RUN BRANCH CREATED_ISO RUN_STATUS JOBS CAPACITY NOW DRY
 # -> 0 when it force-cancelled, 1 otherwise. Reads the jobs payload the wedge pass
-# already fetched, so the whole rule costs ONE extra API call per sweep (the
-# runner list). Everything it decides on is printed, including the refusals --
+# already fetched, so the whole rule costs NO extra API call at all -- its other
+# input is a file. Everything it decides on is printed, including the refusals --
 # a rule that cancels silently is how a hand-cancel got blamed on the code.
 stall_pass() {
-    local repo="$1" run="$2" br="$3" created="$4" rstatus="$5" jobs="$6" runners="$7" now="$8" dry="$9"
+    local repo="$1" run="$2" br="$3" created="$4" rstatus="$5" jobs="$6" capacity="$7" now="$8" dry="$9"
     local age labels idle disp verdict created_s now_s
     stall_candidate_branch "$br" || return 1
     case "$rstatus" in queued|pending) ;; *) return 1 ;; esac
@@ -425,7 +471,7 @@ stall_pass() {
         # run with zero jobs is a victim, never the holder.
         return 1
     fi
-    idle="$( pool_idle "$runners" "$labels" )"
+    idle="$( pool_idle "$capacity" "$labels" )"
     disp="$( dispatch_state "$jobs" "$now" "$STALL_WINDOW_MIN" )"
     verdict="$( stall_verdict "$age" "$idle" "$disp" )"
     case "$verdict" in
@@ -461,19 +507,18 @@ scan() {
         -q '.[] | select(.workflowName=="CI") | select(.status != "completed") | "\(.databaseId)|\(.headBranch)|\(.createdAt)|\(.status)"' \
         > "$tmp/candidates" 2>/dev/null || { printf 'ENV: gh run list failed\n' >&2; return 2; }
 
-    # ---- capacity, fetched ONCE (#3292) ------------------------------------
-    # GET /orgs/{org}/actions/runners needs organization self-hosted-runner
-    # administration, which is NOT among a workflow token's `permissions:` keys,
-    # so ci-unwedge.yml's GITHUB_TOKEN cannot read it. The source is therefore
-    # injectable, and the absent case REFUSES rather than guessing: a rule that
-    # cancels without capacity evidence is the `queued`-alone rule this one exists
-    # to replace. Pagination is deliberately not chased -- an undercount can only
-    # LOWER the idle count, which can only cancel less.
-    if [ -n "${RUNNERS_FILE:-}" ] && [ -r "${RUNNERS_FILE:-}" ]; then
-        cp "$RUNNERS_FILE" "$tmp/runners.json"
+    # ---- capacity, supplied ONCE by the caller (#3292) ----------------------
+    # THE SWEEP DOES NOT ASK GITHUB. Idle capacity is a host-side reading
+    # (`pgrep -fc "[R]unner.Listener"` / `"[R]unner.Worker"` per host, the reading
+    # `make -C machines/intel verify-fleet-bin` reports); the org runners endpoint
+    # is not available to this work. So the payload is an input, and its absence
+    # REFUSES rather than guesses -- a rule that cancels without capacity evidence
+    # is the `queued`-alone rule this one exists to replace.
+    if [ -n "${CAPACITY_FILE:-}" ] && [ -r "${CAPACITY_FILE:-}" ]; then
+        cp "$CAPACITY_FILE" "$tmp/capacity.json"
     else
-        gh api "orgs/${repo%%/*}/actions/runners?per_page=100" > "$tmp/runners.json" 2>/dev/null \
-            || : > "$tmp/runners.json"
+        : > "$tmp/capacity.json"
+        printf 'refuse STALL-RULE capacity unknown -- no --capacity/UNWEDGE_CAPACITY_JSON reading; nothing is cancelled on age alone\n'
     fi
     local now stalled=0
     now="$(date -u +%FT%TZ)"  # bashrs disable-line=DET002
@@ -497,7 +542,7 @@ scan() {
                 fi ;;
             ENV*) printf 'skip  %s -- %s\n' "$run" "$verdict" ;;
             *)    if stall_pass "$repo" "$run" "$br" "$created" "$rstatus" \
-                                "$tmp/jobs.json" "$tmp/runners.json" "$now" "$dry"; then
+                                "$tmp/jobs.json" "$tmp/capacity.json" "$now" "$dry"; then
                       stalled=$(( stalled + 1 ))
                   fi ;;
         esac
@@ -554,7 +599,7 @@ scan() {
     return 0
 }
 
-MODE=""; DRY=0; LIMIT=15; REPO="$REPO_DEFAULT"; RUNNERS_FILE="${UNWEDGE_RUNNERS_JSON:-}"
+MODE=""; DRY=0; LIMIT=15; REPO="$REPO_DEFAULT"; CAPACITY_FILE="${UNWEDGE_CAPACITY_JSON:-}"
 while [ $# -gt 0 ]; do
     case "$1" in
         --self-test|--selftest) MODE=self; shift ;;
@@ -563,7 +608,8 @@ while [ $# -gt 0 ]; do
         --dry-run)              DRY=1; shift ;;
         --limit)                LIMIT="${2:-15}"; shift 2 ;;
         --repo)                 REPO="${2:-$REPO_DEFAULT}"; shift 2 ;;
-        --runners)              RUNNERS_FILE="${2:-}"; shift 2 ;;
+        --capacity)             CAPACITY_FILE="${2:-}"; shift 2 ;;
+        --emit-capacity-row)    MODE=caprow; CAPHOST="${2:-}"; CAPLABELS="${3:-}"; shift 3 ;;
         --help|-h)              usage; exit 0 ;;
         *) printf 'check_ci_unwedge.sh: unknown argument %s\n' "$1" >&2; usage >&2; exit 2 ;;
     esac
@@ -578,5 +624,6 @@ case "${MODE:-self}" in
     self)    self_test; exit $? ;;
     scan)    scan "$REPO" "$LIMIT" "$DRY"; exit $? ;;
     verdict) unwedge_verdict "${VFILE:-}"; exit $? ;;
+    caprow)  emit_capacity_row "${CAPHOST:-}" "${CAPLABELS:-}"; exit $? ;;
     *)       usage >&2; exit 2 ;;
 esac
