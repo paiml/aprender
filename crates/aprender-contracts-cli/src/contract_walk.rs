@@ -79,10 +79,12 @@ impl fmt::Display for ParseErrors {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "{} parse error{} under {}",
+            "{} parse error{} under {}\n  {} of {} contract files measured did not parse",
             self.errors.len(),
             if self.errors.len() == 1 { "" } else { "s" },
-            self.path.display()
+            self.path.display(),
+            self.errors.len(),
+            self.files,
         )?;
         for (file, err) in &self.errors {
             write!(f, "\n  {}: {err}", file.display())?;
