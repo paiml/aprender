@@ -58,18 +58,39 @@ then lost uncommitted to the session restart. P3 GREEN was rewritten by the orch
 | ph2 | goal ×1 writes | paiml-agy-delegate (opus) | gemini-3.1-pro-high | 7d650b83 | achieved; kani_ont_6_3 bound raised 16→30 by the orchestrator |
 | ph3 | goal ×1 writes | paiml-agy-delegate (opus) | gemini-3.1-pro-high | 8de30355 | achieved |
 | ph4 | goal ×1 writes | paiml-agy-delegate (opus) | gemini-3.1-pro-high | 3128f1ca | self-reported achieved; see deviation |
+| ph6 r1 | quorum ×3 (`quorum-review.sh --base origin/main`) on `61fa95aab` | paiml-agy-delegate (opus) | gemini-3.1-pro-high FAIL · gemini-3.8-flash-high FAIL · gemini-3.7-flash-high PASS | 252f06b1, cbaa220d, a43a4af5 | not agreed; the delegate hit maxTurns 30 after the artifact was written (read from disk, not resumed) |
 
 Slots: one Claude subagent at a time for this ticket (`running_peak=1`), `slots=3`. The events file for this
 session holds 2 `SessionStart` + 1 `SubagentStop` after the restart; the pre-restart events were under the wiped
-`/run/user` directory. I-3: `attempted=6 denied=0 running_peak=1 slots=3`.
+`/run/user` directory — a host hard crash at 15:30Z (a peer session's resume note records the 4th unclean reboot in
+24 h). I-3: `attempted=7 denied=0 running_peak=1 slots=3`.
+
+## Diff quorum round 1 → what changed
+
+Both FAILs (lanes 1 and 2) named one thing, cited at `crates/aprender-contracts/src/lint/mod.rs:255`: `61fa95aab`
+let an opt-in flag arm its own gate for that run (`LintConfig::requested_gates` + `ArmedGates::arm_requested`), a
+design choice beyond the ticket, flagged as such in the receipt. Lane 2 added a real inconsistency it caused:
+`contracts/ont-verdict-lattice-v1.yaml`'s `armed_meet` precondition reads A from `lint-baseline.json` only.
+Spec §3.9 agrees with the lanes ("only armed gates enter that repo's meet"; arming is the per-repo declaration),
+so the extension is **removed**: both functions, their test, and the CLI parameter. In its place
+`a_gate_a_flag_ran_is_reported_but_not_armed` pins the spec behaviour: `--strict-test-binding` runs the gate, the
+gate line prints `→ Unknown(NotArmed) [gate: <its verdict>]`, and it stays out of the meet. Round 1's artifact is
+kept outside the tree at `~/.cache/paiml-implement/ont6-evidence/quorum-r1/`.
+
+The consequence, measured rather than argued: `scripts/dogfood.sh` runs `pv lint contracts --binding
+contracts/binding.yaml --crate-dir .` and grades the exit code. reverse-coverage PASSES there today (67.3% bound ≥
+50% threshold), so no present verdict changes; a future reverse-coverage failure under those flags will no longer
+fail that run unless `contracts/lint-baseline.json` arms `reverse-coverage` — and arming it makes every flagless
+`pv lint` decline (Skip). That trade-off is a spec question for ONT-001 §3.9 (a gate that is only meaningful when
+requested), recorded under Gaps.
 
 ## What changed
 
 | File | Change |
 |---|---|
 | `crates/aprender-contracts/src/ontology/verdict.rs` | `Verdict`, `Reason` (15), `meet`/`arm`/`exit_code`/`decline_line`, `from_gate`, `from_shapes_report`, `FLEET_LABELS`/`from_label`, `Display` + `Serialize` as `Pass`/`Fail`/`Unknown(<Reason>)`; `kani_ont_6_1..3` |
-| `crates/aprender-contracts/src/ontology/arming.rs` | `ArmedGates` (`DEFAULT_ARMED` = the ruled 8, `from_baseline`, `arm_requested`), `check_monotone` → `ArmedGatesShrank`, `meet_armed` |
-| `crates/aprender-contracts/src/lint/{mod,gates,gates_extended,composition_gate,duplicate_stems,strict_test_binding,trend}.rs` | `GateResult.verdict` in all 11 constructors; `LintReport.{verdict, armed_gates, not_armed, armed_monotone}` + `LintReport::arm`; `LintConfig::requested_gates`; `run_lint` arms default + requested |
+| `crates/aprender-contracts/src/ontology/arming.rs` | `ArmedGates` (`DEFAULT_ARMED` = the ruled 8, `from_baseline`), `check_monotone` → `ArmedGatesShrank`, `meet_armed` |
+| `crates/aprender-contracts/src/lint/{mod,gates,gates_extended,composition_gate,duplicate_stems,strict_test_binding,trend}.rs` | `GateResult.verdict` in all 11 constructors; `LintReport.{verdict, armed_gates, not_armed, armed_monotone}` + `LintReport::arm`; `run_lint` arms the default set |
 | `crates/aprender-contracts-cli/src/commands/lint_arming.rs` (new) | the comparand: merge-base(HEAD, origin/main) → origin/main tip → `--armed-baseline-ref`; explicit ref fails closed; `GIT_DIR`/`GIT_WORK_TREE`/`GIT_INDEX_FILE` dropped |
 | `crates/aprender-contracts-cli/src/commands/lint.rs` | shrink check before the lint run; the exit is `meet_exit` over the armed meet; watch mode arms from the declared baseline each tick |
 | `crates/aprender-contracts-cli/src/commands/lint_render.rs` | per-gate `→ <verdict>` (unarmed: `Unknown(NotArmed) [gate: …]`), `armed meet:` and `armed_gates monotone:` lines, `Result:` follows the meet |
@@ -82,11 +103,6 @@ session holds 2 `SessionStart` + 1 `SubagentStop` after the restart; the pre-res
 | `docs/audits/surface_audit.csv` | 38 `cli.rs:N` citations +4, each checked against origin/main's line |
 | `contracts/ont-verdict-lattice-v1.yaml`, `contracts/census.json`, `README.md` | the kernel contract; census 1791 → 1792; README count regenerated |
 | `docs/roadmaps/entries/PMAT-3451.yaml`, `docs/roadmaps/roadmap.yaml` | spec + acceptance criteria written from the diff; aggregate regenerated |
-
-**Design choice beyond the plan, for the quorum to judge:** an opt-in flag arms its own gate for that run
-(`--strict-test-binding`; `--binding` with `--crate-dir`). With the ruled default set alone, a gate the caller
-explicitly requested could fail without failing the run — a fail-open the old `report.passed` did not have. It is
-additive only and the monotone check compares declared lists, so it cannot shrink an arming.
 
 ## Evidence — every command re-run by the orchestrator
 
@@ -110,7 +126,7 @@ verification:
 
 What each line observed:
 
-- ont6_lint_verdict: 7 passed. contracts lib: 1555 passed, 0 failed, 5 ignored. aprender-contracts-cli: every
+- ont6_lint_verdict: 7 passed. contracts lib: 1554 passed, 0 failed, 5 ignored. aprender-contracts-cli: every
   suite `ok`. clippy `-D warnings`: clean. Pre-commit hook on GREEN and P4: format, complexity, SATD, docs ✅.
 - Kani 0.67.0 at `81d8f725e`: `VERIFICATION:- SUCCESSFUL` ×3 (4.94 s, 1.07 s, 2.79 s). P1's RED record:
   `kani_ont_6_2` FAILED against the stubbed arm; `kani_ont_6_3` FAILED at unwind 16 (memcmp unwinding assertion).
@@ -127,11 +143,11 @@ What each line observed:
   M2 `check_monotone` ignored: `dropping_a_committed_armed_gate_is_exit_3` FAILED (exit 0).
   M3 explicit ref outside a work tree → NOT CHECKED: `an_explicit_comparand_that_cannot_be_read_is_an_error_not_a_skip` FAILED (exit 0).
   M4 `exit_code_for` loses `LintDeclined`: `explicit_empty_armed_set_declines_r2` FAILED (exit 1).
-  M5 `arm_requested` no-op: `a_requested_gate_is_armed_for_that_run_and_only_added` and `an_opt_in_flag_arms_the_gate_it_requests` FAILED.
+  M5 (after round 1) `run_lint` arms every gate that ran: `a_gate_a_flag_ran_is_reported_but_not_armed` FAILED.
   M6 `skipped_gate` verdict → Pass: `every_gate_verdict_agrees_with_passed_and_skipped_on_the_real_corpus` FAILED (gate reverse-coverage).
   P4: `kani_harnesses[1]` without `obligation` → `pv validate` rc 1, `missing field obligation`.
 - `pv validate contracts/ont-verdict-lattice-v1.yaml`: 0 errors, 0 warnings. `pv lint contracts/ --strict-test-binding`:
-  0 findings on the new file. `make contracts`: rc 0 (census 1792, README count, provenance self-test, 1555 engine tests).
+  0 findings on the new file. `make contracts`: rc 0 (census 1792, README count, provenance self-test, 1555 engine tests at `81d8f725e`).
 - ONT-6 probe (infra main `scripts/pvl/lib.sh`, bash), every conjunct except `merged`: `tracked` 0 · `rc_is 0 pv validate` 0 ·
   `json_object lint-baseline.json` 0 · `armed_gates|length ≥ 8` 0 · `present KANI-ONT-6-2 verdict.rs` 0.
 
@@ -153,6 +169,7 @@ K̂ 90 (ONT-001 row). Actual turns for this ticket are not separable from the se
 
 - No aprender CI lane runs `cargo kani`; L3 is local evidence, re-checked in CI only through the L2 tests.
 - RAH-005's binding lives in paiml/paiml-implement; this PR files the issue and does not implement it.
+- ONT-001 §3.9 does not say how a gate that is only meaningful when a flag requests it (reverse-coverage, strict-test-binding) should arm; see "Diff quorum round 1".
 - The ONT-6 probe's `merged ONT-6` conjunct turns true only after merge and an infra ledger row binding it.
 
 verdict: PARTIAL(review-pending) — the pre-PR diff quorum has not yet run on this head.

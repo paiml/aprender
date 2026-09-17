@@ -54,19 +54,6 @@ impl ArmedGates {
         self.names.iter().any(|n| n == gate)
     }
 
-    /// Also arm gates this run explicitly asked for (`--strict-test-binding`; `--binding` with `--crate-dir`).
-    /// Additive only: a flag can add a gate to this run's meet, never remove one, so an opt-in gate that
-    /// fails still fails the run it was requested in. The monotone check compares declared lists only.
-    #[must_use]
-    pub fn arm_requested(mut self, requested: &[&str]) -> Self {
-        for gate in requested {
-            if !self.is_armed(gate) {
-                self.names.push((*gate).to_string());
-            }
-        }
-        self
-    }
-
     /// Parse `contracts/lint-baseline.json`. `None` (no file) or no `armed_gates` key → the default set; an
     /// array of strings → exactly that list (possibly empty); anything else → [`BaselineError`].
     pub fn from_baseline(text: Option<&str>) -> Result<Self, BaselineError> {
@@ -354,28 +341,5 @@ mod tests {
             vec!["validate".to_string(), "audit".to_string()]
         );
         assert!(m.armed.is_empty());
-    }
-
-    #[test]
-    fn a_requested_gate_is_armed_for_that_run_and_only_added() {
-        let armed = gates(&["validate"]).arm_requested(&["strict-test-binding", "validate"]);
-        assert_eq!(
-            armed.names(),
-            &["validate".to_string(), "strict-test-binding".to_string()],
-            "appended once, declared order kept"
-        );
-        let m = meet_armed(
-            &run(&[
-                ("validate", Verdict::Pass),
-                ("strict-test-binding", Verdict::Fail),
-            ]),
-            &armed,
-        );
-        assert_eq!(
-            m.verdict,
-            Verdict::Fail,
-            "a requested gate that fails fails the run"
-        );
-        assert!(m.not_armed.is_empty());
     }
 }

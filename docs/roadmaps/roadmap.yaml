@@ -18394,7 +18394,7 @@ roadmap:
   spec: docs/specifications/paiml-ontology.md
   acceptance_criteria:
   - 'verdict.rs: Verdict {Fail, Unknown(Reason), Pass}, 15 reasons in §3.4 order, meet = min, arm only on Pass, exit 0/1/2 with `decline: <reason>`; unit tests over all 17 elements; cargo kani --harness kani_ont_6_1/2/3 VERIFICATION SUCCESSFUL'
-  - 'arming.rs: armed_gates from <contract_dir>/lint-baseline.json (absent file or key -> the default 8, reverse-coverage unarmed by ruling); explicit [] -> Unknown(NotArmed) (R-2); check_monotone -> ArmedGatesShrank; an opt-in flag arms its own gate for that run, additive only'
+  - 'arming.rs: armed_gates from <contract_dir>/lint-baseline.json (absent file or key -> the default 8, reverse-coverage unarmed by ruling); explicit [] -> Unknown(NotArmed) (R-2); check_monotone -> ArmedGatesShrank; arming is the declaration alone: a gate a flag ran but the declaration does not arm prints Unknown(NotArmed) and stays out of the meet'
   - 'pv lint: every GateResult carries verdict; LintReport carries verdict, armed_gates, not_armed, armed_monotone; exit is the armed meet (Pass 0, Fail 1 reject:, Unknown 2 decline:); a dropped committed gate exits 3 error: armed_gates shrank; --armed-baseline-ref fails closed, the default comparand with nothing to compare prints NOT CHECKED (no comparand)'
   - 'contracts/lint-baseline.json arms the 8; check_ont_ratchet.sh --write preserves armed_gates in place; contracts/ont-verdict-lattice-v1.yaml validates with KANI-ONT-6-1/2/3'
   - 'operator ruling "Refactor the offenders": run_verify_gate, collect_test_fns and print_findings_grouped below cyclomatic 30 / cognitive 25 with pv lint contracts/ JSON unchanged; their three complexity_baseline.txt rows removed'

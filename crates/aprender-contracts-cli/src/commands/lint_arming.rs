@@ -29,13 +29,9 @@ pub struct Arming {
     pub monotone: String,
 }
 
-/// The corpus's declared arming plus this run's opt-in gates, with the monotone check against the
-/// comparand. `Err(ArmedGatesShrank)` when a committed gate was dropped.
-pub fn resolve(
-    contract_dir: &Path,
-    explicit_ref: Option<&str>,
-    requested: &[&str],
-) -> Result<Arming, Box<dyn Error>> {
+/// The corpus's declared arming — the declaration alone, never the command line (§3.9) — with the monotone
+/// check against the comparand. `Err(ArmedGatesShrank)` when a committed gate was dropped.
+pub fn resolve(contract_dir: &Path, explicit_ref: Option<&str>) -> Result<Arming, Box<dyn Error>> {
     let declared = ArmedGates::from_baseline(read_baseline(contract_dir)?.as_deref())?;
     let monotone = match comparand(contract_dir, explicit_ref)? {
         Comparand::Absent(why) => format!("{NO_COMPARAND} — {why}"),
@@ -51,17 +47,16 @@ pub fn resolve(
         }
     };
     Ok(Arming {
-        armed: declared.arm_requested(requested),
+        armed: declared,
         monotone,
     })
 }
 
 /// The declared arming without the git check (watch mode re-reads it every tick).
-pub fn declared(contract_dir: &Path, requested: &[&str]) -> Result<ArmedGates, Box<dyn Error>> {
-    Ok(
-        ArmedGates::from_baseline(read_baseline(contract_dir)?.as_deref())?
-            .arm_requested(requested),
-    )
+pub fn declared(contract_dir: &Path) -> Result<ArmedGates, Box<dyn Error>> {
+    Ok(ArmedGates::from_baseline(
+        read_baseline(contract_dir)?.as_deref(),
+    )?)
 }
 
 /// `<contract_dir>/lint-baseline.json`, or `None` when the corpus has none (a single-file corpus never does).

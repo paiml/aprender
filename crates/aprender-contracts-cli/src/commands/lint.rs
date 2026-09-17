@@ -101,7 +101,7 @@ pub fn run(
     );
 
     // ONT-6 (PMAT-3451): the shrink check needs no lint run, so it refuses (exit 3) before one.
-    let arming = lint_arming::resolve(contract_dir, armed_baseline_ref, &config.requested_gates())?;
+    let arming = lint_arming::resolve(contract_dir, armed_baseline_ref)?;
 
     let mut report = run_lint(&config);
 
@@ -394,10 +394,7 @@ fn run_watch(
         // corpus is refused (exit 2) at the first tick, never reported over.
         refuse_empty_corpus(&report, contract_dir)?;
         // ONT-6: the declared arming, re-read each tick; the monotone check is a one-shot run's job.
-        report.arm(&lint_arming::declared(
-            contract_dir,
-            &config.requested_gates(),
-        )?);
+        report.arm(&lint_arming::declared(contract_dir)?);
 
         if cache_stats {
             print_cache_stats(&report);

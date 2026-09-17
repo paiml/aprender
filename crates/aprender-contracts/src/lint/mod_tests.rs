@@ -363,8 +363,10 @@ fn every_gate_verdict_agrees_with_passed_and_skipped_on_the_real_corpus() {
     assert_eq!(report.not_armed, vec!["reverse-coverage".to_string()]);
 }
 
+/// ONT-001 §3.9: arming is the corpus's declaration, not the command line. A gate a flag ran is computed and
+/// reported, and stays outside the meet unless `armed_gates` names it.
 #[test]
-fn an_opt_in_flag_arms_the_gate_it_requests() {
+fn a_gate_a_flag_ran_is_reported_but_not_armed() {
     let tmp = tempfile::tempdir().unwrap();
     let corpus = tmp.path().join("contracts");
     std::fs::create_dir_all(&corpus).unwrap();
@@ -374,17 +376,20 @@ fn an_opt_in_flag_arms_the_gate_it_requests() {
     )
     .unwrap();
     let mut config = LintConfig::new(&corpus, None, 0.0);
-    assert!(config.requested_gates().is_empty());
     config.strict_test_binding = true;
-    assert_eq!(config.requested_gates(), vec!["strict-test-binding"]);
     let report = run_lint(&config);
     assert!(
-        report
-            .armed_gates
-            .iter()
-            .any(|g| g.name == "strict-test-binding"),
-        "requested, so armed: {:?}",
-        report.armed_gates
+        report.gates.iter().any(|g| g.name == "strict-test-binding"),
+        "the flag ran the gate"
     );
-    assert!(!report.not_armed.iter().any(|n| n == "strict-test-binding"));
+    assert!(
+        report.not_armed.iter().any(|n| n == "strict-test-binding"),
+        "not declared, so not armed: {:?}",
+        report.not_armed
+    );
+    assert!(!report
+        .armed_gates
+        .iter()
+        .any(|g| g.name == "strict-test-binding"));
+    assert_eq!(report.armed_gates.len(), 8);
 }

@@ -252,20 +252,6 @@ impl<'a> LintConfig<'a> {
             strict_test_binding: false,
         }
     }
-
-    /// Opt-in gates this configuration explicitly asks for. Each is armed for the run that requested it
-    /// ([`ArmedGates::arm_requested`]), so a flag never runs a gate whose failure cannot fail the run.
-    #[must_use]
-    pub fn requested_gates(&self) -> Vec<&'static str> {
-        let mut requested = Vec::new();
-        if self.binding_path.is_some() && self.crate_dir.is_some() {
-            requested.push("reverse-coverage");
-        }
-        if self.strict_test_binding {
-            requested.push("strict-test-binding");
-        }
-        requested
-    }
 }
 
 /// Run all lint gates across a contract directory.
@@ -473,8 +459,9 @@ pub fn run_lint(config: &LintConfig) -> LintReport {
         not_armed: Vec::new(),
         armed_monotone: None,
     };
-    // The default set plus this run's opt-ins. `pv lint` re-arms from the corpus's `lint-baseline.json`.
-    report.arm(&ArmedGates::default_set().arm_requested(&config.requested_gates()));
+    // The default set. `pv lint` re-arms from the corpus's `lint-baseline.json` (ONT-001 §3.9): a gate a flag
+    // ran but the declaration does not arm is printed and excluded, like every other unarmed gate.
+    report.arm(&ArmedGates::default_set());
     report
 }
 
