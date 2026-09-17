@@ -66,6 +66,15 @@ equations:
       - "A row never waits on a later train"
       - "A blocked row carries no date of its own — its expiry is its latest blocker's train"
 
+  milestone_settled_at_cut:
+    formula: "for every train vX.Y.0: at the freeze (before the bump PR opens) and immediately before `git tag` (after it merges), open_issues(milestone X.Y.0) == 0, where open_issues counts issues AND pull requests; read by `scripts/check_milestone_cut.sh X.Y.0`"
+    domain: "the GitHub milestone the train cuts, read live at each of the two instants"
+    codomain: "exit code of scripts/check_milestone_cut.sh: 0 settled, 1 open items named, 2 cannot judge"
+    invariants:
+      - "An item that does not ride the train is carried by moving it to the next milestone with a `slipped_from: X.Y.0` comment, never by leaving it open (§4 step 8 closes on open_issues)"
+      - "The pre-tag read is binding: an item reopened after the freeze is visible only there (v0.68.0 shipped with #3091 reopened 85 min before the tag, #3445)"
+      - "An empty milestone, an unresolvable or duplicate title, or a read that disagrees with open_issues is exit 2, never a pass"
+
 proof_obligations:
   - id: RS0-INV-001
     type: invariant
@@ -97,6 +106,11 @@ proof_obligations:
     property: "Each train left inside its window or the amendment log says why"
     formal: "the closing comment of each release epic carries planned/actual/delta"
     applies_to: train_leaves_in_window
+  - id: RS0-INV-007
+    type: invariant
+    property: "No tag is cut while its milestone holds an open issue or pull request"
+    formal: "scripts/check_milestone_cut.sh X.Y.0 exit 0 immediately before `git tag vX.Y.0`; its self-test exits 0 and each of its three recorded mutations turns it RED"
+    applies_to: milestone_settled_at_cut
 
 falsification_tests:
   - id: FALSIFY-REL-06X-001
@@ -147,6 +161,18 @@ falsification_tests:
     test: "grep -q 'docs/specifications' scripts/check_no_claim_literals.sh"
     if_fails: "A ratio typed into the schedule without a receipt would pass unread"
 
+  - id: FALSIFY-REL-06X-009
+    rule: "The milestone gate can fail and does not pass vacuously (PMAT-3445)"
+    prediction: "check_milestone_cut.sh --self-test exits 0: an open issue, an open PR, 150 open items, a lost or stale count, an empty milestone, a missing or duplicate or regex-lookalike title, and an unpaginated live read are each judged as their case table says"
+    test: "bash scripts/check_milestone_cut.sh --self-test"
+    if_fails: "The cut gate no longer refuses what it exists to refuse, and a tag can again be cut over an open P1 (v0.68.0, #3091)"
+
+  - id: FALSIFY-REL-06X-010
+    rule: "Both release specs read the milestone at the cut"
+    prediction: "06x-release-schedule.md §4 and APR-RELEASE-001 §4 each name scripts/check_milestone_cut.sh"
+    test: "grep -q 'check_milestone_cut.sh' docs/specifications/06x-release-schedule.md && grep -q 'check_milestone_cut.sh' docs/specifications/APR-RELEASE-001-train-and-build-kaizen.md"
+    if_fails: "The gate exists and no protocol calls it — the release step that cuts the tag reads nothing again"
+
 qa_gate:
   id: F-REL-06X-001
   name: "06x release schedule — trains leave in their window, every tag carries four apr binaries, PRs fit in 20 minutes, the spec describes the tree"
@@ -157,3 +183,4 @@ qa_gate:
     - "pr_budget_twenty_minutes"
     - "spec_describes_the_tree"
     - "obligation_dag_is_acyclic_and_forward"
+    - "milestone_settled_at_cut"
