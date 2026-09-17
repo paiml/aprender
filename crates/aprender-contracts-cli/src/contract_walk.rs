@@ -193,6 +193,39 @@ impl fmt::Display for LintRejected {
 
 impl std::error::Error for LintRejected {}
 
+/// `pv lint --gate sigma` found Σ itself malformed (ONT-001 §5 ONT-2b): the DECLARATION is wrong, not the corpus,
+/// so it is `error:` at exit 3 and never `reject:`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SigmaMalformed(pub String);
+
+impl fmt::Display for SigmaMalformed {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl std::error::Error for SigmaMalformed {}
+
+/// `--gate <name>` named a gate this build does not compute alone.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnknownGate {
+    pub asked: String,
+    pub known: Vec<String>,
+}
+
+impl fmt::Display for UnknownGate {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "--gate {}: not a gate this build runs alone (try: {})",
+            self.asked,
+            self.known.join(", ")
+        )
+    }
+}
+
+impl std::error::Error for UnknownGate {}
+
 /// Exit status of an `armed_gates` list that dropped a gate its comparand armed (ONT-001 §3.9).
 pub const ARMED_GATES_SHRANK_EXIT: i32 = 3;
 
@@ -203,7 +236,9 @@ pub fn exit_code_for(err: &(dyn std::error::Error + 'static)) -> i32 {
     if err.downcast_ref::<ZeroContracts>().is_some() || err.downcast_ref::<LintDeclined>().is_some()
     {
         ZERO_CONTRACTS_EXIT
-    } else if err.downcast_ref::<ArmedGatesShrank>().is_some() {
+    } else if err.downcast_ref::<ArmedGatesShrank>().is_some()
+        || err.downcast_ref::<SigmaMalformed>().is_some()
+    {
         ARMED_GATES_SHRANK_EXIT
     } else {
         1

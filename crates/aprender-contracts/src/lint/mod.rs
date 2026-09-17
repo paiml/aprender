@@ -19,6 +19,7 @@ pub use gates::collect_yaml_files;
 mod gates_extended;
 pub mod rules;
 pub mod sarif;
+pub mod sigma_gate;
 mod strict_test_binding;
 pub mod trend;
 
@@ -157,6 +158,20 @@ pub enum GateExtra {
         stale: Vec<String>,
         /// Every ambiguous stem, with its variant count and paths, for the report.
         divergent_stems: Vec<String>,
+    },
+    /// ONT-2b: what Σ declares and what the corpus was checked against.
+    #[serde(rename = "sigma")]
+    Sigma {
+        /// `entity_types` Σ declares.
+        entity_types: usize,
+        /// `roles` Σ declares.
+        roles: usize,
+        /// `symbols` Σ declares.
+        symbols: usize,
+        /// Contract files read (never counting `ontology.yaml` itself).
+        contracts_checked: usize,
+        /// Findings: undeclared entity types plus undeclared roles.
+        violations: usize,
     },
 }
 
@@ -464,6 +479,43 @@ pub fn run_lint(config: &LintConfig) -> LintReport {
     report.arm(&ArmedGates::default_set());
     report
 }
+
+/// ONT-2b: what `--gate <name>` answered. Only `Ran` and `Sigma(Ran)` are verdicts about the corpus.
+pub enum NamedGateOutcome {
+    /// `--gate` was given a name this build does not compute alone.
+    UnknownGate,
+    /// The `sigma` gate, which has two non-verdict answers of its own (no Σ, malformed Σ).
+    Sigma(sigma_gate::SigmaOutcome),
+    /// A gate that ran and judged the corpus.
+    Ran {
+        result: Box<GateResult>,
+        findings: Vec<LintFinding>,
+    },
+}
+
+/// Run ONE named gate and nothing else (ONT-001 §5 ONT-2b).
+///
+/// Only the gates that are meaningful ALONE are offered: `sigma` reads Σ and the corpus, `validate` parses the
+/// corpus. The rest of `run_lint`'s gates are skipped when validation fails, so running one of them by itself would
+/// report a verdict whose precondition nobody checked — `UnknownGate` is the honest answer, not a silent pass.
+#[must_use]
+pub fn run_named_gate(contract_dir: &Path, name: &str) -> NamedGateOutcome {
+    match name {
+        "sigma" => NamedGateOutcome::Sigma(sigma_gate::run_sigma_gate(contract_dir)),
+        "validate" => {
+            let (contracts, parse_errors) = load_contracts(contract_dir);
+            let (result, findings) = run_validate_gate(&contracts, &parse_errors);
+            NamedGateOutcome::Ran {
+                result: Box::new(result),
+                findings,
+            }
+        }
+        _ => NamedGateOutcome::UnknownGate,
+    }
+}
+
+/// The gate names `--gate` computes alone, for the refusal message.
+pub const NAMED_GATES: [&str; 2] = ["sigma", "validate"];
 
 fn skipped_gate(name: &str, reason: &str) -> GateResult {
     GateResult {
