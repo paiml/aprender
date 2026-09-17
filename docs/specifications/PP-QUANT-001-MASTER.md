@@ -6,9 +6,16 @@ risk this decision accepts) · authored 2026-09-17 against `origin/main` @ `425e
 **Companions:** `contracts/quant-dispatch-completeness-v1.yaml` (the type universe, the
 Phase 0 inventory, and the gate's obligations; `pv validate` green) ·
 `crates/aprender-serve/src/quantize/format_trait.rs` (existing partial trait, extended
-not replaced) · epic (owed, §7) · `docs/specifications/06x-release-schedule.md` (the
+not replaced) · epic #3421 · `docs/specifications/06x-release-schedule.md` (the
 train this rides; not amended by this document — see §6.2 for what would need to change
 there)
+**Downstream:** `docs/specifications/PP-ARCH-001-MASTER.md` (#3422, epic #3423,
+milestone PP-ARCH-001) — the shared attention/FFN forward-path consolidation this
+document is a prerequisite for. Closing PP-QUANT-001 alone does not deliver "new
+architectures cost hundreds of lines, not thousands": of #3418's own 1,678-line Qwen3-MoE
+count, only ~85 lines are quant dispatch; the rest is forward-pass logic PP-ARCH-001
+governs. PP-ARCH-001 needs this document's dispatch table to make its shared
+`attn_block`/`moe_ffn_block` layer quant-agnostic.
 **Governs:** how `crates/aprender-serve/` maps a GGUF/APR `qtype` to `{byte_size,
 dequant_to_f32, family}`, and where that mapping is looked up from.
 **Owner:** unassigned (§7)
@@ -347,8 +354,11 @@ from the Phase 0 inventory — not asserted here in advance.
 
 ## §7 Next steps (tracking, not yet done by this document)
 
-1. Open a GitHub epic under milestone `0.69.0`, linking #3418, for Phase 0/1 work.
+1. ~~Open a GitHub epic under milestone `0.69.0`, linking #3418~~ — done: epic #3421.
 2. Assign an owner (currently unassigned).
-3. Phase 0 inventory as the first PR — no trait/gate code, just the checked-in call-site
-   list — so Phase 1's contract has a real enumeration to validate against instead of a
-   re-transcription of #3418's evidence section.
+3. ~~Phase 0 inventory as the first PR~~ — done: `contracts/quant-dispatch-completeness-v1.yaml`
+   plus the `qdc_*` tests binding it to the tree.
+4. Phase 1: the table, `QuantCodebookFormat`, generated grids, and the two remaining
+   tests (§2.4, §5).
+5. See PP-ARCH-001-MASTER.md for the downstream consolidation this one is a
+   prerequisite for.
