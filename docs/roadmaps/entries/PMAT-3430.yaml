@@ -1,0 +1,17 @@
+- id: PMAT-3430
+  github_issue: 3430
+  item_type: task
+  title: 'PP-QUANT-001 M1: one `#[repr(u32)] GgmlType` (43 rows: 35 live + 8 Removed) + `TRAITS[43]` below core/compute/'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-17T11:33:04Z
+  updated: 2026-09-17T11:33:04Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null

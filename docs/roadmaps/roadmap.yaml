@@ -18145,12 +18145,12 @@ roadmap:
 - id: PMAT-3427
   github_issue: 3427
   item_type: task
-  title: PP-QUANT-001 research + 0.69 must-carry plan
+  title: 'docs(plan): PP-QUANT-001 research + 0.69 must-carry slice M — measured tables, fix-diff Pareto, implementation'
   status: planned
-  priority: high
+  priority: medium
   assigned_to: null
-  created: 2026-09-17T10:45:16Z
-  updated: 2026-09-17T10:45:16Z
+  created: 2026-09-17T11:33:02Z
+  updated: 2026-09-17T11:33:02Z
   spec: null
   acceptance_criteria: []
   phases: []
@@ -18166,8 +18166,8 @@ roadmap:
   status: planned
   priority: medium
   assigned_to: null
-  created: 2026-09-17T10:57:46Z
-  updated: 2026-09-17T10:57:46Z
+  created: 2026-09-17T11:33:03Z
+  updated: 2026-09-17T11:33:03Z
   spec: null
   acceptance_criteria: []
   phases: []
@@ -18183,8 +18183,8 @@ roadmap:
   status: planned
   priority: medium
   assigned_to: null
-  created: 2026-09-17T10:57:46Z
-  updated: 2026-09-17T10:57:46Z
+  created: 2026-09-17T11:33:03Z
+  updated: 2026-09-17T11:33:03Z
   spec: null
   acceptance_criteria: []
   phases: []
@@ -18200,8 +18200,8 @@ roadmap:
   status: planned
   priority: medium
   assigned_to: null
-  created: 2026-09-17T10:57:47Z
-  updated: 2026-09-17T10:57:47Z
+  created: 2026-09-17T11:33:04Z
+  updated: 2026-09-17T11:33:04Z
   spec: null
   acceptance_criteria: []
   phases: []
@@ -18217,8 +18217,8 @@ roadmap:
   status: planned
   priority: medium
   assigned_to: null
-  created: 2026-09-17T10:57:47Z
-  updated: 2026-09-17T10:57:47Z
+  created: 2026-09-17T11:33:04Z
+  updated: 2026-09-17T11:33:04Z
   spec: null
   acceptance_criteria: []
   phases: []
@@ -18234,8 +18234,8 @@ roadmap:
   status: planned
   priority: medium
   assigned_to: null
-  created: 2026-09-17T10:57:48Z
-  updated: 2026-09-17T10:57:48Z
+  created: 2026-09-17T11:33:05Z
+  updated: 2026-09-17T11:33:05Z
   spec: null
   acceptance_criteria: []
   phases: []
@@ -18251,8 +18251,8 @@ roadmap:
   status: planned
   priority: medium
   assigned_to: null
-  created: 2026-09-17T10:57:48Z
-  updated: 2026-09-17T10:57:48Z
+  created: 2026-09-17T11:33:05Z
+  updated: 2026-09-17T11:33:05Z
   spec: null
   acceptance_criteria: []
   phases: []
@@ -18268,8 +18268,8 @@ roadmap:
   status: planned
   priority: medium
   assigned_to: null
-  created: 2026-09-17T10:57:49Z
-  updated: 2026-09-17T10:57:49Z
+  created: 2026-09-17T11:33:06Z
+  updated: 2026-09-17T11:33:06Z
   spec: null
   acceptance_criteria: []
   phases: []
@@ -18285,93 +18285,8 @@ roadmap:
   status: planned
   priority: medium
   assigned_to: null
-  created: 2026-09-17T10:57:49Z
-  updated: 2026-09-17T10:57:49Z
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels:
-  - kind:code
-  notes: null
-- id: PMAT-3436
-  github_issue: 3436
-  item_type: task
-  title: 'PP-QUANT-001 Q2 (gguf/ loaders): retype the boundary — raw `u32` qtype → `GgmlType`; ratchet 11 files → 0'
-  status: planned
-  priority: medium
-  assigned_to: null
-  created: 2026-09-17T10:57:50Z
-  updated: 2026-09-17T10:57:50Z
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels:
-  - kind:code
-  notes: null
-- id: PMAT-3437
-  github_issue: 3437
-  item_type: task
-  title: 'PP-QUANT-001 Q2 (gguf/inference CPU): retype the boundary — raw `u32` qtype → `GgmlType`; ratchet 10 files → 0'
-  status: planned
-  priority: medium
-  assigned_to: null
-  created: 2026-09-17T10:57:50Z
-  updated: 2026-09-17T10:57:50Z
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels:
-  - kind:code
-  notes: null
-- id: PMAT-3438
-  github_issue: 3438
-  item_type: task
-  title: 'PP-QUANT-001 Q2 (gguf/cuda): retype the boundary — raw `u32` qtype → `GgmlType`; ratchet 4 files → 0'
-  status: planned
-  priority: medium
-  assigned_to: null
-  created: 2026-09-17T10:57:51Z
-  updated: 2026-09-17T10:57:51Z
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels:
-  - kind:code
-  notes: null
-- id: PMAT-3439
-  github_issue: 3439
-  item_type: task
-  title: 'PP-QUANT-001 Q2 (gpu/adapters wgpu): retype the boundary — raw `u32` qtype → `GgmlType`; ratchet 1 files → 0'
-  status: planned
-  priority: medium
-  assigned_to: null
-  created: 2026-09-17T10:57:51Z
-  updated: 2026-09-17T10:57:51Z
-  spec: null
-  acceptance_criteria: []
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels:
-  - kind:code
-  notes: null
-- id: PMAT-3440
-  github_issue: 3440
-  item_type: task
-  title: 'PP-QUANT-001 Q2 (core + compute + other crates): retype the boundary — raw `u32` qtype → `GgmlType`; ratchet 3'
-  status: planned
-  priority: medium
-  assigned_to: null
-  created: 2026-09-17T10:57:52Z
-  updated: 2026-09-17T10:57:52Z
+  created: 2026-09-17T11:33:06Z
+  updated: 2026-09-17T11:33:06Z
   spec: null
   acceptance_criteria: []
   phases: []
@@ -18387,8 +18302,8 @@ roadmap:
   status: planned
   priority: medium
   assigned_to: null
-  created: 2026-09-17T10:57:52Z
-  updated: 2026-09-17T10:57:52Z
+  created: 2026-09-17T11:33:07Z
+  updated: 2026-09-17T11:33:07Z
   spec: null
   acceptance_criteria: []
   phases: []
@@ -18404,8 +18319,8 @@ roadmap:
   status: planned
   priority: medium
   assigned_to: null
-  created: 2026-09-17T10:57:53Z
-  updated: 2026-09-17T10:57:53Z
+  created: 2026-09-17T11:33:07Z
+  updated: 2026-09-17T11:33:07Z
   spec: null
   acceptance_criteria: []
   phases: []
@@ -18421,8 +18336,8 @@ roadmap:
   status: planned
   priority: medium
   assigned_to: null
-  created: 2026-09-17T10:57:53Z
-  updated: 2026-09-17T10:57:53Z
+  created: 2026-09-17T11:33:08Z
+  updated: 2026-09-17T11:33:08Z
   spec: null
   acceptance_criteria: []
   phases: []
@@ -18438,8 +18353,8 @@ roadmap:
   status: planned
   priority: medium
   assigned_to: null
-  created: 2026-09-17T10:57:54Z
-  updated: 2026-09-17T10:57:54Z
+  created: 2026-09-17T11:33:08Z
+  updated: 2026-09-17T11:33:08Z
   spec: null
   acceptance_criteria: []
   phases: []
@@ -18455,8 +18370,8 @@ roadmap:
   status: planned
   priority: medium
   assigned_to: null
-  created: 2026-09-17T10:57:54Z
-  updated: 2026-09-17T10:57:54Z
+  created: 2026-09-17T11:33:09Z
+  updated: 2026-09-17T11:33:09Z
   spec: null
   acceptance_criteria: []
   phases: []

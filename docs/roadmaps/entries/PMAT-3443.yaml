@@ -1,0 +1,17 @@
+- id: PMAT-3443
+  github_issue: 3443
+  item_type: task
+  title: 'PP-QUANT-001 P4: #3077 support table GENERATED from `TRAITS` (type × backend × tier)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-17T11:33:08Z
+  updated: 2026-09-17T11:33:08Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:docs
+  notes: null
