@@ -84,7 +84,7 @@ Byte-size functions keyed on a raw qtype: 3 (`gguf/transformer.rs:435`, `convert
 | 6 | Q5_0 | affine | 32 | 22 | Y | · | Y | Y |
 | 7 | Q5_1 | affine | 32 | 24 | Y | · | Y | · |
 | 8 | Q8_0 | affine | 32 | 34 | Y | Y | Y | Y |
-| 9 | Q8_1 | affine | 32 | 40 | Y | · | Y | · |
+| 9 | Q8_1 | affine | 32 | **36** ‡ | Y | · | Y | · |
 | 10 | Q2_K | k-quant | 256 | 84 | Y | · | Y | Y |
 | 11 | Q3_K | k-quant | 256 | 110 | Y | · | Y | · |
 | 12 | Q4_K | k-quant | 256 | 144 | Y | Y | Y | Y |
@@ -118,6 +118,8 @@ Byte-size functions keyed on a raw qtype: 3 (`gguf/transformer.rs:435`, `convert
 | 40 | NVFP4 | microscale-fp | 64 | 36 | · | · | · | · |
 | 41 | Q1_0 | affine | 128 | 18 | · | · | · | · |
 | 42 | Q2_0 | affine | 64 | 18 | · | · | · | · |
+
+‡ **Correction (found by the PMAT-3430 session, verified here):** gguf-py `GGML_QUANT_SIZES` gives Q8_1 as `4 + 4 + 32 = 40` at `3173a5647`, but ggml's C struct at the same sha is `2*sizeof(ggml_half) + QK8_1 = 36` (`ggml/src/ggml-common.h`, `static_assert(sizeof(block_q8_1) == …)`). The C struct is what is on disk; gguf-py is stale upstream. This table's `type_size` column is from gguf-py for every other row and was **not** re-checked against the C `static_assert`s row by row — that check belongs to #3430's Phase 2. #3430's falsifier was reworded accordingly.
 
 ## Rows F–I — writes (each read back)
 - #3091 repro comment · #3420 review comment · pmat `--path` leak → paiml/paiml-mcp-agent-toolkit#1386 (47 paths returned, 0 inside `--path`, truth 0)
