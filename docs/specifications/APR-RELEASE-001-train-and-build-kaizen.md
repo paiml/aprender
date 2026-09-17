@@ -110,10 +110,10 @@ Live `forjar.yaml` beats this table. Record the diff in the receipt and continue
 
 | Step | Action | Skip if |
 |---|---|---|
-| **T-0 Cut** | cut sha = `main` HEAD; bump minor; `CHANGELOG` from merged PR titles since last tag | tag `v0.N.0` exists |
+| **T-0 Cut** | **precondition, before the bump PR opens:** `bash scripts/check_milestone_cut.sh 0.N.0` exits 0, meaning the milestone holds no open issue or PR except this train's own release epic. That epic is closed at the end of the train, and the script names it as admitted. An item not riding the train is carried by moving it to the next milestone with a `slipped_from: 0.N.0` comment (§6.3 spill), never by leaving it open. Then cut sha = `main` HEAD; bump minor; `CHANGELOG` from merged PR titles since last tag | tag `v0.N.0` exists |
 | **T-1 Deep** | `deep` green on cut sha (**the check is `deep`, not `ci / deep`** — §4.3): full tests, doctests, `--no-default-features`, feature matrix (§4.1), GPU, every `cargo run --example` (§4.2) | green run recorded for this sha |
 | **T-2 Dogfood** | `apr-dogfood` skill go/no-go receipt; `apr-cookbook` current; release notes generated | receipt exists for this sha |
-| **T-3 Promote** | tag; clean-room on the tag; GitHub release with T-2 receipt attached | release `v0.N.0` exists |
+| **T-3 Promote** | **immediately before the tag, after the bump PR has merged:** `bash scripts/check_milestone_cut.sh 0.N.0` exits 0 again. Exit ≠ 0 is RED and there is no tag. The T-0 read is not enough, because an item reopened between the reads is invisible to it (v0.68.0 shipped with #3091 reopened 85 min before the tag, #3445). Then tag; clean-room on the tag; GitHub release with T-2 receipt attached | release `v0.N.0` exists |
 | **T-4 Publish** | **automated** — the autopilot runs `cascade-drain.sh` after T-3's preflight; record cascade wall minutes; attended minutes are 0 by construction | all crates at `0.N.0` on crates.io |
 | **T-5 Reconcile** | **hard gate (operator 2026-09-13: kaizen)** — the §6 reconcile predicates hold, receipt `docs/build-ledger/<date>/<sha>-reconcile.json` committed; the train has no `DONE` line without it | receipt exists for this sha and every predicate reads 0 |
 
