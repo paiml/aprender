@@ -39,6 +39,21 @@ metadata:
     - 'crates/aprender-contracts/src/lint/sigma_gate.rs — PV-ONT-001/002/003/004'
     - 'crates/aprender-contracts/src/lint/sigma_symbols.rs — the symbol scan and the prose opt-out'
 
+equations:
+  sigma_admission:
+    formula: "admits(corpus) ⇔ entity_types(corpus) ⊆ Σ.entity_types ∧ roles(corpus) ⊆ Σ.roles ∧ glyphs(formal) ⊆ Σ.symbols ∪ prose"
+    domain: "a contract corpus and the Σ that governs it"
+    codomain: "Pass | Fail | Unknown"
+    invariants:
+      - "a corpus saying only what Σ declares is admitted"
+      - "a malformed Σ is never a corpus verdict"
+    preconditions:
+      - "Σ parses and satisfies its own integrity rules"
+    postconditions:
+      - "verdict ∈ {Pass, Fail, Unknown}"
+      - "formal_prose ≤ baseline(formal_prose)"
+    lean_theorem: none — L4 not declared
+
 invariants:
   - id: SIGMA-INV-001
     property: Σ is malformed, never partly applied
