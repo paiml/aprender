@@ -89,38 +89,44 @@ impl Verdict {
     /// K3 strong conjunction.
     #[must_use]
     pub fn meet(self, other: Self) -> Self {
-        // RED (PMAT-3451): deliberately wrong until GREEN — returns the left operand.
-        let _ = other;
-        self
+        std::cmp::min(self, other)
     }
 
     /// Only Pass arms a merge.
     #[must_use]
     pub fn arm(self) -> bool {
-        // RED (PMAT-3451): deliberately wrong until GREEN — anything but Fail arms.
-        self != Self::Fail
+        self == Self::Pass
     }
 
     /// Process exit code: Pass→0, Fail→1, Unknown→2.
     #[must_use]
     pub fn exit_code(self) -> i32 {
-        // RED (PMAT-3451): deliberately wrong until GREEN.
-        0
+        match self {
+            Self::Pass => 0,
+            Self::Fail => 1,
+            Self::Unknown(_) => 2,
+        }
     }
 
     /// The stderr line an Unknown prints (`decline: <reason>`); None for Pass and Fail.
     #[must_use]
     pub fn decline_line(self) -> Option<String> {
-        // RED (PMAT-3451): deliberately wrong until GREEN.
-        None
+        match self {
+            Self::Unknown(reason) => Some(format!("decline: {reason}")),
+            _ => None,
+        }
     }
 
     /// A `pv lint` gate's (passed, skipped) pair.
     #[must_use]
     pub fn from_gate(passed: bool, skipped: bool) -> Self {
-        // RED (PMAT-3451): deliberately wrong until GREEN.
-        let _ = (passed, skipped);
-        Self::Pass
+        if skipped {
+            Self::Unknown(Reason::Skip)
+        } else if passed {
+            Self::Pass
+        } else {
+            Self::Fail
+        }
     }
 
     /// A SHACL shapes report (§3.4). Zero shapes or zero focus nodes is a decline, never an accept (R-2).
@@ -131,18 +137,27 @@ impl Verdict {
         shapes_n: usize,
         focus_n: usize,
     ) -> Self {
-        // RED (PMAT-3451): deliberately wrong until GREEN.
-        let _ = (violations, warnings, shapes_n, focus_n);
-        Self::Pass
+        if shapes_n == 0 {
+            Self::Unknown(Reason::NoShapes)
+        } else if focus_n == 0 {
+            Self::Unknown(Reason::NoFocus)
+        } else if violations > 0 {
+            Self::Fail
+        } else if warnings > 0 {
+            Self::Unknown(Reason::Warn)
+        } else {
+            Self::Pass
+        }
     }
 
     /// Map one fleet label to its element (operator ruling 2026-09-17: "Existing reasons"). An unlisted
     /// spelling is refused (None), never guessed.
     #[must_use]
     pub fn from_label(label: &str) -> Option<Self> {
-        // RED (PMAT-3451): deliberately wrong until GREEN.
-        let _ = label;
-        None
+        FLEET_LABELS
+            .iter()
+            .find(|(l, _)| *l == label)
+            .map(|(_, v)| *v)
     }
 }
 
@@ -338,7 +353,7 @@ mod kani_proofs {
 
     /// KANI-ONT-6-3: every fleet label maps to exactly one element.
     #[kani::proof]
-    #[kani::unwind(16)]
+    #[kani::unwind(30)] // > the longest FLEET_LABELS entry (27 bytes): memcmp must unroll fully
     fn kani_ont_6_3() {
         let i: usize = kani::any();
         kani::assume(i < FLEET_LABELS.len());
