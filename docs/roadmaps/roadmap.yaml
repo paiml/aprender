@@ -18142,3 +18142,241 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-3427
+  github_issue: 3427
+  item_type: task
+  title: 'docs(plan): PP-QUANT-001 research + 0.69 must-carry slice M — measured tables, fix-diff Pareto, implementation'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-17T11:33:02Z
+  updated: 2026-09-17T11:33:02Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:docs
+  notes: null
+- id: PMAT-3428
+  github_issue: 3428
+  item_type: task
+  title: 'EPIC: PP-TENSOR-001 — a tensor that has no bytes is a different type from one that does (MoE / tied-embedding '
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-17T11:33:03Z
+  updated: 2026-09-17T11:33:03Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:docs
+  notes: null
+- id: PMAT-3429
+  github_issue: 3429
+  item_type: task
+  title: 'PP-QUANT-001 M3: regression fixtures — #1749 #1789 #2535 #3341 (+ #3091 reopen) on tiny synthetic GGUFs, obser'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-17T11:33:03Z
+  updated: 2026-09-17T11:33:03Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+- id: PMAT-3430
+  github_issue: 3430
+  item_type: task
+  title: 'PP-QUANT-001 M1: one `#[repr(u32)] GgmlType` (43 rows: 35 live + 8 Removed) + `TRAITS[43]` below core/compute/'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-17T11:33:04Z
+  updated: 2026-09-17T11:33:04Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+- id: PMAT-3431
+  github_issue: 3431
+  item_type: task
+  title: 'PP-QUANT-001 M2: reconciliation gate — `GgmlType` vs the vendored `ggml.h` id list at a pinned sha; exhaustive'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-17T11:33:04Z
+  updated: 2026-09-17T11:33:04Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+- id: PMAT-3432
+  github_issue: 3432
+  item_type: task
+  title: 'PP-QUANT-001 M4: `tensor_byte_size` and ONE refusal site read `TRAITS` — closes the #3091-reopen / #3341 class'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-17T11:33:05Z
+  updated: 2026-09-17T11:33:05Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+- id: PMAT-3433
+  github_issue: 3433
+  item_type: task
+  title: 'PP-TENSOR-001 T1: typed `TensorStorage` — a dense consumer cannot receive an MoE placeholder'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-17T11:33:05Z
+  updated: 2026-09-17T11:33:05Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+- id: PMAT-3434
+  github_issue: 3434
+  item_type: task
+  title: 'PP-TENSOR-001 T2: sentinel ban — `qtype: 0` + `byte_size: 0` may not be constructed; 0 is F32'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-17T11:33:06Z
+  updated: 2026-09-17T11:33:06Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+- id: PMAT-3435
+  github_issue: 3435
+  item_type: task
+  title: 'PP-TENSOR-001 T3: diagnostic contract — an absent tensor is reported as absent, never as truncated, corrupt, o'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-17T11:33:06Z
+  updated: 2026-09-17T11:33:06Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+- id: PMAT-3441
+  github_issue: 3441
+  item_type: task
+  title: 'PP-QUANT-001 Q3: tier-0 scalar dequant for 35/35 live ggml types — every unsupported-type refusal becomes a sl'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-17T11:33:07Z
+  updated: 2026-09-17T11:33:07Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+- id: PMAT-3442
+  github_issue: 3442
+  item_type: task
+  title: 'PP-QUANT-001 Q5: upstream drift job — a new `ggml_type` id upstream opens an issue here the day it lands'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-17T11:33:07Z
+  updated: 2026-09-17T11:33:07Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+- id: PMAT-3443
+  github_issue: 3443
+  item_type: task
+  title: 'PP-QUANT-001 P4: #3077 support table GENERATED from `TRAITS` (type × backend × tier)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-17T11:33:08Z
+  updated: 2026-09-17T11:33:08Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:docs
+  notes: null
+- id: PMAT-3445
+  github_issue: 3445
+  item_type: task
+  title: 'release train: a tag was cut while its milestone had open issues — 0.68.0 shipped with 2 open, one a user-faci'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-17T11:33:08Z
+  updated: 2026-09-17T11:33:08Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+- id: PMAT-3446
+  github_issue: 3446
+  item_type: task
+  title: 'docs(release): APR-RELEASE-001 has no must-carry section on `main` — land §1.5 (must-carry rows; T-0 waits; > '
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-17T11:33:09Z
+  updated: 2026-09-17T11:33:09Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:docs
+  notes: null
