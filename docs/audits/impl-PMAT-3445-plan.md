@@ -144,3 +144,13 @@ paginate every read; add the metacharacter, zero-item and pagination cases; run 
 bump PR is not open. A width-1 goal lane had meanwhile implemented v1 (commit `d14914db8`, lane worktree
 only). It was superseded, not merged: v1 semantics, and `gh api --paginate` without `--jq` writes
 concatenated arrays that `json.load` rejects above 100 items. That would be an exit 2 on 0.69.0 itself.
+
+## 7. Amendment v2.1 — pre-merge review
+
+The review delegate found that each train's release epic (06x §5: label `epic`, milestone X.Y.0) is closed
+at §4 step 8, after publish. #3078 was open in milestone 0.67.0 at the v0.67.0 tag. v2's rule (0 open items)
+would therefore have read RED at every cut. v2.1 admits exactly one item: an issue labelled `epic` whose title
+is literally `EPIC: release train <M>` followed by end or whitespace. It is printed as `ADMITTED`, and two
+claimants exit 2. Cases S17–S23; mutations (d) admission removed → S17 S22 S23 RED, (e) admission widened to
+any `epic` label → S18 S20 S21 RED.
+

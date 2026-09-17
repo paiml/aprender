@@ -11,9 +11,14 @@
 # reopened after it is invisible; the autopilot's tag step read no milestone
 # at all, and its only read was the close step, after publish.
 #
-# THE RULE: exit 0 only when open_issues == 0. Pull requests count because
-# the milestone is closed on open_issues and GitHub counts them there. An item
-# that does not ride this train is CARRIED by moving it to the next milestone
+# THE RULE: exit 0 only when the milestone holds no open item except the
+# train's own release epic. Pull requests count: GitHub counts them in
+# open_issues, and the train driver refuses to close a milestone while that
+# number is not 0. The release epic (06x section 5: label `epic`, title
+# `EPIC: release train X.Y.0 ...`) is open at every cut by design -- it is
+# closed at section 4 step 8, after publish -- so it is the one ADMITTED item,
+# named in the output; two claimants are exit 2. Any other item that does not
+# ride this train is CARRIED by moving it to the next milestone
 # (`gh issue edit N --milestone <next>`, or `gh pr edit`) with a
 # `slipped_from: X.Y.0` comment -- never by leaving it open in this one.
 #
@@ -93,25 +98,44 @@ for it in items:
     if it.get("state") != "open" or (it.get("milestone") or {}).get("number") != number:
         env("listed item #%s is not an open item of milestone #%s" % (it.get("number"), number))
 
-rows = []
-for it in sorted(items, key=lambda i: i.get("number", 0)):
-    rows.append({
+def row(it):
+    return {
         "number": it.get("number"),
         "kind": "pr" if "pull_request" in it else "issue",
         "title": it.get("title", ""),
         "labels": [lb.get("name", "") for lb in (it.get("labels") or [])],
         "url": it.get("html_url", ""),
-    })
+    }
+
+# The OWN release epic of the train (06x section 5: label epic, milestone X.Y.0) is
+# closed at section 4 step 8, after publish, so it is open at every cut by
+# design. It is the one admitted item: an issue, labelled epic, whose title is
+# literally "EPIC: release train <title>" followed by the end or whitespace.
+# Two claimants are ambiguous and widen nothing: exit 2.
+epic_prefix = "EPIC: release train " + title
+def is_release_epic(r):
+    rest = r["title"][len(epic_prefix):]
+    return (r["kind"] == "issue" and "epic" in r["labels"] and r["title"].startswith(epic_prefix)
+            and (rest == "" or rest[0].isspace()))
+
+all_rows = [row(it) for it in sorted(items, key=lambda i: i.get("number", 0))]
+admitted = [r for r in all_rows if is_release_epic(r)]
+if len(admitted) > 1:
+    env("%d open items claim to be the release epic of %s: %s" % (len(admitted), title, " ".join("#%s" % r["number"] for r in admitted)))
+rows = [r for r in all_rows if not is_release_epic(r)]
 
 verdict = "RED" if rows else "PASS"
 if json_out:
     with open(json_out, "w", encoding="utf-8") as f:
         json.dump({"milestone": title, "number": number, "open": open_n, "closed": closed_n,
-                   "items": rows, "verdict": verdict}, f, indent=2, sort_keys=True)
+                   "admitted": admitted, "items": rows, "verdict": verdict}, f, indent=2, sort_keys=True)
         f.write("\n")
 
+for r in admitted:
+    print("ADMITTED #%s %s [%s] %s -- the release epic of this train, closed at 06x section 4 step 8"
+          % (r["number"], r["kind"], ",".join(r["labels"]), r["title"]))
 if not rows:
-    print("PASS  milestone %s (#%s): 0 open, %d closed -- the cut may proceed" % (title, number, closed_n))
+    print("PASS  milestone %s (#%s): 0 open besides its release epic, %d closed -- the cut may proceed" % (title, number, closed_n))
     sys.exit(0)
 
 for r in rows:
@@ -197,14 +221,14 @@ st_ms() {
     printf '{"title":"%s","number":%s,"open_issues":%s,"closed_issues":%s}\n' "$1" "$2" "$3" "$4"
 }
 
-# st_item NUMBER MILESTONE_NUMBER KIND STATE LABEL -- one items.jsonl line
+# st_item NUMBER MILESTONE_NUMBER KIND STATE LABEL [TITLE] -- one items.jsonl line
 st_item() {
     pr=""
     if [ "$3" = pr ]; then
         pr=',"pull_request":{"url":"u"}'
     fi
-    printf '{"number":%s,"state":"%s","milestone":{"number":%s},"title":"item %s","labels":[{"name":"%s"}]%s}\n' \
-        "$1" "$4" "$2" "$1" "$5" "$pr"
+    printf '{"number":%s,"state":"%s","milestone":{"number":%s},"title":"%s","labels":[{"name":"%s"}]%s}\n' \
+        "$1" "$4" "$2" "${6:-item $1}" "$5" "$pr"
 }
 
 self_test() {
@@ -213,7 +237,7 @@ self_test() {
     # S1 zero open, some closed -> PASS
     st_ms M 7 0 5 > "${fx}/milestones.jsonl"
     : > "${fx}/items.jsonl"
-    st_judge "$fx" S1 0 M "PASS  milestone M (#7): 0 open, 5 closed"
+    st_judge "$fx" S1 0 M "PASS  milestone M (#7): 0 open besides its release epic, 5 closed"
 
     # S2 one open issue -> RED, named
     st_ms M 7 1 5 > "${fx}/milestones.jsonl"
@@ -275,6 +299,36 @@ self_test() {
         i=$((i + 1))
     done
     st_judge "$fx" S12 1 M "#1000 issue" "#1149 issue" "150 open item(s)"
+
+    # S17 the train's own release epic is the one admitted open item, and it is named
+    st_ms M 7 1 5 > "${fx}/milestones.jsonl"
+    st_item 20 7 issue open epic "EPIC: release train M — schedule" > "${fx}/items.jsonl"
+    st_judge "$fx" S17 0 M "ADMITTED #20 issue [epic] EPIC: release train M" "0 open besides its release epic"
+
+    # S18 an epic of something else (a topic epic) is an ordinary open item
+    st_item 21 7 issue open epic "EPIC: PP-TENSOR-001 — tensors" > "${fx}/items.jsonl"
+    st_judge "$fx" S18 1 M "#21 issue [epic] EPIC: PP-TENSOR-001"
+
+    # S19 the release title without the epic label is not admitted
+    st_item 22 7 issue open bug "EPIC: release train M — schedule" > "${fx}/items.jsonl"
+    st_judge "$fx" S19 1 M "#22 issue [bug]"
+
+    # S20 another train's epic is not this train's (prefix trap: M0 is not M)
+    st_item 23 7 issue open epic "EPIC: release train M0 — schedule" > "${fx}/items.jsonl"
+    st_judge "$fx" S20 1 M "#23 issue [epic] EPIC: release train M0"
+
+    # S21 a pull request is never the release epic
+    st_item 24 7 pr open epic "EPIC: release train M — schedule" > "${fx}/items.jsonl"
+    st_judge "$fx" S21 1 M "#24 pr [epic]"
+
+    # S22 two claimants are ambiguous and widen nothing
+    st_ms M 7 2 5 > "${fx}/milestones.jsonl"
+    { st_item 20 7 issue open epic "EPIC: release train M — a"; st_item 25 7 issue open epic "EPIC: release train M — b"; } > "${fx}/items.jsonl"
+    st_judge "$fx" S22 2 M "2 open items claim to be the release epic of M"
+
+    # S23 the release epic beside a real open item: the item is RED, the epic is still named as admitted
+    { st_item 20 7 issue open epic "EPIC: release train M — a"; st_item 10 7 issue open P1; } > "${fx}/items.jsonl"
+    st_judge "$fx" S23 1 M "ADMITTED #20" "#10 issue [P1] item 10" "1 open item(s)"
 
     # S16 --json records the verdict and the items
     st_ms M 7 1 5 > "${fx}/milestones.jsonl"
@@ -354,7 +408,7 @@ main() {
         exit $?
     fi
     case "$1" in
-        -h|--help) sed -n '2,33p' "$SELF_PATH"; exit 0 ;;
+        -h|--help) sed -n '2,/^$/p' "$SELF_PATH"; exit 0 ;;
         -*) usage ;;
     esac
 

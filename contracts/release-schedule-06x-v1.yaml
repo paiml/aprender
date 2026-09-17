@@ -67,13 +67,14 @@ equations:
       - "A blocked row carries no date of its own — its expiry is its latest blocker's train"
 
   milestone_settled_at_cut:
-    formula: "for every train vX.Y.0: at the freeze (before the bump PR opens) and immediately before `git tag` (after it merges), open_issues(milestone X.Y.0) == 0, where open_issues counts issues AND pull requests; read by `scripts/check_milestone_cut.sh X.Y.0`"
+    formula: "for every train vX.Y.0: at the freeze (before the bump PR opens) and immediately before `git tag` (after it merges), open(milestone X.Y.0) \\ {the train's release epic} == ∅, where open counts issues AND pull requests and the release epic is the single issue labelled `epic` titled `EPIC: release train X.Y.0 …`; read by `scripts/check_milestone_cut.sh X.Y.0`"
     domain: "the GitHub milestone the train cuts, read live at each of the two instants"
     codomain: "exit code of scripts/check_milestone_cut.sh: 0 settled, 1 open items named, 2 cannot judge"
     invariants:
       - "An item that does not ride the train is carried by moving it to the next milestone with a `slipped_from: X.Y.0` comment, never by leaving it open (§4 step 8 closes on open_issues)"
       - "The pre-tag read is binding: an item reopened after the freeze is visible only there (v0.68.0 shipped with #3091 reopened 85 min before the tag, #3445)"
-      - "An empty milestone, an unresolvable or duplicate title, or a read that disagrees with open_issues is exit 2, never a pass"
+      - "An empty milestone, an unresolvable or duplicate title, a read that disagrees with open_issues, or two open items claiming to be the release epic is exit 2, never a pass"
+      - "The release epic is admitted, never silently: it is printed as ADMITTED; a topic epic, a PR, an unlabelled look-alike or another train's epic is an ordinary open item"
 
 proof_obligations:
   - id: RS0-INV-001
@@ -108,8 +109,8 @@ proof_obligations:
     applies_to: train_leaves_in_window
   - id: RS0-INV-007
     type: invariant
-    property: "No tag is cut while its milestone holds an open issue or pull request"
-    formal: "scripts/check_milestone_cut.sh X.Y.0 exit 0 immediately before `git tag vX.Y.0`; its self-test exits 0 and each of its three recorded mutations turns it RED"
+    property: "No tag is cut while its milestone holds an open issue or pull request other than the train's own release epic"
+    formal: "scripts/check_milestone_cut.sh X.Y.0 exit 0 immediately before `git tag vX.Y.0`; its self-test exits 0 and each of its five recorded mutations turns it RED"
     applies_to: milestone_settled_at_cut
 
 falsification_tests:
@@ -163,7 +164,7 @@ falsification_tests:
 
   - id: FALSIFY-REL-06X-009
     rule: "The milestone gate can fail and does not pass vacuously (PMAT-3445)"
-    prediction: "check_milestone_cut.sh --self-test exits 0: an open issue, an open PR, 150 open items, a lost or stale count, an empty milestone, a missing or duplicate or regex-lookalike title, and an unpaginated live read are each judged as their case table says"
+    prediction: "check_milestone_cut.sh --self-test exits 0: an open issue, an open PR, 150 open items, a lost or stale count, an empty milestone, a missing or duplicate or regex-lookalike title, an unpaginated live read, the release epic (admitted), and a topic epic, an unlabelled look-alike, another train's epic, an epic-titled PR and two claimants (not admitted) are each judged as their case table says"
     test: "bash scripts/check_milestone_cut.sh --self-test"
     if_fails: "The cut gate no longer refuses what it exists to refuse, and a tag can again be cut over an open P1 (v0.68.0, #3091)"
 
