@@ -1,0 +1,159 @@
+# Σ — the ontology's own declaration (ONT-001 v4.4 §4.1, row ONT-2b, PMAT-3471).
+#
+# WHAT THIS FILE IS. Everything the corpus is allowed to say: the concepts, the roles a `relations:` block may use,
+# the symbols a `formal:` expression may carry, the worlds, the agents, the entity types and the extractors that read
+# them, and the keys the ontology deliberately cannot express. `pv lint --gate sigma` reads it; nothing else may.
+#
+# EVERY KEY NAMES ITS READER. `readers:` below claims each populated key, and a key no reader claims is exit 3 —
+# ONT-1's lesson, in the file that would otherwise repeat it: an anchor nothing reads is decoration.
+#
+# THE SYMBOL VOCABULARY IS MEASURED, NOT INVENTED. It was taken from the 2330 `formal:` expressions in 489 contract
+# files at f30c67de3: `∀` 275, `∧` 134, `∈` 116, `→` 72, `⟹` 63, `≥` 52, `≤` 42, `ε` 34, `≠` 27, `⇒` 24, `¬` 21,
+# and the function names `len`, `shape`, `isFinite`, `modifies`, `preserves` that the kernel contracts actually use.
+# Most of those 2330 expressions are PROSE, not notation — the ten most frequent identifiers in them are `for`, `x`,
+# `all`, `in`, `i`, `and`, `t`, `forall`, `s`, `p`. That debt is counted in `lint-baseline.json.formal_prose` and
+# shrinks; it is not declared away here by adding English words to `symbols`.
+schema: ont-sigma-v1
+
+concepts:
+  Entity: {doc: "anything the ontology can name"}
+  Contract: {doc: "a pv contract file under contracts/"}
+  Kernel: {doc: "a contract whose kind is kernel: it carries equations and proof obligations"}
+  Code: {doc: "a Rust item — a function, type or module — in this workspace"}
+  Test: {doc: "a test function a contract cites as its falsifier"}
+  Proof: {doc: "a Kani harness or Lean theorem discharging an obligation"}
+  Doc: {doc: "a prose document under contract (README.md, CLAUDE.md)"}
+  Model: {doc: "an .apr model file"}
+  Dataset: {doc: "a CSV or corpus file"}
+
+roles:
+  binds:
+    {domain: Contract, range: Code, symmetric: false, acyclic: false, doc: "the contract governs this code"}
+  falsified_by:
+    {domain: Contract, range: Test, symmetric: false, acyclic: false, doc: "the test that would refute the contract"}
+  proved_by:
+    {domain: Contract, range: Proof, symmetric: false, acyclic: false, doc: "the harness or theorem discharging it"}
+  refines:
+    {domain: Contract, range: Contract, symmetric: false, acyclic: true, doc: "a stricter contract over the same subject"}
+  depends_on:
+    {domain: Contract, range: Contract, symmetric: false, acyclic: true, doc: "this contract assumes that one"}
+  documents:
+    {domain: Doc, range: Code, symmetric: false, acyclic: false, doc: "the prose that describes this code"}
+
+# Operators and functions a `formal:` expression may carry. A bare variable (x, i, out_i, θ) is not a symbol and is
+# not checked — see the plan's ruling 2 for what symbol-level deliberately does NOT check.
+symbols:
+  - {name: "∀", kind: operator, doc: "for all"}
+  - {name: "∃", kind: operator, doc: "there exists"}
+  - {name: "∧", kind: operator, doc: "and"}
+  - {name: "∨", kind: operator, doc: "or"}
+  - {name: "¬", kind: operator, doc: "not"}
+  - {name: "⇒", kind: operator, doc: "implies"}
+  - {name: "⟹", kind: operator, doc: "implies (long)"}
+  - {name: "→", kind: operator, doc: "maps to"}
+  - {name: "≡", kind: operator, doc: "identical to"}
+  - {name: "≈", kind: operator, doc: "approximately equal"}
+  - {name: "≠", kind: operator, doc: "not equal"}
+  - {name: "≥", kind: operator, doc: "greater or equal"}
+  - {name: "≤", kind: operator, doc: "less or equal"}
+  - {name: "∈", kind: operator, doc: "member of"}
+  - {name: "∉", kind: operator, doc: "not a member of"}
+  - {name: "⊆", kind: operator, doc: "subset of"}
+  - {name: "∪", kind: operator, doc: "union"}
+  - {name: "∩", kind: operator, doc: "intersection"}
+  - {name: "∅", kind: constant, doc: "the empty set"}
+  - {name: "·", kind: operator, doc: "product"}
+  - {name: "×", kind: operator, doc: "cartesian product or multiplication"}
+  - {name: "‖", kind: operator, doc: "norm delimiter"}
+  - {name: "Σ", kind: operator, doc: "sum"}
+  - {name: "ε", kind: constant, doc: "the tolerance a contract declares"}
+  - {name: len, kind: function, doc: "length of a sequence"}
+  - {name: shape, kind: function, doc: "tensor shape"}
+  - {name: isFinite, kind: predicate, doc: "neither NaN nor infinite"}
+  - {name: isNaN, kind: predicate, doc: "is NaN"}
+  - {name: modifies, kind: predicate, doc: "frame condition: what the kernel writes"}
+  - {name: preserves, kind: predicate, doc: "frame condition: what the kernel leaves alone"}
+  - {name: max, kind: function, doc: "maximum"}
+  - {name: min, kind: function, doc: "minimum"}
+  - {name: abs, kind: function, doc: "absolute value"}
+  - {name: exp, kind: function, doc: "exponential"}
+  - {name: log, kind: function, doc: "logarithm"}
+  - {name: sqrt, kind: function, doc: "square root"}
+  - {name: sum, kind: function, doc: "sum of a sequence"}
+  - {name: mod, kind: operator, doc: "modulo"}
+  # Measured from the corpus after the first pass: 79 expressions in 51 files carried an operator Σ did not yet
+  # declare. Every one below is real notation and is declared; the two glyphs deliberately left OUT are `—` and `§`,
+  # which are prose punctuation — the entries carrying those say `prose: true` instead.
+  - {name: "²", kind: operator, doc: "squared"}
+  - {name: "¹", kind: operator, doc: "to the first power"}
+  - {name: "₁", kind: operator, doc: "subscript one"}
+  - {name: "₂", kind: operator, doc: "subscript two"}
+  - {name: "√", kind: function, doc: "square root"}
+  - {name: "∞", kind: constant, doc: "infinity"}
+  - {name: "⊥", kind: constant, doc: "bottom — undefined or unreachable"}
+  - {name: "∘", kind: operator, doc: "function composition"}
+  - {name: "∋", kind: operator, doc: "contains"}
+  - {name: "∌", kind: operator, doc: "does not contain"}
+  - {name: "⊇", kind: operator, doc: "superset of"}
+  - {name: "⊄", kind: operator, doc: "not a subset of"}
+  - {name: "−", kind: operator, doc: "minus (U+2212)"}
+  - {name: "↔", kind: operator, doc: "if and only if"}
+  - {name: "⟺", kind: operator, doc: "if and only if (long)"}
+  - {name: "≺", kind: operator, doc: "precedes"}
+  - {name: "±", kind: operator, doc: "plus or minus"}
+  - {name: "⟨", kind: operator, doc: "inner-product open"}
+  - {name: "⟩", kind: operator, doc: "inner-product close"}
+  - {name: "∇", kind: operator, doc: "gradient"}
+  - {name: "∂", kind: operator, doc: "partial derivative"}
+  - {name: "⌈", kind: operator, doc: "ceiling open"}
+  - {name: "⌉", kind: operator, doc: "ceiling close"}
+  - {name: "′", kind: operator, doc: "prime"}
+  - {name: "̄", kind: operator, doc: "combining macron — the mean of a variable"}
+  - {name: "₀", kind: operator, doc: "subscript zero"}
+  - {name: "⋃", kind: operator, doc: "n-ary union"}
+  - {name: "←", kind: operator, doc: "assignment"}
+
+worlds:
+  committed: {doc: "the tree as committed — the world every contract is read in unless it says otherwise"}
+
+agents:
+  - pv
+  - pmat
+  - human
+
+# Each entry names the extractor that reads it. `implemented: false` is the honest state until ONT-4b/4c build them;
+# an entry naming NO extractor, or one extractors[] does not declare, is exit 3.
+entity_types:
+  - {name: pv-contract, extractor: pv_contract, implemented: false}
+  - {name: code, extractor: code, implemented: false}
+  - {name: lean, extractor: lean, implemented: false}
+  - {name: readme, extractor: readme, implemented: false}
+  - {name: llm-context, extractor: llm_context, implemented: false}
+  - {name: apr-model, extractor: apr_model, implemented: false}
+  - {name: csv, extractor: csv, implemented: false}
+
+extractors:
+  - {name: pv_contract, reader: ontology/extract/pv_contract.rs, implemented: false}
+  - {name: code, reader: ontology/extract/code.rs, implemented: false}
+  - {name: lean, reader: ontology/extract/lean.rs, implemented: false}
+  - {name: readme, reader: ontology/extract/readme.rs, implemented: false}
+  - {name: llm_context, reader: ontology/extract/llm_context.rs, implemented: false}
+  - {name: apr_model, reader: ontology/extract/apr_model.rs, implemented: false}
+  - {name: csv, reader: ontology/extract/csv.rs, implemented: false}
+
+# What this ontology does NOT express, said out loud so nobody encodes it by accident. Each names the reader that
+# would have to change first.
+not_expressible:
+  - {key: taste, reader: ontology/sigma.rs}
+  - {key: urgency, reader: ontology/sigma.rs}
+  - {key: authorship_intent, reader: ontology/sigma.rs}
+
+readers:
+  concepts: ontology/sigma.rs
+  roles: lint/sigma_gate.rs
+  symbols: lint/sigma_symbols.rs
+  worlds: ontology/sigma.rs
+  agents: ontology/sigma.rs
+  entity_types: lint/sigma_gate.rs
+  extractors: ontology/sigma.rs
+  not_expressible: ontology/sigma.rs

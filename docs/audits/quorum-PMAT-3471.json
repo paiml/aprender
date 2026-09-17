@@ -1,0 +1,84 @@
+{
+  "ticket": "PMAT-3471",
+  "base": "origin/main",
+  "base_resolved": "origin/main",
+  "base_note": "no origin/origin/main exists; judged against the local ref",
+  "head": "90159253c6cbb16dd345d67ed4ae59a2d8ae70f2",
+  "diff_sha256": "3f65fe0a7a369cc08711b5af6abd2d9151197577d11ffcb6b0dcc57c64ec4f5d",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "file",
+  "prompt_bytes": 155720,
+  "author": {
+    "model": "opus-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "PMAT-3471 (ONT-2b: Σ — contracts/ontology.yaml with entity_types and extractors; symbol-level check on formal:) audit complete. The diff faithfully implements all ticket requirements without weakening any gates. Σ schema is loaded and enforced, the sigma gate implements PV-ONT-001 through PV-ONT-004, the CLI supports --gate mode, the gate is armed, and the baseline is updated. No refutations found.",
+      "findings": [],
+      "raw_bytes": 2085,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "PMAT-3471 (ONT-2b: Σ — contracts/ontology.yaml with entity_types and extractors; symbol-level check on formal:) audit complete.\n\nAll ticket requirements, acceptance criteria, and receipt claims were read and independently verified:\n1. Σ schema & declaration (contracts/ontology.yaml): Declares 9 concepts, 6 roles, 66 symbols (operators/functions/predicates/constants), 1 world, 3 agents, 7 entity types mapped to declared extractors, 7 extractors, 3 not_expressible keys, and a complete readers mapping covering all populated keys.\n2. Loader and malformed-Σ handling (crates/aprender-contracts/src/ontology/sigma.rs): Deserializes contracts/ontology.yaml and enforces the 4 malformed-Σ classes via Sigma::check_integrity, returning typed SigmaError mapped to exit code 3 (error:). 10/10 unit tests pass.\n3. Sigma gate & symbol check (crates/aprender-contracts/src/lint/sigma_gate.rs, sigma_symbols.rs): Evaluates raw YAML to check PV-ONT-001 (entity.type in Σ), PV-ONT-002 (relations in Σ roles), PV-ONT-003 (operator glyphs in Σ or explicit prose: true), and PV-ONT-004 (shrink-only formal_prose ratchet). Symbol check restricts to operator glyphs while leaving applied identifiers to ONT-3a. 15/15 unit tests pass.\n4. CLI --gate mode & ONT-6 lattice (crates/aprender-contracts-cli/): pv lint --gate <name> executes single gates and outputs SingleGateReport with accurate exit codes (0 for Pass, 1 for corpus reject, 2 for decline/no-sigma, 3 for malformed Σ). 8/8 CLI integration tests pass.\n5. Gate arming & baseline (contracts/lint-baseline.json): Armed gates count increased monotonically from 8 to 9 with sigma armed. formal_prose baseline set at measured 1464. Full pv lint contracts/ passes cleanly across all 9 armed gates.\n6. Real corpus verification & quality gates: ontology.yaml added to NON_CONTRACT_FILENAMES, census updated to 1793, ont-sigma-v1.yaml validated, clippy clean with -D warnings.\n\nNo refutations found. Verdict is PASS.",
+      "findings": [],
+      "raw_bytes": 5316,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.8-flash-high",
+      "model_measured": "gemini-3.8-flash-high",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "PMAT-3471 (ONT-2b: Σ — contracts/ontology.yaml with entity_types and extractors; symbol-level check on formal:) audit complete.\n\nAll ticket requirements, acceptance criteria, and receipt claims were read and verified:\n1. Σ schema & declaration (`contracts/ontology.yaml`): Declares 9 concepts, 6 roles, 66 symbols (operators/functions/predicates/constants), 1 world, 3 agents, 7 entity types mapped to declared extractors, 7 extractors, 3 not_expressible keys, and a complete readers mapping covering all populated keys.\n2. Loader and malformed-Σ handling (`crates/aprender-contracts/src/ontology/sigma.rs`): Deserializes `contracts/ontology.yaml` and enforces the 4 malformed-Σ classes via `Sigma::check_integrity`, returning typed `SigmaError` mapped to exit code 3 (`error:`). 10/10 unit tests pass.\n3. Sigma gate & symbol check (`crates/aprender-contracts/src/lint/sigma_gate.rs`, `sigma_symbols.rs`): Evaluates raw YAML to check PV-ONT-001 (entity.type in Σ), PV-ONT-002 (relations in Σ roles), PV-ONT-003 (operator glyphs in Σ or explicit `prose: true`), and PV-ONT-004 (shrink-only formal_prose ratchet). Symbol check restricts to operator glyphs while leaving applied identifiers to ONT-3a. 15/15 unit tests pass.\n4. CLI `--gate` mode & ONT-6 lattice (`crates/aprender-contracts-cli/`): `pv lint --gate <name>` executes single gates and outputs `SingleGateReport` with accurate exit codes (0 for Pass, 1 for corpus reject, 2 for decline/no-sigma, 3 for malformed Σ). 8/8 CLI tests pass.\n5. Gate arming & baseline (`contracts/lint-baseline.json`): Armed gates count increased monotonically from 8 to 9 with `sigma` armed. `formal_prose` baseline set at measured 1464. Full `pv lint contracts/` passes cleanly across all 9 armed gates.\n6. Real corpus verification & quality gates: `ontology.yaml` added to `NON_CONTRACT_FILENAMES`, census updated to 1793, `ont-sigma-v1.yaml` validated, clippy clean with `-D warnings`.\n\nNo refutations found. Verdict is PASS.",
+      "findings": [],
+      "raw_bytes": 5464,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.7-flash-high",
+      "model_measured": "gemini-3.7-flash-high",
+      "model_source": "measured",
+      "family": "gemini"
+    }
+  ],
+  "dissent": [],
+  "dedup": [],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [],
+  "auto_merge": {
+    "checked": false,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "no --pr given: nothing to disarm"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=opus-5/claude"
+  }
+}

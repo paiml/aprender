@@ -272,6 +272,9 @@ pub enum Commands {
         /// merge-base(HEAD, origin/main), else the origin/main tip; with neither, NOT CHECKED is printed.
         #[arg(long)]
         armed_baseline_ref: Option<String>,
+        /// Run ONE named gate and report only it (ONT-001 section 5 ONT-2b): `--gate sigma`.
+        #[arg(long)]
+        gate: Option<String>,
     },
     /// Score contracts or a codebase directory
     Score {
