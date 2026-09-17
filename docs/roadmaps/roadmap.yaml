@@ -18382,3 +18382,19 @@ roadmap:
   labels:
   - kind:docs
   notes: null
+- id: PMAT-3465
+  github_issue: 3465
+  item_type: task
+  title: 'b2-gpu: aprender-gpu lib tests on hardware at the tag (rule 14)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-17T18:12:33Z
+  updated: 2026-09-17T18:12:33Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
