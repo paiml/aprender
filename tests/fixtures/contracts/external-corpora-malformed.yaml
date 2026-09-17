@@ -1,0 +1,19 @@
+# PMAT-1098 negative fixture — the positive control for the ExternalCorpora kind.
+#
+# Two defects, one file, both of which `pv validate` must NAME:
+#   * the entry has no `head:`, so the corpus is pinned to a moving `ref:` and
+#     the 397 it claims can never be re-measured (EXT-CORPORA-003);
+#   * `n_flies:` is a typo for `n_files:`. serde DROPS an unknown key, so
+#     without the fail-closed rule this file would read as a corpus of 0 and
+#     validate clean (EXT-CORPORA-007).
+#
+# Kept OUTSIDE contracts/ on purpose: a file whose job is to be rejected must
+# not be in the corpus every gate walks.
+schema: ont.paiml.dev/external-corpora/v1alpha1
+corpora:
+  - name: unpinned-corpus
+    repo: paiml/provable-contracts
+    ref: main
+    n_files: 397
+    n_flies: 397
+    counted_by: gh api repos/paiml/provable-contracts/git/trees/main?recursive=1
