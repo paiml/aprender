@@ -34,6 +34,18 @@ fn classification_case_table() {
             "model_id: paiml/x\nprovenance:\n  pipeline: finetune\n",
             ArtifactKind::PublishManifest,
         ),
+        (
+            "schema: ont.paiml.dev/external-corpora/v1alpha1\ncorpora: []\n",
+            ArtifactKind::ExternalCorpora,
+        ),
+        // An unknown VERSION of the family is still the family — it is refused
+        // by its own rules, never silently read as some other kind.
+        (
+            "schema: ont.paiml.dev/external-corpora/v9\ncorpora: []\n",
+            ArtifactKind::ExternalCorpora,
+        ),
+        // A neighbouring ont.paiml.dev schema is NOT this kind.
+        ("schema: ont.paiml.dev/census/v1alpha1\n", ArtifactKind::Contract),
         // Unrecognised shape stays a contract, so it still fails with the
         // contract parse error rather than passing unchecked.
         ("some_other_key: 1\n", ArtifactKind::Contract),
@@ -220,4 +232,40 @@ fn a_real_contract_still_validates_as_a_contract() {
     let (kind, violations) = validate_artifact(&path).expect("contract validates");
     assert_eq!(kind, ArtifactKind::Contract);
     assert!(error_rules(&violations).is_empty());
+}
+
+/// PMAT-1098 RED probe: `contracts/external-corpora.yaml` is the ONT-001
+/// declaration `pv census` reads, not a contract. Before the ExternalCorpora
+/// kind existed this failed with ``missing field `metadata` `` and took the
+/// 0.68.0 T-2 pre-publish dogfood to NO-GO on its `pv-contracts` row.
+#[test]
+fn the_real_external_corpora_declaration_validates() {
+    let path = repo_path("contracts/external-corpora.yaml");
+    let (kind, violations) =
+        validate_artifact(&path).expect("the external-corpora declaration is readable");
+    assert_eq!(kind, ArtifactKind::ExternalCorpora);
+    assert_eq!(kind.to_string(), "external-corpora");
+    assert!(
+        error_rules(&violations).is_empty(),
+        "{:?}",
+        error_rules(&violations)
+    );
+}
+
+/// The same dispatch on the negative fixtures: recognised as the kind, refused
+/// by its rules. A kind that only ever passes is not a gate.
+#[test]
+fn the_external_corpora_fixtures_are_refused_through_validate_artifact() {
+    for relative in [
+        "tests/fixtures/contracts/external-corpora-malformed.yaml",
+        "tests/fixtures/contracts/external-corpora-unknown-version.yaml",
+    ] {
+        let (kind, violations) =
+            validate_artifact(&repo_path(relative)).expect("the fixture is readable");
+        assert_eq!(kind, ArtifactKind::ExternalCorpora, "{relative}");
+        assert!(
+            !error_rules(&violations).is_empty(),
+            "{relative} was accepted"
+        );
+    }
 }
