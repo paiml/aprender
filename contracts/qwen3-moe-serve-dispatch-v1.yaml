@@ -11,7 +11,7 @@ metadata:
   description: "apr serve chat-completions handler dispatch contract for qwen3_moe-arch GGUF models"
 
 name: qwen3-moe-serve-dispatch
-version: "1.2.0"
+version: "1.3.0"
 scope: "crates/aprender-serve/src/api/cuda_chat_backend.rs + crates/aprender-serve/src/infer/inference_result.rs"
 
 description: |
@@ -101,6 +101,22 @@ falsification:
       Empirical pass against Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf
       recorded 2026-05-19 (7.84s wall, non-empty assistant content,
       no matmul guard fire).
+
+  - id: FALSIFY-QWEN3_MOE_SERVE_DISPATCH_V1_005
+    description: "Always-on discharge of V1_001 + V1_003: a synthetic MoE GGUF takes the MoE route at /v1/chat/completions on CPU"
+    test: |
+      Unit test crates/aprender-serve/src/api/tests/regression_1789_moe_serve_route.rs —
+      AppState built as the CPU serve command builds it
+      (with_quantized_model_and_vocab + with_mapped_gguf_model) over the tiny
+      qwen3moe fixture gguf::regression_fixtures::build_qwen3_moe_gguf (bytes pinned
+      by sha256); POST /v1/chat/completions; assert 200 and a non-empty choices
+      array. V1_001/V1_003's own evidence is #[ignore]d behind a 30B download;
+      this one runs in every workspace-test.
+    evidence: |
+      cargo test -p aprender-serve --lib regression_1789
+      Mutation (PMAT-3429): skipping try_qwen3_moe_backend at the
+      /v1/chat/completions handler returns 500 with the #1790 "matmul weight has
+      EMPTY data buffer" refusal and the test fails naming #1789.
 
   - id: FALSIFY-QWEN3_MOE_SERVE_DISPATCH_V1_004
     description: "Companion-side CCPA Phase 6 bench produces non-zero student pass rate against Qwen3-Coder-30B-MoE under contract"
@@ -216,3 +232,7 @@ status_history:
       `moe_kv_cache_equivalence.rs` (correctness) +
       `m32d_perf.rs` (≥ 5 tok/s floor). V1_004 prerequisite MET;
       companion-side bench discharge pending operator dispatch.
+  - version: "1.3.0"
+    date: "2026-09-17"
+    pr: "paiml/aprender PMAT-3429"
+    summary: "V1_005 added: V1_001 + V1_003 get an always-on CPU discharge over a sha256-pinned synthetic MoE GGUF, observed RED with the Option B dispatch skipped."

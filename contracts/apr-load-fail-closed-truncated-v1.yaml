@@ -116,6 +116,15 @@ proof_obligations:
       unknown parameter count is not a small one. apr tune and apr inspect report the same
       number for the same file.
 
+  - id: ALFCT-INV-007
+    type: invariant
+    property: >
+      MOE-PLACEHOLDER-NOT-TRUNCATED (#2535): on a Mixture-of-Experts model the dense-FFN
+      slots are documented placeholders (byte_size 0), not truncated data, so the
+      fail-closed truncation check covers attention and lm_head only. A COMPLETE MoE GGUF
+      loads; it is never reported as "truncated/corrupt … file is incomplete", which sends
+      the user to re-download a file that cannot help.
+
 falsification_tests:
   - id: FALSIFY-LOAD-TRUNCATED-001
     name: test_pmat750_truncated_tensor_detected
@@ -147,3 +156,9 @@ falsification_tests:
     test_harness: "cargo test -p apr-cli --lib commands::tune::tests::read_params_from_file"
     expected_output: "test result: ok"
     if_fails: "apr tune again labels a number derived from the file's byte length 'Model parameters' and feeds it to the VRAM feasibility verdict, disagreeing with apr inspect on the same file and planning a fine-tune for an empty one."
+  - id: FALSIFY-LOAD-MOE-COMPLETE-2535
+    name: regression_2535_complete_moe_passes_validate_quantized_tensors
+    prediction: "a complete 1-layer Q4_K qwen3moe GGUF built by gguf::regression_fixtures (bytes pinned by sha256) loads through MappedGGUFModel::from_path + OwnedQuantizedModel::from_mapped with Ok; with validate_quantized_tensors checking the dense-FFN placeholder slots on MoE again, it fails naming #2535 and 'truncated/corrupt model: tensor layer.0.ffn_up'"
+    test_harness: "cargo test -p aprender-serve --lib gguf::regression_fixtures::regression_tests::regression_2535_complete_moe_passes_validate_quantized_tensors"
+    expected_output: "test result: ok"
+    if_fails: "a complete MoE download is refused at load as truncated/corrupt, and the user is told to re-download multi-GB that cannot help (#2535)."
