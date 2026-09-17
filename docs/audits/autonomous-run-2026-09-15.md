@@ -659,3 +659,16 @@ scheduling chance, and it costs ~3× (gx10 10.6 min vs intel 34.5 for step 1).
 ### Still open
 
 - #3415 (queued, group on intel) → T-1 → T-2 pass 4 → T-3 (tag, clean-room dispatched on the tag with HEAD==tag asserted, `apr-*` assets, install.sh rows on intel + gx10) → T-4 dry-run receipt → STOP and report.
+
+## Interval — 08:25Z (2026-09-17) — T-2 GO, T-3 stopped on infra, fixed
+
+### What moved
+
+- **T-2 pass 4 GO on `c91e065dd` (07:51Z)** — all rows green; `model-parity` reports `UNMEASURED-TOOL` for the MoE/qwen35 rows (#3367/#3090), `pmat-comply` CB-200 at the 601 baseline, `pv-contracts` 1841/1841, perf041 marker fresh (lambda sm_89).
+- **T-3**: `v0.68.0` tagged at `c91e065dd` 07:51:24Z, GitHub release created, `binary-release.yml` run 35196635815 → **16/16 assets** (`check_release_assets.sh` rc=0). **Installer rows** (§4 T-2, by hand): intel rc=0, gx10 rc=0, `apr 0.68.0` from the tag's own `install.sh`.
+- **T-3 clean-room RED, infra defect, driver stopped fail-closed** (07:54Z, run 35196636753): `clean-room.yml` fetched the tag by name into `FETCH_HEAD` and never materialized `refs/tags/v0.68.0`, so `assert-tested-ref.sh` — correct in itself — could not resolve the ref inside the clone while HEAD *was* the tag commit. First real exercise of infra#621 on an annotated tag; its self-test fixture had the tag locally and could not see the trap. Reproduced on aprender against GitHub on protocol v0 and v2 (neither leaves a tag ref); a local `file://` transport auto-follows, so the new fixture rows pin the production state with `--no-tags`. **infra#650** merged 08:17Z (gate: validate, arbiter, gate green). Driver resumed `3415 cleanroom dryrun`; **clean-room re-dispatched on `v0.68.0`, run 35198901863** (08:18Z).
+- Operator ruling: T-4 is the operator's for this train — the driver stops after the `cascade-publish.sh --check` dry-run receipt.
+
+### Still open
+
+- clean-room (aprender) on `v0.68.0` → assets check → preflight → dry-run receipt → STOP and report.
