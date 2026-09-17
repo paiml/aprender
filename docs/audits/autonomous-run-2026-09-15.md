@@ -632,3 +632,18 @@ scheduling chance, and it costs ~3× (gx10 10.6 min vs intel 34.5 for step 1).
 ### Still open
 
 - T-2 verdict → T-3 (tag, release, clean-room dispatched on `v0.68.0`, assets) → T-4 (cascade, install, host + installer receipts, close). Ledger record at close → docs PR.
+
+## Interval — 05:30Z (2026-09-17) — second T-2 stop, three root causes
+
+### What moved
+
+- **T-2 NO-GO #2 on release commit `27f070324`** (03:15Z): three RED rows, none of them a PR-level required check —
+  1. `pv-contracts`: `contracts/external-corpora.yaml` (ONT-1 census declaration, #3281) is not a KernelContract; `pv validate` had no kind for it → **#3410** `ArtifactKind::ExternalCorpora`, one struct shared with `pv census`, 1841 contracts 1→0 failing; merged 05:13Z.
+  2. `pmat-comply` CB-200: 604 below B vs baseline 602 — measured real debt under the same pmat 3.40.2 (baseline commit reads 602); roster diff: `forward_qwen35.rs::from_model_and_layers` (C+, #3114) → A+ by extraction, plus two C++ `main`s of the vendored llama.cpp reference harness under `evidence/` → `evidence/**` excluded from `[tdg]` as reference harness, baseline **lowered** 602 → 601 with its paired `scripts/cb200_baseline.txt` → **#3411** (queued).
+  3. `model-parity` C14: `apr parity` is architecture-blind (dense loop) and after #3325 reaches MoE/qwen35 files — "EMPTY data buffer qtype=0" is the tool defect #3367 named, not a model defect → **#3412** pre-load refusal (exit 12, raw arch tag, never the normalizer's fold), C14 reports `UNMEASURED-TOOL (#3367 / #3090)`, crashes still FAIL; measured on lambda with a CUDA build: 3 PASS, 3 UNMEASURED-TOOL, 0 FAIL (queued).
+- Autopilot relaunched `3411 wait close` (pid 2009080) — #3411 enters the queue last, so its merge commit is the release commit.
+- Memory: release-phase-only gates (perf041 age, `pv validate` over all contracts, CB-200 pair, C14) must run on `origin/main` BEFORE the bump — 0.67 ×3 and 0.68 ×2 NO-GOs after the cut are the same shape.
+
+### Still open
+
+- #3412 → #3411 → T-1 → T-2 → T-3 (clean-room on the tag) → T-4 → close → ledger record.
