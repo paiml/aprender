@@ -17,8 +17,9 @@ Verdict: **PARTIAL(escalate)** — plan quorum is not 3/3 after four rounds; the
 
 Slots: 1 Claude subagent live at any instant (slots=3), 0 resumes, 0 hook denials, 0 stalls. Review lanes wrote rustc probes into their sandboxed clones in v1, v3, v4 (KEPT; nothing reached the checkout).
 
+I-3 (`transcript-gate.sh`, run from the session cwd; run from the worktree it looks in the wrong project directory and passes vacuously with `attempted=0` — a harness finding):
 ```
-PASS transcript-gate: attempted=0 denied=0 stalled=0 running_peak=0 slots=3 — 0 subagents ran in /home/noah/.claude/projects/-home-noah-src-aprender-worktrees-PMAT-3430/a26ca3bb-cffd-4f6e-b6fd-358f489cf451 (rule=pid-file (/run/user/1000/paiml-implement/pid-2717702); vacuous but honest — say so in the receipt)
+PASS transcript-gate: attempted=4 denied=0 stalled=0 running_peak=1 slots=3 (agent_calls=4 resumes=0 workflow_started=0)
 ```
 
 ## PMAT-3430 plan quorum — history, v1–v4. **Not 3/3. No v5 written; no code written.**
