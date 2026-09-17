@@ -101,7 +101,6 @@ crates/aprender-contracts-cli/src/commands/kaizen.rs::find_function_insertion_po
 crates/aprender-contracts-cli/src/commands/kaizen.rs::inject_call_sites 13 49
 crates/aprender-contracts-cli/src/commands/kaizen.rs::scan_call_sites 10 38
 crates/aprender-contracts-cli/src/commands/kaizen.rs::skip_early_returns 14 62
-crates/aprender-contracts-cli/src/commands/lint_render.rs::print_findings_grouped 15 36
 crates/aprender-contracts/src/build_helper.rs::scan_source_fns 12 43
 crates/aprender-contracts/src/codegen.rs::emit_invariant_macro 11 26
 crates/aprender-contracts/src/codegen.rs::emit_precondition_macro 22 71
@@ -114,8 +113,6 @@ crates/aprender-contracts/src/explain.rs::explain_contract_markdown 22 53
 crates/aprender-contracts/src/explain_render.rs::write_obligations 18 40
 crates/aprender-contracts/src/infer.rs::infer 10 28
 crates/aprender-contracts/src/kernels/f16_convert.rs::f32_to_f16_single 13 29
-crates/aprender-contracts/src/lint/gates_extended.rs::collect_test_fns 9 32
-crates/aprender-contracts/src/lint/gates_extended.rs::run_verify_gate 31 110
 crates/aprender-contracts/src/mirai_gen.rs::generate_mirai_annotations 13 27
 crates/aprender-contracts/src/reverse_coverage.rs::scan_file 19 54
 crates/aprender-contracts/src/scaffold/mod.rs::domain_to_params 19 43

@@ -110,8 +110,31 @@ count_unanchored_bindable() {
     printf '%s\n' "$n"
 }
 
+# ONT-6 (PMAT-3451): `armed_gates` is the arming declaration `pv lint` reads, not
+# a counter. `--write` restamps the counters and must carry the declaration over
+# verbatim: resetting it to [] disarms every gate (the meet declines, exit 2).
+# The array must sit on ONE line; any other shape is refused rather than
+# guessed at, because a partial read would rewrite the declaration silently.
+# No file at all prints [] - the fail-closed reading (a decline, never an accept).
+armed_gates_of() { # armed_gates_of FILE -> the one-line JSON array
+    local line
+    [ -f "$1" ] || { printf '[]'; return 0; }
+    line="$({ grep -E '"armed_gates"' "$1" || true; } | head -1)"
+    case "$line" in
+        '')
+            printf 'NO-GO: %s has no armed_gates; declare it before restamping\n' "$1" >&2
+            return 2 ;;
+        *'"armed_gates"'*:*'['*']'*)
+            printf '%s' "$line" | sed -E 's/.*"armed_gates"[[:space:]]*:[[:space:]]*(\[[^]]*\]).*/\1/' ;;
+        *)
+            printf 'NO-GO: %s spreads armed_gates over several lines; keep the array on one\n' "$1" >&2
+            return 2 ;;
+    esac
+}
+
 measure() { # prints the JSON document
-    local anchored shaped types extractors bindable consumer total
+    local anchored shaped types extractors bindable consumer total armed
+    armed="$(armed_gates_of "$BASELINE")" || return 2
     anchored="$(count_anchored)"; shaped="$(count_shaped)"
     types="$(count_entity_types)"; extractors="$(count_extractors)"
     bindable="$(count_unanchored_bindable)"
@@ -120,7 +143,7 @@ measure() { # prints the JSON document
     cat <<JSON
 {
   "_spec": "APR-RELEASE-001 §11.2 — moves only through \`make ont-ratchet\` (ONT R-6)",
-  "armed_gates": [],
+  "armed_gates": $armed,
   "ont": {
     "consumer_present": $consumer,
     "contracts_total": $total,
@@ -158,6 +181,21 @@ self_test() {
     row "field reads a number"          "$(field "$t/j.json" contracts_anchored)" "7"
     printf '{"ont":{"consumer_present": false}}\n' > "$t/k.json"
     row "field reads a bool"            "$(field "$t/k.json" consumer_present)" "false"
+    # ONT-6 (PMAT-3451): --write restamps the counters and must NOT reset the arming declaration.
+    printf '{\n  "armed_gates": ["validate", "audit"],\n  "ont": {}\n}\n' > "$t/armed.json"
+    BASELINE="$t/armed.json" measure > "$t/pres.json"
+    row "measure() preserves armed_gates" "$(grep -o '"armed_gates": *\[[^]]*\]' "$t/pres.json" | tr -d ' ')" '"armed_gates":["validate","audit"]'
+    # ...and so does --write, which reads and replaces the SAME file.
+    cp "$t/armed.json" "$t/w.json"
+    set +e
+    BASELINE="$t/w.json" main --write >/dev/null 2>&1
+    set -e
+    row "--write preserves armed_gates in place" "$(grep -o '"armed_gates": *\[[^]]*\]' "$t/w.json" | tr -d ' ')" '"armed_gates":["validate","audit"]'
+    printf '{\n  "armed_gates": [\n    "validate"\n  ]\n}\n' > "$t/multi.json"
+    set +e
+    BASELINE="$t/multi.json" measure >/dev/null 2>&1
+    row "a multi-line armed_gates is refused" "$?" "2"
+    set -e
     # the measurement must be valid JSON and carry every §11.2 counter
     measure > "$t/m.json"
     if command -v python3 >/dev/null 2>&1; then
@@ -219,7 +257,13 @@ main() {
         --self-test) self_test; return $? ;;
         --write)
             mkdir -p "$(dirname "$BASELINE")"
-            measure > "$BASELINE"
+            # Never `measure > "$BASELINE"`: the shell truncates the file BEFORE
+            # measure() reads armed_gates out of it, so the declaration read back
+            # empty and was rewritten as [].
+            local tmp
+            tmp="$(mktemp "$BASELINE.XXXXXX")"
+            measure > "$tmp" || { rm -f "$tmp"; return 2; }
+            mv "$tmp" "$BASELINE"
             printf 'wrote %s\n' "${BASELINE#"$REPO_ROOT"/}"
             sed -n '/"ont"/,/}/p' "$BASELINE"
             return 0 ;;

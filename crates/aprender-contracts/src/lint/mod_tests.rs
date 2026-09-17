@@ -327,3 +327,69 @@ fn lifecycle_mark_new_findings_unit() {
     );
     assert!(findings[2].is_new, "newly added finding should be new");
 }
+
+/// ONT-6 (PMAT-3451): every gate of a real run carries the lattice element its own `passed`/`skipped`
+/// pair maps to, and the report's verdict is the meet over the default armed set — so no constructor can
+/// set a verdict that disagrees with the booleans it sits beside.
+#[test]
+fn every_gate_verdict_agrees_with_passed_and_skipped_on_the_real_corpus() {
+    let dir = contracts_dir();
+    let report = run_lint(&LintConfig::new(&dir, None, 0.0));
+    for g in &report.gates {
+        assert_eq!(
+            g.verdict,
+            Verdict::from_gate(g.passed, g.skipped),
+            "gate {}",
+            g.name
+        );
+    }
+    let armed = ArmedGates::default_set();
+    let expected = armed
+        .names()
+        .iter()
+        .map(|n| {
+            report.gates.iter().find(|g| &g.name == n).map_or(
+                Verdict::Unknown(crate::ontology::verdict::Reason::NotRun),
+                |g| g.verdict,
+            )
+        })
+        .fold(Verdict::Pass, Verdict::meet);
+    assert_eq!(report.verdict, expected);
+    assert_eq!(
+        report.verdict,
+        Verdict::Pass,
+        "the repo corpus passes its armed meet"
+    );
+    assert_eq!(report.not_armed, vec!["reverse-coverage".to_string()]);
+}
+
+/// ONT-001 §3.9: arming is the corpus's declaration, not the command line. A gate a flag ran is computed and
+/// reported, and stays outside the meet unless `armed_gates` names it.
+#[test]
+fn a_gate_a_flag_ran_is_reported_but_not_armed() {
+    let tmp = tempfile::tempdir().unwrap();
+    let corpus = tmp.path().join("contracts");
+    std::fs::create_dir_all(&corpus).unwrap();
+    std::fs::copy(
+        contracts_dir().join("softmax-kernel-v1.yaml"),
+        corpus.join("softmax-kernel-v1.yaml"),
+    )
+    .unwrap();
+    let mut config = LintConfig::new(&corpus, None, 0.0);
+    config.strict_test_binding = true;
+    let report = run_lint(&config);
+    assert!(
+        report.gates.iter().any(|g| g.name == "strict-test-binding"),
+        "the flag ran the gate"
+    );
+    assert!(
+        report.not_armed.iter().any(|n| n == "strict-test-binding"),
+        "not declared, so not armed: {:?}",
+        report.not_armed
+    );
+    assert!(!report
+        .armed_gates
+        .iter()
+        .any(|g| g.name == "strict-test-binding"));
+    assert_eq!(report.armed_gates.len(), 8);
+}
