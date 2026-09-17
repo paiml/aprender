@@ -20,6 +20,7 @@ mod gates_extended;
 pub mod rules;
 pub mod sarif;
 pub mod sigma_gate;
+pub mod sigma_symbols;
 mod strict_test_binding;
 pub mod trend;
 
