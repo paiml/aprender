@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.68.1] - 2026-09-17
+
+**The crates.io release of the 0.68 line.** `v0.68.0` is a GitHub-only release (tag and binaries stand; `install.sh` verified on x86_64 and aarch64) — its clean-room on the tag passed A0–B1 for the first time ever on a tag and stopped at B2: lib tests in `aprender-core` and `aprender-test-showcase` named path-only dev-dependencies that `cargo publish` deletes (#3425). 0.68.1 carries that fix — the tests moved out of `src/` to targets the published crates do not carry, all 72 lib-test binaries build in published form — plus the two infra gate repairs that made the chain provable (infra#650 tag ref materialized, infra#652 A1 `[patch.crates-io]` overlay at the tag). Everything else is 0.68.0: Qwen 3.5 on the CPU, the one-line installer, the release-train gates.
+
+### Fixed
+
+- fix(publish): lib tests in aprender-core and aprender-test-showcase named path-only dev-deps that cargo publish deletes — clean-room B2 red on v0.68.0 (#3425)
+
+### Changed
+
+- refactor(parity): the refusal call site pushed run to B- — CB-200 back to the 601 baseline (#3415)
+- audit: 2026-09-17 07:00Z — T-2 pass 3, the 602nd site removed (#3415), rulings applied, T-4 stops at the dry-run (#3417)
+- audit: 2026-09-17 08:25Z — T-2 GO, v0.68.0 tagged with 16 assets, clean-room stop on an infra clone defect fixed and re-dispatched (#3419)
+- audit: 2026-09-17 10:00Z — clean-room through B1 on v0.68.0, B2 fixed, v0.68.0 GitHub-only, 0.68.1 to crates.io (#3426)
+
 ## [0.68.0] - 2026-09-16
 
 **Qwen 3.5 runs on the CPU.** Qwen3.5 / Qwen3.8 hybrid GGUFs (Gated DeltaNet + attention) load and generate through `apr run` and `apr chat` (#3114, closes #3091), backed by a reproducible llama.cpp `d1d3c3396` raw-logit reference and a three-PR parity evidence series (#3354, #3355, #3356): strict greedy equality is a near-tie under a margin gate, with every divergence llama.cpp's choice at realizar's rank 2 within 0.19 logits; Q8_K activations and f16 KV parity is 0.69 work (#3208). **One-line install.** `curl -LsSf https://raw.githubusercontent.com/paiml/aprender/main/scripts/install.sh | sh` resolves the release asset for the host, verifies its sha256 and puts `apr` on PATH (#3366). The release train itself hardened: the crates.io cascade refuses unless `clean-room.yml` is green on exactly the tag commit (#3335, #3357); the merge queue gained the unwedge rules (#3361, #3403) and the roadmap became fragment-per-entry so PRs stop colliding on one file (#3297, #3352); the `apr chat` exit code is honest on a failed generation (#3396); and a MoE loader refuses an unsupported expert quantization at load instead of at the first token (#3405, 0.69).
