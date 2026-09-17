@@ -1,0 +1,2 @@
+argmax orig positions=78 mismatches=4 min_cos=0.998391
+argmax p4 positions=82 mismatches=2 min_cos=0.987121

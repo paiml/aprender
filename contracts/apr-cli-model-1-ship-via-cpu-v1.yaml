@@ -182,15 +182,20 @@ falsification_tests:
     pointing readers at this contract for falsifiable verification.
 
 proof_obligations:
-- type: invariant
+- id: ACM1SVC-INV-001
+  type: invariant
   property: "MODEL-1 has a documented working inference path (CPU) on canonical teacher"
-- type: invariant
+- id: ACM1SVC-INV-002
+  type: invariant
   property: "GPU path failure is tracked as known-issue in §40 + falsification chain"
-- type: completeness
+- id: ACM1SVC-CMP-003
+  type: completeness
   property: "FALSIFY-MODEL-1-SHIP-CPU-001 PASSES today on RTX 4090 lambda-labs"
-- type: soundness
+- id: ACM1SVC-SND-004
+  type: soundness
   property: "Contract semver signals scope: v1.x CPU-only, v2.x CPU+GPU"
-- type: termination
+- id: ACM1SVC-TERM-005
+  type: termination
   property: "Bug-fix obligation has a defined closure path (gpu_fix_obligation §3)"
 
 kani_harnesses:

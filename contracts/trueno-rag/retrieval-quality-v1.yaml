@@ -46,15 +46,18 @@ equations:
     - relevant.len() > 0 (for recall, MRR)
     lean_theorem: Theorems.Metric_Bounds
 proof_obligations:
-- type: invariant
+- id: RQ-INV-001
+  type: invariant
   property: Insert-retrieve round-trip
   formal: '∀ doc, emb: insert(doc, emb) ; retrieve(emb, 1)[0] = doc'
   applies_to: embedding_insert
-- type: invariant
+- id: RQ-INV-002
+  type: invariant
   property: Retrieval sorted descending
   formal: '∀ i < j < k: score(results[i]) >= score(results[j])'
   applies_to: retrieval_ranking
-- type: invariant
+- id: RQ-INV-003
+  type: invariant
   property: Metric unit interval
   formal: '∀ metric: 0.0 <= metric(retrieved, relevant) <= 1.0'
   applies_to: metric_bounds

@@ -81,11 +81,14 @@ falsification_tests:
 
   if_fails: rule 'scale + zero_point round-trip to disk' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: equivalence
+- id: CB1889C-EQ-001
+  type: equivalence
   property: "apr train --mode qat matches PyTorch prepare_qat_fx / convert_fx semantics"
-- type: invariant
+- id: CB1889C-INV-002
+  type: invariant
   property: "observer range well-formed (min ≤ max)"
-- type: invariant
+- id: CB1889C-INV-003
+  type: invariant
   property: "≤0.5pp accuracy gap after convert"
 
 verification_summary:

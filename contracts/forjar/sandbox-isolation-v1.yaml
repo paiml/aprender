@@ -44,19 +44,23 @@ equations:
     - overlay.upper_dir exists and is writable
     lean_theorem: Theorems.Overlay_Capture
 proof_obligations:
-- type: frame
+- id: SI-FRM-001
+  type: frame
   property: FS isolation
   formal: writes only to allowed_paths ∪ overlay
   applies_to: all
-- type: precondition
+- id: SI-PRE-002
+  type: precondition
   property: Network isolation
   formal: network=false → no outbound connections
   applies_to: all
-- type: completeness
+- id: SI-CMP-003
+  type: completeness
   property: Overlay captures all mutations
   formal: every write in overlay.upper
   applies_to: all
-- type: conservation
+- id: SI-CON-004
+  type: conservation
   property: Lower dir read-only
   formal: overlay.lower unchanged after execution
   applies_to: all

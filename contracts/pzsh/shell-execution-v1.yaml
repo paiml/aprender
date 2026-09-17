@@ -45,15 +45,18 @@ equations:
     - raw config is valid TOML syntax
     lean_theorem: Theorems.Config_Validation
 proof_obligations:
-- type: invariant
+- id: SE26CF-INV-001
+  type: invariant
   property: Startup time hard limit
   formal: '∀ config: startup_time(config) <= 10ms'
   applies_to: startup_budget
-- type: invariant
+- id: SE26CF-INV-002
+  type: invariant
   property: Parser determinism
   formal: '∀ input: parse(input) = parse(input)'
   applies_to: parser_correctness
-- type: invariant
+- id: SE26CF-INV-003
+  type: invariant
   property: Forbidden pattern rejection
   formal: '∀ config with eval: validate(config) = Err(ForbiddenPattern)'
   applies_to: config_validation

@@ -54,27 +54,33 @@ equations:
     - capacity > 0
     lean_theorem: Theorems.Zero_Input_Identity
 proof_obligations:
-- type: invariant
+- id: KV-INV-001
+  type: invariant
   property: Per-token KV bytes
   formal: kv_bytes = 2 * n_kv * d_k * bpe
   applies_to: all
-- type: monotonicity
+- id: KV-MON-002
+  type: monotonicity
   property: KV total monotonic in sequence length
   formal: S1 < S2 => kv_total(S1) < kv_total(S2)
   applies_to: all
-- type: bound
+- id: KV-BND-003
+  type: bound
   property: Hybrid KV layers bounded
   formal: kv_layers <= total_layers
   applies_to: all
-- type: invariant
+- id: KV-INV-004
+  type: invariant
   property: Bias absence
   formal: has_bias=false => 0 bias tensors
   applies_to: all
-- type: invariant
+- id: KV-INV-005
+  type: invariant
   property: Zero input identity
   formal: W @ 0 = 0 for bias-free projection
   applies_to: all
-- type: equivalence
+- id: KV-EQ-006
+  type: equivalence
   property: SIMD KV equivalence
   tolerance: 0.0
   applies_to: simd

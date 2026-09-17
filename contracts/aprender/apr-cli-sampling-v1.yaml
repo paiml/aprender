@@ -135,7 +135,8 @@ kernel_structure:
     description: Verify output determinism for seeded runs, exit codes for failures
 
 proof_obligations:
-- type: invariant
+- id: ACS6EC2-INV-001
+  type: invariant
   property: Temperature must be non-negative
   formal: 'temperature >= 0.0'
   applies_to: temperature_bounds
@@ -150,7 +151,8 @@ proof_obligations:
       exactly why t -> 0+ recovers greedy decoding and why any t > 0 leaves the sampled-from
       set intact. `valid_temperature_nonneg` records the guard `temperature >= 0.0`. Verified:
       lake env lean ProvableContracts/Theorems/Sampling/TemperatureScaling.lean (exit 0, 0 sorry).
-- type: invariant
+- id: ACS6EC2-INV-002
+  type: invariant
   property: Top-K 0 disables filtering
   formal: 'top_k == 0 => all tokens considered'
   applies_to: top_k_top_p_interaction
@@ -165,7 +167,8 @@ proof_obligations:
       token — filtering disabled. topk_one_is_argmax: cutoff at the max keeps exactly the
       argmax, so top_k=1 == greedy. Verified: lake env lean
       ProvableContracts/Theorems/Sampling/TopK.lean (exit 0, 0 sorry).
-- type: invariant
+- id: ACS6EC2-INV-003
+  type: invariant
   property: Same seed produces identical output
   formal: 'generate(p, s) == generate(p, s)'
   applies_to: seed_determinism
@@ -178,7 +181,8 @@ proof_obligations:
       pipeline, not a real-number identity. A Lean `f x = f x` reflexivity would prove nothing
       about the runtime claim (theater), so this stays outside the Lean layer and is enforced
       by falsification test FALSIFY-SAMP-003.
-- type: invariant
+- id: ACS6EC2-INV-004
+  type: invariant
   property: Temperature must be finite (NaN/inf rejected)
   formal: '!temperature.is_finite() => Err(_)'
   applies_to: temperature_bounds
@@ -190,7 +194,8 @@ proof_obligations:
       does not model (ℝ has no NaN or infinities). `NaN <= 0.0` being false under IEEE
       unordered semantics is precisely an IEEE-754 float fact, not a real-number theorem.
       Enforced by falsification test FALSIFY-SAMP-007.
-- type: invariant
+- id: ACS6EC2-INV-005
+  type: invariant
   property: RNG draw value is in [0, 1)
   formal: '0.0 <= lcg_state_to_unit_f32(s) < 1.0 for all s: u64'
   applies_to: seed_determinism
@@ -203,7 +208,8 @@ proof_obligations:
       while (state>>40)/(1<<24) keeps the numerator exact in f32 so the quotient is strictly
       < 1.0. Lean's ℝ has no f32 rounding, so a real-number proof would NOT capture the actual
       concern. Enforced by falsification test FALSIFY-SAMP-008.
-- type: invariant
+- id: ACS6EC2-INV-006
+  type: invariant
   property: Penalty 1.0 is identity
   formal: 'apply_penalty(logits, _, 1.0, _) == logits'
   applies_to: repeat_penalty
@@ -217,7 +223,8 @@ proof_obligations:
       penalty_reduces_negative strengthen it: any p >= 1 never increases a repeated token's
       logit. Verified: lake env lean ProvableContracts/Theorems/Sampling/RepeatPenalty.lean
       (exit 0, 0 sorry).
-- type: invariant
+- id: ACS6EC2-INV-007
+  type: invariant
   property: Error results never exit 0
   formal: 'Err(_) => exit_code != 0'
   applies_to: exit_code_on_failure

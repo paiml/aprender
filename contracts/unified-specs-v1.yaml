@@ -69,7 +69,8 @@ falsification_tests:
   if_fails: "subcrate still has local specs — should be at root"
 
 proof_obligations:
-- type: invariant
+- id: US-INV-001
+  type: invariant
   property: "TOC is single source of truth for all specifications"
 
 kani_harnesses:

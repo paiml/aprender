@@ -155,11 +155,14 @@ falsification_tests:
     discharge_status: PARTIAL_ALGORITHM_LEVEL
     full_discharge_blocked_on: "end-to-end pull + `du` harness against a real HF fixture"
 proof_obligations:
-- type: equivalence
+- id: CA24943-EQ-001
+  type: equivalence
   property: "apr registry quota semantics match Ollama OLLAMA_MAX_MODELS / docker storage-opt"
-- type: invariant
+- id: CA24943-INV-002
+  type: invariant
   property: "quota never exceeded"
-- type: invariant
+- id: CA24943-INV-003
+  type: invariant
   property: "rejection is pre-download (atomic)"
 
 verification_summary:

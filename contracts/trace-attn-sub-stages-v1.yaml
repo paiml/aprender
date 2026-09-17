@@ -147,24 +147,29 @@ equations:
       identifies which pair of adjacent stages straddles the SHIP-007 root.
 
 proof_obligations:
-- type: invariant
+- id: TASS-INV-001
+  type: invariant
   property: '`SaveTensorStage` enum gains EXACTLY 2 new variants without removing or renaming any existing variant'
   formal: 'variants_after = variants_before ∪ {AttnScores, AttnSoftmax} AND |variants_after| = |variants_before| + 2 AND variants_before ⊆ variants_after'
   applies_to: crates/aprender-serve/src/inference_trace/save_tensor_stage.rs::SaveTensorStage
-- type: invariant
+- id: TASS-INV-002
+  type: invariant
   property: 'Existing 18 capture-point semantics preserved byte-identically pre/post-implementation'
   formal: 'forall stage in {Embedding, AttnNorm, QkvMatmul, QkvBias, QPostRope, KPostRope, Attention, AttnOut, ...}: bytes_after_pr(stage) == bytes_before_pr(stage) on canonical 7B teacher, layer 0, BOS token'
   tolerance: 0.0
   applies_to: crates/aprender-serve/src/apr_transformer/inference.rs::forward_traced_with_plan
-- type: invariant
+- id: TASS-INV-003
+  type: invariant
   property: 'Comma-parser accepts the 2 new stage names with case-insensitive fallback (mirroring existing parser behavior)'
   formal: 'parse_stage_list("attn_scores,attn_softmax") = Ok([AttnScores, AttnSoftmax])'
   applies_to: crates/aprender-serve/src/inference_trace/save_tensor_stage.rs::parse_stage_list
-- type: ordering
+- id: TASS-ORD-004
+  type: ordering
   property: 'Capture order inside the attention block: QkvBias → QPostRope → KPostRope → AttnScores → AttnSoftmax → Attention → AttnOut'
   formal: 'attn_block_order = [QkvBias, QPostRope, KPostRope, AttnScores, AttnSoftmax, Attention, AttnOut]'
   applies_to: crates/aprender-serve/src/apr_transformer/inference.rs::forward_traced_with_plan
-- type: invariant
+- id: TASS-INV-005
+  type: invariant
   property: 'APRT byte-format header serializes the 2 new stage IDs without colliding with reserved IDs of existing stages'
   formal: 'forall new_stage_id in {attn_scores, attn_softmax}: new_stage_id ∉ existing_stage_ids'
   applies_to: crates/aprender-serve/src/inference_trace/save_tensor.rs::write_stage_file

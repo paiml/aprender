@@ -70,14 +70,16 @@ equations:
     - '|answered(S)| == |accepted(S)| for every terminating session'
 
 proof_obligations:
-- type: invariant
+- id: AMSD-INV-001
+  type: invariant
   property: drain-on-every-exit — no exit from the read loop abandons an in-flight worker
   formal: |
     For every session S and every exit reason R in {EOF, stdin io::Error,
     stdout io::Error}, serve_stream calls join_workers before returning R.
     Structurally: the drain is on serve_stream's single return path and the
     loop body lives in read_loop, so no `?` inside the loop can skip it.
-- type: invariant
+- id: AMSD-INV-002
+  type: invariant
   property: panic-is-an-error-not-silence — a panicking tool still answers its id
   formal: |
     For every tools/call with id i whose dispatch panics, the worker writes a
@@ -87,7 +89,8 @@ proof_obligations:
     The obligation is on the SESSION, not on the helper: it is discharged only
     if spawn_tools_call_worker actually routes dispatch through worker_response,
     so it is stated over what a client reading stdout receives.
-- type: invariant
+- id: AMSD-INV-003
+  type: invariant
   property: no-false-error — the guards do not convert successful calls into failures
   formal: |
     For every tools/call whose dispatch returns normally, the response is a

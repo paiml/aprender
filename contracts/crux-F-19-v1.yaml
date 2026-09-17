@@ -153,11 +153,14 @@ falsification_tests:
     discharge_status: PARTIAL_ALGORITHM_LEVEL
     full_discharge_blocked_on: "live `apr explain` emitter under greedy decoding"
 proof_obligations:
-- type: equivalence
+- id: CF16071-EQ-001
+  type: equivalence
   property: "apr explain output matches HF `generate(output_scores=True)` token probabilities within 1e-5"
-- type: invariant
+- id: CF16071-INV-002
+  type: invariant
   property: "post-sampler probs sum to 1.0"
-- type: invariant
+- id: CF16071-INV-003
+  type: invariant
   property: "sampled token present in emitted candidate list"
 
 verification_summary:

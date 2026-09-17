@@ -56,36 +56,44 @@ equations:
       - 'ffn_output is [hidden_dim] residual contribution'
 
 proof_obligations:
-- type: invariant
+- id: TFSB-INV-001
+  type: invariant
   property: LayerActivation gains 4 new fields without removing any existing field
   formal: 'fields_after = fields_before ∪ {ffn_gate_stats, ffn_up_stats, ffn_silu_gate_stats, ffn_swiglu_inner_stats} AND fields_before ⊆ fields_after'
   applies_to: aprender-serve/src/apr_transformer/mod.rs::LayerActivation
-- type: invariant
+- id: TFSB-INV-002
+  type: invariant
   property: ffn_gate_stats reflects post-gate-proj-matmul values
   formal: 'ffn_gate_stats = ActivationStats::from_slice(&matmul(ffn_input, gate_weight, hidden_dim, intermediate_dim))'
   applies_to: aprender-serve/src/apr_transformer/inference.rs::forward_traced
-- type: invariant
+- id: TFSB-INV-003
+  type: invariant
   property: ffn_up_stats reflects post-up-proj-matmul values
   formal: 'ffn_up_stats = ActivationStats::from_slice(&matmul(ffn_input, up_weight, hidden_dim, intermediate_dim))'
   applies_to: aprender-serve/src/apr_transformer/inference.rs::forward_traced
-- type: invariant
+- id: TFSB-INV-004
+  type: invariant
   property: ffn_silu_gate_stats reflects post-SiLU values on gate projection
   formal: 'ffn_silu_gate_stats = ActivationStats::from_slice(&silu(gate)) where silu(g) = g / (1 + exp(-g))'
   applies_to: aprender-serve/src/apr_transformer/inference.rs::forward_traced
-- type: invariant
+- id: TFSB-INV-005
+  type: invariant
   property: ffn_swiglu_inner_stats reflects post-elementwise-multiply values
   formal: 'ffn_swiglu_inner_stats = ActivationStats::from_slice(&[silu(gate[i]) * up[i] for i in 0..intermediate_dim])'
   applies_to: aprender-serve/src/apr_transformer/inference.rs::forward_traced
-- type: conservation
+- id: TFSB-CON-006
+  type: conservation
   property: 'Existing ffn_out_stats semantics preserved (post-down-proj, residual contribution)'
   formal: 'ffn_out_stats == ActivationStats::from_slice(&matmul(ffn_inner, down_proj, intermediate_dim, hidden_dim) [+ down_bias])'
   tolerance: 0.0
   applies_to: aprender-serve/src/apr_transformer/mod.rs::LayerActivation::ffn_out_stats
-- type: ordering
+- id: TFSB-ORD-007
+  type: ordering
   property: 'Renderer emits sub-FFN lines in computation order between ffn_norm and ffn_out'
   formal: 'order = [attn_norm, qkv, attn_out, ffn_norm, ffn_gate, ffn_up, ffn_silu, ffn_swiglu, ffn_out, output]'
   applies_to: crates/apr-cli/src/commands/vector_stats.rs::print_per_layer_activations
-- type: invariant
+- id: TFSB-INV-008
+  type: invariant
   property: 'JSON layer object key set is the union of old keys and 4 new keys; old keys retain identical names'
   formal: 'json_keys_after = json_keys_before ∪ {ffn_gate_stats, ffn_up_stats, ffn_silu_gate_stats, ffn_swiglu_inner_stats} AND json_keys_before ⊆ json_keys_after'
   applies_to: crates/aprender-serve/src/inference_trace/mod.rs

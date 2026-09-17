@@ -122,13 +122,17 @@ falsification_tests:
   if_fails: "apr per-tensor rmse diverges from llama-quantize-stats by >1e-5"
 
 proof_obligations:
-- type: invariant
+- id: CF019EA-INV-001
+  type: invariant
   property: "per_tensor output sorted descending by rmse (worst-quantized first)"
-- type: invariant
+- id: CF019EA-INV-002
+  type: invariant
   property: "--threshold triggers exit_code=1 iff over_budget non-empty"
-- type: invariant
+- id: CF019EA-INV-003
+  type: invariant
   property: "rmse computed in row-major order (LAYOUT-001 compliance)"
-- type: equivalence
+- id: CF019EA-EQ-004
+  type: equivalence
   property: "apr qa-quant --per-tensor --metric rmse matches llama.cpp's llama-quantize-stats -v per-tensor rmse within 1e-5 on matching tensor names"
 
 # References:

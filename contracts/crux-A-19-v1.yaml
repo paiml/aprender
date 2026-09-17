@@ -174,15 +174,20 @@ falsification_tests:
   # be wired into the real download path. Discharge deferred.
 
 proof_obligations:
-- type: equivalence
+- id: CA15E67-EQ-001
+  type: equivalence
   property: "apr pull TTY progress shows pct+bytes+rate+ETA, matching huggingface-cli tqdm output"
-- type: invariant
+- id: CA15E67-INV-002
+  type: invariant
   property: "Progress is emitted on stderr only when stderr is a TTY and --quiet/APR_PROGRESS=0 are not set"
-- type: invariant
+- id: CA15E67-INV-003
+  type: invariant
   property: "Final progress line per file shows 100% and byte counter equals total size"
-- type: invariant
+- id: CA15E67-INV-004
+  type: invariant
   property: "Parallel chunk count surfaces in --verbose log and matches configured concurrency"
-- type: invariant
+- id: CA15E67-INV-005
+  type: invariant
   property: "Byte counter is monotonic non-decreasing over the download lifetime"
 
 verification_summary:

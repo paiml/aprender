@@ -75,9 +75,11 @@ falsification_tests:
   if_fails: CRUX-J-10 configurability invariant — memory store path must be user-configurable
 
 proof_obligations:
-- type: invariant
+- id: CJ1-INV-001
+  type: invariant
   property: "put/get round-trip is deterministic"
-- type: invariant
+- id: CJ1-INV-002
+  type: invariant
   property: "TTL is monotonic — value disappears exactly once"
 
 verification_summary:

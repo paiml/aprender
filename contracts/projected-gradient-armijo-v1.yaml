@@ -47,32 +47,40 @@ equations:
     - use_line_search = true
     lean_theorem: Theorems.Monotone_Non_Increase
 proof_obligations:
-- type: precondition
+- id: PGA-PRE-001
+  type: precondition
   property: Valid hyperparameters and non-empty start
   formal: 'step_size > 0 ∧ beta ∈ (0,1) ∧ x0.len() > 0'
-- type: postcondition
+- id: PGA-POST-002
+  type: postcondition
   property: Accepted iterate is feasible and the backtracked point
   formal: 'x_{k+1} ∈ C ∧ x_{k+1} = P_C(x_k - α_accepted·∇f(x_k))'
   requires: PG-PRE-001
-- type: invariant
+- id: PGA-INV-003
+  type: invariant
   property: Armijo monotone non-increase
   formal: 'f(x_{k+1}) ≤ f(x_k) for every accepted iterate when line search enabled'
   applies_to: all
-- type: invariant
+- id: PGA-INV-004
+  type: invariant
   property: Backtracked point is accepted, not the rejected full step
   formal: 'on acceptance x_new := x_new_ls (backtracked), not the full-step x_new'
   applies_to: all
-- type: loop_invariant
+- id: PGA-LINV-005
+  type: loop_invariant
   property: Objective non-increasing across the iterate sequence
   formal: '∀ k: f(x_{k+1}) ≤ f(x_k) + ε'
   applies_to_phase: backtracking_line_search
-- type: loop_variant
+- id: PGA-LVAR-006
+  type: loop_variant
   property: Backtracking step halves and terminates
   formal: V = 20 - ls_iter, V ≥ 0, V strictly decreasing
-- type: frame
+- id: PGA-FRM-007
+  type: frame
   property: Objective, gradient and projection operators are not mutated
   formal: modifies(x, alpha) ∧ preserves(objective, gradient, project)
-- type: bound
+- id: PGA-BND-008
+  type: bound
   property: Final objective bounded by starting objective
   formal: 'f(x_final) ≤ f(x0) + ε'
   applies_to: all

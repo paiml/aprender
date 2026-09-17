@@ -20,23 +20,28 @@ equations:
     - indices.len() > 0
     lean_theorem: Theorems.Tied_Lm_Head
 proof_obligations:
-- type: bound
+- id: TE-BND-001
+  type: bound
   property: Output shape correctness
   formal: logits.shape = (seq_len, vocab_size) for x.shape = (seq_len, d_model)
   applies_to: all
-- type: equivalence
+- id: TE-EQ-002
+  type: equivalence
   property: Equivalence to separate matmul
   formal: tied_lm_head(x, W_embed) = matmul(x, W_separate^T) when W_separate = W_embed
   applies_to: all
-- type: invariant
+- id: TE-INV-003
+  type: invariant
   property: No extra parameters
   formal: param_count(tied_lm_head) = 0 (reuses W_embed, adds no new weights)
   applies_to: all
-- type: bound
+- id: TE-BND-004
+  type: bound
   property: Finite output
   formal: x finite and W_embed finite implies logits finite
   applies_to: all
-- type: invariant
+- id: TE-INV-005
+  type: invariant
   property: OBLIG-CONVERT-TIED-EMBEDDING-LMHEAD — apr convert synthesizes a runnable LM head for tied-embedding models
   formal: apr_convert(M) where M has embed_tokens and no lm_head/output implies output APR contains lm_head.weight with shape = embed_tokens.shape (row-major [vocab, hidden]) for every quant path (f32/int8/int4/fp16/Q4K)
   applies_to: all

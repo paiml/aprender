@@ -34,25 +34,30 @@ equations:
     - b.len() > 0
     lean_theorem: Theorems.Fma_Accumulation
 proof_obligations:
-- type: equivalence
+- id: AFD-EQ-001
+  type: equivalence
   property: SIMD matches scalar
   formal: '|dot_fma_avx2(a, b) - dot_scalar(a, b)| < tolerance'
   tolerance: 4.0
   applies_to: simd
-- type: invariant
+- id: AFD-INV-002
+  type: invariant
   property: Zero-allocation
   formal: dot_fma_avx2 performs 0 heap allocations
   applies_to: all
-- type: invariant
+- id: AFD-INV-003
+  type: invariant
   property: Commutativity
   formal: '|dot(a, b) - dot(b, a)| < ε'
   tolerance: 1.0e-06
   applies_to: all
-- type: bound
+- id: AFD-BND-004
+  type: bound
   property: Self-dot non-negative
   formal: dot(a, a) ≥ 0 for all a
   applies_to: all
-- type: invariant
+- id: AFD-INV-005
+  type: invariant
   property: Empty input returns zero
   formal: dot([], []) = 0.0
   applies_to: all

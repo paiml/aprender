@@ -52,23 +52,28 @@ equations:
     - n > 0
     lean_theorem: Theorems.Global_Max_Pool
 proof_obligations:
-- type: invariant
+- id: GNN-INV-001
+  type: invariant
   property: GCN preserves node count
   formal: output.shape[0] == input.shape[0] for GCN forward
   applies_to: all
-- type: invariant
+- id: GNN-INV-002
+  type: invariant
   property: Message passing preserves node count
   formal: propagate(x, adj).shape[0] == x.shape[0]
   applies_to: all
-- type: bound
+- id: GNN-BND-003
+  type: bound
   property: Global mean pool output is finite
   formal: 'forall j: r_j.is_finite() when all h_ij are finite'
   applies_to: all
-- type: bound
+- id: GNN-BND-004
+  type: bound
   property: Global max pool bounded by node features
   formal: 'forall j: r_j <= max_{i in V}(h_{ij})'
   applies_to: all
-- type: invariant
+- id: GNN-INV-005
+  type: invariant
   property: Pooling output dimension matches feature dimension
   formal: pool(H).shape[1] == H.shape[1]
   applies_to: all

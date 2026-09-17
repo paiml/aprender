@@ -1,0 +1,46 @@
+--- llama.cpp comparator pin ----------------------------------------
+case table (the pin must discriminate before its verdict means anything)
+ok    pinned, oracle reports it              rc=0 ok
+ok    oracle reports the WRONG build         rc=1 wrong_build
+ok    bench alone, NO oracle beside it       rc=1 no_oracle
+ok    oracle present but cannot run          rc=1 oracle_mute
+ok    no llama-cli, llama-server used        rc=0 ok
+ok    named path is a DIRECTORY              rc=1 candidate_not_a_file
+ok    named path does not exist              rc=1 candidate_not_a_file
+ok    unpinned, binary present               rc=2 unpinned
+ok    unpinned, no binary named              rc=2 unpinned
+ok    pinned but no binary named             rc=1 no_binary_named
+
+pin expiry (PP-20)
+ok    pin_stale                              rc=4 expired
+ok    pin_fresh                              rc=0 ok
+ok    expiry == today is still fresh         rc=0 ok
+ok    a missing pin_expiry REFUSES           rc=3 expiry_absent
+ok    an unparseable expiry REFUSES          rc=3 expiry_malformed
+ok    wrong build outranks a stale pin       rc=1 wrong_build
+
+pin cmake line (PP-20)
+ok    pin_cmake_ok                           rc=0 ok
+ok    pin_cmake_mismatch                     rc=1 cmake_mismatch
+ok    an undeclared arch list MISMATCHES     rc=1 cmake_mismatch
+ok    a declared arch list MATCHES           rc=0 ok
+ok    intel shape: -DGGML_NATIVE=ON matches CUDA=OFF rc=0 ok
+ok    mini shape: -DGGML_METAL=ON matches CUDA=OFF rc=0 ok
+ok    no CMakeCache beside the binary        rc=1 cmake_cache_absent
+ok    no build_flags for this host           rc=3 build_flags_absent
+
+sourced-interface behaviour
+ok    sourcing does not exit (bash)          ALIVE rc=0 bench=/tmp/tmp.vqfBY1uOBy/good/bin/llama-bench expiry=2026-06-16
+ok    sourcing does not exit (zsh)           ALIVE rc=0 bench=/tmp/tmp.vqfBY1uOBy/good/bin/llama-bench expiry=2026-06-16
+ok    sourcing RESOLVES (bash)               ALIVE rc=0 bench=/tmp/tmp.vqfBY1uOBy/good/bin/llama-bench expiry=2026-06-16
+ok    sourcing RESOLVES (zsh)                ALIVE rc=0 bench=/tmp/tmp.vqfBY1uOBy/good/bin/llama-bench expiry=2026-06-16
+ok    sourcing EXPORTS the expiry (bash)     ALIVE rc=0 bench=/tmp/tmp.vqfBY1uOBy/good/bin/llama-bench expiry=2026-06-16
+ok    sourcing EXPORTS the expiry (zsh)      ALIVE rc=0 bench=/tmp/tmp.vqfBY1uOBy/good/bin/llama-bench expiry=2026-06-16
+
+this repo
+ok    build_commit = d1d3c3396
+ok    pinned_on = 2026-09-15, pin_expiry = 2026-12-01 (fresh at 2026-09-15)
+
+PASS  the pin discriminates: right build, wrong build, broken binary,
+      directory, absent path, the unpinned bootstrap, a stale expiry and
+      a cmake line the build tree does not corroborate.

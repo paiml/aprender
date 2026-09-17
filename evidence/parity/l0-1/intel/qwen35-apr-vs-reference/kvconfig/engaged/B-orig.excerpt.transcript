@@ -1,0 +1,7 @@
+# B-orig.log sha256 29228603bcb01067d9658cca3090d696a7f8089e6ab11f2309550ad68274b3ee
+920:0.01.135.258 I llama_context: flash_attn            = enabled
+955:0.01.135.508 I llama_kv_cache: size =    6.00 MiB (   256 cells,   6 layers,  1/1 seqs), K (f32):    3.00 MiB, V (f32):    3.00 MiB
+2028:0.02.847.292 I llama_context: flash_attn            = enabled
+2063:0.02.848.492 I llama_kv_cache: size =    6.00 MiB (   256 cells,   6 layers,  1/1 seqs), K (f32):    3.00 MiB, V (f32):    3.00 MiB
+2118:apr_raw_logits: kvconfig cache_type_k=f32 cache_type_v=f32 flash_attn_type=enabled
+2119:apr_raw_logits: n_pos=78 n_vocab=248320 add_bos=0 mode=per-token out=/home/noah/parity-ref/kvconfig-3091/runs/B-orig.bin

@@ -62,23 +62,28 @@ equations:
     lean_theorem: Theorems.Switch_Load_Balance_Loss
 
 proof_obligations:
-- type: precondition
+- id: MLBL-PRE-001
+  type: precondition
   property: Hyperparameters valid, non-empty batch
   formal: 'n_samples >= 1 ∧ N >= 1 ∧ 1 <= top_k <= N ∧ alpha >= 0'
-- type: invariant
+- id: MLBL-INV-002
+  type: invariant
   property: P_i is the mean FULL router softmax over all tokens
   formal: |
     P_i = (1/n_samples) * Σ_t softmax(router(x_t))_i, summed over ALL N experts
     on EVERY token (NOT restricted to a token's top-k set).
-- type: postcondition
+- id: MLBL-POST-003
+  type: postcondition
   property: Loss equals the Switch Transformer aux loss
   formal: 'loss = alpha * N * Σ_i f_i * P_i  with P_i = mean full-softmax, f_i = top-k dispatch fraction'
   requires: MOE-PRE-001
-- type: bound
+- id: MLBL-BND-004
+  type: bound
   property: Loss minimized under uniform routing
   formal: 'uniform routing (f_i = P_i = 1/N ∀i) ⇒ loss = alpha (the minimum)'
   applies_to: all
-- type: equivalence
+- id: MLBL-EQ-005
+  type: equivalence
   property: Top-k-only P_i is wrong unless routing is uniform
   formal: |
     full-softmax P_i ≠ top-k-only P_i whenever some expert with f_i > 0 also

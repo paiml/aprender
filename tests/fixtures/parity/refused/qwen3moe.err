@@ -1,0 +1,6 @@
+
+  apr parity  GPU/CPU Statistical Process Control
+  Scope: compares inference OUTPUT (logits/tokens) between GPU and CPU
+
+parity: REFUSED architecture=qwen3_moe — the dense parity loop would read the MoE placeholder tensors; run/serve route this architecture through the MoE forward and parity does not yet (#3367)
+error: Not implemented: parity: REFUSED architecture=qwen3_moe — the dense parity loop would read the MoE placeholder tensors; run/serve route this architecture through the MoE forward and parity does not yet (#3367)

@@ -248,13 +248,17 @@ falsification_tests:
   if_fails: "pre-flight gate removed or reordered after a publish — ship-time Poka-Yoke compromised"
 
 proof_obligations:
-- type: safety
+- id: ACPE-SAFE-001
+  type: safety
   property: "no network I/O before sha256 local guard passes"
-- type: safety
+- id: ACPE-SAFE-002
+  type: safety
   property: "no README.md auto-generation when --manifest is provided"
-- type: liveness
+- id: ACPE-LIVE-003
+  type: liveness
   property: "successful manifest path uploads manifest.yaml as a side-car"
-- type: invariant
+- id: ACPE-INV-004
+  type: invariant
   property: "CLI is backwards-compatible (--manifest optional)"
 
 verification_summary:

@@ -100,15 +100,20 @@ falsification_tests:
     with overflow" from epoch 3 / index 13 in any debug build on 64-bit.
 
 proof_obligations:
-- type: invariant
+- id: ASL-INV-001
+  type: invariant
   property: "default FitMode::Batch backward compatible"
-- type: invariant
+- id: ASL-INV-002
+  type: invariant
   property: "stochastic mode shuffles samples each epoch"
-- type: invariant
+- id: ASL-INV-003
+  type: invariant
   property: "mini-batch(n) == full-batch for complete dataset"
-- type: invariant
+- id: ASL-INV-004
+  type: invariant
   property: "shuffle_partner(seed, i) in [0, i] for all seed, i — the Fisher-Yates pass is a permutation"
-- type: invariant
+- id: ASL-INV-005
+  type: invariant
   property: "shuffle_partner uses wrapping u64, never usize, so it is width-portable and cannot overflow"
 
 verification_summary:

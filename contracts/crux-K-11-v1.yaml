@@ -92,11 +92,14 @@ falsification_tests:
 
   if_fails: rule 'unknown directive errors with file:line:col' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: equivalence
+- id: CK11547-EQ-001
+  type: equivalence
   property: "apr modelfile parse matches ollama Modelfile directive set + case rules"
-- type: invariant
+- id: CK11547-INV-002
+  type: invariant
   property: "FROM required (missing ⇒ parse error)"
-- type: invariant
+- id: CK11547-INV-003
+  type: invariant
   property: "unknown directive ⇒ exit != 0 with location"
 
 verification_summary:

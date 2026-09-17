@@ -235,13 +235,17 @@ falsification_tests:
     full_discharge_blocked_on: "apr serve --enable-lora --max-loras N surface with /v1/lora/load enforcing capacity via 429/503 response"
 
 proof_obligations:
-- type: equivalence
+- id: CC1CC73-EQ-001
+  type: equivalence
   property: "batched multi-LoRA per-request output ≡ serial single-adapter output at temp=0"
-- type: invariant
+- id: CC1CC73-INV-002
+  type: invariant
   property: "max_loras bound enforced; unknown adapter → HTTP 404"
-- type: bound
+- id: CC1CC73-BND-003
+  type: bound
   property: "N=8 multi-LoRA throughput >= 80% of base-only batched throughput"
-- type: independence
+- id: CC1CC73-IND-004
+  type: independence
   property: "adapter ordering within batch MUST NOT affect per-request output (no cross-contamination)"
 
 verification_summary:

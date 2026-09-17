@@ -57,31 +57,38 @@ equations:
     - indices.len() > 0
     lean_theorem: Theorems.Rope_Frequency
 proof_obligations:
-- type: invariant
+- id: Q35-INV-001
+  type: invariant
   property: Q projection shape
   formal: n_h * d_k = 4096 for Qwen3.5-9B
   applies_to: all
-- type: invariant
+- id: Q35-INV-002
+  type: invariant
   property: KV projection shape
   formal: n_kv * d_k = 1024 for Qwen3.5-9B
   applies_to: all
-- type: invariant
+- id: Q35-INV-003
+  type: invariant
   property: SwiGLU expansion ratio
   formal: 12288 / 4096 = 3.0
   applies_to: all
-- type: invariant
+- id: Q35-INV-004
+  type: invariant
   property: O projection transpose
   formal: shape(o_proj) == reverse(shape(q_proj))
   applies_to: all
-- type: invariant
+- id: Q35-INV-005
+  type: invariant
   property: RoPE frequency vector length
   formal: len(freqs) == d_k / 2
   applies_to: all
-- type: monotonicity
+- id: Q35-MON-006
+  type: monotonicity
   property: RoPE frequency decreasing
   formal: freq_i > freq_{i+1} for all i
   applies_to: all
-- type: equivalence
+- id: Q35-EQ-007
+  type: equivalence
   property: SIMD shape equivalence
   tolerance: 0.0
   applies_to: simd

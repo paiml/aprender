@@ -44,20 +44,24 @@ equations:
     - x.len() > 0
     lean_theorem: Theorems.Speedup_Bound
 proof_obligations:
-- type: equivalence
+- id: AQ-EQ-001
+  type: equivalence
   property: Q8_K quantization preserves dot product accuracy
   formal: '|dot_q4k_f32(row, acts) - dot_q4k_q8k(row, quantize_q8k(acts))| < ε'
   tolerance: 0.001
   applies_to: all
-- type: bound
+- id: AQ-BND-002
+  type: bound
   property: CPU throughput reaches llama.cpp parity
   formal: tok/s(apr CPU) ≥ 0.85 × tok/s(llama.cpp CPU) on same hardware
   applies_to: all
-- type: invariant
+- id: AQ-INV-003
+  type: invariant
   property: Phase 1 quantization is amortized
   formal: quantize_row_q8_k called exactly once per matmul, not once per dot product
   applies_to: all
-- type: equivalence
+- id: AQ-EQ-004
+  type: equivalence
   property: SIMD kernel equivalence
   formal: avx2_q4k_q8k_dot(row, q8_acts) ≡ scalar_q4k_q8k_dot(row, q8_acts)
   tolerance: 1.0e-06

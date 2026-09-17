@@ -180,13 +180,17 @@ falsification_tests:
     discharge_status: PARTIAL_ALGORITHM_LEVEL
 
 proof_obligations:
-- type: invariant
+- id: CA1F325-INV-001
+  type: invariant
   property: "apr ps rows reflect the currently-loaded model set in apr serve"
-- type: invariant
+- id: CA1F325-INV-002
+  type: invariant
   property: "Every apr ps row satisfies the RunningModel JSON schema"
-- type: invariant
+- id: CA1F325-INV-003
+  type: invariant
   property: "until timestamp ≥ wall-clock now for every row"
-- type: equivalence
+- id: CA1F325-EQ-004
+  type: equivalence
   property: "apr ps columns ⊇ {NAME, SIZE, PROCESSOR} from ollama ps"
 
 verification_summary:

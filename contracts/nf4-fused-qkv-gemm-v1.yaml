@@ -77,16 +77,19 @@ equations:
     lean_theorem: 'Theorems.Bandwidth_savings'
 
 proof_obligations:
-- type: equivalence
+- id: NFQG-EQ-001
+  type: equivalence
   property: Fused K+V output matches separate K, V projections
   formal: '|fused_kv(A, W_k, W_v) - [separate_k(A, W_k), separate_v(A, W_v)]| < ε'
   tolerance: 1.0e-4
   applies_to: all
-- type: bound
+- id: NFQG-BND-002
+  type: bound
   property: Reduces input reads from 3 to 2 per attention layer
   formal: dram_reads(fused) == 2 AND dram_reads(separate) == 3
   applies_to: fused_qkv
-- type: invariant
+- id: NFQG-INV-003
+  type: invariant
   property: K dim equals V dim for fused K+V path
   formal: kv_dim_k == kv_dim_v
   applies_to: fused_qkv

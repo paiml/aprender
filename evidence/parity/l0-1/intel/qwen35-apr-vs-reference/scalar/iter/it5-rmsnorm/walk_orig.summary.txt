@@ -1,0 +1,1 @@
+# orig: matched=750 missing_in_apr=0 max_rel_l2=7.101012e-02 at pos28 linear_attn_out-8; first_not_bit_equal=pos4 idx56 attn_pregate-3 bit_equal=275/2048 rel_l2=7.756e-07

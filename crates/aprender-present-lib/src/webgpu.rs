@@ -1163,6 +1163,11 @@ pub fn render_instances(
                 label: Some("Shape Render Pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view,
+                    // wgpu added this field for rendering into one slice of a 3D
+                    // texture; `view` here is a 2D surface texture, for which
+                    // `None` is the only valid value. Nothing builds this crate
+                    // with `gpu`, so the initializer was never updated.
+                    depth_slice: None,
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: load_op,

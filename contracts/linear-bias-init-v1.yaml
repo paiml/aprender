@@ -41,16 +41,19 @@ equations:
     lean_theorem: Theorems.Linear_Bias_Init
 
 proof_obligations:
-- type: invariant
+- id: LBI-INV-001
+  type: invariant
   property: bias is within the PyTorch bound
   formal: |
     for all i: bias[i] in [-1/sqrt(in_features), +1/sqrt(in_features)] when in_features > 0.
-- type: invariant
+- id: LBI-INV-002
+  type: invariant
   property: bias is not all-zero
   formal: |
     exists i: bias[i] != 0  for a seeded Linear with in_features > 0
     (falsifies the old zeros() initialization).
-- type: invariant
+- id: LBI-INV-003
+  type: invariant
   property: bias initialization is reproducible
   formal: |
     with_seed(in, out, Some(s)).bias() == with_seed(in, out, Some(s)).bias().

@@ -79,11 +79,14 @@ falsification_tests:
 
   if_fails: rule 'parity vs native ≥0.999 cosine' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: equivalence
+- id: CK1E8EC-EQ-001
+  type: equivalence
   property: "apr export --format coreml produces CoreML-spec-compliant .mlpackage with ≥0.999 cosine vs native"
-- type: invariant
+- id: CK1E8EC-INV-002
+  type: invariant
   property: "MLModel.load succeeds on CPU_ONLY compute unit"
-- type: invariant
+- id: CK1E8EC-INV-003
+  type: invariant
   property: "Manifest.json + model.mlmodel present under Data/com.apple.CoreML/"
 
 verification_summary:

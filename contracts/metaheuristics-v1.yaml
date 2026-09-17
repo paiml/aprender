@@ -57,23 +57,28 @@ equations:
     - params.len() > 0
     lean_theorem: Theorems.Best_Monotone
 proof_obligations:
-- type: invariant
+- id: MH-INV-001
+  type: invariant
   property: Best objective non-increasing across iterations
   formal: 'forall t: best_val[t+1] <= best_val[t]'
   applies_to: all
-- type: bound
+- id: MH-BND-002
+  type: bound
   property: SA best improves or stays same
   formal: final_best <= initial_best after SA run
   applies_to: all
-- type: bound
+- id: MH-BND-003
+  type: bound
   property: GA best improves or stays same
   formal: final_best <= initial_best after GA run
   applies_to: all
-- type: bound
+- id: MH-BND-004
+  type: bound
   property: PSO best improves or stays same
   formal: final_best <= initial_best after PSO run
   applies_to: all
-- type: bound
+- id: MH-BND-005
+  type: bound
   property: SA acceptance probability in (0, 1]
   formal: 'forall Delta_E, T > 0: 0 < P(accept) <= 1'
   applies_to: all

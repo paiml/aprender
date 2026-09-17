@@ -76,11 +76,14 @@ falsification_tests:
 
   if_fails: rule 'corrupt image raises IOError, not silent skip' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: equivalence
+- id: CH12BF7-EQ-001
+  type: equivalence
   property: "apr imagefolder class_to_idx matches torchvision.datasets.ImageFolder exactly"
-- type: invariant
+- id: CH12BF7-INV-002
+  type: invariant
   property: "labels are dense 0..K-1"
-- type: invariant
+- id: CH12BF7-INV-003
+  type: invariant
   property: "corrupt images raise errors (no silent skip)"
 
 verification_summary:

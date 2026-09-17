@@ -154,15 +154,20 @@ falsification_tests:
 
   if_fails: rule 'ids are unique within the response' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: invariant
+- id: CC3C5F5-INV-001
+  type: invariant
   property: "GET /v1/models returns 200 with {object: 'list', data: [...]} envelope"
-- type: invariant
+- id: CC3C5F5-INV-002
+  type: invariant
   property: "Every data[i] satisfies {id: non-empty string, object: 'model', created: int>0, owned_by: non-empty string}"
-- type: invariant
+- id: CC3C5F5-INV-003
+  type: invariant
   property: "Every listed id is accepted by /v1/chat/completions (round-trip stability)"
-- type: invariant
+- id: CC3C5F5-INV-004
+  type: invariant
   property: "ids are unique within the response and stable across server restarts"
-- type: invariant
+- id: CC3C5F5-INV-005
+  type: invariant
   property: "created timestamp is a positive integer <= server wall clock"
 
 verification_summary:

@@ -43,15 +43,18 @@ equations:
     - span has initialized trace context
     lean_theorem: Theorems.OTel_Format
 proof_obligations:
-- type: invariant
+- id: TI-INV-001
+  type: invariant
   property: Trace DAG acyclicity
   formal: '∀ trace: is_dag(parent_child_graph(trace.spans))'
   applies_to: trace_capture
-- type: invariant
+- id: TI-INV-002
+  type: invariant
   property: Comparison reflexivity
   formal: '∀ t: compare_traces(t, t).is_match() = true'
   applies_to: trace_comparison
-- type: invariant
+- id: TI-INV-003
+  type: invariant
   property: OTel trace ID format
   formal: '∀ span: otel_trace_id(span).len() = 32 ∧ is_hex(otel_trace_id(span))'
   applies_to: otel_format

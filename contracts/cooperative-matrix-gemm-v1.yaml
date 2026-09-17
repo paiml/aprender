@@ -57,7 +57,8 @@ falsification_tests:
     if_fails: "Missing fallback causes crash on unsupported hardware"
 
 proof_obligations:
-  - type: postcondition
+  - id: CMG-POST-001
+    type: postcondition
     property: Parity with tiled reference
     formal: "|coop - tiled| < 1e-3"
 

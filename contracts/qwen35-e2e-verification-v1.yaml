@@ -93,11 +93,33 @@ proof_obligations:
   property: Parameter count matches architecture
   formal: P(Qwen3.5-9B) ∈ [9.0B, 9.2B]
   applies_to: all
+  note: >-
+    #3091: the 9B instantiation is NOT proved, and is not asserted anywhere. This
+    contract's own model_parameter_count formula, evaluated on the in-tree
+    constants (contracts/model-families/qwen3_5.yaml size_variants.9b: V=248320,
+    d=4096, L=32, n_h=16, d_k=256, intermediate_dim=12288, untied lm_head), sums to
+    8,208,535,552 = 8.209B -- outside [9.0B, 9.2B]. That descriptor's
+    tensor_template states no Gated DeltaNet tensors, so the ~0.8B difference has no
+    in-tree shape to come from, and whether the range or the descriptor is wrong is
+    open. qe2e_inv_001_parameter_sum_matches_tensor_inventory discharges the
+    model_parameter_count EQUATION (the config-derived sum equals the measured
+    tensor inventory) on the real Qwen3.5 layer structures; the range instantiation
+    stays unproved rather than being widened to fit.
 - id: QE2E-BND-002
   type: bound
   property: FLOPs bounded by 2P
-  formal: F <= 2 * P + O(seq_len * d * L)
+  formal: F(s) <= 2*P + 4*L_attn*d_kv*s
   applies_to: all
+  note: >-
+    ont-delta (#3091): tightened from 'F <= 2 * P + O(seq_len * d * L)'. An O()
+    with no constant states no bound at all -- every F satisfies it, so no input
+    could falsify the obligation and FALSIFY-QE2E-002 had nothing to assert. The
+    constant is now named: s = cached positions, L_attn = full-attention layers
+    (a Gated DeltaNet layer carries a fixed-size recurrent state, so its cost does
+    not grow with s), d_kv = num_kv_heads * head_dim, and QK^T and A*V each cost
+    2*d_kv per cached position per such layer. The slope is asserted as an
+    EQUALITY by qe2e_bnd_002_flops_bounded_by_2p_plus_attention_term, so the
+    constant cannot be lowered either.
 - id: QE2E-ORD-003
   type: ordering
   property: Quantization memory ordering
@@ -140,17 +162,17 @@ falsification_tests:
 - id: FALSIFY-QE2E-002
   rule: FLOPs estimate
   prediction: 2P FLOPs per forward token
-  test: Deterministic with Qwen3.5-9B constants
+  test: qe2e_bnd_002_flops_bounded_by_2p_plus_attention_term
   if_fails: Missing layer in FLOP count
 - id: FALSIFY-QE2E-003
   rule: Memory ordering
   prediction: Q4K < Q6K < F16 < F32 memory
-  test: proptest with random tensor dimensions
+  test: qe2e_ord_003_quantization_memory_ordering
   if_fails: Quantization byte formula wrong
 - id: FALSIFY-QE2E-004
   rule: Throughput roofline
   prediction: tok/s bounded by bandwidth and compute
-  test: proptest with random hardware specs
+  test: qe2e_mon_004_throughput_is_monotone_in_bandwidth
   if_fails: Roofline formula error
 - id: FALSIFY-QE2E-005
   rule: Coverage completeness
@@ -160,12 +182,12 @@ falsification_tests:
 - id: FALSIFY-QE2E-006
   rule: Compositional proof structure
   prediction: 'Each block preserves shape: shape(block_l(x)) = shape(x)'
-  test: 'proptest: verify shape(block(x)) = shape(x) for random blocks'
+  test: qe2e_inv_006_every_block_preserves_d_model
   if_fails: Block l breaks shape invariant
 - id: FALSIFY-QE2E-007
   rule: End-to-end shape conservation
   prediction: tokens → [seq_len, d] → ... → [seq_len, V]
-  test: 'proptest: trace shapes through mock pipeline'
+  test: qe2e_con_007_tokens_in_logits_out_shape
   if_fails: Shape break in layer composition
 kani_harnesses:
 - id: KANI-QE2E-001

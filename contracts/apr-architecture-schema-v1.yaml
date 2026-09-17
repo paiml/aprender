@@ -184,7 +184,8 @@ kernel_structure:
     description: Verify total tensor count matches expected, no orphan tensors
 
 proof_obligations:
-- type: invariant
+- id: AAS-INV-001
+  type: invariant
   property: Head dimension divides hidden size evenly
   formal: hidden_size % num_heads == 0
   tolerance: 1e-6
@@ -192,49 +193,56 @@ proof_obligations:
   lean:
     theorem: Theorems.ArchitectureConfigInvariants
     status: sorry
-- type: invariant
+- id: AAS-INV-002
+  type: invariant
   property: GQA group size consistency
   formal: num_heads % num_kv_heads == 0
   applies_to: architecture_config_invariants
   lean:
     theorem: Theorems.ArchitectureConfigGqaInvariant
     status: sorry
-- type: postcondition
+- id: AAS-POST-003
+  type: postcondition
   property: Attention shapes match config
   formal: "Q=[h, n_h*d_h], K=V=[h, n_kv*d_h], O=[n_h*d_h, h]"
   applies_to: attention_tensor_shapes
   lean:
     theorem: Theorems.AttentionTensorShapes
     status: sorry
-- type: postcondition
+- id: AAS-POST-004
+  type: postcondition
   property: FFN transpose consistency
   formal: "gate.shape == up.shape, down.shape == transpose(gate.shape)"
   applies_to: ffn_tensor_shapes
   lean:
     theorem: Theorems.FfnTensorShapes
     status: sorry
-- type: invariant
+- id: AAS-INV-005
+  type: invariant
   property: Norm tensors per layer
   formal: norm_count_per_layer == 2 for all layers
   applies_to: normalization_tensor_shapes
   lean:
     theorem: Theorems.NormalizationTensorShapes
     status: sorry
-- type: postcondition
+- id: AAS-POST-006
+  type: postcondition
   property: Embedding shape matches vocab
   formal: "embed.shape == [vocab_size, hidden_size]"
   applies_to: embedding_tensor_shapes
   lean:
     theorem: Theorems.EmbeddingTensorShapes
     status: sorry
-- type: invariant
+- id: AAS-INV-007
+  type: invariant
   property: RoPE type is valid
   formal: rope_type in {0, 2}
   applies_to: rope_position_encoding
   lean:
     theorem: Theorems.RopePositionEncoding
     status: sorry
-- type: bound
+- id: AAS-BND-008
+  type: bound
   property: Total tensor count within tolerance
   formal: "abs(actual_tensors - expected_tensors(config)) <= 5"
   applies_to: total_tensor_count

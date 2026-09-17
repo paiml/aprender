@@ -126,15 +126,20 @@ falsification_tests:
   if_fails: "Server crashed (SIGKILL) instead of returning error"
 
 proof_obligations:
-- type: invariant
+- id: CE0F57F-INV-001
+  type: invariant
   property: "apr_peak_rss_bytes and apr_peak_vram_bytes always exposed via /metrics"
-- type: invariant
+- id: CE0F57F-INV-002
+  type: invariant
   property: "peak_vram <= gpu_total * 0.95 (no OOM)"
-- type: invariant
+- id: CE0F57F-INV-003
+  type: invariant
   property: "Both metrics monotonic non-decreasing over process lifetime"
-- type: invariant
+- id: CE0F57F-INV-004
+  type: invariant
   property: "peak_rss >= model_file_size_bytes"
-- type: invariant
+- id: CE0F57F-INV-005
+  type: invariant
   property: "Graceful failure on VRAM pressure (no SIGKILL)"
 
 verification_summary:

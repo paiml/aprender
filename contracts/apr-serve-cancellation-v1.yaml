@@ -241,7 +241,8 @@ falsification_tests:
     offending literal.'
 
 proof_obligations:
-- type: invariant
+- id: ASC-INV-001
+  type: invariant
   property: An uncancelled decode loop produces exactly its budget
   formal: for all cfg with cfg.cancel = never, tokens_generated(cfg) = min(cfg.max_tokens,
     context_length - len(prompt))
@@ -251,7 +252,8 @@ proof_obligations:
     The converse half. Without it a falsifier could pass because generation is
     broken and emits nothing, which is indistinguishable from "cancellation
     worked" if only the cancelled case is asserted.
-- type: invariant
+- id: ASC-INV-002
+  type: invariant
   property: Cancellation is observed within one decode step of being requested
   formal: for all cfg, tokens_generated(cfg) <= polls_until_cancel(cfg.cancel) and
     cancel.polls() <= tokens_generated + 1
@@ -263,7 +265,8 @@ proof_obligations:
     Bounds the wasted work at one token. The poll must be at the TOP of the loop
     body: at the bottom it costs one extra forward pass per cancelled request,
     which FALSIFY-SERVE-CANCEL-002 detects.
-- type: invariant
+- id: ASC-INV-003
+  type: invariant
   property: A dropped response future stops the decode loop
   formal: drop(response_future) => eventually the decode loop exits with
     tokens_generated < cfg.max_tokens
@@ -273,7 +276,8 @@ proof_obligations:
     Requires all three of: the token in the request extensions, the CancelOnDrop
     guard in the layer's future, and the handler running in its own task.
     Removing any one restores the defect; each removal is separately mutation-verified.
-- type: invariant
+- id: ASC-INV-004
+  type: invariant
   property: An abandoned STREAM stops too, by body-drop rather than by the guard
   formal: drop(response_body) => eventually the streaming decode loop exits, and it
     does so after exactly one failed on_token send
@@ -291,7 +295,8 @@ proof_obligations:
     each carried their own copy of the send-and-check callback; they now share
     one, and it records the abandonment so the property is observable rather
     than merely stated.
-- type: invariant
+- id: ASC-INV-005
+  type: invariant
   property: Cancellation does not change a completed response
   formal: for all requests r that complete, response(router_with_layer, r) ==
     response(handler_with_never_token, r)
@@ -303,7 +308,8 @@ proof_obligations:
     "does not alter" includes the response BODY of a stream that is still being
     produced when the handler returns.
 
-- type: invariant
+- id: ASC-INV-006
+  type: invariant
   property: A decode loop that runs on a SEPARATE thread is cancelled by the token, not
     by the drop
   formal: for every work item submitted to a scheduler thread, item.cancel is the

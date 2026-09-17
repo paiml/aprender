@@ -31,21 +31,25 @@ equations:
       - "output.iter().all(|v| v > 0.0 && v < 1.0)"
       - "output.iter().sum::<f32>() ≈ 1.0"
 proof_obligations:
-- type: precondition
+- id: SM54B5-PRE-001
+  type: precondition
   property: Input vector is finite and non-empty
   formal: '∀i: ¬isNaN(x_i) ∧ ¬isInf(x_i) ∧ len(x) > 0'
   applies_to: all
-- type: postcondition
+- id: SM54B5-POST-002
+  type: postcondition
   property: Output is a valid probability distribution
   formal: 'len(σ(x)) = len(x) ∧ ∀i: 0 < σ(x)_i < 1 ∧ |Σ σ(x)_i - 1| < ε'
   tolerance: 1.0e-06
   requires: SM-PRE-001
   applies_to: all
-- type: frame
+- id: SM54B5-FRM-003
+  type: frame
   property: Only output buffer is modified; input vector unchanged
   formal: modifies(output) ∧ preserves(input)
   applies_to: all
-- type: invariant
+- id: SM54B5-INV-004
+  type: invariant
   property: Output sums to 1
   formal: '|Σ σ(x)_i - 1.0| < ε'
   tolerance: 1.0e-06
@@ -61,7 +65,8 @@ proof_obligations:
     - Mathlib.Analysis.SpecialFunctions.ExpDeriv
     - Mathlib.Algebra.BigOperators.Group.Finset
     notes: Proof over reals; f32 gap addressed by error-bound lemma
-- type: invariant
+- id: SM54B5-INV-005
+  type: invariant
   property: All outputs strictly positive
   formal: σ(x)_i > 0 for all i
   applies_to: all
@@ -74,7 +79,8 @@ proof_obligations:
     mathlib_imports:
     - Mathlib.Analysis.SpecialFunctions.ExpDeriv
     notes: Follows from exp_pos and positivity of denominator
-- type: bound
+- id: SM54B5-BND-006
+  type: bound
   property: Each output bounded in (0,1)
   formal: 0 < σ(x)_i < 1 for all i
   applies_to: all
@@ -88,7 +94,8 @@ proof_obligations:
     mathlib_imports:
     - Mathlib.Analysis.SpecialFunctions.ExpDeriv
     notes: Upper bound from partition-of-unity; lower bound from positivity
-- type: monotonicity
+- id: SM54B5-MON-007
+  type: monotonicity
   property: Order preservation
   formal: x_i > x_j ⟹ σ(x)_i > σ(x)_j
   applies_to: all
@@ -101,11 +108,13 @@ proof_obligations:
     mathlib_imports:
     - Mathlib.Analysis.SpecialFunctions.ExpDeriv
     notes: Follows from strict monotonicity of exp
-- type: equivalence
+- id: SM54B5-EQ-008
+  type: equivalence
   property: SIMD matches scalar within ULP
   tolerance: 8.0
   applies_to: simd
-- type: invariant
+- id: SM54B5-INV-009
+  type: invariant
   property: Translation invariance
   formal: σ(x + c·1) = σ(x) for any scalar c
   applies_to: all

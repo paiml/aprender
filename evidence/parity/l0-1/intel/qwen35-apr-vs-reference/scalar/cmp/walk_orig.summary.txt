@@ -1,0 +1,1 @@
+# orig: matched=750 missing_in_apr=0 max_rel_l2=9.878425e-02 at pos28 linear_attn_out-8; first_not_bit_equal=pos4 idx2 conv_output_silu-0 bit_equal=5385/6144 rel_l2=3.760e-08

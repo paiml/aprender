@@ -32,15 +32,18 @@ equations:
     - source is a valid node in G
     lean_theorem: Theorems.BFS_Correctness
 proof_obligations:
-- type: invariant
+- id: GQA229-INV-001
+  type: invariant
   property: PageRank convergence
   formal: '∃ n: ||PR_{n+1} - PR_n||_1 < epsilon'
   applies_to: pagerank_convergence
-- type: invariant
+- id: GQA229-INV-002
+  type: invariant
   property: PageRank normalization
   formal: '|Σ PR(v) - 1.0| < epsilon'
   applies_to: pagerank_convergence
-- type: invariant
+- id: GQA229-INV-003
+  type: invariant
   property: BFS shortest path
   formal: '∀ v ∈ BFS(G, s): dist(s, v) = shortest_path(G, s, v)'
   applies_to: bfs_correctness

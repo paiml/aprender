@@ -23,29 +23,35 @@ equations:
     - input.len() > 0
     lean_theorem: Theorems.Qk_Rmsnorm
 proof_obligations:
-- type: invariant
+- id: QKN-INV-001
+  type: invariant
   property: Unit RMS after normalization
   formal: RMS(RMSNorm(x, 1)) ≈ 1.0
   tolerance: 0.1
   applies_to: all
-- type: bound
+- id: QKN-BND-002
+  type: bound
   property: Output amplitude bounded
   formal: '|output_i| <= |weight_i| * sqrt(d_k / ε)'
   applies_to: all
-- type: invariant
+- id: QKN-INV-003
+  type: invariant
   property: Idempotent with unit weight
   formal: RMSNorm(RMSNorm(x, 1), 1) ≈ RMSNorm(x, 1)
   tolerance: 0.001
   applies_to: all
-- type: invariant
+- id: QKN-INV-004
+  type: invariant
   property: Zero-input stability
   formal: RMSNorm(0, w) = 0
   applies_to: all
-- type: equivalence
+- id: QKN-EQ-005
+  type: equivalence
   property: SIMD matches scalar within ULP
   tolerance: 8.0
   applies_to: simd
-- type: invariant
+- id: QKN-INV-006
+  type: invariant
   property: Per-head independence
   formal: RMSNorm([h1;h2;...]) = [RMSNorm(h1); RMSNorm(h2); ...]
   tolerance: 0.0

@@ -21,19 +21,22 @@ status: enforced
 date: 2026-06-13
 
 proof_obligations:
-  - type: invariant
+  - id: NTGP-INV-001
+    type: invariant
     property: >
       GRAD-FLOW: after loss.backward() on a computation graph that contains
       Linear::forward, get_grad(weight.id()) is Some for every grad-tracking
       Linear weight — gradient reaches the weight leaf, not only the bias. This is
       the precondition for any optimizer to update weights.
-  - type: monotonicity
+  - id: NTGP-MON-002
+    type: monotonicity
     property: >
       TRAIN-CONVERGE: under the canonical idiom (clear_graph -> forward ->
       backward -> SGD::step_with_params), a deterministic seeded 2-layer MLP's MSE
       decreases by >80%. A weights-frozen regression (bias-only learning) yields
       only ~50% and violates this obligation.
-  - type: equivalence
+  - id: NTGP-EQ-003
+    type: equivalence
     property: >
       FORWARD-EQUIV: Linear::forward yields identical output whether it reuses the
       cached weight_t (inference / no grad) or re-derives the transpose from the

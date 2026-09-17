@@ -42,15 +42,18 @@ equations:
     - GPU driver is loaded
     lean_theorem: Theorems.Encoder_Resolution
 proof_obligations:
-- type: invariant
+- id: ER5831-INV-001
+  type: invariant
   property: Encode output is non-empty on success
   formal: '∀ frame, codec: encode(frame, codec).is_ok() → encode(frame, codec).unwrap().len() > 0'
   applies_to: encode
-- type: invariant
+- id: ER5831-INV-002
+  type: invariant
   property: Decode preserves frame dimensions
   formal: '∀ frame, codec: decode(encode(frame, codec), codec).dimensions() = frame.dimensions()'
   applies_to: decode
-- type: invariant
+- id: ER5831-INV-003
+  type: invariant
   property: Encoder availability implies encode success
   formal: '∀ codec: encoder_available(codec) → encode(valid_frame, codec).is_ok()'
   applies_to: encoder_resolution

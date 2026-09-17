@@ -87,11 +87,14 @@ falsification_tests:
 
   if_fails: rule 'determinism under fixed seed' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: equivalence
+- id: CH16A1B-EQ-001
+  type: equivalence
   property: "apr dataset bucket matches HF LengthGroupedSampler ordering semantics"
-- type: invariant
+- id: CH16A1B-INV-002
+  type: invariant
   property: "sample-coverage (permutation of 0..N-1)"
-- type: invariant
+- id: CH16A1B-INV-003
+  type: invariant
   property: "padding overhead strictly lower than random baseline"
 
 verification_summary:

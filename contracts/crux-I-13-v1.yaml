@@ -82,11 +82,14 @@ falsification_tests:
 
   if_fails: rule 'mimeType matches content' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: equivalence
+- id: CI1E4B4-EQ-001
+  type: equivalence
   property: "apr mcp serve resources verbs match MCP spec JSON-RPC 2.0 shape (modelcontextprotocol.io)"
-- type: invariant
+- id: CI1E4B4-INV-002
+  type: invariant
   property: "URI stability (same input ⇒ same URIs)"
-- type: invariant
+- id: CI1E4B4-INV-003
+  type: invariant
   property: "declared mimeType matches returned bytes"
 
 verification_summary:

@@ -63,23 +63,28 @@ equations:
     lean_theorem: Theorems.Parity_Gate
 
 proof_obligations:
-  - type: bound
+  - id: CSG72D0-BND-001
+    type: bound
     property: Throughput tolerance is 10%
     formal: THROUGHPUT_TOLERANCE == 0.10
     applies_to: all
-  - type: bound
+  - id: CSG72D0-BND-002
+    type: bound
     property: VRAM tolerance is 5%
     formal: VRAM_TOLERANCE == 0.05
     applies_to: all
-  - type: invariant
+  - id: CSG72D0-INV-003
+    type: invariant
     property: 15% slowdown triggers FAIL
     formal: score(baseline * 0.85, baseline) == FAIL
     applies_to: throughput_gate
-  - type: invariant
+  - id: CSG72D0-INV-004
+    type: invariant
     property: 5% slowdown triggers PASS
     formal: score(baseline * 0.95, baseline) == PASS
     applies_to: throughput_gate
-  - type: invariant
+  - id: CSG72D0-INV-005
+    type: invariant
     property: cuBLAS divergence 0.02 triggers FAIL
     formal: score_cublas(divergence=0.02) == FAIL
     applies_to: parity_gate

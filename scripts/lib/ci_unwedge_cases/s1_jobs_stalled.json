@@ -1,0 +1,36 @@
+{
+ "total_count": 3,
+ "jobs": [
+  {
+   "name": "ci / test",
+   "status": "completed",
+   "conclusion": "success",
+   "started_at": "2026-09-16T09:47:26Z",
+   "labels": [
+    "self-hosted",
+    "clean-room"
+   ]
+  },
+  {
+   "name": "workspace-test",
+   "status": "queued",
+   "conclusion": null,
+   "started_at": null,
+   "labels": [
+    "self-hosted",
+    "Linux",
+    "clean-room"
+   ]
+  },
+  {
+   "name": "ci / gate",
+   "status": "queued",
+   "conclusion": null,
+   "started_at": null,
+   "labels": [
+    "self-hosted",
+    "clean-room"
+   ]
+  }
+ ]
+}

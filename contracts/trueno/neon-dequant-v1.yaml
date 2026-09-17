@@ -85,21 +85,24 @@ kernel_structure:
     description: Check non-zero output, finiteness, scalar parity
 
 proof_obligations:
-- type: invariant
+- id: ND-INV-001
+  type: invariant
   property: Non-zero output for non-zero input
   formal: 'block.has_nonzero_weights() => output.any(|v| v != 0.0)'
   applies_to: neon_q4k_dequant
   lean:
     theorem: Theorems.NeonQ4kDequant
     status: sorry
-- type: invariant
+- id: ND-INV-002
+  type: invariant
   property: Q6K 6-bit extraction correct
   formal: 'val = ((ql & 0xF) | ((qh & 3) << 4)) - 32, val in [-32, 31]'
   applies_to: neon_q6k_dequant
   lean:
     theorem: Theorems.NeonQ6kDequant
     status: sorry
-- type: equivalence
+- id: ND-EQ-003
+  type: equivalence
   property: NEON matches scalar dequant
   formal: '|neon - scalar| < epsilon per element'
   tolerance: 1.0e-5

@@ -34,15 +34,18 @@ equations:
     domain: "lr > 0, accumulation_steps >= 1"
 
 proof_obligations:
-- type: invariant
+- id: WPT-INV-001
+  type: invariant
   property: "grad_B shape matches B shape [out_dim, rank]"
   formal: "grad_B.shape == B.shape"
   applies_to: lora_grad_b
-- type: invariant
+- id: WPT-INV-002
+  type: invariant
   property: "grad_A shape matches A shape [rank, in_dim]"
   formal: "grad_A.shape == A.shape"
   applies_to: lora_grad_a
-- type: invariant
+- id: WPT-INV-003
+  type: invariant
   property: "grad_q respects causal mask (zero gradient from future positions)"
   formal: "forall qi, ki > qi: grad_contribution(qi, ki) == 0"
   applies_to: attn_grad_q

@@ -34,6 +34,7 @@ use std::path::{Path, PathBuf};
 
 use serde_yaml::{Mapping, Value};
 
+use super::external_corpora::{is_external_corpora_schema, validate_external_corpora};
 use super::parser::parse_contract_str;
 use super::validator::validate_contract;
 use crate::binding::validate_binding_registry;
@@ -49,6 +50,10 @@ pub enum ArtifactKind {
     /// A model publish manifest, conforming to
     /// `contracts/publish-manifest-v1.yaml` §schema.
     PublishManifest,
+    /// The ONT-001 external-corpora declaration `pv census` reads
+    /// (`contracts/external-corpora.yaml`). See
+    /// [`crate::schema::external_corpora`].
+    ExternalCorpora,
 }
 
 impl std::fmt::Display for ArtifactKind {
@@ -57,6 +62,7 @@ impl std::fmt::Display for ArtifactKind {
             Self::Contract => "contract",
             Self::Binding => "binding",
             Self::PublishManifest => "publish-manifest",
+            Self::ExternalCorpora => "external-corpora",
         };
         write!(f, "{s}")
     }
@@ -78,6 +84,13 @@ pub fn classify_artifact(yaml: &str) -> ArtifactKind {
     };
     if map.contains_key("metadata") {
         return ArtifactKind::Contract;
+    }
+    if map
+        .get("schema")
+        .and_then(Value::as_str)
+        .is_some_and(is_external_corpora_schema)
+    {
+        return ArtifactKind::ExternalCorpora;
     }
     if map.contains_key("bindings") && map.contains_key("target_crate") {
         return ArtifactKind::Binding;
@@ -115,6 +128,10 @@ pub fn validate_artifact(path: &Path) -> Result<(ArtifactKind, Vec<Violation>), 
                 validate_publish_manifest(&manifest, path),
             ))
         }
+        ArtifactKind::ExternalCorpora => Ok((
+            ArtifactKind::ExternalCorpora,
+            validate_external_corpora(&content),
+        )),
     }
 }
 

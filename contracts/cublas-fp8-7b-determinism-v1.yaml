@@ -48,11 +48,13 @@ equations:
     - "Stage F shipping flips agrees_with_cpu to true AND changes gpu_logits_fnv1a to match cpu_logits_fnv1a"
 
 proof_obligations:
-  - type: invariant
+  - id: CF7D-INV-001
+    type: invariant
     property: "Five consecutive runs produce bit-identical JSON"
     formal: "for all i,j in 1..=5, run_i.stdout == run_j.stdout"
     applies_to: reproducer_bit_identity
-  - type: invariant
+  - id: CF7D-INV-002
+    type: invariant
     property: "Bug signature matches v1.0.0 lock"
     formal: "gpu_argmax_idx == 1057 AND gpu_logits_fnv1a == 6748eb76f78f8683 (pre-fix) on noah-Lambda-Vector"
     applies_to: signature_locks_the_bug

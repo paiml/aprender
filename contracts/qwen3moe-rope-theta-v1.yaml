@@ -50,14 +50,16 @@ equations:
     note: "Original RoPE paper base; the fix MUST NOT alter non-Qwen arms."
 
 proof_obligations:
-- type: invariant
+- id: QRT-INV-001
+  type: invariant
   property: "PO-QWEN3MOE-ROPE-001 — the 1e6 match arm contains BOTH spellings 'qwen3moe' and 'qwen3_moe'"
   formal: |
     The match arm reads: "qwen2" | "qwen3" | "qwen3moe" | "qwen3_moe" => 1_000_000.0.
     Therefore default_rope_theta_for_architecture("qwen3moe") = 1_000_000.0 AND
     default_rope_theta_for_architecture("qwen3_moe") = 1_000_000.0.
     Discharges C-QWEN3MOE-ROPE-001 and C-QWEN3MOE-ROPE-002.
-- type: invariant
+- id: QRT-INV-002
+  type: invariant
   property: "PO-QWEN3MOE-ROPE-002 — the fix is additive: every previously-10_000.0 architecture still returns 10_000.0"
   formal: |
     For every architecture a NOT in {"qwen2","qwen3","qwen3moe","qwen3_moe"}:

@@ -34,8 +34,9 @@
 //! - **Out-of-scope (deferred to M32c.2)**: dequantization,
 //!   forward dispatch, KV cache, attention.
 
-use crate::error::Result;
+use crate::error::{RealizarError, Result};
 use crate::gguf::quantized::QuantizedTensorRef;
+use crate::gguf::types::{GGUF_TYPE_F32, GGUF_TYPE_Q4_K, GGUF_TYPE_Q6_K};
 use crate::gguf::GGUFModel;
 use crate::gguf::QuantizedGGUFTransformer;
 
@@ -67,13 +68,149 @@ pub struct Qwen3MoeQuantizedLayer {
     pub down_exps: QuantizedTensorRef,
 }
 
+/// The GGUF quantization types the MoE expert path can actually execute.
+///
+/// **Single source of truth (#3341).** Both the load-time contract
+/// ([`validate_moe_layer_tensors`], run by [`load_qwen3_moe_layer`]) and the
+/// forward dispatcher ([`matvec_for_qtype`]) read this const. A file whose
+/// expert tensors are outside this set is refused at LOAD time with the
+/// tensor's name, instead of loading successfully and dying at the first
+/// token inside `matvec_for_qtype` — the shape of #3341
+/// (`Qwen3-Coder-30B-A3B-Instruct-Q4_0.gguf`, expert qtype 2).
+///
+/// Extending the kernel means adding BOTH a `matvec_for_qtype` arm and an
+/// entry here; `moe_load_contract_supported_qtypes_match_matvec_dispatch`
+/// fails if the two drift in either direction.
+pub(crate) const SUPPORTED_EXPERT_QTYPES: &[u32] = &[GGUF_TYPE_Q4_K, GGUF_TYPE_Q6_K];
+
+/// `(ggml type id, name)` for the qtypes this crate's GGUF reader knows.
+///
+/// Used only to make a refusal readable ("Q4_0 (2)" rather than "2").
+/// A table rather than a `match` so the lookup stays complexity-1.
+const QTYPE_LABELS: &[(u32, &str)] = &[
+    (0, "F32"),
+    (1, "F16"),
+    (2, "Q4_0"),
+    (3, "Q4_1"),
+    (6, "Q5_0"),
+    (7, "Q5_1"),
+    (8, "Q8_0"),
+    (10, "Q2_K"),
+    (11, "Q3_K"),
+    (12, "Q4_K"),
+    (13, "Q5_K"),
+    (14, "Q6_K"),
+    (30, "BF16"),
+];
+
+/// Render a qtype id as `NAME (id)`, or bare `qtype N` when unknown.
+fn qtype_label(qtype: u32) -> String {
+    QTYPE_LABELS
+        .iter()
+        .find(|(id, _)| *id == qtype)
+        .map_or_else(
+            || format!("qtype {qtype}"),
+            |(_, n)| format!("{n}({qtype})"),
+        )
+}
+
+/// Render [`SUPPORTED_EXPERT_QTYPES`] for an error message.
+fn supported_expert_qtypes_label() -> String {
+    SUPPORTED_EXPERT_QTYPES
+        .iter()
+        .map(|&q| qtype_label(q))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// Build the load-time refusal for an expert tensor the forward cannot read.
+fn refuse_expert_qtype(tensor_name: &str, qtype: u32) -> RealizarError {
+    RealizarError::FormatError {
+        reason: format!(
+            "load refused: {tensor_name} has qtype {}; the MoE expert path supports [{}] \
+             — see #3341",
+            qtype_label(qtype),
+            supported_expert_qtypes_label()
+        ),
+    }
+}
+
+/// Build the load-time refusal for a tensor the forward will read but which
+/// carries no bytes.
+fn refuse_empty_tensor(tensor_name: &str) -> RealizarError {
+    RealizarError::FormatError {
+        reason: format!(
+            "load refused: {tensor_name} has 0 bytes but the MoE forward reads it \
+             — see #3341"
+        ),
+    }
+}
+
+/// Load-time contract for ONE Qwen3-MoE layer (#3341).
+///
+/// Every tensor the MoE forward will read is checked here, at load, for the
+/// two properties the forward silently assumes:
+///
+/// 1. **non-empty** — `byte_size > 0`;
+/// 2. **executable qtype** — expert tensors in [`SUPPORTED_EXPERT_QTYPES`],
+///    router F32 (`moe_ffn_forward_layer` reads it as raw `f32`).
+///
+/// Before this check, `apr run <MoE>.gguf` on a Q4_0-expert file loaded
+/// cleanly and then died at the FIRST TOKEN inside [`matvec_for_qtype`] with
+/// no tensor name — the third recurrence of the #1789 class. The refusal is
+/// deliberately at load: the file is unusable, and the user is told which
+/// tensor and which qtype.
+///
+/// This is a **contract, not a kernel patch**: adding Q4_0 support is a
+/// separate kernel feature. See #3341.
+///
+/// # Errors
+/// `RealizarError::FormatError` naming the offending tensor.
+pub(crate) fn validate_moe_layer_tensors(
+    layer_idx: usize,
+    layer: &Qwen3MoeQuantizedLayer,
+) -> Result<()> {
+    let expert_tensors = [
+        ("ffn_gate_exps", &layer.gate_exps),
+        ("ffn_up_exps", &layer.up_exps),
+        ("ffn_down_exps", &layer.down_exps),
+    ];
+    for (short_name, tensor) in expert_tensors {
+        let name = format!("blk.{layer_idx}.{short_name}.weight");
+        if tensor.byte_size == 0 {
+            return Err(refuse_empty_tensor(&name));
+        }
+        if !SUPPORTED_EXPERT_QTYPES.contains(&tensor.qtype) {
+            return Err(refuse_expert_qtype(&name, tensor.qtype));
+        }
+    }
+
+    // Router: `moe_ffn_forward_layer` reinterprets these bytes as `&[f32]`.
+    let router_name = format!("blk.{layer_idx}.ffn_gate_inp.weight");
+    if layer.router.byte_size == 0 {
+        return Err(refuse_empty_tensor(&router_name));
+    }
+    if layer.router.qtype != GGUF_TYPE_F32 {
+        return Err(RealizarError::FormatError {
+            reason: format!(
+                "load refused: {router_name} has qtype {}; the MoE router is read as \
+                 F32(0) — see #3341",
+                qtype_label(layer.router.qtype)
+            ),
+        });
+    }
+    Ok(())
+}
+
 /// Load the four MoE tensor descriptors for `layer_idx` from a
 /// `qwen3_moe`-arch GGUF.
 ///
 /// # Errors
 /// Returns the standard `RealizarError::InvalidShape { reason:
 /// "Tensor '...' not found" }` if any of the four contract-named
-/// tensors is missing. For arch-mismatched inputs (e.g. a dense
+/// tensors is missing, or `RealizarError::FormatError` naming the
+/// tensor when the #3341 load-time contract
+/// ([`validate_moe_layer_tensors`]) rejects its qtype or byte size. For arch-mismatched inputs (e.g. a dense
 /// LLaMA GGUF passed to this function), the caller is expected
 /// to first canonicalize the architecture via
 /// `tensor_names::normalize_architecture` and only invoke this
@@ -91,7 +228,7 @@ pub fn load_qwen3_moe_layer(
     layer_idx: usize,
 ) -> Result<Qwen3MoeQuantizedLayer> {
     let prefix = format!("blk.{layer_idx}");
-    Ok(Qwen3MoeQuantizedLayer {
+    let layer = Qwen3MoeQuantizedLayer {
         router: QuantizedGGUFTransformer::get_tensor_ref(
             model,
             data,
@@ -112,7 +249,13 @@ pub fn load_qwen3_moe_layer(
             data,
             &format!("{prefix}.ffn_down_exps.weight"),
         )?,
-    })
+    };
+    // #3341 load-time contract: every tensor the MoE forward will read must be
+    // non-empty and carry a qtype the forward can execute. Checked HERE, in the
+    // one function every MoE load path goes through (`from_gguf_for_moe` and
+    // both `infer::qwen3_moe_generate` loaders), so no caller can skip it.
+    validate_moe_layer_tensors(layer_idx, &layer)?;
+    Ok(layer)
 }
 
 /// Slice the byte range for ONE expert's portion of a stacked
@@ -299,8 +442,12 @@ pub fn expert_swiglu_quantized(
 }
 
 /// Dispatch matvec to the right quantization kernel based on qtype.
-/// Supports Q4_K (12) and Q6_K (14) — the two K-quants used by Qwen3-Coder
-/// Q4_K_M expert tensors. Other quantizations error out.
+///
+/// The accepted set is [`SUPPORTED_EXPERT_QTYPES`] — the SAME const the
+/// load-time contract reads (#3341), so the loader cannot accept a file this
+/// dispatcher will refuse at the first token. The guard below is what binds
+/// the two: a kernel arm added without a const entry is dead, and a const
+/// entry added without a kernel arm returns the refusal rather than panicking.
 fn matvec_for_qtype(
     qtype: u32,
     weight_data: &[u8],
@@ -308,20 +455,34 @@ fn matvec_for_qtype(
     in_dim: usize,
     out_dim: usize,
 ) -> Result<Vec<f32>> {
-    use crate::error::RealizarError;
-    use crate::gguf::types::{GGUF_TYPE_Q4_K, GGUF_TYPE_Q6_K};
     use crate::quantize::{fused_q4k_parallel_matvec, fused_q6k_parallel_matvec};
+    if !SUPPORTED_EXPERT_QTYPES.contains(&qtype) {
+        return Err(unsupported_expert_matvec(qtype));
+    }
     match qtype {
         GGUF_TYPE_Q4_K => fused_q4k_parallel_matvec(weight_data, activations, in_dim, out_dim),
         GGUF_TYPE_Q6_K => fused_q6k_parallel_matvec(weight_data, activations, in_dim, out_dim),
-        other => Err(RealizarError::UnsupportedOperation {
-            operation: "moe_expert_matvec".to_string(),
-            reason: format!(
-                "MoE expert tensor qtype {other} not supported. Qwen3-Coder Q4_K_M uses \
-                 Q4_K (12) and Q6_K (14) — caller must extend matvec_for_qtype for other \
-                 quantizations."
-            ),
-        }),
+        other => Err(unsupported_expert_matvec(other)),
+    }
+}
+
+/// The forward-path refusal for an expert tensor qtype with no kernel.
+///
+/// Post-#3341 this is a BACKSTOP, not the user-facing surface: a file whose
+/// expert tensors are unsupported is refused by
+/// [`validate_moe_layer_tensors`] at load, naming the tensor. Reaching this
+/// error means a `Qwen3MoeQuantizedLayer` was built without going through
+/// [`load_qwen3_moe_layer`].
+fn unsupported_expert_matvec(qtype: u32) -> RealizarError {
+    RealizarError::UnsupportedOperation {
+        operation: "moe_expert_matvec".to_string(),
+        reason: format!(
+            "MoE expert tensor {} not supported; the MoE expert path supports [{}]. \
+             A GGUF carrying such experts is refused at LOAD time by the #3341 \
+             contract — reaching this arm means the load-time check was bypassed.",
+            qtype_label(qtype),
+            supported_expert_qtypes_label()
+        ),
     }
 }
 
@@ -806,3 +967,7 @@ mod tests {
         );
     }
 }
+
+// #3341 load-time contract tests (see the module doc in the included file).
+#[cfg(test)]
+include!("qwen3_moe_load_contract_tests.rs");

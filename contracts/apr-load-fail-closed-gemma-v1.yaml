@@ -71,12 +71,14 @@ status: enforced
 date: 2026-06-21
 
 proof_obligations:
-  - type: invariant
+  - id: ALFCG-INV-001
+    type: invariant
     property: >
       GEMMA1-SUPPORTED: is_gemma1_supported(arch) is true iff the lowercased architecture is
       exactly "gemma" (or "gemmaforcausallm"); it is false for gemma2/gemma3/gemma3n and for
       every non-gemma arch. validate_model_load returns Ok for a Gemma-v1 model.
-  - type: invariant
+  - id: ALFCG-INV-002
+    type: invariant
     property: >
       GEMMA2-SUPPORTED: is_gemma2_supported(arch) is true iff the lowercased architecture is
       exactly "gemma2" (or "gemma2forcausallm"); it is false for gemma/gemma3/gemma3n and for
@@ -84,14 +86,16 @@ proof_obligations:
       Gemma-v2 model so apr can run it, having implemented behaviors (d) attn-logit softcap,
       (e) final-logit softcap, (f) query_pre_attn_scalar scaling, and (g) post-attn/post-ffn
       RMSNorms in addition to the v1 behaviors.
-  - type: invariant
+  - id: ALFCG-INV-003
+    type: invariant
     property: >
       GEMMA1-FORWARD-PARITY: with Gemma-v1 behaviors active, GGUFConfig::embed_scale is
       Some(sqrt(hidden_size)) and rmsnorm_unit_offset is false (GGUF weights pre-shifted), and
       the runtime forward produces COHERENT output that matches the llama.cpp reference on the
       same GGUF (e.g. "The capital of France is" -> "Paris", "2+2=" -> "4", "The sky is" ->
       "the limit"). Non-Gemma archs are byte-identical (embed_scale None, standard norm, SiLU).
-  - type: invariant
+  - id: ALFCG-INV-004
+    type: invariant
     property: >
       GEMMA2-GPU-CAPABILITY-FAIL-CLOSED (PMAT-824): the GPU admission gate is model-aware.
       capability::required_ops_for_model(constraints, arch) augments required_ops(constraints)
@@ -103,13 +107,15 @@ proof_obligations:
       runtime cosine parity gate. For every non-softcap arch (llama, qwen2, qwen3, mistral, phi,
       deepseek, gemma v1) required_ops_for_model == required_ops, so they remain GPU-supported and
       the gate is a no-op (no false-positive CPU routing).
-  - type: invariant
+  - id: ALFCG-INV-005
+    type: invariant
     property: >
       GEMMA3-FAIL-LOUD: validate_model_load / validate_model_load_basic return
       Err(gate="architecture_supported") for every Gemma architecture beyond v2 (gemma3,
       gemma3n, Gemma3ForCausalLM), so a model that needs further-unimplemented behaviors is
       refused instead of running silently-wrong. Non-Gemma archs load unchanged.
-  - type: invariant
+  - id: ALFCG-INV-006
+    type: invariant
     property: >
       GEMMA2-FORWARD-PARITY: with Gemma-v2 behaviors active, the runtime forward produces
       COHERENT output that matches the llama.cpp reference on the same GGUF
@@ -117,19 +123,22 @@ proof_obligations:
       "What is 2+2?" -> "2 + 2 = 4"). The attn-logit softcap, final-logit softcap, and
       post-attention/post-ffn RMSNorms are each necessary: removing the post-norms alone
       collapses output to incoherent token repetition ("is is is is").
-  - type: invariant
+  - id: ALFCG-INV-007
+    type: invariant
     property: >
       SOFTCAP-MATH: ops::softcap(x, cap) == cap*tanh(x/cap) elementwise, bounds every output
       into (-cap, cap), is ~identity near 0, and is a no-op for a non-positive or non-finite
       cap. GGUFConfig::attn_logit_softcap/final_logit_softcap return Some(50.0)/Some(30.0) for
       gemma2 and None for every other architecture (so non-gemma2 logits/scores are untouched).
-  - type: invariant
+  - id: ALFCG-INV-008
+    type: invariant
     property: >
       NON-GEMMA-BYTE-IDENTICAL: for every non-Gemma2 architecture the post-norms are absent
       (loaded as None → skipped), attn_logit_softcap/final_logit_softcap are None (no softcap),
       and query_pre_attn_scalar is None so attn_scale falls back to 1/sqrt(head_dim) — the
       forward path is byte-identical to before PMAT-810 (e.g. qwen2/llama output unchanged).
-  - type: invariant
+  - id: ALFCG-INV-009
+    type: invariant
     property: >
       NON-GEMMA-APR-POSTNORM-NONE (PMAT-888): OwnedQuantizedModel::from_apr loads the
       Gemma2-only post_attn_norm_weight / post_ffw_norm_weight slots ONLY when

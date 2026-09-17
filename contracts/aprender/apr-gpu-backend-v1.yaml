@@ -128,28 +128,32 @@ kernel_structure:
     description: Verify output correctness, GPU/CPU parity, JSON formatting
 
 proof_obligations:
-- type: invariant
+- id: AGB-INV-001
+  type: invariant
   property: Backend flag respected
   formal: '--backend cpu => no GPU allocation'
   applies_to: backend_selection
   lean:
     theorem: Theorems.BackendSelection
     status: sorry
-- type: invariant
+- id: AGB-INV-002
+  type: invariant
   property: GPU detection matches actual device
   formal: 'health.compute_mode == actual_device'
   applies_to: gpu_detection_accuracy
   lean:
     theorem: Theorems.GpuDetectionAccuracy
     status: sorry
-- type: postcondition
+- id: AGB-POST-003
+  type: postcondition
   property: Temperature zero produces non-empty output
   formal: 'temperature == 0.0 => output.len() > 0'
   applies_to: generation_temperature_zero
   lean:
     theorem: Theorems.GenerationTemperatureZero
     status: sorry
-- type: bound
+- id: AGB-BND-004
+  type: bound
   property: GPU/CPU parity within tolerance
   formal: 'cosine_similarity(cpu, gpu) > 0.99'
   tolerance: 0.01
@@ -157,7 +161,8 @@ proof_obligations:
   lean:
     theorem: Theorems.GpuCpuParity
     status: sorry
-- type: invariant
+- id: AGB-INV-005
+  type: invariant
   property: JSON output is valid JSON
   formal: 'json_flag => serde_json::from_str(output).is_ok()'
   applies_to: json_output_consistency

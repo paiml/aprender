@@ -57,13 +57,15 @@ equations:
       `forward_gpu_resident` → argmax (sampled) path.
 
 proof_obligations:
-- type: invariant
+- id: DHPZS-INV-001
+  type: invariant
   property: zero per-token fs writes in greedy graphed decode
   formal: |
     count(std::fs::write) inside forward_gpu_resident_to_token_id
     and forward_graphed_replay_to_token_id is 0
   applies_to: all
-- type: invariant
+- id: DHPZS-INV-002
+  type: invariant
   property: is_moe computed once per model (not per token)
   formal: |
     the is_moe predicate is evaluated ≤ once per Model lifetime, not

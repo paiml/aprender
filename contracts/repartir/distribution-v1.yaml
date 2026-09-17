@@ -32,11 +32,13 @@ equations:
     - targets list is non-empty
     lean_theorem: Theorems.Distribution_Delivery
 proof_obligations:
-- type: invariant
+- id: D-INV-001
+  type: invariant
   property: Build determinism
   formal: '∀ c: hash(build(c)) = hash(build(c))'
   applies_to: build_integrity
-- type: invariant
+- id: D-INV-002
+  type: invariant
   property: Delivery completeness
   formal: '∀ t ∈ targets: deliver(a, t).is_ok() → verify(t, a).is_ok()'
   applies_to: distribution_delivery

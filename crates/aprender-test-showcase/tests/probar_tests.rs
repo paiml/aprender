@@ -1,5 +1,10 @@
 //! Probar Advanced Testing for Calculator
 //!
+//! MOVED OUT OF `src/` (PMAT-1098): these tests name `jugar_probar`, a PATH-ONLY
+//! dev-dependency that `cargo publish` deletes, and `#[cfg(test)]` code inside
+//! `src/` is published regardless -- so in published form the crate's own lib
+//! tests could not compile (clean-room GATE B2). Same mechanism as #3307.
+//!
 //! This module demonstrates all advanced Probar features applied to the
 //! calculator application, rebuilt from first principles.
 //!

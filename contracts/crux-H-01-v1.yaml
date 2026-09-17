@@ -136,15 +136,20 @@ falsification_tests:
   if_fails: "apr record count diverges from HF datasets reference"
 
 proof_obligations:
-- type: invariant
+- id: CH0-INV-001
+  type: invariant
   property: "Slice syntax parses all four forms: [:N], [N:], [N:M], [N%]"
-- type: invariant
+- id: CH0-INV-002
+  type: invariant
   property: "output_records == expected count from slice expression"
-- type: invariant
+- id: CH0-INV-003
+  type: invariant
   property: "Cache located at ~/.cache/apr/datasets/ with sha256 manifest"
-- type: invariant
+- id: CH0-INV-004
+  type: invariant
   property: "Warm cache ≥10× faster than cold load"
-- type: invariant
+- id: CH0-INV-005
+  type: invariant
   property: "Record count matches HF datasets library for identical slice"
 
 verification_summary:

@@ -148,15 +148,20 @@ falsification_tests:
   if_fails: "missing HF Trainer reference — resume parity not independently verified"
 
 proof_obligations:
-- type: invariant
+- id: CD02232-INV-001
+  type: invariant
   property: "Checkpoint persists { θ, m, v, t, lr_schedule_state } and restores them exactly"
-- type: invariant
+- id: CD02232-INV-002
+  type: invariant
   property: "Resumed train loss within ±1% of no-save reference at equal global step"
-- type: invariant
+- id: CD02232-INV-003
+  type: invariant
   property: "LR schedule resumes at step t, not 0"
-- type: invariant
+- id: CD02232-INV-004
+  type: invariant
   property: "apr finetune --resume-from <ckpt> exits 0 and continues to completion"
-- type: equivalence
+- id: CD02232-EQ-005
+  type: equivalence
   property: "apr finetune --resume-from <ckpt>  ≅  HF Trainer(resume_from_checkpoint=<ckpt>)"
 
 verification_summary:

@@ -219,28 +219,34 @@ qa_gate:
   pass_criteria: All 6 falsification tests pass
   falsification: Remove gradient division by accumulation_steps to break equivalence
 proof_obligations:
-- type: invariant
+- id: BT-INV-001
+  type: invariant
   property: Equivalent to single batch of B samples (within FP tolerance)
   formal: Equivalent to single batch of B samples (within FP tolerance)
   tolerance: 1e-6
   applies_to: all
-- type: invariant
+- id: BT-INV-002
+  type: invariant
   property: Division by K normalizes gradient magnitude
   formal: Division by K normalizes gradient magnitude
   applies_to: all
-- type: invariant
+- id: BT-INV-003
+  type: invariant
   property: 'Post-clipping: ||g|| <= clip_norm'
   formal: 'Post-clipping: ||g|| <= clip_norm'
   applies_to: all
-- type: invariant
+- id: BT-INV-004
+  type: invariant
   property: 'Direction preserved: g_clipped / ||g_clipped|| == g / ||g||'
   formal: 'Direction preserved: g_clipped / ||g_clipped|| == g / ||g||'
   applies_to: all
-- type: invariant
+- id: BT-INV-005
+  type: invariant
   property: L_batch is finite for all valid inputs
   formal: L_batch is finite for all valid inputs
   applies_to: all
-- type: invariant
+- id: BT-INV-006
+  type: invariant
   property: L_batch >= 0 (cross-entropy is non-negative)
   formal: L_batch >= 0 (cross-entropy is non-negative)
   applies_to: all

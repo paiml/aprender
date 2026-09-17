@@ -869,9 +869,6 @@ mod effective_config_tests {
         );
     }
 
-    /// The counter's peak is a high-water mark, not the current value, and
-    /// `leave` must not wrap below zero.
-    #[test]
     /// `set` mirrors the scheduler's live slot count: the peak follows the
     /// highest value ever set, `now` follows the last one, and a set to zero
     /// (the batch ended) leaves the peak standing.
@@ -892,6 +889,9 @@ mod effective_config_tests {
         );
     }
 
+    /// The counter's peak is a high-water mark, not the current value, and
+    /// `leave` must not wrap below zero.
+    #[test]
     fn in_flight_counter_tracks_peak_and_saturates() {
         let counter = InFlightCounter::new();
         assert_eq!(counter.enter(), 1);
