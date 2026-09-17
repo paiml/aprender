@@ -18445,3 +18445,22 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-3471
+  github_issue: 3471
+  item_type: task
+  title: 'ONT-2b: Σ — contracts/ontology.yaml with entity_types and extractors; symbol-level check on formal:'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-17T20:39:42Z
+  updated: 2026-09-17T20:39:42Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - orch:fable
+  - orch-basis:state
+  notes: null
