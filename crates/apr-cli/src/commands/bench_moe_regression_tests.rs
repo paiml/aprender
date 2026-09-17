@@ -20,12 +20,11 @@
 //    the same row-major shape the realizar loader expects, every tensor
 //    below is declared with dims already in GGML order — i.e. the REVERSE
 //    of `regression_fixtures.rs`'s row-major dims.
-// 2. `bench_moe.rs::run_gguf_moe_benchmark` additionally requires
-//    `{arch}.expert_feed_forward_length`, which the aprender-serve fixture
-//    doesn't set (it only exercises the load path, not the bench path) —
-//    added here. A `tokenizer.ggml.tokens` array is also added so
-//    `GGUFModel::encode` succeeds instead of falling back to a fixed
-//    token list that can exceed this fixture's small vocab.
+// 2. `bench_moe.rs::run_gguf_moe_benchmark` requires
+//    `{arch}.expert_feed_forward_length` (the loader does not), so it is set
+//    here as in the aprender-serve fixture. A `tokenizer.ggml.tokens` array
+//    is also added so `GGUFModel::encode` succeeds instead of falling back
+//    to a fixed token list that can exceed this fixture's small vocab.
 
 #[cfg(test)]
 mod regression_1749_tests {
