@@ -21,6 +21,7 @@ mod backend_equivalence_contract;
 mod batchnorm_contract;
 mod bayesian_contract;
 mod calibration_contract;
+mod classification_finetune_xcrate_contract;
 mod classification_metrics_contract;
 mod clustering_metrics_contract;
 mod cma_es_contract;
