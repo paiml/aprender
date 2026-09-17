@@ -72,6 +72,8 @@ pub(crate) mod test_helpers;
 
 // Test factory module - synthesize valid GGUF files in memory
 #[cfg(test)]
+pub(crate) mod regression_fixtures;
+#[cfg(test)]
 pub(crate) mod test_factory;
 
 // Rosetta format factory - synthesize all model formats (GGUF, SafeTensors, APR)
