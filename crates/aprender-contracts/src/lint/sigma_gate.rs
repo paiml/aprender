@@ -24,6 +24,7 @@ use crate::ontology::sigma::{Sigma, SigmaError};
 
 use super::finding::LintFinding;
 use super::rules::RuleSeverity;
+use super::sigma_symbols::{collect_formals, scan};
 use super::{GateDetail, GateExtra, GateResult, Verdict};
 
 /// What one `sigma` run answers. Only [`SigmaOutcome::Ran`] is a verdict about the corpus.
@@ -60,6 +61,8 @@ pub fn run_sigma_gate(contract_dir: &Path) -> SigmaOutcome {
     super::collect_yaml_files(contract_dir, &mut files);
     let mut findings = Vec::new();
     let mut checked = 0usize;
+    let mut formal_prose = 0usize;
+    let mut formal_total = 0usize;
     for file in &files {
         if file == &path {
             continue;
@@ -78,6 +81,39 @@ pub fn run_sigma_gate(contract_dir: &Path) -> SigmaOutcome {
             .to_string();
         findings.extend(check_entity_type(&sigma, &doc, &stem, file));
         findings.extend(check_roles(&sigma, &doc, &stem, file));
+        let symbols = scan(&sigma, &collect_formals(&doc));
+        formal_prose += symbols.prose_count;
+        formal_total += symbols.total;
+        for (path, _text, glyph) in symbols.undeclared {
+            let mut f = LintFinding::new(
+                "PV-ONT-003",
+                RuleSeverity::Error,
+                format!(
+                    "`{path}.formal` carries `{glyph}`, which Σ does not declare — declare it in contracts/ontology.yaml, or mark the entry `prose: true`"
+                ),
+                file.display().to_string(),
+            );
+            f.contract_stem = Some(stem.clone());
+            findings.push(f);
+        }
+    }
+
+    // The `formal_prose` ratchet, enforced by the one thing that measures it. A RISE is a violation; a fall is
+    // progress and passes (`make ont-ratchet` lowers the recorded number). Without a baseline there is nothing to
+    // ratchet against and the count is only reported — never silently treated as satisfied.
+    if let Some(baseline) = baseline_formal_prose(contract_dir) {
+        if formal_prose > baseline {
+            let mut f = LintFinding::new(
+                "PV-ONT-004",
+                RuleSeverity::Error,
+                format!(
+                    "formal_prose rose {baseline} -> {formal_prose}: a `formal:` entry carrying no symbol Σ declares was added. The baseline in contracts/lint-baseline.json is shrink-only"
+                ),
+                "contracts/lint-baseline.json".to_string(),
+            );
+            f.contract_stem = Some("lint-baseline".to_string());
+            findings.push(f);
+        }
     }
 
     let violations = findings.len();
@@ -103,12 +139,24 @@ pub fn run_sigma_gate(contract_dir: &Path) -> SigmaOutcome {
             symbols: sigma.symbols.len(),
             contracts_checked: checked,
             violations,
+            formal_total,
+            formal_prose,
         }),
     };
     SigmaOutcome::Ran {
         result: Box::new(result),
         findings,
     }
+}
+
+/// `ont.formal_prose` from `<contract_dir>/lint-baseline.json`, when it is recorded.
+fn baseline_formal_prose(contract_dir: &Path) -> Option<usize> {
+    let raw = std::fs::read_to_string(contract_dir.join("lint-baseline.json")).ok()?;
+    let doc: serde_json::Value = serde_json::from_str(&raw).ok()?;
+    doc.get("ont")?
+        .get("formal_prose")?
+        .as_u64()
+        .and_then(|n| usize::try_from(n).ok())
 }
 
 /// PV-ONT-001 — `entity.type` must be one Σ declares.
@@ -230,6 +278,31 @@ mod tests {
             run_sigma_gate(&fixture("sigma-absent")),
             SigmaOutcome::NoSigma
         ));
+    }
+
+    #[test]
+    fn a_rise_in_the_prose_debt_is_a_violation() {
+        // The fixture records `formal_prose: 0` and then carries one prose `formal:` — the shape a new
+        // unformalised expression has when it lands on a corpus whose baseline says there were none.
+        match run_sigma_gate(&fixture("sigma-prose-ratchet")) {
+            SigmaOutcome::Ran { result, findings } => {
+                assert!(!result.passed, "a rise in the debt fails the gate");
+                assert!(
+                    findings.iter().any(|f| f.rule_id == "PV-ONT-004"),
+                    "{findings:?}"
+                );
+            }
+            other => panic!("expected Ran, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_fall_in_the_prose_debt_passes() {
+        // sigma-ok records no baseline at all, and its one expression is fully symbolic: nothing to ratchet.
+        match run_sigma_gate(&fixture("sigma-ok")) {
+            SigmaOutcome::Ran { result, .. } => assert!(result.passed),
+            other => panic!("expected Ran, got {other:?}"),
+        }
     }
 
     #[test]

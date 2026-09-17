@@ -53,14 +53,88 @@ pub fn is_operator_glyph(c: char) -> bool {
 
 /// Collect every `formal:` expression in a raw contract document, with its `prose:` sibling.
 #[must_use]
-pub fn collect_formals(_doc: &serde_yaml::Value) -> Vec<FormalExpr> {
-    Vec::new() // RED
+pub fn collect_formals(doc: &serde_yaml::Value) -> Vec<FormalExpr> {
+    let mut out = Vec::new();
+    walk(doc, String::new(), &mut out);
+    out
+}
+
+fn walk(value: &serde_yaml::Value, path: String, out: &mut Vec<FormalExpr>) {
+    match value {
+        serde_yaml::Value::Mapping(map) => walk_mapping(map, &path, out),
+        serde_yaml::Value::Sequence(items) => {
+            for (i, item) in items.iter().enumerate() {
+                walk(item, format!("{path}[{i}]"), out);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn walk_mapping(map: &serde_yaml::Mapping, path: &str, out: &mut Vec<FormalExpr>) {
+    if let Some(serde_yaml::Value::String(text)) = map.get("formal") {
+        out.push(FormalExpr {
+            text: text.clone(),
+            prose: map
+                .get("prose")
+                .and_then(serde_yaml::Value::as_bool)
+                .unwrap_or(false),
+            path: path.to_string(),
+        });
+    }
+    for (key, value) in map {
+        let Some(name) = key.as_str() else { continue };
+        if name == "formal" || name == "prose" {
+            continue;
+        }
+        let child = if path.is_empty() {
+            name.to_string()
+        } else {
+            format!("{path}.{name}")
+        };
+        walk(value, child, out);
+    }
 }
 
 /// Check one file's expressions against Σ.
 #[must_use]
-pub fn scan(_sigma: &Sigma, _exprs: &[FormalExpr]) -> SymbolScan {
-    SymbolScan::default() // RED
+pub fn scan(sigma: &Sigma, exprs: &[FormalExpr]) -> SymbolScan {
+    let mut result = SymbolScan {
+        total: exprs.len(),
+        ..SymbolScan::default()
+    };
+    for expr in exprs {
+        if !carries_a_declared_symbol(sigma, &expr.text) {
+            result.prose_count += 1;
+        }
+        if expr.prose {
+            continue; // the author declared it prose; its glyphs are not the ontology's business
+        }
+        if let Some(glyph) = expr
+            .text
+            .chars()
+            .filter(|c| is_operator_glyph(*c))
+            .find(|c| !sigma.declares_symbol(&c.to_string()))
+        {
+            result
+                .undeclared
+                .push((expr.path.clone(), expr.text.clone(), glyph));
+        }
+    }
+    result
+}
+
+/// Does the expression carry any symbol Σ declares — a glyph or a declared name? If not, it is prose: the
+/// `formal_prose` debt, counted whether or not the author marked it.
+fn carries_a_declared_symbol(sigma: &Sigma, text: &str) -> bool {
+    if text
+        .chars()
+        .any(|c| is_operator_glyph(c) && sigma.declares_symbol(&c.to_string()))
+    {
+        return true;
+    }
+    text.split(|c: char| !c.is_alphanumeric() && c != '_')
+        .any(|token| !token.is_empty() && sigma.declares_symbol(token))
 }
 
 #[cfg(test)]

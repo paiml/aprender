@@ -256,7 +256,12 @@ fn json_report_carries_the_lattice() {
     assert_eq!(armed.len(), 8, "{}", show(&r));
     assert_eq!(
         v["not_armed"],
-        serde_json::Value::Array(vec![serde_json::Value::String("reverse-coverage".into())]),
+        serde_json::Value::Array(vec![
+            serde_json::Value::String("reverse-coverage".into()),
+            // ONT-2b's gate runs everywhere (R-8) and this corpus declares no `armed_gates`, so it is
+            // reported and excluded — the DEFAULT set is still the eight ONT-6 ruled.
+            serde_json::Value::String("sigma".into()),
+        ]),
         "{}",
         show(&r)
     );
@@ -277,8 +282,10 @@ fn json_report_carries_the_lattice() {
     assert_eq!(rc["verdict"], "Unknown(Skip)", "{rc}");
 }
 
+/// ONT-6 ruled the DEFAULT set at eight. A repo may arm more: ONT-2b appended `sigma` to aprender's own
+/// declaration, which is what §3.9 monotonicity protects — the eight are still armed, and one more is.
 #[test]
-fn repo_baseline_arms_the_eight_ruled_gates() {
+fn repo_baseline_arms_the_eight_ruled_gates_and_every_later_row_that_armed_one() {
     let text = std::fs::read_to_string(repo_contracts().join("lint-baseline.json"))
         .expect("repo baseline reads");
     let v: serde_json::Value = serde_json::from_str(&text).expect("repo baseline is JSON");
@@ -288,9 +295,26 @@ fn repo_baseline_arms_the_eight_ruled_gates() {
         .iter()
         .filter_map(|x| x.as_str())
         .collect();
+    for ruled in EIGHT {
+        assert!(
+            names.contains(&ruled),
+            "the ruled 8 stay armed; `{ruled}` is missing from contracts/lint-baseline.json"
+        );
+    }
     assert_eq!(
         names,
-        EIGHT.to_vec(),
-        "contracts/lint-baseline.json arms exactly the ruled 8"
+        [
+            "validate",
+            "audit",
+            "score",
+            "verify",
+            "enforce",
+            "enforcement-level",
+            "duplicate-stems",
+            "composition",
+            "sigma"
+        ]
+        .to_vec(),
+        "the ruled 8 plus the gates later rows armed (ONT-2b: sigma)"
     );
 }

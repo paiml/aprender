@@ -81,6 +81,37 @@ symbols:
   - {name: sqrt, kind: function, doc: "square root"}
   - {name: sum, kind: function, doc: "sum of a sequence"}
   - {name: mod, kind: operator, doc: "modulo"}
+  # Measured from the corpus after the first pass: 79 expressions in 51 files carried an operator Σ did not yet
+  # declare. Every one below is real notation and is declared; the two glyphs deliberately left OUT are `—` and `§`,
+  # which are prose punctuation — the entries carrying those say `prose: true` instead.
+  - {name: "²", kind: operator, doc: "squared"}
+  - {name: "¹", kind: operator, doc: "to the first power"}
+  - {name: "₁", kind: operator, doc: "subscript one"}
+  - {name: "₂", kind: operator, doc: "subscript two"}
+  - {name: "√", kind: function, doc: "square root"}
+  - {name: "∞", kind: constant, doc: "infinity"}
+  - {name: "⊥", kind: constant, doc: "bottom — undefined or unreachable"}
+  - {name: "∘", kind: operator, doc: "function composition"}
+  - {name: "∋", kind: operator, doc: "contains"}
+  - {name: "∌", kind: operator, doc: "does not contain"}
+  - {name: "⊇", kind: operator, doc: "superset of"}
+  - {name: "⊄", kind: operator, doc: "not a subset of"}
+  - {name: "−", kind: operator, doc: "minus (U+2212)"}
+  - {name: "↔", kind: operator, doc: "if and only if"}
+  - {name: "⟺", kind: operator, doc: "if and only if (long)"}
+  - {name: "≺", kind: operator, doc: "precedes"}
+  - {name: "±", kind: operator, doc: "plus or minus"}
+  - {name: "⟨", kind: operator, doc: "inner-product open"}
+  - {name: "⟩", kind: operator, doc: "inner-product close"}
+  - {name: "∇", kind: operator, doc: "gradient"}
+  - {name: "∂", kind: operator, doc: "partial derivative"}
+  - {name: "⌈", kind: operator, doc: "ceiling open"}
+  - {name: "⌉", kind: operator, doc: "ceiling close"}
+  - {name: "′", kind: operator, doc: "prime"}
+  - {name: "̄", kind: operator, doc: "combining macron — the mean of a variable"}
+  - {name: "₀", kind: operator, doc: "subscript zero"}
+  - {name: "⋃", kind: operator, doc: "n-ary union"}
+  - {name: "←", kind: operator, doc: "assignment"}
 
 worlds:
   committed: {doc: "the tree as committed — the world every contract is read in unless it says otherwise"}

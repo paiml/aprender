@@ -171,8 +171,12 @@ pub enum GateExtra {
         symbols: usize,
         /// Contract files read (never counting `ontology.yaml` itself).
         contracts_checked: usize,
-        /// Findings: undeclared entity types plus undeclared roles.
+        /// Findings: undeclared entity types, undeclared roles, undeclared glyphs.
         violations: usize,
+        /// `formal:` expressions read.
+        formal_total: usize,
+        /// Of those, how many carry NO symbol Σ declares — the `formal_prose` debt, shrink-only.
+        formal_prose: usize,
     },
 }
 
@@ -385,6 +389,13 @@ pub fn run_lint(config: &LintConfig) -> LintReport {
         gates.push(skipped_gate("composition", "validation failed"));
     }
 
+    // Gate 10: sigma (ONT-2b). R-8: a new gate is COMPUTED everywhere and armed per repo — so it runs here as
+    // well as under `--gate sigma`, or `armed_gates` could name a gate no run ever computes.
+    let (sigma_gate_result, mut sigma_findings) =
+        sigma_result(config.contract_dir, validation_passed);
+    gates.push(sigma_gate_result);
+    all_findings.append(&mut sigma_findings);
+
     // Gate 9: strict test-binding (Issue #1510, opt-in via --strict-test-binding)
     if config.strict_test_binding {
         if validation_passed {
@@ -517,6 +528,26 @@ pub fn run_named_gate(contract_dir: &Path, name: &str) -> NamedGateOutcome {
 
 /// The gate names `--gate` computes alone, for the refusal message.
 pub const NAMED_GATES: [&str; 2] = ["sigma", "validate"];
+
+/// The `sigma` gate as `run_lint` reports it. Σ's two non-verdict answers become SKIPPED gates here — under
+/// `--gate sigma` they are an exit of their own (decline / error), but inside a full run "skipped" is how the
+/// lattice already says "not measured".
+fn sigma_result(contract_dir: &Path, validation_passed: bool) -> (GateResult, Vec<LintFinding>) {
+    if !validation_passed {
+        return (skipped_gate("sigma", "validation failed"), Vec::new());
+    }
+    match sigma_gate::run_sigma_gate(contract_dir) {
+        sigma_gate::SigmaOutcome::Ran { result, findings } => (*result, findings),
+        sigma_gate::SigmaOutcome::NoSigma => (
+            skipped_gate("sigma", "no contracts/ontology.yaml"),
+            Vec::new(),
+        ),
+        sigma_gate::SigmaOutcome::Malformed(e) => (
+            skipped_gate("sigma", &format!("Σ is malformed: {e}")),
+            Vec::new(),
+        ),
+    }
+}
 
 fn skipped_gate(name: &str, reason: &str) -> GateResult {
     GateResult {

@@ -1,6 +1,6 @@
 {
   "_spec": "APR-RELEASE-001 §11.2 — moves only through `make ont-ratchet` (ONT R-6)",
-  "armed_gates": ["validate", "audit", "score", "verify", "enforce", "enforcement-level", "duplicate-stems", "composition"],
+  "armed_gates": ["validate", "audit", "score", "verify", "enforce", "enforcement-level", "duplicate-stems", "composition", "sigma"],
   "ont": {
     "consumer_present": false,
     "contracts_total": 1837,
@@ -8,6 +8,7 @@
     "extractors_implemented": 0,
     "contracts_anchored": 0,
     "contracts_shaped": 0,
-    "unanchored_but_bindable": 297
+    "unanchored_but_bindable": 297,
+    "formal_prose": 1464
   }
 }

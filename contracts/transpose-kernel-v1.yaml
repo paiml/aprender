@@ -70,6 +70,7 @@ proof_obligations:
   type: invariant
   property: All elements transposed
   formal: No element lost or duplicated — bijection on index pairs
+  prose: true
   applies_to: all
   lean:
     theorem: TensorTranspose.swapIdx_injective
