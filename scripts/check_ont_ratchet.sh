@@ -158,6 +158,10 @@ self_test() {
     row "field reads a number"          "$(field "$t/j.json" contracts_anchored)" "7"
     printf '{"ont":{"consumer_present": false}}\n' > "$t/k.json"
     row "field reads a bool"            "$(field "$t/k.json" consumer_present)" "false"
+    # ONT-6 (PMAT-3451): --write restamps the counters and must NOT reset the arming declaration.
+    printf '{\n  "armed_gates": ["validate", "audit"],\n  "ont": {}\n}\n' > "$t/armed.json"
+    BASELINE="$t/armed.json" measure > "$t/pres.json"
+    row "measure() preserves armed_gates" "$(grep -o '"armed_gates": *\[[^]]*\]' "$t/pres.json" | tr -d ' ')" '"armed_gates":["validate","audit"]'
     # the measurement must be valid JSON and carry every §11.2 counter
     measure > "$t/m.json"
     if command -v python3 >/dev/null 2>&1; then
