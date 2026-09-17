@@ -1,0 +1,104 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# ont-sigma-v1 — Σ and the `sigma` gate (ONT-001 v4.4 §4.1 + §5 ONT-2b; issue #3471, ticket PMAT-3471)
+#
+# WHAT IT GOVERNS
+#   provable_contracts::ontology::sigma — the Σ types, the loader, and the four malformed-Σ classes.
+#   provable_contracts::lint::sigma_gate — the corpus rules (entity.type ∈ Σ, roles ∈ Σ) and the formal_prose ratchet.
+#   provable_contracts::lint::sigma_symbols — the symbol-level check and the explicit `prose: true` opt-out.
+#   `pv lint --gate sigma`, and the `sigma` gate inside every `pv lint` run (R-8).
+#
+# KIND: pattern, deliberately. Σ is a declaration and a gate over it, not a math kernel: there is no equation to
+# prove and no Kani harness to run, so `kind: kernel` would claim a proof ladder this row does not climb. ONT-6's
+# lattice IS a kernel (it has laws and three harnesses); this is not.
+#
+# PROOF LADDER, STATED HONESTLY
+#   * L1 — the gate exists and runs everywhere: 10th gate in `run_lint`, and armed in contracts/lint-baseline.json.
+#   * L2 — falsification MEASURED on the real corpus (1792 contracts, 2303 `formal:` expressions) and on six
+#          fixture corpora, one per rule, including the two rules the real corpus CANNOT exercise.
+#   * L3/L4 — not applicable and not declared.
+# ─────────────────────────────────────────────────────────────────────────────
+name: ont-sigma
+version: "1.0.0"
+scope: >
+  Σ's own integrity, and what the corpus may say: entity types, roles, and the operator vocabulary of `formal:`.
+  Out of scope: resolving applied identifiers against code (ONT-3a), subsumption (ONT-4d), shapes (ONT-4b).
+status: active
+
+metadata:
+  version: "1.0.0"
+  kind: pattern
+  created: '2026-09-17'
+  last_modified: '2026-09-17'
+  author: PAIML Engineering
+  description: >
+    Σ (contracts/ontology.yaml) declares the concepts, roles, symbols, entity types and extractors the corpus may
+    use; the sigma gate refuses a corpus that says anything else, and a Σ that is malformed.
+  references:
+    - 'paiml/infra docs/specifications/paiml-ontology.md §4.1 (Σ), §5 ONT-2b, R-8 (new gates armed per repo)'
+    - 'crates/aprender-contracts/src/ontology/sigma.rs — Sigma, SigmaError, check_integrity'
+    - 'crates/aprender-contracts/src/lint/sigma_gate.rs — PV-ONT-001/002/003/004'
+    - 'crates/aprender-contracts/src/lint/sigma_symbols.rs — the symbol scan and the prose opt-out'
+
+invariants:
+  - id: SIGMA-INV-001
+    property: Σ is malformed, never partly applied
+    formal: 'entity_type ∈ entity_types ⇒ extractor(entity_type) ∈ extractors'
+    prose: false
+    note: an entity_types entry naming no extractor, or one extractors[] does not declare, is exit 3
+  - id: SIGMA-INV-002
+    property: no Σ key without a reader
+    formal: 'populated(key) ⇒ reader(key) ≠ ∅'
+    prose: false
+    note: the anti-decoration rule ONT-1 paid for — a key nothing reads is refused
+  - id: SIGMA-INV-003
+    property: the corpus says only what Σ declares
+    formal: 'entity.type ∈ entity_types ∧ relations ⊆ roles'
+    prose: false
+  - id: SIGMA-INV-004
+    property: every operator glyph in a formal expression is declared, unless the entry declares itself prose
+    formal: '∀ glyph ∈ formal: glyph ∈ symbols ∨ prose'
+    prose: false
+  - id: SIGMA-INV-005
+    property: the prose debt is shrink-only
+    formal: 'formal_prose ≤ baseline(formal_prose)'
+    prose: false
+
+falsification_tests:
+  - id: FALSIFY-SIGMA-001
+    rule: Σ integrity, all four classes
+    prediction: each malformed shape returns its own SigmaError and never a corpus verdict
+    test: cargo test -p aprender-contracts --lib ontology::sigma
+    if_fails: a malformed declaration is reported as a corpus failure, blaming the wrong author
+  - id: FALSIFY-SIGMA-002
+    rule: the corpus rules fire
+    prediction: an undeclared entity.type and an undeclared role each produce a finding on a fixture corpus
+    test: cargo test -p aprender-contracts --lib lint::sigma_gate
+    if_fails: "rules that cannot fire on today's corpus (0 of 1792 carry entity: or relations:) are never exercised at all"
+  - id: FALSIFY-SIGMA-003
+    rule: the symbol check and its opt-out
+    prediction: "an undeclared glyph is reported with the glyph itself; `prose: true` exempts the entry; an applied identifier is not checked"
+    test: cargo test -p aprender-contracts --lib lint::sigma_symbols
+    if_fails: either the check is vacuous, or it rejects the 1325 expressions that call code rather than ontology
+  - id: FALSIFY-SIGMA-004
+    rule: exit vocabulary
+    prediction: "Pass 0; corpus violation 1 (reject); no Σ 2 (decline); malformed Σ 3 (error)"
+    test: cargo test -p aprender-contracts-cli --test ont2b_sigma_gate
+    if_fails: a malformed Σ and a failing corpus become indistinguishable to a caller
+  - id: FALSIFY-SIGMA-005
+    rule: the formal_prose ratchet
+    prediction: a corpus whose prose debt exceeds its recorded baseline fails with PV-ONT-004
+    test: cargo test -p aprender-contracts --lib lint::sigma_gate::tests::a_rise_in_the_prose_debt_is_a_violation
+    if_fails: the baseline is recorded and nothing enforces it — a number in a file, which is this fleet's signature defect
+
+qa_gate:
+  id: F-SIGMA-001
+  name: Σ and the sigma gate
+  description: The corpus may only say what Σ declares, and Σ must be well formed (ONT-2b)
+  checks:
+    - sigma_integrity
+    - entity_type_declared
+    - role_declared
+    - symbol_declared_or_prose
+    - formal_prose_ratchet
+  pass_criteria: All 5 falsification tests pass; `pv lint contracts/ --gate sigma` is Pass on the real corpus
+  falsification: 'drop a role the corpus uses from Σ → the gate rejects (measured 2026-09-17); unmark one `prose: true` entry → 1 violation'
