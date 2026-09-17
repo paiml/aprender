@@ -647,3 +647,15 @@ scheduling chance, and it costs ~3× (gx10 10.6 min vs intel 34.5 for step 1).
 ### Still open
 
 - #3412 → #3411 → T-1 → T-2 → T-3 (clean-room on the tag) → T-4 → close → ledger record.
+
+## Interval — 07:00Z (2026-09-17) — pass 3, one row; rulings applied
+
+### What moved
+
+- **T-2 pass 3 on `5d95ed54e` (06:18Z): NO-GO on ONE row** — `pmat-comply` CB-200 602 vs 601. Roster diff (pmat's own comply index, release tree vs the CB-200 fix tree): the single addition is `crates/apr-cli/src/commands/parity_03.rs::run`, taken from B to B- (cyc 11) by #3412's refusal call site. **#3415** extracts `refuse_unroutable` + `head_geometry` (both A+); `run` → B+ (cyc 7); the tree's sub-B count is 601 with both baseline lines untouched at 601 — **the 602nd site is removed, nothing restamped** (operator ruling 1, verified before merge). Every other T-2 row was green on pass 3: `pv-contracts` 1841/1841, `model-parity` reports `UNMEASURED-TOOL` for the MoE/qwen35 rows, perf041 marker fresh.
+- **Operator rulings 2026-09-17, applied**: (2) §4 T-0 now says the T-2 preflight runs on `main` HEAD *before* the bump PR opens, the bump PR is refused at arm time without a GO receipt for its parent sha, and the release commit moves zero times — from 0.69; (3) §4 T-2 + §7: a nightly feeding a T-2 row that fails ≥2 consecutive runs auto-opens an issue on the next milestone and reports `NIGHTLY-RED` — mechanism ticket **#3416** (0.69); first entry: `cuda-nightly.yml` 5 consecutive fails → #3096 (stays 0.70); the ledger record now carries the PP-26 witness provenance (lambda sm_89) beside the red producer. **T-4 for this train is the operator's**: the driver is re-pointed to stop after the cascade dry-run receipt (`to-step=dryrun`, pid 2553564).
+- Merged: #3410 05:13Z, #3412 05:44Z, #3411 05:44Z, #3414 06:23Z.
+
+### Still open
+
+- #3415 (queued, group on intel) → T-1 → T-2 pass 4 → T-3 (tag, clean-room dispatched on the tag with HEAD==tag asserted, `apr-*` assets, install.sh rows on intel + gx10) → T-4 dry-run receipt → STOP and report.
