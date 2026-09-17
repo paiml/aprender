@@ -427,6 +427,235 @@ fn load_f32_vec(tensor_ref: &QuantizedTensorRef, data: &[u8]) -> Result<Vec<f32>
         .collect())
 }
 
+/// Metadata map of a GGUF file, as `GGUFModel::metadata` carries it.
+type GGUFMetadata = std::collections::HashMap<String, crate::gguf::types::GGUFValue>;
+
+/// The Gated `DeltaNet` shape Qwen3.5 records in GGUF metadata, under either the
+/// `qwen2.*` or the `qwen35.*` key prefix.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Qwen35SsmMeta {
+    pub(crate) head_k_dim: usize,
+    pub(crate) num_k_heads: usize,
+    pub(crate) num_v_heads: usize,
+    pub(crate) conv_kernel: usize,
+    pub(crate) rope_sections: [usize; 4],
+}
+
+/// One unsigned metadata value, accepting either GGUF integer width.
+fn metadata_usize(metadata: &GGUFMetadata, key: &str) -> Option<usize> {
+    match metadata.get(key) {
+        Some(crate::gguf::types::GGUFValue::UInt32(v)) => Some(*v as usize),
+        Some(crate::gguf::types::GGUFValue::Int32(v)) => Some(*v as usize),
+        _ => None,
+    }
+}
+
+/// `key`, else `fallback`, else `default` — the `qwen2.*`/`qwen35.*` prefix pair.
+fn metadata_usize_or(metadata: &GGUFMetadata, key: &str, fallback: &str, default: usize) -> usize {
+    metadata_usize(metadata, key)
+        .or_else(|| metadata_usize(metadata, fallback))
+        .unwrap_or(default)
+}
+
+/// The four M-RoPE section widths. Defaulted per section: a section the array does not
+/// reach, or carries with a non-integer type, keeps its default.
+fn rope_sections_from_metadata(metadata: &GGUFMetadata) -> [usize; 4] {
+    let mut rope_sections = [16, 24, 24, 0];
+    if let Some(crate::gguf::types::GGUFValue::Array(arr)) = metadata
+        .get("qwen2.rope.dimension_sections")
+        .or_else(|| metadata.get("qwen35.rope.dimension_sections"))
+    {
+        for (i, val) in arr.iter().take(4).enumerate() {
+            if let crate::gguf::types::GGUFValue::UInt32(v) = val {
+                rope_sections[i] = *v as usize;
+            } else if let crate::gguf::types::GGUFValue::Int32(v) = val {
+                rope_sections[i] = *v as usize;
+            }
+        }
+    }
+    rope_sections
+}
+
+/// Read the Gated `DeltaNet` shape, falling back to the Qwen3.5-0.8B defaults key by key.
+pub(crate) fn qwen35_ssm_meta(metadata: &GGUFMetadata) -> Qwen35SsmMeta {
+    Qwen35SsmMeta {
+        head_k_dim: metadata_usize_or(
+            metadata,
+            "qwen2.ssm.state_size",
+            "qwen35.ssm.state_size",
+            16,
+        ),
+        num_k_heads: metadata_usize_or(
+            metadata,
+            "qwen2.ssm.group_count",
+            "qwen35.ssm.group_count",
+            1,
+        ),
+        num_v_heads: metadata_usize_or(
+            metadata,
+            "qwen2.ssm.time_step_rank",
+            "qwen35.ssm.time_step_rank",
+            16,
+        ),
+        conv_kernel: metadata_usize_or(
+            metadata,
+            "qwen2.ssm.conv_kernel",
+            "qwen35.ssm.conv_kernel",
+            4,
+        ),
+        rope_sections: rope_sections_from_metadata(metadata),
+    }
+}
+
+/// The widths every hybrid layer's tensors are dequantised with.
+struct Qwen35LayerDims {
+    hidden_dim: usize,
+    intermediate_dim: usize,
+    num_heads: usize,
+    num_kv_heads: usize,
+    num_v_heads: usize,
+    conv_dim: usize,
+    value_dim: usize,
+}
+
+/// Own one Gated `DeltaNet` layer's tensors.
+fn own_deltanet_layer(
+    d: &crate::gguf::qwen35_load::Qwen35DeltaNetLayer,
+    data: &[u8],
+    dims: &Qwen35LayerDims,
+) -> Result<Qwen35OwnedDeltaNetLayer> {
+    Ok(Qwen35OwnedDeltaNetLayer {
+        attn_norm: load_f32_vec(&d.attn_norm, data)?,
+        attn_qkv: OwnedQuantizedTensor::from_ref_with_dims(
+            &d.attn_qkv,
+            data,
+            dims.hidden_dim,
+            dims.conv_dim,
+        ),
+        attn_gate: OwnedQuantizedTensor::from_ref_with_dims(
+            &d.attn_gate,
+            data,
+            dims.hidden_dim,
+            dims.value_dim,
+        ),
+        ssm_alpha: OwnedQuantizedTensor::from_ref_with_dims(
+            &d.ssm_alpha,
+            data,
+            dims.hidden_dim,
+            dims.num_v_heads,
+        ),
+        ssm_beta: OwnedQuantizedTensor::from_ref_with_dims(
+            &d.ssm_beta,
+            data,
+            dims.hidden_dim,
+            dims.num_v_heads,
+        ),
+        ssm_a: load_f32_vec(&d.ssm_a, data)?,
+        ssm_dt_bias: load_f32_vec(&d.ssm_dt_bias, data)?,
+        ssm_conv1d_weight: load_f32_vec(&d.ssm_conv1d_weight, data)?,
+        ssm_norm_weight: load_f32_vec(&d.ssm_norm_weight, data)?,
+        ssm_out: OwnedQuantizedTensor::from_ref_with_dims(
+            &d.ssm_out,
+            data,
+            dims.value_dim,
+            dims.hidden_dim,
+        ),
+        post_attention_norm: load_f32_vec(&d.post_attention_norm, data)?,
+        ffn_gate: OwnedQuantizedTensor::from_ref_with_dims(
+            &d.ffn_gate,
+            data,
+            dims.hidden_dim,
+            dims.intermediate_dim,
+        ),
+        ffn_up: OwnedQuantizedTensor::from_ref_with_dims(
+            &d.ffn_up,
+            data,
+            dims.hidden_dim,
+            dims.intermediate_dim,
+        ),
+        ffn_down: OwnedQuantizedTensor::from_ref_with_dims(
+            &d.ffn_down,
+            data,
+            dims.intermediate_dim,
+            dims.hidden_dim,
+        ),
+    })
+}
+
+/// Own one full-attention layer's tensors. The head width is `attn_q_norm`'s length
+/// (256 for Qwen3.5 standard attention), not `hidden_dim / num_heads`, and `attn_q` is
+/// gated, so it is twice as wide as the head fan-out.
+fn own_attention_layer(
+    a: &crate::gguf::qwen35_load::Qwen35AttentionLayer,
+    data: &[u8],
+    dims: &Qwen35LayerDims,
+) -> Result<Qwen35OwnedAttentionLayer> {
+    let attn_q_norm = load_f32_vec(&a.attn_q_norm, data)?;
+    let true_head_dim = attn_q_norm.len();
+
+    Ok(Qwen35OwnedAttentionLayer {
+        attn_norm: load_f32_vec(&a.attn_norm, data)?,
+        attn_q: OwnedQuantizedTensor::from_ref_with_dims(
+            &a.attn_q,
+            data,
+            dims.hidden_dim,
+            dims.num_heads * true_head_dim * 2,
+        ),
+        attn_k: OwnedQuantizedTensor::from_ref_with_dims(
+            &a.attn_k,
+            data,
+            dims.hidden_dim,
+            dims.num_kv_heads * true_head_dim,
+        ),
+        attn_v: OwnedQuantizedTensor::from_ref_with_dims(
+            &a.attn_v,
+            data,
+            dims.hidden_dim,
+            dims.num_kv_heads * true_head_dim,
+        ),
+        attn_q_norm,
+        attn_k_norm: load_f32_vec(&a.attn_k_norm, data)?,
+        attn_output: OwnedQuantizedTensor::from_ref_with_dims(
+            &a.attn_output,
+            data,
+            dims.num_heads * true_head_dim,
+            dims.hidden_dim,
+        ),
+        post_attention_norm: load_f32_vec(&a.post_attention_norm, data)?,
+        ffn_gate: OwnedQuantizedTensor::from_ref_with_dims(
+            &a.ffn_gate,
+            data,
+            dims.hidden_dim,
+            dims.intermediate_dim,
+        ),
+        ffn_up: OwnedQuantizedTensor::from_ref_with_dims(
+            &a.ffn_up,
+            data,
+            dims.hidden_dim,
+            dims.intermediate_dim,
+        ),
+        ffn_down: OwnedQuantizedTensor::from_ref_with_dims(
+            &a.ffn_down,
+            data,
+            dims.intermediate_dim,
+            dims.hidden_dim,
+        ),
+    })
+}
+
+/// Attention head width is `key_length` (= `attn_q_norm`'s width, 256), NOT
+/// `hidden / heads` (128): the KV cache and the attention loop used 128-wide heads over
+/// 256-wide q/k/v. A file with no full-attention layer keeps `fallback`.
+fn attention_head_dim(layers: &[Qwen35OwnedLayer], fallback: usize) -> usize {
+    layers
+        .iter()
+        .find_map(|l| match l {
+            Qwen35OwnedLayer::Attention(a) => Some(a.attn_q_norm.len()),
+            Qwen35OwnedLayer::DeltaNet(_) => None,
+        })
+        .unwrap_or(fallback)
+}
+
 impl<'a> Qwen35Model<'a> {
     /// Build the shared base (config, token embeddings, final norm, `lm_head`) without the
     /// dense layer loader, which refuses hybrid files.
@@ -491,189 +720,49 @@ impl<'a> Qwen35Model<'a> {
         data: &[u8],
     ) -> Result<Self> {
         let refs = crate::gguf::qwen35_load::load_qwen35_layers(model, data)?;
+        let meta = qwen35_ssm_meta(&model.metadata);
 
-        let get_u32 = |key: &str| -> Result<usize> {
-            match model.metadata.get(key) {
-                Some(crate::gguf::types::GGUFValue::UInt32(v)) => Ok(*v as usize),
-                Some(crate::gguf::types::GGUFValue::Int32(v)) => Ok(*v as usize),
-                _ => Err(crate::RealizarError::InvalidShape {
-                    reason: format!("Missing or invalid {}", key),
-                }),
-            }
-        };
-
-        let head_k_dim = get_u32("qwen2.ssm.state_size")
-            .or_else(|_| get_u32("qwen35.ssm.state_size"))
-            .unwrap_or(16);
-        let head_v_dim = head_k_dim;
-        let num_k_heads = get_u32("qwen2.ssm.group_count")
-            .or_else(|_| get_u32("qwen35.ssm.group_count"))
-            .unwrap_or(1);
-        let num_v_heads = get_u32("qwen2.ssm.time_step_rank")
-            .or_else(|_| get_u32("qwen35.ssm.time_step_rank"))
-            .unwrap_or(16);
-        let conv_kernel = get_u32("qwen2.ssm.conv_kernel")
-            .or_else(|_| get_u32("qwen35.ssm.conv_kernel"))
-            .unwrap_or(4);
-        let mut rope_sections = [16, 24, 24, 0];
-        if let Some(crate::gguf::types::GGUFValue::Array(arr)) = model
-            .metadata
-            .get("qwen2.rope.dimension_sections")
-            .or_else(|| model.metadata.get("qwen35.rope.dimension_sections"))
-        {
-            for (i, val) in arr.iter().take(4).enumerate() {
-                if let crate::gguf::types::GGUFValue::UInt32(v) = val {
-                    rope_sections[i] = *v as usize;
-                } else if let crate::gguf::types::GGUFValue::Int32(v) = val {
-                    rope_sections[i] = *v as usize;
-                }
-            }
-        }
-
-        let hidden_dim = base.config.hidden_dim;
-        let intermediate_dim = base.config.intermediate_dim;
+        let head_v_dim = meta.head_k_dim;
         let num_heads = base.config.num_heads;
         let num_kv_heads = base.config.num_kv_heads;
-        let head_dim = hidden_dim / num_heads;
+        let head_dim = base.config.hidden_dim / num_heads;
 
-        let key_dim = head_k_dim * num_k_heads;
-        let value_dim = head_v_dim * num_v_heads;
-        let conv_dim = key_dim * 2 + value_dim;
+        let key_dim = meta.head_k_dim * meta.num_k_heads;
+        let value_dim = head_v_dim * meta.num_v_heads;
+        let dims = Qwen35LayerDims {
+            hidden_dim: base.config.hidden_dim,
+            intermediate_dim: base.config.intermediate_dim,
+            num_heads,
+            num_kv_heads,
+            num_v_heads: meta.num_v_heads,
+            conv_dim: key_dim * 2 + value_dim,
+            value_dim,
+        };
 
         let mut owned = Vec::with_capacity(refs.len());
         for layer_ref in refs {
-            match layer_ref {
+            owned.push(match layer_ref {
                 crate::gguf::qwen35_load::Qwen35Layer::DeltaNet(d) => {
-                    owned.push(Qwen35OwnedLayer::DeltaNet(Qwen35OwnedDeltaNetLayer {
-                        attn_norm: load_f32_vec(&d.attn_norm, data)?,
-                        attn_qkv: OwnedQuantizedTensor::from_ref_with_dims(
-                            &d.attn_qkv,
-                            data,
-                            hidden_dim,
-                            conv_dim,
-                        ),
-                        attn_gate: OwnedQuantizedTensor::from_ref_with_dims(
-                            &d.attn_gate,
-                            data,
-                            hidden_dim,
-                            value_dim,
-                        ),
-                        ssm_alpha: OwnedQuantizedTensor::from_ref_with_dims(
-                            &d.ssm_alpha,
-                            data,
-                            hidden_dim,
-                            num_v_heads,
-                        ),
-                        ssm_beta: OwnedQuantizedTensor::from_ref_with_dims(
-                            &d.ssm_beta,
-                            data,
-                            hidden_dim,
-                            num_v_heads,
-                        ),
-                        ssm_a: load_f32_vec(&d.ssm_a, data)?,
-                        ssm_dt_bias: load_f32_vec(&d.ssm_dt_bias, data)?,
-                        ssm_conv1d_weight: load_f32_vec(&d.ssm_conv1d_weight, data)?,
-                        ssm_norm_weight: load_f32_vec(&d.ssm_norm_weight, data)?,
-                        ssm_out: OwnedQuantizedTensor::from_ref_with_dims(
-                            &d.ssm_out, data, value_dim, hidden_dim,
-                        ),
-                        post_attention_norm: load_f32_vec(&d.post_attention_norm, data)?,
-                        ffn_gate: OwnedQuantizedTensor::from_ref_with_dims(
-                            &d.ffn_gate,
-                            data,
-                            hidden_dim,
-                            intermediate_dim,
-                        ),
-                        ffn_up: OwnedQuantizedTensor::from_ref_with_dims(
-                            &d.ffn_up,
-                            data,
-                            hidden_dim,
-                            intermediate_dim,
-                        ),
-                        ffn_down: OwnedQuantizedTensor::from_ref_with_dims(
-                            &d.ffn_down,
-                            data,
-                            intermediate_dim,
-                            hidden_dim,
-                        ),
-                    }));
+                    Qwen35OwnedLayer::DeltaNet(own_deltanet_layer(&d, data, &dims)?)
                 },
                 crate::gguf::qwen35_load::Qwen35Layer::Attention(a) => {
-                    let attn_q_norm = load_f32_vec(&a.attn_q_norm, data)?;
-                    let true_head_dim = attn_q_norm.len(); // 256 for Qwen3.5 standard attention
-
-                    owned.push(Qwen35OwnedLayer::Attention(Qwen35OwnedAttentionLayer {
-                        attn_norm: load_f32_vec(&a.attn_norm, data)?,
-                        attn_q: OwnedQuantizedTensor::from_ref_with_dims(
-                            &a.attn_q,
-                            data,
-                            hidden_dim,
-                            num_heads * true_head_dim * 2,
-                        ),
-                        attn_k: OwnedQuantizedTensor::from_ref_with_dims(
-                            &a.attn_k,
-                            data,
-                            hidden_dim,
-                            num_kv_heads * true_head_dim,
-                        ),
-                        attn_v: OwnedQuantizedTensor::from_ref_with_dims(
-                            &a.attn_v,
-                            data,
-                            hidden_dim,
-                            num_kv_heads * true_head_dim,
-                        ),
-                        attn_q_norm,
-                        attn_k_norm: load_f32_vec(&a.attn_k_norm, data)?,
-                        attn_output: OwnedQuantizedTensor::from_ref_with_dims(
-                            &a.attn_output,
-                            data,
-                            num_heads * true_head_dim,
-                            hidden_dim,
-                        ),
-                        post_attention_norm: load_f32_vec(&a.post_attention_norm, data)?,
-                        ffn_gate: OwnedQuantizedTensor::from_ref_with_dims(
-                            &a.ffn_gate,
-                            data,
-                            hidden_dim,
-                            intermediate_dim,
-                        ),
-                        ffn_up: OwnedQuantizedTensor::from_ref_with_dims(
-                            &a.ffn_up,
-                            data,
-                            hidden_dim,
-                            intermediate_dim,
-                        ),
-                        ffn_down: OwnedQuantizedTensor::from_ref_with_dims(
-                            &a.ffn_down,
-                            data,
-                            intermediate_dim,
-                            hidden_dim,
-                        ),
-                    }));
+                    Qwen35OwnedLayer::Attention(own_attention_layer(&a, data, &dims)?)
                 },
-            }
+            });
         }
 
-        // Attention head width is key_length (= attn_q_norm width, 256), NOT hidden/heads (128):
-        // the KV cache and the attention loop used 128-wide heads over 256-wide q/k/v.
-        let attn_head_dim = owned
-            .iter()
-            .find_map(|l| match l {
-                Qwen35OwnedLayer::Attention(a) => Some(a.attn_q_norm.len()),
-                Qwen35OwnedLayer::DeltaNet(_) => None,
-            })
-            .unwrap_or(head_dim);
+        let attn_head_dim = attention_head_dim(&owned, head_dim);
         Ok(Self {
             base,
             layers: owned,
             head_dim: attn_head_dim,
             num_kv_heads,
-            num_v_heads,
+            num_v_heads: meta.num_v_heads,
             head_v_dim,
-            num_k_heads,
-            head_k_dim,
-            conv_kernel,
-            rope_sections,
+            num_k_heads: meta.num_k_heads,
+            head_k_dim: meta.head_k_dim,
+            conv_kernel: meta.conv_kernel,
+            rope_sections: meta.rope_sections,
         })
     }
 
@@ -1078,6 +1167,74 @@ pub fn run_qwen35_generate(
         logits = qwen.forward_single_qwen35(next, &mut state, tokens.len() - 1)?;
     }
     Ok(tokens)
+}
+
+#[cfg(test)]
+mod qwen35_ssm_meta_tests {
+    use super::{qwen35_ssm_meta, Qwen35SsmMeta};
+    use crate::gguf::types::GGUFValue;
+    use std::collections::HashMap;
+
+    fn md(pairs: &[(&str, GGUFValue)]) -> HashMap<String, GGUFValue> {
+        pairs
+            .iter()
+            .map(|(k, v)| ((*k).to_string(), v.clone()))
+            .collect()
+    }
+
+    #[test]
+    fn test_empty_metadata_gives_the_qwen35_0_8b_defaults() {
+        assert_eq!(
+            qwen35_ssm_meta(&HashMap::new()),
+            Qwen35SsmMeta {
+                head_k_dim: 16,
+                num_k_heads: 1,
+                num_v_heads: 16,
+                conv_kernel: 4,
+                rope_sections: [16, 24, 24, 0],
+            }
+        );
+    }
+
+    #[test]
+    fn test_qwen2_keys_win_and_qwen35_keys_are_the_fallback() {
+        let meta = qwen35_ssm_meta(&md(&[
+            ("qwen2.ssm.state_size", GGUFValue::UInt32(128)),
+            ("qwen35.ssm.state_size", GGUFValue::UInt32(999)),
+            ("qwen35.ssm.group_count", GGUFValue::UInt32(2)),
+            ("qwen35.ssm.time_step_rank", GGUFValue::Int32(32)),
+            ("qwen35.ssm.conv_kernel", GGUFValue::UInt32(4)),
+        ]));
+        assert_eq!(meta.head_k_dim, 128, "the qwen2 key is preferred");
+        assert_eq!(meta.num_k_heads, 2, "no qwen2 key: the qwen35 one is read");
+        assert_eq!(meta.num_v_heads, 32, "Int32 is accepted like UInt32");
+        assert_eq!(meta.conv_kernel, 4);
+    }
+
+    #[test]
+    fn test_a_non_integer_value_falls_through_to_the_default() {
+        // A string where an integer belongs is not a value: it must not be read as 0.
+        let meta = qwen35_ssm_meta(&md(&[(
+            "qwen2.ssm.conv_kernel",
+            GGUFValue::String("four".to_string()),
+        )]));
+        assert_eq!(meta.conv_kernel, 4);
+    }
+
+    #[test]
+    fn test_rope_sections_are_defaulted_per_section() {
+        // Two entries given: the last two sections keep their defaults, and a
+        // non-integer entry keeps its own.
+        let meta = qwen35_ssm_meta(&md(&[(
+            "qwen2.rope.dimension_sections",
+            GGUFValue::Array(vec![
+                GGUFValue::UInt32(8),
+                GGUFValue::Float32(1.0),
+                GGUFValue::Int32(12),
+            ]),
+        )]));
+        assert_eq!(meta.rope_sections, [8, 24, 12, 0]);
+    }
 }
 
 #[cfg(test)]
