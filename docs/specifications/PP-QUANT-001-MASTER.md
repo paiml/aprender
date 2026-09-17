@@ -1,17 +1,19 @@
 # PP-QUANT-001 v1.0 — MASTER — Quant-type dispatch consolidation
 
-**Status:** DRAFT · ticket #3418 · train **0.69.0** (per operator decision 2026-09-17 —
-overrides #3418's own request for a dedicated, non-cadence release; see §6.1 for the
-risk this decision accepts) · authored 2026-09-17 against `origin/main` @ `425e84888`
+**Status:** DRAFT · ticket #3418 (umbrella: "new architectures cost too many lines" —
+see the 2026-09-17 comment on #3418 for how this and PP-ARCH-001 relate) · **Phase
+0/1 on train 0.69.0**, Phase 2/3 on the dedicated milestone (per operator decision
+2026-09-17; see §6.1) · authored 2026-09-17 against `origin/main` @ `425e84888`
 **Companions:** `contracts/quant-dispatch-completeness-v1.yaml` (the type universe, the
 Phase 0 inventory, and the gate's obligations; `pv validate` green) ·
 `crates/aprender-serve/src/quantize/format_trait.rs` (existing partial trait, extended
-not replaced) · epic #3421 · `docs/specifications/06x-release-schedule.md` (the
-train this rides; not amended by this document — see §6.2 for what would need to change
-there)
-**Downstream:** `docs/specifications/PP-ARCH-001-MASTER.md` (#3422, epic #3423,
-milestone PP-ARCH-001) — the shared attention/FFN forward-path consolidation this
-document is a prerequisite for. Closing PP-QUANT-001 alone does not deliver "new
+not replaced) · epic #3421 (Phase 0/1, 0.69.0) · epic #3423 (Phase 2/3, dedicated
+milestone) · `docs/specifications/06x-release-schedule.md` (the train Phase 0/1 rides;
+not amended by this document — see §6.2)
+**Downstream:** `docs/specifications/PP-ARCH-001-MASTER.md` (#3422) — the shared
+attention/FFN forward-path consolidation this document is a prerequisite for, tracked
+jointly with this document's Phase 2/3 by epic #3423 on milestone `Inference dispatch
+& architecture consolidation`. Closing PP-QUANT-001 alone does not deliver "new
 architectures cost hundreds of lines, not thousands": of #3418's own 1,678-line Qwen3-MoE
 count, only ~85 lines are quant dispatch; the rest is forward-pass logic PP-ARCH-001
 governs. PP-ARCH-001 needs this document's dispatch table to make its shared
@@ -334,13 +336,17 @@ Still owed (Phase 1 unless marked):
 the ~30-file, 3-backend (CPU/CUDA/wgpu) blast radius of Phase 2 competes for the same
 verification attention as the model-specific tickets riding the normal cadence, and
 risks regressing Qwen2.5-Coder — the one model line with a real GPU-parity receipt
-(`docs/BEATS.md`). The operator decided (2026-09-17) to place this on **0.69** instead
-of reserving 0.70 or a new milestone. This document's phase split (§3) is the mitigation
-available within that constraint: **only Phase 0/1 are committed to the 0.69 window**;
-Phase 2 (the actual multi-file migration) and Phase 3 (parity re-proof) are **not**
-bound to 0.69's `2026-09-18T06:00Z` train-leaves-by instant and may slip forward under
-the train rule (`06x-release-schedule.md` §1.1) without blocking the tag, carrying a
-`slipped_from:` note on the epic.
+(`docs/BEATS.md`). The operator decided (2026-09-17) to place Phase 0/1 on **0.69**
+instead. This document's phase split (§3) is the mitigation: **only Phase 0/1 are
+committed to the 0.69 window** (done — epic #3421). Phase 2 (the actual multi-file
+migration) and Phase 3 (parity re-proof) are **not** bound to 0.69's
+`2026-09-18T06:00Z` train-leaves-by instant — as of 2026-09-17 they have a fixed home
+of their own: milestone **`Inference dispatch & architecture consolidation`**,
+tracked by epic #3423 alongside PP-ARCH-001's phases (§0's Downstream note). This
+replaces the original "may slip forward under the train rule" language: Phase 2/3
+were never actually going to be scheduled as a 06x-train slip — they're on the
+dedicated, clockless cycle #3418 asked for from the start, just tracked jointly with
+PP-ARCH-001 rather than as a `PP-QUANT-001`-only milestone.
 
 **§6.2** `docs/specifications/06x-release-schedule.md` is not amended by this document.
 0.69's stated theme ("declarative fine-tune lands; batching bands turn VALID") and its
@@ -354,11 +360,13 @@ from the Phase 0 inventory — not asserted here in advance.
 
 ## §7 Next steps (tracking, not yet done by this document)
 
-1. ~~Open a GitHub epic under milestone `0.69.0`, linking #3418~~ — done: epic #3421.
+1. ~~Open a GitHub epic under milestone `0.69.0`, linking #3418~~ — done: epic #3421
+   (rescoped 2026-09-17 to Phase 0/1 only).
 2. Assign an owner (currently unassigned).
 3. ~~Phase 0 inventory as the first PR~~ — done: `contracts/quant-dispatch-completeness-v1.yaml`
    plus the `qdc_*` tests binding it to the tree.
 4. Phase 1: the table, `QuantCodebookFormat`, generated grids, and the two remaining
-   tests (§2.4, §5).
-5. See PP-ARCH-001-MASTER.md for the downstream consolidation this one is a
-   prerequisite for.
+   tests (§2.4, §5). Still tracked by #3421.
+5. Phase 2/3: tracked by epic #3423 on milestone `Inference dispatch & architecture
+   consolidation`, jointly with PP-ARCH-001-MASTER.md — the downstream consolidation
+   this document is a prerequisite for.
