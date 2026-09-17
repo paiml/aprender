@@ -68,6 +68,8 @@ pub(crate) fn build_qwen3_moe_gguf(expert_qtype: u32) -> Vec<u8> {
         .ffn_hidden_dim(arch, INTERMEDIATE as u32)
         .add_u32("qwen3moe.expert_count", NUM_EXPERTS as u32)
         .add_u32("qwen3moe.expert_used_count", 1)
+        // Read by `run_qwen3_moe_generate` (the #1789 serve route), not by the loader.
+        .add_u32("qwen3moe.expert_feed_forward_length", INTERMEDIATE as u32)
         .add_f32_tensor(
             "token_embd.weight",
             &[VOCAB as u64, HIDDEN as u64],
@@ -219,11 +221,11 @@ mod regression_tests {
         const PIN: &str =
             "fixture bytes changed — a fixture change must be deliberate: update the pin in the same commit";
         assert_eq!(
-            hash_q4_k_moe, "32686a821fb10525fc9167d178d7a3877ef2e78119c846b6f8eac0f04745c8fd",
+            hash_q4_k_moe, "3fe8370400ae82669ce84ff46bc4e66d432132f8f8028215d6f6f532ad0135a6",
             "q4_k MoE: {PIN}"
         );
         assert_eq!(
-            hash_q4_0_moe, "2679ae0ecf2738f7accb0be3695ebb17f958f95012fb53dd5ab0866549fdb8c1",
+            hash_q4_0_moe, "4fe1519348988a1d5924da3e0e16e544df844a45c1062b9c4bdc68735f23c656",
             "q4_0 MoE: {PIN}"
         );
         assert_eq!(

@@ -66,3 +66,4 @@ mod chat_stream_route_2375; // aprender#2375(4): POST /v1/chat/completions/strea
 mod apr_model_routes_2609; // aprender#2609: routed endpoints on an AprTransformer server; one condition, one status
 mod effective_config_route_pp2; // PP-LLAMA-001 §12 row 6 / PP-2 / PP-13 / PP-14 / PP-24 / PP-30: GET /v1/effective-config reports residency, not cfg!
 mod stream_mode_pp27; // PP-LLAMA-001 PP-27 / §3: an SSE stream declares live vs replayed, and the terminal chunk carries usage + measured timings
+mod regression_1789_moe_serve_route; // aprender#1789 (PMAT-3429): a resident qwen3_moe GGUF must take the MoE-aware dispatch at /v1/chat/completions, not the dense CPU fallback
