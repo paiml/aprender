@@ -18142,3 +18142,326 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-3427
+  github_issue: 3427
+  item_type: task
+  title: PP-QUANT-001 research + 0.69 must-carry plan
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-09-17T10:45:16Z
+  updated: 2026-09-17T10:45:16Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:docs
+  notes: null
+- id: PMAT-3428
+  github_issue: 3428
+  item_type: task
+  title: 'EPIC: PP-TENSOR-001 — a tensor that has no bytes is a different type from one that does (MoE / tied-embedding '
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-17T10:57:46Z
+  updated: 2026-09-17T10:57:46Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:docs
+  notes: null
+- id: PMAT-3429
+  github_issue: 3429
+  item_type: task
+  title: 'PP-QUANT-001 M3: regression fixtures — #1749 #1789 #2535 #3341 (+ #3091 reopen) on tiny synthetic GGUFs, obser'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-17T10:57:46Z
+  updated: 2026-09-17T10:57:46Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+- id: PMAT-3430
+  github_issue: 3430
+  item_type: task
+  title: 'PP-QUANT-001 M1: one `#[repr(u32)] GgmlType` (43 rows: 35 live + 8 Removed) + `TRAITS[43]` below core/compute/'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-17T10:57:47Z
+  updated: 2026-09-17T10:57:47Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+- id: PMAT-3431
+  github_issue: 3431
+  item_type: task
+  title: 'PP-QUANT-001 M2: reconciliation gate — `GgmlType` vs the vendored `ggml.h` id list at a pinned sha; exhaustive'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-17T10:57:47Z
+  updated: 2026-09-17T10:57:47Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+- id: PMAT-3432
+  github_issue: 3432
+  item_type: task
+  title: 'PP-QUANT-001 M4: `tensor_byte_size` and ONE refusal site read `TRAITS` — closes the #3091-reopen / #3341 class'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-17T10:57:48Z
+  updated: 2026-09-17T10:57:48Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+- id: PMAT-3433
+  github_issue: 3433
+  item_type: task
+  title: 'PP-TENSOR-001 T1: typed `TensorStorage` — a dense consumer cannot receive an MoE placeholder'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-17T10:57:48Z
+  updated: 2026-09-17T10:57:48Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+- id: PMAT-3434
+  github_issue: 3434
+  item_type: task
+  title: 'PP-TENSOR-001 T2: sentinel ban — `qtype: 0` + `byte_size: 0` may not be constructed; 0 is F32'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-17T10:57:49Z
+  updated: 2026-09-17T10:57:49Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+- id: PMAT-3435
+  github_issue: 3435
+  item_type: task
+  title: 'PP-TENSOR-001 T3: diagnostic contract — an absent tensor is reported as absent, never as truncated, corrupt, o'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-17T10:57:49Z
+  updated: 2026-09-17T10:57:49Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+- id: PMAT-3436
+  github_issue: 3436
+  item_type: task
+  title: 'PP-QUANT-001 Q2 (gguf/ loaders): retype the boundary — raw `u32` qtype → `GgmlType`; ratchet 11 files → 0'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-17T10:57:50Z
+  updated: 2026-09-17T10:57:50Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+- id: PMAT-3437
+  github_issue: 3437
+  item_type: task
+  title: 'PP-QUANT-001 Q2 (gguf/inference CPU): retype the boundary — raw `u32` qtype → `GgmlType`; ratchet 10 files → 0'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-17T10:57:50Z
+  updated: 2026-09-17T10:57:50Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+- id: PMAT-3438
+  github_issue: 3438
+  item_type: task
+  title: 'PP-QUANT-001 Q2 (gguf/cuda): retype the boundary — raw `u32` qtype → `GgmlType`; ratchet 4 files → 0'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-17T10:57:51Z
+  updated: 2026-09-17T10:57:51Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+- id: PMAT-3439
+  github_issue: 3439
+  item_type: task
+  title: 'PP-QUANT-001 Q2 (gpu/adapters wgpu): retype the boundary — raw `u32` qtype → `GgmlType`; ratchet 1 files → 0'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-17T10:57:51Z
+  updated: 2026-09-17T10:57:51Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+- id: PMAT-3440
+  github_issue: 3440
+  item_type: task
+  title: 'PP-QUANT-001 Q2 (core + compute + other crates): retype the boundary — raw `u32` qtype → `GgmlType`; ratchet 3'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-17T10:57:52Z
+  updated: 2026-09-17T10:57:52Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+- id: PMAT-3441
+  github_issue: 3441
+  item_type: task
+  title: 'PP-QUANT-001 Q3: tier-0 scalar dequant for 35/35 live ggml types — every unsupported-type refusal becomes a sl'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-17T10:57:52Z
+  updated: 2026-09-17T10:57:52Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+- id: PMAT-3442
+  github_issue: 3442
+  item_type: task
+  title: 'PP-QUANT-001 Q5: upstream drift job — a new `ggml_type` id upstream opens an issue here the day it lands'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-17T10:57:53Z
+  updated: 2026-09-17T10:57:53Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+- id: PMAT-3443
+  github_issue: 3443
+  item_type: task
+  title: 'PP-QUANT-001 P4: #3077 support table GENERATED from `TRAITS` (type × backend × tier)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-17T10:57:53Z
+  updated: 2026-09-17T10:57:53Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:docs
+  notes: null
+- id: PMAT-3445
+  github_issue: 3445
+  item_type: task
+  title: 'release train: a tag was cut while its milestone had open issues — 0.68.0 shipped with 2 open, one a user-faci'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-17T10:57:54Z
+  updated: 2026-09-17T10:57:54Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+- id: PMAT-3446
+  github_issue: 3446
+  item_type: task
+  title: 'docs(release): APR-RELEASE-001 has no must-carry section on `main` — land §1.5 (must-carry rows; T-0 waits; > '
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-17T10:57:54Z
+  updated: 2026-09-17T10:57:54Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:docs
+  notes: null

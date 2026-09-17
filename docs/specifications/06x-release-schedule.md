@@ -63,6 +63,22 @@ A release is a **train**. It leaves in a fixed window; scope that is not on the 
 
 `T` is the previous train's *actual* tag instant (`gh release view vX.Y.Z --json publishedAt`); the table assumes each train leaves at its planned instant (+60h). A train that leaves early or late shifts every later window by the same amount — recompute, do not re-plan.
 
+### §1.1a Must-carry rows — the one scope exception (operator brief v4, 2026-09-17)
+
+The train rule above lets scope slip and never holds a train for it. A **must-carry row** is the single exception: a named slice of work that a named tag does not leave without. The rule, quoted from the operator's session brief of 2026-09-17: *"must-carry slice M … rides 0.69.0 and T-0 waits for it — > 72 h ⇒ andon naming the ticket."* Mechanically:
+
+1. T-0 of a tag with a must-carry row **waits** until every ticket in the row is merged with its cut evidence recorded.
+2. The wait is bounded: more than **72 h past the previous tag's actual instant** raises an andon that names the blocking ticket. The andon is a decision point for the operator, not an automatic slip.
+3. A row names tickets, not themes. Anything not listed rides under the ordinary train rule.
+
+This section stands in for `APR-RELEASE-001` §1.5, which is cited by briefs and tickets but is not on `main` (#3446 lands it and moves this table there).
+
+| Tag | Must-carry | Tickets | Cut evidence, in order |
+|---|---|---|---|
+| **0.69.0** | **PP-QUANT-001 slice M** (epic #3421) + **PP-TENSOR-001 T1–T2** (epic #3428) — *"Alfredo's ticket is prioritized: PP-QUANT-001 is 0.69 must-carry."* | #3429 fixtures → #3430 one `GgmlType` + `TRAITS[43]` → #3433 typed `TensorStorage` → #3431 reconciliation gate → #3432 byte size + single refusal → #3434 sentinel ban; and #3445 (T-0 re-reads the milestone) before the cut | `make clean-room-p1` (a new leaf crate joins clean-room and the publish order) → `pv validate` 0 failed incl. `contracts/quant-dispatch-v1.yaml` → the three M2 mutations observed RED → #3429 fixtures GREEN → Qwen2.5-Coder within APR-PERF-GATE-001 on the cut sha → `apr-dogfood` go receipt |
+
+Clock for this row `[V]`: `v0.68.0` was tagged 2026-09-17T06:35:55Z (`git log -1 --format=%cI v0.68.0`), two days after the planned instant in the table above, so by the shift rule the 0.69.0 window opens 2026-09-19T06:35Z and the 72 h andon falls at **2026-09-20T06:35Z**. Evidence and measurements behind the row: `docs/audits/impl-PMAT-3427-receipt.md`.
+
 ### §1.2 Capacity arithmetic (why E is the enabler, not a nice-to-have)
 
 - Merge throughput today is **3–8 merges/day** (G6) → **8–20 PRs per 60-hour train** `[C]`.
