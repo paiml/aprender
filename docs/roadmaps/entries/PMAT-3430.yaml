@@ -14,4 +14,5 @@
   estimated_effort: null
   labels:
   - kind:code
-  notes: null
+  - orch:fable
+  notes: 'orch-basis:M>=3 — owning modules measured in the PMAT-3427 receipt: aprender-core, aprender-compute, aprender-serve (+ a leaf crate); plan quorum before code'
