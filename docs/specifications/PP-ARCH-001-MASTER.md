@@ -1,12 +1,17 @@
 # PP-ARCH-001 v1.0 — MASTER — Shared-block forward-path consolidation
 
-**Status:** DRAFT · ticket #3422 · epic #3423 · milestone **PP-ARCH-001** (dedicated,
-not the 06x 2-3 day cadence — see §6) · authored 2026-09-17 against `origin/main` @
-`1d7dcc5e9`
+**Status:** DRAFT · ticket #3422, a sub-issue of the umbrella #3418 (see #3418's
+2026-09-17 comment for how the two relate) · epic #3423, which also tracks
+PP-QUANT-001 Phase 2/3 · milestone **`Inference dispatch & architecture
+consolidation`** (dedicated, not the 06x 2-3 day cadence — see §6) · authored
+2026-09-17 against `origin/main` @ `1d7dcc5e9`
 **Prerequisite:** PP-QUANT-001 (`docs/specifications/PP-QUANT-001-MASTER.md`, #3418,
-epic #3421). A shared attention/FFN composition layer must be quant-agnostic to be
-reusable across architectures; that needs PP-QUANT-001's dispatch table (its §2.4).
-This document assumes PP-QUANT-001 Phase 1 is done and does not re-derive it.
+epic #3421 for its Phase 0/1). A shared attention/FFN composition layer must be
+quant-agnostic to be reusable across architectures; that needs PP-QUANT-001's
+dispatch table (its §2.4). This document assumes PP-QUANT-001 Phase 1 is done and
+does not re-derive it. This document's own Phase 2/3, and PP-QUANT-001's Phase 2/3,
+share the same milestone and epic (#3423) — they are the two sub-projects of the one
+dedicated cycle, not independent scope.
 **Companions:** `contracts/shared-block-adoption-v1.yaml` (owed, §5) ·
 `crates/aprender-serve/src/gguf/inference/forward/attention.rs`,
 `ffn_block.rs` (the existing, under-adopted shared layer this builds on)
@@ -165,11 +170,12 @@ Per `docs/specifications/06x-release-schedule.md` §1.1, a train leaves in a fix
 48-72h window regardless of scope. Phase 2 of this document touches the same
 CPU/CUDA forward paths that carry aprender's one proven parity receipt
 (Qwen2.5-Coder, `docs/BEATS.md`) — a strictly larger blast radius than
-PP-QUANT-001's Phase 2 (which #3418 itself asked to be dedicated, and which the
-operator instead placed on 0.69, accepting that risk explicitly — PP-QUANT-001 §6).
-This document's Phase 2/3 is not offered for a 0.69/0.70-style window: milestone
-**PP-ARCH-001** (created 2026-09-17, distinct from the 06x milestones) holds it,
-with no train-leaves-by deadline. Phase 0/1 are additive and low-risk and could in
+PP-QUANT-001's Phase 0/1 (which rode 0.69; PP-QUANT-001 §6). This document's Phase
+2/3 is not offered for a 0.69/0.70-style window: milestone `Inference dispatch &
+architecture consolidation` (created 2026-09-17, distinct from the 06x milestones,
+renamed from its original working title `PP-ARCH-001` once it absorbed
+PP-QUANT-001's own Phase 2/3 — see #3423) holds it, with no train-leaves-by
+deadline. Phase 0/1 of this document are additive and low-risk and could in
 principle ride a 06x train if that's ever wanted, but nothing requires it — this
 milestone has no clock, which is the point.
 
