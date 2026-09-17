@@ -18454,7 +18454,7 @@ roadmap:
   assigned_to: null
   created: 2026-09-17T20:39:42Z
   updated: 2026-09-17T20:39:42Z
-  spec: null
+  spec: docs/specifications/paiml-ontology.md
   acceptance_criteria: []
   phases: []
   subtasks: []
