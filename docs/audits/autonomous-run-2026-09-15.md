@@ -672,3 +672,16 @@ scheduling chance, and it costs ~3× (gx10 10.6 min vs intel 34.5 for step 1).
 ### Still open
 
 - clean-room (aprender) on `v0.68.0` → assets check → preflight → dry-run receipt → STOP and report.
+
+## Interval — 10:00Z (2026-09-17) — clean-room through B1, B2 red, ruling: v0.68.0 GitHub-only, 0.68.1 to crates.io
+
+### What moved
+
+- **infra#650** (tag ref materialized) and **infra#652** (A1 overlays `[patch.crates-io]` for all 79 members at the tag; 24/24 rows, both mutation polarities; A1 on the real tag 101→0 in 7 s) merged 08:17Z / 08:53Z. Re-dispatched clean-room on `v0.68.0` (run 35202211338): **A0, A1, A2, B0, B1 PASSED — first time ever on a tag**; **B2 FAILED**: `aprender-core (lib test)` — 19 × `cannot find module or crate entrenar`. Mechanism: PMAT-955 keeps sibling dev-deps path-only (a versioned one would create a crates.io publish cycle), `cargo publish` deletes them, so the published crate's own lib tests do not compile. Identical at `v0.67.0`: standing, shipped over once. #3307's class.
+- **Operator ruling (10:0xZ)**: `v0.68.0` is **GitHub-only** — tag and 16 binaries stand, `install.sh` verified on x86_64 + aarch64, no crates.io publish, one release-note line pointing at 0.68.1 (done). **0.68.1** is the crates.io release and carries the B2 fix. No dry-run on 0.68.0. T-2 preflight on main BEFORE the bump (§4 as amended), then cut 0.68.1, clean-room on its tag through B2 and past it, dry-run receipt, stop for the attended cascade.
+- **B2 exposure fixed in one ticket — #3425**: measured with B2's own shape (A0 strip + A1 overlay, `cargo test --lib --workspace --no-run`): two crates, `aprender-core` (19 sites/14 tests, `entrenar`) and `aprender-test-showcase` (3 sites/100 tests, `jugar-probar`); tests moved out of `src/` to targets the published crate does not carry (contract_tests fragment 390; new fragment 410 for the showcase target); after: all 72 lib-test binaries build in published form, 0 failures. Three other path-only pairs triaged as not B2 exposure and recorded in the baseline.
+- Learning filed (memory): a gate never green on its own target is not a gate — first-green proof on a real target before it may block (infra#621's assert and A1 both stopped this train on first real use).
+
+### Still open
+
+- #3425 → T-2 preflight on main (GO receipt for the parent sha) → bump PR 0.68.1 → T-1 → T-2 → T-3 (tag, clean-room on the tag, assets, installer rows) → dry-run receipt → STOP for the operator.
