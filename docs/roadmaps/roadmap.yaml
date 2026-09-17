@@ -18142,3 +18142,20 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-3445
+  github_issue: 3445
+  item_type: task
+  title: 'release train: a tag was cut while its milestone had open issues — 0.68.0 shipped with 2 open, one a user-faci'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-17T11:33:08Z
+  updated: 2026-09-17T11:33:08Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
