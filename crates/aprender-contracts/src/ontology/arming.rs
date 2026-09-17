@@ -39,8 +39,9 @@ impl ArmedGates {
     /// [`DEFAULT_ARMED`].
     #[must_use]
     pub fn default_set() -> Self {
-        // RED (PMAT-3451): deliberately wrong until GREEN.
-        Self { names: Vec::new() }
+        Self {
+            names: DEFAULT_ARMED.iter().map(|s| (*s).to_string()).collect(),
+        }
     }
 
     #[must_use]
@@ -50,17 +51,36 @@ impl ArmedGates {
 
     #[must_use]
     pub fn is_armed(&self, gate: &str) -> bool {
-        // RED (PMAT-3451): deliberately wrong until GREEN.
-        let _ = gate;
-        false
+        self.names.iter().any(|n| n == gate)
     }
 
     /// Parse `contracts/lint-baseline.json`. `None` (no file) or no `armed_gates` key → the default set; an
     /// array of strings → exactly that list (possibly empty); anything else → [`BaselineError`].
     pub fn from_baseline(text: Option<&str>) -> Result<Self, BaselineError> {
-        // RED (PMAT-3451): deliberately wrong until GREEN.
-        let _ = text;
-        Ok(Self::default_set())
+        let Some(text) = text else {
+            return Ok(Self::default_set());
+        };
+        let parsed: serde_json::Value = match serde_json::from_str(text) {
+            Ok(v) => v,
+            Err(e) => return Err(BaselineError(e.to_string())),
+        };
+        let Some(armed_gates_val) = parsed.get("armed_gates") else {
+            return Ok(Self::default_set());
+        };
+        let Some(armed_gates_arr) = armed_gates_val.as_array() else {
+            return Err(BaselineError("armed_gates is not an array".to_string()));
+        };
+        let mut names = Vec::new();
+        for val in armed_gates_arr {
+            if let Some(s) = val.as_str() {
+                names.push(s.to_string());
+            } else {
+                return Err(BaselineError(
+                    "armed_gates element is not a string".to_string(),
+                ));
+            }
+        }
+        Ok(Self::new(names))
     }
 }
 
@@ -95,9 +115,17 @@ pub fn check_monotone(
     comparand: &ArmedGates,
     current: &ArmedGates,
 ) -> Result<(), ArmedGatesShrank> {
-    // RED (PMAT-3451): deliberately wrong until GREEN.
-    let _ = (comparand, current);
-    Ok(())
+    let mut dropped = Vec::new();
+    for name in comparand.names() {
+        if !current.is_armed(name) {
+            dropped.push(name.clone());
+        }
+    }
+    if dropped.is_empty() {
+        Ok(())
+    } else {
+        Err(ArmedGatesShrank { dropped })
+    }
 }
 
 /// The armed meet over one run's gate verdicts.
@@ -115,12 +143,42 @@ pub struct ArmedMeet {
 /// armed set is `Unknown{NotArmed}` (R-2: zero is a decline, never an accept).
 #[must_use]
 pub fn meet_armed(results: &[(String, Verdict)], armed: &ArmedGates) -> ArmedMeet {
-    // RED (PMAT-3451): deliberately wrong until GREEN.
-    let _ = (results, armed, Reason::NotArmed);
+    if armed.names().is_empty() {
+        return ArmedMeet {
+            verdict: Verdict::Unknown(Reason::NotArmed),
+            armed: Vec::new(),
+            not_armed: results.iter().map(|(n, _)| n.clone()).collect(),
+        };
+    }
+
+    let mut armed_results = Vec::new();
+    let mut verdict = Verdict::Pass;
+
+    for name in armed.names() {
+        let v = results
+            .iter()
+            .find(|(n, _)| n == name)
+            .map(|(_, v)| *v)
+            .unwrap_or(Verdict::Unknown(Reason::NotRun));
+        armed_results.push((name.clone(), v));
+        verdict = verdict.meet(v);
+    }
+
+    let not_armed = results
+        .iter()
+        .filter_map(|(n, _)| {
+            if !armed.is_armed(n) {
+                Some(n.clone())
+            } else {
+                None
+            }
+        })
+        .collect();
+
     ArmedMeet {
-        verdict: Verdict::Pass,
-        armed: Vec::new(),
-        not_armed: Vec::new(),
+        verdict,
+        armed: armed_results,
+        not_armed,
     }
 }
 
