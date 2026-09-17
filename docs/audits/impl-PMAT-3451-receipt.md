@@ -59,11 +59,12 @@ then lost uncommitted to the session restart. P3 GREEN was rewritten by the orch
 | ph3 | goal ×1 writes | paiml-agy-delegate (opus) | gemini-3.1-pro-high | 8de30355 | achieved |
 | ph4 | goal ×1 writes | paiml-agy-delegate (opus) | gemini-3.1-pro-high | 3128f1ca | self-reported achieved; see deviation |
 | ph6 r1 | quorum ×3 (`quorum-review.sh --base origin/main`) on `61fa95aab` | paiml-agy-delegate (opus) | gemini-3.1-pro-high FAIL · gemini-3.8-flash-high FAIL · gemini-3.7-flash-high PASS | 252f06b1, cbaa220d, a43a4af5 | not agreed; the delegate hit maxTurns 30 after the artifact was written (read from disk, not resumed) |
+| ph6 r2 | quorum ×3 on `2021341bc` | paiml-agy-delegate (opus) | gemini-3.1-pro-high PASS · gemini-3.8-flash-high PASS · gemini-3.7-flash-high PASS | 458d95d3, 7d655f46, 41679307 | agreed; diff_sha256 2d64dd13…; `receipt-lint` on the artifact: complete, author opus-5/claude |
 
 Slots: one Claude subagent at a time for this ticket (`running_peak=1`), `slots=3`. The events file for this
 session holds 2 `SessionStart` + 1 `SubagentStop` after the restart; the pre-restart events were under the wiped
 `/run/user` directory — a host hard crash at 15:30Z (a peer session's resume note records the 4th unclean reboot in
-24 h). I-3: `attempted=7 denied=0 running_peak=1 slots=3`.
+24 h). I-3: `attempted=8 denied=0 running_peak=1 slots=3`.
 
 ## Diff quorum round 1 → what changed
 
@@ -172,4 +173,11 @@ K̂ 90 (ONT-001 row). Actual turns for this ticket are not separable from the se
 - ONT-001 §3.9 does not say how a gate that is only meaningful when a flag requests it (reverse-coverage, strict-test-binding) should arm; see "Diff quorum round 1".
 - The ONT-6 probe's `merged ONT-6` conjunct turns true only after merge and an infra ledger row binding it.
 
-verdict: PARTIAL(review-pending) — the pre-PR diff quorum has not yet run on this head.
+**Lane evidence is not test evidence.** `quorum-review.sh` launches agy directly, without `agy-lane.sh`'s isolated
+clone: during round 2 a 1.6 GB `target/` appeared in this clone inside the lane window, and two lanes graded
+executed-test claims `measured`. Whether a lane ran cargo or copied the numbers from this receipt, those claims are
+not independent; the test, clippy, Kani and mutation results above are the orchestrator's own re-runs. The
+lane-built `target/` was deleted.
+
+verdict: DONE — the diff quorum's verdict of record is `docs/audits/quorum-PMAT-3451.json`, committed on this branch
+immediately after the head it judged.
