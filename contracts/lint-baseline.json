@@ -1,6 +1,6 @@
 {
   "_spec": "APR-RELEASE-001 §11.2 — moves only through `make ont-ratchet` (ONT R-6)",
-  "armed_gates": [],
+  "armed_gates": ["validate", "audit", "score", "verify", "enforce", "enforcement-level", "duplicate-stems", "composition"],
   "ont": {
     "consumer_present": false,
     "contracts_total": 1837,

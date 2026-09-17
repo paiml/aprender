@@ -268,6 +268,10 @@ pub enum Commands {
         /// promote to Error and fail CI. Issue #1510.
         #[arg(long)]
         strict_test_binding: bool,
+        /// Git ref whose `lint-baseline.json` is the `armed_gates` comparand (ONT-001 section 3.9). Default:
+        /// merge-base(HEAD, origin/main), else the origin/main tip; with neither, NOT CHECKED is printed.
+        #[arg(long)]
+        armed_baseline_ref: Option<String>,
     },
     /// Score contracts or a codebase directory
     Score {
