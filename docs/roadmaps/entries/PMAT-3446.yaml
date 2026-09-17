@@ -1,0 +1,17 @@
+- id: PMAT-3446
+  github_issue: 3446
+  item_type: task
+  title: 'docs(release): APR-RELEASE-001 has no must-carry section on `main` — land §1.5 (must-carry rows; T-0 waits; > '
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-17T11:33:09Z
+  updated: 2026-09-17T11:33:09Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:docs
+  notes: null
