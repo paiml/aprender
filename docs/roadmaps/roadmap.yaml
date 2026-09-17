@@ -18445,3 +18445,19 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-3468
+  github_issue: 3468
+  item_type: task
+  title: preflight R6 judges the cycle, not the shape
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-17T20:26:51Z
+  updated: 2026-09-17T20:26:51Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
