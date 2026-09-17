@@ -18455,7 +18455,13 @@ roadmap:
   created: 2026-09-17T20:39:42Z
   updated: 2026-09-17T20:39:42Z
   spec: docs/specifications/paiml-ontology.md
-  acceptance_criteria: []
+  acceptance_criteria:
+  - 'Σ: contracts/ontology.yaml declares concepts, roles, 66 symbols, worlds, agents, 7 entity_types each naming a declared extractor, not_expressible, and a readers map claiming every populated key; ontology/sigma.rs loads it and refuses the four malformed-Σ classes at exit 3'
+  - '`pv lint --gate <name>` runs ONE gate and reports only it, mapping the verdict through ONT-6''s lattice: Pass 0, corpus violation 1 reject, no Σ 2 decline, malformed Σ 3 error; unknown gate names are refused'
+  - 'the sigma gate: PV-ONT-001 entity.type not in Σ, PV-ONT-002 undeclared role, PV-ONT-003 undeclared operator glyph without an explicit `prose: true`, PV-ONT-004 a rise in the formal_prose debt; both rules the real corpus cannot exercise carry fixture corpora'
+  - 'symbol-level means operator glyphs only — applied identifiers are code (ONT-3a), and grammar, arity, types and truth are not checked'
+  - 'sigma runs inside every pv lint (R-8) as the 10th gate and is armed in contracts/lint-baseline.json (nine armed); formal_prose recorded at the measured 1464 and enforced by the gate that measures it'
+  - 'contracts/ont-sigma-v1.yaml validates; census 1793; pv lint contracts/ rc 0; the ONT-2b probe passes every conjunct except `merged`'
   phases: []
   subtasks: []
   estimated_effort: null
