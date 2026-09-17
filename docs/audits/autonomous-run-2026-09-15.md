@@ -618,3 +618,17 @@ scheduling chance, and it costs ~3× (gx10 10.6 min vs intel 34.5 for step 1).
 ### Still open
 
 - #3406 → autopilot. #3405 in queue. #3364 (this log) and #3363 to arm after the release commit is fixed. mini down; gx10 network repaired 21:47Z (forjar item open in memory).
+
+## Interval — 03:10Z (2026-09-17) — T-2 stop and restart
+
+### What moved
+
+- **T-0**: bump PR #3406 merged 00:54Z → release commit `49fe9155a`. **T-1 GO** 01:05Z (980 doctests, examples, `--no-default-features` all rc=0 — the standing #3176 class is gone on this tree).
+- **T-2 NO-GO on `49fe9155a`** (`dogfood-pre-publish-49fe9155a-NOGO.log`): `check_perf041_marker.sh` RED — `evidence/perf041/lambda/marker.json` 7.3 d old vs `witness.max_age_days=7`. Root cause: the sanctioned producer (`cuda-nightly.yml`, gx10) has failed on every run since 09-12 with the standing Blackwell c=16 slot-invariance defect **#3096** (0.70; intra_agree_to=31 < 64 at c=16, c≤8 invariant); nothing refreshed the marker after 09-09. v0.67.0 (cut 09-13) passed on that same lambda marker while fresh.
+- **Fix, precedented (0.67: post-bump fix PRs)**: lambda (RTX 4090, sm_89) PP-26 witness on the release commit with a `--features cuda` build proven by the release lane's bytes test (`libcuda.so`=1): c=1/4/8/16 all intra-invariant to 128, no frozen slot, exit 0. **PR #3407** (marker + witness + CHANGELOG *Known limitations* naming #3096) merged **02:41Z** → **release commit `27f070324`**. Autopilot for #3406 stopped by the orchestrator after the RED row (rc=143 recorded), relaunched `3407 wait close` (pid 1117699). **T-1 GO again 02:50Z**; T-2 running 02:50Z with all 7 declared gates OK.
+- Side defect filed: **#3408** — `apr devices` prints `cuda unavailable reason=NotCompiled` on a CUDA build that serves on the GPU (0.69).
+- Merged this interval: #3363 (pack ledger), #3364 (this log's earlier intervals) 03:00Z.
+
+### Still open
+
+- T-2 verdict → T-3 (tag, release, clean-room dispatched on `v0.68.0`, assets) → T-4 (cascade, install, host + installer receipts, close). Ledger record at close → docs PR.
