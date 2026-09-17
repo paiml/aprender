@@ -38,6 +38,15 @@ pub fn run(file: &Path, prompt: &str, _assert: bool, verbose: bool, json: bool) 
         "(See also: apr ptx-map for kernel dispatch verification)".dimmed()
     );
     eprintln!(
+        "  {}",
+        "Exit: 0 parity held · 5 parity disproven · 12 REFUSED (this build cannot measure"
+            .dimmed()
+    );
+    eprintln!(
+        "  {}",
+        "        that architecture — the line says which, and the issue that lifts it)".dimmed()
+    );
+    eprintln!(
         "{}",
         "══════════════════════════════════════════════════════════════════════"
             .cyan()
@@ -47,6 +56,28 @@ pub fn run(file: &Path, prompt: &str, _assert: bool, verbose: bool, json: bool) 
     // ── Load model ──────────────────────────────────────────────────────────
     let mapped = MappedGGUFModel::from_path(file)
         .map_err(|e| CliError::ValidationFailed(format!("Failed to map model: {e}")))?;
+
+    // PMAT-1098: REFUSE, before a single weight is materialized, an architecture
+    // this dense CPU-vs-GPU loop cannot route. `MappedGGUFModel::from_path`
+    // above is a mmap + header parse — no tensor bytes are read — so an 18 GB
+    // MoE is refused in header time, not after a minute of loading. Falling
+    // through here is what made the 0.68.0 T-2 dogfood report a TOOL limitation
+    // as three FAIL rows naming the MODEL.
+    {
+        let arch = mapped.model.architecture().unwrap_or_default().to_string();
+        let names: Vec<&str> = mapped.model.tensors.iter().map(|t| t.name.as_str()).collect();
+        if let Some(refusal) = parity_refusal_for(&arch, names) {
+            eprintln!();
+            eprintln!("{}", refusal.line());
+            if json {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&refusal.json()).unwrap_or_default()
+                );
+            }
+            return Err(refusal.into_error());
+        }
+    }
 
     let tokens = mapped.model.encode(prompt).unwrap_or_else(|| vec![1u32]);
 
