@@ -104,6 +104,7 @@ aprender-rag	--lib	loader::text
 aprender-rag-cli	--lib	<root>
 aprender-serve	--lib	cli::cli_tests
 aprender-serve	--lib	quantize::contract_tests
+aprender-serve	--lib	quantize::dispatch_contract_tests
 aprender-shell	--lib	model
 aprender-simulate	--lib	demos::tsp_grasp
 aprender-simulate	--lib	demos::tsp_instance

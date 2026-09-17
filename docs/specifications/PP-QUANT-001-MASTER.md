@@ -3,7 +3,8 @@
 **Status:** DRAFT · ticket #3418 · train **0.69.0** (per operator decision 2026-09-17 —
 overrides #3418's own request for a dedicated, non-cadence release; see §6.1 for the
 risk this decision accepts) · authored 2026-09-17 against `origin/main` @ `425e84888`
-**Companions:** `contracts/quant-dispatch-completeness-v1.yaml` (the gate; owed, §5) ·
+**Companions:** `contracts/quant-dispatch-completeness-v1.yaml` (the type universe, the
+Phase 0 inventory, and the gate's obligations; `pv validate` green) ·
 `crates/aprender-serve/src/quantize/format_trait.rs` (existing partial trait, extended
 not replaced) · epic (owed, §7) · `docs/specifications/06x-release-schedule.md` (the
 train this rides; not amended by this document — see §6.2 for what would need to change
@@ -40,8 +41,9 @@ already has `QuantBlockFormat` — a real, working trait — but:
   It has no representation for **codebook/lattice** types (IQ2_XXS/XS, IQ3_XXS/S,
   IQ4_NL/XS) — those need a second trait shape, not an extension of the first, because
   each block indexes a fixed grid table rather than carrying a per-block scale.
-- The crate names 16 `GGUF_TYPE_*` constants total; the GGUF spec defines 30+. Every
-  type absent from a given call site's own match arms is a live
+- The crate names 13 `GGUF_TYPE_*` tensor-type constants (§4 — #3418's "16" included
+  three metadata value types); ggml defines 35 live tensor types. Every type absent
+  from a given call site's own match arms is a live
   `RealizarError::UnsupportedOperation` waiting on the next real download.
 - Five closed tickets (#1749, #1789, #2535, #3341, #3091) are the same defect —
   "this file's qtype list was incomplete" — recurring in five different files. Each fix
@@ -58,8 +60,10 @@ document does not duplicate content that ages, it cites where the aging content 
 ### §2.1 Two traits, one dispatch entry point
 
 1. **`QuantBlockFormat`** (exists, `format_trait.rs`) — affine block formats. Extend its
-   registry to the full affine subset of the GGUF spec (Q4_0/1, Q5_0/1, Q8_0/1, Q2_K
-   through Q6_K, Q8_K, TQ1_0/TQ2_0) rather than the current 5.
+   impls to the full affine subset of the ggml universe (Q1_0, Q2_0, Q4_0/1, Q5_0/1,
+   Q8_0, Q2_K through Q6_K, TQ1_0/TQ2_0) rather than the current 5. Q8_1 and Q8_K get
+   a *size* entry only — ggml itself has no `to_float` for them (they are activation
+   layouts), so the table records `dequant_row: None` rather than pretending.
 2. **`QuantCodebookFormat`** (new) — lattice/codebook formats (IQ1–IQ4 family). Grid
    tables are ported data from llama.cpp's `ggml-quants.c` (`iq2xs_grid`, `iq3xs_grid`,
    etc.) — reference data, not something to re-derive.
@@ -95,10 +99,21 @@ not a replacement.
 
 ### §2.2 The completeness gate (the mechanical backstop, not the honor system)
 
-`contracts/quant-dispatch-completeness-v1.yaml` (owed) enumerates every `GGUF_TYPE_*`
-the format spec defines and asserts `quant_type_traits()` has a non-panicking entry for
-each. A missing type is a CI failure at merge time. This is what #1749/#1789/#2535/
-#3341/#3091 needed and didn't have — each was an honor-system list, five times over.
+`contracts/quant-dispatch-completeness-v1.yaml` (exists; `pv validate` green `[V]`)
+is the enumeration. It carries, per live ggml type id: `name`, `family`, `block`,
+`bytes`, whether ggml itself can dequantize it, and aprender's status at `425e84888`;
+plus `removed_ids` (the eight ids ggml.h marks removed), `type_count` (43), the ten
+codebook `grids` with their element type and length, and the Phase 0 `dispatch_sites`
+inventory. Every number is transcribed from `ggml-common.h`'s `static_assert(sizeof(
+block_X) == …)` lines at llama.cpp `3173a5647` and self-checked: 35 rows + 8 removed
+ids = 43 = `type_count`, no gaps, no duplicates `[V]`.
+
+The gate is a Rust test (owed, Phase 1) that reads the contract and asserts the table
+in §2.4 has `Some` for every row, `None` for every removed id and for `type_count`, and
+that every `QuantBlockFormat`/`QuantCodebookFormat` impl's byte constants equal its row.
+A missing type is then a CI failure at merge time — what #1749/#1789/#2535/#3341/#3091
+needed and did not have; each was an honor-system list, five times over. The contract's
+`FALSIFY-QDC-001..006` name the mutation that must turn each assertion RED.
 
 ### §2.3 Per-backend fan-out is additive, not multiplicative
 
@@ -106,6 +121,130 @@ CPU SIMD, CUDA, and wgpu each implement the trait once per type. The ~30-call-si
 migration happens once, regardless of backend count, because call sites stop matching
 on `qtype` themselves and instead look up the one dispatch table and call the returned
 `QuantTypeTraits` struct's function-pointer fields.
+
+### §2.4 Rust design (Phase 1 blueprint)
+
+**§2.4.1 There are already three registries; the table is built on one of them, not
+beside them.** At `425e84888` `[V]`:
+
+| Registry | Where | Covers | Carries |
+|---|---|---|---|
+| `GgmlQuantType` (`#[repr(u32)]`, `from_id`, `as_str`) | `crates/aprender-serve/src/gguf/types.rs` | 16 ids | name ↔ id only |
+| `WeightQuantType` (PMAT-232: exhaustive matches, no `Default`) | `crates/aprender-serve/src/cuda/types.rs` | 8 | `bytes_per_superblock`, `bytes_per_block`, CUDA kernel choice |
+| `QuantBlockFormat` impls (`Q4K`, `Q5K`, `Q6K`, `Q4_0`, `Q8_0`) | `crates/aprender-serve/src/quantize/format_trait.rs` | 5 | full block algebra, compile-time |
+| `tensor_byte_size` (#3091's site) | `crates/aprender-serve/src/gguf/transformer.rs:435` | 11 | bytes only, its own arms |
+
+A fourth enum would be the two-lists defect again. `GgmlQuantType` is the key: it is
+already `#[repr(u32)]` on the ggml id, already has `from_id`, and is what the loader
+holds. Phase 1 extends it to all 35 live types and makes `from_id` reject the eight
+removed ids by name. `WeightQuantType` stays as the *CUDA kernel selector* (its
+`match`es choose kernels, which is legitimately backend-specific) but loses its byte
+methods: they become `quant_type_traits(self.into()).bytes` so there is one number.
+
+**§2.4.2 The table entry.**
+
+```rust
+// crates/aprender-serve/src/quantize/dispatch.rs (owed)
+pub type DequantRowFn = fn(src: &[u8], dst: &mut [f32]) -> Result<()>;
+
+pub struct QuantTypeTraits {
+    pub id: u32,                       // ggml id; == index in the table
+    pub name: &'static str,            // "Q4_K" — the GGUF spelling
+    pub family: QuantFamilyKind,       // Scalar | AffineBlock | AffineKQuant | Codebook | Ternary | Fp4 | Activation
+    pub block: usize,                  // elements per (super-)block; 1 for scalars
+    pub bytes: usize,                  // bytes per (super-)block
+    pub dequant_row: Option<DequantRowFn>, // None ⇔ ggml has no to_float (Q8_1, Q8_K, I*)
+}
+
+impl QuantTypeTraits {
+    pub const fn bytes_for(&self, n_elements: usize) -> usize { n_elements.div_ceil(self.block) * self.bytes }
+}
+
+static QUANT_TYPE_TRAITS: [Option<QuantTypeTraits>; GGML_TYPE_COUNT] = [ /* index == id */ ];
+
+pub fn quant_type_traits(id: u32) -> Option<&'static QuantTypeTraits> {
+    QUANT_TYPE_TRAITS.get(id as usize).and_then(Option::as_ref)
+}
+```
+
+`dequant_row` is an `fn` pointer (§2.1a), filled with a non-generic wrapper per type:
+
+```rust
+fn dequant_row_q4k(src: &[u8], dst: &mut [f32]) -> Result<()> { dequant_row::<Q4K>(src, dst) }
+```
+
+where `dequant_row<F: QuantBlockFormat>` is generic and monomorphized. The hot kernels
+(`fused_q4k_parallel_matvec`, `generic_fused_gate_up_matvec_into<F>`, the CUDA GEMV
+paths) are **not** routed through the fn pointer — they keep calling the generics
+directly with a concrete `F`. The table serves the cold paths that today hold the
+duplicated arms: sizing, validation, loading, conversion, metadata, "can this backend
+take this tensor" decisions. That is where all five prior tickets crashed; none crashed
+inside a kernel inner loop.
+
+`GGML_TYPE_COUNT` (43) is a `const` in `gguf/types.rs`; the array is indexed by id so a
+removed id is a literal `None` slot, and an id ≥ 43 falls off the end — both are the
+contract's `rejection` equation with no `_ =>` anywhere.
+
+**§2.4.3 `QuantCodebookFormat`** (`crates/aprender-serve/src/quantize/codebook_trait.rs`,
+owed) mirrors `QuantBlockFormat`'s const-based shape so the same kind of generic
+kernel can be written over it, but the algebra differs: a block holds a scale, a run
+of grid *indices*, sign bits, and (for the `_S`/`_XS` variants) sub-block scales.
+
+```rust
+pub trait QuantCodebookFormat: Send + Sync + 'static {
+    const FORMAT_ID: &'static str;
+    const ELEMENTS_PER_SUPERBLOCK: usize;   // 256, or 32 for IQ4_NL
+    const SUPERBLOCK_BYTES: usize;
+    const GRID_POINT_LEN: usize;            // elements one grid entry expands to (8 for IQ2/IQ1, 4 for IQ3, 1 for IQ4)
+    type GridElem: Copy + 'static;          // u64 / u32 / i8
+    const GRID: &'static [Self::GridElem];  // the ported table, by reference
+    fn read_d(superblock: &[u8]) -> f32;
+    fn grid_index(superblock: &[u8], point: usize) -> usize;
+    fn signs(superblock: &[u8], point: usize) -> u8;
+    fn subblock_scale(superblock: &[u8], idx: usize) -> f32;
+    fn dequant_point(superblock: &[u8], point: usize, out: &mut [f32]);
+}
+```
+
+MXFP4/NVFP4 are `QuantCodebookFormat` too: their "grid" is `kvalues_fp4` (16 E2M1
+values) and the scale is a shared exponent; forcing them into the affine trait would
+need a fake `dmin`. TQ1_0/TQ2_0 *are* affine (`{-1,0,1}·d`) and go on
+`QuantBlockFormat` with `ZERO_OFFSET = 1`, `QUANT_BITS = 2`.
+
+**§2.4.4 Grid tables are generated, never typed.** `scripts/gen_iq_grids.sh` (owed)
+reads `ggml-common.h` at the pinned commit and emits
+`crates/aprender-serve/src/quantize/iq_grids.rs`: ten `pub const` arrays, 25.6 KiB of
+`.rodata` in total (the contract's `grids` section lists each with its length). The
+generated file carries the source commit in its header, and PO-QDC-004's test compares
+each array's length, first and last element against the contract. A hand edit to a
+grid is therefore a RED test, not a silent lattice corruption.
+
+**§2.4.5 Migration shape (Phase 2, one site per PR).** `tensor_byte_size` is the
+template — it is #3091's exact crash site and the simplest:
+
+```rust
+// before: eleven arms and a `_ => Err(UnsupportedOperation)`
+// after:
+fn tensor_byte_size(qtype: u32, num_elements: usize, dims: &[u64]) -> Result<usize> {
+    let t = quant_type_traits(qtype).ok_or_else(|| unsupported_qtype("tensor_byte_size", qtype))?;
+    Ok(match (t.family, dims) {
+        (QuantFamilyKind::AffineKQuant | QuantFamilyKind::Codebook | QuantFamilyKind::Ternary, [rows, cols]) =>
+            (*rows as usize) * t.bytes_for(*cols as usize),   // row-padded, LAYOUT-001
+        _ => t.bytes_for(num_elements),
+    })
+}
+```
+
+The row-padding rule (K-quant rows pad to super-block boundaries) is the one piece of
+logic that stays at the site because it is about tensor *shape*, not type. Every other
+site follows the same pattern: look up, branch on `family` if the site genuinely
+differs per family, never on the id.
+
+**§2.4.6 Naming.** `quant_type_traits` / `QuantTypeTraits` / `QUANT_TYPE_TRAITS` —
+deliberately the ggml name so a reader coming from llama.cpp finds it by grep;
+`QuantFamilyKind` rather than reusing `QuantFamily` (which is the trait's two-valued
+`KQuant | Simple` and stays as is). Module: `crate::quantize::dispatch`, re-exported
+from `crate::quantize`.
 
 ---
 
@@ -117,9 +256,9 @@ simultaneously — the ordering #3418 asks for, independent of which train it ri
 
 | Phase | Deliverable | Exit criterion |
 |---|---|---|
-| **0 — Inventory** | Enumerate every call site (owed: a checked-in list, not a one-time grep — `scripts/find_qtype_dispatch_sites.sh` producing the same 30+ paths #3418 found, kept current) and every `GGUF_TYPE_*` the spec defines vs. the 16 named today | `scripts/find_qtype_dispatch_sites.sh --format json` diffs cleanly against a checked-in baseline; new sites fail CI until triaged |
-| **1 — Trait + gate** | `QuantCodebookFormat` written; `QuantBlockFormat` registry extended to the full affine set; `quant_type_traits()` dispatch fn added (additive — no call site migrated yet); `contracts/quant-dispatch-completeness-v1.yaml` created and passing | `pv validate contracts/quant-dispatch-completeness-v1.yaml` green; the gate itself mutation-tested RED→GREEN (remove one type's entry, gate fails) |
-| **2 — Migration** | All ~30 call sites refactored to call `quant_type_traits()` instead of maintaining their own match arms, one call site (or tightly related group) per PR | `grep -rln "GGUF_TYPE_Q4_K\|GGUF_TYPE_Q4_0\|match qtype\|match.*\.qtype" crates/aprender-serve/src/ --include="*.rs" \| grep -v test \| wc -l` → 0 (or only the dispatch function itself) |
+| **0 — Inventory** — **DONE in this PR** | The 30 call sites (`dispatch_sites`) and the 35-type universe (`types`, `removed_ids`, `type_count`) live in `contracts/quant-dispatch-completeness-v1.yaml`, not in a script: the contract is the one list, and the `pv`-dogfooding rule forbids a bash re-implementation. The oracle that produced `dispatch_sites` is written into the contract beside it | `pv validate contracts/quant-dispatch-completeness-v1.yaml` exit 0 `[V]`; 35 + 8 = 43 = `type_count` `[V]`; 30 sites = #3418's count `[V]` |
+| **1 — Trait + gate** | Per §2.4: `GgmlQuantType` → 35 variants; `QuantCodebookFormat` + generated `iq_grids.rs`; `QuantBlockFormat` impls for the remaining affine/ternary types; `dispatch.rs` with `QUANT_TYPE_TRAITS` and `quant_type_traits()`; the five PO-QDC tests reading the contract. Additive — no call site migrated | All five `quant_dispatch_*` tests green, each shown RED first by its FALSIFY-QDC mutation; `WeightQuantType::bytes_per_*` deleted in favour of the table (the first consumer, proves the table is load-bearing) |
+| **2 — Migration** | Every `dispatch_sites` row flipped to `migrated: true`, one site (or tightly related group) per PR, `transformer.rs::tensor_byte_size` first (§2.4.5) | PO-QDC-005's oracle finds only the `keep` rows; the contract's `dispatch_sites` list and the tree agree |
 | **3 — Parity re-proof** | Full parity re-run of the existing Qwen2.5-Coder GPU-beat measurement (README/BEATS.md's demonstrated model) against pre-migration baseline, per quant type touched, per backend | cosine ≥ 0.98 vs. pre-migration baseline (the bar #3091's own history already holds this codebase to); no regression on `contracts/beat-ollama-decode-throughput-speed-v1.yaml` |
 
 Phase 2 is the ~30-file, multi-backend blast radius #3418 warns about. Phases 0/1 are
@@ -128,13 +267,24 @@ site, so Qwen2.5-Coder's proven path is untouched until Phase 3 is ready to re-v
 
 ---
 
-## §4 Missing quant types this closes (relative to today's 16)
+## §4 The universe, measured (2026-09-17, `425e84888` vs llama.cpp `3173a5647`)
 
-Per #3418 evidence: `GGUF_TYPE_Q8_1`, `GGUF_TYPE_Q8_K`, `GGUF_TYPE_TQ1_0`,
-`GGUF_TYPE_TQ2_0`, and the full IQ family (`IQ1_S`, `IQ2_XXS`, `IQ2_XS`, `IQ2_S`,
-`IQ3_XXS`, `IQ3_S`, `IQ4_NL`, `IQ4_XS`) — 12 types, none of which have a dequant path
-anywhere in `crates/aprender-serve/src/` today `[A]` (re-verify at implementing HEAD:
-`grep -rohE "GGUF_TYPE_[A-Z0-9_]+" crates/aprender-serve/src/ | sort -u`).
+| Fact | Value | Measured by |
+|---|---|---|
+| Live ggml tensor types | **35** (ids 0–42 minus 8 removed; `GGML_TYPE_COUNT` = 43) | `awk '/enum ggml_type \{/,/\};/' ggml/include/ggml.h` in the llama.cpp checkout `[V]` |
+| `GGUF_TYPE_*` tensor-type consts in aprender-serve | **13** (#3418's "16" counted `STRING`/`UINT32`/`ARRAY`/`INT32`, which are metadata value types, not tensor types) | `grep -cE 'pub const GGUF_TYPE_' crates/aprender-serve/src/gguf/types.rs` `[V]` |
+| `GgmlQuantType` variants | 16 | `gguf/types.rs` `[V]` |
+| `WeightQuantType` variants | 8 | `cuda/types.rs` `[V]` |
+| `QuantBlockFormat` impls | 5 | `format_trait.rs` `[V]` |
+| Status by contract row | `dequant` 8 · `sized` 3 · `named` 5 · **`missing` 19** | `contracts/quant-dispatch-completeness-v1.yaml` `types[].status` `[C]` |
+
+Of the 19 `missing`: 9 are codebook (IQ1_S, IQ1_M, IQ2_S, IQ3_XXS, IQ3_S, IQ4_NL,
+IQ4_XS, MXFP4, NVFP4 — #3091's IQ2_XS/IQ4_XS crash class), 2 ternary (TQ1_0, TQ2_0),
+2 new affine (Q1_0, Q2_0 — added to ggml after #3418 was written), 5 scalar (I8–I64,
+F64), and Q8_K (activation-only; needs a size entry, no dequant). Two (Q8_1, Q8_K)
+legitimately have **no** dequant in ggml either; the table encodes that as
+`dequant_row: None` rather than as an "unsupported" error, so a caller can tell
+"cannot" from "not yet".
 
 ---
 
@@ -142,12 +292,32 @@ anywhere in `crates/aprender-serve/src/` today `[A]` (re-verify at implementing 
 `PP-LLAMA-001` convention so the drift gate is never asked to check a file this document
 is asking someone to create)
 
-- contracts/quant-dispatch-completeness-v1.yaml — Phase 1 exit gate
-- scripts/find_qtype_dispatch_sites.sh — Phase 0 inventory, checked-in baseline + diff
-- crates/aprender-serve/src/quantize/codebook_trait.rs — QuantCodebookFormat + grid tables
-- crates/aprender-serve/src/quantize/dispatch.rs — `QuantTypeTraits` data struct, the
-  `QUANT_TYPE_TRAITS` static table, and the `quant_type_traits()` lookup fn (§2.1/§2.1a)
-- docs/audits/impl-PP-QUANT-001-phaseN-receipt.md — one per phase, RED→GREEN proof
+Delivered by this document's PR:
+
+- `contracts/quant-dispatch-completeness-v1.yaml` — Phase 0 inventory + Phase 1 gate
+  definition, `pv validate` green
+- `crates/aprender-serve/src/quantize/dispatch_contract_tests.rs` — the five `qdc_*`
+  tests that bind the contract to the tree today (PO-QDC-002/003/005 plus the
+  contract's own gaplessness and name agreement); each shown RED by its FALSIFY-QDC
+  mutation before landing (receipt in the PR). Registered as a tree reader in
+  `scripts/tree_reader_tests.txt` so the quick CI tier always runs it
+- `serde_yaml_ng` as an aprender-serve dev-dependency (it was build-only)
+
+Still owed (Phase 1 unless marked):
+
+- crates/aprender-serve/src/quantize/dispatch.rs — `QuantTypeTraits`, `QuantFamilyKind`,
+  `QUANT_TYPE_TRAITS`, `quant_type_traits()`, the per-type `dequant_row_*` wrappers (§2.4.2)
+- crates/aprender-serve/src/quantize/codebook_trait.rs — `QuantCodebookFormat` + impls (§2.4.3)
+- crates/aprender-serve/src/quantize/iq_grids.rs — GENERATED, ten `const` grids (§2.4.4)
+- scripts/gen_iq_grids.sh — the generator; pins the llama.cpp commit; `--check` diffs
+- scripts/gen_quant_dispatch_rows.sh — regenerates the contract's `types` rows from
+  ggml.h + ggml-common.h; `--check` is FALSIFY-QDC-006
+- `qdc_table_covers_every_row` (PO-QDC-001) and `qdc_grids_match_reference`
+  (PO-QDC-004), added to the existing `dispatch_contract_tests.rs` once the table and
+  grids exist; the contract's FALSIFY-QDC-001/004 then gain their `test:` citation
+- a `ci/explicit-test-commands.d/NNN-quant-dispatch.cmd` fragment if the tests land as
+  an integration target rather than `--lib` (a `tests/*.rs` file is dark until named)
+- docs/audits/impl-PP-QUANT-001-phaseN-receipt.md — one per phase, RED→GREEN proof (each phase)
 
 ---
 

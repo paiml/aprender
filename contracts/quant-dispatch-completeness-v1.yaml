@@ -1,0 +1,236 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-09-17"
+  author: PAIML Engineering
+  registry: true
+  spec: docs/specifications/PP-QUANT-001-MASTER.md
+  ticket: "#3418"
+  epic: "#3421"
+  references:
+    - "llama.cpp ggml/include/ggml.h enum ggml_type @ 3173a5647 (2026-08-29)"
+    - "llama.cpp ggml/src/ggml.c ggml_type_traits[] @ 3173a5647"
+    - "llama.cpp ggml/src/ggml-common.h block_* static_asserts @ 3173a5647"
+  description: >
+    The single source of truth for every GGUF/ggml tensor type aprender-serve
+    must be able to name, size and (where ggml can) dequantize. Mirrors
+    ggml_type_traits[]: one row per type id. The Rust dispatch table
+    (PP-QUANT-001 §2.1) is complete iff it has an entry for every row in
+    `types` and rejects every id in `removed_ids` and every id not listed.
+
+name: quant-dispatch-completeness
+version: "1.0.0"
+scope: "crates/aprender-serve/src/"
+
+description: |
+  Five closed tickets (#1749, #1789, #2535, #3341, #3091) were the same defect:
+  one of ~30 files held its own incomplete quant-type list. This contract
+  enumerates the ggml type universe ONCE so a Rust test can assert the
+  dispatch table covers all of it, turning the honor system into a merge gate.
+
+  Numbers here are transcribed from ggml-common.h's `static_assert(sizeof(
+  block_X) == …)` lines with QK_K = 256 and sizeof(ggml_half) = 2. A row that
+  disagrees with the reference is a bug in this file, not a design choice.
+
+# ---------------------------------------------------------------------------
+# families — how a type turns bytes into f32. Each family maps to one Rust
+# representation (PP-QUANT-001 §2.4):
+#   scalar        no blocks; one element per `block_bytes`         (plain conversion)
+#   affine_block  32-element blocks, one scale (+min)              QuantBlockFormat, FAMILY=Simple
+#   affine_kquant 256-element super-blocks, sub-block scales      QuantBlockFormat, FAMILY=KQuant
+#   codebook      256-element super-blocks indexing a fixed grid  QuantCodebookFormat
+#   ternary       256-element super-blocks, {-1,0,1} packed       QuantBlockFormat (ZERO_OFFSET=1)
+#   fp4           32/64-element blocks of E2M1 with shared exp    QuantCodebookFormat (16-entry grid)
+#   activation    ggml defines NO to_float: an activation-side
+#                 layout only, never a weight on disk             table entry with dequant = None
+# ---------------------------------------------------------------------------
+families:
+  - scalar
+  - affine_block
+  - affine_kquant
+  - codebook
+  - ternary
+  - fp4
+  - activation
+
+# ids that ggml.h marks "support has been removed". A GGUF carrying one is
+# corrupt or ancient; the table MUST reject them by name, not by "unknown id".
+removed_ids: [4, 5, 31, 32, 33, 36, 37, 38]
+
+# GGML_TYPE_COUNT at the reference commit. ids >= this are unknown.
+type_count: 43
+
+# One row per live ggml type. `dequant: false` = ggml's own ggml_type_traits[]
+# has to_float == NULL for this type (Q8_1, Q8_K), so aprender owes a size
+# entry but no dequant function. `status` is the state of aprender-serve at
+# origin/main @ 425e84888 (2026-09-17) and is what Phase 1 changes:
+#   named    a GGUF_TYPE_* const or GgmlQuantType variant exists
+#   sized    tensor_byte_size (gguf/transformer.rs) can size it
+#   dequant  a CPU dequant/matvec path exists (QuantBlockFormat impl or fused_*)
+#   missing  none of the above
+types:
+  - {id: 0,  name: F32,     family: scalar,        block: 1,   bytes: 4,   dequant: true,  status: dequant}
+  - {id: 1,  name: F16,     family: scalar,        block: 1,   bytes: 2,   dequant: true,  status: dequant}
+  - {id: 2,  name: Q4_0,    family: affine_block,  block: 32,  bytes: 18,  dequant: true,  status: dequant}
+  - {id: 3,  name: Q4_1,    family: affine_block,  block: 32,  bytes: 20,  dequant: true,  status: sized}
+  - {id: 6,  name: Q5_0,    family: affine_block,  block: 32,  bytes: 22,  dequant: true,  status: sized}
+  - {id: 7,  name: Q5_1,    family: affine_block,  block: 32,  bytes: 24,  dequant: true,  status: named}
+  - {id: 8,  name: Q8_0,    family: affine_block,  block: 32,  bytes: 34,  dequant: true,  status: dequant}
+  - {id: 9,  name: Q8_1,    family: activation,    block: 32,  bytes: 36,  dequant: false, status: named}
+  - {id: 10, name: Q2_K,    family: affine_kquant, block: 256, bytes: 84,  dequant: true,  status: sized}
+  - {id: 11, name: Q3_K,    family: affine_kquant, block: 256, bytes: 110, dequant: true,  status: named}
+  - {id: 12, name: Q4_K,    family: affine_kquant, block: 256, bytes: 144, dequant: true,  status: dequant}
+  - {id: 13, name: Q5_K,    family: affine_kquant, block: 256, bytes: 176, dequant: true,  status: dequant}
+  - {id: 14, name: Q6_K,    family: affine_kquant, block: 256, bytes: 210, dequant: true,  status: dequant}
+  - {id: 15, name: Q8_K,    family: activation,    block: 256, bytes: 292, dequant: false, status: missing}
+  - {id: 16, name: IQ2_XXS, family: codebook,      block: 256, bytes: 66,  dequant: true,  status: named, grid: iq2xxs_grid}
+  - {id: 17, name: IQ2_XS,  family: codebook,      block: 256, bytes: 74,  dequant: true,  status: named, grid: iq2xs_grid}
+  - {id: 18, name: IQ3_XXS, family: codebook,      block: 256, bytes: 98,  dequant: true,  status: missing, grid: iq3xxs_grid}
+  - {id: 19, name: IQ1_S,   family: codebook,      block: 256, bytes: 50,  dequant: true,  status: missing, grid: iq1s_grid}
+  - {id: 20, name: IQ4_NL,  family: codebook,      block: 32,  bytes: 18,  dequant: true,  status: missing, grid: kvalues_iq4nl}
+  - {id: 21, name: IQ3_S,   family: codebook,      block: 256, bytes: 110, dequant: true,  status: missing, grid: iq3s_grid}
+  - {id: 22, name: IQ2_S,   family: codebook,      block: 256, bytes: 82,  dequant: true,  status: missing, grid: iq2s_grid}
+  - {id: 23, name: IQ4_XS,  family: codebook,      block: 256, bytes: 136, dequant: true,  status: missing, grid: kvalues_iq4nl}
+  - {id: 24, name: I8,      family: scalar,        block: 1,   bytes: 1,   dequant: false, status: missing}
+  - {id: 25, name: I16,     family: scalar,        block: 1,   bytes: 2,   dequant: false, status: missing}
+  - {id: 26, name: I32,     family: scalar,        block: 1,   bytes: 4,   dequant: false, status: missing}
+  - {id: 27, name: I64,     family: scalar,        block: 1,   bytes: 8,   dequant: false, status: missing}
+  - {id: 28, name: F64,     family: scalar,        block: 1,   bytes: 8,   dequant: true,  status: missing}
+  - {id: 29, name: IQ1_M,   family: codebook,      block: 256, bytes: 56,  dequant: true,  status: missing, grid: iq1s_grid}
+  - {id: 30, name: BF16,    family: scalar,        block: 1,   bytes: 2,   dequant: true,  status: dequant}
+  - {id: 34, name: TQ1_0,   family: ternary,       block: 256, bytes: 54,  dequant: true,  status: missing}
+  - {id: 35, name: TQ2_0,   family: ternary,       block: 256, bytes: 66,  dequant: true,  status: missing}
+  - {id: 39, name: MXFP4,   family: fp4,           block: 32,  bytes: 17,  dequant: true,  status: missing, grid: kvalues_fp4}
+  - {id: 40, name: NVFP4,   family: fp4,           block: 64,  bytes: 36,  dequant: true,  status: missing, grid: kvalues_fp4}
+  - {id: 41, name: Q1_0,    family: affine_block,  block: 128, bytes: 18,  dequant: true,  status: missing}
+  - {id: 42, name: Q2_0,    family: affine_block,  block: 64,  bytes: 18,  dequant: true,  status: missing}
+
+# Codebook grids the QuantCodebookFormat impls port verbatim from ggml-common.h
+# (GGML_TABLE_BEGIN lines). `entries` × sizeof(elem) = bytes each grid costs in
+# .rodata; all seven together are 25.6 KiB. Ported as `const` arrays generated
+# by a script from the reference header, never typed in by hand.
+grids:
+  - {name: kmask_iq2xs,   elem: u8,  entries: 8}
+  - {name: ksigns_iq2xs,  elem: u8,  entries: 128}
+  - {name: iq2xxs_grid,   elem: u64, entries: 256}
+  - {name: iq2xs_grid,    elem: u64, entries: 512}
+  - {name: iq2s_grid,     elem: u64, entries: 1024}
+  - {name: iq3xxs_grid,   elem: u32, entries: 256}
+  - {name: iq3s_grid,     elem: u32, entries: 512}
+  - {name: iq1s_grid,     elem: u64, entries: 2048}
+  - {name: kvalues_iq4nl, elem: i8,  entries: 16}
+  - {name: kvalues_fp4,   elem: i8,  entries: 16}
+
+# The sites that match on a quant type today (Phase 0 inventory, PP-QUANT-001
+# §3). Oracle, run from the repo root:
+#   grep -rln "GGUF_TYPE_Q4_K\|GGUF_TYPE_Q4_0\|match qtype\|match.*\.qtype" \
+#     crates/aprender-serve/src/ --include="*.rs" | grep -v test | sort
+# `qdc_dispatch_sites_match_oracle` (quantize/dispatch_contract_tests.rs) re-runs
+# this oracle and requires oracle(tree) == {file : migrated == false}: a new site
+# fails CI until listed, and a row may only flip to `migrated: true` once the
+# file really stopped matching on a raw qtype.
+# Phase 2 exit: every row without `keep` is `migrated: true`; the `keep` rows
+# (the table's key enum and the CUDA kernel selector) stay open by design.
+dispatch_sites:
+  - {file: crates/aprender-serve/src/api/model_source.rs, migrated: false}
+  - {file: crates/aprender-serve/src/apr/cache.rs, migrated: false}
+  - {file: crates/aprender-serve/src/convert/q4k_conversion_stats.rs, migrated: false}
+  - {file: crates/aprender-serve/src/convert/q4k_converter_helpers.rs, migrated: false}
+  - {file: crates/aprender-serve/src/cuda/executor/layers/cublas_prefill/gemm.rs, migrated: false}
+  - {file: crates/aprender-serve/src/cuda/executor/layers/gemv_dispatch.rs, migrated: false}
+  - {file: crates/aprender-serve/src/cuda/types.rs, migrated: false, keep: "WeightQuantType registry; Phase 1 derives it from the table"}
+  - {file: crates/aprender-serve/src/gguf/cuda/cuda.rs, migrated: false}
+  - {file: crates/aprender-serve/src/gguf/cuda/expert_swiglu_cuda.rs, migrated: false}
+  - {file: crates/aprender-serve/src/gguf/cuda/matmul.rs, migrated: false}
+  - {file: crates/aprender-serve/src/gguf/embedding.rs, migrated: false}
+  - {file: crates/aprender-serve/src/gguf/inference/forward/acceleration.rs, migrated: false}
+  - {file: crates/aprender-serve/src/gguf/inference/forward/batch.rs, migrated: false}
+  - {file: crates/aprender-serve/src/gguf/inference/forward/ffn_block.rs, migrated: false}
+  - {file: crates/aprender-serve/src/gguf/inference/forward/results.rs, migrated: false}
+  - {file: crates/aprender-serve/src/gguf/inference/forward/single.rs, migrated: false}
+  - {file: crates/aprender-serve/src/gguf/inference/forward/traced.rs, migrated: false}
+  - {file: crates/aprender-serve/src/gguf/inference/fused_matmul_into.rs, migrated: false}
+  - {file: crates/aprender-serve/src/gguf/inference/matmul_fused.rs, migrated: false, note: "#1749/#1789 site"}
+  - {file: crates/aprender-serve/src/gguf/inference/matmul.rs, migrated: false}
+  - {file: crates/aprender-serve/src/gguf/loader.rs, migrated: false}
+  - {file: crates/aprender-serve/src/gguf/metadata.rs, migrated: false}
+  - {file: crates/aprender-serve/src/gguf/model_gguf_transformer.rs, migrated: false}
+  - {file: crates/aprender-serve/src/gguf/model_owned_quantized.rs, migrated: false}
+  - {file: crates/aprender-serve/src/gguf/quantized.rs, migrated: false}
+  - {file: crates/aprender-serve/src/gguf/qwen3_moe_load.rs, migrated: false, note: "#3341 site"}
+  - {file: crates/aprender-serve/src/gguf/transformer_quantized_layer_field.rs, migrated: false}
+  - {file: crates/aprender-serve/src/gguf/transformer.rs, migrated: false, note: "#3091 site: tensor_byte_size — first to migrate"}
+  - {file: crates/aprender-serve/src/gguf/types.rs, migrated: false, keep: "GgmlQuantType — the table's key enum"}
+  - {file: crates/aprender-serve/src/gpu/adapters/wgpu_adapter.rs, migrated: false}
+
+equations:
+  completeness:
+    description: "∀ id ∈ types: table[id] is Some — every live ggml type has an entry"
+    formula: "∀ t ∈ types: quant_type_traits(t.id) = Some(e) ∧ e.name = t.name"
+    invariants:
+      - "|{t ∈ types}| = 35 = type_count − |removed_ids| (every id in [0, type_count) is a row or a removed id; none is silently skipped)"
+  rejection:
+    description: "∀ id ∈ removed_ids ∪ [type_count, ∞): table[id] is None — removed and unknown ids are refused, never defaulted"
+    formula: "∀ id ∈ removed_ids: quant_type_traits(id) = None ∧ ∀ id ≥ type_count: quant_type_traits(id) = None"
+  byte_size:
+    description: "∀ t: table[t.id].bytes_for(n) = ceil(n / t.block) × t.bytes — the only place a tensor is sized"
+    formula: "bytes_for(n) = ⌈n / block⌉ · bytes"
+    postconditions:
+      - "bytes_for(block) = bytes"
+      - "bytes_for(0) = 0"
+  dequant_presence:
+    description: "∀ t: (table[t.id].dequant is Some) ⇔ t.dequant — the table has a dequant fn exactly for the types ggml itself can dequantize"
+    formula: "is_some(e.dequant_to_f32) ⇔ t.dequant"
+  single_source:
+    description: "The set of files matching on a raw qtype outside the table shrinks monotonically to the `keep` set"
+    formula: "oracle(tree) ⊆ {s.file : s ∈ dispatch_sites}"
+
+proof_obligations:
+  - id: PO-QDC-001
+    type: invariant
+    property: "quant_type_traits() covers every row of `types` (equation completeness)"
+    formal: "rust test: iterate the contract's types, assert Some for each id and name equality"
+  - id: PO-QDC-002
+    type: invariant
+    property: "quant_type_traits() returns None for every removed_ids entry and for id = type_count (equation rejection)"
+    formal: "rust test: iterate removed_ids ∪ {type_count}, assert None"
+  - id: PO-QDC-003
+    type: invariant
+    property: "Every QuantBlockFormat / QuantCodebookFormat impl's SUPERBLOCK_BYTES and ELEMENTS_PER_SUPERBLOCK equal the `bytes`/`block` of its row (equation byte_size)"
+    formal: "rust test: for each impl, compare associated consts against the contract row"
+  - id: PO-QDC-004
+    type: invariant
+    property: "Every grid in `grids` is present in the Rust port with exactly `entries` elements, and its first and last element equal the reference header's"
+    formal: "rust test over the generated grid module; generator script asserts the same at generation time"
+  - id: PO-QDC-005
+    type: invariant
+    property: "Re-running the dispatch_sites oracle yields no file absent from dispatch_sites (equation single_source)"
+    formal: "rust test: run the oracle regex over crates/aprender-serve/src, diff against the list"
+
+falsification_tests:
+  - id: FALSIFY-QDC-001
+    rule: "Removing any single row's table entry turns PO-QDC-001 RED"
+    prediction: "Delete the Q3_K entry from QUANT_TYPE_TRAITS: the completeness test fails naming id 11 / Q3_K. OWED (Phase 1, needs the table): test fn qdc_table_covers_every_row in quantize/dispatch_contract_tests.rs"
+    if_fails: "The gate is theater: the table can lose a type without CI noticing — #3091's failure mode is still open"
+  - id: FALSIFY-QDC-002
+    rule: "A table entry for a removed id turns PO-QDC-002 RED"
+    prediction: "Add an entry at id 4 (Q4_2): the rejection test fails"
+    test: "cargo test -p aprender-serve --lib qdc_removed_ids_rejected"
+    if_fails: "Removed/corrupt ids can be defaulted to a real kernel — the ALG-006 vacuous-catch-all class"
+  - id: FALSIFY-QDC-003
+    rule: "A wrong byte size in any impl turns PO-QDC-003 RED"
+    prediction: "Set Q4K::SUPERBLOCK_BYTES = 145: the byte-size test fails naming Q4_K"
+    test: "cargo test -p aprender-serve --lib qdc_block_format_consts_match_rows"
+    if_fails: "Tensor sizing can drift from the on-disk layout — the #2535 'truncated/corrupt' misdiagnosis class"
+  - id: FALSIFY-QDC-004
+    rule: "A truncated or edited grid turns PO-QDC-004 RED"
+    prediction: "Drop the last element of iq2xs_grid: the grid test fails naming iq2xs_grid, expected 512. OWED (Phase 1, needs iq_grids.rs): test fn qdc_grids_match_reference in quantize/dispatch_contract_tests.rs"
+    if_fails: "Codebook dequant can silently index past or into a wrong lattice point"
+  - id: FALSIFY-QDC-005
+    rule: "A new file that matches on a raw qtype outside dispatch_sites turns PO-QDC-005 RED"
+    prediction: "Add `match qtype { GGUF_TYPE_Q4_K => … }` to a new non-test file: the single-source test fails naming that file"
+    test: "cargo test -p aprender-serve --lib qdc_dispatch_sites_match_oracle"
+    if_fails: "A 31st dispatch site can appear — the exact mechanism behind all five prior tickets"
+  - id: FALSIFY-QDC-006
+    rule: "The ggml reference and this file agree on every row"
+    prediction: "Regenerate `types` from ggml.h + ggml-common.h at the pinned commit: zero diff. OWED (Phase 1): scripts/gen_quant_dispatch_rows.sh --check"
+    if_fails: "This contract has drifted from the format it claims to enumerate and is no longer a source of truth"
