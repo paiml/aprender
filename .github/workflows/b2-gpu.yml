@@ -40,16 +40,18 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: b2-gpu-${{ inputs.ref }}
-  cancel-in-progress: false
-
 jobs:
   b2-gpu:
     name: b2-gpu (aprender-gpu, yoga sm_89)
     # LITERAL list with discriminating labels (scripts/check_runner_labels.sh).
     runs-on: [self-hosted, gpu, yoga, Linux, X64, cuda, ada]
     timeout-minutes: 90
+    # PP-19 (scripts/check_perf_concurrency_groups.sh): every consumer of yoga's GPU
+    # serialises on perf-yoga, across workflows — a release run queues behind a
+    # nightly rather than sharing the device with it.
+    concurrency:
+      group: perf-yoga
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
