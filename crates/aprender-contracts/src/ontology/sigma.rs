@@ -193,9 +193,72 @@ impl Sigma {
     }
 
     /// The four malformed-Σ classes of §5 ONT-2b, in the order the row lists them.
+    ///
+    /// # Errors
+    /// [`SigmaError`] — every variant is exit 3, because a malformed declaration is not the corpus's fault.
     pub fn check_integrity(&self) -> Result<(), SigmaError> {
-        // RED: every integrity test must fail here.
-        Ok(())
+        self.check_entity_types()?;
+        self.check_readers()?;
+        self.check_not_expressible()?;
+        self.check_extractors()
+    }
+
+    /// Class 1: every `entity_types` entry names an extractor `extractors[]` declares.
+    fn check_entity_types(&self) -> Result<(), SigmaError> {
+        let declared: BTreeSet<&str> = self.extractors.iter().map(|e| e.name.as_str()).collect();
+        match self
+            .entity_types
+            .iter()
+            .find(|et| et.extractor.is_empty() || !declared.contains(et.extractor.as_str()))
+        {
+            None => Ok(()),
+            Some(et) => Err(SigmaError::EntityTypeWithoutExtractor {
+                entity_type: et.name.clone(),
+                extractor: et.extractor.clone(),
+            }),
+        }
+    }
+
+    /// Class 2: every POPULATED Σ key is claimed by a non-empty `readers` entry.
+    fn check_readers(&self) -> Result<(), SigmaError> {
+        match self
+            .populated_keys()
+            .into_iter()
+            .find(|key| self.readers.get(*key).is_none_or(|r| r.trim().is_empty()))
+        {
+            None => Ok(()),
+            Some(key) => Err(SigmaError::KeyWithoutReader {
+                key: key.to_string(),
+            }),
+        }
+    }
+
+    /// Class 3: every `not_expressible` entry names the reader that would have to change first.
+    fn check_not_expressible(&self) -> Result<(), SigmaError> {
+        match self
+            .not_expressible
+            .iter()
+            .find(|ne| ne.reader.trim().is_empty())
+        {
+            None => Ok(()),
+            Some(ne) => Err(SigmaError::NotExpressibleWithoutReader {
+                key: ne.key.clone(),
+            }),
+        }
+    }
+
+    /// Class 4: every `extractors[]` entry names a reader.
+    fn check_extractors(&self) -> Result<(), SigmaError> {
+        match self
+            .extractors
+            .iter()
+            .find(|ex| ex.reader.trim().is_empty())
+        {
+            None => Ok(()),
+            Some(ex) => Err(SigmaError::ExtractorWithoutReader {
+                extractor: ex.name.clone(),
+            }),
+        }
     }
 
     /// Which Σ keys are present and non-empty — the set `readers` must cover.
@@ -230,18 +293,18 @@ impl Sigma {
     }
 
     #[must_use]
-    pub fn declares_role(&self, _name: &str) -> bool {
-        true // RED
+    pub fn declares_role(&self, name: &str) -> bool {
+        self.roles.contains_key(name)
     }
 
     #[must_use]
-    pub fn declares_entity_type(&self, _name: &str) -> bool {
-        true // RED
+    pub fn declares_entity_type(&self, name: &str) -> bool {
+        self.entity_types.iter().any(|e| e.name == name)
     }
 
     #[must_use]
-    pub fn declares_symbol(&self, _token: &str) -> bool {
-        true // RED
+    pub fn declares_symbol(&self, token: &str) -> bool {
+        self.symbols.iter().any(|s| s.name == token)
     }
 }
 
