@@ -63,11 +63,35 @@ document does not duplicate content that ages, it cites where the aging content 
 2. **`QuantCodebookFormat`** (new) — lattice/codebook formats (IQ1–IQ4 family). Grid
    tables are ported data from llama.cpp's `ggml-quants.c` (`iq2xs_grid`, `iq3xs_grid`,
    etc.) — reference data, not something to re-derive.
-3. **One dispatch function**, `quant_type_traits(qtype: u32) -> QuantTypeTraits`
-   (name TBD at implementation — analogous to `ggml_type_traits[]`), returning
-   `{byte_size, dequant_to_f32, family: Affine(dyn QuantBlockFormat) | Codebook(dyn
-   QuantCodebookFormat)}` in one place. This is the single new public surface every
-   call site is migrated to use.
+3. **One dispatch table**, `static QUANT_TYPE_TRAITS: [Option<QuantTypeTraits>; N]`
+   plus a lookup fn `quant_type_traits(qtype: u32) -> Option<&'static QuantTypeTraits>`
+   (names TBD at implementation — analogous to `ggml_type_traits[]`). `QuantTypeTraits`
+   is a **plain data struct** — `{byte_size, block_size, family, dequant_to_f32: fn(&[u8],
+   &mut [f32]) -> Result<()>}` — not an enum over trait objects (§2.1a). This is the
+   single new public surface every call site is migrated to use.
+
+### §2.1a Why a data table, not `dyn QuantBlockFormat` (correction, 2026-09-17)
+
+An earlier draft of this section described the table's entries as
+`Affine(dyn QuantBlockFormat) | Codebook(dyn QuantCodebookFormat)`. That is not
+buildable: `QuantBlockFormat` carries associated `const`s (`FORMAT_ID`,
+`SUPERBLOCK_BYTES`, …) and its methods take no `self` receiver (`read_d(superblock:
+&[u8])`, not `read_d(&self, ...)`) — both independently make a trait non-object-safe,
+so `dyn QuantBlockFormat` fails to compile. This was the point of `format_trait.rs`'s
+existing design: monomorphized generics, zero vtable overhead — the opposite of what a
+trait object gives you.
+
+`ggml_type_traits[]` itself was never trait-object-shaped either — it is a C struct of
+plain fields and **function pointers**, stored in a static array indexed by the type
+enum. The direct Rust port of that is a struct whose `dequant_to_f32` field is an
+ordinary `fn` pointer, not a `dyn Trait`. Each table entry's function pointer is a
+concrete, non-generic wrapper (e.g. `dequant_q4k_to_f32`) that calls the existing
+monomorphized generic (`dequant_generic::<Q4K>(...)`) internally; the generic parameter
+is fully resolved before the function is placed in the array, so no object-safety rule
+is ever in play. `QuantBlockFormat`/`QuantCodebookFormat` are unchanged by this
+correction — they remain the const-based, compile-time-specialized traits the hot-path
+kernels use directly; the dispatch table is an additional, thin runtime layer over them,
+not a replacement.
 
 ### §2.2 The completeness gate (the mechanical backstop, not the honor system)
 
@@ -80,8 +104,8 @@ each. A missing type is a CI failure at merge time. This is what #1749/#1789/#25
 
 CPU SIMD, CUDA, and wgpu each implement the trait once per type. The ~30-call-site
 migration happens once, regardless of backend count, because call sites stop matching
-on `qtype` themselves and instead call the one dispatch function and operate on its
-returned trait object / enum.
+on `qtype` themselves and instead look up the one dispatch table and call the returned
+`QuantTypeTraits` struct's function-pointer fields.
 
 ---
 
@@ -121,7 +145,8 @@ is asking someone to create)
 - contracts/quant-dispatch-completeness-v1.yaml — Phase 1 exit gate
 - scripts/find_qtype_dispatch_sites.sh — Phase 0 inventory, checked-in baseline + diff
 - crates/aprender-serve/src/quantize/codebook_trait.rs — QuantCodebookFormat + grid tables
-- crates/aprender-serve/src/quantize/dispatch.rs — the single `quant_type_traits()` entry point
+- crates/aprender-serve/src/quantize/dispatch.rs — `QuantTypeTraits` data struct, the
+  `QUANT_TYPE_TRAITS` static table, and the `quant_type_traits()` lookup fn (§2.1/§2.1a)
 - docs/audits/impl-PP-QUANT-001-phaseN-receipt.md — one per phase, RED→GREEN proof
 
 ---
