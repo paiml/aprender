@@ -18429,3 +18429,19 @@ roadmap:
   - orch:fable
   - orch-basis:state
   notes: 'ONT-001 v4.4 row ONT-6. RAH-005 binding filed in paiml/paiml-implement. Receipt: docs/audits/impl-PMAT-3451-receipt.md'
+- id: PMAT-3465
+  github_issue: 3465
+  item_type: task
+  title: 'b2-gpu: aprender-gpu lib tests on hardware at the tag (rule 14)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-17T18:12:33Z
+  updated: 2026-09-17T18:12:33Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
