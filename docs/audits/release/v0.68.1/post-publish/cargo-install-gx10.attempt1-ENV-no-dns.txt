@@ -1,0 +1,10 @@
+host=gx10-a5b5 arch=aarch64 cargo=cargo 1.95.0 (f2d3ce0bd 2026-03-21)
+start=2026-09-17T22:42:10Z
+  failed to download from `https://index.crates.io/config.json`
+
+Caused by:
+  [6] Could not resolve hostname (Could not resolve host: index.crates.io)
+bash: line 1: <throwaway-root>/bin/apr: No such file or directory
+version=
+end=2026-09-17T22:42:33Z
+rc=0
