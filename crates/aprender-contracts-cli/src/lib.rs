@@ -199,6 +199,7 @@ pub fn dispatch(command: Commands) -> Result<(), Box<dyn std::error::Error>> {
             explain,
             watch,
             strict_test_binding,
+            armed_baseline_ref,
             ..
         } => {
             if let Some(ref rule_id) = explain {
@@ -228,6 +229,7 @@ pub fn dispatch(command: Commands) -> Result<(), Box<dyn std::error::Error>> {
                 min_level.as_deref(),
                 watch,
                 strict_test_binding,
+                armed_baseline_ref.as_deref(),
             )
         }
         Commands::Score {

@@ -8,6 +8,7 @@ use provable_contracts::lint::finding::LintFinding;
 use provable_contracts::lint::rules::RuleSeverity;
 use provable_contracts::lint::sarif::{findings_to_sarif, sarif_to_json};
 use provable_contracts::lint::{GateDetail, GateExtra, LintReport};
+use provable_contracts::ontology::verdict::Verdict;
 
 /// Whether to use ANSI colors (auto-detected or forced via --color).
 fn use_color() -> bool {
@@ -69,7 +70,7 @@ pub fn print_text(report: &LintReport) {
     println!("{}", bold("pv lint — contract quality gate"));
     println!("{}\n", bold("================================"));
     for (i, gate) in report.gates.iter().enumerate() {
-        print_gate(i + 1, gate);
+        print_gate(i + 1, gate, !report.not_armed.contains(&gate.name));
     }
     println!();
     print_findings_grouped(report);
@@ -77,7 +78,9 @@ pub fn print_text(report: &LintReport) {
     print_summary(report);
 }
 
-pub fn print_gate(num: usize, gate: &provable_contracts::lint::GateResult) {
+/// One gate line. ONT-001 §3.9: an unarmed gate prints `Unknown(NotArmed)` (its own verdict in brackets) and is
+/// excluded from the meet.
+pub fn print_gate(num: usize, gate: &provable_contracts::lint::GateResult, armed: bool) {
     let icon = if gate.skipped {
         "⏭"
     } else if gate.passed {
@@ -87,8 +90,13 @@ pub fn print_gate(num: usize, gate: &provable_contracts::lint::GateResult) {
     };
     let summary =
         gate_extra_summary(gate.extra.as_ref()).unwrap_or_else(|| gate_summary(&gate.detail));
+    let verdict = if armed {
+        gate.verdict.to_string()
+    } else {
+        format!("Unknown(NotArmed) [gate: {}]", gate.verdict)
+    };
     println!(
-        "  Gate {num}: {:<20} {icon}  ({summary}) [{:.0}ms]",
+        "  Gate {num}: {:<20} {icon}  ({summary}) [{:.0}ms] → {verdict}",
         bold(&gate.name),
         gate.duration_ms
     );
@@ -215,67 +223,74 @@ fn print_findings_grouped(report: &LintReport) {
 
     println!("{}:", bold("Findings"));
     for (file, findings) in &by_file {
-        let errors = findings
-            .iter()
-            .filter(|f| f.severity == RuleSeverity::Error)
-            .count();
-        let warnings = findings
-            .iter()
-            .filter(|f| f.severity == RuleSeverity::Warning)
-            .count();
-        let mut parts = Vec::new();
-        if errors > 0 {
-            parts.push(red(&format!(
-                "{errors} error{}",
-                if errors == 1 { "" } else { "s" }
-            )));
-        }
-        if warnings > 0 {
-            parts.push(yellow(&format!(
-                "{warnings} warning{}",
-                if warnings == 1 { "" } else { "s" }
-            )));
-        }
-        let infos = findings.len() - errors - warnings;
-        if infos > 0 {
-            parts.push(format!("{infos} info"));
-        }
-        println!("\n  {} ({})", cyan(file), parts.join(", "));
+        println!("\n  {} ({})", cyan(file), severity_counts(findings));
         for f in findings {
-            let sev = severity_colored(f.severity);
-            let new_badge = if f.is_new {
-                format!("  {}", yellow("[NEW]"))
-            } else {
-                String::new()
-            };
-            println!(
-                "    [{sev}] {} — {}{new_badge}",
-                bold(&f.rule_id),
-                f.message
-            );
-            // Feature 5: Show source snippet if available
-            if let Some(ref snippet) = f.snippet {
-                println!("           | {snippet}");
-            }
-            // Feature 7: Show evidence if available
-            if let Some(ref evidence) = f.evidence {
-                println!("            evidence: {evidence}");
-            }
-            // Feature 10: Show fix suggestion if available
-            if let Some(ref suggestion) = f.suggestion {
-                let mut first = true;
-                for line in suggestion.lines() {
-                    if first {
-                        println!("      fix: {line}");
-                        first = false;
-                    } else {
-                        println!("           {line}");
-                    }
-                }
-            }
+            print_finding(f);
         }
     }
     println!();
+}
+
+/// `2 errors, 1 warning, 3 info` for one file's findings; zero counts are omitted.
+fn severity_counts(findings: &[&LintFinding]) -> String {
+    let errors = findings
+        .iter()
+        .filter(|f| f.severity == RuleSeverity::Error)
+        .count();
+    let warnings = findings
+        .iter()
+        .filter(|f| f.severity == RuleSeverity::Warning)
+        .count();
+    let mut parts = Vec::new();
+    if errors > 0 {
+        parts.push(red(&format!(
+            "{errors} error{}",
+            if errors == 1 { "" } else { "s" }
+        )));
+    }
+    if warnings > 0 {
+        parts.push(yellow(&format!(
+            "{warnings} warning{}",
+            if warnings == 1 { "" } else { "s" }
+        )));
+    }
+    let infos = findings.len() - errors - warnings;
+    if infos > 0 {
+        parts.push(format!("{infos} info"));
+    }
+    parts.join(", ")
+}
+
+fn print_finding(f: &LintFinding) {
+    let sev = severity_colored(f.severity);
+    let new_badge = if f.is_new {
+        format!("  {}", yellow("[NEW]"))
+    } else {
+        String::new()
+    };
+    println!(
+        "    [{sev}] {} — {}{new_badge}",
+        bold(&f.rule_id),
+        f.message
+    );
+    // Feature 5: Show source snippet if available
+    if let Some(ref snippet) = f.snippet {
+        println!("           | {snippet}");
+    }
+    // Feature 7: Show evidence if available
+    if let Some(ref evidence) = f.evidence {
+        println!("            evidence: {evidence}");
+    }
+    // Feature 10: Show fix suggestion if available
+    if let Some(ref suggestion) = f.suggestion {
+        for (i, line) in suggestion.lines().enumerate() {
+            if i == 0 {
+                println!("      fix: {line}");
+            } else {
+                println!("           {line}");
+            }
+        }
+    }
 }
 
 pub fn print_summary(report: &LintReport) {
@@ -338,10 +353,28 @@ pub fn print_summary(report: &LintReport) {
         println!("Estimated remediation: {effort_str}");
     }
 
-    let result = if report.passed {
-        green("PASS")
+    print_armed_meet(report);
+}
+
+/// ONT-001 §3.9: the meet over the armed gates, the monotone check, and a `Result:` that agrees with the exit.
+fn print_armed_meet(report: &LintReport) {
+    let not_armed = if report.not_armed.is_empty() {
+        String::new()
     } else {
-        red("FAIL")
+        format!("; not armed: {}", report.not_armed.join(", "))
+    };
+    println!(
+        "armed meet: {} ({} armed{not_armed})",
+        report.verdict,
+        report.armed_gates.len()
+    );
+    if let Some(monotone) = &report.armed_monotone {
+        println!("armed_gates monotone: {monotone}");
+    }
+    let result = match report.verdict {
+        Verdict::Pass => green("PASS"),
+        Verdict::Fail => red("FAIL"),
+        Verdict::Unknown(reason) => yellow(&format!("DECLINE ({reason})")),
     };
     println!("Result: {result}");
 }

@@ -161,6 +161,23 @@ impl Verdict {
     }
 }
 
+/// `Pass`, `Fail`, `Unknown(<Reason>)` — the spelling `pv lint --format json` emits per gate and for the meet.
+impl fmt::Display for Verdict {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Pass => f.write_str("Pass"),
+            Self::Fail => f.write_str("Fail"),
+            Self::Unknown(reason) => write!(f, "Unknown({reason})"),
+        }
+    }
+}
+
+impl serde::Serialize for Verdict {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_str(self)
+    }
+}
+
 /// The closed fleet vocabulary: `dogfood.sh mark`, lane-reduce, and pv's own verdict words.
 pub const FLEET_LABELS: &[(&str, Verdict)] = &[
     ("PASS", Verdict::Pass),
@@ -241,6 +258,22 @@ mod tests {
         assert_eq!(
             Verdict::Unknown(Reason::NotArmed).decline_line().as_deref(),
             Some("decline: NotArmed")
+        );
+    }
+
+    #[test]
+    fn display_is_the_json_spelling() {
+        assert_eq!(Verdict::Pass.to_string(), "Pass");
+        assert_eq!(Verdict::Fail.to_string(), "Fail");
+        assert_eq!(Verdict::Unknown(Reason::Skip).to_string(), "Unknown(Skip)");
+        let spellings: std::collections::HashSet<String> =
+            Verdict::all().iter().map(ToString::to_string).collect();
+        assert_eq!(spellings.len(), 17, "no two elements share a spelling");
+        assert_eq!(
+            serde_json::to_string(&Verdict::Unknown(Reason::NotArmed))
+                .ok()
+                .as_deref(),
+            Some("\"Unknown(NotArmed)\"")
         );
     }
 

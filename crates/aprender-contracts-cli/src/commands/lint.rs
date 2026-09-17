@@ -4,14 +4,18 @@ use provable_contracts::lint::config::{find_config, load_config};
 use provable_contracts::lint::rules::RuleSeverity;
 use provable_contracts::lint::trend;
 use provable_contracts::lint::{run_lint, GateDetail, LintConfig, LintReport};
+use provable_contracts::ontology::verdict::Verdict;
 
-use crate::contract_walk::ZeroContracts;
+use crate::contract_walk::{LintDeclined, LintRejected, ZeroContracts};
 
 #[path = "lint_render.rs"]
 mod lint_render;
 
 #[path = "lint_html.rs"]
 mod lint_html;
+
+#[path = "lint_arming.rs"]
+mod lint_arming;
 
 /// Print long-form explanation for a lint rule.
 pub fn explain_rule(rule_id: &str) {
@@ -42,6 +46,7 @@ pub fn run(
     min_level: Option<&str>,
     watch: bool,
     strict_test_binding: bool,
+    armed_baseline_ref: Option<&str>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     refuse_missing_corpus(contract_dir)?;
     if watch {
@@ -95,11 +100,17 @@ pub fn run(
         strict_test_binding,
     );
 
-    let report = run_lint(&config);
+    // ONT-6 (PMAT-3451): the shrink check needs no lint run, so it refuses (exit 3) before one.
+    let arming = lint_arming::resolve(contract_dir, armed_baseline_ref, &config.requested_gates())?;
+
+    let mut report = run_lint(&config);
 
     // PVL-1 (PMAT-1099): an EMPTY corpus is refused (exit 2) before any report is
     // printed — never `Result: PASS` over 0 contracts.
     refuse_empty_corpus(&report, contract_dir)?;
+
+    report.arm(&arming.armed);
+    report.armed_monotone = Some(arming.monotone);
 
     if cache_stats {
         print_cache_stats(&report);
@@ -129,16 +140,24 @@ pub fn run(
         }
     }
 
-    if report.passed {
-        Ok(())
-    } else {
-        let passed_count = report.gates.iter().filter(|g| g.passed).count();
-        Err(format!(
-            "lint failed ({}/{} gates passed)",
-            passed_count,
-            report.gates.len()
-        )
-        .into())
+    meet_exit(&report)
+}
+
+/// ONT-001 §3.4: the exit is the armed meet — Pass 0, Fail 1 (`reject:`), Unknown 2 (`decline: <reason>`).
+/// `report.passed` (every gate passed or skipped) no longer decides it: a skipped armed gate is not a pass.
+fn meet_exit(report: &LintReport) -> Result<(), Box<dyn std::error::Error>> {
+    match report.verdict {
+        Verdict::Pass => Ok(()),
+        Verdict::Fail => Err(LintRejected {
+            passed: report
+                .armed_gates
+                .iter()
+                .filter(|g| g.verdict == Verdict::Pass)
+                .count(),
+            armed: report.armed_gates.len(),
+        }
+        .into()),
+        Verdict::Unknown(reason) => Err(LintDeclined { reason }.into()),
     }
 }
 
@@ -369,11 +388,16 @@ fn run_watch(
             strict_test_binding,
         );
 
-        let report = run_lint(&config);
+        let mut report = run_lint(&config);
 
         // PVL-1 (PMAT-1099): watch mode is the same gate on a timer — an empty
         // corpus is refused (exit 2) at the first tick, never reported over.
         refuse_empty_corpus(&report, contract_dir)?;
+        // ONT-6: the declared arming, re-read each tick; the monotone check is a one-shot run's job.
+        report.arm(&lint_arming::declared(
+            contract_dir,
+            &config.requested_gates(),
+        )?);
 
         if cache_stats {
             print_cache_stats(&report);

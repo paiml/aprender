@@ -140,9 +140,41 @@ fn dropping_a_committed_armed_gate_is_exit_3() {
     )
     .expect("control copies");
     std::fs::write(contracts.join("lint-baseline.json"), baseline_json(&EIGHT)).expect("baseline");
+    git_init_commit(repo.path());
+
+    // Positive control: the committed eight, unchanged, pass the monotone check against HEAD.
+    let same = pv(&["lint", s(&contracts), "--armed-baseline-ref", "HEAD"]);
+    assert_eq!(same.code, 0, "{}", show(&same));
+    assert!(
+        same.stdout
+            .contains("armed_gates monotone: OK against HEAD"),
+        "{}",
+        show(&same)
+    );
+
+    std::fs::write(
+        contracts.join("lint-baseline.json"),
+        baseline_json(&EIGHT[..7]),
+    )
+    .expect("shrunk baseline");
+    let r = pv(&["lint", s(&contracts), "--armed-baseline-ref", "HEAD"]);
+    assert_eq!(r.code, 3, "{}", show(&r));
+    assert!(
+        r.stderr.contains("error: armed_gates shrank: composition"),
+        "{}",
+        show(&r)
+    );
+}
+
+/// `git init` + commit everything under `dir`. `GIT_DIR`/`GIT_WORK_TREE`/`GIT_INDEX_FILE` are dropped: under a
+/// git hook they are exported, and inherited they would aim `git init` at the hook's own repository.
+fn git_init_commit(dir: &Path) {
     let git = |args: &[&str]| {
         let st = Command::new("git")
-            .current_dir(repo.path())
+            .current_dir(dir)
+            .env_remove("GIT_DIR")
+            .env_remove("GIT_WORK_TREE")
+            .env_remove("GIT_INDEX_FILE")
             .args([
                 "-c",
                 "user.email=t@t",
@@ -163,15 +195,48 @@ fn dropping_a_committed_armed_gate_is_exit_3() {
     git(&["init", "-q"]);
     git(&["add", "-A"]);
     git(&["commit", "-q", "-m", "baseline"]);
-    std::fs::write(
-        contracts.join("lint-baseline.json"),
-        baseline_json(&EIGHT[..7]),
-    )
-    .expect("shrunk baseline");
-    let r = pv(&["lint", s(&contracts), "--armed-baseline-ref", "HEAD"]);
-    assert_eq!(r.code, 3, "{}", show(&r));
+}
+
+#[test]
+fn an_explicit_comparand_that_cannot_be_read_is_an_error_not_a_skip() {
+    // Not a git work tree: the caller asked for a check that cannot run.
+    let d = corpus(None);
+    let r = pv(&["lint", s(d.path()), "--armed-baseline-ref", "HEAD"]);
+    assert_eq!(r.code, 1, "{}", show(&r));
     assert!(
-        r.stderr.contains("error: armed_gates shrank: composition"),
+        r.stderr.contains("error: --armed-baseline-ref HEAD:"),
+        "{}",
+        show(&r)
+    );
+    assert!(!r.stdout.contains("NOT CHECKED"), "{}", show(&r));
+
+    // A work tree, but the ref names no commit.
+    let repo = tempfile::tempdir().expect("repo dir");
+    let contracts = repo.path().join("contracts");
+    std::fs::create_dir_all(&contracts).expect("contracts dir");
+    std::fs::copy(
+        repo_contracts().join("softmax-kernel-v1.yaml"),
+        contracts.join("softmax-kernel-v1.yaml"),
+    )
+    .expect("control copies");
+    git_init_commit(repo.path());
+    let r = pv(&["lint", s(&contracts), "--armed-baseline-ref", "no-such-ref"]);
+    assert_eq!(r.code, 1, "{}", show(&r));
+    assert!(
+        r.stderr
+            .contains("error: --armed-baseline-ref no-such-ref: not a commit"),
+        "{}",
+        show(&r)
+    );
+
+    // A committed baseline that does not parse is an error, not the default set.
+    std::fs::write(contracts.join("lint-baseline.json"), "{ not json").expect("bad baseline");
+    git_init_commit(repo.path());
+    std::fs::write(contracts.join("lint-baseline.json"), baseline_json(&EIGHT)).expect("fixed");
+    let r = pv(&["lint", s(&contracts), "--armed-baseline-ref", "HEAD"]);
+    assert_eq!(r.code, 1, "{}", show(&r));
+    assert!(
+        r.stderr.contains("error: armed_gates comparand HEAD"),
         "{}",
         show(&r)
     );
@@ -191,7 +256,7 @@ fn json_report_carries_the_lattice() {
     assert_eq!(armed.len(), 8, "{}", show(&r));
     assert_eq!(
         v["not_armed"],
-        serde_json::json!(["reverse-coverage"]),
+        serde_json::Value::Array(vec![serde_json::Value::String("reverse-coverage".into())]),
         "{}",
         show(&r)
     );

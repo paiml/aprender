@@ -37,6 +37,8 @@ use self::gates_extended::{
     run_reverse_coverage_gate, run_verify_gate,
 };
 use self::rules::RuleSeverity;
+use crate::ontology::arming::{meet_armed, ArmedGates};
+use crate::ontology::verdict::Verdict;
 
 /// Result of a single gate execution.
 #[derive(Debug, Clone, Serialize)]
@@ -44,6 +46,8 @@ pub struct GateResult {
     pub name: String,
     pub passed: bool,
     pub skipped: bool,
+    /// ONT-001 §3.4: this gate's element of the one verdict lattice (`Verdict::from_gate(passed, skipped)`).
+    pub verdict: Verdict,
     pub duration_ms: u64,
     pub detail: GateDetail,
     /// Structured payload for gates invented AFTER `GateDetail` was frozen.
@@ -169,6 +173,42 @@ pub struct LintReport {
     /// Per-contract processing times: `(contract_stem, duration_ms)`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub contract_timings: Vec<(String, u64)>,
+    /// ONT-001 §3.9: the meet over the armed gates — what the exit code reports. `passed` is the legacy
+    /// every-gate-passed-or-skipped flag and is kept unchanged for existing readers.
+    pub verdict: Verdict,
+    /// Each armed gate, in armed order, with the verdict it contributed (`Unknown(NotRun)` if it did not run).
+    pub armed_gates: Vec<ArmedGateVerdict>,
+    /// Gates that ran but are not armed: printed as `Unknown(NotArmed)` and excluded from the meet.
+    pub not_armed: Vec<String>,
+    /// The `armed_gates` monotone check, as the CLI measured it; `None` when nothing checked it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub armed_monotone: Option<String>,
+}
+
+/// One armed gate's contribution to [`LintReport::verdict`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ArmedGateVerdict {
+    pub name: String,
+    pub verdict: Verdict,
+}
+
+impl LintReport {
+    /// Recompute the meet over `armed`. Gates that ran but are not armed are listed in `not_armed`.
+    pub fn arm(&mut self, armed: &ArmedGates) {
+        let results: Vec<(String, Verdict)> = self
+            .gates
+            .iter()
+            .map(|g| (g.name.clone(), g.verdict))
+            .collect();
+        let meet = meet_armed(&results, armed);
+        self.verdict = meet.verdict;
+        self.armed_gates = meet
+            .armed
+            .into_iter()
+            .map(|(name, verdict)| ArmedGateVerdict { name, verdict })
+            .collect();
+        self.not_armed = meet.not_armed;
+    }
 }
 
 /// Configuration for `pv lint`.
@@ -211,6 +251,20 @@ impl<'a> LintConfig<'a> {
             min_level: None,
             strict_test_binding: false,
         }
+    }
+
+    /// Opt-in gates this configuration explicitly asks for. Each is armed for the run that requested it
+    /// ([`ArmedGates::arm_requested`]), so a flag never runs a gate whose failure cannot fail the run.
+    #[must_use]
+    pub fn requested_gates(&self) -> Vec<&'static str> {
+        let mut requested = Vec::new();
+        if self.binding_path.is_some() && self.crate_dir.is_some() {
+            requested.push("reverse-coverage");
+        }
+        if self.strict_test_binding {
+            requested.push("strict-test-binding");
+        }
+        requested
     }
 }
 
@@ -407,14 +461,21 @@ pub fn run_lint(config: &LintConfig) -> LintReport {
 
     let passed = gates.iter().all(|g| g.passed || g.skipped);
 
-    LintReport {
+    let mut report = LintReport {
         passed,
         gates,
         total_duration_ms: u64::try_from(overall_start.elapsed().as_millis()).unwrap_or(u64::MAX),
         findings: all_findings,
         cache_stats: stats,
         contract_timings,
-    }
+        verdict: Verdict::Unknown(crate::ontology::verdict::Reason::NotArmed),
+        armed_gates: Vec::new(),
+        not_armed: Vec::new(),
+        armed_monotone: None,
+    };
+    // The default set plus this run's opt-ins. `pv lint` re-arms from the corpus's `lint-baseline.json`.
+    report.arm(&ArmedGates::default_set().arm_requested(&config.requested_gates()));
+    report
 }
 
 fn skipped_gate(name: &str, reason: &str) -> GateResult {
@@ -422,6 +483,7 @@ fn skipped_gate(name: &str, reason: &str) -> GateResult {
         name: name.into(),
         passed: false,
         skipped: true,
+        verdict: Verdict::from_gate(false, true),
         duration_ms: 0,
         detail: GateDetail::Skipped {
             reason: reason.into(),
