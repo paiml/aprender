@@ -18382,3 +18382,22 @@ roadmap:
   labels:
   - kind:docs
   notes: null
+- id: PMAT-3451
+  github_issue: 3451
+  item_type: task
+  title: 'ONT-6: one Verdict lattice, Kani-proved; per-repo arming; exit-vocabulary mapping'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-09-17T13:19:20Z
+  updated: 2026-09-17T13:19:20Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - orch:fable
+  - orch-basis:state
+  notes: null
