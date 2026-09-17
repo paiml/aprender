@@ -17839,27 +17839,6 @@ roadmap:
   - kind:code
   notes: 'unanchored_but_bindable moves from [U] to 297; contracts_anchored may not
     rise while pv census is absent, because pv validate accepts entity: by ignoring it'
-- id: PMAT-3233
-  github_issue: 3233
-  item_type: task
-  title: 'APEX-2b: extended-Wilkinson tick placement (Talbot, Lin & Hanrahan 2010) — breaks::{extended, extended_loose, Q_DEFAULT, W_DEFAULT}, 36 CRAN goldens + 6 properties + W_DEFAULT-swap mutation (paiml/aprender#3233 half 1 of 2; apex APEX-001 row EV-2b, bound in paiml/apex#71)'
-  status: planned
-  priority: medium
-  assigned_to: null
-  created: 2026-09-16T14:09:06Z
-  updated: 2026-09-16T14:09:06Z
-  spec: null
-  acceptance_criteria:
-  - 'The first of the two capabilities #3233 owes apex''s EV-14. NEW crates/aprender-viz/src/breaks.rs, tests/breaks_golden.rs, fixtures/breaks/{manifest.json,README.md,generate.py}; EDITS Cargo.toml (+libm), src/lib.rs (+pub mod breaks), Cargo.lock. W_DEFAULT follows the reference code, not the paper''s prose. Landed through paiml/aprender#3259.'
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels:
-  - kind:code
-  - apex
-  - APEX-001
-  - EV-2b
-  notes: null
 - id: PMAT-3234
   github_issue: null
   item_type: task
