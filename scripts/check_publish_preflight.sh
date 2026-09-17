@@ -213,7 +213,7 @@ for n, t, req in sorted(vdev):
     if [ "$r6" = UNREADABLE ]; then
         echo "FAIL  R6 cargo metadata is unreadable, so sibling dev-dependencies cannot be judged"
         fails=1
-    elif printf '%s\n' "$r6" | grep -q '^CYCLE '; then
+    elif grep -q '^CYCLE ' <<< "$r6"; then
         printf 'FAIL  R6 a versioned sibling dev-dependency lies on a cycle (kept in the published manifest; neither crate can be uploaded first):\n%s\n' \
             "$(printf '%s\n' "$r6" | sed -n 's/^CYCLE //p')"
         fails=1
