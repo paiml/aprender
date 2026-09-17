@@ -1,0 +1,18 @@
+name: fixture-kernel
+version: "1.0.0"
+metadata:
+  version: "1.0.0"
+  kind: kernel
+  author: PAIML Engineering
+  description: a fixture kernel contract for the sigma gate
+equations:
+  identity:
+    formal: "∀i: len(out) = len(x)"
+    domain: x
+    codomain: out
+    invariants: ["len(out) = len(x)"]
+    preconditions: ["len(x) > 0"]
+    postconditions: ["len(out) = len(x)"]
+    lean_theorem: none
+entity:
+  type: ghost-entity

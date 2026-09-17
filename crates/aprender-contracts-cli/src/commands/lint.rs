@@ -47,8 +47,12 @@ pub fn run(
     watch: bool,
     strict_test_binding: bool,
     armed_baseline_ref: Option<&str>,
+    gate: Option<&str>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     refuse_missing_corpus(contract_dir)?;
+    if let Some(name) = gate {
+        return run_single_gate(contract_dir, name);
+    }
     if watch {
         return run_watch(
             contract_dir,
@@ -124,23 +128,37 @@ pub fn run(
 
     // --coverage: compute and print aggregate contract coverage metric
     if coverage {
-        let coverage_result = compute_contract_coverage(contract_dir);
-        println!(
-            "\nContract Coverage: {}/{} at Standard+ ({:.1}%)",
-            coverage_result.standard_plus, coverage_result.total, coverage_result.percentage,
-        );
-        if let Some(threshold) = min_coverage {
-            if coverage_result.percentage < threshold {
-                return Err(format!(
-                    "contract coverage {:.1}% is below minimum {:.1}%",
-                    coverage_result.percentage, threshold,
-                )
-                .into());
-            }
-        }
+        report_coverage(contract_dir, min_coverage)?;
     }
 
     meet_exit(&report)
+}
+
+/// `--coverage`: print the aggregate contract-coverage metric, and refuse below `--min-coverage`.
+fn report_coverage(
+    contract_dir: &Path,
+    min_coverage: Option<f64>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let coverage_result = compute_contract_coverage(contract_dir);
+    println!(
+        "\nContract Coverage: {}/{} at Standard+ ({:.1}%)",
+        coverage_result.standard_plus, coverage_result.total, coverage_result.percentage,
+    );
+    match min_coverage {
+        Some(threshold) if coverage_result.percentage < threshold => Err(format!(
+            "contract coverage {:.1}% is below minimum {:.1}%",
+            coverage_result.percentage, threshold,
+        )
+        .into()),
+        _ => Ok(()),
+    }
+}
+
+/// ONT-2b: `--gate <name>` runs ONE gate and reports only it, mapping its verdict through ONT-6's lattice.
+fn run_single_gate(_contract_dir: &Path, name: &str) -> Result<(), Box<dyn std::error::Error>> {
+    // RED: every case but the two Pass cases must fail here.
+    println!("{{\n  \"gate\": \"{name}\",\n  \"verdict\": \"Pass\"\n}}");
+    Ok(())
 }
 
 /// ONT-001 §3.4: the exit is the armed meet — Pass 0, Fail 1 (`reject:`), Unknown 2 (`decline: <reason>`).

@@ -200,6 +200,7 @@ pub fn dispatch(command: Commands) -> Result<(), Box<dyn std::error::Error>> {
             watch,
             strict_test_binding,
             armed_baseline_ref,
+            gate,
             ..
         } => {
             if let Some(ref rule_id) = explain {
@@ -230,6 +231,7 @@ pub fn dispatch(command: Commands) -> Result<(), Box<dyn std::error::Error>> {
                 watch,
                 strict_test_binding,
                 armed_baseline_ref.as_deref(),
+                gate.as_deref(),
             )
         }
         Commands::Score {
