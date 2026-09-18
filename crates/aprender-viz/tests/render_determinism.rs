@@ -20,10 +20,14 @@
 //! The fixture puts a **log scale** on the axis on purpose: `LogScale::scale` is the only place
 //! in this crate where a transcendental reaches a rendered coordinate, so a figure without one
 //! would pass on two architectures while proving nothing about rule 5.
+//! Its axis ticks are EV-2b's `breaks::extended` over each axis's decades, mapped back through
+//! `libm::pow` and the scale, so the tick placement is inside the bytes the two hosts compare.
 
 use std::fs;
 use std::path::PathBuf;
+use trueno_viz::breaks::{extended, Q_DEFAULT, W_DEFAULT};
 use trueno_viz::color::Rgba;
+use trueno_viz::format_coord;
 use trueno_viz::framebuffer::Framebuffer;
 use trueno_viz::manifest::{digest_bytes, Manifest};
 use trueno_viz::output::{PngEncoder, SvgEncoder};
@@ -52,33 +56,73 @@ fn render_fixture() -> Framebuffer {
     fb
 }
 
+/// The receipt fixture's data domains: four decades on x, three on y.
+const X_DOMAIN: (f32, f32) = (1.0, 10_000.0);
+const Y_DOMAIN: (f32, f32) = (1.0, 1_000.0);
+/// The pixel ranges both axes map onto (y grows downwards).
+const X_RANGE: (f32, f32) = (8.0, 312.0);
+const Y_RANGE: (f32, f32) = (192.0, 8.0);
+/// The `m` handed to `breaks::extended`: how many ticks an axis asks for.
+const TICKS_WANTED: usize = 5;
+
 /// The x and y positions of the fixture's marks, each produced by a log-scale evaluation.
 fn log_positions() -> Vec<(f32, f32)> {
-    let sx = LogScale::new((1.0_f32, 10_000.0), (8.0, 312.0)).expect("x scale");
-    let sy = LogScale::new((1.0_f32, 1_000.0), (192.0, 8.0)).expect("y scale");
+    log_positions_over(X_DOMAIN, Y_DOMAIN)
+}
+
+fn log_positions_over(xd: (f32, f32), yd: (f32, f32)) -> Vec<(f32, f32)> {
+    let sx = LogScale::new(xd, X_RANGE).expect("x scale");
+    let sy = LogScale::new(yd, Y_RANGE).expect("y scale");
     (0..200)
         .map(|i| {
             let t = f64::from(i) / 199.0;
-            let xv = 1.0 + t * 9_999.0;
-            let yv = 1.0 + (1.0 - t) * 999.0;
+            let xv = f64::from(xd.0) + t * f64::from(xd.1 - xd.0);
+            let yv = f64::from(yd.0) + (1.0 - t) * f64::from(yd.1 - yd.0);
             (sx.scale(xv as f32), sy.scale(yv as f32))
         })
         .collect()
 }
 
+/// A log axis's ticks, as exponents of ten: EV-2b's `breaks::extended` over the domain's decades.
+///
+/// The labeling runs in log space, where a log axis is linear, and each tick is mapped back
+/// through `libm::pow` and the `LogScale` on its way to a pixel — so a rendered tick position
+/// has been through the tick placement AND both directions of the transcendental path.
+fn decade_ticks(domain: (f32, f32)) -> Vec<f64> {
+    let (lo, hi) = (libm::log10(f64::from(domain.0)), libm::log10(f64::from(domain.1)));
+    extended(lo, hi, TICKS_WANTED, &Q_DEFAULT, &W_DEFAULT)
+}
+
+/// How many ticks the receipt fixture carries on each axis.
+fn fixture_tick_counts() -> (usize, usize) {
+    (decade_ticks(X_DOMAIN).len(), decade_ticks(Y_DOMAIN).len())
+}
+
 /// The same figure as SVG: the artefact EV-2a asserts is identical across architectures.
 ///
-/// Every coordinate in it came out of a log scale, and the writer snaps every emitted number to
-/// the coordinate grid, so this string is where rule 5 either holds or does not.
+/// Every coordinate in it came out of a log scale, the axis ticks are EV-2b's breaks, and the
+/// writer snaps every emitted number to the coordinate grid, so this string is where rule 5
+/// either holds or does not.
 fn render_fixture_svg() -> String {
-    let pts = log_positions();
-    let mut svg = SvgEncoder::new(320, 200).background(Some(Rgba::WHITE)).polyline(
-        &pts,
-        Rgba::new(31, 119, 180, 255),
-        1.0,
-    );
+    render_svg_over(X_DOMAIN, Y_DOMAIN)
+}
+
+fn render_svg_over(xd: (f32, f32), yd: (f32, f32)) -> String {
+    let pts = log_positions_over(xd, yd);
+    let ink = Rgba::new(31, 119, 180, 255);
+    let mut svg = SvgEncoder::new(320, 200).background(Some(Rgba::WHITE)).polyline(&pts, ink, 1.0);
     for &(x, y) in &pts {
-        svg = svg.circle(x, y, 1.5, Rgba::new(31, 119, 180, 255));
+        svg = svg.circle(x, y, 1.5, ink);
+    }
+    let sx = LogScale::new(xd, X_RANGE).expect("x scale");
+    let sy = LogScale::new(yd, Y_RANGE).expect("y scale");
+    for t in decade_ticks(xd) {
+        let x = sx.scale(libm::pow(10.0, t) as f32);
+        svg = svg.line(x, Y_RANGE.0, x, Y_RANGE.0 + 4.0, Rgba::BLACK, 1.0);
+    }
+    for t in decade_ticks(yd) {
+        let y = sy.scale(libm::pow(10.0, t) as f32);
+        svg = svg.line(X_RANGE.0 - 4.0, y, X_RANGE.0, y, Rgba::BLACK, 1.0);
     }
     svg.render()
 }
@@ -162,6 +206,45 @@ fn every_number_in_the_svg_is_on_the_grid() {
         checked += 1;
     }
     assert!(checked >= 800, "only {checked} numbers were checked — the fixture lost its marks");
+}
+
+/// The axis ticks in the SVG are EV-2b's breaks, computed for the figure's own domain.
+///
+/// Rendered over a domain the receipt fixture does NOT use, so a tick list written out by hand
+/// for the fixture's decades — which agrees with `breaks::extended` there, tick for tick —
+/// puts its marks in the wrong place here. Each expected tick is then looked up in the SVG as
+/// the `<line>` the writer emitted for it, in the writer's own number format: a tick computed
+/// and never drawn fails, and so does one drawn off the grid.
+#[test]
+fn the_axis_ticks_are_the_ev2b_breaks_of_the_domain() {
+    let (xd, yd) = ((1.0_f32, 1_000_000.0), (1.0_f32, 100.0));
+    let svg = render_svg_over(xd, yd);
+    let sx = LogScale::new(xd, X_RANGE).expect("x scale");
+    let sy = LogScale::new(yd, Y_RANGE).expect("y scale");
+
+    let (xt, yt) = (decade_ticks(xd), decade_ticks(yd));
+    assert_eq!(xt, extended(0.0, 6.0, TICKS_WANTED, &Q_DEFAULT, &W_DEFAULT));
+    assert_eq!(yt, extended(0.0, 2.0, TICKS_WANTED, &Q_DEFAULT, &W_DEFAULT));
+    assert!(xt.len() >= 2 && yt.len() >= 2, "an axis with fewer than two ticks: {xt:?} {yt:?}");
+
+    for &t in &xt {
+        let x = format_coord(f64::from(sx.scale(libm::pow(10.0, t) as f32)));
+        assert!(
+            svg.contains(&format!(r#"<line x1="{x}" y1="192" x2="{x}" y2="196""#)),
+            "no x tick at 10^{t}"
+        );
+    }
+    for &t in &yt {
+        let y = format_coord(f64::from(sy.scale(libm::pow(10.0, t) as f32)));
+        assert!(
+            svg.contains(&format!(r#"<line x1="4" y1="{y}" x2="8" y2="{y}""#)),
+            "no y tick at 10^{t}"
+        );
+    }
+    assert_eq!(svg.matches("<line ").count(), xt.len() + yt.len(), "a tick that is not a break");
+
+    // The receipt fixture itself: one tick per decade, which is what the receipt records.
+    assert_eq!(fixture_tick_counts(), (5, 4));
 }
 
 /// The PNG carries no timestamp and no text chunk.
@@ -276,6 +359,7 @@ fn zz_write_this_hosts_determinism_receipt() {
     m.insert("fixture.png", &png);
     m.insert("fixture.svg", svg.as_bytes());
 
+    let ticks = fixture_tick_counts();
     let arch = std::env::consts::ARCH;
     let receipt = format!(
         concat!(
@@ -287,6 +371,7 @@ fn zz_write_this_hosts_determinism_receipt() {
             "  \"png_sha256\": \"{png}\",\n",
             "  \"png_bytes\": {len},\n",
             "  \"manifest_root\": \"{root}\",\n",
+            "  \"ticks\": {{\"x\": {tx}, \"y\": {ty}}},\n",
             "  \"coord_grid\": {grid},\n",
             "  \"libm\": \"pure-rust\"\n",
             "}}\n"
@@ -298,6 +383,8 @@ fn zz_write_this_hosts_determinism_receipt() {
         png = digest_bytes(&png),
         root = m.root(),
         len = png.len(),
+        tx = ticks.0,
+        ty = ticks.1,
         grid = trueno_viz::COORD_GRID,
     );
     let path = dir.join(format!("determinism-{arch}.json"));
