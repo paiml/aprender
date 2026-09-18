@@ -4,7 +4,7 @@
 # CI. The fleet installer is infra's forjar pin, applied to every clean-room
 # runner (paiml/infra, machines/intel/forjar.yaml):
 #
-#   stack-tool-pmat    (line 779)  version: "3.41.1"   # infra 9c411f4, 2026-09-18 (#692)
+#   stack-tool-pmat    (line 779)  version: "3.41.1"   # infra 2734069 via f92ed2d, 2026-09-18 (#692)
 #   stack-tool-bashrs                version: "7.4.1"
 #
 # ALWAYS LATEST (operator rule, 2026-09-14): "we always go latest crates.io on
