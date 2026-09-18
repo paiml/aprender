@@ -150,7 +150,7 @@ PY
     case "$b" in cpu) flag="--no-gpu" ;; cuda|gpu) flag="--gpu" ;; *) flag="" ;; esac
     run_out=$("$APR" run "$path" --prompt "What is the capital of France? Answer briefly." --max-tokens 16 $flag 2>&1); run_rc=$?
     fb=false; ran=true
-    if printf '%s' "$run_out" | grep -qE 'falling back to CPU|path rejected, attempting fallback|runs on the CPU; the GPU backend'; then fb=true; fi
+    if grep -qE 'falling back to CPU|path rejected, attempting fallback|runs on the CPU; the GPU backend' <<< "$run_out"; then fb=true; fi
     if [ "$b" != cpu ] && [ -z "$GPU_NAME" ]; then ran=false; fi
     [ $run_rc -eq 0 ] || ran=false
     [ $first = 1 ] || be_json="$be_json,"; first=0
@@ -169,7 +169,7 @@ PY
 )
   printf '%s\n' "$row" >> "$ROWS"
   EXECUTED=$((EXECUTED + 1))
-  if printf '%s' "$row" | grep -q '"green": true'; then
+  if grep -q '"green": true' <<< "$row"; then
     printf '  [ OK   ] %-22s qa cap+golden pass, backends %s honoured\n' "$rid" "$rbackends"
   else
     RED=$((RED + 1))

@@ -123,7 +123,7 @@ if [ "$SELF_TEST" = 1 ]; then
     main=""; [ -f "$c/ladder_main.yaml" ] && main="$c/ladder_main.yaml"
     out=$(judge "$lad" "$main" "$c/receipts" "$(cat "$c/version" 2>/dev/null || echo 0.0.0-case)"); got=$?
     n=$((n+1))
-    if [ "$got" = "$want" ] && { [ ! -f "$c/must_match" ] || printf '%s' "$out" | grep -qE "$(cat "$c/must_match")"; }; then
+    if [ "$got" = "$want" ] && { [ ! -f "$c/must_match" ] || grep -qE "$(cat "$c/must_match")" <<< "$out"; }; then
       printf 'ok    case %-28s rc=%s\n' "$name" "$got"
     else
       printf 'FAIL  case %-28s rc=%s want=%s%s\n' "$name" "$got" "$want" "$([ -f "$c/must_match" ] && printf ' must_match=/%s/' "$(cat "$c/must_match")")"
