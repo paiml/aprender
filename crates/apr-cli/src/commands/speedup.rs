@@ -112,10 +112,10 @@ fn run_throughput_gate(path: &Path, config: &QaConfig) -> Result<GateResult> {
 ///
 /// 128-token minimum, for the reason `measure_our_gguf_tps` already gives: each
 /// run re-prefills the prompt, so a short generation reports prefill cost as if
-/// it were decode. Measured on Qwen3.5-0.8B-Q4_K_M (#3477): 9.9 tok/s at the
-/// 32-token default vs ~15.6 tok/s decode — a ~1.2 s prefill spread over 32
-/// tokens. The threshold is untouched (10 tok/s for unasserted GGUF); what
-/// changes is that the number the gate compares is decode throughput.
+/// it were decode — at the 32-token default the prompt's prefill is spread over
+/// too few tokens and the gate compares a rate that is mostly prefill (#3477).
+/// The threshold is untouched (10 tok/s for unasserted GGUF); what changes is
+/// that the number the gate compares is decode throughput.
 #[cfg(feature = "inference")]
 fn throughput_cpu_runtime(path: &Path, config: &QaConfig) -> Result<f64> {
     use realizar::{run_inference, InferenceConfig};
