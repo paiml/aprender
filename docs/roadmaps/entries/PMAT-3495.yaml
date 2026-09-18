@@ -1,0 +1,16 @@
+- id: PMAT-3495
+  github_issue: 3495
+  item_type: task
+  title: 'VERIFY-001 (0.71.0): run the 132 Kani harnesses in CI so proof credit comes from runs, then pilot Verus on one dequant/parser function bound to its contract equation'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-18T16:43:48Z
+  updated: 2026-09-18T16:43:48Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
