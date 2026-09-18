@@ -625,5 +625,5 @@ qa_gate:
   - no_fallback_line_on_claimed_backend
   - golden_output_gpu_per_rung
   - both_required_hosts
-  pass_criteria: "scripts/check_model_ladder.sh exits 0"
+  pass_criteria: "All 15 falsification tests pass, and scripts/check_model_ladder.sh exits 0 (FALSIFY-CPU-GPU-015 is the ladder itself)"
   falsification: "plant backends.cuda.fallback=true in a receipt → exit 1 (scripts/lib/model_ladder_cases/red-fallback)"

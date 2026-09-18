@@ -84,7 +84,7 @@ falsification_tests:
   if_fails: SIMD normalization diverges beyond ULP tolerance
 - id: FALSIFY-QKN-006
   rule: Cross-backend equivalence — the REAL kernel, on the path generation takes
-  prediction: "`apr run --gpu` on a dense-Qwen3 Q4_K_M GGUF stays on CUDA: no `diverges from CPU … falling back to CPU` line, and `apr qa` golden_output passes on GPU, on sm_89 and on GB10"
+  prediction: "`apr run --gpu` on a dense-Qwen3 Q4_K_M GGUF stays on CUDA: no `diverges from CPU … falling back to CPU` line, and `apr qa` golden_output passes on GPU, on lambda (sm_89) and on gx10 (GB10, sm_121)"
   test: "bash scripts/check_model_ladder.sh — rung qwen3-1.7b-q4km, backend cuda, both required hosts (receipts under evidence/dogfood/models/<version>/)"
   if_fails: "the per-head RMSNorm did not run where generation runs — at 4a538ddef the kernel was correct in isolation and SKIPPED by the manual CUDA graph replay (argmax 25 ≠ 198 at position 1 on both silicons, #3413); a simulation-vs-CPU proptest cannot see that, which is why this falsifier was rewritten (EPIC #3477)"
 - id: FALSIFY-QKN-007
