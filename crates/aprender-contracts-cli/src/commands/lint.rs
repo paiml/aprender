@@ -178,7 +178,8 @@ struct SingleGateFinding<'a> {
 /// Pass 0 · Fail 1 `reject:` · no Σ 2 `decline:` (R-2, zero is a decline) · malformed Σ 3 `error:`.
 fn run_single_gate(contract_dir: &Path, name: &str) -> Result<(), Box<dyn std::error::Error>> {
     use provable_contracts::lint::{
-        relations_gate::RelationsOutcome, sigma_gate::SigmaOutcome, NamedGateOutcome, NAMED_GATES,
+        relations_gate::RelationsOutcome, shapes_gate::ShapesOutcome, sigma_gate::SigmaOutcome,
+        NamedGateOutcome, NAMED_GATES,
     };
 
     let (result, findings) = match provable_contracts::lint::run_named_gate(contract_dir, name) {
@@ -209,8 +210,30 @@ fn run_single_gate(contract_dir: &Path, name: &str) -> Result<(), Box<dyn std::e
         NamedGateOutcome::Relations(RelationsOutcome::Malformed(e)) => {
             return Err(crate::contract_walk::SigmaMalformed(e.to_string()).into())
         }
+        NamedGateOutcome::Shapes(ShapesOutcome::Unsupported(e)) => {
+            return Err(crate::contract_walk::SigmaMalformed(e.to_string()).into())
+        }
+        NamedGateOutcome::Shapes(ShapesOutcome::NoShapes { .. }) => {
+            return Err(LintDeclined {
+                reason: provable_contracts::ontology::verdict::Reason::NoShapes,
+            }
+            .into())
+        }
+        NamedGateOutcome::Shapes(ShapesOutcome::NoFocus { .. }) => {
+            return Err(LintDeclined {
+                reason: provable_contracts::ontology::verdict::Reason::NoFocus,
+            }
+            .into())
+        }
+        NamedGateOutcome::Shapes(ShapesOutcome::PositiveControlFailed { .. }) => {
+            return Err(LintDeclined {
+                reason: provable_contracts::ontology::verdict::Reason::PositiveControlFailed,
+            }
+            .into())
+        }
         NamedGateOutcome::Sigma(SigmaOutcome::Ran { result, findings })
         | NamedGateOutcome::Relations(RelationsOutcome::Ran { result, findings })
+        | NamedGateOutcome::Shapes(ShapesOutcome::Ran { result, findings })
         | NamedGateOutcome::Ran { result, findings } => (result, findings),
     };
 
@@ -232,14 +255,18 @@ fn run_single_gate(contract_dir: &Path, name: &str) -> Result<(), Box<dyn std::e
     };
     println!("{}", serde_json::to_string_pretty(&report)?);
 
-    if result.passed {
-        Ok(())
-    } else {
-        Err(LintRejected {
+    // The exit is the gate's VERDICT, not its `passed` bit: a gate that ran and answered `Unknown{Warn}` (ONT-4b, warnings
+    // and no violation) is a decline, exit 2 — `passed` alone would print 0 for a corpus nobody judged clean.
+    match result.verdict {
+        provable_contracts::ontology::verdict::Verdict::Pass => Ok(()),
+        provable_contracts::ontology::verdict::Verdict::Unknown(reason) => {
+            Err(LintDeclined { reason }.into())
+        }
+        provable_contracts::ontology::verdict::Verdict::Fail => Err(LintRejected {
             passed: 0,
             armed: 1,
         }
-        .into())
+        .into()),
     }
 }
 
