@@ -223,18 +223,6 @@ architectures:
     tied_embeddings: true
     has_qk_norm: false
     default_eps: 1.0e-05
-  qwen3_5:
-    aliases:
-    - qwen3.5
-    norm_type: RmsNorm
-    activation: Silu
-    positional_encoding: Rope
-    mlp_type: SwiGlu
-    weight_layout: Linear
-    has_bias: false
-    tied_embeddings: false
-    has_qk_norm: false
-    default_eps: 1.0e-06
   falcon_h1:
     aliases:
     - falcon-h1

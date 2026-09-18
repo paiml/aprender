@@ -35,6 +35,40 @@ fn float16_matmul(
     all_output
 }
 
+/// Dequantized-F32 weights × activations through trueno's SIMD matvec, one
+/// sequence position at a time. Shared by the Q4_1 / Q5_0 / APR-Q4 / APR-Q8
+/// paths of `fused_matmul` (extracted for complexity, PMAT-3477: the four
+/// copies were what kept that function above the cognitive ceiling).
+fn dequant_f32_matmul(
+    input: &[f32],
+    weights_f32: Vec<f32>,
+    label: &str,
+    in_dim: usize,
+    out_dim: usize,
+    seq_len: usize,
+) -> Result<Vec<f32>> {
+    use trueno::{Matrix as TruenoMatrix, Vector as TruenoVector};
+
+    let weight_matrix = TruenoMatrix::from_vec(out_dim, in_dim, weights_f32).map_err(|_| {
+        RealizarError::InvalidShape {
+            reason: format!("Failed to create weight matrix for {label}"),
+        }
+    })?;
+
+    let mut output = Vec::with_capacity(seq_len * out_dim);
+    for s in 0..seq_len {
+        let x = &input[s * in_dim..(s + 1) * in_dim];
+        let x_vec = TruenoVector::from_slice(x);
+        let r = weight_matrix
+            .matvec(&x_vec)
+            .map_err(|_| RealizarError::InvalidShape {
+                reason: format!("SIMD matvec failed for {label}"),
+            })?;
+        output.extend_from_slice(r.as_slice());
+    }
+    Ok(output)
+}
+
 impl OwnedQuantizedModel {
     /// Look up token embeddings (public for debugging PAR-001)
     pub fn embed(&self, token_ids: &[u32]) -> Vec<f32> {
@@ -79,7 +113,8 @@ impl OwnedQuantizedModel {
             // N-09: OOB token → zeros. Contract: embedding-lookup-v1.yaml
             eprintln!(
                 "Warning: embed_into token_id {} OOB (end={end}, len={}). N-09 escape.",
-                token_id, self.token_embedding.len()
+                token_id,
+                self.token_embedding.len()
             );
             output[..hidden_dim].iter_mut().for_each(|x| *x = 0.0);
         }
@@ -102,7 +137,6 @@ impl OwnedQuantizedModel {
         weight: &OwnedQuantizedTensor,
     ) -> Result<Vec<f32>> {
         use crate::quantize::{dequantize_q4_1, dequantize_q5_0};
-        use trueno::{Matrix as TruenoMatrix, Vector as TruenoVector};
 
         let in_dim = weight.in_dim;
         let out_dim = weight.out_dim;
@@ -123,100 +157,53 @@ impl OwnedQuantizedModel {
             return self.fused_matmul_cuda(input, weight, executor_mutex);
         }
 
-        // CPU path: F32 weights — rayon parallel dot products (zero-copy on raw bytes)
-        if weight.qtype == GGUF_TYPE_F32 {
-            return Ok(self.fused_matmul_f32(input, &weight.data, in_dim, out_dim, seq_len));
+        // CPU paths, one arm per storage format:
+        //   F32        rayon parallel dot products, zero-copy on the raw bytes
+        //   BF16/F16   GH-368: decode 2-byte floats, BF16 = f32::from_bits(bits << 16)
+        //   Q4_0/Q8_0  fused integer SIMD matmul
+        //   Q4_1/Q5_0  dequantize + SIMD matvec
+        //   APR Q4/Q8  GH-478: per-tensor scratch dequant (F32 expansion bounded to
+        //              one tensor's working set, not 4 × num_params at load time)
+        //   otherwise  the K-quant kernels (Q4_K/Q5_K/Q6_K) and, in their default
+        //              arm, the IQ*/Q2_K/Q3_K dequant fallback (PMAT-3477 / #3091)
+        let data = &weight.data;
+        match weight.qtype {
+            GGUF_TYPE_F32 => Ok(self.fused_matmul_f32(input, data, in_dim, out_dim, seq_len)),
+            GGUF_TYPE_BF16 => Ok(float16_matmul(input, data, in_dim, out_dim, seq_len, |b| {
+                f32::from_bits((b as u32) << 16)
+            })),
+            GGUF_TYPE_F16 => Ok(float16_matmul(input, data, in_dim, out_dim, seq_len, |b| {
+                half::f16::from_bits(b).to_f32()
+            })),
+            GGUF_TYPE_Q4_0 | GGUF_TYPE_Q8_0 => {
+                self.fused_matmul_q4_q8(input, weight, in_dim, out_dim, seq_len)
+            },
+            GGUF_TYPE_Q4_1 => dequant_f32_matmul(
+                input,
+                dequantize_q4_1(data)?,
+                "Q4_1",
+                in_dim,
+                out_dim,
+                seq_len,
+            ),
+            GGUF_TYPE_Q5_0 => dequant_f32_matmul(
+                input,
+                dequantize_q5_0(data)?,
+                "Q5_0",
+                in_dim,
+                out_dim,
+                seq_len,
+            ),
+            APR_TYPE_Q4 => {
+                let w = crate::apr::dequant::dequantize_apr_q4(data, in_dim * out_dim);
+                dequant_f32_matmul(input, w, "APR-Q4", in_dim, out_dim, seq_len)
+            },
+            APR_TYPE_Q8 => {
+                let w = crate::apr::dequant::dequantize_apr_q8(data, in_dim * out_dim);
+                dequant_f32_matmul(input, w, "APR-Q8", in_dim, out_dim, seq_len)
+            },
+            _ => self.fused_matmul_k_quants(input, weight, in_dim, out_dim, seq_len),
         }
-
-        // CPU path: BF16 weights — GH-368
-        // BF16→F32: f32::from_bits((bits as u32) << 16)
-        if weight.qtype == GGUF_TYPE_BF16 {
-            return Ok(float16_matmul(
-                input, &weight.data, in_dim, out_dim, seq_len,
-                |bits| f32::from_bits((bits as u32) << 16),
-            ));
-        }
-
-        // CPU path: F16 weights
-        if weight.qtype == GGUF_TYPE_F16 {
-            return Ok(float16_matmul(
-                input, &weight.data, in_dim, out_dim, seq_len,
-                |bits| half::f16::from_bits(bits).to_f32(),
-            ));
-        }
-
-        // CPU path: Fused integer SIMD matmul for Q4_0, Q8_0
-        if weight.qtype == GGUF_TYPE_Q4_0 || weight.qtype == GGUF_TYPE_Q8_0 {
-            return self.fused_matmul_q4_q8(input, weight, in_dim, out_dim, seq_len);
-        }
-
-        // CPU path: Dequantize + SIMD matmul for Q4_1, Q5_0
-        if weight.qtype == GGUF_TYPE_Q4_1 || weight.qtype == GGUF_TYPE_Q5_0 {
-            let weights_f32 = if weight.qtype == GGUF_TYPE_Q4_1 {
-                dequantize_q4_1(&weight.data)?
-            } else {
-                dequantize_q5_0(&weight.data)?
-            };
-            let label = if weight.qtype == GGUF_TYPE_Q4_1 { "Q4_1" } else { "Q5_0" };
-
-            let weight_matrix = TruenoMatrix::from_vec(out_dim, in_dim, weights_f32)
-                .map_err(|_| RealizarError::InvalidShape {
-                    reason: format!("Failed to create weight matrix for {label}"),
-                })?;
-
-            let mut output = Vec::with_capacity(seq_len * out_dim);
-            for s in 0..seq_len {
-                let x = &input[s * in_dim..(s + 1) * in_dim];
-                let x_vec = TruenoVector::from_slice(x);
-                let r = weight_matrix.matvec(&x_vec).map_err(|_| RealizarError::InvalidShape {
-                    reason: format!("SIMD matvec failed for {label}"),
-                })?;
-                output.extend_from_slice(r.as_slice());
-            }
-            return Ok(output);
-        }
-
-        // GH-478: APR-native Q4 / Q8 — per-tensor scratch dequant.
-        // Storage stays at 4-/8-bit; F32 expansion is bounded to one tensor's
-        // working set instead of `4 × num_params` bytes at load time.
-        if weight.qtype == APR_TYPE_Q4 || weight.qtype == APR_TYPE_Q8 {
-            let num_elements = in_dim * out_dim;
-            let weights_f32 = if weight.qtype == APR_TYPE_Q4 {
-                crate::apr::dequant::dequantize_apr_q4(&weight.data, num_elements)
-            } else {
-                crate::apr::dequant::dequantize_apr_q8(&weight.data, num_elements)
-            };
-            let label = if weight.qtype == APR_TYPE_Q4 { "APR-Q4" } else { "APR-Q8" };
-
-            let weight_matrix = TruenoMatrix::from_vec(out_dim, in_dim, weights_f32)
-                .map_err(|_| RealizarError::InvalidShape {
-                    reason: format!("Failed to create weight matrix for {label}"),
-                })?;
-
-            let mut output = Vec::with_capacity(seq_len * out_dim);
-            for s in 0..seq_len {
-                let x = &input[s * in_dim..(s + 1) * in_dim];
-                let x_vec = TruenoVector::from_slice(x);
-                let r = weight_matrix.matvec(&x_vec).map_err(|_| RealizarError::InvalidShape {
-                    reason: format!("SIMD matvec failed for {label}"),
-                })?;
-                output.extend_from_slice(r.as_slice());
-            }
-            return Ok(output);
-        }
-
-        // PMAT-3477 / #3091: types with no fused kernel here (the IQ formats
-        // real unsloth GGUFs ship, plus Q2_K/Q3_K) go through the correct
-        // dequantize-then-dot path instead of being refused.
-        if crate::quantize::iq_block_bytes(weight.qtype).is_some()
-            || weight.qtype == crate::gguf::types::GGUF_TYPE_Q2_K
-            || weight.qtype == crate::gguf::types::GGUF_TYPE_Q3_K
-        {
-            return self.dequant_fallback_matmul(input, weight, in_dim, out_dim, seq_len);
-        }
-
-        // CPU path: Fused K-quant kernels for Q4_K, Q5_K, Q6_K
-        self.fused_matmul_k_quants(input, weight, in_dim, out_dim, seq_len)
     }
 
     /// F32 zero-copy rayon matmul (extracted for complexity)
@@ -243,17 +230,42 @@ impl OwnedQuantizedModel {
                     let remainder = in_dim % 4;
                     for chunk in 0..chunks {
                         let base = row_byte_start + chunk * 16;
-                        let w0 = f32::from_le_bytes([data[base], data[base + 1], data[base + 2], data[base + 3]]);
-                        let w1 = f32::from_le_bytes([data[base + 4], data[base + 5], data[base + 6], data[base + 7]]);
-                        let w2 = f32::from_le_bytes([data[base + 8], data[base + 9], data[base + 10], data[base + 11]]);
-                        let w3 = f32::from_le_bytes([data[base + 12], data[base + 13], data[base + 14], data[base + 15]]);
+                        let w0 = f32::from_le_bytes([
+                            data[base],
+                            data[base + 1],
+                            data[base + 2],
+                            data[base + 3],
+                        ]);
+                        let w1 = f32::from_le_bytes([
+                            data[base + 4],
+                            data[base + 5],
+                            data[base + 6],
+                            data[base + 7],
+                        ]);
+                        let w2 = f32::from_le_bytes([
+                            data[base + 8],
+                            data[base + 9],
+                            data[base + 10],
+                            data[base + 11],
+                        ]);
+                        let w3 = f32::from_le_bytes([
+                            data[base + 12],
+                            data[base + 13],
+                            data[base + 14],
+                            data[base + 15],
+                        ]);
                         let col = chunk * 4;
                         sum += w0 * x[col] + w1 * x[col + 1] + w2 * x[col + 2] + w3 * x[col + 3];
                     }
                     for i in 0..remainder {
                         let col = chunks * 4 + i;
                         let offset = row_byte_start + col * 4;
-                        let w = f32::from_le_bytes([data[offset], data[offset + 1], data[offset + 2], data[offset + 3]]);
+                        let w = f32::from_le_bytes([
+                            data[offset],
+                            data[offset + 1],
+                            data[offset + 2],
+                            data[offset + 3],
+                        ]);
                         sum += w * x[col];
                     }
                     sum
@@ -315,15 +327,10 @@ impl OwnedQuantizedModel {
                     GGUF_TYPE_Q4_K => fused_q4k_parallel_matvec(&weight.data, x, in_dim, out_dim)?,
                     GGUF_TYPE_Q5_K => fused_q5k_parallel_matvec(&weight.data, x, in_dim, out_dim)?,
                     GGUF_TYPE_Q6_K => fused_q6k_parallel_matvec(&weight.data, x, in_dim, out_dim)?,
-                    _ => {
-                        return Err(RealizarError::UnsupportedOperation {
-                            operation: "owned_fused_matmul".to_string(),
-                            reason: format!(
-                                "Fused matmul only supports F32/BF16/F16/Q4_0/Q4_1/Q5_0/Q8_0/Q4_K/Q5_K/Q6_K, got type {}",
-                                weight.qtype
-                            ),
-                        });
-                    },
+                    // PMAT-3477 / #3091: the IQ formats real unsloth GGUFs ship (and
+                    // Q2_K/Q3_K) take the dequantize-then-dot path; anything else is
+                    // refused by name, in the same default arm as before.
+                    _ => self.dequant_fallback_or_refuse(x, weight, in_dim, out_dim, 1)?,
                 };
                 output.extend_from_slice(&row_output);
             }
@@ -333,13 +340,7 @@ impl OwnedQuantizedModel {
                 GGUF_TYPE_Q4_K => fused_q4k_parallel_matvec(&weight.data, input, in_dim, out_dim),
                 GGUF_TYPE_Q5_K => fused_q5k_parallel_matvec(&weight.data, input, in_dim, out_dim),
                 GGUF_TYPE_Q6_K => fused_q6k_parallel_matvec(&weight.data, input, in_dim, out_dim),
-                _ => Err(RealizarError::UnsupportedOperation {
-                    operation: "owned_fused_matmul".to_string(),
-                    reason: format!(
-                        "Fused matmul only supports F32/BF16/F16/Q4_0/Q4_1/Q5_0/Q8_0/Q4_K/Q5_K/Q6_K, got type {}",
-                        weight.qtype
-                    ),
-                }),
+                _ => self.dequant_fallback_or_refuse(input, weight, in_dim, out_dim, 1),
             }
         }
     }

@@ -1,6 +1,4 @@
-
 impl OwnedQuantizedModel {
-
     /// Fused matmul into pre-allocated output buffer
     pub(crate) fn fused_matmul_into(
         &self,
@@ -73,6 +71,34 @@ impl OwnedQuantizedModel {
                 Ok(())
             },
         }
+    }
+
+    /// The K-quant matcher's default arm (PMAT-3477 / #3091): a type with a
+    /// dequantize path (IQ*, Q2_K, Q3_K) takes it; anything else is refused by
+    /// id, exactly as the arm used to. Lives here, not as an early return in
+    /// `fused_matmul`, so that function's complexity does not rise (the
+    /// per-function ratchet is shrink-only).
+    pub(crate) fn dequant_fallback_or_refuse(
+        &self,
+        input: &[f32],
+        weight: &OwnedQuantizedTensor,
+        in_dim: usize,
+        out_dim: usize,
+        seq_len: usize,
+    ) -> Result<Vec<f32>> {
+        let has_dequant = crate::quantize::iq_block_bytes(weight.qtype).is_some()
+            || weight.qtype == crate::gguf::types::GGUF_TYPE_Q2_K
+            || weight.qtype == crate::gguf::types::GGUF_TYPE_Q3_K;
+        if !has_dequant {
+            return Err(RealizarError::UnsupportedOperation {
+                operation: "owned_fused_matmul".to_string(),
+                reason: format!(
+                    "Fused matmul only supports F32/BF16/F16/Q4_0/Q4_1/Q5_0/Q8_0/Q4_K/Q5_K/Q6_K and the dequant path for IQ*/Q2_K/Q3_K, got type {}",
+                    weight.qtype
+                ),
+            });
+        }
+        self.dequant_fallback_matmul(input, weight, in_dim, out_dim, seq_len)
     }
 
     /// Dequantize-then-dot CPU path for the types with no fused kernel here
@@ -167,7 +193,7 @@ impl OwnedQuantizedModel {
                         gate_output,
                         up_output,
                     );
-                }
+                },
                 GGUF_TYPE_Q5_K => {
                     return fused_gate_up_q5k_into(
                         &gate_weight.data,
@@ -178,7 +204,7 @@ impl OwnedQuantizedModel {
                         gate_output,
                         up_output,
                     );
-                }
+                },
                 GGUF_TYPE_Q6_K => {
                     return fused_gate_up_q6k_into(
                         &gate_weight.data,
@@ -189,8 +215,8 @@ impl OwnedQuantizedModel {
                         gate_output,
                         up_output,
                     );
-                }
-                _ => {} // Fall through to rayon::join fallback
+                },
+                _ => {}, // Fall through to rayon::join fallback
             }
         }
 
@@ -219,10 +245,12 @@ impl OwnedQuantizedModel {
                 // P4: Parallel QKV projections — K+V overlap with Q tail
                 let (q_out, (k_out, v_out)) = rayon::join(
                     || self.fused_matmul(input, q),
-                    || rayon::join(
-                        || self.fused_matmul(input, k),
-                        || self.fused_matmul(input, v),
-                    ),
+                    || {
+                        rayon::join(
+                            || self.fused_matmul(input, k),
+                            || self.fused_matmul(input, v),
+                        )
+                    },
                 );
                 let q_out = q_out?;
                 let k_out = k_out?;
@@ -265,10 +293,12 @@ impl OwnedQuantizedModel {
 
                 let (q_res, (k_res, v_res)) = rayon::join(
                     || self.fused_matmul_into(input, q, q_out),
-                    || rayon::join(
-                        || self.fused_matmul_into(input, k, k_out),
-                        || self.fused_matmul_into(input, v, v_out),
-                    ),
+                    || {
+                        rayon::join(
+                            || self.fused_matmul_into(input, k, k_out),
+                            || self.fused_matmul_into(input, v, v_out),
+                        )
+                    },
                 );
                 q_res?;
                 k_res?;
@@ -386,10 +416,12 @@ impl OwnedQuantizedModel {
                 // P4: Parallel QKV projections — K+V overlap with Q tail
                 let (q_out, (k_out, v_out)) = rayon::join(
                     || self.fused_matmul(&normed, q),
-                    || rayon::join(
-                        || self.fused_matmul(&normed, k),
-                        || self.fused_matmul(&normed, v),
-                    ),
+                    || {
+                        rayon::join(
+                            || self.fused_matmul(&normed, k),
+                            || self.fused_matmul(&normed, v),
+                        )
+                    },
                 );
                 let q_out = q_out?;
                 let k_out = k_out?;
@@ -495,7 +527,7 @@ impl OwnedQuantizedModel {
                 } else {
                     self.fused_matmul_into(input, weight, output)
                 }
-            }
+            },
             OwnedQKVWeights::Separate {
                 ref q,
                 ref k,
@@ -542,7 +574,7 @@ impl OwnedQuantizedModel {
                 k_res?;
                 v_res?;
                 Ok(())
-            }
+            },
         }
     }
 
@@ -563,7 +595,7 @@ impl OwnedQuantizedModel {
                     .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
                     .collect();
                 Ok(floats)
-            }
+            },
             // GH-242: F16 weights — convert to F32
             GGUF_TYPE_F16 => {
                 let floats: Vec<f32> = weight
@@ -575,7 +607,7 @@ impl OwnedQuantizedModel {
                     })
                     .collect();
                 Ok(floats)
-            }
+            },
             // GH-368: BF16 weights — convert to F32 (left-shift 16 bits)
             GGUF_TYPE_BF16 => {
                 let floats: Vec<f32> = weight
@@ -587,7 +619,7 @@ impl OwnedQuantizedModel {
                     })
                     .collect();
                 Ok(floats)
-            }
+            },
             GGUF_TYPE_Q4_0 => dequantize_q4_0(&weight.data),
             GGUF_TYPE_Q4_1 => dequantize_q4_1(&weight.data),
             GGUF_TYPE_Q5_0 => dequantize_q5_0(&weight.data),
