@@ -94,7 +94,9 @@ for h in hosts:
             print(f"FAIL  {h['id']:7} {rid:22} sha256 mismatch — a different file is a different measurement"); rc = 1; continue
         why = []
         cm, go = x.get("capability_match") or {}, x.get("golden_output") or {}
-        if not (cm.get("passed") and not cm.get("skipped")): why.append("capability_match " + ("SKIPPED" if cm.get("skipped") else "FAIL") + ": " + str(cm.get("message",""))[:60])
+        claims_gpu = bool({"cuda", "gpu"} & set(r.get("backends", [])))
+        cap_ok = (cm.get("passed") and not cm.get("skipped")) or (cm.get("skipped") and not claims_gpu)
+        if not cap_ok: why.append("capability_match " + ("SKIPPED" if cm.get("skipped") else "FAIL") + ": " + str(cm.get("message",""))[:60])
         if not (go.get("passed") and not go.get("skipped")): why.append("golden_output " + ("SKIPPED" if go.get("skipped") else "FAIL") + ": " + str(go.get("message",""))[:60])
         be = x.get("backends") or {}
         for b in r.get("backends", []):
