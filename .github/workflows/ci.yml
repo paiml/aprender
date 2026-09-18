@@ -874,8 +874,13 @@ jobs:
           set -euo pipefail
           rustup show active-toolchain
           cargo --version
-      - name: cargo check --workspace --all-targets --locked
-        run: cargo check --workspace --all-targets --locked
+      # First run on mini (PR #3488, 2026-09-18) found the first macOS-only fact
+      # in two minutes: crates/aprender-profile/src/main.rs is a compile_error!
+      # on non-Linux by design ("renacer requires Linux (ptrace syscall
+      # tracing)"). That crate is excluded here on purpose; any OTHER crate that
+      # fails to check on macOS is a finding this lane exists to surface.
+      - name: cargo check --workspace --all-targets --locked (minus the Linux-only profiler)
+        run: cargo check --workspace --all-targets --locked --exclude aprender-profile
       - name: apr-cli lib tests (nextest, ci profile)
         run: cargo nextest run --profile ci -p apr-cli --lib
 
