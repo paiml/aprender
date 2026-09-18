@@ -41,6 +41,8 @@ mod config;
 mod cuda;
 #[cfg(feature = "cuda")]
 mod cuda_model;
+/// #3432: the one ggml `type_traits` table (block size + bytes per block).
+pub mod ggml_type_table;
 mod inference;
 mod inference_types;
 mod io;

@@ -4,14 +4,21 @@
 //! that enable fused dequantization operations for memory-efficient inference.
 
 use crate::error::{RealizarError, Result};
-use crate::quantize::QK_K;
 
 use super::config::{GGUFConfig, ValidatedModelConfig};
 use super::quantized::{QKVWeights, QuantizedTensorRef};
+// #3432: the block sizes themselves now live in `ggml_type_table`; only the ids
+// this module names in code (the F32 placeholder, the PAR-058 resolver, the
+// legacy flat-sized set) are imported here.
 use super::types::{
-    GGUFModel, GGUF_TYPE_BF16, GGUF_TYPE_F16, GGUF_TYPE_F32, GGUF_TYPE_Q2_K, GGUF_TYPE_Q4_0,
-    GGUF_TYPE_Q4_1, GGUF_TYPE_Q4_K, GGUF_TYPE_Q5_0, GGUF_TYPE_Q5_K, GGUF_TYPE_Q6_K, GGUF_TYPE_Q8_0,
+    GGUFModel, GGUF_TYPE_F32, GGUF_TYPE_Q2_K, GGUF_TYPE_Q4_0, GGUF_TYPE_Q4_1, GGUF_TYPE_Q5_0,
+    GGUF_TYPE_Q8_0,
 };
+// The remaining ids appear only in this module's tests (including the
+// `include!`d `transformer_quantized_layer_field.rs`), which reach them through
+// `use super::*`.
+#[cfg(test)]
+use super::types::{GGUF_TYPE_BF16, GGUF_TYPE_F16, GGUF_TYPE_Q4_K, GGUF_TYPE_Q5_K, GGUF_TYPE_Q6_K};
 
 /// Quantized transformer layer weights (stored as byte references)
 ///
@@ -432,42 +439,43 @@ impl<'a> QuantizedGGUFTransformer<'a> {
     }
 
     /// Calculate byte size for a quantized tensor based on its type and dimensions.
+    ///
+    /// #3432: the sizes come from the ONE ggml type table
+    /// ([`crate::gguf::ggml_type_table`]) rather than an 11-arm match that listed
+    /// only the types its authors had met. The match refused IQ2_XXS (16) and
+    /// IQ4_XS (23) — the types real unsloth Qwen3.5 GGUFs use — at *size* time,
+    /// so `apr run` could not load the file at all. Sizing a type is not a claim
+    /// that a kernel exists for it; `fused_matmul_into` still fails loud for any
+    /// qtype it cannot dequantize.
+    ///
+    /// # Errors
+    ///
+    /// `UnsupportedOperation` when the ggml table has no layout for `qtype`, or
+    /// when the size overflows `usize`.
     fn tensor_byte_size(qtype: u32, num_elements: usize, dims: &[u64]) -> Result<usize> {
-        /// Row-padded K-quant byte size: each row pads to super-block boundaries.
-        fn k_quant_bytes(dims: &[u64], super_block_bytes: usize) -> usize {
-            if dims.len() == 2 {
-                let rows = dims[0] as usize;
-                let cols = dims[1] as usize;
-                rows * cols.div_ceil(QK_K) * super_block_bytes
-            } else {
-                let n: usize = dims.iter().map(|&d| d as usize).product();
-                n.div_ceil(QK_K) * super_block_bytes
-            }
-        }
+        // Types the pre-#3432 match sized from the FLAT element count. A 2-D
+        // tensor whose rows are not whole blocks gets a different (smaller)
+        // number this way than row-padding gives, so these ids keep their
+        // historical sizing rather than silently re-sizing existing models.
+        // Every other block type is row-padded, as `k_quant_bytes` always did.
+        const LEGACY_FLAT_SIZED: &[u32] = &[
+            GGUF_TYPE_Q4_0,
+            GGUF_TYPE_Q4_1,
+            GGUF_TYPE_Q5_0,
+            GGUF_TYPE_Q8_0,
+            GGUF_TYPE_Q2_K,
+        ];
 
-        match qtype {
-            GGUF_TYPE_F32 => Ok(num_elements * 4),
-            // F16/BF16: 2 bytes/elem, no block structure (#1893-class loader gap).
-            // PMAT-788: F16 (ggml type 1) is the most basic GGUF weight format, but
-            // its byte-size arm was missing here, so `from_gguf` (the `apr run` loader)
-            // crashed on EVERY F16 GGUF on both CPU and GPU paths — before the fail-closed
-            // GPU quant gate (PMAT-785) could even route it to CPU. The CPU forward
-            // (`fused_matmul`'s F16 branch) handles F16 fine once the tensor loads, so the
-            // fix is purely the missing size computation. Mirrors the existing BF16 arm.
-            GGUF_TYPE_F16 | GGUF_TYPE_BF16 => Ok(num_elements * 2),
-            GGUF_TYPE_Q4_0 => Ok(num_elements.div_ceil(32) * 18),
-            GGUF_TYPE_Q8_0 => Ok(num_elements.div_ceil(32) * 34),
-            GGUF_TYPE_Q2_K => Ok(num_elements.div_ceil(QK_K) * 84),
-            GGUF_TYPE_Q4_1 => Ok(num_elements.div_ceil(32) * 20),
-            GGUF_TYPE_Q5_0 => Ok(num_elements.div_ceil(32) * 22),
-            GGUF_TYPE_Q4_K => Ok(k_quant_bytes(dims, 144)),
-            GGUF_TYPE_Q5_K => Ok(k_quant_bytes(dims, 176)),
-            GGUF_TYPE_Q6_K => Ok(k_quant_bytes(dims, 210)),
-            _ => Err(RealizarError::UnsupportedOperation {
-                operation: "tensor_byte_size".to_string(),
-                reason: format!("Unsupported quantization type: {qtype}"),
-            }),
-        }
+        let scalar = super::ggml_type_table::traits(qtype).is_some_and(|t| t.blck_size == 1);
+        let sized = if scalar || LEGACY_FLAT_SIZED.contains(&qtype) {
+            super::ggml_type_table::flat_byte_size(qtype, num_elements)
+        } else {
+            super::ggml_type_table::byte_size(qtype, dims)
+        };
+        sized.map_err(|reason| RealizarError::UnsupportedOperation {
+            operation: "tensor_byte_size".to_string(),
+            reason,
+        })
     }
 
     /// PAR-058: Auto-correct qtype when header claims wrong type.
@@ -690,7 +698,7 @@ impl<'a> QuantizedGGUFTransformer<'a> {
 #[cfg(test)]
 mod tensor_byte_size_tests {
     use super::*;
-    use crate::gguf::types::{GGUF_TYPE_F16, GGUF_TYPE_Q3_K};
+    use crate::gguf::types::GGUF_TYPE_Q3_K;
 
     // PMAT-788: F16 (ggml type 1) is the most common GGUF weight format. Its
     // byte-size arm was missing, so `from_gguf` crashed on every F16 GGUF on
@@ -711,17 +719,95 @@ mod tensor_byte_size_tests {
         assert_eq!(got, n * 2);
     }
 
-    // Regression guard: Q3_K (type 11) is genuinely NOT supported by the CPU
-    // forward matmul, so the loader correctly still rejects it rather than
-    // loading a tensor that would crash deeper in inference. Documents the
-    // deliberate boundary of the PMAT-788 fix (F16 only).
+    // #3432: Q3_K (type 11) HAS a defined size in ggml's type_traits table
+    // (256-element super-block, 110 bytes), so sizing it is not a claim that the
+    // forward can run it. The kernel refusal is downstream and unchanged:
+    // `fused_matmul_into.rs` fails loud with "Unsupported quantization type" for
+    // any qtype it has no dequantizer for. Before #3432 this arm was missing and
+    // the loader refused at *size* time — which also refused IQ2_XXS/IQ4_XS, the
+    // types real unsloth Qwen3.5 files use.
     #[test]
-    fn q3_k_byte_size_still_unsupported() {
-        let res = QuantizedGGUFTransformer::tensor_byte_size(GGUF_TYPE_Q3_K, 256, &[256]);
+    fn q3_k_byte_size_is_the_ggml_super_block_size() {
+        let got = QuantizedGGUFTransformer::tensor_byte_size(GGUF_TYPE_Q3_K, 256, &[256])
+            .expect("Q3_K has a defined ggml block size (#3432)");
+        assert_eq!(got, 110, "Q3_K is 110 bytes per 256-element super-block");
+    }
+
+    /// #3432 (RED first): real unsloth Qwen3.5 GGUFs are IQ2_XXS (type 16) and
+    /// IQ4_XS (type 23). The 11-arm match refused both with "Unsupported
+    /// quantization type", so `apr run` could not even load the file.
+    #[test]
+    fn iq_quants_used_by_real_unsloth_files_are_sized() {
+        // [rows, cols] with cols a whole number of 256-element super-blocks.
+        let dims = [4u64, 512];
+        let n = 4 * 512;
+        let iq2_xxs = QuantizedGGUFTransformer::tensor_byte_size(16, n, &dims)
+            .expect("IQ2_XXS (type 16) must be sized — Qwen3.5-0.8B-UD-IQ2_XXS.gguf (#3432)");
+        assert_eq!(iq2_xxs, 4 * 2 * 66, "IQ2_XXS: 66 bytes per super-block");
+
+        let iq4_xs = QuantizedGGUFTransformer::tensor_byte_size(23, n, &dims)
+            .expect("IQ4_XS (type 23) must be sized — Qwen3.5-0.8B-IQ4_XS.gguf (#3432)");
+        assert_eq!(iq4_xs, 4 * 2 * 136, "IQ4_XS: 136 bytes per super-block");
+    }
+
+    /// The whole point of a table is that an id it does not know still fails
+    /// loud, rather than being sized as something else.
+    #[test]
+    fn an_unknown_type_id_is_still_refused() {
+        let err = QuantizedGGUFTransformer::tensor_byte_size(9_999, 256, &[256])
+            .expect_err("an id outside the ggml table must not be sized");
+        let msg = err.to_string();
         assert!(
-            res.is_err(),
-            "Q3_K is intentionally not loadable (no CPU forward kernel)"
+            msg.contains("9999"),
+            "the refusal must name the id it was given, got: {msg}"
         );
+    }
+
+    /// Regression snapshot: every id the 11-arm match supported keeps EXACTLY
+    /// the byte count it returned before the table (#3432). The dims are
+    /// deliberately NOT block-aligned on the last axis, which is where the
+    /// legacy flat-element-count arms (Q4_0/Q4_1/Q5_0/Q8_0/Q2_K) and the
+    /// row-padded K-quant arms disagree — so this pins both semantics.
+    #[test]
+    fn previously_supported_ids_keep_their_byte_sizes() {
+        let dims = [4u64, 1000];
+        let n = 4000usize;
+        let cases: [(u32, usize); 11] = [
+            (GGUF_TYPE_F32, 16_000),
+            (GGUF_TYPE_F16, 8_000),
+            (GGUF_TYPE_BF16, 8_000),
+            (GGUF_TYPE_Q4_0, 2_250),
+            (GGUF_TYPE_Q4_1, 2_500),
+            (GGUF_TYPE_Q5_0, 2_750),
+            (GGUF_TYPE_Q8_0, 4_250),
+            (GGUF_TYPE_Q2_K, 1_344),
+            (GGUF_TYPE_Q4_K, 2_304),
+            (GGUF_TYPE_Q5_K, 2_816),
+            (GGUF_TYPE_Q6_K, 3_360),
+        ];
+        for (qtype, expected) in cases {
+            let got = QuantizedGGUFTransformer::tensor_byte_size(qtype, n, &dims)
+                .expect("previously supported qtype must stay supported");
+            assert_eq!(got, expected, "qtype {qtype} byte size changed");
+        }
+    }
+
+    /// The 1-D snapshot (vectors, norms) for the same ids.
+    #[test]
+    fn previously_supported_ids_keep_their_1d_byte_sizes() {
+        let dims = [1000u64];
+        let n = 1000usize;
+        let cases: [(u32, usize); 4] = [
+            (GGUF_TYPE_F32, 4_000),
+            (GGUF_TYPE_Q4_0, 32 * 18),
+            (GGUF_TYPE_Q2_K, 4 * 84),
+            (GGUF_TYPE_Q4_K, 4 * 144),
+        ];
+        for (qtype, expected) in cases {
+            let got = QuantizedGGUFTransformer::tensor_byte_size(qtype, n, &dims)
+                .expect("previously supported qtype must stay supported");
+            assert_eq!(got, expected, "qtype {qtype} 1-D byte size changed");
+        }
     }
 }
 
