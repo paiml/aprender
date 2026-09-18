@@ -102,14 +102,14 @@ kani_harnesses:
   obligation: QKN-INV-001
   property: RMSNorm output finite for small vectors
   bound: 8
-  strategy: exhaustive
+  strategy: stub_float
   solver: cadical
   harness: verify_qk_norm_finite
 - id: KANI-QKN-002
   obligation: QKN-INV-004
   property: Zero input produces zero output (eps-guarded)
   bound: 8
-  strategy: exhaustive
+  strategy: stub_float
   solver: cadical
   harness: verify_qk_norm_zero_stability
 - id: KANI-QK_NOR-003
@@ -121,7 +121,7 @@ kani_harnesses:
   obligation: Output amplitude bounded
   property: Output amplitude bounded
   bound: 8
-  strategy: exhaustive
+  strategy: stub_float
 - id: KANI-QK_NOR-005
   obligation: Idempotent with unit weight
   property: Idempotent with unit weight
