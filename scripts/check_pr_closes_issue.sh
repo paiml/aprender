@@ -13,11 +13,26 @@
 #     (Close(s)(d)|Fix(es)(ed)|Resolve(s)(d), case-insensitive, optionally
 #     "owner/repo#N"), or
 #   * a non-closing reference exists but the body also carries a
-#     "no-close: <reason>" line with a non-empty reason, or
+#     "keep-open: <reason>" line with a non-empty reason, or
 #   * the body cites no issue at all (a docs-only PR is not required to).
 #
 # A body FAILS (exit 1) when it cites at least one issue with no closing
-# keyword and no valid no-close line. The failing references are printed.
+# keyword and no valid keep-open line. The failing references are printed.
+#
+# A body ALSO FAILS (exit 1), unconditionally and before anything else, when
+# it contains a "no-close:" line or any other hyphen-prefixed closing keyword
+# next to a "#N" (e.g. "wont-fix: #N", "skip-close: #N"). #3400, measured
+# 2026-09-15/16: GitHub's closing-keyword parser matches "close: #3091" INSIDE
+# "no-close: #3091" -- the hyphen is a word boundary to it, so the negating
+# prefix is invisible. #3091 was closed twice this way despite carrying that
+# exact line. This guard's own CLOSE_RE has the identical blind spot (proven
+# by a repro fixture: `no-close: #3090` / `no-close: #3477` both parse as
+# "PASS: every cited issue has a closing keyword" -- the guard agreeing with
+# GitHub's mistake instead of catching it), which is how #3090 and #3477 were
+# closed a third time on 2026-09-18 by PR #3484 despite two explicit
+# "no-close:" lines naming them. `keep-open:` is the sanctioned marker: it
+# contains no substring GitHub's parser (or this guard's own CLOSE_RE) reads
+# as a closing keyword.
 #
 # Exit 2 is reserved for usage errors and vacuity: no body was given at all
 # (missing --body file, or an empty body).
@@ -40,6 +55,13 @@ usage() {
 # "owner/repo" prefix before the '#'. This is CLASS: closing reference.
 CLOSE_RE='(close|closes|closed|fix|fixes|fixed|resolve|resolves|resolved)[[:space:]]*:?[[:space:]]*([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)?#[0-9]+'
 REF_RE='#[0-9]+'
+
+# THE #3400 LANDMINE, CLASS: a hyphen-prefixed closing keyword. Requires a
+# word character immediately before the hyphen so it does not also match a
+# bare "close: #N" (that is CLOSE_RE's job, and is fine -- it really does
+# close). "no-close:", "wont-fix:", "skip-resolve:" all match; "Closes #123"
+# does not (nothing precedes "Closes").
+NOCLOSE_LANDMINE_RE='[A-Za-z]+-(close|closes|closed|fix|fixes|fixed|resolve|resolves|resolved)[[:space:]]*:[[:space:]]*([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)?#[0-9]+'
 
 # A REFERENCE TO A PULL REQUEST IS NOT AN UN-CLOSED ISSUE.
 #
@@ -116,6 +138,16 @@ check_body_text() {
         return 2
     fi
 
+    # #3400: check the landmine BEFORE anything else. A body carrying
+    # "no-close: #N" is not neutral -- GitHub (and this script's own
+    # CLOSE_RE, unmodified) reads it as "close: #N" and closes N on merge.
+    # This must fail regardless of what else the body does correctly.
+    landmine_hits="$(printf '%s\n' "$body" | grep -oiE "$NOCLOSE_LANDMINE_RE" || true)"
+    if [ -n "$landmine_hits" ]; then
+        printf 'FAIL: hyphen-prefixed closing keyword (#3400 landmine) -- GitHub parses this as a REAL closing reference despite the negating prefix. Use "keep-open: #N <reason>" instead:\n%s\n' "$landmine_hits"
+        return 1
+    fi
+
     closing_nums="$(printf '%s\n' "$body" | grep -oiE "$CLOSE_RE" | grep -oE '[0-9]+$' | LC_ALL=C sort -u || true)"
     all_nums="$(printf '%s\n' "$body" | grep -oE "$REF_RE" | tr -d '#' | LC_ALL=C sort -u || true)"
     all_nums="$(drop_pull_request_refs "$all_nums")"
@@ -143,14 +175,14 @@ EOF_NUMS
         return 0
     fi
 
-    no_close_reason="$(printf '%s\n' "$body" | grep -iE '^[[:space:]]*no-close:' | sed -E 's/^[[:space:]]*[Nn][Oo]-[Cc][Ll][Oo][Ss][Ee]:[[:space:]]*//' | tr -d '[:space:]' || true)"
+    keep_open_reason="$(printf '%s\n' "$body" | grep -iE '^[[:space:]]*keep-open:' | sed -E 's/^[[:space:]]*[Kk][Ee][Ee][Pp]-[Oo][Pp][Ee][Nn]:[[:space:]]*//' | tr -d '[:space:]' || true)"
 
-    if [ -n "$no_close_reason" ]; then
-        printf 'PASS: non-closing ref(s)%s allowed by a no-close reason.\n' "$non_closing"
+    if [ -n "$keep_open_reason" ]; then
+        printf 'PASS: non-closing ref(s)%s allowed by a keep-open reason.\n' "$non_closing"
         return 0
     fi
 
-    printf 'FAIL: non-closing ref(s) with no no-close reason:%s\n' "$non_closing"
+    printf 'FAIL: non-closing ref(s) with no keep-open reason:%s\n' "$non_closing"
     return 1
 }
 
@@ -192,11 +224,16 @@ STUB
 
     write_case_closes="Closes #123"
     write_case_refs_only="Refs #123"
-    write_case_refs_noclose=$'refs #123\nno-close: tracked by the epic'
-    write_case_noclose_empty=$'no-close:\nRefs #1'
+    write_case_refs_keepopen=$'refs #123\nkeep-open: tracked by the epic'
+    write_case_keepopen_empty=$'keep-open:\nRefs #1'
     write_case_no_refs="Bumps dependency versions. No ticket involved."
     write_case_cross_repo="Fixes paiml/aprender#3062"
     write_case_bare_mention="#3062 (see design doc)"
+    # #3400 landmine rows: must FAIL even though each also demonstrates why an
+    # author reaches for this phrasing (it reads like a valid escape hatch).
+    write_case_landmine_noclose="no-close: #123"
+    write_case_landmine_wontfix=$'Closes #999\nwont-fix: #123 -- tracked separately'
+    write_case_landmine_mixed_with_valid_close=$'Closes #456\nno-close: #123 stays open for the GDN device path'
 
     run_case() {
         name="$1"
@@ -215,11 +252,17 @@ STUB
 
     run_case "closes" "$write_case_closes" 0
     run_case "refs-only" "$write_case_refs_only" 1
-    run_case "refs-noclose" "$write_case_refs_noclose" 0
-    run_case "noclose-empty" "$write_case_noclose_empty" 1
+    run_case "refs-keepopen" "$write_case_refs_keepopen" 0
+    run_case "keepopen-empty" "$write_case_keepopen_empty" 1
     run_case "no-refs" "$write_case_no_refs" 0
     run_case "cross-repo" "$write_case_cross_repo" 0
     run_case "bare-mention" "$write_case_bare_mention" 1
+    # #3400: the landmine must fail even though it looks like a valid
+    # non-closing reason to a human reader -- GitHub reads "close: #N" inside
+    # it regardless of the negating prefix.
+    run_case "landmine-noclose" "$write_case_landmine_noclose" 1
+    run_case "landmine-wontfix" "$write_case_landmine_wontfix" 1
+    run_case "landmine-mixed-with-valid-close" "$write_case_landmine_mixed_with_valid_close" 1
 
     # --- a PR reference is not an un-closed issue ---------------------------
     run_kind_case() { # run_kind_case NAME BODY WANT [CMD]
