@@ -67,7 +67,7 @@ impl CudaExecutor {
         k_buf_ptr: u64,
         v_buf_ptr: u64,
         hidden_buf1_ptr: u64,
-        _layer_idx: usize,
+        layer_idx: usize,
         layer_weights: &ValidatedLayerWeights,
         m: u32,
         positions: &[u32],
@@ -91,7 +91,7 @@ impl CudaExecutor {
         // batched layer-0 output is all-NaN under default GEMM routing. This says whether the
         // NaN is already present BEFORE the first GEMM (input upload or batched RMSNorm) or
         // arrives WITH it (aprender#2761's batched_gemv_with_fallback).
-        if Self::layer_trace_enabled() && _layer_idx == 0 {
+        if Self::layer_trace_enabled() && layer_idx == 0 {
             self.trace_buffer("L0_after_rmsnorm", hidden_buf1_ptr, m as usize * hidden_dim as usize);
         }
 
@@ -159,7 +159,7 @@ impl CudaExecutor {
             )?;
         }
 
-        if Self::layer_trace_enabled() && _layer_idx == 0 {
+        if Self::layer_trace_enabled() && layer_idx == 0 {
             self.trace_buffer("L0_after_q_proj", q_buf_ptr, m as usize * q_dim as usize);
         }
 
