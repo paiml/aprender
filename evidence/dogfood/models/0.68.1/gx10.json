@@ -1,0 +1,130 @@
+{
+  "schema": "apr-model-ladder-receipt/v1",
+  "host": "gx10",
+  "version": "0.68.1",
+  "sha": "4a538ddef",
+  "apr_version": "apr 0.68.1 (4a538ddef)",
+  "isa": "aarch64",
+  "gpu": "NVIDIA GB10",
+  "cc": "12.1",
+  "date": "2026-09-18T10:14Z",
+  "executed": 4,
+  "red": 3,
+  "rungs": [
+    {
+      "id": "qwen2-1.5b-q4km",
+      "present": true,
+      "sha_ok": true,
+      "required": true,
+      "qa_rc": 0,
+      "capability_match": {
+        "passed": true,
+        "skipped": false,
+        "message": "Architecture 'qwen2': all 5 required ops supported by GPU"
+      },
+      "golden_output": {
+        "passed": true,
+        "skipped": false,
+        "message": "3 golden test cases passed"
+      },
+      "backends": {
+        "cpu": {
+          "ran": true,
+          "fallback": false,
+          "rc": 0
+        },
+        "cuda": {
+          "ran": true,
+          "fallback": false,
+          "rc": 0
+        }
+      },
+      "green": true
+    },
+    {
+      "id": "qwen3-1.7b-q4km",
+      "present": true,
+      "sha_ok": true,
+      "required": true,
+      "qa_rc": 5,
+      "capability_match": {
+        "passed": true,
+        "skipped": false,
+        "message": "Architecture 'qwen3': all 5 required ops supported by GPU"
+      },
+      "golden_output": {
+        "passed": false,
+        "skipped": false,
+        "message": "GPU output failed (CPU passed): golden_output_gpu: Garbage detected: '\ufffd'"
+      },
+      "backends": {
+        "cpu": {
+          "ran": true,
+          "fallback": false,
+          "rc": 0
+        },
+        "cuda": {
+          "ran": true,
+          "fallback": true,
+          "rc": 0
+        }
+      },
+      "green": false
+    },
+    {
+      "id": "qwen3-8b-q4km",
+      "present": true,
+      "sha_ok": true,
+      "required": false,
+      "qa_rc": 5,
+      "capability_match": {
+        "passed": true,
+        "skipped": false,
+        "message": "Architecture 'qwen3': all 5 required ops supported by GPU"
+      },
+      "golden_output": {
+        "passed": false,
+        "skipped": false,
+        "message": "GPU output failed (CPU passed): golden_output_gpu: gibberish (fragment \"Z+Z+\" repeats 3+ times)"
+      },
+      "backends": {
+        "cpu": {
+          "ran": true,
+          "fallback": false,
+          "rc": 0
+        },
+        "cuda": {
+          "ran": true,
+          "fallback": true,
+          "rc": 0
+        }
+      },
+      "green": false
+    },
+    {
+      "id": "qwen35-0.8b-q4km",
+      "present": true,
+      "sha_ok": true,
+      "required": true,
+      "qa_rc": 5,
+      "capability_match": {
+        "passed": false,
+        "skipped": false,
+        "message": "Architecture 'qwen35' uses SSM/Gated Delta Net layers (detected tensor 'blk.0.ssm_a'). NEITHER the CPU nor the GPU backend implements Gated DeltaNet/SSM layers yet. Tracking issues: #3090 (GPU) and #3"
+      },
+      "golden_output": {
+        "passed": false,
+        "skipped": true,
+        "message": "Skipped: Skipped due to capability match failure"
+      },
+      "backends": {
+        "cpu": {
+          "ran": true,
+          "fallback": false,
+          "rc": 0
+        }
+      },
+      "green": false
+    }
+  ]
+}

@@ -606,6 +606,10 @@ include = [
 [package.metadata.dogfood]
 gates = [
     "scripts/check_multiplatform_dogfood.sh",
+    # #3477 — every claimed (architecture, backend, silicon) triple has a per-host receipt
+    # from scripts/model_ladder.sh; dense Qwen3 on CUDA shipped broken in 0.68.1 because no
+    # release step ran `apr qa` on a Qwen3.
+    "scripts/check_model_ladder.sh",
     "scripts/check_verifier_pinning.sh",
     "scripts/check_dogfood_shim.sh",
     "scripts/check_bench_receipt.sh",
