@@ -677,6 +677,13 @@ if [ -n "${PV:-}" ] && [ -x "$PV" ]; then
       case "$(basename "$c")" in
         binding.yaml) continue ;;   # a binding REGISTRY, not a contract
       esac
+      # Σ (contracts/ontology.yaml, ONT-2b, #3472) declares what contracts may
+      # say; it is not a contract and `pv validate` rejects it ("missing field
+      # metadata"). Keyed on the file's own `schema:` line, not its name, so a
+      # second Σ-shaped file is skipped for the same reason and a contract that
+      # merely sits at that path is not. Measured: the 2026-09-18 T-2 preflight
+      # on e6dad31a8 went RED here with "1845 checked, FAILED: ontology.yaml".
+      if grep -qE '^schema:[[:space:]]*ont-sigma-v[0-9]+[[:space:]]*$' "$c" 2>/dev/null; then continue; fi
       PV_N=$((PV_N + 1))
       "$PV" validate "$c" >/dev/null 2>&1 || PV_FAILED="$PV_FAILED ${c#contracts/}"
     done < <(find contracts -name '*.yaml' -type f -print0 | sort -z)
