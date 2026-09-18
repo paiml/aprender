@@ -1,7 +1,7 @@
 - id: PMAT-3273
   github_issue: null
   item_type: task
-  title: 'APEX-2a: deterministic render primitive — SVG and PNG byte-identical across clean-room X64 and ARM64 hosts: libm-only transcendentals (clippy disallowed-methods, proved live by scripts/ci/libm-ban-live.sh), every emitted coordinate on COORD_GRID=1e-3 via format_coord, text-to-path, sha256 manifest, ci.yml determinism matrix + determinism-compare.sh deciding svg_identical from SVG bytes with a self-test and a manifest_root mutant (apex APEX-001 row EV-2a, bound in paiml/apex#71; depends on EV-2b #3259)'
+  title: 'APEX-2a: deterministic render primitive — SVG byte-identical across clean-room X64 and ARM64 hosts (svg_identical ASSERTED from SVG bytes; PNG identity RECORDED as png_identical and never asserted, because its verdict decides EV-15''s manifest shape — APEX-001 v4.7): libm-only transcendentals (clippy disallowed-methods, proved live by scripts/ci/libm-ban-live.sh), every emitted coordinate on COORD_GRID=1e-3 via format_coord, text-to-path, sha256 manifest, ci.yml determinism matrix + determinism-compare.sh deciding svg_identical from SVG bytes with a self-test and a manifest_root mutant (apex APEX-001 row EV-2a, bound in paiml/apex#71; depends on EV-2b #3259)'
   status: planned
   priority: medium
   assigned_to: null
