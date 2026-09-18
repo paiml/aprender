@@ -17988,6 +17988,29 @@ roadmap:
   - orch:fable
   - orch-basis:state
   notes: 'id is the PR number (#3259), the EV-2a precedent (PMAT-3273). The first id, PMAT-3233 from issue #3233, collided with ONT-1 PMAT-3233 landed by #3281: add/add on the fragment and the verdict artifact.'
+- id: PMAT-3273
+  github_issue: null
+  item_type: task
+  title: 'APEX-2a: deterministic render primitive — SVG byte-identical across clean-room X64 and ARM64 hosts (svg_identical ASSERTED from SVG bytes; PNG identity RECORDED as png_identical and never asserted, because its verdict decides EV-15''s manifest shape — APEX-001 v4.7): libm-only transcendentals (clippy disallowed-methods, proved live by scripts/ci/libm-ban-live.sh), every emitted coordinate on COORD_GRID=1e-3 via format_coord, text-to-path, sha256 manifest, ci.yml determinism matrix + determinism-compare.sh deciding svg_identical from SVG bytes with a self-test and a manifest_root mutant (apex APEX-001 row EV-2a, bound in paiml/apex#71; depends on EV-2b #3259)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-16T14:10:22Z
+  updated: 2026-09-16T14:10:22Z
+  spec: null
+  acceptance_criteria:
+  - Id allocated from the PR number (paiml/aprender#3273), GitHub's central sequence, so it cannot collide. NEW crates/aprender-viz/src/{manifest.rs,text.rs}, tests/render_determinism.rs, scripts/ci/{libm-ban-live.sh,determinism-compare.sh}; EDITS crates/aprender-viz/.clippy.toml (existing file; gains the 12-entry libm disallowed-methods list), .github/workflows/ci.yml (NEW determinism X64+ARM64 matrix job and NEW determinism-compare job which needs it; gate.needs names determinism-compare, so a failed matrix leg skips the compare and gate reads its non-success), Cargo.toml (features text-path/raster; libm non-optional), src/lib.rs (deny + quantise + format_coord), src/breaks.rs (EV-2b's four .powi(2) -> sq(x)=x*x, bit-identical, because this crate's .clippy.toml bans f64::powi), src/output/{svg.rs,png_encoder.rs}, src/error.rs, src/scale.rs, src/plots/{histogram,boxplot,force_graph}.rs, examples/{roc_pr_curves,loss_training}.rs, scripts/tree_reader_tests.txt, Cargo.lock; docs/roadmaps/roadmap.yaml regenerated from this fragment. tests/render_determinism.rs has 10 tests; its SVG fixture sits on a LogScale with EV-2b breaks::extended as the axis ticks (receipt ticks:{x:5,y:4}). Publishing aprender-viz stays operator-only.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - orch:fable
+  - 'orch-basis:M>=3'
+  - apex
+  - APEX-001
+  - EV-2a
+  notes: null
 - id: PMAT-3292
   github_issue: 3292
   item_type: task

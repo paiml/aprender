@@ -2801,6 +2801,107 @@ jobs:
           fi
           printf 'gguf::cuda:: %s test(s) selected and passed\n' "$n"
 
+  # APEX-001 EV-2a: the same figure, rendered on two architectures, must be the same bytes.
+  #
+  # WHY A MATRIX AND NOT ONE JOB. A host always agrees with itself, so no single-runner test can
+  # see the defect this exists to catch: `f32::ln` dispatches to whatever libm the host linked,
+  # and glibc on x86-64 and on aarch64 are not required to agree to the last ulp. The fixture
+  # drives 400 log-scale evaluations into rendered pixel positions precisely so that a one-ulp
+  # difference has somewhere to land.
+  #
+  # `clean-room` is required on both legs: an ephemeral container, so the render cannot pick up a
+  # font, a locale or a cached artefact from a previous job and quietly agree for the wrong reason.
+  determinism:
+    name: determinism (${{ matrix.arch }})
+    strategy:
+      fail-fast: false   # if one arch fails we still want the other's receipt to compare against
+      matrix:
+        arch: [X64, ARM64]
+    runs-on: [self-hosted, Linux, clean-room, "${{ matrix.arch }}"]
+    # 45: NO history — this job is new, so the BSE-05 formula has nothing to fit. basis=[U].
+    # The cold build pulls resvg + skrifa, which no other job in this workflow builds; 45 is the
+    # BSE-05 floor plus headroom, to be refitted from this job's own p99 once it has seven runs.
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      # A target dir that belongs to THIS job and nothing else. The first run of this job used the
+      # runner's persistent `_work/aprender/aprender/target`, and X64 died with `could not
+      # parse/generate dep info at .../deps/hashbrown-….d: No such file or directory` — the
+      # aprender#2822 race that every other cargo job here already avoids with a per-run dir.
+      # `$RUNNER_TEMP` is emptied per job on every runner, so it needs no /mnt mount on gx10.
+      # Set from a step, not from a job-level `env:` — the `runner` context is not available
+      # there, and the whole workflow fails at startup with zero jobs (measured, run 35319640264).
+      - name: A target dir of this job's own
+        run: echo "CARGO_TARGET_DIR=${RUNNER_TEMP}/determinism-target" >> "$GITHUB_ENV"
+
+      # The receipt is written into the workspace's `target/aprender-viz/`, which persists on a
+      # self-hosted runner. A receipt left there by an earlier run must never be uploaded as this
+      # run's, so the directory starts empty and `if-no-files-found: error` below means this run
+      # wrote it.
+      - name: No receipt from an earlier run may survive into this one
+        run: rm -rf target/aprender-viz
+
+      # The row's rule 5 is enforced by a clippy `disallowed-methods` list, and such a list is a
+      # SILENT no-op when a path is misspelled: measured, `std::f32::ln`, `<f32>::ln` and
+      # `core::f32::ln` all fail to ban while `f32::ln` bans. So the ban is proved by planting a
+      # violation and requiring the build to fail, never by reading the config.
+      - name: The libm ban must be able to fail
+        run: bash scripts/ci/libm-ban-live.sh
+
+      - name: Render the fixture and write this host's receipt
+        run: cargo test -p aprender-viz --features text-path,raster --test render_determinism
+
+      - name: Upload this host's receipt
+        uses: actions/upload-artifact@v7
+        with:
+          name: determinism-${{ matrix.arch }}
+          path: target/aprender-viz/determinism-*.json
+          if-no-files-found: error   # a missing receipt is a failure, not an empty comparison
+
+  # Compare the two hosts and write the receipt APEX-001 EV-2a's accept command reads.
+  #
+  # Separate from the matrix because only a job that can see BOTH receipts may set
+  # `svg_identical`. A matrix leg sees one host and records what it measured; deciding identity
+  # from one side would be asserting the thing under test.
+  determinism-compare:
+    name: determinism (compare)
+    needs: [determinism]
+    runs-on: [self-hosted, Linux, clean-room]
+    timeout-minutes: 15   # downloads two small files and runs jq. basis=[U], floor of BSE-05.
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: determinism-*
+          path: receipts
+          merge-multiple: true
+
+      # The decision lives in a script so the same code is exercised by planted receipts first:
+      # identical, PNG-only difference (must PASS: PNG is recorded, not asserted), SVG-only
+      # difference (must FAIL), one host, one architecture, and the old receipt shape that had no
+      # SVG digest at all. A mutant deciding svg_identical from manifest_root must fail the table.
+      - name: The compare must be able to fail
+        run: bash scripts/ci/determinism-compare.sh --self-test
+
+      - name: Compare the hosts and write the receipt
+        run: |
+          set -euo pipefail
+          mkdir -p target/aprender-viz
+          bash scripts/ci/determinism-compare.sh receipts target/aprender-viz/determinism-receipt.json
+
+      - name: Upload the determinism receipt
+        uses: actions/upload-artifact@v7
+        with:
+          name: determinism-receipt
+          path: target/aprender-viz/determinism-receipt.json
+          if-no-files-found: error
+
   gate:
     runs-on: [self-hosted, Linux, clean-room]   # arch-neutral: intel, yoga or gx10 (#3100)
     # 22: BSE-05 formula T = max(15, ceil(1.5*p99), p99+20) over this job's own
@@ -2809,7 +2910,7 @@ jobs:
     # `needs.*.result`; the 20-minute term is the headroom BSE-05 adds so a
     # slow runner is never the thing that fails a required check.
     timeout-minutes: 22
-    needs: [ci, workspace-test, mutants, guard-tree, guard-cargo]
+    needs: [ci, workspace-test, mutants, guard-tree, guard-cargo, determinism-compare]
     if: always()
     steps:
       - name: Check required jobs
@@ -2831,6 +2932,12 @@ jobs:
           fi
           if [ "${{ needs.workspace-test.result }}" != "success" ]; then
             echo "workspace-test failed: ${{ needs.workspace-test.result }}"
+            exit 1
+          fi
+          # APEX-001 EV-2a: the two-architecture determinism comparison. A required check that
+          # `gate` does not read is not a required check, so it is read here like guard-tree.
+          if [ "${{ needs.determinism-compare.result }}" != "success" ]; then
+            echo "determinism-compare failed: ${{ needs.determinism-compare.result }}"
             exit 1
           fi
           # Diff-scoped mutation gate (PMAT gap #1): blocking on PRs.

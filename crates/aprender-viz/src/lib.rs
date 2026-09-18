@@ -50,6 +50,12 @@
 //! - Fruchterman, T. M. J., & Reingold, E. M. (1991). Force-directed graph layout.
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![warn(missing_docs)]
+// APEX-001 EV-2a rule 5. The ban list lives in `crates/aprender-viz/.clippy.toml`, NOT the
+// repository root: clippy reads exactly one config, the nearest, so a root entry is read for
+// crates that have no config of their own and is ignored here (measured). This deny is what
+// turns that list from advice into a build failure — without it the lints are warnings and
+// `cargo clippy` exits 0, which is also measured.
+#![deny(clippy::disallowed_methods)]
 // Allow unwrap() in tests only - banned in production code (Cloudflare incident 2025-11-18)
 #![cfg_attr(test, allow(clippy::unwrap_used))]
 // Allow common patterns in graphics/visualization code
@@ -73,8 +79,138 @@ pub mod color;
 pub mod framebuffer;
 /// Geometric primitives (points, lines, rectangles).
 pub mod geometry;
+/// Content manifest: per-file digests reduced to one root hash (APEX-001 EV-2a rule 4).
+pub mod manifest;
 /// Scale functions for data-to-visual mappings.
 pub mod scale;
+/// Text as glyph outlines, from caller-pinned font bytes (APEX-001 EV-2a rule 1).
+#[cfg(feature = "text-path")]
+pub mod text;
+
+/// The coordinate grid emitted geometry is snapped to, in user units.
+///
+/// APEX-001 EV-2a rule 5. Deterministic transcendentals stop the *inputs* to layout from
+/// differing between hosts; this stops a difference that survives anyway from reaching the
+/// bytes. One thousandth of a user unit is far below a device pixel at any plausible scale, so
+/// snapping is invisible in the image and decisive in the file.
+pub const COORD_GRID: f64 = 1e-3;
+
+/// Snap one coordinate to [`COORD_GRID`].
+///
+/// Ties round half away from zero, and `-0.0` is normalised to `0.0` so the two zeros cannot
+/// print differently.
+#[must_use]
+pub fn quantise(v: f64) -> f64 {
+    if !v.is_finite() {
+        return v;
+    }
+    let snapped = (v / COORD_GRID).round() * COORD_GRID;
+    if snapped == 0.0 {
+        0.0
+    } else {
+        snapped
+    }
+}
+
+/// Quantise every number in an SVG path `d` string.
+///
+/// Operates on the serialised form because that is the last point before the bytes are fixed:
+/// whatever produced the path, what reaches the file is on the grid.
+#[must_use]
+pub fn quantise_path_data(d: &str) -> String {
+    let mut out = String::with_capacity(d.len());
+    let mut num = String::new();
+    for c in d.chars() {
+        if c.is_ascii_digit() || c == '.' || c == '-' || c == 'e' || c == 'E' || c == '+' {
+            num.push(c);
+        } else {
+            flush_number(&mut num, &mut out);
+            out.push(c);
+        }
+    }
+    flush_number(&mut num, &mut out);
+    out
+}
+
+/// Quantise one coordinate and print its shortest form on the grid.
+///
+/// Every number the SVG writer emits goes through here, so what reaches the file is a function
+/// of the grid cell rather than of the last few bits of a float: `1.0000004` and `1.0000001`
+/// both print `1`, and `-0.0` prints `0`. A non-finite value prints as Rust formats it, which is
+/// never a valid coordinate and is left visible rather than silently replaced.
+#[must_use]
+pub fn format_coord(v: f64) -> String {
+    let q = quantise(v);
+    if !q.is_finite() {
+        return format!("{q}");
+    }
+    if (q - q.round()).abs() < f64::EPSILON {
+        format!("{}", q.round() as i64)
+    } else {
+        format!("{q:.3}").trim_end_matches('0').trim_end_matches('.').to_string()
+    }
+}
+
+/// Parse one accumulated number, quantise it, and append its shortest form.
+fn flush_number(num: &mut String, out: &mut String) {
+    if num.is_empty() {
+        return;
+    }
+    match num.parse::<f64>() {
+        Ok(v) => out.push_str(&format_coord(v)),
+        Err(_) => out.push_str(num),
+    }
+    num.clear();
+}
+#[cfg(test)]
+mod coord_grid_tests {
+    use super::{format_coord, quantise, quantise_path_data, COORD_GRID};
+
+    #[test]
+    fn format_coord_prints_the_shortest_form_on_the_grid() {
+        let cases = [
+            (0.0, "0"),
+            (-0.0, "0"),
+            (1.0, "1"),
+            (1.000_000_4, "1"),
+            (0.999_999_6, "1"),
+            (2.5, "2.5"),
+            (1.234_56, "1.235"),
+            (0.000_5, "0.001"),
+            (-0.000_5, "-0.001"),
+            (0.000_4, "0"),
+            (-0.000_4, "0"),
+            (312.0, "312"),
+            (-7.123_456, "-7.123"),
+            (1e6 + 0.25, "1000000.25"),
+        ];
+        for (v, want) in cases {
+            assert_eq!(format_coord(v), want, "format_coord({v})");
+        }
+        assert_eq!(format_coord(f64::NAN), "NaN");
+        assert_eq!(format_coord(f64::INFINITY), "inf");
+    }
+
+    #[test]
+    fn quantise_is_idempotent_and_on_the_grid() {
+        for v in [0.0, 0.1, 0.123_456, -3.999_9, 1e-9, 12_345.678_9] {
+            let q = quantise(v);
+            assert_eq!(quantise(q), q, "quantise({v}) is not a fixed point");
+            let cells = q / COORD_GRID;
+            assert!((cells - cells.round()).abs() < 1e-6, "quantise({v}) = {q} is off the grid");
+        }
+    }
+
+    #[test]
+    fn path_data_numbers_are_quantised_and_commands_are_kept() {
+        assert_eq!(quantise_path_data("M 1.00004 2.0006 L -0.0 3 Z"), "M 1 2.001 L 0 3 Z");
+        assert_eq!(
+            quantise_path_data("M1.5,2.5C3.33333,4.44444 5,6 7.7777,8.8888Z"),
+            "M1.5,2.5C3.333,4.444 5,6 7.778,8.889Z"
+        );
+    }
+}
+
 // ============================================================================
 // Visualization Modules
 // ============================================================================

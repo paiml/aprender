@@ -1,0 +1,182 @@
+{
+  "ticket": "PMAT-3273",
+  "base": "origin/main",
+  "base_resolved": "origin/main",
+  "base_note": "no origin/origin/main exists; judged against the local ref",
+  "head": "e89de5199978d10b29e39cf206119e9cdc727e01",
+  "diff_sha256": "23dd2e1704b1a9e7b6a3a81d009bda11df78ae0c8bcc39c5e97461e6434aea85",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "file",
+  "prompt_bytes": 104071,
+  "author": {
+    "model": "fable-5-1",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff correctly implements all requirements defined in PMAT-3273. It enforces deterministic transcendentals using `libm` with a strict `disallowed_methods` clippy rule, replaces standard math library calls (such as `powi` and `exp`) across the codebase, introduces `COORD_GRID` quantisation, and writes glyph outlines instead of relying on local fonts. It also adds the two-architecture determinism verification workflows that distinguishes SVG identity (asserted) from PNG identity (recorded only), exactly as requested. There are no deviations from the ticket or weakened tests/gates.",
+      "findings": [],
+      "raw_bytes": 2441,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "PMAT-3273 (APEX-2a) implementation is fully verified and adheres strictly to all ticket requirements and acceptance criteria without refutation. The ticket title was updated in commit e89de5199 to unpromise cross-architecture PNG identity (svg_identical is ASSERTED from SVG bytes; PNG identity is RECORDED as png_identical and never asserted, matching APEX-001 v4.7 and determinism-compare.sh). All 12 clippy disallowed-methods libm bans are proven live by libm-ban-live.sh, determinism-compare.sh passes all self-test cases and refutes the mutant, all 10 tests in render_determinism.rs pass, and CI gates properly require determinism-compare without weakening existing checks.",
+      "findings": [
+        {
+          "claim": "Cross-architecture comparison script determinism-compare.sh asserts svg_identical from SVG sha256 bytes (.svg_identical == true) and records png_identical without asserting it (# Recorded, deliberately NOT asserted: this verdict decides EV-15's manifest shape), adhering strictly to the updated ticket PMAT-3273 requirement.",
+          "file": "scripts/ci/determinism-compare.sh",
+          "grounding": "cited",
+          "line": 66
+        },
+        {
+          "claim": "Running `bash scripts/ci/determinism-compare.sh --self-test` passes all 6 case table entries (including differing PNG, differing SVG, single host, single architecture, and old shape) and successfully refutes the mutant deciding svg_identical from manifest_root.",
+          "file": "scripts/ci/determinism-compare.sh",
+          "grounding": "measured",
+          "line": 146
+        },
+        {
+          "claim": "Clippy disallowed-methods ban is live and enforces pure-Rust libm across all 12 transcendental methods (f32/f64: ln, log10, log2, exp, powf, powi), verified via `bash scripts/ci/libm-ban-live.sh` which confirms 12 diagnostics on planted probe and clean pass on restore.",
+          "file": "scripts/ci/libm-ban-live.sh",
+          "grounding": "measured",
+          "line": 1
+        },
+        {
+          "claim": "All 10 tests in render_determinism.rs pass via `cargo test -p aprender-viz --features text-path,raster --test render_determinism`, verifying same-host PNG and SVG byte identity, libm exactness, coordinate grid snapping, breaks extended ticks, and receipt generation.",
+          "file": "crates/aprender-viz/tests/render_determinism.rs",
+          "grounding": "measured",
+          "line": 1
+        },
+        {
+          "claim": "The CI workflow defines clean-room X64 and ARM64 matrix runners for determinism and wires determinism-compare into gate.needs and required check validation without weakening any existing gates.",
+          "file": ".github/workflows/ci.yml",
+          "grounding": "cited",
+          "line": 2939
+        },
+        {
+          "claim": "COORD_GRID = 1e-3 snapping along with quantise, quantise_path_data, and format_coord ensures that all emitted SVG coordinates are quantised to the coordinate grid and -0.0 is normalized to 0.0.",
+          "file": "crates/aprender-viz/src/lib.rs",
+          "grounding": "cited",
+          "line": 80
+        }
+      ],
+      "raw_bytes": 6771,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.8-flash-high",
+      "model_measured": "gemini-3.8-flash-high",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Independent review of PMAT-3273 diff (origin/main...HEAD): PASS.\n\nThe diff implements APEX-2a deterministic render primitive strictly according to the ticket requirements and acceptance criteria without weakening any gates or introducing unrequested changes:\n\n1. Deterministic Math & Clippy Ban (EV-2a rule 5):\n   - `crates/aprender-viz/.clippy.toml` configures 12 disallowed method entries (f32 and f64 variants of ln, log10, log2, exp, powf, powi).\n   - `crates/aprender-viz/src/lib.rs` activates `#![deny(clippy::disallowed_methods)]`.\n   - `scripts/ci/libm-ban-live.sh` verified live: planting probes triggers 12 distinct diagnostics and fails with error; clean tree passes.\n   - All call sites in `scale.rs`, `breaks.rs`, `plots/{boxplot,force_graph,histogram}.rs`, and examples replaced platform math with `libm` equivalents or direct multiplication (`sq(x) = x * x`).\n\n2. Coordinate Quantisation (EV-2a rule 5):\n   - `COORD_GRID = 1e-3` defined in `src/lib.rs` with `quantise`, `quantise_path_data`, and `format_coord`.\n   - All SVG element formatting in `src/output/svg.rs` routes numeric coordinates through `format_coord` / `quantise_path_data`.\n\n3. Text Outlines & Pinned PNG Encoding:\n   - `src/text.rs` provides `to_path`, `to_path_data`, and `to_path_data_at` using caller-pinned font bytes via `skrifa` and `kurbo` under `text-path` feature.\n   - `src/output/png_encoder.rs` pins `Compression::Fast`, `FilterType::NoFilter`, and `NonAdaptive` with no timestamp or text metadata chunks.\n\n4. Manifest Verification:\n   - `src/manifest.rs` implements flat SHA-256 tree hashing over raw bytes with refusal-on-mismatch semantics (`Error::ManifestMismatch`).\n\n5. CI Workflow & Determinism Compare:\n   - `.github/workflows/ci.yml` introduces matrix job `determinism` across clean-room X64 and ARM64 runners and `determinism-compare` job, wired into `gate.needs`.\n   - `scripts/ci/determinism-compare.sh` asserts `svg_identical` from SVG digests, records `png_identical`, and passes `--self-test` (including detecting the `manifest_root` mutant).\n\n6. Verification Suite & Sanity Checks:\n   - `tests/render_determinism.rs` executes 10 tests verifying same-host PNG/SVG repeatability, grid quantisation, log-scale bit accuracy against `libm`, EV-2b breaks tick placement, and receipt generation.\n   - All `aprender-viz` tests (unit, integration, benchmarks) and clippy pass cleanly.\n   - Roadmap uniqueness, sorting, and tree-reader checks pass.",
+      "findings": [],
+      "raw_bytes": 6300,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.7-flash-high",
+      "model_measured": "gemini-3.7-flash-high",
+      "model_source": "measured",
+      "family": "gemini"
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": ".github/workflows/ci.yml",
+      "line": 2939,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "The CI workflow defines clean-room X64 and ARM64 matrix runners for determinism and wires determinism-compare into gate.needs and required check validation without weakening any existing gates."
+      ]
+    },
+    {
+      "file": "crates/aprender-viz/src/lib.rs",
+      "line": 80,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "COORD_GRID = 1e-3 snapping along with quantise, quantise_path_data, and format_coord ensures that all emitted SVG coordinates are quantised to the coordinate grid and -0.0 is normalized to 0.0."
+      ]
+    },
+    {
+      "file": "crates/aprender-viz/tests/render_determinism.rs",
+      "line": 1,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "All 10 tests in render_determinism.rs pass via `cargo test -p aprender-viz --features text-path,raster --test render_determinism`, verifying same-host PNG and SVG byte identity, libm exactness, coordinate grid snapping, breaks extended ticks, and receipt generation."
+      ]
+    },
+    {
+      "file": "scripts/ci/determinism-compare.sh",
+      "line": 66,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "Cross-architecture comparison script determinism-compare.sh asserts svg_identical from SVG sha256 bytes (.svg_identical == true) and records png_identical without asserting it (# Recorded, deliberately NOT asserted: this verdict decides EV-15's manifest shape), adhering strictly to the updated ticket PMAT-3273 requirement."
+      ]
+    },
+    {
+      "file": "scripts/ci/determinism-compare.sh",
+      "line": 146,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "Running `bash scripts/ci/determinism-compare.sh --self-test` passes all 6 case table entries (including differing PNG, differing SVG, single host, single architecture, and old shape) and successfully refutes the mutant deciding svg_identical from manifest_root."
+      ]
+    },
+    {
+      "file": "scripts/ci/libm-ban-live.sh",
+      "line": 1,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "Clippy disallowed-methods ban is live and enforces pure-Rust libm across all 12 transcendental methods (f32/f64: ln, log10, log2, exp, powf, powi), verified via `bash scripts/ci/libm-ban-live.sh` which confirms 12 diagnostics on planted probe and clean pass on restore."
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [],
+  "auto_merge": {
+    "checked": true,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "auto-merge not armed"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=fable-5-1/claude"
+  }
+}

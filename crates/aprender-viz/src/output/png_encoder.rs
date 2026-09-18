@@ -1,12 +1,43 @@
 //! PNG output encoder.
 //!
 //! Pure Rust PNG encoding using the `png` crate.
+//!
+//! # Every encoder setting is pinned
+//!
+//! APEX-001 EV-2a rule 3. The bytes of a PNG are not determined by its pixels alone: the
+//! compression level, the row filter, and whether filtering adapts per row all change the
+//! output for identical input, and every one of them has a *default* that the `png` crate is
+//! free to change in a patch release. A figure whose hash moves because a dependency was
+//! updated is not a reproducible figure.
+//!
+//! So the encoder states all three explicitly, and writes no timestamp or text chunk:
+//! `tIME` would put the wall clock in the file, and `tEXt`/`iTXt`/`zTXt` would put the
+//! encoder's identity there. Neither is a property of the image.
+//!
+//! `Compression::Fast` and `FilterType::NoFilter` are chosen over the smaller
+//! `Best`/`Paeth` because the property that matters here is that the bytes are a pure
+//! function of the pixels and stay stable across `png` patch versions — not that the file is
+//! small. Fewer moving parts in the encoder is fewer things that can change underneath a hash.
 
 use crate::error::Result;
 use crate::framebuffer::Framebuffer;
 use std::fs::File;
 use std::io::BufWriter;
 use std::path::Path;
+
+/// Fix every setting that can move the bytes for a fixed set of pixels.
+///
+/// One function, called from both entry points, so `write_to_file` and `to_bytes` cannot drift
+/// apart — a figure written to disk and the same figure hashed in memory must be the same file.
+fn pin<W: std::io::Write>(encoder: &mut png::Encoder<'_, W>) {
+    encoder.set_color(png::ColorType::Rgba);
+    encoder.set_depth(png::BitDepth::Eight);
+    encoder.set_compression(png::Compression::Fast);
+    encoder.set_filter(png::FilterType::NoFilter);
+    encoder.set_adaptive_filter(png::AdaptiveFilterType::NonAdaptive);
+    // No set_time / add_text_chunk / add_ztxt_chunk: a wall clock and an encoder name are not
+    // properties of the image, and both would move the hash on every run.
+}
 
 /// PNG encoder for framebuffer output.
 pub struct PngEncoder;
@@ -22,8 +53,7 @@ impl PngEncoder {
         let writer = BufWriter::new(file);
 
         let mut encoder = png::Encoder::new(writer, fb.width(), fb.height());
-        encoder.set_color(png::ColorType::Rgba);
-        encoder.set_depth(png::BitDepth::Eight);
+        pin(&mut encoder);
 
         let mut writer = encoder.write_header()?;
         // Use compact pixels to handle stride padding
@@ -42,8 +72,7 @@ impl PngEncoder {
 
         {
             let mut encoder = png::Encoder::new(&mut buffer, fb.width(), fb.height());
-            encoder.set_color(png::ColorType::Rgba);
-            encoder.set_depth(png::BitDepth::Eight);
+            pin(&mut encoder);
 
             let mut writer = encoder.write_header()?;
             // Use compact pixels to handle stride padding

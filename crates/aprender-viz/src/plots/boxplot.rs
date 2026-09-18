@@ -604,10 +604,11 @@ fn compute_kde(data: &[f32], bandwidth: Option<f32>, n_points: usize) -> Vec<(f3
     // Silverman's rule of thumb for bandwidth
     let std_dev = {
         let mean = clean.iter().sum::<f32>() / clean.len() as f32;
-        let variance = clean.iter().map(|x| (x - mean).powi(2)).sum::<f32>() / clean.len() as f32;
+        let variance =
+            clean.iter().map(|x| (x - mean) * (x - mean)).sum::<f32>() / clean.len() as f32;
         variance.sqrt()
     };
-    let h = bandwidth.unwrap_or_else(|| 1.06 * std_dev * (clean.len() as f32).powf(-0.2));
+    let h = bandwidth.unwrap_or_else(|| 1.06 * std_dev * libm::powf(clean.len() as f32, -0.2));
     let h = h.max(range * 0.01); // Minimum bandwidth
 
     // Extend range slightly for smoother edges
@@ -624,7 +625,7 @@ fn compute_kde(data: &[f32], bandwidth: Option<f32>, n_points: usize) -> Vec<(f3
             .iter()
             .map(|&xi| {
                 let u = (x - xi) / h;
-                (-0.5 * u * u).exp() / (2.506_628 * h) // Gaussian kernel
+                libm::expf(-0.5 * u * u) / (2.506_628 * h) // Gaussian kernel
             })
             .sum();
         let density = density / clean.len() as f32;
