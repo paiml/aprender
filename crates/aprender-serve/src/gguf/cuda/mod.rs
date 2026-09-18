@@ -498,9 +498,10 @@ impl OwnedQuantizedModelCuda {
         if executor.gpu_profile.disable_fp8_for_qk_norm(
             model.config.constraints.has_qk_norm,
             std::env::var("FP8_PREFILL").ok().as_deref(),
+            std::env::var("BATCHED_PREFILL").ok().as_deref(),
         ) {
             eprintln!(
-                "[#3413] FP8 prefill off: architecture '{}' uses per-head QK-norm and its FP8 batched prefill fails CPU parity (FP16 prefill in use; FP8_PREFILL=1 forces FP8)",
+                "[#3413] architecture '{}' uses per-head QK-norm: FP8 prefill off and serial prefill in use — its FP8 batched prefill fails CPU parity (#3483; FP8_PREFILL=1 / BATCHED_PREFILL=1 override)",
                 model.config.architecture
             );
         }
