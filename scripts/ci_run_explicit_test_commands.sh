@@ -106,6 +106,11 @@ run() {
     out=$(parse "$dir") || return $?
     mapfile -t cmds <<< "$out"
     total=${#cmds[@]}
+    # parse() already refuses an empty directory; this is the belt for a future
+    # parse that prints nothing: a here-string of "" still yields one empty element.
+    if [ "$total" -eq 0 ] || [ -z "${cmds[0]}" ]; then
+        printf 'REFUSE %s parsed to zero commands -- nothing to run is not a pass\n' "$dir" >&2; return 2
+    fi
     if [ "$m" -gt 1 ]; then
         local -a mine=()
         for cmd in "${cmds[@]}"; do

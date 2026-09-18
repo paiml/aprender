@@ -165,6 +165,15 @@ self_test() {
     row 2 "REFUSE the same command in two fragments (after trimming)" 'same command is in 010-a.cmd and 020-b.cmd' bash "$R" --list "$td/dup"
     frags "$td/ord" '010-a.cmd=echo a\n' '010-b.cmd=echo b\n'
     row 2 "REFUSE two fragments sharing an ordinal" 'ordinal 010 is shared' bash "$R" --list "$td/ord"
+    # ── sharding (PACK-001): every M-th command from the N-th; refusals, never a vacuous pass ──
+    row 0 "--shard 1/2 takes the 1st and 3rd of three commands" 'shard 1/2: 2 of 3' bash "$R" --run "$td/p" --shard 1/2
+    row 0 "--shard 2/2 takes the 2nd" 'shard 2/2: 1 of 3' bash "$R" --run "$td/p" --shard 2/2
+    fact "  ...and 1/2 ran exactly [true, echo c]; 2/2 ran [echo b] (a command is on ONE shard)" \
+        test "$(bash "$R" --run "$td/p" --shard 1/2 2>/dev/null | grep -cE '^\[|^(b|c)$')$(bash "$R" --run "$td/p" --shard 2/2 2>/dev/null | grep -c '^b$')" = "11"
+    row 2 "REFUSE --shard with N > M" 'N exceeds M' bash "$R" --run "$td/p" --shard 3/2
+    row 2 "REFUSE a shard that selects zero commands (more shards than commands)" 'selects 0 of 3' bash "$R" --run "$td/p" --shard 4/4
+    row 2 "REFUSE a malformed --shard" 'must look like N/M' bash "$R" --run "$td/p" --shard x
+    row 2 "REFUSE an unknown --run option" 'usage' bash "$R" --run "$td/p" --bogus
     # ── refusals: filename shape (must-match / must-not-match, rule 7) ───
     local bad
     for bad in '10-a.cmd' '0100-a.cmd' '010-A.cmd' '010-a_b.cmd' '010-.cmd' '010-a.txt' '010a.cmd' 'README.md' '.gitkeep' '010-a.cmd.orig'; do

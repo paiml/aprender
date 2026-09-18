@@ -632,6 +632,35 @@ jobs:
             -e SHARD -e SHARDS \
             "$IMAGE" \
             bash scripts/ci_run_explicit_test_commands.sh --run ci/explicit-test-commands.d --shard "${SHARD}/${SHARDS}"
+      # PACK-001: the examples build used to be fragment 350 of the explicit
+      # list. Measured on the first sharded full-tier run (35361149112, shard 1
+      # on yoga): 489 s of that shard's 794 s integration phase was this ONE
+      # command, so round-robin sharding could never balance it -- a shard that
+      # drew it was the long pole regardless. It is its own step on shard 3
+      # (whose fragment share is the lightest), so the three shards finish
+      # together. Not a fragment because it is a build, not a test target, and
+      # no wiring reader (check_model_tests_wired, check_beats_gated) names it.
+      - name: Build every example (workspace, keep-going)
+        if: steps.tier.outputs.tier == 'full' && matrix.shard == 3
+        timeout-minutes: 40
+        run: |
+          set -euo pipefail
+          docker run --rm \
+          -e CI -e GITHUB_ACTIONS -e GITHUB_REF -e GITHUB_SHA -e GITHUB_REPOSITORY -e GITHUB_RUN_ID -e GITHUB_EVENT_NAME -e GITHUB_WORKFLOW \
+            -v "${GITHUB_WORKSPACE}:/workspace" \
+            -v "/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}:/usr/local/cargo/registry" \
+            -v "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}:/workspace/target" \
+            -v "${SCCACHE_HOST_DIR}:/sccache" \
+            -w /workspace \
+            -e CARGO_TARGET_DIR=/workspace/target \
+            -e RUSTC_WRAPPER=/usr/local/cargo/bin/sccache \
+            -e SCCACHE_DIR=/sccache \
+            -e SCCACHE_CACHE_SIZE=50G \
+            -e CARGO_INCREMENTAL=0 \
+            -e CARGO_BUILD_JOBS=8 \
+            -e SHARD -e SHARDS \
+            "$IMAGE" \
+            cargo build --examples --workspace --keep-going
       # BSE-17 quick tier, part 1: the selected crates' unit and integration
       # targets (default features) under the same image and mounts as the full
       # tier. Empty selection (a scripts/docs PR) skips this step; part 2 still runs.
