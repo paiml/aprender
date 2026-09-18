@@ -120,6 +120,66 @@
     }
 
     // ========================================================================
+    // #3477: the driver's gate plan for a CPU-only architecture
+    // ========================================================================
+
+    /// The GPU gates of a CPU-only architecture skip with the #3090 reason, and
+    /// a skip does not taint the report.
+    ///
+    /// Before #3477 the Capability Match FAIL routed every later gate through
+    /// "Skipped due to capability match failure" and `apr qa` exited 5 on a
+    /// model `apr run` serves correctly. A declined backend is a skip with a
+    /// reason, not a failure of the model.
+    #[test]
+    fn gpu_gates_skip_with_the_3090_reason_on_a_cpu_only_architecture() {
+        let (skip, reason) = gpu_gate_skip(true, false, "Skipped by --skip-gpu-speedup");
+        assert!(skip, "a GPU gate cannot run when the GPU declined the arch");
+        assert!(
+            reason.contains("#3090"),
+            "the skip must cite why the GPU declined: {reason}"
+        );
+        let gate = GateResult::skipped("gpu_speedup", reason);
+        assert!(
+            gate.passed && gate.skipped,
+            "a reasoned skip must not fail the report: {gate:?}"
+        );
+        assert!(
+            !reason.contains("capability match failure"),
+            "the capability gate PASSED on the CPU rung: {reason}"
+        );
+    }
+
+    /// A GPU-capable architecture keeps the user's own skip flags verbatim —
+    /// a predicate that skipped everything would satisfy the test above.
+    #[test]
+    fn a_gpu_capable_architecture_is_not_treated_as_cpu_only() {
+        let (skip, reason) = gpu_gate_skip(false, false, "Skipped by --skip-gpu-speedup");
+        assert!(!skip, "a dense model still runs its GPU gates");
+        assert_eq!(reason, "Skipped by --skip-gpu-speedup");
+
+        let (skip, reason) = gpu_gate_skip(false, true, "Skipped by --skip-gpu-state");
+        assert!(skip, "--skip-gpu-state still skips");
+        assert_eq!(reason, "Skipped by --skip-gpu-state");
+    }
+
+    /// The dense-loader gates (Ollama parity, cross-format parity) build the
+    /// model with `OwnedQuantizedModel::from_mapped`, which refuses Gated
+    /// DeltaNet — that refusal is what aborted the whole run. They skip with a
+    /// reason naming both issues.
+    #[test]
+    fn dense_loader_gates_skip_on_a_cpu_only_architecture() {
+        let (skip, reason) = dense_gate_skip(true, false, "Skipped by --skip-ollama");
+        assert!(skip);
+        assert!(
+            reason.contains("#3091") && reason.contains("#3090"),
+            "the skip must cite the CPU forward and the declined GPU: {reason}"
+        );
+        let (skip, reason) = dense_gate_skip(false, false, "Skipped by --skip-ollama");
+        assert!(!skip);
+        assert_eq!(reason, "Skipped by --skip-ollama");
+    }
+
+    // ========================================================================
     // detect_ollama_model_from_path: filename-based model size detection
     // ========================================================================
 
