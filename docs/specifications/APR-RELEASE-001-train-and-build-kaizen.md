@@ -563,7 +563,7 @@ ratio (R-5) is the control on that; capacity only decides what a date is allowed
 | Predicate | Derive with | Fix |
 |---|---|---|
 | R-1 fixed-but-open | open issues cited by a `main` commit since the previous tag whose subject/body uses `Closes/Fixes/Resolves #N` or is `fix(...)`: must be ∅ | close with the commit sha as receipt |
-| R-2 closing-reference | merged PRs since the previous tag whose body cites an issue without a closing keyword: must be ∅ going forward (guard `scripts/check_pr_closes_issue.sh` on the PR; `Refs #N` is allowed only with `no-close:` and a reason) | the guard refuses the PR |
+| R-2 closing-reference | merged PRs since the previous tag whose body cites an issue without a closing keyword: must be ∅ going forward (guard `scripts/check_pr_closes_issue.sh` on the PR; `Refs #N` is allowed only with `keep-open:` and a reason — not `no-close:`, which GitHub's parser reads as a real closing keyword despite the negating prefix, #3400) | the guard refuses the PR |
 | R-3 dead branches | remote branches with no open PR and a tip older than 14 d: must be ∅ | archive to `refs/archive/<branch>` (objects kept, reversible), then delete the head |
 | R-4 dirty PRs | PRs `DIRTY` for more than one train: must be ∅ | a verdict per PR in the train: rebase (union tool, or by hand) or close with the reason |
 | R-5 ratio | `closure / arrival` over the train window, recorded; ratchet as below | — |

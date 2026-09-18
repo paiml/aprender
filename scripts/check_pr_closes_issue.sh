@@ -61,7 +61,16 @@ REF_RE='#[0-9]+'
 # bare "close: #N" (that is CLOSE_RE's job, and is fine -- it really does
 # close). "no-close:", "wont-fix:", "skip-resolve:" all match; "Closes #123"
 # does not (nothing precedes "Closes").
-NOCLOSE_LANDMINE_RE='[A-Za-z]+-(close|closes|closed|fix|fixes|fixed|resolve|resolves|resolved)[[:space:]]*:[[:space:]]*([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)?#[0-9]+'
+#
+# The colon is OPTIONAL, matching CLOSE_RE's own `:?` exactly -- an
+# independent review of the first cut of this fix (evidence/pr-review/3497)
+# found that a colon-less body ("no-fix #123 tracked elsewhere") satisfied
+# CLOSE_RE (which never required the colon) while failing to satisfy a
+# landmine regex that mandated one, so it was judged a VALID closing
+# reference instead of the #3400 landmine it actually is. Confirmed as a real
+# gap, not a false alarm: `no-fix #123` reproduces the exact bug this guard
+# exists to catch, just spelled without the colon.
+NOCLOSE_LANDMINE_RE='[A-Za-z]+-(close|closes|closed|fix|fixes|fixed|resolve|resolves|resolved)[[:space:]]*:?[[:space:]]*([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)?#[0-9]+'
 
 # A REFERENCE TO A PULL REQUEST IS NOT AN UN-CLOSED ISSUE.
 #
@@ -234,6 +243,11 @@ STUB
     write_case_landmine_noclose="no-close: #123"
     write_case_landmine_wontfix=$'Closes #999\nwont-fix: #123 -- tracked separately'
     write_case_landmine_mixed_with_valid_close=$'Closes #456\nno-close: #123 stays open for the GDN device path'
+    # PR #3497's own independent review (evidence/pr-review/3497) found this row
+    # missing: the colon is optional in CLOSE_RE, so it must be optional here too,
+    # or "no-fix #123" (no colon) reads as a VALID closing reference instead of
+    # the landmine it is.
+    write_case_landmine_no_colon="no-fix #123 tracked elsewhere"
 
     run_case() {
         name="$1"
@@ -263,6 +277,7 @@ STUB
     run_case "landmine-noclose" "$write_case_landmine_noclose" 1
     run_case "landmine-wontfix" "$write_case_landmine_wontfix" 1
     run_case "landmine-mixed-with-valid-close" "$write_case_landmine_mixed_with_valid_close" 1
+    run_case "landmine-no-colon" "$write_case_landmine_no_colon" 1
 
     # --- a PR reference is not an un-closed issue ---------------------------
     run_kind_case() { # run_kind_case NAME BODY WANT [CMD]
