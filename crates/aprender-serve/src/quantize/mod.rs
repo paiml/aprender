@@ -72,8 +72,16 @@ pub mod fused_gate_up;
 pub mod fused_k;
 pub mod fused_q5k_q6k;
 pub(crate) mod gemv_pool;
+// PMAT-3477 / #3091: the IQ formats real unsloth GGUFs ship.
 pub mod generic_dot;
 pub mod generic_matvec;
+pub mod iq2_s;
+pub mod iq2_xxs;
+pub mod iq3_s;
+pub mod iq3_xxs;
+pub mod iq4_xs;
+pub mod iq_dispatch;
+pub mod iq_grids;
 pub mod parallel_dequant;
 pub mod parallel_k;
 pub mod simd;
@@ -90,6 +98,16 @@ pub use dequant::{
     dequantize_f16, dequantize_q2_k, dequantize_q3_k, dequantize_q4_0, dequantize_q4_1,
     dequantize_q4_k, dequantize_q5_0, dequantize_q5_1, dequantize_q5_k, dequantize_q6_k,
     dequantize_q8_0, f16_to_f32,
+};
+
+// Re-export the IQ dequant path (PMAT-3477 / #3091)
+pub use iq2_s::dequantize_iq2_s;
+pub use iq2_xxs::dequantize_iq2_xxs;
+pub use iq3_s::dequantize_iq3_s;
+pub use iq3_xxs::dequantize_iq3_xxs;
+pub use iq4_xs::dequantize_iq4_xs;
+pub use iq_dispatch::{
+    dequantize_iq_tensor, iq_block_bytes, iq_parallel_matvec, iq_parallel_matvec_into,
 };
 
 // Re-export fused K-quant operations (PMAT-802)

@@ -205,6 +205,16 @@ impl OwnedQuantizedModel {
             return Ok(output);
         }
 
+        // PMAT-3477 / #3091: types with no fused kernel here (the IQ formats
+        // real unsloth GGUFs ship, plus Q2_K/Q3_K) go through the correct
+        // dequantize-then-dot path instead of being refused.
+        if crate::quantize::iq_block_bytes(weight.qtype).is_some()
+            || weight.qtype == crate::gguf::types::GGUF_TYPE_Q2_K
+            || weight.qtype == crate::gguf::types::GGUF_TYPE_Q3_K
+        {
+            return self.dequant_fallback_matmul(input, weight, in_dim, out_dim, seq_len);
+        }
+
         // CPU path: Fused K-quant kernels for Q4_K, Q5_K, Q6_K
         self.fused_matmul_k_quants(input, weight, in_dim, out_dim, seq_len)
     }
