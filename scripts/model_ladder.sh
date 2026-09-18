@@ -168,7 +168,10 @@ PY
 import json, sys
 rid, qa, be, qa_rc, req = sys.argv[1], json.loads(sys.argv[2]), json.loads(sys.argv[3]), int(sys.argv[4]), sys.argv[5] == "1"
 cap = qa.get("capability_match", {})
-cap_ok = cap.get("passed", False) or (cap.get("skipped", False) and not ({"cuda", "gpu"} & set(be)))
+# `passed` is already normalised (skipped ⇒ passed=False) by the gate() reader above, but the
+# judge must not depend on that: a skipped gate counts only when no GPU backend is claimed.
+cap_ok = (cap.get("passed", False) and not cap.get("skipped", False)) \
+         or (cap.get("skipped", False) and not ({"cuda", "gpu"} & set(be)))
 green = cap_ok and qa.get("golden_output", {}).get("passed", False) \
         and all(v["ran"] and not v["fallback"] for v in be.values())
 print(json.dumps({"id": rid, "present": True, "sha_ok": True, "required": req, "qa_rc": qa_rc,
@@ -185,7 +188,7 @@ PY
     why=$(printf '%s' "$row" | python3 -c '
 import json,sys; r=json.load(sys.stdin); w=[]
 cap=r["capability_match"]; claims_gpu=bool({"cuda","gpu"} & set(r["backends"]))
-if not cap["passed"] and not (cap["skipped"] and not claims_gpu): w.append("capability_match: "+cap["message"][:70])
+if not (cap["passed"] and not cap["skipped"]) and not (cap["skipped"] and not claims_gpu): w.append("capability_match: "+("SKIPPED on a GPU-claiming rung: " if cap["skipped"] else "")+cap["message"][:70])
 if not r["golden_output"]["passed"]: w.append("golden_output: "+r["golden_output"]["message"][:70])
 for b,v in r["backends"].items():
     if v["fallback"]: w.append(b+": FELL BACK (claimed backend did not run)")
