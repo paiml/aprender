@@ -259,8 +259,9 @@ fn json_report_carries_the_lattice() {
         serde_json::Value::Array(vec![
             serde_json::Value::String("reverse-coverage".into()),
             // ONT-2b's gate runs everywhere (R-8) and this corpus declares no `armed_gates`, so it is
-            // reported and excluded — the DEFAULT set is still the eight ONT-6 ruled.
+            // reported and excluded — the DEFAULT set is still the eight ONT-6 ruled. ONT-4's gate likewise.
             serde_json::Value::String("sigma".into()),
+            serde_json::Value::String("relations".into()),
         ]),
         "{}",
         show(&r)
@@ -312,9 +313,10 @@ fn repo_baseline_arms_the_eight_ruled_gates_and_every_later_row_that_armed_one()
             "enforcement-level",
             "duplicate-stems",
             "composition",
-            "sigma"
+            "sigma",
+            "relations"
         ]
         .to_vec(),
-        "the ruled 8 plus the gates later rows armed (ONT-2b: sigma)"
+        "the ruled 8 plus the gates later rows armed (ONT-2b: sigma; ONT-4: relations)"
     );
 }

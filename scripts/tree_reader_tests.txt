@@ -36,6 +36,7 @@ aprender-contracts	--lib	lint::duplicate_stems
 aprender-contracts	--lib	lint::finding
 aprender-contracts	--lib	lint::gates
 aprender-contracts	--lib	lint::gates_extended
+aprender-contracts	--lib	lint::relations_gate
 aprender-contracts	--lib	lint::sarif
 aprender-contracts	--lib	lint::sigma_gate
 aprender-contracts	--lib	lint::strict_test_binding
