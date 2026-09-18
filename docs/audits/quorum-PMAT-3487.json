@@ -3,12 +3,12 @@
   "base": "origin/main",
   "base_resolved": "origin/main",
   "base_note": "no origin/origin/main exists; judged against the local ref",
-  "head": "b2edc381b66a9dcd9f0211995285910a973f0918",
-  "diff_sha256": "482a438df87597817e57682d01be3712ae8310ae483ff950679b85c9c16650ca",
+  "head": "6d2190a4f063ad60ea48213a779d60c7b0b3e9b6",
+  "diff_sha256": "fa628e7856dad0c3ca5d6af293c822bc7ecef22ed718a53d5df4eeebab13488c",
   "width": 3,
   "executor": "agy",
   "prompt_mode": "file",
-  "prompt_bytes": 150098,
+  "prompt_bytes": 159863,
   "author": {
     "model": "claude-opus-5",
     "family": "claude",
@@ -20,7 +20,7 @@
       "lane": 1,
       "status": "SUCCESS",
       "verdict": "PASS",
-      "summary": "The implementation maps exactly to the ticket PMAT-3487. The relations gate correctly enforces domain/range matching, target resolution, and acyclic properties for supersedes, contradicts, depends_on, and refines. Contradicts is marked as symmetric. The legacy debt of metadata.depends_on is measured and ratcheted without being rewritten. When there are no typed relations, the gate correctly declines. No tests assert the opposite of the ticket, and all receipt claims are backed by the diff.",
+      "summary": "The diff correctly implements all requirements specified in PMAT-3487. The relations block is implemented as a gate enforcing Contract to Contract domain and range, checking target resolution, and verifying that acyclic roles have no cycles. The contradicts role is marked symmetric and materialized both ways. Legacy metadata.depends_on is measured, ratcheted, and never rewritten. Finally, relations_n == 0 is properly mapped to a decline (Unknown{NoRelations}), and the gate is armed and integrated appropriately.",
       "findings": [
         {
           "claim": "relations_n==0 → Unknown{NoRelations} (R-2)",
@@ -36,10 +36,15 @@
           "claim": "Σ gains supersedes and contradicts naming this gate as reader (R-11)",
           "file": "contracts/ontology.yaml",
           "grounding": "cited"
+        },
+        {
+          "claim": "role in Σ with Contract→Contract domain/range, every target resolves, acyclic roles have no cycle",
+          "file": "crates/aprender-contracts/src/lint/relations_gate.rs",
+          "grounding": "cited"
         }
       ],
-      "raw_bytes": 3286,
-      "err_bytes": 0,
+      "raw_bytes": 3629,
+      "err_bytes": 100,
       "envelope_status": "SUCCESS",
       "verdict_source": "structured_output",
       "grounding_check": "parity",
@@ -52,10 +57,10 @@
       "lane": 2,
       "status": "SUCCESS",
       "verdict": "PASS",
-      "summary": "The implementation completely fulfills the PMAT-3487 requirements. relations_gate.rs enforces domain/range restrictions (Contract→Contract), target resolution, acyclic checks, and symmetric mapping for typed relations. The ontology.yaml correctly declares the new roles (supersedes, contradicts) and maps them to the relations_gate.rs reader. Legacy metadata.depends_on targets are counted and ratcheted without being rewritten. The gate properly handles missing relations with NoRelations, mapping it to exit 2 (Decline). The gate is armed in lint-baseline.json.",
+      "summary": "The implementation faithfully fulfills the PMAT-3487 requirements. The relations gate is correctly implemented and armed, verifying domain/range of Contract→Contract, resolving targets, enforcing acyclicity, and treating `contradicts` as symmetric. The ontology adds `supersedes` and `contradicts` properly. Legacy `metadata.depends_on` edges are counted and ratcheted in the baseline without being rewritten. The handling of `relations_n == 0` results in a decline, as expected. All ticket claims and constraints are accurately addressed.",
       "findings": [],
-      "raw_bytes": 2497,
-      "err_bytes": 0,
+      "raw_bytes": 2457,
+      "err_bytes": 100,
       "envelope_status": "SUCCESS",
       "verdict_source": "structured_output",
       "grounding_check": "parity",
@@ -68,10 +73,47 @@
       "lane": 3,
       "status": "SUCCESS",
       "verdict": "PASS",
-      "summary": "The diff for ticket PMAT-3487 (ONT-4: typed relations) has been thoroughly reviewed against the ticket requirements, receipt, specifications, and code. All requirements are faithfully and accurately implemented without forbidden changes:\n1. `relations:` block is implemented as a gate (`provable_contracts::lint::relations_gate`) checking that roles are declared in Σ, domain/range is Contract→Contract, targets resolve, acyclic roles have no cycles (with deterministically reported closing paths), and contradicts is symmetric (materialized both directions).\n2. Exit codes conform to the lattice: Pass (0), Fail / reject (1), Decline (2, when Σ is absent or relations_n == 0 via R-2), Malformed Σ (3).\n3. Legacy `metadata.depends_on` is counted as `legacy_depends_on` and `legacy_unresolved_depends_on`, never rewritten, and ratcheted shrink-only against baseline (PV-ONT-010).\n4. Σ is updated with `supersedes` (acyclic) and `contradicts` (symmetric) and names `lint/relations_gate.rs` under `readers.roles`.\n5. `pv lint --gate relations` is armed and integrated into full runs (Gate 11).\n6. All tests and fixtures pass cleanly.",
-      "findings": [],
-      "raw_bytes": 3763,
-      "err_bytes": 59,
+      "summary": "Thoroughly reviewed the diff (159,863 bytes) for ticket PMAT-3487 against the ticket requirements, receipt, and refutation doctrine. All requirements have been implemented precisely as specified:\n1. `relations_gate.rs` validates `relations:` blocks against Σ, enforcing Contract→Contract domain/range, target resolution (contracts/<id>.yaml), acyclicity for acyclic roles (`refines`, `supersedes`, `depends_on`), and symmetric closure for `contradicts`.\n2. Missing relations (`relations_n == 0`) or absent Σ declines at exit code 2 (`NoRelations` / `NoSigma` per R-2).\n3. Legacy `metadata.depends_on` entries are counted as `legacy_depends_on` and `legacy_unresolved_depends_on`, never rewritten, and ratcheted shrink-only against `contracts/lint-baseline.json` (PV-ONT-010).\n4. Σ (`contracts/ontology.yaml`) declares `supersedes` and `contradicts`, adding `lint/relations_gate.rs` to `readers.roles` (R-11).\n5. All fixtures, unit tests (`cargo test -p aprender-contracts --lib relations_gate`), and CLI integration tests (`cargo test -p aprender-contracts-cli --test ont4_relations_gate`) execute and pass cleanly. No gates are weakened and no extraneous or forbidden modifications were made.",
+      "findings": [
+        {
+          "claim": "relations: block with refines, supersedes, contradicts, depends_on implemented as relations gate checking Σ declaration, Contract→Contract domain/range, target resolution, and acyclicity with deterministic cycle reporting",
+          "file": "crates/aprender-contracts/src/lint/relations_gate.rs",
+          "grounding": "cited",
+          "line": 770
+        },
+        {
+          "claim": "contradicts materialized symmetrically and read both ways",
+          "file": "crates/aprender-contracts/src/lint/relations_gate.rs",
+          "grounding": "cited",
+          "line": 1083
+        },
+        {
+          "claim": "relations_n == 0 declines at exit 2 with NoRelations per R-2",
+          "file": "crates/aprender-contracts/src/lint/relations_gate.rs",
+          "grounding": "cited",
+          "line": 874
+        },
+        {
+          "claim": "legacy metadata.depends_on measured as legacy_unresolved_depends_on and ratcheted shrink-only against baseline without rewriting corpus per R-5",
+          "file": "contracts/lint-baseline.json",
+          "grounding": "cited",
+          "line": 159
+        },
+        {
+          "claim": "Σ updated with supersedes (acyclic) and contradicts (symmetric) and readers.roles names lint/relations_gate.rs per R-11",
+          "file": "contracts/ontology.yaml",
+          "grounding": "cited",
+          "line": 320
+        },
+        {
+          "claim": "Unit and CLI test suites for relations gate pass cleanly",
+          "file": "crates/aprender-contracts-cli/tests/ont4_relations_gate.rs",
+          "grounding": "measured",
+          "line": 447
+        }
+      ],
+      "raw_bytes": 6363,
+      "err_bytes": 100,
       "envelope_status": "SUCCESS",
       "verdict_source": "structured_output",
       "grounding_check": "parity",
@@ -94,6 +136,16 @@
       ]
     },
     {
+      "file": "contracts/lint-baseline.json",
+      "line": 159,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "legacy metadata.depends_on measured as legacy_unresolved_depends_on and ratcheted shrink-only against baseline without rewriting corpus per R-5"
+      ]
+    },
+    {
       "file": "contracts/ontology.yaml",
       "line": null,
       "lanes_agreeing": [
@@ -101,6 +153,16 @@
       ],
       "claims": [
         "Σ gains supersedes and contradicts naming this gate as reader (R-11)"
+      ]
+    },
+    {
+      "file": "contracts/ontology.yaml",
+      "line": 320,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "Σ updated with supersedes (acyclic) and contradicts (symmetric) and readers.roles names lint/relations_gate.rs per R-11"
       ]
     },
     {
@@ -112,13 +174,65 @@
       "claims": [
         "relations_n==0 → Unknown{NoRelations} (R-2)"
       ]
+    },
+    {
+      "file": "crates/aprender-contracts-cli/tests/ont4_relations_gate.rs",
+      "line": 447,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "Unit and CLI test suites for relations gate pass cleanly"
+      ]
+    },
+    {
+      "file": "crates/aprender-contracts/src/lint/relations_gate.rs",
+      "line": null,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "role in Σ with Contract→Contract domain/range, every target resolves, acyclic roles have no cycle"
+      ]
+    },
+    {
+      "file": "crates/aprender-contracts/src/lint/relations_gate.rs",
+      "line": 770,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "relations: block with refines, supersedes, contradicts, depends_on implemented as relations gate checking Σ declaration, Contract→Contract domain/range, target resolution, and acyclicity with deterministic cycle reporting"
+      ]
+    },
+    {
+      "file": "crates/aprender-contracts/src/lint/relations_gate.rs",
+      "line": 874,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "relations_n == 0 declines at exit 2 with NoRelations per R-2"
+      ]
+    },
+    {
+      "file": "crates/aprender-contracts/src/lint/relations_gate.rs",
+      "line": 1083,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "contradicts materialized symmetrically and read both ways"
+      ]
     }
   ],
   "uncovered": [],
   "coverage_source": "lanes",
   "partial": true,
   "partial_reasons": [
-    "lane 3: non-empty .err (59 bytes, 1 line(s) beyond agy-lane's workspace narration)"
+    "lane 1: non-empty .err (100 bytes, 1 line(s) beyond agy-lane's workspace narration)",
+    "lane 2: non-empty .err (100 bytes, 1 line(s) beyond agy-lane's workspace narration)",
+    "lane 3: non-empty .err (100 bytes, 1 line(s) beyond agy-lane's workspace narration)"
   ],
   "auto_merge": {
     "checked": true,
