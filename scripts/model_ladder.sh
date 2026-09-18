@@ -193,13 +193,17 @@ if [ "$EXECUTED" -eq 0 ]; then
   exit 2
 fi
 mkdir -p "$OUT_DIR"
-python3 - "$ROWS" "$OUT_DIR/$HOST.json" "$HOST" "$VERSION" "$SHA" "${GPU_NAME:-}" "${GPU_CC:-}" "$EXECUTED" "$RED" "$APR" <<'PY'
+# The receipt names the binary by what it SAYS it is (`apr --version`, which
+# carries the built-from sha), never by its path: a path is machine-specific
+# (check_no_shipped_machine_paths) and says nothing about what was run.
+APR_VERSION=$("$APR" --version 2>/dev/null | head -1)
+python3 - "$ROWS" "$OUT_DIR/$HOST.json" "$HOST" "$VERSION" "$SHA" "${GPU_NAME:-}" "${GPU_CC:-}" "$EXECUTED" "$RED" "$APR_VERSION" <<'PY'
 import json, sys, datetime, platform
 rows = [json.loads(l) for l in open(sys.argv[1]) if l.strip()]
 out = {"schema": "apr-model-ladder-receipt/v1", "host": sys.argv[3], "version": sys.argv[4], "sha": sys.argv[5],
        "isa": platform.machine(), "gpu": sys.argv[6] or None, "cc": sys.argv[7] or None,
        "date": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%MZ"),
-       "apr": sys.argv[10], "executed": int(sys.argv[8]), "red": int(sys.argv[9]), "rungs": rows}
+       "apr_version": sys.argv[10], "executed": int(sys.argv[8]), "red": int(sys.argv[9]), "rungs": rows}
 json.dump(out, open(sys.argv[2], "w"), indent=2); open(sys.argv[2], "a").write("\n")
 PY
 printf 'receipt: %s/%s.json (executed=%s red=%s)\n' "$OUT_DIR" "$HOST" "$EXECUTED" "$RED"

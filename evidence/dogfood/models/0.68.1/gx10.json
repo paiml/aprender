@@ -3,11 +3,11 @@
   "host": "gx10",
   "version": "0.68.1",
   "sha": "4a538ddef",
+  "apr_version": "apr 0.68.1 (4a538ddef)",
   "isa": "aarch64",
   "gpu": "NVIDIA GB10",
   "cc": "12.1",
   "date": "2026-09-18T10:14Z",
-  "apr": "/home/noah/src/aprender-qwen3-probe/target/release/apr",
   "executed": 4,
   "red": 3,
   "rungs": [

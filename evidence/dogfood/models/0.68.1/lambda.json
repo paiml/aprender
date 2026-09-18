@@ -3,11 +3,11 @@
   "host": "lambda",
   "version": "0.68.1",
   "sha": "4a538ddef",
+  "apr_version": "apr 0.68.1 (4a538ddef)",
   "isa": "x86_64",
   "gpu": "NVIDIA GeForce RTX 4090",
   "cc": "8.9",
   "date": "2026-09-18T09:50Z",
-  "apr": "/home/noah/src/aprender-qwen3-probe/target/release/apr",
   "executed": 4,
   "red": 3,
   "rungs": [
