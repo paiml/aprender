@@ -15,6 +15,7 @@ aprender-contracts	--test	apr_registry_snapshot_contract
 aprender-contracts	--test	apr_rerank_contract
 aprender-contracts-cli	--test	book_coverage
 aprender-contracts-cli	--test	ont4_relations_gate
+aprender-contracts-cli	--test	ont4b_shapes_gate
 aprender-contrastive-data	--test	goldens_regenerate
 aprender-contrastive-data	--test	negative_leaky
 aprender-contrastive-data	--test	negative_materializing

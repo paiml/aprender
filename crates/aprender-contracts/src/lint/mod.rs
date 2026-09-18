@@ -20,6 +20,7 @@ mod gates_extended;
 pub mod relations_gate;
 pub mod rules;
 pub mod sarif;
+pub mod shapes_gate;
 pub mod sigma_gate;
 pub mod sigma_symbols;
 mod strict_test_binding;
@@ -196,6 +197,26 @@ pub enum GateExtra {
         legacy_unresolved_depends_on: usize,
         /// Findings.
         violations: usize,
+    },
+    /// ONT-4b: the shapes gate — every `shape:` block over the extracted graph, with the plant.
+    #[serde(rename = "shapes")]
+    Shapes {
+        /// `shape:` blocks read.
+        shapes_n: usize,
+        /// Distinct focus nodes across the shapes (the plant excluded).
+        focus_nodes_n: usize,
+        /// `fired` — the plant drew a violation; the gate never reaches `Ran` otherwise.
+        pc_shape: String,
+        /// How many violations the plant drew.
+        plant_violations: usize,
+        /// Corpus violations (the plant excluded).
+        violations: usize,
+        /// Corpus warnings.
+        warnings: usize,
+        /// `shape=focus-count` per shape.
+        by_shape: Vec<String>,
+        /// Triples in the extracted graph.
+        triples: usize,
     },
 }
 
@@ -421,6 +442,12 @@ pub fn run_lint(config: &LintConfig) -> LintReport {
     gates.push(relations_gate_result);
     all_findings.append(&mut relations_findings);
 
+    // Gate 12: shapes (ONT-4b). Same R-8 shape: computed in every run, armed per repo.
+    let (shapes_gate_result, mut shapes_findings) =
+        shapes_result(config.contract_dir, validation_passed);
+    gates.push(shapes_gate_result);
+    all_findings.append(&mut shapes_findings);
+
     // Gate 9: strict test-binding (Issue #1510, opt-in via --strict-test-binding)
     if config.strict_test_binding {
         if validation_passed {
@@ -525,6 +552,8 @@ pub enum NamedGateOutcome {
     Sigma(sigma_gate::SigmaOutcome),
     /// The `relations` gate (ONT-4), with three non-verdict answers (no Σ, malformed Σ, no typed relations).
     Relations(relations_gate::RelationsOutcome),
+    /// The `shapes` gate (ONT-4b), with four non-verdict answers (unsupported shape, no shapes, no focus, control failed).
+    Shapes(shapes_gate::ShapesOutcome),
     /// A gate that ran and judged the corpus.
     Ran {
         result: Box<GateResult>,
@@ -543,6 +572,7 @@ pub fn run_named_gate(contract_dir: &Path, name: &str) -> NamedGateOutcome {
         "relations" => {
             NamedGateOutcome::Relations(relations_gate::run_relations_gate(contract_dir))
         }
+        "shapes" => NamedGateOutcome::Shapes(shapes_gate::run_shapes_gate(contract_dir)),
         "sigma" => NamedGateOutcome::Sigma(sigma_gate::run_sigma_gate(contract_dir)),
         "validate" => {
             let (contracts, parse_errors) = load_contracts(contract_dir);
@@ -557,7 +587,7 @@ pub fn run_named_gate(contract_dir: &Path, name: &str) -> NamedGateOutcome {
 }
 
 /// The gate names `--gate` computes alone, for the refusal message.
-pub const NAMED_GATES: [&str; 3] = ["relations", "sigma", "validate"];
+pub const NAMED_GATES: [&str; 4] = ["relations", "shapes", "sigma", "validate"];
 
 /// The `sigma` gate as `run_lint` reports it. Σ's two non-verdict answers become SKIPPED gates here — under
 /// `--gate sigma` they are an exit of their own (decline / error), but inside a full run "skipped" is how the
@@ -606,6 +636,30 @@ fn relations_result(
                 "relations",
                 &format!("no typed relations in {contracts_checked} contracts ({legacy_depends_on} legacy metadata.depends_on edges) — R-2: zero is a decline"),
             ),
+            Vec::new(),
+        ),
+    }
+}
+
+/// The `shapes` gate as `run_lint` reports it. Its four non-verdict answers become SKIPPED gates here (under
+/// `--gate shapes` they are exits of their own); an `Unknown{Warn}` run is reported as the gate returned it.
+fn shapes_result(contract_dir: &Path, validation_passed: bool) -> (GateResult, Vec<LintFinding>) {
+    if !validation_passed {
+        return (skipped_gate("shapes", "validation failed"), Vec::new());
+    }
+    match shapes_gate::run_shapes_gate(contract_dir) {
+        shapes_gate::ShapesOutcome::Ran { result, findings } => (*result, findings),
+        shapes_gate::ShapesOutcome::Unsupported(e) => (skipped_gate("shapes", &format!("{e}")), Vec::new()),
+        shapes_gate::ShapesOutcome::NoShapes { contracts_checked } => (
+            skipped_gate("shapes", &format!("no `shape:` block in {contracts_checked} contracts — R-2: zero is a decline")),
+            Vec::new(),
+        ),
+        shapes_gate::ShapesOutcome::NoFocus { shapes_n } => (
+            skipped_gate("shapes", &format!("{shapes_n} shape(s), no focus node")),
+            Vec::new(),
+        ),
+        shapes_gate::ShapesOutcome::PositiveControlFailed { shapes_n, focus_nodes_n } => (
+            skipped_gate("shapes", &format!("the planted focus node drew no violation ({shapes_n} shape(s), {focus_nodes_n} focus node(s)) — the shapes cannot fire")),
             Vec::new(),
         ),
     }
