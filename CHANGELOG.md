@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.68.2] - 2026-09-18
+
+0.68.2 is an interrupt release for Qwen3 (EPIC #3477): dense Qwen3 produced garbage on CUDA in 0.68.1 because two fast paths dropped the per-head QK-norm — the manual decode graph never recorded the kernel (#3413 A) and the batched prefill never applied it (#3413 B) — and the CPU-vs-GPU guard could not see either because it probed a path generation does not use (#3413 C). All three are fixed and the guard now judges the real prefill path; a fourth finding (FP8 batched prefill fails parity on QK-norm models, #3483) is mitigated by routing those models to the serial prefill with FP8 off. Qwen3.5 real-world files (unsloth UD-IQ2_XXS / IQ4_XS) load and run on the CPU (#3432, #3091), and `apr qa` certifies a CPU-only architecture instead of aborting. The model-capability ladder (contracts/model-capability-ladder-v1.yaml) is green on lambda (sm_89) and gx10 (sm_121) at the cut; Qwen3-8B's optional rung stays optional pending the golden thinking-budget harness fix (#3486). #3090 (Gated DeltaNet on the GPU) is a dated non-goal carried to 0.69.0.
+
+### Added
+
+- feat(ont): ONT-6 — one Verdict lattice, Kani-proved; per-repo arming; exit-vocabulary mapping (PMAT-3451) (#3463)
+- feat(ont): ONT-2b — Σ with entity_types and extractors, and a symbol-level check on formal: (PMAT-3471) (#3472)
+- feat(dogfood): model capability ladder — T-2 proves every (architecture, backend, silicon) triple per host; RED at 4a538ddef on both GPUs (#3477) (#3479)
+
+### Fixed
+
+- fix(publish): preflight R6 judges the cycle, not the shape (0.68.1 T-4 stop, #3468) (#3469)
+- fix(ladder): a rung that claims only the CPU is not asked whether the GPU can run it (#3477) (#3481)
+
+### Changed
+
+- APEX-2b: extended-Wilkinson tick placement (Talbot, Lin & Hanrahan 2010) with a CRAN-golden set that catches the paper's own erratum — NEW crates/aprender-viz/src/breaks.rs (pub fn extended, extended_loose; Q_DEFAULT, W_DEFAULT=[0.25,0.2,0.5,0.05] per the reference code, not the prose), tests/breaks_golden.rs (44 tests: 36 goldens, 6 properties, anti-vacuity floor, W_DEFAULT-swap mutation), fixtures/breaks/{manifest.json, README.md (R transcription, verbatim), generate.py}; EDITS Cargo.toml (+libm), src/lib.rs (+pub mod breaks), Cargo.lock; no renderer change, no new rendering dep (#3259)
+- APEX-2a: deterministic render — svg_identical from SVG bytes on X64+ARM64; NEW viz manifest.rs/text.rs/render_determinism.rs (EV-2b breaks as ticks), ci determinism+compare jobs, libm-ban-live.sh; EDITS .clippy.toml (libm bans), breaks.rs powi->sq, svg/lib/scale/plots (#3273)
+- release: 0.68.1 (#3450)
+- PMAT-3445: no tag while the milestone being cut holds an open item — check_milestone_cut.sh at the freeze and before the tag (#3455)
+- ci(b2-gpu): aprender-gpu lib tests on hardware at the tag (0.68.1 chain, rule 14) (#3467)
+- docs(release): v0.68.1 cascade dry-run receipt (T-4, committed before the first upload) (#3470)
+- docs(release): v0.68.1 SHIPPED — cascade timestamps, install receipts, ledger record, audit interval (#3473)
+- docs(spec): APR-RELEASE-001 revision 2026-09-17 — fan-out by construction, B2 split, unattended cascade; 0.68.1 SHIPPED (#3474)
+- ledger: clean-room chain at -j8 — 3877 s → 1474 s on v0.68.1, same tests, peak RSS at the 48g ceiling (#3475 lever a) (#3476)
+- PMAT-3477: 0.68.2 — Qwen3 CUDA QK-norm restored in the graph and the batched prefill, FP8 prefill gated for QK-norm models, F2 guard judges the real prefill path; Qwen3.5 real IQ files load and run; apr qa certifies CPU-only qwen35 (#3413, #3432, #3091) (#3484)
+
 ## [0.68.1] - 2026-09-17
 
 **The crates.io release of the 0.68 line.** `v0.68.0` is a GitHub-only release (tag and binaries stand; `install.sh` verified on x86_64 and aarch64) — its clean-room on the tag passed A0–B1 for the first time ever on a tag and stopped at B2: lib tests in `aprender-core` and `aprender-test-showcase` named path-only dev-dependencies that `cargo publish` deletes (#3425). 0.68.1 carries that fix — the tests moved out of `src/` to targets the published crates do not carry, all 72 lib-test binaries build in published form — plus the two infra gate repairs that made the chain provable (infra#650 tag ref materialized, infra#652 A1 `[patch.crates-io]` overlay at the tag). Everything else is 0.68.0: Qwen 3.5 on the CPU, the one-line installer, the release-train gates.
