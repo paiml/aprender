@@ -168,8 +168,12 @@ self_test() {
     # ── sharding (PACK-001): every M-th command from the N-th; refusals, never a vacuous pass ──
     row 0 "--shard 1/2 takes the 1st and 3rd of three commands" 'shard 1/2: 2 of 3' bash "$R" --run "$td/p" --shard 1/2
     row 0 "--shard 2/2 takes the 2nd" 'shard 2/2: 1 of 3' bash "$R" --run "$td/p" --shard 2/2
-    fact "  ...and 1/2 ran exactly [true, echo c]; 2/2 ran [echo b] (a command is on ONE shard)" \
-        test "$(bash "$R" --run "$td/p" --shard 1/2 2>/dev/null | grep -cE '^\[|^(b|c)$')$(bash "$R" --run "$td/p" --shard 2/2 2>/dev/null | grep -c '^b$')" = "11"
+    # the commands themselves print: `true` nothing, `echo b` b, `echo c` c -- so the
+    # command OUTPUT lines say which commands a shard ran, independent of the runner's framing
+    fact "  ...and 1/2 ran [true, echo c] (its output lines are exactly: c)" \
+        test "$(bash "$R" --run "$td/p" --shard 1/2 2>/dev/null | grep -E '^(b|c)$' | tr -d '\n')" = "c"
+    fact "  ...and 2/2 ran [echo b] (its output lines are exactly: b) -- a command is on ONE shard" \
+        test "$(bash "$R" --run "$td/p" --shard 2/2 2>/dev/null | grep -E '^(b|c)$' | tr -d '\n')" = "b"
     row 2 "REFUSE --shard with N > M" 'N exceeds M' bash "$R" --run "$td/p" --shard 3/2
     row 2 "REFUSE a shard that selects zero commands (more shards than commands)" 'selects 0 of 3' bash "$R" --run "$td/p" --shard 4/4
     row 2 "REFUSE a malformed --shard" 'must look like N/M' bash "$R" --run "$td/p" --shard x
