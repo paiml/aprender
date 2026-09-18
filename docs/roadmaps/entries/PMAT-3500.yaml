@@ -7,8 +7,14 @@
   assigned_to: null
   created: 2026-09-18T20:17:28Z
   updated: 2026-09-18T20:17:28Z
-  spec: null
-  acceptance_criteria: []
+  spec: docs/specifications/paiml-ontology.md
+  acceptance_criteria:
+  - 'The spec''s ONT-4b probe text passes verbatim minus `merged`: contracts.nt tracked with no `_:`, shapes.ttl tracked, `pv lint contracts/ --gate shapes --format json` → Pass with shapes_n>0, focus_nodes_n>0 (1731 at acab2e754) and pc_shape=fired at the top level of the report.'
+  - 'ontology/shapes.rs implements §3.6''s subset exactly and refuses every other component at parse by name (targetNode, qualifiedValueShape, languageIn, a sequence path, or/and/not, a second node level): `cargo test -p aprender-contracts --lib ontology::shapes` 10/10.'
+  - 'Two extractions are byte-identical and carry no blank node; `pv extract --check` exits 1 on drift and `make contracts` runs it (R-18).'
+  - 'The exit vocabulary holds on fixtures: Pass 0; a corpus violation 1 naming focus node and shape (PV-ONT-011); NoShapes, NoFocus, PositiveControlFailed and Warn each 2 with the reason; an unsupported component 3: `cargo test -p aprender-contracts-cli --test ont4b_shapes_gate` 11/11.'
+  - 'Two mutations from the spec: minCount removed from ont:id → exit 2 decline: PositiveControlFailed; a kind outside the list on one contract → exit 1 naming that contract and the shape.'
+  - 'shapes is armed (11 armed gates), Σ marks pv-contract/pv_contract implemented, contracts_shaped=1, census 1796 with the README synced; lib 1610 and cli 271 tests pass; clippy -D warnings clean.'
   phases: []
   subtasks: []
   estimated_effort: null
