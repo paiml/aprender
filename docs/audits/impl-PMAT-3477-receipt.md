@@ -58,6 +58,11 @@ Gate stages measured by `pmat verify` (format, complexity, clippy): ok. not_meas
 - ph7 review lanes 1–2: exit 3 from the orchestrator's own ladder receipt write during the review window — verdicts kept with that caveat (the only changed path was the receipt).
 - CI guard-cargo RED: `matmul_fused.rs::fused_matmul` cognitive 36→41 / cyclomatic 17→20 (worker E's early-return) — fixed by moving the fallback into the existing default arm (see the commit after this receipt).
 - CI guard-tree R-2: PR body cited issues without close/no-close reasons — body amended.
+- CI guard-cargo "No claim literals": my 47-line insertion in `gpu_profile.rs` shifted two baselined doc-comment claims (356→403, 410→457) and a worker's doc comment stated tok/s measurements — fixed by moving the new fn into a trailing `impl GpuProfile` block (baseline untouched) and rewording the comment to the mechanism.
+- CI guard-cargo "pmat/bashrs must match the pinned fleet versions": the fleet moved to pmat 3.41.1 under the repo pin 3.40.1 (PMAT-1363 convergence) — every PR red. Folded in: `tools.toml` pin → 3.41.1, `scripts/complexity_baseline.txt` re-recorded under 3.41.1 (676 → 668 rows, D2 PASS: none new, none grown), `scripts/cb200_baseline.txt` header restamped with CB-200 re-measured at 601 (= baseline). check_tool_versions 4/4, check_baseline_ratchets PASS.
+- CI cuda-unit (yoga): `driver::cublas_tests::cta64_vs_cta32_vs_cublas_fp16` → `CUDA_ERROR_OUT_OF_MEMORY` allocating B; 2608/2609 pass there, 2609/2609 on lambda; the test file is untouched by this PR — environment (yoga's GPU shared with a concurrent job), not code. Not in `ci / gate`'s needs; rerun when the run completes.
+- CI guard-tree §11.1: touching `scripts/cb200_baseline.txt` (a known-red list) makes this a sweep PR that must carry an `ont-delta:` line — added to the body (`none`: the instrument moved, no ontology entity changed).
+- `ci / lint` (first runs): the folded #3485 contract carried `qwen35` with aliases that duplicated the existing `qwen3_5` entry, so the generated `match` had an unreachable arm under `-D warnings` — duplicate entry removed; `check_arch_constraints_contract_covers_fallback.sh` ok.
 
 ## Gaps (NotRun / open)
 - `present` / `pr-review-quorum` (Arm 4 signed receipt at `evidence/pr-review/3484`): not produced — review backlog class, not a required check.
