@@ -566,6 +566,12 @@ falsification_tests:
   issue: "https://github.com/paiml/aprender/issues/2971"
 
 
+- id: FALSIFY-CPU-GPU-015
+  rule: "Parity is per ARCHITECTURE, not per binary — a green qwen2 says nothing about qwen3"
+  prediction: "for every rung of contracts/model-capability-ladder-v1.yaml whose backends include cuda, `apr run --gpu` on both required hosts prints no fallback line and `apr qa` golden_output passes on GPU"
+  test: "bash scripts/check_model_ladder.sh (reads evidence/dogfood/models/<version>/{lambda,gx10}.json written by scripts/model_ladder.sh)"
+  if_fails: "an architecture the release claims silently runs on the CPU — 0.68.1 shipped dense Qwen3 this way while the qwen2.5 control was green on the same binary (#3413, EPIC #3477)"
+
 proof_obligations:
 - id: ACVGOP-INV-001
   type: invariant
@@ -610,3 +616,14 @@ obligation_coverage:
   computational_cost: 'O(N) per `apr run` invocation where N = APR_WGPU_PARITY_STEPS (default 3): N forward passes at init for the multi-step parity smoke (extends the gguf::cuda single-step gate)'
   reproducible_seed: 'fixed prompt "What is 2+2?", greedy decode at temperature 0.0, max_tokens=1'
   reference_for_oracle: '`apr run --no-gpu` (CPU scalar-loop path; v5 evidence shows it produces correct output on canonical 7B teacher)'
+
+qa_gate:
+  id: F-CPU-GPU-PARITY-001
+  name: CPU-vs-GPU output parity, per architecture
+  description: "T-2 consumer of this contract: the model capability ladder (contracts/model-capability-ladder-v1.yaml, F-MCL-001). Until 2026-09-18 this contract had no qa_gate — ACVGOP-INV-002 (greedy first-token argmax identical) was exactly what failed on dense Qwen3 and nothing ran it on that architecture"
+  checks:
+  - no_fallback_line_on_claimed_backend
+  - golden_output_gpu_per_rung
+  - both_required_hosts
+  pass_criteria: "scripts/check_model_ladder.sh exits 0"
+  falsification: "plant backends.cuda.fallback=true in a receipt → exit 1 (scripts/lib/model_ladder_cases/red-fallback)"
