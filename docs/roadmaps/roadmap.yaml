@@ -18519,6 +18519,26 @@ roadmap:
   created: 2026-09-18T10:25:51Z
   updated: 2026-09-18T10:25:51Z
   spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - orch:fable
+  - orch-basis:release
+  - P0
+  notes: null
+- id: PMAT-3487
+  github_issue: 3487
+  item_type: task
+  title: 'ONT-4: typed relations — a contract''s relations: block (refines · supersedes · contradicts · depends_on) is a gate: role in Σ with Contract→Contract domain/range, every target resolves, acyclic roles have no cycle, contradicts is symmetric; pv lint --gate relations, armed; Σ gains supersedes and contradicts naming this gate as reader (R-11); legacy metadata.depends_on measured as legacy_unresolved_depends_on and ratcheted, never rewritten (R-5); relations_n==0 → Unknown{NoRelations} (R-2)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-18T15:04:36Z
+  updated: 2026-09-18T15:04:36Z
+  spec: null
   acceptance_criteria:
   - '`pv lint contracts/ --gate relations --format json` is Pass at exit 0 on the real corpus with relations_n=3 (the ONT-001 §5 ONT-4 probe''s predicate); `pv lint contracts/` (all gates, relations armed) is Pass at exit 0.'
   - 'Σ declares supersedes (acyclic) and contradicts (symmetric), both Contract→Contract, and readers.roles names lint/relations_gate.rs.'
@@ -18532,6 +18552,5 @@ roadmap:
   labels:
   - kind:code
   - orch:fable
-  - orch-basis:release
-  - P0
+  - orch-basis:state
   notes: null
