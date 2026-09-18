@@ -1,0 +1,19 @@
+- id: PMAT-3500
+  github_issue: 3500
+  item_type: task
+  title: 'ONT-4b: pv extract (pv-contract) → contracts/contracts.nt (deterministic N-Triples, no blank nodes, R-15); in-house shapes validator over the SHACL-Core subset of §3.6 exactly (unsupported component → exit 3); shape: block on contracts; pv lint --gate shapes with pc_shape planted every run, shapes_n/focus_nodes_n declines (R-2), a corpus violation naming focus node and shape; contracts/shapes.ttl exported; the first shape targets ont:Contract from the ONT contracts so the whole corpus is focus nodes; shapes armed'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-18T20:17:28Z
+  updated: 2026-09-18T20:17:28Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - orch:fable
+  - orch-basis:state
+  notes: null
