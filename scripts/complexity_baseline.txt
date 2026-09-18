@@ -2,7 +2,7 @@
 # (cyclomatic > 30 or cognitive > 25), as "<path>::<function> <cyclomatic> <cognitive>".
 # SHRINK-ONLY. Regenerate with: bash scripts/check_complexity_ratchet.sh --update
 # Owner: scripts/check_complexity_ratchet.sh (PMAT-746).
-# tool_version=pmat 3.40.1
+# tool_version=pmat 3.41.1
 crates/apr-cli/examples/gpu_chat_inference.rs::run_chat_completion 11 33
 crates/apr-cli/src/commands/attn_parity_lint.rs::run 13 26
 crates/apr-cli/src/commands/attn_viz_classifier.rs::classify_causal_mask 8 29
@@ -506,7 +506,6 @@ crates/aprender-serve/src/grammar/mod.rs::validate 8 27
 crates/aprender-serve/src/infer/batch.rs::init_batch_model 15 51
 crates/aprender-serve/src/infer/gguf_gpu_generate.rs::try_apr_wgpu_inference 25 69
 crates/aprender-serve/src/infer/gguf_gpu_generate.rs::try_wgpu_generate 19 49
-crates/aprender-serve/src/infer/inference_result.rs::validate_gpu_first_token 12 29
 crates/aprender-serve/src/infer/qwen3_moe_generate.rs::run_qwen3_moe_generate_streaming 10 27
 crates/aprender-serve/src/infer/qwen3_moe_generate.rs::sample_from_logits 20 46
 crates/aprender-serve/src/inference_trace/execution_failure.rs::format_text 34 100
@@ -546,10 +545,6 @@ crates/aprender-sparse/src/bsr.rs::spmv 10 31
 crates/aprender-sparse/src/bsr.rs::to_csr 8 33
 crates/aprender-test-cli/src/handlers/build.rs::scan_files_recursive 8 26
 crates/aprender-test-cli/src/handlers/comply.rs::find_files_recursive 8 26
-crates/aprender-test-cli/src/handlers/llm.rs::execute_llm_experiment 16 36
-crates/aprender-test-cli/src/handlers/llm.rs::execute_llm_load 36 61
-crates/aprender-test-cli/src/handlers/llm.rs::execute_llm_score 40 91
-crates/aprender-test-cli/src/handlers/llm.rs::execute_llm_sweep 20 40
 crates/aprender-test-js-gen/src/codegen.rs::write_expr 22 96
 crates/aprender-test-js-gen/src/codegen.rs::write_stmt 11 45
 crates/aprender-test-lib/src/browser.rs::take_coverage 8 30
@@ -656,7 +651,6 @@ crates/aprender-verify-ml/src/ml/augmentation.rs::find_swappable_pairs 17 45
 crates/aprender-verify-ml/src/ml/augmentation.rs::replace_identifier 10 35
 crates/aprender-verify-ml/src/ml/rich_labeling.rs::classify 31 46
 crates/aprender-verify-ml/src/mutator/ast_mutator.rs::collect_names_recursive 7 35
-crates/aprender-viz/src/grammar/ggplot.rs::compute_data_ranges 12 31
 crates/aprender-viz/src/plots/confusion_matrix.rs::normalized_values 11 26
 crates/aprender-viz/src/plots/loss_curve.rs::render_best_markers 11 43
 crates/aprender-zram-core/src/lz4/compress.rs::compress_fast 16 42
