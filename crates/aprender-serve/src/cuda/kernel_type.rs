@@ -411,6 +411,17 @@ pub enum KernelType {
         num_heads: u32,
         epsilon: f32,
     },
+    /// #3413 B: Batched per-head QK RMSNorm (Qwen3 prefill).
+    ///
+    /// Grid (num_heads, batch, 1): block (seq_idx, head_idx) normalizes
+    /// `input[(seq_idx * num_heads + head_idx) * head_dim ..][..head_dim]`.
+    /// `batch` is a grid dimension only — the PTX does not depend on it.
+    BatchedPerHeadRmsNorm {
+        head_dim: u32,
+        num_heads: u32,
+        batch: u32,
+        epsilon: f32,
+    },
     /// PAR-114: Batched RoPE kernel
     BatchedRope {
         num_heads: u32,

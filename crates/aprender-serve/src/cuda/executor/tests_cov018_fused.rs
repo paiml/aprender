@@ -443,3 +443,35 @@ fn test_cov019_tensor_core_attention_valid_run() {
     let has_nonzero = output.iter().any(|&x| x.abs() > 1e-10);
     assert!(has_nonzero, "Output should have non-zero values");
 }
+
+/// #3413 defect A: the manual CUDA graph (trueno#243) is built ONLY from
+/// `graph_recorded_kernels`. Every decode-path kernel pushes itself while
+/// `graph_recording` is set — except the per-head QK RMSNorm Qwen3 needs, so
+/// the replayed graph skipped QK-norm and diverged at position 1 on sm_89 and
+/// GB10 alike. This test is RED on 4a538ddef (0 kernels recorded).
+#[test]
+#[serial]
+fn test_3413_per_head_rmsnorm_is_recorded_into_the_manual_graph() {
+    if !CudaExecutor::is_available() {
+        return;
+    }
+    let mut executor = crate::cuda_executor_or_skip!(0);
+    let head_dim: usize = 64;
+    let num_heads: usize = 4;
+    let x = GpuBuffer::<f32>::new(&executor.context, head_dim * num_heads).expect("x");
+    let gamma = GpuBuffer::<f32>::new(&executor.context, head_dim).expect("gamma");
+
+    executor.begin_graph_recording();
+    executor
+        .per_head_rmsnorm_into(&x, &gamma, &x, head_dim as u32, num_heads as u32, 1e-6)
+        .expect("per_head_rmsnorm_into");
+    let recorded = executor.graph_recorded_kernels.len();
+    executor.graph_recording = false;
+    executor.graph_recorded_kernels.clear();
+
+    assert_eq!(
+        recorded, 1,
+        "#3413: per_head_rmsnorm_into must record itself while graph_recording is set, \
+         or the replayed decode graph runs without QK-norm"
+    );
+}

@@ -2,14 +2,14 @@
   "schema": "apr-model-ladder-receipt/v1",
   "host": "lambda",
   "version": "0.68.1",
-  "sha": "4a538ddef",
-  "apr_version": "apr 0.68.1 (4a538ddef)",
+  "sha": "927587272",
   "isa": "x86_64",
   "gpu": "NVIDIA GeForce RTX 4090",
   "cc": "8.9",
-  "date": "2026-09-18T09:50Z",
+  "date": "2026-09-18T14:28Z",
+  "apr_version": "apr 0.68.1 (927587272)",
   "executed": 4,
-  "red": 3,
+  "red": 1,
   "rungs": [
     {
       "id": "qwen2-1.5b-q4km",
@@ -46,16 +46,16 @@
       "present": true,
       "sha_ok": true,
       "required": true,
-      "qa_rc": 5,
+      "qa_rc": 0,
       "capability_match": {
         "passed": true,
         "skipped": false,
         "message": "Architecture 'qwen3': all 5 required ops supported by GPU"
       },
       "golden_output": {
-        "passed": false,
+        "passed": true,
         "skipped": false,
-        "message": "GPU output failed (CPU passed): golden_output_gpu: gibberish (fragment \"    \" repeats 3+ times)"
+        "message": "3 golden test cases passed"
       },
       "backends": {
         "cpu": {
@@ -65,11 +65,11 @@
         },
         "cuda": {
           "ran": true,
-          "fallback": true,
+          "fallback": false,
           "rc": 0
         }
       },
-      "green": false
+      "green": true
     },
     {
       "id": "qwen3-8b-q4km",
@@ -85,7 +85,7 @@
       "golden_output": {
         "passed": false,
         "skipped": false,
-        "message": "GPU output failed (CPU passed): golden_output_gpu: gibberish (fragment \"UVUV\" repeats 3+ times)"
+        "message": "golden_output: Empty output"
       },
       "backends": {
         "cpu": {
@@ -95,7 +95,7 @@
         },
         "cuda": {
           "ran": true,
-          "fallback": true,
+          "fallback": false,
           "rc": 0
         }
       },
@@ -106,16 +106,16 @@
       "present": true,
       "sha_ok": true,
       "required": true,
-      "qa_rc": 5,
+      "qa_rc": 0,
       "capability_match": {
-        "passed": false,
+        "passed": true,
         "skipped": false,
-        "message": "Architecture 'qwen35' uses SSM/Gated Delta Net layers (detected tensor 'blk.0.ssm_a'). NEITHER the CPU nor the GPU backend implements Gated DeltaNet/SSM layers yet. Tracking issues: #3090 (GPU) and #3"
+        "message": "Architecture 'qwen35': CPU-only \u2014 Gated DeltaNet runs on the CPU (#3091); the GPU backend has no SSM kernels (#3090), GPU gates skipped"
       },
       "golden_output": {
-        "passed": false,
-        "skipped": true,
-        "message": "Skipped: Skipped due to capability match failure"
+        "passed": true,
+        "skipped": false,
+        "message": "3 golden test cases passed on the CPU forward (#3091); GPU declined (#3090)"
       },
       "backends": {
         "cpu": {
@@ -124,7 +124,7 @@
           "rc": 0
         }
       },
-      "green": false
+      "green": true
     }
   ]
 }

@@ -226,6 +226,10 @@ impl CudaKernels {
             KernelType::PerHeadRmsNorm { head_dim, num_heads, epsilon } => {
                 PerHeadRmsNormKernel::new(*head_dim, *num_heads).with_epsilon(*epsilon).emit_ptx_for_target(target)
             },
+            // #3413 B: batched prefill variant — grid.y selects the sequence.
+            KernelType::BatchedPerHeadRmsNorm { head_dim, num_heads, batch, epsilon } => {
+                PerHeadRmsNormKernel::new(*head_dim, *num_heads).with_epsilon(*epsilon).with_batch(*batch).emit_ptx_for_target(target)
+            },
             // GH-143: BatchedFusedResidualRmsNormKernel only on x86_64
             #[cfg(target_arch = "x86_64")]
             KernelType::BatchedFusedResidualRmsNorm { hidden_size, batch_size, epsilon } => {
