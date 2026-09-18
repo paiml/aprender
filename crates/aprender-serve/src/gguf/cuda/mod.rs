@@ -489,6 +489,22 @@ impl OwnedQuantizedModelCuda {
             },
         };
 
+        // #3413 / #3477: FP8 batched prefill is broken for per-head-QK-norm models
+        // (Qwen3-8B: cosine −0.10 vs CPU, garbage; 1.7B: 0.87 on some prompts),
+        // while the FP16 prefill passes the F2 guard — see
+        // `GpuProfile::disable_fp8_for_qk_norm` for the measurements. Decided here,
+        // BEFORE `preload_and_verify` warms either weight cache, so the FP16 cache
+        // is the one that gets warmed.
+        if executor.gpu_profile.disable_fp8_for_qk_norm(
+            model.config.constraints.has_qk_norm,
+            std::env::var("FP8_PREFILL").ok().as_deref(),
+        ) {
+            eprintln!(
+                "[#3413] FP8 prefill off: architecture '{}' uses per-head QK-norm and its FP8 batched prefill fails CPU parity (FP16 prefill in use; FP8_PREFILL=1 forces FP8)",
+                model.config.architecture
+            );
+        }
+
         let device_name = executor
             .device_name()
             .unwrap_or_else(|_| "Unknown GPU".to_string());
