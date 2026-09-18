@@ -947,7 +947,40 @@ fn validate_gpu_first_token(
     cuda_model.executor.reset_kv_cache_gpu();
 
     // Per-position decision over REAL positions (≥1). Excludes pos0 (BOS near-tie).
-    let report = f2_multi_position_report(&cpu_logits_per_pos, &gpu_logits_per_pos);
+    let mut report = f2_multi_position_report(&cpu_logits_per_pos, &gpu_logits_per_pos);
+
+    // #3413 C / PMAT-798 pattern: the FP8 batched prefill's precision shows at the
+    // decode step AFTER the prompt (the K/V it attends to were produced by FP8
+    // GEMMs) and sits at the floor run-to-run: qwen2.5-1.5b "Write one sentence
+    // about the ocean." → pos 27, cosine 0.9187 with the SAME argmax on one run,
+    // ≥ 0.95 on another (RTX 4090, 2026-09-18). A miss inside the non-catastrophic
+    // band on an FP8 path is re-measured on the FP16 HGEMM prefill before the model
+    // is pushed off the GPU — a precision fallback, not a backend fallback, printed,
+    // never silent; the floors themselves do not move. Anything below the
+    // catastrophic band (Qwen3-8B under FP8: −0.0972) is never retried.
+    if f2_should_retry_without_fp8(&report, via, cuda_model.executor.gpu_profile.fp8_prefill) {
+        eprintln!(
+            "note: FP8 batched prefill scored min cosine {:.4} vs CPU (floor {F2_GATE_COSINE_MIN}) — re-measuring on the FP16 prefill path",
+            report.min_cosine_real,
+        );
+        cuda_model.executor.gpu_profile.fp8_prefill = false;
+        cuda_model.executor.gpu_profile.fp8_decode = false;
+        cuda_model.executor.reset_kv_cache_gpu();
+        match f2_gpu_batched_logits(cuda_model, &probe, decode_token, kv_dim, num_layers) {
+            Ok(v) => {
+                report = f2_multi_position_report(&cpu_logits_per_pos, &v);
+                if report.accepted {
+                    eprintln!(
+                        "note: FP16 prefill passes (min cosine {:.4}); FP8 stays OFF for this model",
+                        report.min_cosine_real,
+                    );
+                }
+            },
+            Err(msg) => eprintln!("{msg} [{} retry without FP8]", via.as_str()),
+        }
+        cuda_model.executor.reset_kv_cache_gpu();
+    }
+
     if report.accepted {
         // #2405: the GPU was ACCEPTED — this line reports a benign near-tie on a
         // successful run and says nothing the user can act on, so it is a
@@ -964,6 +997,90 @@ fn validate_gpu_first_token(
     } else {
         eprintln!("{}", f2_divergence_msg(&report, via));
         false
+    }
+}
+
+/// #3413 C: retry the batched probe with FP8 prefill off iff the miss is inside the
+/// non-catastrophic band (`≥ F2_CATASTROPHIC_COSINE`), the path judged was the
+/// batched prefill, and FP8 was actually on — otherwise a retry could not change
+/// the answer and would only hide a real divergence behind a second measurement.
+/// Pure + GPU-free.
+#[cfg(feature = "cuda")]
+pub(crate) fn f2_should_retry_without_fp8(
+    report: &F2PositionReport,
+    via: F2ProbePath,
+    fp8_prefill_on: bool,
+) -> bool {
+    !report.accepted
+        && via == F2ProbePath::Batched
+        && fp8_prefill_on
+        && report.min_cosine_real >= F2_CATASTROPHIC_COSINE
+        && report.first_bad_cosine >= F2_CATASTROPHIC_COSINE
+}
+
+#[cfg(all(test, feature = "cuda"))]
+mod pmat3477_f2_fp8_retry_tests {
+    use super::{f2_should_retry_without_fp8, F2PositionReport, F2ProbePath};
+
+    fn miss(cos: f32) -> F2PositionReport {
+        F2PositionReport {
+            accepted: false,
+            pos0_argmax_flip: false,
+            min_cosine_real: cos,
+            first_bad_pos: 27,
+            first_bad_cpu_argmax: 29,
+            first_bad_gpu_argmax: 29,
+            first_bad_cosine: cos,
+        }
+    }
+
+    // The measured case: FP8 batched prefill on the qwen2.5 control, pos 27,
+    // cosine 0.9187, same argmax → re-measure on FP16.
+    #[test]
+    fn fp8_batched_miss_in_band_is_retried() {
+        assert!(f2_should_retry_without_fp8(
+            &miss(0.9187),
+            F2ProbePath::Batched,
+            true
+        ));
+    }
+
+    // A catastrophic miss (Qwen3-8B under FP8: −0.0972) is never retried: a
+    // second measurement cannot turn orthogonal logits into parity.
+    #[test]
+    fn catastrophic_miss_is_not_retried() {
+        assert!(!f2_should_retry_without_fp8(
+            &miss(-0.0972),
+            F2ProbePath::Batched,
+            true
+        ));
+        assert!(!f2_should_retry_without_fp8(
+            &miss(0.40),
+            F2ProbePath::Batched,
+            true
+        ));
+    }
+
+    // FP8 already off, or the serial path: nothing to switch, no retry.
+    #[test]
+    fn retry_needs_fp8_on_and_the_batched_path() {
+        assert!(!f2_should_retry_without_fp8(
+            &miss(0.9187),
+            F2ProbePath::Batched,
+            false
+        ));
+        assert!(!f2_should_retry_without_fp8(
+            &miss(0.9187),
+            F2ProbePath::Serial,
+            true
+        ));
+    }
+
+    #[test]
+    fn an_accepted_report_is_not_retried() {
+        let mut r = miss(0.99);
+        r.accepted = true;
+        assert!(!f2_should_retry_without_fp8(&r, F2ProbePath::Batched, true));
     }
 }
 
