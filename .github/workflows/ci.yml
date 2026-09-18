@@ -175,7 +175,14 @@ jobs:
       # of a path this job already spelled five times (PMAT-1077).
       SCCACHE_HOST_DIR: /home/noah/data/sccache
       IMAGE: localhost:5000/sovereign-ci:stable
-      PR_OR_REF: ${{ github.event.pull_request.number || github.ref_name }}
+      # Per-SHARD, not per-PR: the first full-tier run (35361149112) put two
+      # shards on the same host and both unpacked the same registry mount at
+      # once -- "failed to unpack package aws-runtime" from `cargo metadata`,
+      # exit 102 in 60 s. The registry (`cargo-ci/registry/<PR_OR_REF>`) and
+      # the target parent (`targets/aprender-ci/<PR_OR_REF>/run-<id>`) both key
+      # on this value, so suffixing it isolates a shard's whole cargo state and
+      # keeps the reclaim planner's `run-<id>` naming intact under each parent.
+      PR_OR_REF: ${{ github.event.pull_request.number || github.ref_name }}-s${{ matrix.shard }}
       SHARD: ${{ matrix.shard }}
       SHARDS: ${{ matrix.shards }}
     steps:
