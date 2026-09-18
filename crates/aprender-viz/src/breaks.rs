@@ -52,16 +52,22 @@ fn simplicity_max(q: f64, qs: &[f64], j: f64) -> f64 {
     1.0 - (i - 1.0) / (n - 1.0) - j + 1.0
 }
 
+/// `x * x`. `f64::powi` is on the crate's `disallowed-methods` list (APEX-001 EV-2a rule 5:
+/// multiply directly, so the ban needs no exceptions); `powi(2)` and `x * x` are bit-identical.
+fn sq(x: f64) -> f64 {
+    x * x
+}
+
 fn coverage(dmin: f64, dmax: f64, lmin: f64, lmax: f64) -> f64 {
     let range = dmax - dmin;
-    1.0 - 0.5 * ((dmax - lmax).powi(2) + (dmin - lmin).powi(2)) / (0.1 * range).powi(2)
+    1.0 - 0.5 * (sq(dmax - lmax) + sq(dmin - lmin)) / sq(0.1 * range)
 }
 
 fn coverage_max(dmin: f64, dmax: f64, span: f64) -> f64 {
     let range = dmax - dmin;
     if span > range {
         let half = (span - range) / 2.0;
-        1.0 - 0.5 * (half * half + half * half) / (0.1 * range).powi(2)
+        1.0 - 0.5 * (half * half + half * half) / sq(0.1 * range)
     } else {
         1.0
     }
