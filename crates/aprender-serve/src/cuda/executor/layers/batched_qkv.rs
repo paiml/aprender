@@ -188,6 +188,39 @@ impl CudaExecutor {
         let head_dim = self.kv_head_dim as u32;
         let theta = self.rope_theta;
 
+        // ========== 2c. Per-head QK RMSNorm (#3413 B, Qwen3) ==========
+        // AFTER the QKV bias and BEFORE RoPE — the same order as the decode path
+        // (`apply_qk_norm`, rope.rs) and the CPU path (single_part_02.rs:211-225).
+        // This phase used to skip it entirely, so the prompt's K went into the KV
+        // cache un-normed and decode produced garbage with every guard green.
+        // No-op when the model has no QK-norm weights (len == 0).
+        if layer_weights.attn_q_norm_len > 0 {
+            // SAFETY: Pointer valid from rmsnorm_cache, length verified at model load time
+            let q_norm_buf = unsafe {
+                GpuBuffer::<f32>::from_raw_parts(
+                    layer_weights.attn_q_norm_ptr,
+                    layer_weights.attn_q_norm_len,
+                )
+            };
+            self.batched_per_head_rmsnorm_into(
+                q_buf, &q_norm_buf, q_buf, head_dim, num_heads, m, epsilon,
+            )?;
+            std::mem::forget(q_norm_buf);
+        }
+        if layer_weights.attn_k_norm_len > 0 {
+            // SAFETY: Pointer valid from rmsnorm_cache, length verified at model load time
+            let k_norm_buf = unsafe {
+                GpuBuffer::<f32>::from_raw_parts(
+                    layer_weights.attn_k_norm_ptr,
+                    layer_weights.attn_k_norm_len,
+                )
+            };
+            self.batched_per_head_rmsnorm_into(
+                k_buf, &k_norm_buf, k_buf, head_dim, num_kv_heads, m, epsilon,
+            )?;
+            std::mem::forget(k_norm_buf);
+        }
+
         let positions_buf_ptr = self
             .workspace
             .positions_buf

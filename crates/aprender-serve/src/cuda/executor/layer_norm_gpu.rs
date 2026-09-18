@@ -347,6 +347,102 @@ impl CudaExecutor {
         Ok(())
     }
 
+    /// #3413 B: Batched per-head QK RMSNorm for `batch_size` packed sequences.
+    ///
+    /// The batched prefill path (`batched_qkv_rope_phase`) used to go
+    /// GEMV -> bias -> RoPE and never applied Qwen3's QK-norm, so the prompt's K
+    /// was cached un-normed and decode produced garbage while every guard passed.
+    /// This is the batched counterpart of [`Self::per_head_rmsnorm_into`].
+    ///
+    /// Grid: (num_heads, batch_size, 1), Block: (32, 1, 1) — one warp per
+    /// (sequence, head). Gamma is `[head_dim]`, shared across heads AND
+    /// sequences (no batch stride).
+    ///
+    /// # Arguments
+    ///
+    /// * `input` - Packed Q or K: `[batch_size * num_heads * head_dim]`
+    /// * `gamma` - Norm weights: `[head_dim]`
+    /// * `output` - Packed result (may alias `input` for in-place)
+    /// * `head_dim` - Elements per head
+    /// * `num_heads` - Heads per sequence (`num_kv_heads` for K)
+    /// * `batch_size` - Number of packed sequences (M)
+    /// * `epsilon` - Numerical stability constant (1e-6 for Qwen3)
+    #[allow(clippy::too_many_arguments)]
+    pub fn batched_per_head_rmsnorm_into(
+        &mut self,
+        input: &GpuBuffer<f32>,
+        gamma: &GpuBuffer<f32>,
+        output: &GpuBuffer<f32>,
+        head_dim: u32,
+        num_heads: u32,
+        batch_size: u32,
+        epsilon: f32,
+    ) -> Result<(), GpuError> {
+        // m == 1 is the single-sequence kernel: same grid, same result, and the
+        // PTX the decode path already has compiled.
+        if batch_size <= 1 {
+            return self.per_head_rmsnorm_into(input, gamma, output, head_dim, num_heads, epsilon);
+        }
+
+        let kernel_type = KernelType::BatchedPerHeadRmsNorm {
+            head_dim,
+            num_heads,
+            batch: batch_size,
+            epsilon,
+        };
+        let kernel_name = self.kernels.kernel_name(&kernel_type);
+        // GH-129: the PTX depends on head_dim/num_heads/epsilon (immediates) but
+        // NOT on batch_size (grid dim only) — keep it out of the cache key so a
+        // new prompt length does not force a JIT recompile.
+        let cache_key = format!("batched_per_head_rmsnorm_{}_{}", head_dim, num_heads);
+
+        if !self.modules.contains_key(&cache_key) {
+            let ptx = self.kernels.generate_ptx(&kernel_type);
+            let module = self.compile_ptx(&ptx)?;
+            self.modules.insert(cache_key.clone(), module);
+        }
+
+        let module = self
+            .modules
+            .get_mut(&cache_key)
+            .expect("module just inserted");
+
+        // One warp (32 threads) per head, one block per (sequence, head)
+        let config = LaunchConfig::grid_2d(num_heads, batch_size, 32, 1);
+
+        let mut ptr_input = input.as_ptr();
+        let mut ptr_output = output.as_ptr();
+        let mut ptr_gamma = gamma.as_ptr();
+
+        // SAFETY: Memory safety ensured by bounds checking and alignment
+        unsafe {
+            self.stream.launch_kernel(
+                module,
+                kernel_name,
+                &config,
+                &mut [
+                    std::ptr::from_mut(&mut ptr_input) as *mut std::ffi::c_void,
+                    std::ptr::from_mut(&mut ptr_output) as *mut std::ffi::c_void,
+                    std::ptr::from_mut(&mut ptr_gamma) as *mut std::ffi::c_void,
+                ],
+            )?;
+        }
+
+        // trueno#243 / #3413 A: every kernel on a graph path records itself, or
+        // the manually rebuilt graph silently drops it.
+        if self.graph_recording {
+            let module = self.modules.get_mut(&cache_key).expect("module exists");
+            let func = module.get_function(kernel_name)?;
+            self.graph_recorded_kernels.push(RecordedKernel {
+                func: SendCUfunction(func),
+                config,
+                arg_data: vec![ptr_input, ptr_output, ptr_gamma],
+            });
+        }
+
+        Ok(())
+    }
+
     /// PAR-112: Batched RMSNorm for M sequences in parallel
     ///
     /// Processes M sequences in a single kernel launch using Grid.y = M.
