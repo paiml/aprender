@@ -461,7 +461,7 @@ impl CudaExecutor {
     /// PAR-112: Batched RMSNorm for M sequences in parallel
     ///
     /// Processes M sequences in a single kernel launch using Grid.y = M.
-    /// Achieves ~4x speedup over M sequential kernel launches by eliminating
+    /// One launch for all M sequences instead of M sequential launches, removing
     /// kernel launch overhead.
     ///
     /// # Arguments

@@ -502,7 +502,7 @@ impl OwnedQuantizedModel {
     ///
     /// Uses pre-quantized Q8K activations for faster matmul with Q4K weights.
     /// Dispatches to `fused_q4k_q8k_parallel_matvec_into` (maddubs-based, 32 vals/instr)
-    /// instead of the f32 dequant path (8 vals/instr) for ~3-4x speedup on QKV projections.
+    /// instead of the f32 dequant path (8 vals/instr) on QKV projections.
     pub fn qkv_matmul_q8k_into(
         &self,
         input: &[f32],
