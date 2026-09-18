@@ -344,6 +344,21 @@ impl CudaExecutor {
             )?;
         }
 
+        // trueno#243 / #3413: the manual decode graph is rebuilt ONLY from
+        // `graph_recorded_kernels`. This was the one decode-path kernel that never
+        // pushed itself, so every replayed step ran Qwen3 without QK-norm and
+        // diverged at position 1 on sm_89 and GB10 alike (position 0 is immune:
+        // attention over one key is V, and RoPE(0) is the identity).
+        if self.graph_recording {
+            let module = self.modules.get_mut(&cache_key).expect("module exists");
+            let func = module.get_function(kernel_name)?;
+            self.graph_recorded_kernels.push(RecordedKernel {
+                func: SendCUfunction(func),
+                config,
+                arg_data: vec![ptr_input, ptr_output, ptr_gamma],
+            });
+        }
+
         Ok(())
     }
 
