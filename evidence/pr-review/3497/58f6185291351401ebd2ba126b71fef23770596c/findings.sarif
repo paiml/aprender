@@ -1,0 +1,148 @@
+{
+  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat",
+          "version": "2.217.0",
+          "informationUri": "https://github.com/paiml/aprender/blob/main/.claude/skills/pr-review/SKILL.md",
+          "rules": [
+            {
+              "id": "landmine-colon-optional-gap",
+              "shortDescription": { "text": "NOCLOSE_LANDMINE_RE requires a literal colon; CLOSE_RE's colon is optional, leaving a colon-less landmine variant undetected." }
+            },
+            {
+              "id": "doc-drift-apr-release-001-no-close",
+              "shortDescription": { "text": "APR-RELEASE-001 §6 R-2 still documents the retired 'no-close:' marker as sanctioned; the new guard now hard-fails it." }
+            },
+            {
+              "id": "self-test-vacuity-floor-stale",
+              "shortDescription": { "text": "self_test()'s vacuity floor (9) was not raised to reflect the table's new size (19) after this diff added 10 rows." }
+            }
+          ]
+        }
+      },
+      "results": [
+        {
+          "ruleId": "landmine-colon-optional-gap",
+          "level": "warning",
+          "message": {
+            "text": "NOCLOSE_LANDMINE_RE (scripts/check_pr_closes_issue.sh:64) requires a literal ':' between the hyphen-prefixed keyword and the '#N' reference. CLOSE_RE (line 56), and per the PR's own account of GitHub's parser, treats the colon as optional. A body reading 'no-fixes #123 tracked elsewhere' (no colon) is NOT caught by the landmine check and is then matched by CLOSE_RE as a valid closing reference, so the script prints 'PASS: every cited issue has a closing keyword.' -- the exact false-PASS shape #3400 exists to eliminate, just without the colon. Reproduced live against the PR head. Independently found by the antigravity (agy, gemini-3.1-pro-high) consultation in the same run with a different literal body ('no-close #123'); see the antigravity run's 'missing-optional-colon-in-landmine-re' result and consultations.antigravity.divergence (agreed=1)."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": { "uri": "scripts/check_pr_closes_issue.sh" },
+                "region": { "startLine": 64 }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "precision_class": "advisory",
+            "command": ["bash", "scripts/check_pr_closes_issue.sh", "--body", "/tmp/colon_gap_body.txt"],
+            "command_stdin_body": "no-fixes #123 tracked elsewhere",
+            "exit_code": 0,
+            "stdout_sha256": "52ee57adc844d6e8e53058995dddc89888d6e3699aa8d4976a3c268c9754b3b6",
+            "failure_scenario": "An author writes 'no-close #123' or 'wont-fix #123' (forgetting the colon that every example in the new docstring and self-test uses) intending to keep #123 open. The guard PASSes the PR body instead of flagging the #3400 landmine class, GitHub's parser still reads the hyphenated keyword and closes #123 on merge -- reproducing the incident this PR was written to stop, in a colon-less variant the fix does not cover."
+          }
+        },
+        {
+          "ruleId": "doc-drift-apr-release-001-no-close",
+          "level": "warning",
+          "message": {
+            "text": "docs/specifications/APR-RELEASE-001-train-and-build-kaizen.md:566 (the spec this script's own header cites as its authority: 'APR-RELEASE-001 section 6, predicate R-2') still reads: '...guard `scripts/check_pr_closes_issue.sh` on the PR; `Refs #N` is allowed only with `no-close:` and a reason'. This diff renames the sanctioned marker from `no-close:` to `keep-open:` in the guard and its self-test, but does not update this line. A contributor who follows the spec as written will use `no-close:` and be hard-failed by the very guard the spec is describing, with no indication in the spec of why."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": { "uri": "docs/specifications/APR-RELEASE-001-train-and-build-kaizen.md" },
+                "region": { "startLine": 566 }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "precision_class": "advisory",
+            "command": ["grep", "-n", "no-close:\\|keep-open:", "docs/specifications/APR-RELEASE-001-train-and-build-kaizen.md"],
+            "exit_code": 0,
+            "stdout_sha256": "8c84ca1c27da152a1f0ac91c03c59558345f80c10e6db1d1d7e8284fe456741d",
+            "failure_scenario": "A future contributor reads APR-RELEASE-001 §6 R-2 (the canonical spec this guard implements), writes `no-close: #N <reason>` exactly as documented, and gets a CI failure ('#3400 landmine') that contradicts the spec they just followed -- with no cross-reference telling them the spec is stale and `keep-open:` is now required."
+          }
+        },
+        {
+          "ruleId": "self-test-vacuity-floor-stale",
+          "level": "note",
+          "message": {
+            "text": "self_test()'s vacuity floor at the end of the function (`if [ \"$cases\" -lt 9 ]`) was written when the table had 9 rows. This diff adds 10 more (3 landmine write_case rows plus overhead), bringing the true count to 19 (confirmed: `self-test OK: 19 case(s).`), but the floor constant was left at 9. The file's own comment already documents that the floor 'does not catch a deleted row' -- true, and now truer: an accidental deletion of up to 10 of the 19 rows (including all 3 new landmine rows) would still clear the floor and print a green self-test."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": { "uri": "scripts/check_pr_closes_issue.sh" },
+                "region": { "startLine": 357 }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "precision_class": "advisory",
+            "command": ["bash", "scripts/check_pr_closes_issue.sh", "--self-test"],
+            "exit_code": 0,
+            "stdout_sha256": "7237204814da1ae27f21d8bd03c3740bdac02ec76046244b0f4ef4cc70ecc87b",
+            "failure_scenario": "A later edit silently drops several of the 3 new landmine rows (e.g. during a refactor) and the self-test still reports green, because the floor never moved to reflect the rows this PR added -- the exact 'completeness is a ratchet, not a floor' gap the file's own comment names, now with a wider unguarded margin (10 rows instead of the pre-existing slack)."
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "cargo-mutants",
+          "version": "n/a (no dedicated mutate_*.sh harness for scripts/check_pr_closes_issue.sh; 5 mutants hand-constructed per the skill's fallback, run via --self-test)"
+        }
+      },
+      "results": []
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity",
+          "version": "agy 1.2.6",
+          "rules": [
+            {
+              "id": "missing-optional-colon-in-landmine-re",
+              "shortDescription": { "text": "NOCLOSE_LANDMINE_RE requires a literal colon whereas CLOSE_RE makes it optional, creating a blind spot for colon-less landmines." }
+            }
+          ]
+        }
+      },
+      "results": [
+        {
+          "ruleId": "missing-optional-colon-in-landmine-re",
+          "level": "warning",
+          "message": {
+            "text": "If a user types 'no-close #123' (omitting the colon), NOCLOSE_LANDMINE_RE fails to catch it because the regex strictly requires a colon ([[:space:]]*:[[:space:]]*). However, CLOSE_RE matches 'close #123' because its colon is optional (:?), leading the script to wrongly report \"PASS: every cited issue has a closing keyword.\" GitHub then proceeds to close the issue on merge, which is exactly the #3400 bug this PR intends to prevent."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": { "uri": "scripts/check_pr_closes_issue.sh" },
+                "region": { "startLine": 64 }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "precision_class": "advisory",
+            "command": ["bash", "-c", "echo 'no-close #123' > test.txt && bash scripts/check_pr_closes_issue.sh --body test.txt"],
+            "measured_by": "antigravity (agy, gemini-3.1-pro-high) -- not re-run by the primary reviewer; see reverified_by_primary",
+            "failure_scenario": "If a user types 'no-close #123' (omitting the colon), the guard reports PASS and GitHub closes the referenced issue on merge -- the #3400 bug this PR intends to prevent, in a colon-less variant the fix does not cover."
+          }
+        }
+      ]
+    }
+  ]
+}
