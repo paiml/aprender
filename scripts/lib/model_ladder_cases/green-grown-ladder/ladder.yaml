@@ -1,0 +1,41 @@
+ladder:
+  hosts:
+  - cc: sm_89
+    gpu: RTX 4090
+    id: lambda
+    required: true
+  - cc: sm_121
+    gpu: GB10
+    id: gx10
+    required: true
+  rungs:
+  - arch: qwen2
+    backends:
+    - cpu
+    - cuda
+    file: c.gguf
+    id: ctrl-q4km
+    required: true
+    sha256: '0000000000000000000000000000000000000000000000000000000000000000'
+  - arch: qwen3
+    backends:
+    - cpu
+    - cuda
+    file: q.gguf
+    id: q3-q4km
+    required: true
+    sha256: '1111111111111111111111111111111111111111111111111111111111111111'
+  - arch: phi3
+    backends:
+    - cpu
+    file: o.gguf
+    id: opt-q4km
+    required: false
+    sha256: '2222222222222222222222222222222222222222222222222222222222222222'
+  - arch: llama
+    backends:
+    - cpu
+    file: n.gguf
+    id: new-q4km
+    required: true
+    sha256: '3333333333333333333333333333333333333333333333333333333333333333'

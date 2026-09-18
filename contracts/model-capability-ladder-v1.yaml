@@ -1,0 +1,185 @@
+metadata:
+  version: 1.0.0
+  created: '2026-09-18'
+  author: PAIML Engineering
+  description: "Model capability ladder — the pre-release proof that every model ARCHITECTURE a release claims to support actually produces correct output on every backend it claims, on every silicon class the fleet ships for. One rung per (architecture, quant); each rung is measured by `apr qa` (capability_match + golden_output on CPU and GPU) plus the `apr run --gpu` fallback line, per host, and the per-host receipt is what T-2 reads. Born from the 0.68.1 finding (EPIC #3477): dense Qwen3 on CUDA diverged at position 1 (argmax 25 != 198) on sm_89 AND GB10, the parity guard silently fell back to CPU, `apr qa` was the only surface that said so, and no release step ran `apr qa` on a Qwen3 — the dogfood picks `find ~/models | head -1` and checks that a command printed something."
+  kind: pattern
+  references:
+    - "scripts/model_ladder.sh — per-host runner, writes evidence/dogfood/models/<version>/<host>.json"
+    - "scripts/check_model_ladder.sh — the declared dogfood gate (Cargo.toml [package.metadata.dogfood]) that reads every required host's receipt"
+    - "docs/specifications/APR-RELEASE-001-train-and-build-kaizen.md §4 T-2 — the row this contract discharges"
+    - "paiml/aprender#3477 (EPIC 0.68.2 — measured matrix, contract gaps, SHACL rows)"
+    - "paiml/aprender#3413 (dense Qwen3 GPU divergence — the rung this ladder is RED on today)"
+    - "paiml/aprender#3432 (second refusal site — `apr qa` capability_match red on qwen35 while `apr run` serves it)"
+    - "contracts/apr-cpu-vs-gpu-output-parity-v1.yaml (per-inference parity guard; this ladder is its release-time consumer)"
+    - "contracts/qwen-story-v1.yaml (the narrative ladder 0.5B → 30B-MoE; it has no dense-Qwen3 rung and no per-backend golden check)"
+  tags:
+    - dogfood
+    - release-gate
+    - model-support
+    - gpu-parity
+    - qwen3
+
+five_whys:
+  symptom: "Alfredo: 'it doesn't work'. Dense Qwen3 `--gpu` on 0.68.1 produces garbage on CUDA on both fleet GPUs and silently runs on CPU; `apr qa` names it (Golden Output FAIL) while the same run's Throughput and GPU-Speedup gates PASS on the garbage path."
+  why_1: "No release step runs `apr qa` on a dense Qwen3, or on any model per architecture: the dogfood grid takes ONE model (`find ~/models | head -1`) and its check is `| head -1 && echo OK` — that a command printed a line."
+  why_2: "The per-inference parity guard is designed to hide the failure from the user (CPU fallback), so the only observable is a warning line nobody greps for and a qa gate nobody runs."
+  why_3: "The contracts that cover this surface were proved against the wrong object: qk-norm-v1 FALSIFY-QKN-006 compares CPU to a 'GPU reference simulation', KANI-QK_NOR-008 is a Kani harness for a CUDA kernel, apr-cpu-vs-gpu-output-parity-v1 has no qa_gate, qwen3-e2e-verification-v1 self-declares coverage = 1.0."
+  why_4: "The support claim lives in prose (README, book, #3077's table-to-be) and evidence/models/supported.yaml is a citation index with no arch, backend or receipt column (#3369)."
+  why_5: "There was no unit of release evidence at the granularity 'this ARCHITECTURE on this BACKEND on this SILICON' — the unit was 'a model ran' or 'a kernel test passed'."
+  root_cause: "Capability was asserted per binary, never measured per (architecture, backend, silicon). The ladder makes that triple the unit of evidence and the receipt the thing T-2 reads."
+
+# THE LADDER. One rung per (family, arch, quant). `required: true` rungs must be
+# present and green on every required host before T-2 is green; an absent
+# required rung on a host is a FAIL for that host, not a SKIP (a host that does
+# not hold the model has not measured it). `backends` is what the RELEASE claims
+# for that arch; a claimed backend that falls back is RED.
+# sha256 pins the exact file: a rung measured on a different file is a different
+# measurement (Q5_K taught us three readers can each invent a layout).
+ladder:
+  hosts:
+    - { id: lambda, isa: x86_64, gpu: "RTX 4090", cc: sm_89,  required: true }
+    - { id: gx10,   isa: aarch64, gpu: "GB10",     cc: sm_121, required: true }
+  rungs:
+    - id: qwen2-1.5b-q4km
+      family: qwen2.5
+      arch: qwen2
+      file: qwen2.5-1.5b-instruct-q4_k_m.gguf
+      sha256: 6a1a2eb6d15622bf3c96857206351ba97e1af16c30d7a74ee38970e434e9407e
+      backends: [cpu, cuda]
+      required: true
+      note: "control rung — the architecture every other gate already exercises; if this is red the host is broken, not the model"
+    - id: qwen3-1.7b-q4km
+      family: qwen3
+      arch: qwen3
+      file: Qwen3-1.7B-Q4_K_M.gguf
+      sha256: b139949c5bd74937ad8ed8c8cf3d9ffb1e99c866c823204dc42c0d91fa181897
+      backends: [cpu, cuda]
+      required: true
+      note: "dense Qwen3 (per-head QK RMSNorm) — RED on cuda at 4a538ddef on both hosts (#3413)"
+    - id: qwen3-8b-q4km
+      family: qwen3
+      arch: qwen3
+      file: Qwen3-8B-Q4_K_M.gguf
+      sha256: d98cdcbd03e17ce47681435b5150e34c1417f50b5c0019dd560e4882c5745785
+      backends: [cpu, cuda]
+      required: false
+      note: "second dense-Qwen3 size; required once #3413 lands so the fix is proved at two widths"
+    - id: qwen35-0.8b-q4km
+      family: qwen3.5
+      arch: qwen35
+      file: Qwen3.5-0.8B-Q4_K_M.gguf
+      sha256: bd258782e35f7f458f8aced1adc053e6e92e89bc735ba3be89d38a06121dc517
+      backends: [cpu]
+      required: true
+      note: "hybrid Gated DeltaNet — cpu only until #3090; `apr qa` capability_match RED at 4a538ddef because of the second refusal site (#3432)"
+
+equations:
+  rung_green:
+    formula: "green(rung, host) = present(file, sha256) ∧ qa.capability_match ∧ qa.golden_output ∧ ∀ b ∈ backends: ran_on(b) ∧ ¬fallback(b)"
+    domain: "every rung in ladder.rungs, every host in ladder.hosts with required: true"
+    invariants:
+      - "`apr qa --json` is the measurement; a Skipped gate counts as NOT passed even though the report marks it passed:true"
+      - "ran_on(cuda) is proved by the ABSENCE of the `diverges from CPU … falling back to CPU` and `path rejected` lines in `apr run --gpu` output, never by the flag that was passed"
+      - "a rung the host does not hold is absent, and absent is FAIL for a required rung: an unmeasured claim is not a passed claim"
+    preconditions:
+      - "binary pinned via scripts/apr_bin.sh (built from HEAD) or DOGFOOD_ALLOW_UNPINNED=1 for the published-crate mode"
+  host_receipt:
+    formula: "receipt(host) = {host, version, sha, gpu, cc, rungs: [{id, present, capability_match, golden_output, backends: {b: {ran, fallback}}}]}"
+    domain: "evidence/dogfood/models/<version>/<host>.json, written only by scripts/model_ladder.sh"
+    invariants:
+      - "receipt.version equals the cargo root version of the tree it was measured on"
+      - "receipt.sha equals the git HEAD the binary was built from"
+      - "receipt.executed >= 1 — a receipt that measured nothing is a decline (exit 2), never a pass"
+    preconditions:
+      - "python3 with json on the host (yaml is read by python3 too)"
+  gate_verdict:
+    formula: "T2_models = ∀ host required: receipt(host) fresh(version) ∧ ∀ rung required: green(rung, host)"
+    domain: "scripts/check_model_ladder.sh, invoked by scripts/dogfood.sh through [package.metadata.dogfood]"
+    invariants:
+      - "the rung list at origin/main is the floor: a PR may add rungs, hosts or backends and may not remove any (same construction as check_multiplatform_dogfood.sh layer 2)"
+      - "a missing receipt is FAIL, not DEFER: unlike the multiplatform gate this needs no published crate, a dev build measures it"
+    preconditions:
+      - "git can read origin/main:contracts/model-capability-ladder-v1.yaml, or the run is the bootstrap"
+
+proof_obligations:
+  - id: MCL-INV-001
+    type: invariant
+    property: "Every architecture the release claims is a rung"
+    formal: "∀ arch ∈ claimed_archs(README, book, #3077 table): ∃ rung ∈ ladder.rungs with rung.arch = arch"
+    applies_to: rung_green
+  - id: MCL-INV-002
+    type: invariant
+    property: "A claimed backend that silently falls back is red"
+    formal: "fallback(cuda) ⟹ ¬green(rung, host), even when the final tokens are correct"
+    applies_to: rung_green
+  - id: MCL-INV-003
+    type: invariant
+    property: "The gate is red on the tree it was born on"
+    formal: "verdict(gate, 4a538ddef, receipts₁) = 1 ∧ {qwen3-1.7b-q4km/cuda, qwen35-0.8b-q4km/capability_match} ⊆ failures(gate, 4a538ddef, receipts₁) ∧ ∀ h ∈ {lambda, gx10}: h ∈ failing_hosts"
+    applies_to: gate_verdict
+  - id: MCL-INV-004
+    type: invariant
+    property: "Receipts are per host and per version, never inherited across silicon"
+    formal: "∀ h₁, h₂ ∈ hosts: h₁ ≠ h₂ ⟹ green(rung, h₁) ∌ evidence(rung, h₂) ∧ T2 ⟹ ∀ h ∈ required_hosts: ∃ receipt(h, version)"
+    applies_to: host_receipt
+  - id: MCL-INV-005
+    type: invariant
+    property: "The ladder can grow and cannot shrink in the same PR that reads it"
+    formal: "rungs(origin/main) ⊆ rungs(HEAD) ∧ hosts(origin/main) ⊆ hosts(HEAD) ∧ ∀ rung: backends_main(rung) ⊆ backends_head(rung)"
+    applies_to: gate_verdict
+
+falsification_tests:
+  - id: FALSIFY-MCL-001
+    rule: "Runner and gate exist and are executable"
+    prediction: "both scripts are regular files with the execute bit"
+    test: "test -x scripts/model_ladder.sh && test -x scripts/check_model_ladder.sh"
+    if_fails: "the ladder is a document, not a gate"
+  - id: FALSIFY-MCL-002
+    rule: "The gate is declared to the dogfood"
+    prediction: "Cargo.toml [package.metadata.dogfood] gates names scripts/check_model_ladder.sh"
+    test: "grep -q 'scripts/check_model_ladder.sh' Cargo.toml"
+    if_fails: "a gate no runner calls is a facility with a self-test and no caller"
+  - id: FALSIFY-MCL-003
+    rule: "The gate discriminates — its case table runs and every case lands on its expected exit"
+    prediction: "check_model_ladder.sh --self-test exits 0 and reports >= 6 cases (green, red-golden, red-fallback, red-capability, stale-version, vacuous-empty)"
+    test: "bash scripts/check_model_ladder.sh --self-test"
+    if_fails: "a validator that has only seen valid input is indistinguishable from exit 0"
+  - id: FALSIFY-MCL-004
+    rule: "Skipped is not passed"
+    prediction: "a receipt whose golden_output gate is skipped:true, passed:true is RED"
+    test: "bash scripts/check_model_ladder.sh --self-test --case red-skipped-is-not-passed"
+    if_fails: "`apr qa --json` marks skipped gates passed:true; a reader that trusts `passed` alone passes a model that was never generated from"
+  - id: FALSIFY-MCL-005
+    rule: "Fallback is red even when tokens are right"
+    prediction: "a receipt with backends.cuda.fallback=true and golden_output passed is RED"
+    test: "bash scripts/check_model_ladder.sh --self-test --case red-fallback"
+    if_fails: "the parity guard's CPU fallback produces correct text; a text-only check certifies a GPU path that never ran"
+  - id: FALSIFY-MCL-006
+    rule: "The runner never reads $? through a pipe and never invokes a bare apr"
+    prediction: "model_ladder.sh sources scripts/apr_bin.sh and has no `| … ; rc=$?` shape"
+    test: "grep -q 'scripts/apr_bin.sh' scripts/model_ladder.sh && ! grep -E '\\|[^|]*; *rc=\\$\\?' scripts/model_ladder.sh"
+    if_fails: "two release gates in this repo could never fail for exactly this reason (#2336, #2360)"
+  - id: FALSIFY-MCL-007
+    rule: "The ladder at origin/main is a floor"
+    prediction: "removing a rung present at origin/main makes the gate exit 1 with 'DROPPED'"
+    test: "bash scripts/check_model_ladder.sh --self-test --case red-dropped-rung"
+    if_fails: "any state the author writes and the gate reads can be moved in the same commit"
+  - id: FALSIFY-MCL-008
+    rule: "Contract validates"
+    prediction: "pv validate accepts this file"
+    test: "pv validate contracts/model-capability-ladder-v1.yaml"
+    if_fails: "schema drift"
+
+qa_gate:
+  id: F-MCL-001
+  name: Model Capability Ladder
+  description: "T-2 pre-publish: every required rung green on every required host, per receipt"
+  checks:
+    - receipts_present_per_required_host
+    - receipt_version_matches_cut
+    - required_rungs_present_and_green
+    - claimed_backends_ran_without_fallback
+    - ladder_not_shrunk_vs_origin_main
+  pass_criteria: "check_model_ladder.sh exits 0 with executed >= 1 on every required host"
+  falsification: "plant a receipt with cuda.fallback=true → exit 1"
