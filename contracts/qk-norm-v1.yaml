@@ -102,14 +102,14 @@ kani_harnesses:
   obligation: QKN-INV-001
   property: RMSNorm output finite for small vectors
   bound: 8
-  strategy: stub_float
+  strategy: exhaustive
   solver: cadical
   harness: verify_qk_norm_finite
 - id: KANI-QKN-002
   obligation: QKN-INV-004
   property: Zero input produces zero output (eps-guarded)
   bound: 8
-  strategy: stub_float
+  strategy: exhaustive
   solver: cadical
   harness: verify_qk_norm_zero_stability
 - id: KANI-QK_NOR-003
@@ -121,7 +121,7 @@ kani_harnesses:
   obligation: Output amplitude bounded
   property: Output amplitude bounded
   bound: 8
-  strategy: stub_float
+  strategy: exhaustive
 - id: KANI-QK_NOR-005
   obligation: Idempotent with unit weight
   property: Idempotent with unit weight
@@ -141,7 +141,7 @@ kani_harnesses:
   obligation: GPU kernel matches CPU reference
   property: "GPU reference SIMULATION matches CPU reference — this harness checks the algorithm in Rust, it cannot execute the CUDA kernel or the graph that dispatches it; the kernel-on-the-generation-path obligation is discharged only by FALSIFY-QKN-006 (measured per host), never by this harness (#3477)"
   bound: 8
-  strategy: stub_float
+  strategy: exhaustive
 - id: KANI-QK_NOR-009
   obligation: Per-head independence
   property: Per-head independence
