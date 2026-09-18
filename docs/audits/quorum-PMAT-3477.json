@@ -2,13 +2,13 @@
   "ticket": "PMAT-3477",
   "base": "main",
   "base_resolved": "origin/main",
-  "base_note": "local main differs from origin/main by 91 commit(s); judged against origin/main",
-  "head": "0dec4d7d2aa1295c20d5ecb83e0ab098473353b6",
-  "diff_sha256": "10eed716f3af9451fbc6927b1baf003d00736a18211a453999581b1240c6528b",
+  "base_note": "local main differs from origin/main by 92 commit(s); judged against origin/main",
+  "head": "4133f35ebfeb4ce643eca30b4259fccab537459a",
+  "diff_sha256": "d1e59c398c76bbf6db126df810a8e3001db12c259f75eab7a41a6194edc699ae",
   "width": 3,
   "executor": "agy",
-  "prompt_mode": "file",
-  "prompt_bytes": 112317,
+  "prompt_mode": "inline",
+  "prompt_bytes": 8700,
   "author": {
     "model": "claude-fable-5-1",
     "family": "claude",
@@ -20,10 +20,29 @@
       "lane": 1,
       "status": "SUCCESS",
       "verdict": "PASS",
-      "summary": "I have completely reviewed the provided diff against ticket PMAT-3477 (\"0.68.2 T-2 Models row: model capability ladder gate\"). The diff correctly and thoroughly implements the model capability ladder gate, hooks it into the `apr-dogfood` process via `Cargo.toml`, updates `APR-RELEASE-001-train-and-build-kaizen.md` to reflect the new T-2 models row, and introduces the required `scripts/model_ladder.sh` and `scripts/check_model_ladder.sh` tools. I verified the 13 test cases in `scripts/lib/model_ladder_cases/` correctly back all assertions, including `executed=0`, skipped-is-not-passed, and fallback=true cases. The baseline receipts for 0.68.1 properly capture the RED states from the dense Qwen3 CUDA fallback (#3413) and Qwen3.5 capability match (#3432), effectively proving the gate's discriminatory power as outlined in the ticket. No changes fall outside the scope of the ticket, and the gate enforces exactly the stated requirements.",
-      "findings": [],
-      "raw_bytes": 4675,
-      "err_bytes": 100,
+      "summary": "The diff successfully co-evolves the contracts for the qwen3 GPU surface by adding explicit validations against silent fallbacks (ensuring the real GPU kernel is dispatched) and enforcing per-architecture output parity checks. The added QA gates and falsification tests accurately match the goals of EPIC #3477 as stated in the ticket brief.",
+      "findings": [
+        {
+          "claim": "Adds QW3E-DEV-009 with formal: '∀ h ∈ required_hosts: fallback(cuda, h) = ⊥ ∧ ran(cuda, h)' to prevent silent fallback.",
+          "file": "contracts/qwen3-e2e-verification-v1.yaml",
+          "grounding": "cited",
+          "line": 130
+        },
+        {
+          "claim": "Adds FALSIFY-CPU-GPU-015: 'Parity is per ARCHITECTURE, not per binary — a green qwen2 says nothing about qwen3'",
+          "file": "contracts/apr-cpu-vs-gpu-output-parity-v1.yaml",
+          "grounding": "cited",
+          "line": 569
+        },
+        {
+          "claim": "Updates FALSIFY-QKN-006 rule to 'Cross-backend equivalence — the REAL kernel, on the path generation takes'",
+          "file": "contracts/qk-norm-v1.yaml",
+          "grounding": "cited",
+          "line": 86
+        }
+      ],
+      "raw_bytes": 3221,
+      "err_bytes": 0,
       "envelope_status": "SUCCESS",
       "verdict_source": "structured_output",
       "grounding_check": "parity",
@@ -36,9 +55,28 @@
       "lane": 2,
       "status": "SUCCESS",
       "verdict": "PASS",
-      "summary": "Thorough review of the full diff against PMAT-3477 (PR #3479, EPIC #3477) found no refuting conditions.\n\nVerification results:\n1. FALSIFY-MCL-001 through FALSIFY-MCL-008 all pass.\n2. `scripts/check_model_ladder.sh --self-test` executes all 13 discrimination test cases with 0 failures.\n3. `pv validate contracts/model-capability-ladder-v1.yaml` and `pv lint` pass with 0 errors/warnings.\n4. `scripts/check_readme_claims.sh`, `scripts/check_verifier_pinning.sh`, and `scripts/check_no_claim_literals.sh` pass cleanly.\n5. Both `scripts/model_ladder.sh` and `scripts/check_model_ladder.sh` pass `bash -n`, `shellcheck -S error`, and `bashrs lint --level error` with 0 errors.\n6. The model hashes in `contracts/model-capability-ladder-v1.yaml` match the actual models on disk.\n7. `scripts/check_model_ladder.sh` against the 0.68.1 receipts evaluates to RED (exit code 1) on both `lambda` and `gx10`, proving red-capability at commit 4a538ddef as required by MCL-INV-003.\n8. The diff implements all requirements of the ticket without scope creep or weakened gates.",
-      "findings": [],
-      "raw_bytes": 3430,
+      "summary": "Diff for PMAT-3477 / PR #3480 correctly co-evolves the contract surface for Qwen3 GPU support across contracts/apr-cpu-vs-gpu-output-parity-v1.yaml, contracts/qk-norm-v1.yaml, and contracts/qwen3-e2e-verification-v1.yaml. All gates are strengthened, tests accurately reflect ticket requirements, no gates are weakened, and all changes are strictly within scope.",
+      "findings": [
+        {
+          "claim": "FALSIFY-CPU-GPU-015 and qa_gate F-CPU-GPU-PARITY-001 added to require that CPU-vs-GPU output parity is enforced per-architecture across required hosts without silent fallback.",
+          "file": "contracts/apr-cpu-vs-gpu-output-parity-v1.yaml",
+          "grounding": "cited",
+          "line": 569
+        },
+        {
+          "claim": "FALSIFY-QKN-006 updated to verify the real CUDA kernel on the generation path via ladder receipts rather than a reference simulation; FALSIFY-QKN-008 added to retain algorithmic testing; pass_criteria increased from 7 to 8 tests.",
+          "file": "contracts/qk-norm-v1.yaml",
+          "grounding": "cited",
+          "line": 86
+        },
+        {
+          "claim": "Proof obligations QW3E-PAR-008 and QW3E-DEV-009 added with falsification tests FALSIFY-QW3E-008 and FALSIFY-QW3E-009, forbidding silent CPU fallback and requiring real-silicon parity receipts; pass_criteria increased from 7 to 9 tests.",
+          "file": "contracts/qwen3-e2e-verification-v1.yaml",
+          "grounding": "cited",
+          "line": 124
+        }
+      ],
+      "raw_bytes": 3861,
       "err_bytes": 0,
       "envelope_status": "SUCCESS",
       "verdict_source": "structured_output",
@@ -52,9 +90,28 @@
       "lane": 3,
       "status": "SUCCESS",
       "verdict": "PASS",
-      "summary": "The diff in PR #3479 faithfully implements ticket PMAT-3477 (EPIC #3477) for the 0.68.2 T-2 Models row model capability ladder gate. It adds the provable contract `contracts/model-capability-ladder-v1.yaml`, runner `scripts/model_ladder.sh`, dogfood gate `scripts/check_model_ladder.sh` with 13 self-test discrimination cases, updates `Cargo.toml` dogfood gates metadata, updates `APR-RELEASE-001-train-and-build-kaizen.md` §4 T-2 Models row, updates `.claude/skills/apr-dogfood/SKILL.md` P6 section, and records the initial 0.68.1 RED baseline receipts for lambda and gx10. All checks, self-tests, and validators pass cleanly.",
-      "findings": [],
-      "raw_bytes": 2534,
+      "summary": "Diff for PMAT-3477 correctly co-evolves the contract surface for Qwen3 GPU support across apr-cpu-vs-gpu-output-parity-v1.yaml, qk-norm-v1.yaml, and qwen3-e2e-verification-v1.yaml. All gates are strengthened (requiring real-silicon ladder receipts and forbidding silent fallback), no tests assert opposite conditions, and the diff strictly adheres to the ticket scope.",
+      "findings": [
+        {
+          "claim": "Added FALSIFY-CPU-GPU-015 and F-CPU-GPU-PARITY-001 qa_gate in contracts/apr-cpu-vs-gpu-output-parity-v1.yaml ensuring CPU vs GPU parity is validated per-architecture on required hosts without silent fallbacks.",
+          "file": "contracts/apr-cpu-vs-gpu-output-parity-v1.yaml",
+          "grounding": "cited",
+          "line": 569
+        },
+        {
+          "claim": "Updated FALSIFY-QKN-006 in contracts/qk-norm-v1.yaml to check real GPU kernel execution on generation paths rather than reference simulation, preserved algorithm testing under FALSIFY-QKN-008, and updated qa_gate pass criteria to all 8 falsification tests.",
+          "file": "contracts/qk-norm-v1.yaml",
+          "grounding": "cited",
+          "line": 86
+        },
+        {
+          "claim": "Added proof obligations QW3E-PAR-008 (GPU/CPU parity invariant) and QW3E-DEV-009 (selected device liveness without silent fallback) with falsification tests FALSIFY-QW3E-008/009 and updated qa_gate to require all 9 falsification tests.",
+          "file": "contracts/qwen3-e2e-verification-v1.yaml",
+          "grounding": "cited",
+          "line": 124
+        }
+      ],
+      "raw_bytes": 3998,
       "err_bytes": 0,
       "envelope_status": "SUCCESS",
       "verdict_source": "structured_output",
@@ -66,13 +123,62 @@
     }
   ],
   "dissent": [],
-  "dedup": [],
+  "dedup": [
+    {
+      "file": "contracts/apr-cpu-vs-gpu-output-parity-v1.yaml",
+      "line": 569,
+      "lanes_agreeing": [
+        1,
+        2,
+        3
+      ],
+      "claims": [
+        "Added FALSIFY-CPU-GPU-015 and F-CPU-GPU-PARITY-001 qa_gate in contracts/apr-cpu-vs-gpu-output-parity-v1.yaml ensuring CPU vs GPU parity is validated per-architecture on required hosts without silent fallbacks.",
+        "Adds FALSIFY-CPU-GPU-015: 'Parity is per ARCHITECTURE, not per binary — a green qwen2 says nothing about qwen3'",
+        "FALSIFY-CPU-GPU-015 and qa_gate F-CPU-GPU-PARITY-001 added to require that CPU-vs-GPU output parity is enforced per-architecture across required hosts without silent fallback."
+      ]
+    },
+    {
+      "file": "contracts/qk-norm-v1.yaml",
+      "line": 86,
+      "lanes_agreeing": [
+        1,
+        2,
+        3
+      ],
+      "claims": [
+        "FALSIFY-QKN-006 updated to verify the real CUDA kernel on the generation path via ladder receipts rather than a reference simulation; FALSIFY-QKN-008 added to retain algorithmic testing; pass_criteria increased from 7 to 8 tests.",
+        "Updated FALSIFY-QKN-006 in contracts/qk-norm-v1.yaml to check real GPU kernel execution on generation paths rather than reference simulation, preserved algorithm testing under FALSIFY-QKN-008, and updated qa_gate pass criteria to all 8 falsification tests.",
+        "Updates FALSIFY-QKN-006 rule to 'Cross-backend equivalence — the REAL kernel, on the path generation takes'"
+      ]
+    },
+    {
+      "file": "contracts/qwen3-e2e-verification-v1.yaml",
+      "line": 124,
+      "lanes_agreeing": [
+        2,
+        3
+      ],
+      "claims": [
+        "Added proof obligations QW3E-PAR-008 (GPU/CPU parity invariant) and QW3E-DEV-009 (selected device liveness without silent fallback) with falsification tests FALSIFY-QW3E-008/009 and updated qa_gate to require all 9 falsification tests.",
+        "Proof obligations QW3E-PAR-008 and QW3E-DEV-009 added with falsification tests FALSIFY-QW3E-008 and FALSIFY-QW3E-009, forbidding silent CPU fallback and requiring real-silicon parity receipts; pass_criteria increased from 7 to 9 tests."
+      ]
+    },
+    {
+      "file": "contracts/qwen3-e2e-verification-v1.yaml",
+      "line": 130,
+      "lanes_agreeing": [
+        1
+      ],
+      "claims": [
+        "Adds QW3E-DEV-009 with formal: '∀ h ∈ required_hosts: fallback(cuda, h) = ⊥ ∧ ran(cuda, h)' to prevent silent fallback."
+      ]
+    }
+  ],
   "uncovered": [],
   "coverage_source": "lanes",
-  "partial": true,
-  "partial_reasons": [
-    "lane 1: non-empty .err (100 bytes, 1 line(s) beyond agy-lane's workspace narration)"
-  ],
+  "partial": false,
+  "partial_reasons": [],
   "auto_merge": {
     "checked": true,
     "was_armed": false,
