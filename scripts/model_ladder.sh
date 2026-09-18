@@ -123,8 +123,15 @@ while IFS='|' read -r -t 5 rid rfile rsha rbackends rreq; do
   # 1. apr qa --json: capability_match + golden_output are the two gates that name
   #    a wrong model; the perf gates are skipped here (they pass on garbage).
   qa_json="$WORK/$rid.qa.json"
+  # A rung that claims only the CPU is not asked whether the GPU can run it:
+  # capability_match is a GPU-capability gate, and "the GPU backend has no SSM
+  # kernels (#3090)" is a true statement about a claim the rung does not make.
+  # The judge accepts a SKIPPED capability_match only when cuda is not claimed.
+  cap_flag=""
+  case ",$rbackends," in *,cuda,*|*,gpu,*) ;; *) cap_flag="--skip-capability" ;; esac
+  # shellcheck disable=SC2086
   "$APR" qa "$path" --json --offline --skip-throughput --skip-ollama --skip-gpu-speedup \
-      --skip-ptx-parity --skip-gpu-state --skip-format-parity > "$qa_json" 2> "$WORK/$rid.qa.err"; qa_rc=$?
+      --skip-ptx-parity --skip-gpu-state --skip-format-parity $cap_flag > "$qa_json" 2> "$WORK/$rid.qa.err"; qa_rc=$?
   qa_row=$(python3 - "$qa_json" <<'PY'
 import json, sys
 try:
@@ -160,7 +167,12 @@ PY
   row=$(python3 - "$rid" "$qa_row" "$be_json" "$qa_rc" "$rreq" <<'PY'
 import json, sys
 rid, qa, be, qa_rc, req = sys.argv[1], json.loads(sys.argv[2]), json.loads(sys.argv[3]), int(sys.argv[4]), sys.argv[5] == "1"
-green = qa.get("capability_match", {}).get("passed", False) and qa.get("golden_output", {}).get("passed", False) \
+cap = qa.get("capability_match", {})
+# `passed` is already normalised (skipped ⇒ passed=False) by the gate() reader above, but the
+# judge must not depend on that: a skipped gate counts only when no GPU backend is claimed.
+cap_ok = (cap.get("passed", False) and not cap.get("skipped", False)) \
+         or (cap.get("skipped", False) and not ({"cuda", "gpu"} & set(be)))
+green = cap_ok and qa.get("golden_output", {}).get("passed", False) \
         and all(v["ran"] and not v["fallback"] for v in be.values())
 print(json.dumps({"id": rid, "present": True, "sha_ok": True, "required": req, "qa_rc": qa_rc,
                   "capability_match": qa.get("capability_match"), "golden_output": qa.get("golden_output"),
@@ -175,7 +187,8 @@ PY
     RED=$((RED + 1))
     why=$(printf '%s' "$row" | python3 -c '
 import json,sys; r=json.load(sys.stdin); w=[]
-if not r["capability_match"]["passed"]: w.append("capability_match: "+r["capability_match"]["message"][:70])
+cap=r["capability_match"]; claims_gpu=bool({"cuda","gpu"} & set(r["backends"]))
+if not (cap["passed"] and not cap["skipped"]) and not (cap["skipped"] and not claims_gpu): w.append("capability_match: "+("SKIPPED on a GPU-claiming rung: " if cap["skipped"] else "")+cap["message"][:70])
 if not r["golden_output"]["passed"]: w.append("golden_output: "+r["golden_output"]["message"][:70])
 for b,v in r["backends"].items():
     if v["fallback"]: w.append(b+": FELL BACK (claimed backend did not run)")
