@@ -133,11 +133,14 @@ jobs:
   # intel 18, intel worst 51 under contention). This job is now a 3-way matrix:
   # nextest `--partition hash:N/3` splits the lib tests by stable hash, and the
   # explicit-command runner takes every 3rd fragment (`--shard N/3`). The once-only
-  # steps (GPU crates, compute, quick tier, guards) run on shard 1. All shards of a
-  # run share the per-RUN target dir on a host (cargo's lock serialises the cached
-  # compile; test execution is what we parallelise). The check-run every consumer
-  # reads -- branch protection, `gate`, the BSE-17 reuse lookup by check_name --
-  # is the fan-in job `workspace-test` below, which fails unless every shard passed.
+  # steps (GPU crates, compute, quick tier, guards) run on shard 1. Each shard
+  # owns its cargo state (registry + target parent keyed by PR_OR_REF-sN, see the
+  # env below): the test-binary compile is therefore repeated per shard, and it is
+  # cheap because codegen comes from the shared sccache (measured ~1 min on a warm
+  # cache vs 13 min of test execution, which is the part that now runs 3-wide).
+  # The check-run every consumer reads -- branch protection, `gate`, the BSE-17
+  # reuse lookup by check_name -- is the fan-in job `workspace-test` below, which
+  # fails unless every shard passed.
   workspace-test-shard:
     name: workspace-test-shard (${{ matrix.shard }}/${{ matrix.shards }})
     strategy:
