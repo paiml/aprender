@@ -128,13 +128,22 @@ mod tests {
         );
     }
 
-    /// FALSIFIER: the ETXTBSY window is real, and `exec_marker_bin` rides it out.
+    /// FALSIFIER: the ETXTBSY window is real *on Linux*, and `exec_marker_bin`
+    /// rides it out.
     ///
     /// Holding a write handle open reproduces exactly the state a forked
-    /// sibling leaves the shim in. A direct spawn must fail with ETXTBSY (if it
-    /// does not, the premise of the retry is wrong and this test says so);
-    /// the retrying helper must then succeed once the handle drops. Deleting
-    /// the retry loop turns this RED deterministically.
+    /// sibling leaves the shim in. On Linux the kernel refuses to exec a file
+    /// any process holds open for writing, so the direct spawn fails with
+    /// ETXTBSY and the retry loop is the only reason the shim ever runs.
+    /// Darwin has no such interlock — measured on mini-m4: the same held write
+    /// fd lets the spawn straight through, and the shared assertion reddened
+    /// the whole `macos-arm64` leg on a premise that is false there.
+    ///
+    /// So each side asserts what its own kernel does. A bare `#[cfg]` skip
+    /// would leave darwin proving nothing; asserting the absence keeps the row
+    /// falsifiable on both, and the day darwin grows the interlock this turns
+    /// RED instead of passing quietly. Both sides still require the helper to
+    /// produce the marker, so deleting the retry loop is still caught.
     #[test]
     #[cfg(unix)]
     fn exec_marker_bin_survives_a_transient_etxtbsy() {
@@ -146,13 +155,7 @@ mod tests {
             .write(true)
             .open(&shim)
             .expect("hold a write fd open");
-        let direct = std::process::Command::new(&shim).output();
-        assert_eq!(
-            direct.err().and_then(|e| e.raw_os_error()),
-            Some(26),
-            "an open write fd must make a direct spawn fail with ETXTBSY; without that \
-             the retry loop is guarding nothing"
-        );
+        assert_direct_spawn_under_a_held_write_fd(&shim);
 
         std::thread::spawn(move || {
             std::thread::sleep(std::time::Duration::from_millis(50));
@@ -163,7 +166,36 @@ mod tests {
         assert_eq!(
             String::from_utf8_lossy(&out.stdout).trim(),
             "RETRY-MARKER",
-            "the helper must retry through ETXTBSY and then run the shim"
+            "the helper must run the shim on every platform, retrying where the \
+             kernel makes it necessary"
+        );
+    }
+
+    /// Linux: the exec is refused while any process holds a write fd, so the
+    /// retry loop is load bearing and this states the errno it rides out.
+    #[cfg(all(unix, target_os = "linux"))]
+    fn assert_direct_spawn_under_a_held_write_fd(shim: &Path) {
+        let direct = std::process::Command::new(shim).output();
+        assert_eq!(
+            direct.err().and_then(|e| e.raw_os_error()),
+            Some(26),
+            "linux: an open write fd must make a direct spawn fail with ETXTBSY; \
+             without that the retry loop is guarding nothing"
+        );
+    }
+
+    /// Not Linux (darwin is the one we run): no ETXTBSY interlock for a held
+    /// write fd. Assert the spawn SUCCEEDS and that the shim is what ran, so
+    /// this row measures the platform instead of skipping it.
+    #[cfg(all(unix, not(target_os = "linux")))]
+    fn assert_direct_spawn_under_a_held_write_fd(shim: &Path) {
+        let out = std::process::Command::new(shim)
+            .output()
+            .expect("no ETXTBSY interlock on this platform: the direct spawn must succeed");
+        assert_eq!(
+            String::from_utf8_lossy(&out.stdout).trim(),
+            "RETRY-MARKER",
+            "the direct spawn ran something other than the shim"
         );
     }
 

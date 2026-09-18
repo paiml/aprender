@@ -9,8 +9,20 @@
 //!
 //! Every assertion here is chosen so a mock executor fails it. Requires
 //! Chrome/Chromium; fails rather than skips without one.
+//!
+//! `browser-falsify`, not `browser` — for the reason given at length in
+//! falsify_chromium_driver_is_real.rs and in this crate's Cargo.toml.
+//! aprender-orchestrate's dev-dependency carries `features = ["browser"]`, the
+//! BSE-17 quick tier builds the selected crates' `--lib --tests` in ONE graph,
+//! and a PR touching both crates therefore compiled and ran these three tests on
+//! a browser-less clean-room runner. A feature is a property of the build graph;
+//! a browser is a property of the box.
+//!
+//! Fixing only the sibling file left THIS one armed and #3205's next run failed
+//! on it (run 34806202374): `2 files gated on "browser"` was in the survey, and
+//! the second was not acted on. Both are gated here.
 
-#![cfg(feature = "browser")]
+#![cfg(feature = "browser-falsify")]
 
 use jugar_probar::playbook::chromium_executor::ChromiumExecutor;
 use jugar_probar::playbook::executor::{ActionExecutor, ExecutorError};

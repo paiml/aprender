@@ -76,6 +76,19 @@ jobs:
           - name: yoga
             cuda: true
             labels: '["self-hosted", "Linux", "X64", "cuda", "yoga", "ephemeral", "docker"]'
+          # mini was NOT PROBED, and it is the box that needed it most: measured
+          # 2026-09-13 it carried pmat 3.20.0 against the fleet's 3.39.0 —
+          # nineteen minor versions — while the workflow that exists to answer
+          # "what does each box actually have on it?" had never asked it. The
+          # operator's ruling the same day makes mini a full-time aprender build
+          # host, so the one box outside this matrix became the one box whose
+          # toolset decides builds.
+          #
+          # cuda: false — it is an M4, and ci_self_hosted_preflight.sh --cuda
+          # would look for nvidia-smi on a machine that will never have one.
+          - name: mini
+            cuda: false
+            labels: '["self-hosted", "macOS", "ARM64", "apple-silicon", "mini"]'
     steps:
       - uses: actions/checkout@v7
 
@@ -84,10 +97,31 @@ jobs:
           PREFLIGHT_OUT: ${{ runner.temp }}/preflight.json
         run: |
           if [ "${{ matrix.cuda }}" = "true" ]; then
-            bash scripts/ci_self_hosted_preflight.sh --cuda
+            bash scripts/ci_self_hosted_preflight.sh --cuda --need pmat bashrs
           else
-            bash scripts/ci_self_hosted_preflight.sh
+            bash scripts/ci_self_hosted_preflight.sh --need pmat bashrs
           fi
+
+      # THE QUESTION WAS NEVER ASKED.
+      #
+      # This workflow exists to answer "what does each box actually have on it?"
+      # and its DEFAULT_TOOLS are `jq curl git python3 tar sha256sum rustup cargo`.
+      # pmat and bashrs are not in that list and never were — the two tools every
+      # aprender guard depends on, and the two that had drifted. Measured
+      # 2026-09-13: intel bashrs 7.0.1, gx10 and mini 7.0.4, yoga NO BASHRS AT
+      # ALL, with pmat spread over 3.20.0 / 3.31.0 / 3.39.0. Four hosts, four
+      # combinations, one "pin", and the daily fleet probe had no opinion because
+      # it had no question.
+      #
+      # `--need pmat bashrs` puts them in the record. The step after it turns the
+      # record into a PREDICATE: tools.toml names the pin, check_tool_versions.sh
+      # fails closed when the box it runs on disagrees. A recording is evidence; a
+      # comparison is a gate; this workflow had the first and not the second.
+      #
+      # It runs BEFORE the upload, and the upload's `if: always()` is what keeps a
+      # red box's record — the record most worth having, by this file's own header.
+      - name: The pinned tools must match tools.toml ON THIS BOX
+        run: bash scripts/check_tool_versions.sh
 
       # `if: always()` — a box that FAILED the preflight is the box whose record
       # matters most, and a step that only uploads on success would drop exactly

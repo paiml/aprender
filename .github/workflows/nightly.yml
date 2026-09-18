@@ -12,9 +12,10 @@
 # job runs on the fleet. x86_64 builds on yoga and aarch64 natively on gx10, both
 # inside rust:1.93.0-bullseye (binary-release.yml's CPU-lane pattern), so the
 # nightly's glibc floor is 2.31; the ubuntu-latest build needed GLIBC_2.39 and did
-# not run on lambda's 22.04. The macOS and Windows targets are gone: no self-hosted
-# macOS or Windows runner is registered in the org, and there is no hosted
-# fallback. They come back when a box for them does.
+# not run on lambda's 22.04. The Windows target is gone: no self-hosted Windows
+# runner is registered in the org, and there is no hosted fallback. It comes back
+# when a box for it does. macOS came back 2026-09-13 (#3204): aarch64-apple-darwin
+# builds natively on mini-m4 (bare cargo — macOS has no docker), job build-darwin.
 
 name: Nightly
 
@@ -123,9 +124,55 @@ jobs:
             apr-${{ matrix.target }}.tar.gz
             apr-${{ matrix.target }}.tar.gz.sha256
 
+  # ── aarch64-apple-darwin, natively on mini (#3204) ────────────────────
+  # No docker on macOS: the pinned toolchain is rust-toolchain.toml's, the
+  # glibc floor does not apply (Mach-O), and the archive shape matches `build`
+  # so the release step below picks it up unchanged.
+  build-darwin:
+    needs: check-activity
+    if: needs.check-activity.outputs.has_commits == 'true'
+    name: apr aarch64-apple-darwin on mini
+    runs-on: [self-hosted, macOS, ARM64, apple-silicon, mini]
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Build apr natively (rust-toolchain.toml pin)
+        run: |
+          set -euo pipefail
+          export PATH="$HOME/.cargo/bin:/opt/homebrew/bin:$PATH"
+          T=aarch64-apple-darwin
+          rustc -vV | grep -E "^host: $T$"
+          CARGO_BUILD_JOBS=6 CARGO_INCREMENTAL=0 cargo build --release -p apr-cli --target "$T" --locked
+          "target/$T/release/apr" --version
+
+      - name: Package
+        run: |
+          ARCHIVE="apr-aarch64-apple-darwin"
+          mkdir -p "$ARCHIVE"
+          cp "target/aarch64-apple-darwin/release/apr" "$ARCHIVE/"
+          for f in README.md LICENSE LICENSE-MIT COPYING UNLICENSE; do
+            [ -f "$f" ] && cp "$f" "$ARCHIVE/"
+          done
+          tar czf "${ARCHIVE}.tar.gz" "$ARCHIVE"
+          shasum -a 256 "${ARCHIVE}.tar.gz" > "${ARCHIVE}.tar.gz.sha256"
+          echo "Packaged: ${ARCHIVE}.tar.gz ($(du -h "${ARCHIVE}.tar.gz" | cut -f1))"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: apr-aarch64-apple-darwin
+          path: |
+            apr-aarch64-apple-darwin.tar.gz
+            apr-aarch64-apple-darwin.tar.gz.sha256
+
   # ── Create/update nightly prerelease ─────────────────────
   release:
-    needs: build
+    # build-darwin is one 16 GB box: its failure must not take the Linux
+    # nightly down with it, so the release waits for both and requires only build.
+    needs: [build, build-darwin]
+    if: ${{ !cancelled() && needs.build.result == 'success' }}
     runs-on: [self-hosted, Linux, X64, clean-room]
     steps:
       - name: Checkout

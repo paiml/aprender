@@ -15,8 +15,16 @@
 //! because the clean-room image is not known to ship a browser; they belong on a
 //! Chrome-equipped runner the way the GPU falsifiers belong on a CUDA one.
 //! Running them without a browser FAILS — deliberately. There is no skip.
+//!
+//! `browser-falsify`, not `browser`. "Not on ci.yml's beat list" was the whole
+//! containment, and a cargo feature could not hold it: aprender-orchestrate's
+//! dev-dependency carries `features = ["browser"]`, so the BSE-17 quick tier
+//! selecting both crates unified the feature on and ran these three tests on a
+//! browser-less clean-room runner (#3205, run 34803859272, gx10-pool1). A
+//! feature is a property of the build graph; a browser is a property of the
+//! box. They need different names. See this crate's Cargo.toml.
 
-#![cfg(feature = "browser")]
+#![cfg(feature = "browser-falsify")]
 
 use std::time::Duration;
 

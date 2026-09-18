@@ -298,7 +298,23 @@ fn test_brick_profiler_reset_v2() {
     let timer = profiler.start_brick(BrickId::RmsNorm);
     profiler.stop_brick(timer, 1);
 
-    assert!(profiler.total_ns() > 0);
+    // PRECONDITION: there IS state to clear. Asserted on the COUNT, which is
+    // deterministic, and NOT on elapsed nanoseconds, which are not.
+    //
+    // This line used to be `assert!(profiler.total_ns() > 0)` — an assertion
+    // that the system clock ticked between two adjacent statements with no work
+    // between them. On x86 Linux it always did. On Apple Silicon `Instant` is
+    // backed by mach_absolute_time, whose tick is ~41.7 ns, so two reads inside
+    // one tick differ by exactly 0 and the assertion fails. It failed on the
+    // fleet's first mini-m4 run: 3325 passed, this one test failed.
+    //
+    // Nothing about the profiler was wrong; the test was measuring the host's
+    // clock granularity and calling it a profiler property. The two other
+    // `total_ns() > 0` assertions in this crate are fine and stay — one sleeps
+    // 100 µs first, the other feeds record_elapsed an explicit Duration — so
+    // this is the one site, not a class to sweep.
+    assert_eq!(profiler.brick_stats(BrickId::RmsNorm).count, 1);
+    assert_eq!(profiler.total_tokens(), 1);
 
     profiler.reset();
 

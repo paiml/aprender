@@ -331,6 +331,18 @@ mod tests {
             .await
             .expect("remember failed");
 
+        // The `since` filter keeps a fragment whose `created_at == since`
+        // (`f.created_at < since` is what skips), so this cut has to land
+        // STRICTLY after the first fragment. Reading the clock on the next line
+        // does not guarantee that: chrono's `Utc::now()` is microsecond-resolution
+        // on darwin, both writes landed in one tick, and the filter returned 2
+        // where the test wanted 1 (mini-m4, job 103760…). Linux's nanosecond
+        // clock is why no Linux runner could ever find this.
+        //
+        // One sleep, before the cut and not after: the second fragment only
+        // needs `created_at >= after_first`, which an equal timestamp already
+        // satisfies.
+        tokio::time::sleep(std::time::Duration::from_millis(5)).await;
         let after_first = chrono::Utc::now();
 
         substrate

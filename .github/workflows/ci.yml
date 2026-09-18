@@ -2801,6 +2801,118 @@ jobs:
           fi
           printf 'gguf::cuda:: %s test(s) selected and passed\n' "$n"
 
+  # ── macOS / arm64 leg on mini (Apple M4) — #3204 ───────────────────────
+  # Operator 2026-09-13: mini is a full-time aprender build host. It is the
+  # fleet's only Apple-Silicon node, so it is the only place the NEON SIMD path
+  # runs at all (intel/yoga are AVX; gx10 is aarch64 but its lanes are cuda),
+  # and the only place `cargo install aprender` on a Mac is ever compiled.
+  # Bare metal: macOS has no docker and no sovereign-ci image, so the pinned
+  # toolchain comes from rust-toolchain.toml and the target dir is the
+  # workspace default (one persistent runner; the mini-reaper sweeps _work).
+  # NOT in `gate`'s needs. One runner, 16 GB: a box that is down or busy must
+  # never hold a merge, so this job reports and the required check ignores it.
+  # 40 [U]: first run in this repo, no history yet — re-derive from
+  # evidence/fleet/history.jsonl once it has rows. Native measurement on mini,
+  # 2026-09-13T10:11Z, main @ 3786870d9: `cargo test -p aprender-compute --lib
+  # -j6` rc=0 and `cargo check -p aprender-core --lib` rc=0 (~/mini-measure.log).
+  macos-arm64:
+    # NOT on merge_group, and that is an optimisation rather than an omission.
+    # mini is ONE runner (10 cores / 16 GB; a second would overcommit a
+    # workspace build the way cuda-unit overcommits yoga, #3234), so these jobs
+    # serialise at ~15-20 min each. This job is in nothing's `needs:` and is not
+    # a required check, so a merge group NEVER waits for it -- the group reaches
+    # its verdict from `gate` + `workspace-test` and merges while mini is still
+    # building. A result that arrives after the decision it could have informed
+    # is load without signal, and it is load on the one platform with no spare
+    # capacity.
+    #
+    # pull_request KEEPS it: that is where a darwin defect is still actionable.
+    # push-to-main KEEPS it: that is main's only darwin andon.
+    #
+    # Eight jobs in this file already carry the stronger `== 'pull_request'`
+    # (cuda-unit, gpu-quick, ...); this one wants push as well, hence `!=`.
+    if: github.event_name != 'merge_group'
+    runs-on: [self-hosted, macOS, ARM64, apple-silicon, mini]
+    # 60, and the basis is honest about what it does NOT know. BSE-05 derives T
+    # from this job's own p99, and this job has no history for the workspace
+    # step added below: 3m43s was measured WARM on the box, and the first CI run
+    # after a cache wipe builds 79 packages cold on 10 cores at
+    # CARGO_BUILD_JOBS=6. That number is unmeasured, so the timeout is set wide
+    # enough that the first run reports a RESULT rather than a timeout, and
+    # tightened from evidence once this leg has a p99 like every other job.
+    timeout-minutes: 60
+    env:
+      CARGO_BUILD_JOBS: 6        # 16 GB box: never all 10 cores on a workspace build
+      CARGO_INCREMENTAL: 0
+    steps:
+      - uses: actions/checkout@v7
+      - name: The toolchain is the pinned one, natively on darwin/arm64
+        run: |
+          set -euo pipefail
+          export PATH="$HOME/.cargo/bin:/opt/homebrew/bin:$PATH"
+          rustup show active-toolchain
+          rustc -vV | grep -E '^host: aarch64-apple-darwin$'
+      - name: Check the core library
+        run: |
+          set -euo pipefail
+          export PATH="$HOME/.cargo/bin:/opt/homebrew/bin:$PATH"
+          cargo check -p aprender-core --lib --locked
+      - name: SIMD crate unit tests — the NEON path no Linux runner exercises
+        run: |
+          set -euo pipefail
+          export PATH="$HOME/.cargo/bin:/opt/homebrew/bin:$PATH"
+          cargo test -p aprender-compute --lib --locked -- --test-threads=4
+      # THE WHOLE WORKSPACE, because two crates was not coverage and was not work.
+      #
+      # This leg ran for 32 SECONDS per PR (measured 2026-09-13, job
+      # 103736930145: 5s checking aprender-core, 20s on the SIMD tests) while
+      # intel spent an hour on the same commit. mini is 10 cores / 16 GB and the
+      # operator's ruling makes it a full-time aprender build host; a 32-second
+      # job is neither.
+      #
+      # MEASURED ON THE BOX BEFORE BEING WRITTEN HERE: `cargo check --workspace
+      # --lib` is 1m01s over 79 packages and the suite below is 3m43s, warm.
+      # That is 7x the work, and it is the ONLY darwin/arm64 coverage the repo
+      # has.
+      #
+      # It pays for itself immediately. The first full run produced exactly one
+      # failure — `test_read_system_memory_total_mb` asserting /proc/meminfo
+      # exists — a Linux assumption that had been sitting in a test whose own
+      # doc line said "On Linux". No Linux runner can find that class, by
+      # construction.
+      #
+      # THE THREE EXCLUSIONS ARE THE SAME ONES workspace-test USES, for the same
+      # reason: aprender-gpu, aprender-cuda-edge and aprender-compute need a CUDA
+      # toolchain. aprender-compute is tested on its own above, natively, which is
+      # the point of this runner.
+      #
+      # --test-threads=4, not the default 10: a 16 GB box running 10 test threads
+      # over 79 packages is how a runner starts swapping and reports a timeout
+      # instead of a result.
+      - name: Workspace unit tests, natively on darwin/arm64
+        run: |
+          set -euo pipefail
+          export PATH="$HOME/.cargo/bin:/opt/homebrew/bin:$PATH"
+          # --no-fail-fast, and it is not a nicety. Plain `cargo test` stops
+          # after the first failing test BINARY, so this leg reports ONE crate
+          # per run and every fix costs another ~25-minute round trip to learn
+          # the next. That is exactly what it cost: apr-cli, then aprender-mcp,
+          # then aprender-orchestrate, then aprender-test-lib, then
+          # aprender-train, then aprender-verify-ml -- six runs for six
+          # independent darwin defects one run could have listed.
+          #
+          # workspace-test does not have this problem because it runs nextest,
+          # whose measurement note above was taken with --no-fail-fast. nextest
+          # 0.9.137 IS installed on mini, so this leg could match it -- and
+          # deliberately does not. nextest gives every test its own PROCESS;
+          # plain `cargo test -- --test-threads=4` shares one, which is a
+          # different isolation model and therefore different coverage. Keeping
+          # them different is the point; it just means the flag has to be
+          # written out here rather than coming from a nextest profile.
+          cargo test --workspace --lib --locked --no-fail-fast \
+            --exclude aprender-gpu --exclude aprender-cuda-edge --exclude aprender-compute \
+            -- --test-threads=4
+
   gate:
     runs-on: [self-hosted, Linux, clean-room]   # arch-neutral: intel, yoga or gx10 (#3100)
     # 22: BSE-05 formula T = max(15, ceil(1.5*p99), p99+20) over this job's own

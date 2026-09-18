@@ -189,6 +189,44 @@ preflight_main() {
         json_tools="$json_tools{\"name\":\"$t\",\"present\":true,\"path\":\"$p\",\"version\":\"$v\"},"
     done
 
+    # ---- $HOME probe paths cargo/gix READ BUT DO NOT OWN -------------------
+    #
+    # ONE ROOT-OWNED DOTFILE DIRECTORY DISABLES EVERY CARGO BUILD ON THE BOX.
+    # Measured on mini 2026-09-13: a `sudo htop` created
+    #     /Users/<user>/.config   drwx------ root staff
+    # and from that moment cargo could not fingerprint ANY package whose build
+    # script lacks `rerun-if-changed`:
+    #     failed to determine package fingerprint for build script for apr-cli
+    #       Caused by: failed to determine list of files in crates/apr-cli
+    #       Caused by: Could not read repository exclude
+    #       Caused by: Permission denied (os error 13)
+    # gix probes $HOME/.config/git/ignore for the XDG excludes file. An absent
+    # path answers ENOENT and is fine; an UNREADABLE parent answers EACCES, and
+    # gix treats that as a hard error. `cargo check --workspace` went from
+    # "impossible" to 1m01s over 79 packages with one chown.
+    #
+    # The error names a crate and a build script and says nothing about $HOME,
+    # which is why it cost an afternoon. This row names it in one line, on every
+    # box, every day.
+    #
+    # NOT AN ERROR WHEN ABSENT. Only an existing-but-unreadable path is a
+    # finding: `[ -e ]` and then `[ -r ] && [ -x ]`.
+    local hp hp_bad="" json_home=""
+    for hp in "$HOME/.config" "$HOME/.cargo" "$HOME/.gitconfig" "$HOME/.config/git"; do
+        [ -e "$hp" ] || continue
+        if [ -r "$hp" ] && { [ ! -d "$hp" ] || [ -x "$hp" ]; }; then
+            json_home="$json_home{\"path\":\"$hp\",\"readable\":true},"
+            continue
+        fi
+        printf 'DENIED %s (%s) — cargo/gix probe this; EACCES here breaks every build\n' \
+            "$hp" "$(ls -ld "$hp" 2>/dev/null | awk '{print $1, $3, $4}')"
+        hp_bad="$hp_bad $hp"
+        json_home="$json_home{\"path\":\"$hp\",\"readable\":false},"
+    done
+    if [ -n "$hp_bad" ]; then
+        missing="$missing$hp_bad"
+    fi
+
     # ---- the device, when asked -------------------------------------------
     local cuda_devices=0 driver='-' listing='' line
     if [ "$want_cuda" -eq 1 ] && command -v nvidia-smi > /dev/null 2>&1; then

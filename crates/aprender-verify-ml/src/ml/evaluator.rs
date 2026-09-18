@@ -634,8 +634,13 @@ mod tests {
         let result = benchmark_inference(predictor, &features, 10);
 
         assert_eq!(result.num_predictions, 1000);
-        assert!(result.total_time_ms > 0.0);
-        assert!(result.predictions_per_sec > 0.0);
+        // Same class as data/pipeline.rs: a closure returning a constant over
+        // 1000 predictions can finish inside the clock's resolution, and
+        // `predictions_per_sec` above already guards `total_time_ms > 0.0`
+        // because production knows zero is reachable. Assert the shape instead
+        // of the speed -- not negative, and finite.
+        assert!(result.total_time_ms >= 0.0 && result.total_time_ms.is_finite());
+        assert!(result.predictions_per_sec >= 0.0 && result.predictions_per_sec.is_finite());
     }
 
     #[test]

@@ -435,7 +435,21 @@ mod tests {
 
         assert!(!programs.is_empty());
         assert!(stats.total_generated > 0);
-        assert!(stats.generation_time_ms > 0 || stats.total_generated < 10);
+        // NOT `generation_time_ms > 0`. That is an assertion about how slow the
+        // machine is: `elapsed.as_millis()` truncates, ten tiny programs take
+        // well under a millisecond on an M4, and the row failed on mini-m4 with
+        // both disjuncts false (10 generated, 0 ms). The production code already
+        // treats 0 as a real measurement -- `throughput()` returns 0.0 for it
+        // rather than dividing -- so the test was the only thing pretending
+        // otherwise.
+        //
+        // The invariant it was reaching for is that the reported count is the
+        // count returned; `total_generated` is literally `all_programs.len()`.
+        assert_eq!(
+            stats.total_generated,
+            programs.len(),
+            "the reported count must be the number of programs returned"
+        );
     }
 
     #[test]

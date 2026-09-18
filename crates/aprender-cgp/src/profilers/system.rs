@@ -224,11 +224,36 @@ mod tests {
 
     /// On Linux `/proc/meminfo` always reports a positive `MemTotal`. This backs the
     /// unified-memory VRAM fallback (GB10/GH200/Jetson report memory.total = N/A).
+    ///
+    /// GATED TO LINUX, and the doc line above is why: the assertion is a statement
+    /// about `/proc`, not about this function. mini (Apple M4) ran the workspace
+    /// suite for the first time on 2026-09-13 and this was the only failure in it —
+    /// there is no `/proc/meminfo` on darwin, so the reader returns `None` and the
+    /// `is_some()` fires. Every platform this fallback exists for (GB10, GH200,
+    /// Jetson) is Linux.
+    ///
+    /// The row below keeps darwin covered rather than skipped: off Linux the
+    /// function must degrade to `None`, which is a real assertion and the thing
+    /// callers depend on.
+    #[cfg(target_os = "linux")]
     #[test]
     fn test_read_system_memory_total_mb() {
         let total = read_system_memory_total_mb();
         assert!(total.is_some(), "/proc/meminfo MemTotal should be readable");
         assert!(total.unwrap() > 0.0, "system memory total should be > 0 MB");
+    }
+
+    /// Off Linux there is no `/proc/meminfo`: the reader must return `None`
+    /// rather than panic or invent a number. The unified-memory VRAM fallback
+    /// then simply does not fire, which is correct — there is no CUDA device
+    /// here to need it.
+    #[cfg(not(target_os = "linux"))]
+    #[test]
+    fn test_read_system_memory_total_mb_is_none_without_proc() {
+        assert!(
+            read_system_memory_total_mb().is_none(),
+            "without /proc/meminfo the reader must yield None, never a fabricated total"
+        );
     }
 
     #[test]

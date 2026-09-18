@@ -73,6 +73,23 @@ tempfile = "3.14"
 
 [features]
 default = []
+# A RUNNER CAPABILITY, NOT A LIBRARY FEATURE (#3205).
+#
+# tests/book/verification/oracles.rs runs `PythonExecutor`, which shells out to a
+# python3 interpreter. The clean-room CI image has none -- measured:
+#   docker run --rm localhost:5000/sovereign-ci:stable command -v python3  ->  NO_PYTHON3
+#   (rustc IS present; only the interpreter is missing)
+# and the three rows fail there while passing wherever python3 exists. Proved by
+# running the SAME built binary both ways: with python3 3 pass, with an empty PATH
+# all 3 fail.
+#
+# The BSE-17 quick tier builds the selected crates' `--lib --tests` in one graph,
+# so any PR whose selection reaches this crate ran them on a box without an
+# interpreter. A capability needs a name nothing enables by accident; see
+# aprender-test-lib's `browser-falsify` for the same shape.
+#
+# Arm it once the image carries python3, not before.
+python-oracle = []
 parquet = ["dep:parquet", "dep:arrow"]
 tree-sitter = ["dep:tree-sitter", "dep:tree-sitter-python", "dep:tree-sitter-c", "dep:tree-sitter-typescript"]
 pest = ["dep:pest", "dep:pest_derive"]
