@@ -1,0 +1,17 @@
+- id: PMAT-3490
+  github_issue: 3490
+  item_type: task
+  title: 'tools.toml pmat pin 3.40.1 -> 3.41.1 — the fleet converged 2026-09-18 (infra#692: intel /opt/fleet-bin/bin/pmat and lambda both measured 3.41.1) and every converged runner fails check_tool_versions.sh (FAIL pmat pinned 3.40.1 found 3.41.1), which blocks every open PR; the two baselines that record tool_version (complexity_baseline.txt, cb200_baseline.txt) are re-recorded under 3.41.1 in the same commit, as their guards require'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-18T15:59:52Z
+  updated: 2026-09-18T15:59:52Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
