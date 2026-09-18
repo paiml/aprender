@@ -14,10 +14,15 @@ categories = ["visualization", "graphics", "science", "wasm"]
 
 [dependencies]
 # Core SIMD/GPU acceleration
-trueno = { version = "0.67.0", path = "../aprender-compute", package = "aprender-compute", default-features = false }
+trueno = { version = "0.68.1", path = "../aprender-compute", package = "aprender-compute", default-features = false }
 
 # Shared Batuta stack utilities (display traits, formatting)
 batuta-common = { workspace = true }
+
+# Deterministic math (APEX-001 F-51, EV-2a rule 5): every transcendental on the render path
+# — tick placement, log scales — goes through pure-Rust libm, never the platform libm. NOT
+# optional: the rule covers the default render path, not just the text-path/raster features.
+libm = "0.2"
 
 # PNG encoding (pure Rust, no libpng)
 png = "0.17"
@@ -27,12 +32,6 @@ base64 = "0.22"
 
 # Error handling
 thiserror = "2.0"
-
-# APEX-001 EV-2a rule 5: deterministic math. Every transcendental on the render path goes
-# through this pure-Rust implementation rather than the platform libm, so a labeling or a
-# log scale does not depend on which libc the host shipped. NOT optional: the rule covers
-# the default render path, not just the text-path/raster features.
-libm = "0.2"
 
 # Content manifest (EV-2a rule 4), moved from rmedia-types.
 sha2 = { workspace = true }
@@ -45,10 +44,10 @@ kurbo = { version = "0.13", optional = true }
 resvg = { version = "0.45", optional = true }
 
 # Optional: ML integration
-aprender = { path = "../aprender-core", version = "0.67.0", package = "aprender-core", optional = true }
+aprender = { path = "../aprender-core", version = "0.68.1", package = "aprender-core", optional = true }
 
 # Optional: Graph integration
-trueno-graph = { version = "0.67.0", path = "../aprender-graph", package = "aprender-graph", default-features = false, optional = true }
+trueno-graph = { version = "0.68.1", path = "../aprender-graph", package = "aprender-graph", default-features = false, optional = true }
 
 # Optional: Database integration
 trueno-db = { workspace = true, optional = true }

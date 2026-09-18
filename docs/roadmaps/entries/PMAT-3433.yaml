@@ -1,0 +1,18 @@
+- id: PMAT-3433
+  github_issue: 3433
+  item_type: task
+  title: 'PP-TENSOR-001 T1: typed `TensorStorage` — a dense consumer cannot receive an MoE placeholder'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-17T11:33:05Z
+  updated: 2026-09-17T11:33:05Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - orch:fable
+  notes: 'orch-basis:M>=3 — owning modules measured in the PMAT-3427 receipt: aprender-core, aprender-compute, aprender-serve (+ a leaf crate); plan quorum before code'

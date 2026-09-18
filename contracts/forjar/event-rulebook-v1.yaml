@@ -42,19 +42,23 @@ equations:
     - rule.actions.len() >= 0
     lean_theorem: Theorems.Action_Ordering
 proof_obligations:
-- type: completeness
+- id: ER36FE-CMP-001
+  type: completeness
   property: All triggers handled
   formal: '∀ kind: handler(kind) exists'
   applies_to: all
-- type: idempotency
+- id: ER36FE-IDEM-002
+  type: idempotency
   property: Cooldown dedup
   formal: events within cooldown → 1 execution
   applies_to: all
-- type: ordering
+- id: ER36FE-ORD-003
+  type: ordering
   property: Sequential actions
   formal: action[i] completes before action[i+1] starts
   applies_to: all
-- type: soundness
+- id: ER36FE-SND-004
+  type: soundness
   property: Fail-fast
   formal: action failure → remaining skipped
   applies_to: all

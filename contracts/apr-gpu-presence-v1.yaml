@@ -44,15 +44,18 @@ equations:
       - "Text and JSON outputs agree on gpu_present"
 
 proof_obligations:
-  - type: invariant
+  - id: AGP-INV-001
+    type: invariant
     property: "JSON output exposes gpu_present boolean"
     formal: "apr gpu --json | jq 'has(\"gpu_present\")' = true"
     applies_to: gpu_presence_disambiguation
-  - type: invariant
+  - id: AGP-INV-002
+    type: invariant
     property: "On no-GPU host, gpu_present = false"
     formal: "uuid = 'GPU-unknown' ∨ total_mb = 0 ⟹ gpu_present = false"
     applies_to: gpu_presence_disambiguation
-  - type: invariant
+  - id: AGP-INV-003
+    type: invariant
     property: "Text output distinguishes no-GPU"
     formal: "gpu_present = false ⟹ text output contains 'No discrete GPU' (or equivalent)"
     applies_to: consistency

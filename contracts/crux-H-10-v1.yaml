@@ -114,13 +114,17 @@ falsification_tests:
   if_fails: "apr record count diverges from datasets.load_dataset('json') reference"
 
 proof_obligations:
-- type: invariant
+- id: CH1-INV-001
+  type: invariant
   property: "record_count == non-empty-non-malformed line count"
-- type: invariant
+- id: CH1-INV-002
+  type: invariant
   property: "malformed line error names the 1-indexed line number"
-- type: invariant
+- id: CH1-INV-003
+  type: invariant
   property: "empty/whitespace-only lines are skipped silently"
-- type: equivalence
+- id: CH1-EQ-004
+  type: equivalence
   property: "Record set matches datasets.load_dataset('json', data_files=F)['train'] in count and content"
   reference: "https://jsonlines.org and https://huggingface.co/docs/datasets/loading#json"
 

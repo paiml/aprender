@@ -97,15 +97,20 @@ falsification_tests:
   if_fails: "Unpinned punica source"
 
 proof_obligations:
-- type: invariant
+- id: CL13885-INV-001
+  type: invariant
   property: "SGMV parity max_abs_diff <= 1e-3 bf16 vs per-adapter reference"
-- type: invariant
+- id: CL13885-INV-002
+  type: invariant
   property: "Mixed-rank adapters supported (no pad-to-max)"
-- type: invariant
+- id: CL13885-INV-003
+  type: invariant
   property: "Cross-adapter isolation: no contamination between routes"
-- type: invariant
+- id: CL13885-INV-004
+  type: invariant
   property: "route=-1 preserves base output bitwise"
-- type: equivalence
+- id: CL13885-EQ-005
+  type: equivalence
   property: "apr punica-sgmv  ≅  HF kernels-community punica-sgmv (multi-LoRA batched)"
 
 verification_summary:

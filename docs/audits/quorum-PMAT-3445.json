@@ -1,0 +1,150 @@
+{
+  "ticket": "PMAT-3445",
+  "base": "origin/main",
+  "base_resolved": "origin/main",
+  "base_note": "no origin/origin/main exists; judged against the local ref",
+  "head": "b5a09b0ba0ce50f07b73f79019046eb975c87bcd",
+  "diff_sha256": "a3162818e5cd28656e5a9f2da79148fb3783ff0f43e48ad23e523d0f85c37b2a",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 68913,
+  "author": {
+    "model": "claude-opus-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff implements exactly what PMAT-3445 requires: a script to verify that a release milestone has no open items (except the release epic) and integrates it into the build/release specifications and the release contract. The new `scripts/check_milestone_cut.sh` properly checks the open PRs/issues and handles the epic exception. The `docs/specifications/06x-release-schedule.md` and `APR-RELEASE-001-train-and-build-kaizen.md` have been properly updated to call this script at freeze and prior to the tag cut. The contract includes the new constraints and tests correctly. The self-test logic effectively tests the required edge cases as stated in the receipt. I found no evidence that the gate is weakened, tests assert the opposite, or claims are unsubstantiated. The implementation is well-tested and documented.",
+      "findings": [],
+      "raw_bytes": 2994,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Independent Review (Lane 2 of 3) for ticket PMAT-3445:\n\nVERDICT: PASS.\n\n1. Ticket Alignment:\nThe diff directly addresses PMAT-3445 (\"release train: a tag was cut while its milestone had open issues — 0.68.0 shipped with 2 open, one a user-faci\") by adding `scripts/check_milestone_cut.sh` as an automated gate checking that the milestone has no open issues or pull requests at the instant of the cut (except the train's own release epic, which is closed post-publish at step 8). The gate is integrated into `docs/specifications/06x-release-schedule.md` (§4 steps 1 and 4), `docs/specifications/APR-RELEASE-001-train-and-build-kaizen.md` (§4 T-0 and T-3), and `contracts/release-schedule-06x-v1.yaml` (equation `milestone_settled_at_cut`, invariant `RS0-INV-007`, falsification tests `FALSIFY-REL-06X-009/010`, and `qa_gate.checks`).\n\n2. Refutation Criteria Checks:\n- Test asserting opposite of ticket: None. All 25 self-test cases in `check_milestone_cut.sh` assert that unsettled open issues/PRs, count discrepancies, ambiguous epics, or missing milestones fail the cut (exit 1 or exit 2).\n- Gate weakened: None. Contract quality gate and release specifications were strengthened with mandatory pre-freeze and pre-tag checks.\n- Receipt claim not backed by diff: None. All files, specifications, equations, and test cases claimed in the receipt are present in the diff.\n- Unasked changes: None. All diff changes are strictly scoped to the ticket requirements and audit trails.\n\n3. Measured Verifications:\n- `bash scripts/check_milestone_cut.sh --self-test` (and bare run): exit 0, 25 cases passed.\n- All 5 mutations verified RED:\n  (a) Judge always passes: exit 1 (S2, S3, S4, S12, S15, S16, S18, S19, S20, S21, S23 RED)\n  (b) Count cross-check deleted: exit 1 (S6, S7 RED)\n  (c) `--paginate` dropped: exit 1 (S15 RED)\n  (d) Release-epic admission removed: exit 1 (S17, S22, S23 RED)\n  (e) Admission widened to any epic: exit 1 (S18, S20, S21 RED)\n- `bashrs lint --no-ignore --level error`: exit 0 (0 issues found).\n- `pv validate contracts/release-schedule-06x-v1.yaml` & `pv lint`: exit 0, 0 errors, 0 warnings (PASS).\n- `cargo test -p aprender-core --test readme_contract`: exit 0 (15 passed).\n- `cargo test -p aprender-contracts --lib`: exit 0 (1538 passed).\n- `cargo deny check advisories`: exit 0 (`advisories ok`).\n- `cargo fmt --all -- --check`: exit 0.\n\nNo refuting findings found.",
+      "findings": [],
+      "raw_bytes": 6204,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.8-flash-high",
+      "model_measured": "gemini-3.8-flash-high",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Reviewed PMAT-3445 diff against ticket requirements and receipt. The diff introduces scripts/check_milestone_cut.sh to prevent cutting tags when a milestone contains open issues or pull requests, updates the release specifications (06x-release-schedule.md and APR-RELEASE-001) to make pre-tag checks binding, updates the release schedule contract (release-schedule-06x-v1.yaml), and records the audit plan, receipt, and estimates. All 25 self-test cases and 5 mutation test suites pass as claimed. No refuting flaws found. Verdict: PASS.",
+      "findings": [
+        {
+          "claim": "check_milestone_cut.sh self-test passes all 25 test cases cleanly in both --self-test mode and bare invocation.",
+          "file": "scripts/check_milestone_cut.sh",
+          "grounding": "measured",
+          "line": 236
+        },
+        {
+          "claim": "Mutations (a) judge always passes, (b) count cross-check deleted, (c) unpaginated read, (d) release-epic admission removed, and (e) widened epic admission each turn the self-test RED on the exact expected cases.",
+          "file": "scripts/check_milestone_cut.sh",
+          "grounding": "measured",
+          "line": 116
+        },
+        {
+          "claim": "FALSIFY-REL-06X-010 passes: both release specifications (06x-release-schedule.md §4 and APR-RELEASE-001 §4) wire check_milestone_cut.sh into the freeze (T-0) and immediately before tag (T-3).",
+          "file": "contracts/release-schedule-06x-v1.yaml",
+          "grounding": "measured",
+          "line": 171
+        },
+        {
+          "claim": "The gate strictly admits only the train's own release epic (an issue with label `epic` and title prefixed by `EPIC: release train <M>`); any other open item or duplicate epic claimants cause exit 1 or exit 2 respectively.",
+          "file": "scripts/check_milestone_cut.sh",
+          "grounding": "cited",
+          "line": 117
+        }
+      ],
+      "raw_bytes": 4720,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.7-flash-high",
+      "model_measured": "gemini-3.7-flash-high",
+      "model_source": "measured",
+      "family": "gemini"
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": "contracts/release-schedule-06x-v1.yaml",
+      "line": 171,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "FALSIFY-REL-06X-010 passes: both release specifications (06x-release-schedule.md §4 and APR-RELEASE-001 §4) wire check_milestone_cut.sh into the freeze (T-0) and immediately before tag (T-3)."
+      ]
+    },
+    {
+      "file": "scripts/check_milestone_cut.sh",
+      "line": 116,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "Mutations (a) judge always passes, (b) count cross-check deleted, (c) unpaginated read, (d) release-epic admission removed, and (e) widened epic admission each turn the self-test RED on the exact expected cases."
+      ]
+    },
+    {
+      "file": "scripts/check_milestone_cut.sh",
+      "line": 117,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "The gate strictly admits only the train's own release epic (an issue with label `epic` and title prefixed by `EPIC: release train <M>`); any other open item or duplicate epic claimants cause exit 1 or exit 2 respectively."
+      ]
+    },
+    {
+      "file": "scripts/check_milestone_cut.sh",
+      "line": 236,
+      "lanes_agreeing": [
+        3
+      ],
+      "claims": [
+        "check_milestone_cut.sh self-test passes all 25 test cases cleanly in both --self-test mode and bare invocation."
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [],
+  "auto_merge": {
+    "checked": true,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "auto-merge not armed"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5/claude"
+  }
+}

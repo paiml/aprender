@@ -153,22 +153,26 @@ equations:
     lean_theorem: 'Theorems.Torch_profiler_integration'
 
 proof_obligations:
-  - type: equivalence
+  - id: PPS-EQ-001
+    type: equivalence
     property: Schema consistency across runtimes
     formal: 'all three runtimes emit valid parity-profile-v1 JSON'
     applies_to: apr, pytorch, unsloth canaries
 
-  - type: invariant
+  - id: PPS-INV-002
+    type: invariant
     property: Wall coverage threshold
     formal: 'sum(phases.pct) >= 90.0 for all profiled runs'
     applies_to: all runtimes
 
-  - type: bound
+  - id: PPS-BND-003
+    type: bound
     property: CUPTI vs CPU timing divergence
     formal: 'gpu_kernel_time / cpu_dispatch_time < 0.50 when launch_overhead > 50%'
     applies_to: APR runtime (validates 84.6% overhead claim)
 
-  - type: invariant
+  - id: PPS-INV-004
+    type: invariant
     property: Profiler overhead bounded
     formal: 'profiled_step_time / unprofiled_step_time < 1.15'
     applies_to: all runtimes

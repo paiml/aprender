@@ -121,13 +121,17 @@ falsification_tests:
   if_fails: "apr tokenize diverges from transformers AutoTokenizer reference"
 
 proof_obligations:
-- type: invariant
+- id: CH04746-INV-001
+  type: invariant
   property: "len(token_ids) <= max_length for all inputs"
-- type: invariant
+- id: CH04746-INV-002
+  type: invariant
   property: "truncation_side=right keeps prefix raw[0..N]"
-- type: invariant
+- id: CH04746-INV-003
+  type: invariant
   property: "truncation_side=left keeps suffix raw[L-N..L]"
-- type: equivalence
+- id: CH04746-EQ-004
+  type: equivalence
   property: "Byte-identical to transformers.AutoTokenizer.encode(truncation=True, max_length=N, truncation_side=S)"
   reference: "https://huggingface.co/docs/transformers/main_classes/tokenizer"
 

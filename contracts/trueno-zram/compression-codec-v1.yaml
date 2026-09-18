@@ -43,15 +43,18 @@ equations:
     - all elements non-empty
     lean_theorem: Theorems.Batch_Correctness
 proof_obligations:
-- type: invariant
+- id: CC03D8-INV-001
+  type: invariant
   property: Roundtrip identity
   formal: '∀ d: decompress(compress(d)) = d'
   applies_to: roundtrip_identity
-- type: invariant
+- id: CC03D8-INV-002
+  type: invariant
   property: SIMD-scalar cross-compatibility
   formal: '∀ d: decompress_simd(compress(d)) = decompress(compress_simd(d)) = d'
   applies_to: simd_scalar_parity
-- type: invariant
+- id: CC03D8-INV-003
+  type: invariant
   property: Batch element preservation
   formal: '∀ B, i: decompress_batch(compress_batch(B))[i] = B[i]'
   applies_to: batch_correctness

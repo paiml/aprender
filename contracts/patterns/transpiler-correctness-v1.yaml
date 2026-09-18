@@ -80,19 +80,23 @@ equations:
     - BLAKE3(output_1) = BLAKE3(output_2) for same input
     lean_theorem: Theorems.TranspileDeterminism
 proof_obligations:
-- type: equivalence
+- id: TC-EQ-001
+  type: equivalence
   property: Type mapping is compatible across languages
   formal: 'forall e: type(transpile(e)) is compatible with type(e)'
   applies_to: type_preservation
-- type: equivalence
+- id: TC-EQ-002
+  type: equivalence
   property: Observable behavior is identical
   formal: 'forall i: observe(run(source, i)) = observe(run(target, i))'
   applies_to: semantic_equivalence
-- type: determinism
+- id: TC-DET-003
+  type: determinism
   property: Same source always produces byte-identical target
   formal: 'forall s: transpile(s) = transpile(s)'
   applies_to: transpile_determinism
-- type: soundness
+- id: TC-SND-004
+  type: soundness
   property: Target type-checks if source type-checks
   formal: 'type_checks(source) -> type_checks(transpile(source))'
   applies_to: type_preservation

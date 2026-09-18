@@ -53,6 +53,7 @@ proof_obligations:
     importer restores it exactly: importDtype g = some d. The compatible subset
     is exactly {F32,F16,Q4K,Q6K} — whose numeric ids 0,1,12,14 are shared byte
     for byte with GGML.
+  prose: true
   applies_to: all
   lean:
     theorem: GgufExportSymmetry.dtype_roundtrip
@@ -103,6 +104,7 @@ proof_obligations:
     exportTensor t = some gt → importTensor gt = some t. On the exportable
     subset the raw byte payload, shape, and dtype are all restored exactly —
     the export/import involution on the tensor payload.
+  prose: true
   applies_to: all
   lean:
     theorem: GgufExportSymmetry.export_import_roundtrip
@@ -120,6 +122,7 @@ proof_obligations:
     Err whose message names "AprQ8". (Runtime file-IO + error-string content —
     NOT an algebraic identity; the analytic core exportDtype AprQ8 = none is
     proved by GES-REJECT-SYM-001. Verified at L2 by FT-APRQ8-001.)
+  prose: true
   applies_to: all
 - id: GES-RUNTIME-GGUF-PARSE-001
   type: invariant
@@ -131,6 +134,7 @@ proof_obligations:
     importDtype∘exportDtype = id + shape/payload preservation is proved by
     GES-DTYPE-ROUNDTRIP-001 / GES-SHAPE-PRESERVE-001 / GES-PAYLOAD-INVOL-001.
     Verified at L2 by FT-APRQ8-002.)
+  prose: true
   applies_to: all
 
 verification_summary:

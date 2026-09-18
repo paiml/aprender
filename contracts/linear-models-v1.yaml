@@ -55,23 +55,28 @@ equations:
     - input.iter().all(|v| v.is_finite())
     lean_theorem: Theorems.R_Squared_Training
 proof_obligations:
-- type: bound
+- id: LM-BND-001
+  type: bound
   property: OLS training R² non-negative
   formal: R² ≥ 0 for OLS with intercept on training data
   applies_to: all
-- type: invariant
+- id: LM-INV-002
+  type: invariant
   property: Prediction deterministic
   formal: predict(X) = predict(X) for all X
   applies_to: all
-- type: bound
+- id: LM-BND-003
+  type: bound
   property: Logistic probability bounded
   formal: P(y=1|x) ∈ (0, 1) for all finite x
   applies_to: all
-- type: invariant
+- id: LM-INV-004
+  type: invariant
   property: Logistic probabilities sum to 1
   formal: P(y=0) + P(y=1) = 1
   applies_to: all
-- type: invariant
+- id: LM-INV-005
+  type: invariant
   property: Perfect fit on collinear data
   formal: y = Xβ_true + b ⟹ R² ≈ 1 after fit
   applies_to: all

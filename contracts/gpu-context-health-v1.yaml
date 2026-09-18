@@ -65,13 +65,16 @@ equations:
     - n > 0
     lean_theorem: Theorems.Cuda_Graph_Guard
 proof_obligations:
-- type: invariant
+- id: GCH-INV-001
+  type: invariant
   property: FP8 is disabled on Blackwell (cc >= 100)
   formal: 'For all cc >= 100: fp8_enabled = false'
-- type: invariant
+- id: GCH-INV-002
+  type: invariant
   property: FP8 warmup cannot poison context on incompatible hardware
   formal: warmup_fp8_cache() is a no-op when cc >= 100
-- type: invariant
+- id: GCH-INV-003
+  type: invariant
   property: FP8 dispatch guard prevents runtime FP8 on Blackwell
   formal: cublas_prefill_gemm() never dispatches FP8 path when cc >= 100
 falsification_tests:

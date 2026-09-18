@@ -139,35 +139,43 @@ equations:
     - startup_time <= Duration::from_secs(2)
     lean_theorem: Theorems.Startup_Latency
 proof_obligations:
-- type: invariant
+- id: ACC091-INV-001
+  type: invariant
   property: Sovereign mode zero network
   formal: offline => network_syscalls == 0
   applies_to: all
-- type: invariant
+- id: ACC091-INV-002
+  type: invariant
   property: Three-layer tool safety
   formal: execute requires capability AND hook AND sandbox
   applies_to: all
-- type: roundtrip
+- id: ACC091-RT-003
+  type: roundtrip
   property: Session persist-resume lossless
   formal: resume(persist(s)) ≈ s
   applies_to: all
-- type: postcondition
+- id: ACC091-POST-004
+  type: postcondition
   property: APR.md blocked tools respected
   formal: blocked_tools ∩ executed_tools == ∅
   applies_to: all
-- type: postcondition
+- id: ACC091-POST-005
+  type: postcondition
   property: Model fallback notifies user
   formal: model_changed => user_notified
   applies_to: all
-- type: invariant
+- id: ACC091-INV-006
+  type: invariant
   property: Single binary, no external deps
   formal: works without npm, python, docker
   applies_to: all
-- type: bound
+- id: ACC091-BND-007
+  type: bound
   property: Startup latency under 2s
   formal: startup_time <= 2.0s
   applies_to: all
-- type: frame
+- id: ACC091-FRM-008
+  type: frame
   property: APR.md instructions in system prompt
   formal: system_prompt contains apr_md.instructions
   applies_to: all

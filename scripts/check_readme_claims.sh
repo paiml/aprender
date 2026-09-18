@@ -9,7 +9,7 @@
 #
 # Claims:
 #   crate_count        → `cargo metadata --no-deps` members == README "N workspace crates"
-#   contract_count     → `find contracts/ -name '*.yaml' | wc -l` == README "M provable contracts"
+#   contract_count     → contracts/census.json `.n_files` — the set `pv lint` walks (ONT-001 ONT-1) == README "M provable contracts"
 #   cli_command_count  → `apr --help` subcmd count == README "K CLI commands"
 #   cookbook_link      → README.md mentions `apr-cookbook`
 
@@ -103,7 +103,29 @@ measured_crate_count() {
 }
 
 measured_contract_count() {
-  find "$REPO_ROOT/contracts" -name "*.yaml" | wc -l | tr -d ' '
+  # ONT-001 ONT-1 (F-1): the count is the census's `n_files` — the number the
+  # gate actually validates — not a `find`, which counts 51 files `pv lint`
+  # never walks (kaizen/, legacy/, pipelines/, publish-manifests/, binding.yaml,
+  # external-corpora.yaml). A README printing a number no gate measures is the
+  # drift this script exists to end; the generator and the guard now read the
+  # same file.
+  local census="$REPO_ROOT/contracts/census.json" n
+  [ -s "$census" ] || {
+      printf 'FAIL readme_sync: %s is missing or empty — run `make contracts`. The count is UNMEASURED, which is a failure, not a zero.\n' "$census" >&2
+      return 1
+  }
+  n=$(jq -r '.n_files // empty' "$census" 2>/dev/null || true)
+  case "$n" in
+      '' | *[!0-9]*)
+          printf 'FAIL readme_sync: %s carries no numeric .n_files\n' "$census" >&2
+          return 1
+          ;;
+  esac
+  [ "$n" -gt 0 ] || {
+      printf 'FAIL readme_sync: the census reports 0 contracts. A zero count is a broken measurement, not a README to regenerate.\n' >&2
+      return 1
+  }
+  printf '%s' "$n"
 }
 
 measured_cli_command_count() {
@@ -232,11 +254,26 @@ check_crate_count() {
 # names, taken as a tar STREAM rather than extracted to a scratch checkout: the
 # count is a property of the listing, extracting 15 MB per revision twice a run
 # buys nothing, and a stream cannot be contaminated by the working tree at all.
+# ONE definition of "a contract file", the one `provable_contracts::lint`'s walker
+# applies and `pv census` (ONT-001 ONT-1) counts: *.yaml, no dotfile, not the
+# binding registry, not ONT-1's external-corpora declaration, not ONT-2b's Σ, and nothing under
+# kaizen/, legacy/, pipelines/, publish-manifests/ or quarantine/. Reading a tar
+# listing with a SECOND definition is how the README came to state 1841 while
+# every gate measured 1790 — the on-disk reading, the two revisions and the
+# README claim are now one instrument.
+contract_files_only() {
+  grep -E '\.yaml$' \
+    | grep -Ev '(^|/)(kaizen|legacy|pipelines|publish-manifests|quarantine)/' \
+    | grep -Ev '(^|/)(binding\.yaml|binding\.yml|external-corpora\.yaml|ontology\.yaml)$' \
+    | grep -Ev '(^|/)\.[^/]*$'
+}
+
 measure_contract_count_rev() { # measure_contract_count_rev <rev>
   local rev="$1" n=""
   n=$(git -C "$REPO_ROOT" archive --format=tar "$rev" -- contracts 2>/dev/null \
         | tar -tf - 2>/dev/null \
-        | grep -c '\.yaml$') || n=""
+        | contract_files_only \
+        | grep -c .) || n=""
   # 0 is a FAILED measurement, never a count. The preflight has already proved
   # the revision carries contracts/, so an empty listing means the instrument
   # broke -- and "0 violations over 0 files" is this fleet's signature defect.

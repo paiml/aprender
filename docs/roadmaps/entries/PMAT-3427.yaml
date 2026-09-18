@@ -1,0 +1,17 @@
+- id: PMAT-3427
+  github_issue: 3427
+  item_type: task
+  title: 'docs(plan): PP-QUANT-001 research + 0.69 must-carry slice M — measured tables, fix-diff Pareto, implementation'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-17T11:33:02Z
+  updated: 2026-09-17T11:33:02Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:docs
+  notes: null

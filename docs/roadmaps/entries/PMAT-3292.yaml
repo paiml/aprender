@@ -1,0 +1,16 @@
+- id: PMAT-3292
+  github_issue: 3292
+  item_type: task
+  title: a run cannot hold a concurrency group while capacity sits idle
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-09-16 11:28:34+00:00
+  updated: 2026-09-16 11:28:34+00:00
+  spec: null
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null

@@ -51,15 +51,18 @@ equations:
     - parse succeeds and produces equivalent trace
     lean_theorem: Theorems.RenacerBackwardCompat
 proof_obligations:
-- type: invariant
+- id: TO-INV-001
+  type: invariant
   property: Span tree is valid
   formal: No cycles, no orphan children in span hierarchy
   applies_to: all
-- type: monotonicity
+- id: TO-MON-002
+  type: monotonicity
   property: Counter monotonic
   formal: counter(t1) <= counter(t2) when t1 < t2
   applies_to: all
-- type: roundtrip
+- id: TO-RT-003
+  type: roundtrip
   property: Trace format backward compatible
   formal: parse(serialize(trace)) = trace across matching major versions
   applies_to: all

@@ -59,23 +59,28 @@ equations:
     - input.len() > 0
     lean_theorem: Theorems.FP8
 proof_obligations:
-- type: roundtrip
+- id: FI-RT-001
+  type: roundtrip
   property: E4M3 encode-decode preserves value within ULP
   formal: '|decode_e4m3(encode_e4m3(x)) - x| <= ULP_e4m3(x) / 2 for |x| <= 448'
   applies_to: all
-- type: roundtrip
+- id: FI-RT-002
+  type: roundtrip
   property: E5M2 encode-decode preserves value within ULP
   formal: '|decode_e5m2(encode_e5m2(x)) - x| <= ULP_e5m2(x) / 2 for |x| <= 57344'
   applies_to: all
-- type: bound
+- id: FI-BND-003
+  type: bound
   property: E4M3 range [-448, 448]
   formal: '|decode_e4m3(bits)| <= 448 for all bits ∈ {0..255}'
   applies_to: all
-- type: bound
+- id: FI-BND-004
+  type: bound
   property: E5M2 range [-57344, 57344]
   formal: '|decode_e5m2(bits)| <= 57344 for all non-special bits'
   applies_to: all
-- type: invariant
+- id: FI-INV-005
+  type: invariant
   property: Sign preservation
   formal: sign(decode(encode(x))) == sign(x) for x != 0
   applies_to: all

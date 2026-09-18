@@ -21,7 +21,8 @@ equations:
     - b.len() > 0
     lean_theorem: Theorems.Transpose
 proof_obligations:
-- type: invariant
+- id: TPB2E0-INV-001
+  type: invariant
   property: Shape correctness
   formal: shape(transpose(A[m,n])) = (n, m)
   applies_to: all
@@ -33,7 +34,8 @@ proof_obligations:
     mathlib_imports: []
     notes: Core-only (no Mathlib). transpose swaps dims — (t.transpose.rows =
       t.cols ∧ t.transpose.cols = t.rows) by rfl. Theorems/TensorTranspose/Roundtrip.lean
-- type: idempotency
+- id: TPB2E0-IDEM-002
+  type: idempotency
   property: Involution (self-inverse)
   formal: transpose(transpose(A)) = A (bitwise exact)
   applies_to: all
@@ -45,12 +47,14 @@ proof_obligations:
     mathlib_imports: []
     notes: Core-only (no Mathlib). (Aᵀ)ᵀ = A bit-for-bit by rfl over the
       Tensor2D model. Theorems/TensorTranspose/Roundtrip.lean
-- type: equivalence
+- id: TPB2E0-EQ-003
+  type: equivalence
   property: AVX2 matches scalar
   formal: '|transpose_avx2(A) - transpose_scalar(A)| = 0 (bitwise exact)'
   tolerance: 0.0
   applies_to: simd
-- type: invariant
+- id: TPB2E0-INV-004
+  type: invariant
   property: Element correctness
   formal: B[j][i] = A[i][j] for all valid i,j
   applies_to: all
@@ -62,9 +66,11 @@ proof_obligations:
     mathlib_imports: []
     notes: Core-only (no Mathlib). Bᵀ j i = A i j is definitional equality
       (rfl). Theorems/TensorTranspose/Roundtrip.lean
-- type: invariant
+- id: TPB2E0-INV-005
+  type: invariant
   property: All elements transposed
   formal: No element lost or duplicated — bijection on index pairs
+  prose: true
   applies_to: all
   lean:
     theorem: TensorTranspose.swapIdx_injective

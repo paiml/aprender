@@ -264,22 +264,26 @@ equations:
 # ─── PROOF OBLIGATIONS ───────────────────────────────────────
 
 proof_obligations:
-- type: precondition
+- id: ACHA-PRE-001
+  type: precondition
   property: hf_architecture stamping is a precondition for downstream apr pretrain --init / apr export / apr inspect to propagate source arch identity
   formal: 'apr_convert(src) ⟹ apr.metadata.hf_architecture = src.config.architectures[0] ∨ src.config = ⊥'
   applies_to: all
 
-- type: invariant
+- id: ACHA-INV-002
+  type: invariant
   property: When config.json is absent, hf_architecture remains None — no fabrication
   formal: '¬∃ config.json ⟹ hf_architecture = None'
   applies_to: all
 
-- type: roundtrip
+- id: ACHA-RT-003
+  type: roundtrip
   property: AprV2Metadata serializes + deserializes hf_architecture byte-identical via serde-JSON
   formal: 'from_json(to_json(m)).hf_architecture = m.hf_architecture'
   applies_to: all
 
-- type: completeness
+- id: ACHA-CMP-004
+  type: completeness
   property: GGUF import synthesizes a class name so round-tripping does not lose arch identity
   formal: 'gguf(family).hf_architecture = synth(family) ∧ synth(family) ≠ ⊥'
   applies_to: all

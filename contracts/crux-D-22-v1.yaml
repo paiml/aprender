@@ -129,13 +129,17 @@ falsification_tests:
   if_fails: "apr diverges from TRL DataCollatorForCompletionOnlyLM final_loss by >5%"
 
 proof_obligations:
-- type: invariant
+- id: CD298A4-INV-001
+  type: invariant
   property: "mask is 0 on all prompt tokens and 1 on all completion tokens"
-- type: invariant
+- id: CD298A4-INV-002
+  type: invariant
   property: "masked training loss differs from unmasked loss on SFT data"
-- type: invariant
+- id: CD298A4-INV-003
+  type: invariant
   property: "loss_mask_fraction in (0, 1) when --mask-prompt is active"
-- type: equivalence
+- id: CD298A4-EQ-004
+  type: equivalence
   property: "apr finetune --mask-prompt --response-template TEMPLATE matches TRL's DataCollatorForCompletionOnlyLM(response_template=TEMPLATE) on golden fixture"
 
 # References:

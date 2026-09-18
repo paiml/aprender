@@ -115,23 +115,28 @@ equations:
     - no overlapping byte ranges
     lean_theorem: Theorems.No_Overlap_Invariant
 proof_obligations:
-- type: bound
+- id: SFS-BND-001
+  type: bound
   property: Header size bounded before allocation
   formal: header_size < MAX_HEADER_SIZE checked before alloc(header_size)
   applies_to: header_size_validation
-- type: invariant
+- id: SFS-INV-002
+  type: invariant
   property: Tensor regions within file bounds
   formal: forall t, data_start + t.end <= file_size
   applies_to: tensor_offset_bounds
-- type: invariant
+- id: SFS-INV-003
+  type: invariant
   property: No overlapping tensor regions
   formal: forall t1 t2, t1 != t2 -> [t1.begin, t1.end) ∩ [t2.begin, t2.end) = empty
   applies_to: no_overlap_invariant
-- type: invariant
+- id: SFS-INV-004
+  type: invariant
   property: DType size matches tensor bytes
   formal: forall t, t.bytes.len() == product(t.shape) * dtype_size(t.dtype)
   applies_to: dtype_consistency
-- type: invariant
+- id: SFS-INV-005
+  type: invariant
   property: Zero-copy mmap no heap allocation
   formal: mmap_tensor allocates 0 heap bytes
   applies_to: mmap_zero_copy

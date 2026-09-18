@@ -79,11 +79,13 @@ equations:
     - 'epoch aggregation is token-weighted (instruct_trainer.rs)'
 
 proof_obligations:
-- type: invariant
+- id: FCLW-INV-001
+  type: invariant
   property: loss window honors configured scratch capacity
   formal: 'cuda_loss_window(p, s, Some(cap), mpe).seq_len == min(s, cap)'
   applies_to: loss_window_capacity_parity
-- type: invariant
+- id: FCLW-INV-002
+  type: invariant
   property: zero-token samples skip loudly
   formal: 'num_loss_tokens == 0 ⇒ eprintln(sample skipped)'
   applies_to: zero_token_samples_are_loud

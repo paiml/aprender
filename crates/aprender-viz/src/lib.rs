@@ -73,6 +73,7 @@
 #[macro_use]
 #[allow(unused_macros, unused_variables)]
 mod generated_contracts;
+pub mod breaks;
 pub mod color;
 /// Core framebuffer for pixel rendering.
 pub mod framebuffer;

@@ -1,0 +1,17 @@
+- id: PMAT-3435
+  github_issue: 3435
+  item_type: task
+  title: 'PP-TENSOR-001 T3: diagnostic contract — an absent tensor is reported as absent, never as truncated, corrupt, o'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-17T11:33:06Z
+  updated: 2026-09-17T11:33:06Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null

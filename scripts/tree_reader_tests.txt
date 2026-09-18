@@ -37,7 +37,9 @@ aprender-contracts	--lib	lint::finding
 aprender-contracts	--lib	lint::gates
 aprender-contracts	--lib	lint::gates_extended
 aprender-contracts	--lib	lint::sarif
+aprender-contracts	--lib	lint::sigma_gate
 aprender-contracts	--lib	lint::strict_test_binding
+aprender-contracts	--lib	ontology::sigma
 aprender-contracts	--lib	pipeline
 aprender-contracts	--lib	query
 aprender-contracts	--lib	query::index
@@ -54,6 +56,8 @@ aprender-contracts-cli	--lib	commands::verify_pipeline
 aprender-contracts-cli	--lib	contract_walk
 aprender-contracts-cli	--test	cli_integration
 aprender-contracts-cli	--test	ground_truth
+aprender-contracts-cli	--test	ont2b_sigma_gate
+aprender-contracts-cli	--test	ont6_lint_verdict
 aprender-contracts-cli	--test	pv_surface_gate
 aprender-contracts-cli	--test	pvl_zero_contracts
 aprender-core	--lib	format::metadata_bounds_contract_falsify

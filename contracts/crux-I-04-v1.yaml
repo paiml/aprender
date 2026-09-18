@@ -285,15 +285,20 @@ falsification_tests:
     full_discharge_blocked_on: "live /api/chat handler emitting tool_calls against a real tools[] request so the allowlist can be checked end-to-end on a live server"
 
 proof_obligations:
-- type: invariant
+- id: CI0C851-INV-001
+  type: invariant
   property: "response.message.tool_calls is an array when the model elects to call a tool"
-- type: invariant
+- id: CI0C851-INV-002
+  type: invariant
   property: "tool_calls[i].function.name ∈ declared tools[*].function.name"
-- type: invariant
+- id: CI0C851-INV-003
+  type: invariant
   property: "tool_calls[i].function.arguments is a JSON object, not a string"
-- type: invariant
+- id: CI0C851-INV-004
+  type: invariant
   property: "arguments validate against declared tool parameter JSON schema"
-- type: invariant
+- id: CI0C851-INV-005
+  type: invariant
   property: "streamed tool_calls appear atomically in the unique done=true chunk"
 
 verification_summary:

@@ -1,0 +1,40 @@
+{
+ "measured_at": "2026-09-16T10:00:00Z",
+ "hosts": [
+  {
+   "host": "intel",
+   "labels": [
+    "self-hosted",
+    "Linux",
+    "X64",
+    "clean-room"
+   ],
+   "listeners": 16,
+   "workers": 16
+  },
+  {
+   "host": "yoga",
+   "labels": [
+    "self-hosted",
+    "Linux",
+    "X64",
+    "clean-room"
+   ],
+   "listeners": 5,
+   "workers": 5
+  },
+  {
+   "host": "gx10",
+   "labels": [
+    "self-hosted",
+    "Linux",
+    "ARM64",
+    "gpu",
+    "gx10",
+    "cuda"
+   ],
+   "listeners": 6,
+   "workers": 4
+  }
+ ]
+}

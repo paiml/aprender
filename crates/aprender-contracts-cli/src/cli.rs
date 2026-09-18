@@ -84,6 +84,19 @@ pub enum Commands {
         /// Path to the new contract YAML file
         new: PathBuf,
     },
+    /// Census the contract corpus: one cardinality, by_anchoring, by_entity_type (ONT-001 ONT-1)
+    Census {
+        /// Directory containing contract YAML files
+        #[arg(default_value = "contracts")]
+        contract_dir: PathBuf,
+        /// Output format. ONT-001 §5 ONT-1's probe runs `--format json`.
+        #[arg(long, value_enum, default_value_t = CensusFormat::Table)]
+        format: CensusFormat,
+        /// Deprecated alias for `--format json`, kept because
+        /// scripts/check_ont_ratchet.sh derives its consumer probe from this surface.
+        #[arg(long)]
+        json: bool,
+    },
     /// Show cross-contract obligation coverage report
     Coverage {
         /// Directory containing contract YAML files
@@ -255,6 +268,13 @@ pub enum Commands {
         /// promote to Error and fail CI. Issue #1510.
         #[arg(long)]
         strict_test_binding: bool,
+        /// Git ref whose `lint-baseline.json` is the `armed_gates` comparand (ONT-001 section 3.9). Default:
+        /// merge-base(HEAD, origin/main), else the origin/main tip; with neither, NOT CHECKED is printed.
+        #[arg(long)]
+        armed_baseline_ref: Option<String>,
+        /// Run ONE named gate and report only it (ONT-001 section 5 ONT-2b): `--gate sigma`.
+        #[arg(long)]
+        gate: Option<String>,
     },
     /// Score contracts or a codebase directory
     Score {
@@ -430,4 +450,13 @@ pub enum Commands {
         #[arg(long)]
         dry_run: bool,
     },
+}
+
+/// `pv census` output format (ONT-001 ONT-1).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+pub enum CensusFormat {
+    /// Human-readable table.
+    Table,
+    /// The bytes `contracts/census.json` carries.
+    Json,
 }

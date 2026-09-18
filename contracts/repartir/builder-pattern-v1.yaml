@@ -29,15 +29,18 @@ equations:
     preconditions: []
     lean_theorem: Theorems.Builder_Fresh
 proof_obligations:
-- type: invariant
+- id: BP216F-INV-001
+  type: invariant
   property: Build produces valid config
   formal: '∀ b: build(b).is_ok() → build(b).unwrap().is_valid()'
   applies_to: build
-- type: invariant
+- id: BP216F-INV-002
+  type: invariant
   property: Missing required fields fail build
   formal: 'let b = Builder::new(); build(b) = Err(BuildError::MissingField(_))'
   applies_to: build
-- type: invariant
+- id: BP216F-INV-003
+  type: invariant
   property: Fresh builder has no targets
   formal: Builder::new().targets.len() = 0
   applies_to: builder_config

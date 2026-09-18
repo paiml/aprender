@@ -106,13 +106,17 @@ falsification_tests:
   if_fails: "Unpinned gptq/awq source"
 
 proof_obligations:
-- type: invariant
+- id: CL017B4-INV-001
+  type: invariant
   property: "GPTQ parity max_abs_diff <= 2e-2"
-- type: invariant
+- id: CL017B4-INV-002
+  type: invariant
   property: "AWQ parity max_abs_diff <= 2e-2"
-- type: invariant
+- id: CL017B4-INV-003
+  type: invariant
   property: "group_size ∈ {32,64,128}; scheme auto-detect"
-- type: equivalence
+- id: CL017B4-EQ-004
+  type: equivalence
   property: "apr gptq/awq kernel  ≅  HF kernels-community gptq / awq"
 
 verification_summary:

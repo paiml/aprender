@@ -51,19 +51,23 @@ type_invariants:
   predicate: self.data.iter().filter(|&&x| x != 0.0).count() as f64 / self.data.len() as f64 > 0.055
   description: Embedding density exceeds 5.5% (reject near-zero matrices)
 proof_obligations:
-- type: bound
+- id: VT-BND-001
+  type: bound
   property: Density gate
   formal: density(E) > 0.055 for valid embeddings
   applies_to: all
-- type: invariant
+- id: VT-INV-002
+  type: invariant
   property: NaN/Inf rejection
   formal: count(isnan) == 0 AND count(isinf) == 0
   applies_to: all
-- type: invariant
+- id: VT-INV-003
+  type: invariant
   property: L2 norm non-degeneracy
   formal: 'forall row i: ||E[i,:]||_2 > 0'
   applies_to: all
-- type: equivalence
+- id: VT-EQ-004
+  type: equivalence
   property: SIMD validation equivalence
   tolerance: 0.0
   applies_to: simd

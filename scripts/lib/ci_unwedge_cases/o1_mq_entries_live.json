@@ -1,0 +1,105 @@
+{
+  "data": {
+    "repository": {
+      "mergeQueue": {
+        "entries": {
+          "nodes": [
+            {
+              "position": 1,
+              "state": "AWAITING_CHECKS",
+              "headCommit": {
+                "oid": "f5d02debcce43710c64bde4bfdbe4da8d423bd19"
+              },
+              "baseCommit": {
+                "oid": "eb262f8eb799ef9b7de26a770a584330a27025b4"
+              },
+              "pullRequest": {
+                "number": 3270
+              }
+            },
+            {
+              "position": 2,
+              "state": "AWAITING_CHECKS",
+              "headCommit": {
+                "oid": "e0706bd56dc2fd15f81006b2bc89d095ebb6f20c"
+              },
+              "baseCommit": {
+                "oid": "f5d02debcce43710c64bde4bfdbe4da8d423bd19"
+              },
+              "pullRequest": {
+                "number": 3266
+              }
+            },
+            {
+              "position": 3,
+              "state": "AWAITING_CHECKS",
+              "headCommit": {
+                "oid": "13243a6baf8838c9cb668a6563dafb46b06d1c9d"
+              },
+              "baseCommit": {
+                "oid": "e0706bd56dc2fd15f81006b2bc89d095ebb6f20c"
+              },
+              "pullRequest": {
+                "number": 3265
+              }
+            },
+            {
+              "position": 4,
+              "state": "QUEUED",
+              "headCommit": null,
+              "baseCommit": null,
+              "pullRequest": {
+                "number": 3238
+              }
+            },
+            {
+              "position": 5,
+              "state": "QUEUED",
+              "headCommit": null,
+              "baseCommit": null,
+              "pullRequest": {
+                "number": 3205
+              }
+            },
+            {
+              "position": 6,
+              "state": "QUEUED",
+              "headCommit": null,
+              "baseCommit": null,
+              "pullRequest": {
+                "number": 3354
+              }
+            },
+            {
+              "position": 7,
+              "state": "QUEUED",
+              "headCommit": null,
+              "baseCommit": null,
+              "pullRequest": {
+                "number": 3360
+              }
+            },
+            {
+              "position": 8,
+              "state": "QUEUED",
+              "headCommit": null,
+              "baseCommit": null,
+              "pullRequest": {
+                "number": 3278
+              }
+            },
+            {
+              "position": 9,
+              "state": "QUEUED",
+              "headCommit": null,
+              "baseCommit": null,
+              "pullRequest": {
+                "number": 3320
+              }
+            }
+          ]
+        }
+      }
+    }
+  }
+}

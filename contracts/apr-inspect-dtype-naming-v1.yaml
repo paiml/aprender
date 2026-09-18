@@ -36,15 +36,18 @@ equations:
       - "JSON output (inspect --json, tensors --json) MUST use the same dtype names as text output"
 
 proof_obligations:
-  - type: invariant
+  - id: AIDN-INV-001
+    type: invariant
     property: "dtype names never leak as raw integers on GGUF"
     formal: "∀ t ∈ inspect(GGUF).tensors: t.dtype ∈ GGML_NAMES ∧ ¬parses_as_u32(t.dtype)"
     applies_to: dtype_naming
-  - type: invariant
+  - id: AIDN-INV-002
+    type: invariant
     property: "dtype names never leak as raw integers on rosetta inspect"
     formal: "∀ t ∈ rosetta_inspect(GGUF).tensors: t.dtype ∈ GGML_NAMES ∧ ¬parses_as_u32(t.dtype)"
     applies_to: dtype_naming
-  - type: invariant
+  - id: AIDN-INV-003
+    type: invariant
     property: "Cross-command dtype name consistency"
     formal: "∀ tensor T: dtype(inspect, T) = dtype(tensors, T) = dtype(rosetta_inspect, T)"
     applies_to: cross_cmd_consistency

@@ -76,11 +76,14 @@ falsification_tests:
 
   if_fails: rule 'nsys parity within 5% per kernel' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: equivalence
+- id: CF13351-EQ-001
+  type: equivalence
   property: "apr profile kernel timings match nsys within 5% per kernel"
-- type: invariant
+- id: CF13351-INV-002
+  type: invariant
   property: "trace.json validates Chrome Trace Event Format"
-- type: invariant
+- id: CF13351-INV-003
+  type: invariant
   property: "kernels.csv duration_ns ≥ 0 for every row"
 
 verification_summary:

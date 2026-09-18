@@ -133,7 +133,8 @@ equations:
     lean_theorem: Theorems.Error_Classification
 
 proof_obligations:
-- type: state_machine
+- id: AO-SM-001
+  type: state_machine
   property: Daemon lifecycle follows valid state transitions
   formal: >-
     forall d. d.status transitions only follow edges in
@@ -141,37 +142,44 @@ proof_obligations:
     Running->Stopping, Paused->Stopping, Stopping->Stopped, *->Failed}
   applies_to: daemon_lifecycle
 
-- type: equivalence
+- id: AO-EQ-002
+  type: equivalence
   property: Signal numeric roundtrip
   formal: forall s in Signal. Signal::from_i32(s.as_i32()) == Some(s)
   applies_to: signal_handling
 
-- type: bound
+- id: AO-BND-003
+  type: bound
   property: Backoff delay bounded by max_delay
   formal: forall n. BackoffConfig::delay_for(n) <= BackoffConfig.max_delay
   applies_to: restart_policy
 
-- type: monotonicity
+- id: AO-MON-004
+  type: monotonicity
   property: Backoff delay non-decreasing until capped
   formal: forall n. delay_for(n) <= delay_for(n+1) OR delay_for(n) == max_delay
   applies_to: restart_policy
 
-- type: invariant
+- id: AO-INV-005
+  type: invariant
   property: Error rate bounded
   formal: 0.0 <= DaemonMetrics::error_rate() <= 1.0 for all metric states
   applies_to: red_metrics
 
-- type: determinism
+- id: AO-DET-006
+  type: determinism
   property: Restart policy is deterministic
   formal: should_restart(reason, count) returns same bool for same inputs
   applies_to: restart_policy
 
-- type: precondition
+- id: AO-PRE-007
+  type: precondition
   property: Active daemons cannot be unregistered
   formal: status.is_active() => unregister(id).is_err()
   applies_to: manager_registration
 
-- type: postcondition
+- id: AO-POST-008
+  type: postcondition
   property: Registration increments count
   formal: register(d).is_ok() => count_after == count_before + 1
   applies_to: manager_registration

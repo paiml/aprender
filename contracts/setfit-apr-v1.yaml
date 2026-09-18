@@ -1009,93 +1009,111 @@ equations:
 
 proof_obligations:
 
-  - type: completeness
+  - id: SA996B-CMP-001
+    type: completeness
     property: 'Every APR-01 item has exactly one storage location in the storage map, and every location is either a typed metadata key, a named tensor, or a field of the one custom document'
     formal: 'forall item in APR_01_ITEMS: exists! loc in storage_map: loc.item == item'
     applies_to: all
 
-  - type: invariant
+  - id: SA996B-INV-002
+    type: invariant
     property: 'Classifier head weights and intercepts are stored as named F32 tensors, never as metadata'
     formal: 'setfit.head.weight in tensor_index && setfit.head.bias in tensor_index && head_coefficients not in metadata'
     applies_to: all
 
-  - type: determinism
+  - id: SA996B-DET-003
+    type: determinism
     property: 'Writing the same SetFitBundle twice, in two different processes, produces byte-identical artifacts'
     formal: 'write(b) == write(b) across processes; no timestamp, exactly one custom metadata key, BTreeMap-ordered doc'
     applies_to: all
 
-  - type: roundtrip
+  - id: SA996B-RT-004
+    type: roundtrip
     property: 'serialize(deserialize(bytes)) == bytes at Tolerance::EXACT for every artifact this writer produces'
     formal: 'forall bytes in image(write_setfit_apr): serialize(deserialize(bytes)) == bytes'
     applies_to: all
 
-  - type: completeness
+  - id: SA996B-CMP-005
+    type: completeness
     property: 'Every SetFitArtifactDoc field is either a SetFitBundle field or a named deterministic function of bundle fields, and all 20 bundle fields are recovered by deserialize'
     formal: 'forall f in doc_fields: source(f) in bundle_fields union derived_functions; forall g in bundle_fields: exists path in doc union tensor_payload recovering g'
     applies_to: all
 
-  - type: soundness
+  - id: SA996B-SND-006
+    type: soundness
     property: 'The nullable-path allowlist names exactly the paths at which an Option-typed field of the five walked sub-documents can serialize — no more, no fewer'
     formal: 'null_paths(all_none_instance(subdoc)) for subdoc in FIVE == NULLABLE_PATH_ALLOWLIST; |NULLABLE_PATH_ALLOWLIST| == 4'
     applies_to: all
 
-  - type: safety
+  - id: SA996B-SAFE-007
+    type: safety
     property: 'A non-finite value smuggled into any non-allowlisted path is refused at write time with a typed NonFiniteValue naming the path'
     formal: 'exists p in null_paths(doc) \\ ALLOWLIST => write_setfit_apr(doc) == Err(NonFiniteValue{path: p})'
     applies_to: all
 
-  - type: invariant
+  - id: SA996B-INV-008
+    type: invariant
     property: 'The pinned production artifact shape (vocab_remap: None, budget: None, hard_cap: None, epsilon_used: None) is ACCEPTED by the null guard'
     formal: 'write_setfit_apr(full_pin_doc).is_ok()'
     applies_to: all
 
-  - type: invariant
+  - id: SA996B-INV-009
+    type: invariant
     property: 'The writer walks all FIVE embedded sub-documents, including the two that contribute zero allowlisted paths'
     formal: 'walked_subdocuments == {architecture, requested_config, resolved_config, evidence, provenance}; |walked| == 5'
     applies_to: all
 
-  - type: bound
+  - id: SA996B-BND-010
+    type: bound
     property: 'An artifact larger than max_artifact_bytes is refused before the reader allocates it, both by declared length and by a bounded read of cap+1'
     formal: 'declared_len > 268435456 => Err(TooLarge) before any read; bytes_read <= 268435457 always'
     applies_to: all
 
-  - type: invariant
+  - id: SA996B-INV-011
+    type: invariant
     property: 'The expected tensor-name set is computed from the artifact own declared architecture, with no hardcoded layer count and no test-only schema exception'
     formal: 'expected_names == f(doc.architecture.num_layers); |expected_names| == 5 + 16*num_layers + 3'
     applies_to: all
 
-  - type: equivalence
+  - id: SA996B-EQ-012
+    type: equivalence
     property: 'Every TensorIndexEntry size equals product(shape) * dtype_width for its declared dtype'
     formal: 'forall e in tensor_index: e.size == product(e.shape) * dtype_width(e.dtype)'
     applies_to: all
 
-  - type: classification
+  - id: SA996B-CLS-013
+    type: classification
     property: 'Probe replay agrees within tolerance on embeddings, logits and probabilities, and EXACTLY on labels, for all six probes, before any prediction is served'
     formal: 'forall i in 0..6: within(|obs_i - exp_i|, bound) && obs_label_i == exp_label_i'
     tolerance: 7.62939453e-06
     applies_to: all
 
-  - type: invariant
+  - id: SA996B-INV-014
+    type: invariant
     property: 'Float comparison is NaN-visible: within(NaN, bound) is false in every argument position'
     formal: 'within(d, b) == matches!(d.partial_cmp(&b), Some(Less | Equal)); within(NaN, b) == false; within(d, NaN) == false'
     applies_to: all
 
-  - type: invariant
+  - id: SA996B-INV-015
+    type: invariant
     property: 'A ClassifyResponse carrying a non-finite value is unconstructible: fields are private, the sole constructor validates, and Deserialize routes through it'
     formal: 'no public field; ClassifyResponse::new validates; Deserialize via try_from(wire)'
     applies_to: all
 
-  - type: invariant
+  - id: SA996B-INV-016
+    type: invariant
     property: 'The backend identity is produced by the encode invocation that ran, and never by capability detection or configuration'
     formal: 'backend == encode_result.backend_identity; backend not in {Backend::AVX2, Backend::NEON, select_backend*(..), config.device}'
     applies_to: all
 
-  - type: state_machine
+  - id: SA996B-SM-017
+    type: state_machine
     property: 'Canonical test access requires a durable lock written by a prior validation evaluation; absent, stale and dataset-mismatched locks are three distinct typed refusals'
     formal: 'grant(token, run, dataset) reachable only from mint_test_token(run) reachable only from a lock read off disk'
     applies_to: all
 
-  - type: invariant
+  - id: SA996B-INV-018
+    type: invariant
     property: 'A truncated text reports truncated == true together with token_count == MAX_SEQUENCE_LENGTH, read from the exported constant rather than a literal'
     formal: 'truncated => token_count == aprender::setfit::MAX_SEQUENCE_LENGTH'
     applies_to: all

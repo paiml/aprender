@@ -40,19 +40,23 @@ equations:
       - "MIN_EXPECTED is overridable by environment only so the self-test can scan a one-file fixture"
 
 proof_obligations:
-  - type: invariant
+  - id: CGI-INV-001
+    type: invariant
     property: "No pass-grep in the tree matches an all-failing line"
     formal: "scripts/check_pass_grep_anchored.sh exits 0"
     applies_to: pass_grep_rejects_failure
-  - type: invariant
+  - id: CGI-INV-002
+    type: invariant
     property: "The checker can turn RED"
     formal: "Given the pre-#2298 ci.yml pattern, the checker exits non-zero"
     applies_to: pass_grep_rejects_failure
-  - type: invariant
+  - id: CGI-INV-003
+    type: invariant
     property: "The checker is not vacuous"
     formal: "The checker fails when it locates fewer than MIN_EXPECTED in-scope patterns"
     applies_to: checker_is_not_vacuous
-  - type: invariant
+  - id: CGI-INV-004
+    type: invariant
     property: "The checker is enforced per-PR, not merely present"
     formal: "ci.yml invokes the checker in a job that `gate` depends on"
     applies_to: pass_grep_rejects_failure

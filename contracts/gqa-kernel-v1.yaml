@@ -25,38 +25,46 @@ equations:
     - k.len() == v.len()
     lean_theorem: Theorems.Gqa
 proof_obligations:
-- type: subcontract
+- id: GQ-SUB-001
+  type: subcontract
   property: GQA refines standard MHA — accepts same Q/K/V shapes, produces compatible output
   formal: pre(MHA) → pre(GQA) ∧ post(GQA) → post(MHA) when n_kv_heads = n_heads
   parent_contract: attention-kernel-v1
-- type: invariant
+- id: GQ-INV-002
+  type: invariant
   property: Attention weight normalization
   formal: '|sum(attn_weights[i, :]) - 1.0| < eps per query position i'
   tolerance: 1.0e-06
   applies_to: all
-- type: equivalence
+- id: GQ-EQ-003
+  type: equivalence
   property: GQA degenerates to MHA
   formal: GQA(kv_heads=num_heads) == MHA(Q, K, V) within tolerance
   tolerance: 1.0e-06
   applies_to: all
-- type: bound
+- id: GQ-BND-004
+  type: bound
   property: Output is convex combination of V
   formal: min(V) <= output_i <= max(V) per head
   applies_to: all
-- type: invariant
+- id: GQ-INV-005
+  type: invariant
   property: KV head broadcasting correctness
   formal: Q heads [g*r..(g+1)*r] share K_g, V_g where r = num_heads/num_kv_heads
   applies_to: all
-- type: equivalence
+- id: GQ-EQ-006
+  type: equivalence
   property: SIMD matches scalar within ULP
   tolerance: 8.0
   applies_to: simd
-- type: equivalence
+- id: GQ-EQ-007
+  type: equivalence
   property: GPU PTX matches CPU within cosine >= 0.98
   formal: cosine(gqa_ptx(Q,K,V), gqa_cpu(Q,K,V)) >= 0.98
   tolerance: 0.02
   applies_to: cuda
-- type: invariant
+- id: GQ-INV-008
+  type: invariant
   property: GPU head mapping for non-power-of-2 ratios
   formal: kv_head_idx(q) == q * num_kv_heads / num_heads for all q in [0..num_heads)
   applies_to: cuda

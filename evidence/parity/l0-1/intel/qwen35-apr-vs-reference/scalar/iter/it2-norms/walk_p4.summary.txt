@@ -1,0 +1,1 @@
+# p4: matched=1500 missing_in_apr=0 max_rel_l2=1.353631e-01 at pos3 a_softplus-12; first_not_bit_equal=pos0 idx11 attn_output-0 bit_equal=545/2048 rel_l2=1.457e-07

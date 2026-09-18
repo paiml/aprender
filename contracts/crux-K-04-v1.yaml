@@ -133,11 +133,14 @@ falsification_tests:
   if_fails: "LlamaIndex RAG smoke test fails when using apr serve as the LLM backend"
 
 proof_obligations:
-- type: invariant
+- id: CK06E94-INV-001
+  type: invariant
   property: "apr-backed LLM conforms to llama_index BaseLLM interface (complete/chat/metadata)"
-- type: invariant
+- id: CK06E94-INV-002
+  type: invariant
   property: "LLMMetadata exposes valid context_window and model_name"
-- type: equivalence
+- id: CK06E94-EQ-003
+  type: equivalence
   property: "apr serve is drop-in usable via llama_index.llms.openai_like.OpenAILike, matching OpenAI-compat provider behavior on the canonical VectorStoreIndex RAG smoke test"
   reference: "https://docs.llamaindex.ai/en/stable/module_guides/models/llms/"
 

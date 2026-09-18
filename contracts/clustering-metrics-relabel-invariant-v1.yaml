@@ -57,17 +57,20 @@ equations:
     note: "RED (max+1 bug): gapped [0,0,2,2,2] => DB=0.3721 (phantom origin-centroid + inflated k). GREEN: DB=0.4150 for both."
 
 proof_obligations:
-  - type: invariant
+  - id: CMRI-INV-001
+    type: invariant
     property: cluster count equals number of distinct labels
     formal: |
       k computed by both calinski_harabasz_score and davies_bouldin_score equals
       |distinct(labels)|; no index in (max+1 minus distinct) contributes a cluster.
-  - type: equivalence
+  - id: CMRI-EQ-002
+    type: equivalence
     property: Calinski-Harabasz invariant under relabeling
     formal: |
       For any bijection sigma on the label set, CH(X, sigma.L) == CH(X, L); the
       gapped encoding [0,0,2,2,2] yields the same score (10.3140) as [0,0,1,1,1].
-  - type: equivalence
+  - id: CMRI-EQ-003
+    type: equivalence
     property: Davies-Bouldin invariant under relabeling
     formal: |
       For any bijection sigma on the label set, DB(X, sigma.L) == DB(X, L); the

@@ -128,11 +128,14 @@ falsification_tests:
   if_fails: "apr publish left half-committed state after a file-level failure (not atomic)"
 
 proof_obligations:
-- type: invariant
+- id: CG0D5AE-INV-001
+  type: invariant
   property: "a single `apr publish` CLI invocation produces exactly one HF commit covering all files"
-- type: invariant
+- id: CG0D5AE-INV-002
+  type: invariant
   property: "on any file-level failure, no files are committed (atomic all-or-nothing)"
-- type: equivalence
+- id: CG0D5AE-EQ-003
+  type: equivalence
   property: "apr publish N files --commit-message M matches hf upload repo N files --commit-message M on HF /tree and /commits state"
   competitor: huggingface
   reference: "https://huggingface.co/docs/huggingface_hub/main/en/guides/cli (hf upload --commit-message, create_commit atomic operations[])"

@@ -174,13 +174,17 @@ falsification_tests:
     full_discharge_blocked_on: "`apr quantize` gaining a --method/--bits/--group-size surface (or this rule being retired); see contracts/apr-lint-flag-parity-v1.yaml"
 
 proof_obligations:
-- type: invariant
+- id: CB005D8-INV-001
+  type: invariant
   property: "GPTQ 4-bit artifact <= 0.30x fp16 size"
-- type: invariant
+- id: CB005D8-INV-002
+  type: invariant
   property: "Mean logit cosine(fp16, gptq) >= 0.98 on 64 held-out prompts"
-- type: invariant
+- id: CB005D8-INV-003
+  type: invariant
   property: "apr quantize --method gptq flag is on CLI surface and documented"
-- type: invariant
+- id: CB005D8-INV-004
+  type: invariant
   property: "GPTQ output includes per-group scale + zero_point metadata"
 
 verification_summary:

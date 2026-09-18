@@ -1,0 +1,117 @@
+obs_code=543da11883ce06082b9e59f0e2f4d8511510179e dirty_tracked=0 host=noah-Lambda-Vector nproc=48 start_utc=2026-09-15T22:43:03Z load=6.63 3.45 2.73
+e57e30533e9069fdef6ce0c4d90955756aea758ad40703efffb060113b9cb0da  /mnt/nvme-raid0/targets/obs-3091/release/examples/qwen35_layer_obs
+bd258782e35f7f458f8aced1adc053e6e92e89bc735ba3be89d38a06121dc517  /home/noah/models/Qwen3.5-0.8B-Q4_K_M.gguf
+42a64dc1c78e3b4ae0ad7ece7dcebf4ee80550931866e53762944c118ae68b9e  /mnt/nvme-raid0/agent-wt/layer-3091/evidence/parity/l0-1/intel/qwen35-apr-vs-reference/variation/prompt-4.ids
+a4df9cdea5769e5e0ab81ba20e3a6bc890767b4cd668ae001b5c3b4034f380be  /mnt/nvme-raid0/agent-wt/layer-3091/evidence/parity/l0-1/intel/qwen35-apr-vs-reference/variation/prompt-1.ids
+1b7d56c1ff086b7332d9ece65683797417f8237a34a99705c9ce396b04fd8ca2  /mnt/nvme-raid0/agent-wt/layer-3091/evidence/parity/l0-1/intel/qwen35-apr-vs-reference/variation/prompt-3.ids
+77001b22094106e48dc38b37e49a816e0af36d03dceba93f1feb1373bce297d6  /mnt/nvme-raid0/agent-wt/layer-3091/evidence/parity/l0-1/intel/qwen35-apr-vs-reference/variation/prompt-2.ids
+62e908350982297259947997d026c399c39558e8129890b6e9e64d17ace55e72  /mnt/nvme-raid0/agent-wt/layer-3091/evidence/parity/l0-1/intel/qwen35-apr-vs-reference/prompt_token_ids.txt
+f05cd87aef3bbe8396606f91334c974ddcb4f59d68186c35611405f74bbdd4ce  /mnt/nvme-raid0/agent-wt/layer-3091/evidence/parity/l0-1/intel/qwen35-apr-vs-reference/compare_raw_logits.py
+54ccaca6fbf6db33f29f113b6689a8a7eae9466297191a15afe37e7755b7adb3  /mnt/nvme-raid0/agent-wt/layer-3091/evidence/parity/l0-1/intel/qwen35-apr-vs-reference/layerwise/compare_layerwise.py
+d9a25a0d6560a2da67a6e98bbc07eaaa57f846e1c5907cf9de325fe814f9f1fe  /mnt/nvme-raid0/agent-wt/layer-3091/evidence/parity/l0-1/intel/qwen35-apr-vs-reference/layerwise/layer_steps.py
+a61b12ba9bbc063851ed03a5f72c2b0657e5cb75d321ff30085790527fa02f24  /mnt/nvme-raid0/agent-wt/layer-3091/evidence/parity/l0-1/intel/qwen35-apr-vs-reference/layerwise/layer_types.tsv
+--- 1. invariance (switch OFF)
+run off-orig switch=- start_utc=22:43:04Z load=6.63 3.45 2.73
+run off-orig rc=0 end_utc=22:43:10Z
+  qwen35_layer_obs: ggml_vecdot_emul mask=EmulationMask { q4_k: false, q5_k: false, q6_k: false, q8_0: false, scalar: false } emulated_matmuls[Q4_K,Q5_K,Q6_K,Q8_0]=[0, 0, 0, 0]
+  qwen35_layer_obs: n_pos=78 n_vocab=248320 out=/tmp/scalar3091/runs/off-orig.bin
+  f6f792649014dcef6eec1afaf96852a293cc95c6cfceb1c88d62e16ee36c0252  /tmp/scalar3091/runs/off-orig.bin
+invariance orig sha_equal=true
+run off-p4 switch=- start_utc=22:43:10Z load=10.53 4.37 3.04
+run off-p4 rc=0 end_utc=22:43:16Z
+  qwen35_layer_obs: ggml_vecdot_emul mask=EmulationMask { q4_k: false, q5_k: false, q6_k: false, q8_0: false, scalar: false } emulated_matmuls[Q4_K,Q5_K,Q6_K,Q8_0]=[0, 0, 0, 0]
+  qwen35_layer_obs: n_pos=82 n_vocab=248320 out=/tmp/scalar3091/runs/off-p4.bin
+  92f1b54d504a53f758a56911c4779ce1900207bd89c78d58597e558ebc6d3ee9  /tmp/scalar3091/runs/off-p4.bin
+invariance p4 sha_equal=true
+--- 2. scalar subjects
+run scalar-orig switch=scalar start_utc=22:43:16Z load=12.17 4.81 3.19
+run scalar-orig rc=0 end_utc=22:43:25Z
+  qwen35_layer_obs: ggml_vecdot_emul mask=EmulationMask { q4_k: true, q5_k: true, q6_k: true, q8_0: true, scalar: true } emulated_matmuls[Q4_K,Q5_K,Q6_K,Q8_0]=[7644, 2808, 1326, 2808]
+  qwen35_layer_obs: n_pos=78 n_vocab=248320 out=/tmp/scalar3091/runs/scalar-orig.bin
+  a581be495b605f023f387e5fd10a22f46f43902a80b5762efbc490567bd8c13c  /tmp/scalar3091/runs/scalar-orig.bin
+run scalar-p4 switch=scalar start_utc=22:43:26Z load=17.51 6.18 3.65
+run scalar-p4 rc=0 end_utc=22:43:36Z
+  qwen35_layer_obs: ggml_vecdot_emul mask=EmulationMask { q4_k: true, q5_k: true, q6_k: true, q8_0: true, scalar: true } emulated_matmuls[Q4_K,Q5_K,Q6_K,Q8_0]=[8036, 2952, 1394, 2952]
+  qwen35_layer_obs: n_pos=82 n_vocab=248320 out=/tmp/scalar3091/runs/scalar-p4.bin
+  2c5f2150fa2e3d7d9dddc63359a35e9c72f0e2e0fdbfae51c1049147f7179112  /tmp/scalar3091/runs/scalar-p4.bin
+run scalar-p1 switch=scalar start_utc=22:43:36Z load=22.95 7.72 4.18
+run scalar-p1 rc=0 end_utc=22:43:45Z
+  qwen35_layer_obs: ggml_vecdot_emul mask=EmulationMask { q4_k: true, q5_k: true, q6_k: true, q8_0: true, scalar: true } emulated_matmuls[Q4_K,Q5_K,Q6_K,Q8_0]=[8134, 2988, 1411, 2988]
+  qwen35_layer_obs: n_pos=83 n_vocab=248320 out=/tmp/scalar3091/runs/scalar-p1.bin
+  cf976837c46f927ff1c90f583df03d8c18c2edace8ed13546d60d194281b6285  /tmp/scalar3091/runs/scalar-p1.bin
+run scalar-p2 switch=scalar start_utc=22:43:45Z load=25.23 8.73 4.55
+run scalar-p2 rc=0 end_utc=22:43:57Z
+  qwen35_layer_obs: ggml_vecdot_emul mask=EmulationMask { q4_k: true, q5_k: true, q6_k: true, q8_0: true, scalar: true } emulated_matmuls[Q4_K,Q5_K,Q6_K,Q8_0]=[11466, 4212, 1989, 4212]
+  qwen35_layer_obs: n_pos=117 n_vocab=248320 out=/tmp/scalar3091/runs/scalar-p2.bin
+  7216009a84ca07db04a45edfd9cd365d31a2a1065cde4b768d65ce2ea3a84bc4  /tmp/scalar3091/runs/scalar-p2.bin
+run scalar-p3 switch=scalar start_utc=22:43:57Z load=26.57 9.58 4.87
+run scalar-p3 rc=0 end_utc=22:44:09Z
+  qwen35_layer_obs: ggml_vecdot_emul mask=EmulationMask { q4_k: true, q5_k: true, q6_k: true, q8_0: true, scalar: true } emulated_matmuls[Q4_K,Q5_K,Q6_K,Q8_0]=[10584, 3888, 1836, 3888]
+  qwen35_layer_obs: n_pos=108 n_vocab=248320 out=/tmp/scalar3091/runs/scalar-p3.bin
+  0f7bdf591c0af973b3ffe21322b92a885b70a121b1beab270a91f0a3c6e9a0a2  /tmp/scalar3091/runs/scalar-p3.bin
+run scalar2-orig switch=scalar start_utc=22:44:09Z load=30.67 11.02 5.39
+run scalar2-orig rc=0 end_utc=22:44:18Z
+  qwen35_layer_obs: ggml_vecdot_emul mask=EmulationMask { q4_k: true, q5_k: true, q6_k: true, q8_0: true, scalar: true } emulated_matmuls[Q4_K,Q5_K,Q6_K,Q8_0]=[7644, 2808, 1326, 2808]
+  qwen35_layer_obs: n_pos=78 n_vocab=248320 out=/tmp/scalar3091/runs/scalar2-orig.bin
+  a581be495b605f023f387e5fd10a22f46f43902a80b5762efbc490567bd8c13c  /tmp/scalar3091/runs/scalar2-orig.bin
+scalar2-orig vs scalar-orig cmp rc=0
+scalar-orig vs =1 on-orig cmp rc=1 (1 = scalar differs from native emulation)
+scalar-p4 vs =1 on-p4 cmp rc=1 (1 = scalar differs from native emulation)
+run scalar-dump-p4 switch=scalar start_utc=22:44:18Z load=28.82 11.26 5.52
+run scalar-dump-p4 rc=0 end_utc=22:44:27Z
+  qwen35_layer_obs: dump dir=/tmp/scalar3091/runs/scalar-dump-p4 written=1500
+  qwen35_layer_obs: ggml_vecdot_emul mask=EmulationMask { q4_k: true, q5_k: true, q6_k: true, q8_0: true, scalar: true } emulated_matmuls[Q4_K,Q5_K,Q6_K,Q8_0]=[8036, 2952, 1394, 2952]
+  qwen35_layer_obs: n_pos=82 n_vocab=248320 out=/tmp/scalar3091/runs/scalar-dump-p4.bin
+  2c5f2150fa2e3d7d9dddc63359a35e9c72f0e2e0fdbfae51c1049147f7179112  /tmp/scalar3091/runs/scalar-dump-p4.bin
+run scalar-dump-orig switch=scalar start_utc=22:44:27Z load=31.34 12.37 5.95
+run scalar-dump-orig rc=0 end_utc=22:44:35Z
+  qwen35_layer_obs: dump dir=/tmp/scalar3091/runs/scalar-dump-orig written=750
+  qwen35_layer_obs: ggml_vecdot_emul mask=EmulationMask { q4_k: true, q5_k: true, q6_k: true, q8_0: true, scalar: true } emulated_matmuls[Q4_K,Q5_K,Q6_K,Q8_0]=[7644, 2808, 1326, 2808]
+  qwen35_layer_obs: n_pos=78 n_vocab=248320 out=/tmp/scalar3091/runs/scalar-dump-orig.bin
+  a581be495b605f023f387e5fd10a22f46f43902a80b5762efbc490567bd8c13c  /tmp/scalar3091/runs/scalar-dump-orig.bin
+scalar-dump-p4 logits vs scalar-p4 cmp rc=0
+scalar-dump-orig logits vs scalar-orig cmp rc=0
+--- 3. compare vs llama SCALAR config C
+e22120ae1e04a84c43af809f3185972e153483def2124e495a017c602159fdb5  /tmp/scalar3091/ref/SC-orig.bin
+c5e5d181a9883c8516fdf5b3b88dcc4c019b8416da94b3923b7aa07652d8e715  /tmp/scalar3091/ref/SC-p1.bin
+6088eeb44732f48a6d356107ee4623f3d6395b91cb874a044f4caa40751e00cb  /tmp/scalar3091/ref/SC-p2.bin
+c413c03b95afad52b04b79894f48bc95787009e91e78c681438c425ad580568b  /tmp/scalar3091/ref/SC-p3.bin
+b40d6649039e72be21f589e1e774cbc0a6584b14d19cc4875d414b18e8f75944  /tmp/scalar3091/ref/SC-p4.bin
+e22120ae1e04a84c43af809f3185972e153483def2124e495a017c602159fdb5  /tmp/scalar3091/ref/SC-sub-orig.bin
+b40d6649039e72be21f589e1e774cbc0a6584b14d19cc4875d414b18e8f75944  /tmp/scalar3091/ref/SC-sub-p4.bin
+compare_raw_logits orig scalar vs SC rc=0
+compare_raw_logits orig off vs SC rc=0
+compare_raw_logits p4 scalar vs SC rc=0
+compare_raw_logits p4 off vs SC rc=0
+compare_raw_logits p1 scalar vs SC rc=0
+compare_raw_logits p1 off vs SC rc=2
+compare_raw_logits p2 scalar vs SC rc=0
+compare_raw_logits p2 off vs SC rc=2
+compare_raw_logits p3 scalar vs SC rc=0
+compare_raw_logits p3 off vs SC rc=2
+compare_layerwise p4 rc=0
+compare_layerwise orig rc=0
+layer_steps rc=0
+a6f8e0a4f5118aab4b6dfc46c01b7d847084b443133d22453daefaae88f5c3d7  /tmp/scalar3091/cmp/layer_steps_scalar_vs_SC.tsv
+6066005fb961176d572f0cae9a12a5f9b9adc72c7ba68b5c5763d4d5d08d636c  /tmp/scalar3091/cmp/logits-orig-off-vs-SC.json
+46cd65779720875b45747c2e55506878a634b221ea88d12da63af475777e718c  /tmp/scalar3091/cmp/logits-orig-off-vs-SC.tsv
+0785249139d1359144a8c76d7f748976fc1692d63c1fb6cdc96ba6620ecf539c  /tmp/scalar3091/cmp/logits-orig-scalar-vs-SC.json
+db62ee8f6fc6bbc58fe69f0e0be5dbd6ea60ad03df4b0aaf46a5bf2c3a87b462  /tmp/scalar3091/cmp/logits-orig-scalar-vs-SC.tsv
+06ac72114f4989e485f3ff9f5371b5974f855d821bc2f66829035f5797ed3a4a  /tmp/scalar3091/cmp/logits-p1-off-vs-SC.tsv
+0eb3f0372793da487b64226f14c398a3c0fe9a8792d510929117fac03fece25b  /tmp/scalar3091/cmp/logits-p1-scalar-vs-SC.json
+4b671ede5cdc046583e11c9b581cf0929f0f2636e010f7e86035318f32769612  /tmp/scalar3091/cmp/logits-p1-scalar-vs-SC.tsv
+2581229d2cde291d57635a0e771643c23f9574fba0f9bd3c8fa29808ce71b63d  /tmp/scalar3091/cmp/logits-p2-off-vs-SC.tsv
+e191cf9ba14528671cd7aefdb49fdb2dab3b8dca7c2bb9971908a6afd9ecfef5  /tmp/scalar3091/cmp/logits-p2-scalar-vs-SC.json
+55c9da32bd4d3de7dc7dec6a6937cfafe2e9e8dbdf032b4e1a6d8b76979e84be  /tmp/scalar3091/cmp/logits-p2-scalar-vs-SC.tsv
+6983ee72191bd6a89b1a3814acbf11047ac82f2518cff2cd5da43bc2b3444731  /tmp/scalar3091/cmp/logits-p3-off-vs-SC.tsv
+d6132d4097d8ff2daa2f1fb8ebdcaf0cdcda4e8932dec34db268efc76eacf59d  /tmp/scalar3091/cmp/logits-p3-scalar-vs-SC.json
+88e1dce1bde82921d441ff1d1d51e1bd13c968a2d8fd4a2e99b22091e5e3e1cb  /tmp/scalar3091/cmp/logits-p3-scalar-vs-SC.tsv
+e1691ec30bd8f72b02c474beb8fb85ecc7d2382dc2e3babafa1b2394bf61cb07  /tmp/scalar3091/cmp/logits-p4-off-vs-SC.json
+913f6d9d97352f13d60daac1e80ed2692ae90d448bdd1ade3bf3cd8739fb4506  /tmp/scalar3091/cmp/logits-p4-off-vs-SC.tsv
+6bad8b27b6032eedfb4c4445a680c30dcec5853a6879032d09364888ab12cccd  /tmp/scalar3091/cmp/logits-p4-scalar-vs-SC.json
+a657e49d4ed6e7d66f9755efb79be9552f8e9e4c673629c1e944cc54c694a6a9  /tmp/scalar3091/cmp/logits-p4-scalar-vs-SC.tsv
+1185ef7cfed8835ee32fa99544cc057a002373d2ced31c4797881fafe2afa301  /tmp/scalar3091/cmp/sublayer_orig_scalar_vs_SC.selfcheck.txt
+71c3b164d15034108a8fb519cbc1284719529ef654efd2e7606ef5e3d5bfeb1f  /tmp/scalar3091/cmp/sublayer_orig_scalar_vs_SC.tsv
+34d0c59e5014e088a4c8a7ff9e97974f6492fa6b099a056a74ffb843a15812d8  /tmp/scalar3091/cmp/sublayer_p4_scalar_vs_SC.selfcheck.txt
+c83d1c592fb61d34c71e2136fb89cd50b20c15222893b2116ebcc3fa146b186a  /tmp/scalar3091/cmp/sublayer_p4_scalar_vs_SC.tsv
+end_utc=2026-09-15T22:45:17Z load=36.06 16.75 7.79

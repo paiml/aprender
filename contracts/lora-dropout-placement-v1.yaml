@@ -38,18 +38,22 @@ equations:
     - 'E[dropout(x)] == x (expectation preserved)'
     lean_theorem: Theorems.Inverted_Dropout
 proof_obligations:
-- type: postcondition
+- id: LDP-POST-001
+  type: postcondition
   property: Dropout on input is train-only; eval is identity (dropout-on-input-train-only)
   formal: 'training ∧ p > 0 ⇒ y_lora = s·B(A(dropout(x))) ; ¬training ∨ p = 0 ⇒ y_lora = s·B(A(x))'
-- type: invariant
+- id: LDP-INV-002
+  type: invariant
   property: Eval-mode forward is deterministic and dropout-free (inference parity)
   formal: ¬training ⇒ forward(x) byte-identical to no-dropout forward(x)
   applies_to: all
-- type: invariant
+- id: LDP-INV-003
+  type: invariant
   property: Deterministic mask for a fixed seed
   formal: same dropout_seed ⇒ same mask sequence
   applies_to: all
-- type: bound
+- id: LDP-BND-004
+  type: bound
   property: Inverted-dropout scale finite
   formal: p ∈ [0, 1) ⇒ 1/(1-p) is finite
   applies_to: all

@@ -63,23 +63,28 @@ equations:
       - "Shapes are interpreted row-major (LAYOUT-001) consistently with import"
 
 proof_obligations:
-  - type: invariant
+  - id: AENL-INV-001
+    type: invariant
     property: "Tensor-name inference returns max-index + 1"
     formal: "infer_num_layers([blk.0.x, blk.1.x, blk.2.x]) = Some(3)"
     applies_to: num_layers_inference
-  - type: invariant
+  - id: AENL-INV-002
+    type: invariant
     property: "Inference returns None on non-block tensors"
     formal: "infer_num_layers([token_embd.weight, output_norm.weight]) = None"
     applies_to: num_layers_inference
-  - type: invariant
+  - id: AENL-INV-003
+    type: invariant
     property: "Export does not panic on missing dim"
     formal: "export_apr_to_gguf_raw(apr_with_no_num_layers) = Err | Ok (never panic)"
     applies_to: export_no_panic
-  - type: invariant
+  - id: AENL-INV-004
+    type: invariant
     property: "With explicit head_dim, num_heads is derived EXACTLY (not guessed) (PMAT-920)"
     formal: "export_apr_to_gguf_raw(apr{head_dim=128, q_dim=256}) = Ok AND gguf.<arch>.attention.head_count = 256/128 = 2 (NOT the [64,...] guess's 4)"
     applies_to: attn_dim_inference
-  - type: invariant
+  - id: AENL-INV-005
+    type: invariant
     property: "Absent head_dim AND num_heads → actionable hard-fail, no silently-wrong head count (PMAT-920)"
     formal: "export_apr_to_gguf_raw(apr{head_dim=None, num_heads=None}) = Err(msg naming num_heads + head_dim + a working remedy: apr stamp / re-convert) AND no GGUF written"
     applies_to: attn_dim_inference

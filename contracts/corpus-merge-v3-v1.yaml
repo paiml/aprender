@@ -296,15 +296,18 @@ execution_plan:
 # ─── PROOF OBLIGATIONS ───────────────────────────────────────
 
 proof_obligations:
-- type: completeness
+- id: CM-CMP-001
+  type: completeness
   property: Multi-source corpus assembly produces ≥ 2 sources with full provenance
   formal: '|sources| ≥ 2 ∧ ∀ shard ∈ manifest.shards: shard.has_provenance_fields'
   applies_to: all
-- type: bound
+- id: CM-BND-002
+  type: bound
   property: Total tokens meet or exceed Chinchilla 10× safety floor
   formal: 'manifest.total_tokens ≥ 10 × manifest.target_param_count'
   applies_to: all
-- type: invariant
+- id: CM-INV-003
+  type: invariant
   property: Tokenizer identity matches qwen-v2 lineage (no multi-tokenizer mixing)
   formal: 'manifest.tokenizer_id = qwen_v2.tokenizer_id'
   applies_to: all

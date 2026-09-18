@@ -263,7 +263,8 @@ falsification_tests:
     pinned against LISTEN-vs-ESTABLISHED, wrong-port and malformed rows, and the ppid
     parse against a comm containing spaces and parentheses.'
 proof_obligations:
-- type: invariant
+- id: AMSL-INV-001
+  type: invariant
   property: SERVE-URL-ONLY-WHEN-CHILD-OWNS-PORT — apr.serve reports a URL only for a
     port whose listening socket is held by the child it spawned, or a descendant of it
   formal: 'url in payload(r) <=> r came from the branch reached after tcp_connect(port)
@@ -281,7 +282,8 @@ proof_obligations:
     both sides: five branches that must NOT carry a url — including a stranger holding
     the port, before and during the readiness window — and one, driven by a real child
     holding a real listening socket, that must.
-- type: invariant
+- id: AMSL-INV-002
+  type: invariant
   property: Where socket->pid attribution is unavailable, the WEAKER guarantee is
     stated rather than the stronger one asserted
   formal: attribution_available() == false => classify_listener(port, pid) !=
@@ -298,7 +300,8 @@ proof_obligations:
     connections while the child was alive. A process that grabs the port inside the
     readiness window would still be mistaken for the child there. That is a real,
     narrower claim, labelled as such in the payload — not the strong one restated.
-- type: invariant
+- id: AMSL-INV-003
+  type: invariant
   property: A port already held by another process is refused BEFORE a child is spawned
   formal: port != 0 AND tcp_connect(127.0.0.1:port) succeeds before spawn => is_error
     == Some(true), no process is created, and the message names the port
@@ -312,7 +315,8 @@ proof_obligations:
     their port is taken and is instead handed a quiet ready:false. Where the platform
     has no attribution, this is the ONLY thing standing between a client and a
     stranger's URL.
-- type: invariant
+- id: AMSL-INV-004
+  type: invariant
   property: A still-loading child is reported truthfully, not as an error and not as
     a server
   formal: child alive at deadline AND no connect observed => is_error == None AND
@@ -324,10 +328,12 @@ proof_obligations:
     multi-GB CPU model load can outlast READY_TIMEOUT; reporting isError for a healthy
     loader would be its own false claim, and would orphan a live process the caller
     still owns. The honest report is pid yes, url no, ready false.
-- type: invariant
+- id: AMSL-INV-005
+  type: invariant
   property: The argv the MCP tool spawns is accepted by the CLI that receives it
   formal: 'for all m, p — Cli::try_parse_from(["apr"] ++ serve_argv(m,p)) yields
     Commands::Serve{command ServeCommands::Run} with file = m and port = p'
+  prose: true
   applies_to: aprender_mcp::tools::serve::serve_argv, apr_cli::Cli
   discharged_by: FALSIFY-MCP-SERVE-2606-005, FALSIFY-MCP-SERVE-2606-007
   notes: >-
@@ -335,7 +341,8 @@ proof_obligations:
     vector assertion is tautological with the implementation and was mutation-proven
     blind to a coordinated rename. Any future check on this argv must run on a surface
     that can REJECT it.
-- type: invariant
+- id: AMSL-INV-006
+  type: invariant
   property: The shipped defect stays observable
   formal: Cli::try_parse_from(["apr","serve",m,"--port",p]).is_err()
   applies_to: apr_cli::Cli

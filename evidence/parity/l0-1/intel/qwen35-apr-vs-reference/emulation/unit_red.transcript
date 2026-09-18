@@ -1,0 +1,67 @@
+   Compiling aprender-present-core v0.67.0 (/mnt/nvme-raid0/agent-wt/obs-3091/crates/aprender-present-core)
+   Compiling aprender-compute v0.67.0 (/mnt/nvme-raid0/agent-wt/obs-3091/crates/aprender-compute)
+warning: aprender-present-core@0.67.0: [contract] Assertions: 18 preconditions, 12 postconditions from YAML
+warning: aprender-present-core@0.67.0: [contract] provable-contracts binding.yaml not found at /mnt/nvme-raid0/agent-wt/obs-3091/crates/aprender-present-core/../../../../../provable-contracts/contracts/presentar/binding.yaml; skipping
+warning: aprender-contracts@0.67.0: [contract] Assertions: 1447 preconditions, 474 postconditions from YAML
+warning: aprender-compute@0.67.0: provable-contracts binding.yaml not found at /mnt/nvme-raid0/agent-wt/obs-3091/crates/aprender-compute/../../../provable-contracts/contracts/trueno/binding.yaml; CONTRACT_* env vars will not be set (CI/crates.io build)
+   Compiling aprender-serve v0.67.0 (/mnt/nvme-raid0/agent-wt/obs-3091/crates/aprender-serve)
+warning: aprender-serve@0.67.0: [PMAT-228] architecture-requirements-v1.yaml not found; using hand-written arch_requirements.rs fallback
+warning: aprender-serve@0.67.0: [GH-323] arch-constraints-v1.yaml not found; using fallback arch_constraints.rs
+warning: aprender-serve@0.67.0: provable-contracts binding.yaml not found at /mnt/nvme-raid0/agent-wt/obs-3091/crates/aprender-serve/../../../provable-contracts/contracts/realizar/binding.yaml; CONTRACT_* env vars will not be set (CI/crates.io build)
+warning: aprender-serve@0.67.0: [contract] Assertions: 0 preconditions, 0 postconditions from YAML
+   Compiling aprender-present-terminal v0.67.0 (/mnt/nvme-raid0/agent-wt/obs-3091/crates/aprender-present-terminal)
+   Compiling aprender-test-lib v0.67.0 (/mnt/nvme-raid0/agent-wt/obs-3091/crates/aprender-test-lib)
+warning: duplicated attribute
+   --> crates/aprender-serve/src/api/effective_config.rs:878:5
+    |
+878 |     #[test]
+    |     ^^^^^^^
+    |
+    = note: `#[warn(duplicate_macro_attributes)]` on by default
+
+warning: `aprender-serve` (lib test) generated 1 warning
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 44.67s
+     Running unittests src/lib.rs (/mnt/nvme-raid0/targets/obs-3091/debug/deps/realizar-f22e8988df685202)
+
+running 7 tests
+test quantize::ggml_vecdot_emul::tests::emulated_matvec_refuses_bad_shapes_and_unported_qtypes ... ok
+test quantize::ggml_vecdot_emul::tests::vec_dot_k_quants_are_bit_exact_vs_ggml_c_generic ... FAILED
+test quantize::ggml_vecdot_emul::tests::q8_0_quantize_and_dot_are_bit_exact_vs_ggml_c ... FAILED
+test quantize::ggml_vecdot_emul::tests::quantize_row_q8_k_is_bit_exact_vs_ggml_c ... FAILED
+test quantize::ggml_vecdot_emul::tests::emulated_matvec_row_r_is_the_vec_dot_of_row_r ... FAILED
+test quantize::ggml_vecdot_emul::tests::switch_values_parse_or_are_refused ... FAILED
+test quantize::ggml_vecdot_emul::tests::fixture_generator_reproduces_the_c_harness_bytes ... ok
+
+failures:
+
+---- quantize::ggml_vecdot_emul::tests::vec_dot_k_quants_are_bit_exact_vs_ggml_c_generic stdout ----
+Error: UnsupportedOperation { operation: "ggml_vecdot_emul", reason: "stub" }
+
+---- quantize::ggml_vecdot_emul::tests::q8_0_quantize_and_dot_are_bit_exact_vs_ggml_c stdout ----
+Error: UnsupportedOperation { operation: "ggml_vecdot_emul", reason: "stub" }
+
+---- quantize::ggml_vecdot_emul::tests::quantize_row_q8_k_is_bit_exact_vs_ggml_c stdout ----
+Error: UnsupportedOperation { operation: "ggml_vecdot_emul", reason: "stub" }
+
+---- quantize::ggml_vecdot_emul::tests::emulated_matvec_row_r_is_the_vec_dot_of_row_r stdout ----
+Error: UnsupportedOperation { operation: "ggml_vecdot_emul", reason: "stub" }
+
+---- quantize::ggml_vecdot_emul::tests::switch_values_parse_or_are_refused stdout ----
+
+thread 'quantize::ggml_vecdot_emul::tests::switch_values_parse_or_are_refused' (2483366) panicked at crates/aprender-serve/src/quantize/ggml_vecdot_emul.rs:422:9:
+assertion `left == right` failed
+  left: Err("stub")
+ right: Ok(EmulationMask { q4_k: false, q5_k: false, q6_k: false, q8_0: false })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    quantize::ggml_vecdot_emul::tests::emulated_matvec_row_r_is_the_vec_dot_of_row_r
+    quantize::ggml_vecdot_emul::tests::q8_0_quantize_and_dot_are_bit_exact_vs_ggml_c
+    quantize::ggml_vecdot_emul::tests::quantize_row_q8_k_is_bit_exact_vs_ggml_c
+    quantize::ggml_vecdot_emul::tests::switch_values_parse_or_are_refused
+    quantize::ggml_vecdot_emul::tests::vec_dot_k_quants_are_bit_exact_vs_ggml_c_generic
+
+test result: FAILED. 2 passed; 5 failed; 0 ignored; 0 measured; 15859 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p aprender-serve --lib`

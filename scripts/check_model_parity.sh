@@ -10,6 +10,10 @@
 #   PASS      model measured, above threshold
 #   FAIL      model measured, a position below threshold (named) — or fewer positions than I8 allows
 #   UNMEASURED model in the manifest, no file on this host (reported; RED when README.md cites it)
+#   UNMEASURED-TOOL  the model IS here and `apr parity` REFUSED its architecture (exit 12 +
+#                    `parity: REFUSED architecture=...`): a limit of the TOOL, reported, never
+#                    FAIL -- but RED when README.md makes a GPU=CPU/parity claim about it,
+#                    because no host can produce that number in this build (PMAT-1098).
 # Exit 0 iff no FAIL and no README-cited model is UNMEASURED. Never SKIP: SKIP_PARITY_GATE set
 # in the environment is an override — printed, and the run's receipt is INVALID-CORRECTNESS (REG-15).
 #
@@ -70,6 +74,70 @@ resolve_model_file() {
     return 1
 }
 
+# PMAT-1098 -------------------------------------------------------------------
+# `apr parity` REFUSES an architecture its dense CPU-vs-GPU loop cannot route,
+# before loading any weights: one stderr line `parity: REFUSED architecture=...`
+# and exit 12 (CliError::NotImplemented; distinct from 3/5/8/9, the codes the
+# command already emits). The 0.68.0 T-2 dogfood read three such rows as FAIL,
+# i.e. as MODEL defects, when every one of them is a limit of the TOOL.
+#
+# UNMEASURED-TOOL is therefore a REPORT, like UNMEASURED -- with one difference
+# that matters: UNMEASURED says "not on this host", and some other host can
+# still measure it; UNMEASURED-TOOL says "no host can, in this build". So the
+# moment a shipped claim depends on the number, the report becomes RED.
+PARITY_REFUSED_EXIT=12
+PARITY_REFUSED_MARK='parity: REFUSED architecture='
+
+# readme_cites_parity <manifest-name> [readme] -> rc 0 iff README makes a
+# GPU=CPU / parity claim ABOUT that model.
+#
+# Naming a model is not claiming parity for it: README.md names
+# Qwen3-Coder-30B-A3B under `apr inspect`, which asserts nothing about GPU==CPU.
+# The predicate is therefore proximity-based -- the model name within 5 lines of
+# a parity keyword -- so a table row under a "parity" heading counts and a bare
+# `apr inspect` line does not. Both polarities are in the case table.
+readme_cites_parity() {
+    python3 - "$1" "${2:-$ROOT/README.md}" <<'RCP'
+import re, sys
+name, path = sys.argv[1], sys.argv[2]
+try:
+    lines = open(path, encoding="utf-8", errors="replace").read().splitlines()
+except OSError:
+    sys.exit(1)
+kw = re.compile(r"parity|GPU\s*=\s*CPU|GPU/CPU|GPU vs CPU", re.I)
+nm = re.compile(re.escape(name), re.I)
+W = 5
+for i, line in enumerate(lines):
+    if not kw.search(line):
+        continue
+    if any(nm.search(lines[j]) for j in range(max(0, i - W), min(len(lines), i + W + 1))):
+        sys.exit(0)
+sys.exit(1)
+RCP
+}
+
+# classify_parity_exit <name> <rc> <stderr-file> [readme] -> prints the verdict
+# line; rc 0 = reported (not RED), rc 1 = RED.
+#
+# BOTH signals are required for UNMEASURED-TOOL. Exit 12 alone could come from
+# any other NotImplemented path, and the line alone could be echoed by a crash
+# that printed it before dying -- either half on its own would let a real
+# failure be laundered as "the tool cannot measure this", which is the one
+# outcome worse than the FAIL row this replaces.
+classify_parity_exit() {
+    local name=$1 prc=$2 err=$3 readme=${4:-$ROOT/README.md} line=""
+    if [ "$prc" = "$PARITY_REFUSED_EXIT" ] && line=$(grep -m1 -F "$PARITY_REFUSED_MARK" "$err" 2>/dev/null); then
+        printf 'UNMEASURED-TOOL %s: %s\n' "$name" "${line#*: REFUSED }"
+        if readme_cites_parity "$name" "$readme"; then
+            printf 'RED %s: README.md makes a GPU=CPU/parity claim about a model apr parity REFUSES to measure - the claim has no measurement behind it\n' "$name"
+            return 1
+        fi
+        return 0
+    fi
+    printf 'FAIL %s: apr parity exited non-zero (%s)\n' "$name" "$(tail -1 "$err" 2>/dev/null | cut -c1-100)"
+    return 1
+}
+
 if [ "${1:-}" = "--self-test" ]; then
     TD=$(mktemp -d "${TMPDIR:-/tmp}/parity.XXXXXX"); trap 'rm -rf "${TD:?}"' EXIT
     L="$ROOT/evidence/parity/l0-1/lambda"; G="$ROOT/evidence/parity/l0-1/gx10"
@@ -108,6 +176,26 @@ PY
     row 3 "MIXED-CASE model resolves and is flagged rc=3, never silent UNMEASURED (#3325)" resolve_model_file "$MD" qwen3.5-0.8b
     row 1 "a model genuinely absent on this host is rc=1 (UNMEASURED is correct there)"    resolve_model_file "$MD" no-such-model
 
+    # PMAT-1098: `apr parity` REFUSES architectures its dense CPU-vs-GPU loop cannot
+    # route (MoE -> #3367, Qwen3.5 -> #3090) with exit 12 and one stderr line. That is
+    # a TOOL limitation; reporting it as FAIL blames the MODEL, which is what the
+    # 0.68.0 T-2 dogfood did for three rows. The classifier below must separate the
+    # three cases, and a genuine crash must NEVER be laundered into UNMEASURED-TOOL.
+    FX="$ROOT/tests/fixtures/parity/refused"
+    row 0 "a REFUSED MoE (exit 12 + the refusal line) is UNMEASURED-TOOL, not FAIL"      classify_parity_exit qwen3-coder-30b 12 "$FX/qwen3moe.err" "$FX/README-no-parity-claim.md"
+    row 0 "a REFUSED qwen3.5 (no GPU forward, #3090) is UNMEASURED-TOOL too"             classify_parity_exit qwen3.5-0.8b 12 "$FX/qwen35.err" "$FX/README-no-parity-claim.md"
+    row 1 "the SAME refusal is RED when the README makes a parity claim about the model" classify_parity_exit qwen3-coder-30b 12 "$FX/qwen3moe.err" "$FX/README-cites-parity.md"
+    row 1 "a non-zero exit WITHOUT the refusal line is still FAIL (a crash is a crash)"  classify_parity_exit qwen3-coder-30b 8 "$FX/crash-empty-buffer.err" "$FX/README-no-parity-claim.md"
+    row 1 "exit 12 WITHOUT the refusal line is FAIL — the code alone may not launder it" classify_parity_exit qwen3-coder-30b 12 "$FX/crash-empty-buffer.err" "$FX/README-no-parity-claim.md"
+    row 1 "the refusal line WITHOUT exit 12 is FAIL — the line alone may not launder it" classify_parity_exit qwen3-coder-30b 8 "$FX/qwen3moe.err" "$FX/README-no-parity-claim.md"
+    # The predicate that decides today's C14 verdict on the three refused models. If a
+    # future README starts claiming GPU=CPU for one of them, this row goes RED here
+    # BEFORE the release reads a green C14 that measured nothing.
+    row 0 "the fixture README's parity claim about qwen3-coder-30b is SEEN (must-RED twin)" readme_cites_parity qwen3-coder-30b "$FX/README-cites-parity.md"
+    row 1 "README.md makes no parity claim about qwen3-coder-30b today (so the refusal is not RED)" readme_cites_parity qwen3-coder-30b "$ROOT/README.md"
+    row 1 "README.md makes no parity claim about qwen3.5-0.8b today"                       readme_cites_parity qwen3.5-0.8b "$ROOT/README.md"
+    row 1 "README.md makes no parity claim about qwen3-30b today"                          readme_cites_parity qwen3-30b "$ROOT/README.md"
+
     printf '%s/%s rows\n' "$((n - red))" "$n"; [ "$red" = 0 ] || exit 1; exit 0
 fi
 
@@ -141,7 +229,15 @@ while IFS= read -r name; do
     case " $seen " in *" $f "*) printf 'ALIAS %s -> %s (already measured under a longer name)\n' "$name" "$(basename "$f")"; continue ;; esac
     seen="$seen $f"
     j="$OUT/$name.json"; measured=$((measured + 1))
-    if ! "$APR_BIN" parity "$f" --prompt "$PROMPT" --json > "$j" 2> "$j.err"; then printf 'FAIL %s: apr parity exited non-zero (%s)\n' "$name" "$(tail -1 "$j.err" | cut -c1-100)"; rc=1; continue; fi
+    prc=0; "$APR_BIN" parity "$f" --prompt "$PROMPT" --json > "$j" 2> "$j.err" || prc=$?
+    if [ "$prc" != 0 ]; then
+        # A refusal is NOT a measurement: it must not hold the vacuity floor
+        # ("nothing measured is not a pass") green on a host where every model
+        # was refused.
+        classify_parity_exit "$name" "$prc" "$j.err" || rc=1
+        case "$prc" in "$PARITY_REFUSED_EXIT") measured=$((measured - 1)) ;; *) : ;; esac
+        continue
+    fi
     judge "$j" "$name" || rc=1
 done < <(grep -oE '^- name: .*' "$MANIFEST" | sed 's/^- name: //' | awk '{ print length($0) "\t" $0 }' | sort -rn | cut -f2-)
 [ "$OVERRIDE" = 0 ] || rc=1

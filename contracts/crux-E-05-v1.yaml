@@ -129,15 +129,20 @@ falsification_tests:
   if_fails: "apr bench --json schema regressed — breaks downstream parity scripts"
 
 proof_obligations:
-- type: invariant
+- id: CE059F6-INV-001
+  type: invariant
   property: "apr bench --json emits median_tok_s_decode and p50_latency_ms"
-- type: invariant
+- id: CE059F6-INV-002
+  type: invariant
   property: "Prefill and decode wall times are reported separately"
-- type: invariant
+- id: CE059F6-INV-003
+  type: invariant
   property: "Median is computed over ≥5 trials"
-- type: equivalence
+- id: CE059F6-EQ-004
+  type: equivalence
   property: "apr bench median_tok_s_decode within 10% of Ollama 0.5.7 DIRECT on same model + GPU"
-- type: invariant
+- id: CE059F6-INV-005
+  type: invariant
   property: "Derived 128/decode_ms matches reported median within 5% (internal consistency)"
 
 verification_summary:

@@ -16,7 +16,7 @@ use crate::scoring::{score_contract, ContractScore};
 
 use super::finding::LintFinding;
 use super::rules::RuleSeverity;
-use super::{GateDetail, GateResult};
+use super::{GateDetail, GateResult, Verdict};
 
 /// Load and parse all YAML contracts from a directory.
 ///
@@ -77,7 +77,10 @@ pub fn collect_yaml_files(dir: &Path, out: &mut Vec<std::path::PathBuf>) {
             // validating them here would fail on missing `metadata.` root.
             if matches!(
                 dirname,
-                "kaizen" | "legacy" | "pipelines" | "publish-manifests"
+                // `quarantine/` holds contracts ONT-001 ONT-1 pulled OUT of the
+                // corpus precisely because they do not parse; walking them would
+                // make every gate reject on the files quarantine exists to hold.
+                "kaizen" | "legacy" | "pipelines" | "publish-manifests" | "quarantine"
             ) {
                 continue;
             }
@@ -149,6 +152,7 @@ pub(crate) fn run_validate_gate(
         name: "validate".into(),
         passed: total_errors == 0,
         skipped: false,
+        verdict: Verdict::from_gate(total_errors == 0, false),
         duration_ms: u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX),
         detail: GateDetail::Validate {
             contracts: contracts.len() + parse_errors.len(),
@@ -196,6 +200,7 @@ pub(crate) fn run_audit_gate(contracts: &[(String, Contract)]) -> (GateResult, V
         name: "audit".into(),
         passed: total_findings == 0,
         skipped: false,
+        verdict: Verdict::from_gate(total_findings == 0, false),
         duration_ms: u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX),
         detail: GateDetail::Audit {
             contracts: contracts.len(),
@@ -265,6 +270,7 @@ pub(crate) fn run_score_gate(
         name: "score".into(),
         passed,
         skipped: false,
+        verdict: Verdict::from_gate(passed, false),
         duration_ms: u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX),
         detail: GateDetail::Score {
             contracts: contracts.len(),

@@ -55,23 +55,28 @@ equations:
     - predicted.len() > 0
     lean_theorem: Theorems.Training_Loss
 proof_obligations:
-- type: invariant
+- id: GBM-INV-001
+  type: invariant
   property: Predictions binary
   formal: predict(x) in {0, 1} for all x
   applies_to: all
-- type: invariant
+- id: GBM-INV-002
+  type: invariant
   property: Predictions deterministic
   formal: predict(x) = predict(x) for same fitted model
   applies_to: all
-- type: bound
+- id: GBM-BND-003
+  type: bound
   property: Ensemble output finite
   formal: '|F_M(x)| < infinity for bounded x'
   applies_to: all
-- type: invariant
+- id: GBM-INV-004
+  type: invariant
   property: Training loss non-increasing
   formal: L_m <= L_{m-1} for each boosting round m
   applies_to: all
-- type: bound
+- id: GBM-BND-005
+  type: bound
   property: predict_proba calibrates to the base rate (PMAT-831)
   formal: 'for inputs with identical features and class-1 fraction r in (0,1), predict_proba(x)[1]
     -> r (not 0/1); the weak learner is a REGRESSION tree fit to the continuous pseudo-residuals

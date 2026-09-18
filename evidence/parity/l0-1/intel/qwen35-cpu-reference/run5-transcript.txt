@@ -1,0 +1,48 @@
+tree: aprender=03e301475 llama.cpp=d1d3c3396 host=mac-server
+input sha256: 14294256f2ef509c0759d1b4042f57fad77ea88a595b0226f7e487de806d1672  /tmp/ref3303/cand-nl.txt
+llama-perplexity sha256: 0222a898db4e1dda9e19c6e76bbb591ff19dd8dcec1f86fa5851bd9e54e16efd
+libllama-perplexity-impl.so sha256: aa31191a2692879a92c6fb5661e75301fd1fa1b42edff8d0864b334cfaa30bd1
+	libllama-perplexity-impl.so => /home/noah/src/llama.cpp-d1d3c3396/build/bin/libllama-perplexity-impl.so (0x00007f1f73ae2000)
+	libllama-common.so.0 => /home/noah/src/llama.cpp-d1d3c3396/build/bin/libllama-common.so.0 (0x00007f1f73200000)
+	libllama.so.0 => /home/noah/src/llama.cpp-d1d3c3396/build/bin/libllama.so.0 (0x00007f1f72e00000)
+	libggml-base.so.0 => /home/noah/src/llama.cpp-d1d3c3396/build/bin/libggml-base.so.0 (0x00007f1f73731000)
+	libggml.so.0 => /home/noah/src/llama.cpp-d1d3c3396/build/bin/libggml.so.0 (0x00007f1f73aa3000)
+	libggml-cpu.so.0 => /home/noah/src/llama.cpp-d1d3c3396/build/bin/libggml-cpu.so.0 (0x00007f1f7284d000)
+=== run 1 start_utc=2026-09-15T16:55:52Z load=55.57 49.16 46.81
+run 1 rc=0 end_utc=2026-09-15T16:55:57Z load=56.41 49.44 46.91
+0.02.924.868 I perplexity: saving all logits to /tmp/ref3303/run1.kld
+0.02.925.875 I perplexity: calculating perplexity over 2 chunks, n_ctx=78, batch_size=78, n_seq=1
+0.04.207.937 I Final estimate: PPL = 42.2235 +/- 14.11843
+bytes=37745892
+609e048112a1d328cd9cbc766431886cd85adb2f470bab607b9df24ef76d54ef  /tmp/ref3303/run1.kld
+=== run 2 start_utc=2026-09-15T16:55:57Z load=56.41 49.44 46.91
+run 2 rc=0 end_utc=2026-09-15T16:56:01Z load=56.21 49.51 46.95
+0.02.923.982 I perplexity: saving all logits to /tmp/ref3303/run2.kld
+0.02.924.995 I perplexity: calculating perplexity over 2 chunks, n_ctx=78, batch_size=78, n_seq=1
+0.04.192.735 I Final estimate: PPL = 42.2235 +/- 14.11843
+bytes=37745892
+609e048112a1d328cd9cbc766431886cd85adb2f470bab607b9df24ef76d54ef  /tmp/ref3303/run2.kld
+=== run 3 start_utc=2026-09-15T16:56:02Z load=56.21 49.51 46.95
+run 3 rc=0 end_utc=2026-09-15T16:56:06Z load=57.88 49.97 47.11
+0.02.963.758 I perplexity: saving all logits to /tmp/ref3303/run3.kld
+0.02.964.785 I perplexity: calculating perplexity over 2 chunks, n_ctx=78, batch_size=78, n_seq=1
+0.04.257.762 I Final estimate: PPL = 42.2235 +/- 14.11843
+bytes=37745892
+609e048112a1d328cd9cbc766431886cd85adb2f470bab607b9df24ef76d54ef  /tmp/ref3303/run3.kld
+=== run 4 start_utc=2026-09-15T16:56:07Z load=57.88 49.97 47.11
+run 4 rc=0 end_utc=2026-09-15T16:56:11Z load=59.49 50.43 47.28
+0.02.932.635 I perplexity: saving all logits to /tmp/ref3303/run4.kld
+0.02.933.653 I perplexity: calculating perplexity over 2 chunks, n_ctx=78, batch_size=78, n_seq=1
+0.04.229.824 I Final estimate: PPL = 42.2235 +/- 14.11843
+bytes=37745892
+609e048112a1d328cd9cbc766431886cd85adb2f470bab607b9df24ef76d54ef  /tmp/ref3303/run4.kld
+=== run 5 start_utc=2026-09-15T16:56:11Z load=59.49 50.43 47.28
+run 5 rc=0 end_utc=2026-09-15T16:56:16Z load=60.81 50.86 47.43
+0.02.899.270 I perplexity: saving all logits to /tmp/ref3303/run5.kld
+0.02.900.494 I perplexity: calculating perplexity over 2 chunks, n_ctx=78, batch_size=78, n_seq=1
+0.04.172.425 I Final estimate: PPL = 42.2235 +/- 14.11843
+bytes=37745892
+609e048112a1d328cd9cbc766431886cd85adb2f470bab607b9df24ef76d54ef  /tmp/ref3303/run5.kld
+=== run1 header lines
+0.02.924.768 I system_info: n_threads = 8 (n_threads_batch = 8) / 32 | CPU : SSE3 = 1 | SSSE3 = 1 | AVX = 1 | AVX2 = 1 | F16C = 1 | FMA = 1 | BMI2 = 1 | AVX512 = 1 | AVX512_VNNI = 1 | LLAMAFILE = 1 | OPENMP = 1 | REPACK = 1 | 
+0.02.925.875 I perplexity: calculating perplexity over 2 chunks, n_ctx=78, batch_size=78, n_seq=1

@@ -1,0 +1,65 @@
+# #3073 (operator rule 2026-09-10: no GitHub-hosted runners): runs on the
+# clean-room pool like every other lightweight workflow (book.yml, etc.).
+#
+# Path-scoped to scripts/install.sh's own test suite (issue #3365) rather than
+# folded into ci.yml's whole-repo job, because it does real network installs
+# (a real stable release + a real nightly, per install_test.sh) and has no
+# reason to run on every unrelated PR.
+#
+# Watches BOTH sides of the coupling, per book.yml's own documented lesson
+# ("a parity gate must run when EITHER side moves; watching only one of them
+# is how it comes to certify nothing", learned there the hard way twice):
+# install.sh assumes a specific asset-naming shape from binary-release.yml
+# (stable: apr-vX.Y.Z-<target>-<cpu|cuda>.tar.gz) and nightly.yml (nightly:
+# apr-<target>.tar.gz, no variant suffix). A rename in either workflow breaks
+# install.sh without a single line of install.sh itself changing.
+name: apr install.sh
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "scripts/install.sh"
+      - "scripts/tests/install_test.sh"
+      - ".github/workflows/install-script.yml"
+      - ".github/workflows/binary-release.yml"
+      - ".github/workflows/nightly.yml"
+  pull_request:
+    paths:
+      - "scripts/install.sh"
+      - "scripts/tests/install_test.sh"
+      - ".github/workflows/install-script.yml"
+      - ".github/workflows/binary-release.yml"
+      - ".github/workflows/nightly.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: install_test.sh
+    runs-on: [self-hosted, Linux, X64, clean-room]
+    steps:
+      - uses: actions/checkout@v7
+
+      # pmat/bashrs are pinned-fleet tools, never installed per-job (BSE-10a,
+      # PMAT-1066) — see ci.yml's identical step for why.
+      - name: pmat/bashrs must match the pinned fleet versions (never install)
+        run: bash scripts/check_tool_versions.sh
+
+      - name: "bashrs SEC/DET/IDEM (scripts/install.sh, scripts/tests/install_test.sh)"
+        run: |
+          bashrs lint --level error scripts/install.sh
+          bashrs lint --level error scripts/tests/install_test.sh
+
+      # Proves install_test.sh's own mutual-exclusivity row discriminates
+      # before trusting the full run below — same discipline as
+      # check_bashrs_gate.sh --self-test in ci.yml.
+      - name: install_test.sh --self-test
+        run: bash scripts/tests/install_test.sh --self-test
+
+      # Full suite: real downloads from paiml/aprender's actual latest stable
+      # release and the nightly prerelease. This is deliberately not mocked —
+      # it is the same contract a user's `curl | sh` exercises.
+      - name: install_test.sh
+        run: bash scripts/tests/install_test.sh

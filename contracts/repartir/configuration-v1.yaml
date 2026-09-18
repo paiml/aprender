@@ -17,7 +17,8 @@ equations:
     preconditions: []
     lean_theorem: Theorems.Config_Factory
 proof_obligations:
-- type: invariant
+- id: CA0D0-INV-001
+  type: invariant
   property: Builder independence
   formal: 'let b1 = builder(); let b2 = builder(); mutate(b1); b2 unchanged'
   applies_to: config

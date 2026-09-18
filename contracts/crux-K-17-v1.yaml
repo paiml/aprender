@@ -84,11 +84,14 @@ falsification_tests:
 
   if_fails: rule 'graceful shutdown publishes worker_down' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: equivalence
+- id: CK1877A-EQ-001
+  type: equivalence
   property: "apr serve --dynamo-role emits Dynamo-compatible worker manifest + lifecycle events"
-- type: invariant
+- id: CK1877A-INV-002
+  type: invariant
   property: "heartbeat within 10s of startup"
-- type: invariant
+- id: CK1877A-INV-003
+  type: invariant
   property: "graceful shutdown publishes worker_down"
 
 verification_summary:

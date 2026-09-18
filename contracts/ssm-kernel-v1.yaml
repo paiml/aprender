@@ -41,24 +41,29 @@ equations:
     - input.iter().all(|v| v.is_finite())
     lean_theorem: Theorems.Selective_Gate
 proof_obligations:
-- type: invariant
+- id: SSM-INV-001
+  type: invariant
   property: Causality
   formal: y_t depends only on x_1..x_t, not x_{t+1}..x_L
   applies_to: all
-- type: bound
+- id: SSM-BND-002
+  type: bound
   property: Softplus positivity
   formal: Delta_t = softplus(z) > 0 for all z
   applies_to: all
-- type: invariant
+- id: SSM-INV-003
+  type: invariant
   property: Scan linearity
   formal: SSM(alpha*x + beta*z) = alpha*SSM(x) + beta*SSM(z) for fixed params
   applies_to: all
-- type: equivalence
+- id: SSM-EQ-004
+  type: equivalence
   property: Parallel scan matches sequential scan
   formal: '|parallel_scan(x) - sequential_scan(x)| < eps'
   tolerance: 1.0e-05
   applies_to: all
-- type: equivalence
+- id: SSM-EQ-005
+  type: equivalence
   property: SIMD matches scalar within ULP
   tolerance: 8.0
   applies_to: simd

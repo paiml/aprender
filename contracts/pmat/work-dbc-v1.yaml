@@ -189,7 +189,8 @@ equations:
     - retry counter decremented on each Retry
     lean_theorem: Theorems.RescueProtocol
 proof_obligations:
-- type: state_machine
+- id: WD-SM-001
+  type: state_machine
   property: Work lifecycle valid transitions
   formal: >
     forall s1 s2 : ItemStatus, transition(s1, s2) -> (s1, s2) in adjacency_set.
@@ -199,21 +200,24 @@ proof_obligations:
   lean:
     theorem: Theorems.WorkLifecycle
     status: sorry
-- type: determinism
+- id: WD-DET-002
+  type: determinism
   property: Falsifiable claim determinism
   formal: forall c e, evaluate(c, e) = evaluate(c, e) (same evidence -> same verdict)
   applies_to: all
   lean:
     theorem: Theorems.FalsifiableClaimDeterminism
     status: sorry
-- type: bound
+- id: WD-BND-003
+  type: bound
   property: Contract profile score bounded
   formal: 0.0 <= score <= 1.0 for all profiles
   applies_to: all
   lean:
     theorem: Theorems.ContractProfileScoreBounded
     status: sorry
-- type: postcondition
+- id: WD-POST-004
+  type: postcondition
   property: Falsified blocks completion
   formal: any_falsified(claims) AND NOT overridden -> completion returns Error
   applies_to: all
@@ -221,21 +225,24 @@ proof_obligations:
     theorem: Theorems.FalsifiedBlocksCompletion
     status: sorry
   requires: claim.falsification_method is executable
-- type: termination
+- id: WD-TERM-005
+  type: termination
   property: Rescue retry bounded
   formal: retries <= max_retries, after max_retries either Escalate or Abandon
   applies_to: all
   lean:
     theorem: Theorems.RescueRetryBounded
     status: sorry
-- type: conservation
+- id: WD-CON-006
+  type: conservation
   property: Profile weights sum to unity
   formal: active_claims / applicable_claims = contract_quality.score
   applies_to: all
   lean:
     theorem: Theorems.ProfileWeightsSumToUnity
     status: sorry
-- type: invariant
+- id: WD-INV-007
+  type: invariant
   property: Meyer triad phase correctness
   formal: >
     require checked only at Start,
@@ -245,21 +252,24 @@ proof_obligations:
   lean:
     theorem: Theorems.MeyerTriadPhaseCorrectness
     status: sorry
-- type: idempotency
+- id: WD-IDEM-008
+  type: idempotency
   property: Checkpoint is idempotent
   formal: checkpoint(item, contract) = checkpoint(item, contract) (no side effects)
   applies_to: all
   lean:
     theorem: Theorems.CheckpointIsIdempotent
     status: sorry
-- type: monotonicity
+- id: WD-MON-009
+  type: monotonicity
   property: Profile composition is monotonic
   formal: claims(rust) superset claims(universal), claims(pmat) superset claims(rust)
   applies_to: all
   lean:
     theorem: Theorems.ProfileCompositionIsMonotonic
     status: sorry
-- type: precondition
+- id: WD-PRE-010
+  type: precondition
   property: Override requires ticket
   formal: override(claim, None) -> AccountabilityError
   applies_to: all

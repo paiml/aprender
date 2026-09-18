@@ -115,13 +115,17 @@ falsification_tests:
   if_fails: "apr imatrix diverges from llama.cpp imatrix (cos < 0.99 on some tensor)"
 
 proof_obligations:
-- type: invariant
+- id: CB16069-INV-001
+  type: invariant
   property: "Calibration sampling is deterministic given (dataset_ref, seed, samples)"
-- type: invariant
+- id: CB16069-INV-002
+  type: invariant
   property: "imatrix covers every linear tensor in the model graph"
-- type: invariant
+- id: CB16069-INV-003
+  type: invariant
   property: "No NaN/Inf/negative importance values emitted"
-- type: equivalence
+- id: CB16069-EQ-004
+  type: equivalence
   property: "apr imatrix cosine_sim ≥ 0.99 vs llama.cpp imatrix per tensor"
 
 verification_summary:

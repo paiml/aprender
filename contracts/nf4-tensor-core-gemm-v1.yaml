@@ -34,16 +34,19 @@ equations:
     - FP32 accumulator written to global memory
 
 proof_obligations:
-- type: equivalence
+- id: NTCG-EQ-001
+  type: equivalence
   property: Tensor core NF4 GEMM matches naive NF4 GEMM
   formal: '|tc_gemm(A, B_nf4) - naive_gemm(A, B_nf4)| < ε element-wise'
   tolerance: 1.0e-3
   applies_to: all
-- type: bound
+- id: NTCG-BND-002
+  type: bound
   property: Throughput improvement via tensor cores
   formal: throughput(tc_gemm) >= 5 * throughput(naive_gemm)
   applies_to: tensor_core_nf4_gemm
-- type: invariant
+- id: NTCG-INV-003
+  type: invariant
   property: NF4 dequant to FP16 in shared memory before WMMA load
   formal: dequant_location == shared_memory AND wmma_input_type == fp16
   applies_to: tensor_core_nf4_gemm

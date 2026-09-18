@@ -67,19 +67,23 @@ equations:
       - "strict_blocking_issues() returns None iff strict_blocking(report) is false"
 
 proof_obligations:
-  - type: invariant
+  - id: AVFC-INV-001
+    type: invariant
     property: "Content-broken .apr is rejected from the CLI (dispatch re-route)"
     formal: "all_zero(lm_head) OR has_nan(tensor) ⟹ fail_closed(validate(file.apr))"
     applies_to: apr_content_gate
-  - type: invariant
+  - id: AVFC-INV-002
+    type: invariant
     property: "Healthy .apr still validates clean (no false positive)"
     formal: "healthy(file.apr) ⟹ NOT fail_closed(validate(file.apr))"
     applies_to: apr_content_gate
-  - type: invariant
+  - id: AVFC-INV-003
+    type: invariant
     property: "--strict escalates an all-zero / NaN / Inf finding to non-zero exit on the .apr path"
     formal: "strict AND strict_blocking(report) ⟹ fail_closed(report)"
     applies_to: strict_blocking
-  - type: invariant
+  - id: AVFC-INV-004
+    type: invariant
     property: "--skip-contract bypasses the content gate"
     formal: "skip_contract ⟹ NOT fail_closed(report)"
     applies_to: apr_content_gate

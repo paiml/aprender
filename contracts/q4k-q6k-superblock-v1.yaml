@@ -58,31 +58,38 @@ equations:
     - input.len() > 0
     lean_theorem: Theorems.Bsum
 proof_obligations:
-- type: invariant
+- id: QS-INV-001
+  type: invariant
   property: Q4K superblock size
   formal: 2 + 2 + 12 + 128 = 144
   applies_to: all
-- type: invariant
+- id: QS-INV-002
+  type: invariant
   property: Q6K superblock size
   formal: 128 + 64 + 16 + 2 = 210
   applies_to: all
-- type: monotonicity
+- id: QS-MON-003
+  type: monotonicity
   property: Total bytes monotonic
   formal: cols1 < cols2 => total_bytes(r, cols1) <= total_bytes(r, cols2)
   applies_to: all
-- type: invariant
+- id: QS-INV-004
+  type: invariant
   property: Dequant produces finite
   formal: x_i is finite for valid superblock inputs
   applies_to: all
-- type: invariant
+- id: QS-INV-005
+  type: invariant
   property: Offset vanishing
   formal: has_dmin=false => offset_term = 0
   applies_to: all
-- type: invariant
+- id: QS-INV-006
+  type: invariant
   property: bsum weight independence
   formal: bsum depends on x only
   applies_to: all
-- type: equivalence
+- id: QS-EQ-007
+  type: equivalence
   property: SIMD dequant equivalence
   tolerance: 0.0
   applies_to: simd

@@ -30,15 +30,18 @@ equations:
     - n > 0
     lean_theorem: Theorems.Kahn_Sort
 proof_obligations:
-- type: ordering
+- id: DOE32D-ORD-001
+  type: ordering
   property: Topological ordering respected
   formal: '∀ (u, v) ∈ E: position(u, order) < position(v, order)'
   applies_to: all
-- type: soundness
+- id: DOE32D-SND-002
+  type: soundness
   property: Cycle detection is sound
   formal: ∃ cycle ⟹ build_execution_order returns Err
   applies_to: all
-- type: invariant
+- id: DOE32D-INV-003
+  type: invariant
   property: Deterministic output
   formal: '∀ G: KahnSort(G) = KahnSort(G)'
   applies_to: all

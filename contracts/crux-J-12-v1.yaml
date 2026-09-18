@@ -75,9 +75,11 @@ falsification_tests:
   if_fails: CRUX-J-12 isolation invariant — no chat-app SDK may leak into agent core
 
 proof_obligations:
-- type: invariant
+- id: CJ1FBF8-INV-001
+  type: invariant
   property: "agent core depends only on envelope"
-- type: invariant
+- id: CJ1FBF8-INV-002
+  type: invariant
   property: "each transport adapter is ingest+egress symmetric"
 
 verification_summary:

@@ -68,18 +68,21 @@ equations:
     lean_theorem: Theorems.Yarn_Interp_Base_Over_Scale
 
 proof_obligations:
-- type: invariant
+- id: YROB-INV-001
+  type: invariant
   property: YaRN extrapolated dims use the original base, not the NTK-modified base
   formal: |
     For a YaRN ScaledRoPE with base B, dim D, scale S = L_new/L_orig:
     inv_freq[1] == B^(-2/D)  AND  inv_freq[1] != (B*S^(D/(D-2)))^(-2/D).
     Equivalently scaled_base == B (not B*S^(D/(D-2))).
-- type: invariant
+- id: YROB-INV-002
+  type: invariant
   property: YaRN base equals the original base
   formal: |
     ScaledRoPE::scaled_base() == original base for RopeScalingType::Yarn (the NTK
     base modification is a property of RopeScalingType::Ntk / DynamicNtk only).
-- type: classification
+- id: YROB-CLS-003
+  type: classification
   property: NTK base modification is exclusive to NTK scaling types
   formal: |
     base*scale^(dim/(dim-2)) is applied for Ntk and DynamicNtk, and NEVER for Yarn.

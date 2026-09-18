@@ -46,19 +46,23 @@ equations:
     - input.iter().all(|v| v.is_finite())
     lean_theorem: Theorems.Jit_Compilation_Success
 proof_obligations:
-- type: invariant
+- id: PTP-INV-001
+  type: invariant
   property: Target parity
   formal: 'for all kernel K loaded at runtime: K.ptx_target == executor.gpu_profile.sm_target'
   applies_to: all
-- type: invariant
+- id: PTP-INV-002
+  type: invariant
   property: No hardcoded emit_ptx in executor
   formal: grep -c 'emit_ptx()' src/cuda/executor/**/*.rs == 0
   applies_to: all
-- type: invariant
+- id: PTP-INV-003
+  type: invariant
   property: CudaKernels constructed with device target
   formal: CudaKernels::with_target(gpu_profile.sm_target) at executor init
   applies_to: all
-- type: invariant
+- id: PTP-INV-004
+  type: invariant
   property: JIT success for all kernels
   formal: 'for all K: compile_ptx(K.ptx) == Ok(_)'
   applies_to: all

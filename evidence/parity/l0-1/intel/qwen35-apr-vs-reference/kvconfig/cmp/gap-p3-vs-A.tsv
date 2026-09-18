@@ -1,0 +1,3 @@
+prompt	variant	frob_rel_l2	mean_pos_rel_l2	median_pos_rel_l2	gap_removed_frac_frob	gap_removed_frac_mean	pos_rel_l2
+p3	off	0.040229	0.041500	0.037755	0.000000	0.000000	
+p3	on	0.036117	0.038183	0.035224	0.102196	0.079944	

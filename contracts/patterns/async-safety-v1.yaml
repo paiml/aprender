@@ -71,19 +71,23 @@ equations:
     - sent_count = received_count + dropped_on_close
     lean_theorem: Theorems.ChannelLossless
 proof_obligations:
-- type: frame
+- id: AS2504-FRM-001
+  type: frame
   property: Resources released on cancellation
   formal: 'forall task t, resource r: acquired(t, r) and cancelled(t) -> released(r)'
   applies_to: cancellation_safe
-- type: frame
+- id: AS2504-FRM-002
+  type: frame
   property: Children do not outlive parent
   formal: 'forall parent p, child c: spawned(p, c) -> lifetime(c) subset lifetime(p)'
   applies_to: structured_spawn
-- type: conservation
+- id: AS2504-CON-003
+  type: conservation
   property: Messages are conserved across channel
   formal: 'forall channel ch: sent(ch) = received(ch) + pending(ch) + dropped_on_close(ch)'
   applies_to: channel_lossless
-- type: invariant
+- id: AS2504-INV-004
+  type: invariant
   property: No orphan tasks after parent completion
   formal: 'forall p: completed(p) -> forall c in spawned(p): completed(c) or cancelled(c)'
   applies_to: structured_spawn

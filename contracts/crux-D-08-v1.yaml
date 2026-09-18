@@ -149,15 +149,20 @@ falsification_tests:
   if_fails: "trainer_state.json not machine-parseable for CI"
 
 proof_obligations:
-- type: equivalence
+- id: CD0483D-EQ-001
+  type: equivalence
   property: "apr finetune --eval-strategy epoch output schema matches HuggingFace Trainer trainer_state.json log_history on golden dataset"
-- type: equivalence
+- id: CD0483D-EQ-002
+  type: equivalence
   property: "apr finetune --load-best-model-at-end matches HF Trainer best-model selection on min eval_loss"
-- type: invariant
+- id: CD0483D-INV-003
+  type: invariant
   property: "Number of eval entries >= total_epochs"
-- type: invariant
+- id: CD0483D-INV-004
+  type: invariant
   property: "best_metric == min(eval_loss) when greater_is_better=false"
-- type: invariant
+- id: CD0483D-INV-005
+  type: invariant
   property: "trainer_state.json is valid JSON with finite numeric eval_loss values"
 
 verification_summary:

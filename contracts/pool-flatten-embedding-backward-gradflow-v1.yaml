@@ -27,14 +27,16 @@ status: enforced
 date: 2026-06-24
 
 proof_obligations:
-  - type: invariant
+  - id: PFEBG-INV-001
+    type: invariant
     property: >
       OBLIG-FLATTEN-BACKWARD-GRAD-FLOW: after loss.backward() on a graph
       containing Flatten::forward, get_grad is Some for the input x, has the input
       shape, and equals grad_output reshaped to the input shape (Flatten is a pure
       view: dL/dx = reshape(grad_output, input_shape)). Matches a central
       finite-difference gradcheck within tolerance.
-  - type: invariant
+  - id: PFEBG-INV-002
+    type: invariant
     property: >
       OBLIG-MAXPOOL1D-BACKWARD-GRAD-FLOW: after loss.backward() on a graph
       containing MaxPool1d::forward, get_grad is Some for the input x. The
@@ -42,27 +44,31 @@ proof_obligations:
       of max; ties to the first max). dL/dx[argmax(window)] += grad_out[window].
       Matches a central finite-difference gradcheck within tolerance (distinct
       per-window maxima so argmax is unambiguous).
-  - type: invariant
+  - id: PFEBG-INV-003
+    type: invariant
     property: >
       OBLIG-MAXPOOL2D-BACKWARD-GRAD-FLOW: after loss.backward() on a graph
       containing MaxPool2d::forward, get_grad is Some for the input x. The gradient
       is routed to the argmax position of each 2D window per channel.
       dL/dx[argmax(window)] += grad_out[window]. Matches a central
       finite-difference gradcheck within tolerance.
-  - type: invariant
+  - id: PFEBG-INV-004
+    type: invariant
     property: >
       OBLIG-AVGPOOL2D-BACKWARD-GRAD-FLOW: after loss.backward() on a graph
       containing AvgPool2d::forward, get_grad is Some for the input x. The gradient
       is distributed evenly: each input element in a window receives
       grad_out[window] / (kernel_h*kernel_w). Matches a central finite-difference
       gradcheck within tolerance.
-  - type: invariant
+  - id: PFEBG-INV-005
+    type: invariant
     property: >
       OBLIG-GLOBALAVGPOOL2D-BACKWARD-GRAD-FLOW: after loss.backward() on a graph
       containing GlobalAvgPool2d::forward, get_grad is Some for the input x. Each
       input element in plane (n,c) receives grad_out[n,c] / (H*W). Matches a
       central finite-difference gradcheck within tolerance.
-  - type: invariant
+  - id: PFEBG-INV-006
+    type: invariant
     property: >
       OBLIG-EMBEDDING-BACKWARD-GRAD-FLOW: after loss.backward() on a graph
       containing Embedding::forward, get_grad is Some for the weight TABLE, shaped
@@ -70,7 +76,8 @@ proof_obligations:
       corresponding table row by index: dW[idx[i]] += grad_out[i]. Repeated token
       ids ACCUMULATE (ADD, not overwrite). Rows for never-referenced ids stay zero.
       Matches a central finite-difference gradcheck of the table within tolerance.
-  - type: equivalence
+  - id: PFEBG-EQ-007
+    type: equivalence
     property: >
       GRADCHECK-NON-TAUTOLOGICAL: every falsifier is a finite-difference gradcheck
       (plus a severed-graph is_some guard and an all-zero guard), not an is_some

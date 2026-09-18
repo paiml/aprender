@@ -79,11 +79,14 @@ falsification_tests:
 
   if_fails: rule 'self-recall at k=1 is perfect' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: equivalence
+- id: CI1035B-EQ-001
+  type: equivalence
   property: "apr agent memory matches LangGraph checkpointer + LlamaIndex memory semantics"
-- type: invariant
+- id: CI1035B-INV-002
+  type: invariant
   property: "TTL is monotonic (no key ever un-expires)"
-- type: invariant
+- id: CI1035B-INV-003
+  type: invariant
   property: "self-recall@1 == 1.0"
 
 verification_summary:

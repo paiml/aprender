@@ -73,11 +73,14 @@ falsification_tests:
 
   if_fails: rule 'Restart policy is bounded' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: equivalence
+- id: CK10F6B-EQ-001
+  type: equivalence
   property: "emitted unit conforms to systemd.service(5) directive set"
-- type: invariant
+- id: CK10F6B-INV-002
+  type: invariant
   property: "systemd-analyze verify passes"
-- type: invariant
+- id: CK10F6B-INV-003
+  type: invariant
   property: "non-root + hardening directives present"
 
 verification_summary:

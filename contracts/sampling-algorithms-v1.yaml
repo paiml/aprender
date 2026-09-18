@@ -62,45 +62,54 @@ equations:
     - input.len() > 0
     lean_theorem: Theorems.RepeatPenalty
 proof_obligations:
-- type: equivalence
+- id: SA-EQ-001
+  type: equivalence
   property: Greedy = argmax
   formal: greedy(logits) == argmax(logits)
   tolerance: 0.0
   applies_to: all
-- type: bound
+- id: SA-BND-002
+  type: bound
   property: Top-K cardinality
   formal: count(nonzero(top_k(p, K))) <= K
   applies_to: all
-- type: bound
+- id: SA-BND-003
+  type: bound
   property: Top-P cumulative
   formal: sum(top_p(p, threshold)) >= threshold
   applies_to: all
-- type: equivalence
+- id: SA-EQ-004
+  type: equivalence
   property: Temperature identity
   formal: softmax(l/1) == softmax(l)
   tolerance: 1e-6
   applies_to: all
-- type: equivalence
+- id: SA-EQ-005
+  type: equivalence
   property: SIMD sampling equivalence
   tolerance: 0.0
   applies_to: simd
-- type: equivalence
+- id: SA-EQ-006
+  type: equivalence
   property: Repeat penalty identity at rho=1
   formal: apply_repeat_penalty(l, recent, 1.0, last_n) == l
   tolerance: 0.0
   applies_to: all
-- type: bound
+- id: SA-BND-007
+  type: bound
   property: Repeat penalty demotes repeated token
   formal: 'token T in last_n(recent) AND argmax(l)=T AND l_T>0 AND exists U!=T with
     l_T/rho < l_U => argmax(penalize(l, recent, rho, last_n)) != T'
   applies_to: all
-- type: bound
+- id: SA-BND-008
+  type: bound
   property: APR-path sampler honors top_k / top_p (PMAT-820)
   formal: apr_sample_from_logits(logits, {temperature, top_k, top_p}) selects only
     from top_k_top_p_survivors(logits/temperature, top_k, top_p); excluded tokens
     are unreachable
   applies_to: all
-- type: equivalence
+- id: SA-EQ-009
+  type: equivalence
   property: APR-path neutral params are byte-identical to temperature-only (PMAT-820
     no-regression)
   formal: top_k in {0} ∪ [V, ∞) ∧ top_p >= 1.0 ⇒ apr_sample_from_logits == argmax(logits/temperature);

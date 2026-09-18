@@ -104,15 +104,20 @@ falsification_tests:
   if_fails: "apr chat is not drop-in equivalent to ollama run interactive mode"
 
 proof_obligations:
-- type: invariant
+- id: CC0E471-INV-001
+  type: invariant
   property: "Every user line emits an assistant reply before the next prompt"
-- type: invariant
+- id: CC0E471-INV-002
+  type: invariant
   property: "Session state S grows monotonically by one (user, assistant) pair per turn"
-- type: invariant
+- id: CC0E471-INV-003
+  type: invariant
   property: "/bye and EOF both exit with code 0"
-- type: equivalence
+- id: CC0E471-EQ-004
+  type: equivalence
   property: "apr chat <model>  ≅  ollama run <model>  (interactive readline REPL with multi-turn history and /bye exit)"
-- type: invariant
+- id: CC0E471-INV-005
+  type: invariant
   property: "Empty input line is a no-op (session unchanged)"
 
 verification_summary:

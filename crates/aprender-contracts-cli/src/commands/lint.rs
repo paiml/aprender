@@ -4,14 +4,18 @@ use provable_contracts::lint::config::{find_config, load_config};
 use provable_contracts::lint::rules::RuleSeverity;
 use provable_contracts::lint::trend;
 use provable_contracts::lint::{run_lint, GateDetail, LintConfig, LintReport};
+use provable_contracts::ontology::verdict::Verdict;
 
-use crate::contract_walk::ZeroContracts;
+use crate::contract_walk::{LintDeclined, LintRejected, ZeroContracts};
 
 #[path = "lint_render.rs"]
 mod lint_render;
 
 #[path = "lint_html.rs"]
 mod lint_html;
+
+#[path = "lint_arming.rs"]
+mod lint_arming;
 
 /// Print long-form explanation for a lint rule.
 pub fn explain_rule(rule_id: &str) {
@@ -42,8 +46,13 @@ pub fn run(
     min_level: Option<&str>,
     watch: bool,
     strict_test_binding: bool,
+    armed_baseline_ref: Option<&str>,
+    gate: Option<&str>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     refuse_missing_corpus(contract_dir)?;
+    if let Some(name) = gate {
+        return run_single_gate(contract_dir, name);
+    }
     if watch {
         return run_watch(
             contract_dir,
@@ -95,11 +104,17 @@ pub fn run(
         strict_test_binding,
     );
 
-    let report = run_lint(&config);
+    // ONT-6 (PMAT-3451): the shrink check needs no lint run, so it refuses (exit 3) before one.
+    let arming = lint_arming::resolve(contract_dir, armed_baseline_ref)?;
+
+    let mut report = run_lint(&config);
 
     // PVL-1 (PMAT-1099): an EMPTY corpus is refused (exit 2) before any report is
     // printed — never `Result: PASS` over 0 contracts.
     refuse_empty_corpus(&report, contract_dir)?;
+
+    report.arm(&arming.armed);
+    report.armed_monotone = Some(arming.monotone);
 
     if cache_stats {
         print_cache_stats(&report);
@@ -113,32 +128,122 @@ pub fn run(
 
     // --coverage: compute and print aggregate contract coverage metric
     if coverage {
-        let coverage_result = compute_contract_coverage(contract_dir);
-        println!(
-            "\nContract Coverage: {}/{} at Standard+ ({:.1}%)",
-            coverage_result.standard_plus, coverage_result.total, coverage_result.percentage,
-        );
-        if let Some(threshold) = min_coverage {
-            if coverage_result.percentage < threshold {
-                return Err(format!(
-                    "contract coverage {:.1}% is below minimum {:.1}%",
-                    coverage_result.percentage, threshold,
-                )
-                .into());
-            }
-        }
+        report_coverage(contract_dir, min_coverage)?;
     }
 
-    if report.passed {
+    meet_exit(&report)
+}
+
+/// `--coverage`: print the aggregate contract-coverage metric, and refuse below `--min-coverage`.
+fn report_coverage(
+    contract_dir: &Path,
+    min_coverage: Option<f64>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let coverage_result = compute_contract_coverage(contract_dir);
+    println!(
+        "\nContract Coverage: {}/{} at Standard+ ({:.1}%)",
+        coverage_result.standard_plus, coverage_result.total, coverage_result.percentage,
+    );
+    match min_coverage {
+        Some(threshold) if coverage_result.percentage < threshold => Err(format!(
+            "contract coverage {:.1}% is below minimum {:.1}%",
+            coverage_result.percentage, threshold,
+        )
+        .into()),
+        _ => Ok(()),
+    }
+}
+
+/// One gate's report. NOT a `LintReport`: `--gate` answers about one gate, and a reader must be able to tell the
+/// two apart without counting keys.
+#[derive(serde::Serialize)]
+struct SingleGateReport<'a> {
+    gate: &'a str,
+    verdict: Verdict,
+    passed: bool,
+    duration_ms: u64,
+    extra: Option<&'a provable_contracts::lint::GateExtra>,
+    findings: Vec<SingleGateFinding<'a>>,
+}
+
+#[derive(serde::Serialize)]
+struct SingleGateFinding<'a> {
+    rule_id: &'a str,
+    severity: String,
+    message: &'a str,
+    file: &'a str,
+}
+
+/// ONT-2b: `--gate <name>` runs ONE gate and reports only it, mapping its verdict through ONT-6's lattice —
+/// Pass 0 · Fail 1 `reject:` · no Σ 2 `decline:` (R-2, zero is a decline) · malformed Σ 3 `error:`.
+fn run_single_gate(contract_dir: &Path, name: &str) -> Result<(), Box<dyn std::error::Error>> {
+    use provable_contracts::lint::{sigma_gate::SigmaOutcome, NamedGateOutcome, NAMED_GATES};
+
+    let (result, findings) = match provable_contracts::lint::run_named_gate(contract_dir, name) {
+        NamedGateOutcome::UnknownGate => {
+            return Err(crate::contract_walk::UnknownGate {
+                asked: name.to_string(),
+                known: NAMED_GATES.iter().map(|g| (*g).to_string()).collect(),
+            }
+            .into())
+        }
+        NamedGateOutcome::Sigma(SigmaOutcome::NoSigma) => {
+            return Err(LintDeclined {
+                reason: provable_contracts::ontology::verdict::Reason::NoCheckable,
+            }
+            .into())
+        }
+        NamedGateOutcome::Sigma(SigmaOutcome::Malformed(e)) => {
+            return Err(crate::contract_walk::SigmaMalformed(e.to_string()).into())
+        }
+        NamedGateOutcome::Sigma(SigmaOutcome::Ran { result, findings })
+        | NamedGateOutcome::Ran { result, findings } => (result, findings),
+    };
+
+    let report = SingleGateReport {
+        gate: &result.name,
+        verdict: result.verdict,
+        passed: result.passed,
+        duration_ms: result.duration_ms,
+        extra: result.extra.as_ref(),
+        findings: findings
+            .iter()
+            .map(|f| SingleGateFinding {
+                rule_id: &f.rule_id,
+                severity: format!("{:?}", f.severity),
+                message: &f.message,
+                file: &f.file,
+            })
+            .collect(),
+    };
+    println!("{}", serde_json::to_string_pretty(&report)?);
+
+    if result.passed {
         Ok(())
     } else {
-        let passed_count = report.gates.iter().filter(|g| g.passed).count();
-        Err(format!(
-            "lint failed ({}/{} gates passed)",
-            passed_count,
-            report.gates.len()
-        )
+        Err(LintRejected {
+            passed: 0,
+            armed: 1,
+        }
         .into())
+    }
+}
+
+/// ONT-001 §3.4: the exit is the armed meet — Pass 0, Fail 1 (`reject:`), Unknown 2 (`decline: <reason>`).
+/// `report.passed` (every gate passed or skipped) no longer decides it: a skipped armed gate is not a pass.
+fn meet_exit(report: &LintReport) -> Result<(), Box<dyn std::error::Error>> {
+    match report.verdict {
+        Verdict::Pass => Ok(()),
+        Verdict::Fail => Err(LintRejected {
+            passed: report
+                .armed_gates
+                .iter()
+                .filter(|g| g.verdict == Verdict::Pass)
+                .count(),
+            armed: report.armed_gates.len(),
+        }
+        .into()),
+        Verdict::Unknown(reason) => Err(LintDeclined { reason }.into()),
     }
 }
 
@@ -369,11 +474,13 @@ fn run_watch(
             strict_test_binding,
         );
 
-        let report = run_lint(&config);
+        let mut report = run_lint(&config);
 
         // PVL-1 (PMAT-1099): watch mode is the same gate on a timer — an empty
         // corpus is refused (exit 2) at the first tick, never reported over.
         refuse_empty_corpus(&report, contract_dir)?;
+        // ONT-6: the declared arming, re-read each tick; the monotone check is a one-shot run's job.
+        report.arm(&lint_arming::declared(contract_dir)?);
 
         if cache_stats {
             print_cache_stats(&report);

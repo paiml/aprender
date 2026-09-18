@@ -71,9 +71,11 @@ falsification_tests:
   if_fails: CRUX-J-01 docs obligation — one-liner install must be documented and searchable
 
 proof_obligations:
-- type: invariant
+- id: CJ0-INV-001
+  type: invariant
   property: "onboard is idempotent"
-- type: invariant
+- id: CJ0-INV-002
+  type: invariant
   property: "first-run artifacts live under $HOME"
 
 verification_summary:

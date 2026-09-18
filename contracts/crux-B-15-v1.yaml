@@ -68,11 +68,14 @@ falsification_tests:
 
   if_fails: rule 'ppl drift ≤ 0.5 on wikitext-2' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: equivalence
+- id: CB1B848-EQ-001
+  type: equivalence
   property: "apr quantize --format iq3_xxs matches `llama-quantize IQ3_XXS` file size ± 1% and ppl drift ≤ 0.5"
-- type: invariant
+- id: CB1B848-INV-002
+  type: invariant
   property: "IQ types require imatrix; absence rejected at parse time"
-- type: invariant
+- id: CB1B848-INV-003
+  type: invariant
   property: "imat hash persisted in metadata for reproducibility"
 
 verification_summary:

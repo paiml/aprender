@@ -35,11 +35,13 @@ equations:
       - "The --quiet flag is NOT a JSON flag; it produces a terse text representation"
 
 proof_obligations:
-  - type: invariant
+  - id: ALQW-INV-001
+    type: invariant
     property: "list --quiet differs from list default"
     formal: "output(apr list) ≠ output(apr list --quiet)"
     applies_to: quiet_materiality
-  - type: invariant
+  - id: ALQW-INV-002
+    type: invariant
     property: "list --quiet omits help text"
     formal: "'Pull a model with' ∉ output(apr list --quiet)"
     applies_to: quiet_materiality

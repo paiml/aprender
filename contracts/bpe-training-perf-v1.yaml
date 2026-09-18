@@ -149,27 +149,33 @@ equations:
     lean_theorem: "Theorems.Bpe_Train_Priority_Queue"
 
 proof_obligations:
-  - type: invariant
+  - id: BTP-INV-001
+    type: invariant
     property: "Fast-BPE and naïve-BPE parity under lex-min tie-breaker"
     formal: "fast_train(corpus, vs, mf) == naive_train_lexmin(corpus, vs, mf) for |corpus| ≤ 1 KB, vs ≤ 512"
     applies_to: all
-  - type: invariant
+  - id: BTP-INV-002
+    type: invariant
     property: "Cross-run determinism"
     formal: "fast_train(corpus, vs, mf) on run A == fast_train(corpus, vs, mf) on run B, byte-identical"
     applies_to: all
-  - type: bound
+  - id: BTP-BND-003
+    type: bound
     property: "Wall-clock bound on the MODEL-2 training workload"
     formal: "train(corpus=csn-python-train-00000.jsonl, vs=50257, mf=2) wall_time ≤ 60 min on RTX 4090 host"
     applies_to: workload=MODEL-2
-  - type: bound
+  - id: BTP-BND-004
+    type: bound
     property: "Merge count bound"
     formal: "|merges_out| ≤ vocab_size - |special_tokens| - 256"
     applies_to: all
-  - type: monotonicity
+  - id: BTP-MON-005
+    type: monotonicity
     property: "Vocabulary grows strictly monotonically per merge"
     formal: "∀i: |vocab| after merge i > |vocab| before merge i"
     applies_to: all
-  - type: bound
+  - id: BTP-BND-006
+    type: bound
     property: "1.5× speedup vs replaced algorithm (org-wide replacement rule)"
     formal: >
       naive_wall_seconds / fast_wall_seconds ≥ 1.5 on a representative

@@ -110,15 +110,20 @@ falsification_tests:
   if_fails: "Task registry mismatch — loader skipping or duplicating problems"
 
 proof_obligations:
-- type: invariant
+- id: CE0-INV-001
+  type: invariant
   property: "pass_at_1 ∈ [0.0, 1.0]"
-- type: invariant
+- id: CE0-INV-002
+  type: invariant
   property: "pass_at_k monotonically non-decreasing in k"
-- type: invariant
+- id: CE0-INV-003
+  type: invariant
   property: "All code execution contained in sandbox (no network/fs escape)"
-- type: invariant
+- id: CE0-INV-004
+  type: invariant
   property: "Reproducible at temp=0.0 with fixed seed"
-- type: invariant
+- id: CE0-INV-005
+  type: invariant
   property: "total_problems matches canonical task registry (HumanEval=164, MBPP=974)"
 
 verification_summary:

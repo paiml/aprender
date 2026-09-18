@@ -62,11 +62,14 @@ falsification_tests:
 
   if_fails: rule 'hardlink used when same filesystem' is violated — contract MUST be re-verified against competitor canonical reference
 proof_obligations:
-- type: equivalence
+- id: CA2FD8F-EQ-001
+  type: equivalence
   property: "apr create --from matches `ollama create -f Modelfile(FROM path)` semantics"
-- type: invariant
+- id: CA2FD8F-INV-002
+  type: invariant
   property: "same-FS source is hardlinked (zero-copy); cross-FS is copy+sha256-verify"
-- type: invariant
+- id: CA2FD8F-INV-003
+  type: invariant
   property: "registered tag is loadable by apr run/serve without re-download"
 
 verification_summary:

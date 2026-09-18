@@ -1,0 +1,17 @@
+- id: PMAT-3428
+  github_issue: 3428
+  item_type: task
+  title: 'EPIC: PP-TENSOR-001 — a tensor that has no bytes is a different type from one that does (MoE / tied-embedding '
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-17T11:33:03Z
+  updated: 2026-09-17T11:33:03Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:docs
+  notes: null

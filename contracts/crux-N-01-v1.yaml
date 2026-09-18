@@ -71,11 +71,14 @@ falsification_tests:
   if_fails: rule 'singular values match the scipy oracle' is violated — the burn parity claim for CRUX-N-01 is FALSE and the contract MUST be re-verified against the competitor's canonical implementation
 
 proof_obligations:
-- type: invariant
+- id: CN0-INV-001
+  type: invariant
   property: "reconstruction holds across shape and conditioning classes"
-- type: invariant
+- id: CN0-INV-002
+  type: invariant
   property: "U and V are orthonormal"
-- type: invariant
+- id: CN0-INV-003
+  type: invariant
   property: "singular values match the scipy oracle"
 
 kani_harnesses:

@@ -67,27 +67,33 @@ equations:
     - b.len() > 0
     lean_theorem: Theorems.Conv1D_Causal
 proof_obligations:
-- type: invariant
+- id: HL-INV-001
+  type: invariant
   property: Exhaustive partition
   formal: len(layer_types) == L, each entry in {attention, linear}
   applies_to: all
-- type: invariant
+- id: HL-INV-002
+  type: invariant
   property: Matrix associativity
   formal: (A @ B) @ C == A @ (B @ C) within numerical tolerance
   applies_to: all
-- type: invariant
+- id: HL-INV-003
+  type: invariant
   property: Head grouping exact
   formal: n_v % n_k == 0 for valid configs
   applies_to: all
-- type: invariant
+- id: HL-INV-004
+  type: invariant
   property: Residual shape preservation
   formal: O_proj output dim == hidden_dim
   applies_to: all
-- type: invariant
+- id: HL-INV-005
+  type: invariant
   property: Conv1d causal output length
   formal: output_len == input_len with padding = kernel_size - 1
   applies_to: all
-- type: equivalence
+- id: HL-EQ-006
+  type: equivalence
   property: SIMD linear attention equivalence
   tolerance: 0.0
   applies_to: simd

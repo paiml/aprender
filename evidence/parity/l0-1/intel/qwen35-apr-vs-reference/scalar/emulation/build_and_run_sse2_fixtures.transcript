@@ -1,0 +1,19 @@
+host=mac-server start_utc=2026-09-15T23:12:52Z load=55.10 55.57 50.58
+d1c86a2d322b90f3e405005526ad90e0d263013c08a8966ead4c49f95b14a65a  ggml_sse2_fixtures.c
+5f087688edb479598854a25d40be70cdd9a32185e4c8416e29dbeb36a8eb99ea  /home/noah/parity-ref/llama-scalar-d1d3c3396/bin/libggml-cpu.so.0.24.0
+6d8708c456c06bc4cc572678755b3ac68f987c808acf23a12dadb78fc1c08c13  /home/noah/src/llama.cpp-d1d3c3396/build/bin/libggml-cpu.so.0.24.0
+build scalar rc=0
+	libggml-cpu.so.0 => /home/noah/parity-ref/llama-scalar-d1d3c3396/bin/libggml-cpu.so.0 (0x000077580d53a000)
+run scalar rc=0
+222b47afc92499359ed040ab99ed324bd72aa2c499146e61064cf8c53430ef00  sse2_fixtures_scalar.tsv
+8caa096c2d5a3265f496028723367b184cff33c9b458df5e0bd4a012d67d3bdb  sse2_fixtures_scalar.rs.txt
+build native rc=0
+	libggml-cpu.so.0 => /home/noah/src/llama.cpp-d1d3c3396/build/bin/libggml-cpu.so.0 (0x0000741bdb9f7000)
+run native rc=0
+f0a198b4054753638f604e905486ca64ce4852018617f8a3e896bdb5bf7deb2f  sse2_fixtures_native.tsv
+427216a33525193316d69a6e9cc02094364d66f439019df4aafcdccd0ce42140  sse2_fixtures_native.rs.txt
+rows=84 out_fnv_differ_scalar_vs_native=51
+scalar sym ggml_vec_silu_f32 ps_insns=66 ymm=0 fma=0 calls=call   165c0 <expf@plt>;
+scalar sym ggml_vec_swiglu_f32 ps_insns=68 ymm=0 fma=0 calls=call   165c0 <expf@plt>;
+scalar sym ggml_vec_soft_max_f32 ps_insns=72 ymm=0 fma=0 calls=call   165c0 <expf@plt>;
+end_utc=2026-09-15T23:12:54Z

@@ -188,13 +188,17 @@ falsification_tests:
   if_fails: "--num-gpus not validated against hardware availability"
 
 proof_obligations:
-- type: invariant
+- id: CD14A41-INV-001
+  type: invariant
   property: "Scaling efficiency E(N) = T_N / (N * T_1) >= 0.85 for N ∈ {2, 4}"
-- type: invariant
+- id: CD14A41-INV-002
+  type: invariant
   property: "Final training loss matches single-GPU within ±1% at identical seed and total samples"
-- type: invariant
+- id: CD14A41-INV-003
+  type: invariant
   property: "Gradient all-reduce uses mean reduction (sum / world_size), not sum"
-- type: invariant
+- id: CD14A41-INV-004
+  type: invariant
   property: "Per-step all-reduce bandwidth logged in --json output and non-zero"
 
 verification_summary:

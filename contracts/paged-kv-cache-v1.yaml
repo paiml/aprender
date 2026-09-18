@@ -76,32 +76,39 @@ equations:
     - n > 0
     lean_theorem: Theorems.Graph_Compatibility
 proof_obligations:
-- type: invariant
+- id: PKV-INV-001
+  type: invariant
   property: Slot mapping bijectivity
   formal: (r1, p1) != (r2, p2) => slot(r1, p1) != slot(r2, p2)
   applies_to: all
-- type: equivalence
+- id: PKV-EQ-002
+  type: equivalence
   property: Paged/contiguous attention equivalence
   formal: '|paged - contiguous| < 1e-5'
   tolerance: 1e-5
   applies_to: all
-- type: monotonicity
+- id: PKV-MON-003
+  type: monotonicity
   property: Block allocation monotonic in seq_len
   formal: s1 < s2 => num_blocks(s1) <= num_blocks(s2)
   applies_to: all
-- type: bound
+- id: PKV-BND-004
+  type: bound
   property: Block waste bounded
   formal: num_blocks * B - seq_len < B
   applies_to: all
-- type: invariant
+- id: PKV-INV-005
+  type: invariant
   property: No duplicate blocks within request
   formal: '∀ i != j: block_table[req][i] != block_table[req][j]'
   applies_to: all
-- type: invariant
+- id: PKV-INV-006
+  type: invariant
   property: Graph-compatible fixed shape
   formal: shape(block_table) constant across graph replay
   applies_to: all
-- type: invariant
+- id: PKV-INV-007
+  type: invariant
   property: Block pool conservation
   formal: allocated + free = pool_size
   applies_to: all

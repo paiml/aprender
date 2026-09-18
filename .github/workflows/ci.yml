@@ -23,9 +23,22 @@ on:
   merge_group:
   workflow_dispatch:
 
+# CONCURRENCY (#3292, measured in #3358)
+# `cancel-in-progress` is an EXPRESSION, which GitHub evaluates per event
+# ("To conditionally cancel currently running jobs or workflows in the same
+# concurrency group, you can specify cancel-in-progress as an expression with any
+# of the allowed expression contexts" -- workflow-syntax reference, fetched
+# 2026-09-16). It was an unconditional `true`, which is right for a pull_request
+# -- a new push supersedes the run it replaces instead of stacking behind it --
+# and is the destructive failure mode everywhere else: for `merge_group` the group
+# is the queue ref, and cancelling a queue BUILD throws away the verdict the queue
+# is waiting on (the same mistake, made by hand on 35078448806 at 11:25Z, turned a
+# healthy run's `gate` red in four seconds). Narrowed to the one event where
+# superseding is what we mean; `merge_group`, `push` and `workflow_dispatch`
+# evaluate to false and QUEUE.
 concurrency:
   group: ci-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   ci:

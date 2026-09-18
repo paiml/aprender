@@ -29,25 +29,30 @@ equations:
     - n > 0
     lean_theorem: Theorems.Power_Iteration
 proof_obligations:
-- type: invariant
+- id: PRFB3C-INV-001
+  type: invariant
   property: Probability distribution
   formal: '|sum(r) - 1.0| < eps and r_i >= 0 for all i'
   tolerance: 1.0e-06
   applies_to: all
-- type: monotonicity
+- id: PRFB3C-MON-002
+  type: monotonicity
   property: Convergence
   formal: '||r_{t+1} - r*|| <= ||r_t - r*|| (contraction)'
   applies_to: all
-- type: bound
+- id: PRFB3C-BND-003
+  type: bound
   property: Scores non-negative
   formal: r_i >= 0 for all i at every iteration
   applies_to: all
-- type: invariant
+- id: PRFB3C-INV-004
+  type: invariant
   property: Normalization preserved per iteration
   formal: '|sum(r_t) - 1.0| < eps at every iteration t'
   tolerance: 1.0e-06
   applies_to: all
-- type: equivalence
+- id: PRFB3C-EQ-005
+  type: equivalence
   property: SIMD matches scalar within ULP
   tolerance: 8.0
   applies_to: simd

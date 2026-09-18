@@ -47,7 +47,8 @@ falsification_tests:
   if_fails: "dep resolution fails — old crate versions conflict"
 
 proof_obligations:
-- type: invariant
+- id: ACDM-INV-001
+  type: invariant
   property: "apr-cli deps are all aprender-* workspace names"
 
 kani_harnesses:

@@ -91,14 +91,16 @@ equations:
     lean_theorem: Theorems.ThreadCapPolicy
 
 proof_obligations:
-- type: invariant
+- id: BTC-INV-001
+  type: invariant
   property: Thread cap within [1, physical_cores]
   formal: '1 <= cap <= phys_cores'
   applies_to: thread_cap_policy
   lean:
     theorem: Theorems.ThreadCapPolicy
     status: sorry
-- type: bound
+- id: BTC-BND-002
+  type: bound
   property: Amdahl speedup bounded by n
   formal: 'speedup(p, n) <= n'
   applies_to: amdahl_speedup

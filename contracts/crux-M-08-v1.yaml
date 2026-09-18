@@ -176,13 +176,17 @@ falsification_tests:
   if_fails: "Gate rejects a good-faith complete artifact — false-positive burden causes team to bypass"
 
 proof_obligations:
-- type: invariant
+- id: CM08966-INV-001
+  type: invariant
   property: "Every qa-fix commit on main is accompanied by a conforming 5-Whys artifact"
-- type: invariant
+- id: CM08966-INV-002
+  type: invariant
   property: "Artifact shape enforced: defect_id, 5 whys (exactly), real poka_yoke"
-- type: invariant
+- id: CM08966-INV-003
+  type: invariant
   property: "Exit code aligns with status; trivial poka_yoke classified"
-- type: equivalence
+- id: CM08966-EQ-004
+  type: equivalence
   property: "apr qa --gate five-whys  ≅  apr-model-qa-playbook Gate-8 (Jidoka 5-Whys)"
 
 verification_summary:

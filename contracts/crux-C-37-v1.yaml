@@ -144,17 +144,20 @@ falsification_tests:
     allow a remote resolve on miss; the offline case must turn RED
 
 proof_obligations:
-- type: invariant
+- id: CC37CB5-INV-001
+  type: invariant
   property: >-
     Independence is total over the verifier set: every accepted verifier has a
     family distinct from the primary's (FALSIFY-001).
   formal: "forall v in verifiers: accepted(v) => family(v) != family(primary)"
-- type: soundness
+- id: CC37CB5-SND-002
+  type: soundness
   property: >-
     A reported AGREE implies every verifier actually executed, evidenced by a
     resolved sha distinct from the primary's (FALSIFY-002).
   formal: "verdict = AGREE => forall v: ran(v) and sha(v) != sha(primary)"
-- type: invariant
+- id: CC37CB5-INV-003
+  type: invariant
   property: >-
     Exit status is a total function of the verdict, so a DISAGREE can never be
     observed as success (FALSIFY-003).

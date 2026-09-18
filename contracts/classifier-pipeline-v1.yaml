@@ -45,23 +45,28 @@ equations:
     - capacity > 0
     lean_theorem: Theorems.Evaluation
 proof_obligations:
-- type: invariant
+- id: CP-INV-001
+  type: invariant
   property: Embedding determinism
   formal: extract(model, script) == extract(model, script) for same inputs
   applies_to: all
-- type: invariant
+- id: CP-INV-002
+  type: invariant
   property: Split determinism
   formal: split(data, seed) == split(data, seed) for same seed
   applies_to: all
-- type: invariant
+- id: CP-INV-003
+  type: invariant
   property: Probe convergence
   formal: train_accuracy(epoch=N) >= train_accuracy(epoch=0) for N >= 10
   applies_to: training
-- type: invariant
+- id: CP-INV-004
+  type: invariant
   property: Ship gate C-CLF-001
   formal: test_mcc > 0.3 (beats keyword) AND test_mcc > 0.0 (beats majority)
   applies_to: evaluation
-- type: invariant
+- id: CP-INV-005
+  type: invariant
   property: No empty embeddings
   formal: 'for all e in embeddings: e.embedding.len() == hidden_size AND any(e != 0.0)'
   applies_to: extraction

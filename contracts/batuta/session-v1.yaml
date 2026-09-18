@@ -104,19 +104,23 @@ equations:
     lean_theorem: Theorems.Append_Only
 
 proof_obligations:
-- type: roundtrip
+- id: S3FB1-RT-001
+  type: roundtrip
   property: Messages survive persist-resume
   formal: resume(persist(M)) == M
   applies_to: jsonl_roundtrip
-- type: roundtrip
+- id: S3FB1-RT-002
+  type: roundtrip
   property: Manifest fields survive JSON
   formal: deser(ser(manifest)) == manifest
   applies_to: manifest_serde
-- type: postcondition
+- id: S3FB1-POST-003
+  type: postcondition
   property: Age filter respects 24h boundary
   formal: returned.created > now() - 24h
   applies_to: age_filter
-- type: invariant
+- id: S3FB1-INV-004
+  type: invariant
   property: Message log grows monotonically
   formal: messages(t2).starts_with(messages(t1))
   applies_to: append_only

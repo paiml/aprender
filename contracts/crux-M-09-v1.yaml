@@ -126,15 +126,20 @@ falsification_tests:
   if_fails: "Fuzz corpus is ephemeral — no compounding coverage, each run starts from zero"
 
 proof_obligations:
-- type: invariant
+- id: CM0B8DB-INV-001
+  type: invariant
   property: "All 8 QA gates are exercised each run; no silent skips"
-- type: invariant
+- id: CM0B8DB-INV-002
+  type: invariant
   property: "Zero panics across proptest + fuzz on all 8 gates"
-- type: invariant
+- id: CM0B8DB-INV-003
+  type: invariant
   property: "Shrink seed emitted for every proptest failure (reproducibility)"
-- type: invariant
+- id: CM0B8DB-INV-004
+  type: invariant
   property: "Fuzz corpus persists and compounds across runs"
-- type: equivalence
+- id: CM0B8DB-EQ-005
+  type: equivalence
   property: "apr qa --gate property-fuzz  ≅  apr-model-qa-playbook Gate-9 (meta-gate over Gate-1..8)"
 
 verification_summary:

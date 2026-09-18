@@ -51,7 +51,8 @@ equations:
     - input.iter().all(|v| v.is_finite())
     lean_theorem: Theorems.Lora
 proof_obligations:
-- type: equivalence
+- id: LMFE-EQ-001
+  type: equivalence
   property: Merge distributivity — merged weight has the same forward map
   formal: (W + s·(B@A)) x = W x + s·(B (A x))
   applies_to: all
@@ -72,7 +73,8 @@ proof_obligations:
       matvec/matmul are folds. Proved by structural induction from Int.add_mul,
       Int.mul_assoc and omega. Compiles sorry-free with the standalone `lean`
       binary.
-- type: equivalence
+- id: LMFE-EQ-002
+  type: equivalence
   property: Composed-affine identity — delta-weight split preserves the affine map
   formal: (W + dW) x + b = (W x + dW x) + b
   applies_to: all
@@ -84,7 +86,8 @@ proof_obligations:
     - Lora.matvec_madd
     mathlib_imports: []
     notes: Scaled twin composed_affine_scaled also proved sorry-free.
-- type: equivalence
+- id: LMFE-EQ-003
+  type: equivalence
   property: Matrix-product associativity against a vector
   formal: (B @ A) x = B (A x)
   applies_to: all

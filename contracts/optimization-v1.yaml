@@ -44,15 +44,18 @@ equations:
     - params.len() > 0
     lean_theorem: Theorems.Convergence
 proof_obligations:
-- type: invariant
+- id: OPT-INV-001
+  type: invariant
   property: Monotone function decrease
   formal: f(x_{k+1}) <= f(x_k) for all k (with Wolfe line search)
   applies_to: all
-- type: bound
+- id: OPT-BND-002
+  type: bound
   property: Finite iterates
   formal: '||x_k|| < infinity for all k'
   applies_to: all
-- type: bound
+- id: OPT-BND-003
+  type: bound
   property: Positive step size
   formal: alpha_k > 0 for all k
   applies_to: all

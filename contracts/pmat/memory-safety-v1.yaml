@@ -54,15 +54,18 @@ equations:
     - peak_memory <= budget
     lean_theorem: Theorems.IndexMemoryBudget
 proof_obligations:
-- type: bound
+- id: MSD35F-BND-001
+  type: bound
   property: LRU capacity invariant
   formal: cache.len() <= capacity
   applies_to: all
-- type: frame
+- id: MSD35F-FRM-002
+  type: frame
   property: Arena lifetime containment
   formal: drop(arena) frees all allocations
   applies_to: all
-- type: bound
+- id: MSD35F-BND-003
+  type: bound
   property: Memory budget honored
   formal: peak_memory <= budget
   applies_to: all

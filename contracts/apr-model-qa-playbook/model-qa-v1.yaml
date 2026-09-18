@@ -41,15 +41,18 @@ equations:
     - both reports have matching metric sets
     lean_theorem: Theorems.Regression_Detection
 proof_obligations:
-- type: invariant
+- id: MQ-INV-001
+  type: invariant
   property: MQS score bounds
   formal: '∀ m: 0.0 <= calculate_mqs(m) <= 100.0'
   applies_to: mqs_scoring
-- type: invariant
+- id: MQ-INV-002
+  type: invariant
   property: Grade monotonicity
   formal: '∀ s1, s2: s1 >= s2 → grade(s1) >= grade(s2)'
   applies_to: grade_assignment
-- type: invariant
+- id: MQ-INV-003
+  type: invariant
   property: Regression reflexivity
   formal: '∀ r: detect_regression(r, r) = []'
   applies_to: regression_detection

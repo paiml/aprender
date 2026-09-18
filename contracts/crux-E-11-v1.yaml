@@ -101,13 +101,17 @@ falsification_tests:
   if_fails: "bootstrap CI inverted or excludes point estimate"
 
 proof_obligations:
-- type: invariant
+- id: CE17756-INV-001
+  type: invariant
   property: "MT-Bench JSON schema matches FastChat reference"
-- type: invariant
+- id: CE17756-INV-002
+  type: invariant
   property: "judge determinism at temperature 0 (±0.3)"
-- type: equivalence
+- id: CE17756-EQ-003
+  type: equivalence
   property: "apr eval --benchmark mtbench score matches FastChat gen_judgment.py within 0.5 on golden set"
-- type: invariant
+- id: CE17756-INV-004
+  type: invariant
   property: "pairwise battles run both orderings to cancel positional bias"
 
 verification_summary:
