@@ -76,7 +76,7 @@ RUNGS=$(python3 - "$LADDER" <<'PY'
 import sys, yaml
 d = yaml.safe_load(open(sys.argv[1]))
 for r in d["ladder"]["rungs"]:
-    print("|".join([r["id"], r["file"], r["sha256"], ",".join(r["backends"]), "1" if r.get("required") else "0"]))
+    print("|".join([r["id"], r["gguf"], r["sha256"], ",".join(r["backends"]), "1" if r.get("required") else "0"]))
 PY
 ) || { echo "decline: ladder unreadable" >&2; exit 2; }
 [ -n "$RUNGS" ] || { echo "decline: ladder has no rungs" >&2; exit 2; }

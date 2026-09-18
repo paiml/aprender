@@ -1,0 +1,224 @@
+{
+  "ticket": "PMAT-3477",
+  "base": "main",
+  "base_resolved": "origin/main",
+  "base_note": "local main differs from origin/main by 91 commit(s); judged against origin/main",
+  "head": "86f4039e8c0e084e19f6f42370782987e63d043a",
+  "diff_sha256": "92e1b2564a87b6a596792ed9805605eba41adccf9a60b4eeaa6a9e2d9dcfb6a0",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "file",
+  "prompt_bytes": 109358,
+  "author": {
+    "model": "claude-fable-5-1",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff correctly implements the model capability ladder as requested in ticket PMAT-3477. It adds the required scripts to run the ladder tests and checks the receipts strictly against the defined rules (e.g., verifying fallbacks, empty executions, missing receipts, stale versions, and enforcing that the main ladder cannot be shrunk). All self-test coverage covers these edge cases accurately, and the documentation is updated to match. No weakened gates or unexpected behavior were found.",
+      "findings": [],
+      "raw_bytes": 3551,
+      "err_bytes": 100,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Audit of PMAT-3477 (PR #3479, EPIC #3477) concludes with verdict PASS. The diff establishes the Model Capability Ladder contract (contracts/model-capability-ladder-v1.yaml), runner script (scripts/model_ladder.sh), gate checker (scripts/check_model_ladder.sh), Cargo.toml dogfood gate registration, T-2 Models release specification row, 13 self-test discrimination cases, and verified 0.68.1 birth receipts. All 8 contract falsification obligations (FALSIFY-MCL-001 through FALSIFY-MCL-008) were verified and measured. Scripts are clean under bash -n, shellcheck, and bashrs lint (0 errors). No gate weakening or unauthorized changes detected.",
+      "findings": [
+        {
+          "claim": "contracts/model-capability-ladder-v1.yaml validates with 0 errors and 0 warnings under pv validate (FALSIFY-MCL-008)",
+          "file": "contracts/model-capability-ladder-v1.yaml",
+          "grounding": "measured",
+          "line": 86
+        },
+        {
+          "claim": "scripts/check_model_ladder.sh is declared in Cargo.toml under [package.metadata.dogfood] gates without altering or weakening existing gates (FALSIFY-MCL-002)",
+          "file": "Cargo.toml",
+          "grounding": "cited",
+          "line": 77
+        },
+        {
+          "claim": "scripts/check_model_ladder.sh --self-test passes all 13 discrimination cases with 0 errors, validating anti-vacuity and proper failure modes (FALSIFY-MCL-003, FALSIFY-MCL-004, FALSIFY-MCL-005, FALSIFY-MCL-007)",
+          "file": "scripts/check_model_ladder.sh",
+          "grounding": "measured",
+          "line": 675
+        },
+        {
+          "claim": "scripts/model_ladder.sh pins binary via scripts/apr_bin.sh and captures status without pipes (FALSIFY-MCL-006), correctly detecting backend fallback and skipped QA gates",
+          "file": "scripts/model_ladder.sh",
+          "grounding": "cited",
+          "line": 3295
+        },
+        {
+          "claim": "Running check_model_ladder.sh against committed 0.68.1 receipts on lambda and gx10 exits 1 with RED for qwen3-1.7b and qwen35-0.8b, establishing red-capability on the birth tree (MCL-INV-003)",
+          "file": "evidence/dogfood/models/0.68.1/lambda.json",
+          "grounding": "measured",
+          "line": 427
+        },
+        {
+          "claim": "docs/specifications/APR-RELEASE-001-train-and-build-kaizen.md §4 T-2 Models row defines the capability ladder gate as a prerequisite for pre-publish cuts",
+          "file": "docs/specifications/APR-RELEASE-001-train-and-build-kaizen.md",
+          "grounding": "cited",
+          "line": 280
+        }
+      ],
+      "raw_bytes": 5708,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.8-flash-high",
+      "model_measured": "gemini-3.8-flash-high",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "Audit of PMAT-3477 (PR #3479 / EPIC #3477) completes with verdict PASS. The diff implements the Model Capability Ladder contract (contracts/model-capability-ladder-v1.yaml), the runner script (scripts/model_ladder.sh), the dogfood gate (scripts/check_model_ladder.sh), the Cargo.toml registration, the T-2 Models release specification row, 13 self-test discrimination cases, and verified 0.68.1 birth receipts. All 8 contract falsification obligations (FALSIFY-MCL-001 through FALSIFY-MCL-008) were verified and measured. No gate weakening or forbidden behavior detected.",
+      "findings": [
+        {
+          "claim": "contracts/model-capability-ladder-v1.yaml validates with 0 errors and 0 warnings under pv validate (FALSIFY-MCL-008)",
+          "file": "contracts/model-capability-ladder-v1.yaml",
+          "grounding": "measured",
+          "line": 86
+        },
+        {
+          "claim": "scripts/check_model_ladder.sh is declared in Cargo.toml under [package.metadata.dogfood] gates (FALSIFY-MCL-002)",
+          "file": "Cargo.toml",
+          "grounding": "cited",
+          "line": 77
+        },
+        {
+          "claim": "scripts/check_model_ladder.sh --self-test passes all 13 discrimination cases with 0 errors (FALSIFY-MCL-003)",
+          "file": "scripts/check_model_ladder.sh",
+          "grounding": "measured",
+          "line": 675
+        },
+        {
+          "claim": "scripts/model_ladder.sh sources scripts/apr_bin.sh to pin HEAD binary and avoids reading status across pipes (FALSIFY-MCL-006)",
+          "file": "scripts/model_ladder.sh",
+          "grounding": "cited",
+          "line": 3295
+        },
+        {
+          "claim": "Evidence receipts for 0.68.1 on lambda and gx10 correctly trigger RED on qwen3-1.7b and qwen35-0.8b rungs, proving red-capability on the birth tree (MCL-INV-003)",
+          "file": "evidence/dogfood/models/0.68.1/lambda.json",
+          "grounding": "measured",
+          "line": 427
+        }
+      ],
+      "raw_bytes": 4579,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.7-flash-high",
+      "model_measured": "gemini-3.7-flash-high",
+      "model_source": "measured",
+      "family": "gemini"
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": "Cargo.toml",
+      "line": 77,
+      "lanes_agreeing": [
+        2,
+        3
+      ],
+      "claims": [
+        "scripts/check_model_ladder.sh is declared in Cargo.toml under [package.metadata.dogfood] gates (FALSIFY-MCL-002)",
+        "scripts/check_model_ladder.sh is declared in Cargo.toml under [package.metadata.dogfood] gates without altering or weakening existing gates (FALSIFY-MCL-002)"
+      ]
+    },
+    {
+      "file": "contracts/model-capability-ladder-v1.yaml",
+      "line": 86,
+      "lanes_agreeing": [
+        2,
+        3
+      ],
+      "claims": [
+        "contracts/model-capability-ladder-v1.yaml validates with 0 errors and 0 warnings under pv validate (FALSIFY-MCL-008)"
+      ]
+    },
+    {
+      "file": "docs/specifications/APR-RELEASE-001-train-and-build-kaizen.md",
+      "line": 280,
+      "lanes_agreeing": [
+        2
+      ],
+      "claims": [
+        "docs/specifications/APR-RELEASE-001-train-and-build-kaizen.md §4 T-2 Models row defines the capability ladder gate as a prerequisite for pre-publish cuts"
+      ]
+    },
+    {
+      "file": "evidence/dogfood/models/0.68.1/lambda.json",
+      "line": 427,
+      "lanes_agreeing": [
+        2,
+        3
+      ],
+      "claims": [
+        "Evidence receipts for 0.68.1 on lambda and gx10 correctly trigger RED on qwen3-1.7b and qwen35-0.8b rungs, proving red-capability on the birth tree (MCL-INV-003)",
+        "Running check_model_ladder.sh against committed 0.68.1 receipts on lambda and gx10 exits 1 with RED for qwen3-1.7b and qwen35-0.8b, establishing red-capability on the birth tree (MCL-INV-003)"
+      ]
+    },
+    {
+      "file": "scripts/check_model_ladder.sh",
+      "line": 675,
+      "lanes_agreeing": [
+        2,
+        3
+      ],
+      "claims": [
+        "scripts/check_model_ladder.sh --self-test passes all 13 discrimination cases with 0 errors (FALSIFY-MCL-003)",
+        "scripts/check_model_ladder.sh --self-test passes all 13 discrimination cases with 0 errors, validating anti-vacuity and proper failure modes (FALSIFY-MCL-003, FALSIFY-MCL-004, FALSIFY-MCL-005, FALSIFY-MCL-007)"
+      ]
+    },
+    {
+      "file": "scripts/model_ladder.sh",
+      "line": 3295,
+      "lanes_agreeing": [
+        2,
+        3
+      ],
+      "claims": [
+        "scripts/model_ladder.sh pins binary via scripts/apr_bin.sh and captures status without pipes (FALSIFY-MCL-006), correctly detecting backend fallback and skipped QA gates",
+        "scripts/model_ladder.sh sources scripts/apr_bin.sh to pin HEAD binary and avoids reading status across pipes (FALSIFY-MCL-006)"
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": true,
+  "partial_reasons": [
+    "lane 1: non-empty .err (100 bytes, 1 line(s) beyond agy-lane's workspace narration)"
+  ],
+  "auto_merge": {
+    "checked": true,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "auto-merge not armed"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-fable-5-1/claude"
+  }
+}

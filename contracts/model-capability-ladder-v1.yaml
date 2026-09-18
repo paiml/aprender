@@ -44,7 +44,7 @@ ladder:
     - id: qwen2-1.5b-q4km
       family: qwen2.5
       arch: qwen2
-      file: qwen2.5-1.5b-instruct-q4_k_m.gguf
+      gguf: qwen2.5-1.5b-instruct-q4_k_m.gguf
       sha256: 6a1a2eb6d15622bf3c96857206351ba97e1af16c30d7a74ee38970e434e9407e
       backends: [cpu, cuda]
       required: true
@@ -52,7 +52,7 @@ ladder:
     - id: qwen3-1.7b-q4km
       family: qwen3
       arch: qwen3
-      file: Qwen3-1.7B-Q4_K_M.gguf
+      gguf: Qwen3-1.7B-Q4_K_M.gguf
       sha256: b139949c5bd74937ad8ed8c8cf3d9ffb1e99c866c823204dc42c0d91fa181897
       backends: [cpu, cuda]
       required: true
@@ -60,7 +60,7 @@ ladder:
     - id: qwen3-8b-q4km
       family: qwen3
       arch: qwen3
-      file: Qwen3-8B-Q4_K_M.gguf
+      gguf: Qwen3-8B-Q4_K_M.gguf
       sha256: d98cdcbd03e17ce47681435b5150e34c1417f50b5c0019dd560e4882c5745785
       backends: [cpu, cuda]
       required: false
@@ -68,7 +68,7 @@ ladder:
     - id: qwen35-0.8b-q4km
       family: qwen3.5
       arch: qwen35
-      file: Qwen3.5-0.8B-Q4_K_M.gguf
+      gguf: Qwen3.5-0.8B-Q4_K_M.gguf
       sha256: bd258782e35f7f458f8aced1adc053e6e92e89bc735ba3be89d38a06121dc517
       backends: [cpu]
       required: true

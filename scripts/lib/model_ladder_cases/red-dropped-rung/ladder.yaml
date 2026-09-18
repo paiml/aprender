@@ -13,14 +13,14 @@ ladder:
     backends:
     - cpu
     - cuda
-    file: c.gguf
+    gguf: c.gguf
     id: ctrl-q4km
     required: true
     sha256: '0000000000000000000000000000000000000000000000000000000000000000'
   - arch: phi3
     backends:
     - cpu
-    file: o.gguf
+    gguf: o.gguf
     id: opt-q4km
     required: false
     sha256: '2222222222222222222222222222222222222222222222222222222222222222'
