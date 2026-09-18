@@ -163,6 +163,11 @@ struct SingleGateReport<'a> {
     passed: bool,
     duration_ms: u64,
     extra: Option<&'a provable_contracts::lint::GateExtra>,
+    /// The same fields at the TOP level (ONT-4b): ONT-001 §5's probes read `.shapes_n`, `.focus_nodes_n`, `.pc_shape`,
+    /// `.w3c_cases_passed` from the single-gate report directly, beside `.verdict` — the way `.gate` and `.verdict`
+    /// already sit there. `extra` stays nested for anything that reads the structure; the flatten costs one `type` key.
+    #[serde(flatten)]
+    flat: Option<&'a provable_contracts::lint::GateExtra>,
     findings: Vec<SingleGateFinding<'a>>,
 }
 
@@ -243,6 +248,7 @@ fn run_single_gate(contract_dir: &Path, name: &str) -> Result<(), Box<dyn std::e
         passed: result.passed,
         duration_ms: result.duration_ms,
         extra: result.extra.as_ref(),
+        flat: result.extra.as_ref(),
         findings: findings
             .iter()
             .map(|f| SingleGateFinding {
