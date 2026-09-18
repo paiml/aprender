@@ -1,0 +1,86 @@
+{
+  "ticket": "PMAT-3490",
+  "base": "origin/main",
+  "base_resolved": "origin/main",
+  "base_note": "no origin/origin/main exists; judged against the local ref",
+  "head": "6a9c5ed08e1bf6cbeb8da79049c8f93b7c758008",
+  "diff_sha256": "86c18002963dd135eab68e81d66f8072bc9e854bdc9e1563697cac5400877fdb",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 6949,
+  "author": {
+    "model": "claude-opus-5",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff correctly applies the tools.toml pmat update from 3.40.1 to 3.41.1. It accurately updates the two baselines (cb200_baseline.txt and complexity_baseline.txt) that record the tool_version as requested, including the necessary shrink-only updates to the complexity baseline. The roadmap entry for PMAT-3490 is correctly added without any unauthorized modifications. No forbidden changes were found.",
+      "findings": [],
+      "raw_bytes": 2180,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff correctly implements the requested changes for PMAT-3490. It bumps the pmat version to 3.41.1 in tools.toml, adds the required roadmap entry, and successfully re-records the tool_version in both complexity_baseline.txt and cb200_baseline.txt. The dropped items in the complexity baseline are correctly associated with the ratchet shrinking upon a tool version upgrade. No violations or unauthorized changes were found.",
+      "findings": [],
+      "raw_bytes": 2219,
+      "err_bytes": 100,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-low",
+      "model_measured": "gemini-3.1-pro-low",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff strictly implements ticket PMAT-3490: it bumps the pmat tool version pin from 3.40.1 to 3.41.1 in tools.toml, updates the tool_version header and shrink-only ratchets in scripts/cb200_baseline.txt and scripts/complexity_baseline.txt as required when re-recording baselines under 3.41.1, and records the roadmap entry for PMAT-3490. No gates are weakened and no unrelated modifications are introduced.",
+      "findings": [],
+      "raw_bytes": 2077,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.7-flash-low",
+      "model_measured": "gemini-3.7-flash-low",
+      "model_source": "measured",
+      "family": "gemini"
+    }
+  ],
+  "dissent": [],
+  "dedup": [],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": true,
+  "partial_reasons": [
+    "lane 2: non-empty .err (100 bytes, 1 line(s) beyond agy-lane's workspace narration)"
+  ],
+  "auto_merge": {
+    "checked": true,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "auto-merge not armed"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-opus-5/claude"
+  }
+}
