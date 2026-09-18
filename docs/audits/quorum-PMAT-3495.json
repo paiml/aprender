@@ -1,0 +1,137 @@
+{
+  "ticket": "PMAT-3496",
+  "base": "main",
+  "base_resolved": "origin/main",
+  "base_note": "local main differs from origin/main by 93 commit(s); judged against origin/main",
+  "head": "57e0e4dfb681fc8e301b0c9493144301f158bec1",
+  "diff_sha256": "c49eff55bd63d8664ab370003a18766c397eab394dca0a14513fac2d10025b6e",
+  "width": 3,
+  "executor": "agy",
+  "prompt_mode": "inline",
+  "prompt_bytes": 2389,
+  "author": {
+    "model": "claude-fable-5-1",
+    "family": "claude",
+    "source": "flag"
+  },
+  "agreed": true,
+  "lanes": [
+    {
+      "lane": 1,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff successfully fulfills the requirements of ticket PMAT-3496. It adds the roadmap entry for PMAT-3495 by creating `docs/roadmaps/entries/PMAT-3495.yaml` and registering it within `docs/roadmaps/roadmap.yaml`. The entry correctly uses the specified title and sets the status to 'planned'. Furthermore, the diff adheres to the negative constraint \"it does not implement the work\" by including only the necessary documentation YAML changes and absolutely no code modifications. No tests assert the opposite, no gates are weakened, and no unbacked receipt claims are made.",
+      "findings": [],
+      "raw_bytes": 2521,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.1-pro-high",
+      "model_measured": "gemini-3.1-pro-high",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 2,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff accurately registers PMAT-3495 (VERIFY-001) as a planned roadmap fragment in both docs/roadmaps/entries/PMAT-3495.yaml and docs/roadmaps/roadmap.yaml. It performs only the requested roadmap entry creation and does not implement any code or modify gates/tests. No refuting issues found. Verdict: PASS.",
+      "findings": [
+        {
+          "claim": "docs/roadmaps/entries/PMAT-3495.yaml creates the planned roadmap entry for PMAT-3495 with status 'planned' and does not introduce implementation code, adhering to ticket instructions.",
+          "file": "docs/roadmaps/entries/PMAT-3495.yaml",
+          "grounding": "cited",
+          "line": 1
+        },
+        {
+          "claim": "docs/roadmaps/roadmap.yaml registers the PMAT-3495 planned fragment in the consolidated roadmap without extraneous changes.",
+          "file": "docs/roadmaps/roadmap.yaml",
+          "grounding": "cited",
+          "line": 18512
+        }
+      ],
+      "raw_bytes": 2859,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.8-flash-high",
+      "model_measured": "gemini-3.8-flash-high",
+      "model_source": "measured",
+      "family": "gemini"
+    },
+    {
+      "lane": 3,
+      "status": "SUCCESS",
+      "verdict": "PASS",
+      "summary": "The diff solely registers PMAT-3495 (VERIFY-001) as a planned roadmap entry in docs/roadmaps/entries/PMAT-3495.yaml and docs/roadmaps/roadmap.yaml. No implementation work is added and no gates or test tables are modified, fulfilling PMAT-3496 exactly.",
+      "findings": [
+        {
+          "claim": "PMAT-3495 roadmap entry fragment registered with planned status as requested",
+          "file": "docs/roadmaps/entries/PMAT-3495.yaml",
+          "fix": "None required",
+          "grounding": "cited",
+          "line": 1
+        },
+        {
+          "claim": "PMAT-3495 appended to roadmap.yaml as planned fragment",
+          "file": "docs/roadmaps/roadmap.yaml",
+          "fix": "None required",
+          "grounding": "cited",
+          "line": 18512
+        }
+      ],
+      "raw_bytes": 2493,
+      "err_bytes": 0,
+      "envelope_status": "SUCCESS",
+      "verdict_source": "structured_output",
+      "grounding_check": "parity",
+      "model": "gemini-3.7-flash-high",
+      "model_measured": "gemini-3.7-flash-high",
+      "model_source": "measured",
+      "family": "gemini"
+    }
+  ],
+  "dissent": [],
+  "dedup": [
+    {
+      "file": "docs/roadmaps/entries/PMAT-3495.yaml",
+      "line": 1,
+      "lanes_agreeing": [
+        2,
+        3
+      ],
+      "claims": [
+        "PMAT-3495 roadmap entry fragment registered with planned status as requested",
+        "docs/roadmaps/entries/PMAT-3495.yaml creates the planned roadmap entry for PMAT-3495 with status 'planned' and does not introduce implementation code, adhering to ticket instructions."
+      ]
+    },
+    {
+      "file": "docs/roadmaps/roadmap.yaml",
+      "line": 18512,
+      "lanes_agreeing": [
+        2,
+        3
+      ],
+      "claims": [
+        "PMAT-3495 appended to roadmap.yaml as planned fragment",
+        "docs/roadmaps/roadmap.yaml registers the PMAT-3495 planned fragment in the consolidated roadmap without extraneous changes."
+      ]
+    }
+  ],
+  "uncovered": [],
+  "coverage_source": "lanes",
+  "partial": false,
+  "partial_reasons": [],
+  "auto_merge": {
+    "checked": true,
+    "was_armed": false,
+    "disarmed": false,
+    "note": "auto-merge not armed"
+  },
+  "lint": {
+    "ok": true,
+    "output": "receipt complete: kind=artifact lanes=3 author=claude-fable-5-1/claude"
+  }
+}
