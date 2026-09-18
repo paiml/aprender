@@ -2822,17 +2822,20 @@ jobs:
     # The cold build pulls resvg + skrifa, which no other job in this workflow builds; 45 is the
     # BSE-05 floor plus headroom, to be refitted from this job's own p99 once it has seven runs.
     timeout-minutes: 45
-    env:
-      # A target dir that belongs to THIS job and nothing else. The first run of this job used the
-      # runner's persistent `_work/aprender/aprender/target`, and X64 died with `could not
-      # parse/generate dep info at .../deps/hashbrown-….d: No such file or directory` — the
-      # aprender#2822 race that every other cargo job here already avoids with a per-run dir.
-      # `runner.temp` is emptied per job on every runner, so it needs no /mnt mount on gx10.
-      CARGO_TARGET_DIR: ${{ runner.temp }}/determinism-target
     steps:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
+
+      # A target dir that belongs to THIS job and nothing else. The first run of this job used the
+      # runner's persistent `_work/aprender/aprender/target`, and X64 died with `could not
+      # parse/generate dep info at .../deps/hashbrown-….d: No such file or directory` — the
+      # aprender#2822 race that every other cargo job here already avoids with a per-run dir.
+      # `$RUNNER_TEMP` is emptied per job on every runner, so it needs no /mnt mount on gx10.
+      # Set from a step, not from a job-level `env:` — the `runner` context is not available
+      # there, and the whole workflow fails at startup with zero jobs (measured, run 35319640264).
+      - name: A target dir of this job's own
+        run: echo "CARGO_TARGET_DIR=${RUNNER_TEMP}/determinism-target" >> "$GITHUB_ENV"
 
       # The receipt is written into the workspace's `target/aprender-viz/`, which persists on a
       # self-hosted runner. A receipt left there by an earlier run must never be uploaded as this
