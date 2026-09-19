@@ -1,14 +1,20 @@
 - id: PMAT-3509
   github_issue: 3509
   item_type: task
-  title: 'ONT-4b2: extract:code (syn module-tree walk over the bound symbols) and extract:lean (the in-tree theorems) into contracts.nt under the symbol/ and world/ roots; 32 vendored W3C SHACL-Core cases run by the shapes gate (w3c_cases_passed); tests/oracle/ scratch crate + make oracle writing tests/oracle/differential.json (release gate only, R-13); Unknown{Differential} on disagreement'
+  title: 'ONT-4b2: extract:code (syn module-tree walk over the bound symbols) and extract:lean (the in-tree theorems) into contracts.nt under the symbol/ and world/ roots; the ONT-0 table''s 32 W3C SHACL-Core cases accounted for one by one — 16 vendored and run by the shapes gate (w3c_cases_passed), 16 NOT vendored because their FORM (a constraint on the node shape itself) is outside the subset, each with its reason; tests/oracle/ scratch crate + make oracle writing tests/oracle/differential.json (release gate only, R-13); Unknown{Differential} on disagreement'
   status: planned
   priority: medium
   assigned_to: null
   created: 2026-09-19T11:07:51Z
   updated: 2026-09-19T11:07:51Z
   spec: null
-  acceptance_criteria: []
+  acceptance_criteria:
+  - 'extract:code walks the syn module tree of every crate a binding registry names and emits ont:Symbol focus nodes under the symbol/ root (resolved and unresolved counted separately: symbols_resolved / symbols_unresolved in the shapes report); extract:lean emits ont:Statement nodes under the world/ root for the in-tree theorems whose names the ONT-2a camel-case rule accepts; both run inside the one walk extract::all (R-18) and both have a positive control (pc_extract.code / pc_extract.lean) that must fire or the gate declines PositiveControlFailed.'
+  - 'crates/aprender-contracts/src/ontology/w3c.rs vendors 16 W3C SHACL-Core cases as YAML translations under crates/aprender-contracts/w3c/ and the shapes gate runs them (w3c_cases_passed / w3c_cases_n in the report, 16/16); NOT_VENDORED lists the other 16 of ONT-0''s 32 with the excluding form each (a constraint on the node shape itself, which the subset attaches only to property shapes); the_table_of_ont_0_is_accounted_for_case_by_case asserts CASES + NOT_VENDORED == 32 with no id twice. The CLI leg asserts n >= 16 because 16 is what is vendored — not 32.'
+  - 'sh:in is TERM equality (InEntry{lexical, datatype}; "1"^^xsd:integer and "1" are different entries; typed export in shapes.ttl); rdfs:subClassOf closes instance sets for targetClass; sh:datatype checks the lexical form is well-formed for the datatype; one sh:node result per failing value; the sh:in message reads `<path>: <term> is not one of [<terms>]` (the path from #3530, the terms from this row).'
+  - 'tests/oracle/ is a workspace-DETACHED crate (its own [workspace]; shacl = "=0.3.21" default-features off) run only by `make oracle` / `make oracle-check` (release gate, R-13: no third-party SHACL crate in the gate path; the workspace Cargo.lock has no rudof/oxigraph/horned/sophia/whelk); it writes tests/oracle/differential.json (TRACKED) and oracle-check diffs it; the Makefile target uses --manifest-path, never cd, because the Makefile is .ONESHELL.'
+  - 'contracts/ont-code-symbols-v1.yaml ships two shapes UNARMED (bound-symbols-resolve, lean-statements-grounded) — reported in not_armed_shapes, armed later by their own PR (§3.9 reported-first); FALSIFY-SYM-001..005 in the contract; scripts/check_ont_ratchet.sh reads entity types and extractors from Σ and preserves foreign keys; fixtures tests/fixtures/ont/{code-bound,code-ghost,lean-sorry}/; CLI test ont4b2_code_lean_w3c (8 legs) wired at ci/explicit-test-commands.d/343-….'
+  - 'Rebased onto 45decafb5 (ONT-4c1 + #3530 + #3523 + #3516): pv extract contracts --check 0; sigma / relations / shapes Pass on the tree (shapes_n=5, focus_nodes_n=2318, symbols 169 resolved / 101 unresolved, W3C 16/16); the 4c1 corpus test asserts ladder-green is computed and reported (a by_shape entry, listed in armed ∪ not_armed) without pinning which side, so it holds on the 0.68.2 bump tree that arms it; crates/facades/Cargo.lock regenerated for the syn edge; clippy 1.93 -D warnings clean on both crates; lib 1665 + the seven ONT CLI test files green.'
   phases: []
   subtasks: []
   estimated_effort: null

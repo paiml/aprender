@@ -1373,8 +1373,10 @@ ont-ratchet-check:
 oracle:
 	@echo "== W3C cases + the real corpus through the pinned oracle (shacl 0.3.21, out of gate) =="
 	@. scripts/pv_bin.sh && "$$PV" lint contracts --gate shapes --format json > "$${TMPDIR:-/tmp}/pv-shapes.json" 2>/dev/null || true
-	@cd tests/oracle && cargo build --release --quiet
-	@"$$(cd tests/oracle && cargo metadata --no-deps --format-version 1 | sed -n 's/.*"target_directory":"\([^"]*\)".*/\1/p')/release/ont-oracle" . "$${TMPDIR:-/tmp}/pv-shapes.json"
+	@# No `cd`: this Makefile is .ONESHELL, so a cd on one line moves every line after it (the first form of
+	@# this target built in tests/oracle/ and then ran `$(cd tests/oracle …)` from inside it — "No such file").
+	@cargo build --release --quiet --manifest-path tests/oracle/Cargo.toml
+	@"$$(cargo metadata --no-deps --format-version 1 --manifest-path tests/oracle/Cargo.toml | sed -n 's/.*"target_directory":"\([^"]*\)".*/\1/p')/release/ont-oracle" . "$${TMPDIR:-/tmp}/pv-shapes.json"
 
 oracle-check: oracle
 	@git diff --exit-code tests/oracle/differential.json \

@@ -2,8 +2,8 @@
   "cases": 17,
   "corpus": {
     "agree": true,
-    "oracle_violations": 113,
-    "pv_violations": 113,
+    "oracle_violations": 103,
+    "pv_violations": 103,
     "ran": true
   },
   "detail": [],
