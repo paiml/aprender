@@ -232,37 +232,30 @@ fn decide_named_gate(
     name: &str,
 ) -> Result<NamedGateAnswer, Box<dyn std::error::Error>> {
     use provable_contracts::lint::{
-        relations_gate::RelationsOutcome, shapes_gate::ShapesOutcome, sigma_gate::SigmaOutcome,
-        NamedGateOutcome, NAMED_GATES,
+        relations_gate::RelationsOutcome, sigma_gate::SigmaOutcome, NamedGateOutcome, NAMED_GATES,
     };
 
     match provable_contracts::lint::run_named_gate(contract_dir, name) {
-        NamedGateOutcome::UnknownGate => {
-            return Err(crate::contract_walk::UnknownGate {
-                asked: name.to_string(),
-                known: NAMED_GATES.iter().map(|g| (*g).to_string()).collect(),
-            }
-            .into())
+        NamedGateOutcome::UnknownGate => Err(crate::contract_walk::UnknownGate {
+            asked: name.to_string(),
+            known: NAMED_GATES.iter().map(|g| (*g).to_string()).collect(),
         }
-        NamedGateOutcome::Sigma(SigmaOutcome::NoSigma) => {
-            return Err(LintDeclined {
-                reason: provable_contracts::ontology::verdict::Reason::NoCheckable,
-            }
-            .into())
+        .into()),
+        NamedGateOutcome::Sigma(SigmaOutcome::NoSigma) => Err(LintDeclined {
+            reason: provable_contracts::ontology::verdict::Reason::NoCheckable,
         }
+        .into()),
         NamedGateOutcome::Sigma(SigmaOutcome::Malformed(e)) => {
-            return Err(crate::contract_walk::SigmaMalformed(e.to_string()).into())
+            Err(crate::contract_walk::SigmaMalformed(e.to_string()).into())
         }
         NamedGateOutcome::Relations(
             RelationsOutcome::NoSigma | RelationsOutcome::NoRelations { .. },
-        ) => {
-            return Err(LintDeclined {
-                reason: provable_contracts::ontology::verdict::Reason::NoCheckable,
-            }
-            .into())
+        ) => Err(LintDeclined {
+            reason: provable_contracts::ontology::verdict::Reason::NoCheckable,
         }
+        .into()),
         NamedGateOutcome::Relations(RelationsOutcome::Malformed(e)) => {
-            return Err(crate::contract_walk::SigmaMalformed(e.to_string()).into())
+            Err(crate::contract_walk::SigmaMalformed(e.to_string()).into())
         }
         NamedGateOutcome::Shapes(outcome) => decide_shapes_gate(outcome),
         NamedGateOutcome::Sigma(SigmaOutcome::Ran { result, findings })
