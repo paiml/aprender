@@ -297,8 +297,9 @@ impl CudaKernels {
     /// match grows past the complexity ceiling.
     fn generate_gdn_ptx(kernel_type: &KernelType, target: &str) -> Option<String> {
         use trueno_gpu::kernels::gdn::{
-            CausalConv1dSiluKernel, DeltaRuleRecurrenceKernel, GatedRmsNormKernel, GdnGatesKernel,
-            PerHeadL2NormKernel, SigmoidGateKernel,
+            CausalConv1dSiluKernel, DecodeAttention256Kernel, DeltaRuleRecurrenceKernel,
+            GatedRmsNormKernel, GdnGatesKernel, PartialNeoxRopeKernel, PerHeadL2NormKernel,
+            SigmoidGateKernel, SplitInterleavedKernel,
         };
         let ptx = match kernel_type {
             KernelType::GdnCausalConv1dSilu { channels, kernel_size } => {
@@ -318,6 +319,17 @@ impl CudaKernels {
             },
             KernelType::GdnSigmoidGate { n } => {
                 SigmoidGateKernel::new(*n).emit_ptx_for_target(target)
+            },
+            KernelType::GdnSplitInterleaved { num_heads, head_dim } => {
+                SplitInterleavedKernel::new(*num_heads, *head_dim).emit_ptx_for_target(target)
+            },
+            KernelType::GdnPartialNeoxRope { num_heads, head_dim, n_rot } => {
+                PartialNeoxRopeKernel::new(*num_heads, *head_dim, *n_rot)
+                    .emit_ptx_for_target(target)
+            },
+            KernelType::GdnDecodeAttention { num_heads, num_kv_heads, head_dim } => {
+                DecodeAttention256Kernel::new(*num_heads, *num_kv_heads, *head_dim)
+                    .emit_ptx_for_target(target)
             },
             _ => return None,
         };

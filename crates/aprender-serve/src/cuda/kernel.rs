@@ -26,6 +26,9 @@ impl CudaKernels {
             KernelType::GdnDeltaRule { .. } => "gdn_delta_rule_recurrence",
             KernelType::GdnGatedRmsNorm { .. } => "gdn_gated_rmsnorm",
             KernelType::GdnSigmoidGate { .. } => "gdn_sigmoid_gate",
+            KernelType::GdnSplitInterleaved { .. } => "gdn_split_interleaved_q_gate",
+            KernelType::GdnPartialNeoxRope { .. } => "gdn_partial_neox_rope",
+            KernelType::GdnDecodeAttention { .. } => "gdn_decode_attention",
             _ => return None,
         };
         Some(name)

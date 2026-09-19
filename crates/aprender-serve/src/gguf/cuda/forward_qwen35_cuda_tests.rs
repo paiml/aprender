@@ -51,13 +51,39 @@ const TOL: f32 = 1e-3;
 /// tokens and every `DeltaNet` layer: 9.8e-3 with the float GEMV pinned.
 const LAYER_TOL: f32 = 2e-2;
 
+/// Tolerance for the K and V rows an attention layer appends. They are one
+/// Q4_K/Q6_K GEMV plus a per-head RMSNorm and the partial rope away from the
+/// layer input, so they carry the GEMV budget but not the attention block's.
+const KV_TOL: f32 = 5e-3;
+
+/// Tolerance for the end-to-end logits of a whole token. Every layer's GEMV
+/// error compounds through 24 layers and the `lm_head`; this is the measured
+/// budget, and it is held together with an EXACT argmax equality, which is what
+/// a decode actually depends on.
+const LOGITS_TOL: f32 = 1e-3;
+
 /// A fixed three-token prompt. Any ids work for parity — what matters is that
 /// both sides see the same ones.
 const PROMPT: [u32; 3] = [9707, 11, 1879];
 
+/// A fixed six-token prompt for the end-to-end comparison.
+const LONG_PROMPT: [u32; 6] = [9707, 11, 1879, 0, 2610, 525];
+
 /// `max|want|`, the scale the tolerance is relative to.
 fn max_abs(v: &[f32]) -> f32 {
     v.iter().fold(0.0f32, |m, x| m.max(x.abs()))
+}
+
+/// `max|got - want| / max|want|` — the scale-relative L∞ every assertion here
+/// is written in.
+fn rel_linf(got: &[f32], want: &[f32]) -> f32 {
+    assert_eq!(got.len(), want.len(), "rel_linf: length mismatch");
+    let scale = max_abs(want);
+    assert!(scale > 0.0, "rel_linf: the reference is all zeros");
+    got.iter()
+        .zip(want)
+        .fold(0.0f32, |m, (g, w)| m.max((g - w).abs()))
+        / scale
 }
 
 /// Assert `max|got - want| <= tol * max|want|`, refusing a vacuous comparison.
@@ -415,11 +441,12 @@ fn qwen35_cuda_sigmoid_gate_matches_cpu() {
     assert_rel_linf(&got, &want, TOL, "sigmoid gate");
 }
 
-/// The attention seam refuses, loudly and by name, instead of silently running a
-/// `DeltaNet` layer's code on an attention layer.
+/// Each layer path refuses the other kind, loudly and by name, instead of
+/// silently running a `DeltaNet` layer's code on an attention layer or the
+/// reverse.
 #[test]
 #[serial_test::serial]
-fn qwen35_cuda_attention_layer_is_an_unimplemented_seam() {
+fn qwen35_cuda_layer_kind_mismatch_refuses_by_name() {
     let executor = qwen35_cuda_fixture_or_skip!();
     let mapped = crate::gguf::MappedGGUFModel::from_path(MODEL_PATH).expect("map the GGUF");
     let base = load_cpu_model(&mapped);
@@ -430,6 +457,11 @@ fn qwen35_cuda_attention_layer_is_an_unimplemented_seam() {
         .iter()
         .position(|l| matches!(l, Qwen35OwnedLayer::Attention(_)))
         .expect("the hybrid file carries full-attention layers");
+    let deltanet_il = qwen
+        .layers
+        .iter()
+        .position(|l| matches!(l, Qwen35OwnedLayer::DeltaNet(_)))
+        .expect("the hybrid file carries Gated DeltaNet layers");
 
     let mut gpu = Qwen35CudaModel::new(&qwen, executor).expect("build the CUDA model");
     let dev = GpuBuffer::<f32>::from_host(
@@ -446,9 +478,366 @@ fn qwen35_cuda_attention_layer_is_an_unimplemented_seam() {
         "the refusal must name the seam: {err}"
     );
     let err = gpu
-        .forward_attention_layer(attention_il, &dev)
-        .expect_err("attention is phase 2");
-    assert!(format!("{err}").contains("qwen35_cuda_attention"), "{err}");
+        .forward_attention_layer(deltanet_il, &dev, 0)
+        .expect_err("a DeltaNet layer must not run the attention path");
+    assert!(format!("{err}").contains("qwen35_cuda_deltanet"), "{err}");
+}
+
+/// Per-layer parity of the wired full-attention GPU forward against the CPU
+/// reference, over the first three tokens of a fixed prompt, on EVERY attention
+/// layer, with teacher forcing — on the layer output hidden state AND on the K
+/// and V rows the token appends at its position.
+#[test]
+#[serial_test::serial]
+#[allow(clippy::too_many_lines)]
+fn qwen35_cuda_attention_layers_match_cpu_on_the_real_file() {
+    let executor = qwen35_cuda_fixture_or_skip!();
+    let mapped = crate::gguf::MappedGGUFModel::from_path(MODEL_PATH).expect("map the GGUF");
+    let base = load_cpu_model(&mapped);
+    let qwen =
+        Qwen35Model::from_model_and_layers(&base, &mapped.model, mapped.data()).expect("qwen35");
+
+    let attention_layers = qwen
+        .layers
+        .iter()
+        .filter(|l| matches!(l, Qwen35OwnedLayer::Attention(_)))
+        .count();
+    assert!(
+        attention_layers > 0,
+        "the fixture must carry full-attention layers, else this test proves nothing"
+    );
+
+    let mut gpu = Qwen35CudaModel::new(&qwen, executor).expect("build the CUDA model");
+    gpu.pin_reference_gemv();
+
+    let hidden_dim = qwen.base.config.hidden_dim;
+    let kv_row = qwen.base.config.num_kv_heads * qwen.head_dim;
+    let mut cpu_state = qwen.new_state(PROMPT.len() + 1);
+    let mut normed = vec![0.0f32; hidden_dim];
+    let mut post_normed = vec![0.0f32; hidden_dim];
+    let mut compared = 0usize;
+
+    for (pos, &token) in PROMPT.iter().enumerate() {
+        let mut hidden = qwen.base.token_embedding()
+            [(token as usize) * hidden_dim..(token as usize + 1) * hidden_dim]
+            .to_vec();
+
+        for (il, layer) in qwen.layers.iter().enumerate() {
+            match layer {
+                Qwen35OwnedLayer::DeltaNet(d) => {
+                    // Already proven above; here it only advances the CPU
+                    // reference so the next attention layer sees a real input.
+                    qwen.forward_deltanet(
+                        d,
+                        &mut hidden,
+                        &mut cpu_state,
+                        il,
+                        pos,
+                        &mut normed,
+                        &mut post_normed,
+                    )
+                    .expect("cpu deltanet");
+                },
+                Qwen35OwnedLayer::Attention(a) => {
+                    // Teacher forcing: the GPU starts from the CPU's KV rows for
+                    // positions 0..pos, and from the same hidden state.
+                    let k_before = cpu_state.kv_cache.get_k(il).to_vec();
+                    let v_before = cpu_state.kv_cache.get_v(il).to_vec();
+                    assert_eq!(
+                        k_before.len(),
+                        pos * kv_row,
+                        "pos {pos} layer {il}: the CPU cache must hold exactly {pos} rows"
+                    );
+                    gpu.upload_attention_kv(il, &k_before, &v_before)
+                        .expect("seed the device KV cache");
+                    let dev = GpuBuffer::from_host(gpu.executor_mut().context(), &hidden)
+                        .expect("upload hidden");
+
+                    qwen.forward_attention(
+                        a,
+                        &mut hidden,
+                        &mut cpu_state,
+                        il,
+                        pos,
+                        &mut normed,
+                        &mut post_normed,
+                    )
+                    .expect("cpu attention");
+
+                    gpu.forward_attention_layer(il, &dev, pos)
+                        .expect("gpu attention");
+                    gpu.executor_mut().sync_stream().expect("sync");
+                    let mut got = vec![0.0f32; hidden_dim];
+                    dev.copy_to_host(&mut got).expect("download hidden");
+
+                    assert_rel_linf(
+                        &got,
+                        &hidden,
+                        LAYER_TOL,
+                        &format!("pos {pos} layer {il} hidden"),
+                    );
+
+                    // The appended row is the only one the GPU computed — the
+                    // earlier rows were seeded from the CPU and would compare
+                    // equal to themselves.
+                    let (k_after, v_after) = gpu.download_layer(il).expect("download KV");
+                    assert_eq!(k_after.len(), (pos + 1) * kv_row, "K rows written");
+                    let cpu_k = cpu_state.kv_cache.get_k(il);
+                    let cpu_v = cpu_state.kv_cache.get_v(il);
+                    assert_rel_linf(
+                        &k_after[pos * kv_row..],
+                        &cpu_k[pos * kv_row..(pos + 1) * kv_row],
+                        KV_TOL,
+                        &format!("pos {pos} layer {il} K row"),
+                    );
+                    assert_rel_linf(
+                        &v_after[pos * kv_row..],
+                        &cpu_v[pos * kv_row..(pos + 1) * kv_row],
+                        KV_TOL,
+                        &format!("pos {pos} layer {il} V row"),
+                    );
+                    compared += 1;
+                },
+            }
+        }
+        cpu_state.kv_cache.advance();
+    }
+
+    assert_eq!(
+        compared,
+        attention_layers * PROMPT.len(),
+        "every attention layer must be compared at every position"
+    );
+}
+
+/// The three attention-side kernels (split, partial rope, decode attention) and
+/// the per-head RMSNorm, each against the CPU reference function on the GPU's
+/// OWN input, at 1e-3 relative.
+///
+/// Feeding the CPU the GPU's inputs is what makes this a kernel test: the
+/// projection GEMVs are upstream of every one of them and carry ~5e-3 of their
+/// own, so comparing "the CPU's attention output" against "the GPU's" would
+/// measure the GEMVs and call it the attention block.
+#[test]
+#[serial_test::serial]
+#[allow(clippy::too_many_lines)]
+fn qwen35_cuda_attention_ops_match_cpu_given_the_same_inputs() {
+    let executor = qwen35_cuda_fixture_or_skip!();
+    let mapped = crate::gguf::MappedGGUFModel::from_path(MODEL_PATH).expect("map the GGUF");
+    let base = load_cpu_model(&mapped);
+    let qwen =
+        Qwen35Model::from_model_and_layers(&base, &mapped.model, mapped.data()).expect("qwen35");
+    let il = qwen
+        .layers
+        .iter()
+        .position(|l| matches!(l, Qwen35OwnedLayer::Attention(_)))
+        .expect("an attention layer");
+    let Qwen35OwnedLayer::Attention(a) = &qwen.layers[il] else {
+        unreachable!("just matched")
+    };
+
+    let mut gpu = Qwen35CudaModel::new(&qwen, executor).expect("build the CUDA model");
+    gpu.pin_reference_gemv();
+
+    let hidden_dim = qwen.base.config.hidden_dim;
+    let eps = qwen.base.config.eps;
+    let num_heads = qwen.base.config.num_heads;
+    let num_kv_heads = qwen.base.config.num_kv_heads;
+    let head_dim = a.attn_q_norm.len();
+    let kv_row = num_kv_heads * head_dim;
+    let n_rot = 2 * qwen.rope_sections.iter().sum::<usize>();
+    let freq_base = qwen.base.config.rope_theta;
+    let mut cpu_state = qwen.new_state(PROMPT.len() + 1);
+    let mut normed = vec![0.0f32; hidden_dim];
+    let mut post_normed = vec![0.0f32; hidden_dim];
+
+    for (pos, &token) in PROMPT.iter().enumerate() {
+        let k_before = cpu_state.kv_cache.get_k(il).to_vec();
+        let v_before = cpu_state.kv_cache.get_v(il).to_vec();
+        let mut hidden = qwen.base.token_embedding()
+            [(token as usize) * hidden_dim..(token as usize + 1) * hidden_dim]
+            .to_vec();
+        gpu.upload_attention_kv(il, &k_before, &v_before)
+            .expect("seed");
+        let dev =
+            GpuBuffer::from_host(gpu.executor_mut().context(), &hidden).expect("upload hidden");
+        gpu.forward_attention_layer(il, &dev, pos)
+            .expect("gpu attention");
+
+        let normed_g = gpu.dump_stage("normed");
+        let q_full_g = gpu.dump_stage("q_full");
+        let q_g = gpu.dump_stage("q");
+        let q_rot_g = gpu.dump_stage("q_normed");
+        let gate_g = gpu.dump_stage("attn_gate");
+        let k_raw_g = gpu.dump_stage("k_raw");
+        let attn_out_in_g = gpu.dump_stage("attn_out_in");
+        let (k_all_g, v_all_g) = gpu.download_layer(il).expect("download KV");
+
+        // --- the q|gate split, from the GPU's own joint projection. Pure data
+        // movement: this one must be EXACT.
+        let mut q_c = vec![0.0f32; num_heads * head_dim];
+        let mut gate_c = vec![0.0f32; num_heads * head_dim];
+        for h in 0..num_heads {
+            let src = h * head_dim * 2;
+            let dst = h * head_dim;
+            q_c[dst..dst + head_dim].copy_from_slice(&q_full_g[src..src + head_dim]);
+            gate_c[dst..dst + head_dim]
+                .copy_from_slice(&q_full_g[src + head_dim..src + head_dim * 2]);
+        }
+        assert_eq!(q_g, q_c, "pos {pos}: the q half of the split is not exact");
+        assert_eq!(
+            gate_g, gate_c,
+            "pos {pos}: the gate half of the split is not exact"
+        );
+
+        // --- per-head RMSNorm + partial rope on q, from the GPU's own q.
+        let mut q_rot_c = q_g.clone();
+        crate::gguf::ops::apply_per_head_rms_norm(&mut q_rot_c, &a.attn_q_norm, num_heads, eps);
+        crate::gguf::forward_qwen35::apply_partial_neox_rope(
+            &mut q_rot_c,
+            num_heads,
+            head_dim,
+            n_rot,
+            pos,
+            freq_base,
+        );
+        assert_rel_linf(&q_rot_g, &q_rot_c, TOL, &format!("pos {pos}: q norm+rope"));
+
+        // --- the same on k, whose result IS the appended cache row.
+        let mut k_rot_c = k_raw_g.clone();
+        crate::gguf::ops::apply_per_head_rms_norm(&mut k_rot_c, &a.attn_k_norm, num_kv_heads, eps);
+        crate::gguf::forward_qwen35::apply_partial_neox_rope(
+            &mut k_rot_c,
+            num_kv_heads,
+            head_dim,
+            n_rot,
+            pos,
+            freq_base,
+        );
+        assert_rel_linf(
+            &k_all_g[pos * kv_row..],
+            &k_rot_c,
+            TOL,
+            &format!("pos {pos}: k norm+rope (the appended row)"),
+        );
+
+        // --- the attention block + output gate, from the GPU's own q, KV cache
+        // and gate.
+        let mut attn_c = vec![0.0f32; num_heads * head_dim];
+        let group_size = num_heads / num_kv_heads;
+        for h in 0..num_heads {
+            let kv_h = h / group_size;
+            let q_h = &q_rot_g[h * head_dim..(h + 1) * head_dim];
+            let mut scores = vec![0.0f32; pos + 1];
+            for (p, score) in scores.iter_mut().enumerate() {
+                let base = p * kv_row + kv_h * head_dim;
+                let mut dot = 0.0;
+                for i in 0..head_dim {
+                    dot += q_h[i] * k_all_g[base + i];
+                }
+                *score = dot / (head_dim as f32).sqrt();
+            }
+            crate::gguf::ops::softmax(&mut scores);
+            let out_h = &mut attn_c[h * head_dim..(h + 1) * head_dim];
+            for (p, &w) in scores.iter().enumerate() {
+                let base = p * kv_row + kv_h * head_dim;
+                for i in 0..head_dim {
+                    out_h[i] += w * v_all_g[base + i];
+                }
+            }
+        }
+        crate::gguf::forward_qwen35::apply_sigmoid_gate(&mut attn_c, &gate_g);
+        assert_rel_linf(
+            &attn_out_in_g,
+            &attn_c,
+            TOL,
+            &format!("pos {pos}: decode attention + output gate"),
+        );
+
+        // --- the projection GEMVs, from the GPU's own normed input. These are
+        // NOT this ticket's kernels: they are the pre-existing CPU/GPU
+        // quantization gap, measured here so the layer budget below is a
+        // reading and not a wish.
+        let mut q_full_c = vec![0.0f32; a.attn_q.out_dim];
+        qwen.base
+            .fused_matmul_into(&normed_g, &a.attn_q, &mut q_full_c)
+            .expect("cpu attn_q");
+        let mut k_c = vec![0.0f32; a.attn_k.out_dim];
+        qwen.base
+            .fused_matmul_into(&normed_g, &a.attn_k, &mut k_c)
+            .expect("cpu attn_k");
+        let mut out_c = vec![0.0f32; a.attn_output.out_dim];
+        qwen.base
+            .fused_matmul_into(&attn_out_in_g, &a.attn_output, &mut out_c)
+            .expect("cpu attn_output");
+        eprintln!(
+            "[GEMV pos {pos}] attn_q(t{}) {:.3e}  attn_k(t{}) {:.3e}  attn_output(t{}) {:.3e}",
+            a.attn_q.qtype,
+            rel_linf(&q_full_g, &q_full_c),
+            a.attn_k.qtype,
+            rel_linf(&k_raw_g, &k_c),
+            a.attn_output.qtype,
+            rel_linf(&gpu.dump_stage("attn_out"), &out_c),
+        );
+
+        // --- rms_norm itself, on the same hidden state.
+        let mut normed_c = vec![0.0f32; hidden_dim];
+        crate::gguf::ops::rms_norm_into(&hidden, &a.attn_norm, eps, &mut normed_c);
+        assert_rel_linf(&normed_g, &normed_c, TOL, &format!("pos {pos}: rms_norm"));
+
+        qwen.forward_attention(
+            a,
+            &mut hidden,
+            &mut cpu_state,
+            il,
+            pos,
+            &mut normed,
+            &mut post_normed,
+        )
+        .expect("cpu attention");
+        cpu_state.kv_cache.advance();
+    }
+}
+
+/// END TO END: the whole per-token forward — both layer kinds, the output norm
+/// and the `lm_head` — against `forward_single_qwen35`, from fresh states, token
+/// by token over a fixed six-token prompt.
+///
+/// No teacher forcing: after the first token the two sides diverge or they do
+/// not, and the argmax equality is what a decode actually depends on.
+#[test]
+#[serial_test::serial]
+fn qwen35_cuda_forward_single_matches_cpu_logits_end_to_end() {
+    let executor = qwen35_cuda_fixture_or_skip!();
+    let mapped = crate::gguf::MappedGGUFModel::from_path(MODEL_PATH).expect("map the GGUF");
+    let base = load_cpu_model(&mapped);
+    let qwen =
+        Qwen35Model::from_model_and_layers(&base, &mapped.model, mapped.data()).expect("qwen35");
+
+    let mut gpu = Qwen35CudaModel::new(&qwen, executor).expect("build the CUDA model");
+    gpu.pin_reference_gemv();
+    let mut gpu_state = gpu.new_state().expect("device state");
+    let mut cpu_state = qwen.new_state(LONG_PROMPT.len() + 1);
+
+    for (pos, &token) in LONG_PROMPT.iter().enumerate() {
+        let want = qwen
+            .forward_single_qwen35(token, &mut cpu_state, pos)
+            .expect("cpu forward");
+        let got = gpu
+            .forward_single(token, &mut gpu_state, pos)
+            .expect("gpu forward");
+        assert_rel_linf(&got, &want, LOGITS_TOL, &format!("pos {pos} logits"));
+        assert_eq!(
+            crate::gguf::ops::argmax(&got),
+            crate::gguf::ops::argmax(&want),
+            "pos {pos}: the GPU and CPU must choose the same token"
+        );
+        assert_eq!(
+            gpu_state.kv_len(),
+            pos + 1,
+            "pos {pos}: the device KV cache must have advanced"
+        );
+    }
 }
 
 /// The device state is sized from the config, never from a constant.
@@ -490,6 +879,105 @@ fn qwen35_cuda_forward_hidden_refuses_a_wrong_width() {
         .forward_hidden_deltanet_only(&[0.0f32; 7])
         .expect_err("7 is not the hidden width");
     assert!(format!("{err}").contains("hidden state is 7 wide"), "{err}");
+}
+
+/// WHERE THE PARITY FLOOR COMES FROM (PMAT-3477 / #3090).
+///
+/// The wired-layer and end-to-end comparisons above cannot be driven below the
+/// projection GEMVs, and a GPU-vs-CPU number on its own never says WHICH side
+/// moved. This puts both sides against a third reference that is neither: the
+/// Q4_K weight dequantized to f32 and the row dots accumulated in **f64**.
+///
+/// Measured on `blk.<first attention>.attn_q` of the real 0.8B file:
+///
+/// | side | relative L∞ vs the exact f64 dot |
+/// |------|----------------------------------|
+/// | GPU, float (`Mwv`) GEMV | **9.96e-8** |
+/// | CPU `fused_matmul_into` | **2.95e-3** |
+///
+/// The CPU is the noisier side by four and a half orders of magnitude, because
+/// `fused_q4k_parallel_matvec_into` quantizes the **activation** to Q8_K and
+/// takes int8 dots; the GPU float path dequantizes the weight and accumulates
+/// in f32. So ~3e-3 per projection is a property of the *reference*, not a GPU
+/// defect, and it is the floor under [`LAYER_TOL`] and [`LOGITS_TOL`]: no
+/// correct GPU implementation can be closer to this CPU than the CPU is to
+/// arithmetic.
+///
+/// Both bounds bite. If the GPU float GEMV ever regresses it fails on the first
+/// assertion; if the CPU path ever stops quantizing its activation the second
+/// assertion fails and says so — at which point the end-to-end budget can come
+/// down and this test is the thing that tells you.
+#[test]
+#[serial_test::serial]
+fn qwen35_cuda_the_parity_floor_is_the_cpu_references_own_activation_quantization() {
+    let executor = qwen35_cuda_fixture_or_skip!();
+    let mapped = crate::gguf::MappedGGUFModel::from_path(MODEL_PATH).expect("map the GGUF");
+    let base = load_cpu_model(&mapped);
+    let qwen =
+        Qwen35Model::from_model_and_layers(&base, &mapped.model, mapped.data()).expect("qwen35");
+    let il = qwen
+        .layers
+        .iter()
+        .position(|l| matches!(l, Qwen35OwnedLayer::Attention(_)))
+        .expect("the hybrid file carries full-attention layers");
+    let Qwen35OwnedLayer::Attention(a) = &qwen.layers[il] else {
+        unreachable!("just matched")
+    };
+    assert_eq!(
+        a.attn_q.qtype,
+        crate::gguf::types::GGUF_TYPE_Q4_K,
+        "this test reads the Q4_K dequantizer; the projection is no longer Q4_K"
+    );
+
+    let hidden_dim = qwen.base.config.hidden_dim;
+    let x: Vec<f32> = (0..hidden_dim)
+        .map(|i| ((i as f32) * 0.37).sin() * 1.3)
+        .collect();
+
+    // the exact reference: dequantized weight, f64 accumulation
+    let w = crate::quantize::dequantize_q4_k(&a.attn_q.data).expect("dequantize the projection");
+    assert_eq!(
+        w.len(),
+        a.attn_q.out_dim * a.attn_q.in_dim,
+        "the dequantized weight must be out_dim x in_dim, row-major"
+    );
+    let exact: Vec<f32> = (0..a.attn_q.out_dim)
+        .map(|r| {
+            let row = &w[r * a.attn_q.in_dim..(r + 1) * a.attn_q.in_dim];
+            row.iter()
+                .zip(&x)
+                .fold(0.0f64, |s, (wv, xv)| s + f64::from(*wv) * f64::from(*xv)) as f32
+        })
+        .collect();
+
+    let mut cpu = vec![0.0f32; a.attn_q.out_dim];
+    qwen.base
+        .fused_matmul_into(&x, &a.attn_q, &mut cpu)
+        .expect("cpu attn_q");
+
+    let mut gpu = Qwen35CudaModel::new(&qwen, executor).expect("build the CUDA model");
+    gpu.pin_reference_gemv();
+    let got = gpu
+        .attn_q_gemv_of_host_input(il, &x)
+        .expect("gpu attn_q GEMV");
+
+    let gpu_err = rel_linf(&got, &exact);
+    let cpu_err = rel_linf(&cpu, &exact);
+    eprintln!("[parity floor] gpu-vs-exact {gpu_err:.3e}  cpu-vs-exact {cpu_err:.3e}");
+    assert!(
+        gpu_err <= 1e-5,
+        "the GPU float GEMV must reproduce the exact dot: {gpu_err:.3e} > 1e-5"
+    );
+    assert!(
+        cpu_err > 1e-4,
+        "the CPU reference no longer quantizes its activation (cpu-vs-exact {cpu_err:.3e} <= \
+         1e-4) — the end-to-end parity budget can now come down; re-measure LOGITS_TOL"
+    );
+    assert!(
+        cpu_err > gpu_err * 100.0,
+        "the CPU, not the GPU, must be the side that is far from arithmetic: cpu {cpu_err:.3e} \
+         vs gpu {gpu_err:.3e}"
+    );
 }
 
 /// Keep the layer type in the compiled surface: the parity tests bind it, and a

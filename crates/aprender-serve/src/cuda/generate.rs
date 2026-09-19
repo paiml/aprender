@@ -253,11 +253,13 @@ impl CudaKernels {
             .or_else(|| Self::generate_gdn_ptx(kernel_type))
     }
 
-    /// PMAT-3477 (#3090): PTX for the six Gated `DeltaNet` kernels (sm_70 default).
+    /// PMAT-3477 (#3090): PTX for the nine Gated `DeltaNet` / Qwen3.5 attention
+    /// kernels (sm_70 default).
     fn generate_gdn_ptx(kernel_type: &KernelType) -> Option<String> {
         use trueno_gpu::kernels::gdn::{
-            CausalConv1dSiluKernel, DeltaRuleRecurrenceKernel, GatedRmsNormKernel, GdnGatesKernel,
-            PerHeadL2NormKernel, SigmoidGateKernel,
+            CausalConv1dSiluKernel, DecodeAttention256Kernel, DeltaRuleRecurrenceKernel,
+            GatedRmsNormKernel, GdnGatesKernel, PartialNeoxRopeKernel, PerHeadL2NormKernel,
+            SigmoidGateKernel, SplitInterleavedKernel,
         };
         let ptx = match kernel_type {
             KernelType::GdnCausalConv1dSilu { channels, kernel_size } => {
@@ -274,6 +276,15 @@ impl CudaKernels {
                 GatedRmsNormKernel::new(*head_dim, *num_heads, *epsilon).emit_ptx()
             },
             KernelType::GdnSigmoidGate { n } => SigmoidGateKernel::new(*n).emit_ptx(),
+            KernelType::GdnSplitInterleaved { num_heads, head_dim } => {
+                SplitInterleavedKernel::new(*num_heads, *head_dim).emit_ptx()
+            },
+            KernelType::GdnPartialNeoxRope { num_heads, head_dim, n_rot } => {
+                PartialNeoxRopeKernel::new(*num_heads, *head_dim, *n_rot).emit_ptx()
+            },
+            KernelType::GdnDecodeAttention { num_heads, num_kv_heads, head_dim } => {
+                DecodeAttention256Kernel::new(*num_heads, *num_kv_heads, *head_dim).emit_ptx()
+            },
             _ => return None,
         };
         Some(ptx)

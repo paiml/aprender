@@ -16,19 +16,34 @@
 //!   -> residual -> post_attention_norm -> SwiGLU FFN -> residual
 //! ```
 //!
-//! Full-attention layers are NOT in this phase: the head-256 / partial-RoPE /
-//! gated-split kernels are still being written, so
-//! [`Qwen35CudaModel::forward_attention_layer`] is a named seam that refuses.
+//! The interleaved full-attention layers run here too (PMAT-3477 phase 2), from
+//! the same specification — `Qwen35Model::forward_attention`:
+//!
+//! ```text
+//! rms_norm -> attn_q|attn_k|attn_v GEMV -> split q|gate -> per-head RMSNorm on
+//!   q and k -> partial NEOX rope on q and k -> KV append at `position`
+//!   -> GQA decode attention -> sigmoid gate -> attn_output GEMV -> residual
+//!   -> post_attention_norm -> SwiGLU FFN -> residual
+//! ```
+//!
+//! and [`Qwen35CudaModel::forward_single`] runs a whole token through both layer
+//! kinds, the output norm and the `lm_head`.
 //!
 //! Every state buffer is sized from the config
-//! (`num_v_heads * head_v_dim * head_v_dim`, `conv_dim * (conv_kernel - 1)`) —
-//! never from a constant.
+//! (`num_v_heads * head_v_dim * head_v_dim`, `conv_dim * (conv_kernel - 1)`,
+//! `max_seq_len * num_kv_heads * head_dim`) — never from a constant.
 
 use super::{OwnedQuantizedTensor, RealizarError, Result};
 use crate::cuda::types::WeightQuantType;
 use crate::cuda::CudaExecutor;
 use crate::gguf::forward_qwen35::{Qwen35Model, Qwen35OwnedLayer};
 use trueno_gpu::driver::GpuBuffer;
+
+/// Positions the device KV cache holds unless a caller asks for more.
+///
+/// The CPU model takes `max_seq_len` at `new_state`; this model takes it at
+/// build time because the caches are allocated with the weights.
+pub const DEFAULT_MAX_SEQ_LEN: usize = 512;
 
 /// A quantized projection already resident in the executor's weight cache.
 struct CudaQuantWeight {
@@ -60,17 +75,47 @@ struct CudaDeltaNetLayer {
     ffn_down: CudaQuantWeight,
 }
 
-/// Per-sequence Gated `DeltaNet` decode state on the device: one causal-conv
-/// window and one recurrent state per layer, both sized from the config.
-///
-/// Attention layers own no entry here (their KV cache is the CPU model's).
+/// One full-attention layer's device-resident weights.
+struct CudaAttentionLayer {
+    attn_norm: GpuBuffer<f32>,
+    attn_q_norm: GpuBuffer<f32>,
+    attn_k_norm: GpuBuffer<f32>,
+    post_attention_norm: GpuBuffer<f32>,
+    attn_q: CudaQuantWeight,
+    attn_k: CudaQuantWeight,
+    attn_v: CudaQuantWeight,
+    attn_output: CudaQuantWeight,
+    ffn_gate: CudaQuantWeight,
+    ffn_up: CudaQuantWeight,
+    ffn_down: CudaQuantWeight,
+}
+
+/// One resident layer, of either kind — the GPU mirror of `Qwen35OwnedLayer`.
+enum CudaLayer {
+    DeltaNet(Box<CudaDeltaNetLayer>),
+    Attention(Box<CudaAttentionLayer>),
+}
+
+/// Per-sequence Qwen3.5 decode state on the device: one causal-conv window and
+/// one recurrent state per Gated `DeltaNet` layer, one K/V cache per
+/// full-attention layer, all sized from the config.
 pub struct Qwen35CudaState {
     conv: Vec<GpuBuffer<f32>>,
     ssm: Vec<GpuBuffer<f32>>,
+    /// `Some((k, v))` for a full-attention layer, `None` for a `DeltaNet` one.
+    /// Each is `[max_seq_len][num_kv_heads * head_dim]`, the CPU KV cache's
+    /// layout exactly.
+    kv: Vec<Option<(GpuBuffer<f32>, GpuBuffer<f32>)>>,
     /// `conv_dim * (conv_kernel - 1)`.
     conv_len: usize,
     /// `num_v_heads * head_v_dim * head_v_dim`.
     ssm_len: usize,
+    /// `num_kv_heads * head_dim` — one KV cache row.
+    kv_row: usize,
+    /// Positions the KV cache can hold.
+    max_seq_len: usize,
+    /// KV rows written so far (the CPU cache's `seq_len` after `advance`).
+    kv_len: usize,
 }
 
 impl Qwen35CudaState {
@@ -84,6 +129,42 @@ impl Qwen35CudaState {
     #[must_use]
     pub const fn ssm_len(&self) -> usize {
         self.ssm_len
+    }
+
+    /// Elements in one KV cache row (`num_kv_heads * head_dim`).
+    #[must_use]
+    pub const fn kv_row(&self) -> usize {
+        self.kv_row
+    }
+
+    /// Positions the KV cache can hold.
+    #[must_use]
+    pub const fn max_seq_len(&self) -> usize {
+        self.max_seq_len
+    }
+
+    /// KV rows written so far.
+    #[must_use]
+    pub const fn kv_len(&self) -> usize {
+        self.kv_len
+    }
+
+    /// A placeholder holding no device memory.
+    ///
+    /// Only ever alive inside [`Qwen35CudaModel::with_own_state`], which swaps
+    /// the real state back before returning — the layer bodies take the state as
+    /// an argument, so the model cannot lend it to itself.
+    const fn detached() -> Self {
+        Self {
+            conv: Vec::new(),
+            ssm: Vec::new(),
+            kv: Vec::new(),
+            conv_len: 0,
+            ssm_len: 0,
+            kv_row: 0,
+            max_seq_len: 0,
+            kv_len: 0,
+        }
     }
 }
 
@@ -107,6 +188,27 @@ struct Qwen35CudaScratch {
     ffn_down: GpuBuffer<f32>,
 }
 
+/// Scratch device buffers for one full-attention layer step, allocated once.
+///
+/// `post_normed` and the FFN buffers are shared with [`Qwen35CudaScratch`] —
+/// the two layer kinds have the same FFN.
+struct Qwen35AttnScratch {
+    /// The joint `[q | gate]` projection, `[num_heads * 2 * head_dim]`.
+    q_full: GpuBuffer<f32>,
+    /// `q` out of the split, before the per-head norm.
+    q: GpuBuffer<f32>,
+    /// `q` after the per-head norm (and rotated in place).
+    q_normed: GpuBuffer<f32>,
+    /// `gate` out of the split.
+    gate: GpuBuffer<f32>,
+    /// `k` out of the GEMV, before the per-head norm (which writes the cache).
+    k_raw: GpuBuffer<f32>,
+    /// The attention output before the output projection.
+    attn_out_in: GpuBuffer<f32>,
+    /// The output projection's result.
+    attn_out: GpuBuffer<f32>,
+}
+
 /// The shapes the layer forward reads, all derived from the model config.
 #[derive(Debug, Clone, Copy)]
 struct Qwen35CudaDims {
@@ -121,6 +223,18 @@ struct Qwen35CudaDims {
     num_v_heads: u32,
     conv_kernel: u32,
     eps: f32,
+    /// `config.num_heads` — the full-attention query heads.
+    num_heads: u32,
+    /// `config.num_kv_heads`.
+    num_kv_heads: u32,
+    /// `attn_q_norm.len()` (256 for the 0.8B file), NOT `hidden_dim / num_heads`.
+    attn_head_dim: u32,
+    /// `2 * sum(rope.dimension_sections)`.
+    n_rot: u32,
+    /// `freq_base.powf(-2.0 / n_rot)`, computed on the HOST exactly as the CPU
+    /// reference does — see `gdn_partial_neox_rope_into`.
+    theta_scale: f32,
+    vocab_size: u32,
 }
 
 /// Qwen3.5's Gated `DeltaNet` block, resident on one CUDA device (#3090).
@@ -130,11 +244,13 @@ struct Qwen35CudaDims {
 pub struct Qwen35CudaModel<'a> {
     model: &'a Qwen35Model<'a>,
     executor: CudaExecutor,
-    /// `None` for a full-attention layer (phase 2), `Some` for a `DeltaNet` one.
-    layers: Vec<Option<CudaDeltaNetLayer>>,
+    layers: Vec<CudaLayer>,
     state: Qwen35CudaState,
     scratch: Qwen35CudaScratch,
+    attn_scratch: Qwen35AttnScratch,
     dims: Qwen35CudaDims,
+    /// Positions the device KV caches hold.
+    max_seq_len: usize,
 }
 
 /// Map a GPU error into the crate error type with the operation that raised it.
@@ -203,7 +319,22 @@ impl<'a> Qwen35CudaModel<'a> {
     fn dims_of(model: &Qwen35Model<'_>) -> Qwen35CudaDims {
         let k_dim = model.head_k_dim * model.num_k_heads;
         let v_dim = model.head_v_dim * model.num_v_heads;
+        let n_rot = 2 * model.rope_sections.iter().sum::<usize>();
+        // The CPU computes theta_scale once per call with f32::powf; the kernel
+        // must be given THAT value, not one derived on the device.
+        let theta_scale = trueno_gpu::kernels::gdn::PartialNeoxRopeKernel::new(
+            model.base.config.num_heads as u32,
+            model.head_dim as u32,
+            n_rot as u32,
+        )
+        .theta_scale(model.base.config.rope_theta);
         Qwen35CudaDims {
+            num_heads: model.base.config.num_heads as u32,
+            num_kv_heads: model.base.config.num_kv_heads as u32,
+            attn_head_dim: model.head_dim as u32,
+            n_rot: n_rot as u32,
+            theta_scale,
+            vocab_size: model.base.config.vocab_size as u32,
             hidden_dim: model.base.config.hidden_dim as u32,
             intermediate_dim: model.base.config.intermediate_dim as u32,
             conv_dim: (k_dim * 2 + v_dim) as u32,
@@ -266,6 +397,49 @@ impl<'a> Qwen35CudaModel<'a> {
         })
     }
 
+    /// Upload one full-attention layer's tensors.
+    fn build_attention_layer(
+        executor: &mut CudaExecutor,
+        il: usize,
+        a: &crate::gguf::forward_qwen35::Qwen35OwnedAttentionLayer,
+    ) -> Result<CudaAttentionLayer> {
+        let q = |e: &mut CudaExecutor, suffix: &str, t: &OwnedQuantizedTensor| {
+            Self::upload_quant(e, &format!("qwen35.blk.{il}.{suffix}"), t)
+        };
+        Ok(CudaAttentionLayer {
+            attn_norm: Self::upload_f32(executor, "attn_norm", &a.attn_norm)?,
+            attn_q_norm: Self::upload_f32(executor, "attn_q_norm", &a.attn_q_norm)?,
+            attn_k_norm: Self::upload_f32(executor, "attn_k_norm", &a.attn_k_norm)?,
+            post_attention_norm: Self::upload_f32(
+                executor,
+                "post_attention_norm",
+                &a.post_attention_norm,
+            )?,
+            attn_q: q(executor, "attn_q.weight", &a.attn_q)?,
+            attn_k: q(executor, "attn_k.weight", &a.attn_k)?,
+            attn_v: q(executor, "attn_v.weight", &a.attn_v)?,
+            attn_output: q(executor, "attn_output.weight", &a.attn_output)?,
+            ffn_gate: q(executor, "ffn_gate.weight", &a.ffn_gate)?,
+            ffn_up: q(executor, "ffn_up.weight", &a.ffn_up)?,
+            ffn_down: q(executor, "ffn_down.weight", &a.ffn_down)?,
+        })
+    }
+
+    /// Allocate the scratch buffers one full-attention layer step needs.
+    fn build_attn_scratch(executor: &CudaExecutor, d: Qwen35CudaDims) -> Result<Qwen35AttnScratch> {
+        let q_dim = (d.num_heads * d.attn_head_dim) as usize;
+        let kv_dim = (d.num_kv_heads * d.attn_head_dim) as usize;
+        Ok(Qwen35AttnScratch {
+            q_full: Self::zeros(executor, q_dim * 2)?,
+            q: Self::zeros(executor, q_dim)?,
+            q_normed: Self::zeros(executor, q_dim)?,
+            gate: Self::zeros(executor, q_dim)?,
+            k_raw: Self::zeros(executor, kv_dim)?,
+            attn_out_in: Self::zeros(executor, q_dim)?,
+            attn_out: Self::zeros(executor, d.hidden_dim as usize)?,
+        })
+    }
+
     /// Allocate the scratch buffers one layer step needs.
     fn build_scratch(executor: &CudaExecutor, d: Qwen35CudaDims) -> Result<Qwen35CudaScratch> {
         let hidden = d.hidden_dim as usize;
@@ -303,54 +477,137 @@ impl<'a> Qwen35CudaModel<'a> {
     /// A tensor whose GGML type has no GPU GEMV kernel, an empty tensor, a
     /// key/value head mismatch the delta-rule kernel cannot index, or any CUDA
     /// allocation failure.
-    pub fn new(model: &'a Qwen35Model<'a>, mut executor: CudaExecutor) -> Result<Self> {
+    pub fn new(model: &'a Qwen35Model<'a>, executor: CudaExecutor) -> Result<Self> {
+        Self::with_max_seq_len(model, executor, DEFAULT_MAX_SEQ_LEN)
+    }
+
+    /// Build the GPU model with room for `max_seq_len` KV cache positions.
+    ///
+    /// # Errors
+    /// As [`Self::new`], plus a `max_seq_len` of zero.
+    pub fn with_max_seq_len(
+        model: &'a Qwen35Model<'a>,
+        mut executor: CudaExecutor,
+        max_seq_len: usize,
+    ) -> Result<Self> {
         let dims = Self::dims_of(model);
         Self::check_head_symmetry(dims)?;
+        if max_seq_len == 0 {
+            return Err(RealizarError::InvalidShape {
+                reason: "qwen35_cuda: max_seq_len must be at least 1".to_string(),
+            });
+        }
 
         let mut layers = Vec::with_capacity(model.layers.len());
         for (il, layer) in model.layers.iter().enumerate() {
-            match layer {
+            layers.push(match layer {
                 Qwen35OwnedLayer::DeltaNet(d) => {
-                    layers.push(Some(Self::build_layer(&mut executor, il, d)?));
+                    CudaLayer::DeltaNet(Box::new(Self::build_layer(&mut executor, il, d)?))
                 },
-                Qwen35OwnedLayer::Attention(_) => layers.push(None),
-            }
+                Qwen35OwnedLayer::Attention(a) => CudaLayer::Attention(Box::new(
+                    Self::build_attention_layer(&mut executor, il, a)?,
+                )),
+            });
         }
 
-        let conv_len = (dims.conv_dim * (dims.conv_kernel - 1)) as usize;
-        let ssm_len = (dims.num_v_heads * dims.head_v_dim * dims.head_v_dim) as usize;
-        let mut conv = Vec::with_capacity(model.layers.len());
-        let mut ssm = Vec::with_capacity(model.layers.len());
-        for _ in 0..model.layers.len() {
-            conv.push(Self::zeros(&executor, conv_len)?);
-            ssm.push(Self::zeros(&executor, ssm_len)?);
-        }
+        // `hidden_to_logits` reads the final norm out of the rmsnorm cache and
+        // the lm_head out of the quantized weight cache, both by fixed name.
+        executor
+            .preload_output_norm(model.base.output_norm_weight())
+            .map_err(|e| gpu_err("qwen35_cuda_upload", &e))?;
+        let lm_head = model.base.lm_head_weight();
+        Self::upload_quant(&mut executor, "output.weight", lm_head)?;
 
         // The DP4A GEMV kernels quantize the activation into
         // `workspace.q8_activation_buf`, which `init_workspace` sizes from
         // `max(hidden_dim, intermediate_dim, q_dim)`. Our widest GEMV input is
-        // `v_dim` (the ssm_out projection), which is none of those — pass it as
-        // the "hidden" width so the buffer covers every input this block feeds a
-        // kernel. Without this the Q6_K path panics on an uninitialized buffer.
-        let widest_gemv_input = dims.hidden_dim.max(dims.v_dim) as usize;
+        // `v_dim` (the ssm_out projection) or `num_heads * attn_head_dim` (the
+        // attn_output projection), neither of which is one of those — pass the
+        // widest as the "hidden" width so the buffer covers every input this
+        // model feeds a kernel. Without this the Q6_K path panics on an
+        // uninitialized buffer.
+        let widest_gemv_input = dims
+            .hidden_dim
+            .max(dims.v_dim)
+            .max(dims.num_heads * dims.attn_head_dim) as usize;
         executor
             .init_workspace(widest_gemv_input, dims.intermediate_dim as usize)
             .map_err(|e| gpu_err("qwen35_cuda_workspace", &e))?;
 
         let scratch = Self::build_scratch(&executor, dims)?;
+        let attn_scratch = Self::build_attn_scratch(&executor, dims)?;
+        let state = Self::build_state(&executor, &layers, dims, max_seq_len)?;
         Ok(Self {
             model,
             executor,
             layers,
-            state: Qwen35CudaState {
-                conv,
-                ssm,
-                conv_len,
-                ssm_len,
-            },
+            state,
             scratch,
+            attn_scratch,
             dims,
+            max_seq_len,
         })
+    }
+
+    /// Allocate a fresh decode state: every layer's conv window and recurrent
+    /// state, and a K/V cache for each full-attention layer.
+    fn build_state(
+        executor: &CudaExecutor,
+        layers: &[CudaLayer],
+        dims: Qwen35CudaDims,
+        max_seq_len: usize,
+    ) -> Result<Qwen35CudaState> {
+        let conv_len = (dims.conv_dim * (dims.conv_kernel - 1)) as usize;
+        let ssm_len = (dims.num_v_heads * dims.head_v_dim * dims.head_v_dim) as usize;
+        let kv_row = (dims.num_kv_heads * dims.attn_head_dim) as usize;
+        let mut conv = Vec::with_capacity(layers.len());
+        let mut ssm = Vec::with_capacity(layers.len());
+        let mut kv = Vec::with_capacity(layers.len());
+        for layer in layers {
+            conv.push(Self::zeros(executor, conv_len)?);
+            ssm.push(Self::zeros(executor, ssm_len)?);
+            kv.push(match layer {
+                CudaLayer::DeltaNet(_) => None,
+                CudaLayer::Attention(_) => Some((
+                    Self::zeros(executor, kv_row * max_seq_len)?,
+                    Self::zeros(executor, kv_row * max_seq_len)?,
+                )),
+            });
+        }
+        Ok(Qwen35CudaState {
+            conv,
+            ssm,
+            kv,
+            conv_len,
+            ssm_len,
+            kv_row,
+            max_seq_len,
+            kv_len: 0,
+        })
+    }
+
+    /// A fresh decode state, independent of the model's own.
+    ///
+    /// The GPU analogue of `Qwen35Model::new_state`; `max_seq_len` is the one
+    /// this model was built with.
+    ///
+    /// # Errors
+    /// Any CUDA allocation failure.
+    pub fn new_state(&self) -> Result<Qwen35CudaState> {
+        Self::build_state(&self.executor, &self.layers, self.dims, self.max_seq_len)
+    }
+
+    /// Run `f` with the model's own state detached.
+    ///
+    /// The layer bodies take `&mut Qwen35CudaState` so a caller can drive an
+    /// external state ([`Self::forward_single`]); a method that uses the
+    /// model's own state cannot pass `&mut self.state` and `&mut self` at once,
+    /// so it swaps the state out for the call and back after.
+    fn with_own_state<R>(&mut self, f: impl FnOnce(&mut Self, &mut Qwen35CudaState) -> R) -> R {
+        let mut state = std::mem::replace(&mut self.state, Qwen35CudaState::detached());
+        let out = f(self, &mut state);
+        self.state = state;
+        out
     }
 
     /// The device state buffers (their configured lengths).
@@ -382,14 +639,29 @@ impl<'a> Qwen35CudaModel<'a> {
         self.executor.gpu_profile.q6k = crate::cuda::gpu_profile::Q6kVariant::Mwv;
     }
 
-    /// Read layer `il`'s causal-conv window and recurrent state back to the
-    /// host — the parity tests' observation point.
+    /// Read layer `il`'s state back to the host — the parity tests' observation
+    /// point. What comes back depends on the layer kind:
+    ///
+    /// | layer | pair |
+    /// |-------|------|
+    /// | Gated `DeltaNet` | `(causal-conv window, recurrent state)` |
+    /// | full attention | `(K rows written so far, V rows written so far)`, each `kv_len * kv_row` long |
+    ///
+    /// An attention layer at position 0 of a fresh state therefore returns two
+    /// EMPTY vectors, not two zero-filled ones — nothing has been written.
     ///
     /// # Errors
-    /// A device-to-host copy failure, or a layer index that is not a `DeltaNet`
-    /// layer.
+    /// A device-to-host copy failure, or a layer index out of range.
     pub fn download_layer(&mut self, il: usize) -> Result<(Vec<f32>, Vec<f32>)> {
-        self.require_deltanet(il)?;
+        match self.layers.get(il) {
+            Some(CudaLayer::DeltaNet(_)) => {},
+            Some(CudaLayer::Attention(_)) => return self.download_attention_layer(il),
+            None => {
+                return Err(RealizarError::InvalidShape {
+                    reason: format!("qwen35_cuda: layer {il} is out of range"),
+                })
+            },
+        }
         self.executor
             .sync_stream()
             .map_err(|e| gpu_err("qwen35_cuda_download", &e))?;
@@ -402,6 +674,63 @@ impl<'a> Qwen35CudaModel<'a> {
             .copy_to_host(&mut ssm)
             .map_err(|e| gpu_err("qwen35_cuda_download", &e))?;
         Ok((conv, ssm))
+    }
+
+    /// The K and V rows written so far for full-attention layer `il`.
+    fn download_attention_layer(&mut self, il: usize) -> Result<(Vec<f32>, Vec<f32>)> {
+        self.executor
+            .sync_stream()
+            .map_err(|e| gpu_err("qwen35_cuda_download", &e))?;
+        let n = self.state.kv_len * self.state.kv_row;
+        let (kc, vc) = self.state.kv[il]
+            .as_ref()
+            .expect("an attention layer owns a KV cache");
+        let mut k = vec![0.0f32; n];
+        let mut v = vec![0.0f32; n];
+        if n > 0 {
+            kc.copy_to_host_at(&mut k, 0)
+                .map_err(|e| gpu_err("qwen35_cuda_download", &e))?;
+            vc.copy_to_host_at(&mut v, 0)
+                .map_err(|e| gpu_err("qwen35_cuda_download", &e))?;
+        }
+        Ok((k, v))
+    }
+
+    /// Write the K and V rows of full-attention layer `il` — teacher forcing
+    /// for the parity tests. `k` and `v` are whole rows (`kv_row` each) and set
+    /// the state's `kv_len`.
+    ///
+    /// # Errors
+    /// A length that is not a whole number of rows or exceeds `max_seq_len`, a
+    /// host-to-device copy failure, or a layer that is not a full-attention one.
+    pub fn upload_attention_kv(&mut self, il: usize, k: &[f32], v: &[f32]) -> Result<()> {
+        self.require_attention(il)?;
+        let row = self.state.kv_row;
+        if k.len() != v.len() || k.len() % row != 0 || k.len() > row * self.state.max_seq_len {
+            return Err(RealizarError::InvalidShape {
+                reason: format!(
+                    "qwen35_cuda upload_attention_kv({il}): expected equal K/V lengths that are a \
+                     multiple of {row} and at most {}, got {} / {}",
+                    row * self.state.max_seq_len,
+                    k.len(),
+                    v.len()
+                ),
+            });
+        }
+        let rows = k.len() / row;
+        {
+            let (kc, vc) = self.state.kv[il]
+                .as_mut()
+                .expect("require_attention checked this layer");
+            if !k.is_empty() {
+                kc.copy_from_host_at(k, 0)
+                    .map_err(|e| gpu_err("qwen35_cuda_upload_state", &e))?;
+                vc.copy_from_host_at(v, 0)
+                    .map_err(|e| gpu_err("qwen35_cuda_upload_state", &e))?;
+            }
+        }
+        self.state.kv_len = rows;
+        Ok(())
     }
 
     /// Write layer `il`'s causal-conv window and recurrent state — teacher
@@ -435,10 +764,10 @@ impl<'a> Qwen35CudaModel<'a> {
     /// Refuse a layer index that is not a resident `DeltaNet` layer.
     fn require_deltanet(&self, il: usize) -> Result<()> {
         match self.layers.get(il) {
-            Some(Some(_)) => Ok(()),
-            Some(None) => Err(RealizarError::UnsupportedOperation {
+            Some(CudaLayer::DeltaNet(_)) => Ok(()),
+            Some(CudaLayer::Attention(_)) => Err(RealizarError::UnsupportedOperation {
                 operation: "qwen35_cuda_attention".to_string(),
-                reason: "#3090 phase 2".to_string(),
+                reason: format!("layer {il} is a full-attention layer, not a Gated DeltaNet one"),
             }),
             None => Err(RealizarError::InvalidShape {
                 reason: format!("qwen35_cuda: layer {il} is out of range"),
@@ -446,19 +775,230 @@ impl<'a> Qwen35CudaModel<'a> {
         }
     }
 
-    /// The full-attention layer forward — NOT in this phase.
+    /// Refuse a layer index that is not a resident full-attention layer.
+    fn require_attention(&self, il: usize) -> Result<()> {
+        match self.layers.get(il) {
+            Some(CudaLayer::Attention(_)) => Ok(()),
+            Some(CudaLayer::DeltaNet(_)) => Err(RealizarError::UnsupportedOperation {
+                operation: "qwen35_cuda_deltanet".to_string(),
+                reason: format!("layer {il} is a Gated DeltaNet layer, not a full-attention one"),
+            }),
+            None => Err(RealizarError::InvalidShape {
+                reason: format!("qwen35_cuda: layer {il} is out of range"),
+            }),
+        }
+    }
+
+    /// Run one full-attention layer in place on a device-resident hidden state,
+    /// appending this token's K and V at `position`.
     ///
-    /// The head-256 / partial-RoPE / gated-split kernels are being written in
-    /// `aprender-gpu`; this is the named seam they land behind.
+    /// Mirrors `Qwen35Model::forward_attention` operation for operation, on the
+    /// model's own state.
     ///
     /// # Errors
-    /// Always: `UnsupportedOperation { operation: "qwen35_cuda_attention" }`.
-    #[allow(clippy::unused_self)]
-    pub fn forward_attention_layer(&mut self, _il: usize, _hidden: &GpuBuffer<f32>) -> Result<()> {
-        Err(RealizarError::UnsupportedOperation {
-            operation: "qwen35_cuda_attention".to_string(),
-            reason: "#3090 phase 2".to_string(),
-        })
+    /// A kernel launch or GEMV dispatch failure, a layer index that is not a
+    /// full-attention layer, or a position past the state's `max_seq_len`.
+    pub fn forward_attention_layer(
+        &mut self,
+        il: usize,
+        hidden: &GpuBuffer<f32>,
+        position: usize,
+    ) -> Result<()> {
+        self.require_attention(il)?;
+        self.with_own_state(|m, s| m.attention_layer(s, il, hidden, position))
+    }
+
+    /// The attention body against an explicit state.
+    fn attention_layer(
+        &mut self,
+        state: &mut Qwen35CudaState,
+        il: usize,
+        hidden: &GpuBuffer<f32>,
+        position: usize,
+    ) -> Result<()> {
+        self.require_attention(il)?;
+        if position >= state.max_seq_len {
+            return Err(RealizarError::InvalidShape {
+                reason: format!(
+                    "qwen35_cuda: position {position} is past the KV cache ({} rows)",
+                    state.max_seq_len
+                ),
+            });
+        }
+        self.attention_layer_inner(state, il, hidden, position)
+            .map_err(|e| gpu_err("qwen35_cuda_attention", &e))
+    }
+
+    /// The op-for-op attention body; every error here is a GPU error.
+    #[allow(clippy::too_many_lines)]
+    fn attention_layer_inner(
+        &mut self,
+        state: &mut Qwen35CudaState,
+        il: usize,
+        hidden: &GpuBuffer<f32>,
+        position: usize,
+    ) -> std::result::Result<(), trueno_gpu::GpuError> {
+        let d = self.dims;
+        let CudaLayer::Attention(w) = &self.layers[il] else {
+            unreachable!("require_attention checked this layer")
+        };
+        let s = &self.scratch;
+        let a = &self.attn_scratch;
+        let ex = &mut self.executor;
+        let q_dim = d.num_heads * d.attn_head_dim;
+        let kv_dim = d.num_kv_heads * d.attn_head_dim;
+        let (k_cache, v_cache) = state.kv[il]
+            .as_ref()
+            .expect("an attention layer owns a KV cache");
+
+        // This token's row in the KV cache: the GEMVs and the norm write
+        // straight into it, which IS the CPU's `kv_cache.append`.
+        let k_row = Self::view(
+            k_cache,
+            u32::try_from(position).unwrap_or(0) * kv_dim,
+            kv_dim,
+        );
+        let v_row = Self::view(
+            v_cache,
+            u32::try_from(position).unwrap_or(0) * kv_dim,
+            kv_dim,
+        );
+
+        // rms_norm(hidden, attn_norm)
+        ex.rmsnorm_into(hidden, &w.attn_norm, &s.normed, d.hidden_dim, d.eps)?;
+
+        // attn_q . normed -> [q | gate] per head ; attn_k, attn_v -> the cache row
+        ex.gemv_dispatch(
+            w.attn_q.qtype,
+            w.attn_q.ptr,
+            &s.normed,
+            &a.q_full,
+            w.attn_q.n,
+            w.attn_q.k,
+        )?;
+        ex.gemv_dispatch(
+            w.attn_k.qtype,
+            w.attn_k.ptr,
+            &s.normed,
+            &a.k_raw,
+            w.attn_k.n,
+            w.attn_k.k,
+        )?;
+        ex.gemv_dispatch(
+            w.attn_v.qtype,
+            w.attn_v.ptr,
+            &s.normed,
+            &v_row,
+            w.attn_v.n,
+            w.attn_v.k,
+        )?;
+
+        // split [q | gate] per head
+        ex.gdn_split_interleaved_into(&a.q_full, &a.q, &a.gate, d.num_heads, d.attn_head_dim)?;
+
+        // per-head RMSNorm on q (num_heads) and k (num_kv_heads); k's result is
+        // written into its cache row.
+        ex.per_head_rmsnorm_into(
+            &a.q,
+            &w.attn_q_norm,
+            &a.q_normed,
+            d.attn_head_dim,
+            d.num_heads,
+            d.eps,
+        )?;
+        ex.per_head_rmsnorm_into(
+            &a.k_raw,
+            &w.attn_k_norm,
+            &k_row,
+            d.attn_head_dim,
+            d.num_kv_heads,
+            d.eps,
+        )?;
+
+        // partial NEOX rope on q and k, in place, at this position
+        let pos32 = u32::try_from(position).unwrap_or(u32::MAX);
+        ex.gdn_partial_neox_rope_into(
+            &a.q_normed,
+            d.num_heads,
+            d.attn_head_dim,
+            d.n_rot,
+            pos32,
+            d.theta_scale,
+        )?;
+        ex.gdn_partial_neox_rope_into(
+            &k_row,
+            d.num_kv_heads,
+            d.attn_head_dim,
+            d.n_rot,
+            pos32,
+            d.theta_scale,
+        )?;
+
+        // GQA decode attention over positions 0..=position
+        ex.gdn_decode_attention_into(
+            &a.q_normed,
+            k_cache,
+            v_cache,
+            &a.attn_out_in,
+            d.num_heads,
+            d.num_kv_heads,
+            d.attn_head_dim,
+            pos32 + 1,
+        )?;
+        std::mem::forget(k_row);
+        std::mem::forget(v_row);
+
+        // the output gate, then the output projection and the first residual
+        ex.gdn_sigmoid_gate_into(&a.attn_out_in, &a.gate, q_dim)?;
+        ex.gemv_dispatch(
+            w.attn_output.qtype,
+            w.attn_output.ptr,
+            &a.attn_out_in,
+            &a.attn_out,
+            w.attn_output.n,
+            w.attn_output.k,
+        )?;
+        ex.residual_add_into(hidden, &a.attn_out, hidden, d.hidden_dim)?;
+
+        // post_attention_norm -> SwiGLU FFN -> the second residual
+        ex.rmsnorm_into(
+            hidden,
+            &w.post_attention_norm,
+            &s.post_normed,
+            d.hidden_dim,
+            d.eps,
+        )?;
+        ex.gemv_dispatch(
+            w.ffn_gate.qtype,
+            w.ffn_gate.ptr,
+            &s.post_normed,
+            &s.ffn_gate,
+            w.ffn_gate.n,
+            w.ffn_gate.k,
+        )?;
+        ex.gemv_dispatch(
+            w.ffn_up.qtype,
+            w.ffn_up.ptr,
+            &s.post_normed,
+            &s.ffn_up,
+            w.ffn_up.n,
+            w.ffn_up.k,
+        )?;
+        ex.fused_swiglu_into(&s.ffn_gate, &s.ffn_up, &s.ffn_act, d.intermediate_dim)?;
+        ex.gemv_dispatch(
+            w.ffn_down.qtype,
+            w.ffn_down.ptr,
+            &s.ffn_act,
+            &s.ffn_down,
+            w.ffn_down.n,
+            w.ffn_down.k,
+        )?;
+        ex.residual_add_into(hidden, &s.ffn_down, hidden, d.hidden_dim)?;
+
+        ex.sync_stream()?;
+        // The row is written: the cache now holds `position + 1` rows.
+        state.kv_len = state.kv_len.max(position + 1);
+        Ok(())
     }
 
     /// Read one named scratch buffer back to the host.
@@ -473,7 +1013,15 @@ impl<'a> Qwen35CudaModel<'a> {
     pub(crate) fn dump_stage(&mut self, which: &str) -> Vec<f32> {
         self.executor.sync_stream().expect("sync");
         let s = &self.scratch;
+        let a = &self.attn_scratch;
         let buf = match which {
+            "q_full" => &a.q_full,
+            "q" => &a.q,
+            "q_normed" => &a.q_normed,
+            "attn_gate" => &a.gate,
+            "k_raw" => &a.k_raw,
+            "attn_out_in" => &a.attn_out_in,
+            "attn_out" => &a.attn_out,
             "normed" => &s.normed,
             "conv_in" => &s.conv_in,
             "conv_out" => &s.conv_out,
@@ -495,6 +1043,37 @@ impl<'a> Qwen35CudaModel<'a> {
         let mut host = vec![0.0f32; buf.len()];
         buf.copy_to_host(&mut host).expect("download stage");
         host
+    }
+
+    /// Run attention layer `il`'s `attn_q` projection on a host input vector and
+    /// read the result back — the observation point for the parity-floor test.
+    ///
+    /// The whole-layer and end-to-end comparisons are bounded from below by the
+    /// projection GEMVs, and "is the GPU wrong or is the reference?" is not
+    /// answerable from a GPU-vs-CPU number alone. This exposes one GEMV so a
+    /// test can put BOTH sides against an exact dequantized f64 reference.
+    ///
+    /// # Errors
+    /// Any allocation, dispatch or transfer failure.
+    #[cfg(test)]
+    pub(crate) fn attn_q_gemv_of_host_input(&mut self, il: usize, x: &[f32]) -> Result<Vec<f32>> {
+        let CudaLayer::Attention(w) = &self.layers[il] else {
+            unreachable!("an attention layer")
+        };
+        let (qtype, ptr, n, k) = (w.attn_q.qtype, w.attn_q.ptr, w.attn_q.n, w.attn_q.k);
+        let dev =
+            GpuBuffer::from_host(self.executor.context(), x).map_err(|e| gpu_err("diag", &e))?;
+        let out = Self::zeros(&self.executor, n as usize)?;
+        self.executor
+            .gemv_dispatch(qtype, ptr, &dev, &out, n, k)
+            .map_err(|e| gpu_err("diag", &e))?;
+        self.executor
+            .sync_stream()
+            .map_err(|e| gpu_err("diag", &e))?;
+        let mut host = vec![0.0f32; n as usize];
+        out.copy_to_host(&mut host)
+            .map_err(|e| gpu_err("diag", &e))?;
+        Ok(host)
     }
 
     /// A non-owning view of `elems` f32 starting `offset` elements into `buf`.
@@ -523,7 +1102,18 @@ impl<'a> Qwen35CudaModel<'a> {
     /// `DeltaNet` layer.
     pub fn forward_deltanet_layer(&mut self, il: usize, hidden: &GpuBuffer<f32>) -> Result<()> {
         self.require_deltanet(il)?;
-        self.deltanet_layer_inner(il, hidden)
+        self.with_own_state(|m, s| m.deltanet_layer(s, il, hidden))
+    }
+
+    /// The `DeltaNet` body against an explicit state.
+    fn deltanet_layer(
+        &mut self,
+        state: &mut Qwen35CudaState,
+        il: usize,
+        hidden: &GpuBuffer<f32>,
+    ) -> Result<()> {
+        self.require_deltanet(il)?;
+        self.deltanet_layer_inner(state, il, hidden)
             .map_err(|e| gpu_err("qwen35_cuda_deltanet", &e))
     }
 
@@ -531,13 +1121,14 @@ impl<'a> Qwen35CudaModel<'a> {
     #[allow(clippy::too_many_lines)]
     fn deltanet_layer_inner(
         &mut self,
+        state: &Qwen35CudaState,
         il: usize,
         hidden: &GpuBuffer<f32>,
     ) -> std::result::Result<(), trueno_gpu::GpuError> {
         let d = self.dims;
-        let w = self.layers[il]
-            .as_ref()
-            .expect("require_deltanet checked this layer");
+        let CudaLayer::DeltaNet(w) = &self.layers[il] else {
+            unreachable!("require_deltanet checked this layer")
+        };
         let s = &self.scratch;
         let ex = &mut self.executor;
 
@@ -557,7 +1148,7 @@ impl<'a> Qwen35CudaModel<'a> {
         // causal_conv1d + SiLU (the window is updated in place)
         ex.gdn_causal_conv1d_silu_into(
             &s.conv_in,
-            &self.state.conv[il],
+            &state.conv[il],
             &w.conv1d_weight,
             &s.conv_out,
             d.conv_dim,
@@ -617,7 +1208,7 @@ impl<'a> Qwen35CudaModel<'a> {
             &v_view,
             &s.beta,
             &s.dt,
-            &self.state.ssm[il],
+            &state.ssm[il],
             &s.out_h,
             d.num_v_heads,
             d.head_v_dim,
@@ -684,11 +1275,84 @@ impl<'a> Qwen35CudaModel<'a> {
         ex.sync_stream()
     }
 
+    /// Run one token at `position` through every layer of both kinds, the
+    /// output norm and the `lm_head`, and return the logits — the GPU twin of
+    /// `Qwen35Model::forward_single_qwen35`.
+    ///
+    /// `state` is updated in place (conv windows, recurrent states and the K/V
+    /// caches) and its KV length advanced to `position + 1`, exactly as the CPU
+    /// advances `cache.kv_cache` at the end of the token.
+    ///
+    /// # Errors
+    /// A token id outside the vocabulary, a position past the state's
+    /// `max_seq_len`, or any kernel / GEMV / transfer failure.
+    pub fn forward_single(
+        &mut self,
+        token: u32,
+        state: &mut Qwen35CudaState,
+        position: usize,
+    ) -> Result<Vec<f32>> {
+        let hidden_dim = self.dims.hidden_dim as usize;
+        let embedding = self.model.base.token_embedding();
+        let start = (token as usize) * hidden_dim;
+        if start + hidden_dim > embedding.len() {
+            return Err(RealizarError::InvalidShape {
+                reason: format!(
+                    "qwen35_cuda: token {token} is outside the {}-row embedding table",
+                    embedding.len() / hidden_dim
+                ),
+            });
+        }
+        if position >= state.max_seq_len {
+            return Err(RealizarError::InvalidShape {
+                reason: format!(
+                    "qwen35_cuda: position {position} is past the KV cache ({} rows)",
+                    state.max_seq_len
+                ),
+            });
+        }
+
+        let dev = GpuBuffer::from_host(
+            self.executor.context(),
+            &embedding[start..start + hidden_dim],
+        )
+        .map_err(|e| gpu_err("qwen35_cuda_forward", &e))?;
+        for il in 0..self.layers.len() {
+            match self.layers[il] {
+                CudaLayer::DeltaNet(_) => self.deltanet_layer(state, il, &dev)?,
+                CudaLayer::Attention(_) => self.attention_layer(state, il, &dev, position)?,
+            }
+        }
+        self.executor
+            .sync_stream()
+            .map_err(|e| gpu_err("qwen35_cuda_forward", &e))?;
+
+        let mut hidden = vec![0.0f32; hidden_dim];
+        dev.copy_to_host(&mut hidden)
+            .map_err(|e| gpu_err("qwen35_cuda_forward", &e))?;
+
+        // output rms_norm + lm_head, through the executor's own path (it reads
+        // "output_norm.gamma" and "output.weight", both preloaded in `new`).
+        let mut logits = vec![0.0f32; self.dims.vocab_size as usize];
+        self.executor
+            .hidden_to_logits(
+                &hidden,
+                &mut logits,
+                self.dims.hidden_dim,
+                self.dims.vocab_size,
+                self.dims.eps,
+            )
+            .map_err(|e| gpu_err("qwen35_cuda_lm_head", &e))?;
+
+        state.kv_len = state.kv_len.max(position + 1);
+        Ok(logits)
+    }
+
     /// Run every Gated `DeltaNet` layer over a host hidden state and read the
     /// result back — the tests' end-to-end handle on the GPU block.
     ///
-    /// Full-attention layers are skipped (phase 2), so this is NOT a decoder
-    /// forward pass; it is exactly "the `DeltaNet` layers, in order".
+    /// Full-attention layers are skipped, so this is NOT a decoder forward
+    /// pass; it is exactly "the `DeltaNet` layers, in order".
     ///
     /// # Errors
     /// A hidden state of the wrong width, or any per-layer failure.

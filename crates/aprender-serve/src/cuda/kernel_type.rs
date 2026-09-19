@@ -374,4 +374,18 @@ pub enum KernelType {
     },
     /// PMAT-3477 (#3090): `x *= sigmoid(gate)`, the full-attention output gate.
     GdnSigmoidGate { n: u32 },
+    /// PMAT-3477 (#3090): de-interleave the joint `[q | gate]` Q projection.
+    GdnSplitInterleaved { num_heads: u32, head_dim: u32 },
+    /// PMAT-3477 (#3090): partial NEOX RoPE over the first `n_rot` dimensions.
+    GdnPartialNeoxRope {
+        num_heads: u32,
+        head_dim: u32,
+        n_rot: u32,
+    },
+    /// PMAT-3477 (#3090): single-query decode attention, `head_dim <= 256`.
+    GdnDecodeAttention {
+        num_heads: u32,
+        num_kv_heads: u32,
+        head_dim: u32,
+    },
 }
