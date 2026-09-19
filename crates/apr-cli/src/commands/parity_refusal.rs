@@ -70,8 +70,13 @@ pub(crate) struct ParityRefusal {
     /// reader to the wrong code, so the normalizer is never allowed to rename a
     /// refusal into an architecture that is not refused.
     pub(crate) architecture: String,
-    /// Why the dense parity loop cannot route it.
-    pub(crate) reason: &'static str,
+    /// Why parity cannot measure it.
+    ///
+    /// Owned, not `&'static str`: #3477's quant refusal names the offending
+    /// tensor and its GGML type, which only the file knows. A refusal that
+    /// could not quote the file would send the reader looking for a tensor the
+    /// line did not name.
+    pub(crate) reason: String,
     /// The issue that will lift the refusal.
     pub(crate) issue: &'static str,
 }
@@ -150,7 +155,8 @@ pub(crate) fn parity_refusal_for<'n>(
                 architecture.to_string()
             },
             reason: "the dense parity loop would read the MoE placeholder tensors; \
-                     run/serve route this architecture through the MoE forward and parity does not yet",
+                     run/serve route this architecture through the MoE forward and parity does not yet"
+                .to_string(),
             issue: "#3367",
         });
     }
@@ -173,7 +179,8 @@ pub(crate) fn parity_refusal_for<'n>(
         return Some(ParityRefusal {
             architecture: architecture.to_string(),
             reason: "the GPU forward for this architecture is not implemented; \
-                     GPU=CPU cannot be measured",
+                     GPU=CPU cannot be measured"
+                .to_string(),
             issue: "#3090",
         });
     }
