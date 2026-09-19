@@ -153,38 +153,46 @@ pub fn delta_rule_recurrence(
 /// (PMAT-3477, #3346/#3510).
 ///
 /// Qwen3.5 4B and 9B carry `linear_num_value_heads = 32` against `linear_num_key_heads = 16`,
-/// and 27B carries 48 against 16, so `q` and `k` are narrower than `v`. The reference
-/// (HF `modeling_qwen3_next.py::GatedDeltaNet`, llama.cpp `delta-net-base.cpp`) expands q and
-/// k with `repeat_interleave(num_v_heads / num_k_heads, dim = heads)`:
+/// and 27B carries 48 against 16, so `q` and `k` are narrower than `v`. A **GGUF** file shares
+/// them TILED:
 ///
-/// > **value head `h` reads key/query head `h / (num_v_heads / num_k_heads)`** — grouped, not
-/// > strided. With `num_k_heads = 16` and `num_v_heads = 32`, value heads 0 and 1 share key
-/// > head 0, value heads 2 and 3 share key head 1, and so on.
+/// > **value head `h` reads key/query head `h % num_k_heads`.** With `num_k_heads = 16` and
+/// > `num_v_heads = 32`, value heads 0 and 16 share key head 0, value heads 1 and 17 share key
+/// > head 1, and so on.
 ///
-/// OPEN, MEASURED (PMAT-3477, 2026-09-19): this mapping makes 4B/9B/27B **load and run** —
-/// the shape panic is gone and every logit is finite — but the 4B completion is not yet
-/// coherent, and a three-prompt A/B against the other candidate mapping (`h % num_k_heads`,
-/// which is what a plain `ggml_repeat` of the head axis would give) favours THAT one:
+/// This is not the HF checkpoint's own order, and that is the trap. HF
+/// (`modeling_qwen3_next.py::GatedDeltaNet`) stores the value heads grouped by key head and
+/// expands q/k with `repeat_interleave` (`h / ratio`); the **conversion permutes the value
+/// heads out of that order**, and everything downstream is written for the permuted file:
 ///
-/// | prompt (4B Q4\_K\_M, `--no-gpu`, 12 tokens) | `h / ratio` (here) | `h % num_k_heads` |
-/// |---|---|---|
-/// | `The capital of France is` | `<think>META自来看似inglyigitar好莱坞erer` | `总部位于法国本土中央kaçinglyweisehood…` |
-/// | `1, 2, 3, 4, 5, 6,` | `抱歉erweiseinglyinglyinglyingly…` | `第七下一个 **.**新加坡和新舊舊…` |
-/// | `Water freezes at a temperature of` | `думанlyurahusaticallyALLYyronpan…` | `通常情况下所说的普通普通普通…` |
+/// * `llama.cpp/conversion/qwen.py:455-464` — `_LinearAttentionVReorderBase`, which
+///   `Qwen3_5TextModel` (line 639, `MODEL_ARCH.QWEN35`) is built from: *"reorders V heads from
+///   grouped to tiled order for ggml broadcast … The HF weights store V heads grouped by K
+///   head … ggml binary ops use tiled broadcast … We reorder V heads to tiled order so
+///   `ggml_repeat` can replace the expensive interleaved repeat"*. `modify_tensors`
+///   (lines 568-613) permutes **every** v-head-indexed tensor together — the v rows of
+///   `in_proj_qkv`, `in_proj_z` (the gate), `in_proj_a`/`in_proj_b` (dt and beta),
+///   `A_log`/`dt_bias`, the v channels of `conv1d`, and the v columns of `out_proj` — so the
+///   loader needs no compensating permutation anywhere: only this index changes.
+/// * `llama.cpp/src/models/qwen35.cpp:436-441` — the graph expands q and k with
+///   `ggml_repeat_4d`, which tiles.
+/// * `llama.cpp/ggml/src/ggml-cpu/ops.cpp:10976-10977` — the fused kernel that skips that
+///   repeat reads `iq1 = iv1 % neq1; ik1 = iv1 % nek1;`.
 ///
-/// The strided column is on-topic (and "the seventh, the next one" is the right continuation
-/// of the counting prompt) and then degenerates; this column is off-topic from token 0.
-/// Neither is coherent, so at least one further 4B-specific defect remains and the mapping is
-/// NOT settled by that reading alone. What is kept here is the reference semantics — HF
-/// `repeat_interleave(dim = heads)` and llama.cpp's `convert_hf_to_gguf.py::Qwen3NextModel`,
-/// whose `in_proj_qkvz` de-interleave emits v group-major — because the local llama.cpp
-/// (39173bcac, 2026-01-15) has no `qwen35` converter to read, so the file's own v ordering
-/// could not be confirmed. Settle it against a reference implementation of `qwen35`, not
-/// against another sample of generated text.
+/// MEASURED, so that nobody re-opens this from a text sample: with this mapping the 4B CPU
+/// forward agrees with `llama-eval-callback` (`-ub 1`, autoregressive graph, same token
+/// stream) on **every** `DeltaNet` intermediate of layer 0 at position 0 — `attn_norm`
+/// -26.4532 vs -26.4532, `q_conv_predelta` 1.4485 vs 1.4614, `k_conv_predelta` 13.3249 vs
+/// 13.3100, `gate` -18.2186 vs -18.2173, `beta_sigmoid` 21.0785 vs 21.0794, `attn_output`
+/// 0.9502 vs 0.9535, `new_state` 38.7674 vs 38.7736, `l_out` 0.2917 vs 0.3056 (tensor sums;
+/// the residual is the Q4_K/Q5_K activation quantisation, which is ~0.3% on a 8192-wide
+/// sum). The *incoherent* 4B/9B text that survived this mapping was never a DeltaNet defect
+/// at all — [`crate::gguf::qwen35_load::load_qwen35_layers`] was reading a bare
+/// `block_count` key that never matched, so it built 24 layers for a 32-block file.
 ///
 /// Shapes (this is the contract the CUDA `DeltaRuleRecurrenceKernel` / `Qwen35CudaModel`
 /// mirror — the kernel's `num_v_heads`/`head_v_dim` pair gains `num_k_heads`/`head_k_dim` and
-/// the same `h / ratio` read):
+/// the same `h % num_k_heads` read):
 ///
 /// | argument | length |
 /// |---|---|
@@ -233,11 +241,11 @@ pub fn delta_rule_recurrence_gqa(
     assert_eq!(output.len(), num_v_heads * head_v_dim);
 
     let scale = 1.0 / (head_k_dim as f32).sqrt();
-    let heads_per_k = num_v_heads / num_k_heads;
 
     for h in 0..num_v_heads {
-        // repeat_interleave: value head h reads key/query head h / heads_per_k.
-        let kh = h / heads_per_k;
+        // ggml_repeat (tiled): value head h reads key/query head h % num_k_heads. The GGUF
+        // conversion already permuted the value heads into this order — see the doc comment.
+        let kh = h % num_k_heads;
         let q_h = &q[kh * head_k_dim..(kh + 1) * head_k_dim];
         let k_h = &k[kh * head_k_dim..(kh + 1) * head_k_dim];
         let v_h = &v[h * head_v_dim..(h + 1) * head_v_dim];
