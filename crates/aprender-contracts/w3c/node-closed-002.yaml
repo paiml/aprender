@@ -1,0 +1,23 @@
+# vendored: tests/core/node/closed-002.ttl
+id: node/closed-002
+label: "Test of sh:closed at node shape 002"
+prefix: "http://datashapes.org/sh/tests/core/node/closed-002.test#"
+targeting: "sh:targetNode → rdf:type ex:Focus + targetClass (rdf:type is in sh:ignoredProperties, so the added typing is admitted by the case's own declaration)"
+shapes:
+  - id: MyShape
+    targetClass: ex:Focus
+    closed: true
+    ignoredProperties: [rdf:type]
+    properties:
+      - {path: ex:someProperty}
+data: |
+  ex:InvalidInstance1 rdf:type ex:Focus .
+  ex:ValidInstance1 rdf:type ex:Focus .
+  ex:InvalidInstance1 ex:otherProperty 4 .
+  ex:InvalidInstance1 ex:someProperty 3 .
+  ex:ValidInstance1 rdf:type ex:SomeClass .
+  ex:ValidInstance1 ex:someProperty 3 .
+expect:
+  conforms: false
+  results:
+    - {focus: ex:InvalidInstance1, path: ex:otherProperty, component: closed}

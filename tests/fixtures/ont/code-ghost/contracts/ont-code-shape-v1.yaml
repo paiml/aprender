@@ -1,0 +1,17 @@
+# A fixture: the same shape ONT-4b2 ships, ARMED here (the fixture's own baseline lists it), so a ghost
+# binding is a corpus FAIL naming the symbol — the arming the real corpus does not have yet.
+name: ont-code-shape
+version: "1.0.0"
+status: active
+metadata:
+  version: "1.0.0"
+  kind: pattern
+  created: '2026-09-19'
+  last_modified: '2026-09-19'
+  author: fixture
+  description: the armed form of bound-symbols-resolve
+shapes:
+  - id: bound-symbols-resolve
+    targetClass: ont:Symbol
+    properties:
+      - {path: sym:resolved, minCount: 1, maxCount: 1, in: [true]}

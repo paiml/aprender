@@ -153,21 +153,34 @@ impl Graph {
             .map(|t| t.subject.as_str())
             .collect()
     }
-    /// Objects of `<subject> <predicate> ?o`, in byte order.
+    /// Objects of `<subject> <predicate> ?o`, in byte order. A range scan: `Triple`'s derived order is
+    /// (subject, predicate, object) and `Term::Iri("")` is the least term, so the block for one
+    /// (subject, predicate) is contiguous and starts at that bound — O(log n + k), not a pass over the graph
+    /// (the validator asks this once per property per focus node: 1 700 focus nodes over 15 000 triples).
     #[must_use]
     pub fn objects(&self, subject: &str, predicate: &str) -> Vec<&Term> {
+        let from = Triple {
+            subject: subject.to_string(),
+            predicate: predicate.to_string(),
+            object: Term::Iri(String::new()),
+        };
         self.triples
-            .iter()
-            .filter(|t| t.subject == subject && t.predicate == predicate)
+            .range(from..)
+            .take_while(|t| t.subject == subject && t.predicate == predicate)
             .map(|t| &t.object)
             .collect()
     }
-    /// Every predicate used on `subject`, unique, in byte order.
+    /// Every predicate used on `subject`, unique, in byte order (the same range scan, over the subject).
     #[must_use]
     pub fn predicates_of(&self, subject: &str) -> BTreeSet<&str> {
+        let from = Triple {
+            subject: subject.to_string(),
+            predicate: String::new(),
+            object: Term::Iri(String::new()),
+        };
         self.triples
-            .iter()
-            .filter(|t| t.subject == subject)
+            .range(from..)
+            .take_while(|t| t.subject == subject)
             .map(|t| t.predicate.as_str())
             .collect()
     }

@@ -1,0 +1,22 @@
+# vendored: tests/core/property/maxCount-001.ttl
+id: property/maxCount-001
+label: "Test of sh:maxCount at property shape 001"
+prefix: "http://datashapes.org/sh/tests/core/property/maxCount-001.test#"
+targeting: "sh:targetClass ex:Person plus sh:targetNode ex:ValidResource (already a Person) → targetClass ex:Person"
+shapes:
+  - id: PersonShape
+    targetClass: ex:Person
+    properties:
+      - {path: ex:firstName, datatype: xsd:string, maxCount: 1}
+data: |
+  ex:InvalidPerson rdf:type ex:Person .
+  ex:InvalidPerson ex:firstName "George" .
+  ex:InvalidPerson ex:firstName "John" .
+  ex:Person rdf:type rdfs:Class .
+  ex:Person rdfs:subClassOf rdfs:Resource .
+  ex:ValidResource rdf:type ex:Person .
+  ex:ValidResource ex:firstName "John" .
+expect:
+  conforms: false
+  results:
+    - {focus: ex:InvalidPerson, path: ex:firstName, component: maxCount}

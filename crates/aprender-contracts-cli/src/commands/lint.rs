@@ -183,80 +183,7 @@ struct SingleGateFinding<'a> {
 /// ONT-2b: `--gate <name>` runs ONE gate and reports only it, mapping its verdict through ONT-6's lattice —
 /// Pass 0 · Fail 1 `reject:` · no Σ 2 `decline:` (R-2, zero is a decline) · malformed Σ 3 `error:`.
 fn run_single_gate(contract_dir: &Path, name: &str) -> Result<(), Box<dyn std::error::Error>> {
-    use provable_contracts::lint::{
-        relations_gate::RelationsOutcome, shapes_gate::ShapesOutcome, sigma_gate::SigmaOutcome,
-        NamedGateOutcome, NAMED_GATES,
-    };
-
-    let (result, findings) = match provable_contracts::lint::run_named_gate(contract_dir, name) {
-        NamedGateOutcome::UnknownGate => {
-            return Err(crate::contract_walk::UnknownGate {
-                asked: name.to_string(),
-                known: NAMED_GATES.iter().map(|g| (*g).to_string()).collect(),
-            }
-            .into())
-        }
-        NamedGateOutcome::Sigma(SigmaOutcome::NoSigma) => {
-            return Err(LintDeclined {
-                reason: provable_contracts::ontology::verdict::Reason::NoCheckable,
-            }
-            .into())
-        }
-        NamedGateOutcome::Sigma(SigmaOutcome::Malformed(e)) => {
-            return Err(crate::contract_walk::SigmaMalformed(e.to_string()).into())
-        }
-        NamedGateOutcome::Relations(
-            RelationsOutcome::NoSigma | RelationsOutcome::NoRelations { .. },
-        ) => {
-            return Err(LintDeclined {
-                reason: provable_contracts::ontology::verdict::Reason::NoCheckable,
-            }
-            .into())
-        }
-        NamedGateOutcome::Relations(RelationsOutcome::Malformed(e)) => {
-            return Err(crate::contract_walk::SigmaMalformed(e.to_string()).into())
-        }
-        NamedGateOutcome::Shapes(ShapesOutcome::Unsupported(e)) => {
-            return Err(crate::contract_walk::SigmaMalformed(e.to_string()).into())
-        }
-        NamedGateOutcome::Shapes(ShapesOutcome::ExtractFailed(e)) => {
-            return Err(crate::contract_walk::SigmaMalformed(e.to_string()).into())
-        }
-        NamedGateOutcome::Shapes(ShapesOutcome::NoShapes { .. }) => {
-            return Err(LintDeclined {
-                reason: provable_contracts::ontology::verdict::Reason::NoShapes,
-            }
-            .into())
-        }
-        NamedGateOutcome::Shapes(ShapesOutcome::NoFocus { .. }) => {
-            return Err(LintDeclined {
-                reason: provable_contracts::ontology::verdict::Reason::NoFocus,
-            }
-            .into())
-        }
-        NamedGateOutcome::Shapes(ShapesOutcome::NoReceipts { shapes_n, dir }) => {
-            // ONT-4c1: the WHY travels with the decline — the lattice has no ReceiptUnmeasured element (ONT-6's
-            // 15 reasons), so the reason is NoCheckable and this line says what could not be checked.
-            eprintln!(
-                "shapes: {shapes_n} shape(s) resolve receipts and the tree holds none under {dir}/"
-            );
-            return Err(LintDeclined {
-                reason: provable_contracts::ontology::verdict::Reason::NoCheckable,
-            }
-            .into());
-        }
-        NamedGateOutcome::Shapes(ShapesOutcome::PositiveControlFailed { which, .. }) => {
-            eprintln!("shapes: positive control {which} did not fire");
-            return Err(LintDeclined {
-                reason: provable_contracts::ontology::verdict::Reason::PositiveControlFailed,
-            }
-            .into());
-        }
-        NamedGateOutcome::Sigma(SigmaOutcome::Ran { result, findings })
-        | NamedGateOutcome::Relations(RelationsOutcome::Ran { result, findings })
-        | NamedGateOutcome::Shapes(ShapesOutcome::Ran { result, findings })
-        | NamedGateOutcome::Ran { result, findings } => (result, findings),
-    };
+    let (result, findings) = decide_named_gate(contract_dir, name)?;
 
     let report = SingleGateReport {
         gate: &result.name,
@@ -289,6 +216,118 @@ fn run_single_gate(contract_dir: &Path, name: &str) -> Result<(), Box<dyn std::e
             armed: 1,
         }
         .into()),
+    }
+}
+
+/// One gate's run, mapped to a report or to the refusal/decline that stands in its place. Every non-verdict
+/// answer says WHY on stderr before it returns, because an exit code without a reason is the thing this gate
+/// exists to refuse.
+type NamedGateAnswer = (
+    Box<provable_contracts::lint::GateResult>,
+    Vec<provable_contracts::lint::finding::LintFinding>,
+);
+
+fn decide_named_gate(
+    contract_dir: &Path,
+    name: &str,
+) -> Result<NamedGateAnswer, Box<dyn std::error::Error>> {
+    use provable_contracts::lint::{
+        relations_gate::RelationsOutcome, shapes_gate::ShapesOutcome, sigma_gate::SigmaOutcome,
+        NamedGateOutcome, NAMED_GATES,
+    };
+
+    match provable_contracts::lint::run_named_gate(contract_dir, name) {
+        NamedGateOutcome::UnknownGate => {
+            return Err(crate::contract_walk::UnknownGate {
+                asked: name.to_string(),
+                known: NAMED_GATES.iter().map(|g| (*g).to_string()).collect(),
+            }
+            .into())
+        }
+        NamedGateOutcome::Sigma(SigmaOutcome::NoSigma) => {
+            return Err(LintDeclined {
+                reason: provable_contracts::ontology::verdict::Reason::NoCheckable,
+            }
+            .into())
+        }
+        NamedGateOutcome::Sigma(SigmaOutcome::Malformed(e)) => {
+            return Err(crate::contract_walk::SigmaMalformed(e.to_string()).into())
+        }
+        NamedGateOutcome::Relations(
+            RelationsOutcome::NoSigma | RelationsOutcome::NoRelations { .. },
+        ) => {
+            return Err(LintDeclined {
+                reason: provable_contracts::ontology::verdict::Reason::NoCheckable,
+            }
+            .into())
+        }
+        NamedGateOutcome::Relations(RelationsOutcome::Malformed(e)) => {
+            return Err(crate::contract_walk::SigmaMalformed(e.to_string()).into())
+        }
+        NamedGateOutcome::Shapes(outcome) => decide_shapes_gate(outcome),
+        NamedGateOutcome::Sigma(SigmaOutcome::Ran { result, findings })
+        | NamedGateOutcome::Relations(RelationsOutcome::Ran { result, findings })
+        | NamedGateOutcome::Ran { result, findings } => Ok((result, findings)),
+    }
+}
+
+/// The `shapes` gate's answers (ONT-4b, ONT-4c1, ONT-4b2). Only `Ran` is a verdict about the corpus; every
+/// other arm prints what could not be checked before it returns its decline or refusal.
+fn decide_shapes_gate(
+    outcome: provable_contracts::lint::shapes_gate::ShapesOutcome,
+) -> Result<NamedGateAnswer, Box<dyn std::error::Error>> {
+    use provable_contracts::lint::shapes_gate::ShapesOutcome;
+    use provable_contracts::ontology::verdict::Reason;
+
+    match outcome {
+        ShapesOutcome::Unsupported(e) => {
+            Err(crate::contract_walk::SigmaMalformed(e.to_string()).into())
+        }
+        ShapesOutcome::ExtractFailed(e) => {
+            Err(crate::contract_walk::SigmaMalformed(e.to_string()).into())
+        }
+        ShapesOutcome::NoShapes { .. } => Err(LintDeclined {
+            reason: Reason::NoShapes,
+        }
+        .into()),
+        ShapesOutcome::NoFocus { .. } => Err(LintDeclined {
+            reason: Reason::NoFocus,
+        }
+        .into()),
+        ShapesOutcome::NoReceipts { shapes_n, dir } => {
+            // ONT-4c1: the WHY travels with the decline — the lattice has no ReceiptUnmeasured element (ONT-6's
+            // 15 reasons), so the reason is NoCheckable and this line says what could not be checked.
+            eprintln!(
+                "shapes: {shapes_n} shape(s) resolve receipts and the tree holds none under {dir}/"
+            );
+            Err(LintDeclined {
+                reason: Reason::NoCheckable,
+            }
+            .into())
+        }
+        ShapesOutcome::PositiveControlFailed { which, .. } => {
+            eprintln!("shapes: positive control {which} did not fire");
+            Err(LintDeclined {
+                reason: Reason::PositiveControlFailed,
+            }
+            .into())
+        }
+        ShapesOutcome::Differential {
+            passed, n, failed, ..
+        } => {
+            // ONT-4b2: the validator failed a vendored W3C case for a form it claims — no corpus verdict.
+            eprintln!(
+                "shapes: W3C SHACL-Core differential — {passed} of {n} vendored case(s) pass"
+            );
+            for f in &failed {
+                eprintln!("  {f}");
+            }
+            Err(LintDeclined {
+                reason: Reason::Differential,
+            }
+            .into())
+        }
+        ShapesOutcome::Ran { result, findings } => Ok((result, findings)),
     }
 }
 

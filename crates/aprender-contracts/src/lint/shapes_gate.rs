@@ -30,11 +30,12 @@ use std::path::Path;
 use std::time::Instant;
 
 use crate::ontology::arming::ArmedShapes;
-use crate::ontology::extract::{self, apr_model, gguf, pv_contract, ExtractFailure};
+use crate::ontology::extract::{self, apr_model, code, gguf, lean, pv_contract, ExtractFailure};
 use crate::ontology::rdf::{iri, Graph, Term, RDF_TYPE};
 use crate::ontology::receipts;
 use crate::ontology::shapes::{self, NodeShape, Report, Severity, ShapeError};
 use crate::ontology::verdict::Reason;
+use crate::ontology::w3c;
 
 use super::finding::LintFinding;
 use super::rules::RuleSeverity;
@@ -63,6 +64,15 @@ pub enum ShapesOutcome {
         shapes_n: usize,
         focus_nodes_n: usize,
         which: String,
+    },
+    /// A vendored W3C SHACL-Core case did not pass (ONT-4b2): the validator disagrees with the standard on a
+    /// form it claims, so no corpus verdict is trusted until it agrees — `Unknown{Differential}`.
+    Differential {
+        shapes_n: usize,
+        focus_nodes_n: usize,
+        passed: usize,
+        n: usize,
+        failed: Vec<String>,
     },
     /// Shapes ran over the corpus, and the controls fired.
     Ran {
@@ -167,6 +177,19 @@ pub fn run_shapes_gate(contract_dir: &Path) -> ShapesOutcome {
     ) {
         return d;
     }
+    // ONT-4b2: the vendored W3C cases, every run. A validator that fails the standard's own case for a form
+    // it claims has no standing to grade the corpus.
+    let w3c_run = w3c::run_all();
+    let w3c_failed = w3c_run.failed();
+    if !w3c_failed.is_empty() {
+        return ShapesOutcome::Differential {
+            shapes_n: shapes.len(),
+            focus_nodes_n: report.focus_nodes_n,
+            passed: w3c_run.passed(),
+            n: w3c_run.results.len(),
+            failed: w3c_failed,
+        };
+    }
 
     let counted = findings_of(
         &report,
@@ -186,7 +209,7 @@ pub fn run_shapes_gate(contract_dir: &Path) -> ShapesOutcome {
     let mut by_shape: Vec<String> = shapes
         .iter()
         .map(|s| {
-            let n = graph.instances_of(&s.target_class).len();
+            let n = shapes::instances_closed(&graph, &s.target_class).len();
             format!("{}={}", s.id, n)
         })
         .collect();
@@ -207,6 +230,8 @@ pub fn run_shapes_gate(contract_dir: &Path) -> ShapesOutcome {
             extraction.gguf.rungs.len() + extraction.gguf.files_read,
         ),
         ("apr-model", extraction.apr_model.files_read),
+        ("code", extraction.code.symbols),
+        ("lean", extraction.lean.statements),
     ]
     .into_iter()
     .map(|(k, v)| (k.to_string(), v))
@@ -247,6 +272,12 @@ pub fn run_shapes_gate(contract_dir: &Path) -> ShapesOutcome {
             witnesses: extraction.resolve.witnesses,
             hex_mismatches: extraction.resolve.hex_mismatches,
             unmeasured_rows: extraction.resolve.unmeasured_rows,
+            w3c_cases_passed: w3c_run.passed(),
+            w3c_cases_n: w3c_run.results.len(),
+            symbols_resolved: extraction.code.resolved,
+            symbols_unresolved: extraction.code.unresolved,
+            lean_statements: extraction.lean.statements,
+            lean_refs_unresolved: extraction.lean.refs_unresolved.len(),
         }),
     };
     ShapesOutcome::Ran {
@@ -294,6 +325,8 @@ fn extract_controls() -> BTreeMap<String, String> {
     [
         ("gguf", gguf::positive_control()),
         ("apr-model", apr_model::positive_control(&apr_sample)),
+        ("code", code::positive_control()),
+        ("lean", lean::positive_control()),
     ]
     .into_iter()
     .map(|(k, fired)| {

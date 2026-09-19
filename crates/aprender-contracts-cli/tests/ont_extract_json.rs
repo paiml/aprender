@@ -106,7 +106,7 @@ fn an_undeclared_key_and_a_value_outside_in_are_each_a_violation_naming_focus_an
         show(&r)
     );
     assert!(
-        r.stdout.contains("broken is not one of"),
+        r.stdout.contains("broken") && r.stdout.contains("is not one of"),
         "the in: violation names the value\n{}",
         show(&r)
     );

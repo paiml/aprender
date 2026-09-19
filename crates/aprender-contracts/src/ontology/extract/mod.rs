@@ -3,7 +3,8 @@
 //! (aprender#3515, for infra's ARBITER-001 §14) reads a tool's own `--json` output through the vocabulary map its
 //! contract carries; ONT-4c1 (aprender#3508) implements `gguf` and `apr_model` — the model receipts — and joins
 //! the tracked ladder receipts to the rungs (`resolves: receipt`, [`crate::ontology::receipts`]); the rest are
-//! declared in Σ and arrive with their rows (ONT-4b2: code, lean; ONT-4c: readme, llm_context, csv).
+//! declared in Σ and arrive with their rows (ONT-4b2 implements `code` — the bound symbols by a `syn` module-tree walk —
+//! and `lean` — the in-tree theorems; ONT-4c: readme, llm_context, csv).
 //!
 //! [`all`] is the ONE walk the shapes gate and `pv extract` share, so what the gate grades and what
 //! `contracts.nt` records are the same graph (R-18: files are canonical, the graph is derived — from one place).
@@ -14,8 +15,10 @@ use crate::ontology::rdf::Graph;
 use crate::ontology::receipts;
 
 pub mod apr_model;
+pub mod code;
 pub mod gguf;
 pub mod json;
+pub mod lean;
 pub mod pv_contract;
 
 /// Every extractor's output over `contract_dir`, plus the input-side warnings the extractors chose to carry
@@ -34,6 +37,10 @@ pub struct Extraction {
     pub receipts: Vec<receipts::Receipt>,
     /// ONT-4c1: witnesses, hex mismatches, unmeasured rows, green / missing hosts.
     pub resolve: receipts::ResolveStats,
+    /// ONT-4b2: the bound Rust symbols, resolved by the `syn` walk or not.
+    pub code: code::CodeStats,
+    /// ONT-4b2: the in-tree Lean theorems and the contracts that cite them.
+    pub lean: lean::LeanStats,
 }
 
 /// What a walk could not do. Every variant is the DECLARATION's fault (exit 3), never a corpus verdict.
@@ -78,5 +85,18 @@ pub fn all(contract_dir: &Path) -> Result<Extraction, ExtractFailure> {
     out.apr_model = apr_model::extract(contract_dir, &mut out.graph);
     out.receipts = receipts::read_all(root).map_err(ExtractFailure::Receipt)?;
     out.resolve = receipts::resolve(&mut out.graph, &out.gguf.rungs, &out.receipts);
+    out.code = code::extract(contract_dir, &mut out.graph);
+    out.lean = lean::extract(contract_dir, &mut out.graph);
     Ok(out)
+}
+
+/// The repo root an extractor resolves against: the contract dir's parent — and `.` when the contract dir is a
+/// bare relative name like `contracts`, whose parent is the empty path (`read_dir("")` fails, and an extractor
+/// that walked nothing would report an empty workspace as if it had measured one).
+#[must_use]
+pub fn repo_root(contract_dir: &Path) -> std::path::PathBuf {
+    match contract_dir.parent() {
+        Some(p) if !p.as_os_str().is_empty() => p.to_path_buf(),
+        _ => std::path::PathBuf::from("."),
+    }
 }

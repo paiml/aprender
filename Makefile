@@ -1361,3 +1361,21 @@ ont-ratchet:
 
 ont-ratchet-check:
 	@bash scripts/check_ont_ratchet.sh --check
+
+# ONT-001 §5 ONT-4b2 / R-13 — the out-of-gate SHACL differential oracle.
+#
+# NOT a PR check, by the rule that puts it here: `shacl` is 316 crates and pinned at ONE version (ONT-0's
+# ledger), so it lives in tests/oracle/ — a crate DETACHED from the workspace — and runs in the release gate
+# only. It validates the same graph twice (the pinned processor and the in-house validator) and writes
+# tests/oracle/differential.json, which is TRACKED: the row's probe reads `cases>0 and disagreements==0`, and
+# a tracked file nobody regenerated is caught by `oracle-check` diffing it.
+.PHONY: oracle oracle-check
+oracle:
+	@echo "== W3C cases + the real corpus through the pinned oracle (shacl 0.3.21, out of gate) =="
+	@. scripts/pv_bin.sh && "$$PV" lint contracts --gate shapes --format json > "$${TMPDIR:-/tmp}/pv-shapes.json" 2>/dev/null || true
+	@cd tests/oracle && cargo build --release --quiet
+	@"$$(cd tests/oracle && cargo metadata --no-deps --format-version 1 | sed -n 's/.*"target_directory":"\([^"]*\)".*/\1/p')/release/ont-oracle" . "$${TMPDIR:-/tmp}/pv-shapes.json"
+
+oracle-check: oracle
+	@git diff --exit-code tests/oracle/differential.json \
+	  || { echo "FAIL: tests/oracle/differential.json differs from a fresh run — commit it"; exit 1; }
