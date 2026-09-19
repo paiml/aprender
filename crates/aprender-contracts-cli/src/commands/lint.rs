@@ -115,6 +115,7 @@ pub fn run(
 
     report.arm(&arming.armed);
     report.armed_monotone = Some(arming.monotone);
+    report.armed_shapes_monotone = Some(arming.shapes_monotone);
 
     if cache_stats {
         print_cache_stats(&report);
@@ -233,11 +234,23 @@ fn run_single_gate(contract_dir: &Path, name: &str) -> Result<(), Box<dyn std::e
             }
             .into())
         }
-        NamedGateOutcome::Shapes(ShapesOutcome::PositiveControlFailed { .. }) => {
+        NamedGateOutcome::Shapes(ShapesOutcome::NoReceipts { shapes_n, dir }) => {
+            // ONT-4c1: the WHY travels with the decline — the lattice has no ReceiptUnmeasured element (ONT-6's
+            // 15 reasons), so the reason is NoCheckable and this line says what could not be checked.
+            eprintln!(
+                "shapes: {shapes_n} shape(s) resolve receipts and the tree holds none under {dir}/"
+            );
+            return Err(LintDeclined {
+                reason: provable_contracts::ontology::verdict::Reason::NoCheckable,
+            }
+            .into());
+        }
+        NamedGateOutcome::Shapes(ShapesOutcome::PositiveControlFailed { which, .. }) => {
+            eprintln!("shapes: positive control {which} did not fire");
             return Err(LintDeclined {
                 reason: provable_contracts::ontology::verdict::Reason::PositiveControlFailed,
             }
-            .into())
+            .into());
         }
         NamedGateOutcome::Sigma(SigmaOutcome::Ran { result, findings })
         | NamedGateOutcome::Relations(RelationsOutcome::Ran { result, findings })

@@ -10,6 +10,7 @@
 pub mod arming;
 pub mod extract;
 pub mod rdf;
+pub mod receipts;
 pub mod shapes;
 pub mod sigma;
 pub mod verdict;
