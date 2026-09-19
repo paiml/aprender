@@ -915,14 +915,13 @@ fn f2_gpu_logits_via(
 ///     Backend: GPU (NVIDIA GeForce RTX 4090, 24045 MB VRAM)
 ///     Backend: wgpu (Vulkan)
 ///     Backend: CPU (wgpu unavailable: cosine 0.884 < 0.99)
-/// an order of magnitude below the GPU decode rate, with no stated cause
-/// even under --verbose. A silent downgrade is indistinguishable from a
-/// decode regression, and it makes any throughput measured through
-/// it a fabrication (the Pillar-4 beat reports 0.070x and a
-/// BEAT-REGRESSION panic off exactly this state).
+/// with no stated cause even under --verbose. A silent downgrade is
+/// indistinguishable from a decode regression, and it makes any
+/// throughput measured through it a fabrication (the Pillar-4 beat
+/// raises BEAT-REGRESSION off exactly this state).
 ///
 /// Unconditional, not verbose-gated: the user is about to silently
-/// receive a 20x slower backend, which they need to know regardless
+/// receive the fallback backend, which they need to know regardless
 /// of verbosity.
 ///
 /// #3413 C: the message now carries the path that failed, because a
