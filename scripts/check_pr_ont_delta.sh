@@ -39,10 +39,12 @@ usage() {
     exit 2
 }
 
-# The sinks §11.1 names, verbatim. A `docs/specifications/` entry is a PREFIX.
+# The sinks §11.1 names, verbatim. Under docs/specifications/ the sink is the release spec ITSELF —
+# the train writes its findings there — never a design spec (aprender#3535: three maintainer PRs,
+# each touching one design document, were red for a delta that did not exist).
 ONT_SWEEP_SINKS=(
     ".github/workflows/night.yml"
-    "docs/specifications/"
+    "docs/specifications/APR-RELEASE-001-train-and-build-kaizen.md"
     "contracts/apr-cli-commands-v1.yaml"
     "README.md"
     "CLAUDE.md"
@@ -166,10 +168,52 @@ trailer'
     [ "$fail" -eq 0 ]
 }
 
+# The PREDICATE half had no self-test: every row above feeds check_body_text, so
+# sweep_reason could have classified every PR as a sweep (or none) and the
+# self-test would stay green. Measured 2026-09-19: three PRs by a maintainer
+# (#3499 a guard-regex fix, #3420 and #3424 design specs) were RED on this
+# guard, every one of them because `docs/specifications/**` is a prefix sink
+# and §11.1 says so verbatim. A design spec that IS the finding's home is not
+# "writing a finding into a prose sink"; whether the sentence or the row moves
+# is a §11.1 amendment, and the row below is the falsifying case either way.
+predicate_row() { # predicate_row NAME WANT CHANGED_PATH  (want: 0 = sweep, 1 = not a sweep)
+    local name="$1" want="$2" path="$3" tmp rc
+    tmp="$(mktemp -d)"
+    case "$tmp" in /tmp/*|/var/tmp/*) : ;; *) printf 'NO-GO: mktemp -d gave %s\n' "$tmp" >&2; return 2 ;; esac
+    printf '%s\n' "$path" > "$tmp/c.txt"
+    set +e; sweep_reason "$tmp/c.txt" >/dev/null 2>&1; rc=$?; set -e
+    [ -n "$tmp" ] && [ -d "$tmp" ] && rm -rf "$tmp"
+    if [ "$rc" -eq "$want" ]; then printf '  ok    %-46s want=%s\n' "$name" "$want"; return 0
+    else printf '  FAIL  %-46s want=%s got=%s\n' "$name" "$want" "$rc"; return 1; fi
+}
+
+predicate_self_test() {
+    local pass=0 fail=0
+    printf 'check_pr_ont_delta predicate self-test (sweep_reason)\n'
+    prow() { if predicate_row "$@"; then pass=$((pass+1)); else fail=$((fail+1)); fi; }
+    prow "crate source is not a sweep"            1 'crates/aprender-core/src/lib.rs'
+    prow "a contract yaml is not a sweep"         1 'contracts/tensor-layout-v1.yaml'
+    prow "a workflow other than night is not"     1 '.github/workflows/ci.yml'
+    prow "night.yml is a prose sink"              0 '.github/workflows/night.yml'
+    prow "README.md is a prose sink"              0 'README.md'
+    prow "CLAUDE.md is a prose sink"              0 'CLAUDE.md'
+    prow "apr-cli-commands registry is a sink"    0 'contracts/apr-cli-commands-v1.yaml'
+    prow "a known-red baseline is DERIVED"        0 'scripts/cb200_baseline.txt'
+    prow "the release spec itself is a sink"      0 'docs/specifications/APR-RELEASE-001-train-and-build-kaizen.md'
+    # THE FALSIFYING ROW. A design spec (PP-QUANT-001, #3420) carries no finding
+    # from a sweep; under the §11.1 sentence as first written it WAS a sweep (want=0)
+    # and the guard redded a maintainer's spec PR for a line about a delta that
+    # did not exist. The amendment (aprender#3535) makes this row want=1; restoring the
+    # directory-wide sink turns it RED again, which is the proof it discriminates.
+    prow "a DESIGN spec is not a sweep"                  1 'docs/specifications/PP-QUANT-001-MASTER.md'
+    printf 'predicate self-test: %s passed, %s failed\n' "$pass" "$fail"
+    [ "$fail" -eq 0 ]
+}
+
 main() {
     local body="" changed="" reason
     if [ $# -eq 0 ] || [ "${1:-}" = "--self-test" ]; then
-        self_test; return $?
+        self_test && predicate_self_test; return $?
     fi
     while [ $# -gt 0 ]; do
         case "$1" in

@@ -1,0 +1,18 @@
+- id: PMAT-3535
+  github_issue: 3535
+  item_type: task
+  title: '§11.1 + check_pr_ont_delta: the docs/specifications sink is the release spec, not every design spec — three maintainer PRs red for a delta that does not exist; predicate self-test with the falsifying design-spec row (Refs aprender#3535)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-19T18:35:25Z
+  updated: 2026-09-19T18:35:25Z
+  spec: null
+  acceptance_criteria:
+  - 'APR-RELEASE-001 §11.1 names docs/specifications/APR-RELEASE-001-train-and-build-kaizen.md (the release spec, where the train writes its findings) as the docs/specifications sink and says a *-MASTER.md design spec is the finding''s home, not a sink; scripts/check_pr_ont_delta.sh ONT_SWEEP_SINKS carries that exact path in place of the docs/specifications/ prefix — the spec sentence and the guard list name the same bytes.'
+  - 'predicate_self_test (10 rows) chains into --self-test: crate source, a contract yaml and ci.yml are not sweeps; night.yml, README.md, CLAUDE.md, the apr-cli-commands registry, a derived baseline and the release spec are; the row "a DESIGN spec is not a sweep" (docs/specifications/PP-QUANT-001-MASTER.md) is want=1 and goes RED (got=0) when the directory-wide sink is restored. --self-test 15 + 10 passed; bashrs lint 0 errors; this PR''s own body passes check_pr_ont_delta.sh (ont-delta: none) and check_pr_closes_issue.sh.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
